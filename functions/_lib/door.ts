@@ -37,6 +37,7 @@ export function homeFor(who: { role: string; kind?: DepartmentKind | null; side?
   const kind = kindOf({ role, kind: who.kind });
   if (kind === 'management') return '/';
   if (kind === 'cleaning' || kind === 'maintenance') return '/portal/today';
+  if (kind === 'renovation') return '/portal/clock';
   if (department?.trim().toLowerCase() === 'finance') return '/owners?view=statements';
   return side === 'dream_crafter' ? '/sales/orders' : '/operations/today';
 }

@@ -3,6 +3,7 @@ import { type Env, all, run, nowIso } from './db';
 import { hasColumn } from './auth';
 import { employeeIdsFor } from './hr';
 import { hasAttendance } from './attendance';
+import { withoutDreamCrafterSql } from './dcStaff';
 import { workedMinutes } from './attendanceCalc';
 import { shiftDay, type PayRules } from './payrollCalc';
 import { DEPARTMENTS, type Department, type Employee } from './hrFields';
@@ -79,7 +80,8 @@ export const homeDepartment = (e: Pick<Employee, 'cleanerId' | 'technicianId'>):
 export interface PunchRow { id: string; employee_id: string; work_date: string; clock_in_at: string; clock_out_at: string | null; forgot_out: number }
 export async function punchesBetween(env: Env, from: string, to: string): Promise<PunchRow[]> {
   if (!(await hasAttendance(env))) return [];
-  return all<PunchRow>(env, 'SELECT id, employee_id, work_date, clock_in_at, clock_out_at, forgot_out FROM attendance WHERE work_date BETWEEN ? AND ?', from, to);
+  const contsOnly = await withoutDreamCrafterSql(env, 'employee_id');
+  return all<PunchRow>(env, `SELECT id, employee_id, work_date, clock_in_at, clock_out_at, forgot_out FROM attendance WHERE work_date BETWEEN ? AND ?${contsOnly}`, from, to);
 }
 
 const mytMinute = (iso: string): number => Math.floor(Date.parse(iso) / 60_000 + 8 * 60) % (24 * 60);

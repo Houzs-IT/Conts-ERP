@@ -95,6 +95,20 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/claims\/[a-z0-9_/-]+$/i],
 ];
 
+/** Dream Crafter's own staff (renovators) get only the Clock and their account: strictly narrower than FIELD_ALLOWED, so
+ *  nothing else a field account may call (jobs, repairs, pay, leave, receipts, documents) is theirs. */
+const RENOVATOR_ALLOWED: [string, RegExp][] = [
+  ['GET', /^\/api\/auth\/session$/],
+  ['POST', /^\/api\/auth\/logout$/],
+  ['POST', /^\/api\/auth\/change-password$/],
+  ['GET', /^\/api\/account$/],
+  ['POST', /^\/api\/account\/[a-z0-9/-]+$/],
+  ['GET', /^\/api\/notifications(\/count)?$/],
+  ['PATCH', /^\/api\/notifications$/],
+  ['GET', /^\/api\/field\/clock$/],
+  ['POST', /^\/api\/field\/clock$/],
+];
+
 /** Supply chain endpoints only check for a signed-in user, and carry prices and costs;
  *  field accounts have no supply chain screens, so they are refused here in one place. */
 const SUPPLY_CHAIN = /^\/api\/(consignment-notes|customers|delivery-orders|delivery-schedule|delivery-zones|driver-leave|drivers|fabrics|fleet-health|coverage-fleet|goods-receipts|loading-list|mrp|payment-vouchers|product-models|products|purchase-consignment|purchase-invoices|purchase-orders|purchase-returns|racks|rate-cards|sales-invoices|sales-orders|sales-returns|so-amendments|stock|stock-takes|stock-transfers|suppliers|threepl-companies|unbilled-deliveries|vehicles|warehouses|credit-notes|accounting)(\/|$)/;
@@ -171,7 +185,8 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   if (isFieldRole(session.role) && SUPPLY_CHAIN.test(path)) {
     return fail('FORBIDDEN', 'Your account does not have access to supply chain records.', 403);
   }
-  if (isFieldRole(session.role) && !FIELD_ALLOWED.some(([m, re]) => m === request.method && re.test(path))) {
+  const fieldAllowed = session.role === 'renovator' ? RENOVATOR_ALLOWED : FIELD_ALLOWED;
+  if (isFieldRole(session.role) && !fieldAllowed.some(([m, re]) => m === request.method && re.test(path))) {
     return fail('FORBIDDEN', 'This is not available in the field app.', 403);
   }
   // The level on Users and roles > Permissions (chosen by management, or the built-in one it shows).

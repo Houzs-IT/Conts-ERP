@@ -17,10 +17,10 @@ export type PayoutState = 'pending' | 'processing' | 'paid' | 'failed';
 export type IntegrationState = 'connected' | 'expired' | 'degraded' | 'failed';
 export type SyncState = 'queued' | 'synced' | 'failed';
 
-/** The hidden role the server works out from the department's kind (management, staff, cleaning, maintenance), plus owner.
+/** The hidden role the server works out from the department's kind (management, staff, cleaning, maintenance, renovation), plus owner.
  *  No screen shows or picks it. The two older office roles (operations manager and finance admin) are retired: what set them apart now lives in
  *  the position and department rules. */
-export type UserRole = 'management' | 'operations_staff' | 'housekeeper' | 'technician' | 'owner';
+export type UserRole = 'management' | 'operations_staff' | 'housekeeper' | 'technician' | 'renovator' | 'owner';
 
 /** Which side of the business an account works on (migration 0143): The Conts is rental, Dream Crafter the supply chain. */
 export type UserSide = 'conts' | 'dream_crafter' | 'both';
@@ -61,8 +61,8 @@ export type AccessSetting = 'inherit' | AccessLevel;
 /* ----------------------- departments, positions and rules ----------------------- */
 // Shapes of the API contract in PLAN.md (/api/departments, /api/users/access, /api/users/:id/access).
 
-/** What a department is for: decides the hidden role. Management is always Full, cleaning and maintenance use the field app only. */
-export type DepartmentKind = 'management' | 'staff' | 'cleaning' | 'maintenance';
+/** What a department is for: decides the hidden role. Management is always Full, cleaning, maintenance and renovation use the field app only. */
+export type DepartmentKind = 'management' | 'staff' | 'cleaning' | 'maintenance' | 'renovation';
 
 export interface Position { id: string; name: string; sort: number; headCount: number }
 

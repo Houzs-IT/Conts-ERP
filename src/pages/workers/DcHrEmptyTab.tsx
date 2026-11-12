@@ -1,18 +1,13 @@
 import { EmptyState } from '../../components/States';
 
 /* ------------------------------------------------------------------ *
- * Dream Crafter > HR > Employees > Attendance and Punch Sites: the Dream
- * Crafter version of The Conts' punch in / punch out (HR > Employees >
- * Hours, #426). Dream Crafter staff cannot clock in yet, so both tabs say
- * what will show here and stay empty until they can.
+ * Dream Crafter > HR > Employees > Punch Sites: the Dream Crafter version of
+ * The Conts' punch sites (HR > Employees > Hours, #426). Dream Crafter has
+ * no sites yet, so the tab says what will show here and stays empty until it
+ * has. Attendance has its own tab (DcAttendanceTab).
  * ------------------------------------------------------------------ */
 
 const PAGES = {
-  attendance: {
-    icon: 'UserCheck',
-    empty: 'Dream Crafter clock-in is not set up yet',
-    body: 'Dream Crafter staff are added on Staff > Employee Master. Once they can clock in, everyone shows here each day: clock-in and clock-out, the selfie, whether they were at a Dream Crafter site, and anyone not in or on leave. A punch left open more than 16 hours shows as no clock-out for the office to fix, and the office can key a day for someone who forgot to clock in.',
-  },
   'punch-sites': {
     icon: 'MapPin',
     empty: 'No Dream Crafter sites yet',

@@ -15,7 +15,8 @@
 // local database only.
 //
 // Letters: A = reached the handler (2xx, 4xx other than 401/403), F = 403 refused, U = 401 signed out, E = 5xx.
-// Column order: management, operations_manager, operations_staff, finance_admin, housekeeper, technician, owner, signed out.
+// Column order: management, operations_manager, operations_staff, finance_admin, housekeeper, technician, owner, signed out, renovator
+// (Dream Crafter's own staff, added after the first eight so their columns kept their place).
 // Since access follows department and position (migrations 0145, 0146), each staff column is a test account placed where
 // 0146 placed that old role: Management / Director, Operations / Operations Manager, Operations / Operations Staff,
 // Finance / Finance Admin, Cleaning / Cleaner, Maintenance / Technician.
@@ -71,7 +72,7 @@ async function callOnce(u, method, path, body) {
 }
 
 /* ---------- accounts: one per role, two owners linked to owner accounts ---------- */
-export const PERSONAS = ['management', 'operations_manager', 'operations_staff', 'finance_admin', 'housekeeper', 'technician', 'owner', 'anon'];
+export const PERSONAS = ['management', 'operations_manager', 'operations_staff', 'finance_admin', 'housekeeper', 'technician', 'owner', 'anon', 'renovator'];
 const uid = n => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
 /** column -> [the account's role, department, position]: what migration 0146 made of each old role. */
 const PLACE = {
@@ -86,6 +87,7 @@ export const USERS = Object.fromEntries(PERSONAS.slice(0, 6).map((p, i) => [p, {
 USERS.owner = { id: uid(7), role: 'owner', email: 'rbac.owner-a@local.test', name: 'RBAC owner A' };
 USERS.ownerB = { id: uid(8), role: 'owner', email: 'rbac.owner-b@local.test', name: 'RBAC owner B' };
 USERS.anon = null;
+USERS.renovator = { id: uid(9), role: 'renovator', email: 'rbac.renovator@local.test', name: 'RBAC renovator' };
 
 export async function setup() {
   for (const u of Object.values(USERS).filter(Boolean)) {
@@ -100,6 +102,8 @@ export async function setup() {
       WHERE d.name = $2 AND u.id = $1 RETURNING u.id`, USERS[p].id, dept, pos);
     if (!placed.length) throw new Error(`No ${dept} / ${pos} on this database (migration 0145).`);
   }
+  const crew = await db(`UPDATE users u SET department_id = d.id, department = d.name, side = d.side FROM departments d WHERE d.kind = 'renovation' AND u.id = $1 RETURNING u.id`, USERS.renovator.id);
+  if (!crew.length) throw new Error('No Renovation crew department on this database (migration 0311).');
   // Two owners who each have statements an owner may see, so one can ask for the other's.
   const owners = await db(`SELECT o.id FROM owners o JOIN owner_statements s ON s.owner_id = o.id
     WHERE s.state IN ('finalised','sent','paid') AND (o.user_id IS NULL OR o.user_id IN ($1, $2))
@@ -223,6 +227,13 @@ async function scenarios(ownerA, ownerB, ids) {
   }
   r = await call(H, 'GET', '/api/field/tasks');
   check('a housekeeper still loads the field app', r.status === 200, `${r.status}`);
+  // Dream Crafter's own staff (renovators) get the Clock and their account only: nothing else a field account may reach.
+  for (const p of ['/api/field/tasks', '/api/field/repairs', '/api/field/units', '/api/field/pay', '/api/field/leave', '/api/claims/summary', '/api/audit', '/api/units', '/api/search?q=a']) {
+    r = await call(USERS.renovator, 'GET', p);
+    check(`a renovator is refused ${p}`, r.status === 403, `${r.status}`);
+  }
+  r = await call(USERS.renovator, 'GET', '/api/auth/session');
+  check('a renovator still loads their session', r.status === 200, `${r.status}`);
   const own = (await db(`SELECT id FROM tasks WHERE id <> $1 ORDER BY id DESC LIMIT 1`, ids.tasks))[0].id;
   const was = (await db('SELECT assignee_id FROM tasks WHERE id = $1', own))[0].assignee_id;
   await db('UPDATE tasks SET assignee_id = $1 WHERE id = $2', H.id, own);

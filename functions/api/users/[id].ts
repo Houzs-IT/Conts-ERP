@@ -38,7 +38,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const before = await one<Before>(env, 'SELECT role, is_active, manager_id, full_name, email, phone, department_id, position_id, department, position, side FROM users WHERE id = ?', id);
   if (!before) return fail('NOT_FOUND', 'That account no longer exists.', 404);
   // Switching off, renaming and the PIN all happen on HR > Employees, which keeps the worker entry and its login together.
-  if (before.role === 'housekeeper' || before.role === 'technician') return fail('VALIDATION', 'Cleaners and technicians are managed on HR > Employees.', 422);
+  if (before.role === 'housekeeper' || before.role === 'technician' || before.role === 'renovator') return fail('VALIDATION', 'Cleaners and technicians are managed on HR > Employees, and Dream Crafter staff on Dream Crafter > HR > Employees.', 422);
   if (b.managerId && !(await one(env, 'SELECT 1 AS x FROM users WHERE id = ?', b.managerId))) return fail('VALIDATION', 'That manager does not exist.', 422, { managerId: 'Pick a manager from the list.' });
   if (b.email !== undefined && b.email.trim().toLowerCase() !== before.email.toLowerCase()
       && await one(env, 'SELECT 1 AS x FROM users WHERE lower(email) = lower(?) AND id != ?', b.email.trim(), id)) {

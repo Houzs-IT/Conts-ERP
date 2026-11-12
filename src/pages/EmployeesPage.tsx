@@ -7,6 +7,7 @@ import { TabBar, tabId, panelId } from '../components/TabBar';
 import { Button } from '../components/Button';
 import { useApi } from '../lib/useApi';
 import type { AttendanceLine } from '../../functions/api/attendance/index';
+import type { DcAttendanceLine } from '../../functions/api/attendance/dream-crafter';
 import type { DcEmployee } from '../../functions/_lib/hrFields';
 
 const WorkingHoursTab = lazy(() => import('./workers/WorkingHoursTab'));
@@ -24,6 +25,7 @@ const EmployeePerformanceTab = lazy(() => import('./workers/EmployeePerformanceT
 const StandardTimesTab = lazy(() => import('./workers/StandardTimesTab'));
 const DcEmployeesTab = lazy(() => import('./workers/DcEmployeesTab'));
 const DcEmployeePerformanceTab = lazy(() => import('./workers/DcEmployeePerformanceTab'));
+const DcAttendanceTab = lazy(() => import('./workers/DcAttendanceTab'));
 const DcHrEmptyTab = lazy(() => import('./workers/DcHrEmptyTab'));
 
 /* ------------------------------------------------------------------ *
@@ -77,7 +79,8 @@ const UNDECIDED: Partial<Record<TabKey, string>> = {
 };
 
 /** Dream Crafter > HR > Employees has the same layout as The Conts' (owner, 30 Oct 2026). Its people are its own
- *  (migration 0185); clock-in and pay are not built for them yet, so it opens on Employee Master, the tab that works. */
+ *  (migration 0185). They clock in on the phone (migration 0311) and Attendance shows it; Punch Sites and pay are not built for
+ *  them yet, so it opens on Employee Master. */
 export interface EmployeesPageProps { dreamCrafter?: boolean }
 
 export default function EmployeesPage({ dreamCrafter = false }: EmployeesPageProps) {
@@ -86,22 +89,23 @@ export default function EmployeesPage({ dreamCrafter = false }: EmployeesPagePro
   const tab: TabKey = isTab(asked) ? asked : dreamCrafter ? 'employee-master' : 'working-hours';
   const setTab = (t: TabKey) => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); n.delete('month'); n.delete('day'); n.delete('year'); return n; }, { replace: true });
   const section = sectionOf(tab);
-  const today = useApi<{ data: AttendanceLine[] }>(dreamCrafter ? null : '/attendance');
+  const today = useApi<{ data: (AttendanceLine | DcAttendanceLine)[] }>(dreamCrafter ? '/attendance/dream-crafter' : '/attendance');
   const dcStaff = useApi<{ data: DcEmployee[] }>(dreamCrafter ? '/employees/dream-crafter' : null);
   const lines = today.data?.data ?? [];
   const present = lines.filter(l => l.punch).length;
   const minutes = lines.reduce((n, l) => n + (l.punch?.minutes ?? 0), 0);
 
-  const workers = dreamCrafter ? dcStaff.data?.data.filter(e => e.status === 'active').length : today.data ? lines.length : undefined;
+  const workers = dreamCrafter ? dcStaff.data?.data.filter(e => e.status === 'active' && e.isActive).length : today.data ? lines.length : undefined;
   const workersLoading = dreamCrafter ? dcStaff.loading && !dcStaff.data : today.loading && !today.data;
 
   let body: ReactNode;
   if (dreamCrafter && tab === 'employee-master') body = <DcEmployeesTab onChanged={dcStaff.reload} />;
   else if (dreamCrafter && tab === 'detail') body = <DcEmployeePerformanceTab />;
-  else if (dreamCrafter && (tab === 'attendance' || tab === 'punch-sites')) body = <DcHrEmptyTab page={tab} />;
+  else if (dreamCrafter && tab === 'attendance') body = <DcAttendanceTab />;
+  else if (dreamCrafter && tab === 'punch-sites') body = <DcHrEmptyTab page={tab} />;
   else if (dreamCrafter) {
     body = <EmptyState icon="Users" title="Not set up for Dream Crafter yet"
-      body="Dream Crafter clock-in and payroll are not built yet, so this is empty for now. Add staff on Staff > Employee Master." />;
+      body="Dream Crafter payroll is not built yet, so this is empty for now. Add staff on Staff > Employee Master." />;
   }
   else if (tab === 'working-hours') body = <WorkingHoursTab />;
   else if (tab === 'attendance') body = <AttendanceTab />;
@@ -128,8 +132,8 @@ export default function EmployeesPage({ dreamCrafter = false }: EmployeesPagePro
       <div className={tab === 'employee-master' || tab === 'outside' ? 'hidden md:block' : undefined}>
         <StatRow cols={4}>
           <StatTile label="Total Workers" value={workers === undefined ? undefined : String(workers)} loading={workersLoading} />
-          <StatTile label="Present" value={dreamCrafter ? '—' : today.data ? String(present) : undefined} hint={dreamCrafter ? 'Clock-in not set up' : 'Clocked in today'} loading={today.loading && !today.data} />
-          <StatTile label="Working Hours" value={dreamCrafter ? '—' : today.data ? `${(minutes / 60).toFixed(1)} h` : undefined} hint={dreamCrafter ? 'Clock-in not set up' : 'Today so far'} loading={today.loading && !today.data} />
+          <StatTile label="Present" value={today.data ? String(present) : undefined} hint="Clocked in today" loading={today.loading && !today.data} />
+          <StatTile label="Working Hours" value={today.data ? `${(minutes / 60).toFixed(1)} h` : undefined} hint="Today so far" loading={today.loading && !today.data} />
           <StatTile label="Avg Efficiency" value="—" hint="Production time not decided" />
         </StatRow>
       </div>

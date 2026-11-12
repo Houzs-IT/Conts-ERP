@@ -121,7 +121,9 @@ export const dcEmployeeInput = employeeRecord.extend({
   name: z.string().trim().min(1, 'Enter their name.').max(120),
   phone: text(40),
   status: z.enum(['active', 'resigned']),
+  /** Switched on or off for work and the phone app (migration 0311); left out, it stays as it is. */
+  isActive: z.boolean().optional(),
 }).refine(e => e.status !== 'resigned' || !!e.resignedAt, { path: ['resignedAt'], message: 'Give the last working day.' });
 export type DcEmployeeInput = z.infer<typeof dcEmployeeInput>;
-/** id is the dc_staff id. */
-export type DcEmployee = DcEmployeeInput & { id: string };
+/** id is the dc_staff id; employeeId is the EMP number of their app login, null without one. */
+export type DcEmployee = DcEmployeeInput & { id: string; employeeId: string | null; isActive: boolean };

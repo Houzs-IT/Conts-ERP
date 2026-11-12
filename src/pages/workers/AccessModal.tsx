@@ -4,8 +4,9 @@ import { Button } from '../../components/Button';
 import { useToast } from '../../components/Toast';
 import { api } from '../../lib/api';
 
-/** Who gets the sign-in, and which roster holds them (POST {rosterApi}/{id}/access). */
-export interface AccessTarget { id: string; name: string; employeeId: string | null; rosterApi: string; jobs: string }
+/** Who gets the sign-in, and which roster holds them (POST {rosterApi}/{id}/access). `appName` is how the copied message
+ *  names the app (The Conts' unless the company is another). */
+export interface AccessTarget { id: string; name: string; employeeId: string | null; rosterApi: string; jobs: string; appName?: string }
 
 /** "Give app access" / "Reset PIN": the worker's employee ID (made on first access) and their first PIN, shown once. */
 export function AccessModal({ target, given0, onClose, onDone }: {
@@ -20,7 +21,7 @@ export function AccessModal({ target, given0, onClose, onDone }: {
 
   /** The sign-in as one message the manager pastes into WhatsApp or SMS. */
   async function copyMessage({ employeeId, pin }: { employeeId: string; pin: string }): Promise<void> {
-    const text = `Hi ${target.name}, this is your sign-in for The Conts app.\n\n`
+    const text = `Hi ${target.name}, this is your sign-in for ${target.appName ?? 'The Conts app'}.\n\n`
       + `1. On your phone, open ${link}\n2. Employee ID: ${employeeId}\n3. PIN: ${pin}\n\n`
       + 'The first time, it asks you to choose your own PIN.';
     try {

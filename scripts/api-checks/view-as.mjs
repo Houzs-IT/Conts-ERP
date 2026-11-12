@@ -79,7 +79,7 @@ if (field) {
   check('switch to a field account', r.status === 200 && r.json?.home === '/portal/today' && (await whoAmI(b))?.id === field.id, r.text);
 }
 // By department: each one lands on its own test account (with its first position) and its own home screen.
-const homeOf = d => d.kind === 'management' ? '/' : d.kind === 'cleaning' || d.kind === 'maintenance' ? '/portal/today'
+const homeOf = d => d.kind === 'management' ? '/' : d.kind === 'cleaning' || d.kind === 'maintenance' ? '/portal/today' : d.kind === 'renovation' ? '/portal/clock'
   : d.name === 'Finance' ? '/owners?view=statements' : d.side === 'dream_crafter' ? '/sales/orders' : '/operations/today';
 const madeIds = {};
 for (const d of departments) {
@@ -89,6 +89,11 @@ for (const d of departments) {
   madeIds[d.id] = me?.id;
   const name = `Test: ${d.name}${pos ? ` / ${pos.name}` : ''}`;
   check(`by department ${d.name}: on the test account, at ${homeOf(d)}`, r.status === 200 && r.json?.home === homeOf(d) && me?.department === d.name && /@staging\.invalid$/.test(me.email) && me.fullName === name, `${r.text} ${JSON.stringify(me)}`);
+}
+const renovation = departments.find(d => d.kind === 'renovation');
+if (renovation) {
+  r = await b('POST', '/api/auth/view-as', { departmentId: renovation.id, positionId: null });
+  check('the Renovation crew test account is a renovator, on the Clock', r.status === 200 && r.json?.home === '/portal/clock' && (await whoAmI(b))?.role === 'renovator', r.text);
 }
 const cleaning = departments.find(d => d.kind === 'cleaning');
 r = await b('POST', '/api/auth/view-as', { departmentId: cleaning.id, positionId: cleaning.positions[0]?.id ?? null });

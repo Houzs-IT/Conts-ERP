@@ -21,7 +21,7 @@ export interface DepartmentRef { id: string; name: string; kind: DepartmentKind 
 /** A comma-separated setting value as a list. */
 export const parseList = (v: string | undefined): string[] => (v ?? '').split(',').map(r => r.trim()).filter(Boolean);
 
-const KIND_OF_ROLE: Record<string, DepartmentKind> = { management: 'management', operations_staff: 'staff', housekeeper: 'cleaning', technician: 'maintenance' };
+const KIND_OF_ROLE: Record<string, DepartmentKind> = { management: 'management', operations_staff: 'staff', housekeeper: 'cleaning', technician: 'maintenance', renovator: 'renovation' };
 const NAME_OF_ROLE: Record<string, string> = { finance_admin: 'finance', operations_manager: 'operations' };
 
 /** The ids of the departments an old role list stands for, in the order `departments` came in (sort, then name). */

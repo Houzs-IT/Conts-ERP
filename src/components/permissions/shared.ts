@@ -36,7 +36,7 @@ export const categorySide = (group: string): UserSide =>
 
 /** The Cleaning and Maintenance departments hold the cleaners' and technicians' logins, which are managed on Workers
  *  only: Users and roles never lists, offers or changes them. */
-export const isFieldKind = (kind: DepartmentKind): boolean => kind === 'cleaning' || kind === 'maintenance';
+export const isFieldKind = (kind: DepartmentKind): boolean => kind === 'cleaning' || kind === 'maintenance' || kind === 'renovation';
 
 export interface DeskCompany { side: UserSide; label: string; departments: Department[] }
 
@@ -64,6 +64,7 @@ export const KIND_NOTE: Partial<Record<DepartmentKind, string>> = {
   management: 'Management always has full access to everything.',
   cleaning: 'Uses the field app only.',
   maintenance: 'Uses the field app only.',
+  renovation: 'Uses the field app only.',
 };
 
 /** The managed list of departments and positions (GET /api/departments). `path` null skips the request. */

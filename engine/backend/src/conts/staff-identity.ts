@@ -10,7 +10,7 @@ export interface Staff {
   userId: string; name: string; email: string; departmentId: string | null; side: string | null; role: string; field: boolean;
 }
 
-const FIELD_ROLES = new Set(['housekeeper', 'technician']);
+const FIELD_ROLES = new Set(['housekeeper', 'technician', 'renovator']);
 const MAX_AGE_MS = 60_000;
 const enc = new TextEncoder();
 const b64url = (bytes: ArrayBuffer | Uint8Array) =>

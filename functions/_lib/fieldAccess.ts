@@ -1,13 +1,16 @@
 import { type Env, one, run, json, fail, audit, nowIso } from './db';
-import { type Session, hashPassword, revokeSessions } from './auth';
+import { type Session, hashPassword, hasColumn, revokeSessions } from './auth';
 import { can, roleForKind } from './access';
 import { NO_EMAIL_DOMAIN, PIN_ROLES, employeeIdFor, hasEmployeeIds, tempPin } from './fieldPin';
 
 
-/** The two rosters on HR > Employees: cleaners sign in as housekeepers, technicians as technicians. */
+/** The rosters that get a phone login: cleaners sign in as housekeepers and technicians as technicians (HR > Employees,
+ *  Full on Operations to give access), Dream Crafter's own staff as renovators (Dream Crafter > HR > Employees, Full on
+ *  dcHr). dc_staff has no employment_type: every entry on it is the company's own. */
 const LISTS = {
-  cleaners: { role: 'housekeeper', noun: 'cleaner', action: 'housekeeping.cleaner', kind: 'cleaning' },
-  technicians: { role: 'technician', noun: 'technician', action: 'maintenance.technician', kind: 'maintenance' },
+  cleaners: { role: 'housekeeper', noun: 'cleaner', action: 'housekeeping.cleaner', kind: 'cleaning', area: 'operations', refusal: 'Only management and operations managers can give app access.' },
+  technicians: { role: 'technician', noun: 'technician', action: 'maintenance.technician', kind: 'maintenance', area: 'operations', refusal: 'Only management and operations managers can give app access.' },
+  dc_staff: { role: 'renovator', noun: 'employee', action: 'hr.dc_staff', kind: 'renovation', area: 'dcHr', refusal: 'Only management and people with Full access to Dream Crafter Employees can give app access.' },
 } as const;
 export type WorkerList = keyof typeof LISTS;
 export type FieldKind = (typeof LISTS)[WorkerList]['kind'];
@@ -20,14 +23,15 @@ export type FieldKind = (typeof LISTS)[WorkerList]['kind'];
  * earlier sign-in on that account ends. Run it again to give a forgotten PIN; the ID stays the same.
  */
 export async function giveFieldAccess(env: Env, session: Session, list: WorkerList, id: string): Promise<Response> {
-  const { role, noun, action, kind } = LISTS[list];
+  const { role, noun, action, kind, area, refusal } = LISTS[list];
   // Creating a login is a management decision; Full on Operations (the Operations Manager position) may make field
-  // ones too, and only from here.
-  if (!can(session, 'operations', 'full')) return fail('FORBIDDEN', 'Only management and operations managers can give app access.', 403);
+  // ones too, and only from here. A Dream Crafter employee's login needs Full on Dream Crafter > HR > Employees.
+  if (!can(session, area, 'full')) return fail('FORBIDDEN', refusal, 403);
+  if (list === 'dc_staff' && !(await hasColumn(env, 'dc_staff', 'user_id'))) return fail('NOT_MIGRATED', 'Dream Crafter app access needs a database update (migration 0311) that has not been applied yet.', 503);
   if (!(await hasEmployeeIds(env))) return fail('NOT_MIGRATED', 'Employee ID sign-in needs a database update (migration 0145) that has not been applied yet.', 503);
 
   const w = await one<{ id: string; full_name: string; employment_type: string; phone: string | null; user_id: string | null; is_active: number }>(env,
-    `SELECT id, full_name, employment_type, phone, user_id, is_active FROM ${list} WHERE id = ?`, id);
+    `SELECT id, full_name, ${list === 'dc_staff' ? "'internal' AS employment_type" : 'employment_type'}, phone, user_id, is_active FROM ${list} WHERE id = ?`, id);
   if (!w) return fail('NOT_FOUND', `That ${noun} is no longer on the list.`, 404);
   if (w.employment_type !== 'internal') return fail('VALIDATION', `Outside companies do not get a login.`, 422);
   if (!w.is_active) return fail('VALIDATION', `Switch the ${noun} back on first.`, 422);
@@ -72,17 +76,19 @@ export async function giveFieldAccess(env: Env, session: Session, list: WorkerLi
   return json({ userId, employeeId, pin }, 200, { 'cache-control': 'no-store' });
 }
 
-/** Cleaners and technicians are managed on HR > Employees only, so a worker switched off there (or changed to an outside
+/** Cleaners, technicians and Dream Crafter staff are managed on their Employees pages only, so a worker switched off there (or changed to an outside
  *  company, which keeps the link) loses their field-app login at once, and switched back on gets it back. An office
- *  login linked to a technician entry is never touched: only a cleaner or technician login follows its entry.
+ *  login linked to a technician entry is never touched: only a cleaner, technician or renovator login follows its entry.
  *  A login shared by a cleaner and a technician entry stays on while either is on: switching one department off must not
  *  lock the person out of the other (the caller has already saved its own entry, so it reads as off here).
  *  Answers whether the login changed, for the entry's audit row. */
 export async function followWorker(env: Env, userId: string | null, active: boolean): Promise<boolean> {
   if (!userId) return false;
+  const hasDreamCrafterRoster = await hasColumn(env, 'dc_staff', 'is_active');
   if (!active && await one(env, `
     SELECT 1 AS x FROM cleaners WHERE user_id = ? AND employment_type = 'internal' AND is_active = 1
-    UNION ALL SELECT 1 FROM technicians WHERE user_id = ? AND employment_type = 'internal' AND is_active = 1 LIMIT 1`, userId, userId)) return false;
+    UNION ALL SELECT 1 FROM technicians WHERE user_id = ? AND employment_type = 'internal' AND is_active = 1${hasDreamCrafterRoster ? ' UNION ALL SELECT 1 FROM dc_staff WHERE user_id = ? AND is_active = 1' : ''} LIMIT 1`,
+    userId, userId, ...(hasDreamCrafterRoster ? [userId] : []))) return false;
   const u = await one<{ role: string; is_active: number }>(env, 'SELECT role, is_active FROM users WHERE id = ?', userId);
   if (!u || !PIN_ROLES.includes(u.role) || !!u.is_active === active) return false;
   await run(env, 'UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?', active ? 1 : 0, nowIso(), userId);

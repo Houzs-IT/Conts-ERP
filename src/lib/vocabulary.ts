@@ -49,12 +49,12 @@ export const TONE: Record<Tone, { bg: string; fg: string; line: string }> = {
  *  tells what an office person does: that is their department and position, see `jobTitle`. */
 export const ROLE_LABEL: Record<string, string> = {
   management: 'Management', operations_staff: 'Office staff',
-  housekeeper: 'Cleaner', technician: 'Maintenance technician', owner: 'Owner',
+  housekeeper: 'Cleaner', technician: 'Maintenance technician', renovator: 'Renovation', owner: 'Owner',
 };
 
 /** What to print under a person's name: their department for office accounts, the field or owner label otherwise. */
 export const jobTitle = (u: { role: string; department?: string | null }): string => {
-  if (u.role === 'housekeeper' || u.role === 'technician' || u.role === 'owner') return ROLE_LABEL[u.role];
+  if (u.role === 'housekeeper' || u.role === 'technician' || u.role === 'renovator' || u.role === 'owner') return ROLE_LABEL[u.role];
   return u.department?.trim() || ROLE_LABEL[u.role] || u.role;
 };
 

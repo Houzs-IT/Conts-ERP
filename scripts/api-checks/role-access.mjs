@@ -101,7 +101,7 @@ check('Works on must fit the department: Operations is The Conts only (422)', r.
 r = await call('POST', '/api/users', { fullName: 'No Side', email: `noside-${Date.now()}@example.com`, departmentId: admin.id });
 check('Works on is required (422)', r.status === 422 && /side/.test(r.text), r.text);
 r = await call('GET', '/api/users');
-check('Users and roles lists no cleaners or technicians', r.status === 200 && !r.json.data.some(u => u.role === 'housekeeper' || u.role === 'technician'), r.text.slice(0, 160));
+check('Users and roles lists no cleaners, technicians or renovators', r.status === 200 && !r.json.data.some(u => u.role === 'housekeeper' || u.role === 'technician' || u.role === 'renovator'), r.text.slice(0, 160));
 r = await call('PATCH', `/api/users/${staff.userId}`, { side: 'dream_crafter', departmentId: admin.id, positionId: adminPos?.id ?? null });
 check('a person moves to Admin (on both sides) working on Dream Crafter only', r.status === 200, r.text);
 r = await callAsUser(staff, 'GET', '/api/reservations');
@@ -123,6 +123,15 @@ r = await call('DELETE', `/api/departments/${addedWithCleaningKind?.id}`);
 check('...and is removed again', r.status === 200, r.text);
 r = await call('PATCH', `/api/departments/${ops.id}`, { kind: 'maintenance' });
 check('an office department cannot become Maintenance (422)', r.status === 422, r.text);
+const renovation = start.departments.find(d => d.kind === 'renovation');
+if (renovation) {
+  r = await call('PATCH', `/api/departments/${ops.id}`, { kind: 'renovation' });
+  check('an office department cannot become Renovation (422)', r.status === 422, r.text);
+  r = await call('PATCH', `/api/departments/${renovation.id}`, { kind: 'staff' });
+  check('Renovation crew cannot become an office department (422)', r.status === 422, r.text);
+  r = await call('DELETE', `/api/departments/${renovation.id}`, { moveTo: { departmentId: admin.id, positionId: null } });
+  check('Renovation crew cannot be deleted from here (400)', r.status === 400, r.text);
+}
 r = await call('PATCH', `/api/departments/${maintenance.id}`, { kind: 'staff' });
 check('Maintenance cannot become an office department (422)', r.status === 422, r.text);
 r = await call('DELETE', `/api/departments/${cleaning.id}`, { moveTo: { departmentId: admin.id, positionId: null } });

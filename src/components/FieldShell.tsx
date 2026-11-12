@@ -17,12 +17,17 @@ const TABS: { to: string; label: keyof PortalStrings['nav']; icon: string; match
   { to: '/portal/me', label: 'me', icon: 'CircleUser', match: p => p.startsWith('/portal/me') },
 ];
 
+/** Dream Crafter's own staff (renovators) see Clock and Me only. */
+const RENOVATOR_TABS = TABS.filter(tab => tab.label === 'clock' || tab.label === 'me');
+
 /** Housekeepers and technicians work on a phone, in a car park, one-handed.
  *  One column, 44px targets, and the whole page scrolls normally. */
 export default function FieldShell({ children }: { children: ReactNode }) {
   const { user } = useSession();
   const path = useLocation().pathname;
   const atAccount = path === '/account';
+  const tabs = user!.role === 'renovator' ? RENOVATOR_TABS : TABS;
+  const homePath = user!.role === 'renovator' ? '/portal/clock' : '/portal/today';
   const lang = usePortalLang();
   const t = usePortalText();
   // The page's language follows the portal's, so screen readers and fonts read Chinese and Burmese right.
@@ -42,7 +47,7 @@ export default function FieldShell({ children }: { children: ReactNode }) {
           <span style={{ fontSize: text.caption, color: color.dim }}>{jobTitle(user!)}</span>
         </div>
         <FieldNotificationBell />
-        <Link to={atAccount ? '/portal/today' : '/account'} aria-label={atAccount ? t.nav.backToday : t.nav.settings} title={atAccount ? t.nav.backToday : t.nav.settings}
+        <Link to={atAccount ? homePath : '/account'} aria-label={atAccount ? t.nav.backToday : t.nav.settings} title={atAccount ? t.nav.backToday : t.nav.settings}
           style={{ width: 44, height: 44, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.control, border: '1px solid rgba(255,255,255,0.14)', color: color.onDark }}>
           <Icon name={atAccount ? 'House' : 'Settings'} size="nav" />
         </Link>
@@ -53,13 +58,13 @@ export default function FieldShell({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      {/* Jobs, Clock, Pay and Me (HR phases 2 to 4). Hidden on Settings, which has its own way back. */}
+      {/* Jobs, Clock, Pay and Me (HR phases 2 to 4); a renovator has Clock and Me. Hidden on Settings, which has its own way back. */}
       {!atAccount && (
         <nav aria-label={t.nav.portal} style={{
-          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 20, display: 'grid', gridTemplateColumns: `repeat(${TABS.length}, 1fr)`,
+          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 20, display: 'grid', gridTemplateColumns: `repeat(${tabs.length}, 1fr)`,
           background: color.card, borderTop: `1px solid ${color.border}`, paddingBottom: 'env(safe-area-inset-bottom)',
         }}>
-          {TABS.map(tab => {
+          {tabs.map(tab => {
             const on = tab.match(path);
             return (
               <Link key={tab.to} to={tab.to} aria-current={on ? 'page' : undefined}

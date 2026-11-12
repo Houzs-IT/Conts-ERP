@@ -135,15 +135,15 @@ const GROUP_KEYS = new Set(GROUPS.map(groupKey));
  * Rules are keyed by area key, or `group:<Category>` for a category baseline.
  */
 export type PermissionLevel = Level;
-export type DepartmentKind = 'management' | 'staff' | 'cleaning' | 'maintenance';
+export type DepartmentKind = 'management' | 'staff' | 'cleaning' | 'maintenance' | 'renovation';
 /** The hidden role a department's kind gives its people (PLAN.md). The role stays on the session because the field
  *  app, the owner portal and the management guards still branch on it; nobody picks it any more. */
 export const roleForKind = (kind: DepartmentKind): string =>
-  kind === 'management' ? 'management' : kind === 'cleaning' ? 'housekeeper' : kind === 'maintenance' ? 'technician' : 'operations_staff';
-export const isKind = (v: unknown): v is DepartmentKind => v === 'management' || v === 'staff' || v === 'cleaning' || v === 'maintenance';
+  kind === 'management' ? 'management' : kind === 'cleaning' ? 'housekeeper' : kind === 'maintenance' ? 'technician' : kind === 'renovation' ? 'renovator' : 'operations_staff';
+export const isKind = (v: unknown): v is DepartmentKind => v === 'management' || v === 'staff' || v === 'cleaning' || v === 'maintenance' || v === 'renovation';
 /** Cleaning and Maintenance hold the cleaners' and technicians' logins, which are managed on HR > Employees only (owner,
  *  23 Oct 2026): no department screen or user form creates one, moves anyone into or out of one, or changes its kind. */
-export const isFieldKind = (kind: DepartmentKind): boolean => kind === 'cleaning' || kind === 'maintenance';
+export const isFieldKind = (kind: DepartmentKind): boolean => kind === 'cleaning' || kind === 'maintenance' || kind === 'renovation';
 export const needsPosition = (kind: DepartmentKind): boolean => kind !== 'management';
 /** Where a person's level in an area comes from. 'fixed': management, always Full. 'none': nothing sets it. */
 export type Origin = 'department' | 'position' | 'user' | 'fixed' | 'none';
@@ -245,6 +245,8 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | string[
   ...(['POST', 'PATCH', 'PUT', 'DELETE'] as const).map(method => ({ method, path: /^\/api\/(unit-layout-types|unit-bed-sizes|contract-types)(\/.*)?$/, area: 'unitSettings', why: 'Unit settings keeps the layout, bed size and contract type lists.' })),
   { method: 'GET', path: /^\/api\/finance\/deductions$/, area: 'deductions', why: 'The Deductions page under Units.' },
   { method: '*', path: /^\/api\/employees\/dream-crafter$/, area: 'dcHr', why: 'Dream Crafter > HR > Employees keeps Dream Crafter\'s own staff.' },
+  { method: 'POST', path: /^\/api\/employees\/dream-crafter\/[^/]+\/access$/, area: 'dcHr', why: 'Give app access and Reset PIN on Dream Crafter > HR > Employees.' },
+  { method: '*', path: /^\/api\/attendance\/dream-crafter(\/[^/]+\/photo\/(in|out))?$/, area: 'dcHr', why: 'Dream Crafter > HR > Employees > Attendance: the day\'s punches, keying a day, and the selfies.' },
   { method: 'POST', path: /^\/api\/expenses$/, area: ['finance', 'deductions'], why: 'Adding a deduction records an expense; Finance records them too.' },
   { method: 'DELETE', path: /^\/api\/expenses\/[^/]+$/, area: ['finance', 'deductions'], why: 'Removing a deduction removes its expense; Finance removes them too.' },
 ];
@@ -294,7 +296,7 @@ export interface Actor { userId: string; role: string; side?: Side; departmentId
 /** The kind of the person's department. Owners are not staff and never have one. */
 export function kindOf(a: Pick<Actor, 'role' | 'kind'>): DepartmentKind {
   if (a.kind) return a.kind;
-  return a.role === 'management' ? 'management' : a.role === 'housekeeper' ? 'cleaning' : a.role === 'technician' ? 'maintenance' : 'staff';
+  return a.role === 'management' ? 'management' : a.role === 'housekeeper' ? 'cleaning' : a.role === 'technician' ? 'maintenance' : a.role === 'renovator' ? 'renovation' : 'staff';
 }
 /** Whether the person's levels come from department, position and user rules: desk staff, not owners or field accounts. */
 const isStaff = (a: Actor): boolean => a.role !== 'owner' && kindOf(a) === 'staff';

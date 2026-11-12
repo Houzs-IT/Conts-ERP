@@ -159,4 +159,34 @@ check('the cleaner marks the clean complete', r.status === 200, r.text);
 r = await call('POST', `/api/tasks/${taskId}/complete`, { photoIds: [] }, 'technician');
 check('someone else cannot complete the cleaner\'s job', r.status === 403 || r.status === 409, r.text);
 
+// Dream Crafter staff (renovators, migration 0311) get the Clock and their account, none of the jobs above.
+const DC_RECORD = {
+  position: 'employee', nationality: null, joinDate: null, status: 'active', resignedAt: null, payBasis: 'monthly', basicSalarySen: 0, dailyRateSen: 0,
+  workingDaysPerMonth: 26, workingHoursPerDay: 8, otMultiplier: 1.5, leaderAllowanceSen: 0, efficiencyAllowanceSen: 0, efficiencyThresholdPct: 100,
+  paymentMethod: 'transfer', bankName: null, bankAccount: null, epfEnabled: false, socsoEnabled: false, eisEnabled: false, pcbEnabled: false,
+  taxResidency: null, taxCategory: null, taxChildReliefSen: null, annualLeaveDays: null, medicalLeaveDays: null,
+};
+r = await call('PUT', '/api/employees/dream-crafter', { ...DC_RECORD, name: `Renovation Phone Test ${Date.now()}`, phone: null });
+const dcStaffId = r.json?.data?.id;
+r = await call('POST', `/api/employees/dream-crafter/${dcStaffId}/access`, {});
+check('management gives a Dream Crafter employee a phone login', r.status === 200 && !!r.json?.employeeId, r.text);
+const { employeeId: renovatorEmployeeId, pin: renovatorFirstPin } = r.json;
+const signInWithPin = async (pin) => (await fetch(BASE + '/api/auth/login-pin', {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ employeeId: renovatorEmployeeId, pin }),
+})).headers.get('set-cookie')?.split(';')[0] ?? '';
+const asRenovator = async (cookie, method, path, body) => {
+  const res = await fetch(BASE + path, { method, headers: { cookie, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const text = await res.text();
+  return { status: res.status, text };
+};
+let renovatorCookie = await signInWithPin(renovatorFirstPin);
+await asRenovator(renovatorCookie, 'POST', '/api/auth/change-password', { password: '482913' });
+renovatorCookie = await signInWithPin('482913');
+r = await asRenovator(renovatorCookie, 'GET', '/api/field/clock');
+check('a renovator, past the first PIN, reaches the Clock', r.status === 200, r.text);
+for (const [method, path] of [['GET', '/api/field/tasks'], ['GET', '/api/field/repairs'], ['GET', '/api/field/units'], ['GET', '/api/field/pay'], ['GET', `/api/field/repairs/${openId}`], ['POST', `/api/field/repairs/${openId}/pick`], ['POST', '/api/maintenance/issues']]) {
+  r = await asRenovator(renovatorCookie, method, path, method === 'GET' ? undefined : {});
+  check(`a renovator is refused ${method} ${path}`, r.status === 403, r.text);
+}
+
 done();

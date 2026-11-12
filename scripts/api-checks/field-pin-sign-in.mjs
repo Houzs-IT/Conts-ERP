@@ -1,5 +1,5 @@
 // Employee ID and 6-digit PIN sign-in for field staff (PRs #364, #365), end to end: who may give app access, sign-in, first PIN,
-// lockout, New PIN, no way in by phone.
+// lockout, New PIN, no way in by phone; and Dream Crafter staff (renovators): app access, Clock only, switch off.
 //
 // Run on a throwaway database only (it adds accounts, cleaners, technicians and jobs):
 //   node scripts/dev-pglite.mjs   (leave running), a local server on it (wrangler pages dev dist with
@@ -169,6 +169,99 @@ r = await call(opsStaff, 'PATCH', `/api/housekeeping/cleaners/${cleanerId}`, { e
 r = await call(opsMgr, 'POST', `/api/housekeeping/cleaners/${cleanerId}/access`, {});
 const [back] = await db('SELECT id, employee_id, is_active FROM users WHERE id = $1', u.id);
 check('back in-house, Give app access reopens the same login and employee ID', r.status === 200 && r.json.userId === u.id && r.json.employeeId === employeeId && back.is_active === 1, { r, back });
+
+// Dream Crafter staff (migration 0311): app access from Dream Crafter > HR > Employees, a renovator login with Clock and
+// Me only, and a login that stops when the employee is switched off.
+const DC_RECORD = {
+  position: 'employee', nationality: null, joinDate: null, status: 'active', resignedAt: null, payBasis: 'monthly', basicSalarySen: 0, dailyRateSen: 0,
+  workingDaysPerMonth: 26, workingHoursPerDay: 8, otMultiplier: 1.5, leaderAllowanceSen: 0, efficiencyAllowanceSen: 0, efficiencyThresholdPct: 100,
+  paymentMethod: 'transfer', bankName: null, bankAccount: null, epfEnabled: false, socsoEnabled: false, eisEnabled: false, pcbEnabled: false,
+  taxResidency: null, taxCategory: null, taxChildReliefSen: null, annualLeaveDays: null, medicalLeaveDays: null,
+};
+r = await call(mgmt, 'PUT', '/api/employees/dream-crafter', { ...DC_RECORD, name: `Renovation Tester ${stamp}`, phone: null });
+check('management adds a Dream Crafter employee', r.status === 200 && !!r.json.data?.id, r);
+const dcStaffId = r.json.data.id;
+r = await call(opsMgr, 'POST', `/api/employees/dream-crafter/${dcStaffId}/access`, {});
+check('an operations manager (The Conts side) cannot give a Dream Crafter employee app access (403)', r.status === 403, r);
+r = await call(null, 'POST', `/api/employees/dream-crafter/${dcStaffId}/access`, {});
+check('signed out cannot give a Dream Crafter employee app access (401)', r.status === 401, r);
+r = await call(mgmt, 'POST', `/api/employees/dream-crafter/${dcStaffId}/access`, {});
+check('management gives a Dream Crafter employee app access: an EMP- ID and a 6-digit PIN', r.status === 200 && /^EMP-\d{3,}$/.test(r.json.employeeId) && /^\d{6}$/.test(r.json.pin), r);
+const { employeeId: renovatorEmployeeId, pin: renovatorFirstPin } = r.json;
+const [renovatorLogin] = await db(`SELECT u.id, u.role, u.employee_id, d.kind, d.side FROM dc_staff s JOIN users u ON u.id = s.user_id
+  JOIN departments d ON d.id = u.department_id WHERE s.id = $1`, dcStaffId);
+check('the login is a renovator in the Renovation crew department, on the Dream Crafter side',
+  renovatorLogin?.role === 'renovator' && renovatorLogin.employee_id === renovatorEmployeeId && renovatorLogin.kind === 'renovation' && renovatorLogin.side === 'dream_crafter', renovatorLogin);
+r = await call(mgmt, 'GET', '/api/employees/dream-crafter');
+check('Employee Master shows the employee ID and that app access is set up', r.json?.hasAppAccess === true && r.json.data?.find(p => p.id === dcStaffId)?.employeeId === renovatorEmployeeId, r.json?.data?.find(p => p.id === dcStaffId));
+
+r = await call(null, 'POST', '/api/auth/login-pin', { employeeId: renovatorEmployeeId, pin: renovatorFirstPin });
+check('the renovator signs in with the first PIN and must choose their own', r.status === 200 && r.json.user?.role === 'renovator' && r.json.user?.mustChangePassword === true && r.json.home === '/change-password', r);
+let renovator = r.cookie;
+r = await call(renovator, 'POST', '/api/auth/change-password', { password: '482913' });
+check('the renovator chooses their own PIN', r.status === 200, r);
+r = await call(null, 'POST', '/api/auth/login-pin', { employeeId: renovatorEmployeeId, pin: '482913' });
+check('signs in again, landing on the Clock', r.status === 200 && r.json.user?.mustChangePassword === false && r.json.home === '/portal/clock', r);
+renovator = r.cookie;
+
+for (const [method, path] of [['GET', '/api/auth/session'], ['GET', '/api/account'], ['GET', '/api/notifications'], ['GET', '/api/field/clock']]) {
+  r = await call(renovator, method, path);
+  check(`a renovator reaches ${method} ${path}`, r.status === 200, r);
+}
+for (const [method, path] of [
+  ['GET', '/api/field/tasks'], ['GET', '/api/field/repairs'], ['GET', '/api/field/units'], ['GET', '/api/field/pay'], ['GET', '/api/field/leave'], ['POST', '/api/field/leave'],
+  ['GET', '/api/claims/summary'], ['POST', '/api/claims/receipts'], ['GET', '/api/documents/no-such-file/download'], ['GET', '/api/audit'], ['POST', '/api/maintenance/issues'],
+  ['GET', '/api/units'], ['GET', '/api/attendance'], ['GET', '/api/attendance/dream-crafter'], ['GET', '/api/employees/dream-crafter'],
+]) {
+  r = await call(renovator, method, path, method === 'GET' ? undefined : {});
+  check(`a renovator is refused ${method} ${path} (403)`, r.status === 403, r);
+}
+
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
+const punch = async (action) => {
+  const form = new FormData();
+  form.append('action', action); form.append('lat', '3.139'); form.append('lng', '101.687'); form.append('accuracy', '20');
+  form.append('photo', new Blob([png], { type: 'image/png' }), 'selfie.png');
+  const res = await fetch(BASE + '/api/field/clock', { method: 'POST', headers: { cookie: renovator }, body: form });
+  return { status: res.status, json: await res.json().catch(() => null) };
+};
+r = await call(renovator, 'GET', '/api/field/clock');
+check('the Clock screen knows them by name and employee ID', r.json?.name === `Renovation Tester ${stamp}` && r.json.employeeId === renovatorEmployeeId, r);
+r = await punch('in');
+check('the renovator clocks in with a selfie and a location', r.status === 201 && !!r.json?.data?.id, r);
+const renovatorPunchId = r.json.data.id;
+r = await punch('out');
+check('...and clocks out', r.status === 200 && !!r.json?.data?.clockOutAt, r);
+r = await call(mgmt, 'GET', '/api/attendance/dream-crafter');
+const renovatorLine = r.json?.data?.find(l => l.employee.dcStaffId === dcStaffId);
+check('Dream Crafter Attendance lists the punch, with no building to compare', r.status === 200 && renovatorLine?.punch?.id === renovatorPunchId && renovatorLine.inPlace === null, r);
+r = await call(mgmt, 'GET', '/api/attendance');
+check('The Conts\' Attendance does not list the Dream Crafter employee', r.status === 200 && !r.json?.data?.some(l => l.punch?.id === renovatorPunchId || l.employee.name === `Renovation Tester ${stamp}`), r.json?.data?.length);
+r = await call(opsMgr, 'GET', '/api/attendance/dream-crafter');
+check('an operations manager (The Conts side) cannot read Dream Crafter Attendance (403)', r.status === 403, r);
+r = await call(mgmt, 'POST', '/api/attendance/dream-crafter', { dcStaffId, date: '2026-01-05', clockIn: '08:30', clockOut: '17:30', note: 'Forgot to clock in' });
+check('management keys a day for a Dream Crafter employee', r.status === 201 && r.json?.data?.edited === true, r);
+r = await call(mgmt, 'POST', '/api/attendance/dream-crafter', { dcStaffId, date: '2026-01-05', clockIn: '08:00', clockOut: '17:30', note: 'Came in earlier' });
+check('...and the same day again fixes its times', r.status === 200 && r.json?.data?.edited === true, r);
+r = await call(mgmt, 'POST', '/api/attendance/dream-crafter', { dcStaffId: 'no-such-person', date: '2026-01-05', clockIn: '08:30', clockOut: null, note: 'Test' });
+check('a person who is not Dream Crafter staff is refused (404)', r.status === 404, r);
+r = await call(mgmt, 'GET', '/api/users');
+check('Users and roles does not list the renovator', r.status === 200 && !r.json.data?.some(x => x.id === renovatorLogin.id), r.json.data?.find(x => x.id === renovatorLogin.id));
+r = await call(mgmt, 'PATCH', `/api/users/${renovatorLogin.id}`, { fullName: 'Renamed Here' });
+check('a renovator account cannot be changed under Users (422)', r.status === 422, r);
+
+r = await call(mgmt, 'PUT', '/api/employees/dream-crafter', { ...DC_RECORD, id: dcStaffId, name: `Renovation Tester ${stamp}`, phone: null, isActive: false });
+const [renovatorOff] = await db('SELECT is_active FROM users WHERE id = $1', renovatorLogin.id);
+check('switching the Dream Crafter employee off switches their login off', r.status === 200 && r.json.data?.isActive === false && renovatorOff.is_active === 0, { r, renovatorOff });
+r = await call(renovator, 'GET', '/api/field/clock');
+check('...and ends their session at once (401)', r.status === 401, r);
+r = await call(null, 'POST', '/api/auth/login-pin', { employeeId: renovatorEmployeeId, pin: '482913' });
+check('...and blocks sign-in', r.status !== 200, r);
+r = await call(mgmt, 'GET', '/api/attendance/dream-crafter?date=2026-01-06');
+check('a switched-off employee who did not punch is off that day\'s Attendance', r.status === 200 && !r.json?.data?.some(l => l.employee.dcStaffId === dcStaffId), r);
+r = await call(mgmt, 'PUT', '/api/employees/dream-crafter', { ...DC_RECORD, id: dcStaffId, name: `Renovation Tester ${stamp}`, phone: null, isActive: true });
+const [renovatorOn] = await db('SELECT is_active FROM users WHERE id = $1', renovatorLogin.id);
+check('...and switching them back on reopens the login', r.status === 200 && renovatorOn.is_active === 1, { r, renovatorOn });
 
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exit(fails ? 1 : 0);

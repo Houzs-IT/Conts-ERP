@@ -108,7 +108,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 /** POST /api/auth/view-as { userId } or { departmentId, positionId? } -> signs this browser in as that account, or as
  *  that department's (and position's) test account. Answers { home }. The old { role } still works for the four
  *  hidden roles: it opens the first department of that kind. */
-const KIND_OF_ROLE: Record<string, DepartmentKind> = { management: 'management', operations_staff: 'staff', housekeeper: 'cleaning', technician: 'maintenance' };
+const KIND_OF_ROLE: Record<string, DepartmentKind> = { management: 'management', operations_staff: 'staff', housekeeper: 'cleaning', technician: 'maintenance', renovator: 'renovation' };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const w = await who(request, env);

@@ -4,6 +4,7 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { hasAttendance, NOT_MIGRATED, payslipLocked, toView, ROW_COLS, type AttendanceRow } from '../../_lib/attendance';
 import { mytInstant } from '../../_lib/attendanceCalc';
+import { withoutDreamCrafterSql } from '../../_lib/dcStaff';
 
 const MANAGE = ['management']; // everyone else follows their level in HR (functions/_lib/access.ts)
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use a time such as 08:30.');
@@ -23,7 +24,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!mayWork(session, MANAGE)) return fail('FORBIDDEN', 'Your access does not include fixing attendance.', 403);
   if (!(await hasAttendance(env))) return fail('NOT_MIGRATED', NOT_MIGRATED, 503);
 
-  const before = await one<AttendanceRow>(env, `SELECT ${ROW_COLS} FROM attendance WHERE id = ?`, String(params.id));
+  const before = await one<AttendanceRow>(env, `SELECT ${ROW_COLS} FROM attendance WHERE id = ?${await withoutDreamCrafterSql(env, 'employee_id')}`, String(params.id));
   if (!before) return fail('NOT_FOUND', 'That day is not on record.', 404);
   const parsed = fix.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
@@ -61,7 +62,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   if (!mayWork(session, MANAGE)) return fail('FORBIDDEN', 'Your access does not include fixing attendance.', 403);
   if (!(await hasAttendance(env))) return fail('NOT_MIGRATED', NOT_MIGRATED, 503);
 
-  const before = await one<AttendanceRow>(env, `SELECT ${ROW_COLS} FROM attendance WHERE id = ?`, String(params.id));
+  const before = await one<AttendanceRow>(env, `SELECT ${ROW_COLS} FROM attendance WHERE id = ?${await withoutDreamCrafterSql(env, 'employee_id')}`, String(params.id));
   if (!before) return fail('NOT_FOUND', 'That day is not on record.', 404);
   if (!before.clock_out_at) return fail('CONFLICT', 'There is no clock-out on that day to remove.', 409);
   const parsed = removal.safeParse(await request.json().catch(() => null));

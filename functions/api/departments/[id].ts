@@ -75,7 +75,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   const cur = await loadDepartment(env, id);
   if (!cur) return fail('NOT_FOUND', 'That department no longer exists.', 404);
   if (cur.kind === 'management') return fail('VALIDATION', 'The management department cannot be deleted.', 400);
-  if (isFieldKind(cur.kind)) return fail('VALIDATION', 'Cleaning and Maintenance hold the cleaner and technician logins and cannot be deleted here.', 400);
+  if (isFieldKind(cur.kind)) return fail('VALIDATION', 'Cleaning, Maintenance and Renovation crew hold the phone logins and cannot be deleted here.', 400);
 
   const parsed = parseDepartmentMove(await request.json().catch(() => null));
   if (!parsed.ok) return fail('VALIDATION', parsed.message, 400);

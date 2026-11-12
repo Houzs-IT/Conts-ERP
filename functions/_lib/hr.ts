@@ -167,6 +167,29 @@ export async function ensureEmployeeId(env: Env, e: Employee): Promise<string> {
   return made.id;
 }
 
+/** Who a login clocks in as: the person's name, EMP number and employment status, and the HR record their punches go on. */
+export interface ClockPerson { recordId: string | null; name: string; employeeId: string | null; status: EmployeeStatus }
+
+/** The person a login belongs to for clock-in: The Conts' in-house person first (a cleaner or technician), then a Dream
+ *  Crafter employee (dc_staff.user_id, from "Give app access" on Dream Crafter > HR > Employees). A Dream Crafter person
+ *  always has an HR record; a Conts person has none until first saved, which reads as recordId null unless
+ *  shouldMakeRecord asks for it to be made (a first clock-in). Null for anyone else. */
+export async function clockPersonFor(env: Env, userId: string, shouldMakeRecord: boolean): Promise<ClockPerson | null> {
+  const contsPerson = await employeeForUser(env, userId);
+  if (contsPerson) {
+    const recordId = shouldMakeRecord ? await ensureEmployeeId(env, contsPerson) : contsPerson.id;
+    return { recordId, name: contsPerson.name, employeeId: contsPerson.employeeId, status: contsPerson.status };
+  }
+  if (!(await hasColumn(env, 'dc_staff', 'user_id').catch(() => false))) return null;
+  const dreamCrafterPerson = await one<{ record_id: string; full_name: string; employee_id: string | null; status: EmployeeStatus | null }>(env, `
+    SELECT e.id AS record_id, d.full_name, u.employee_id, e.status
+    FROM dc_staff d JOIN employees e ON e.dc_staff_id = d.id LEFT JOIN users u ON u.id = d.user_id
+    WHERE d.user_id = ?`, userId);
+  return dreamCrafterPerson
+    ? { recordId: dreamCrafterPerson.record_id, name: dreamCrafterPerson.full_name, employeeId: dreamCrafterPerson.employee_id, status: dreamCrafterPerson.status ?? EMPLOYEE_DEFAULTS.status }
+    : null;
+}
+
 /** Someone in a form: by HR record, or by roster entry before they have one. */
 export interface PersonRef { employeeId?: string | null; cleanerId?: string | null; technicianId?: string | null }
 

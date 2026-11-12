@@ -8,7 +8,7 @@ import type { AccessLevel, SessionUser } from './types';
 export function levelOf(user: SessionUser | null | undefined, area: string): AccessLevel {
   if (!user) return 'none';
   if (user.role === 'management') return 'full';
-  if (user.role === 'housekeeper' || user.role === 'technician' || user.role === 'owner') return 'none';
+  if (user.role === 'housekeeper' || user.role === 'technician' || user.role === 'renovator' || user.role === 'owner') return 'none';
   return user.access ? user.access[area] ?? 'none' : 'edit';
 }
 

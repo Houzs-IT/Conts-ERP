@@ -108,7 +108,7 @@ export default function NotificationBell({ path, navigate, size, glass }: { path
 export function FieldNotificationBell() {
   const { user } = useSession();
   const navigate = useNavigate();
-  const field = user?.role === 'housekeeper' || user?.role === 'technician';
+  const field = user?.role === 'housekeeper' || user?.role === 'technician' || user?.role === 'renovator';
   // The field app is one screen, so a notice opens its job there (FieldHome reads ?task / ?repair), not the office page in its link.
   const target = (n: Notice) => !field || !n.entityId ? null
     : n.entityTable === 'tasks' ? `/?task=${encodeURIComponent(n.entityId)}`
