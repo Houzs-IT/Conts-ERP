@@ -37,6 +37,7 @@ import { PORTAL_ENGLISH } from '../lib/portalI18n';
 import type { Me } from '../lib/claims';
 import { HistoryDisclosure, PhoneHistory, RecordHistory } from '../components/RecordHistory';
 import { passKeyStatus, passKeyDay, type PassKeyStatus, type PassKeyDay } from '../lib/passKeyStatus';
+import { typeOf, isUrgent, needsSupport, awaitingOwner, isOffDayPassKey as offDayPassKey, openOrder, type JobType } from '../lib/maintenanceOrder';
 
 /* ---------- the API's shape (functions/api/maintenance/issues.ts) ---------- */
 
@@ -56,25 +57,22 @@ interface Issue {
   approvalStatus?: 'needed' | 'approved' | 'not_needed';
   supportRequestedAt?: string | null; supportNote?: string | null; urgentByHand?: boolean;
 }
-type JobType = 'urgent' | 'pass_key' | 'normal';
 const JOB_TYPE: Record<JobType, string> = { urgent: 'Urgent', pass_key: 'Pass key', normal: 'Normal' };
-const JOB_ORDER: Record<JobType, number> = { urgent: 0, pass_key: 1, normal: 2 };
 const APPROVAL: Record<string, { label: string; tone: AnyTone }> = {
   needed: { label: 'Needs owner approval', tone: 'warning' }, approved: { label: 'Approved', tone: 'success' }, not_needed: { label: 'Not needed', tone: 'neutral' },
 };
-const typeOf = (i: Issue): JobType => i.jobType ?? (i.urgency === 'urgent' ? 'urgent' : 'normal');
-const isUrgent = (i: Issue): boolean => typeOf(i) === 'urgent' || i.urgency === 'urgent';
 const jobBadge = (i: Issue): { label: string; tone: 'critical' | 'info' | 'neutral' } => {
   const type = typeOf(i);
   if (type === 'pass_key' && isUrgent(i)) return { label: 'Pass key · Urgent', tone: 'critical' };
   return { label: JOB_TYPE[type], tone: type === 'urgent' ? 'critical' : type === 'pass_key' ? 'info' : 'neutral' };
 };
-const isOffDayPassKey = (i: Issue): boolean => typeOf(i) === 'pass_key' && !!i.dueOn && i.dueOn > mytDay(1) && !isUrgent(i);
+const isOffDayPassKey = (i: Issue): boolean => offDayPassKey(i, mytDay(1));
 /** Approved, but the parts it waits for have not come: still hidden from the technicians. */
-const needsSupport = (i: Issue): boolean => i.state !== 'resolved' && !i.endedAt && !!i.supportRequestedAt;
 const waitingParts = (i: Issue) => i.state !== 'resolved' && i.approvalStatus === 'approved' && !!i.needsParts && !i.partsArrivedAt;
 /** `billing` is false until migration 0108 is applied; billing date, collected and contractor payment are then hidden. */
 interface Payload { billing?: boolean; jobTypes?: boolean; data: Issue[] }
+/** ?view=open: the Open tab's first rows and the counts, which show while the full list is still on its way. */
+interface FirstView extends Payload { partial: true; summary: { open: number; urgent: number; support: number; approval: number; passKeys: number; monthCost: number | null } }
 interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string; byteSize?: number }
 
 type Tab = 'open' | 'pass_key' | 'support' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'profit';
@@ -92,7 +90,6 @@ const DOC_KIND: Record<string, string> = { purchase: 'Claim', pod: 'Receipt / Pr
 const COLLECT_FROM: Partial<Record<ChargeTo, string>> = { owner: 'the owner', guest_deposit: "the guest's deposit" };
 const FIELD_ROLES = ['housekeeper', 'technician'];
 
-const awaitingOwner = (i: Issue) => i.state !== 'resolved' && i.ownerApprovalRequired && !i.ownerApprovedAt && i.chargeTo === 'owner';
 const PASS_KEY_STATUS: Record<PassKeyStatus, { label: string; tone: AnyTone }> = {
   new: { label: 'New', tone: 'neutral' }, assigned: { label: 'Assigned', tone: 'neutral' }, needs_support: { label: 'Needs support', tone: 'critical' },
   missed: { label: 'Missed', tone: 'critical' }, done: { label: 'Pass key done', tone: 'success' },
@@ -107,6 +104,9 @@ function statusOf(i: Issue): { label: string; tone: AnyTone } {
   if (i.vendorName) return { label: 'Assigned', tone: 'neutral' };
   return { label: 'New', tone: 'neutral' };
 }
+
+/** How many of the Open tab's jobs the first view brings (the table's first page). */
+const FIRST_ROWS = 50;
 
 export default function MaintenancePage() {
   const toast = useToast();
@@ -124,6 +124,10 @@ export default function MaintenancePage() {
   const canAddPassKey = !!user && !FIELD_ROLES.includes(user.role) && user.role !== 'owner';
 
   const { data, loading, error, reload: reloadData } = useApi<Payload>('/maintenance/issues');
+  // Asked at the same time as the full list and much smaller, so the header, the tab counts and the Open tab's first rows
+  // show before every job has arrived (performance, 12 Nov 2026); the full list replaces it the moment it lands.
+  const first = useApi<FirstView>(data ? null : `/maintenance/issues?view=open&limit=${FIRST_ROWS}`);
+  const early = !data && first.data ? first.data : null;
   // The side menu's counts (open jobs, today's work) follow what was just done here.
   const reload = () => { reloadData(); void refreshNavCounts(); };
   const issues = data?.data ?? [];
@@ -153,8 +157,7 @@ export default function MaintenancePage() {
   const rows = base.filter(i => (!ql || `${unitText(i)} ${i.propertyName} ${i.title} ${i.vendorName ?? ''}`.toLowerCase().includes(ql)))
     // Open jobs in the order they are worked: Urgent, Pass key, then Normal one by one by due date (the day reported when none).
     .sort((a, b) => tab === 'pass_key' ? checkInAt(a).localeCompare(checkInAt(b))
-      : tab === 'open'
-      ? JOB_ORDER[typeOf(a)] - JOB_ORDER[typeOf(b)] || (a.dueOn ?? a.reportedAt.slice(0, 10)).localeCompare(b.dueOn ?? b.reportedAt.slice(0, 10)) || a.reportedAt.localeCompare(b.reportedAt)
+      : tab === 'open' ? openOrder(a, b)
       : b.reportedAt.localeCompare(a.reportedAt));
   // Every building with units, not only those with a job loaded (request M1): a filter that lists a building with no
   // jobs simply shows none.
@@ -171,12 +174,17 @@ export default function MaintenancePage() {
     const collator = new Intl.Collator('en', { numeric: true });
     return [...byId.values()].sort((a, b) => collator.compare(a.group ?? '', b.group ?? '') || collator.compare(a.label, b.label));
   }, [issues, roster]);
-  const sel = issues.find(i => i.id === selected) ?? null;
+  const sel = issues.find(i => i.id === selected) ?? early?.data.find(i => i.id === selected) ?? null;
   const historySpend = tab === 'history' ? rows.reduce((s, i) => s + (i.finalAmount ?? 0), 0) : 0;
 
-  const sub = data
-    ? `${openTab.length} open · ${urgent} urgent${support.length ? ` · ${support.length} need support` : ''} · ${approval.length} awaiting owner approval${money ? ` · this month ${rm(monthCost)}` : ''}`
+  // Until the full list lands, the counts are the first view's (the same rules, counted on the server).
+  const counts = data ? { open: openTab.length, urgent, support: support.length, approval: approval.length, passKeys: passKeys.length, monthCost }
+    : early ? { ...early.summary, monthCost: early.summary.monthCost ?? 0 } : null;
+  const sub = counts
+    ? `${counts.open} open · ${counts.urgent} urgent${counts.support ? ` · ${counts.support} need support` : ''} · ${counts.approval} awaiting owner approval${money ? ` · this month ${rm(counts.monthCost)}` : ''}`
     : 'Maintenance jobs on every unit';
+  // The first view only fills the Open tab with no search; any other view waits for the full list.
+  const earlyRows = early && tab === 'open' && !ql ? early.data : null;
 
   async function createSku(input: CatalogInput) {
     try { await api.post('/maintenance/skus', input); toast({ tone: 'success', title: 'Item added.' }); sku.reload(); return null; }
@@ -190,7 +198,7 @@ export default function MaintenancePage() {
   const list = (
     <>
       {error && data && <StaleBanner message={`Showing the last jobs we have. ${error}`} onRetry={reload} />}
-      <IssueTable tab={tab} rows={data ? rows : null} loading={loading} error={data ? null : error} onRetry={reload} selected={selected} onSelect={setSelected}
+      <IssueTable tab={tab} rows={data ? rows : earlyRows} loading={loading} error={data || earlyRows ? null : error} onRetry={reload} selected={selected} onSelect={setSelected}
         money={money} canBulk={!FIELD_ROLES.includes(user!.role)} onChanged={reload} buildingOptions={buildingOptions} unitOptions={unitOptions}
         toolbar={<ToolbarSearch value={q} onChange={setQ} placeholder="Search unit, building, problem or technician" label="Search jobs" />}
         filtered={!!q} onClearFilters={() => setQ('')}
@@ -207,7 +215,7 @@ export default function MaintenancePage() {
       <PageHeader title="Maintenance" sub={sub}
         actions={<>
           <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/hr/employees?tab=employee-master')}>Technicians</Button>
-          {data?.jobTypes && <Button size="sm" variant={tab === 'rules' ? 'primary' : 'secondary'} icon={<Icon name="ShieldCheck" size="sm" />} onClick={() => setTab(tab === 'rules' ? 'open' : 'rules')}>Approval rules</Button>}
+          {(data ?? early)?.jobTypes && <Button size="sm" variant={tab === 'rules' ? 'primary' : 'secondary'} icon={<Icon name="ShieldCheck" size="sm" />} onClick={() => setTab(tab === 'rules' ? 'open' : 'rules')}>Approval rules</Button>}
           {money && <Button size="sm" variant={tab === 'profit' ? 'primary' : 'secondary'} icon={<Icon name="TrendingUp" size="sm" />} onClick={() => setTab(tab === 'profit' ? 'open' : 'profit')}>Profit by job</Button>}
           {SHOW_CATALOG && <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Item catalog</Button>}
         </>}
@@ -220,15 +228,15 @@ export default function MaintenancePage() {
         <MaintenanceItems fallback={<CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={mayWork(user, 'maintenance')} onCreate={createSku} onUpdate={updateSku} />} onChanged={sku.reload} />
       ) : (
         <SplitPane open={!!sel} onClose={() => setSelected(null)} width={580}
-          detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null}
+          detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!(data ?? early)?.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null}
           list={<>
           {/* The job tabs as one Segmented track with counts; search, Filters (with counts) and chips sit in the table's own toolbar. */}
           <div className="flex items-center gap-2 flex-wrap">
             <MetricSegmented<JobTab> label="Jobs" value={tab as JobTab} onChange={t => { setTab(t); setSelected(null); }} options={[
-              { key: 'open', label: 'Open', count: data ? openTab.length : undefined },
-              ...(data?.jobTypes ? [{ key: 'pass_key' as const, label: 'Pass key', count: passKeys.length }] : []),
-              { key: 'support', label: 'Needs support', count: data ? support.length : undefined, tone: support.length ? 'warning' as const : undefined },
-              { key: 'approval', label: 'Awaiting owner approval', short: 'Owner approval', count: data ? approval.length : undefined },
+              { key: 'open', label: 'Open', count: counts?.open },
+              ...((data ?? early)?.jobTypes ? [{ key: 'pass_key' as const, label: 'Pass key', count: counts?.passKeys ?? 0 }] : []),
+              { key: 'support', label: 'Needs support', count: counts?.support, tone: counts?.support ? 'warning' as const : undefined },
+              { key: 'approval', label: 'Awaiting owner approval', short: 'Owner approval', count: counts?.approval },
               { key: 'done', label: 'Done' },
               { key: 'history', label: 'History' },
             ]} />

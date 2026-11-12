@@ -28,9 +28,12 @@ import {
   type Unit, type Building, type UnitDetail,
 } from './shared';
 
-/** Every owner profile, for the owner pickers (GET /api/owners, management roles). */
+/** One owner in the pickers: GET /api/owners?view=pick, the full list's same fields without the month's figures. */
+export type OwnerOption = Pick<Owner, 'id' | 'displayName' | 'icLast4' | 'bankName' | 'bankAccountLast4' | 'accountHolder'> & { unitCount: number };
+
+/** Every owner profile, for the owner pickers (GET /api/owners?view=pick, management roles). */
 export function useOwnerOptions(on = true) {
-  const r = useApi<{ data: Owner[] }>(on ? '/owners' : null);
+  const r = useApi<{ data: OwnerOption[] }>(on ? '/owners?view=pick' : null);
   return { owners: r.data?.data ?? null, loading: r.loading, error: r.error, reload: r.reload };
 }
 
@@ -190,7 +193,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
           {canEdit && owners ? (
             <SearchSelect label="Owner" size="md" value={ownerId} placeholder="Search owners"
               onChange={v => onChange({ ownerId: v })}
-              options={owners.map(o => ({ value: o.id, label: personName(o.displayName), hint: o.units.length ? `${o.units.length} ${o.units.length === 1 ? 'unit' : 'units'}` : undefined }))} />
+              options={owners.map(o => ({ value: o.id, label: personName(o.displayName), hint: o.unitCount ? `${o.unitCount} ${o.unitCount === 1 ? 'unit' : 'units'}` : undefined }))} />
           ) : <ReadOnly>{personName(shown?.displayName ?? owner.name)}</ReadOnly>}
         </Labeled>
         <Labeled label="IC / company number">
