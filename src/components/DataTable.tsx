@@ -703,7 +703,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
                       <th key={c.key} scope="col" aria-sort={on ? (sortDir === 'desc' ? 'descending' : 'ascending') : undefined}
                         className={cx('group/th sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] py-2 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink',
                           i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]', i === visible.length - 1 && 'pr-[22px]', right ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left')}>
-                        <span className={cx('flex items-center gap-[2px] max-w-full', right && 'relative w-fit ml-auto flex-row-reverse')}>
+                        <span className={cx('flex items-center gap-[2px] max-w-full', right && 'relative w-fit ml-auto flex-row-reverse',
+                          fOn && (right ? '[@media(hover:hover)]:pl-[26px]' : '[@media(hover:hover)]:pr-[23px]'))}>
                           {k ? (
                             <button type="button" onClick={() => toggleSort(c)} title={c.title ?? `Sort by ${c.label}`}
                               className={cx('inline-flex items-center gap-1 min-w-0 font-sans text-caption font-bold uppercase tracking-[0.09em] bg-transparent border-none cursor-pointer p-0', on ? 'text-ink' : 'text-muted-ink')}>
@@ -719,7 +720,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
                                 // "Occupancy" no longer breaks mid-word; idle it shows on hover, set it stays visible. Touch screens keep it in place.
                                 '[@media(hover:hover)]:absolute [@media(hover:hover)]:top-1/2 [@media(hover:hover)]:-translate-y-1/2',
                                 !fOn && '[@media(hover:hover)]:bg-muted [@media(hover:hover)]:opacity-0 group-hover/th:opacity-100 focus-visible:opacity-100',
-                                right ? '[@media(hover:hover)]:right-full [@media(hover:hover)]:mr-0.5' : 'right-1')}>
+                                !right ? 'right-1' : fOn ? '[@media(hover:hover)]:left-0' : '[@media(hover:hover)]:right-full [@media(hover:hover)]:mr-0.5')}>
                               <Icon name="ListFilter" size="sm" />
                             </button>
                           )}
