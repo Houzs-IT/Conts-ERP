@@ -248,7 +248,7 @@ export interface TrendBar {
 }
 
 /** Bar chart in HTML rather than a scaled SVG, so its text stays at real pixel sizes on a phone.
- *  The current period is gold, the rest charcoal. */
+ *  The current period is Conts green, the rest soft tan (--color-chart-now / --color-chart-bar, both themes). */
 export function BarTrend({ bars, height = 200, lineLabel }: { bars: TrendBar[]; height?: number; lineLabel?: string }) {
   const max = Math.max(1, ...bars.map(b => b.value));
   const many = bars.length > 6;
@@ -277,7 +277,7 @@ export function BarTrend({ bars, height = 200, lineLabel }: { bars: TrendBar[]; 
                 <div
                   className={cx(
                     'w-full max-w-[40px] rounded-t-[4px] origin-bottom [animation:grow_520ms_var(--ease-out)_both] transition-[filter,opacity] duration-[var(--motion-fast)]',
-                    b.current ? 'bg-gold' : 'trend-bar bg-gradient-to-b from-charcoal to-black',
+                    b.current ? 'bg-chart-now' : 'bg-chart-bar',
                     'group-hover:brightness-125',
                   )}
                   style={{ height: `${h}%`, animationDelay: `${i * 28}ms` }} />
