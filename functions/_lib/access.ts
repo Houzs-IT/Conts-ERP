@@ -296,8 +296,10 @@ export function kindOf(a: Pick<Actor, 'role' | 'kind'>): DepartmentKind {
   if (a.kind) return a.kind;
   return a.role === 'management' ? 'management' : a.role === 'housekeeper' ? 'cleaning' : a.role === 'technician' ? 'maintenance' : 'staff';
 }
+/** Owners and Renovation staff (who have no department) never have a desk area. */
+const hasNoDeskAreas = (role: string): boolean => role === 'owner' || role === 'renovator';
 /** Whether the person's levels come from department, position and user rules: desk staff, not owners or field accounts. */
-const isStaff = (a: Actor): boolean => a.role !== 'owner' && kindOf(a) === 'staff';
+const isStaff = (a: Actor): boolean => !hasNoDeskAreas(a.role) && kindOf(a) === 'staff';
 const whoOf = (a: Actor): Who => ({ userId: a.userId, departmentId: a.departmentId ?? null, positionId: a.positionId ?? null, kind: kindOf(a) });
 
 export interface Access { area: Area | null; level: Level; chosen: boolean; role: string; staff: boolean }
@@ -347,7 +349,7 @@ export async function levelsFor(env: Env, who: Actor): Promise<Record<string, Le
   const side = who.side ?? 'both';
   const w = whoOf(who);
   const rules = isStaff(who) ? await rulesCached(env, w) : noRules;
-  return Object.fromEntries(AREAS.map(a => [a.key, offSide(kind, side, a) || who.role === 'owner' ? 'none' : resolveFor(rules, w, a).level]));
+  return Object.fromEntries(AREAS.map(a => [a.key, offSide(kind, side, a) || hasNoDeskAreas(who.role) ? 'none' : resolveFor(rules, w, a).level]));
 }
 
 /** One area's level for the person, for a handler whose action belongs to a different area than the request's path
@@ -380,7 +382,7 @@ export async function peopleWithAccess(env: Env, areaKey: string, min: Level): P
   const out: { id: string; kind: DepartmentKind }[] = [];
   for (const p of people) {
     const kind = kindOf({ role: p.role, kind: isKind(p.kind) ? p.kind : null });
-    if (kind !== 'management' && kind !== 'staff') continue;
+    if ((kind !== 'management' && kind !== 'staff') || hasNoDeskAreas(p.role)) continue;
     if (offSide(kind, isSide(p.side) ? p.side : 'both', area)) continue;
     const rules: Rules = { department: { rules: mapFor('department', p.department_id) }, position: { rules: mapFor('position', p.position_id) }, user: { rules: mapFor('user', p.id) } };
     if (RANK[resolveFor(rules, { kind }, area).level] >= RANK[min]) out.push({ id: p.id, kind });

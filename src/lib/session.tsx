@@ -5,6 +5,7 @@ import { invalidateCachePrefix } from './cached-fetch';
 import type { SessionUser } from './types';
 import { go } from './go';
 import { confirmLeaving } from './useLeaveGuard';
+import { isFieldRole } from './fieldRoles';
 
 /** The password was right and the account has two-step sign-in on: the code is asked for next. */
 export interface TwoStep { challenge: string; backupOnly: boolean }
@@ -94,8 +95,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     // Asked here, not on the move below: clearing the user removes the form that would ask.
     if (!await confirmLeaving()) return;
-    // Cleaners and technicians go back to their own door (/portal opens the PIN sign-in), the office to /.
-    const worker = user?.role === 'housekeeper' || user?.role === 'technician';
+    // Cleaners, technicians and Renovation staff go back to their own door (/portal opens the PIN sign-in), the office to /.
+    const worker = isFieldRole(user?.role);
     try { await api.post('/auth/logout'); } catch (e) { if (!(e instanceof ApiFailure)) throw e; }
     setUser(null);
     // Cached reads are kept per browser, not per person: the next person on a shared phone or desk must not see them.

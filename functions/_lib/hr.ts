@@ -96,8 +96,9 @@ export const hasRenovationDepartment = (env: Env): Promise<boolean> => hasColumn
 
 const RENOVATION_PEOPLE = `
   SELECT NULL AS p_cleaner_id, NULL AS p_technician_id, r.full_name, r.phone, r.is_active, NULL AS cleaner_active,
-    NULL AS technician_active, r.user_id AS p_user_id, NULL AS employee_id, e.*
-  FROM renovators r JOIN employees e ON e.renovator_id = r.id`;
+    NULL AS technician_active, r.user_id AS p_user_id, u.employee_id, e.*
+  FROM renovators r JOIN employees e ON e.renovator_id = r.id
+  LEFT JOIN users u ON u.id = r.user_id`;
 
 async function findRenovationPerson(env: Env, renovatorId: string): Promise<Employee | null> {
   if (!(await hasRenovationDepartment(env))) return null;
