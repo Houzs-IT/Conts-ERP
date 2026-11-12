@@ -27,6 +27,16 @@ import ApprovalBanner from '../components/ApprovalBanner';
 import { isStaged, stagedToast, useApprovalsOn, type Approval, type Staged } from '../lib/approvals';
 import { statusLabel } from '../lib/status';
 import { StatRow, StatTile } from '../components/Metric';
+import { ChoiceChips } from '../components/ChoiceChips';
+
+/** How the bank file splits an owner's payout into transfers, chosen at each download (chew, 13 Nov 2026;
+ *  functions/api/payouts/export.ts). Every transfer goes to one account, so each grouping also splits by account. */
+type Grouping = 'building' | 'owner' | 'unit';
+const GROUPINGS: { value: Grouping; label: string; help: string }[] = [
+  { value: 'building', label: 'Building', help: "An owner's units in the same building, paid to the same account, are one transfer. As before." },
+  { value: 'owner', label: 'Owner', help: "All of an owner's units are one transfer, one for each bank account." },
+  { value: 'unit', label: 'Unit', help: 'Each unit is its own transfer.' },
+];
 
 type Payout = PayoutRow;
 interface Payload {
@@ -85,6 +95,9 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
 
   const [confirm, setConfirm] = useState<{ payout: Payout; kind: 'retry' | 'paid' } | null>(null);
   const [bulkPaid, setBulkPaid] = useState<{ rows: Payout[]; clear: () => void } | null>(null);
+  // Export asks how to group the transfers first; `only` holds the ticked payouts, if any.
+  const [exportAsk, setExportAsk] = useState<{ only?: Payout[] } | null>(null);
+  const [grouping, setGrouping] = useState<Grouping>('building');
   const [historyOf, setHistoryOf] = useState<Payout | null>(null);
   const historyButton = (r: Payout) => (
     <button type="button" onClick={() => setHistoryOf(r)} aria-label={`History of the payout to ${personName(r.ownerName)}`} title="History"
@@ -150,22 +163,28 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
     });
   }
 
-  /** The bank sheet: one row per owner, their payouts under the filter added up, with the full account number, for
-   *  making the transfers (owner, 22 Oct 2026). Its own endpoint, because the list only ever carries the last four
-   *  digits and every export is audited. */
-  async function exportBank(only?: Payout[]) {
+  /** Export: a month (or ticked payouts) is needed first, then the grouping is asked (chew, 13 Nov 2026). */
+  async function askExport(only?: Payout[]) {
     if (!only && !period) {
       toast({ tone: 'warning', title: 'Pick a statement month first.', body: 'Or tick the payouts to export. All months together would add up payouts already made.' });
       return;
     }
-    const params: Record<string, string> = only ? { ids: only.map(r => r.id).join(',') } : { ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}) };
+    setGrouping('building');
+    setExportAsk({ only });
+  }
+
+  /** The bank sheet: one row per transfer, the payouts under the filter added up by the chosen grouping, with the full
+   *  account number, for making the transfers (owner, 22 Oct 2026). Its own endpoint, because the list only ever carries
+   *  the last four digits and every export is audited. */
+  async function exportBank(only: Payout[] | undefined, group: Grouping) {
+    const params: Record<string, string> = { ...(only ? { ids: only.map(r => r.id).join(',') } : { ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}) }), group };
     const { data: list, capped } = await api.get<{ data: BankRow[]; capped: boolean }>(`/payouts/export?${new URLSearchParams(params)}`);
     // The extra column appears only when a row needs it, so an ordinary file is unchanged.
     const byHand = list.filter(r => r.checkByHand).length;
     downloadTable('xlsx', 'payouts', 'Payouts', byHand ? [...BANK_COLS, { label: 'Check by hand', kind: 'text' }] : BANK_COLS,
       list.map(r => [r.units, personName(r.ownerName), bankName(r.bankName) ?? '', r.accountNumber, r.amount, ...(byHand ? [r.checkByHand ? r.note ?? 'Check this row by hand.' : ''] : [])]));
     const safe = capped ? 'Only the first 5,000 fit in one file. Narrow the filters to get the rest.' : 'Full account numbers are in this file. Keep it safe and delete it once the transfers are made.';
-    toast({ tone: capped || byHand ? 'warning' : 'success', title: `Excel file ready: ${plural(list.length, 'owner')}, ${plural(list.reduce((n, r) => n + r.payouts, 0), 'payout')}.`,
+    toast({ tone: capped || byHand ? 'warning' : 'success', title: `Excel file ready: ${plural(list.length, 'transfer')}, ${plural(list.reduce((n, r) => n + r.payouts, 0), 'payout')}.`,
       body: byHand ? `${plural(byHand, 'row')} ${byHand === 1 ? 'needs' : 'need'} checking by hand before you transfer. ${safe}` : safe });
   }
 
@@ -260,7 +279,7 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
         server={{ total, page: data?.page ?? page, pageSize: data?.pageSize ?? size, sizes: SIZES, defaultPageSize: PAGE_SIZE }}
         viewParams={['state', 'period', 'q']} filtered={filtered} onClearFilters={() => url.set({ state: null, period: null, q: null, page: null })}
         noun={['payout', 'payouts']} exportName="payouts"
-        onExport={{ hint: 'Units, owner, bank, full account number and amount in RM, for the bank transfers.', run: exportBank }}
+        onExport={{ hint: 'Units, owner, bank, full account number and amount in RM, for the bank transfers.', run: askExport }}
         empty={{ icon: 'Banknote', title: 'No owner payouts yet', body: 'An owner payout is created for each owner statement when it is sent. Send statements from the Statements tab, then start a payout run here.' }}
         selectable={canAct ? (r => r.state === 'processing') : false}
         bulkActions={canAct ? ((picked, clear) => (
@@ -299,6 +318,19 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
       <ConfirmDialog spec={spec} busy={busy} onClose={() => { if (!busy) { setConfirm(null); setBulkPaid(null); } }} />
       <HistoryDrawer onClose={() => setHistoryOf(null)}
         target={historyOf && { entity: 'payouts', id: historyOf.id, title: `Payout to ${personName(historyOf.ownerName)}`, sub: `${moneyString(historyOf.amount, 'exact')}${historyOf.period ? ` · ${monthLabel(historyOf.period)} statement` : ''}` }} />
+      {exportAsk && (
+        <Modal title="Download the bank transfer file" sub="One row is one transfer, with the full account number." onClose={() => setExportAsk(null)} dirty={false}
+          footer={<>
+            <Button variant="secondary" onClick={() => setExportAsk(null)}>Cancel</Button>
+            <Button variant="primary" icon={<Icon name="Download" size="sm" />} onClick={() => {
+              const ask = exportAsk; setExportAsk(null);
+              exportBank(ask.only, grouping).catch(e => toast({ tone: 'critical', title: 'The file could not be made.', body: errorMessage(e, 'Try again in a moment.') }));
+            }}>Download</Button>
+          </>}>
+          <ChoiceChips<Grouping> label="One transfer per" value={grouping} onChange={setGrouping}
+            options={GROUPINGS.map(g => ({ value: g.value, label: g.label }))} help={GROUPINGS.find(g => g.value === grouping)?.help} />
+        </Modal>
+      )}
       {runOpen && <RunDialog onClose={() => setRunOpen(false)} onDone={() => { setRunOpen(false); reload(); overall.reload(); runs.reload(); void refreshNavCounts(); }} />}
     </>
   );
