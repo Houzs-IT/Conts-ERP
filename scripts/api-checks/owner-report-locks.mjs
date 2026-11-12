@@ -135,6 +135,16 @@ await db(`UPDATE owner_statements SET state = 'provisional', finalised_at = NULL
 r = await unlock('misc', [UNIT]);
 check('… and once the owner is no longer final, it unlocks too', r.status === 200 && (r.json?.unlocked ?? []).includes(UNIT), r.text);
 
+// Review Focus 3: Lock all on Revenue skips exactly the units with Airbnb reservations still to confirm and locks the
+// rest (a unit with nothing to confirm, as in a month with no Airbnb file, locks). Undone at once: every unit of October.
+const incomeBefore = new Set((await db(`SELECT unit_id FROM owner_report_locks WHERE month = $1 AND stage = 'income'`, OCT)).map(x => x.unit_id));
+r = await lock('income', 'all');
+const lockedIncome = r.json?.locked ?? [];
+check('Lock all on Revenue skips the unit still to confirm, names why, and locks the others', r.status === 201
+  && !lockedIncome.includes(UNIT) && (r.json?.notReady ?? []).some(x => x.unitId === UNIT && x.reason === '1 Airbnb reservation still to confirm on Airbnb reconciliation.')
+  && lockedIncome.length >= 1 && (r.json?.notReady ?? []).every(x => !lockedIncome.includes(x.unitId)), r.text.slice(0, 400));
+await unlock('income', lockedIncome.filter(id => !incomeBefore.has(id)));
+
 // Remove everything the check made.
 await dropAll();
 done();

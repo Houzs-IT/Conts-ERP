@@ -236,6 +236,21 @@ const fe = await october();
 await generate(NOV, u.owner_id);
 check('a cost moved from locked cleaning to open other deductions is counted once, under cleaning, and posts nothing late',
   fe.cleaning === fc.cleaning && fe.additional === fc.additional && (await lateOf(u.id, 'cleaning')).length === 0, `${JSON.stringify(fc)} -> ${JSON.stringify(fe)}`);
+// Final review I2: what a lock keeps decides removal, whatever the cost's category is now (spec goal 2). The clean the
+// cleaning lock keeps, now under open other deductions, still cannot be removed.
+r = await call('DELETE', '/api/expenses/ocs-cl1');
+check('a cost a lock keeps cannot be removed after it moves to an open category', r.status === 409
+  && r.json?.error?.message === `October 2026 cleaning is locked for ${label}. Ask someone who can unlock a step to unlock it first.`, r.text);
+// Open → locked: a cost under open other deductions moved into locked cleaning is told that the month keeps its old
+// figures (its difference goes on as a late change); no lock keeps it, so it can still be removed.
+r = await call('POST', '/api/expenses', { unitId: u.id, category: 'other', description: 'Check: becomes a clean', amount: 1000, incurredOn: '2026-10-20', chargeTo: 'owner' });
+const bc = (await db(`SELECT id, deduct_month FROM expenses WHERE description = 'Check: becomes a clean'`))[0];
+check('a cost for open other deductions stays in October', r.status === 201 && bc?.deduct_month === OCT, `${r.text} ${JSON.stringify(bc)}`);
+r = await call('PATCH', `/api/expenses/${bc?.id}`, { category: 'cleaning' });
+check('moving it into locked cleaning says the month keeps its old figures', r.status === 200
+  && r.json?.notice === `October 2026 cleaning is locked for ${label}. The October 2026 statement keeps the old amount; the difference goes to the next open month as an owner adjustment.`, r.text);
+r = await call('DELETE', `/api/expenses/${bc?.id}`);
+check('… and, as no lock keeps it, it can be removed', r.status === 200, r.text);
 
 // ── Add. ded. locked again: a cost for October skips a final November; a cost moved out leaves October as locked ──
 r = await lock('additional', [u.id]);

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Icon from './Icon';
 import { Button } from './Button';
 import { useToast } from './Toast';
+import { Skeleton } from './States';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { cx } from '../lib/design-tokens';
@@ -38,13 +39,14 @@ const listed = (items: string[], most = 5) => {
 export function LockBars({ month: given, stages, onChange }: { month?: string; stages: Stage[]; onChange?: () => void }) {
   const [own, setOwn] = useState(() => shift(todayMyt().slice(0, 7), -1));
   const month = given ?? own;
-  const { data, reload } = useApi<Summary>(`/owner-close/summary?month=${month}`);
+  const { data, loading, reload } = useApi<Summary>(`/owner-close/summary?month=${month}`);
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
-  // Someone who cannot read the month's locks (or a failed read) gets no bar: the page is theirs without it.
-  if (!data) return null;
+  // Someone who cannot read the month's locks (or a failed read) gets no bar: the page is theirs without it. While the
+  // first read is on its way the bar keeps its place, in the same shape, so the page below it does not jump.
+  if (!data && !loading) return null;
   const long = monthLabel(month, { long: true });
-  const labelOf = (id: string) => data.notReady.find(x => x.unitId === id)?.label;
+  const labelOf = (id: string) => data?.notReady.find(x => x.unitId === id)?.label;
 
   async function act(stage: Stage, action: 'lock' | 'unlock') {
     const name = STAGE_LABEL[stage];
@@ -71,7 +73,7 @@ export function LockBars({ month: given, stages, onChange }: { month?: string; s
   }
 
   return (
-    <section aria-label={`${long} locks`} className="rounded-card border border-solid border-line bg-card">
+    <section aria-label={`${long} locks`} aria-busy={!data || undefined} className="rounded-card border border-solid border-line bg-card">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2 [border-bottom:1px_solid_var(--color-line-soft)]">
         <span className="flex items-center gap-2 text-copy font-semibold">
           <span aria-hidden className="inline-flex text-lock"><Icon name="Lock" size="sm" /></span>
@@ -87,7 +89,23 @@ export function LockBars({ month: given, stages, onChange }: { month?: string; s
         </span>
         <Link to={`/portfolio/owner-report?month=${month}`} className="text-meta text-muted-ink hover:text-ink">Unit by unit on the Unit report</Link>
       </div>
-      {data.lockProblem
+      {!data
+        ? stages.map((stage, i) => (
+          // Loading: each category's row at its loaded height (the name, the bar and count, the two buttons).
+          <div key={stage} aria-hidden className={cx('flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-2.5', i > 0 && '[border-top:1px_solid_var(--color-line-soft)]')}>
+            <span className="w-[76px] shrink-0 text-copy font-medium text-muted-ink">{STAGE_LABEL[stage]}</span>
+            <span className="flex min-w-[180px] flex-1 items-center gap-2.5">
+              <span className="w-16 sm:w-28 shrink-0"><Skeleton height={6} radius={999} /></span>
+              <Skeleton width={128} height={12} />
+            </span>
+            {/* The two buttons' places, at the small control height the buttons have. */}
+            <span className="flex items-center gap-2">
+              <span className="skeleton block h-[var(--control-height-sm)] w-[92px] rounded-control" />
+              <span className="skeleton block h-[var(--control-height-sm)] w-[84px] rounded-control" />
+            </span>
+          </div>
+        ))
+        : data.lockProblem
         ? <p className="m-0 px-4 py-2.5 text-meta text-muted-ink">{data.lockProblem}</p>
         : stages.map((stage, i) => {
           const c = data.counts[stage] ?? { locked: 0, total: 0 };

@@ -803,13 +803,13 @@
 
 **锁了以后**
 
-- **那个类别的数字不会再变。** 之后改了的东西，差额自动去**下一个那个类别还没锁、也还没 final 的月份**，按合约重新算业主那一份（保底也算进去），不是直接乘分成 %；年保底的单位先 hold，等人看过再放。同一个锁只会有一笔，不会重复；生成报表、对账确认或撤回、以及每 15 分钟都会核对一次。
+- **那个类别的数字不会再变。** 之后改了的东西，差额自动变成**下一个 O2 还没锁、也还没 final 的月份**的 O2，按合约重新算业主那一份（保底也算进去），不是直接乘分成 %；年保底的单位先 hold，等人看过再放。每个锁的差额各自一笔（例如 Cleaning 锁一笔、Utilities 锁一笔），同一个锁只会有一笔，不会重复；生成报表、对账确认或撤回、以及每 15 分钟都会核对一次。只有**新进来的费用**是放到下一个**同一类别**还没锁的月份（见下面）。
   - **订单**（Airbnb 对账确认、手改订单、HostPlatform 或 Channex 取消）：Revenue 的差额变成下个月的 O2（「Late change to … income for October 2026 (income locked)」）。
   - **锁了以后才进来的费用**（水电账单、扫描账单、清洁费、维修费、手动加的费用）：放到下一个**同一类别**还没锁、也还没 final 的月份扣，报表上写「(late bill)」；输入的人会看到提示，例如「October 2026 utilities are locked for … This cost goes on the November 2026 statement.」
   - **改已锁的费用**：可以改。那个月保留原来的数字，差额变成下个月的 O2（例如「Late change to … utilities for October 2026 (utilities locked)」）。例子：电费 412.35 改成 421.35，10 月照样扣 412.35，11 月多一笔 O2，扣业主那一份（业主拿 75% 就是 6.75）。
   - **费用换了类别**（例如本来记成清洁，改成维修）：两个类别都锁了的话，每个锁只算自己那一部分，加起来跟一次算的一样。
   - **删已锁的费用**：不行，要先解锁那个类别。水电账单页面要替换锁住月份的账单、维修单以 RM 0 重新完成要删掉锁住月份的费用，也会被挡。
-  - **misc**：Misc 锁的时候定下来；之后订单让 misc 变了，差额跟着 Revenue 的差额一起去下个月（先算 Revenue，再算其他类别）。
+  - **misc**：Misc 锁的时候定下来。之后订单让 misc 变了：**Misc 锁了**，差额是 Misc 锁自己的一笔（「Late change to … misc for October 2026 (misc locked)」）；**Misc 没锁、Revenue 锁了**，misc 的差额跟着 Revenue 的差额一起去下个月（先算 Revenue，再算其他类别）。
 - **O2 锁了以后**：那个月的报表只拿锁的时候那些 O2，其他开着的 O2 放到下一个月。锁了以后新加的 O2（业主页、单位的扣款、业主自付水电退回、扫描账单的业主行、审批通过的 O2）日期自动改到下一个 O2 还没锁、也还没 final 的月份，画面会提示；没有指定单位的 O2 看业主的第一个单位。已锁的 O2 不能 hold、settle、删除；hold 着的欠款不能 release 到锁住的月份。
 - **草稿上已经印出来的 O2 之后变了或没了**：那份草稿按 Mark final 会被挡（「An owner adjustment changed after this draft was made. Generate the statement again, then mark it final.」）。在 Unit report 按 Make final 会先重新 Generate，所以不会遇到。
 - **解锁**：解锁后那个月回到最新的数字：之前因为锁而移到下个月的差额会拿回来；如果那笔已经在 final 的报表上，就留在那里，解锁的月份多一笔相反的调整（「Already settled on the … statement」），业主不会多拿或少拿。那个月自己的报表已经 final，就不能解锁（先 Unlock final）。被拿回的差额如果已经印在下个月的草稿上，解锁时会提醒那份草稿过时了；在 Unit report 按 Make final 会重新 Generate。

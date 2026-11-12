@@ -5,7 +5,7 @@ import { isIsoDate } from '../../_lib/validate';
 import { EXPENSE_CATEGORIES, CHARGE_TO, EXPENSE_FROM, LOCKED_SQL, expenseOut, isPeriodLocked, isExpenseLocked, isUtility, utilityDeduction, expenseCategoryLabel, expenseDayLabel } from '../../_lib/expenses';
 import { approvalSettings, approvalsEnabled, stage } from '../../_lib/approvals';
 import { receiptRequired, RECEIPT_REQUIRED } from '../../../src/lib/receipts';
-import { costNotice, editNotice, costLockProblem } from '../../_lib/lockGuards';
+import { costNotice, editNotices, keptCostProblem } from '../../_lib/lockGuards';
 import { costStageOf } from '../../_lib/stageLocks';
 
 /** GET /api/expenses/:id — one expense as the Accounts payable list shows it, for a link that opens it (the top-bar search). */
@@ -87,9 +87,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     before: { category: cur.category, amount: cur.amount, incurredOn: cur.incurred_on, chargeTo: cur.charge_to },
     after: { category: b.category ?? cur.category, amount: b.amount ?? cur.amount, incurredOn: b.incurredOn ?? cur.incurred_on, chargeTo: b.chargeTo ?? cur.charge_to },
   });
-  // A cost the owner was charged in a month whose category is locked: the month keeps it as it was locked. A cost whose
-  // deduction month moved because of this change (into a locked or final month): where it went.
-  const notice = (cur.charge_to === 'owner' ? await editNotice(env, cur.unit_id, cur.deduct_month, costStageOf(cur.category, cur.description)) : null)
+  // A cost the owner was charged in a month whose category is locked, before the change or after it (a cost moved into a
+  // locked category): the month keeps its figures as locked. A cost whose deduction month moved because of this change
+  // (into a locked or final month): where it went.
+  const notice = (await editNotices(env,
+    cur.charge_to === 'owner' ? { unitId: cur.unit_id, deductMonth: cur.deduct_month, stage: costStageOf(cur.category, cur.description) } : null,
+    after && after.charge_to === 'owner' ? { unitId: after.unit_id, deductMonth: after.deduct_month, stage: costStageOf(after.category, after.description) } : null))
     ?? (after && after.charge_to === 'owner' && after.deduct_month !== cur.deduct_month
       ? await costNotice(env, { unitId: after.unit_id, incurredOn: String(after.incurred_on).slice(0, 10), deductMonth: after.deduct_month, category: after.category, description: after.description }) : null);
   return json({ ok: true, notice });
@@ -105,7 +108,8 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
     'SELECT unit_id, deduct_month, category, amount, incurred_on, description, charge_to FROM expenses WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That expense no longer exists.', 404);
   if (await isExpenseLocked(env, cur)) return fail('PERIOD_LOCKED', 'The owner statement for that month is final, so this expense is locked.', 409);
-  const locked = cur.charge_to === 'owner' ? await costLockProblem(env, cur.unit_id, cur.deduct_month, costStageOf(cur.category, cur.description)) : null;
+  // What a Cleaning, Utilities or Add. ded. lock keeps cannot be removed until it is unlocked, whatever its category is now.
+  const locked = await keptCostProblem(env, id);
   if (locked) return fail('PERIOD_LOCKED', locked, 409);
   if (await one(env, 'SELECT 1 AS x FROM expenses WHERE parent_expense_id = ? LIMIT 1', id)) return fail('HAS_LINE_ITEMS', 'This bill has line items under it. Remove those first.', 409);
 

@@ -471,7 +471,7 @@ export default function OwnerOverallReportPage() {
                       <td key={c.key} className={cx(CELL, cellTone(state) ?? bg, 'text-center [border-top:1px_solid_var(--color-line-soft)]', groupStart(i) && DIVIDER,
                         i === cols.length - 1 && !showClose ? FOCUS_LAST : FOCUS)}>
                         {stage && state
-                          ? <LockCell state={state} title={cellTitle(r, stage, state)} label={`${r.code} ${STAGE_LABEL[stage]}${c.label !== STAGE_LABEL[stage] ? ` (${c.label})` : ''}`}
+                          ? <LockCell state={state} busy={lk.isBusy(r, stage)} title={cellTitle(r, stage, state)} label={`${r.code} ${STAGE_LABEL[stage]}${c.label !== STAGE_LABEL[stage] ? ` (${c.label})` : ''}`}
                               onClick={() => void lk.toggle(r, stage)}><Value c={c} v={r[c.key]} locked={state === 'locked'} /></LockCell>
                           : <Value c={c} v={r[c.key]} />}
                       </td>

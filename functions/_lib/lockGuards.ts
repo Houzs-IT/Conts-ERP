@@ -73,9 +73,30 @@ export async function editNotice(env: Env, unitId: string, deductMonth: string, 
   return (await costLocked(env, unitId, deductMonth, stage)) ? editedText(await unitLabel(env, unitId), monthLabel(deductMonth), stage) : null;
 }
 
-/** Why a cost in a month whose category is locked cannot be removed, or null. */
-export async function costLockProblem(env: Env, unitId: string, deductMonth: string, stage: CostStage): Promise<string | null> {
-  return (await costLocked(env, unitId, deductMonth, stage)) ? refusedText(stage, await unitLabel(env, unitId), monthLabel(deductMonth)) : null;
+/** What a person changing an owner's cost is told: for its category before the change and after it, a month that keeps
+ *  its old figures because that category is locked there (a cost moved into a locked category goes on as a late change
+ *  too). Null when neither is locked. */
+export async function editNotices(env: Env, before: { unitId: string; deductMonth: string; stage: CostStage } | null,
+  after: { unitId: string; deductMonth: string; stage: CostStage } | null): Promise<string | null> {
+  const seen = new Set<string>(), out: string[] = [];
+  for (const c of [before, after]) {
+    if (!c || seen.has(`${c.unitId}|${c.deductMonth}|${c.stage}`)) continue;
+    seen.add(`${c.unitId}|${c.deductMonth}|${c.stage}`);
+    const n = await editNotice(env, c.unitId, c.deductMonth, c.stage);
+    if (n) out.push(n);
+  }
+  return out.length ? out.join(' ') : null;
+}
+
+/** Why a cost cannot be removed: a Cleaning, Utilities or Add. ded. lock keeps it (spec goal 2: removing what a lock keeps
+ *  is refused until that category is unlocked). Decided by what the lock froze, not by the cost's category now: a kept cost
+ *  re-categorised into an open category is still refused, and one moved into a locked category, which no lock keeps,
+ *  can go (its late change goes with it). */
+export async function keptCostProblem(env: Env, costId: string): Promise<string | null> {
+  const kept = await one<{ unit_id: string; month: string; stage: CostStage }>(env, `SELECT unit_id, month, stage FROM owner_report_locks
+    WHERE stage IN ('cleaning', 'utilities', 'additional') AND frozen->'costs' @> jsonb_build_array(jsonb_build_object('id', ?::text))
+    ORDER BY month LIMIT 1`, costId);
+  return kept ? refusedText(kept.stage, await unitLabel(env, kept.unit_id), monthLabel(kept.month)) : null;
 }
 
 /* O2 (owner adjustments). A statement being built for a month whose O2 is locked takes only what the lock kept

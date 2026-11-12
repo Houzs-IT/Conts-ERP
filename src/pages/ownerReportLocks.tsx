@@ -4,10 +4,11 @@
  *  Unlock all over its column; Final is a lock too (Make final, and a click on a final statement unlocks it, with a
  *  reason). Locked amounts are teal with the lock on the left (chew's choice). The server decides everything: these only
  *  ask and say what came back (functions/api/owner-close/lock.ts, unlock.ts; statements/generate, finalise, unlock-final). */
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Icon from '../components/Icon';
 import { cx } from '../lib/design-tokens';
 import { api, notifyFailure } from '../lib/api';
+import { cellKey, settleOverrides, startClick, type Overrides } from '../lib/lockOverrides';
 import { useToast } from '../components/Toast';
 import type { ConfirmSpec } from '../components/ConfirmDialog';
 import { count, dateShort, monthLabel, personName, plural } from '../lib/format';
@@ -36,12 +37,14 @@ export function LockIcon({ open, className }: { open?: boolean; className?: stri
   return <span aria-hidden className={cx('inline-flex shrink-0', className)}><Icon name={open ? 'LockOpen' : 'Lock'} size="sm" style={{ width: 14, height: 14 }} /></span>;
 }
 
-/** A lockable amount as a button filling its cell: the lock on the left, the amount on the right. */
-export function LockCell({ state, title, onClick, children, label }: { state: CellState; title: string; onClick: () => void; children: ReactNode; label: string }) {
+/** A lockable amount as a button filling its cell: the lock on the left, the amount on the right. While its click is on
+ *  its way (`busy`) it dims and further clicks are ignored by useReportLocks. */
+export function LockCell({ state, title, onClick, children, label, busy }: { state: CellState; title: string; onClick: () => void; children: ReactNode; label: string; busy?: boolean }) {
   return (
-    <button type="button" title={title} aria-label={label} aria-pressed={state === 'locked'}
+    <button type="button" title={busy ? 'Saving…' : title} aria-label={label} aria-pressed={state === 'locked'} aria-busy={busy || undefined}
       onClick={e => { e.stopPropagation(); onClick(); }}
-      className={cx('flex w-full items-center justify-between gap-2 bg-transparent border-0 p-0 font-sans text-copy cursor-pointer',
+      className={cx('flex w-full items-center justify-between gap-2 bg-transparent border-0 p-0 font-sans text-copy',
+        busy ? 'cursor-progress opacity-60' : 'cursor-pointer',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lock')}>
       {state === 'locked' ? <LockIcon className="text-lock" />
         : state === 'blocked' ? <span aria-hidden className="inline-flex shrink-0 text-warning"><Icon name="TriangleAlert" size="sm" style={{ width: 14, height: 14 }} /></span>
@@ -54,26 +57,25 @@ export function LockCell({ state, title, onClick, children, label }: { state: Ce
 /** The background of a locked (teal) or waiting (amber) cell, used in place of the row's own; null: keep the row's. */
 export const cellTone = (state: CellState | null) => (state === 'locked' ? 'bg-lock-bg text-lock-ink' : state === 'blocked' ? 'bg-warning-bg' : null);
 
-/** The month's lock actions for the report: one cell, a whole column, and Final. Each answer updates the cell at once
- *  (`over`, cleared when the report reloads) and then the report reloads in the background for the counts and finals. */
+/** The month's lock actions for the report: one cell, a whole column, and Final. A click shows on its cell at once
+ *  (`over`) and the cell is busy until the server answers; another click on a busy cell is ignored. When the report
+ *  reloads, every override whose click has been answered goes, so what the server stored always wins (final review I1:
+ *  a double click no longer leaves a cell showing the opposite of its lock). src/lib/lockOverrides.ts has the rules. */
 export function useReportLocks(o: { month: string; may?: LockMay; rows: ReportRow[]; owners: Record<string, OwnerFinal>; reload: () => void;
   ask: (spec: Omit<ConfirmSpec, 'onConfirm'>) => Promise<string | null> }) {
   const toast = useToast();
   const label = monthLabel(o.month, { long: true });
-  const [over, setOver] = useState<Record<string, Partial<Record<Stage, Lock | null>>>>({});
+  const [over, setOver] = useState<Overrides>({});
   const [busy, setBusy] = useState<string | null>(null);
+  // The cells whose click is on its way: a ref for the click guard (a double click lands before the screen draws again)
+  // and a copy in state so those cells draw busy.
+  const pending = useRef(new Set<string>());
+  const [busyCells, setBusyCells] = useState<ReadonlySet<string>>(() => new Set());
+  const showPending = () => setBusyCells(new Set(pending.current));
   // Another month's clicks never show on this one.
   useEffect(() => setOver({}), [o.month]);
-  /** When the report reloads, a click it now shows is dropped; one still on its way to the server stays on top. */
-  const settle = useCallback((rows: ReportRow[]) => setOver(x => {
-    const next: typeof x = {};
-    for (const [id, m] of Object.entries(x)) {
-      const r = rows.find(row => row.unitId === id);
-      const left = Object.fromEntries(Object.entries(m).filter(([stage, v]) => !!v !== !!r?.locks?.[stage as Stage]));
-      if (Object.keys(left).length) next[id] = left;
-    }
-    return Object.keys(next).length || Object.keys(x).length ? next : x;
-  }), []);
+  /** When the report reloads: only the clicks still on their way keep their overrides. */
+  const settle = useCallback((_rows: ReportRow[]) => setOver(x => settleOverrides(x, pending.current)), []);
   /** "A, B and 2 more": a list in a sentence. */
   const listed = (items: string[], most = 6) => {
     const shown = [...items.slice(0, most), ...(items.length > most ? [`${items.length - most} more`] : [])];
@@ -99,37 +101,49 @@ export function useReportLocks(o: { month: string; may?: LockMay; rows: ReportRo
     return Object.fromEntries(Object.entries(mine).filter(([, v]) => !!v)) as Partial<Record<Stage, Lock>>;
   };
   const stateOf = (r: ReportRow, stage: Stage): CellState => (locksOf(r)[stage] ? 'locked' : stage === 'income' && (r.toConfirm ?? 0) > 0 ? 'blocked' : 'open');
+  const isBusy = (r: ReportRow, stage: Stage) => busyCells.has(cellKey(r.unitId, stage));
   const finalOf = (r: ReportRow) => (r.ownerId ? o.owners[r.ownerId] : undefined);
   const mark = (id: string, stage: Stage, v: Lock | null) => setOver(x => ({ ...x, [id]: { ...x[id], [stage]: v } }));
 
   async function toggle(r: ReportRow, stage: Stage) {
     const name = STAGE_LABEL[stage];
+    // A second click on this cell while its first is on its way is ignored, whatever it would have done.
+    const key = cellKey(r.unitId, stage);
+    if (pending.current.has(key)) return;
     if (finalOf(r)?.state === 'final') { toast({ tone: 'warning', title: `${personName(r.ownerName)}'s ${label} statement is final.`, body: 'Unlock the final first, in the Final column.' }); return; }
     const was = locksOf(r)[stage] ?? null;
-    if (was) {
-      if (!o.may?.unlock) { toast({ tone: 'warning', title: `You can't unlock ${name}.`, body: 'Ask management for the Unlock a step permission.' }); return; }
-      mark(r.unitId, stage, null);
-      try {
-        const res = await api.post<{ unlocked: string[]; notLocked: string[]; regenerate: string[] }>('/owner-close/unlock', { month: o.month, stage, unitIds: [r.unitId] });
-        if (res.regenerate?.length) toast({ tone: 'warning', title: `${r.code} ${name} unlocked.`, body: stale(res.regenerate) });
-      } catch (err) { mark(r.unitId, stage, was); notifyFailure(err); }
-    } else {
-      if (!o.may?.lock[stage]) { toast({ tone: 'warning', title: `You can't lock ${name}.`, body: `Ask management for the ${PERMISSION[stage]} permission.` }); return; }
-      if (stateOf(r, stage) === 'blocked') {
-        toast({ tone: 'warning', title: `${r.code} Revenue can't be locked yet.`, body: `${plural(r.toConfirm ?? 0, 'Airbnb reservation')} still to confirm. Confirm ${(r.toConfirm ?? 0) === 1 ? 'it' : 'them'} on the Airbnb reconciliation tab first.` });
-        return;
-      }
-      mark(r.unitId, stage, { by: 'You', at: new Date().toISOString() });
-      try {
-        const res = await api.post<{ locked: string[]; already: string[]; notLockable: string[]; final: string[]; notReady: { unitId: string; reason: string }[] }>('/owner-close/lock', { month: o.month, stage, unitIds: [r.unitId] });
-        if (!res.locked.length && !res.already.length) {
-          mark(r.unitId, stage, null);
-          toast({ tone: 'warning', title: `${r.code} ${name} was not locked.`,
-            body: res.notReady[0]?.reason ?? (res.final.length ? `The ${label} statement is already final.` : `${name} does not apply to this unit.`) });
-        }
-      } catch (err) { mark(r.unitId, stage, null); notifyFailure(err); }
+    if (was && !o.may?.unlock) { toast({ tone: 'warning', title: `You can't unlock ${name}.`, body: 'Ask management for the Unlock a step permission.' }); return; }
+    if (!was && !o.may?.lock[stage]) { toast({ tone: 'warning', title: `You can't lock ${name}.`, body: `Ask management for the ${PERMISSION[stage]} permission.` }); return; }
+    if (!was && stateOf(r, stage) === 'blocked') {
+      toast({ tone: 'warning', title: `${r.code} Revenue can't be locked yet.`, body: `${plural(r.toConfirm ?? 0, 'Airbnb reservation')} still to confirm. Confirm ${(r.toConfirm ?? 0) === 1 ? 'it' : 'them'} on the Airbnb reconciliation tab first.` });
+      return;
     }
-    o.reload();
+    if (!startClick(pending.current, key)) return;
+    showPending();
+    try {
+      if (was) {
+        mark(r.unitId, stage, null);
+        try {
+          const res = await api.post<{ unlocked: string[]; notLocked: string[]; regenerate: string[] }>('/owner-close/unlock', { month: o.month, stage, unitIds: [r.unitId] });
+          if (res.regenerate?.length) toast({ tone: 'warning', title: `${r.code} ${name} unlocked.`, body: stale(res.regenerate) });
+        } catch (err) { mark(r.unitId, stage, was); notifyFailure(err); }
+      } else {
+        mark(r.unitId, stage, { by: 'You', at: new Date().toISOString() });
+        try {
+          const res = await api.post<{ locked: string[]; already: string[]; notLockable: string[]; final: string[]; notReady: { unitId: string; reason: string }[] }>('/owner-close/lock', { month: o.month, stage, unitIds: [r.unitId] });
+          if (!res.locked.length && !res.already.length) {
+            mark(r.unitId, stage, null);
+            toast({ tone: 'warning', title: `${r.code} ${name} was not locked.`,
+              body: res.notReady[0]?.reason ?? (res.final.length ? `The ${label} statement is already final.` : `${name} does not apply to this unit.`) });
+          }
+        } catch (err) { mark(r.unitId, stage, null); notifyFailure(err); }
+      }
+    } finally {
+      // Answered: the override now waits only for the reload below, where what the server stored takes over.
+      pending.current.delete(key);
+      showPending();
+      o.reload();
+    }
   }
 
   async function column(stage: Stage, action: 'lock' | 'unlock') {
@@ -246,7 +260,7 @@ export function useReportLocks(o: { month: string; may?: LockMay; rows: ReportRo
     o.reload();
   }
 
-  return { locksOf, stateOf, toggle, column, finalOne, finalAll, unlockFinalAll, busy, settle };
+  return { locksOf, stateOf, isBusy, toggle, column, finalOne, finalAll, unlockFinalAll, busy, settle };
 }
 
 /** A unit's Final cell: on the owner's first row, the statement as a lock (Make final, or final by whom and when, a
@@ -273,7 +287,7 @@ export function FinalCell({ r, f, first, onClick, busy }: { r: ReportRow; f?: Ow
   return (
     <button type="button" onClick={e => { e.stopPropagation(); onClick(); }} disabled={busy}
       title={`Every category of ${personName(r.ownerName)}'s units is locked. Click to make the statement final (it is generated again first).`}
-      className="flex items-center gap-2 bg-transparent border-0 p-0 font-sans text-copy font-semibold text-lock cursor-pointer">
+      className="flex items-center gap-2 bg-transparent border-0 p-0 font-sans text-copy font-semibold text-lock-ink cursor-pointer">
       <LockIcon open className="text-lock" />{busy ? 'Making final…' : 'Make final'}
     </button>
   );
@@ -285,7 +299,7 @@ export function ColumnButtons({ onLock, onUnlock, busy, wide, name }: { onLock: 
   return (
     <span className={cx('flex items-center justify-center gap-x-3 gap-y-0.5', wide ? 'flex-row' : 'flex-col')}>
       {wide && <span className="text-meta font-semibold text-lock-ink">{name}</span>}
-      <button type="button" className={cx(btn, 'font-semibold text-lock')} disabled={!!busy} onClick={onLock} aria-label={`Lock all ${name}`}>{busy === 'lock' ? 'Locking…' : 'Lock all'}</button>
+      <button type="button" className={cx(btn, 'font-semibold text-lock-ink')} disabled={!!busy} onClick={onLock} aria-label={`Lock all ${name}`}>{busy === 'lock' ? 'Locking…' : 'Lock all'}</button>
       <button type="button" className={cx(btn, 'text-ink-2')} disabled={!!busy} onClick={onUnlock} aria-label={`Unlock all ${name}`}>{busy === 'unlock' ? 'Unlocking…' : 'Unlock all'}</button>
     </span>
   );
