@@ -20,14 +20,14 @@ export default function ViewAsOwnerPage() {
   const money = !!user && areaOpen(user.role, 'finance', user.access);
   const { data, error } = useApi<Payload>(money ? `/owners?id=${encodeURIComponent(ownerId)}` : null);
   const owner = data?.data?.[0];
-  const exit = () => navigate(`/owner-b/${encodeURIComponent(ownerId)}`);
+  const exit = () => navigate(`/owners/${encodeURIComponent(ownerId)}`);
 
   if (!money) {
-    return <EmptyState icon="Lock" title="For Management and Finance" body="Viewing an owner's portal needs access to Finance." action={{ label: 'Back to Owners', onClick: () => navigate('/owner-b') }} />;
+    return <EmptyState icon="Lock" title="For Management and Finance" body="Viewing an owner's portal needs access to Finance." action={{ label: 'Back to Owners', onClick: () => navigate('/owners') }} />;
   }
   if (!owner) {
     return data || error
-      ? <EmptyState icon="UserX" title="Owner not found" body={error ?? 'This owner is no longer on file.'} action={{ label: 'Back to Owners', onClick: () => navigate('/owner-b') }} />
+      ? <EmptyState icon="UserX" title="Owner not found" body={error ?? 'This owner is no longer on file.'} action={{ label: 'Back to Owners', onClick: () => navigate('/owners') }} />
       : <div className="p-6 text-copy text-muted-ink">Opening the owner portal…</div>;
   }
   const name = titleCase(owner.displayName);
