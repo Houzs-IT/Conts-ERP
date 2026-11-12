@@ -3,7 +3,7 @@ import { type Session, isFieldRole } from './auth';
 import { levelsFor } from './access';
 
 /** The areas whose screens come from the engine. Keep in step with engine/backend/src/conts/access.ts. */
-const ENGINE_AREAS = ['scSales', 'scInvoices', 'scConsignment', 'scProcurement', 'scTransportPlan', 'scWarehouse', 'serviceCases', 'projects', 'ledger', 'mail'];
+const ENGINE_AREAS = ['scSales', 'scInvoices', 'scConsignment', 'scProcurement', 'scProduction', 'scTransportPlan', 'scWarehouse', 'serviceCases', 'serviceMetrics', 'projects', 'projectDefects', 'projectHandover', 'projectFinances', 'ledger', 'mail'];
 
 /** The supply chain engine is Houzs's code run as its own server and site (see engine/ and CLAUDE.md).
  *  It is in use on an environment only when all three settings are present. */
