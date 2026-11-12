@@ -27,7 +27,7 @@ import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
-import { rm, date, dateRange, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel } from '../lib/format';
+import { rm, date, dateRange, dateShort, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { BookingChannel, ReservationState } from '../lib/types';
 import { statusOptions, statusLabel } from '../lib/status';
@@ -310,7 +310,7 @@ export default function BookingsPage() {
     ...countryPicked.filter(a => !data?.facets?.country?.some(f => f.value === a)).map(a => ({ value: a, label: a === 'none' ? 'Not known' : countryName(a.toUpperCase()) ?? a, count: 0 })),
   ];
   const columns = useMemo<Column<Row>[]>(() => [
-    { key: 'reference', label: 'Reference', type: 'ref', value: r => r.externalRef, sortKey: 'reference', width: 150, hideable: false,
+    { key: 'reference', label: 'Reference', type: 'ref', value: r => r.externalRef, sortKey: 'reference', width: 136, hideable: false,
       filter: { kind: 'text', param: 'ref' },
       render: b => (
         <span className="flex items-center gap-[9px] min-w-0">
@@ -324,12 +324,13 @@ export default function BookingsPage() {
       render: b => { const w = stayWho(b); return <span className="flex items-center gap-1.5 min-w-0"><span className={cx('font-medium whitespace-nowrap overflow-hidden text-ellipsis block', w.missing && 'text-muted-ink')} title={w.name}>{w.name}</span><SampleMark kind={b.sample} /></span>; },
       sub: b => [stayWho(b).missing ? 'No guest name' : null, b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, countryOf(b)].filter(Boolean).join(' · ') || null },
     { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, sortKey: 'unit', width: 140,
+      render: b => <span className="font-mono text-meta font-semibold text-ink whitespace-nowrap">{b.unitNumber}</span>,
       filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => b.propertyName },
     { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150,
       filter: { kind: 'select', param: 'building', multi: false, options: (data?.buildings ?? []).map(b => ({ value: b.id, label: b.name, count: facetCount('building', b.id) })) } },
     { key: 'channel', label: 'Channel', type: 'channel', value: r => r.channel, sortKey: 'channel', hidden: true, width: 130,
       filter: { kind: 'select', param: 'ch', multi: false, options: CHANNEL_CHOICES.map(c => ({ value: c, label: CHANNEL_META[c].label, count: facetCount('ch', c) })) } },
-    { key: 'stay', label: 'Check-in to checkout', type: 'date', value: r => r.checkIn, sortKey: 'stay', width: 200,
+    { key: 'stay', label: 'Check-in to checkout', type: 'date', value: r => r.checkIn, sortKey: 'stay', width: 176,
       filter: { kind: 'date', params: ['from', 'to'], hint: 'Reservations that touch these dates' },
       render: b => <span className="whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span>, sub: b => fmtNights(b.nights),
       exportKind: 'text', exportValue: r => `${r.checkIn} to ${r.checkOut}` },
@@ -465,7 +466,7 @@ export default function BookingsPage() {
             <PhoneCard lead={<ChannelMark ch={b.channel} size={18} />} titleMuted={w.missing}
               title={<span className="inline-flex items-center gap-1.5 max-w-full"><span className="min-w-0 overflow-hidden text-ellipsis">{w.name}</span><SampleMark kind={b.sample} /></span>}
               right={b.grossBookingValue > 0 ? rm(b.grossBookingValue) : '—'}
-              meta={[owed, b.unitNumber, b.propertyName, dateRange(b.checkIn, b.checkOut), fmtNights(b.nights)].filter(Boolean).join(' · ')}
+              meta={[owed, b.unitNumber, `${dateShort(b.checkIn)} – ${dateShort(b.checkOut)}`, fmtNights(b.nights), b.propertyName].filter(Boolean).join(' · ')}
               badge={<StatusBadge entity="stay" value={stayPhase(b)} size="sm" />} />
           );
         }}

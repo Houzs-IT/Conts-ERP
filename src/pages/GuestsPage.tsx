@@ -557,10 +557,10 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
       {g.movement && <MovementStrip g={g} busy={busy} onPrepare={onPrepare} onSendAccess={onSendAccess} onCheckIn={onCheckIn} onCheckOut={onCheckOut} />}
 
       {canSeeContact && (
-        <div className="grid grid-cols-2 gap-5 max-lg:grid-cols-1">
+        <div className="@container"><div className="grid grid-cols-1 @min-[640px]:grid-cols-2 gap-5">
           <Registration g={g} onEdit={onEdit} />
           <NotesAndTags g={g} onSaved={onSaved} />
-        </div>
+        </div></div>
       )}
 
       <div className="bg-card border border-solid border-line rounded-card overflow-hidden">

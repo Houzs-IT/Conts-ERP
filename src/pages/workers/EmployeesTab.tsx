@@ -70,13 +70,13 @@ export default function EmployeesTab() {
 
   const columns = useMemo<Column<Employee>[]>(() => [
     { key: 'empNo', label: 'Emp No', value: e => e.employeeId, width: 100 },
-    { key: 'name', label: 'Name', value: e => e.name, hideable: false, width: 190, render: e => <span className="font-semibold">{e.name}</span> },
-    { key: 'departments', label: 'Departments', value: departmentsOf, width: 170 },
-    { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], width: 120 },
+    { key: 'name', label: 'Name', value: e => e.name, hideable: false, width: 170, render: e => <span className="font-semibold">{e.name}</span> },
+    { key: 'departments', label: 'Departments', value: departmentsOf, width: 140 },
+    { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], width: 104 },
     { key: 'basic', label: 'Basic Salary', type: 'money', value: e => (e.payBasis === 'daily' ? e.dailyRateSen : e.basicSalarySen), width: 140,
       render: e => e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen) },
     { key: 'status', label: 'Status', type: 'status', value: e => statusOf(e).label, status: statusOf, width: 120 },
-    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 340, align: 'right', render: e => actions(e) },
+    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 176, align: 'right', render: e => actions(e) },
   ], [mayEdit, mayRoster, mayGrant]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** The roster entries a person is on: one per department, sharing a login when both. Switching off leaves alone a
@@ -103,16 +103,21 @@ export default function EmployeesTab() {
   }
 
   function actions(e: Employee, align: 'start' | 'end' = 'end'): ReactNode {
-    // The row itself opens the form, so a click or Enter on a button here must not reach it.
+    // The row itself opens the form, so a click or Enter on a button here must not reach it. In the table the
+    // buttons are icons with their name as a tooltip until the screen is wide enough for the words, so the row stays
+    // one line and the buttons stay in view.
+    const word = (w: string) => (align === 'end' ? <span className="max-[1599px]:sr-only">{w}</span> : w);
+    const access = e.employeeId ? 'Reset PIN' : 'Give app access';
+    const onOff = e.isActive ? 'Switch off' : 'Switch on';
     return (
-      <span className={`flex gap-[7px] items-center flex-wrap ${align === 'start' ? 'justify-start' : 'justify-end'}`} onClick={ev => ev.stopPropagation()} onKeyDown={ev => ev.stopPropagation()}>
+      <span className={`flex gap-[7px] items-center ${align === 'start' ? 'flex-wrap justify-start' : 'flex-nowrap justify-end whitespace-nowrap'}`} onClick={ev => ev.stopPropagation()} onKeyDown={ev => ev.stopPropagation()}>
         {mayGrant && e.isActive && (
-          <Button size="sm" variant="tertiary" icon={<Icon name="KeyRound" size="sm" />} onClick={() => giveAccess(e)}>{e.employeeId ? 'Reset PIN' : 'Give app access'}</Button>
+          <Button size="sm" variant="tertiary" title={access} icon={<Icon name="KeyRound" size="sm" />} onClick={() => giveAccess(e)}>{word(access)}</Button>
         )}
-        {mayEdit && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setForm({ person: e })}>Edit</Button>}
+        {mayEdit && <Button size="sm" variant="tertiary" title="Edit" icon={<Icon name="Pencil" size="sm" />} onClick={() => setForm({ person: e })}>{word('Edit')}</Button>}
         {mayRoster && (
-          <Button size="sm" variant="tertiary" icon={<Icon name={e.isActive ? 'UserMinus' : 'UserCheck'} size="sm" />} onClick={() => void toggleActive(e)}>
-            {e.isActive ? 'Switch off' : 'Switch on'}
+          <Button size="sm" variant="tertiary" title={onOff} icon={<Icon name={e.isActive ? 'UserMinus' : 'UserCheck'} size="sm" />} onClick={() => void toggleActive(e)}>
+            {word(onOff)}
           </Button>
         )}
       </span>
