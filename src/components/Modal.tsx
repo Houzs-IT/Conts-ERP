@@ -97,28 +97,48 @@ export function DialogFrame({ label, onClose, busy, dirty, children, className, 
  * to the children, who then bring their own form and footer. `layer="over"` sits above other dialogs (a decision opened
  * from a dialog or the drawer).
  * ConfirmDialog is for yes/no confirmations; Drawer for side panels.
+ *
+ * Conts DS v2 (Nov 2026): `size` picks one of three widths (sm 420, md 560, lg 860; `width` still works and is used
+ * when no size is given). `eyebrow` puts a small gold label over the title. `aside` adds a right-hand summary panel
+ * (a live price summary, "what this changes"); it stacks under the form on a phone. `footNote` is a quiet note on
+ * the left of the footer, where a destructive text button also belongs. The footer stays put while the body scrolls,
+ * and on a phone (640px and under) the dialog rises from the bottom as a sheet.
  */
-export function Modal({ title, sub, onClose, children, footer, width = 460, busy, dirty, onSubmit, body = 'padded', layer }: {
+const MODAL_SIZE = { sm: 420, md: 560, lg: 860 } as const;
+const OVERLAY = 'ds-dialog-overlay fixed inset-0 grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]';
+
+export function Modal({ title, sub, onClose, children, footer, width = 460, busy, dirty, onSubmit, body = 'padded', layer, size, eyebrow, aside, footNote }: {
   title: string; sub?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; width?: number;
   busy?: boolean; dirty?: boolean; onSubmit?: () => void; body?: 'padded' | 'flush' | 'raw'; layer?: 'over';
+  size?: keyof typeof MODAL_SIZE; eyebrow?: string; aside?: ReactNode; footNote?: ReactNode;
 }) {
+  const main = body === 'raw' ? children
+    : <div className={`ds-dialog-body flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col${body === 'flush' ? '' : ' pt-[18px] pb-5 px-6 max-sm:px-4 gap-[18px]'}`}>{children}</div>;
   const inner = (
     <>
-      <div className="flex-none pt-[22px] px-[22px] pb-1 flex flex-col gap-[5px]">
-        <h2 className="m-0 text-title leading-[1.3] font-semibold [text-wrap:pretty]">{title}</h2>
+      <div className="ds-dialog-head flex-none pt-5 px-6 max-sm:px-4 pb-4 flex flex-col gap-1 [border-bottom:1px_solid_var(--color-line-soft)]">
+        {eyebrow && <span className="ds-eyebrow mb-1">{eyebrow}</span>}
+        <h2 className="m-0 text-title leading-[1.3] font-bold [text-wrap:pretty]">{title}</h2>
         {sub && <div className="m-0 text-copy leading-[1.5] text-muted-ink [text-wrap:pretty]">{sub}</div>}
       </div>
-      {body === 'raw' ? children : <div className={`flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col${body === 'flush' ? ' mt-3' : ' py-4 px-[22px] gap-[14px]'}`}>{children}</div>}
-      {footer != null && <div className="flex-none py-[14px] px-[22px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end gap-[9px] flex-wrap">{footer}</div>}
+      {aside && body !== 'raw'
+        ? <div className="ds-dialog-split">{main}<aside className="ds-dialog-aside">{aside}</aside></div>
+        : main}
+      {footer != null && (
+        <div className="ds-dialog-foot flex-none py-[14px] px-6 max-sm:px-4 [border-top:1px_solid_var(--color-line-soft)] bg-card flex items-center justify-end gap-2 flex-wrap">
+          {footNote && <span className="ds-dialog-note">{footNote}</span>}
+          {footer}
+        </div>
+      )}
     </>
   );
   // Portalled to the page body: opened inside a drawer (which animates with a transform), a fixed overlay would
   // otherwise be pinned to the drawer instead of covering the screen.
   return createPortal(
     <DialogFrame label={title} onClose={onClose} busy={busy} dirty={dirty}
-      className={layer === 'over' ? 'fixed inset-0 z-[80] grid place-items-center p-4 sm:p-6 bg-[var(--color-surface-scrim)] [animation:fade-in_var(--motion-standard)_var(--ease-out)_both]' : undefined}
-      panelClassName="relative w-full max-h-[calc(100dvh-32px)] flex flex-col bg-card rounded-card overflow-hidden [box-shadow:var(--shadow-overlay)] [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]"
-      panelStyle={{ maxWidth: width }}>
+      className={`${OVERLAY} ${layer === 'over' ? 'z-[80]' : 'z-[60]'}`}
+      panelClassName="ds-dialog-panel relative w-full max-h-[calc(100dvh-32px)] flex flex-col bg-card rounded-[var(--radius-dialog)] overflow-hidden [box-shadow:var(--shadow-overlay)] [animation:dialog-in_var(--motion-slow)_var(--ease-out)_both]"
+      panelStyle={{ maxWidth: size ? MODAL_SIZE[size] : (aside ? Math.max(width, MODAL_SIZE.lg) : width) }}>
       {onSubmit
         ? <form className="contents" onSubmit={e => { e.preventDefault(); onSubmit(); }}>{inner}</form>
         : inner}
@@ -128,12 +148,13 @@ export function Modal({ title, sub, onClose, children, footer, width = 460, busy
 }
 
 /** The common form dialog: Modal with Cancel and one submit button. Enter submits once the form can be sent. */
-export function FormModal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, disabledReason = 'Fill the required fields first', width = 480, busy, children }: {
+export function FormModal({ title, sub, onClose, onSubmit, submitLabel, canSubmit, disabledReason = 'Fill the required fields first', width = 480, busy, children, size, eyebrow, aside }: {
   title: string; sub?: ReactNode; onClose: () => void; onSubmit: () => void; submitLabel: string; canSubmit: boolean;
   disabledReason?: string; width?: number; busy?: boolean; children: ReactNode;
+  size?: 'sm' | 'md' | 'lg'; eyebrow?: string; aside?: ReactNode;
 }) {
   return (
-    <Modal title={title} sub={sub} onClose={onClose} width={width} busy={busy} onSubmit={() => { if (canSubmit) onSubmit(); }}
+    <Modal title={title} sub={sub} onClose={onClose} width={width} size={size} eyebrow={eyebrow} aside={aside} busy={busy} onSubmit={() => { if (canSubmit) onSubmit(); }}
       footer={<>
         <Button size="sm" variant="secondary" type="button" onClick={onClose} disabled={busy} disabledReason="Working on it.">Cancel</Button>
         <Button size="sm" variant="primary" type="submit" loading={busy} disabled={!canSubmit} disabledReason={disabledReason}>{submitLabel}</Button>
