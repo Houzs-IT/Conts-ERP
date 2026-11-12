@@ -171,6 +171,42 @@ const after = await companyRows(u.id);
 check('C6: the late update after an unlock writes nothing more for it',
   JSON.stringify(after.filter(x => x.reference.endsWith(incomeLock))) === JSON.stringify(rows.filter(x => x.reference.endsWith(incomeLock))), JSON.stringify(after));
 
+// ── N: someone editing a reservation in a month whose income is locked is told where the difference goes ──
+// On the check's own unit L-03, with only its October income locked (nothing in the checks above reaches it).
+{
+  const N = 'ocl-n', want = 'October 2026 income is locked for Late Court L-03. The difference goes to November 2026.';
+  await db(`INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, created_at, updated_at) VALUES ($1, $2, $3, 'L-03', 0, $4, $4)`, N, PROP, OWNER, now);
+  const stay = (id, from, to, gross) => db(`INSERT INTO reservations (id, unit_id, channel, external_ref, state, check_in, check_out, gross_booking_value, channel_fee, collected_revenue, created_at, updated_at)
+    VALUES ($1, $2, 'direct', $1, 'confirmed', $3, $4, $5, 0, $5, $6, $6)`, id, N, from, to, gross, now);
+  await stay('ocl-n1', '2026-10-05', '2026-10-09', 20000);
+  await stay('ocl-n2', '2026-10-30', '2026-11-02', 15000);
+  await stay('ocl-n3', '2026-12-10', '2026-12-12', 10000);
+  r = await lock('income', [N]);
+  check('L-03: October income is locked', r.status === 201, r.text);
+
+  r = await call('PATCH', '/api/reservations/ocl-n1/dates', { checkIn: '2026-10-05', checkOut: '2026-10-10', confirm: true });
+  check('N1: moving a checkout in a locked month says where the difference goes', r.status === 200 && r.json?.notice === want, r.text);
+  r = await call('PATCH', '/api/reservations/ocl-n2/dates', { checkIn: '2026-10-30', checkOut: '2026-11-03', confirm: true });
+  check('N2: a stay across two months names only the locked one', r.status === 200 && r.json?.notice === want, r.text);
+  r = await call('PATCH', '/api/reservations/ocl-n3/dates', { checkIn: '2026-12-11', checkOut: '2026-12-13', confirm: true });
+  check('N3: a change in open months says nothing', r.status === 200 && r.json?.notice === null, r.text);
+
+  r = await call('POST', '/api/reservations', { unitId: N, channel: 'direct', guest: { fullName: 'Late Check Guest' }, checkIn: '2026-10-20', checkOut: '2026-10-22', guestsCount: 1, grossBookingValue: 30000 });
+  const made = r.json?.id;
+  check('N4: a new reservation in a locked month is told', r.status === 201 && r.json?.notice === want, r.text);
+  r = await call('POST', `/api/reservations/${made}/cancel`, { reason: 'Check: cancelled after the lock' });
+  check('N4: … and so is cancelling it', r.status === 200 && r.json?.notice === want, r.text);
+  // A direct booking with no guest total is paid by what is recorded against it, so a payment changes its income.
+  r = await call('POST', '/api/reservations', { unitId: N, channel: 'direct', guest: { fullName: 'Late Check Payer' }, checkIn: '2026-10-23', checkOut: '2026-10-25', guestsCount: 1, grossBookingValue: 0 });
+  const paid = r.json?.id;
+  r = await call('POST', `/api/reservations/${paid}/payments`, { amount: 20000, receivedOn: '2026-10-23', method: 'cash', kind: 'guest_payment' });
+  check('N4: … and recording a payment on a booking with no guest total', r.status === 201 && r.json?.notice === want, r.text);
+  const pid = r.json?.id;
+  r = await call('DELETE', `/api/reservations/${paid}/payments/${pid}`);
+  check('N4: … and removing it', r.status === 200 && r.json?.notice === want, r.text);
+  await db(`DELETE FROM booking_payments WHERE reservation_id IN (SELECT id FROM reservations WHERE unit_id = $1)`, N);
+}
+
 // Remove everything the check made.
 await dropAll();
 done();

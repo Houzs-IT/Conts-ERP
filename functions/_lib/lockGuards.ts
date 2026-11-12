@@ -4,8 +4,9 @@
  *  stageLocks.ts. A new cost never lands in a locked month whatever writes it (the expenses trigger, migration 0303);
  *  these only say so. */
 import { type Env, one, all } from './db';
-import { monthLabel, rolledText, editedText, refusedText, movedO2Text, openMonthAfter } from './stageLocks';
-import { closedMonthsFor } from './ownerLocks';
+import { monthLabel, rolledText, editedText, refusedText, movedO2Text, openMonthAfter, incomeNoticeText } from './stageLocks';
+import { closedMonthsFor, lockedMonthsFor } from './ownerLocks';
+import { stayMonths } from './airbnbConfirm';
 import { UNIT_SQL, unitForMonth, type UnitRow } from './ownerStatement';
 import { modelOf } from './revenueModel';
 
@@ -13,6 +14,38 @@ import { modelOf } from './revenueModel';
 export async function unitLabel(env: Env, unitId: string): Promise<string> {
   const r = await one<{ name: string }>(env, `SELECT p.name || ' ' || u.unit_number AS name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, unitId);
   return r?.name ?? 'this unit';
+}
+
+/** Whether a reservation in this state and on this channel counts in the owner statement's income (loadInputs). */
+export const countsAsIncome = (state: string, channel: string): boolean =>
+  ['confirmed', 'checked_in', 'checked_out'].includes(state) && !['maintenance_block', 'owner_stay'].includes(channel);
+
+/** What someone changing a reservation's income is told when any of `months` has the unit's income locked (owner
+ *  statement close part 2b): the month keeps its locked figures and the late update takes the difference to the next
+ *  open month, named when one locked month is involved. Null when none is locked. */
+export async function incomeNotice(env: Env, unitId: string, months: string[]): Promise<string | null> {
+  if (!unitId || !months.length) return null;
+  const locked = (await lockedMonthsFor(env, [unitId], 'income')).get(unitId);
+  const hit = [...new Set(months)].filter(m => locked?.has(m)).sort();
+  if (!hit.length) return null;
+  let to: string | null = null;
+  if (hit.length === 1) {
+    const closed = (await closedMonthsFor(env, [unitId], hit[0], 'o2')).get(unitId) ?? new Set<string>();
+    to = monthLabel(openMonthAfter(hit[0], closed));
+  }
+  return incomeNoticeText(await unitLabel(env, unitId), hit.map(monthLabel), to);
+}
+
+/** The months a stay has nights in, from its stored dates. */
+export const stayMonthsOf = (checkIn: string, checkOut: string): string[] => stayMonths(String(checkIn).slice(0, 10), String(checkOut).slice(0, 10));
+
+/** The notice for money recorded against a reservation, added or removed: only a booking with no host payout takes its
+ *  income from what is recorded (ownerStatement.ts stayIncomeParts), so only such a booking is told. */
+export async function paymentIncomeNotice(env: Env, reservationId: string): Promise<string | null> {
+  const r = await one<{ unit_id: string; state: string; channel: string; check_in: string; check_out: string; payout: number }>(env,
+    'SELECT unit_id, state, channel, check_in, check_out, GREATEST(0, gross_booking_value - COALESCE(channel_fee, 0)) AS payout FROM reservations WHERE id = ?', reservationId);
+  if (!r || !countsAsIncome(r.state, r.channel) || Number(r.payout) > 0) return null;
+  return incomeNotice(env, r.unit_id, stayMonthsOf(r.check_in, r.check_out));
 }
 
 /** Whether `month`'s deductions are locked for the unit. */
