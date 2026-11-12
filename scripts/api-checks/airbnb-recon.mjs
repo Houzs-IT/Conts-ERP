@@ -23,8 +23,14 @@ const MONTH = '2026-10';
 
 let r = await call('GET', `/api/airbnb-recon?month=${MONTH}`);
 check('the month reads, with confirming set up (migration 0259)', r.status === 200 && r.json?.ready === true && r.json?.confirmReady === true, r.text.slice(0, 300));
-check('the month says how much of its income is locked (Owner statement close)',
-  Number.isInteger(r.json?.incomeLocks?.locked) && Number.isInteger(r.json?.incomeLocks?.total) && r.json.incomeLocks.locked <= r.json.incomeLocks.total, JSON.stringify(r.json?.incomeLocks));
+// The page's Revenue lock bar reads the month's locks from the lock summary (Unit report locks, 13 Nov 2026), so the
+// reconciliation no longer works the month out a second time for its own count.
+check('the reconciliation leaves the lock count to the lock summary', r.json?.incomeLocks === undefined, JSON.stringify(r.json?.incomeLocks));
+{
+  const s = await call('GET', `/api/owner-close/summary?month=${MONTH}`);
+  check("the lock summary counts the month's Revenue locks", s.status === 200 && Number.isInteger(s.json?.counts?.income?.locked)
+    && Number.isInteger(s.json?.counts?.income?.total) && s.json.counts.income.locked <= s.json.counts.income.total, s.text.slice(0, 300));
+}
 if (!r.json?.confirmReady) done();
 
 // Two profit-share units of different owners whose October and November 2026 statements are not final yet (a draft is

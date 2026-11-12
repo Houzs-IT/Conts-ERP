@@ -17,7 +17,8 @@ import { cx } from '../lib/design-tokens';
 import { count, dateShort, monthLabel, percent, plural, rm, todayMyt, buildingName } from '../lib/format';
 import { useConfirm } from '../components/ConfirmDialog';
 import { overallFigures, overallTotals, occupancyLabel, GROUP_NAME, REPORT_GROUPS, type OverallInput, type OverallTotals, type ReportGroup } from '../lib/ownerOverall';
-import { GainLoss, LEVELS, OwnerOverallDetail, money, unitStatus, STAGES, STAGE_LABEL, type Level, type ReportRow, type Stage } from './OwnerOverallDetail';
+import { GainLoss, LEVELS, OwnerOverallDetail, money, unitStatus, type Level, type ReportRow } from './OwnerOverallDetail';
+import { STAGES, STAGE_LABEL, type Stage } from '../lib/lockStages';
 import { ColumnButtons, FinalCell, LockCell, LockIcon, STAGE_OF, cellTone, useReportLocks, type CellState, type LockMay, type OwnerFinal } from './ownerReportLocks';
 
 /** /portfolio/owner-report — the overall owner report (the owner workbook's overall report sheet) for one month: every

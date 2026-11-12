@@ -97,7 +97,6 @@ const StatementsPage = lazy(() => import('./pages/StatementsPage'));
 const PayoutsPage = lazy(() => import('./pages/PayoutsPage'));
 const OwnerProfilePage = lazy(() => import('./pages/OwnerProfilePage'));
 const ContractsPage = lazy(() => import('./pages/ContractsPage'));
-const OwnerReportClosePage = lazy(() => import('./pages/owners/OwnerReportClosePage'));
 const LettingsPage = lazy(() => import('./pages/LettingsPage'));
 const DeductionsPage = lazy(() => import('./pages/DeductionsPage'));
 const ScheduledChangesPage = lazy(() => import('./pages/ScheduledChangesPage'));
@@ -432,7 +431,8 @@ function Routed() {
         <Route path="/owners/statements" element={<StatementsPage />} />
         <Route path="/owners/payouts" element={<PayoutsPage />} />
         <Route path="/owners/contracts" element={<ContractsPage />} />
-        <Route path="/owners/close" element={<OwnerReportClosePage />} />
+        {/* Statement close was retired for the Unit report's locks (chew, 13 Nov 2026): its address opens the month there. */}
+        <Route path="/owners/close" element={<Moved to="/portfolio/owner-report" />} />
         <Route path="/owners/portal" element={<OwnerPortalShowcasePage />} />
         <Route path="/owners/:id" element={<OwnerProfileRoute />} />
         <Route path="/owners/:id/portal" element={<ViewAsOwnerPage />} />

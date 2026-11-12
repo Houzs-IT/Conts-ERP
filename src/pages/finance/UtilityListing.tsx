@@ -5,6 +5,7 @@ import { Button } from '../../components/Button';
 import { StatusBadge } from '../../components/StatusBadge';
 import { StaleBanner, TableSkeleton } from '../../components/DataState';
 import { EmptyState } from '../../components/States';
+import { LockBars } from '../../components/LockBar';
 import { Modal } from '../../components/Modal';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Segmented as Tabs } from '../../components/ops/OpsUi';
@@ -126,6 +127,9 @@ export default function UtilityListing() {
         <Tabs<View> label="By bill month, by payment request or unusual bills" value={view} onChange={v => url.set({ view: v === 'all' ? null : v })} className="self-start"
           options={[{ value: 'all', label: 'By bill month' }, { value: 'requests', label: 'By payment request' }, { value: 'unusual', label: 'Unusual' }]} />
         {filters}
+        {/* The Utilities lock (Unit report locks): this listing shows many months, so the bar keeps its own month,
+            last month to begin with. */}
+        <LockBars stages={['utilities']} onChange={reload} />
         {error && <StaleBanner message={data ? `Showing the last figures we have. ${error}` : error} onRetry={reload} />}
         {view !== 'unusual'
           ? <AllBills units={units} months={monthList} kinds={shownKinds} cells={cells} nights={data?.nights ?? {}} loading={loading && !data} mode={mode}

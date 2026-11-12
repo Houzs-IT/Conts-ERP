@@ -7,16 +7,12 @@ import { CloseButton } from '../components/CloseButton';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { overallTotals, occupancyLabel, GROUP_NAME, OWNER_BASE_NAME, type OverallFigures, type ReportGroup } from '../lib/ownerOverall';
+import type { Stage } from '../lib/lockStages';
 
 /** The overall owner report's unit drawer: L1 breakdown, L2 full detail. Every figure comes from
  *  ownerOverall.ts; this file only lays them out. */
 
 export type Level = 1 | 2;
-/** A lock category (functions/_lib/stageLocks.ts Stage): Revenue (income), Cleaning, Utilities, Add. ded. (additional),
- *  Misc and O2 (Unit report locks, chew 13 Nov 2026). */
-export type Stage = 'income' | 'cleaning' | 'utilities' | 'additional' | 'misc' | 'o2';
-export const STAGES: Stage[] = ['income', 'cleaning', 'utilities', 'additional', 'misc', 'o2'];
-export const STAGE_LABEL: Record<Stage, string> = { income: 'Revenue', cleaning: 'Cleaning', utilities: 'Utilities', additional: 'Add. ded.', misc: 'Misc', o2: 'O2' };
 export interface ReportRow extends OverallFigures {
   unitId: string; ownerId?: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null;
   lateItems?: { label: string; amount: number }[];

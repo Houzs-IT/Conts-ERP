@@ -50,22 +50,6 @@ export async function closedMonthsFor(env: Env, unitIds: string[], fromMonth: st
   return out;
 }
 
-/** The units on a month's income step: those with something in the month's owner statement whose income can be
- *  locked (not a fixed rent or a master lease), with their income lock, and whether their owner's statement for the
- *  month is final (a unit that is final and not locked cannot be locked any more). Airbnb reconciliation shows how many
- *  are locked; Owner statement close counts them the same way (closeSteps). */
-export async function incomeStep(env: Env, month: string): Promise<{ inputs: Inputs; rows: UnitMonth[]; locks: Map<string, LockRow>; finals: Set<string>; counts: { locked: number; total: number } }> {
-  const q = queryOf(env);
-  const [settings, loaded, locks, finals] = await Promise.all([statementSettings(q), loadInputs(q, `${month}-01`, monthEndExclusive(month)), locksFor(env, month), finalOwners(env, month)]);
-  const inputs = await withYearToDate(q, loaded, month, settings);
-  const rows = computeMonth(month, inputs, settings, 'dated').filter(r => hasActivity(r) && lockable('income', r.terms.basis));
-  const income = new Map(locks.filter(l => l.stage === 'income').map(l => [l.unit_id, l]));
-  return {
-    inputs, rows, locks: income, finals,
-    counts: { locked: rows.filter(r => income.has(r.unitId)).length, total: rows.filter(r => income.has(r.unitId) || !finals.has(r.ownerId)).length },
-  };
-}
-
 /** A month already worked out by the caller (the Unit report), so monthSteps and finalReadiness do not load it again:
  *  the inputs, the month as its statements take it (`dated`, every lock applied) and as a statement being built now
  *  would take its owner adjustments (`open`). */
@@ -168,12 +152,6 @@ export async function companyLateFor(env: Env, unitIds: string[] | null, fromMon
     out.set(key, x);
   }
   return out;
-}
-
-/** How many units are on the month's income step, and how many of them have their income locked: the figures Owner
- *  statement close shows on its Income step (Airbnb reconciliation shows them too). */
-export async function incomeLockCounts(env: Env, month: string): Promise<{ locked: number; total: number }> {
-  return (await incomeStep(env, month)).counts;
 }
 
 /** For each unit, the months whose `stage` is locked. */

@@ -11,7 +11,8 @@ import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import type { ConfirmSpec } from '../components/ConfirmDialog';
 import { count, dateShort, monthLabel, personName, plural } from '../lib/format';
-import { STAGE_LABEL, type ReportRow, type Stage } from './OwnerOverallDetail';
+import type { ReportRow } from './OwnerOverallDetail';
+import { STAGE_LABEL, type Stage } from '../lib/lockStages';
 
 /** The report's columns that are a lock category's amount. The four bills and their total lock together as Utilities. */
 export const STAGE_OF: Partial<Record<string, Stage>> = {
