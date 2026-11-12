@@ -71,7 +71,7 @@ function CloseSteps({ current, counts, onPick }: { current: Stage; counts: Paylo
           <li key={s} className="contents">
             <button type="button" onClick={() => onPick(s)} aria-current={cur ? 'step' : undefined}
               className={cx(cell, 'border-0 font-[inherit] cursor-pointer bg-transparent', cur && 'bg-gold-tint [box-shadow:inset_0_-3px_0_var(--color-gold)]')}>
-              <span className={cx(num, st === 'Done' ? 'bg-success text-white' : cur ? 'bg-gold text-[#1b1a17]' : 'bg-muted text-ink-2')}>
+              <span className={cx(num, st === 'Done' ? 'bg-success text-white' : cur ? 'bg-gold text-black' : 'bg-muted text-ink-2')}>
                 {st === 'Done' ? <Icon name="Check" size="sm" /> : STEP[s].n}
               </span>
               <span className="flex flex-col gap-0.5 min-w-0 flex-1">

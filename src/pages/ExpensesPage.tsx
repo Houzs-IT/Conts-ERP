@@ -684,7 +684,7 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
       title={mode === 'create' ? 'Add monthly expense' : 'Edit expense'}
       sub={mode === 'create'
         ? 'Logs a deduction against the unit for the owner statement. Every expense needs a category, date, amount and reference.'
-        : `${buildingName(expense?.propertyName)} ${expense?.unitNumber}`}
+        : [buildingName(expense?.propertyName), expense?.unitNumber].join(' ')}
       onClose={onClose}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose}>{readOnly ? 'Close' : 'Cancel'}</Button>

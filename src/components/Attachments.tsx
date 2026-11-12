@@ -417,7 +417,7 @@ export function CoverPhotoDrop({ photo, onPick, busy, label = 'Add a photo', hin
           </span>
           {canAdd && (
             <button type="button" onClick={() => input.current?.click()} disabled={busy}
-              className="absolute right-3 bottom-3 z-[2] inline-flex items-center gap-1.5 h-8 px-3 rounded-control bg-white/[0.92] text-[#1b1a17] text-meta font-medium border-none cursor-pointer outline-none focus-visible:[box-shadow:var(--focus-ring)]">
+              className="absolute right-3 bottom-3 z-[2] inline-flex items-center gap-1.5 h-8 px-3 rounded-control bg-white/[0.92] text-black text-meta font-medium border-none cursor-pointer outline-none focus-visible:[box-shadow:var(--focus-ring)]">
               <Icon name="Plus" size="sm" />Add photos
             </button>
           )}
