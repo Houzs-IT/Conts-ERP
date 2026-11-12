@@ -10,7 +10,7 @@ import { DataTable, type Column } from '../../components/DataTable';
 import { Segmented as Tabs } from '../../components/ops/OpsUi';
 import { useApi } from '../../lib/useApi';
 import { downloadFile, notifyFailure } from '../../lib/api';
-import { monthLabel, rm, todayMyt, buildingName } from '../../lib/format';
+import { monthLabel, rm, todayMyt, buildingName, personName } from '../../lib/format';
 import { downloadTable, type ExportCell, type ExportColumn } from '../../lib/export';
 import { statusOf, statusLabel, TONE_STYLE } from '../../lib/status';
 import { cx } from '../../lib/design-tokens';
@@ -215,7 +215,7 @@ function AllBills({ units, months, kinds, cells, nights, loading, filtered, mode
                   <th scope="row" className={cx(TD, STICKY, 'font-normal')}>
                     <button type="button" onClick={() => onUnit(u)} className="text-left bg-transparent border-0 p-0 cursor-pointer text-ink hover:underline">
                       <span className="block font-semibold">{unitName(u)}</span>
-                      {u.owner && <span className="block text-meta text-muted-ink truncate max-w-[200px]">{u.owner}</span>}
+                      {u.owner && <span className="block text-meta text-muted-ink truncate max-w-[200px]">{personName(u.owner)}</span>}
                     </button>
                   </th>
                   {months.map(m => cols.map((k, i) => {
@@ -264,7 +264,7 @@ function OneUnit({ unit, months, cells, nights, mode = 'bill', onBack, onOpen }:
         <Button size="sm" variant="secondary" icon={<Icon name="ArrowLeft" size="sm" />} onClick={onBack}>All units</Button>
         <div>
           <div className="text-title font-semibold">{unitName(unit)}</div>
-          {unit.owner && <div className="text-meta text-muted-ink">{unit.owner}</div>}
+          {unit.owner && <div className="text-meta text-muted-ink">{personName(unit.owner)}</div>}
         </div>
         <div className="ml-auto flex gap-4 text-meta text-muted-ink">
           <span>Average per month <b className="text-ink tabular-nums">{avg.perMonth == null ? '–' : rm(avg.perMonth)}</b></span>

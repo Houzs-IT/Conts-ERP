@@ -5,7 +5,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import Icon from '../components/Icon';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { rm, percent, rating as fmtRating, todayMyt, monthLabel, plural, count, titleCase, buildingName } from '../lib/format';
+import { rm, percent, rating as fmtRating, todayMyt, monthLabel, plural, count, buildingName, personName } from '../lib/format';
 import { Button } from '../components/Button';
 import { StatTile, Segmented } from '../components/Metric';
 import { Select } from '../components/Select';
@@ -159,7 +159,7 @@ export default function PortfolioPage() {
       hideable: false, width: 180, sub: r => buildingName(r.propertyName),
       render: r => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block" title={r.unitNumber}>{r.unitNumber}</span> },
     { key: 'building', label: 'Building', value: r => buildingName(r.propertyName), hidden: true, width: 150 },
-    { key: 'owner', label: 'Owner', value: r => titleCase(r.ownerName), width: 150 },
+    { key: 'owner', label: 'Owner', value: r => personName(r.ownerName), width: 150 },
     { key: 'nights', label: 'Nights', type: 'number', value: r => r.nights ?? null, hidden: true, width: 80 },
     { key: 'occupancy', label: 'Occupancy', type: 'number', value: r => r.occupancy, width: 100,
       render: r => <span className={NUM}>{percent(r.occupancy)}</span> },

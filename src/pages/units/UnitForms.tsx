@@ -10,7 +10,7 @@ import { FileDropRow } from '../../components/Attachments';
 import { useToast } from '../../components/Toast';
 import { color } from '../../theme';
 import { api, notifyFailure, downloadFile } from '../../lib/api';
-import { titleCase, buildingName } from '../../lib/format';
+import { buildingName, personName } from '../../lib/format';
 import { PhoneText } from '../../components/PhoneText';
 import { addressLines, type OwnerAddress, type Owner } from '../owners/shared';
 import { SearchSelect } from '../../components/Select';
@@ -190,8 +190,8 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
           {canEdit && owners ? (
             <SearchSelect label="Owner" size="md" value={ownerId} placeholder="Search owners"
               onChange={v => onChange({ ownerId: v })}
-              options={owners.map(o => ({ value: o.id, label: titleCase(o.displayName), hint: o.units.length ? `${o.units.length} ${o.units.length === 1 ? 'unit' : 'units'}` : undefined }))} />
-          ) : <ReadOnly>{titleCase(shown?.displayName ?? owner.name)}</ReadOnly>}
+              options={owners.map(o => ({ value: o.id, label: personName(o.displayName), hint: o.units.length ? `${o.units.length} ${o.units.length === 1 ? 'unit' : 'units'}` : undefined }))} />
+          ) : <ReadOnly>{personName(shown?.displayName ?? owner.name)}</ReadOnly>}
         </Labeled>
         <Labeled label="IC / company number">
           <ReadOnly>{ic || 'Not recorded'}</ReadOnly>
@@ -200,7 +200,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
           <ReadOnly>{[bank, account].filter(Boolean).join(' · ') || 'Not recorded'}</ReadOnly>
         </Labeled>
         <Labeled label="Account holder">
-          <ReadOnly>{holder ? titleCase(holder) : 'Not recorded'}</ReadOnly>
+          <ReadOnly>{holder ? personName(holder) : 'Not recorded'}</ReadOnly>
         </Labeled>
       </Grid3>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 -mt-3 mb-[6px]">

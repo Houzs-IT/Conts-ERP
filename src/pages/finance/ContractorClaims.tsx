@@ -11,7 +11,7 @@ import { StatRow, StatTile } from '../../components/Metric';
 import { useApi } from '../../lib/useApi';
 import { useToast } from '../../components/Toast';
 import { api, errorMessage } from '../../lib/api';
-import { date as fmtDate, count, titleCase, todayMyt, buildingName } from '../../lib/format';
+import { date as fmtDate, count, todayMyt, buildingName, personName } from '../../lib/format';
 import { useUrlState, SearchBox } from './listKit';
 
 /** Accounts payable > Contractor claims: what each maintenance job owes its technician or contractor (entered on the
@@ -44,7 +44,7 @@ export default function ContractorClaims() {
       setConfirm(null);
       reload();
       toast(to === 'paid'
-        ? { tone: 'success', title: 'Recorded as paid.', body: `${titleCase(c.payee ?? 'The contractor')}: ${moneyString(c.amount, 'exact')} for ${c.title}.` }
+        ? { tone: 'success', title: 'Recorded as paid.', body: `${personName(c.payee ?? 'The contractor')}: ${moneyString(c.amount, 'exact')} for ${c.title}.` }
         : { tone: 'success', title: 'Back to not paid.', body: `${c.title}: the paid date was cleared.` });
     } catch (e) {
       toast({ tone: 'critical', title: 'The payment was not recorded.', body: errorMessage(e, 'Try again in a moment.') });
@@ -55,7 +55,7 @@ export default function ContractorClaims() {
     { key: 'job', label: 'Maintenance job', value: c => c.title, hideable: false, width: 260, sub: c => unitOf(c),
       render: c => <span className="font-medium block truncate" title={c.title}>{c.title}</span> },
     { key: 'unit', label: 'Unit', value: c => unitOf(c), hidden: true, width: 180 },
-    { key: 'payee', label: 'Pay to', value: c => c.payee ? titleCase(c.payee) : null, width: 180 },
+    { key: 'payee', label: 'Pay to', value: c => c.payee ? personName(c.payee) : null, width: 180 },
     { key: 'billed', label: 'Billed on', type: 'date', value: c => billedOn(c), width: 120 },
     { key: 'amount', label: 'Owed', type: 'money', value: c => c.amount, width: 130,
       render: c => <MoneyText sen={c.amount} mode="exact" strong className="text-copy" /> },
@@ -76,7 +76,7 @@ export default function ContractorClaims() {
   }
 
   const spec: ConfirmSpec | null = !confirm ? null : confirm.to === 'paid' ? {
-    title: `Mark ${moneyString(confirm.c.amount, 'exact')} to ${titleCase(confirm.c.payee ?? 'the contractor')} as paid?`,
+    title: `Mark ${moneyString(confirm.c.amount, 'exact')} to ${personName(confirm.c.payee ?? 'the contractor')} as paid?`,
     body: 'Only once the money has left the bank. Records today as the day it was paid; the maintenance job shows it too.',
     meta: `${confirm.c.title} · ${unitOf(confirm.c)}`,
     danger: true, confirmLabel: 'Mark paid', busyLabel: 'Saving...', onConfirm: () => record(confirm.c, 'paid'),
@@ -115,7 +115,7 @@ export default function ContractorClaims() {
           <span className="flex items-start gap-3 text-ink">
             <span className="flex flex-col gap-[3px] min-w-0 flex-1">
               <span className="text-copy font-medium truncate">{c.title}</span>
-              <span className="text-meta text-muted-ink truncate">{unitOf(c)}{c.payee ? ` · ${titleCase(c.payee)}` : ''}</span>
+              <span className="text-meta text-muted-ink truncate">{unitOf(c)}{c.payee ? ` · ${personName(c.payee)}` : ''}</span>
             </span>
             <span className="flex flex-col items-end gap-[5px] shrink-0">
               <MoneyText sen={c.amount} mode="exact" strong className="text-copy" />

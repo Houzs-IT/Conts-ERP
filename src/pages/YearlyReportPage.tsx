@@ -8,7 +8,7 @@ import { EmptyState } from '../components/States';
 import { ListToolbar } from '../components/ListToolbar';
 import { Segmented } from '../components/Metric';
 import { useApi } from '../lib/useApi';
-import { count, plural, rm, todayMyt, buildingName } from '../lib/format';
+import { count, plural, rm, todayMyt, buildingName, personName } from '../lib/format';
 import { downloadTable, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { useUrlState, FilterSelect } from './finance/listKit';
@@ -52,7 +52,7 @@ function Grid({ grid, units, months, toDate }: { grid: BlockGrid; units: Unit[];
         <tbody>
           {listed.map(u => (
             <tr key={u.id} className="[border-top:1px_solid_var(--color-line)]">
-              <td className="sticky left-0 bg-card px-3 py-1.5 whitespace-nowrap" title={`${unitName(u)} · ${u.owner}`}>
+              <td className="sticky left-0 bg-card px-3 py-1.5 whitespace-nowrap" title={`${unitName(u)} · ${personName(u.owner)}`}>
                 <span className="block font-semibold leading-tight">{u.number}</span>
                 <span className="block text-meta text-muted-ink leading-tight">{buildingName(u.building)} · {u.contract === 'LT' ? 'Fixed rent' : 'Profit share'}</span>
               </td>

@@ -4,7 +4,7 @@ import { Card } from '../../components/Card';
 import Icon from '../../components/Icon';
 import { cx } from '../../lib/design-tokens';
 import type { UnitReadiness } from '../../lib/types';
-import { titleCase, buildingName } from '../../lib/format';
+import { buildingName, personName } from '../../lib/format';
 import type { Building, Unit } from './shared';
 import { MODEL, PURPOSE_LABEL, codeName } from '../../lib/revenueModel';
 import { useContractTypes } from '../../lib/useContractTypes';
@@ -174,7 +174,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                             {dot(u.id)}
                             <span className="flex-1 min-w-0">
                               <span className={cx('block text-copy whitespace-nowrap overflow-hidden text-ellipsis', on ? 'font-semibold' : 'font-medium')}>{u.unitCode || 'New unit'}</span>
-                              <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName ? titleCase(u.ownerName) : 'No owner yet'}{kids.length ? ` · ${kids.length} sub-unit${kids.length > 1 ? 's' : ''}` : ''}</span>
+                              <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName ? personName(u.ownerName) : 'No owner yet'}{kids.length ? ` · ${kids.length} sub-unit${kids.length > 1 ? 's' : ''}` : ''}</span>
                             </span>
                             <span className="flex flex-col items-end flex-none text-right">
                               <span className="text-caption font-bold text-gold-ink" title={u.termsLabel ?? (u.revenueModel ? MODEL[u.revenueModel].label : u.pkg)}>{(u.contractCode ? codeName(types, u.contractCode) : null) ?? (u.revenueModel ? MODEL[u.revenueModel].short : u.pkg.replace('Package ', 'Pkg '))}</span>

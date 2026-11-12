@@ -15,7 +15,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { monthLabel, rm, todayMyt, buildingName } from '../lib/format';
+import { monthLabel, rm, todayMyt, buildingName, personName } from '../lib/format';
 import { downloadTable, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx, TONE } from '../lib/design-tokens';
 import { useUrlState, FilterSelect, shiftMonth } from './finance/listKit';
@@ -87,7 +87,7 @@ export default function UnitPnlPage() {
 
   const header = (
     <PageHeader title={focus ? `Unit P&L · ${unitName(focus, focus.id)}` : 'Unit P&L'}
-      sub={focus ? `${focus.owner} · ${focus.contract === 'LT' ? 'Fixed rent' : 'Profit share'}` : 'What each unit earned and spent, month by month: the unit’s profit, then what the company keeps.'}
+      sub={focus ? `${personName(focus.owner)} · ${focus.contract === 'LT' ? 'Fixed rent' : 'Profit share'}` : 'What each unit earned and spent, month by month: the unit’s profit, then what the company keeps.'}
       back={focus ? { label: 'All units', onClick: () => url.set({ unit: null }) } : undefined} />
   );
   const filters = (

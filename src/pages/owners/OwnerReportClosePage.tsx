@@ -17,7 +17,7 @@ import { Segmented as Tabs } from '../../components/ops/OpsUi';
 import { useApi } from '../../lib/useApi';
 import { api, notifyFailure } from '../../lib/api';
 import { useToast } from '../../components/Toast';
-import { count, dateTime, monthLabel, plural, todayMyt, buildingName } from '../../lib/format';
+import { count, dateTime, monthLabel, plural, todayMyt, buildingName, personName } from '../../lib/format';
 import { useUrlState, MonthStepper, shiftMonth } from '../finance/listKit';
 
 type Stage = 'income' | 'deductions' | 'o2';
@@ -200,7 +200,7 @@ export default function OwnerReportClosePage() {
     }
   }
 
-  const unitColumn: Column<CloseUnit> = { key: 'unit', label: 'Unit', value: unitName, sub: u => u.ownerName, phone: 'title', hideable: false, width: 200 };
+  const unitColumn: Column<CloseUnit> = { key: 'unit', label: 'Unit', value: unitName, sub: u => personName(u.ownerName), phone: 'title', hideable: false, width: 200 };
   const checkColumn: Column<CloseUnit> = {
     key: 'check', label: 'Check', width: 240, sortable: false, value: u => (needsLook(u, step) ? 'Needs a look' : step === 'income' ? 'All confirmed' : 'OK'),
     render: u => (

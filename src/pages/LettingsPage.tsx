@@ -10,7 +10,7 @@ import { FilterBar } from '../components/FilterBar';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { mayRun } from '../lib/areaAccess';
-import { date, titleCase, plural, buildingName } from '../lib/format';
+import { date, plural, buildingName, personName } from '../lib/format';
 import { cx, TONE } from '../lib/design-tokens';
 import { useUrlState, SearchBox } from './finance/listKit';
 import { LettingModal, LETTING_STATUS, leftText, type Letting, type LettingsPayload } from './units/LettingTab';
@@ -46,7 +46,7 @@ export default function LettingsPage() {
   const columns: Column<Letting>[] = [
     { key: 'unit', label: 'Unit', value: r => r.unitLabel, hideable: false, width: 180, render: r => <span className="font-medium truncate block" title={r.unitLabel}>{r.unitLabel}</span> },
     { key: 'building', label: 'Building', value: r => buildingName(r.building), hidden: true, width: 160, filter: { kind: 'select' } },
-    { key: 'owner', label: 'Owner', type: 'person', value: r => titleCase(r.ownerName), width: 150 },
+    { key: 'owner', label: 'Owner', type: 'person', value: r => personName(r.ownerName), width: 150 },
     { key: 'status', label: 'Status', type: 'status', value: r => LETTING_STATUS[r.status].label, status: r => LETTING_STATUS[r.status], width: 140, filter: { kind: 'select' } },
     { key: 'tenant', label: 'Tenant', value: r => r.tenantName, width: 150, sub: r => r.tenantPhone },
     { key: 'starts', label: 'Starts', type: 'date', value: r => r.startsOn, width: 110 },
@@ -64,7 +64,7 @@ export default function LettingsPage() {
     { key: 'notes', label: 'Notes', value: r => r.notes, hidden: true, width: 220 },
   ];
 
-  const unitOptions = (roster.data?.data ?? []).map(u => ({ id: u.id, label: `${buildingName(u.propertyName)} ${u.unitNumber}`, hint: titleCase(u.ownerName) }));
+  const unitOptions = (roster.data?.data ?? []).map(u => ({ id: u.id, label: `${buildingName(u.propertyName)} ${u.unitNumber}`, hint: personName(u.ownerName) }));
   const tiles: { key: Filter; label: string; hint: string; tone?: 'warning' | 'success' }[] = [
     { key: 'looking', label: 'Looking for a tenant', hint: 'Not rented yet', tone: undefined },
     { key: 'rented', label: 'Rented', hint: 'Agreement running', tone: 'success' },
@@ -100,7 +100,7 @@ export default function LettingsPage() {
         renderCard={r => (
           <span className="flex flex-col gap-1 min-w-0 w-full">
             <span className="flex items-start justify-between gap-2"><span className="text-copy font-medium min-w-0 [overflow-wrap:anywhere]">{r.unitLabel}</span><StatusBadge tone={LETTING_STATUS[r.status].tone} label={LETTING_STATUS[r.status].label} size="sm" /></span>
-            <span className="text-meta text-muted-ink">{titleCase(r.ownerName)}{r.tenantName ? ` · tenant ${titleCase(r.tenantName)}` : ''}</span>
+            <span className="text-meta text-muted-ink">{personName(r.ownerName)}{r.tenantName ? ` · tenant ${personName(r.tenantName)}` : ''}</span>
             {r.endsOn && <span className={cx('text-meta', r.remind ? TONE.warning.text : 'text-muted-ink')}>{r.startsOn ? date(r.startsOn) : "?"} to {date(r.endsOn)}{r.status === 'rented' && r.daysLeft != null ? ` · ${leftText(r.daysLeft)}` : ''}</span>}
           </span>
         )}

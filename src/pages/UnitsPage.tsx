@@ -27,7 +27,7 @@ import { PurposeBadge, CodeBadge } from './units/UnitExtras';
 import LettingTab from './units/LettingTab';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, dateRange, date, monthLabel, plural, titleCase, buildingName } from '../lib/format';
+import { rm, dateRange, date, monthLabel, plural, buildingName, personName } from '../lib/format';
 import type { UnitReadiness } from '../lib/types';
 import UnitTree, { firstUnitId } from './units/UnitTree';
 import AccessTab from './units/AccessTab';
@@ -486,7 +486,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           {/* Owner names run long (several co-owners, company names); they wrap instead of running off a phone. */}
           <div className="flex flex-col gap-1 min-w-0 max-w-full sm:max-w-[45%] items-start">
             <Eyebrow>Owner</Eyebrow>
-            <Link to={`/owners/${encodeURIComponent(u.owner.id)}`} className="text-heading font-semibold no-underline text-ink! [overflow-wrap:anywhere]">{titleCase(u.owner.name)}</Link>
+            <Link to={`/owners/${encodeURIComponent(u.owner.id)}`} className="text-heading font-semibold no-underline text-ink! [overflow-wrap:anywhere]">{personName(u.owner.name)}</Link>
             {u.contract && <span className="text-meta text-muted-ink">{u.termsLabel ?? `${u.contract.managementFeePct}%`} · {u.contract.renewsOn ? `renews ${date(u.contract.renewsOn)}` : 'No renewal date'}</span>}
           </div>
         </div>

@@ -3,7 +3,7 @@ import { CloseButton } from '../../components/CloseButton';
 import { Drawer } from '../../components/Dialog';
 import { SearchSelect } from '../../components/Select';
 import { Skeleton } from '../../components/States';
-import { titleCase } from '../../lib/format';
+import { personName } from '../../lib/format';
 import { useApi } from '../../lib/useApi';
 import { CLEAN_KINDS } from './UnitCleaning';
 import { PercentSchedule, type PriceTarget } from './PercentSchedule';
@@ -21,7 +21,7 @@ const CLEAN_TARGETS: PriceTarget[] = CLEAN_KINDS.map(([cleanKind, name]) => ({ k
 function useScheduleUnits(): ScheduleUnit[] {
   const roster = useApi<{ data: RosterUnit[] }>('/units');
   return (roster.data?.data ?? []).map(({ id, unitNumber, propertyName, ownerName }) => (
-    { id, label: `${propertyName} ${unitNumber}`, building: propertyName, hint: titleCase(ownerName) }));
+    { id, label: `${propertyName} ${unitNumber}`, building: propertyName, hint: personName(ownerName) }));
 }
 
 function CleaningPercent({ onSaved }: { onSaved: () => void }) {

@@ -18,7 +18,7 @@ import { api, errorMessage } from '../lib/api';
 import { downloadTable, type ExportColumn } from '../lib/export';
 import { runEach, skippedNote } from '../lib/bulk';
 import { refreshNavCounts } from '../lib/navBadges';
-import { monthLabel, plural, titleCase, count } from '../lib/format';
+import { monthLabel, plural, count, personName } from '../lib/format';
 import { cx } from '../lib/design-tokens';
 import { PAYOUT, bankName } from '../lib/vocabulary';
 import type { PayoutState } from '../lib/types';
@@ -87,7 +87,7 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
   const [bulkPaid, setBulkPaid] = useState<{ rows: Payout[]; clear: () => void } | null>(null);
   const [historyOf, setHistoryOf] = useState<Payout | null>(null);
   const historyButton = (r: Payout) => (
-    <button type="button" onClick={() => setHistoryOf(r)} aria-label={`History of the payout to ${titleCase(r.ownerName)}`} title="History"
+    <button type="button" onClick={() => setHistoryOf(r)} aria-label={`History of the payout to ${personName(r.ownerName)}`} title="History"
       className="w-8 h-8 flex-none grid place-items-center rounded-control border border-solid border-line bg-card text-muted-ink cursor-pointer hover:bg-muted hover:text-ink">
       <Icon name="History" size="sm" />
     </button>
@@ -126,8 +126,8 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
       setConfirm(null);
       reload(); overall.reload(); void refreshNavCounts();
       toast(kind === 'retry'
-        ? { tone: 'success', title: 'Payout back to processing.', body: `${titleCase(p.ownerName)}: make the transfer at the bank, then mark it paid.` }
-        : { tone: 'success', title: 'Recorded as paid.', body: `${titleCase(p.ownerName)}: ${moneyString(p.amount, 'exact')} recorded as transferred.` });
+        ? { tone: 'success', title: 'Payout back to processing.', body: `${personName(p.ownerName)}: make the transfer at the bank, then mark it paid.` }
+        : { tone: 'success', title: 'Recorded as paid.', body: `${personName(p.ownerName)}: ${moneyString(p.amount, 'exact')} recorded as transferred.` });
     } catch (e) {
       toast({ tone: 'critical', title: 'Payout was not updated.', body: errorMessage(e, 'Try again in a moment.') });
     } finally { setBusy(false); }
@@ -138,7 +138,7 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
     if (!bulkPaid) return;
     const rows = bulkPaid.rows;
     setBusy(true);
-    const { ok, failed: left } = await runEach(rows, p => api.patch('/payouts', { id: p.id, state: 'paid' }), p => titleCase(p.ownerName));
+    const { ok, failed: left } = await runEach(rows, p => api.patch('/payouts', { id: p.id, state: 'paid' }), p => personName(p.ownerName));
     setBusy(false);
     bulkPaid.clear();
     setBulkPaid(null);
@@ -163,15 +163,15 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
     // The extra column appears only when a row needs it, so an ordinary file is unchanged.
     const byHand = list.filter(r => r.checkByHand).length;
     downloadTable('xlsx', 'payouts', 'Payouts', byHand ? [...BANK_COLS, { label: 'Check by hand', kind: 'text' }] : BANK_COLS,
-      list.map(r => [r.units, titleCase(r.ownerName), bankName(r.bankName) ?? '', r.accountNumber, r.amount, ...(byHand ? [r.checkByHand ? r.note ?? 'Check this row by hand.' : ''] : [])]));
+      list.map(r => [r.units, personName(r.ownerName), bankName(r.bankName) ?? '', r.accountNumber, r.amount, ...(byHand ? [r.checkByHand ? r.note ?? 'Check this row by hand.' : ''] : [])]));
     const safe = capped ? 'Only the first 5,000 fit in one file. Narrow the filters to get the rest.' : 'Full account numbers are in this file. Keep it safe and delete it once the transfers are made.';
     toast({ tone: capped || byHand ? 'warning' : 'success', title: `Excel file ready: ${plural(list.length, 'owner')}, ${plural(list.reduce((n, r) => n + r.payouts, 0), 'payout')}.`,
       body: byHand ? `${plural(byHand, 'row')} ${byHand === 1 ? 'needs' : 'need'} checking by hand before you transfer. ${safe}` : safe });
   }
 
   const columns = useMemo<Column<Payout>[]>(() => [
-    { key: 'owner', label: 'Owner', value: r => titleCase(r.ownerName), hideable: false, width: 220,
-      render: r => <span className="font-medium block truncate" title={r.ownerName}>{titleCase(r.ownerName)}</span>,
+    { key: 'owner', label: 'Owner', value: r => personName(r.ownerName), hideable: false, width: 220,
+      render: r => <span className="font-medium block truncate" title={r.ownerName}>{personName(r.ownerName)}</span>,
       sub: r => <span className="font-mono text-caption">{r.ref ?? r.id}{r.period ? ` · ${monthLabel(r.period)}` : ''}</span> },
     { key: 'ref', label: 'Reference', type: 'ref', value: r => r.ref ?? r.id, hidden: true, width: 140 },
     { key: 'period', label: 'Statement month', value: r => r.period ?? null, text: r => (r.period ? monthLabel(r.period) : ''), hidden: true, width: 130 },
@@ -205,14 +205,14 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
     : !confirm ? null
     : confirm.kind === 'retry'
       ? {
-          title: `Try ${moneyString(confirm.payout.amount, 'exact')} to ${titleCase(confirm.payout.ownerName)} again?`,
+          title: `Try ${moneyString(confirm.payout.amount, 'exact')} to ${personName(confirm.payout.ownerName)} again?`,
           body: 'Confirm the bank details were corrected first. This moves the payout back to Processing; it does not send money. Make the transfer at the bank, then mark it paid.',
           meta: `${destination(confirm.payout)} · ${confirm.payout.method}`,
           danger: true, confirmLabel: 'Move to processing', busyLabel: 'Saving...',
           onConfirm: () => transition(confirm.payout, 'retry'),
         }
       : {
-          title: `Mark ${moneyString(confirm.payout.amount, 'exact')} to ${titleCase(confirm.payout.ownerName)} as paid?`,
+          title: `Mark ${moneyString(confirm.payout.amount, 'exact')} to ${personName(confirm.payout.ownerName)} as paid?`,
           body: 'Only once the bank confirms the transfer left the account. The owner statement moves to Paid and the owner is told by email.',
           meta: `${destination(confirm.payout)} · ${confirm.payout.method}`,
           danger: true, confirmLabel: 'Mark paid', busyLabel: 'Saving...',
@@ -242,7 +242,7 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
           <div className="px-5 py-[15px] flex items-center gap-4 flex-wrap">
             <div className="flex flex-col gap-1 flex-1 min-w-[220px]">
               <div className="flex items-center gap-[9px]">
-                <span className="text-copy font-semibold">{titleCase(p.ownerName)}</span>
+                <span className="text-copy font-semibold">{personName(p.ownerName)}</span>
                 <StatusBadge tone={PAYOUT.failed.tone} label={PAYOUT.failed.label} />
               </div>
               <span className="text-meta text-muted-ink text-pretty">{p.failureReason}</span>
@@ -276,7 +276,7 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
         renderCard={r => (
           <span className="flex items-start gap-3 text-ink">
             <span className="flex flex-col gap-[3px] min-w-0 flex-1">
-              <span className="text-copy font-medium truncate">{titleCase(r.ownerName)}</span>
+              <span className="text-copy font-medium truncate">{personName(r.ownerName)}</span>
               <span className="text-meta text-muted-ink truncate">{destination(r)} · {r.method}</span>
               <span className="text-meta text-muted-ink">{r.period ? `${monthLabel(r.period)} statement` : ''}</span>
               {r.state === 'processing' && <Button size="sm" variant="secondary" style={{ alignSelf: 'flex-start', marginTop: 4 }} onClick={e => { e.stopPropagation(); setConfirm({ payout: r, kind: 'paid' }); }}>Mark paid</Button>}
@@ -298,7 +298,7 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
 
       <ConfirmDialog spec={spec} busy={busy} onClose={() => { if (!busy) { setConfirm(null); setBulkPaid(null); } }} />
       <HistoryDrawer onClose={() => setHistoryOf(null)}
-        target={historyOf && { entity: 'payouts', id: historyOf.id, title: `Payout to ${titleCase(historyOf.ownerName)}`, sub: `${moneyString(historyOf.amount, 'exact')}${historyOf.period ? ` · ${monthLabel(historyOf.period)} statement` : ''}` }} />
+        target={historyOf && { entity: 'payouts', id: historyOf.id, title: `Payout to ${personName(historyOf.ownerName)}`, sub: `${moneyString(historyOf.amount, 'exact')}${historyOf.period ? ` · ${monthLabel(historyOf.period)} statement` : ''}` }} />
       {runOpen && <RunDialog onClose={() => setRunOpen(false)} onDone={() => { setRunOpen(false); reload(); overall.reload(); runs.reload(); void refreshNavCounts(); }} />}
     </>
   );
@@ -359,7 +359,7 @@ function RunDialog({ onClose, onDone }: { onClose: () => void; onDone: () => voi
               <label key={p.id} className={cx('flex items-center gap-3 px-[22px] py-[10px] [border-bottom:1px_solid_var(--color-line-soft)]', can(p) ? 'cursor-pointer' : 'cursor-not-allowed opacity-70')}>
                 <input type="checkbox" disabled={!can(p) || busy} checked={can(p) && !off[p.id]} onChange={() => setOff(o => ({ ...o, [p.id]: !o[p.id] }))} className="w-4 h-4 accent-black" />
                 <span className="flex flex-col min-w-0 flex-1">
-                  <span className="text-copy font-medium truncate">{titleCase(p.ownerName)}</span>
+                  <span className="text-copy font-medium truncate">{personName(p.ownerName)}</span>
                   <span className="text-meta text-muted-ink truncate">{can(p) ? destination(p) : 'No bank account on file. Add it on the owner profile first.'}{p.period ? ` · ${monthLabel(p.period)}` : ''}</span>
                 </span>
                 <MoneyText sen={p.amount} mode="exact" className="text-copy" />

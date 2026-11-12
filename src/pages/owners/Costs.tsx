@@ -19,7 +19,7 @@ import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, notifyFailure, errorMessage } from '../../lib/api';
 import { isStaged, stagedToast, type Approval } from '../../lib/approvals';
 import { refreshNavCounts } from '../../lib/navBadges';
-import { rm, monthLabel, date as fmtDate, todayMyt, titleCase, plural, buildingName } from '../../lib/format';
+import { rm, monthLabel, date as fmtDate, todayMyt, plural, buildingName, personName } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { PAYER_LABEL, PAYERS } from '../../lib/revenueModel';
 import { OwnerPaidTick, UtilitiesModal, type UnitChoice } from './ExpenseEntry';
@@ -170,7 +170,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason={needsReceipt && !receipt && amount && validDay ? 'Attach the receipt: the owner pays this bill' : 'Pick the bill and enter the amount and bill date'} onClick={() => void save()}>Add bill</Button>
       </>}>
-          {units.length > 1 && <Select showLabel size="md" label="Unit" value={unitId} onChange={v => { setUnitId(v); setAccount(null); }} options={units.map(u => ({ value: u.id, label: titleCase(u.label) }))} />}
+          {units.length > 1 && <Select showLabel size="md" label="Unit" value={unitId} onChange={v => { setUnitId(v); setAccount(null); }} options={units.map(u => ({ value: u.id, label: personName(u.label) }))} />}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Select showLabel size="md" label="Bill" value={category} onChange={v => { setCategory(v); setAccount(null); }} options={kinds} />
             <MoneyInput label="Amount (RM)" placeholder="e.g. 120.50" minSen={1} valueSen={amount} onChangeSen={setAmount} error={fields.amount} />
@@ -603,7 +603,7 @@ export function OwnerCostsCard({ ownerId, ownerName, month, units, canEdit, onCh
           </StatRow>
           {!data ? <div className="skeleton h-40" /> : view === 'owner' ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-5">
-              <div className="flex flex-col gap-2 min-w-0"><Eyebrow>{titleCase(ownerName)} · all units</Eyebrow><KindBreakdown b={data.total} /></div>
+              <div className="flex flex-col gap-2 min-w-0"><Eyebrow>{personName(ownerName)} · all units</Eyebrow><KindBreakdown b={data.total} /></div>
               <div className="flex flex-col gap-2 min-w-0">
                 <Eyebrow>Bills and after-split charges</Eyebrow>
                 <PaidOnBehalfList items={items.filter(i => isBill(i.group))} adjustments={data.adjustments} ownerId={ownerId} showUnit={many}

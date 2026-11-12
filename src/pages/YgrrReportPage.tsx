@@ -8,7 +8,7 @@ import { EmptyState } from '../components/States';
 import { ListToolbar } from '../components/ListToolbar';
 import { StatusBadge } from '../components/StatusBadge';
 import { useApi } from '../lib/useApi';
-import { todayMyt, monthLabel, buildingName } from '../lib/format';
+import { todayMyt, monthLabel, buildingName, personName } from '../lib/format';
 import { downloadTable, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { bracketMoney } from '../lib/unitPnl';
@@ -64,7 +64,7 @@ function UnitsTable({ rows, month }: { rows: YgrrRow[]; month: string }): ReactE
               <tr key={row.unitId} className="[border-top:1px_solid_var(--color-line)]">
                 <td className="sticky left-0 bg-card px-3 py-1.5">
                   <span className="block whitespace-nowrap font-semibold leading-tight" title={unitName(row)}>{row.number}</span>
-                  <span className="block text-meta text-muted-ink truncate max-w-[200px] leading-tight" title={row.owner}>{buildingName(row.building)} · {row.owner}</span>
+                  <span className="block text-meta text-muted-ink truncate max-w-[200px] leading-tight" title={row.owner}>{buildingName(row.building)} · {personName(row.owner)}</span>
                 </td>
                 <td className={cx('px-3 py-1.5 whitespace-nowrap', GRID)}>
                   {yearRange(row)}

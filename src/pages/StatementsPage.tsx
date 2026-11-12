@@ -12,7 +12,7 @@ import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { fetchAllPages } from '../lib/export';
-import { rm, todayMyt, monthLabel, plural } from '../lib/format';
+import { rm, todayMyt, monthLabel, plural, personName } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { StatementState } from '../lib/types';
 import { useUrlState, SearchBox, shiftMonth } from './finance/listKit';
@@ -149,7 +149,7 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
       setEdits({}); reload();
       if (failed.length) {
         const failedIds = new Set(failed.map(f => f.id));
-        const names = targets.filter(t => failedIds.has(t.id)).map(t => t.ownerName);
+        const names = targets.filter(t => failedIds.has(t.id)).map(t => personName(t.ownerName));
         toast({ tone: 'warning', title: `${res.sent} sent, ${failed.length} not.`, body: `Not sent: ${names.join(', ')}.` });
       } else {
         toast({ tone: 'success', title: `${res.sent} ${res.sent === 1 ? 'statement' : 'statements'} sent.`, body: 'Owners were emailed and the statements are live on their portals.' });
@@ -172,7 +172,7 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
       setEdits(e => ({ ...e, [target.id]: { ...e[target.id], netPayout: res.netPayout } }));
       setAdjustTarget(null);
       reload();
-      toast({ tone: 'success', title: 'Adjustment recorded.', body: `${target.ownerName} — Net Payout to Owner is now ${rm(res.netPayout)}.` });
+      toast({ tone: 'success', title: 'Adjustment recorded.', body: `${personName(target.ownerName)} — Net Payout to Owner is now ${rm(res.netPayout)}.` });
     } catch (e) {
       const locked = e instanceof ApiFailure && e.status === 409;
       toast({ tone: locked ? 'warning' : 'critical', title: locked ? 'This statement is locked.' : 'Adjustment was not recorded.', body: errorMessage(e, 'Try again in a moment.') });
@@ -191,8 +191,8 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
   function openRow(r: Statement) { go(`/owners/statements/${encodeURIComponent(r.id)}`); }
 
   const columns = useMemo<Column<Statement>[]>(() => [
-    { key: 'owner', label: 'Owner', value: r => r.ownerName, hideable: false, width: 240, sub: r => r.unitsLabel,
-      render: r => <span className="font-medium block truncate" title={r.ownerName}>{r.ownerName}</span> },
+    { key: 'owner', label: 'Owner', value: r => personName(r.ownerName), hideable: false, width: 240, sub: r => r.unitsLabel,
+      render: r => <span className="font-medium block truncate" title={r.ownerName}>{personName(r.ownerName)}</span> },
     { key: 'units', label: 'Units', value: r => r.unitsLabel, hidden: true, width: 220 },
     { key: 'period', label: 'Period', value: r => r.period ?? null, text: r => (r.period ? periodLabel(r.period) : ''), hidden: true, width: 110 },
     { key: 'gross', label: 'Gross Income', type: 'money', value: r => r.grossBookingValue, width: 140,
@@ -209,13 +209,13 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
       render: s => (
         <span className="flex justify-end gap-[6px]" onClick={e => e.stopPropagation()}>
           {(s.state === 'provisional' || s.state === 'finalised') && (
-            <button onClick={() => setAdjustTarget(s)} aria-label={`Adjust statement for ${s.ownerName}`} title="Add an adjustment"
+            <button onClick={() => setAdjustTarget(s)} aria-label={`Adjust statement for ${personName(s.ownerName)}`} title="Add an adjustment"
               className="grid place-items-center w-[30px] h-[30px] rounded-control bg-transparent border border-solid border-line text-muted-ink cursor-pointer">
               <Icon name="Pencil" size="sm" />
             </button>
           )}
           <button onClick={() => { go(`/finance/statements/${encodeURIComponent(s.id)}/report`); }}
-            aria-label={`Owner Income Report for ${s.ownerName}`} title="Owner Income Report (PDF)"
+            aria-label={`Owner Income Report for ${personName(s.ownerName)}`} title="Owner Income Report (PDF)"
             className="grid place-items-center w-[30px] h-[30px] rounded-control bg-transparent border border-solid border-line text-muted-ink cursor-pointer">
             <Icon name="FileText" size="sm" />
           </button>
@@ -298,7 +298,7 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
           renderCard={s => (
             <span className="flex items-start gap-3 text-ink">
               <span className="flex flex-col gap-[3px] min-w-0 flex-1">
-                <span className="text-[13px] font-medium truncate">{s.ownerName}</span>
+                <span className="text-[13px] font-medium truncate">{personName(s.ownerName)}</span>
                 <span className="text-[12px] text-muted-ink truncate">{s.unitsLabel}</span>
                 <span className="text-[12px] text-muted-ink tabular-nums">Income {rm(s.grossBookingValue)} · operator share {rm(s.managementFee)} · deductions {rm(s.expensesTotal)}</span>
               </span>

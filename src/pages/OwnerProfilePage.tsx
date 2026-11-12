@@ -15,7 +15,7 @@ import { useApi } from '../lib/useApi';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api, ApiFailure, errorMessage } from '../lib/api';
-import { rm, monthLabel, todayMyt, titleCase, plural, buildingName } from '../lib/format';
+import { rm, monthLabel, todayMyt, plural, buildingName, personName } from '../lib/format';
 import { MODEL, isTenancy, type RevenueModel } from '../lib/revenueModel';
 import { PayoutDetails } from './owners/PayoutDetails';
 import { OwnerDetails } from './owners/OwnerDetails';
@@ -130,7 +130,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       await api.put(`/units/${u.unitId}/contract`, u.model === 'grr'
         ? { revenueModel: 'grr', monthlyRent: u.grrAmount ?? 0, startsOn: todayMyt() }
         : { revenueModel: 'management', ownerPct: 100 - (u.feePct ?? 25), managementPct: u.feePct ?? 25, agentPct: 0, startsOn: todayMyt() });
-      toast({ tone: 'success', title: 'Unit linked.', body: `${buildingName(u.unitLabel)} assigned to ${titleCase(o.displayName)}.` });
+      toast({ tone: 'success', title: 'Unit linked.', body: `${buildingName(u.unitLabel)} assigned to ${personName(o.displayName)}.` });
       setModal(null); reload();
     } catch (e) {
       toast({ tone: 'critical', title: 'Unit was not linked.', body: errorMessage(e, 'Try again in a moment.') });
@@ -160,14 +160,14 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
   function deleteOwner() {
     if (!o) return;
     setDialog({
-      title: `Delete ${titleCase(o.displayName)}?`,
+      title: `Delete ${personName(o.displayName)}?`,
       body: 'This permanently removes the owner record and their portal login, if any. Only possible when they have no units, contract or statement history.',
       meta: o.email, confirmLabel: 'Delete owner', busyLabel: 'Deleting…', danger: true,
       onConfirm: async () => {
         setBusy(true);
         try {
           await api.del(`/owners/${o.id}`);
-          toast({ tone: 'success', title: 'Owner deleted.', body: `${titleCase(o.displayName)} was removed.` });
+          toast({ tone: 'success', title: 'Owner deleted.', body: `${personName(o.displayName)} was removed.` });
           navigate('/owners');
         } catch (e) {
           toast({ tone: 'critical', title: 'Owner was not deleted.', body: errorMessage(e, 'Try again in a moment.') });
@@ -181,7 +181,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title={titleCase(o.displayName)}
+        title={personName(o.displayName)}
         back={{ label: 'All owners', onClick: () => navigate('/owners') }}
         badge={<span className="inline-flex items-center gap-2 flex-wrap"><StatusBadge tone={badge.tone} label={badge.label} />{badge.hint && <span className="text-meta text-muted-ink font-normal">{badge.hint}</span>}</span>}
         sub={
@@ -265,7 +265,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
               <Section title="Owner-level default fee" action={<Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setModal('defaultFee')}>{o.defaultManagementFeePct != null ? 'Change' : 'Set'}</Button>}>
                 <div className="text-copy text-muted-ink leading-[1.6]">
                   {o.defaultManagementFeePct != null
-                    ? <>Recorded for {titleCase(o.displayName)}: <strong className="font-semibold text-ink">{o.defaultManagementFeePct}%</strong>, for reference. Each unit's own contract decides its owner statement.</>
+                    ? <>Recorded for {personName(o.displayName)}: <strong className="font-semibold text-ink">{o.defaultManagementFeePct}%</strong>, for reference. Each unit's own contract decides its owner statement.</>
                     : <>No owner default set. Each unit's contract decides its owner statement.</>}
                 </div>
               </Section>
@@ -331,7 +331,7 @@ function OwnerCombined({ o, month }: { o: Owner; month: string }) {
     <Card>
       <div className="py-4 px-5 flex flex-col">
         <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
-          <span className="text-heading font-semibold">{titleCase(o.displayName)} · all {plural(units.length, 'unit')}</span>
+          <span className="text-heading font-semibold">{personName(o.displayName)} · all {plural(units.length, 'unit')}</span>
           <span className="text-meta text-muted-ink">{monthLabel(month, { long: true })}</span>
         </div>
         {share.length > 0 && <>
@@ -417,7 +417,7 @@ function DefaultFeeModal({ current, owner, onClose, onSubmit }: { current: numbe
   const [busy, setBusy] = useState(false);
   const valid = parsed == null || (parsed >= 0 && parsed <= 100);
   return (
-    <Modal title="Owner default operator share" sub={<>Recorded for {titleCase(owner)} for reference. Leave blank to clear it.</>} onClose={onClose} width={440}
+    <Modal title="Owner default operator share" sub={<>Recorded for {personName(owner)} for reference. Leave blank to clear it.</>} onClose={onClose} width={440}
       onSubmit={() => { if (valid && !busy) { setBusy(true); onSubmit(parsed); } }}
       footer={<>
         <Button size="sm" variant="secondary" type="button" onClick={onClose}>Cancel</Button>

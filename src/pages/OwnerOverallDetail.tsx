@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { cx } from '../lib/design-tokens';
-import { amount, percent, plural, buildingName } from '../lib/format';
+import { amount, percent, plural, buildingName, personName } from '../lib/format';
 import { StatusBadge } from '../components/StatusBadge';
 import { Segmented } from '../components/Metric';
 import { CloseButton } from '../components/CloseButton';
@@ -99,7 +99,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
           <div className="min-w-0">
             <div className="text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink">{GROUP_NAME[r.group]}{r.contractCode && ` · ${r.contractCode}`}</div>
             <h2 id="owner-overall-unit" className="text-title font-semibold truncate">{r.code}</h2>
-            <div className="text-meta text-muted-ink truncate">{buildingName(r.building)} · {r.ownerName}</div>
+            <div className="text-meta text-muted-ink truncate">{buildingName(r.building)} · {personName(r.ownerName)}</div>
             <div className="mt-1.5"><StatusBadge size="sm" tone={st.tone} label={st.label} /></div>
           </div>
           <CloseButton onClick={onClose} />

@@ -10,7 +10,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure, ApiFailure, errorMessage } from '../lib/api';
 import { isStaged, stagedToast } from '../lib/approvals';
 import { refreshNavCounts } from '../lib/navBadges';
-import { monthLabel, dateShort, todayMyt, plural, count as fmtCount, titleCase, buildingName } from '../lib/format';
+import { monthLabel, dateShort, todayMyt, plural, count as fmtCount, buildingName, personName } from '../lib/format';
 import { DataTable, type Column } from '../components/DataTable';
 import { fetchAllPages } from '../lib/export';
 import { MoneyText, moneyString } from '../components/MoneyText';
@@ -183,7 +183,7 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
   const unitOptions = useMemo<SelectOption[]>(() => (filters?.units ?? [])
     .filter(u => (!building || u.buildingId === building) && (!owner || u.ownerId === owner))
     .map(u => ({ value: u.id, label: u.unitNumber, group: filters?.buildings.find(b => b.id === u.buildingId)?.name ?? '' })), [filters, building, owner]);
-  const ownerOptions = useMemo<SelectOption[]>(() => (filters?.owners ?? []).map(o => ({ value: o.id, label: titleCase(o.name) })), [filters]);
+  const ownerOptions = useMemo<SelectOption[]>(() => (filters?.owners ?? []).map(o => ({ value: o.id, label: personName(o.name) })), [filters]);
   const buildingOptions = useMemo<SelectOption[]>(() => [
     { value: '', label: 'All buildings' },
     ...[...(filters?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: buildingName(b.name) })),

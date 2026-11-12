@@ -23,7 +23,7 @@ import { useApi } from '../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { deliveryToast, stayPhase } from '../lib/bookingStatus';
-import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, todayMyt, greetName, titleCase, buildingName } from '../lib/format';
+import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, todayMyt, greetName, buildingName, personName } from '../lib/format';
 import { phone, phoneCountries } from '../lib/phone';
 import { Select, Menu } from '../components/Select';
 import { ListToolbar, PhoneCard, type ToolbarFilter } from '../components/ListToolbar';
@@ -704,7 +704,7 @@ function NotesAndTags({ g, onSaved }: { g: Guest; onSaved: () => void }) {
   const toggle = async (t: string) => {
     const had = g.manualTags.includes(t);
     const label = t === 'vip' ? 'VIP' : 'Blacklist';
-    const name = titleCase(g.fullName);
+    const name = personName(g.fullName);
     const ok = await ask(had
       ? { title: `Remove the ${label} tag from ${name}?`, confirmLabel: `Remove ${label}`, danger: false }
       : { title: `Tag ${name} as ${label}?`, body: 'The tag shows on this guest everywhere until someone removes it.', confirmLabel: `Tag ${label}`, danger: t === 'blacklist' });

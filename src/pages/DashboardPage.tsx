@@ -15,7 +15,7 @@ import { useApi } from '../lib/useApi';
 import { useCrew } from '../lib/useCrew';
 import { useSession } from '../lib/session';
 import { api, notifyFailure } from '../lib/api';
-import { rm, rmCompact, time, percent, monthLabel, MONTHS, plural, count, humanize, weekdayDate, buildingName } from '../lib/format';
+import { rm, rmCompact, time, percent, monthLabel, MONTHS, plural, count, humanize, weekdayDate, buildingName, personName } from '../lib/format';
 import ChannelMark from '../components/ChannelMark';
 import type { BookingChannel } from '../lib/types';
 import { Select } from '../components/Select';
@@ -444,7 +444,7 @@ export default function DashboardPage() {
     const ex = notify;
     const owner = ex.owner!;
     resolve(ex.id);
-    toast({ tone: 'success', title: 'Owner notified.', body: `${owner.name} was sent the blocked-unit notice.` });
+    toast({ tone: 'success', title: 'Owner notified.', body: `${personName(owner.name)} was sent the blocked-unit notice.` });
     setNotify(null);
     api.post(`/owners/${owner.id}/notify`, {
       unitLabel: ex.unitLabel, reason: ex.reason, datesBlocked: ex.datesBlocked,
@@ -703,7 +703,7 @@ export default function DashboardPage() {
         busy={false}
         onClose={() => setNotify(null)}
         spec={!notify || !notify.owner ? null : {
-          title: `Send a blocked-unit notice to ${notify.owner.name}?`,
+          title: `Send a blocked-unit notice to ${personName(notify.owner.name)}?`,
           body: 'The owner receives the dates blocked, the reason, the earnings at risk and the expected return date. Nothing is charged and no work is approved by this notice.',
           meta: `${notify.unitLabel ?? ''}${notify.datesBlocked ? ` · ${notify.datesBlocked}` : ''}${notify.revenueAtRisk != null ? ` · ${rm(notify.revenueAtRisk)} at risk` : ''}${notify.expectedReturn ? ` · back ${notify.expectedReturn}` : ''}`,
           confirmLabel: 'Send notice',

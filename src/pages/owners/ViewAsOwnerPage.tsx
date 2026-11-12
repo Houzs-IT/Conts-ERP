@@ -5,7 +5,7 @@ import Icon from '../../components/Icon';
 import { EmptyState } from '../../components/States';
 import { useApi } from '../../lib/useApi';
 import { useSession } from '../../lib/session';
-import { titleCase } from '../../lib/format';
+import { personName } from '../../lib/format';
 import type { Payload } from './shared';
 import { mayViewAsOwner } from './portalAccess';
 
@@ -31,7 +31,7 @@ export default function ViewAsOwnerPage() {
       ? <EmptyState icon="UserX" title="Owner not found" body={error ?? 'This owner is no longer on file.'} action={{ label: 'Back to owners', onClick: () => navigate('/owners') }} />
       : <div className="p-6 text-copy text-muted-ink">Opening the owner portal…</div>;
   }
-  const name = titleCase(owner.displayName);
+  const name = personName(owner.displayName);
 
   return (
     <div className="flex flex-col gap-5">
