@@ -26,7 +26,7 @@ export const companiesOf = (side: UserSide): readonly Company[] => (side === 'bo
  *  in step. Management always sees both sides; Finance and System are on neither list, so they follow the rules. */
 const CLOSED_BY_SIDE: Record<UserSide, string[]> = {
   conts: ['Service cases', 'Projects', 'Supply chain', 'Dream Crafter HR'],
-  dream_crafter: ['Home', 'Reports', 'Reservations', 'Operations', 'HR', 'Units', 'Growth'],
+  dream_crafter: ['Home', 'Reservations', 'Operations', 'HR', 'Units', 'Growth'],
   both: [],
 };
 export const closedBySide = (kind: DepartmentKind, side: UserSide, group: string): boolean => kind !== 'management' && CLOSED_BY_SIDE[side].includes(group);
