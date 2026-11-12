@@ -34,6 +34,12 @@ engine parses them in `engine/backend/src/conts/access.ts` and turns them into p
 | **Production** gets its own box (production orders, SKU composition, draft delivery) | Page key `scm.procurement.production` already exists and guards `/production-orders/*` (`scm/index.ts:1074`). Add optional `scProduction`, override that page after the Procurement prefix (`access.ts:70`), count it for `scm.access` and `isFullEverywhere` |
 | **Mail** stays one box | View or Edit opens Mail Center, Full opens Mailboxes; the engine already separates them (`mail_center.read` / `.manage`). Check first whether Mailboxes opens at all for Conts roles: it sits behind the engine's `team` page and needs `users.read`, which Conts roles never get |
 
+**As built (migration 0308):** Production is `scProduction`; the engine takes Procurement's level when a sign-on
+leaves it out. The Mail check found Mailboxes never opened for Conts roles: it is the `mail2` tab of the engine's Team
+page (`page: team`) and lists people from `/api/users` (`users.read`). Full on Mail now also opens the Team page (only
+the tabs its keys allow: Mailboxes and a read-only Members list) and `users.read`. Consignment (switched off since
+11 Oct) is off the Permissions chart (`hidden` in `AREAS`); its area stays for the engine.
+
 Known limit: a person with Production but no Procurement cannot load the supplier list or "from sales order" (other
 areas' endpoints). Same as part 1's rule: they need Procurement View too, or those reads get shared.
 

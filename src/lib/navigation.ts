@@ -249,7 +249,7 @@ export const NAV: NavGroup[] = [
       { key: 'purchaseInvoices', label: 'Purchase invoices', icon: 'receipt-text', path: '/procurement/purchase-invoices', area: 'scInvoices' },
       { key: 'purchaseReturns', label: 'Purchase returns', icon: 'package-x', path: '/procurement/purchase-returns' },
     ] },
-    { key: 'scProduction', label: 'Production', icon: 'factory', area: 'scProcurement', children: [
+    { key: 'scProduction', label: 'Production', icon: 'factory', area: 'scProduction', children: [
       { key: 'productionOrders', label: 'Production orders', icon: 'clipboard-list', path: '/production/production-orders' },
       { key: 'skuComposition', label: 'SKU Composition', icon: 'clipboard-list', path: '/production/sku-composition' },
       { key: 'draftDelivery', label: 'Draft delivery', icon: 'truck', path: '/production/draft-delivery', phoneOnly: true },
