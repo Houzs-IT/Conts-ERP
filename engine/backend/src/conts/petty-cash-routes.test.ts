@@ -9,7 +9,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
 import {
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
-  checkReceiptsHandler, claimsDeps, createFloatHandler, listFloatsHandler, optionsHandler, receiptVoucherHandler, rejectReceiptHandler,
+  checkReceiptsHandler, claimsDeps, createFloatHandler, financeReceiptsHandler, listFloatsHandler, optionsHandler, receiptVoucherHandler, rejectReceiptHandler,
   repaidReceiptHandler, topUpHandler, updateFloatHandler, writeOffReceiptHandler, EDIT_KEY, FULL_KEY,
 } from './petty-cash-routes';
 
@@ -60,6 +60,7 @@ const app = (sb: ReturnType<typeof world>, perms: string[]) => {
   a.post('/receipts/:id/repaid', repaidReceiptHandler);
   a.post('/receipts/:id/write-off', writeOffReceiptHandler);
   a.post('/receipts/:id/voucher', receiptVoucherHandler);
+  a.get('/receipts', financeReceiptsHandler);
   return a;
 };
 const post = (a: Hono<{ Variables: Record<string, unknown> }>, path: string, body: unknown = {}) => a.request(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
@@ -252,6 +253,51 @@ describe('money out', () => {
     expect((await post(app(sb, [FULL_KEY, EDIT_KEY]), '/receipts/R2/voucher', { bankAccountCode: '310-0010' })).status).toBe(201);
     expect((made[0]!.lines as Array<Record<string, unknown>>)[0]).not.toHaveProperty('subDepartmentId');
     expect(sb.tables.payment_voucher_lines[0]).toMatchObject({ sub_department_id: 's-retired' });
+  });
+});
+
+/* Direct Claim to Me (chew, 12 Nov 2026): the person confirms the bank on the claim, and finance pays to it. Finance
+   sees when it is not the account on file. The saved records are only read ("不要碰我这里保存的银行记录"). */
+describe('the bank given on a claim', () => {
+  const SAVED = { company_id: CO, user_id: 'u-ops', bank_name: 'Maybank', account_no: '1234567890', account_name: 'Wei Wen' };
+  const onClaim = (sb: ReturnType<typeof world>, over: Record<string, unknown>) =>
+    Object.assign(sb.tables.staff_receipts.find((r) => r.id === 'R2')!, { payee_bank_name: 'CIMB Bank', payee_account_no: '8000111222', payee_account_name: 'WEI WEN', ...over });
+
+  test("V1: the pay-back voucher names the claim's bank, not the saved one, and the saved record is left alone", async () => {
+    const sb = world();
+    fakeVoucher(sb);
+    sb.tables.staff_bank_details.push({ ...SAVED });
+    onClaim(sb, { status: 'CHECKED' });
+    expect((await post(app(sb, [FULL_KEY]), '/receipts/R2/voucher', { bankAccountCode: '310-0010' })).status).toBe(201);
+    expect(made[0]).toMatchObject({ payeeName: 'Wei Wen', notes: 'Pays back receipt CLM-2611-002. Bank: CIMB Bank 8000111222 (WEI WEN)' });
+    expect(sb.tables.staff_bank_details).toEqual([SAVED]);
+  });
+
+  test('V1b: a claim with its own bank is paid back when nothing is saved', async () => {
+    const sb = world();
+    fakeVoucher(sb);
+    onClaim(sb, { status: 'CHECKED' });
+    expect((await post(app(sb, [FULL_KEY]), '/receipts/R2/voucher', { bankAccountCode: '310-0010' })).status).toBe(201);
+    expect(String(made[0].notes)).toContain('CIMB Bank 8000111222');
+  });
+
+  test("V2: the list shows each receipt's bank, and says when the claim's account is not the saved one", async () => {
+    const sb = world();
+    const bankOf = async () => ((await (await app(sb, []).request('/receipts')).json()) as any).receipts.find((r: any) => r.id === 'R2').bank;
+    expect(await bankOf()).toBeNull();
+    sb.tables.staff_bank_details.push({ ...SAVED });
+    expect(await bankOf()).toEqual({ bankName: 'Maybank', accountNo: '1234567890', accountName: 'Wei Wen', fromClaim: false, differsFromSaved: false });
+    onClaim(sb, { payee_bank_name: 'Maybank', payee_account_no: '1234567890' });
+    expect(await bankOf()).toEqual({ bankName: 'Maybank', accountNo: '1234567890', accountName: 'WEI WEN', fromClaim: true, differsFromSaved: false });
+    onClaim(sb, {});
+    expect(await bankOf()).toEqual({ bankName: 'CIMB Bank', accountNo: '8000111222', accountName: 'WEI WEN', fromClaim: true, differsFromSaved: true });
+    // HR's record, written with dashes, is the same account.
+    sb.tables.staff_bank_details.length = 0;
+    sb.tables.conts_employee_bank.push({ user_id: 'u-ops', bank_name: 'CIMB', bank_account: '8000-111-222' });
+    expect(await bankOf()).toMatchObject({ fromClaim: true, differsFromSaved: false });
+    // Nothing saved: the claim's own, flagged so finance looks twice.
+    sb.tables.conts_employee_bank.length = 0;
+    expect(await bankOf()).toMatchObject({ accountNo: '8000111222', fromClaim: true, differsFromSaved: true });
   });
 });
 

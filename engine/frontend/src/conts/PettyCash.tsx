@@ -171,6 +171,16 @@ function FinancePaysBack({ run }: { run: (path: string, body: unknown, method?: 
     { key: "date", label: "Date", render: (r) => r.spendDate, getValue: (r) => r.spendDate },
     { key: "no", label: "Receipt", render: (r) => r.receiptNo, getValue: (r) => r.receiptNo },
     { key: "by", label: "Handed in by", render: (r) => r.submitterName, getValue: (r) => r.submitterName },
+    {
+      key: "bank", label: "Paid to", getValue: (r) => r.bank?.accountNo ?? "",
+      render: (r) => (r.bank ? (
+        <span>
+          {r.bank.bankName} {r.bank.accountNo}
+          {r.bank.differsFromSaved && <span className="ml-1 rounded bg-err-bg px-1 text-xs text-err">Not the saved account</span>}
+          {r.bank.accountName && <span className="block text-xs text-ink-muted">{r.bank.accountName}</span>}
+        </span>
+      ) : <span className="text-xs text-err">No bank details</span>),
+    },
     { key: "what", label: "For", render: (r) => [r.vendorName, r.lines.map((l) => l.description).filter(Boolean).join("; ")].filter(Boolean).join(" — ") || "—", getValue: (r) => r.vendorName ?? "" },
     { key: "dept", label: "Department", render: (r) => [...new Set(r.lines.map(deptLabel))].join(", "), getValue: (r) => (r.lines[0] ? deptLabel(r.lines[0]) : "") },
     { key: "amount", label: "Amount", align: "right", render: (r) => <Money sen={r.amountSen} strong />, getValue: (r) => r.amountSen },
