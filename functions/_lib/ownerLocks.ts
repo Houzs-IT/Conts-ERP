@@ -178,48 +178,56 @@ export const incomeLockedMonths = (env: Env, unitIds: string[]) => lockedMonthsF
  *  is the one the statement uses. */
 export async function lockStage(env: Env, who: { userId: string; fullName: string }, month: string, stage: Stage, which: string[] | 'all', unconfirmed: Map<string, number> = new Map()):
   Promise<{ locked: string[]; already: string[]; notLockable: string[]; final: string[]; notReady: { unitId: string; reason: string }[]; unknown: string[] }> {
-  const q = queryOf(env);
   const unitIds = which === 'all' ? (await monthSteps(env, month)).steps[stage] : which;
   if (!unitIds.length) return { locked: [], already: [], notLockable: [], final: [], notReady: [], unknown: [] };
   const owners = (await all<{ owner_id: string }>(env, 'SELECT DISTINCT owner_id FROM units WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', ids(unitIds))).map(r => r.owner_id);
-  const [settings, inputs, existing, finals, statements] = await Promise.all([
-    statementSettings(q), loadInputs(q, `${month}-01`, monthEndExclusive(month), { ownerIds: owners }), locksFor(env, month, unitIds), finalOwners(env, month),
-    stage === 'o2' ? all<{ id: string; owner_id: string }>(env, 'SELECT id, owner_id FROM owner_statements WHERE period_start = ?', `${month}-01`) : Promise.resolve([]),
-  ]);
-  const known = new Set(inputs.units.map(u => u.id));
-  const unknown = unitIds.filter(id => !known.has(id));
-  const ticked = new Set(unitIds);
-  const already = new Set(existing.filter(l => l.stage === stage).map(l => l.unit_id));
-  // The month as its statement works it out now, with every other lock applied (a cost category or misc), or as a
-  // statement being built now would take its owner adjustments (O2).
-  const statementOf = new Map(statements.map(s => [s.owner_id, s.id]));
-  const rows = stage === 'income' ? [] : computeMonth(month, inputs, settings, stage === 'o2' ? 'open' : 'dated', ownerId => statementOf.get(ownerId) ?? null);
-  const notLockable: string[] = [], final: string[] = [], notReady: { unitId: string; reason: string }[] = [];
-  const toLock: { id: string; unit_id: string; frozen: unknown }[] = [];
-  for (const u of inputs.units) {
-    if (!ticked.has(u.id) || already.has(u.id)) continue;
-    const terms = termsFor(unitForMonth(u, month), settings.defaultFeePct);
-    if (!lockable(stage, terms.basis)) { notLockable.push(u.id); continue; }
-    if (finals.has(u.owner_id)) { final.push(u.id); continue; }
-    const waiting = stage === 'income' ? notReadyText(unconfirmed.get(u.id) ?? 0) : null;
-    if (waiting) { notReady.push({ unitId: u.id, reason: waiting }); continue; }
-    const m = rows.find(r => r.unitId === u.id);
-    const frozen = stage === 'income' ? freezeIncome(u.id, month, inputs.stays, terms)
-      : stage === 'o2' ? freezeO2(m!, inputs.adjustments)
-      : stage === 'misc' ? freezeMisc(m!) : freezeCosts(m!, stage);
-    toLock.push({ id: `lock-${crypto.randomUUID()}`, unit_id: u.id, frozen });
+  // A month's locks and its statements being generated take turns (final review minor 17; chew, 13 Nov 2026): a lock
+  // waits for a generate under way, so it is stamped after that draft and Make final asks for the draft again; a generate
+  // waits for a lock and then reads what it keeps. What a lock keeps is read in here, under the advisory lock
+  // functions/api/statements/generate.ts takes first.
+  const out = await transaction(env, async tx => {
+    await one(tx, 'SELECT 1 AS x FROM (SELECT pg_advisory_xact_lock(hashtext(?::text))) l', `statements:${month}`);
+    const q = queryOf(tx);
+    const [settings, inputs, existing, finals, statements] = await Promise.all([
+      statementSettings(q), loadInputs(q, `${month}-01`, monthEndExclusive(month), { ownerIds: owners }), locksFor(tx, month, unitIds), finalOwners(tx, month),
+      stage === 'o2' ? all<{ id: string; owner_id: string }>(tx, 'SELECT id, owner_id FROM owner_statements WHERE period_start = ?', `${month}-01`) : Promise.resolve([]),
+    ]);
+    const known = new Set(inputs.units.map(u => u.id));
+    const unknown = unitIds.filter(id => !known.has(id));
+    const ticked = new Set(unitIds);
+    const already = new Set(existing.filter(l => l.stage === stage).map(l => l.unit_id));
+    // The month as its statement works it out now, with every other lock applied (a cost category or misc), or as a
+    // statement being built now would take its owner adjustments (O2).
+    const statementOf = new Map(statements.map(s => [s.owner_id, s.id]));
+    const rows = stage === 'income' ? [] : computeMonth(month, inputs, settings, stage === 'o2' ? 'open' : 'dated', ownerId => statementOf.get(ownerId) ?? null);
+    const notLockable: string[] = [], final: string[] = [], notReady: { unitId: string; reason: string }[] = [];
+    const toLock: { id: string; unit_id: string; frozen: unknown }[] = [];
+    for (const u of inputs.units) {
+      if (!ticked.has(u.id) || already.has(u.id)) continue;
+      const terms = termsFor(unitForMonth(u, month), settings.defaultFeePct);
+      if (!lockable(stage, terms.basis)) { notLockable.push(u.id); continue; }
+      if (finals.has(u.owner_id)) { final.push(u.id); continue; }
+      const waiting = stage === 'income' ? notReadyText(unconfirmed.get(u.id) ?? 0) : null;
+      if (waiting) { notReady.push({ unitId: u.id, reason: waiting }); continue; }
+      const m = rows.find(r => r.unitId === u.id);
+      const frozen = stage === 'income' ? freezeIncome(u.id, month, inputs.stays, terms)
+        : stage === 'o2' ? freezeO2(m!, inputs.adjustments)
+        : stage === 'misc' ? freezeMisc(m!) : freezeCosts(m!, stage);
+      toLock.push({ id: `lock-${crypto.randomUUID()}`, unit_id: u.id, frozen });
+    }
+    // ON CONFLICT: a unit locked by someone else a moment ago counts as already locked.
+    const inserted = toLock.length ? await all<{ unit_id: string }>(tx, `
+      INSERT INTO owner_report_locks (id, month, unit_id, stage, frozen, locked_by, locked_by_name, locked_at)
+      SELECT x.id, ?, x.unit_id, ?, x.frozen, ?, ?, ? FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, frozen jsonb)
+      ON CONFLICT (month, unit_id, stage) DO NOTHING RETURNING unit_id`,
+      month, stage, who.userId, who.fullName, nowIso(), JSON.stringify(toLock)) : [];
+    const locked = inserted.map(r => r.unit_id);
+    return { locked, already: [...already, ...toLock.map(r => r.unit_id).filter(id => !locked.includes(id))], notLockable, final, notReady, unknown };
+  });
+  if (out.locked.length) {
+    await auditMany(env, out.locked.map(id => ({ actorId: who.userId, actorLabel: who.fullName, action: 'owner_report.lock', entityTable: 'units', entityId: id, after: { month, stage } })));
   }
-  // ON CONFLICT: a unit locked by someone else a moment ago counts as already locked.
-  const inserted = toLock.length ? await all<{ unit_id: string }>(env, `
-    INSERT INTO owner_report_locks (id, month, unit_id, stage, frozen, locked_by, locked_by_name, locked_at)
-    SELECT x.id, ?, x.unit_id, ?, x.frozen, ?, ?, ? FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, frozen jsonb)
-    ON CONFLICT (month, unit_id, stage) DO NOTHING RETURNING unit_id`,
-    month, stage, who.userId, who.fullName, nowIso(), JSON.stringify(toLock)) : [];
-  const locked = inserted.map(r => r.unit_id);
-  if (locked.length) {
-    await auditMany(env, locked.map(id => ({ actorId: who.userId, actorLabel: who.fullName, action: 'owner_report.lock', entityTable: 'units', entityId: id, after: { month, stage } })));
-  }
-  return { locked, already: [...already, ...toLock.map(r => r.unit_id).filter(id => !locked.includes(id))], notLockable, final, notReady, unknown };
+  return out;
 }
 
 /** The adjustments these locks have posted, by lock id: whether each can still be changed (open or held, on no
