@@ -163,7 +163,7 @@ function AppLayout() {
   const { user } = useSession();
   const closed = screenClosed(location.pathname, user?.access);
   // A screen's first reads start now, while its code downloads (lib/routePrefetch.ts); never for a screen closed to them.
-  useEffect(() => { if (!closed) prefetchScreen(location.pathname, location.search); }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!closed) prefetchScreen(location.pathname, location.search, user); }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
   // The early engine sign-in waits until the menu says a supply chain screen is near (Sidebar.tsx), not every page load.
   useEffect(() => { armEngineSignIn(engine.data?.enabled && user ? user.id : null); }, [engine.data?.enabled, user?.id]);
   if (switchedOff(location.pathname)) return <Navigate to={user ? homeFor(user) : '/'} replace />;

@@ -1,4 +1,4 @@
-import { type Env, fail, json, poolFull, withRequestDb, runDemo } from '../_lib/db';
+import { type Env, fail, json, poolFull, withRequestDb, runDemo, afterResponse } from '../_lib/db';
 import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, sessionState, isFieldRole } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
 import { accessFor, refusalFor } from '../_lib/access';
@@ -209,7 +209,8 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   closePastStaysSometimes(env, waitUntil);
   // Any write may have queued Channex updates; send them once the burst of edits has gone quiet.
   if (request.method !== 'GET' && response.status < 400) {
-    waitUntil(new Promise(r => setTimeout(r, FLUSH_DELAY_MS)).then(() => flushWhenQuiet(env)).catch(() => {}));
+    // One client for the whole flush (db.ts afterResponse), not a connect for each statement once this request's has closed.
+    waitUntil(new Promise(r => setTimeout(r, FLUSH_DELAY_MS)).then(() => afterResponse(waitUntil, () => flushWhenQuiet(env))));
   }
   // Slide the idle deadline forward on every authenticated call, capped at the
   // absolute limit from first login (see signSession). Skipped when the endpoint

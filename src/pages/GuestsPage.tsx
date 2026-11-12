@@ -20,6 +20,7 @@ import ChannelMark from '../components/ChannelMark';
 import { CentreModal, ModalActions } from '../components/booking/BookingDrawer';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
+import { guestsListPath } from '../lib/screenQueries';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { deliveryToast, stayPhase } from '../lib/bookingStatus';
@@ -162,13 +163,9 @@ export default function GuestsPage() {
   // The table writes `sort` as "<key>:asc|desc"; the Sort menu writes each key with its natural direction.
   const sortKey = (params.get('sort') ?? 'recent').split(':')[0];
 
-  const listQuery = useMemo(() => {
-    const p = new URLSearchParams();
-    for (const k of ['q', 'filter', 'country', 'page', 'size']) { const v = params.get(k); if (v) p.set(k, v); }
-    p.set('sort', params.get('sort') ?? 'recent');
-    return p.toString();
-  }, [params]);
-  const list = useApi<ListPayload>(`/guests${listQuery ? `?${listQuery}` : ''}`, LIST_FALLBACK);
+  // Built in lib/screenQueries.ts, which lib/routePrefetch.ts also uses to start this read while the page downloads.
+  const listPath = useMemo(() => guestsListPath(params), [params]);
+  const list = useApi<ListPayload>(listPath, LIST_FALLBACK);
   const rows = list.data?.data ?? [];
   const counts = list.data?.counts;
   const total = list.data?.total ?? 0;

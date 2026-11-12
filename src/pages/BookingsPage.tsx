@@ -22,6 +22,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import { fetchAllPages } from '../lib/export';
 import { useApi } from '../lib/useApi';
+import { BOOKING_API_PARAMS, BOOKING_FILTER_PARAMS, BOOKING_SEARCH_PARAMS, bookingsPath } from '../lib/screenQueries';
 import { useMedia } from '../lib/useMedia';
 import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
@@ -87,11 +88,8 @@ const FALLBACK: Payload = {
   totals: { bookings: 1, nights: 3, gross: 85200, fees: 12780, outstanding: 72420 }, buildings: [], paymentsReady: true,
 };
 
-/** Searches the server reads. The column searches are kept for links from global search (?ref=, ?guest=). */
-const SEARCH_PARAMS = ['q', 'ref', 'guest', 'unit', 'channel', 'stay', 'gross', 'status'];
-const FILTER_PARAMS = ['ch', 'building', 'country', 'from', 'to', 'cancelledFrom', 'cancelledTo', 'grossMin', 'grossMax', 'nightsMin', 'nightsMax'];
-/** URL parameters the server reads. The drawer's `open` stays out so opening a booking does not refetch the list. */
-const API_PARAMS = ['view', 'todo', 'sort', 'page', 'size', ...SEARCH_PARAMS, ...FILTER_PARAMS];
+// The searches and filters the server reads, and the list read they make (lib/screenQueries.ts).
+const SEARCH_PARAMS = BOOKING_SEARCH_PARAMS, FILTER_PARAMS = BOOKING_FILTER_PARAMS, API_PARAMS = BOOKING_API_PARAMS;
 const CHANNEL_CHOICES: BookingChannel[] = ['airbnb', 'booking_com', 'agoda', 'direct'];
 
 const nightsBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 864e5);
@@ -129,12 +127,9 @@ export default function BookingsPage() {
   const rawTodo = params.get('todo');
   const todo: TodoKey | null = TODOS.some(t => t.key === rawTodo) ? (rawTodo as TodoKey) : null;
 
-  const apiQuery = useMemo(() => {
-    const p = new URLSearchParams();
-    for (const k of API_PARAMS) { const v = params.get(k); if (v) p.set(k, v); }
-    return p.toString();
-  }, [params]);
-  const { data, loading, error, reload } = useApi<Payload>(`/reservations${apiQuery ? `?${apiQuery}` : ''}`, FALLBACK);
+  // Built in lib/screenQueries.ts, which lib/routePrefetch.ts also uses to start this read while the page downloads.
+  const listPath = useMemo(() => bookingsPath(params), [params]);
+  const { data, loading, error, reload } = useApi<Payload>(listPath, FALLBACK);
 
   // The search box answers every keystroke locally; the URL (and so the server) follows once typing pauses.
   const [draft, setDraft] = useState(params.get('q') ?? '');

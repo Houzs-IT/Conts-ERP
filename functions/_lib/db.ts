@@ -133,6 +133,15 @@ export async function withRequestDb<T>(fn: () => Promise<T>, waitUntil: (p: Prom
   }
 }
 
+/** Work that runs after the response (waitUntil): one client of its own for all of it, closed when it ends. Without
+ *  this, work still going when its request's client has closed opened and closed a client for every statement it made
+ *  (onOwnConnection above): about ten connects in a row for one turnover sweep or Channex flush. Never throws. */
+export function afterResponse(waitUntil: (p: Promise<unknown>) => void, work: () => Promise<unknown>): Promise<void> {
+  const done = withRequestDb(work, waitUntil).then(() => {}, e => console.error('background work failed', e));
+  waitUntil(done);
+  return done;
+}
+
 /** The role `pos_app` has search_path = pos, so table names stay unqualified. In Demo mode each statement runs in a
  *  transaction of its own that puts demo_pos ahead of pos (SET LOCAL, which a pooled connection allows), so the same
  *  SQL reads real plus demo rows and writes only into the demo store (migration 0203). */

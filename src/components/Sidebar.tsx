@@ -17,6 +17,14 @@ import { count as countLabel } from '../lib/format';
 import { opensInPlace } from '../lib/linkClick';
 import { ENGINE_PATH } from '../lib/scmEngine';
 import { engineSoon } from './SupplyChainEngine';
+import { preloadRoute } from '../lib/routeChunks';
+
+/** The pointer is on a menu link: start its screen's code downloading (lib/routeChunks.ts), and sign in to the
+ *  supply chain engine early when the link opens one of its screens. */
+function linkSoon(path: string) {
+  preloadRoute(path);
+  if (ENGINE_PATH[path]) engineSoon();
+}
 
 interface Props { path: string; navigate: (p: string) => void; open: boolean; onToggle: () => void }
 
@@ -359,7 +367,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                   {leafPath ? (
                     // A link, so right-click, Ctrl or Cmd + click and middle click open it in a new tab (chew, 11 Nov 2026).
                     <a href={leafPath} title={tip} aria-label={named} aria-current={selfActive ? 'page' : undefined} style={itemStyle}
-                      onPointerEnter={ENGINE_PATH[leafPath] ? engineSoon : undefined}
+                      onPointerEnter={() => linkSoon(leafPath)}
                       onClick={e => { if (!opensInPlace(e)) return; e.preventDefault(); navigate(leafPath); }}>
                       {itemInner}
                     </a>
@@ -382,7 +390,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                         const on = c.path === path;
                         return (
                           <a key={c.key} href={c.path} onClick={e => { if (!opensInPlace(e)) return; e.preventDefault(); navigate(c.path); }} aria-current={on ? 'page' : undefined}
-                            onPointerEnter={ENGINE_PATH[c.path] ? engineSoon : undefined}
+                            onPointerEnter={() => linkSoon(c.path)}
                             aria-label={countOf(c.badge) > 0 ? `${c.label}, ${countWords(c.badge, countOf(c.badge))}` : c.label}
                             title={countOf(c.badge) > 0 ? `${c.label}: ${countWords(c.badge, countOf(c.badge))}` : undefined}
                             style={{
