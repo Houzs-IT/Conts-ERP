@@ -13,7 +13,7 @@ import { BusyLine, CardRowsSkeleton, RowsSkeleton } from './Loading';
 import { PageControls } from './PageControls';
 import { useToast } from './Toast';
 import { PhoneText } from './PhoneText';
-import { Floating, ToolButton, PanelItem, PanelHeading, StatusCell, ChannelCell, PersonCell, channelLabel } from './DataTableParts';
+import { Floating, ToolButton, TableFilterChipsContext, type TableFilterChips, PanelItem, PanelHeading, StatusCell, ChannelCell, PersonCell, channelLabel } from './DataTableParts';
 import { useTableViews, type TableLayout, type SavedView } from './DataTableViews';
 import { resolveRelative, isRelative } from '../lib/relativeDates';
 import { rm, date as fmtDate, dateTime as fmtDateTime, count as fmtCount, plural } from '../lib/format';
@@ -367,12 +367,12 @@ export function DataTable<R>(props: DataTableProps<R>) {
   }, [filterOf, filterKeys, setParams, PAGE]);
   const allFilterKeys = useMemo(() => columns.flatMap(c => filterKeys(c)), [columns, filterKeys]);
   const activeFilters = columns.filter(c => filterValue(c));
-  const clearColumnFilters = () => setParams(prev => {
+  const clearColumnFilters = useCallback(() => setParams(prev => {
     const next = new URLSearchParams(prev);
     for (const k of allFilterKeys) next.delete(k);
     next.delete(PAGE);
     return next;
-  }, { replace: true });
+  }, { replace: true }), [allFilterKeys, setParams, PAGE]);
 
   /* ---- sort ---- */
   const [sortCol, sortDir] = (params.get(SORT) ?? (server ? '' : defaultSort ?? '')).split(':') as [string | undefined, string | undefined];
@@ -531,6 +531,21 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const colsBtn = useRef<HTMLButtonElement>(null), viewsBtn = useRef<HTMLButtonElement>(null), exportBtn = useRef<HTMLButtonElement>(null);
   const filtersBtn = useRef<HTMLButtonElement>(null), bulkExportBtn = useRef<HTMLButtonElement>(null), moreBtn = useRef<HTMLButtonElement>(null);
   const headAnchor = useRef<HTMLElement | null>(null);
+  const [chipRowClaims, setChipRowClaims] = useState(0);
+  const claimChipRow = useCallback(() => {
+    setChipRowClaims(claims => claims + 1);
+    return () => setChipRowClaims(claims => claims - 1);
+  }, []);
+  const chippedFilters = activeFilters.filter(c => panel !== `col:${c.key}`);
+  const tableFilterChips: TableFilterChips = {
+    chips: inlineFiltersHost ? [] : chippedFilters.map(c => ({
+      key: `_column:${c.key}`,
+      label: `${c.label}: ${describeFilter(c, filterOf(c)!, filterValue(c), rows ?? [])}`,
+      onRemove: () => setFilter(c, ''),
+    })),
+    clearAll: clearColumnFilters,
+    claim: claimChipRow,
+  };
   // With no height given, the table's scroll box runs to the bottom of the screen (see useFillHeight).
   const scrollBox = useFillHeight({ enabled: maxHeight === undefined, fallback: maxHeight ?? 'calc(100dvh - 300px)' });
   const [saving, setSaving] = useState<null | { name: string; scope: 'mine' | 'company'; isDefault: boolean }>(null);
@@ -578,7 +593,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
                 <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Sort</span>
                 <select value={sortCol ? `${sortCol}:${sortDir === 'desc' ? 'desc' : 'asc'}` : ''} aria-label="Sort"
                   onChange={e => setParams(prev => { const next = new URLSearchParams(prev); if (e.target.value) next.set(SORT, e.target.value); else next.delete(SORT); next.delete(PAGE); return next; }, { replace: true })}
-                  className="h-9 w-full min-w-0 pl-3 pr-7 appearance-none rounded-control border border-solid border-line bg-card text-ink font-sans text-copy cursor-pointer">
+                  className="h-9 max-md:h-11 w-full min-w-0 pl-3 pr-7 appearance-none rounded-control border border-solid border-line bg-card text-ink font-sans text-copy cursor-pointer">
                   <option value="">Sort</option>
                   {sortChoices.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
@@ -626,9 +641,9 @@ export function DataTable<R>(props: DataTableProps<R>) {
         inlineFiltersHost,
       )}
 
-      {activeFilters.length > 0 && !inlineFiltersHost && (
+      {chippedFilters.length > 0 && !inlineFiltersHost && chipRowClaims === 0 && (
         <div className="flex items-center gap-2 flex-wrap py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)] bg-page">
-          {activeFilters.map(c => (
+          {chippedFilters.map(c => (
             <span key={c.key} className="inline-flex items-center gap-1 h-7 pl-[10px] pr-1 rounded-full bg-card border border-solid border-line text-meta max-w-full">
               <span className="text-muted-ink whitespace-nowrap">{c.label}</span>
               <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis">{describeFilter(c, filterOf(c)!, filterValue(c), rows ?? [])}</span>
@@ -688,7 +703,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
                       <th key={c.key} scope="col" aria-sort={on ? (sortDir === 'desc' ? 'descending' : 'ascending') : undefined}
                         className={cx('group/th sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] py-2 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink',
                           i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]', i === visible.length - 1 && 'pr-[22px]', right ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left')}>
-                        <span className={cx('flex items-center gap-[2px] max-w-full', right && 'justify-end')}>
+                        <span className={cx('flex items-center gap-[2px] max-w-full', right && 'relative w-fit ml-auto flex-row-reverse')}>
                           {k ? (
                             <button type="button" onClick={() => toggleSort(c)} title={c.title ?? `Sort by ${c.label}`}
                               className={cx('inline-flex items-center gap-1 min-w-0 font-sans text-caption font-bold uppercase tracking-[0.09em] bg-transparent border-none cursor-pointer p-0', on ? 'text-ink' : 'text-muted-ink')}>
@@ -700,10 +715,11 @@ export function DataTable<R>(props: DataTableProps<R>) {
                             <button type="button" aria-label={`Filter ${c.label}`} title={`Filter ${c.label}`}
                               onClick={e => { headAnchor.current = e.currentTarget; setPanel(p => (p === `col:${c.key}` ? null : `col:${c.key}`)); }}
                               className={cx('w-6 h-6 grid place-items-center shrink-0 rounded-[6px] border-none cursor-pointer', fOn ? 'bg-black text-white' : 'bg-transparent text-[var(--color-line-strong)] hover:text-ink hover:bg-card',
-                                // With a mouse the idle filter button floats over the cell edge and shows on hover, so the label gets
-                                // its width back and "Occupancy" no longer breaks mid-word. Touch screens keep it in place and visible.
-                                !fOn && cx('[@media(hover:hover)]:absolute [@media(hover:hover)]:top-1/2 [@media(hover:hover)]:-translate-y-1/2 [@media(hover:hover)]:bg-muted [@media(hover:hover)]:opacity-0 group-hover/th:opacity-100 focus-visible:opacity-100',
-                                  right ? 'left-1' : 'right-1'))}>
+                                // With a mouse the filter button floats over the cell edge, so the label gets its width back and
+                                // "Occupancy" no longer breaks mid-word; idle it shows on hover, set it stays visible. Touch screens keep it in place.
+                                '[@media(hover:hover)]:absolute [@media(hover:hover)]:top-1/2 [@media(hover:hover)]:-translate-y-1/2',
+                                !fOn && '[@media(hover:hover)]:bg-muted [@media(hover:hover)]:opacity-0 group-hover/th:opacity-100 focus-visible:opacity-100',
+                                right ? '[@media(hover:hover)]:right-full [@media(hover:hover)]:mr-0.5' : 'right-1')}>
                               <Icon name="ListFilter" size="sm" />
                             </button>
                           )}
@@ -877,8 +893,9 @@ export function DataTable<R>(props: DataTableProps<R>) {
     </>
   );
 
-  if (bare) return <div className="@container/dt relative">{body}</div>;
-  return <div className="@container/dt relative bg-card border border-solid border-line rounded-card [overflow:clip] shrink-0">{body}</div>;
+  const withChips = <TableFilterChipsContext.Provider value={tableFilterChips}>{body}</TableFilterChipsContext.Provider>;
+  if (bare) return <div className="@container/dt relative">{withChips}</div>;
+  return <div className="@container/dt relative bg-card border border-solid border-line rounded-card [overflow:clip] shrink-0">{withChips}</div>;
 }
 
 /** A phone card from the columns: title and amount on the first line, the rest as one muted line, status last. */
@@ -1436,7 +1453,7 @@ function PhoneMoreMenu({ items, btnRef }: { items: { icon: string; label: string
   return (
     <span className="md:hidden @max-3xl/tb:inline">
       <button ref={btnRef} type="button" onClick={() => setOpen(true)} aria-label="More table tools" aria-haspopup="menu"
-        className="h-9 w-9 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer">
+        className="h-9 w-9 max-md:h-11 max-md:w-11 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer">
         <Icon name="Ellipsis" size="sm" />
       </button>
       {open && (

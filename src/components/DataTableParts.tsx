@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from './Icon';
 import { StatusBadge } from './StatusBadge';
@@ -21,9 +21,12 @@ export function Floating({ anchor, fallback, open, onClose, width = 260, maxHeig
   children: ReactNode; label: string;
 }) {
   const panel = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; w: number; maxH: number } | null>(null);
+  const [pos, setPos] = useState<FloatingPosition | null>(null);
+  const placeRef = useRef<() => void>(() => {});
+  useLayoutEffect(() => { if (open) placeRef.current(); });
   useLayoutEffect(() => {
     if (!open) { setPos(null); return; }
+    const setPosIfMoved = (next: FloatingPosition) => setPos(previous => (previous && isSamePosition(previous, next) ? previous : next));
     const place = () => {
       const a = anchor.current?.offsetParent ? anchor.current : fallback?.current ?? anchor.current;
       if (!a) return;
@@ -34,9 +37,10 @@ export function Floating({ anchor, fallback, open, onClose, width = 260, maxHeig
       const below = window.innerHeight - r.bottom - 12;
       // Opens upwards only when there is clearly more room above (a trigger near the bottom of a phone screen).
       // Pinned by its bottom edge so a short list still sits right above the trigger.
-      if (below < 220 && r.top > below + 80) setPos({ bottom: window.innerHeight - r.top + 4, left, w, maxH: Math.min(r.top - 12, maxHeight ?? 480) });
-      else setPos({ top: r.bottom + 4, left, w, maxH: Math.min(maxHeight ?? Infinity, Math.max(160, below)) });
+      if (below < 220 && r.top > below + 80) setPosIfMoved({ bottom: window.innerHeight - r.top + 4, left, w, maxH: Math.min(r.top - 12, maxHeight ?? 480) });
+      else setPosIfMoved({ top: r.bottom + 4, left, w, maxH: Math.min(maxHeight ?? Infinity, Math.max(160, below)) });
     };
+    placeRef.current = place;
     place();
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place, true);
@@ -72,6 +76,23 @@ export function Floating({ anchor, fallback, open, onClose, width = 260, maxHeig
   );
 }
 
+interface FloatingPosition { top?: number; bottom?: number; left: number; w: number; maxH: number }
+
+const isSamePosition = (first: FloatingPosition, second: FloatingPosition): boolean =>
+  first.top === second.top && first.bottom === second.bottom && first.left === second.left && first.w === second.w && first.maxH === second.maxH;
+
+export interface TableFilterChip { key: string; label: string; onRemove: () => void }
+
+export interface TableFilterChips {
+  chips: TableFilterChip[];
+  clearAll: () => void;
+  claim: () => () => void;
+}
+
+export const TableFilterChipsContext = createContext<TableFilterChips | null>(null);
+
+export const useTableFilterChips = (): TableFilterChips | null => useContext(TableFilterChipsContext);
+
 /** Toolbar button: icon plus label on a wide screen, icon only on a phone. */
 export function ToolButton({ icon, label, onClick, active, btnRef, count, hideLabelOnPhone = true, title }: {
   icon: string; label: string; onClick: () => void; active?: boolean; btnRef?: RefObject<HTMLButtonElement>; count?: number;
@@ -79,7 +100,7 @@ export function ToolButton({ icon, label, onClick, active, btnRef, count, hideLa
 }) {
   return (
     <button ref={btnRef} type="button" onClick={onClick} aria-label={label} title={title ?? label} aria-expanded={active}
-      className={cx('h-9 inline-flex items-center gap-[6px] px-[11px] max-md:px-[9px] rounded-control border border-solid bg-card cursor-pointer font-sans text-copy whitespace-nowrap shrink-0',
+      className={cx('h-9 max-md:h-11 max-md:min-w-11 justify-center inline-flex items-center gap-[6px] px-[11px] max-md:px-[9px] rounded-control border border-solid bg-card cursor-pointer font-sans text-copy whitespace-nowrap shrink-0',
         active ? 'border-ink text-ink' : 'border-line text-ink hover:bg-muted')}>
       <Icon name={icon} size="sm" />
       <span className={cx(hideLabelOnPhone && 'max-md:hidden')}>{label}</span>

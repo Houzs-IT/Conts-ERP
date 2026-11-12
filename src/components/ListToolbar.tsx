@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import Icon from './Icon';
-import { Floating } from './DataTableParts';
+import { Floating, useTableFilterChips } from './DataTableParts';
 import { cx } from '../lib/design-tokens';
 import { useMedia } from '../lib/useMedia';
 import { count as fmtCount, date as fmtDate, dateRange, dateShort, todayMyt } from '../lib/format';
@@ -76,6 +76,9 @@ export function ListToolbar({ search, leading, filters = [], filtersLabel = 'Fil
   const [panel, setPanel] = useState<null | 'filters' | 'date'>(null);
   const filtersBtn = useRef<HTMLButtonElement>(null);
   const dateBtn = useRef<HTMLButtonElement>(null);
+  const tableFilterChips = useTableFilterChips();
+  const claimTableChipRow = tableFilterChips?.claim;
+  useLayoutEffect(() => claimTableChipRow?.(), [claimTableChipRow]);
 
   const allOf = (f: ToolbarFilter) => f.all ?? '';
   const valuesOf = (f: ToolbarFilter) => (f.multi ? f.value.split(',').filter(Boolean) : f.value !== allOf(f) ? [f.value] : []);
@@ -95,10 +98,12 @@ export function ListToolbar({ search, leading, filters = [], filtersLabel = 'Fil
   }
   chips.push(...extraChips);
   if (date && dateOn && datePreset) chips.push({ key: '_date', label: `${date.label}: ${datePreset.label}`, onRemove: () => date.onChange(date.def!) });
+  chips.push(...(tableFilterChips?.chips ?? []));
   const clearAll = () => {
     if (search) search.onChange('');
     for (const f of filters) if (f.value !== allOf(f)) f.onChange(allOf(f));
     for (const c of extraChips) c.onRemove();
+    tableFilterChips?.clearAll();
     if (date && dateOn) date.onChange(date.def!);
     onClearAll?.();
   };

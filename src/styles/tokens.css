@@ -62,6 +62,10 @@ body { margin: 0; }
   }
 }
 
+@media (max-width: 639.98px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea { font-size: 16px; }
+}
+
 /* Design tokens -> Tailwind theme. Utilities such as text-ink, bg-page, bg-gold,
    border-line, text-success now emit the exact brand values (keeps design 1:1
    while adopting the ERP's Tailwind convention). */
