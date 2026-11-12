@@ -33,12 +33,41 @@ let r = await call('GET', `/api/owner-close/summary?month=${OCT}`);
 check('the month reads (migrations 0302, 0323)', r.status === 200 && !!r.json?.counts?.income, r.text.slice(0, 300));
 if (r.status !== 200) done();
 
-// Two units of different owners whose October and November statements are not final (a draft is fine: generating
-// rebuilds it; the airbnb-recon check before this one in CI finalises one owner's October): a management contract with
-// no minimum, so the owner's share is a plain percentage and the Unit report (which lists units with a contract) shows it.
+// The check's own two owners, each with a unit on a management contract with no minimum (the owner's share is a plain
+// percentage, and the Unit report lists units with a contract). A local rerun starts from a clean slate.
+const OWNERS = ['oc-owner-a', 'oc-owner-b'], OPROP = 'oc-prop';
+const dropOwn = async () => {
+  const ofOwners = `SELECT id FROM units WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`;
+  await db(`DELETE FROM company_late_changes WHERE unit_id IN (${ofOwners})`);
+  await db(`UPDATE owner_adjustments SET statement_id = NULL WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  await db(`DELETE FROM statement_lines WHERE statement_id IN (SELECT id FROM owner_statements WHERE owner_id IN ('oc-owner-a', 'oc-owner-b'))`);
+  await db(`DELETE FROM statement_units WHERE statement_id IN (SELECT id FROM owner_statements WHERE owner_id IN ('oc-owner-a', 'oc-owner-b'))`);
+  await db(`DELETE FROM payouts WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  await db(`DELETE FROM owner_statements WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  await db(`DELETE FROM owner_adjustments WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  for (const table of ['owner_report_locks', 'expenses', 'reservations']) await db(`DELETE FROM ${table} WHERE unit_id IN (${ofOwners})`);
+  await db(`UPDATE units SET contract_id = NULL WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  await db(`DELETE FROM owner_contracts WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  await db(`DELETE FROM units WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  await db(`DELETE FROM properties WHERE id = $1`, OPROP);
+  await db(`DELETE FROM owners WHERE id IN ('oc-owner-a', 'oc-owner-b')`);
+};
+await dropOwn();
+{
+  const fee0 = Number(Object.fromEntries((await db(`SELECT key, value FROM settings WHERE key IN ('locale.managementFeePct', 'finance.default_fee_pct')`)).map(s => [s.key, s.value]))['locale.managementFeePct'] ?? 25);
+  await db(`INSERT INTO properties (id, name, address_line, city, state, created_at, updated_at) VALUES ($1, 'Close Court', 'Check', 'Check', 'Check', $2, $2)`, OPROP, now);
+  for (const [k, owner] of OWNERS.entries()) {
+    const unit = `oc-u${'ab'[k]}`;
+    await db(`INSERT INTO owners (id, display_name, email, created_at, updated_at) VALUES ($1, $2, $3, $4, $4)`, owner, `Close Owner ${'AB'[k]}`, `${owner}@example.invalid`, now);
+    await db(`INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, misc_charges, created_at, updated_at) VALUES ($1, $2, $3, $4, 0, 0, $5, $5)`, unit, OPROP, owner, `O-0${k + 1}`, now);
+    await db(`INSERT INTO owner_contracts (id, owner_id, unit_id, management_fee_pct, starts_on, ends_on, created_at, model, revenue_model, grr_amount, minimum_guarantee, misc_charges)
+      VALUES ($1, $2, $3, $4, '2020-01-01', NULL, $5, 'management', 'management', 0, 0, 0)`, `oc-c${'ab'[k]}`, owner, unit, fee0, now);
+    await db('UPDATE units SET contract_id = $1 WHERE id = $2', `oc-c${'ab'[k]}`, unit);
+  }
+}
 const open = await db(`SELECT u.id, u.owner_id, u.contract_id, u.split_kind, u.split_value, c.management_fee_pct AS fee FROM units u
   LEFT JOIN owner_contracts c ON c.id = u.contract_id
-  WHERE u.parent_unit_id IS NULL AND c.id IS NOT NULL AND coalesce(c.revenue_model, c.model) = 'management' AND coalesce(c.minimum_guarantee, 0) = 0
+  WHERE u.owner_id IN ('oc-owner-a', 'oc-owner-b') AND c.id IS NOT NULL AND coalesce(c.revenue_model, c.model) = 'management' AND coalesce(c.minimum_guarantee, 0) = 0
     AND NOT EXISTS (SELECT 1 FROM owner_statements s WHERE s.owner_id = u.owner_id AND substr(s.period_start, 1, 7) IN ('2026-10', '2026-11')
                       AND s.state IN ('finalised', 'sent', 'paid'))
   ORDER BY u.id`);
@@ -57,7 +86,7 @@ const windowsOf = async unitId => {
 let u = null, win = null;
 for (const c of open) { const w = await windowsOf(c.id); if (w) { u = c; win = w; break; } }
 const lt = open.find(x => x.owner_id !== u?.owner_id);
-check('two units of different owners, October and November open, one with free nights', !!u && !!lt, `${open.length} units`);
+check("the check's two units of different owners, October and November open, one with free nights", !!u && !!lt, `${open.length} units`);
 if (!u || !lt) done();
 
 // The owner's share as termsFor reads it for these units.
@@ -252,4 +281,6 @@ check('a finance admin without Unlock a step is refused', r.status === 403, r.te
 const fa = await summary(OCT, 'finance_admin');
 check('a finance admin reads the summary but may lock and unlock nothing until management opens it',
   fa?.may?.lock?.income === false && fa?.may?.lock?.misc === false && fa?.may?.unlock === false, JSON.stringify(fa?.may));
+// Remove everything the check made.
+await dropOwn();
 done();
