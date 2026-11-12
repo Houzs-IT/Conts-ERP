@@ -15,7 +15,7 @@ const db = async (text, ...values) => {
 
 const year = String(new Date(Date.now() + 8 * 3600e3).getUTCFullYear());
 const month = `${year}-01`, next = `${year}-02`;
-const [unit] = await db(`SELECT u.id FROM units u WHERE u.parent_unit_id IS NULL AND u.owner_id IS NOT NULL ORDER BY u.id LIMIT 1`);
+const [unit] = await db(`SELECT u.id FROM units u JOIN owner_contracts c ON c.id = u.contract_id AND c.revenue_model IS DISTINCT FROM 'grr' WHERE u.parent_unit_id IS NULL AND u.owner_id IS NOT NULL ORDER BY u.id LIMIT 1`);
 check('a unit to use', !!unit);
 if (!unit) { done(); process.exit(1); }
 const clear = async () => {

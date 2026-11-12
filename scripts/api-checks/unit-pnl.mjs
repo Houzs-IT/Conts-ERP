@@ -16,7 +16,7 @@ const db = async (text, ...values) => {
 };
 
 // A whole unit with an owner, and two months nobody has used (2029).
-const [unit] = await db(`SELECT u.id FROM units u WHERE u.parent_unit_id IS NULL AND u.owner_id IS NOT NULL ORDER BY u.id LIMIT 1`);
+const [unit] = await db(`SELECT u.id FROM units u JOIN owner_contracts c ON c.id = u.contract_id AND c.revenue_model IS DISTINCT FROM 'grr' WHERE u.parent_unit_id IS NULL AND u.owner_id IS NOT NULL ORDER BY u.id LIMIT 1`);
 check('a unit to use', !!unit);
 if (!unit) { done(); process.exit(1); }
 await db(`DELETE FROM reservations WHERE unit_id = $1 AND check_in >= '2029-02-01' AND check_in < '2029-06-01'`, unit.id);
