@@ -6,7 +6,51 @@ import {
   lockMonthProblem, openMonthAfter, planLate, planUnlock, carriedText, monthAfter, monthLabel, lateText, incomeLockable,
   lockable, splitLate, lockedText, rolledText, editedText, refusedText, movedO2Text, deductionChecks, o2Checks,
   companyFigure, companyCarriedText, incomeNoticeText, lateLabel, quietly,
+  finalWaiting, waitingText, unlockFinalPlan, finalUnlockText,
 } from '../../functions/_lib/stageLocks.ts';
+
+// Part 3 (GP and final): Make final needs every step that lists one of the owner's units locked (spec goal 7), and
+// Unlock final follows how far the payout has gone (spec calls 5 and 6, chew 11 Nov 2026 "可以").
+test('nothing is waiting once every step that lists a unit is locked', () => {
+  assert.deepEqual(finalWaiting([
+    { unitId: 'a', label: 'S-22-04', steps: ['income', 'deductions', 'o2'], locked: ['o2', 'income', 'deductions'] },
+    { unitId: 'b', label: 'D-48-09', steps: ['o2'], locked: ['o2'] },
+  ]), []);
+});
+
+test('a unit waits on the steps not yet locked, in step order', () => {
+  assert.deepEqual(finalWaiting([
+    { unitId: 'a', label: 'B-16-05 (A)', steps: ['income', 'deductions', 'o2'], locked: ['income', 'deductions', 'o2'] },
+    { unitId: 'b', label: 'B-16-05 (B)', steps: ['o2', 'income', 'deductions'], locked: ['deductions'] },
+  ]), [{ unitId: 'b', label: 'B-16-05 (B)', stages: ['income', 'o2'] }]);
+});
+
+test('the waiting text names the steps for a one-unit owner and the units otherwise', () => {
+  assert.equal(waitingText([{ label: 'A-20-05', stages: ['deductions', 'o2'] }], 1), 'Waiting: deductions, O2');
+  assert.equal(waitingText([{ label: 'B-16-05 (B)', stages: ['o2'] }], 2), 'Waiting: B-16-05 (B) O2');
+  assert.equal(waitingText([{ label: 'B-16-05 (B)', stages: ['income', 'o2'] }], 2), 'Waiting: B-16-05 (B) income and O2');
+  assert.equal(waitingText([{ label: 'X', stages: ['income'] }, { label: 'Y', stages: ['o2'] }, { label: 'Z', stages: ['o2'] }], 5),
+    'Waiting: X income, Y O2 and 1 more unit');
+  assert.equal(waitingText([{ label: 'X', stages: ['income'] }, { label: 'Y', stages: ['o2'] }, { label: 'Z', stages: ['o2'] }, { label: 'W', stages: ['o2'] }], 5),
+    'Waiting: X income, Y O2 and 2 more units');
+});
+
+test('unlocking a final statement follows its payout', () => {
+  assert.deepEqual(unlockFinalPlan('finalised', null), { kind: 'draft', cancelPayout: null });
+  assert.deepEqual(unlockFinalPlan('sent', null), { kind: 'draft', cancelPayout: null });
+  assert.deepEqual(unlockFinalPlan('sent', { id: 'p1', state: 'pending' }), { kind: 'draft', cancelPayout: 'p1' });
+  assert.deepEqual(unlockFinalPlan('sent', { id: 'p1', state: 'failed' }), { kind: 'draft', cancelPayout: 'p1' });
+  assert.deepEqual(unlockFinalPlan('paid', { id: 'p1', state: 'paid' }), { kind: 'paid' });
+  assert.deepEqual(unlockFinalPlan('sent', { id: 'p1', state: 'paid' }), { kind: 'paid' });
+  const transferring = unlockFinalPlan('sent', { id: 'p1', state: 'processing' });
+  assert.equal(transferring.kind, 'refused');
+  assert.match(transferring.problem, /being transferred/);
+  assert.equal(unlockFinalPlan('provisional', null).kind, 'refused');
+});
+
+test('a paid statement unlocked again names its change in the owner adjustment', () => {
+  assert.equal(finalUnlockText('Skyline KL C27-01', 'October 2026'), 'Change to Skyline KL C27-01 for October 2026 after it was paid (statement unlocked)');
+});
 
 test('locks start from October 2026, and only for a month that has ended', () => {
   const today = '2026-11-11';
