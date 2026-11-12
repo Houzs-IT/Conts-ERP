@@ -18,10 +18,10 @@ const db = async (text, ...values) => {
   try { return await c.unsafe(text, values); } finally { await c.end({ timeout: 5 }); }
 };
 const now = new Date().toISOString();
-const OWNER = 'pxe-owner', ST = 'pxe-s', PAY = 'pxe-pay';
+const OWNER = 'pxe-owner', ST = 'pxe-s', PAY = 'pxe-pay', ST2 = 'pxe-s2', PAY2 = 'pxe-pay2';
 const dropAll = async () => {
   await db(`DELETE FROM payouts WHERE owner_id = $1`, OWNER);
-  await db(`DELETE FROM statement_lines WHERE statement_id = $1`, ST);
+  await db(`DELETE FROM statement_lines WHERE statement_id IN ($1, $2)`, ST, ST2);
   await db(`DELETE FROM owner_statements WHERE owner_id = $1`, OWNER);
   await db(`UPDATE units SET bank_account_id = NULL WHERE owner_id = $1`, OWNER);
   await db(`DELETE FROM owner_bank_accounts WHERE owner_id = $1`, OWNER);
@@ -47,10 +47,15 @@ await line('pxe-l5', 'pxe-u3', 'gross', 30000); await line('pxe-l6', 'pxe-u3', '
 await db(`INSERT INTO payouts (id, statement_id, owner_id, amount, currency, state, method, bank_last4, created_at)
   VALUES ($1, $2, $3, 126000, 'MYR', 'pending', 'bank_transfer', '2333', $4)`, PAY, ST, OWNER, now);
 
-const rows = async group => {
-  const r = await call('GET', `/api/payouts/export?ids=${PAY}${group ? `&group=${group}` : ''}`);
-  return { status: r.status, text: r.text, list: (r.json?.data ?? []).map(x => ({ units: x.units, amount: x.amount, account: x.accountNumber, byHand: x.checkByHand })).sort((a, b) => a.units.localeCompare(b.units)) };
+// This owner's rows only (a month's file has every owner's), sorted by units then amount; payouts is the file's count.
+const get = async query => {
+  const r = await call('GET', `/api/payouts/export?${query}`);
+  return { status: r.status, text: r.text, payouts: r.json?.payouts,
+    list: (r.json?.data ?? []).filter(x => /^Export Court/.test(x.units))
+      .map(x => ({ units: x.units, amount: x.amount, account: x.accountNumber, byHand: x.checkByHand, note: x.note ?? '' }))
+      .sort((a, b) => a.units.localeCompare(b.units) || a.amount - b.amount) };
 };
+const rows = group => get(`ids=${PAY}${group ? `&group=${group}` : ''}`);
 const amounts = list => list.map(x => x.amount).join(',');
 
 let r = await rows(null);
@@ -61,6 +66,9 @@ r = await rows('owner');
 check('by owner: one transfer for every building', r.status === 200 && r.list.length === 1 && r.list[0].amount === 126000 && /E-01/.test(r.list[0].units) && /E-03/.test(r.list[0].units), JSON.stringify(r.list));
 r = await rows('unit');
 check('by unit: one transfer per unit', r.status === 200 && r.list.length === 3 && amounts(r.list) === '70000,35000,21000' && r.list.every(x => !x.byHand), JSON.stringify(r.list));
+check('… and the file counts the payout once, not once per transfer', r.payouts === 1, String(r.payouts));
+r = await get('period=2026-10&group=unit');
+check("a month's file splits by unit the same way", r.status === 200 && amounts(r.list) === '70000,35000,21000', JSON.stringify(r.list));
 r = await rows('bogus');
 check('an unknown grouping is refused', r.status === 422, r.text);
 
@@ -81,9 +89,36 @@ await db(`UPDATE owner_statements SET net_payout = 86000 WHERE id = $1`, ST);
 r = await rows('unit');
 check('by unit: a unit at zero or below keeps the payout whole, flagged', r.status === 200 && r.list.length === 1 && r.list[0].amount === 86000 && r.list[0].byHand === true, JSON.stringify(r.list));
 r = await rows('building');
-check('by building: the building at zero or below keeps it whole too (as before)', r.status === 200 && r.list.length === 1 && r.list[0].amount === 86000, JSON.stringify(r.list));
+check('by building: the building at zero or below keeps it whole too (as before), not flagged', r.status === 200 && r.list.length === 1 && r.list[0].amount === 86000 && !r.list[0].byHand, JSON.stringify(r.list));
 r = await rows('owner');
 check('by owner: one account adding up above zero is one transfer', r.status === 200 && r.list.length === 1 && r.list[0].amount === 86000 && !r.list[0].byHand, JSON.stringify(r.list));
+
+// Lines that do not add up to the payout: it cannot be split. By unit it is one flagged transfer whose note does not
+// claim a reason it cannot know.
+await db(`UPDATE payouts SET amount = 90000 WHERE id = $1`, PAY);
+r = await rows('unit');
+check('by unit: lines that do not add up keep it whole, flagged, without claiming a unit is below zero',
+  r.status === 200 && r.list.length === 1 && r.list[0].amount === 90000 && r.list[0].byHand === true && !/zero or below/.test(r.list[0].note), JSON.stringify(r.list));
+
+// One owner, two payouts in one file: October splits by unit; September cannot (its lines do not add up), so it is a
+// whole row of its own, flagged because that row lists several units. Nothing merges, the total is both payouts and
+// the file counts two payouts.
+await db(`DELETE FROM statement_lines WHERE id = 'pxe-l7'`);
+await db(`UPDATE payouts SET amount = 126000 WHERE id = $1`, PAY);
+await db(`UPDATE owner_statements SET net_payout = 126000 WHERE id = $1`, ST);
+await db(`INSERT INTO owner_statements (id, owner_id, period_start, period_end, state, net_payout, generated_at, created_at)
+  VALUES ($1, $2, '2026-09-01', '2026-09-30', 'sent', 60000, $3, $3)`, ST2, OWNER, now);
+await db(`INSERT INTO statement_lines (id, statement_id, unit_id, line_type, description, occurred_on, amount)
+  VALUES ('pxe-l8', $1, 'pxe-u1', 'gross', 'Check', '2026-09-30', 50000)`, ST2);
+await db(`INSERT INTO payouts (id, statement_id, owner_id, amount, currency, state, method, bank_last4, created_at)
+  VALUES ($1, $2, $3, 60000, 'MYR', 'pending', 'bank_transfer', '2333', $4)`, PAY2, ST2, OWNER, now);
+r = await get(`ids=${PAY},${PAY2}&group=unit`);
+check('two payouts by unit: October per unit, September one flagged whole row, nothing lost or merged',
+  r.status === 200 && r.list.length === 4 && r.list.reduce((n, x) => n + x.amount, 0) === 186000
+    && r.list.filter(x => x.byHand).length === 1 && r.list.some(x => x.amount === 60000 && x.byHand) && r.payouts === 2, JSON.stringify(r.list) + ' payouts=' + r.payouts);
+r = await get(`ids=${PAY},${PAY2}`);
+check('… by building: October per building, September whole, as before', r.status === 200 && r.list.length === 3
+  && r.list.reduce((n, x) => n + x.amount, 0) === 186000 && r.list.every(x => !x.byHand), JSON.stringify(r.list));
 
 await dropAll();
 done();

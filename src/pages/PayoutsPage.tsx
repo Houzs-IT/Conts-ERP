@@ -98,6 +98,7 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
   // Export asks how to group the transfers first; `only` holds the ticked payouts, if any.
   const [exportAsk, setExportAsk] = useState<{ only?: Payout[] } | null>(null);
   const [grouping, setGrouping] = useState<Grouping>('building');
+  const [exporting, setExporting] = useState(false);
   const [historyOf, setHistoryOf] = useState<Payout | null>(null);
   const historyButton = (r: Payout) => (
     <button type="button" onClick={() => setHistoryOf(r)} aria-label={`History of the payout to ${personName(r.ownerName)}`} title="History"
@@ -173,18 +174,33 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
     setExportAsk({ only });
   }
 
+  /** Download keeps the dialog open and busy until the file is made, so a second click cannot make a second file
+   *  (review M2). A failure leaves it open to try again. */
+  async function download() {
+    if (!exportAsk || exporting) return;
+    setExporting(true);
+    try {
+      await exportBank(exportAsk.only, grouping);
+      setExportAsk(null);
+    } catch (e) {
+      toast({ tone: 'critical', title: 'The file could not be made.', body: errorMessage(e, 'Try again in a moment.') });
+    } finally {
+      setExporting(false);
+    }
+  }
+
   /** The bank sheet: one row per transfer, the payouts under the filter added up by the chosen grouping, with the full
    *  account number, for making the transfers (owner, 22 Oct 2026). Its own endpoint, because the list only ever carries
    *  the last four digits and every export is audited. */
   async function exportBank(only: Payout[] | undefined, group: Grouping) {
     const params: Record<string, string> = { ...(only ? { ids: only.map(r => r.id).join(',') } : { ...(filter !== 'all' ? { state: filter } : {}), ...(period ? { period } : {}), ...(q ? { q } : {}) }), group };
-    const { data: list, capped } = await api.get<{ data: BankRow[]; capped: boolean }>(`/payouts/export?${new URLSearchParams(params)}`);
+    const { data: list, capped, payouts } = await api.get<{ data: BankRow[]; capped: boolean; payouts?: number }>(`/payouts/export?${new URLSearchParams(params)}`);
     // The extra column appears only when a row needs it, so an ordinary file is unchanged.
     const byHand = list.filter(r => r.checkByHand).length;
     downloadTable('xlsx', 'payouts', 'Payouts', byHand ? [...BANK_COLS, { label: 'Check by hand', kind: 'text' }] : BANK_COLS,
       list.map(r => [r.units, personName(r.ownerName), bankName(r.bankName) ?? '', r.accountNumber, r.amount, ...(byHand ? [r.checkByHand ? r.note ?? 'Check this row by hand.' : ''] : [])]));
     const safe = capped ? 'Only the first 5,000 fit in one file. Narrow the filters to get the rest.' : 'Full account numbers are in this file. Keep it safe and delete it once the transfers are made.';
-    toast({ tone: capped || byHand ? 'warning' : 'success', title: `Excel file ready: ${plural(list.length, 'transfer')}, ${plural(list.reduce((n, r) => n + r.payouts, 0), 'payout')}.`,
+    toast({ tone: capped || byHand ? 'warning' : 'success', title: `Excel file ready: ${plural(list.length, 'transfer')}, ${plural(payouts ?? list.reduce((n, r) => n + r.payouts, 0), 'payout')}.`,
       body: byHand ? `${plural(byHand, 'row')} ${byHand === 1 ? 'needs' : 'need'} checking by hand before you transfer. ${safe}` : safe });
   }
 
@@ -319,13 +335,10 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
       <HistoryDrawer onClose={() => setHistoryOf(null)}
         target={historyOf && { entity: 'payouts', id: historyOf.id, title: `Payout to ${personName(historyOf.ownerName)}`, sub: `${moneyString(historyOf.amount, 'exact')}${historyOf.period ? ` · ${monthLabel(historyOf.period)} statement` : ''}` }} />
       {exportAsk && (
-        <Modal title="Download the bank transfer file" sub="One row is one transfer, with the full account number." onClose={() => setExportAsk(null)} dirty={false}
+        <Modal title="Download the bank transfer file" sub="One row is one transfer, with the full account number." onClose={() => { if (!exporting) setExportAsk(null); }} dirty={false} busy={exporting}
           footer={<>
-            <Button variant="secondary" onClick={() => setExportAsk(null)}>Cancel</Button>
-            <Button variant="primary" icon={<Icon name="Download" size="sm" />} onClick={() => {
-              const ask = exportAsk; setExportAsk(null);
-              exportBank(ask.only, grouping).catch(e => toast({ tone: 'critical', title: 'The file could not be made.', body: errorMessage(e, 'Try again in a moment.') }));
-            }}>Download</Button>
+            <Button variant="secondary" disabled={exporting} disabledReason="The file is being made." onClick={() => setExportAsk(null)}>Cancel</Button>
+            <Button variant="primary" loading={exporting} icon={<Icon name="Download" size="sm" />} onClick={() => void download()}>Download</Button>
           </>}>
           <ChoiceChips<Grouping> label="One transfer per" value={grouping} onChange={setGrouping}
             options={GROUPINGS.map(g => ({ value: g.value, label: g.label }))} help={GROUPINGS.find(g => g.value === grouping)?.help} />

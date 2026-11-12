@@ -5,7 +5,9 @@ import { bankAccountsReady } from '../../_lib/ownerBank';
 const STATES = ['failed', 'pending', 'processing', 'paid', 'cancelled'];
 const CAP = 5000;
 const HAND_NOTE = 'Could not split this payout by account. It is the whole payout under the main account, but some units of this owner pay to other accounts. Check each unit.';
-const UNIT_NOTE = "Could not split this payout by unit: a unit's share is zero or below. It is the whole payout in one transfer.";
+// Neutral on purpose: a whole row comes from a unit at zero or below, lines that do not add up, or a line with no unit
+// (review M1), so the note does not name one reason.
+const UNIT_NOTE = 'Could not split this payout by unit, so it is one transfer for the whole payout. Check its units by hand.';
 /** How the file groups an owner's payout into transfers (chew, 13 Nov 2026: chosen at each download, "每次下载时选"):
  *  building, as before (one per owner, building and account); owner (one per owner and account, whatever the building);
  *  unit (one per unit and account). A transfer always goes to one account, so every grouping splits by account. */
@@ -53,17 +55,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // each line names its unit, and the lines add up to the payout. A unit pays to the account chosen for it (0180), else
   // the owner's main account. A payout whose lines do not add up, or that would leave a group and account at zero or
   // below (repairs bigger than that income), stays whole under the owner's main account, so every row is one real,
-  // positive transfer. If that owner has any unit on another account, or the file was asked by unit and the payout
-  // covers several units, the whole row is flagged for a hand check instead of being paid silently.
+  // positive transfer. If that owner has any unit on another account, or the file was asked by unit and the whole row
+  // lists several units (it lists every unit of the owner), the row is flagged for a hand check instead of being paid
+  // silently.
   const ready = await bankAccountsReady(env);
   const acct = ready ? "COALESCE(u.bank_account_id, '')" : "''";
   const byHand = ready ? 'EXISTS (SELECT 1 FROM units k WHERE k.owner_id = y.owner_id AND k.bank_account_id IS NOT NULL)' : 'false';
   // The group a unit's share falls in: its building, nothing (the owner's whole payout), or the unit itself.
   const bucket = group === 'building' ? 'u.property_id::text' : group === 'unit' ? 'u.id' : "''";
   const bucketBy = group === 'owner' ? '' : `, ${bucket}`;
-  const unitHand = group === 'unit' ? '(SELECT count(DISTINCT x.unit_id) FROM lines x WHERE x.payout_id = y.id) > 1' : 'false';
+  const unitHand = group === 'unit' ? '(SELECT count(*) FROM units k WHERE k.owner_id = y.owner_id) > 1' : 'false';
   const pick = (own: string, extra: string) => (ready ? `CASE WHEN a.id IS NULL THEN o.${own} ELSE a.${extra} END` : `o.${own}`);
-  const rows = await all<{ units: string | null; display_name: string; bank_name: string | null; bank_account_number: string | null; amount: number; payouts: number; check_by_hand: boolean; unsplit_unit: boolean }>(env, `
+  const rows = await all<{ units: string | null; display_name: string; bank_name: string | null; bank_account_number: string | null; amount: number; payouts: number; payout_ids: string; check_by_hand: boolean; unsplit_unit: boolean }>(env, `
     WITH y AS (
       SELECT y.id, y.owner_id, y.statement_id, y.amount
       FROM payouts y JOIN owners o ON o.id = y.owner_id LEFT JOIN owner_statements s ON s.id = y.statement_id
@@ -93,7 +96,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     )
     SELECT string_agg(DISTINCT x.unit, ', ' ORDER BY x.unit) AS units,
            x.display_name, MIN(x.bank_name) AS bank_name, x.account_number AS bank_account_number, SUM(x.amount) AS amount, COUNT(DISTINCT x.id)::int AS payouts,
-           bool_or(x.by_hand) AS check_by_hand, bool_or(x.by_unit) AS unsplit_unit
+           string_agg(DISTINCT x.id, ',') AS payout_ids, bool_or(x.by_hand) AS check_by_hand, bool_or(x.by_unit) AS unsplit_unit
     FROM paid x
     GROUP BY x.owner_id, x.display_name, x.bucket, x.account_number
     ORDER BY amount DESC, x.display_name, units
@@ -105,9 +108,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     after: { rows: Math.min(rows.length, CAP), group, filter: ids.length ? { ticked: ids.length } : { state: state ?? 'all', period: period ?? 'all', q: q ?? '' } },
   });
 
+  // The file's payouts, each counted once however many transfers it was split into (review M3).
+  const kept = rows.slice(0, CAP);
+  const payouts = new Set(kept.flatMap(r => (r.payout_ids ?? '').split(',').filter(Boolean))).size;
   return json({
     capped: rows.length > CAP,
-    data: rows.slice(0, CAP).map(r => {
+    payouts,
+    data: kept.map(r => {
       const notes = [r.unsplit_unit === true ? UNIT_NOTE : '', r.check_by_hand === true ? HAND_NOTE : ''].filter(Boolean);
       return {
         units: r.units ?? '', ownerName: r.display_name, bankName: r.bank_name, accountNumber: r.bank_account_number ?? '', amount: Number(r.amount), payouts: r.payouts,
