@@ -601,7 +601,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       </section>}
       {done && i.vendorName && <p className="m-0 text-muted-ink">Done by {i.vendorName}{i.assigneeKind ? ` (${KIND_WORD[i.assigneeKind].toLowerCase()})` : ''}.</p>}
 
-      {money ? (
+      {isPassKey ? null : money ? (
         <section className="flex flex-col gap-2.5 rounded-card border border-solid border-line p-3.5">
           <h3 className="m-0 text-copy font-semibold">Quote and billing</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -638,11 +638,11 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
 
           {billing && (
             <div className="flex flex-col gap-2.5 pt-2.5 [border-top:1px_solid_var(--color-line-soft)]">
-              {!isPassKey && (collectFrom ? (
+              {collectFrom ? (
                 <DateMark label={`Collected from ${collectFrom}`} amount={charge} at={i.collectedAt} busy={busy === 'collected'} markLabel="Mark collected"
                   note={charge == null ? 'Add the quote first.' : i.chargeTo === 'owner' ? 'Taken off the owner statement for the billing month, or paid by the owner directly.' : undefined}
                   onSet={day => void markCollected(day)} />
-              ) : <span className="text-meta text-muted-ink">{PAYER[i.chargeTo]} pays: nothing to collect.</span>)}
+              ) : <span className="text-meta text-muted-ink">{PAYER[i.chargeTo]} pays: nothing to collect.</span>}
               <div className="flex flex-col gap-1.5">
                 <span className="font-medium">Owed to {i.vendorName ?? 'the technician or contractor'}</span>
                 <div className="flex gap-2">
