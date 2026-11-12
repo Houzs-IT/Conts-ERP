@@ -324,7 +324,10 @@ export async function syncLate(env: Env, scope: { unitIds?: string[]; ownerIds?:
       const locked = { income: has(unitId, 'income'), deductions: has(unitId, 'deductions') };
       const split = splitLate({ statement: s.payoutBeforeAdjustments, incomeLive: x?.payoutBeforeAdjustments, live: v.payoutBeforeAdjustments }, locked);
       // The company's share, split the same way: what the change leaves the company after the owner's share.
-      const companySplit = splitLate({ statement: companyFigure(s), incomeLive: x ? companyFigure(x) : undefined, live: companyFigure(v) }, locked);
+      // A yearly guarantee's true-up top-up is left out, as the reports leave it out (companyFigure).
+      const yearly = s.terms.model === 'management_yearly_guarantee';
+      const cf = (m: UnitMonth) => companyFigure({ ...m, yearlyGuarantee: yearly });
+      const companySplit = splitLate({ statement: cf(s), incomeLive: x ? cf(x) : undefined, live: cf(v) }, locked);
       const target = openMonthAfter(month, closed.get(unitId) ?? new Set());
       const held = termsFor(unitForMonth(unit, month), settings.defaultFeePct).model === 'management_yearly_guarantee';
       for (const l of mine.filter(k => k.unit_id === unitId)) {

@@ -171,6 +171,28 @@ const after = await companyRows(u.id);
 check('C6: the late update after an unlock writes nothing more for it',
   JSON.stringify(after.filter(x => x.reference.endsWith(incomeLock))) === JSON.stringify(rows.filter(x => x.reference.endsWith(incomeLock))), JSON.stringify(after));
 
+// ── Y: a yearly guarantee's true-up month (review finding). The reports leave the yearly top-up out of the company's
+// figure, so the company's share of a late change does too: RM 100 more is RM 25 for the company (25% fee), not RM 100.
+{
+  const Y = 'ocl-y', CY = 'ocl-cy', SY = 'ocl-sy';
+  await db(`INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, created_at, updated_at) VALUES ($1, $2, $3, 'L-05', 0, $4, $4)`, Y, PROP, OWNER, now);
+  // Contract year November 2025 to October 2026, so October is its true-up month; RM 60,000 a year keeps the owner topped up.
+  await db(`INSERT INTO owner_contracts (id, owner_id, unit_id, revenue_model, model, management_fee_pct, minimum_guarantee_annual, starts_on, created_at)
+    VALUES ($1, $2, $3, 'management_yearly_guarantee', 'management', 25, 6000000, '2025-11-01', $4)`, CY, OWNER, Y, now);
+  await db('UPDATE units SET contract_id = $1 WHERE id = $2', CY, Y);
+  await db(`INSERT INTO reservations (id, unit_id, channel, external_ref, state, check_in, check_out, gross_booking_value, channel_fee, collected_revenue, created_at, updated_at)
+    VALUES ($1, $2, 'direct', $1, 'checked_out', '2026-10-03', '2026-10-06', 40000, 0, 40000, $3, $3)`, SY, Y, now);
+  r = await lock('income', [Y]);
+  const yLock = await lockId(Y, 'income');
+  check('Y1: a yearly-guarantee unit in its true-up month is locked', r.status === 201 && !!yLock, r.text);
+  await db(`UPDATE reservations SET gross_booking_value = gross_booking_value + 10000, collected_revenue = collected_revenue + 10000 WHERE id = $1`, SY);
+  await generate(NOV);
+  const yRows = await companyRows(Y);
+  const yOwner = await db(`SELECT amount FROM owner_adjustments WHERE unit_id = $1 AND source = 'stage_lock'`, Y);
+  check("Y1: the company's share leaves the yearly top-up out, as the reports do", ofLock(yRows, yLock).length === 1
+    && near(ofLock(yRows, yLock)[0].amount, 2500) && sum(yOwner) === 0, `${JSON.stringify(yRows)} owner ${JSON.stringify(yOwner)}`);
+}
+
 // ── N: someone editing a reservation in a month whose income is locked is told where the difference goes ──
 // On the check's own unit L-03, with only its October income locked (nothing in the checks above reaches it).
 {

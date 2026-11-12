@@ -751,7 +751,7 @@
 - **那个月业主报表已经 final 的单位，不能再锁**（锁会记下今天的订单，不是那份报表已经付的数字）；页面显示「Statement final」，不能打勾。
 - **锁了以后，那个月的 Income 不会再变。** 之后订单改了（Airbnb 对账确认、手改订单、HostPlatform 或 Channex 取消），差额自动变成**下一个还没 final 的月份**的 O2（来源 stage_lock），按合约重新算业主应得多少（保底也算进去），不是直接乘分成 %；年保底的单位，这笔先 hold，等人看过再放出去。同一个锁只会有一笔，不会重复；生成报表、对账确认或撤回、以及每 15 分钟都会核对一次。对账确认或撤回后，页面提醒重新 Generate 的是**差额去的那个月**（例如 11 月），不是锁住的月份。
 - **草稿上已经印出来的 O2 如果之后变了或没了**（订单又改了、解锁、或在业主页改了调整），那份草稿按 Mark final 会被挡住：「An owner adjustment changed after this draft was made. Generate the statement again, then mark it final.」重新 Generate 一次就可以 final，付的钱和账上的数字才会一样。
-- **锁了以后才改的订单，公司那一份**（chew 2026-11-11 选 A）：跟业主的 O2 一样，算进**下一个还没 final 的月份**的公司数字（unit P&L、yearly report、portfolio）；锁住的月份，公司的数字也不再变。例子：10 月锁了以后 Airbnb 多付 RM100，业主那份 RM75 进 11 月 O2，公司那份 RM25 算进 11 月。**还没做**（第二部分做）：做好之前，这一份暂时不会出现在公司报表里；订单数据都在，做好以后可以补算。
+- **锁了以后才改的订单，公司那一份**（chew 2026-11-11 选 A）：跟业主的 O2 一样，算进**下一个还没 final 的月份**的公司数字（unit P&L、yearly report、portfolio）；锁住的月份，公司的数字也不再变。例子：10 月锁了以后 Airbnb 多付 RM100，业主那份 RM75 进 11 月 O2，公司那份 RM25 算进 11 月。**已做**（第二部分 2b，见下面「公司那一份」）。
 - **解锁要写原因**，系统记下是谁、几时、为什么。解锁后那个月回到最新的订单：之前因为锁而移到下个月的差额会拿回来；如果那笔已经在 final 的报表上，就留在那里，解锁的月份多一笔相反的调整（「Already settled on the … statement」），业主不会多拿或少拿。那个月自己的报表已经 final，就不能解锁（要先解锁 final，第三部分做）。被拿回的差额如果已经印在下个月的草稿上，解锁后会提醒重新 Generate 那个月。解锁会等系统正在跑的差额更新做完才开始，不会留下没人管的差额。
 - **权限由 chew 分配到个人**（Users and roles）：Owner statement close（看页面）、Lock income（锁）、Unlock a step（解锁）。上线时三个都只开给管理层。
 
@@ -779,7 +779,9 @@ O2：
 **第二部分（2b）已做：公司那一份、手改订单的提示、锁的权限一个一个给**（chew 2026-11-12「开始 2b」「你先做出来吧，我测试了才懂」）
 
 公司那一份（chew 2026-11-11 选的 A）：
-- 锁了以后才改的订单或费用，差额里**公司那一份**，跟业主的 O2 放在**同一个月**（下一个 O2 还没锁、也还没 final 的月份），算进公司那个月的数字。锁住的月份，公司的数字不再变。
+- 锁了以后才改的订单或费用，差额里**公司那一份**，跟业主的 O2 放在**同一个月**（下一个 O2 还没锁、也还没 final 的月份），算进公司那个月的数字。锁住的月份，自己的订单和扣款不再变。
+- 一个月的公司数字什么时候完全定下来：Income、Deductions、O2 三步都锁了以后。在那之前，更早被锁的月份的差额，公司那一份还可能落到这个月；合约改了（例如分成 %）也会改变公司的数字，要等第三部分的 Final 才定下来。
+- 年保底（PS YGRR）的单位，合约年度最后一个月有 top-up：报表里公司的数字本来就不扣这笔 top-up，所以公司那一份也照同样的算法。例子：那个月锁了以后多付 RM100，业主拿的总数不变（top-up 少了），公司那一份是 RM25，跟没锁时报表会显示的一样。
 - 例子：10 月锁了以后 Airbnb 多付 RM100，业主那份 RM75 进 11 月 O2，公司那份 RM25 算进 11 月：
   - **Overall owner report**：多一栏「Late changes」（只有那个月有这种差额才出现），算进 Gain / Loss；点开单位，「Revenue and profitability」列出每一笔（例如「October 2026 income +25.00」）。
   - **Yearly report**：「The Conts」包含它，另外有一块「The Conts: late changes」（有数字才出现）。
@@ -797,7 +799,7 @@ O2：
 - HostPlatform、Channex 的自动同步没有人可以提示，差额照样会处理。
 
 锁的权限一个一个给：
-- Lock income、Lock deductions、Lock O2、Unlock a step **只能单独打开**：在 Users and roles 勾整组 Finance，或部门、职位有 Finance 的基础权限，都不会顺便打开这四个。它们那一行标「Set on its own」，要在那一行单独勾（给个人、职位或整个部门都可以）。
+- Lock income、Lock deductions、Lock O2、Unlock a step **只能单独打开**。这四个和 Owner statement close 现在放在 Users and roles 的 **Units** 组（2026-11-12 起，migration 0307）。勾整组 Units，或部门、职位有 Units 的基础权限，都不会顺便打开这四个。它们那一行标「Set on its own」，要在那一行单独勾（给个人、职位或整个部门都可以）。
 
 **还没做**：
 - 第三部分：Final（三段都锁才能 final）、解锁 final（钱还没付 → 回草稿；转账中 → 不能解；已付 → 差额放下个月 O2）、Overall owner report 的 Locks 栏和 Agent / Company 两栏（先补合约的 agent %）。

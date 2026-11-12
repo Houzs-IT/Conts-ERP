@@ -114,12 +114,21 @@ export function splitLate(r: LateRun, locked: { income: boolean; deductions: boo
  *  adjustments. It is the reports' Gain / Loss (GP less the owner base) on a share, a guarantee and a long-term let.
  *  A late change's company share is this figure live less as locked, split between the locks by splitLate, and it
  *  lands on the month the owner's share goes to (chew's choice A, 11 Nov 2026: "A：算进下个月"). */
-export const companyFigure = (m: { gross: number; deductions: number; payoutBeforeAdjustments: number }): number =>
-  m.gross - m.deductions - m.payoutBeforeAdjustments;
+export const companyFigure = (m: { gross: number; deductions: number; payoutBeforeAdjustments: number; topUp?: number; yearlyGuarantee?: boolean }): number =>
+  // A yearly guarantee's top-up (its contract year's last month) is not in the reports' owner base (O1 only), so it is
+  // left out here too: a lock must not change the company's figure from what the reports work out (review finding).
+  m.gross - m.deductions - m.payoutBeforeAdjustments + (m.yearlyGuarantee ? m.topUp ?? 0 : 0);
 
 /** The owner adjustment's description for a lock's late difference. */
 export const lateText = (stage: 'income' | 'deductions', unitLabel: string, label: string): string =>
   `Late change to ${unitLabel} ${stage} for ${label} (${stage} locked)`;
+
+/** A notice is worked out after the change it is about has been saved, so a failure there must never turn a saved change
+ *  into an error (the person would try again and, say, record a payment twice: review finding). Any failure gives
+ *  `fallback`, and is logged. */
+export async function quietly<T>(work: () => Promise<T>, fallback: T): Promise<T> {
+  try { return await work(); } catch (e) { console.error('A notice was skipped:', e); return fallback; }
+}
 
 /** A late change named by its month and step ('October 2026 income'), for a screen that already shows the unit (the
  *  company views). Any other text, such as a carried row's, is returned as it is. */

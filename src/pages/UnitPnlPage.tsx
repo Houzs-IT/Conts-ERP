@@ -286,7 +286,9 @@ function ByUnit({ rows, units, flags, holes, onUnit }: { rows: UnitMonthInput[];
     { key: 'utilNight', label: 'Utilities / night', type: 'money', value: r => (r.nights ? Math.round(util(r.p) / r.nights) : null), width: 130 },
     { key: 'margin', label: 'Operating margin', type: 'number', value: r => pct(r.p.operating, r.p), render: r => <span className={cx((pct(r.p.operating, r.p) ?? 0) < 0 && 'text-danger')}>{pctText(pct(r.p.operating, r.p))}</span>, width: 140 },
     { key: 'owner', label: "Owner's portion", type: 'money', value: r => r.p.owner, render: r => <Money sen={r.p.owner} />, width: 140 },
-    { key: 'late', label: 'Late changes', type: 'money', value: r => r.p.late, render: r => <Money sen={r.p.late} />, width: 130, hidden: !list.some(r => r.p.late !== 0) },
+    // Only when a unit has one: DataTable reads a column's hidden flag once, so a column that comes and goes with the
+    // data is left out instead (review finding).
+    ...(list.some(r => r.p.late !== 0) ? [{ key: 'late', label: 'Late changes', type: 'money' as const, value: (r: UnitRow) => r.p.late, render: (r: UnitRow) => <Money sen={r.p.late} />, width: 130 }] : []),
     { key: 'company', label: 'Company keeps', type: 'money', value: r => r.p.company, render: r => <Money sen={r.p.company} strong />, width: 140 },
     { key: 'checks', label: 'Checks', value: r => r.flags + r.gaps, width: 150, render: r => (
       <span className="inline-flex gap-1">

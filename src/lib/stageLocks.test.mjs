@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   lockMonthProblem, openMonthAfter, planLate, planUnlock, carriedText, monthAfter, monthLabel, lateText, incomeLockable,
   lockable, splitLate, lockedText, rolledText, editedText, refusedText, movedO2Text, deductionChecks, o2Checks,
-  companyFigure, companyCarriedText, incomeNoticeText, lateLabel,
+  companyFigure, companyCarriedText, incomeNoticeText, lateLabel, quietly,
 } from '../../functions/_lib/stageLocks.ts';
 
 test('locks start from October 2026, and only for a month that has ended', () => {
@@ -91,6 +91,18 @@ test("the company's figure of a unit-month: what is left of the gross after the 
   assert.deepEqual(splitLate(run, { income: true, deductions: true }), { income: 2000, deductions: -200 });
 });
 
+test("a yearly guarantee's true-up top-up is left out of the company's figure, as the reports leave it out (review finding)", () => {
+  // 75% owner, the contract year's last month: the owner is topped up to the yearly guarantee (RM 5,000 due).
+  const before = companyFigure({ gross: 100000, deductions: 10000, payoutBeforeAdjustments: 500000, topUp: 432500, yearlyGuarantee: true });
+  assert.equal(before, 22500);
+  // RM 100 more in that month after its lock: the top-up shrinks by the owner's RM 75, so the owner's payout does not
+  // move; the company's share is RM 25, the same as the reports would show had the month not been locked.
+  const after = companyFigure({ gross: 110000, deductions: 10000, payoutBeforeAdjustments: 500000, topUp: 425000, yearlyGuarantee: true });
+  assert.equal(after - before, 2500);
+  // A monthly guarantee's top-up is part of the owner base in the reports, so it stays in.
+  assert.equal(companyFigure({ gross: 100000, deductions: 10000, payoutBeforeAdjustments: 80000, topUp: 12500 }), 10000);
+});
+
 test('a late change named by its month and step where the unit is already on screen (the company views)', () => {
   assert.equal(lateLabel('Late change to Vista Jaya One #A-12-03 income for October 2026 (income locked)'), 'October 2026 income');
   assert.equal(lateLabel(lateText('deductions', 'Skyline D-49-03A', 'October 2026')), 'October 2026 deductions');
@@ -100,6 +112,14 @@ test('a late change named by its month and step where the unit is already on scr
 test('the balancing row an unlock leaves on the company side', () => {
   assert.equal(companyCarriedText(['November 2026']), 'Already counted in November 2026');
   assert.equal(companyCarriedText(['November 2026', 'December 2026']), 'Already counted in November 2026 and December 2026');
+});
+
+test('working out a notice after a saved change never turns that change into an error (review finding)', async () => {
+  const quiet = console.error; console.error = () => {};
+  try {
+    assert.equal(await quietly(async () => { throw new Error('the read failed'); }, null), null);
+    assert.equal(await quietly(async () => 'October 2026 income is locked for Vista 22-04.', null), 'October 2026 income is locked for Vista 22-04.');
+  } finally { console.error = quiet; }
 });
 
 test('what someone editing a reservation in an income-locked month is told', () => {
