@@ -1,4 +1,4 @@
-import { mayRun } from '../../lib/areaAccess';
+import { mayRun, maySee } from '../../lib/areaAccess';
 import type { SessionUser } from '../../lib/types';
 import { api, errorMessage } from '../../lib/api';
 import { date, titleCase } from '../../lib/format';
@@ -77,3 +77,8 @@ export function portalAction(o: Owner, ctx: {
   }
   return null;
 }
+
+/** View as owner (owner, 12 Nov 2026): only Management and the Finance department, and only with Finance access, which
+ *  is what the portal's reads check (?ownerId=, functions/_lib/ownerScope.ts). It moved from Owner B to the owner profile. */
+export const mayViewAsOwner = (user: SessionUser | null | undefined): boolean =>
+  !!user && (user.role === 'management' || user.department?.trim().toLowerCase() === 'finance') && maySee(user, 'finance');

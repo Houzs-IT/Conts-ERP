@@ -105,7 +105,7 @@ export default function LettingTab({ unitId, canEdit, money }: { unitId: string;
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
         <div className="flex flex-col gap-1 min-w-0">
-          <span className="text-[16px] font-semibold tracking-[-0.01em]">Agent to let</span>
+          <span className="text-[15px] font-semibold tracking-[-0.01em]">Agent to let</span>
           <span className="text-meta text-muted-ink">Finding a long-term tenant for the owner. Once rented, you are reminded 90 days before the agreement ends to let it again. <Link to="/properties/agent-to-let" className="text-gold-ink">All units to let</Link></span>
         </div>
         {canEdit && data?.ready !== false && <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ letting: null })}>Record a letting</Button>}

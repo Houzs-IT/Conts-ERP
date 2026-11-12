@@ -7,12 +7,15 @@ export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'reviews
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
 /** `icon`: drawn only in the phone menu, where each screen is its own row; the desktop shows its category's icon. */
-export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey; icon?: string; phoneOnly?: boolean }
+/** A child's `full` works as the item's does; `phone: false` leaves it off the sub-tabs at phone width (its address still opens). */
+export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey; icon?: string; phoneOnly?: boolean; full?: boolean; phone?: boolean }
 /** `full`: the screen's data is for roles with Full on its area (the server refuses Edit), so it is shown only then.
- *  `fresh`: a newly added screen, marked New in the desktop menu. */
+ *  `fresh`: a newly added screen, marked New in the desktop menu.
+ *  `tabs`: the children are one screen's sub-tabs (SubNav above the page), not a folding list: the menu shows the item
+ *  once and opens its first child this person can open (owner, 12 Nov 2026: Units and Owners hold their screens as tabs). */
 export interface NavItem {
   key: string; label: string; icon: string; path?: string; area?: string;
-  badge?: BadgeKey; children?: NavChild[]; full?: boolean; fresh?: boolean; phone?: boolean;
+  badge?: BadgeKey; children?: NavChild[]; full?: boolean; fresh?: boolean; phone?: boolean; tabs?: boolean;
 }
 /** `phone: false`: left off the menu at phone width; its screens still open by address. */
 export interface NavGroup { label: string; workspace: Workspace; items: NavItem[]; phone?: boolean }
@@ -119,10 +122,8 @@ export const NAV: NavGroup[] = [
   // Reports sit under Home (owner, 29 Oct 2026), with their own permission area since 30 Oct 2026.
   { label: 'REPORTS', workspace: 'rental', items: [
     { key: 'portfolio', label: 'Portfolio', icon: 'layers', path: '/portfolio', area: 'portfolio' },
-    { key: 'unitReport', label: 'Overall unit report', icon: 'file-spreadsheet', path: '/portfolio/owner-report', area: 'portfolio', full: true },
     { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance', full: true },
-    { key: 'yearlyReport', label: 'Yearly unit report', icon: 'file-spreadsheet', path: '/reports/yearly', area: 'reports', fresh: true, phone: false },
-    { key: 'ygrrReport', label: 'YGRR report', icon: 'shield-check', path: '/reports/ygrr', area: 'reports', fresh: true, phone: false },
+    // The three unit reports are one Unit report under Units now (owner, 12 Nov 2026).
   ] },
   { label: 'RESERVATIONS', workspace: 'rental', items: [
     { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'calendar' },
@@ -143,27 +144,41 @@ export const NAV: NavGroup[] = [
   { label: 'HR', workspace: 'rental', items: [
     { key: 'employees', label: 'Employees', icon: 'users', path: '/hr/employees', area: 'hr' },
   ] },
+  /* Three entries, each one screen with its related screens as sub-tabs (owner, 12 Nov 2026). Every tab keeps its
+     own address and permission area, so old links and bookmarks still open it. */
   { label: 'UNITS', workspace: 'rental', items: [
+    // One Unit report: the month, the year and YGRR are views of the same report (owner, 12 Nov 2026). It replaced the
+    // Overall unit report, Yearly unit report and YGRR report entries under Reports.
+    { key: 'unitReport', label: 'Unit report', icon: 'file-spreadsheet', tabs: true, children: [
+      { key: 'unitReportMonthly', label: 'Monthly', path: '/portfolio/owner-report', area: 'portfolio', full: true },
+      { key: 'yearlyReport', label: 'Yearly', path: '/reports/yearly', area: 'reports', phone: false },
+      { key: 'ygrrReport', label: 'YGRR', path: '/reports/ygrr', area: 'reports', phone: false },
+    ] },
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
-    { key: 'units', label: 'Units', icon: 'building-2', path: '/properties/units', area: 'properties' },
-    // Everything set to change on a later date, in one list (owner, 30 Oct 2026).
-    { key: 'scheduledChanges', label: 'Scheduled changes', icon: 'calendar-clock', path: '/properties/scheduled-changes', area: 'scheduledChanges' },
-    // Units we find a long-term tenant for, for the owner (staff sheet UNIT, 17 Oct 2026).
-    { key: 'agentToLet', label: 'Agent to let', icon: 'key-round', path: '/properties/agent-to-let', area: 'agentToLet' },
-    // Owner statements and owner payouts live on the owner (owner, 11 Oct 2026): each owner's page, and the Owners
-    // list's Statements and Payouts tabs for a whole month. Their old addresses redirect (App.tsx).
-    { key: 'ownerList', label: 'Owners', icon: 'user-round', path: '/owners', area: 'owners', badge: 'statements' },
-    { key: 'contracts', label: 'Contracts', icon: 'file-signature', path: '/owners/contracts', area: 'contracts' },
-    // Each month's owner statements locked in steps, unit by unit (chew, 11 Nov 2026). Its own area, closed until management opens it.
-    { key: 'ownerClose', label: 'Owner statement close', icon: 'lock', path: '/owners/close', area: 'ownerClose' },
-    // The workbook's misc deductions sheet: additional deductions and O2 by month (owner, 4 Nov 2026). Its own area under Units.
-    { key: 'deductions', label: 'Deductions', icon: 'receipt', path: '/properties/deductions', area: 'deductions', fresh: true },
-    // Owner B (owner, 2 Nov 2026): the new owners module, built beside Owners (A) so the two can be compared; it took
-    // the Owner Showcase's menu place and permission (Performance), which is what sales staff open, and its sample
-    // owner portal replaced the showcase. Its Owners, Statements and Payouts tabs follow their own areas.
-    { key: 'ownerB', label: 'Owner B', icon: 'contact', path: '/owner-b', area: 'performance', fresh: true },
-    // The lists the unit screens pick from: buildings, unit types, contract types (owner, 4 Nov 2026).
-    { key: 'unitSettings', label: 'Unit settings', icon: 'settings', path: '/properties/settings', area: 'unitSettings' },
+    { key: 'units', label: 'Units', icon: 'building-2', tabs: true, children: [
+      { key: 'unitList', label: 'All units', path: '/properties/units', area: 'properties' },
+      // Everything set to change on a later date, in one list (owner, 30 Oct 2026).
+      { key: 'scheduledChanges', label: 'Scheduled changes', path: '/properties/scheduled-changes', area: 'scheduledChanges' },
+      // Units we find a long-term tenant for, for the owner (staff sheet UNIT, 17 Oct 2026).
+      { key: 'agentToLet', label: 'Agent to let', path: '/properties/agent-to-let', area: 'agentToLet' },
+      // The lists the unit screens pick from: buildings, unit types, contract types (owner, 4 Nov 2026).
+      { key: 'unitSettings', label: 'Unit settings', path: '/properties/settings', area: 'unitSettings' },
+    ] },
+    // Owner statements and owner payouts live on the owner (owner, 11 Oct 2026): each owner's page, and these tabs for a
+    // whole month. Money is not worked on the phone, so those two stay off the phone's tabs (their links still open).
+    { key: 'ownerList', label: 'Owners', icon: 'user-round', tabs: true, children: [
+      { key: 'owners', label: 'Owners', path: '/owners', area: 'owners' },
+      { key: 'ownerStatements', label: 'Owner statements', path: '/owners/statements', area: 'finance', badge: 'statements', phone: false },
+      { key: 'ownerPayouts', label: 'Owner payouts', path: '/owners/payouts', area: 'finance', phone: false },
+      { key: 'contracts', label: 'Contracts', path: '/owners/contracts', area: 'contracts' },
+      // Each month's owner statements locked in steps, unit by unit (chew, 11 Nov 2026). Its own area, closed until management opens it.
+      { key: 'ownerClose', label: 'Statement close', path: '/owners/close', area: 'ownerClose' },
+      // The workbook's misc deductions sheet: additional deductions and O2 by month (owner, 4 Nov 2026).
+      { key: 'deductions', label: 'Deductions', path: '/properties/deductions', area: 'deductions' },
+      // Owner B folded into Owners (owner, 12 Nov 2026): the company showcase and portal access. It keeps Owner B's
+      // permission area (Performance), which is what sales staff open. View as owner is on the owner profile.
+      { key: 'ownerPortal', label: 'Owner portal and showcase', path: '/owners/portal', area: 'performance' },
+    ] },
   ] },
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
   ...financeGroups('/finance', '', 'rental'),
@@ -185,7 +200,7 @@ export const NAV: NavGroup[] = [
     { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', area: 'users' },
     { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', area: 'integrations' },
     // My account and Notifications are every person's own, so they carry an area no role is ever denied.
-    { key: 'settings', label: 'Settings', icon: 'settings', area: 'settings', children: [
+    { key: 'settings', label: 'Settings', icon: 'settings', area: 'settings', tabs: true, children: [
       ...SETTINGS_SECTIONS.map(s => ({ key: `settings_${s.key}`, label: s.label, path: `/system/settings/${s.key}` })),
       { key: 'myAccount', label: 'My account', path: '/account', area: 'account' },
       { key: 'notifications', label: 'Notifications', path: '/notifications', area: 'account' },
@@ -351,7 +366,8 @@ export function screenClosed(path: string, access?: Record<string, AccessLevel>)
   const area = areaOfPath(path);
   if (!area) return false;
   if (access[area] === 'none') return true;
-  const item = NAV.flatMap(g => g.items).find(i => i.path === path);
+  const items = NAV.flatMap(g => g.items);
+  const item = items.find(i => i.path === path) ?? items.flatMap(i => i.children ?? []).find(c => c.path === path);
   return !!item?.full && access[area] !== 'full';
 }
 
@@ -369,12 +385,13 @@ function navGroups(role: UserRole, engine: boolean, access?: Record<string, Acce
   if (deny.includes('*')) return [];
   const open = (key: string, area: string) => !deny.includes(key) && !deny.includes(area);
   const enough = (i: NavItem) => !i.full || !access || FIXED_ROLES.includes(role) || access[areaOfItem(i)] === 'full';
+  const enoughChild = (i: NavItem, c: NavChild) => !c.full || !access || FIXED_ROLES.includes(role) || access[areaOfChild(i, c)] === 'full';
   // A parent closed to this role still shows the children with an open area of their own (Sales invoices under
   // Sales order); a child without its own area follows its parent.
   return NAV
     .map(g => ({ ...g, items: g.items
       .filter(i => (i.children || open(i.key, areaOfItem(i))) && enough(i))
-      .map(i => i.children ? { ...i, children: i.children.filter(c => open(c.key, areaOfChild(i, c)) && (!!c.area || open(i.key, areaOfItem(i)))) } : i)
+      .map(i => i.children ? { ...i, children: i.children.filter(c => open(c.key, areaOfChild(i, c)) && (!!c.area || open(i.key, areaOfItem(i))) && enoughChild(i, c)) } : i)
       .filter(i => !i.children || i.children.length > 0) }))
     .filter(g => g.items.length > 0);
 }
@@ -406,10 +423,27 @@ export function workspaceOf(path: string): Workspace | null {
   if (SUPPLY_OFF_MENU[path]) return 'supply';
   for (const g of NAV) for (const it of g.items) {
     if (it.path && (path === it.path || (it.path !== '/' && path.startsWith(it.path + '/')))) return g.workspace;
-    if (it.children?.some(c => c.path === path)) return g.workspace;
+    if (it.children?.some(c => c.path === path || (it.tabs && path.startsWith(c.path + '/')))) return g.workspace;
   }
   return null;
 }
+
+/** The sub-tabs to draw above a page: its menu item's tabs this person can open (the menu's own rule), when there are
+ *  at least two. `groups` is the person's menu (navFor). A record under a tab (/properties/units/C-37-13A) keeps
+ *  its tab selected. On a phone, tabs marked `phone: false` are left out unless they are the one open. */
+export function subTabsFor(groups: NavGroup[], path: string, phone = false): { item: NavItem; tabs: NavChild[]; current: string | null } | null {
+  for (const g of groups) for (const it of g.items) {
+    if (!it.tabs || !it.children) continue;
+    const hit = it.children.find(c => c.path === path) ?? it.children.filter(c => path.startsWith(c.path + '/')).sort((a, b) => b.path.length - a.path.length)[0];
+    if (!hit) continue;
+    const tabs = it.children.filter(c => !phone || c.phone !== false || c.key === hit.key);
+    return tabs.length >= 2 ? { item: it, tabs, current: hit.key } : null;
+  }
+  return null;
+}
+
+/** Where a menu entry opens: its own address, or its first sub-tab or child this person can open. */
+export const entryPath = (it: NavItem): string | undefined => it.path ?? it.children?.[0]?.path;
 
 /** role → landing path. The server returns this as `home`; kept here for the client guard. */
 export const HOME: Record<UserRole, string> = {
@@ -430,10 +464,8 @@ export const homeFor = (who: Pick<SessionUser, 'role' | 'side' | 'department'>):
 /** Pages below a menu entry, for the third breadcrumb ("Units / Owners / Owner statement"). */
 const SUB_PAGES: [RegExp, string][] = [
   [/^\/owners\/statements\/[^/]+$/, 'Owner statement'],
-  [/^\/owner-b\/sample\/[^/]+$/, 'Owner portal (sample)'],
-  [/^\/owner-b\/[^/]+\/portal$/, 'View as owner'],
-  [/^\/owner-b\/(?!sample$)[^/]+$/, 'Owner profile'],
-  [/^\/owners\/(?!contracts$|statements$)[^/]+$/, 'Owner profile'],
+  [/^\/owners\/[^/]+\/portal$/, 'View as owner'],
+  [/^\/owners\/(?!contracts$|statements$|payouts$|close$|portal$)[^/]+$/, 'Owner profile'],
   [/^\/properties\/units\/new$/, 'Add unit'],
   [/^\/properties\/units\/[^/]+$/, 'Unit'],
   [/^\/system\/integrations\/hostplatform$/, 'HostPlatform import'],
@@ -450,7 +482,8 @@ const RENTAL_OFF_MENU: Record<string, { group: string; item: string; page?: stri
 export function findNav(path: string): { group: string; item: string; label: string; page?: string } | null {
   for (const g of NAV) for (const it of g.items) {
     if (it.path === path) return { group: groupName(g.label), item: it.label, label: it.label };
-    for (const c of it.children ?? []) if (c.path === path) return { group: it.label, item: it.label, label: c.label };
+    // A sub-tab reads "Units / Owners / Contracts"; a folding child "Sales order / Sales orders".
+    for (const c of it.children ?? []) if (c.path === path) return it.tabs ? { group: groupName(g.label), item: it.label, label: c.label } : { group: it.label, item: it.label, label: c.label };
   }
   const off = SUPPLY_OFF_MENU[path];
   if (off) return { group: off[0], item: off[1], label: off[1] };

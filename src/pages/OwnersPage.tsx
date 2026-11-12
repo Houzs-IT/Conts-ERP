@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -26,16 +26,13 @@ import { ModelChip } from './units/ContractTab';
 import { CodeBadge } from './units/UnitExtras';
 import { typeOptions } from '../lib/revenueModel';
 import { useContractTypes } from '../lib/useContractTypes';
-import { Segmented } from '../components/ops/OpsUi';
-import { RowsSkeleton } from '../components/Loading';
+import { Eyebrow, StatRow, StatTile } from '../components/Metric';
 import { useSession } from '../lib/session';
 import { areaOpen } from '../lib/navigation';
 import { RowActions, type RowAction } from '../components/RowActions';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { mayInviteOwners, portalAction, portalBadge } from './owners/portalAccess';
 
-const StatementsPage = lazy(() => import('./StatementsPage'));
-const PayoutsPage = lazy(() => import('./PayoutsPage'));
 
 /**
  * Owners list. Each row opens the full owner profile at `/owners/:id`
@@ -50,8 +47,8 @@ const PayoutsPage = lazy(() => import('./PayoutsPage'));
  *
  * Owner statements and owner payouts live on the owner (owner, 11 Oct 2026). One owner's month is on their profile;
  * the whole month for every owner (generate, mark final, send, start the payout run, mark paid) is this page's
- * Statements and Payouts tabs, for people with the Finance area. `/finance/statements` and `/finance/payouts`
- * redirect here. On a phone the tabs show only when a link opened one.
+ * Owner statements and Owner payouts sub-tabs, for people with the Finance area. `/finance/statements` and
+ * `/finance/payouts` redirect there. On a phone those tabs show only when a link opened one.
  */
 
 type ModelFilter = '' | RevenueModel | 'none';
@@ -98,35 +95,13 @@ function byColumnFilters(list: Owner[], get: (k: string) => string, buildingName
 }
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
 
-type View = 'owners' | 'statements' | 'payouts';
-/** Query keys each tab keeps in the address; switching tabs clears them so one tab's filters never leak into another. */
-const TAB_KEYS = ['q', 'building', 'model', 'month', 'sort', 'state', 'period', 'page', 'size'];
-
+/** The month's statements and payouts for every owner are the Owner statements and Owner payouts sub-tabs now, at
+ *  /owners/statements and /owners/payouts (owner, 12 Nov 2026); /owners?view=... still opens them (App.tsx). */
 export default function OwnersPage() {
-  const url = useUrlState();
-  const phone = usePhone();
-  const { user } = useSession();
-  const money = !!user && areaOpen(user.role, 'finance', user.access);
-  const asked = url.get('view');
-  const view: View = money && (asked === 'statements' || asked === 'payouts') ? asked : 'owners';
-  const pick = (v: View) => url.set({ view: v === 'owners' ? null : v, ...Object.fromEntries(TAB_KEYS.map(k => [k, null])) });
-  const tabs = money && (!phone || view !== 'owners') ? (
-    <Segmented<View> label="Owners, statements and payouts" value={view} onChange={pick} className="self-start"
-      options={[{ value: 'owners', label: 'Owners' }, { value: 'statements', label: 'Statements' }, { value: 'payouts', label: 'Payouts' }]} />
-  ) : null;
-  if (view === 'owners') return <OwnerList tabs={tabs} />;
-  return (
-    <>
-      <PageHeader title="Owners" sub={view === 'statements' ? 'Owner statements for every owner, a month at a time.' : 'Owner payouts for every owner.'} />
-      {tabs}
-      <Suspense fallback={<RowsSkeleton rows={8} cols={5} />}>
-        {view === 'statements' ? <StatementsPage embedded /> : <PayoutsPage embedded />}
-      </Suspense>
-    </>
-  );
+  return <OwnerList />;
 }
 
-function OwnerList({ tabs }: { tabs: ReactNode }) {
+function OwnerList() {
   const types = useContractTypes();
   const url = useUrlState();
   const phone = usePhone();
@@ -364,11 +339,10 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
     <>
       <PageHeader title="Owners" sub={data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')} under management` : 'Loading owners…'}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal(true)}>Add owner</Button>} />
-      {tabs}
 
       {/* The month's payout as the dark statement tile; the split and the gross beside it; the month stepper on top. */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">Owner payouts · {monthText} (estimate)</span>
+        <Eyebrow>Owner payouts · {monthText} (estimate)</Eyebrow>
         <span className="flex items-center gap-2 flex-wrap">
           <MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} />
           {finance && (zipping || !tableRows.length ? (
@@ -385,25 +359,13 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
           ))}
         </span>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] gap-3 sm:gap-4">
-        <div className="col-span-2 lg:col-span-1 relative rounded-card bg-black text-white p-5 flex flex-col gap-2 overflow-hidden">
-          <span aria-hidden className="absolute left-5 top-0 h-[2px] w-8 bg-gold" />
-          <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">To pay owners</span>
-          <span className="text-[28px] sm:text-[34px] leading-none font-semibold tabular-nums text-gold">{data ? rm(portfolioNet) : '—'}</span>
-          <span className="text-meta text-on-dark">{data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')}` : 'Loading…'}</span>
-        </div>
-        {([
-          ['From managed units', portfolioManagedNet, 'Income split, after costs'],
-          ['Guaranteed rent', portfolioGuaranteed, 'GRR units, fixed'],
-          ['Gross income', portfolioManagedGross, 'Managed units, before split'],
-        ] as const).map(([label, v, hint]) => (
-          <div key={label} className="rounded-card border border-solid border-line bg-card p-4 sm:p-5 flex flex-col gap-2 min-w-0">
-            <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">{label}</span>
-            <span className="text-[16px] sm:text-[24px] leading-none font-semibold tabular-nums whitespace-nowrap">{data ? rm(v) : '—'}</span>
-            <span className="text-meta text-muted-ink truncate">{hint}</span>
-          </div>
-        ))}
-      </div>
+      {/* The month's payout leads as the dark hero tile; the split and the gross beside it (StatTile, Conts DS v2). */}
+      <StatRow cols={4}>
+        <StatTile hero label="To pay owners" value={data ? rm(portfolioNet) : undefined} hint={data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')}` : undefined} />
+        <StatTile label="From managed units" value={data ? rm(portfolioManagedNet) : undefined} hint="Income split, after costs" />
+        <StatTile label="Guaranteed rent" value={data ? rm(portfolioGuaranteed) : undefined} hint="GRR units, fixed" />
+        <StatTile className="max-sm:col-span-2" label="Gross income" value={data ? rm(portfolioManagedGross) : undefined} hint="Managed units, before split" />
+      </StatRow>
       <details className="text-meta text-muted-ink -mt-1">
         <summary className="cursor-pointer select-none w-fit">How these are worked out</summary>
         <p className="m-0 mt-2 max-w-[880px] text-pretty">Each unit is worked out the way its owner statement is, by its payout model: income split by night into the month, less the costs the owner pays, then the share, minimum or fixed rent, and Owner Adjustments. Guaranteed rent is counted on its own, not as a share of earnings. Until the month's statement is final, these are estimates.</p>

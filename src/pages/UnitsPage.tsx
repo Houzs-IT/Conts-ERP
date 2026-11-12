@@ -497,7 +497,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           ] : [['Purpose', u.purpose === 'warehouse' ? 'Warehouse' : 'Showroom'], ['Car park bays', form?.parkingBays?.length ? String(form.parkingBays.length) : '—'], ['Open maintenance jobs', String(openIssues)]]).map(([label, value]) => (
             <div key={label} className="flex flex-col gap-2 min-w-0">
               <Eyebrow>{label}</Eyebrow>
-              <Figure value={value} className="text-[20px] sm:text-[24px] font-medium tracking-[-0.02em] leading-none text-ink" />
+              <Figure value={value} className="text-[19px] font-semibold tracking-[-0.02em] leading-none text-ink" />
             </div>
           ))}
         </div>
