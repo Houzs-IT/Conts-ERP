@@ -4,10 +4,10 @@ import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
-import { useUrlState } from '../finance/listKit';
 import { Modal } from '../../components/Modal';
 import { ChoiceChips } from '../../components/ChoiceChips';
-import { ListToolbar, PhoneCard, type ToolbarFilter } from '../../components/ListToolbar';
+import { ListToolbar } from '../../components/ListToolbar';
+import { RowActions, type RowAction } from '../../components/RowActions';
 import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
 import { FormSection } from '../../components/Card';
@@ -19,7 +19,7 @@ import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, notifyFailure } from '../../lib/api';
 import { mayRun, mayWork } from '../../lib/areaAccess';
 import { useSession } from '../../lib/session';
-import { rm, plural, todayMyt } from '../../lib/format';
+import { rm, todayMyt } from '../../lib/format';
 import {
   EMPLOYEE_DEFAULTS, POSITION_LABEL, MALAYSIAN_BANKS, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, TAX_RESIDENCIES, TAX_RESIDENCY_LABEL,
   TAX_CATEGORIES, TAX_CATEGORY_LABEL, EMPLOYEE_STATUSES, EMPLOYEE_STATUS_LABEL, RENOVATION_LABEL, isEmployeeStatus, type Employee, type EmployeeInput,
@@ -49,11 +49,11 @@ const departmentNamesOf = ({ cleanerId, technicianId, renovatorId, cleanerActive
 const isDepartmentName = (name: string | false | null | undefined): name is string => !!name;
 const departmentsOf = (e: Employee): string => departmentNamesOf(e).join(', ');
 
-type DepartmentFilter = 'all' | Dept;
 const DEPARTMENT_FILTER_NAME: Record<Dept, string> = { cleaning: 'Cleaning', maintenance: 'Maintenance', renovation: RENOVATION_LABEL };
-const isDepartmentFilter = (value: string): value is DepartmentFilter => value === 'all' || value in DEPARTMENT_FILTER_NAME;
-const isInDepartment = (e: Employee, department: DepartmentFilter): boolean =>
-  department === 'all' || departmentNamesOf(e).includes(DEPARTMENT_FILTER_NAME[department]);
+const isDept = (value: string): value is Dept => Object.hasOwn(DEPARTMENT_FILTER_NAME, value);
+const isInAnyDepartment = (e: Employee, picked: ReadonlySet<string>): boolean =>
+  [...picked].filter(isDept).some(department => departmentNamesOf(e).includes(DEPARTMENT_FILTER_NAME[department]));
+const payLabelOf = (e: Employee): string => (e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen));
 function statusOf(e: Employee): { label: string; tone: 'success' | 'neutral' | 'warning' } {
   if (e.status === 'resigned') return { label: 'Resigned', tone: 'neutral' };
   if (e.status === 'test') return { label: 'Test', tone: 'neutral' };
@@ -76,27 +76,23 @@ export default function EmployeesTab() {
   const [query, setQuery] = useState('');
   const [columnFiltersSlot, setColumnFiltersSlot] = useState<HTMLElement | null>(null);
   const people = data?.data ?? [];
-  const url = useUrlState();
-  const requestedDepartment = url.get('dept', 'all');
-  const department: DepartmentFilter = isDepartmentFilter(requestedDepartment) ? requestedDepartment : 'all';
   const needle = query.trim().toLowerCase();
-  // The department (main's ?dept=) and the search, both in the one toolbar.
-  const visiblePeople = people.filter(e => isInDepartment(e, department)
-    && (!needle || [e.name, e.employeeId, departmentsOf(e), POSITION_LABEL[e.position]].join(' ').toLowerCase().includes(needle)));
-  const departmentFilter: ToolbarFilter = {
-    key: 'dept', label: 'Department', allLabel: 'All', value: department === 'all' ? '' : department,
-    onChange: v => url.set({ dept: v || null, page: null }),
-    options: DEPARTMENTS.map(({ value: key }) => ({ value: key, label: DEPARTMENT_FILTER_NAME[key], count: data ? people.filter(e => isInDepartment(e, key)).length : undefined })),
-  };
+  const visiblePeople = needle
+    ? people.filter(e => [e.name, e.employeeId, departmentsOf(e), POSITION_LABEL[e.position]].join(' ').toLowerCase().includes(needle))
+    : people;
 
   const columns = useMemo<Column<Employee>[]>(() => [
     { key: 'empNo', label: 'Emp No', value: e => e.employeeId, filter: false, width: 100 },
     { key: 'name', label: 'Name', value: e => e.name, filter: false, hideable: false, width: 170, render: e => <span className="font-semibold">{e.name}</span> },
-    { key: 'departments', label: 'Departments', value: departmentsOf, filter: false, width: 140 },
+    // param 'dept' keeps the links main and older bookmarks use (?dept=cleaning).
+    { key: 'departments', label: 'Department', value: departmentsOf, width: 140, filterMatch: isInAnyDepartment,
+      filter: { kind: 'select', param: 'dept', multi: true, options: DEPARTMENTS.map(({ value }) => ({ value, label: DEPARTMENT_FILTER_NAME[value] })) } },
     { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], filter: { kind: 'select' }, width: 104 },
     { key: 'status', label: 'Status', type: 'status', value: e => statusOf(e).label, status: statusOf, width: 120 },
-    { key: 'basic', label: 'Basic Salary', type: 'money', value: e => (e.payBasis === 'daily' ? e.dailyRateSen : e.basicSalarySen), width: 140,
-      render: e => e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen) },
+    { key: 'basic', label: 'Basic Salary', type: 'money', value: e => (e.payBasis === 'daily' ? null : e.basicSalarySen), width: 140,
+      exportValue: e => (e.payBasis === 'daily' ? e.dailyRateSen : e.basicSalarySen),
+      filter: { kind: 'number', hint: 'Monthly salary. Staff on a daily rate are left out.' },
+      render: payLabelOf },
     { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 240, align: 'right', render: e => actions(e) },
   ], [mayEdit, mayRoster, mayGrant]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -127,25 +123,28 @@ export default function EmployeesTab() {
       rosterApi: onCleaning ? ROSTER.cleaning : ROSTER.maintenance, appNote: onCleaning ? APP_NOTE.cleaning : APP_NOTE.maintenance });
   }
 
-  function actions(e: Employee, align: 'start' | 'end' = 'end'): ReactNode {
+  function rowActionsOf(e: Employee): RowAction[] {
+    const isOnFieldRoster = !e.renovatorId;
+    return [
+      ...(mayGrant && e.isActive ? [{ key: 'access', label: e.employeeId ? 'Reset PIN' : 'Give app access', icon: 'KeyRound', run: () => giveAccess(e) }] : []),
+      ...(mayEdit ? [{ key: 'edit', label: 'Edit', icon: 'Pencil', run: () => setForm({ person: e }) }] : []),
+      ...(mayRoster && isOnFieldRoster
+        ? [{ key: 'switch', label: e.isActive ? 'Switch off' : 'Switch on', icon: e.isActive ? 'UserMinus' : 'UserCheck', danger: e.isActive, run: () => { void toggleActive(e); } }]
+        : []),
+    ];
+  }
+
+  function actions(e: Employee): ReactNode {
     // The row itself opens the form, so a click or Enter on a button here must not reach it. In the table the
     // buttons are icons with their name as a tooltip until the table is wide enough for the words, so the row stays
     // one line and the buttons stay in view.
-    const word = (w: string) => (align === 'end' ? <span className="@max-[1500px]/dt:sr-only">{w}</span> : w);
-    const access = e.employeeId ? 'Reset PIN' : 'Give app access';
-    const onOff = e.isActive ? 'Switch off' : 'Switch on';
-    const isOnFieldRoster = !e.renovatorId;
     return (
-      <span className={`flex gap-[7px] items-center ${align === 'start' ? 'flex-wrap justify-start [&>*]:flex-[1_1_auto]' : 'flex-nowrap justify-end whitespace-nowrap'}`} onClick={ev => ev.stopPropagation()} onKeyDown={ev => ev.stopPropagation()}>
-        {mayGrant && e.isActive && (
-          <Button size="sm" variant="tertiary" title={access} icon={<Icon name="KeyRound" size="sm" />} onClick={() => giveAccess(e)}>{word(access)}</Button>
-        )}
-        {mayEdit && <Button size="sm" variant="tertiary" title="Edit" icon={<Icon name="Pencil" size="sm" />} onClick={() => setForm({ person: e })}>{word('Edit')}</Button>}
-        {mayRoster && isOnFieldRoster && (
-          <Button size="sm" variant="tertiary" title={onOff} icon={<Icon name={e.isActive ? 'UserMinus' : 'UserCheck'} size="sm" />} onClick={() => void toggleActive(e)}>
-            {word(onOff)}
+      <span className="flex gap-[7px] items-center flex-nowrap justify-end whitespace-nowrap" onClick={ev => ev.stopPropagation()} onKeyDown={ev => ev.stopPropagation()}>
+        {rowActionsOf(e).map(action => (
+          <Button key={action.key} size="sm" variant="tertiary" title={action.label} icon={<Icon name={action.icon} size="sm" />} onClick={action.run}>
+            <span className="@max-[1500px]/dt:sr-only">{action.label}</span>
           </Button>
-        )}
+        ))}
       </span>
     );
   }
@@ -153,36 +152,38 @@ export default function EmployeesTab() {
   return (
     <>
       {confirmDialog}
-      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? (visiblePeople.length !== people.length ? `${plural(visiblePeople.length, 'employee')} of ${people.length}` : plural(people.length, 'employee')) : 'Loading the list…'}</p>
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <DataTable<Employee>
         id="employees" columns={columns} rows={loading && people.length === 0 ? null : visiblePeople}
-        viewParams={['dept']} defaultSort="empNo:asc" filtered={department !== 'all' || !!needle} onClearFilters={() => { setQuery(''); url.set({ dept: null, page: null }); }}
+        defaultSort="empNo:asc" filtered={!!needle} onClearFilters={() => setQuery('')}
         inlineFiltersTarget={columnFiltersSlot}
-        toolbar={<ListToolbar bare className="w-full" filters={[departmentFilter]} filtersLabel="Department"
-          after={<span ref={setColumnFiltersSlot} className="contents" />}
-          search={{ value: query, onChange: setQuery, placeholder: 'Name, employee no, department', label: 'Search employees' }} />}
+        toolbar={<ListToolbar bare className="w-full" after={<span ref={setColumnFiltersSlot} className="contents" />}
+          search={{ value: query, onChange: setQuery, placeholder: 'Name or employee no', label: 'Search employees' }} />}
         rowKey={e => e.cleanerId ?? e.technicianId ?? e.renovatorId ?? e.name} pageSize={0} noun={['employee', 'employees']} exportName="employee-master"
         rowTone={e => (e.status !== 'active' || !e.isActive ? 'muted' : null)}
         onRowClick={mayEdit ? e => setForm({ person: e }) : undefined}
         header={
-          <div className="pt-5 pb-3 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
-            <span className="flex flex-col gap-0.5">
+          <div className="pt-5 pb-3 px-5 max-md:px-4 max-md:pt-4 flex items-center justify-between gap-3 [border-bottom:1px_solid_var(--color-line-soft)]">
+            <span className="flex flex-col gap-0.5 min-w-0">
               <span className="text-heading font-bold tracking-[-0.005em]">Employee Master</span>
-              <span className="text-meta text-muted-ink">The company's own cleaners, technicians and Renovation staff. Open a person for their pay, bank and statutory details.</span>
+              <span className="text-meta text-muted-ink max-md:hidden">The company's own cleaners, technicians and Renovation staff. Open a person for their pay, bank and statutory details.</span>
             </span>
-            {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setForm({ person: null })}>Add employee</Button>}
+            {mayEdit && <Button size="sm" variant="primary" className="shrink-0" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setForm({ person: null })}>Add employee</Button>}
           </div>
         }
         empty={{ title: 'No employees yet.', body: 'Add the first cleaner, technician or Renovation employee.', action: mayEdit ? { label: 'Add employee', onClick: () => setForm({ person: null }) } : undefined }}
         renderCard={e => (
-          <span className="flex flex-col gap-2 min-w-0">
-            <PhoneCard title={e.name}
-              right={e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen)}
-              meta={[e.employeeId, departmentsOf(e), POSITION_LABEL[e.position]].filter(Boolean).join(' · ')}
-              badge={<StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />} />
-            {(mayGrant || mayEdit || mayRoster) && actions(e, 'start')}
+          <span className="flex flex-col gap-1 min-w-0">
+            <span className="flex items-start gap-2">
+              <span className="flex-1 min-w-0 text-heading font-semibold [overflow-wrap:anywhere]">{e.name}</span>
+              {rowActionsOf(e).length > 0 && <span className="-my-3 -mr-2"><RowActions name={e.name} items={rowActionsOf(e)} /></span>}
+            </span>
+            <span className="text-copy text-muted-ink [overflow-wrap:anywhere]">{[e.employeeId, departmentsOf(e)].filter(Boolean).join(' · ')}</span>
+            <span className="flex items-center justify-between gap-3 mt-1">
+              <StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />
+              <span className="text-heading font-semibold tabular-nums whitespace-nowrap">{payLabelOf(e)}</span>
+            </span>
           </span>
         )}
       />
