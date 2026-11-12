@@ -255,8 +255,8 @@ export default function OwnerOverallReportPage() {
   }
 
   const present = REPORT_GROUPS.map(g => ({ group: g, n: all.filter(r => r.group === g).length })).filter(g => g.n);
-  // Rent to rent keeps its chip even in a month with no such unit; No contract units show under All only (owner, 5 Nov 2026).
-  const chips: ReportGroup[] = [...present.map(p => p.group).filter(g => g !== 'RTR' && g !== 'NONE'), 'RTR'];
+  // Rent to rent keeps its chip even in a month with no such unit (owner, 5 Nov 2026).
+  const chips: ReportGroup[] = [...present.map(p => p.group).filter(g => g !== 'RTR'), 'RTR'];
   const detail = row && (
     <OwnerOverallDetail row={row} all={all} level={level} onLevel={setLevel} onClose={() => setSelected(null)}
       onStep={step} position={at + 1} total={order.length} />
@@ -334,7 +334,7 @@ export default function OwnerOverallReportPage() {
                 </tr>
               );
             })}
-            {totalRow(`${phone && g.group !== 'NONE' ? g.group : GROUP_NAME[g.group]} total`, overallTotals(g.rows), false)}
+            {totalRow(`${phone ? g.group : GROUP_NAME[g.group]} total`, overallTotals(g.rows), false)}
           </Fragment>
         ))}
         {groups.length > 1 && totalRow('Grand total', totals, true)}
