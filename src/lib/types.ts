@@ -20,7 +20,7 @@ export type SyncState = 'queued' | 'synced' | 'failed';
 /** The hidden role the server works out from the department's kind (management, staff, cleaning, maintenance), plus owner.
  *  No screen shows or picks it. The two older office roles (operations manager and finance admin) are retired: what set them apart now lives in
  *  the position and department rules. */
-export type UserRole = 'management' | 'operations_staff' | 'housekeeper' | 'technician' | 'owner';
+export type UserRole = 'management' | 'operations_staff' | 'housekeeper' | 'technician' | 'renovator' | 'owner';
 
 /** Which side of the business an account works on (migration 0143): The Conts is rental, Dream Crafter the supply chain. */
 export type UserSide = 'conts' | 'dream_crafter' | 'both';
@@ -78,7 +78,8 @@ export type AccessOrigin = 'user' | 'position' | 'department' | 'fixed' | 'none'
 /** The origins a default can have: a person's own override is never part of the default. */
 export type InheritedOrigin = 'position' | 'department' | 'none';
 
-export interface AccessArea { key: string; label: string; managed: boolean }
+/** `ownGrant`: given one by one; no category baseline or group tick reaches it (owner statement close part 2b). */
+export interface AccessArea { key: string; label: string; managed: boolean; ownGrant?: boolean }
 export interface AccessCategory { group: string; areas: AccessArea[] }
 
 /** Stored rows only. A missing key means inherit (area) or not set (category); category keys are `group:<Category>`. */
@@ -104,6 +105,8 @@ export interface PersonAccessArea {
   override: AccessLevel | null;
   /** What they get with no override: what "Inherit (position default)" goes back to. */
   inherited: { level: AccessLevel; origin: InheritedOrigin };
+  /** Given one by one: the group's ticks leave it alone (owner statement close part 2b). */
+  ownGrant?: boolean;
 }
 
 export interface PersonAccess {

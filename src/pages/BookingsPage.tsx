@@ -22,12 +22,14 @@ import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import { fetchAllPages } from '../lib/export';
 import { useApi } from '../lib/useApi';
+import { BOOKING_API_PARAMS, BOOKING_FILTER_PARAMS, BOOKING_SEARCH_PARAMS, bookingsPath } from '../lib/screenQueries';
 import { useMedia } from '../lib/useMedia';
 import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
+import { incomeLockedToast } from '../lib/lockNotice';
 import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
-import { rm, date, dateRange, dateShort, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel } from '../lib/format';
+import { rm, date, dateRange, dateShort, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel, buildingName } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { BookingChannel, ReservationState } from '../lib/types';
 import { statusOptions, statusLabel } from '../lib/status';
@@ -86,11 +88,8 @@ const FALLBACK: Payload = {
   totals: { bookings: 1, nights: 3, gross: 85200, fees: 12780, outstanding: 72420 }, buildings: [], paymentsReady: true,
 };
 
-/** Searches the server reads. The column searches are kept for links from global search (?ref=, ?guest=). */
-const SEARCH_PARAMS = ['q', 'ref', 'guest', 'unit', 'channel', 'stay', 'gross', 'status'];
-const FILTER_PARAMS = ['ch', 'building', 'country', 'from', 'to', 'cancelledFrom', 'cancelledTo', 'grossMin', 'grossMax', 'nightsMin', 'nightsMax'];
-/** URL parameters the server reads. The drawer's `open` stays out so opening a booking does not refetch the list. */
-const API_PARAMS = ['view', 'todo', 'sort', 'page', 'size', ...SEARCH_PARAMS, ...FILTER_PARAMS];
+// The searches and filters the server reads, and the list read they make (lib/screenQueries.ts).
+const SEARCH_PARAMS = BOOKING_SEARCH_PARAMS, FILTER_PARAMS = BOOKING_FILTER_PARAMS, API_PARAMS = BOOKING_API_PARAMS;
 const CHANNEL_CHOICES: BookingChannel[] = ['airbnb', 'booking_com', 'agoda', 'direct'];
 
 const nightsBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 864e5);
@@ -128,12 +127,9 @@ export default function BookingsPage() {
   const rawTodo = params.get('todo');
   const todo: TodoKey | null = TODOS.some(t => t.key === rawTodo) ? (rawTodo as TodoKey) : null;
 
-  const apiQuery = useMemo(() => {
-    const p = new URLSearchParams();
-    for (const k of API_PARAMS) { const v = params.get(k); if (v) p.set(k, v); }
-    return p.toString();
-  }, [params]);
-  const { data, loading, error, reload } = useApi<Payload>(`/reservations${apiQuery ? `?${apiQuery}` : ''}`, FALLBACK);
+  // Built in lib/screenQueries.ts, which lib/routePrefetch.ts also uses to start this read while the page downloads.
+  const listPath = useMemo(() => bookingsPath(params), [params]);
+  const { data, loading, error, reload } = useApi<Payload>(listPath, FALLBACK);
 
   // The search box answers every keystroke locally; the URL (and so the server) follows once typing pauses.
   const [draft, setDraft] = useState(params.get('q') ?? '');
@@ -210,7 +206,7 @@ export default function BookingsPage() {
     const unit = UNITS.find(u => u.id === input.unitId);
     if (!unit) { toast({ tone: 'critical', title: 'Pick a unit first.' }); return; }
     try {
-      const res = await api.post<{ id: string; externalRef: string; effects?: { channel: 'queued' | 'not_linked' | 'failed' } }>('/reservations', {
+      const res = await api.post<{ id: string; externalRef: string; effects?: { channel: 'queued' | 'not_linked' | 'failed' }; notice?: string | null }>('/reservations', {
         unitId: input.unitId, channel: input.channel,
         guest: input.guestName ? { fullName: input.guestName, email: input.email || null, phone: input.phone || null } : undefined,
         checkIn: input.checkIn, checkOut: input.checkOut, checkInTime: input.checkInTime, checkOutTime: input.checkOutTime,
@@ -221,9 +217,10 @@ export default function BookingsPage() {
       toast({
         tone: res.effects?.channel === 'failed' ? 'warning' : 'success',
         title: owner ? `Owner stay ${res.externalRef} saved.` : `Reservation ${res.externalRef} created.`,
-        body: [`${owner ? '' : `${input.guestName} · `}${unit.propertyName} ${unit.unitNumber} · ${dateRange(input.checkIn, input.checkOut)}.`,
+        body: [`${owner ? '' : `${input.guestName} · `}${buildingName(unit.propertyName)} ${unit.unitNumber} · ${dateRange(input.checkIn, input.checkOut)}.`,
           channelNote(res.effects?.channel, 'held'), owner ? 'Owner stays show on the calendar and the unit page, not in this list.' : ''].filter(Boolean).join(' '),
       });
+      if (res.notice) toast(incomeLockedToast(res.notice));
       if (!owner) setOpenId(res.id);
       reload();
     } catch (e) {
@@ -323,11 +320,11 @@ export default function BookingsPage() {
     { key: 'guest', label: 'Guest', value: r => r.guestName, sortKey: 'guest', width: 170, filter: { kind: 'text', param: 'guest' },
       render: b => { const w = stayWho(b); return <span className="flex items-center gap-1.5 min-w-0"><span className={cx('font-medium whitespace-nowrap overflow-hidden text-ellipsis block', w.missing && 'text-muted-ink')} title={w.name}>{w.name}</span><SampleMark kind={b.sample} /></span>; },
       sub: b => [stayWho(b).missing ? 'No guest name' : null, b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, countryOf(b)].filter(Boolean).join(' · ') || null },
-    { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, sortKey: 'unit', width: 140,
+    { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${buildingName(r.propertyName)}`, sortKey: 'unit', width: 140,
       render: b => <span className="font-mono text-meta font-semibold text-ink whitespace-nowrap">{b.unitNumber}</span>,
-      filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => b.propertyName },
-    { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150,
-      filter: { kind: 'select', param: 'building', multi: false, options: (data?.buildings ?? []).map(b => ({ value: b.id, label: b.name, count: facetCount('building', b.id) })) } },
+      filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => buildingName(b.propertyName) },
+    { key: 'building', label: 'Building', value: r => buildingName(r.propertyName), hidden: true, width: 150,
+      filter: { kind: 'select', param: 'building', multi: false, options: (data?.buildings ?? []).map(b => ({ value: b.id, label: buildingName(b.name), count: facetCount('building', b.id) })) } },
     { key: 'channel', label: 'Channel', type: 'channel', value: r => r.channel, sortKey: 'channel', hidden: true, width: 130,
       filter: { kind: 'select', param: 'ch', multi: false, options: CHANNEL_CHOICES.map(c => ({ value: c, label: CHANNEL_META[c].label, count: facetCount('ch', c) })) } },
     { key: 'stay', label: 'Check-in to checkout', type: 'date', value: r => r.checkIn, sortKey: 'stay', width: 176,

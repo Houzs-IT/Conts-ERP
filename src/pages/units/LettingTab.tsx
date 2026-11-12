@@ -9,7 +9,7 @@ import Icon from '../../components/Icon';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
-import { date, rm, titleCase } from '../../lib/format';
+import { date, rm, personName } from '../../lib/format';
 import type { Tone } from '../../lib/types';
 import { CentreModal, Labeled, Select } from './shared';
 import { Link } from 'react-router-dom';
@@ -121,7 +121,7 @@ export default function LettingTab({ unitId, canEdit, money }: { unitId: string;
                 <StatusBadge tone={LETTING_STATUS[l.status].tone} label={LETTING_STATUS[l.status].label} />
                 {l.remind && <StatusBadge tone="critical" label={`Let it again: ${leftText(l.daysLeft)}`} />}
               </span>
-              {l.tenantName && <span className="text-copy font-medium">{titleCase(l.tenantName)}{l.tenantPhone ? ` · ${l.tenantPhone}` : ''}</span>}
+              {l.tenantName && <span className="text-copy font-medium">{personName(l.tenantName)}{l.tenantPhone ? ` · ${l.tenantPhone}` : ''}</span>}
               {(l.startsOn || l.endsOn) && <span className="text-meta text-muted-ink">{l.startsOn ? date(l.startsOn) : '?'} to {l.endsOn ? date(l.endsOn) : '?'}{l.status === 'rented' && l.daysLeft != null && !l.remind ? ` · ${leftText(l.daysLeft)}` : ''}</span>}
               {money && (l.monthlyRent != null || l.agentFee != null) && <span className="text-meta text-muted-ink">{l.monthlyRent != null ? `Rent ${rm(l.monthlyRent)} a month` : ''}{l.monthlyRent != null && l.agentFee != null ? ' · ' : ''}{l.agentFee != null ? `Agent fee ${rm(l.agentFee)}` : ''}</span>}
               {l.notes && <span className="text-meta text-muted-ink whitespace-pre-line">{l.notes}</span>}

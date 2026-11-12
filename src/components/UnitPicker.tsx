@@ -3,6 +3,7 @@ import { cx } from '../lib/design-tokens';
 import Icon from './Icon';
 import { Floating } from './DataTableParts';
 import type { RosterUnit } from '../lib/useUnitRoster';
+import { buildingName } from '../lib/format';
 
 const RECENT_KEY = 'unitPicker.recent';
 const RECENT_MAX = 5;
@@ -61,7 +62,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
     const recentRows = words.length ? [] : recent.map(id => units.find(u => u.id === id)).filter((u): u is RosterUnit => !!u).map(u => ({ u, group: 'Recent' }));
     const pin = pinned && (!words.length || words.every(w => pinned.label.toLowerCase().includes(w)))
       ? [{ u: { id: pinned.id, unitNumber: pinned.label, propertyName: '' }, group: '', pinned: true }] : [];
-    return [...pin, ...recentRows, ...sorted.map(u => ({ u, group: u.propertyName }))];
+    return [...pin, ...recentRows, ...sorted.map(u => ({ u, group: buildingName(u.propertyName) }))];
   }, [units, q, recent, pinned]);
 
   useEffect(() => {
@@ -111,7 +112,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
         {current ? (
           <span className="flex-1 min-w-0 truncate">
             <b className="font-semibold text-ink">{code(current)}</b>
-            <span className="text-muted-ink"> · {current.propertyName}{bedBath(current) ? ` · ${bedBath(current)}` : ''}</span>
+            <span className="text-muted-ink"> · {buildingName(current.propertyName)}{bedBath(current) ? ` · ${bedBath(current)}` : ''}</span>
           </span>
         ) : pinnedOn ? <span className="flex-1 min-w-0 truncate font-semibold text-ink">{pinned!.label}</span>
           : <span className="flex-1 min-w-0 truncate text-muted-ink">Pick the unit</span>}
@@ -141,7 +142,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
                     className={cx('mx-1 my-0.5 px-2.5 py-2 rounded-control flex items-center gap-2 text-copy cursor-pointer', i === active && 'bg-muted')}>
                     <span className="flex-1 min-w-0 truncate">
                       <span className={cx('text-ink', r.u.id === value ? 'font-semibold' : 'font-medium')}>{code(r.u)}</span>
-                      {r.group === 'Recent' && <span className="text-muted-ink"> · {r.u.propertyName}</span>}
+                      {r.group === 'Recent' && <span className="text-muted-ink"> · {buildingName(r.u.propertyName)}</span>}
                     </span>
                     {bedBath(r.u) && <span className="text-meta text-muted-ink flex-none">{bedBath(r.u)}</span>}
                     {r.u.id === value && <Icon name="Check" size="sm" />}

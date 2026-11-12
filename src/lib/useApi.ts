@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, ApiFailure, errorMessage, readCache, remember } from './api';
+import { answeredWithin, api, ApiFailure, errorMessage, isAbort, readCache, remember } from './api';
 
 /* How many reads are refreshing figures that are already on screen. The shell draws one thin gold line while it is
    above zero, so stale-but-shown data visibly says it is being brought up to date. */
@@ -13,13 +13,44 @@ function holdRefreshing() {
 }
 
 const pendingReads = new Map<string, Promise<unknown>>();
+/** Reads whose answer is kept under a path not known until it arrives (prefetchAs), by the start of that path. */
+const pendingAs = new Map<string, Promise<unknown>>();
 function sharedGet<T>(path: string): Promise<T> {
   let pending = pendingReads.get(path);
   if (!pending) {
-    pending = api.get<T>(path).finally(() => pendingReads.delete(path));
+    // A read that may answer this one is on its way (prefetchAs): wait for it, and ask only if it did not.
+    const before = [...pendingAs].find(([start]) => path.startsWith(start))?.[1];
+    pending = (before
+      ? before.then(() => (answeredWithin(path, FRESH_MS) ? readCache.get(path) as T : api.get<T>(path)))
+      : api.get<T>(path)
+    ).finally(() => pendingReads.delete(path));
     pendingReads.set(path, pending);
   }
   return pending as Promise<T>;
+}
+
+/** An answer this recent is shown as it is, with no second read: a tab switched back and forth, or a page whose data
+ *  was asked for while its code was still downloading (prefetch). Older answers still show at once and are re-read. */
+const FRESH_MS = 10_000;
+
+/** Starts a read a screen is about to make, so it runs while the screen's code downloads (App.tsx routes). The
+ *  screen's own useApi of the same path joins it, or uses its answer, instead of asking again. */
+export function prefetch(path: string) {
+  if (pendingReads.has(path) || answeredWithin(path, FRESH_MS)) return;
+  sharedGet(path).then(r => remember(path, r)).catch(() => { /* the screen's own read reports it */ });
+}
+
+/** Starts a read whose answer a screen will ask for under another path, one it cannot name until something else has
+ *  loaded: the Units screen's first unit record (/units/detail?first=1), which it asks for as ?unitId= once the tree is
+ *  in. The answer is kept under `keyOf(answer)` as well; until it arrives, a read of any path starting with `start`
+ *  waits for it and asks the server only when the answer was for another path. */
+export function prefetchAs<T>(path: string, start: string, keyOf: (answer: T) => string | null) {
+  if (pendingAs.has(start) || answeredWithin(path, FRESH_MS)) return;
+  const read: Promise<unknown> = api.get<T>(path)
+    .then(r => { remember(path, r); const key = keyOf(r); if (key) remember(key, r); })
+    .catch(() => { /* the screen's own read asks again and reports it */ })
+    .finally(() => { if (pendingAs.get(start) === read) pendingAs.delete(start); });
+  pendingAs.set(start, read);
 }
 
 export interface Query<T> {
@@ -53,11 +84,15 @@ export function useApi<T>(path: string | null, fallback?: T): Query<T> {
     // A page revisited (or a range switched back) shows its last answer straight away; the read below refreshes it.
     const seen = readCache.get(path) as T | undefined;
     if (seen !== undefined) setData(seen);
+    // Read a moment ago (a prefetch, or this tab a few seconds back): nothing to refresh.
+    if (!nonce && seen !== undefined && answeredWithin(path, FRESH_MS)) { setError(null); setLoading(false); return; }
     // A reload after a save must not join a read sent before the save.
     (nonce ? api.get<T>(path) : sharedGet<T>(path))
       .then(r => { remember(path, r); if (live) { setData(r); setError(null); } })
       .catch((e: unknown) => {
-        if (!live) return;
+        // A read cancelled on the way (the page left, the browser stopped it) is not a failure: no error state, and the
+        // next visit reads again (only answers are kept in readCache, never failures).
+        if (!live || isAbort(e)) return;
         // With a fallback present the page still renders; the banner explains why
         // the figures are not live rather than blanking the screen.
         setError(errorMessage(e, 'This list could not load. Check your connection and try again.'));

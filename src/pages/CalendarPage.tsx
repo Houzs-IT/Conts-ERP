@@ -14,9 +14,10 @@ import { channelNote, type ChannelSync } from '../lib/bookingStatus';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
+import { incomeLockedToast } from '../lib/lockNotice';
 import { useSession } from '../lib/session';
 import { api, notifyFailure, errorMessage } from '../lib/api';
-import { todayMyt, dateInputValue, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, plural, count, rm, amount } from '../lib/format';
+import { todayMyt, dateInputValue, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, plural, count, rm, amount, buildingName } from '../lib/format';
 import { CHANNEL, TONE } from '../lib/vocabulary';
 import type { BookingChannel, Tone } from '../lib/types';
 import { calendarFilterGroups, ChannelLegend } from '../components/calendar/CalendarFilters';
@@ -250,13 +251,13 @@ function CalendarBoard() {
   const everyUnit = useApi<Payload>(rateUpdate && property !== 'all' ? `/reservations/calendar?from=${from}&to=${from}` : null);
   const rateSource = property === 'all' ? data : everyUnit.data ?? data;
   const properties = useMemo<BuildingRow[]>(() => data?.buildings ?? Array.from(
-    allUnits.reduce((m, u) => m.set(buildingOf(u), { id: buildingOf(u), name: u.propertyName, units: (m.get(buildingOf(u))?.units ?? 0) + 1 }), new Map<string, BuildingRow>()).values(),
+    allUnits.reduce((m, u) => m.set(buildingOf(u), { id: buildingOf(u), name: buildingName(u.propertyName), units: (m.get(buildingOf(u))?.units ?? 0) + 1 }), new Map<string, BuildingRow>()).values(),
   ), [data, allUnits]);
   const units = useMemo(() => (property === 'all' ? allUnits : allUnits.filter(u => buildingOf(u) === property)), [allUnits, property]);
   const groups = useMemo(() => {
     const m = new Map<string, { id: string; name: string; units: Unit[] }>();
     for (const u of units) {
-      const g = m.get(buildingOf(u)) ?? { id: buildingOf(u), name: u.propertyName, units: [] };
+      const g = m.get(buildingOf(u)) ?? { id: buildingOf(u), name: buildingName(u.propertyName), units: [] };
       g.units.push(u); m.set(g.id, g);
     }
     return [...m.values()];
@@ -423,8 +424,9 @@ function CalendarBoard() {
         setBusy(true);
         setDateEdits(e => ({ ...e, [b.id]: { checkIn: newCheckIn, checkOut: newCheckOut } }));
         try {
-          const res = await api.patch<{ effects?: { channel: ChannelSync } }>(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true });
+          const res = await api.patch<{ effects?: { channel: ChannelSync }; notice?: string | null }>(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true });
           toast({ tone: 'success', title: 'Reservation moved.', body: `${b.guestName || 'The reservation'} is now ${dateRange(newCheckIn, newCheckOut)}. ${channelNote(res?.effects?.channel, 'moved')}`.trim() });
+          if (res?.notice) toast(incomeLockedToast(res.notice));
           reload();
         } catch (e) {
           // Put the bar back where it was: the server kept the old dates.
@@ -657,7 +659,7 @@ function CalendarBoard() {
                             </label>
                           )}
                           <button type="button" aria-expanded={rowOpen} onClick={() => setUnitOpen(o => ({ ...o, [u.id]: !rowOpen }))}
-                            title={`${u.unitNumber} · ${u.propertyName} · ${link.label}${readiness ? ' · ' + readiness.label : ''} · ${rowOpen ? 'hide' : 'show'} rates`}
+                            title={`${u.unitNumber} · ${buildingName(u.propertyName)} · ${link.label}${readiness ? ' · ' + readiness.label : ''} · ${rowOpen ? 'hide' : 'show'} rates`}
                             className={`flex-1 min-w-0 flex items-center gap-1 pl-2 ${selectable ? 'md:pl-0' : 'md:pl-1.5'} pr-2 md:pr-3 py-0 m-0 border-none bg-transparent hover:bg-muted/60 cursor-pointer text-left font-sans`}>
                             <span className="hidden md:grid w-6 h-6 flex-none place-items-center text-muted-ink">
                               <Icon name={rowOpen ? 'ChevronDown' : 'ChevronRight'} size="sm" />
@@ -754,7 +756,7 @@ function CalendarBoard() {
                             return (
                               <div key={b.id} draggable={!inquiry} onClick={e => { e.stopPropagation(); if (refusedDrag.current) { refusedDrag.current = false; return; } setHover(null); setOpenBlock(b); }}
                                 onPointerDown={e => e.stopPropagation()}
-                                onPointerEnter={e => { if (e.pointerType === 'mouse') setHover({ b, phase, unit: `${u.propertyName} ${u.unitNumber}`, x: e.clientX, y: e.clientY }); }}
+                                onPointerEnter={e => { if (e.pointerType === 'mouse') setHover({ b, phase, unit: `${buildingName(u.propertyName)} ${u.unitNumber}`, x: e.clientX, y: e.clientY }); }}
                                 onPointerMove={e => { e.stopPropagation(); if (e.pointerType === 'mouse') setHover(h => (h && h.b.id === b.id ? { ...h, x: e.clientX, y: e.clientY } : h)); }}
                                 onPointerLeave={() => setHover(null)}
                                 aria-label={`${name} · ${phase === 'hold' ? holdName(b) : ch.label} · ${PHASE_LABEL[phase]} · ${dateRange(b.checkIn, b.checkOut)}`}

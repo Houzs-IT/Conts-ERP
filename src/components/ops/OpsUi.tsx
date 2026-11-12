@@ -7,7 +7,7 @@ import { MediaSourceSheet } from '../Attachments';
 import { cx } from '../../lib/design-tokens';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { SearchSelect } from '../Select';
-import { time, weekdayDate, dateTimeShort } from '../../lib/format';
+import { time, weekdayDate, dateTimeShort, buildingName } from '../../lib/format';
 import { stampPhoto } from '../../lib/photoStamp';
 import { useToast } from '../Toast';
 import { useApi } from '../../lib/useApi';
@@ -241,7 +241,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
   const items = (catalog.data?.data ?? []).filter(s => s.active);
   const fromClean = !!taskId;
   const inBuilding = f.unitId === IN_BUILDING.id;
-  const buildings = [...new Map((units ?? []).flatMap(u => u.propertyId ? [[u.propertyId, u.propertyName] as const] : [])).entries()]
+  const buildings = [...new Map((units ?? []).flatMap(u => u.propertyId ? [[u.propertyId, buildingName(u.propertyName)] as const] : [])).entries()]
     .map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
   // A cleaner's damage report can name several kinds of problem at once; each becomes its own job (Conts field app, Nov 2026).
   const multi = fromClean && !office;
@@ -298,7 +298,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
     // The job is saved; a photo that fails is named, not a reason to undo it.
     if (picked.files.length) {
       setSending(true);
-      const placeLabel = inBuilding ? buildings.find(b => b.id === f.building)?.name : (units ?? []).filter(u => u.id === f.unitId).map(u => `${u.propertyName} ${u.unitNumber}`)[0];
+      const placeLabel = inBuilding ? buildings.find(b => b.id === f.building)?.name : (units ?? []).filter(u => u.id === f.unitId).map(u => `${buildingName(u.propertyName)} ${u.unitNumber}`)[0];
       const failed = await picked.send(unit?.label ?? placeLabel ?? '', ...ids);
       if (failed.length) toast({ tone: 'warning', title: 'Job added, but some photos were not.', body: `Not added: ${failed.join(', ')}. Add them in the job's photos, under The problem.` });
     }

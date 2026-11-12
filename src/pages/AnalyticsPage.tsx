@@ -6,7 +6,7 @@ import PageHeader from '../components/PageHeader';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import ChannelMark, { channelLabel } from '../components/ChannelMark';
 import { useApi } from '../lib/useApi';
-import { rm, rmCompact, monthLabel, plural, MONTHS } from '../lib/format';
+import { rm, rmCompact, monthLabel, plural, MONTHS, buildingName } from '../lib/format';
 import { DataTable, type Column } from '../components/DataTable';
 import type { BookingChannel, Tone } from '../lib/types';
 import { useUrlState, SearchBox } from './finance/listKit';
@@ -302,7 +302,7 @@ export default function AnalyticsPage() {
                 <span className={cx('w-6 h-6 rounded-full grid place-items-center text-caption font-semibold flex-none tabular-nums', g.key === 'best' && i === 0 ? 'bg-gold-tint text-gold-ink' : 'bg-muted text-muted-ink')}>{i + 1}</span>
                 <div className="flex flex-col gap-px min-w-0 flex-1">
                   <span className="text-copy font-medium">{u.unitNumber}</span>
-                  <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</span>
+                  <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{buildingName(u.propertyName)}</span>
                 </div>
                 <div className="md:hidden flex flex-col items-end gap-px flex-none">
                   <span className="text-copy font-semibold tabular-nums">{m.full(m.pick(u))}</span>
@@ -359,7 +359,7 @@ function UnitTable({ units, metric, loading, range }: { units: UnitRow[]; metric
 
   const buildings = useMemo(() => {
     const m = new Map<string, string>();
-    for (const u of units) m.set(u.buildingId ?? u.propertyName, u.propertyName);
+    for (const u of units) m.set(u.buildingId ?? u.propertyName, buildingName(u.propertyName));
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label }));
   }, [units]);
 
@@ -379,9 +379,9 @@ function UnitTable({ units, metric, loading, range }: { units: UnitRow[]; metric
 
   const columns = useMemo<Column<UnitRow>[]>(() => [
     { key: 'unit', label: 'Unit', value: u => u.unitNumber, text: u => `${u.propertyName} ${u.unitNumber}`, exportValue: u => `${u.propertyName} ${u.unitNumber}`,
-      hideable: false, width: 180, sub: u => u.propertyName,
+      hideable: false, width: 180, sub: u => buildingName(u.propertyName),
       render: u => <span className="font-medium truncate block" title={u.unitNumber}>{u.unitNumber}</span> },
-    { key: 'building', label: 'Building', value: u => u.propertyName, hidden: true, width: 150 },
+    { key: 'building', label: 'Building', value: u => buildingName(u.propertyName), hidden: true, width: 150 },
     { key: 'revenue', label: 'Earnings', type: 'money', value: u => u.revenue, width: 120, render: u => <span className={NUM}>{rm(u.revenue)}</span> },
     { key: 'nights', label: 'Booked nights', type: 'number', value: u => u.nights ?? null, hidden: true, width: 100 },
     { key: 'occupancy', label: 'Occupancy', type: 'number', value: u => u.occupancy, width: 100, render: u => <span className={NUM}>{u.occupancy.toFixed(1)}%</span> },
@@ -418,7 +418,7 @@ function UnitTable({ units, metric, loading, range }: { units: UnitRow[]; metric
         <span className="flex items-center gap-3">
           <span className="flex flex-col gap-[2px] min-w-0 flex-1">
             <span className="text-copy font-medium truncate">{u.unitNumber}</span>
-            <span className="text-meta text-muted-ink truncate">{u.propertyName} · {u.occupancy.toFixed(1)}% occupied</span>
+            <span className="text-meta text-muted-ink truncate">{buildingName(u.propertyName)} · {u.occupancy.toFixed(1)}% occupied</span>
           </span>
           <span className="flex flex-col items-end gap-[2px] shrink-0">
             <span className="text-copy font-semibold tabular-nums">{METRICS[metric].full(METRICS[metric].pick(u))}</span>

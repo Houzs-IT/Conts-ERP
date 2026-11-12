@@ -14,8 +14,9 @@ import ChannelMark from '../ChannelMark';
 import { PhoneText } from '../PhoneText';
 import { useApi } from '../../lib/useApi';
 import { useToast } from '../Toast';
+import { incomeLockedToast } from '../../lib/lockNotice';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
-import { rm, date, dateRange, dateTime, time, nights as fmtNights, guests as fmtGuests, greetName } from '../../lib/format';
+import { rm, date, dateRange, dateTime, time, nights as fmtNights, guests as fmtGuests, greetName, buildingName } from '../../lib/format';
 import { CHANNEL_META, cx } from '../../lib/design-tokens';
 import { channelNote, deliveryToast, stayPhase, type ChannelSync } from '../../lib/bookingStatus';
 import { statusLabel } from '../../lib/status';
@@ -360,10 +361,11 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
     if (!valid) return;
     setBusy(true); setError(null); setFieldErrors({});
     try {
-      const res = await api.patch<{ effects?: { channel: ChannelSync } }>(`/reservations/${d.id}/dates`, {
+      const res = await api.patch<{ effects?: { channel: ChannelSync }; notice?: string | null }>(`/reservations/${d.id}/dates`, {
         checkIn, checkOut, confirm: true, ...(priceChanged ? { grossBookingValue: totalSen } : {}),
       });
       onSaved({ checkIn, checkOut, channel: res?.effects?.channel });
+      if (res?.notice) toast(incomeLockedToast(res.notice));
     } catch (err) {
       setError(failMessage(err));
       if (err instanceof ApiFailure && err.fields) setFieldErrors(err.fields);
@@ -441,6 +443,8 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
       const res = await api.post<unknown>(`/reservations/${d.id}/payments`, { amount: sen, receivedOn, kind, method, reference: reference || undefined, note: note || undefined, reason: refund && reason.trim() ? reason.trim() : undefined });
       // With approvals on, a refund waits for a second person and nothing is recorded yet.
       if (isStaged(res)) { toast(stagedToast(res)); onSaved(''); setBusy(false); return; }
+      const notice = (res as { notice?: string | null } | null)?.notice;
+      if (notice) toast(incomeLockedToast(notice));
       if (refund) { onSaved(`Refund of ${rm(sen)} recorded.`); setBusy(false); return; }
       const left = Math.max(d.ledger.outstanding - sen, 0);
       onSaved(`Payment of ${rm(sen)} recorded. ${left > 0 ? `${rm(left)} still outstanding.` : 'Nothing is outstanding now.'}`);
@@ -832,7 +836,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   async function move(m: Move, reason?: string) {
     setBusy(true);
     try {
-      const res = await api.patch<{ state: ReservationState; effects: { channel: ChannelSync; readiness: string | null; turnoverCreated: boolean; tasksRemoved: number; tasksKept: number } }>(
+      const res = await api.patch<{ state: ReservationState; effects: { channel: ChannelSync; readiness: string | null; turnoverCreated: boolean; tasksRemoved: number; tasksKept: number }; notice?: string | null }>(
         `/reservations/${id}`, { state: m.to, ...(reason ? { reason } : {}) });
       const e = res.effects;
       const bits = [
@@ -844,6 +848,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
       ].filter(Boolean);
       // vocab-ok: 'booking' here is the status entity key, not text
       toast({ tone: m.to === 'cancelled' || m.to === 'no_show' ? 'neutral' : 'success', title: `${s!.externalRef ?? 'Reservation'} is now ${statusLabel('booking', res.state)}.`, body: bits.join(' ') || undefined });
+      if (res.notice) toast(incomeLockedToast(res.notice));
       setAsking(null);
       reload(); onChanged?.(id);
     } catch (err) {
@@ -868,8 +873,9 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   async function removePayment(p: Payment) {
     setBusy(true);
     try {
-      await api.del(`/reservations/${id}/payments/${p.id}`);
+      const res = await api.del<{ notice?: string | null }>(`/reservations/${id}/payments/${p.id}`);
       toast({ tone: 'neutral', title: `${KIND_LABEL[p.kind]} of ${rm(p.amount)} removed.` });
+      if (res?.notice) toast(incomeLockedToast(res.notice));
       setRemoving(null); reload(); onChanged?.(id);
     } catch (err) { toast({ tone: 'critical', title: 'Payment not removed.', body: failMessage(err) }); }
     setBusy(false);
@@ -890,7 +896,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
 
   const pick = (m: Move) => { if (m.needsReason) setAsking(m); else void move(m); };
   const cancelMove = d?.moves.find(m => m.to === 'cancelled' && m.allowed);
-  const metaLine = `${s.guestName || ch.label} · ${s.propertyName} ${s.unitNumber} · ${dateRange(s.checkIn, s.checkOut)}`;
+  const metaLine = `${s.guestName || ch.label} · ${buildingName(s.propertyName)} ${s.unitNumber} · ${dateRange(s.checkIn, s.checkOut)}`;
   const saved = (msg: string) => { toast({ tone: 'success', title: msg }); reload(); onChanged?.(id); };
   const nationality = d ? countryName(d.nationality) : null;
 
@@ -902,7 +908,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             <ChannelMark ch={s.channel} size={24} />
             <div className="flex flex-col min-w-0">
               <span className="text-heading font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{s.channel === 'owner_stay' ? (s.guestName ? `Owner stay · ${s.guestName}` : 'Owner stay') : block ? 'Blocked dates' : (s.guestName || 'No guest name')}</span>
-              <span className="text-meta text-[rgba(255,255,255,0.72)] whitespace-nowrap overflow-hidden text-ellipsis">{s.propertyName} {s.unitNumber} · {fmtNights(nights)}</span>
+              <span className="text-meta text-[rgba(255,255,255,0.72)] whitespace-nowrap overflow-hidden text-ellipsis">{buildingName(s.propertyName)} {s.unitNumber} · {fmtNights(nights)}</span>
             </div>
           </div>
           <CloseButton onClick={onClose} onDark />

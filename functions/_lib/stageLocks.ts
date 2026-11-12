@@ -21,10 +21,11 @@ export function lockMonthProblem(month: string, today: string): string | null {
   return month >= today.slice(0, 7) ? `${monthLabel(month)} has not ended yet.` : null;
 }
 
-/** Whether a unit can be locked on a step, by its contract's basis (termsFor). Income and deductions: a share only. A
- *  fixed rent or a master lease pays the owner the same whatever the unit earns or costs, so locking those steps would
- *  only freeze the company's own figures (review finding 4); they join once the company's share of a late change is
- *  built (chew's choice A, part 2b). O2: every unit on the statement. */
+/** Whether a unit can be locked on a step, by its contract's basis (termsFor). Income and deductions: a share only
+ *  (long-term lets included). A master lease has no owner statement. A fixed rent (GRR) pays the owner the same whatever
+ *  the unit earns or costs; it is no longer a contract type (owner, 4 Nov 2026, migration 0206: the database refuses it
+ *  on a contract and on a unit, and no unit on production is one), so it is left off these steps rather than built for
+ *  (part 2b ruling, 12 Nov 2026). O2: every unit on the statement. */
 export const lockable = (stage: Stage, basis: string): boolean => stage === 'o2' || basis === 'share';
 export const incomeLockable = (basis: string): boolean => lockable('income', basis);
 
@@ -109,9 +110,32 @@ export function splitLate(r: LateRun, locked: { income: boolean; deductions: boo
   return {};
 }
 
+/** The company's figure of a unit-month (sen): what the gross leaves after the deductions and what the owner is due before
+ *  adjustments. It is the reports' Gain / Loss (GP less the owner base) on a share, a guarantee and a long-term let.
+ *  A late change's company share is this figure live less as locked, split between the locks by splitLate, and it
+ *  lands on the month the owner's share goes to (chew's choice A, 11 Nov 2026: "A：算进下个月"). */
+export const companyFigure = (m: { gross: number; deductions: number; payoutBeforeAdjustments: number; topUp?: number; yearlyGuarantee?: boolean }): number =>
+  // A yearly guarantee's top-up (its contract year's last month) is not in the reports' owner base (O1 only), so it is
+  // left out here too: a lock must not change the company's figure from what the reports work out (review finding).
+  m.gross - m.deductions - m.payoutBeforeAdjustments + (m.yearlyGuarantee ? m.topUp ?? 0 : 0);
+
 /** The owner adjustment's description for a lock's late difference. */
 export const lateText = (stage: 'income' | 'deductions', unitLabel: string, label: string): string =>
   `Late change to ${unitLabel} ${stage} for ${label} (${stage} locked)`;
+
+/** A notice is worked out after the change it is about has been saved, so a failure there must never turn a saved change
+ *  into an error (the person would try again and, say, record a payment twice: review finding). Any failure gives
+ *  `fallback`, and is logged. */
+export async function quietly<T>(work: () => Promise<T>, fallback: T): Promise<T> {
+  try { return await work(); } catch (e) { console.error('A notice was skipped:', e); return fallback; }
+}
+
+/** A late change named by its month and step ('October 2026 income'), for a screen that already shows the unit (the
+ *  company views). Any other text, such as a carried row's, is returned as it is. */
+export const lateLabel = (description: string): string => {
+  const m = /^Late change to .+ (income|deductions) for (.+) \((?:income|deductions) locked\)$/.exec(description);
+  return m ? `${m[2]} ${m[1]}` : description;
+};
 
 /* What people are told about a locked or final month: every route and screen uses these, not its own wording. */
 const STAGE_NAME: Record<Stage, string> = { income: 'income', deductions: 'deductions', o2: 'O2' };
@@ -124,6 +148,10 @@ export const rolledText = (unitLabel: string, fromLabel: string, toLabel: string
 /** A cost changed on a month whose deductions are locked: the month keeps it as locked, the difference moves on. */
 export const editedText = (unitLabel: string, label: string): string =>
   `${lockedText('deductions', unitLabel, label)} The ${label} statement keeps the old amount; the difference goes to the next open month as an owner adjustment.`;
+/** A reservation added, changed or cancelled in a month whose income is locked: the month keeps its locked figures and
+ *  the difference goes on. `toLabel`: the month it goes to, when there is one locked month to name it from. */
+export const incomeNoticeText = (unitLabel: string, lockedLabels: string[], toLabel: string | null): string =>
+  `${lockedLabels.join(' and ')} income ${lockedLabels.length > 1 ? 'are' : 'is'} locked for ${unitLabel}. The difference goes to ${lockedLabels.length === 1 && toLabel ? toLabel : 'the next open month'}.`;
 /** Something a locked month holds cannot be removed or changed until the step is unlocked. */
 export const refusedText = (stage: Stage, unitLabel: string, label: string): string =>
   `${lockedText(stage, unitLabel, label)} Ask someone who can unlock a step to unlock ${stage === 'deductions' ? 'them' : 'it'} first.`;
@@ -154,3 +182,5 @@ export function o2Checks(x: { held: number; repeats: number; prevMonth: string }
 
 /** The balancing line on an unlocked month whose difference was already settled on later statements. */
 export const carriedText = (labels: string[]): string => `Already settled on the ${labels.join(' and ')} statement`;
+/** The company's balancing row on an unlocked month whose late change already counted in later months. */
+export const companyCarriedText = (labels: string[]): string => `Already counted in ${labels.join(' and ')}`;

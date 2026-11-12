@@ -8,7 +8,7 @@ import { EmptyState } from '../components/States';
 import { ListToolbar } from '../components/ListToolbar';
 import { StatusBadge } from '../components/StatusBadge';
 import { useApi } from '../lib/useApi';
-import { todayMyt, monthLabel } from '../lib/format';
+import { todayMyt, monthLabel, buildingName, personName } from '../lib/format';
 import { downloadTable, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { bracketMoney } from '../lib/unitPnl';
@@ -64,7 +64,7 @@ function UnitsTable({ rows, month }: { rows: YgrrRow[]; month: string }): ReactE
               <tr key={row.unitId} className="[border-top:1px_solid_var(--color-line)]">
                 <td className="sticky left-0 bg-card px-3 py-1.5">
                   <span className="block whitespace-nowrap font-semibold leading-tight" title={unitName(row)}>{row.number}</span>
-                  <span className="block text-meta text-muted-ink truncate max-w-[200px] leading-tight" title={row.owner}>{row.building} · {row.owner}</span>
+                  <span className="block text-meta text-muted-ink truncate max-w-[200px] leading-tight" title={row.owner}>{buildingName(row.building)} · {personName(row.owner)}</span>
                 </td>
                 <td className={cx('px-3 py-1.5 whitespace-nowrap', GRID)}>
                   {yearRange(row)}
@@ -123,7 +123,7 @@ function MonthGrid({ rows, months }: { rows: YgrrRow[]; months: string[] }): Rea
               <tr key={row.unitId} className="[border-top:1px_solid_var(--color-line)]">
                 <td className="sticky left-0 bg-card px-3 py-1.5 whitespace-nowrap" title={unitName(row)}>
                   <span className="block font-semibold leading-tight">{row.number}</span>
-                  <span className="block text-meta text-muted-ink leading-tight">{row.building}</span>
+                  <span className="block text-meta text-muted-ink leading-tight">{buildingName(row.building)}</span>
                 </td>
                 <td className={cx(CELL, GRID)}><Money sen={standing.guaranteedPerMonth} /></td>
                 {months.map(month => <ShareCell key={month} cell={cellByMonth.get(month)} />)}
@@ -153,7 +153,7 @@ export default function YgrrReportPage(): ReactElement {
   const rows = useMemo(() => (data?.rows ?? []).filter(row => (!building || row.building === building)
     && (!search || `${row.building} ${row.number} ${row.owner}`.toLowerCase().includes(search))), [data, building, search]);
   const buildings = useMemo(() => [...new Set((data?.rows ?? []).map(row => row.building))].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
-    .map(name => ({ value: name, label: name })), [data]);
+    .map(name => ({ value: name, label: buildingName(name) })), [data]);
   const behindCount = rows.filter(row => standingOf(row).aheadBy < 0).length;
 
   function exportExcel(): void {
@@ -172,7 +172,7 @@ export default function YgrrReportPage(): ReactElement {
 
   return (
     <>
-      <PageHeader title="YGRR report" sub="Package D (PS YGRR)"
+      <PageHeader title="Unit report" sub="YGRR: Package D (PS YGRR)"
         right={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel} disabled={!rows.length}>Export</Button>} />
       <div className="flex flex-col gap-4">
         <ListToolbar

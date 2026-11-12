@@ -22,18 +22,40 @@ const readLastEnginePath = (menu: string): string | null => {
 type EngineSession = { site: string; token: string; sessionPass: string | null };
 const requestEngineSession = () => api.post<EngineSession>('/supply-chain/engine-session');
 // Kept with the person it was made for, so someone signing in next on the same tab never receives it.
-let earlySignIn: { userId: string; session: Promise<EngineSession> } | null = null;
+let earlySignIn: { userId: string; at: number; session: Promise<EngineSession> } | null = null;
 let frameOpenedBy: string | null = null;
+// Who may be signed in early: set by the app shell once it knows the engine is on for this person, else null.
+let armedFor: string | null = null;
+// The menu can ask (its effects run before the shell's) before the shell knows the engine is on.
+let askedBeforeArmed = false;
+const earlyFor = (userId: string) =>
+  earlySignIn?.userId === userId && Date.now() - earlySignIn.at < ENGINE_SIGN_IN_MAX_AGE_MS ? earlySignIn.session : null;
 
-/** For people who have used Supply chain on this browser before: signs in to the engine while they are still on a
- *  Rental page, so their first Supply chain click does not wait for it. */
+/** For people who have used Supply chain on this browser before: signs in to the engine just before they need it
+ *  (engineSoon below), so their first Supply chain click does not wait for it. One sign-in serves until it is a day
+ *  old (ENGINE_SIGN_IN_MAX_AGE_MS), however often it is asked for. */
 export function signInToEngineEarly(userId: string) {
   let usedBefore = false;
   try { usedBefore = localStorage.getItem(USED_SUPPLY_CHAIN_KEY) === '1'; } catch { /* storage blocked */ }
-  if (!usedBefore || frameOpenedBy === userId || earlySignIn?.userId === userId) return;
+  if (!usedBefore || frameOpenedBy === userId || earlyFor(userId)) return;
   const session = requestEngineSession();
   session.catch(() => { /* the frame asks again when it opens */ });
-  earlySignIn = { userId, session };
+  earlySignIn = { userId, at: Date.now(), session };
+}
+
+/** The app shell says whether this person may use the engine here (null: not, or not known yet). */
+export function armEngineSignIn(userId: string | null) {
+  armedFor = userId;
+  if (userId && askedBeforeArmed) signInToEngineEarly(userId);
+  askedBeforeArmed = false;
+}
+
+/** A supply chain screen is about to be wanted (the Supply chain side of the menu is open, or the pointer is on an
+ *  engine menu item): sign in early then, never on every page load (performance, 12 Nov 2026: the sign-in took about
+ *  1s on every Rental page load, for screens that never use it). */
+export function engineSoon() {
+  if (armedFor) signInToEngineEarly(armedFor);
+  else askedBeforeArmed = true;
 }
 
 /** The supply chain engine's screen for the current menu item, shown inside this app. The server signs
@@ -69,7 +91,7 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
     setStarted(false);
     frameOpenedBy = userId;
     try { localStorage.setItem(USED_SUPPLY_CHAIN_KEY, '1'); } catch { /* storage blocked */ }
-    const early = earlySignIn?.userId === userId ? earlySignIn.session : null;
+    const early = earlyFor(userId);
     earlySignIn = null;
     (early ? early.catch(requestEngineSession) : requestEngineSession())
       .then(r => {

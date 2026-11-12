@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
-import { rm, monthLabel, plural } from '../lib/format';
+import { rm, monthLabel, plural, buildingName } from '../lib/format';
 import { INPUT, mytDay } from '../components/ops/OpsUi';
 import { Segmented } from '../components/Metric';
 import { ToolbarSearch } from '../components/ListToolbar';
@@ -163,7 +163,7 @@ function UnitPricesCard({ rows, mayEdit, byBed, byCount, guest, onSaved }: { row
               ? <UnitPriceEdit key={r.unitId} row={r} kind={kind} guest={guest} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onSaved(); }} />
               : (
                 <div key={r.unitId} className={cx('grid grid-cols-2 gap-x-3 gap-y-1 py-2 [border-top:1px_solid_var(--color-line-soft)] items-center text-copy', cols)}>
-                  <span className="col-span-2 md:col-span-1"><b className="font-mono">{r.unitNumber}</b> <span className="text-muted-ink">{r.propertyName}</span></span>
+                  <span className="col-span-2 md:col-span-1"><b className="font-mono">{r.unitNumber}</b> <span className="text-muted-ink">{buildingName(r.propertyName)}</span></span>
                   {r.beds
                     ? <span className="flex flex-col min-w-0"><span>{plural(r.bedCount ?? 0, 'bed')}</span><span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{r.beds}</span></span>
                     : <span className="text-warning">No beds recorded</span>}
@@ -198,7 +198,7 @@ function UnitPriceEdit({ row, kind, guest, onClose, onSaved }: { row: UnitRow; k
   }
   return (
     <div className="py-3 [border-top:1px_solid_var(--color-line-soft)] flex flex-col gap-2 bg-page -mx-4 px-4">
-      <b><span className="font-mono">{row.unitNumber}</span> <span className="font-normal text-muted-ink">{row.propertyName} · {KIND[kind]} clean</span></b>
+      <b><span className="font-mono">{row.unitNumber}</span> <span className="font-normal text-muted-ink">{buildingName(row.propertyName)} · {KIND[kind]} clean</span></b>
       <div className={cx('grid gap-3', guest ? 'grid-cols-[repeat(auto-fit,minmax(140px,1fr))]' : 'grid-cols-2')}>
         <label className="flex flex-col gap-1 text-meta text-muted-ink">Owner price<MoneyInput className={INPUT} valueSen={charge} onChangeSen={setCharge} placeholder={p?.source === 'table' && p.externalCharge != null ? `List ${(p.externalCharge / 100).toFixed(2)}` : 'Not set'} aria-label="Owner price" /></label>
         {guest && <label className="flex flex-col gap-1 text-meta text-muted-ink">Guest price<MoneyInput className={INPUT} valueSen={guestCharge} onChangeSen={setGuestCharge} placeholder={p?.source === 'table' && p.guestCharge != null ? `List ${(p.guestCharge / 100).toFixed(2)}` : 'Not set'} aria-label="Guest price" /></label>}

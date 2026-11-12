@@ -116,10 +116,14 @@ export default function EmployeesTab() {
   }
 
   function giveAccess(e: Employee) {
+    if (e.renovatorId) {
+      setAccess({ id: e.renovatorId, name: e.name, employeeId: e.employeeId, rosterApi: RENOVATION_ACCESS_API, appNote: APP_NOTE.renovation });
+      return;
+    }
     // Two departments share one login, so either roster entry reaches it.
     const onCleaning = !!e.cleanerId && (e.cleanerActive || !e.technicianActive);
     setAccess({ id: (onCleaning ? e.cleanerId : e.technicianId) ?? '', name: e.name, employeeId: e.employeeId,
-      rosterApi: onCleaning ? ROSTER.cleaning : ROSTER.maintenance, jobs: onCleaning ? 'cleaning jobs' : 'repair jobs' });
+      rosterApi: onCleaning ? ROSTER.cleaning : ROSTER.maintenance, appNote: onCleaning ? APP_NOTE.cleaning : APP_NOTE.maintenance });
   }
 
   function actions(e: Employee, align: 'start' | 'end' = 'end'): ReactNode {
@@ -132,7 +136,7 @@ export default function EmployeesTab() {
     const isOnFieldRoster = !e.renovatorId;
     return (
       <span className={`flex gap-[7px] items-center ${align === 'start' ? 'flex-wrap justify-start [&>*]:flex-[1_1_auto]' : 'flex-nowrap justify-end whitespace-nowrap'}`} onClick={ev => ev.stopPropagation()} onKeyDown={ev => ev.stopPropagation()}>
-        {mayGrant && isOnFieldRoster && e.isActive && (
+        {mayGrant && e.isActive && (
           <Button size="sm" variant="tertiary" title={access} icon={<Icon name="KeyRound" size="sm" />} onClick={() => giveAccess(e)}>{word(access)}</Button>
         )}
         {mayEdit && <Button size="sm" variant="tertiary" title="Edit" icon={<Icon name="Pencil" size="sm" />} onClick={() => setForm({ person: e })}>{word('Edit')}</Button>}
@@ -186,7 +190,7 @@ export default function EmployeesTab() {
       )}
       {access && <AccessModal target={access} onClose={() => setAccess(null)} onDone={reload} />}
       {given && (
-        <AccessModal target={{ id: '', name: given.name, employeeId: given.employeeId, rosterApi: '', jobs: '' }} given0={given}
+        <AccessModal target={{ id: '', name: given.name, employeeId: given.employeeId, rosterApi: '', appNote: '' }} given0={given}
           onClose={() => setGiven(null)} onDone={reload} />
       )}
     </>
@@ -196,6 +200,12 @@ export default function EmployeesTab() {
 type FieldDept = 'cleaning' | 'maintenance';
 type Dept = FieldDept | 'renovation';
 const ROSTER: Record<FieldDept, string> = { cleaning: '/housekeeping/cleaners', maintenance: '/maintenance/technicians' };
+const RENOVATION_ACCESS_API = '/employees/renovators';
+const APP_NOTE: Record<Dept, string> = {
+  cleaning: 'In the field app they see only their own cleaning jobs.',
+  maintenance: 'In the field app they see only their own repair jobs.',
+  renovation: 'Their app has nothing built in it yet: it says so and offers Settings and Log out.',
+};
 const DEPARTMENTS: { value: Dept; label: string }[] = [
   { value: 'cleaning', label: 'Cleaning' },
   { value: 'maintenance', label: 'Maintenance' },
@@ -254,9 +264,13 @@ function EmployeeForm({ person, onClose, onSaved }: {
       let given: { name: string; employeeId: string; pin: string } | null = null;
       const roster = { name: name.trim(), phone: phone.trim() || null };
       if (dept === 'renovation') {
-        await api.put('/employees', { ...d, ...roster, department: 'renovation', renovatorId: person?.renovatorId ?? null, ...(salaryChanged ? { salaryEffectiveFrom: salaryFrom } : {}) });
+        const { data: saved } = await api.put<{ data: Employee }>('/employees', { ...d, ...roster, department: 'renovation', renovatorId: person?.renovatorId ?? null, ...(salaryChanged ? { salaryEffectiveFrom: salaryFrom } : {}) });
+        if (creating && giveAccess && saved.renovatorId) {
+          const { employeeId, pin } = await api.post<{ employeeId: string; pin: string }>(`${RENOVATION_ACCESS_API}/${saved.renovatorId}/access`, {});
+          given = { name: roster.name, employeeId, pin };
+        }
         toast({ tone: 'success', title: creating ? 'Employee added.' : 'Employee saved.', body: roster.name });
-        onSaved(null);
+        onSaved(given);
         return;
       }
       if (creating) {
@@ -334,7 +348,7 @@ function EmployeeForm({ person, onClose, onSaved }: {
             <DateField label="Last working day" value={d.resignedAt ?? ''} onChange={v => set('resignedAt', v || null)} required error={errors.resignedAt} />
           )}
           <Field label="Nationality" value={d.nationality ?? ''} onChange={e => set('nationality', e.target.value)} placeholder="Malaysian" error={errors.nationality} />
-          {creating && mayGrant && dept !== 'renovation' && (
+          {creating && mayGrant && (
             <label className="sm:col-span-2 flex items-center gap-2.5 min-h-10 cursor-pointer">
               <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={giveAccess} onChange={e => setGiveAccess(e.target.checked)} />
               <span className="text-copy">Give app access now (employee ID and first PIN)</span>

@@ -41,7 +41,8 @@ const dropAll = async () => {
   await db(`DELETE FROM statement_units WHERE statement_id IN (SELECT id FROM owner_statements WHERE owner_id = $1)`, OWNER);
   await db(`DELETE FROM owner_statements WHERE owner_id = $1`, OWNER);
   await db(`DELETE FROM owner_adjustments WHERE owner_id = $1`, OWNER);
-  for (const table of ['owner_report_locks', 'expenses', 'unit_utility_accounts', 'reservations', 'documents']) await db(`DELETE FROM ${table} WHERE unit_id IN (${ofOwner})`, OWNER);
+  // company_late_changes: the company's share of the locks' late differences (part 2b, migration 0308).
+  for (const table of ['company_late_changes', 'owner_report_locks', 'expenses', 'unit_utility_accounts', 'reservations', 'documents']) await db(`DELETE FROM ${table} WHERE unit_id IN (${ofOwner})`, OWNER);
   await db(`DELETE FROM units WHERE owner_id = $1`, OWNER);
   await db(`DELETE FROM properties WHERE id IN ($1, 'ocs-p0')`, PROP);
   await db(`DELETE FROM owners WHERE id = $1`, OWNER);

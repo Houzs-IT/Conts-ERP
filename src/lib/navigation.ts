@@ -118,9 +118,8 @@ export const NAV: NavGroup[] = [
     // was hard to find under System). No permission area: the engine answers each person with their own only
     // (functions/api/claims/[[path]].ts).
     { key: 'myClaims', label: 'My claims', icon: 'receipt', path: '/my-claims' },
-  ] },
-  // Reports sit under Home (owner, 29 Oct 2026), with their own permission area since 30 Oct 2026.
-  { label: 'REPORTS', workspace: 'rental', items: [
+    // Portfolio and Performance sit in Home (the approved prototype, polish 1). Only the menu heading moved: their
+    // permission areas keep the Reports group (functions/_lib/access.ts), so stored rules are unchanged.
     { key: 'portfolio', label: 'Portfolio', icon: 'layers', path: '/portfolio', area: 'portfolio' },
     { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance', full: true },
     // The three unit reports are one Unit report under Units now (owner, 12 Nov 2026).
@@ -333,7 +332,7 @@ export function switchedOff(path: string): boolean {
 
 /** Menu areas (and single menu keys) whose screens exist only in the supply chain engine: hidden where it is not set up. */
 const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'ledger', 'mail'];
-const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'owner'];
+const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'renovator', 'owner'];
 
 /** Areas (and menu keys) closed to a role: from its permission levels where the session carries them, else the built-in list. */
 function denied(role: UserRole, access?: Record<string, AccessLevel>): string[] {
@@ -448,7 +447,7 @@ export const entryPath = (it: NavItem): string | undefined => it.path ?? it.chil
 /** role → landing path. The server returns this as `home`; kept here for the client guard. */
 export const HOME: Record<UserRole, string> = {
   management: '/', operations_staff: '/operations/today', housekeeper: '/portal/today',
-  technician: '/portal/today', owner: '/owner',
+  technician: '/portal/today', renovator: '/portal/today', owner: '/owner',
 };
 
 /** Landing path from the role, side and department. Keep in step with homeFor in functions/_lib/door.ts: the Finance

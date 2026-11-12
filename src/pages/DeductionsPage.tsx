@@ -12,7 +12,7 @@ import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { api, notifyFailure } from '../lib/api';
 import { useApi } from '../lib/useApi';
-import { monthLabel, rm, titleCase, todayMyt } from '../lib/format';
+import { monthLabel, rm, todayMyt, personName } from '../lib/format';
 import { statusOf, statusLabel } from '../lib/status';
 import { useUrlState, SearchBox, MonthStepper, shiftMonth } from './finance/listKit';
 import { DeductionPanel, type DeductionType } from './units/DeductionPanel';
@@ -87,7 +87,7 @@ export default function DeductionsPage(): JSX.Element {
     { key: 'total', label: 'Total', type: 'money', value: r => r.amount, width: 130,
       render: r => <MoneyText sen={r.amount} mode="exact" className="tabular-nums whitespace-nowrap" /> },
     { key: 'remarks', label: 'Remarks', value: r => r.remarks, width: 240, render: r => <span className="truncate block" title={r.remarks}>{r.remarks || '—'}</span> },
-    { key: 'owner', label: 'Owner', type: 'person', value: r => (r.ownerName ? titleCase(r.ownerName) : null), width: 160 },
+    { key: 'owner', label: 'Owner', type: 'person', value: r => (r.ownerName ? personName(r.ownerName) : null), width: 160 },
     { key: 'status', label: 'Status', type: 'status', value: r => statusLabel('deduction', r.status), status: r => statusOf('deduction', r.status), width: 160, filter: { kind: 'select' } },
     { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
       render: r => removeButton(r, 'w-[30px] h-[30px]') },

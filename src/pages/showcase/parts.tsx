@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
-import { date, monthLabel } from '../../lib/format';
+import { date, monthLabel, buildingName } from '../../lib/format';
 import Icon from '../../components/Icon';
 import { Switch } from '../../components/Switch';
 import { META, photoUrl, daysBetween, type FigureKey, type Live, type Overrides, type Listing } from './model';
@@ -40,7 +40,7 @@ export function Photo({ id, style, className = '', fine, children, place = '', c
   return (
     <div className={`sc-photo${fine ? ' fine' : ''} ${className}`} style={{ ['--h' as string]: hueOf(place), ...style }}>
       {real ? <img src={url!} alt="" loading="lazy" onError={() => setBroken(true)} /> : place ? <b className="sc-mono" aria-hidden>{monoOf(place)}</b> : null}
-      {!real && caption && place && <small className="sc-place">{place}</small>}
+      {!real && caption && place && <small className="sc-place">{buildingName(place)}</small>}
       {children}
     </div>
   );
@@ -106,7 +106,7 @@ export function PropertyDropdown({ listings, value, onChange, allLabel, totalLab
   const [q, setQ] = useState('');
   const cur = listings.find(l => l.id === value);
   const needle = q.trim().toLowerCase();
-  const rows = listings.filter(l => !needle || `${l.name} ${l.unit}`.toLowerCase().includes(needle));
+  const rows = listings.filter(l => !needle || `${l.name} ${buildingName(l.unit)}`.toLowerCase().includes(needle));
   const pick = (id: string) => { onChange(id); setOpen(false); setQ(''); };
   return (
     <div style={{ position: 'relative' }}>
@@ -129,7 +129,7 @@ export function PropertyDropdown({ listings, value, onChange, allLabel, totalLab
               {rows.map(l => (
                 <button key={l.id} type="button" role="option" aria-selected={value === l.id} className="sc-dd-row" onClick={() => pick(l.id)}>
                   <Photo id={l.photoId} place={buildingOf(l.unit)} fine style={{ width: 34, height: 34, borderRadius: 8 }} />
-                  <div style={{ minWidth: 0, flex: 1 }}><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{l.unit}</div></div>
+                  <div style={{ minWidth: 0, flex: 1 }}><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{buildingName(l.unit)}</div></div>
                   <div className="sc-dd-check">{value === l.id && <Icon name="Check" size="sm" />}</div>
                 </button>
               ))}

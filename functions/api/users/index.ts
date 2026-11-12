@@ -25,7 +25,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       COALESCE(locked_until::timestamptz > now(), false) AS is_locked, ${totp ? 'totp_enabled_at IS NOT NULL' : 'false'} AS two_step,
       (SELECT max(a.occurred_at) FROM audit_log a WHERE a.entity_table = 'users' AND a.entity_id = users.id
          AND a.action IN ('user.invite', 'user.resend_invite')) AS last_invited_at
-    FROM users WHERE role NOT IN ('housekeeper', 'technician') ORDER BY role, full_name`);
+    FROM users WHERE role NOT IN ('housekeeper', 'technician', 'renovator') ORDER BY role, full_name`);
   return json({
     generatedAt: nowIso(),
     jobFields: job,

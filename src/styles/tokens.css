@@ -99,6 +99,10 @@ body { margin: 0; }
   --color-gold-tint: #F9F6EF;
   /* The active tab's underline on TabBar and the sub-tabs: gold (Conts DS v2; was indigo from Oct 2026). */
   --color-tab: #C8A46A;
+  /* The shared bar chart (BarTrend: Dashboard, Analytics, Reviews): soft tan bars (gold at 75% on the card) and the
+     current period in Conts green, as the prototype's ui.bars. */
+  --color-chart-bar: #D6BB8F;
+  --color-chart-now: #1A6152;
 
   /* Conts green: the one primary button per page, a switch that is on, a selected tile. */
   --color-primary: #1A6152;

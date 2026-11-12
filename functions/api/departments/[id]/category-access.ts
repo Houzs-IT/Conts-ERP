@@ -1,6 +1,7 @@
 import { type Env, all, one, json, fail, run, audit, nowIso, transaction } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
 import { choiceOfRows, describeChoice, parseCategoryAccess, rowsOfChoice, type CategoryChoice } from '../../../_lib/categoryCatalog';
+import { loadCategoryCatalog } from '../../../_lib/categoryCatalogDb';
 import { categoryAccessReady, notMigrated } from '../../../_lib/categoryAccessReady';
 
 interface DepartmentCategoryAccess extends CategoryChoice { departmentId: string; restricted: boolean }
@@ -18,9 +19,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   if (!(await categoryAccessReady(env))) return notMigrated();
 
   const id = String(params.id);
+  const catalog = await loadCategoryCatalog(env);
   if (!await one(env, 'SELECT id FROM departments WHERE id = ?', id)) return fail('NOT_FOUND', 'That department no longer exists.', 404);
   const rows = await loadRows(env, id);
-  const body: DepartmentCategoryAccess = { departmentId: id, restricted: rows.length > 0, ...choiceOfRows(rows) };
+  const body: DepartmentCategoryAccess = { departmentId: id, restricted: rows.length > 0, ...choiceOfRows(rows, catalog) };
   return json(body);
 };
 
@@ -34,7 +36,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   if (!(await categoryAccessReady(env))) return notMigrated();
 
   const id = String(params.id);
-  const parsed = parseCategoryAccess(await request.json().catch(() => null));
+  const catalog = await loadCategoryCatalog(env);
+  const parsed = parseCategoryAccess(await request.json().catch(() => null), catalog);
   if (!parsed.ok) return fail('VALIDATION', parsed.message, 400);
   const { restricted, ...choice } = parsed.value;
 
@@ -53,8 +56,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
     }
     await audit(tx, {
       actorId: session.userId, actorLabel: session.fullName, action: 'department.category_access_change', entityTable: 'departments', entityId: id,
-      before: { department: dept.name, categories: describeChoice(was.length > 0, choiceOfRows(was)) },
-      after: { department: dept.name, categories: describeChoice(restricted, choice) },
+      before: { department: dept.name, categories: describeChoice(was.length > 0, choiceOfRows(was, catalog), catalog) },
+      after: { department: dept.name, categories: describeChoice(restricted, choice, catalog) },
     });
   });
 

@@ -8,7 +8,7 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
 import { useToast } from '../../components/Toast';
 import { api, errorMessage, ApiFailure } from '../../lib/api';
-import { date as fmtDate, todayMyt } from '../../lib/format';
+import { date as fmtDate, todayMyt, buildingName } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { isBadReview, scaleText, type Scale } from '../../lib/reviewRules';
 import type { BookingChannel } from '../../lib/types';
@@ -100,7 +100,7 @@ export function ReviewCard({ review, canReply, onChanged, compact }: {
 
   function submit(e: FormEvent) { e.preventDefault(); const body = draft.trim(); if (body) void post(body); }
 
-  const unit = [r.propertyName, r.unitNumber].filter(Boolean).join(' ');
+  const unit = [buildingName(r.propertyName), r.unitNumber].filter(Boolean).join(' ');
   const stay = stayLine(r.checkIn, r.checkOut);
   const cleaners = [...new Map((r.cleanJobs ?? []).flatMap(j => j.cleaners).map(c => [c.id, c])).values()];
   const cleanliness = r.categories.find(c => c.key === 'cleanliness');

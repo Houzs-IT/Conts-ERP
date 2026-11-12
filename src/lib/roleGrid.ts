@@ -20,16 +20,19 @@ const storedLevel = (rules: RuleMap, key: string): AccessLevel | undefined => {
 };
 
 export const areaKeysOf = (categories: { areas: { key: string }[] }[]): string[] => categories.flatMap(category => category.areas.map(area => area.key));
+/** The areas a group's own ticks set: all but the ones given one by one (AccessArea.ownGrant). */
+export const bulkKeysOf = (category: { areas: { key: string; ownGrant?: boolean }[] }): string[] =>
+  category.areas.filter(area => !area.ownGrant).map(area => area.key);
 
 export function resolveRoleLevels(categories: AccessCategory[], departmentRules: RuleMap, positionRules: RuleMap = {}): RoleLevels {
   const levels: RoleLevels = {};
   for (const category of categories) {
     const group = groupRuleKey(category.group);
     for (const area of category.areas) {
+      // A power given one by one takes no category baseline (functions/_lib/access.ts resolveFor).
       levels[area.key] = storedLevel(positionRules, area.key)
         ?? storedLevel(departmentRules, area.key)
-        ?? storedLevel(positionRules, group)
-        ?? storedLevel(departmentRules, group)
+        ?? (area.ownGrant ? undefined : storedLevel(positionRules, group) ?? storedLevel(departmentRules, group))
         ?? 'none';
     }
   }

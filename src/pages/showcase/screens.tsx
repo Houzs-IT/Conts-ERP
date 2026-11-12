@@ -1,6 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { useApi } from '../../lib/useApi';
-import { count, date, dateLong, dateRange, dateShort, monthLabel, rm, plural } from '../../lib/format';
+import { count, date, dateLong, dateRange, dateShort, monthLabel, rm, plural, buildingName } from '../../lib/format';
 import Icon from '../../components/Icon';
 import { fmtFigure, LEAD_KEYS, type CalendarData, type FigureKey, type Insights, type Listing, type ReviewCard, type ShowcaseData, type TodayItem } from './model';
 import { Fig, Photo, Avatar, Segmented, PriceToggle, MonthNav, useEscape, Stars, Star, buildingOf } from './parts';
@@ -53,7 +53,7 @@ export function TodayScreen({ data, g, mode, setMode }: { data: ShowcaseData; g:
                   <div className="sc-big num" style={{ fontSize: 19 }}>{when(it)}</div>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 15, fontWeight: 700 }}>{it.guest}{it.guests > 1 ? ` · party of ${it.guests}` : ''}</div>
-                    <div className="ellipsis" style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 2 }}>{it.listing} · {it.unit}</div>
+                    <div className="ellipsis" style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 2 }}>{it.listing} · {buildingName(it.unit)}</div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <Avatar name={it.guest} i={k} size={46} style={{ border: '2px solid var(--sc-surface)' }} />
@@ -98,7 +98,7 @@ function ListingStrip({ listings, width, pill }: { listings: Listing[]; width: n
             {pill && <span className="sc-published sm"><span className="sc-dot" style={{ width: 6, height: 6 }} />Published</span>}
           </Photo>
           {pill
-            ? <div><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{l.unit}{l.rating !== null ? <> · <Star /> {l.rating.toFixed(2)}</> : ''}</div></div>
+            ? <div><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{buildingName(l.unit)}{l.rating !== null ? <> · <Star /> {l.rating.toFixed(2)}</> : ''}</div></div>
             : <div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</div>}
         </div>
       ))}
@@ -124,7 +124,7 @@ export function ListingsScreen({ data, g }: { data: ShowcaseData; g: G }) {
             </Photo>
             <div>
               <div style={{ fontSize: 15, fontWeight: 700 }}>{l.name}</div>
-              <div style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 2 }}>{l.unit}{l.city ? ` · ${l.city}` : ''}</div>
+              <div style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 2 }}>{buildingName(l.unit)}{l.city ? ` · ${l.city}` : ''}</div>
               <div style={{ fontSize: 13, marginTop: 4, fontWeight: 600 }}>{ratingLine(l)}</div>
             </div>
           </button>
@@ -307,7 +307,7 @@ export function OccupancyScreen({ ins, g, one, unit, showPrice, setShowPrice, mo
       {one && unit && ms && (
         <section className="sc-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 20, flexWrap: 'wrap' }}>
-            <div><div className="sc-eyebrow">Monthly calendar</div><div className="sc-sub" style={{ marginTop: 8 }}>{unit.name} · {unit.unit}</div></div>
+            <div><div className="sc-eyebrow">Monthly calendar</div><div className="sc-sub" style={{ marginTop: 8 }}>{unit.name} · {buildingName(unit.unit)}</div></div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}><MonthNav month={month} min={min} max={max} onChange={setMonth} /><PriceToggle on={showPrice} onChange={setShowPrice} /></div>
           </div>
           <div className="sc-grid-4" style={{ margin: '24px 0' }}>
@@ -366,7 +366,7 @@ export function LeadScreen({ ins, g, one }: { ins: Insights | null; g: G; one: b
           <div key={r.unitId} className="sc-lead-grid sc-trow">
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', minWidth: 0 }}>
               <Photo id={r.photoId} place={buildingOf(r.unit)} fine style={{ width: 32, height: 32, borderRadius: 8 }} />
-              <div style={{ minWidth: 0 }}><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{r.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{r.unit}</div></div>
+              <div style={{ minWidth: 0 }}><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{r.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{buildingName(r.unit)}</div></div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><div className="sc-bar"><span style={{ width: `${Math.round((r.lead / maxLead) * 100)}%` }} /></div><div className="num" style={{ fontSize: 13, fontWeight: 700, width: 72, textAlign: 'right' }}>{r.lead.toFixed(1)} days</div></div>
             <div className="num" style={{ fontSize: 13, textAlign: 'right' }}>{count(r.bookings)}</div>

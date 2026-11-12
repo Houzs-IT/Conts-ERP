@@ -12,7 +12,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
-import { rm, date, monthLabel } from '../lib/format';
+import { rm, date, monthLabel, personName } from '../lib/format';
 import type { StatementState } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
 import { StatRow, StatTile } from '../components/Metric';
@@ -91,7 +91,7 @@ export default function StatementDetailPage() {
   return (
     <>
       <PageHeader
-        title={s.owner.name}
+        title={personName(s.owner.name)}
         sub={`Owner statement · ${monthLabel(s.period, { long: true })} · ${s.units.length || 'no'} ${s.units.length === 1 ? 'unit' : 'units'}${s.source === 'owner_workbook' ? ' · from the owner workbook' : ''}`}
         right={
           <div className="flex gap-[9px] flex-wrap items-center">
@@ -178,12 +178,12 @@ export default function StatementDetailPage() {
         spec={!confirm ? null : confirm === 'send' ? {
           title: 'Send this statement to the owner?',
           body: 'The owner is emailed and sees it on the portal. A sent statement cannot be edited.',
-          meta: `${rm(s.totals.netPayout)} net payout · ${s.owner.name}`,
+          meta: `${rm(s.totals.netPayout)} net payout · ${personName(s.owner.name)}`,
           confirmLabel: 'Send', busyLabel: 'Sending...', onConfirm: () => act('send'),
         } : {
           title: 'Mark this payout as paid?',
           body: 'Record that the money has reached the owner. The statement becomes Paid.',
-          meta: `${rm(s.payout?.amount ?? 0)} · ${s.owner.name}`,
+          meta: `${rm(s.payout?.amount ?? 0)} · ${personName(s.owner.name)}`,
           danger: true, confirmLabel: 'Mark paid', busyLabel: 'Saving...', onConfirm: () => act('paid'),
         }}
       />

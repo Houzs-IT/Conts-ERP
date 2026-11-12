@@ -14,7 +14,7 @@ import { useApi } from '../lib/useApi';
 import { useMedia } from '../lib/useMedia';
 import { saveBlob, toXlsx, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
-import { count, monthLabel, percent, plural, rm, todayMyt } from '../lib/format';
+import { count, monthLabel, percent, plural, rm, todayMyt, buildingName } from '../lib/format';
 import { overallFigures, overallTotals, occupancyLabel, GROUP_NAME, REPORT_GROUPS, type OverallInput, type OverallTotals, type ReportGroup } from '../lib/ownerOverall';
 import { GainLoss, LEVELS, OwnerOverallDetail, money, unitStatus, type Level, type ReportRow } from './OwnerOverallDetail';
 
@@ -22,7 +22,11 @@ import { GainLoss, LEVELS, OwnerOverallDetail, money, unitStatus, type Level, ty
  *  unit's revenue, deductions, owner payout and the company's gain or loss on it, from GET /api/portfolio/owner-report.
  *  The whole month is about a row per unit, so search, filters and sorting happen here. */
 
-interface ApiRow extends OverallInput { unitId: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null }
+interface ApiRow extends OverallInput {
+  unitId: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null;
+  /** The company's share of late changes to an earlier, locked month counted this month, row by row (part 2b). */
+  lateItems?: { label: string; amount: number }[];
+}
 interface Payload { month: string; rows: ApiRow[]; generatedAt: string }
 
 type Group = 'inc' | 'ded' | 'pro' | 'pay' | 'res';
@@ -53,6 +57,9 @@ const COLS: Col[] = [
   { key: 'o1', label: 'O1', level: 1, group: 'pay', kind: 'money' },
   { key: 'o2', label: 'O2', level: 1, group: 'pay', kind: 'money' },
   { key: 'payout', label: 'Owner payout', level: 1, group: 'pay', kind: 'money' },
+  // The company's share of late changes to an earlier, locked month (part 2b, chew's choice A), in Gain / Loss. The column
+  // is shown only in a month that has one.
+  { key: 'late', label: 'Late changes', level: 1, group: 'res', kind: 'money' },
   { key: 'gainLoss', label: 'Gain / Loss', level: 1, group: 'res', kind: 'gl' },
 ];
 const colOf = (key: string) => COLS.find(c => c.key === key) ?? COLS[0];
@@ -145,8 +152,9 @@ export default function OwnerOverallReportPage() {
     try { localStorage.setItem(LEVEL_KEY, String(l)); } catch { /* private window: the level just isn't remembered */ }
   }, []);
 
-  const all = useMemo<ReportRow[]>(() => (data?.rows ?? []).map(({ unitId, code, building, ownerName, group, contractCode, ...input }) =>
-    ({ ...overallFigures(input), unitId, code, building, ownerName, group, contractCode })), [data]);
+  const all = useMemo<ReportRow[]>(() => (data?.rows ?? []).map(({ unitId, code, building, ownerName, group, contractCode, lateItems, ...input }) =>
+    ({ ...overallFigures(input), lateItems: lateItems ?? [], unitId, code, building, ownerName, group, contractCode })), [data]);
+  const hasLate = all.some(r => r.late !== 0);
 
   const range = colOf(rangeKey);
   const shownValue = (r: ReportRow) => (inSen(range) ? r[range.key] / 100 : r[range.key]);
@@ -175,7 +183,7 @@ export default function OwnerOverallReportPage() {
   const row = at >= 0 ? order[at] : null;
   const totals = overallTotals(filtered);
   // Full detail shows the four bills, so their Utilities total would only repeat them.
-  const cols = COLS.filter(c => c.level <= level && (level === 1 || c.key !== 'utilities'));
+  const cols = COLS.filter(c => c.level <= level && (level === 1 || c.key !== 'utilities') && (c.key !== 'late' || hasLate));
   const groupStart = (i: number) => i > 0 && cols[i - 1].group !== cols[i].group;
   // The band header: one cell per run of columns in the same group.
   const bands: { group: Group; span: number }[] = [];
@@ -264,7 +272,45 @@ export default function OwnerOverallReportPage() {
   else if (!all.length) body = <EmptyState title={`No unit figures for ${monthLabel(month, { long: true })}.`} icon="BarChart3"
     body="Units appear here once they have reservations, costs or a fixed rent in the month." />;
   else if (!filtered.length) body = <EmptyState kind="filtered" title="No units match these filters." body="Widen the range or clear the search." action={{ label: 'Reset filters', onClick: reset }} />;
-  else body = (
+  else if (phone) {
+    // A phone lists two-line cards (the prototype's Unit report on a phone): the unit and its building, Net Payout to
+    // Owner on the right, the month's revenue, deduction and GP under it; a total card closes each group.
+    const line = (t: { revenue: number; deductions: number; gp: number }) => `Revenue ${money(t.revenue)} · Deduction ${money(t.deductions)} · GP ${money(t.gp)}`;
+    const total = (label: string, t: OverallTotals, grand: boolean) => (
+      <div className={cx('flex flex-col gap-0.5 px-4 py-2.5 [border-top:1px_solid_var(--color-line-soft)]', grand ? 'bg-muted' : 'bg-page')}>
+        <span className="flex items-baseline justify-between gap-3"><b className="text-copy">{label}</b><b className="text-copy tabular-nums">{rm(t.payout)}</b></span>
+        <span className="text-meta text-muted-ink tabular-nums">{line(t)}</span>
+      </div>
+    );
+    body = (
+      <div>
+        {groups.map(g => (
+          <Fragment key={g.group}>
+            <div className="px-4 pt-2.5 pb-1.5 bg-sunken text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink">{GROUP_NAME[g.group]} · <span className="normal-case tracking-normal font-normal">{plural(g.rows.length, 'unit')}</span></div>
+            {g.rows.map(r => {
+              const st = unitStatus(r);
+              return (
+                <button key={r.unitId} type="button" data-unit-row={r.unitId} onClick={() => setSelected(r.unitId)}
+                  className={cx('w-full min-h-[64px] flex flex-col gap-1 px-4 py-2.5 text-left font-sans bg-card border-0 [border-top:1px_solid_var(--color-line-soft)] cursor-pointer', r.unitId === selected && 'shadow-[inset_3px_0_0_var(--color-gold)]')}>
+                  <span className="flex items-baseline justify-between gap-3 w-full min-w-0">
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span aria-hidden className={cx('h-1.5 w-1.5 shrink-0 rounded-full self-center', st.tone === 'success' ? 'bg-success-line' : st.tone === 'critical' ? 'bg-danger-line' : 'bg-neutral-line')} />
+                      <b className="text-copy font-semibold text-ink truncate">{r.code}</b>
+                      <span className="text-meta text-muted-ink truncate">{buildingName(r.building)}</span>
+                    </span>
+                    <b className="text-copy text-ink tabular-nums whitespace-nowrap">{rm(r.payout)}</b>
+                  </span>
+                  <span className="text-meta text-muted-ink tabular-nums truncate w-full">{line(r)}</span>
+                </button>
+              );
+            })}
+            {total(`${GROUP_NAME[g.group]} total`, overallTotals(g.rows), false)}
+          </Fragment>
+        ))}
+        {groups.length > 1 && total('Grand total', totals, true)}
+      </div>
+    );
+  } else body = (
     <table className="w-max min-w-full border-separate border-spacing-0 text-copy">
       <thead className="sticky top-0 z-[3]">
         <tr>
@@ -306,9 +352,9 @@ export default function OwnerOverallReportPage() {
                     {/* A phone wraps the code at its hyphen (CONTINEW- / B1703A) so the Unit column stays narrow. */}
                     <span className="flex items-center gap-2 min-w-0 max-sm:max-w-[92px] sm:max-w-[200px]">
                       <span aria-hidden className={cx('h-1.5 w-1.5 shrink-0 rounded-full', st.tone === 'success' ? 'bg-success-line' : st.tone === 'critical' ? 'bg-danger-line' : 'bg-neutral-line')} />
-                      <span className="flex flex-col min-w-0" title={`${r.code} · ${r.building}`}>
+                      <span className="flex flex-col min-w-0" title={`${r.code} · ${buildingName(r.building)}`}>
                         <span className="font-semibold sm:truncate leading-tight">{r.code}</span>
-                        <span className="max-sm:hidden text-meta text-muted-ink truncate leading-tight">{r.building}{r.contractCode ? ` · ${r.contractCode}` : ''}</span>
+                        <span className="max-sm:hidden text-meta text-muted-ink truncate leading-tight">{buildingName(r.building)}{r.contractCode ? ` · ${r.contractCode}` : ''}</span>
                       </span>
                     </span>
                   </td>
@@ -332,12 +378,12 @@ export default function OwnerOverallReportPage() {
   return (
     <div className="flex flex-col gap-4 md:gap-5 md:flex-1 md:min-h-0 transition-[margin] duration-[var(--motion-standard)]" style={{ marginRight: panel ? PANEL_ROOM : 0 }}>
       <PageHeader
-        title="Overall unit report"
+        title="Unit report"
         sub={data ? <>
           {[plural(all.length, 'unit'), ...present.map(g => `${count(g.n)} ${GROUP_NAME[g.group].toLowerCase()}`), 'amounts in RM']
             .map((part, n) => <span key={n}>{n > 0 && ' · '}<span className="inline-block">{part}</span></span>)}
           {/* The definition gets its own line, so it never wraps into the counts. */}
-          <span className="block text-meta">Gain/Loss = GP − owner base (the owner's part of the rent, the fixed rent, or the higher of O1 and GRR), before O2</span>
+          <span className="block text-meta">Gain/Loss = GP − owner base (the owner's part of the rent, the fixed rent, or the higher of O1 and GRR), before O2{hasLate ? ', plus late changes: the company’s share of changes to an earlier, locked month' : ''}</span>
         </> : 'Every unit\'s month, as on the owner statements'}
         actions={<>
           <Button variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel}
@@ -387,14 +433,15 @@ export default function OwnerOverallReportPage() {
         below={<>
           <Segmented label="Contract" value={contract} onChange={setContract}
             options={[{ key: 'all' as Contract, label: 'All', count: all.length }, ...chips.map(g => ({ key: g as Contract, label: GROUP_NAME[g], count: all.filter(r => r.group === g).length }))]} />
-          <span className="ml-auto max-sm:ml-0"><Segmented label="Detail level" value={`${level}`} onChange={k => setLevel(Number(k) as Level)} options={LEVELS} /></span>
+          {!phone && <span className="ml-auto"><Segmented label="Detail level" value={`${level}`} onChange={k => setLevel(Number(k) as Level)} options={LEVELS} /></span>}
         </>}
         count={<span className="tabular-nums">Showing {count(filtered.length)} of {count(all.length)} · {monthLabel(month, { long: true })}</span>}
       />
 
       {/* The page fills the screen and only the table scrolls; under 220px for it the page scrolls instead. A phone scrolls the page. */}
-      <div className="max-md:h-[72vh] max-md:shrink-0 md:flex-1 md:min-h-[220px] overflow-auto overscroll-contain rounded-card border border-solid border-line bg-card" data-keep-scroll="owner-overall">
-        {body}
+      {phone && <div className="overflow-hidden rounded-card border border-solid border-line bg-card">{body}</div>}
+      <div hidden={phone} className="max-md:h-[72vh] max-md:shrink-0 md:flex-1 md:min-h-[220px] overflow-auto overscroll-contain rounded-card border border-solid border-line bg-card" data-keep-scroll="owner-overall">
+        {phone ? null : body}
       </div>
       {panel && (
         <aside aria-labelledby="owner-overall-unit" className="fixed right-0 bottom-0 z-[20] bg-card [border-left:1px_solid_var(--color-line)] shadow-[var(--shadow-overlay)]"

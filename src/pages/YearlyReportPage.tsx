@@ -8,7 +8,7 @@ import { EmptyState } from '../components/States';
 import { ListToolbar } from '../components/ListToolbar';
 import { Segmented } from '../components/Metric';
 import { useApi } from '../lib/useApi';
-import { count, plural, rm, todayMyt } from '../lib/format';
+import { count, plural, rm, todayMyt, buildingName, personName } from '../lib/format';
 import { downloadTable, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { useUrlState, FilterSelect } from './finance/listKit';
@@ -22,11 +22,12 @@ interface Unit { id: string; building: string; number: string; owner: string; co
 interface Payload { year: string; months: string[]; units: Unit[]; rows: YearlyRow[]; notInGrid: number; unpricedCleans: number; excluded: number; toDate: string | null }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const unitName = (u: Unit) => `${u.building} ${u.number}`;
+const unitName = (u: Unit) => `${buildingName(u.building)} ${u.number}`;
 const GRID = '[border-left:1px_solid_var(--color-line)]';
 /** The Show filter: one option per figure, plus the three cleaning tables together. */
 const CLEANING = ['cleanerCost', 'cleaningOwner', 'cleaningEarned'];
-const SHOW_OPTIONS = [...BLOCKS.slice(0, 8), { key: 'cleaning', label: 'Cleaning (all three)' }, ...BLOCKS.slice(8)].map(b => ({ value: b.key, label: b.label }));
+const CLEANING_AT = BLOCKS.findIndex(b => b.key === 'cleanerCost');
+const SHOW_OPTIONS = [...BLOCKS.slice(0, CLEANING_AT), { key: 'cleaning', label: 'Cleaning (all three)' }, ...BLOCKS.slice(CLEANING_AT)].map(b => ({ value: b.key, label: b.label }));
 const showsBlock = (show: string, key: string) => !show || show === key || (show === 'cleaning' && CLEANING.includes(key));
 
 function Cell({ sen, strong }: { sen: number | null; strong?: boolean }) {
@@ -52,9 +53,9 @@ function Grid({ grid, units, months, toDate }: { grid: BlockGrid; units: Unit[];
         <tbody>
           {listed.map(u => (
             <tr key={u.id} className="[border-top:1px_solid_var(--color-line)]">
-              <td className="sticky left-0 bg-card px-3 py-1.5 whitespace-nowrap" title={`${unitName(u)} · ${u.owner}`}>
+              <td className="sticky left-0 bg-card px-3 py-1.5 whitespace-nowrap" title={`${unitName(u)} · ${personName(u.owner)}`}>
                 <span className="block font-semibold leading-tight">{u.number}</span>
-                <span className="block text-meta text-muted-ink leading-tight">{u.building} · {u.contract === 'LT' ? 'Fixed rent' : 'Profit share'}</span>
+                <span className="block text-meta text-muted-ink leading-tight">{buildingName(u.building)} · {u.contract === 'LT' ? 'Fixed rent' : 'Profit share'}</span>
               </td>
               {(grid.units[u.id] ?? []).map((v, i) => <td key={i} className={cx('text-right px-3 py-1.5', GRID)}><Cell sen={v} /></td>)}
               <td className={cx('text-right px-3 py-1.5', GRID)}><Cell sen={rowTotal(grid.units[u.id] ?? [])} strong /></td>
@@ -75,7 +76,8 @@ const BLOCK_NOTE: Partial<Record<BlockKey, string>> = {
   revenue: 'What the owner statement counts as income for the month.',
   gp: 'Earnings less cleaning, utilities, additional costs and the monthly misc charge.',
   payout: REPORT_RULES.ownerPayoutIncludesO2 ? 'The owner’s share, plus the owner’s credits and charges for the month.' : 'The owner’s share only.',
-  company: 'Gross profit less the owner’s share: what The Conts keeps.',
+  company: 'Gross profit less the owner’s share, plus any late changes below: what The Conts keeps.',
+  late: 'The company’s share of changes to an earlier month after its income or deductions were locked, counted in the month the owner’s share went to.',
   cleanerCost: 'What we pay the cleaners for finished cleaning jobs (their pay, not their invoices).',
   cleaningOwner: REPORT_RULES.ltOwnerPaysCleaning ? 'The cleaning on the owner statement.' : 'The cleaning on the owner statement. Fixed-rent units show nothing: the company carries their cleaning.',
   cleaningEarned: 'What The Conts charges the owner for cleaning, less what it pays the cleaners.',
@@ -95,7 +97,7 @@ export default function YearlyReportPage() {
     return (data?.rows ?? []).filter(r => ids.has(r.unitId) && (!contract || r.contract === contract));
   }, [data, shown, contract]);
   const grids = useMemo(() => pivot(rows, data?.months ?? []), [rows, data]);
-  const buildings = useMemo(() => [...new Set((data?.units ?? []).map(u => u.building))].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).map(b => ({ value: b, label: b })), [data]);
+  const buildings = useMemo(() => [...new Set((data?.units ?? []).map(u => u.building))].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).map(b => ({ value: b, label: buildingName(b) })), [data]);
   const contractUnits = (c: string) => new Set((data?.rows ?? []).filter(r => r.contract === c && shown.some(u => u.id === r.unitId)).map(r => r.unitId)).size;
   const years = Array.from({ length: Math.min(4, thisYear - 2019) }, (_, i) => String(thisYear - i));
 
@@ -118,7 +120,7 @@ export default function YearlyReportPage() {
 
   return (
     <>
-      <PageHeader title="Yearly unit report" sub="Each unit month by month across the year: earnings, profit, owner payout, bills and cleaning."
+      <PageHeader title="Unit report" sub="Each unit month by month across the year: earnings, profit, owner payout, bills and cleaning."
         right={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel} disabled={!rows.length}>Export</Button>} />
       <div className="flex flex-col gap-4">
         <ListToolbar
@@ -135,7 +137,7 @@ export default function YearlyReportPage() {
         {error && <StaleBanner message={data ? `Showing the last figures we have. ${error}` : error} onRetry={reload} />}
         {loading && !data ? <TableSkeleton rows={8} cols={7} />
           : !rows.length ? <EmptyState kind={building || contract || q ? 'filtered' : 'empty'} title="No figures for this year." />
-          : BLOCKS.filter(b => showsBlock(show, b.key)).map(b => {
+          : BLOCKS.filter(b => showsBlock(show, b.key) && (b.key !== 'late' || rows.some(r => (r.late ?? 0) !== 0))).map(b => {
             const grid = grids.find(g => g.key === b.key);
             return grid && <Section key={b.key} title={b.label} note={BLOCK_NOTE[b.key]}><Grid grid={grid} units={shown} months={data?.months ?? []} toDate={data?.toDate ?? null} /></Section>;
           })}

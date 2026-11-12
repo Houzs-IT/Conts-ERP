@@ -6,7 +6,7 @@ import { useToast } from '../../components/Toast';
 import { api } from '../../lib/api';
 
 /** Who gets the sign-in, and which roster holds them (POST {rosterApi}/{id}/access). */
-export interface AccessTarget { id: string; name: string; employeeId: string | null; rosterApi: string; jobs: string }
+export interface AccessTarget { id: string; name: string; employeeId: string | null; rosterApi: string; appNote: string }
 
 /** "Give app access" / "Reset PIN": the worker's employee ID (made on first access) and their first PIN, shown once. */
 export function AccessModal({ target, given0, onClose, onDone }: {
@@ -70,7 +70,7 @@ export function AccessModal({ target, given0, onClose, onDone }: {
           <span className="text-meta text-muted-ink text-pretty">
             {target.employeeId
               ? `${target.name} keeps employee ID ${target.employeeId} and gets a new 6-digit PIN. Their old PIN stops working and they are signed out on every phone.`
-              : `${target.name} gets the next employee ID (EMP-...) and a 6-digit PIN. In the field app they see only their own ${target.jobs}.`}
+              : `${target.name} gets the next employee ID (EMP-...) and a 6-digit PIN. ${target.appNote}`}
           </span>
           {error && <div role="alert" className="rounded-control bg-danger-bg py-3 px-3.5 text-meta text-danger">{error}</div>}
         </div>

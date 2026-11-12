@@ -14,7 +14,7 @@ import { useConfirm } from '../../components/ConfirmDialog';
 import Icon from '../../components/Icon';
 import { api, errorMessage, ApiFailure } from '../../lib/api';
 import { useApi } from '../../lib/useApi';
-import { date as fmtDate, dateRange, dateTime, count, plural } from '../../lib/format';
+import { date as fmtDate, dateRange, dateTime, count, plural, buildingName } from '../../lib/format';
 import { cx, TONE } from '../../lib/design-tokens';
 import { useUrlState } from '../finance/listKit';
 import {
@@ -181,7 +181,7 @@ export function GuestReviews({ canWrite }: { canWrite: boolean }) {
                       <Avatar name={s.guestName} />
                       <div className="flex flex-col min-w-0">
                         <span className="text-copy font-semibold truncate">{s.guestName}</span>
-                        <span className="text-meta text-muted-ink">{dateRange(s.checkIn, s.checkOut)} · {[s.propertyName, s.unitNumber].filter(Boolean).join(' ')}</span>
+                        <span className="text-meta text-muted-ink">{dateRange(s.checkIn, s.checkOut)} · {[buildingName(s.propertyName), s.unitNumber].filter(Boolean).join(' ')}</span>
                         <Link to={`/reservations/bookings?open=${encodeURIComponent(s.reservationId)}`} className="text-meta text-ink-2 w-fit">Reservation{s.bookingRef ? ` ${s.bookingRef}` : ''}</Link>
                       </div>
                     </div>
@@ -337,7 +337,7 @@ export function GuestReviewForm({ stay, onClose, onSaved }: { stay: GuestStay; o
     : key === 'private' ? 'Only they see this. Optional.' : 'Kept between you and Airbnb.';
 
   return (
-    <Modal title={`Review ${stay.guestName}`} sub={`${dateRange(stay.checkIn, stay.checkOut)} · ${[stay.propertyName, stay.unitNumber].filter(Boolean).join(' ')}`} onClose={onClose} width={560}
+    <Modal title={`Review ${stay.guestName}`} sub={`${dateRange(stay.checkIn, stay.checkOut)} · ${[buildingName(stay.propertyName), stay.unitNumber].filter(Boolean).join(' ')}`} onClose={onClose} width={560}
       footer={<>
         {step > 0 ? <Button variant="secondary" onClick={() => setStep(step - 1)}>Previous step</Button> : <Button variant="secondary" onClick={onClose}>Close</Button>}
         {step < STEPS.length - 1

@@ -1,6 +1,7 @@
 import { type Env, all, one, json, fail, run, audit, nowIso, transaction } from '../../../_lib/db';
 import { requireSession } from '../../../_lib/auth';
-import { choiceOfRows, describeChoice, parseCategoryAccess, rowsOfChoice, type CategoryChoice } from '../../../_lib/categoryCatalog';
+import { choiceOfRows, describeChoice, parseCategoryAccess, rowsOfChoice, type CategoryCatalog, type CategoryChoice } from '../../../_lib/categoryCatalog';
+import { loadCategoryCatalog } from '../../../_lib/categoryCatalogDb';
 import { categoryAccessReady, notMigrated } from '../../../_lib/categoryAccessReady';
 
 /** The person's department and what it limits everyone in it to; null when they have no department. Their own rows win over it. */
@@ -11,13 +12,13 @@ const loadRows = (env: Env, id: string) =>
   all<{ group_code: string; sub_code: string | null }>(env,
     'SELECT group_code, sub_code FROM person_category_access WHERE user_id = ? ORDER BY group_code, sub_code', id);
 
-const loadDepartment = async (env: Env, id: string): Promise<FromDepartment | null> => {
+const loadDepartment = async (env: Env, id: string, catalog: CategoryCatalog): Promise<FromDepartment | null> => {
   const dept = await one<{ id: string; name: string }>(env,
     'SELECT d.id, d.name FROM users u JOIN departments d ON d.id = u.department_id WHERE u.id = ?', id);
   if (!dept) return null;
   const rows = await all<{ group_code: string; sub_code: string | null }>(env,
     'SELECT group_code, sub_code FROM department_category_access WHERE department_id = ? ORDER BY group_code, sub_code', dept.id);
-  return { ...dept, restricted: rows.length > 0, ...choiceOfRows(rows) };
+  return { ...dept, restricted: rows.length > 0, ...choiceOfRows(rows, catalog) };
 };
 
 /** GET /api/users/:id/category-access -> which product categories this person is limited to. `restricted` false means
@@ -30,9 +31,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   if (!(await categoryAccessReady(env))) return notMigrated();
 
   const id = String(params.id);
+  const catalog = await loadCategoryCatalog(env);
   if (!await one(env, 'SELECT id FROM users WHERE id = ?', id)) return fail('NOT_FOUND', 'That account no longer exists.', 404);
   const rows = await loadRows(env, id);
-  const body: PersonCategoryAccess = { userId: id, restricted: rows.length > 0, ...choiceOfRows(rows), department: await loadDepartment(env, id) };
+  const body: PersonCategoryAccess = { userId: id, restricted: rows.length > 0, ...choiceOfRows(rows, catalog), department: await loadDepartment(env, id, catalog) };
   return json(body);
 };
 
@@ -46,7 +48,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   if (!(await categoryAccessReady(env))) return notMigrated();
 
   const id = String(params.id);
-  const parsed = parseCategoryAccess(await request.json().catch(() => null));
+  const catalog = await loadCategoryCatalog(env);
+  const parsed = parseCategoryAccess(await request.json().catch(() => null), catalog);
   if (!parsed.ok) return fail('VALIDATION', parsed.message, 400);
   const { restricted, ...choice } = parsed.value;
 
@@ -65,11 +68,11 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
     }
     await audit(tx, {
       actorId: session.userId, actorLabel: session.fullName, action: 'user.category_access_change', entityTable: 'users', entityId: id,
-      before: { user: user.full_name, categories: describeChoice(was.length > 0, choiceOfRows(was)) },
-      after: { user: user.full_name, categories: describeChoice(restricted, choice) },
+      before: { user: user.full_name, categories: describeChoice(was.length > 0, choiceOfRows(was, catalog), catalog) },
+      after: { user: user.full_name, categories: describeChoice(restricted, choice, catalog) },
     });
   });
 
-  const body: PersonCategoryAccess = { userId: id, restricted, ...choice, department: await loadDepartment(env, id) };
+  const body: PersonCategoryAccess = { userId: id, restricted, ...choice, department: await loadDepartment(env, id, catalog) };
   return json(body);
 };

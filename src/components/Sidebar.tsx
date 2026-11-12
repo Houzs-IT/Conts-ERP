@@ -15,6 +15,16 @@ import { DARK_MODE_READY } from '../lib/theme';
 import { cx } from '../lib/design-tokens';
 import { count as countLabel } from '../lib/format';
 import { opensInPlace } from '../lib/linkClick';
+import { ENGINE_PATH } from '../lib/scmEngine';
+import { engineSoon } from './SupplyChainEngine';
+import { preloadRoute } from '../lib/routeChunks';
+
+/** The pointer is on a menu link: start its screen's code downloading (lib/routeChunks.ts), and sign in to the
+ *  supply chain engine early when the link opens one of its screens. */
+function linkSoon(path: string) {
+  preloadRoute(path);
+  if (ENGINE_PATH[path]) engineSoon();
+}
 
 interface Props { path: string; navigate: (p: string) => void; open: boolean; onToggle: () => void }
 
@@ -174,6 +184,8 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   const [ws, setWs] = useState<Workspace>(() => workspaceOf(path) ?? readWs());
   useEffect(() => { const w = workspaceOf(path); if (w) { setWs(w); saveWs(w); } }, [path]);
   useEffect(() => rememberPage(path), [path]);
+  // The Supply chain side is open: its screens are near, so the engine signs in now rather than on the first click.
+  useEffect(() => { if (hasSupply && ws === 'supply') engineSoon(); }, [hasSupply, ws]);
   const pick = async (w: Workspace): Promise<void> => {
     const first = all.find(g => g.workspace === w)?.items[0];
     const target = first?.path ?? first?.children?.[0]?.path;
@@ -266,7 +278,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
         open ? (
           <div role="tablist" aria-label="Workspace" style={{ margin: '12px 10px 0', padding: 3, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, borderRadius: radius.control, background: look.track }}>
             {(['rental', 'supply'] as Workspace[]).map(w => (
-              <button key={w} role="tab" aria-selected={ws === w} onClick={() => void pick(w)}
+              <button key={w} role="tab" aria-selected={ws === w} onClick={() => void pick(w)} onPointerEnter={w === 'supply' ? engineSoon : undefined}
                 // A real border, not a shadow, so high-contrast mode still shows which side is chosen.
                 style={{ height: 28, borderRadius: 6, border: `1px solid ${ws === w ? look.tabOnBorder : 'transparent'}`, cursor: 'pointer', font: 'inherit', fontSize: text.meta, fontWeight: 500,
                   background: ws === w ? look.tabOnBg : 'transparent', color: ws === w ? look.tabOnInk : look.text, boxShadow: ws === w ? look.tabOnShadow : undefined }}>
@@ -355,6 +367,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                   {leafPath ? (
                     // A link, so right-click, Ctrl or Cmd + click and middle click open it in a new tab (chew, 11 Nov 2026).
                     <a href={leafPath} title={tip} aria-label={named} aria-current={selfActive ? 'page' : undefined} style={itemStyle}
+                      onPointerEnter={() => linkSoon(leafPath)}
                       onClick={e => { if (!opensInPlace(e)) return; e.preventDefault(); navigate(leafPath); }}>
                       {itemInner}
                     </a>
@@ -377,6 +390,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                         const on = c.path === path;
                         return (
                           <a key={c.key} href={c.path} onClick={e => { if (!opensInPlace(e)) return; e.preventDefault(); navigate(c.path); }} aria-current={on ? 'page' : undefined}
+                            onPointerEnter={() => linkSoon(c.path)}
                             aria-label={countOf(c.badge) > 0 ? `${c.label}, ${countWords(c.badge, countOf(c.badge))}` : c.label}
                             title={countOf(c.badge) > 0 ? `${c.label}: ${countWords(c.badge, countOf(c.badge))}` : undefined}
                             style={{

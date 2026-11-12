@@ -19,7 +19,7 @@ import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, notifyFailure, errorMessage } from '../../lib/api';
 import { isStaged, stagedToast, type Approval } from '../../lib/approvals';
 import { refreshNavCounts } from '../../lib/navBadges';
-import { rm, monthLabel, date as fmtDate, todayMyt, titleCase, plural } from '../../lib/format';
+import { rm, monthLabel, date as fmtDate, todayMyt, plural, buildingName, personName } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { PAYER_LABEL, PAYERS } from '../../lib/revenueModel';
 import { OwnerPaidTick, UtilitiesModal, type UnitChoice } from './ExpenseEntry';
@@ -170,7 +170,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button size="sm" variant="primary" loading={busy} disabled={!ok} disabledReason={needsReceipt && !receipt && amount && validDay ? 'Attach the receipt: the owner pays this bill' : 'Pick the bill and enter the amount and bill date'} onClick={() => void save()}>Add bill</Button>
       </>}>
-          {units.length > 1 && <Select showLabel size="md" label="Unit" value={unitId} onChange={v => { setUnitId(v); setAccount(null); }} options={units.map(u => ({ value: u.id, label: titleCase(u.label) }))} />}
+          {units.length > 1 && <Select showLabel size="md" label="Unit" value={unitId} onChange={v => { setUnitId(v); setAccount(null); }} options={units.map(u => ({ value: u.id, label: personName(u.label) }))} />}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Select showLabel size="md" label="Bill" value={category} onChange={v => { setCategory(v); setAccount(null); }} options={kinds} />
             <MoneyInput label="Amount (RM)" placeholder="e.g. 120.50" minSen={1} valueSen={amount} onChangeSen={setAmount} error={fields.amount} />
@@ -262,7 +262,7 @@ function PaidOnBehalfList({ items, adjustments, ownerId, showUnit, canChange, ca
           <span className="flex flex-col gap-0.5 min-w-0">
             <span className="text-copy text-ink [overflow-wrap:anywhere]">{it.description || it.kindLabel}</span>
             <span className="text-meta text-muted-ink">
-              {[it.kindLabel, fmtDate(it.incurredOn), showUnit ? titleCase(it.unitLabel) : null, it.reference].filter(Boolean).join(' · ')}
+              {[it.kindLabel, fmtDate(it.incurredOn), showUnit ? buildingName(it.unitLabel) : null, it.reference].filter(Boolean).join(' · ')}
               {(it.receiptDocumentId || missingReceipt(it)) && <> · <ReceiptCell expenseId={it.id} unitId={it.unitId} receiptDocumentId={it.receiptDocumentId} missing={missingReceipt(it)} canAdd={canAddReceipt} onAdded={onChanged} /></>}
             </span>
           </span>
@@ -279,7 +279,7 @@ function PaidOnBehalfList({ items, adjustments, ownerId, showUnit, canChange, ca
           <span className="flex flex-col gap-0.5 min-w-0">
             <span className="text-copy text-ink [overflow-wrap:anywhere]">{a.description}</span>
             <span className="text-meta text-muted-ink">
-              {[ADJUSTMENT_KIND[a.kind] ?? a.kind, fmtDate(a.occurredOn), showUnit ? titleCase(a.unitLabel) : null,
+              {[ADJUSTMENT_KIND[a.kind] ?? a.kind, fmtDate(a.occurredOn), showUnit ? buildingName(a.unitLabel) : null,
                 a.source === 'owner_workbook' ? 'from the owner workbook' : a.source === 'airbnb_recon' ? 'from Airbnb reconciliation' : null].filter(Boolean).join(' · ')}
             </span>
             {a.placedOnFirstUnit && <span className="text-caption text-muted-ink">Recorded for the owner, not a unit: the statement puts it on this unit.</span>}
@@ -362,7 +362,7 @@ export function CostCard({ r, unit, canAdd = false, onAdded = () => {} }: { r: C
   return (
     <span className="flex items-start justify-between gap-3 min-w-0">
       <span className="flex flex-col min-w-0">
-        {unit && <span className="text-meta text-muted-ink truncate">{titleCase(r.unitLabel)}</span>}
+        {unit && <span className="text-meta text-muted-ink truncate">{buildingName(r.unitLabel)}</span>}
         <span className="text-copy truncate" title={r.description}>{r.description}</span>
         <span className="text-meta text-muted-ink">{fmtDate(r.date)} · {r.kindLabel} · {r.how}</span>
         {(r.receiptDocumentId || r.missingReceipt) && <span className="pt-0.5"><LineReceipt r={r} canAdd={canAdd} onAdded={onAdded} /></span>}
@@ -603,7 +603,7 @@ export function OwnerCostsCard({ ownerId, ownerName, month, units, canEdit, onCh
           </StatRow>
           {!data ? <div className="skeleton h-40" /> : view === 'owner' ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-5">
-              <div className="flex flex-col gap-2 min-w-0"><Eyebrow>{titleCase(ownerName)} · all units</Eyebrow><KindBreakdown b={data.total} /></div>
+              <div className="flex flex-col gap-2 min-w-0"><Eyebrow>{personName(ownerName)} · all units</Eyebrow><KindBreakdown b={data.total} /></div>
               <div className="flex flex-col gap-2 min-w-0">
                 <Eyebrow>Bills and after-split charges</Eyebrow>
                 <PaidOnBehalfList items={items.filter(i => isBill(i.group))} adjustments={data.adjustments} ownerId={ownerId} showUnit={many}
@@ -615,7 +615,7 @@ export function OwnerCostsCard({ ownerId, ownerName, month, units, canEdit, onCh
               {data.units.map(u => (
                 <section key={u.unitId} className="border border-solid border-line rounded-card p-4 flex flex-col gap-2 min-w-0">
                   <div className="flex items-baseline justify-between gap-2">
-                    <Link to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=financials`} className="text-[15px] font-semibold text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</Link>
+                    <Link to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=financials`} className="text-[15px] font-semibold text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{buildingName(u.unitLabel)}</Link>
                     <MoneyText sen={u.totals.deducted} mode="exact" strong className="text-copy whitespace-nowrap" />
                   </div>
                   <KindBreakdown b={u} deducts={u.deductsFromOwner} />

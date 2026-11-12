@@ -10,7 +10,7 @@ import { api, ApiFailure, errorMessage } from '../lib/api';
 import { saveBlob, zipStore } from '../lib/export';
 import type { Report } from './OwnerIncomeReportPage';
 import type { StatementPages } from '../lib/statementPdf';
-import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
+import { rm, monthLabel, todayMyt, plural, buildingName, personName } from '../lib/format';
 import { phone as formatPhone } from '../lib/phone';
 import { MoneyText } from '../components/MoneyText';
 import { Menu, Select } from '../components/Select';
@@ -115,7 +115,7 @@ function OwnerList() {
 
   const { data, loading, error, reload } = useApi<Payload>(`/owners${month === thisMonth ? '' : `?month=${month}`}`, FALLBACK);
   const filters = useFinanceFilters();
-  const buildingNameOf = useMemo(() => new Map((filters?.buildings ?? []).map(b => [b.id, b.name])), [filters]);
+  const buildingNameOf = useMemo(() => new Map((filters?.buildings ?? []).map(b => [b.id, buildingName(b.name)])), [filters]);
   const buildingsOf = (o: Owner) => [...new Set(o.units.map(u => (u.buildingId ? buildingNameOf.get(u.buildingId) : null)).filter(Boolean))].join(', ');
   const toast = useToast();
   const navigate = useNavigate();
@@ -183,7 +183,7 @@ function OwnerList() {
   }
 
   function askToGenerate(picked: ListedStatement[], missing: Owner[], pages: StatementPages): void {
-    const names = missing.slice(0, 5).map(o => titleCase(o.displayName)).join(', ');
+    const names = missing.slice(0, 5).map(o => personName(o.displayName)).join(', ');
     setDialog({
       title: `No ${monthLabel(month)} statement yet for ${plural(missing.length, 'owner')}`,
       body: 'The zip is made from generated owner statements. Generate drafts for them now from the month\'s reservations and costs, then export?',
@@ -235,11 +235,11 @@ function OwnerList() {
       await Promise.all(picked.slice(i, i + 4).map(async s => {
         try {
           const r = await loadReport(s.id);
-          if (!r.units.length) { noReport.push(titleCase(s.ownerName)); return; }
+          if (!r.units.length) { noReport.push(personName(s.ownerName)); return; }
           const opts = { logo: await logoOf(r.settings.company.logo), phone: printedPhone, pages };
-          for (const u of r.units) made.push({ name: `${u.code} - ${titleCase(s.ownerName)}`, bytes: await statementPdf({ ...r, units: [u] }, opts) });
+          for (const u of r.units) made.push({ name: `${u.code} - ${personName(s.ownerName)}`, bytes: await statementPdf({ ...r, units: [u] }, opts) });
         } catch {
-          failed.push(titleCase(s.ownerName));
+          failed.push(personName(s.ownerName));
         }
       }));
     }
@@ -272,7 +272,7 @@ function OwnerList() {
   async function addOwner(o: Omit<Owner, 'id' | 'units' | 'portalInvited' | 'contract' | 'defaultManagementFeePct'>) {
     try {
       const made = await api.post<{ id: string }>('/owners', o);
-      toast({ tone: 'success', title: 'Owner added.', body: `${titleCase(o.displayName)}: link a unit next.` });
+      toast({ tone: 'success', title: 'Owner added.', body: `${personName(o.displayName)}: link a unit next.` });
       setModal(false);
       navigate(`/owners/${encodeURIComponent(made.id)}`);
     } catch (e) {
@@ -282,12 +282,12 @@ function OwnerList() {
 
   // Column filters are off: the totals under the table add up the owners the page's own search and chips leave.
   const columns = useMemo<Column<Owner>[]>(() => [
-    { key: 'owner', label: 'Owner', value: o => o.displayName, hideable: false, width: 220, filter: false,
+    { key: 'owner', label: 'Owner', value: o => personName(o.displayName), hideable: false, width: 220, filter: false,
       render: o => (
         <span className="flex items-center gap-2.5 min-w-0">
           <span className="w-[30px] h-[30px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
           <span className="flex flex-col gap-px min-w-0">
-            <span className="text-copy font-medium truncate" title={o.displayName}>{titleCase(o.displayName)}</span>
+            <span className="text-copy font-medium truncate" title={o.displayName}>{personName(o.displayName)}</span>
             {(o.email || o.phone) && <span className="text-meta text-muted-ink truncate" title={contactText(o)}>{contactText(o)}</span>}
           </span>
         </span>
@@ -315,7 +315,7 @@ function OwnerList() {
           {open[o.id] && o.units.map(u => (
             <Link key={u.unitId} to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} onClick={e => e.stopPropagation()}
               className="flex items-center justify-between gap-2 min-w-0 pl-5 no-underline text-inherit! hover:underline" title={`${u.unitLabel} · ${terms(u)}`}>
-              <span className="text-meta text-ink truncate">{titleCase(u.unitLabel)}</span>
+              <span className="text-meta text-ink truncate">{buildingName(u.unitLabel)}</span>
               <span className="shrink-0"><ModelChip model={modelOf(u)} label={terms(u)} /></span>
             </Link>
           ))}
@@ -332,7 +332,7 @@ function OwnerList() {
       value: o => portalBadge(o, true).label,
       status: o => portalBadge(o, true) },
     ...(inviter ? [{ key: 'actions', label: '', width: 52, align: 'right' as const, noExport: true, sortable: false, filter: false, hideable: false,
-      render: (o: Owner) => <RowActions name={titleCase(o.displayName)} items={actionsRef.current(o)} /> } satisfies Column<Owner>] : []),
+      render: (o: Owner) => <RowActions name={personName(o.displayName)} items={actionsRef.current(o)} /> } satisfies Column<Owner>] : []),
   ], [open, monthCol, inviter, buildingNameOf, types]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -391,7 +391,7 @@ function OwnerList() {
           <SearchBox className="flex-1 min-w-[200px]" label="Search owners" placeholder="Search owner, phone, email, address or unit" value={url.get('q')} onChange={v => url.set({ q: v || null, page: null })} />
           {filters && (
             <Select className="flex-[0_1_200px] max-md:flex-[1_1_160px]" label="Building" value={building} onChange={v => url.set({ building: v || null, page: null })}
-              options={[{ value: '', label: 'All buildings' }, ...[...filters.buildings].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name }))]} />
+              options={[{ value: '', label: 'All buildings' }, ...[...filters.buildings].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: buildingName(b.name) }))]} />
           )}
           {phone && (
             <Select className="flex-[1_1_180px]" label="Sort by" value={url.get('sort')}
@@ -411,7 +411,7 @@ function OwnerList() {
           <span className="flex items-center gap-3 min-w-0">
             <span className="w-[32px] h-[32px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
             <span className="flex flex-col gap-[2px] min-w-0 flex-1">
-              <span className="text-copy font-medium truncate" title={o.displayName}>{titleCase(o.displayName)}</span>
+              <span className="text-copy font-medium truncate" title={o.displayName}>{personName(o.displayName)}</span>
               {o.units.length <= 1
                 ? <span className="text-meta text-muted-ink truncate" title={`${o.units.map(u => u.unitLabel).join(', ') || unitsText(o)} · ${ownerTerms(o)}`}>{unitsText(o)} · {ownerTerms(o)}</span>
                 : o.units.map(u => <span key={u.unitId} className="text-meta text-muted-ink truncate" title={`${u.unitLabel} · ${terms(u)}`}>{u.unitLabel.split(' ').pop()} · {terms(u)}</span>)}
@@ -420,7 +420,7 @@ function OwnerList() {
               <MoneyText sen={netOf(o)} mode="exact" tone="auto" strong className="text-copy" />
               <span className="text-caption text-muted-ink">net</span>
             </span>
-            {inviter && <RowActions name={titleCase(o.displayName)} items={actionsRef.current(o)} />}
+            {inviter && <RowActions name={personName(o.displayName)} items={actionsRef.current(o)} />}
           </span>
         )}
       />

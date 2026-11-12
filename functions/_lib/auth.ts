@@ -280,7 +280,7 @@ export async function requireSession(req: Request, env: Env) {
   return { session: session as Session & { manage: boolean }, response: null };
 }
 
-const FIELD = ['housekeeper', 'technician'];
+const FIELD = ['housekeeper', 'technician', 'renovator'];
 
 export function isFieldRole(role: string) { return FIELD.includes(role); }
 

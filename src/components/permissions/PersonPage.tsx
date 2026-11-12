@@ -4,7 +4,7 @@ import { ConfirmDialog, type ConfirmSpec } from '../ConfirmDialog';
 import { StaleBanner } from '../DataState';
 import { useToast } from '../Toast';
 import { api, errorMessage } from '../../lib/api';
-import { plural } from '../../lib/format';
+import { plural, personName } from '../../lib/format';
 import { areaKeysOf, countChanged, countDifferences, personChanges, type RoleLevels } from '../../lib/roleGrid';
 import type { AccessLevel, PersonAccess, PersonAccessArea, PersonAccessChange } from '../../lib/types';
 import { BackLink } from './MasterDetail';
@@ -33,7 +33,7 @@ function categoriesOf(access: PersonAccess): GridCategory[] {
   for (const area of access.areas) {
     if (closedBySide(access.user.kind, access.user.side, area.group)) continue;
     const category = categoriesByGroup.get(area.group) ?? { group: area.group, areas: [] };
-    category.areas.push({ key: area.key, label: area.label });
+    category.areas.push({ key: area.key, label: area.label, ownGrant: area.ownGrant });
     categoriesByGroup.set(area.group, category);
   }
   return [...categoriesByGroup.values()];
@@ -80,7 +80,7 @@ export default function PersonPage({ personId, onBack, onSaved, onDirtyChange }:
     return (
       <div className="flex flex-col gap-1.5 p-5 max-md:p-4">
         <BackLink label="People" onBack={onBack} />
-        <h2 className="m-0 text-title font-semibold [overflow-wrap:anywhere]">{access.user.fullName}</h2>
+        <h2 className="m-0 text-title font-semibold [overflow-wrap:anywhere]">{personName(access.user.fullName)}</h2>
         <p className="m-0 text-copy text-muted-ink">
           {access.user.kind === 'management'
             ? 'Full (Management). Management always has full access to everything and it cannot be changed.'
@@ -112,7 +112,7 @@ function PersonAccessEditor({ access, onBack, onSaved, onDirtyChange }: PersonAc
   const ownSettingCount = countDifferences(savedLevels, roleLevels, areaKeys);
   const closedNote = user.side === 'both'
     ? null
-    : `${user.fullName} works on ${sideLabel(user.side)} only. ${closedCompanyLabel(user.side)} areas are closed, so they are not shown.`;
+    : `${personName(user.fullName)} works on ${sideLabel(user.side)} only. ${closedCompanyLabel(user.side)} areas are closed, so they are not shown.`;
 
   async function send(update: PersonAccessUpdate, successTitle: string) {
     setIsSaving(true);
@@ -128,10 +128,10 @@ function PersonAccessEditor({ access, onBack, onSaved, onDirtyChange }: PersonAc
 
   const save = () => send(
     { changes: personChanges(savedLevels, levels, roleLevels, areaKeys) },
-    `${user.fullName}: ${plural(changedCount, 'change')} saved.`,
+    `${personName(user.fullName)}: ${plural(changedCount, 'change')} saved.`,
   );
   const askResetAll = () => setConfirm({
-    title: `Reset ${user.fullName} to their role?`,
+    title: `Reset ${personName(user.fullName)} to their role?`,
     body: 'Every setting made just for this person is removed. They get exactly what their role gives again.',
     confirmLabel: 'Reset all', busyLabel: 'Resetting…',
     onConfirm: async () => { setConfirm(null); await send({ resetAll: true }, 'Access reset to their role.'); },
@@ -141,7 +141,7 @@ function PersonAccessEditor({ access, onBack, onSaved, onDirtyChange }: PersonAc
     <div className="flex flex-col">
       <div className="flex flex-col gap-1.5 px-5 pt-4 pb-3.5 max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
         <BackLink label="People" onBack={onBack} />
-        <h2 className="m-0 text-title font-semibold [overflow-wrap:anywhere]">{user.fullName}</h2>
+        <h2 className="m-0 text-title font-semibold [overflow-wrap:anywhere]">{personName(user.fullName)}</h2>
         <span className="text-meta text-muted-ink">{roleNameOf(access)} · {sideLabel(user.side)}</span>
         <span className="text-copy">
           {ownSettingCount === 0 ? 'Gets exactly what their role gives.' : <><b>{ownSettingCount}</b> {ownSettingCount === 1 ? 'area differs' : 'areas differ'} from their role.</>}

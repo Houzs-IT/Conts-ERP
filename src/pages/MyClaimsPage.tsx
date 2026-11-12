@@ -19,7 +19,7 @@ import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
-import { date, monthLabel, rm, todayMyt } from '../lib/format';
+import { date, monthLabel, rm, todayMyt, buildingName } from '../lib/format';
 import {
   DEPARTMENT, RECEIPT_STATUS, REQUEST_STATUS, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, thisMonthMyt,
   type LineDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt,
@@ -95,7 +95,7 @@ function LinesEditor({ lines, setLines, totalSen, department }: { lines: LineDra
             options={[{ value: 'none', label: 'The department' }, { value: 'unit', label: 'A unit' }, { value: 'job', label: 'A maintenance job' }, { value: 'project', label: 'A project' }]} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
             {l.where === 'unit' && <Select label="Unit" showLabel value={l.unitId} onChange={v => set(i, { unitId: v })} placeholder="Choose the unit"
-              options={(units.data?.units ?? []).map(u => ({ value: u.id, label: `${u.building} ${u.unitNumber}` }))} />}
+              options={(units.data?.units ?? []).map(u => ({ value: u.id, label: `${buildingName(u.building)} ${u.unitNumber}` }))} />}
             {l.where === 'job' && <Select label="Maintenance job" showLabel value={l.jobId} onChange={v => set(i, { jobId: v })} placeholder="Choose the job"
               options={(jobs.data?.jobs ?? []).map(j => ({ value: j.id, label: j.title }))} />}
             {l.where === 'project' && <Select label="Project" showLabel value={l.projectId} onChange={v => set(i, { projectId: v })} placeholder="Choose the project"

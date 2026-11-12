@@ -17,7 +17,7 @@ import { usePortalText, usePortalDates, wordFor } from '../lib/portalI18n';
 import { useFieldRefresh, useFreshIds } from '../lib/fieldLive';
 import type { Me } from '../lib/claims';
 import { JobClaimBox } from '../components/ops/JobClaimBox';
-import { todayMyt } from '../lib/format';
+import { todayMyt, buildingName } from '../lib/format';
 import { passKeyStatus, passKeyDay, type PassKeyDay } from '../lib/passKeyStatus';
 
 /* GET /api/field/repairs and /api/field/repairs/:id (functions/api/field/repairs*.ts). No amounts: the server never sends any. */
@@ -139,7 +139,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const fresh = useFreshIds([...(data?.mine ?? []), ...(data?.open ?? [])].map(r => r.id), 'repairs', !!data);
   const buildingOptions = useMemo(() => {
     const byId = new Map((data?.buildings ?? []).map(b => [b.id, b]));
-    for (const r of data?.mine ?? []) if (!byId.has(r.buildingId)) byId.set(r.buildingId, { id: r.buildingId, name: r.propertyName, open: 0 });
+    for (const r of data?.mine ?? []) if (!byId.has(r.buildingId)) byId.set(r.buildingId, { id: r.buildingId, name: buildingName(r.propertyName), open: 0 });
     return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [data]);
   const allBuildingsOpen = (data?.buildings ?? []).reduce((sum, b) => sum + b.open, 0);
@@ -665,7 +665,7 @@ function ReportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
   const [error, setError] = useState<{ unitId?: string; title?: string; category?: string; detail?: string; form?: string }>({});
   const inBuildingJob = f.unitId === OTHERS_UNIT;
   const all = units.data?.data ?? [];
-  const buildings = useMemo(() => [...new Map(all.map(u => [u.propertyId, u.propertyName])).entries()].map(([id, name]) => ({ id, name })), [all]);
+  const buildings = useMemo(() => [...new Map(all.map(u => [u.propertyId, buildingName(u.propertyName)])).entries()].map(([id, name]) => ({ id, name })), [all]);
   const inBuilding = all.filter(u => u.propertyId === f.building);
   useEffect(() => { if (buildings.length === 1 && !f.building) setF(x => ({ ...x, building: buildings[0].id })); }, [buildings, f.building]);
 
@@ -685,7 +685,7 @@ function ReportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
     }
     if (picked.files.length) {
       setSending(true);
-      const failed = await picked.send(f.unitId === OTHERS_UNIT ? buildings.find(b => b.id === f.building)?.name ?? '' : inBuilding.filter(u => u.id === f.unitId).map(u => `${u.propertyName} ${u.unitNumber}`)[0] ?? '', id);
+      const failed = await picked.send(f.unitId === OTHERS_UNIT ? buildings.find(b => b.id === f.building)?.name ?? '' : inBuilding.filter(u => u.id === f.unitId).map(u => `${buildingName(u.propertyName)} ${u.unitNumber}`)[0] ?? '', id);
       if (failed.length) toast({ tone: 'warning', title: tf.someNotAdded, body: tf.notAdded(failed.join(', ')) });
     }
     onDone();
