@@ -8,7 +8,7 @@ import { register } from 'node:module';
 register('data:text/javascript,' + encodeURIComponent(`export async function resolve(s, c, next) {
   try { return await next(s, c); } catch (e) { if (s.startsWith('.') && !/\\.[a-z]+$/.test(s)) return next(s + '.ts', c); throw e; }
 }`));
-const { AREAS, resolveFor, routeAreas, highestLevelOf } = await import('../../functions/_lib/access.ts');
+const { AREAS, resolveFor, routeAreas, highestLevelOf, closedBySide } = await import('../../functions/_lib/access.ts');
 
 const area = key => AREAS.find(a => a.key === key);
 const rules = ({ user = {}, position = {}, department = {} } = {}) => ({
@@ -75,9 +75,9 @@ test('cleaning and maintenance have no desk areas, whatever is stored', () => {
 // before departments: Operations staff, Operations manager and Finance admin columns). HR came later (migration 0165)
 // and nobody is seeded into it: pay and bank details stay hidden until management grants HR.
 const seeded = {
-  operations_staff: { dashboard: 'none', portfolio: 'none', calendar: 'edit', reservations: 'edit', guests: 'edit', operations: 'edit', cleaning: 'edit', maintenance: 'edit', properties: 'edit', scheduledChanges: 'edit', agentToLet: 'edit', unitSettings: 'edit', hr: 'none', serviceCases: 'edit', projects: 'edit', scSales: 'edit', scInvoices: 'none', scConsignment: 'edit', scProcurement: 'edit', scTransportPlan: 'edit', scWarehouse: 'edit', finance: 'none', deductions: 'none', owners: 'none', contracts: 'none', ledger: 'none', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none', performance: 'edit', comms: 'edit', reports: 'none', pricing: 'edit', reviews: 'edit', automations: 'edit', mail: 'none', users: 'none', integrations: 'none', settings: 'none', health: 'none' },
-  operations_manager: { dashboard: 'full', portfolio: 'full', calendar: 'full', reservations: 'full', guests: 'full', operations: 'full', cleaning: 'full', maintenance: 'full', properties: 'full', scheduledChanges: 'full', agentToLet: 'full', unitSettings: 'full', hr: 'none', serviceCases: 'full', projects: 'full', scSales: 'full', scInvoices: 'view', scConsignment: 'full', scProcurement: 'full', scTransportPlan: 'full', scWarehouse: 'full', finance: 'view', deductions: 'view', owners: 'view', contracts: 'view', ledger: 'none', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none', performance: 'full', comms: 'full', reports: 'view', pricing: 'full', reviews: 'full', automations: 'full', mail: 'none', users: 'full', integrations: 'full', settings: 'full', health: 'full' },
-  finance_admin: { dashboard: 'view', portfolio: 'view', calendar: 'view', reservations: 'view', guests: 'view', operations: 'view', cleaning: 'view', maintenance: 'view', properties: 'view', scheduledChanges: 'view', agentToLet: 'view', unitSettings: 'view', hr: 'none', serviceCases: 'view', projects: 'view', scSales: 'view', scInvoices: 'full', scConsignment: 'view', scProcurement: 'view', scTransportPlan: 'view', scWarehouse: 'view', finance: 'full', deductions: 'full', owners: 'full', contracts: 'full', ledger: 'full', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none', performance: 'full', comms: 'none', reports: 'full', pricing: 'full', reviews: 'full', automations: 'none', mail: 'none', users: 'none', integrations: 'full', settings: 'full', health: 'full' },
+  operations_staff: { dashboard: 'none', portfolio: 'none', calendar: 'edit', reservations: 'edit', guests: 'edit', operations: 'edit', cleaning: 'edit', maintenance: 'edit', properties: 'edit', scheduledChanges: 'edit', agentToLet: 'edit', unitSettings: 'edit', hr: 'none', dcHr: 'none', serviceCases: 'edit', projects: 'edit', scSales: 'edit', scInvoices: 'none', scConsignment: 'edit', scProcurement: 'edit', scTransportPlan: 'edit', scWarehouse: 'edit', finance: 'none', deductions: 'none', owners: 'none', contracts: 'none', ledger: 'none', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none', performance: 'edit', comms: 'edit', reports: 'none', pricing: 'edit', reviews: 'edit', automations: 'edit', mail: 'none', users: 'none', integrations: 'none', settings: 'none', health: 'none' },
+  operations_manager: { dashboard: 'full', portfolio: 'full', calendar: 'full', reservations: 'full', guests: 'full', operations: 'full', cleaning: 'full', maintenance: 'full', properties: 'full', scheduledChanges: 'full', agentToLet: 'full', unitSettings: 'full', hr: 'none', dcHr: 'none', serviceCases: 'full', projects: 'full', scSales: 'full', scInvoices: 'view', scConsignment: 'full', scProcurement: 'full', scTransportPlan: 'full', scWarehouse: 'full', finance: 'view', deductions: 'view', owners: 'view', contracts: 'view', ledger: 'none', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none', performance: 'full', comms: 'full', reports: 'view', pricing: 'full', reviews: 'full', automations: 'full', mail: 'none', users: 'full', integrations: 'full', settings: 'full', health: 'full' },
+  finance_admin: { dashboard: 'view', portfolio: 'view', calendar: 'view', reservations: 'view', guests: 'view', operations: 'view', cleaning: 'view', maintenance: 'view', properties: 'view', scheduledChanges: 'view', agentToLet: 'view', unitSettings: 'view', hr: 'none', dcHr: 'none', serviceCases: 'view', projects: 'view', scSales: 'view', scInvoices: 'full', scConsignment: 'view', scProcurement: 'view', scTransportPlan: 'view', scWarehouse: 'view', finance: 'full', deductions: 'full', owners: 'full', contracts: 'full', ledger: 'full', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none', performance: 'full', comms: 'none', reports: 'full', pricing: 'full', reviews: 'full', automations: 'none', mail: 'none', users: 'none', integrations: 'full', settings: 'full', health: 'full' },
 };
 
 test('the seeded rules give the levels of the old role chart', () => {
@@ -153,6 +153,10 @@ test('each page split off a shared area reaches its own endpoints and shares the
     ['GET', '/api/finance/expenses', ['finance']],
     ['GET', '/api/reviews', ['reviews']],
     ['PUT', '/api/rates', ['pricing']],
+    ['GET', '/api/employees/dream-crafter', ['dcHr']],
+    ['PUT', '/api/employees/dream-crafter', ['dcHr']],
+    ['GET', '/api/employees', ['hr']],
+    ['GET', '/api/owner-close', ['ownerClose']],
   ];
   for (const [method, path, keys] of expected) assert.deepEqual(keysFor(method, path), keys, `${method} ${path}`);
 });
@@ -162,4 +166,13 @@ test('a shared endpoint takes the highest level the person has on any of its pag
   assert.deepEqual([best.area.key, best.level], ['maintenance', 'edit']);
   const tie = highestLevelOf([{ area: area('cleaning'), level: 'none' }, { area: area('maintenance'), level: 'none' }]);
   assert.equal(tie.level, 'none');
+});
+
+test('each company closes the other one\'s HR: The Conts closes Dream Crafter HR, Dream Crafter closes HR', () => {
+  assert.equal(closedBySide('staff', 'conts', 'Dream Crafter HR'), true);
+  assert.equal(closedBySide('staff', 'dream_crafter', 'Dream Crafter HR'), false);
+  assert.equal(closedBySide('staff', 'dream_crafter', 'HR'), true);
+  assert.equal(closedBySide('management', 'conts', 'Dream Crafter HR'), false);
+  assert.equal(area('dcHr').group, 'Dream Crafter HR');
+  for (const key of ['ownerClose', 'lockIncome', 'lockDeductions', 'lockO2', 'unlockStep']) assert.equal(area(key).group, 'Units', key);
 });
