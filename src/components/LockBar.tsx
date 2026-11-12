@@ -32,7 +32,7 @@ const listed = (items: string[], most = 5) => {
 
 /** A work page's lock bars (Unit report locks, spec goal 5): for each category, how many of the units it lists are locked
  *  for the month, the units whose Revenue waits for Airbnb reservations to be confirmed, and Lock all / Unlock all for the
- *  whole month. They are the Unit report's own locks ("两边是互通的": one store), so a lock taken here shows there and
+ *  whole month. They are the Unit report's own locks (chew: the two places are linked; one store), so a lock taken here shows there and
  *  the other way round; the Unit report locks unit by unit. Lock all and Unlock all show only to whoever holds the power.
  *  Without `month` the bars keep their own month, last month to begin with (Utility bills shows many months at once). */
 export function LockBars({ month: given, stages, onChange }: { month?: string; stages: Stage[]; onChange?: () => void }) {

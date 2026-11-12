@@ -145,6 +145,11 @@ jobs:
         env:
           API_BASE: http://localhost:8788
           DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Unit report locks, click and Lock all (owner-report-locks)
+        run: node scripts/api-checks/owner-report-locks.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
       - name: Owner payouts bank file grouping (payout-export)
         run: node scripts/api-checks/payout-export.mjs
         env:

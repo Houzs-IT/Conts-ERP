@@ -211,3 +211,20 @@
 - Modify: `docs/finance/FINANCE-SOP.md` §9.1 (Chinese: the Unit report way, six categories, click and Lock all, Final as a lock, work-page bars, unconfirmed blocks, blank/zero does not), `.github/workflows/ci.yml` (add `owner-report-locks`), the plan's As built section.
 - [ ] **Step 1:** run every check this plan touched plus `npm test`, `npm run check`, `npx tsc -b`, `npm run build` on a fresh local database. Expected: all pass except the known `statementPdf` module-resolution failure that is also on main.
 - [ ] **Step 2: Commit** `docs(finance): SOP 9.1 for the Unit report locks; CI step`.
+
+## As built (13 Nov 2026)
+
+- Tasks 1–9 as planned, with the rulings in the ledger; the ones that changed what ships:
+  - Make final generates first, and generating is Finance edit work: the report's `may.generate` is `can(finance, edit)`
+    and Make final says so when it is missing.
+  - The Utility bills listing shows many months, so its Utilities bar keeps its own month (last month, stepped on the bar).
+  - The work pages' bars are one `LockBars` card per page, reading the summary once.
+  - Airbnb reconciliation leaves only the rental Finance menu (the supply side keeps its entry, which gives its address
+    a permission area); the reconciliation no longer works out its own income lock count (`incomeLocks`,
+    `incomeLockCounts`, `incomeStep` removed; `airbnb-recon.mjs` checks the summary instead).
+  - Lock all / Unlock all cover the whole month whatever the filters; their toasts count units the locks cover that
+    the Unit report leaves out (no contract for the month; 22 on production for October 2026).
+  - Toasts have no buttons in this app, so the amber Revenue toast names the Airbnb reconciliation tab.
+  - `Stage`, `STAGES`, `STAGE_LABEL` live in `src/lib/lockStages.ts`.
+- CI: `owner-report-locks` runs after `owner-close-final`.
+- SOP: FINANCE-SOP §9.1 rewritten for the Unit report way.

@@ -749,82 +749,107 @@
 - 启用后：月结之后那个月的记录不能再改，错误在当前月份用调整分录修正；有权限的人可以重新打开已锁的月份。
 - 系统现有的规则保留：业主结算单定稿后，那个月的 Rental 费用不能再改。
 
-### 9.1 业主报表分阶段锁（Owner statement close，财务确认，2026-11-11）
+### 9.1 业主报表的锁（在 Unit report 上锁，2026-11-13 改版）
 
-每个月的业主报表分三段检查，查好一段就锁一段：Income → Deductions → O2，三段都锁了，每个单位的 GP 和付完业主后的利润才定下来，然后才 final。设计：`docs/superpowers/specs/2026-11-11-owner-report-stage-locks-design.md`。
+每个月的业主报表按类别检查，查好一类就锁一类；一个业主名下所有单位的类别都锁了，才可以 final。2026-11-13 起，**锁都在 Units › Unit report › Monthly 上做**（chew：「锁整合起来」「点那个 amount 就锁」），原来的 Owners › Statement close 页已经拿掉，旧链接会打开同一个月的 Unit report。设计：`docs/superpowers/specs/2026-11-13-unit-report-click-locks-design.md`（第一版：`docs/superpowers/specs/2026-11-11-owner-report-stage-locks-design.md`）。
 
-**第一部分已做：Income 锁**（Owners › Owner statement close）
+**一个月怎么锁完（chew 2026-11-13）**
 
-- 一个月一页，列出这个月有业主报表的单位：订单数、晚数、Income、要看的地方（Airbnb 对账还没确认的订单、系统的提醒）、锁了没有。
-- **只锁打了勾的单位**，没勾的保持没锁，可以之后再锁（chew：「应该是我要锁的我tick 了锁」「可以留部分单位」）。还有东西要看的单位，锁的时候会提醒，不会挡住。
-- 2026 年 10 月以前的月份不能锁（9 月及以前是业主 Excel 导入、已付）。**还没过完的月份也不能锁**（以马来西亚时间算，例如 11 月 11 日最多只能锁到 10 月），不然那个月之后的订单全部会变成下个月的差额。
-- **固定租金（GRR）和 master lease 的单位不在 Income 这一步**：不管单位收入多少，业主拿的都一样，锁了只会冻结公司自己的数字。公司那边怎么算，见下面「公司那一份」。
-- **那个月业主报表已经 final 的单位，不能再锁**（锁会记下今天的订单，不是那份报表已经付的数字）；页面显示「Statement final」，不能打勾。
-- **锁了以后，那个月的 Income 不会再变。** 之后订单改了（Airbnb 对账确认、手改订单、HostPlatform 或 Channex 取消），差额自动变成**下一个还没 final 的月份**的 O2（来源 stage_lock），按合约重新算业主应得多少（保底也算进去），不是直接乘分成 %；年保底的单位，这笔先 hold，等人看过再放出去。同一个锁只会有一笔，不会重复；生成报表、对账确认或撤回、以及每 15 分钟都会核对一次。对账确认或撤回后，页面提醒重新 Generate 的是**差额去的那个月**（例如 11 月），不是锁住的月份。
-- **草稿上已经印出来的 O2 如果之后变了或没了**（订单又改了、解锁、或在业主页改了调整），那份草稿按 Mark final 会被挡住：「An owner adjustment changed after this draft was made. Generate the statement again, then mark it final.」重新 Generate 一次就可以 final，付的钱和账上的数字才会一样。
-- **锁了以后才改的订单，公司那一份**（chew 2026-11-11 选 A）：跟业主的 O2 一样，算进**下一个还没 final 的月份**的公司数字（unit P&L、yearly report、portfolio）；锁住的月份，公司的数字也不再变。例子：10 月锁了以后 Airbnb 多付 RM100，业主那份 RM75 进 11 月 O2，公司那份 RM25 算进 11 月。**已做**（第二部分 2b，见下面「公司那一份」）。
-- **解锁要写原因**，系统记下是谁、几时、为什么。解锁后那个月回到最新的订单：之前因为锁而移到下个月的差额会拿回来；如果那笔已经在 final 的报表上，就留在那里，解锁的月份多一笔相反的调整（「Already settled on the … statement」），业主不会多拿或少拿。那个月自己的报表已经 final，就不能解锁（要先解锁 final，第三部分做）。被拿回的差额如果已经印在下个月的草稿上，解锁后会提醒重新 Generate 那个月。解锁会等系统正在跑的差额更新做完才开始，不会留下没人管的差额。
-- **权限由 chew 分配到个人**（Users and roles）：Owner statement close（看页面）、Lock income（锁）、Unlock a step（解锁）。上线时三个都只开给管理层。
+1. 上传 Airbnb 文件，在 **Unit report › Airbnb reconciliation**（这一页从 Finance 搬到 Unit report 的分页，在 Monthly 旁边）确认完 → 用那页上面的锁条 **Lock all** 锁 Revenue，或在 Monthly 一格一格点。
+2. **Finance › Utility bills** 输入或扫描完水电账单 → 用那页的锁条锁 Utilities（锁条有自己的月份，默认上个月，可以前后切换）。
+3. **Owners › Deductions** 加完 Add. ded. 和 O2 → 用那页的锁条锁 Add. ded.、O2；Cleaning 和 Misc 也在这页锁。
+4. 回到 **Unit report › Monthly** 看数字：锁了的金额是青色、左边有锁头。一个业主的单位全部锁了，Final 那一格出现 **Make final**，按下去就 final。
 
-**第二部分（2a）已做：Deductions 和 O2 的锁**（同一页的第 2、3 步；chew 2026-11-12「可以，先做 2a」）
+两边是同一个锁（「两边是互通的」）：在工作页面锁了，Unit report 马上看到；在 Unit report 锁了，工作页面的锁条也会算进去。
 
-Deductions（扣款）：
-- 列出这个月有业主报表、按分成算的单位（跟 Income 一样；固定租金和 master lease 不在这一步，等 2b 跟「公司那一份」一起做）：清洁费、水电（电、水、网络、Indah Water）、其他扣款、misc、合计。要看的地方：有退房却没收清洁费（「n check-outs, no cleaning charged」）、合约已到期但这个月有水电账单（「Contract ended …: check the bills」）。只是提醒，不会挡住。
-- **锁了以后，那个月的扣款不会再变**：清洁费、水电、其他扣款和 misc 都按锁的时候的数字。
-- **锁了以后才进来的费用**（水电账单、扫描账单、清洁费、维修费、手动加的费用；不管从哪里写进来都一样）：自动放到**下一个还没锁、也还没 final 的月份**扣，报表上写「(late bill)」。输入的人会看到提示，例如「October 2026 deductions are locked for … This cost goes on the November 2026 statement.」
-- **改已锁的费用**：可以改。那个月的报表保留原来的数字，差额变成下一个开着的月份的 O2（「Late change to … deductions for October 2026 (deductions locked)」），一样按合约重新算业主那一份。例子：电费 412.35 改成 421.35，10 月照样扣 412.35，11 月多一笔 O2，扣业主那一份（业主拿 75% 就是 6.75）。
-- **删已锁的费用**：不行，会说哪个月锁了，要请有 Unlock a step 权限的人先解锁。水电账单页面要替换锁住月份的账单，也会被挡（显示在 locked）。维修单以 RM 0 重新完成、要删掉锁住月份的费用，也会被挡。
-- **misc**：锁的时候定下来。之后订单变了：Income 没锁，misc 的差额跟着扣款的差额一起去下个月；Income 也锁了，misc 的差额跟着 Income 的差额一起去下个月（先算 Income，再算扣款）。
-- 已 final 的月份规则照旧：已 final 的费用不能改、不能删；只有水电账单会自动去下个月，其他费用还是会被挡（第三部分再看）。
+**六个类别**
 
-O2：
-- 列出这个月业主报表上的所有单位（固定租金、master lease 也在）：Credits、Charges、Net O2，就是这个月的报表会拿的 O2。要看的地方：hold 着的欠款还没放（「Held debt RM … not released」）、跟上个月一样的 O2（「Repeats one from September」）。
-- **锁了以后，那个月的报表只拿锁的时候那些 O2**；其他还开着的 O2 自动放到下一个月的报表。
-- **锁了以后新加的 O2**（业主页、单位的扣款、业主自付水电退回、扫描账单的业主行、审批通过的 O2）：日期自动改到下一个还没锁、也还没 final 的月份，画面会提示。没有指定单位的 O2，看业主的第一个单位。
-- **已锁的 O2**：不能 hold、settle、删除；hold 着的欠款不能 release 到锁住的月份（可以 release 到下个月）。
-- 订单或扣款的差额、Airbnb 对账给业主的那一份，如果下个月的 O2 已经锁了，就再往后放一个月；已经放在那个月的差额不会再动。
-- 解锁 O2：那个月的报表重新 Generate 时，会拿当时的 O2。
+- **Revenue**：这个月的订单收入（Unit report 的 Total revenue）。
+- **Cleaning**：清洁费。
+- **Utilities**：电、水、网络、Indah Water 四种账单一起锁（L2 Full detail 看到四栏，点任何一栏都是同一个锁）。
+- **Add. ded.**：其他扣业主的费用（维修、Deductions 页的 additional deduction、其他）。
+- **Misc**：misc 费（有 misc 的合约，RM 100 × 入住率）。
+- **O2**：这个月的报表会拿的业主调整（owner adjustments）。
 
-**权限**：新加 Lock deductions、Lock O2，上线时只开给管理层，由 chew 在 Users and roles 分配到个人；解锁还是 Unlock a step。
+原来的一个「Deductions」锁拆成 Cleaning、Utilities、Add. ded.、Misc 四个，每个只管自己那一部分（chew：「这个我想要分开」）。Revenue、Cleaning、Utilities、Add. ded.、Misc 列出这个月有业主报表、按分成算的单位（长租也算）；O2 列出这个月报表上的所有单位。固定租金和 master lease 只有 O2。
 
-**第二部分（2b）已做：公司那一份、手改订单的提示、锁的权限一个一个给**（chew 2026-11-12「开始 2b」「你先做出来吧，我测试了才懂」）
+**在 Unit report 上点金额锁、再点解锁**
 
-公司那一份（chew 2026-11-11 选的 A）：
-- 锁了以后才改的订单或费用，差额里**公司那一份**，跟业主的 O2 放在**同一个月**（下一个 O2 还没锁、也还没 final 的月份），算进公司那个月的数字。锁住的月份，自己的订单和扣款不再变。
-- 一个月的公司数字什么时候完全定下来：Income、Deductions、O2 三步都锁了以后。在那之前，更早被锁的月份的差额，公司那一份还可能落到这个月；合约改了（例如分成 %）也会改变公司的数字，要等第三部分的 Final 才定下来。
-- 年保底（PS YGRR）的单位，合约年度最后一个月有 top-up：报表里公司的数字本来就不扣这笔 top-up，所以公司那一份也照同样的算法。例子：那个月锁了以后多付 RM100，业主拿的总数不变（top-up 少了），公司那一份是 RM25，跟没锁时报表会显示的一样。
-- 例子：10 月锁了以后 Airbnb 多付 RM100，业主那份 RM75 进 11 月 O2，公司那份 RM25 算进 11 月：
-  - **Overall owner report**：多一栏「Late changes」（只有那个月有这种差额才出现），算进 Gain / Loss；点开单位，「Revenue and profitability」列出每一笔（例如「October 2026 income +25.00」）。
+- 点一下可以锁的金额就锁上，再点一下就解锁。**解锁单个金额不用写原因**（「小锁我觉得unlock 不要reason，毕竟我有大锁」），History 一样记下是谁、几时。
+- 没锁的金额左边是淡色的开锁图标；锁了是青色加锁头。鼠标停在金额上，会显示里面有什么（几个订单、几晚；几次清洁；哪些账单；misc 按多少入住率；哪些 O2），还有系统的提醒（有退房没收清洁费、合约到期还有水电账单、hold 着的欠款、跟上个月一样的 O2）。提醒只是提醒，**不会挡住**。
+- 业主的报表已经 final 的，那些金额点了不会解锁，会说「Unlock the final first」。
+- 手机上只看「6 of 6 locked」这样的数字，锁要在电脑上做。
+
+**整列：Lock all / Unlock all**
+
+- 表头下面有一行「Whole column」，每个类别都有 **Lock all** 和 **Unlock all**，一按就锁或解整个月（「我想要也可以一键unlock」）。不管上面有没有搜索或筛选，都是整个月。
+- Lock all 会跳过还不能锁的单位，并在提示里写出是哪几个。
+- 没有合约的单位不在 Unit report 上（系统用默认条件算它们的报表），但整列的锁也会锁到它们；提示会写「… of them have no contract for the month, so they are not on this report.」。2026 年 10 月正式库有 22 个这样的单位，它们的业主都没有其他有合约的单位。
+
+**Final 也是一个锁**（「可以把final 这个给锁也做在这边吗」）
+
+- Final 栏在每个业主排在最前面的那一行（同一个业主的其他行写「Same owner」）。
+- 还没锁完：写还在等什么，例如「Waiting: Revenue, Utilities and O2」。
+- 全部锁了：**Make final**。按下去系统**先重新 Generate 那份报表，再 final**，所以锁完以后不用再去按 Generate。Generate 要 Finance 的编辑权限，没有的人按 Make final 会被告知。
+- final 了：青色「Final · 谁 · 几号」。点它就是 **Unlock final，要写原因**（规则跟以前一样，见下面）。
+- Final 栏的 Whole column：**Lock all** 把所有已经锁完的业主一次 final，并写出还在等的业主名字；**Unlock all** 把这个月所有 final 的报表一次解锁，写一个原因。
+
+**什么时候不能锁**
+
+- **Revenue 还有 Airbnb 订单没确认**：那一格是琥珀色、有警告图标，点了会说「1 Airbnb reservation still to confirm. Confirm it on the Airbnb reconciliation tab first.」Lock all 会跳过并写出单位。服务器也会挡，不只是画面。
+- **空白或 0 不会挡**：没有数字也可以锁（「别因为空白或没数额就不让锁」「这个别写死，因为可能真的迟来」）。这个月还没有 Airbnb 文件的话，Unit report 和锁条会写「No Airbnb payout file is uploaded for … yet」，Revenue 还是可以锁。
+- 2026 年 10 月以前的月份不能锁（9 月及以前是业主 Excel 导入、已付）。**还没过完的月份也不能锁**（以马来西亚时间算，例如 11 月 13 日最多只能锁到 10 月）。
+- 那个月业主报表已经 final 的单位，不能再锁。
+
+**锁了以后**
+
+- **那个类别的数字不会再变。** 之后改了的东西，差额自动去**下一个那个类别还没锁、也还没 final 的月份**，按合约重新算业主那一份（保底也算进去），不是直接乘分成 %；年保底的单位先 hold，等人看过再放。同一个锁只会有一笔，不会重复；生成报表、对账确认或撤回、以及每 15 分钟都会核对一次。
+  - **订单**（Airbnb 对账确认、手改订单、HostPlatform 或 Channex 取消）：Revenue 的差额变成下个月的 O2（「Late change to … income for October 2026 (income locked)」）。
+  - **锁了以后才进来的费用**（水电账单、扫描账单、清洁费、维修费、手动加的费用）：放到下一个**同一类别**还没锁、也还没 final 的月份扣，报表上写「(late bill)」；输入的人会看到提示，例如「October 2026 utilities are locked for … This cost goes on the November 2026 statement.」
+  - **改已锁的费用**：可以改。那个月保留原来的数字，差额变成下个月的 O2（例如「Late change to … utilities for October 2026 (utilities locked)」）。例子：电费 412.35 改成 421.35，10 月照样扣 412.35，11 月多一笔 O2，扣业主那一份（业主拿 75% 就是 6.75）。
+  - **费用换了类别**（例如本来记成清洁，改成维修）：两个类别都锁了的话，每个锁只算自己那一部分，加起来跟一次算的一样。
+  - **删已锁的费用**：不行，要先解锁那个类别。水电账单页面要替换锁住月份的账单、维修单以 RM 0 重新完成要删掉锁住月份的费用，也会被挡。
+  - **misc**：Misc 锁的时候定下来；之后订单让 misc 变了，差额跟着 Revenue 的差额一起去下个月（先算 Revenue，再算其他类别）。
+- **O2 锁了以后**：那个月的报表只拿锁的时候那些 O2，其他开着的 O2 放到下一个月。锁了以后新加的 O2（业主页、单位的扣款、业主自付水电退回、扫描账单的业主行、审批通过的 O2）日期自动改到下一个 O2 还没锁、也还没 final 的月份，画面会提示；没有指定单位的 O2 看业主的第一个单位。已锁的 O2 不能 hold、settle、删除；hold 着的欠款不能 release 到锁住的月份。
+- **草稿上已经印出来的 O2 之后变了或没了**：那份草稿按 Mark final 会被挡（「An owner adjustment changed after this draft was made. Generate the statement again, then mark it final.」）。在 Unit report 按 Make final 会先重新 Generate，所以不会遇到。
+- **解锁**：解锁后那个月回到最新的数字：之前因为锁而移到下个月的差额会拿回来；如果那笔已经在 final 的报表上，就留在那里，解锁的月份多一笔相反的调整（「Already settled on the … statement」），业主不会多拿或少拿。那个月自己的报表已经 final，就不能解锁（先 Unlock final）。被拿回的差额如果已经印在下个月的草稿上，解锁时会提醒那份草稿过时了；在 Unit report 按 Make final 会重新 Generate。
+
+**公司那一份**（chew 2026-11-11 选 A）
+
+- 锁了以后才改的订单或费用，差额里**公司那一份**，跟业主的 O2 放在**同一个月**，算进公司那个月的数字；锁住的月份，公司的数字也不再变。例子：10 月锁了以后 Airbnb 多付 RM100，业主那份 RM75 进 11 月 O2，公司那份 RM25 算进 11 月：
+  - **Unit report**：多一栏「Late changes」（只有那个月有这种差额才出现），算进 Gain / Loss；点开单位，「Revenue and profitability」列出每一笔（例如「October 2026 income +25.00」）。
   - **Yearly report**：「The Conts」包含它，另外有一块「The Conts: late changes」（有数字才出现）。
   - **Finance › Unit P&L**：多一行「Late changes (company's share)」，算进「Company keeps」。
   - **单位页 Financials**：The Conts 那边多一行「Late changes from locked months」，算进 The Conts' result。
-- Income 和 Deductions 都锁了：跟业主那边一样，先算 Income（订单让 misc 变了，也算在 Income 那笔），再算 Deductions。
-- 那笔所在月份的 O2 锁了或 final 了，就不再动；之后的差额放到再下一个月。
-- 解锁：还能动的拿回来；已经定下来的留着，解锁的月份多一笔相反的数字（「Already counted in November 2026」），公司不会算两次。
-- 只管业主报表会算的数字（订单、扣款、misc、保底）。公司自己付的费用、清洁和维修的利润照旧，锁不影响。首页 Dashboard 的 management fees 不变。
+- 一个月的公司数字什么时候完全定下来：所有类别都锁了以后；合约改了（例如分成 %）也会改变公司的数字，要等 Final 才定下来。
+- 年保底（PS YGRR）的单位，合约年度最后一个月有 top-up：公司那一份照报表同样的算法（不扣 top-up）。
+- 那笔所在月份的 O2 锁了或 final 了，就不再动；之后的差额放到再下一个月。解锁：还能动的拿回来；已经定下来的留着，解锁的月份多一笔相反的数字（「Already counted in November 2026」），公司不会算两次。
+- 只管业主报表会算的数字（订单、扣款、misc、保底）。公司自己付的费用、清洁和维修的利润照旧。首页 Dashboard 的 management fees 不变。
+- 固定租金（GRR）：**不做**。公司老板 2026-11-04 取消了 GRR（migration 0206），正式库没有 GRR 单位。
 
-固定租金（GRR）：**不做**。公司老板 2026-11-04 取消了 GRR（「only 6 now ... don't let GRR go in」，migration 0206），合约和单位都不能再设 GRR，正式库也没有 GRR 单位。固定租金和 master lease 照旧不在 Income、Deductions 这两步。
+**手改订单的提示**
 
-手改订单的提示：
-- 改日期（订单详情，或在 Calendar 拖动）、新建订单、改状态（确认、取消、no-show）、在没有 host payout 的订单记录或删除付款，只要碰到 **Income 已锁的月份**，画面会提示，例如：「October 2026 income is locked for Vista 22-04. The difference goes to November 2026.」那个月的数字不变，差额由系统放到下一个开着的月份（生成报表时，或每 15 分钟核对一次）。
-- HostPlatform、Channex 的自动同步没有人可以提示，差额照样会处理。
+- 改日期（订单详情，或在 Calendar 拖动）、新建订单、改状态（确认、取消、no-show）、在没有 host payout 的订单记录或删除付款，只要碰到 **Revenue 已锁的月份**，画面会提示，例如：「October 2026 income is locked for Vista 22-04. The difference goes to November 2026.」那个月的数字不变，差额由系统放到下一个开着的月份。HostPlatform、Channex 的自动同步没有人可以提示，差额照样会处理。
 
-锁的权限一个一个给：
-- Lock income、Lock deductions、Lock O2、Unlock a step **只能单独打开**。这四个和 Owner statement close 现在放在 Users and roles 的 **Units** 组（2026-11-12 起，migration 0307）。勾整组 Units，或部门、职位有 Units 的基础权限，都不会顺便打开这四个。它们那一行标「Set on its own」，要在那一行单独勾（给个人、职位或整个部门都可以）。
+**Unlock final**（要写原因，记在 History）
 
-**第三部分：GP 和 final**（2026-11-12 做好）
-- **Make final**：从 2026 年 10 月起，一个业主名下的单位，那个月出现在哪几步（Income、Deductions、O2），那几步都锁了才能 final。没锁完会说还在等什么，例如「Waiting: deductions and O2」或「Waiting: B-16-05 (B) O2」。只有 O2 的单位也算在三步里，三步都要锁。9 月和以前照旧。
-- **Unlock final**（要写原因，记在 History）：
-  - 还没付（final，或已 send、付款还是 Pending 或 Failed）：回到草稿，付款变 **Cancelled**：不会再转账，付款批次会跳过它，也不算在「还没付」里。重新 final、send 以后，会有一笔新的付款。
-  - 转账中（Processing）：不能解锁，等转好或失败再解。
-  - 已付：付了的钱不变。用今天的合约重新算那个月，差额做成 owner adjustment，放到下一个开着的月份；公司那份反过来算进同一个月。解锁第二次不会重复放。
-  - 那个月的三步锁还在。要改某一步，先 Unlock final，再到 Owner statement close 解那一步。
-- **权限**：Make final、Unlock final 跟锁一样，只能在 Users and roles 一个一个给（个人、职位或部门），管理层一直有。没给的人在 Owner statements 也看不到「Mark final」。
-- **Unit report（Overall owner report）**：Gain / Loss 分成 **Agent**（GP × 合约的 agent %；长租是 0；GP 是负数时是 0）和 **Company**（Gain / Loss 减 Agent）。从 10 月起多一组「Close」：
-  - Locks：Income / Ded. / O2，锁了的有锁头；
-  - Final：Make final、Waiting: …，或 Final · 谁 · 几号，旁边有 Unlock。按钮放在那个业主排在最前面的那一行，手机上只显示状态。
-- **Owner statement close 第 4 步**：显示「N 个业主里几个 final」，点了打开那个月的 Unit report。
+- 还没付（final，或已 send、付款还是 Pending 或 Failed）：回到草稿，付款变 **Cancelled**：不会再转账，付款批次会跳过它。重新 final、send 以后，会有一笔新的付款。
+- 转账中（Processing）：不能解锁，等转好或失败再解。
+- 已付：付了的钱不变。用今天的合约重新算那个月，差额做成 owner adjustment，放到下一个开着的月份；公司那份反过来算进同一个月。解锁第二次不会重复放。
+- 那个月的锁还在。要改某一个金额，先 Unlock final，再点那个金额解锁。
+
+**Unit report 其他栏位**
+
+- Gain / Loss 分成 **Agent**（GP × 合约的 agent %；长租是 0；GP 是负数时是 0）和 **Company**（Gain / Loss 减 Agent）。
 - **合约的 agent %**：正式库的合约全都是空的，所以 Agent 栏现在都是 0。清单已按十月 V2 的「整体报告」整理好，等 chew 确认才填。只填 agent %，业主拿的钱不变。
+- Export 的 Excel：每个类别一栏（Locked / Open，不适用的留空），加 Final。
+
+**权限**（Users and roles，Units 组，「Set on its own」：只能单独打开，给个人、职位或整个部门都可以；管理层一直有）
+
+- **Lock income**：锁 Revenue。**Lock deductions**：锁 Cleaning、Utilities、Add. ded.、Misc。**Lock O2**：锁 O2。**Unlock a step**：解锁（单个金额和 Unlock all）。
+- **Make final**、**Unlock final**：跟以前一样；Make final 还要 Finance 的编辑权限（它会先 Generate）。
+- 看得到锁的人：能打开 Unit report、Utility bills、Deductions、Airbnb reconciliation 其中一页的人，或有上面任何一个锁的权限的人。没有权限的人看得到哪些锁了，但锁条上没有按钮；在 Unit report 点了会说要找管理层开哪个权限。
+- 原来的「Owner statement close」看页面权限已经拿掉（那一页没有了）。
 
 ---
 

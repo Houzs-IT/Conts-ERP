@@ -1,8 +1,8 @@
 /** Unit report click-to-lock (chew, 13 Nov 2026; spec docs/superpowers/specs/2026-11-13-unit-report-click-locks-design.md):
  *  the pieces OwnerOverallReportPage puts in its table. Clicking a lockable amount locks it, clicking again unlocks it
- *  (no reason: "小锁我觉得unlock 不要reason"); each category has Lock all and Unlock all over its column; Final is a
- *  lock too (Make final, and a click on a final statement unlocks it, with a reason). Locked amounts are teal with the
- *  lock on the left ("lock 了 background colour 可以是青色", "lock 的图案靠左"). The server decides everything: these only
+ *  (no reason: chew wants the small unlocks without one, since the column lock is there); each category has Lock all and
+ *  Unlock all over its column; Final is a lock too (Make final, and a click on a final statement unlocks it, with a
+ *  reason). Locked amounts are teal with the lock on the left (chew's choice). The server decides everything: these only
  *  ask and say what came back (functions/api/owner-close/lock.ts, unlock.ts; statements/generate, finalise, unlock-final). */
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import Icon from '../components/Icon';

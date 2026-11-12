@@ -152,8 +152,8 @@ export const NAV: NavGroup[] = [
     // Overall unit report, Yearly unit report and YGRR report entries under Reports.
     { key: 'unitReport', label: 'Unit report', icon: 'file-spreadsheet', tabs: true, children: [
       { key: 'unitReportMonthly', label: 'Monthly', path: '/portfolio/owner-report', area: 'portfolio', full: true },
-      // Airbnb's payments are confirmed here before the month's Revenue is locked, so it sits beside Monthly ("把Airbnb
-      // reconciliation 来出来放unit report", chew 13 Nov 2026). It keeps its address and its own permission area.
+      // Airbnb's payments are confirmed here before the month's Revenue is locked, so it sits beside Monthly (chew,
+      // 13 Nov 2026: take it out of Finance and put it under the Unit report). It keeps its address and permission area.
       { key: 'unitReportAirbnb', label: 'Airbnb reconciliation', path: '/finance/airbnb-reconciliation', area: 'airbnbRecon', phone: false },
       { key: 'yearlyReport', label: 'Yearly', path: '/reports/yearly', area: 'reports', phone: false },
       { key: 'ygrrReport', label: 'YGRR', path: '/reports/ygrr', area: 'reports', phone: false },
