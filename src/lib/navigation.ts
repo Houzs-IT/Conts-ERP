@@ -170,8 +170,6 @@ export const NAV: NavGroup[] = [
       { key: 'ownerStatements', label: 'Owner statements', path: '/owners/statements', area: 'finance', badge: 'statements', phone: false },
       { key: 'ownerPayouts', label: 'Owner payouts', path: '/owners/payouts', area: 'finance', phone: false },
       { key: 'contracts', label: 'Contracts', path: '/owners/contracts', area: 'contracts' },
-      // Each month's owner statements locked in steps, unit by unit (chew, 11 Nov 2026). Its own area, closed until management opens it.
-      { key: 'ownerClose', label: 'Statement close', path: '/owners/close', area: 'ownerClose' },
       // The workbook's misc deductions sheet: additional deductions and O2 by month (owner, 4 Nov 2026).
       { key: 'deductions', label: 'Deductions', path: '/properties/deductions', area: 'deductions' },
       // Owner B folded into Owners (owner, 12 Nov 2026): the company showcase and portal access. It keeps Owner B's

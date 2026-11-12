@@ -250,8 +250,13 @@ await db(`UPDATE owner_statements SET state = 'provisional', finalised_at = NULL
 r = await call('PATCH', '/api/expenses/ocs-c0', { incurredOn: '2026-11-05' });
 await generate(NOV, u.owner_id);
 add = await lateOf(u.id, 'other deductions');
-check('a locked cost moved out of the month leaves the month as locked', r.status === 200 && (await october()).additional === add1
-  && add.length === 1 && near(add[0].amount, owner(15000)), `${r.text} ${JSON.stringify(add)} want ${owner(15000)}`);
+const cln = await lateOf(u.id, 'cleaning');
+// Each lock carries its own part: the clean re-categorised above (kept by the cleaning lock, live under other deductions
+// now) leaves cleaning (+RM 80 of costs gone there) and arrives in other deductions, where the moved cost leaves too
+// (RM 150 - RM 80). Together: the RM 150 the month no longer has.
+check('a locked cost moved out of the month leaves the month as locked; each lock posts its own part', r.status === 200 && (await october()).additional === add1
+  && add.length === 1 && near(add[0].amount, owner(7000)) && cln.length === 1 && near(cln[0].amount, owner(8000)),
+  `${r.text} other ${JSON.stringify(add)} want ${owner(7000)}; cleaning ${JSON.stringify(cln)} want ${owner(8000)}`);
 
 // ── O2 ──
 await db(`INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
