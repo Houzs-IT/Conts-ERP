@@ -4,6 +4,7 @@ import { useSession } from '../lib/session';
 import { useNavCounts } from '../lib/navBadges';
 import { count as countLabel } from '../lib/format';
 import { opensInPlace } from '../lib/linkClick';
+import { revealInRow } from '../lib/revealInRow';
 
 /**
  * The sub-tabs above a page whose menu entry holds several screens (Unit report, Units, Owners, Settings; owner,
@@ -20,8 +21,10 @@ export default function SubNav({ path, navigate, phone }: { path: string; naviga
   const counts = useNavCounts(path);
   const bar = useRef<HTMLElement>(null);
   // The open tab scrolls into view on a narrow screen (the last Owners tab is off the right edge on a phone).
+  // By setting the row's own scroll, never scrollIntoView, which also scrolls the page (Hookka e27f8a574).
   useEffect(() => {
-    bar.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const row = bar.current, tab = row?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (row && tab) revealInRow(row, tab);
   }, [found?.current]);
   if (!found) return null;
   const n = (b?: BadgeKey) => (b ? Number(counts?.[b] ?? 0) : 0);

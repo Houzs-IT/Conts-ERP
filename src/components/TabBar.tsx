@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import Icon from './Icon';
 import { cx } from '../lib/design-tokens';
+import { revealInRow } from '../lib/revealInRow';
 
 export interface TabItem<K extends string> { key: K; label: string; icon?: string }
 
@@ -42,8 +43,11 @@ export function TabBar<K extends string>({ tabs, value, onChange, label, id }: T
     return () => { observer.disconnect(); el.removeEventListener('scroll', measure); };
   }, [measure]);
 
+  // The open tab is brought into view by scrolling the tab row itself, never with scrollIntoView, which also scrolls
+  // the page (Hookka e27f8a574), and only when the row overflows.
   useEffect(() => {
-    buttons.current.get(value)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const row = scroller.current, tab = buttons.current.get(value);
+    if (row && tab) revealInRow(row, tab);
   }, [value]);
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
@@ -85,3 +89,4 @@ export function TabBar<K extends string>({ tabs, value, onChange, label, id }: T
     </div>
   );
 }
+

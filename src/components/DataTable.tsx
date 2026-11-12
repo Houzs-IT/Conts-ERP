@@ -670,10 +670,12 @@ export function DataTable<R>(props: DataTableProps<R>) {
                 {pickCol && <col style={{ width: 44 }} />}
                 {visible.map(c => <col key={c.key} style={{ width: `${((c.width ?? MIN_WIDTH[typeOf(c)]) / (minWidth - (pickCol ? 44 : 0))) * 100}%` }} />)}
               </colgroup>
+              {/* The header line is an inset shadow on each cell, not a border: under border-collapse a sticky cell's
+                  border stays behind while it sticks, and rows scrolling under it showed through (Hookka a55394608). */}
               <thead>
                 <tr>
                   {pickCol && (
-                    <th className="sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] pl-[22px] pr-1 py-2 text-left">
+                    <th className="sticky top-0 z-[2] bg-muted [box-shadow:inset_0_-1px_0_var(--color-line)] pl-[22px] pr-1 py-2 text-left">
                       <input type="checkbox" aria-label="Tick every row on this page" className="w-4 h-4 cursor-pointer align-middle" checked={allOnPage}
                         ref={el => { if (el) el.indeterminate = !allOnPage && someOnPage; }} onChange={togglePage} disabled={!pickable.length} />
                     </th>
@@ -686,7 +688,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
                     const fOn = !!filterValue(c);
                     return (
                       <th key={c.key} scope="col" aria-sort={on ? (sortDir === 'desc' ? 'descending' : 'ascending') : undefined}
-                        className={cx('group/th sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] py-2 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink',
+                        className={cx('group/th sticky top-0 z-[2] bg-muted [box-shadow:inset_0_-1px_0_var(--color-line)] py-2 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink',
                           i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]', i === visible.length - 1 && 'pr-[22px]', right ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left')}>
                         <span className={cx('flex items-center gap-[2px] max-w-full', right && 'justify-end')}>
                           {k ? (

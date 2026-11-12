@@ -1,13 +1,14 @@
-import { type Env, fail, json, poolFull, withRequestDb, runDemo, afterResponse } from '../_lib/db';
+import { type Env, fail, json, poolFull, transientDb, withRequestDb, runDemo, afterResponse } from '../_lib/db';
 import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, sessionState, isFieldRole } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
 import { accessFor, refusalFor } from '../_lib/access';
-import { flushWhenQuiet, FLUSH_DELAY_MS } from '../_lib/channexQueue';
+import { flushWhenQuiet, FLUSH_DELAY_MS, FLUSH_BUDGET_MS } from '../_lib/channexQueue';
 import { closePastStaysSometimes } from '../_lib/autoCheckout';
 import { twoStepSetupDue } from '../_lib/signIn';
 import { overLimit } from '../_lib/textLimits';
 import { once } from '../_lib/idempotency';
 import { demoAsked, demoAllowed } from '../_lib/demo';
+import { isPolled, withPollEtag } from '../_lib/pollEtag';
 
 /**
  * Runs before every /api endpoint. Most endpoints only check that someone is signed
@@ -203,14 +204,22 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   }
 
   // A money or document write sent again with the same Idempotency-Key gets the first answer back (functions/_lib/idempotency.ts).
-  const response = demoRun
+  const answered = demoRun
     ? await runDemo(() => once(env, forward, session.userId, () => next(forward)))
     : await once(env, forward, session.userId, () => next(forward));
+  // A screen's timed re-read of an unchanged list gets 304 and no body (functions/_lib/pollEtag.ts).
+  const response = isPolled(request.method, path)
+    ? await withPollEtag(request, answered, `${session.userId}|${session.role}|${demoRun ? 'demo' : ''}`)
+    : answered;
   closePastStaysSometimes(env, waitUntil);
   // Any write may have queued Channex updates; send them once the burst of edits has gone quiet.
   if (request.method !== 'GET' && response.status < 400) {
-    // One client for the whole flush (db.ts afterResponse), not a connect for each statement once this request's has closed.
-    waitUntil(new Promise(r => setTimeout(r, FLUSH_DELAY_MS)).then(() => afterResponse(waitUntil, () => flushWhenQuiet(env))));
+    // Cloudflare cancels waitUntil work 30 s after the response (Hookka 87fc435a9), so the wait plus the flush stay
+    // inside that: the flush stops starting Channex calls once its budget is spent and leaves the rest queued for the
+    // cron worker's next minute. One client for the whole flush (db.ts afterResponse), not a connect for each statement
+    // once this request's has closed.
+    waitUntil(new Promise(r => setTimeout(r, FLUSH_DELAY_MS))
+      .then(() => afterResponse(waitUntil, () => flushWhenQuiet(env, Date.now() + FLUSH_BUDGET_MS))));
   }
   // Slide the idle deadline forward on every authenticated call, capped at the
   // absolute limit from first login (see signSession). Skipped when the endpoint
@@ -235,10 +244,11 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     if (msg.startsWith('Demo: ')) return fail('DEMO_MODE', msg, 409);
     // Every database connection was taken, through all of retryPoolFull's tries (db.ts): Supabase's session pooler admits
     // 15 clients. Production logs, 12 Nov 2026: EMAXCONNSESSION is behind the occasional 500 on GET /api/properties and
-    // other reads. Logged on its own line so it can be counted, and answered as busy (503, which the screen tries again)
-    // rather than as a fault. A read only: a write keeps the answer below, as it may have saved part of its work.
-    if (poolFull(e) && ctx.request.method === 'GET') {
-      console.error('Database pool full', ctx.request.method, new URL(ctx.request.url).pathname);
+    // other reads. The same for a connection refused, reset or dropped before the answer (transientDb). Logged on its own
+    // line so it can be counted, and answered as busy (503, which the screen tries again) rather than as a fault. A read
+    // only: a write keeps the answer below, as it may have saved part of its work, and the browser never resends a write.
+    if (transientDb(e) && ctx.request.method === 'GET') {
+      console.error(poolFull(e) ? 'Database pool full' : 'Database connection failed', ctx.request.method, new URL(ctx.request.url).pathname, poolFull(e) ? '' : e);
       return json({ error: { code: 'BUSY', message: 'The server is busy right now. Wait a moment and try again.' } }, 503, { 'retry-after': '1' });
     }
     console.error('Unhandled error', ctx.request.method, new URL(ctx.request.url).pathname, e);

@@ -54,7 +54,7 @@ function MaintenancePercent({ items, onSaved }: { items: CatalogItem[]; onSaved:
 
 function SidePanel({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
-    <Drawer open onClose={onClose} width={560} labelledBy="price-change-title">
+    <Drawer open onClose={onClose} dirty="typed" width={560} labelledBy="price-change-title">
       <div className="flex items-start justify-between gap-3 p-5 [border-bottom:1px_solid_var(--color-line)] sticky top-0 bg-card z-[1]">
         <h2 id="price-change-title" className="m-0 text-title font-semibold [overflow-wrap:anywhere]">{title}</h2>
         <CloseButton onClick={onClose} />

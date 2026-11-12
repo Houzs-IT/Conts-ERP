@@ -144,7 +144,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onDone }: { warehouses: O
   }
 
   return (
-    <Drawer open onClose={onClose} width={480}>
+    <Drawer open onClose={onClose} dirty="typed" width={480}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">Stock adjustment</h2>
         <CloseButton onClick={onClose} />

@@ -166,7 +166,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
   }
 
   return (
-    <Drawer open onClose={onClose} size="lg">
+    <Drawer open onClose={onClose} dirty="typed" size="lg">
       <div className="flex items-start justify-between gap-3 px-6 max-sm:px-4 pt-[22px] pb-3.5">
         <div className="flex flex-col gap-1 min-w-0">
           <span className="ds-eyebrow">Suppliers</span>

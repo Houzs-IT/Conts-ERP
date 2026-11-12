@@ -11,6 +11,16 @@ export interface SelectOption {
   keywords?: string;
 }
 
+/** One collator for every sort: localeCompare with options builds a new one per comparison (Houzs ed334b3f4). Same
+ *  locale and options, so the order is unchanged. */
+const COLLATOR = new Intl.Collator('en', { numeric: true });
+/** The same as a plain localeCompare (no locale, no options), for the one list sorted that way. */
+const PLAIN = new Intl.Collator();
+/** Rows drawn at once in an open SearchSelect; more are drawn as the list scrolls near its end (Houzs ab0c3df20: a
+ *  long picker drew every row, hundreds of nodes, on open and again on each keystroke). The search still runs over
+ *  every option. */
+const PAGE = 60;
+
 const CONTROL = 'h-9 rounded-control border border-solid border-line bg-card text-ink font-sans text-copy cursor-pointer';
 
 /**
@@ -65,11 +75,12 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [active, setActive] = useState(0);
+  const [limit, setLimit] = useState(PAGE);
   const button = useRef<HTMLButtonElement>(null);
   const listId = useId();
 
   const sorted = useMemo(() => [...options].sort((a, b) =>
-    (a.group ?? '').localeCompare(b.group ?? '', 'en', { numeric: true }) || a.label.localeCompare(b.label, 'en', { numeric: true })), [options]);
+    COLLATOR.compare(a.group ?? '', b.group ?? '') || COLLATOR.compare(a.label, b.label)), [options]);
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
     const hits = t ? sorted.filter(o => `${o.group ?? ''} ${o.label} ${o.hint ?? ''} ${o.keywords ?? ''}`.toLowerCase().includes(t)) : sorted;
@@ -82,9 +93,18 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
   const current = options.find(o => o.value === value);
 
   useEffect(() => {
-    if (open) setActive(Math.max(0, shown.findIndex(o => o.value === value)));
+    if (!open) return;
+    const at = Math.max(0, shown.findIndex(o => o.value === value));
+    setActive(at);
+    setLimit(Math.max(PAGE, at + PAGE));
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { setActive(0); }, [q]);
+  useEffect(() => { setActive(0); setLimit(PAGE); }, [q]);
+  // The drawn rows always reach past the highlighted one, so arrow keys and Enter never land on a row not drawn.
+  const drawn = shown.slice(0, Math.max(limit, active + 1));
+  const onListScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (drawn.length < shown.length && el.scrollTop + el.clientHeight >= el.scrollHeight - 120) setLimit(n => n + PAGE);
+  };
 
   const close = () => { setOpen(false); setQ(''); };
   // The list floats outside any dialog, so a pick has to tell the dialog around the button that something changed.
@@ -118,9 +138,9 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
               role="combobox" aria-controls={listId} aria-expanded aria-activedescendant={shown[active] ? `${listId}-${active}` : undefined}
               className="flex-1 min-w-0 border-none outline-none bg-transparent font-sans text-copy text-ink" />
           </div>
-          <div id={listId} role="listbox" aria-label={label} className="max-h-[300px] overflow-y-auto py-1">
+          <div id={listId} role="listbox" aria-label={label} className="max-h-[300px] overflow-y-auto py-1" onScroll={onListScroll}>
             {shown.length === 0 && <div className="px-3 py-3 text-meta text-muted-ink">No match for "{q.trim()}".</div>}
-            {shown.map((o, i) => {
+            {drawn.map((o, i) => {
               const head = o.group && o.group !== lastGroup ? o.group : null;
               lastGroup = o.group;
               return (
@@ -162,7 +182,7 @@ export function ComboInput({ value, onChange, options, label, placeholder, maxLe
 
   const shown = useMemo(() => {
     const t = typed ? value.trim().toLowerCase() : '';
-    const sorted = [...options].sort((a, b) => (a.group ?? '').localeCompare(b.group ?? '') || a.label.localeCompare(b.label));
+    const sorted = [...options].sort((a, b) => PLAIN.compare(a.group ?? '', b.group ?? '') || PLAIN.compare(a.label, b.label));
     return t ? sorted.filter(o => `${o.group ?? ''} ${o.label}`.toLowerCase().includes(t)) : sorted;
   }, [options, value, typed]);
 

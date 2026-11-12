@@ -160,12 +160,13 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const [picks, setPicks] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<'done' | 'cancel' | null>(null);
 
-  const { data, loading, error, reload: reloadData } = useApi<Board>(`/housekeeping/board?date=${date}`);
+  const { data, loading, error, reload: reloadData, poll } = useApi<Board>(`/housekeeping/board?date=${date}`);
   // The side menu's counts (open jobs, today's work) follow what was just done here.
   const reload = () => { reloadData(); void refreshNavCounts(); };
   // A cleaner finishing on the phone shows here without anyone pressing refresh.
   useEffect(() => {
-    const tick = () => { if (document.visibilityState === 'visible') reloadData(); };
+    // poll, not reload: a slow board read is let finish rather than stacked under another.
+    const tick = () => { if (document.visibilityState === 'visible') poll(); };
     const t = window.setInterval(tick, 30_000);
     document.addEventListener('visibilitychange', tick);
     return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', tick); };

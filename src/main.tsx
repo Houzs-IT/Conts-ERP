@@ -8,8 +8,11 @@ import './styles/devices.css';
 import './styles/theme-dark.css';
 import './styles/hover.css';
 import { initTheme } from './lib/theme';
+import { hasUnsavedWork, NEW_VERSION_EVENT } from './lib/unsavedWork';
+import { installNumberWheelGuard } from './lib/numberWheel';
 
 initTheme();
+installNumberWheelGuard();
 
 // Self-heal after a deploy. Pages are lazy-loaded, so a browser holding a stale
 // index.html asks for an old chunk hash that no longer exists; Cloudflare Pages
@@ -18,9 +21,14 @@ initTheme();
 // index.html + chunk names. The sessionStorage guard prevents a reload loop if
 // the failure is real (e.g. truly offline). Covers both Vite's preloadError and
 // the raw rejected dynamic import.
+// Only a failed chunk load counts: a plain "Failed to fetch" is any request that did not reach the server (an API call
+// on a weak connection), and reloading for it threw typed work away (Houzs c9ad7527a, Hookka 44b86b3c4).
+const CHUNK_ERROR = /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|ChunkLoadError|Loading (?:CSS )?chunk \S+ failed|Unable to preload CSS/i;
 function healChunkError(reason: unknown): boolean {
   const msg = String((reason as { message?: string })?.message ?? reason ?? '');
-  if (!/dynamically imported module|Importing a module script failed|Failed to fetch|ChunkLoadError|error loading dynamically imported module/i.test(msg)) return false;
+  if (!CHUNK_ERROR.test(msg)) return false;
+  // A form holds unsaved typing: reloading would throw it away. Ask for it to be saved, then reloaded (UpdateNotice).
+  if (hasUnsavedWork()) { window.dispatchEvent(new Event(NEW_VERSION_EVENT)); return false; }
   try {
     // Loop-safe: reload at most once per 10s. A genuine offline failure then
     // stops reloading; a stale-chunk failure heals on the first reload.
