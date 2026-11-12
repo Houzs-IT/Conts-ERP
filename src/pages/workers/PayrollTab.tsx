@@ -21,7 +21,7 @@ import { rm, todayMyt, date } from '../../lib/format';
 import { downloadTable, type ExportColumn, type ExportCell } from '../../lib/export';
 import type { PayrollPayload, PayrollLine } from '../../../functions/api/payroll/index';
 import type { PayFigures } from '../../../functions/_lib/payrollCalc';
-import { DEPARTMENT_LABEL } from '../../../functions/_lib/hrFields';
+import { DEPARTMENT_LABEL, departmentOf } from '../../../functions/_lib/hrFields';
 import { PayRulesPanel } from './PayRules';
 import { pcbHasFigure } from '../../../functions/_lib/pcb';
 import type { PayslipDoc } from '../../lib/payslipPdf';
@@ -51,7 +51,7 @@ export function MonthSelect({ value, latest, onChange }: { value: string; latest
   return <Select label="Month" size="md" className="w-[180px]" value={value} onChange={onChange} options={months.map(m => ({ value: m, label: monthName(m) }))} />;
 }
 
-const department = (l: PayrollLine): string => DEPARTMENT_LABEL[l.employee.cleanerId ? 'cleaning' : 'maintenance'];
+const department = (l: PayrollLine): string => DEPARTMENT_LABEL[departmentOf(l.employee)];
 const otTotal = (f: PayFigures): number => f.otSen + f.sundaySen + f.holidaySen;
 const totalPay = (f: PayFigures): number => f.grossSen + f.epfEmployerSen + f.socsoEmployerSen + f.eisEmployerSen;
 const basicEarned = (l: PayrollLine, f: PayFigures): number =>

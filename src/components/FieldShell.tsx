@@ -16,6 +16,8 @@ const TABS: { to: string; label: keyof PortalStrings['nav']; icon: string; match
   { to: '/portal/pay', label: 'pay', icon: 'Wallet', match: p => p.startsWith('/portal/pay') },
   { to: '/portal/me', label: 'me', icon: 'CircleUser', match: p => p.startsWith('/portal/me') },
 ];
+/** Renovation staff have no jobs or receipts in the portal: their own clock, pay and leave. */
+const RENOVATION_TABS = TABS.filter(tab => tab.label === 'clock' || tab.label === 'pay' || tab.label === 'me');
 
 /** Housekeepers and technicians work on a phone, in a car park, one-handed.
  *  One column, 44px targets, and the whole page scrolls normally. */
@@ -23,6 +25,9 @@ export default function FieldShell({ children }: { children: ReactNode }) {
   const { user } = useSession();
   const path = useLocation().pathname;
   const atAccount = path === '/account';
+  const isRenovator = user!.role === 'renovator';
+  const tabs = isRenovator ? RENOVATION_TABS : TABS;
+  const home = isRenovator ? '/portal/clock' : '/portal/today';
   const lang = usePortalLang();
   const t = usePortalText();
   // The page's language follows the portal's, so screen readers and fonts read Chinese and Burmese right.
@@ -42,24 +47,24 @@ export default function FieldShell({ children }: { children: ReactNode }) {
           <span style={{ fontSize: text.caption, color: color.dim }}>{jobTitle(user!)}</span>
         </div>
         <FieldNotificationBell />
-        <Link to={atAccount ? '/portal/today' : '/account'} aria-label={atAccount ? t.nav.backToday : t.nav.settings} title={atAccount ? t.nav.backToday : t.nav.settings}
+        <Link to={atAccount ? home : '/account'} aria-label={atAccount ? t.nav.backToday : t.nav.settings} title={atAccount ? t.nav.backToday : t.nav.settings}
           style={{ width: 44, height: 44, flex: 'none', display: 'grid', placeItems: 'center', borderRadius: radius.control, border: '1px solid rgba(255,255,255,0.14)', color: color.onDark }}>
           <Icon name={atAccount ? 'House' : 'Settings'} size="nav" />
         </Link>
         {/* Log out sits at the bottom of Settings (AccountPage), never one mis-tap from the bell (owner, Oct 2026). */}
       </header>
 
-      <main style={{ flex: 1, padding: atAccount || user!.role === 'renovator' ? '16px 16px 32px' : '16px 16px 96px', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560, width: '100%', boxSizing: 'border-box', margin: '0 auto' }}>
+      <main style={{ flex: 1, padding: atAccount ? '16px 16px 32px' : '16px 16px 96px', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560, width: '100%', boxSizing: 'border-box', margin: '0 auto' }}>
         {children}
       </main>
 
       {/* Jobs, Clock, Pay and Me (HR phases 2 to 4). Hidden on Settings, which has its own way back. */}
-      {!atAccount && user!.role !== 'renovator' && (
+      {!atAccount && (
         <nav aria-label={t.nav.portal} style={{
-          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 20, display: 'grid', gridTemplateColumns: `repeat(${TABS.length}, 1fr)`,
+          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 20, display: 'grid', gridTemplateColumns: `repeat(${tabs.length}, 1fr)`,
           background: color.card, borderTop: `1px solid ${color.border}`, paddingBottom: 'env(safe-area-inset-bottom)',
         }}>
-          {TABS.map(tab => {
+          {tabs.map(tab => {
             const on = tab.match(path);
             return (
               <Link key={tab.to} to={tab.to} aria-current={on ? 'page' : undefined}

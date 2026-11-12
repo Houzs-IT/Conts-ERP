@@ -106,11 +106,13 @@ export const EMPLOYEE_DEFAULTS: EmployeeInput = {
 };
 
 /** The departments an employee works in: the rosters they are on (Working Hours, Department Labor). */
-export const DEPARTMENTS = ['cleaning', 'maintenance'] as const;
+export const DEPARTMENTS = ['cleaning', 'maintenance', 'renovation'] as const;
 export type Department = (typeof DEPARTMENTS)[number];
-export const DEPARTMENT_LABEL: Record<Department, string> = { cleaning: 'Cleaning', maintenance: 'Maintenance' };
-
 export const RENOVATION_LABEL = 'Renovation';
+export const DEPARTMENT_LABEL: Record<Department, string> = { cleaning: 'Cleaning', maintenance: 'Maintenance', renovation: RENOVATION_LABEL };
+
+export const departmentOf = (person: Pick<Employee, 'cleanerId' | 'renovatorId'>): Department =>
+  person.renovatorId ? 'renovation' : person.cleanerId ? 'cleaning' : 'maintenance';
 export const renovationPersonInput = z.object({
   name: z.string().trim().min(1, 'Enter their name.').max(120),
   phone: text(40),
