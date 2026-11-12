@@ -100,7 +100,7 @@ export function ToolButton({ icon, label, onClick, active, btnRef, count, hideLa
 }) {
   return (
     <button ref={btnRef} type="button" onClick={onClick} aria-label={label} title={title ?? label} aria-expanded={active}
-      className={cx('h-9 max-md:h-11 max-md:min-w-11 justify-center inline-flex items-center gap-[6px] px-[11px] max-md:px-[9px] rounded-control border border-solid bg-card cursor-pointer font-sans text-copy whitespace-nowrap shrink-0',
+      className={cx('h-[34px] max-md:h-11 max-md:min-w-11 justify-center inline-flex items-center gap-[6px] px-[11px] max-md:px-[9px] rounded-control border border-solid bg-card cursor-pointer font-sans text-copy whitespace-nowrap shrink-0',
         active ? 'border-ink text-ink' : 'border-line text-ink hover:bg-muted')}>
       <Icon name={icon} size="sm" />
       <span className={cx(hideLabelOnPhone && 'max-md:hidden')}>{label}</span>
