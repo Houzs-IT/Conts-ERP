@@ -79,6 +79,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return { deductMonth: row?.deduct_month ?? b.incurredOn.slice(0, 7), rolled: !!row?.rolled };
   });
   const toPay = isUtility(b.category) ? (await billsToRequest(env, [id])).map(g => ({ provider: g.provider, count: g.bills.length, amountSen: g.bills.reduce((n, x) => n + x.amountSen, 0), expenseIds: g.bills.map(x => x.expenseId) })) : [];
-  const notice = (b.chargeTo ?? 'owner') === 'owner' ? await costNotice(env, { unitId: unit.id, incurredOn: b.incurredOn, deductMonth: saved.deductMonth }) : null;
+  const notice = (b.chargeTo ?? 'owner') === 'owner' ? await costNotice(env, { unitId: unit.id, incurredOn: b.incurredOn, deductMonth: saved.deductMonth, category: b.category, description: b.description ?? null }) : null;
   return json({ id, deductMonth: saved.deductMonth, rolled: saved.rolled, toPay, notice }, 201);
 };

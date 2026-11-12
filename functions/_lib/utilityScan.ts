@@ -102,8 +102,8 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
   const unitOf = new Map(ctx.units.map(u => [u.id, u]));
   const missing = rows.find(r => !unitOf.has(r.unitId));
   if (missing) return bad(missing.scanId, 'That unit was not found.');
-  // A bill month that is final, or whose deductions are locked (owner statement close), goes on the next open month.
-  const finals = await closedMonthsFor(env, [...new Set(rows.map(r => r.unitId))], rows.map(r => r.billMonth).sort()[0], 'deductions');
+  // A bill month that is final, or whose utilities are locked (Unit report locks), goes on the next open month.
+  const finals = await closedMonthsFor(env, [...new Set(rows.map(r => r.unitId))], rows.map(r => r.billMonth).sort()[0], 'utilities');
   const now = nowIso();
   const rolled: { scanId: string; deductMonth: string }[] = [], notSplit: string[] = [];
   let ownerLines = 0, alreadyDone = 0;
