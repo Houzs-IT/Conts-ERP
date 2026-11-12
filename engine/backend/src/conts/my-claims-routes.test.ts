@@ -4,7 +4,8 @@
      · nobody reads another person's receipt or file, and a keeper reads only their own float;
      · a proper receipt replaces a rejected one and keeps its float; the old one stops counting;
      · a request: a deposit names a supplier; over a project's limit it is refused; withdrawn only before a voucher;
-       a field worker hands receipts in but does not ask finance to pay; a deposit's voucher is a supplier payment. */
+       a field worker asks finance to pay a supplier by name only (chew, 12 Nov 2026); a deposit's voucher is a supplier
+       payment. */
 import { Hono } from 'hono';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
@@ -163,13 +164,24 @@ describe('payment requests', () => {
   const realCreate = claimsDeps.createVoucher;
   afterEach(() => { claimsDeps.createVoucher = realCreate; });
 
-  test('a deposit names a supplier; a PO fills it; a field worker cannot ask', async () => {
+  test('a deposit names a supplier; a PO fills it', async () => {
     const sb = world();
     const a = appFor(sb, OPS, 'session');
     expect((await ask(a, { type: 'DEPOSIT', supplierId: undefined, payeeName: 'Someone' })).status).toBe(422);
     expect((await ask(a, { supplierId: undefined, purchaseOrderId: 'PO1' })).status).toBe(201);
     expect(sb.tables.payment_requests[0]).toMatchObject({ supplier_id: 'S1', payee_name: 'ACE HARDWARE', payee_to_check: false, status: 'SUBMITTED' });
-    expect((await ask(appFor(sb, TECH))).status).toBe(403);
+  });
+  test('a field worker asks finance to pay a supplier by name only: no list, no PO, no deposit (chew, 12 Nov 2026)', async () => {
+    const sb = world();
+    const a = appFor(sb, TECH);
+    const byName = { supplierId: undefined, payeeName: 'KEDAI PAIP AH SENG', lines: [{ amountSen: 5000, department: 'rental', description: 'Pipe' }] };
+    expect((await ask(a, byName)).status).toBe(201);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ supplier_id: null, payee_name: 'KEDAI PAIP AH SENG', type: 'PAYMENT', status: 'SUBMITTED' });
+    expect((await ask(a, { ...byName, supplierId: 'S1' })).status).toBe(422);
+    expect((await ask(a, { ...byName, purchaseOrderId: 'PO1' })).status).toBe(422);
+    expect((await ask(a, { ...byName, type: 'DEPOSIT' })).status).toBe(422);
+    expect((await ask(a, { ...byName, payeeName: ' ' })).status).toBe(422);
+    expect(sb.tables.payment_requests).toHaveLength(1);
   });
   test('over a project\'s limit it is refused', async () => {
     const a = appFor(world(), OPS, 'session');

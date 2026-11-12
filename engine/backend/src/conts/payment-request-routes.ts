@@ -108,7 +108,6 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const staff: Staff = c.get('staff');
-  if (staff.field) return c.json({ error: 'forbidden', message: 'Hand your receipts in; your supervisor asks finance to pay suppliers.' }, 403);
   const sb = c.get('supabase');
   const bucket = c.env?.SLIPS;
   if (!bucket) return c.json({ error: 'not_configured', message: 'File storage is not set up yet.' }, 501);
@@ -116,6 +115,13 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
   if (!b) return c.json({ error: 'invalid_json' }, 400);
   const type = String(b.type ?? '');
   if (type !== 'PAYMENT' && type !== 'DEPOSIT') return c.json({ error: 'validation', message: 'Choose a payment or a deposit.' }, 422);
+  /* A field worker may ask finance to pay a supplier they name (chew, 12 Nov 2026: Direct Pay to Supplier on the phone's
+     Receipts page): a payment only, by the name on the bill, as they see neither the supplier list nor the POs. */
+  if (staff.field) {
+    if (type !== 'PAYMENT') return c.json({ error: 'validation', message: 'A deposit is asked for by the office.' }, 422);
+    if (b.supplierId) return c.json({ error: 'validation', message: 'Type the supplier\'s name as it is on the bill.' }, 422);
+    if (b.purchaseOrderId) return c.json({ error: 'validation', message: 'A purchase order is paid by the office.' }, 422);
+  }
   let supplierId = b.supplierId ? String(b.supplierId) : null;
   const purchaseOrderId = b.purchaseOrderId ? String(b.purchaseOrderId) : null;
   let poProject: number | null = null;
