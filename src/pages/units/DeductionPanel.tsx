@@ -94,7 +94,7 @@ export function DeductionPanel({ month, canAddO2, onClose, onSaved }: DeductionP
   }
 
   return (
-    <Drawer open onClose={onClose} width={480} labelledBy="deduction-title">
+    <Drawer open onClose={onClose} dirty="typed" width={480} labelledBy="deduction-title">
       <div className="flex items-center justify-between px-6 max-sm:px-4 pt-[22px] pb-3.5">
         <h2 id="deduction-title" className="m-0 text-title font-semibold">Add deduction</h2>
         <CloseButton onClick={onClose} />

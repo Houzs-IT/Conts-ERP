@@ -37,14 +37,15 @@ export default function OwnerShowcasePage() {
   const data = main.data;
   const one = prop !== 'all';
   const ins = useApi<Insights>(FILTERED.includes(page) ? `/showcase/insights?from=${from}&to=${to}${one ? `&unitId=${prop}` : ''}` : null);
-  const { reload } = main;
+  const { poll } = main;
   // The curtain names the one sample owner, so nobody mistakes the Owner view for a real owner's account.
   const sw = useSwitch('/performance/showcase/owner', { from: 'Portfolio', to: 'Owner', sub: `${OWNER.name} · sample owner · ${UNITS.length} units · sample data` });
   useDisplayFont();
 
   useEffect(() => {
     document.title = 'Owner Showcase · The Conts';
-    const t = window.setInterval(reload, 120_000);
+    // Only while the tab is looked at, and never on top of a read still on its way.
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') poll(); }, 120_000);
     return () => window.clearInterval(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

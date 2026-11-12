@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Switch as SharedSwitch } from '../components/Switch';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { Card } from '../components/Card';
@@ -11,6 +11,7 @@ import { Select } from '../components/Select';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
+import { useSeedOnce } from '../lib/useSeedOnce';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import { useDevice } from '../lib/deviceClass';
@@ -187,7 +188,8 @@ export default function SettingsPage() {
   // Working draft the fields edit against.
   const [draft, setDraft] = useState<Settings>(committed);
   // The form starts from the loaded values, not the built-in defaults, so nothing invented can be saved over the real settings.
-  useEffect(() => { if (data) setDraft(committed); }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Filled once, not on every answer (the kept copy, then the fresh one), so a late answer never wipes typing.
+  useSeedOnce(data, 'settings', () => setDraft(committed));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<SectionKey | null>(null);
 

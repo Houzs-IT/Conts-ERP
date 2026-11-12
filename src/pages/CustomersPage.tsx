@@ -111,7 +111,7 @@ function CustomerDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
   const set = <K extends keyof Draft>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as Draft[K] }));
   const canSave = f.code.trim() !== '' && f.name.trim() !== '' && !emailBad(f.email);
   return (
-    <Drawer open onClose={onClose} width={640}>
+    <Drawer open onClose={onClose} dirty="typed" width={640}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New customer' : 'Edit customer'}</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <Section title="Identity">

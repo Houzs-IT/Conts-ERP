@@ -89,13 +89,13 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   const { weekday } = usePortalDates();
   const [pick, setPick] = useState<'today' | 'tomorrow'>('today');
   const date = pick === 'today' ? mytDay(0) : mytDay(1);
-  const { data, loading, error, reload } = useApi<ListPayload>(`/field/tasks?date=${date}`);
+  const { data, loading, error, reload, poll } = useApi<ListPayload>(`/field/tasks?date=${date}`);
   // A new notice, or the phone coming back to the app, reloads the list now; a job that just arrived carries a New mark.
   useFieldRefresh(reload);
   // The office ticks the guest out or changes a time on its board: the list catches up every 30 seconds, as the board does,
   // and when the phone comes back to the app.
   useEffect(() => {
-    const tick = () => { if (document.visibilityState === 'visible') reload(); };
+    const tick = () => { if (document.visibilityState === 'visible') poll(); };
     const t = window.setInterval(tick, 30_000);
     document.addEventListener('visibilitychange', tick);
     return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', tick); };

@@ -88,7 +88,7 @@ function ItemsDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
   const [lines, setLines] = useState<DoLine[] | null>(null);
   useEffect(() => { let live = true; (async () => { try { const r = await api.get<{ data: { lines: DoLine[] } }>(`/delivery-orders/${row.id}`); if (live) setLines(r.data.lines); } catch { if (live) setLines([]); } })(); return () => { live = false; }; }, [row.id]);
   return (
-    <Drawer open onClose={onClose} width={620}>
+    <Drawer open onClose={onClose} dirty="typed" width={620}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <div className="flex flex-col"><h2 className="m-0 text-[19px] font-semibold">{row.doNumber}</h2><span className="text-[12.5px] text-muted-ink">{row.customerName} · {row.warehouseName}</span></div>
         <CloseButton onClick={onClose} />

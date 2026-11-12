@@ -97,11 +97,11 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
     return () => window.clearTimeout(timer);
   }, [unitSearch, unitKey]);
   const query = new URLSearchParams({ ...(building ? { building } : {}), ...(category ? { category } : {}), ...(unitKey ? { unit: unitKey } : {}), ...(limit > POOL_PAGE ? { limit: String(limit) } : {}) }).toString();
-  const { data, loading, error, reload } = useApi<ListPayload>(`/field/repairs${query ? `?${query}` : ''}`);
+  const { data, loading, error, reload, poll } = useApi<ListPayload>(`/field/repairs${query ? `?${query}` : ''}`);
   // A new notice, the phone coming back to the app, or a minute passing reloads the list; a repair that just arrived carries a New mark.
   useFieldRefresh(reload);
   useEffect(() => {
-    const t = window.setInterval(() => { if (document.visibilityState === 'visible') reload(); }, 60_000);
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') poll(); }, 60_000);
     return () => window.clearInterval(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [tab, setTab] = useState<ListTab>('all');

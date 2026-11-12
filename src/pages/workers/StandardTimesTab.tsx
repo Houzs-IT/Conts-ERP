@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { StaleBanner } from '../../components/DataState';
 import { Skeleton } from '../../components/States';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
+import { useSeedOnce } from '../../lib/useSeedOnce';
 import { api, errorMessage } from '../../lib/api';
 import type { JobTimesPayload } from '../../../functions/api/employees/job-times';
 
@@ -53,7 +54,8 @@ export default function StandardTimesTab() {
   const { data, error, reload } = useApi<JobTimesPayload>('/employees/job-times');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  useEffect(() => { if (data) setDraft(toDraft(data.minutes)); }, [data]);
+  // Filled once (and again after a save), not on every answer, so a late answer never wipes typing.
+  const reseed = useSeedOnce(data, 'job-times', d => setDraft(toDraft(d.minutes)));
 
   const saved = data ? toDraft(data.minutes) : null;
   const hasChanges = !!draft && !!saved && Object.keys(saved).some(card => draft[card] !== saved[card]);
@@ -67,7 +69,7 @@ export default function StandardTimesTab() {
       const minutes = Object.fromEntries(Object.entries(draft).map(([card, text]) => [card, Number(text)]));
       await api.put('/employees/job-times', { minutes });
       toast({ tone: 'success', title: 'Standard times saved.', body: 'Employee Performance uses them straight away.' });
-      reload();
+      reseed(); reload();
     } catch (saveError) {
       toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(saveError, 'Try again in a moment.') });
     } finally {

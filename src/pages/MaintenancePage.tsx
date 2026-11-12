@@ -14,6 +14,7 @@ import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
+import { useSeedOnce } from '../lib/useSeedOnce';
 import { refreshNavCounts } from '../lib/navBadges';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
@@ -1001,12 +1002,13 @@ function ApprovalRulesPanel() {
   const { data, error, reload } = useApi<{ rules: Record<string, { mode: RuleMode; amount?: number }>; mayEdit: boolean }>('/maintenance/approval-rules');
   const [draft, setDraft] = useState<Record<string, { mode: RuleMode; amount?: number }> | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (data) setDraft(data.rules); }, [data]);
+  // Filled once (and again after a save), not on every answer, so a late answer never wipes a rule being changed.
+  const reseed = useSeedOnce(data, 'rules', d => setDraft(d.rules));
   const changed = !!data && !!draft && JSON.stringify(draft) !== JSON.stringify(data.rules);
   async function save() {
     if (!draft) return;
     setBusy(true);
-    try { await api.put('/maintenance/approval-rules', { rules: draft }); toast({ tone: 'success', title: 'Approval rules saved.', body: 'They apply to jobs added or changed from now on.' }); reload(); }
+    try { await api.put('/maintenance/approval-rules', { rules: draft }); toast({ tone: 'success', title: 'Approval rules saved.', body: 'They apply to jobs added or changed from now on.' }); reseed(); reload(); }
     catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); }
     finally { setBusy(false); }
   }

@@ -98,7 +98,7 @@ function FabricDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onCl
   const [sortOrder, setSortOrder] = useState<number | null>(draft.sortOrder);
   const canSave = f.id.trim() !== '' && f.label.trim() !== '';
   return (
-    <Drawer open onClose={onClose} width={520}>
+    <Drawer open onClose={onClose} dirty="typed" width={520}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">{draft.isNew ? 'New fabric' : 'Edit fabric'}</h2>
         <CloseButton onClick={onClose} />
