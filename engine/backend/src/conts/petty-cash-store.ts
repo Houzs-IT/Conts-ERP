@@ -20,7 +20,7 @@ export interface ReceiptRow {
   vendor_name: string | null; note: string | null; status: ReceiptStatus; reject_reason: string | null; checked_at: string | null;
   checked_by: string | null; topup_pv_id: string | null; payback_pv_id: string | null; replaces_id: string | null; source: string;
   created_at: string;
-  /** The bank given on a Direct Claim to Me (migration 0309); null on every other receipt. */
+  /** The bank given on a Direct Claim to Me (migration 0311); null on every other receipt. */
   payee_bank_name?: string | null; payee_account_no?: string | null; payee_account_name?: string | null;
 }
 export interface ReceiptLineRow {

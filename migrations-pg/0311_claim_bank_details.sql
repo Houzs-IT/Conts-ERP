@@ -10,7 +10,7 @@
 --   scm.staff_receipts.payee_account_name   the name on the account
 -- The table's grants (all, to service_role and pos_app: 0178) cover the new columns.
 --
--- APPLY: production through the GitHub workflow "Apply migrations to production" with only=0309, dry run first,
+-- APPLY: production through the GitHub workflow "Apply migrations to production" with only=0311, dry run first,
 -- before the code merges (the engine writes these columns on a direct claim).
 set local search_path = scm, public, extensions;
 set local lock_timeout = '5s';
