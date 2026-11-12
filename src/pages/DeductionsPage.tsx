@@ -8,6 +8,7 @@ import { MoneyText } from '../components/MoneyText';
 import { DataTable, type Column } from '../components/DataTable';
 import { FilterBar } from '../components/FilterBar';
 import { StatTile, StatRow } from '../components/Metric';
+import { LockBars } from '../components/LockBar';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { api, notifyFailure } from '../lib/api';
@@ -102,6 +103,8 @@ export default function DeductionsPage(): JSX.Element {
         <StatTile label="Owner adjustments (O2)" value={money(data ? sum(o2) : undefined)} loading={loading && !data} hint="After the operator's share" />
         <StatTile label="Effect on payouts" value={money(data ? sum(rows) : undefined)} loading={loading && !data} hint={`${monthLabel(month)}, all owners`} />
       </StatRow>
+      {/* The month's Cleaning, Add. ded., Misc and O2 locks (Unit report locks; the Unit report locks them unit by unit). */}
+      <LockBars month={month} stages={['cleaning', 'additional', 'misc', 'o2']} onChange={reload} />
       <DataTable<DeductionLine> id="deductions" columns={columns} rows={data ? visible : null} rowKey={r => `${r.type}-${r.id}`} loading={loading} error={error} onRetry={reload}
         onRowClick={r => { if (r.ownerId) navigate(`/owners/${encodeURIComponent(r.ownerId)}`); }}
         viewParams={['month', 'type', 'q']} filtered={filter !== 'all' || !!q} onClearFilters={() => url.set({ type: null, q: null, page: null })}

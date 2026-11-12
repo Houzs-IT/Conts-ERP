@@ -44,7 +44,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const units = byOwner.get(s.owner_id) ?? [];
       ready.set(s.id, units);
       const open = finalWaiting(units);
-      if (open.length) waiting.set(s.id, `${waitingText(open, units.length)}. Lock every step on Owner statement close before marking it final.`);
+      if (open.length) waiting.set(s.id, `${waitingText(open, units.length)}. Lock every category on the Unit report before marking it final.`);
     }
   }
   // A draft made before the owner's latest lock, or before Unlock final, may print figures the locks do not hold: a change
@@ -73,7 +73,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         const month = r.period_start.slice(0, 7);
         const units = ready.get(r.id)!.map(u => ({ ...u, locked: STAGES.filter(s => held.has(`${u.unitId}|${month}|${s}`)) }));
         const open = finalWaiting(units);
-        if (open.length) waiting.set(r.id, `${waitingText(open, units.length)}. Lock every step on Owner statement close before marking it final.`);
+        if (open.length) waiting.set(r.id, `${waitingText(open, units.length)}. Lock every category on the Unit report before marking it final.`);
       }
     }
     const go = candidates.filter(r => !waiting.has(r.id));

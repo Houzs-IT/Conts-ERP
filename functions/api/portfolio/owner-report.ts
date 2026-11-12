@@ -1,16 +1,28 @@
 import { type Env, all, json, fail, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { todayMyt } from '../../_lib/ops';
-import { loadInputs, withYearToDate, computeMonth, statementSettings, hasActivity, unitForMonth, type Query, type UnitRow } from '../../_lib/ownerStatement';
+import { loadInputs, withYearToDate, computeMonth, statementSettings, hasActivity, unitForMonth, type Query, type UnitRow, type UnitMonth } from '../../_lib/ownerStatement';
 import { unitCode } from '../../_lib/ownerReport';
 import { isTenancy, type RevenueModel } from '../../_lib/revenueModel';
 import { codeOf } from '../../_lib/unitPurpose';
 import { contractTypes } from '../../_lib/contractTypes';
 import { monthEndExclusive } from '../../_lib/revenue';
-import { companyLateFor, finalReadiness } from '../../_lib/ownerLocks';
+import { companyLateFor, finalReadiness, monthSteps } from '../../_lib/ownerLocks';
+import { unconfirmedRevenue } from '../../_lib/lockReadiness';
+import { lockMay } from '../../_lib/lockPowers';
 import { can } from '../../_lib/access';
-import { LOCK_FROM, finalWaiting, waitingText, type FinalUnit } from '../../_lib/stageLocks';
+import {
+  LOCK_FROM, STAGES, finalWaiting, waitingText, cleaningChecks, utilitiesChecks, o2Checks, notReadyText, monthLabel, type FinalUnit, type Stage,
+} from '../../_lib/stageLocks';
 import type { ReportGroup } from '../../../src/lib/ownerOverall';
+
+const rmText = (sen: number) => `RM ${(sen / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const BILL: Record<string, string> = { electricity: 'Electricity', water: 'Water', internet: 'Internet', sewerage: 'Indah Water' };
+const previousMonth = (m: string) => { const [y, n] = m.split('-').map(Number); return n === 1 ? `${y - 1}-12` : `${y}-${String(n - 1).padStart(2, '0')}`; };
+/** An owner adjustment's description as the statement prints it, for comparing two months. */
+const said = (d: string) => d.replace(/^O2:\s*/i, '').trim().toLowerCase();
+/** A list in a hint: the first few, then how many more. */
+const some = (items: string[], max = 4) => items.length > max ? `${items.slice(0, max).join('; ')}; and ${items.length - max} more` : items.join('; ');
 
 const UTILITIES = new Set(['electricity', 'water', 'internet', 'sewerage']);
 
@@ -52,16 +64,60 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const q: Query = (sql, ...args) => all(env, sql, ...args);
   const lockable = month >= LOCK_FROM;
-  const [settings, loaded, types, late, ready, statements] = await Promise.all([
+  const [settings, loaded, types, late, statements, revenue] = await Promise.all([
     statementSettings(q), loadInputs(q, `${month}-01`, monthEndExclusive(month)), contractTypes(env),
     // The company's share of late changes to an earlier, locked month that counts this month (part 2b, choice A).
     companyLateFor(env, null, month, month),
-    // Each owner's units on the month's steps and their locks (part 3): Make final waits for them all.
-    lockable ? finalReadiness(env, month) : Promise.resolve(new Map<string, FinalUnit[]>()),
     all<{ id: string; owner_id: string; state: string }>(env, 'SELECT id, owner_id, state FROM owner_statements WHERE period_start = ?', `${month}-01`),
+    // Revenue waits while the month's Airbnb reservations are still to confirm (Unit report locks, spec goal 4).
+    lockable ? unconfirmedRevenue(env, month) : Promise.resolve({ byUnit: new Map<string, number>(), files: 0 }),
   ]);
   const inputs = await withYearToDate(q, loaded, month, settings);
-  const months = computeMonth(month, inputs, settings, 'dated');
+  const dated = computeMonth(month, inputs, settings, 'dated');
+  // From October 2026 the report shows O2 as the owner's statement takes it, the set the O2 lock keeps (builder check
+  // answers, 13 Nov 2026): before final, the open owner adjustments up to the month's end that no other statement holds;
+  // once final, the ones on that statement. Earlier months read adjustments by their dates, as before.
+  const statementOf = new Map(statements.map(s => [s.owner_id, s]));
+  const finalOf = new Map(statements.filter(s => s.state !== 'provisional').map(s => [s.owner_id, s.id]));
+  const open = lockable
+    ? computeMonth(month, { ...inputs, adjustments: inputs.adjustments.filter(a => !finalOf.has(a.owner_id) || a.statement_id === finalOf.get(a.owner_id)) },
+      settings, 'open', ownerId => statementOf.get(ownerId)?.id ?? null)
+    : dated;
+  const months = lockable ? open : dated;
+  // Each unit's categories and locks, and each owner's readiness for Make final (part 3), from the month worked out here.
+  const step = lockable ? await monthSteps(env, month, { inputs, dated, open }) : null;
+  const ready = step ? await finalReadiness(env, month, undefined, step) : new Map<string, FinalUnit[]>();
+  const onStep = new Map<string, Set<Stage>>();
+  if (step) for (const s of STAGES) for (const id of step.steps[s]) onStep.set(id, (onStep.get(id) ?? new Set()).add(s));
+  // For the hints: check-outs in the month, and last month's owner adjustments (a repeat may be a mistake).
+  const start = `${month}-01`, endEx = monthEndExclusive(month);
+  const monthEnd = new Date(Date.parse(`${endEx}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
+  const prev = previousMonth(month);
+  const before = new Set(inputs.adjustments.filter(a => a.occurred_on.slice(0, 7) === prev).map(a => `${a.owner_id}|${a.unit_id ?? ''}|${Number(a.amount)}|${said(a.description)}`));
+  const dayOf = (d: string) => `${Number(d.slice(8, 10))} ${monthLabel(d.slice(0, 7)).slice(0, 3)}`;
+  /** What is in each lockable amount of a unit's month, in a sentence or two (the hover on the Unit report). */
+  const hintsFor = (m: UnitMonth): Partial<Record<Stage, string>> => {
+    const total = (cs: { amount: number }[]) => cs.reduce((n, c) => n + Number(c.amount), 0);
+    const stays = m.lines.filter(l => l.type === 'gross' && l.category === 'hospitality').length;
+    const checkouts = inputs.stays.filter(s => s.unit_id === m.unitId && s.check_out >= start && s.check_out < endEx).length;
+    const toConfirm = revenue.byUnit.get(m.unitId) ?? 0;
+    const cleans = m.stageCosts.cleaning, bills = m.stageCosts.utilities, other = m.stageCosts.additional;
+    const o2 = m.lines.filter(l => l.type === 'adjustment' && (l.category === 'owner_credit' || l.category === 'owner_charge'));
+    const same = (unitId: string, l: { amount: number; description: string }) => before.has(`${m.ownerId}|${unitId}|${l.amount}|${said(l.description)}`);
+    const join = (...parts: (string | null | undefined | false)[]) => parts.filter(Boolean).join(' ');
+    return {
+      income: join(`${stays} ${stays === 1 ? 'reservation' : 'reservations'}, ${m.nights} ${m.nights === 1 ? 'night' : 'nights'}.`, notReadyText(toConfirm), m.warnings[0]),
+      cleaning: join(cleans.length ? `${cleans.length} ${cleans.length === 1 ? 'clean' : 'cleans'}, ${rmText(total(cleans))}.` : 'No cleaning charged.',
+        ...cleaningChecks({ checkouts, cleaning: total(cleans) }).map(c => `${c}.`)),
+      utilities: join(bills.length ? `${some(bills.map(c => `${BILL[c.category] ?? 'Indah Water'} ${rmText(c.amount)}`))}.` : 'No bills yet. They can still be locked: a bill that comes late goes to the next month.',
+        ...utilitiesChecks({ utilities: total(bills), contractEnd: m.terms.activeTo, monthEnd }).map(c => `${c}.`)),
+      additional: other.length ? `${some(other.map(c => `${c.description || c.category} ${rmText(c.amount)}`))}.` : 'Nothing this month.',
+      misc: m.miscCharge.amount ? `RM ${(settings.miscMonthly / 100).toFixed(2)} at ${(m.miscCharge.occupancy * 100).toFixed(2)}% occupancy.`
+        : m.terms.miscCharges ? 'No nights this month, so no misc charge.' : 'No misc charge on this contract.',
+      o2: join(o2.length ? `${some(o2.map(l => `${l.description} ${rmText(l.amount)} (${dayOf(l.occurredOn)})`))}.` : 'Nothing this month.',
+        ...o2Checks({ held: step?.held.get(m.unitId) ?? 0, repeats: o2.filter(l => same(m.unitId, l) || same('', l)).length, prevMonth: monthLabel(prev).split(' ')[0] }).map(c => `${c}.`)),
+    };
+  };
   const unitOf = new Map(inputs.units.map(u => [u.id, u]));
   // Owner credits and charges stay where the statement puts them (O2 below), so the trading run takes none.
   const leased = inputs.units.filter(u => months.some(m => m.unitId === u.id && m.terms.model === 'master_lease'));
@@ -83,7 +139,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const group = code === null ? undefined : types.find(type => type.code === code)?.hasFixedOwnerAmount ? 'MANAGE' : MODEL_GROUP[m.terms.model];
     if (!group) return [];
     const sum = (pick: (category: string) => boolean) => f.deductionGroups.filter(g => pick(g.category)).reduce((n, g) => n + g.amount, 0);
-    const close = ready.get(m.ownerId)?.find(x => x.unitId === m.unitId);
+    const locks = step?.locks.get(m.unitId) ?? {};
     return [{
       unitId: m.unitId, ownerId: m.ownerId, // The workbook's code (SKYLINE-C2701): the unit's own code field holds only its number (C27-01).
       code: unitCode(u.property_name, u.unit_number), building: u.property_name, ownerName: u.owner_name,
@@ -95,7 +151,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       ownerPct: share ? f.terms.ownerPct ?? 0 : 0,
       // The agent's part of the operator's share (Agent = GP x agent %, part 3); a long-term let or fixed rent has none.
       agentPct: share ? Number(f.terms.agentPct ?? 0) : 0,
-      steps: close?.steps ?? [], locked: close?.locked ?? [],
+      // Unit report locks (13 Nov 2026): the categories that list the unit, who locked each and when, its Airbnb
+      // reservations still to confirm (Revenue waits for them), and what is in each amount, shown when pointing at it.
+      steps: STAGES.filter(s => onStep.get(m.unitId)?.has(s)),
+      locks: Object.fromEntries(Object.entries(locks).map(([s, l]) => [s, { by: l!.locked_by_name, at: l!.locked_at }])),
+      toConfirm: revenue.byUnit.get(m.unitId) ?? 0,
+      hints: lockable ? hintsFor(m) : {},
       // A yearly guarantee is checked once a year (its true-up lands on the statement as a top-up), not month by month.
       // A long-term let's owner base is the owner's part of the rent; GRR and master lease, the fixed rent.
       ltGrr: tenancy ? f.ownerShare : !share ? f.fixedRent : f.terms.model === 'management_guarantee' ? f.guarantee : 0,
@@ -130,6 +191,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
   return json({
     generatedAt: nowIso(), month, rows, owners, lockFrom: LOCK_FROM,
-    may: { makeFinal: can(session, 'makeFinal', 'edit'), unlockFinal: can(session, 'unlockFinal', 'edit') },
+    // The Whole column row: per category how many of the units it lists are locked; and the month's Airbnb files.
+    counts: step?.counts ?? null, airbnbFiles: revenue.files,
+    may: { ...lockMay(session), makeFinal: can(session, 'makeFinal', 'edit'), unlockFinal: can(session, 'unlockFinal', 'edit'),
+      // Make final generates the statement again first: POST /api/statements/generate is Finance edit work.
+      generate: can(session, 'finance', 'edit') },
   });
 };

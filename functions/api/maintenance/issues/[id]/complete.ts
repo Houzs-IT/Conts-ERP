@@ -2,7 +2,7 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/
 import { requireSession } from '../../../../_lib/auth';
 import { CHARGE_TO, DAY, hasBilling } from '../../../../_lib/maintenance';
 import { isPeriodLocked } from '../../../../_lib/expenses';
-import { costLockProblem } from '../../../../_lib/lockGuards';
+import { keptCostProblem } from '../../../../_lib/lockGuards';
 import { releaseRepairBlocks } from '../../../../_lib/repairBlocks';
 import { repairNotice } from '../../../../_lib/notices';
 import { PASS_KEY_DONE_ONLY } from '../../../../_lib/passKeyJobs';
@@ -39,12 +39,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
   const billingDate: string | null = billing ? (b?.billingDate ?? cur.billing_date ?? null) : null;
   const day = billingDate ?? today;
-  const prior = await one<{ id: string; incurred_on: string; amount: number; deduct_month: string; charge_to: string }>(env, 'SELECT id, incurred_on, amount, deduct_month, charge_to FROM expenses WHERE maintenance_id = ? ORDER BY created_at LIMIT 1', id);
+  const prior = await one<{ id: string; incurred_on: string; amount: number; deduct_month: string; charge_to: string; category: string; description: string | null }>(env, 'SELECT id, incurred_on, amount, deduct_month, charge_to, category, description FROM expenses WHERE maintenance_id = ? ORDER BY created_at LIMIT 1', id);
   const expenseOn = amount > 0 && cur.unit_id ? day : null;
   const unchanged = !!prior && Number(prior.amount) === amount && prior.incurred_on === day;
   if (amount > 0 && cur.unit_id && !unchanged && await isPeriodLocked(env, cur.unit_id, day)) return fail('PERIOD_LOCKED', "That month's owner statement is already final, so the cost cannot be added to it. Pick a later billing date.", 409, { billingDate: 'That month is closed.' });
   if (prior && !unchanged && await isPeriodLocked(env, cur.unit_id, prior.incurred_on)) return fail('PERIOD_LOCKED', 'This job was finished before and its cost is on an owner statement that is already final. Ask finance to adjust it there.', 409);
-  const lockedPrior = prior && amount <= 0 && prior.charge_to === 'owner' ? await costLockProblem(env, cur.unit_id, prior.deduct_month) : null;
+  // Finishing again at RM 0 removes the job's cost: refused while a lock keeps it, whatever its category is now.
+  const lockedPrior = prior && amount <= 0 ? await keptCostProblem(env, prior.id) : null;
   if (lockedPrior) return fail('PERIOD_LOCKED', lockedPrior, 409);
   await run(env, `UPDATE maintenance_issues SET state = 'resolved', final_amount = ?, charge_to = ?, resolved_at = ?, blocks_unit = 0${billing ? ', billing_date = ?' : ''}, updated_at = ? WHERE id = ?`,
     amount, chargeTo, now, ...(billing ? [billingDate ?? (amount > 0 ? day : null)] : []), now, id);

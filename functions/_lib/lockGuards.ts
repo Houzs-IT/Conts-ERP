@@ -4,7 +4,7 @@
  *  stageLocks.ts. A new cost never lands in a locked month whatever writes it (the expenses trigger, migration 0303);
  *  these only say so. */
 import { type Env, one, all } from './db';
-import { monthLabel, rolledText, editedText, refusedText, movedO2Text, openMonthAfter, incomeNoticeText, quietly } from './stageLocks';
+import { monthLabel, rolledText, editedText, refusedText, movedO2Text, openMonthAfter, incomeNoticeText, quietly, costStageOf, type CostStage } from './stageLocks';
 import { closedMonthsFor, lockedMonthsFor } from './ownerLocks';
 import { stayMonths } from './airbnbConfirm';
 import { UNIT_SQL, unitForMonth, type UnitRow } from './ownerStatement';
@@ -52,29 +52,51 @@ async function paymentIncomeNoticeOf(env: Env, reservationId: string): Promise<s
 export const incomeNotice = (env: Env, unitId: string, months: string[]): Promise<string | null> => quietly(() => incomeNoticeOf(env, unitId, months), null);
 export const paymentIncomeNotice = (env: Env, reservationId: string): Promise<string | null> => quietly(() => paymentIncomeNoticeOf(env, reservationId), null);
 
-/** Whether `month`'s deductions are locked for the unit. */
-export async function deductionsLocked(env: Env, unitId: string, month: string): Promise<boolean> {
-  return !!(await one(env, `SELECT 1 AS x FROM owner_report_locks WHERE unit_id = ? AND stage = 'deductions' AND month = ?`, unitId, month));
+/** Whether `month`'s cost category (Cleaning, Utilities or Add. ded.: stageLocks.ts costStageOf) is locked for the unit. */
+export async function costLocked(env: Env, unitId: string, month: string, stage: CostStage): Promise<boolean> {
+  return !!(await one(env, `SELECT 1 AS x FROM owner_report_locks WHERE unit_id = ? AND stage = ? AND month = ?`, unitId, stage, month));
 }
 
-/** A cost just written whose deduction month is later than its own month: where it went, and why (its month's
- *  deductions are locked, or its statement is final). Null when it stayed in its own month. */
-export async function costNotice(env: Env, c: { unitId: string; incurredOn: string; deductMonth: string }): Promise<string | null> {
+/** A cost just written whose deduction month is later than its own month: where it went, and why (its category is
+ *  locked in its month, or its statement is final). Null when it stayed in its own month. */
+export async function costNotice(env: Env, c: { unitId: string; incurredOn: string; deductMonth: string; category: string; description: string | null }): Promise<string | null> {
   const own = c.incurredOn.slice(0, 7);
   if (!c.deductMonth || c.deductMonth <= own) return null;
-  const why = (await deductionsLocked(env, c.unitId, own)) ? 'locked' : 'final';
-  return rolledText(await unitLabel(env, c.unitId), monthLabel(own), monthLabel(c.deductMonth), why);
+  const stage = costStageOf(c.category, c.description);
+  const why = (await costLocked(env, c.unitId, own, stage)) ? 'locked' : 'final';
+  return rolledText(await unitLabel(env, c.unitId), monthLabel(own), monthLabel(c.deductMonth), why, stage);
 }
 
-/** A cost changed on a month whose deductions are locked: that month keeps it as locked and the late update posts the
- *  difference to the next open month. Null when the month is not locked. */
-export async function editNotice(env: Env, unitId: string, deductMonth: string): Promise<string | null> {
-  return (await deductionsLocked(env, unitId, deductMonth)) ? editedText(await unitLabel(env, unitId), monthLabel(deductMonth)) : null;
+/** A cost changed in a month whose category is locked: that month keeps it as locked and the late update posts the
+ *  difference to the next open month. Null when it is not locked. */
+export async function editNotice(env: Env, unitId: string, deductMonth: string, stage: CostStage): Promise<string | null> {
+  return (await costLocked(env, unitId, deductMonth, stage)) ? editedText(await unitLabel(env, unitId), monthLabel(deductMonth), stage) : null;
 }
 
-/** Why a cost on a month whose deductions are locked cannot be removed, or null. */
-export async function costLockProblem(env: Env, unitId: string, deductMonth: string): Promise<string | null> {
-  return (await deductionsLocked(env, unitId, deductMonth)) ? refusedText('deductions', await unitLabel(env, unitId), monthLabel(deductMonth)) : null;
+/** What a person changing an owner's cost is told: for its category before the change and after it, a month that keeps
+ *  its old figures because that category is locked there (a cost moved into a locked category goes on as a late change
+ *  too). Null when neither is locked. */
+export async function editNotices(env: Env, before: { unitId: string; deductMonth: string; stage: CostStage } | null,
+  after: { unitId: string; deductMonth: string; stage: CostStage } | null): Promise<string | null> {
+  const seen = new Set<string>(), out: string[] = [];
+  for (const c of [before, after]) {
+    if (!c || seen.has(`${c.unitId}|${c.deductMonth}|${c.stage}`)) continue;
+    seen.add(`${c.unitId}|${c.deductMonth}|${c.stage}`);
+    const n = await editNotice(env, c.unitId, c.deductMonth, c.stage);
+    if (n) out.push(n);
+  }
+  return out.length ? out.join(' ') : null;
+}
+
+/** Why a cost cannot be removed: a Cleaning, Utilities or Add. ded. lock keeps it (spec goal 2: removing what a lock keeps
+ *  is refused until that category is unlocked). Decided by what the lock froze, not by the cost's category now: a kept cost
+ *  re-categorised into an open category is still refused, and one moved into a locked category, which no lock keeps,
+ *  can go (its late change goes with it). */
+export async function keptCostProblem(env: Env, costId: string): Promise<string | null> {
+  const kept = await one<{ unit_id: string; month: string; stage: CostStage }>(env, `SELECT unit_id, month, stage FROM owner_report_locks
+    WHERE stage IN ('cleaning', 'utilities', 'additional') AND frozen->'costs' @> jsonb_build_array(jsonb_build_object('id', ?::text))
+    ORDER BY month LIMIT 1`, costId);
+  return kept ? refusedText(kept.stage, await unitLabel(env, kept.unit_id), monthLabel(kept.month)) : null;
 }
 
 /* O2 (owner adjustments). A statement being built for a month whose O2 is locked takes only what the lock kept

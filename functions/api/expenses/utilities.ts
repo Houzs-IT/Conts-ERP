@@ -52,7 +52,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       AND category IN ('electricity','water','internet','sewerage') AND incurred_on >= ? AND incurred_on < ?
     ORDER BY created_at`, JSON.stringify(bare.map(u => u.id)), `${month}-01`, `${nextMonth(month)}-01`) : [];
   const inScope = [...new Set([...rows.map(r => r.unit_id as string), ...bare.map(u => u.id as string)])];
-  const [finals, closed] = await Promise.all([finalMonthsFor(env, inScope, month), closedMonthsFor(env, inScope, month, 'deductions')]);
+  const [finals, closed] = await Promise.all([finalMonthsFor(env, inScope, month), closedMonthsFor(env, inScope, month, 'utilities')]);
   const rollsTo = Object.fromEntries([...closed].map(([unit, set]) => [unit, firstOpenMonth(month, set)]).filter(([, m]) => m !== month));
   const rollsWhy = Object.fromEntries(Object.keys(rollsTo).map(unit => [unit, finals.get(unit)?.has(month) ? 'final' : 'locked']));
   return json({
@@ -122,7 +122,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Read once what each row is checked against: final months, bills recorded without an account number, receipts,
   // and for unit-only bills any bill of that kind already in the month.
   const [finals, blankRows, onFile, known, anyRows, current] = await Promise.all([
-    closedMonthsFor(env, unitIds, month, 'deductions'),
+    closedMonthsFor(env, unitIds, month, 'utilities'),
     unitIds.length ? all<{ unit_id: string; category: string }>(env, `
       SELECT DISTINCT unit_id, category FROM expenses WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
         AND (reference IS NULL OR reference = '') AND incurred_on >= ? AND incurred_on < ?`, JSON.stringify(unitIds), from, to) : Promise.resolve([]),

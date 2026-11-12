@@ -18,8 +18,8 @@ const OCT = '2026-10', NOV = '2026-11';
 const now = new Date().toISOString();
 const near = (a, b, by = 1) => Math.abs(Number(a) - Number(b)) <= by;
 
-let r = await call('GET', `/api/owner-close?month=${OCT}`);
-check('the month reads', r.status === 200 && Array.isArray(r.json?.units), r.text.slice(0, 300));
+let r = await call('GET', `/api/owner-close/summary?month=${OCT}`);
+check('the month reads', r.status === 200 && !!r.json?.counts?.income, r.text.slice(0, 300));
 if (r.status !== 200) done();
 
 // The check's own owner, building and units, so the checks before it in CI cannot get in its way. A local rerun starts
@@ -63,7 +63,7 @@ const company = net => net - owner(net);
 const day = n => new Date(Date.UTC(2026, 9, n)).toISOString().slice(0, 10); // day(1) = 1 Oct
 
 const lock = (stage, unitIds) => call('POST', '/api/owner-close/lock', { month: OCT, stage, unitIds });
-const unlock = (stage, unitId, reason) => call('POST', '/api/owner-close/unlock', { month: OCT, stage, unitId, reason });
+const unlock = (stage, unitId, reason) => call('POST', '/api/owner-close/unlock', { month: OCT, stage, unitIds: [unitId], reason });
 const generate = (month, ownerId = OWNER) => call('POST', '/api/statements/generate', { period: month, ownerIds: [ownerId] });
 const lockId = async (unitId, stage, month = OCT) => (await db(`SELECT id FROM owner_report_locks WHERE unit_id = $1 AND stage = $2 AND month = $3`, unitId, stage, month))[0]?.id ?? null;
 // The company's rows for a unit, each with the stage of the lock it came from (a carried row keeps its lock's id).
@@ -131,22 +131,31 @@ check('C2: running the late update again changes nothing', JSON.stringify(again)
   await db(`DELETE FROM units WHERE id = 'ocl-x'`);
 }
 
-// C3: deductions locked too (the misc charge on). The stay is made two nights longer for the same money, so occupancy
-// moves the misc charge. Income comes first: the misc difference goes with the income lock, the company's as the owner's.
-r = await lock('deductions', [u.id]);
-const dedLock = await lockId(u.id, 'deductions');
-check('October deductions are locked too', r.status === 201 && !!dedLock, r.text);
+// C3: misc and utilities locked too (13 Nov 2026: each its own lock). The stay is made two nights longer for the same
+// money, so occupancy moves the misc charge, and October's electricity bill is raised by RM 5. Each lock carries its own
+// part, the company's as the owner's: income keeps C1's change, misc the occupancy change, utilities the bill change.
+await db(`INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, charge_to, created_at)
+  VALUES ('ocl-e1', $1, 'electricity', 'Check: October electricity', 4000, 'MYR', '2026-10-15', 'owner', $2)`, u.id, now);
+r = await lock('misc', [u.id]);
+const miscLock = await lockId(u.id, 'misc');
+const r3 = await lock('utilities', [u.id]);
+const utilLock = await lockId(u.id, 'utilities');
+check('October misc and utilities are locked too', r.status === 201 && r3.status === 201 && !!miscLock && !!utilLock, `${r.text} ${r3.text}`);
 await db(`UPDATE reservations SET check_out = $1 WHERE id = $2`, day(9), S1);
+await db(`UPDATE expenses SET amount = 4500 WHERE id = 'ocl-e1'`);
 await generate(NOV);
 rows = await companyRows(u.id);
 inc = await ownerLate(u.id, 'income');
-const ded = await ownerLate(u.id, 'deductions');
+const msc = await ownerLate(u.id, 'misc');
+const utl = await ownerLate(u.id, 'utilities');
 const dMisc = misc(7) - misc(5);
-check('C3: with income and deductions locked, the misc difference goes with income for the company too',
-  ofLock(rows, incomeLock).length === 1 && near(ofLock(rows, incomeLock)[0].amount, company(10000 - dMisc), 2) && near(sum(ofLock(rows, dedLock)), 0),
-  `${JSON.stringify(rows)} want income ${company(10000 - dMisc)}, deductions 0`);
-check("C3: … and the shares still add up to the month's change", near(sum(rows) + sum(inc) + sum(ded), 10000 - dMisc, 2),
-  `${sum(rows)} + ${sum(inc)} + ${sum(ded)} want ${10000 - dMisc}`);
+check('C3: with income, misc and utilities locked, each lock carries its own part, for the company too',
+  ofLock(rows, incomeLock).length === 1 && near(ofLock(rows, incomeLock)[0].amount, company(10000), 2)
+    && near(sum(ofLock(rows, miscLock)), -company(dMisc), 2) && near(sum(ofLock(rows, utilLock)), -company(500), 2)
+    && near(sum(msc), -owner(dMisc), 2) && near(sum(utl), -owner(500), 2),
+  `${JSON.stringify(rows)} want income ${company(10000)}, misc ${-company(dMisc)}, utilities ${-company(500)}; owner misc ${JSON.stringify(msc)} utilities ${JSON.stringify(utl)}`);
+check("C3: … and the shares still add up to the month's change", near(sum(rows) + sum(inc) + sum(msc) + sum(utl), 10000 - dMisc - 500, 3),
+  `${sum(rows)} + ${sum(inc)} + ${sum(msc)} + ${sum(utl)} want ${10000 - dMisc - 500}`);
 
 // C4: November's O2 is locked (written here: November has not ended, so the route refuses it), then October changes
 // again. The new difference goes to December; November's row stays as it was.

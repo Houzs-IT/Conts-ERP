@@ -70,15 +70,17 @@ const lock = (stage, unitIds, role) => call('POST', '/api/owner-close/lock', { m
 const generate = month => call('POST', '/api/statements/generate', { period: month, ownerIds: [OWNER] });
 const statementOf = async month => (await db(`SELECT id, state FROM owner_statements WHERE owner_id = $1 AND period_start = $2`, OWNER, `${month}-01`))[0];
 const finalise = async (month, role) => call('POST', '/api/statements/finalise', { statementIds: [(await statementOf(month))?.id ?? 'none'] }, role);
-const LOCK_FIRST = 'Lock every step on Owner statement close before marking it final.';
+const LOCK_FIRST = 'Lock every category on the Unit report before marking it final.';
+const SIX = ['income', 'cleaning', 'utilities', 'additional', 'misc', 'o2'];
 // Review C1: a draft made before the last lock, or before Unlock final, prints figures the locks may not hold.
 const STALE_DRAFT = 'A step was locked, or the statement unlocked, after this draft was made. Generate the statement again, then mark it final.';
 
 let r = await generate(OCT);
 check('the October draft is made', r.status < 300 && !!(await statementOf(OCT)), r.text);
-r = await lock('income', [U1]);
-const r2 = await lock('deductions', [U1]);
-check('income and deductions locked', r.status < 300 && r.json?.locked?.includes(U1) && r2.status < 300 && r2.json?.locked?.includes(U1), `${r.text} | ${r2.text}`);
+// Every category but O2 locked for the first unit (13 Nov 2026: the deductions lock is four).
+const firstFive = [];
+for (const stage of SIX.slice(0, 5)) firstFive.push(await lock(stage, [U1]));
+check('every category but O2 locked', firstFive.every(x => x.status < 300 && x.json?.locked?.includes(U1)), firstFive.map(x => x.text).join(' | '));
 
 // ── Make final waits for every step ──
 r = await finalise(OCT);
@@ -94,22 +96,19 @@ await generate(OCT);
 r = await finalise(OCT);
 // A unit with something on the statement is on every step its contract has (closeSteps), so all three wait.
 check('a unit that joins the steps after the locks is waiting', r.status === 200 && r.json?.finalised === 0
-  && r.json?.failed?.[0]?.reason === `Waiting: F-02 income, deductions and O2. ${LOCK_FIRST}`, r.text);
+  && r.json?.failed?.[0]?.reason === `Waiting: F-02 Revenue, Cleaning, Utilities, Add. ded., Misc and O2. ${LOCK_FIRST}`, r.text);
 
-for (const stage of ['income', 'deductions', 'o2']) {
+// Review focus 5: the second unit has nothing in any cost category, no misc on its contract: every amount is RM 0, and
+// each still locks, so its owner can be made final.
+for (const stage of SIX) {
   r = await lock(stage, [U2]);
   check(`${stage} locked for the second unit`, r.status < 300 && r.json?.locked?.includes(U2), r.text);
 }
 r = await finalise(OCT);
 check('a draft made before the last lock is not made final', r.status === 200 && r.json?.finalised === 0 && r.json?.failed?.[0]?.reason === STALE_DRAFT, r.text);
 await generate(OCT);
-// Owner statement close, step 4 (GP and final): how many of the month's owners are final.
-const finalCount = async () => (await call('GET', `/api/owner-close?month=${OCT}`)).json?.final;
-const before = await finalCount();
 r = await finalise(OCT);
-check('finalise passes once every step is locked', r.status === 200 && r.json?.finalised === 1, r.text);
-const after = await finalCount();
-check('the close page counts owners final', before?.total >= 1 && after?.total === before?.total && after?.final === before?.final + 1, JSON.stringify({ before, after }));
+check('finalise passes once every category is locked', r.status === 200 && r.json?.finalised === 1, r.text);
 check('… and the statement is final', (await statementOf(OCT))?.state === 'finalised');
 
 // ── A month before the locks keeps today's Make final ──
@@ -243,7 +242,7 @@ r = await call('GET', `/api/portfolio/owner-report?month=${OCT}`);
 const row1 = r.json?.rows?.find(x => x.unitId === U1);
 const mine = r.json?.owners?.[OWNER];
 check('the overall report carries each unit\'s steps, locks and agent %', r.status === 200 && row1?.ownerId === OWNER && row1?.agentPct === 10
-  && JSON.stringify(row1?.steps) === '["income","deductions","o2"]' && JSON.stringify(row1?.locked) === '["income","deductions","o2"]', JSON.stringify(row1));
+  && JSON.stringify(row1?.steps) === JSON.stringify(SIX) && SIX.every(s => !!row1?.locks?.[s]?.by), JSON.stringify(row1));
 // Who made it final is the name the history recorded for the latest Make final (the account's name in this database).
 const [fin] = await db(`SELECT actor_label FROM audit_log WHERE action = 'statement.finalise' AND entity_id = $1 ORDER BY occurred_at DESC LIMIT 1`, mine?.statementId ?? '');
 check("… the owner's statement: final, by whom, paid, nothing waiting", mine?.state === 'final' && !!fin && mine?.by === fin.actor_label && !!mine?.at
@@ -265,7 +264,7 @@ if (pgReal) {
   await db(`INSERT INTO owners (id, display_name, email, bank_name, bank_account_last4, created_at, updated_at) VALUES ('ocf-owner2', 'Final Race Owner', 'final-race@example.invalid', 'Check Bank', '4321', $1, $1)`, now);
   await db(`INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, misc_charges, created_at, updated_at) VALUES ('ocf-r1', $1, 'ocf-owner2', 'R-01', 0, 0, $2, $2)`, PROP, now);
   await db(`INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, charge_to, created_at) VALUES ('ocf-r-c', 'ocf-r1', 'other', 'Check: race cost', 3000, 'MYR', '2026-10-10', 'owner', $1)`, now);
-  for (const stage of ['income', 'deductions', 'o2']) await lock(stage, ['ocf-r1']);
+  for (const stage of SIX) await lock(stage, ['ocf-r1']);
   await call('POST', '/api/statements/generate', { period: OCT, ownerIds: ['ocf-owner2'] });
   const race = async () => (await db(`SELECT id, state FROM owner_statements WHERE owner_id = 'ocf-owner2' AND period_start = '2026-10-01'`))[0];
   // I3: Unlock a step lands while Make final is checking the locks: Make final waits for it and then refuses.

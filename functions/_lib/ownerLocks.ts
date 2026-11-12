@@ -1,26 +1,26 @@
-/** Owner report stage locks: locking a month's income, deductions and O2 unit by unit, unlocking them, and the late
- *  update (spec docs/superpowers/specs/2026-11-11-owner-report-stage-locks-design.md, plans
- *  docs/superpowers/plans/2026-11-11-owner-report-locks-part1-income.md and …-part2a-deductions-o2.md). The rules are in
- *  stageLocks.ts.
+/** Owner report locks: locking a month's categories unit by unit (Revenue, Cleaning, Utilities, Add. ded., Misc and O2,
+ *  stored as income, cleaning, utilities, additional, misc and o2), unlocking them, and the late update (specs
+ *  docs/superpowers/specs/2026-11-11-owner-report-stage-locks-design.md and 2026-11-13-unit-report-click-locks-design.md).
+ *  The rules are in stageLocks.ts.
  *
- *  A locked month is worked out from what its locks kept (ownerStatement.ts: FrozenIncome, FrozenDeductions, FrozenO2),
+ *  A locked month is worked out from what its locks kept (ownerStatement.ts: FrozenIncome, KeptDeductions, FrozenO2),
  *  so its figures never change. A reservation changed afterwards (Airbnb reconciliation, an edit, a cancellation from
- *  HostPlatform or Channex), or a cost changed on a month whose deductions are locked, changes only the live figures;
- *  syncLate compares the two and keeps one owner adjustment per lock on the next open month for the difference in what
- *  the owner is due (spec call 10: worked out again through the contract, guarantee included, not a flat %; a
- *  yearly-guarantee unit's is held for a person to check). Income first, then deductions (stageLocks.ts splitLate). */
+ *  HostPlatform or Channex), or a cost changed in a locked category, changes only the live figures; syncLate compares
+ *  them and keeps one owner adjustment per lock on the next open month for the difference in what the owner is due
+ *  (spec call 10: worked out again through the contract, guarantee included, not a flat %; a yearly-guarantee unit's is
+ *  held for a person to check). The locked categories are turned live one at a time (stageLocks.ts lateShares). */
 import { type Env, all, one, run, transaction, nowIso, audit } from './db';
 import { auditMany, type AuditEntry } from './history';
 import {
-  loadInputs, computeMonth, statementSettings, withYearToDate, freezeIncome, freezeDeductions, freezeO2, withoutMisc, termsFor, unitForMonth,
+  loadInputs, computeMonth, statementSettings, withYearToDate, freezeIncome, freezeCosts, freezeMisc, freezeO2, unfreeze, termsFor, unitForMonth,
   hasLocksTable, hasCompanyLateTable, hasActivity, type Query, type Inputs, type UnitMonth,
 } from './ownerStatement';
 import { monthEndExclusive } from './revenue';
 import { modelOf } from './revenueModel';
 import { finalMonthsFor } from './expenses';
 import {
-  type Stage, STAGES, openMonthAfter, planLate, planUnlock, carriedText, companyCarriedText, companyFigure, lateLabel, lateText, monthLabel, lockable, splitLate,
-  type PostedLate, type FinalUnit, LOCK_FROM, finalWaiting, unlockFinalPlan, finalUnlockText,
+  type Stage, STAGES, LATE_STAGES, openMonthAfter, planLate, planUnlock, carriedText, companyCarriedText, companyFigure, lateLabel, lateText, monthLabel, lockable,
+  lateShares, stageName, notReadyText, type PostedLate, type FinalUnit, LOCK_FROM, finalWaiting, unlockFinalPlan, finalUnlockText,
 } from './stageLocks';
 
 export interface LockRow { id: string; month: string; unit_id: string; stage: Stage; locked_by_name: string; locked_at: string }
@@ -50,45 +50,36 @@ export async function closedMonthsFor(env: Env, unitIds: string[], fromMonth: st
   return out;
 }
 
-/** The units on a month's income step: those with something in the month's owner statement whose income can be
- *  locked (not a fixed rent or a master lease), with their income lock, and whether their owner's statement for the
- *  month is final (a unit that is final and not locked cannot be locked any more). Airbnb reconciliation shows how many
- *  are locked; Owner statement close counts them the same way (closeSteps). */
-export async function incomeStep(env: Env, month: string): Promise<{ inputs: Inputs; rows: UnitMonth[]; locks: Map<string, LockRow>; finals: Set<string>; counts: { locked: number; total: number } }> {
-  const q = queryOf(env);
-  const [settings, loaded, locks, finals] = await Promise.all([statementSettings(q), loadInputs(q, `${month}-01`, monthEndExclusive(month)), locksFor(env, month), finalOwners(env, month)]);
-  const inputs = await withYearToDate(q, loaded, month, settings);
-  const rows = computeMonth(month, inputs, settings, 'dated').filter(r => hasActivity(r) && lockable('income', r.terms.basis));
-  const income = new Map(locks.filter(l => l.stage === 'income').map(l => [l.unit_id, l]));
-  return {
-    inputs, rows, locks: income, finals,
-    counts: { locked: rows.filter(r => income.has(r.unitId)).length, total: rows.filter(r => income.has(r.unitId) || !finals.has(r.ownerId)).length },
-  };
-}
+/** A month already worked out by the caller (the Unit report), so monthSteps and finalReadiness do not load it again:
+ *  the inputs, the month as its statements take it (`dated`, every lock applied) and as a statement being built now
+ *  would take its owner adjustments (`open`). */
+export interface MonthCtx { inputs: Inputs; dated: UnitMonth[]; open: UnitMonth[] }
 
-/** Everything Owner statement close shows for a month: the month worked out as its statements do (`dated`, every lock
- *  applied) and as a statement being built now would take its owner adjustments (`open`), each unit's locks, the owners
- *  whose statement is final, the debts held back per unit (a held one with no unit counts on the owner's first unit),
- *  which units each step lists and how many of them are locked. */
-export async function closeSteps(env: Env, month: string): Promise<{
-  inputs: Inputs; dated: UnitMonth[]; open: UnitMonth[]; locks: Map<string, Partial<Record<Stage, LockRow>>>; finals: Set<string>;
+/** Everything the month's locks need: the month worked out (MonthCtx, loaded here unless given), each unit's locks, the
+ *  owners whose statement is final, the debts held back per unit (a held one with no unit counts on the owner's first
+ *  unit), which units each category lists (every category but O2: units on a share with something in the month; O2:
+ *  every unit on the statement) and how many of them are locked. */
+export async function monthSteps(env: Env, month: string, ctx?: MonthCtx): Promise<MonthCtx & {
+  locks: Map<string, Partial<Record<Stage, LockRow>>>; finals: Set<string>;
   held: Map<string, number>; steps: Record<Stage, string[]>; counts: Record<Stage, { locked: number; total: number }>;
 }> {
   const q = queryOf(env);
-  const [settings, loaded, locks, finals, statements] = await Promise.all([
-    statementSettings(q), loadInputs(q, `${month}-01`, monthEndExclusive(month)), locksFor(env, month), finalOwners(env, month),
-    all<{ id: string; owner_id: string }>(env, 'SELECT id, owner_id FROM owner_statements WHERE period_start = ?', `${month}-01`),
-  ]);
-  const inputs = await withYearToDate(q, loaded, month, settings);
-  const dated = computeMonth(month, inputs, settings, 'dated');
-  const statementOf = new Map(statements.map(s => [s.owner_id, s.id]));
-  const open = computeMonth(month, inputs, settings, 'open', ownerId => statementOf.get(ownerId) ?? null);
+  const [locks, finals, worked] = await Promise.all([locksFor(env, month), finalOwners(env, month), ctx ? Promise.resolve(ctx) : (async () => {
+    const [settings, loaded, statements] = await Promise.all([
+      statementSettings(q), loadInputs(q, `${month}-01`, monthEndExclusive(month)),
+      all<{ id: string; owner_id: string }>(env, 'SELECT id, owner_id FROM owner_statements WHERE period_start = ?', `${month}-01`),
+    ]);
+    const inputs = await withYearToDate(q, loaded, month, settings);
+    const statementOf = new Map(statements.map(s => [s.owner_id, s.id]));
+    return { inputs, dated: computeMonth(month, inputs, settings, 'dated'), open: computeMonth(month, inputs, settings, 'open', ownerId => statementOf.get(ownerId) ?? null) };
+  })()]);
+  const { inputs, dated, open } = worked;
   const byUnit = new Map<string, Partial<Record<Stage, LockRow>>>();
   for (const l of locks) { const x = byUnit.get(l.unit_id) ?? {}; x[l.stage] = l; byUnit.set(l.unit_id, x); }
   const openOf = new Map(open.map(r => [r.unitId, r]));
+  const onShare = dated.filter(r => hasActivity(r) && lockable('income', r.terms.basis)).map(r => r.unitId);
   const steps: Record<Stage, string[]> = {
-    income: dated.filter(r => hasActivity(r) && lockable('income', r.terms.basis)).map(r => r.unitId),
-    deductions: dated.filter(r => hasActivity(r) && lockable('deductions', r.terms.basis)).map(r => r.unitId),
+    income: onShare, cleaning: onShare, utilities: onShare, additional: onShare, misc: onShare,
     o2: dated.filter(r => hasActivity(r) || (openOf.get(r.unitId)?.adjustmentIds.length ?? 0) > 0).map(r => r.unitId),
   };
   const ownerOf = new Map(dated.map(r => [r.unitId, r.ownerId]));
@@ -116,11 +107,11 @@ export async function closeSteps(env: Env, month: string): Promise<{
   return { inputs, dated, open, locks: byUnit, finals, held, steps, counts };
 }
 
-/** For each owner with a unit on one of the month's steps: those units, the steps that list each (closeSteps) and the
- *  ones locked. Make final needs every listed step locked (spec goal 7; stageLocks.ts finalWaiting). Units are named as
- *  the close page names them (the unit code, else the unit number), in that order. */
-export async function finalReadiness(env: Env, month: string): Promise<Map<string, FinalUnit[]>> {
-  const step = await closeSteps(env, month);
+/** For each owner with a unit on one of the month's categories: those units, the categories that list each (monthSteps)
+ *  and the ones locked. Make final needs every listed category locked (spec goal 7; stageLocks.ts finalWaiting). Units
+ *  are named by their unit code, else the unit number, in that order. `step`: monthSteps already read by the caller. */
+export async function finalReadiness(env: Env, month: string, ctx?: MonthCtx, given?: Awaited<ReturnType<typeof monthSteps>>): Promise<Map<string, FinalUnit[]>> {
+  const step = given ?? await monthSteps(env, month, ctx);
   const unitOf = new Map(step.inputs.units.map(u => [u.id, u]));
   const ownerOf = new Map(step.dated.map(r => [r.unitId, r.ownerId]));
   const listed = new Map<string, Stage[]>();
@@ -163,12 +154,6 @@ export async function companyLateFor(env: Env, unitIds: string[] | null, fromMon
   return out;
 }
 
-/** How many units are on the month's income step, and how many of them have their income locked: the figures Owner
- *  statement close shows on its Income step (Airbnb reconciliation shows them too). */
-export async function incomeLockCounts(env: Env, month: string): Promise<{ locked: number; total: number }> {
-  return (await incomeStep(env, month)).counts;
-}
-
 /** For each unit, the months whose `stage` is locked. */
 export async function lockedMonthsFor(env: Env, unitIds: string[], stage: Stage): Promise<Map<string, Set<string>>> {
   const out = new Map<string, Set<string>>();
@@ -182,16 +167,20 @@ export async function lockedMonthsFor(env: Env, unitIds: string[], stage: Stage)
 /** For each unit, the months whose income is locked. */
 export const incomeLockedMonths = (env: Env, unitIds: string[]) => lockedMonthsFor(env, unitIds, 'income');
 
-/** Locks one step of `month` for these units. Each lock keeps what the month is worked out from now: income, the stays
- *  (and a long-term let's rent); deductions, the costs and the misc charge; O2, the owner adjustments its statement
- *  takes. Left as they are, and listed apart: a unit already locked (`already`); one that cannot be locked on this step
- *  (`notLockable`: a fixed rent or master lease on income and deductions); one whose owner's statement for the month is
- *  final (`final`: a lock would keep today's figures, not what that statement paid); an id that is not a unit
- *  (`unknown`). Every unit of the ticked units' owners is loaded, so each owner's first unit (which carries an owner
- *  adjustment with no unit) is the one the statement uses. */
-export async function lockStage(env: Env, who: { userId: string; fullName: string }, month: string, stage: Stage, unitIds: string[]):
-  Promise<{ locked: string[]; already: string[]; notLockable: string[]; final: string[]; unknown: string[] }> {
+/** Locks one category of `month` for these units, or for every unit the category lists (`'all'`: Lock all). Each lock
+ *  keeps what the month is worked out from now: Revenue, the stays (and a long-term let's rent); a cost category, the
+ *  costs the month counts under it; Misc, the misc charge; O2, the owner adjustments its statement takes. Left as they
+ *  are, and listed apart: a unit already locked (`already`); one that cannot be locked in this category (`notLockable`: a
+ *  fixed rent or master lease on anything but O2); one whose owner's statement for the month is final (`final`: a lock
+ *  would keep today's figures, not what that statement paid); a unit whose Revenue has Airbnb reservations still to
+ *  confirm (`notReady`, from `unconfirmed`, read by the route: lockReadiness.ts); an id that is not a unit (`unknown`).
+ *  Every unit of the units' owners is loaded, so each owner's first unit (which carries an owner adjustment with no unit)
+ *  is the one the statement uses. */
+export async function lockStage(env: Env, who: { userId: string; fullName: string }, month: string, stage: Stage, which: string[] | 'all', unconfirmed: Map<string, number> = new Map()):
+  Promise<{ locked: string[]; already: string[]; notLockable: string[]; final: string[]; notReady: { unitId: string; reason: string }[]; unknown: string[] }> {
   const q = queryOf(env);
+  const unitIds = which === 'all' ? (await monthSteps(env, month)).steps[stage] : which;
+  if (!unitIds.length) return { locked: [], already: [], notLockable: [], final: [], notReady: [], unknown: [] };
   const owners = (await all<{ owner_id: string }>(env, 'SELECT DISTINCT owner_id FROM units WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', ids(unitIds))).map(r => r.owner_id);
   const [settings, inputs, existing, finals, statements] = await Promise.all([
     statementSettings(q), loadInputs(q, `${month}-01`, monthEndExclusive(month), { ownerIds: owners }), locksFor(env, month, unitIds), finalOwners(env, month),
@@ -201,20 +190,23 @@ export async function lockStage(env: Env, who: { userId: string; fullName: strin
   const unknown = unitIds.filter(id => !known.has(id));
   const ticked = new Set(unitIds);
   const already = new Set(existing.filter(l => l.stage === stage).map(l => l.unit_id));
-  // The month as its statement works it out now, with every other lock applied (deductions), or as a statement being
-  // built now would take its owner adjustments (O2).
+  // The month as its statement works it out now, with every other lock applied (a cost category or misc), or as a
+  // statement being built now would take its owner adjustments (O2).
   const statementOf = new Map(statements.map(s => [s.owner_id, s.id]));
   const rows = stage === 'income' ? [] : computeMonth(month, inputs, settings, stage === 'o2' ? 'open' : 'dated', ownerId => statementOf.get(ownerId) ?? null);
-  const notLockable: string[] = [], final: string[] = [];
+  const notLockable: string[] = [], final: string[] = [], notReady: { unitId: string; reason: string }[] = [];
   const toLock: { id: string; unit_id: string; frozen: unknown }[] = [];
   for (const u of inputs.units) {
     if (!ticked.has(u.id) || already.has(u.id)) continue;
     const terms = termsFor(unitForMonth(u, month), settings.defaultFeePct);
     if (!lockable(stage, terms.basis)) { notLockable.push(u.id); continue; }
     if (finals.has(u.owner_id)) { final.push(u.id); continue; }
+    const waiting = stage === 'income' ? notReadyText(unconfirmed.get(u.id) ?? 0) : null;
+    if (waiting) { notReady.push({ unitId: u.id, reason: waiting }); continue; }
     const m = rows.find(r => r.unitId === u.id);
     const frozen = stage === 'income' ? freezeIncome(u.id, month, inputs.stays, terms)
-      : stage === 'deductions' ? freezeDeductions(m!, inputs.costs) : freezeO2(m!, inputs.adjustments);
+      : stage === 'o2' ? freezeO2(m!, inputs.adjustments)
+      : stage === 'misc' ? freezeMisc(m!) : freezeCosts(m!, stage);
     toLock.push({ id: `lock-${crypto.randomUUID()}`, unit_id: u.id, frozen });
   }
   // ON CONFLICT: a unit locked by someone else a moment ago counts as already locked.
@@ -227,11 +219,8 @@ export async function lockStage(env: Env, who: { userId: string; fullName: strin
   if (locked.length) {
     await auditMany(env, locked.map(id => ({ actorId: who.userId, actorLabel: who.fullName, action: 'owner_report.lock', entityTable: 'units', entityId: id, after: { month, stage } })));
   }
-  return { locked, already: [...already, ...toLock.map(r => r.unit_id).filter(id => !locked.includes(id))], notLockable, final, unknown };
+  return { locked, already: [...already, ...toLock.map(r => r.unit_id).filter(id => !locked.includes(id))], notLockable, final, notReady, unknown };
 }
-
-/** Locks `month`'s income for these units (lockStage). */
-export const lockIncome = (env: Env, who: { userId: string; fullName: string }, month: string, unitIds: string[]) => lockStage(env, who, month, 'income', unitIds);
 
 /** The adjustments these locks have posted, by lock id: whether each can still be changed (open or held, on no
  *  statement or on one that is still a draft, and not kept by an O2 lock) and whether a draft statement prints it. One
@@ -253,13 +242,14 @@ async function postedFor(env: Env, lockIds: string[]): Promise<Map<string, Poste
   return out;
 }
 
-/** Unlocks one step of one unit's month (a reason is required by the route). Brings the month back to today's data:
+/** Unlocks one category of one unit's month (no reason needed since 13 Nov 2026: "小锁我觉得unlock 不要reason"; the
+ *  history still records who and when, and a reason when one is given). Brings the month back to today's data:
  *  the late differences it posted that can still change are withdrawn; any already settled on a final statement (or
  *  kept by an O2 lock) stay, and the month carries the same amount back so the owner is not paid twice, dated on the
  *  first month from it whose O2 is open. Refused while the month itself is final. `regenerate`: the months whose draft
  *  printed a withdrawn difference (finalise refuses them until generated again). An O2 lock posted nothing: unlocking it
  *  lets the month's statement take today's owner adjustments again. */
-export async function unlockStage(env: Env, who: { userId: string; fullName: string }, month: string, stage: Stage, unitId: string, reason: string): Promise<{ ok: true; regenerate: string[] } | { problem: string; status: 404 | 409 }> {
+export async function unlockStage(env: Env, who: { userId: string; fullName: string }, month: string, stage: Stage, unitId: string, reason: string | null): Promise<{ ok: true; regenerate: string[] } | { problem: string; status: 404 | 409 }> {
   return transaction(env, async tx => {
     // After any late update already running: one that read this lock must not post for it once it is gone.
     await takeLateIncomeLock(tx);
@@ -298,14 +288,34 @@ export async function unlockStage(env: Env, who: { userId: string; fullName: str
     }
     await run(tx, 'DELETE FROM owner_report_locks WHERE id = ?', lock.id);
     await audit(tx, { actorId: who.userId, actorLabel: who.fullName, action: 'owner_report.unlock', entityTable: 'units', entityId: unitId,
-      after: { month, stage, reason, withdrawn: plan.remove.length, carried: plan.carried?.amount ?? 0, company } });
+      after: { month, stage, ...(reason ? { reason } : {}), withdrawn: plan.remove.length, carried: plan.carried?.amount ?? 0, company } });
     return { ok: true as const, regenerate: plan.regenerate };
   });
 }
 
-/** For every income and deductions lock in scope: its share of the difference between what the owner is due on the live
- *  figures and on the locked ones (income first, then deductions: stageLocks.ts splitLate), kept as one owner
- *  adjustment on the next open month (inserted, topped up or withdrawn); a month whose O2 is locked is not open. The
+/** Unlocks one category of `month` for these units, or every unit locked in it (`'all'`: Unlock all, one click: "我想要
+ *  也可以一键unlock"). Each unit is its own unlockStage (its own transaction). Listed apart: a unit that was not locked
+ *  (`notLocked`), and one refused with why (`refused`: its owner's statement is final, so the final comes first).
+ *  `regenerate`: the months whose drafts printed a difference these unlocks withdrew. */
+export async function unlockStages(env: Env, who: { userId: string; fullName: string }, month: string, stage: Stage, which: string[] | 'all', reason: string | null):
+  Promise<{ unlocked: string[]; notLocked: string[]; refused: { unitId: string; problem: string }[]; regenerate: string[] }> {
+  const unitIds = which === 'all'
+    ? (await all<{ unit_id: string }>(env, 'SELECT unit_id FROM owner_report_locks WHERE month = ? AND stage = ? ORDER BY unit_id', month, stage)).map(r => r.unit_id)
+    : which;
+  const out = { unlocked: [] as string[], notLocked: [] as string[], refused: [] as { unitId: string; problem: string }[], regenerate: new Set<string>() };
+  for (const unitId of unitIds) {
+    const r = await unlockStage(env, who, month, stage, unitId, reason);
+    if ('ok' in r) { out.unlocked.push(unitId); r.regenerate.forEach(m => out.regenerate.add(m)); }
+    else if (r.status === 404) out.notLocked.push(unitId);
+    else out.refused.push({ unitId, problem: r.problem });
+  }
+  return { unlocked: out.unlocked, notLocked: out.notLocked, refused: out.refused, regenerate: [...out.regenerate].sort() };
+}
+
+/** For every Revenue, cost and misc lock in scope: its share of the difference between what the owner is due on the live
+ *  figures and on the locked ones (the locked categories turned live one at a time in LATE_STAGES order: stageLocks.ts
+ *  lateShares), kept as one owner adjustment on the next open month (inserted, topped up or withdrawn); a month whose
+ *  O2 is locked is not open. The
  *  company's share of the same difference (companyFigure, chew's choice A) is kept the same way in company_late_changes,
  *  on the same month; a row whose month has since been O2-locked or made final stays as it is. Safe to run as often as
  *  anything calls it (statement generation, Airbnb reconciliation, the 15-minute cron): the writes happen in one
@@ -318,42 +328,42 @@ export async function syncLate(env: Env, scope: { unitIds?: string[]; ownerIds?:
   const q = queryOf(env);
   if (!(await hasLocksTable(q))) return out;
   if ((scope.unitIds && !scope.unitIds.length) || (scope.ownerIds && !scope.ownerIds.length)) return out;
-  const locks = await all<{ id: string; month: string; unit_id: string; owner_id: string; stage: 'income' | 'deductions' }>(env, `
-    SELECT l.id, l.month, l.unit_id, l.stage, u.owner_id FROM owner_report_locks l JOIN units u ON u.id = l.unit_id WHERE l.stage IN ('income', 'deductions')
+  const locks = await all<{ id: string; month: string; unit_id: string; owner_id: string; stage: Stage }>(env, `
+    SELECT l.id, l.month, l.unit_id, l.stage, u.owner_id FROM owner_report_locks l JOIN units u ON u.id = l.unit_id
+    WHERE l.stage IN (SELECT jsonb_array_elements_text(?::text::jsonb))
     ${scope.unitIds ? 'AND l.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : scope.ownerIds ? 'AND u.owner_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))' : ''}
-    ORDER BY l.month, l.unit_id, l.stage`, ...(scope.unitIds ? [ids(scope.unitIds)] : scope.ownerIds ? [ids(scope.ownerIds)] : []));
+    ORDER BY l.month, l.unit_id, l.stage`, JSON.stringify(LATE_STAGES), ...(scope.unitIds ? [ids(scope.unitIds)] : scope.ownerIds ? [ids(scope.ownerIds)] : []));
   if (!locks.length) return out;
 
   // What each lock's difference is now, month by month (a few months at most: the ones still being closed).
   const settings = await statementSettings(q);
-  const due: { lockId: string; stage: 'income' | 'deductions'; ownerId: string; unitId: string; month: string; diff: number; companyDiff: number; target: string; held: boolean; text: string }[] = [];
+  const due: { lockId: string; stage: Stage; ownerId: string; unitId: string; month: string; diff: number; companyDiff: number; target: string; held: boolean; text: string }[] = [];
   for (const month of [...new Set(locks.map(l => l.month))]) {
     const mine = locks.filter(l => l.month === month);
     const unitIds = [...new Set(mine.map(l => l.unit_id))];
     const inputs = await withYearToDate(q, await loadInputs(q, `${month}-01`, monthEndExclusive(month), { unitIds }), month, settings);
-    const has = (unitId: string, stage: 'income' | 'deductions') => mine.some(l => l.unit_id === unitId && l.stage === stage);
     const statement = computeMonth(month, inputs, settings, 'dated');
-    const both = unitIds.some(id => has(id, 'income') && has(id, 'deductions'));
-    const incomeLive = both ? computeMonth(month, { ...inputs, frozen: undefined, deductions: withoutMisc(inputs.deductions) }, settings, 'dated') : [];
-    const live = computeMonth(month, { ...inputs, frozen: undefined, deductions: undefined }, settings, 'dated');
+    // One run per category locked on any of these units, each with one more category live, in LATE_STAGES order. A unit
+    // that has not locked a category is the same in the run before and after it, so its share there is 0.
+    const order = LATE_STAGES.filter(s => mine.some(l => l.stage === s));
+    const runs = order.map((_, k) => computeMonth(month, unfreeze(inputs, order.slice(0, k + 1)), settings, 'dated'));
     const closed = await closedMonthsFor(env, unitIds, month, 'o2');
     for (const unitId of unitIds) {
-      const s = statement.find(r => r.unitId === unitId), v = live.find(r => r.unitId === unitId), x = incomeLive.find(r => r.unitId === unitId);
-      const unit = inputs.units.find(u => u.id === unitId);
-      if (!s || !v || !unit) continue;
-      const locked = { income: has(unitId, 'income'), deductions: has(unitId, 'deductions') };
-      const split = splitLate({ statement: s.payoutBeforeAdjustments, incomeLive: x?.payoutBeforeAdjustments, live: v.payoutBeforeAdjustments }, locked);
+      const s = statement.find(r => r.unitId === unitId), unit = inputs.units.find(u => u.id === unitId);
+      const steps = runs.map(run => run.find(r => r.unitId === unitId));
+      if (!s || !unit || steps.some(x => !x)) continue;
+      const owner = lateShares(s.payoutBeforeAdjustments, steps.map(x => x!.payoutBeforeAdjustments));
       // The company's share, split the same way: what the change leaves the company after the owner's share.
       // A yearly guarantee's true-up top-up is left out, as the reports leave it out (companyFigure).
       const yearly = s.terms.model === 'management_yearly_guarantee';
       const cf = (m: UnitMonth) => companyFigure({ ...m, yearlyGuarantee: yearly });
-      const companySplit = splitLate({ statement: cf(s), incomeLive: x ? cf(x) : undefined, live: cf(v) }, locked);
+      const company = lateShares(cf(s), steps.map(x => cf(x!)));
       const target = openMonthAfter(month, closed.get(unitId) ?? new Set());
       const held = termsFor(unitForMonth(unit, month), settings.defaultFeePct).model === 'management_yearly_guarantee';
       for (const l of mine.filter(k => k.unit_id === unitId)) {
+        const k = order.indexOf(l.stage);
         due.push({ lockId: l.id, stage: l.stage, ownerId: l.owner_id, unitId, month, target, held,
-          diff: (l.stage === 'income' ? split.income : split.deductions) ?? 0,
-          companyDiff: (l.stage === 'income' ? companySplit.income : companySplit.deductions) ?? 0,
+          diff: owner[k] ?? 0, companyDiff: company[k] ?? 0,
           text: lateText(l.stage, `${unit.property_name} ${unit.unit_number}`, monthLabel(month)) });
       }
     }
@@ -396,7 +406,7 @@ export async function syncLate(env: Env, scope: { unitIds?: string[]; ownerIds?:
             description: d.text, occurred_on: `${plan.month}-01`, reference: `stage-lock:${d.lockId}`, state: d.held ? 'held' : 'open' });
         } else if (plan.kind === 'update') updates.push({ id: plan.id, amount: plan.amount, kind: plan.amount >= 0 ? 'credit' : 'charge' });
         else removes.push(plan.id);
-        audits.push({ actorId: null, actorLabel: d.stage === 'income' ? 'Late income update' : 'Late deductions update', action: `owner_report.late_${d.stage}.${plan.kind}`,
+        audits.push({ actorId: null, actorLabel: `Late ${stageName(d.stage)} update`, action: `owner_report.late_${d.stage}.${plan.kind}`,
           entityTable: 'units', entityId: d.unitId, after: { month: d.month, lockId: d.lockId, diff: d.diff, plan }, source: 'system' });
       }
       if (!company) continue;

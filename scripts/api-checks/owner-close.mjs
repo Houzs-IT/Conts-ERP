@@ -8,7 +8,7 @@
 //     statements are generated; a stay across October and November sends only its October part there;
 //   - a November draft that printed the difference is not finalised once the difference changed or was withdrawn,
 //     until it is generated again;
-//   - unlock needs a reason, withdraws an open difference, names the draft to generate again, and with November final
+//   - unlock needs no reason (13 Nov 2026), withdraws an open difference, names the draft to generate again, and with November final
 //     balances October instead; a final October cannot be unlocked, and a unit whose October is final cannot be locked;
 //   - unlock waits for a late-income update that is running (Postgres only);
 //   - a master-lease unit is not on the income step; a long-term let keeps its locked rent when the tenancy dates
@@ -29,16 +29,45 @@ const OCT = '2026-10', NOV = '2026-11';
 const now = new Date().toISOString();
 const near = (a, b) => Math.abs(Number(a) - Number(b)) <= 1;
 
-let r = await call('GET', `/api/owner-close?month=${OCT}`);
-check('the month reads (migration 0302)', r.status === 200 && Array.isArray(r.json?.units), r.text.slice(0, 300));
+let r = await call('GET', `/api/owner-close/summary?month=${OCT}`);
+check('the month reads (migrations 0302, 0323)', r.status === 200 && !!r.json?.counts?.income, r.text.slice(0, 300));
 if (r.status !== 200) done();
 
-// Two units of different owners whose October and November statements are not final (a draft is fine: generating
-// rebuilds it; the airbnb-recon check before this one in CI finalises one owner's October): no contract, or a
-// management one with no minimum, so the owner's share is a plain percentage.
+// The check's own two owners, each with a unit on a management contract with no minimum (the owner's share is a plain
+// percentage, and the Unit report lists units with a contract). A local rerun starts from a clean slate.
+const OWNERS = ['oc-owner-a', 'oc-owner-b'], OPROP = 'oc-prop';
+const dropOwn = async () => {
+  const ofOwners = `SELECT id FROM units WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`;
+  await db(`DELETE FROM company_late_changes WHERE unit_id IN (${ofOwners})`);
+  await db(`UPDATE owner_adjustments SET statement_id = NULL WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  await db(`DELETE FROM statement_lines WHERE statement_id IN (SELECT id FROM owner_statements WHERE owner_id IN ('oc-owner-a', 'oc-owner-b'))`);
+  await db(`DELETE FROM statement_units WHERE statement_id IN (SELECT id FROM owner_statements WHERE owner_id IN ('oc-owner-a', 'oc-owner-b'))`);
+  await db(`DELETE FROM payouts WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  await db(`DELETE FROM owner_statements WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  await db(`DELETE FROM owner_adjustments WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  for (const table of ['owner_report_locks', 'expenses', 'reservations']) await db(`DELETE FROM ${table} WHERE unit_id IN (${ofOwners})`);
+  await db(`UPDATE units SET contract_id = NULL WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  await db(`DELETE FROM owner_contracts WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  await db(`DELETE FROM units WHERE owner_id IN ('oc-owner-a', 'oc-owner-b')`);
+  await db(`DELETE FROM properties WHERE id = $1`, OPROP);
+  await db(`DELETE FROM owners WHERE id IN ('oc-owner-a', 'oc-owner-b')`);
+};
+await dropOwn();
+{
+  const fee0 = Number(Object.fromEntries((await db(`SELECT key, value FROM settings WHERE key IN ('locale.managementFeePct', 'finance.default_fee_pct')`)).map(s => [s.key, s.value]))['locale.managementFeePct'] ?? 25);
+  await db(`INSERT INTO properties (id, name, address_line, city, state, created_at, updated_at) VALUES ($1, 'Close Court', 'Check', 'Check', 'Check', $2, $2)`, OPROP, now);
+  for (const [k, owner] of OWNERS.entries()) {
+    const unit = `oc-u${'ab'[k]}`;
+    await db(`INSERT INTO owners (id, display_name, email, created_at, updated_at) VALUES ($1, $2, $3, $4, $4)`, owner, `Close Owner ${'AB'[k]}`, `${owner}@example.invalid`, now);
+    await db(`INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, misc_charges, created_at, updated_at) VALUES ($1, $2, $3, $4, 0, 0, $5, $5)`, unit, OPROP, owner, `O-0${k + 1}`, now);
+    await db(`INSERT INTO owner_contracts (id, owner_id, unit_id, management_fee_pct, starts_on, ends_on, created_at, model, revenue_model, grr_amount, minimum_guarantee, misc_charges)
+      VALUES ($1, $2, $3, $4, '2020-01-01', NULL, $5, 'management', 'management', 0, 0, 0)`, `oc-c${'ab'[k]}`, owner, unit, fee0, now);
+    await db('UPDATE units SET contract_id = $1 WHERE id = $2', `oc-c${'ab'[k]}`, unit);
+  }
+}
 const open = await db(`SELECT u.id, u.owner_id, u.contract_id, u.split_kind, u.split_value, c.management_fee_pct AS fee FROM units u
   LEFT JOIN owner_contracts c ON c.id = u.contract_id
-  WHERE u.parent_unit_id IS NULL AND (c.id IS NULL OR (coalesce(c.revenue_model, c.model) = 'management' AND coalesce(c.minimum_guarantee, 0) = 0))
+  WHERE u.owner_id IN ('oc-owner-a', 'oc-owner-b') AND c.id IS NOT NULL AND coalesce(c.revenue_model, c.model) = 'management' AND coalesce(c.minimum_guarantee, 0) = 0
     AND NOT EXISTS (SELECT 1 FROM owner_statements s WHERE s.owner_id = u.owner_id AND substr(s.period_start, 1, 7) IN ('2026-10', '2026-11')
                       AND s.state IN ('finalised', 'sent', 'paid'))
   ORDER BY u.id`);
@@ -57,7 +86,7 @@ const windowsOf = async unitId => {
 let u = null, win = null;
 for (const c of open) { const w = await windowsOf(c.id); if (w) { u = c; win = w; break; } }
 const lt = open.find(x => x.owner_id !== u?.owner_id);
-check('two units of different owners, October and November open, one with free nights', !!u && !!lt, `${open.length} units`);
+check("the check's two units of different owners, October and November open, one with free nights", !!u && !!lt, `${open.length} units`);
 if (!u || !lt) done();
 
 // The owner's share as termsFor reads it for these units.
@@ -77,34 +106,34 @@ await db(`INSERT INTO reservations (id, unit_id, channel, external_ref, state, c
   A, B, u.id, day(win.a), day(win.a + 2), day(win.b.s), day(win.b.e), now);
 const bNights = win.b.e - win.b.s, bOctNights = 32 - win.b.s;
 
-const income = async (month, unitId) => (await call('GET', `/api/owner-close?month=${month}`)).json?.units?.find(x => x.unitId === unitId)?.income?.amount;
+const report = async (month, role) => (await call('GET', `/api/portfolio/owner-report?month=${month}`, undefined, role)).json;
+const summary = async (month, role) => (await call('GET', `/api/owner-close/summary?month=${month}`, undefined, role)).json;
+const income = async (month, unitId) => (await report(month))?.rows?.find(x => x.unitId === unitId)?.revenue;
 const lateOf = unitId => db(`SELECT id, amount, occurred_on, state, reference, description FROM owner_adjustments WHERE unit_id = $1 AND source = 'stage_lock' ORDER BY created_at, id`, unitId);
 const generate = (month, ownerId) => call('POST', '/api/statements/generate', { period: month, ownerIds: [ownerId] });
 const lock = (unitId, month = OCT, stage = 'income', role) => call('POST', '/api/owner-close/lock', { month, stage, unitIds: [unitId] }, role);
-const unlock = (unitId, reason, role) => call('POST', '/api/owner-close/unlock', { month: OCT, stage: 'income', unitId, reason }, role);
+const unlock = (unitId, reason, role) => call('POST', '/api/owner-close/unlock', { month: OCT, stage: 'income', unitIds: [unitId], ...(reason === undefined ? {} : { reason }) }, role);
 
 // Locking.
-r = await call('GET', `/api/owner-close?month=${OCT}`);
-const row = r.json.units.find(x => x.unitId === u.id);
-check('the unit is listed, not locked yet', !!row && row.locks?.income === null && r.json.may?.lockIncome === true, JSON.stringify(row));
-const oct0 = row?.income?.amount;
+const row = (await report(OCT))?.rows?.find(x => x.unitId === u.id);
+check('the unit is listed, not locked yet', !!row && !row.locks?.income && (await summary(OCT))?.may?.lock?.income === true, JSON.stringify(row));
+const oct0 = row?.revenue;
 r = await lock(u.id);
 check('locking October income locks the ticked unit', r.status === 201 && r.json?.locked?.length === 1 && r.json.locked[0] === u.id, r.text);
 r = await lock(u.id);
 check('locking it again changes nothing', r.status === 200 && !r.json?.locked?.length && r.json?.already?.includes(u.id), r.text);
-r = await call('GET', `/api/owner-close?month=${OCT}`);
-check('the page shows who locked it', !!r.json.units.find(x => x.unitId === u.id)?.locks?.income?.by && r.json.counts.income.locked >= 1, JSON.stringify(r.json.counts));
+const locked = (await report(OCT))?.rows?.find(x => x.unitId === u.id)?.locks?.income;
+check('the report shows who locked it', !!locked?.by && !!locked?.at && ((await summary(OCT))?.counts?.income?.locked ?? 0) >= 1, JSON.stringify(locked));
 r = await lock(u.id, '2026-09');
 check('September cannot be locked', r.status === 422 && r.json?.error?.message === 'Locks start from October 2026.', r.text);
 r = await lock(u.id, OCT, 'gp');
-check('an unknown step cannot be locked', r.status === 422 && r.json?.error?.message === 'Say which step to lock: income, deductions or O2.', r.text);
+check('an unknown category cannot be locked', r.status === 422 && r.json?.error?.message === 'Say which category to lock: income, cleaning, utilities, additional, misc or o2.', r.text);
 // The month running now (Malaysia time) would freeze half its reservations (review finding 3).
 const thisMonth = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7);
 const running = `${new Date(`${thisMonth}-01T00:00:00Z`).toLocaleString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })} has not ended yet.`;
 r = await lock(u.id, thisMonth);
 check('a month that has not ended cannot be locked', r.status === 422 && r.json?.error?.message === running, r.text);
-r = await call('GET', `/api/owner-close?month=${thisMonth}`);
-check('… and its page says so', r.json?.lockProblem === running, JSON.stringify(r.json?.lockProblem));
+check('… and the summary says so', (await summary(thisMonth))?.lockProblem === running, JSON.stringify((await summary(thisMonth))?.lockProblem));
 
 // A changed booking: the locked income stays, the difference lands on November once.
 await db(`UPDATE reservations SET gross_booking_value = gross_booking_value + 10000, collected_revenue = collected_revenue + 10000 WHERE id = $1`, A);
@@ -144,10 +173,10 @@ check('generated again, it is no longer out of date', r.status === 200 && r.json
 await backToDraft();
 
 // Unlocking.
-r = await unlock(u.id, '');
-check('unlocking needs a reason', r.status === 422 && r.json?.error?.message === 'Say why you are unlocking.', r.text);
+r = await unlock(u.id, 'x'.repeat(501));
+check('a reason over 500 characters is refused', r.status === 422 && r.json?.error?.message === 'Keep the reason under 500 characters.', r.text);
 r = await unlock(u.id, 'Correct the booking');
-check('unlocking with a reason works', r.status === 200, r.text);
+check('unlocking works', r.status === 200 && (r.json?.unlocked ?? []).includes(u.id), r.text);
 check('… and names the November draft to generate again', JSON.stringify(r.json?.regenerate) === JSON.stringify([NOV]), r.text);
 check('unlocking withdraws the open difference', (await lateOf(u.id)).length === 0, JSON.stringify(await lateOf(u.id)));
 r = await finalise();
@@ -187,8 +216,8 @@ check('a final month cannot be unlocked', r.status === 409 && r.json?.error?.mes
 await db(`DELETE FROM owner_report_locks WHERE unit_id = $1`, u.id);
 r = await lock(u.id);
 check('a unit whose October statement is final is not locked', r.status === 200 && !r.json?.locked?.length && !!r.json?.final?.includes(u.id), r.text);
-r = await call('GET', `/api/owner-close?month=${OCT}`);
-check('… and the page shows its statement is final', r.json?.units?.find(x => x.unitId === u.id)?.statementFinal === true, JSON.stringify(r.json?.units?.find(x => x.unitId === u.id)));
+const fin = (await report(OCT))?.owners?.[u.owner_id];
+check('… and the report shows its statement is final', fin?.state === 'final', JSON.stringify(fin));
 await db(`UPDATE owner_statements SET state = 'provisional', finalised_at = NULL WHERE owner_id = $1 AND period_start IN ('2026-10-01', '2026-11-01')`, u.owner_id);
 
 // Unlock waits for a late-income update that is running, then withdraws what it wrote (review finding 2). Postgres
@@ -225,8 +254,8 @@ await db(`INSERT INTO owner_contracts (id, owner_id, unit_id, management_fee_pct
 await db(`UPDATE units SET contract_id = $1 WHERE id = $2`, LTC, lt.id);
 await db(`INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
   VALUES ('oc-check-ml', $1, $2, 'credit', 1000, 'Check credit', '2026-10-15', NULL, 'open', 'manual', NULL, $3, $3) ON CONFLICT (id) DO NOTHING`, lt.owner_id, lt.id, now);
-r = await call('GET', `/api/owner-close?month=${OCT}`);
-check('a master-lease unit is not on the income step', r.status === 200 && !(r.json.units.find(x => x.unitId === lt.id)?.steps ?? []).includes('income'), JSON.stringify(r.json?.units?.find(x => x.unitId === lt.id)));
+const ml = (await report(OCT))?.rows?.find(x => x.unitId === lt.id);
+check('a master-lease unit is not on the income step', !!ml && !(ml.steps ?? []).includes('income') && (ml.steps ?? []).includes('o2'), JSON.stringify(ml));
 r = await lock(lt.id);
 check('… and is not locked', r.status === 200 && !r.json?.locked?.length && !!r.json?.notLockable?.includes(lt.id), r.text);
 await db(`DELETE FROM owner_adjustments WHERE id = 'oc-check-ml'`);
@@ -249,6 +278,9 @@ r = await lock(u.id, OCT, 'income', 'finance_admin');
 check('a finance admin without Lock income is refused', r.status === 403, r.text);
 r = await unlock(u.id, 'No power', 'finance_admin');
 check('a finance admin without Unlock a step is refused', r.status === 403, r.text);
-r = await call('GET', `/api/owner-close?month=${OCT}`, undefined, 'finance_admin');
-check('the page is closed to a finance admin until management opens it', r.status === 403, r.text);
+const fa = await summary(OCT, 'finance_admin');
+check('a finance admin reads the summary but may lock and unlock nothing until management opens it',
+  fa?.may?.lock?.income === false && fa?.may?.lock?.misc === false && fa?.may?.unlock === false, JSON.stringify(fa?.may));
+// Remove everything the check made.
+await dropOwn();
 done();

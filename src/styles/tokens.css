@@ -97,6 +97,13 @@ body { margin: 0; }
   --color-gold-ink: #87612A;
   --color-gold-soft: #F3ECDF;
   --color-gold-tint: #F9F6EF;
+
+  /* A locked amount on the Unit report (chew, 13 Nov 2026: "lock 了 background colour 可以是青色"): the teal fill, its
+     edge, the lock icon and the text on the fill. Redefined for the dark theme in theme-dark.css. */
+  --color-lock-bg: #DDF1EF;
+  --color-lock-line: #B9DFDA;
+  --color-lock: #1F8A8A;
+  --color-lock-ink: #0B4F4A;
   /* The active tab's underline on TabBar and the sub-tabs: gold (Conts DS v2; was indigo from Oct 2026). */
   --color-tab: #C8A46A;
   /* The shared bar chart (BarTrend: Dashboard, Analytics, Reviews): soft tan bars (gold at 75% on the card) and the

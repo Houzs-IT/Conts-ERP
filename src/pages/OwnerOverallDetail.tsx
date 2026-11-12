@@ -7,18 +7,18 @@ import { CloseButton } from '../components/CloseButton';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { overallTotals, occupancyLabel, GROUP_NAME, OWNER_BASE_NAME, type OverallFigures, type ReportGroup } from '../lib/ownerOverall';
+import type { Stage } from '../lib/lockStages';
 
 /** The overall owner report's unit drawer: L1 breakdown, L2 full detail. Every figure comes from
  *  ownerOverall.ts; this file only lays them out. */
 
 export type Level = 1 | 2;
-/** An owner statement close step (functions/_lib/stageLocks.ts Stage). */
-export type Stage = 'income' | 'deductions' | 'o2';
 export interface ReportRow extends OverallFigures {
   unitId: string; ownerId?: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null;
   lateItems?: { label: string; amount: number }[];
-  /** The month's steps that list the unit, and the ones locked (owner statement close part 3). */
-  steps?: Stage[]; locked?: Stage[];
+  /** The categories that list the unit, who locked each and when, its Airbnb reservations still to confirm (Revenue
+   *  waits for them) and what is in each amount (Unit report locks). */
+  steps?: Stage[]; locks?: Partial<Record<Stage, { by: string; at: string }>>; toConfirm?: number; hints?: Partial<Record<Stage, string>>;
 }
 
 export const LEVELS: { key: `${Level}`; label: string }[] = [

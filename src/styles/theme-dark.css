@@ -27,6 +27,11 @@
   --color-gold-ink: #E0C48F;
   --color-gold-soft: #3A3122;
   --color-gold-tint: #2A251C;
+  /* A locked amount on the Unit report: a dark teal fill, a lighter icon and text that reads on it. */
+  --color-lock-bg: #16302E;
+  --color-lock-line: #24504B;
+  --color-lock: #5FC4BC;
+  --color-lock-ink: #BFEAE5;
   --color-tab: #D4B37C;
   --color-primary: #5FB59A;
   --color-primary-hover: #79C7AE;

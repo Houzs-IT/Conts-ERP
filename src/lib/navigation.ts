@@ -99,7 +99,9 @@ export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix:
     label: FINANCE_PREFIX, workspace, phone: false,
     items: FINANCE_LAYOUT.map(([part, entries]): NavItem => ({
       key: `finance_${part.toLowerCase().replace(/\s+/g, '_')}${keySuffix}`, label: part, icon: FINANCE_PART_ICON[part] ?? 'folder',
-      children: entries.map(e => (e.startsWith('desk:') ? desk[e.slice(5)] : ledger.get(e))).filter((i): i is NavItem => !!i)
+      // Rental's Airbnb reconciliation is a Unit report tab (chew, 13 Nov 2026), so its Finance menu leaves it out.
+      children: entries.filter(e => !(workspace === 'rental' && e === 'desk:airbnbRecon'))
+        .map(e => (e.startsWith('desk:') ? desk[e.slice(5)] : ledger.get(e))).filter((i): i is NavItem => !!i)
         .map(i => ({ key: i.key, label: i.label, path: i.path!, area: i.area, badge: i.badge, icon: i.icon })),
     })),
   }];
@@ -150,6 +152,9 @@ export const NAV: NavGroup[] = [
     // Overall unit report, Yearly unit report and YGRR report entries under Reports.
     { key: 'unitReport', label: 'Unit report', icon: 'file-spreadsheet', tabs: true, children: [
       { key: 'unitReportMonthly', label: 'Monthly', path: '/portfolio/owner-report', area: 'portfolio', full: true },
+      // Airbnb's payments are confirmed here before the month's Revenue is locked, so it sits beside Monthly (chew,
+      // 13 Nov 2026: take it out of Finance and put it under the Unit report). It keeps its address and permission area.
+      { key: 'unitReportAirbnb', label: 'Airbnb reconciliation', path: '/finance/airbnb-reconciliation', area: 'airbnbRecon', phone: false },
       { key: 'yearlyReport', label: 'Yearly', path: '/reports/yearly', area: 'reports', phone: false },
       { key: 'ygrrReport', label: 'YGRR', path: '/reports/ygrr', area: 'reports', phone: false },
     ] },
@@ -170,8 +175,6 @@ export const NAV: NavGroup[] = [
       { key: 'ownerStatements', label: 'Owner statements', path: '/owners/statements', area: 'finance', badge: 'statements', phone: false },
       { key: 'ownerPayouts', label: 'Owner payouts', path: '/owners/payouts', area: 'finance', phone: false },
       { key: 'contracts', label: 'Contracts', path: '/owners/contracts', area: 'contracts' },
-      // Each month's owner statements locked in steps, unit by unit (chew, 11 Nov 2026). Its own area, closed until management opens it.
-      { key: 'ownerClose', label: 'Statement close', path: '/owners/close', area: 'ownerClose' },
       // The workbook's misc deductions sheet: additional deductions and O2 by month (owner, 4 Nov 2026).
       { key: 'deductions', label: 'Deductions', path: '/properties/deductions', area: 'deductions' },
       // Owner B folded into Owners (owner, 12 Nov 2026): the company showcase and portal access. It keeps Owner B's
