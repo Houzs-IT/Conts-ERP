@@ -90,8 +90,13 @@ for (const stage of ['income', 'deductions', 'o2']) {
   check(`${stage} locked for the second unit`, r.status < 300 && r.json?.locked?.includes(U2), r.text);
 }
 await generate(OCT);
+// Owner statement close, step 4 (GP and final): how many of the month's owners are final.
+const finalCount = async () => (await call('GET', `/api/owner-close?month=${OCT}`)).json?.final;
+const before = await finalCount();
 r = await finalise(OCT);
 check('finalise passes once every step is locked', r.status === 200 && r.json?.finalised === 1, r.text);
+const after = await finalCount();
+check('the close page counts owners final', before?.total >= 1 && after?.total === before?.total && after?.final === before?.final + 1, JSON.stringify({ before, after }));
 check('… and the statement is final', (await statementOf(OCT))?.state === 'finalised');
 
 // ── A month before the locks keeps today's Make final ──
