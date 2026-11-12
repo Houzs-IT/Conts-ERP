@@ -28,6 +28,7 @@ import { requestAiTag } from '../services/aiUsage';
 import { lineDepartment, resolveFloatId } from './petty-cash';
 import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, receiptView, staffNames, type FloatRow, type ReceiptRow } from './petty-cash-store';
 import type { Staff } from './staff-identity';
+import { bankDetailsOf } from './petty-cash-routes';
 import { buildLines, defaultLineSubs } from './claims-lines';
 import { myRequestRoutes } from './payment-request-routes';
 import { utilityBillRoutes } from './utility-bill-routes';
@@ -65,6 +66,14 @@ export const meHandler = async (c: Ctx): Promise<Response> => {
   return c.json({ userId: s.userId, name: s.name, field: s.field, lineDepartment: lineDepartment(s.side), route: floatId ? 'float' : 'finance', keepsFloat: !!kept });
 };
 
+/** GET /my-bank — the signed-in person's saved bank details (finance's record first, else HR's), to prefill a Direct Claim
+ *  to Me. Read only: a claim keeps the details given on it and never changes the saved ones. */
+export const myBankHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  return c.json({ bank: await bankDetailsOf(c.get('supabase'), co.companyId, staffOf(c).userId) });
+};
+
 export const extractHandler = async (c: Ctx): Promise<Response> => {
   const key = (c.env as { ANTHROPIC_API_KEY?: string } | undefined)?.ANTHROPIC_API_KEY;
   if (!key) return c.json({ error: 'anthropic_key_missing', message: 'Reading receipts is not set up yet. Type the amount.' }, 503);
@@ -94,6 +103,17 @@ export const extractHandler = async (c: Ctx): Promise<Response> => {
   return c.json({ ...read, dueDate: x.dueDate && DATE.test(x.dueDate) ? x.dueDate : null, summary: x.summary ?? null, documentKind: x.documentKind, supplier });
 };
 
+/** The bank given on a Direct Claim to Me (chew, 12 Nov 2026): the bank, the account number (digits only, 5 to 30) and the
+ *  name on the account. Null when any is missing or wrong. */
+export function claimBank(x: unknown): { bankName: string; accountNo: string; accountName: string } | null {
+  const v = (x ?? {}) as Record<string, unknown>;
+  const bankName = String(v.bankName ?? '').trim();
+  const accountNo = String(v.accountNo ?? '').replace(/[\s-]/g, '');
+  const accountName = String(v.accountName ?? '').trim();
+  if (!bankName || bankName.length > 60 || !/^\d{5,30}$/.test(accountNo) || !accountName || accountName.length > 100) return null;
+  return { bankName, accountNo, accountName };
+}
+
 export const handInHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
@@ -107,6 +127,11 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
   if (!(Number.isInteger(amountSen) && amountSen > 0)) return c.json({ error: 'validation', message: 'Enter the amount on the receipt.' }, 422);
   const spendDate = DATE.test(String(b.spendDate ?? '')) ? String(b.spendDate) : todayMyt();
   if (spendDate > todayMyt()) return c.json({ error: 'validation', message: 'The receipt date cannot be in the future.' }, 422);
+  /* Direct Claim to Me (chew, 12 Nov 2026): finance pays it back by transfer, to the bank given on the claim, and no float
+     is touched. The saved bank records (HR's and finance's own) are only read, for the form's prefill (GET /my-bank). */
+  const direct = b.payBack === 'finance';
+  const bank = direct ? claimBank(b.bank) : null;
+  if (direct && !bank) return c.json({ error: 'validation', message: 'Enter the bank the money goes to: the bank, the account number (digits only) and the name on the account.' }, 422);
   /* The caller may name the receipt's id (a uuid): sent again after a lost reply, the same receipt comes back instead
      of a second one being made. */
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -135,7 +160,8 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
     if (!claimed) return c.json({ error: 'not_rejected', message: 'Only a rejected receipt can be replaced.' }, 409);
   }
   const unclaim = async () => { if (replaces) await sb.from('staff_receipts').update({ status: 'REJECTED' }).eq('id', replaces.id).eq('status', 'REPLACED'); };
-  const floatId = replaces ? replaces.float_id : await myFloatId(sb, co.companyId, staff);
+  // A replacement keeps the old receipt's float, unless finance is now asked to pay it back.
+  const floatId = direct ? null : replaces ? replaces.float_id : await myFloatId(sb, co.companyId, staff);
   /* SOP 1.1: each line starts on the float's department's sub-department (a job's on Maintenance), else the person's. */
   await defaultLineSubs(sb, co.companyId, built.lines, { staffDepartmentId: staff.departmentId, floatId });
   const source = c.get('claimsSource') === 'forward' ? (staff.field ? 'field_app' : 'property_os') : 'engine';
@@ -159,6 +185,7 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
       id, company_id: co.companyId, receipt_no: no, submitter_user_id: staff.userId, float_id: floatId, spend_date: spendDate,
       amount_sen: amountSen, vendor_name: b.vendorName ? String(b.vendorName).slice(0, 200) : null, note: b.note ? String(b.note).slice(0, 500) : null,
       status: 'HANDED_IN', replaces_id: replaces?.id ?? null, source,
+      ...(bank ? { payee_bank_name: bank.bankName, payee_account_no: bank.accountNo, payee_account_name: bank.accountName } : {}),
     }).select('id, receipt_no').single(),
   );
   if (error || !row) return fail(error?.message ?? 'insert returned nothing');
@@ -313,6 +340,7 @@ export function myClaimsRouter(source: 'session' | 'forward') {
   const r = new Hono<{ Variables: Record<string, unknown> }>();
   r.use('*', async (c, next) => { c.set('claimsSource', source); await next(); });
   r.get('/me', meHandler);
+  r.get('/my-bank', myBankHandler);
   r.post('/extract', extractHandler);
   r.post('/receipts', handInHandler);
   r.get('/receipts', myReceiptsHandler);

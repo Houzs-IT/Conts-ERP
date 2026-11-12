@@ -25,7 +25,7 @@ const PNG = { name: 'r.png', mime: 'image/png', dataBase64: btoa('png-bytes') };
 const world = () => publicTablesOnly(fakeSb({
   petty_cash_floats: [{ id: 'F1', company_id: CO, department_id: 'maint', keeper_user_id: 'u-keeper', float_sen: 100000, warn_pct: 20, active: true, topup_requested_at: null }],
   petty_cash_overrides: [], petty_cash_events: [{ id: 'E1', float_id: 'F1', kind: 'PAID_IN', amount_sen: 100000, event_date: '2026-11-01' }],
-  staff_receipts: [], staff_receipt_lines: [], staff_receipt_files: [],
+  staff_receipts: [], staff_receipt_lines: [], staff_receipt_files: [], staff_bank_details: [], conts_employee_bank: [],
   payment_requests: [], payment_request_lines: [], payment_request_files: [], payment_vouchers: [], payment_voucher_lines: [],
   conts_maintenance_jobs: [
     { id: 'M1', unit_id: 'UNIT-A01', title: 'Tap', assignee_user_id: 'u-tech', state: 'in_progress' },
@@ -38,7 +38,7 @@ const world = () => publicTablesOnly(fakeSb({
   projects: [{ id: 7, company_id: CO, name: 'SHOWROOM', funding: 'internal', limit_pct_bp: null, budget_sen: 10_000 }],
   project_limit_requests: [], acc_company_settings: [{ company_id: CO, project_limit_pct_bp: 7000 }],
   accounts: ['601-0001', '906-0000'].map(code => ({ company_id: CO, account_code: code, account_name: code, account_type: 'EXPENSE', is_active: true, acc_money: false, parent_code: null, special_type: null, everyday_expense: false })),
-}), ['conts_maintenance_jobs', 'conts_units', 'conts_staff', 'projects']);
+}), ['conts_maintenance_jobs', 'conts_units', 'conts_staff', 'projects', 'conts_employee_bank']);
 
 const bucket = () => { const m = new Map<string, ArrayBuffer>(); return { m, put: async (k: string, v: ArrayBuffer) => { m.set(k, v); }, get: async (k: string) => (m.has(k) ? { body: m.get(k) } : null) }; };
 const appFor = (sb: ReturnType<typeof world>, staff: Staff, source: 'session' | 'forward' = 'forward') => {
@@ -115,6 +115,46 @@ describe('replacing a rejected receipt', () => {
     expect(sb.tables.staff_receipts.map(r => [r.status, r.float_id])).toEqual([['REPLACED', 'F1'], ['HANDED_IN', 'F1']]);
     const mine = await (await get(appFor(sb, KEEPER), '/float?month=2026-10')).json() as any;
     expect(mine.float.balanceSen).toBe(95500);
+  });
+});
+
+describe('Direct Claim to Me (chew, 12 Nov 2026): finance pays it back, to the bank given on the claim', () => {
+  const BANK = { bankName: 'Maybank', accountNo: '1234567890', accountName: 'AH WAI' };
+  test('D1: a claim finance pays back is on no float and keeps the bank given on it', async () => {
+    const sb = world();
+    expect(await (await handIn(appFor(sb, TECH), { payBack: 'finance', bank: BANK })).json()).toMatchObject({ route: 'finance' });
+    expect(sb.tables.staff_receipts[0]).toMatchObject({ float_id: null, payee_bank_name: 'Maybank', payee_account_no: '1234567890', payee_account_name: 'AH WAI' });
+  });
+  test('D2: with no bank, an account number with letters, or no bank or name, it is refused', async () => {
+    const a = appFor(world(), TECH);
+    expect((await handIn(a, { payBack: 'finance' })).status).toBe(422);
+    expect((await handIn(a, { payBack: 'finance', bank: { ...BANK, accountNo: '12AB5678' } })).status).toBe(422);
+    expect((await handIn(a, { payBack: 'finance', bank: { ...BANK, accountNo: '1234' } })).status).toBe(422);
+    expect((await handIn(a, { payBack: 'finance', bank: { ...BANK, bankName: '' } })).status).toBe(422);
+    expect((await handIn(a, { payBack: 'finance', bank: { ...BANK, accountName: ' ' } })).status).toBe(422);
+  });
+  test('D3: without payBack the float pays, as before, and no bank is kept on the claim', async () => {
+    const sb = world();
+    expect(await (await handIn(appFor(sb, TECH), { bank: BANK })).json()).toMatchObject({ route: 'float' });
+    expect(sb.tables.staff_receipts[0].float_id).toBe('F1');
+    expect(sb.tables.staff_receipts[0].payee_account_no ?? null).toBeNull();
+  });
+  test("D4: my bank shows the saved details (finance's first, else HR) and writes nothing", async () => {
+    const sb = world();
+    sb.tables.conts_employee_bank.push({ user_id: 'u-tech', bank_name: 'CIMB Bank', bank_account: '5550001111' });
+    expect(await (await get(appFor(sb, TECH), '/my-bank')).json()).toMatchObject({ bank: { bankName: 'CIMB Bank', accountNo: '5550001111' } });
+    sb.tables.staff_bank_details.push({ company_id: CO, user_id: 'u-tech', bank_name: 'Maybank', account_no: '1234567890', account_name: 'AH WAI' });
+    expect(await (await get(appFor(sb, TECH), '/my-bank')).json()).toMatchObject({ bank: { bankName: 'Maybank', accountNo: '1234567890', accountName: 'AH WAI' } });
+    expect(await (await get(appFor(sb, OPS), '/my-bank')).json()).toEqual({ bank: null });
+    expect(sb.tables.staff_bank_details).toHaveLength(1);
+    expect(sb.tables.conts_employee_bank).toHaveLength(1);
+  });
+  test('a replacement for a rejected direct claim stays with finance and takes the new bank', async () => {
+    const sb = world();
+    const first = await (await handIn(appFor(sb, TECH), { payBack: 'finance', bank: BANK })).json() as { id: string };
+    sb.tables.staff_receipts[0].status = 'REJECTED';
+    expect((await handIn(appFor(sb, TECH), { replacesId: first.id, payBack: 'finance', bank: { ...BANK, accountNo: '999888777' } })).status).toBe(201);
+    expect(sb.tables.staff_receipts[1]).toMatchObject({ float_id: null, payee_account_no: '999888777' });
   });
 });
 
