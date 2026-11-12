@@ -6,6 +6,9 @@ import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
+import { MoneyLines, type MoneyLine } from '../../components/MoneyLines';
+import { KeyFacts } from '../../components/KeyFacts';
+import { PhoneCard } from '../../components/ListToolbar';
 import { Select } from '../../components/Select';
 import { StatTile, StatRow } from '../../components/Metric';
 import { useToast } from '../../components/Toast';
@@ -14,7 +17,7 @@ import { useApi } from '../../lib/useApi';
 import { api, notifyFailure } from '../../lib/api';
 import { mayRun } from '../../lib/areaAccess';
 import { useSession } from '../../lib/session';
-import { rm, todayMyt } from '../../lib/format';
+import { rm, todayMyt, date } from '../../lib/format';
 import { downloadTable, type ExportColumn, type ExportCell } from '../../lib/export';
 import type { PayrollPayload, PayrollLine } from '../../../functions/api/payroll/index';
 import type { PayFigures } from '../../../functions/_lib/payrollCalc';
@@ -171,7 +174,7 @@ export default function PayrollTab() {
 
   const columns = useMemo<Column<PayrollLine>[]>(() => [
     { key: 'name', label: 'Employee', value: l => l.employee.name, hideable: false, width: 190,
-      render: l => <span className="flex flex-col"><span className="font-semibold whitespace-nowrap">{l.employee.name}</span><span className="text-meta text-muted-ink">{l.employee.employeeId ?? '-'} · {department(l)}{l.employee.resignedAt ? ` · left ${l.employee.resignedAt}` : ''}</span></span> },
+      render: l => <span className="flex flex-col"><span className="font-semibold whitespace-nowrap">{l.employee.name}</span><span className="text-meta text-muted-ink">{l.employee.employeeId ?? '-'} · {department(l)}{l.employee.resignedAt ? ` · left ${date(l.employee.resignedAt)}` : ''}</span></span> },
     money('basic', 'Basic', f => f.basicSalarySen),
     { key: 'days', label: 'Days', value: l => figuresOf(l)?.daysWorked ?? null, width: 80, align: 'center', title: 'Days worked of the working days in the month.',
       render: l => { const f = figuresOf(l); return f ? <span className="tabular-nums">{f.daysWorked}/{f.workingDays}</span> : ''; } },
@@ -224,7 +227,7 @@ export default function PayrollTab() {
             <div className="pt-5 pb-4 px-5 flex flex-col gap-3 [border-bottom:1px_solid_var(--color-line-soft)]">
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <span className="flex flex-col gap-0.5">
-                  <span className="text-[16px] font-semibold tracking-[-0.01em]">Payroll Processing - {monthName(period)}</span>
+                  <span className="text-heading font-bold tracking-[-0.005em]">Payroll Processing - {monthName(period)}</span>
                   {figures.length > 0 && <span className="text-meta text-muted-ink">{figures.length} active {figures.length === 1 ? 'worker' : 'workers'} · total salary {rm(sum(f => f.basicSalarySen))} · total pay {rm(sum(totalPay))}</span>}
                 </span>
                 <span className="flex items-center gap-2 flex-wrap">
@@ -239,7 +242,7 @@ export default function PayrollTab() {
                     <Button size="sm" variant="primary" icon={<Icon name="Check" size="sm" />} disabled={busy || !data.ended || unslipped.length > 0}
                       title={unslipped.length ? 'Some people on payroll have no payslip. Regenerate first.' : data.ended ? undefined : 'A month can be approved once it has ended.'} onClick={() => void approveAll()}>Approve All</Button>
                   )}
-                  {data && figures.length > 0 && <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => exportCsv(data)}>Export CSV</Button>}
+                  {data && figures.length > 0 && <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => exportCsv(data)} title="Every figure for the accountant, as CSV.">Export</Button>}
                   {figures.length > 0 && <Button size="sm" variant="tertiary" icon={<Icon name="Printer" size="sm" />} onClick={() => window.print()}>Print Report</Button>}
                 </span>
               </div>
@@ -268,10 +271,9 @@ export default function PayrollTab() {
           renderCard={l => {
             const f = figuresOf(l);
             return (
-              <span className="flex flex-col gap-[3px]">
-                <span className="flex items-center gap-2 flex-wrap"><span className="text-copy font-semibold">{l.employee.name}</span><StatusBadge entity="payslip" value={statusOf(l)} size="sm" /></span>
-                {f && <span className="text-meta text-muted-ink tabular-nums">Gross {rm(f.grossSen)} · Net {rm(f.netSen)} · Total pay {rm(totalPay(f))}</span>}
-              </span>
+              <PhoneCard title={l.employee.name} right={f ? rm(f.netSen) : undefined}
+                meta={f ? `Gross ${rm(f.grossSen)} · Total pay ${rm(totalPay(f))}` : `${l.employee.employeeId ?? '-'} · ${department(l)}`}
+                badge={<StatusBadge entity="payslip" value={statusOf(l)} size="sm" />} />
             );
           }}
         />
@@ -299,50 +301,56 @@ function SlipModal({ line, month, full, onClose, onChange }: { line: PayrollLine
     } catch (e) { notifyFailure(e); }
     finally { setBusy(false); }
   }
-  const row = (k: string, v: ReactNode, strong = false) => (
-    <span className={`flex justify-between gap-3 py-1 text-copy ${strong ? 'font-semibold' : ''}`}><span className={strong ? '' : 'text-muted-ink'}>{k}</span><span className="tabular-nums">{v}</span></span>
-  );
+  const earnings: MoneyLine[] = [
+    { label: line.employee.payBasis === 'daily' ? `Days worked ${f.daysWorked} x ${rm(f.dayRateSen)}` : 'Basic salary', sen: line.employee.payBasis === 'daily' ? f.daysWorked * f.dayRateSen : f.basicSalarySen },
+    ...(f.absentDays > 0 ? [{ label: `Absent ${f.absentDays} d`, sen: f.absenceDeductionSen, kind: 'neg' as const }] : []),
+    ...(f.lateShortHours > 0 ? [{ label: `Late / short ${f.lateShortHours} h`, sen: f.lateShortSen, kind: 'neg' as const }] : []),
+    ...(f.otHours > 0 ? [{ label: `Overtime ${f.otHours} h`, sen: f.otSen }] : []),
+    ...(f.sundayHours > 0 ? [{ label: `Sunday ${f.sundayHours} h`, sen: f.sundaySen }] : []),
+    ...(f.holidayHours > 0 ? [{ label: `Public holiday ${f.holidayHours} h`, sen: f.holidaySen }] : []),
+    ...(f.allowanceSen > 0 ? [{ label: 'Leader allowance', sen: f.allowanceSen }] : []),
+    { label: 'Gross', sen: f.grossSen, kind: 'sub' },
+  ];
+  const deductions: MoneyLine[] = [
+    { label: 'EPF', sen: f.epfEmployeeSen, kind: 'neg' },
+    { label: 'SOCSO', sen: f.socsoEmployeeSen, kind: 'neg' },
+    { label: 'EIS', sen: f.eisEmployeeSen, kind: 'neg' },
+    // PCB with no figure worked out is named under the breakdown (the warning line), not drawn as RM 0.00.
+    ...(pcbHasFigure(f.pcbStatus) ? [{ label: 'PCB', sen: f.pcbSen, kind: 'neg' as const }] : []),
+    ...(f.advanceSen > 0 ? [{ label: 'Advance', sen: f.advanceSen, kind: 'neg' as const }] : []),
+    ...(f.penaltySen > 0 ? [{ label: 'Penalty', sen: f.penaltySen, kind: 'neg' as const }] : []),
+    { label: 'Total', sen: f.totalDeductionsSen + f.advanceSen + f.penaltySen, kind: 'sub' },
+  ];
   return (
-    <Modal title={`${line.employee.name} · ${monthName(month.period)}`} sub={slip ? `Payslip ${slip.status}` : 'Not run yet: what the month comes to now'} onClose={onClose} width={560}
+    <Modal title={`${line.employee.name} · ${monthName(month.period)}`} eyebrow="Payslip" size="md" sub={slip ? `Payslip ${slip.status}` : 'Not run yet: what the month comes to now'} onClose={onClose}
       footer={<>
         <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={() => void downloadPdf(line, month)}>PDF</Button>
         {full && slip?.status === 'approved' && <Button size="sm" variant="secondary" disabled={busy} onClick={() => void move('reopen')}>Reopen</Button>}
         {full && slip?.status === 'draft' && <Button size="sm" variant="primary" disabled={busy || !month.ended} title={month.ended ? undefined : 'Once the month has ended.'} onClick={() => void move('approve')}>Approve</Button>}
         {full && slip?.status === 'approved' && <Button size="sm" variant="primary" disabled={busy} onClick={() => void move('pay')}>Mark paid</Button>}
       </>}>
+      <KeyFacts items={[['Working days', String(f.workingDays)], ['Worked', String(f.daysWorked)], ['Paid leave', String(f.paidLeaveDays)], ['Absent', String(f.absentDays)]]} />
       <div className="grid gap-x-6 gap-y-4 grid-cols-1 sm:grid-cols-2">
-        <div className="flex flex-col">
-          <span className="text-meta font-semibold text-muted-ink pb-1">EARNINGS</span>
-          {row(line.employee.payBasis === 'daily' ? `Days worked ${f.daysWorked} x ${rm(f.dayRateSen)}` : 'Basic salary', rm(line.employee.payBasis === 'daily' ? f.daysWorked * f.dayRateSen : f.basicSalarySen))}
-          {f.absentDays > 0 && row(`Absent ${f.absentDays} d`, rm(-f.absenceDeductionSen))}
-          {f.lateShortHours > 0 && row(`Late / short ${f.lateShortHours} h`, rm(-f.lateShortSen))}
-          {f.otHours > 0 && row(`Overtime ${f.otHours} h`, rm(f.otSen))}
-          {f.sundayHours > 0 && row(`Sunday ${f.sundayHours} h`, rm(f.sundaySen))}
-          {f.holidayHours > 0 && row(`Public holiday ${f.holidayHours} h`, rm(f.holidaySen))}
-          {f.allowanceSen > 0 && row('Leader allowance', rm(f.allowanceSen))}
-          {row('Gross', rm(f.grossSen), true)}
-        </div>
-        <div className="flex flex-col">
-          <span className="text-meta font-semibold text-muted-ink pb-1">DEDUCTIONS</span>
-          {row('EPF', rm(f.epfEmployeeSen))}
-          {row('SOCSO', rm(f.socsoEmployeeSen))}
-          {row('EIS', rm(f.eisEmployeeSen))}
-          {row('PCB', <span title={f.pcbNote}>{pcbCell(f)}</span>)}
-          {f.advanceSen > 0 && row('Advance', rm(f.advanceSen))}
-          {f.penaltySen > 0 && row('Penalty', rm(f.penaltySen))}
-          {row('Total', rm(f.totalDeductionsSen + f.advanceSen + f.penaltySen), true)}
-        </div>
+        <section className="flex flex-col gap-1">
+          <span className="text-caption font-semibold uppercase tracking-[0.12em] text-muted-ink">Earnings</span>
+          <MoneyLines lines={earnings} />
+        </section>
+        <section className="flex flex-col gap-1">
+          <span className="text-caption font-semibold uppercase tracking-[0.12em] text-muted-ink">Deductions</span>
+          <MoneyLines lines={deductions} />
+          {!pcbHasFigure(f.pcbStatus) && <span className="text-meta text-muted-ink">PCB: {pcbCell(f)}</span>}
+        </section>
       </div>
-      <div className="mt-4 px-4 py-3 rounded-control bg-page flex justify-between text-[18px] font-bold"><span>Net pay</span><span className={`tabular-nums ${f.netSen < 0 ? 'text-danger' : ''}`}>{rm(f.netSen)}</span></div>
+      <MoneyLines lines={[{ label: 'Net pay', sen: f.netSen, kind: 'total' }]} className={f.netSen < 0 ? '[&_.is-total>span:last-child]:text-danger' : undefined} />
       {line.employee.resignedAt && line.employee.payBasis === 'monthly' && (
-        <p className="m-0 mt-3 text-meta text-ink">
-          <span className="font-semibold">Resigned · last working day {line.employee.resignedAt}.</span> Every working day after it, to the end of the month, counts as absent.
+        <p className="m-0 text-meta text-ink">
+          <span className="font-semibold">Resigned · last working day {date(line.employee.resignedAt)}.</span> Every working day after it, to the end of the month, counts as absent.
         </p>
       )}
-      <p className="m-0 mt-3 text-meta text-muted-ink">
-        Working days {f.workingDays} · worked {f.daysWorked} · paid leave {f.paidLeaveDays} · absent {f.absentDays}. Employer pays EPF {rm(f.epfEmployerSen)}, SOCSO {rm(f.socsoEmployerSen)}, EIS {rm(f.eisEmployerSen)}.
+      <p className="m-0 text-meta text-muted-ink">
+        Employer pays EPF {rm(f.epfEmployerSen)}, SOCSO {rm(f.socsoEmployerSen)}, EIS {rm(f.eisEmployerSen)}.
       </p>
-      {!pcbHasFigure(f.pcbStatus) && f.pcbStatus !== 'DISABLED' && <p className="m-0 mt-2 text-meta text-warning">{f.pcbNote}</p>}
+      {!pcbHasFigure(f.pcbStatus) && f.pcbStatus !== 'DISABLED' && <p className="m-0 text-meta text-warning">{f.pcbNote}</p>}
     </Modal>
   );
 }

@@ -1,6 +1,6 @@
 import { mayWork } from '../lib/areaAccess';
 import { readDevice } from '../lib/deviceClass';
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { StatusBadge } from '../components/StatusBadge';
@@ -13,10 +13,11 @@ import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import { Field } from '../components/Field';
-import { DateField, TimeField, NumberInput, MoneyInput, PhoneInput } from '../components/inputs';
-import { Select } from '../components/Select';
+import { DateField, TimeField, MoneyInput, PhoneInput, StayRange } from '../components/inputs';
 import { StatTile, StatRow, Segmented } from '../components/Metric';
-import { FilterMenu } from '../components/FilterBar';
+import { ToolbarSearch, ToolbarDateButton, rangeDate, PhoneCard } from '../components/ListToolbar';
+import { ChoiceChips } from '../components/ChoiceChips';
+import { Stepper } from '../components/Stepper';
 import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import { fetchAllPages } from '../lib/export';
@@ -204,7 +205,6 @@ export default function BookingsPage() {
       p.delete('page');
     });
   }
-  function setParam(k: string, v: string) { updateParams(p => { if (v) p.set(k, v); else p.delete(k); p.delete('page'); }); }
 
   async function createReservation(input: CreateInput): Promise<Record<string, string> | undefined> {
     const unit = UNITS.find(u => u.id === input.unitId);
@@ -302,6 +302,13 @@ export default function BookingsPage() {
   }
 
   const moneyTodo = !!TODOS.find(t => t.key === todo)?.money;
+  // Each filter choice with how many reservations it would show under everything else on screen (the server's facets).
+  const facetCount = (k: 'ch' | 'building' | 'country', v: string) => (data?.facets ? data.facets[k]?.find(x => x.value === v)?.count ?? 0 : null);
+  const countryPicked = (params.get('country') ?? '').split(',').filter(Boolean);
+  const countryOptions = [
+    ...(data?.facets?.country ?? []).map(f => ({ value: f.value, label: f.label ?? (f.value === 'none' ? 'Not known' : countryName(f.value.toUpperCase()) ?? f.value), count: f.count })),
+    ...countryPicked.filter(a => !data?.facets?.country?.some(f => f.value === a)).map(a => ({ value: a, label: a === 'none' ? 'Not known' : countryName(a.toUpperCase()) ?? a, count: 0 })),
+  ];
   const columns = useMemo<Column<Row>[]>(() => [
     { key: 'reference', label: 'Reference', type: 'ref', value: r => r.externalRef, sortKey: 'reference', width: 150, hideable: false,
       filter: { kind: 'text', param: 'ref' },
@@ -318,9 +325,10 @@ export default function BookingsPage() {
       sub: b => [stayWho(b).missing ? 'No guest name' : null, b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, countryOf(b)].filter(Boolean).join(' · ') || null },
     { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, sortKey: 'unit', width: 140,
       filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => b.propertyName },
-    { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150, filter: false },
+    { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150,
+      filter: { kind: 'select', param: 'building', multi: false, options: (data?.buildings ?? []).map(b => ({ value: b.id, label: b.name, count: facetCount('building', b.id) })) } },
     { key: 'channel', label: 'Channel', type: 'channel', value: r => r.channel, sortKey: 'channel', hidden: true, width: 130,
-      filter: { kind: 'select', param: 'ch', multi: false, options: CHANNEL_CHOICES.map(c => ({ value: c, label: CHANNEL_META[c].label })) } },
+      filter: { kind: 'select', param: 'ch', multi: false, options: CHANNEL_CHOICES.map(c => ({ value: c, label: CHANNEL_META[c].label, count: facetCount('ch', c) })) } },
     { key: 'stay', label: 'Check-in to checkout', type: 'date', value: r => r.checkIn, sortKey: 'stay', width: 200,
       filter: { kind: 'date', params: ['from', 'to'], hint: 'Reservations that touch these dates' },
       render: b => <span className="whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span>, sub: b => fmtNights(b.nights),
@@ -331,7 +339,8 @@ export default function BookingsPage() {
       filter: { kind: 'number', params: ['nightsMin', 'nightsMax'], hint: 'Reservations of this many nights' } },
     { key: 'guests', label: 'Guests', type: 'number', value: r => r.guestsCount, hidden: true, sortKey: 'guests', filter: false, width: 80 },
     { key: 'phone', label: 'Phone', type: 'phone', value: r => r.guestPhone, hidden: true, filter: false, width: 140 },
-    { key: 'country', label: 'Country', value: r => countryOf(r), hidden: true, sortKey: 'country', filter: false, width: 130 },
+    { key: 'country', label: 'Country', value: r => countryOf(r), hidden: true, sortKey: 'country', width: 130,
+      filter: { kind: 'select', param: 'country', multi: true, options: countryOptions } },
     { key: 'gross', label: 'Guest total', type: 'money', value: r => (r.grossBookingValue > 0 ? r.grossBookingValue : null), sortKey: 'gross', width: 120,
       title: 'What the guest paid: accommodation, fees and the taxes we collect. Tax a channel keeps is not included.',
       filter: { kind: 'number', params: ['grossMin', 'grossMax'] },
@@ -362,7 +371,7 @@ export default function BookingsPage() {
           <Icon name="MessageSquare" size="sm" />
         </button>
       ) },
-  ], [moneyTodo]);
+  ], [moneyTodo, data?.facets, data?.buildings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const viewMeta = VIEWS.find(v => v.key === view)!;
   const todoMeta = todo ? TODOS.find(t => t.key === todo)! : null;
@@ -421,30 +430,20 @@ export default function BookingsPage() {
           <div className="flex items-center gap-2 flex-wrap py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)]">
             <Segmented<ViewKey> label="Reservation views" value={todo ? '' : view} onChange={setView}
               options={VIEWS.map(v => ({ key: v.key, label: v.label, count: counts?.[v.key] }))} />
-            <div className="flex items-center gap-2 flex-wrap ml-auto max-md:ml-0 max-md:w-full">
-              <ChannelFilter value={params.get('ch') ?? ''} onChange={v => setParam('ch', v)} counts={data?.facets?.ch} />
-              <Select label="Building" value={params.get('building') ?? ''} onChange={v => setParam('building', v)} className="w-[170px] max-md:w-full max-md:order-last"
-                options={[{ value: '', label: 'All buildings' }, ...(data?.buildings ?? []).map(b => ({ value: b.id, label: b.name }))]} />
-              <CountryFilter value={params.get('country') ?? ''} onChange={v => setParam('country', v)} facets={data?.facets?.country} />
-              {(params.get('cancelledFrom') || params.get('cancelledTo')) && (
-                <Button size="sm" variant="secondary" icon={<Icon name="X" size="sm" />} aria-label={`Remove filter: ${cancelledLabel(params.get('cancelledFrom') ?? '', params.get('cancelledTo') ?? '')}`}
-                  onClick={() => updateParams(p => { p.delete('cancelledFrom'); p.delete('cancelledTo'); p.delete('page'); })}>
-                  {cancelledLabel(params.get('cancelledFrom') ?? '', params.get('cancelledTo') ?? '')}
-                </Button>
-              )}
-              <DateFilter from={params.get('from') ?? ''} to={params.get('to') ?? ''}
-                onChange={(f, t) => updateParams(p => { if (f) p.set('from', f); else p.delete('from'); if (t) p.set('to', t); else p.delete('to'); p.delete('page'); })} />
-            </div>
           </div>
         }
         toolbar={<>
-          <label className="relative flex-[1_1_260px] min-w-[200px] max-w-[420px]">
-            <span className="absolute left-[11px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="Search" size="sm" /></span>
-            <input value={draft} onChange={e => setSearch(e.target.value)} placeholder="Guest, phone, reference, unit or building"
-              aria-label="Search reservations"
-              className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink font-sans text-copy pl-[33px] pr-3 py-0 outline-none" />
-          </label>
-          {(searching || todo) && <Button variant="tertiary" size="sm" icon={<Icon name="X" size="sm" />} onClick={clearAll}>Clear filters</Button>}
+          <ToolbarSearch debounce={false} value={draft} onChange={setSearch} placeholder="Guest, phone, reference, unit or building" label="Search reservations" />
+          <ToolbarDateButton date={rangeDate({ label: 'Reservations that touch these dates', from: params.get('from') ?? '', to: params.get('to') ?? '',
+            onChange: (f, t) => updateParams(p => { if (f) p.set('from', f); else p.delete('from'); if (t) p.set('to', t); else p.delete('to'); p.delete('page'); }) })} />
+          {(params.get('cancelledFrom') || params.get('cancelledTo')) && (
+            <button type="button" aria-label={`Remove filter: ${cancelledLabel(params.get('cancelledFrom') ?? '', params.get('cancelledTo') ?? '')}`}
+              onClick={() => updateParams(p => { p.delete('cancelledFrom'); p.delete('cancelledTo'); p.delete('page'); })}
+              className="inline-flex items-center gap-1 h-9 pl-3 pr-2 rounded-control border border-solid border-primary bg-primary-soft text-[var(--color-primary-ink)] font-sans text-copy font-medium cursor-pointer whitespace-nowrap">
+              {cancelledLabel(params.get('cancelledFrom') ?? '', params.get('cancelledTo') ?? '')}<Icon name="X" size="sm" />
+            </button>
+          )}
+          {(searching || todo) && <Button variant="tertiary" size="sm" icon={<Icon name="X" size="sm" />} onClick={clearAll}>Clear all</Button>}
         </>}
         above={totals && (
           <dl className="m-0 flex items-center gap-x-5 gap-y-1 flex-wrap text-meta min-h-[20px] py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
@@ -459,23 +458,17 @@ export default function BookingsPage() {
             {todo === 'payout' && canMoney && <span className="text-muted-ink">Tick the reservations the channel has paid out, then mark them received.</span>}
           </dl>
         )}
-        renderCard={b => (
-          <span className="flex gap-3 items-start">
-            <ChannelMark ch={b.channel} size={22} />
-            <span className="flex flex-col gap-[3px] min-w-0 flex-1">
-              <span className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 min-w-0"><span className={cx('text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis', stayWho(b).missing && 'text-muted-ink')}>{stayWho(b).name}</span><SampleMark kind={b.sample} /></span>
-                <span className="text-copy font-medium [font-variant-numeric:tabular-nums] whitespace-nowrap">{b.grossBookingValue > 0 ? rm(b.grossBookingValue) : '—'}</span>
-              </span>
-              <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.externalRef ?? (stayWho(b).missing ? 'No guest name, no reference' : 'No reference')} · {b.unitNumber} · {b.propertyName}</span>
-              <span className="flex items-center justify-between gap-2 pt-[2px]">
-                <span className="text-meta min-w-0 flex flex-col leading-tight"><span className="whitespace-nowrap">{dateRange(b.checkIn, b.checkOut)}</span><span className="text-muted-ink">{fmtNights(b.nights)}</span></span>
-                <StatusBadge entity="stay" value={stayPhase(b)} size="sm" />
-              </span>
-              {todoMeta?.money && b.outstanding > 0 && <span className="text-meta text-warning">{rm(b.outstanding)} owed</span>}
-            </span>
-          </span>
-        )}
+        renderCard={b => {
+          const w = stayWho(b);
+          const owed = todoMeta?.money && b.outstanding > 0 ? `${rm(b.outstanding)} owed` : null;
+          return (
+            <PhoneCard lead={<ChannelMark ch={b.channel} size={18} />} titleMuted={w.missing}
+              title={<span className="inline-flex items-center gap-1.5 max-w-full"><span className="min-w-0 overflow-hidden text-ellipsis">{w.name}</span><SampleMark kind={b.sample} /></span>}
+              right={b.grossBookingValue > 0 ? rm(b.grossBookingValue) : '—'}
+              meta={[owed, b.unitNumber, b.propertyName, dateRange(b.checkIn, b.checkOut), fmtNights(b.nights)].filter(Boolean).join(' · ')}
+              badge={<StatusBadge entity="stay" value={stayPhase(b)} size="sm" />} />
+          );
+        }}
       />
 
       {addingSample && <DemoReservationModal onClose={() => setAddingSample(false)} onSaved={newId => { setAddingSample(false); reload(); setOpenId(newId); }} />}
@@ -505,108 +498,9 @@ function Total({ label, value, title }: { label: string; value: string; title?: 
 /* Filters                                                             */
 /* ------------------------------------------------------------------ */
 
-function Popover({ label, active, children, width = 240 }: { label: ReactNode; active: boolean; children: (close: () => void) => ReactNode; width?: number }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onDoc); document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
-  }, [open]);
-  return (
-    <div ref={ref} className="relative max-md:flex-1">
-      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
-        className={cx('h-9 w-full inline-flex items-center gap-2 pl-3 pr-2 rounded-control border border-solid bg-card [font-family:inherit] text-copy cursor-pointer whitespace-nowrap',
-          active ? 'border-ink text-ink font-medium' : 'border-line text-ink')}>
-        {label}<Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" style={{ marginLeft: 'auto' }} />
-      </button>
-      {open && (
-        <div style={{ width }} className="absolute z-[30] right-0 max-md:left-0 max-md:right-auto top-full mt-1 max-w-[calc(100vw-32px)] p-1 bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)]">
-          {children(() => setOpen(false))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ChannelFilter({ value, onChange, counts }: { value: string; onChange: (v: string) => void; counts?: { value: string; count: number }[] }) {
-  const n = (c: string) => (c ? counts?.find(x => x.value === c)?.count ?? (counts ? 0 : null) : null);
-  const cur = value ? CHANNEL_META[value as BookingChannel] : null;
-  return (
-    <Popover active={!!cur} width={210} label={cur ? <span className="inline-flex items-center gap-2"><ChannelMark ch={value as BookingChannel} size={16} />{cur.label}</span> : 'All channels'}>
-      {close => (
-        <div role="menu" aria-label="Channel">
-          {(['', ...CHANNEL_CHOICES] as const).map(c => (
-            <button key={c || 'all'} type="button" role="menuitemradio" aria-checked={value === c} onClick={() => { onChange(c); close(); }}
-              className={cx('w-full flex items-center gap-2 px-[10px] py-2 rounded-[8px] border-none [font-family:inherit] text-copy text-left cursor-pointer hover:bg-muted', value === c ? 'bg-muted font-semibold' : 'bg-transparent')}>
-              {c ? <ChannelMark ch={c} size={18} /> : <span className="w-[18px]" />}
-              <span className="flex-1">{c ? CHANNEL_META[c].label : 'All channels'}</span>
-              {n(c) != null && <span className="text-meta text-muted-ink tabular-nums">{countLabel(n(c)!)}</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </Popover>
-  );
-}
-
-/** Where guests are from, as the data has it, each with how many reservations it would show under the rest of the
- *  screen's filters. Several can be ticked; "Not known" is a guest with neither a nationality nor a readable phone. */
-function CountryFilter({ value, onChange, facets }: { value: string; onChange: (v: string) => void; facets?: { value: string; count: number; label?: string }[] }) {
-  const active = value ? value.split(',') : [];
-  const items = [...(facets ?? []).map(f => ({ key: f.value, label: f.label ?? f.value, count: f.count })),
-    ...active.filter(a => !facets?.some(f => f.value === a)).map(a => ({ key: a, label: a === 'none' ? 'Not known' : countryName(a.toUpperCase()) ?? a, count: 0 }))];
-  return (
-    <FilterMenu label="Country" items={items} active={active}
-      onToggle={k => onChange((active.includes(k) ? active.filter(a => a !== k) : [...active, k]).join(','))}
-      onClear={() => onChange('')} />
-  );
-}
-
-const shift = (iso: string, days: number) => new Date(Date.parse(iso) + days * 864e5).toISOString().slice(0, 10);
-const monthStart = (iso: string, add = 0) => { const d = new Date(Date.parse(iso.slice(0, 7) + '-01T00:00:00Z')); d.setUTCMonth(d.getUTCMonth() + add); return d.toISOString().slice(0, 10); };
-
 /** The chip of a "Cancelled this month" style filter: when the reservations were cancelled. */
 const cancelledLabel = (from: string, to: string) =>
   `Cancelled ${from && to ? dateRange(from, to) : from ? `from ${date(from)}` : `until ${date(to)}`}`;
-
-function DateFilter({ from, to, onChange }: { from: string; to: string; onChange: (from: string, to: string) => void }) {
-  const today = todayMyt();
-  const presets: { label: string; from: string; to: string }[] = [
-    { label: 'Today', from: today, to: today },
-    { label: 'Next 7 days', from: today, to: shift(today, 6) },
-    { label: 'This month', from: monthStart(today), to: shift(monthStart(today, 1), -1) },
-    { label: 'Last month', from: monthStart(today, -1), to: shift(monthStart(today), -1) },
-  ];
-  const [f, setF] = useState(from), [t, setT] = useState(to);
-  useEffect(() => { setF(from); setT(to); }, [from, to]);
-  const label = from || to ? (from && to ? (from === to ? dateRange(from, shift(from, 1)).split(' –')[0] : dateRange(from, to)) : from ? `From ${date(from)}` : `Until ${date(to)}`) : 'Any dates';
-  return (
-    <Popover active={!!(from || to)} width={280} label={label}>
-      {close => (
-        <div className="p-2 flex flex-col gap-2">
-          <span className="text-caption text-muted-ink px-1">Reservations that touch these dates</span>
-          <div className="grid grid-cols-2 gap-1">
-            {presets.map(p => (
-              <button key={p.label} type="button" onClick={() => { onChange(p.from, p.to); close(); }}
-                className={cx('h-8 rounded-control border border-solid [font-family:inherit] text-meta cursor-pointer', from === p.from && to === p.to ? 'bg-black text-white border-black' : 'bg-card border-line text-ink hover:bg-muted')}>{p.label}</button>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <DateField label="From" value={f} onChange={setF} />
-            <DateField label="To" value={t} min={f || undefined} onChange={setT} />
-          </div>
-          <div className="flex justify-between gap-2">
-            <Button size="sm" variant="tertiary" onClick={() => { onChange('', ''); close(); }}>Any dates</Button>
-            <Button size="sm" variant="primary" onClick={() => { onChange(f, t); close(); }} disabled={!!(f && t && t < f)} disabledReason="The end is before the start.">Apply</Button>
-          </div>
-        </div>
-      )}
-    </Popover>
-  );
-}
 
 /* ------------------------------------------------------------------ */
 /* Bulk: mark booking-site payouts received                            */
@@ -636,7 +530,7 @@ function BulkPayoutModal({ rows: ticked, onClose, onDone }: { rows: Row[]; onClo
     setBusy(false);
   }
   return (
-    <CentreModal title="Mark host payouts received" sub={`Records one host payout per reservation for what it still has outstanding: ${plural(rows.length, 'reservation')}, ${rm(owed)} in all.${left ? ` ${plural(left, 'ticked reservation')} ${left === 1 ? 'is' : 'are'} left out: not from a channel, cancelled, or nothing owed.` : ''}`} onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal eyebrow="Reservations" title="Mark host payouts received" sub={`Records one host payout per reservation for what it still has outstanding: ${plural(rows.length, 'reservation')}, ${rm(owed)} in all.${left ? ` ${plural(left, 'ticked reservation')} ${left === 1 ? 'is' : 'are'} left out: not from a channel, cancelled, or nothing owed.` : ''}`} onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div className="max-h-[180px] overflow-y-auto border border-solid border-line rounded-control">
           {rows.map(r => (
@@ -773,19 +667,15 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
   }
 
   return (
-    <CentreModal title={owner ? 'Owner stay' : 'Create reservation'} sub="Checked against the unit's other reservations before it is saved, then blocked on the channels the unit is listed on." onClose={() => { if (!busy) onClose(); }} maxWidth={520}>
+    <CentreModal eyebrow="Reservations" title={owner ? 'Owner stay' : 'Create reservation'} sub="Checked against the unit's other reservations before it is saved, then blocked on the channels the unit is listed on." onClose={() => { if (!busy) onClose(); }} size="md">
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
-        <div role="radiogroup" aria-label="What is this" className="grid grid-cols-3 gap-1 p-1 rounded-control bg-muted">
-          {([['direct', 'Direct'], ['ota', 'From a channel'], ['owner_stay', 'Owner stay']] as const).map(([k, l]) => (
-            <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
-              className={cx('h-9 rounded-[8px] border-none [font-family:inherit] text-meta cursor-pointer', kind === k ? 'bg-card font-semibold text-ink shadow-sm' : 'bg-transparent text-muted-ink')}>{l}</button>
-          ))}
-        </div>
+        <ChoiceChips<Kind> label="What is this" value={kind} onChange={setKind}
+          options={[{ value: 'direct', label: 'Direct' }, { value: 'ota', label: 'From a channel' }, { value: 'owner_stay', label: 'Owner stay' }]} />
         <UnitPicker units={UNITS} value={unitId} onChange={setUnitId} />
         {kind === 'ota' && (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
-            <Select label="Channel" showLabel size="md" value={site} onChange={v => setSite(v as BookingChannel)}
-              options={(['airbnb', 'booking_com', 'agoda'] as const).map(c => ({ value: c, label: CHANNEL_META[c].label }))} />
+            <ChoiceChips<BookingChannel> label="Channel" value={site} onChange={setSite}
+              options={(['airbnb', 'booking_com', 'agoda'] as const).map(c => ({ value: c, label: CHANNEL_META[c].label, channel: c }))} />
             <Field label="Channel reference" placeholder="e.g. HMF4323EHS" value={ref} onChange={e => setRef(e.target.value)}
               help="Reservations normally arrive from the channel by themselves. Type one in only if it did not." />
           </div>
@@ -797,18 +687,15 @@ function CreateReservationModal({ units: UNITS, prefill, onClose, onCreate }: {
             <Field label="Email" type="email" placeholder="jane@example.com" value={email} onChange={e => setEmail(e.target.value)} />
           </div>
         )}
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-          <DateField label="Check-in" value={checkIn} min={todayMyt(-1)} onChange={setCheckIn} required error={fieldErrors.checkIn} />
-          <DateField label="Checkout" value={checkOut} min={checkIn || undefined} onChange={setCheckOut} required
-            error={checkIn && checkOut && nights < 1 ? 'Checkout must be after check-in.' : fieldErrors.checkOut} />
-        </div>
+        <StayRange label="Stay" from={checkIn} to={checkOut} min={todayMyt(-1)} required
+          onChange={(f, t) => { setCheckIn(f); setCheckOut(t); }}
+          error={checkIn && checkOut && nights < 1 ? 'Checkout must be after check-in.' : fieldErrors.checkIn || fieldErrors.checkOut} />
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <TimeField label="Check-in from" value={inTime} onChange={setInTime} help="Earlier for an early check-in." error={fieldErrors.checkInTime} />
           <TimeField label="Checkout by" value={outTime} onChange={setOutTime} help="Later for a late checkout." error={fieldErrors.checkOutTime} />
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-          <NumberInput label="Guests" min={1} max={16} value={guestsCount} onChange={setGuestsCount} required
-            error={fieldErrors.guestsCount} />
+          <Stepper label="Guests" min={1} max={16} value={guestsCount ?? 1} onChange={setGuestsCount} help={fieldErrors.guestsCount} />
           {!owner && (
             <MoneyInput label="Guest total for the stay (RM)" valueSen={rateSen} onChangeSen={setRateSen} error={fieldErrors.grossBookingValue}
               help={datesValid ? `${fmtNights(nights)} · ${dateRange(checkIn, checkOut)}` : 'What the guest pays for the whole stay.'} />
@@ -833,7 +720,7 @@ function ImportPreviewModal({ rows, onClose, onConfirm }: { rows: ParsedRow[]; o
   const ok = rows.filter(r => r.row).length;
   const bad = rows.length - ok;
   return (
-    <CentreModal title="Import reservations" sub="Review the rows before importing. Rejected rows are left out. Each reservation is blocked on the channels its unit is listed on." onClose={onClose} maxWidth={620}>
+    <CentreModal eyebrow="Reservations" title="Import reservations" sub="Review the rows before importing. Rejected rows are left out. Each reservation is blocked on the channels its unit is listed on." onClose={onClose} size="lg">
       <div className="px-[22px] pt-1 pb-3 flex items-center gap-2 flex-wrap flex-none">
         <span className="text-meta text-muted-ink">{plural(rows.length, 'row')} read</span>
         <StatusBadge tone="success" label={`${num(ok)} ready`} size="sm" />

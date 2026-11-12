@@ -36,7 +36,7 @@ export function FilterBar<K extends string>({ label, views, value, onChange, tag
 
 /** The Filter button and its menu. Each option carries its count; an option with nothing in it stays listed,
  *  greyed, so the menu does not change shape as the counts move. */
-export function FilterMenu({ items, active, onToggle, onClear, single, label = 'Filter' }: FilterTags & { label?: string }) {
+export function FilterMenu({ items, active, onToggle, onClear, single, label = 'Filters' }: FilterTags & { label?: string }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);

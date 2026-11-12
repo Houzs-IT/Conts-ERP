@@ -4,7 +4,8 @@ import Icon from './Icon';
 import { Floating } from './DataTableParts';
 import { cx } from '../lib/design-tokens';
 import { useMedia } from '../lib/useMedia';
-import { count as fmtCount } from '../lib/format';
+import { count as fmtCount, date as fmtDate, dateRange, dateShort, todayMyt } from '../lib/format';
+import { DateField } from './inputs';
 
 /**
  * The one compact toolbar above a list or a report (redesign phase 2, the prototype's toolbar): search, then a Filters
@@ -15,7 +16,7 @@ import { count as fmtCount } from '../lib/format';
  * It only arranges the controls: every value stays in the page (its URL or state), so a page keeps its behaviour.
  */
 
-export interface ToolbarOption { value: string; label: string; count?: number }
+export interface ToolbarOption { value: string; label: string; count?: number; /** A channel mark or icon before the label. */ icon?: ReactNode }
 
 export interface ToolbarFilter {
   key: string;
@@ -27,6 +28,10 @@ export interface ToolbarFilter {
   /** The "everything" choice, listed first. Its value is `all` (default ''); picking it removes the chip. */
   allLabel?: string;
   all?: string;
+  /** Several values at once: `value` holds them comma-separated, each its own chip. */
+  multi?: boolean;
+  /** The chip's prefix when it differs from the group title ("Hidden" for "Hide these statuses"). */
+  chipLabel?: string;
 }
 
 export interface ToolbarDate {
@@ -36,6 +41,8 @@ export interface ToolbarDate {
   presets: { value: string; label: string; sub?: string }[];
   /** The preset that counts as "not narrowed"; when set, any other preset also shows as a chip. */
   def?: string;
+  /** A custom From / To under the presets (inclusive dates). */
+  custom?: { from: string; to: string; onApply: (from: string, to: string) => void };
 }
 
 /** A chip the page builds itself (a range, a quick filter), removable on its own. */
@@ -69,16 +76,20 @@ export function ListToolbar({ search, leading, filters = [], panelExtra, chips: 
   const dateBtn = useRef<HTMLButtonElement>(null);
 
   const allOf = (f: ToolbarFilter) => f.all ?? '';
-  const onFilters = filters.filter(f => f.value !== allOf(f));
-  const nFilters = onFilters.length + extraChips.length;
+  const valuesOf = (f: ToolbarFilter) => (f.multi ? f.value.split(',').filter(Boolean) : f.value !== allOf(f) ? [f.value] : []);
+  const onFilters = filters.filter(f => valuesOf(f).length > 0);
+  const nFilters = onFilters.reduce((n, f) => n + valuesOf(f).length, 0) + extraChips.length;
   const datePreset = date ? date.presets.find(p => p.value === date.value) ?? date.presets[0] : null;
   const dateOn = !!date && date.def !== undefined && date.value !== date.def;
 
   const chips: ToolbarChip[] = [];
   if (search && search.value.trim()) chips.push({ key: '_search', label: `Search: ${search.value.trim()}`, onRemove: () => search.onChange('') });
   for (const f of onFilters) {
-    const o = f.options.find(x => x.value === f.value);
-    chips.push({ key: f.key, label: `${f.label}: ${o?.label ?? f.value}`, onRemove: () => f.onChange(allOf(f)) });
+    for (const v of valuesOf(f)) {
+      const o = f.options.find(x => x.value === v);
+      chips.push({ key: `${f.key}:${v}`, label: `${f.chipLabel ?? f.label}: ${o?.label ?? v}`,
+        onRemove: () => f.onChange(f.multi ? valuesOf(f).filter(x => x !== v).join(',') : allOf(f)) });
+    }
   }
   chips.push(...extraChips);
   if (date && dateOn && datePreset) chips.push({ key: '_date', label: `${date.label}: ${datePreset.label}`, onRemove: () => date.onChange(date.def!) });
@@ -145,12 +156,15 @@ export function ListToolbar({ search, leading, filters = [], panelExtra, chips: 
             <h5 className="m-0 mb-1.5 text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">{f.label}</h5>
             <div className="flex flex-wrap gap-1.5">
               {[...(f.allLabel ? [{ value: allOf(f), label: f.allLabel } as ToolbarOption] : []), ...f.options].map(o => {
-                const picked = f.value === o.value;
+                const vs = valuesOf(f);
+                const picked = f.multi ? (o.value === allOf(f) ? vs.length === 0 : vs.includes(o.value)) : f.value === o.value;
                 const empty = o.count === 0 && !picked;
+                const pick = () => f.onChange(!f.multi || o.value === allOf(f) ? o.value : (picked ? vs.filter(x => x !== o.value) : [...vs, o.value]).join(','));
                 return (
-                  <button key={o.value} type="button" aria-pressed={picked} disabled={empty} onClick={() => f.onChange(o.value)}
+                  <button key={o.value} type="button" aria-pressed={picked} disabled={empty} onClick={pick}
                     className={cx('inline-flex items-center gap-1.5 min-h-[30px] max-sm:min-h-10 max-w-full px-2.5 rounded-full border border-solid font-sans text-meta font-medium cursor-pointer',
                       picked ? 'bg-black border-black text-white' : empty ? 'bg-card border-line-soft text-faint cursor-not-allowed' : 'bg-card border-line text-ink hover:bg-muted')}>
+                    {o.icon}
                     <span className="truncate">{o.label}</span>
                     {o.count !== undefined && <span className={cx('tabular-nums', picked ? 'opacity-75' : 'text-muted-ink')}>{fmtCount(o.count)}</span>}
                   </button>
@@ -172,6 +186,7 @@ export function ListToolbar({ search, leading, filters = [], panelExtra, chips: 
               <span className="text-meta text-muted-ink font-normal">{p.sub ?? ''}</span>
             </button>
           ))}
+          {date.custom && <CustomRange {...date.custom} onDone={() => setPanel(null)} />}
         </Panel>
       )}
     </section>
@@ -193,7 +208,7 @@ export function TbButton({ icon, children, on, expanded, onClick, label, caret, 
   );
 }
 
-export function ToolbarSearch({ value, onChange, placeholder, label, debounce = true }: { value: string; onChange: (v: string) => void; placeholder: string; label?: string; debounce?: boolean }) {
+export function ToolbarSearch({ value, onChange, placeholder, label, debounce = true, className }: { value: string; onChange: (v: string) => void; placeholder: string; label?: string; debounce?: boolean; className?: string }) {
   const [text, setText] = useState(value);
   const last = useRef(value);
   useEffect(() => { if (value !== last.current) { setText(value); last.current = value; } }, [value]);
@@ -203,7 +218,7 @@ export function ToolbarSearch({ value, onChange, placeholder, label, debounce = 
     return () => clearTimeout(t);
   }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <label className="relative flex items-center flex-[1_1_220px] min-w-[180px] max-w-[360px] max-sm:max-w-none">
+    <label className={cx('relative flex items-center flex-[1_1_220px] min-w-[180px] max-w-[360px] max-sm:max-w-none', className)}>
       <span className="sr-only">{label ?? placeholder}</span>
       <span className="absolute left-2.5 flex text-muted-ink pointer-events-none"><Icon name="Search" size="sm" /></span>
       <input type="search" value={text} placeholder={placeholder} aria-label={label ?? placeholder}
@@ -242,5 +257,122 @@ function Panel({ open, anchor, onClose, label, width = 340, children }: {
     <Floating anchor={anchor} open={open} onClose={onClose} width={width} maxHeight={520} label={label}>
       <div className="px-3 py-2.5">{children}</div>
     </Floating>
+  );
+}
+
+function CustomRange({ from, to, onApply, onDone }: { from: string; to: string; onApply: (from: string, to: string) => void; onDone: () => void }) {
+  const [f, setF] = useState(from), [t, setT] = useState(to);
+  const bad = !!(f && t && t < f);
+  return (
+    <div className="mt-2 pt-2 flex flex-col gap-2 [border-top:1px_solid_var(--color-line-soft)]">
+      <h5 className="m-0 text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">Custom range</h5>
+      <div className="grid grid-cols-2 gap-2">
+        <DateField label="From" value={f} onChange={setF} />
+        <DateField label="To" value={t} min={f || undefined} onChange={setT} />
+      </div>
+      <button type="button" disabled={bad || (!f && !t)} onClick={() => { onApply(f, t); onDone(); }}
+        className="self-end h-[34px] max-sm:h-10 px-3 rounded-control border-none bg-primary text-on-primary font-sans text-copy font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+        {bad ? 'The end is before the start' : 'Apply'}
+      </button>
+    </div>
+  );
+}
+
+const shiftDay = (iso: string, days: number) => new Date(Date.parse(iso) + days * 864e5).toISOString().slice(0, 10);
+const monthStart = (iso: string, add = 0) => { const d = new Date(Date.parse(iso.slice(0, 7) + '-01T00:00:00Z')); d.setUTCMonth(d.getUTCMonth() + add); return d.toISOString().slice(0, 10); };
+
+/** A from / to preset (inclusive dates; '' is open). */
+export interface DatePreset { key: string; label: string; from: string; to: string }
+
+/** The usual presets: Today, Next 7 days, This month, Last month. */
+export function defaultDatePresets(today = todayMyt()): DatePreset[] {
+  return [
+    { key: 'today', label: 'Today', from: today, to: today },
+    { key: 'next7', label: 'Next 7 days', from: today, to: shiftDay(today, 6) },
+    { key: 'month', label: 'This month', from: monthStart(today), to: shiftDay(monthStart(today, 1), -1) },
+    { key: 'lastm', label: 'Last month', from: monthStart(today, -1), to: shiftDay(monthStart(today), -1) },
+  ];
+}
+
+/** What a from / to filter says: the preset's name, else the range. */
+export function dateFilterLabel(from: string, to: string, presets: DatePreset[] = defaultDatePresets(), anyLabel = 'Any dates') {
+  if (!from && !to) return anyLabel;
+  const p = presets.find(x => x.from === from && x.to === to);
+  if (p) return p.label;
+  if (from && to) return from === to ? fmtDate(from) : dateRange(from, to);
+  return from ? `From ${fmtDate(from)}` : `Until ${fmtDate(to)}`;
+}
+
+/**
+ * The toolbar's date button for a page that keeps a from / to pair (URL keys or state): its presets, an
+ * "any" choice (or the page's default range), and a custom From / To. Picking anything other than the default
+ * shows a chip.
+ */
+export function rangeDate({ label, from, to, onChange, presets = defaultDatePresets(), anyLabel = 'Any dates', def }: {
+  label: string; from: string; to: string; onChange: (from: string, to: string) => void;
+  presets?: DatePreset[]; anyLabel?: string;
+  /** The range that counts as "not narrowed" (default: no dates). */
+  def?: { from: string; to: string };
+}): ToolbarDate {
+  const key = (a: string, b: string) => (a || b ? `${a}|${b}` : '');
+  const d = def ? key(def.from, def.to) : '';
+  const list = [
+    ...(def ? [] : [{ value: '', label: anyLabel }]),
+    ...presets.map(p => ({ value: key(p.from, p.to), label: p.label, sub: p.from === p.to ? dateShort(p.from) : p.from && p.to ? `${dateShort(p.from)} – ${dateShort(p.to)}` : '' })),
+  ];
+  const value = key(from, to);
+  if (!list.some(p => p.value === value)) list.push({ value, label: dateFilterLabel(from, to, presets, anyLabel), sub: '' });
+  return {
+    label, value, def: d, presets: list,
+    onChange: v => { const [a = '', b = ''] = v ? v.split('|') : []; onChange(a, b); },
+    custom: { from, to, onApply: onChange },
+  };
+}
+
+/**
+ * A phone card (the prototype's two-line card, about 64px): line 1 the name (a channel mark or icon before it)
+ * with the key figure on the right; line 2 one muted line of context with the status pill on the right.
+ * Use it as a DataTable `renderCard`.
+ */
+export function PhoneCard({ lead, title, right, meta, badge, titleMuted }: {
+  lead?: ReactNode; title: ReactNode; right?: ReactNode; meta?: ReactNode; badge?: ReactNode; titleMuted?: boolean;
+}) {
+  return (
+    <span className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-[3px] min-w-0">
+      <span className="flex items-center gap-[7px] min-w-0">
+        {lead}
+        <span className={cx('min-w-0 text-heading font-semibold whitespace-nowrap overflow-hidden text-ellipsis', titleMuted && 'text-muted-ink')}>{title}</span>
+      </span>
+      <span className="text-heading font-semibold text-right whitespace-nowrap tabular-nums">{right}</span>
+      <span className="min-w-0 text-copy text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{meta}</span>
+      <span className="justify-self-end">{badge}</span>
+    </span>
+  );
+}
+
+/** The date button alone, for a toolbar slot whose chips another part already draws (a DataTable's date column). */
+export function ToolbarDateButton({ date }: { date: ToolbarDate }) {
+  const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const preset = date.presets.find(p => p.value === date.value) ?? date.presets[0];
+  const on = date.def !== undefined && date.value !== date.def;
+  return (
+    <>
+      <TbButton btnRef={btn} icon="CalendarDays" on={on} expanded={open} onClick={() => setOpen(v => !v)} label={`${date.label}: ${preset?.label ?? ''}`} caret>
+        <span className="truncate">{preset?.label}</span>
+      </TbButton>
+      <Panel open={open} anchor={btn} onClose={() => setOpen(false)} label={date.label} width={280}>
+        <h5 className="m-0 mb-1 text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">{date.label}</h5>
+        {date.presets.map(p => (
+          <button key={p.value} type="button" aria-pressed={p.value === date.value} onClick={() => { date.onChange(p.value); setOpen(false); }}
+            className={cx('w-full flex items-center justify-between gap-3 min-h-9 max-sm:min-h-11 px-2 rounded-[8px] border-none font-sans text-copy text-left cursor-pointer',
+              p.value === date.value ? 'bg-muted text-ink font-semibold' : 'bg-transparent text-ink hover:bg-muted')}>
+            <span>{p.label}</span>
+            <span className="text-meta text-muted-ink font-normal">{p.sub ?? ''}</span>
+          </button>
+        ))}
+        {date.custom && <CustomRange {...date.custom} onDone={() => setOpen(false)} />}
+      </Panel>
+    </>
   );
 }

@@ -4,8 +4,11 @@ import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
+import { FormSection } from '../../components/Card';
+import { ChoiceChips } from '../../components/ChoiceChips';
+import { StatusBadge } from '../../components/StatusBadge';
+import { PhoneCard, ToolbarSearch } from '../../components/ListToolbar';
 import { Field } from '../../components/Field';
-import { Select } from '../../components/Select';
 import { DateField, PhoneInput, phoneProblem } from '../../components/inputs';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
@@ -30,7 +33,10 @@ export default function DcEmployeesTab({ onChanged }: { onChanged: () => void })
   const { user } = useSession();
   const mayEdit = mayWork(user, 'dcHr');
   const [form, setForm] = useState<{ person: DcEmployee | null } | null>(null);
-  const people = data?.data ?? [];
+  const [query, setQuery] = useState('');
+  const all = data?.data ?? [];
+  const needle = query.trim().toLowerCase();
+  const people = needle ? all.filter(e => [e.name, e.jobTitle ?? '', e.phone ?? ''].join(' ').toLowerCase().includes(needle)) : all;
   const add = () => setForm({ person: null });
 
   const columns = useMemo<Column<DcEmployee>[]>(() => [
@@ -43,18 +49,24 @@ export default function DcEmployeesTab({ onChanged }: { onChanged: () => void })
 
   return (
     <>
-      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? plural(people.length, 'employee') : 'Loading the list…'}</p>
+      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? (needle ? `${plural(people.length, 'employee')} of ${all.length} match` : plural(all.length, 'employee')) : 'Loading the list…'}</p>
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <DataTable<DcEmployee>
-        id="dc-employees" columns={columns} rows={loading && people.length === 0 ? null : people}
+        id="dc-employees" columns={columns} rows={loading && all.length === 0 ? null : people}
+        toolbar={<ToolbarSearch value={query} onChange={setQuery} placeholder="Name, job title or phone" label="Search employees" />}
+        filtered={!!needle} onClearFilters={() => setQuery('')}
+        renderCard={e => (
+          <PhoneCard title={e.name} meta={[e.jobTitle, e.phone].filter(Boolean).join(' · ') || 'No job title'}
+            badge={<StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />} />
+        )}
         rowKey={e => e.id} pageSize={0} noun={['employee', 'employees']} exportName="dream-crafter-employees"
         rowTone={e => (e.status === 'resigned' ? 'muted' : null)}
         onRowClick={mayEdit ? e => setForm({ person: e }) : undefined}
         header={
           <div className="pt-5 pb-3 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
             <span className="flex flex-col gap-0.5">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Employee Master</span>
+              <span className="text-heading font-bold tracking-[-0.005em]">Employee Master</span>
               <span className="text-meta text-muted-ink">The people who work for Dream Crafter. Open a person to change their details.</span>
             </span>
             {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={add}>Add employee</Button>}
@@ -101,22 +113,22 @@ function DcEmployeeForm({ person, onClose, onSaved }: { person: DcEmployee | nul
   }
 
   return (
-    <Modal title={creating ? 'Add employee' : d.name || 'Employee'} sub="Someone who works for Dream Crafter." onClose={onClose} width={560}
+    <Modal title={creating ? 'Add employee' : d.name || 'Employee'} eyebrow="Employee Master" size="md" sub="Someone who works for Dream Crafter." onClose={onClose}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : creating ? 'Add employee' : 'Save'}</Button>
       </>}>
-      <div className="grid gap-x-4 gap-y-3 grid-cols-1 sm:grid-cols-2">
+      <FormSection title="Details">
         <Field label="Name" value={d.name} onChange={e => set('name', e.target.value)} placeholder="Ahmad Firdaus" error={errors.name} />
         <Field label="Job title" value={d.jobTitle ?? ''} onChange={e => set('jobTitle', e.target.value || null)} placeholder="Site supervisor" error={errors.jobTitle} />
         <PhoneInput label="Phone" value={d.phone ?? ''} onChange={v => set('phone', v || null)} error={errors.phone} />
         <DateField label="Join date" value={d.joinDate ?? ''} onChange={v => set('joinDate', v || null)} error={errors.joinDate} />
-        <Select label="Status" showLabel size="md" value={d.status} onChange={v => set('status', v === 'resigned' ? 'resigned' : 'active')}
+        <ChoiceChips label="Status" value={d.status} onChange={v => set('status', v)}
           options={[{ value: 'active', label: 'Active' }, { value: 'resigned', label: 'Resigned' }]} />
         {d.status === 'resigned' && (
           <DateField label="Last working day" value={d.resignedAt ?? ''} onChange={v => set('resignedAt', v || null)} required error={errors.resignedAt} />
         )}
-      </div>
+      </FormSection>
     </Modal>
   );
 }

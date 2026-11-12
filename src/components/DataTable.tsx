@@ -45,7 +45,7 @@ export type ColumnType = 'text' | 'date' | 'datetime' | 'money' | 'number' | 're
 export type FilterKind = 'text' | 'select' | 'date' | 'number';
 export type Raw = string | number | boolean | null | undefined;
 
-export interface FilterOption { value: string; label: string; group?: string }
+export interface FilterOption { value: string; label: string; group?: string; /** How many rows this option would show, drawn after the label in the Filters panel (not in the chip). */ count?: number | null }
 
 export interface FilterSpec {
   kind: FilterKind;
@@ -586,7 +586,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
               </label>
             )}
             {filterable.length > 0 && !inlineFiltersHost && (
-              <ToolButton icon="ListFilter" label="Filter" btnRef={filtersBtn} active={panel === 'filters'} count={activeFilters.length}
+              <ToolButton icon="ListFilter" label="Filters" btnRef={filtersBtn} active={panel === 'filters'} count={activeFilters.length}
                 onClick={() => setPanel(p => (p === 'filters' ? null : 'filters'))} />
             )}
             {/* Phones: Sort and Filter stay; Views, Columns and Export move behind one "More" button,
@@ -1035,6 +1035,7 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, 
             <input type={multi ? 'checkbox' : 'radio'} name={`dt-${col.key}`} checked={on.has(o.value)} className="w-4 h-4 cursor-pointer"
               onChange={() => toggle(o.value)} />
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{typeOf(col) === 'channel' ? <ChannelCell channel={o.value} /> : o.label}</span>
+            {o.count != null && <span className="ml-auto text-meta text-muted-ink tabular-nums">{fmtCount(o.count)}</span>}
           </label>
         ))}
         {on.size > 0 && <button type="button" onClick={() => onChange('')} className="self-start mt-1 text-meta text-muted-ink bg-transparent border-none cursor-pointer underline px-2">Any {col.label.toLowerCase()}</button>}
@@ -1046,7 +1047,7 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, 
 }
 
 function FilterChips({ label, options, picked, hint, onToggle }: {
-  label: string; options: { value: string; label: string }[]; picked: Set<string>; hint?: string; onToggle: (value: string) => void;
+  label: string; options: { value: string; label: string; count?: number | null }[]; picked: Set<string>; hint?: string; onToggle: (value: string) => void;
 }): ReactElement {
   const [search, setSearch] = useState('');
   const needle = search.trim().toLowerCase();
@@ -1070,6 +1071,7 @@ function FilterChips({ label, options, picked, hint, onToggle }: {
                 isPicked ? 'bg-black border-black text-white' : 'bg-card border-line text-ink hover:bg-muted')}>
               {isPicked ? <Icon name="Check" size="sm" /> : <span aria-hidden className="w-3.5 h-3.5 rounded-full border border-solid border-[var(--color-line-strong)] shrink-0" />}
               <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{o.label}</span>
+              {o.count != null && <span className={cx('text-meta tabular-nums', isPicked ? 'text-white/75' : 'text-muted-ink')}>{fmtCount(o.count)}</span>}
             </button>
           );
         })}
