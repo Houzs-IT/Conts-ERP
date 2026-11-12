@@ -15,7 +15,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!can(session, 'makeFinal', 'edit')) return fail('FORBIDDEN', 'Your access does not include Make final.', 403);
 
   const b = await request.json<{ statementIds: string[] }>().catch(() => null);
-  if (!Array.isArray(b?.statementIds) || !b.statementIds.length || b.statementIds.length > 200) return fail('VALIDATION', 'Select at least one statement.', 422);
+  if (!Array.isArray(b?.statementIds) || !b.statementIds.length) return fail('VALIDATION', 'Select at least one statement.', 422);
+  // The Unit report's Final "Lock all" sends owners in batches under this (src/lib/finalBatches.ts FINALISE_LIMIT).
+  if (b.statementIds.length > 200) return fail('VALIDATION', 'Select up to 200 statements at a time.', 422);
 
   const rows = await all<{ id: string; state: string; owner_id: string; period_start: string }>(env,
     `SELECT id, state, owner_id, period_start FROM owner_statements WHERE id IN (${b.statementIds.map(() => '?').join(',')})`, ...b.statementIds);

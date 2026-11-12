@@ -9,6 +9,7 @@ import Icon from '../components/Icon';
 import { cx } from '../lib/design-tokens';
 import { api, notifyFailure } from '../lib/api';
 import { cellKey, settleOverrides, startClick, type Overrides } from '../lib/lockOverrides';
+import { finalBatches } from '../lib/finalBatches';
 import { useToast } from '../components/Toast';
 import type { ConfirmSpec } from '../components/ConfirmDialog';
 import { count, dateShort, monthLabel, personName, plural } from '../lib/format';
@@ -175,11 +176,18 @@ export function useReportLocks(o: { month: string; may?: LockMay; rows: ReportRo
   /** Make final for these owners: their statements are generated again first (so nobody presses Generate after the
    *  locks), then made final. Returns how many were made final and why the others were not. */
   async function makeFinal(ownerIds: string[]): Promise<{ done: number; failed: string[] }> {
-    const gen = await api.post<{ statements: { ownerId: string; id: string }[] }>('/statements/generate', { period: o.month, ownerIds });
-    const ids = gen.statements.filter(s => ownerIds.includes(s.ownerId)).map(s => s.id);
-    if (!ids.length) return { done: 0, failed: ['No statement was made: nothing in the month for these owners.'] };
-    const res = await api.post<{ finalised: number; failed: { id: string; reason: string }[] }>('/statements/finalise', { statementIds: ids });
-    return { done: res.finalised, failed: res.failed.map(f => f.reason) };
+    // In batches (src/lib/finalBatches.ts): finalise takes at most 200 statements a request.
+    let done = 0;
+    const failed: string[] = [];
+    for (const batch of finalBatches(ownerIds)) {
+      const gen = await api.post<{ statements: { ownerId: string; id: string }[] }>('/statements/generate', { period: o.month, ownerIds: batch });
+      const ids = gen.statements.filter(s => batch.includes(s.ownerId)).map(s => s.id);
+      if (!ids.length) { failed.push('No statement was made: nothing in the month for these owners.'); continue; }
+      const res = await api.post<{ finalised: number; failed: { id: string; reason: string }[] }>('/statements/finalise', { statementIds: ids });
+      done += res.finalised;
+      failed.push(...res.failed.map(f => f.reason));
+    }
+    return { done, failed };
   }
 
   async function finalOne(r: ReportRow) {
