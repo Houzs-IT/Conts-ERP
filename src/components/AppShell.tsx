@@ -7,6 +7,7 @@ import { DemoBand } from './DemoMode';
 import { Logo } from './Logo';
 import { RefreshLine } from './Loading';
 import MobileTabBar, { TAB_BAR_HEIGHT } from './MobileTabBar';
+import SubNav from './SubNav';
 import { PagePrimaryScope } from './States';
 import { color, dcGlass } from '../theme';
 import { workspaceOf } from '../lib/navigation';
@@ -98,6 +99,8 @@ export default function AppShell({
           display: 'flex', flexDirection: 'column', gap: flush ? 0 : isNarrow ? 16 : 20,
           '--sticky-bottom-offset': stickyBottomOffset(flush ?? false, isNarrow),
         } as CSSProperties}>
+          {/* A menu entry that holds several screens draws them as sub-tabs above the page (owner, 12 Nov 2026). */}
+          {!flush && <SubNav path={path} navigate={navigate} phone={isNarrow} />}
           <PagePrimaryScope path={path}>{children}</PagePrimaryScope>
         </main>
         {isNarrow && <MobileTabBar path={path} navigate={navigate} />}

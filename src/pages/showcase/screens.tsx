@@ -1,8 +1,9 @@
-import { useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { useApi } from '../../lib/useApi';
-import { count, date, dateLong, dateRange, dateShort, monthLabel, rmShort, plural } from '../../lib/format';
+import { count, date, dateLong, dateRange, dateShort, monthLabel, rm, plural } from '../../lib/format';
+import Icon from '../../components/Icon';
 import { fmtFigure, LEAD_KEYS, type CalendarData, type FigureKey, type Insights, type Listing, type ReviewCard, type ShowcaseData, type TodayItem } from './model';
-import { Fig, Photo, Avatar, Segmented, PriceToggle, MonthNav, useMarquees, useEscape } from './parts';
+import { Fig, Photo, Avatar, Segmented, PriceToggle, MonthNav, useEscape, Stars, Star, buildingOf } from './parts';
 import { MonthGrid, monthStats, monthStart, monthDays, monthRange } from './CalendarScreen';
 
 type G = (k: FigureKey) => number | null;
@@ -14,13 +15,13 @@ export const cityPhrase = (listings: Listing[]) => {
 };
 
 const listingSpecs = (l: Listing) => [plural(l.maxGuests, 'guest'), plural(l.bedrooms, 'bedroom'), plural(l.bathrooms, 'bath')].join(' · ');
-const ratingLine = (l: Listing) => (l.rating === null ? 'New · no reviews yet' : `★ ${l.rating.toFixed(2)} · ${plural(l.reviews, 'review')}`);
+const ratingLine = (l: Listing): ReactNode => (l.rating === null ? 'New · no reviews yet' : <><Star /> {l.rating.toFixed(2)} · {plural(l.reviews, 'review')}</>);
 
 /* 01 Today */
 
 type Mode = 'in' | 'out' | 'up' | 'tn';
 const MODE_KEY: Record<Mode, FigureKey> = { in: 'today_in', out: 'today_out', up: 'today_up', tn: 'tn_pct' };
-const HEADLINE: Record<Exclude<Mode, 'tn'>, string> = { in: 'guests arriving today', out: 'guests checking out today', up: 'orders on the books' };
+const HEADLINE: Record<Exclude<Mode, 'tn'>, string> = { in: 'guests arriving today', out: 'guests checking out today', up: 'reservations on the books' };
 const EMPTY: Record<Exclude<Mode, 'tn'>, string> = { in: 'No guests arrive today.', out: 'No guests check out today.', up: 'No stays are on the books yet.' };
 
 export function TodayScreen({ data, g, mode, setMode }: { data: ShowcaseData; g: G; mode: Mode; setMode: (m: Mode) => void }) {
@@ -37,46 +38,46 @@ export function TodayScreen({ data, g, mode, setMode }: { data: ShowcaseData; g:
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
         <Segmented large value={mode} onChange={setMode} options={[
           { key: 'in', label: 'Check-ins', count: fmtFigure('today_in', g('today_in')) },
-          { key: 'out', label: 'Check-outs', count: fmtFigure('today_out', g('today_out')) },
+          { key: 'out', label: 'Checkouts', count: fmtFigure('today_out', g('today_out')) },
           { key: 'up', label: 'Upcoming', count: fmtFigure('today_up', g('today_up')) },
           { key: 'tn', label: 'Tonight', count: `${fmtFigure('tn_pct', g('tn_pct'))}%` },
         ]} />
         {mode !== 'tn' ? (
           <div key={mode} className="sc-rise" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <div style={{ fontSize: 'clamp(36px, 5vw, 64px)', fontWeight: 800, letterSpacing: '-0.035em', lineHeight: 1.05, textAlign: 'center', textWrap: 'balance', margin: '12px 0 16px' } as CSSProperties}>
+            <div className="sc-d56" style={{ textAlign: 'center', textWrap: 'balance', margin: '12px 0 16px' } as CSSProperties}>
               <span style={{ color: 'var(--sc-teal)' }}><Fig k={MODE_KEY[mode]}>{fmtFigure(MODE_KEY[mode], g(MODE_KEY[mode]))}</Fig></span> {HEADLINE[mode]}
             </div>
             <div style={{ width: '100%', maxWidth: 900, display: 'flex', flexDirection: 'column', gap: 12 }}>
               {list.items.map((it, k) => (
                 <div key={it.id} className="sc-today-row">
-                  <div className="num" style={{ fontSize: 15, fontWeight: 700 }}>{when(it)}</div>
+                  <div className="sc-big num" style={{ fontSize: 19 }}>{when(it)}</div>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 17, fontWeight: 700 }}>{it.guest}{it.guests > 1 ? ` · party of ${it.guests}` : ''}</div>
-                    <div className="ellipsis" style={{ fontSize: 14, color: 'var(--sc-muted)', marginTop: 3 }}>{it.listing} · {it.unit}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>{it.guest}{it.guests > 1 ? ` · party of ${it.guests}` : ''}</div>
+                    <div className="ellipsis" style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 2 }}>{it.listing} · {it.unit}</div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <Avatar name={it.guest} i={k} size={46} style={{ border: '2px solid var(--sc-surface)' }} />
-                    <Photo id={it.photoId} fine style={{ width: 34, height: 34, borderRadius: 8, marginLeft: -12, marginTop: 18, border: '2px solid var(--sc-surface)' }} />
+                    <Photo id={it.photoId} place={buildingOf(it.unit)} fine style={{ width: 34, height: 34, borderRadius: 8, marginLeft: -12, marginTop: 18, border: '2px solid var(--sc-surface)' }} />
                   </div>
                 </div>
               ))}
               {!list.items.length && <div className="sc-empty">{EMPTY[mode]}</div>}
-              <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--sc-muted)', marginTop: 8 }}>Showing {list.items.length} of {fmtFigure(MODE_KEY[mode], g(MODE_KEY[mode]))} · pulled live from Airbnb reservations</div>
+              <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--sc-muted)', marginTop: 8 }}>Showing {list.items.length} of {fmtFigure(MODE_KEY[mode], g(MODE_KEY[mode]))} · from today's reservations</div>
             </div>
           </div>
         ) : (
           <div className="sc-card dark sc-rise" style={{ width: '100%', maxWidth: 900, display: 'flex', flexDirection: 'column', gap: 28, marginTop: 12 }}>
             <div className="sc-eyebrow">Tonight</div>
             <div>
-              <div className="sc-big" style={{ fontSize: 'clamp(64px, 9vw, 120px)', letterSpacing: '-0.045em' }}>
-                <Fig k="tn_occ">{fmtFigure('tn_occ', g('tn_occ'))}</Fig><span style={{ fontSize: 44, color: 'var(--sc-dark-muted)' }}> / <Fig k="listings">{fmtFigure('listings', g('listings'))}</Fig></span>
+              <div className="sc-d56">
+                <Fig k="tn_occ">{fmtFigure('tn_occ', g('tn_occ'))}</Fig><span className="sc-d26" style={{ color: 'var(--sc-dark-muted)' }}> / <Fig k="listings">{fmtFigure('listings', g('listings'))}</Fig></span>
               </div>
-              <div style={{ fontSize: 18, color: 'var(--sc-dark-soft)', marginTop: 12 }}>listings occupied</div>
+              <div style={{ fontSize: 15, color: 'var(--sc-dark-soft)', marginTop: 10 }}>listings occupied</div>
             </div>
-            <div style={{ height: 10, borderRadius: 999, background: 'var(--sc-dark-line)', overflow: 'hidden' }}><div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: 'var(--sc-teal-on-dark)' }} /></div>
+            <div style={{ height: 10, borderRadius: 999, background: 'var(--sc-dark-line)', overflow: 'hidden' }}><div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: 'var(--color-gold)' }} /></div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-              <div><div className="sc-big" style={{ fontSize: 48, letterSpacing: '-0.03em' }}><Fig k="tn_pct">{fmtFigure('tn_pct', g('tn_pct'))}</Fig>%</div><div style={{ fontSize: 14, color: 'var(--sc-dark-muted)', marginTop: 4 }}>occupancy tonight</div></div>
-              <div><div className="sc-big" style={{ fontSize: 48, letterSpacing: '-0.03em' }}><Fig k="tn_turn">{fmtFigure('tn_turn', g('tn_turn'))}</Fig></div><div style={{ fontSize: 14, color: 'var(--sc-dark-muted)', marginTop: 4 }}>turnovers in progress</div></div>
+              <div><div className="sc-d40"><Fig k="tn_pct">{fmtFigure('tn_pct', g('tn_pct'))}</Fig>%</div><div style={{ fontSize: 13, color: 'var(--sc-dark-muted)', marginTop: 4 }}>occupancy tonight</div></div>
+              <div><div className="sc-d40"><Fig k="tn_turn">{fmtFigure('tn_turn', g('tn_turn'))}</Fig></div><div style={{ fontSize: 13, color: 'var(--sc-dark-muted)', marginTop: 4 }}>cleaning jobs in progress</div></div>
             </div>
           </div>
         )}
@@ -87,43 +88,42 @@ export function TodayScreen({ data, g, mode, setMode }: { data: ShowcaseData; g:
 
 /* 02 Listings */
 
-function ListingStrip({ listings, width, speedRef, pill }: { listings: Listing[]; width: number; speedRef: (el: HTMLDivElement | null) => void; pill?: boolean }) {
-  const loop = [...listings, ...listings];
+/** A still row of listings that scrolls sideways by hand (nothing loops on these pages). */
+function ListingStrip({ listings, width, pill }: { listings: Listing[]; width: number; pill?: boolean }) {
   return (
-    <div className="sc-marquee-track" ref={speedRef}>
-      {loop.map((l, i) => (
-        <div key={`${l.id}-${i}`} style={{ width, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: pill ? 10 : 8 }}>
-          <Photo id={l.photoId} label="listing photo" style={{ width: '100%', aspectRatio: '4 / 3', borderRadius: 14 }}>
+    <div className="sc-strip"><div className="sc-strip-track">
+      {listings.map(l => (
+        <div key={l.id} style={{ width, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: pill ? 10 : 8 }}>
+          <Photo id={l.photoId} place={buildingOf(l.unit)} caption style={{ width: '100%', aspectRatio: '4 / 3', borderRadius: 14 }}>
             {pill && <span className="sc-published sm"><span className="sc-dot" style={{ width: 6, height: 6 }} />Published</span>}
           </Photo>
           {pill
-            ? <div><div className="ellipsis" style={{ fontSize: 14, fontWeight: 700 }}>{l.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{l.unit}{l.rating !== null ? ` · ★ ${l.rating.toFixed(2)}` : ''}</div></div>
+            ? <div><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{l.unit}{l.rating !== null ? <> · <Star /> {l.rating.toFixed(2)}</> : ''}</div></div>
             : <div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</div>}
         </div>
       ))}
-    </div>
+    </div></div>
   );
 }
 
 export function ListingsScreen({ data, g }: { data: ShowcaseData; g: G }) {
   const [shown, setShown] = useState(14);
   const [preview, setPreview] = useState<Listing | null>(null);
-  const mq = useMarquees([{ speed: -0.03 }]);
   const all = data.listings;
   return (
     <div className="sc-wrap wide">
       <div className="sc-eyebrow">Portfolio</div>
-      <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: '-0.03em', marginTop: 6 }}><Fig k="listings">{fmtFigure('listings', g('listings'))}</Fig> listings</div>
+      <div className="sc-d56" style={{ marginTop: 6 }}><Fig k="listings">{fmtFigure('listings', g('listings'))}</Fig> listings</div>
       <div className="sc-sub" style={{ marginTop: 4 }}>All live on Airbnb{cityPhrase(all) ? ` ·${cityPhrase(all).replace(' in', '')}` : ''}. Click a listing to see it as guests do.</div>
-      {all.length > 3 && <div className="sc-marquee" {...mq.hover} style={{ margin: '28px -32px 0' }}><ListingStrip listings={all} width={220} speedRef={mq.ref(0)} /></div>}
+      {all.length > 3 && <div style={{ marginTop: 24 }}><ListingStrip listings={all} width={220} /></div>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '28px 24px', marginTop: 28 }}>
         {all.slice(0, shown).map(l => (
           <button key={l.id} type="button" onClick={() => setPreview(l)} style={{ textAlign: 'left', border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Photo id={l.photoId} label="listing photo" style={{ width: '100%', aspectRatio: '4 / 3', borderRadius: 16 }}>
+            <Photo id={l.photoId} place={buildingOf(l.unit)} caption style={{ width: '100%', aspectRatio: '4 / 3', borderRadius: 16 }}>
               <span className="sc-published"><span className="sc-dot" />Published</span>
             </Photo>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>{l.name}</div>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>{l.name}</div>
               <div style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 2 }}>{l.unit}{l.city ? ` · ${l.city}` : ''}</div>
               <div style={{ fontSize: 13, marginTop: 4, fontWeight: 600 }}>{ratingLine(l)}</div>
             </div>
@@ -150,7 +150,7 @@ export function ListingPreview({ l, hostLine, onClose }: { l: Listing; hostLine:
   return (
     <div className="sc-layer" role="dialog" aria-label={`${l.name} as guests see it`}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', marginBottom: 24, height: 44 }}>
-        <button type="button" aria-label="Close" onClick={onClose} style={{ position: 'absolute', left: 0, width: 44, height: 44, borderRadius: '50%', border: '1px solid var(--sc-control)', background: 'var(--sc-surface)', cursor: 'pointer', fontSize: 18 }}>×</button>
+        <button type="button" aria-label="Close" onClick={onClose} style={{ position: 'absolute', left: 0, width: 44, height: 44, borderRadius: '50%', border: '1px solid var(--sc-control)', background: 'var(--sc-surface)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="X" size="base" /></button>
         <div className="sc-seg" style={{ background: 'var(--sc-stripe-a)' }}>
           {(['desktop', 'mobile'] as const).map(m => <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)} style={{ padding: '9px 18px' }}>{m === 'desktop' ? 'Desktop' : 'Mobile'}</button>)}
         </div>
@@ -163,14 +163,14 @@ export function ListingPreview({ l, hostLine, onClose }: { l: Listing; hostLine:
             <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}><div style={{ width: 420, maxWidth: '100%', height: 26, borderRadius: 8, background: 'var(--sc-surface)', border: '1px solid var(--sc-line)', fontSize: 12, color: 'var(--sc-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{room}</div></div>
           </div>
           <div style={{ padding: '28px 56px 44px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20 }}><div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em' }}>{l.name}</div><div style={{ display: 'flex', gap: 18, fontSize: 13, fontWeight: 700, textDecoration: 'underline' }}>Share<span>Save</span></div></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20 }}><div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.01em' }}>{l.name}</div><div style={{ display: 'flex', gap: 18, fontSize: 13, fontWeight: 700, textDecoration: 'underline' }}>Share<span>Save</span></div></div>
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gridTemplateRows: '190px 190px', gap: 8, marginTop: 20, borderRadius: 14, overflow: 'hidden' }}>
-              <Photo id={l.photoId} label="main photo" style={{ gridRow: 'span 2' }} />
-              <Photo /><Photo /><Photo /><Photo />
+              <Photo id={l.photoId} place={buildingOf(l.unit)} caption style={{ gridRow: 'span 2' }} />
+              {[1, 2, 3, 4].map(k => <Photo key={k} place={`${buildingOf(l.unit)} ${k}`} />)}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1fr)', gap: 56, marginTop: 30, alignItems: 'start' }}>
               <div>
-                <div style={{ fontSize: 20, fontWeight: 800 }}>{place}</div>
+                <div style={{ fontSize: 19, fontWeight: 700 }}>{place}</div>
                 <div style={{ fontSize: 15, color: 'var(--sc-ink-2)', marginTop: 4 }}>{listingSpecs(l)}</div>
                 <div style={{ fontSize: 15, fontWeight: 700, marginTop: 6 }}>{ratingLine(l)}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, borderTop: '1px solid var(--sc-line)', borderBottom: '1px solid var(--sc-line)', padding: '20px 0', marginTop: 22 }}>
@@ -179,33 +179,33 @@ export function ListingPreview({ l, hostLine, onClose }: { l: Listing; hostLine:
                 </div>
               </div>
               <div style={{ border: '1px solid var(--sc-line)', borderRadius: 16, padding: 24, boxShadow: '0 6px 20px rgba(28,27,25,0.08)' }}>
-                <div style={{ fontSize: 20, fontWeight: 800 }}>Add dates for prices</div>
+                <div style={{ fontSize: 19, fontWeight: 700 }}>Add dates for prices</div>
                 <div style={{ border: '1px solid var(--sc-disabled)', borderRadius: 12, marginTop: 18, overflow: 'hidden' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--sc-disabled)' }}>
-                    <div style={{ padding: '10px 12px', borderRight: '1px solid var(--sc-disabled)' }}><div style={{ fontSize: 10, fontWeight: 800 }}>CHECK-IN</div><div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>Add date</div></div>
-                    <div style={{ padding: '10px 12px' }}><div style={{ fontSize: 10, fontWeight: 800 }}>CHECKOUT</div><div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>Add date</div></div>
+                    <div style={{ padding: '10px 12px', borderRight: '1px solid var(--sc-disabled)' }}><div style={{ fontSize: 11, fontWeight: 700 }}>CHECK-IN</div><div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>Add date</div></div>
+                    <div style={{ padding: '10px 12px' }}><div style={{ fontSize: 11, fontWeight: 700 }}>CHECKOUT</div><div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>Add date</div></div>
                   </div>
-                  <div style={{ padding: '10px 12px' }}><div style={{ fontSize: 10, fontWeight: 800 }}>GUESTS</div><div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>1 guest</div></div>
+                  <div style={{ padding: '10px 12px' }}><div style={{ fontSize: 11, fontWeight: 700 }}>GUESTS</div><div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>1 guest</div></div>
                 </div>
-                <div style={{ marginTop: 16, height: 48, borderRadius: 12, background: 'var(--sc-teal)', color: 'var(--sc-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800 }}>Check availability</div>
+                <div style={{ marginTop: 16, height: 48, borderRadius: 12, background: 'var(--color-airbnb)', color: 'var(--sc-on-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700 }}>Check availability</div>
               </div>
             </div>
           </div>
         </div>
       ) : (
         <div className="sc-pop" style={{ width: 390, height: 800, maxWidth: '100%', margin: '0 auto', borderRadius: 52, border: '10px solid var(--sc-ink)', background: 'var(--sc-surface)', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(28,27,25,0.2)' }}>
-          <div style={{ height: 44, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 26px', fontSize: 14, fontWeight: 800, flexShrink: 0 }}>9:41<span style={{ display: 'flex', gap: 4 }}><span style={{ width: 16, height: 9, borderRadius: 2, background: 'var(--sc-ink)' }} /><span style={{ width: 22, height: 10, borderRadius: 3, border: '1.5px solid var(--sc-ink)' }} /></span></div>
-          <div style={{ height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', fontSize: 18, flexShrink: 0 }}><span>←</span><span style={{ display: 'flex', gap: 18 }}><span>⇪</span><span>♡</span></span></div>
-          <Photo id={l.photoId} label="listing photo" style={{ height: 300 }} />
+          <div style={{ height: 44, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 26px', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>9:41<span style={{ display: 'flex', gap: 4 }}><span style={{ width: 16, height: 9, borderRadius: 2, background: 'var(--sc-ink)' }} /><span style={{ width: 22, height: 10, borderRadius: 3, border: '1.5px solid var(--sc-ink)' }} /></span></div>
+          <div style={{ height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', flexShrink: 0 }}><Icon name="ArrowLeft" size="base" /><span style={{ display: 'flex', gap: 18 }}><Icon name="Share" size="base" /><Icon name="Heart" size="base" /></span></div>
+          <Photo id={l.photoId} place={buildingOf(l.unit)} caption style={{ height: 300 }} />
           <div style={{ flex: 1, marginTop: -20, background: 'var(--sc-surface)', borderRadius: '22px 22px 0 0', position: 'relative', padding: '24px 22px', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.2, textWrap: 'balance' } as CSSProperties}>{l.name}</div>
+            <div style={{ fontSize: 19, fontWeight: 700, lineHeight: 1.25, textWrap: 'balance' } as CSSProperties}>{l.name}</div>
             <div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>{place}</div>
             <div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>{listingSpecs(l)}</div>
             <div style={{ fontSize: 13, fontWeight: 700, marginTop: 6 }}>{ratingLine(l)}</div>
           </div>
           <div style={{ height: 84, flexShrink: 0, borderTop: '1px solid var(--sc-line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px' }}>
-            <div><div style={{ fontSize: 14, fontWeight: 800 }}>Add dates for prices</div>{l.rating !== null && <div style={{ fontSize: 12, fontWeight: 700 }}>★ {l.rating.toFixed(2)}</div>}</div>
-            <div style={{ height: 46, padding: '0 20px', borderRadius: 12, background: 'var(--sc-teal)', color: 'var(--sc-surface)', display: 'flex', alignItems: 'center', fontSize: 14, fontWeight: 800 }}>Check availability</div>
+            <div><div style={{ fontSize: 13, fontWeight: 700 }}>Add dates for prices</div>{l.rating !== null && <div style={{ fontSize: 12, fontWeight: 700 }}><Star /> {l.rating.toFixed(2)}</div>}</div>
+            <div style={{ height: 46, padding: '0 20px', borderRadius: 12, background: 'var(--color-airbnb)', color: 'var(--sc-on-color)', display: 'flex', alignItems: 'center', fontSize: 13, fontWeight: 700 }}>Check availability</div>
           </div>
         </div>
       )}
@@ -218,19 +218,18 @@ export function ListingPreview({ l, hostLine, onClose }: { l: Listing; hostLine:
 function ReviewBox({ r, i }: { r: ReviewCard; i: number }) {
   const [a, b] = r.stay ? r.stay.split('|') : [];
   return (
-    <div style={{ border: '1px solid var(--sc-line)', borderRadius: 16, padding: 22, display: 'flex', flexDirection: 'column', gap: 12, background: 'var(--sc-surface)', height: '100%' }}>
+    <div style={{ border: '1px solid var(--sc-line)', borderRadius: 16, padding: 18, display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--sc-surface)', height: '100%' }}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
         <Avatar name={r.guest} i={i} size={40} />
         <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 15 }}>{r.guest}</div><div className="ellipsis" style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{a && b ? dateRange(a, b) : date(r.reviewedAt)} · {r.listing}</div></div>
       </div>
-      <div style={{ color: 'var(--sc-star)', fontSize: 14, letterSpacing: 2 }}>★★★★★</div>
-      <div style={{ fontSize: 14, lineHeight: 1.55, textWrap: 'pretty' } as CSSProperties}>{r.text}</div>
+      <Stars />
+      <div style={{ fontSize: 13, lineHeight: 1.55, textWrap: 'pretty' } as CSSProperties}>{r.text}</div>
     </div>
   );
 }
 
 export function ReviewsScreen({ data, ins, g, one }: { data: ShowcaseData; ins: Insights | null; g: G; one: boolean }) {
-  const mq = useMarquees([{ speed: 0.025 }, { speed: -0.03 }]);
   const fig = (k: FigureKey, own: number | null | undefined) => (one ? fmtFigure(k, own ?? null) : fmtFigure(k, g(k)));
   const recent = one ? ins?.recentReviews ?? [] : data.reviews.slice(0, 6);
   const loop = one ? [] : data.reviews.slice(6);
@@ -238,9 +237,9 @@ export function ReviewsScreen({ data, ins, g, one }: { data: ShowcaseData; ins: 
     <section className="sc-card">
       <div className="sc-eyebrow">Guest reviews</div>
       <div className="sc-grid-3" style={{ marginTop: 20, paddingBottom: 28, borderBottom: '1px solid var(--sc-line)' }}>
-        <div><div className="sc-big" style={{ fontSize: 72, letterSpacing: '-0.045em' }}><Fig k="rev_count" portfolio={!one}>{fig('rev_count', ins?.reviews.count)}</Fig></div><div style={{ fontSize: 14, color: 'var(--sc-muted)', marginTop: 10 }}>reviews received on Airbnb</div></div>
-        <div><div className="sc-big" style={{ fontSize: 72, letterSpacing: '-0.045em' }}><Fig k="rev_five" portfolio={!one}>{fig('rev_five', ins?.reviews.fiveStar)}</Fig>%</div><div style={{ fontSize: 14, color: 'var(--sc-muted)', marginTop: 10 }}>of stays rated 5 stars</div></div>
-        <div><div className="sc-big" style={{ fontSize: 72, letterSpacing: '-0.045em', display: 'flex', alignItems: 'baseline', gap: 8 }}><Fig k="rev_rating" portfolio={!one}>{fig('rev_rating', ins?.reviews.rating)}</Fig><span style={{ fontSize: 32, color: 'var(--sc-star)' }}>★</span></div><div style={{ fontSize: 14, color: 'var(--sc-muted)', marginTop: 10 }}>overall rating out of 5</div></div>
+        <div><div className="sc-d56"><Fig k="rev_count" portfolio={!one}>{fig('rev_count', ins?.reviews.count)}</Fig></div><div style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 10 }}>reviews received on Airbnb</div></div>
+        <div><div className="sc-d56"><Fig k="rev_five" portfolio={!one}>{fig('rev_five', ins?.reviews.fiveStar)}</Fig>%</div><div style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 10 }}>of stays rated 5 stars</div></div>
+        <div><div className="sc-d56" style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Fig k="rev_rating" portfolio={!one}>{fig('rev_rating', ins?.reviews.rating)}</Fig><span className="sc-star"><Icon name="Star" size="lg" color="currentColor" style={{ fill: 'currentColor' }} /></span></div><div style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 10 }}>overall rating out of 5</div></div>
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: '26px 0 16px', gap: 12, flexWrap: 'wrap' }}>
         <div className="sc-h2">Recent 5-star reviews</div>
@@ -251,13 +250,13 @@ export function ReviewsScreen({ data, ins, g, one }: { data: ShowcaseData; ins: 
       {!one && data.listings.length > 3 && (
         <>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: '32px 0 4px', gap: 12, flexWrap: 'wrap' }}><div className="sc-h2">Homes behind these reviews</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{fmtFigure('listings', g('listings'))} listings live on Airbnb</div></div>
-          <div className="sc-marquee" {...mq.hover} style={{ margin: '12px -36px 0' }}><ListingStrip listings={data.listings} width={260} speedRef={mq.ref(0)} pill /></div>
+          <div style={{ marginTop: 12 }}><ListingStrip listings={data.listings} width={240} pill /></div>
         </>
       )}
       {loop.length >= 3 && (
-        <div className="sc-marquee" {...mq.hover} style={{ margin: '20px -36px 0' }}>
-          <div className="sc-marquee-track" ref={mq.ref(1)}>
-            {[...loop, ...loop].map((r, i) => <div key={`${r.id}-${i}`} style={{ width: 340, flexShrink: 0, display: 'flex' }}><ReviewBox r={r} i={i + 6} /></div>)}
+        <div className="sc-strip" style={{ marginTop: 20 }}>
+          <div className="sc-strip-track">
+            {loop.map((r, i) => <div key={r.id} style={{ width: 320, flexShrink: 0, display: 'flex' }}><ReviewBox r={r} i={i + 6} /></div>)}
           </div>
         </div>
       )}
@@ -289,20 +288,20 @@ export function OccupancyScreen({ ins, g, one, unit, showPrice, setShowPrice, mo
       <section className="sc-card">
         <div className="sc-eyebrow">Occupancy &amp; reliability</div>
         <div className="sc-two-up" style={{ marginTop: 20, border: '1px solid var(--sc-line)', borderRadius: 18, overflow: 'hidden' }}>
-          <div style={{ padding: 28 }}><div className="sc-big" style={{ fontSize: 'clamp(56px, 7vw, 88px)', letterSpacing: '-0.05em' }}><Fig k="occ_rate" portfolio={!one}>{fig('occ_rate', o?.rate)}</Fig>%</div><div className="sc-sub" style={{ marginTop: 10 }}>average occupancy rate</div></div>
-          <div className="sc-two-up-b" style={{ padding: 28, background: 'var(--sc-teal-panel)' }}><div className="sc-big" style={{ fontSize: 'clamp(56px, 7vw, 88px)', letterSpacing: '-0.05em', color: 'var(--sc-teal)' }}><Fig k="occ_cancel" portfolio={!one}>{fig('occ_cancel', o?.cancel)}</Fig>%</div><div className="sc-sub" style={{ marginTop: 10 }}>cancellation rate</div></div>
+          <div style={{ padding: 24 }}><div className="sc-d56"><Fig k="occ_rate" portfolio={!one}>{fig('occ_rate', o?.rate)}</Fig>%</div><div className="sc-sub" style={{ marginTop: 10 }}>average occupancy rate</div></div>
+          <div className="sc-two-up-b" style={{ padding: 24, background: 'var(--sc-teal-panel)' }}><div className="sc-d56" style={{ color: 'var(--sc-teal)' }}><Fig k="occ_cancel" portfolio={!one}>{fig('occ_cancel', o?.cancel)}</Fig>%</div><div className="sc-sub" style={{ marginTop: 10 }}>cancellation rate</div></div>
         </div>
         <div className="sc-grid-5" style={{ marginTop: 28 }}>
-          {small.map(s => <div key={s.l}><div className="num" style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.03em' }}>{s.v}</div><div className="sc-label">{s.l}</div></div>)}
+          {small.map(s => <div key={s.l}><div className="sc-d26">{s.v}</div><div className="sc-label">{s.l}</div></div>)}
         </div>
       </section>
       <section className="sc-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 24, flexWrap: 'wrap' }}>
           <div><div className="sc-eyebrow">Year-round daily occupancy</div><div className="sc-sub" style={{ marginTop: 8 }}>Share of listings booked on an average day{months.length ? `, ${monthLabel(months[0].month)} – ${monthLabel(months[months.length - 1].month)}` : ''}</div></div>
-          <div className="sc-big" style={{ fontSize: 64, letterSpacing: '-0.04em' }}><Fig k="occ_year" portfolio={!one}>{fig('occ_year', o?.year)}</Fig>%</div>
+          <div className="sc-d56"><Fig k="occ_year" portfolio={!one}>{fig('occ_year', o?.year)}</Fig>%</div>
         </div>
         <div className="sc-grid-12" style={{ marginTop: 26 }}>
-          {months.map(m => <div key={m.month} style={{ borderTop: '3px solid var(--sc-teal)', paddingTop: 10 }}><div style={{ fontSize: 12, color: 'var(--sc-muted)', fontWeight: 600 }}>{monthLabel(m.month).slice(0, 3)}</div><div className="num" style={{ fontSize: 17, fontWeight: 800, marginTop: 2 }}>{m.occupancy}%</div></div>)}
+          {months.map(m => <div key={m.month} style={{ borderTop: '3px solid var(--color-gold)', paddingTop: 10 }}><div style={{ fontSize: 12, color: 'var(--sc-muted)', fontWeight: 600 }}>{monthLabel(m.month).slice(0, 3)}</div><div className="num" style={{ fontSize: 15, fontWeight: 700, marginTop: 2 }}>{m.occupancy}%</div></div>)}
         </div>
       </section>
       {one && unit && ms && (
@@ -312,10 +311,10 @@ export function OccupancyScreen({ ins, g, one, unit, showPrice, setShowPrice, mo
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}><MonthNav month={month} min={min} max={max} onChange={setMonth} /><PriceToggle on={showPrice} onChange={setShowPrice} /></div>
           </div>
           <div className="sc-grid-4" style={{ margin: '24px 0' }}>
-            <div><div className="sc-big" style={{ fontSize: 40, letterSpacing: '-0.04em', color: 'var(--sc-teal)' }}>{ms.occupancy}%</div><div className="sc-label" style={{ marginTop: 6 }}>occupancy in {monthLabel(month, { long: true })}</div></div>
-            <div><div className="sc-big" style={{ fontSize: 40, letterSpacing: '-0.04em' }}>{ms.nights}</div><div className="sc-label" style={{ marginTop: 6 }}>nights booked</div></div>
-            <div><div className="sc-big" style={{ fontSize: 40, letterSpacing: '-0.04em' }}>{ms.stays}</div><div className="sc-label" style={{ marginTop: 6 }}>reservations</div></div>
-            {showPrice && <div><div className="sc-big" style={{ fontSize: 40, letterSpacing: '-0.04em' }}>{rmShort(ms.revenue)}</div><div className="sc-label" style={{ marginTop: 6 }}>total revenue this month</div></div>}
+            <div><div className="sc-d40" style={{ color: 'var(--sc-teal)' }}>{ms.occupancy}%</div><div className="sc-label" style={{ marginTop: 6 }}>occupancy in {monthLabel(month, { long: true })}</div></div>
+            <div><div className="sc-d40">{ms.nights}</div><div className="sc-label" style={{ marginTop: 6 }}>nights booked</div></div>
+            <div><div className="sc-d40">{ms.stays}</div><div className="sc-label" style={{ marginTop: 6 }}>reservations</div></div>
+            {showPrice && <div><div className="sc-d26">{rm(ms.revenue)}</div><div className="sc-label" style={{ marginTop: 6 }}>guest totals this month</div></div>}
           </div>
           <MonthGrid data={cal.data} unitId={unit.id} month={month} showPrice={showPrice} compact />
         </section>
@@ -339,13 +338,13 @@ export function LeadScreen({ ins, g, one }: { ins: Insights | null; g: G; one: b
       <section className="sc-card sc-lead-hero">
         <div>
           <div className="sc-eyebrow">Booking lead time</div>
-          <div className="sc-big" style={{ fontSize: 'clamp(64px, 8vw, 96px)', letterSpacing: '-0.05em', marginTop: 16 }}><Fig k="lead_avg" portfolio={!one}>{avg === null ? '-' : avg.toFixed(1)}</Fig><span style={{ fontSize: 36, letterSpacing: '-0.02em' }}> days</span></div>
+          <div className="sc-d56" style={{ marginTop: 14 }}><Fig k="lead_avg" portfolio={!one}>{avg === null ? '-' : avg.toFixed(1)}</Fig><span className="sc-d26"> days</span></div>
           <div className="sc-sub" style={{ marginTop: 12, maxWidth: 340 }}>On average, guests book our units this far ahead of their check-in date.</div>
         </div>
         <div>
           <div style={{ display: 'flex', height: 44, borderRadius: 12, overflow: 'hidden', gap: 3 }}>
             {BUCKETS.map(([, c], i) => pct(i) > 0 && (
-              <div key={i} style={{ flex: pct(i), minWidth: 0, background: c, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sc-surface)', fontSize: 13, fontWeight: 800 }}>
+              <div key={i} style={{ flex: pct(i), minWidth: 0, background: c, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--sc-on-color)', fontSize: 13, fontWeight: 700 }}>
                 <Fig k={LEAD_KEYS[i]} portfolio={!one}>{fmtFigure(LEAD_KEYS[i], pct(i))}%</Fig>
               </div>
             ))}
@@ -357,24 +356,24 @@ export function LeadScreen({ ins, g, one }: { ins: Insights | null; g: G; one: b
       </section>
       <section className="sc-card flush">
         <div style={{ padding: '22px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--sc-line)', gap: 12, flexWrap: 'wrap' }}>
-          <div className="sc-h2">Lead time by property</div>
+          <div className="sc-h2">Lead time by unit</div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--sc-muted)' }}>Sort by
-            {([['lead', 'Lead time'], ['bookings', 'Bookings'], ['rate', 'Rate']] as const).map(([k, l]) => <button key={k} type="button" className="sc-chip sm" aria-pressed={sort === k} onClick={() => setSort(k)}>{l}</button>)}
+            {([['lead', 'Lead time'], ['bookings', 'Reservations'], ['rate', 'Avg nightly price']] as const).map(([k, l]) => <button key={k} type="button" className="sc-chip sm" aria-pressed={sort === k} onClick={() => setSort(k)}>{l}</button>)}
           </div>
         </div>
-        <div className="sc-lead-grid sc-thead"><div>Property</div><div>Avg lead time</div><div>Bookings</div><div style={{ textAlign: 'right' }}>Avg nightly rate</div></div>
+        <div className="sc-lead-grid sc-thead"><div>Unit</div><div>Avg lead time</div><div style={{ textAlign: 'right' }}>Reservations</div><div style={{ textAlign: 'right' }}>Avg nightly price</div></div>
         {rows.map(r => (
           <div key={r.unitId} className="sc-lead-grid sc-trow">
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', minWidth: 0 }}>
-              <Photo id={r.photoId} fine style={{ width: 40, height: 40, borderRadius: 8 }} />
-              <div style={{ minWidth: 0 }}><div className="ellipsis" style={{ fontSize: 14, fontWeight: 700 }}>{r.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{r.unit}</div></div>
+              <Photo id={r.photoId} place={buildingOf(r.unit)} fine style={{ width: 32, height: 32, borderRadius: 8 }} />
+              <div style={{ minWidth: 0 }}><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{r.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{r.unit}</div></div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><div className="sc-bar"><span style={{ width: `${Math.round((r.lead / maxLead) * 100)}%` }} /></div><div className="num" style={{ fontSize: 14, fontWeight: 800, width: 64, textAlign: 'right' }}>{r.lead.toFixed(1)} d</div></div>
-            <div className="num" style={{ fontSize: 14 }}>{count(r.bookings)}</div>
-            <div className="num" style={{ fontSize: 14, fontWeight: 700, textAlign: 'right' }}>{rmShort(r.rate * 100)}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><div className="sc-bar"><span style={{ width: `${Math.round((r.lead / maxLead) * 100)}%` }} /></div><div className="num" style={{ fontSize: 13, fontWeight: 700, width: 72, textAlign: 'right' }}>{r.lead.toFixed(1)} days</div></div>
+            <div className="num" style={{ fontSize: 13, textAlign: 'right' }}>{count(r.bookings)}</div>
+            <div className="num" style={{ fontSize: 13, fontWeight: 700, textAlign: 'right' }}>{rm(r.rate * 100)}</div>
           </div>
         ))}
-        {!rows.length && <div className="sc-empty">No bookings checked in during this range.</div>}
+        {!rows.length && <div className="sc-empty">No reservations checked in during these dates.</div>}
       </section>
     </>
   );
@@ -389,12 +388,12 @@ export function ViewsScreen({ g }: { g: G }) {
       <section className="sc-card dark">
         <div className="sc-eyebrow">Airbnb exposure · per listing</div>
         <div className="sc-two-up" style={{ gap: 40, marginTop: 22 }}>
-          <div><div className="sc-big" style={{ fontSize: 'clamp(64px, 8vw, 96px)', letterSpacing: '-0.05em' }}><Fig k="views_pv">{fmtFigure('views_pv', pv)}</Fig></div><div style={{ fontSize: 15, color: 'var(--sc-dark-soft)', marginTop: 12 }}>average listing page views</div></div>
-          <div><div className="sc-big" style={{ fontSize: 'clamp(64px, 8vw, 96px)', letterSpacing: '-0.05em' }}><Fig k="views_imp">{fmtFigure('views_imp', imp)}</Fig></div><div style={{ fontSize: 15, color: 'var(--sc-dark-soft)', marginTop: 12 }}>average first-page search impressions</div></div>
+          <div><div className="sc-d56"><Fig k="views_pv">{fmtFigure('views_pv', pv)}</Fig></div><div style={{ fontSize: 15, color: 'var(--sc-dark-soft)', marginTop: 12 }}>average listing page views</div></div>
+          <div><div className="sc-d56"><Fig k="views_imp">{fmtFigure('views_imp', imp)}</Fig></div><div style={{ fontSize: 15, color: 'var(--sc-dark-soft)', marginTop: 12 }}>average first-page search impressions</div></div>
         </div>
         {pv !== null && imp !== null && (
-          <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--sc-dark-line)', fontSize: 18, lineHeight: 1.5, color: 'var(--sc-dark-text)', maxWidth: 760, textWrap: 'pretty' } as CSSProperties}>
-            A unit listed with The Conts is seen in Airbnb search about <b style={{ color: 'var(--sc-surface)' }}>{fmtFigure('views_imp', imp)}</b> times and opened by about <b style={{ color: 'var(--sc-surface)' }}>{fmtFigure('views_pv', pv)}</b> people every month.
+          <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--sc-dark-line)', fontSize: 15, lineHeight: 1.5, color: 'var(--sc-dark-text)', maxWidth: 760, textWrap: 'pretty' } as CSSProperties}>
+            A unit listed with The Conts is seen in Airbnb search about <b style={{ color: 'var(--sc-on-color)' }}>{fmtFigure('views_imp', imp)}</b> times and opened by about <b style={{ color: 'var(--sc-on-color)' }}>{fmtFigure('views_pv', pv)}</b> people every month.
           </div>
         )}
       </section>

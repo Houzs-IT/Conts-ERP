@@ -4,24 +4,23 @@ import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
+import { useUrlState } from '../finance/listKit';
 import { Modal } from '../../components/Modal';
-import { FormSection } from '../../components/Card';
 import { ChoiceChips } from '../../components/ChoiceChips';
-import { PhoneCard, ToolbarSearch } from '../../components/ListToolbar';
+import { ListToolbar, PhoneCard, type ToolbarFilter } from '../../components/ListToolbar';
 import { Field } from '../../components/Field';
-import { Select } from '../../components/Select';
-import { MoneyInput, NumberInput, DateField, PhoneInput, phoneProblem } from '../../components/inputs';
+import { DateField, PhoneInput, phoneProblem } from '../../components/inputs';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { AccessModal, type AccessTarget } from './AccessModal';
+import { EmployeePaySections, Section } from './EmployeePaySections';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, notifyFailure } from '../../lib/api';
 import { mayRun, mayWork } from '../../lib/areaAccess';
 import { useSession } from '../../lib/session';
 import { rm, plural, todayMyt } from '../../lib/format';
 import {
-  EMPLOYEE_DEFAULTS, POSITION_LABEL, MALAYSIAN_BANKS, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, TAX_RESIDENCIES, TAX_RESIDENCY_LABEL,
-  TAX_CATEGORIES, TAX_CATEGORY_LABEL, EMPLOYEE_STATUSES, EMPLOYEE_STATUS_LABEL, isEmployeeStatus, type Employee, type EmployeeInput,
+  EMPLOYEE_DEFAULTS, POSITION_LABEL, EMPLOYEE_STATUSES, EMPLOYEE_STATUS_LABEL, isEmployeeStatus, type Employee, type EmployeeInput,
 } from '../../../functions/_lib/hrFields';
 
 /* ------------------------------------------------------------------ *
@@ -32,18 +31,19 @@ import {
  * are on (Cleaning, Maintenance); adding one here puts them on it.
  * ------------------------------------------------------------------ */
 
-const STATUTORY: { key: 'epfEnabled' | 'socsoEnabled' | 'eisEnabled' | 'pcbEnabled'; label: string; hint: string }[] = [
-  { key: 'epfEnabled', label: 'EPF', hint: 'KWSP retirement savings' },
-  { key: 'socsoEnabled', label: 'SOCSO', hint: 'PERKESO injury cover' },
-  { key: 'eisEnabled', label: 'EIS', hint: 'Employment insurance' },
-  { key: 'pcbEnabled', label: 'PCB', hint: 'Monthly tax deduction' },
-];
-
 /** The departments they work in now; a person switched off everywhere still shows the ones they were on. */
-const departmentsOf = ({ cleanerId, technicianId, cleanerActive, technicianActive }: Pick<Employee, 'cleanerId' | 'technicianId' | 'cleanerActive' | 'technicianActive'>): string => {
-  const working = [cleanerActive && 'Cleaning', technicianActive && 'Maintenance'].filter(Boolean);
-  return (working.length ? working : [cleanerId && 'Cleaning', technicianId && 'Maintenance'].filter(Boolean)).join(', ');
+const departmentNamesOf = ({ cleanerId, technicianId, cleanerActive, technicianActive }: Pick<Employee, 'cleanerId' | 'technicianId' | 'cleanerActive' | 'technicianActive'>): string[] => {
+  const working = [cleanerActive && 'Cleaning', technicianActive && 'Maintenance'].filter(isDepartmentName);
+  return working.length ? working : [cleanerId && 'Cleaning', technicianId && 'Maintenance'].filter(isDepartmentName);
 };
+const isDepartmentName = (name: string | false | null | undefined): name is string => !!name;
+const departmentsOf = (e: Employee): string => departmentNamesOf(e).join(', ');
+
+type DepartmentFilter = 'all' | 'cleaning' | 'maintenance';
+const DEPARTMENT_FILTER_NAME: Record<Exclude<DepartmentFilter, 'all'>, string> = { cleaning: 'Cleaning', maintenance: 'Maintenance' };
+const isDepartmentFilter = (value: string): value is DepartmentFilter => value === 'all' || value in DEPARTMENT_FILTER_NAME;
+const isInDepartment = (e: Employee, department: DepartmentFilter): boolean =>
+  department === 'all' || departmentNamesOf(e).includes(DEPARTMENT_FILTER_NAME[department]);
 function statusOf(e: Employee): { label: string; tone: 'success' | 'neutral' | 'warning' } {
   if (e.status === 'resigned') return { label: 'Resigned', tone: 'neutral' };
   if (e.status === 'test') return { label: 'Test', tone: 'neutral' };
@@ -64,9 +64,19 @@ export default function EmployeesTab() {
   const [form, setForm] = useState<{ person: Employee | null } | null>(null);
   const [given, setGiven] = useState<{ name: string; employeeId: string; pin: string } | null>(null);
   const [query, setQuery] = useState('');
-  const all = data?.data ?? [];
+  const people = data?.data ?? [];
+  const url = useUrlState();
+  const requestedDepartment = url.get('dept', 'all');
+  const department: DepartmentFilter = isDepartmentFilter(requestedDepartment) ? requestedDepartment : 'all';
   const needle = query.trim().toLowerCase();
-  const people = needle ? all.filter(e => [e.name, e.employeeId, departmentsOf(e), POSITION_LABEL[e.position]].join(' ').toLowerCase().includes(needle)) : all;
+  // The department (main's ?dept=) and the search, both in the one toolbar.
+  const visiblePeople = people.filter(e => isInDepartment(e, department)
+    && (!needle || [e.name, e.employeeId, departmentsOf(e), POSITION_LABEL[e.position]].join(' ').toLowerCase().includes(needle)));
+  const departmentFilter: ToolbarFilter = {
+    key: 'dept', label: 'Department', allLabel: 'All', value: department === 'all' ? '' : department,
+    onChange: v => url.set({ dept: v || null, page: null }),
+    options: (['cleaning', 'maintenance'] as const).map(key => ({ value: key, label: DEPARTMENT_FILTER_NAME[key], count: data ? people.filter(e => isInDepartment(e, key)).length : undefined })),
+  };
 
   const columns = useMemo<Column<Employee>[]>(() => [
     { key: 'empNo', label: 'Emp No', value: e => e.employeeId, width: 100 },
@@ -127,13 +137,14 @@ export default function EmployeesTab() {
   return (
     <>
       {confirmDialog}
-      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? (needle ? `${plural(people.length, 'employee')} of ${all.length} match` : plural(all.length, 'employee')) : 'Loading the list…'}</p>
+      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? (visiblePeople.length !== people.length ? `${plural(visiblePeople.length, 'employee')} of ${people.length}` : plural(people.length, 'employee')) : 'Loading the list…'}</p>
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <DataTable<Employee>
-        id="employees" columns={columns} rows={loading && all.length === 0 ? null : people}
-        toolbar={<ToolbarSearch value={query} onChange={setQuery} placeholder="Name, employee no, department" label="Search employees" />}
-        filtered={!!needle} onClearFilters={() => setQuery('')}
+        id="employees" columns={columns} rows={loading && people.length === 0 ? null : visiblePeople}
+        viewParams={['dept']} filtered={department !== 'all' || !!needle} onClearFilters={() => { setQuery(''); url.set({ dept: null, page: null }); }}
+        toolbar={<ListToolbar bare className="w-full" filters={[departmentFilter]}
+          search={{ value: query, onChange: setQuery, placeholder: 'Name, employee no, department', label: 'Search employees' }} />}
         rowKey={e => e.cleanerId ?? e.technicianId ?? e.name} pageSize={0} noun={['employee', 'employees']} exportName="employee-master"
         rowTone={e => (e.status !== 'active' || !e.isActive ? 'muted' : null)}
         onRowClick={mayEdit ? e => setForm({ person: e }) : undefined}
@@ -269,7 +280,7 @@ function EmployeeForm({ person, onClose, onSaved }: {
 
   return (
     <Modal title={creating ? 'Add employee' : name || 'Employee'} sub={creating ? 'A cleaner or technician on the company payroll.' : [person.employeeId, departmentsOf(person), POSITION_LABEL[d.position]].filter(Boolean).join(' · ')}
-      onClose={onClose} size="lg" eyebrow="Employee Master"
+      onClose={onClose} width={640} eyebrow="Employee Master"
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : creating ? 'Add employee' : 'Save'}</Button>
@@ -280,14 +291,12 @@ function EmployeeForm({ person, onClose, onSaved }: {
             help={creating ? undefined : 'Given with app access: use Give app access on the list.'} />
           <Field label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="Nurul Huda" error={errors.name} />
           <PhoneInput label="Phone" value={phone} onChange={setPhone} error={errors.phone} />
-          <label className="sm:col-span-2 flex items-center gap-2.5 min-h-10 cursor-pointer">
-            <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={d.position === 'leader'}
-              onChange={e => setD(p => ({ ...p, position: e.target.checked ? 'leader' : 'employee', leaderAllowanceSen: e.target.checked ? p.leaderAllowanceSen : 0 }))} />
-            <span className="flex flex-col">
-              <span className="text-copy font-medium">Leader</span>
-              <span className="text-meta text-muted-ink">Leads a team and can get the leader allowance. Unticked: a normal employee.</span>
-            </span>
-          </label>
+          {/* Main's Leader tick as one-tap chips: Leader, or a normal employee; leaving Leader clears the leader allowance. */}
+          <div className="sm:col-span-2">
+            <ChoiceChips label="Position" value={d.position} help="A leader leads a team and can get the leader allowance."
+              options={[{ value: 'employee', label: POSITION_LABEL.employee }, { value: 'leader', label: POSITION_LABEL.leader }]}
+              onChange={v => setD(p => ({ ...p, position: v, leaderAllowanceSen: v === 'leader' ? p.leaderAllowanceSen : 0 }))} />
+          </div>
           <div className="sm:col-span-2 flex flex-col gap-1.5">
             {creating || mayRoster ? (
               <ChoiceChips<Dept> label="Department" required={creating} value={dept ?? ''} onChange={setDept}
@@ -297,7 +306,7 @@ function EmployeeForm({ person, onClose, onSaved }: {
             {!creating && dept && dept !== wasDept && <span className="text-meta text-muted-ink">Saving moves them to {dept === 'cleaning' ? 'Cleaning' : 'Maintenance'}. Their app opens on {dept === 'cleaning' ? 'cleaning jobs' : 'repair jobs'} from the next time it loads.</span>}
             {errors.departments && <span className="text-meta text-danger">{errors.departments}</span>}
           </div>
-          <Select label="Status" showLabel size="md" value={d.status} onChange={v => set('status', isEmployeeStatus(v) ? v : 'active')}
+          <ChoiceChips label="Status" value={d.status} onChange={v => set('status', isEmployeeStatus(v) ? v : 'active')}
             options={EMPLOYEE_STATUSES.map(status => ({ value: status, label: EMPLOYEE_STATUS_LABEL[status] }))} />
           <DateField label="Join date" value={d.joinDate ?? ''} onChange={v => set('joinDate', v || null)} error={errors.joinDate} />
           {d.status === 'resigned' && (
@@ -312,64 +321,7 @@ function EmployeeForm({ person, onClose, onSaved }: {
           )}
         </Section>
 
-        <Section title="Pay">
-          <label className="sm:col-span-2 flex items-center gap-2.5 min-h-10 cursor-pointer">
-            <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={daily} onChange={e => set('payBasis', e.target.checked ? 'daily' : 'monthly')} />
-            <span className="text-copy">Paid per day instead of a monthly salary</span>
-          </label>
-          {daily
-            ? <MoneyInput label="Rate per day (RM)" valueSen={d.dailyRateSen || null} onChangeSen={v => set('dailyRateSen', v ?? 0)} error={errors.dailyRateSen} />
-            : <MoneyInput label="Basic salary (RM)" valueSen={d.basicSalarySen || null} onChangeSen={v => set('basicSalarySen', v ?? 0)} error={errors.basicSalarySen} />}
-          <NumberInput label="Days / month" value={d.workingDaysPerMonth} onChange={v => set('workingDaysPerMonth', v ?? 26)} min={1} max={31} help="The divisor for the day rate." error={errors.workingDaysPerMonth} />
-          {salaryChanged && (
-            <DateField label="New salary takes effect from" value={salaryFrom} onChange={v => v && setSalaryFrom(v)} required
-              help="Months ending on or after this day are paid on the new salary. Approved payslips stay as they are." />
-          )}
-          <NumberInput label="Hours / day" value={d.workingHoursPerDay} onChange={v => set('workingHoursPerDay', v ?? 8)} decimals={2} min={0.5} max={24}
-            help="Their standard day: the overtime line, and what a short day is short of." error={errors.workingHoursPerDay} />
-          <NumberInput label="OT multiplier" value={d.otMultiplier} onChange={v => set('otMultiplier', v ?? 1.5)} decimals={2} min={1} max={5} error={errors.otMultiplier} />
-          {d.position === 'leader' && (
-            <MoneyInput label="Leader allowance (RM)" valueSen={d.leaderAllowanceSen || null} onChangeSen={v => set('leaderAllowanceSen', v ?? 0)}
-              help="Each month, less the share of working days missed." error={errors.leaderAllowanceSen} />
-          )}
-          <MoneyInput label="Eff. allowance (RM)" valueSen={d.efficiencyAllowanceSen || null} onChangeSen={v => set('efficiencyAllowanceSen', v ?? 0)}
-            help="Paid once production time is decided." error={errors.efficiencyAllowanceSen} />
-          <NumberInput label="Eff. threshold %" value={d.efficiencyThresholdPct} onChange={v => set('efficiencyThresholdPct', v ?? 100)} min={0} max={200} error={errors.efficiencyThresholdPct} />
-        </Section>
-
-        <Section title="How they are paid">
-          <Select label="Method" showLabel size="md" value={d.paymentMethod} onChange={v => set('paymentMethod', PAYMENT_METHODS.find(m => m === v) ?? 'transfer')}
-            options={PAYMENT_METHODS.map(m => ({ value: m, label: PAYMENT_METHOD_LABEL[m] }))} />
-          {d.paymentMethod === 'transfer' && <>
-            <Select label="Bank" showLabel size="md" value={d.bankName ?? ''} placeholder="Pick a bank" onChange={v => set('bankName', MALAYSIAN_BANKS.find(b => b === v) ?? null)}
-              options={MALAYSIAN_BANKS.map(b => ({ value: b, label: b }))} />
-            <Field label="Account number" inputMode="numeric" value={d.bankAccount ?? ''} onChange={e => set('bankAccount', e.target.value)} placeholder="Digits only" error={errors.bankAccount} />
-          </>}
-        </Section>
-
-        <Section title="Statutory" note="Each one is taken from their pay only when ticked.">
-          {STATUTORY.map(s => (
-            <label key={s.key} className="flex items-center gap-2.5 min-h-10 cursor-pointer">
-              <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={d[s.key]} onChange={e => set(s.key, e.target.checked)} />
-              <span className="flex flex-col">
-                <span className="text-copy font-medium">{s.label}</span>
-                <span className="text-meta text-muted-ink">{s.hint}</span>
-              </span>
-            </label>
-          ))}
-        </Section>
-
-        {d.pcbEnabled && (
-          <Section title="PCB tax declaration" note="Leave a field empty until the employee declares it: PCB is not worked out on a guess.">
-            <Select label="Tax residency" showLabel size="md" value={d.taxResidency ?? ''} placeholder="Not declared"
-              onChange={v => set('taxResidency', TAX_RESIDENCIES.find(r => r === v) ?? null)}
-              options={TAX_RESIDENCIES.map(r => ({ value: r, label: TAX_RESIDENCY_LABEL[r] }))} />
-            <Select label="Marital category" showLabel size="md" value={d.taxCategory ?? ''} placeholder="Not declared"
-              onChange={v => set('taxCategory', TAX_CATEGORIES.find(c => c === v) ?? null)}
-              options={TAX_CATEGORIES.map(c => ({ value: c, label: TAX_CATEGORY_LABEL[c] }))} />
-            <MoneyInput label="Child relief a year (RM)" valueSen={d.taxChildReliefSen} onChangeSen={v => set('taxChildReliefSen', v)} placeholder="Not declared" error={errors.taxChildReliefSen} />
-          </Section>
-        )}
+        <EmployeePaySections record={d} onChange={set} errors={errors} salaryChanged={salaryChanged} salaryFrom={salaryFrom} onSalaryFromChange={setSalaryFrom} />
 
         {errors.form && <p className="m-0 text-meta text-danger">{errors.form}</p>}
         {person && person.status === 'active' && d.status === 'resigned' && (
@@ -378,9 +330,4 @@ function EmployeeForm({ person, onClose, onSaved }: {
       </div>
     </Modal>
   );
-}
-
-/** The kit's form section (Conts DS v2): small caps title, the note on the right, two columns on a desk. */
-function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
-  return <FormSection title={title} hint={note}>{children}</FormSection>;
 }

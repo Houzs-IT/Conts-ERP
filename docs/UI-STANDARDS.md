@@ -77,6 +77,9 @@ every pull request.
   `src/styles/theme-dark.css`. Component classes (`ds-*`) live in `src/styles/components.css`.
 - `PageHeader` shows a gold eyebrow (the menu group, or `eyebrow="..."`, or `eyebrow={false}`); below 900px its plain
   secondary `Button`s fold into one More menu (`HeaderActions`).
+- A menu entry marked `tabs` in `navigation.ts` (Unit report, Units, Owners, Settings) is one row in the menu; its
+  screens show as sub-tabs above the page (`SubNav`, drawn by AppShell, `.ds-subnav`). Each tab keeps its own address
+  and permission area; pages do not draw this bar themselves. The phone tab bar is the person's four main screens + Menu.
 - `StatTile hero` leads its row and spans it on a phone. `Segmented` is a white track with the chosen option on black.
   `TabBar` and `DrawerTabs` have the gold underline. `DataTable` rows are about 40px with an uppercase sticky header.
 - `Modal size="sm|md|lg"`, `eyebrow`, `aside`, `footNote`; a bottom sheet at 640px and under. `Drawer size="md|lg|xl"`,

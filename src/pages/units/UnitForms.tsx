@@ -46,7 +46,7 @@ export function SaveBar({ title, sub, dirty, saving, canEdit, onSave, extra }: {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
       <div className="flex flex-col gap-1 min-w-0">
-        <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
+        <span className="text-[15px] font-semibold tracking-[-0.01em]">{title}</span>
         {sub && <span className="text-meta text-muted-ink">{sub}</span>}
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -273,7 +273,7 @@ export function DocumentsCard({ unitId, unitLabel, documents, onUploaded }: { un
   return (
     <Card>
       <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
-        <span className="text-[16px] font-semibold tracking-[-0.01em]">Documents</span>
+        <span className="text-[15px] font-semibold tracking-[-0.01em]">Documents</span>
         <span className="text-meta text-muted-ink">Agreements, statements, inspection reports and photos for this unit.</span>
       </div>
       <DataTable<Doc> id="unit.documents" urlPrefix="doc." bare noViews noToolbar pageSize={0} maxHeight="none"

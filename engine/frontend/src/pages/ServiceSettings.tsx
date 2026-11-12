@@ -7,7 +7,7 @@ import { TabStrip } from "../components/TabStrip";
 import { ServiceLeadTimePortal } from "./ServiceLeadTimePortal";
 import { useQuery } from "../hooks/useQuery";
 import { useToast } from "../hooks/useToast";
-import { useAuth } from "../auth/AuthContext";
+import { usePageAccess } from "../auth/PageGuard";
 import { api } from "../api/client";
 import { UserMultiSelect } from "../components/UserMultiSelect";
 
@@ -127,8 +127,7 @@ function DefaultAssigneeSection() {
   // (assr.ts:218) while the nav entry and the PUT both need `.manage` — so
   // anyone who could read a case could read this config. Never fire it without
   // the permission the page is actually for.
-  const { can } = useAuth();
-  const canManageService = can("service_cases.manage");
+  const canManageService = usePageAccess("service_cases.settings") === "full";
   const settings = useQuery<ServiceSettingsResponse>("/api/assr/settings",
     () => api.get("/api/assr/settings"),
     [],

@@ -209,7 +209,7 @@ app.get("/projects/:id/workspace", requirePageAccess("projects.list"), async (c)
 
 // ── Settings ─────────────────────────────────────────────────────────────
 
-app.put("/settings", requirePermission("projects.manage"), async (c) => {
+app.put("/settings", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const v = cleanBetaSettings(await body(c));

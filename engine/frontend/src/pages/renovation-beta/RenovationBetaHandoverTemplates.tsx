@@ -1,12 +1,12 @@
 /* Projects > Handover checklists (TODO item 17, after Hookka's QC templates; migration 0296): the company's checklists
    for walking a unit before handover. Each is a list of things to check, under a room or area, with what good looks
    like. A project's Defects tab starts a check from one; the check keeps its own copy, so editing a checklist here never
-   changes a check already started. Editing needs projects.manage (like Beta's settings); everyone with project list
-   access can read them. */
+   changes a check already started. Editing needs Full on the projects.handover page; anyone with that page or the project list
+   can read them. */
 
 import { useState, type ReactElement } from "react";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import { useAuth } from "../../auth/AuthContext";
+import { usePageAccess } from "../../auth/PageGuard";
 import { useQuery } from "../../hooks/useQuery";
 import { errorText } from "../projects/renovation/renovationModel";
 import { BetaLoading } from "./BetaLoading";
@@ -34,8 +34,7 @@ const blankRow = (): TemplateItem => ({ area: "", item: "", criteria: "" });
 const editOf = (t: HandoverTemplate): Editing => ({ id: t.id, name: t.name, active: t.active, rows: t.items.map((i) => ({ area: i.area ?? "", item: i.item, criteria: i.criteria ?? "" })) });
 
 function TemplatesScreen(): ReactElement {
-  const { can } = useAuth();
-  const canManage = can("projects.manage");
+  const canManage = usePageAccess("projects.handover") === "full";
   const q = useQuery(["renovation-beta", "handover-templates", "all"], () => handoverApi.templates(true), []);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -80,8 +79,7 @@ function TemplatesScreen(): ReactElement {
 }
 
 function Editor({ start, onCancel, onSaved }: { start: Editing; onCancel: () => void; onSaved: (text: string) => void }): ReactElement {
-  const { can } = useAuth();
-  const canManage = can("projects.manage");
+  const canManage = usePageAccess("projects.handover") === "full";
   const [name, setName] = useState(start.name);
   const [active, setActive] = useState(start.active);
   const [rows, setRows] = useState<TemplateItem[]>(start.rows);
