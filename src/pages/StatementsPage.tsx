@@ -17,6 +17,8 @@ import { TONE, cx } from '../lib/design-tokens';
 import type { StatementState } from '../lib/types';
 import { useUrlState, SearchBox, shiftMonth } from './finance/listKit';
 import { FilterBar } from '../components/FilterBar';
+import { useSession } from '../lib/session';
+import { mayWork } from '../lib/areaAccess';
 import { statusLabel } from '../lib/status';
 import { Eyebrow, Figure, StatRow, StatTile } from '../components/Metric';
 import { AdjustDialog, SectionHead } from './owners/OwnerMoney';
@@ -63,6 +65,8 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
   const query = new URLSearchParams({ pageSize: String(size), ...(pickedPeriod ? { period: pickedPeriod } : {}), ...(stateFilter ? { state: stateFilter } : {}), ...(q ? { q } : {}), ...(page > 1 ? { page: String(page) } : {}) });
   const { data, loading, error, reload } = useApi<Payload>(`/statements?${query}`, FALLBACK);
   const toast = useToast();
+  // Make final is a power given one by one (owner statement close part 3); the server checks it too.
+  const mayMakeFinal = mayWork(useSession().user, 'makeFinal');
 
   const [edits, setEdits] = useState<Record<string, Partial<Statement>>>({});
   const [sendTargets, setSendTargets] = useState<{ rows: Statement[]; clear: () => void } | null>(null);
@@ -281,7 +285,7 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
             const provisional = picked.filter(r => r.state === 'provisional').length;
             const finalised = picked.filter(r => r.state === 'finalised');
             return <>
-              {provisional > 0 && <Button size="sm" variant="secondary" loading={busy} onClick={() => runFinalise(picked, clear)}>Mark {provisional} final</Button>}
+              {provisional > 0 && mayMakeFinal && <Button size="sm" variant="secondary" loading={busy} onClick={() => runFinalise(picked, clear)}>Mark {provisional} final</Button>}
               {finalised.length > 0 && <Button size="sm" variant="primary" onClick={() => setSendTargets({ rows: finalised, clear })}>Send {plural(finalised.length, 'statement')}</Button>}
             </>;
           }}

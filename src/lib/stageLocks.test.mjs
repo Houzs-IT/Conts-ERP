@@ -26,13 +26,14 @@ test('a unit waits on the steps not yet locked, in step order', () => {
 });
 
 test('the waiting text names the steps for a one-unit owner and the units otherwise', () => {
-  assert.equal(waitingText([{ label: 'A-20-05', stages: ['deductions', 'o2'] }], 1), 'Waiting: deductions, O2');
+  assert.equal(waitingText([{ label: 'A-20-05', stages: ['deductions', 'o2'] }], 1), 'Waiting: deductions and O2');
   assert.equal(waitingText([{ label: 'B-16-05 (B)', stages: ['o2'] }], 2), 'Waiting: B-16-05 (B) O2');
   assert.equal(waitingText([{ label: 'B-16-05 (B)', stages: ['income', 'o2'] }], 2), 'Waiting: B-16-05 (B) income and O2');
+  assert.equal(waitingText([{ label: 'F-02', stages: ['income', 'deductions', 'o2'] }], 2), 'Waiting: F-02 income, deductions and O2');
   assert.equal(waitingText([{ label: 'X', stages: ['income'] }, { label: 'Y', stages: ['o2'] }, { label: 'Z', stages: ['o2'] }], 5),
-    'Waiting: X income, Y O2 and 1 more unit');
+    'Waiting: X income; Y O2; 1 more unit');
   assert.equal(waitingText([{ label: 'X', stages: ['income'] }, { label: 'Y', stages: ['o2'] }, { label: 'Z', stages: ['o2'] }, { label: 'W', stages: ['o2'] }], 5),
-    'Waiting: X income, Y O2 and 2 more units');
+    'Waiting: X income; Y O2; 2 more units');
 });
 
 test('unlocking a final statement follows its payout', () => {

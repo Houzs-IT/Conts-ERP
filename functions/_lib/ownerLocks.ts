@@ -20,7 +20,7 @@ import { modelOf } from './revenueModel';
 import { finalMonthsFor } from './expenses';
 import {
   type Stage, STAGES, openMonthAfter, planLate, planUnlock, carriedText, companyCarriedText, companyFigure, lateLabel, lateText, monthLabel, lockable, splitLate,
-  type PostedLate,
+  type PostedLate, type FinalUnit,
 } from './stageLocks';
 
 export interface LockRow { id: string; month: string; unit_id: string; stage: Stage; locked_by_name: string; locked_at: string }
@@ -114,6 +114,26 @@ export async function closeSteps(env: Env, month: string): Promise<{
     if (unitId) held.set(unitId, (held.get(unitId) ?? 0) + Number(h.amount));
   }
   return { inputs, dated, open, locks: byUnit, finals, held, steps, counts };
+}
+
+/** For each owner with a unit on one of the month's steps: those units, the steps that list each (closeSteps) and the
+ *  ones locked. Make final needs every listed step locked (spec goal 7; stageLocks.ts finalWaiting). Units are named as
+ *  the close page names them (the unit code, else the unit number), in that order. */
+export async function finalReadiness(env: Env, month: string): Promise<Map<string, FinalUnit[]>> {
+  const step = await closeSteps(env, month);
+  const unitOf = new Map(step.inputs.units.map(u => [u.id, u]));
+  const ownerOf = new Map(step.dated.map(r => [r.unitId, r.ownerId]));
+  const listed = new Map<string, Stage[]>();
+  for (const stage of STAGES) for (const id of step.steps[stage]) listed.set(id, [...(listed.get(id) ?? []), stage]);
+  const out = new Map<string, FinalUnit[]>();
+  for (const [unitId, steps] of listed) {
+    const ownerId = ownerOf.get(unitId), u = unitOf.get(unitId);
+    if (!ownerId || !u) continue;
+    const locks = step.locks.get(unitId) ?? {};
+    out.set(ownerId, [...(out.get(ownerId) ?? []), { unitId, label: u.unit_code || u.unit_number, steps, locked: STAGES.filter(s => !!locks[s]) }]);
+  }
+  for (const units of out.values()) units.sort((a, b) => a.label.localeCompare(b.label));
+  return out;
 }
 
 /** The locks of a month, for some units or all. */

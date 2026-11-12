@@ -84,6 +84,10 @@ export const AREAS: Area[] = [
   { key: 'lockDeductions', label: 'Lock deductions', group: 'Units', api: [], managed: true, ownGrant: true },
   { key: 'lockO2', label: 'Lock O2', group: 'Units', api: [], managed: true, ownGrant: true },
   { key: 'unlockStep', label: 'Unlock a step', group: 'Units', api: [], managed: true, ownGrant: true },
+  // Owner statement close part 3 (chew, 11 Nov 2026: "final 解锁权限我也能assign"): making a statement final and unlocking
+  // a final one are powers of their own, given one by one like the locks.
+  { key: 'makeFinal', label: 'Make final', group: 'Units', api: [], managed: true, ownGrant: true },
+  { key: 'unlockFinal', label: 'Unlock final', group: 'Units', api: [], managed: true, ownGrant: true },
   { key: 'serviceCases', label: 'Service cases', group: 'Service cases', api: [] },
   { key: 'serviceMetrics', label: 'Quality metrics', group: 'Service cases', api: [] },
   // Picker lists and SLA lead times; changing them needs Full, as it did on Service cases.
@@ -240,6 +244,7 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | string[
   // Pricing (Full to change) or Employees (edit to change), whichever the person has (functions/_lib/holidays.ts).
   ...(['GET', 'POST', 'PUT', 'DELETE'] as const).map(method => ({ method, path: /^\/api\/holidays(\/[^/]+)?$/, area: null, why: 'The public holiday list is shared by Pricing and HR; its handlers check either area.' })),
   { method: 'POST', path: /^\/api\/owner-close\/(lock|unlock)$/, area: null, why: 'Each stage has its own lock power and unlocking has its own (lockIncome, lockDeductions, lockO2, unlockStep); the handlers check them.' },
+  { method: 'POST', path: /^\/api\/statements\/(finalise|unlock-final)$/, area: null, why: 'Make final and Unlock final are powers given one by one (makeFinal, unlockFinal); the handlers check them.' },
   { method: 'POST', path: /^\/api\/housekeeping\/guest-left$/, area: ['operations', 'cleaning'], why: 'Today and Cleaning both mark a guest as left.' },
   { method: '*', path: /^\/api\/housekeeping\/(price-raise|unit-prices)$/, area: ['cleaning', 'maintenance'], why: 'The price list and its scheduled raises sit on Cleaning and Maintenance.' },
   { method: '*', path: /^\/api\/maintenance\/skus(\/[^/]+)?$/, area: ['cleaning', 'maintenance'], why: 'The service price list on Cleaning and Maintenance edits the repair SKUs.' },

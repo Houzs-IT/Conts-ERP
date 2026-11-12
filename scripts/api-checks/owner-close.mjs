@@ -138,7 +138,9 @@ const octPart = (8000 * bOctNights) / bNights;
 check('a stay across months sends only its October part', late.length === 1 && near(late[0].amount, Math.round(((10000 + octPart) * pct) / 100)), JSON.stringify(late));
 check('November follows the change itself', near((await income(NOV, u.id)) - nov0, 8000 - octPart), `${await income(NOV, u.id)} - ${nov0}`);
 r = await finalise();
-check('generated again, it can be marked final', r.status === 200 && r.json?.finalised === 1, r.text);
+// Generated again it is no longer out of date; it now waits for November's steps to be locked (part 3: Make final needs
+// every step locked, and November cannot be locked before it ends).
+check('generated again, it is no longer out of date', r.status === 200 && r.json?.finalised === 0 && /^Waiting: /.test(r.json?.failed?.[0]?.reason ?? ''), r.text);
 await backToDraft();
 
 // Unlocking.
@@ -153,7 +155,9 @@ check('the November draft that printed it cannot be marked final until generated
 await backToDraft();
 await generate(NOV, u.owner_id);
 r = await finalise();
-check('generated again, it can be marked final', r.status === 200 && r.json?.finalised === 1, r.text);
+// Generated again it is no longer out of date; it now waits for November's steps to be locked (part 3: Make final needs
+// every step locked, and November cannot be locked before it ends).
+check('generated again, it is no longer out of date', r.status === 200 && r.json?.finalised === 0 && /^Waiting: /.test(r.json?.failed?.[0]?.reason ?? ''), r.text);
 await backToDraft();
 check("the month is back to today's data", near(await income(OCT, u.id), oct0 + 10000 + octPart), `${await income(OCT, u.id)} vs ${oct0 + 10000 + octPart}`);
 const why = await db(`SELECT after_state FROM audit_log WHERE action = 'owner_report.unlock' AND entity_id = $1 ORDER BY occurred_at DESC LIMIT 1`, u.id);

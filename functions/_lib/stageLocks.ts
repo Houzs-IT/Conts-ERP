@@ -201,12 +201,19 @@ export function finalWaiting(units: FinalUnit[]): { unitId: string; label: strin
   });
 }
 
-/** 'Waiting: deductions, O2' for an owner with one unit; 'Waiting: B-16-05 (B) O2' otherwise, at most two units named. */
+/** 'income, deductions and O2'. */
+const stageList = (stages: Stage[]): string => {
+  const names = stages.map(s => STAGE_NAME[s]);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0] ?? '';
+};
+
+/** 'Waiting: deductions and O2' for an owner with one unit; 'Waiting: B-16-05 (B) O2' otherwise, at most two units named
+ *  ('Waiting: X income; Y O2; 2 more units'). */
 export function waitingText(waiting: { label: string; stages: Stage[] }[], ownerUnits: number): string {
-  if (ownerUnits <= 1 && waiting.length === 1) return `Waiting: ${waiting[0].stages.map(s => STAGE_NAME[s]).join(', ')}`;
-  const named = waiting.slice(0, 2).map(w => `${w.label} ${w.stages.map(s => STAGE_NAME[s]).join(' and ')}`).join(', ');
+  if (ownerUnits <= 1 && waiting.length === 1) return `Waiting: ${stageList(waiting[0].stages)}`;
+  const named = waiting.slice(0, 2).map(w => `${w.label} ${stageList(w.stages)}`);
   const more = waiting.length - 2;
-  return `Waiting: ${named}${more > 0 ? ` and ${more} more unit${more === 1 ? '' : 's'}` : ''}`;
+  return `Waiting: ${[...named, ...(more > 0 ? [`${more} more unit${more === 1 ? '' : 's'}`] : [])].join('; ')}`;
 }
 
 export type FinalUnlock = { kind: 'draft'; cancelPayout: string | null } | { kind: 'paid' } | { kind: 'refused'; problem: string };

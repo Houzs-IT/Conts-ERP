@@ -60,8 +60,10 @@ await stay('rc-fut', u2.id, 'HMCHECK0FUT', '2026-11-20', '2026-11-23', 30_000, 0
 const statementOf = async (ownerId, month) => (await db(`SELECT id, state FROM owner_statements WHERE owner_id = $1 AND period_start LIKE $2`, ownerId, `${month}%`))[0];
 r = await call('POST', '/api/statements/generate', { period: MONTH, ownerIds: [u1.owner_id] });
 check('October statement generated', r.status < 300, r.text);
-r = await call('POST', '/api/statements/finalise', { statementIds: [(await statementOf(u1.owner_id, MONTH))?.id] });
-check('October statement final', r.status === 200 && (await statementOf(u1.owner_id, MONTH))?.state !== 'provisional', r.text);
+// Made final in the database: from October 2026 Make final needs every step locked (owner statement close part 3), and
+// this check is about a final month, not about the locks.
+await db(`UPDATE owner_statements SET state = 'finalised', finalised_at = $2 WHERE id = $1`, (await statementOf(u1.owner_id, MONTH))?.id, now);
+check('October statement final', (await statementOf(u1.owner_id, MONTH))?.state === 'finalised');
 
 const line = (date, type, code, amount, o = {}) => ({
   Date: date, Type: type, 'Confirmation code': code, 'Start date': o.start ?? '', 'End date': o.end ?? '', Nights: o.nights ?? '', Guest: 'Check Guest',
@@ -154,8 +156,8 @@ adj = await shares();
 check('November’s statement takes the owner’s share', r.status < 300 && !!nov && adj[0]?.statement_id === nov.id, `${r.text} ${JSON.stringify(adj)}`);
 const novLines = await db(`SELECT amount FROM statement_lines WHERE statement_id = $1 AND adjustment_id = $2`, nov?.id, adj[0]?.id);
 check('… as a line of its own', novLines.length === 1 && Number(novLines[0].amount) === share, JSON.stringify(novLines));
-r = await call('POST', '/api/statements/finalise', { statementIds: [nov?.id] });
-check('November final', r.status === 200, r.text);
+await db(`UPDATE owner_statements SET state = 'finalised', finalised_at = $2 WHERE id = $1`, nov?.id, now);
+check('November final', (await statementOf(u1.owner_id, '2026-11'))?.state === 'finalised');
 r = await call('POST', '/api/airbnb-recon/undo', { month: MONTH, code: 'HMCHECK0SET' });
 check('then undo is refused', r.status === 409 && /final statement/.test(r.text), r.text);
 check('… and nothing moved', Number((await resv('rc-set')).gross) === 34_191 && (await shares()).length === 1);
