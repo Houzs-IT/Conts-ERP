@@ -116,7 +116,7 @@ export default function WorkingHoursTab() {
     setRows(rs => rs.filter(x => x.key !== r.key));
   }
   const duplicate = (r: Row) => setRows(rs => {
-    const other = DEPARTMENTS.find(d => d !== r.department) ?? r.department;
+    const other = people.get(r.person)?.departments.find(d => d !== r.department) ?? r.department;
     const i = rs.findIndex(x => x.key === r.key);
     const copy: Row = { ...r, key: newKey(), entryId: null, savedAs: null, department: other, hours: null, notes: '', origin: 'split', dirty: true };
     return [...rs.slice(0, i + 1), copy, ...rs.slice(i + 1)];

@@ -3,7 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { hasEmployees, employeeForUser, ensureEmployeeId } from '../../_lib/hr';
 import { hasAttendance, NOT_MIGRATED, readPunch, clockIn, clockOut, toView, ROW_COLS, type AttendanceRow } from '../../_lib/attendance';
 
-const NOT_ON_LIST = 'Clocking in is for the company\'s own cleaners and technicians. Ask the office to add you.';
+const NOT_ON_LIST = 'Clocking in is for the company\'s own staff. Ask the office to add you.';
 
 /** GET /api/field/clock?month=YYYY-MM — the signed-in person's punch today and their days in the month (this month by
  *  default), for the portal's Clock screen. After midnight a punch from yesterday still going stands in for today, so the

@@ -52,7 +52,7 @@ const OWNER_ALLOWED: [string, RegExp][] = [
 const DEMO_LIVE = /^\/api\/(auth|account|owner|table-layouts)(\/|$)|^\/api\/demo$|^\/api\/(reservations|units|payouts|operations\/service-prices)\/export$/;
 const DEMO_REFUSED = /^\/api\/(statements\/(finalise|send)|payouts|integrations|import|claims|supply-chain|it-support|system|users|accounting|units\/[^/]+\/channex-setup)(\/|$)/;
 
-/** Renovation staff (migration 0316) have nothing built in the field app yet: their own sign-in, account and notices only. */
+/** Renovation staff (migration 0316): their own sign-in, account and notices, and their own clock, leave and pay. */
 const RENOVATION_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/auth\/session$/],
   ['POST', /^\/api\/auth\/logout$/],
@@ -61,11 +61,6 @@ const RENOVATION_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/account\/[a-z0-9/-]+$/],
   ['GET', /^\/api\/notifications(\/count)?$/],
   ['PATCH', /^\/api\/notifications$/],
-];
-
-const FIELD_ALLOWED: [string, RegExp][] = [
-  ...RENOVATION_ALLOWED,
-  ['GET', /^\/api\/field\/(tasks|repairs|units)$/],
   // Their own clock-in and clock-out (HR phase 2); the handler finds their employee record from the login.
   ['GET', /^\/api\/field\/clock$/],
   ['POST', /^\/api\/field\/clock$/],
@@ -75,6 +70,11 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/field\/leave\/[^/]+\/cancel$/],
   // Their own pay: approved and paid slips, and an estimate of the month so far (HR phase 4).
   ['GET', /^\/api\/field\/pay$/],
+];
+
+const FIELD_ALLOWED: [string, RegExp][] = [
+  ...RENOVATION_ALLOWED,
+  ['GET', /^\/api\/field\/(tasks|repairs|units)$/],
   // Repair jobs on the phone: the technician's own and the unassigned ones they may pick up (the handlers check which).
   ['GET', /^\/api\/field\/repairs\/[^/]+$/],
   ['POST', /^\/api\/field\/repairs\/[^/]+\/(pick|drop|note)$/],

@@ -3,7 +3,8 @@ import { hasColumn } from './auth';
 import { EMPLOYEE_DEFAULTS, type Bank, type Employee, type EmployeeStatus, type PayBasis, type PaymentMethod, type RenovationPersonInput, type TaxCategory, type TaxResidency } from './hrFields';
 
 /**
- * The employee record (migration 0165, PLAN-hr-employees.md): the HR side of an in-house cleaner or technician,
+ * The employee record (migration 0165, PLAN-hr-employees.md): the HR side of an in-house cleaner, technician or
+ * Renovation person (migration 0315),
  * ported from Hookka's Employee Master. The database side; the fields and their rules are in hrFields.ts.
  */
 
@@ -77,10 +78,13 @@ export const notTestCleaner = (cleaner: string): string => `NOT EXISTS (SELECT 1
 export const notTestTechnician = (technician: string): string => `NOT EXISTS (SELECT 1 FROM employees te WHERE te.status = 'test'
   AND (te.technician_id = ${technician}.id OR te.cleaner_id IN (SELECT tc.id FROM cleaners tc WHERE tc.user_id = ${technician}.user_id)))`;
 
-/** Everyone on the Employees tab, switched-off roster entries last. */
+/** Every in-house person: the cleaners and technicians, then the Renovation department, switched-off entries last in each. */
 export async function listEmployees(env: Env): Promise<Employee[]> {
-  const rows = await all<Row>(env, `${PEOPLE} ORDER BY p.is_active DESC, p.full_name`);
-  return rows.map(toEmployee);
+  const [roster, renovation] = await Promise.all([
+    all<Row>(env, `${PEOPLE} ORDER BY p.is_active DESC, p.full_name`),
+    hasRenovationDepartment(env).then(isMigrated => (isMigrated ? all<Row>(env, `${RENOVATION_PEOPLE} ORDER BY r.is_active DESC, r.full_name`) : [])),
+  ]);
+  return [...roster, ...renovation].map(toEmployee);
 }
 
 /** One person, found by either roster id. Null when neither is an in-house roster entry. */
@@ -106,15 +110,6 @@ async function findRenovationPerson(env: Env, renovatorId: string): Promise<Empl
   return row ? toEmployee(row) : null;
 }
 
-/** Employee Master: the cleaners and technicians, then the Renovation department. */
-export async function listEmployeeMaster(env: Env): Promise<Employee[]> {
-  if (!(await hasRenovationDepartment(env))) return listEmployees(env);
-  const [roster, renovation] = await Promise.all([
-    listEmployees(env),
-    all<Row>(env, `${RENOVATION_PEOPLE} ORDER BY r.is_active DESC, r.full_name`),
-  ]);
-  return [...roster, ...renovation.map(toEmployee)];
-}
 
 /** Adds a Renovation person (their roster entry and HR record, in one statement) or renames one. Returns the roster id. */
 export async function saveRenovationPerson(env: Env, renovatorId: string | null, person: RenovationPersonInput): Promise<string> {
@@ -131,9 +126,10 @@ export async function saveRenovationPerson(env: Env, renovatorId: string | null,
   return newId;
 }
 
-/** The in-house person a login belongs to (from "Give app access" on either roster). Null for anyone else. */
+/** The in-house person a login belongs to (from "Give app access" on any roster). Null for anyone else. */
 export async function employeeForUser(env: Env, userId: string): Promise<Employee | null> {
-  const row = await one<Row>(env, `${PEOPLE} WHERE p.user_id = ?`, userId);
+  const row = await one<Row>(env, `${PEOPLE} WHERE p.user_id = ?`, userId)
+    ?? (await hasRenovationDepartment(env) ? await one<Row>(env, `${RENOVATION_PEOPLE} WHERE r.user_id = ?`, userId) : null);
   return row ? toEmployee(row) : null;
 }
 
