@@ -34,6 +34,12 @@ engine parses them in `engine/backend/src/conts/access.ts` and turns them into p
 | **Production** gets its own box (production orders, SKU composition, draft delivery) | Page key `scm.procurement.production` already exists and guards `/production-orders/*` (`scm/index.ts:1074`). Add optional `scProduction`, override that page after the Procurement prefix (`access.ts:70`), count it for `scm.access` and `isFullEverywhere` |
 | **Mail** stays one box | View or Edit opens Mail Center, Full opens Mailboxes; the engine already separates them (`mail_center.read` / `.manage`). Check first whether Mailboxes opens at all for Conts roles: it sits behind the engine's `team` page and needs `users.read`, which Conts roles never get |
 
+**As built (migration 0309):** Production is `scProduction`; the engine takes Procurement's level when a sign-on
+leaves it out. The Mail check found Mailboxes never opened for Conts roles: it is the `mail2` tab of the engine's Team
+page (`page: team`) and lists people from `/api/users` (`users.read`). Full on Mail now also opens the Team page (only
+the tabs its keys allow: Mailboxes and a read-only Members list) and `users.read`. Consignment (switched off since
+11 Oct) is off the Permissions chart (`hidden` in `AREAS`); its area stays for the engine.
+
 Known limit: a person with Production but no Procurement cannot load the supplier list or "from sales order" (other
 areas' endpoints). Same as part 1's rule: they need Procurement View too, or those reads get shared.
 
@@ -43,6 +49,23 @@ areas' endpoints). Same as part 1's rule: they need Procurement View too, or tho
 |---|---|---|---|
 | Service cases | Cases · Quality metrics · Case settings · My cases | Optional `serviceMetrics`, `serviceSettings`, `serviceMyCases`; page keys `service_cases.metrics` / `.settings` exist; My cases needs a key; route checks on `/metrics*`, `/settings`, `/lookups` writes, `/my-cases`; front-end gates in `ServiceCases.tsx` and `App.tsx:552-565` | `/summary` and `/lookups/:kind` are shared by the list and the other pages |
 | Projects | Projects · Defects · Handover checklists · Finances · Project settings | Map to `projects.list` / `.finances` / `.maintenance`, add `projects.defects` and `projects.handover`; route checks on `/beta/defect-queue`, `/handover-templates`, settings writes; re-point `App.tsx:589-592` | **Calendar cannot be its own box**: it reads the same `/api/beta/board` as the Projects list. It stays with Projects |
+
+**As built (migration 0310), the light scope:** Quality metrics (`serviceMetrics`), Defects (`projectDefects`), Handover
+checklists (`projectHandover`) and Finances (`projectFinances`) are their own boxes, each copied from its parent.
+Project settings, Case settings and My cases stay with their parent: in the engine their routes share
+`projects.manage` / `service_cases.manage` with project and case actions (about 45 routes).
+
+- The engine has two new pages, `projects.defects` and `projects.handover`. `/beta/defect-queue` follows Defects;
+  the checklist list reads with the project list or Handover checklists, and changing a checklist needs Full on
+  Handover checklists (was `projects.manage`, which only Full on Projects held).
+- `/assr/metrics` and its drill follow the `service_cases.metrics` page; `/assr/summary` (shared by the case list
+  and the metrics) takes either.
+- Finances opens at Full only, as before, now on its own box (`projects.finances` and `projects.finance.view`).
+- A box open without its parent opens the parent's screen (`/projects`, `/assr`) at View, so the page loads; the
+  parent's other pages stay closed. That also opens the parent's lookup reads (organizers, contractors, venues).
+- Limit: in the engine's Service screen the hub card and the view switch still offer Quality metrics to case staff
+  without it (the metrics then refuse); the case list stays reachable by address for metrics-only staff, as in the
+  "enforced only in the screens" gap below.
 
 ## Step 2d: engine, large (design first)
 

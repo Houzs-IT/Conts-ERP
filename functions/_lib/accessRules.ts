@@ -199,7 +199,7 @@ export async function loadRuleBook(env: Env): Promise<RuleBook> {
 
 export interface CategoryList { group: string; areas: { key: string; label: string; managed: boolean; ownGrant: boolean }[] }
 export const categoryList = (): CategoryList[] =>
-  GROUPS.map(group => ({ group, areas: AREAS.filter(a => a.group === group).map(({ key, label, managed, ownGrant }) => ({ key, label, managed: !!managed, ownGrant: !!ownGrant })) }));
+  GROUPS.map(group => ({ group, areas: AREAS.filter(a => a.group === group && !a.hidden).map(({ key, label, managed, ownGrant }) => ({ key, label, managed: !!managed, ownGrant: !!ownGrant })) }));
 
 /** The body of GET and PUT /api/users/access. */
 export interface PermissionPerson {
@@ -258,7 +258,7 @@ export async function personAccess(env: Env, userId: string, canEdit: boolean): 
   const who = { userId: row.id, departmentId: row.department_id, positionId: row.position_id, kind };
   const rules: Rules = await rulesFor(env, who);
   const withoutOverrides: Rules = { ...rules, user: { rules: new Map() } };
-  const areas = AREAS.map((a): PersonArea => {
+  const areas = AREAS.filter(a => !a.hidden).map((a): PersonArea => {
     const closed = closedBySide(kind, side, a.group);
     const now = resolveFor(rules, who, a);
     const base = resolveFor(withoutOverrides, who, a);
