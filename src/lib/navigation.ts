@@ -332,7 +332,7 @@ export function switchedOff(path: string): boolean {
 
 /** Menu areas (and single menu keys) whose screens exist only in the supply chain engine: hidden where it is not set up. */
 const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'ledger', 'mail'];
-const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'owner'];
+const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'renovator', 'owner'];
 
 /** Areas (and menu keys) closed to a role: from its permission levels where the session carries them, else the built-in list. */
 function denied(role: UserRole, access?: Record<string, AccessLevel>): string[] {
@@ -447,7 +447,7 @@ export const entryPath = (it: NavItem): string | undefined => it.path ?? it.chil
 /** role → landing path. The server returns this as `home`; kept here for the client guard. */
 export const HOME: Record<UserRole, string> = {
   management: '/', operations_staff: '/operations/today', housekeeper: '/portal/today',
-  technician: '/portal/today', owner: '/owner',
+  technician: '/portal/today', renovator: '/portal/today', owner: '/owner',
 };
 
 /** Landing path from the role, side and department. Keep in step with homeFor in functions/_lib/door.ts: the Finance

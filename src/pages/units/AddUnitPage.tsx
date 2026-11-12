@@ -203,7 +203,7 @@ export default function AddUnitPage(): ReactElement {
                   <Labeled label="Owner" help={hasOwner ? 'Picked from the owner profiles.' : 'Optional. Left empty, the unit waits under "Owner to be confirmed" until you pick one on its Details tab.'}>
                     <SearchSelect label="Owner" size="md" value={form.ownerId} onChange={v => edit({ ownerId: v })} allLabel="Leave empty: Owner to be confirmed"
                       placeholder={ownersLoading ? 'Loading owners' : 'Search owners'}
-                      options={(owners ?? []).filter(o => !isPlaceholderOwner(o.displayName)).map(o => ({ value: o.id, label: personName(o.displayName), hint: o.units.length ? `${o.units.length} ${o.units.length === 1 ? 'unit' : 'units'}` : undefined }))} />
+                      options={(owners ?? []).filter(o => !isPlaceholderOwner(o.displayName)).map(o => ({ value: o.id, label: personName(o.displayName), hint: o.unitCount ? `${o.unitCount} ${o.unitCount === 1 ? 'unit' : 'units'}` : undefined }))} />
                     {fieldError('ownerId')}
                   </Labeled>
                   <Labeled label="Listing name *" help="Exactly as published on the channels">

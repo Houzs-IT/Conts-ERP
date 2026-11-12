@@ -1,4 +1,4 @@
-import { type Env, fail, withRequestDb, runDemo } from '../_lib/db';
+import { type Env, fail, json, poolFull, withRequestDb, runDemo } from '../_lib/db';
 import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, sessionState, isFieldRole } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
 import { accessFor, refusalFor } from '../_lib/access';
@@ -52,7 +52,8 @@ const OWNER_ALLOWED: [string, RegExp][] = [
 const DEMO_LIVE = /^\/api\/(auth|account|owner|table-layouts)(\/|$)|^\/api\/demo$|^\/api\/(reservations|units|payouts|operations\/service-prices)\/export$/;
 const DEMO_REFUSED = /^\/api\/(statements\/(finalise|send)|payouts|integrations|import|claims|supply-chain|it-support|system|users|accounting|units\/[^/]+\/channex-setup)(\/|$)/;
 
-const FIELD_ALLOWED: [string, RegExp][] = [
+/** Renovation staff (migration 0316) have nothing built in the field app yet: their own sign-in, account and notices only. */
+const RENOVATION_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/auth\/session$/],
   ['POST', /^\/api\/auth\/logout$/],
   ['POST', /^\/api\/auth\/change-password$/],
@@ -60,6 +61,10 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/account\/[a-z0-9/-]+$/],
   ['GET', /^\/api\/notifications(\/count)?$/],
   ['PATCH', /^\/api\/notifications$/],
+];
+
+const FIELD_ALLOWED: [string, RegExp][] = [
+  ...RENOVATION_ALLOWED,
   ['GET', /^\/api\/field\/(tasks|repairs|units)$/],
   // Their own clock-in and clock-out (HR phase 2); the handler finds their employee record from the login.
   ['GET', /^\/api\/field\/clock$/],
@@ -171,7 +176,8 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   if (isFieldRole(session.role) && SUPPLY_CHAIN.test(path)) {
     return fail('FORBIDDEN', 'Your account does not have access to supply chain records.', 403);
   }
-  if (isFieldRole(session.role) && !FIELD_ALLOWED.some(([m, re]) => m === request.method && re.test(path))) {
+  const fieldAllowed = session.role === 'renovator' ? RENOVATION_ALLOWED : FIELD_ALLOWED;
+  if (isFieldRole(session.role) && !fieldAllowed.some(([m, re]) => m === request.method && re.test(path))) {
     return fail('FORBIDDEN', 'This is not available in the field app.', 403);
   }
   // The level on Users and roles > Permissions (chosen by management, or the built-in one it shows).
@@ -226,6 +232,14 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     // The demo store's own refusal (migration 0203, demo.refuse_write): a real-only table changed in Demo mode.
     const msg = e instanceof Error ? e.message : '';
     if (msg.startsWith('Demo: ')) return fail('DEMO_MODE', msg, 409);
+    // Every database connection was taken, through all of retryPoolFull's tries (db.ts): Supabase's session pooler admits
+    // 15 clients. Production logs, 12 Nov 2026: EMAXCONNSESSION is behind the occasional 500 on GET /api/properties and
+    // other reads. Logged on its own line so it can be counted, and answered as busy (503, which the screen tries again)
+    // rather than as a fault. A read only: a write keeps the answer below, as it may have saved part of its work.
+    if (poolFull(e) && ctx.request.method === 'GET') {
+      console.error('Database pool full', ctx.request.method, new URL(ctx.request.url).pathname);
+      return json({ error: { code: 'BUSY', message: 'The server is busy right now. Wait a moment and try again.' } }, 503, { 'retry-after': '1' });
+    }
     console.error('Unhandled error', ctx.request.method, new URL(ctx.request.url).pathname, e);
     // A write may have saved part of its work before it failed, so it does not claim "nothing was saved" (a person who
     // believes that and presses again can make a second copy). A read saved nothing.

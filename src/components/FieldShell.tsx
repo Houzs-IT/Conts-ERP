@@ -49,12 +49,12 @@ export default function FieldShell({ children }: { children: ReactNode }) {
         {/* Log out sits at the bottom of Settings (AccountPage), never one mis-tap from the bell (owner, Oct 2026). */}
       </header>
 
-      <main style={{ flex: 1, padding: atAccount ? '16px 16px 32px' : '16px 16px 96px', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560, width: '100%', boxSizing: 'border-box', margin: '0 auto' }}>
+      <main style={{ flex: 1, padding: atAccount || user!.role === 'renovator' ? '16px 16px 32px' : '16px 16px 96px', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 560, width: '100%', boxSizing: 'border-box', margin: '0 auto' }}>
         {children}
       </main>
 
       {/* Jobs, Clock, Pay and Me (HR phases 2 to 4). Hidden on Settings, which has its own way back. */}
-      {!atAccount && (
+      {!atAccount && user!.role !== 'renovator' && (
         <nav aria-label={t.nav.portal} style={{
           position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 20, display: 'grid', gridTemplateColumns: `repeat(${TABS.length}, 1fr)`,
           background: color.card, borderTop: `1px solid ${color.border}`, paddingBottom: 'env(safe-area-inset-bottom)',

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, ApiFailure, errorMessage, isAbort, readCache, remember } from './api';
+import { answeredWithin, api, ApiFailure, errorMessage, isAbort, readCache, remember } from './api';
 
 /* How many reads are refreshing figures that are already on screen. The shell draws one thin gold line while it is
    above zero, so stale-but-shown data visibly says it is being brought up to date. */
@@ -20,6 +20,17 @@ function sharedGet<T>(path: string): Promise<T> {
     pendingReads.set(path, pending);
   }
   return pending as Promise<T>;
+}
+
+/** An answer this recent is shown as it is, with no second read: a tab switched back and forth, or a page whose data
+ *  was asked for while its code was still downloading (prefetch). Older answers still show at once and are re-read. */
+const FRESH_MS = 10_000;
+
+/** Starts a read a screen is about to make, so it runs while the screen's code downloads (App.tsx routes). The
+ *  screen's own useApi of the same path joins it, or uses its answer, instead of asking again. */
+export function prefetch(path: string) {
+  if (pendingReads.has(path) || answeredWithin(path, FRESH_MS)) return;
+  sharedGet(path).then(r => remember(path, r)).catch(() => { /* the screen's own read reports it */ });
 }
 
 export interface Query<T> {
@@ -53,6 +64,8 @@ export function useApi<T>(path: string | null, fallback?: T): Query<T> {
     // A page revisited (or a range switched back) shows its last answer straight away; the read below refreshes it.
     const seen = readCache.get(path) as T | undefined;
     if (seen !== undefined) setData(seen);
+    // Read a moment ago (a prefetch, or this tab a few seconds back): nothing to refresh.
+    if (!nonce && seen !== undefined && answeredWithin(path, FRESH_MS)) { setError(null); setLoading(false); return; }
     // A reload after a save must not join a read sent before the save.
     (nonce ? api.get<T>(path) : sharedGet<T>(path))
       .then(r => { remember(path, r); if (live) { setData(r); setError(null); } })

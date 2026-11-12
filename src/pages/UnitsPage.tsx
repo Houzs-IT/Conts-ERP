@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { color, channel as CH } from '../theme';
@@ -57,6 +57,22 @@ function useSmUp() {
   const [v, setV] = useState(read);
   useEffect(() => { if (typeof window === 'undefined' || !('matchMedia' in window)) return; const m = window.matchMedia(q); const f = () => setV(m.matches); m.addEventListener('change', f); return () => m.removeEventListener('change', f); }, []);
   return v;
+}
+
+/** A section further down the phone's one-page record: drawn, and its data read, once it scrolls near the screen
+ *  (performance, 12 Nov 2026: every section's reads, the owner list and cleaning prices among them, used to start
+ *  together the moment the record opened, behind the part on screen). Until then it keeps its place with a skeleton. */
+function NearView({ children }: { children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(() => typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    if (near || !box.current) return;
+    const io = new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting)) setNear(true); }, { rootMargin: '600px 0px' });
+    io.observe(box.current);
+    return () => io.disconnect();
+  }, [near]);
+  if (near) return <>{children}</>;
+  return <div ref={box} aria-hidden className="skeleton h-[160px] rounded-card" />;
 }
 
 function useWide() {
@@ -411,6 +427,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   // Each section keeps its own component and data; only the tab gate is lifted. Desktop is unchanged.
   const stacked = !wideRecord;
   const on = (k: Tab) => stacked || shown === k;
+  // On a phone every section is on the page: those below the overview wait until they scroll near (NearView).
+  const later = (n: ReactNode) => (stacked ? <NearView>{n}</NearView> : n);
   // On a phone the strip scrolls sideways; keep the open tab in view (a link can land on the last one).
   useEffect(() => {
     const strip = tabsRef.current, el = strip?.querySelector<HTMLElement>(`[data-tab="${shown}"]`);
@@ -550,7 +568,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       )}
 
       {stacked && on('details') && <h3 className="m-0 mt-2 text-heading font-semibold">Details and owner</h3>}
-      {on('details') && (form ? (
+      {on('details') && later(form ? (
         <Card>
           <SaveBar title="Details & owner" sub="Four steps: listing, space, owner, then cleaning prices and income model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
             extra={canEdit ? <Button size="sm" variant="tertiary" icon={<Icon name="Trash2" size="sm" />} onClick={onDelete}>Delete unit</Button> : undefined} />
@@ -559,7 +577,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       ) : needsForm)}
 
       {stacked && on('contract') && <h3 className="m-0 mt-2 text-heading font-semibold">Contract and documents</h3>}
-      {on('contract') && (money
+      {on('contract') && later(money
         ? <><PaysTo unitId={u.id} ownerId={u.owner.id} accountId={u.bankAccountId ?? null} canEdit={mayChoosePayAccount(user)} onSaved={reloadDetail}
             mainAccount={form?.bankAccount ? `${bankName(form.bankName) ?? form.bankName} ${form.bankAccount}` : undefined} />
           <ContractTab key={u.id} unitId={u.id} canEdit={canEdit} onSaved={reload}
@@ -570,15 +588,15 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         </>)}
 
       {stacked && on('access') && <h3 className="m-0 mt-2 text-heading font-semibold">Access and keys</h3>}
-      {on('access') && <AccessTab key={u.id} unitId={u.id} unitLabel={unitLabel} parking={form?.parkingLabel} fullAccessCard={building?.fullAccessCard} />}
+      {on('access') && later(<AccessTab key={u.id} unitId={u.id} unitLabel={unitLabel} parking={form?.parkingLabel} fullAccessCard={building?.fullAccessCard} />)}
 
       {stacked && on('reservations') && <h3 className="m-0 mt-2 text-heading font-semibold">Reservations</h3>}
-      {on('reservations') && <BookingsTab key={u.id} unitId={u.id} />}
+      {on('reservations') && later(<BookingsTab key={u.id} unitId={u.id} />)}
 
       {stacked && on('operations') && <h3 className="m-0 mt-2 text-heading font-semibold">Cleaning, maintenance and fit-out</h3>}
-      {on('operations') && <JobsTab key={u.id} unitId={u.id} stem={stem} />}
+      {on('operations') && later(<JobsTab key={u.id} unitId={u.id} stem={stem} />)}
       {stacked && on('financials') && <h3 className="m-0 mt-2 text-heading font-semibold">Financials</h3>}
-      {on('financials') && d.pnl && (
+      {on('financials') && d.pnl && later(
         <>
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <MonthStepper month={fmonth} onChange={setFmonth} />
@@ -596,10 +614,10 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       )}
 
       {stacked && on('letting') && <h3 className="m-0 mt-2 text-heading font-semibold">Agent to let</h3>}
-      {on('letting') && <LettingTab key={u.id} unitId={u.id} canEdit={canEdit} money={money} />}
+      {on('letting') && later(<LettingTab key={u.id} unitId={u.id} canEdit={canEdit} money={money} />)}
 
       {stacked && on('activity') && <h3 className="m-0 mt-2 text-heading font-semibold">History of changes</h3>}
-      {on('activity') && (
+      {on('activity') && later(
         <RecordHistory key={u.id} entity="units" id={u.id} refreshKey={d}
           also={u.contract?.id ? [['owner_contracts', u.contract.id]] : undefined} />
       )}
