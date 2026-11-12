@@ -181,6 +181,11 @@ export const movedO2Text = (unitLabel: string, fromLabel: string, toLabel: strin
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+/** Why a unit's Revenue cannot be locked yet (its Airbnb reservations still to confirm), or null: the one thing that holds
+ *  a lock back (spec goal 4). */
+export const notReadyText = (toConfirm: number): string | null =>
+  toConfirm > 0 ? `${toConfirm} Airbnb ${toConfirm === 1 ? 'reservation' : 'reservations'} still to confirm on Airbnb reconciliation.` : null;
+
 /** Hints on Cleaning (a warning, never a block: spec call 4): check-outs with no cleaning charged. Amounts in sen. */
 export function cleaningChecks(x: { checkouts: number; cleaning: number }): string[] {
   return x.checkouts > 0 && x.cleaning === 0 ? [`${x.checkouts} check-out${x.checkouts === 1 ? '' : 's'}, no cleaning charged`] : [];
