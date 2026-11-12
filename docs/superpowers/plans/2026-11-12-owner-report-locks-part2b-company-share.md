@@ -399,3 +399,45 @@ Tests:
 - **Dashboard › management fees** (the operator share) does not take the company rows: it is not the company's result.
 - **Guest total and Service fees on Finance › Unit P&L** for a locked month still read today's reservations, so the fees line can move while Company keeps does not. This was already so after part 1, and is left alone.
 - **The 2a deferred minors** stay deferred. The company split follows M6, the misc attribution when income is locked after deductions, exactly as the owner's does.
+
+## As built (12 Nov 2026)
+
+**Built.**
+- **Choice A.** Migration 0304 adds `company_late_changes`. `syncLate` keeps the company's share of each lock's late difference in it:
+  - the share is `companyFigure`, split by `splitLate`;
+  - it goes on the owner adjustment's month, in the same transaction;
+  - a row on a month since O2-locked or final stays.
+- **Unlock** withdraws what can still move and carries back what is settled ("Already counted in …").
+- **Company views.** `companyLateFor` feeds:
+  - the Overall owner report (a Late changes column and drawer lines, in Gain / Loss);
+  - the Yearly report (in The Conts, with its own block);
+  - Finance › Unit P&L (a line, a table column, in Company keeps);
+  - the unit's Financials (a row, in The Conts' result).
+  - Each shows only when there is one. A unit-month with only a late row still has its row.
+- **Reservation notice.** Dates (drawer and calendar), new reservations, status moves into or out of income, and payments on a booking with no host payout answer with `notice` when a touched month's income is locked. The screens show the toast "Income is locked".
+- **Lock powers given one by one.** `Area.ownGrant` is set on Lock income, Lock deductions, Lock O2 and Unlock a step:
+  - `resolveFor` and `resolveRoleLevels` skip category baselines for them;
+  - the role grid's group ticks leave them alone (`bulkKeysOf`);
+  - their rows show "Set on its own".
+- **Check.** `owner-close-late.mjs` (C1–C6, R1–R5, N1–N4, P1), in CI after owner-close-steps.
+
+**Not built (ruling).** Task 4, fixed-rent units on Income and Deductions. GRR was retired on 4 Nov 2026 (migration 0206):
+- the database refuses it on a contract and on a unit;
+- production has no GRR unit.
+- Task 1's fixed-rent rule and wording were taken back out.
+
+**Rulings** are in the ledger and the PR. In short:
+- the 2a check clears the company rows;
+- `late` is optional (0 when absent);
+- `lateLabel` names a late row by its month and step;
+- the drawer's bar shows the month's own split;
+- a late column is added to the per-unit table;
+- fixed rent was dropped;
+- a duplicate gives no notice (it is saved pending);
+- status-move notices come from `applyMove`;
+- payment notices come only on a booking with no host payout;
+- the group reset leaves the one-by-one powers alone.
+
+**Known, not changed.**
+- `reservations.mjs`, `booking-lifecycle.mjs` and `booking-payments.mjs` fail locally at their first step: the fixture's phone fails validation, and their own sign-in gets 401. They are not in CI.
+- `rbac-matrix` runs only in CI.

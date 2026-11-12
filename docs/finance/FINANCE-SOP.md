@@ -776,8 +776,30 @@ O2：
 
 **权限**：新加 Lock deductions、Lock O2，上线时只开给管理层，由 chew 在 Users and roles 分配到个人；解锁还是 Unlock a step。
 
+**第二部分（2b）已做：公司那一份、手改订单的提示、锁的权限一个一个给**（chew 2026-11-12「开始 2b」「你先做出来吧，我测试了才懂」）
+
+公司那一份（chew 2026-11-11 选的 A）：
+- 锁了以后才改的订单或费用，差额里**公司那一份**，跟业主的 O2 放在**同一个月**（下一个 O2 还没锁、也还没 final 的月份），算进公司那个月的数字。锁住的月份，公司的数字不再变。
+- 例子：10 月锁了以后 Airbnb 多付 RM100，业主那份 RM75 进 11 月 O2，公司那份 RM25 算进 11 月：
+  - **Overall owner report**：多一栏「Late changes」（只有那个月有这种差额才出现），算进 Gain / Loss；点开单位，「Revenue and profitability」列出每一笔（例如「October 2026 income +25.00」）。
+  - **Yearly report**：「The Conts」包含它，另外有一块「The Conts: late changes」（有数字才出现）。
+  - **Finance › Unit P&L**：多一行「Late changes (company's share)」，算进「Company keeps」。
+  - **单位页 Financials**：The Conts 那边多一行「Late changes from locked months」，算进 The Conts' result。
+- Income 和 Deductions 都锁了：跟业主那边一样，先算 Income（订单让 misc 变了，也算在 Income 那笔），再算 Deductions。
+- 那笔所在月份的 O2 锁了或 final 了，就不再动；之后的差额放到再下一个月。
+- 解锁：还能动的拿回来；已经定下来的留着，解锁的月份多一笔相反的数字（「Already counted in November 2026」），公司不会算两次。
+- 只管业主报表会算的数字（订单、扣款、misc、保底）。公司自己付的费用、清洁和维修的利润照旧，锁不影响。首页 Dashboard 的 management fees 不变。
+
+固定租金（GRR）：**不做**。公司老板 2026-11-04 取消了 GRR（「only 6 now ... don't let GRR go in」，migration 0206），合约和单位都不能再设 GRR，正式库也没有 GRR 单位。固定租金和 master lease 照旧不在 Income、Deductions 这两步。
+
+手改订单的提示：
+- 改日期（订单详情，或在 Calendar 拖动）、新建订单、改状态（确认、取消、no-show）、在没有 host payout 的订单记录或删除付款，只要碰到 **Income 已锁的月份**，画面会提示，例如：「October 2026 income is locked for Vista 22-04. The difference goes to November 2026.」那个月的数字不变，差额由系统放到下一个开着的月份（生成报表时，或每 15 分钟核对一次）。
+- HostPlatform、Channex 的自动同步没有人可以提示，差额照样会处理。
+
+锁的权限一个一个给：
+- Lock income、Lock deductions、Lock O2、Unlock a step **只能单独打开**：在 Users and roles 勾整组 Finance，或部门、职位有 Finance 的基础权限，都不会顺便打开这四个。它们那一行标「Set on its own」，要在那一行单独勾（给个人、职位或整个部门都可以）。
+
 **还没做**：
-- 2b：chew 选的 A（公司那一份算进下个月的公司数字）、固定租金单位放进 Income 和 Deductions、手改订单时的提示。
 - 第三部分：Final（三段都锁才能 final）、解锁 final（钱还没付 → 回草稿；转账中 → 不能解；已付 → 差额放下个月 O2）、Overall owner report 的 Locks 栏和 Agent / Company 两栏（先补合约的 agent %）。
 
 ---
