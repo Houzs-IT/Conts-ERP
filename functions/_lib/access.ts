@@ -38,7 +38,7 @@ export const sideFits = (departmentSide: Side, side: Side) => departmentSide ===
  *  (migration 0182 moved the stored rules). */
 const CLOSED_BY_SIDE: Record<Side, string[]> = {
   conts: ['Service cases', 'Projects', 'Supply chain', 'Dream Crafter HR'],
-  dream_crafter: ['Home', 'Reports', 'Reservations', 'Operations', 'HR', 'Units', 'Growth'],
+  dream_crafter: ['Home', 'Reservations', 'Operations', 'HR', 'Units', 'Growth'],
   both: [],
 };
 /** Management always sees both sides, so nobody can lock the system out of one. */
@@ -47,13 +47,12 @@ const offSide = (kind: DepartmentKind, side: Side, area: Area): boolean => close
 
 // The Conts' groups are its sidebar sections, in menu order (owner, 30 Oct 2026), and each area sits in the section
 // its pages are in. Areas whose pages sat in two sections were split: Pricing and reviews off Performance,
-// Automations off Messages, Reports off Finance (migration 0182 copied their stored rules).
+// Automations off Messages, Reports off Finance (migration 0182 copied their stored rules). The Reports section left the
+// menu (12 Nov 2026): Portfolio and Performance moved to Home, Reports to Units (migration 0318 pinned their levels).
 export const AREAS: Area[] = [
   { key: 'dashboard', label: 'Dashboard', group: 'Home', api: ['dashboard'] },
-  { key: 'portfolio', label: 'Portfolio', group: 'Reports', api: ['portfolio'], managed: true, strictRead: true },
-  { key: 'performance', label: 'Performance', group: 'Reports', api: ['analytics', 'showcase'] },
-  // The yearly unit report. Its figures are Finance's, so it stays management-only like Finance.
-  { key: 'reports', label: 'Reports', group: 'Reports', api: [], managed: true, strictRead: true },
+  { key: 'portfolio', label: 'Portfolio', group: 'Home', api: ['portfolio'], managed: true, strictRead: true },
+  { key: 'performance', label: 'Performance', group: 'Home', api: ['analytics', 'showcase'] },
   // Reservations arrive from the channels through the API; finance reads them but does not create or change them (owner, 11 Oct 2026).
   { key: 'calendar', label: 'Calendar', group: 'Reservations', api: ['blocks'] },
   { key: 'reservations', label: 'Reservations', group: 'Reservations', api: ['reservations', 'guest-documents'] },
@@ -64,6 +63,8 @@ export const AREAS: Area[] = [
   // Field staff's HR record: IC, bank, salary and statutory (PLAN-hr-employees.md). Its own group so Operations staff do
   // not see pay by default. The cleaner and technician rosters themselves stay under Operations.
   { key: 'hr', label: 'Employees', group: 'HR', api: ['employees', 'attendance', 'punch-sites', 'leaves', 'payroll', 'working-hours', 'penalties', 'labor-cost'], strictRead: true },
+  // The yearly unit report. Its figures are Finance's, so it stays management-only like Finance.
+  { key: 'reports', label: 'Unit report: yearly and YGRR', group: 'Units', api: [], managed: true, strictRead: true },
   { key: 'properties', label: 'Units', group: 'Units', api: ['properties', 'units', 'unit-layout-types', 'unit-bed-sizes', 'contract-types', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
   { key: 'scheduledChanges', label: 'Scheduled changes', group: 'Units', api: [] },
   { key: 'agentToLet', label: 'Agent to let', group: 'Units', api: [] },
@@ -216,8 +217,8 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | string[
   { method: 'PATCH', path: /^\/api\/units\/[^/]+\/bank-account$/, area: 'owners', why: 'Choosing which of the owner\'s bank accounts a unit is paid to is owner payout work.' },
   { method: 'POST', path: /^\/api\/owners\/[^/]+\/notify$/, area: 'dashboard', why: 'The dashboard\'s exception action that tells an owner about a problem with their unit.' },
   { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a reservation or a guest record; the Messages inbox keeps its own area.' },
-  { method: 'GET', path: /^\/api\/finance\/yearly-report$/, area: 'reports', why: 'The yearly unit report sits under Reports in the menu.' },
-  { method: 'GET', path: /^\/api\/finance\/ygrr-report$/, area: 'reports', why: 'The YGRR report (Package D) sits under Reports in the menu.' },
+  { method: 'GET', path: /^\/api\/finance\/yearly-report$/, area: 'reports', why: 'The yearly unit report is a tab of Units > Unit report.' },
+  { method: 'GET', path: /^\/api\/finance\/ygrr-report$/, area: 'reports', why: 'The YGRR report (Package D) is a tab of Units > Unit report.' },
   // Finance reads bookings but does not make or change them (owner, 11 Oct 2026); taking a guest's payment, recording
   // a channel payout and issuing a receipt are finance's own work, so those writes follow the Finance area.
   { method: 'POST', path: /^\/api\/reservations\/[^/]+\/payments$/, area: 'finance', why: 'Recording a guest payment on a reservation is money work.' },

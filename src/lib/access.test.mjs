@@ -83,21 +83,22 @@ const seeded = {
 test('the seeded rules give the levels of the old role chart', () => {
   // Migration 0172 copied each seeded Dream Crafter baseline to its three sidebar categories. Migration 0182 copied
   // Workspace to Home, Finance to Reports, Operations to Reservations and Units, and pinned the areas that changed
-  // category (performance, comms, owners) to the level they had.
+  // category (performance, comms, owners) to the level they had. Migration 0318 pinned reports, which moved from Reports
+  // to Units (portfolio and performance already had their own rows).
   const dc = level => ({ 'group:Service cases': level, 'group:Projects': level, 'group:Supply chain': level });
   const staffDept = {
     'group:Operations': 'edit', 'group:Reservations': 'edit', 'group:Units': 'edit', ...dc('edit'), 'group:Growth': 'edit',
-    scInvoices: 'none', performance: 'edit', comms: 'edit', owners: 'none', contracts: 'none', deductions: 'none', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none',
+    reports: 'none', scInvoices: 'none', performance: 'edit', comms: 'edit', owners: 'none', contracts: 'none', deductions: 'none', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none',
   };
   const financeDept = {
     'group:Home': 'view', 'group:Reports': 'full', 'group:Reservations': 'view', 'group:Operations': 'view', 'group:Units': 'view',
     ...dc('view'), 'group:Finance': 'full', 'group:Growth': 'full', 'group:System': 'full',
-    scInvoices: 'full', comms: 'none', automations: 'none', users: 'none', performance: 'full', portfolio: 'view', owners: 'full', contracts: 'full', deductions: 'full', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none',
+    reports: 'full', scInvoices: 'full', comms: 'none', automations: 'none', users: 'none', performance: 'full', portfolio: 'view', owners: 'full', contracts: 'full', deductions: 'full', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none',
   };
   const managerPosition = {
     'group:Home': 'full', 'group:Reports': 'view', 'group:Reservations': 'full', 'group:Operations': 'full', 'group:Units': 'full',
     ...dc('full'), 'group:Finance': 'view', 'group:Growth': 'full', 'group:System': 'full',
-    scInvoices: 'view', ledger: 'none', performance: 'full', portfolio: 'full', comms: 'full', owners: 'view', contracts: 'view', deductions: 'view',
+    reports: 'view', scInvoices: 'view', ledger: 'none', performance: 'full', portfolio: 'full', comms: 'full', owners: 'view', contracts: 'view', deductions: 'view',
   };
   const people = {
     operations_staff: rules({ department: staffDept }),
@@ -175,4 +176,13 @@ test('each company closes the other one\'s HR: The Conts closes Dream Crafter HR
   assert.equal(closedBySide('management', 'conts', 'Dream Crafter HR'), false);
   assert.equal(area('dcHr').group, 'Dream Crafter HR');
   for (const key of ['ownerClose', 'lockIncome', 'lockDeductions', 'lockO2', 'unlockStep']) assert.equal(area(key).group, 'Units', key);
+});
+
+test('every permission category is a section of the menu, so the chart reads like the sidebar (migration 0318)', async () => {
+  const { NAV } = await import('./navigation.ts');
+  const sections = new Set(NAV.map(group => group.label.toLowerCase()));
+  const categoriesWithoutSection = [...new Set(AREAS.map(a => a.group))]
+    .filter(group => group !== 'Dream Crafter HR' && !sections.has(group.toLowerCase()));
+  assert.deepEqual(categoriesWithoutSection, []);
+  assert.deepEqual(['portfolio', 'performance', 'reports'].map(key => area(key).group), ['Home', 'Home', 'Units']);
 });
