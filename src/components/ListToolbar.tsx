@@ -114,9 +114,9 @@ export function ListToolbar({ search, leading, filters = [], filtersLabel = 'Fil
       {search && <ToolbarSearch {...search} />}
       {leading}
       {hasFilters && (
-        <TbButton btnRef={filtersBtn} icon="ListFilter" on={nFilters > 0} expanded={panel === 'filters'} onClick={() => setPanel(p => (p === 'filters' ? null : 'filters'))}
+        <TbButton btnRef={filtersBtn} icon="ListFilter" caret count={nFilters} on={nFilters > 0} expanded={panel === 'filters'} onClick={() => setPanel(p => (p === 'filters' ? null : 'filters'))}
           label={nFilters ? `${filtersLabel}, ${nFilters} on` : filtersLabel}>
-          {filtersLabel}{nFilters > 0 && <span className="min-w-[18px] h-[18px] px-[5px] grid place-items-center rounded-full bg-primary text-on-primary text-caption font-semibold tabular-nums">{nFilters}</span>}
+          {filtersLabel}
         </TbButton>
       )}
       {date && datePreset && (
@@ -201,16 +201,22 @@ export function ListToolbar({ search, leading, filters = [], filtersLabel = 'Fil
 }
 
 /** A toolbar button: icon, label, an optional caret; dark outline while it narrows the list. */
-export function TbButton({ icon, children, on, expanded, onClick, label, caret, btnRef }: {
-  icon: string; children: ReactNode; on?: boolean; expanded?: boolean; onClick: () => void; label: string; caret?: boolean; btnRef?: RefObject<HTMLButtonElement>;
+export function TbButton({ icon, count = 0, children, on, expanded, onClick, label, caret, btnRef }: {
+  icon: string; count?: number; children: ReactNode; on?: boolean; expanded?: boolean; onClick: () => void; label: string; caret?: boolean; btnRef?: RefObject<HTMLButtonElement>;
 }) {
   return (
     <button ref={btnRef} type="button" onClick={onClick} aria-haspopup="dialog" aria-expanded={expanded} aria-label={label}
-      className={cx('inline-flex items-center gap-1.5 h-[34px] max-sm:h-10 max-w-full px-2.5 rounded-control border border-solid bg-card font-sans text-copy font-semibold whitespace-nowrap cursor-pointer outline-none focus-visible:[box-shadow:0_0_0_2px_var(--color-gold)]',
+      className={cx('inline-flex items-center gap-1.5 h-[34px] max-sm:h-11 max-w-full px-2.5 rounded-control border border-solid bg-card font-sans text-copy font-semibold whitespace-nowrap cursor-pointer outline-none focus-visible:[box-shadow:0_0_0_2px_var(--color-gold)]',
         on ? 'border-ink text-ink' : 'border-line text-ink-2 hover:bg-muted')}>
       <Icon name={icon} size="sm" />
       {children}
-      {caret && <Icon name="ChevronDown" size="sm" style={{ width: 12, height: 12 }} />}
+      {caret && (
+        <span className="min-w-5 h-5 grid place-items-center shrink-0">
+          {count > 0
+            ? <span className="box-border min-w-[18px] h-[18px] px-[5px] grid place-items-center rounded-full bg-primary text-on-primary text-caption font-semibold tabular-nums">{count}</span>
+            : <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />}
+        </span>
+      )}
     </button>
   );
 }
@@ -230,7 +236,7 @@ export function ToolbarSearch({ value, onChange, placeholder, label, debounce = 
       <span className="absolute left-2.5 flex text-muted-ink pointer-events-none"><Icon name="Search" size="sm" /></span>
       <input type="search" value={text} placeholder={placeholder} aria-label={label ?? placeholder}
         onChange={e => { setText(e.target.value); if (!debounce) { last.current = e.target.value; onChange(e.target.value); } }}
-        className="block w-full box-border h-[34px] max-sm:h-10 pl-8 pr-2.5 rounded-control border border-solid border-line bg-card font-sans text-copy text-ink outline-none focus:border-ink" />
+        className="block w-full box-border h-[34px] max-sm:h-11 pl-8 pr-2.5 rounded-control border border-solid border-line bg-card font-sans text-copy text-ink outline-none focus:border-ink" />
     </label>
   );
 }
@@ -278,7 +284,7 @@ function CustomRange({ from, to, onApply, onDone }: { from: string; to: string; 
         <DateField label="To" value={t} min={f || undefined} onChange={setT} />
       </div>
       <button type="button" disabled={bad || (!f && !t)} onClick={() => { onApply(f, t); onDone(); }}
-        className="self-end h-[34px] max-sm:h-10 px-3 rounded-control border-none bg-primary text-on-primary font-sans text-copy font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+        className="self-end h-[34px] max-sm:h-11 px-3 rounded-control border-none bg-primary text-on-primary font-sans text-copy font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
         {bad ? 'The end is before the start' : 'Apply'}
       </button>
     </div>
