@@ -336,7 +336,15 @@ export const financeReceiptsHandler = async (c: Ctx): Promise<Response> => {
   const sb = c.get('supabase');
   const rows = (await receiptsWhere(sb, co.companyId, null, c.req.query('month'))).sort((a, b) => String(a.spend_date).localeCompare(String(b.spend_date)));
   const [views, saved] = await Promise.all([receiptViews(sb, co.companyId, rows), savedBanksOf(sb, co.companyId, rows.map(r => r.submitter_user_id))]);
-  return c.json({ receipts: views.map((v, i) => ({ ...v, bank: payBackBank(rows[i], saved.get(rows[i].submitter_user_id) ?? null) })) });
+  /* Reading bank details is Ledger full's, as on GET /accounting/staff-bank (final review): view and edit see the bank,
+     the name and the flags, with only the last four digits of the account. */
+  const full = hasHouzsPerm(c, FULL_KEY);
+  return c.json({
+    receipts: views.map((v, i) => {
+      const bank = payBackBank(rows[i], saved.get(rows[i].submitter_user_id) ?? null);
+      return { ...v, bank: bank && !full ? { ...bank, accountNo: lastFour(bank.accountNo) } : bank };
+    }),
+  });
 };
 
 export const financeReceiptFileHandler = async (c: Ctx): Promise<Response> => {
@@ -585,6 +593,8 @@ export async function bankDetailsOf(sb: any, companyId: number, userId: string):
 }
 
 const digitsOf = (v: string) => v.replace(/[\s-]/g, '');
+/** An account number shown to someone who may not read it whole: its last four digits. */
+const lastFour = (v: string) => `•••• ${digitsOf(v).slice(-4)}`;
 /** Where a receipt finance pays back goes: the bank given on the claim (Direct Claim to Me), else the person's saved
  *  details; null when there is neither. differsFromSaved tells finance that the claim's account number is not the
  *  saved one, or that nothing is saved to compare it with. */

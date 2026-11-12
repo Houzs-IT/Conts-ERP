@@ -283,7 +283,7 @@ describe('the bank given on a claim', () => {
 
   test("V2: the list shows each receipt's bank, and says when the claim's account is not the saved one", async () => {
     const sb = world();
-    const bankOf = async () => ((await (await app(sb, []).request('/receipts')).json()) as any).receipts.find((r: any) => r.id === 'R2').bank;
+    const bankOf = async () => ((await (await app(sb, [FULL_KEY]).request('/receipts')).json()) as any).receipts.find((r: any) => r.id === 'R2').bank;
     expect(await bankOf()).toBeNull();
     sb.tables.staff_bank_details.push({ ...SAVED });
     expect(await bankOf()).toEqual({ bankName: 'Maybank', accountNo: '1234567890', accountName: 'Wei Wen', fromClaim: false, differsFromSaved: false });
@@ -298,6 +298,17 @@ describe('the bank given on a claim', () => {
     // Nothing saved: the claim's own, flagged so finance looks twice.
     sb.tables.conts_employee_bank.length = 0;
     expect(await bankOf()).toMatchObject({ accountNo: '8000111222', fromClaim: true, differsFromSaved: true });
+  });
+});
+
+describe('who sees an account number (final review)', () => {
+  test('V3: only Ledger full, who pays people back, sees the whole number; view and edit see its last four', async () => {
+    const sb = world();
+    sb.tables.staff_bank_details.push({ company_id: CO, user_id: 'u-ops', bank_name: 'Maybank', account_no: '1234567890', account_name: 'Wei Wen' });
+    const bankFor = async (perms: string[]) => ((await (await app(sb, perms).request('/receipts')).json()) as any).receipts.find((r: any) => r.id === 'R2').bank;
+    expect(await bankFor([])).toEqual({ bankName: 'Maybank', accountNo: '•••• 7890', accountName: 'Wei Wen', fromClaim: false, differsFromSaved: false });
+    expect(await bankFor([EDIT_KEY])).toMatchObject({ accountNo: '•••• 7890' });
+    expect(await bankFor([FULL_KEY])).toMatchObject({ accountNo: '1234567890' });
   });
 });
 

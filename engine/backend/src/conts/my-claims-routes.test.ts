@@ -150,6 +150,12 @@ describe('Direct Claim to Me (chew, 12 Nov 2026): finance pays it back, to the b
     expect(sb.tables.staff_bank_details).toHaveLength(1);
     expect(sb.tables.conts_employee_bank).toHaveLength(1);
   });
+  test("my bank: HR keeps no name on the account, so the person's own name fills it (final review)", async () => {
+    const sb = world();
+    sb.tables.conts_employee_bank.push({ user_id: 'u-tech', bank_name: 'CIMB Bank', bank_account: '5550001111' });
+    expect(await (await get(appFor(sb, TECH), '/my-bank')).json()).toEqual({ bank: { bankName: 'CIMB Bank', accountNo: '5550001111', accountName: 'Ah Wai' } });
+    expect(sb.tables.conts_employee_bank).toEqual([{ user_id: 'u-tech', bank_name: 'CIMB Bank', bank_account: '5550001111' }]);
+  });
   test('a replacement for a rejected direct claim stays with finance and takes the new bank', async () => {
     const sb = world();
     const first = await (await handIn(appFor(sb, TECH), { payBack: 'finance', bank: BANK })).json() as { id: string };
@@ -181,6 +187,28 @@ describe('payment requests', () => {
     expect((await ask(a, { ...byName, purchaseOrderId: 'PO1' })).status).toBe(422);
     expect((await ask(a, { ...byName, type: 'DEPOSIT' })).status).toBe(422);
     expect((await ask(a, { ...byName, payeeName: ' ' })).status).toBe(422);
+    expect(sb.tables.payment_requests).toHaveLength(1);
+  });
+  test("a field worker's request names no project: a project's limit stays with the office (final review)", async () => {
+    const sb = world();
+    const res = await ask(appFor(sb, TECH), { supplierId: undefined, payeeName: 'KEDAI PAIP AH SENG', lines: [{ amountSen: 5000, department: 'rental', description: 'Pipe', projectId: 7 }] });
+    expect(res.status).toBe(422);
+    expect(JSON.stringify(await res.json())).not.toMatch(/leftSen|left of its limit/);
+    expect(sb.tables.payment_requests).toHaveLength(0);
+  });
+  test('a request sent again with the same id is found, not made twice; another person cannot take the id (final review)', async () => {
+    const sb = world();
+    const id = '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b';
+    const byName = { id, supplierId: undefined, payeeName: 'KEDAI PAIP AH SENG', lines: [{ amountSen: 5000, department: 'rental', description: 'Pipe' }] };
+    const first = await ask(appFor(sb, TECH), byName);
+    expect(first.status).toBe(201);
+    const made = await first.json() as { id: string; requestNo: string };
+    expect(made.id).toBe(id);
+    const again = await ask(appFor(sb, TECH), byName);
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({ id, requestNo: made.requestNo });
+    expect(sb.tables.payment_requests).toHaveLength(1);
+    expect((await ask(appFor(sb, OPS), { ...byName, supplierId: 'S1' })).status).toBe(409);
     expect(sb.tables.payment_requests).toHaveLength(1);
   });
   test('over a project\'s limit it is refused', async () => {

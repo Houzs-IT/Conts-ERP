@@ -13,7 +13,7 @@ import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
 import { rm, todayMyt } from '../lib/format';
 import { usePortalText, usePortalDates, wordFor } from '../lib/portalI18n';
-import { bankProblem, postWithFiles, readReceipt, readRequestBill, receiptFileHref, thisMonthMyt, type ClaimBank, type Me, type MyFloat, type Receipt } from '../lib/claims';
+import { bankProblem, postWithFiles, readReceipt, readRequestBill, receiptFileHref, thisMonthMyt, type ClaimBank, type Me, type MyFloat, type PaymentRequest, type Receipt } from '../lib/claims';
 
 /* ------------------------------------------------------------------ *
  * Portal > Receipts (finance, 28-29 Oct 2026; SOP 6): a cleaner or technician who paid for something for work hands
@@ -29,6 +29,8 @@ export default function FieldReceiptsPage() {
   const me = useApi<Me>('/claims/me');
   // Every month: a receipt rejected last month must stay in sight until it is dealt with.
   const mine = useApi<{ receipts: Receipt[] }>('/claims/receipts');
+  // Suppliers they asked finance to pay (Direct Pay to Supplier): what became of each, as for their receipts.
+  const asked = useApi<{ requests: PaymentRequest[] }>('/claims/requests');
   const [handingIn, setHandingIn] = useState(false);
   return (
     <div className="flex flex-col gap-4">
@@ -38,13 +40,19 @@ export default function FieldReceiptsPage() {
       </div>
       {me.error && <StaleBanner message={me.error} onRetry={me.reload} />}
       {!handingIn && <Button size="touch" variant="primary" className="w-full" icon={<Icon name="Receipt" size="sm" />} onClick={() => setHandingIn(true)}>{tr.handIn}</Button>}
-      {handingIn && me.data && <HandIn me={me.data} onClose={() => setHandingIn(false)} onDone={() => { setHandingIn(false); mine.reload(); }} />}
+      {handingIn && me.data && <HandIn me={me.data} onClose={() => setHandingIn(false)} onDone={() => { setHandingIn(false); mine.reload(); asked.reload(); }} />}
       <section className="flex flex-col gap-2">
         <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em]">{tr.mine}</h2>
         {mine.error && <StaleBanner message={mine.error} onRetry={mine.reload} />}
         {mine.data && mine.data.receipts.length === 0 && <span className="text-copy text-muted-ink">{tr.none}</span>}
         {mine.data?.receipts.map(r => <ReceiptCard key={r.id} r={r} />)}
       </section>
+      {(asked.data?.requests.length ?? 0) > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em]">{tr.requestsTitle}</h2>
+          {asked.data!.requests.map(q => <RequestCard key={q.id} q={q} />)}
+        </section>
+      )}
       {me.data?.keepsFloat && <KeptFloat />}
     </div>
   );
@@ -75,6 +83,22 @@ function ReceiptCard({ r, by }: { r: Receipt; by?: boolean }) {
 
 type Way = 'float' | 'finance' | 'supplier';
 
+function RequestCard({ q }: { q: PaymentRequest }) {
+  const t = usePortalText();
+  const tr = t.receipts;
+  const { short } = usePortalDates();
+  return (
+    <div className="bg-card rounded-card border border-solid border-line px-4 py-3 flex flex-col gap-1">
+      <span className="flex items-center justify-between gap-2">
+        <span className="text-copy font-semibold [overflow-wrap:anywhere]">{q.payeeName}</span>
+        <span className="text-copy font-semibold tabular-nums">{rm(q.amountSen)}</span>
+      </span>
+      <span className="text-meta text-muted-ink">{short(q.createdAt.slice(0, 10))} · {wordFor(tr.requestStatus, q.status)}</span>
+      {q.status === 'REJECTED' && q.reason && <span className="text-meta text-danger">{tr.rejected(q.reason)}</span>}
+    </div>
+  );
+}
+
 function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: () => void }) {
   const t = usePortalText();
   const tr = t.receipts;
@@ -101,6 +125,9 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
   const [wrongBank, setWrongBank] = useState<keyof ClaimBank | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /* One id for this form's request: sent again after a lost reply, the finance system finds the first request instead
+     of making a second, so the supplier is not paid twice. */
+  const [requestId] = useState(() => crypto.randomUUID());
 
   /* The photo is read in the background (the bill reader for a supplier's bill): the person may type and send
      meanwhile, and only the fields still empty are filled, so nothing typed is overwritten. */
@@ -141,7 +168,7 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
       if (way === 'supplier') {
         // A field worker names the supplier as on the bill; finance matches it to the list when it pays.
         await postWithFiles('/claims/requests', {
-          type: 'PAYMENT', payeeName: payeeName.trim(), amountSen, wantedOn: wantedOn || undefined, note: note.trim() || undefined, lines: [line],
+          id: requestId, type: 'PAYMENT', payeeName: payeeName.trim(), amountSen, wantedOn: wantedOn || undefined, note: note.trim() || undefined, lines: [line],
         }, files);
         toast({ tone: 'success', title: tr.supplierSent });
       } else {

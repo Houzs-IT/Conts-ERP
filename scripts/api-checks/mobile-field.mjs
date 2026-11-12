@@ -172,4 +172,12 @@ check('the cleaner marks the clean complete', r.status === 200, r.text);
 r = await call('POST', `/api/tasks/${taskId}/complete`, { photoIds: [] }, 'technician');
 check('someone else cannot complete the cleaner\'s job', r.status === 403 || r.status === 409, r.text);
 
+// Direct Pay to Supplier (final review): a field worker sees their own requests to pay suppliers on the phone, as they
+// see their receipts. The forward lets the read through (the finance system answers with the person's own only: 501
+// here when it is not set up); the supplier list and purchase orders stay the office's.
+r = await call('GET', '/api/claims/requests', undefined, 'technician');
+check('a field worker reads their own requests to pay suppliers (forwarded, not refused)', r.status !== 404 && r.status !== 403, `${r.status} ${r.text.slice(0, 200)}`);
+r = await call('GET', '/api/claims/suppliers', undefined, 'technician');
+check('the supplier list stays the office\'s', r.status === 404, `${r.status} ${r.text.slice(0, 200)}`);
+
 done();

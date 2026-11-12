@@ -71,7 +71,10 @@ export const meHandler = async (c: Ctx): Promise<Response> => {
 export const myBankHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  return c.json({ bank: await bankDetailsOf(c.get('supabase'), co.companyId, staffOf(c).userId) });
+  const s = staffOf(c);
+  const bank = await bankDetailsOf(c.get('supabase'), co.companyId, s.userId);
+  /* HR keeps no name on the account: the person's own name is the likeliest, and the form lets them change it. */
+  return c.json({ bank: bank ? { ...bank, accountName: bank.accountName || s.name || null } : null });
 };
 
 export const extractHandler = async (c: Ctx): Promise<Response> => {

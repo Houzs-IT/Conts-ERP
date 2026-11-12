@@ -759,7 +759,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
           <section className="flex flex-col gap-2">
             <AttachmentLabel title="Claim" count={claimDocs.length} hint="The invoice for something you paid for this job, handed in to be paid back." />
             <FileList files={claimDocs.map(docRow)} />
-            <JobClaimBox jobId={i.id} route={me.data?.route ?? null} t={PORTAL_ENGLISH} onDone={refresh} />
+            {!done && <JobClaimBox jobId={i.id} route={me.data?.route ?? null} t={PORTAL_ENGLISH} onDone={refresh} />}
           </section>
           <section className="flex flex-col gap-2">
             <AttachmentLabel title="Receipt / Proof of work and product" count={otherDocs.length} hint="Receipts, and photos or PDFs of the work and the products. Kept on the job." />
