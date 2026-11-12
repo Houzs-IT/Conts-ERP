@@ -1,4 +1,4 @@
-import { type Env, fail, withRequestDb, runDemo } from '../_lib/db';
+import { type Env, fail, json, poolFull, withRequestDb, runDemo } from '../_lib/db';
 import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, sessionState, isFieldRole } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
 import { accessFor, refusalFor } from '../_lib/access';
@@ -226,6 +226,14 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     // The demo store's own refusal (migration 0203, demo.refuse_write): a real-only table changed in Demo mode.
     const msg = e instanceof Error ? e.message : '';
     if (msg.startsWith('Demo: ')) return fail('DEMO_MODE', msg, 409);
+    // Every database connection was taken, through all of retryPoolFull's tries (db.ts): Supabase's session pooler admits
+    // 15 clients. Production logs, 12 Nov 2026: EMAXCONNSESSION is behind the occasional 500 on GET /api/properties and
+    // other reads. Logged on its own line so it can be counted, and answered as busy (503, which the screen tries again)
+    // rather than as a fault. A read only: a write keeps the answer below, as it may have saved part of its work.
+    if (poolFull(e) && ctx.request.method === 'GET') {
+      console.error('Database pool full', ctx.request.method, new URL(ctx.request.url).pathname);
+      return json({ error: { code: 'BUSY', message: 'The server is busy right now. Wait a moment and try again.' } }, 503, { 'retry-after': '1' });
+    }
     console.error('Unhandled error', ctx.request.method, new URL(ctx.request.url).pathname, e);
     // A write may have saved part of its work before it failed, so it does not claim "nothing was saved" (a person who
     // believes that and presses again can make a second copy). A read saved nothing.

@@ -19,7 +19,7 @@ import { cleaningCheckoutSql } from '../../_lib/lateCheckout';
  *  the late checkout's once one is requested, paid or not (lib/lateCheckout cleaningCheckoutSql, 2 Nov 2026). With
  *  nobody arriving that day, `nextLater` is the unit's next arrival on a later day, which the screen's order needs
  *  (src/lib/cleanOrder.ts). Each clean carries its amount and cleaner pay; `external` lists cleans at outside addresses. */
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Use your own job list.', 403);
@@ -28,12 +28,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const asked = new URL(request.url).searchParams.get('date');
   const date = isDay(asked) ? asked : today;
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
-  // Checkouts from any path (import, channel sync, older data) get their turnover job before the board is read; the
-  // next 60 days too, so a backlog clears within a few looks. Idempotent, never for a past day, and at most 50 jobs per
-  // load (soonest first, so the day being looked at is always covered).
-  const sixtyDaysOut = plusDays(today, 60);
-  if (date > sixtyDaysOut) await ensureTurnovers(env, { from: today, to: date }, 50);
-  if (date >= today) await ensureTurnovers(env, { from: today, to: sixtyDaysOut }, 50);
+  // Checkouts from any path (import, channel sync, older data) get their turnover job before the board is read: the day
+  // being looked at, every time. Idempotent, never for a past day, at most 50 jobs per load.
+  if (date >= today) await ensureTurnovers(env, { from: date, to: date }, 50);
+  // The next 60 days too, so a backlog clears, but after the answer has gone out and at most every few minutes
+  // (performance, 12 Nov 2026: sweeping 60 days before every board read, the 30-second refresh included, was most of its
+  // 1.2 s).
+  sweepTurnoversSometimes(env, today, waitUntil);
 
   const [defaults, ready, layoutSql, priced, mattressSql, prevOut, depOut] = await Promise.all([
     all<{ key: string; value: string }>(env, `SELECT key, value FROM settings WHERE key IN ('operations.checkIn','operations.checkOut','ops.check_in','ops.check_out')`),
@@ -189,5 +190,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 const LATER_ARRIVAL_SQL = (unit: string, day: string) => `SELECT r.check_in, r.check_in_time FROM reservations r
   WHERE r.unit_id = ${unit} AND r.check_in > ${day} AND ${LIVE_STAY_SQL('r')} AND r.state NOT IN ('checked_in','checked_out')
   ORDER BY r.check_in, r.check_in_time LIMIT 1`;
+
+let lastSweep = 0;
+/** The 60-day turnover sweep the board used to run before every read: at most every 5 minutes per Worker instance,
+ *  after the response, as closePastStaysSometimes does (lib/autoCheckout.ts). */
+function sweepTurnoversSometimes(env: Env, today: string, waitUntil: (p: Promise<unknown>) => void) {
+  const now = Date.now();
+  if (now - lastSweep < 5 * 60_000) return;
+  lastSweep = now;
+  waitUntil(ensureTurnovers(env, { from: today, to: plusDays(today, 60) }, 50).catch(() => { lastSweep = 0; }));
+}
 
 const plusDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);

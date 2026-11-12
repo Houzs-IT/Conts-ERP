@@ -44,6 +44,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     bedSizes(env),
   ]);
 
+  // Each unit's monthly costs and contract files, grouped once rather than searched for every unit (same order).
+  const byUnit = <T extends { unit_id: string }>(list: T[]) => {
+    const m = new Map<string, T[]>();
+    for (const x of list) { const l = m.get(x.unit_id); if (l) l.push(x); else m.set(x.unit_id, [x]); }
+    return m;
+  };
+  const expensesOf = byUnit(expenses), docsOf = byUnit(docs);
+
   return json({
     generatedAt: nowIso(),
     buildings: buildings.map(b => ({ id: b.id, name: b.name, city: area(b.city, b.postcode), state: b.state, fullAccessCard: b.full_access_card === true, needsPassKey: b.needs_pass_key === true })),
@@ -61,13 +69,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       // Migration 0125: what the unit is for, its beds and its car park bays.
       ...(() => { const x = extras.get(u.id); return { purpose: x?.purpose ?? 'rental', usedBy: x?.usedBy ?? null, beds: x?.beds ?? [], bedsLabel: bedsLabel(x?.beds ?? [], sizes), parkingBays: x?.parkingBays ?? [], parkingLabel: baysLabel(x?.parkingBays ?? []) }; })(),
       bedrooms: u.bedrooms, bathrooms: u.bathrooms, sizeSqft: u.size_sqft ?? null, layoutType: u.layout_type ?? null, ...(banking ? { baseRate: Number(u.base_rate), cleaningPrice: u.cleaning_price == null ? null : Number(u.cleaning_price), deepCleaningPrice: u.deep_cleaning_price == null ? null : Number(u.deep_cleaning_price) } : {}),
-      expenses: expenses.filter(e => e.unit_id === u.id).map(e => ({ id: e.id, category: e.category, amount: Number(e.amount), note: e.note })),
+      expenses: (expensesOf.get(u.id) ?? []).map(e => ({ id: e.id, category: e.category, amount: Number(e.amount), note: e.note })),
       contract: {
         feePct: u.management_fee_pct ?? 25, startedOn: u.starts_on ?? '', renewsOn: u.renews_on ?? '',
         // Package D's monthly minimum (sen), read-only here: it comes from the owner workbook import.
         ...(banking ? { minimumGuarantee: Number(u.minimum_guarantee ?? 0), minimumGuaranteeAnnual: u.minimum_guarantee_annual == null ? null : Number(u.minimum_guarantee_annual),
           guaranteeStartsOn: u.guarantee_starts_on ?? null, guaranteeEndsOn: u.guarantee_ends_on ?? null } : {}),
-        documents: docs.filter(d => d.unit_id === u.id).map(d => ({ id: d.id, name: d.file_name })),
+        documents: (docsOf.get(u.id) ?? []).map(d => ({ id: d.id, name: d.file_name })),
       },
     })),
   });
