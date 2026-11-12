@@ -102,6 +102,7 @@ export const STATUS_VOCAB = {
     processing: { label: 'Processing', tone: 'info' },
     paid: { label: 'Paid', tone: 'success' },
     failed: { label: 'Failed', tone: 'danger' },
+    cancelled: { label: 'Cancelled', tone: 'neutral' },
   },
   /** Whether an owner can sign in to the owner portal. */
   owner: {

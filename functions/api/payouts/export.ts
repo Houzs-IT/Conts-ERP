@@ -2,7 +2,7 @@ import { type Env, all, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { bankAccountsReady } from '../../_lib/ownerBank';
 
-const STATES = ['failed', 'pending', 'processing', 'paid'];
+const STATES = ['failed', 'pending', 'processing', 'paid', 'cancelled'];
 const CAP = 5000;
 const HAND_NOTE = 'Could not split this payout by account. It is the whole payout under the main account, but some units of this owner pay to other accounts. Check each unit.';
 

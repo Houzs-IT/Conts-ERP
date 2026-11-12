@@ -13,7 +13,8 @@ export type BookingChannel =
   | 'airbnb' | 'booking_com' | 'agoda' | 'direct' | 'maintenance_block' | 'owner_stay';
 
 export type StatementState = 'provisional' | 'finalised' | 'sent' | 'paid';
-export type PayoutState = 'pending' | 'processing' | 'paid' | 'failed';
+/** 'cancelled': its statement was unlocked before it was paid (owner statement close part 3). */
+export type PayoutState = 'pending' | 'processing' | 'paid' | 'failed' | 'cancelled';
 export type IntegrationState = 'connected' | 'expired' | 'degraded' | 'failed';
 export type SyncState = 'queued' | 'synced' | 'failed';
 

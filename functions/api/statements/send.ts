@@ -36,7 +36,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const extra = (await bankAccountsReady(env)) ? extraLast4Sql('s') : 'NULL::text';
     const info = await all<{ id: string; net_payout: number; owner_id: string; bank_account_last4: string | null; extra_last4: string | null; display_name: string; email: string; has_payout: boolean }>(env, `
       SELECT s.id, s.net_payout, s.owner_id, o.bank_account_last4, ${extra} AS extra_last4, o.display_name, o.email,
-             EXISTS (SELECT 1 FROM payouts p WHERE p.statement_id = s.id) AS has_payout
+             EXISTS (SELECT 1 FROM payouts p WHERE p.statement_id = s.id AND p.state <> 'cancelled') AS has_payout
       FROM owner_statements s JOIN owners o ON o.id = s.owner_id
       WHERE s.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, ids);
     const byId = new Map(info.map(x => [x.id, x]));

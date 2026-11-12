@@ -6,11 +6,13 @@ import { notify, notifyUsers } from '../../_lib/notify';
 import { refOf } from '../../_lib/ops';
 import { bankAccountsReady, extraLast4Sql } from '../../_lib/ownerBank';
 
-const STATES = ['failed', 'pending', 'processing', 'paid'];
+// 'cancelled': the payout of a statement unlocked before it was paid (owner statement close part 3, migration 0321). It
+// counts in neither the money still to pay nor the money paid.
+const STATES = ['failed', 'pending', 'processing', 'paid', 'cancelled'];
 const METHOD_LABEL: Record<string, string> = { bank_transfer: 'Bank transfer', ibg: 'IBG', duitnow: 'DuitNow' };
 
 /** GET /api/payouts?state=&period=YYYY-MM&q=&ownerId=&page=&pageSize=
- *  Attention order (failed, pending, processing, then paid newest first), a page at a time, with counts per
+ *  Attention order (failed, pending, processing, then paid newest first, then cancelled), a page at a time, with counts per
  *  state and the amount still outstanding for the whole filter so the header never depends on the page. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -45,7 +47,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     all<any>(env, `
       SELECT y.*, o.display_name, o.bank_name, o.bank_account_last4, substr(s.period_start, 1, 7) AS period
       ${FROM} WHERE 1 = 1 ${baseSql} ${state ? 'AND y.state = ?' : ''}
-      ORDER BY CASE y.state WHEN 'failed' THEN 0 WHEN 'pending' THEN 1 WHEN 'processing' THEN 2 ELSE 3 END,
+      ORDER BY CASE y.state WHEN 'failed' THEN 0 WHEN 'pending' THEN 1 WHEN 'processing' THEN 2 WHEN 'paid' THEN 3 ELSE 4 END,
                CASE WHEN y.state = 'paid' THEN y.paid_at END DESC NULLS LAST, y.amount DESC, y.id
       LIMIT ? OFFSET ?`, ...args, ...(state ? [state] : []), pageSize, (page - 1) * pageSize),
     all<any>(env, `SELECT y.state, COUNT(*) AS n, COALESCE(SUM(y.amount), 0) AS amount ${FROM} WHERE 1 = 1 ${baseSql} GROUP BY y.state`, ...args),
@@ -98,7 +100,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const extra = (await bankAccountsReady(env)) ? extraLast4Sql('s') : 'NULL::text';
   const rows = await all<any>(env, `
     SELECT s.id, s.state, s.owner_id, s.net_payout, o.bank_account_last4, ${extra} AS extra_last4,
-           EXISTS (SELECT 1 FROM payouts x WHERE x.statement_id = s.id) AS has_payout
+           EXISTS (SELECT 1 FROM payouts x WHERE x.statement_id = s.id AND x.state <> 'cancelled') AS has_payout
     FROM owner_statements s JOIN owners o ON o.id = s.owner_id
     WHERE s.id IN (${placeholders})`, ...statementIds);
 
@@ -153,6 +155,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   const before = await one<any>(env, 'SELECT state, statement_id FROM payouts WHERE id = ?', id);
   if (!before) return fail('NOT_FOUND', 'That payout no longer exists.', 404);
   if (before.state === 'paid') return fail('CONFLICT', 'That payout is already paid.', 409);
+  if (before.state === 'cancelled') return fail('CONFLICT', 'That payout was cancelled when its statement was unlocked.', 409);
   if (state === 'failed' && !failureReason?.trim()) return fail('VALIDATION', 'Say why it failed.', 422, { failureReason: 'Give the reason the bank gave.' });
 
   await run(env, 'UPDATE payouts SET state = ?, paid_at = ?, failure_reason = ? WHERE id = ?',

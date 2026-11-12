@@ -545,6 +545,7 @@
  "POST /api/statements/finalise": "AFFFFFFU",
  "POST /api/statements/generate": "AFFAFFFU",
  "POST /api/statements/send": "AFFAFFFU",
+ "POST /api/statements/unlock-final": "AFFFFFFU",
  "POST /api/stock": "AFFFFFFU",
  "POST /api/stock-takes": "AFFFFFFU",
  "POST /api/stock-transfers": "AFFFFFFU",
