@@ -18,7 +18,7 @@ import { useFieldRefresh, useFreshIds } from '../lib/fieldLive';
 import { MoneyInput } from '../components/inputs';
 import { readReceipt } from '../lib/claims';
 import { todayMyt } from '../lib/format';
-import { passKeyStatus } from '../lib/passKeyStatus';
+import { passKeyStatus, passKeyDay, type PassKeyDay } from '../lib/passKeyStatus';
 
 /* GET /api/field/repairs and /api/field/repairs/:id (functions/api/field/repairs*.ts). No amounts: the server never sends any. */
 interface Repair {
@@ -105,6 +105,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
     return () => window.clearInterval(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [tab, setTab] = useState<ListTab>('all');
+  const [passKeyDayShown, setPassKeyDayShown] = useState<PassKeyDay>('today');
   const [open, setOpen] = useState<string | null>(null);
   // A notice tapped in the bell: open that repair (the sheet loads it by id and says so if it is not theirs).
   useEffect(() => { if (linkRepair) { setTab('all'); setOpen(linkRepair); onLinked?.(); } }, [linkRepair]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -122,14 +123,16 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const team = (data?.team ?? []).filter(isShown);
   const passKeyTodo = todo.filter(r => r.jobType === 'pass_key');
   const passKeyPool = pool.filter(r => r.jobType === 'pass_key');
-  const myJobsShown = tab === 'pass_key' ? passKeyTodo : tab === 'ongoing' || tab === 'all' ? todo : [];
-  const poolShown = tab === 'pass_key' ? passKeyPool : tab === 'all' ? pool : [];
+  const isOnDay = (day: PassKeyDay) => (repair: Repair): boolean => passKeyDay(repair.dueOn ?? null, todayMyt(1)) === day;
+  const passKeyCountOn = (day: PassKeyDay): number => passKeyTodo.filter(isOnDay(day)).length + passKeyPool.filter(isOnDay(day)).length;
+  const myJobsShown = tab === 'pass_key' ? passKeyTodo.filter(isOnDay(passKeyDayShown)) : tab === 'ongoing' || tab === 'all' ? todo : [];
+  const poolShown = tab === 'pass_key' ? passKeyPool.filter(isOnDay(passKeyDayShown)) : tab === 'all' ? pool : [];
   const groups = [
     ...groupByUnit(myJobsShown).map(group => ({ group, offer: false })),
     ...groupByUnit(poolShown).map(group => ({ group, offer: true })),
   ];
   const finishedShown = tab === 'all' || tab === 'done' ? finished : [];
-  const emptyTitle = tab === 'pass_key' ? tr.noPassKey : tab === 'done' ? tr.noDone : tr.noMine;
+  const emptyTitle = tab === 'pass_key' ? (passKeyDayShown === 'today' ? tr.noPassKeyToday : tr.noPassKeyTomorrow) : tab === 'done' ? tr.noDone : tr.noMine;
   const tabLabel = (name: string, count: number): ReactNode => (
     <span className="flex flex-col items-center">{name}<span className="text-meta text-muted-ink tabular-nums">{count}</span></span>
   );
@@ -173,6 +176,14 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
             ]} />
         )}
       </div>
+      {data && tab === 'pass_key' && (
+        <Segmented label={t.jobs.day} value={passKeyDayShown} onChange={setPassKeyDayShown}
+          className="w-full grid grid-flow-col auto-cols-fr [&>button]:min-h-11"
+          options={[
+            { value: 'today', label: `${t.jobs.today} · ${passKeyCountOn('today')}` },
+            { value: 'tomorrow', label: `${t.jobs.tomorrow} · ${passKeyCountOn('tomorrow')}` },
+          ]} />
+      )}
       {data && (
         <FormRow label={tr.unitSearch}>
           <input type="search" enterKeyHint="search" autoComplete="off" className={cx(INPUT, 'h-11 text-[16px]')} value={unitSearch}

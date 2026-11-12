@@ -30,7 +30,7 @@ import { ServicePrices } from './ServicePrices';
 import { PriceChangePanel } from './units/PriceChangePanel';
 import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
 import { HistoryDisclosure, PhoneHistory, RecordHistory } from '../components/RecordHistory';
-import { passKeyStatus, type PassKeyStatus } from '../lib/passKeyStatus';
+import { passKeyStatus, passKeyDay, type PassKeyStatus, type PassKeyDay } from '../lib/passKeyStatus';
 
 /* ---------- the API's shape (functions/api/maintenance/issues.ts) ---------- */
 
@@ -106,6 +106,7 @@ export default function MaintenancePage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('open');
+  const [passKeyDayShown, setPassKeyDayShown] = useState<PassKeyDay>('today');
   const [q, setQ] = useState('');
   const [filtersTarget, setFiltersTarget] = useState<HTMLDivElement | null>(null);
   const selected = params.get('id');
@@ -135,10 +136,11 @@ export default function MaintenancePage() {
   const openTab = open.filter(i => !awaitingOwner(i) && !isOffDayPassKey(i));
   const urgent = openTab.filter(isUrgent).length;
   const passKeys = openTab.filter(i => typeOf(i) === 'pass_key');
+  const passKeysOn = (day: PassKeyDay): Issue[] => passKeys.filter(i => passKeyDay(i.dueOn ?? null, mytDay(1)) === day);
   const support = openTab.filter(needsSupport);
   const monthCost = issues.filter(i => i.state === 'resolved' && (i.resolvedAt ?? '').slice(0, 7) === monthStart).reduce((s, i) => s + (i.finalAmount ?? 0), 0);
 
-  const base = tab === 'open' ? openTab : tab === 'pass_key' ? passKeys : tab === 'support' ? support : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
+  const base = tab === 'open' ? openTab : tab === 'pass_key' ? passKeysOn(passKeyDayShown) : tab === 'support' ? support : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
   const ql = q.trim().toLowerCase();
   const rows = base.filter(i => (!ql || `${unitText(i)} ${i.propertyName} ${i.title} ${i.vendorName ?? ''}`.toLowerCase().includes(ql)))
     // Open jobs in the order they are worked: Urgent, Pass key, then Normal one by one by due date (the day reported when none).
@@ -186,7 +188,7 @@ export default function MaintenancePage() {
         above={tab === 'history' && rows.length > 0 && money ? (
           <div className="text-copy text-muted-ink py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">{rows.length} {rows.length === 1 ? 'job' : 'jobs'} · {rm(historySpend)} spent{q ? ` matching "${q}"` : ''}</div>
         ) : undefined}
-        empty={{ title: tab === 'pass_key' ? 'No pass key handovers today or tomorrow.' : tab === 'support' ? 'No technician is waiting for support.' : tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open maintenance jobs.',
+        empty={{ title: tab === 'pass_key' ? `No pass key handovers ${passKeyDayShown}.` : tab === 'support' ? 'No technician is waiting for support.' : tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open maintenance jobs.',
           action: tab === 'open' ? { label: 'Add maintenance job', onClick: () => setCreating(true) } : undefined }} />
     </>
   );
@@ -228,6 +230,12 @@ export default function MaintenancePage() {
               { value: 'done', label: 'Done' },
               { value: 'history', label: 'History' },
             ]} />
+            {tab === 'pass_key' && (
+              <Segmented label="Check-in day" value={passKeyDayShown} onChange={setPassKeyDayShown} className="max-md:w-full max-md:[&>button]:flex-1 max-md:[&>button]:min-h-11" options={[
+                { value: 'today', label: `Today · ${passKeysOn('today').length}` },
+                { value: 'tomorrow', label: `Tomorrow · ${passKeysOn('tomorrow').length}` },
+              ]} />
+            )}
           </div>
           {list}
         </>} />
