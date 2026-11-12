@@ -450,9 +450,10 @@ export type UnlockFinalResult =
  *              final and sent again, it gets a fresh payout. A transfer under way refuses it.
  *    paid      the statement and its payout stay. The month is worked out again (every lock applied, today's contract)
  *              and each unit's difference in what the owner is due becomes an owner adjustment on the unit's next open
- *              month (held on a yearly guarantee, as the late update does), the company's share the opposite way in
- *              company_late_changes; both carry the statement as their reference, so unlocking again posts only what
- *              is still missing. Refused if the statement was made final before every step was locked (its month cannot
+ *              month (held on a yearly guarantee, as the late update does), referenced to the statement, so unlocking
+ *              again posts only what is still missing. No company row: the company views work a final month out with
+ *              today's contract, so they already follow the correction (review I1; spec call 8's frozen split is not
+ *              built in those views). Refused if the statement was made final before every step was locked (its month cannot
  *              be worked out again from what the locks kept).
  *  A month before the locks, or a statement imported from the owner workbook, cannot be unlocked here. */
 export async function unlockFinal(env: Env, who: Who, statementId: string, reason: string): Promise<UnlockFinalResult> {
@@ -503,12 +504,10 @@ export async function unlockFinal(env: Env, who: Who, statementId: string, reaso
   const due = unitIds.map(unitId => {
     const m = fresh.find(r => r.unitId === unitId), o = stored.find(x => x.unit_id === unitId);
     const yearly = (m?.terms.model ?? o?.revenue_model) === 'management_yearly_guarantee';
-    const was = o ? { gross: Number(o.gross_income), deductions: Number(o.deductions), payoutBeforeAdjustments: Number(o.payout_before_adjustments), topUp: Number(o.top_up ?? 0) } : null;
     const unit = inputs.units.find(u => u.id === unitId);
     return {
       unitId, held: yearly,
-      diff: (m?.payoutBeforeAdjustments ?? 0) - (was?.payoutBeforeAdjustments ?? 0),
-      companyDiff: (m ? companyFigure({ ...m, yearlyGuarantee: yearly }) : 0) - (was ? companyFigure({ ...was, yearlyGuarantee: yearly }) : 0),
+      diff: (m?.payoutBeforeAdjustments ?? 0) - Number(o?.payout_before_adjustments ?? 0),
       text: finalUnlockText(unit ? `${unit.property_name} ${unit.unit_number}` : unitId, label),
     };
   });
@@ -524,14 +523,10 @@ export async function unlockFinal(env: Env, who: Who, statementId: string, reaso
                AND NOT EXISTS (SELECT 1 FROM owner_report_locks k WHERE k.stage = 'o2' AND k.frozen->'adjustments' @> jsonb_build_array(jsonb_build_object('id', a.id)))) AS movable
       FROM owner_adjustments a LEFT JOIN owner_statements s ON s.id = a.statement_id
       WHERE a.source = 'stage_lock' AND a.reference = ? ORDER BY a.occurred_on, a.id`, ref);
-    const company = (await hasCompanyLateTable(queryOf(tx)))
-      ? await all<{ id: string; unit_id: string; month: string; amount: number }>(tx, 'SELECT id, unit_id, month, amount FROM company_late_changes WHERE reference = ? ORDER BY month, id', ref)
-      : null;
     const closed = await closedMonthsFor(tx, unitIds, month, 'o2');
     const at = nowIso();
     const out: { unitId: string; month: string; amount: number }[] = [];
     const inserts: Record<string, unknown>[] = [], updates: { id: string; amount: number; kind: string }[] = [], removes: string[] = [];
-    const cInserts: Record<string, unknown>[] = [], cUpdates: { id: string; amount: number }[] = [], cRemoves: string[] = [];
     for (const d of due) {
       const target = openMonthAfter(month, closed.get(d.unitId) ?? new Set());
       const mine: PostedLate[] = posted.filter(p => p.unit_id === d.unitId).map(p => ({ id: p.id, month: p.month, amount: Number(p.amount), movable: !!p.movable }));
@@ -544,13 +539,6 @@ export async function unlockFinal(env: Env, who: Who, statementId: string, reaso
         updates.push({ id: plan.id, amount: plan.amount, kind: plan.amount >= 0 ? 'credit' : 'charge' });
         out.push({ unitId: d.unitId, month: mine.find(p => p.id === plan.id)?.month ?? target, amount: plan.amount });
       } else if (plan.kind === 'remove') removes.push(plan.id);
-      if (!company) continue;
-      const cMine: PostedLate[] = company.filter(c => c.unit_id === d.unitId)
-        .map(c => ({ id: c.id, month: c.month, amount: Number(c.amount), movable: !(closed.get(d.unitId)?.has(c.month) ?? false) }));
-      const cPlan = planLate(d.companyDiff, cMine, target);
-      if (cPlan.kind === 'insert') cInserts.push({ id: `clc-${crypto.randomUUID()}`, unit_id: d.unitId, month: cPlan.month, amount: cPlan.amount, description: d.text });
-      else if (cPlan.kind === 'update') cUpdates.push({ id: cPlan.id, amount: cPlan.amount });
-      else if (cPlan.kind === 'remove') cRemoves.push(cPlan.id);
     }
     // One write per kind for every unit of the owner, as the late update writes.
     if (inserts.length) await run(tx, `
@@ -561,13 +549,6 @@ export async function unlockFinal(env: Env, who: Who, statementId: string, reaso
     if (updates.length) await run(tx, `UPDATE owner_adjustments a SET amount = x.amount, kind = x.kind, updated_at = ?
       FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, amount integer, kind text) WHERE a.id = x.id`, at, JSON.stringify(updates));
     if (removes.length) await run(tx, 'DELETE FROM owner_adjustments WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', JSON.stringify(removes));
-    if (cInserts.length) await run(tx, `
-      INSERT INTO company_late_changes (id, unit_id, month, amount, description, reference, created_at, updated_at)
-      SELECT x.id, x.unit_id, x.month, x.amount, x.description, ?, ?, ? FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, month text, amount integer, description text)`,
-      ref, at, at, JSON.stringify(cInserts));
-    if (cUpdates.length) await run(tx, `UPDATE company_late_changes c SET amount = x.amount, updated_at = ?
-      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, amount integer) WHERE c.id = x.id`, at, JSON.stringify(cUpdates));
-    if (cRemoves.length) await run(tx, 'DELETE FROM company_late_changes WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', JSON.stringify(cRemoves));
     await audit(tx, { ...actor, action: 'statement.unlock_final', entityTable: 'owner_statements', entityId: statementId,
       before: { state: cur.state }, after: { state: cur.state, reason, posted: out } });
     return { ok: true as const, outcome: 'paid' as const, posted: out };

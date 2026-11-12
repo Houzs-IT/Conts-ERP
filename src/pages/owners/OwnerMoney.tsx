@@ -19,6 +19,9 @@ import { statusOf } from '../../lib/status';
 import type { PayoutState, StatementState } from '../../lib/types';
 import { Section } from './shared';
 import { Link } from 'react-router-dom';
+import { statementActionToast } from '../../lib/statementActions';
+import { useSession } from '../../lib/session';
+import { mayWork } from '../../lib/areaAccess';
 
 /**
  * Owner statements and owner payouts on the owner (owner, 11 Oct 2026: "owner payout is basically the same as owner;
@@ -53,6 +56,7 @@ export const payoutStatus = (p: PayoutRow) =>
   p.state === 'paid' ? (p.paidAt ? `Paid · ${fmtDate(p.paidAt)}` : 'Paid')
     : p.state === 'processing' ? 'Transfer in progress'
     : p.state === 'failed' ? 'Failed'
+    : p.state === 'cancelled' ? 'Cancelled'
     : 'Not paid yet';
 export const PayoutBadge = ({ p, size }: { p: PayoutRow; size?: 'sm' | 'md' }) => (
   <StatusBadge label={payoutStatus(p)} tone={statusOf('payout', p.state).tone} size={size} />
@@ -137,6 +141,8 @@ export function StatementSteps({ statementId, unitsLabel, onChanged }: { stateme
   const [confirm, setConfirm] = useState<'send' | 'paid' | null>(null);
   const [adjusting, setAdjusting] = useState(false);
   const s = data?.data;
+  // Make final is a power given one by one (owner statement close part 3); the server checks it too.
+  const mayMakeFinal = mayWork(useSession().user, 'makeFinal');
   if (!s) return null;
 
   const done = () => { reload(); onChanged(); void refreshNavCounts(); };
@@ -144,10 +150,14 @@ export function StatementSteps({ statementId, unitsLabel, onChanged }: { stateme
     if (!s) return;
     setBusy(true);
     try {
-      if (kind === 'finalise') await api.post('/statements/finalise', { statementIds: [s.id] });
-      if (kind === 'send') await api.post('/statements/send', { statementIds: [s.id] });
-      if (kind === 'paid' && s.payout) await api.patch('/payouts', { id: s.payout.id, state: 'paid' });
-      toast({ tone: 'success', title: kind === 'finalise' ? 'Statement marked final.' : kind === 'send' ? 'Statement sent to the owner.' : 'Marked as paid.' });
+      if (kind === 'paid') {
+        if (s.payout) await api.patch('/payouts', { id: s.payout.id, state: 'paid' });
+        toast({ tone: 'success', title: 'Marked as paid.' });
+      } else {
+        // The server answers 200 with what it did and what it refused (a step still open, a draft out of date).
+        const res = await api.post<{ finalised?: number; sent?: number; failed?: { id: string; reason: string }[] }>(kind === 'finalise' ? '/statements/finalise' : '/statements/send', { statementIds: [s.id] });
+        toast(statementActionToast(kind, res));
+      }
       done();
     } catch (e) {
       toast({ tone: 'critical', title: 'That did not go through.', body: errorMessage(e, 'Try again in a moment.') });
@@ -171,7 +181,7 @@ export function StatementSteps({ statementId, unitsLabel, onChanged }: { stateme
   const unpaid = s.state === 'sent' && s.payout && s.payout.state !== 'paid';
   return (
     <>
-      {s.state === 'provisional' && <Button size="sm" variant="secondary" loading={busy && !confirm} onClick={() => void act('finalise')}>Mark final</Button>}
+      {s.state === 'provisional' && mayMakeFinal && <Button size="sm" variant="secondary" loading={busy && !confirm} onClick={() => void act('finalise')}>Mark final</Button>}
       {s.state === 'finalised' && <Button size="sm" variant="secondary" icon={<Icon name="Send" size="sm" />} onClick={() => setConfirm('send')}>Send to owner</Button>}
       {unpaid && <Button size="sm" variant="secondary" icon={<Icon name="CheckCircle2" size="sm" />} onClick={() => setConfirm('paid')}>Mark paid</Button>}
       {editable && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setAdjusting(true)}>Add adjustment</Button>}

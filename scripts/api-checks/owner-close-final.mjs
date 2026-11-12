@@ -31,6 +31,15 @@ const accessCache = () => new Promise(res => setTimeout(res, 11_000));
 // no contract (the default fee), no misc charge. A local rerun starts from a clean slate.
 const OWNER = 'ocf-owner', PROP = 'ocf-prop', U1 = 'ocf-u1', U2 = 'ocf-u2';
 const dropAll = async () => {
+  for (const o of ['ocf-owner2']) {
+    await db(`DELETE FROM payouts WHERE owner_id = $1`, o);
+    await db(`DELETE FROM statement_lines WHERE statement_id IN (SELECT id FROM owner_statements WHERE owner_id = $1)`, o);
+    await db(`DELETE FROM statement_units WHERE statement_id IN (SELECT id FROM owner_statements WHERE owner_id = $1)`, o);
+    await db(`DELETE FROM owner_statements WHERE owner_id = $1`, o);
+    for (const table of ['owner_report_locks', 'expenses', 'company_late_changes']) await db(`DELETE FROM ${table} WHERE unit_id IN (SELECT id FROM units WHERE owner_id = $1)`, o);
+    await db(`DELETE FROM units WHERE owner_id = $1`, o);
+    await db(`DELETE FROM owners WHERE id = $1`, o);
+  }
   const ofOwner = 'SELECT id FROM units WHERE owner_id = $1';
   await db(`DELETE FROM payouts WHERE owner_id = $1`, OWNER);
   await db(`DELETE FROM statement_lines WHERE statement_id IN (SELECT id FROM owner_statements WHERE owner_id = $1)`, OWNER);
@@ -62,6 +71,8 @@ const generate = month => call('POST', '/api/statements/generate', { period: mon
 const statementOf = async month => (await db(`SELECT id, state FROM owner_statements WHERE owner_id = $1 AND period_start = $2`, OWNER, `${month}-01`))[0];
 const finalise = async (month, role) => call('POST', '/api/statements/finalise', { statementIds: [(await statementOf(month))?.id ?? 'none'] }, role);
 const LOCK_FIRST = 'Lock every step on Owner statement close before marking it final.';
+// Review C1: a draft made before the last lock, or before Unlock final, prints figures the locks may not hold.
+const STALE_DRAFT = 'A step was locked, or the statement unlocked, after this draft was made. Generate the statement again, then mark it final.';
 
 let r = await generate(OCT);
 check('the October draft is made', r.status < 300 && !!(await statementOf(OCT)), r.text);
@@ -89,6 +100,8 @@ for (const stage of ['income', 'deductions', 'o2']) {
   r = await lock(stage, [U2]);
   check(`${stage} locked for the second unit`, r.status < 300 && r.json?.locked?.includes(U2), r.text);
 }
+r = await finalise(OCT);
+check('a draft made before the last lock is not made final', r.status === 200 && r.json?.finalised === 0 && r.json?.failed?.[0]?.reason === STALE_DRAFT, r.text);
 await generate(OCT);
 // Owner statement close, step 4 (GP and final): how many of the month's owners are final.
 const finalCount = async () => (await call('GET', `/api/owner-close?month=${OCT}`)).json?.final;
@@ -131,6 +144,8 @@ check('unlock final on a final statement makes it a draft', r.status === 200 && 
   && (await statementOf(OCT))?.state === 'provisional', r.text);
 const why = await db(`SELECT after_state FROM audit_log WHERE action = 'statement.unlock_final' AND entity_id = $1 ORDER BY occurred_at DESC LIMIT 1`, (await statementOf(OCT))?.id);
 check('… and the reason is kept in the history', JSON.stringify(why[0]?.after_state ?? '').includes('Owner disputes the cleaning fee'), JSON.stringify(why));
+r = await finalise(OCT);
+check('an unlocked statement is not made final until it is generated again', r.status === 200 && r.json?.finalised === 0 && r.json?.failed?.[0]?.reason === STALE_DRAFT, r.text);
 
 // Sent, its payout pending: unlocking cancels the payout; made final and sent again, a fresh payout.
 r = await again();
@@ -145,12 +160,20 @@ check('unlock final on a sent statement cancels its payout', r.status === 200 &&
 r = await call('PATCH', '/api/payouts', { id: pays[0]?.id, state: 'paid' });
 check('a cancelled payout cannot be marked paid', r.status === 409 && r.json?.error?.message === 'That payout was cancelled when its statement was unlocked.', r.text);
 await again();
+r = await call('GET', `/api/owner/summary?ownerId=${OWNER}&period=${OCT}`);
+check('the owner portal never shows a cancelled payout', r.status === 200 && r.json?.payout?.state !== 'cancelled', r.text.slice(0, 300));
 r = await send(OCT);
 pays = await payoutsOf();
 check('make final and send again makes a fresh pending payout', r.json?.sent === 1 && pays.length === 2 && pays[0].state === 'cancelled' && pays[1].state === 'pending', JSON.stringify(pays));
 r = await call('GET', `/api/payouts?ownerId=${OWNER}`);
 check('the payouts list keeps cancelled apart', r.status === 200 && r.json?.counts?.cancelled === 1 && r.json?.counts?.pending === 1
   && r.json?.outstanding === Number(pays[1].amount), r.text);
+for (const q of [`period=${OCT}&q=Final%20Check`, `ids=${pays.map(p => p.id).join(',')}`]) {
+  r = await call('GET', `/api/payouts/export?${q}`);
+  const mineX = (r.json?.data ?? []).filter(x => x.ownerName === 'Final Check Owner');
+  check(`the bank export leaves a cancelled payout out (${q.split('=')[0]})`, r.status === 200 && mineX.reduce((n, x) => n + x.payouts, 0) === 1
+    && mineX.reduce((n, x) => n + x.amount, 0) === Number(pays[1].amount), r.text.slice(0, 300));
+}
 
 // A payout run waiting for approval: unlocking cancels the payout, and approving the run afterwards moves nothing.
 await db(`INSERT INTO settings (key, value, updated_at) VALUES ('approvals.enabled', 'true', $1) ON CONFLICT (key) DO UPDATE SET value = 'true'`, now);
@@ -192,7 +215,9 @@ check('a paid statement keeps its payout and posts the difference', r.status ===
   && (await statementOf(OCT))?.state === 'paid' && (await payoutsOf())[2]?.state === 'paid'
   && posted.length === 1 && Math.abs(Number(posted[0].amount) - want) <= 1 && String(posted[0].occurred_on).startsWith('2026-11')
   && posted[0].description === 'Change to Final Court F-01 for October 2026 after it was paid (statement unlocked)'
-  && company.length === 1 && Number(company[0].amount) === -Number(posted[0].amount) && company[0].month === '2026-11', `${r.text} ${JSON.stringify({ posted, company, want })}`);
+  // The company views work a final month out with today's contract, so the company's side already follows the corrected
+  // contract; a company row as well would count it twice (review I1).
+  && company.length === 0, `${r.text} ${JSON.stringify({ posted, company, want })}`);
 r = await unlockFinal(OCT, 'Clicked twice');
 const twice = await db(`SELECT count(*)::int AS n FROM owner_adjustments WHERE owner_id = $1 AND reference LIKE 'final-unlock:%'`, OWNER);
 check('a second unlock of a paid statement posts nothing', r.status === 200 && twice[0]?.n === 1, `${r.text} ${JSON.stringify(twice)}`);
@@ -228,6 +253,57 @@ r = await call('GET', `/api/portfolio/owner-report?month=${SEP}`);
 check('a month before the locks has no Final column to fill', r.status === 200 && r.json?.lockFrom === '2026-10', r.text.slice(0, 200));
 await db(`UPDATE units SET contract_id = NULL WHERE id = $1`, U1);
 await db(`DELETE FROM owner_contracts WHERE id = 'ocf-contract2'`);
+
+// ── Races (review I3, I4): Postgres only. PGlite runs one transaction at a time, so nothing can overlap there. ──
+const pgReal = !/emscripten|emcc/i.test(String((await db('SELECT version() AS v'))[0]?.v ?? ''));
+if (pgReal) {
+  const pause = ms => new Promise(res => setTimeout(res, ms));
+  const inTx = async work => { const c = postgres(DB_URL, { max: 1, onnotice: () => {}, connection: { search_path: 'pos' } }); try { return await c.begin(work); } finally { await c.end({ timeout: 5 }); } };
+  // A second owner with one unit, every October step locked and a draft made after the locks.
+  await db(`INSERT INTO owners (id, display_name, email, bank_name, bank_account_last4, created_at, updated_at) VALUES ('ocf-owner2', 'Final Race Owner', 'final-race@example.invalid', 'Check Bank', '4321', $1, $1)`, now);
+  await db(`INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, misc_charges, created_at, updated_at) VALUES ('ocf-r1', $1, 'ocf-owner2', 'R-01', 0, 0, $2, $2)`, PROP, now);
+  await db(`INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, charge_to, created_at) VALUES ('ocf-r-c', 'ocf-r1', 'other', 'Check: race cost', 3000, 'MYR', '2026-10-10', 'owner', $1)`, now);
+  for (const stage of ['income', 'deductions', 'o2']) await lock(stage, ['ocf-r1']);
+  await call('POST', '/api/statements/generate', { period: OCT, ownerIds: ['ocf-owner2'] });
+  const race = async () => (await db(`SELECT id, state FROM owner_statements WHERE owner_id = 'ocf-owner2' AND period_start = '2026-10-01'`))[0];
+  // I3: Unlock a step lands while Make final is checking the locks: Make final waits for it and then refuses.
+  const st = await race();
+  const fin = await inTx(async sql => {
+    await sql`SELECT pg_advisory_xact_lock(hashtext('owner-report-late-income'))`;
+    const p = call('POST', '/api/statements/finalise', { statementIds: [st.id] });
+    await pause(2500);
+    await sql`DELETE FROM pos.owner_report_locks WHERE unit_id = 'ocf-r1' AND month = '2026-10' AND stage = 'o2'`;
+    return p;
+  });
+  check('Make final waits for an unlock under way and then refuses', fin.status === 200 && fin.json?.finalised === 0 && (await race())?.state === 'provisional', fin.text);
+  await lock('o2', ['ocf-r1']);
+  await call('POST', '/api/statements/generate', { period: OCT, ownerIds: ['ocf-owner2'] });
+  r = await call('POST', '/api/statements/finalise', { statementIds: [st.id] });
+  check('… and passes once locked again', r.json?.finalised === 1, r.text);
+  // I4: Unlock final lands while Send is sending: the statement stays a draft and no payout is made.
+  const sent = await inTx(async sql => {
+    await sql`SELECT id FROM pos.owner_statements WHERE id = ${st.id} FOR UPDATE`;
+    const p = call('POST', '/api/statements/send', { statementIds: [st.id] });
+    await pause(2500);
+    await sql`UPDATE pos.owner_statements SET state = 'provisional', finalised_at = NULL WHERE id = ${st.id}`;
+    return p;
+  });
+  const racePays = await db(`SELECT state FROM payouts WHERE owner_id = 'ocf-owner2'`);
+  check('Send leaves a statement unlocked meanwhile alone', (await race())?.state === 'provisional' && racePays.length === 0, `${sent.text} ${JSON.stringify(racePays)}`);
+  // I4: a payout marked failed while Unlock final cancels it stays cancelled.
+  await db(`UPDATE owner_statements SET state = 'finalised', finalised_at = $2 WHERE id = $1`, st.id, now);
+  await call('POST', '/api/statements/send', { statementIds: [st.id] });
+  const [pay] = await db(`SELECT id FROM payouts WHERE owner_id = 'ocf-owner2' AND state = 'pending'`);
+  const patched = await inTx(async sql => {
+    await sql`SELECT id FROM pos.payouts WHERE id = ${pay?.id ?? ''} FOR UPDATE`;
+    const p = call('PATCH', '/api/payouts', { id: pay?.id, state: 'failed', failureReason: 'Bank refused' });
+    await pause(2500);
+    await sql`UPDATE pos.payouts SET state = 'cancelled' WHERE id = ${pay?.id ?? ''}`;
+    return p;
+  });
+  const [after] = await db(`SELECT state FROM payouts WHERE id = $1`, pay?.id ?? '');
+  check('a payout cancelled meanwhile is not marked failed', patched.status === 409 && after?.state === 'cancelled', `${patched.text} ${JSON.stringify(after)}`);
+} else console.log('skip the race checks: PGlite runs one transaction at a time');
 
 // Remove everything the check made.
 await dropAll();

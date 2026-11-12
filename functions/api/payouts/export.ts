@@ -30,7 +30,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (ids.length > 500) return fail('VALIDATION', 'Tick 500 payouts at most.', 422);
   if (!ids.length && !period) return fail('VALIDATION', 'Pick a statement month first, or tick the payouts to export.', 422);
 
-  const where: string[] = [], args: unknown[] = [];
+  // A cancelled payout (its statement was unlocked before it was paid) is never transferred (review C2).
+  const where: string[] = ["y.state <> 'cancelled'"], args: unknown[] = [];
   if (ids.length) { where.push(`y.id IN (${ids.map(() => '?').join(',')})`); args.push(...ids); }
   else {
     if (state) { where.push('y.state = ?'); args.push(state); }

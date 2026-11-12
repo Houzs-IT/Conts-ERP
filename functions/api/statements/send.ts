@@ -19,15 +19,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const rows = await all<{ id: string; state: string; owner_id: string }>(env,
     `SELECT id, state, owner_id FROM owner_statements WHERE id IN (${placeholders})`, ...statementIds);
 
-  // Only finalised statements may be sent — provisional figures must never reach owners.
-  const notFinal = rows.filter(r => r.state !== 'finalised');
-  const sendable = rows.filter(r => r.state === 'finalised');
+  // Only finalised statements may be sent — provisional figures must never reach owners. The update itself checks the
+  // state again: a statement unlocked (Unlock final) between the read and the write stays a draft (review I4).
+  const asked = rows.filter(r => r.state === 'finalised');
+  const changed = asked.length ? new Set((await all<{ id: string }>(env, `UPDATE owner_statements SET state = 'sent', sent_at = ?
+    WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND state = 'finalised' RETURNING id`, new Date().toISOString(), JSON.stringify(asked.map(r => r.id)))).map(r => r.id)) : new Set<string>();
+  const notFinal = rows.filter(r => !changed.has(r.id));
+  const sendable = rows.filter(r => changed.has(r.id));
 
   if (sendable.length) {
     // The database side in a handful of writes for the whole selection (a month is about 100 owners); it was
     // eleven queries per statement, one after another, before the first email went out.
     const ids = JSON.stringify(sendable.map(r => r.id));
-    await run(env, "UPDATE owner_statements SET state = 'sent', sent_at = ? WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))", new Date().toISOString(), ids);
     await auditMany(env, sendable.map(r => ({
       actorId: session.userId, actorLabel: session.fullName, action: 'statement.send',
       entityTable: 'owner_statements', entityId: r.id, before: { state: 'finalised' }, after: { state: 'sent' },

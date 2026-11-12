@@ -158,11 +158,18 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   if (before.state === 'cancelled') return fail('CONFLICT', 'That payout was cancelled when its statement was unlocked.', 409);
   if (state === 'failed' && !failureReason?.trim()) return fail('VALIDATION', 'Say why it failed.', 422, { failureReason: 'Give the reason the bank gave.' });
 
-  await run(env, 'UPDATE payouts SET state = ?, paid_at = ?, failure_reason = ? WHERE id = ?',
+  // The update checks the state again: a payout cancelled by Unlock final (or paid) between the read and the write is
+  // left as it is (review I4).
+  const moved = await one<{ id: string }>(env, `UPDATE payouts SET state = ?, paid_at = ?, failure_reason = ?
+    WHERE id = ? AND state NOT IN ('paid', 'cancelled') RETURNING id`,
     state, state === 'paid' ? nowIso() : null, state === 'failed' ? (failureReason ?? null) : null, id);
+  if (!moved) {
+    const now = await one<{ state: string }>(env, 'SELECT state FROM payouts WHERE id = ?', id);
+    return fail('CONFLICT', now?.state === 'cancelled' ? 'That payout was cancelled when its statement was unlocked.' : 'That payout is already paid.', 409);
+  }
 
   if (state === 'paid') {
-    await run(env, "UPDATE owner_statements SET state = 'paid' WHERE id = ?", before.statement_id);
+    await run(env, "UPDATE owner_statements SET state = 'paid' WHERE id = ? AND state IN ('sent', 'finalised')", before.statement_id);
   }
 
   await audit(env, {

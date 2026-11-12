@@ -396,6 +396,35 @@ test('agent and company on a negative GP', () => { /* the Task 1 ruling's value;
   - the drawer's Agent and Company;
   - totals: Agent 705 + Company 1,410 = Gain / Loss 2,115.
 
+**Final review** (Opus, fresh context, 12 Nov). It found 2 Critical and 5 Important issues, all fixed in one pass, each with a check:
+
+- **C1. Make final on an out-of-date draft.** Make final now refuses a draft made before the owner's latest lock or before Unlock final ("Generate the statement again, then mark it final").
+- **C2. Cancelled payouts in the bank export.** The export always leaves cancelled payouts out, whether by month or ticked. The payout label says Cancelled.
+- **I1. The company's side counted twice.** A paid unlock now posts the owner's difference only. The company views work a final month out with today's contract, so they already follow the correction. Spec call 8 (a frozen split in those views) is not built.
+- **I2. The owner portal.** It never shows a cancelled payout.
+- **I3. Make final against Unlock a step.** Make final re-checks the locks and updates in one transaction under the late update's lock.
+- **I4. Send and Mark paid against Unlock final.** Send and the payout update check the state again in the same statement, so an unlock that lands in between is not overwritten.
+  - The I3 and I4 race checks run on Postgres only (CI). PGlite runs one transaction at a time, so they could not be seen failing locally.
+- **I5. False success messages.** Mark final and Send on the owner page and the statement page report a refusal instead of a green toast. Mark final shows only with the Make final power.
+
+The pass also fixed two other things:
+- `access.test.mjs` was missing the two new areas (found by `npm test`).
+- A slip in the I1 edit had removed the late update's company lists; this was caught by the owner-close checks.
+
+**Deferred minors**
+- **Step 4** counts owners the Unit report can't act on: the placeholder owner, and units with no contract record. So it may never read Done.
+- **A unit moved to another owner.** Unlocking a paid statement after one of its units moved posts that unit's whole payout as a charge on the old owner.
+- **The paid-unlock refusal** checks today's locks, not the locks at Final.
+- **The paid unlock's history and toast** leave out an adjustment it withdrew.
+- **The Unit report** works the month out twice.
+- **The negative-GP agent rule** (never below 0) is chew's to confirm.
+
+**Checks after the fix pass**
+- owner-close-final: 45/45 locally, 48 with the race checks on CI.
+- owner-close: 38/38; owner-close-steps: 41/41; owner-close-late: 31/31; late-bills: 27/27.
+- `tsc -b` clean; `npm run check` 17/17.
+- `npm test` 419/420: `statementPdf` fails on main too.
+
 **Release**
 1. Migration **0321** goes to production: dry run, then `only=0321`.
 2. Then merge. Property OS deploys from main.
