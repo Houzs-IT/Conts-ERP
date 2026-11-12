@@ -172,7 +172,7 @@ export default function YgrrReportPage(): ReactElement {
 
   return (
     <>
-      <PageHeader title="YGRR report" sub="Package D (PS YGRR)"
+      <PageHeader title="Unit report" sub="YGRR: Package D (PS YGRR)"
         right={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel} disabled={!rows.length}>Export</Button>} />
       <div className="flex flex-col gap-4">
         <ListToolbar

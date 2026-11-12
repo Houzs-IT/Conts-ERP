@@ -332,7 +332,7 @@ export default function OwnerOverallReportPage() {
   return (
     <div className="flex flex-col gap-4 md:gap-5 md:flex-1 md:min-h-0 transition-[margin] duration-[var(--motion-standard)]" style={{ marginRight: panel ? PANEL_ROOM : 0 }}>
       <PageHeader
-        title="Overall unit report"
+        title="Unit report"
         sub={data ? <>
           {[plural(all.length, 'unit'), ...present.map(g => `${count(g.n)} ${GROUP_NAME[g.group].toLowerCase()}`), 'amounts in RM']
             .map((part, n) => <span key={n}>{n > 0 && ' · '}<span className="inline-block">{part}</span></span>)}

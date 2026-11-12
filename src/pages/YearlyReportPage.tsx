@@ -118,7 +118,7 @@ export default function YearlyReportPage() {
 
   return (
     <>
-      <PageHeader title="Yearly unit report" sub="Each unit month by month across the year: earnings, profit, owner payout, bills and cleaning."
+      <PageHeader title="Unit report" sub="Each unit month by month across the year: earnings, profit, owner payout, bills and cleaning."
         right={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel} disabled={!rows.length}>Export</Button>} />
       <div className="flex flex-col gap-4">
         <ListToolbar

@@ -236,7 +236,7 @@ function PnlByMonth({ months, byMonth, total, mLabel }: { months: string[]; byMo
           </tbody>
         </table>
       </div>
-      <p className="m-0 text-meta text-muted-ink">Guest total: what guests paid for the month’s nights. Service fees and taxes: the guest total less what the reservations paid out. Operating profit is the statement’s gross profit; company keeps is what is left after the owner’s portion (the Overall unit report’s gain or loss).</p>
+      <p className="m-0 text-meta text-muted-ink">Guest total: what guests paid for the month’s nights. Service fees and taxes: the guest total less what the reservations paid out. Operating profit is the statement’s gross profit; company keeps is what is left after the owner’s portion (the Monthly Unit report’s gain or loss).</p>
     </Section>
   );
 }
