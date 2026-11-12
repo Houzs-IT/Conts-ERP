@@ -293,6 +293,11 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
   }
 
   const technicians = useTechnicians();
+  async function assignOne(issue: Issue, name: string) {
+    if (name === issue.vendorName) return;
+    try { await api.patch(`/maintenance/issues/${issue.id}`, { assigneeName: name }); toast({ tone: 'success', title: `${jobLabel(issue)} assigned to ${name}.` }); onChanged(); }
+    catch (e) { toast({ tone: 'critical', title: 'Not assigned.', body: errorMessage(e, 'Try again in a moment.') }); }
+  }
   const assigneeOptions = useMemo<FilterOption[]>(() => {
     const groupOf = (kind: string | null | undefined): string => (kind === 'in_house' ? 'In-house' : 'Contractors');
     const byName = new Map(technicians.map(t => [t.name, { value: t.name, label: t.name, group: groupOf(t.kind) }]));
@@ -322,7 +327,13 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
       filter: { kind: 'select', options: Object.entries(CATEGORY).map(([value, label]) => ({ value, label })) } },
     { key: 'assignee', label: 'Assigned to', value: i => i.vendorName ?? 'Unassigned', text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 160,
       filter: { kind: 'select', display: 'menu', options: assigneeOptions },
-      render: i => (i.vendorName
+      render: i => (canBulk && i.state !== 'resolved'
+        ? <span className="block" onClick={e => e.stopPropagation()}>
+            <SearchSelect label={`Assign ${jobLabel(i)}`} value={i.vendorName ?? ''} onChange={name => void assignOne(i, name)} allLabel={i.vendorName ?? 'Unassigned'}
+              placeholder="Search technicians and contractors" buttonClassName={cx('max-sm:h-11', !i.vendorName && '[&>span]:text-danger!')}
+              options={technicians.map(t => ({ value: t.name, label: t.name, group: t.kind === 'in_house' ? 'In-house' : 'Contractors' }))} />
+          </span>
+        : i.vendorName
         ? <span className="block truncate">{i.vendorName}<span className="text-muted-ink"> {i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}</span></span>
         : <span className="text-danger">Unassigned</span>) },
     { key: 'due', label: 'Due', type: 'date', value: i => i.dueOn ?? null, width: 110, hidden: true, filter: false },
@@ -342,7 +353,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     ] : []),
     { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150, filter: false },
     { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150, filter: false },
-  ], [money, buildingOptions, unitOptions, assigneeOptions]);
+  ], [money, buildingOptions, unitOptions, assigneeOptions, canBulk, technicians]);
 
   return (
     <>
@@ -445,6 +456,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const [completeOpen, setCompleteOpen] = useState(false);
   const [exchange, setExchange] = useState(false);
   const done = i.state === 'resolved';
+  const isTypedAssignee = !!assignee.trim() && !techs.some(t => t.name === assignee);
   const media = (files.data?.data ?? []).filter(f => f.kind === 'photo' || f.kind === 'video');
   const docs = (files.data?.data ?? []).filter(f => f.kind !== 'photo' && f.kind !== 'video');
   const shownMedia = media.filter(m => (m.stage ?? 'before') === stage);
@@ -455,6 +467,11 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const doneWhy = awaitingOwner(i) ? "Waiting for the owner's approval." : counts.after === 0 ? 'Add a photo of the fixed job first (Photos, Fixed).' : null;
 
   const refresh = useCallback(() => { files.reload(); onChanged(); }, [files, onChanged]);
+  const assignTo = (name: string) => void act('assign', () => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: name }), `Assigned to ${name}.`);
+  function pickAssignee(name: string) {
+    setAssignee(name);
+    if (name !== (i.vendorName ?? '') && techs.some(t => t.name === name)) assignTo(name);
+  }
   async function act(key: string, fn: () => Promise<unknown>, ok: string, body?: string) {
     setBusy(key);
     try { await fn(); toast({ tone: 'success', title: ok, body }); refresh(); return true; }
@@ -584,9 +601,9 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       {!done && (
         <section className="flex flex-col gap-2">
           <h3 className="m-0 text-copy font-semibold">Assigned to</h3>
-          <div className="max-sm:[&>div>span:last-child>button]:min-h-11"><AssigneePicker value={assignee} onChange={setAssignee} techs={techs} /></div>
-          <Button size="sm" variant="secondary" className="self-start" disabled={!assignee.trim() || assignee.trim() === (i.vendorName ?? '')} disabledReason="Pick a different person."
-            loading={busy === 'assign'} onClick={() => void act('assign', () => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: assignee.trim() }), 'Job assigned.')}>Save</Button>
+          <div className="max-sm:[&>div>span:last-child>button]:min-h-11"><AssigneePicker value={assignee} onChange={pickAssignee} techs={techs} /></div>
+          {isTypedAssignee && <Button size="sm" variant="secondary" className="self-start" disabled={assignee.trim() === (i.vendorName ?? '')} disabledReason="Type a different name."
+            loading={busy === 'assign'} onClick={() => assignTo(assignee.trim())}>Save</Button>}
         </section>
       )}
       {!isPassKey && <section className="flex flex-col gap-2 rounded-card border border-solid border-line p-3.5">
@@ -697,6 +714,17 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
           ))}
       </section>}
 
+      {isPassKey ? (
+        <section className="flex flex-col gap-2.5">
+          <AttachmentLabel title="Proof" count={media.length}
+            hint={<PhotosPdfButton items={media} title={jobLabel(i)} sub={`Maintenance: ${i.title}`} fileStem={jobLabel(i)} label={() => 'Proof'} />} />
+          <span className="text-meta text-muted-ink">Needed before Pass key done.</span>
+          {files.loading && !files.data ? <Skeleton height={96} /> : (
+            <MediaGallery items={media} upload={done ? undefined : uploadTo(`/maintenance/issues/${i.id}/photos`, { kind: 'after' }, jobLabel(i))} onDone={refresh} onRemove={done ? undefined : m => void removePhoto(m)}
+              addLabel="Add proof" emptyText="No proof yet." />
+          )}
+        </section>
+      ) : (
       <section className="flex flex-col gap-2.5">
         <AttachmentLabel title="Photos and videos" count={media.length}
           hint={<PhotosPdfButton items={[...media].sort((a, b) => Number(a.stage === 'after') - Number(b.stage === 'after'))} title={jobLabel(i)} sub={`Maintenance: ${i.title}`} fileStem={jobLabel(i)}
@@ -711,6 +739,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
             addLabel={stage === 'before' ? 'Add photo of the problem' : 'Add proof it is fixed'} emptyText={stage === 'before' ? 'No photo of the problem yet.' : 'No proof yet. Add one when the job is settled.'} />
         )}
       </section>
+      )}
 
       {money && !isPassKey && (
         <section className="flex flex-col gap-2">
