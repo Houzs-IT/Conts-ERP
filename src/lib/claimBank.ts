@@ -1,8 +1,8 @@
 /**
  * The bank a Direct Claim to Me is paid to (chew, 12 Nov 2026): prefilled from the person's saved details and changed
- * on the claim only. A claim never writes the saved records ("不要碰我这里保存的银行记录"). The rules are the engine's
- * (engine/backend/src/conts/my-claims-routes.ts claimBank); the forms and the job's documents route check them first, so
- * the person hears which field is wrong before anything is sent.
+ * on the claim only. A claim never writes the saved records (chew: leave the saved bank records alone). The rules are
+ * the engine's (engine/backend/src/conts/my-claims-routes.ts claimBank); the forms and the job's documents route check
+ * them first, so the person hears which field is wrong before anything is sent.
  */
 export interface ClaimBank { bankName: string; accountNo: string; accountName: string }
 

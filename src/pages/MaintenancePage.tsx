@@ -5,7 +5,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { DateField, DateTimeField, MoneyInput } from '../components/inputs';
 import Icon from '../components/Icon';
-import { Select, SearchSelect, type SelectOption } from '../components/Select';
+import { SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { Skeleton } from '../components/States';
 import { AttachmentLabel, MediaGallery, FileList, FileDropRow, PhotosPdfButton } from '../components/Attachments';
@@ -29,6 +29,9 @@ import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInp
 import { ServicePrices } from './ServicePrices';
 import { PriceChangePanel } from './units/PriceChangePanel';
 import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
+import { JobClaimBox } from '../components/ops/JobClaimBox';
+import { PORTAL_ENGLISH } from '../lib/portalI18n';
+import type { Me } from '../lib/claims';
 import { HistoryDisclosure, PhoneHistory, RecordHistory } from '../components/RecordHistory';
 import { passKeyStatus, passKeyDay, type PassKeyStatus, type PassKeyDay } from '../lib/passKeyStatus';
 
@@ -78,7 +81,9 @@ const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', ins
 const checkInAt = (i: Issue): string => i.windows[0]?.startsAt ?? i.dueOn ?? i.reportedAt;
 // The item catalog: staff pick an item (or Other) on a job; management and operations keep the list (request M3).
 const SHOW_CATALOG = true;
-const DOC_KIND: Record<string, string> = { claim: 'Claim from the technician or contractor', invoice: 'Invoice to the payer', receipt: 'Receipt', purchase: 'Bought by staff (handed in as a receipt)', pod: 'Proof of work', other: 'File' };
+/* The job's two boxes (chew, 12 Nov 2026): a claim handed in (purchase) and the second box (pod). The other kinds are no
+   longer offered; files already on jobs keep them. */
+const DOC_KIND: Record<string, string> = { purchase: 'Claim', pod: 'Receipt / Proof of work and product', claim: 'Claim from the technician or contractor', invoice: 'Invoice to the payer', receipt: 'Receipt', other: 'File' };
 /** Who the money is collected from; the company and a warranty pay their own share, so nothing is collected. */
 const COLLECT_FROM: Partial<Record<ChargeTo, string>> = { owner: 'the owner', guest_deposit: "the guest's deposit" };
 const FIELD_ROLES = ['housekeeper', 'technician'];
@@ -440,6 +445,8 @@ function BulkAssignModal({ rows, onClose, onDone }: { rows: Issue[]; onClose: ()
 function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { issue: Issue; billing: boolean; money: boolean; skus: Sku[]; onClose: () => void; onChanged: () => void }) {
   const toast = useToast();
   const files = useApi<{ data: FileItem[] }>(`/maintenance/issues/${i.id}/documents`);
+  // Whether the signed-in person has petty cash: without it, the Claim box offers Direct Claim to Me only.
+  const me = useApi<Me>(money && typeOf(i) !== 'pass_key' ? '/claims/me' : null);
   const techs = useTechnicians();
   const [confirmUi, ask] = useConfirm();
   const [busy, setBusy] = useState<string | null>(null);
@@ -450,7 +457,6 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const [payer, setPayer] = useState<ChargeTo>(i.chargeTo);
   const [owedSen, setOwedSen] = useState<number | null>(i.contractorAmount);
   const [stage, setStage] = useState<'before' | 'after'>(i.endedAt || i.state === 'resolved' ? 'after' : 'before');
-  const [docKind, setDocKind] = useState('claim');
   const [windowOpen, setWindowOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
@@ -459,6 +465,8 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const isTypedAssignee = !!assignee.trim() && !techs.some(t => t.name === assignee);
   const media = (files.data?.data ?? []).filter(f => f.kind === 'photo' || f.kind === 'video');
   const docs = (files.data?.data ?? []).filter(f => f.kind !== 'photo' && f.kind !== 'video');
+  const claimDocs = docs.filter(f => f.kind === 'purchase');
+  const otherDocs = docs.filter(f => f.kind !== 'purchase');
   const shownMedia = media.filter(m => (m.stage ?? 'before') === stage);
   const counts = { before: media.filter(m => (m.stage ?? 'before') === 'before').length, after: media.filter(m => m.stage === 'after').length };
   const charge = i.finalAmount ?? i.quotedAmount;
@@ -467,6 +475,9 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const doneWhy = awaitingOwner(i) ? "Waiting for the owner's approval." : counts.after === 0 ? 'Add a photo of the fixed job first (Photos, Fixed).' : null;
 
   const refresh = useCallback(() => { files.reload(); onChanged(); }, [files, onChanged]);
+  const docRow = (d: FileItem) => ({ id: d.id, name: d.fileName, href: d.url, size: d.byteSize ?? null, label: `${DOC_KIND[d.kind] ?? 'File'} · ${dateShort(d.uploadedAt)}`,
+    // A claim was also handed in to finance as a receipt: it is cancelled there, not here.
+    onRemove: done || d.kind === 'purchase' ? undefined : () => void removeFile(d) });
   const assignTo = (name: string) => void act('assign', () => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: name }), `Assigned to ${name}.`);
   function pickAssignee(name: string) {
     setAssignee(name);
@@ -507,7 +518,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   async function uploadDocs(list: FileList) {
     const picked = Array.from(list);
     setBusy('docs');
-    const res = await runEach(picked, f => uploadTo(`/maintenance/issues/${i.id}/documents`, { kind: docKind })(f), f => f.name);
+    const res = await runEach(picked, f => uploadTo(`/maintenance/issues/${i.id}/documents`, { kind: 'pod' })(f), f => f.name);
     setBusy(null);
     toast({ tone: res.ok === 0 ? 'critical' : res.failed.length ? 'warning' : 'success', title: res.ok ? `${plural(res.ok, 'file')} attached.` : 'Nothing attached.', body: skippedNote(res.failed) || undefined });
     refresh();
@@ -742,19 +753,18 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       )}
 
       {money && !isPassKey && (
-        <section className="flex flex-col gap-2">
-          <AttachmentLabel title="Claims, invoices and receipts" count={docs.length} hint="The technician's or contractor's claim, the bill to the payer, payment receipts. Accounts pay from these." />
-          <FileList files={docs.map(d => ({ id: d.id, name: d.fileName, href: d.url, size: d.byteSize ?? null, label: `${DOC_KIND[d.kind] ?? 'File'} · ${dateShort(d.uploadedAt)}`,
-            // A purchase was also handed in to finance as a receipt: it is cancelled there, not here.
-            onRemove: done || d.kind === 'purchase' ? undefined : () => void removeFile(d) }))} />
-          <div className="flex gap-2 items-start flex-wrap">
-            <Select label="Kind of file" value={docKind} onChange={setDocKind} size="md" className="w-[230px] max-sm:w-full"
-              options={['claim', 'invoice', 'receipt', 'pod'].map(k => ({ value: k, label: DOC_KIND[k] }))} />
-            <div className="flex-1 min-w-[200px]">
-              <FileDropRow label="Add files" hint="Photos or PDFs, several at once" accept="image/*,application/pdf" multiple busy={busy === 'docs'} onPick={fl => void uploadDocs(fl)} />
-            </div>
-          </div>
-        </section>
+        <>
+          <section className="flex flex-col gap-2">
+            <AttachmentLabel title="Claim" count={claimDocs.length} hint="The invoice for something you paid for this job, handed in to be paid back." />
+            <FileList files={claimDocs.map(docRow)} />
+            <JobClaimBox jobId={i.id} route={me.data?.route ?? null} t={PORTAL_ENGLISH} onDone={refresh} />
+          </section>
+          <section className="flex flex-col gap-2">
+            <AttachmentLabel title="Receipt / Proof of work and product" count={otherDocs.length} hint="Receipts, and photos or PDFs of the work and the products. Kept on the job." />
+            <FileList files={otherDocs.map(docRow)} />
+            <FileDropRow label="Add files" hint="Photos or PDFs, several at once" accept="image/*,application/pdf" multiple busy={busy === 'docs'} onPick={fl => void uploadDocs(fl)} />
+          </section>
+        </>
       )}
 
       {done ? (

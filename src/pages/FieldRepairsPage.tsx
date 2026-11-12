@@ -15,8 +15,8 @@ import { CATEGORY, FormRow, INPUT, TEXTAREA, ProblemPhotos, Segmented, hm, uploa
 import { statusOf } from '../lib/status';
 import { usePortalText, usePortalDates, wordFor } from '../lib/portalI18n';
 import { useFieldRefresh, useFreshIds } from '../lib/fieldLive';
-import { MoneyInput } from '../components/inputs';
-import { readReceipt } from '../lib/claims';
+import type { Me } from '../lib/claims';
+import { JobClaimBox } from '../components/ops/JobClaimBox';
 import { todayMyt } from '../lib/format';
 import { passKeyStatus, passKeyDay, type PassKeyDay } from '../lib/passKeyStatus';
 
@@ -367,10 +367,6 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
   const d = useApi<Detail>(`/field/repairs/${id}`);
   const [busy, setBusy] = useState<string | null>(null);
   const [stage, setStage] = useState<'before' | 'after'>('before');
-  const [fileKind, setFileKind] = useState('claim');
-  /* A purchase of their own for the job (finance, 29 Oct 2026): one photo, its amount read and confirmed, handed in as a
-     receipt to be paid back from the department's petty cash or by finance. */
-  const [purchase, setPurchase] = useState<{ id: string; file: File; amountSen: number | null; spendDate: string | null } | null>(null);
   const [note, setNote] = useState('');
   const [doneNote, setDoneNote] = useState('');
   const [isAskingSupport, setIsAskingSupport] = useState(false);
@@ -380,6 +376,8 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
   const mine = !!d.data?.mine;
   const closed = j?.state === 'resolved';
   const working = mine && !closed;
+  // Whether the person has petty cash: without it, the Claim box offers Direct Claim to Me only.
+  const me = useApi<Me>(working ? '/claims/me' : null);
 
   // Once the repair has started, the photos being taken are of the finished work.
   const started = !!j?.startedAt;
@@ -414,30 +412,9 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
     if (ok === null) return;
     if (await act('drop', () => api.post(`/field/repairs/${id}/drop`, {}), tr.dropped, tr.droppedBody)) onDropped();
   }
-  async function pickPurchase(list: FileList) {
-    const file = list[0];
-    if (!file) return;
-    setBusy('reading');
-    const read = await readReceipt([file]);
-    setBusy(null);
-    // A date read the wrong way round can land in the future; then the day it is handed in is used.
-    setPurchase({ id: crypto.randomUUID(), file, amountSen: read.amountSen, spendDate: read.date && read.date <= todayMyt() ? read.date : null });
-  }
-  async function handInPurchase() {
-    if (!purchase?.amountSen) return;
-    setBusy('purchase');
-    try {
-      const res = await uploadTo(`/maintenance/issues/${id}/documents`, { kind: 'purchase', receiptId: purchase.id, amountSen: String(purchase.amountSen), ...(purchase.spendDate ? { spendDate: purchase.spendDate } : {}) })(purchase.file) as { receipt?: unknown; message?: string | null };
-      if (res.receipt === 'failed') { toast({ tone: 'warning', title: tr.notHandedIn, body: res.message ?? undefined }); return; }
-      else toast({ tone: 'success', title: tr.handedIn });
-      setPurchase(null);
-    } catch (e) { toast({ tone: 'critical', title: t.jobs.notSaved, body: errorMessage(e, t.jobs.checkSignal) }); }
-    finally { setBusy(null); refresh(); }
-  }
-
   async function uploadFiles(list: FileList) {
     setBusy('files');
-    const res = await runEach(Array.from(list), f => uploadTo(`/maintenance/issues/${id}/documents`, { kind: fileKind })(f), f => f.name);
+    const res = await runEach(Array.from(list), f => uploadTo(`/maintenance/issues/${id}/documents`, { kind: 'pod' })(f), f => f.name);
     setBusy(null);
     toast({ tone: res.ok === 0 ? 'critical' : res.failed.length ? 'warning' : 'success', title: res.ok ? tr.filesAdded(res.ok) : tr.nothingAdded, body: skippedNote(res.failed) || undefined });
     refresh();
@@ -446,6 +423,14 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
   const media = d.data?.media ?? [];
   const counts = { before: media.filter(m => m.stage === 'before').length, after: media.filter(m => m.stage === 'after').length };
   const windows = j?.windows ?? [];
+  /* The Claim box lists the claims handed in on this job (kind purchase); the second box, everything else kept on it. */
+  const jobFiles = d.data?.files ?? [];
+  const claimFiles = jobFiles.filter(f => f.kind === 'purchase');
+  const otherFiles = jobFiles.filter(f => f.kind !== 'purchase');
+  const fileRow = (f: FileDoc) => ({ id: f.id, name: f.fileName, href: f.url, size: f.byteSize,
+    label: `${f.kind in tr.fileKind ? wordFor(tr.fileKind, f.kind) : tr.fileKind.other} · ${short(f.uploadedAt.slice(0, 10))}`,
+    // A claim was also handed in to finance as a receipt: it is cancelled there, not here.
+    onRemove: working && f.kind !== 'purchase' ? () => void removeFile(f) : undefined, removeLabel: `${t.jobs.remove} ${f.fileName}` });
 
   const supportForm = (
     <div className="flex flex-col gap-2">
@@ -600,33 +585,21 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
                 )}
               </section>
 
-              {(working || d.data!.files.length > 0) && (
+              {(working || claimFiles.length > 0) && (
                 <section className="flex flex-col gap-2">
-                  <AttachmentLabel title={tr.claims} count={d.data!.files.length} />
+                  <AttachmentLabel title={tr.claims} count={claimFiles.length} />
                   {working && <span className="text-meta text-muted-ink">{tr.claimsHint}</span>}
-                  {working && (
-                    <FormRow label={tr.fileKindLabel}>
-                      <select className={cx(INPUT, 'h-11')} value={fileKind} onChange={e => setFileKind(e.target.value)}>
-                        {['purchase', 'claim', 'receipt', 'invoice', 'pod'].map(k => <option key={k} value={k}>{wordFor(tr.fileKind, k)}</option>)}
-                      </select>
-                    </FormRow>
-                  )}
-                  {working && purchase && (
-                    <div className="flex flex-col gap-2 rounded-control bg-muted px-3 py-3">
-                      <span className="text-meta text-muted-ink">{purchase.file.name}</span>
-                      <MoneyInput label={tr.purchaseAmount} valueSen={purchase.amountSen} onChangeSen={v => setPurchase({ ...purchase, amountSen: v })} />
-                      <span className="flex gap-2">
-                        <Button size="touch" variant="primary" disabled={!purchase.amountSen || busy === 'purchase'} onClick={() => void handInPurchase()}>{tr.handIn}</Button>
-                        <Button size="touch" variant="secondary" disabled={busy === 'purchase'} onClick={() => setPurchase(null)}>{t.common.back}</Button>
-                      </span>
-                    </div>
-                  )}
-                  <FileList files={d.data!.files.map(f => ({ id: f.id, name: f.fileName, href: f.url, size: f.byteSize, label: `${f.kind in tr.fileKind ? wordFor(tr.fileKind, f.kind) : tr.fileKind.other} · ${short(f.uploadedAt.slice(0, 10))}`,
-                    // A purchase was also handed in to finance as a receipt: it is cancelled there, not here.
-                    onRemove: working && f.kind !== 'purchase' ? () => void removeFile(f) : undefined, removeLabel: `${t.jobs.remove} ${f.fileName}` }))}
-                    add={working && !purchase ? (fileKind === 'purchase'
-                      ? { label: busy === 'reading' ? tr.reading : tr.addFile, hint: tr.purchaseHint, accept: 'image/*,application/pdf', multiple: false, busy: busy === 'reading', onPick: fl => void pickPurchase(fl) }
-                      : { label: tr.addFile, hint: tr.addFileHint, accept: 'image/*,application/pdf', multiple: true, busy: busy === 'files', onPick: fl => void uploadFiles(fl) }) : undefined} />
+                  <FileList files={claimFiles.map(fileRow)} />
+                  {working && <JobClaimBox jobId={id} route={me.data?.route ?? null} t={t} touch onDone={refresh} />}
+                </section>
+              )}
+
+              {(working || otherFiles.length > 0) && (
+                <section className="flex flex-col gap-2">
+                  <AttachmentLabel title={tr.podBox} count={otherFiles.length} />
+                  {working && <span className="text-meta text-muted-ink">{tr.podHint}</span>}
+                  <FileList files={otherFiles.map(fileRow)}
+                    add={working ? { label: tr.addFile, hint: tr.addFileHint, accept: 'image/*,application/pdf', multiple: true, busy: busy === 'files', onPick: fl => void uploadFiles(fl) } : undefined} />
                 </section>
               )}
 
