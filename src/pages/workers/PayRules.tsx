@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
 import { Modal } from '../../components/Modal';
+import { FormSection } from '../../components/Card';
 import { Select } from '../../components/Select';
 import { MoneyInput, NumberInput, TimeField } from '../../components/inputs';
 import { useToast } from '../../components/Toast';
@@ -36,17 +37,17 @@ export function PayRulesPanel({ rules, full, onSaved }: { rules: PayRules; full:
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const box = (title: string, lines: ReactNode[]) => (
-    <div className="rounded-control border border-solid border-line px-4 py-3 flex flex-col gap-1">
-      <span className="text-meta font-semibold">{title}</span>
-      {lines.map((l, i) => <span key={i} className="text-meta text-muted-ink">{l}</span>)}
+    <div className="rounded-control bg-muted px-4 py-3 flex flex-col gap-1">
+      <span className="text-caption font-semibold uppercase tracking-[0.1em] text-muted-ink">{title}</span>
+      {lines.map((l, i) => <span key={i} className="text-meta text-ink-2">{l}</span>)}
     </div>
   );
   return (
-    <section className="bg-card rounded-card border border-solid border-line">
+    <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)]">
       <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
         className="w-full pt-5 pb-4 px-5 flex items-center justify-between gap-3 bg-transparent border-0 cursor-pointer text-left [font-family:inherit]">
         <span className="flex flex-col gap-0.5">
-          <span className="text-[16px] font-semibold tracking-[-0.01em] text-ink">Pay Rules (Maintenance)</span>
+          <span className="text-heading font-bold tracking-[-0.005em] text-ink">Pay Rules (Maintenance)</span>
           <span className="text-meta text-muted-ink">How days, hours, lateness, overtime and statutory are worked out. Shift rules are {rules.useShiftRules ? 'on' : 'off'}.</span>
         </span>
         <Icon name={open ? 'ChevronUp' : 'ChevronDown'} size="sm" />
@@ -89,12 +90,7 @@ function RulesForm({ rules, onClose, onDone }: { rules: PayRules; onClose: () =>
       <span className="text-copy">{label}</span>
     </label>
   );
-  const section = (title: string, children: ReactNode) => (
-    <section className="flex flex-col gap-3">
-      <h3 className="m-0 text-copy font-semibold [border-bottom:1px_solid_var(--color-line-soft)] pb-2">{title}</h3>
-      <div className="grid gap-x-4 gap-y-3 grid-cols-1 sm:grid-cols-2">{children}</div>
-    </section>
-  );
+  const section = (title: string, children: ReactNode) => <FormSection title={title}>{children}</FormSection>;
 
   async function save() {
     setBusy(true);
@@ -110,9 +106,9 @@ function RulesForm({ rules, onClose, onDone }: { rules: PayRules; onClose: () =>
   }
 
   return (
-    <Modal title="Change pay rules" sub="They apply to draft payslips from the next refresh." onClose={onClose} width={640}
+    <Modal title="Change pay rules" eyebrow="Payroll" size="lg" sub="They apply to draft payslips from the next refresh." onClose={onClose}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save rules'}</Button></>}>
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-[18px]">
         {section('Daily & hourly rate', <>
           <Select label="Day rate is basic divided by" showLabel size="md" value={r.dayRateDivisorMode} onChange={v => isDayMode(v) && set('dayRateDivisorMode', v)}
             options={Object.entries(DAY_DIVISOR).map(([value, label]) => ({ value, label }))} />

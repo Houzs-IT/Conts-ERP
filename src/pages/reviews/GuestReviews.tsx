@@ -150,8 +150,8 @@ export function GuestReviews({ canWrite }: { canWrite: boolean }) {
           { label: 'Not sent', value: c?.failed, tone: c?.failed ? 'critical' : undefined, hint: c?.held ? `${c.held} held for Bad guests` : 'Use Retry' },
         ].map(t => (
           <div key={t.label} className={cx('rounded-card border border-solid p-4 flex flex-col gap-1.5 min-w-0', t.tone ? cx(TONE[t.tone as 'warning'].border, TONE[t.tone as 'warning'].bg) : 'border-line bg-card')}>
-            <span className={cx('text-[11px] font-semibold tracking-[0.12em] uppercase', t.tone ? TONE[t.tone as 'warning'].text : 'text-muted-ink')}>{t.label}</span>
-            <span className={cx('text-[26px] leading-none font-semibold tabular-nums', t.tone ? TONE[t.tone as 'warning'].text : 'text-ink')}>{t.value == null ? '–' : count(t.value)}</span>
+            <span className={cx('text-caption font-semibold tracking-[0.12em] uppercase', t.tone ? TONE[t.tone as 'warning'].text : 'text-muted-ink')}>{t.label}</span>
+            <span className={cx('text-headline leading-none font-semibold tabular-nums', t.tone ? TONE[t.tone as 'warning'].text : 'text-ink')}>{t.value == null ? '–' : count(t.value)}</span>
             {t.hint && <span className="text-meta text-muted-ink">{t.hint}</span>}
           </div>
         ))}
@@ -251,7 +251,7 @@ export function StarPicker({ value, onChange, label }: { value: number; onChange
     <div role="radiogroup" aria-label={label} className="flex gap-1">
       {[1, 2, 3, 4, 5].map(n => (
         <button key={n} type="button" role="radio" aria-checked={value === n} aria-label={`${n} ${n === 1 ? 'star' : 'stars'}`} onClick={() => onChange(n)}
-          className={cx('w-11 h-11 grid place-items-center bg-transparent border-none cursor-pointer text-[30px] leading-none p-0', n <= value ? 'text-ink' : 'text-line')}><StarMark /></button>
+          className={cx('w-11 h-11 grid place-items-center bg-transparent border-none cursor-pointer text-headline leading-none p-0', n <= value ? 'text-ink' : 'text-line')}><StarMark /></button>
       ))}
     </div>
   );
@@ -339,7 +339,7 @@ export function GuestReviewForm({ stay, onClose, onSaved }: { stay: GuestStay; o
   return (
     <Modal title={`Review ${stay.guestName}`} sub={`${dateRange(stay.checkIn, stay.checkOut)} · ${[stay.propertyName, stay.unitNumber].filter(Boolean).join(' ')}`} onClose={onClose} width={560}
       footer={<>
-        {step > 0 ? <Button variant="secondary" onClick={() => setStep(step - 1)}>Back</Button> : <Button variant="secondary" onClick={onClose}>Close</Button>}
+        {step > 0 ? <Button variant="secondary" onClick={() => setStep(step - 1)}>Previous step</Button> : <Button variant="secondary" onClick={onClose}>Close</Button>}
         {step < STEPS.length - 1
           ? <Button variant="primary" disabled={!ready} disabledReason="Answer this step first." onClick={() => setStep(step + 1)}>Next</Button>
           : <Button variant="brand" loading={busy} disabled={!ready} disabledReason="Answer this step first." onClick={send}>{stay.badGuest ? 'Save, send on day 13' : 'Submit review'}</Button>}
@@ -433,7 +433,7 @@ function TemplatesPanel({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Guest review templates" sub="A review written by a rule or with Use a template takes one at random among the least used, so guests do not all read the same words. {guest} is the guest's first name, {unit} the unit." onClose={onClose} width={620}
       footer={edit
-        ? <><Button variant="secondary" onClick={() => setEdit(null)}>Back</Button><Button variant="primary" loading={busy} onClick={save}>Save template</Button></>
+        ? <><Button variant="secondary" onClick={() => setEdit(null)}>Cancel</Button><Button variant="primary" loading={busy} onClick={save}>Save template</Button></>
         : <><Button variant="secondary" onClick={onClose}>Close</Button><Button variant="primary" onClick={() => setEdit({ title: '', body: '' })}>Add template</Button></>}>
       {edit ? (
         <div className="flex flex-col gap-3">
@@ -494,7 +494,7 @@ function RulesPanel({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Auto rules" sub="After checkout, the first rule that fits writes the review with its stars and a random template. Never for a Bad guest or a guest on the Blacklist." onClose={onClose} width={620}
       footer={edit
-        ? <><Button variant="secondary" onClick={() => setEdit(null)}>Back</Button><Button variant="primary" loading={busy} onClick={save}>Save rule</Button></>
+        ? <><Button variant="secondary" onClick={() => setEdit(null)}>Cancel</Button><Button variant="primary" loading={busy} onClick={save}>Save rule</Button></>
         : <><Button variant="secondary" onClick={onClose}>Close</Button><Button variant="primary" onClick={() => setEdit({ ...BLANK_RULE })}>Add rule</Button></>}>
       {edit ? (
         <div className="flex flex-col gap-4">

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import { StatRow, StatTile } from '../components/Metric';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { StatusBadge } from '../components/StatusBadge';
@@ -73,20 +74,17 @@ export default function LettingsPage() {
     <>
       <PageHeader title="Agent to let" sub={data ? `${plural(counts.all, 'unit')} we are letting for owners · ${counts.soon} ending within ${days} days` : 'Loading…'}
         primary={canEdit && data?.ready !== false ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ letting: null })}>Record a unit to let</Button> : undefined} />
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        {tiles.map(t => {
-          const n = data ? counts[t.key] : undefined, on = filter === t.key, warn = t.tone === 'warning' && !!n;
+      {/* Each tile is the count and the filter (StatTile, Conts DS v2); the third spans the row on a phone. */}
+      <StatRow cols={3}>
+        {tiles.map((t, i) => {
+          const n = data ? counts[t.key] : undefined, on = filter === t.key;
           return (
-            <button key={t.key} type="button" aria-pressed={on} onClick={() => url.set({ state: on ? null : t.key, page: null })}
-              className={cx('text-left rounded-card border border-solid p-3 sm:p-5 flex flex-col gap-1.5 sm:gap-2 min-w-0 cursor-pointer [font-family:inherit]',
-                on ? 'border-black shadow-[0_0_0_1px_var(--color-black)]' : warn ? 'border-warning-line' : 'border-line hover:border-line-strong', warn ? TONE.warning.bg : 'bg-card')}>
-              <span className={cx('text-[10px] sm:text-[11px] font-semibold tracking-[0.08em] sm:tracking-[0.12em] uppercase leading-tight', warn ? TONE.warning.text : 'text-muted-ink')}>{t.label}</span>
-              <span className={cx('text-[22px] sm:text-[28px] leading-none font-semibold tabular-nums', warn ? TONE.warning.text : 'text-ink')}>{n ?? '—'}</span>
-              <span className="max-sm:hidden text-meta text-muted-ink truncate">{t.hint}</span>
-            </button>
+            <StatTile key={t.key} label={t.label} value={n === undefined ? undefined : String(n)} hint={t.hint} active={on}
+              tone={t.tone === 'warning' && n ? 'warning' : undefined} className={i === tiles.length - 1 ? 'max-sm:col-span-2' : undefined}
+              onClick={() => url.set({ state: on ? null : t.key, page: null })} />
           );
         })}
-      </div>
+      </StatRow>
       <DataTable<Letting> id="lettings" columns={columns} rows={data ? visible : null} rowKey={r => r.id} loading={loading} error={error} onRetry={reload}
         onRowClick={r => (canEdit ? setModal({ letting: r }) : navigate(`/properties/units/${encodeURIComponent(r.unitId)}?tab=letting`))}
         rowTone={r => (r.remind ? 'warning' : r.status === 'closed' ? 'muted' : null)}

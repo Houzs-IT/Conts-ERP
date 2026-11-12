@@ -5,12 +5,13 @@ import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { EmptyState } from '../components/States';
-import { Select } from '../components/Select';
+import { ListToolbar } from '../components/ListToolbar';
+import { Segmented } from '../components/Metric';
 import { useApi } from '../lib/useApi';
-import { rm, todayMyt } from '../lib/format';
+import { count, plural, rm, todayMyt } from '../lib/format';
 import { downloadTable, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
-import { useUrlState, SearchBox, FilterSelect } from './finance/listKit';
+import { useUrlState, FilterSelect } from './finance/listKit';
 import { BLOCKS, REPORT_RULES, pivot, rowTotal, type BlockGrid, type BlockKey, type YearlyRow } from '../lib/yearlyReport';
 import { bracketMoney } from '../lib/unitPnl';
 
@@ -42,7 +43,7 @@ function Grid({ grid, units, months, toDate }: { grid: BlockGrid; units: Unit[];
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-copy">
         <thead>
-          <tr className="bg-muted text-meta font-semibold text-muted-ink">
+          <tr className="bg-muted text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">
             <th className="sticky left-0 z-[1] bg-muted text-left px-3 py-2 min-w-[190px]">Unit</th>
             {months.map((m, i) => <th key={m} className={cx('text-right px-3 py-2 whitespace-nowrap', GRID)}>{MONTH_NAMES[i]}{m === toDate ? ' (to date)' : ''}</th>)}
             <th className={cx('text-right px-3 py-2', GRID)}>Total</th>
@@ -51,13 +52,16 @@ function Grid({ grid, units, months, toDate }: { grid: BlockGrid; units: Unit[];
         <tbody>
           {listed.map(u => (
             <tr key={u.id} className="[border-top:1px_solid_var(--color-line)]">
-              <td className="sticky left-0 bg-card px-3 py-1.5 whitespace-nowrap">{unitName(u)}</td>
+              <td className="sticky left-0 bg-card px-3 py-1.5 whitespace-nowrap" title={`${unitName(u)} · ${u.owner}`}>
+                <span className="block font-semibold leading-tight">{u.number}</span>
+                <span className="block text-meta text-muted-ink leading-tight">{u.building} · {u.contract === 'LT' ? 'Fixed rent' : 'Profit share'}</span>
+              </td>
               {(grid.units[u.id] ?? []).map((v, i) => <td key={i} className={cx('text-right px-3 py-1.5', GRID)}><Cell sen={v} /></td>)}
               <td className={cx('text-right px-3 py-1.5', GRID)}><Cell sen={rowTotal(grid.units[u.id] ?? [])} strong /></td>
             </tr>
           ))}
-          <tr className="[border-top:2px_solid_var(--color-line)] font-semibold">
-            <td className="sticky left-0 bg-card px-3 py-2">All units</td>
+          <tr className="[border-top:2px_solid_var(--color-line-strong)] font-semibold bg-muted">
+            <td className="sticky left-0 bg-muted px-3 py-2 text-caption uppercase tracking-[0.06em] text-muted-ink">All units</td>
             {grid.totals.map((v, i) => <td key={i} className={cx('text-right px-3 py-2', GRID)}><Cell sen={v} strong /></td>)}
             <td className={cx('text-right px-3 py-2', GRID)}><Cell sen={rowTotal(grid.totals)} strong /></td>
           </tr>
@@ -92,6 +96,7 @@ export default function YearlyReportPage() {
   }, [data, shown, contract]);
   const grids = useMemo(() => pivot(rows, data?.months ?? []), [rows, data]);
   const buildings = useMemo(() => [...new Set((data?.units ?? []).map(u => u.building))].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).map(b => ({ value: b, label: b })), [data]);
+  const contractUnits = (c: string) => new Set((data?.rows ?? []).filter(r => r.contract === c && shown.some(u => u.id === r.unitId)).map(r => r.unitId)).size;
   const years = Array.from({ length: Math.min(4, thisYear - 2019) }, (_, i) => String(thisYear - i));
 
   // One sheet, one row per unit and figure (the export writes a single table); the Report column filters it back into the sheet's blocks.
@@ -116,14 +121,16 @@ export default function YearlyReportPage() {
       <PageHeader title="Yearly unit report" sub="Each unit month by month across the year: earnings, profit, owner payout, bills and cleaning."
         right={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel} disabled={!rows.length}>Export</Button>} />
       <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Select label="Year" value={year} onChange={v => url.set({ year: v === String(thisYear) ? null : v })} className="w-[130px]" options={years.map(y => ({ value: y, label: y }))} />
-          <FilterSelect label="Report" value={show} all="All reports" onChange={v => url.set({ report: v })} options={SHOW_OPTIONS} className="w-[260px]" />
-          <FilterSelect label="Building" value={building} all="All buildings" onChange={v => url.set({ building: v })} options={buildings} className="w-[200px]" />
-          <FilterSelect label="Contract" value={contract} all="All contracts" onChange={v => url.set({ contract: v })}
-            options={[{ value: 'PS', label: 'Profit share' }, { value: 'LT', label: 'Fixed rent' }]} className="w-[160px]" />
-          <SearchBox value={url.get('q')} onChange={v => url.set({ q: v })} placeholder="Unit or owner" label="Search units" className="w-[200px]" />
-        </div>
+        <ListToolbar
+          search={{ value: url.get('q'), onChange: v => url.set({ q: v.trim() }), placeholder: 'Unit or owner', label: 'Search units' }}
+          filters={[{ key: 'building', label: 'Building', value: building, onChange: v => url.set({ building: v }), allLabel: 'All buildings',
+            options: buildings.map(b => ({ ...b, count: (data?.units ?? []).filter(u => u.building === b.value).length })) }]}
+          date={{ label: 'Year', value: year, onChange: v => url.set({ year: v === String(thisYear) ? null : v }), presets: years.map(y => ({ value: y, label: y, sub: y === String(thisYear) ? 'This year' : undefined })) }}
+          after={<Segmented label="Contract" value={contract || 'all'} onChange={v => url.set({ contract: v === 'all' ? null : v })}
+            options={[{ key: 'all', label: 'All', count: shown.length }, { key: 'PS', label: 'Profit share', count: contractUnits('PS') }, { key: 'LT', label: 'Fixed rent', count: contractUnits('LT') }]} />}
+          below={<FilterSelect label="Report" value={show} all="All reports" onChange={v => url.set({ report: v })} options={SHOW_OPTIONS} className="w-[260px] max-sm:w-full" />}
+          count={data ? <span className="tabular-nums">Showing {count(new Set(rows.map(r => r.unitId)).size)} of {plural(data.units.length, 'unit')} · {year}</span> : undefined}
+        />
         {notes.length > 0 && <p className="m-0 text-meta text-muted-ink">{notes.join(' ')}</p>}
         {error && <StaleBanner message={data ? `Showing the last figures we have. ${error}` : error} onRetry={reload} />}
         {loading && !data ? <TableSkeleton rows={8} cols={7} />

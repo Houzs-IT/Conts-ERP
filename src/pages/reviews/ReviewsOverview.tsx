@@ -88,8 +88,8 @@ export function ReviewsOverview() {
         <div className="px-5 sm:px-7 py-6 flex flex-col gap-6">
           <div className="flex items-end justify-between gap-4 flex-wrap">
             <div className="flex flex-col gap-1">
-              <span className="flex items-center gap-2 text-[40px] sm:text-[48px] leading-none font-semibold tabular-nums">
-                <span aria-hidden className="text-[32px] sm:text-[40px] inline-flex"><StarMark /></span>{sum.data?.average != null ? fmtRating(sum.data.average) : '–'}
+              <span className="flex items-center gap-2 text-headline leading-none font-semibold tabular-nums">
+                <span aria-hidden className="text-title inline-flex"><StarMark /></span>{sum.data?.average != null ? fmtRating(sum.data.average) : '–'}
               </span>
               <span className="text-copy text-muted-ink">{sum.data ? `${plural(total, 'review')} · ${replyRate}% replied` : 'Loading…'}</span>
               <span className="text-caption text-muted-ink">Out of 5, Airbnb and Booking.com together</span>

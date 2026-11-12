@@ -204,7 +204,7 @@ export default function AccessTab({ unitId, unitLabel, parking, fullAccessCard }
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
           <div className="flex flex-col gap-1 min-w-0">
-            <span className="text-[16px] font-semibold tracking-[-0.01em]">Access and keys</span>
+            <span className="text-[15px] font-semibold tracking-[-0.01em]">Access and keys</span>
             <span className="text-meta text-muted-ink">Codes are masked. Revealing one is recorded in the audit trail.</span>
             <span className="text-meta"><span className="text-muted-ink">Car park:</span> {parking || 'No bays recorded. Add them on the Details tab.'}</span>
             {fullAccessCard && <span className="text-meta"><span className="text-muted-ink">Building:</span> full access card (lobby, lift and car park on one card)</span>}

@@ -33,6 +33,9 @@ const SUB_AREAS: Record<string, { parent: string; page: string; shell?: string }
   projectDefects: { parent: "projects", page: "projects.defects", shell: "projects" },
   projectHandover: { parent: "projects", page: "projects.handover", shell: "projects" },
   projectFinances: { parent: "projects", page: "projects.finances", shell: "projects" },
+  projectSettings: { parent: "projects", page: "projects.maintenance", shell: "projects" },
+  serviceSettings: { parent: "serviceCases", page: "service_cases.settings", shell: "service_cases" },
+  serviceMyCases: { parent: "serviceCases", page: "service_cases.my_cases", shell: "service_cases" },
 };
 const SPLIT_AREAS = [...CONTS_AREAS, ...Object.keys(SUB_AREAS)];
 /** Invoices sit inside Sales and Procurement here but are their own area in Property OS. */

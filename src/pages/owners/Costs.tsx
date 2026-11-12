@@ -433,7 +433,7 @@ export function UnitCostsCard({ unitId, ownerId, unitLabel, canEdit, cleaningPri
     <Card>
       <div className="flex items-start justify-between gap-3 flex-wrap py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
         <div className="flex flex-col gap-1 min-w-0 flex-[1_1_260px]">
-          <span className="text-[16px] font-semibold tracking-[-0.01em]">Costs</span>
+          <span className="text-[15px] font-semibold tracking-[-0.01em]">Costs</span>
           <span className="text-meta text-muted-ink [text-wrap:pretty]">Every cost recorded to {unitLabel}, by its date: cleaning jobs when finished, maintenance jobs on their billing date, and bills. The date decides the month and the owner statement. The cards total the table.</span>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
@@ -582,7 +582,7 @@ export function OwnerCostsCard({ ownerId, ownerName, month, units, canEdit, onCh
     <Card>
       <div className="flex items-start justify-between gap-3 flex-wrap py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
         <div className="flex flex-col gap-1 min-w-0">
-          <span className="text-[16px] font-semibold tracking-[-0.01em]">Expenses by unit</span>
+          <span className="text-[15px] font-semibold tracking-[-0.01em]">Expenses by unit</span>
           <span className="text-meta text-muted-ink">{monthLabel(month, { long: true })} · {plural(units.length, 'unit')}. What the owner pays is deducted before the operator's share.</span>
         </div>
         <div className="flex gap-2 flex-wrap items-center">

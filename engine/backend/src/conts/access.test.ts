@@ -108,3 +108,39 @@ describe("Conts Projects and Service cases boxes", () => {
     }
   });
 });
+
+// One box per menu item: Project settings, Case settings and My cases follow their own boxes.
+describe("Conts settings and My cases boxes", () => {
+  it("each takes its parent's level when a sign-on leaves it out", () => {
+    const access = parseContsAccess(all("none", { projects: "full", serviceCases: "edit" }))!;
+    expect([access.projectSettings, access.serviceSettings, access.serviceMyCases]).toEqual(["full", "edit", "edit"]);
+  });
+
+  it("sets its own page and leaves the parent's other pages alone", () => {
+    const pages = contsPageAccess(parseContsAccess(all("none", { projects: "full", projectSettings: "none", serviceCases: "view", serviceSettings: "full", serviceMyCases: "none" }))!);
+    expect(pages["projects.maintenance"]).toBe("none");
+    expect(pages["projects.list"]).toBe("full");
+    expect(pages["service_cases.settings"]).toBe("full");
+    expect(pages["service_cases.my_cases"]).toBe("none");
+    expect(pages["service_cases.cases"]).toBe("view");
+  });
+
+  it("alone opens the parent's screen at view, not the parent's other pages", () => {
+    const pages = contsPageAccess(parseContsAccess(all("none", { projectSettings: "full", serviceMyCases: "view" }))!);
+    expect(pages.projects).toBe("view");
+    expect(pages["projects.maintenance"]).toBe("full");
+    expect(pages["projects.list"]).toBe("none");
+    expect(pages.service_cases).toBe("view");
+    expect(pages["service_cases.my_cases"]).toBe("view");
+    expect(pages["service_cases.cases"]).toBe("none");
+  });
+
+  it("day one: the same pages as before for every parent level", () => {
+    for (const level of ["none", "view", "edit", "full"]) {
+      const pages = contsPageAccess(parseContsAccess(all(level))!);
+      expect(pages["projects.maintenance"]).toBe(level);
+      expect(pages["service_cases.settings"]).toBe(level);
+      expect(pages["service_cases.my_cases"]).toBe(level);
+    }
+  });
+});

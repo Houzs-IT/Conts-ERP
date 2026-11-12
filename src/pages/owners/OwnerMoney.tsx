@@ -94,7 +94,7 @@ export function OwnerPayouts({ ownerId, onChanged }: { ownerId: string; onChange
   };
 
   return (
-    <Section title="Owner payouts" action={<Link to="/owners?view=payouts" className="text-meta text-gold-ink no-underline font-medium">All owners</Link>}>
+    <Section title="Owner payouts" action={<Link to="/owners/payouts" className="text-meta text-gold-ink no-underline font-medium">All owners</Link>}>
       <div className="border border-solid border-line rounded-card overflow-hidden">
         {error && !data ? <div className="p-4 text-copy text-critical">{error}</div>
           : loading && !data ? <div className="p-4"><div className="skeleton h-12" /></div>

@@ -12,6 +12,8 @@ import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { cx } from '../../lib/design-tokens';
 import { rm, date as dayText, monthLabel } from '../../lib/format';
 import { OpsModal, FormRow, INPUT, mytDay } from './OpsUi';
+import { StatRow, StatTile } from '../Metric';
+import { ListToolbar, type ToolbarFilter } from '../ListToolbar';
 
 /* Billing, actual cost and profit of a job (functions/_lib/jobProfit.ts, owner 17 Oct 2026). Amounts in sen. */
 type Kind = 'maintenance' | 'cleaning';
@@ -208,7 +210,7 @@ export function SubmitInvoiceModal({ kind, jobId, unitId, onClose, onDone }: { k
     }
   }
   return (
-    <OpsModal title="Submit invoice" sub={kind === 'maintenance' ? "The supplier's or contractor's invoice for this job. It becomes the job's actual cost; the owner never sees it." : "The cleaner's or vendor's invoice for this clean. It becomes its actual cost; the owner never sees it."} onClose={onClose} busy={busy}
+    <OpsModal title="Submit invoice" eyebrow={kind === 'maintenance' ? 'Maintenance' : 'Cleaning'} size="md" sub={kind === 'maintenance' ? "The supplier's or contractor's invoice for this job. It becomes the job's actual cost; the owner never sees it." : "The cleaner's or vendor's invoice for this clean. It becomes its actual cost; the owner never sees it."} onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Submit invoice</Button></>}>
       <FormRow label={kind === 'maintenance' ? 'Supplier or contractor' : 'Cleaner or vendor'} error={error.supplierName}>
         <input className={INPUT} value={supplier} onChange={e => setSupplier(e.target.value)} maxLength={120} />
@@ -249,6 +251,13 @@ export function JobProfitView({ kind, onOpen }: { kind: Kind; onOpen?: (id: stri
   const t = { billed: rows.reduce((n, r) => n + r.billed, 0), actual: rows.reduce((n, r) => n + (r.actual ?? 0), 0), profit: rows.reduce((n, r) => n + (r.profit ?? 0), 0) };
   const buildings = [...new Map(all.map(r => [r.buildingId, r.building])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const people = [...new Set(all.map(r => r.who ?? ''))].filter(Boolean).sort();
+  // Building and Cleaner (or Contractor) behind one Filters button, each option with its count for the month.
+  const groups: ToolbarFilter[] = [
+    { key: 'building', label: 'Building', allLabel: 'All buildings', value: building, onChange: setBuilding,
+      options: buildings.map(([id, name]) => ({ value: id, label: name, count: all.filter(r => r.buildingId === id).length })) },
+    { key: 'who', label: kind === 'maintenance' ? 'Contractor' : 'Cleaner', allLabel: kind === 'maintenance' ? 'All contractors' : 'All cleaners', value: who, onChange: setWho,
+      options: people.map(p => ({ value: p, label: p, count: all.filter(r => r.who === p).length })) },
+  ];
   const columns = useMemo<Column<ProfitRow>[]>(() => [
     { key: 'day', label: 'Finished', type: 'date', value: r => r.day, width: 110 },
     { key: 'unit', label: 'Unit', value: r => `${r.building} ${r.unitNumber ?? NO_UNIT}`, width: 160, phone: 'title', render: r => <span><b>{r.unitNumber ?? NO_UNIT}</b> <span className="text-muted-ink">{r.building}</span></span> },
@@ -264,35 +273,22 @@ export function JobProfitView({ kind, onOpen }: { kind: Kind; onOpen?: (id: stri
   return (
     <div className="flex flex-col gap-3">
       {q.error && <StaleBanner message={q.error} onRetry={q.reload} />}
-      <div className="grid grid-cols-4 gap-2 max-md:grid-cols-2">
-        <Total label={`Jobs in ${monthLabel(`${month}-01`)}`} text={String(rows.length)} />
-        <Total label="Billed" text={rm(t.billed)} />
-        <Total label="Actual cost" text={rm(t.actual)} note={rows.some(r => r.actualSource !== 'invoice') ? `${rows.filter(r => r.actualSource !== 'invoice').length} not from invoices` : undefined} />
-        <Total label="Profit" text={rm(t.profit)} negative={t.profit < 0} />
-      </div>
+      <StatRow cols={4}>
+        <StatTile hero label="Profit" value={rm(t.profit)} tone={t.profit < 0 ? 'critical' : undefined} hint={`${monthLabel(`${month}-01`)}`} loading={!q.data && !q.error} />
+        <StatTile label={`Jobs in ${monthLabel(`${month}-01`)}`} value={String(rows.length)} loading={!q.data && !q.error} />
+        <StatTile label="Billed" value={rm(t.billed)} loading={!q.data && !q.error} />
+        <StatTile label="Actual cost" value={rm(t.actual)} loading={!q.data && !q.error}
+          hint={rows.some(r => r.actualSource !== 'invoice') ? `${rows.filter(r => r.actualSource !== 'invoice').length} not from invoices` : undefined} hintTone={rows.some(r => r.actualSource !== 'invoice') ? 'warning' : undefined} />
+      </StatRow>
       <DataTable<ProfitRow>
         id={`job-profit.${kind}`} urlPrefix="jp." columns={columns} rows={q.data ? rows : null} rowKey={r => r.id} pageSize={50}
         noun={kind === 'maintenance' ? ['job', 'jobs'] : ['cleaning job', 'cleaning jobs']} exportName={`profit-by-job-${kind}-${month}`} defaultSort="day:asc"
         onRowClick={onOpen ? r => onOpen(r.id) : undefined}
-        toolbar={<div className="flex items-center gap-2 flex-wrap">
-          <Select label="Month" value={month} onChange={setMonth} options={lastMonths(12).map(m => ({ value: m, label: monthLabel(`${m}-01`) }))} />
-          <Select label="Building" value={building} onChange={setBuilding} options={[{ value: '', label: 'Every building' }, ...buildings.map(([id, name]) => ({ value: id, label: name }))]} />
-          <Select label={kind === 'maintenance' ? 'Contractor' : 'Cleaner'} value={who} onChange={setWho} options={[{ value: '', label: kind === 'maintenance' ? 'Every contractor' : 'Every cleaner' }, ...people.map(p => ({ value: p, label: p }))]} />
-        </div>}
+        toolbar={<ListToolbar bare filters={groups}
+          leading={<Select label="Month" value={month} onChange={setMonth} options={lastMonths(12).map(m => ({ value: m, label: monthLabel(`${m}-01`) }))} />} />}
         filtered={!!building || !!who} onClearFilters={() => { setBuilding(''); setWho(''); }}
         empty={{ title: `No ${kind === 'maintenance' ? 'maintenance jobs' : 'cleaning jobs'} finished in ${monthLabel(`${month}-01`)}.`, icon: 'TrendingUp' }}
       />
     </div>
   );
 }
-
-function Total({ label, text, note, negative }: { label: string; text: string; note?: string; negative?: boolean }) {
-  return (
-    <div className="flex flex-col gap-0.5 p-3 rounded-card bg-card border border-solid border-line">
-      <span className="text-meta text-muted-ink">{label}</span>
-      <b className={cx('text-heading tabular-nums', negative && 'text-danger')}>{text}</b>
-      {note && <span className="text-meta text-warning">{note}</span>}
-    </div>
-  );
-}
-

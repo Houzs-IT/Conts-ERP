@@ -3,10 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { useApi } from '../../lib/useApi';
 import { date, dateShort, time, todayMyt, count } from '../../lib/format';
 import { resolve, addDays, LEAD_KEYS, type FigureKey, type Insights, type Live, type ShowcaseData } from './model';
-import { FigureContext, PropertyDropdown, DateRangePicker } from './parts';
+import { FigureContext, PropertyDropdown, DateRangePicker, useDisplayFont } from './parts';
 import { CalendarScreen } from './CalendarScreen';
 import { TodayScreen, ListingsScreen, ReviewsScreen, OccupancyScreen, LeadScreen, ViewsScreen } from './screens';
 import { useSwitch, useExit, SwitchButton, CurtainLayer } from './Switch';
+import { OWNER, UNITS } from './sampleOwner';
+import Icon from '../../components/Icon';
 import './showcase.css';
 import './owner-portal.css';
 
@@ -14,7 +16,6 @@ const PAGES = [['today', 'Today'], ['list', 'Listings'], ['cal', 'Calendar'], ['
 type Page = typeof PAGES[number][0];
 const FILTERED: Page[] = ['rev', 'occ', 'lead'];
 const RANGES = [['30', 'Last 30 days'], ['90', 'Last 90 days'], ['365', 'Last 12 months']] as const;
-const FONT_ID = 'sc-manrope';
 
 /** Owner Showcase (CONTS-0006): a full-screen presentation sales staff open in front of a prospective owner, with
  *  live figures from the reservations, reviews and listings. Showcase control was removed (owner, 2 Nov 2026). */
@@ -37,15 +38,12 @@ export default function OwnerShowcasePage() {
   const one = prop !== 'all';
   const ins = useApi<Insights>(FILTERED.includes(page) ? `/showcase/insights?from=${from}&to=${to}${one ? `&unitId=${prop}` : ''}` : null);
   const { reload } = main;
-  const sw = useSwitch('/performance/showcase/owner', { from: 'Portfolio', to: 'Owner', sub: 'Tan Wei Ming · 3 units' });
+  // The curtain names the one sample owner, so nobody mistakes the Owner view for a real owner's account.
+  const sw = useSwitch('/performance/showcase/owner', { from: 'Portfolio', to: 'Owner', sub: `${OWNER.name} · sample owner · ${UNITS.length} units · sample data` });
+  useDisplayFont();
 
   useEffect(() => {
     document.title = 'Owner Showcase · The Conts';
-    if (!document.getElementById(FONT_ID)) {
-      const l = document.createElement('link');
-      l.id = FONT_ID; l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap';
-      document.head.appendChild(l);
-    }
     const t = window.setInterval(reload, 120_000);
     return () => window.clearInterval(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -92,9 +90,9 @@ export default function OwnerShowcasePage() {
             ))}
           </nav>
           <div className="sc-head-right">
-            {data && <div className="sc-sync"><span className="sc-dot" />Synced with Airbnb · {time(data.generatedAt)}</div>}
+            {data && <div className="sc-sync"><span className="sc-dot" />Updated {time(data.generatedAt)}</div>}
             <SwitchButton current="Portfolio" next="Owner" rolled={sw.rolled} onClick={sw.go} />
-            <button type="button" className="sc-exit" onClick={exit} aria-label="Exit the showcase">✕ Exit</button>
+            <button type="button" className="sc-exit" onClick={exit} aria-label="Exit the showcase"><Icon name="X" size="sm" />Exit</button>
           </div>
         </header>
 

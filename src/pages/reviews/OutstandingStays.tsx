@@ -7,10 +7,11 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { DateField } from '../../components/inputs/DateField';
 import { StaleBanner } from '../../components/DataState';
 import { useApi } from '../../lib/useApi';
-import { count, dateRange, plural } from '../../lib/format';
+import { count, date, dateRange, plural } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { channelLabel } from '../../components/ChannelMark';
 import { useUrlState, FilterSelect } from '../finance/listKit';
+import { ListToolbar } from '../../components/ListToolbar';
 import type { BookingChannel } from '../../lib/types';
 import type { PlaceRow } from './ReviewsOverview';
 const Tile = StatTile;
@@ -73,22 +74,34 @@ export function OutstandingStays() {
         <Tile label="Window closed" value={t ? count(t.windowClosed) : '—'} hint={windows ? `After ${windows}` : undefined} />
       </div>
 
-      <div className="grid grid-cols-2 md:flex md:flex-wrap gap-2">
-        <div className="md:w-[160px]"><DateField aria-label="Checked out from" value={f.from || data?.from || ''} onChange={v => set({ from: v || null })} /></div>
-        <div className="md:w-[160px]"><DateField aria-label="Checked out to" value={f.to || data?.to || ''} onChange={v => set({ to: v || null })} /></div>
-        <FilterSelect className="md:flex-[1_1_150px]" label="Channel" all="All channels" value={f.channel} onChange={v => set({ channel: v || null })} options={CHANNELS} />
-        <FilterSelect className="md:flex-[1_1_170px]" label="Building" all="All buildings" value={f.propertyId} onChange={v => set({ propertyId: v || null, unitId: null })}
-          options={buildings.map(([id, name]) => ({ value: id, label: name }))} />
-        <FilterSelect className="md:flex-[1_1_190px]" label="Unit" all="All units" value={f.unitId} onChange={v => set({ unitId: v || null })}
-          options={units.map(u => ({ value: u.unitId ?? '', label: `${u.propertyName ?? ''} ${u.unitNumber ?? ''}`.trim() }))} />
-        <FilterSelect className="md:flex-[1_1_170px]" label="Review window" all="Open or closed" value={f.window} onChange={v => set({ window: v || null })}
-          options={[{ value: 'open', label: 'Can still review' }, { value: 'closed', label: 'Window closed' }]} />
-      </div>
+      <ListToolbar
+        leading={<FilterSelect className="flex-[0_1_200px] min-w-[150px]" label="Unit" all="All units" value={f.unitId} onChange={v => set({ unitId: v || null })}
+          options={units.map(u => ({ value: u.unitId ?? '', label: `${u.propertyName ?? ''} ${u.unitNumber ?? ''}`.trim() }))} />}
+        filters={[
+          { key: 'channel', label: 'Channel', value: f.channel, onChange: v => set({ channel: v || null }), allLabel: 'All channels', options: CHANNELS },
+          { key: 'building', label: 'Building', value: f.propertyId, onChange: v => set({ propertyId: v || null, unitId: null }), allLabel: 'All buildings',
+            options: buildings.map(([id, name]) => ({ value: id, label: name })) },
+          { key: 'window', label: 'Review window', value: f.window, onChange: v => set({ window: v || null }), allLabel: 'Open or closed',
+            options: [{ value: 'open', label: 'Can still review' }, { value: 'closed', label: 'Window closed' }] },
+        ]}
+        panelExtra={<>
+          <h5 className="m-0 mb-1.5 text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">Checked out</h5>
+          <div className="grid grid-cols-2 gap-1.5">
+            <DateField aria-label="Checked out from" value={f.from || data?.from || ''} onChange={v => set({ from: v || null })} />
+            <DateField aria-label="Checked out to" value={f.to || data?.to || ''} onChange={v => set({ to: v || null })} />
+          </div>
+        </>}
+        chips={[
+          ...(f.unitId ? [{ key: 'unit', label: `Unit: ${(() => { const u = units.find(x => x.unitId === f.unitId); return u ? `${u.propertyName ?? ''} ${u.unitNumber ?? ''}`.trim() : f.unitId; })()}`, onRemove: () => set({ unitId: null }) }] : []),
+          ...(f.from || f.to ? [{ key: 'dates', label: `Checked out: ${f.from ? date(f.from) : 'any'} to ${f.to ? date(f.to) : 'any'}`, onRemove: () => set({ from: null, to: null }) }] : []),
+        ]}
+        count={data ? <span className="tabular-nums">{dateRange(data.from, data.to)}</span> : undefined}
+      />
 
       {data && data.perUnit.length > 0 && (
         <Card>
           <div className="px-4 sm:px-5 py-3 flex flex-col gap-2">
-            <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">No review yet, per unit</span>
+            <span className="text-caption font-semibold tracking-[0.12em] uppercase text-muted-ink">No review yet, per unit</span>
             <div className="flex flex-wrap gap-2">
               {data.perUnit.map(u => {
                 const on = f.unitId === u.unitId;

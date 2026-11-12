@@ -30,7 +30,7 @@ import { MonthSelect, monthName } from './PayrollTab';
 const keyOf = (l: PayrollLine): string => (l.employee.cleanerId ? `c:${l.employee.cleanerId}` : `t:${l.employee.technicianId}`);
 const deptOf = (l: PayrollLine | undefined): string => (l ? DEPARTMENT_LABEL[l.employee.cleanerId ? 'cleaning' : 'maintenance'] : '');
 const day = (d: string): string => date(`${d}T12:00:00+08:00`);
-const th = 'py-2.5 px-3 font-medium text-left whitespace-nowrap';
+const th = 'py-2 px-3 text-caption font-bold uppercase tracking-[0.09em] text-left whitespace-nowrap bg-muted [border-bottom:1px_solid_var(--color-line)]';
 const td = 'py-2 px-3 [border-top:1px_solid_var(--color-line-soft)]';
 const LOCKED = 'Settled: the month\'s payroll is approved. Reopen it first.';
 
@@ -83,12 +83,12 @@ export default function AdvancesTab() {
         <StatTile label="Settled" value={data ? `${list.filter(a => a.status === 'settled').length} / ${list.length}` : undefined} hint="Locked once this month's payroll is approved" loading={loading && !data} />
       </StatRow>
 
-      <section className="bg-card rounded-card border border-solid border-line">
+      <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)]">
         <div className="pt-5 pb-4 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
-          <span className="text-[16px] font-semibold tracking-[-0.01em]">Salary Advances - {monthName(period)}</span>
+          <span className="text-heading font-bold tracking-[-0.005em]">Salary Advances - {monthName(period)}</span>
           <span className="flex items-center gap-2 flex-wrap">
             <MonthSelect value={period} latest={data?.today.slice(0, 7) ?? period} onChange={setMonth} />
-            {payout.length > 0 && <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} title="One row per employee: the sheet HR counts the cash against" onClick={exportPayout}>Export Payout Listing</Button>}
+            {payout.length > 0 && <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} title="One row per employee: the sheet HR counts the cash against" onClick={exportPayout}>Export</Button>}
             {payout.length > 0 && <Button size="sm" variant="tertiary" icon={<Icon name="Printer" size="sm" />} onClick={() => window.print()}>Print Report</Button>}
           </span>
         </div>
@@ -147,9 +147,9 @@ function BatchEntry({ lines, period, onDone }: { lines: PayrollLine[]; period: s
   }
 
   return (
-    <div className="rounded-control border border-solid border-line bg-page p-4 flex flex-col gap-3">
+    <div className="rounded-control bg-muted p-4 flex flex-col gap-3">
       <div className="flex items-end justify-between gap-3 flex-wrap">
-        <span className="text-meta font-semibold text-muted-ink">RECORD ADVANCES</span>
+        <span className="text-caption font-semibold uppercase tracking-[0.12em] text-muted-ink">Record advances</span>
         <div className="w-[180px] flex-none"><DateField label="Date handed over" value={handedOn} onChange={v => v && setHandedOn(v)} /></div>
       </div>
       <div className="relative">
@@ -236,7 +236,7 @@ function AdvanceTable({ list, lineById, payoutCount, totalSen, full, onChange }:
     <div className="overflow-x-auto rounded-control border border-solid border-line">
       {confirmDialog}
       <table className="w-full min-w-max border-collapse text-copy">
-        <thead><tr className="text-meta text-muted-ink bg-page">
+        <thead><tr className="text-muted-ink">
           <th className={th}>Date</th><th className={`${th} min-w-[180px]`}>Employee</th><th className={`${th} text-right`}>Amount</th><th className={th}>Note</th>
           <th className={th} title="Locked once the month's payroll is approved">Status</th>{full && <th className={`${th} text-right`}>Actions</th>}
         </tr></thead>

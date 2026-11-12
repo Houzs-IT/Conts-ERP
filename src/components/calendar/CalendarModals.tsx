@@ -2,9 +2,10 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { DialogFrame, FormModal } from '../Modal';
 import { Button } from '../Button';
 import { Field } from '../Field';
-import { DateField, MoneyInput, PercentInput } from '../inputs';
+import { DateField, MoneyInput, PercentInput, StayRange } from '../inputs';
+import { ChoiceChips } from '../ChoiceChips';
 import ChannelMark from '../ChannelMark';
-import { date, dateShort, count, plural, rmShort, rmRange, amount } from '../../lib/format';
+import { date, dateShort, count, plural, rm, rmRange, amount } from '../../lib/format';
 import { Select } from '../Select';
 import Icon from '../Icon';
 import { UnitPicker } from '../booking/UnitPicker';
@@ -15,8 +16,8 @@ import { type CalendarUnit } from './types';
 import { runBulk, type BulkBody, type BulkResult } from './bulkRates';
 import { errorMessage } from '../../lib/api';
 
-function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, disabledReason = 'Fill the fields first', children }: { title: string; sub?: string; onClose: () => void; onSave: () => void; saveLabel: string; canSave: boolean; disabledReason?: string; children: ReactNode }) {
-  return <FormModal title={title} sub={sub} onClose={onClose} width={440} onSubmit={onSave} submitLabel={saveLabel} canSubmit={canSave} disabledReason={disabledReason}>{children}</FormModal>;
+function CentreModal({ title, sub, onClose, onSave, saveLabel, canSave, disabledReason = 'Fill the fields first', children, size = 'sm' }: { title: string; sub?: string; onClose: () => void; onSave: () => void; saveLabel: string; canSave: boolean; disabledReason?: string; children: ReactNode; size?: 'sm' | 'md' }) {
+  return <FormModal title={title} sub={sub} eyebrow="Calendar" size={size} onClose={onClose} width={440} onSubmit={onSave} submitLabel={saveLabel} canSubmit={canSave} disabledReason={disabledReason}>{children}</FormModal>;
 }
 
 export function SetPriceModal({ m, onClose, onSave }: { m: { unit: CalendarUnit; channel: string; dayIso: string; current: number }; onClose: () => void; onSave: (rm: number) => void }) {
@@ -46,26 +47,14 @@ export function BlockWizard({ units, initial, onClose, onSave }: {
   const [reason, setReason] = useState('');
   const valid = !!unit && fromD !== '' && toD !== '' && toD > fromD && (kind !== 'other' || reason.trim() !== '');
   return (
-    <CentreModal title="Block nights" sub="Nobody can book these nights on any channel." onClose={onClose} saveLabel="Block nights" canSave={valid}
+    <CentreModal title="Block nights" sub="Nobody can book these nights on any channel." size="md" onClose={onClose} saveLabel="Block nights" canSave={valid}
       disabledReason={kind === 'other' && !reason.trim() ? 'Add a note saying why' : 'Pick the unit and dates first'}
       onSave={() => onSave({ unitId: unit, from: fromD, to: toD, kind, reason: reason.trim() })}>
       <UnitPicker units={units} value={unit} onChange={setUnit} />
-      <div className="grid grid-cols-2 gap-3">
-        <DateField label="From" value={fromD} onChange={setFromD} />
-        <DateField label="To (checkout day)" value={toD} min={fromD || undefined} onChange={setToD} />
-      </div>
-      <fieldset className="m-0 p-0 border-none flex flex-col gap-[7px]">
-        <legend className="p-0 mb-[7px] text-meta font-medium text-muted-ink">Reason</legend>
-        <div role="radiogroup" aria-label="Reason" className="grid grid-cols-3 gap-2">
-          {BLOCK_KINDS.map(k => (
-            <button key={k.key} type="button" role="radio" aria-checked={kind === k.key} onClick={() => setKind(k.key)}
-              className={`h-10 px-2 rounded-control cursor-pointer font-sans text-copy border border-solid ${kind === k.key ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink'}`}>
-              {k.label}
-            </button>
-          ))}
-        </div>
-        <span className="text-meta text-muted-ink">{BLOCK_KINDS.find(k => k.key === kind)!.help}</span>
-      </fieldset>
+      <StayRange label="Nights" required from={fromD} to={toD} onChange={(f, t) => { setFromD(f); setToD(t); }}
+        help="From the first blocked night to the checkout day." />
+      <ChoiceChips label="Reason" required options={BLOCK_KINDS.map(k => ({ value: k.key, label: k.label }))} value={kind} onChange={setKind}
+        help={BLOCK_KINDS.find(k => k.key === kind)!.help} />
       <Field label={kind === 'other' ? 'Note' : 'Note (optional)'} placeholder={kind === 'owner_stay' ? 'e.g. Owner and family' : 'e.g. Plumbing works'} value={reason} onChange={e => setReason(e.target.value)}
         help="Shown on the blocked nights. A unit linked to the channels has these nights blocked there too." />
     </CentreModal>
@@ -104,7 +93,7 @@ const weekdayIso = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay();
 const span = (xs: number[], f: (n: number) => string) => {
   if (!xs.length) return '—';
   const lo = Math.min(...xs), hi = Math.max(...xs);
-  return lo === hi ? f(lo) : `${f(lo)}–${amount(hi, { cents: false })}`;
+  return lo === hi ? f(lo) : `${f(lo)}–${amount(hi)}`;
 };
 
 /** Up to this many units on the board, Rate update starts with all of them ticked. */
@@ -318,7 +307,7 @@ export function RateUpdate({ units, pricing, initial, onClose, onDone, building,
                             <input type="checkbox" checked={sel.has(u.id)} onChange={e => toggle([u.id], e.target.checked)} className="w-4 h-4 accent-[var(--color-brand-black)] cursor-pointer" />
                             <span className="flex-1 min-w-0 text-copy text-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber}</span>
                             <span className="flex-none flex items-center gap-1">{(u.linked ?? []).map(c => <ChannelMark key={c} ch={c} size={14} />)}</span>
-                            <span className="flex-none w-[72px] text-right text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{pricing.baseRate[u.id] ? rmShort(pricing.baseRate[u.id]) : 'No price'}</span>
+                            <span className="flex-none w-[72px] text-right text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{pricing.baseRate[u.id] ? rm(pricing.baseRate[u.id]) : 'No price'}</span>
                           </label>
                         ))}
                       </div>
@@ -393,7 +382,7 @@ export function RateUpdate({ units, pricing, initial, onClose, onDone, building,
                       const r = rowFor(ch);
                       const markup = ch === 'web' ? 'None' : (() => {
                         const shares = r.ups.map((u, i) => (r.guest[i] - u > 0 ? Math.round((u / (r.guest[i] - u)) * 100) : 0));
-                        return new Set(r.ups).size === 1 ? `+ ${rmShort(r.ups[0])}` : new Set(shares).size === 1 ? `+ ${shares[0]}%` : `+ ${span(r.ups, rmShort)}`;
+                        return new Set(r.ups).size === 1 ? `+ ${rm(r.ups[0])}` : new Set(shares).size === 1 ? `+ ${shares[0]}%` : `+ ${span(r.ups, rm)}`;
                       })();
                       return (
                         <div key={ch} className={`grid grid-cols-[minmax(150px,1.3fr)_1fr_1fr_1.2fr] gap-3 items-center px-3.5 min-h-12 [border-top:1px_solid_var(--color-line-soft)] ${on || (!pricing_ && !disabled) ? 'text-ink' : 'text-faint'}`}>
@@ -407,8 +396,8 @@ export function RateUpdate({ units, pricing, initial, onClose, onDone, building,
                           </label>
                           {disabled ? <><span className="text-copy">Not connected</span><span className="text-copy">—</span><span className="text-copy">—</span></> : <>
                             <span className="text-copy [font-variant-numeric:tabular-nums]">{markup}</span>
-                            <span className="text-copy font-semibold [font-variant-numeric:tabular-nums]">{span(r.guest, rmShort)}</span>
-                            <span className="text-copy [font-variant-numeric:tabular-nums]">{span(r.keep, rmShort)}{ch !== 'web' && <span className="text-caption text-muted-ink"> after {COMMISSION[ch]}%</span>}</span>
+                            <span className="text-copy font-semibold [font-variant-numeric:tabular-nums]">{span(r.guest, rm)}</span>
+                            <span className="text-copy [font-variant-numeric:tabular-nums]">{span(r.keep, rm)}{ch !== 'web' && <span className="text-caption text-muted-ink"> after {COMMISSION[ch]}%</span>}</span>
                           </>}
                         </div>
                       );

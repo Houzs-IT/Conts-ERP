@@ -3,6 +3,7 @@ import { FormModal } from '../components/Modal';
 import { useNavigate } from 'react-router-dom';
 import { color } from '../theme';
 import PageHeader from '../components/PageHeader';
+import { StatRow, StatTile } from '../components/Metric';
 import { StatusBadge } from '../components/StatusBadge';
 import { HistoryDisclosure } from '../components/RecordHistory';
 import { Button } from '../components/Button';
@@ -16,7 +17,6 @@ import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
 import { rm, date, todayMyt, titleCase, plural } from '../lib/format';
 import { Select } from '../components/Select';
-import { TONE, cx } from '../lib/design-tokens';
 import { useUrlState, usePhone, SearchBox } from './finance/listKit';
 import { FilterBar } from '../components/FilterBar';
 import { statusOf } from '../lib/status';
@@ -291,7 +291,7 @@ export default function ContractsPage() {
       />
 
       {/* Contract states as four tiles: each is the count and the filter. "Ending soon" carries the next names. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <StatRow cols={4}>
         {([
           { key: 'all', label: 'All contracts', hint: 'Management agreements', tone: undefined },
           { key: 'soon', label: `Ending within ${ENDING_WINDOW_DAYS} days`, hint: soonList.length ? soonList.slice(0, 2).map(r => `${titleCase(r.ownerName)} · ${inDays(daysUntil(expiryOf(r)) ?? 0)}`).join(' / ') : 'Nothing due', tone: 'warning' },
@@ -300,20 +300,13 @@ export default function ContractsPage() {
         ] as { key: FilterKey; label: string; hint: string; tone?: 'warning' | 'success' | 'muted' }[]).map(f => {
           const on = filter === f.key;
           const n = data ? counts[f.key] : undefined;
-          const warn = f.tone === 'warning' && !!n;
           return (
-            <button key={f.key} type="button" aria-pressed={on} onClick={() => url.set({ state: f.key === 'all' ? null : f.key, page: null })}
-              className={cx('relative text-left rounded-card border border-solid p-4 sm:p-5 flex flex-col gap-2 min-w-0 cursor-pointer [font-family:inherit] transition-[border-color,box-shadow] duration-150',
-                on ? 'border-black shadow-[0_0_0_1px_var(--color-black)]' : warn ? 'border-warning-line' : 'border-line hover:border-line-strong',
-                warn ? TONE.warning.bg : 'bg-card')}>
-              <span className={cx('text-[11px] font-semibold tracking-[0.12em] uppercase', warn ? TONE.warning.text : 'text-muted-ink')}>{f.label}</span>
-              <span className={cx('text-[28px] leading-none font-semibold tabular-nums', f.tone === 'muted' ? 'text-muted-ink' : warn ? TONE.warning.text : 'text-ink')}>{n ?? '—'}</span>
-              <span className="text-meta text-muted-ink truncate">{f.hint}</span>
-              {f.tone === 'success' && <span aria-hidden className="absolute right-4 top-4 w-2 h-2 rounded-full bg-success" />}
-            </button>
+            <StatTile key={f.key} label={f.label} value={n === undefined ? undefined : String(n)} hint={f.hint} active={on}
+              tone={f.tone === 'warning' && n ? 'warning' : f.tone === 'success' ? 'success' : undefined}
+              onClick={() => url.set({ state: f.key === 'all' ? null : f.key, page: null })} />
           );
         })}
-      </div>
+      </StatRow>
 
       <DataTable<Contract>
         id="contracts" phoneSort={false} columns={columns} rows={data ? visible : null} rowKey={r => r.id}

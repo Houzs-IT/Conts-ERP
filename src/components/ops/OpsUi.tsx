@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Modal } from '../Modal';
+import { ChoiceChips } from '../ChoiceChips';
 import { Button } from '../Button';
 import Icon from '../Icon';
 import { MediaSourceSheet } from '../Attachments';
@@ -85,10 +86,12 @@ export function PillTabs<T extends string>({ value, tabs, onChange }: { value: T
 }
 
 /** A form dialog: title, body, and the buttons at the bottom right (secondary left of primary). */
-export function OpsModal({ title, sub, children, footer, onClose, busy, width = 480 }: {
+export function OpsModal({ title, sub, children, footer, onClose, busy, width = 480, size, eyebrow, aside, footNote }: {
   title: string; sub?: ReactNode; children: ReactNode; footer: ReactNode; onClose: () => void; busy?: boolean; width?: number;
+  /** The phase-1 kit: sm | md | lg width, a gold eyebrow, a right-hand summary panel and a quiet note left of the buttons. */
+  size?: 'sm' | 'md' | 'lg'; eyebrow?: string; aside?: ReactNode; footNote?: ReactNode;
 }) {
-  return <Modal title={title} sub={sub} onClose={onClose} busy={busy} width={width} footer={footer}>{children}</Modal>;
+  return <Modal title={title} sub={sub} onClose={onClose} busy={busy} width={width} size={size} eyebrow={eyebrow} aside={aside} footNote={footNote} footer={footer}>{children}</Modal>;
 }
 
 /** Label above a control, error under it. */
@@ -303,7 +306,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
   }
   const label = fromClean ? 'Report damage' : 'Add maintenance job';
   return (
-    <OpsModal title={label} sub={unit ? `${unit.label}. Opens a Maintenance job on this unit.` : office ? 'The unit, the problem and, if known, who fixes it and when. The quote and who pays are set in the job.' : 'Pick the unit and say what is wrong.'}
+    <OpsModal title={label} eyebrow="Maintenance" size="md" sub={unit ? `${unit.label}. Opens a Maintenance job on this unit.` : office ? 'The unit, the problem and, if known, who fixes it and when. The quote and who pays are set in the job.' : 'Pick the unit and say what is wrong.'}
       onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void submit()}>{label}</Button></>}>
       {!unit && (
@@ -340,28 +343,28 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
           </div>
         </FormRow>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        {!multi && (
-          <FormRow label={fromClean ? 'Problem category (optional)' : 'Problem category'} error={error.category}>
-            <select className={INPUT} value={f.category} onChange={e => { set({ category: e.target.value }); setError(x => ({ ...x, category: undefined })); }}>
-              <option value="" disabled={!fromClean}>{fromClean ? 'Not sure' : 'Pick one'}</option>
-              {Object.entries(CATEGORY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </FormRow>
+      {/* Six kinds or fewer, two types, two severities: one-tap chips (the kit's ChoiceChips), not dropdowns. */}
+      {!multi && (
+        <div className="flex flex-col gap-1">
+          <ChoiceChips<string> label={fromClean ? 'Problem category (optional)' : 'Problem category'} required={!fromClean} value={f.category}
+            options={Object.entries(CATEGORY).map(([value, label]) => ({ value, label }))}
+            onChange={v => { set({ category: f.category === v && fromClean ? '' : v }); setError(x => ({ ...x, category: undefined })); }}
+            help={fromClean && !error.category ? 'Not sure? Leave it empty: it goes in as Other.' : undefined} />
+          {error.category && <span className="text-meta text-danger">{error.category}</span>}
+        </div>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <ChoiceChips<'normal' | 'urgent'> label={office ? 'Job type' : 'Urgency'} value={f.jobType} onChange={v => set({ jobType: v })}
+          options={[{ value: 'normal', label: 'Normal' }, { value: 'urgent', label: 'Urgent' }]}
+          help={f.jobType === 'urgent' ? 'Affects the next guest; done first.' : office ? 'Done in date order.' : undefined} />
+        {office && (
+          <ChoiceChips<'minor' | 'major'> label="Severity" value={f.severity} onChange={v => set({ severity: v })}
+            options={[{ value: 'minor', label: 'Minor' }, { value: 'major', label: 'Major' }]}
+            help="Management's approval rules can ask the owner first for major jobs." />
         )}
-        <FormRow label={office ? 'Job type' : 'Urgency'} hint={f.jobType === 'urgent' ? 'Affects the next guest; done first.' : office && f.jobType === 'normal' ? 'Done in date order.' : undefined}>
-          <select className={INPUT} value={f.jobType} onChange={e => set({ jobType: e.target.value === 'urgent' ? 'urgent' : 'normal' })}>
-            <option value="normal">Normal</option><option value="urgent">Urgent</option>
-          </select>
-        </FormRow>
       </div>
       {office && (
-        <div className="grid grid-cols-2 gap-3">
-          <FormRow label="Severity" hint="Management's approval rules can ask the owner first for major jobs.">
-            <select className={INPUT} value={f.severity} onChange={e => set({ severity: e.target.value as 'minor' | 'major' })}>
-              <option value="minor">Minor</option><option value="major">Major</option>
-            </select>
-          </FormRow>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormRow label="Due (optional)" error={error.dueOn} hint="Normal jobs are worked one by one in this order.">
             <DateField aria-label="Due date" className={INPUT} value={f.dueOn} onChange={v => { set({ dueOn: v }); setError(x => ({ ...x, dueOn: undefined })); }} />
           </FormRow>
@@ -444,27 +447,21 @@ export function PassKeyJobForm({ units, onClose, onDone }: { units: RosterUnit[]
   }
 
   return (
-    <OpsModal title="Add pass key job" sub="One key hand-over or collection on one unit." onClose={onClose} busy={isBusy}
+    <OpsModal title="Add pass key job" eyebrow="Maintenance" size="md" sub="One key hand-over or collection on one unit." onClose={onClose} busy={isBusy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={isBusy}>Cancel</Button><Button size="sm" variant="primary" loading={isBusy} onClick={() => void submit()}>Add pass key job</Button></>}>
       <FormRow label="Unit" error={error.unitId} hint="Type the building or the unit, e.g. agile 13a.">
         <UnitPicker units={units} value={form.unitId} error={error.unitId} onChange={unitId => { update({ unitId }); setError(current => ({ ...current, unitId: undefined })); }} />
       </FormRow>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <FormRow label="Key">
-          <select className={PHONE_INPUT} value={form.action} onChange={event => update({ action: event.target.value === 'collect' ? 'collect' : 'hand_over' })}>
-            {Object.entries(PASS_KEY_ACTION).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
-        </FormRow>
+        <ChoiceChips<PassKeyAction> label="Key" value={form.action} onChange={action => update({ action })}
+          options={Object.entries(PASS_KEY_ACTION).map(([value, label]) => ({ value: value as PassKeyAction, label }))} />
         <FormRow label="When" error={error.startsAt} hint="Malaysia time.">
           <DateTimeField aria-label="When" className={PHONE_INPUT} value={form.startsAt}
             onChange={startsAt => { update({ startsAt }); setError(current => ({ ...current, startsAt: undefined })); }} />
         </FormRow>
       </div>
-      <FormRow label="Urgency" hint={PASS_KEY_URGENCY_HINT}>
-        <select className={PHONE_INPUT} value={form.urgentByHand ? 'urgent' : 'normal'} onChange={event => update({ urgentByHand: event.target.value === 'urgent' })}>
-          <option value="normal">Normal</option><option value="urgent">Urgent</option>
-        </select>
-      </FormRow>
+      <ChoiceChips<'normal' | 'urgent'> label="Urgency" value={form.urgentByHand ? 'urgent' : 'normal'} onChange={v => update({ urgentByHand: v === 'urgent' })}
+        options={[{ value: 'normal', label: 'Normal' }, { value: 'urgent', label: 'Urgent' }]} help={PASS_KEY_URGENCY_HINT} />
       <FormRow label="Guest (optional)">
         <input className={PHONE_INPUT} value={form.guestName} onChange={event => update({ guestName: event.target.value })} maxLength={80} placeholder="e.g. Tan Wei Ming" autoComplete="off" />
       </FormRow>

@@ -237,7 +237,7 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
               <label className="relative h-full">
                 <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Statement period</span>
                 <select value={viewPeriod} onChange={e => setViewPeriod(e.target.value)}
-                  className="h-full appearance-none bg-transparent border-none outline-none font-sans text-[14px] font-medium text-ink cursor-pointer px-1 tabular-nums [text-align-last:center]">
+                  className="h-full appearance-none bg-transparent border-none outline-none font-sans text-[13px] font-medium text-ink cursor-pointer px-1 tabular-nums [text-align-last:center]">
                   {[...PERIODS].reverse().map(p => {
                     const s = periodRows.find(x => x.period === p);
                     return <option key={p} value={p}>{periodLabel(p)}{s ? ` · ${s.count}` : ''}</option>;
@@ -298,12 +298,12 @@ export default function StatementsPage({ embedded = false }: { embedded?: boolea
           renderCard={s => (
             <span className="flex items-start gap-3 text-ink">
               <span className="flex flex-col gap-[3px] min-w-0 flex-1">
-                <span className="text-[13.5px] font-medium truncate">{s.ownerName}</span>
+                <span className="text-[13px] font-medium truncate">{s.ownerName}</span>
                 <span className="text-[12px] text-muted-ink truncate">{s.unitsLabel}</span>
-                <span className="text-[11.5px] text-muted-ink tabular-nums">Income {rm(s.grossBookingValue)} · operator share {rm(s.managementFee)} · deductions {rm(s.expensesTotal)}</span>
+                <span className="text-[12px] text-muted-ink tabular-nums">Income {rm(s.grossBookingValue)} · operator share {rm(s.managementFee)} · deductions {rm(s.expensesTotal)}</span>
               </span>
               <span className="flex flex-col items-end gap-[5px] shrink-0">
-                <span className="text-[13.5px] font-semibold tabular-nums">{rm(s.netPayout)}</span>
+                <span className="text-[13px] font-semibold tabular-nums">{rm(s.netPayout)}</span>
                 <StatusBadge entity="statement" value={s.state} size="sm" />
               </span>
             </span>
@@ -363,7 +363,7 @@ function Sum({ label, value, minus, strong }: { label: string; value: string; mi
   return (
     <div className="flex flex-col gap-1 min-w-0">
       <Eyebrow>{label}</Eyebrow>
-      <span className={cx('inline-flex items-baseline gap-1 text-[17px] tracking-[-0.015em] text-ink', strong ? 'font-semibold' : 'font-medium')}>
+      <span className={cx('inline-flex items-baseline gap-1 text-[15px] tracking-[-0.015em] text-ink', strong ? 'font-semibold' : 'font-medium')}>
         {minus && <span className="text-muted-ink">&minus;</span>}<Figure value={value} />
       </span>
     </div>

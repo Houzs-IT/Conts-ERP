@@ -14,7 +14,7 @@
 
 import { Hono, type Context } from "hono";
 import type { Env } from "../types";
-import { requirePageAccess, requirePermission } from "../middleware/auth";
+import { requireAnyAccess, requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
 import type { Db } from "../services/renovation/load";
 import { refreshProjectDates } from "../services/renovation/projectDates";
@@ -44,12 +44,12 @@ function parseId(x: string | undefined | null): number | null {
 
 const NOT_READY = { error: "property_columns_missing", message: "The property lists are not in the database yet (migration 0112)." };
 
-app.get("/property-lists", requirePageAccess("projects.list"), async (c) => {
+app.get("/property-lists", requireAnyAccess(["projects.list", "projects.maintenance"]), async (c) => {
   if (!(await propertyColumnsReady(db(c)).catch(() => false))) return c.json({ ready: false, propertyTypes: [], layouts: [] });
   return c.json({ ready: true, ...(await readPropertyLists(db(c), coSql(c))) });
 });
 
-app.post("/property-types", requirePermission("projects.manage"), async (c) => {
+app.post("/property-types", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   if (!(await propertyColumnsReady(db(c)))) return c.json(NOT_READY, 409);
@@ -65,7 +65,7 @@ app.post("/property-types", requirePermission("projects.manage"), async (c) => {
   return c.json({ id: row.id }, 201);
 });
 
-app.patch("/property-types/:listId", requirePermission("projects.manage"), async (c) => {
+app.patch("/property-types/:listId", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseId(c.req.param("listId"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
   if (!(await propertyColumnsReady(db(c)))) return c.json(NOT_READY, 409);
@@ -93,7 +93,7 @@ function layoutNumbers(b: Record<string, unknown>, partial: boolean): { bedrooms
   return { bedrooms, bathrooms };
 }
 
-app.post("/layouts", requirePermission("projects.manage"), async (c) => {
+app.post("/layouts", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   if (!(await propertyColumnsReady(db(c)))) return c.json(NOT_READY, 409);
@@ -110,7 +110,7 @@ app.post("/layouts", requirePermission("projects.manage"), async (c) => {
   return c.json({ id: row.id }, 201);
 });
 
-app.patch("/layouts/:listId", requirePermission("projects.manage"), async (c) => {
+app.patch("/layouts/:listId", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseId(c.req.param("listId"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
   if (!(await propertyColumnsReady(db(c)))) return c.json(NOT_READY, 409);

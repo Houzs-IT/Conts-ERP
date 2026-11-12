@@ -22,9 +22,12 @@ import { cx } from '../lib/design-tokens';
 import { rm, plural, dateShort, date, monthLabel } from '../lib/format';
 import { runEach, skippedNote } from '../lib/bulk';
 import {
-  PillTabs, Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm, PassKeyJobForm, AssigneePicker, useTechnicians, KIND_WORD, PASS_KEY_URGENCY_HINT } from '../components/ops/OpsUi';
+  Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm, PassKeyJobForm, AssigneePicker, useTechnicians, KIND_WORD, PASS_KEY_URGENCY_HINT } from '../components/ops/OpsUi';
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
+import { Segmented as MetricSegmented } from '../components/Metric';
+import { ChoiceChips } from '../components/ChoiceChips';
+import { PhoneCard, ToolbarSearch } from '../components/ListToolbar';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
 import { ServicePrices } from './ServicePrices';
 import { PriceChangePanel } from './units/PriceChangePanel';
@@ -75,6 +78,7 @@ interface Payload { billing?: boolean; jobTypes?: boolean; data: Issue[] }
 interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string; byteSize?: number }
 
 type Tab = 'open' | 'pass_key' | 'support' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'profit';
+type JobTab = Exclude<Tab, 'catalog' | 'rules' | 'profit'>;
 const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the_conts: 'Company', guest_deposit: 'Guest (from the deposit)', warranty: 'Warranty' };
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
 const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office', booking: 'Reservation' };
@@ -113,7 +117,6 @@ export default function MaintenancePage() {
   const [tab, setTab] = useState<Tab>('open');
   const [passKeyDayShown, setPassKeyDayShown] = useState<PassKeyDay>('today');
   const [q, setQ] = useState('');
-  const [filtersTarget, setFiltersTarget] = useState<HTMLDivElement | null>(null);
   const selected = params.get('id');
   const setSelected = (id: string | null) => setParams(p => { const n = new URLSearchParams(p); if (id) n.set('id', id); else n.delete('id'); return n; }, { replace: true });
   const [creating, setCreating] = useState(false);
@@ -188,7 +191,8 @@ export default function MaintenancePage() {
     <>
       {error && data && <StaleBanner message={`Showing the last jobs we have. ${error}`} onRetry={reload} />}
       <IssueTable tab={tab} rows={data ? rows : null} loading={loading} error={data ? null : error} onRetry={reload} selected={selected} onSelect={setSelected}
-        money={money} canBulk={!FIELD_ROLES.includes(user!.role)} onChanged={reload} buildingOptions={buildingOptions} unitOptions={unitOptions} filtersTarget={filtersTarget}
+        money={money} canBulk={!FIELD_ROLES.includes(user!.role)} onChanged={reload} buildingOptions={buildingOptions} unitOptions={unitOptions}
+        toolbar={<ToolbarSearch value={q} onChange={setQ} placeholder="Search unit, building, problem or technician" label="Search jobs" />}
         filtered={!!q} onClearFilters={() => setQ('')}
         above={tab === 'history' && rows.length > 0 && money ? (
           <div className="text-copy text-muted-ink py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">{rows.length} {rows.length === 1 ? 'job' : 'jobs'} · {rm(historySpend)} spent{q ? ` matching "${q}"` : ''}</div>
@@ -218,27 +222,20 @@ export default function MaintenancePage() {
         <SplitPane open={!!sel} onClose={() => setSelected(null)} width={580}
           detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null}
           list={<>
-          <div className="flex flex-wrap items-start gap-2 px-5 py-3 max-md:px-4 rounded-card border border-solid border-line bg-card">
-            <label className="relative flex items-center w-[280px] max-md:w-full">
-              <span className="absolute left-3 flex text-muted-ink pointer-events-none"><Icon name="Search" size="base" /></span>
-              <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit, building, problem or technician" aria-label="Search jobs"
-                className={cx(INPUT, 'h-9 max-md:h-11 w-full pl-10 max-md:text-[16px]')} />
-            </label>
-            <div ref={setFiltersTarget} className="flex-1 min-w-0 empty:hidden" />
-          </div>
+          {/* The job tabs as one Segmented track with counts; search, Filters (with counts) and chips sit in the table's own toolbar. */}
           <div className="flex items-center gap-2 flex-wrap">
-            <PillTabs value={tab} onChange={t => { setTab(t); setSelected(null); }} tabs={[
-              { value: 'open', label: 'Open', count: data ? openTab.length : undefined },
-              ...(data?.jobTypes ? [{ value: 'pass_key' as const, label: 'Pass key', count: passKeys.length }] : []),
-              { value: 'support', label: 'Needs support', count: data ? support.length : undefined },
-              { value: 'approval', label: 'Awaiting owner approval', count: data ? approval.length : undefined },
-              { value: 'done', label: 'Done' },
-              { value: 'history', label: 'History' },
+            <MetricSegmented<JobTab> label="Jobs" value={tab as JobTab} onChange={t => { setTab(t); setSelected(null); }} options={[
+              { key: 'open', label: 'Open', count: data ? openTab.length : undefined },
+              ...(data?.jobTypes ? [{ key: 'pass_key' as const, label: 'Pass key', count: passKeys.length }] : []),
+              { key: 'support', label: 'Needs support', count: data ? support.length : undefined, tone: support.length ? 'warning' as const : undefined },
+              { key: 'approval', label: 'Awaiting owner approval', short: 'Owner approval', count: data ? approval.length : undefined },
+              { key: 'done', label: 'Done' },
+              { key: 'history', label: 'History' },
             ]} />
             {tab === 'pass_key' && (
-              <Segmented label="Check-in day" value={passKeyDayShown} onChange={setPassKeyDayShown} className="max-md:w-full max-md:[&>button]:flex-1 max-md:[&>button]:min-h-11" options={[
-                { value: 'today', label: `Today · ${passKeysOn('today').length}` },
-                { value: 'tomorrow', label: `Tomorrow · ${passKeysOn('tomorrow').length}` },
+              <MetricSegmented<PassKeyDay> label="Check-in day" value={passKeyDayShown} onChange={setPassKeyDayShown} options={[
+                { key: 'today', label: 'Today', count: passKeysOn('today').length },
+                { key: 'tomorrow', label: 'Tomorrow', count: passKeysOn('tomorrow').length },
               ]} />
             )}
           </div>
@@ -271,9 +268,9 @@ const paidText = (i: Issue) => (i.contractorPaidAt ? `Paid ${dateShort(i.contrac
 const MOVE_DONE: Record<Move, string> = { start: 'started', end: 'marked repair finished', reopen: 'reopened' };
 const COST_SLIDER_START: RangeBounds = { lowest: 0, highest: 1000 };
 
-function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, money, canBulk, onChanged, buildingOptions, unitOptions, filtersTarget, filtered, onClearFilters, empty, above }: {
+function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, money, canBulk, onChanged, buildingOptions, unitOptions, toolbar, filtered, onClearFilters, empty, above }: {
   tab: Tab; rows: Issue[] | null; loading: boolean; error: string | null; onRetry: () => void; selected: string | null; onSelect: (id: string) => void;
-  money: boolean; canBulk: boolean; onChanged: () => void; buildingOptions: SelectOption[]; unitOptions: FilterOption[]; filtersTarget: HTMLElement | null; filtered: boolean; onClearFilters: () => void;
+  money: boolean; canBulk: boolean; onChanged: () => void; buildingOptions: SelectOption[]; unitOptions: FilterOption[]; toolbar?: ReactNode; filtered: boolean; onClearFilters: () => void;
   empty: { title: string; action?: { label: string; onClick: () => void } }; above?: ReactNode;
 }) {
   const toast = useToast();
@@ -313,12 +310,14 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     return [{ value: 'Unassigned', label: 'Unassigned' }, ...named];
   }, [technicians, rows]);
 
+  // Each option in the Filters panel says how many jobs of this tab it would show.
+  const n = (f: (i: Issue) => boolean) => (rows ? rows.filter(f).length : null);
   const columns = useMemo<Column<Issue>[]>(() => [
     { key: 'building', label: 'Building', value: i => i.buildingId, text: i => i.propertyName, width: 150, hidden: true,
-      filter: { kind: 'select', options: buildingOptions } },
+      filter: { kind: 'select', options: buildingOptions.map(o => ({ value: o.value, label: String(o.label), count: n(i => i.buildingId === o.value) })) } },
     { key: 'unit', label: 'Unit', value: i => i.unitId, text: i => `${unitText(i)} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120,
       filter: { kind: 'select', display: 'menu', options: unitOptions },
-      render: i => <b className="text-ink">{unitText(i)}</b> },
+      render: i => <b className="text-ink font-mono">{unitText(i)}</b> },
     { key: 'issue', label: 'Problem', value: i => i.title, width: 240, filter: false,
       sub: i => i.source === 'booking'
         ? <>Guest check-in {stamp(checkInAt(i))}</>
@@ -326,10 +325,10 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
       render: i => <span className="block whitespace-normal text-ink">{i.title}</span> },
     { key: 'urgency', label: 'Type', type: 'status', value: i => typeOf(i),
       status: jobBadge, width: 140, phone: 'meta',
-      filter: { kind: 'select', options: Object.entries(JOB_TYPE).map(([value, label]) => ({ value, label })) } },
+      filter: { kind: 'select', options: Object.entries(JOB_TYPE).map(([value, label]) => ({ value, label, count: n(i => typeOf(i) === value) })) } },
     { key: 'status', label: 'Status', type: 'status', value: i => statusOf(i).label, status: i => { const s = statusOf(i); return { label: s.label, tone: s.tone === 'gold' ? 'neutral' : s.tone }; }, width: 160 },
     { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120, hidden: true,
-      filter: { kind: 'select', options: Object.entries(CATEGORY).map(([value, label]) => ({ value, label })) } },
+      filter: { kind: 'select', options: Object.entries(CATEGORY).map(([value, label]) => ({ value, label, count: n(i => i.category === value) })) } },
     { key: 'assignee', label: 'Assigned to', value: i => i.vendorName ?? 'Unassigned', text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 160,
       filter: { kind: 'select', display: 'menu', options: assigneeOptions },
       render: i => (canBulk && i.state !== 'resolved'
@@ -343,7 +342,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
         : <span className="text-danger">Unassigned</span>) },
     { key: 'due', label: 'Due', type: 'date', value: i => i.dueOn ?? null, width: 110, hidden: true, filter: false },
     { key: 'approval', label: 'Owner approval', type: 'status', value: i => i.approvalStatus ?? 'not_needed',
-      filter: { kind: 'select', options: Object.entries(APPROVAL).map(([value, { label }]) => ({ value, label })) },
+      filter: { kind: 'select', options: Object.entries(APPROVAL).map(([value, { label }]) => ({ value, label, count: n(i => (i.approvalStatus ?? 'not_needed') === value) })) },
       status: i => { const a = APPROVAL[i.approvalStatus ?? 'not_needed']; return { label: a.label, tone: a.tone === 'gold' ? 'neutral' : a.tone }; }, width: 150 },
     ...(money ? [{ key: 'cost', label: 'Cost', type: 'money' as const, value: (i: Issue) => i.finalAmount ?? i.quotedAmount, width: 110, title: 'The final cost, or the quote while the job is open.',
       filter: { kind: 'number' as const, bounds: COST_SLIDER_START },
@@ -358,7 +357,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     ] : []),
     { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150, filter: false },
     { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150, filter: false },
-  ], [money, buildingOptions, unitOptions, assigneeOptions, canBulk, technicians]);
+  ], [money, buildingOptions, unitOptions, assigneeOptions, canBulk, technicians, rows]); // rows: the filter counts
 
   return (
     <>
@@ -367,7 +366,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
         renderCard={i => <JobCard i={i} money={money} />}
         onRowClick={i => onSelect(i.id)} rowTone={i => (i.id === selected ? 'gold' : i.state === 'resolved' ? 'muted' : null)}
         noun={['job', 'jobs']} exportName="maintenance-jobs" selectionKey={tab} above={above}
-        filtered={filtered} onClearFilters={onClearFilters} inlineFiltersTarget={filtersTarget}
+        filtered={filtered} onClearFilters={onClearFilters} toolbar={toolbar}
         empty={{ title: empty.title, icon: 'Wrench', action: empty.action }}
         selectable={canBulk}
         bulkActions={(picked, clear) => {
@@ -386,28 +385,23 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
   );
 }
 
-/** The phone row: unit and cost, the problem, category and who has it, then urgency and status. */
+/** The phone card (two lines): the problem and the cost (or its type), then unit, building and who has it, status on the right. */
 function JobCard({ i, money }: { i: Issue; money: boolean }) {
   const s = statusOf(i);
   const cost = i.finalAmount ?? i.quotedAmount;
+  const type = typeOf(i) !== 'normal' ? jobBadge(i) : null;
+  const right = money && cost != null ? <>{rm(cost)}{i.finalAmount == null && <span className="text-meta text-muted-ink font-normal"> quote</span>}</>
+    : type ? <span className={type.tone === 'critical' ? 'text-danger' : 'text-ink-2'}>{type.label}</span> : null;
+  const meta = [
+    `${unitText(i)} · ${i.propertyName}`,
+    i.source === 'booking' ? `Guest check-in ${stamp(checkInAt(i))}` : CATEGORY[i.category] ?? i.category,
+    i.vendorName ?? 'Unassigned',
+    i.blocksUnit && i.state !== 'resolved' ? 'unit blocked' : null,
+    i.dueOn && typeOf(i) === 'normal' && i.state !== 'resolved' ? `due ${dateShort(i.dueOn)}` : null,
+  ].filter(Boolean).join(' · ');
   return (
-    <span className="flex flex-col gap-1 min-w-0">
-      <span className="flex items-baseline justify-between gap-2">
-        <span className="min-w-0 truncate"><b className="text-copy text-ink">{unitText(i)}</b><span className="text-meta text-muted-ink"> · {i.propertyName}</span></span>
-        {money && cost != null && <span className="text-copy font-medium tabular-nums whitespace-nowrap">{rm(cost)}{i.finalAmount == null && <span className="text-meta text-muted-ink font-normal"> quote</span>}</span>}
-      </span>
-      <span className="text-copy text-ink [overflow-wrap:anywhere]">{i.title}</span>
-      <span className="text-meta text-muted-ink">
-        {i.source === 'booking' ? <>Guest check-in {stamp(checkInAt(i))}</> : CATEGORY[i.category] ?? i.category} · {i.vendorName ? i.vendorName : <span className="text-danger">Unassigned</span>}{i.source !== 'booking' && <> · reported {dateShort(i.reportedAt)}</>}
-      </span>
-      <span className="flex gap-1.5 flex-wrap pt-0.5">
-        {typeOf(i) !== 'normal' && <StatusBadge tone={jobBadge(i).tone}>{jobBadge(i).label}</StatusBadge>}
-        {i.blocksUnit && i.state !== 'resolved' && <StatusBadge tone="critical">Unit blocked</StatusBadge>}
-        {i.dueOn && typeOf(i) === 'normal' && i.state !== 'resolved' && <StatusBadge tone="neutral">Due {dateShort(i.dueOn)}</StatusBadge>}
-        <StatusBadge tone={s.tone === 'gold' ? 'neutral' : s.tone}>{s.label}</StatusBadge>
-        {i.approvalStatus === 'needed' && !awaitingOwner(i) ? null : i.approvalStatus === 'approved' && <StatusBadge tone="success">Owner approved</StatusBadge>}
-      </span>
-    </span>
+    <PhoneCard title={i.title} right={right} meta={meta}
+      badge={<StatusBadge tone={s.tone === 'gold' ? 'neutral' : s.tone} size="sm">{s.label}</StatusBadge>} />
   );
 }
 
@@ -433,7 +427,7 @@ function BulkAssignModal({ rows, onClose, onDone }: { rows: Issue[]; onClose: ()
     onDone();
   }
   return (
-    <OpsModal title="Assign jobs" sub={`${plural(rows.length, 'job')} ticked. Each goes to the same technician or contractor.`} onClose={onClose} busy={busy}
+    <OpsModal title="Assign jobs" eyebrow="Maintenance" size="sm" sub={`${plural(rows.length, 'job')} ticked. Each goes to the same technician or contractor.`} onClose={onClose} busy={busy}
       footer={footer(onClose, busy, 'Assign', () => void save())}>
       <FormRow label="Assign to" error={error}><AssigneePicker value={name} onChange={v => { setName(v); setError(null); }} techs={techs} /></FormRow>
     </OpsModal>
@@ -549,8 +543,8 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       {confirmUi}
       <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-4 pb-4 bg-black text-white flex items-start gap-3">
         <div className="flex-1 min-w-0 flex flex-col gap-1">
-          <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{i.propertyName} · {unitText(i)}</div>
-          <div className="text-[19px] leading-tight font-semibold">{i.title}</div>
+          <div className="text-caption font-semibold tracking-[0.12em] uppercase text-gold">{i.propertyName} · {unitText(i)}</div>
+          <div className="text-title leading-tight font-semibold">{i.title}</div>
           <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
             {steps.map((s, k) => (
               <span key={s.label} title={s.label} className={cx('h-1.5 rounded-full flex-1 min-w-[18px]', s.on ? 'bg-gold' : k === current ? 'bg-faint' : 'bg-charcoal')} />
@@ -650,12 +644,10 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
             {billing && <FormRow label="Billing date" hint="The cost goes on the unit in this month.">
               <DateField aria-label="Billing date" className={INPUT} value={billingDate} onChange={setBillingDate} />
             </FormRow>}
-            <FormRow label="Who pays">
-              {done || !i.unitId ? <span className="h-10 flex items-center">{PAYER[i.chargeTo]}</span>
-                : <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>
-                  {(['owner', 'the_conts', 'guest_deposit'] as ChargeTo[]).concat(i.chargeTo === 'warranty' ? ['warranty'] : []).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}
-                </select>}
-            </FormRow>
+            {done || !i.unitId
+              ? <FormRow label="Who pays"><span className="h-10 flex items-center">{PAYER[i.chargeTo]}</span></FormRow>
+              : <ChoiceChips<ChargeTo> label="Who pays" value={payer} onChange={setPayer}
+                  options={(['owner', 'the_conts', 'guest_deposit'] as ChargeTo[]).concat(i.chargeTo === 'warranty' ? ['warranty'] : []).map(p => ({ value: p, label: PAYER[p] }))} />}
           </div>
           {(!done || billing) && <Button size="sm" variant="secondary" className="self-start" disabled={!Object.keys(billingDelta).length} disabledReason="Change something first."
             loading={busy === 'billing'} onClick={() => void act('billing', () => api.patch(`/maintenance/issues/${i.id}`, billingDelta), 'Saved.',
@@ -841,12 +833,12 @@ function DateMark({ label, amount, at, busy, markLabel, note, onSet }: {
     <div className="flex items-center flex-wrap gap-2 py-2 [&+&]:[border-top:1px_solid_var(--color-line-soft)]">
       <span className="flex-1 min-w-[160px] flex flex-col leading-tight">
         <span className="text-meta font-medium truncate">{label}</span>
-        <span className="text-[12px] text-muted-ink tabular-nums">{amount != null ? rm(amount) : note ?? '—'}</span>
+        <span className="text-meta text-muted-ink tabular-nums">{amount != null ? rm(amount) : note ?? '—'}</span>
       </span>
       {at
-        ? <><span className="text-[12px] font-medium text-success whitespace-nowrap">{date(at)}</span><Button size="sm" variant="tertiary" loading={busy} onClick={() => onSet(null)}>Undo</Button></>
+        ? <><span className="text-meta font-medium text-success whitespace-nowrap">{date(at)}</span><Button size="sm" variant="tertiary" loading={busy} onClick={() => onSet(null)}>Undo</Button></>
         : amount == null
-          ? <span className="text-[12px] text-muted-ink whitespace-nowrap">Not yet</span>
+          ? <span className="text-meta text-muted-ink whitespace-nowrap">Not yet</span>
           : <span className="flex gap-1.5 items-center flex-none">
               <DateField aria-label={`${markLabel}: day`} className={cx(INPUT, 'h-8 w-[128px] text-meta')} value={day} max={mytDay(0)} onChange={v => v && setDay(v)} />
               <Button size="sm" variant="secondary" loading={busy} onClick={() => onSet(day)}>{markLabel}</Button>
@@ -882,7 +874,7 @@ function WindowModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => 
     catch (e) { setError(errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Add repair window" sub={`When the technician may enter ${jobLabel(issue)}. Malaysia time.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Add window', () => void save())}>
+    <OpsModal title="Add repair window" eyebrow={jobLabel(issue)} size="sm" sub="When the technician may enter. Malaysia time." onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Add window', () => void save())}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <FormRow label="From" error={error}><DateTimeField aria-label="From" className={INPUT} value={start} onChange={setStart} required /></FormRow>
         <FormRow label="To"><DateTimeField aria-label="To" className={INPUT} value={end} min={start || undefined} onChange={setEnd} required /></FormRow>
@@ -903,7 +895,7 @@ function BlockModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => v
     catch (e) { setError(e instanceof ApiFailure && e.status === 409 ? 'A reservation already holds some of those nights. Pick dates when the unit is free.' : errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Block unit until fixed" sub={`${jobLabel(issue)} is blocked for these nights, and shows as under maintenance.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Block unit', () => void save())}>
+    <OpsModal title="Block unit until fixed" eyebrow={jobLabel(issue)} size="sm" sub="The unit is blocked for these nights, and shows as under maintenance." onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Block unit', () => void save())}>
       <div className="grid grid-cols-2 gap-3">
         <FormRow label="First night" error={error}><DateField aria-label="First night" className={INPUT} value={from} onChange={v => v && setFrom(v)} /></FormRow>
         <FormRow label="Available again"><DateField aria-label="Available again" className={INPUT} value={to} min={from || undefined} onChange={v => v && setTo(v)} /></FormRow>
@@ -927,16 +919,15 @@ function CompleteModal({ issue, billing, onClose, onDone }: { issue: Issue; bill
     catch (e) { setError(errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Mark job done" sub={`${jobLabel(issue)} · ${issue.title}`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Mark done', () => void save())}>
+    <OpsModal title="Mark job done" eyebrow={jobLabel(issue)} size="md" sub={issue.title} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Mark done', () => void save())}>
       <FormRow label="Final cost, RM (required)" error={error} hint="Recorded as a maintenance expense on the unit. RM 0 records nothing.">
         <MoneyInput className={INPUT} valueSen={amountSen} onChangeSen={setAmountSen} aria-label="Final cost in RM" />
       </FormRow>
       {billing && <FormRow label="Billing date" hint={billingDate ? `The cost goes on the unit's costs for ${monthLabel(billingDate)}.` : undefined}>
         <DateField aria-label="Billing date" className={INPUT} value={billingDate} onChange={setBillingDate} />
       </FormRow>}
-      <FormRow label="Who pays">
-        <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>{((issue.unitId ? ['owner', 'the_conts', 'guest_deposit', 'warranty'] : ['the_conts']) as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select>
-      </FormRow>
+      <ChoiceChips<ChargeTo> label="Who pays" value={payer} onChange={setPayer}
+        options={((issue.unitId ? ['owner', 'the_conts', 'guest_deposit', 'warranty'] : ['the_conts']) as ChargeTo[]).map(p => ({ value: p, label: PAYER[p] }))} />
       {issue.blocksUnit && <span className="text-meta text-muted-ink">The unit goes back to ready, and the nights blocked for this repair become available again.</span>}
     </OpsModal>
   );
@@ -950,26 +941,20 @@ function JobPlan({ i, busy, act }: { i: Issue; busy: string | null; act: (key: s
   const isBookingPassKey = isPassKey && i.source === 'booking';
   return (
     <section className="flex flex-col gap-2.5 rounded-card border border-solid border-line p-3.5">
-      <h3 className="m-0 text-copy font-semibold">Job</h3>
-      <div className="grid grid-cols-2 gap-3">
-        <FormRow label="Type">
-          <select className={INPUT} value={typeOf(i)} disabled={busy === 'type' || isBookingPassKey} onChange={e => patch('type', { jobType: e.target.value }, 'Job type saved.')}>
-            {(Object.keys(JOB_TYPE) as JobType[]).map(t => <option key={t} value={t}>{JOB_TYPE[t]}</option>)}
-          </select>
-        </FormRow>
+      <h3 className="m-0 text-meta font-bold uppercase tracking-[0.12em] text-ink-2">Job</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <ChoiceChips<JobType> label="Type" value={typeOf(i)} disabled={busy === 'type' || isBookingPassKey}
+          options={(Object.keys(JOB_TYPE) as JobType[]).map(t => ({ value: t, label: JOB_TYPE[t] }))}
+          onChange={v => { if (v !== typeOf(i)) patch('type', { jobType: v }, 'Job type saved.'); }} />
         {isPassKey && (
-          <FormRow label="Urgency" hint={PASS_KEY_URGENCY_HINT}>
-            <select className={INPUT} value={i.urgentByHand ? 'urgent' : 'normal'} disabled={busy === 'urgency'} onChange={e => patch('urgency', { urgentByHand: e.target.value === 'urgent' }, 'Urgency saved.')}>
-              <option value="normal">Normal</option><option value="urgent">Urgent</option>
-            </select>
-          </FormRow>
+          <ChoiceChips<'normal' | 'urgent'> label="Urgency" help={PASS_KEY_URGENCY_HINT} value={i.urgentByHand ? 'urgent' : 'normal'} disabled={busy === 'urgency'}
+            options={[{ value: 'normal', label: 'Normal' }, { value: 'urgent', label: 'Urgent' }]}
+            onChange={v => { if ((v === 'urgent') !== !!i.urgentByHand) patch('urgency', { urgentByHand: v === 'urgent' }, 'Urgency saved.'); }} />
         )}
         {!isPassKey && (
-          <FormRow label="Severity">
-            <select className={INPUT} value={i.severity ?? 'minor'} disabled={busy === 'severity'} onChange={e => patch('severity', { severity: e.target.value }, 'Severity saved.')}>
-              <option value="minor">Minor</option><option value="major">Major</option>
-            </select>
-          </FormRow>
+          <ChoiceChips<'minor' | 'major'> label="Severity" value={(i.severity ?? 'minor') as 'minor' | 'major'} disabled={busy === 'severity'}
+            options={[{ value: 'minor', label: 'Minor' }, { value: 'major', label: 'Major' }]}
+            onChange={v => { if (v !== (i.severity ?? 'minor')) patch('severity', { severity: v }, 'Severity saved.'); }} />
         )}
         <FormRow label={isPassKey ? 'Check-in day' : 'Due'} hint={typeOf(i) === 'normal' ? 'Normal jobs are worked one by one in this order.' : undefined}>
           <DateField aria-label={isPassKey ? 'Check-in day' : 'Due date'} className={INPUT} value={i.dueOn ?? ''} onChange={v => patch('due', { dueOn: v || null }, v ? 'Due date saved.' : 'Due date cleared.')} />
@@ -1018,8 +1003,9 @@ function ApprovalRulesPanel() {
     finally { setBusy(false); }
   }
   return (
-    <section className="bg-card rounded-card border border-solid border-line p-4 flex flex-col gap-3 max-w-[720px]">
-      <div>
+    <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] p-4 sm:p-5 flex flex-col gap-3 max-w-[760px]">
+      <div className="flex flex-col gap-1">
+        <span className="ds-eyebrow">Approval rules</span>
         <h2 className="m-0 text-heading font-semibold">When the owner must approve</h2>
         <p className="m-0 text-meta text-muted-ink">A job that needs approval is kept from the technicians until the owner approves it, and until its parts arrive when it needs parts. Jobs that do not need it go straight to the technician. Only jobs the owner pays for are held.</p>
       </div>
