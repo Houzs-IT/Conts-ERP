@@ -7,7 +7,7 @@ import type { Employee } from '../../_lib/hrFields';
 import { hasAttendance, NOT_MIGRATED, punchSites, payslipLocked, toView, ROW_COLS, type AttendanceRow, type PunchView } from '../../_lib/attendance';
 import { placeOf, mytInstant, type Nearest } from '../../_lib/attendanceCalc';
 import { hasLeaves } from '../../_lib/leave';
-import { withoutDreamCrafterSql } from '../../_lib/dcStaff';
+import { employeeOfCompanySql } from '../../_lib/hrCompany';
 import type { LeaveType } from '../../_lib/leaveRules';
 
 export interface AttendanceLine {
@@ -98,7 +98,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   let employeeId: string;
   try { [employeeId] = await employeeIdsFor(env, [{ employeeId: k.employeeId, cleanerId: k.cleanerId, technicianId: k.technicianId }]); }
   catch { return fail('NOT_FOUND', 'That person is not an in-house cleaner or technician.', 404); }
-  if (!(await one(env, `SELECT 1 AS x FROM employees WHERE id = ?${await withoutDreamCrafterSql(env, 'id')}`, employeeId))) {
+  if (!(await one(env, `SELECT 1 AS x FROM employees WHERE id = ?${await employeeOfCompanySql(env, 'conts', 'id')}`, employeeId))) {
     return fail('NOT_FOUND', 'That person is not an in-house cleaner or technician.', 404);
   }
   if (await payslipLocked(env, employeeId, k.date)) {

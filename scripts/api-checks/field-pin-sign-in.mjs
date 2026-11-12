@@ -237,6 +237,15 @@ const renovatorLine = r.json?.data?.find(l => l.employee.dcStaffId === dcStaffId
 check('Dream Crafter Attendance lists the punch, with no building to compare', r.status === 200 && renovatorLine?.punch?.id === renovatorPunchId && renovatorLine.inPlace === null, r);
 r = await call(mgmt, 'GET', '/api/attendance');
 check('The Conts\' Attendance does not list the Dream Crafter employee', r.status === 200 && !r.json?.data?.some(l => l.punch?.id === renovatorPunchId || l.employee.name === `Renovation Tester ${stamp}`), r.json?.data?.length);
+const [{ company: renovatorCompany } = {}] = await db(`SELECT e.company FROM employees e WHERE e.dc_staff_id = $1`, dcStaffId);
+check('the Dream Crafter HR record says its company', renovatorCompany === 'dream_crafter', renovatorCompany);
+const renovatorPunchDate = renovatorLine?.punch?.date;
+r = await call(mgmt, 'GET', `/api/working-hours?from=${renovatorPunchDate}&to=${renovatorPunchDate}`);
+check('The Conts\' Working Hours does not fill from the Dream Crafter punch', r.status === 200 && !r.json?.punches?.some(p => p.attendanceId === renovatorPunchId), r.json?.punches?.length);
+r = await call(mgmt, 'PATCH', `/api/attendance/${renovatorPunchId}`, { clockIn: '08:00', clockOut: '17:00', note: 'Cross-company fix' });
+check('The Conts\' fix-a-punch route does not find a Dream Crafter punch (404)', r.status === 404, r);
+r = await call(mgmt, 'GET', `/api/attendance/${renovatorPunchId}/photo/in`);
+check('The Conts\' selfie route does not serve a Dream Crafter selfie (404)', r.status === 404, r);
 r = await call(opsMgr, 'GET', '/api/attendance/dream-crafter');
 check('an operations manager (The Conts side) cannot read Dream Crafter Attendance (403)', r.status === 403, r);
 r = await call(mgmt, 'POST', '/api/attendance/dream-crafter', { dcStaffId, date: '2026-01-05', clockIn: '08:30', clockOut: '17:30', note: 'Forgot to clock in' });

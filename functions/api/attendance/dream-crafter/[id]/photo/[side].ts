@@ -1,6 +1,7 @@
 import { type Env, one, fail } from '../../../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../../../_lib/auth';
 import { hasAttendance, NOT_MIGRATED } from '../../../../../_lib/attendance';
+import { employeeOfCompanySql } from '../../../../../_lib/hrCompany';
 
 /** GET /api/attendance/dream-crafter/:id/photo/in|out — a Dream Crafter punch selfie, for Dream Crafter > HR > Employees >
  *  Attendance. Only a Dream Crafter employee's punch is served here. */
@@ -15,7 +16,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 
   const doc = await one<{ storage_key: string; mime_type: string }>(env, `
     SELECT d.storage_key, d.mime_type FROM attendance a JOIN documents d ON d.id = ${side === 'in' ? 'a.in_photo_id' : 'a.out_photo_id'}
-    WHERE a.id = ? AND a.employee_id IN (SELECT id FROM employees WHERE dc_staff_id IS NOT NULL)`, String(params.id));
+    WHERE a.id = ?${await employeeOfCompanySql(env, 'dream_crafter', 'a.employee_id')}`, String(params.id));
   if (!doc) return fail('NOT_FOUND', 'No photo with that punch.', 404);
   const object = await env.MEDIA.get(doc.storage_key);
   if (!object) return fail('NOT_FOUND', 'The photo file is missing from storage.', 404);

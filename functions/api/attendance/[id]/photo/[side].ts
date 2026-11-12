@@ -1,7 +1,7 @@
 import { type Env, one, fail } from '../../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
 import { hasAttendance, NOT_MIGRATED } from '../../../../_lib/attendance';
-import { withoutDreamCrafterSql } from '../../../../_lib/dcStaff';
+import { employeeOfCompanySql } from '../../../../_lib/hrCompany';
 
 /** GET /api/attendance/:id/photo/in|out — a punch selfie, for HR > Workers > Attendance. The shared download endpoint
  *  only knows unit, job and owner files, so selfies are served here, under the HR area. */
@@ -16,7 +16,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 
   const doc = await one<{ storage_key: string; mime_type: string }>(env, `
     SELECT d.storage_key, d.mime_type FROM attendance a JOIN documents d ON d.id = ${side === 'in' ? 'a.in_photo_id' : 'a.out_photo_id'}
-    WHERE a.id = ?${await withoutDreamCrafterSql(env, 'a.employee_id')}`, String(params.id));
+    WHERE a.id = ?${await employeeOfCompanySql(env, 'conts', 'a.employee_id')}`, String(params.id));
   if (!doc) return fail('NOT_FOUND', 'No photo with that punch.', 404);
   const object = await env.MEDIA.get(doc.storage_key);
   if (!object) return fail('NOT_FOUND', 'The photo file is missing from storage.', 404);

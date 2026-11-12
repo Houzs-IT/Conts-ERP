@@ -3,6 +3,7 @@ import { mayWork } from '../../_lib/access';
 import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { hasDcAppAccess, dcPeopleSql } from '../../_lib/dcStaff';
+import { employeeOfCompanySql } from '../../_lib/hrCompany';
 import type { EmployeeStatus } from '../../_lib/hrFields';
 import { hasAttendance, NOT_MIGRATED, payslipLocked, toView, ROW_COLS, type AttendanceRow, type PunchView } from '../../_lib/attendance';
 import { mytInstant } from '../../_lib/attendanceCalc';
@@ -37,7 +38,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const day = asked && /^\d{4}-\d{2}-\d{2}$/.test(asked) ? asked : today;
   const [people, rows] = await Promise.all([
     all<PersonRow>(env, `SELECT p.dc_staff_id, p.id, p.full_name, p.emp_no, p.roster_active, p.status FROM (${dcPeopleSql(true)}) p ORDER BY p.full_name`),
-    all<AttendanceRow>(env, `SELECT ${ROW_COLS} FROM attendance WHERE work_date = ? AND employee_id IN (SELECT id FROM employees WHERE dc_staff_id IS NOT NULL)`, day),
+    all<AttendanceRow>(env, `SELECT ${ROW_COLS} FROM attendance WHERE work_date = ?${await employeeOfCompanySql(env, 'dream_crafter', 'employee_id')}`, day),
   ]);
   const byEmployee = new Map(rows.map(row => [row.employee_id, row]));
 
