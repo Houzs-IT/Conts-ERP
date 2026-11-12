@@ -48,6 +48,18 @@ test('O2 changes the payout but not gain/loss', () => {
   assert.equal(r.gainLoss, 128505);
 });
 
+test("the company's share of a late change from a locked month counts in gain/loss, not in GP or the payout (part 2b, choice A)", () => {
+  const base = { contract: 'PS', revenue: 600000, cleaning: 100000, utilities: 0, additional: 0, misc: 0, electricity: 0, water: 0, internet: 0, sewerage: 0,
+    ownerPct: 75, ltGrr: 0, o2: 7500, nights: 10, days: 30 };
+  const a = overallFigures(base), b = overallFigures({ ...base, late: 2500 });
+  assert.equal(a.late, 0);
+  assert.equal(b.late, 2500);
+  assert.equal(b.gainLoss - a.gainLoss, 2500);
+  assert.equal(b.gp, a.gp);
+  assert.equal(b.payout, a.payout);
+  assert.equal(overallTotals([a, b]).late, 2500);
+});
+
 test('nights, rev/night, margin, and empty months', () => {
   const r = row('PS', 600000, 100000, 0, 0, 0, 70, 0, 0, 15, 30);
   assert.equal(r.occupancy, 50);

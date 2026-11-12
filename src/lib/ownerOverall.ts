@@ -7,7 +7,8 @@
  *    PS: O1 = GP x owner %, owner base = the higher of O1 and GRR
  *    LT: owner base = LT (owner % and O1 unused)
  *    owner payout    = owner base + O2
- *    gain/loss       = GP - owner base (O2 is passed straight to the owner and does not change it)
+ *    gain/loss       = GP - owner base + late (O2 is passed straight to the owner and does not change it; late is
+ *                      the company's share of changes to an earlier, locked month that counts this month: part 2b)
  *
  *  `contract` picks the formula: PS for a share, LT for a fixed owner base (a long-term let's part of the rent, a GRR
  *  or master lease rent). The report groups rows by income model, ReportGroup. */
@@ -38,10 +39,14 @@ export interface OverallInput {
   /** LT: the fixed monthly rent. PS: the monthly guaranteed minimum (GRR), 0 when there is none. */
   ltGrr: number;
   o2: number;
+  /** The company's share (sen) of late changes to an earlier month whose income or deductions were locked, counted
+   *  this month (owner statement close part 2b, chew's choice A). 0 when absent. */
+  late?: number;
   nights: number; days: number;
 }
 
 export interface OverallFigures extends OverallInput {
+  late: number;
   deductions: number; gp: number; o1: number; ownerBase: number; payout: number; gainLoss: number;
   /** Percent, 0-100. */
   occupancy: number;
@@ -60,10 +65,11 @@ export function overallFigures(i: OverallInput): OverallFigures {
   const gp = i.revenue - deductions;
   const o1 = i.contract === 'PS' ? roundSen((gp * i.ownerPct) / 100) : 0;
   const ownerBase = i.contract === 'PS' ? Math.max(o1, i.ltGrr) : i.ltGrr;
+  const late = i.late ?? 0;
   return {
-    ...i, deductions, gp, o1, ownerBase,
+    ...i, late, deductions, gp, o1, ownerBase,
     payout: ownerBase + i.o2,
-    gainLoss: gp - ownerBase,
+    gainLoss: gp - ownerBase + late,
     occupancy: i.days ? (i.nights / i.days) * 100 : 0,
     revPerNight: i.nights ? Math.round(i.revenue / i.nights) : 0,
     margin: i.revenue ? (gp / i.revenue) * 100 : 0,
@@ -72,7 +78,7 @@ export function overallFigures(i: OverallInput): OverallFigures {
 }
 
 /** The columns that add up across units. */
-export const SUMMED = ['revenue', 'cleaning', 'utilities', 'electricity', 'water', 'internet', 'sewerage', 'additional', 'misc', 'deductions', 'gp', 'ltGrr', 'o1', 'o2',
+export const SUMMED = ['revenue', 'cleaning', 'utilities', 'electricity', 'water', 'internet', 'sewerage', 'additional', 'misc', 'deductions', 'gp', 'ltGrr', 'o1', 'o2', 'late',
   'ownerBase', 'payout', 'gainLoss', 'breakEven', 'nights', 'days'] as const;
 export type Summed = typeof SUMMED[number];
 

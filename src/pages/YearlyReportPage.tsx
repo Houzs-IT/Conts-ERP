@@ -25,7 +25,8 @@ const unitName = (u: Unit) => `${u.building} ${u.number}`;
 const GRID = '[border-left:1px_solid_var(--color-line)]';
 /** The Show filter: one option per figure, plus the three cleaning tables together. */
 const CLEANING = ['cleanerCost', 'cleaningOwner', 'cleaningEarned'];
-const SHOW_OPTIONS = [...BLOCKS.slice(0, 8), { key: 'cleaning', label: 'Cleaning (all three)' }, ...BLOCKS.slice(8)].map(b => ({ value: b.key, label: b.label }));
+const CLEANING_AT = BLOCKS.findIndex(b => b.key === 'cleanerCost');
+const SHOW_OPTIONS = [...BLOCKS.slice(0, CLEANING_AT), { key: 'cleaning', label: 'Cleaning (all three)' }, ...BLOCKS.slice(CLEANING_AT)].map(b => ({ value: b.key, label: b.label }));
 const showsBlock = (show: string, key: string) => !show || show === key || (show === 'cleaning' && CLEANING.includes(key));
 
 function Cell({ sen, strong }: { sen: number | null; strong?: boolean }) {
@@ -71,7 +72,8 @@ const BLOCK_NOTE: Partial<Record<BlockKey, string>> = {
   revenue: 'What the owner statement counts as income for the month.',
   gp: 'Earnings less cleaning, utilities, additional costs and the monthly misc charge.',
   payout: REPORT_RULES.ownerPayoutIncludesO2 ? 'The owner’s share, plus the owner’s credits and charges for the month.' : 'The owner’s share only.',
-  company: 'Gross profit less the owner’s share: what The Conts keeps.',
+  company: 'Gross profit less the owner’s share, plus any late changes below: what The Conts keeps.',
+  late: 'The company’s share of changes to an earlier month after its income or deductions were locked, counted in the month the owner’s share went to.',
   cleanerCost: 'What we pay the cleaners for finished cleaning jobs (their pay, not their invoices).',
   cleaningOwner: REPORT_RULES.ltOwnerPaysCleaning ? 'The cleaning on the owner statement.' : 'The cleaning on the owner statement. Fixed-rent units show nothing: the company carries their cleaning.',
   cleaningEarned: 'What The Conts charges the owner for cleaning, less what it pays the cleaners.',
@@ -128,7 +130,7 @@ export default function YearlyReportPage() {
         {error && <StaleBanner message={data ? `Showing the last figures we have. ${error}` : error} onRetry={reload} />}
         {loading && !data ? <TableSkeleton rows={8} cols={7} />
           : !rows.length ? <EmptyState kind={building || contract || q ? 'filtered' : 'empty'} title="No figures for this year." />
-          : BLOCKS.filter(b => showsBlock(show, b.key)).map(b => {
+          : BLOCKS.filter(b => showsBlock(show, b.key) && (b.key !== 'late' || rows.some(r => (r.late ?? 0) !== 0))).map(b => {
             const grid = grids.find(g => g.key === b.key);
             return grid && <Section key={b.key} title={b.label} note={BLOCK_NOTE[b.key]}><Grid grid={grid} units={shown} months={data?.months ?? []} toDate={data?.toDate ?? null} /></Section>;
           })}

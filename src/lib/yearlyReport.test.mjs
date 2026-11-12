@@ -18,6 +18,17 @@ test('revenue, gross profit, payout and company equal the Overall unit report fi
   assert.equal(f.company, o.gainLoss);
 });
 
+test("the company's share of a late change counts in The Conts, shown in its own block after it (part 2b, choice A)", () => {
+  const a = figures(row()), b = figures(row({ late: 2500 }));
+  assert.equal(a.late, 0);
+  assert.equal(b.late, 2500);
+  assert.equal(b.company - a.company, 2500);
+  assert.equal(b.gp, a.gp);
+  assert.equal(b.payout, a.payout);
+  assert.equal(b.company, overallFigures({ ...row({ late: 2500 }), utilities: 75_000 }).gainLoss);
+  assert.equal(BLOCKS.findIndex(x => x.key === 'late'), BLOCKS.findIndex(x => x.key === 'company') + 1);
+});
+
 test('cleaning: what we earn is the owner charge less the cleaner cost', () => {
   const f = figures(row());
   assert.equal(f.cleanerCost, 60_000);

@@ -19,7 +19,7 @@ import { monthEndExclusive } from './revenue';
 import { modelOf } from './revenueModel';
 import { finalMonthsFor } from './expenses';
 import {
-  type Stage, STAGES, openMonthAfter, planLate, planUnlock, carriedText, companyCarriedText, companyFigure, lateText, monthLabel, lockable, splitLate,
+  type Stage, STAGES, openMonthAfter, planLate, planUnlock, carriedText, companyCarriedText, companyFigure, lateLabel, lateText, monthLabel, lockable, splitLate,
   type PostedLate,
 } from './stageLocks';
 
@@ -124,7 +124,7 @@ export async function locksFor(env: Env, month: string, unitIds?: string[]): Pro
 }
 
 /** The company's share of late changes that counts in each unit-month from `fromMonth` to `toMonth` (both included), by
- *  `${unitId}|${month}`: the total and each row (its description and amount), oldest first. All units when `unitIds`
+ *  `${unitId}|${month}`: the total and each row (named by its month and step, lateLabel, and its amount), oldest first. All units when `unitIds`
  *  is null. Empty until migration 0304 has run. The company views add it to the company's result for the month. */
 export async function companyLateFor(env: Env, unitIds: string[] | null, fromMonth: string, toMonth: string): Promise<Map<string, { amount: number; items: { label: string; amount: number }[] }>> {
   const out = new Map<string, { amount: number; items: { label: string; amount: number }[] }>();
@@ -137,7 +137,7 @@ export async function companyLateFor(env: Env, unitIds: string[] | null, fromMon
     const key = `${r.unit_id}|${r.month}`;
     const x = out.get(key) ?? { amount: 0, items: [] };
     x.amount += Number(r.amount);
-    x.items.push({ label: r.description, amount: Number(r.amount) });
+    x.items.push({ label: lateLabel(r.description), amount: Number(r.amount) });
     out.set(key, x);
   }
   return out;

@@ -120,6 +120,13 @@ export const companyFigure = (m: { gross: number; deductions: number; payoutBefo
 export const lateText = (stage: 'income' | 'deductions', unitLabel: string, label: string): string =>
   `Late change to ${unitLabel} ${stage} for ${label} (${stage} locked)`;
 
+/** A late change named by its month and step ('October 2026 income'), for a screen that already shows the unit (the
+ *  company views). Any other text, such as a carried row's, is returned as it is. */
+export const lateLabel = (description: string): string => {
+  const m = /^Late change to .+ (income|deductions) for (.+) \((?:income|deductions) locked\)$/.exec(description);
+  return m ? `${m[2]} ${m[1]}` : description;
+};
+
 /* What people are told about a locked or final month: every route and screen uses these, not its own wording. */
 const STAGE_NAME: Record<Stage, string> = { income: 'income', deductions: 'deductions', o2: 'O2' };
 /** 'October 2026 deductions are locked for Vista 22-04.' */

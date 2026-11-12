@@ -93,7 +93,33 @@ await generate(NOV);
 const again = await companyRows(u.id);
 check('C2: running the late update again changes nothing', JSON.stringify(again) === JSON.stringify(rows), `${JSON.stringify(again)} vs ${JSON.stringify(rows)}`);
 
-// ── R: the company views (part 2b, Task 3) ──
+// ── R: the company views take the company's share in November ──
+{
+  const want = ofLock(rows, incomeLock)[0]?.amount;
+  const port = (await call('GET', `/api/portfolio/owner-report?month=${NOV}`)).json;
+  const pRow = port?.rows?.find(x => x.unitId === u.id);
+  check('R1: the Overall owner report has the late change in November', !!want && pRow?.late === want, `${JSON.stringify(pRow)} want late ${want}`);
+  const year = (await call('GET', '/api/finance/yearly-report?year=2026')).json;
+  const yRow = year?.rows?.find(x => x.unitId === u.id && x.month === NOV);
+  check('R2: the Yearly report has it in November', !!want && yRow?.late === want, `${JSON.stringify(yRow)} want late ${want}`);
+  const fin = (await call('GET', `/api/finance/unit-pnl?from=${NOV}&to=${NOV}`)).json;
+  const fRow = fin?.rows?.find(x => x.unitId === u.id && x.month === NOV);
+  check('R3: Finance > Unit P&L has it in November', !!want && fRow?.late === want, `${JSON.stringify(fRow)} want late ${want}`);
+  const own = (await call('GET', `/api/units/financials?unitId=${u.id}&month=${NOV}`)).json;
+  const line = own?.companyPnl?.find(x => x.label === 'Late changes from locked months');
+  check("R4: the unit's Financials list it under The Conts", !!want && line?.amount === want
+    && line?.items?.[0]?.label === 'October 2026 income', JSON.stringify(own?.companyPnl));
+  // A unit whose only figure in a month is the company's share of a late change still has its row.
+  await db(`INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, created_at, updated_at) VALUES ('ocl-x', $1, $2, 'L-04', 0, $3, $3)`, PROP, OWNER, now);
+  await db(`INSERT INTO company_late_changes (id, unit_id, month, amount, description, reference, created_at, updated_at) VALUES ('ocl-clc-x', 'ocl-x', $1, 1234, 'Check: a late change', 'stage-lock:ocl-none', $2, $2)`, NOV, now);
+  const p2 = (await call('GET', `/api/portfolio/owner-report?month=${NOV}`)).json?.rows?.find(x => x.unitId === 'ocl-x');
+  const y2 = (await call('GET', '/api/finance/yearly-report?year=2026')).json?.rows?.find(x => x.unitId === 'ocl-x' && x.month === NOV);
+  const f2 = (await call('GET', `/api/finance/unit-pnl?from=${NOV}&to=${NOV}`)).json?.rows?.find(x => x.unitId === 'ocl-x' && x.month === NOV);
+  check('R5: a unit with only a late change that month is still listed in all three', p2?.late === 1234 && y2?.late === 1234 && f2?.late === 1234,
+    `${JSON.stringify(p2)} | ${JSON.stringify(y2)} | ${JSON.stringify(f2)}`);
+  await db(`DELETE FROM company_late_changes WHERE id = 'ocl-clc-x'`);
+  await db(`DELETE FROM units WHERE id = 'ocl-x'`);
+}
 
 // C3: deductions locked too (the misc charge on). The stay is made two nights longer for the same money, so occupancy
 // moves the misc charge. Income comes first: the misc difference goes with the income lock, the company's as the owner's.

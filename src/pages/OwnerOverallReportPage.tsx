@@ -22,7 +22,11 @@ import { GainLoss, LEVELS, OwnerOverallDetail, money, unitStatus, type Level, ty
  *  unit's revenue, deductions, owner payout and the company's gain or loss on it, from GET /api/portfolio/owner-report.
  *  The whole month is about a row per unit, so search, filters and sorting happen here. */
 
-interface ApiRow extends OverallInput { unitId: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null }
+interface ApiRow extends OverallInput {
+  unitId: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null;
+  /** The company's share of late changes to an earlier, locked month counted this month, row by row (part 2b). */
+  lateItems?: { label: string; amount: number }[];
+}
 interface Payload { month: string; rows: ApiRow[]; generatedAt: string }
 
 type Group = 'inc' | 'ded' | 'pro' | 'pay' | 'res';
@@ -53,6 +57,9 @@ const COLS: Col[] = [
   { key: 'o1', label: 'O1', level: 1, group: 'pay', kind: 'money' },
   { key: 'o2', label: 'O2', level: 1, group: 'pay', kind: 'money' },
   { key: 'payout', label: 'Owner payout', level: 1, group: 'pay', kind: 'money' },
+  // The company's share of late changes to an earlier, locked month (part 2b, chew's choice A), in Gain / Loss. The column
+  // is shown only in a month that has one.
+  { key: 'late', label: 'Late changes', level: 1, group: 'res', kind: 'money' },
   { key: 'gainLoss', label: 'Gain / Loss', level: 1, group: 'res', kind: 'gl' },
 ];
 const colOf = (key: string) => COLS.find(c => c.key === key) ?? COLS[0];
@@ -145,8 +152,9 @@ export default function OwnerOverallReportPage() {
     try { localStorage.setItem(LEVEL_KEY, String(l)); } catch { /* private window: the level just isn't remembered */ }
   }, []);
 
-  const all = useMemo<ReportRow[]>(() => (data?.rows ?? []).map(({ unitId, code, building, ownerName, group, contractCode, ...input }) =>
-    ({ ...overallFigures(input), unitId, code, building, ownerName, group, contractCode })), [data]);
+  const all = useMemo<ReportRow[]>(() => (data?.rows ?? []).map(({ unitId, code, building, ownerName, group, contractCode, lateItems, ...input }) =>
+    ({ ...overallFigures(input), lateItems: lateItems ?? [], unitId, code, building, ownerName, group, contractCode })), [data]);
+  const hasLate = all.some(r => r.late !== 0);
 
   const range = colOf(rangeKey);
   const shownValue = (r: ReportRow) => (inSen(range) ? r[range.key] / 100 : r[range.key]);
@@ -175,7 +183,7 @@ export default function OwnerOverallReportPage() {
   const row = at >= 0 ? order[at] : null;
   const totals = overallTotals(filtered);
   // Full detail shows the four bills, so their Utilities total would only repeat them.
-  const cols = COLS.filter(c => c.level <= level && (level === 1 || c.key !== 'utilities'));
+  const cols = COLS.filter(c => c.level <= level && (level === 1 || c.key !== 'utilities') && (c.key !== 'late' || hasLate));
   const groupStart = (i: number) => i > 0 && cols[i - 1].group !== cols[i].group;
   // The band header: one cell per run of columns in the same group.
   const bands: { group: Group; span: number }[] = [];
@@ -342,7 +350,7 @@ export default function OwnerOverallReportPage() {
           {[plural(all.length, 'unit'), ...present.map(g => `${count(g.n)} ${GROUP_NAME[g.group].toLowerCase()}`), 'amounts in RM']
             .map((part, n) => <span key={n}>{n > 0 && ' · '}<span className="inline-block">{part}</span></span>)}
           {/* The definition gets its own line, so it never wraps into the counts. */}
-          <span className="block text-meta">Gain/Loss = GP − owner base (the owner's part of the rent, the fixed rent, or the higher of O1 and GRR), before O2</span>
+          <span className="block text-meta">Gain/Loss = GP − owner base (the owner's part of the rent, the fixed rent, or the higher of O1 and GRR), before O2{hasLate ? ', plus late changes: the company’s share of changes to an earlier, locked month' : ''}</span>
         </> : 'Every unit\'s month, as on the owner statements'}
         actions={<>
           <Button variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel}

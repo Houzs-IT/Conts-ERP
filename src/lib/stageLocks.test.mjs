@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   lockMonthProblem, openMonthAfter, planLate, planUnlock, carriedText, monthAfter, monthLabel, lateText, incomeLockable,
   lockable, splitLate, lockedText, rolledText, editedText, refusedText, movedO2Text, deductionChecks, o2Checks,
-  companyFigure, companyCarriedText, incomeNoticeText,
+  companyFigure, companyCarriedText, incomeNoticeText, lateLabel,
 } from '../../functions/_lib/stageLocks.ts';
 
 test('locks start from October 2026, and only for a month that has ended', () => {
@@ -90,6 +90,12 @@ test("the company's figure of a unit-month: what is left of the gross after the 
     incomeLive: companyFigure({ gross: 110000, deductions: 10000, payoutBeforeAdjustments: 80000 }),
     live: companyFigure({ gross: 110000, deductions: 11000, payoutBeforeAdjustments: 79200 }) };
   assert.deepEqual(splitLate(run, { income: true, deductions: true }), { income: 2000, deductions: -200 });
+});
+
+test('a late change named by its month and step where the unit is already on screen (the company views)', () => {
+  assert.equal(lateLabel('Late change to Vista Jaya One #A-12-03 income for October 2026 (income locked)'), 'October 2026 income');
+  assert.equal(lateLabel(lateText('deductions', 'Skyline D-49-03A', 'October 2026')), 'October 2026 deductions');
+  assert.equal(lateLabel('Already counted in November 2026'), 'Already counted in November 2026');
 });
 
 test('the balancing row an unlock leaves on the company side', () => {
