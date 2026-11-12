@@ -436,7 +436,7 @@ export interface DeadlineGroups {
 
 const sortKey = (x: DueItem | ApptItem): string => x.due + (x.type === "appt" ? x.a.t : "");
 
-export function deadlineGroups(m: BoardModel, who: Viewing, canAssign: boolean): DeadlineGroups {
+export function deadlineGroups(m: BoardModel, who: Viewing): DeadlineGroups {
   const all = [...items(m, who), ...apptItems(m, who)].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
   const g: DeadlineGroups = { late: [], week: [], two: [], later: [], waiting: [], ready: [], todo: [] };
   for (const x of all) {
@@ -452,9 +452,10 @@ export function deadlineGroups(m: BoardModel, who: Viewing, canAssign: boolean):
     else if (p.design["3"].ok && !p.design["2"].s && mineAny(who, p.team["2"])) g.ready.push({ p, k: "2" });
   }
   for (const p of m.projects) {
-    /* A project with no design lead yet is shown to the whole team and to anyone who can assign. */
+    /* A project with no design lead belongs to nobody, so it is listed under Whole team only, like Progress's
+       "Not assigned" (YH, 11 Nov 2026). Before, anyone who could assign saw it whoever Viewing named. */
     if (p.unassigned) {
-      if (who === "All" || canAssign) g.todo.push({ p, k: "as" });
+      if (who === "All") g.todo.push({ p, k: "as" });
       continue;
     }
     if (!mine(who, p.lead?.id)) continue;

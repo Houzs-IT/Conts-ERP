@@ -119,7 +119,7 @@ function Section({ title, color, children, count }: { title: string; color: stri
 }
 
 export function BetaCalDeadlines({ m, who, canAssign, viewingName, ...act }: Props): ReactElement {
-  const g = deadlineGroups(m, who, canAssign);
+  const g = deadlineGroups(m, who);
   const rowsOf = (arr: Array<DueItem | ApptItem>): ReactElement[] => arr.map((x) => (x.type === "appt" ? apptRow(m, who, x) : dueRow(m, who, x)));
   const hasLeft = g.late.length + g.week.length + g.two.length + g.later.length + g.waiting.length + g.ready.length > 0;
 
