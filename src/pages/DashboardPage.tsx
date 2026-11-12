@@ -15,7 +15,7 @@ import { useApi } from '../lib/useApi';
 import { useCrew } from '../lib/useCrew';
 import { useSession } from '../lib/session';
 import { api, notifyFailure } from '../lib/api';
-import { rm, rmCompact, time, percent, monthLabel, MONTHS, plural, count, humanize, weekdayDate } from '../lib/format';
+import { rm, rmCompact, time, percent, monthLabel, MONTHS, plural, count, humanize, weekdayDate, buildingName, personName } from '../lib/format';
 import ChannelMark from '../components/ChannelMark';
 import type { BookingChannel } from '../lib/types';
 import { Select } from '../components/Select';
@@ -335,7 +335,7 @@ const KPI_FLEX = 'min-w-0';
 const NUM = 'tabular-nums whitespace-nowrap';
 const TOP_COLUMNS: Column<PortfolioRow>[] = [
   { key: 'unit', label: 'Unit', value: u => u.unitNumber, text: u => `${u.unitNumber} ${u.propertyName}`, exportValue: u => u.unitNumber,
-    hideable: false, width: 190, sub: u => u.propertyName,
+    hideable: false, width: 190, sub: u => buildingName(u.propertyName),
     render: u => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block">{u.unitNumber}</span> },
   { key: 'occupancy', label: 'Occupancy', type: 'number', value: u => u.occupancy, width: 90, render: u => <span className={NUM}>{u.occupancy.toFixed(1)}%</span> },
   { key: 'adr', label: 'Avg nightly price', type: 'money', value: u => u.adr, width: 90, render: u => <span className={NUM}>{rm(u.adr)}</span> },
@@ -406,7 +406,7 @@ export default function DashboardPage() {
 
   // Average occupancy per building, highest first.
   const buildings = Object.values(allRows.reduce<Record<string, { name: string; sum: number; n: number }>>((acc, r) => {
-    const b = acc[r.propertyName] ?? (acc[r.propertyName] = { name: r.propertyName, sum: 0, n: 0 });
+    const b = acc[r.propertyName] ?? (acc[r.propertyName] = { name: buildingName(r.propertyName), sum: 0, n: 0 });
     b.sum += r.occupancy; b.n += 1; return acc;
   }, {})).map(b => ({ name: b.name, occupancy: b.sum / b.n, units: b.n })).sort((a, b) => b.occupancy - a.occupancy);
   const channelRows = channels.data?.channels ?? [];
@@ -444,7 +444,7 @@ export default function DashboardPage() {
     const ex = notify;
     const owner = ex.owner!;
     resolve(ex.id);
-    toast({ tone: 'success', title: 'Owner notified.', body: `${owner.name} was sent the blocked-unit notice.` });
+    toast({ tone: 'success', title: 'Owner notified.', body: `${personName(owner.name)} was sent the blocked-unit notice.` });
     setNotify(null);
     api.post(`/owners/${owner.id}/notify`, {
       unitLabel: ex.unitLabel, reason: ex.reason, datesBlocked: ex.datesBlocked,
@@ -659,7 +659,7 @@ export default function DashboardPage() {
           renderCard={u => (
             <span className="flex items-center justify-between gap-3">
               <span className="flex flex-col gap-px min-w-0">
-                <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber} <span className="font-normal text-meta text-muted-ink">· {u.propertyName}</span></span>
+                <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{u.unitNumber} <span className="font-normal text-meta text-muted-ink">· {buildingName(u.propertyName)}</span></span>
                 <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{u.occupancy.toFixed(1)}% occupied · Avg nightly price {rm(u.adr)}</span>
               </span>
               <span className="flex-none text-copy font-semibold [font-variant-numeric:tabular-nums]">{rm(u.revenue)}</span>
@@ -703,7 +703,7 @@ export default function DashboardPage() {
         busy={false}
         onClose={() => setNotify(null)}
         spec={!notify || !notify.owner ? null : {
-          title: `Send a blocked-unit notice to ${notify.owner.name}?`,
+          title: `Send a blocked-unit notice to ${personName(notify.owner.name)}?`,
           body: 'The owner receives the dates blocked, the reason, the earnings at risk and the expected return date. Nothing is charged and no work is approved by this notice.',
           meta: `${notify.unitLabel ?? ''}${notify.datesBlocked ? ` · ${notify.datesBlocked}` : ''}${notify.revenueAtRisk != null ? ` · ${rm(notify.revenueAtRisk)} at risk` : ''}${notify.expectedReturn ? ` · back ${notify.expectedReturn}` : ''}`,
           confirmLabel: 'Send notice',

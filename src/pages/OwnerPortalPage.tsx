@@ -3,7 +3,7 @@ import { color } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
 import { api, downloadFile, errorMessage } from '../lib/api';
-import { date, percent, rating, monthLabel, count, plural } from '../lib/format';
+import { date, percent, rating, monthLabel, count, plural, buildingName } from '../lib/format';
 import { TASK } from '../lib/vocabulary';
 import type { TaskState, PayoutState } from '../lib/types';
 import { StatusBadge } from '../components/StatusBadge';
@@ -156,7 +156,7 @@ function UnitPhoto({ label }: { label: string }) {
     <div aria-hidden className="relative h-[96px] rounded-xl overflow-hidden flex items-end px-3 py-2.5"
       style={{ background: `linear-gradient(135deg, hsl(${h} 40% 56%), hsl(${h + 35} 34% 40%))` }}>
       <b className="absolute right-3 top-1/2 -translate-y-1/2 font-[Manrope,var(--font-sans)] font-extrabold text-[40px] leading-none tracking-[-0.05em] text-white/30">{monoOf(b)}</b>
-      <small className="relative text-caption font-bold tracking-[0.14em] uppercase text-white/90 [text-shadow:0_1px_2px_rgba(0,0,0,.25)]">{b}</small>
+      <small className="relative text-caption font-bold tracking-[0.14em] uppercase text-white/90 [text-shadow:0_1px_2px_rgba(0,0,0,.25)]">{buildingName(b)}</small>
     </div>
   );
 }
@@ -282,7 +282,7 @@ export default function OwnerPortalPage({ source }: { source?: PortalSource } = 
             const card = (
               <>
                 <UnitPhoto label={u.label} />
-                <span className="px-1.5 pb-1 text-copy font-semibold text-ink [overflow-wrap:anywhere]">{u.label}</span>
+                <span className="px-1.5 pb-1 text-copy font-semibold text-ink [overflow-wrap:anywhere]">{buildingName(u.label)}</span>
               </>
             );
             return st.sample
@@ -347,7 +347,7 @@ export default function OwnerPortalPage({ source }: { source?: PortalSource } = 
         <section className={cx(CARD, 'p-5 flex flex-col gap-1')}>
           <span className="text-heading font-semibold tracking-[-0.01em]">Earnings over time</span>
           <span className="text-meta text-muted-ink">
-            Net Payout to Owner, RM · {trend.data ? `last ${trend.data.months} months · ` : ''}{trend.data?.unitLabel ?? st.unitsLabel}
+            Net Payout to Owner, RM · {trend.data ? `last ${trend.data.months} months · ` : ''}{trend.data?.unitLabel ? buildingName(trend.data.unitLabel) : st.unitsLabel}
           </span>
           {points.length ? <TrendChart points={points} /> : !trend.data ? null : (
             <EmptyState bare icon="ChartLine" title="No earnings yet" body="Earnings appear after your first statement." />
@@ -421,7 +421,7 @@ export default function OwnerPortalPage({ source }: { source?: PortalSource } = 
         spec={!approve ? null : {
           title: `Approve ${moneyString(approve.quotedAmount ?? 0, 'exact')} for ${approve.title.toLowerCase()}?`,
           body: 'The Conts will schedule the work and deduct the amount from your next statement.',
-          meta: [`Quoted ${date(approve.reportedAt)}`, approve.vendorName && `by ${approve.vendorName}`, approve.unitLabel].filter(Boolean).join(' · '),
+          meta: [`Quoted ${date(approve.reportedAt)}`, approve.vendorName && `by ${approve.vendorName}`, buildingName(approve.unitLabel)].filter(Boolean).join(' · '),
           confirmLabel: 'Approve quote', busyLabel: 'Approving…', onConfirm: doApprove,
         }}
       />
@@ -463,7 +463,7 @@ function StatementBreakdown({ statementId, source }: { statementId: string; sour
               >
                 <span className="flex items-center gap-2 min-w-0">
                   <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size="sm" color="var(--color-muted-ink)" />
-                  <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{u.label}</span>
+                  <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{buildingName(u.label)}</span>
                 </span>
                 <MoneyText sen={u.net} mode="exact" strong className="text-copy" />
               </button>
@@ -471,7 +471,7 @@ function StatementBreakdown({ statementId, source }: { statementId: string; sour
 
             {open && (
               <div className={multi ? 'px-5 pb-4 pt-0' : 'px-5 py-4'}>
-                {!multi && <div className="text-copy font-medium mb-2.5">{u.label}</div>}
+                {!multi && <div className="text-copy font-medium mb-2.5">{buildingName(u.label)}</div>}
                 <div className="flex flex-col">
                   {u.lines.map((l, i) => (
                     <div key={i} className="flex items-center justify-between gap-3 py-2 [border-bottom:1px_solid_var(--color-line-soft)]">
@@ -499,7 +499,7 @@ function StatementBreakdown({ statementId, source }: { statementId: string; sour
 
 /** Owner-safe, factual language only — no internal shorthand (guide 15.2). */
 function issueLine(i: HealthIssue, showUnit: boolean): string {
-  const where = showUnit ? `${i.unitLabel}. ` : '';
+  const where = showUnit ? `${buildingName(i.unitLabel)}. ` : '';
   if (i.state === 'waiting') {
     return `${where}Quoted ${i.quotedAmount != null ? moneyString(i.quotedAmount, 'exact') : ''}${i.vendorName ? ` by ${i.vendorName}` : ''} on ${date(i.reportedAt)}. Your approval is needed.`;
   }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { rm, amount, dateShort, monthLabel, weekdayDate, nights as nightsLabel } from '../../lib/format';
+import { rm, amount, dateShort, monthLabel, weekdayDate, nights as nightsLabel, buildingName } from '../../lib/format';
 import Icon from '../../components/Icon';
 import ChannelMark from '../../components/ChannelMark';
 import { addDays, daysBetween } from './model';
@@ -72,7 +72,7 @@ export function OwnerPhone({ platform, data, today }: { platform: 'ios' | 'andro
         {tab === 'cal' && (
           <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--sc-page)', margin: '-8px -18px 0', padding: '8px 18px 0', borderBottom: '1px solid var(--sc-seg)' }}>
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 10 }}>
-              {UNITS.map((x, k) => <button key={x.id} type="button" className="sc-chip sm" style={{ flexShrink: 0 }} aria-pressed={unit === k} onClick={() => setUnit(k)}>{x.unit}</button>)}
+              {UNITS.map((x, k) => <button key={x.id} type="button" className="sc-chip sm" style={{ flexShrink: 0 }} aria-pressed={unit === k} onClick={() => setUnit(k)}>{buildingName(x.unit)}</button>)}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', paddingBottom: 6 }}>{['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: 'var(--sc-faint)' }}>{d}</div>)}</div>
           </div>
@@ -98,14 +98,14 @@ export function OwnerPhone({ platform, data, today }: { platform: 'ios' | 'andro
                 <div key={x.id} style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <Photo place={buildingOf(x.unit)} caption style={{ width: '100%', height: 130, borderRadius: 14 }} />
                   <div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{x.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--sc-muted)', marginTop: -4 }}>{x.unit} · {occupancy(data.stays, [x.id], monthStartOf(today.slice(0, 7)), addDays(monthStartOf(monthShift(today, 1)), 0))}% in {monthLabel(today).slice(0, 3)}</div>
+                  <div style={{ fontSize: 12, color: 'var(--sc-muted)', marginTop: -4 }}>{buildingName(x.unit)} · {occupancy(data.stays, [x.id], monthStartOf(today.slice(0, 7)), addDays(monthStartOf(monthShift(today, 1)), 0))}% in {monthLabel(today).slice(0, 3)}</div>
                 </div>
               ))}
             </div>
             <div style={{ fontSize: 15, fontWeight: 700, marginTop: 4 }}>Recent 5-star reviews</div>
             {data.reviews.slice(0, 3).map((r, k) => (
               <div key={k} className="sc-phone-card" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: -8 }}>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><div className="sc-avatar" style={{ width: 34, height: 34, fontSize: 12, background: `var(--sc-tint-${k})` }}>{r.guest[0]}</div><div><div style={{ fontSize: 13, fontWeight: 700 }}>{r.guest}</div><div style={{ fontSize: 11, color: 'var(--sc-muted)' }}>{dateShort(r.from)} – {dateShort(r.to)} · {UNITS.find(x => x.id === r.unitId)!.unit}</div></div></div>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><div className="sc-avatar" style={{ width: 34, height: 34, fontSize: 12, background: `var(--sc-tint-${k})` }}>{r.guest[0]}</div><div><div style={{ fontSize: 13, fontWeight: 700 }}>{r.guest}</div><div style={{ fontSize: 11, color: 'var(--sc-muted)' }}>{dateShort(r.from)} – {dateShort(r.to)} · {buildingName(UNITS.find(x => x.id === r.unitId)!.unit)}</div></div></div>
                 <Stars />
                 <div style={{ fontSize: 13, lineHeight: 1.5 }}>{r.text}</div>
               </div>
@@ -124,7 +124,7 @@ export function OwnerPhone({ platform, data, today }: { platform: 'ios' | 'andro
               <button key={c.id} type="button" className="sc-phone-card" onClick={() => setSub({ type: 'case', id: c.id })} style={{ display: 'flex', flexDirection: 'column', gap: 6, cursor: 'pointer', textAlign: 'left', marginTop: -6 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}><span style={{ fontSize: 12, fontWeight: 700, color: 'var(--sc-muted)' }}>{c.id} · {at(c.trail[0].at)}</span><span className={`sc-status ${c.done ? 'ok' : 'open'}`} style={{ fontSize: 11, padding: '3px 9px' }}>{c.done ? 'Resolved' : 'In progress'}</span></div>
                 <div style={{ fontSize: 15, fontWeight: 700 }}>{c.title}</div>
-                <div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{UNITS.find(x => x.id === c.unitId)!.unit} · {c.cat}</div>
+                <div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{buildingName(UNITS.find(x => x.id === c.unitId)!.unit)} · {c.cat}</div>
               </button>
             ))}
             {data.cases.filter(c => c.done).length > 3 && <button type="button" className="sc-chip" style={{ alignSelf: 'center', marginTop: -6 }} onClick={() => setMoreDone(v => !v)}>{moreDone ? 'Show fewer' : `Show more (${data.cases.filter(c => c.done).length - 3})`}</button>}
@@ -189,7 +189,7 @@ export function OwnerPhone({ platform, data, today }: { platform: 'ios' | 'andro
             {sub.type === 'stay' && <StayPage s={sub.s} today={today} />}
             {kase && (
               <>
-                <div style={{ padding: '8px 0 4px' }}><div style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.01em' }}>{kase.title}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)', marginTop: 2 }}>{UNITS.find(x => x.id === kase.unitId)!.unit} · {kase.cat}</div></div>
+                <div style={{ padding: '8px 0 4px' }}><div style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.01em' }}>{kase.title}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)', marginTop: 2 }}>{buildingName(UNITS.find(x => x.id === kase.unitId)!.unit)} · {kase.cat}</div></div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
                   {[['Status', kase.done ? 'Resolved' : 'In progress', kase.done ? 'var(--sc-green-ink)' : 'var(--sc-amber-ink)'], ['Time to fix', kase.ttf, ''], ['Operator', kase.operator.split(' (')[0], '']].map(([l, v, c]) => <div key={l} style={{ background: 'var(--sc-surface)', borderRadius: 14, padding: 12 }}><div style={{ fontSize: 11, color: 'var(--sc-muted)' }}>{l}</div><div style={{ fontSize: 13, fontWeight: 700, color: c || undefined }}>{v}</div></div>)}
                 </div>
@@ -268,7 +268,7 @@ function StayPage({ s, today }: { s: SampleStay; today: string }) {
         </div>
         <div style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.01em', marginTop: 6 }}>{s.guests > 1 ? `${s.guest}'s party of ${s.guests}` : s.guest}</div>
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--sc-ink-2)' }}>{dateShort(s.checkIn)} – {dateShort(s.checkOut)} · {nightsLabel(n)}</div>
-        <div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>{u.unit} · {u.name}</div>
+        <div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>{buildingName(u.unit)} · {u.name}</div>
         <span className="sc-status" style={{ marginTop: 6, fontSize: 11, background: st === 'completed' ? 'var(--sc-seg)' : 'var(--color-primary-soft)', color: st === 'completed' ? 'var(--sc-ink-2)' : 'var(--color-primary-ink)' }}>{STATUS_WORD[st]}</span>
       </div>
       <div className="sc-phone-white" style={{ display: 'grid', gridTemplateColumns: '1fr 1px 1fr', gap: 14 }}>

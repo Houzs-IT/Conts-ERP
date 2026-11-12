@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { cx } from '../lib/design-tokens';
-import { amount, percent, plural } from '../lib/format';
+import { amount, percent, plural, buildingName, personName } from '../lib/format';
 import { StatusBadge } from '../components/StatusBadge';
 import { Segmented } from '../components/Metric';
 import { CloseButton } from '../components/CloseButton';
@@ -99,7 +99,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
           <div className="min-w-0">
             <div className="text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink">{GROUP_NAME[r.group]}{r.contractCode && ` · ${r.contractCode}`}</div>
             <h2 id="owner-overall-unit" className="text-title font-semibold truncate">{r.code}</h2>
-            <div className="text-meta text-muted-ink truncate">{r.building} · {r.ownerName}</div>
+            <div className="text-meta text-muted-ink truncate">{buildingName(r.building)} · {personName(r.ownerName)}</div>
             <div className="mt-1.5"><StatusBadge size="sm" tone={st.tone} label={st.label} /></div>
           </div>
           <CloseButton onClick={onClose} />
@@ -206,7 +206,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
               <span className="text-muted-ink">Gain / Loss vs average<span className="ml-1.5 text-meta text-faint">{signed(Math.round(avg(peers, x => x.gainLoss)))}</span></span>
               {delta(r.gainLoss, avg(peers, x => x.gainLoss), signed(Math.round(r.gainLoss - avg(peers, x => x.gainLoss))))}
             </div>
-            <Line label="Same building average" note={`${r.building} · ${plural(building.length, 'unit')}`}
+            <Line label="Same building average" note={`${buildingName(r.building)} · ${plural(building.length, 'unit')}`}
               value={signed(Math.round(avg(building, x => x.gainLoss)))} tone={avg(building, x => x.gainLoss) < 0 ? 'text-danger' : 'text-success'} />
           </Section>
         </>}

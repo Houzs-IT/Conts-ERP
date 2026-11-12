@@ -5,7 +5,7 @@ import { EmptyState } from '../../components/States';
 import { StaleBanner, TableSkeleton } from '../../components/DataState';
 import Icon from '../../components/Icon';
 import { useApi } from '../../lib/useApi';
-import { MONTHS, plural } from '../../lib/format';
+import { MONTHS, plural, buildingName } from '../../lib/format';
 import { cx, TONE } from '../../lib/design-tokens';
 import { useUrlState, FilterSelect } from '../finance/listKit';
 import { ListToolbar } from '../../components/ListToolbar';
@@ -34,7 +34,7 @@ export function ReviewHealth() {
   const q = new URLSearchParams(Object.entries({ unitId, propertyId: unitId ? '' : propertyId, months }).filter(([, v]) => v) as [string, string][]);
   const { data, error, reload } = useApi<Health>(`/reviews/health?${q}`);
   const places = useApi<{ data: PlaceRow[] }>('/reviews/units');
-  const buildings = [...new Map((places.data?.data ?? []).filter(p => p.propertyId).map(p => [p.propertyId!, p.propertyName ?? ''])).entries()];
+  const buildings = [...new Map((places.data?.data ?? []).filter(p => p.propertyId).map(p => [p.propertyId!, buildingName(p.propertyName ?? '')])).entries()];
   const units = (places.data?.data ?? []).filter(p => !propertyId || p.propertyId === propertyId);
 
   const bars = (data?.trend ?? []).map((m, i, arr) => {

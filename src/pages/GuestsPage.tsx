@@ -23,7 +23,7 @@ import { useApi } from '../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { deliveryToast, stayPhase } from '../lib/bookingStatus';
-import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, todayMyt, greetName, titleCase } from '../lib/format';
+import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, todayMyt, greetName, buildingName, personName } from '../lib/format';
 import { phone, phoneCountries } from '../lib/phone';
 import { Select, Menu } from '../components/Select';
 import { ListToolbar, PhoneCard, type ToolbarFilter } from '../components/ListToolbar';
@@ -310,7 +310,7 @@ export default function GuestsPage() {
     setBusy(true);
     try {
       const r = await api.post<{ taskCreated: boolean }>(`/reservations/${m.reservationId}/prepare`, {});
-      toast({ tone: 'success', title: r.taskCreated ? `A cleaning job was added for ${m.propertyName} ${m.unitNumber}.` : `A cleaning job is already open for ${m.propertyName} ${m.unitNumber}.`,
+      toast({ tone: 'success', title: r.taskCreated ? `A cleaning job was added for ${buildingName(m.propertyName)} ${m.unitNumber}.` : `A cleaning job is already open for ${buildingName(m.propertyName)} ${m.unitNumber}.`,
         body: 'Nothing was sent to the guest. Send access details once the unit is Ready.' });
       reloadAll();
     } catch (e) { toast({ tone: 'critical', title: 'Cleaning job not added.', body: failMessage(e) }); }
@@ -331,7 +331,7 @@ export default function GuestsPage() {
     setBusy(true);
     try {
       await api.patch(`/reservations/${m.reservationId}`, { state: 'checked_in' });
-      toast({ tone: 'success', title: `${g.fullName} checked in.`, body: `${m.propertyName} ${m.unitNumber} is now occupied.` });
+      toast({ tone: 'success', title: `${g.fullName} checked in.`, body: `${buildingName(m.propertyName)} ${m.unitNumber} is now occupied.` });
       reloadAll();
     } catch (e) { toast({ tone: 'critical', title: 'Not checked in.', body: failMessage(e) }); }
     setBusy(false);
@@ -342,7 +342,7 @@ export default function GuestsPage() {
     setBusy(true);
     try {
       const r = await api.patch<{ effects?: { turnoverCreated?: boolean } }>(`/reservations/${m.reservationId}`, { state: 'checked_out' });
-      toast({ tone: 'success', title: `${g.fullName} checked out.`, body: r?.effects?.turnoverCreated ? `A cleaning job was added for ${m.propertyName} ${m.unitNumber}.` : `${m.propertyName} ${m.unitNumber} already had a cleaning job planned.` });
+      toast({ tone: 'success', title: `${g.fullName} checked out.`, body: r?.effects?.turnoverCreated ? `A cleaning job was added for ${buildingName(m.propertyName)} ${m.unitNumber}.` : `${buildingName(m.propertyName)} ${m.unitNumber} already had a cleaning job planned.` });
       setCheckout(null);
       reloadAll();
     } catch (e) { toast({ tone: 'critical', title: 'Not checked out.', body: failMessage(e) }); } finally { setBusy(false); }
@@ -460,7 +460,7 @@ export default function GuestsPage() {
         onClose={() => setCheckout(null)}
         spec={!checkout?.movement ? null : {
           title: `Check out ${checkout.fullName}?`,
-          body: `${checkout.movement.propertyName} ${checkout.movement.unitNumber} moves to Dirty and the reservation is closed.`,
+          body: `${buildingName(checkout.movement.propertyName)} ${checkout.movement.unitNumber} moves to Dirty and the reservation is closed.`,
           meta: 'A cleaning job is added if the unit has none planned.',
           confirmLabel: 'Check out',
           busyLabel: 'Checking out…',
@@ -600,7 +600,7 @@ function StayRow({ s, last, onOpen }: { s: Stay; last: boolean; onOpen: () => vo
         className="w-full text-left [font:inherit] bg-transparent border-none cursor-pointer hover:bg-page flex items-center gap-[14px] py-[13px] px-5 flex-wrap">
         <ChannelMark ch={s.channel} size={24} />
         <div className="flex flex-col gap-[2px] min-w-[150px] flex-1">
-          <span className="text-copy font-medium text-ink">{s.propertyName} {s.unitNumber}</span>
+          <span className="text-copy font-medium text-ink">{buildingName(s.propertyName)} {s.unitNumber}</span>
           <span className="text-meta text-muted-ink">{dateRange(s.checkIn, s.checkOut)} · {fmtNights(s.nights)}{s.externalRef ? ` · ${s.externalRef}` : ''}{s.rating != null ? ` · rated ${s.rating.toFixed(1)}` : ''}</span>
         </div>
         <span className="flex flex-col items-end min-w-[92px] max-w-[190px]">
@@ -704,7 +704,7 @@ function NotesAndTags({ g, onSaved }: { g: Guest; onSaved: () => void }) {
   const toggle = async (t: string) => {
     const had = g.manualTags.includes(t);
     const label = t === 'vip' ? 'VIP' : 'Blacklist';
-    const name = titleCase(g.fullName);
+    const name = personName(g.fullName);
     const ok = await ask(had
       ? { title: `Remove the ${label} tag from ${name}?`, confirmLabel: `Remove ${label}`, danger: false }
       : { title: `Tag ${name} as ${label}?`, body: 'The tag shows on this guest everywhere until someone removes it.', confirmLabel: `Tag ${label}`, danger: t === 'blacklist' });
@@ -763,7 +763,7 @@ function MovementStrip({ g, busy, onPrepare, onSendAccess, onCheckIn, onCheckOut
         <ChannelMark ch={m.channel} size={24} />
         <div className="flex flex-col gap-[2px] min-w-0 flex-1">
           <span className="text-[16px] font-semibold tracking-[-0.01em]">{heading}</span>
-          <span className="text-meta text-muted-ink">{m.propertyName} {m.unitNumber} · {fmtGuests(m.guestsCount)} · {fmtNights(m.nights)}</span>
+          <span className="text-meta text-muted-ink">{buildingName(m.propertyName)} {m.unitNumber} · {fmtGuests(m.guestsCount)} · {fmtNights(m.nights)}</span>
         </div>
         <div className="flex items-center gap-[7px]">
           {m.checkIn && m.checkOut ? <StatusBadge entity="stay" value={stayPhase({ state: m.state, checkIn: m.checkIn, checkOut: m.checkOut })} size="sm" /> : <StatusBadge entity="booking" value={m.state} size="sm" />}

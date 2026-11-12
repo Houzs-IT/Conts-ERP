@@ -5,7 +5,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import Icon from '../components/Icon';
 import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
-import { rm, percent, rating as fmtRating, todayMyt, monthLabel, plural, count, titleCase } from '../lib/format';
+import { rm, percent, rating as fmtRating, todayMyt, monthLabel, plural, count, buildingName, personName } from '../lib/format';
 import { Button } from '../components/Button';
 import { StatTile, Segmented } from '../components/Metric';
 import { Select } from '../components/Select';
@@ -66,7 +66,7 @@ function BuildingTile({ b, i, money, onOpen }: { b: BuildingCard; i: number; mon
       <span className="relative flex flex-col gap-3 p-[18px]">
         <span className="flex items-end justify-between gap-3">
           <span className="flex flex-col gap-[3px] min-w-0">
-            <span className="text-heading leading-tight font-semibold text-white whitespace-nowrap overflow-hidden text-ellipsis">{b.name}</span>
+            <span className="text-heading leading-tight font-semibold text-white whitespace-nowrap overflow-hidden text-ellipsis">{buildingName(b.name)}</span>
             <span className="text-meta text-on-dark">{plural(b.units, 'unit')}{b.issues > 0 ? ` · ${b.issues} with exceptions` : ''}</span>
           </span>
           <span className="text-headline leading-none font-semibold tabular-nums" style={{ color: occColour(b.occupancy) }}>{percent(b.occupancy)}</span>
@@ -110,7 +110,7 @@ export default function PortfolioPage() {
     const m = new Map<string, { id: string; name: string; n: number }>();
     for (const r of rows) {
       const id = r.propertyId ?? r.propertyName;
-      const b = m.get(id) ?? { id, name: r.propertyName, n: 0 };
+      const b = m.get(id) ?? { id, name: buildingName(r.propertyName), n: 0 };
       b.n++; m.set(id, b);
     }
     return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -143,7 +143,7 @@ export default function PortfolioPage() {
     const m = new Map<string, { id: string; name: string; units: number; nights: number; revenue: number; issues: number }>();
     for (const r of rows) {
       const id = r.propertyId ?? r.propertyName;
-      const b = m.get(id) ?? { id, name: r.propertyName, units: 0, nights: 0, revenue: 0, issues: 0 };
+      const b = m.get(id) ?? { id, name: buildingName(r.propertyName), units: 0, nights: 0, revenue: 0, issues: 0 };
       b.units++; b.nights += r.nights ?? (r.occupancy * days) / 100; b.revenue += r.revenue; if (r.exception) b.issues++;
       m.set(id, b);
     }
@@ -156,10 +156,10 @@ export default function PortfolioPage() {
 
   const columns = useMemo<Column<PortfolioRow>[]>(() => [
     { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, exportValue: r => `${r.propertyName} ${r.unitNumber}`,
-      hideable: false, width: 180, sub: r => r.propertyName,
+      hideable: false, width: 180, sub: r => buildingName(r.propertyName),
       render: r => <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis block" title={r.unitNumber}>{r.unitNumber}</span> },
-    { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150 },
-    { key: 'owner', label: 'Owner', value: r => titleCase(r.ownerName), width: 150 },
+    { key: 'building', label: 'Building', value: r => buildingName(r.propertyName), hidden: true, width: 150 },
+    { key: 'owner', label: 'Owner', value: r => personName(r.ownerName), width: 150 },
     { key: 'nights', label: 'Nights', type: 'number', value: r => r.nights ?? null, hidden: true, width: 80 },
     { key: 'occupancy', label: 'Occupancy', type: 'number', value: r => r.occupancy, width: 100,
       render: r => <span className={NUM}>{percent(r.occupancy)}</span> },

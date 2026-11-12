@@ -7,7 +7,7 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { DateField } from '../../components/inputs/DateField';
 import { StaleBanner } from '../../components/DataState';
 import { useApi } from '../../lib/useApi';
-import { count, date, dateRange, plural } from '../../lib/format';
+import { count, date, dateRange, plural, buildingName } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { channelLabel } from '../../components/ChannelMark';
 import { useUrlState, FilterSelect } from '../finance/listKit';
@@ -42,7 +42,7 @@ export function OutstandingStays() {
   const { data, loading, error, reload } = useApi<Payload>(`/reviews/unreviewed?${q}`);
   const places = useApi<{ data: PlaceRow[] }>('/reviews/units');
   const t = data?.totals;
-  const buildings = [...new Map((places.data?.data ?? []).filter(p => p.propertyId).map(p => [p.propertyId!, p.propertyName ?? ''])).entries()];
+  const buildings = [...new Map((places.data?.data ?? []).filter(p => p.propertyId).map(p => [p.propertyId!, buildingName(p.propertyName ?? '')])).entries()];
   const units = (places.data?.data ?? []).filter(p => !f.propertyId || p.propertyId === f.propertyId);
   const set = (patch: Record<string, string | null>) => url.set({ ...patch, page: null });
   const windows = data ? Object.entries(data.windowDays).map(([c, d]) => `${channelLabel(c as BookingChannel)} ${d} days`).join(', ') : '';
@@ -51,7 +51,7 @@ export function OutstandingStays() {
     { key: 'guest', label: 'Guest', value: r => r.guestName, hideable: false, phone: 'title', width: 160,
       render: r => <Link to={`/reservations/bookings?open=${encodeURIComponent(r.reservationId)}`} className="font-medium text-ink no-underline hover:underline" onClick={e => e.stopPropagation()}>{r.guestName}</Link>,
       sub: r => r.bookingRef ?? '' },
-    { key: 'unit', label: 'Unit', value: r => `${r.propertyName ?? ''} ${r.unitNumber}`.trim(), render: r => r.unitNumber, sub: r => r.propertyName ?? '', width: 150 },
+    { key: 'unit', label: 'Unit', value: r => `${r.propertyName ?? ''} ${r.unitNumber}`.trim(), render: r => r.unitNumber, sub: r => buildingName(r.propertyName ?? ''), width: 150 },
     { key: 'channel', label: 'Channel', type: 'channel', value: r => r.channel, width: 110 },
     { key: 'stay', label: 'Stay', type: 'date', value: r => r.checkOut, render: r => dateRange(r.checkIn, r.checkOut), width: 200 },
     { key: 'days', label: 'Since checkout', type: 'number', value: r => r.daysSinceCheckout, align: 'right', width: 110, phone: 'right',
@@ -109,7 +109,7 @@ export function OutstandingStays() {
                   <button key={u.unitId} type="button" onClick={() => set({ unitId: on ? null : u.unitId })} aria-pressed={on}
                     className={cx('inline-flex items-center gap-2 h-8 px-3 rounded-full border border-solid cursor-pointer [font-family:inherit] text-meta',
                       on ? 'border-black bg-black text-white' : 'border-line bg-card text-ink')}>
-                    <span className="truncate max-w-[180px]">{u.propertyName} {u.unitNumber}</span>
+                    <span className="truncate max-w-[180px]">{buildingName(u.propertyName)} {u.unitNumber}</span>
                     <span className="font-semibold tabular-nums">{u.withoutReview}</span>
                     {u.windowOpen > 0 && <span className={on ? 'text-on-dark' : 'text-muted-ink'}>· {u.windowOpen} open</span>}
                   </button>

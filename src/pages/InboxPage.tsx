@@ -12,7 +12,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, errorMessage, ApiFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
-import { relative, time, date as fmtDate, dateRange, count, guests as fmtGuests } from '../lib/format';
+import { relative, time, date as fmtDate, dateRange, count, guests as fmtGuests, buildingName } from '../lib/format';
 import { Button } from '../components/Button';
 import { deliveryToast } from '../lib/bookingStatus';
 import { refreshNavCounts } from '../lib/navBadges';
@@ -46,7 +46,7 @@ type View = 'all' | 'unread' | 'inquiry';
 const IMAGE = /\.(png|jpe?g|gif|webp|heic)(\?|$)|placehold\.co/i;
 
 function unitLine(t: ThreadHead) {
-  const unit = [t.propertyName, t.unitNumber].filter(Boolean).join(' ');
+  const unit = [buildingName(t.propertyName), t.unitNumber].filter(Boolean).join(' ');
   const stay = t.checkIn && t.checkOut ? dateRange(t.checkIn, t.checkOut) : null;
   return [unit || null, stay ?? (t.inquiry ? 'Inquiry, no reservation yet' : null)].filter(Boolean).join(' · ');
 }
@@ -301,7 +301,7 @@ export default function InboxPage() {
                   <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                     <span className="text-heading font-semibold tracking-[-0.01em] [overflow-wrap:anywhere]">{open.guestName ?? 'Unknown guest'}</span>
                     <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">
-                      {[open.propertyName, open.unitNumber].filter(Boolean).join(' ') || 'Unit not known'}
+                      {[buildingName(open.propertyName), open.unitNumber].filter(Boolean).join(' ') || 'Unit not known'}
                       {open.checkIn && open.checkOut ? ` · ${dateRange(open.checkIn, open.checkOut)}` : ''}
                       {open.guestsCount ? ` · ${fmtGuests(open.guestsCount)}` : ''}
                     </span>

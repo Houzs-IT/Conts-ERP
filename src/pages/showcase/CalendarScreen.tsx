@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApi } from '../../lib/useApi';
-import { rm, count, monthLabel, weekdayDate, weekdayShort, dateShort, year, nights as nightsLabel } from '../../lib/format';
+import { rm, count, monthLabel, weekdayDate, weekdayShort, dateShort, year, nights as nightsLabel, buildingName } from '../../lib/format';
 import ChannelMark from '../../components/ChannelMark';
 import Icon from '../../components/Icon';
 import { addDays, daysBetween, type CalendarData, type CalendarStay, type Listing } from './model';
@@ -90,7 +90,7 @@ export function ReservationDrawer({ stay, listing, showPrice, onClose }: { stay:
         <div style={{ padding: '14px 0', borderBottom: '1px solid var(--sc-subtle)' }}>
           <div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>Property</div>
           <div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{listing?.name}</div>
-          <div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>{listing?.unit}</div>
+          <div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>{buildingName(listing?.unit)}</div>
         </div>
         <div className="sc-drawer-row"><span>Check-in</span><span>{weekdayDate(stay.checkIn)}, 15:00</span></div>
         <div className="sc-drawer-row"><span>Checkout</span><span>{weekdayDate(stay.checkOut)}, 11:00</span></div>
@@ -153,7 +153,7 @@ export function CalendarScreen({ listings, today, listingsShown, showPrice, setS
           <div style={{ background: 'var(--sc-surface)', border: '1px solid var(--sc-line)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <Photo id={mProp?.photoId} place={buildingOf(mProp?.unit ?? '')} fine style={{ width: 48, height: 48, borderRadius: 10 }} />
-              <div style={{ minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{mProp?.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{mProp?.unit}</div></div>
+              <div style={{ minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{mProp?.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{buildingName(mProp?.unit)}</div></div>
             </div>
             <div style={{ borderTop: '1px solid var(--sc-subtle)', paddingTop: 18 }}>
               <div className="sc-d40" style={{ color: 'var(--sc-teal)' }}>{ms.occupancy}%</div>
@@ -195,7 +195,7 @@ function Timeline({ data, rows, showPrice, selected, onSelect }: { data: Calenda
           return (
             <div key={l.id} style={{ height: 60, borderBottom: '1px solid var(--sc-subtle)', display: 'flex', alignItems: 'center', gap: 10, padding: '0 16px' }}>
               <Photo id={l.photoId} place={buildingOf(l.unit)} fine style={{ width: 36, height: 36, borderRadius: 8 }} />
-              <div style={{ minWidth: 0, flex: 1 }}><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</div><div className="ellipsis" style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{l.unit}</div></div>
+              <div style={{ minWidth: 0, flex: 1 }}><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</div><div className="ellipsis" style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{buildingName(l.unit)}</div></div>
               <div className="num" style={{ fontSize: 13, fontWeight: 700, color: 'var(--sc-teal)' }}>{occ}%</div>
             </div>
           );

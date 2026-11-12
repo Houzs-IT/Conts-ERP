@@ -15,7 +15,7 @@ import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
 import { useSession } from '../../lib/session';
 import { areaOpen } from '../../lib/navigation';
-import { count, plural, titleCase } from '../../lib/format';
+import { count, plural, personName } from '../../lib/format';
 import { useUrlState, SearchBox } from '../finance/listKit';
 import { type Owner, type Payload, FALLBACK } from './shared';
 import { mayInviteOwners, mayViewAsOwner, portalAction, portalBadge, portalOf } from './portalAccess';
@@ -118,8 +118,8 @@ function PortalList() {
   const clear = () => url.set({ q: null, access: null });
 
   const columns = useMemo<Column<Owner>[]>(() => [
-    { key: 'owner', label: 'Owner', width: 240, hideable: false, value: o => o.displayName,
-      render: o => <span className="text-copy font-medium truncate block" title={o.displayName}>{titleCase(o.displayName)}</span>, sub: o => o.email || null },
+    { key: 'owner', label: 'Owner', width: 240, hideable: false, value: o => personName(o.displayName),
+      render: o => <span className="text-copy font-medium truncate block" title={o.displayName}>{personName(o.displayName)}</span>, sub: o => o.email || null },
     { key: 'units', label: 'Units', width: 220, value: o => o.units.length, render: o => <span className="truncate block" title={o.units.map(u => u.unitLabel).join(', ')}>{unitsText(o)}</span> },
     { key: 'portal', label: 'Portal', type: 'status', width: 170, value: o => portalBadge(o, true).label, status: o => portalBadge(o, true),
       sub: o => portalBadge(o).hint ?? null },
@@ -128,7 +128,7 @@ function PortalList() {
         <Button size="sm" variant="tertiary" icon={<Icon name="Eye" size="sm" />} onClick={e => { e.stopPropagation(); openPortal(o); }}>View as owner</Button>
       ) : null } satisfies Column<Owner>] : []),
     { key: 'actions', label: '', width: 52, align: 'right' as const, noExport: true, sortable: false, filter: false, hideable: false,
-      render: (o: Owner) => <RowActions name={titleCase(o.displayName)} items={actionsRef.current(o)} /> },
+      render: (o: Owner) => <RowActions name={personName(o.displayName)} items={actionsRef.current(o)} /> },
   ], [viewAs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -156,10 +156,10 @@ function PortalList() {
         renderCard={o => (
           <span className="flex items-center gap-3 min-w-0">
             <span className="flex flex-col gap-[2px] min-w-0 flex-1">
-              <span className="text-copy font-medium truncate">{titleCase(o.displayName)}</span>
+              <span className="text-copy font-medium truncate">{personName(o.displayName)}</span>
               <span className="text-meta text-muted-ink truncate">{unitsText(o)} · {portalBadge(o, true).label}</span>
             </span>
-            <RowActions name={titleCase(o.displayName)} items={actionsRef.current(o)} />
+            <RowActions name={personName(o.displayName)} items={actionsRef.current(o)} />
           </span>
         )}
       />

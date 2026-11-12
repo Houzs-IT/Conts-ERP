@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Field } from '../Field';
 import Icon from '../Icon';
 import { cx } from '../../lib/design-tokens';
-import { plural } from '../../lib/format';
+import { plural, personName } from '../../lib/format';
 import type { AccessChart, Department, PermissionPerson } from '../../lib/types';
 import { GroupToggle } from './GroupToggle';
 import {
@@ -37,7 +37,7 @@ function PersonRow({ person, roleName, isSelected, onOpen }: PersonRowProps) {
       className={cx(LIST_ROW, isSelected ? SELECTED_ROW : 'bg-card', 'cursor-pointer hover:bg-muted')}>
       <span className="flex-1 min-w-0 flex flex-col gap-0.5">
         <span className="flex items-center gap-2 flex-wrap text-copy font-medium">
-          {person.fullName}
+          {personName(person.fullName)}
           {person.customCount > 0 && <span className={TAG} style={CUSTOM_TAG_STYLE}>{person.customCount} custom</span>}
           {!person.isActive && <span className={TAG} style={OFF_TAG_STYLE}>Switched off</span>}
         </span>

@@ -4,7 +4,7 @@ import { Card } from '../../components/Card';
 import Icon from '../../components/Icon';
 import { cx } from '../../lib/design-tokens';
 import type { UnitReadiness } from '../../lib/types';
-import { titleCase } from '../../lib/format';
+import { buildingName, personName } from '../../lib/format';
 import type { Building, Unit } from './shared';
 import { MODEL, PURPOSE_LABEL, codeName } from '../../lib/revenueModel';
 import { useContractTypes } from '../../lib/useContractTypes';
@@ -150,16 +150,16 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                       className="flex items-center gap-2 flex-1 bg-transparent [border:none] cursor-pointer disabled:cursor-default [font-family:inherit] text-copy text-left min-w-0 p-0 text-ink">
                       <span className="[transition:transform_160ms] text-muted-ink flex flex-none" style={{ transform: `rotate(${open ? 90 : 0}deg)` }}><Icon name="ChevronRight" size="sm" /></span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={b.name}>{b.name}</span>
+                        <span className="block text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={b.name}>{buildingName(b.name)}</span>
                         {b.city && <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.city}</span>}
                       </span>
                       <span className="flex-none min-w-[26px] h-[20px] px-1.5 box-border rounded-pill bg-muted text-caption font-semibold text-muted-ink grid place-items-center [font-variant-numeric:tabular-nums]"
                         title={`${us.length} ${us.length === 1 ? 'unit' : 'units'}`}>{us.length}</span>
                     </button>
                     {canEdit && <>
-                      <button onClick={() => onEditBuilding(b)} aria-label={`Edit ${b.name}`} title="Edit building"
+                      <button onClick={() => onEditBuilding(b)} aria-label={`Edit ${buildingName(b.name)}`} title="Edit building"
                         className="hit-target w-[26px] h-[26px] flex-none grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted"><Icon name="Pencil" size="sm" /></button>
-                      <button onClick={() => onAddUnit(b.id)} aria-label={`Add a unit to ${b.name}`} title="Add unit"
+                      <button onClick={() => onAddUnit(b.id)} aria-label={`Add a unit to ${buildingName(b.name)}`} title="Add unit"
                         className="hit-target w-[26px] h-[26px] flex-none grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer text-muted-ink"><Icon name="Plus" size="sm" /></button>
                     </>}
                   </div>
@@ -174,7 +174,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                             {dot(u.id)}
                             <span className="flex-1 min-w-0">
                               <span className={cx('block text-copy whitespace-nowrap overflow-hidden text-ellipsis', on ? 'font-semibold' : 'font-medium')}>{u.unitCode || 'New unit'}</span>
-                              <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName ? titleCase(u.ownerName) : 'No owner yet'}{kids.length ? ` · ${kids.length} sub-unit${kids.length > 1 ? 's' : ''}` : ''}</span>
+                              <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.ownerName ? personName(u.ownerName) : 'No owner yet'}{kids.length ? ` · ${kids.length} sub-unit${kids.length > 1 ? 's' : ''}` : ''}</span>
                             </span>
                             <span className="flex flex-col items-end flex-none text-right">
                               <span className="text-caption font-bold text-gold-ink" title={u.termsLabel ?? (u.revenueModel ? MODEL[u.revenueModel].label : u.pkg)}>{(u.contractCode ? codeName(types, u.contractCode) : null) ?? (u.revenueModel ? MODEL[u.revenueModel].short : u.pkg.replace('Package ', 'Pkg '))}</span>

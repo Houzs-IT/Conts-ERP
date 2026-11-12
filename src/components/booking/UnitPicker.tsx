@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import Icon from '../Icon';
 import { Floating } from '../DataTableParts';
 import { cx } from '../../lib/design-tokens';
+import { buildingName } from '../../lib/format';
 
 /** purpose (0125): a showroom or warehouse takes no reservations, so it is never offered here. */
 export interface PickerUnit { id: string; unitNumber: string; propertyName: string; purpose?: string }
@@ -50,7 +51,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
       <div ref={box} className="relative">
         <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="Search" size="sm" /></span>
         <input id={id} role="combobox" aria-expanded={open} aria-controls={`${id}-list`} aria-autocomplete="list" autoComplete="off"
-          value={open ? q : selected ? `${selected.propertyName} ${selected.unitNumber}` : ''}
+          value={open ? q : selected ? `${buildingName(selected.propertyName)} ${selected.unitNumber}` : ''}
           placeholder={units.length ? placeholder : 'Loading units…'}
           onFocus={() => { setOpen(true); setQ(''); }}
           onChange={e => { setQ(e.target.value); setOpen(true); }}
@@ -67,7 +68,7 @@ export function UnitPicker({ units, value, onChange, label = 'Unit', placeholder
             lastBuilding = u.propertyName;
             return (
               <li key={u.id} role="presentation">
-                {head && <div className="px-2 pt-2 pb-1 text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.propertyName}</div>}
+                {head && <div className="px-2 pt-2 pb-1 text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{buildingName(u.propertyName)}</div>}
                 <div role="option" aria-selected={u.id === value} data-i={i}
                   onMouseDown={e => { e.preventDefault(); pick(u); }} onMouseEnter={() => setActive(i)}
                   className={cx('px-3 py-[7px] rounded-[6px] text-copy cursor-pointer flex items-center justify-between gap-2',

@@ -8,7 +8,7 @@ import Icon from '../../components/Icon';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, downloadFile, errorMessage, notifyFailure } from '../../lib/api';
-import { monthLabel, titleCase, rm } from '../../lib/format';
+import { monthLabel, rm, buildingName } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { PAYERS } from '../../lib/revenueModel';
 import { Field } from '../../components/Field';
@@ -165,7 +165,7 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
                 return (
                   <div key={r.accountId} className="grid grid-cols-[minmax(0,1fr)_112px] sm:grid-cols-[minmax(0,1fr)_120px_140px_150px] gap-x-3 gap-y-2 items-center py-[10px] px-3 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
                     <div className="flex flex-col min-w-0">
-                      <span className="text-copy font-medium truncate" title={r.unitLabel}>{titleCase(r.unitLabel)}</span>
+                      <span className="text-copy font-medium truncate" title={r.unitLabel}>{buildingName(r.unitLabel)}</span>
                       <span className="text-meta text-muted-ink truncate">{r.kindLabel} · {r.accountNo}{r.provider ? ` · ${r.provider}` : ''}{r.recordedElsewhere ? ' · already recorded' : r.paymentRequestNo ? ` · sent for payment (${r.paymentRequestNo})` : r.expenseId ? ' · entered here' : ''}{r.rolled && r.deductMonth ? ` · deducted ${monthLabel(r.deductMonth)}` : !r.expenseId && rollsTo[r.unitId] ? ` · will be deducted ${monthLabel(rollsTo[r.unitId])}` : ''}</span>
                     </div>
                     {fixed(r) ? (
@@ -260,7 +260,7 @@ function NoAccountUnits({ units, lines, setLines, errors, onAdded }: {
           return (
             <div key={u.unitId} className="py-[10px] px-3 flex flex-col gap-2 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
               <span className="flex flex-col min-w-0">
-                <span className="text-copy font-medium truncate" title={u.unitLabel}>{titleCase(u.unitLabel)}</span>
+                <span className="text-copy font-medium truncate" title={u.unitLabel}>{buildingName(u.unitLabel)}</span>
                 <span className="text-meta text-muted-ink">
                   No account on file, a bill can still go in.
                   {(u.recorded ?? []).length > 0 && ` Already recorded this month: ${u.recorded!.map(x => `${kindLabel(x.kind)} ${rm(x.amount)}${x.rolled && x.deductMonth ? ` (deducted ${monthLabel(x.deductMonth)})` : ''}`).join(', ')}.`}
@@ -268,10 +268,10 @@ function NoAccountUnits({ units, lines, setLines, errors, onAdded }: {
               </span>
               {mine.map(l => {
                 const owes = (l.amount ?? 0) > 0 && receiptRequired(l.kind, l.payer);
-                const what = `${titleCase(u.unitLabel)} ${kindLabel(l.kind)}`;
+                const what = `${buildingName(u.unitLabel)} ${kindLabel(l.kind)}`;
                 return (
                   <div key={l.key} className="grid grid-cols-[minmax(0,1fr)_112px] sm:grid-cols-[minmax(0,1fr)_120px_140px_150px] gap-x-3 gap-y-2 items-center">
-                    <Select size="sm" label={`Which bill for ${titleCase(u.unitLabel)}`} className="w-full" value={l.kind}
+                    <Select size="sm" label={`Which bill for ${buildingName(u.unitLabel)}`} className="w-full" value={l.kind}
                       onChange={v => patch(l.key, { kind: v })} options={ACCOUNT_KINDS.filter(k => k.value === l.kind || !taken.has(k.value))} />
                     <MoneyInput aria-label={`${what} amount in ringgit`} valueSen={l.amount} onChangeSen={sen => patch(l.key, { amount: sen })}
                       className="field-input h-[38px]! min-w-0 text-right tabular-nums" />
@@ -317,7 +317,7 @@ function AddAccountForm({ unitId, unitLabel, onCancel, onAdded }: { unitId: stri
     setBusy(true); setFields({});
     try {
       await api.post('/expenses/utility-accounts', { unitId, kind, accountNo: accountNo.trim(), provider: provider.trim() || null });
-      toast({ tone: 'success', title: 'Account added.', body: `${titleCase(unitLabel)} now has a line for its ${ACCOUNT_KINDS.find(k => k.value === kind)?.label ?? kind} bill.` });
+      toast({ tone: 'success', title: 'Account added.', body: `${buildingName(unitLabel)} now has a line for its ${ACCOUNT_KINDS.find(k => k.value === kind)?.label ?? kind} bill.` });
       onAdded();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);

@@ -157,3 +157,10 @@
   .ds-drange .ds-nights { grid-column: 1 / -1; justify-content: flex-start; border-left: 0; border-top: 1px solid var(--color-line-soft); padding: 6px 12px; }
   .ds-drange .ds-nights:empty { display: none; }
 }
+
+/* Tile rows on a phone (StatRow, SystemStats): two across with the hero full width, and a last tile that would sit alone
+   on its row spans it instead (polish 1: Today's fifth tile, Users and roles' fourth). */
+@media (max-width: 639.98px) {
+  .ds-tiles:not(:has(> .dash-hero)) > :last-child:nth-child(odd),
+  .ds-tiles:has(> .dash-hero) > :last-child:nth-child(even) { grid-column: 1 / -1; }
+}

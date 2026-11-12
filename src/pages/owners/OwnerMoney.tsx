@@ -13,7 +13,7 @@ import { useApi } from '../../lib/useApi';
 import { useToast } from '../../components/Toast';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { refreshNavCounts } from '../../lib/navBadges';
-import { rm, monthLabel, titleCase, date as fmtDate, masked } from '../../lib/format';
+import { rm, monthLabel, date as fmtDate, masked, personName } from '../../lib/format';
 import { bankName } from '../../lib/vocabulary';
 import { statusOf } from '../../lib/status';
 import type { PayoutState, StatementState } from '../../lib/types';
@@ -176,19 +176,19 @@ export function StatementSteps({ statementId, unitsLabel, onChanged }: { stateme
       {unpaid && <Button size="sm" variant="secondary" icon={<Icon name="CheckCircle2" size="sm" />} onClick={() => setConfirm('paid')}>Mark paid</Button>}
       {editable && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setAdjusting(true)}>Add adjustment</Button>}
       {adjusting && (
-        <AdjustDialog target={{ ownerName: s.owner.name, unitsLabel, netPayout: s.totals.netPayout }} busy={busy}
+        <AdjustDialog target={{ ownerName: personName(s.owner.name), unitsLabel, netPayout: s.totals.netPayout }} busy={busy}
           onClose={() => { if (!busy) setAdjusting(false); }} onSubmit={(label, sen) => void adjust(label, sen)} />
       )}
       <ConfirmDialog busy={busy} onClose={() => { if (!busy) setConfirm(null); }}
         spec={!confirm ? null : confirm === 'send' ? {
           title: 'Send this statement to the owner?',
           body: 'The owner is emailed and sees it on the portal. A sent statement cannot be edited.',
-          meta: `${rm(s.totals.netPayout)} Net Payout to Owner · ${titleCase(s.owner.name)} · ${monthLabel(s.period)}`,
+          meta: `${rm(s.totals.netPayout)} Net Payout to Owner · ${personName(s.owner.name)} · ${monthLabel(s.period)}`,
           confirmLabel: 'Send', busyLabel: 'Sending...', onConfirm: () => act('send'),
         } : {
           title: 'Mark this owner payout as paid?',
           body: 'Record that the money has reached the owner. The statement becomes Paid.',
-          meta: `${rm(s.payout?.amount ?? 0)} · ${titleCase(s.owner.name)} · ${monthLabel(s.period)}`,
+          meta: `${rm(s.payout?.amount ?? 0)} · ${personName(s.owner.name)} · ${monthLabel(s.period)}`,
           danger: true, confirmLabel: 'Mark paid', busyLabel: 'Saving...', onConfirm: () => act('paid'),
         }} />
     </>

@@ -10,7 +10,7 @@ import { FileDropRow } from '../../components/Attachments';
 import { useToast } from '../../components/Toast';
 import { color } from '../../theme';
 import { api, notifyFailure, downloadFile } from '../../lib/api';
-import { titleCase } from '../../lib/format';
+import { buildingName, personName } from '../../lib/format';
 import { PhoneText } from '../../components/PhoneText';
 import { addressLines, type OwnerAddress, type Owner } from '../owners/shared';
 import { SearchSelect } from '../../components/Select';
@@ -114,7 +114,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
         </Labeled>
         <Labeled label="Building" help={u.parentUnitId ? 'A sub-unit stays in its parent unit\'s building.' : 'Moving a unit takes its sub-units with it.'}>
           <Select label="Building" value={u.buildingId} disabled={!!u.parentUnitId} onChange={v => onChange({ buildingId: v, state: buildings.find(b => b.id === v)?.state ?? u.state })}
-            options={[...buildings].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })).map(b => ({ value: b.id, label: b.name }))} />
+            options={[...buildings].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })).map(b => ({ value: b.id, label: buildingName(b.name) }))} />
         </Labeled>
         <Labeled label="State" help="Set on the building. Edit the building to change it.">
           <ReadOnly>{building?.state ?? u.state}</ReadOnly>
@@ -190,8 +190,8 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
           {canEdit && owners ? (
             <SearchSelect label="Owner" size="md" value={ownerId} placeholder="Search owners"
               onChange={v => onChange({ ownerId: v })}
-              options={owners.map(o => ({ value: o.id, label: titleCase(o.displayName), hint: o.units.length ? `${o.units.length} ${o.units.length === 1 ? 'unit' : 'units'}` : undefined }))} />
-          ) : <ReadOnly>{titleCase(shown?.displayName ?? owner.name)}</ReadOnly>}
+              options={owners.map(o => ({ value: o.id, label: personName(o.displayName), hint: o.units.length ? `${o.units.length} ${o.units.length === 1 ? 'unit' : 'units'}` : undefined }))} />
+          ) : <ReadOnly>{personName(shown?.displayName ?? owner.name)}</ReadOnly>}
         </Labeled>
         <Labeled label="IC / company number">
           <ReadOnly>{ic || 'Not recorded'}</ReadOnly>
@@ -200,7 +200,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
           <ReadOnly>{[bank, account].filter(Boolean).join(' · ') || 'Not recorded'}</ReadOnly>
         </Labeled>
         <Labeled label="Account holder">
-          <ReadOnly>{holder ? titleCase(holder) : 'Not recorded'}</ReadOnly>
+          <ReadOnly>{holder ? personName(holder) : 'Not recorded'}</ReadOnly>
         </Labeled>
       </Grid3>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 -mt-3 mb-[6px]">

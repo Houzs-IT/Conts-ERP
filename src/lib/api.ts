@@ -69,6 +69,14 @@ export function remember(path: string, data: unknown) {
 }
 
 const RETRY_STATUS = new Set([502, 503, 504]);
+/** A read is also tried again after a plain 500: it saved nothing, and a burst of reads (moving quickly between pages)
+ *  can meet a database hiccup that the next try does not (polish 1: Units showed an empty tree until a reload). */
+const RETRY_READ_STATUS = new Set([500, 502, 503, 504]);
+
+/** True for a request the browser or the page cancelled (an AbortController, a page being left): not a failure, so
+ *  nothing should show an error for it. */
+export const isAbort = (e: unknown): boolean =>
+  (e instanceof DOMException || e instanceof Error) && e.name === 'AbortError';
 
 /** Money and document writes: payments, payouts, statements, expenses, credit notes, guest documents, owner adjustments. */
 const ONCE = /^\/(reservations\/[^/]+\/payments(\/[^/]+)?|payouts(\/run)?|statements\/(generate|finalise|send|[^/]+\/adjust)|expenses(\/utilities)?|credit-notes(\/[^/]+)?|guest-documents(\/[^/]+\/void)?|owners\/[^/]+\/adjustments(\/[^/]+)?|payment-vouchers(\/[^/]+)?)$/;
@@ -101,11 +109,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (attempt > 0) await new Promise((r) => setTimeout(r, 300));
     try {
       res = await send();
-    } catch {
+    } catch (e) {
+      // A cancelled request is passed on as it is (useApi ignores it); it is not "could not reach the server".
+      if (isAbort(e) || init?.signal?.aborted) throw e;
       res = undefined;
       continue;
     }
-    if (!RETRY_STATUS.has(res.status)) break;
+    if (!(isRead ? RETRY_READ_STATUS : RETRY_STATUS).has(res.status)) break;
   }
   if (intent) {
     // A 409 with Retry-After is "the first one is still being saved": that one's answer is still to come.

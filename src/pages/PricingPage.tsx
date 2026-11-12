@@ -7,7 +7,7 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { EmptyState } from '../components/States';
 import { Segmented } from '../components/Metric';
 import { useApi } from '../lib/useApi';
-import { rm, plural } from '../lib/format';
+import { rm, plural, buildingName } from '../lib/format';
 import { Select, SearchSelect } from '../components/Select';
 import { usePhone, SearchBox } from './finance/listKit';
 import { TONE, cx } from '../lib/design-tokens';
@@ -101,12 +101,12 @@ export default function PricingPage() {
           <div className="flex gap-4 items-start flex-wrap">
             {phone ? (
               <SearchSelect label="Unit" showLabel className="w-full" placeholder="Search unit or building" value={selected?.unitId ?? ''} onChange={v => v && setSelectedId(v)}
-                options={units.map(u => ({ value: u.unitId, label: u.unitNumber, group: u.propertyName, hint: u.baseRate > 0 ? rm(u.baseRate, { cents: false }) : 'No nightly price' }))} />
+                options={units.map(u => ({ value: u.unitId, label: u.unitNumber, group: buildingName(u.propertyName), hint: u.baseRate > 0 ? rm(u.baseRate, { cents: false }) : 'No nightly price' }))} />
             ) : (
               <Card className="lg:sticky lg:top-0 lg:z-[1]" style={{ flex: '0 1 280px', minWidth: 240, maxWidth: 320 }}>
                 <div className="py-3 px-3 [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-2">
                   <SearchBox label="Search units" placeholder="Search unit or building" value={q} onChange={setQ} />
-                  <Select label="Building" value={building} onChange={setBuilding} placeholder={`All buildings · ${buildings.length}`} options={buildings.map(b => ({ value: b, label: b }))} />
+                  <Select label="Building" value={building} onChange={setBuilding} placeholder={`All buildings · ${buildings.length}`} options={buildings.map(b => ({ value: b, label: buildingName(b) }))} />
                   <span className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink px-1">Units · {listed.length === units.length ? units.length : `${listed.length} of ${units.length}`}</span>
                 </div>
                 <div data-keep-scroll="pricing.units" className="max-h-[70vh] overflow-y-auto overscroll-contain [scrollbar-width:thin]">
@@ -122,7 +122,7 @@ export default function PricingPage() {
                         className={cx('flex flex-col gap-[3px] w-full text-left py-3 px-4 cursor-pointer [font:inherit] [border-bottom:1px_solid_var(--color-line-soft)]',
                           on ? '[border-left:3px_solid_var(--color-gold)] bg-gold-tint' : '[border-left:3px_solid_transparent] bg-transparent')}>
                         <span className="text-copy font-semibold">{u.unitNumber}</span>
-                        <span className="text-meta text-muted-ink">{u.propertyName} · {u.baseRate > 0 ? rm(u.baseRate, { cents: false }) : <span className={TONE.critical.text}>No nightly price</span>}{u.holidayRate ? ` · holiday ${rm(u.holidayRate, { cents: false })}` : ''}</span>
+                        <span className="text-meta text-muted-ink">{buildingName(u.propertyName)} · {u.baseRate > 0 ? rm(u.baseRate, { cents: false }) : <span className={TONE.critical.text}>No nightly price</span>}{u.holidayRate ? ` · holiday ${rm(u.holidayRate, { cents: false })}` : ''}</span>
                         <span className={cx('text-caption', failed ? TONE.critical.text : 'text-faint')}>{syncNote}</span>
                       </button>
                     );

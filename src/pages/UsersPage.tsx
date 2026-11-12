@@ -20,7 +20,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { api, ApiFailure, errorMessage } from '../lib/api';
-import { count, date, plural } from '../lib/format';
+import { count, date, plural, personName } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Department, Tone, UserRole, UserSide } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
@@ -116,7 +116,7 @@ function InviteCell({ u, onResend }: { u: Row; onResend?: () => void }) {
   return (
     <span className="flex items-center gap-2 min-w-0 flex-wrap" onClick={e => e.stopPropagation()}>
       <span className="text-meta text-muted-ink whitespace-nowrap">{u.lastInvitedAt ? `Invited ${date(u.lastInvitedAt)}` : 'Invited, date unknown'}</span>
-      {onResend && <Button size="sm" variant="secondary" icon={<Icon name="Send" size="sm" />} onClick={onResend} aria-label={`Resend invitation to ${u.fullName}`}>Resend</Button>}
+      {onResend && <Button size="sm" variant="secondary" icon={<Icon name="Send" size="sm" />} onClick={onResend} aria-label={`Resend invitation to ${personName(u.fullName)}`}>Resend</Button>}
     </span>
   );
 }
@@ -130,7 +130,7 @@ function managerOptions(staff: Row[], exclude?: string, keep?: string | null) {
   for (const s of list) seen.set(s.fullName, (seen.get(s.fullName) ?? 0) + 1);
   return list.map(s => ({
     value: s.id,
-    label: `${s.fullName}${(seen.get(s.fullName) ?? 0) > 1 ? ` (${s.email})` : ''}${s.isActive ? '' : ' (switched off)'}`,
+    label: `${personName(s.fullName)}${(seen.get(s.fullName) ?? 0) > 1 ? ` (${s.email})` : ''}${s.isActive ? '' : ' (switched off)'}`,
   }));
 }
 
@@ -161,7 +161,7 @@ export default function UsersPage() {
     () => [...added, ...(data?.data ?? [])].map(r => ({ ...r, ...edits[r.id] })),
     [added, data, edits],
   );
-  const nameById = useMemo(() => Object.fromEntries(rows.map(r => [r.id, r.fullName])), [rows]);
+  const nameById = useMemo(() => Object.fromEntries(rows.map(r => [r.id, personName(r.fullName)])), [rows]);
 
   const staff = rows.filter(r => r.role !== 'owner');
   // The managed departments and positions (Permissions > Departments and positions) feed the forms and the side label.
@@ -187,14 +187,14 @@ export default function UsersPage() {
   ];
 
   const columns = useMemo<Column<Row>[]>(() => [
-    { key: 'name', label: 'Name', value: u => u.fullName, hideable: false, width: 220,
+    { key: 'name', label: 'Name', value: u => personName(u.fullName), hideable: false, width: 220,
       render: u => (
         <span className="flex items-center gap-2.5 min-w-0">
           <span className={cx('w-[30px] h-[30px] flex-none rounded-full grid place-items-center text-caption font-semibold', 'bg-muted text-muted-ink')}>
             {initials(u.fullName)}
           </span>
           <span className="flex flex-col gap-px min-w-0">
-            <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={u.fullName}>{u.fullName}</span>
+            <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={personName(u.fullName)}>{personName(u.fullName)}</span>
             <span className="text-caption text-muted-ink whitespace-nowrap">{u.phone || '—'}</span>
           </span>
         </span>
@@ -220,7 +220,7 @@ export default function UsersPage() {
     { key: 'invited', label: 'Invitation sent', type: 'date', value: u => (isInvited(u) ? u.lastInvitedAt ?? null : null), hidden: true, width: 140 },
     // The menu is read through a ref: its actions depend on state the memoised columns would otherwise hold stale.
     { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
-      render: u => <RowActions name={u.fullName} items={actionsRef.current(u)} /> },
+      render: u => <RowActions name={personName(u.fullName)} items={actionsRef.current(u)} /> },
   ], [nameById, companiesOfRow, sideValueOf]);
   const invitedRows = rows.filter(isInvited);
   const invitedCount = invitedRows.length;
@@ -332,7 +332,7 @@ export default function UsersPage() {
 
   function confirmResend(u: Row) {
     setConfirm({
-      title: `Resend the invitation to ${u.fullName}?`,
+      title: `Resend the invitation to ${personName(u.fullName)}?`,
       body: 'They get a fresh temporary password by email. The one in the earlier email stops working.',
       meta: `Sent to ${u.email}${u.lastInvitedAt ? ` · last sent ${date(u.lastInvitedAt)}` : ''}`, confirmLabel: 'Resend invitation', busyLabel: 'Sending…',
       onConfirm: () => resendInvite(u),
@@ -353,7 +353,7 @@ export default function UsersPage() {
         if (res.delivery === 'sent') sent++;
         else if (res.delivery === 'failed' && /not configured/i.test(res.reason ?? '')) noMail++;
         else other++;
-      } catch { refused.push(u.fullName); }
+      } catch { refused.push(personName(u.fullName)); }
     }
     setBusy(false);
     setConfirm(null);
@@ -378,7 +378,7 @@ export default function UsersPage() {
       reload();
       setConfirm(null);
     } catch (err) {
-      toast({ tone: 'critical', title: `Nothing changed for ${u.fullName}.`, body: errorMessage(err, 'Try again in a moment.') });
+      toast({ tone: 'critical', title: `Nothing changed for ${personName(u.fullName)}.`, body: errorMessage(err, 'Try again in a moment.') });
     } finally {
       setBusy(false);
     }
@@ -403,50 +403,50 @@ export default function UsersPage() {
     const items: RowAction[] = [{ key: 'edit', label: 'Edit details', icon: 'Pencil', run: () => openEdit(u) }];
     if (u.isActive && invited) items.push({ key: 'invite', label: 'Resend invitation', icon: 'Send', run: () => confirmResend(u) });
     if (u.isActive && !invited) items.push({ key: 'reset', label: 'Email a password reset link', icon: 'Mail', run: () => setConfirm({
-      title: `Send ${u.fullName} a password reset link?`,
+      title: `Send ${personName(u.fullName)} a password reset link?`,
       body: 'They get an email with a link to choose a new password. It works once and expires in 60 minutes. Their current password keeps working until they use it.',
       meta: `Sent to ${u.email}`, confirmLabel: 'Send link', busyLabel: 'Sending…',
       onConfirm: () => act(u, security(u, 'reset_email'), `Reset link sent to ${u.email}.`),
     }) });
     if (u.isActive && !invited) items.push({ key: 'link', label: 'Get a reset link to pass on', icon: 'Link', run: () => makeResetLink(u) });
     if (u.isActive && !self) items.push({ key: 'temp', label: 'Reset password', icon: 'KeyRound', run: () => setConfirm({
-      title: `Reset ${u.fullName}'s password?`,
+      title: `Reset ${personName(u.fullName)}'s password?`,
       body: 'Their current password stops working and they are signed out on every device now. You get a temporary password to give them; when they sign in with it, they must choose their own before they can do anything else.',
       confirmLabel: 'Reset and sign out', busyLabel: 'Resetting…', danger: true,
       onConfirm: () => act(u, async () => {
         const res = await api.post<{ tempPassword: string }>(`/users/${u.id}/security`, { action: 'temp_password' });
-        setTempShown({ name: u.fullName, email: hasRealEmail(u.email) ? u.email : u.employeeId ?? u.email, password: res.tempPassword });
-      }, `${u.fullName}'s password was reset.`, 'They have been signed out on every device.'),
+        setTempShown({ name: personName(u.fullName), email: hasRealEmail(u.email) ? u.email : u.employeeId ?? u.email, password: res.tempPassword });
+      }, `${personName(u.fullName)}'s password was reset.`, 'They have been signed out on every device.'),
     }) });
     if (!self) items.push({ key: 'revoke', label: 'Sign out everywhere', icon: 'LogOut', run: () => setConfirm({
-      title: `Sign ${u.fullName} out everywhere?`,
+      title: `Sign ${personName(u.fullName)} out everywhere?`,
       body: 'Ends their sessions on every phone and computer straight away. Their password does not change, so they can sign in again. Use this for a lost phone or a shared computer.',
       confirmLabel: 'Sign out everywhere', busyLabel: 'Signing out…', danger: true,
-      onConfirm: () => act(u, security(u, 'revoke_sessions'), `${u.fullName} has been signed out on every device.`),
+      onConfirm: () => act(u, security(u, 'revoke_sessions'), `${personName(u.fullName)} has been signed out on every device.`),
     }) });
     if (u.twoStep && !self) items.push({ key: '2fa', label: 'Reset two-step sign-in', icon: 'ShieldOff', run: () => setConfirm({
-      title: `Reset ${u.fullName}'s two-step sign-in?`,
+      title: `Reset ${personName(u.fullName)}'s two-step sign-in?`,
       body: 'Use this when they lost their phone. Their authenticator code and backup codes stop working, and they sign in with their password alone. If their department requires two-step sign-in, they are asked to set it up again straight after signing in.',
       confirmLabel: 'Reset two-step sign-in', busyLabel: 'Resetting…', danger: true,
-      onConfirm: () => act(u, security(u, 'reset_2fa'), `${u.fullName}'s two-step sign-in was reset.`),
+      onConfirm: () => act(u, security(u, 'reset_2fa'), `${personName(u.fullName)}'s two-step sign-in was reset.`),
     }) });
     if (u.isActive && u.isLocked) items.push({ key: 'unlock', label: 'Unlock account', icon: 'LockOpen', run: () => setConfirm({
-      title: `Unlock ${u.fullName}'s account?`,
+      title: `Unlock ${personName(u.fullName)}'s account?`,
       body: 'Too many wrong passwords locked this account for a while. Unlocking lets them try again now instead of waiting.',
       confirmLabel: 'Unlock', busyLabel: 'Unlocking…',
-      onConfirm: () => act(u, security(u, 'unlock'), `${u.fullName}'s account is unlocked.`),
+      onConfirm: () => act(u, security(u, 'unlock'), `${personName(u.fullName)}'s account is unlocked.`),
     }) });
     if (u.isActive && !self) items.push({ key: 'off', label: 'Switch off account', icon: 'UserX', danger: true, run: () => setConfirm({
-      title: `Switch off ${u.fullName}'s account?`,
+      title: `Switch off ${personName(u.fullName)}'s account?`,
       body: 'They are signed out at once and cannot sign in. Nothing is deleted: their password, history and records stay, and you can switch the account back on at any time.',
       confirmLabel: 'Switch off', busyLabel: 'Switching off…', danger: true,
-      onConfirm: () => act(u, setActive(u, false), `${u.fullName}'s account is switched off.`),
+      onConfirm: () => act(u, setActive(u, false), `${personName(u.fullName)}'s account is switched off.`),
     }) });
     if (!u.isActive) items.push({ key: 'on', label: 'Switch account back on', icon: 'UserCheck', run: () => setConfirm({
-      title: `Switch ${u.fullName}'s account back on?`,
+      title: `Switch ${personName(u.fullName)}'s account back on?`,
       body: 'They can sign in again with their existing password.',
       confirmLabel: 'Switch on', busyLabel: 'Saving…',
-      onConfirm: () => act(u, setActive(u, true), `${u.fullName}'s account is switched back on.`),
+      onConfirm: () => act(u, setActive(u, true), `${personName(u.fullName)}'s account is switched back on.`),
     }) });
     return items;
   }
@@ -494,7 +494,7 @@ export default function UsersPage() {
       setEditing(null);
     } catch (err) {
       if (err instanceof ApiFailure && err.fields) setEditErrors(err.fields);
-      toast({ tone: 'critical', title: `${editing.fullName} was not updated.`, body: errorMessage(err, 'Try again in a moment.') });
+      toast({ tone: 'critical', title: `${personName(editing.fullName)} was not updated.`, body: errorMessage(err, 'Try again in a moment.') });
     }
     setBusy(false);
   }
@@ -555,7 +555,7 @@ export default function UsersPage() {
               <Button variant="secondary" size="sm" icon={<Icon name="Send" size="sm" />} onClick={() => setConfirm({
                 title: `Resend the invitation to all ${plural(invitedCount, 'invited person', 'invited people')}?`,
                 body: 'Everyone who was invited and has not signed in yet gets a fresh temporary password by email. The passwords in their earlier emails stop working.',
-                meta: invitedRows.map(u => u.fullName).join(', '), confirmLabel: `Resend ${plural(invitedCount, 'invitation')}`, busyLabel: 'Sending…',
+                meta: invitedRows.map(u => personName(u.fullName)).join(', '), confirmLabel: `Resend ${plural(invitedCount, 'invitation')}`, busyLabel: 'Sending…',
                 onConfirm: resendAll,
               })}>Resend to all invited ({count(invitedCount)})</Button>
             )}
@@ -615,13 +615,13 @@ export default function UsersPage() {
                   {initials(u.fullName)}
                 </span>
                 <span className="flex flex-col gap-1 min-w-0 flex-1">
-                  <span className="text-copy font-medium truncate" title={u.fullName}>{u.fullName}</span>
+                  <span className="text-copy font-medium truncate" title={personName(u.fullName)}>{personName(u.fullName)}</span>
                   <span className="text-meta text-ink truncate" title={jobLine(u) || roleName(u)}>{jobLine(u) || roleName(u)}</span>
                   <span className="text-meta text-muted-ink truncate" title={u.email}>{hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'}</span>
                   <span className="flex items-center gap-1.5 flex-wrap">{u.role !== 'owner' && <CompanyBadges side={sideValueOf(u)} />}<StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
                   {isInvited(u) && <InviteCell u={u} onResend={canManage ? () => confirmResend(u) : undefined} />}
                 </span>
-                <RowActions name={u.fullName} items={actionsFor(u)} />
+                <RowActions name={personName(u.fullName)} items={actionsFor(u)} />
               </span>
             );
           }}
@@ -629,7 +629,7 @@ export default function UsersPage() {
       )}
 
       {/* ----------------------------- Sign-ins tab ----------------------------- */}
-      {tab === 'signins' && canManage && <UsersSignIns people={rows.map(r => ({ id: r.id, fullName: r.fullName }))} />}
+      {tab === 'signins' && canManage && <UsersSignIns people={rows.map(r => ({ id: r.id, fullName: personName(r.fullName) }))} />}
 
       {/* --------------------------- Permissions tab --------------------------- */}
       {tab === 'permissions' && <PermissionsChart />}
@@ -687,7 +687,7 @@ export default function UsersPage() {
       {editing && (
         <Modal
           width={editing.role === 'owner' ? 460 : 640}
-          title={`Edit ${editing.fullName}`}
+          title={`Edit ${personName(editing.fullName)}`}
           sub="Change the department, position, reporting line or status."
           onClose={() => setEditing(null)}
           footer={
@@ -790,12 +790,12 @@ export default function UsersPage() {
             {staff.map(s => (
               <div key={s.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 items-center">
                 <div className="flex flex-col gap-px min-w-0">
-                  <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{s.fullName}</span>
+                  <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{personName(s.fullName)}</span>
                   <span className="text-caption text-muted-ink">{jobLine(s) || 'No department'}</span>
                 </div>
-                <Select label={`Manager for ${s.fullName}`} size="md" value={orgDraft[s.id] ?? ''}
+                <Select label={`Manager for ${personName(s.fullName)}`} size="md" value={orgDraft[s.id] ?? ''}
                   onChange={v => setOrgDraft(d => ({ ...d, [s.id]: v }))} placeholder="No manager"
-                  options={staff.filter(o => o.id !== s.id).map(o => ({ value: o.id, label: o.fullName }))} />
+                  options={staff.filter(o => o.id !== s.id).map(o => ({ value: o.id, label: personName(o.fullName) }))} />
               </div>
             ))}
           </form>
@@ -896,7 +896,7 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
                       {initials(p.fullName)}
                     </span>
                     <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-copy font-semibold whitespace-nowrap">{p.fullName}</span>
+                      <span className="text-copy font-semibold whitespace-nowrap">{personName(p.fullName)}</span>
                       <span className="text-caption text-muted-ink whitespace-nowrap" title={jobLine(p)}>{jobLine(p) || 'No department'}</span>
                     </div>
                   </div>

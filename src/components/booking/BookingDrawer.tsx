@@ -15,7 +15,7 @@ import { PhoneText } from '../PhoneText';
 import { useApi } from '../../lib/useApi';
 import { useToast } from '../Toast';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
-import { rm, date, dateRange, dateTime, time, nights as fmtNights, guests as fmtGuests, greetName } from '../../lib/format';
+import { rm, date, dateRange, dateTime, time, nights as fmtNights, guests as fmtGuests, greetName, buildingName } from '../../lib/format';
 import { CHANNEL_META, cx } from '../../lib/design-tokens';
 import { channelNote, deliveryToast, stayPhase, type ChannelSync } from '../../lib/bookingStatus';
 import { statusLabel } from '../../lib/status';
@@ -890,7 +890,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
 
   const pick = (m: Move) => { if (m.needsReason) setAsking(m); else void move(m); };
   const cancelMove = d?.moves.find(m => m.to === 'cancelled' && m.allowed);
-  const metaLine = `${s.guestName || ch.label} · ${s.propertyName} ${s.unitNumber} · ${dateRange(s.checkIn, s.checkOut)}`;
+  const metaLine = `${s.guestName || ch.label} · ${buildingName(s.propertyName)} ${s.unitNumber} · ${dateRange(s.checkIn, s.checkOut)}`;
   const saved = (msg: string) => { toast({ tone: 'success', title: msg }); reload(); onChanged?.(id); };
   const nationality = d ? countryName(d.nationality) : null;
 
@@ -902,7 +902,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             <ChannelMark ch={s.channel} size={24} />
             <div className="flex flex-col min-w-0">
               <span className="text-heading font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{s.channel === 'owner_stay' ? (s.guestName ? `Owner stay · ${s.guestName}` : 'Owner stay') : block ? 'Blocked dates' : (s.guestName || 'No guest name')}</span>
-              <span className="text-meta text-[rgba(255,255,255,0.72)] whitespace-nowrap overflow-hidden text-ellipsis">{s.propertyName} {s.unitNumber} · {fmtNights(nights)}</span>
+              <span className="text-meta text-[rgba(255,255,255,0.72)] whitespace-nowrap overflow-hidden text-ellipsis">{buildingName(s.propertyName)} {s.unitNumber} · {fmtNights(nights)}</span>
             </div>
           </div>
           <CloseButton onClick={onClose} onDark />

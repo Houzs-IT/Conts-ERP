@@ -27,7 +27,7 @@ import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
-import { rm, date, dateRange, dateShort, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel } from '../lib/format';
+import { rm, date, dateRange, dateShort, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel, buildingName } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { BookingChannel, ReservationState } from '../lib/types';
 import { statusOptions, statusLabel } from '../lib/status';
@@ -221,7 +221,7 @@ export default function BookingsPage() {
       toast({
         tone: res.effects?.channel === 'failed' ? 'warning' : 'success',
         title: owner ? `Owner stay ${res.externalRef} saved.` : `Reservation ${res.externalRef} created.`,
-        body: [`${owner ? '' : `${input.guestName} · `}${unit.propertyName} ${unit.unitNumber} · ${dateRange(input.checkIn, input.checkOut)}.`,
+        body: [`${owner ? '' : `${input.guestName} · `}${buildingName(unit.propertyName)} ${unit.unitNumber} · ${dateRange(input.checkIn, input.checkOut)}.`,
           channelNote(res.effects?.channel, 'held'), owner ? 'Owner stays show on the calendar and the unit page, not in this list.' : ''].filter(Boolean).join(' '),
       });
       if (!owner) setOpenId(res.id);
@@ -323,11 +323,11 @@ export default function BookingsPage() {
     { key: 'guest', label: 'Guest', value: r => r.guestName, sortKey: 'guest', width: 170, filter: { kind: 'text', param: 'guest' },
       render: b => { const w = stayWho(b); return <span className="flex items-center gap-1.5 min-w-0"><span className={cx('font-medium whitespace-nowrap overflow-hidden text-ellipsis block', w.missing && 'text-muted-ink')} title={w.name}>{w.name}</span><SampleMark kind={b.sample} /></span>; },
       sub: b => [stayWho(b).missing ? 'No guest name' : null, b.guestsCount > 0 ? fmtGuests(b.guestsCount) : null, countryOf(b)].filter(Boolean).join(' · ') || null },
-    { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, sortKey: 'unit', width: 140,
+    { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${buildingName(r.propertyName)}`, sortKey: 'unit', width: 140,
       render: b => <span className="font-mono text-meta font-semibold text-ink whitespace-nowrap">{b.unitNumber}</span>,
-      filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => b.propertyName },
-    { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, width: 150,
-      filter: { kind: 'select', param: 'building', multi: false, options: (data?.buildings ?? []).map(b => ({ value: b.id, label: b.name, count: facetCount('building', b.id) })) } },
+      filter: { kind: 'text', param: 'unit' }, exportValue: r => r.unitNumber, sub: b => buildingName(b.propertyName) },
+    { key: 'building', label: 'Building', value: r => buildingName(r.propertyName), hidden: true, width: 150,
+      filter: { kind: 'select', param: 'building', multi: false, options: (data?.buildings ?? []).map(b => ({ value: b.id, label: buildingName(b.name), count: facetCount('building', b.id) })) } },
     { key: 'channel', label: 'Channel', type: 'channel', value: r => r.channel, sortKey: 'channel', hidden: true, width: 130,
       filter: { kind: 'select', param: 'ch', multi: false, options: CHANNEL_CHOICES.map(c => ({ value: c, label: CHANNEL_META[c].label, count: facetCount('ch', c) })) } },
     { key: 'stay', label: 'Check-in to checkout', type: 'date', value: r => r.checkIn, sortKey: 'stay', width: 176,

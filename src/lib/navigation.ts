@@ -118,9 +118,8 @@ export const NAV: NavGroup[] = [
     // was hard to find under System). No permission area: the engine answers each person with their own only
     // (functions/api/claims/[[path]].ts).
     { key: 'myClaims', label: 'My claims', icon: 'receipt', path: '/my-claims' },
-  ] },
-  // Reports sit under Home (owner, 29 Oct 2026), with their own permission area since 30 Oct 2026.
-  { label: 'REPORTS', workspace: 'rental', items: [
+    // Portfolio and Performance sit in Home (the approved prototype, polish 1). Only the menu heading moved: their
+    // permission areas keep the Reports group (functions/_lib/access.ts), so stored rules are unchanged.
     { key: 'portfolio', label: 'Portfolio', icon: 'layers', path: '/portfolio', area: 'portfolio' },
     { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance', full: true },
     // The three unit reports are one Unit report under Units now (owner, 12 Nov 2026).
