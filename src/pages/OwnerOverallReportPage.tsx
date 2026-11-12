@@ -264,7 +264,45 @@ export default function OwnerOverallReportPage() {
   else if (!all.length) body = <EmptyState title={`No unit figures for ${monthLabel(month, { long: true })}.`} icon="BarChart3"
     body="Units appear here once they have reservations, costs or a fixed rent in the month." />;
   else if (!filtered.length) body = <EmptyState kind="filtered" title="No units match these filters." body="Widen the range or clear the search." action={{ label: 'Reset filters', onClick: reset }} />;
-  else body = (
+  else if (phone) {
+    // A phone lists two-line cards (the prototype's Unit report on a phone): the unit and its building, Net Payout to
+    // Owner on the right, the month's revenue, deduction and GP under it; a total card closes each group.
+    const line = (t: { revenue: number; deductions: number; gp: number }) => `Revenue ${money(t.revenue)} · Deduction ${money(t.deductions)} · GP ${money(t.gp)}`;
+    const total = (label: string, t: OverallTotals, grand: boolean) => (
+      <div className={cx('flex flex-col gap-0.5 px-4 py-2.5 [border-top:1px_solid_var(--color-line-soft)]', grand ? 'bg-muted' : 'bg-page')}>
+        <span className="flex items-baseline justify-between gap-3"><b className="text-copy">{label}</b><b className="text-copy tabular-nums">{rm(t.payout)}</b></span>
+        <span className="text-meta text-muted-ink tabular-nums">{line(t)}</span>
+      </div>
+    );
+    body = (
+      <div>
+        {groups.map(g => (
+          <Fragment key={g.group}>
+            <div className="px-4 pt-2.5 pb-1.5 bg-sunken text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink">{GROUP_NAME[g.group]} · <span className="normal-case tracking-normal font-normal">{plural(g.rows.length, 'unit')}</span></div>
+            {g.rows.map(r => {
+              const st = unitStatus(r);
+              return (
+                <button key={r.unitId} type="button" data-unit-row={r.unitId} onClick={() => setSelected(r.unitId)}
+                  className={cx('w-full min-h-[64px] flex flex-col gap-1 px-4 py-2.5 text-left font-sans bg-card border-0 [border-top:1px_solid_var(--color-line-soft)] cursor-pointer', r.unitId === selected && 'shadow-[inset_3px_0_0_var(--color-gold)]')}>
+                  <span className="flex items-baseline justify-between gap-3 w-full min-w-0">
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span aria-hidden className={cx('h-1.5 w-1.5 shrink-0 rounded-full self-center', st.tone === 'success' ? 'bg-success-line' : st.tone === 'critical' ? 'bg-danger-line' : 'bg-neutral-line')} />
+                      <b className="text-copy font-semibold text-ink truncate">{r.code}</b>
+                      <span className="text-meta text-muted-ink truncate">{buildingName(r.building)}</span>
+                    </span>
+                    <b className="text-copy text-ink tabular-nums whitespace-nowrap">{rm(r.payout)}</b>
+                  </span>
+                  <span className="text-meta text-muted-ink tabular-nums truncate w-full">{line(r)}</span>
+                </button>
+              );
+            })}
+            {total(`${GROUP_NAME[g.group]} total`, overallTotals(g.rows), false)}
+          </Fragment>
+        ))}
+        {groups.length > 1 && total('Grand total', totals, true)}
+      </div>
+    );
+  } else body = (
     <table className="w-max min-w-full border-separate border-spacing-0 text-copy">
       <thead className="sticky top-0 z-[3]">
         <tr>
@@ -387,14 +425,15 @@ export default function OwnerOverallReportPage() {
         below={<>
           <Segmented label="Contract" value={contract} onChange={setContract}
             options={[{ key: 'all' as Contract, label: 'All', count: all.length }, ...chips.map(g => ({ key: g as Contract, label: GROUP_NAME[g], count: all.filter(r => r.group === g).length }))]} />
-          <span className="ml-auto max-sm:ml-0"><Segmented label="Detail level" value={`${level}`} onChange={k => setLevel(Number(k) as Level)} options={LEVELS} /></span>
+          {!phone && <span className="ml-auto"><Segmented label="Detail level" value={`${level}`} onChange={k => setLevel(Number(k) as Level)} options={LEVELS} /></span>}
         </>}
         count={<span className="tabular-nums">Showing {count(filtered.length)} of {count(all.length)} · {monthLabel(month, { long: true })}</span>}
       />
 
       {/* The page fills the screen and only the table scrolls; under 220px for it the page scrolls instead. A phone scrolls the page. */}
-      <div className="max-md:h-[72vh] max-md:shrink-0 md:flex-1 md:min-h-[220px] overflow-auto overscroll-contain rounded-card border border-solid border-line bg-card" data-keep-scroll="owner-overall">
-        {body}
+      {phone && <div className="overflow-hidden rounded-card border border-solid border-line bg-card">{body}</div>}
+      <div hidden={phone} className="max-md:h-[72vh] max-md:shrink-0 md:flex-1 md:min-h-[220px] overflow-auto overscroll-contain rounded-card border border-solid border-line bg-card" data-keep-scroll="owner-overall">
+        {phone ? null : body}
       </div>
       {panel && (
         <aside aria-labelledby="owner-overall-unit" className="fixed right-0 bottom-0 z-[20] bg-card [border-left:1px_solid_var(--color-line)] shadow-[var(--shadow-overlay)]"
