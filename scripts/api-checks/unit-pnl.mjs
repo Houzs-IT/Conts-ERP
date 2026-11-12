@@ -16,9 +16,14 @@ const db = async (text, ...values) => {
 };
 
 // A whole unit with an owner, and two months nobody has used (2029).
-const [unit] = await db(`SELECT u.id FROM units u WHERE u.parent_unit_id IS NULL AND u.owner_id IS NOT NULL ORDER BY u.id LIMIT 1`);
+const [unit] = await db(`SELECT u.id, u.owner_id, u.contract_id FROM units u WHERE u.parent_unit_id IS NULL AND u.owner_id IS NOT NULL ORDER BY u.id LIMIT 1`);
 check('a unit to use', !!unit);
 if (!unit) { done(); process.exit(1); }
+const CONTRACT = 'pnl-check-contract';
+await db(`INSERT INTO owner_contracts (id, owner_id, unit_id, management_fee_pct, starts_on, ends_on, created_at, model, revenue_model, grr_amount, minimum_guarantee, misc_charges)
+  VALUES ($1, $2, $3, 20, '2020-01-01', NULL, $4, 'management', 'management', 0, 0, 0)
+  ON CONFLICT (id) DO UPDATE SET owner_id = $2, unit_id = $3`, CONTRACT, unit.owner_id, unit.id, new Date().toISOString());
+await db(`UPDATE units SET contract_id = $1 WHERE id = $2`, CONTRACT, unit.id);
 await db(`DELETE FROM reservations WHERE unit_id = $1 AND check_in >= '2029-02-01' AND check_in < '2029-06-01'`, unit.id);
 await db(`DELETE FROM expenses WHERE unit_id = $1 AND incurred_on >= '2029-02-01' AND incurred_on < '2029-06-01'`, unit.id);
 const stay = async (from, to, gbv, collected) => db(`INSERT INTO reservations (id, unit_id, check_in, check_out, state, channel, gross_booking_value, collected_revenue, created_at, updated_at)
@@ -64,4 +69,6 @@ await call('PUT', '/api/finance/unit-pnl-limits', { lines: {} });
 
 await db(`DELETE FROM reservations WHERE unit_id = $1 AND check_in >= '2029-02-01' AND check_in < '2029-06-01'`, unit.id);
 await db(`DELETE FROM expenses WHERE unit_id = $1 AND incurred_on >= '2029-02-01' AND incurred_on < '2029-06-01'`, unit.id);
+await db(`UPDATE units SET contract_id = $1 WHERE id = $2`, unit.contract_id ?? null, unit.id);
+await db(`DELETE FROM owner_contracts WHERE id = $1`, CONTRACT);
 done();
