@@ -143,6 +143,14 @@ export const PAGES: PageDef[] = [
     backfill: serviceCasesBackfill,
   },
   {
+    key: "service_cases.my_cases",
+    parent: "service_cases",
+    label: "My cases",
+    partialMeaning: "The cases assigned to this person.",
+    supportsPartial: true,
+    backfill: serviceCasesBackfill,
+  },
+  {
     key: "service_cases.pnl",
     parent: "service_cases",
     label: "P&L",

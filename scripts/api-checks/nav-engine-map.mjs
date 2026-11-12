@@ -100,7 +100,7 @@ check('IT Support is in the supply chain menu', supply(M.navFor('management', tr
 check('IT Support is still in the rental menu', paths(M.navFor('management', true).filter((g) => g.workspace === 'rental')).includes('/system/it-support'));
 check('the supply chain IT Support address keeps the supply chain sidebar', M.workspaceOf('/supply/it-support') === 'supply', M.workspaceOf('/supply/it-support'));
 check('the supply chain IT Support address is not an engine screen', !M.ENGINE_PATH['/supply/it-support']);
-const noSupply = Object.fromEntries(['serviceCases', 'serviceMetrics', 'projects', 'projectDefects', 'projectHandover', 'projectFinances', 'scSales', 'scConsignment', 'scProcurement', 'scProduction', 'scTransportPlan', 'scWarehouse', 'scInvoices'].map((a) => [a, 'none']));
+const noSupply = Object.fromEntries(['serviceCases', 'serviceMetrics', 'serviceSettings', 'serviceMyCases', 'projects', 'projectDefects', 'projectHandover', 'projectFinances', 'projectSettings', 'scSales', 'scConsignment', 'scProcurement', 'scProduction', 'scTransportPlan', 'scWarehouse', 'scInvoices'].map((a) => [a, 'none']));
 check('IT Support alone does not open the supply chain workspace', supply(M.navFor('operations_staff', true, noSupply)).length === 0, supply(M.navFor('operations_staff', true, noSupply)).join(' '));
 check('a field role gets no supply chain IT Support', !supply(M.navFor('housekeeper', true)).includes('/supply/it-support'));
 

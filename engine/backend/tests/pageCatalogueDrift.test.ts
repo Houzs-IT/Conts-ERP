@@ -91,6 +91,7 @@ const EVER_KNOWN_PAGE_KEYS: readonly string[] = [
   "service_cases.by_creditor",
   "service_cases.cases",
   "service_cases.metrics",
+  "service_cases.my_cases",
   "service_cases.pnl",
   "service_cases.settings",
   "settings",
