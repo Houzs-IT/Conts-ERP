@@ -269,6 +269,19 @@ if (pgReal) {
   await db(`INSERT INTO owners (id, display_name, email, bank_name, bank_account_last4, created_at, updated_at) VALUES ('ocf-owner2', 'Final Race Owner', 'final-race@example.invalid', 'Check Bank', '4321', $1, $1)`, now);
   await db(`INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, misc_charges, created_at, updated_at) VALUES ('ocf-r1', $1, 'ocf-owner2', 'R-01', 0, 0, $2, $2)`, PROP, now);
   await db(`INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, charge_to, created_at) VALUES ('ocf-r-c', 'ocf-r1', 'other', 'Check: race cost', 3000, 'MYR', '2026-10-10', 'owner', $1)`, now);
+  // Lock vs generate (final review minor 17; chew, 13 Nov 2026: fix it): a lock taken while the month's statements are
+  // being generated waits for them, so it is stamped after the draft and Make final asks for the draft again. The held
+  // advisory lock stands in for a generate under way (functions/api/statements/generate.ts takes it first).
+  const waited = await inTx(async sql => {
+    await sql`SELECT pg_advisory_xact_lock(hashtext('statements:2026-10'))`;
+    const p = lock('cleaning', ['ocf-r1']);
+    await pause(2500);
+    const [{ n }] = await sql`SELECT count(*)::int AS n FROM pos.owner_report_locks WHERE unit_id = 'ocf-r1' AND month = '2026-10' AND stage = 'cleaning'`;
+    return { p, early: n };
+  });
+  const lockedAfter = await waited.p;
+  check("a lock waits while the month's statements are being generated", waited.early === 0 && lockedAfter.status === 201
+    && (lockedAfter.json?.locked ?? []).includes('ocf-r1'), `locked early: ${waited.early}; ${lockedAfter.text}`);
   for (const stage of SIX) await lock(stage, ['ocf-r1']);
   await call('POST', '/api/statements/generate', { period: OCT, ownerIds: ['ocf-owner2'] });
   const race = async () => (await db(`SELECT id, state FROM owner_statements WHERE owner_id = 'ocf-owner2' AND period_start = '2026-10-01'`))[0];
