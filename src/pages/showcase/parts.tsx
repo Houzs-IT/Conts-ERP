@@ -1,5 +1,7 @@
-import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { date, monthLabel } from '../../lib/format';
+import Icon from '../../components/Icon';
+import { Switch } from '../../components/Switch';
 import { META, photoUrl, daysBetween, type FigureKey, type Live, type Overrides, type Listing } from './model';
 
 /** What every overridable figure needs: whether the page is the control panel's visual editor, and the figures. */
@@ -22,16 +24,43 @@ export function Fig({ k, children, portfolio = true }: { k: FigureKey; children:
   );
 }
 
-export function Photo({ id, style, className = '', fine, children, label }: { id?: string | null; style?: CSSProperties; className?: string; fine?: boolean; children?: ReactNode; label?: string }) {
+/** A stable hue for a building's name, so each building's photo stand-in has its own colour. */
+export const hueOf = (seed: string) => { let h = 7; for (const c of String(seed || '')) h = (h * 31 + c.charCodeAt(0)) % 997; return Math.round((h * 137.508) % 360); };
+/** Two letters for a building: "Trion KL" gives TK. */
+export const monoOf = (name: string) => String(name || '').replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+/** The building part of "Trion KL B52-05" (everything before the unit code). */
+export const buildingOf = (unit: string) => { const p = String(unit || '').trim().split(/\s+/); return p.length > 1 ? p.slice(0, -1).join(' ') : p[0] ?? ''; };
+
+/** A listing's photo, or a designed stand-in: the building's soft colour, its monogram and, when large, its name.
+ *  `place` is the building (it sets the colour); `caption` shows it on larger stand-ins. */
+export function Photo({ id, style, className = '', fine, children, place = '', caption }: { id?: string | null; style?: CSSProperties; className?: string; fine?: boolean; children?: ReactNode; place?: string; caption?: boolean }) {
   const url = photoUrl(id);
   const [broken, setBroken] = useState(false);
+  const real = !!url && !broken;
   return (
-    <div className={`sc-photo${fine ? ' fine' : ''} ${className}`} style={style}>
-      {url && !broken ? <img src={url} alt="" loading="lazy" onError={() => setBroken(true)} />
-        : label ? <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'ui-monospace, monospace', fontSize: 11, color: 'var(--sc-faint)' }}>{label}</span> : null}
+    <div className={`sc-photo${fine ? ' fine' : ''} ${className}`} style={{ ['--h' as string]: hueOf(place), ...style }}>
+      {real ? <img src={url!} alt="" loading="lazy" onError={() => setBroken(true)} /> : place ? <b className="sc-mono" aria-hidden>{monoOf(place)}</b> : null}
+      {!real && caption && place && <small className="sc-place">{place}</small>}
       {children}
     </div>
   );
+}
+
+/** A rating with the gold star icon (no glyphs). */
+export function Stars({ n = 5, size = 'sm' }: { n?: number; size?: 'sm' | 'base' }) {
+  return <span className="sc-star" aria-label={`${n} stars`}>{Array.from({ length: n }, (_, i) => <Icon key={i} name="Star" size={size} color="currentColor" style={{ fill: 'currentColor' }} />)}</span>;
+}
+export const Star = () => <span className="sc-star" aria-hidden><Icon name="Star" size="sm" color="currentColor" style={{ fill: 'currentColor' }} /></span>;
+
+/** The display face for the 56 and 40 figures (Manrope), loaded once. */
+const FONT_ID = 'sc-manrope';
+export function useDisplayFont() {
+  useEffect(() => {
+    if (document.getElementById(FONT_ID)) return;
+    const l = document.createElement('link');
+    l.id = FONT_ID; l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&display=swap';
+    document.head.appendChild(l);
+  }, []);
 }
 
 export function Avatar({ name, i, size, style }: { name: string; i: number; size: number; style?: CSSProperties }) {
@@ -53,10 +82,10 @@ export function Segmented<T extends string>({ value, options, onChange, large }:
 
 export function PriceToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
-    <button type="button" className="sc-toggle" role="switch" aria-checked={on} onClick={() => onChange(!on)}>
-      <span className={`sc-toggle-track${on ? ' on' : ''}`}><span className="sc-toggle-knob" /></span>
+    <label className="sc-toggle">
+      <Switch checked={on} onChange={onChange} label="Show prices" />
       {on ? 'Prices shown' : 'Prices hidden'}
-    </button>
+    </label>
   );
 }
 
@@ -64,9 +93,9 @@ export function MonthNav({ month, min, max, onChange }: { month: string; min: st
   const shift = (n: number) => { const [y, m] = month.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`; };
   return (
     <div className="sc-monthnav">
-      <button type="button" aria-label="Previous month" disabled={month <= min} onClick={() => onChange(shift(-1))}>‹</button>
+      <button type="button" aria-label="Previous month" disabled={month <= min} onClick={() => onChange(shift(-1))}><Icon name="ChevronLeft" size="sm" /></button>
       <div style={{ fontSize: 13, fontWeight: 700, minWidth: 110, textAlign: 'center', whiteSpace: 'nowrap' }}>{monthLabel(month, { long: true })}</div>
-      <button type="button" aria-label="Next month" disabled={month >= max} onClick={() => onChange(shift(1))}>›</button>
+      <button type="button" aria-label="Next month" disabled={month >= max} onClick={() => onChange(shift(1))}><Icon name="ChevronRight" size="sm" /></button>
     </div>
   );
 }
@@ -82,7 +111,7 @@ export function PropertyDropdown({ listings, value, onChange, allLabel, totalLab
   return (
     <div style={{ position: 'relative' }}>
       <button type="button" className="sc-pill" aria-expanded={open} aria-haspopup="listbox" onClick={() => { setOpen(!open); setQ(''); }}>
-        <span className="ellipsis">{cur ? cur.name : allLabel ?? 'Select a property'}</span><span className="sc-caret">▼</span>
+        <span className="ellipsis">{cur ? cur.name : allLabel ?? 'Select a property'}</span><span className="sc-caret"><Icon name="ChevronDown" size="sm" /></span>
       </button>
       {open && (
         <>
@@ -92,16 +121,16 @@ export function PropertyDropdown({ listings, value, onChange, allLabel, totalLab
             <div className="sc-dd-list" role="listbox">
               {allLabel && (
                 <button type="button" role="option" aria-selected={value === 'all'} className="sc-dd-row" onClick={() => pick('all')}>
-                  <div style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--sc-ink)', color: 'var(--sc-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{totalLabel}</div>
+                  <div style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--sc-ink)', color: 'var(--sc-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{totalLabel}</div>
                   <div style={{ minWidth: 0, flex: 1 }}><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{allLabel}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>Entire portfolio</div></div>
-                  <div className="sc-dd-check">{value === 'all' ? '✓' : ''}</div>
+                  <div className="sc-dd-check">{value === 'all' && <Icon name="Check" size="sm" />}</div>
                 </button>
               )}
               {rows.map(l => (
                 <button key={l.id} type="button" role="option" aria-selected={value === l.id} className="sc-dd-row" onClick={() => pick(l.id)}>
-                  <Photo id={l.photoId} fine style={{ width: 34, height: 34, borderRadius: 8 }} />
+                  <Photo id={l.photoId} place={buildingOf(l.unit)} fine style={{ width: 34, height: 34, borderRadius: 8 }} />
                   <div style={{ minWidth: 0, flex: 1 }}><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{l.unit}</div></div>
-                  <div className="sc-dd-check">{value === l.id ? '✓' : ''}</div>
+                  <div className="sc-dd-check">{value === l.id && <Icon name="Check" size="sm" />}</div>
                 </button>
               ))}
               {!rows.length && <div className="sc-empty" style={{ padding: 20 }}>No property matches "{q}".</div>}
@@ -125,16 +154,16 @@ export function DateRangePicker({ from, to, today, onApply }: { from: string; to
   const [left, setLeft] = useState(monthAdd(ym(to), -1));
   const show = () => { setTf(from); setTt(to); setLeft(monthAdd(ym(to), -1)); setOpen(true); };
   const click = (d: string) => { if (!tf || tt) { setTf(d); setTt(null); } else if (d < tf) setTf(d); else setTt(d); };
-  const summary = tf && tt ? `${date(tf)} → ${date(tt)} · ${daysBetween(tf, tt)} days` : tf ? 'Select an end date' : 'Select a start date';
+  const summary = tf && tt ? `${date(tf)} – ${date(tt)} · ${daysBetween(tf, tt)} days` : tf ? 'Select an end date' : 'Select a start date';
   const month = (m: string, k: number) => {
     const [y, mo] = m.split('-').map(Number);
     const first = new Date(Date.UTC(y, mo - 1, 1)).getUTCDay(), dim = new Date(Date.UTC(y, mo, 0)).getUTCDate();
     return (
       <div key={m}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 32, marginBottom: 10 }}>
-          <button type="button" className="sc-dp-nav" aria-label="Previous month" style={{ visibility: k === 0 ? 'visible' : 'hidden' }} onClick={() => setLeft(monthAdd(left, -1))}>‹</button>
-          <div style={{ fontSize: 15, fontWeight: 800 }}>{monthLabel(m, { long: true })}</div>
-          <button type="button" className="sc-dp-nav" aria-label="Next month" style={{ visibility: k === 1 ? 'visible' : 'hidden' }} disabled={m >= ym(today)} onClick={() => setLeft(monthAdd(left, 1))}>›</button>
+          <button type="button" className="sc-dp-nav" aria-label="Previous month" style={{ visibility: k === 0 ? 'visible' : 'hidden' }} onClick={() => setLeft(monthAdd(left, -1))}><Icon name="ChevronLeft" size="sm" /></button>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>{monthLabel(m, { long: true })}</div>
+          <button type="button" className="sc-dp-nav" aria-label="Next month" style={{ visibility: k === 1 ? 'visible' : 'hidden' }} disabled={m >= ym(today)} onClick={() => setLeft(monthAdd(left, 1))}><Icon name="ChevronRight" size="sm" /></button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 4 }}>{['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((w, i) => <div key={i} className="sc-dp-dow">{w}</div>)}</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', rowGap: 2 }}>
@@ -157,7 +186,7 @@ export function DateRangePicker({ from, to, today, onApply }: { from: string; to
   return (
     <div style={{ position: 'relative' }}>
       <button type="button" className="sc-pill" aria-expanded={open} onClick={() => (open ? setOpen(false) : show())} style={{ padding: '0 16px' }}>
-        <span>{date(from)}</span><span style={{ color: 'var(--sc-faint)' }}>→</span><span>{date(to)}</span>
+        <Icon name="CalendarDays" size="sm" color="var(--sc-muted)" /><span>{date(from)}</span><span style={{ color: 'var(--sc-faint)' }}>–</span><span>{date(to)}</span>
       </button>
       {open && (
         <>
@@ -174,40 +203,6 @@ export function DateRangePicker({ from, to, today, onApply }: { from: string; to
       )}
     </div>
   );
-}
-
-/** Several strips moving at once: content doubled for a seamless loop, time-based steps (frame gap capped at 50 ms),
- *  hovering any strip pauses them all. `speed` is pixels per millisecond; negative moves right to left. */
-export function useMarquees(strips: { speed: number }[]) {
-  const refs = useRef<(HTMLDivElement | null)[]>([]);
-  const paused = useRef(false);
-  const xs = useRef<(number | null)[]>([]);
-  useEffect(() => {
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-    let last = 0, raf = 0;
-    const tick = (now: number) => {
-      const dt = last ? Math.min(now - last, 50) : 0; last = now;
-      strips.forEach((s, i) => {
-        const el = refs.current[i];
-        if (!el || paused.current) return;
-        const half = el.scrollWidth / 2;
-        if (!half) return;
-        let x = xs.current[i] ?? (s.speed > 0 ? -half : 0);
-        x += dt * s.speed;
-        if (s.speed < 0 && -x >= half) x += half;
-        if (s.speed > 0 && x >= 0) x -= half;
-        xs.current[i] = x;
-        el.style.transform = `translateX(${x}px)`;
-      });
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [strips.length]); // eslint-disable-line react-hooks/exhaustive-deps
-  return {
-    ref: (i: number) => (el: HTMLDivElement | null) => { refs.current[i] = el; },
-    hover: { onMouseEnter: () => { paused.current = true; }, onMouseLeave: () => { paused.current = false; } },
-  };
 }
 
 /** Esc closes the layer on top (listing preview, reservation drawer) before it would leave the showcase. */

@@ -4,9 +4,9 @@ import { count } from '../../lib/format';
  *  panel lists them. `decimals` is how the showcase prints the figure. */
 export const SECTIONS = [
   { title: 'Today', where: '01 Today page', rows: [
-    { key: 'today_in', label: 'Check-ins today', decimals: 0 }, { key: 'today_out', label: 'Check-outs today', decimals: 0 },
-    { key: 'today_up', label: 'Upcoming orders', decimals: 0 }, { key: 'tn_occ', label: 'Occupied tonight', decimals: 0 },
-    { key: 'tn_pct', label: 'Occupancy tonight (%)', decimals: 0 }, { key: 'tn_turn', label: 'Turnovers in progress', decimals: 0 },
+    { key: 'today_in', label: 'Check-ins today', decimals: 0 }, { key: 'today_out', label: 'Checkouts today', decimals: 0 },
+    { key: 'today_up', label: 'Upcoming reservations', decimals: 0 }, { key: 'tn_occ', label: 'Occupied tonight', decimals: 0 },
+    { key: 'tn_pct', label: 'Occupancy tonight (%)', decimals: 0 }, { key: 'tn_turn', label: 'Cleaning jobs in progress', decimals: 0 },
   ] },
   { title: 'Portfolio', where: 'Listings, Today, Calendar', rows: [{ key: 'listings', label: 'Total listings', decimals: 0 }] },
   { title: 'Guest reviews', where: '04 Reviews page', rows: [
