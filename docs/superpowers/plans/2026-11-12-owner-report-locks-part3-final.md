@@ -344,3 +344,59 @@ test('agent and company on a negative GP', () => { /* the Task 1 ruling's value;
 4. Wait for CI to pass, then merge the PR.
 5. Confirm the deploys: Property OS, scheduled jobs and the staging preview.
 6. Update memory and report to chew. No test steps.
+
+---
+
+## As built (12 Nov 2026)
+
+**Commits** (branch `feat/owner-close-part3`):
+- 6525dc3: Task 2, the rules.
+  - `finalWaiting`, `waitingText`, `unlockFinalPlan` and `finalUnlockText` in `stageLocks.ts`.
+  - Agent and Company in `ownerOverall.ts`.
+- 34742cc: Task 3, Make final needs every step locked.
+  - The `makeFinal` and `unlockFinal` powers, and `finalReadiness`.
+  - Other checks now set up their final months in the database.
+- 9e9eac6: Task 4, Unlock final.
+  - Migration **0321**: the payout state `cancelled`.
+  - Payouts: a cancelled payout is kept apart, can't be paid, and does not count as "already has a payout".
+  - Demo mode refuses Unlock final.
+- bcef48e: Task 5, the Unit report (Overall owner report).
+  - Agent and Company columns.
+  - A Close band with Locks and Final, and the Make final and Unlock final dialogs.
+  - Phone cards, the export and the drawer.
+  - Unlock final's paid path writes in batches.
+- 6c4199a: Task 6, step 4 on Owner statement close.
+- Then the SOP commit (Task 7).
+
+**Where it differs from the plan.** Each change is a `Ruling:` line in the ledger.
+- **Negative GP.** Agent = max(0, GP × agent %). Neither the September nor the October 2026 workbook has a negative-GP share row to copy, and an agent shares profit, not a loss.
+- **Months that can't be made final yet.** Make final is refused for every month from October 2026 without the locks, including a month that hasn't ended. The checks that made October, November or 2027 final only to set up a final month now set that state in the database (airbnb-recon, late-bills, owner-close).
+- **Owner adjustments.** A unit whose only October item is an owner adjustment is on all three steps, so Make final also waits for its income and deductions locks. The close page already listed it that way.
+- **Waiting text.** It reads as a list: "Waiting: deductions and O2" and "Waiting: F-02 income, deductions and O2; B-16-05 (B) O2; 1 more unit". The mockup's comma form read badly with three steps.
+- **Unlock final on a paid statement.**
+  - It posts per unit: an owner adjustment with source `stage_lock` and reference `final-unlock:<statement id>`, held on a yearly guarantee, plus the company's share in `company_late_changes`.
+  - It is refused when the statement was made final before every step was locked.
+- **Buttons.**
+  - The Final state shows on every row of an owner. The buttons sit on the owner's first row in the current order.
+  - Phone cards show state only, with no buttons.
+- **Page name.** Step 4 names the page "Unit report", its on-screen title. The vocabulary check refuses "owner report".
+- **Agent % list.** It lists the rows to check first.
+
+**Checks**
+- Rules: `node --test src/lib/stageLocks.test.mjs src/lib/ownerOverall.test.mjs`, 34/34.
+- API on a local PGlite copy:
+  - owner-close-final: 40/40 (new in CI);
+  - owner-close: 38/38; owner-close-steps: 41/41; owner-close-late: 31/31;
+  - late-bills: 27/27; airbnb-recon: 53/53.
+  - demo-mode, role-access and unit-costs fail locally only on the operations-staff test account, which `scripts/ci-api-db.mjs` adds in CI.
+- Builds and repo checks: `tsc -b` clean; `npm run check` 17/17.
+- Browser, on a local copy with a fixture (one owner made final, one waiting):
+  - widths: 1280 px light and dark, and 375 px with no sideways scroll;
+  - the Unlock (reason required) and Make final round trip;
+  - the drawer's Agent and Company;
+  - totals: Agent 705 + Company 1,410 = Gain / Loss 2,115.
+
+**Release**
+1. Migration **0321** goes to production: dry run, then `only=0321`.
+2. Then merge. Property OS deploys from main.
+3. Migration 0322 (agent %) waits for chew's answer on the list `exports/agent-pct-to-confirm-2026-11-12.xlsx`. Until then the Agent column is 0.
