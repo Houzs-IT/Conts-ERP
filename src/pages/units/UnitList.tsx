@@ -6,6 +6,7 @@ import { statusOf } from '../../lib/status';
 import { PURPOSE_LABEL, USED_BY, typeOptions, packageOf } from '../../lib/revenueModel';
 import { useContractTypes } from '../../lib/useContractTypes';
 import { CodeBadge } from './UnitExtras';
+import { buildingName } from '../../lib/format';
 
 const USED_BY_LABEL = Object.fromEntries(USED_BY.map(u => [u.value, u.label]));
 
@@ -24,7 +25,7 @@ export function UnitList({ units, buildings, readiness, loading, error, onRetry,
       sub: u => (u.parentUnitId ? `Part of ${code(u) ?? 'another unit'}` : u.listingName || null) },
     { key: 'listing', label: 'Listing name', value: u => u.listingName, hidden: true, width: 200 },
     { key: 'building', label: 'Building', value: u => byId.get(u.buildingId)?.name ?? '', width: 160,
-      filter: { kind: 'select', options: buildings.map(b => ({ value: b.name, label: b.name })) } },
+      filter: { kind: 'select', options: buildings.map(b => ({ value: b.name, label: buildingName(b.name) })) } },
     // Staff sheet UNIT (17 Oct 2026): what the unit is for; only rental units are on the channels.
     { key: 'purpose', label: 'Purpose', value: u => PURPOSE_LABEL[u.purpose ?? 'rental'], width: 110,
       filter: { kind: 'select', options: Object.values(PURPOSE_LABEL).map(v => ({ value: v, label: v })) } },

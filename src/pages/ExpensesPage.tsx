@@ -10,7 +10,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure, ApiFailure, errorMessage } from '../lib/api';
 import { isStaged, stagedToast } from '../lib/approvals';
 import { refreshNavCounts } from '../lib/navBadges';
-import { monthLabel, dateShort, todayMyt, plural, count as fmtCount, titleCase } from '../lib/format';
+import { monthLabel, dateShort, todayMyt, plural, count as fmtCount, titleCase, buildingName } from '../lib/format';
 import { DataTable, type Column } from '../components/DataTable';
 import { fetchAllPages } from '../lib/export';
 import { MoneyText, moneyString } from '../components/MoneyText';
@@ -186,7 +186,7 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
   const ownerOptions = useMemo<SelectOption[]>(() => (filters?.owners ?? []).map(o => ({ value: o.id, label: titleCase(o.name) })), [filters]);
   const buildingOptions = useMemo<SelectOption[]>(() => [
     { value: '', label: 'All buildings' },
-    ...[...(filters?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name })),
+    ...[...(filters?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: buildingName(b.name) })),
   ], [filters]);
 
   const monthOptions = useMemo(() => {
@@ -283,8 +283,8 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
     { key: 'description', label: 'Description', value: r => r.description || catLabel(r.category), hideable: false, width: 230, filter: false,
       sub: r => (r.chargeTo !== 'owner' ? `Charged to ${CHARGE_LABEL[r.chargeTo] ?? r.chargeTo}` : null) },
     { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, exportValue: r => r.unitNumber,
-      sortKey: 'unit', width: 140, filter: false, sub: r => r.propertyName },
-    { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, filter: false, width: 150 },
+      sortKey: 'unit', width: 140, filter: false, sub: r => buildingName(r.propertyName) },
+    { key: 'building', label: 'Building', value: r => buildingName(r.propertyName), hidden: true, filter: false, width: 150 },
     { key: 'category', label: 'Category', type: 'status', value: r => r.category, width: 130,
       status: r => ({ label: catLabel(r.category), tone: catTone(r.category) }),
       filter: { kind: 'select', param: 'category', multi: false, options: (Object.keys(CAT_LABEL) as Category[]).map(c => ({ value: c, label: CAT_LABEL[c] })) } },
@@ -460,7 +460,7 @@ function ExpenseCard({ e }: { e: Expense }) {
     <span className="flex gap-3 items-start text-ink">
       <span className="flex flex-col gap-[3px] min-w-0 flex-1">
         <span className="text-copy font-medium truncate">{e.description || catLabel(e.category)}</span>
-        <span className="text-meta text-muted-ink truncate">{e.propertyName} {e.unitNumber}</span>
+        <span className="text-meta text-muted-ink truncate">{buildingName(e.propertyName)} {e.unitNumber}</span>
         <span className="text-meta text-muted-ink">{dateShort(e.incurredOn)}{e.locked ? ' · locked' : ''}</span>
       </span>
       <span className="flex flex-col items-end gap-[5px] shrink-0">
@@ -524,7 +524,7 @@ function CategoryRows({ base, category, count, sort, open, toggle, withEdits, on
         return (
           <div key={e.id}>
             <TreeRow depth={2} kind="expense" label={e.description || catLabel(e.category)}
-              sub={`${e.propertyName} ${e.unitNumber} · ${dateShort(e.incurredOn)}${e.reference ? ` · ${e.reference}` : ''}`}
+              sub={`${buildingName(e.propertyName)} ${e.unitNumber} · ${dateShort(e.incurredOn)}${e.reference ? ` · ${e.reference}` : ''}`}
               amount={e.amount} tone={catTone(e.category)} count={kids.length ? kids.length : undefined}
               expanded={open.has(key)} onToggle={kids.length ? () => toggle(key) : undefined}
               locked={!!e.locked} onEdit={kids.length ? undefined : () => onEdit(e)} />
@@ -656,7 +656,7 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
   // even when it came in from a category outside the add-set.
   const catOptions = ADD_CATEGORIES.includes(category) ? ADD_CATEGORIES : [category, ...ADD_CATEGORIES];
   const unitChoices = (filters?.units ?? []).filter(u => !buildingId || u.buildingId === buildingId);
-  const buildingName = (id: string) => filters?.buildings.find(b => b.id === id)?.name ?? '';
+  const buildingOf = (id: string) => buildingName(filters?.buildings.find(b => b.id === id)?.name);
 
   async function submit(e?: FormEvent) {
     e?.preventDefault();
@@ -684,7 +684,7 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
       title={mode === 'create' ? 'Add monthly expense' : 'Edit expense'}
       sub={mode === 'create'
         ? 'Logs a deduction against the unit for the owner statement. Every expense needs a category, date, amount and reference.'
-        : `${expense?.propertyName} ${expense?.unitNumber}`}
+        : `${buildingName(expense?.propertyName)} ${expense?.unitNumber}`}
       onClose={onClose}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose}>{readOnly ? 'Close' : 'Cancel'}</Button>
@@ -703,9 +703,9 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
         {mode === 'create' && (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
             <Select showLabel size="md" label="Building" value={buildingId} onChange={v => { setBuildingId(v); setUnitId(''); }}
-              options={[{ value: '', label: 'All buildings' }, ...[...(filters?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name }))]} />
+              options={[{ value: '', label: 'All buildings' }, ...[...(filters?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: buildingName(b.name) }))]} />
             <SearchSelect showLabel size="md" label="Unit" allLabel="Pick a unit" placeholder="Search units" value={unitId} onChange={setUnitId}
-              options={unitChoices.map(u => ({ value: u.id, label: u.unitNumber, group: buildingName(u.buildingId) }))} />
+              options={unitChoices.map(u => ({ value: u.id, label: u.unitNumber, group: buildingOf(u.buildingId) }))} />
           </div>
         )}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">

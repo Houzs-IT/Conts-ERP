@@ -10,7 +10,7 @@ import { DataTable, type Column } from '../../components/DataTable';
 import { Segmented as Tabs } from '../../components/ops/OpsUi';
 import { useApi } from '../../lib/useApi';
 import { downloadFile, notifyFailure } from '../../lib/api';
-import { monthLabel, rm, todayMyt } from '../../lib/format';
+import { monthLabel, rm, todayMyt, buildingName } from '../../lib/format';
 import { downloadTable, type ExportCell, type ExportColumn } from '../../lib/export';
 import { statusOf, statusLabel, TONE_STYLE } from '../../lib/status';
 import { cx } from '../../lib/design-tokens';
@@ -40,7 +40,7 @@ const RANGES = [6, 12, 24];
 const PURPOSES = [{ value: 'rental', label: 'Rental' }, { value: 'showroom', label: 'Showroom' }, { value: 'warehouse', label: 'Warehouse' }];
 const ENTITY = { bill: 'utility_bill', request: 'utility_request' } as const;
 
-const unitName = (u: Unit) => `${u.building} ${u.number}`;
+const unitName = (u: Unit) => `${buildingName(u.building)} ${u.number}`;
 const cellStyle = (c: Cell | undefined, mode: Mode = 'bill') => {
   if (!c?.state) return undefined;
   const tone = statusOf(ENTITY[mode], c.state).tone;
@@ -64,7 +64,7 @@ export default function UtilityListing() {
 
   const cells = useMemo(() => (mode === 'request' ? buildRequestCells : buildCells)(data?.bills ?? []), [data, mode]);
   const monthList = data?.months ?? monthsOf(from, to);
-  const buildings = useMemo(() => [...new Map((data?.units ?? []).map(u => [u.buildingId, u.building])).entries()]
+  const buildings = useMemo(() => [...new Map((data?.units ?? []).map(u => [u.buildingId, buildingName(u.building)])).entries()]
     .sort((a, b) => a[1].localeCompare(b[1], 'en', { numeric: true })).map(([value, label]) => ({ value, label })), [data]);
   // By payment request lists only the units with a request in the months shown.
   const units = useMemo(() => (data?.units ?? []).filter(u => (!building || u.buildingId === building)

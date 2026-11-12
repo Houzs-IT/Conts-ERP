@@ -11,7 +11,7 @@ import { StatRow, StatTile } from '../../components/Metric';
 import { useApi } from '../../lib/useApi';
 import { useToast } from '../../components/Toast';
 import { api, errorMessage } from '../../lib/api';
-import { date as fmtDate, count, titleCase, todayMyt } from '../../lib/format';
+import { date as fmtDate, count, titleCase, todayMyt, buildingName } from '../../lib/format';
 import { useUrlState, SearchBox } from './listKit';
 
 /** Accounts payable > Contractor claims: what each maintenance job owes its technician or contractor (entered on the
@@ -25,7 +25,7 @@ interface Claim {
 interface Payload { ready: boolean; data: Claim[]; counts: { unpaid: number; paid: number }; owed: number }
 type Paid = 'no' | 'yes' | 'all';
 
-const unitOf = (c: Claim) => `${c.propertyName} ${c.unitNumber ?? 'Building (no unit)'}`;
+const unitOf = (c: Claim) => `${buildingName(c.propertyName)} ${c.unitNumber ?? 'Building (no unit)'}`;
 const billedOn = (c: Claim) => c.billingDate ?? c.finishedAt?.slice(0, 10) ?? null;
 
 export default function ContractorClaims() {

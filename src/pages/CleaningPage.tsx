@@ -29,7 +29,7 @@ import { useSession } from '../lib/session';
 import { runEach, skippedNote } from '../lib/bulk';
 import { fetchAllPages } from '../lib/export';
 import { cx } from '../lib/design-tokens';
-import { rm, plural, count } from '../lib/format';
+import { rm, plural, count, buildingName } from '../lib/format';
 import type { Tone } from '../lib/types';
 import { PhoneHistory, RecordHistory } from '../components/RecordHistory';
 import { PricesView, PayView } from './CleaningSetup';
@@ -178,8 +178,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
 
   const buildingOptions: SelectOption[] = useMemo(() => {
     const m = new Map<string, string>();
-    for (const r of rows) m.set(r.buildingId, r.propertyName);
-    for (const d of departures) m.set(d.buildingId, d.propertyName);
+    for (const r of rows) m.set(r.buildingId, buildingName(r.propertyName));
+    for (const d of departures) m.set(d.buildingId, buildingName(d.propertyName));
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label }));
   }, [rows, departures]);
   const cleanerOptions: SelectOption[] = [{ value: 'none', label: 'Unassigned' }, ...cleaners.map(c => ({ value: c.id, label: c.name }))];
@@ -209,8 +209,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const toGroups = (rs: Row[], deps: Departure[], reps: RepairOnDay[], tag: string) => {
     const m = new Map<string, { id: string; key: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }>();
     const get = (id: string, name: string) => m.get(id) ?? (m.set(id, { id, key: `${tag}${id}`, name, rows: [], departures: [], repairs: [] }), m.get(id)!);
-    for (const r of rs) get(r.buildingId, r.propertyName).rows.push(r);
-    for (const d of deps) get(d.buildingId, d.propertyName).departures.push(d);
+    for (const r of rs) get(r.buildingId, buildingName(r.propertyName)).rows.push(r);
+    for (const d of deps) get(d.buildingId, buildingName(d.propertyName)).departures.push(d);
     for (const w of reps) if (m.has(w.buildingId)) m.get(w.buildingId)!.repairs.push(w);
     // Inside each building, the cleaner's order (lib/cleanOrder): units ready to clean by next check-in, then guests still
     // in by checkout time, then done. The buildings themselves always A to Z (owner, 2 Nov 2026).
@@ -439,7 +439,7 @@ function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'c
     <ul className="m-0 p-0 list-none max-h-[180px] overflow-y-auto rounded-control border border-solid border-line divide-y divide-[var(--color-line-soft)]">
       {jobs.map(j => (
         <li key={j.id} className="px-3 py-1.5 text-copy flex items-baseline gap-2">
-          <b>{j.unitNumber}</b><span className="text-muted-ink truncate">{j.propertyName}</span>
+          <b>{j.unitNumber}</b><span className="text-muted-ink truncate">{buildingName(j.propertyName)}</span>
           <span className="ml-auto text-meta text-muted-ink whitespace-nowrap">{dayLabel(j.day)}</span>
         </li>
       ))}
@@ -803,12 +803,12 @@ const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2)
 const rowOrder = (r: Row): CleanOrderInput => ({
   checkIn: r.next?.checkInTime ?? r.nextLater?.checkInTime ?? null, checkInDay: r.next ? r.day : r.nextLater?.day ?? null, day: r.day,
   guestIn: !!r.previous && !r.guestOut && r.status !== 'cleaning' && r.status !== 'done', checkOut: r.previous?.checkOutTime ?? null,
-  done: r.status === 'done', building: r.propertyName, unit: r.unitNumber,
+  done: r.status === 'done', building: buildingName(r.propertyName), unit: r.unitNumber,
 });
 const departureOrder = (d: Departure, day: string): CleanOrderInput => ({
   checkIn: d.next?.checkInTime ?? d.nextLater?.checkInTime ?? null, checkInDay: d.next ? day : d.nextLater?.day ?? null, day,
   guestIn: d.state !== 'checked_out', checkOut: d.checkOutTime,
-  building: d.propertyName, unit: d.unitNumber,
+  building: buildingName(d.propertyName), unit: d.unitNumber,
 });
 /** "Auto at 11:00" or "Auto at 13:00 (late checkout)": the system marked the guest out at the checkout time (lib/guestLeft). */
 const autoLabel = (r: Row) => `Auto at ${hm(r.guestLeftAt)}${r.previous?.lateCheckOut ? ' (late checkout)' : ''}`;
@@ -977,7 +977,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
   // Only After files are proof of work; a Before photo never unlocks Mark complete (owner, 2 Nov 2026).
   const files = data ? stageCounts(data.media).after : row.photoCount + row.videoCount;
   const used = row.startedAt ? (Date.parse(row.completedAt ?? new Date(now).toISOString()) - Date.parse(row.startedAt)) / 60000 : null;
-  const unitLabel = `${row.propertyName} ${row.unitNumber}`;
+  const unitLabel = `${buildingName(row.propertyName)} ${row.unitNumber}`;
   const kind = picked.kind ?? row.kind;
   const kindName = KIND_NAME[kind] ?? 'Basic clean';
   const cleanerName = shownTeam.length ? shownTeam.map(id => teamNames[id] ?? cleaners.find(c => c.id === id)?.name ?? 'Cleaner').join(', ') : row.assigneeName;
@@ -991,7 +991,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
     <div className="ops-detail flex flex-col gap-4 p-5 text-copy">
       <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-4 pb-4 bg-black text-white flex items-start gap-3">
         <div className="flex-1 min-w-0 flex flex-col gap-1">
-          <div className="text-caption font-semibold tracking-[0.12em] uppercase text-gold">{row.propertyName}</div>
+          <div className="text-caption font-semibold tracking-[0.12em] uppercase text-gold">{buildingName(row.propertyName)}</div>
           <div className="text-title leading-tight font-semibold"><span className="font-mono">{row.unitNumber}</span> · {kindName}</div>
           {size && <div className="text-meta text-on-dark">{size}</div>}
           <div className="mt-1 flex items-center gap-2 flex-wrap">
@@ -1347,7 +1347,7 @@ const TASK_STATE: Record<string, { label: string; tone: Tone }> = {
   resolved: { label: 'Done', tone: 'success' },
 };
 const FIELD_ROLES = ['housekeeper', 'technician'];
-const historyLabel = (r: HistoryRow) => `${r.propertyName} ${r.unitNumber}`;
+const historyLabel = (r: HistoryRow) => `${buildingName(r.propertyName)} ${r.unitNumber}`;
 
 function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
   const toast = useToast();
@@ -1415,7 +1415,7 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
 
   const columns = useMemo<Column<HistoryRow>[]>(() => [
     { key: 'day', label: 'Day', type: 'date', value: r => r.date, sortKey: 'day', width: 120, render: r => <span className="tabular-nums whitespace-nowrap">{dayLabel(r.date)}</span> },
-    { key: 'building', label: 'Building', value: r => r.propertyName, sortKey: 'building', width: 170 },
+    { key: 'building', label: 'Building', value: r => buildingName(r.propertyName), sortKey: 'building', width: 170 },
     { key: 'unit', label: 'Unit', value: r => r.unitNumber, sortKey: 'unit', width: 100, hideable: false, render: r => <span className="font-medium">{r.unitNumber}</span> },
     { key: 'kind', label: 'Type', value: r => r.kind, text: r => KIND_LABEL[r.kind] ?? r.kind, sortKey: 'kind', width: 100 },
     { key: 'cleaner', label: 'Cleaner', type: 'person', value: r => r.assigneeName ?? r.sheetCleaner, sortKey: 'cleaner', width: 160 },
@@ -1460,7 +1460,7 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
             onChange: (f, t) => update(p => { if (f) p.set('from', f); else p.delete('from'); if (t) p.set('to', t); else p.delete('to'); }) })} />}
         renderCard={r => (
           <PhoneCard title={<span className="font-mono">{r.unitNumber}</span>} right={<span className="text-copy text-muted-ink font-normal">{dayLabel(r.date)}</span>}
-            meta={`${r.propertyName} · ${KIND_LABEL[r.kind] ?? r.kind} · ${r.assigneeName ?? r.sheetCleaner ?? 'No cleaner recorded'} · ${r.photoCount} proof`}
+            meta={`${buildingName(r.propertyName)} · ${KIND_LABEL[r.kind] ?? r.kind} · ${r.assigneeName ?? r.sheetCleaner ?? 'No cleaner recorded'} · ${r.photoCount} proof`}
             badge={show ? <StatusBadge tone={TASK_STATE[r.state]?.tone ?? 'neutral'} size="sm">{TASK_STATE[r.state]?.label ?? r.state}</StatusBadge> : undefined} />
         )}
       />

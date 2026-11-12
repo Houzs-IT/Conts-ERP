@@ -9,7 +9,7 @@ import { FileDropRow } from '../components/Attachments';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
-import { rm, todayMyt } from '../lib/format';
+import { rm, todayMyt, buildingName } from '../lib/format';
 import { usePortalText, usePortalDates, wordFor } from '../lib/portalI18n';
 import { postWithFiles, readReceipt, receiptFileHref, thisMonthMyt, type Me, type MyFloat, type Receipt } from '../lib/claims';
 
@@ -118,7 +118,7 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
       <DateField label={tr.date} value={spendDate} onChange={v => { setSpendDate(v); setDateTouched(true); }} max={todayMyt()} />
       <Field label={tr.note} value={note} onChange={e => setNote(e.target.value)} placeholder={tr.notePh} maxLength={300} />
       <Select label={tr.unit} showLabel size="md" value={unitId} onChange={setUnitId}
-        options={[{ value: '', label: tr.noUnit }, ...(units.data?.units ?? []).map(u => ({ value: u.id, label: `${u.building} ${u.unitNumber}` }))]} />
+        options={[{ value: '', label: tr.noUnit }, ...(units.data?.units ?? []).map(u => ({ value: u.id, label: `${buildingName(u.building)} ${u.unitNumber}` }))]} />
       <span className="text-meta text-muted-ink">{me.route === 'float' ? tr.paidFromFloat : tr.paidByFinance}</span>
       {problem && <span role="alert" className="text-meta text-danger">{problem}</span>}
       <span className="flex gap-2">

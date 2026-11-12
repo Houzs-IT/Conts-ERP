@@ -10,7 +10,7 @@ import { FileDropRow } from '../../components/Attachments';
 import { useToast } from '../../components/Toast';
 import { color } from '../../theme';
 import { api, notifyFailure, downloadFile } from '../../lib/api';
-import { titleCase } from '../../lib/format';
+import { titleCase, buildingName } from '../../lib/format';
 import { PhoneText } from '../../components/PhoneText';
 import { addressLines, type OwnerAddress, type Owner } from '../owners/shared';
 import { SearchSelect } from '../../components/Select';
@@ -114,7 +114,7 @@ export function DetailsForm({ u, owner, buildings, canEdit, onChange, onOpenCont
         </Labeled>
         <Labeled label="Building" help={u.parentUnitId ? 'A sub-unit stays in its parent unit\'s building.' : 'Moving a unit takes its sub-units with it.'}>
           <Select label="Building" value={u.buildingId} disabled={!!u.parentUnitId} onChange={v => onChange({ buildingId: v, state: buildings.find(b => b.id === v)?.state ?? u.state })}
-            options={[...buildings].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })).map(b => ({ value: b.id, label: b.name }))} />
+            options={[...buildings].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })).map(b => ({ value: b.id, label: buildingName(b.name) }))} />
         </Labeled>
         <Labeled label="State" help="Set on the building. Edit the building to change it.">
           <ReadOnly>{building?.state ?? u.state}</ReadOnly>

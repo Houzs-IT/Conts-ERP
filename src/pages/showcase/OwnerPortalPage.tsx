@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { at, useChat, CaseTrail, toListing, toCalendar } from './portalParts';
 import { useSearchParams } from 'react-router-dom';
-import { rm, count, dateShort, monthLabel, weekdayDate, todayMyt, nights as nightsLabel, plural } from '../../lib/format';
+import { rm, count, dateShort, monthLabel, weekdayDate, todayMyt, nights as nightsLabel, plural, buildingName } from '../../lib/format';
 import Icon from '../../components/Icon';
 import ChannelMark from '../../components/ChannelMark';
 import { addDays, daysBetween, type CalendarStay, type Listing } from './model';
@@ -138,7 +138,7 @@ export default function OwnerPortalPage() {
                 return (
                   <button key={u.id} type="button" onClick={() => setPreview(toListing(u))} className="sc-op-card" style={{ textAlign: 'left', padding: '8px 8px 14px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <Photo place={buildingOf(u.unit)} caption style={{ width: '100%', height: 150, borderRadius: 12 }}><span className="sc-published"><span className="sc-dot" />Live on Airbnb</span></Photo>
-                    <div style={{ padding: '0 6px', minWidth: 0 }}><div className="ellipsis" style={{ fontSize: 15, fontWeight: 700 }}>{u.name}</div><div className="ellipsis" style={{ fontSize: 12, color: 'var(--sc-muted)', marginTop: 2 }}>{u.unit} · <Star /> {u.rating.toFixed(2)} · {plural(u.reviews, 'review')}</div></div>
+                    <div style={{ padding: '0 6px', minWidth: 0 }}><div className="ellipsis" style={{ fontSize: 15, fontWeight: 700 }}>{u.name}</div><div className="ellipsis" style={{ fontSize: 12, color: 'var(--sc-muted)', marginTop: 2 }}>{buildingName(u.unit)} · <Star /> {u.rating.toFixed(2)} · {plural(u.reviews, 'review')}</div></div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '10px 6px 0', borderTop: '1px solid var(--sc-subtle)', margin: '0 6px' }}>
                       <div><div className="sc-big" style={{ fontSize: 19 }}>{occ}%</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>occupancy this month</div></div>
                       <div><div className="sc-big" style={{ fontSize: 19 }}>{next ? weekdayDate(next.checkIn) : '-'}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>next check-in</div></div>
@@ -161,7 +161,7 @@ export default function OwnerPortalPage() {
               </div>
               <div className="sc-op-card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <Photo place={buildingOf(unitOf(calUnit).unit)} caption style={{ width: '100%', height: 96, borderRadius: 12 }} />
-                <div><div style={{ fontSize: 13, fontWeight: 700 }}>{unitOf(calUnit).name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{unitOf(calUnit).unit}</div></div>
+                <div><div style={{ fontSize: 13, fontWeight: 700 }}>{unitOf(calUnit).name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{buildingName(unitOf(calUnit).unit)}</div></div>
                 <div style={{ borderTop: '1px solid var(--sc-subtle)', paddingTop: 14 }}><div className="sc-d40" style={{ color: 'var(--sc-teal)' }}>{ms.occupancy}%</div><div style={{ fontSize: 12, color: 'var(--sc-muted)', marginTop: 6 }}>occupancy in {monthLabel(month, { long: true })}</div></div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div><div className="sc-d26">{ms.nights}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>nights booked</div></div>
@@ -275,7 +275,7 @@ export default function OwnerPortalPage() {
                     <details key={y} className="sc-year" open={i === 0}>
                       <summary><span className="chev"><Icon name="ChevronRight" size="sm" /></span><span style={{ flex: 1 }}>{y}</span><span style={{ fontWeight: 400, color: 'var(--sc-muted)' }}>{plural(list.length + (i === 0 ? UNITS.length : 0), 'document')}</span></summary>
                       {list.map(m => <Doc key={m.month} title={`Owner Income Report · ${monthLabel(m.month, { long: true })}`} meta={`Final · ${rm(m.payout)} Net Payout to Owner`} />)}
-                      {i === 0 && UNITS.map(u => <Doc key={u.id} title={`Management agreement · ${u.unit}`} meta={`Contract · since ${OWNER.since}`} />)}
+                      {i === 0 && UNITS.map(u => <Doc key={u.id} title={`Management agreement · ${buildingName(u.unit)}`} meta={`Contract · since ${OWNER.since}`} />)}
                     </details>
                   );
                 })}
@@ -361,7 +361,7 @@ function StayDrawer({ stay, onClose }: { stay: CalendarStay; onClose: () => void
   useEscape(onClose);
   const u = UNITS.find(x => x.id === stay.unitId)!;
   const n = daysBetween(stay.checkIn, stay.checkOut);
-  const rows: [string, string][] = [['Unit', `${u.unit} · ${u.name}`], ['Check-in', `${weekdayDate(stay.checkIn)}, 15:00`], ['Checkout', `${weekdayDate(stay.checkOut)}, 11:00`], ['Nights', nightsLabel(n)], ['Guests', `${stay.guests} ${stay.guests === 1 ? 'adult' : 'adults'}`], ['Status', STATUS_WORD[stay.status]], ['Guest total', rm(stay.total)]];
+  const rows: [string, string][] = [['Unit', `${buildingName(u.unit)} · ${u.name}`], ['Check-in', `${weekdayDate(stay.checkIn)}, 15:00`], ['Checkout', `${weekdayDate(stay.checkOut)}, 11:00`], ['Nights', nightsLabel(n)], ['Guests', `${stay.guests} ${stay.guests === 1 ? 'adult' : 'adults'}`], ['Status', STATUS_WORD[stay.status]], ['Guest total', rm(stay.total)]];
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 29 }} />
@@ -382,7 +382,7 @@ function CaseDrawer({ c, onClose, onPhoto }: { c: SampleCase; onClose: () => voi
       <div className="sc-scrim-dim" onClick={onClose} />
       <div className="sc-side" style={{ width: 560 }} role="dialog" aria-label={`Service case ${c.id}`}>
         <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--sc-line)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
-          <div><div className="sc-eyebrow">Service case {c.id}</div><div style={{ fontSize: 19, fontWeight: 700, marginTop: 4 }}>{c.title}</div><div style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 2 }}>{u.name} · {u.unit}</div></div>
+          <div><div className="sc-eyebrow">Service case {c.id}</div><div style={{ fontSize: 19, fontWeight: 700, marginTop: 4 }}>{c.title}</div><div style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 2 }}>{u.name} · {buildingName(u.unit)}</div></div>
           <button type="button" className="sc-close" aria-label="Close" onClick={onClose}><Icon name="X" size="sm" /></button>
         </div>
         <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 22 }}>

@@ -15,7 +15,7 @@ import { useApi } from '../lib/useApi';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
 import { api, ApiFailure, errorMessage } from '../lib/api';
-import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
+import { rm, monthLabel, todayMyt, titleCase, plural, buildingName } from '../lib/format';
 import { MODEL, isTenancy, type RevenueModel } from '../lib/revenueModel';
 import { PayoutDetails } from './owners/PayoutDetails';
 import { OwnerDetails } from './owners/OwnerDetails';
@@ -130,7 +130,7 @@ export default function OwnerProfilePage({ ownerId }: { ownerId: string }) {
       await api.put(`/units/${u.unitId}/contract`, u.model === 'grr'
         ? { revenueModel: 'grr', monthlyRent: u.grrAmount ?? 0, startsOn: todayMyt() }
         : { revenueModel: 'management', ownerPct: 100 - (u.feePct ?? 25), managementPct: u.feePct ?? 25, agentPct: 0, startsOn: todayMyt() });
-      toast({ tone: 'success', title: 'Unit linked.', body: `${titleCase(u.unitLabel)} assigned to ${titleCase(o.displayName)}.` });
+      toast({ tone: 'success', title: 'Unit linked.', body: `${buildingName(u.unitLabel)} assigned to ${titleCase(o.displayName)}.` });
       setModal(null); reload();
     } catch (e) {
       toast({ tone: 'critical', title: 'Unit was not linked.', body: errorMessage(e, 'Try again in a moment.') });
@@ -349,7 +349,7 @@ function OwnerCombined({ o, month }: { o: Owner; month: string }) {
           return (
             <div key={u.unitId} className="flex items-baseline justify-between gap-3 py-2 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
               <span className="flex flex-col min-w-0">
-                <Link to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=financials`} className="text-copy text-ink no-underline [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</Link>
+                <Link to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=financials`} className="text-copy text-ink no-underline [overflow-wrap:anywhere]">{buildingName(u.unitLabel)}</Link>
                 <span className="text-meta text-muted-ink">{terms(u)}{none ? ' · No reservations this month' : fixed.includes(u) ? '' : ` · ${TERMS.grossIncome} ${rm(f.income)}`}</span>
               </span>
               <MoneyText sen={f.netPayout} mode="exact" className="text-copy whitespace-nowrap" />
@@ -377,7 +377,7 @@ function UnitCard({ u, reportHref }: { u: UnitLine; reportHref: string | null })
   return (
     <section className="bg-card border border-solid border-line rounded-card p-4 flex flex-col gap-2 min-w-0">
       <div className="flex items-start justify-between gap-2">
-        <Link to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} className="text-[15px] font-semibold tracking-[-0.01em] text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{titleCase(u.unitLabel)}</Link>
+        <Link to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} className="text-[15px] font-semibold tracking-[-0.01em] text-ink! no-underline min-w-0 [overflow-wrap:anywhere]">{buildingName(u.unitLabel)}</Link>
         <span className="inline-flex flex-wrap items-center justify-end gap-1.5"><CodeBadge code={u.contractCode} types={types} /><ModelChip model={model} label={terms(u)} /></span>
       </div>
       {!f ? <div className="text-meta text-muted-ink">Figures are visible to finance and management.</div> : model === 'master_lease' ? <>

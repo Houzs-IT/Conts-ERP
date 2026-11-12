@@ -5,7 +5,7 @@ import { Field } from '../Field';
 import { DateField, MoneyInput, PercentInput, StayRange } from '../inputs';
 import { ChoiceChips } from '../ChoiceChips';
 import ChannelMark from '../ChannelMark';
-import { date, dateShort, count, plural, rm, rmRange, amount } from '../../lib/format';
+import { date, dateShort, count, plural, rm, rmRange, amount, buildingName } from '../../lib/format';
 import { Select } from '../Select';
 import Icon from '../Icon';
 import { UnitPicker } from '../booking/UnitPicker';
@@ -132,7 +132,7 @@ export function RateUpdate({ units, pricing, initial, onClose, onDone, building,
 
   const groups = useMemo(() => {
     const m = new Map<string, { name: string; units: CalendarUnit[] }>();
-    for (const u of units) { const k = u.propertyId ?? u.propertyName; const g = m.get(k) ?? { name: u.propertyName, units: [] }; g.units.push(u); m.set(k, g); }
+    for (const u of units) { const k = u.propertyId ?? u.propertyName; const g = m.get(k) ?? { name: buildingName(u.propertyName), units: [] }; g.units.push(u); m.set(k, g); }
     return [...m.entries()].map(([id, g]) => ({ id, ...g }));
   }, [units]);
   const needle = q.trim().toLowerCase();

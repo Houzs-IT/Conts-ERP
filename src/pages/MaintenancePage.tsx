@@ -19,7 +19,7 @@ import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { cx } from '../lib/design-tokens';
-import { rm, plural, dateShort, date, monthLabel } from '../lib/format';
+import { rm, plural, dateShort, date, monthLabel, buildingName } from '../lib/format';
 import { runEach, skippedNote } from '../lib/bulk';
 import {
   Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm, PassKeyJobForm, AssigneePicker, useTechnicians, KIND_WORD, PASS_KEY_URGENCY_HINT } from '../components/ops/OpsUi';
@@ -155,7 +155,7 @@ export default function MaintenancePage() {
   // jobs simply shows none.
   const roster = useUnitRoster();
   const buildingOptions: SelectOption[] = useMemo(() => {
-    const m = new Map<string, string>([...roster.filter(u => u.propertyId).map(u => [u.propertyId!, u.propertyName] as [string, string]), ...issues.map(i => [i.buildingId, i.propertyName] as [string, string])]);
+    const m = new Map<string, string>([...roster.filter(u => u.propertyId).map(u => [u.propertyId!, buildingName(u.propertyName)] as [string, string]), ...issues.map(i => [i.buildingId, buildingName(i.propertyName)] as [string, string])]);
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'en', { numeric: true })).map(([value, label]) => ({ value, label }));
   }, [issues, roster]);
   const unitOptions: FilterOption[] = useMemo(() => {
@@ -247,7 +247,7 @@ export default function MaintenancePage() {
 /* ---------- the list ---------- */
 
 const unitText = ({ unitNumber }: Pick<Issue, 'unitNumber'>): string => unitNumber ?? 'Building (no unit)';
-const jobLabel = (i: Issue) => `${i.propertyName} ${unitText(i)}`;
+const jobLabel = (i: Issue) => `${buildingName(i.propertyName)} ${unitText(i)}`;
 // Some rows are in progress without a start time (set before Start repair recorded one), so the state counts too.
 const started = (i: Issue) => !!i.startedAt || i.state === 'in_progress';
 type Move = 'start' | 'end' | 'reopen';
@@ -308,9 +308,9 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
   // Each option in the Filters panel says how many jobs of this tab it would show.
   const n = (f: (i: Issue) => boolean) => (rows ? rows.filter(f).length : null);
   const columns = useMemo<Column<Issue>[]>(() => [
-    { key: 'building', label: 'Building', value: i => i.buildingId, text: i => i.propertyName, width: 150, hidden: true,
+    { key: 'building', label: 'Building', value: i => i.buildingId, text: i => buildingName(i.propertyName), width: 150, hidden: true,
       filter: { kind: 'select', options: buildingOptions.map(o => ({ value: o.value, label: String(o.label), count: n(i => i.buildingId === o.value) })) } },
-    { key: 'unit', label: 'Unit', value: i => i.unitId, text: i => `${unitText(i)} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120,
+    { key: 'unit', label: 'Unit', value: i => i.unitId, text: i => `${unitText(i)} ${buildingName(i.propertyName)}`, sub: i => i.propertyName, hideable: false, width: 120,
       filter: { kind: 'select', display: 'menu', options: unitOptions },
       render: i => <b className="text-ink font-mono">{unitText(i)}</b> },
     { key: 'issue', label: 'Problem', value: i => i.title, width: 240, filter: false,
@@ -388,7 +388,7 @@ function JobCard({ i, money }: { i: Issue; money: boolean }) {
   const right = money && cost != null ? <>{rm(cost)}{i.finalAmount == null && <span className="text-meta text-muted-ink font-normal"> quote</span>}</>
     : type ? <span className={type.tone === 'critical' ? 'text-danger' : 'text-ink-2'}>{type.label}</span> : null;
   const meta = [
-    `${unitText(i)} · ${i.propertyName}`,
+    `${unitText(i)} · ${buildingName(i.propertyName)}`,
     i.source === 'booking' ? `Guest check-in ${stamp(checkInAt(i))}` : CATEGORY[i.category] ?? i.category,
     i.vendorName ?? 'Unassigned',
     i.blocksUnit && i.state !== 'resolved' ? 'unit blocked' : null,
@@ -530,7 +530,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       {confirmUi}
       <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-4 pb-4 bg-black text-white flex items-start gap-3">
         <div className="flex-1 min-w-0 flex flex-col gap-1">
-          <div className="text-caption font-semibold tracking-[0.12em] uppercase text-gold">{i.propertyName} · {unitText(i)}</div>
+          <div className="text-caption font-semibold tracking-[0.12em] uppercase text-gold">{buildingName(i.propertyName)} · {unitText(i)}</div>
           <div className="text-title leading-tight font-semibold">{i.title}</div>
           <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
             {steps.map((s, k) => (

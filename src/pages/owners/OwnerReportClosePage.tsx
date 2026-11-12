@@ -17,7 +17,7 @@ import { Segmented as Tabs } from '../../components/ops/OpsUi';
 import { useApi } from '../../lib/useApi';
 import { api, notifyFailure } from '../../lib/api';
 import { useToast } from '../../components/Toast';
-import { count, dateTime, monthLabel, plural, todayMyt } from '../../lib/format';
+import { count, dateTime, monthLabel, plural, todayMyt, buildingName } from '../../lib/format';
 import { useUrlState, MonthStepper, shiftMonth } from '../finance/listKit';
 
 type Stage = 'income' | 'deductions' | 'o2';
@@ -48,7 +48,7 @@ const STAGES: Stage[] = ['income', 'deductions', 'o2'];
 
 const needsLook = (u: CloseUnit, step: Stage) => step === 'income' ? u.income.toConfirm > 0 || u.income.warnings.length > 0
   : (step === 'deductions' ? u.deductions.checks : u.o2.checks).length > 0;
-const unitName = (u: CloseUnit) => `${u.building} ${u.unit}`;
+const unitName = (u: CloseUnit) => `${buildingName(u.building)} ${u.unit}`;
 /** The engine's warnings are sentences; the chip shows the first clause. */
 const short = (w: string) => w.split(/[:(]/)[0].replace(/\.$/, '').trim();
 

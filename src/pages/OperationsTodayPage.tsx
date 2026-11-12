@@ -17,6 +17,7 @@ import { OpsModal, dayLabel, hm, mytDay, CATEGORY } from '../components/ops/OpsU
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { StatRow, StatTile, SectionTitle, Segmented } from '../components/Metric';
+import { buildingName } from '../lib/format';
 
 interface Arrival {
   reservationId: string; state: string; channel: string; guestName: string; guests: number; checkInTime: string; checkOut: string;
@@ -134,14 +135,14 @@ export default function OperationsTodayPage() {
             return (
               <StayLine key={d.reservationId} id={d.reservationId} channel={d.channel} time={d.checkOutTime}
                 done={d.leftAt ? `Left ${hm(d.leftAt)}` : d.guestOut ? 'Out' : undefined}
-                unit={`${d.propertyName} ${d.unitNumber}`} guest={d.guestName}
+                unit={`${buildingName(d.propertyName)} ${d.unitNumber}`} guest={d.guestName}
                 sub={d.taskId ? undefined : 'No cleaning job planned yet'} subTone="critical"
                 actions={<>
                   {d.guestOut ? <StatusBadge tone="gold">Guest out{d.taskState === 'resolved' ? ', cleaned' : ''}</StatusBadge>
                     : d.channel === 'owner_stay' ? <StatusBadge tone="neutral">Owner stay</StatusBadge>
                     : !isToday ? <StatusBadge tone="neutral">Leaves {d.checkOutTime}</StatusBadge>
                     : <Button size="sm" variant="secondary" loading={busy === d.reservationId} onClick={() => void guestLeft(d)}>Guest left</Button>}
-                  {canEdit && <TimeButton label="Change checkout time" onClick={() => setEditTime({ id: d.reservationId, which: 'out', label: `${d.propertyName} ${d.unitNumber}`, value: d.checkOutTime })} />}
+                  {canEdit && <TimeButton label="Change checkout time" onClick={() => setEditTime({ id: d.reservationId, which: 'out', label: `${buildingName(d.propertyName)} ${d.unitNumber}`, value: d.checkOutTime })} />}
                 </>} />
             );
           })}
@@ -154,13 +155,13 @@ export default function OperationsTodayPage() {
             return (
               <StayLine key={a.reservationId} id={a.reservationId} channel={a.channel} time={a.checkInTime}
                 done={a.arrivedAt ? `Arrived ${hm(a.arrivedAt)}` : inside ? 'Arrived' : undefined}
-                unit={`${a.propertyName} ${a.unitNumber}`} guest={`${a.guestName}${a.guests ? ` · ${a.guests} ${a.guests === 1 ? 'guest' : 'guests'}` : ''}`}
+                unit={`${buildingName(a.propertyName)} ${a.unitNumber}`} guest={`${a.guestName}${a.guests ? ` · ${a.guests} ${a.guests === 1 ? 'guest' : 'guests'}` : ''}`}
                 sub={!inside && a.cleanState && a.cleanState !== 'resolved' ? `Cleaning ${a.cleanState === 'in_progress' ? 'in progress' : 'not finished'}` : undefined} subTone="warning"
                 actions={<>
                   {a.passKey && <PassKeyBadge passKey={a.passKey} />}
                   {inside ? <StatusBadge tone="success">Currently hosting</StatusBadge> : <StatusBadge tone={r.tone}>{r.label}</StatusBadge>}
                   {canArrive && <Button size="sm" variant="secondary" loading={busy === a.reservationId} onClick={() => void guestArrived(a)}>Guest arrived</Button>}
-                  {!inside && <TimeButton label="Change check-in time" onClick={() => setEditTime({ id: a.reservationId, which: 'in', label: `${a.propertyName} ${a.unitNumber}`, value: a.checkInTime })} />}
+                  {!inside && <TimeButton label="Change check-in time" onClick={() => setEditTime({ id: a.reservationId, which: 'in', label: `${buildingName(a.propertyName)} ${a.unitNumber}`, value: a.checkInTime })} />}
                 </>} />
             );
           })}
@@ -268,7 +269,7 @@ function JobLine({ m }: { m: Job }) {
       className={cx(ROW, 'flex flex-wrap items-center gap-x-3 gap-y-2 text-copy text-ink no-underline hover:bg-page')}>
       <span className={cx('w-[96px] flex-none [font-variant-numeric:tabular-nums]', m.visit ? 'font-semibold' : 'text-meta text-muted-ink')}>{when}</span>
       <span className="flex-1 min-w-[180px]">
-        <b className="[overflow-wrap:anywhere]">{m.propertyName} {m.unitNumber ?? 'Building (no unit)'}</b> · {m.title}
+        <b className="[overflow-wrap:anywhere]">{buildingName(m.propertyName)} {m.unitNumber ?? 'Building (no unit)'}</b> · {m.title}
         <span className="block text-meta text-muted-ink">{CATEGORY[m.category] ?? m.category} · {m.assigneeName ?? 'nobody assigned'}{m.dueBy ? ` · available again ${dayLabel(m.dueBy)}` : ''}</span>
       </span>
       <span className="flex items-center gap-2 flex-wrap justify-end ml-auto">
@@ -289,7 +290,7 @@ function FreeUnits({ units, loading, night }: { units: FreeUnit[] | undefined; l
   const shown = (units ?? []).filter(u => show === 'all' || u.status === show || (show === 'needs_cleaning' && u.status === 'cleaning'));
   const buildings = (() => {
     const m = new Map<string, { name: string; units: FreeUnit[] }>();
-    for (const u of shown) (m.get(u.buildingId) ?? m.set(u.buildingId, { name: u.propertyName, units: [] }).get(u.buildingId)!).units.push(u);
+    for (const u of shown) (m.get(u.buildingId) ?? m.set(u.buildingId, { name: buildingName(u.propertyName), units: [] }).get(u.buildingId)!).units.push(u);
     return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
   })();
   return (

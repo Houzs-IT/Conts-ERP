@@ -4,7 +4,7 @@ import { Segmented, StatTile } from '../../components/Metric';
 import { EmptyState } from '../../components/States';
 import { StaleBanner } from '../../components/DataState';
 import { useApi } from '../../lib/useApi';
-import { rating as fmtRating, date as fmtDate, count, plural } from '../../lib/format';
+import { rating as fmtRating, date as fmtDate, count, plural, buildingName } from '../../lib/format';
 import { cx, TONE } from '../../lib/design-tokens';
 import { useUrlState } from '../finance/listKit';
 import { BAD_REVIEW_MAX, AIRBNB_CATEGORIES, CATEGORY_FLAG_BELOW, categoryLabel, categoryFlagged } from '../../lib/reviewRules';
@@ -57,8 +57,8 @@ export function ReviewsOverview() {
 
   const columns: Column<PlaceRow>[] = [
     by === 'building'
-      ? { key: 'place', label: 'Building', value: r => r.propertyName ?? 'No building', sub: r => plural(r.units, 'unit'), hideable: false, phone: 'title', width: 180 }
-      : { key: 'place', label: 'Unit', value: r => `${r.propertyName ?? ''} ${r.unitNumber ?? ''}`.trim(), render: r => <span className="font-medium">{r.unitNumber}</span>, sub: r => r.propertyName ?? '', hideable: false, phone: 'title', width: 180 },
+      ? { key: 'place', label: 'Building', value: r => buildingName(r.propertyName) || 'No building', sub: r => plural(r.units, 'unit'), hideable: false, phone: 'title', width: 180 }
+      : { key: 'place', label: 'Unit', value: r => `${r.propertyName ?? ''} ${r.unitNumber ?? ''}`.trim(), render: r => <span className="font-medium">{r.unitNumber}</span>, sub: r => buildingName(r.propertyName ?? ''), hideable: false, phone: 'title', width: 180 },
     { key: 'reviews', label: 'Reviews', type: 'number', value: r => r.reviews, align: 'right', width: 80 },
     { key: 'average', label: 'Average', type: 'number', value: r => r.average, align: 'right', width: 90, phone: 'right', title: 'Out of 5, Airbnb and Booking.com together',
       render: r => r.average == null ? <span className="text-muted-ink">No reviews</span> : <span className="inline-flex items-center gap-1.5 tabular-nums"><StarMark className="text-ink" />{fmtRating(r.average)}</span> },

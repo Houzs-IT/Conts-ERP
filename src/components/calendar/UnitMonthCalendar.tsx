@@ -10,7 +10,7 @@ import { useApi } from '../../lib/useApi';
 import { useToast } from '../Toast';
 import { api, errorMessage } from '../../lib/api';
 import { channelNote, type ChannelSync } from '../../lib/bookingStatus';
-import { todayMyt, monthLabel, plural, rm, dateRange, count } from '../../lib/format';
+import { todayMyt, monthLabel, plural, rm, dateRange, count, buildingName } from '../../lib/format';
 import { CHANNEL } from '../../lib/vocabulary';
 import { BlockWizard } from './CalendarModals';
 import { SelectionPopover, type NightSelection } from './SelectionPopover';
@@ -117,7 +117,7 @@ function UnitPicker({ units, blocks, loading, error, reload, ym, first, next, ni
   const [q, setQ] = useState('');
   const buildings = useMemo(() => {
     const m = new Map<string, string>();
-    for (const u of units) m.set(u.propertyId ?? u.propertyName, u.propertyName);
+    for (const u of units) m.set(u.propertyId ?? u.propertyName, buildingName(u.propertyName));
     return [...m].sort((a, b) => a[1].localeCompare(b[1]));
   }, [units]);
   const rows = useMemo(() => {
@@ -164,7 +164,7 @@ function UnitPicker({ units, blocks, loading, error, reload, ym, first, next, ni
               className="min-h-[64px] flex items-center gap-3 px-4 py-2.5 border-0 [border-bottom:1px_solid_var(--color-line-soft)] bg-transparent text-left cursor-pointer text-ink font-sans">
               <span className="flex-1 min-w-0 flex flex-col gap-0.5">
                 <span className="text-[15px] font-semibold">{u.unitNumber}</span>
-                <span className="text-meta text-muted-ink truncate">{u.propertyName}{now ? ` · ${isHold(now) ? holdName(now) : 'Hosting now'}` : ' · Free tonight'}</span>
+                <span className="text-meta text-muted-ink truncate">{buildingName(u.propertyName)}{now ? ` · ${isHold(now) ? holdName(now) : 'Hosting now'}` : ' · Free tonight'}</span>
               </span>
               <span className="flex flex-col items-end gap-1 flex-none w-[74px]">
                 <span className="text-copy font-semibold tabular-nums">{pct}%</span>
@@ -240,7 +240,7 @@ function MonthView({ unit, data, ym, first, next, nights, today, error, reload, 
       <div className="flex items-end justify-between gap-3">
         <span className="flex flex-col gap-0.5 min-w-0">
           <span className="text-[22px] leading-tight font-semibold tracking-[-0.01em]">{unit.unitNumber}</span>
-          <span className="text-meta text-muted-ink truncate">{unit.propertyName}</span>
+          <span className="text-meta text-muted-ink truncate">{buildingName(unit.propertyName)}</span>
         </span>
         <MonthStep ym={ym} onMonth={onMonth} />
       </div>

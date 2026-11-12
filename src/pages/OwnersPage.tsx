@@ -10,7 +10,7 @@ import { api, ApiFailure, errorMessage } from '../lib/api';
 import { saveBlob, zipStore } from '../lib/export';
 import type { Report } from './OwnerIncomeReportPage';
 import type { StatementPages } from '../lib/statementPdf';
-import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
+import { rm, monthLabel, todayMyt, titleCase, plural, buildingName } from '../lib/format';
 import { phone as formatPhone } from '../lib/phone';
 import { MoneyText } from '../components/MoneyText';
 import { Menu, Select } from '../components/Select';
@@ -115,7 +115,7 @@ function OwnerList() {
 
   const { data, loading, error, reload } = useApi<Payload>(`/owners${month === thisMonth ? '' : `?month=${month}`}`, FALLBACK);
   const filters = useFinanceFilters();
-  const buildingNameOf = useMemo(() => new Map((filters?.buildings ?? []).map(b => [b.id, b.name])), [filters]);
+  const buildingNameOf = useMemo(() => new Map((filters?.buildings ?? []).map(b => [b.id, buildingName(b.name)])), [filters]);
   const buildingsOf = (o: Owner) => [...new Set(o.units.map(u => (u.buildingId ? buildingNameOf.get(u.buildingId) : null)).filter(Boolean))].join(', ');
   const toast = useToast();
   const navigate = useNavigate();
@@ -315,7 +315,7 @@ function OwnerList() {
           {open[o.id] && o.units.map(u => (
             <Link key={u.unitId} to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} onClick={e => e.stopPropagation()}
               className="flex items-center justify-between gap-2 min-w-0 pl-5 no-underline text-inherit! hover:underline" title={`${u.unitLabel} · ${terms(u)}`}>
-              <span className="text-meta text-ink truncate">{titleCase(u.unitLabel)}</span>
+              <span className="text-meta text-ink truncate">{buildingName(u.unitLabel)}</span>
               <span className="shrink-0"><ModelChip model={modelOf(u)} label={terms(u)} /></span>
             </Link>
           ))}
@@ -391,7 +391,7 @@ function OwnerList() {
           <SearchBox className="flex-1 min-w-[200px]" label="Search owners" placeholder="Search owner, phone, email, address or unit" value={url.get('q')} onChange={v => url.set({ q: v || null, page: null })} />
           {filters && (
             <Select className="flex-[0_1_200px] max-md:flex-[1_1_160px]" label="Building" value={building} onChange={v => url.set({ building: v || null, page: null })}
-              options={[{ value: '', label: 'All buildings' }, ...[...filters.buildings].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name }))]} />
+              options={[{ value: '', label: 'All buildings' }, ...[...filters.buildings].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: buildingName(b.name) }))]} />
           )}
           {phone && (
             <Select className="flex-[1_1_180px]" label="Sort by" value={url.get('sort')}

@@ -14,7 +14,7 @@ import { useApi } from '../lib/useApi';
 import { useMedia } from '../lib/useMedia';
 import { saveBlob, toXlsx, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
-import { count, monthLabel, percent, plural, rm, todayMyt } from '../lib/format';
+import { count, monthLabel, percent, plural, rm, todayMyt, buildingName } from '../lib/format';
 import { overallFigures, overallTotals, occupancyLabel, GROUP_NAME, REPORT_GROUPS, type OverallInput, type OverallTotals, type ReportGroup } from '../lib/ownerOverall';
 import { GainLoss, LEVELS, OwnerOverallDetail, money, unitStatus, type Level, type ReportRow } from './OwnerOverallDetail';
 
@@ -306,9 +306,9 @@ export default function OwnerOverallReportPage() {
                     {/* A phone wraps the code at its hyphen (CONTINEW- / B1703A) so the Unit column stays narrow. */}
                     <span className="flex items-center gap-2 min-w-0 max-sm:max-w-[92px] sm:max-w-[200px]">
                       <span aria-hidden className={cx('h-1.5 w-1.5 shrink-0 rounded-full', st.tone === 'success' ? 'bg-success-line' : st.tone === 'critical' ? 'bg-danger-line' : 'bg-neutral-line')} />
-                      <span className="flex flex-col min-w-0" title={`${r.code} · ${r.building}`}>
+                      <span className="flex flex-col min-w-0" title={`${r.code} · ${buildingName(r.building)}`}>
                         <span className="font-semibold sm:truncate leading-tight">{r.code}</span>
-                        <span className="max-sm:hidden text-meta text-muted-ink truncate leading-tight">{r.building}{r.contractCode ? ` · ${r.contractCode}` : ''}</span>
+                        <span className="max-sm:hidden text-meta text-muted-ink truncate leading-tight">{buildingName(r.building)}{r.contractCode ? ` · ${r.contractCode}` : ''}</span>
                       </span>
                     </span>
                   </td>

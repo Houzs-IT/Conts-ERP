@@ -14,7 +14,7 @@ import { useApi } from '../../lib/useApi';
 import { useLeaveGuard } from '../../lib/useLeaveGuard';
 import { useSession } from '../../lib/session';
 import { api, ApiFailure, errorMessage, notifyFailure } from '../../lib/api';
-import { titleCase } from '../../lib/format';
+import { titleCase, buildingName } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { PURPOSES, USED_BY, offeredTypes, optionsOfType, type ContractTypeOptions } from '../../lib/revenueModel';
 import { useContractTypes } from '../../lib/useContractTypes';
@@ -152,7 +152,7 @@ export default function AddUnitPage(): ReactElement {
     try {
       const r = await api.post<{ id: string }>('/properties', b);
       setAddingBuilding(false);
-      toast({ tone: 'success', title: 'Building added.', body: `${b.name} is picked for this unit.` });
+      toast({ tone: 'success', title: 'Building added.', body: `${buildingName(b.name)} is picked for this unit.` });
       edit({ buildingId: r.id });
       props.reload();
     } catch (e) { notifyFailure(e); }
@@ -214,7 +214,7 @@ export default function AddUnitPage(): ReactElement {
                   </Labeled>
                   <Labeled label="Building *">
                     <Select label="Building" value={form.buildingId} onChange={v => edit({ buildingId: v })}
-                      options={[...(form.buildingId ? [] : [{ value: '', label: props.loading ? 'Loading buildings' : 'Pick a building' }]), ...buildings.map(b => ({ value: b.id, label: b.name }))]} />
+                      options={[...(form.buildingId ? [] : [{ value: '', label: props.loading ? 'Loading buildings' : 'Pick a building' }]), ...buildings.map(b => ({ value: b.id, label: buildingName(b.name) }))]} />
                     {fieldError('buildingId')}
                     <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                       <button type="button" onClick={() => setAddingBuilding(true)} className="p-0 bg-transparent border-none cursor-pointer [font-family:inherit] text-meta font-semibold text-gold-ink max-md:min-h-11">Add building</button>

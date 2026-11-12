@@ -15,7 +15,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { monthLabel, rm, todayMyt } from '../lib/format';
+import { monthLabel, rm, todayMyt, buildingName } from '../lib/format';
 import { downloadTable, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx, TONE } from '../lib/design-tokens';
 import { useUrlState, FilterSelect, shiftMonth } from './finance/listKit';
@@ -38,7 +38,7 @@ const LINE_COLOR: Record<CostKey, string> = {
   fees: 'var(--color-chart-ink)', cleaning: 'var(--color-info-line)', electricity: 'var(--color-warning-line)', water: 'var(--color-chart-teal)',
   internet: 'var(--color-gold)', sewerage: 'var(--color-success-line)', other: 'var(--color-neutral-line)', misc: 'var(--color-faint)',
 };
-const unitName = (u: Unit | undefined, id: string) => (u ? `${u.building} ${u.number}` : id);
+const unitName = (u: Unit | undefined, id: string) => (u ? `${buildingName(u.building)} ${u.number}` : id);
 const pctText = (v: number | null) => (v == null ? '–' : `${v.toFixed(1)}%`);
 const rmText = (sen: number) => (sen < 0 ? `(${rm(-sen)})` : rm(sen));
 
@@ -71,7 +71,7 @@ export default function UnitPnlPage() {
 
   const unitById = useMemo(() => new Map((data?.units ?? []).map(u => [u.id, u])), [data]);
   const buildings = useMemo(() => [...new Set((data?.units ?? []).map(u => u.building))].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
-    .map(b => ({ value: b, label: b })), [data]);
+    .map(b => ({ value: b, label: buildingName(b) })), [data]);
   const shownUnits = useMemo(() => new Set((data?.units ?? []).filter(u => (!building || u.building === building)
     && (!unitId || u.id === unitId) && (!q || `${u.building} ${u.number} ${u.owner}`.toLowerCase().includes(q))).map(u => u.id)), [data, building, unitId, q]);
   // The contract filter goes by each month's own contract, so a unit that changed contract keeps its earlier months.

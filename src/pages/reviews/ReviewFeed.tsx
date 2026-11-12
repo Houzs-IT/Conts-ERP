@@ -5,7 +5,7 @@ import { EmptyState } from '../../components/States';
 import { StaleBanner, TableSkeleton } from '../../components/DataState';
 import { DateField } from '../../components/inputs/DateField';
 import { api, errorMessage } from '../../lib/api';
-import { count, date, plural } from '../../lib/format';
+import { count, date, plural, buildingName } from '../../lib/format';
 import { useUrlState, FilterSelect, BusyBar } from '../finance/listKit';
 import { ListToolbar } from '../../components/ListToolbar';
 import { ReviewCard, type Review } from './ReviewCard';
@@ -77,7 +77,7 @@ export function ReviewFeed({ bad, canReply, fixed }: { bad: boolean; canReply: b
         filters={[
           { key: 'channel', label: 'Channel', value: f.channel, onChange: v => set({ channel: v || null }), allLabel: 'All channels', options: CHANNELS },
           { key: 'building', label: 'Building', value: f.propertyId, onChange: v => set({ propertyId: v || null, unitId: null }), allLabel: 'All buildings',
-            options: (meta?.buildings ?? []).map(b => ({ value: b.id, label: b.label })) },
+            options: (meta?.buildings ?? []).map(b => ({ value: b.id, label: buildingName(b.label) })) },
           ...(!bad ? [{ key: 'rating', label: 'Rating', value: f.rating, onChange: (v: string) => set({ rating: v || null }), allLabel: 'Any rating',
             options: [5, 4, 3, 2, 1].map(n => ({ value: String(n), label: `${n} ${n === 1 ? 'star' : 'stars'}` })) }] : []),
           { key: 'reply', label: 'Reply', value: f.reply, onChange: v => set({ reply: v || null }), allLabel: 'Any reply state',

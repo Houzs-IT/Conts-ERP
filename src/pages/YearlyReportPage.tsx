@@ -8,7 +8,7 @@ import { EmptyState } from '../components/States';
 import { ListToolbar } from '../components/ListToolbar';
 import { Segmented } from '../components/Metric';
 import { useApi } from '../lib/useApi';
-import { count, plural, rm, todayMyt } from '../lib/format';
+import { count, plural, rm, todayMyt, buildingName } from '../lib/format';
 import { downloadTable, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { useUrlState, FilterSelect } from './finance/listKit';
@@ -22,7 +22,7 @@ interface Unit { id: string; building: string; number: string; owner: string; co
 interface Payload { year: string; months: string[]; units: Unit[]; rows: YearlyRow[]; notInGrid: number; unpricedCleans: number; excluded: number; toDate: string | null }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const unitName = (u: Unit) => `${u.building} ${u.number}`;
+const unitName = (u: Unit) => `${buildingName(u.building)} ${u.number}`;
 const GRID = '[border-left:1px_solid_var(--color-line)]';
 /** The Show filter: one option per figure, plus the three cleaning tables together. */
 const CLEANING = ['cleanerCost', 'cleaningOwner', 'cleaningEarned'];
@@ -54,7 +54,7 @@ function Grid({ grid, units, months, toDate }: { grid: BlockGrid; units: Unit[];
             <tr key={u.id} className="[border-top:1px_solid_var(--color-line)]">
               <td className="sticky left-0 bg-card px-3 py-1.5 whitespace-nowrap" title={`${unitName(u)} · ${u.owner}`}>
                 <span className="block font-semibold leading-tight">{u.number}</span>
-                <span className="block text-meta text-muted-ink leading-tight">{u.building} · {u.contract === 'LT' ? 'Fixed rent' : 'Profit share'}</span>
+                <span className="block text-meta text-muted-ink leading-tight">{buildingName(u.building)} · {u.contract === 'LT' ? 'Fixed rent' : 'Profit share'}</span>
               </td>
               {(grid.units[u.id] ?? []).map((v, i) => <td key={i} className={cx('text-right px-3 py-1.5', GRID)}><Cell sen={v} /></td>)}
               <td className={cx('text-right px-3 py-1.5', GRID)}><Cell sen={rowTotal(grid.units[u.id] ?? [])} strong /></td>
@@ -95,7 +95,7 @@ export default function YearlyReportPage() {
     return (data?.rows ?? []).filter(r => ids.has(r.unitId) && (!contract || r.contract === contract));
   }, [data, shown, contract]);
   const grids = useMemo(() => pivot(rows, data?.months ?? []), [rows, data]);
-  const buildings = useMemo(() => [...new Set((data?.units ?? []).map(u => u.building))].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).map(b => ({ value: b, label: b })), [data]);
+  const buildings = useMemo(() => [...new Set((data?.units ?? []).map(u => u.building))].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).map(b => ({ value: b, label: buildingName(b) })), [data]);
   const contractUnits = (c: string) => new Set((data?.rows ?? []).filter(r => r.contract === c && shown.some(u => u.id === r.unitId)).map(r => r.unitId)).size;
   const years = Array.from({ length: Math.min(4, thisYear - 2019) }, (_, i) => String(thisYear - i));
 

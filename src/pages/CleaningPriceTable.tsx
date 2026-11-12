@@ -7,7 +7,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
-import { amount, date as dayText, plural } from '../lib/format';
+import { amount, date as dayText, plural, buildingName } from '../lib/format';
 import { INPUT } from '../components/ops/OpsUi';
 import { Segmented } from '../components/Metric';
 import { LabeledField } from './MaintenanceCatalog';
@@ -68,7 +68,7 @@ export function CleaningPriceTable({ onSaved }: { onSaved: () => void }) {
       <div className="flex flex-col gap-1.5 mt-1">
         <h3 className="m-0 text-meta font-bold uppercase tracking-[0.12em] text-ink-2">Units with their own price</h3>
         {d.own && d.own.length > 0
-          ? <PriceGrid fields={fields} first="Unit" rows={d.own.map(u => ({ key: u.unitId, label: <span className="flex flex-col"><span><b className="font-mono">{u.unitNumber}</b> <span className="text-muted-ink">{u.propertyName}</span></span><span className="text-meta text-muted-ink">{plural(u.beds, 'bed')}</span></span>, basic: u.basic, deep: u.deep }))} />
+          ? <PriceGrid fields={fields} first="Unit" rows={d.own.map(u => ({ key: u.unitId, label: <span className="flex flex-col"><span><b className="font-mono">{u.unitNumber}</b> <span className="text-muted-ink">{buildingName(u.propertyName)}</span></span><span className="text-meta text-muted-ink">{plural(u.beds, 'bed')}</span></span>, basic: u.basic, deep: u.deep }))} />
           : <span className="text-meta text-muted-ink">No unit has its own price. Set one under Per unit.</span>}
       </div>
     </section>

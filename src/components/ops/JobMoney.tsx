@@ -10,7 +10,7 @@ import { useConfirm } from '../ConfirmDialog';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { cx } from '../../lib/design-tokens';
-import { rm, date as dayText, monthLabel } from '../../lib/format';
+import { rm, date as dayText, monthLabel, buildingName } from '../../lib/format';
 import { OpsModal, FormRow, INPUT, mytDay } from './OpsUi';
 import { StatRow, StatTile } from '../Metric';
 import { ListToolbar, type ToolbarFilter } from '../ListToolbar';
@@ -254,13 +254,13 @@ export function JobProfitView({ kind, onOpen }: { kind: Kind; onOpen?: (id: stri
   // Building and Cleaner (or Contractor) behind one Filters button, each option with its count for the month.
   const groups: ToolbarFilter[] = [
     { key: 'building', label: 'Building', allLabel: 'All buildings', value: building, onChange: setBuilding,
-      options: buildings.map(([id, name]) => ({ value: id, label: name, count: all.filter(r => r.buildingId === id).length })) },
+      options: buildings.map(([id, name]) => ({ value: id, label: buildingName(name), count: all.filter(r => r.buildingId === id).length })) },
     { key: 'who', label: kind === 'maintenance' ? 'Contractor' : 'Cleaner', allLabel: kind === 'maintenance' ? 'All contractors' : 'All cleaners', value: who, onChange: setWho,
       options: people.map(p => ({ value: p, label: p, count: all.filter(r => r.who === p).length })) },
   ];
   const columns = useMemo<Column<ProfitRow>[]>(() => [
     { key: 'day', label: 'Finished', type: 'date', value: r => r.day, width: 110 },
-    { key: 'unit', label: 'Unit', value: r => `${r.building} ${r.unitNumber ?? NO_UNIT}`, width: 160, phone: 'title', render: r => <span><b>{r.unitNumber ?? NO_UNIT}</b> <span className="text-muted-ink">{r.building}</span></span> },
+    { key: 'unit', label: 'Unit', value: r => `${buildingName(r.building)} ${r.unitNumber ?? NO_UNIT}`, width: 160, phone: 'title', render: r => <span><b>{r.unitNumber ?? NO_UNIT}</b> <span className="text-muted-ink">{buildingName(r.building)}</span></span> },
     { key: 'job', label: kind === 'maintenance' ? 'Job' : 'Clean', value: r => r.title, width: 200, sub: r => (kind === 'maintenance' && r.chargeTo !== 'owner' ? `Paid by ${r.chargeTo === 'the_conts' ? 'The Conts' : r.chargeTo.replace('_', ' ')}` : null) },
     { key: 'category', label: 'Category', value: r => CATEGORY_WORD[r.category] ?? r.category, width: 120 },
     { key: 'who', label: kind === 'maintenance' ? 'Contractor' : 'Cleaner', value: r => r.who ?? '', width: 140 },
