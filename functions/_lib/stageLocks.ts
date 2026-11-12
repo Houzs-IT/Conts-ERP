@@ -184,3 +184,51 @@ export function o2Checks(x: { held: number; repeats: number; prevMonth: string }
 export const carriedText = (labels: string[]): string => `Already settled on the ${labels.join(' and ')} statement`;
 /** The company's balancing row on an unlocked month whose late change already counted in later months. */
 export const companyCarriedText = (labels: string[]): string => `Already counted in ${labels.join(' and ')}`;
+
+/* Part 3, GP and final (chew, 11 Nov 2026). An owner's statement can be made final only once every step that lists one
+ * of the owner's units is locked for the month (spec goal 7); Unlock final follows how far the payout has gone (spec
+ * calls 5 and 6, agreed "可以"). */
+
+/** One unit of an owner on the month's steps: the steps that list it (income and deductions on a share, O2 for every unit
+ *  on the statement: closeSteps) and the ones locked. */
+export interface FinalUnit { unitId: string; label: string; steps: Stage[]; locked: Stage[] }
+
+/** The units still waiting before Make final, each with the steps not yet locked, in step order. Empty: it can be made final. */
+export function finalWaiting(units: FinalUnit[]): { unitId: string; label: string; stages: Stage[] }[] {
+  return units.flatMap(u => {
+    const stages = STAGES.filter(s => u.steps.includes(s) && !u.locked.includes(s));
+    return stages.length ? [{ unitId: u.unitId, label: u.label, stages }] : [];
+  });
+}
+
+/** 'income, deductions and O2'. */
+const stageList = (stages: Stage[]): string => {
+  const names = stages.map(s => STAGE_NAME[s]);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0] ?? '';
+};
+
+/** 'Waiting: deductions and O2' for an owner with one unit; 'Waiting: B-16-05 (B) O2' otherwise, at most two units named
+ *  ('Waiting: X income; Y O2; 2 more units'). */
+export function waitingText(waiting: { label: string; stages: Stage[] }[], ownerUnits: number): string {
+  if (ownerUnits <= 1 && waiting.length === 1) return `Waiting: ${stageList(waiting[0].stages)}`;
+  const named = waiting.slice(0, 2).map(w => `${w.label} ${stageList(w.stages)}`);
+  const more = waiting.length - 2;
+  return `Waiting: ${[...named, ...(more > 0 ? [`${more} more unit${more === 1 ? '' : 's'}`] : [])].join('; ')}`;
+}
+
+export type FinalUnlock = { kind: 'draft'; cancelPayout: string | null } | { kind: 'paid' } | { kind: 'refused'; problem: string };
+
+/** What Unlock final does, from the statement's state and its latest payout that is not cancelled (null when none):
+ *    not paid (final, or sent with the payout pending or failed): back to draft, the payout cancelled;
+ *    the transfer under way (processing): refused until it is paid or has failed;
+ *    paid: the statement and its payout stay; the month is worked out again and the difference goes to the next open
+ *          month as an owner adjustment. */
+export function unlockFinalPlan(statementState: string, payout: { id: string; state: string } | null): FinalUnlock {
+  if (statementState === 'provisional') return { kind: 'refused', problem: 'This statement is a draft, so there is nothing to unlock.' };
+  if (statementState === 'paid' || payout?.state === 'paid') return { kind: 'paid' };
+  if (payout?.state === 'processing') return { kind: 'refused', problem: 'The payout is being transferred. Unlock the statement once the transfer is paid or has failed.' };
+  return { kind: 'draft', cancelPayout: payout && (payout.state === 'pending' || payout.state === 'failed') ? payout.id : null };
+}
+
+/** The owner adjustment's description for a paid statement's difference after Unlock final. */
+export const finalUnlockText = (unitLabel: string, label: string): string => `Change to ${unitLabel} for ${label} after it was paid (statement unlocked)`;

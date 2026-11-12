@@ -51,7 +51,7 @@ const OWNER_ALLOWED: [string, RegExp][] = [
  *                connections and imports, receipts and claims (the engine), IT support (the IT Hub), system health,
  *                and user accounts and permissions. */
 const DEMO_LIVE = /^\/api\/(auth|account|owner|table-layouts)(\/|$)|^\/api\/demo$|^\/api\/(reservations|units|payouts|operations\/service-prices)\/export$/;
-const DEMO_REFUSED = /^\/api\/(statements\/(finalise|send)|payouts|integrations|import|claims|supply-chain|it-support|system|users|accounting|units\/[^/]+\/channex-setup)(\/|$)/;
+const DEMO_REFUSED = /^\/api\/(statements\/(finalise|send|unlock-final)|payouts|integrations|import|claims|supply-chain|it-support|system|users|accounting|units\/[^/]+\/channex-setup)(\/|$)/;
 
 /** Renovation staff (migration 0316): their own sign-in, account and notices, and their own clock, leave and pay. */
 const RENOVATION_ALLOWED: [string, RegExp][] = [

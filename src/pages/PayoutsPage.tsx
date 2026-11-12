@@ -56,8 +56,8 @@ const FALLBACK: Payload = {
 };
 
 /** Attention-first: failed rises to the top, paid settles to the bottom. */
-const GROUP_ORDER: PayoutState[] = ['failed', 'pending', 'processing', 'paid'];
-const RANK: Record<PayoutState, number> = { failed: 0, pending: 1, processing: 2, paid: 3 };
+const GROUP_ORDER: PayoutState[] = ['failed', 'pending', 'processing', 'paid', 'cancelled'];
+const RANK: Record<PayoutState, number> = { failed: 0, pending: 1, processing: 2, paid: 3, cancelled: 4 };
 type Filter = 'all' | PayoutState;
 
 const destination = payoutDestination;
@@ -100,7 +100,7 @@ export default function PayoutsPage({ embedded = false }: { embedded?: boolean }
   // Counts and the outstanding amount come from the server, so they cover every payout, not just this page.
   const counts = useMemo(() => {
     if (data?.counts) return data.counts;
-    const c: Record<PayoutState, number> = { failed: 0, pending: 0, processing: 0, paid: 0 };
+    const c: Record<PayoutState, number> = { failed: 0, pending: 0, processing: 0, paid: 0, cancelled: 0 };
     allRows.forEach(r => { c[r.state] += 1; });
     return c;
   }, [allRows, data]);

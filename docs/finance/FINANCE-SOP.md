@@ -812,8 +812,19 @@ O2：
 锁的权限一个一个给：
 - Lock income、Lock deductions、Lock O2、Unlock a step **只能单独打开**。这四个和 Owner statement close 现在放在 Users and roles 的 **Units** 组（2026-11-12 起，migration 0307）。勾整组 Units，或部门、职位有 Units 的基础权限，都不会顺便打开这四个。它们那一行标「Set on its own」，要在那一行单独勾（给个人、职位或整个部门都可以）。
 
-**还没做**：
-- 第三部分：Final（三段都锁才能 final）、解锁 final（钱还没付 → 回草稿；转账中 → 不能解；已付 → 差额放下个月 O2）、Overall owner report 的 Locks 栏和 Agent / Company 两栏（先补合约的 agent %）。
+**第三部分：GP 和 final**（2026-11-12 做好）
+- **Make final**：从 2026 年 10 月起，一个业主名下的单位，那个月出现在哪几步（Income、Deductions、O2），那几步都锁了才能 final。没锁完会说还在等什么，例如「Waiting: deductions and O2」或「Waiting: B-16-05 (B) O2」。只有 O2 的单位也算在三步里，三步都要锁。9 月和以前照旧。
+- **Unlock final**（要写原因，记在 History）：
+  - 还没付（final，或已 send、付款还是 Pending 或 Failed）：回到草稿，付款变 **Cancelled**：不会再转账，付款批次会跳过它，也不算在「还没付」里。重新 final、send 以后，会有一笔新的付款。
+  - 转账中（Processing）：不能解锁，等转好或失败再解。
+  - 已付：付了的钱不变。用今天的合约重新算那个月，差额做成 owner adjustment，放到下一个开着的月份；公司那份反过来算进同一个月。解锁第二次不会重复放。
+  - 那个月的三步锁还在。要改某一步，先 Unlock final，再到 Owner statement close 解那一步。
+- **权限**：Make final、Unlock final 跟锁一样，只能在 Users and roles 一个一个给（个人、职位或部门），管理层一直有。没给的人在 Owner statements 也看不到「Mark final」。
+- **Unit report（Overall owner report）**：Gain / Loss 分成 **Agent**（GP × 合约的 agent %；长租是 0；GP 是负数时是 0）和 **Company**（Gain / Loss 减 Agent）。从 10 月起多一组「Close」：
+  - Locks：Income / Ded. / O2，锁了的有锁头；
+  - Final：Make final、Waiting: …，或 Final · 谁 · 几号，旁边有 Unlock。按钮放在那个业主排在最前面的那一行，手机上只显示状态。
+- **Owner statement close 第 4 步**：显示「N 个业主里几个 final」，点了打开那个月的 Unit report。
+- **合约的 agent %**：正式库的合约全都是空的，所以 Agent 栏现在都是 0。清单已按十月 V2 的「整体报告」整理好，等 chew 确认才填。只填 agent %，业主拿的钱不变。
 
 ---
 

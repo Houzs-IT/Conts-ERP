@@ -33,6 +33,8 @@ const said = (d: string) => d.replace(/^O2:\s*/i, '').trim().toLowerCase();
  *                 the month still to confirm whose reservation is on the unit.
  *    deductions   the same units: cleaning, utilities, additional deductions and the misc charge.
  *    o2           every unit on the month's statement: the owner adjustments a statement built now takes for it.
+ *  final: step 4 (GP and final, part 3): how many owners have a unit on one of the month's steps, and how many of them
+ *  have their statement final.
  *  Without a month: last month (MYT). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -102,12 +104,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     };
   }).sort((a, b) => a.building.localeCompare(b.building) || a.unit.localeCompare(b.unit));
 
+  const stepOwners = new Set(step.dated.filter(r => onStep.has(r.unitId)).map(r => r.ownerId));
   return json({
     month, today, lockProblem: lockMonthProblem(month, today),
     may: {
       lockIncome: can(session, 'lockIncome', 'edit'), lockDeductions: can(session, 'lockDeductions', 'edit'), lockO2: can(session, 'lockO2', 'edit'),
-      unlock: can(session, 'unlockStep', 'edit'),
+      unlock: can(session, 'unlockStep', 'edit'), makeFinal: can(session, 'makeFinal', 'edit'),
     },
+    final: { final: [...stepOwners].filter(id => step.finals.has(id)).length, total: stepOwners.size },
     airbnbFiles: recon?.files.length ?? 0,
     counts: step.counts,
     units,

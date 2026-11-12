@@ -20,7 +20,7 @@ import { modelOf } from './revenueModel';
 import { finalMonthsFor } from './expenses';
 import {
   type Stage, STAGES, openMonthAfter, planLate, planUnlock, carriedText, companyCarriedText, companyFigure, lateLabel, lateText, monthLabel, lockable, splitLate,
-  type PostedLate,
+  type PostedLate, type FinalUnit, LOCK_FROM, finalWaiting, unlockFinalPlan, finalUnlockText,
 } from './stageLocks';
 
 export interface LockRow { id: string; month: string; unit_id: string; stage: Stage; locked_by_name: string; locked_at: string }
@@ -114,6 +114,26 @@ export async function closeSteps(env: Env, month: string): Promise<{
     if (unitId) held.set(unitId, (held.get(unitId) ?? 0) + Number(h.amount));
   }
   return { inputs, dated, open, locks: byUnit, finals, held, steps, counts };
+}
+
+/** For each owner with a unit on one of the month's steps: those units, the steps that list each (closeSteps) and the
+ *  ones locked. Make final needs every listed step locked (spec goal 7; stageLocks.ts finalWaiting). Units are named as
+ *  the close page names them (the unit code, else the unit number), in that order. */
+export async function finalReadiness(env: Env, month: string): Promise<Map<string, FinalUnit[]>> {
+  const step = await closeSteps(env, month);
+  const unitOf = new Map(step.inputs.units.map(u => [u.id, u]));
+  const ownerOf = new Map(step.dated.map(r => [r.unitId, r.ownerId]));
+  const listed = new Map<string, Stage[]>();
+  for (const stage of STAGES) for (const id of step.steps[stage]) listed.set(id, [...(listed.get(id) ?? []), stage]);
+  const out = new Map<string, FinalUnit[]>();
+  for (const [unitId, steps] of listed) {
+    const ownerId = ownerOf.get(unitId), u = unitOf.get(unitId);
+    if (!ownerId || !u) continue;
+    const locks = step.locks.get(unitId) ?? {};
+    out.set(ownerId, [...(out.get(ownerId) ?? []), { unitId, label: u.unit_code || u.unit_number, steps, locked: STAGES.filter(s => !!locks[s]) }]);
+  }
+  for (const units of out.values()) units.sort((a, b) => a.label.localeCompare(b.label));
+  return out;
 }
 
 /** The locks of a month, for some units or all. */
@@ -416,4 +436,121 @@ export async function syncLate(env: Env, scope: { unitIds?: string[]; ownerIds?:
     out.company = { inserted: cInserts.length, updated: cUpdates.length, removed: cRemoves.length };
   });
   return out;
+}
+
+type Who = { userId: string; fullName: string };
+export type UnlockFinalResult =
+  | { ok: true; outcome: 'draft'; payoutCancelled: boolean }
+  | { ok: true; outcome: 'paid'; posted: { unitId: string; month: string; amount: number }[] }
+  | { problem: string; status: 404 | 409 };
+
+/** Unlock final (route statements/unlock-final; spec calls 5 and 6, chew 11 Nov 2026 "可以"), by how far the payout has
+ *  gone (stageLocks.ts unlockFinalPlan):
+ *    not paid  the statement goes back to draft (its steps stay locked) and a pending or failed payout is cancelled; made
+ *              final and sent again, it gets a fresh payout. A transfer under way refuses it.
+ *    paid      the statement and its payout stay. The month is worked out again (every lock applied, today's contract)
+ *              and each unit's difference in what the owner is due becomes an owner adjustment on the unit's next open
+ *              month (held on a yearly guarantee, as the late update does), referenced to the statement, so unlocking
+ *              again posts only what is still missing. No company row: the company views work a final month out with
+ *              today's contract, so they already follow the correction (review I1; spec call 8's frozen split is not
+ *              built in those views). Refused if the statement was made final before every step was locked (its month cannot
+ *              be worked out again from what the locks kept).
+ *  A month before the locks, or a statement imported from the owner workbook, cannot be unlocked here. */
+export async function unlockFinal(env: Env, who: Who, statementId: string, reason: string): Promise<UnlockFinalResult> {
+  const s = await one<{ owner_id: string; period_start: string; state: string; source: string | null }>(env,
+    'SELECT owner_id, period_start, state, source FROM owner_statements WHERE id = ?', statementId);
+  if (!s) return { problem: 'That statement no longer exists.', status: 404 };
+  const month = s.period_start.slice(0, 7), label = monthLabel(month);
+  if (month < LOCK_FROM || (s.source ?? 'generated') !== 'generated') {
+    return { problem: `The ${label} statement comes from the owner workbook, before the locks, so it cannot be unlocked here.`, status: 409 };
+  }
+  const latestPayout = (tx: Env, lock: boolean) => one<{ id: string; state: string }>(tx, `SELECT id, state FROM payouts
+    WHERE statement_id = ? AND state <> 'cancelled' ORDER BY created_at DESC, id DESC LIMIT 1${lock ? ' FOR UPDATE' : ''}`, statementId);
+  const first = unlockFinalPlan(s.state, await latestPayout(env, false));
+  if (first.kind === 'refused') return { problem: first.problem, status: 409 };
+  const actor = { actorId: who.userId, actorLabel: who.fullName };
+
+  if (first.kind === 'draft') {
+    return transaction(env, async tx => {
+      await takeLateIncomeLock(tx);
+      const cur = await one<{ state: string }>(tx, 'SELECT state FROM owner_statements WHERE id = ? FOR UPDATE', statementId);
+      const pay = await latestPayout(tx, true);
+      const plan = unlockFinalPlan(cur?.state ?? 'provisional', pay);
+      if (plan.kind === 'refused') return { problem: plan.problem, status: 409 as const };
+      if (plan.kind === 'paid') return { problem: 'The payout was marked paid a moment ago. Unlock the statement again to post the difference.', status: 409 as const };
+      await run(tx, "UPDATE owner_statements SET state = 'provisional', finalised_at = NULL, sent_at = NULL WHERE id = ?", statementId);
+      if (plan.cancelPayout) {
+        await run(tx, "UPDATE payouts SET state = 'cancelled', failure_reason = ? WHERE id = ? AND state IN ('pending', 'failed')", `Statement unlocked: ${reason}`, plan.cancelPayout);
+        await audit(tx, { ...actor, action: 'payout.cancel', entityTable: 'payouts', entityId: plan.cancelPayout, before: { state: pay?.state }, after: { state: 'cancelled', reason } });
+      }
+      await audit(tx, { ...actor, action: 'statement.unlock_final', entityTable: 'owner_statements', entityId: statementId,
+        before: { state: cur?.state }, after: { state: 'provisional', reason, payoutCancelled: !!plan.cancelPayout } });
+      return { ok: true as const, outcome: 'draft' as const, payoutCancelled: !!plan.cancelPayout };
+    });
+  }
+
+  // Paid: work the owner's month out again from what the locks kept, with today's contract.
+  const ready = (await finalReadiness(env, month)).get(s.owner_id) ?? [];
+  if (finalWaiting(ready).length) {
+    return { problem: 'Its steps were not all locked when it was made final, so it cannot be worked out again. Post the difference as an owner adjustment instead.', status: 409 };
+  }
+  const q = queryOf(env);
+  const settings = await statementSettings(q);
+  const inputs = await withYearToDate(q, await loadInputs(q, `${month}-01`, monthEndExclusive(month), { ownerIds: [s.owner_id] }), month, settings);
+  const fresh = computeMonth(month, inputs, settings, 'dated').filter(r => r.ownerId === s.owner_id);
+  const stored = await all<{ unit_id: string; gross_income: number; deductions: number; payout_before_adjustments: number; top_up: number | null; revenue_model: string | null }>(env,
+    'SELECT unit_id, gross_income, deductions, payout_before_adjustments, top_up, revenue_model FROM statement_units WHERE statement_id = ?', statementId);
+  const unitIds = [...new Set([...stored.map(x => x.unit_id), ...fresh.filter(hasActivity).map(r => r.unitId)])];
+  const due = unitIds.map(unitId => {
+    const m = fresh.find(r => r.unitId === unitId), o = stored.find(x => x.unit_id === unitId);
+    const yearly = (m?.terms.model ?? o?.revenue_model) === 'management_yearly_guarantee';
+    const unit = inputs.units.find(u => u.id === unitId);
+    return {
+      unitId, held: yearly,
+      diff: (m?.payoutBeforeAdjustments ?? 0) - Number(o?.payout_before_adjustments ?? 0),
+      text: finalUnlockText(unit ? `${unit.property_name} ${unit.unit_number}` : unitId, label),
+    };
+  });
+
+  return transaction(env, async tx => {
+    await takeLateIncomeLock(tx);
+    const cur = await one<{ state: string }>(tx, 'SELECT state FROM owner_statements WHERE id = ? FOR UPDATE', statementId);
+    if (!cur || cur.state === 'provisional') return { problem: 'This statement is a draft, so there is nothing to unlock.', status: 409 as const };
+    const ref = `final-unlock:${statementId}`;
+    const posted = await all<{ id: string; unit_id: string; month: string; amount: number; movable: boolean }>(tx, `
+      SELECT a.id, a.unit_id, substr(a.occurred_on, 1, 7) AS month, a.amount,
+             (a.state IN ('open','held') AND (a.statement_id IS NULL OR s.state = 'provisional')
+               AND NOT EXISTS (SELECT 1 FROM owner_report_locks k WHERE k.stage = 'o2' AND k.frozen->'adjustments' @> jsonb_build_array(jsonb_build_object('id', a.id)))) AS movable
+      FROM owner_adjustments a LEFT JOIN owner_statements s ON s.id = a.statement_id
+      WHERE a.source = 'stage_lock' AND a.reference = ? ORDER BY a.occurred_on, a.id`, ref);
+    const closed = await closedMonthsFor(tx, unitIds, month, 'o2');
+    const at = nowIso();
+    const out: { unitId: string; month: string; amount: number }[] = [];
+    const inserts: Record<string, unknown>[] = [], updates: { id: string; amount: number; kind: string }[] = [], removes: string[] = [];
+    for (const d of due) {
+      const target = openMonthAfter(month, closed.get(d.unitId) ?? new Set());
+      const mine: PostedLate[] = posted.filter(p => p.unit_id === d.unitId).map(p => ({ id: p.id, month: p.month, amount: Number(p.amount), movable: !!p.movable }));
+      const plan = planLate(d.diff, mine, target);
+      if (plan.kind === 'insert') {
+        inserts.push({ id: `adj-final-${crypto.randomUUID()}`, unit_id: d.unitId, kind: plan.amount >= 0 ? 'credit' : 'charge', amount: plan.amount,
+          description: d.text, occurred_on: `${plan.month}-01`, state: d.held ? 'held' : 'open' });
+        out.push({ unitId: d.unitId, month: plan.month, amount: plan.amount });
+      } else if (plan.kind === 'update') {
+        updates.push({ id: plan.id, amount: plan.amount, kind: plan.amount >= 0 ? 'credit' : 'charge' });
+        out.push({ unitId: d.unitId, month: mine.find(p => p.id === plan.id)?.month ?? target, amount: plan.amount });
+      } else if (plan.kind === 'remove') removes.push(plan.id);
+    }
+    // One write per kind for every unit of the owner, as the late update writes.
+    if (inserts.length) await run(tx, `
+      INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
+      SELECT x.id, ?, x.unit_id, x.kind, x.amount, x.description, x.occurred_on, ?, x.state, 'stage_lock', ?, ?, ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, kind text, amount integer, description text, occurred_on text, state text)`,
+      s.owner_id, ref, who.userId, at, at, JSON.stringify(inserts));
+    if (updates.length) await run(tx, `UPDATE owner_adjustments a SET amount = x.amount, kind = x.kind, updated_at = ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, amount integer, kind text) WHERE a.id = x.id`, at, JSON.stringify(updates));
+    if (removes.length) await run(tx, 'DELETE FROM owner_adjustments WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', JSON.stringify(removes));
+    await audit(tx, { ...actor, action: 'statement.unlock_final', entityTable: 'owner_statements', entityId: statementId,
+      before: { state: cur.state }, after: { state: cur.state, reason, posted: out } });
+    return { ok: true as const, outcome: 'paid' as const, posted: out };
+  });
 }

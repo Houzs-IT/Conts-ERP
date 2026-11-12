@@ -1,8 +1,9 @@
 /** Owner statement close (chew, 11 Nov 2026; spec docs/superpowers/specs/2026-11-11-owner-report-stage-locks-design.md):
  *  each month's owner statements are checked in steps and each step is locked unit by unit, only the units ticked.
  *  Income (part 1), deductions and O2 (part 2a): a locked figure never changes, and what comes later (a reservation
- *  changed, a cost or an owner adjustment added) goes to the next open month. Unlocking asks why. GP and final follow
- *  in part 3. */
+ *  changed, a cost or an owner adjustment added) goes to the next open month. Unlocking asks why. Step 4, GP and final
+ *  (part 3): how many owners are final; it opens the Unit report, where an owner's statement is made final once
+ *  every step is locked. */
 import { useMemo } from 'react';
 import { cx } from '../../lib/design-tokens';
 import { useNavigate } from 'react-router-dom';
@@ -31,7 +32,9 @@ interface CloseUnit {
 }
 interface Payload {
   month: string; today: string; lockProblem: string | null;
-  may: { lockIncome: boolean; lockDeductions: boolean; lockO2: boolean; unlock: boolean };
+  may: { lockIncome: boolean; lockDeductions: boolean; lockO2: boolean; unlock: boolean; makeFinal?: boolean };
+  /** Step 4: the month's owners with a unit on a step, and how many of them are final. */
+  final?: { final: number; total: number };
   airbnbFiles: number;
   counts: Record<Stage, { locked: number; total: number }>;
   units: CloseUnit[];
@@ -53,9 +56,11 @@ const STEP_DETAIL: Record<Stage, string> = {
 };
 
 /** The close as a horizontal stepper (prototype .uo-steps): number, name, state and one line for each step, the current
- *  one gold with its "n of N locked" and a slim bar. Step 4 (GP and final) is shown as not yet, it comes in part 3.
- *  Stacks one under another on a phone. */
-function CloseSteps({ current, counts, onPick }: { current: Stage; counts: Payload['counts']; onPick: (s: Stage) => void }) {
+ *  one gold with its "n of N locked" and a slim bar. Step 4 (GP and final) counts the owners whose statement is final and
+ *  opens the Unit report. Stacks one under another on a phone. */
+function CloseSteps({ current, counts, final, onPick, onFinal }: {
+  current: Stage; counts: Payload['counts']; final?: Payload['final']; onPick: (s: Stage) => void; onFinal: () => void;
+}) {
   const state = (s: Stage) => {
     const c = counts[s];
     return c.total > 0 && c.locked >= c.total ? 'Done' : s === current || c.locked > 0 ? 'In progress' : 'Not yet';
@@ -88,14 +93,29 @@ function CloseSteps({ current, counts, onPick }: { current: Stage; counts: Paylo
           </li>
         );
       })}
-      <li className={cx(cell, 'cursor-default')}>
-        <span className={cx(num, 'bg-muted text-ink-2')}>4</span>
-        <span className="flex flex-col gap-0.5 min-w-0 flex-1">
-          <b className="text-copy text-ink">GP and final</b>
-          <span className="text-meta font-semibold text-muted-ink">Not yet</span>
-          <span className="text-meta text-muted-ink truncate">Comes in a later update</span>
-        </span>
-      </li>
+      {(() => {
+        const f = final ?? { final: 0, total: 0 };
+        const done = f.total > 0 && f.final >= f.total;
+        const pct = f.total ? Math.round((f.final / f.total) * 100) : 0;
+        return (
+          <li className="contents">
+            <button type="button" onClick={onFinal} title="Open the Unit report, where each owner's statement is made final"
+              className={cx(cell, 'border-0 font-[inherit] cursor-pointer bg-transparent')}>
+              <span className={cx(num, done ? 'bg-success text-white' : 'bg-muted text-ink-2')}>{done ? <Icon name="Check" size="sm" /> : 4}</span>
+              <span className="flex flex-col gap-0.5 min-w-0 flex-1">
+                <b className="text-copy text-ink">GP and final</b>
+                <span className={cx('text-meta font-semibold', done ? 'text-success' : 'text-muted-ink')}>
+                  {done ? 'Done' : f.final > 0 ? 'In progress' : 'Not yet'} · {count(f.final)} of {plural(f.total, 'owner')} final
+                </span>
+                <span className="text-meta text-muted-ink truncate">Make final on the Unit report</span>
+                <span aria-hidden className="block h-1 rounded-full bg-muted mt-1.5 overflow-hidden">
+                  <i className={cx('block h-1', done ? 'bg-success' : 'bg-gold')} style={{ width: `${pct}%` }} />
+                </span>
+              </span>
+            </button>
+          </li>
+        );
+      })()}
     </ol>
   );
 }
@@ -260,7 +280,8 @@ export default function OwnerReportClosePage() {
         {error && <StaleBanner message={data ? `Showing the last figures we have. ${error}` : error} onRetry={reload} />}
         {loading && !data ? <TableSkeleton rows={8} cols={6} /> : data ? (
           <>
-            <CloseSteps current={step} counts={data.counts} onPick={s => url.set({ step: s === 'income' ? null : s, show: null })} />
+            <CloseSteps current={step} counts={data.counts} final={data.final} onPick={s => url.set({ step: s === 'income' ? null : s, show: null })}
+              onFinal={() => navigate(`/portfolio/owner-report?month=${month}`)} />
             {data.lockProblem && <p className="m-0 text-meta text-muted-ink">{data.lockProblem} This month can be looked at but not locked.</p>}
             {step === 'income' && !data.lockProblem && data.airbnbFiles === 0 && (
               <div className="flex flex-wrap items-center justify-between gap-2 border border-line border-l-[3px] border-l-info bg-info-bg px-3 py-2 text-copy">

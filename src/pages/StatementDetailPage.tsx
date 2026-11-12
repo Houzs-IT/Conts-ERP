@@ -18,6 +18,9 @@ import { RecordHistory } from '../components/RecordHistory';
 import { StatRow, StatTile } from '../components/Metric';
 import { TERMS, DEDUCTION_TERMS, deductionTerm, lineTerm, lineDetail, isSourceReference } from '../lib/statementTerms';
 import { go } from '../lib/go';
+import { statementActionToast } from '../lib/statementActions';
+import { useSession } from '../lib/session';
+import { mayWork } from '../lib/areaAccess';
 
 /** `/owners/statements/:id` (the old `/finance/statements/:id` redirects here) — one owner's statement on screen: each unit's month the way the Owner Income
  *  Report prints it (income, deductions, split, owner adjustments, payout), every line behind it with a link to
@@ -52,6 +55,8 @@ export default function StatementDetailPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  // Make final is a power given one by one (owner statement close part 3); the server checks it too.
+  const mayMakeFinal = mayWork(useSession().user, 'makeFinal');
   const { data, loading, error, reload } = useApi<{ data: Detail }>(`/statements/${encodeURIComponent(id)}`);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<'send' | 'paid' | null>(null);
@@ -61,10 +66,14 @@ export default function StatementDetailPage() {
     if (!s) return;
     setBusy(true);
     try {
-      if (kind === 'finalise') await api.post('/statements/finalise', { statementIds: [s.id] });
-      if (kind === 'send') await api.post('/statements/send', { statementIds: [s.id] });
-      if (kind === 'paid' && s.payout) await api.patch('/payouts', { id: s.payout.id, state: 'paid' });
-      toast({ tone: 'success', title: kind === 'finalise' ? 'Statement marked final.' : kind === 'send' ? 'Statement sent to the owner.' : 'Marked as paid.' });
+      if (kind === 'paid') {
+        if (s.payout) await api.patch('/payouts', { id: s.payout.id, state: 'paid' });
+        toast({ tone: 'success', title: 'Marked as paid.' });
+      } else {
+        // The server answers 200 with what it did and what it refused (a step still open, a draft out of date).
+        const res = await api.post<{ finalised?: number; sent?: number; failed?: { id: string; reason: string }[] }>(kind === 'finalise' ? '/statements/finalise' : '/statements/send', { statementIds: [s.id] });
+        toast(statementActionToast(kind, res));
+      }
       reload();
     } catch (e) {
       toast({ tone: 'critical', title: 'That did not go through.', body: errorMessage(e, 'Try again in a moment.') });
@@ -81,7 +90,7 @@ export default function StatementDetailPage() {
     );
   }
 
-  const next = s.state === 'provisional' ? { label: 'Mark final', run: () => act('finalise') }
+  const next = s.state === 'provisional' ? (mayMakeFinal ? { label: 'Mark final', run: () => act('finalise') } : null)
     : s.state === 'finalised' ? { label: 'Send to owner', run: () => setConfirm('send') }
     : s.state === 'sent' && s.payout && s.payout.state !== 'paid' ? { label: 'Mark paid', run: () => setConfirm('paid') }
     : null;

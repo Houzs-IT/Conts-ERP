@@ -62,7 +62,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     }
   }
 
-  const payout = st ? await one<any>(env, 'SELECT state, amount, paid_at, bank_last4 FROM payouts WHERE statement_id = ? AND owner_id = ? ORDER BY created_at DESC LIMIT 1', st.id, owner.id) : null;
+  const payout = st ? await one<any>(env, "SELECT state, amount, paid_at, bank_last4 FROM payouts WHERE statement_id = ? AND owner_id = ? AND state <> 'cancelled' ORDER BY created_at DESC LIMIT 1", st.id, owner.id) : null;
 
   // Accounts the units are paid to when any is not the main one (0180): bank and last four of each, never a number. [] otherwise.
   const accounts = st ? await differingAccountTails(env, st.id) : [];

@@ -140,6 +140,11 @@ jobs:
         env:
           API_BASE: http://localhost:8788
           DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Owner statement close, GP and final (owner-close-final)
+        run: node scripts/api-checks/owner-close-final.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
       - name: Demo mode guards (demo-mode)
         run: node scripts/api-checks/demo-mode.mjs
         env:
