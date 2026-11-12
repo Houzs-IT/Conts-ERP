@@ -68,7 +68,7 @@ export async function cleanPrice(env: Env, unitId: string, kind: string): Promis
  *  clean already has an expense, when the unit already carries a cleaning expense that day (the owner workbook import
  *  records cleans too), or when that month's statement is final. Never throws: the clean is already finished. */
 export async function chargeClean(env: Env, session: Session, task: { id: string; unit_id: string; kind: string; title: string }, day = mytToday()):
-  Promise<{ amount: number; created: boolean; reason: string | null }> {
+  Promise<{ amount: number; created: boolean; reason: string | null; rolledTo?: string | null }> {
   try {
     // The clean's own amount (typed on the job) or the price table's, kept on the job as charged; none set: the old pricing.
     let set: { amount: number; source: 'job' | 'unit' | 'table' } | null = null;
@@ -92,12 +92,14 @@ export async function chargeClean(env: Env, session: Session, task: { id: string
     if (await isPeriodLocked(env, task.unit_id, day)) return { amount: price.amount, created: false, reason: "this month's owner statement is already final" };
     if (price.amount <= 0) return { amount: 0, created: false, reason: 'no price' };
     const id = crypto.randomUUID();
-    await run(env, `
+    // A month whose deductions are locked (owner statement close) takes no new cost: the charge goes on the next open
+    // month (the expenses trigger, migration 0303), as a late bill.
+    const row = await one<{ deduct_month: string }>(env, `
       INSERT INTO expenses (id, unit_id, task_id, category, description, amount, currency, incurred_on, charge_to, created_by, created_at)
-      VALUES (?, ?, ?, 'cleaning', ?, ?, 'MYR', ?, 'owner', ?, ?)`,
+      VALUES (?, ?, ?, 'cleaning', ?, ?, 'MYR', ?, 'owner', ?, ?) RETURNING deduct_month`,
       id, task.unit_id, task.id, task.kind === 'deep_clean' ? 'Deep clean' : 'Basic clean', price.amount, day, session.userId, nowIso());
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.create', entityTable: 'expenses', entityId: id, after: { unitId: task.unit_id, taskId: task.id, category: 'cleaning', amount: price.amount, source: price.source } });
-    return { amount: price.amount, created: true, reason: null };
+    return { amount: price.amount, created: true, reason: null, rolledTo: row && row.deduct_month !== day.slice(0, 7) ? row.deduct_month : null };
   } catch (e) {
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.clean_charge_failed', entityTable: 'tasks', entityId: task.id, after: { error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
     return { amount: 0, created: false, reason: 'the charge could not be saved' };

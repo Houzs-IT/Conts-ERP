@@ -5,7 +5,7 @@ import { loadInputs, computeMonth, statementSettings, hasActivity, withYearToDat
 import { monthEndExclusive } from '../../_lib/revenue';
 import { auditMany } from '../../_lib/history';
 import { notifyUsers } from '../../_lib/notify';
-import { syncLateIncome, LATE_INCOME_LOCK } from '../../_lib/ownerLocks';
+import { syncLate, LATE_INCOME_LOCK } from '../../_lib/ownerLocks';
 
 /** POST /api/statements/generate { period: "2026-09", ownerIds?: string[] }
  *  One provisional statement per owner, built by the owner workbook's rules (functions/_lib/ownerStatement.ts):
@@ -33,9 +33,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const start = `${period}-01`, endEx = monthEndExclusive(period);
   const end = new Date(Date.parse(`${endEx}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
 
-  // Months whose income is locked: a booking changed since reaches the owner as an owner adjustment on the next open
-  // month (owner report close). Brought up to date first, so the statements built below carry it.
-  await syncLateIncome(env, ownerIds ? { ownerIds } : {});
+  // Months whose income or deductions are locked: a reservation or cost changed since reaches the owner as an owner
+  // adjustment on the next open month (owner statement close). Brought up to date first, so the statements built below carry it.
+  await syncLate(env, ownerIds ? { ownerIds } : {});
 
   // One transaction, one period at a time: a second click while the first was still writing failed half-way through
   // (11 Oct 2026), and a finalise landing between the reads and the writes would have had its lines rebuilt.
@@ -108,7 +108,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       // Rebuilding releases what these statements carried before; whatever is still due is attached again.
       await run(tx, "UPDATE owner_adjustments SET statement_id = NULL, updated_at = ? WHERE statement_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND state = 'open'", now, sids);
       if (attach.length) await run(tx, `UPDATE owner_adjustments a SET statement_id = x.statement_id, updated_at = ?
-        FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, statement_id text) WHERE a.id = x.id AND a.state = 'open'`, now, JSON.stringify(attach));
+        FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, statement_id text) WHERE a.id = x.id AND a.state = 'open'
+          AND (a.statement_id IS NULL OR a.statement_id = x.statement_id)`, now, JSON.stringify(attach));
+      // A month whose deductions or O2 are locked prints what its locks kept: a cost or owner adjustment gone since keeps
+      // its line, without the link (the foreign key would refuse the line).
+      const present = async (table: 'expenses' | 'owner_adjustments', key: 'expense_id' | 'adjustment_id') => {
+        const ids = [...new Set(lines.map(l => l[key]).filter((x): x is string => typeof x === 'string' && !!x))];
+        return new Set(ids.length ? (await all<{ id: string }>(tx, `SELECT id FROM ${table} WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(ids))).map(r => r.id) : []);
+      };
+      const haveExpense = await present('expenses', 'expense_id');
+      const haveAdjustment = await present('owner_adjustments', 'adjustment_id');
+      for (const l of lines) {
+        if (typeof l.expense_id === 'string' && !haveExpense.has(l.expense_id)) l.expense_id = null;
+        if (typeof l.adjustment_id === 'string' && !haveAdjustment.has(l.adjustment_id)) l.adjustment_id = null;
+      }
       for (let i = 0; i < lines.length; i += 2000) {
         await run(tx, `
           INSERT INTO statement_lines (id, statement_id, unit_id, reservation_id, expense_id, line_type, category, description, occurred_on, amount, reference, sort_order, quantity, adjustment_id)

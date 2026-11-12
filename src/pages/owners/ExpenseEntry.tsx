@@ -48,10 +48,14 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
   const toast = useToast();
   const [month, setMonth] = useState(initial);
   const scope = ownerId ? `&ownerId=${encodeURIComponent(ownerId)}` : unitId ? `&unitId=${encodeURIComponent(unitId)}` : '';
-  const { data, loading, error, reload } = useApi<{ data: UtilityRow[]; unitsWithoutAccount?: BareUnit[]; rollsTo?: Record<string, string> }>(`/expenses/utilities?month=${month}${scope}`);
+  const { data, loading, error, reload } = useApi<{ data: UtilityRow[]; unitsWithoutAccount?: BareUnit[]; rollsTo?: Record<string, string>; rollsWhy?: Record<string, 'final' | 'locked'> }>(`/expenses/utilities?month=${month}${scope}`);
   // Units whose statement for this month is already final: their bills are deducted on the next open statement.
   const rollsTo = data?.rollsTo ?? {};
   const rollMonths = [...new Set(Object.values(rollsTo))].sort();
+  // Why each unit's bills go to a later statement: its month is final, or its deductions are locked (owner statement close).
+  const lockedN = Object.keys(rollsTo).filter(u => data?.rollsWhy?.[u] === 'locked').length, finalN = Object.keys(rollsTo).length - lockedN;
+  const units = (n: number) => (n === 1 ? 'one unit' : `${n} units`);
+  const rollReason = [lockedN ? `${monthLabel(month)} deductions are locked for ${units(lockedN)}` : '', finalN ? `${monthLabel(month)} is final for ${units(finalN)}` : ''].filter(Boolean).join(', and ');
   const [amounts, setAmounts] = useState<Record<string, number | null>>({});
   const [payers, setPayers] = useState<Record<string, string>>({});
   const [receipts, setReceipts] = useState<Record<string, File | null>>({});
@@ -143,7 +147,7 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
       </div>
       {rollMonths.length > 0 && (
         <div role="note" className="text-copy rounded-control border border-solid border-line bg-muted px-3 py-2">
-          {monthLabel(month)} is final for {Object.keys(rollsTo).length === 1 ? 'one unit' : `${Object.keys(rollsTo).length} units`}. Bills entered for {Object.keys(rollsTo).length === 1 ? 'it' : 'them'} will be deducted on the {rollMonths.map(m => monthLabel(m)).join(' or ')} statement.
+          {rollReason}. Bills entered for {Object.keys(rollsTo).length === 1 ? 'it' : 'them'} will be deducted on the {rollMonths.map(m => monthLabel(m)).join(' or ')} statement.
         </div>
       )}
       <div className="w-[220px] max-w-full">

@@ -7,7 +7,7 @@ import { COUNTED, adjustmentText, bulkEligible, checkIncomeType, incomeKey, mont
 import { confirmContext, planWith, setsAirbnbFigure } from '../../_lib/airbnbConfirmLoad';
 import { MONTH, hasAirbnbRecon, loadMonth } from './index';
 import { hasIncomeTypes, loadIncomeTypes } from './income-types';
-import { syncLateIncome } from '../../_lib/ownerLocks';
+import { syncLate } from '../../_lib/ownerLocks';
 
 /* Airbnb reconciliation, step 2 (chew, 11 Nov 2026): finance confirms a reservation's line, or keeps it as it is.
    Confirming writes what the confirm window listed, all together or nothing:
@@ -194,7 +194,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   // The late difference of a locked month goes on the next open month: that statement is the one to generate again.
-  if (changedUnits.size) (await syncLateIncome(env, { unitIds: [...changedUnits] })).months.forEach(m => regenerate.add(m));
+  if (changedUnits.size) (await syncLate(env, { unitIds: [...changedUnits] })).months.forEach(m => regenerate.add(m));
 
   return json({
     ok: true, confirmed: decisions.filter(d => d.action !== 'keep').length, kept: decisions.filter(d => d.action === 'keep').length,

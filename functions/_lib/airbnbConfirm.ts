@@ -97,11 +97,13 @@ export type Plan = { ok: true; changes: StayChange[]; shares: OwnerShare[] } | {
  *  code's counted stays to Airbnb's net. cancel: a past stay is marked cancelled (one still to come is cancelled on
  *  the reservation itself, where its nights reopen). Anything else changes no reservation.
  *  lockedMonthsOf: a unit's months whose income is locked (owner statement close). The caller leaves them out of
- *  finalMonthsOf too: a locked month gets no flat share either, as its lock posts the difference by the contract. */
+ *  finalMonthsOf too: a locked month gets no flat share either, as its lock posts the difference by the contract.
+ *  o2LockedOf: a unit's months whose O2 is locked: a final month's share is posted past them too. */
 export function planLine(
   line: Pick<Line, 'code' | 'action' | 'newAmount'>, stays: ReadonlyArray<StayMoney>, today: string,
   finalMonthsOf: (unitId: string) => ReadonlySet<string>, ownerPctOf: (unitId: string, month: string) => number | null,
   lockedMonthsOf: (unitId: string) => ReadonlySet<string> = () => new Set(),
+  o2LockedOf: (unitId: string) => ReadonlySet<string> = () => new Set(),
 ): Plan {
   const counted = stays.filter(s => COUNTED.includes(s.state));
   const changes: StayChange[] = [];
@@ -113,7 +115,7 @@ export function planLine(
   const share = (s: StayMoney, delta: number) => {
     const finals = finalMonthsOf(s.unitId);
     const o = ownerShareOfChange(delta, s, finals, m => ownerPctOf(s.unitId, m));
-    if (o.sen !== 0) shares.push({ unitId: s.unitId, reservationId: s.id, sen: o.sen, months: o.months, onMonth: openMonthFrom(o.months[o.months.length - 1]!, finals) });
+    if (o.sen !== 0) shares.push({ unitId: s.unitId, reservationId: s.id, sen: o.sen, months: o.months, onMonth: openMonthFrom(o.months[o.months.length - 1]!, new Set([...finals, ...o2LockedOf(s.unitId)])) });
   };
   if (line.action === 'set_amount') {
     if (line.newAmount == null || line.newAmount <= 0) return { ok: false, message: `${line.code}: there is no amount above RM 0.00 to set. Check it by hand.` };
@@ -172,7 +174,8 @@ export interface Applied { changes: StayChange[]; shares: (OwnerShare & { adjust
 export function undoProblem(applied: Applied, now: {
   stays: ReadonlyMap<string, { gross: number | null; state: string }>;
   finalMonthsOf: (unitId: string) => ReadonlySet<string>;
-  adjustments: ReadonlyMap<string, { state: string; final: boolean }>;
+  /** locked: why an O2 lock keeps the adjustment (owner statement close), when one does. */
+  adjustments: ReadonlyMap<string, { state: string; final: boolean; locked?: string | null }>;
 }): string | null {
   for (const c of applied.changes) {
     const s = now.stays.get(c.id);
@@ -184,6 +187,8 @@ export function undoProblem(applied: Applied, now: {
   }
   for (const s of applied.shares) {
     const a = now.adjustments.get(s.adjustmentId);
+    // Kept by an O2 lock: deleting it would leave the locked month's statement printing a line with nothing behind it.
+    if (a?.locked) return a.locked;
     if (a && (a.final || a.state !== 'open')) {
       return `The owner’s ${s.sen > 0 ? 'credit' : 'charge'} it made is on a final statement now, or was held or settled.`;
     }

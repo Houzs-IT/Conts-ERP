@@ -21,10 +21,12 @@ export function lockMonthProblem(month: string, today: string): string | null {
   return month >= today.slice(0, 7) ? `${monthLabel(month)} has not ended yet.` : null;
 }
 
-/** Whether a unit's income can be locked, by its contract's basis (termsFor): only a share. A fixed rent or a master
- *  lease pays the owner the same whatever the unit earns, so a lock there would only freeze the company's own figures
- *  (review finding 4; where the company's part of a late change goes is chew's call). */
-export const incomeLockable = (basis: string): boolean => basis === 'share';
+/** Whether a unit can be locked on a step, by its contract's basis (termsFor). Income and deductions: a share only. A
+ *  fixed rent or a master lease pays the owner the same whatever the unit earns or costs, so locking those steps would
+ *  only freeze the company's own figures (review finding 4); they join once the company's share of a late change is
+ *  built (chew's choice A, part 2b). O2: every unit on the statement. */
+export const lockable = (stage: Stage, basis: string): boolean => stage === 'o2' || basis === 'share';
+export const incomeLockable = (basis: string): boolean => lockable('income', basis);
 
 /** The month after `month` (YYYY-MM). */
 export function monthAfter(month: string): string {
@@ -89,8 +91,66 @@ export function planUnlock(posted: PostedLate[], monthIsFinal: boolean, label: s
   };
 }
 
+/** A unit-month's owner payout before adjustments (sen), worked out three ways for the late update: `statement` as the
+ *  statement takes it (every lock's figures); `incomeLive` with today's income but the locked costs, misc worked out
+ *  from today's occupancy (needed only when income and deductions are both locked); `live` from today's data alone. */
+export interface LateRun { statement: number; incomeLive?: number; live: number }
+
+/** Each lock's share of a unit-month's late difference. Income comes first, then deductions, so a misc change that a
+ *  reservation brings (misc follows occupancy) goes with the income difference (spec call 11); with income unlocked,
+ *  the deductions lock carries it. */
+export function splitLate(r: LateRun, locked: { income: boolean; deductions: boolean }): { income?: number; deductions?: number } {
+  if (locked.income && locked.deductions) {
+    const mid = r.incomeLive ?? r.live;
+    return { income: mid - r.statement, deductions: r.live - mid };
+  }
+  if (locked.income) return { income: r.live - r.statement };
+  if (locked.deductions) return { deductions: r.live - r.statement };
+  return {};
+}
+
 /** The owner adjustment's description for a lock's late difference. */
-export const lateText = (unitLabel: string, label: string): string => `Late change to ${unitLabel} income for ${label} (income locked)`;
+export const lateText = (stage: 'income' | 'deductions', unitLabel: string, label: string): string =>
+  `Late change to ${unitLabel} ${stage} for ${label} (${stage} locked)`;
+
+/* What people are told about a locked or final month: every route and screen uses these, not its own wording. */
+const STAGE_NAME: Record<Stage, string> = { income: 'income', deductions: 'deductions', o2: 'O2' };
+/** 'October 2026 deductions are locked for Vista 22-04.' */
+export const lockedText = (stage: Stage, unitLabel: string, label: string): string =>
+  `${label} ${STAGE_NAME[stage]} ${stage === 'deductions' ? 'are' : 'is'} locked for ${unitLabel}.`;
+/** A new cost dated in a closed month goes on the next open statement. */
+export const rolledText = (unitLabel: string, fromLabel: string, toLabel: string, why: 'locked' | 'final'): string =>
+  `${why === 'locked' ? lockedText('deductions', unitLabel, fromLabel) : `The ${fromLabel} statement is final for ${unitLabel}.`} This cost goes on the ${toLabel} statement.`;
+/** A cost changed on a month whose deductions are locked: the month keeps it as locked, the difference moves on. */
+export const editedText = (unitLabel: string, label: string): string =>
+  `${lockedText('deductions', unitLabel, label)} The ${label} statement keeps the old amount; the difference goes to the next open month as an owner adjustment.`;
+/** Something a locked month holds cannot be removed or changed until the step is unlocked. */
+export const refusedText = (stage: Stage, unitLabel: string, label: string): string =>
+  `${lockedText(stage, unitLabel, label)} Ask someone who can unlock a step to unlock ${stage === 'deductions' ? 'them' : 'it'} first.`;
+/** A new owner adjustment dated in a month whose O2 is locked is dated into the next open month. */
+export const movedO2Text = (unitLabel: string, fromLabel: string, toLabel: string): string =>
+  `${lockedText('o2', unitLabel, fromLabel)} This owner adjustment is dated ${toLabel}.`;
+
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Hints on the Deductions step (a warning, never a block: spec call 4). `contractEnd` and `monthEnd` are YYYY-MM-DD;
+ *  amounts in sen. */
+export function deductionChecks(x: { checkouts: number; cleaning: number; utilities: number; contractEnd: string | null; monthEnd: string }): string[] {
+  const out: string[] = [];
+  if (x.checkouts > 0 && x.cleaning === 0) out.push(`${x.checkouts} check-out${x.checkouts === 1 ? '' : 's'}, no cleaning charged`);
+  const end = x.contractEnd?.slice(0, 10);
+  if (end && end <= x.monthEnd && x.utilities > 0) out.push(`Contract ended ${Number(end.slice(8, 10))} ${MON[Number(end.slice(5, 7)) - 1]}: check the bills`);
+  return out;
+}
+
+/** Hints on the O2 step. `held`: the unit's owner adjustments held back (sen; a debt is negative); `repeats`: its
+ *  owner adjustments this month that match one of the month before (`prevMonth`, e.g. 'September'). */
+export function o2Checks(x: { held: number; repeats: number; prevMonth: string }): string[] {
+  const out: string[] = [];
+  if (x.held !== 0) out.push(`Held debt RM ${(Math.abs(x.held) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} not released`);
+  if (x.repeats > 0) out.push(`Repeats ${x.repeats === 1 ? 'one' : x.repeats} from ${x.prevMonth}`);
+  return out;
+}
 
 /** The balancing line on an unlocked month whose difference was already settled on later statements. */
 export const carriedText = (labels: string[]): string => `Already settled on the ${labels.join(' and ')} statement`;

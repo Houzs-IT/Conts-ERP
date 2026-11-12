@@ -17,7 +17,7 @@ import { FORGOTTEN_AFTER_HOURS } from './attendanceCalc';
 import { dueDepartures, markGuestLeft } from './guestLeft';
 import { runGuestReviews } from './guestReviews';
 import { passKeyUrgencyChanges, applyPassKeyUrgency } from './passKeyJobs';
-import { syncLateIncome } from './ownerLocks';
+import { syncLate } from './ownerLocks';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -415,7 +415,7 @@ export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<Job
  *  Channex or by hand, reaches the owner as an owner adjustment on the next open month, once (functions/_lib/ownerLocks.ts).
  *  With dryRun nothing is written. */
 export async function lateIncomeSweep(env: Env, o: RunOptions = {}): Promise<JobReport> {
-  const r = await syncLateIncome(env, {}, { dryRun: o.dryRun });
+  const r = await syncLate(env, {}, { dryRun: o.dryRun });
   return {
     job: 'late-income',
     summary: o.dryRun ? `Would change ${plural(r.planned, 'late income adjustment')}.`

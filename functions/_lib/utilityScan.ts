@@ -1,6 +1,8 @@
 import { type Env, all, one, run, audit, nowIso, transaction } from './db';
 import { numericDay } from './format';
-import { CHARGE_TO, finalMonthsFor } from './expenses';
+import { CHARGE_TO } from './expenses';
+import { closedMonthsFor } from './ownerLocks';
+import { o2Date } from './lockGuards';
 import { firstOpenMonth } from '../../src/lib/deductMonth';
 import { contractSplit, type SplitContract } from '../../src/lib/utilitySplit';
 import type { AccountMark, RecentBill } from '../../src/lib/utilityMatch';
@@ -100,7 +102,8 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
   const unitOf = new Map(ctx.units.map(u => [u.id, u]));
   const missing = rows.find(r => !unitOf.has(r.unitId));
   if (missing) return bad(missing.scanId, 'That unit was not found.');
-  const finals = await finalMonthsFor(env, [...new Set(rows.map(r => r.unitId))], rows.map(r => r.billMonth).sort()[0]);
+  // A bill month that is final, or whose deductions are locked (owner statement close), goes on the next open month.
+  const finals = await closedMonthsFor(env, [...new Set(rows.map(r => r.unitId))], rows.map(r => r.billMonth).sort()[0], 'deductions');
   const now = nowIso();
   const rolled: { scanId: string; deductMonth: string }[] = [], notSplit: string[] = [];
   let ownerLines = 0, alreadyDone = 0;
@@ -169,7 +172,7 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
           if (!owner) throw new Refused(r.scanId, 'This unit has no owner to put the owner line on.');
           await run(tx, `INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, expense_id, created_by, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', 'manual', ?, ?, ?, ?)`,
-            crypto.randomUUID(), owner, r.unitId, amount > 0 ? 'credit' : 'charge', amount, description, `${deductMonth}-01`, account!.account_no, expenseId, session.userId, now, now);
+            crypto.randomUUID(), owner, r.unitId, amount > 0 ? 'credit' : 'charge', amount, description, (await o2Date(tx, owner, r.unitId, `${deductMonth}-01`)).occurredOn, account!.account_no, expenseId, session.userId, now, now);
           ownerLines++;
         };
         if (split.kind === 'split') {

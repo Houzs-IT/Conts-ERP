@@ -21,6 +21,7 @@ import { can } from './access';
 import { insertPayment } from './bookingPayments';
 import { isPeriodLocked, isExpenseLocked, isUtility, utilityDeduction } from './expenses';
 import { ownerPaidCredit } from './utilityRequests';
+import { o2Date } from './lockGuards';
 import { notifyUsers } from './notify';
 import { auditMany } from './history';
 
@@ -341,10 +342,11 @@ const EXECUTE: Record<ApprovalKind, Executor> = {
   async owner_adjustment(tx, p, c) {
     if (!await one(tx, 'SELECT 1 AS x FROM owners WHERE id = ?', p.ownerId)) throw new ApprovalRefused('NOT_FOUND', 'The owner no longer exists.', 404);
     const id = crypto.randomUUID(), now = nowIso();
+    const { occurredOn } = await o2Date(tx, p.ownerId, p.unitId ?? null, p.occurredOn);
     await run(tx, `INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', 'manual', ?, ?, ?)`, id, p.ownerId, p.unitId ?? null, p.kind, Number(p.amount), p.description, p.occurredOn, p.reference ?? null, c.requestedBy, now, now);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', 'manual', ?, ?, ?)`, id, p.ownerId, p.unitId ?? null, p.kind, Number(p.amount), p.description, occurredOn, p.reference ?? null, c.requestedBy, now, now);
     await audit(tx, { ...actor(c), action: 'owner_adjustment.create', entityTable: 'owner_adjustments', entityId: id,
-      after: { ownerId: p.ownerId, unitId: p.unitId ?? null, kind: p.kind, amount: Number(p.amount), occurredOn: p.occurredOn, state: 'open', approvalId: c.approvalId } });
+      after: { ownerId: p.ownerId, unitId: p.unitId ?? null, kind: p.kind, amount: Number(p.amount), occurredOn, state: 'open', approvalId: c.approvalId } });
     return { adjustmentId: id };
   },
 

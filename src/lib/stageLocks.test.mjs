@@ -2,7 +2,10 @@
 // the rules that decide where a late change goes and what unlocking does, without the database.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lockMonthProblem, openMonthAfter, planLate, planUnlock, carriedText, monthAfter, monthLabel, lateText, incomeLockable } from '../../functions/_lib/stageLocks.ts';
+import {
+  lockMonthProblem, openMonthAfter, planLate, planUnlock, carriedText, monthAfter, monthLabel, lateText, incomeLockable,
+  lockable, splitLate, lockedText, rolledText, editedText, refusedText, movedO2Text, deductionChecks, o2Checks,
+} from '../../functions/_lib/stageLocks.ts';
 
 test('locks start from October 2026, and only for a month that has ended', () => {
   const today = '2026-11-11';
@@ -28,7 +31,8 @@ test('next open month skips closed months and crosses the year', () => {
 
 test('month label and the lines the owner sees', () => {
   assert.equal(monthLabel('2026-10'), 'October 2026');
-  assert.equal(lateText('Skyline D-49-03A', 'October 2026'), 'Late change to Skyline D-49-03A income for October 2026 (income locked)');
+  assert.equal(lateText('income', 'Skyline D-49-03A', 'October 2026'), 'Late change to Skyline D-49-03A income for October 2026 (income locked)');
+  assert.equal(lateText('deductions', 'Skyline D-49-03A', 'October 2026'), 'Late change to Skyline D-49-03A deductions for October 2026 (deductions locked)');
   assert.equal(carriedText(['November 2026']), 'Already settled on the November 2026 statement');
   assert.equal(carriedText(['November 2026', 'December 2026']), 'Already settled on the November 2026 and December 2026 statement');
 });
@@ -59,4 +63,54 @@ test('unlock names the draft statements that printed a withdrawn difference, to 
     { id: 'b', month: '2026-12', amount: 500, movable: true, onDraft: false },
     { id: 'c', month: '2026-11', amount: 100, movable: true, onDraft: true },
   ], false, 'October 2026'), { problem: null, remove: ['a', 'b', 'c'], carried: null, regenerate: ['2026-11'] });
+});
+
+// Part 2a (plan docs/superpowers/plans/2026-11-11-owner-report-locks-part2a-deductions-o2.md): deductions and O2 locks.
+
+test('who each step can lock: income and deductions on a share contract, O2 on any unit', () => {
+  assert.equal(lockable('income', 'share'), true);
+  assert.equal(lockable('income', 'fixed_rent'), false);
+  assert.equal(lockable('deductions', 'share'), true);
+  assert.equal(lockable('deductions', 'fixed_rent'), false);
+  assert.equal(lockable('deductions', 'none'), false);
+  assert.equal(lockable('o2', 'none'), true);
+  assert.equal(lockable('o2', 'fixed_rent'), true);
+});
+
+test('a late difference is shared out between the locks: income first, then deductions (so a misc change from occupancy goes with income)', () => {
+  const both = { statement: 75000, incomeLive: 82500, live: 81000 };
+  assert.deepEqual(splitLate(both, { income: true, deductions: true }), { income: 7500, deductions: -1500 });
+  assert.deepEqual(splitLate({ statement: 75000, live: 81000 }, { income: true, deductions: false }), { income: 6000 });
+  assert.deepEqual(splitLate({ statement: 75000, live: 81000 }, { income: false, deductions: true }), { deductions: 6000 });
+  assert.deepEqual(splitLate({ statement: 75000, live: 81000 }, { income: false, deductions: false }), {});
+});
+
+test('what people are told when a month is locked or final', () => {
+  assert.equal(lockedText('income', 'Vista 22-04', 'October 2026'), 'October 2026 income is locked for Vista 22-04.');
+  assert.equal(lockedText('deductions', 'Vista 22-04', 'October 2026'), 'October 2026 deductions are locked for Vista 22-04.');
+  assert.equal(lockedText('o2', 'Vista 22-04', 'October 2026'), 'October 2026 O2 is locked for Vista 22-04.');
+  assert.equal(rolledText('Vista 22-04', 'October 2026', 'November 2026', 'locked'),
+    'October 2026 deductions are locked for Vista 22-04. This cost goes on the November 2026 statement.');
+  assert.equal(rolledText('Vista 22-04', 'October 2026', 'December 2026', 'final'),
+    'The October 2026 statement is final for Vista 22-04. This cost goes on the December 2026 statement.');
+  assert.equal(editedText('Vista 22-04', 'October 2026'),
+    'October 2026 deductions are locked for Vista 22-04. The October 2026 statement keeps the old amount; the difference goes to the next open month as an owner adjustment.');
+  assert.equal(refusedText('deductions', 'Vista 22-04', 'October 2026'), 'October 2026 deductions are locked for Vista 22-04. Ask someone who can unlock a step to unlock them first.');
+  assert.equal(refusedText('o2', 'Vista 22-04', 'October 2026'), 'October 2026 O2 is locked for Vista 22-04. Ask someone who can unlock a step to unlock it first.');
+  assert.equal(movedO2Text('Vista 22-04', 'October 2026', 'November 2026'), 'October 2026 O2 is locked for Vista 22-04. This owner adjustment is dated November 2026.');
+});
+
+test('deductions: what to look at before locking', () => {
+  assert.deepEqual(deductionChecks({ checkouts: 9, cleaning: 0, utilities: 0, contractEnd: null, monthEnd: '2026-10-31' }), ['9 check-outs, no cleaning charged']);
+  assert.deepEqual(deductionChecks({ checkouts: 1, cleaning: 0, utilities: 0, contractEnd: null, monthEnd: '2026-10-31' }), ['1 check-out, no cleaning charged']);
+  assert.deepEqual(deductionChecks({ checkouts: 1, cleaning: 6500, utilities: 31424, contractEnd: '2026-10-15', monthEnd: '2026-10-31' }), ['Contract ended 15 Oct: check the bills']);
+  assert.deepEqual(deductionChecks({ checkouts: 0, cleaning: 0, utilities: 100, contractEnd: '2026-09-30', monthEnd: '2026-10-31' }), ['Contract ended 30 Sep: check the bills']);
+  assert.deepEqual(deductionChecks({ checkouts: 0, cleaning: 0, utilities: 31424, contractEnd: '2026-11-15', monthEnd: '2026-10-31' }), []);
+  assert.deepEqual(deductionChecks({ checkouts: 0, cleaning: 0, utilities: 0, contractEnd: '2026-10-15', monthEnd: '2026-10-31' }), []);
+});
+
+test('O2: what to look at before locking', () => {
+  assert.deepEqual(o2Checks({ held: -354192, repeats: 1, prevMonth: 'September' }), ['Held debt RM 3,541.92 not released', 'Repeats one from September']);
+  assert.deepEqual(o2Checks({ held: 0, repeats: 2, prevMonth: 'September' }), ['Repeats 2 from September']);
+  assert.deepEqual(o2Checks({ held: 0, repeats: 0, prevMonth: 'September' }), []);
 });
