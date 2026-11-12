@@ -9,6 +9,7 @@ import type { Building, Unit } from './shared';
 import { MODEL, PURPOSE_LABEL, codeName } from '../../lib/revenueModel';
 import { useContractTypes } from '../../lib/useContractTypes';
 import { statusLabel, statusOf, TONE_STYLE } from '../../lib/status';
+import { byName, byState, firstUnitId, stateOf, unitKey } from '../../lib/unitOrder';
 
 interface Props {
   buildings: Building[];
@@ -24,21 +25,9 @@ interface Props {
   fill?: boolean;
 }
 
-const NO_STATE = 'State not set';
-const byName = (a: string, b: string) => a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' });
-const stateOf = (b: Building) => b.state?.trim() || NO_STATE;
-const byState = (a: string, b: string) => (a === NO_STATE ? 1 : b === NO_STATE ? -1 : byName(a, b));
-const unitKey = (u: Unit) => u.unitCode || u.listingName;
-
-/** The unit at the top of the tree: what the Units screen opens when the address names none. */
-export function firstUnitId(buildings: Building[], units: Unit[]): string | undefined {
-  const order = [...buildings].sort((a, b) => byState(stateOf(a), stateOf(b)) || byName(a.name, b.name));
-  for (const b of order) {
-    const top = units.filter(u => u.buildingId === b.id && !u.parentUnitId).sort((x, y) => byName(unitKey(x), unitKey(y)));
-    if (top.length) return top[0].id;
-  }
-  return units[0]?.id;
-}
+/** The unit at the top of the tree, what the Units screen opens when the address names none (lib/unitOrder.ts, which the
+ *  server shares so it can send that unit's record along with the first visit: functions/api/units/detail.ts). */
+export { firstUnitId };
 
 /** State, then building, then unit, then sub-unit. Buildings start folded, except the one holding the open
  *  unit, so 20-odd buildings read as a short list. A search (kept in the address as ?q=) opens every

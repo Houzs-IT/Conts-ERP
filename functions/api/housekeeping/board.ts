@@ -1,4 +1,4 @@
-import { type Env, all, one, json, fail, nowIso } from '../../_lib/db';
+import { type Env, all, one, json, fail, nowIso, afterResponse } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE, SHEET_CLEANER } from '../../_lib/ops';
 import { taskCleanersReady, cleanerListSql, parseCleaners, rosterIdSql } from '../../_lib/taskCleaners';
@@ -28,24 +28,24 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
   const asked = new URL(request.url).searchParams.get('date');
   const date = isDay(asked) ? asked : today;
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
-  // Checkouts from any path (import, channel sync, older data) get their turnover job before the board is read: the day
-  // being looked at, every time. Idempotent, never for a past day, at most 50 jobs per load.
-  if (date >= today) await ensureTurnovers(env, { from: date, to: date }, 50);
-  // The next 60 days too, so a backlog clears, but after the answer has gone out and at most every few minutes
-  // (performance, 12 Nov 2026: sweeping 60 days before every board read, the 30-second refresh included, was most of its
-  // 1.2 s).
-  sweepTurnoversSometimes(env, today, waitUntil);
-
-  const [defaults, ready, layoutSql, priced, mattressSql, prevOut, depOut] = await Promise.all([
+  // Statements with no values go down the request's one connection back to back (db.ts), so these are asked together.
+  const [defaults, ready, layoutSql, priced, mattressSql, prevOut, depOut, prices] = await Promise.all([
     all<{ key: string; value: string }>(env, `SELECT key, value FROM settings WHERE key IN ('operations.checkIn','operations.checkOut','ops.check_in','ops.check_out')`),
     taskCleanersReady(env), unitLayoutSql(env), hasCleanPrices(env), unitMattressesSql(env), cleaningCheckoutSql(env, 'prev'), cleaningCheckoutSql(env, 'r'),
+    one<{ std: string | null; deep: string | null }>(env, `
+      SELECT (SELECT value FROM settings WHERE key = 'operations.cleaningPriceStandard') AS std, (SELECT value FROM settings WHERE key = 'operations.cleaningPriceDeep') AS deep`),
   ]);
   const pick = (a: string, b: string, d: string) => defaults.find(x => x.key === a)?.value ?? defaults.find(x => x.key === b)?.value ?? d;
   const stdIn = pick('operations.checkIn', 'ops.check_in', '15:00');
   const stdOut = pick('operations.checkOut', 'ops.check_out', '11:00');
 
   const money = priced ? 't.amount, t.cleaner_pay,' : 'NULL::int AS amount, NULL::int AS cleaner_pay,';
-  const rows = await all<any>(env, `
+  // The day's cleans, the external cleans and the guests leaving with no clean go to the database as ONE statement
+  // (performance, 12 Nov 2026): a statement that carries a value costs two waits on the request's connection and holds
+  // back the ones after it, and these three used to go one after another. Each list comes back as JSON text; every
+  // column in them is text, an integer or a boolean, so the parsed rows read exactly as the three statements' did.
+  // `ord` keeps each list's own order.
+  const rowsSql = `
     SELECT ${money} t.id, t.kind, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.started_at, t.completed_at, t.guest_left_at, t.next_guest_at,
            t.assignee_id, t.cleaner_id, t.unit_id, t.reservation_id, ${when} AS day,
            u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name,
@@ -60,7 +60,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
            (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id AND d.kind = 'photo') AS photos,
            (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id AND d.kind = 'video') AS videos,
            (SELECT COUNT(*)::int FROM task_checklist_items c WHERE c.task_id = t.id AND c.done_at IS NOT NULL) AS ticks,
-           (SELECT COUNT(*)::int FROM task_checklist_items c WHERE c.task_id = t.id AND c.item_key LIKE 'c-%') AS custom_items
+           (SELECT COUNT(*)::int FROM task_checklist_items c WHERE c.task_id = t.id AND c.item_key LIKE 'c-%') AS custom_items,
+           row_number() OVER (ORDER BY p.name, u.unit_number) AS ord
     FROM tasks t
     JOIN units u ON u.id = t.unit_id
     JOIN properties p ON p.id = u.property_id
@@ -80,24 +81,23 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
     LEFT JOIN guests ng ON ng.id = nxt.guest_id
     LEFT JOIN LATERAL (${LATER_ARRIVAL_SQL('t.unit_id', when)}) later ON nxt.id IS NULL
     WHERE t.kind IN ${CLEAN_KINDS_SQL}
-      AND (${when} = ? OR (? = ? AND ${when} < ? AND t.state != 'resolved'))
-    ORDER BY p.name, u.unit_number`, date, date, today, date);
+      AND (${when} = ? OR (? = ? AND ${when} < ? AND t.state != 'resolved'))`;
 
   // External cleans (an address, no unit): their own group on the board, never a unit's cost.
-  const external = !priced ? [] : await all<any>(env, `
+  const externalSql = `
     SELECT t.id, t.kind, t.state, t.title, t.instructions, t.started_at, t.completed_at, t.assignee_id, t.cleaner_id, t.amount, t.cleaner_pay,
            t.external_address, t.external_client, t.external_phone, ${when} AS day,
            COALESCE(cl.full_name, a.full_name) AS assignee_name, ${cleanerListSql(ready)} AS cleaner_list, ${rosterIdSql()} AS roster_id,
            (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id AND d.kind = 'photo') AS photos,
-           (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id AND d.kind = 'video') AS videos
+           (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id AND d.kind = 'video') AS videos,
+           row_number() OVER (ORDER BY COALESCE(t.scheduled_for, t.due_at, t.created_at)) AS ord
     FROM tasks t LEFT JOIN users a ON a.id = t.assignee_id LEFT JOIN cleaners cl ON cl.id = t.cleaner_id
     WHERE t.unit_id IS NULL AND t.kind IN ${CLEAN_KINDS_SQL}
-      AND (${when} = ? OR (? = ? AND ${when} < ? AND t.state != 'resolved'))
-    ORDER BY COALESCE(t.scheduled_for, t.due_at, t.created_at)`, date, date, today, date);
-  const price = await priceBook(env, rows.map(r => r.unit_id));
+      AND (${when} = ? OR (? = ? AND ${when} < ? AND t.state != 'resolved'))`;
 
-  // Guests leaving that day with no clean on the unit: the gap the board must not hide.
-  const departures = await all<any>(env, `
+  // Guests leaving that day with no clean on the unit: the gap the board must not hide. A checkout whose turnover job
+  // is not made yet shows here too (it is planned after the answer, below), since this list comes from the bookings.
+  const departuresSql = `
     SELECT r.id, r.state, ${depOut.time} AS check_out_time, ${depOut.requested} AS late_requested, r.channel, u.id AS unit_id, u.unit_number, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name,
            COALESCE(NULLIF(g.full_name, ''), 'Guest') AS guest_name,
            (SELECT n.check_in_time FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_time,
@@ -105,17 +105,43 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
            (SELECT COALESCE(NULLIF(ng.full_name, ''), 'Guest') FROM reservations n LEFT JOIN guests ng ON ng.id = n.guest_id
               WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_guest,
            (SELECT x.check_in FROM (${LATER_ARRIVAL_SQL('r.unit_id', 'r.check_out')}) x) AS later_day,
-           (SELECT x.check_in_time FROM (${LATER_ARRIVAL_SQL('r.unit_id', 'r.check_out')}) x) AS later_time
+           (SELECT x.check_in_time FROM (${LATER_ARRIVAL_SQL('r.unit_id', 'r.check_out')}) x) AS later_time,
+           row_number() OVER (ORDER BY p.name, u.unit_number) AS ord
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
     WHERE r.check_out = ? AND ${LIVE_STAY_SQL('r')} AND r.channel != 'owner_stay'
       AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.kind IN ${CLEAN_KINDS_SQL} AND (t.reservation_id = r.id OR (t.unit_id = r.unit_id AND ${when} = r.check_out)))
       -- A cleaning job management cancelled (housekeeping/overdue.ts) is not a gap to plan again.
-      AND NOT EXISTS (SELECT 1 FROM audit_log l WHERE l.entity_table = 'reservations' AND l.entity_id = r.id AND l.action = 'cleaning.cancel')
-    ORDER BY p.name, u.unit_number`, date);
+      AND NOT EXISTS (SELECT 1 FROM audit_log l WHERE l.entity_table = 'reservations' AND l.entity_id = r.id AND l.action = 'cleaning.cancel')`;
 
-  const repairs = await windowsOnDay(env, date);
-  const prices = await one<{ std: string | null; deep: string | null }>(env, `
-    SELECT (SELECT value FROM settings WHERE key = 'operations.cleaningPriceStandard') AS std, (SELECT value FROM settings WHERE key = 'operations.cleaningPriceDeep') AS deep`);
+  // The ? values go in the order the three lists appear (db.ts numbers them $1, $2, ... down the whole statement).
+  const list = (sql: string) => `(SELECT COALESCE(json_agg(x ORDER BY x.ord), '[]'::json)::text FROM (${sql}) x)`;
+  const [lists, repairs] = await Promise.all([
+    one<{ rows: string | null; external: string | null; departures: string | null }>(env,
+      `SELECT ${list(rowsSql)} AS rows, ${priced ? list(externalSql) : 'NULL::text'} AS external, ${list(departuresSql)} AS departures`,
+      date, date, today, date, ...(priced ? [date, date, today, date] : []), date),
+    windowsOnDay(env, date),
+  ]);
+  const rows = JSON.parse(lists?.rows ?? '[]') as any[];
+  const external = (lists?.external ? JSON.parse(lists.external) : []) as any[];
+  const departures = JSON.parse(lists?.departures ?? '[]') as any[];
+  const price = await priceBook(env, rows.map(r => r.unit_id));
+
+  // Checkouts from any path (import, channel sync, older data) get their turnover job: the day being looked at, every
+  // time, idempotent, never for a past day, at most 50 jobs. It runs after the answer is ready, no longer before the
+  // reads (performance, 12 Nov 2026: with the Pass key sync inside it, it was several writes on every load, and nearly
+  // always made nothing, since every booking write plans its own job). A checkout it has not made a job for yet is on
+  // the board all the same, under `departures` above (the same bookings: live, not an owner stay, no clean on the unit
+  // that day), and shows as a job from the next refresh.
+  // The next 60 days too, so a backlog clears, at most every few minutes (performance, 12 Nov 2026: sweeping 60 days
+  // before every board read, the 30-second refresh included, was most of its 1.2 s). One after the other on one client,
+  // as before: two plans running at once could each make the same job.
+  const sweep = sweepDue();
+  if (date >= today || sweep) {
+    afterResponse(waitUntil, async () => {
+      if (date >= today) await ensureTurnovers(env, { from: date, to: date }, 50);
+      if (sweep) await ensureTurnovers(env, { from: today, to: plusDays(today, 60) }, 50).catch(() => { lastSweep = 0; });
+    });
+  }
 
   const at = (day: string, hm: string | null, d: string) => `${day}T${hm && /^\d{2}:\d{2}$/.test(hm) ? hm : d}:00+08:00`;
   return json({
@@ -192,13 +218,13 @@ const LATER_ARRIVAL_SQL = (unit: string, day: string) => `SELECT r.check_in, r.c
   ORDER BY r.check_in, r.check_in_time LIMIT 1`;
 
 let lastSweep = 0;
-/** The 60-day turnover sweep the board used to run before every read: at most every 5 minutes per Worker instance,
- *  after the response, as closePastStaysSometimes does (lib/autoCheckout.ts). */
-function sweepTurnoversSometimes(env: Env, today: string, waitUntil: (p: Promise<unknown>) => void) {
+/** Whether the 60-day turnover sweep the board used to run before every read is due: at most every 5 minutes per
+ *  Worker instance, after the response, as closePastStaysSometimes does (lib/autoCheckout.ts). */
+function sweepDue(): boolean {
   const now = Date.now();
-  if (now - lastSweep < 5 * 60_000) return;
+  if (now - lastSweep < 5 * 60_000) return false;
   lastSweep = now;
-  waitUntil(ensureTurnovers(env, { from: today, to: plusDays(today, 60) }, 50).catch(() => { lastSweep = 0; }));
+  return true;
 }
 
 const plusDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);

@@ -13,10 +13,17 @@ function holdRefreshing() {
 }
 
 const pendingReads = new Map<string, Promise<unknown>>();
+/** Reads whose answer is kept under a path not known until it arrives (prefetchAs), by the start of that path. */
+const pendingAs = new Map<string, Promise<unknown>>();
 function sharedGet<T>(path: string): Promise<T> {
   let pending = pendingReads.get(path);
   if (!pending) {
-    pending = api.get<T>(path).finally(() => pendingReads.delete(path));
+    // A read that may answer this one is on its way (prefetchAs): wait for it, and ask only if it did not.
+    const before = [...pendingAs].find(([start]) => path.startsWith(start))?.[1];
+    pending = (before
+      ? before.then(() => (answeredWithin(path, FRESH_MS) ? readCache.get(path) as T : api.get<T>(path)))
+      : api.get<T>(path)
+    ).finally(() => pendingReads.delete(path));
     pendingReads.set(path, pending);
   }
   return pending as Promise<T>;
@@ -31,6 +38,19 @@ const FRESH_MS = 10_000;
 export function prefetch(path: string) {
   if (pendingReads.has(path) || answeredWithin(path, FRESH_MS)) return;
   sharedGet(path).then(r => remember(path, r)).catch(() => { /* the screen's own read reports it */ });
+}
+
+/** Starts a read whose answer a screen will ask for under another path, one it cannot name until something else has
+ *  loaded: the Units screen's first unit record (/units/detail?first=1), which it asks for as ?unitId= once the tree is
+ *  in. The answer is kept under `keyOf(answer)` as well; until it arrives, a read of any path starting with `start`
+ *  waits for it and asks the server only when the answer was for another path. */
+export function prefetchAs<T>(path: string, start: string, keyOf: (answer: T) => string | null) {
+  if (pendingAs.has(start) || answeredWithin(path, FRESH_MS)) return;
+  const read: Promise<unknown> = api.get<T>(path)
+    .then(r => { remember(path, r); const key = keyOf(r); if (key) remember(key, r); })
+    .catch(() => { /* the screen's own read asks again and reports it */ })
+    .finally(() => { if (pendingAs.get(start) === read) pendingAs.delete(start); });
+  pendingAs.set(start, read);
 }
 
 export interface Query<T> {

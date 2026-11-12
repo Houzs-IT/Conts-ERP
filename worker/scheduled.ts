@@ -1,4 +1,4 @@
-import type { Env } from '../functions/_lib/db';
+import { type Env, afterResponse } from '../functions/_lib/db';
 import { SCHEDULE, runJobs } from '../functions/_lib/cronJobs';
 
 /**
@@ -19,6 +19,8 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     const jobs = SCHEDULE[event.cron];
     if (!jobs) return;
-    ctx.waitUntil(runJobs(env, jobs).then(r => { for (const j of r) if (j.error) console.error(`${j.job}: ${j.error}`); }));
+    // One database client for the whole run, closed when it ends (db.ts afterResponse). Outside a request each statement
+    // used to open and close a client of its own, and a job's parallel reads opened several at once.
+    afterResponse(p => ctx.waitUntil(p), () => runJobs(env, jobs).then(r => { for (const j of r) if (j.error) console.error(`${j.job}: ${j.error}`); }));
   },
 };
