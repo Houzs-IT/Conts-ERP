@@ -22,7 +22,7 @@ import { cx } from '../lib/design-tokens';
 import { rm, plural, dateShort, date, monthLabel } from '../lib/format';
 import { runEach, skippedNote } from '../lib/bulk';
 import {
-  PillTabs, Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm, PassKeyJobForm, AssigneePicker, useTechnicians, KIND_WORD } from '../components/ops/OpsUi';
+  PillTabs, Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm, PassKeyJobForm, AssigneePicker, useTechnicians, KIND_WORD, PASS_KEY_URGENCY_HINT } from '../components/ops/OpsUi';
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
@@ -443,6 +443,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const counts = { before: media.filter(m => (m.stage ?? 'before') === 'before').length, after: media.filter(m => m.stage === 'after').length };
   const charge = i.finalAmount ?? i.quotedAmount;
   const collectFrom = COLLECT_FROM[i.chargeTo];
+  const isPassKey = typeOf(i) === 'pass_key';
   const doneWhy = awaitingOwner(i) ? "Waiting for the owner's approval." : counts.after === 0 ? 'Add a photo of the fixed job first (Photos, Fixed).' : null;
 
   const refresh = useCallback(() => { files.reload(); onChanged(); }, [files, onChanged]);
@@ -580,7 +581,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
             loading={busy === 'assign'} onClick={() => void act('assign', () => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: assignee.trim() }), 'Job assigned.')}>Save</Button>
         </section>
       )}
-      <section className="flex flex-col gap-2 rounded-card border border-solid border-line p-3.5">
+      {!isPassKey && <section className="flex flex-col gap-2 rounded-card border border-solid border-line p-3.5">
         <h3 className="m-0 text-copy font-semibold">Items, cost and profit</h3>
         <JobMoneyPanel kind="maintenance" jobId={i.id} unitId={i.unitId} catalog={skus} onChanged={onChanged}
           itemsLocked={done ? 'The job is finished; reopen it to change its items.' : i.ownerApprovedAt && i.chargeTo === 'owner' ? 'The owner approved this quote, so its items stay as they are.' : null}
@@ -597,7 +598,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         {done && <p className="m-0 text-muted-ink">Item: {i.skuName ? `${i.skuName}${i.skuCode ? ` (${i.skuCode})` : ''}` : 'Other (not on the list)'}.</p>}
               {done && <p className="m-0 text-muted-ink">Item: {i.skuName ? `${i.skuName}${i.skuCode ? ` (${i.skuCode})` : ''}` : 'Other (not on the list)'}.</p>}
           </>} />
-      </section>
+      </section>}
       {done && i.vendorName && <p className="m-0 text-muted-ink">Done by {i.vendorName}{i.assigneeKind ? ` (${KIND_WORD[i.assigneeKind].toLowerCase()})` : ''}.</p>}
 
       {money ? (
@@ -637,11 +638,11 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
 
           {billing && (
             <div className="flex flex-col gap-2.5 pt-2.5 [border-top:1px_solid_var(--color-line-soft)]">
-              {collectFrom ? (
+              {!isPassKey && (collectFrom ? (
                 <DateMark label={`Collected from ${collectFrom}`} amount={charge} at={i.collectedAt} busy={busy === 'collected'} markLabel="Mark collected"
                   note={charge == null ? 'Add the quote first.' : i.chargeTo === 'owner' ? 'Taken off the owner statement for the billing month, or paid by the owner directly.' : undefined}
                   onSet={day => void markCollected(day)} />
-              ) : <span className="text-meta text-muted-ink">{PAYER[i.chargeTo]} pays: nothing to collect.</span>}
+              ) : <span className="text-meta text-muted-ink">{PAYER[i.chargeTo]} pays: nothing to collect.</span>)}
               <div className="flex flex-col gap-1.5">
                 <span className="font-medium">Owed to {i.vendorName ?? 'the technician or contractor'}</span>
                 <div className="flex gap-2">
@@ -670,7 +671,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         <p className="m-0 text-muted-ink">Paid by {PAYER[i.chargeTo].toLowerCase()}.</p>
       )}
 
-      <section className="flex flex-col gap-2">
+      {!isPassKey && <section className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <h3 className="m-0 text-copy font-semibold flex-1">Repair windows</h3>
           {!done && <Button size="sm" variant="secondary" icon={<Icon name="CalendarClock" size="sm" />} onClick={() => setWindowOpen(true)}>Add window</Button>}
@@ -686,7 +687,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
               {w.overlaps.map(o => <span key={o.reservationId} className="text-meta text-danger">Overlaps the reservation of {o.guestName} ({dateShort(o.checkIn)} {o.checkInTime} to {dateShort(o.checkOut)} {o.checkOutTime}). Make sure the guest agreed.</span>)}
             </div>
           ))}
-      </section>
+      </section>}
 
       <section className="flex flex-col gap-2.5">
         <AttachmentLabel title="Photos and videos" count={media.length}
@@ -703,7 +704,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         )}
       </section>
 
-      {money && (
+      {money && !isPassKey && (
         <section className="flex flex-col gap-2">
           <AttachmentLabel title="Claims, invoices and receipts" count={docs.length} hint="The technician's or contractor's claim, the bill to the payer, payment receipts. Accounts pay from these." />
           <FileList files={docs.map(d => ({ id: d.id, name: d.fileName, href: d.url, size: d.byteSize ?? null, label: `${DOC_KIND[d.kind] ?? 'File'} · ${dateShort(d.uploadedAt)}`,
@@ -751,7 +752,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
             </section>
           )}
           {/* Phones have no hover, so the reason a button is off is written out. The bar sticks to the bottom of a long sheet on phones. */}
-          {typeOf(i) === 'pass_key' ? <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:order-last max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:-mb-5 max-sm:px-5! max-sm:pb-4! max-sm:rounded-none! max-sm:border-x-0! max-sm:border-b-0! max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
+          {isPassKey ? <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:order-last max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:-mb-5 max-sm:px-5! max-sm:pb-4! max-sm:rounded-none! max-sm:border-x-0! max-sm:border-b-0! max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
             <Button variant="primary" icon={<Icon name="KeyRound" size="sm" />} loading={busy === 'passKeyDone'} disabled={media.length === 0} disabledReason="Add a photo first."
               onClick={() => void act('passKeyDone', () => api.post(`/maintenance/issues/${i.id}/pass-key-done`, {}), 'Pass key done.')}>Pass key done</Button>
             {media.length === 0 && <span className="text-meta text-muted-ink">Add a photo first.</span>}
@@ -902,23 +903,25 @@ function JobPlan({ i, busy, act }: { i: Issue; busy: string | null; act: (key: s
     <section className="flex flex-col gap-2.5 rounded-card border border-solid border-line p-3.5">
       <h3 className="m-0 text-copy font-semibold">Job</h3>
       <div className="grid grid-cols-2 gap-3">
-        <FormRow label="Type" hint={isPassKey ? 'Urgent by itself on the day before check-in, on the day and when missed.' : undefined}>
+        <FormRow label="Type">
           <select className={INPUT} value={typeOf(i)} disabled={busy === 'type' || isBookingPassKey} onChange={e => patch('type', { jobType: e.target.value }, 'Job type saved.')}>
             {(Object.keys(JOB_TYPE) as JobType[]).map(t => <option key={t} value={t}>{JOB_TYPE[t]}</option>)}
           </select>
         </FormRow>
         {isPassKey && (
-          <FormRow label="Urgency">
+          <FormRow label="Urgency" hint={PASS_KEY_URGENCY_HINT}>
             <select className={INPUT} value={i.urgentByHand ? 'urgent' : 'normal'} disabled={busy === 'urgency'} onChange={e => patch('urgency', { urgentByHand: e.target.value === 'urgent' }, 'Urgency saved.')}>
               <option value="normal">Normal</option><option value="urgent">Urgent</option>
             </select>
           </FormRow>
         )}
-        <FormRow label="Severity">
-          <select className={INPUT} value={i.severity ?? 'minor'} disabled={busy === 'severity'} onChange={e => patch('severity', { severity: e.target.value }, 'Severity saved.')}>
-            <option value="minor">Minor</option><option value="major">Major</option>
-          </select>
-        </FormRow>
+        {!isPassKey && (
+          <FormRow label="Severity">
+            <select className={INPUT} value={i.severity ?? 'minor'} disabled={busy === 'severity'} onChange={e => patch('severity', { severity: e.target.value }, 'Severity saved.')}>
+              <option value="minor">Minor</option><option value="major">Major</option>
+            </select>
+          </FormRow>
+        )}
         <FormRow label={isPassKey ? 'Check-in day' : 'Due'} hint={typeOf(i) === 'normal' ? 'Normal jobs are worked one by one in this order.' : undefined}>
           <DateField aria-label={isPassKey ? 'Check-in day' : 'Due date'} className={INPUT} value={i.dueOn ?? ''} onChange={v => patch('due', { dueOn: v || null }, v ? 'Due date saved.' : 'Due date cleared.')} />
         </FormRow>
@@ -926,13 +929,13 @@ function JobPlan({ i, busy, act }: { i: Issue; busy: string | null; act: (key: s
           <span className="h-10 flex items-center"><StatusBadge tone={APPROVAL[i.approvalStatus ?? 'not_needed'].tone}>{APPROVAL[i.approvalStatus ?? 'not_needed'].label}</StatusBadge></span>
         </FormRow>
       </div>
-      <div className="flex flex-col gap-1.5 pt-2 [border-top:1px_solid_var(--color-line-soft)]">
-        <label className="flex items-center gap-2 cursor-pointer">
+      {(!isPassKey || i.approvalStatus === 'needed') && <div className="flex flex-col gap-1.5 pt-2 [border-top:1px_solid_var(--color-line-soft)]">
+        {!isPassKey && <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" className="w-4 h-4 accent-black" checked={!!i.needsParts} disabled={busy === 'parts'}
             onChange={e => patch('parts', { needsParts: e.target.checked }, e.target.checked ? 'Marked as waiting for parts.' : 'No parts needed.')} />
           Needs parts or stock
-        </label>
-        {i.needsParts && (
+        </label>}
+        {!isPassKey && i.needsParts && (
           <label className="flex items-center gap-2 cursor-pointer pl-6">
             <input type="checkbox" className="w-4 h-4 accent-black" checked={!!i.partsArrivedAt} disabled={busy === 'arrived'}
               onChange={e => patch('arrived', { partsArrived: e.target.checked }, e.target.checked ? 'Parts arrived.' : 'Parts not arrived.',
@@ -941,7 +944,7 @@ function JobPlan({ i, busy, act }: { i: Issue; busy: string | null; act: (key: s
           </label>
         )}
         {i.approvalStatus === 'needed' && <span className="text-meta text-muted-ink">The technicians do not see this job until the owner approves{i.needsParts ? ' and the parts arrive' : ''}.</span>}
-      </div>
+      </div>}
     </section>
   );
 }
