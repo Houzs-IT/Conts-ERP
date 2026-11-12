@@ -10,6 +10,6 @@
 -- transaction): that would cost a round trip on every transaction and leave plain statements unlimited.
 -- Applies to pos_app only: migrations run as postgres and the engine as scm_engine, neither limited by this.
 --
--- APPLY: production through the GitHub workflow "Apply migrations to production" with only=0319, dry run first.
+-- APPLY: production through the GitHub workflow "Apply migrations to production" with only=0320, dry run first.
 -- REVERSAL: alter role pos_app reset statement_timeout;
 alter role pos_app set statement_timeout = '30s';
