@@ -274,7 +274,7 @@ export const NAV: NavGroup[] = [
   ] },
   // Dream Crafter's own HR (owner, 30 Oct 2026): one Employees page, laid out as The Conts'. Shares its label with the Rental HR group.
   { label: 'HR', workspace: 'supply', items: [
-    { key: 'dcEmployees', label: 'Employees', icon: 'users', path: '/supply/hr/employees', area: 'hr', fresh: true },
+    { key: 'dcEmployees', label: 'Employees', icon: 'users', path: '/supply/hr/employees', area: 'dcHr', fresh: true },
   ] },
   // The same Finance as in Rental (finance phase 1): one set of company books for both sides, so the supply chain
   // sidebar stays put while finance works.
