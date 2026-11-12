@@ -77,6 +77,11 @@ const STALE_DRAFT = 'A step was locked, or the statement unlocked, after this dr
 
 let r = await generate(OCT);
 check('the October draft is made', r.status < 300 && !!(await statementOf(OCT)), r.text);
+// The Unit report's Final "Lock all" sends owners in batches under finalise's limit (src/lib/finalBatches.ts); a request
+// over the limit is told the limit, not "Select at least one statement".
+r = await call('POST', '/api/statements/finalise', { statementIds: Array.from({ length: 201 }, (_, i) => `ocf-none-${i}`) });
+check('finalise names its limit when asked for more than 200 statements', r.status === 422
+  && r.json?.error?.message === 'Select up to 200 statements at a time.', r.text);
 // Every category but O2 locked for the first unit (13 Nov 2026: the deductions lock is four).
 const firstFive = [];
 for (const stage of SIX.slice(0, 5)) firstFive.push(await lock(stage, [U1]));

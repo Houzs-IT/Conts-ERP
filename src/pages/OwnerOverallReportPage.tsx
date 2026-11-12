@@ -293,7 +293,7 @@ export default function OwnerOverallReportPage() {
       <td className={cx(CELL, UNIT_EDGE, 'text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink max-sm:whitespace-normal',
         grand ? 'bg-muted [border-top:2px_solid_var(--color-line-strong)]' : 'bg-card [border-top:1px_solid_var(--color-line-strong)]')}>{label}</td>
       {cols.map((c, i) => (
-        <td key={c.key} className={cx(CELL, 'text-center font-semibold', groupStart(i) && DIVIDER,
+        <td key={c.key} className={cx(CELL, showClose && STAGE_OF[c.key] ? 'text-right' : 'text-center', 'font-semibold', groupStart(i) && DIVIDER,
           grand ? 'bg-muted [border-top:2px_solid_var(--color-line-strong)]' : 'bg-card [border-top:1px_solid_var(--color-line-strong)]')}>
           {c.key === 'ownerPct' ? null : <Value c={c} v={t[c.key]} />}
         </td>
@@ -473,7 +473,11 @@ export default function OwnerOverallReportPage() {
                         {stage && state
                           ? <LockCell state={state} busy={lk.isBusy(r, stage)} title={cellTitle(r, stage, state)} label={`${r.code} ${STAGE_LABEL[stage]}${c.label !== STAGE_LABEL[stage] ? ` (${c.label})` : ''}`}
                               onClick={() => void lk.toggle(r, stage)}><Value c={c} v={r[c.key]} locked={state === 'locked'} /></LockCell>
-                          : <Value c={c} v={r[c.key]} />}
+                          : stage
+                            // A column that locks, on a unit none of its categories lists (a master lease): the amount
+                            // sits at the right like the lockable amounts above and below it (chew, 13 Nov 2026).
+                            ? <span className="flex w-full items-center justify-end"><Value c={c} v={r[c.key]} /></span>
+                            : <Value c={c} v={r[c.key]} />}
                       </td>
                     );
                   })}
