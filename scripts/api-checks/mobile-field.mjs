@@ -92,6 +92,19 @@ r = await upload(`/api/maintenance/issues/${openId}/photos`, 'technician', { kin
 check('technician adds an After photo', r.status === 201, r.text);
 r = await upload(`/api/maintenance/issues/${openId}/documents`, 'technician', { kind: 'claim' }, 'claim.pdf', 'application/pdf');
 check('technician uploads their claim', r.status === 201, r.text);
+// The Claim box (chew, 12 Nov 2026): Direct Claim to Me needs the whole bank, checked before anything is saved; the
+// second box keeps receipts and proof of work and product on the job only.
+const filesNow = async () => ((await call('GET', `/api/field/repairs/${openId}`, undefined, 'technician')).json?.files ?? []).length;
+const filesBefore = await filesNow();
+r = await upload(`/api/maintenance/issues/${openId}/documents`, 'technician', { kind: 'purchase', amountSen: '4500', payBack: 'finance', bankName: 'Maybank', accountNo: '12AB', accountName: 'HAFIZ RAHMAN' }, 'bill.png');
+check('a Direct Claim to Me with a wrong account number is refused, naming the field', r.status === 422 && !!r.json?.error?.fields?.accountNo, r.text);
+r = await upload(`/api/maintenance/issues/${openId}/documents`, 'technician', { kind: 'purchase', amountSen: '4500', payBack: 'finance' }, 'bill.png');
+check('a Direct Claim to Me with no bank is refused', r.status === 422 && !!r.json?.error?.fields?.bankName, r.text);
+check('nothing is saved on the job when the bank is refused', (await filesNow()) === filesBefore, String(filesBefore));
+r = await upload(`/api/maintenance/issues/${openId}/documents`, 'technician', { kind: 'purchase', amountSen: '4500', payBack: 'finance', bankName: 'Maybank', accountNo: '1234-5678 90', accountName: 'HAFIZ RAHMAN' }, 'bill.png');
+check('a Direct Claim to Me with the whole bank keeps the invoice on the job', r.status === 201 && !!r.json?.documentId, r.text);
+r = await upload(`/api/maintenance/issues/${openId}/documents`, 'technician', { kind: 'pod' }, 'proof.png');
+check('the second box keeps a receipt or proof of work and product on the job', r.status === 201 && (await filesNow()) === filesBefore + 2, r.text);
 r = await call('POST', `/api/field/repairs/${openId}/note`, { note: 'Washer replaced.' }, 'technician');
 check('technician leaves a note', r.status === 201, r.text);
 r = await call('POST', `/api/maintenance/issues/${openId}/end`, { note: 'Tested, no drip.' }, 'technician');

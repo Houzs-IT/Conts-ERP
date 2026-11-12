@@ -4,12 +4,14 @@ import { fileToUpload, forwardClaims } from '../../_lib/claimsForward';
 
 /** /api/claims/* — a member of staff's own receipts, petty cash and payment requests, forwarded to the engine on their
  *  behalf (functions/_lib/claimsForward.ts). Only these paths pass; the engine limits every answer to the person.
- *    GET  me, receipts, receipts/:id/files/:fileId, float, jobs, units, accounts, projects   (everyone)
+ *    GET  me, my-bank, receipts, receipts/:id/files/:fileId, float, jobs, units, accounts, projects   (everyone)
  *    GET  requests, suppliers, purchase-orders                                                (office staff)
  *    POST extract, receipts            multipart: `data` (JSON) and `file` (one or more)       (everyone)
+ *    POST requests (multipart)                                                                (everyone; a field worker
+ *         asks finance to pay a supplier by the name on the bill only: Direct Pay to Supplier, chew 12 Nov 2026)
  *    POST float/top-up-request                                                                (a float's keeper)
- *    POST requests (multipart), requests/:id/withdraw                                         (office staff) */
-const GET_ANYONE = /^(me|receipts|receipts\/[^/]+\/files\/[^/]+|float|jobs|units|accounts|projects)$/;
+ *    POST requests/:id/withdraw                                                               (office staff) */
+const GET_ANYONE = /^(me|my-bank|receipts|receipts\/[^/]+\/files\/[^/]+|float|jobs|units|accounts|projects)$/;
 const GET_OFFICE = /^(requests|suppliers|purchase-orders)$/;
 const MAX_FILES = 8;
 const MAX_BYTES = 25 * 1024 * 1024;
@@ -45,7 +47,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const field = isFieldRole(session.role);
   const source = field ? 'field_app' : 'web';
 
-  if (path === 'extract' || path === 'receipts' || (path === 'requests' && !field)) {
+  if (path === 'extract' || path === 'receipts' || path === 'requests') {
     const form = await readForm(request);
     if (form instanceof Response) return form;
     const files = await Promise.all(form.files.map(fileToUpload));
