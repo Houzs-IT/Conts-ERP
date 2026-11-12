@@ -8,7 +8,7 @@ import { register } from 'node:module';
 register('data:text/javascript,' + encodeURIComponent(`export async function resolve(s, c, next) {
   try { return await next(s, c); } catch (e) { if (s.startsWith('.') && !/\\.[a-z]+$/.test(s)) return next(s + '.ts', c); throw e; }
 }`));
-const { AREAS, resolveFor } = await import('../../functions/_lib/access.ts');
+const { AREAS, resolveFor, routeAreas, highestLevelOf } = await import('../../functions/_lib/access.ts');
 
 const area = key => AREAS.find(a => a.key === key);
 const rules = ({ user = {}, position = {}, department = {} } = {}) => ({
@@ -75,9 +75,9 @@ test('cleaning and maintenance have no desk areas, whatever is stored', () => {
 // before departments: Operations staff, Operations manager and Finance admin columns). HR came later (migration 0165)
 // and nobody is seeded into it: pay and bank details stay hidden until management grants HR.
 const seeded = {
-  operations_staff: { dashboard: 'none', portfolio: 'none', reservations: 'edit', operations: 'edit', properties: 'edit', hr: 'none', serviceCases: 'edit', projects: 'edit', scSales: 'edit', scInvoices: 'none', scConsignment: 'edit', scProcurement: 'edit', scTransportPlan: 'edit', scWarehouse: 'edit', finance: 'none', owners: 'none', ledger: 'none', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none', performance: 'edit', comms: 'edit', reports: 'none', pricing: 'edit', automations: 'edit', mail: 'none', users: 'none', integrations: 'none', settings: 'none', health: 'none' },
-  operations_manager: { dashboard: 'full', portfolio: 'full', reservations: 'full', operations: 'full', properties: 'full', hr: 'none', serviceCases: 'full', projects: 'full', scSales: 'full', scInvoices: 'view', scConsignment: 'full', scProcurement: 'full', scTransportPlan: 'full', scWarehouse: 'full', finance: 'view', owners: 'view', ledger: 'none', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none', performance: 'full', comms: 'full', reports: 'view', pricing: 'full', automations: 'full', mail: 'none', users: 'full', integrations: 'full', settings: 'full', health: 'full' },
-  finance_admin: { dashboard: 'view', portfolio: 'view', reservations: 'view', operations: 'view', properties: 'view', hr: 'none', serviceCases: 'view', projects: 'view', scSales: 'view', scInvoices: 'full', scConsignment: 'view', scProcurement: 'view', scTransportPlan: 'view', scWarehouse: 'view', finance: 'full', owners: 'full', ledger: 'full', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none', performance: 'full', comms: 'none', reports: 'full', pricing: 'full', automations: 'none', mail: 'none', users: 'none', integrations: 'full', settings: 'full', health: 'full' },
+  operations_staff: { dashboard: 'none', portfolio: 'none', calendar: 'edit', reservations: 'edit', guests: 'edit', operations: 'edit', cleaning: 'edit', maintenance: 'edit', properties: 'edit', scheduledChanges: 'edit', agentToLet: 'edit', unitSettings: 'edit', hr: 'none', serviceCases: 'edit', projects: 'edit', scSales: 'edit', scInvoices: 'none', scConsignment: 'edit', scProcurement: 'edit', scTransportPlan: 'edit', scWarehouse: 'edit', finance: 'none', deductions: 'none', owners: 'none', contracts: 'none', ledger: 'none', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none', performance: 'edit', comms: 'edit', reports: 'none', pricing: 'edit', reviews: 'edit', automations: 'edit', mail: 'none', users: 'none', integrations: 'none', settings: 'none', health: 'none' },
+  operations_manager: { dashboard: 'full', portfolio: 'full', calendar: 'full', reservations: 'full', guests: 'full', operations: 'full', cleaning: 'full', maintenance: 'full', properties: 'full', scheduledChanges: 'full', agentToLet: 'full', unitSettings: 'full', hr: 'none', serviceCases: 'full', projects: 'full', scSales: 'full', scInvoices: 'view', scConsignment: 'full', scProcurement: 'full', scTransportPlan: 'full', scWarehouse: 'full', finance: 'view', deductions: 'view', owners: 'view', contracts: 'view', ledger: 'none', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none', performance: 'full', comms: 'full', reports: 'view', pricing: 'full', reviews: 'full', automations: 'full', mail: 'none', users: 'full', integrations: 'full', settings: 'full', health: 'full' },
+  finance_admin: { dashboard: 'view', portfolio: 'view', calendar: 'view', reservations: 'view', guests: 'view', operations: 'view', cleaning: 'view', maintenance: 'view', properties: 'view', scheduledChanges: 'view', agentToLet: 'view', unitSettings: 'view', hr: 'none', serviceCases: 'view', projects: 'view', scSales: 'view', scInvoices: 'full', scConsignment: 'view', scProcurement: 'view', scTransportPlan: 'view', scWarehouse: 'view', finance: 'full', deductions: 'full', owners: 'full', contracts: 'full', ledger: 'full', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none', performance: 'full', comms: 'none', reports: 'full', pricing: 'full', reviews: 'full', automations: 'none', mail: 'none', users: 'none', integrations: 'full', settings: 'full', health: 'full' },
 };
 
 test('the seeded rules give the levels of the old role chart', () => {
@@ -87,17 +87,17 @@ test('the seeded rules give the levels of the old role chart', () => {
   const dc = level => ({ 'group:Service cases': level, 'group:Projects': level, 'group:Supply chain': level });
   const staffDept = {
     'group:Operations': 'edit', 'group:Reservations': 'edit', 'group:Units': 'edit', ...dc('edit'), 'group:Growth': 'edit',
-    scInvoices: 'none', performance: 'edit', comms: 'edit', owners: 'none', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none',
+    scInvoices: 'none', performance: 'edit', comms: 'edit', owners: 'none', contracts: 'none', deductions: 'none', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none',
   };
   const financeDept = {
     'group:Home': 'view', 'group:Reports': 'full', 'group:Reservations': 'view', 'group:Operations': 'view', 'group:Units': 'view',
     ...dc('view'), 'group:Finance': 'full', 'group:Growth': 'full', 'group:System': 'full',
-    scInvoices: 'full', comms: 'none', automations: 'none', users: 'none', performance: 'full', owners: 'full', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none',
+    scInvoices: 'full', comms: 'none', automations: 'none', users: 'none', performance: 'full', portfolio: 'view', owners: 'full', contracts: 'full', deductions: 'full', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none',
   };
   const managerPosition = {
     'group:Home': 'full', 'group:Reports': 'view', 'group:Reservations': 'full', 'group:Operations': 'full', 'group:Units': 'full',
     ...dc('full'), 'group:Finance': 'view', 'group:Growth': 'full', 'group:System': 'full',
-    scInvoices: 'view', ledger: 'none', performance: 'full', comms: 'full', owners: 'view',
+    scInvoices: 'view', ledger: 'none', performance: 'full', portfolio: 'full', comms: 'full', owners: 'view', contracts: 'view', deductions: 'view',
   };
   const people = {
     operations_staff: rules({ department: staffDept }),
@@ -110,9 +110,9 @@ test('the seeded rules give the levels of the old role chart', () => {
   }
 });
 
-test('Messages sits in Growth beside Pricing and reviews and Automations (owner, 2 Nov 2026; migration 0200)', () => {
+test('Messages sits in Growth beside Pricing, Reviews and Automations (owner, 2 Nov 2026; migration 0200)', () => {
   const growth = AREAS.filter(a => a.group === 'Growth').map(a => a.key);
-  assert.deepEqual(growth, ['pricing', 'comms', 'automations']);
+  assert.deepEqual(growth, ['pricing', 'reviews', 'comms', 'automations']);
   assert.ok(!AREAS.some(a => a.group === 'Reservations' && a.key === 'comms'));
 });
 
@@ -121,4 +121,45 @@ test('a Growth baseline does not reach Messages where migration 0200 pinned it',
   const r = rules({ department: { 'group:Reservations': 'edit', 'group:Growth': 'view', comms: 'edit' } });
   assert.equal(resolveFor(r, staff, AREAS.find(a => a.key === 'comms')).level, 'edit');
   assert.equal(resolveFor(r, staff, AREAS.find(a => a.key === 'pricing')).level, 'view');
+});
+
+test('each page split off a shared area reaches its own endpoints and shares the ones its siblings use', () => {
+  const keysFor = (method, path) => routeAreas(method, path)?.map(a => a.key) ?? null;
+  const expected = [
+    ['GET', '/api/reservations/calendar', ['calendar']],
+    ['GET', '/api/guests', ['guests']],
+    ['GET', '/api/operations/day', ['operations']],
+    ['GET', '/api/housekeeping/board', ['cleaning']],
+    ['GET', '/api/maintenance/issues', ['maintenance']],
+    ['POST', '/api/housekeeping/guest-left', ['operations', 'cleaning']],
+    ['GET', '/api/operations/service-prices', ['cleaning', 'maintenance']],
+    ['PATCH', '/api/operations/service-prices/x1', ['cleaning', 'maintenance']],
+    ['PATCH', '/api/maintenance/skus/x1', ['cleaning', 'maintenance']],
+    ['POST', '/api/housekeeping/price-raise', ['cleaning', 'maintenance']],
+    ['GET', '/api/units', null],
+    ['GET', '/api/units/scheduled-changes', ['scheduledChanges']],
+    ['PATCH', '/api/units/x1', ['properties']],
+    ['PATCH', '/api/lettings/x1', ['properties', 'agentToLet']],
+    ['POST', '/api/properties', ['properties', 'unitSettings']],
+    ['GET', '/api/properties/x1/channels', ['properties']],
+    ['GET', '/api/unit-layout-types', ['properties', 'unitSettings']],
+    ['POST', '/api/unit-layout-types', ['unitSettings']],
+    ['GET', '/api/contract-types', null],
+    ['PATCH', '/api/contract-types/x1', ['unitSettings']],
+    ['GET', '/api/contracts', ['contracts']],
+    ['GET', '/api/owners', ['owners']],
+    ['GET', '/api/finance/deductions', ['deductions']],
+    ['POST', '/api/expenses', ['finance', 'deductions']],
+    ['GET', '/api/finance/expenses', ['finance']],
+    ['GET', '/api/reviews', ['reviews']],
+    ['PUT', '/api/rates', ['pricing']],
+  ];
+  for (const [method, path, keys] of expected) assert.deepEqual(keysFor(method, path), keys, `${method} ${path}`);
+});
+
+test('a shared endpoint takes the highest level the person has on any of its pages', () => {
+  const best = highestLevelOf([{ area: area('cleaning'), level: 'view' }, { area: area('maintenance'), level: 'edit' }]);
+  assert.deepEqual([best.area.key, best.level], ['maintenance', 'edit']);
+  const tie = highestLevelOf([{ area: area('cleaning'), level: 'none' }, { area: area('maintenance'), level: 'none' }]);
+  assert.equal(tie.level, 'none');
 });

@@ -158,7 +158,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const { user } = useSession();
   // Closing overdue jobs in bulk is management's (functions/api/housekeeping/overdue.ts); cleaners never see it.
-  const mayBulk = mayRun(user, 'operations');
+  const mayBulk = mayRun(user, 'cleaning');
   const [overdueOpen, setOverdueOpen] = useState(() => { try { return localStorage.getItem('cleaning.overdueOpen') === '1'; } catch { return false; } });
   const toggleOverdue = () => setOverdueOpen(v => { try { localStorage.setItem('cleaning.overdueOpen', v ? '0' : '1'); } catch { /* private window */ } return !v; });
   const [picks, setPicks] = useState<Set<string>>(new Set());

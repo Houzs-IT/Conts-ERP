@@ -8,6 +8,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { FilterBar } from '../components/FilterBar';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
+import { mayRun } from '../lib/areaAccess';
 import { date, titleCase, plural } from '../lib/format';
 import { cx, TONE } from '../lib/design-tokens';
 import { useUrlState, SearchBox } from './finance/listKit';
@@ -23,7 +24,7 @@ export default function LettingsPage() {
   const { data, loading, error, reload } = useApi<LettingsPayload>('/lettings');
   const roster = useApi<{ data: { id: string; unitNumber: string; propertyName: string; ownerName: string }[] }>('/units');
   const { user } = useSession();
-  const canEdit = mayEditUnits(user);
+  const canEdit = mayRun(user, 'agentToLet') || mayEditUnits(user);
   const money = canEdit;
   const navigate = useNavigate();
   const url = useUrlState();

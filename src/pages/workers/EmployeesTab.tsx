@@ -53,8 +53,8 @@ export default function EmployeesTab() {
   const { data, loading, error, reload } = useApi<{ data: Employee[] }>('/employees');
   const { user } = useSession();
   const mayEdit = mayWork(user, 'hr');
-  // Same rules as the roster routes: Operations to switch someone off, Full on Operations to give app access.
-  const mayRoster = mayWork(user, 'operations');
+  // Same rules as the roster routes: Cleaning or Maintenance to switch someone off, Full on Today (operations) to give app access.
+  const mayRoster = mayWork(user, 'cleaning') || mayWork(user, 'maintenance');
   const mayGrant = mayRun(user, 'operations');
   const [confirmDialog, ask] = useConfirm();
   const toast = useToast();
@@ -191,8 +191,8 @@ function EmployeeForm({ person, onClose, onSaved }: {
   const isOnBoth = !!person?.cleanerActive && !!person.technicianActive;
   const wasDept: Dept | null = person?.cleanerActive === person?.technicianActive ? null : person?.cleanerActive ? 'cleaning' : 'maintenance';
   const [dept, setDept] = useState<Dept | null>(person ? wasDept : 'cleaning');
-  // Changing a department changes the roster, which is Operations' to run (as Switch off is).
-  const mayRoster = mayWork(user, 'operations');
+  // Changing a department changes the roster, which is Cleaning's or Maintenance's to run (as Switch off is).
+  const mayRoster = mayWork(user, 'cleaning') || mayWork(user, 'maintenance');
   const [giveAccess, setGiveAccess] = useState(mayGrant);
   const [salaryFrom, setSalaryFrom] = useState(`${todayMyt().slice(0, 7)}-01`);
   const [errors, setErrors] = useState<Record<string, string>>({});

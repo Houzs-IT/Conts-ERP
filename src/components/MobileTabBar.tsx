@@ -95,6 +95,8 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
   // Groups marked phone: false (Finance, owner 11 Oct 2026) stay off the phone; switched-off items stay off as on the desk.
   const all = useMemo(() => withoutOffItems(navFor(user!.role, !!engine.data?.enabled, user!.access), counts?.approvalsOn === true)
     .filter(g => g.phone !== false)
+    .map(g => ({ ...g, items: g.items.filter(item => item.phone !== false) }))
+    .filter(g => g.items.length > 0)
     .map(g => g.workspace === 'rental' && g.label === 'SYSTEM' ? { ...g, label: 'SUPPORT', items: g.items.filter(it => it.key === 'itSupport') } : g),
   [user, engine.data?.enabled, counts?.approvalsOn]);
   // Highlights the row a record or sub-page belongs to, the same rule as the desk sidebar.
