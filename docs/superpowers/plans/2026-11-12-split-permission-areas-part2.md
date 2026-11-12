@@ -67,6 +67,20 @@ Project settings, Case settings and My cases stay with their parent: in the engi
   without it (the metrics then refuse); the case list stays reachable by address for metrics-only staff, as in the
   "enforced only in the screens" gap below.
 
+**As built (migration 0312), one box per menu item (owner, 12 Nov 2026):** Case settings (`serviceSettings`), My cases
+(`serviceMyCases`) and Project settings (`projectSettings`) get their own boxes too, copied from their parent. Calendar
+stays with Projects.
+
+- Settings writes move from `projects.manage` / `service_cases.manage` to Full on the `projects.maintenance` /
+  `service_cases.settings` page: brands, event types, cost rates, organizers, contractors, venues, crews (`/renovation/people`),
+  flow step SLAs, task categories, property lists, project types, Beta settings; case settings, lookups and the lead
+  time profiles and targets. The lists the settings screens read take the project list or the settings page. Project
+  actions (archive, import, delete) and case actions (archive, assign, bulk, escalation, generate PO, alert override)
+  keep the manage key, so Full on Projects / Service cases.
+- My cases is a new engine page, `service_cases.my_cases`; `/assr/my-cases` and the `/my-cases` screens follow it.
+- Not moved: the exhibition-mode checklist template routes (Conts runs in renovation mode). The Case settings default
+  assignee picker reads `/api/users`, which needs `users.read` (Full on Mail), as before.
+
 ## Step 2d: engine, large (design first)
 
 **Finance by menu part** (To approve, Suppliers, Rental bills, Billing, Collections, Bank, Reports, Setup, both

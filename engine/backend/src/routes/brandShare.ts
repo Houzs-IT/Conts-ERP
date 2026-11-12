@@ -15,7 +15,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import type { Env } from "../types";
-import { requirePermission } from "../middleware/auth";
+import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql } from "../scm/lib/companyScope";
 import { issueBrandShareToken, revokeBrandShareTokens } from "../services/brandShare";
 
@@ -43,7 +43,7 @@ brandShare.post("/:id/share-link", requirePermission("projects.write"), async (c
   return c.json({ token });
 });
 
-brandShare.delete("/:id/share-link", requirePermission("projects.manage"), async (c) => {
+brandShare.delete("/:id/share-link", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (isNaN(id)) return c.json({ error: "Invalid ID" }, 400);
   const name = await brandName(c, id);
