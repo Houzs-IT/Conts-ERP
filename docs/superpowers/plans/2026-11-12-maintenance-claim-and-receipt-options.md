@@ -44,7 +44,7 @@ The upload area on a maintenance job is reduced to one claim box and one store-o
   - the account number is digits only, 5–30 of them;
   - the account name is 1–100 characters.
 - **The saved bank records** (`public.conts_employee_bank`, `scm.staff_bank_details`) are read, never written, by these flows.
-- **Migration** `0309_claim_bank_details.sql` goes through `migrate-production.yml` (dry run first) with chew's OK, before merge. The engine writes the new columns.
+- **Migration** `0311_claim_bank_details.sql` (renumbered from 0309: main took 0309 and 0310 on 12 Nov) goes through `migrate-production.yml` (dry run first) with chew's OK, before merge. The engine writes the new columns.
 - **Old files.** Documents already on jobs keep their kinds and labels. No data is changed.
 - **Rules unchanged:**
   - a person's float (override, else department float) still decides Petty Cash;
@@ -99,11 +99,11 @@ The old test "a field worker hands receipts in but does not ask finance to pay" 
 - [ ] Write the tests: allowed by name; supplier id refused; PO refused; deposit refused. Run them. Expected: they fail.
 - [ ] Implement, run, commit.
 
-### Task 3: Migration 0309 — the bank details on a claim
+### Task 3: Migration 0311 (planned as 0309) — the bank details on a claim
 
-**Files:** `migrations-pg/0309_claim_bank_details.sql`.
+**Files:** `migrations-pg/0311_claim_bank_details.sql`.
 - It adds nullable `payee_bank_name text`, `payee_account_no text` and `payee_account_name text` to `scm.staff_receipts`. The column grants follow the table's.
-- Header: APPLY with only=0309, dry run first; REVERSAL drops the three columns (by hand).
+- Header: APPLY with only=0311, dry run first; REVERSAL drops the three columns (by hand).
 
 - [ ] Write it. Check that PGlite starts with it. Commit.
 
@@ -191,3 +191,63 @@ The old test "a field worker hands receipts in but does not ask finance to pay" 
 - [ ] Run `npm test`, `npm run check`, `npx tsc -b`, the engine tests (`npm run test:light` in `engine/backend`) and the engine frontend build.
 - [ ] Add an "As built" section to this plan.
 - [ ] Commit.
+
+## As built (12 Nov 2026)
+
+**Commits** (branch `feat/maintenance-claim-options`):
+- 5d4476c — Task 1: Direct Claim to Me in the engine, and `GET /my-bank`.
+- 5045f31 — Task 2: a field worker's payment request, by the supplier's name only.
+- d7561f1 — Task 3: the migration, renumbered 0309 → **0311** in a later commit (main took 0309 and 0310 the same day).
+- 3e0f63c — Task 4: finance's pay-back list shows the bank, and the voucher pays to the claim's bank.
+- 24e0c65 — Task 5: the documents route; the claims forward; `src/lib/claimBank.ts`.
+- 6882127 — Task 6: the job's two boxes on the phone and the desk.
+- b111b80 — Task 7: the Receipts page's three options, plus the polish found in the browser check.
+- The SOP commit.
+
+**Where it differs from the plan.** Each is a `Ruling:` line in the ledger.
+- **The claims forward.** The Property OS claims forward (`functions/api/claims/[[path]].ts`) also changed:
+  - `GET my-bank` is open to everyone;
+  - `POST requests` is open to field workers too. The engine still allows them only a PAYMENT by name.
+- **`bankProblem`.** It lives in `src/lib/claimBank.ts` (no imports) and returns the key of the wrong field, so the phone can name it in four languages. It is shared by the forms and the job's documents route.
+- **`differsFromSaved`** is also true when nothing is saved.
+- **Finance's screen.** It shows the bank as a "Paid to" column, with the page's own badge.
+- **One shared component.** One Claim box (`JobClaimBox`) with shared bank fields (`ClaimBankFields`, `useSavedBank`). The desk uses the portal's English words (`PORTAL_ENGLISH`).
+- **The choice control.** The options use `ChoiceChips` (wraps on a phone, 44 px on touch) on the job box and the Receipts page, not `Segmented`.
+- **Lists.**
+  - The Claim box lists the claims handed in.
+  - The second box lists every other file, including the old kinds.
+  - Inside its own box a file shows only its date.
+- **Where the boxes show.**
+  - Desk: both boxes, on a done job too, as the old desk upload was. Still behind finance view.
+  - Phone: only on an open job of the person's own.
+- **Option names** stay in English in all four languages (chew's names); the notes are translated.
+
+**Checks**
+- Engine:
+  - my-claims-routes 32/32 and petty-cash-routes 25/25;
+  - engine `tsc` clean;
+  - engine frontend build passes.
+- Property OS:
+  - `tsc -b` clean;
+  - `npm run check` 17/17;
+  - `claimBank.test.mjs` 2/2;
+  - `mobile-field.mjs` 62/62 on a local copy (5 new checks).
+- Browser, on a local copy with an engine stand-in that records what Property OS forwards: phone at 375 px (light, and dark with the theme forced), desk at 800 px. What was checked:
+  - the default choice;
+  - the bank prefill, and a changed account kept on the claim only;
+  - a wrong account number refused under the field;
+  - a typed amount kept while the photo is read, and sending while it reads;
+  - several files in the second box;
+  - a person with no petty cash sees Direct Claim to Me only;
+  - Direct Pay to Supplier read with the bill reader and forwarded as a PAYMENT by name;
+  - no "Kind of file" dropdown on either screen.
+
+**Not this branch's**
+- `npm test` 3 failures on main: categoryCatalog ×2 and statementPdf.
+- The engine light suite's known failures: doStockLeavesOnConfirm and specialsRecordedNeverPriced.
+- PGlite cannot apply main's 0291 (btree_gist).
+
+**Release**
+1. With chew's OK: migration **0311** on production through "Apply migrations to production" with only=0311, dry run first, **before** merge. The engine writes the new columns as soon as it deploys.
+2. Then merge. Property OS and the engine both deploy from main.
+3. To test end to end: production with a test account, or staging. The engine does not run on the local PGlite copy.
