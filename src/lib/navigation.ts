@@ -125,9 +125,9 @@ export const NAV: NavGroup[] = [
     { key: 'ygrrReport', label: 'YGRR report', icon: 'shield-check', path: '/reports/ygrr', area: 'reports', fresh: true },
   ] },
   { label: 'RESERVATIONS', workspace: 'rental', items: [
-    { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'reservations' },
+    { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'calendar' },
     { key: 'bookings', label: 'Reservations', icon: 'book-open', path: '/reservations/bookings', area: 'reservations' },
-    { key: 'guests', label: 'Guests', icon: 'users', path: '/reservations/guests', area: 'reservations' },
+    { key: 'guests', label: 'Guests', icon: 'users', path: '/reservations/guests', area: 'guests' },
     // Invoices and receipts issued to guests: guest invoicing, so it sits with reservations. Still money work, so
     // its permission area stays Finance (who can open it does not change).
   ] },

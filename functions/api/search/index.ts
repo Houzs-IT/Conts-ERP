@@ -107,7 +107,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ...rq.flatMap(c => c.args), q);
 
   const gq = guestSearch(q, true);
-  const guestsRead = !q || !sees('reservations') || !want('guest') ? [] : all<any>(env, `
+  const guestsRead = !q || !sees('guests') || !want('guest') ? [] : all<any>(env, `
     SELECT g.id, g.full_name, g.email, g.phone FROM guests g
     WHERE ${gq.sql}
     ORDER BY g.full_name LIMIT ${n}`, ...gq.args);

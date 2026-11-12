@@ -53,7 +53,9 @@ export const AREAS: Area[] = [
   // The yearly unit report. Its figures are Finance's, so it stays management-only like Finance.
   { key: 'reports', label: 'Reports', group: 'Reports', api: [], managed: true, strictRead: true },
   // Reservations arrive from the channels through the API; finance reads them but does not create or change them (owner, 11 Oct 2026).
-  { key: 'reservations', label: 'Reservations', group: 'Reservations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
+  { key: 'calendar', label: 'Calendar', group: 'Reservations', api: ['blocks'] },
+  { key: 'reservations', label: 'Reservations', group: 'Reservations', api: ['reservations', 'guest-documents'] },
+  { key: 'guests', label: 'Guests', group: 'Reservations', api: ['guests'] },
   { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'] },
   // Field staff's HR record: IC, bank, salary and statutory (PLAN-hr-employees.md). Its own group so Operations staff do
   // not see pay by default. The cleaner and technician rosters themselves stay under Operations.
@@ -185,8 +187,9 @@ export async function rulesFor(env: Env, who: Who): Promise<Rules> {
 export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; why: string }[] = [
   { method: 'GET', path: /^\/api\/units$/, area: null, why: 'The unit list feeds every unit picker (calendar, cleaning, maintenance, reservations, expenses).' },
   { method: 'GET', path: /^\/api\/housekeeping\/(cleaners|crew)$/, area: null, why: 'Names of the cleaners for the assign pickers on the dashboard and in reservations.' },
-  { method: 'GET', path: /^\/api\/integrations$/, area: 'reservations', why: 'The calendar shows which channels each unit is connected to.' },
-  { method: 'POST', path: /^\/api\/integrations\/sync$/, area: 'reservations', why: 'The calendar\'s button that gets new reservations from the channels.' },
+  { method: 'GET', path: /^\/api\/reservations\/calendar$/, area: 'calendar', why: 'The reservation calendar grid is the Calendar page.' },
+  { method: 'GET', path: /^\/api\/integrations$/, area: 'calendar', why: 'The calendar shows which channels each unit is connected to.' },
+  { method: 'POST', path: /^\/api\/integrations\/sync$/, area: 'calendar', why: 'The calendar\'s button that gets new reservations from the channels.' },
   { method: 'PATCH', path: /^\/api\/units\/[^/]+\/bank-account$/, area: 'owners', why: 'Choosing which of the owner\'s bank accounts a unit is paid to is owner payout work.' },
   { method: 'POST', path: /^\/api\/owners\/[^/]+\/notify$/, area: 'dashboard', why: 'The dashboard\'s exception action that tells an owner about a problem with their unit.' },
   { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a reservation or a guest record; the Messages inbox keeps its own area.' },

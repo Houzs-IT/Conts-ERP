@@ -7,7 +7,7 @@ import { levelsFor } from '../../_lib/access';
 /** The area (functions/_lib/access.ts) whose records each history belongs to: a role that cannot open the
  *  area cannot read the history of its records either. Tables not listed are management and finance only. */
 const ENTITY_AREA: Record<string, string> = {
-  reservations: 'reservations', guests: 'reservations',
+  reservations: 'reservations', guests: 'guests',
   units: 'properties', properties: 'properties', access_credentials: 'properties',
   tasks: 'operations', maintenance_issues: 'operations', cleaners: 'operations',
   owners: 'owners', owner_contracts: 'owners', owner_adjustments: 'owners',
