@@ -183,18 +183,22 @@ const Section = SectionCard;
 const ROWS: { key: LineKey; kind: 'income' | 'cost' | 'sub' | 'line' | 'result' }[] = [
   { key: 'guestPaid', kind: 'income' },
   ...COST_KEYS.map(k => ({ key: k as LineKey, kind: 'cost' as const })),
-  { key: 'operating', kind: 'sub' }, { key: 'owner', kind: 'line' }, { key: 'company', kind: 'result' },
+  { key: 'operating', kind: 'sub' }, { key: 'owner', kind: 'line' },
+  // The company's share of late changes to an earlier, locked month (part 2b): shown only when there is one.
+  { key: 'late', kind: 'line' }, { key: 'company', kind: 'result' },
 ];
 
 function PnlByMonth({ months, byMonth, total, mLabel }: { months: string[]; byMonth: Map<string, Pnl>; total: Pnl; mLabel: (m: string) => string }) {
   const cols = [...months.map(m => ({ key: m, label: mLabel(m), p: byMonth.get(m)! })), { key: 'total', label: 'Total', p: total }];
   const costs = (p: Pnl) => COST_KEYS.reduce((n, k) => n + p[k], 0);
+  const hasLate = cols.some(c => c.p.late !== 0);
   function exportExcel() {
     const head: ExportColumn[] = [{ label: 'Line', kind: 'text' }, ...cols.flatMap(c => [{ label: `${c.label} (RM)`, kind: 'money' as const }, { label: `${c.label} %`, kind: 'number' as const }])];
     const line = (label: string, get: (p: Pnl) => number): ExportCell[] => [label, ...cols.flatMap(c => [get(c.p) / 100, pctOfIncome(get(c.p), c.p.guestPaid)])];
     downloadTable('xlsx', 'unit-pnl-by-month', 'P&L by month', head, [
       line(LINE_LABEL.guestPaid, p => p.guestPaid), ...COST_KEYS.map(k => line(LINE_LABEL[k], p => p[k])), line('Total costs', costs),
-      line(LINE_LABEL.operating, p => p.operating), line(LINE_LABEL.owner, p => p.owner), line(LINE_LABEL.company, p => p.company),
+      line(LINE_LABEL.operating, p => p.operating), line(LINE_LABEL.owner, p => p.owner),
+      ...(hasLate ? [line(LINE_LABEL.late, p => p.late)] : []), line(LINE_LABEL.company, p => p.company),
     ]);
   }
   // Grid lines between every month and every line; each month has its amount and its % of the guest total side by side.
@@ -229,14 +233,14 @@ function PnlByMonth({ months, byMonth, total, mLabel }: { months: string[]; byMo
             </tr>
           </thead>
           <tbody>
-            {ROWS.map(r => (
+            {ROWS.filter(r => r.key !== 'late' || hasLate).map(r => (
               <PnlRow key={r.key} kind={r.kind} label={LINE_LABEL[r.key]} cells={cols.map(c => cell(c.key, c.p, r.key, r.kind !== 'cost'))}
                 extra={r.key === 'misc' ? <PnlRow kind="subtotal" label="Total costs" cells={cols.map(c => cell(c.key, c.p, 'costs', true))} /> : null} />
             ))}
           </tbody>
         </table>
       </div>
-      <p className="m-0 text-meta text-muted-ink">Guest total: what guests paid for the month’s nights. Service fees and taxes: the guest total less what the reservations paid out. Operating profit is the statement’s gross profit; company keeps is what is left after the owner’s portion (the Monthly Unit report’s gain or loss).</p>
+      <p className="m-0 text-meta text-muted-ink">Guest total: what guests paid for the month’s nights. Service fees and taxes: the guest total less what the reservations paid out. Operating profit is the statement’s gross profit; company keeps is what is left after the owner’s portion, plus any late changes, the company’s share of changes to an earlier, locked month (the Monthly Unit report’s gain or loss).</p>
     </Section>
   );
 }
@@ -283,6 +287,9 @@ function ByUnit({ rows, units, flags, holes, onUnit }: { rows: UnitMonthInput[];
     { key: 'utilNight', label: 'Utilities / night', type: 'money', value: r => (r.nights ? Math.round(util(r.p) / r.nights) : null), width: 130 },
     { key: 'margin', label: 'Operating margin', type: 'number', value: r => pct(r.p.operating, r.p), render: r => <span className={cx((pct(r.p.operating, r.p) ?? 0) < 0 && 'text-danger')}>{pctText(pct(r.p.operating, r.p))}</span>, width: 140 },
     { key: 'owner', label: "Owner's portion", type: 'money', value: r => r.p.owner, render: r => <Money sen={r.p.owner} />, width: 140 },
+    // Only when a unit has one: DataTable reads a column's hidden flag once, so a column that comes and goes with the
+    // data is left out instead (review finding).
+    ...(list.some(r => r.p.late !== 0) ? [{ key: 'late', label: 'Late changes', type: 'money' as const, value: (r: UnitRow) => r.p.late, render: (r: UnitRow) => <Money sen={r.p.late} />, width: 130 }] : []),
     { key: 'company', label: 'Company keeps', type: 'money', value: r => r.p.company, render: r => <Money sen={r.p.company} strong />, width: 140 },
     { key: 'checks', label: 'Checks', value: r => r.flags + r.gaps, width: 150, render: r => (
       <span className="inline-flex gap-1">

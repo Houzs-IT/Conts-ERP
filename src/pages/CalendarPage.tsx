@@ -14,6 +14,7 @@ import { channelNote, type ChannelSync } from '../lib/bookingStatus';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
+import { incomeLockedToast } from '../lib/lockNotice';
 import { useSession } from '../lib/session';
 import { api, notifyFailure, errorMessage } from '../lib/api';
 import { todayMyt, dateInputValue, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, plural, count, rm, amount, buildingName } from '../lib/format';
@@ -423,8 +424,9 @@ function CalendarBoard() {
         setBusy(true);
         setDateEdits(e => ({ ...e, [b.id]: { checkIn: newCheckIn, checkOut: newCheckOut } }));
         try {
-          const res = await api.patch<{ effects?: { channel: ChannelSync } }>(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true });
+          const res = await api.patch<{ effects?: { channel: ChannelSync }; notice?: string | null }>(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true });
           toast({ tone: 'success', title: 'Reservation moved.', body: `${b.guestName || 'The reservation'} is now ${dateRange(newCheckIn, newCheckOut)}. ${channelNote(res?.effects?.channel, 'moved')}`.trim() });
+          if (res?.notice) toast(incomeLockedToast(res.notice));
           reload();
         } catch (e) {
           // Put the bar back where it was: the server kept the old dates.

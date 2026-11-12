@@ -26,6 +26,7 @@ import { useMedia } from '../lib/useMedia';
 import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { useToast } from '../components/Toast';
+import { incomeLockedToast } from '../lib/lockNotice';
 import { api, notifyFailure, downloadFile, ApiFailure, errorMessage } from '../lib/api';
 import { rm, date, dateRange, dateShort, nights as fmtNights, guests as fmtGuests, todayMyt, plural, count as countLabel, buildingName } from '../lib/format';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
@@ -210,7 +211,7 @@ export default function BookingsPage() {
     const unit = UNITS.find(u => u.id === input.unitId);
     if (!unit) { toast({ tone: 'critical', title: 'Pick a unit first.' }); return; }
     try {
-      const res = await api.post<{ id: string; externalRef: string; effects?: { channel: 'queued' | 'not_linked' | 'failed' } }>('/reservations', {
+      const res = await api.post<{ id: string; externalRef: string; effects?: { channel: 'queued' | 'not_linked' | 'failed' }; notice?: string | null }>('/reservations', {
         unitId: input.unitId, channel: input.channel,
         guest: input.guestName ? { fullName: input.guestName, email: input.email || null, phone: input.phone || null } : undefined,
         checkIn: input.checkIn, checkOut: input.checkOut, checkInTime: input.checkInTime, checkOutTime: input.checkOutTime,
@@ -224,6 +225,7 @@ export default function BookingsPage() {
         body: [`${owner ? '' : `${input.guestName} · `}${buildingName(unit.propertyName)} ${unit.unitNumber} · ${dateRange(input.checkIn, input.checkOut)}.`,
           channelNote(res.effects?.channel, 'held'), owner ? 'Owner stays show on the calendar and the unit page, not in this list.' : ''].filter(Boolean).join(' '),
       });
+      if (res.notice) toast(incomeLockedToast(res.notice));
       if (!owner) setOpenId(res.id);
       reload();
     } catch (e) {

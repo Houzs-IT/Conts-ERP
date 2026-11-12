@@ -12,7 +12,10 @@ import { overallTotals, occupancyLabel, GROUP_NAME, OWNER_BASE_NAME, type Overal
  *  ownerOverall.ts; this file only lays them out. */
 
 export type Level = 1 | 2;
-export interface ReportRow extends OverallFigures { unitId: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null }
+export interface ReportRow extends OverallFigures {
+  unitId: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null;
+  lateItems?: { label: string; amount: number }[];
+}
 
 export const LEVELS: { key: `${Level}`; label: string }[] = [
   { key: '1', label: 'L1 Breakdown' }, { key: '2', label: 'L2 Full detail' },
@@ -122,10 +125,11 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
             </div>
           </div>
           <div className="mt-3 flex h-2.5 w-full overflow-hidden rounded-full bg-muted" role="img"
-            aria-label={`Revenue ${money(r.revenue)}: deductions ${money(r.deductions)}, owner base ${money(r.ownerBase)}, kept ${money(Math.max(r.gainLoss, 0))}`}>
+            aria-label={`Revenue ${money(r.revenue)}: deductions ${money(r.deductions)}, owner base ${money(r.ownerBase)}, kept ${money(Math.max(r.gainLoss - r.late, 0))}`}>
             <span className="h-full bg-warning-line" style={{ width: width(r.deductions) }} />
             <span className="h-full bg-info-line" style={{ width: width(r.ownerBase) }} />
-            <span className="h-full bg-success-line" style={{ width: width(r.gainLoss) }} />
+            {/* The month's own split of its revenue: a late change from an earlier month is listed below, not drawn here. */}
+            <span className="h-full bg-success-line" style={{ width: width(r.gainLoss - r.late) }} />
           </div>
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-meta text-muted-ink">
             <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-[2px] bg-warning-line" />Deductions</span>
@@ -143,6 +147,19 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
         <Section title="Revenue and profitability" level={1}>
           <Line label="Total revenue" value={r.revenue ? money(r.revenue) : '—'} tone={r.revenue ? undefined : 'text-faint'} />
           <Line label="Gross profit (GP)" value={money(r.gp)} tone={r.gp < 0 ? 'text-danger' : undefined} />
+          {r.late !== 0 && (
+            <div className="py-1.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-muted-ink">Late changes from locked months</span>
+                <span className={cx('tabular-nums', r.late < 0 ? 'text-danger' : 'text-ink')}>{signed(r.late)}</span>
+              </div>
+              {(r.lateItems ?? []).map((x, i) => (
+                <div key={`${i}-${x.label}`} className="mt-0.5 flex items-baseline justify-between gap-3 text-meta text-muted-ink">
+                  <span>{x.label}</span><span className="tabular-nums">{signed(x.amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <Line label="Gain / Loss" value={signed(r.gainLoss)} tone={r.gainLoss < 0 ? 'text-danger' : 'text-success'} />
         </Section>
         <Section title="Itemized deductions" level={1}>
@@ -177,6 +194,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
               ['=', 'Gross profit (GP)', money(r.gp), true],
               ...(lt ? [] : [['×', `Owner share ${r.ownerPct}% gives O1`, money(r.o1)] as LedgerRow]),
               ['−', lt ? `Owner base = ${OWNER_BASE_NAME[r.group].toLowerCase()}` : r.o1 >= r.ltGrr ? `Owner base = O1 (GRR is ${money(r.ltGrr)})` : `Owner base = GRR (O1 is ${money(r.o1)})`, money(r.ownerBase)],
+              ...(r.late ? [['+', 'Late changes from locked months', signed(r.late)] as LedgerRow] : []),
               ['=', 'Gain / Loss', signed(r.gainLoss), true],
             ]} />
             <p className="mt-3 rounded-control px-3 py-2 text-meta text-muted-ink [border:1px_dashed_var(--color-line)]">

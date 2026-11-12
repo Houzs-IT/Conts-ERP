@@ -492,6 +492,13 @@ export async function hasLocksTable(q: Query): Promise<boolean> {
   return locksTable;
 }
 
+/** Whether the table of the company's share of late changes exists yet (migration 0308), asked the same way. */
+let companyLateTable = false;
+export async function hasCompanyLateTable(q: Query): Promise<boolean> {
+  if (!companyLateTable) companyLateTable = !!(await q<{ ok: boolean }>(`SELECT to_regclass('company_late_changes') IS NOT NULL AS ok`))[0]?.ok;
+  return companyLateTable;
+}
+
 export const UNIT_SQL = `
   SELECT u.id, u.owner_id, o.display_name AS owner_name, u.unit_number, u.unit_code, p.name AS property_name, u.address,
          u.package, u.term, u.split_kind, u.split_value, u.misc_charges AS unit_misc,

@@ -17,6 +17,10 @@ export interface Area {
   /** Kept for the Permissions chart's wording. Reads are refused at "No access" in every area now; the few
    *  reads other screens share across areas are listed in SHARED_READS instead. */
   strictRead?: boolean;
+  /** Given one by one: no category baseline reaches it, and the group's ticks on Users and roles leave it alone. Only a
+   *  setting of its own, for a person, a position or a department, opens it (owner statement close part 2b: chew gives
+   *  the lock powers to the colleagues who do each part, "lock 的功能我会自己assign 去相关做的同事去lock"). */
+  ownGrant?: boolean;
   /** Off the Permissions chart: its pages are switched off for everyone (SWITCHED_OFF_AREAS in src/lib/navigation.ts). */
   hidden?: boolean;
 }
@@ -75,10 +79,10 @@ export const AREAS: Area[] = [
   // own area; locking each stage and unlocking are separate powers chew gives person by person ("lock 的功能我会自己
   // assign 去相关做的同事去lock"). Migrations 0302 and 0303 closed them for every department until management opens them.
   { key: 'ownerClose', label: 'Owner statement close', group: 'Units', api: ['owner-close'], managed: true, strictRead: true },
-  { key: 'lockIncome', label: 'Lock income', group: 'Units', api: [], managed: true },
-  { key: 'lockDeductions', label: 'Lock deductions', group: 'Units', api: [], managed: true },
-  { key: 'lockO2', label: 'Lock O2', group: 'Units', api: [], managed: true },
-  { key: 'unlockStep', label: 'Unlock a step', group: 'Units', api: [], managed: true },
+  { key: 'lockIncome', label: 'Lock income', group: 'Units', api: [], managed: true, ownGrant: true },
+  { key: 'lockDeductions', label: 'Lock deductions', group: 'Units', api: [], managed: true, ownGrant: true },
+  { key: 'lockO2', label: 'Lock O2', group: 'Units', api: [], managed: true, ownGrant: true },
+  { key: 'unlockStep', label: 'Unlock a step', group: 'Units', api: [], managed: true, ownGrant: true },
   { key: 'serviceCases', label: 'Service cases', group: 'Service cases', api: [] },
   { key: 'serviceMetrics', label: 'Quality metrics', group: 'Service cases', api: [] },
   // Picker lists and SLA lead times; changing them needs Full, as it did on Service cases.
@@ -179,7 +183,8 @@ export function resolveFor(rules: Rules, who: Pick<Who, 'kind'>, area: Area): Re
     ['position', rules.position.rules, group],
     ['department', rules.department.rules, group],
   ];
-  for (const [origin, map, key] of steps) {
+  // A power given one by one takes no category baseline.
+  for (const [origin, map, key] of area.ownGrant ? steps.slice(0, 3) : steps) {
     const level = levelIn(map, key);
     if (level) return { level, origin };
   }

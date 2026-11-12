@@ -33,7 +33,7 @@ function categoriesOf(access: PersonAccess): GridCategory[] {
   for (const area of access.areas) {
     if (closedBySide(access.user.kind, access.user.side, area.group)) continue;
     const category = categoriesByGroup.get(area.group) ?? { group: area.group, areas: [] };
-    category.areas.push({ key: area.key, label: area.label });
+    category.areas.push({ key: area.key, label: area.label, ownGrant: area.ownGrant });
     categoriesByGroup.set(area.group, category);
   }
   return [...categoriesByGroup.values()];

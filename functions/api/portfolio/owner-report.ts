@@ -7,6 +7,7 @@ import { isTenancy, type RevenueModel } from '../../_lib/revenueModel';
 import { codeOf } from '../../_lib/unitPurpose';
 import { contractTypes } from '../../_lib/contractTypes';
 import { monthEndExclusive } from '../../_lib/revenue';
+import { companyLateFor } from '../../_lib/ownerLocks';
 import type { ReportGroup } from '../../../src/lib/ownerOverall';
 
 const UTILITIES = new Set(['electricity', 'water', 'internet', 'sewerage']);
@@ -38,8 +39,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return fail('VALIDATION', 'Month must look like 2026-09.', 422);
 
   const q: Query = (sql, ...args) => all(env, sql, ...args);
-  const [settings, loaded, types] = await Promise.all([
+  const [settings, loaded, types, late] = await Promise.all([
     statementSettings(q), loadInputs(q, `${month}-01`, monthEndExclusive(month)), contractTypes(env),
+    // The company's share of late changes to an earlier, locked month that counts this month (part 2b, choice A).
+    companyLateFor(env, null, month, month),
   ]);
   const inputs = await withYearToDate(q, loaded, month, settings);
   const months = computeMonth(month, inputs, settings, 'dated');
@@ -53,7 +56,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const rows = months.flatMap(m => {
     const lease = m.terms.model === 'master_lease';
     const f = lease ? trading.get(m.unitId)! : m;
-    if (!hasActivity(f) && !m.adjustmentIds.length) return [];
+    const lateOf = late.get(`${m.unitId}|${month}`);
+    if (!hasActivity(f) && !m.adjustmentIds.length && !lateOf) return [];
     const u = unitOf.get(m.unitId)!;
     const tenancy = isTenancy(m.terms.model);
     const share = f.terms.basis === 'share' && !tenancy;
@@ -78,6 +82,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       // A tenancy is let by the month, not by the night, so it stays out of occupancy. The statement's nights leave out
       // owner stays and HostPlatform free stays (both owner_stay), so occupancy matches the misc charge (owner, 4 Nov 2026).
       o2: m.adjustmentsTotal, nights: f.nights, days: tenancy ? 0 : f.days,
+      late: lateOf?.amount ?? 0, lateItems: lateOf?.items ?? [],
     }];
   });
   return json({ generatedAt: nowIso(), month, rows });

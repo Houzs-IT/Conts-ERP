@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   resolveRoleLevels, rulesToWrite, tierState, raiseTo, lowerBelow, countGrants, countChanged, areaKeysOf,
-  differenceFromRole, countDifferences, resetToRole, personChanges,
+  differenceFromRole, countDifferences, resetToRole, personChanges, bulkKeysOf,
 } from './roleGrid.ts';
 
 const categories = [
@@ -11,6 +11,17 @@ const categories = [
   { group: 'Finance', areas: [{ key: 'finance', label: 'Finance', managed: true }] },
 ];
 const keys = areaKeysOf(categories);
+
+test('a power given one by one: no category baseline or group tick reaches it (owner statement close part 2b)', () => {
+  const finance = { group: 'Finance', areas: [{ key: 'finance', label: 'Finance', managed: true }, { key: 'lockIncome', label: 'Lock income', managed: true, ownGrant: true }] };
+  const levels = resolveRoleLevels([finance], { 'group:Finance': 'edit' }, { 'group:Finance': 'full' });
+  assert.equal(levels.finance, 'full');
+  assert.equal(levels.lockIncome, 'none');
+  assert.equal(resolveRoleLevels([finance], { 'group:Finance': 'edit', lockIncome: 'edit' }).lockIncome, 'edit');
+  assert.deepEqual(bulkKeysOf(finance), ['finance']);
+  const raised = raiseTo({ finance: 'none', lockIncome: 'none' }, bulkKeysOf(finance), 'edit');
+  assert.deepEqual(raised, { finance: 'edit', lockIncome: 'none' });
+});
 
 test('a role with no rules anywhere has no access', () => {
   assert.deepEqual(resolveRoleLevels(categories, {}), { operations: 'none', properties: 'none', owners: 'none', finance: 'none' });
