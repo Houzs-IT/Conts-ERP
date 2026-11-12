@@ -475,7 +475,9 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const doneWhy = awaitingOwner(i) ? "Waiting for the owner's approval." : counts.after === 0 ? 'Add a photo of the fixed job first (Photos, Fixed).' : null;
 
   const refresh = useCallback(() => { files.reload(); onChanged(); }, [files, onChanged]);
-  const docRow = (d: FileItem) => ({ id: d.id, name: d.fileName, href: d.url, size: d.byteSize ?? null, label: `${DOC_KIND[d.kind] ?? 'File'} · ${dateShort(d.uploadedAt)}`,
+  // Inside its own box a file shows its date only; an older kind (a claim, invoice or receipt) keeps its name too.
+  const docRow = (d: FileItem) => ({ id: d.id, name: d.fileName, href: d.url, size: d.byteSize ?? null,
+    label: d.kind === 'purchase' || d.kind === 'pod' ? dateShort(d.uploadedAt) : `${DOC_KIND[d.kind] ?? 'File'} · ${dateShort(d.uploadedAt)}`,
     // A claim was also handed in to finance as a receipt: it is cancelled there, not here.
     onRemove: done || d.kind === 'purchase' ? undefined : () => void removeFile(d) });
   const assignTo = (name: string) => void act('assign', () => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: name }), `Assigned to ${name}.`);

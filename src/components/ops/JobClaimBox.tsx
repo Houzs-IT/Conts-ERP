@@ -3,12 +3,12 @@ import { Button } from '../Button';
 import { FileDropRow } from '../Attachments';
 import { MoneyInput } from '../inputs';
 import { useToast } from '../Toast';
+import { ChoiceChips } from '../ChoiceChips';
 import { errorMessage } from '../../lib/api';
-import { cx } from '../../lib/design-tokens';
 import { bankProblem, readReceipt, type ClaimBank } from '../../lib/claims';
 import { todayMyt } from '../../lib/format';
 import type { PortalStrings } from '../../lib/portalI18n';
-import { Segmented, uploadTo } from './OpsUi';
+import { uploadTo } from './OpsUi';
 import { ClaimBankFields, useSavedBank } from './ClaimBankFields';
 
 interface Picked { id: string; file: File; amountSen: number | null; typed: boolean; spendDate: string | null; reading: boolean }
@@ -80,11 +80,10 @@ export function JobClaimBox({ jobId, route, t, touch, onDone }: {
   const size = touch ? 'touch' : undefined;
   return (
     <div className="flex flex-col gap-2">
-      {pettyCashOffered && (
-        <Segmented label={p.label} className={cx('self-start', touch && '[&>button]:h-11')} value={choice} onChange={v => { setChoice(v); setWrong(null); }}
-          options={[{ value: 'float', label: p.pettyCash }, { value: 'finance', label: p.direct }]} />
-      )}
-      <span className="text-meta text-muted-ink">{!pettyCashOffered ? p.noFloatNote : payBack === 'finance' ? p.directNote : p.pettyCashNote}</span>
+      {/* The same one-tap choice as the phone's Receipts page; without petty cash, Direct Claim to Me stands alone. */}
+      <ChoiceChips label={p.label} value={payBack} onChange={v => { setChoice(v); setWrong(null); }}
+        options={[...(pettyCashOffered ? [{ value: 'float' as const, label: p.pettyCash }] : []), { value: 'finance' as const, label: p.direct }]}
+        help={!pettyCashOffered ? p.noFloatNote : payBack === 'finance' ? p.directNote : p.pettyCashNote} />
       {!picked ? (
         <FileDropRow label={tr.addInvoice} hint={tr.purchaseHint} accept="image/*,application/pdf" onPick={pick} />
       ) : (

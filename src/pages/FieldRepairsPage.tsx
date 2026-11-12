@@ -427,8 +427,9 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
   const jobFiles = d.data?.files ?? [];
   const claimFiles = jobFiles.filter(f => f.kind === 'purchase');
   const otherFiles = jobFiles.filter(f => f.kind !== 'purchase');
+  // Inside its own box a file shows its date only; an older kind (a claim, invoice or receipt) keeps its name too.
   const fileRow = (f: FileDoc) => ({ id: f.id, name: f.fileName, href: f.url, size: f.byteSize,
-    label: `${f.kind in tr.fileKind ? wordFor(tr.fileKind, f.kind) : tr.fileKind.other} · ${short(f.uploadedAt.slice(0, 10))}`,
+    label: f.kind === 'purchase' || f.kind === 'pod' ? short(f.uploadedAt.slice(0, 10)) : `${f.kind in tr.fileKind ? wordFor(tr.fileKind, f.kind) : tr.fileKind.other} · ${short(f.uploadedAt.slice(0, 10))}`,
     // A claim was also handed in to finance as a receipt: it is cancelled there, not here.
     onRemove: working && f.kind !== 'purchase' ? () => void removeFile(f) : undefined, removeLabel: `${t.jobs.remove} ${f.fileName}` });
 
