@@ -588,8 +588,8 @@ export default function App() {
         <Route path="/beta/projects" element={<PageGuard page="projects.list"><RenovationBetaHome /></PageGuard>} />
         <Route path="/beta/calendar" element={<PageGuard page="projects.list"><RenovationBetaCalendar /></PageGuard>} />
         {/* Handover snag list (TODO item 17): the open defects of every project, and the company's handover checklists. */}
-        <Route path="/beta/defects" element={<PageGuard page="projects.list"><RenovationBetaDefectQueue /></PageGuard>} />
-        <Route path="/beta/handover-checklists" element={<PageGuard page="projects.list"><RenovationBetaHandoverTemplates /></PageGuard>} />
+        <Route path="/beta/defects" element={<PageGuard page="projects.defects"><RenovationBetaDefectQueue /></PageGuard>} />
+        <Route path="/beta/handover-checklists" element={<PageGuard page="projects.handover"><RenovationBetaHandoverTemplates /></PageGuard>} />
         <Route path="/beta/projects/:id" element={<PageGuard page="projects.list"><RenovationBetaWorkspace /></PageGuard>} />
         <Route
           path="/fair-report-fill"

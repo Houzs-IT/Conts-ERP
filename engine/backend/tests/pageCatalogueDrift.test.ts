@@ -42,14 +42,16 @@ import {
    here rather than in the snapshot suite.
    ───────────────────────────────────────────────────────────────────────────── */
 
-/** Every key the catalogue has ever had: the 50 live today + the 14 6e59f071
+/** Every key the catalogue has ever had: the 52 live today + the 14 6e59f071
  *  removed. Append-only. A key must never leave this list — leaving PAGES[] is
  *  what makes it retired, not forgotten. */
 const EVER_KNOWN_PAGE_KEYS: readonly string[] = [
   // ── live in PAGES[] ──
   "projects",
   "projects.calendar",
+  "projects.defects",
   "projects.finances",
+  "projects.handover",
   "projects.list",
   "projects.maintenance",
   "sales",
