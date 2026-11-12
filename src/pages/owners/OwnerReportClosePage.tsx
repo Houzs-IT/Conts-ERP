@@ -4,13 +4,13 @@
  *  changed, a cost or an owner adjustment added) goes to the next open month. Unlocking asks why. GP and final follow
  *  in part 3. */
 import { useMemo } from 'react';
+import { cx } from '../../lib/design-tokens';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
 import { StatusBadge } from '../../components/StatusBadge';
 import { StaleBanner, TableSkeleton } from '../../components/DataState';
-import { StatRow, StatTile } from '../../components/Metric';
 import { DataTable, type Column } from '../../components/DataTable';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { Segmented as Tabs } from '../../components/ops/OpsUi';
@@ -45,6 +45,60 @@ const STEP: Record<Stage, { n: number; name: string; noun: string; power: 'lockI
   o2: { n: 3, name: 'O2', noun: 'O2', power: 'lockO2' },
 };
 const STAGES: Stage[] = ['income', 'deductions', 'o2'];
+/** The one line under each step on the strip. */
+const STEP_DETAIL: Record<Stage, string> = {
+  income: "Each unit's income from its reservations",
+  deductions: 'Utilities, cleaning and repairs',
+  o2: "Owner adjustments after the operator's share",
+};
+
+/** The close as a horizontal stepper (prototype .uo-steps): number, name, state and one line for each step, the current
+ *  one gold with its "n of N locked" and a slim bar. Step 4 (GP and final) is shown as not yet, it comes in part 3.
+ *  Stacks one under another on a phone. */
+function CloseSteps({ current, counts, onPick }: { current: Stage; counts: Payload['counts']; onPick: (s: Stage) => void }) {
+  const state = (s: Stage) => {
+    const c = counts[s];
+    return c.total > 0 && c.locked >= c.total ? 'Done' : s === current || c.locked > 0 ? 'In progress' : 'Not yet';
+  };
+  const cell = 'relative flex gap-3 px-4 py-3.5 min-w-0 text-left [border-bottom:1px_solid_var(--color-line-soft)] md:border-b-0 md:[border-right:1px_solid_var(--color-line-soft)] last:border-0';
+  const num = 'flex-none w-7 h-7 rounded-full grid place-items-center text-[13px] font-bold';
+  return (
+    <ol aria-label="Close steps" className="m-0 p-0 list-none grid grid-cols-1 md:grid-cols-4 bg-card border border-solid border-line-soft rounded-card shadow-[var(--shadow-card)] overflow-hidden">
+      {STAGES.map(s => {
+        const st = state(s), cur = s === current, c = counts[s];
+        const pct = c.total ? Math.round((c.locked / c.total) * 100) : 0;
+        return (
+          <li key={s} className="contents">
+            <button type="button" onClick={() => onPick(s)} aria-current={cur ? 'step' : undefined}
+              className={cx(cell, 'border-0 font-[inherit] cursor-pointer bg-transparent', cur && 'bg-gold-tint [box-shadow:inset_0_-3px_0_var(--color-gold)]')}>
+              <span className={cx(num, st === 'Done' ? 'bg-success text-white' : cur ? 'bg-gold text-[#1b1a17]' : 'bg-muted text-ink-2')}>
+                {st === 'Done' ? <Icon name="Check" size="sm" /> : STEP[s].n}
+              </span>
+              <span className="flex flex-col gap-0.5 min-w-0 flex-1">
+                <b className="text-copy text-ink">{STEP[s].name}</b>
+                <span className={cx('text-meta font-semibold', cur ? 'text-gold-ink' : st === 'Done' ? 'text-success' : 'text-muted-ink')}>
+                  {st} · {count(c.locked)} of {count(c.total)} locked
+                </span>
+                <span className="text-meta text-muted-ink truncate">{STEP_DETAIL[s]}</span>
+                <span aria-hidden className="block h-1 rounded-full bg-muted mt-1.5 overflow-hidden">
+                  <i className={cx('block h-1', st === 'Done' ? 'bg-success' : 'bg-gold')} style={{ width: `${pct}%` }} />
+                </span>
+              </span>
+            </button>
+          </li>
+        );
+      })}
+      <li className={cx(cell, 'cursor-default')}>
+        <span className={cx(num, 'bg-muted text-ink-2')}>4</span>
+        <span className="flex flex-col gap-0.5 min-w-0 flex-1">
+          <b className="text-copy text-ink">GP and final</b>
+          <span className="text-meta font-semibold text-muted-ink">Not yet</span>
+          <span className="text-meta text-muted-ink truncate">Comes in a later update</span>
+        </span>
+      </li>
+    </ol>
+  );
+}
 
 const needsLook = (u: CloseUnit, step: Stage) => step === 'income' ? u.income.toConfirm > 0 || u.income.warnings.length > 0
   : (step === 'deductions' ? u.deductions.checks : u.o2.checks).length > 0;
@@ -206,13 +260,7 @@ export default function OwnerReportClosePage() {
         {error && <StaleBanner message={data ? `Showing the last figures we have. ${error}` : error} onRetry={reload} />}
         {loading && !data ? <TableSkeleton rows={8} cols={6} /> : data ? (
           <>
-            <StatRow cols={4}>
-              {STAGES.map(s => (
-                <StatTile key={s} label={`Step ${STEP[s].n} · ${STEP[s].name}`} value={`${count(data.counts[s].locked)} of ${count(data.counts[s].total)}`} hint="units locked"
-                  onClick={() => url.set({ step: s === 'income' ? null : s, show: null })} active={step === s} />
-              ))}
-              <StatTile label="Step 4 · GP and final" value="Later" hint="Comes in a later update" />
-            </StatRow>
+            <CloseSteps current={step} counts={data.counts} onPick={s => url.set({ step: s === 'income' ? null : s, show: null })} />
             {data.lockProblem && <p className="m-0 text-meta text-muted-ink">{data.lockProblem} This month can be looked at but not locked.</p>}
             {step === 'income' && !data.lockProblem && data.airbnbFiles === 0 && (
               <div className="flex flex-wrap items-center justify-between gap-2 border border-line border-l-[3px] border-l-info bg-info-bg px-3 py-2 text-copy">
