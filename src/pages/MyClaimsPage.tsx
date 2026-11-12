@@ -1,19 +1,25 @@
 import { useMemo, useRef, useState } from 'react';
 import PageHeader from '../components/PageHeader';
-import { Card } from '../components/Card';
+import { Card, FormSection } from '../components/Card';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Select, type SelectOption } from '../components/Select';
-import { Segmented } from '../components/Metric';
+import { Segmented, StatTile } from '../components/Metric';
+import { ChoiceChips } from '../components/ChoiceChips';
+import { KeyFacts } from '../components/KeyFacts';
+import { ListToolbar } from '../components/ListToolbar';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { StaleBanner } from '../components/DataState';
+import Icon from '../components/Icon';
+import { TONE, cx } from '../lib/design-tokens';
 import { DataTable, type Column } from '../components/DataTable';
 import { FileDropRow } from '../components/Attachments';
-import { MoneyText } from '../components/MoneyText';
 import { MoneyInput, DateField } from '../components/inputs';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
-import { monthLabel, rm, todayMyt } from '../lib/format';
+import { date, monthLabel, rm, todayMyt } from '../lib/format';
 import {
   DEPARTMENT, RECEIPT_STATUS, REQUEST_STATUS, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, thisMonthMyt,
   type LineDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt,
@@ -51,10 +57,10 @@ export default function MyClaimsPage() {
     ...(me.data?.keepsFloat ? [{ key: 'float' as const, label: 'Petty cash I keep' }] : []),
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="flex flex-col gap-4">
       <PageHeader title="My claims" sub="Claim back what you paid, or ask finance to pay a supplier." />
-      {me.error && <Card style={{ padding: 16 }}>{me.error}</Card>}
-      <Segmented label="My claims" options={tabs} value={tab} onChange={setTab} />
+      {me.error && <StaleBanner message={me.error} onRetry={me.reload} />}
+      <Segmented label="My claims" options={tabs} value={tab} onChange={setTab} className="self-start" />
       {tab === 'handin' && me.data && <HandInForm me={me.data} onDone={() => setTab('mine')} />}
       {tab === 'mine' && <Mine />}
       {tab === 'float' && <KeptFloat />}
@@ -70,32 +76,39 @@ function LinesEditor({ lines, setLines, totalSen, department }: { lines: LineDra
   const set = (i: number, patch: Partial<LineDraft>) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const split = lines.length > 1;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div className="flex flex-col gap-3">
       {lines.map((l, i) => (
-        <div key={i} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, alignItems: 'end', paddingTop: i ? 12 : 0, borderTop: i ? '1px solid var(--color-border-muted)' : undefined }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 'var(--text-small)', fontWeight: 600 }}>Department</span>
-            <span style={{ padding: '8px 0', color: 'var(--color-text-muted)' }}>
+        <div key={i} className={cx('flex flex-col gap-3', i > 0 && 'pt-3 [border-top:1px_dashed_var(--color-line)]')}>
+          {split && (
+            <div className="flex items-center justify-between gap-2">
+              <b className="text-copy">Line {i + 1}</b>
+              <Button variant="ghost" size="sm" onClick={() => setLines(lines.filter((_, j) => j !== i))}>Remove</Button>
+            </div>
+          )}
+          <div className="flex flex-col gap-1">
+            <span className="text-meta font-semibold text-ink">Department</span>
+            <span className="text-copy text-muted-ink">
               {l.where === 'job' ? `${DEPARTMENT.rental} (a maintenance job)` : `${DEPARTMENT[department]} (from your department)`}
             </span>
           </div>
-          <Select label="For" showLabel value={l.where} onChange={v => set(i, { where: v as LineDraft['where'] })}
+          <ChoiceChips label="For" value={l.where} onChange={v => set(i, { where: v })}
             options={[{ value: 'none', label: 'The department' }, { value: 'unit', label: 'A unit' }, { value: 'job', label: 'A maintenance job' }, { value: 'project', label: 'A project' }]} />
-          {l.where === 'unit' && <Select label="Unit" showLabel value={l.unitId} onChange={v => set(i, { unitId: v })} placeholder="Choose the unit"
-            options={(units.data?.units ?? []).map(u => ({ value: u.id, label: `${u.building} ${u.unitNumber}` }))} />}
-          {l.where === 'job' && <Select label="Maintenance job" showLabel value={l.jobId} onChange={v => set(i, { jobId: v })} placeholder="Choose the job"
-            options={(jobs.data?.jobs ?? []).map(j => ({ value: j.id, label: j.title }))} />}
-          {l.where === 'project' && <Select label="Project" showLabel value={l.projectId} onChange={v => set(i, { projectId: v })} placeholder="Choose the project"
-            options={(projects.data?.projects ?? []).map(p => ({ value: String(p.id), label: [p.code, p.name].filter(Boolean).join(' ') }))} />}
-          <Field label="Description" value={l.description} onChange={e => set(i, { description: e.target.value })} placeholder="e.g. tap for the kitchen" maxLength={300} />
-          {split && <MoneyInput label="Amount" valueSen={l.amountSen} onChangeSen={v => set(i, { amountSen: v })} />}
-          {split && <Button variant="ghost" onClick={() => setLines(lines.filter((_, j) => j !== i))}>Remove</Button>}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+            {l.where === 'unit' && <Select label="Unit" showLabel value={l.unitId} onChange={v => set(i, { unitId: v })} placeholder="Choose the unit"
+              options={(units.data?.units ?? []).map(u => ({ value: u.id, label: `${u.building} ${u.unitNumber}` }))} />}
+            {l.where === 'job' && <Select label="Maintenance job" showLabel value={l.jobId} onChange={v => set(i, { jobId: v })} placeholder="Choose the job"
+              options={(jobs.data?.jobs ?? []).map(j => ({ value: j.id, label: j.title }))} />}
+            {l.where === 'project' && <Select label="Project" showLabel value={l.projectId} onChange={v => set(i, { projectId: v })} placeholder="Choose the project"
+              options={(projects.data?.projects ?? []).map(p => ({ value: String(p.id), label: [p.code, p.name].filter(Boolean).join(' ') }))} />}
+            <Field label="Description" value={l.description} onChange={e => set(i, { description: e.target.value })} placeholder="e.g. tap for the kitchen" maxLength={300} />
+            {split && <MoneyInput label="Amount" required valueSen={l.amountSen} onChangeSen={v => set(i, { amountSen: v })} />}
+          </div>
         </div>
       ))}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-        <Button variant="ghost" onClick={() => setLines([...lines.map((l, j) => (j === 0 && !split ? { ...l, amountSen: totalSen } : l)), blankLine()])}>Split across more lines</Button>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="ghost" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => setLines([...lines.map((l, j) => (j === 0 && !split ? { ...l, amountSen: totalSen } : l)), blankLine()])}>Split across more lines</Button>
         {split && totalSen != null && (
-          <span style={{ fontSize: 'var(--text-small)', color: 'var(--color-text-muted)' }}>
+          <span className="text-meta text-muted-ink tabular-nums">
             Lines add up to {rm(lines.reduce((n, l) => n + (l.amountSen ?? 0), 0))} of {rm(totalSen)}
           </span>
         )}
@@ -133,36 +146,34 @@ function SupplierPicker({ value, onChange, allowNotListed }: { value: Supplier |
     return (all.data?.suppliers ?? []).filter(s => words.every(w => `${s.code} ${s.name}`.toLowerCase().includes(w)));
   }, [all.data, q]);
   const pick = (s: Supplier | null) => { onChange(s); setOpen(false); setQ(''); };
-  const cell: React.CSSProperties = { padding: '8px 10px', borderBottom: '1px solid var(--color-border-muted)', textAlign: 'left', cursor: 'pointer' };
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 'var(--text-small)', fontWeight: 600 }}>Supplier</span>
-      <Button variant="secondary" onClick={() => setOpen(true)} aria-label="Supplier">
-        {value ? `${value.code} ${value.name}` : allowNotListed ? 'Choose the supplier, or not on the list…' : 'Choose the supplier…'}
-      </Button>
+    <div className="flex flex-col gap-1">
+      <span className="text-meta font-semibold text-ink">Supplier</span>
+      <button type="button" onClick={() => setOpen(true)} aria-label="Supplier"
+        className="h-[var(--control-height)] min-h-10 flex items-center justify-between gap-2 px-3 rounded-control border border-solid border-line-input bg-card font-sans text-copy text-left text-ink cursor-pointer hover:border-line-strong">
+        <span className={cx('truncate', !value && 'text-muted-ink')}>{value ? `${value.code} ${value.name}` : allowNotListed ? 'Choose the supplier, or not on the list' : 'Choose the supplier'}</span>
+        <Icon name="ChevronDown" size="sm" />
+      </button>
       {open && (
-        <Modal title="Choose the supplier" onClose={() => setOpen(false)} width={640} dirty={false} footer={<Button variant="ghost" onClick={() => setOpen(false)}>Close</Button>}>
+        <Modal title="Choose the supplier" eyebrow="My claims" size="md" onClose={() => setOpen(false)} dirty={false}
+          footer={<Button variant="secondary" size="sm" onClick={() => setOpen(false)}>Cancel</Button>}>
           <Field label="Search" value={q} onChange={e => setQ(e.target.value)} placeholder="Name or code" autoFocus />
-          <div style={{ maxHeight: '55vh', overflow: 'auto', marginTop: 12, border: '1px solid var(--color-border-muted)', borderRadius: 8 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr><th style={{ ...cell, cursor: 'default' }}>Code</th><th style={{ ...cell, cursor: 'default' }}>Name</th></tr></thead>
-              <tbody>
-                {allowNotListed && (
-                  <tr onClick={() => pick(null)} tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') pick(null); }}>
-                    <td style={cell} colSpan={2}><b>Not on the list</b> <span style={{ color: 'var(--color-text-muted)' }}>— type who is paid; finance checks them</span></td>
-                  </tr>
-                )}
-                {all.loading && <tr><td style={cell} colSpan={2}>Loading…</td></tr>}
-                {!all.loading && rows.length === 0 && <tr><td style={cell} colSpan={2}>No supplier matches.</td></tr>}
-                {rows.map(s => (
-                  <tr key={s.id} onClick={() => pick(s)} tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') pick(s); }}
-                    style={{ background: value?.id === s.id ? 'var(--color-surface-muted)' : undefined }}>
-                    <td style={{ ...cell, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{s.code}</td>
-                    <td style={cell}>{s.name}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-3 max-h-[55vh] overflow-auto rounded-control border border-solid border-line-soft">
+            {allowNotListed && (
+              <button type="button" onClick={() => pick(null)} className="w-full flex items-center justify-between gap-3 min-h-11 px-3 py-2 bg-transparent border-0 [border-bottom:1px_solid_var(--color-line-soft)] font-sans text-left cursor-pointer hover:bg-muted">
+                <span className="flex flex-col"><b className="text-copy">Not on the list</b><span className="text-meta text-muted-ink">Type who is paid; finance checks them</span></span>
+                <Icon name="ChevronRight" size="sm" />
+              </button>
+            )}
+            {all.loading && <div className="px-3 py-3 text-copy text-muted-ink">Loading suppliers</div>}
+            {!all.loading && rows.length === 0 && <div className="px-3 py-3 text-copy text-muted-ink">No supplier matches.</div>}
+            {rows.map(s => (
+              <button key={s.id} type="button" onClick={() => pick(s)} aria-pressed={value?.id === s.id}
+                className={cx('w-full flex items-center gap-3 min-h-10 px-3 py-2 border-0 [border-bottom:1px_solid_var(--color-line-soft)] font-sans text-copy text-left cursor-pointer hover:bg-muted', value?.id === s.id ? 'bg-muted' : 'bg-transparent')}>
+                <span className="font-mono text-meta text-muted-ink whitespace-nowrap">{s.code}</span>
+                <span className="min-w-0 truncate">{s.name}</span>
+              </button>
+            ))}
           </div>
         </Modal>
       )}
@@ -266,57 +277,93 @@ function HandInForm({ me, onDone }: { me: Me; onDone: () => void }) {
     } catch (e) { setProblem(errorMessage(e)); } finally { setBusy(false); }
   }
 
-  return (
-    <Card style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <Segmented label="What is this?" options={[{ key: 'claim' as const, label: 'Claim to me' }, { key: 'direct' as const, label: 'Direct pay' }]} value={kind} onChange={switchKind} />
-      {kind === 'claim' ? (
-        <>
-          <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>
-            I paid. {me.route === 'float' ? 'Your department\'s petty cash pays you back.' : 'Your department has no petty cash: finance pays you back by bank transfer.'}
-          </p>
-          <FileDropRow label="Add the receipt" hint="Photos or a PDF. The amount is read from it; check it before you send." accept="image/*,application/pdf" multiple
-            onPick={l => void pick(l)} busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-            <DateField label="Date on the receipt" value={spendDate} onChange={v => { setSpendDate(v); dateTyped.current = true; }} max={todayMyt()} />
-            <MoneyInput label="Amount" valueSen={amountSen} onChangeSen={setAmountSen} />
-            <Field label="Shop (optional)" value={vendorName} onChange={e => setVendorName(e.target.value)} maxLength={200} />
-          </div>
-        </>
-      ) : (
-        <>
-          <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>Finance pays a supplier.</p>
-          <Segmented label="What to pay" options={[{ key: 'PAYMENT' as const, label: 'A payment' }, { key: 'DEPOSIT' as const, label: 'A deposit' }]} value={type} onChange={setType} />
-          <span style={{ fontSize: 'var(--text-small)', color: 'var(--color-text-muted)' }}>
-            {type === 'PAYMENT' ? 'A bill to pay: an invoice or a receipt from the supplier.' : 'Paid before the bill, to a supplier on the list; their bill later is set off against it.'}
-          </span>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, alignItems: 'end' }}>
-            <Field label="Find a PO (optional)" value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="PO number" />
-            {/* The chosen PO stays an option when a new search no longer finds it, so the box never shows "Not against a
-                PO" while one is still chosen. */}
-            <Select label="Purchase order" showLabel value={poId} onChange={v => { const o = poOptions.find(x => x.value === v); setPo(o ? { id: o.value, label: o.label } : null); if (o) setSupplier(null); }}
-              options={[{ value: '', label: 'Not against a PO' }, ...poOptions]} />
-            {!poId && <SupplierPicker value={supplier} onChange={setSupplier} allowNotListed={type === 'PAYMENT'} />}
-            {!poId && !supplier && type === 'PAYMENT' && <Field label="Pay to (not on the list)" value={payeeName} onChange={e => setPayeeName(e.target.value)} maxLength={200} help="Finance checks the payee before paying." />}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-            <MoneyInput label="Amount" valueSen={amountSen} onChangeSen={setAmountSen} />
-            <DateField label="Pay by (optional)" value={wantedOn} onChange={setWantedOn} min={todayMyt()} />
-          </div>
-          <FileDropRow label="Add the invoice, receipt or quotation" hint="Photos or a PDF. Empty fields are filled from it; check them before you send." accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
-            busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
-        </>
-      )}
-      <LinesEditor lines={lines} setLines={setLines} totalSen={amountSen} department={me.lineDepartment} />
-      <Field label="Note" value={note} onChange={e => setNote(e.target.value)} maxLength={500} placeholder="Anything finance should know" />
-      {problem && <div role="alert" style={{ color: 'var(--color-critical-fg)' }}>{problem}</div>}
-      <div><Button disabled={busy || reading} onClick={() => void send()}>{busy ? 'Sending…' : kind === 'claim' ? 'Hand in' : 'Send to finance'}</Button></div>
+  const claim = kind === 'claim';
+  const summary = (
+    <Card className="p-4 flex flex-col gap-3 lg:sticky lg:top-0">
+      <span className="ds-eyebrow">Summary</span>
+      <KeyFacts cols={2} items={[
+        { label: 'Hand in as', value: claim ? 'Claim to me' : 'Direct pay' },
+        { label: 'Lines', value: String(lines.length) },
+        { label: 'Amount', value: amountSen ? rm(amountSen) : 'Not entered' },
+        { label: claim ? 'Paid back by' : 'Paid by', value: claim ? (me.route === 'float' ? 'Petty cash' : 'Finance, by transfer') : 'Finance, by transfer' },
+      ]} />
+      <p className="m-0 text-meta text-muted-ink">
+        {claim ? (me.route === 'float' ? 'Your department keeps petty cash, so it pays you back once the receipt is checked.' : 'Your department has no petty cash: finance pays you back by bank transfer.')
+          : 'Finance pays the supplier after checking the bill and the payee. Finance chooses the account while checking.'}
+      </p>
     </Card>
+  );
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4 items-start">
+      <Card className="p-4 sm:p-5 flex flex-col gap-4">
+        <FormSection title="What is this" hint={claim ? 'I paid; pay me back' : 'Finance pays a supplier'}>
+          <ChoiceChips label="Hand in as" value={kind} onChange={switchKind} options={[{ value: 'claim', label: 'Claim to me' }, { value: 'direct', label: 'Direct pay' }]} />
+        </FormSection>
+        {claim ? (
+          <section className="ds-fs">
+            <div className="ds-fs-h"><b>Receipt</b></div>
+            <div className="flex flex-col gap-3">
+              <FileDropRow label="Add the receipt" hint="Photos or a PDF. The amount is read from it; check it before you send." accept="image/*,application/pdf" multiple
+                onPick={l => void pick(l)} busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <DateField label="Date on the receipt" required value={spendDate} onChange={v => { setSpendDate(v); dateTyped.current = true; }} max={todayMyt()} />
+                <MoneyInput label="Amount" required valueSen={amountSen} onChangeSen={setAmountSen} />
+                <Field label="Shop (optional)" value={vendorName} onChange={e => setVendorName(e.target.value)} maxLength={200} />
+              </div>
+            </div>
+          </section>
+        ) : (
+          <>
+            <section className="ds-fs">
+              <div className="ds-fs-h"><b>Who is paid</b></div>
+              <div className="flex flex-col gap-3">
+                <ChoiceChips label="What to pay" value={type} onChange={setType} options={[{ value: 'PAYMENT', label: 'A payment' }, { value: 'DEPOSIT', label: 'A deposit' }]}
+                  help={type === 'PAYMENT' ? 'A bill to pay: an invoice or a receipt from the supplier.' : 'Paid before the bill, to a supplier on the list; their bill later is set off against it.'} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                  <Field label="Find a PO (optional)" value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="PO number" />
+                  {/* The chosen PO stays an option when a new search no longer finds it, so the box never shows "Not against a
+                      PO" while one is still chosen. */}
+                  <Select label="Purchase order" showLabel value={poId} onChange={v => { const o = poOptions.find(x => x.value === v); setPo(o ? { id: o.value, label: o.label } : null); if (o) setSupplier(null); }}
+                    options={[{ value: '', label: 'Not against a PO' }, ...poOptions]} />
+                  {!poId && <SupplierPicker value={supplier} onChange={setSupplier} allowNotListed={type === 'PAYMENT'} />}
+                  {!poId && !supplier && type === 'PAYMENT' && <Field label="Pay to (not on the list)" value={payeeName} onChange={e => setPayeeName(e.target.value)} maxLength={200} help="Finance checks the payee before paying." />}
+                </div>
+              </div>
+            </section>
+            <section className="ds-fs">
+              <div className="ds-fs-h"><b>Money and papers</b></div>
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <MoneyInput label="Amount" required valueSen={amountSen} onChangeSen={setAmountSen} />
+                  <DateField label="Pay by (optional)" value={wantedOn} onChange={setWantedOn} min={todayMyt()} />
+                </div>
+                <FileDropRow label="Add the invoice, receipt or quotation" hint="Photos or a PDF. Empty fields are filled from it; check them before you send." accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
+                  busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
+              </div>
+            </section>
+          </>
+        )}
+        <section className="ds-fs">
+          <div className="ds-fs-h"><b>What it was for</b><span>{lines.length > 1 ? 'The lines must add up to the amount' : 'Finance chooses the account while checking'}</span></div>
+          <LinesEditor lines={lines} setLines={setLines} totalSen={amountSen} department={me.lineDepartment} />
+        </section>
+        <section className="ds-fs">
+          <div className="ds-fs-h"><b>Note</b></div>
+          <Field label="Anything finance should know (optional)" value={note} onChange={e => setNote(e.target.value)} maxLength={500} />
+        </section>
+        {problem && <div role="alert" className={cx('px-3 py-2 rounded-control text-copy', TONE.critical.bg, TONE.critical.text)}>{problem}</div>}
+        <div className="flex justify-end max-sm:[&>*]:w-full">
+          <Button variant="primary" loading={busy} disabled={reading} disabledReason="Reading the papers first." onClick={() => void send()}>{claim ? 'Hand in' : 'Send to finance'}</Button>
+        </div>
+      </Card>
+      <div className="max-lg:order-first max-lg:hidden">{summary}</div>
+    </div>
   );
 }
 
 function Files({ r }: { r: Receipt }) {
   if (!r.files.length) return <>—</>;
-  return <>{r.files.map((f, i) => <a key={f.id} href={receiptFileHref(r.id, f.id)} target="_blank" rel="noreferrer" style={{ marginRight: 8 }}>{f.mime === 'application/pdf' ? 'PDF' : 'Photo'}{r.files.length > 1 ? ` ${i + 1}` : ''}</a>)}</>;
+  return <>{r.files.map((f, i) => <a key={f.id} href={receiptFileHref(r.id, f.id)} target="_blank" rel="noreferrer" className="mr-2 text-primary font-medium">{f.mime === 'application/pdf' ? 'PDF' : 'Photo'}{r.files.length > 1 ? ` ${i + 1}` : ''}</a>)}</>;
 }
 
 function Mine() {
@@ -324,6 +371,7 @@ function Mine() {
   const receipts = useApi<{ receipts: Receipt[] }>(`/claims/receipts?month=${month}`);
   const requests = useApi<{ requests: PaymentRequest[] }>('/claims/requests');
   const toast = useToast();
+  const [withdraw, setWithdraw] = useState<PaymentRequest | null>(null);
   const months = useMemo(() => lastMonths(12), []);
   const rCols: Column<Receipt>[] = [
     { key: 'date', label: 'Date', type: 'date', value: r => r.spendDate },
@@ -342,20 +390,28 @@ function Mine() {
     {
       key: 'act', label: '', value: () => '',
       render: q => (q.status === 'SUBMITTED' && q.vouchers.length === 0 ? (
-        <Button variant="ghost" onClick={async () => {
-          try { await api.post(`/claims/requests/${q.id}/withdraw`, {}); toast({ tone: 'success', title: `${q.requestNo} withdrawn` }); requests.reload(); }
-          catch (e) { toast({ tone: 'critical', title: 'Not withdrawn', body: errorMessage(e) }); }
-        }}>Withdraw</Button>
+        <Button variant="ghost" size="sm" onClick={() => setWithdraw(q)}>Withdraw</Button>
       ) : null),
     },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ maxWidth: 240 }}><Select label="Month" showLabel value={month} onChange={setMonth} options={months} /></div>
+    <div className="flex flex-col gap-4">
+      <ListToolbar date={{ label: 'Month', value: month, onChange: setMonth, presets: months.map(m => ({ value: m.value, label: String(m.label) })) }}
+        count="Receipts follow the month; requests to finance show every month." />
       <DataTable id="my-claims-receipts" header="My receipts" columns={rCols} rows={receipts.data?.receipts ?? null} rowKey={r => r.id} loading={receipts.loading} error={receipts.error} onRetry={receipts.reload}
         empty={{ title: 'No receipts this month' }} />
       <DataTable id="my-claims-requests" header="Asked finance to pay" columns={qCols} rows={requests.data?.requests ?? null} rowKey={q => q.id} loading={requests.loading} error={requests.error} onRetry={requests.reload}
         empty={{ title: 'Nothing asked yet' }} />
+      <ConfirmDialog busy={false} onClose={() => setWithdraw(null)} spec={withdraw && {
+        title: `Withdraw ${withdraw.requestNo}?`,
+        body: 'Finance has not paid it yet. Withdrawing removes it from their list; you can ask again later.',
+        confirmLabel: 'Withdraw request', danger: true,
+        onConfirm: async () => {
+          const q = withdraw; setWithdraw(null);
+          try { await api.post(`/claims/requests/${q.id}/withdraw`, {}); toast({ tone: 'success', title: `${q.requestNo} withdrawn` }); requests.reload(); }
+          catch (e) { toast({ tone: 'critical', title: 'Not withdrawn', body: errorMessage(e) }); }
+        },
+      }} />
     </div>
   );
 }
@@ -375,21 +431,22 @@ function KeptFloat() {
     { key: 'files', label: 'Receipt', value: r => r.files.length, render: r => <Files r={r} /> },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="flex flex-col gap-4">
       {f && (
-        <Card style={{ padding: 20, display: 'flex', gap: 32, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div><div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-small)' }}>Cash you should hold</div><MoneyText sen={f.balanceSen} mode="exact" strong style={{ fontSize: 28 }} /></div>
-          <div><div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-small)' }}>Float</div><MoneyText sen={f.floatSen} mode="exact" /></div>
-          <div style={{ color: f.balanceSen < 0 || f.low ? 'var(--color-critical-fg)' : 'var(--color-text-muted)', fontSize: 'var(--text-small)' }}>
-            {f.balanceSen < 0 ? 'Below zero: you have paid in your own money; the next top-up pays it back.' : f.low ? 'Running low.' : f.lastTopUpOn ? `Last topped up ${f.lastTopUpOn}.` : 'Not topped up yet.'}
-          </div>
-          <Button variant="secondary" disabled={f.topUpRequested} onClick={async () => {
-            try { await api.post('/claims/float/top-up-request', {}); toast({ tone: 'success', title: 'Finance has been asked for a top-up' }); q.reload(); }
-            catch (e) { toast({ tone: 'critical', title: 'Not sent', body: errorMessage(e) }); }
-          }}>{f.topUpRequested ? 'Top-up asked for' : 'Ask for a top-up'}</Button>
-        </Card>
+        <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.6fr)] gap-3">
+          <StatTile hero className="col-span-2 lg:col-span-1" label="Cash you should hold" value={rm(f.balanceSen)}
+            hint={f.balanceSen < 0 ? 'Below zero: you have paid in your own money; the next top-up pays it back.' : f.low ? 'Running low.' : f.lastTopUpOn ? `Last topped up ${date(f.lastTopUpOn)}.` : 'Not topped up yet.'} />
+          <StatTile label="Float" value={rm(f.floatSen)} hint="What the department keeps" />
+          <Card className="col-span-2 lg:col-span-1 p-4 flex flex-col justify-between gap-3">
+            <span className="text-meta text-muted-ink">When the cash runs low, ask finance to top the float back up.</span>
+            <div><Button variant="secondary" size="sm" disabled={f.topUpRequested} disabledReason="Finance has been asked already." onClick={async () => {
+              try { await api.post('/claims/float/top-up-request', {}); toast({ tone: 'success', title: 'Finance has been asked for a top-up' }); q.reload(); }
+              catch (e) { toast({ tone: 'critical', title: 'Not sent', body: errorMessage(e) }); }
+            }}>{f.topUpRequested ? 'Top-up asked for' : 'Ask for a top-up'}</Button></div>
+          </Card>
+        </div>
       )}
-      <div style={{ maxWidth: 240 }}><Select label="Month" showLabel value={month} onChange={setMonth} options={months} /></div>
+      <ListToolbar date={{ label: 'Month', value: month, onChange: setMonth, presets: months.map(m => ({ value: m.value, label: String(m.label) })) }} />
       <DataTable id="my-claims-float" header="Receipts on the float" columns={cols} rows={q.data?.receipts ?? null} rowKey={r => r.id} loading={q.loading} error={q.error} onRetry={q.reload}
         empty={{ title: 'No receipts this month' }} />
     </div>

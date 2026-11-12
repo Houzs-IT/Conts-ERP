@@ -54,6 +54,8 @@ export default function PricingPage() {
   const noRate = units.filter(u => u.baseRate <= 0).length;
   const withHoliday = units.filter(u => u.holidayRate).length;
   const priced = units.filter(u => u.baseRate > 0);
+  // No unit sends its prices to a channel yet: "Failed updates 0" would only say the feature is off, so it is a note instead.
+  const sending = units.some(u => u.rates.some(r => r.sync !== 'not_connected'));
 
   return (
     <>
@@ -66,8 +68,11 @@ export default function PricingPage() {
         { label: 'Average nightly', value: priced.length ? rm(Math.round(priced.reduce((s, u) => s + u.baseRate, 0) / priced.length)) : undefined, hint: 'Direct, Sun to Thu' },
         { label: 'Units priced', value: data ? String(units.length - noRate) : undefined, hint: `of ${units.length}` },
         { label: 'Holiday price set', value: data ? String(withHoliday) : undefined, hint: `of ${units.length}` },
-        { label: 'Failed updates', value: data ? String(units.reduce((s, u) => s + u.rates.filter(r => r.sync === 'failed').length, 0)) : undefined, hint: 'To channels', warn: units.some(u => u.rates.some(r => r.sync === 'failed')) },
+        ...(sending || !data ? [{ label: 'Failed updates', value: data ? String(units.reduce((s, u) => s + u.rates.filter(r => r.sync === 'failed').length, 0)) : undefined, hint: 'To channels', warn: units.some(u => u.rates.some(r => r.sync === 'failed')) }] : []),
       ]} />
+      {data && units.length > 0 && !sending && (
+        <p className="m-0 -mt-1 text-meta text-muted-ink">No unit is connected to a channel yet, so these prices are not sent anywhere. Connect a unit in Integrations to send them.</p>
+      )}
 
       {/* The Metric switch, not TabBar: TabBar would become a chunk of its own that every page's preload list names. */}
       <div className="mb-4"><Segmented label="Pricing pages" options={TABS} value={tab} onChange={setTab} /></div>

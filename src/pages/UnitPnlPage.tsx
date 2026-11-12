@@ -7,7 +7,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { EmptyState } from '../components/States';
 import { StatRow, StatTile } from '../components/Metric';
-import { Select } from '../components/Select';
+import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { Segmented as Tabs } from '../components/ops/OpsUi';
 import { TwoLayerTrend, CostShare } from '../components/reports/PnlCharts';
@@ -18,7 +18,8 @@ import { useSession } from '../lib/session';
 import { monthLabel, rm, todayMyt } from '../lib/format';
 import { downloadTable, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx, TONE } from '../lib/design-tokens';
-import { useUrlState, SearchBox, FilterSelect, shiftMonth } from './finance/listKit';
+import { useUrlState, FilterSelect, shiftMonth } from './finance/listKit';
+import { ListToolbar } from '../components/ListToolbar';
 import {
   LINE_LABEL, COST_KEYS, pnl, sumPnl, pctOfIncome, bracketMoney, checks, gaps,
   type CostKey, type LineKey, type Limits, type Pnl, type UnitMonthInput, type Flag, type Gap,
@@ -90,18 +91,18 @@ export default function UnitPnlPage() {
       back={focus ? { label: 'All units', onClick: () => url.set({ unit: null }) } : undefined} />
   );
   const filters = (
-    <div className="flex flex-wrap items-center gap-2">
-      <Select label="Months" value={String(range)} onChange={v => url.set({ range: v === '6' ? null : v })} className="w-[170px]"
-        options={RANGES.map(r => ({ value: String(r), label: `Last ${r} months` }))} />
-      <Select label="This month" value={toDate ? '1' : ''} onChange={v => url.set({ toDate: v || null })} className="w-[190px]"
-        options={[{ value: '', label: 'Complete months only' }, { value: '1', label: `With ${monthLabel(thisMonth)} to date` }]} />
-      {!focus && <>
-        <FilterSelect label="Building" value={building} all="All buildings" onChange={v => url.set({ building: v })} options={buildings} className="w-[200px]" />
-        <FilterSelect label="Contract" value={contract} all="All contracts" onChange={v => url.set({ contract: v })}
-          options={[{ value: 'PS', label: 'Profit share' }, { value: 'LT', label: 'Fixed rent' }]} className="w-[160px]" />
-        <SearchBox value={url.get('q')} onChange={v => url.set({ q: v })} placeholder="Unit or owner" label="Search units" className="w-[200px]" />
-      </>}
-    </div>
+    <ListToolbar
+      search={focus ? undefined : { value: url.get('q'), onChange: v => url.set({ q: v.trim() }), placeholder: 'Unit or owner', label: 'Search units' }}
+      filters={focus ? [] : [
+        { key: 'building', label: 'Building', value: building, onChange: v => url.set({ building: v }), allLabel: 'All buildings',
+          options: buildings.map(b => ({ ...b, count: (data?.units ?? []).filter(u => u.building === b.value).length })) },
+        { key: 'contract', label: 'Contract', value: contract, onChange: v => url.set({ contract: v }), allLabel: 'All contracts',
+          options: [{ value: 'PS', label: 'Profit share' }, { value: 'LT', label: 'Fixed rent' }] },
+      ]}
+      date={{ label: 'Months', value: String(range), def: '6', onChange: v => url.set({ range: v === '6' ? null : v }), presets: RANGES.map(r => ({ value: String(r), label: `Last ${r} months` })) }}
+      after={<Segmented label="This month" value={toDate ? '1' : '0'} onChange={v => url.set({ toDate: v === '1' ? '1' : null })}
+        options={[{ key: '0', label: 'Complete months' }, { key: '1', label: `With ${monthLabel(thisMonth)} to date` }]} />}
+    />
   );
 
   return (

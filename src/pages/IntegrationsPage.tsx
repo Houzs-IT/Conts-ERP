@@ -201,7 +201,7 @@ export default function IntegrationsPage() {
                   <div className="flex items-center gap-3">
                     <Monogram label={label} />
                     <div className="flex flex-col gap-1 flex-1 min-w-0">
-                      <span className="text-[16px] font-semibold tracking-[-0.01em]">{label}</span>
+                      <span className="text-heading font-semibold tracking-[-0.01em]">{label}</span>
                       <span className="text-meta text-muted-ink">{syncedLine(row)}</span>
                     </div>
                     <StatusBadge tone={m.tone} label={m.label} />

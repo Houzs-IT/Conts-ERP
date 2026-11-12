@@ -114,7 +114,7 @@ function AuditDiff({ before, after }: { before: Detail; after: Detail }) {
 }
 
 const panel = 'rounded-card border border-solid border-line bg-card p-5';
-const panelTitle = 'text-[16px] font-semibold tracking-[-0.01em] text-ink';
+const panelTitle = 'text-heading font-semibold tracking-[-0.01em] text-ink';
 
 export default function SystemHealthPage() {
   const [range, setRange] = useState<Range>('7d');

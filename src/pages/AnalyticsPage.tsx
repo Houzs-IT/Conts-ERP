@@ -241,7 +241,7 @@ export default function AnalyticsPage() {
             <div className="flex flex-col gap-2 min-w-0">
               <Eyebrow>{m.label}{d.summary ? ` · ${RANGE_SUB[range].toLowerCase()}` : ' this period'}</Eyebrow>
               <div className="flex items-baseline gap-3 flex-wrap">
-                <Figure value={blank ? '—' : m.full(headline)} className="text-[34px] sm:text-[44px] font-medium tracking-[-0.03em] leading-none" />
+                <Figure value={blank ? '—' : m.full(headline)} className="text-headline font-semibold tracking-[-0.02em] leading-none" />
                 <span className={cx('text-copy font-semibold', delta.note && delta.value === 0 ? 'text-muted-ink font-normal' : TONE[delta.tone].text)}>{blank ? '' : deltaText(delta)}</span>
               </div>
               <span className="text-meta text-muted-ink [text-wrap:pretty]">
