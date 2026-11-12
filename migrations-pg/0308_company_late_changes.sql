@@ -13,7 +13,7 @@
 --                         reference: 'stage-lock:<lock id>', or 'stage-lock-carried:<lock id>' for the balancing row an
 --                         unlock leaves. amount: sen, the company's share (live company figure less the locked one).
 --
--- APPLY: production through the GitHub workflow "Apply migrations to production" with only=0304, dry run first.
+-- APPLY: production through the GitHub workflow "Apply migrations to production" with only=0308, dry run first.
 -- REVERSAL: the table can be left in place; the code reads it only when it exists.
 set local search_path = pos;
 set local lock_timeout = '5s';

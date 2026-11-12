@@ -39,16 +39,17 @@ test('precedence: user, position area, department area, position category, depar
 });
 
 test('the lock and unlock powers are given one by one: no category baseline opens them (owner statement close part 2b)', () => {
-  const r = rules({ department: { 'group:Finance': 'edit' } });
+  // The powers sit under Units, beside the page (migration 0307).
+  const r = rules({ department: { 'group:Units': 'edit' } });
   for (const key of ['lockIncome', 'lockDeductions', 'lockO2', 'unlockStep']) {
     assert.equal(area(key).ownGrant, true, key);
     assert.deepEqual(at(r, key), { level: 'none', origin: 'none' }, key);
   }
-  assert.deepEqual(at(rules({ position: { 'group:Finance': 'full' } }), 'lockIncome'), { level: 'none', origin: 'none' });
-  // The page and the other Finance areas still follow the baseline.
+  assert.deepEqual(at(rules({ position: { 'group:Units': 'full' } }), 'lockIncome'), { level: 'none', origin: 'none' });
+  // The page and the other Units areas still follow the baseline.
   assert.deepEqual(at(r, 'ownerClose'), { level: 'edit', origin: 'department' });
   // Set on its own, for a person, a position or a department, a power is given.
-  assert.deepEqual(at(rules({ department: { 'group:Finance': 'edit' }, position: { lockIncome: 'edit' } }), 'lockIncome'), { level: 'edit', origin: 'position' });
+  assert.deepEqual(at(rules({ department: { 'group:Units': 'edit' }, position: { lockIncome: 'edit' } }), 'lockIncome'), { level: 'edit', origin: 'position' });
   assert.deepEqual(at(rules({ user: { unlockStep: 'edit' } }), 'unlockStep'), { level: 'edit', origin: 'user' });
   assert.deepEqual(at(rules({ department: { lockO2: 'edit' } }), 'lockO2'), { level: 'edit', origin: 'department' });
 });

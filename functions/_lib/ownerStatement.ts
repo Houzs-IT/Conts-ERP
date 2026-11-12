@@ -492,7 +492,7 @@ export async function hasLocksTable(q: Query): Promise<boolean> {
   return locksTable;
 }
 
-/** Whether the table of the company's share of late changes exists yet (migration 0304), asked the same way. */
+/** Whether the table of the company's share of late changes exists yet (migration 0308), asked the same way. */
 let companyLateTable = false;
 export async function hasCompanyLateTable(q: Query): Promise<boolean> {
   if (!companyLateTable) companyLateTable = !!(await q<{ ok: boolean }>(`SELECT to_regclass('company_late_changes') IS NOT NULL AS ok`))[0]?.ok;

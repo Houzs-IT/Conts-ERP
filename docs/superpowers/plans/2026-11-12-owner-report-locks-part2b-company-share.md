@@ -9,7 +9,7 @@
 - **Lock powers.** The four lock and unlock powers open only when someone ticks them on their own.
 
 **Architecture:**
-- **Store.** A new table, `company_late_changes` (migration 0304), keeps the company's share of each lock's late difference: one row per lock per month, like the owner adjustment the late update keeps for the owner.
+- **Store.** A new table, `company_late_changes` (migration 0308; planned as 0304, renumbered when main took 0304–0307), keeps the company's share of each lock's late difference: one row per lock per month, like the owner adjustment the late update keeps for the owner.
 - **Sync.** `syncLate` works out the company figure the same three ways it works out the owner's payout:
   - the figure is `gross − deductions − payoutBeforeAdjustments`;
   - the three ways are as the statement takes it, with today's income, and live;
@@ -129,7 +129,7 @@ New here:
 ### Task 2: Company late store and the late update
 
 **Files:**
-- Create: `migrations-pg/0304_company_late_changes.sql`
+- Create: `migrations-pg/0308_company_late_changes.sql` (planned as 0304)
 - Modify:
   - `functions/_lib/ownerStatement.ts`: add `hasCompanyLateTable(q)` next to `hasLocksTable`, the same way;
   - `functions/_lib/ownerLocks.ts`: `syncLate`, `unlockStage`, and a new `companyLateFor`.
@@ -403,7 +403,7 @@ Tests:
 ## As built (12 Nov 2026)
 
 **Built.**
-- **Choice A.** Migration 0304 adds `company_late_changes`. `syncLate` keeps the company's share of each lock's late difference in it:
+- **Choice A.** Migration 0308 adds `company_late_changes`. `syncLate` keeps the company's share of each lock's late difference in it:
   - the share is `companyFigure`, split by `splitLate`;
   - it goes on the owner adjustment's month, in the same transaction;
   - a row on a month since O2-locked or final stays.

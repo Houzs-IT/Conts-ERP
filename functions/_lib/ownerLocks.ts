@@ -125,7 +125,7 @@ export async function locksFor(env: Env, month: string, unitIds?: string[]): Pro
 
 /** The company's share of late changes that counts in each unit-month from `fromMonth` to `toMonth` (both included), by
  *  `${unitId}|${month}`: the total and each row (named by its month and step, lateLabel, and its amount), oldest first. All units when `unitIds`
- *  is null. Empty until migration 0304 has run. The company views add it to the company's result for the month. */
+ *  is null. Empty until migration 0308 has run. The company views add it to the company's result for the month. */
 export async function companyLateFor(env: Env, unitIds: string[] | null, fromMonth: string, toMonth: string): Promise<Map<string, { amount: number; items: { label: string; amount: number }[] }>> {
   const out = new Map<string, { amount: number; items: { label: string; amount: number }[] }>();
   if ((unitIds && !unitIds.length) || !(await hasCompanyLateTable(queryOf(env)))) return out;

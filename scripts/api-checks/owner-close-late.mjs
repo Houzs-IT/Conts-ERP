@@ -208,7 +208,7 @@ check('C6: the late update after an unlock writes nothing more for it',
 }
 
 // ── P: the lock and unlock powers are given one by one ──
-// A new department given the whole Finance category does not get them; a power ticked on its own is given. The seeded
+// A new department given the whole Units category (where the powers sit, migration 0307) does not get them; a power ticked on its own is given. The seeded
 // finance admin is moved into such a department for the check and put back after. Access rules are remembered for 10
 // seconds per person (functions/_lib/access.ts), so the check waits before each ask.
 {
@@ -216,11 +216,11 @@ check('C6: the late update after an unlock writes nothing more for it',
   const [was] = await db('SELECT department_id, position_id FROM users WHERE id = $1', FINANCE_ADMIN);
   try {
     await db(`INSERT INTO departments (id, name, kind, side, sort, created_at, updated_at) VALUES ($1, 'Late Check Accounts', 'staff', 'both', 999, $2, $2)`, DEPT, now);
-    await db(`INSERT INTO access_rules (scope, scope_id, area, level, updated_by) VALUES ('department', $1, 'group:Finance', 'edit', 'check')`, DEPT);
+    await db(`INSERT INTO access_rules (scope, scope_id, area, level, updated_by) VALUES ('department', $1, 'group:Units', 'edit', 'check')`, DEPT);
     await db('UPDATE users SET department_id = $1, position_id = NULL WHERE id = $2', DEPT, FINANCE_ADMIN);
     await new Promise(res => setTimeout(res, 11_000));
     r = await call('POST', '/api/owner-close/lock', {}, 'finance_admin');
-    check('P1: a department given the whole Finance category cannot lock or unlock', r.status === 403
+    check('P1: a department given the whole Units category cannot lock or unlock', r.status === 403
       && r.json?.error?.message === "You can't lock any step. Ask management for the Lock income, Lock deductions or Lock O2 permission.", r.text);
     await db(`INSERT INTO access_rules (scope, scope_id, area, level, updated_by) VALUES ('user', $1, 'lockIncome', 'edit', 'check')
       ON CONFLICT (scope, scope_id, area) DO UPDATE SET level = 'edit'`, FINANCE_ADMIN);
