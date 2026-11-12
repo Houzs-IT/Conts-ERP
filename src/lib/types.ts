@@ -20,7 +20,7 @@ export type SyncState = 'queued' | 'synced' | 'failed';
 /** The hidden role the server works out from the department's kind (management, staff, cleaning, maintenance), plus owner.
  *  No screen shows or picks it. The two older office roles (operations manager and finance admin) are retired: what set them apart now lives in
  *  the position and department rules. */
-export type UserRole = 'management' | 'operations_staff' | 'housekeeper' | 'technician' | 'owner';
+export type UserRole = 'management' | 'operations_staff' | 'housekeeper' | 'technician' | 'renovator' | 'owner';
 
 /** Which side of the business an account works on (migration 0143): The Conts is rental, Dream Crafter the supply chain. */
 export type UserSide = 'conts' | 'dream_crafter' | 'both';

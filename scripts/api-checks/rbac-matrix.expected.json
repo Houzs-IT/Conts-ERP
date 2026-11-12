@@ -409,6 +409,7 @@
  "POST /api/documents": "AAAAFFFU",
  "POST /api/driver-leave": "AFFFFFFU",
  "POST /api/drivers": "AFFFFFFU",
+ "POST /api/employees/renovators/[id]/access": "AFFFFFFU",
  "POST /api/expenses": "AFFAFFFU",
  "POST /api/expenses/clean-charges": "AFFAFFFU",
  "POST /api/expenses/utilities": "AFFAFFFU",

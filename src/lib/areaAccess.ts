@@ -1,4 +1,5 @@
 import type { AccessLevel, SessionUser } from './types';
+import { isFieldRole } from './fieldRoles';
 
 /**
  * The person's level in a permission area, from the levels the session carries (Users and roles > Permissions).
@@ -8,7 +9,7 @@ import type { AccessLevel, SessionUser } from './types';
 export function levelOf(user: SessionUser | null | undefined, area: string): AccessLevel {
   if (!user) return 'none';
   if (user.role === 'management') return 'full';
-  if (user.role === 'housekeeper' || user.role === 'technician' || user.role === 'owner') return 'none';
+  if (isFieldRole(user.role) || user.role === 'owner') return 'none';
   return user.access ? user.access[area] ?? 'none' : 'edit';
 }
 

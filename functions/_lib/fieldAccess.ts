@@ -4,13 +4,15 @@ import { can, roleForKind } from './access';
 import { NO_EMAIL_DOMAIN, PIN_ROLES, employeeIdFor, hasEmployeeIds, tempPin } from './fieldPin';
 
 
-/** The two rosters on HR > Employees: cleaners sign in as housekeepers, technicians as technicians. */
+/** The rosters on HR > Employees: cleaners sign in as housekeepers, technicians as technicians, Renovation staff as
+ *  renovators (migration 0316), who have no department and nothing built in the field app yet. */
 const LISTS = {
   cleaners: { role: 'housekeeper', noun: 'cleaner', action: 'housekeeping.cleaner', kind: 'cleaning' },
   technicians: { role: 'technician', noun: 'technician', action: 'maintenance.technician', kind: 'maintenance' },
+  renovators: { role: 'renovator', noun: 'Renovation employee', action: 'renovation.renovator', kind: null },
 } as const;
 export type WorkerList = keyof typeof LISTS;
-export type FieldKind = (typeof LISTS)[WorkerList]['kind'];
+export type FieldKind = NonNullable<(typeof LISTS)[WorkerList]['kind']>;
 
 /**
  * "Give app access" on a worker list entry: lets an in-house worker sign in to the field app with an employee ID
@@ -62,8 +64,10 @@ export async function giveFieldAccess(env: Env, session: Session, list: WorkerLi
   /* The login takes its roster's department (Maintenance for a technician, Cleaning for a cleaner) when it has none:
      petty cash follows a person's department, so a technician's receipt comes off the Maintenance float (chew, 2 Nov 2026).
      A department already set stays: a person on both rosters keeps the first. */
-  await run(env, `UPDATE users SET department_id = (SELECT id FROM departments WHERE kind = ? ORDER BY sort, name LIMIT 1), updated_at = ?
-    WHERE id = ? AND department_id IS NULL`, kind, now, userId);
+  if (kind) {
+    await run(env, `UPDATE users SET department_id = (SELECT id FROM departments WHERE kind = ? ORDER BY sort, name LIMIT 1), updated_at = ?
+      WHERE id = ? AND department_id IS NULL`, kind, now, userId);
+  }
 
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: w.user_id ? `${action}_new_pin` : `${action}_app_access`,

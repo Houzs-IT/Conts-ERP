@@ -52,7 +52,8 @@ const OWNER_ALLOWED: [string, RegExp][] = [
 const DEMO_LIVE = /^\/api\/(auth|account|owner|table-layouts)(\/|$)|^\/api\/demo$|^\/api\/(reservations|units|payouts|operations\/service-prices)\/export$/;
 const DEMO_REFUSED = /^\/api\/(statements\/(finalise|send)|payouts|integrations|import|claims|supply-chain|it-support|system|users|accounting|units\/[^/]+\/channex-setup)(\/|$)/;
 
-const FIELD_ALLOWED: [string, RegExp][] = [
+/** Renovation staff (migration 0316) have nothing built in the field app yet: their own sign-in, account and notices only. */
+const RENOVATION_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/auth\/session$/],
   ['POST', /^\/api\/auth\/logout$/],
   ['POST', /^\/api\/auth\/change-password$/],
@@ -60,6 +61,10 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/account\/[a-z0-9/-]+$/],
   ['GET', /^\/api\/notifications(\/count)?$/],
   ['PATCH', /^\/api\/notifications$/],
+];
+
+const FIELD_ALLOWED: [string, RegExp][] = [
+  ...RENOVATION_ALLOWED,
   ['GET', /^\/api\/field\/(tasks|repairs|units)$/],
   // Their own clock-in and clock-out (HR phase 2); the handler finds their employee record from the login.
   ['GET', /^\/api\/field\/clock$/],
@@ -171,7 +176,8 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   if (isFieldRole(session.role) && SUPPLY_CHAIN.test(path)) {
     return fail('FORBIDDEN', 'Your account does not have access to supply chain records.', 403);
   }
-  if (isFieldRole(session.role) && !FIELD_ALLOWED.some(([m, re]) => m === request.method && re.test(path))) {
+  const fieldAllowed = session.role === 'renovator' ? RENOVATION_ALLOWED : FIELD_ALLOWED;
+  if (isFieldRole(session.role) && !fieldAllowed.some(([m, re]) => m === request.method && re.test(path))) {
     return fail('FORBIDDEN', 'This is not available in the field app.', 403);
   }
   // The level on Users and roles > Permissions (chosen by management, or the built-in one it shows).
