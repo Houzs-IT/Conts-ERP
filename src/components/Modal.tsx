@@ -4,7 +4,7 @@ import { useConfirm } from './ConfirmDialog';
 import { Button } from './Button';
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-const FIELD = 'input:not([disabled]):not([type=hidden]):not([type=checkbox]):not([type=radio]), select:not([disabled]), textarea:not([disabled])';
+const FIELD = 'input:not([disabled]):not([readonly]):not([type=hidden]):not([type=checkbox]):not([type=radio]), select:not([disabled]), textarea:not([disabled])';
 
 /**
  * The one way a dialog behaves, whatever it looks like (owner, 3 Nov 2026):
