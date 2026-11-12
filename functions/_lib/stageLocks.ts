@@ -21,11 +21,11 @@ export function lockMonthProblem(month: string, today: string): string | null {
   return month >= today.slice(0, 7) ? `${monthLabel(month)} has not ended yet.` : null;
 }
 
-/** Whether a unit can be locked on a step, by its contract's basis (termsFor). Income and deductions: a share only. A
- *  fixed rent or a master lease pays the owner the same whatever the unit earns or costs, so locking those steps would
- *  only freeze the company's own figures (review finding 4); they join once the company's share of a late change is
- *  built (chew's choice A, part 2b). O2: every unit on the statement. */
-export const lockable = (stage: Stage, basis: string): boolean => stage === 'o2' || basis === 'share';
+/** Whether a unit can be locked on a step, by its contract's basis (termsFor). Income and deductions: a share or a
+ *  fixed rent. A fixed rent pays the owner the same whatever the unit earns or costs, so its locks freeze the company's
+ *  own figures, and a late change reaches the company in the next open month (chew's choice A, part 2b). A master
+ *  lease has no owner statement and is on neither step. O2: every unit on the statement. */
+export const lockable = (stage: Stage, basis: string): boolean => stage === 'o2' || basis === 'share' || basis === 'fixed_rent';
 export const incomeLockable = (basis: string): boolean => lockable('income', basis);
 
 /** The month after `month` (YYYY-MM). */
@@ -109,6 +109,13 @@ export function splitLate(r: LateRun, locked: { income: boolean; deductions: boo
   return {};
 }
 
+/** The company's figure of a unit-month (sen): what the gross leaves after the deductions and what the owner is due before
+ *  adjustments. It is the reports' Gain / Loss (GP less the owner base) on a share, a guarantee, a long-term let and a
+ *  fixed rent. A late change's company share is this figure live less as locked, split between the locks by splitLate,
+ *  and it lands on the month the owner's share goes to (chew's choice A, 11 Nov 2026: "A：算进下个月"). */
+export const companyFigure = (m: { gross: number; deductions: number; payoutBeforeAdjustments: number }): number =>
+  m.gross - m.deductions - m.payoutBeforeAdjustments;
+
 /** The owner adjustment's description for a lock's late difference. */
 export const lateText = (stage: 'income' | 'deductions', unitLabel: string, label: string): string =>
   `Late change to ${unitLabel} ${stage} for ${label} (${stage} locked)`;
@@ -118,12 +125,20 @@ const STAGE_NAME: Record<Stage, string> = { income: 'income', deductions: 'deduc
 /** 'October 2026 deductions are locked for Vista 22-04.' */
 export const lockedText = (stage: Stage, unitLabel: string, label: string): string =>
   `${label} ${STAGE_NAME[stage]} ${stage === 'deductions' ? 'are' : 'is'} locked for ${unitLabel}.`;
-/** A new cost dated in a closed month goes on the next open statement. */
-export const rolledText = (unitLabel: string, fromLabel: string, toLabel: string, why: 'locked' | 'final'): string =>
-  `${why === 'locked' ? lockedText('deductions', unitLabel, fromLabel) : `The ${fromLabel} statement is final for ${unitLabel}.`} This cost goes on the ${toLabel} statement.`;
-/** A cost changed on a month whose deductions are locked: the month keeps it as locked, the difference moves on. */
-export const editedText = (unitLabel: string, label: string): string =>
-  `${lockedText('deductions', unitLabel, label)} The ${label} statement keeps the old amount; the difference goes to the next open month as an owner adjustment.`;
+/** A new cost dated in a closed month goes on the next open statement. A fixed-rent unit's statement carries no costs
+ *  (the company bears them), so for one the cost counts in that month instead. */
+export const rolledText = (unitLabel: string, fromLabel: string, toLabel: string, why: 'locked' | 'final', fixedRent = false): string =>
+  `${why === 'locked' ? lockedText('deductions', unitLabel, fromLabel) : `The ${fromLabel} statement is final for ${unitLabel}.`} ${fixedRent ? `This cost counts in ${toLabel}.` : `This cost goes on the ${toLabel} statement.`}`;
+/** A cost changed on a month whose deductions are locked: the month keeps it as locked, the difference moves on (for a
+ *  fixed rent, to the company's figures only). */
+export const editedText = (unitLabel: string, label: string, fixedRent = false): string =>
+  `${lockedText('deductions', unitLabel, label)} ${fixedRent
+    ? `${label} keeps the old amount; the difference counts in the next open month.`
+    : `The ${label} statement keeps the old amount; the difference goes to the next open month as an owner adjustment.`}`;
+/** A reservation added, changed or cancelled in a month whose income is locked: the month keeps its locked figures and
+ *  the difference goes on. `toLabel`: the month it goes to, when there is one locked month to name it from. */
+export const incomeNoticeText = (unitLabel: string, lockedLabels: string[], toLabel: string | null): string =>
+  `${lockedLabels.join(' and ')} income ${lockedLabels.length > 1 ? 'are' : 'is'} locked for ${unitLabel}. The difference goes to ${lockedLabels.length === 1 && toLabel ? toLabel : 'the next open month'}.`;
 /** Something a locked month holds cannot be removed or changed until the step is unlocked. */
 export const refusedText = (stage: Stage, unitLabel: string, label: string): string =>
   `${lockedText(stage, unitLabel, label)} Ask someone who can unlock a step to unlock ${stage === 'deductions' ? 'them' : 'it'} first.`;
@@ -154,3 +169,5 @@ export function o2Checks(x: { held: number; repeats: number; prevMonth: string }
 
 /** The balancing line on an unlocked month whose difference was already settled on later statements. */
 export const carriedText = (labels: string[]): string => `Already settled on the ${labels.join(' and ')} statement`;
+/** The company's balancing row on an unlocked month whose late change already counted in later months. */
+export const companyCarriedText = (labels: string[]): string => `Already counted in ${labels.join(' and ')}`;

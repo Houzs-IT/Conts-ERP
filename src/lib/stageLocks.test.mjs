@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   lockMonthProblem, openMonthAfter, planLate, planUnlock, carriedText, monthAfter, monthLabel, lateText, incomeLockable,
   lockable, splitLate, lockedText, rolledText, editedText, refusedText, movedO2Text, deductionChecks, o2Checks,
+  companyFigure, companyCarriedText, incomeNoticeText,
 } from '../../functions/_lib/stageLocks.ts';
 
 test('locks start from October 2026, and only for a month that has ended', () => {
@@ -17,9 +18,9 @@ test('locks start from October 2026, and only for a month that has ended', () =>
   assert.equal(lockMonthProblem('2026-13', today), 'Month must look like 2026-10.');
 });
 
-test('a fixed rent or master lease unit has no income to lock: the owner is paid the same whatever it earns', () => {
+test('income can be locked on a share or a fixed rent (part 2b: its lock freezes the company figures); a master lease has no statement', () => {
   assert.equal(incomeLockable('share'), true);
-  assert.equal(incomeLockable('fixed_rent'), false);
+  assert.equal(incomeLockable('fixed_rent'), true);
   assert.equal(incomeLockable('none'), false);
 });
 
@@ -67,14 +68,51 @@ test('unlock names the draft statements that printed a withdrawn difference, to 
 
 // Part 2a (plan docs/superpowers/plans/2026-11-11-owner-report-locks-part2a-deductions-o2.md): deductions and O2 locks.
 
-test('who each step can lock: income and deductions on a share contract, O2 on any unit', () => {
+test('who each step can lock: income and deductions on a share or fixed rent (part 2b), O2 on any unit', () => {
   assert.equal(lockable('income', 'share'), true);
-  assert.equal(lockable('income', 'fixed_rent'), false);
+  assert.equal(lockable('income', 'fixed_rent'), true);
+  assert.equal(lockable('income', 'none'), false);
   assert.equal(lockable('deductions', 'share'), true);
-  assert.equal(lockable('deductions', 'fixed_rent'), false);
+  assert.equal(lockable('deductions', 'fixed_rent'), true);
   assert.equal(lockable('deductions', 'none'), false);
   assert.equal(lockable('o2', 'none'), true);
   assert.equal(lockable('o2', 'fixed_rent'), true);
+});
+
+// Part 2b (plan docs/superpowers/plans/2026-11-12-owner-report-locks-part2b-company-share.md).
+
+test("the company's figure of a unit-month: what is left of the gross after the deductions and the owner", () => {
+  assert.equal(companyFigure({ gross: 10000, deductions: 2000, payoutBeforeAdjustments: 6000 }), 2000);
+  // A fixed rent above what the unit made: the company carries the loss.
+  assert.equal(companyFigure({ gross: 120000, deductions: 30000, payoutBeforeAdjustments: 150000 }), -60000);
+  // The company's share of a late change splits between the locks the same way the owner's does.
+  const run = { statement: companyFigure({ gross: 100000, deductions: 10000, payoutBeforeAdjustments: 72000 }),
+    incomeLive: companyFigure({ gross: 110000, deductions: 10000, payoutBeforeAdjustments: 80000 }),
+    live: companyFigure({ gross: 110000, deductions: 11000, payoutBeforeAdjustments: 79200 }) };
+  assert.deepEqual(splitLate(run, { income: true, deductions: true }), { income: 2000, deductions: -200 });
+});
+
+test('the balancing row an unlock leaves on the company side', () => {
+  assert.equal(companyCarriedText(['November 2026']), 'Already counted in November 2026');
+  assert.equal(companyCarriedText(['November 2026', 'December 2026']), 'Already counted in November 2026 and December 2026');
+});
+
+test('what someone editing a reservation in an income-locked month is told', () => {
+  assert.equal(incomeNoticeText('Vista 22-04', ['October 2026'], 'November 2026'),
+    'October 2026 income is locked for Vista 22-04. The difference goes to November 2026.');
+  assert.equal(incomeNoticeText('Vista 22-04', ['October 2026', 'November 2026'], null),
+    'October 2026 and November 2026 income are locked for Vista 22-04. The difference goes to the next open month.');
+  assert.equal(incomeNoticeText('Vista 22-04', ['October 2026'], null),
+    'October 2026 income is locked for Vista 22-04. The difference goes to the next open month.');
+});
+
+test('a fixed-rent unit has no deductions on its statement: the cost counts in the next month, for the company', () => {
+  assert.equal(rolledText('Vista 22-04', 'October 2026', 'November 2026', 'locked', true),
+    'October 2026 deductions are locked for Vista 22-04. This cost counts in November 2026.');
+  assert.equal(rolledText('Vista 22-04', 'October 2026', 'December 2026', 'final', true),
+    'The October 2026 statement is final for Vista 22-04. This cost counts in December 2026.');
+  assert.equal(editedText('Vista 22-04', 'October 2026', true),
+    'October 2026 deductions are locked for Vista 22-04. October 2026 keeps the old amount; the difference counts in the next open month.');
 });
 
 test('a late difference is shared out between the locks: income first, then deductions (so a misc change from occupancy goes with income)', () => {
