@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Modal } from '../Modal';
 import { DemoReservationBar, useDemoOn } from '../demo/DemoRecords';
-import { Drawer } from '../Dialog';
+import { Drawer, useDrawerDirty } from '../Dialog';
 import { KeyFacts } from '../KeyFacts';
 import { MoneyLines } from '../MoneyLines';
 import { ChoiceChips } from '../ChoiceChips';
@@ -565,6 +565,8 @@ function NotesBox({ d, onSaved }: { d: Detail; onSaved: () => void }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => { setText(d.staffNotes ?? ''); }, [d.staffNotes]);
   const dirty = text.trim() !== (d.staffNotes ?? '').trim();
+  // Notes typed and not saved: the drawer asks before Escape or the dimmed strip closes it.
+  useDrawerDirty(dirty);
   async function save() {
     setBusy(true);
     try {
@@ -750,6 +752,7 @@ function GuestPhoneRow({ guestId, phone, onSaved }: { guestId: string; phone: st
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!editing) setValue(shown ?? ''); }, [shown, editing]);
+  useDrawerDirty(editing && value.trim() !== (shown ?? '').trim());
   async function save() {
     const problem = value.trim() ? phoneProblem(value) : undefined;
     if (problem) { setError(problem); return; }

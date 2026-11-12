@@ -142,7 +142,7 @@ export function CalendarRangeControl({ start, days, today, phone, onChange, isDe
   const seg = 'h-full min-w-10 md:min-w-0 px-2.5 grid place-items-center bg-transparent hover:bg-muted border-none cursor-pointer font-sans text-copy text-ink';
 
   return (
-    <div className="relative flex flex-1 md:flex-none min-w-0">
+    <div data-live className="relative flex flex-1 md:flex-none min-w-0">
       <div className="flex flex-1 md:flex-none min-w-0 items-stretch h-[42px] md:h-9 box-border rounded-control border border-solid border-line bg-card overflow-hidden">
         <button type="button" onClick={() => stepBy(-1)} className={seg} aria-label={stepLabel(-1)} title={`${stepLabel(-1)}: see earlier dates`}><Icon name="ChevronLeft" size="sm" /></button>
         <button type="button" data-popover-trigger onClick={() => setOpen(v => !v)} aria-expanded={open} aria-haspopup="dialog"

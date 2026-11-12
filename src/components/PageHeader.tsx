@@ -5,6 +5,8 @@ import { Button, ButtonLink } from './Button';
 import { useMarkPagePrimary, usePagePath } from './States';
 import { findNav } from '../lib/navigation';
 import { useMedia } from '../lib/useMedia';
+import { time } from '../lib/format';
+import { retrySnapshots, snapshotState, useSnapshotView } from '../lib/snapshotView';
 
 /**
  * Title, a one-line subtitle (count and period, no developer notes), and the actions at the top right.
@@ -42,6 +44,7 @@ export default function PageHeader({ title, sub, right, actions, primary, back, 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
             <h1 className="m-0 text-headline leading-[32px] font-bold tracking-[-0.015em] [text-wrap:balance] [overflow-wrap:anywhere]">{title}</h1>
             {badge}
+            <SnapshotNote />
           </div>
           {/* Each "·" fact wraps as a unit on a phone, so "RM 0" or "awaiting owner approval" never splits across lines. */}
           {sub && <div className="max-sm:line-clamp-2" style={{ fontSize: text.copy, color: color.inkSecondary }}>
@@ -58,6 +61,26 @@ export default function PageHeader({ title, sub, right, actions, primary, back, 
         )}
       </div>
     </div>
+  );
+}
+
+/** Snapshots older than this say how old they are (Houzs 49e80ffd7: a figure on screen says its age). */
+export const SNAPSHOT_NOTE_AFTER_MS = 60_000;
+
+/**
+ * While the page shows a saved snapshot (lib/snapshots.ts): "Updated 10:42 · refreshing" once it is over a minute old,
+ * and "Couldn't refresh · Updated 10:42" with Retry when the fresh read failed. Gone as soon as fresh data lands.
+ */
+export function SnapshotNote() {
+  useSnapshotView();
+  const s = snapshotState();
+  if (!s || (!s.failed && Date.now() - s.savedAt < SNAPSHOT_NOTE_AFTER_MS)) return null;
+  const at = time(new Date(s.savedAt).toISOString());
+  return (
+    <span role="status" className="inline-flex items-center gap-2 text-meta text-muted-ink whitespace-nowrap">
+      {s.failed ? `Couldn't refresh · Updated ${at}` : `Updated ${at} · refreshing`}
+      {s.failed && <Button size="sm" variant="tertiary" live onClick={retrySnapshots}>Retry</Button>}
+    </span>
   );
 }
 

@@ -454,7 +454,7 @@ function ContractDrawer({ contract, canEdit, onClose, onSaved }: { contract: Con
   const units = contract.units ?? [];
   const [unitId, setUnitId] = useState(units[0]?.id ?? '');
   return (
-    <Drawer open onClose={onClose} width={920} labelledBy="contract-drawer-title">
+    <Drawer open onClose={onClose} dirty="typed" width={920} labelledBy="contract-drawer-title">
       <div className="flex items-start justify-between gap-3 px-6 pt-[22px] pb-3.5">
         <div className="flex flex-col gap-1 min-w-0">
           <h2 id="contract-drawer-title" className="m-0 text-[19px] font-semibold">Contract · {personName(contract.ownerName)}</h2>

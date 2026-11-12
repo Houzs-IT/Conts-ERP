@@ -97,7 +97,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
   }
 
   return (
-    <Drawer open onClose={onClose} width={640}>
+    <Drawer open onClose={onClose} dirty="typed" width={640}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New stock take</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -140,7 +140,7 @@ function CountDrawer({ k, canWrite, onClose, onAct }: { k: Take; canWrite: boole
   function post() { onAct(k, { status: 'POSTED', lines: lines.map(l => ({ id: l.id, countedQty: l.countedQty })) }, { status: 'POSTED', lines }, 'Stock take posted — on-hand adjusted.'); }
 
   return (
-    <Drawer open onClose={onClose} width={720}>
+    <Drawer open onClose={onClose} dirty="typed" width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{k.takeNumber}</h2><StatusBadge entity="stock_take" value={k.status} /></div><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="text-[13px] text-muted-ink">{k.warehouseName} · {k.takeDate ? date(k.takeDate) : ''}</div>

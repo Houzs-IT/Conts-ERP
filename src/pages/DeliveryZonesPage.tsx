@@ -100,7 +100,7 @@ function ZoneDrawer({ draft, isNew, knownZones, onClose, onSave, onDelete }: { d
   const endError = inRange(start) && inRange(end) && end! < start! ? 'Must not be before the start prefix.' : undefined;
   const canSave = f.zone.trim() !== '' && inRange(start) && inRange(end) && !endError;
   return (
-    <Drawer open onClose={onClose} width={520}>
+    <Drawer open onClose={onClose} dirty="typed" width={520}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New zone rule' : 'Edit zone rule'}</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="flex flex-col gap-[7px]">

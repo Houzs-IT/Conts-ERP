@@ -16,8 +16,8 @@ import { dateIn, time } from './format';
 export const PORTAL_LANGS = ['en', 'ms', 'zh', 'my'] as const;
 export type PortalLang = (typeof PORTAL_LANGS)[number];
 const isLang = (v: unknown): v is PortalLang => PORTAL_LANGS.some(l => l === v);
-/** The languages a person can pick: the system is English, with the field workers' own languages; no Chinese (owner, 1 Nov 2026). */
-export const OFFERED_PORTAL_LANGS: readonly PortalLang[] = PORTAL_LANGS.filter(l => l !== 'zh');
+/** The languages a person can pick on Me: every portal language. */
+export const OFFERED_PORTAL_LANGS: readonly PortalLang[] = PORTAL_LANGS;
 
 /** Each language in its own script, so the person can find theirs. */
 export const LANG_LABEL: Record<PortalLang, string> = { en: 'English', ms: 'Bahasa Melayu', zh: '中文', my: 'မြန်မာ' };
@@ -30,7 +30,7 @@ const listeners = new Set<() => void>();
 function stored(): PortalLang {
   try {
     const v = localStorage.getItem(KEY);
-    return isLang(v) && v !== 'zh' ? v : 'en';
+    return isLang(v) ? v : 'en';
   } catch {
     return 'en'; // storage blocked (private window): the portal reads in English
   }
@@ -60,7 +60,6 @@ const en = {
     mins: (min: number): string => `${min} min`,
   },
   home: { show: 'Show', cleaning: 'Cleaning', repairs: 'Repairs' },
-  renovation: { title: 'Nothing here yet', body: 'The Renovation app is not built yet. When it is, your work will show here.' },
   clock: {
     title: 'Clock', today: 'Today', notIn: 'Not clocked in',
     inSince: (t: string): string => `In since ${t}`,
@@ -266,7 +265,6 @@ const ms: PortalStrings = {
     mins: min => `${min} min`,
   },
   home: { show: 'Tunjuk', cleaning: 'Pembersihan', repairs: 'Pembaikan' },
-  renovation: { title: 'Belum ada apa-apa', body: 'Aplikasi Renovasi belum siap. Apabila siap, kerja anda akan ditunjukkan di sini.' },
   clock: {
     title: 'Kehadiran', today: 'Hari ini', notIn: 'Belum daftar masuk',
     inSince: t => `Masuk sejak ${t}`,
@@ -466,7 +464,6 @@ const zh: PortalStrings = {
     mins: min => `${min} 分钟`,
   },
   home: { show: '显示', cleaning: '清洁', repairs: '维修' },
-  renovation: { title: '暂时没有内容', body: '装修应用尚未开发。开发完成后，你的工作会显示在这里。' },
   clock: {
     title: '打卡', today: '今天', notIn: '还没上班打卡',
     inSince: t => `${t} 起已上班`,
@@ -666,7 +663,6 @@ const my: PortalStrings = {
     mins: min => `${min} မိနစ်`,
   },
   home: { show: 'ပြရန်', cleaning: 'သန့်ရှင်းရေး', repairs: 'ပြုပြင်ရေး' },
-  renovation: { title: 'ဘာမှ မရှိသေးပါ', body: 'ပြင်ဆင်မွမ်းမံရေး app ကို မတည်ဆောက်ရသေးပါ။ ပြီးသောအခါ သင့်အလုပ်များ ဒီမှာ ပေါ်လာပါမည်။' },
   clock: {
     title: 'အချိန်မှတ်', today: 'ယနေ့', notIn: 'အလုပ်ဝင် မမှတ်ရသေးပါ',
     inSince: t => `${t} မှစ၍ အလုပ်ဝင်နေသည်`,

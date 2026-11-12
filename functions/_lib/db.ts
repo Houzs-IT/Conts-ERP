@@ -87,6 +87,20 @@ const open = (env: Env, max: number) =>
 // Supabase's pooler says EMAXCONNSESSION; Postgres itself says "too many clients" / "remaining connection slots are reserved".
 export const poolFull = (e: unknown) => /EMAXCONNSESSION|max clients reached|too many clients|remaining connection slots/i.test(e instanceof Error ? e.message : String(e));
 
+/** The database could not be reached, or dropped the connection, before answering: the pool full (above), a refused,
+ *  reset or timed-out connection (postgres.js CONNECT_TIMEOUT / CONNECTION_*, the socket's ECONN*), Hyperdrive or the
+ *  Worker's socket giving up, or Postgres starting up or shutting down (SQLSTATE class 08, 57P01-57P03). A read that
+ *  meets one is worth asking again a moment later, so the API answers it as busy (503). A real SQL error (a bad column,
+ *  a constraint, a timeout on a slow query) is none of these and stays a fault. */
+const CONNECTION_CODES = new Set(['CONNECT_TIMEOUT', 'CONNECTION_CLOSED', 'CONNECTION_ENDED', 'CONNECTION_DESTROYED', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND', 'EAI_AGAIN', '57P01', '57P02', '57P03']);
+const CONNECTION_TEXT = /Network connection lost|connection attempt failed|connection (?:terminated|refused|reset|closed)|failed to connect|could not connect|Hyperdrive|socket hang up|write CONNECTION_CLOSED/i;
+export function transientDb(e: unknown): boolean {
+  if (poolFull(e)) return true;
+  const code = String((e as { code?: unknown } | null)?.code ?? '');
+  if (CONNECTION_CODES.has(code) || /^08[0-9A-Z]{3}$/.test(code)) return true;
+  return CONNECTION_TEXT.test(e instanceof Error ? e.message : String(e));
+}
+
 async function retryPoolFull<T>(work: () => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {

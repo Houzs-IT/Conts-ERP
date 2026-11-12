@@ -80,7 +80,7 @@ function DriverDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onCl
   const set = <K extends keyof Draft>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as Draft[K] }));
   const canSave = f.driverCode.trim() !== '' && f.name.trim() !== '' && !phoneProblem(f.phone);
   return (
-    <Drawer open onClose={onClose} width={480}>
+    <Drawer open onClose={onClose} dirty="typed" width={480}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">{draft.isNew ? 'New driver' : 'Edit driver'}</h2>
         <CloseButton onClick={onClose} />

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, lazy, Suspense } from 'react';
+import { useMemo, useState, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
@@ -10,6 +10,7 @@ import { DateField, NumberInput } from '../../components/inputs';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useApi } from '../../lib/useApi';
+import { useSeedOnce } from '../../lib/useSeedOnce';
 import { api, notifyFailure } from '../../lib/api';
 import { mayWork } from '../../lib/areaAccess';
 import { useSession } from '../../lib/session';
@@ -87,7 +88,8 @@ export default function WorkingHoursTab() {
   const [filter, setFilter] = useState<{ name: string; department: '' | Department; day: string }>({ name: '', department: '', day: '' });
   const [copyFrom, setCopyFrom] = useState(shiftDay(to, -1));
 
-  useEffect(() => { if (data) { setRows(rowsFrom(data)); setRemoved([]); } }, [data]);
+  // Filled once per date range (and again after a save), not on every answer, so a late answer never wipes typing.
+  const reseed = useSeedOnce(data, `${from}|${to}`, d => { setRows(rowsFrom(d)); setRemoved([]); });
   // Both ends or neither: an open end goes back to the default, this month to today.
   const setRange = (f: string, t: string) => setParams(p => { const n = new URLSearchParams(p); if (f && t) { n.set('from', f); n.set('to', t); } else { n.delete('from'); n.delete('to'); } return n; }, { replace: true });
   const ranges: DatePreset[] = [
@@ -116,7 +118,7 @@ export default function WorkingHoursTab() {
     setRows(rs => rs.filter(x => x.key !== r.key));
   }
   const duplicate = (r: Row) => setRows(rs => {
-    const other = DEPARTMENTS.find(d => d !== r.department) ?? r.department;
+    const other = people.get(r.person)?.departments.find(d => d !== r.department) ?? r.department;
     const i = rs.findIndex(x => x.key === r.key);
     const copy: Row = { ...r, key: newKey(), entryId: null, savedAs: null, department: other, hours: null, notes: '', origin: 'split', dirty: true };
     return [...rs.slice(0, i + 1), copy, ...rs.slice(i + 1)];
@@ -152,7 +154,7 @@ export default function WorkingHoursTab() {
         }),
       });
       toast({ tone: 'success', title: 'Working hours saved.', body: `${res.saved} saved${res.removed ? `, ${res.removed} removed` : ''}. Payroll uses them from the next refresh.` });
-      reload();
+      reseed(); reload();
     } catch (e) { notifyFailure(e); }
     finally { setBusy(false); }
   }

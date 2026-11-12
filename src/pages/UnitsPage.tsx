@@ -285,7 +285,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
         {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button>}
         <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} disabled={units.length === 0} title="Download every unit with every field as an Excel file"
           onClick={() => exportUnits(units, buildings, readiness, types)}>Export all units</Button>
-        <Button size="sm" variant="secondary" icon={<Icon name={listMode ? 'FolderTree' : 'Table2'} size="sm" />} onClick={() => setListMode(!listMode)}>{listMode ? 'Tree and record' : 'List of all units'}</Button>
+        <Button size="sm" variant="secondary" icon={<Icon name={listMode ? 'FolderTree' : 'Table2'} size="sm" />} live onClick={() => setListMode(!listMode)}>{listMode ? 'Tree and record' : 'List of all units'}</Button>
       </>}
       primary={canEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => navigate('/properties/units/new')}>Add unit</Button> : undefined} />
   );

@@ -16,7 +16,7 @@ import { useSession } from '../../lib/session';
 import { rm, date, todayMyt } from '../../lib/format';
 import { downloadTable } from '../../lib/export';
 import type { PayrollPayload, PayrollLine, AdvanceView } from '../../../functions/api/payroll/index';
-import { DEPARTMENT_LABEL } from '../../../functions/_lib/hrFields';
+import { DEPARTMENT_LABEL, departmentOf } from '../../../functions/_lib/hrFields';
 import { MonthSelect, monthName } from './PayrollTab';
 
 /* ------------------------------------------------------------------ *
@@ -27,8 +27,8 @@ import { MonthSelect, monthName } from './PayrollTab';
  * advance's own month takes it back.
  * ------------------------------------------------------------------ */
 
-const keyOf = (l: PayrollLine): string => (l.employee.cleanerId ? `c:${l.employee.cleanerId}` : `t:${l.employee.technicianId}`);
-const deptOf = (l: PayrollLine | undefined): string => (l ? DEPARTMENT_LABEL[l.employee.cleanerId ? 'cleaning' : 'maintenance'] : '');
+const keyOf = (l: PayrollLine): string => (l.employee.renovatorId ? `r:${l.employee.renovatorId}` : l.employee.cleanerId ? `c:${l.employee.cleanerId}` : `t:${l.employee.technicianId}`);
+const deptOf = (l: PayrollLine | undefined): string => (l ? DEPARTMENT_LABEL[departmentOf(l.employee)] : '');
 const day = (d: string): string => date(`${d}T12:00:00+08:00`);
 const th = 'py-2 px-3 text-caption font-bold uppercase tracking-[0.09em] text-left whitespace-nowrap bg-muted [border-bottom:1px_solid_var(--color-line)]';
 const td = 'py-2 px-3 [border-top:1px_solid_var(--color-line-soft)]';
@@ -129,7 +129,7 @@ function BatchEntry({ lines, period, onDone }: { lines: PayrollLine[]; period: s
       const l = byKey.get(k);
       if (!l) continue;
       try {
-        await api.post('/payroll/advances', { cleanerId: l.employee.cleanerId, technicianId: l.employee.cleanerId ? null : l.employee.technicianId, date: handedOn, amountSen: amount[k], note: note[k] ?? '' });
+        await api.post('/payroll/advances', { cleanerId: l.employee.cleanerId, technicianId: l.employee.cleanerId ? null : l.employee.technicianId, renovatorId: l.employee.renovatorId, date: handedOn, amountSen: amount[k], note: note[k] ?? '' });
       } catch (e) {
         failed.push(k);
         notifyFailure(e);

@@ -123,7 +123,6 @@ const FieldClockPage = lazy(() => import('./pages/FieldClockPage'));
 const FieldMePage = lazy(() => import('./pages/FieldMePage'));
 const FieldPayPage = lazy(() => import('./pages/FieldPayPage'));
 const FieldReceiptsPage = lazy(() => import('./pages/FieldReceiptsPage'));
-const FieldRenovationHome = lazy(() => import('./pages/FieldRenovationHome'));
 const OwnerPortalPage = lazy(() => import('./pages/OwnerPortalPage'));
 const AccountPage = lazy(() => import('./pages/AccountPage'));
 const MobileSettingsHub = lazy(() => import('./components/MobileSettingsHub'));
@@ -289,7 +288,8 @@ function Routed() {
   const account = location.pathname === '/account';
   // Field roles: single-column 44px shell, not the desk nav.
   if (user.role === 'renovator') {
-    return <Suspense fallback={<Fallback />}><FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : <FieldRenovationHome />}</Suspense></FieldShell></Suspense>;
+    if (!account && !/^\/portal\/(clock|pay|me)(\/|$)/.test(location.pathname)) return <Navigate to="/portal/clock" replace />;
+    return <Suspense fallback={<Fallback />}><FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : location.pathname.startsWith('/portal/me') ? <FieldMePage /> : location.pathname.startsWith('/portal/pay') ? <FieldPayPage /> : <FieldClockPage />}</Suspense></FieldShell></Suspense>;
   }
   if (user.role === 'housekeeper' || user.role === 'technician') {
     // Cleaners' and technicians' screens moved from /field (then /worker) to /portal; old bookmarks and links follow.

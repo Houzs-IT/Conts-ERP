@@ -14,11 +14,13 @@ import type { AnyTone } from '../lib/status';
 
 /** A panel under its trigger, drawn on top of the page so a scrolling table cannot clip it. Closes on an outside
  *  click or Escape. */
-export function Floating({ anchor, fallback, open, onClose, width = 260, maxHeight, align = 'left', children, label }: {
+export function Floating({ anchor, fallback, open, onClose, width = 260, maxHeight, align = 'left', children, label, live }: {
   anchor: RefObject<HTMLElement>; open: boolean; onClose: () => void; width?: number; maxHeight?: number; align?: 'left' | 'right';
   /** Where to open when the anchor is hidden (the toolbar folded it into "More table tools"). */
   fallback?: RefObject<HTMLElement>;
   children: ReactNode; label: string;
+  /** A panel that only filters, sorts or picks columns: usable while a saved snapshot is shown (lib/snapshotView.ts). */
+  live?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<FloatingPosition | null>(null);
@@ -66,7 +68,7 @@ export function Floating({ anchor, fallback, open, onClose, width = 260, maxHeig
   }, [open, onClose, anchor]);
   if (!open || !pos) return null;
   return createPortal(
-    <div ref={panel} role="dialog" aria-label={label}
+    <div ref={panel} role="dialog" aria-label={label} {...(live ? { 'data-live': '' } : {})}
       // Above every dialog (z 50 to 70) so a list opened inside one is never behind it; below ConfirmDialog (80).
       style={{ position: 'fixed', top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.w, maxHeight: pos.maxH, zIndex: 75 }}
       className="overflow-auto bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] text-ink font-sans">

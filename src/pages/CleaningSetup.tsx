@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -8,6 +8,7 @@ import { EmptyState, Skeleton } from '../components/States';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
+import { useSeedOnce } from '../lib/useSeedOnce';
 import { cx } from '../lib/design-tokens';
 import { rm, monthLabel, plural, buildingName } from '../lib/format';
 import { INPUT, mytDay } from '../components/ops/OpsUi';
@@ -80,14 +81,15 @@ function PriceTableCard({ data, onSaved }: { data: PriceTable; onSaved: () => vo
   const [kind, setKind] = useState(data.kinds[0] ?? 'turnover');
   const [draft, setDraft] = useState<Record<string, PriceRow>>({});
   const [busy, setBusy] = useState(false);
-  useEffect(() => { setDraft({}); }, [data]);
+  // Cleared after a save, once the saved prices are read back; not on every answer, which wiped prices being typed.
+  const reseed = useSeedOnce(data, 'prices', () => setDraft({}));
   const rows = data.rows.filter(r => r.kind === kind).map(r => draft[`${r.kind}:${r.layout}`] ?? r);
   const changed = Object.keys(draft).length > 0;
   const set = (r: PriceRow, p: Partial<PriceRow>) => setDraft(d => ({ ...d, [`${r.kind}:${r.layout}`]: { ...r, ...p } }));
   const notSet = data.rows.filter(r => r.internalCost == null && r.externalCharge == null).length;
   async function save() {
     setBusy(true);
-    try { await api.put('/housekeeping/prices', { rows: Object.values(draft) }); toast({ tone: 'success', title: 'Prices saved.', body: 'Cleaning jobs not yet finished use them from now on.' }); onSaved(); }
+    try { await api.put('/housekeeping/prices', { rows: Object.values(draft) }); toast({ tone: 'success', title: 'Prices saved.', body: 'Cleaning jobs not yet finished use them from now on.' }); reseed(); onSaved(); }
     catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); }
     finally { setBusy(false); }
   }

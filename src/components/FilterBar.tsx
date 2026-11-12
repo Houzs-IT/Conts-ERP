@@ -27,7 +27,7 @@ export function FilterBar<K extends string>({ label, views, value, onChange, tag
   label: string; views: SegmentOption<K>[]; value: K | ''; onChange: (k: K) => void; tags?: FilterTags; className?: string;
 }) {
   return (
-    <div className={cx('flex items-center gap-2 min-w-0 max-w-full', className)}>
+    <div data-live className={cx('flex items-center gap-2 min-w-0 max-w-full', className)}>
       <Segmented label={label} options={views} value={value} onChange={onChange} />
       {tags && tags.items.length > 0 && <FilterMenu {...tags} />}
     </div>
@@ -62,7 +62,7 @@ export function FilterMenu({ items, active, onToggle, onClear, single, label = '
   };
 
   return (
-    <div ref={box} className="relative flex-none">
+    <div ref={box} data-live className="relative flex-none">
       <button ref={trigger} type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(v => !v)}
         aria-label={on.length ? `${label}: ${on.map(t => t.label).join(', ')}` : label}
         className={cx('inline-flex items-center gap-1.5 h-[38px] px-3 rounded-control border border-solid bg-card cursor-pointer font-sans text-copy whitespace-nowrap outline-none focus-visible:[box-shadow:0_0_0_2px_var(--color-gold)]',

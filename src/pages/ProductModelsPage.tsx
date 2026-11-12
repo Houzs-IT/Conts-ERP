@@ -144,7 +144,7 @@ function ModelDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Draft
   const canSave = f.modelCode.trim() !== '' && f.name.trim() !== '';
 
   return (
-    <Drawer open onClose={onClose} width={560}>
+    <Drawer open onClose={onClose} dirty="typed" width={560}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New model' : 'Edit model'}</h2>
         <CloseButton onClick={onClose} />

@@ -219,7 +219,7 @@ function stepLine(s: Step): string {
 
 function OneRequest({ code }: { code: string }) {
   const toast = useToast();
-  const { data, loading, error, reload } = useApi<Detail>(`/it-support/tickets/${encodeURIComponent(code)}`);
+  const { data, loading, error, reload, poll } = useApi<Detail>(`/it-support/tickets/${encodeURIComponent(code)}`);
   const [reply, setReply] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState<'' | 'reply' | 'confirm'>('');
@@ -229,9 +229,9 @@ function OneRequest({ code }: { code: string }) {
   useEffect(() => { if (data) refreshItUnread(); }, [data]);
   // IT's reply appears while the person keeps the request open.
   useEffect(() => {
-    const t = window.setInterval(() => { if (document.visibilityState === 'visible') reload(); }, 30_000);
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') poll(); }, 30_000);
     return () => window.clearInterval(t);
-  }, [reload]);
+  }, [poll]);
 
   async function send(e: FormEvent) {
     e.preventDefault();

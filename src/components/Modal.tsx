@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useConfirm } from './ConfirmDialog';
+import { holdUnsavedWork } from '../lib/unsavedWork';
 import { Button } from './Button';
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -55,7 +56,13 @@ export function DialogFrame({ label, onClose, busy, dirty, children, className, 
   useEffect(() => {
     const p = panel.current;
     if (!p) return;
-    const mark = (e: Event) => { if ((e.target as HTMLElement | null)?.closest?.('[data-dialog-ignore-dirty]')) return; typed.current = true; };
+    // The first change also holds the tab's unsaved work, so a deploy does not reload it under the dialog (main.tsx).
+    let release: (() => void) | null = null;
+    const mark = (e: Event) => {
+      if ((e.target as HTMLElement | null)?.closest?.('[data-dialog-ignore-dirty]')) return;
+      typed.current = true;
+      if (state.current.dirty !== false) release ??= holdUnsavedWork();
+    };
     p.addEventListener('input', mark);
     p.addEventListener('change', mark);
     const onKey = (e: KeyboardEvent) => {
@@ -72,8 +79,9 @@ export function DialogFrame({ label, onClose, busy, dirty, children, className, 
       else if (!p.contains(at)) { e.preventDefault(); first.focus(); }
     };
     document.addEventListener('keydown', onKey);
-    return () => { p.removeEventListener('input', mark); p.removeEventListener('change', mark); document.removeEventListener('keydown', onKey); };
+    return () => { p.removeEventListener('input', mark); p.removeEventListener('change', mark); document.removeEventListener('keydown', onKey); release?.(); };
   }, [requestClose]);
+  useEffect(() => (dirty ? holdUnsavedWork() : undefined), [dirty]);
 
   return (
     <div ref={overlay} role={role} aria-modal="true" aria-label={label}

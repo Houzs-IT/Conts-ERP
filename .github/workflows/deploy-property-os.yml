@@ -33,8 +33,33 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # A Pages deployment serves only its own files, and Vite names every chunk by its content, so the moment a deploy
+      # lands the chunks an open tab still asks for are gone (Hookka 44b86b3c4, Houzs c9ad7527a). The previous build's
+      # assets are carried into this deployment, so a tab opened before the deploy keeps working for one more deploy.
+      # The cache key is unique per run; restore-keys picks the latest saved one.
+      - name: Restore the previous build's assets
+        uses: actions/cache/restore@v4
+        with:
+          path: .previous-assets
+          key: property-os-assets-${{ github.run_id }}
+          restore-keys: property-os-assets-
       - run: npm run build
+      # cp -n never overwrites, so a name this build emits always serves this build's file. Then this build's own
+      # files (not the carried ones) are saved for the next deploy, so old files are kept for exactly one deploy.
+      - name: Carry the previous build's assets
+        run: |
+          mkdir -p .previous-assets .this-build-assets
+          cp -R dist/assets/. .this-build-assets/
+          before=$(find dist/assets -type f | wc -l)
+          cp -Rn .previous-assets/. dist/assets/ 2>/dev/null || true
+          echo "carried $(( $(find dist/assets -type f | wc -l) - before )) file(s) from the previous deploy"
+          rm -rf .previous-assets && mv .this-build-assets .previous-assets
       - run: npx wrangler pages deploy dist --project-name=theconts-os --branch=theconts-os
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 3a9ff01edda85702f9e2649fb340f1cc
+      - name: Save this build's assets for the next deploy
+        uses: actions/cache/save@v4
+        with:
+          path: .previous-assets
+          key: property-os-assets-${{ github.run_id }}

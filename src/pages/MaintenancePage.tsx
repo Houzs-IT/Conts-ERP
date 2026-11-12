@@ -14,6 +14,7 @@ import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
+import { useSeedOnce } from '../lib/useSeedOnce';
 import { refreshNavCounts } from '../lib/navBadges';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
@@ -123,7 +124,7 @@ export default function MaintenancePage() {
   const [isAddingPassKey, setIsAddingPassKey] = useState(false);
   const canAddPassKey = !!user && !FIELD_ROLES.includes(user.role) && user.role !== 'owner';
 
-  const { data, loading, error, reload: reloadData } = useApi<Payload>('/maintenance/issues');
+  const { data, loading, error, reload: reloadData, fromSnapshot } = useApi<Payload>('/maintenance/issues');
   // Asked at the same time as the full list and much smaller, so the header, the tab counts and the Open tab's first rows
   // show before every job has arrived (performance, 12 Nov 2026); the full list replaces it the moment it lands.
   const first = useApi<FirstView>(data ? null : `/maintenance/issues?view=open&limit=${FIRST_ROWS}`);
@@ -181,7 +182,7 @@ export default function MaintenancePage() {
   const counts = data ? { open: openTab.length, urgent, support: support.length, approval: approval.length, passKeys: passKeys.length, monthCost }
     : early ? { ...early.summary, monthCost: early.summary.monthCost ?? 0 } : null;
   const sub = counts
-    ? `${counts.open} open · ${counts.urgent} urgent${counts.support ? ` · ${counts.support} need support` : ''} · ${counts.approval} awaiting owner approval${money ? ` · this month ${rm(counts.monthCost)}` : ''}`
+    ? `${counts.open} open · ${counts.urgent} urgent${counts.support ? ` · ${counts.support} need support` : ''} · ${counts.approval} awaiting owner approval${money && !fromSnapshot && !first.fromSnapshot ? ` · this month ${rm(counts.monthCost)}` : ''}`
     : 'Maintenance jobs on every unit';
   // The first view only fills the Open tab with no search; any other view waits for the full list.
   const earlyRows = early && tab === 'open' && !ql ? early.data : null;
@@ -1001,12 +1002,13 @@ function ApprovalRulesPanel() {
   const { data, error, reload } = useApi<{ rules: Record<string, { mode: RuleMode; amount?: number }>; mayEdit: boolean }>('/maintenance/approval-rules');
   const [draft, setDraft] = useState<Record<string, { mode: RuleMode; amount?: number }> | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (data) setDraft(data.rules); }, [data]);
+  // Filled once (and again after a save), not on every answer, so a late answer never wipes a rule being changed.
+  const reseed = useSeedOnce(data, 'rules', d => setDraft(d.rules));
   const changed = !!data && !!draft && JSON.stringify(draft) !== JSON.stringify(data.rules);
   async function save() {
     if (!draft) return;
     setBusy(true);
-    try { await api.put('/maintenance/approval-rules', { rules: draft }); toast({ tone: 'success', title: 'Approval rules saved.', body: 'They apply to jobs added or changed from now on.' }); reload(); }
+    try { await api.put('/maintenance/approval-rules', { rules: draft }); toast({ tone: 'success', title: 'Approval rules saved.', body: 'They apply to jobs added or changed from now on.' }); reseed(); reload(); }
     catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); }
     finally { setBusy(false); }
   }

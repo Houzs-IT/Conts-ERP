@@ -8,6 +8,7 @@ import { useApi } from '../lib/useApi';
 import { count, dateTime, relative } from '../lib/format';
 import { DataTable, type Column } from '../components/DataTable';
 import { cx } from '../lib/design-tokens';
+import { BUILD_ID } from '../lib/buildId';
 import { StatRow, StatTile, Segmented } from '../components/Metric';
 
 // System Health, laid out like the Hookka /admin/health page so the two can be moved between systems:
@@ -125,7 +126,8 @@ export default function SystemHealthPage() {
   const feed = useApi<AuditFeed>(`/system/health/audit-feed?range=${range}${sensitiveOnly ? '&sensitive=1' : ''}&limit=${limit}`);
   const navigate = useNavigate();
   const reloadLive = live.reload, reloadFeed = feed.reload;
-  useEffect(() => { const t = setInterval(() => { if (document.visibilityState === 'visible') reloadLive(); }, REFRESH_MS); return () => clearInterval(t); }, [reloadLive]);
+  const pollLive = live.poll;
+  useEffect(() => { const t = setInterval(() => { if (document.visibilityState === 'visible') pollLive(); }, REFRESH_MS); return () => clearInterval(t); }, [pollLive]);
 
   const d = live.data;
   const banner = useMemo<{ tone: BannerTone; label: string; detail: string }>(() => {
@@ -148,7 +150,7 @@ export default function SystemHealthPage() {
   return (
     <>
       <PageHeader title="System health"
-        sub={d ? `Checked ${relative(d.time).replace(/^Just now$/, 'just now')} · this version published ${dateTime(__BUILD_ID__)}` : 'Live state of the database, storage, integrations and recent changes.'}
+        sub={d ? `Checked ${relative(d.time).replace(/^Just now$/, 'just now')} · this version published ${dateTime(BUILD_ID)}` : 'Live state of the database, storage, integrations and recent changes.'}
         actions={<Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} loading={live.loading && !!d} onClick={() => { reloadLive(); reloadFeed(); }}>Refresh</Button>} />
 
       <HealthBanner tone={banner.tone} label={banner.label} detail={banner.detail} />
