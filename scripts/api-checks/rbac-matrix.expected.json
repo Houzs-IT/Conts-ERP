@@ -104,6 +104,7 @@
  "GET /api/employees": "AFFFFFFU",
  "GET /api/employees/dream-crafter": "AFFFFFFU",
  "GET /api/employees/job-times": "AFFFFFFU",
+ "GET /api/employees/master": "AFFFFFFU",
  "GET /api/employees/performance": "AFFFFFFU",
  "GET /api/expenses/[id]": "AAFAFFFU",
  "GET /api/expenses/breakdown": "AAFAFFFU",

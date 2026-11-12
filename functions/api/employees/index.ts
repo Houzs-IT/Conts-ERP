@@ -1,8 +1,8 @@
 import { mayWork } from '../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { hasEmployees, listEmployees, findEmployee } from '../../_lib/hr';
-import { employeeInput, type Employee, type EmployeeInput } from '../../_lib/hrFields';
+import { hasEmployees, listEmployees, findEmployee, hasRenovationDepartment, saveRenovationPerson } from '../../_lib/hr';
+import { employeeInput, renovationPersonInput, type Employee, type EmployeeInput } from '../../_lib/hrFields';
 import { hasPayroll } from '../../_lib/payroll';
 
 const MANAGE = ['management']; // everyone else follows their level in HR (functions/_lib/access.ts)
@@ -35,9 +35,16 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     const fields = Object.fromEntries(parsed.error.issues.map(i => [String(i.path[0] ?? 'form'), i.message]));
     return fail('VALIDATION', 'Some fields need a fix.', 422, fields);
   }
-  const by = { cleanerId: typeof b?.cleanerId === 'string' ? b.cleanerId : null, technicianId: typeof b?.technicianId === 'string' ? b.technicianId : null };
-  const before = await findEmployee(env, by);
-  if (!before) return fail('NOT_FOUND', 'That person is not an in-house cleaner or technician.', 404);
+  const renovation = isRenovationSave(b) ? await saveRenovationRoster(env, b) : null;
+  if (renovation instanceof Response) return renovation;
+  const by = {
+    cleanerId: typeof b?.cleanerId === 'string' ? b.cleanerId : null,
+    technicianId: typeof b?.technicianId === 'string' ? b.technicianId : null,
+    renovatorId: renovation?.renovatorId ?? null,
+  };
+  const found = await findEmployee(env, by);
+  if (!found) return fail('NOT_FOUND', 'That person is not an in-house cleaner, technician or Renovation employee.', 404);
+  const before = renovation?.isNew ? { ...found, id: null } : found;
 
   const e = parsed.data;
   // Resigned people keep their record; an active one has no last day.
@@ -55,7 +62,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     ['annual_leave_days', e.annualLeaveDays], ['medical_leave_days', e.medicalLeaveDays],
   ];
   const now = nowIso();
-  let id = before.id;
+  let id = found.id;
   if (id) {
     // Attach the other roster id if this person has since appeared on both lists and no other record holds it.
     const other = before.cleanerId && !(await one(env, 'SELECT 1 AS x FROM employees WHERE cleaner_id = ? AND id <> ?', before.cleanerId, id)) ? before.cleanerId : null;
@@ -88,6 +95,20 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   });
   return json({ data: after });
 };
+
+const isRenovationSave = (body: Record<string, unknown> | null): boolean =>
+  body?.department === 'renovation' || typeof body?.renovatorId === 'string';
+
+async function saveRenovationRoster(env: Env, body: Record<string, unknown> | null): Promise<{ renovatorId: string; isNew: boolean } | Response> {
+  if (!(await hasRenovationDepartment(env))) return fail('NOT_MIGRATED', 'The Renovation department needs a database update (migration 0315) that has not been applied yet.', 503);
+  const roster = renovationPersonInput.safeParse(body);
+  if (!roster.success) {
+    return fail('VALIDATION', 'Some fields need a fix.', 422, Object.fromEntries(roster.error.issues.map(i => [String(i.path[0] ?? 'form'), i.message])));
+  }
+  const askedId = typeof body?.renovatorId === 'string' ? body.renovatorId : null;
+  if (askedId && !(await findEmployee(env, { renovatorId: askedId }))) return fail('NOT_FOUND', 'That person is not in the Renovation department.', 404);
+  return { renovatorId: await saveRenovationPerson(env, askedId, roster.data), isNew: !askedId };
+}
 
 /** The record as the audit trail keeps it: private numbers become "set" or "not set". */
 function forAudit(e: Employee): Record<string, unknown> {

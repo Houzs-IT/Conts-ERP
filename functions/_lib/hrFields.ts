@@ -81,6 +81,7 @@ export interface Employee extends EmployeeInput {
   id: string | null;
   cleanerId: string | null;
   technicianId: string | null;
+  renovatorId: string | null;
   name: string;
   phone: string | null;
   /** EMP-001, from the login "Give app access" made; null without app access. */
@@ -108,6 +109,13 @@ export const EMPLOYEE_DEFAULTS: EmployeeInput = {
 export const DEPARTMENTS = ['cleaning', 'maintenance'] as const;
 export type Department = (typeof DEPARTMENTS)[number];
 export const DEPARTMENT_LABEL: Record<Department, string> = { cleaning: 'Cleaning', maintenance: 'Maintenance' };
+
+export const RENOVATION_LABEL = 'Renovation';
+export const renovationPersonInput = z.object({
+  name: z.string().trim().min(1, 'Enter their name.').max(120),
+  phone: text(40),
+});
+export type RenovationPersonInput = z.infer<typeof renovationPersonInput>;
 
 /**
  * A Dream Crafter employee (migration 0185): an entry on Dream Crafter's own roster with its HR record. Kept apart from
