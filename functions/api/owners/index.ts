@@ -26,6 +26,24 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const banking = session.manage || can(session, 'finance', 'view');
 
   const url = new URL(request.url);
+  // ?view=pick: the owner pickers (Units > Details, Add unit) need each owner's name, unit count and the last four of
+  // their IC and bank, not the month's statement for every owner the full list works out (performance, 12 Nov 2026: 1.8 s).
+  // The same people may read it and the same masking applies.
+  if (url.searchParams.get('view') === 'pick') {
+    const rows = await all<any>(env, `
+      SELECT o.id, o.display_name, o.ic_number, o.bank_name, o.bank_account_number, o.bank_account_last4, o.bank_account_holder,
+             (SELECT COUNT(*) FROM units u JOIN properties p ON p.id = u.property_id WHERE u.owner_id = o.id) AS unit_count
+      FROM owners o ORDER BY o.display_name`);
+    return json({
+      generatedAt: nowIso(),
+      data: rows.map(o => ({
+        id: o.id, displayName: o.display_name, unitCount: Number(o.unit_count),
+        icLast4: banking && o.ic_number ? tail(o.ic_number) : null,
+        bankAccountLast4: banking ? (o.bank_account_last4 ?? (o.bank_account_number ? tail(o.bank_account_number) : null)) : null,
+        bankName: banking ? o.bank_name : null, accountHolder: banking ? (o.bank_account_holder ?? o.display_name) : null,
+      })),
+    });
+  }
   const month = url.searchParams.get('month') || todayMyt().slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(month)) return fail('VALIDATION', 'Month must look like 2026-08.', 422);
   const id = url.searchParams.get('id');

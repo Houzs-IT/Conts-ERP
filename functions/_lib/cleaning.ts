@@ -124,6 +124,33 @@ export async function staysOverlapping(env: Env, unitId: string, from: string, t
   return rows.map(r => ({ reservationId: r.id, guestName: r.guest_name, checkIn: r.check_in, checkOut: r.check_out, checkInTime: r.cin, checkOutTime: r.cout, state: r.state }));
 }
 
+/** staysOverlapping for many windows in one statement (performance, 12 Nov 2026: the Maintenance list and the Cleaning
+ *  board asked once per repair window, one after another). Same stays, same order, keyed by `key`. */
+export async function staysOverlappingMany(env: Env, asks: { key: string; unitId: string; from: string; to: string }[]): Promise<Map<string, Overlap[]>> {
+  const out = new Map<string, Overlap[]>();
+  if (!asks.length) return out;
+  const rows = await all<any>(env, `
+    SELECT q.k, r.id, r.state, r.check_in, r.check_out, COALESCE(NULLIF(r.check_in_time, ''), '15:00') AS cin, COALESCE(NULLIF(r.check_out_time, ''), '11:00') AS cout,
+           COALESCE(NULLIF(g.full_name, ''), CASE WHEN r.channel = 'owner_stay' THEN 'Owner stay' ELSE 'Guest' END) AS guest_name
+    FROM jsonb_to_recordset(?::text::jsonb) AS q(k text, u text, f text, t text)
+    JOIN reservations r ON r.unit_id = q.u
+    LEFT JOIN guests g ON g.id = r.guest_id
+    WHERE r.state IN ('pending','confirmed','checked_in') AND r.channel != 'maintenance_block'
+      AND (r.check_in || 'T' || COALESCE(NULLIF(r.check_in_time, ''), '15:00') || ':00+08:00')::timestamptz < q.t::timestamptz
+      AND (r.check_out || 'T' || COALESCE(NULLIF(r.check_out_time, ''), '11:00') || ':00+08:00')::timestamptz > q.f::timestamptz
+    ORDER BY q.k, r.check_in`, JSON.stringify(asks.map(a => ({ k: a.key, u: a.unitId, f: a.from, t: a.to }))));
+  for (const r of rows) {
+    const list = out.get(r.k) ?? [];
+    list.push({ reservationId: r.id, guestName: r.guest_name, checkIn: r.check_in, checkOut: r.check_out, checkInTime: r.cin, checkOutTime: r.cout, state: r.state });
+    out.set(r.k, list);
+  }
+  return out;
+}
+
+/** Windows still to come on a unit (not a booking's own) are checked against its stays; finished ones are not. */
+const checksStays = (r: { unit_id: string | null; source: string | null; ends_at: string }, now: number) =>
+  !!r.unit_id && r.source !== 'booking' && Date.parse(r.ends_at) > now;
+
 export interface RepairWindow { id: string; issueId: string; startsAt: string; endsAt: string; note: string | null; overlaps: Overlap[] }
 
 /** Repair windows of these jobs, each with the stays it overlaps (only for windows not yet over). */
@@ -135,8 +162,9 @@ export async function windowsFor(env: Env, issueIds: string[]): Promise<Map<stri
     FROM maintenance_windows w JOIN maintenance_issues m ON m.id = w.issue_id
     WHERE w.issue_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY w.starts_at`, JSON.stringify(issueIds));
   const now = Date.now();
+  const stays = await staysOverlappingMany(env, rows.filter(r => checksStays(r, now)).map(r => ({ key: r.id, unitId: r.unit_id, from: r.starts_at, to: r.ends_at })));
   for (const r of rows) {
-    const overlaps = r.unit_id && r.source !== 'booking' && Date.parse(r.ends_at) > now ? await staysOverlapping(env, r.unit_id, r.starts_at, r.ends_at) : [];
+    const overlaps = checksStays(r, now) ? stays.get(r.id) ?? [] : [];
     const list = out.get(r.issue_id) ?? [];
     list.push({ id: r.id, issueId: r.issue_id, startsAt: r.starts_at, endsAt: r.ends_at, note: r.note ?? null, overlaps });
     out.set(r.issue_id, list);
@@ -155,13 +183,15 @@ export async function windowsOnDay(env: Env, day: string) {
     ${placeJoin}
     WHERE m.state != 'resolved' AND w.starts_at::timestamptz <= ?::timestamptz AND w.ends_at::timestamptz >= ?::timestamptz
     ORDER BY w.starts_at`, to, from);
+  const now = Date.now();
+  const stays = await staysOverlappingMany(env, rows.filter(r => checksStays(r, now)).map(r => ({ key: r.id, unitId: r.unit_id, from: r.starts_at, to: r.ends_at })));
   const out = [];
   for (const r of rows) {
     out.push({
       id: r.id, issueId: r.issue_id, startsAt: r.starts_at, endsAt: r.ends_at, note: r.note ?? null,
       title: r.title, state: r.state, urgency: r.urgency, category: r.category, assigneeName: r.vendor_name ?? null,
       unitId: r.unit_id, unitNumber: r.unit_number, buildingId: r.property_id, propertyName: r.property_name,
-      overlaps: r.unit_id && r.source !== 'booking' && Date.parse(r.ends_at) > Date.now() ? await staysOverlapping(env, r.unit_id, r.starts_at, r.ends_at) : [],
+      overlaps: checksStays(r, now) ? stays.get(r.id) ?? [] : [],
     });
   }
   return out;

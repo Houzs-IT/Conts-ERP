@@ -62,10 +62,18 @@ export function friendlyMessage(status: number, code: string | undefined, messag
  *  screen never shows data from before a change it might have made. Capped so a long session does not grow it. */
 export const readCache = new Map<string, unknown>();
 const READ_CACHE_MAX = 80;
+const answeredAt = new Map<string, number>();
 export function remember(path: string, data: unknown) {
   readCache.delete(path);
   readCache.set(path, data);
-  if (readCache.size > READ_CACHE_MAX) readCache.delete(readCache.keys().next().value!);
+  answeredAt.set(path, Date.now());
+  if (readCache.size > READ_CACHE_MAX) { const oldest = readCache.keys().next().value!; readCache.delete(oldest); answeredAt.delete(oldest); }
+}
+/** True when the kept answer for this read arrived within the last `ms` (and no write has emptied the cache since):
+ *  a screen opened or a tab switched back that soon shows it without asking the server again. */
+export function answeredWithin(path: string, ms: number): boolean {
+  const at = answeredAt.get(path);
+  return readCache.has(path) && at !== undefined && Date.now() - at < ms;
 }
 
 const RETRY_STATUS = new Set([502, 503, 504]);

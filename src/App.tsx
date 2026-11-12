@@ -8,7 +8,8 @@ import TwoStepPrompt from './components/TwoStepPrompt';
 import AppShell from './components/AppShell';
 import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
-import LoginPage from './pages/LoginPage';
+// Signed-in visits (nearly all of them) never show it, so it stays out of the entry script.
+const LoginPage = lazy(() => import('./pages/LoginPage'));
 import { HOME, homeFor, screenClosed, switchedOff } from './lib/navigation';
 import { setNavigate } from './lib/go';
 import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
@@ -33,9 +34,10 @@ const OperationsTodayPage = lazy(() => import('./pages/OperationsTodayPage'));
 const CleaningPage = lazy(() => import('./pages/CleaningPage'));
 const EmployeesPage = lazy(() => import('./pages/EmployeesPage'));
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
-import SupplyChainEngine, { signInToEngineEarly } from './components/SupplyChainEngine';
+import SupplyChainEngine, { armEngineSignIn } from './components/SupplyChainEngine';
 import { ENGINE_PATH } from './lib/scmEngine';
 import { useApi } from './lib/useApi';
+import { prefetchScreen } from './lib/routePrefetch';
 const UnitsPage = lazy(() => import('./pages/UnitsPage'));
 const AddUnitPage = lazy(() => import('./pages/units/AddUnitPage'));
 const ProductsPage = lazy(() => import('./pages/ProductsPage'));
@@ -159,7 +161,10 @@ function AppLayout() {
   // A screen whose area is closed to this person (Users and roles > Permissions) is not shown even by its address.
   const { user } = useSession();
   const closed = screenClosed(location.pathname, user?.access);
-  useEffect(() => { if (engine.data?.enabled && user) signInToEngineEarly(user.id); }, [engine.data?.enabled, user?.id]);
+  // A screen's first reads start now, while its code downloads (lib/routePrefetch.ts); never for a screen closed to them.
+  useEffect(() => { if (!closed) prefetchScreen(location.pathname, location.search); }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The early engine sign-in waits until the menu says a supply chain screen is near (Sidebar.tsx), not every page load.
+  useEffect(() => { armEngineSignIn(engine.data?.enabled && user ? user.id : null); }, [engine.data?.enabled, user?.id]);
   if (switchedOff(location.pathname)) return <Navigate to={user ? homeFor(user) : '/'} replace />;
   const engineShown = viaEngine && !closed;
   return (
@@ -264,13 +269,13 @@ function Routed() {
   // Emailed reset links carry a token and must work with no session at all.
   if (location.pathname === '/reset-password') {
     const token = new URLSearchParams(location.search).get('token');
-    if (token) return <LoginPage resetToken={token} />;
+    if (token) return <Suspense fallback={<BootScreen />}><LoginPage resetToken={token} /></Suspense>;
   }
-  if (!user) return <LoginPage />;
+  if (!user) return <Suspense fallback={<BootScreen />}><LoginPage /></Suspense>;
   // A temporary password (invite, or management's Reset password) must be replaced before anything else. Sign-in
   // sends the browser to /change-password, which has no screen of its own, so this holds on every address.
   if (user.mustChangePassword) {
-    return <LoginPage key="change-password" forceChangePassword />;
+    return <Suspense fallback={<BootScreen />}><LoginPage key="change-password" forceChangePassword /></Suspense>;
   }
   // Management requires two-step sign-in for this role and it is not set up: nothing else answers until it is.
   if (user.twoStepSetupRequired) {

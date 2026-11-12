@@ -85,7 +85,7 @@ const open = (env: Env, max: number) =>
 /** The pooler refuses a connection that would exceed its client limit before any statement is sent, so retrying
  *  that refusal cannot run anything twice. Any other error is thrown as it is. */
 // Supabase's pooler says EMAXCONNSESSION; Postgres itself says "too many clients" / "remaining connection slots are reserved".
-const poolFull = (e: unknown) => /EMAXCONNSESSION|max clients reached|too many clients|remaining connection slots/i.test(e instanceof Error ? e.message : String(e));
+export const poolFull = (e: unknown) => /EMAXCONNSESSION|max clients reached|too many clients|remaining connection slots/i.test(e instanceof Error ? e.message : String(e));
 
 async function retryPoolFull<T>(work: () => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt++) {
