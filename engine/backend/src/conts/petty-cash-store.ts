@@ -20,13 +20,15 @@ export interface ReceiptRow {
   vendor_name: string | null; note: string | null; status: ReceiptStatus; reject_reason: string | null; checked_at: string | null;
   checked_by: string | null; topup_pv_id: string | null; payback_pv_id: string | null; replaces_id: string | null; source: string;
   created_at: string;
+  /** The bank given on a Direct Claim to Me (migration 0314); null on every other receipt. */
+  payee_bank_name?: string | null; payee_account_no?: string | null; payee_account_name?: string | null;
 }
 export interface ReceiptLineRow {
   id: string; receipt_id: string; department: string; unit_id: string | null; maintenance_issue_id: string | null; sub_department_id?: string | null;
   project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number;
 }
 
-export const RECEIPT_COLS = 'id, receipt_no, submitter_user_id, float_id, spend_date, amount_sen, vendor_name, note, status, reject_reason, checked_at, checked_by, topup_pv_id, payback_pv_id, replaces_id, source, created_at';
+export const RECEIPT_COLS = 'id, receipt_no, submitter_user_id, float_id, spend_date, amount_sen, vendor_name, note, status, reject_reason, checked_at, checked_by, topup_pv_id, payback_pv_id, replaces_id, source, created_at, payee_bank_name, payee_account_no, payee_account_name';
 
 export async function floatsOf(sb: Db, companyId: number, opts: { activeOnly?: boolean } = {}): Promise<FloatRow[]> {
   let q = sb.from('petty_cash_floats').select('*').eq('company_id', companyId);
