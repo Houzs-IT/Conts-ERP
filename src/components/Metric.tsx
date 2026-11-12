@@ -29,26 +29,25 @@ export function Figure({ value, className }: { value: string; className?: string
 /** One KPI, the single summary tile every page uses.
  *  `hero` is the dark statement card, once per page, for the figure that matters most. It always leads its row
  *  (Conts DS v2), and spans the row on a phone.
- *  `tone` colours the figure (and tints a warning/critical tile) when the number itself is the alert.
+ *  `tone` colours the figure only, when the number itself is the alert: the tile stays white (prototype, polish 1).
  *  `onClick` makes it a filter or a link; `active` marks the filter that is on. `value` undefined shows a skeleton. */
 export function StatTile({ label, value, hint, hintTone, tone, loading, hero, onClick, active, className }: {
   label: string; value: string | undefined; hint?: ReactNode; hintTone?: Tone; tone?: Tone;
   loading?: boolean; hero?: boolean; onClick?: () => void; active?: boolean; className?: string;
 }) {
   const Tag = onClick ? 'button' : 'div';
-  const alert = !hero && (tone === 'warning' || tone === 'critical');
   return (
     <Tag type={onClick ? 'button' : undefined} onClick={onClick} aria-pressed={onClick && active !== undefined ? active : undefined}
       className={cx(
         '@container relative rounded-card px-4 py-3.5 max-sm:px-3 max-sm:py-[11px] flex flex-col gap-[5px] min-w-0 overflow-hidden text-left',
         // The hero keeps its edge on the near-black dark page through .dash-hero (theme-dark.css).
         hero ? 'dash-hero order-first max-sm:col-span-full bg-black text-white border border-solid border-black'
-          : cx('border border-solid shadow-[var(--shadow-card)]', alert ? TONE[tone].bg : 'bg-card',
-            active ? 'border-primary shadow-[0_0_0_1px_var(--color-primary)]' : alert ? 'border-warning-line' : 'border-line-soft'),
+          : cx('border border-solid shadow-[var(--shadow-card)] bg-card',
+            active ? 'border-primary shadow-[0_0_0_1px_var(--color-primary)]' : 'border-line-soft'),
         onClick && 'cursor-pointer transition-[border-color,box-shadow] duration-[var(--motion-fast)] hover:shadow-[var(--shadow-raised)]',
         className,
       )}>
-      <Eyebrow className={hero ? 'text-gold' : alert ? TONE[tone].text : undefined}>{label}</Eyebrow>
+      <Eyebrow className={hero ? 'text-gold' : undefined}>{label}</Eyebrow>
       {loading || value === undefined
         // The block is the figure's own height (leading-none at the same clamp), so the tile does not grow when it lands.
         ? <div className={cx('skeleton w-3/4 h-[clamp(18px,11cqi,24px)]', hero && 'skeleton-on-dark')} />
