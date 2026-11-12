@@ -78,7 +78,8 @@ export type AccessOrigin = 'user' | 'position' | 'department' | 'fixed' | 'none'
 /** The origins a default can have: a person's own override is never part of the default. */
 export type InheritedOrigin = 'position' | 'department' | 'none';
 
-export interface AccessArea { key: string; label: string; managed: boolean }
+/** `ownGrant`: given one by one; no category baseline or group tick reaches it (owner statement close part 2b). */
+export interface AccessArea { key: string; label: string; managed: boolean; ownGrant?: boolean }
 export interface AccessCategory { group: string; areas: AccessArea[] }
 
 /** Stored rows only. A missing key means inherit (area) or not set (category); category keys are `group:<Category>`. */
@@ -104,6 +105,8 @@ export interface PersonAccessArea {
   override: AccessLevel | null;
   /** What they get with no override: what "Inherit (position default)" goes back to. */
   inherited: { level: AccessLevel; origin: InheritedOrigin };
+  /** Given one by one: the group's ticks leave it alone (owner statement close part 2b). */
+  ownGrant?: boolean;
 }
 
 export interface PersonAccess {

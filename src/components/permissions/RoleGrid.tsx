@@ -2,14 +2,15 @@ import Icon from '../Icon';
 import { cx } from '../../lib/design-tokens';
 import { plural } from '../../lib/format';
 import {
-  TIER_LEVELS, areaKeysOf, lowerBelow, raiseTo, resetToRole, tierState, type RoleLevels, type TierLevel, type TierState,
+  TIER_LEVELS, bulkKeysOf, lowerBelow, raiseTo, resetToRole, tierState, type RoleLevels, type TierLevel, type TierState,
 } from '../../lib/roleGrid';
 import { GroupToggle } from './GroupToggle';
 import { RoleDifferenceMark } from './RoleDifferenceMark';
 import { COMPANY_LABEL, SIDE_OPTIONS, categorySide, useToggleSet } from './shared';
 import { TIER_HINT, TIER_LABEL, TierBoxes } from './TierBoxes';
 
-export interface GridArea { key: string; label: string }
+/** `ownGrant`: given one by one, so the group row's ticks leave it alone (owner statement close part 2b). */
+export interface GridArea { key: string; label: string; ownGrant?: boolean }
 export interface GridCategory { group: string; areas: GridArea[] }
 export interface RoleCompany { key: string; label: string; categories: GridCategory[] }
 
@@ -99,14 +100,18 @@ export default function RoleGrid({ companies, levels, savedLevels, isLocked, onC
                         {groupLabel}
                       </>
                     )}
-                    {differenceFor(category.group, areaKeysOf([category]))}
+                    {differenceFor(category.group, bulkKeysOf(category))}
                   </div>
-                  {boxesFor(category.group, areaKeysOf([category]))}
+                  {boxesFor(category.group, bulkKeysOf(category))}
                 </div>
                 {isOpen && category.areas.map(area => (
                   <div key={area.key} className={cx(ROW, 'min-h-[42px] bg-muted pl-[46px] max-md:pl-[38px] [border-bottom:1px_solid_var(--color-line-soft)]')}>
                     <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0 text-copy">
                       <span>{area.label}</span>
+                      {area.ownGrant && (
+                        <span title={`The ${category.group} ticks above do not change this. Tick it here to give it.`}
+                          className="rounded-full px-2 py-px text-caption font-medium text-muted-ink [border:1px_solid_var(--color-line)]">Set on its own</span>
+                      )}
                       {differenceFor(area.label, [area.key])}
                     </div>
                     {boxesFor(area.label, [area.key])}

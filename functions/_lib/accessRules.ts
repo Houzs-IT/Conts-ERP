@@ -197,9 +197,9 @@ export async function loadRuleBook(env: Env): Promise<RuleBook> {
   return book;
 }
 
-export interface CategoryList { group: string; areas: { key: string; label: string; managed: boolean }[] }
+export interface CategoryList { group: string; areas: { key: string; label: string; managed: boolean; ownGrant: boolean }[] }
 export const categoryList = (): CategoryList[] =>
-  GROUPS.map(group => ({ group, areas: AREAS.filter(a => a.group === group).map(({ key, label, managed }) => ({ key, label, managed: !!managed })) }));
+  GROUPS.map(group => ({ group, areas: AREAS.filter(a => a.group === group).map(({ key, label, managed, ownGrant }) => ({ key, label, managed: !!managed, ownGrant: !!ownGrant })) }));
 
 /** The body of GET and PUT /api/users/access. */
 export interface PermissionPerson {
@@ -232,6 +232,8 @@ export type InheritedOrigin = 'position' | 'department' | 'none';
 export interface PersonArea {
   key: string; label: string; group: string; level: Level; origin: Origin; override: Level | null;
   inherited: { level: Level; origin: InheritedOrigin };
+  /** Given one by one (Area.ownGrant): the group's ticks leave it alone. */
+  ownGrant: boolean;
 }
 export interface PersonAccess {
   user: { id: string; fullName: string; departmentId: string; departmentName: string; positionId: string | null; positionName: string | null; kind: DepartmentKind; side: Side };
@@ -264,7 +266,7 @@ export async function personAccess(env: Env, userId: string, canEdit: boolean): 
     // Management is fixed Full from its department, so "what you would get" names the department.
     const origin: InheritedOrigin = base.origin === 'position' ? 'position' : base.origin === 'none' ? 'none' : 'department';
     return {
-      key: a.key, label: a.label, group: a.group,
+      key: a.key, label: a.label, group: a.group, ownGrant: !!a.ownGrant,
       level: closed ? 'none' : now.level, origin: closed ? 'none' : now.origin,
       override: isLevel(own) ? own : null,
       inherited: closed ? { level: 'none', origin: 'none' } : { level: base.level, origin },
