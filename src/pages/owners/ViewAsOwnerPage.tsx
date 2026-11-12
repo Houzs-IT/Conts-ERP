@@ -40,7 +40,7 @@ export default function ViewAsOwnerPage() {
         <Icon name="Eye" size="sm" color="var(--color-gold)" />
         <span className="flex flex-col gap-px min-w-0 flex-1">
           <span className="text-copy font-semibold [overflow-wrap:anywhere]">Viewing as {name}</span>
-          <span className="text-meta text-[var(--color-text-on-dark-muted)]">Read-only. This is their owner portal exactly as they see it. This view is recorded in the owner's History.</span>
+          <span className="text-meta text-[var(--color-text-on-dark-muted)]">Read-only. This is their owner portal exactly as they see it, with Final owner statements only. This view is recorded in the owner's History.</span>
         </span>
         <Button size="sm" variant="secondary" icon={<Icon name="X" size="sm" />} onClick={exit}>Exit</Button>
       </div>

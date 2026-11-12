@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import Icon from '../../components/Icon';
 
 export interface Curtain { from: string; to: string; sub: string }
 
@@ -35,8 +36,8 @@ export function useSwitch(target: string, curtain: Curtain) {
   return { go, rolled, curtain: closing ? { c: closing, dir: 'in' as const } : opening ? { c: opening, dir: 'out' as const } : null };
 }
 
-/** Leaves the showcase (either view) for the ERP page it was opened from, else Showcase control. Inside the visual
- *  editor's frame it asks the control panel instead. */
+/** Leaves the showcase (either view) for the ERP page it was opened from, else the page that opens it. Inside a frame
+ *  it asks the page around it instead. */
 export function useExit() {
   const navigate = useNavigate();
   return () => {
@@ -48,9 +49,9 @@ export function useExit() {
 export function SwitchButton({ current, next, rolled, onClick }: { current: string; next: string; rolled: boolean; onClick: () => void }) {
   return (
     <button type="button" className={`sc-switch${rolled ? ' rolled' : ''}`} onClick={onClick} aria-label={`Switch to the ${next} view`}>
-      <span className="sc-switch-icon" aria-hidden>⇄</span>
+      <span className="sc-switch-icon" aria-hidden><Icon name="ArrowLeftRight" size="sm" /></span>
       <span className="sc-switch-label" style={{ color: 'var(--sc-muted)', fontWeight: 600 }}>Switch</span>
-      <span className="sc-switch-roll" aria-hidden><span><span>{current}</span><span style={{ color: 'var(--sc-teal)' }}>{next}</span></span></span>
+      <span className="sc-switch-roll" aria-hidden><span><span>{current}</span><span style={{ color: 'var(--color-gold-ink)' }}>{next}</span></span></span>
     </button>
   );
 }
@@ -59,10 +60,10 @@ export function CurtainLayer({ curtain }: { curtain: { c: Curtain; dir: 'in' | '
   if (!curtain) return null;
   return (
     <div className={`sc-curtain ${curtain.dir}`} role="status" aria-live="polite">
-      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.14em', color: 'var(--sc-teal-eyebrow)' }}>SWITCHING VIEW</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 22, fontSize: 'clamp(30px, 6vw, 44px)', fontWeight: 800, letterSpacing: '-0.03em' }}>
-        <span style={{ color: 'var(--sc-muted)' }}>{curtain.c.from}</span>
-        <span className="sc-nudge">→</span>
+      <div className="sc-eyebrow" style={{ color: 'var(--color-gold)' }}>Switching view</div>
+      <div className="sc-d56" style={{ display: 'flex', alignItems: 'center', gap: 22 }}>
+        <span style={{ color: 'var(--sc-dark-muted)' }}>{curtain.c.from}</span>
+        <span className="sc-nudge"><Icon name="ArrowRight" size="lg" /></span>
         <span className="sc-curtain-to">{curtain.c.to}</span>
       </div>
       <div className="sc-curtain-sub">{curtain.c.sub}</div>

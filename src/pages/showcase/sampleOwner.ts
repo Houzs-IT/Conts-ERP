@@ -96,7 +96,7 @@ export function sampleOwner(today: string) {
       { title: 'Fixed', at: stamp(today, -4, '12:52'), note: 'Gas topped up, filter cleaned, 18°C confirmed at vent.', by: 'Hafiz · Technician' },
       { title: 'Closed', at: stamp(today, -4, '14:10'), note: 'Guest confirmed room is cool. Case closed.', by: 'Nadia · Customer service' }] },
     { id: 'SC-2284', unitId: 'u1', title: 'Linen change between stays', cat: 'Housekeeping', done: true, ttf: '1h 55m', operator: 'Siti (Housekeeping)', photos: ['Bedroom', 'Bathroom', 'Linen tag'], trail: [
-      { title: 'Scheduled turnover', at: stamp(today, -6, '11:00'), note: 'Checkout completed, turnover triggered automatically.', by: 'ERP · Reservations' },
+      { title: 'Cleaning scheduled', at: stamp(today, -6, '11:00'), note: 'Checkout completed, cleaning job created automatically.', by: 'Property OS · Reservations' },
       { title: 'Case opened', at: stamp(today, -6, '11:02'), note: 'Linen change and deep clean assigned.', by: 'Ops desk' },
       { title: 'Operator on site', at: stamp(today, -6, '11:35'), note: 'Housekeeping arrived with 2 fresh linen sets.', by: 'Siti · Housekeeping' },
       { title: 'Fixed', at: stamp(today, -6, '12:57'), note: 'Bed linen, towels and bath mats replaced; unit inspected.', by: 'Siti · Housekeeping' },
@@ -109,9 +109,9 @@ export function sampleOwner(today: string) {
       { title: 'Closed', at: stamp(today, -8, '11:00'), note: 'Guest confirmed. Case closed.', by: 'Aina · Customer service' }] },
     { id: 'SC-2262', unitId: 'u0', title: 'Smart lock battery low', cat: 'Maintenance', done: true, ttf: '45m', operator: 'Hafiz (Technician)', photos: ['Lock'], trail: [
       { title: 'Alert raised', at: stamp(today, -11, '08:02'), note: 'Lock reported battery at 15%.', by: 'Smart lock · auto alert' },
-      { title: 'Case opened', at: stamp(today, -11, '08:03'), note: 'Battery swap scheduled before next arrival.', by: 'ERP · Auto case' },
+      { title: 'Case opened', at: stamp(today, -11, '08:03'), note: 'Battery swap scheduled before next arrival.', by: 'Property OS · automatic' },
       { title: 'Fixed', at: stamp(today, -11, '08:47'), note: 'Batteries replaced, lock tested with new guest code.', by: 'Hafiz · Technician' },
-      { title: 'Closed', at: stamp(today, -11, '08:50'), note: 'Auto-closed after lock reported 100%.', by: 'ERP · Auto case' }] },
+      { title: 'Closed', at: stamp(today, -11, '08:50'), note: 'Auto-closed after lock reported 100%.', by: 'Property OS · automatic' }] },
     { id: 'SC-2251', unitId: 'u1', title: 'Deep cleaning (monthly)', cat: 'Housekeeping', done: true, ttf: '3h 05m', operator: 'Siti (Housekeeping)', photos: ['Kitchen', 'Sofa', 'Bathroom'], trail: [
       { title: 'Case opened', at: stamp(today, -16, '10:00'), note: 'Monthly deep clean scheduled.', by: 'Ops desk' },
       { title: 'Operator on site', at: stamp(today, -16, '10:20'), note: 'Kitchen, grout and sofa shampoo.', by: 'Siti · Housekeeping' },

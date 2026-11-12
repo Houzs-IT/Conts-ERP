@@ -3,8 +3,8 @@ import { dateShort, todayMyt } from '../../lib/format';
 import { type CalendarData, type Listing } from './model';
 import { stayStatus, UNITS, type SampleStay, type SampleCase, type ChatMessage } from './sampleOwner';
 
-/** "22 Oct, 09:12" from a sample timestamp. */
-export const at = (stamp: string) => `${dateShort(stamp.slice(0, 10))}, ${stamp.slice(11, 16)}`;
+/** "22/10 09:12" from a sample timestamp (docs/DATE-FORMAT.md). */
+export const at = (stamp: string) => `${dateShort(stamp.slice(0, 10))} ${stamp.slice(11, 16)}`;
 export const toListing = (u: typeof UNITS[number]): Listing => ({
   id: u.id, name: u.name, unit: u.unit, city: 'Kuala Lumpur', photoId: null, rating: u.rating, reviews: u.reviews,
   bedrooms: u.unit.startsWith('Skyline') ? 1 : 2, bathrooms: u.unit.startsWith('Skyline') ? 1 : 2, maxGuests: u.unit.startsWith('Skyline') ? 2 : 6, airbnbId: null,
@@ -39,9 +39,9 @@ export function CaseTrail({ c, small }: { c: SampleCase; small?: boolean }) {
               <span style={{ flex: 1, width: 2, background: 'var(--sc-line)', visibility: last ? 'hidden' : 'visible' }} />
             </div>
             <div style={{ paddingBottom: small ? 14 : 18 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}><div style={{ fontSize: small ? 13 : 14, fontWeight: 800 }}>{t.title}</div><div className="num" style={{ fontSize: small ? 11 : 12, color: 'var(--sc-muted)', whiteSpace: 'nowrap' }}>{at(t.at)}</div></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{t.title}</div><div className="num" style={{ fontSize: small ? 11 : 12, color: 'var(--sc-muted)', whiteSpace: 'nowrap' }}>{at(t.at)}</div></div>
               <div style={{ fontSize: small ? 12 : 13, color: 'var(--sc-ink-2)', marginTop: 3, lineHeight: 1.5 }}>{t.note}</div>
-              <div style={{ fontSize: small ? 11 : 12, color: 'var(--sc-faint)', marginTop: 3 }}>{t.by}</div>
+              <div style={{ fontSize: small ? 11 : 12, color: 'var(--sc-muted)', marginTop: 3 }}>{t.by}</div>
             </div>
           </div>
         );
