@@ -44,7 +44,7 @@ The upload area on a maintenance job is reduced to one claim box and one store-o
   - the account number is digits only, 5–30 of them;
   - the account name is 1–100 characters.
 - **The saved bank records** (`public.conts_employee_bank`, `scm.staff_bank_details`) are read, never written, by these flows.
-- **Migration** `0311_claim_bank_details.sql` (renumbered from 0309: main took 0309 and 0310 on 12 Nov) goes through `migrate-production.yml` (dry run first) with chew's OK, before merge. The engine writes the new columns.
+- **Migration** `0314_claim_bank_details.sql` (planned as 0309, then 0311: main took 0309, 0310 and 0312, and two other branches hold 0311, on 12 Nov) goes through `migrate-production.yml` (dry run first) with chew's OK, before merge. The engine writes the new columns.
 - **Old files.** Documents already on jobs keep their kinds and labels. No data is changed.
 - **Rules unchanged:**
   - a person's float (override, else department float) still decides Petty Cash;
@@ -99,11 +99,11 @@ The old test "a field worker hands receipts in but does not ask finance to pay" 
 - [ ] Write the tests: allowed by name; supplier id refused; PO refused; deposit refused. Run them. Expected: they fail.
 - [ ] Implement, run, commit.
 
-### Task 3: Migration 0311 (planned as 0309) — the bank details on a claim
+### Task 3: Migration 0314 (planned as 0309, then 0311) — the bank details on a claim
 
-**Files:** `migrations-pg/0311_claim_bank_details.sql`.
+**Files:** `migrations-pg/0314_claim_bank_details.sql`.
 - It adds nullable `payee_bank_name text`, `payee_account_no text` and `payee_account_name text` to `scm.staff_receipts`. The column grants follow the table's.
-- Header: APPLY with only=0311, dry run first; REVERSAL drops the three columns (by hand).
+- Header: APPLY with only=0314, dry run first; REVERSAL drops the three columns (by hand).
 
 - [ ] Write it. Check that PGlite starts with it. Commit.
 
@@ -197,7 +197,7 @@ The old test "a field worker hands receipts in but does not ask finance to pay" 
 **Commits** (branch `feat/maintenance-claim-options`):
 - 5d4476c — Task 1: Direct Claim to Me in the engine, and `GET /my-bank`.
 - 5045f31 — Task 2: a field worker's payment request, by the supplier's name only.
-- d7561f1 — Task 3: the migration, renumbered 0309 → **0311** in a later commit (main took 0309 and 0310 the same day).
+- d7561f1 — Task 3: the migration, renumbered 0309 → 0311 → **0314** in later commits (main took 0309, 0310 and 0312 the same day; two other branches hold 0311).
 - 3e0f63c — Task 4: finance's pay-back list shows the bank, and the voucher pays to the claim's bank.
 - 24e0c65 — Task 5: the documents route; the claims forward; `src/lib/claimBank.ts`.
 - 6882127 — Task 6: the job's two boxes on the phone and the desk.
@@ -248,7 +248,7 @@ The old test "a field worker hands receipts in but does not ask finance to pay" 
 - PGlite cannot apply main's 0291 (btree_gist).
 
 **Release**
-1. With chew's OK: migration **0311** on production through "Apply migrations to production" with only=0311, dry run first, **before** merge. The engine writes the new columns as soon as it deploys.
+1. With chew's OK: migration **0314** on production through "Apply migrations to production" with only=0314, dry run first, **before** merge. The engine writes the new columns as soon as it deploys.
 2. Then merge. Property OS and the engine both deploy from main.
 3. To test end to end: production with a test account, or staging. The engine does not run on the local PGlite copy.
 
@@ -264,7 +264,7 @@ The old test "a field worker hands receipts in but does not ask finance to pay" 
 - **The success toast follows the local choice, not the returned route.** This shows after a resend following a switch, or when Property OS is deployed before the engine.
 - **"Not the saved account" compares the account number only,** not the bank.
 - **Switching from Direct Pay to Supplier to a claim after the bill was read** loses the bill's date and shop.
-- **Every receipt read selects the 0311 columns.** So 0311 must be on production and staging before the engine deploys.
+- **Every receipt read selects the 0314 columns.** So 0314 must be on production and staging before the engine deploys.
 - **`ClaimBankFields` imports the bank list from `functions/_lib/hrFields`.** Move the list to a module with no imports.
 - **Smaller items:**
   - `savedBanksOf` reads ids unbatched;
@@ -276,4 +276,4 @@ The old test "a field worker hands receipts in but does not ask finance to pay" 
   - engine route header comments are stale.
 - **A field worker cannot withdraw a Direct Pay to Supplier on the phone.** Withdraw stays office-only; they ask the office.
 
-**Release note added:** the **staging** database needs 0311 too, because the staging engine deploys on every merge to main.
+**Release note added:** the **staging** database needs 0314 too, because the staging engine deploys on every merge to main.
