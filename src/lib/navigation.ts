@@ -12,7 +12,7 @@ export interface NavChild { key: string; label: string; path: string; area?: str
  *  `fresh`: a newly added screen, marked New in the desktop menu. */
 export interface NavItem {
   key: string; label: string; icon: string; path?: string; area?: string;
-  badge?: BadgeKey; children?: NavChild[]; full?: boolean; fresh?: boolean;
+  badge?: BadgeKey; children?: NavChild[]; full?: boolean; fresh?: boolean; phone?: boolean;
 }
 /** `phone: false`: left off the menu at phone width; its screens still open by address. */
 export interface NavGroup { label: string; workspace: Workspace; items: NavItem[]; phone?: boolean }
@@ -115,14 +115,14 @@ export const NAV: NavGroup[] = [
     // was hard to find under System). No permission area: the engine answers each person with their own only
     // (functions/api/claims/[[path]].ts).
     { key: 'myClaims', label: 'My claims', icon: 'receipt', path: '/my-claims' },
+  ] },
+  // Reports sit under Home (owner, 29 Oct 2026), with their own permission area since 30 Oct 2026.
+  { label: 'REPORTS', workspace: 'rental', items: [
     { key: 'portfolio', label: 'Portfolio', icon: 'layers', path: '/portfolio', area: 'portfolio' },
     { key: 'unitReport', label: 'Overall unit report', icon: 'file-spreadsheet', path: '/portfolio/owner-report', area: 'portfolio', full: true },
     { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance', full: true },
-  ] },
-  // Reports sit under Home (owner, 29 Oct 2026), with their own permission area since 30 Oct 2026.
-  { label: 'REPORTS', workspace: 'rental', phone: false, items: [
-    { key: 'yearlyReport', label: 'Yearly unit report', icon: 'file-spreadsheet', path: '/reports/yearly', area: 'reports', fresh: true },
-    { key: 'ygrrReport', label: 'YGRR report', icon: 'shield-check', path: '/reports/ygrr', area: 'reports', fresh: true },
+    { key: 'yearlyReport', label: 'Yearly unit report', icon: 'file-spreadsheet', path: '/reports/yearly', area: 'reports', fresh: true, phone: false },
+    { key: 'ygrrReport', label: 'YGRR report', icon: 'shield-check', path: '/reports/ygrr', area: 'reports', fresh: true, phone: false },
   ] },
   { label: 'RESERVATIONS', workspace: 'rental', items: [
     { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'calendar' },

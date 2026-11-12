@@ -92,12 +92,12 @@ test('the seeded rules give the levels of the old role chart', () => {
   const financeDept = {
     'group:Home': 'view', 'group:Reports': 'full', 'group:Reservations': 'view', 'group:Operations': 'view', 'group:Units': 'view',
     ...dc('view'), 'group:Finance': 'full', 'group:Growth': 'full', 'group:System': 'full',
-    scInvoices: 'full', comms: 'none', automations: 'none', users: 'none', performance: 'full', owners: 'full', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none',
+    scInvoices: 'full', comms: 'none', automations: 'none', users: 'none', performance: 'full', portfolio: 'view', owners: 'full', airbnbRecon: 'none', ownerClose: 'none', lockIncome: 'none', lockDeductions: 'none', lockO2: 'none', unlockStep: 'none',
   };
   const managerPosition = {
     'group:Home': 'full', 'group:Reports': 'view', 'group:Reservations': 'full', 'group:Operations': 'full', 'group:Units': 'full',
     ...dc('full'), 'group:Finance': 'view', 'group:Growth': 'full', 'group:System': 'full',
-    scInvoices: 'view', ledger: 'none', performance: 'full', comms: 'full', owners: 'view',
+    scInvoices: 'view', ledger: 'none', performance: 'full', portfolio: 'full', comms: 'full', owners: 'view',
   };
   const people = {
     operations_staff: rules({ department: staffDept }),
