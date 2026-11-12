@@ -76,8 +76,8 @@ export interface RoleTarget { departmentId: string; positionId: string | null }
 
 export interface ToggleSet { has: (key: string) => boolean; toggle: (key: string) => void }
 
-export function useToggleSet(): ToggleSet {
-  const [keys, setKeys] = useState<Set<string>>(new Set());
+export function useToggleSet(initialKeys: readonly string[] = []): ToggleSet {
+  const [keys, setKeys] = useState<Set<string>>(() => new Set(initialKeys));
   const toggle = (key: string) => setKeys(previous => {
     const next = new Set(previous);
     if (next.has(key)) next.delete(key); else next.add(key);
