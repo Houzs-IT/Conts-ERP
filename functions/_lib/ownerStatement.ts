@@ -39,6 +39,7 @@
 import { prorate, nightsInWindow, daysInMonth, monthEndExclusive } from './revenue';
 import { modelOf, isTenancy, type RevenueModel } from './revenueModel';
 import { DEDUCTION_TERMS } from '../../src/lib/statementTerms';
+import { COST_STAGES, costStageOf, type CostStage, type Stage } from './stageLocks';
 
 export type Query = <T = any>(sql: string, ...args: unknown[]) => Promise<T[]>;
 
@@ -85,9 +86,16 @@ export interface StayPart { check_in: string; check_out: string; amount: number 
  *  they were loaded when it was locked, and a long-term let's rent. The month is worked out from these instead of the
  *  live bookings, so its income never changes; a later change reaches the owner through functions/_lib/ownerLocks.ts. */
 export interface FrozenIncome { stays: StayRow[]; rent: { tenancyDays: number; rentExact: number } | null }
-/** What a deductions lock keeps of a unit's month: its owner-charged costs as loaded, and its misc charge as it was
- *  (`misc: null`: worked out from occupancy, as the late update's own run asks). */
-export interface FrozenDeductions { costs: CostRow[]; misc: { amount: number; exact: number; occupancy: number } | null }
+/** What a cost lock (Cleaning, Utilities or Add. ded.; the deductions lock until 13 Nov 2026) keeps of a unit's month:
+ *  the owner-charged costs it counted under that category, as loaded. */
+export interface FrozenCosts { costs: CostRow[] }
+/** What a misc lock keeps of a unit's month: its misc charge as it was, with the occupancy it came from. */
+export interface FrozenMisc { misc: { amount: number; exact: number; occupancy: number } }
+/** A unit-month's cost and misc locks, each with its owner_report_locks row. A category with no entry is open. */
+export interface KeptDeductions {
+  cleaning?: FrozenCosts & { lockId: string }; utilities?: FrozenCosts & { lockId: string }; additional?: FrozenCosts & { lockId: string };
+  misc?: FrozenMisc & { lockId: string };
+}
 /** What an O2 lock keeps of a unit's month: the owner adjustments its statement took. */
 export interface FrozenO2 { adjustments: AdjustmentRow[] }
 /** An owner-charged expense. incurred_on is the bill's own date; deduct_month (YYYY-MM) the statement that takes it, a later
@@ -195,13 +203,15 @@ export function freezeIncome(unitId: string, month: string, stays: StayRow[], te
   };
 }
 
-/** What a deductions lock keeps (FrozenDeductions), from the unit's month as its statement works it out now `m`: the
- *  unit's costs deducted that month, exactly as loaded, and the misc charge with the occupancy it came from. */
-export function freezeDeductions(m: UnitMonth, costs: CostRow[]): FrozenDeductions {
-  const mine = costs.filter(c => c.unit_id === m.unitId && deductMonthOf(c) === m.month);
-  const total = mine.reduce((n, c) => n + Number(c.amount), 0);
-  const amount = m.deductionGroups.find(g => g.category === 'misc')?.amount ?? 0;
-  return { costs: mine, misc: { amount, exact: m.deductionsExact - total, occupancy: m.occupancy } };
+/** What a cost lock keeps (FrozenCosts), from the unit's month as its statement works it out now `m`: the costs it counts
+ *  under that category (a cost another lock of the month already keeps stays with that lock, so nothing counts twice). */
+export function freezeCosts(m: UnitMonth, stage: CostStage): FrozenCosts {
+  return { costs: m.stageCosts[stage] };
+}
+
+/** What a misc lock keeps (FrozenMisc): the month's misc charge as its statement works it out now, with its occupancy. */
+export function freezeMisc(m: UnitMonth): FrozenMisc {
+  return { misc: { ...m.miscCharge } };
 }
 
 /** What an O2 lock keeps (FrozenO2): the owner adjustments the unit's month `m` takes on its statement, each on the
@@ -248,6 +258,10 @@ export interface UnitMonth {
   ownerPct: number | null; operatorShare: number; ownerShare: number; guarantee: number; topUp: number; fixedRent: number;
   payoutBeforeAdjustments: number; adjustmentsTotal: number; netPayout: number;
   lines: Line[]; adjustmentIds: string[];
+  /** The owner-charged costs counted under each cost lock category (what a lock taken now would keep: freezeCosts). */
+  stageCosts: Record<CostStage, CostRow[]>;
+  /** The misc charge counted (what a misc lock taken now would keep: freezeMisc). */
+  miscCharge: { amount: number; exact: number; occupancy: number };
   /** PS YGRR: the contract year this month belongs to; on its last month, the shares checked against the guarantee. */
   yearly?: YearlyGuarantee & { sharesBefore: number | null; yearShares: number | null };
   /** Things finance should look at before finalising (shown on the statement screen, never on the owner's report). */
@@ -297,7 +311,7 @@ export function stayParts(s: StayRow, pieces: PaymentPiece[]): StayPart[] | unde
 
 /** One unit, one month. `stays`, `costs` and `adjustments` may hold other months and units: only what belongs here is used.
  *  adjustments: pass the ones to put on this statement (the caller decides: open ones for a new statement, dated ones for history). */
-export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, stays: StayRow[], costs: CostRow[], adjustments: AdjustmentRow[], miscMonthly: number, frozen?: FrozenIncome, kept?: FrozenDeductions): UnitMonth {
+export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, stays: StayRow[], costs: CostRow[], adjustments: AdjustmentRow[], miscMonthly: number, frozen?: FrozenIncome, kept?: KeptDeductions): UnitMonth {
   const start = `${month}-01`, endEx = monthEndExclusive(month), days = daysInMonth(month), end = new Date(Date.parse(`${endEx}T00:00:00Z`) - 864e5).toISOString().slice(0, 10);
   const lines: Line[] = [];
 
@@ -326,12 +340,19 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   if (left < 0) floors[floors.length - 1] += left;
 
   // Deductions, by the workbook's rows.
-  // A master lease deducts nothing from the owner: every cost of the unit is the company's. A month whose deductions are
-  // locked is worked out from the costs and misc charge the lock kept.
-  const myCosts = terms.basis === 'none' ? [] : (kept ? kept.costs : costs).filter(c => c.unit_id === unit.id && deductMonthOf(c) === month).sort((a, b) => a.incurred_on.localeCompare(b.incurred_on));
+  // A master lease deducts nothing from the owner: every cost of the unit is the company's. A cost category whose lock is
+  // on takes the costs that lock kept, as they were; an open one takes today's costs of the category, less any cost a
+  // lock of this month keeps (a cost re-categorised after a lock still counts once, where it was kept). The misc charge
+  // likewise, when misc is locked.
+  const thisMonth = (c: CostRow) => c.unit_id === unit.id && deductMonthOf(c) === month;
+  const keptIds = new Set(COST_STAGES.flatMap(s => kept?.[s]?.costs.map(c => c.id) ?? []));
+  const stageCosts = Object.fromEntries(COST_STAGES.map(s => [s, terms.basis === 'none' ? []
+    : kept?.[s] ? kept[s]!.costs.filter(thisMonth)
+    : costs.filter(c => thisMonth(c) && !keptIds.has(c.id) && costStageOf(c.category, c.description) === s)])) as Record<CostStage, CostRow[]>;
+  const myCosts = COST_STAGES.flatMap(s => stageCosts[s]).sort((a, b) => a.incurred_on.localeCompare(b.incurred_on));
   const occupancy = nights / days;
   // RM 100 (the setting) times the occupancy rate, never more than the RM 100 (staff sheet UNIT, 26 Oct 2026).
-  const keptMisc = kept?.misc ?? null;
+  const keptMisc = kept?.misc?.misc ?? null;
   const miscExact = keptMisc ? keptMisc.exact : terms.miscCharges && terms.basis === 'share' ? miscMonthly * Math.min(1, occupancy) : 0;
   const misc = keptMisc ? keptMisc.amount : roundSen(miscExact);
   const miscOccupancy = keptMisc ? keptMisc.occupancy : occupancy;
@@ -453,6 +474,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
     ownerPct: terms.ownerPct, operatorShare, ownerShare, guarantee, topUp, fixedRent, yearly,
     payoutBeforeAdjustments, adjustmentsTotal, netPayout: payoutBeforeAdjustments + adjustmentsTotal,
     lines, adjustmentIds: mineAdj.map(a => a.id), warnings,
+    stageCosts, miscCharge: { amount: misc, exact: miscExact, occupancy: miscOccupancy },
   };
 }
 
@@ -468,21 +490,26 @@ export const hasActivity = (m: UnitMonth) => m.terms.basis === 'none'
 /* ------------------------------------------------------------------ */
 
 /** `frozen`: the months whose income is locked, by `${unitId}|${month}` (lockId: the owner_report_locks row). Leave it
- *  out ({ ...inputs, frozen: undefined }) to work the months out from the live bookings instead. `deductions` and `o2`:
- *  the same for the months whose deductions or O2 are locked (leave `deductions` out for the live costs and misc). */
+ *  out ({ ...inputs, frozen: undefined }) to work the months out from the live bookings instead. `deductions`: the
+ *  cost and misc locks of each unit-month (unfreeze turns some of them live). `o2`: the months whose O2 is locked. */
 export interface Inputs {
   units: UnitRow[]; stays: StayRow[]; costs: CostRow[]; adjustments: AdjustmentRow[];
   frozen?: Map<string, FrozenIncome & { lockId: string }>;
-  deductions?: Map<string, FrozenDeductions & { lockId: string }>;
+  deductions?: Map<string, KeptDeductions>;
   o2?: Map<string, FrozenO2 & { lockId: string }>;
   /** The owner adjustments an O2 lock of a month outside this load keeps: only that month's statement takes them. */
   keptElsewhere?: Set<string>;
 }
 
-/** The kept deductions with the misc charge worked out again from occupancy: the late update's run with today's income
- *  and the locked costs (stageLocks.ts splitLate, `incomeLive`). */
-export const withoutMisc = (d: Inputs['deductions']): Inputs['deductions'] =>
-  d && new Map([...d].map(([k, v]) => [k, { ...v, misc: null }]));
+/** The inputs with these locked categories turned live, the others still as locked (the late update's runs:
+ *  ownerLocks.ts syncLate). Income drops the frozen stays; a cost category or misc drops that part of every unit-month's
+ *  kept deductions. O2 is left as it is. */
+export function unfreeze(inputs: Inputs, stages: Stage[]): Inputs {
+  const live = new Set<string>(stages);
+  const deductions = inputs.deductions && new Map([...inputs.deductions].map(([k, v]) =>
+    [k, Object.fromEntries(Object.entries(v).filter(([s]) => !live.has(s))) as KeptDeductions]));
+  return { ...inputs, frozen: live.has('income') ? undefined : inputs.frozen, deductions };
+}
 
 /** Whether the locks table exists yet (migration 0302), so this code can ship before the migration is applied. Once
  *  it is there it stays; until then it is asked again on each load. */
@@ -520,7 +547,7 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
   // six lists this used to read one by one were twelve waits in a row; the Dashboard waits on this. Stays come in a
   // fixed order, so two check-ins on the same day always list (and share out a rounding sen) the same way.
   const [loaded] = await q<{ units: UnitRow[] | null; stays: StayRow[] | null; costs: CostRow[] | null; adjustments: AdjustmentRow[] | null; history: ContractRow[] | null; pieces: PaymentPiece[] | null;
-    locks: { id: string; unit_id: string; month: string; stage: string; frozen: Partial<FrozenIncome> & Partial<FrozenDeductions> & Partial<FrozenO2> }[] | null; kept_elsewhere: string[] | null }>(`
+    locks: { id: string; unit_id: string; month: string; stage: string; frozen: Partial<FrozenIncome> & Partial<FrozenCosts> & Partial<FrozenMisc> & Partial<FrozenO2> }[] | null; kept_elsewhere: string[] | null }>(`
     WITH su AS (SELECT u.id, u.owner_id FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id ${unitWhere}),
     st AS (
       SELECT r.id, r.unit_id, r.check_in, r.check_out, r.collected_revenue, r.channel, r.external_ref, g.full_name AS guest_name,
@@ -558,17 +585,21 @@ export async function loadInputs(q: Query, from: string, toExclusive: string, sc
     ...unitArg, toExclusive, from, from, toExclusive, toExclusive, ...(withLocks ? [from, toExclusive, from, toExclusive] : []));
   const [units, stays, costs, adjustments, history, pieces] = [loaded.units ?? [], loaded.stays ?? [], loaded.costs ?? [], loaded.adjustments ?? [], loaded.history ?? [], loaded.pieces ?? []];
   const frozen = new Map<string, FrozenIncome & { lockId: string }>();
-  const deductions = new Map<string, FrozenDeductions & { lockId: string }>();
+  const deductions = new Map<string, KeptDeductions>();
   const o2 = new Map<string, FrozenO2 & { lockId: string }>();
   for (const l of loaded.locks ?? []) {
     const key = `${l.unit_id}|${l.month}`;
-    if (l.stage === 'deductions') {
+    if (l.stage === 'cleaning' || l.stage === 'utilities' || l.stage === 'additional') {
+      const k = deductions.get(key) ?? {};
+      k[l.stage] = { lockId: l.id, costs: (l.frozen.costs ?? []).map(c => ({ ...c, incurred_on: ymd(c.incurred_on), amount: Number(c.amount) })) };
+      deductions.set(key, k);
+      continue;
+    }
+    if (l.stage === 'misc') {
       const m = l.frozen.misc;
-      deductions.set(key, {
-        lockId: l.id,
-        costs: (l.frozen.costs ?? []).map(c => ({ ...c, incurred_on: ymd(c.incurred_on), amount: Number(c.amount) })),
-        misc: m ? { amount: Number(m.amount), exact: Number(m.exact), occupancy: Number(m.occupancy) } : null,
-      });
+      const k = deductions.get(key) ?? {};
+      k.misc = { lockId: l.id, misc: { amount: Number(m?.amount ?? 0), exact: Number(m?.exact ?? 0), occupancy: Number(m?.occupancy ?? 0) } };
+      deductions.set(key, k);
       continue;
     }
     if (l.stage === 'o2') {
