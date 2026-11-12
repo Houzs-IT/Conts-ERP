@@ -13,10 +13,10 @@ import { refreshNavCounts } from '../lib/navBadges';
 import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import type { BookingChannel } from '../lib/types';
-import { Segmented, OpsModal, dayLabel, hm, mytDay, CATEGORY } from '../components/ops/OpsUi';
+import { OpsModal, dayLabel, hm, mytDay, CATEGORY } from '../components/ops/OpsUi';
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
-import { StatRow, StatTile, SectionTitle } from '../components/Metric';
+import { StatRow, StatTile, SectionTitle, Segmented } from '../components/Metric';
 
 interface Arrival {
   reservationId: string; state: string; channel: string; guestName: string; guests: number; checkInTime: string; checkOut: string;
@@ -110,7 +110,7 @@ export default function OperationsTodayPage() {
       <PageHeader title="Today"
         // vocab-ok: data.arrivals and data.departures are API field names, not words on screen
         sub={data ? `${dayLabel(date)} · ${count(data.arrivals.length, 'check-in')} · ${count(data.departures.length, 'checkout')} · ${c!.done} of ${count(c!.total, 'cleaning job')} done` : dayLabel(date)}
-        actions={<Segmented label="Day" value={pick} onChange={setPick} options={[{ value: 'today', label: 'Today' }, { value: 'tomorrow', label: 'Tomorrow' }]} />}
+        actions={<Segmented<'today' | 'tomorrow'> label="Day" value={pick} onChange={setPick} options={[{ key: 'today', label: 'Today' }, { key: 'tomorrow', label: 'Tomorrow' }]} />}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Sparkles" size="sm" />} onClick={() => navigate('/operations/cleaning')}>Open Cleaning</Button>} />
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
 
@@ -126,7 +126,8 @@ export default function OperationsTodayPage() {
           hint={data ? `${readyFree} ready` : undefined} />
       </StatRow>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+      {/* Checkouts beside Check-ins from 1180px (prototype rops-tgrid2), Maintenance and the free units full width below. */}
+      <div className="grid grid-cols-1 min-[1180px]:grid-cols-2 gap-4 items-start">
         <Panel title="Checkouts" count={data?.departures.length} loading={loading && !data} empty="Nobody checks out on this day.">
           {data?.departures.map(d => {
             const canEdit = !d.guestOut && d.state !== 'checked_out';
@@ -164,13 +165,13 @@ export default function OperationsTodayPage() {
             );
           })}
         </Panel>
-        <div className="xl:col-span-2">
+        <div className="min-[1180px]:col-span-2">
           <Panel title="Maintenance" count={data?.maintenance.length} loading={loading && !data}
             empty={pick === 'today' ? 'No repair visit today, and no urgent or overdue job is open.' : 'No repair visit tomorrow, and no urgent or overdue job is open.'}>
             {data?.maintenance.map(m => <JobLine key={m.id} m={m} />)}
           </Panel>
         </div>
-        <div className="xl:col-span-2">
+        <div className="min-[1180px]:col-span-2">
           <FreeUnits units={data?.available} loading={loading && !data} night={night} />
         </div>
       </div>
@@ -182,7 +183,7 @@ export default function OperationsTodayPage() {
 
 function Panel({ title, count, loading, empty, right, children }: { title: string; count?: number; loading: boolean; empty: string; right?: ReactNode; children: ReactNode }) {
   return (
-    <section className="bg-card rounded-card border border-solid border-line overflow-hidden">
+    <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] overflow-hidden">
       <SectionTitle title={title} count={count} right={right} />
       <div className="[border-top:1px_solid_var(--color-line-soft)]">
         {loading ? <div className="p-5 flex flex-col gap-2"><Skeleton height={36} /><Skeleton height={36} /></div>
@@ -247,8 +248,8 @@ function TimeDialog({ edit, onClose, onSaved }: { edit: { id: string; which: 'in
     } catch (e) { toast({ tone: 'critical', title: 'Time not changed.', body: errorMessage(e, 'Try again.') }); setBusy(false); }
   }
   return (
-    <OpsModal title={`${what} time`} sub={`${edit.label}. For an early check-in or a late checkout; the dates do not change and the guest is not messaged.`}
-      onClose={onClose} busy={busy} width={400}
+    <OpsModal title={`${what} time`} eyebrow={edit.label} size="sm" sub="For an early check-in or a late checkout; the dates do not change and the guest is not messaged."
+      onClose={onClose} busy={busy}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button size="sm" variant="primary" loading={busy} disabled={!value || value === edit.value} disabledReason="Change the time first." onClick={() => void save()}>Save time</Button>
@@ -298,25 +299,25 @@ function FreeUnits({ units, loading, night }: { units: FreeUnit[] | undefined; l
         <div role="tablist" aria-label="Show" className="flex flex-wrap gap-2">
           {([['all', 'All', units?.length], ['ready', 'Ready', n('ready')], ['needs_cleaning', 'Needs cleaning', n('needs_cleaning')], ['blocked', 'Blocked for repair', n('blocked')]] as const).map(([v, label, k]) => (
             <button key={v} type="button" role="tab" aria-selected={show === v} onClick={() => setShow(v)}
-              className={cx('h-9 px-3.5 rounded-pill text-copy font-medium cursor-pointer whitespace-nowrap border border-solid',
-                show === v ? 'bg-black text-white border-black' : 'bg-card text-ink border-line hover:bg-muted')}>
-              {label}<span className={cx('ml-1.5 [font-variant-numeric:tabular-nums]', show === v ? 'text-gold' : 'text-muted-ink')}>{k}</span>
+              className={cx('min-h-8 max-sm:min-h-10 px-3 rounded-pill text-copy cursor-pointer whitespace-nowrap border border-solid',
+                show === v ? 'bg-primary-soft border-primary text-[var(--color-primary-ink)] font-semibold' : 'bg-card text-ink-2 border-line hover:border-line-strong')}>
+              {label}<span className="ml-1.5 font-normal text-muted-ink [font-variant-numeric:tabular-nums]">{k}</span>
             </button>
           ))}
         </div>
       </div>
       {buildings.length === 0 && <p className="m-0 px-5 py-5 text-copy text-muted-ink">No unit in this group.</p>}
       {buildings.map(b => (
-        <div key={b.name} className="px-4 sm:px-5 py-3">
-          <div className="text-meta font-semibold text-muted-ink mb-2">{b.name} <span className="font-normal">· {b.units.length}</span></div>
+        <div key={b.name} className="px-4 sm:px-5 py-3 [border-top:1px_solid_var(--color-line-soft)] first-of-type:border-t-0">
+          <div className="text-copy font-semibold text-ink mb-2">{b.name} <span className="font-normal text-muted-ink">· {b.units.length}</span></div>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2">
             {b.units.map(u => {
               const s = FREE[u.status];
               return (
-                <div key={u.unitId} className="rounded-control border border-solid border-line px-3 py-2 flex flex-col gap-1 min-w-0">
+                <div key={u.unitId} className="rounded-control border border-solid border-line bg-card px-3 py-2 flex flex-col gap-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <b className="text-copy [overflow-wrap:anywhere]">{u.unitNumber}</b>
-                    <StatusBadge tone={s.tone}>{s.label}</StatusBadge>
+                    <b className="text-copy font-mono [overflow-wrap:anywhere]">{u.unitNumber}</b>
+                    <StatusBadge tone={s.tone} size="sm">{s.label}</StatusBadge>
                   </div>
                   <span className="text-meta text-muted-ink">
                     {u.bedrooms ? `${count(u.bedrooms, 'bedroom')} · ` : ''}up to {count(u.maxGuests, 'guest')}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal } from '../../components/Modal';
 import { Button } from '../../components/Button';
+import { KeyFacts } from '../../components/KeyFacts';
 import { useToast } from '../../components/Toast';
 import { api } from '../../lib/api';
 
@@ -44,7 +45,7 @@ export function AccessModal({ target, given0, onClose, onDone }: {
 
   const title = given ? `Sign-in for ${target.name}` : target.employeeId ? `Reset PIN for ${target.name}` : `Give ${target.name} app access`;
   return (
-    <Modal title={title} onClose={onClose}
+    <Modal title={title} eyebrow="App access" size="sm" onClose={onClose}
       footer={given
         ? <>
             <Button size="sm" variant="secondary" onClick={() => void copyMessage(given)}>Copy message</Button>
@@ -57,16 +58,8 @@ export function AccessModal({ target, given0, onClose, onDone }: {
       {given ? (
         <div className="flex flex-col gap-4 text-copy">
           <span>Give {target.name} these two. The PIN is shown only now.</span>
-          <span className="flex gap-3 flex-wrap">
-            <span className="flex flex-col gap-1">
-              <span className="text-meta text-muted-ink">Employee ID</span>
-              <span className="py-3 px-4 rounded-control bg-page border border-solid border-line text-[28px] font-semibold tabular-nums">{given.employeeId}</span>
-            </span>
-            <span className="flex flex-col gap-1">
-              <span className="text-meta text-muted-ink">First PIN</span>
-              <span className="py-3 px-4 rounded-control bg-page border border-solid border-line text-[28px] font-semibold tracking-[0.3em] tabular-nums">{given.pin}</span>
-            </span>
-          </span>
+          <KeyFacts cols={2} className="[&_dd]:text-headline [&_dd]:mt-1.5 [&_dd]:font-semibold"
+            items={[['Employee ID', given.employeeId], ['First PIN', <span key="pin" className="tracking-[0.3em]">{given.pin}</span>]]} />
           <span className="text-meta text-muted-ink text-pretty">
             They open <span className="font-semibold text-ink">{link}</span> on their phone, type the number
             after EMP- and this PIN, and choose their own PIN the first time. Copy message puts all of this in one text to send them.
@@ -79,7 +72,7 @@ export function AccessModal({ target, given0, onClose, onDone }: {
               ? `${target.name} keeps employee ID ${target.employeeId} and gets a new 6-digit PIN. Their old PIN stops working and they are signed out on every phone.`
               : `${target.name} gets the next employee ID (EMP-...) and a 6-digit PIN. In the field app they see only their own ${target.jobs}.`}
           </span>
-          {error && <div role="alert" className="[border-left:2px_solid_var(--color-critical-line)] bg-critical-bg py-3 px-3.5 text-meta text-danger">{error}</div>}
+          {error && <div role="alert" className="rounded-control bg-danger-bg py-3 px-3.5 text-meta text-danger">{error}</div>}
         </div>
       )}
     </Modal>

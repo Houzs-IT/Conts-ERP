@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Button } from '../../components/Button';
-import { StatusBadge } from '../../components/StatusBadge';
 import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
+import { ChoiceChips } from '../../components/ChoiceChips';
+import { StatusBadge } from '../../components/StatusBadge';
+import { PhoneCard, ToolbarSearch } from '../../components/ListToolbar';
 import { Field } from '../../components/Field';
-import { Select } from '../../components/Select';
 import { DateField, PhoneInput, phoneProblem } from '../../components/inputs';
 import { EmployeePaySections, Section } from './EmployeePaySections';
 import { useToast } from '../../components/Toast';
@@ -33,7 +34,10 @@ export default function DcEmployeesTab({ onChanged }: { onChanged: () => void })
   const { user } = useSession();
   const mayEdit = mayWork(user, 'dcHr');
   const [form, setForm] = useState<{ person: DcEmployee | null } | null>(null);
-  const people = data?.data ?? [];
+  const [query, setQuery] = useState('');
+  const all = data?.data ?? [];
+  const needle = query.trim().toLowerCase();
+  const people = needle ? all.filter(e => [e.name, e.phone ?? '', POSITION_LABEL[e.position]].join(' ').toLowerCase().includes(needle)) : all;
   const add = () => setForm({ person: null });
 
   const columns = useMemo<Column<DcEmployee>[]>(() => [
@@ -47,18 +51,20 @@ export default function DcEmployeesTab({ onChanged }: { onChanged: () => void })
 
   return (
     <>
-      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? plural(people.length, 'employee') : 'Loading the list…'}</p>
+      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? (needle ? `${plural(people.length, 'employee')} of ${all.length} match` : plural(all.length, 'employee')) : 'Loading the list…'}</p>
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <DataTable<DcEmployee>
-        id="dc-employees" columns={columns} rows={loading && people.length === 0 ? null : people}
+        id="dc-employees" columns={columns} rows={loading && all.length === 0 ? null : people}
+        toolbar={<ToolbarSearch value={query} onChange={setQuery} placeholder="Name, phone or position" label="Search employees" />}
+        filtered={!!needle} onClearFilters={() => setQuery('')}
         rowKey={e => e.id} pageSize={0} noun={['employee', 'employees']} exportName="dream-crafter-employees"
         rowTone={e => (e.status === 'resigned' ? 'muted' : null)}
         onRowClick={mayEdit ? e => setForm({ person: e }) : undefined}
         header={
           <div className="pt-5 pb-3 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
             <span className="flex flex-col gap-0.5">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Employee Master</span>
+              <span className="text-heading font-bold tracking-[-0.005em]">Employee Master</span>
               <span className="text-meta text-muted-ink">The people who work for Dream Crafter. Open a person for their pay, bank and statutory details.</span>
             </span>
             {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={add}>Add employee</Button>}
@@ -66,14 +72,9 @@ export default function DcEmployeesTab({ onChanged }: { onChanged: () => void })
         }
         empty={{ title: 'No Dream Crafter employees yet.', body: 'Add the first person who works for Dream Crafter.', icon: 'Users', action: mayEdit ? { label: 'Add employee', onClick: add } : undefined }}
         renderCard={e => (
-          <span className="flex flex-col gap-1 min-w-0">
-            <span className="flex items-center justify-between gap-3">
-              <span className="text-copy font-semibold min-w-0 truncate">{e.name}</span>
-              <StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />
-            </span>
-            <span className="text-meta text-muted-ink">{[DC_DEPARTMENT_LABEL, POSITION_LABEL[e.position]].join(' · ')}</span>
-            <span className="text-copy tabular-nums">{e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : `${rm(e.basicSalarySen)} / month`}</span>
-          </span>
+          <PhoneCard title={e.name} right={e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen)}
+            meta={[DC_DEPARTMENT_LABEL, POSITION_LABEL[e.position]].join(' · ')}
+            badge={<StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />} />
         )}
       />
 
@@ -117,7 +118,7 @@ function DcEmployeeForm({ person, onClose, onSaved }: { person: DcEmployee | nul
   }
 
   return (
-    <Modal title={creating ? 'Add employee' : d.name || 'Employee'} sub={creating ? 'Someone who works for Dream Crafter.' : [DC_DEPARTMENT_LABEL, POSITION_LABEL[d.position]].join(' · ')}
+    <Modal title={creating ? 'Add employee' : d.name || 'Employee'} eyebrow="Employee Master" sub={creating ? 'Someone who works for Dream Crafter.' : [DC_DEPARTMENT_LABEL, POSITION_LABEL[d.position]].join(' · ')}
       onClose={onClose} width={640}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -128,15 +129,13 @@ function DcEmployeeForm({ person, onClose, onSaved }: { person: DcEmployee | nul
           <Field label="Name" value={d.name} onChange={e => set('name', e.target.value)} placeholder="Ahmad Firdaus" error={errors.name} />
           <PhoneInput label="Phone" value={d.phone ?? ''} onChange={v => set('phone', v || null)} error={errors.phone} />
           <Field label="Department" value={DC_DEPARTMENT_LABEL} readOnly />
-          <label className="sm:col-span-2 flex items-center gap-2.5 min-h-10 cursor-pointer">
-            <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={d.position === 'leader'}
-              onChange={e => setD(p => ({ ...p, position: e.target.checked ? 'leader' : 'employee', leaderAllowanceSen: e.target.checked ? p.leaderAllowanceSen : 0 }))} />
-            <span className="flex flex-col">
-              <span className="text-copy font-medium">Leader</span>
-              <span className="text-meta text-muted-ink">Leads a team and can get the leader allowance. Unticked: a normal employee.</span>
-            </span>
-          </label>
-          <Select label="Status" showLabel size="md" value={d.status} onChange={v => set('status', v === 'resigned' ? 'resigned' : 'active')}
+          {/* Main's Leader tick as one-tap chips: Leader, or a normal employee; leaving Leader clears the leader allowance. */}
+          <div className="sm:col-span-2">
+            <ChoiceChips label="Position" value={d.position} help="A leader leads a team and can get the leader allowance."
+              options={[{ value: 'employee', label: POSITION_LABEL.employee }, { value: 'leader', label: POSITION_LABEL.leader }]}
+              onChange={v => setD(p => ({ ...p, position: v, leaderAllowanceSen: v === 'leader' ? p.leaderAllowanceSen : 0 }))} />
+          </div>
+          <ChoiceChips label="Status" value={d.status} onChange={v => set('status', v === 'resigned' ? 'resigned' : 'active')}
             options={[{ value: 'active', label: 'Active' }, { value: 'resigned', label: 'Resigned' }]} />
           <DateField label="Join date" value={d.joinDate ?? ''} onChange={v => set('joinDate', v || null)} error={errors.joinDate} />
           {d.status === 'resigned' && (
