@@ -74,6 +74,7 @@ export default function EmployeesTab() {
   const [form, setForm] = useState<{ person: Employee | null } | null>(null);
   const [given, setGiven] = useState<{ name: string; employeeId: string; pin: string } | null>(null);
   const [query, setQuery] = useState('');
+  const [columnFiltersSlot, setColumnFiltersSlot] = useState<HTMLElement | null>(null);
   const people = data?.data ?? [];
   const url = useUrlState();
   const requestedDepartment = url.get('dept', 'all');
@@ -89,14 +90,14 @@ export default function EmployeesTab() {
   };
 
   const columns = useMemo<Column<Employee>[]>(() => [
-    { key: 'empNo', label: 'Emp No', value: e => e.employeeId, width: 100 },
-    { key: 'name', label: 'Name', value: e => e.name, hideable: false, width: 170, render: e => <span className="font-semibold">{e.name}</span> },
-    { key: 'departments', label: 'Departments', value: departmentsOf, width: 140 },
-    { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], width: 104 },
+    { key: 'empNo', label: 'Emp No', value: e => e.employeeId, filter: false, width: 100 },
+    { key: 'name', label: 'Name', value: e => e.name, filter: false, hideable: false, width: 170, render: e => <span className="font-semibold">{e.name}</span> },
+    { key: 'departments', label: 'Departments', value: departmentsOf, filter: false, width: 140 },
+    { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], filter: { kind: 'select' }, width: 104 },
+    { key: 'status', label: 'Status', type: 'status', value: e => statusOf(e).label, status: statusOf, width: 120 },
     { key: 'basic', label: 'Basic Salary', type: 'money', value: e => (e.payBasis === 'daily' ? e.dailyRateSen : e.basicSalarySen), width: 140,
       render: e => e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen) },
-    { key: 'status', label: 'Status', type: 'status', value: e => statusOf(e).label, status: statusOf, width: 120 },
-    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 280, align: 'right', render: e => actions(e) },
+    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 240, align: 'right', render: e => actions(e) },
   ], [mayEdit, mayRoster, mayGrant]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** The roster entries a person is on: one per department, sharing a login when both. Switching off leaves alone a
@@ -157,8 +158,10 @@ export default function EmployeesTab() {
 
       <DataTable<Employee>
         id="employees" columns={columns} rows={loading && people.length === 0 ? null : visiblePeople}
-        viewParams={['dept']} filtered={department !== 'all' || !!needle} onClearFilters={() => { setQuery(''); url.set({ dept: null, page: null }); }}
+        viewParams={['dept']} defaultSort="empNo:asc" filtered={department !== 'all' || !!needle} onClearFilters={() => { setQuery(''); url.set({ dept: null, page: null }); }}
+        inlineFiltersTarget={columnFiltersSlot}
         toolbar={<ListToolbar bare className="w-full" filters={[departmentFilter]} filtersLabel="Department"
+          after={<span ref={setColumnFiltersSlot} className="contents" />}
           search={{ value: query, onChange: setQuery, placeholder: 'Name, employee no, department', label: 'Search employees' }} />}
         rowKey={e => e.cleanerId ?? e.technicianId ?? e.renovatorId ?? e.name} pageSize={0} noun={['employee', 'employees']} exportName="employee-master"
         rowTone={e => (e.status !== 'active' || !e.isActive ? 'muted' : null)}
