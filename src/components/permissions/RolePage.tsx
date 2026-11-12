@@ -7,7 +7,7 @@ import { areaKeysOf, countChanged, countGrants, resolveRoleLevels, rulesToWrite 
 import type { AccessChart, Department, Position } from '../../lib/types';
 import { BackLink } from './MasterDetail';
 import RoleGrid, { groupByCompany } from './RoleGrid';
-import { SAVE_BAR, closedCompanyLabel, defaultRoleName, headCountWithoutPosition, sideLabel, visibleCategoriesOf, type RoleTarget } from './shared';
+import { NO_POSITION_LABEL, SAVE_BAR, closedCompanyLabel, headCountWithoutPosition, sideLabel, visibleCategoriesOf, type RoleTarget } from './shared';
 
 export interface RolePageProps {
   chart: AccessChart;
@@ -71,7 +71,7 @@ function RoleEditor({ chart, department, position, onBack, onSaved, onDirtyChang
 
   const { granted, full, available } = countGrants(levels, areaKeys);
   const isLocked = !chart.canEdit || isSaving;
-  const roleName = position?.name ?? defaultRoleName(department);
+  const roleName = position?.name ?? NO_POSITION_LABEL;
   const people = position ? position.headCount : headCountWithoutPosition(department);
   const closedNote = department.side === 'both'
     ? null

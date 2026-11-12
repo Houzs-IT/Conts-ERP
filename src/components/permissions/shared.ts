@@ -37,7 +37,6 @@ export const categorySide = (group: string): UserSide =>
 /** The Cleaning and Maintenance departments hold the cleaners' and technicians' logins, which are managed on Workers
  *  only: Users and roles never lists, offers or changes them. */
 export const isFieldKind = (kind: DepartmentKind): boolean => kind === 'cleaning' || kind === 'maintenance';
-export const needsPosition = (kind: DepartmentKind): boolean => kind !== 'management';
 
 export interface DeskCompany { side: UserSide; label: string; departments: Department[] }
 
@@ -100,8 +99,9 @@ export const visibleCategoriesOf = (categories: AccessCategory[], department: De
 export const headCountWithoutPosition = (department: Department): number =>
   department.headCount - department.positions.reduce((total, position) => total + position.headCount, 0);
 
-export const defaultRoleName = (department: Department): string =>
-  department.positions.some(position => position.name.trim().toLowerCase() === 'staff') ? 'Staff (no position)' : 'Staff';
+export const NO_POSITION_LABEL = 'No position';
+
+export const hasPeopleWithoutPosition = (department: Department): boolean => headCountWithoutPosition(department) > 0;
 
 export const closedCompanyLabel = (side: UserSide): string => (side === 'conts' ? 'Dream Crafter' : 'The Conts');
 

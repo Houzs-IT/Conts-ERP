@@ -11,7 +11,7 @@ import { Field } from '../components/Field';
 import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Select } from '../components/Select';
 import { Modal } from '../components/Modal';
-import { COMPANIES, KIND_NOTE, SIDE_OPTIONS, companiesOf, isFieldKind, needsPosition, sideLabel, useDepartments, type Company } from '../components/permissions/shared';
+import { COMPANIES, KIND_NOTE, SIDE_OPTIONS, companiesOf, isFieldKind, sideLabel, useDepartments, type Company } from '../components/permissions/shared';
 import { CompanyBadges } from '../components/permissions/CompanyBadges';
 import { Segmented } from '../components/Metric';
 import { StaleBanner } from '../components/DataState';
@@ -253,8 +253,8 @@ export default function UsersPage() {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) errs.email = 'Enter a valid work email.';
     if (rows.some(r => r.email.toLowerCase() === email.trim().toLowerCase())) errs.email = 'That email already has an account.';
     if (!departmentId) errs.departmentId = 'Pick a department.';
-    const invitedDepartment = departmentById.get(departmentId);
-    if (invitedDepartment && needsPosition(invitedDepartment.kind) && !positionId) errs.positionId = 'Pick a position.';
+    const positionProblem = positionProblemOf(departmentById.get(departmentId), positionId);
+    if (positionProblem) errs.positionId = positionProblem;
     if (Object.keys(errs).length) { setFieldErrors(errs); return; }
 
     setBusy(true); setFieldErrors({});
@@ -455,13 +455,15 @@ export default function UsersPage() {
   async function submitEdit(e: FormEvent) {
     e.preventDefault();
     if (!editing || busy) return;
-    const errs: { fullName?: string; email?: string; phone?: string } = {};
+    const errs: { fullName?: string; email?: string; phone?: string; positionId?: string } = {};
     if (!editName.trim()) errs.fullName = 'Enter a name.';
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(editEmail)) errs.email = 'Enter a valid email address.';
     // Only owners have a phone here; staff are invited without one, so their edit form matches.
     const isOwner = editing.role === 'owner';
     const phoneErr = isOwner ? phoneProblem(editPhone) : null;
     if (phoneErr) errs.phone = phoneErr;
+    const positionProblem = isOwner ? null : positionProblemOf(departmentById.get(editDepartmentId), editPositionId);
+    if (positionProblem) errs.positionId = positionProblem;
     // An owner has no department; a staff account must keep one.
     const noDepartment = !isOwner && !editDepartmentId;
     if (Object.keys(errs).length || noDepartment) { setEditErrors({ ...errs, ...(noDepartment ? { departmentId: 'Pick a department.' } : {}) }); return; }
@@ -663,7 +665,7 @@ export default function UsersPage() {
           <form id="invite-form" onSubmit={submitInvite} className="flex flex-col gap-4">
             <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" error={fieldErrors.fullName} />
             <Field label="Work email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@theconts.com" error={fieldErrors.email} />
-            <PlaceFields departments={departments} side={side} onSide={setSide} departmentId={departmentId} positionId={positionId} isPositionRequired
+            <PlaceFields departments={departments} side={side} onSide={setSide} departmentId={departmentId} positionId={positionId}
               onDepartment={v => { setDepartmentId(v); setPositionId(''); }} onPosition={setPositionId}
               errors={{ side: fieldErrors.side, departmentId: fieldErrors.departmentId, positionId: fieldErrors.positionId }} />
             <Select label="Reports to" showLabel size="md" value={managerId} onChange={setManagerId} placeholder="No manager"
@@ -699,7 +701,7 @@ export default function UsersPage() {
             <Field label="Full name" value={editName} onChange={e => setEditName(e.target.value)} error={editErrors.fullName} />
             <Field label="Email" type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} error={editErrors.email} />
             {editing.role === 'owner' && <PhoneInput label="Phone" value={editPhone} onChange={setEditPhone} error={editErrors.phone} />}
-            {editing.role !== 'owner' && <PlaceFields departments={departments} side={editSide} onSide={setEditSide} departmentId={editDepartmentId} positionId={editPositionId} isPositionRequired={false}
+            {editing.role !== 'owner' && <PlaceFields departments={departments} side={editSide} onSide={setEditSide} departmentId={editDepartmentId} positionId={editPositionId}
               onDepartment={v => { setEditDepartmentId(v); setEditPositionId(''); }} onPosition={setEditPositionId}
               errors={{ side: editErrors.side, departmentId: editErrors.departmentId, positionId: editErrors.positionId }} />}
             {editing.role !== 'owner' && editPlaceChanged && (
@@ -804,17 +806,22 @@ export default function UsersPage() {
 }
 
 /* ------------------------------ forms ------------------------------ */
-/** Works on, then department (required), then position (required on an invitation unless the department is Management), from the managed list. Only the departments on the
+function positionProblemOf(department: Department | undefined, positionId: string): string | null {
+  if (!department || positionId) return null;
+  return department.positions.length === 0 ? `${department.name} has no positions yet. Add one under Permissions > Setup first.` : 'Pick a position.';
+}
+
+/** Works on, then department (required), then position (required), from the managed list. Only the departments on the
  *  chosen side (or on both) are offered, so a department picked earlier is cleared when the side no longer fits it.
  *  A position belongs to one department, so changing the department clears the position. */
-function PlaceFields({ departments, side, onSide, departmentId, positionId, isPositionRequired, onDepartment, onPosition, errors }: {
-  departments: Department[]; side: UserSide; onSide: (s: UserSide) => void; departmentId: string; positionId: string; isPositionRequired: boolean;
+function PlaceFields({ departments, side, onSide, departmentId, positionId, onDepartment, onPosition, errors }: {
+  departments: Department[]; side: UserSide; onSide: (s: UserSide) => void; departmentId: string; positionId: string;
   onDepartment: (id: string) => void; onPosition: (id: string) => void;
   errors: { side?: string; departmentId?: string; positionId?: string };
 }) {
   const offered = departments.filter(d => !isFieldKind(d.kind) && sideFits(d, side));
   const dept = offered.find(d => d.id === departmentId);
-  const mustPickPosition = isPositionRequired && !!dept && needsPosition(dept.kind);
+  const hasNoPositions = !!dept && dept.positions.length === 0;
   const pickSide = (s: UserSide) => {
     onSide(s);
     const current = departments.find(d => d.id === departmentId);
@@ -834,14 +841,17 @@ function PlaceFields({ departments, side, onSide, departmentId, positionId, isPo
           {errors.departmentId && <span className={cx('text-meta', TONE.critical.text)}>{errors.departmentId}</span>}
         </div>
         <div className="flex flex-col gap-1">
-          <Select label="Position" showLabel size="md" value={positionId} onChange={onPosition} placeholder={mustPickPosition ? 'Pick a position' : 'No position'} disabled={!dept || dept.positions.length === 0}
+          <Select label="Position" showLabel size="md" value={positionId} onChange={onPosition} placeholder="Pick a position" disabled={!dept || hasNoPositions}
             options={(dept?.positions ?? []).map(p => ({ value: p.id, label: p.name }))} />
-          {errors.positionId && <span className={cx('text-meta', TONE.critical.text)}>{errors.positionId}</span>}
+          {errors.positionId && !hasNoPositions && <span className={cx('text-meta', TONE.critical.text)}>{errors.positionId}</span>}
         </div>
       </div>
       {dept && <span className="text-meta text-muted-ink">{departmentNote(dept)}</span>}
-      {mustPickPosition && dept.positions.length === 0 && (
-        <span className="text-meta text-muted-ink">{dept.name} has no positions yet. Add one under Permissions, Setup, before inviting anyone to it.</span>
+      {hasNoPositions && (
+        <div role="alert" className={cx('flex items-start gap-2 py-2.5 px-3 rounded-control border border-solid text-meta', TONE.warning.bg, TONE.warning.border, TONE.warning.text)}>
+          <Icon name="AlertTriangle" size="sm" />
+          <span>{dept.name} has no positions yet. Add one under Permissions &gt; Setup first, then pick it here.</span>
+        </div>
       )}
       {offered.length === 0 && <span className="text-meta text-muted-ink">No department works on this side yet. Add one under Permissions, Setup.</span>}
     </div>
