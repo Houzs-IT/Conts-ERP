@@ -129,7 +129,7 @@ export default function BookingsPage() {
 
   // Built in lib/screenQueries.ts, which lib/routePrefetch.ts also uses to start this read while the page downloads.
   const listPath = useMemo(() => bookingsPath(params), [params]);
-  const { data, loading, error, reload } = useApi<Payload>(listPath, FALLBACK);
+  const { data, loading, error, reload, fromSnapshot } = useApi<Payload>(listPath, FALLBACK);
 
   // The search box answers every keystroke locally; the URL (and so the server) follows once typing pauses.
   const [draft, setDraft] = useState(params.get('q') ?? '');
@@ -402,7 +402,7 @@ export default function BookingsPage() {
             const warn = t.money && (c?.count ?? 0) > 0;
             return (
               <StatTile key={t.key} label={t.label} onClick={() => setTodo(t.key)} active={todo === t.key} tone={warn ? 'warning' : undefined}
-                value={c ? `${num(c.count)}${t.money && c.count > 0 ? ` · ${rm(c.outstanding)}` : ''}` : '–'} loading={loading && !data} />
+                value={c ? `${num(c.count)}${t.money && c.count > 0 && !fromSnapshot ? ` · ${rm(c.outstanding)}` : ''}` : '–'} loading={loading && !data} />
             );
           })}
         </StatRow>

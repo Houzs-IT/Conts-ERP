@@ -1,4 +1,5 @@
 import type { ApiError } from './types';
+import { clearSnapshots, saveSnapshot } from './snapshots';
 
 // Fields written out rather than as constructor parameter properties, so Node can load this file for tests (type
 // stripping does not support those).
@@ -79,15 +80,27 @@ const answeredAt = new Map<string, number>();
  *  so a read sent while a write is on its way does not count either. */
 let writes = 0;
 export const writeCount = () => writes;
-/** A write started or finished: everything kept may be out of date. */
-export function wrote() { writes++; readCache.clear(); answeredAt.clear(); }
+/** Other tabs of this browser hear of each write, so a read one of them sent before it is not kept either (its
+ *  snapshot would otherwise come back on the next visit as if it were current). */
+const writesElsewhere: BroadcastChannel | null = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('conts-writes') : null;
+if (writesElsewhere) {
+  writesElsewhere.onmessage = () => forgetAll(false);
+  // Node (the tests) would otherwise stay running for it.
+  (writesElsewhere as BroadcastChannel & { unref?: () => void }).unref?.();
+}
+function forgetAll(stored: boolean) { writes++; readCache.clear(); answeredAt.clear(); clearSnapshots({ stored }); }
+/** A write started or finished: everything kept may be out of date, the saved snapshots (lib/snapshots.ts) included. */
+export function wrote() { forgetAll(true); try { writesElsewhere?.postMessage(1); } catch { /* closed */ } }
+/** Reads answered with Cache-Control: no-store. Never kept as a snapshot. */
+const noStore = new Set<string>();
 /** Keeps a read's answer. `sentAt` is writeCount() when the read was sent; an answer sent before the latest write is
- *  not kept. */
+ *  not kept. The main screens' reads are also kept as a snapshot for the next visit (lib/snapshots.ts decides which). */
 export function remember(path: string, data: unknown, sentAt?: number) {
   if (sentAt !== undefined && sentAt !== writes) return;
   readCache.delete(path);
   readCache.set(path, data);
   answeredAt.set(path, Date.now());
+  if (sentAt !== undefined && !noStore.has(path)) saveSnapshot(path, data);
   if (readCache.size > READ_CACHE_MAX) { const oldest = readCache.keys().next().value!; readCache.delete(oldest); answeredAt.delete(oldest); }
 }
 /** True when the kept answer for this read arrived within the last `ms` (and no write has emptied the cache since):
@@ -179,6 +192,9 @@ async function requestOnce<T>(path: string, init: RequestInit | undefined, isRea
   }
   if (!res) throw new ApiFailure(0, 'NETWORK', isRead ? CODE_MESSAGE.NETWORK : MAYBE_SAVED);
 
+  if (isRead) {
+    if (/no-store/i.test(res.headers.get('cache-control') ?? '')) noStore.add(path); else noStore.delete(path);
+  }
   if (res.status === 204) return undefined as T;
 
   const text = await res.text();

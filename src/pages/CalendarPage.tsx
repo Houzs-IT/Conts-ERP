@@ -13,6 +13,7 @@ import { DemoReservationModal, useDemoOn } from '../components/demo/DemoRecords'
 import { channelNote, type ChannelSync } from '../lib/bookingStatus';
 import { StaleBanner } from '../components/DataState';
 import { useApi } from '../lib/useApi';
+import { snapshotLocked } from '../lib/snapshotView';
 import { useToast } from '../components/Toast';
 import { incomeLockedToast } from '../lib/lockNotice';
 import { useSession } from '../lib/session';
@@ -529,16 +530,16 @@ function CalendarBoard() {
               )}
               {groups.length > 1 && (
                 // Phones fold one building at a time from its header; the toolbar there has no room for a third button.
-                <button type="button" className={`${toolBtn} hidden! md:inline-flex!`} onClick={() => setFolded(allFolded ? {} : Object.fromEntries(groups.map(g => [g.id, true])))}
+                <button type="button" data-live className={`${toolBtn} hidden! md:inline-flex!`} onClick={() => setFolded(allFolded ? {} : Object.fromEntries(groups.map(g => [g.id, true])))}
                   aria-label={allFolded ? 'Expand all buildings' : 'Collapse all buildings'} title={allFolded ? 'Expand all buildings' : 'Collapse all buildings'}>
                   <Icon name={allFolded ? 'UnfoldVertical' : 'FoldVertical'} size="sm" /><span className="hidden md:inline">{allFolded ? 'Expand all' : 'Collapse all'}</span>
                 </button>
               )}
-              <button type="button" className={`${toolBtn} hidden! md:inline-flex!`} onClick={() => setShowFree(v => !v)} aria-pressed={showFree}
+              <button type="button" data-live className={`${toolBtn} hidden! md:inline-flex!`} onClick={() => setShowFree(v => !v)} aria-pressed={showFree}
                 title={showFree ? 'Hide the free-unit count on each building row' : 'Show how many units are free each night on each building row'}>
                 <Icon name={showFree ? 'EyeOff' : 'Eye'} size="sm" /><span className="hidden md:inline">{showFree ? 'Hide free count' : 'Show free count'}</span>
               </button>
-              <button type="button" className={`${toolBtn} ${expanded ? 'border-primary! bg-primary-soft! text-[var(--color-primary-ink)]!' : ''}`} onClick={() => { setRatesPref(!expanded); setUnitOpen({}); }}
+              <button type="button" data-live className={`${toolBtn} ${expanded ? 'border-primary! bg-primary-soft! text-[var(--color-primary-ink)]!' : ''}`} onClick={() => { setRatesPref(!expanded); setUnitOpen({}); }}
                 aria-pressed={expanded} aria-label={expanded ? 'Hide prices' : 'Show prices'} title={expanded ? 'Hide the price rows' : 'Show the availability and price rows under every unit'}>
                 <Icon name="Tag" size="sm" /><span className="hidden md:inline">{expanded ? 'Hide prices' : 'Show prices'}</span>
               </button>
@@ -658,7 +659,7 @@ function CalendarBoard() {
                                 className="w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
                             </label>
                           )}
-                          <button type="button" aria-expanded={rowOpen} onClick={() => setUnitOpen(o => ({ ...o, [u.id]: !rowOpen }))}
+                          <button type="button" data-live aria-expanded={rowOpen} onClick={() => setUnitOpen(o => ({ ...o, [u.id]: !rowOpen }))}
                             title={`${u.unitNumber} · ${buildingName(u.propertyName)} · ${link.label}${readiness ? ' · ' + readiness.label : ''} · ${rowOpen ? 'hide' : 'show'} rates`}
                             className={`flex-1 min-w-0 flex items-center gap-1 pl-2 ${selectable ? 'md:pl-0' : 'md:pl-1.5'} pr-2 md:pr-3 py-0 m-0 border-none bg-transparent hover:bg-muted/60 cursor-pointer text-left font-sans`}>
                             <span className="hidden md:grid w-6 h-6 flex-none place-items-center text-muted-ink">
@@ -691,6 +692,8 @@ function CalendarBoard() {
                           aria-label={`${u.unitNumber} nights`}
                           onPointerDown={e => {
                             lastPointer.current = e.pointerType;
+                            // A saved snapshot is view-only: no nights are picked until the fresh board is in.
+                            if (snapshotLocked()) return;
                             if (e.button !== 0 || phone || e.pointerType === 'touch') return;
                             const i = nightAt(e);
                             if (i < 0 || cells[i]) return;
@@ -721,6 +724,7 @@ function CalendarBoard() {
                             if (i < 0 || i >= span) return;
                             const tapMode = phone || lastPointer.current === 'touch';
                             if (!tapMode) { if (cells[i]) setOpenBlock(cells[i]); return; }
+                            if (snapshotLocked()) { if (cells[i]) setOpenBlock(cells[i]); return; }
                             // Phones: the first tap marks the first night, the second the last.
                             if (tapStart && tapStart.unitId === u.id) { openPick(u, tapStart.i, i, e.clientX, e.clientY); return; }
                             if (cells[i]) { setOpenBlock(cells[i]); return; }
@@ -728,8 +732,8 @@ function CalendarBoard() {
                             setTapStart({ unitId: u.id, i });
                             setPicked({ unitId: u.id, a: i, b: i });
                           }}
-                          onDragOver={e => { if (dragRef.current) e.preventDefault(); }}
-                          onDrop={e => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); dropOnDay(u.id, Math.floor((e.clientX - r.left) / COL)); }}>
+                          onDragOver={e => { if (dragRef.current && !snapshotLocked()) e.preventDefault(); }}
+                          onDrop={e => { e.preventDefault(); if (snapshotLocked()) return; const r = e.currentTarget.getBoundingClientRect(); dropOnDay(u.id, Math.floor((e.clientX - r.left) / COL)); }}>
                           <div aria-hidden className="absolute top-0 bottom-0 hidden group-hover:block bg-sunken/80 pointer-events-none" style={{ left: 'var(--hx, -100px)', width: COL }} />
                           {picked?.unitId === u.id && (() => {
                             const lo = Math.min(picked.a, picked.b), hi = Math.max(picked.a, picked.b), n = hi - lo + 1;
@@ -762,6 +766,8 @@ function CalendarBoard() {
                                 aria-label={`${name} · ${phase === 'hold' ? holdName(b) : ch.label} · ${PHASE_LABEL[phase]} · ${dateRange(b.checkIn, b.checkOut)}`}
                                 onDragStart={ev => {
                                   setHover(null);
+                                  // Dates are not moved from a saved snapshot: the booking may have changed since.
+                                  if (snapshotLocked()) { ev.preventDefault(); refusedDrag.current = true; window.setTimeout(() => { refusedDrag.current = false; }, 400); return; }
                                   if (!movable) {
                                     // A booking site owns its booking's dates: moving it here would leave the site on the old ones.
                                     ev.preventDefault();
@@ -961,7 +967,7 @@ function BuildingRowHeader({ name, units, folded, showToggle, onToggle, picked, 
               aria-label={`Select every unit in ${name}`} className="w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
           </label>
         )}
-        <button type="button" onClick={onToggle} disabled={!showToggle} aria-expanded={!folded}
+        <button type="button" data-live onClick={onToggle} disabled={!showToggle} aria-expanded={!folded}
           title={`${name} · ${plural(n, 'unit')}${showToggle ? (folded ? ' · show its units' : ' · fold it away') : ''}`}
           className={`flex-1 min-w-0 flex items-center gap-1 ${picked !== null ? 'pl-0' : 'pl-1.5'} pr-2 md:pr-3 min-h-8 py-1 m-0 border-none bg-transparent enabled:hover:bg-muted/60 enabled:cursor-pointer text-left font-sans text-ink`}>
           {showToggle && <span className="w-5 h-5 flex-none grid place-items-center text-muted-ink"><Icon name={folded ? 'ChevronRight' : 'ChevronDown'} size="sm" /></span>}

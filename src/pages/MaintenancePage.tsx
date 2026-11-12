@@ -124,7 +124,7 @@ export default function MaintenancePage() {
   const [isAddingPassKey, setIsAddingPassKey] = useState(false);
   const canAddPassKey = !!user && !FIELD_ROLES.includes(user.role) && user.role !== 'owner';
 
-  const { data, loading, error, reload: reloadData } = useApi<Payload>('/maintenance/issues');
+  const { data, loading, error, reload: reloadData, fromSnapshot } = useApi<Payload>('/maintenance/issues');
   // Asked at the same time as the full list and much smaller, so the header, the tab counts and the Open tab's first rows
   // show before every job has arrived (performance, 12 Nov 2026); the full list replaces it the moment it lands.
   const first = useApi<FirstView>(data ? null : `/maintenance/issues?view=open&limit=${FIRST_ROWS}`);
@@ -182,7 +182,7 @@ export default function MaintenancePage() {
   const counts = data ? { open: openTab.length, urgent, support: support.length, approval: approval.length, passKeys: passKeys.length, monthCost }
     : early ? { ...early.summary, monthCost: early.summary.monthCost ?? 0 } : null;
   const sub = counts
-    ? `${counts.open} open · ${counts.urgent} urgent${counts.support ? ` · ${counts.support} need support` : ''} · ${counts.approval} awaiting owner approval${money ? ` · this month ${rm(counts.monthCost)}` : ''}`
+    ? `${counts.open} open · ${counts.urgent} urgent${counts.support ? ` · ${counts.support} need support` : ''} · ${counts.approval} awaiting owner approval${money && !fromSnapshot && !first.fromSnapshot ? ` · this month ${rm(counts.monthCost)}` : ''}`
     : 'Maintenance jobs on every unit';
   // The first view only fills the Open tab with no search; any other view waits for the full list.
   const earlyRows = early && tab === 'open' && !ql ? early.data : null;

@@ -1,4 +1,5 @@
 import type { AnchorHTMLAttributes, CSSProperties, ButtonHTMLAttributes, ReactNode } from 'react';
+import { REFRESHING, useSnapshotLock } from '../lib/snapshotView';
 
 /** `outline` is another name for `secondary` and `ghost` for `tertiary`: same look, for the primary / outline / ghost naming. */
 type Variant = 'primary' | 'secondary' | 'outline' | 'tertiary' | 'ghost' | 'brand' | 'danger';
@@ -14,6 +15,9 @@ interface Props extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'
   children: ReactNode;
   /** Required whenever disabled. A disabled control must say why. */
   disabledReason?: string;
+  /** Changes nothing (opens another page, a filter, a tab), so it stays usable while the page shows a saved snapshot.
+   *  Every other button is disabled then, with the tooltip "Refreshing…" (lib/snapshotView.ts). */
+  live?: boolean;
 }
 
 const base: CSSProperties = {
@@ -43,8 +47,12 @@ const variants: Record<Look, CSSProperties> = {
 };
 
 export function Button({
-  variant = 'secondary', size = 'md', loading, icon, children, disabled, disabledReason, style, ...rest
+  variant = 'secondary', size = 'md', loading, icon, children, disabled: ownDisabled, disabledReason: ownReason, style, live, ...rest
 }: Props) {
+  // A saved snapshot is on screen: nothing may act on it until the fresh answer has landed.
+  const locked = useSnapshotLock() && !live && !ownDisabled;
+  const disabled = ownDisabled || locked;
+  const disabledReason = locked ? REFRESHING : ownReason;
   const isDisabled = disabled || loading;
   // Busy keeps the button's own colours and label, with a spinner in front: the person sees which action is running.
   // Only a truly disabled button greys out.
@@ -53,6 +61,7 @@ export function Button({
   return (
     <button
       {...rest}
+      {...(live ? { 'data-live': '' } : {})}
       className={['ui-btn', rest.className].filter(Boolean).join(' ')}
       data-variant={look}
       disabled={isDisabled}

@@ -100,8 +100,8 @@ type SegmentedProps<K extends string> = { label: string; options: SegmentOption<
 
 export function Segmented<K extends string>(props: SegmentedProps<K>) {
   const narrow = useNarrow();
-  if (narrow && props.options.length > PHONE_MAX_OPTIONS) return <SegmentedPicker {...props} />;
-  return <SegmentedRow {...props} />;
+  // A choice of view, never an action: usable while a saved snapshot is shown (lib/snapshotView.ts).
+  return <span data-live className="contents">{narrow && props.options.length > PHONE_MAX_OPTIONS ? <SegmentedPicker {...props} /> : <SegmentedRow {...props} />}</span>;
 }
 
 function useNarrow() {

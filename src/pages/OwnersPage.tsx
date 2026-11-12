@@ -113,7 +113,9 @@ function OwnerList() {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setOpen(m => ({ ...m, [id]: !m[id] }));
 
-  const { data, loading, error, reload } = useApi<Payload>(`/owners${month === thisMonth ? '' : `?month=${month}`}`, FALLBACK);
+  const { data, loading, error, reload, fromSnapshot } = useApi<Payload>(`/owners${month === thisMonth ? '' : `?month=${month}`}`, FALLBACK);
+  // Money is not shown from a saved snapshot (owner, 12 Nov 2026, rule 3): the totals wait for the fresh answer.
+  const figures = data && !fromSnapshot;
   const filters = useFinanceFilters();
   const buildingNameOf = useMemo(() => new Map((filters?.buildings ?? []).map(b => [b.id, buildingName(b.name)])), [filters]);
   const buildingsOf = (o: Owner) => [...new Set(o.units.map(u => (u.buildingId ? buildingNameOf.get(u.buildingId) : null)).filter(Boolean))].join(', ');
@@ -361,10 +363,10 @@ function OwnerList() {
       </div>
       {/* The month's payout leads as the dark hero tile; the split and the gross beside it (StatTile, Conts DS v2). */}
       <StatRow cols={4}>
-        <StatTile hero label="To pay owners" value={data ? rm(portfolioNet) : undefined} hint={data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')}` : undefined} />
-        <StatTile label="From managed units" value={data ? rm(portfolioManagedNet) : undefined} hint="Income split, after costs" />
-        <StatTile label="Guaranteed rent" value={data ? rm(portfolioGuaranteed) : undefined} hint="GRR units, fixed" />
-        <StatTile className="max-sm:col-span-2" label="Gross income" value={data ? rm(portfolioManagedGross) : undefined} hint="Managed units, before split" />
+        <StatTile hero label="To pay owners" value={figures ? rm(portfolioNet) : undefined} loading={fromSnapshot || (loading && !data)} hint={data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')}` : undefined} />
+        <StatTile label="From managed units" value={figures ? rm(portfolioManagedNet) : undefined} loading={fromSnapshot || (loading && !data)} hint="Income split, after costs" />
+        <StatTile label="Guaranteed rent" value={figures ? rm(portfolioGuaranteed) : undefined} loading={fromSnapshot || (loading && !data)} hint="GRR units, fixed" />
+        <StatTile className="max-sm:col-span-2" label="Gross income" value={figures ? rm(portfolioManagedGross) : undefined} loading={fromSnapshot || (loading && !data)} hint="Managed units, before split" />
       </StatRow>
       <details className="text-meta text-muted-ink -mt-1">
         <summary className="cursor-pointer select-none w-fit">How these are worked out</summary>

@@ -584,7 +584,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
     <>
       {header}
       {!noToolbar && (
-        <div className="@container/tb flex items-center gap-2 flex-wrap py-[10px] px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+        <div data-live className="@container/tb flex items-center gap-2 flex-wrap py-[10px] px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
           {toolbar && <div className="dt-toolbar flex items-center gap-2 flex-wrap flex-[1_1_260px] min-w-0">{toolbar}</div>}
           <div className={cx('flex items-center gap-2 flex-wrap max-md:flex-[1_1_auto] max-md:justify-end', 'ml-auto')}>
             {actions}
@@ -687,7 +687,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
               </colgroup>
               {/* The header line is an inset shadow on each cell, not a border: under border-collapse a sticky cell's
                   border stays behind while it sticks, and rows scrolling under it showed through (Hookka a55394608). */}
-              <thead>
+              <thead data-live>
                 <tr>
                   {pickCol && (
                     <th className="sticky top-0 z-[2] bg-muted [box-shadow:inset_0_-1px_0_var(--color-line)] pl-[22px] pr-1 py-2 text-left">
@@ -843,7 +843,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
         const c = byKey.get(panel.slice(4));
         if (!c || !filterOf(c)) return null;
         return (
-          <Floating anchor={headAnchor} open onClose={closePanel} width={290} label={`Filter ${c.label}`}>
+          <Floating anchor={headAnchor} open onClose={closePanel} width={290} label={`Filter ${c.label}`} live>
             <div className="p-2.5 flex flex-col gap-2">
               <span className="text-meta font-semibold">{c.label}</span>
               <FilterEditor col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)} onDone={closePanel} autoFocus />
@@ -852,7 +852,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
         );
       })()}
 
-      <Floating anchor={colsBtn} fallback={moreBtn} open={panel === 'columns'} onClose={closePanel} width={300} align="right" label="Columns">
+      <Floating anchor={colsBtn} fallback={moreBtn} open={panel === 'columns'} onClose={closePanel} width={300} align="right" label="Columns" live>
         <ColumnsPanel defs={byKey} layout={layoutCols} onChange={setCols} onReset={() => setCols(mergeColumns(columns, null))} />
       </Floating>
 
@@ -874,7 +874,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       </Floating>
 
       {!noViews && (
-        <Floating anchor={viewsBtn} fallback={moreBtn} open={panel === 'views'} onClose={closePanel} width={320} align="right" label="Saved views">
+        <Floating anchor={viewsBtn} fallback={moreBtn} open={panel === 'views'} onClose={closePanel} width={320} align="right" label="Saved views" live>
           <ViewsPanel views={views} activeId={activeView} onApply={v => { setActiveView(v.id); applyLayout(v.layout); closePanel(); }}
             onSaveNew={() => { closePanel(); setSaving({ name: '', scope: 'mine', isDefault: false }); }}
             onUpdate={async v => {

@@ -271,3 +271,14 @@ body:has([aria-modal="true"]:not([data-side-drawer])) .app-main { overflow: hidd
   .hit-target { position: relative; }
   .hit-target::after { content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 44px); transform: translate(-50%, -50%); }
 }
+
+/* A saved snapshot is on screen (lib/snapshotView.ts): the page is display-only until the fresh answer lands. Every
+   action control on the page or in what opens over it looks disabled (Button disables itself), and figures are muted
+   so nobody reads them as live (owner, 12 Nov 2026, rules 2 and 3). Menus, tabs, filters and pagers stay usable. */
+html[data-snapshot-shown] :is([data-app-main], [role="dialog"]) :is(button, [role="button"], input[type="checkbox"], input[type="radio"], select):not(.ui-btn, [data-live], [data-live] *, [role="tablist"] *, [role="tab"], nav *) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+html[data-snapshot-shown] [data-app-main] :is(.tabular-nums, [data-money]) {
+  color: var(--color-text-muted);
+}
