@@ -109,7 +109,7 @@ export default function BookingsPage() {
   const toast = useToast();
   const { user } = useSession();
   // Marking host payouts received records money: the server wants Edit on Finance (reservations/mark-paid-out.ts).
-  const canMoney = mayWork(user, 'finance');
+  const canMoney = mayWork(user, 'reservationPayments');
   const canOps = mayWork(user, 'reservations');
   // Phones list bookings as cards to open, not to tick: bulk actions stay on tablet and desktop.
   const phone = useMedia('(max-width: 767.98px)');

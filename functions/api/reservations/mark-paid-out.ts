@@ -15,7 +15,7 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!can(session, 'finance', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Finance record host payouts.', 403);
+  if (!can(session, 'reservationPayments', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Reservation payments record host payouts.', 403);
   const schema = await moneySchema(env);
   if (!schema.payments) return fail('NOT_READY', 'Payments are not set up on this database yet (migration 0091).', 503);
 

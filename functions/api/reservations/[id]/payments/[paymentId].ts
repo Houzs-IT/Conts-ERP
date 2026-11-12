@@ -8,7 +8,7 @@ import { requireSession } from '../../../../_lib/auth';
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!can(session, 'finance', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Finance remove payments.', 403);
+  if (!can(session, 'reservationPayments', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Reservation payments remove payments.', 403);
 
   const p = await one<any>(env, 'SELECT * FROM booking_payments WHERE id = ? AND reservation_id = ?', String(params.paymentId), String(params.id));
   if (!p) return fail('NOT_FOUND', 'That payment does not exist.', 404);

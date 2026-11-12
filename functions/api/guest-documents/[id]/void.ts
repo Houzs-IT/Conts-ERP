@@ -8,7 +8,7 @@ import { voidDoc, DocRefused } from '../../../_lib/guestDocuments';
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!can(session, 'finance', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Finance void guest documents.', 403);
+  if (!can(session, 'reservationPayments', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Reservation payments void guest documents.', 403);
   const b = await request.json<{ reason?: string }>().catch(() => null);
   try {
     return json(await voidDoc(env, session, String(params.id), typeof b?.reason === 'string' ? b.reason : ''));

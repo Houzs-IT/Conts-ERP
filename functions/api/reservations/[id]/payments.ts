@@ -10,7 +10,7 @@ import { approvalsEnabled, submit } from '../../../_lib/approvals';
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!can(session, 'finance', 'view')) return fail('FORBIDDEN', 'Payments are for people with Finance access.', 403);
+  if (!can(session, 'reservationPayments', 'view')) return fail('FORBIDDEN', 'Payments are for people with Reservation payments access.', 403);
   if (!(await moneySchema(env)).payments) return fail('NOT_READY', 'Payments are not set up on this database yet (migration 0091).', 503);
   const rows = await all<any>(env, `
     SELECT bp.*, u.full_name AS created_by_name FROM booking_payments bp LEFT JOIN users u ON u.id = bp.created_by
@@ -24,7 +24,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!can(session, 'finance', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Finance record payments.', 403);
+  if (!can(session, 'reservationPayments', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Reservation payments record payments.', 403);
   const schema = await moneySchema(env);
   if (!schema.payments) return fail('NOT_READY', 'Payments are not set up on this database yet (migration 0091).', 503);
 

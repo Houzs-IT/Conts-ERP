@@ -8,7 +8,7 @@ import { issue, toDoc, DOC_SQL, DocRefused, type DocType } from '../../_lib/gues
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!can(session, 'finance', 'view')) return fail('FORBIDDEN', 'Guest documents are for people with Finance access.', 403);
+  if (!can(session, 'reservationPayments', 'view')) return fail('FORBIDDEN', 'Guest documents are for people with Reservation payments access.', 403);
 
   const url = new URL(request.url);
   const type = url.searchParams.get('type'), status = url.searchParams.get('status'), month = url.searchParams.get('month');
@@ -56,7 +56,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!can(session, 'finance', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Finance issue guest documents.', 403);
+  if (!can(session, 'reservationPayments', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Reservation payments issue guest documents.', 403);
   const b = await request.json<{ type?: string; reservationId?: string; paymentId?: string }>().catch(() => null);
   if (b?.type !== 'invoice' && b?.type !== 'receipt') return fail('VALIDATION', 'Choose an invoice or a receipt.', 422);
   if (!b.reservationId) return fail('VALIDATION', 'Say which reservation.', 422);

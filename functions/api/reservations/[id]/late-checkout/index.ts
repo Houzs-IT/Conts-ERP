@@ -22,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     checkOut: r.check_out, checkOutTime: r.check_out_time || '11:00',
     open: await openLateCheckout(env, id),
     canRequest: ready && !lateRefusal(r),
-    canPay: ready && can(session, 'finance', 'edit'),
+    canPay: ready && can(session, 'reservationPayments', 'edit'),
   });
 };
 

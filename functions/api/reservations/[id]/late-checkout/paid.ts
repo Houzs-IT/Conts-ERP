@@ -15,7 +15,7 @@ const rm = (sen: number) => rmText(sen);
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response;
-  if (!can(session, 'finance', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Finance record payments.', 403);
+  if (!can(session, 'reservationPayments', 'edit')) return fail('FORBIDDEN', 'Only people who can edit Reservation payments record payments.', 403);
   if (!(await lateCheckoutReady(env))) return fail('NOT_READY', 'Late checkout is not set up on this database yet (migration 0138).', 503);
 
   const id = String(params.id);

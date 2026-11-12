@@ -58,6 +58,9 @@ export const AREAS: Area[] = [
   { key: 'calendar', label: 'Calendar', group: 'Reservations', api: ['blocks'] },
   { key: 'reservations', label: 'Reservations', group: 'Reservations', api: ['reservations', 'guest-documents'] },
   { key: 'guests', label: 'Guests', group: 'Reservations', api: ['guests'] },
+  // The money on a booking: payments, refunds, host payouts, guest receipts and invoices, late checkout paid. It followed
+  // Finance until 12 Nov 2026 (migration 0311); finance staff get it without being able to change bookings.
+  { key: 'reservationPayments', label: 'Reservation payments', group: 'Reservations', api: [], strictRead: true },
   { key: 'operations', label: 'Today', group: 'Operations', api: ['operations'] },
   { key: 'cleaning', label: 'Cleaning', group: 'Operations', api: ['housekeeping', 'tasks'] },
   { key: 'maintenance', label: 'Maintenance', group: 'Operations', api: ['maintenance'] },
@@ -212,14 +215,14 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | string[
   { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a reservation or a guest record; the Messages inbox keeps its own area.' },
   { method: 'GET', path: /^\/api\/finance\/yearly-report$/, area: 'reports', why: 'The yearly unit report sits under Reports in the menu.' },
   { method: 'GET', path: /^\/api\/finance\/ygrr-report$/, area: 'reports', why: 'The YGRR report (Package D) sits under Reports in the menu.' },
-  // Finance reads bookings but does not make or change them (owner, 11 Oct 2026); taking a guest's payment, recording
-  // a channel payout and issuing a receipt are finance's own work, so those writes follow the Finance area.
-  { method: 'POST', path: /^\/api\/reservations\/[^/]+\/payments$/, area: 'finance', why: 'Recording a guest payment on a reservation is money work.' },
-  { method: 'DELETE', path: /^\/api\/reservations\/[^/]+\/payments\/[^/]+$/, area: 'finance', why: 'Removing a wrongly recorded guest payment is money work.' },
-  { method: 'POST', path: /^\/api\/reservations\/[^/]+\/late-checkout\/paid$/, area: 'finance', why: 'Marking a late checkout paid records a guest payment.' },
-  { method: 'POST', path: /^\/api\/reservations\/mark-paid-out$/, area: 'finance', why: 'Recording a channel payout is money work.' },
-  { method: 'POST', path: /^\/api\/guest-documents$/, area: 'finance', why: 'Issuing a guest receipt or invoice is money work.' },
-  { method: 'POST', path: /^\/api\/guest-documents\/[^/]+\/void$/, area: 'finance', why: 'Voiding a guest receipt or invoice is money work.' },
+  // Taking a guest's payment, recording a channel payout and issuing a receipt follow Reservation payments, so finance staff
+  // do them without making or changing bookings (owner, 11 Oct 2026; its own area since 12 Nov 2026).
+  { method: 'POST', path: /^\/api\/reservations\/[^/]+\/payments$/, area: 'reservationPayments', why: 'Recording a guest payment on a reservation is money work.' },
+  { method: 'DELETE', path: /^\/api\/reservations\/[^/]+\/payments\/[^/]+$/, area: 'reservationPayments', why: 'Removing a wrongly recorded guest payment is money work.' },
+  { method: 'POST', path: /^\/api\/reservations\/[^/]+\/late-checkout\/paid$/, area: 'reservationPayments', why: 'Marking a late checkout paid records a guest payment.' },
+  { method: 'POST', path: /^\/api\/reservations\/mark-paid-out$/, area: 'reservationPayments', why: 'Recording a channel payout is money work.' },
+  { method: 'POST', path: /^\/api\/guest-documents$/, area: 'reservationPayments', why: 'Issuing a guest receipt or invoice is money work.' },
+  { method: 'POST', path: /^\/api\/guest-documents\/[^/]+\/void$/, area: 'reservationPayments', why: 'Voiding a guest receipt or invoice is money work.' },
   { method: 'POST', path: /^\/api\/maintenance\/issues\/[^/]+\/approve$/, area: 'finance', why: 'Recording an owner\'s approval of a repair quote is a money decision.' },
   { method: 'GET', path: /^\/api\/audit$/, area: null, why: 'The History panel on every record: the handler applies the area of the record asked for; the whole trail stays management and finance only.' },
   { method: 'GET', path: /^\/api\/contract-types$/, area: null, why: 'The contract type list that the Units, Owners and Contracts screens all show; changing it stays under Units.' },

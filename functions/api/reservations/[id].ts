@@ -170,7 +170,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   } as any;
   const ota = OTA_CHANNELS.includes(row.channel);
   // Documents and money requests arrive with the booking, so the money section never fills in after it opens.
-  const moneyRole = can(session, 'finance', 'view');
+  const moneyRole = can(session, 'reservationPayments', 'view');
   const [documents, approvals] = moneyRole
     ? await Promise.all([documentsFor(env, id), pendingFor(env, session, 'reservations', id).catch(() => [])])
     : [[], []];
@@ -198,7 +198,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
       // A booking site owns its bookings' dates and price: they change on the site and come back through Channex.
       changeDates: live && !ota,
       changeDatesReason: !live ? 'A past, cancelled or no-show reservation cannot move.' : ota ? `This is a ${CHANNEL_LABEL[row.channel]} reservation: its dates and price are set on ${CHANNEL_LABEL[row.channel]}. Change them there; the change comes back here by itself.` : null,
-      recordPayment: schema.payments && can(session, 'finance', 'edit') && row.channel !== 'maintenance_block' && row.channel !== 'owner_stay',
+      recordPayment: schema.payments && can(session, 'reservationPayments', 'edit') && row.channel !== 'maintenance_block' && row.channel !== 'owner_stay',
       editDetails: true,
       paymentsReady: schema.payments,
     },
