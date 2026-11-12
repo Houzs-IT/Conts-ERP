@@ -697,14 +697,14 @@ export function DataTable<R>(props: DataTableProps<R>) {
                     const k = sortKeyOf(c);
                     const on = !!k && sortCol === k;
                     const right = c.align === 'right' || (!c.align && RIGHT.includes(typeOf(c)));
-                    const f = filterOf(c);
-                    const fOn = !!filterValue(c);
+                    const f = inlineFiltersHost ? null : filterOf(c);
+                    const fOn = !!f && !!filterValue(c);
                     return (
                       <th key={c.key} scope="col" aria-sort={on ? (sortDir === 'desc' ? 'descending' : 'ascending') : undefined}
                         className={cx('group/th sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] py-2 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink',
                           i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]', i === visible.length - 1 && 'pr-[22px]', right ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left')}>
-                        <span className={cx('flex items-center gap-[2px] max-w-full', right && 'relative w-fit ml-auto flex-row-reverse',
-                          fOn && (right ? '[@media(hover:hover)]:pl-[26px]' : '[@media(hover:hover)]:pr-[23px]'))}>
+                        <span className={cx('relative w-fit flex items-center gap-[2px] max-w-full', right && 'ml-auto flex-row-reverse',
+                          fOn && (right ? '[@media(hover:hover)]:pl-[26px]' : '[@media(hover:hover)]:pr-[26px]'))}>
                           {k ? (
                             <button type="button" onClick={() => toggleSort(c)} title={c.title ?? `Sort by ${c.label}`}
                               className={cx('inline-flex items-center gap-1 min-w-0 font-sans text-caption font-bold uppercase tracking-[0.09em] bg-transparent border-none cursor-pointer p-0', on ? 'text-ink' : 'text-muted-ink')}>
@@ -716,11 +716,13 @@ export function DataTable<R>(props: DataTableProps<R>) {
                             <button type="button" aria-label={`Filter ${c.label}`} title={`Filter ${c.label}`}
                               onClick={e => { headAnchor.current = e.currentTarget; setPanel(p => (p === `col:${c.key}` ? null : `col:${c.key}`)); }}
                               className={cx('w-6 h-6 grid place-items-center shrink-0 rounded-[6px] border-none cursor-pointer', fOn ? 'bg-black text-white' : 'bg-transparent text-[var(--color-line-strong)] hover:text-ink hover:bg-card',
-                                // With a mouse the filter button floats over the cell edge, so the label gets its width back and
+                                // With a mouse the filter button floats beside the label, so the label gets its width back and
                                 // "Occupancy" no longer breaks mid-word; idle it shows on hover, set it stays visible. Touch screens keep it in place.
                                 '[@media(hover:hover)]:absolute [@media(hover:hover)]:top-1/2 [@media(hover:hover)]:-translate-y-1/2',
                                 !fOn && '[@media(hover:hover)]:bg-muted [@media(hover:hover)]:opacity-0 group-hover/th:opacity-100 focus-visible:opacity-100',
-                                !right ? 'right-1' : fOn ? '[@media(hover:hover)]:left-0' : '[@media(hover:hover)]:right-full [@media(hover:hover)]:mr-0.5')}>
+                                right
+                                  ? (fOn ? '[@media(hover:hover)]:left-0' : '[@media(hover:hover)]:right-full [@media(hover:hover)]:mr-0.5')
+                                  : (fOn ? '[@media(hover:hover)]:right-0' : '[@media(hover:hover)]:left-full [@media(hover:hover)]:ml-0.5'))}>
                               <Icon name="ListFilter" size="sm" />
                             </button>
                           )}
