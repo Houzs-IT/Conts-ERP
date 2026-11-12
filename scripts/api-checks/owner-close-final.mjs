@@ -258,6 +258,8 @@ await db(`DELETE FROM owner_contracts WHERE id = 'ocf-contract2'`);
 const pgReal = !/emscripten|emcc/i.test(String((await db('SELECT version() AS v'))[0]?.v ?? ''));
 if (pgReal) {
   const pause = ms => new Promise(res => setTimeout(res, ms));
+  // The work hands back the request it started as { p }: postgres.js waits for a returned promise before it commits, which
+  // would hold the lock until the request timed out.
   const inTx = async work => { const c = postgres(DB_URL, { max: 1, onnotice: () => {}, connection: { search_path: 'pos' } }); try { return await c.begin(work); } finally { await c.end({ timeout: 5 }); } };
   // A second owner with one unit, every October step locked and a draft made after the locks.
   await db(`INSERT INTO owners (id, display_name, email, bank_name, bank_account_last4, created_at, updated_at) VALUES ('ocf-owner2', 'Final Race Owner', 'final-race@example.invalid', 'Check Bank', '4321', $1, $1)`, now);
@@ -273,8 +275,8 @@ if (pgReal) {
     const p = call('POST', '/api/statements/finalise', { statementIds: [st.id] });
     await pause(2500);
     await sql`DELETE FROM pos.owner_report_locks WHERE unit_id = 'ocf-r1' AND month = '2026-10' AND stage = 'o2'`;
-    return p;
-  });
+    return { p };
+  }).then(x => x.p);
   check('Make final waits for an unlock under way and then refuses', fin.status === 200 && fin.json?.finalised === 0 && (await race())?.state === 'provisional', fin.text);
   await lock('o2', ['ocf-r1']);
   await call('POST', '/api/statements/generate', { period: OCT, ownerIds: ['ocf-owner2'] });
@@ -286,10 +288,10 @@ if (pgReal) {
     const p = call('POST', '/api/statements/send', { statementIds: [st.id] });
     await pause(2500);
     await sql`UPDATE pos.owner_statements SET state = 'provisional', finalised_at = NULL WHERE id = ${st.id}`;
-    return p;
-  });
+    return { p };
+  }).then(x => x.p);
   const racePays = await db(`SELECT state FROM payouts WHERE owner_id = 'ocf-owner2'`);
-  check('Send leaves a statement unlocked meanwhile alone', (await race())?.state === 'provisional' && racePays.length === 0, `${sent.text} ${JSON.stringify(racePays)}`);
+  check('Send leaves a statement unlocked meanwhile alone', sent.status === 200 && sent.json?.sent === 0 && (await race())?.state === 'provisional' && racePays.length === 0, `${sent.text} ${JSON.stringify(racePays)}`);
   // I4: a payout marked failed while Unlock final cancels it stays cancelled.
   await db(`UPDATE owner_statements SET state = 'finalised', finalised_at = $2 WHERE id = $1`, st.id, now);
   await call('POST', '/api/statements/send', { statementIds: [st.id] });
@@ -299,8 +301,8 @@ if (pgReal) {
     const p = call('PATCH', '/api/payouts', { id: pay?.id, state: 'failed', failureReason: 'Bank refused' });
     await pause(2500);
     await sql`UPDATE pos.payouts SET state = 'cancelled' WHERE id = ${pay?.id ?? ''}`;
-    return p;
-  });
+    return { p };
+  }).then(x => x.p);
   const [after] = await db(`SELECT state FROM payouts WHERE id = $1`, pay?.id ?? '');
   check('a payout cancelled meanwhile is not marked failed', patched.status === 409 && after?.state === 'cancelled', `${patched.text} ${JSON.stringify(after)}`);
 } else console.log('skip the race checks: PGlite runs one transaction at a time');
