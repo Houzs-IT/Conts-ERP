@@ -148,7 +148,7 @@ export function ListToolbar({ search, leading, filters = [], filtersLabel = 'Fil
   ) : null;
 
   return (
-    <section aria-label="List tools" className={cx(!bare && 'bg-card border border-solid border-line rounded-card shadow-[var(--shadow-card)] px-2.5 py-2', 'min-w-0', className)}>
+    <section data-live aria-label="List tools" className={cx(!bare && 'bg-card border border-solid border-line rounded-card shadow-[var(--shadow-card)] px-2.5 py-2', 'min-w-0', className)}>
       {row}
       {below && <div className="flex flex-wrap items-center gap-2 mt-2 min-w-0">{below}</div>}
       {chipRow}
@@ -261,7 +261,7 @@ function Panel({ open, anchor, onClose, label, width = 340, children }: {
     );
   }
   return (
-    <Floating anchor={anchor} open={open} onClose={onClose} width={width} maxHeight={520} label={label}>
+    <Floating anchor={anchor} open={open} onClose={onClose} width={width} maxHeight={520} label={label} live>
       <div className="px-3 py-2.5">{children}</div>
     </Floating>
   );

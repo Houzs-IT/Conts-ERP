@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { answeredWithin, api, ApiFailure, errorMessage, isAbort, readCache, remember, writeCount } from './api';
+import { snapshotOf } from './snapshots';
+import { hideSnapshot, showSnapshot, snapshotSlot } from './snapshotView';
 
 /* How many reads are refreshing figures that are already on screen. The shell draws one thin gold line while it is
    above zero, so stale-but-shown data visibly says it is being brought up to date. */
@@ -72,6 +74,9 @@ export interface Query<T> {
   /** For a timer: reads again unless a read of this screen is still on its way, so a slow answer is not stacked
    *  under more of the same. After a save, call reload, which always reads again. */
   poll: () => void;
+  /** True while `data` is the saved answer from an earlier visit (lib/snapshots.ts), until the fresh one lands. Every
+   *  action is disabled meanwhile (lib/snapshotView.ts); a screen hides money figures from it (owner, rule 3). */
+  fromSnapshot: boolean;
 }
 
 /**
@@ -85,26 +90,37 @@ export interface Query<T> {
 export function useApi<T>(path: string | null, fallback?: T): Query<T> {
   // The fallback is design sample data. It exists only in dev; a real build shows nothing rather than invented figures.
   const cached = path !== null ? readCache.get(path) as T | undefined : undefined;
-  const [data, setData] = useState<T | null>(cached ?? (import.meta.env.DEV ? (fallback ?? null) : null));
+  // Nothing from this tab yet: the answer saved on an earlier visit, shown at once while the read below refreshes it.
+  const [saved] = useState(() => (path !== null && cached === undefined ? snapshotOf(path) : undefined));
+  const [data, setData] = useState<T | null>(cached ?? (saved?.data as T | undefined) ?? (import.meta.env.DEV ? (fallback ?? null) : null));
   const [loading, setLoading] = useState(path !== null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const inFlight = useRef(false);
+  /** When the snapshot on screen was saved; null once fresh data is shown. */
+  const [snapAt, setSnapAt] = useState<number | null>(saved?.savedAt ?? null);
+  const [refreshFailed, setRefreshFailed] = useState(false);
 
   useEffect(() => {
-    if (path === null) { setLoading(false); return; }
+    if (path === null) { setLoading(false); setSnapAt(null); return; }
     let live = true;
     setLoading(true);
     // A page revisited (or a range switched back) shows its last answer straight away; the read below refreshes it.
     const seen = readCache.get(path) as T | undefined;
-    if (seen !== undefined) setData(seen);
+    if (seen !== undefined) { setData(seen); setSnapAt(null); }
+    else {
+      const snap = snapshotOf(path);
+      if (snap) { setData(snap.data as T); setSnapAt(snap.savedAt); setRefreshFailed(false); }
+      else setSnapAt(null);
+    }
     // Read a moment ago (a prefetch, or this tab a few seconds back): nothing to refresh.
     if (!nonce && seen !== undefined && answeredWithin(path, FRESH_MS)) { setError(null); setLoading(false); return; }
     // A reload after a save must not join a read sent before the save.
     const sentAt = writeCount();
     inFlight.current = true;
     (nonce ? api.get<T>(path).then(r => { remember(path, r, sentAt); return r; }) : sharedGet<T>(path))
-      .then(r => { if (live) { setData(r); setError(null); } })
+      // Fresh data replaces a snapshot at once; the lock lifts after it is on screen (the effect below).
+      .then(r => { if (live) { setData(r); setError(null); setSnapAt(null); setRefreshFailed(false); } })
       .catch((e: unknown) => {
         // A read cancelled on the way (the page left, the browser stopped it) is not a failure: no error state, and the
         // next visit reads again (only answers are kept in readCache, never failures).
@@ -112,6 +128,8 @@ export function useApi<T>(path: string | null, fallback?: T): Query<T> {
         // With a fallback present the page still renders; the banner explains why
         // the figures are not live rather than blanking the screen.
         setError(errorMessage(e, 'This list could not load. Check your connection and try again.'));
+        // A snapshot stays on screen, marked "Couldn't refresh", and actions stay disabled until a retry lands.
+        setRefreshFailed(true);
       })
       .finally(() => { if (live) { setLoading(false); inFlight.current = false; } });
     return () => { live = false; inFlight.current = false; };
@@ -123,7 +141,18 @@ export function useApi<T>(path: string | null, fallback?: T): Query<T> {
   // The same functions on every render, so a timer set up with them is not torn down and set again each time.
   const reload = useCallback(() => setNonce(n => n + 1), []);
   const poll = useCallback(() => { if (!inFlight.current) setNonce(n => n + 1); }, []);
-  return { data, loading, error, reload, poll };
+
+  // While a snapshot is on screen the page says how old it is and every action stays disabled (lib/snapshotView.ts).
+  const slot = useRef(0);
+  if (!slot.current) slot.current = snapshotSlot();
+  useEffect(() => {
+    if (snapAt === null) return;
+    const id = slot.current;
+    showSnapshot(id, { savedAt: snapAt, failed: refreshFailed, retry: reload });
+    return () => hideSnapshot(id);
+  }, [snapAt, refreshFailed, reload]);
+
+  return { data, loading, error, reload, poll, fromSnapshot: snapAt !== null };
 }
 
 /** POST/PATCH helper with the same error contract. */

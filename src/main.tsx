@@ -10,9 +10,15 @@ import './styles/hover.css';
 import { initTheme } from './lib/theme';
 import { hasUnsavedWork, NEW_VERSION_EVENT } from './lib/unsavedWork';
 import { installNumberWheelGuard } from './lib/numberWheel';
+import { indexedDbBackend, setSnapshotBackend } from './lib/snapshots';
+import { installActionGuard } from './lib/snapshotView';
 
 initTheme();
 installNumberWheelGuard();
+// The main screens' saved answers (lib/snapshots.ts), read now so they are ready when the session arrives; and the
+// guard that keeps actions disabled while one is on screen (lib/snapshotView.ts).
+setSnapshotBackend(indexedDbBackend());
+installActionGuard();
 
 // Self-heal after a deploy. Pages are lazy-loaded, so a browser holding a stale
 // index.html asks for an old chunk hash that no longer exists; Cloudflare Pages

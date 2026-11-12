@@ -15,7 +15,7 @@ import { useApi } from '../lib/useApi';
 import { useCrew } from '../lib/useCrew';
 import { useSession } from '../lib/session';
 import { api, notifyFailure } from '../lib/api';
-import { rm, rmCompact, time, percent, monthLabel, MONTHS, plural, count, humanize, weekdayDate, buildingName, personName } from '../lib/format';
+import { rm, rmCompact, time, percent, monthLabel, MONTHS, plural, count, humanize, weekdayDate, buildingName, personName, todayMyt } from '../lib/format';
 import ChannelMark from '../components/ChannelMark';
 import type { BookingChannel } from '../lib/types';
 import { Select } from '../components/Select';
@@ -413,7 +413,10 @@ export default function DashboardPage() {
 
   const failure = kpi.error ?? today.error ?? exc.error ?? portfolio.error;
   const lastUpdated = kpi.data?.generatedAt ? time(kpi.data.generatedAt) : null;
-  const period = kpi.data?.period ?? '';
+  // The month is known before any figure arrives (the server reads the same Malaysian date), so the subtitle's
+  // "Nov 2026 to date" shows at once and only "Last updated" waits.
+  const period = kpi.data?.period ?? todayMyt().slice(0, 7);
+  const todayDate = today.data?.date ?? todayMyt();
 
   // --- Actions ---------------------------------------------------------------
 
@@ -460,10 +463,11 @@ export default function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
-        sub={[period ? `${monthLabel(period)} to date` : '', lastUpdated ? `Last updated ${lastUpdated}` : ''].filter(Boolean).join(' · ')
-          // Holds the subtitle's line while the figures load, so the page does not shift down when it arrives.
-          || (kpi.loading ? <span aria-hidden className="skeleton inline-block align-middle h-[11px] w-[200px]" /> : undefined)}
-        actions={<Button variant="secondary" size="sm" onClick={() => go('/properties/units')}>Manage units</Button>}
+        sub={lastUpdated ? `${monthLabel(period)} to date · Last updated ${lastUpdated}` : (
+          // The month at once; only "Last updated" holds its place while the figures load.
+          <>{monthLabel(period)} to date{kpi.loading && <> · <span aria-hidden className="skeleton inline-block align-middle h-[11px] w-[120px]" /></>}</>
+        )}
+        actions={<Button variant="secondary" size="sm" live onClick={() => go('/properties/units')}>Manage units</Button>}
         primary={<Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => go('/reservations/bookings?create=1')}>Create reservation</Button>}
       />
 
@@ -476,6 +480,9 @@ export default function DashboardPage() {
           // The five tiles that arrive, revenue first as the dark one, so the row does not reflow when they land.
           ? Array.from({ length: 5 }, (_, i) => <TileSkeleton key={i} hero={i === 0} hint={i === 0} className={i === 0 ? KPI_HERO_FLEX : KPI_FLEX} />)
           : kpis.map(k => {
+              // Money is never shown from a saved snapshot (owner, 12 Nov 2026, rule 3): just that tile waits for the
+              // fresh figure; occupancy shows at once.
+              if (kpi.fromSnapshot && k.currency) return <TileSkeleton key={k.key} hero={k.key === HERO_KPI} hint={k.key === HERO_KPI} className={k.key === HERO_KPI ? KPI_HERO_FLEX : KPI_FLEX} />;
               if (k.key === HERO_KPI) return (
                 <RevenueHero key={k.key} label={KPI_LABEL[k.key] ?? humanize(k.key)} value={kpiValue(k)} className={KPI_HERO_FLEX}
                   period={period} points={tp.points} delta={tp.delta} />
@@ -578,9 +585,16 @@ export default function DashboardPage() {
 
       {/* Today */}
       <Card className="max-md:order-3">
-        <CardHeader title={today.data?.date ? `Today, ${weekdayDate(today.data.date)}` : 'Today'} right={seesOps ? <LinkAction onClick={() => go('/operations/today')}>Open operations →</LinkAction> : undefined} />
+        <CardHeader title={`Today, ${weekdayDate(todayDate)}`} right={seesOps ? <LinkAction onClick={() => go('/operations/today')}>Open operations →</LinkAction> : undefined} />
         <div className="[border-top:1px_solid_var(--color-line)]">
          <div className="-ml-px -mt-px grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
+          {/* The labels are fixed; only the counts wait for the first answer. */}
+          {!today.data && today.loading && Object.entries(TODAY_LABEL).map(([key, label]) => (
+            <div key={key} aria-hidden className="flex flex-col items-start gap-3 py-4 sm:py-5 px-4 sm:px-5 [border-left:1px_solid_var(--color-line-soft)] [border-top:1px_solid_var(--color-line-soft)]">
+              <Eyebrow>{label}</Eyebrow>
+              <span className="skeleton block h-[28px] w-[40px]" />
+            </div>
+          ))}
           {(today.data?.rows ?? []).map(r => (
             <button key={r.key} type="button" disabled={!seesOps || !TODAY_LINK[r.key]} onClick={() => go(TODAY_LINK[r.key])}
               className="flex flex-col items-start gap-3 py-4 sm:py-5 px-4 sm:px-5 bg-transparent border-0 [border-left:1px_solid_var(--color-line-soft)] [border-top:1px_solid_var(--color-line-soft)] font-sans text-left text-ink cursor-pointer enabled:hover:bg-page disabled:cursor-default">
@@ -625,7 +639,9 @@ export default function DashboardPage() {
         <Card>
           <CardHeader title="Occupancy by building" right={<LinkAction onClick={() => go('/portfolio')}>Portfolio →</LinkAction>} />
           <div className="px-5 pb-5 flex flex-col gap-[11px]">
-            {buildings.length === 0
+            {buildings.length === 0 && portfolio.loading
+              ? Array.from({ length: 4 }, (_, i) => <div key={i} aria-hidden className="flex flex-col gap-[6px]"><div className="skeleton h-[12px] w-[55%]" /><div className="skeleton h-[6px] w-full" /></div>)
+              : buildings.length === 0
               ? <EmptyState bare icon="Building2" title="No building figures for this month yet." />
               : buildings.map(b => (
                 <div key={b.name} className="flex flex-col gap-[6px]">
