@@ -23,13 +23,13 @@ import { useApi } from '../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { deliveryToast, stayPhase } from '../lib/bookingStatus';
-import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, todayMyt, greetName, titleCase } from '../lib/format';
+import { rm, dateRange, time, date as fmtDate, nights as fmtNights, guests as fmtGuests, plural, count as fmtCount, todayMyt, greetName, buildingName, personName } from '../lib/format';
 import { phone, phoneCountries } from '../lib/phone';
 import { Select, Menu } from '../components/Select';
-import { FilterBar, FilterMenu } from '../components/FilterBar';
+import { ListToolbar, PhoneCard, type ToolbarFilter } from '../components/ListToolbar';
 import type { BookingChannel, ReservationState, UnitReadiness, Tone } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
-import { Eyebrow, Figure } from '../components/Metric';
+import { Eyebrow, Figure, Segmented } from '../components/Metric';
 import { moneyStatus, isOtaChannel } from '../lib/payoutStatus';
 
 /* ------------------------------------------------------------------ */
@@ -262,12 +262,22 @@ export default function GuestsPage() {
   function setCountries(next: string[]) {
     updateParams(p => { if (next.length) p.set('country', next.join(',')); else p.delete('country'); p.delete('page'); p.delete('g'); });
   }
+  // One Filters button (owner, PR #190): the guest flags (VIP, Blacklist, Missing ID, Repeat) with their counts, picked
+  // one at a time as before, and the countries in the list, several at once.
+  const filterGroups: ToolbarFilter[] = [
+    { key: 'flag', label: 'Tag', allLabel: 'Any tag',
+      options: FILTERS.filter(f => !VIEW_KEYS.includes(f.key)).map(f => ({ value: f.key, label: f.label, count: counts?.[f.key] })),
+      value: VIEW_KEYS.includes(filter) ? '' : filter, onChange: v => setFilter((v as Filter) || 'all') },
+    { key: 'country', label: 'Country', multi: true, options: countryItems.map(c => ({ value: c.key, label: c.label, count: c.count })),
+      value: pickedCountries.join(','), onChange: v => setCountries(v.split(',').filter(Boolean)) },
+  ];
+  const clearFilters = () => updateParams(p => { p.delete('country'); if (!VIEW_KEYS.includes(filter)) p.delete('filter'); p.delete('page'); p.delete('g'); });
 
   const columns = useMemo<Column<GuestSummary>[]>(() => [
     { key: 'name', label: 'Guest', value: g => g.fullName, sortKey: 'name', hideable: false, width: 196,
       render: g => (
         <span className="flex items-center gap-[10px] min-w-0">
-          <span className="w-[30px] h-[30px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-caption font-semibold">{initials(g.fullName)}</span>
+          <span className="w-[30px] h-[30px] flex-none rounded-full bg-gold-soft text-gold-ink grid place-items-center text-caption font-bold">{initials(g.fullName)}</span>
           <span className="flex flex-col gap-px min-w-0">
             <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={g.fullName}>{g.fullName}</span>
             <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{guestMeta(g, canSeeContact)}</span>
@@ -300,7 +310,7 @@ export default function GuestsPage() {
     setBusy(true);
     try {
       const r = await api.post<{ taskCreated: boolean }>(`/reservations/${m.reservationId}/prepare`, {});
-      toast({ tone: 'success', title: r.taskCreated ? `A cleaning job was added for ${m.propertyName} ${m.unitNumber}.` : `A cleaning job is already open for ${m.propertyName} ${m.unitNumber}.`,
+      toast({ tone: 'success', title: r.taskCreated ? `A cleaning job was added for ${buildingName(m.propertyName)} ${m.unitNumber}.` : `A cleaning job is already open for ${buildingName(m.propertyName)} ${m.unitNumber}.`,
         body: 'Nothing was sent to the guest. Send access details once the unit is Ready.' });
       reloadAll();
     } catch (e) { toast({ tone: 'critical', title: 'Cleaning job not added.', body: failMessage(e) }); }
@@ -321,7 +331,7 @@ export default function GuestsPage() {
     setBusy(true);
     try {
       await api.patch(`/reservations/${m.reservationId}`, { state: 'checked_in' });
-      toast({ tone: 'success', title: `${g.fullName} checked in.`, body: `${m.propertyName} ${m.unitNumber} is now occupied.` });
+      toast({ tone: 'success', title: `${g.fullName} checked in.`, body: `${buildingName(m.propertyName)} ${m.unitNumber} is now occupied.` });
       reloadAll();
     } catch (e) { toast({ tone: 'critical', title: 'Not checked in.', body: failMessage(e) }); }
     setBusy(false);
@@ -332,7 +342,7 @@ export default function GuestsPage() {
     setBusy(true);
     try {
       const r = await api.patch<{ effects?: { turnoverCreated?: boolean } }>(`/reservations/${m.reservationId}`, { state: 'checked_out' });
-      toast({ tone: 'success', title: `${g.fullName} checked out.`, body: r?.effects?.turnoverCreated ? `A cleaning job was added for ${m.propertyName} ${m.unitNumber}.` : `${m.propertyName} ${m.unitNumber} already had a cleaning job planned.` });
+      toast({ tone: 'success', title: `${g.fullName} checked out.`, body: r?.effects?.turnoverCreated ? `A cleaning job was added for ${buildingName(m.propertyName)} ${m.unitNumber}.` : `${buildingName(m.propertyName)} ${m.unitNumber} already had a cleaning job planned.` });
       setCheckout(null);
       reloadAll();
     } catch (e) { toast({ tone: 'critical', title: 'Not checked out.', body: failMessage(e) }); } finally { setBusy(false); }
@@ -403,26 +413,13 @@ export default function GuestsPage() {
             ) : undefined}
             header={
               <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)] flex items-center gap-2 flex-wrap">
-                <FilterBar<Filter> label="Guest views" value={filter} onChange={setFilter}
-                  views={FILTERS.filter(f => VIEW_KEYS.includes(f.key)).map(f => ({ key: f.key, label: f.label, short: 'short' in f ? f.short : undefined, count: counts?.[f.key] }))}
-                  tags={{
-                    single: true, active: [filter], onClear: () => setFilter('all'),
-                    onToggle: k => setFilter(k === filter ? 'all' : k as Filter),
-                    items: FILTERS.filter(f => !VIEW_KEYS.includes(f.key)).map(f => ({ key: f.key, label: f.label, count: counts?.[f.key], tone: f.key === 'missing_id' ? 'danger' as const : undefined })),
-                  }} />
+                <Segmented<Filter> label="Guest views" value={VIEW_KEYS.includes(filter) ? filter : ''} onChange={setFilter}
+                  options={FILTERS.filter(f => VIEW_KEYS.includes(f.key)).map(f => ({ key: f.key, label: f.label, short: 'short' in f ? f.short : undefined, count: counts?.[f.key] }))} />
               </div>
             }
-            toolbar={<>
-              <label className="relative flex-[1_1_180px] min-w-0">
-                <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid pointer-events-none"><Icon name="Search" size="sm" /></span>
-                <input value={draft} onChange={e => setSearch(e.target.value)} aria-label="Search guests"
-                  placeholder={canSeeContact ? 'Name, phone, email or reservation reference' : 'Guest name'}
-                  className="h-9 w-full box-border rounded-control border border-solid border-line bg-card text-ink [font-family:inherit] text-copy pl-[32px] pr-3 py-0 outline-none" />
-              </label>
-              <Select label="Sort guests" value={sortKey} onChange={setSort} className="flex-[1_1_150px] sm:flex-none sm:w-[150px]" options={sortOptions} />
-              <FilterMenu label="Country" items={countryItems} active={pickedCountries} onClear={() => setCountries([])}
-                  onToggle={k => setCountries(pickedCountries.includes(k) ? pickedCountries.filter(x => x !== k) : [...pickedCountries, k])} />
-            </>}
+            toolbar={<ListToolbar bare className="w-full" filters={filterGroups} onClearAll={clearFilters}
+              search={{ value: draft, onChange: setSearch, label: 'Search guests', debounce: false, placeholder: canSeeContact ? 'Name, phone, email or reservation reference' : 'Guest name' }}
+              after={<Select label="Sort guests" value={sortKey} onChange={setSort} className="flex-[1_1_150px] sm:flex-none sm:w-[150px]" options={sortOptions} />} />}
             renderCard={g => <GuestCard g={g} canSeeContact={canSeeContact} />}
           />
         </div>
@@ -463,7 +460,7 @@ export default function GuestsPage() {
         onClose={() => setCheckout(null)}
         spec={!checkout?.movement ? null : {
           title: `Check out ${checkout.fullName}?`,
-          body: `${checkout.movement.propertyName} ${checkout.movement.unitNumber} moves to Dirty and the reservation is closed.`,
+          body: `${buildingName(checkout.movement.propertyName)} ${checkout.movement.unitNumber} moves to Dirty and the reservation is closed.`,
           meta: 'A cleaning job is added if the unit has none planned.',
           confirmLabel: 'Check out',
           busyLabel: 'Checking out…',
@@ -494,17 +491,12 @@ function GuestCard({ g, canSeeContact }: { g: GuestSummary; canSeeContact: boole
   const meta = [g.country?.name, guestMeta(g, canSeeContact)].filter(Boolean).join(' · ');
   const tag = g.tags[0];
   return (
-    <span className="flex items-center gap-3 min-w-0">
-      <span className="w-[34px] h-[34px] flex-none rounded-full bg-muted text-muted-ink grid place-items-center text-meta font-semibold">{initials(g.fullName)}</span>
-      <span className="flex flex-col gap-[2px] min-w-0 flex-1">
-        <span className="text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={g.fullName}>{g.fullName}</span>
-        <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={meta}>{meta}</span>
-      </span>
-      <span className="flex flex-col items-end gap-1 flex-none">
-        {g.missingId ? <StatusBadge tone="critical" label="Missing ID" size="sm" /> : tag && <StatusBadge tone={tag.tone} label={tag.label} size="sm" />}
-        <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]">{plural(g.stays, 'reservation')}{g.upcoming ? ` (${g.upcoming} upcoming)` : ''}</span>
-      </span>
-    </span>
+    <PhoneCard
+      lead={<span className="w-7 h-7 flex-none rounded-full bg-gold-soft text-gold-ink grid place-items-center text-caption font-bold">{initials(g.fullName)}</span>}
+      title={<span title={g.fullName}>{g.fullName}</span>}
+      right={<span className="text-copy font-medium text-muted-ink">{plural(g.stays, 'reservation')}</span>}
+      meta={<span title={meta}>{g.upcoming ? `${g.upcoming} upcoming · ` : ''}{meta}</span>}
+      badge={g.missingId ? <StatusBadge tone="critical" label="Missing ID" size="sm" /> : tag ? <StatusBadge tone={tag.tone} label={tag.label} size="sm" /> : null} />
   );
 }
 
@@ -565,10 +557,10 @@ function ProfilePanel({ g, canSeeContact, busy, onMessage, onBookStay, onEdit, o
       {g.movement && <MovementStrip g={g} busy={busy} onPrepare={onPrepare} onSendAccess={onSendAccess} onCheckIn={onCheckIn} onCheckOut={onCheckOut} />}
 
       {canSeeContact && (
-        <div className="grid grid-cols-2 gap-5 max-lg:grid-cols-1">
+        <div className="@container"><div className="grid grid-cols-1 @min-[640px]:grid-cols-2 gap-5">
           <Registration g={g} onEdit={onEdit} />
           <NotesAndTags g={g} onSaved={onSaved} />
-        </div>
+        </div></div>
       )}
 
       <div className="bg-card border border-solid border-line rounded-card overflow-hidden">
@@ -608,7 +600,7 @@ function StayRow({ s, last, onOpen }: { s: Stay; last: boolean; onOpen: () => vo
         className="w-full text-left [font:inherit] bg-transparent border-none cursor-pointer hover:bg-page flex items-center gap-[14px] py-[13px] px-5 flex-wrap">
         <ChannelMark ch={s.channel} size={24} />
         <div className="flex flex-col gap-[2px] min-w-[150px] flex-1">
-          <span className="text-copy font-medium text-ink">{s.propertyName} {s.unitNumber}</span>
+          <span className="text-copy font-medium text-ink">{buildingName(s.propertyName)} {s.unitNumber}</span>
           <span className="text-meta text-muted-ink">{dateRange(s.checkIn, s.checkOut)} · {fmtNights(s.nights)}{s.externalRef ? ` · ${s.externalRef}` : ''}{s.rating != null ? ` · rated ${s.rating.toFixed(1)}` : ''}</span>
         </div>
         <span className="flex flex-col items-end min-w-[92px] max-w-[190px]">
@@ -712,7 +704,7 @@ function NotesAndTags({ g, onSaved }: { g: Guest; onSaved: () => void }) {
   const toggle = async (t: string) => {
     const had = g.manualTags.includes(t);
     const label = t === 'vip' ? 'VIP' : 'Blacklist';
-    const name = titleCase(g.fullName);
+    const name = personName(g.fullName);
     const ok = await ask(had
       ? { title: `Remove the ${label} tag from ${name}?`, confirmLabel: `Remove ${label}`, danger: false }
       : { title: `Tag ${name} as ${label}?`, body: 'The tag shows on this guest everywhere until someone removes it.', confirmLabel: `Tag ${label}`, danger: t === 'blacklist' });
@@ -771,7 +763,7 @@ function MovementStrip({ g, busy, onPrepare, onSendAccess, onCheckIn, onCheckOut
         <ChannelMark ch={m.channel} size={24} />
         <div className="flex flex-col gap-[2px] min-w-0 flex-1">
           <span className="text-[16px] font-semibold tracking-[-0.01em]">{heading}</span>
-          <span className="text-meta text-muted-ink">{m.propertyName} {m.unitNumber} · {fmtGuests(m.guestsCount)} · {fmtNights(m.nights)}</span>
+          <span className="text-meta text-muted-ink">{buildingName(m.propertyName)} {m.unitNumber} · {fmtGuests(m.guestsCount)} · {fmtNights(m.nights)}</span>
         </div>
         <div className="flex items-center gap-[7px]">
           {m.checkIn && m.checkOut ? <StatusBadge entity="stay" value={stayPhase({ state: m.state, checkIn: m.checkIn, checkOut: m.checkOut })} size="sm" /> : <StatusBadge entity="booking" value={m.state} size="sm" />}
@@ -807,7 +799,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   return (
     <div className="flex flex-col gap-1.5 min-w-0">
       <Eyebrow>{label}</Eyebrow>
-      <Figure value={value} className="text-[20px] sm:text-[22px] leading-none font-medium tracking-[-0.02em] text-ink" />
+      <Figure value={value} className="text-title leading-none font-semibold tracking-[-0.01em] text-ink" />
       {sub && <span className="text-caption text-muted-ink">{sub}</span>}
     </div>
   );
@@ -830,7 +822,7 @@ function MessageModal({ g, onClose, onSend }: { g: Guest; onClose: () => void; o
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   return (
-    <CentreModal title={`Message ${g.fullName}`} sub={`Goes to the guest's latest conversation on ${threadName(g.channel)}.`} onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal eyebrow="Reservations" title={`Message ${g.fullName}`} sub={`Goes to the guest's latest conversation on ${threadName(g.channel)}.`} onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={async (e: FormEvent) => { e.preventDefault(); if (!body.trim()) return; setBusy(true); await onSend(body.trim()); setBusy(false); }} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div className="flex flex-col gap-[6px]">
           <label htmlFor="msg-body" className={labelClass}>Message</label>
@@ -868,7 +860,7 @@ function AddGuestModal({ onClose, onAdd }: { onClose: () => void; onAdd: (input:
     setBusy(false);
   }
   return (
-    <CentreModal title="Add guest" sub="Creates the guest's record only. To give them a unit and dates, use Add reservation on their profile." onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal eyebrow="Reservations" title="Add guest" sub="Creates the guest's record only. To give them a unit and dates, use Add reservation on their profile." onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Jane Tan" required />
         <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
@@ -919,7 +911,7 @@ function EditGuestModal({ g, onClose, onSaved }: { g: Guest; onClose: () => void
     setBusy(false);
   }
   return (
-    <CentreModal title="Edit guest details" sub="Registration details are what Malaysian short-stay rules ask for: ID, its number, date of birth and nationality." onClose={() => { if (!busy) onClose(); }} maxWidth={540}>
+    <CentreModal eyebrow="Reservations" title="Edit guest details" sub="Registration details are what Malaysian short-stay rules ask for: ID, its number, date of birth and nationality." onClose={() => { if (!busy) onClose(); }} size="md">
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <Field label="Full name" value={fullName} onChange={e => setFullName(e.target.value)} required error={errors.fullName} />
         <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
@@ -965,7 +957,7 @@ function MergeModal({ g, onClose, onMerged }: { g: Guest; onClose: () => void; o
     setBusy(false);
   }
   return (
-    <CentreModal title={`Merge ${g.fullName}`} sub={`Pick the guest to keep. ${g.fullName}'s ${plural(g.stays, 'reservation')} and conversations move to them, and details they lack are filled in.`} onClose={() => { if (!busy) onClose(); }} maxWidth={520}>
+    <CentreModal eyebrow="Reservations" title={`Merge ${g.fullName}`} sub={`Pick the guest to keep. ${g.fullName}'s ${plural(g.stays, 'reservation')} and conversations move to them, and details they lack are filled in.`} onClose={() => { if (!busy) onClose(); }} size="md">
       <div className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <label className="relative">
           <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-muted-ink grid"><Icon name="Search" size="sm" /></span>

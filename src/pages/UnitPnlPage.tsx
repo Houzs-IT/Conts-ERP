@@ -7,7 +7,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { EmptyState } from '../components/States';
 import { StatRow, StatTile } from '../components/Metric';
-import { Select } from '../components/Select';
+import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { Segmented as Tabs } from '../components/ops/OpsUi';
 import { TwoLayerTrend, CostShare } from '../components/reports/PnlCharts';
@@ -15,10 +15,11 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { monthLabel, rm, todayMyt } from '../lib/format';
+import { monthLabel, rm, todayMyt, buildingName, personName } from '../lib/format';
 import { downloadTable, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx, TONE } from '../lib/design-tokens';
-import { useUrlState, SearchBox, FilterSelect, shiftMonth } from './finance/listKit';
+import { useUrlState, FilterSelect, shiftMonth } from './finance/listKit';
+import { ListToolbar } from '../components/ListToolbar';
 import {
   LINE_LABEL, COST_KEYS, pnl, sumPnl, pctOfIncome, bracketMoney, checks, gaps,
   type CostKey, type LineKey, type Limits, type Pnl, type UnitMonthInput, type Flag, type Gap,
@@ -37,7 +38,7 @@ const LINE_COLOR: Record<CostKey, string> = {
   fees: 'var(--color-chart-ink)', cleaning: 'var(--color-info-line)', electricity: 'var(--color-warning-line)', water: 'var(--color-chart-teal)',
   internet: 'var(--color-gold)', sewerage: 'var(--color-success-line)', other: 'var(--color-neutral-line)', misc: 'var(--color-faint)',
 };
-const unitName = (u: Unit | undefined, id: string) => (u ? `${u.building} ${u.number}` : id);
+const unitName = (u: Unit | undefined, id: string) => (u ? `${buildingName(u.building)} ${u.number}` : id);
 const pctText = (v: number | null) => (v == null ? '–' : `${v.toFixed(1)}%`);
 const rmText = (sen: number) => (sen < 0 ? `(${rm(-sen)})` : rm(sen));
 
@@ -70,7 +71,7 @@ export default function UnitPnlPage() {
 
   const unitById = useMemo(() => new Map((data?.units ?? []).map(u => [u.id, u])), [data]);
   const buildings = useMemo(() => [...new Set((data?.units ?? []).map(u => u.building))].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
-    .map(b => ({ value: b, label: b })), [data]);
+    .map(b => ({ value: b, label: buildingName(b) })), [data]);
   const shownUnits = useMemo(() => new Set((data?.units ?? []).filter(u => (!building || u.building === building)
     && (!unitId || u.id === unitId) && (!q || `${u.building} ${u.number} ${u.owner}`.toLowerCase().includes(q))).map(u => u.id)), [data, building, unitId, q]);
   // The contract filter goes by each month's own contract, so a unit that changed contract keeps its earlier months.
@@ -86,22 +87,22 @@ export default function UnitPnlPage() {
 
   const header = (
     <PageHeader title={focus ? `Unit P&L · ${unitName(focus, focus.id)}` : 'Unit P&L'}
-      sub={focus ? `${focus.owner} · ${focus.contract === 'LT' ? 'Fixed rent' : 'Profit share'}` : 'What each unit earned and spent, month by month: the unit’s profit, then what the company keeps.'}
+      sub={focus ? `${personName(focus.owner)} · ${focus.contract === 'LT' ? 'Fixed rent' : 'Profit share'}` : 'What each unit earned and spent, month by month: the unit’s profit, then what the company keeps.'}
       back={focus ? { label: 'All units', onClick: () => url.set({ unit: null }) } : undefined} />
   );
   const filters = (
-    <div className="flex flex-wrap items-center gap-2">
-      <Select label="Months" value={String(range)} onChange={v => url.set({ range: v === '6' ? null : v })} className="w-[170px]"
-        options={RANGES.map(r => ({ value: String(r), label: `Last ${r} months` }))} />
-      <Select label="This month" value={toDate ? '1' : ''} onChange={v => url.set({ toDate: v || null })} className="w-[190px]"
-        options={[{ value: '', label: 'Complete months only' }, { value: '1', label: `With ${monthLabel(thisMonth)} to date` }]} />
-      {!focus && <>
-        <FilterSelect label="Building" value={building} all="All buildings" onChange={v => url.set({ building: v })} options={buildings} className="w-[200px]" />
-        <FilterSelect label="Contract" value={contract} all="All contracts" onChange={v => url.set({ contract: v })}
-          options={[{ value: 'PS', label: 'Profit share' }, { value: 'LT', label: 'Fixed rent' }]} className="w-[160px]" />
-        <SearchBox value={url.get('q')} onChange={v => url.set({ q: v })} placeholder="Unit or owner" label="Search units" className="w-[200px]" />
-      </>}
-    </div>
+    <ListToolbar
+      search={focus ? undefined : { value: url.get('q'), onChange: v => url.set({ q: v.trim() }), placeholder: 'Unit or owner', label: 'Search units' }}
+      filters={focus ? [] : [
+        { key: 'building', label: 'Building', value: building, onChange: v => url.set({ building: v }), allLabel: 'All buildings',
+          options: buildings.map(b => ({ ...b, count: (data?.units ?? []).filter(u => u.building === b.value).length })) },
+        { key: 'contract', label: 'Contract', value: contract, onChange: v => url.set({ contract: v }), allLabel: 'All contracts',
+          options: [{ value: 'PS', label: 'Profit share' }, { value: 'LT', label: 'Fixed rent' }] },
+      ]}
+      date={{ label: 'Months', value: String(range), def: '6', onChange: v => url.set({ range: v === '6' ? null : v }), presets: RANGES.map(r => ({ value: String(r), label: `Last ${r} months` })) }}
+      after={<Segmented label="This month" value={toDate ? '1' : '0'} onChange={v => url.set({ toDate: v === '1' ? '1' : null })}
+        options={[{ key: '0', label: 'Complete months' }, { key: '1', label: `With ${monthLabel(thisMonth)} to date` }]} />}
+    />
   );
 
   return (
@@ -239,7 +240,7 @@ function PnlByMonth({ months, byMonth, total, mLabel }: { months: string[]; byMo
           </tbody>
         </table>
       </div>
-      <p className="m-0 text-meta text-muted-ink">Guest total: what guests paid for the month’s nights. Service fees and taxes: the guest total less what the reservations paid out. Operating profit is the statement’s gross profit; company keeps is what is left after the owner’s portion, plus any late changes, the company’s share of changes to an earlier, locked month (the Overall unit report’s gain or loss).</p>
+      <p className="m-0 text-meta text-muted-ink">Guest total: what guests paid for the month’s nights. Service fees and taxes: the guest total less what the reservations paid out. Operating profit is the statement’s gross profit; company keeps is what is left after the owner’s portion, plus any late changes, the company’s share of changes to an earlier, locked month (the Monthly Unit report’s gain or loss).</p>
     </Section>
   );
 }

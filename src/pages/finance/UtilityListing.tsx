@@ -6,17 +6,17 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { StaleBanner, TableSkeleton } from '../../components/DataState';
 import { EmptyState } from '../../components/States';
 import { Modal } from '../../components/Modal';
-import { Select } from '../../components/Select';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Segmented as Tabs } from '../../components/ops/OpsUi';
 import { useApi } from '../../lib/useApi';
 import { downloadFile, notifyFailure } from '../../lib/api';
-import { monthLabel, rm, todayMyt } from '../../lib/format';
+import { monthLabel, rm, todayMyt, buildingName, personName } from '../../lib/format';
 import { downloadTable, type ExportCell, type ExportColumn } from '../../lib/export';
 import { statusOf, statusLabel, TONE_STYLE } from '../../lib/status';
 import { cx } from '../../lib/design-tokens';
 import { PAYER_LABEL } from '../../lib/revenueModel';
-import { useUrlState, SearchBox, FilterSelect, shiftMonth } from './listKit';
+import { useUrlState, shiftMonth } from './listKit';
+import { ListToolbar } from '../../components/ListToolbar';
 import {
   KINDS, KIND_LABEL, billState, buildCells, buildRequestCells, months as monthsOf, requestState, unitAverages, unusual,
   type Cell, type GridBill, type UtilityKind, type UnusualRow,
@@ -40,7 +40,7 @@ const RANGES = [6, 12, 24];
 const PURPOSES = [{ value: 'rental', label: 'Rental' }, { value: 'showroom', label: 'Showroom' }, { value: 'warehouse', label: 'Warehouse' }];
 const ENTITY = { bill: 'utility_bill', request: 'utility_request' } as const;
 
-const unitName = (u: Unit) => `${u.building} ${u.number}`;
+const unitName = (u: Unit) => `${buildingName(u.building)} ${u.number}`;
 const cellStyle = (c: Cell | undefined, mode: Mode = 'bill') => {
   if (!c?.state) return undefined;
   const tone = statusOf(ENTITY[mode], c.state).tone;
@@ -64,7 +64,7 @@ export default function UtilityListing() {
 
   const cells = useMemo(() => (mode === 'request' ? buildRequestCells : buildCells)(data?.bills ?? []), [data, mode]);
   const monthList = data?.months ?? monthsOf(from, to);
-  const buildings = useMemo(() => [...new Map((data?.units ?? []).map(u => [u.buildingId, u.building])).entries()]
+  const buildings = useMemo(() => [...new Map((data?.units ?? []).map(u => [u.buildingId, buildingName(u.building)])).entries()]
     .sort((a, b) => a[1].localeCompare(b[1], 'en', { numeric: true })).map(([value, label]) => ({ value, label })), [data]);
   // By payment request lists only the units with a request in the months shown.
   const units = useMemo(() => (data?.units ?? []).filter(u => (!building || u.buildingId === building)
@@ -95,15 +95,18 @@ export default function UtilityListing() {
     </>
   );
   const filters = (
-    <div className="flex flex-wrap items-center gap-2">
-      <Select label="Months" value={String(range)} onChange={v => url.set({ range: v === '12' ? null : v })} className="w-[160px]"
-        options={RANGES.map(r => ({ value: String(r), label: `Last ${r} months` }))} />
-      <FilterSelect label="Building" value={building} all="All buildings" onChange={v => url.set({ building: v })} options={buildings} className="w-[200px]" />
-      <FilterSelect label="Purpose" value={purpose} all="All purposes" onChange={v => url.set({ purpose: v })} options={PURPOSES} className="w-[160px]" />
-      <FilterSelect label="Kind" value={kind ?? ''} all="All bills" onChange={v => url.set({ kind: v })}
-        options={KINDS.map(k => ({ value: k, label: KIND_LABEL[k] }))} className="w-[150px]" />
-      <SearchBox value={url.get('q')} onChange={v => url.set({ q: v })} placeholder="Unit or owner" label="Search units" className="w-[200px]" />
-    </div>
+    <ListToolbar
+      search={{ value: url.get('q'), onChange: v => url.set({ q: v.trim() }), placeholder: 'Unit or owner', label: 'Search units' }}
+      filters={[
+        { key: 'building', label: 'Building', value: building, onChange: v => url.set({ building: v }), allLabel: 'All buildings',
+          options: buildings.map(b => ({ ...b, count: (data?.units ?? []).filter(u => u.buildingId === b.value).length })) },
+        { key: 'purpose', label: 'Purpose', value: purpose, onChange: v => url.set({ purpose: v }), allLabel: 'All purposes',
+          options: PURPOSES.map(p => ({ ...p, count: (data?.units ?? []).filter(u => (u.purpose ?? 'rental') === p.value).length })) },
+        { key: 'kind', label: 'Bill', value: kind ?? '', onChange: v => url.set({ kind: v }), allLabel: 'All bills', options: KINDS.map(k => ({ value: k, label: KIND_LABEL[k] })) },
+      ]}
+      date={{ label: 'Months', value: String(range), def: '12', onChange: v => url.set({ range: v === '12' ? null : v }), presets: RANGES.map(r => ({ value: String(r), label: `Last ${r} months` })) }}
+      count={data ? <span className="tabular-nums">Showing {units.length} of {data.units.length} units</span> : undefined}
+    />
   );
 
   if (scanning) return <Suspense fallback={<TableSkeleton rows={4} cols={8} />}><ScanBills onBack={() => setScanning(false)} onRecorded={reload} /></Suspense>;
@@ -212,7 +215,7 @@ function AllBills({ units, months, kinds, cells, nights, loading, filtered, mode
                   <th scope="row" className={cx(TD, STICKY, 'font-normal')}>
                     <button type="button" onClick={() => onUnit(u)} className="text-left bg-transparent border-0 p-0 cursor-pointer text-ink hover:underline">
                       <span className="block font-semibold">{unitName(u)}</span>
-                      {u.owner && <span className="block text-meta text-muted-ink truncate max-w-[200px]">{u.owner}</span>}
+                      {u.owner && <span className="block text-meta text-muted-ink truncate max-w-[200px]">{personName(u.owner)}</span>}
                     </button>
                   </th>
                   {months.map(m => cols.map((k, i) => {
@@ -261,7 +264,7 @@ function OneUnit({ unit, months, cells, nights, mode = 'bill', onBack, onOpen }:
         <Button size="sm" variant="secondary" icon={<Icon name="ArrowLeft" size="sm" />} onClick={onBack}>All units</Button>
         <div>
           <div className="text-title font-semibold">{unitName(unit)}</div>
-          {unit.owner && <div className="text-meta text-muted-ink">{unit.owner}</div>}
+          {unit.owner && <div className="text-meta text-muted-ink">{personName(unit.owner)}</div>}
         </div>
         <div className="ml-auto flex gap-4 text-meta text-muted-ink">
           <span>Average per month <b className="text-ink tabular-nums">{avg.perMonth == null ? '–' : rm(avg.perMonth)}</b></span>
@@ -286,7 +289,7 @@ function OneUnit({ unit, months, cells, nights, mode = 'bill', onBack, onOpen }:
                   return (
                     <td key={m} style={cellStyle(c, mode)} className={cx(TD, k === 'total' && 'font-semibold', c && 'cursor-pointer')} onClick={c ? () => onOpen(m, k, c) : undefined}>
                       {c ? amountText(c.amount) : <span className="text-muted-ink">–</span>}
-                      {c?.state && <span className="block text-[11px] font-normal opacity-90">{statusLabel(ENTITY[mode], c.state)}</span>}
+                      {c?.state && <span className="block text-caption font-normal opacity-90">{statusLabel(ENTITY[mode], c.state)}</span>}
                     </td>
                   );
                 })}

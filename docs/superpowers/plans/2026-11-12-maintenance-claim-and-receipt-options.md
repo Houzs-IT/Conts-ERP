@@ -1,0 +1,279 @@
+# Maintenance job claims and the three receipt options — Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** a person who paid for work picks how they are paid back, and finance can pay a supplier a technician names.
+- Petty Cash (Claim), the default: from their petty cash.
+- Direct Claim to Me: finance transfers it to them, to the bank account they confirm on the claim.
+- Direct Pay to Supplier: finance pays a supplier the technician names. This is on the phone's Receipts page only.
+
+The upload area on a maintenance job is reduced to one claim box and one store-only box. It is the same on the phone and on the computer.
+
+**Architecture:**
+- **Finance system (engine).**
+  - A hand-in can ask finance to pay it back (`payBack: 'finance'`). Such a receipt is never put on a float, and it carries the bank details given on it.
+  - A field worker may now ask finance to pay a supplier, by name only (a PAYMENT, with no list or PO).
+  - Finance's Petty cash page shows a direct claim's own bank details, and says when they differ from the saved ones. The payback voucher uses the claim's own details.
+- **Property OS.**
+  - The job's documents route forwards the choice and the bank details.
+  - The phone job sheet and the desk job page get the same two boxes.
+  - The phone Receipts page gets the three options.
+  - The saved bank details are read for prefill through a new read-only `GET /claims/my-bank`. The saved records (HR, and finance's `staff_bank_details`) are never written by these screens.
+
+**Tech Stack:**
+- engine backend: Hono, the PostgREST client, vitest with `fake-postgrest`;
+- engine frontend: React;
+- Property OS: Pages Functions and React; `portalI18n` in four languages: English, Malay, Chinese, Burmese.
+
+**Decisions (chew, 12 Nov 2026, in chat):**
+- Job upload: only "Petty Cash (Claim)" or "Direct Claim to Me", and an invoice must be attached.
+- Direct Claim to Me does not touch petty cash; finance pays them directly.
+- "Receipt / Proof of work and product" is one extra box to attach, store only, optional.
+- Default: Petty Cash (Claim).
+- Direct Claim to Me needs bank details. They are shown for confirming and can be changed, "但不要碰我这里保存的银行记录".
+- The computer's job page is the same as the phone.
+- The Receipts page has three options: petty cash, finance pay (= Direct Claim to Me) and direct pay to supplier.
+- OCR stays. The person need not wait for it.
+
+## Global Constraints
+
+- **Copy.** Product copy on the desk and in the engine is British English, with no CJK in `src/` except the portal translations in `src/lib/portalI18n.ts`. Field screens use `portalI18n` in all four languages.
+- **Money** is in sen, as integers.
+- **Bank details on a claim:**
+  - the bank comes from `MALAYSIAN_BANKS` (`functions/_lib/hrFields.ts`);
+  - the account number is digits only, 5–30 of them;
+  - the account name is 1–100 characters.
+- **The saved bank records** (`public.conts_employee_bank`, `scm.staff_bank_details`) are read, never written, by these flows.
+- **Migration** `0314_claim_bank_details.sql` (planned as 0309, then 0311: main took 0309, 0310 and 0312, and two other branches hold 0311, on 12 Nov) goes through `migrate-production.yml` (dry run first) with chew's OK, before merge. The engine writes the new columns.
+- **Old files.** Documents already on jobs keep their kinds and labels. No data is changed.
+- **Rules unchanged:**
+  - a person's float (override, else department float) still decides Petty Cash;
+  - a field worker sees no balance, quote or job cost, except a keeper's own float;
+  - a replacement keeps its float.
+
+## Review Focus
+
+1. A department with no active float: only Direct Claim to Me (and, on Receipts, Direct Pay to Supplier) is offered. A Petty Cash choice sent anyway goes to finance, as today. Task 1.
+2. A direct claim whose bank details match the saved record: there is no "differs" flag, and the voucher uses the claim's details. Task 4.
+3. A technician's Direct Pay to Supplier naming a supplier id or a PO: refused, because a field worker cannot see the list. A deposit: refused. Task 2.
+4. A replacement for a rejected direct claim keeps finance as the payer and takes the new bank details. Task 1.
+5. A person who types the amount before OCR returns: the read does not overwrite it, and they can hand in at once. Tasks 6 and 7, checked in the browser.
+
+---
+
+### Task 1: Engine — a claim finance pays back directly, with its bank details
+
+**Files:**
+- `engine/backend/src/conts/my-claims-routes.ts`: `handInHandler`, and a new `myBankHandler` on `GET /my-bank`;
+- `engine/backend/src/conts/petty-cash-routes.ts`: `bankDetailsOf` is reused;
+- test: `engine/backend/src/conts/my-claims-routes.test.ts`.
+
+**Interfaces:**
+- **Hand-in body** gains `payBack?: 'float' | 'finance'`. `'finance'` sets `float_id` null. It requires `bank: { bankName, accountNo, accountName }`, validated as in Global Constraints, else 422 "Enter the bank the money goes to.". The bank is stored in `payee_bank_name`, `payee_account_no` and `payee_account_name`.
+- **A replacement** keeps the old receipt's float, unless the new one says `'finance'`.
+- **`GET /my-bank`** → `{ bankName, accountNo, accountName } | null` for the signed-in person only, from `bankDetailsOf`.
+
+**Tests, written first:**
+- D1: a technician with a float hands in with `payBack: 'finance'` and a bank. `float_id` is null, `route` is `'finance'`, and the bank is stored.
+- D2: `'finance'` with no bank, or an account with letters → 422.
+- D3: no `payBack` → the float, as before. The existing tests still pass.
+- D4: `GET /my-bank` returns the person's own saved details. HR is used when finance has none, and the call never writes.
+
+- [ ] Write D1–D4. Run `npx vitest run --config vitest.light.config.mts src/conts/my-claims-routes.test.ts` in `engine/backend`. Expected: they fail.
+- [ ] Implement. Run again. Expected: they pass. Commit.
+
+### Task 2: Engine — a field worker asks finance to pay a supplier, by name
+
+**Files:**
+- `engine/backend/src/conts/payment-request-routes.ts` (`submitRequestHandler`);
+- test: `my-claims-routes.test.ts`, which already holds the request tests.
+
+**Rules for a field worker:**
+- only a `PAYMENT`;
+- no `supplierId` and no `purchaseOrderId`, each refused with a 422 that names the field;
+- `payeeName` is required;
+- the files, the amount and the lines are as for office staff.
+
+The old test "a field worker hands receipts in but does not ask finance to pay" is replaced by these.
+
+- [ ] Write the tests: allowed by name; supplier id refused; PO refused; deposit refused. Run them. Expected: they fail.
+- [ ] Implement, run, commit.
+
+### Task 3: Migration 0314 (planned as 0309, then 0311) — the bank details on a claim
+
+**Files:** `migrations-pg/0314_claim_bank_details.sql`.
+- It adds nullable `payee_bank_name text`, `payee_account_no text` and `payee_account_name text` to `scm.staff_receipts`. The column grants follow the table's.
+- Header: APPLY with only=0314, dry run first; REVERSAL drops the three columns (by hand).
+
+- [ ] Write it. Check that PGlite starts with it. Commit.
+
+### Task 4: Engine — finance sees and pays to a direct claim's bank details
+
+**Files:**
+- `engine/backend/src/conts/petty-cash-routes.ts`: the "Paid back by finance" list, and `POST /accounting/petty-cash/receipts/:id/voucher`;
+- `engine/frontend/src/conts/PettyCash.tsx`;
+- test: `petty-cash-routes.test.ts`.
+
+**Interfaces:**
+- The list's rows gain `bank: { bankName, accountNo, accountName, fromClaim: boolean, differsFromSaved: boolean } | null`.
+- The voucher uses the claim's bank when there is one, else `bankDetailsOf`.
+
+**Tests:**
+- V1: a voucher for a direct claim names the claim's bank in its notes.
+- V2: `differsFromSaved` is true when the account number differs, and false when it is the same.
+
+- [ ] Write V1 and V2, see them fail, implement, then see them pass.
+- [ ] The screen shows the bank under the receipt, with a "Not the saved account" badge when it differs.
+- [ ] Commit.
+
+### Task 5: Property OS — the job's documents route
+
+**Files:**
+- `functions/api/maintenance/issues/[id]/documents.ts`;
+- `src/lib/claims.ts`: `myBank()`, and `bankProblem(b)` for the shared form rules;
+- test: `src/lib/claims.test.mjs` (new), for `bankProblem`.
+
+**Interfaces:**
+- **A `purchase`** takes `payBack` (`'float'` default, or `'finance'`) and the `bankName`, `accountNo` and `accountName` fields, and forwards them as `payBack` and `bank`.
+- **Box 2** uploads as kind `pod`.
+- **The desk and phone labels** for `pod` become "Receipt / Proof of work and product".
+
+- [ ] Write the `bankProblem` tests, see them fail, implement, see them pass.
+- [ ] Wire the route, then commit.
+
+### Task 6: The job upload area on the phone and the computer
+
+**Files:**
+- `src/pages/FieldRepairsPage.tsx`;
+- `src/pages/MaintenancePage.tsx`;
+- `src/lib/portalI18n.ts` (four languages).
+
+**Box 1, "Claim":**
+- **The choice.** Segmented Petty Cash (Claim) / Direct Claim to Me. The default is Petty Cash, and it is hidden when `me.route` is `'finance'`.
+- **What is required:**
+  - the invoice photo;
+  - the amount, read by OCR without waiting;
+  - for Direct, the bank: a bank select, the account number and the name, prefilled from `GET /claims/my-bank` and editable. The note under it says "Changes here are kept on this claim only."
+- **Submitting.** "Hand in" sends a `purchase`.
+
+**Box 2, "Receipt / Proof of work and product":** an attach button for several files, store only.
+
+**Removed:** the kind dropdown, on both screens.
+
+- [ ] Build both screens.
+- [ ] Check in the browser, against the local API with the claims forward stubbed or absent:
+  - layout at 375 px and in dark mode;
+  - the default choice;
+  - the bank prefill shape;
+  - Box 2 upload.
+- [ ] Commit.
+
+### Task 7: The phone Receipts page — three options
+
+**Files:**
+- `src/pages/FieldReceiptsPage.tsx`;
+- `src/lib/portalI18n.ts`.
+
+**Options:** Petty Cash (Claim), the default and hidden without a float; Direct Claim to Me; Direct Pay to Supplier.
+- **Direct Claim to Me** adds the bank fields, as in Task 6, and hands in with `payBack: 'finance'`.
+- **Direct Pay to Supplier:**
+  - it asks for the supplier's name (prefilled from OCR), the amount, a "Pay by" date and the bill photo;
+  - it posts to `/claims/requests` as `{ type: 'PAYMENT', payeeName, ... }`;
+  - the bill is read with `readRequestBill`;
+  - the success toast says "Sent to finance to pay the supplier".
+- **Not waiting for OCR.** Send is enabled once the amount and the photo are there, even while reading.
+
+- [ ] Build it, check it in the browser, commit.
+
+### Task 8: SOP, checks and wrap-up
+
+- [ ] SOP 6 gets the three options and the job boxes, in Chinese.
+- [ ] Run `npm test`, `npm run check`, `npx tsc -b`, the engine tests (`npm run test:light` in `engine/backend`) and the engine frontend build.
+- [ ] Add an "As built" section to this plan.
+- [ ] Commit.
+
+## As built (12 Nov 2026)
+
+**Commits** (branch `feat/maintenance-claim-options`):
+- 5d4476c — Task 1: Direct Claim to Me in the engine, and `GET /my-bank`.
+- 5045f31 — Task 2: a field worker's payment request, by the supplier's name only.
+- d7561f1 — Task 3: the migration, renumbered 0309 → 0311 → **0314** in later commits (main took 0309, 0310 and 0312 the same day; two other branches hold 0311).
+- 3e0f63c — Task 4: finance's pay-back list shows the bank, and the voucher pays to the claim's bank.
+- 24e0c65 — Task 5: the documents route; the claims forward; `src/lib/claimBank.ts`.
+- 6882127 — Task 6: the job's two boxes on the phone and the desk.
+- b111b80 — Task 7: the Receipts page's three options, plus the polish found in the browser check.
+- The SOP commit.
+
+**Where it differs from the plan.** Each is a `Ruling:` line in the ledger.
+- **The claims forward.** The Property OS claims forward (`functions/api/claims/[[path]].ts`) also changed:
+  - `GET my-bank` is open to everyone;
+  - `POST requests` is open to field workers too. The engine still allows them only a PAYMENT by name.
+- **`bankProblem`.** It lives in `src/lib/claimBank.ts` (no imports) and returns the key of the wrong field, so the phone can name it in four languages. It is shared by the forms and the job's documents route.
+- **`differsFromSaved`** is also true when nothing is saved.
+- **Finance's screen.** It shows the bank as a "Paid to" column, with the page's own badge.
+- **One shared component.** One Claim box (`JobClaimBox`) with shared bank fields (`ClaimBankFields`, `useSavedBank`). The desk uses the portal's English words (`PORTAL_ENGLISH`).
+- **The choice control.** The options use `ChoiceChips` (wraps on a phone, 44 px on touch) on the job box and the Receipts page, not `Segmented`.
+- **Lists.**
+  - The Claim box lists the claims handed in.
+  - The second box lists every other file, including the old kinds.
+  - Inside its own box a file shows only its date.
+- **Where the boxes show.**
+  - Desk: both boxes, on a done job too, as the old desk upload was. Still behind finance view.
+  - Phone: only on an open job of the person's own.
+- **Option names** stay in English in all four languages (chew's names); the notes are translated.
+
+**Checks**
+- Engine:
+  - my-claims-routes 32/32 and petty-cash-routes 25/25;
+  - engine `tsc` clean;
+  - engine frontend build passes.
+- Property OS:
+  - `tsc -b` clean;
+  - `npm run check` 17/17;
+  - `claimBank.test.mjs` 2/2;
+  - `mobile-field.mjs` 62/62 on a local copy (5 new checks).
+- Browser, on a local copy with an engine stand-in that records what Property OS forwards: phone at 375 px (light, and dark with the theme forced), desk at 800 px. What was checked:
+  - the default choice;
+  - the bank prefill, and a changed account kept on the claim only;
+  - a wrong account number refused under the field;
+  - a typed amount kept while the photo is read, and sending while it reads;
+  - several files in the second box;
+  - a person with no petty cash sees Direct Claim to Me only;
+  - Direct Pay to Supplier read with the bill reader and forwarded as a PAYMENT by name;
+  - no "Kind of file" dropdown on either screen.
+
+**Not this branch's**
+- `npm test` 3 failures on main: categoryCatalog ×2 and statementPdf.
+- The engine light suite's known failures: doStockLeavesOnConfirm and specialsRecordedNeverPriced.
+- PGlite cannot apply main's 0291 (btree_gist).
+
+**Release**
+1. With chew's OK: migration **0314** on production through "Apply migrations to production" with only=0314, dry run first, **before** merge. The engine writes the new columns as soon as it deploys.
+2. Then merge. Property OS and the engine both deploy from main.
+3. To test end to end: production with a test account, or staging. The engine does not run on the local PGlite copy.
+
+**Final review** (opus, 12 Nov). Ready "with fixes": 0 Critical, 3 Important. All were fixed in one pass, each with a test that failed first (04df0f8):
+- **Account numbers.** Only Ledger full sees whole account numbers on the pay-back list; view and edit see the last four digits (V3).
+- **No project on a field request.** A field worker's request may not name a project, because the refusal over a limit would show what is left of it.
+- **Field workers see their requests.** The Receipts page lists the person's requests to pay suppliers, with the status and any rejection reason. The forward lets field workers read their own requests, and a request carries an id, so a resend finds the first request.
+- **Account name prefill (a Minor, raised to Important).** `/my-bank` fills the account name with the person's own name when HR keeps none.
+- **Ruling changed.** The desk Claim box appears on an open job only, as on the phone.
+
+**Deferred minors** (from the final review, not fixed here):
+- **A replacement sent without `payBack` loses the claim's bank.** No client sends replacements today.
+- **The success toast follows the local choice, not the returned route.** This shows after a resend following a switch, or when Property OS is deployed before the engine.
+- **"Not the saved account" compares the account number only,** not the bank.
+- **Switching from Direct Pay to Supplier to a claim after the bill was read** loses the bill's date and shop.
+- **Every receipt read selects the 0314 columns.** So 0314 must be on production and staging before the engine deploys.
+- **`ClaimBankFields` imports the bank list from `functions/_lib/hrFields`.** Move the list to a module with no imports.
+- **Smaller items:**
+  - `savedBanksOf` reads ids unbatched;
+  - the desk shows phone wording;
+  - the Receipts choice is titled "How you are paid back" for Direct Pay to Supplier too;
+  - "No bank details" shows on rejected and replaced rows;
+  - paid rows show today's saved account;
+  - `fromClaim` is not displayed;
+  - engine route header comments are stale.
+- **A field worker cannot withdraw a Direct Pay to Supplier on the phone.** Withdraw stays office-only; they ask the office.
+
+**Release note added:** the **staging** database needs 0314 too, because the staging engine deploys on every merge to main.

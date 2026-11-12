@@ -5,9 +5,10 @@ import { EmptyState } from '../../components/States';
 import { StaleBanner, TableSkeleton } from '../../components/DataState';
 import Icon from '../../components/Icon';
 import { useApi } from '../../lib/useApi';
-import { MONTHS, plural } from '../../lib/format';
+import { MONTHS, plural, buildingName } from '../../lib/format';
 import { cx, TONE } from '../../lib/design-tokens';
 import { useUrlState, FilterSelect } from '../finance/listKit';
+import { ListToolbar } from '../../components/ListToolbar';
 import { AIRBNB_CATEGORIES, CATEGORY_FLAG_BELOW, categoryLabel } from '../../lib/reviewRules';
 import { CategoryGrid, TagChips } from './reviewUi';
 import type { PlaceRow } from './ReviewsOverview';
@@ -33,7 +34,7 @@ export function ReviewHealth() {
   const q = new URLSearchParams(Object.entries({ unitId, propertyId: unitId ? '' : propertyId, months }).filter(([, v]) => v) as [string, string][]);
   const { data, error, reload } = useApi<Health>(`/reviews/health?${q}`);
   const places = useApi<{ data: PlaceRow[] }>('/reviews/units');
-  const buildings = [...new Map((places.data?.data ?? []).filter(p => p.propertyId).map(p => [p.propertyId!, p.propertyName ?? ''])).entries()];
+  const buildings = [...new Map((places.data?.data ?? []).filter(p => p.propertyId).map(p => [p.propertyId!, buildingName(p.propertyName ?? '')])).entries()];
   const units = (places.data?.data ?? []).filter(p => !propertyId || p.propertyId === propertyId);
 
   const bars = (data?.trend ?? []).map((m, i, arr) => {
@@ -49,14 +50,14 @@ export function ReviewHealth() {
   return (
     <>
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
-      <div className="grid grid-cols-2 md:flex md:flex-wrap gap-2 items-center">
-        <FilterSelect className="md:flex-[1_1_200px]" label="Building" all="All buildings" value={propertyId} onChange={v => url.set({ propertyId: v || null, unitId: null })}
-          options={buildings.map(([id, name]) => ({ value: id, label: name }))} />
-        <FilterSelect className="md:flex-[1_1_200px]" label="Unit" all="Every unit" value={unitId} onChange={v => url.set({ unitId: v || null })}
-          options={units.filter(u => u.unitId).map(u => ({ value: u.unitId!, label: `${u.propertyName ?? ''} ${u.unitNumber ?? ''}`.trim() }))} />
-        <Segmented className="col-span-2" label="Months" value={months as '6' | '12' | '24'} onChange={k => url.set({ months: k === '12' ? null : k })}
-          options={[{ key: '6', label: '6 months' }, { key: '12', label: '12 months' }, { key: '24', label: '24 months' }]} />
-      </div>
+      <ListToolbar
+        leading={<FilterSelect className="flex-[0_1_220px] min-w-[150px]" label="Unit" all="Every unit" value={unitId} onChange={v => url.set({ unitId: v || null })}
+          options={units.filter(u => u.unitId).map(u => ({ value: u.unitId!, label: `${u.propertyName ?? ''} ${u.unitNumber ?? ''}`.trim() }))} />}
+        filters={[{ key: 'building', label: 'Building', value: propertyId, onChange: v => url.set({ propertyId: v || null, unitId: null }), allLabel: 'All buildings',
+          options: buildings.map(([id, name]) => ({ value: id, label: name })) }]}
+        date={{ label: 'Months', value: months, def: '12', onChange: k => url.set({ months: k === '12' ? null : k }),
+          presets: [{ value: '6', label: 'Last 6 months' }, { value: '12', label: 'Last 12 months' }, { value: '24', label: 'Last 24 months' }] }}
+      />
 
       {!data ? <Card><TableSkeleton rows={4} cols={3} /></Card> : (
         <>

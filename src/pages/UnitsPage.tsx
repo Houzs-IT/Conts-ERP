@@ -27,7 +27,7 @@ import { PurposeBadge, CodeBadge } from './units/UnitExtras';
 import LettingTab from './units/LettingTab';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, dateRange, date, monthLabel, plural, titleCase } from '../lib/format';
+import { rm, dateRange, date, monthLabel, plural, buildingName, personName } from '../lib/format';
 import type { UnitReadiness } from '../lib/types';
 import UnitTree, { firstUnitId } from './units/UnitTree';
 import AccessTab from './units/AccessTab';
@@ -223,7 +223,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     try {
       await api.post<{ id: string }>('/properties', b);
       setModal(null);
-      toast({ tone: 'success', title: 'Building added.', body: `${b.name} — add units to it.` });
+      toast({ tone: 'success', title: 'Building added.', body: `${buildingName(b.name)} — add units to it.` });
       props.reload();
     } catch (e) { notifyFailure(e); }
   }
@@ -231,7 +231,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     try {
       await api.patch(`/properties/${id}`, b);
       setModal(null);
-      toast({ tone: 'success', title: 'Building updated.', body: b.name });
+      toast({ tone: 'success', title: 'Building updated.', body: buildingName(b.name) });
       reloadAll();
     } catch (e) { notifyFailure(e); }
   }
@@ -239,7 +239,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     try {
       await api.del(`/properties/${b.id}`);
       setModal(null);
-      toast({ tone: 'success', title: 'Building deleted.', body: b.name });
+      toast({ tone: 'success', title: 'Building deleted.', body: buildingName(b.name) });
       props.reload();
     } catch (e) { notifyFailure(e); }
   }
@@ -328,7 +328,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   }
 
   const building = buildings.find(b => b.id === form?.buildingId);
-  const unitLabel = form ? (form.unitCode || form.listingName || 'this unit') : d ? `${d.unit.propertyName} ${d.unit.unitNumber}` : 'this unit';
+  const unitLabel = form ? (form.unitCode || form.listingName || 'this unit') : d ? `${buildingName(d.unit.propertyName)} ${d.unit.unitNumber}` : 'this unit';
 
   return (
     <div className="flex flex-col gap-5 min-w-0">
@@ -344,7 +344,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
             className="xl:hidden flex items-center gap-3 w-full py-[11px] px-[14px] bg-card border border-solid border-line rounded-card cursor-pointer [font-family:inherit] text-copy text-left">
             <Icon name="Building2" size="sm" color={color.textMuted} />
             <span className="flex-1 min-w-0">
-              <span className="block text-caption text-muted-ink">{building?.name ?? 'Unit'}</span>
+              <span className="block text-caption text-muted-ink">{building?.name ? buildingName(building.name) : 'Unit'}</span>
               <span className="block text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{form?.unitCode || form?.listingName || 'Choose a unit'}</span>
             </span>
             <span className="text-meta font-medium text-gold-ink flex-none">{treeOpen ? 'Close' : 'Change unit'}</span>
@@ -444,16 +444,17 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
     downloadFile('/expenses/report', { unitId: form.id, period: fmonth }).catch(notifyFailure);
   }
   const needsForm = <Card><div className="p-8 text-center text-copy text-muted-ink">This unit's master data is not available to your role.</div></Card>;
-  const title = form?.listingName || `${u.propertyName} ${u.unitNumber}`;
+  const title = form?.listingName || `${buildingName(u.propertyName)} ${u.unitNumber}`;
   const stem = unitLabel.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'unit';
-  const subtitle = [form?.unitCode || u.unitNumber, building?.name ?? u.propertyName].filter(Boolean).join(' · ');
+  const subtitle = [form?.unitCode || u.unitNumber, buildingName(building?.name ?? u.propertyName)].filter(Boolean).join(' · ');
 
   return (
     <>
       <Card>
         <div className="pt-[14px] px-[14px] pb-0">
-          <CoverPhotoDrop photo={photo} onPick={takeFile} busy={uploading} className="h-[96px] sm:h-[128px]"
-            label="Add a photo of this unit" hint="Drop an image here, or click to browse" />
+          <CoverPhotoDrop photo={photo} onPick={takeFile} busy={uploading} className="h-[120px]"
+            standIn={{ place: buildingName(building?.name ?? u.propertyName), code: form?.unitCode || u.unitNumber }} canAdd={canEdit}
+            label="Add photos of this unit" hint="Drop an image here, or click to browse" />
         </div>
 
         <div className="pt-[18px] px-5 sm:px-6 pb-4 flex items-start justify-between gap-6 flex-wrap">
@@ -485,7 +486,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           {/* Owner names run long (several co-owners, company names); they wrap instead of running off a phone. */}
           <div className="flex flex-col gap-1 min-w-0 max-w-full sm:max-w-[45%] items-start">
             <Eyebrow>Owner</Eyebrow>
-            <Link to={`/owners/${encodeURIComponent(u.owner.id)}`} className="text-heading font-semibold no-underline text-ink! [overflow-wrap:anywhere]">{titleCase(u.owner.name)}</Link>
+            <Link to={`/owners/${encodeURIComponent(u.owner.id)}`} className="text-heading font-semibold no-underline text-ink! [overflow-wrap:anywhere]">{personName(u.owner.name)}</Link>
             {u.contract && <span className="text-meta text-muted-ink">{u.termsLabel ?? `${u.contract.managementFeePct}%`} · {u.contract.renewsOn ? `renews ${date(u.contract.renewsOn)}` : 'No renewal date'}</span>}
           </div>
         </div>
@@ -497,7 +498,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           ] : [['Purpose', u.purpose === 'warehouse' ? 'Warehouse' : 'Showroom'], ['Car park bays', form?.parkingBays?.length ? String(form.parkingBays.length) : '—'], ['Open maintenance jobs', String(openIssues)]]).map(([label, value]) => (
             <div key={label} className="flex flex-col gap-2 min-w-0">
               <Eyebrow>{label}</Eyebrow>
-              <Figure value={value} className="text-[20px] sm:text-[24px] font-medium tracking-[-0.02em] leading-none text-ink" />
+              <Figure value={value} className="text-[19px] font-semibold tracking-[-0.02em] leading-none text-ink" />
             </div>
           ))}
         </div>

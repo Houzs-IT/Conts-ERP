@@ -1,7 +1,7 @@
-import { mayRun } from '../../lib/areaAccess';
+import { mayRun, maySee } from '../../lib/areaAccess';
 import type { SessionUser } from '../../lib/types';
 import { api, errorMessage } from '../../lib/api';
-import { date, titleCase } from '../../lib/format';
+import { date, personName } from '../../lib/format';
 import { deliveryToast, type Delivery } from '../../lib/emailDelivery';
 import type { ConfirmSpec } from '../../components/ConfirmDialog';
 import type { Tone } from '../../lib/types';
@@ -38,7 +38,7 @@ export function portalAction(o: Owner, ctx: {
   onDone: (state: PortalLogin['state']) => void;
 }): PortalAction | null {
   const p = portalOf(o);
-  const name = titleCase(o.displayName);
+  const name = personName(o.displayName);
   const call = async (path: string, ok: { title: string; body?: string }, what: string, fallback: string, failTitle: string, next: PortalLogin['state']) => {
     try {
       const res = await api.post<Delivery>(path, {});
@@ -77,3 +77,8 @@ export function portalAction(o: Owner, ctx: {
   }
   return null;
 }
+
+/** View as owner (owner, 12 Nov 2026): only Management and the Finance department, and only with Finance access, which
+ *  is what the portal's reads check (?ownerId=, functions/_lib/ownerScope.ts). It moved from Owner B to the owner profile. */
+export const mayViewAsOwner = (user: SessionUser | null | undefined): boolean =>
+  !!user && (user.role === 'management' || user.department?.trim().toLowerCase() === 'finance') && maySee(user, 'finance');

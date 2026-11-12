@@ -1,7 +1,7 @@
 import { type CSSProperties, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
 import { color, dcGlass, shell, radius, motion, text } from '../theme';
-import { groupName, navFor, withoutOffItems, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, type Workspace } from '../lib/navigation';
+import { entryPath, groupName, navFor, withoutOffItems, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, type Workspace } from '../lib/navigation';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { confirmLeaving } from '../lib/useLeaveGuard';
@@ -125,7 +125,7 @@ export const sidebarLookKey = (dreamCrafter: boolean, dark: boolean): SidebarLoo
 
 function parentOf(groups: NavGroup[], path: string) {
   for (const g of groups) for (const it of g.items)
-    if (it.children?.some(c => c.path === path)) return it.key;
+    if (!it.tabs && it.children?.some(c => c.path === path)) return it.key;
   return null;
 }
 
@@ -313,8 +313,11 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
               <div aria-hidden style={{ height: 1, margin: '4px 8px 6px', background: look.divider }} />
             )}
             {!sectionCollapsed && g.items.map(it => {
-              const isOpen = open && (expanded[it.key] ?? activeParent === it.key);
-              const selfActive = it.key === selected || (!!it.children && activeParent === it.key && !isOpen);
+              // An entry whose screens are sub-tabs (Units, Owners, Settings) is one row: it never folds open, and it is
+              // selected on any of its tabs and their records.
+              const tabbed = !!it.tabs && !!it.children;
+              const isOpen = open && !tabbed && (expanded[it.key] ?? activeParent === it.key);
+              const selfActive = it.key === selected || (tabbed && it.children!.some(c => c.key === selected)) || (!!it.children && !tabbed && activeParent === it.key && !isOpen);
               const n = countOf(it.badge) || (it.children ?? []).reduce((s, c) => s + countOf(c.badge), 0);
               const tip = n > 0 ? `${it.label}: ${countWords(it.badge ?? it.children?.find(c => countOf(c.badge))?.badge, n)}` : it.label;
               const named = n > 0 ? `${it.label}, ${countWords(it.badge ?? it.children?.find(c => countOf(c.badge))?.badge, n)}` : it.label;
@@ -336,17 +339,17 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                     : <Icon name={toPascal(it.icon)} size="nav" />}
                   {open && <span style={{ flex: 1, minWidth: 0, fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.label}</span>}
                   {open && it.fresh && n === 0 && <span style={{ fontSize: text.micro, fontWeight: 700, padding: '1px 6px', borderRadius: radius.pill, flex: 'none', background: color.gold, color: color.black }}>New</span>}
-                  {open && !it.children && n > 0 && <span style={badge(selfActive)}>{countLabel(n)}</span>}
+                  {open && (!it.children || tabbed) && n > 0 && <span style={badge(selfActive)}>{countLabel(n)}</span>}
                   {/* The rail shows a dot where the full menu shows a count. */}
                   {!open && n > 0 && <span aria-hidden style={{ position: 'absolute', top: look.tile ? 4 : 6, right: look.tile ? 6 : 10, width: 7, height: 7, borderRadius: 999, background: look.dot, boxShadow: `0 0 0 2px ${look.dotRing}` }} />}
-                  {open && it.children && (
+                  {open && it.children && !tabbed && (
                     <span style={{ display: 'flex', opacity: 0.6, transition: `transform 180ms ${motion.ease}`, transform: `rotate(${isOpen ? 90 : 0}deg)` }}>
                       <Icon name="ChevronRight" size="sm" />
                     </span>
                   )}
                 </>
               );
-              const leafPath = !it.children ? it.path : undefined;
+              const leafPath = tabbed ? entryPath(it) : !it.children ? it.path : undefined;
               return (
                 <div key={it.key} style={{ display: 'flex', flexDirection: 'column' }}>
                   {leafPath ? (

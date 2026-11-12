@@ -34,7 +34,7 @@ import { sendEmail, publicUrl } from "../services/email";
 import { resolveCompanyCode, getBrandingForCompany } from "../services/branding";
 import { AutoCountClient, routeRegion, isAutoCountSyncDisabled } from "../services/autocount";
 import { upsertSalesOrder } from "../services/pull";
-import { requirePermission, requireAnyPermission, requireAnyAccess, requirePageAccessOrSalesView } from "../middleware/auth";
+import { requirePermission, requireAnyPermission, requireAnyAccess, requirePageAccess, requirePageAccessOrSalesView } from "../middleware/auth";
 import { baseKeyOf, isThumbKey, THUMB_MAX_BYTES, thumbKeyFor } from "../services/photoThumbs";
 import {
   houzsCompanyId,
@@ -338,7 +338,7 @@ const DEFAULT_ASSIGNEE_KEYS = {
   default_assignee2_id: "assr_default_assignee2_id",
 } as const;
 
-app.get("/settings", requirePermission("service_cases.read"), async (c) => {
+app.get("/settings", requireAnyAccess(["service_cases.settings"], ["service_cases.read"]), async (c) => {
   const rows = await c.env.DB.prepare(
     `SELECT s.key AS key, u.id AS user_id, u.name AS user_name, u.email AS user_email
        FROM system_settings s
@@ -363,7 +363,7 @@ app.get("/settings", requirePermission("service_cases.read"), async (c) => {
   });
 });
 
-app.put("/settings", requirePermission("service_cases.manage"), async (c) => {
+app.put("/settings", requirePageAccess("service_cases.settings", "full"), async (c) => {
   const body = await c.req.json<{
     default_assignee_id?: number | null;
     default_assignee2_id?: number | null;
@@ -432,7 +432,7 @@ app.get("/lookups/:kind", requireServiceCaseAccess(), async (c) => {
   return c.json({ data: rows.results ?? [] });
 });
 
-app.post("/lookups/:kind", requirePermission("service_cases.manage"), async (c) => {
+app.post("/lookups/:kind", requirePageAccess("service_cases.settings", "full"), async (c) => {
   const kind = c.req.param("kind");
   const table = lookupTable(kind);
   if (!table) return c.json({ error: "Unknown lookup kind" }, 400);
@@ -473,7 +473,7 @@ app.post("/lookups/:kind", requirePermission("service_cases.manage"), async (c) 
   return c.json({ ok: true, slug });
 });
 
-app.patch("/lookups/:kind/:id", requirePermission("service_cases.manage"), async (c) => {
+app.patch("/lookups/:kind/:id", requirePageAccess("service_cases.settings", "full"), async (c) => {
   const kind = c.req.param("kind");
   const table = lookupTable(kind);
   if (!table) return c.json({ error: "Unknown lookup kind" }, 400);
@@ -511,7 +511,7 @@ app.patch("/lookups/:kind/:id", requirePermission("service_cases.manage"), async
 // Bulk reorder. Same shape as the project bulk-reorder endpoints:
 // `{ ids: [...] }` in the new display order; sort_order is rewritten
 // in steps of 10 so future inserts can slot between rows.
-app.put("/lookups/:kind/reorder", requirePermission("service_cases.manage"), async (c) => {
+app.put("/lookups/:kind/reorder", requirePageAccess("service_cases.settings", "full"), async (c) => {
   const kind = c.req.param("kind");
   const table = lookupTable(kind);
   if (!table) return c.json({ error: "Unknown lookup kind" }, 400);
@@ -530,7 +530,7 @@ app.put("/lookups/:kind/reorder", requirePermission("service_cases.manage"), asy
   return c.json({ ok: true });
 });
 
-app.delete("/lookups/:kind/:id", requirePermission("service_cases.manage"), async (c) => {
+app.delete("/lookups/:kind/:id", requirePageAccess("service_cases.settings", "full"), async (c) => {
   const kind = c.req.param("kind");
   const table = lookupTable(kind);
   if (!table) return c.json({ error: "Unknown lookup kind" }, 400);
@@ -1502,7 +1502,7 @@ app.post("/resync-so/:docNo", requirePermission("service_cases.write"), async (c
 // measurement that says both arms have to stay live in
 // services/assrVisibility.ts `myCasesPredicateSql` — this handler only resolves
 // the per-REQUEST company predicate, which is the one thing a service cannot.
-app.get("/my-cases", requireServiceCaseAccess(), async (c) => {
+app.get("/my-cases", requireServiceCaseAccess(), requirePageAccessOrSalesView("service_cases.my_cases"), async (c) => {
   const userId = (c as any).get?.("userId") ?? 0;
   if (!userId) return c.json({ cases: [] });
   return c.json(await listMyCases(c.env, Number(userId), assrCompanySql(c)));

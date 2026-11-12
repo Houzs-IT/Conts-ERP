@@ -216,7 +216,7 @@ export default function AirbnbReconPage() {
     : null;
   const ruleChip = ruleFilter ? (
     <button type="button" onClick={() => url.set({ rule: null })} className="bg-transparent border-0 p-0 cursor-pointer" title="Show every rule">
-      <StatusBadge tone={RULE_TONE[ruleFilter]} label={<>{ruleText(ruleFilter)} ✕</>} />
+      <StatusBadge tone={RULE_TONE[ruleFilter]} label={<span className="inline-flex items-center gap-1">{ruleText(ruleFilter)}<Icon name="X" size="sm" style={{ width: 12, height: 12 }} /></span>} />
     </button>
   ) : null;
 
@@ -246,7 +246,7 @@ export default function AirbnbReconPage() {
               <Files files={data.files ?? []} />
               <StatRow cols={4}>
                 <StatTile label="Paid to the bank" value={rm(t.bank)}
-                  hint={t.bank === t.money ? <span className="text-success">✓ Equals the money for reservations</span> : <span className="text-warning">Money for reservations {rm(t.money)}: {signed(t.money - t.bank)} apart</span>} />
+                  hint={t.bank === t.money ? <span className="inline-flex items-center gap-1 text-success"><Icon name="Check" size="sm" style={{ width: 13, height: 13 }} />Equals the money for reservations</span> : <span className="text-warning">Money for reservations {rm(t.money)}: {signed(t.money - t.bank)} apart</span>} />
                 <StatTile label="Reservations equal" value={`${count(equal)} of ${count(counted)}`} hint={counted ? `${((equal / counted) * 100).toFixed(1)}% need nothing` : undefined} />
                 <StatTile label="To confirm" value={count(open.length)} tone={open.length ? 'warning' : undefined} onClick={() => url.set({ view: null, rule: null })} active={view === 'confirm'}
                   hint={[done.length ? `${count(done.length)} done` : '', change ? `amounts would go ${change > 0 ? 'up' : 'down'} by ${rm(Math.abs(change))}` : ''].filter(Boolean).join(' · ') || 'No reservation amount to change'} />

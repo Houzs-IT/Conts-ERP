@@ -10,7 +10,7 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure, ApiFailure, errorMessage } from '../lib/api';
 import { isStaged, stagedToast } from '../lib/approvals';
 import { refreshNavCounts } from '../lib/navBadges';
-import { monthLabel, dateShort, todayMyt, plural, count as fmtCount, titleCase } from '../lib/format';
+import { monthLabel, dateShort, todayMyt, plural, count as fmtCount, buildingName, personName } from '../lib/format';
 import { DataTable, type Column } from '../components/DataTable';
 import { fetchAllPages } from '../lib/export';
 import { MoneyText, moneyString } from '../components/MoneyText';
@@ -21,9 +21,9 @@ import { TONE, cx } from '../lib/design-tokens';
 import type { Tone } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
 import { Eyebrow, Figure, Segmented } from '../components/Metric';
-import { FilterBar } from '../components/FilterBar';
+import { ListToolbar } from '../components/ListToolbar';
 import {
-  useUrlState, ListCard, SearchBox, shiftMonth,
+  useUrlState, ListCard, shiftMonth,
   useFinanceFilters, type FinanceFilters,
 } from './finance/listKit';
 import { Segmented as Tabs } from '../components/ops/OpsUi';
@@ -183,10 +183,10 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
   const unitOptions = useMemo<SelectOption[]>(() => (filters?.units ?? [])
     .filter(u => (!building || u.buildingId === building) && (!owner || u.ownerId === owner))
     .map(u => ({ value: u.id, label: u.unitNumber, group: filters?.buildings.find(b => b.id === u.buildingId)?.name ?? '' })), [filters, building, owner]);
-  const ownerOptions = useMemo<SelectOption[]>(() => (filters?.owners ?? []).map(o => ({ value: o.id, label: titleCase(o.name) })), [filters]);
+  const ownerOptions = useMemo<SelectOption[]>(() => (filters?.owners ?? []).map(o => ({ value: o.id, label: personName(o.name) })), [filters]);
   const buildingOptions = useMemo<SelectOption[]>(() => [
     { value: '', label: 'All buildings' },
-    ...[...(filters?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name })),
+    ...[...(filters?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: buildingName(b.name) })),
   ], [filters]);
 
   const monthOptions = useMemo(() => {
@@ -283,8 +283,8 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
     { key: 'description', label: 'Description', value: r => r.description || catLabel(r.category), hideable: false, width: 230, filter: false,
       sub: r => (r.chargeTo !== 'owner' ? `Charged to ${CHARGE_LABEL[r.chargeTo] ?? r.chargeTo}` : null) },
     { key: 'unit', label: 'Unit', value: r => r.unitNumber, text: r => `${r.unitNumber} ${r.propertyName}`, exportValue: r => r.unitNumber,
-      sortKey: 'unit', width: 140, filter: false, sub: r => r.propertyName },
-    { key: 'building', label: 'Building', value: r => r.propertyName, hidden: true, filter: false, width: 150 },
+      sortKey: 'unit', width: 140, filter: false, sub: r => buildingName(r.propertyName) },
+    { key: 'building', label: 'Building', value: r => buildingName(r.propertyName), hidden: true, filter: false, width: 150 },
     { key: 'category', label: 'Category', type: 'status', value: r => r.category, width: 130,
       status: r => ({ label: catLabel(r.category), tone: catTone(r.category) }),
       filter: { kind: 'select', param: 'category', multi: false, options: (Object.keys(CAT_LABEL) as Category[]).map(c => ({ value: c, label: CAT_LABEL[c] })) } },
@@ -312,7 +312,6 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
   const rows = (data?.data ?? []).map(withEdits);
   const firstLoad = loading && !data;
   const cats = data?.byCategory ?? [];
-  const catCount = cats.reduce((n, c) => n + c.count, 0);
   // Pills read A to Z with Other last, so a category is always in the same place.
   const catPills = [...cats].sort((a, b) =>
     Number(a.category === 'other') - Number(b.category === 'other') || catLabel(a.category).localeCompare(catLabel(b.category)));
@@ -335,39 +334,45 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
 
       {error && view === 'grouped' && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={refresh} />}
 
-      {/* Category chips carry counts for the month and the other filters, so a click never lands on nothing. */}
-      <FilterBar label="Expense category" className="shrink-0" value={cat}
-        onChange={k => setFilter({ category: k && k !== cat ? k : null })}
-        views={[
-          { key: '', label: 'All categories', count: data ? catCount : undefined },
-          ...catPills.map(c => ({ key: c.category as string, label: catLabel(c.category), count: c.count })),
-          ...(cat && !cats.some(c => c.category === cat) ? [{ key: cat as string, label: catLabel(cat), count: 0 }] : []),
-        ]} />
-
-      <div className="flex flex-wrap gap-2 items-center shrink-0">
-        <SearchBox className="flex-[2_1_220px]" label="Search expenses" placeholder="Search expenses" value={q} onChange={v => setFilter({ q: v || null })} />
-        <Select className="flex-[1_1_140px]" label="Building" value={building} onChange={v => setFilter({ building: v || null, unit: null })} options={buildingOptions} />
-        <SearchSelect className="flex-[1_1_160px]" label="Unit" allLabel="All units" placeholder="Search units" value={unit} onChange={v => setFilter({ unit: v || null })} options={unitOptions} />
-        <SearchSelect className="flex-[1_1_160px]" label="Owner" allLabel="All owners" placeholder="Search owners" value={owner} onChange={v => setFilter({ owner: v || null, unit: null })} options={ownerOptions} />
-
-        {/* View toggle — grouped drill-down (default) or the flat list. */}
-        <Segmented<'grouped' | 'list'> label="Expenses view" value={view} onChange={v => setFilter({ view: v === 'grouped' ? null : v })}
-          options={[{ key: 'grouped', label: 'Grouped' }, { key: 'list', label: 'List' }]} />
-
-        {/* Month — stepper plus a menu of the months that have expenses. */}
-        <div className="flex flex-[1_0_150px] sm:flex-none sm:w-[168px] items-center h-9 rounded-control border border-solid border-line bg-card min-w-0">
-          <button aria-label="Previous month" onClick={() => stepMonth(-1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink hover:text-ink"><Icon name="ChevronLeft" size="sm" /></button>
-          <label className="relative flex-1 min-w-0 h-full">
-            <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Month</span>
-            <select value={monthAll ? 'all' : shownMonth} onChange={e => setFilter({ month: e.target.value })}
-              className="w-full h-full appearance-none bg-transparent border-none outline-none text-center font-sans text-copy font-medium text-ink cursor-pointer tabular-nums px-1 [text-align-last:center]">
-              {monthOptions.map(m => <option key={m} value={m}>{monthLabel(m)}{sentPeriods.has(m) ? ' · sent' : ''}</option>)}
-              <option value="all">All months</option>
-            </select>
-          </label>
-          <button aria-label="Next month" onClick={() => stepMonth(1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink hover:text-ink"><Icon name="ChevronRight" size="sm" /></button>
-        </div>
-      </div>
+      {/* One toolbar (redesign phase 2): search, unit and owner pickers, Filters (category with its count, building),
+          Grouped / List and the month. Category counts are for the month and the other filters, so a pick never lands on nothing. */}
+      <ListToolbar
+        search={{ value: q, onChange: v => setFilter({ q: v.trim() || null }), placeholder: 'Search expenses', label: 'Search expenses' }}
+        leading={<>
+          <SearchSelect className="flex-[0_1_170px] min-w-[140px]" label="Unit" allLabel="All units" placeholder="Search units" value={unit} onChange={v => setFilter({ unit: v || null })} options={unitOptions} />
+          <SearchSelect className="flex-[0_1_170px] min-w-[140px]" label="Owner" allLabel="All owners" placeholder="Search owners" value={owner} onChange={v => setFilter({ owner: v || null, unit: null })} options={ownerOptions} />
+        </>}
+        filters={[
+          { key: 'category', label: 'Category', value: cat, onChange: v => setFilter({ category: v || null }), allLabel: 'All categories',
+            options: [...catPills.map(c => ({ value: c.category as string, label: catLabel(c.category), count: c.count })),
+              ...(cat && !cats.some(c => c.category === cat) ? [{ value: cat, label: catLabel(cat), count: 0 }] : [])] },
+          { key: 'building', label: 'Building', value: building, onChange: v => setFilter({ building: v || null, unit: null }), allLabel: 'All buildings',
+            options: buildingOptions.filter(o => o.value).map(o => ({ value: o.value, label: String(o.label) })) },
+        ]}
+        chips={[
+          ...(unit ? [{ key: 'unit', label: `Unit: ${unitOptions.find(o => o.value === unit)?.label ?? unit}`, onRemove: () => setFilter({ unit: null }) }] : []),
+          ...(owner ? [{ key: 'owner', label: `Owner: ${ownerOptions.find(o => o.value === owner)?.label ?? owner}`, onRemove: () => setFilter({ owner: null, unit: null }) }] : []),
+        ]}
+        after={<>
+          {/* View toggle — grouped drill-down (default) or the flat list. */}
+          <Segmented<'grouped' | 'list'> label="Expenses view" value={view} onChange={v => setFilter({ view: v === 'grouped' ? null : v })}
+            options={[{ key: 'grouped', label: 'Grouped' }, { key: 'list', label: 'List' }]} />
+          {/* Month — stepper plus a menu of the months that have expenses. */}
+          <div className="flex flex-[1_0_150px] sm:flex-none sm:w-[168px] items-center h-[34px] max-sm:h-10 rounded-control border border-solid border-line bg-card min-w-0">
+            <button aria-label="Previous month" onClick={() => stepMonth(-1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink hover:text-ink"><Icon name="ChevronLeft" size="sm" /></button>
+            <label className="relative flex-1 min-w-0 h-full">
+              <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Month</span>
+              <select value={monthAll ? 'all' : shownMonth} onChange={e => setFilter({ month: e.target.value })}
+                className="w-full h-full appearance-none bg-transparent border-none outline-none text-center font-sans text-copy font-semibold text-ink cursor-pointer tabular-nums px-1 [text-align-last:center]">
+                {monthOptions.map(m => <option key={m} value={m}>{monthLabel(m)}{sentPeriods.has(m) ? ' · sent' : ''}</option>)}
+                <option value="all">All months</option>
+              </select>
+            </label>
+            <button aria-label="Next month" onClick={() => stepMonth(1)} className="h-full w-8 shrink-0 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink hover:text-ink"><Icon name="ChevronRight" size="sm" /></button>
+          </div>
+        </>}
+        count={data ? <span className="tabular-nums">{subParts.join(' · ')}</span> : undefined}
+      />
 
       {view === 'list' ? (
         <DataTable<Expense>
@@ -444,7 +449,7 @@ function TotalBar({ count, amount }: { count: number; amount: number }) {
   return (
     <div className="flex items-center justify-between gap-3 py-3.5 px-[22px] max-md:px-4 [border-top:1px_solid_var(--color-line)]">
       <Eyebrow>Total · {plural(count, 'expense')}</Eyebrow>
-      <Figure value={moneyString(amount, 'exact')} className="text-[18px] font-semibold tracking-[-0.015em] text-ink" />
+      <Figure value={moneyString(amount, 'exact')} className="text-title font-semibold tracking-[-0.015em] text-ink" />
     </div>
   );
 }
@@ -455,7 +460,7 @@ function ExpenseCard({ e }: { e: Expense }) {
     <span className="flex gap-3 items-start text-ink">
       <span className="flex flex-col gap-[3px] min-w-0 flex-1">
         <span className="text-copy font-medium truncate">{e.description || catLabel(e.category)}</span>
-        <span className="text-meta text-muted-ink truncate">{e.propertyName} {e.unitNumber}</span>
+        <span className="text-meta text-muted-ink truncate">{buildingName(e.propertyName)} {e.unitNumber}</span>
         <span className="text-meta text-muted-ink">{dateShort(e.incurredOn)}{e.locked ? ' · locked' : ''}</span>
       </span>
       <span className="flex flex-col items-end gap-[5px] shrink-0">
@@ -519,7 +524,7 @@ function CategoryRows({ base, category, count, sort, open, toggle, withEdits, on
         return (
           <div key={e.id}>
             <TreeRow depth={2} kind="expense" label={e.description || catLabel(e.category)}
-              sub={`${e.propertyName} ${e.unitNumber} · ${dateShort(e.incurredOn)}${e.reference ? ` · ${e.reference}` : ''}`}
+              sub={`${buildingName(e.propertyName)} ${e.unitNumber} · ${dateShort(e.incurredOn)}${e.reference ? ` · ${e.reference}` : ''}`}
               amount={e.amount} tone={catTone(e.category)} count={kids.length ? kids.length : undefined}
               expanded={open.has(key)} onToggle={kids.length ? () => toggle(key) : undefined}
               locked={!!e.locked} onEdit={kids.length ? undefined : () => onEdit(e)} />
@@ -576,7 +581,7 @@ function TreeRow({ depth, kind, label, sub, amount, tone, count, expanded, onTog
       {tone && !isTotal && <span className={cx('w-[7px] h-[7px] rounded-full shrink-0', TONE[tone].dot)} aria-hidden />}
 
       <div className="flex flex-col gap-px min-w-0 flex-1">
-        <span className={cx('truncate', isTotal ? 'text-[16px] tracking-[-0.01em]' : 'text-copy')} title={label}>
+        <span className={cx('truncate', isTotal ? 'text-heading tracking-[-0.01em]' : 'text-copy')} title={label}>
           {label}
           {count != null && count > 0 && kind !== 'expense' && <span className="ml-[6px] text-caption font-normal text-muted-ink">· {plural(count, 'item')}</span>}
           {count != null && count > 0 && kind === 'expense' && <span className="ml-[6px] text-caption font-normal text-muted-ink">· {plural(count, 'line')}</span>}
@@ -584,7 +589,7 @@ function TreeRow({ depth, kind, label, sub, amount, tone, count, expanded, onTog
         {sub && <span className="text-meta text-muted-ink truncate" title={sub}>{sub}{locked ? ' · statement final' : ''}</span>}
       </div>
 
-      <MoneyText sen={amount} mode="exact" className={cx('shrink-0 text-right', isTotal ? 'text-[16px] font-semibold' : 'text-copy')} />
+      <MoneyText sen={amount} mode="exact" className={cx('shrink-0 text-right', isTotal ? 'text-heading font-semibold' : 'text-copy')} />
 
       {onEdit ? (
         <Button size="sm" variant="secondary" onClick={e => { e.stopPropagation(); onEdit(); }}
@@ -651,7 +656,7 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
   // even when it came in from a category outside the add-set.
   const catOptions = ADD_CATEGORIES.includes(category) ? ADD_CATEGORIES : [category, ...ADD_CATEGORIES];
   const unitChoices = (filters?.units ?? []).filter(u => !buildingId || u.buildingId === buildingId);
-  const buildingName = (id: string) => filters?.buildings.find(b => b.id === id)?.name ?? '';
+  const buildingOf = (id: string) => buildingName(filters?.buildings.find(b => b.id === id)?.name);
 
   async function submit(e?: FormEvent) {
     e?.preventDefault();
@@ -679,7 +684,7 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
       title={mode === 'create' ? 'Add monthly expense' : 'Edit expense'}
       sub={mode === 'create'
         ? 'Logs a deduction against the unit for the owner statement. Every expense needs a category, date, amount and reference.'
-        : `${expense?.propertyName} ${expense?.unitNumber}`}
+        : [buildingName(expense?.propertyName), expense?.unitNumber].join(' ')}
       onClose={onClose}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose}>{readOnly ? 'Close' : 'Cancel'}</Button>
@@ -698,9 +703,9 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
         {mode === 'create' && (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
             <Select showLabel size="md" label="Building" value={buildingId} onChange={v => { setBuildingId(v); setUnitId(''); }}
-              options={[{ value: '', label: 'All buildings' }, ...[...(filters?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name }))]} />
+              options={[{ value: '', label: 'All buildings' }, ...[...(filters?.buildings ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: buildingName(b.name) }))]} />
             <SearchSelect showLabel size="md" label="Unit" allLabel="Pick a unit" placeholder="Search units" value={unitId} onChange={setUnitId}
-              options={unitChoices.map(u => ({ value: u.id, label: u.unitNumber, group: buildingName(u.buildingId) }))} />
+              options={unitChoices.map(u => ({ value: u.id, label: u.unitNumber, group: buildingOf(u.buildingId) }))} />
           </div>
         )}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">

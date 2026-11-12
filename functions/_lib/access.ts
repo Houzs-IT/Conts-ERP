@@ -85,11 +85,17 @@ export const AREAS: Area[] = [
   { key: 'unlockStep', label: 'Unlock a step', group: 'Units', api: [], managed: true, ownGrant: true },
   { key: 'serviceCases', label: 'Service cases', group: 'Service cases', api: [] },
   { key: 'serviceMetrics', label: 'Quality metrics', group: 'Service cases', api: [] },
+  // Picker lists and SLA lead times; changing them needs Full, as it did on Service cases.
+  { key: 'serviceSettings', label: 'Case settings', group: 'Service cases', api: [] },
+  { key: 'serviceMyCases', label: 'My cases', group: 'Service cases', api: [] },
   { key: 'projects', label: 'Projects', group: 'Projects', api: [] },
   { key: 'projectDefects', label: 'Defects', group: 'Projects', api: [] },
   { key: 'projectHandover', label: 'Handover checklists', group: 'Projects', api: [] },
   // Cost and profit: the engine opens it at Full only, as the menu does.
   { key: 'projectFinances', label: 'Finances', group: 'Projects', api: [] },
+  // Brands, event types, crews, venues and the other lists; Full only, as it was on Projects. Calendar stays with Projects:
+  // it reads the same board as the Projects list.
+  { key: 'projectSettings', label: 'Project settings', group: 'Projects', api: [] },
   { key: 'scSales', label: 'Sales order', group: 'Supply chain', api: ['sales-orders', 'so-amendments', 'delivery-orders', 'sales-returns', 'customers'] },
   { key: 'scInvoices', label: 'Invoices and payments', group: 'Supply chain', api: ['payment-vouchers', 'purchase-invoices', 'sales-invoices', 'unbilled-deliveries', 'credit-notes', 'accounting'], managed: true, strictRead: true },
   { key: 'scConsignment', label: 'Consignment', group: 'Supply chain', api: ['consignment-notes', 'purchase-consignment'], hidden: true },

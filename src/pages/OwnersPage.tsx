@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -10,7 +10,7 @@ import { api, ApiFailure, errorMessage } from '../lib/api';
 import { saveBlob, zipStore } from '../lib/export';
 import type { Report } from './OwnerIncomeReportPage';
 import type { StatementPages } from '../lib/statementPdf';
-import { rm, monthLabel, todayMyt, titleCase, plural } from '../lib/format';
+import { rm, monthLabel, todayMyt, plural, buildingName, personName } from '../lib/format';
 import { phone as formatPhone } from '../lib/phone';
 import { MoneyText } from '../components/MoneyText';
 import { Menu, Select } from '../components/Select';
@@ -26,16 +26,13 @@ import { ModelChip } from './units/ContractTab';
 import { CodeBadge } from './units/UnitExtras';
 import { typeOptions } from '../lib/revenueModel';
 import { useContractTypes } from '../lib/useContractTypes';
-import { Segmented } from '../components/ops/OpsUi';
-import { RowsSkeleton } from '../components/Loading';
+import { Eyebrow, StatRow, StatTile } from '../components/Metric';
 import { useSession } from '../lib/session';
 import { areaOpen } from '../lib/navigation';
 import { RowActions, type RowAction } from '../components/RowActions';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { mayInviteOwners, portalAction, portalBadge } from './owners/portalAccess';
 
-const StatementsPage = lazy(() => import('./StatementsPage'));
-const PayoutsPage = lazy(() => import('./PayoutsPage'));
 
 /**
  * Owners list. Each row opens the full owner profile at `/owners/:id`
@@ -50,8 +47,8 @@ const PayoutsPage = lazy(() => import('./PayoutsPage'));
  *
  * Owner statements and owner payouts live on the owner (owner, 11 Oct 2026). One owner's month is on their profile;
  * the whole month for every owner (generate, mark final, send, start the payout run, mark paid) is this page's
- * Statements and Payouts tabs, for people with the Finance area. `/finance/statements` and `/finance/payouts`
- * redirect here. On a phone the tabs show only when a link opened one.
+ * Owner statements and Owner payouts sub-tabs, for people with the Finance area. `/finance/statements` and
+ * `/finance/payouts` redirect there. On a phone those tabs show only when a link opened one.
  */
 
 type ModelFilter = '' | RevenueModel | 'none';
@@ -98,35 +95,13 @@ function byColumnFilters(list: Owner[], get: (k: string) => string, buildingName
 }
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase();
 
-type View = 'owners' | 'statements' | 'payouts';
-/** Query keys each tab keeps in the address; switching tabs clears them so one tab's filters never leak into another. */
-const TAB_KEYS = ['q', 'building', 'model', 'month', 'sort', 'state', 'period', 'page', 'size'];
-
+/** The month's statements and payouts for every owner are the Owner statements and Owner payouts sub-tabs now, at
+ *  /owners/statements and /owners/payouts (owner, 12 Nov 2026); /owners?view=... still opens them (App.tsx). */
 export default function OwnersPage() {
-  const url = useUrlState();
-  const phone = usePhone();
-  const { user } = useSession();
-  const money = !!user && areaOpen(user.role, 'finance', user.access);
-  const asked = url.get('view');
-  const view: View = money && (asked === 'statements' || asked === 'payouts') ? asked : 'owners';
-  const pick = (v: View) => url.set({ view: v === 'owners' ? null : v, ...Object.fromEntries(TAB_KEYS.map(k => [k, null])) });
-  const tabs = money && (!phone || view !== 'owners') ? (
-    <Segmented<View> label="Owners, statements and payouts" value={view} onChange={pick} className="self-start"
-      options={[{ value: 'owners', label: 'Owners' }, { value: 'statements', label: 'Statements' }, { value: 'payouts', label: 'Payouts' }]} />
-  ) : null;
-  if (view === 'owners') return <OwnerList tabs={tabs} />;
-  return (
-    <>
-      <PageHeader title="Owners" sub={view === 'statements' ? 'Owner statements for every owner, a month at a time.' : 'Owner payouts for every owner.'} />
-      {tabs}
-      <Suspense fallback={<RowsSkeleton rows={8} cols={5} />}>
-        {view === 'statements' ? <StatementsPage embedded /> : <PayoutsPage embedded />}
-      </Suspense>
-    </>
-  );
+  return <OwnerList />;
 }
 
-function OwnerList({ tabs }: { tabs: ReactNode }) {
+function OwnerList() {
   const types = useContractTypes();
   const url = useUrlState();
   const phone = usePhone();
@@ -140,7 +115,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
 
   const { data, loading, error, reload } = useApi<Payload>(`/owners${month === thisMonth ? '' : `?month=${month}`}`, FALLBACK);
   const filters = useFinanceFilters();
-  const buildingNameOf = useMemo(() => new Map((filters?.buildings ?? []).map(b => [b.id, b.name])), [filters]);
+  const buildingNameOf = useMemo(() => new Map((filters?.buildings ?? []).map(b => [b.id, buildingName(b.name)])), [filters]);
   const buildingsOf = (o: Owner) => [...new Set(o.units.map(u => (u.buildingId ? buildingNameOf.get(u.buildingId) : null)).filter(Boolean))].join(', ');
   const toast = useToast();
   const navigate = useNavigate();
@@ -208,7 +183,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
   }
 
   function askToGenerate(picked: ListedStatement[], missing: Owner[], pages: StatementPages): void {
-    const names = missing.slice(0, 5).map(o => titleCase(o.displayName)).join(', ');
+    const names = missing.slice(0, 5).map(o => personName(o.displayName)).join(', ');
     setDialog({
       title: `No ${monthLabel(month)} statement yet for ${plural(missing.length, 'owner')}`,
       body: 'The zip is made from generated owner statements. Generate drafts for them now from the month\'s reservations and costs, then export?',
@@ -260,11 +235,11 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
       await Promise.all(picked.slice(i, i + 4).map(async s => {
         try {
           const r = await loadReport(s.id);
-          if (!r.units.length) { noReport.push(titleCase(s.ownerName)); return; }
+          if (!r.units.length) { noReport.push(personName(s.ownerName)); return; }
           const opts = { logo: await logoOf(r.settings.company.logo), phone: printedPhone, pages };
-          for (const u of r.units) made.push({ name: `${u.code} - ${titleCase(s.ownerName)}`, bytes: await statementPdf({ ...r, units: [u] }, opts) });
+          for (const u of r.units) made.push({ name: `${u.code} - ${personName(s.ownerName)}`, bytes: await statementPdf({ ...r, units: [u] }, opts) });
         } catch {
-          failed.push(titleCase(s.ownerName));
+          failed.push(personName(s.ownerName));
         }
       }));
     }
@@ -297,7 +272,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
   async function addOwner(o: Omit<Owner, 'id' | 'units' | 'portalInvited' | 'contract' | 'defaultManagementFeePct'>) {
     try {
       const made = await api.post<{ id: string }>('/owners', o);
-      toast({ tone: 'success', title: 'Owner added.', body: `${titleCase(o.displayName)}: link a unit next.` });
+      toast({ tone: 'success', title: 'Owner added.', body: `${personName(o.displayName)}: link a unit next.` });
       setModal(false);
       navigate(`/owners/${encodeURIComponent(made.id)}`);
     } catch (e) {
@@ -307,12 +282,12 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
 
   // Column filters are off: the totals under the table add up the owners the page's own search and chips leave.
   const columns = useMemo<Column<Owner>[]>(() => [
-    { key: 'owner', label: 'Owner', value: o => o.displayName, hideable: false, width: 220, filter: false,
+    { key: 'owner', label: 'Owner', value: o => personName(o.displayName), hideable: false, width: 220, filter: false,
       render: o => (
         <span className="flex items-center gap-2.5 min-w-0">
           <span className="w-[30px] h-[30px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
           <span className="flex flex-col gap-px min-w-0">
-            <span className="text-copy font-medium truncate" title={o.displayName}>{titleCase(o.displayName)}</span>
+            <span className="text-copy font-medium truncate" title={o.displayName}>{personName(o.displayName)}</span>
             {(o.email || o.phone) && <span className="text-meta text-muted-ink truncate" title={contactText(o)}>{contactText(o)}</span>}
           </span>
         </span>
@@ -340,7 +315,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
           {open[o.id] && o.units.map(u => (
             <Link key={u.unitId} to={`/properties/units/${encodeURIComponent(u.unitId)}?tab=contract`} onClick={e => e.stopPropagation()}
               className="flex items-center justify-between gap-2 min-w-0 pl-5 no-underline text-inherit! hover:underline" title={`${u.unitLabel} · ${terms(u)}`}>
-              <span className="text-meta text-ink truncate">{titleCase(u.unitLabel)}</span>
+              <span className="text-meta text-ink truncate">{buildingName(u.unitLabel)}</span>
               <span className="shrink-0"><ModelChip model={modelOf(u)} label={terms(u)} /></span>
             </Link>
           ))}
@@ -357,18 +332,17 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
       value: o => portalBadge(o, true).label,
       status: o => portalBadge(o, true) },
     ...(inviter ? [{ key: 'actions', label: '', width: 52, align: 'right' as const, noExport: true, sortable: false, filter: false, hideable: false,
-      render: (o: Owner) => <RowActions name={titleCase(o.displayName)} items={actionsRef.current(o)} /> } satisfies Column<Owner>] : []),
+      render: (o: Owner) => <RowActions name={personName(o.displayName)} items={actionsRef.current(o)} /> } satisfies Column<Owner>] : []),
   ], [open, monthCol, inviter, buildingNameOf, types]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
       <PageHeader title="Owners" sub={data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')} under management` : 'Loading owners…'}
         primary={<Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal(true)}>Add owner</Button>} />
-      {tabs}
 
       {/* The month's payout as the dark statement tile; the split and the gross beside it; the month stepper on top. */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">Owner payouts · {monthText} (estimate)</span>
+        <Eyebrow>Owner payouts · {monthText} (estimate)</Eyebrow>
         <span className="flex items-center gap-2 flex-wrap">
           <MonthStepper label={monthLabel(month)} onStep={by => url.set({ month: shiftMonth(month, by) === thisMonth ? null : shiftMonth(month, by) })} />
           {finance && (zipping || !tableRows.length ? (
@@ -385,25 +359,13 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
           ))}
         </span>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] gap-3 sm:gap-4">
-        <div className="col-span-2 lg:col-span-1 relative rounded-card bg-black text-white p-5 flex flex-col gap-2 overflow-hidden">
-          <span aria-hidden className="absolute left-5 top-0 h-[2px] w-8 bg-gold" />
-          <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">To pay owners</span>
-          <span className="text-[28px] sm:text-[34px] leading-none font-semibold tabular-nums text-gold">{data ? rm(portfolioNet) : '—'}</span>
-          <span className="text-meta text-on-dark">{data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')}` : 'Loading…'}</span>
-        </div>
-        {([
-          ['From managed units', portfolioManagedNet, 'Income split, after costs'],
-          ['Guaranteed rent', portfolioGuaranteed, 'GRR units, fixed'],
-          ['Gross income', portfolioManagedGross, 'Managed units, before split'],
-        ] as const).map(([label, v, hint]) => (
-          <div key={label} className="rounded-card border border-solid border-line bg-card p-4 sm:p-5 flex flex-col gap-2 min-w-0">
-            <span className="text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-ink">{label}</span>
-            <span className="text-[16px] sm:text-[24px] leading-none font-semibold tabular-nums whitespace-nowrap">{data ? rm(v) : '—'}</span>
-            <span className="text-meta text-muted-ink truncate">{hint}</span>
-          </div>
-        ))}
-      </div>
+      {/* The month's payout leads as the dark hero tile; the split and the gross beside it (StatTile, Conts DS v2). */}
+      <StatRow cols={4}>
+        <StatTile hero label="To pay owners" value={data ? rm(portfolioNet) : undefined} hint={data ? `${plural(all.length, 'owner')} · ${plural(unitCount, 'unit')}` : undefined} />
+        <StatTile label="From managed units" value={data ? rm(portfolioManagedNet) : undefined} hint="Income split, after costs" />
+        <StatTile label="Guaranteed rent" value={data ? rm(portfolioGuaranteed) : undefined} hint="GRR units, fixed" />
+        <StatTile className="max-sm:col-span-2" label="Gross income" value={data ? rm(portfolioManagedGross) : undefined} hint="Managed units, before split" />
+      </StatRow>
       <details className="text-meta text-muted-ink -mt-1">
         <summary className="cursor-pointer select-none w-fit">How these are worked out</summary>
         <p className="m-0 mt-2 max-w-[880px] text-pretty">Each unit is worked out the way its owner statement is, by its payout model: income split by night into the month, less the costs the owner pays, then the share, minimum or fixed rent, and Owner Adjustments. Guaranteed rent is counted on its own, not as a share of earnings. Until the month's statement is final, these are estimates.</p>
@@ -429,7 +391,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
           <SearchBox className="flex-1 min-w-[200px]" label="Search owners" placeholder="Search owner, phone, email, address or unit" value={url.get('q')} onChange={v => url.set({ q: v || null, page: null })} />
           {filters && (
             <Select className="flex-[0_1_200px] max-md:flex-[1_1_160px]" label="Building" value={building} onChange={v => url.set({ building: v || null, page: null })}
-              options={[{ value: '', label: 'All buildings' }, ...[...filters.buildings].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: b.name }))]} />
+              options={[{ value: '', label: 'All buildings' }, ...[...filters.buildings].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true })).map(b => ({ value: b.id, label: buildingName(b.name) }))]} />
           )}
           {phone && (
             <Select className="flex-[1_1_180px]" label="Sort by" value={url.get('sort')}
@@ -449,7 +411,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
           <span className="flex items-center gap-3 min-w-0">
             <span className="w-[32px] h-[32px] flex-none rounded-full bg-black text-gold grid place-items-center text-caption font-semibold">{initials(o.displayName)}</span>
             <span className="flex flex-col gap-[2px] min-w-0 flex-1">
-              <span className="text-copy font-medium truncate" title={o.displayName}>{titleCase(o.displayName)}</span>
+              <span className="text-copy font-medium truncate" title={o.displayName}>{personName(o.displayName)}</span>
               {o.units.length <= 1
                 ? <span className="text-meta text-muted-ink truncate" title={`${o.units.map(u => u.unitLabel).join(', ') || unitsText(o)} · ${ownerTerms(o)}`}>{unitsText(o)} · {ownerTerms(o)}</span>
                 : o.units.map(u => <span key={u.unitId} className="text-meta text-muted-ink truncate" title={`${u.unitLabel} · ${terms(u)}`}>{u.unitLabel.split(' ').pop()} · {terms(u)}</span>)}
@@ -458,7 +420,7 @@ function OwnerList({ tabs }: { tabs: ReactNode }) {
               <MoneyText sen={netOf(o)} mode="exact" tone="auto" strong className="text-copy" />
               <span className="text-caption text-muted-ink">net</span>
             </span>
-            {inviter && <RowActions name={titleCase(o.displayName)} items={actionsRef.current(o)} />}
+            {inviter && <RowActions name={personName(o.displayName)} items={actionsRef.current(o)} />}
           </span>
         )}
       />

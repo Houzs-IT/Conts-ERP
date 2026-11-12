@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useApi } from '../../lib/useApi';
-import { rm, rmShort, count, monthLabel, weekdayDate, weekdayShort, dateShort, year, nights as nightsLabel } from '../../lib/format';
+import { rm, count, monthLabel, weekdayDate, weekdayShort, dateShort, year, nights as nightsLabel, buildingName } from '../../lib/format';
+import ChannelMark from '../../components/ChannelMark';
+import Icon from '../../components/Icon';
 import { addDays, daysBetween, type CalendarData, type CalendarStay, type Listing } from './model';
-import { Photo, Avatar, Segmented, PriceToggle, MonthNav, PropertyDropdown, useEscape } from './parts';
+import { Photo, Avatar, Segmented, PriceToggle, MonthNav, PropertyDropdown, useEscape, buildingOf } from './parts';
 
 const W = 96, DAYS = 21;
 
@@ -32,16 +34,19 @@ export function MonthGrid({ data, unitId, month, showPrice, onSelect, selected, 
     cells.push(
       <div key={d} onClick={stay && onSelect ? () => onSelect(stay) : undefined}
         style={{ minHeight: compact ? 104 : 116, borderRight: '1px solid var(--sc-subtle)', borderBottom: '1px solid var(--sc-subtle)', background: past ? 'var(--sc-page)' : 'var(--sc-surface)', padding: '10px 0', display: 'flex', flexDirection: 'column', gap: compact ? 6 : 8, cursor: stay && onSelect ? 'pointer' : 'default' }}>
-        <div style={{ padding: '0 10px' }}><span className={`sc-mnum${d === today ? ' today' : past ? ' past' : ''}`}>{day}</span></div>
-        {!compact && out && <div style={{ padding: '0 10px', fontSize: 11, fontWeight: 700, color: 'var(--sc-out)', whiteSpace: 'nowrap' }}>Out 11am</div>}
+        {/* The checkout time sits beside the day number, so every stay bar of a week sits on one line. */}
+        <div style={{ padding: '0 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+          <span className={`sc-mnum${d === today ? ' today' : past ? ' past' : ''}`}>{day}</span>
+          {!compact && out && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--sc-muted)', whiteSpace: 'nowrap', overflow: 'hidden' }}>Out 11:00</span>}
+        </div>
         {stay && (
-          <div className={`sc-mbar ${stay.status}`} style={{ margin: `0 ${end ? 10 : 0}px 0 ${start ? 10 : 0}px`, borderRadius: `${start ? 8 : 0}px ${end ? 8 : 0}px ${end ? 8 : 0}px ${start ? 8 : 0}px`, boxShadow: selected === stay.id ? '0 0 0 2px var(--sc-ink)' : undefined }}>
-            <div className="ellipsis" style={{ fontSize: 12, fontWeight: 700 }}>{lead ? stay.guest : ''}</div>
-            <div className="num" style={{ fontSize: 11, opacity: 0.85, whiteSpace: 'nowrap' }}>{lead && showPrice ? rm(stay.total) : ''}</div>
+          <div className={`sc-mbar ${stay.status}${start ? ' start' : ''}`} style={{ margin: `0 ${end ? 10 : 0}px 0 ${start ? 10 : 0}px`, borderRadius: `${start ? 7 : 0}px ${end ? 7 : 0}px ${end ? 7 : 0}px ${start ? 7 : 0}px`, boxShadow: selected === stay.id ? '0 0 0 2px var(--sc-ink)' : undefined }}>
+            {lead && <div className="ellipsis" style={{ fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}><ChannelMark ch="airbnb" size={14} />{stay.guest}</div>}
+            <div className="num" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{lead && showPrice ? <em>{rm(stay.total)}</em> : ''}</div>
           </div>
         )}
-        {!compact && start && <div style={{ padding: '0 10px', fontSize: 11, fontWeight: 700, color: 'var(--sc-teal)', whiteSpace: 'nowrap' }}>In 3pm</div>}
-        {!stay && showPrice && rates[day - 1] ? <div className="num" style={{ padding: '0 10px', marginTop: 'auto', fontSize: 12, color: 'var(--sc-faint)' }}>{rmShort(rates[day - 1])}</div> : null}
+        {!compact && start && <div style={{ padding: '0 10px', fontSize: 11, fontWeight: 700, color: 'var(--sc-teal)', whiteSpace: 'nowrap' }}>In 15:00</div>}
+        {!stay && showPrice && rates[day - 1] ? <div className="num" style={{ padding: '0 10px', marginTop: 'auto', fontSize: 12, color: 'var(--sc-faint)' }}>{rm(rates[day - 1])}</div> : null}
       </div>,
     );
   }
@@ -75,24 +80,24 @@ export function ReservationDrawer({ stay, listing, showPrice, onClose }: { stay:
     <div className="sc-drawer" role="dialog" aria-label={`Reservation ${stay.code}`}>
       <div style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--sc-line)' }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--sc-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Reservation {stay.code}</div>
-        <button type="button" className="sc-close" aria-label="Close" onClick={onClose}>×</button>
+        <button type="button" className="sc-close" aria-label="Close" onClick={onClose}><Icon name="X" size="sm" /></button>
       </div>
       <div style={{ padding: 24, display: 'flex', alignItems: 'center', gap: 14, borderBottom: '1px solid var(--sc-line)' }}>
         <Avatar name={stay.guest} i={stay.code.charCodeAt(0)} size={52} />
-        <div><div style={{ fontSize: 20, fontWeight: 800 }}>{stay.guest}</div><div style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 2 }}>Verified Airbnb guest · Airbnb</div></div>
+        <div><div style={{ fontSize: 19, fontWeight: 700 }}>{stay.guest}</div><div style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}><ChannelMark ch="airbnb" size={16} />Verified Airbnb guest</div></div>
       </div>
       <div style={{ padding: '8px 24px', flex: 1, overflow: 'auto' }}>
         <div style={{ padding: '14px 0', borderBottom: '1px solid var(--sc-subtle)' }}>
           <div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>Property</div>
           <div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{listing?.name}</div>
-          <div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>{listing?.unit}</div>
+          <div style={{ fontSize: 13, color: 'var(--sc-muted)' }}>{buildingName(listing?.unit)}</div>
         </div>
-        <div className="sc-drawer-row"><span>Check-in</span><span>{weekdayDate(stay.checkIn)}, 3:00 PM</span></div>
-        <div className="sc-drawer-row"><span>Check-out</span><span>{weekdayDate(stay.checkOut)}, 11:00 AM</span></div>
+        <div className="sc-drawer-row"><span>Check-in</span><span>{weekdayDate(stay.checkIn)}, 15:00</span></div>
+        <div className="sc-drawer-row"><span>Checkout</span><span>{weekdayDate(stay.checkOut)}, 11:00</span></div>
         <div className="sc-drawer-row"><span>Nights</span><span>{nightsLabel(n)}</span></div>
         <div className="sc-drawer-row"><span>Guests</span><span>{stay.guests} {stay.guests === 1 ? 'adult' : 'adults'}</span></div>
         <div className="sc-drawer-row"><span>Status</span><span>{stay.status === 'completed' ? 'Completed' : stay.status === 'in_stay' ? 'In stay' : 'Confirmed'}</span></div>
-        <div className="sc-drawer-row" style={{ borderBottom: 'none' }}><span>Total payout</span><span style={{ fontWeight: 800 }}>{showPrice ? rm(stay.total) : 'Hidden'}</span></div>
+        <div className="sc-drawer-row" style={{ borderBottom: 'none' }}><span>Guest total</span><span style={{ fontWeight: 700 }}>{showPrice ? rm(stay.total) : 'Hidden'}</span></div>
       </div>
     </div>
   );
@@ -101,9 +106,8 @@ export function ReservationDrawer({ stay, listing, showPrice, onClose }: { stay:
 function Legend() {
   return (
     <div className="sc-cal-legend">
-      <span><i style={{ background: 'var(--sc-faint)' }} />Completed</span>
-      <span><i style={{ background: 'var(--sc-teal-deep)' }} />In stay</span>
-      <span><i style={{ background: 'var(--sc-teal-mid)' }} />Confirmed</span>
+      <span><i />Upcoming or hosting</span>
+      <span><i className="past" />Past</span>
     </div>
   );
 }
@@ -128,7 +132,7 @@ export function CalendarScreen({ listings, today, listingsShown, showPrice, setS
   return (
     <div style={{ padding: '24px 32px 48px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
-        <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', marginRight: 8, whiteSpace: 'nowrap' }}>{title}</div>
+        <div className="sc-d40" style={{ marginRight: 8, whiteSpace: 'nowrap' }}>{title}</div>
         <Segmented value={view} onChange={v => { setView(v); setSel(null); }} options={[{ key: 'timeline', label: 'Timeline' }, { key: 'month', label: 'Month' }]} />
         <PropertyDropdown listings={listings} value={view === 'month' ? monthProp : prop} onChange={id => { setProp(id); setSel(null); }}
           allLabel={view === 'timeline' ? 'All properties' : undefined} totalLabel={count(listingsShown)} />
@@ -148,22 +152,22 @@ export function CalendarScreen({ listings, today, listingsShown, showPrice, setS
           <MonthGrid data={mo.data} unitId={monthProp} month={month} showPrice={showPrice} onSelect={setSel} selected={sel?.id ?? null} />
           <div style={{ background: 'var(--sc-surface)', border: '1px solid var(--sc-line)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <Photo id={mProp?.photoId} fine style={{ width: 48, height: 48, borderRadius: 10 }} />
-              <div style={{ minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 800 }}>{mProp?.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{mProp?.unit}</div></div>
+              <Photo id={mProp?.photoId} place={buildingOf(mProp?.unit ?? '')} fine style={{ width: 48, height: 48, borderRadius: 10 }} />
+              <div style={{ minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 700 }}>{mProp?.name}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{buildingName(mProp?.unit)}</div></div>
             </div>
             <div style={{ borderTop: '1px solid var(--sc-subtle)', paddingTop: 18 }}>
-              <div className="sc-big" style={{ fontSize: 48, letterSpacing: '-0.04em', color: 'var(--sc-teal)' }}>{ms.occupancy}%</div>
+              <div className="sc-d40" style={{ color: 'var(--sc-teal)' }}>{ms.occupancy}%</div>
               <div style={{ fontSize: 13, color: 'var(--sc-muted)', marginTop: 6 }}>occupancy in {monthLabel(month, { long: true })}</div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div><div style={{ fontSize: 24, fontWeight: 800 }}>{ms.nights}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>nights booked</div></div>
-              <div><div style={{ fontSize: 24, fontWeight: 800 }}>{ms.stays}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>reservations</div></div>
+              <div><div className="sc-d26">{ms.nights}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>nights booked</div></div>
+              <div><div className="sc-d26">{ms.stays}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>reservations</div></div>
             </div>
-            {showPrice && <div style={{ borderTop: '1px solid var(--sc-subtle)', paddingTop: 18 }}><div style={{ fontSize: 24, fontWeight: 800 }}>{rmShort(ms.revenue)}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>booked revenue this month</div></div>}
+            {showPrice && <div style={{ borderTop: '1px solid var(--sc-subtle)', paddingTop: 18 }}><div className="sc-big num" style={{ fontSize: 19 }}>{rm(ms.revenue)}</div><div style={{ fontSize: 12, color: 'var(--sc-muted)' }}>guest totals booked this month</div></div>}
           </div>
         </div>
       )}
-      <div style={{ fontSize: 12, color: 'var(--sc-muted)', marginTop: 12 }}>Every bar is a real Airbnb reservation. Click one to see guest and stay details.</div>
+      <div style={{ fontSize: 12, color: 'var(--sc-muted)', marginTop: 12 }}>Every bar is a reservation on Airbnb. Click one to see the guest and the stay.</div>
       {sel && <ReservationDrawer stay={sel} listing={byId.get(sel.unitId)} showPrice={showPrice} onClose={() => setSel(null)} />}
     </div>
   );
@@ -183,16 +187,16 @@ function Timeline({ data, rows, showPrice, selected, onSelect }: { data: Calenda
   return (
     <div style={{ background: 'var(--sc-surface)', border: '1px solid var(--sc-line)', borderRadius: 16, display: 'flex', overflow: 'hidden' }}>
       <div style={{ width: 280, flexShrink: 0, borderRight: '1px solid var(--sc-line)' }}>
-        <div style={{ height: 84, borderBottom: '1px solid var(--sc-line)', display: 'flex', alignItems: 'flex-end', padding: '0 16px 12px', fontSize: 12, fontWeight: 700, color: 'var(--sc-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Property · 21-day occ.</div>
+        <div style={{ height: 84, borderBottom: '1px solid var(--sc-line)', display: 'flex', alignItems: 'flex-end', padding: '0 16px 12px', fontSize: 11, fontWeight: 700, color: 'var(--sc-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Unit · occupancy, 21 days</div>
         {rows.map(l => {
           const booked = new Set<string>();
           for (const s of byUnit.get(l.id) ?? []) for (let d = s.checkIn; d < s.checkOut; d = addDays(d, 1)) booked.add(d);
           const occ = dates.length ? Math.round((dates.filter(d => booked.has(d)).length / dates.length) * 100) : 0;
           return (
             <div key={l.id} style={{ height: 60, borderBottom: '1px solid var(--sc-subtle)', display: 'flex', alignItems: 'center', gap: 10, padding: '0 16px' }}>
-              <Photo id={l.photoId} fine style={{ width: 36, height: 36, borderRadius: 8 }} />
-              <div style={{ minWidth: 0, flex: 1 }}><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</div><div className="ellipsis" style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{l.unit}</div></div>
-              <div className="num" style={{ fontSize: 13, fontWeight: 800, color: 'var(--sc-teal)' }}>{occ}%</div>
+              <Photo id={l.photoId} place={buildingOf(l.unit)} fine style={{ width: 36, height: 36, borderRadius: 8 }} />
+              <div style={{ minWidth: 0, flex: 1 }}><div className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{l.name}</div><div className="ellipsis" style={{ fontSize: 12, color: 'var(--sc-muted)' }}>{buildingName(l.unit)}</div></div>
+              <div className="num" style={{ fontSize: 13, fontWeight: 700, color: 'var(--sc-teal)' }}>{occ}%</div>
             </div>
           );
         })}
@@ -200,7 +204,7 @@ function Timeline({ data, rows, showPrice, selected, onSelect }: { data: Calenda
       <div style={{ overflowX: 'auto', flex: 1 }}>
         <div style={{ width: dates.length * W }}>
           <div style={{ height: 32, display: 'flex', borderBottom: '1px solid var(--sc-subtle)' }}>
-            {bands.map(b => <div key={b.label} style={{ width: b.width, flexShrink: 0, borderLeft: `1px solid ${b.first ? 'var(--sc-control)' : 'transparent'}`, padding: '0 12px', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>{b.label}</div>)}
+            {bands.map(b => <div key={b.label} style={{ width: b.width, flexShrink: 0, borderLeft: `1px solid ${b.first ? 'var(--sc-control)' : 'transparent'}`, padding: '0 12px', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>{b.label}</div>)}
           </div>
           <div style={{ height: 52, borderBottom: '1px solid var(--sc-line)', display: 'flex' }}>
             {dates.map((d, i) => {
@@ -208,7 +212,7 @@ function Timeline({ data, rows, showPrice, selected, onSelect }: { data: Calenda
               return (
                 <div key={d} style={{ width: W, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderLeft: `1px solid ${sep(d, i)}`, background: t ? 'var(--sc-teal-row)' : 'transparent' }}>
                   <div style={{ fontSize: 12, color: 'var(--sc-muted)', fontWeight: 600 }}>{weekdayShort(d)}</div>
-                  <div style={{ fontSize: 14, fontWeight: 800, minWidth: 30, height: 28, padding: '0 6px', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: t ? 'var(--sc-teal)' : 'transparent', color: t ? 'var(--sc-surface)' : 'var(--sc-ink)' }}>{Number(d.slice(8, 10))}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, minWidth: 30, height: 28, padding: '0 6px', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: t ? 'var(--sc-ink)' : 'transparent', color: t ? 'var(--sc-surface)' : 'var(--sc-ink)' }}>{Number(d.slice(8, 10))}</div>
                 </div>
               );
             })}
@@ -224,7 +228,7 @@ function Timeline({ data, rows, showPrice, selected, onSelect }: { data: Calenda
                     const out = stays.some(s => s.checkOut === d);
                     return (
                       <div key={d} className="num" style={{ width: W, flexShrink: 0, borderLeft: `1px solid ${sep(d, i)}`, background: d === today ? 'var(--sc-teal-row)' : 'transparent', fontSize: 12, color: 'var(--sc-faint)', display: 'flex', alignItems: 'center', justifyContent: out ? 'flex-end' : 'center', padding: '0 10px' }}>
-                        {!booked && showPrice && rates[i] ? rmShort(rates[i]) : ''}
+                        {!booked && showPrice && rates[i] ? rm(rates[i]) : ''}
                       </div>
                     );
                   })}
@@ -238,9 +242,11 @@ function Timeline({ data, rows, showPrice, selected, onSelect }: { data: Calenda
                   const width = right - left;
                   if (width <= 0) return null;
                   return (
-                    <button key={s.id} type="button" className={`sc-stay ${s.status}${selected === s.id ? ' selected' : ''}`} style={{ left, width, borderRadius: cut ? '0 8px 8px 0' : 8 }} onClick={() => onSelect(s)}>
-                      <span className="ellipsis" style={{ fontSize: 13, fontWeight: 700 }}>{s.guest}</span>
-                      {showPrice && width > 170 && <span className="num" style={{ fontSize: 12, fontWeight: 600, opacity: 0.85 }}>{rm(s.total)}</span>}
+                    <button key={s.id} type="button" className={`sc-stay ${s.status}${cut ? ' cut' : ''}${selected === s.id ? ' selected' : ''}`} style={{ left, width }} onClick={() => onSelect(s)} title={`${s.guest} · ${dateShort(s.checkIn)} – ${dateShort(s.checkOut)}`}>
+                      <ChannelMark ch="airbnb" size={14} />
+                      <span className="ellipsis" style={{ fontSize: 12, fontWeight: 700 }}>{s.guest}</span>
+                      {showPrice && width > 200 && <em className="num" style={{ fontSize: 12 }}>{rm(s.total)}</em>}
+                      {width > 260 && <em style={{ fontSize: 12 }}>{nightsLabel(daysBetween(s.checkIn, s.checkOut))}</em>}
                     </button>
                   );
                 })}

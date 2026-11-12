@@ -108,7 +108,6 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const staff: Staff = c.get('staff');
-  if (staff.field) return c.json({ error: 'forbidden', message: 'Hand your receipts in; your supervisor asks finance to pay suppliers.' }, 403);
   const sb = c.get('supabase');
   const bucket = c.env?.SLIPS;
   if (!bucket) return c.json({ error: 'not_configured', message: 'File storage is not set up yet.' }, 501);
@@ -116,6 +115,28 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
   if (!b) return c.json({ error: 'invalid_json' }, 400);
   const type = String(b.type ?? '');
   if (type !== 'PAYMENT' && type !== 'DEPOSIT') return c.json({ error: 'validation', message: 'Choose a payment or a deposit.' }, 422);
+  /* A field worker may ask finance to pay a supplier they name (chew, 12 Nov 2026: Direct Pay to Supplier on the phone's
+     Receipts page): a payment only, by the name on the bill, as they see neither the supplier list nor the POs. */
+  if (staff.field) {
+    if (type !== 'PAYMENT') return c.json({ error: 'validation', message: 'A deposit is asked for by the office.' }, 422);
+    if (b.supplierId) return c.json({ error: 'validation', message: 'Type the supplier\'s name as it is on the bill.' }, 422);
+    if (b.purchaseOrderId) return c.json({ error: 'validation', message: 'A purchase order is paid by the office.' }, 422);
+    /* A project, its limit and what is left of it are the office's: the refusal over a limit names them (final review). */
+    if (Array.isArray(b.lines) && (b.lines as Array<Record<string, unknown> | null>).some(l => l?.projectId != null && l.projectId !== '')) {
+      return c.json({ error: 'validation', message: 'A project is chosen by the office.' }, 422);
+    }
+  }
+  /* The caller may name the request's id (a uuid): sent again after a lost reply, the same request comes back instead of
+     a second one being made, so a supplier is not paid twice (final review; receipts do the same). */
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const askedId = typeof b.id === 'string' && UUID.test(b.id) ? b.id.toLowerCase() : null;
+  if (askedId) {
+    const { data: seen } = await sb.from('payment_requests').select('id, request_no, requester_user_id').eq('id', askedId).maybeSingle();
+    if (seen) {
+      if (seen.requester_user_id !== staff.userId) return c.json({ error: 'conflict', message: 'That request id is taken.' }, 409);
+      return c.json({ id: seen.id, requestNo: seen.request_no }, 200);
+    }
+  }
   let supplierId = b.supplierId ? String(b.supplierId) : null;
   const purchaseOrderId = b.purchaseOrderId ? String(b.purchaseOrderId) : null;
   let poProject: number | null = null;
@@ -151,7 +172,7 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
   if ('error' in lim) return c.json({ error: 'limit_unavailable', message: 'The project limit could not be read. Try again.' }, 503);
   if (lim.over.length) return c.json(overLimitBody(lim.over), 409);
 
-  const id = crypto.randomUUID();
+  const id = askedId ?? crypto.randomUUID();
   let stored: Awaited<ReturnType<typeof storeFiles>> = [];
   try { stored = await storeFiles(bucket, `payment-requests/${co.companyId}/${id}`, decoded.files); } catch {
     return c.json({ error: 'upload_failed', message: 'The files could not be saved. Try again.' }, 502);

@@ -376,8 +376,15 @@ export function FileList({ files, add, emptyText }: { files: FileRowItem[]; add?
 
 /** A single cover photo: the empty state is one dashed tile to click or drop on; once there is a photo it fills the
  *  frame and a "Replace photo" chip appears on hover or focus. */
-export function CoverPhotoDrop({ photo, onPick, busy, label = 'Add a photo', hint = 'Drop an image here, or click to browse', className }: {
+/** A building's own soft hue (0-359) from its name, so each building's stand-in looks different and stays the same. */
+const hueOfPlace = (seed: string) => { let h = 0; for (const c of seed) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+const initialsOf = (name: string) => name.replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+
+/** `standIn`: with no photo yet, show the building-coloured banner (building name, unit code, initials) with a small
+ *  "Add photos" button instead of the dashed drop box (prototype ui.uphoto). Leave it out for the dashed box. */
+export function CoverPhotoDrop({ photo, onPick, busy, label = 'Add a photo', hint = 'Drop an image here, or click to browse', className, standIn, canAdd = true }: {
   photo: string | null; onPick: (file: File) => void; busy?: boolean; label?: string; hint?: string; className?: string;
+  standIn?: { place: string; code?: string }; canAdd?: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [refused, setRefused] = useState(false);
@@ -387,7 +394,7 @@ export function CoverPhotoDrop({ photo, onPick, busy, label = 'Add a photo', hin
     if (!accepts(f, 'image/*')) { setRefused(true); return; }
     setRefused(false); onPick(f);
   }
-  const drop = useDropTarget(take, !busy);
+  const drop = useDropTarget(take, !busy && canAdd);
   return (
     <div className={cx('group relative rounded-control overflow-hidden', className)} {...drop.handlers}>
       {photo ? (
@@ -400,6 +407,22 @@ export function CoverPhotoDrop({ photo, onPick, busy, label = 'Add a photo', hin
           </button>
           {drop.over && <span className="absolute inset-0 grid place-items-center bg-gold-tint/90 text-ink text-copy font-medium [box-shadow:inset_0_0_0_1px_var(--color-gold)] rounded-control">Drop to replace</span>}
         </>
+      ) : standIn ? (
+        <div className="absolute inset-0 flex items-end p-3.5 text-white/90 overflow-hidden"
+          style={{ background: `linear-gradient(135deg, hsl(${hueOfPlace(standIn.place)} 34% 40%), hsl(${hueOfPlace(standIn.place) + 40} 30% 24%))` }}>
+          <b aria-hidden className="absolute right-[18px] top-2.5 font-extrabold text-[64px] leading-none tracking-[-0.04em] text-white/[0.14] pointer-events-none select-none">{initialsOf(standIn.place)}</b>
+          <span className="relative flex flex-col min-w-0">
+            <small className="block text-caption font-semibold tracking-[0.12em] uppercase opacity-75 truncate">{standIn.place}</small>
+            {standIn.code && <b className="font-mono text-[13px] tracking-[0.04em] truncate">{standIn.code}</b>}
+          </span>
+          {canAdd && (
+            <button type="button" onClick={() => input.current?.click()} disabled={busy}
+              className="absolute right-3 bottom-3 z-[2] inline-flex items-center gap-1.5 h-8 px-3 rounded-control bg-white/[0.92] text-black text-meta font-medium border-none cursor-pointer outline-none focus-visible:[box-shadow:var(--focus-ring)]">
+              <Icon name="Plus" size="sm" />Add photos
+            </button>
+          )}
+          {drop.over && <span className="absolute inset-0 grid place-items-center bg-gold-tint/90 text-ink text-copy font-medium [box-shadow:inset_0_0_0_1px_var(--color-gold)] rounded-control">Drop to add</span>}
+        </div>
       ) : (
         <button type="button" onClick={() => input.current?.click()} disabled={busy}
           className={cx(DASHED, 'absolute inset-0 w-full flex items-center justify-center gap-3 px-4 cursor-pointer text-left', drop.over ? DASHED_OVER : DASHED_IDLE)}>
@@ -414,7 +437,7 @@ export function CoverPhotoDrop({ photo, onPick, busy, label = 'Add a photo', hin
       )}
       {busy && (
         <span className={cx('absolute inset-0 flex items-center justify-center gap-2 text-copy font-medium rounded-control',
-          photo ? 'bg-[var(--color-surface-scrim)] text-white' : 'bg-page text-ink border border-dashed border-line-strong')}>
+          photo || standIn ? 'bg-[var(--color-surface-scrim)] text-white' : 'bg-page text-ink border border-dashed border-line-strong')}>
           <Spinner className="w-4 h-4" />Uploading…
         </span>
       )}

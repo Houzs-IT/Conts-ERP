@@ -3,6 +3,7 @@ import { FormModal } from '../components/Modal';
 import { useNavigate } from 'react-router-dom';
 import { color } from '../theme';
 import PageHeader from '../components/PageHeader';
+import { StatRow, StatTile } from '../components/Metric';
 import { StatusBadge } from '../components/StatusBadge';
 import { HistoryDisclosure } from '../components/RecordHistory';
 import { Button } from '../components/Button';
@@ -14,9 +15,8 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
-import { rm, date, todayMyt, titleCase, plural } from '../lib/format';
+import { rm, date, todayMyt, plural, personName } from '../lib/format';
 import { Select } from '../components/Select';
-import { TONE, cx } from '../lib/design-tokens';
 import { useUrlState, usePhone, SearchBox } from './finance/listKit';
 import { FilterBar } from '../components/FilterBar';
 import { statusOf } from '../lib/status';
@@ -123,7 +123,7 @@ export default function ContractsPage() {
     const results = await Promise.allSettled(todo.map(u => api.patch(`/units/${u.id}`, { purpose })));
     setSavingPurpose(null);
     const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [`${todo[i].label}: ${errorMessage(r.reason)}`] : []));
-    if (failed.length < todo.length) toast({ tone: 'success', title: `${plural(todo.length - failed.length, 'unit')} now ${PURPOSE_LABEL[purpose].toLowerCase()}.`, body: titleCase(c.ownerName) });
+    if (failed.length < todo.length) toast({ tone: 'success', title: `${plural(todo.length - failed.length, 'unit')} now ${PURPOSE_LABEL[purpose].toLowerCase()}.`, body: personName(c.ownerName) });
     if (failed.length) toast({ tone: 'critical', title: 'Purpose not changed.', body: failed.join(' · ') });
     reload();
   }
@@ -177,7 +177,7 @@ export default function ContractsPage() {
   async function addContract(input: Omit<Contract, 'id'>) {
     try {
       await api.post('/contracts', input);
-      toast({ tone: 'success', title: 'Contract added.', body: `Contract recorded for ${titleCase(input.ownerName)}.` });
+      toast({ tone: 'success', title: 'Contract added.', body: `Contract recorded for ${personName(input.ownerName)}.` });
       setModal(null); reload();
     } catch (e) {
       toast({ tone: 'critical', title: 'Contract was not added.', body: errorMessage(e, 'Try again in a moment.') });
@@ -187,7 +187,7 @@ export default function ContractsPage() {
     try {
       await api.patch(`/contracts/${id}`, input);
       setEdits(e => ({ ...e, [id]: { ...e[id], ...input } }));
-      toast({ tone: 'success', title: 'Contract updated.', body: `Terms saved for ${titleCase(input.ownerName)}.` });
+      toast({ tone: 'success', title: 'Contract updated.', body: `Terms saved for ${personName(input.ownerName)}.` });
       setModal(null); reload();
     } catch (e) {
       toast({ tone: 'critical', title: 'Contract was not updated.', body: errorMessage(e, 'Try again in a moment.') });
@@ -227,12 +227,12 @@ export default function ContractsPage() {
   };
 
   const columns: Column<Contract>[] = [
-    { key: 'owner', label: 'Owner', value: r => r.ownerName, hideable: false, width: 210,
+    { key: 'owner', label: 'Owner', value: r => personName(r.ownerName), hideable: false, width: 210,
       render: r => (
         <span className="flex items-center gap-[10px] min-w-0">
           <Icon name="FileSignature" size="sm" color={color.textMuted} />
           <span className="flex flex-col gap-px min-w-0">
-            <span className="text-copy font-medium truncate" title={r.ownerName}>{titleCase(r.ownerName)}</span>
+            <span className="text-copy font-medium truncate" title={r.ownerName}>{personName(r.ownerName)}</span>
             {r.offerLetter && (
               <span className="inline-flex items-center gap-1 text-caption text-muted-ink truncate">
                 <Icon name="Paperclip" size="sm" color={color.faint} style={{ width: 12, height: 12 }} />{r.offerLetter}
@@ -263,7 +263,7 @@ export default function ContractsPage() {
       render: r => (
         <span className="inline-flex items-center gap-1.5">
         {(r.units?.length ?? 0) > 0 && (
-          <button onClick={e => { e.stopPropagation(); setModal({ mode: 'extend', contract: r }); }} aria-label={`Extend contract for ${titleCase(r.ownerName)}`} title="Extend or renew (needs the new agreement or memo)"
+          <button onClick={e => { e.stopPropagation(); setModal({ mode: 'extend', contract: r }); }} aria-label={`Extend contract for ${personName(r.ownerName)}`} title="Extend or renew (needs the new agreement or memo)"
             className="grid place-items-center w-9 h-9 rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink">
             <Icon name="CalendarPlus" size="sm" />
           </button>
@@ -272,7 +272,7 @@ export default function ContractsPage() {
           // A contract in force on units opens the unit's own contract editor (package, terms, dates); the older form is
           // left for records not on any unit.
           onClick={e => { e.stopPropagation(); openTerms(r); }}
-          aria-label={`Edit contract for ${titleCase(r.ownerName)}`}
+          aria-label={`Edit contract for ${personName(r.ownerName)}`}
           className="grid place-items-center w-9 h-9 rounded-control bg-card border border-solid border-line cursor-pointer text-muted-ink"
         >
           <Icon name="Pencil" size="sm" />
@@ -291,29 +291,22 @@ export default function ContractsPage() {
       />
 
       {/* Contract states as four tiles: each is the count and the filter. "Ending soon" carries the next names. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <StatRow cols={4}>
         {([
           { key: 'all', label: 'All contracts', hint: 'Management agreements', tone: undefined },
-          { key: 'soon', label: `Ending within ${ENDING_WINDOW_DAYS} days`, hint: soonList.length ? soonList.slice(0, 2).map(r => `${titleCase(r.ownerName)} · ${inDays(daysUntil(expiryOf(r)) ?? 0)}`).join(' / ') : 'Nothing due', tone: 'warning' },
+          { key: 'soon', label: `Ending within ${ENDING_WINDOW_DAYS} days`, hint: soonList.length ? soonList.slice(0, 2).map(r => `${personName(r.ownerName)} · ${inDays(daysUntil(expiryOf(r)) ?? 0)}`).join(' / ') : 'Nothing due', tone: 'warning' },
           { key: 'active', label: 'Active', hint: 'Running now', tone: 'success' },
           { key: 'ended', label: 'Ended', hint: 'Kept for history', tone: 'muted' },
         ] as { key: FilterKey; label: string; hint: string; tone?: 'warning' | 'success' | 'muted' }[]).map(f => {
           const on = filter === f.key;
           const n = data ? counts[f.key] : undefined;
-          const warn = f.tone === 'warning' && !!n;
           return (
-            <button key={f.key} type="button" aria-pressed={on} onClick={() => url.set({ state: f.key === 'all' ? null : f.key, page: null })}
-              className={cx('relative text-left rounded-card border border-solid p-4 sm:p-5 flex flex-col gap-2 min-w-0 cursor-pointer [font-family:inherit] transition-[border-color,box-shadow] duration-150',
-                on ? 'border-black shadow-[0_0_0_1px_var(--color-black)]' : warn ? 'border-warning-line' : 'border-line hover:border-line-strong',
-                warn ? TONE.warning.bg : 'bg-card')}>
-              <span className={cx('text-[11px] font-semibold tracking-[0.12em] uppercase', warn ? TONE.warning.text : 'text-muted-ink')}>{f.label}</span>
-              <span className={cx('text-[28px] leading-none font-semibold tabular-nums', f.tone === 'muted' ? 'text-muted-ink' : warn ? TONE.warning.text : 'text-ink')}>{n ?? '—'}</span>
-              <span className="text-meta text-muted-ink truncate">{f.hint}</span>
-              {f.tone === 'success' && <span aria-hidden className="absolute right-4 top-4 w-2 h-2 rounded-full bg-success" />}
-            </button>
+            <StatTile key={f.key} label={f.label} value={n === undefined ? undefined : String(n)} hint={f.hint} active={on}
+              tone={f.tone === 'warning' && n ? 'warning' : f.tone === 'success' ? 'success' : undefined}
+              onClick={() => url.set({ state: f.key === 'all' ? null : f.key, page: null })} />
           );
         })}
-      </div>
+      </StatRow>
 
       <DataTable<Contract>
         id="contracts" phoneSort={false} columns={columns} rows={data ? visible : null} rowKey={r => r.id}
@@ -344,7 +337,7 @@ export default function ContractsPage() {
           return (
             <span className="flex flex-col gap-1 min-w-0">
               <span className="flex items-start justify-between gap-2 w-full">
-                <span className="text-copy font-medium min-w-0 [overflow-wrap:anywhere]">{titleCase(r.ownerName)}</span>
+                <span className="text-copy font-medium min-w-0 [overflow-wrap:anywhere]">{personName(r.ownerName)}</span>
                 <span className="shrink-0"><StatusBadge entity="contract" value={STATE_KEY[state]} size="sm" /></span>
               </span>
               <span className="text-meta text-muted-ink truncate w-full" title={r.unitsLabel}>{r.unitsLabel}</span>
@@ -358,7 +351,7 @@ export default function ContractsPage() {
                   <span className="flex-1 min-w-0">{purposeControl(r, 'md')}</span>
                   <span {...keepInRow} className="shrink-0">
                     <Button size="md" variant="secondary" icon={<Icon name="Pencil" size="sm" />} onClick={() => openTerms(r)}
-                      aria-label={`Edit contract for ${titleCase(r.ownerName)}`}>Edit contract</Button>
+                      aria-label={`Edit contract for ${personName(r.ownerName)}`}>Edit contract</Button>
                   </span>
                 </span>
               )}
@@ -424,7 +417,7 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
   return (
     <Modal
       title={existing ? 'Edit management agreement' : 'Add contract'}
-      sub={existing ? `Update the terms for ${titleCase(existing.ownerName)}.` : 'Record a management agreement — owner, unit and how the owner is paid.'}
+      sub={existing ? `Update the terms for ${personName(existing.ownerName)}.` : 'Record a management agreement — owner, unit and how the owner is paid.'}
       onClose={onClose}
       submitLabel={existing ? 'Save changes' : 'Add contract'}
       canSubmit={canSubmit}
@@ -432,7 +425,7 @@ function ContractModal({ existing, onClose, onSubmit }: { existing?: Contract; o
     >
       {existing ? (
         <div className="py-[10px] px-3 rounded-control bg-page border border-solid border-line flex flex-col gap-[2px]">
-          <span className="text-copy font-medium">{titleCase(existing.ownerName)}</span>
+          <span className="text-copy font-medium">{personName(existing.ownerName)}</span>
           <span className="text-meta text-muted-ink">{existing.unitsLabel}</span>
         </div>
       ) : (<>
@@ -464,7 +457,7 @@ function ContractDrawer({ contract, canEdit, onClose, onSaved }: { contract: Con
     <Drawer open onClose={onClose} width={920} labelledBy="contract-drawer-title">
       <div className="flex items-start justify-between gap-3 px-6 pt-[22px] pb-3.5">
         <div className="flex flex-col gap-1 min-w-0">
-          <h2 id="contract-drawer-title" className="m-0 text-[19px] font-semibold">Contract · {titleCase(contract.ownerName)}</h2>
+          <h2 id="contract-drawer-title" className="m-0 text-[19px] font-semibold">Contract · {personName(contract.ownerName)}</h2>
           {units.length === 1 && <span className="text-meta text-muted-ink">{units[0].label}</span>}
         </div>
         <CloseButton onClick={onClose} />
@@ -498,7 +491,7 @@ function ExtendFromList({ contract, rows, onClose, onSaved }: { contract: Contra
       footer={<><Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button size="sm" variant="primary" disabled={!chosen} disabledReason="Pick the unit" onClick={() => setGo(true)}>Next</Button></>}>
       <Labeled label="Unit">
         <FormSelect label="Unit" value={picked} onChange={setPicked}
-          options={[{ value: '', label: choices.length ? 'Pick a unit' : 'No unit has a contract in force' }, ...choices.map(x => ({ value: x.unit.id, label: `${x.unit.label} · ${x.c.contractCode ? codeName(types, x.c.contractCode) : ''} · ${titleCase(x.c.ownerName)}` }))]} />
+          options={[{ value: '', label: choices.length ? 'Pick a unit' : 'No unit has a contract in force' }, ...choices.map(x => ({ value: x.unit.id, label: `${x.unit.label} · ${x.c.contractCode ? codeName(types, x.c.contractCode) : ''} · ${personName(x.c.ownerName)}` }))]} />
       </Labeled>
       {chosen && <p className="m-0 text-meta text-muted-ink">{codeLabel(types, chosen.c.contractCode ?? 'PS')}: {feeLabel(chosen.c)}{chosen.c.endsOn ? `, ends ${date(chosen.c.endsOn)}` : ''}.</p>}
     </CentreModal>

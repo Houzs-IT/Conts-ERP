@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, ApiFailure, errorMessage, readCache, remember } from './api';
+import { api, ApiFailure, errorMessage, isAbort, readCache, remember } from './api';
 
 /* How many reads are refreshing figures that are already on screen. The shell draws one thin gold line while it is
    above zero, so stale-but-shown data visibly says it is being brought up to date. */
@@ -57,7 +57,9 @@ export function useApi<T>(path: string | null, fallback?: T): Query<T> {
     (nonce ? api.get<T>(path) : sharedGet<T>(path))
       .then(r => { remember(path, r); if (live) { setData(r); setError(null); } })
       .catch((e: unknown) => {
-        if (!live) return;
+        // A read cancelled on the way (the page left, the browser stopped it) is not a failure: no error state, and the
+        // next visit reads again (only answers are kept in readCache, never failures).
+        if (!live || isAbort(e)) return;
         // With a fallback present the page still renders; the banner explains why
         // the figures are not live rather than blanking the screen.
         setError(errorMessage(e, 'This list could not load. Check your connection and try again.'));

@@ -17,10 +17,11 @@ import { useToast } from '../components/Toast';
 import { incomeLockedToast } from '../lib/lockNotice';
 import { useSession } from '../lib/session';
 import { api, notifyFailure, errorMessage } from '../lib/api';
-import { todayMyt, dateInputValue, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, plural, count, rmShort, amount } from '../lib/format';
+import { todayMyt, dateInputValue, date, dateRange, dateShort, dateTime, time, timeWithZone, monthLabel, weekdayDay, plural, count, rm, amount, buildingName } from '../lib/format';
 import { CHANNEL, TONE } from '../lib/vocabulary';
 import type { BookingChannel, Tone } from '../lib/types';
-import { CalendarFilters } from '../components/calendar/CalendarFilters';
+import { calendarFilterGroups, ChannelLegend } from '../components/calendar/CalendarFilters';
+import { ListToolbar, type ToolbarChip } from '../components/ListToolbar';
 import { BlockWizard, RateUpdate, SetPriceModal, type BlockKind } from '../components/calendar/CalendarModals';
 import { SelectionPopover, type NightSelection } from '../components/calendar/SelectionPopover';
 import { BarContent, BarHoverCard, barStyle, displayName, holdName, phaseOf, PHASE_LABEL, type StayPhase } from '../components/calendar/ReservationBar';
@@ -193,7 +194,6 @@ function CalendarBoard() {
 
   const [off, setOff] = useState<Partial<Record<BookingChannel, boolean>>>({});
   const [statusOff, setStatusOff] = useState<Record<string, boolean>>({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [ratesPref, setRatesPref] = useState<boolean | null>(null);
   const [showFree, setShowFree] = useStoredFlag('tc.calendar.free', true);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -251,13 +251,13 @@ function CalendarBoard() {
   const everyUnit = useApi<Payload>(rateUpdate && property !== 'all' ? `/reservations/calendar?from=${from}&to=${from}` : null);
   const rateSource = property === 'all' ? data : everyUnit.data ?? data;
   const properties = useMemo<BuildingRow[]>(() => data?.buildings ?? Array.from(
-    allUnits.reduce((m, u) => m.set(buildingOf(u), { id: buildingOf(u), name: u.propertyName, units: (m.get(buildingOf(u))?.units ?? 0) + 1 }), new Map<string, BuildingRow>()).values(),
+    allUnits.reduce((m, u) => m.set(buildingOf(u), { id: buildingOf(u), name: buildingName(u.propertyName), units: (m.get(buildingOf(u))?.units ?? 0) + 1 }), new Map<string, BuildingRow>()).values(),
   ), [data, allUnits]);
   const units = useMemo(() => (property === 'all' ? allUnits : allUnits.filter(u => buildingOf(u) === property)), [allUnits, property]);
   const groups = useMemo(() => {
     const m = new Map<string, { id: string; name: string; units: Unit[] }>();
     for (const u of units) {
-      const g = m.get(buildingOf(u)) ?? { id: buildingOf(u), name: u.propertyName, units: [] };
+      const g = m.get(buildingOf(u)) ?? { id: buildingOf(u), name: buildingName(u.propertyName), units: [] };
       g.units.push(u); m.set(g.id, g);
     }
     return [...m.values()];
@@ -327,7 +327,23 @@ function CalendarBoard() {
   }, [units]);
   const offCount = filterChannels.filter(c => off[c]).length;
   const filtersDirty = property !== 'all' || offCount > 0 || Object.values(statusOff).some(Boolean);
-  const filterCount = (property !== 'all' ? 1 : 0) + offCount + Object.values(statusOff).filter(Boolean).length;
+  const clearFilters = () => { setOff({}); setStatusOff({}); setProperty('all'); };
+  // Counts in the Filters panel and on the channel legend: the stays in this window of the units shown, whatever
+  // the filters hide (cancelled and no-show stays leave the board, so they are not counted).
+  const legendCounts = useMemo(() => {
+    const shown = new Set(units.map(u => u.id));
+    const ch: Partial<Record<BookingChannel, number>> = {}; const st: Record<string, number> = {};
+    for (const b of liveBlocks) {
+      if (!shown.has(b.unitId) || b.state === 'cancelled' || b.state === 'no_show') continue;
+      ch[b.channel] = (ch[b.channel] ?? 0) + 1;
+      const k = b.channel === 'maintenance_block' ? 'blocked' : b.state;
+      st[k] = (st[k] ?? 0) + 1;
+    }
+    return { ch, st };
+  }, [units, liveBlocks]);
+  const filterGroups = calendarFilterGroups({ properties, counted: !!data, property, setProperty, statusOff, setStatusOff, statusCounts: data ? legendCounts.st : undefined });
+  // A hidden channel is a chip too (the legend is where it is switched).
+  const channelChips: ToolbarChip[] = filterChannels.filter(c => off[c]).map(c => ({ key: `ch:${c}`, label: `Hidden: ${CHANNEL[c].label}`, onRemove: () => setOff(o => ({ ...o, [c]: false })) }));
 
   // Real connection status, or nothing.
   const otaRows = (integrations?.data ?? []).filter(r => OTA_CHANNELS.includes(r.provider as BookingChannel));
@@ -490,26 +506,27 @@ function CalendarBoard() {
       {/* Not the shared Card: that clips overflow, which would cut off the status menu. */}
       {/* On phones the card runs edge to edge (cancelling main's 16px gutter) so the grid gets the full width. */}
       <div className="flex-none bg-card border border-solid border-line border-x-0 md:border-x rounded-none md:rounded-card -mx-4 md:mx-0 shadow-[var(--shadow-card)] min-w-0">
-        {/* Toolbar + filters */}
-        <div className="px-3 md:px-4 py-2.5 md:py-3 flex flex-col gap-2.5 md:gap-3 [border-bottom:1px_solid_var(--color-line)]">
-          <div className="flex items-center gap-2">
-            <CalendarRangeControl start={from} days={wantSpan} today={todayIso} phone={phone} isDefault={!startParam}
-              onChange={(st, n) => setWindow(st, n)} />
-
-            <div className="ml-auto flex items-center gap-2">
+        {/* Toolbar (Conts DS v2): the window and its View menu, one Filters button (Building, statuses to hide, each
+            with its count), the board's view toggles on the right; under it the channel legend and the removable
+            chips of whatever is on. */}
+        <ListToolbar bare className="px-3 md:px-4 py-2.5 [border-bottom:1px_solid_var(--color-line-soft)]"
+          leading={<CalendarRangeControl start={from} days={wantSpan} today={todayIso} phone={phone} isDefault={!startParam} onChange={(st, n) => setWindow(st, n)} />}
+          filters={filterGroups} chips={channelChips} onClearAll={clearFilters}
+          panelExtra={<p className="m-0 text-meta text-muted-ink">Filters only hide reservation bars. The free count always counts every reservation.</p>}
+          below={
+            <div className="flex items-center gap-x-3 gap-y-2 flex-wrap min-w-0 max-md:flex-nowrap max-md:overflow-x-auto max-md:[scrollbar-width:none] max-md:-mx-3 max-md:px-3">
+              <ChannelLegend channels={filterChannels} off={off} setOff={setOff} counts={data ? legendCounts.ch : undefined} />
+            </div>
+          }
+          right={<>
               {lastSync && (
-                <span className="hidden sm:inline-flex items-center gap-1.5 text-meta text-muted-ink whitespace-nowrap" title={`Last update sent to the channels ${dateTime(lastSync)}`}>
+                <span className="hidden lg:inline-flex items-center gap-1.5 text-meta text-muted-ink whitespace-nowrap" title={`Last update sent to the channels ${dateTime(lastSync)}`}>
                   <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: TONE[syncTrouble ? 'warning' : 'success'].line }} />
                   {syncTrouble
                     ? <Link to="/system/integrations" className="no-underline" style={{ color: TONE.warning.fg }}>Channel errors · see Integrations</Link>
                     : <>Channels updated {dateInputValue(lastSync) === todayMyt() ? timeWithZone(lastSync) : `${dateShort(lastSync)} ${time(lastSync)}`}</>}
                 </span>
               )}
-              <button type="button" onClick={() => setFiltersOpen(v => !v)} aria-expanded={filtersOpen} aria-label={filterCount ? `Filters, ${filterCount} on` : 'Filters'} title="Filters"
-                className={`${toolBtn} md:hidden ${filtersOpen ? 'bg-muted!' : ''}`}>
-                <Icon name="SlidersHorizontal" size="sm" />
-                {filterCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 box-border rounded-full bg-black text-white text-caption grid place-items-center">{filterCount}</span>}
-              </button>
               {groups.length > 1 && (
                 // Phones fold one building at a time from its header; the toolbar there has no room for a third button.
                 <button type="button" className={`${toolBtn} hidden! md:inline-flex!`} onClick={() => setFolded(allFolded ? {} : Object.fromEntries(groups.map(g => [g.id, true])))}
@@ -521,22 +538,11 @@ function CalendarBoard() {
                 title={showFree ? 'Hide the free-unit count on each building row' : 'Show how many units are free each night on each building row'}>
                 <Icon name={showFree ? 'EyeOff' : 'Eye'} size="sm" /><span className="hidden md:inline">{showFree ? 'Hide free count' : 'Show free count'}</span>
               </button>
-              <button type="button" className={toolBtn} onClick={() => { setRatesPref(!expanded); setUnitOpen({}); }}
-                aria-label={expanded ? 'Hide prices' : 'Show prices'} title={expanded ? 'Hide the price rows' : 'Show the availability and price rows under every unit'}>
-                <Icon name={expanded ? 'ChevronsDownUp' : 'ChevronsUpDown'} size="sm" /><span className="hidden md:inline">{expanded ? 'Hide prices' : 'Show prices'}</span>
+              <button type="button" className={`${toolBtn} ${expanded ? 'border-primary! bg-primary-soft! text-[var(--color-primary-ink)]!' : ''}`} onClick={() => { setRatesPref(!expanded); setUnitOpen({}); }}
+                aria-pressed={expanded} aria-label={expanded ? 'Hide prices' : 'Show prices'} title={expanded ? 'Hide the price rows' : 'Show the availability and price rows under every unit'}>
+                <Icon name="Tag" size="sm" /><span className="hidden md:inline">{expanded ? 'Hide prices' : 'Show prices'}</span>
               </button>
-            </div>
-          </div>
-
-          <div className={`${filtersOpen ? 'block' : 'hidden'} md:block`}>
-            <CalendarFilters channels={filterChannels} properties={properties} counted={!!data} property={property} setProperty={setProperty}
-              off={off} setOff={setOff} statusOff={statusOff} setStatusOff={setStatusOff} dirty={filtersDirty}
-              onReset={() => { setOff({}); setStatusOff({}); setProperty('all'); }} />
-            {(offCount > 0 || Object.values(statusOff).some(Boolean)) && (
-              <p className="m-0 mt-2 text-meta text-muted-ink">Filters only hide reservation bars. The free count always counts every reservation.</p>
-            )}
-          </div>
-        </div>
+          </>} />
 
         {/* Grid: scrolls inside the card both ways; the date header and unit column stay put. */}
         <div ref={el => { (gridRef as MutableRefObject<HTMLDivElement | null>).current = el; fillGrid(el); }} tabIndex={0} aria-label="Reservation calendar. Arrow keys scroll."
@@ -599,7 +605,7 @@ function CalendarBoard() {
               // Pinned to the visible part of the wide grid so it does not centre on the 30-night track.
               <div className="sticky left-0 w-[min(100%,calc(100vw-2rem))] md:w-[min(100%,720px)]">
                 {filtersDirty
-                    ? <EmptyState bare kind="filtered" title="No units match these filters." action={{ label: 'Clear filters', onClick: () => { setOff({}); setStatusOff({}); setProperty('all'); } }} />
+                    ? <EmptyState bare kind="filtered" title="No units match these filters." action={{ label: 'Clear filters', onClick: clearFilters }} />
                     : <EmptyState bare icon="CalendarDays" title="No units on the board yet." body="Units appear here once they are added under Units." action={{ label: 'Open units', onClick: () => { go('/properties/units'); } }} />}
               </div>
             )}
@@ -653,7 +659,7 @@ function CalendarBoard() {
                             </label>
                           )}
                           <button type="button" aria-expanded={rowOpen} onClick={() => setUnitOpen(o => ({ ...o, [u.id]: !rowOpen }))}
-                            title={`${u.unitNumber} · ${u.propertyName} · ${link.label}${readiness ? ' · ' + readiness.label : ''} · ${rowOpen ? 'hide' : 'show'} rates`}
+                            title={`${u.unitNumber} · ${buildingName(u.propertyName)} · ${link.label}${readiness ? ' · ' + readiness.label : ''} · ${rowOpen ? 'hide' : 'show'} rates`}
                             className={`flex-1 min-w-0 flex items-center gap-1 pl-2 ${selectable ? 'md:pl-0' : 'md:pl-1.5'} pr-2 md:pr-3 py-0 m-0 border-none bg-transparent hover:bg-muted/60 cursor-pointer text-left font-sans`}>
                             <span className="hidden md:grid w-6 h-6 flex-none place-items-center text-muted-ink">
                               <Icon name={rowOpen ? 'ChevronDown' : 'ChevronRight'} size="sm" />
@@ -670,8 +676,8 @@ function CalendarBoard() {
                                 if (w.base <= 0) return <span className="text-caption text-faint whitespace-nowrap">No price set</span>;
                                 return (
                                   <>
-                                    <span className="text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]"><span className="hidden md:inline">Nightly </span>{rmShort(w.base)}</span>
-                                    {w.weekend !== w.base && <span className="text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]"><span className="hidden md:inline">Weekend </span><span className="md:hidden">Wknd </span>{rmShort(w.weekend)}</span>}
+                                    <span className="text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]"><span className="hidden md:inline">Nightly </span>{rm(w.base)}</span>
+                                    {w.weekend !== w.base && <span className="text-caption text-muted-ink whitespace-nowrap [font-variant-numeric:tabular-nums]"><span className="hidden md:inline">Weekend </span><span className="md:hidden">Wknd </span>{rm(w.weekend)}</span>}
                                   </>
                                 );
                               })()}
@@ -750,7 +756,7 @@ function CalendarBoard() {
                             return (
                               <div key={b.id} draggable={!inquiry} onClick={e => { e.stopPropagation(); if (refusedDrag.current) { refusedDrag.current = false; return; } setHover(null); setOpenBlock(b); }}
                                 onPointerDown={e => e.stopPropagation()}
-                                onPointerEnter={e => { if (e.pointerType === 'mouse') setHover({ b, phase, unit: `${u.propertyName} ${u.unitNumber}`, x: e.clientX, y: e.clientY }); }}
+                                onPointerEnter={e => { if (e.pointerType === 'mouse') setHover({ b, phase, unit: `${buildingName(u.propertyName)} ${u.unitNumber}`, x: e.clientX, y: e.clientY }); }}
                                 onPointerMove={e => { e.stopPropagation(); if (e.pointerType === 'mouse') setHover(h => (h && h.b.id === b.id ? { ...h, x: e.clientX, y: e.clientY } : h)); }}
                                 onPointerLeave={() => setHover(null)}
                                 aria-label={`${name} · ${phase === 'hold' ? holdName(b) : ch.label} · ${PHASE_LABEL[phase]} · ${dateRange(b.checkIn, b.checkOut)}`}
@@ -830,10 +836,10 @@ function CalendarBoard() {
                                   const none = !custom && (price <= 0 || unlinked);
                                   return (
                                     <button key={i} type="button" disabled={!canSetRates} onClick={() => setPriceModal({ unit: u, channel: r.key, dayIso: dayIso(i), current: price })}
-                                      title={`${r.label} · ${date(dayIso(i))} · ${none ? (unlinked ? `not linked to ${r.label}, so no price is sent` : 'no price set') : rmShort(price)}${custom ? ' · set by hand' : ''}${canSetRates ? ' · click to set' : ''}`}
+                                      title={`${r.label} · ${date(dayIso(i))} · ${none ? (unlinked ? `not linked to ${r.label}, so no price is sent` : 'no price set') : rm(price)}${custom ? ' · set by hand' : ''}${canSetRates ? ' · click to set' : ''}`}
                                       style={{ width: COL }}
-                                      className={`flex-none box-border h-10 md:h-8 p-0 pr-2 border-none bg-transparent enabled:hover:bg-sunken/80 enabled:cursor-pointer disabled:cursor-default font-sans text-meta text-right [font-variant-numeric:tabular-nums] ${none ? 'text-faint' : custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
-                                      {none ? '—' : amount(price, { cents: false })}
+                                      className={`flex-none box-border h-10 md:h-8 p-0 pr-1.5 md:pr-2 border-none bg-transparent enabled:hover:bg-sunken/80 enabled:cursor-pointer disabled:cursor-default font-sans text-caption md:text-meta text-right [font-variant-numeric:tabular-nums] ${none ? 'text-faint' : custom ? 'font-semibold text-ink' : 'text-ink-2'}`}>
+                                      {none ? '—' : amount(price)}
                                     </button>
                                   );
                                 })}

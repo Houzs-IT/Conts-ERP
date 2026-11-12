@@ -18,6 +18,9 @@ export type Receipt = {
   amountSen: number; vendorName: string | null; note: string | null; status: ReceiptStatus; rejectReason: string | null;
   checkedAt: string | null; checkedBy: string | null; topUpPvId: string | null; paybackPvId: string | null; replacesId: string | null;
   source: string; lines: ClaimLine[]; files: { id: string; fileName: string; mime: string }[]; overLimit?: boolean;
+  /** Finance's pay-back list only: where the money goes. The bank given on the claim (Direct Claim to Me) when there is
+   *  one, else the saved details; differsFromSaved when the claim's account is not the saved one or nothing is saved. */
+  bank?: { bankName: string; accountNo: string; accountName: string | null; fromClaim: boolean; differsFromSaved: boolean } | null;
 };
 export type RequestStatus = "SUBMITTED" | "PART_PAID" | "PAID" | "REJECTED" | "CLOSED" | "WITHDRAWN";
 export type PaymentRequest = {

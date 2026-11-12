@@ -551,7 +551,7 @@ export default function App() {
         <Route
           path="/my-cases"
           element={
-            <PageGuard page="service_cases" allowSales>
+            <PageGuard page="service_cases.my_cases" allowSales>
               <MyCases />
             </PageGuard>
           }
@@ -559,7 +559,7 @@ export default function App() {
         <Route
           path="/my-cases/:id"
           element={
-            <PageGuard page="service_cases" allowSales>
+            <PageGuard page="service_cases.my_cases" allowSales>
               <>
                 <MyCases />
                 <MyCaseDetail />
