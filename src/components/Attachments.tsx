@@ -410,7 +410,7 @@ export function CoverPhotoDrop({ photo, onPick, busy, label = 'Add a photo', hin
       ) : standIn ? (
         <div className="absolute inset-0 flex items-end p-3.5 text-white/90 overflow-hidden"
           style={{ background: `linear-gradient(135deg, hsl(${hueOfPlace(standIn.place)} 34% 40%), hsl(${hueOfPlace(standIn.place) + 40} 30% 24%))` }}>
-          <b aria-hidden className="absolute right-[18px] top-1/2 -translate-y-1/2 font-extrabold text-[64px] leading-none tracking-[-0.04em] text-white/[0.14] pointer-events-none select-none">{initialsOf(standIn.place)}</b>
+          <b aria-hidden className="absolute right-[18px] top-2.5 font-extrabold text-[64px] leading-none tracking-[-0.04em] text-white/[0.14] pointer-events-none select-none">{initialsOf(standIn.place)}</b>
           <span className="relative flex flex-col min-w-0">
             <small className="block text-caption font-semibold tracking-[0.12em] uppercase opacity-75 truncate">{standIn.place}</small>
             {standIn.code && <b className="font-mono text-[13px] tracking-[0.04em] truncate">{standIn.code}</b>}

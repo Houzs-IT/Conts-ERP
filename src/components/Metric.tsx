@@ -65,7 +65,7 @@ export function StatTile({ label, value, hint, hintTone, tone, loading, hero, on
 /** A row of StatTiles: two across on phones, up to `cols` across on wide screens. */
 export function StatRow({ children, cols = 4 }: { children: ReactNode; cols?: 2 | 3 | 4 | 5 }) {
   const wide = { 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'xl:grid-cols-4', 5: 'xl:grid-cols-5' }[cols];
-  return <div className={cx('grid grid-cols-2 gap-2 sm:gap-3', wide)}>{children}</div>;
+  return <div className={cx('ds-tiles grid grid-cols-2 gap-2 sm:gap-3', wide)}>{children}</div>;
 }
 
 /** Section heading inside a page: an eyebrow-sized title, an optional count and a right-hand action. */
