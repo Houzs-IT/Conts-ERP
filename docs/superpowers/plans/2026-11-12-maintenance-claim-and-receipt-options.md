@@ -259,4 +259,21 @@ The old test "a field worker hands receipts in but does not ask finance to pay" 
 - **Account name prefill (a Minor, raised to Important).** `/my-bank` fills the account name with the person's own name when HR keeps none.
 - **Ruling changed.** The desk Claim box appears on an open job only, as on the phone.
 
-Deferred minors and the set-aside items are in the ledger as `Final:` lines. Release note added: the **staging** database needs 0311 too (the staging engine deploys on every merge to main).
+**Deferred minors** (from the final review, not fixed here):
+- **A replacement sent without `payBack` loses the claim's bank.** No client sends replacements today.
+- **The success toast follows the local choice, not the returned route.** This shows after a resend following a switch, or when Property OS is deployed before the engine.
+- **"Not the saved account" compares the account number only,** not the bank.
+- **Switching from Direct Pay to Supplier to a claim after the bill was read** loses the bill's date and shop.
+- **Every receipt read selects the 0311 columns.** So 0311 must be on production and staging before the engine deploys.
+- **`ClaimBankFields` imports the bank list from `functions/_lib/hrFields`.** Move the list to a module with no imports.
+- **Smaller items:**
+  - `savedBanksOf` reads ids unbatched;
+  - the desk shows phone wording;
+  - the Receipts choice is titled "How you are paid back" for Direct Pay to Supplier too;
+  - "No bank details" shows on rejected and replaced rows;
+  - paid rows show today's saved account;
+  - `fromClaim` is not displayed;
+  - engine route header comments are stale.
+- **A field worker cannot withdraw a Direct Pay to Supplier on the phone.** Withdraw stays office-only; they ask the office.
+
+**Release note added:** the **staging** database needs 0311 too, because the staging engine deploys on every merge to main.
