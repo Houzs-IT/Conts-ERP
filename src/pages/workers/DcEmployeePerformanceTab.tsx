@@ -3,7 +3,7 @@ import { StatTile, StatRow } from '../../components/Metric';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
 import { useApi } from '../../lib/useApi';
-import { POSITION_LABEL, type DcEmployee } from '../../../functions/_lib/hrFields';
+import type { DcEmployee } from '../../../functions/_lib/hrFields';
 
 /* ------------------------------------------------------------------ *
  * Dream Crafter > HR > Employees > Employee Performance: the Dream Crafter
@@ -22,7 +22,7 @@ export default function DcEmployeePerformanceTab() {
 
   const columns = useMemo<Column<DcEmployee>[]>(() => [
     { key: 'name', label: 'Employee', value: e => e.name, hideable: false, width: 220, render: e => <span className="font-semibold">{e.name}</span> },
-    { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], width: 120 },
+    { key: 'jobTitle', label: 'Job title', value: e => e.jobTitle, width: 180 },
     { key: 'projects', label: 'Renovation projects', value: () => null, render: () => NOT_YET, sortable: false, filter: false, width: 170 },
     { key: 'minutes', label: 'Production minutes', value: () => null, render: () => NOT_YET, sortable: false, filter: false, width: 170 },
     { key: 'efficiency', label: 'Efficiency', value: () => null, render: () => NOT_YET, sortable: false, filter: false, width: 120 },
