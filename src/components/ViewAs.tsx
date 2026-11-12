@@ -136,8 +136,9 @@ export default function ViewAs({ docked = false }: { docked?: boolean } = {}) {
   return (
     // z-[45]: above the phone tab bar (40) and the page, under every dialog and drawer (50 and up), so it never
     // sits on a dialog's buttons. On phones (under 600px, deviceClass.ts) it sits above the 64px bottom tab bar, and
-    // above a pinned action bar (data-action-bar, the field app's job button) wherever one is showing.
-    <div className="min-[601px]:[body:has([data-viewas-docked])_&]:hidden fixed right-3 bottom-3 max-[600px]:bottom-[calc(76px+env(safe-area-inset-bottom))] [body:has([data-action-bar])_&]:bottom-[calc(104px+env(safe-area-inset-bottom))] z-[45] flex flex-col items-end [font-family:inherit] text-meta">
+    // above a pinned action bar (data-action-bar, the field app's job button) wherever one is showing. A sticky
+    // save bar (data-save-bar, permissions/SaveBar.tsx) sits on the tab bar, so the switch rises by its measured height.
+    <div className="min-[601px]:[body:has([data-viewas-docked])_&]:hidden fixed right-3 bottom-3 max-[600px]:bottom-[calc(76px+env(safe-area-inset-bottom))] [body:has([data-action-bar])_&]:bottom-[calc(104px+env(safe-area-inset-bottom))] max-[600px]:[body:has([data-save-bar])_&]:bottom-[calc(76px+var(--save-bar-height,0px)+env(safe-area-inset-bottom))] z-[45] flex flex-col items-end [font-family:inherit] text-meta">
       {open && !min && menu}
       {min ? (
         <button type="button" onClick={() => minimise(false)} title={label} aria-label={`${label}. Show the View as switch.`}

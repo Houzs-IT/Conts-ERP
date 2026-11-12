@@ -14,6 +14,9 @@
 /* The canonical token sheet lives at the project root as tokens.css.
    Keep them identical — root tokens.css is the source of truth. */
 @import '../../tokens.css';
+/* Conts DS v2 component layer: the prototype's shared component styles (sub-tabs, header More menu, tables, dialogs,
+   form kit, key facts, money lines). */
+@import './components.css';
 
 /* No preflight means the browser's 8px body margin survived: it framed every screen in a grey border
    and, with the shell at 100vh, made the whole page scroll by 16px. The app shell owns the viewport. */
@@ -54,8 +57,8 @@ body { margin: 0; }
      .field-input focus look. A control that sets outline-none keeps its own focus treatment. */
   input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible, select:focus-visible, textarea:focus-visible {
     border-color: var(--color-border-focus);
-    outline: 2px solid color-mix(in srgb, var(--color-border-focus) 35%, transparent);
-    outline-offset: 0;
+    outline: none;
+    box-shadow: var(--focus-ring);
   }
 }
 
@@ -66,41 +69,51 @@ body { margin: 0; }
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
-  --color-black: #151515;
-  --color-charcoal: #242424;
-  --color-ink: #252525;
-  --color-ink-2: #4A4844;
-  --color-muted-ink: #706D67;
-  --color-faint: #A8A29A;
+  /* Conts DS v2 (Nov 2026 redesign, the approved prototype): one neutral family tinted toward the green, a darker
+     canvas (page) behind white cards, the black slab, champagne gold, and Conts green for the primary action. */
+  --color-black: #121714;
+  --color-charcoal: #242824;
+  --color-ink: #11140F;
+  --color-ink-2: #3B4035;
+  --color-muted-ink: #5C6155;
+  --color-faint: #7D8378;
 
-  --color-page: #FAF9F6;
+  --color-page: #EEF0EC;
   --color-card: #FFFFFF;
-  --color-muted: #F1F0ED;
-  --color-sunken: #EDEAE4;
+  --color-muted: #F4F6F3;
+  --color-sunken: #E3E6E0;
 
-  --color-line: #DEDAD3;
-  --color-line-soft: #EDEAE4;
-  --color-line-strong: #C7C1B6;
-  /* A field's own outline where it must read as a control (WCAG 3:1): 3.6:1 on the login linen, 4.1:1 on white. */
-  --color-line-input: #857D70;
+  --color-line: #D6D9D2;
+  --color-line-soft: #E3E6E0;
+  --color-line-strong: #C2C6BD;
+  /* A field's own outline where it must read as a control (WCAG 3:1): 3.3:1 on the canvas, 3.8:1 on white. */
+  --color-line-input: #7F857A;
 
   --color-gold: #C8A46A;
-  --color-gold-ink: #8A6A2F;
-  --color-gold-tint: #FBF7F0;
-  /* The active tab's underline on TabBar (owner, Oct 2026: indigo). 6.3:1 on white. */
-  --color-tab: #4F46E5;
+  --color-gold-ink: #87612A;
+  --color-gold-soft: #F3ECDF;
+  --color-gold-tint: #F9F6EF;
+  /* The active tab's underline on TabBar and the sub-tabs: gold (Conts DS v2; was indigo from Oct 2026). */
+  --color-tab: #C8A46A;
+
+  /* Conts green: the one primary button per page, a switch that is on, a selected tile. */
+  --color-primary: #1A6152;
+  --color-primary-hover: #134A3F;
+  --color-primary-soft: #E1EFEC;
+  --color-primary-ink: #0C3F37;
+  --color-on-primary: #FFFFFF;
 
   /* text-on-dark: the quiet line on a black panel or photo tile. Pages used the class before it existed, so the
      Portfolio tiles drew it in page ink, unreadable on the photo. */
-  --color-on-dark: #DEDAD3;
+  --color-on-dark: #D9D4CB;
 
   --color-airbnb: #FF5A5F;
   --color-booking: #003B95;
   --color-agoda: #5C2D91;
   --color-owner: #706D67;
 
-  --radius-card: 12px;
-  --radius-control: 8px;
+  --radius-card: 14px;
+  --radius-control: 10px;
   --radius-pill: 999px;
 
   /* The six-step type scale (UI audit, 8 Oct). Use these instead of hand-set sizes:
@@ -127,29 +140,29 @@ body { margin: 0; }
    --color-critical etc. as the TINT, unlayered, which beat the @theme value. Inline utilities carry the value itself,
    so no root variable can override them. critical is kept as an alias of danger. */
 @theme inline {
-  --color-success: #11694A;
-  --color-success-bg: #E9F5EF;
-  --color-success-line: #16845B;
+  --color-success: #276B46;
+  --color-success-bg: #E3F1E8;
+  --color-success-line: #2F7D52;
   --color-warning: #8A5A12;
-  --color-warning-bg: #FFF4D8;
-  --color-warning-line: #B7791F;
-  --color-danger: #A8352F;
-  --color-danger-bg: #FCECEB;
-  --color-danger-line: #C2413B;
-  --color-critical: #A8352F;
-  --color-critical-bg: #FCECEB;
-  --color-critical-line: #C2413B;
-  --color-info: #2E6DA4;
-  --color-info-bg: #EAF2FA;
-  --color-info-line: #2E6DA4;
+  --color-warning-bg: #F6EBD5;
+  --color-warning-line: #C98A1E;
+  --color-danger: #B23A3A;
+  --color-danger-bg: #F8EAEA;
+  --color-danger-line: #B23A3A;
+  --color-critical: #B23A3A;
+  --color-critical-bg: #F8EAEA;
+  --color-critical-line: #B23A3A;
+  --color-info: #2B5C9E;
+  --color-info-bg: #E6EEF8;
+  --color-info-line: #2B5C9E;
   /* Chart series that are not a status (unit P&L report): a dark bar and a teal that read in both themes. */
-  --color-chart-ink: #242424;
+  --color-chart-ink: #242824;
   --color-chart-teal: #1F8A8A;
-  --color-neutral: #706D67;
-  --color-neutral-bg: #F1F0ED;
-  --color-neutral-line: #C7C1B6;
-  --color-accent: #8A6A2F;
-  --color-accent-bg: #FBF7F0;
+  --color-neutral: #5C6155;
+  --color-neutral-bg: #F4F6F3;
+  --color-neutral-line: #C2C6BD;
+  --color-accent: #87612A;
+  --color-accent-bg: #F3ECDF;
   --color-accent-line: #C8A46A;
 }
 
@@ -220,14 +233,16 @@ body:has([aria-modal="true"]:not([data-side-drawer])) .app-main { overflow: hidd
 /* Hover only where a pointer can hover: on a phone :hover sticks after a tap and the button looks still pressed. */
 @media (hover: hover) {
   .ui-btn:not(:disabled):hover::after { opacity: 0.07; }
-  .ui-btn[data-variant='primary']:not(:disabled):hover::after,
   .ui-btn[data-variant='danger']:not(:disabled):hover::after { opacity: 0.12; }
+  /* Conts DS v2: the green primary darkens on hover rather than taking a white wash. */
+  .ui-btn[data-variant='primary']:not(:disabled):not([aria-busy='true']):hover { background: var(--color-primary-hover) !important; border-color: var(--color-primary-hover) !important; }
+  .ui-btn[data-variant='secondary']:not(:disabled):hover { box-shadow: var(--shadow-card); }
   .ui-btn[data-variant='secondary']:not(:disabled):hover { border-color: var(--color-border-strong) !important; }
   .ui-btn[data-variant='brand']:not(:disabled):hover { box-shadow: 0 0 0 3px rgba(200,164,106,0.16); }
 }
 .ui-btn:not(:disabled):active::after { opacity: 0.13; }
 .ui-btn:not(:disabled):active { transform: translateY(0.5px); }
-.ui-btn[data-variant='primary'] { box-shadow: 0 1px 2px rgba(21,21,21,0.18), inset 0 1px 0 rgba(255,255,255,0.08); }
+.ui-btn[data-variant='primary'] { box-shadow: 0 1px 2px rgba(17,24,16,0.16), inset 0 1px 0 rgba(255,255,255,0.08); }
 .ui-btn:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .ui-btn:active { transform: none; } }
 

@@ -107,7 +107,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ...rq.flatMap(c => c.args), q);
 
   const gq = guestSearch(q, true);
-  const guestsRead = !q || !sees('reservations') || !want('guest') ? [] : all<any>(env, `
+  const guestsRead = !q || !sees('guests') || !want('guest') ? [] : all<any>(env, `
     SELECT g.id, g.full_name, g.email, g.phone FROM guests g
     WHERE ${gq.sql}
     ORDER BY g.full_name LIMIT ${n}`, ...gq.args);
@@ -118,13 +118,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY o.display_name LIMIT ${n}`, like);
 
   const jobPlace = await jobPlaceJoin(env);
-  const jobsRead = !q || !sees('operations') || !want('maintenance') ? [] : all<any>(env, `
+  const jobsRead = !q || !sees('maintenance') || !want('maintenance') ? [] : all<any>(env, `
     SELECT m.id, m.title, m.state, m.reported_at, u.unit_number, p.name AS property_name
     FROM maintenance_issues m ${jobPlace}
     WHERE ${words.map(() => `lower(m.title || ' ' || COALESCE(m.vendor_name, '') || ' ' || p.name || ' ' || COALESCE(u.unit_number, '${BUILDING_JOB_LABEL}')) LIKE ?`).join(' AND ') || 'FALSE'}
     ORDER BY (m.state = 'resolved') ASC, m.reported_at DESC LIMIT ${n}`, ...words);
 
-  const cleansAsked = !!q && sees('operations') && want('cleaning');
+  const cleansAsked = !!q && sees('cleaning') && want('cleaning');
   const ready = cleansAsked ? await taskCleanersReady(env) : false;
   const cleanDay = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const cleanText = `lower(p.name || ' ' || u.unit_number || ' ' || COALESCE(g.full_name, '') || ' ' || COALESCE(t.external_client, '')

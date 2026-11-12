@@ -25,7 +25,7 @@ export const companiesOf = (side: UserSide): readonly Company[] => (side === 'bo
 /** The area groups each side closes. Same table as CLOSED_BY_SIDE and closedBySide in functions/_lib/access.ts: keep them
  *  in step. Management always sees both sides; Finance and System are on neither list, so they follow the rules. */
 const CLOSED_BY_SIDE: Record<UserSide, string[]> = {
-  conts: ['Service cases', 'Projects', 'Supply chain'],
+  conts: ['Service cases', 'Projects', 'Supply chain', 'Dream Crafter HR'],
   dream_crafter: ['Home', 'Reports', 'Reservations', 'Operations', 'HR', 'Units', 'Growth'],
   both: [],
 };
@@ -37,7 +37,6 @@ export const categorySide = (group: string): UserSide =>
 /** The Cleaning and Maintenance departments hold the cleaners' and technicians' logins, which are managed on Workers
  *  only: Users and roles never lists, offers or changes them. */
 export const isFieldKind = (kind: DepartmentKind): boolean => kind === 'cleaning' || kind === 'maintenance';
-export const needsPosition = (kind: DepartmentKind): boolean => kind !== 'management';
 
 export interface DeskCompany { side: UserSide; label: string; departments: Department[] }
 
@@ -55,7 +54,6 @@ export const COMPANY_HEADING = 'py-2 px-3 bg-muted hover:bg-page [border-bottom:
 export const DEPARTMENT_LABEL = 'text-copy font-semibold text-ink';
 export const DEPARTMENT_HEADING = 'py-2 px-4 bg-card hover:bg-muted [border-bottom:1px_solid_var(--color-line-soft)]';
 export const LIST_ROW = 'flex w-full items-center gap-3 text-left border-0 [border-bottom:1px_solid_var(--color-line-soft)] [font-family:inherit] min-h-14 py-2.5 pr-4 pl-10';
-export const SAVE_BAR = 'sticky bottom-[var(--sticky-bottom-offset,0px)] z-[2] flex items-center justify-between gap-3 flex-wrap py-3 px-5 max-md:px-4 bg-card [border-top:1px_solid_var(--color-line)]';
 export const SELECTED_ROW ='bg-info-bg shadow-[inset_3px_0_0_var(--color-gold)]';
 export const KIND_OPTIONS: { value: DepartmentKind; label: string }[] = [
   { value: 'staff', label: 'Staff (office work)' },
@@ -77,8 +75,8 @@ export interface RoleTarget { departmentId: string; positionId: string | null }
 
 export interface ToggleSet { has: (key: string) => boolean; toggle: (key: string) => void }
 
-export function useToggleSet(): ToggleSet {
-  const [keys, setKeys] = useState<Set<string>>(new Set());
+export function useToggleSet(initialKeys: readonly string[] = []): ToggleSet {
+  const [keys, setKeys] = useState<Set<string>>(() => new Set(initialKeys));
   const toggle = (key: string) => setKeys(previous => {
     const next = new Set(previous);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -100,8 +98,9 @@ export const visibleCategoriesOf = (categories: AccessCategory[], department: De
 export const headCountWithoutPosition = (department: Department): number =>
   department.headCount - department.positions.reduce((total, position) => total + position.headCount, 0);
 
-export const defaultRoleName = (department: Department): string =>
-  department.positions.some(position => position.name.trim().toLowerCase() === 'staff') ? 'Staff (no position)' : 'Staff';
+export const NO_POSITION_LABEL = 'No position';
+
+export const hasPeopleWithoutPosition = (department: Department): boolean => headCountWithoutPosition(department) > 0;
 
 export const closedCompanyLabel = (side: UserSide): string => (side === 'conts' ? 'Dream Crafter' : 'The Conts');
 

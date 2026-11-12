@@ -69,8 +69,9 @@ const GLASS_SHAPE: CSSProperties = { backdropFilter: 'blur(30px) saturate(1.6)',
 export const LOOKS: Record<SidebarLookKey, SidebarLook> = {
   conts: {
     shellBg: color.black, card: null,
-    textOn: 'var(--color-text-inverse)', text: color.onDark, muted: color.dim, faint: color.faint, line: color.charcoal,
-    activeBg: color.charcoal, activeShadow: `inset 2px 0 0 ${color.gold}`,
+    textOn: 'var(--color-text-inverse)', text: color.onDark, muted: color.dim, faint: color.faint, line: 'rgba(255,255,255,0.08)',
+    // Conts DS v2: the selected item sits on a soft gold wash with a gold icon.
+    activeBg: 'rgba(200,164,106,0.15)', activeShadow: `inset 2px 0 0 ${color.gold}`,
     // The same gold bar as a top-level item: the tint alone was too faint to find.
     childOnBg: 'rgba(200,164,106,0.14)', childOnShadow: `inset 2px 0 0 ${color.gold}`,
     // Badge text uses the menu's own text colours: gold and dim on these washes fell under 4.5:1.

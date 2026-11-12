@@ -28,7 +28,7 @@ const statusOf = (e: DcEmployee): { label: string; tone: 'success' | 'neutral' }
 export default function DcEmployeesTab({ onChanged }: { onChanged: () => void }) {
   const { data, loading, error, reload } = useApi<{ data: DcEmployee[] }>('/employees/dream-crafter');
   const { user } = useSession();
-  const mayEdit = mayWork(user, 'hr');
+  const mayEdit = mayWork(user, 'dcHr');
   const [form, setForm] = useState<{ person: DcEmployee | null } | null>(null);
   const people = data?.data ?? [];
   const add = () => setForm({ person: null });

@@ -9,7 +9,7 @@ import type { Tone } from '../lib/types';
 export function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
   // cx only joins classes, so a colour passed in would lose to the default grey on CSS order; the grey applies only when none is given.
   const coloured = /(^|\s)text-(?!caption|meta|copy|heading|title|headline|\[)[a-z]/.test(className ?? '');
-  return <span className={cx('text-caption font-semibold uppercase tracking-[0.09em]', !coloured && 'text-muted-ink', className)}>{children}</span>;
+  return <span className={cx('text-caption font-semibold uppercase tracking-[0.12em]', !coloured && 'text-muted-ink', className)}>{children}</span>;
 }
 
 /** "RM 12,450" and "86.2%" with the unit set smaller than the number, so the eye lands on the figure. */
@@ -27,7 +27,8 @@ export function Figure({ value, className }: { value: string; className?: string
 }
 
 /** One KPI, the single summary tile every page uses.
- *  `hero` is the dark statement card, once per page, for the figure that matters most.
+ *  `hero` is the dark statement card, once per page, for the figure that matters most. It always leads its row
+ *  (Conts DS v2), and spans the row on a phone.
  *  `tone` colours the figure (and tints a warning/critical tile) when the number itself is the alert.
  *  `onClick` makes it a filter or a link; `active` marks the filter that is on. `value` undefined shows a skeleton. */
 export function StatTile({ label, value, hint, hintTone, tone, loading, hero, onClick, active, className }: {
@@ -39,24 +40,25 @@ export function StatTile({ label, value, hint, hintTone, tone, loading, hero, on
   return (
     <Tag type={onClick ? 'button' : undefined} onClick={onClick} aria-pressed={onClick && active !== undefined ? active : undefined}
       className={cx(
-        '@container relative rounded-card p-4 sm:p-5 flex flex-col gap-3 min-w-0 overflow-hidden text-left',
-        hero ? 'bg-black text-white' : cx('border border-solid', alert ? TONE[tone].bg : 'bg-card',
-          active ? 'border-black shadow-[0_0_0_1px_var(--color-black)]' : alert ? 'border-warning-line' : 'border-line'),
-        onClick && 'cursor-pointer transition-[border-color,box-shadow] duration-[var(--motion-fast)] hover:border-line-strong hover:shadow-[var(--shadow-raised)]',
+        '@container relative rounded-card px-4 py-3.5 max-sm:px-3 max-sm:py-[11px] flex flex-col gap-[5px] min-w-0 overflow-hidden text-left',
+        // The hero keeps its edge on the near-black dark page through .dash-hero (theme-dark.css).
+        hero ? 'dash-hero order-first max-sm:col-span-full bg-black text-white border border-solid border-black'
+          : cx('border border-solid shadow-[var(--shadow-card)]', alert ? TONE[tone].bg : 'bg-card',
+            active ? 'border-primary shadow-[0_0_0_1px_var(--color-primary)]' : alert ? 'border-warning-line' : 'border-line-soft'),
+        onClick && 'cursor-pointer transition-[border-color,box-shadow] duration-[var(--motion-fast)] hover:shadow-[var(--shadow-raised)]',
         className,
       )}>
-      {hero && <span aria-hidden className="absolute left-4 sm:left-5 top-0 h-[2px] w-8 bg-gold" />}
       <Eyebrow className={hero ? 'text-gold' : alert ? TONE[tone].text : undefined}>{label}</Eyebrow>
       {loading || value === undefined
         // The block is the figure's own height (leading-none at the same clamp), so the tile does not grow when it lands.
-        ? <div className={cx('skeleton w-3/4', hero ? 'h-[clamp(20px,13cqi,40px)] skeleton-on-dark' : 'h-[clamp(16px,12cqi,30px)]')} />
+        ? <div className={cx('skeleton w-3/4 h-[clamp(18px,11cqi,24px)]', hero && 'skeleton-on-dark')} />
         : <Figure value={value} className={cx(
-            'leading-none font-medium tracking-[-0.025em]',
-            // Sized to the tile, so five across on a laptop never clips "RM 121,900".
-            hero ? 'text-[clamp(20px,13cqi,40px)]' : 'text-[clamp(16px,12cqi,30px)]',
+            'leading-[1.15] font-bold tracking-[-0.01em]',
+            // Sized to the tile, so five across on a laptop never clips "RM 121,900.00".
+            'text-[clamp(18px,11cqi,24px)]',
             hero ? '' : tone && tone !== 'neutral' ? TONE[tone].text : 'text-ink',
           )} />}
-      {hint && <div className={cx('text-meta', hero ? 'text-faint' : hintTone ? TONE[hintTone].text : 'text-muted-ink')}>{hint}</div>}
+      {hint && <div className={cx('text-meta', hero ? 'text-on-dark' : hintTone ? TONE[hintTone].text : 'text-ink-2')}>{hint}</div>}
     </Tag>
   );
 }
@@ -64,7 +66,7 @@ export function StatTile({ label, value, hint, hintTone, tone, loading, hero, on
 /** A row of StatTiles: two across on phones, up to `cols` across on wide screens. */
 export function StatRow({ children, cols = 4 }: { children: ReactNode; cols?: 2 | 3 | 4 | 5 }) {
   const wide = { 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'xl:grid-cols-4', 5: 'xl:grid-cols-5' }[cols];
-  return <div className={cx('grid grid-cols-2 gap-3 sm:gap-4', wide)}>{children}</div>;
+  return <div className={cx('grid grid-cols-2 gap-2 sm:gap-3', wide)}>{children}</div>;
 }
 
 /** Section heading inside a page: an eyebrow-sized title, an optional count and a right-hand action. */
@@ -88,7 +90,8 @@ export interface SegmentOption<K extends string> {
   short?: string;
 }
 
-/** Pill-style segmented switch (range, metric, a list's main views). Never wraps: on a narrow screen the
+/** Segmented switch (range, metric, a list's main views): a white track, the chosen option on the black slab
+ *  (Conts DS v2). Never wraps: on a narrow screen the
  *  options scroll sideways inside the track. `value` may be a key that is not offered (a filter chosen
  *  elsewhere), and then no option is lit. */
 /** Phones only: past this many options the row becomes one picker button instead of a sideways scroll
@@ -200,7 +203,7 @@ function SegmentedRow<K extends string>({ label, options, value, onChange, class
     : undefined;
   return (
     <div ref={track} role="group" aria-label={label} style={fade ? { maskImage: fade, WebkitMaskImage: fade } : undefined}
-      className={cx('relative inline-flex items-center p-[3px] gap-[2px] rounded-control bg-muted max-w-full min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', className)}>
+      className={cx('relative inline-flex flex-nowrap items-center p-1 gap-1 rounded-[12px] bg-card border border-solid border-line shadow-[var(--shadow-card)] max-w-full min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', className)}>
       {options.map(o => {
         const on = o.key === value;
         const short = compact && o.short;
@@ -211,13 +214,13 @@ function SegmentedRow<K extends string>({ label, options, value, onChange, class
           <button key={o.key} type="button" onClick={() => onChange(o.key)} aria-pressed={on}
             title={short && typeof o.label === 'string' ? o.label : undefined}
             className={cx(
-              'flex-none inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] cursor-pointer text-copy whitespace-nowrap transition-colors duration-[var(--motion-fast)] outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]',
-              on ? 'bg-card text-ink font-medium shadow-[var(--shadow-card)]' : 'text-muted-ink hover:text-ink',
+              'ds-tap flex-none inline-flex items-center gap-1.5 min-h-[30px] px-[11px] rounded-[8px] border-0 cursor-pointer text-meta font-semibold whitespace-nowrap transition-colors duration-[180ms] outline-none focus-visible:[box-shadow:inset_0_0_0_2px_var(--color-gold)]',
+              on ? 'bg-black text-white' : 'bg-transparent text-ink-2 hover:bg-muted',
             )}>
             {short ? o.short : o.label}
             {o.count !== undefined && (
-              <span className={cx('inline-flex items-center gap-1 text-meta font-normal tabular-nums',
-                flagged ? (o.tone === 'danger' ? 'text-danger' : 'text-warning') : empty ? 'text-faint' : 'text-muted-ink')}>
+              <span className={cx('inline-flex items-center gap-1 text-meta font-semibold tabular-nums',
+                on ? 'opacity-70' : flagged ? (o.tone === 'danger' ? 'text-danger' : 'text-warning') : empty ? 'text-faint' : 'text-muted-ink')}>
                 {flagged && <span aria-hidden className={cx('w-1.5 h-1.5 rounded-full', o.tone === 'danger' ? 'bg-danger-line' : 'bg-warning-line')} />}
                 {count(o.count)}
               </span>

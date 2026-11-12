@@ -5,76 +5,94 @@
  * --color-card …) and the brand semantic names (--color-surface-*, --color-text-*).
  * The sidebar is already dark in light mode, so its tokens do not change.
  * ========================================================================== */
-:root[data-theme="theconts-dark"] {
+:root[data-theme="theconts-dark"],
+:root[data-theme="dark"] {
   color-scheme: dark;
 
-  --color-page: #0F0F0E;
-  --color-card: #1A1917;
-  --color-muted: #23211E;
-  --color-sunken: #141312;
-  --color-ink: #F2EFE9;
-  --color-ink-2: #D6D1C8;
-  --color-muted-ink: #A8A29A;
-  /* Used for labels and counts, not only placeholders: #8A8680 fell to 4.4:1 on the muted surface. */
-  --color-faint: #9C978F;
-  --color-line: #2E2B27;
-  --color-line-soft: #24221F;
-  --color-line-strong: #3D3934;
-  --color-line-input: #7A736A;
-  --color-gold-ink: #D0B37E;
-  --color-gold-tint: rgba(200, 164, 106, 0.14);
-  --color-tab: #818CF8;
+  /* Conts DS v2 dark (the approved prototype): warm near-blacks, gold lifted for contrast, the green lightened. */
+  --color-page: #121211;
+  --color-card: #1B1B19;
+  --color-muted: #22221F;
+  --color-sunken: #2A2A27;
+  --color-ink: #F1EEE8;
+  --color-ink-2: #CFCAC1;
+  --color-muted-ink: #A39E95;
+  /* Used for labels and counts, not only placeholders: 5.6:1 on the card. */
+  --color-faint: #8F948A;
+  --color-line: #33322E;
+  --color-line-soft: #2A2A27;
+  --color-line-strong: #4A4844;
+  --color-line-input: #7A766E;
+  --color-gold: #D4B37C;
+  --color-gold-ink: #E0C48F;
+  --color-gold-soft: #3A3122;
+  --color-gold-tint: #2A251C;
+  --color-tab: #D4B37C;
+  --color-primary: #5FB59A;
+  --color-primary-hover: #79C7AE;
+  --color-primary-soft: #1D3A31;
+  --color-primary-ink: #BFE5D7;
+  --color-on-primary: #0D1F19;
 
   /* Same roles as root tokens.css: --color-{tone} is the TINT behind a badge, -fg its text, -line dots and borders.
-     These once held the text colour under the tint's name, so every badge read through status.ts drew a bright
-     pill with light-mode text on it (2.0-3.2:1). -bg is the Tailwind-side alias of the tint. */
-  --color-success: rgba(22, 132, 91, 0.18);  --color-success-bg: rgba(22, 132, 91, 0.18);  --color-success-fg: #5FC79A;  --color-success-line: #2FA674;
-  --color-warning: rgba(183, 121, 31, 0.20); --color-warning-bg: rgba(183, 121, 31, 0.20); --color-warning-fg: #E3B25A;  --color-warning-line: #C99332;
-  --color-critical: rgba(194, 65, 59, 0.20); --color-critical-bg: rgba(194, 65, 59, 0.20); --color-critical-fg: #F08A84; --color-critical-line: #D9605A;
-  --color-danger: rgba(194, 65, 59, 0.20);   --color-danger-bg: rgba(194, 65, 59, 0.20);   --color-danger-fg: #F08A84;   --color-danger-line: #D9605A;
-  --color-info: rgba(46, 109, 164, 0.22);    --color-info-bg: rgba(46, 109, 164, 0.22);    --color-info-fg: #7DB3E6;     --color-info-line: #5A95CE;
+     -bg is the Tailwind-side alias of the tint. */
+  --color-success: #1B3326;  --color-success-bg: #1B3326;  --color-success-fg: #6CC396;  --color-success-line: #4FA97A;
+  --color-warning: #3A2E17;  --color-warning-bg: #3A2E17;  --color-warning-fg: #E7B964;  --color-warning-line: #E7B964;
+  --color-critical: #3B1F1F; --color-critical-bg: #3B1F1F; --color-critical-fg: #EC8A8A; --color-critical-line: #D96B6B;
+  --color-danger: #3B1F1F;   --color-danger-bg: #3B1F1F;   --color-danger-fg: #EC8A8A;   --color-danger-line: #D96B6B;
+  --color-info: #1D2B3D;     --color-info-bg: #1D2B3D;     --color-info-fg: #8FB4E8;     --color-info-line: #6E9AD6;
   --color-chart-ink: #D8D3CA;                --color-chart-teal: #4FBDBD;
-  --color-neutral: #2A2723;                  --color-neutral-bg: #2A2723;                  --color-neutral-fg: #B5AFA6;  --color-neutral-line: #5A554D;
-  --color-accent: rgba(200, 164, 106, 0.14); --color-accent-bg: rgba(200, 164, 106, 0.14); --color-accent-fg: #D0B37E;   --color-accent-line: #C8A46A;
+  --color-neutral: #2A2A27;                  --color-neutral-bg: #2A2A27;                  --color-neutral-fg: #B5AFA6;  --color-neutral-line: #5A574F;
+  --color-accent: #3A3122;   --color-accent-bg: #3A3122;   --color-accent-fg: #E0C48F;   --color-accent-line: #D4B37C;
 
-  --color-surface-page: #0F0F0E;
-  --color-surface-card: #1A1917;
-  --color-surface-elevated: #23211E;
-  --color-surface-muted: #23211E;
-  --color-surface-sunken: #141312;
-  --color-surface-selected: rgba(200, 164, 106, 0.12);
-  --color-surface-hover: #201E1B;
-  --color-surface-press: #2A2723;
+  --color-surface-page: #121211;
+  --color-surface-card: #1B1B19;
+  --color-surface-elevated: #22221F;
+  --color-surface-muted: #22221F;
+  --color-surface-sunken: #2A2A27;
+  --color-surface-selected: #2A251C;
+  --color-surface-hover: #22221F;
+  --color-surface-press: #2A2A27;
   --color-surface-scrim: rgba(0, 0, 0, 0.6);
-  --color-surface-skeleton: #24221F;
-  --color-text-primary: #F2EFE9;
-  --color-text-secondary: #D6D1C8;
-  --color-text-muted: #A8A29A;
-  --color-text-faint: #9C978F;
-  --color-text-accent: #D0B37E;
-  --color-text-link: #F2EFE9;
-  --color-text-link-hover: #D0B37E;
-  --color-border-default: #2E2B27;
-  --color-border-strong: #3D3934;
-  --color-border-muted: #24221F;
-  --color-border-hairline: #2A2723;
+  --color-surface-skeleton: #2A2A27;
+  --color-text-primary: #F1EEE8;
+  --color-text-secondary: #CFCAC1;
+  --color-text-muted: #A39E95;
+  --color-text-faint: #8F948A;
+  --color-text-accent: #E0C48F;
+  --color-text-link: #F1EEE8;
+  --color-text-link-hover: #E0C48F;
+  --color-border-default: #33322E;
+  --color-border-strong: #4A4844;
+  --color-border-muted: #2A2A27;
+  --color-border-hairline: #2A2A27;
+  --color-border-focus: #D4B37C;
+  --focus-ring: 0 0 0 3px rgba(212, 179, 124, 0.22);
 
-  /* A near-black primary button vanishes on a near-black card, so in dark mode
-     the primary action becomes brand gold with dark ink (7.80:1). */
-  --color-brand-black: #C8A46A;
+  --shadow-card: 0 1px 0 rgba(0, 0, 0, 0.3), 0 6px 20px -10px rgba(0, 0, 0, 0.6);
+  --shadow-raised: 0 14px 34px -14px rgba(0, 0, 0, 0.7);
+  --shadow-dropdown: 0 12px 28px -8px rgba(0, 0, 0, 0.7);
+  --shadow-overlay: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
+
+  /* A near-black fill vanishes on a near-black card, so in dark mode the brand-black fill (checkbox ticks, the older
+     primary look) becomes brand gold with dark ink (7.80:1). The primary button itself is --color-primary. */
+  --color-brand-black: #D4B37C;
   --color-text-inverse: #151515;
 
   /* The phone's black fills written as color.black (menu button, selected side switch, avatar, portal headers) drew
      #151515 text or marks on #151515 and vanished. These lift them to a warm charcoal with light text and a ring that
      keeps the edge visible on the cards (4.6:1). */
-  --color-fill-strong: #34302B;
-  --color-on-fill-strong: #F2EFE9;
+  --color-fill-strong: #34322D;
+  --color-on-fill-strong: #F1EEE8;
   --color-fill-ring: #8A8378;
 }
 
 :root[data-theme="theconts-dark"] input,
 :root[data-theme="theconts-dark"] select,
-:root[data-theme="theconts-dark"] textarea {
+:root[data-theme="theconts-dark"] textarea,
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
   background-color: var(--color-surface-card);
   color: var(--color-text-primary);
   border-color: var(--color-border-strong);
@@ -102,7 +120,7 @@
  * of them (the selected "All" chip looked unselected), so they lift to a warm charcoal and a selected border shows.
  * Only these two classes: --color-black itself stays, since text-black is the dark ink on gold buttons and
  * bg-black/30 scrims must stay dark. */
-:root[data-theme="theconts-dark"] .bg-black { background-color: #34302B; }
+:root[data-theme="theconts-dark"] .bg-black { background-color: #34322D; }
 :root[data-theme="theconts-dark"] .border-black { border-color: var(--color-muted-ink); }
 
 /* The sidebar is dark in both themes: keep its "inverse" text white so the active item, the Rental/Supply chain

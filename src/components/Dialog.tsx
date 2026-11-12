@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode, type WheelEvent } from 'react';
+import { cx } from '../lib/design-tokens';
 
 /** The wheel over a side drawer's dimmed strip scrolls the list under it, as the owner expects when he reads down the
  *  reservations with one open. The strip is position: fixed, so the browser would hand that scroll to the window (which
@@ -21,8 +22,13 @@ function scrollUnder(e: WheelEvent<HTMLDivElement>) {
   }
 }
 
-/** Confirmations live in ConfirmDialog.tsx; this file keeps the side drawer. */
-export function Drawer({ open, onClose, children, width = 480, labelledBy }: { open: boolean; onClose: () => void; children: ReactNode; width?: number; labelledBy?: string }) {
+/** Conts DS v2 drawer widths: md for a record, lg for anything with a table or two columns, xl for a wide sheet. */
+const DRAWER_SIZE = { md: 520, lg: 780, xl: 1040 } as const;
+
+/** Confirmations live in ConfirmDialog.tsx; this file keeps the side drawer.
+ *  `size` picks one of the three widths (`width` still works and is used when no size is given). On a phone the
+ *  drawer fills the screen. */
+export function Drawer({ open, onClose, children, width = 480, size, labelledBy }: { open: boolean; onClose: () => void; children: ReactNode; width?: number; size?: keyof typeof DRAWER_SIZE; labelledBy?: string }) {
   const panel = useRef<HTMLDivElement>(null);
   // Focus goes into the drawer when it opens (unless a field inside already took it) and back to what opened it on close,
   // so a keyboard user is never left on the list hidden behind it.
@@ -65,14 +71,29 @@ export function Drawer({ open, onClose, children, width = 480, labelledBy }: { o
         aria-labelledby={labelledBy}
         tabIndex={-1}
         data-side-drawer
+        className="ds-drawer-panel"
         style={{
-          width: `min(${width}px, 100%)`, height: '100%', overflowY: 'auto', overscrollBehavior: 'contain', outline: 'none',
-          background: 'var(--color-surface-card)', boxShadow: '-12px 0 40px rgba(21,21,21,0.18)',
+          width: `min(${size ? DRAWER_SIZE[size] : width}px, 100%)`, height: '100%', overflowY: 'auto', overscrollBehavior: 'contain', outline: 'none',
+          background: 'var(--color-surface-card)', boxShadow: 'var(--shadow-overlay)',
           display: 'flex', flexDirection: 'column', animation: 'rise var(--motion-slow) var(--ease-out) both',
         }}
       >
         {children}
       </div>
+    </div>
+  );
+}
+
+/** A drawer's own tabs (Overview / Money / Messages / History): one line under the header with a gold underline,
+ *  scrolling sideways when they do not fit, 44px tall on a touch screen. */
+export function DrawerTabs<K extends string>({ tabs, value, onChange, label, className }: {
+  tabs: readonly { key: K; label: string }[]; value: K; onChange: (k: K) => void; label: string; className?: string;
+}) {
+  return (
+    <div role="tablist" aria-label={label} className={cx('ds-drawer-tabs', className)}>
+      {tabs.map(t => (
+        <button key={t.key} type="button" role="tab" aria-selected={t.key === value} onClick={() => onChange(t.key)}>{t.label}</button>
+      ))}
     </div>
   );
 }

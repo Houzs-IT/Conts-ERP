@@ -295,7 +295,7 @@ const BULK = 5;
 async function alertNewReviews(env: Env, created: Record<string, unknown>[]) {
   if (!created.length) return;
   try {
-    const people = (await peopleWithAccess(env, 'pricing', 'edit')).map(p => p.id);
+    const people = (await peopleWithAccess(env, 'reviews', 'edit')).map(p => p.id);
     if (!people.length) return;
     const name = (ch: unknown) => (ch === 'booking_com' ? 'Booking.com' : ch === 'airbnb' ? 'Airbnb' : String(ch));
     if (created.length > BULK) {

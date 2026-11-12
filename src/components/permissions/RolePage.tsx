@@ -7,7 +7,8 @@ import { areaKeysOf, countChanged, countGrants, resolveRoleLevels, rulesToWrite 
 import type { AccessChart, Department, Position } from '../../lib/types';
 import { BackLink } from './MasterDetail';
 import RoleGrid, { groupByCompany } from './RoleGrid';
-import { SAVE_BAR, closedCompanyLabel, defaultRoleName, headCountWithoutPosition, sideLabel, visibleCategoriesOf, type RoleTarget } from './shared';
+import { SaveBar } from './SaveBar';
+import { NO_POSITION_LABEL, closedCompanyLabel, headCountWithoutPosition, sideLabel, visibleCategoriesOf, type RoleTarget } from './shared';
 
 export interface RolePageProps {
   chart: AccessChart;
@@ -71,7 +72,7 @@ function RoleEditor({ chart, department, position, onBack, onSaved, onDirtyChang
 
   const { granted, full, available } = countGrants(levels, areaKeys);
   const isLocked = !chart.canEdit || isSaving;
-  const roleName = position?.name ?? defaultRoleName(department);
+  const roleName = position?.name ?? NO_POSITION_LABEL;
   const people = position ? position.headCount : headCountWithoutPosition(department);
   const closedNote = department.side === 'both'
     ? null
@@ -110,7 +111,7 @@ function RoleEditor({ chart, department, position, onBack, onSaved, onDirtyChang
       <RoleGrid companies={companies} levels={levels} savedLevels={savedLevels} isLocked={isLocked} onChange={setLevels} />
 
       {chart.canEdit && (
-        <div className={SAVE_BAR}>
+        <SaveBar>
           <span className="text-meta text-muted-ink">
             {changedCount === 0 ? 'No unsaved changes.' : `${changedCount} ${changedCount === 1 ? 'area' : 'areas'} changed.`}
           </span>
@@ -118,7 +119,7 @@ function RoleEditor({ chart, department, position, onBack, onSaved, onDirtyChang
             <Button onClick={() => setLevels(savedLevels)} disabled={changedCount === 0 || isSaving} disabledReason="Nothing has changed yet.">Discard</Button>
             <Button variant="primary" onClick={save} loading={isSaving} disabled={changedCount === 0} disabledReason="Nothing has changed yet.">Save role</Button>
           </span>
-        </div>
+        </SaveBar>
       )}
     </div>
   );

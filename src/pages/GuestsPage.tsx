@@ -149,7 +149,7 @@ function accessGuard(m: GuestMovement): string | null {
 
 export default function GuestsPage() {
   const { user } = useSession();
-  const canSeeContact = mayWork(user, 'reservations');
+  const canSeeContact = mayWork(user, 'guests');
   const navigate = useNavigate();
   const toast = useToast();
 

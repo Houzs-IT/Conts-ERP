@@ -9,7 +9,8 @@ import { areaKeysOf, countChanged, countDifferences, personChanges, type RoleLev
 import type { AccessLevel, PersonAccess, PersonAccessArea, PersonAccessChange } from '../../lib/types';
 import { BackLink } from './MasterDetail';
 import RoleGrid, { groupByCompany, type GridCategory } from './RoleGrid';
-import { SAVE_BAR, closedBySide, closedCompanyLabel, sideLabel } from './shared';
+import { SaveBar } from './SaveBar';
+import { closedBySide, closedCompanyLabel, sideLabel } from './shared';
 
 export interface PersonPageProps {
   personId: string;
@@ -155,7 +156,7 @@ function PersonAccessEditor({ access, onBack, onSaved, onDirtyChange }: PersonAc
         isLocked={!canEdit || isSaving} onChange={setLevels} />
 
       {canEdit && (
-        <div className={SAVE_BAR}>
+        <SaveBar>
           <Button size="sm" disabled={isSaving || ownSettingCount === 0} disabledReason="They already get exactly what their role gives." onClick={askResetAll}>
             Reset all to role
           </Button>
@@ -164,7 +165,7 @@ function PersonAccessEditor({ access, onBack, onSaved, onDirtyChange }: PersonAc
             <Button onClick={() => setLevels(savedLevels)} disabled={changedCount === 0 || isSaving}>Discard</Button>
             <Button variant="primary" onClick={save} loading={isSaving} disabled={changedCount === 0}>Save access</Button>
           </span>
-        </div>
+        </SaveBar>
       )}
       <ConfirmDialog spec={confirm} busy={isSaving} onClose={() => setConfirm(null)} />
     </div>
