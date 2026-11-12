@@ -12,13 +12,17 @@ import { overallTotals, occupancyLabel, GROUP_NAME, OWNER_BASE_NAME, type Overal
  *  ownerOverall.ts; this file only lays them out. */
 
 export type Level = 1 | 2;
-/** An owner statement close step (functions/_lib/stageLocks.ts Stage). */
-export type Stage = 'income' | 'deductions' | 'o2';
+/** A lock category (functions/_lib/stageLocks.ts Stage): Revenue (income), Cleaning, Utilities, Add. ded. (additional),
+ *  Misc and O2 (Unit report locks, chew 13 Nov 2026). */
+export type Stage = 'income' | 'cleaning' | 'utilities' | 'additional' | 'misc' | 'o2';
+export const STAGES: Stage[] = ['income', 'cleaning', 'utilities', 'additional', 'misc', 'o2'];
+export const STAGE_LABEL: Record<Stage, string> = { income: 'Revenue', cleaning: 'Cleaning', utilities: 'Utilities', additional: 'Add. ded.', misc: 'Misc', o2: 'O2' };
 export interface ReportRow extends OverallFigures {
   unitId: string; ownerId?: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null;
   lateItems?: { label: string; amount: number }[];
-  /** The month's steps that list the unit, and the ones locked (owner statement close part 3). */
-  steps?: Stage[]; locked?: Stage[];
+  /** The categories that list the unit, who locked each and when, its Airbnb reservations still to confirm (Revenue
+   *  waits for them) and what is in each amount (Unit report locks). */
+  steps?: Stage[]; locks?: Partial<Record<Stage, { by: string; at: string }>>; toConfirm?: number; hints?: Partial<Record<Stage, string>>;
 }
 
 export const LEVELS: { key: `${Level}`; label: string }[] = [

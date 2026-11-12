@@ -193,6 +193,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     generatedAt: nowIso(), month, rows, owners, lockFrom: LOCK_FROM,
     // The Whole column row: per category how many of the units it lists are locked; and the month's Airbnb files.
     counts: step?.counts ?? null, airbnbFiles: revenue.files,
-    may: { ...lockMay(session), makeFinal: can(session, 'makeFinal', 'edit'), unlockFinal: can(session, 'unlockFinal', 'edit'), generate: !!session.manage },
+    may: { ...lockMay(session), makeFinal: can(session, 'makeFinal', 'edit'), unlockFinal: can(session, 'unlockFinal', 'edit'),
+      // Make final generates the statement again first: POST /api/statements/generate is Finance edit work.
+      generate: can(session, 'finance', 'edit') },
   });
 };
