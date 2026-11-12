@@ -204,12 +204,12 @@ const en = {
     over: '(over)', guestStaying: 'A guest is staying then. Knock first.', noTime: 'No time set yet. Ask the office before going in.',
     media: 'Photos and videos', atLeastAfter: 'At least 1 After to finish', beforeOrAfter: 'Before or after the repair', before: 'Before', after: 'After',
     addBefore: 'Add Before photo', addAfter: 'Add After photo', noBefore: 'No photo of the problem yet.', noAfter: 'No photo of the finished repair yet.',
-    claims: 'Claim, receipts and invoices', claimsHint: 'Your claim or the shop receipt, so accounts can pay you. The office enters the amount.',
-    fileKindLabel: 'Kind of file to add',
+    claims: 'Claim', claimsHint: 'The invoice for something you paid for this job. Add the photo, check the amount, choose how you are paid back, then hand it in.',
     removeFile: 'Remove this file?', removeFileBody: 'It is deleted from the job. You can add it again.', fileRemoved: 'File removed.',
-    fileKind: { claim: 'My claim', receipt: 'Receipt', invoice: 'Invoice', pod: 'Proof of work', purchase: 'My purchase (pay me back)', other: 'File' },
-    purchaseHint: 'One photo of the shop receipt. Check the amount, then hand it in.', purchaseAmount: 'Amount on the receipt', reading: 'Reading the receipt…', handIn: 'Hand in', handedIn: 'Receipt handed in', notHandedIn: 'Saved on the job, but not handed in. Tell the office.',
+    fileKind: { claim: 'My claim', receipt: 'Receipt', invoice: 'Invoice', pod: 'Receipt / Proof of work and product', purchase: 'Claim', other: 'File' },
+    purchaseHint: 'Photo or PDF. The amount is read for you.', purchaseAmount: 'Amount on the invoice', reading: 'Reading the invoice…', handIn: 'Hand in', handedIn: 'Claim handed in', notHandedIn: 'Saved on the job, but not handed in. Tell the office.',
     addFile: 'Add file', addFileHint: 'Photo or PDF, several at once',
+    podBox: 'Receipt / Proof of work and product', podHint: 'Receipts, and photos or PDFs of the work and the products. Kept on the job.', addInvoice: 'Add the invoice', needAmount: 'Enter the amount on the invoice.',
     notes: 'Notes', whenFinishing: 'when finishing', notePh: 'e.g. Part ordered, back on Thursday', newNote: 'New note',
     writeFirst: 'Write the note first.', addNote: 'Add note', noteAdded: 'Note added.',
     form: {
@@ -225,7 +225,10 @@ const en = {
   category: { plumbing: 'Plumbing', electrical: 'Electrical', aircon: 'Aircon', furniture: 'Furniture', appliance: 'Appliance', other: 'Other' },
   repairStatus: { new: 'New', assigned: 'Assigned', awaiting_owner: 'Awaiting owner approval', in_progress: 'In progress', repair_finished: 'Repair finished', done: 'Done', needs_support: 'Needs support', missed: 'Missed' },
   receipts: {
-    title: 'Receipts', intro: 'Paid for something for work? Hand the receipt in to be paid back.', handIn: 'Hand in a receipt',
+    title: 'Receipts', intro: 'Paid for something for work, or need a supplier paid? Hand the receipt or the bill in here.', handIn: 'Hand in a receipt or bill',
+    payee: 'Supplier (the name on the bill)', payeePh: 'e.g. Kedai Paip Ah Seng', payBy: 'Pay by', billPhoto: 'Photo of the bill', billHint: "The supplier's name and the amount are read from the photo. Check them before you send.",
+    needPayee: "Enter the supplier's name.", needBill: 'Add a photo of the bill.', supplierSent: 'Sent to finance to pay the supplier', sendToFinance: 'Send to finance',
+    requestsTitle: 'Suppliers you asked finance to pay', requestStatus: { SUBMITTED: 'Waiting for payment', PART_PAID: 'Part paid', PAID: 'Paid', REJECTED: 'Rejected', CLOSED: 'Closed', WITHDRAWN: 'Withdrawn' } as Record<string, string>,
     photo: 'Photo of the receipt', photoHint: 'The amount is read from the photo. Check it before you send.', reading: 'Reading the receipt…',
     amount: 'Amount', date: 'Date on the receipt', unit: 'Unit (if it was for one)', noUnit: 'Not for a unit', note: 'What was it for?', notePh: 'e.g. cleaning supplies',
     send: 'Send', sent: 'Receipt handed in', paidFromFloat: "Your department's petty cash pays you back.", paidByFinance: 'Finance pays you back by transfer.',
@@ -237,8 +240,18 @@ const en = {
     belowZero: 'Below zero: the next top-up pays you back.', low: 'Running low.', askTopUp: 'Ask for a top-up', topUpAsked: 'Top-up asked for',
     askedTopUp: 'Finance has been asked for a top-up.', onFloat: 'Receipts on your float this month', by: (name: string): string => `by ${name}`,
   },
+  claimPay: {
+    label: 'How you are paid back', pettyCash: 'Petty Cash (Claim)', direct: 'Direct Claim to Me', supplier: 'Direct Pay to Supplier',
+    pettyCashNote: 'Paid back from your petty cash.', directNote: 'Finance transfers it to your bank account. Your petty cash is not used.',
+    noFloatNote: 'You have no petty cash, so finance transfers it to your bank account.', supplierNote: 'Finance pays the supplier on the bill. You pay nothing.',
+    bank: 'Bank', bankPick: 'Choose the bank', accountNo: 'Account number', accountName: 'Name on the account',
+    bankNote: 'Changes here are kept on this claim only.', directSent: 'Finance will transfer it to your bank account.',
+    bankWrong: { bankName: 'Choose the bank.', accountNo: 'Digits only, 5 to 30.', accountName: 'Enter the name on the account.' },
+  },
 };
 export type PortalStrings = typeof en;
+/** The English words, for a desk screen that shares a field form (the job's Claim box, components/ops/JobClaimBox.tsx). */
+export const PORTAL_ENGLISH: PortalStrings = en;
 
 /** A label from one of the portal's word lists, or the stored code when the list has no word for it. */
 export const wordFor = (words: Record<string, string>, code: string): string => words[code] ?? code;
@@ -396,12 +409,12 @@ const ms: PortalStrings = {
     over: '(sudah tamat)', guestStaying: 'Ada tetamu menginap ketika itu. Ketuk pintu dahulu.', noTime: 'Masa belum ditetapkan. Tanya pejabat sebelum masuk.',
     media: 'Foto dan video', atLeastAfter: 'Sekurang-kurangnya 1 Selepas untuk selesai', beforeOrAfter: 'Sebelum atau selepas pembaikan', before: 'Sebelum', after: 'Selepas',
     addBefore: 'Tambah foto Sebelum', addAfter: 'Tambah foto Selepas', noBefore: 'Belum ada foto masalah.', noAfter: 'Belum ada foto pembaikan yang siap.',
-    claims: 'Tuntutan, resit dan invois', claimsHint: 'Tuntutan anda atau resit kedai, supaya akaun boleh membayar anda. Pejabat memasukkan jumlahnya.',
-    fileKindLabel: 'Jenis fail untuk ditambah',
+    claims: 'Tuntutan', claimsHint: 'Invois untuk barang yang anda bayar bagi kerja ini. Tambah foto, semak jumlah, pilih cara anda dibayar balik, kemudian serahkan.',
     removeFile: 'Buang fail ini?', removeFileBody: 'Ia dipadam daripada kerja ini. Anda boleh tambah semula.', fileRemoved: 'Fail dibuang.',
-    fileKind: { claim: 'Tuntutan saya', receipt: 'Resit', invoice: 'Invois', pod: 'Bukti kerja', purchase: 'Belian saya (bayar balik)', other: 'Fail' },
-    purchaseHint: 'Satu foto resit kedai. Semak jumlahnya, kemudian serahkan.', purchaseAmount: 'Jumlah pada resit', reading: 'Membaca resit…', handIn: 'Serahkan', handedIn: 'Resit diserahkan', notHandedIn: 'Disimpan pada kerja, tetapi tidak diserahkan. Beritahu pejabat.',
+    fileKind: { claim: 'Tuntutan saya', receipt: 'Resit', invoice: 'Invois', pod: 'Resit / Bukti kerja dan produk', purchase: 'Tuntutan', other: 'Fail' },
+    purchaseHint: 'Foto atau PDF. Jumlahnya dibaca untuk anda.', purchaseAmount: 'Jumlah pada invois', reading: 'Membaca invois…', handIn: 'Serahkan', handedIn: 'Tuntutan diserahkan', notHandedIn: 'Disimpan pada kerja, tetapi tidak diserahkan. Beritahu pejabat.',
     addFile: 'Tambah fail', addFileHint: 'Foto atau PDF, beberapa sekali gus',
+    podBox: 'Resit / Bukti kerja dan produk', podHint: 'Resit, dan foto atau PDF kerja dan produk. Disimpan pada kerja.', addInvoice: 'Tambah invois', needAmount: 'Masukkan jumlah pada invois.',
     notes: 'Nota', whenFinishing: 'semasa menyiapkan', notePh: 'cth. Alat ganti ditempah, kembali hari Khamis', newNote: 'Nota baharu',
     writeFirst: 'Tulis nota dahulu.', addNote: 'Tambah nota', noteAdded: 'Nota ditambah.',
     form: {
@@ -417,7 +430,10 @@ const ms: PortalStrings = {
   category: { plumbing: 'Paip', electrical: 'Elektrik', aircon: 'Aircond', furniture: 'Perabot', appliance: 'Peralatan elektrik', other: 'Lain-lain' },
   repairStatus: { new: 'Baharu', assigned: 'Ditugaskan', awaiting_owner: 'Menunggu kelulusan pemilik', in_progress: 'Sedang dibuat', repair_finished: 'Pembaikan siap', done: 'Selesai', needs_support: 'Perlu bantuan', missed: 'Terlepas' },
   receipts: {
-    title: 'Resit', intro: 'Membayar sesuatu untuk kerja? Serahkan resit untuk dibayar balik.', handIn: 'Serahkan resit',
+    title: 'Resit', intro: 'Membayar sesuatu untuk kerja, atau perlu pembekal dibayar? Serahkan resit atau bil di sini.', handIn: 'Serahkan resit atau bil',
+    payee: 'Pembekal (nama pada bil)', payeePh: 'cth. Kedai Paip Ah Seng', payBy: 'Bayar sebelum', billPhoto: 'Foto bil', billHint: 'Nama pembekal dan jumlah dibaca daripada foto. Semak sebelum menghantar.',
+    needPayee: 'Masukkan nama pembekal.', needBill: 'Tambah foto bil.', supplierSent: 'Dihantar kepada kewangan untuk membayar pembekal', sendToFinance: 'Hantar kepada kewangan',
+    requestsTitle: 'Pembekal yang anda minta kewangan bayar', requestStatus: { SUBMITTED: 'Menunggu bayaran', PART_PAID: 'Dibayar sebahagian', PAID: 'Dibayar', REJECTED: 'Ditolak', CLOSED: 'Ditutup', WITHDRAWN: 'Ditarik balik' } as Record<string, string>,
     photo: 'Foto resit', photoHint: 'Jumlah dibaca daripada foto. Semak sebelum menghantar.', reading: 'Membaca resit…',
     amount: 'Jumlah', date: 'Tarikh pada resit', unit: 'Unit (jika untuk satu unit)', noUnit: 'Bukan untuk unit', note: 'Untuk apa?', notePh: 'cth. bahan pembersihan',
     send: 'Hantar', sent: 'Resit diserahkan', paidFromFloat: 'Wang runcit jabatan anda membayar balik.', paidByFinance: 'Kewangan membayar balik melalui pindahan.',
@@ -428,6 +444,14 @@ const ms: PortalStrings = {
     keeper: 'Wang runcit yang anda simpan', balance: 'Wang tunai yang patut ada', float: amount => `Apungan ${amount}`,
     belowZero: 'Bawah sifar: tambahan seterusnya membayar balik anda.', low: 'Semakin rendah.', askTopUp: 'Minta tambahan', topUpAsked: 'Tambahan telah diminta',
     askedTopUp: 'Kewangan telah diminta untuk tambahan.', onFloat: 'Resit pada apungan anda bulan ini', by: name => `oleh ${name}`,
+  },
+  claimPay: {
+    label: 'Cara anda dibayar balik', pettyCash: 'Petty Cash (Claim)', direct: 'Direct Claim to Me', supplier: 'Direct Pay to Supplier',
+    pettyCashNote: 'Dibayar balik daripada petty cash anda.', directNote: 'Kewangan memindahkannya ke akaun bank anda. Petty cash anda tidak digunakan.',
+    noFloatNote: 'Anda tiada petty cash, jadi kewangan memindahkannya ke akaun bank anda.', supplierNote: 'Kewangan membayar pembekal pada bil. Anda tidak membayar apa-apa.',
+    bank: 'Bank', bankPick: 'Pilih bank', accountNo: 'Nombor akaun', accountName: 'Nama pada akaun',
+    bankNote: 'Perubahan di sini disimpan pada tuntutan ini sahaja.', directSent: 'Kewangan akan memindahkannya ke akaun bank anda.',
+    bankWrong: { bankName: 'Pilih bank.', accountNo: 'Digit sahaja, 5 hingga 30.', accountName: 'Masukkan nama pada akaun.' },
   },
 };
 
@@ -584,12 +608,12 @@ const zh: PortalStrings = {
     over: '（已过）', guestStaying: '那时有客人入住，请先敲门。', noTime: '还没定时间，进入前请问办公室。',
     media: '照片和视频', atLeastAfter: '至少 1 张“维修后”才能完成', beforeOrAfter: '维修前或维修后', before: '维修前', after: '维修后',
     addBefore: '添加维修前照片', addAfter: '添加维修后照片', noBefore: '还没有问题的照片。', noAfter: '还没有维修完成的照片。',
-    claims: '报销单、收据和发票', claimsHint: '你的报销单或店家收据，会计才能付钱给你。金额由办公室填写。',
-    fileKindLabel: '要添加的文件类型',
+    claims: '报销', claimsHint: '你为这份工作付钱买的东西的发票。加照片、核对金额、选择怎么还钱给你，然后提交。',
     removeFile: '删除这个文件？', removeFileBody: '会从这项工作中删除，你可以重新上传。', fileRemoved: '文件已删除。',
-    fileKind: { claim: '我的报销单', receipt: '收据', invoice: '发票', pod: '工作证明', purchase: '我买的东西（报销给我）', other: '文件' },
-    purchaseHint: '拍一张店家收据。核对金额后再提交。', purchaseAmount: '收据上的金额', reading: '正在读取收据…', handIn: '提交', handedIn: '收据已提交', notHandedIn: '已存到这张维修单，但没有提交成功。请告诉办公室。',
+    fileKind: { claim: '我的报销单', receipt: '收据', invoice: '发票', pod: '收据 / 工作和产品证明', purchase: '报销', other: '文件' },
+    purchaseHint: '照片或 PDF，金额会自动读取。', purchaseAmount: '发票上的金额', reading: '正在读取发票…', handIn: '提交', handedIn: '报销已提交', notHandedIn: '已存到这张维修单，但没有提交成功。请告诉办公室。',
     addFile: '添加文件', addFileHint: '照片或 PDF，可一次选多个',
+    podBox: '收据 / 工作和产品证明', podHint: '收据，以及工作和产品的照片或 PDF。保存在这份工作里。', addInvoice: '添加发票', needAmount: '请填写发票上的金额。',
     notes: '备注', whenFinishing: '完成时', notePh: '例如：零件已订，星期四回来', newNote: '新备注',
     writeFirst: '请先写备注。', addNote: '添加备注', noteAdded: '备注已添加。',
     form: {
@@ -605,7 +629,10 @@ const zh: PortalStrings = {
   category: { plumbing: '水管', electrical: '电', aircon: '冷气', furniture: '家具', appliance: '电器', other: '其他' },
   repairStatus: { new: '新', assigned: '已分配', awaiting_owner: '等待屋主批准', in_progress: '进行中', repair_finished: '维修完成', done: '已完成', needs_support: '需要支援', missed: '已错过' },
   receipts: {
-    title: '收据', intro: '为工作先付了钱？提交收据就能拿回。', handIn: '提交收据',
+    title: '收据', intro: '为工作先付了钱，或需要付款给供应商？在这里提交收据或账单。', handIn: '提交收据或账单',
+    payee: '供应商（账单上的名字）', payeePh: '例如 Kedai Paip Ah Seng', payBy: '付款期限', billPhoto: '账单照片', billHint: '系统会从照片读出供应商名字和金额，发送前请核对。',
+    needPayee: '请填写供应商名字。', needBill: '请添加账单照片。', supplierSent: '已发给财务付款给供应商', sendToFinance: '发给财务',
+    requestsTitle: '你请财务付款的供应商', requestStatus: { SUBMITTED: '等待付款', PART_PAID: '已付部分', PAID: '已付款', REJECTED: '被拒绝', CLOSED: '已结束', WITHDRAWN: '已撤回' } as Record<string, string>,
     photo: '收据照片', photoHint: '系统会从照片读出金额，提交前请核对。', reading: '正在读取收据…',
     amount: '金额', date: '收据日期', unit: '单位（如果是某个单位用的）', noUnit: '不是某个单位用的', note: '买了什么？', notePh: '例如：清洁用品',
     send: '提交', sent: '收据已提交', paidFromFloat: '你部门的零用金会还给你。', paidByFinance: '财务会转账还给你。',
@@ -616,6 +643,14 @@ const zh: PortalStrings = {
     keeper: '你保管的零用金', balance: '你手上应有的现金', float: amount => `定额 ${amount}`,
     belowZero: '低于零：下次补回时会还给你。', low: '快用完了。', askTopUp: '申请补回', topUpAsked: '已申请补回',
     askedTopUp: '已通知财务补回。', onFloat: '这个月你零用金的收据', by: name => `由 ${name} 提交`,
+  },
+  claimPay: {
+    label: '怎么还钱给你', pettyCash: 'Petty Cash (Claim)', direct: 'Direct Claim to Me', supplier: 'Direct Pay to Supplier',
+    pettyCashNote: '从你的零用金（petty cash）还给你。', directNote: '财务直接转账到你的银行户口，不动用你的零用金。',
+    noFloatNote: '你没有零用金，所以由财务转账到你的银行户口。', supplierNote: '财务直接付款给账单上的供应商，你不用付钱。',
+    bank: '银行', bankPick: '选择银行', accountNo: '户口号码', accountName: '户口名字',
+    bankNote: '这里的修改只保存在这张报销单上。', directSent: '财务会转账到你的银行户口。',
+    bankWrong: { bankName: '请选择银行。', accountNo: '只能是数字，5 到 30 位。', accountName: '请填写户口名字。' },
   },
 };
 
@@ -772,12 +807,12 @@ const my: PortalStrings = {
     over: '(ကျော်ပြီ)', guestStaying: 'ထိုအချိန်တွင် ဧည့်သည် တည်းနေသည်။ အရင် တံခါးခေါက်ပါ။', noTime: 'အချိန် မသတ်မှတ်ရသေးပါ။ မဝင်မီ ရုံးကို မေးပါ။',
     media: 'ဓာတ်ပုံနှင့် ဗီဒီယိုများ', atLeastAfter: 'ပြီးဆုံးရန် "ပြင်ပြီး" အနည်းဆုံး 1 ခု', beforeOrAfter: 'မပြင်မီ သို့မဟုတ် ပြင်ပြီး', before: 'မပြင်မီ', after: 'ပြင်ပြီး',
     addBefore: '"မပြင်မီ" ဓာတ်ပုံ ထည့်ရန်', addAfter: '"ပြင်ပြီး" ဓာတ်ပုံ ထည့်ရန်', noBefore: 'ပြဿနာ ဓာတ်ပုံ မရှိသေးပါ။', noAfter: 'ပြင်ပြီး ဓာတ်ပုံ မရှိသေးပါ။',
-    claims: 'တောင်းခံလွှာ၊ ပြေစာနှင့် ငွေတောင်းခံလွှာ', claimsHint: 'စာရင်းဌာနက သင့်ကို ငွေပေးနိုင်ရန် သင့်တောင်းခံလွှာ သို့မဟုတ် ဆိုင်ပြေစာ။ ပမာဏကို ရုံးက ထည့်ပါမည်။',
-    fileKindLabel: 'ထည့်မည့် ဖိုင်အမျိုးအစား',
+    claims: 'တောင်းခံလွှာ', claimsHint: 'ဤအလုပ်အတွက် သင်ပေးချေခဲ့သော ပစ္စည်း၏ ငွေတောင်းခံလွှာ။ ဓာတ်ပုံထည့်ပါ၊ ပမာဏကို စစ်ပါ၊ ငွေပြန်ရမည့်နည်းကို ရွေးပါ၊ ထို့နောက် တင်ပါ။',
     removeFile: 'ဤဖိုင်ကို ဖယ်ရှားမလား?', removeFileBody: 'ဤအလုပ်မှ ဖျက်ပါမည်။ ပြန်ထည့်နိုင်သည်။', fileRemoved: 'ဖိုင်ကို ဖယ်ရှားပြီး။',
-    fileKind: { claim: 'ကျွန်ုပ်၏ တောင်းခံလွှာ', receipt: 'ပြေစာ', invoice: 'ငွေတောင်းခံလွှာ', pod: 'အလုပ်ပြီးကြောင်း အထောက်အထား', purchase: 'ကျွန်ုပ် ဝယ်ခဲ့သည် (ပြန်ပေးရန်)', other: 'ဖိုင်' },
-    purchaseHint: 'ဆိုင်ပြေစာ ဓာတ်ပုံ တစ်ပုံ။ ပမာဏကို စစ်ပြီးမှ တင်ပါ။', purchaseAmount: 'ပြေစာပေါ်ရှိ ပမာဏ', reading: 'ပြေစာကို ဖတ်နေသည်…', handIn: 'တင်ရန်', handedIn: 'ပြေစာ တင်ပြီးပါပြီ', notHandedIn: 'အလုပ်တွင် သိမ်းထားသော်လည်း မတင်ရသေးပါ။ ရုံးကို ပြောပါ။',
+    fileKind: { claim: 'ကျွန်ုပ်၏ တောင်းခံလွှာ', receipt: 'ပြေစာ', invoice: 'ငွေတောင်းခံလွှာ', pod: 'ပြေစာ / အလုပ်နှင့် ပစ္စည်း အထောက်အထား', purchase: 'တောင်းခံလွှာ', other: 'ဖိုင်' },
+    purchaseHint: 'ဓာတ်ပုံ သို့မဟုတ် PDF။ ပမာဏကို ဖတ်ပေးပါမည်။', purchaseAmount: 'ငွေတောင်းခံလွှာပေါ်ရှိ ပမာဏ', reading: 'ငွေတောင်းခံလွှာကို ဖတ်နေသည်…', handIn: 'တင်ရန်', handedIn: 'တောင်းခံလွှာ တင်ပြီးပါပြီ', notHandedIn: 'အလုပ်တွင် သိမ်းထားသော်လည်း မတင်ရသေးပါ။ ရုံးကို ပြောပါ။',
     addFile: 'ဖိုင် ထည့်ရန်', addFileHint: 'ဓာတ်ပုံ သို့မဟုတ် PDF၊ တစ်ခါတည်း အများအပြား',
+    podBox: 'ပြေစာ / အလုပ်နှင့် ပစ္စည်း အထောက်အထား', podHint: 'ပြေစာများနှင့် အလုပ်နှင့် ပစ္စည်းများ၏ ဓာတ်ပုံ သို့မဟုတ် PDF။ အလုပ်တွင် သိမ်းထားပါမည်။', addInvoice: 'ငွေတောင်းခံလွှာ ထည့်ရန်', needAmount: 'ငွေတောင်းခံလွှာပေါ်ရှိ ပမာဏ ထည့်ပါ။',
     notes: 'မှတ်ချက်များ', whenFinishing: 'ပြီးဆုံးချိန်', notePh: 'ဥပမာ - အစိတ်အပိုင်း မှာထားသည်၊ ကြာသပတေးနေ့ ပြန်လာမည်', newNote: 'မှတ်ချက်အသစ်',
     writeFirst: 'မှတ်ချက် အရင်ရေးပါ။', addNote: 'မှတ်ချက် ထည့်ရန်', noteAdded: 'မှတ်ချက် ထည့်ပြီး။',
     form: {
@@ -793,7 +828,10 @@ const my: PortalStrings = {
   category: { plumbing: 'ရေပိုက်', electrical: 'လျှပ်စစ်', aircon: 'အဲယားကွန်း', furniture: 'ပရိဘောဂ', appliance: 'လျှပ်စစ်ပစ္စည်း', other: 'အခြား' },
   repairStatus: { new: 'အသစ်', assigned: 'တာဝန်ပေးပြီး', awaiting_owner: 'ပိုင်ရှင် အတည်ပြုချက် စောင့်နေ', in_progress: 'လုပ်နေဆဲ', repair_finished: 'ပြင်ပြီး', done: 'ပြီးပြီ', needs_support: 'အကူအညီ လိုသည်', missed: 'လွတ်သွားသည်' },
   receipts: {
-    title: 'ပြေစာများ', intro: 'အလုပ်အတွက် ငွေကြိုပေးခဲ့ပါသလား။ ပြန်ရရန် ပြေစာကို တင်ပါ။', handIn: 'ပြေစာ တင်ရန်',
+    title: 'ပြေစာများ', intro: 'အလုပ်အတွက် ငွေပေးခဲ့ပါသလား၊ သို့မဟုတ် ပစ္စည်းပေးသူကို ငွေပေးရန် လိုပါသလား။ ပြေစာ သို့မဟုတ် ငွေတောင်းခံလွှာကို ဤနေရာတွင် တင်ပါ။', handIn: 'ပြေစာ သို့မဟုတ် ငွေတောင်းခံလွှာ တင်ရန်',
+    payee: 'ပစ္စည်းပေးသူ (ငွေတောင်းခံလွှာပေါ်ရှိ အမည်)', payeePh: 'ဥပမာ Kedai Paip Ah Seng', payBy: 'ပေးချေရမည့်ရက်', billPhoto: 'ငွေတောင်းခံလွှာ ဓာတ်ပုံ', billHint: 'ပစ္စည်းပေးသူအမည်နှင့် ပမာဏကို ဓာတ်ပုံမှ ဖတ်ပါမည်။ မပို့မီ စစ်ပါ။',
+    needPayee: 'ပစ္စည်းပေးသူ အမည် ထည့်ပါ။', needBill: 'ငွေတောင်းခံလွှာ ဓာတ်ပုံ ထည့်ပါ။', supplierSent: 'ပစ္စည်းပေးသူကို ငွေပေးရန် ငွေစာရင်းဌာနသို့ ပို့ပြီးပါပြီ', sendToFinance: 'ငွေစာရင်းဌာနသို့ ပို့ရန်',
+    requestsTitle: 'ငွေစာရင်းဌာနကို ပေးချေခိုင်းထားသော ပစ္စည်းပေးသူများ', requestStatus: { SUBMITTED: 'ငွေပေးချေရန် စောင့်နေသည်', PART_PAID: 'တစ်စိတ်တစ်ပိုင်း ပေးပြီး', PAID: 'ပေးပြီး', REJECTED: 'ပယ်ချခံရသည်', CLOSED: 'ပိတ်ပြီး', WITHDRAWN: 'ပြန်ရုပ်သိမ်းပြီး' } as Record<string, string>,
     photo: 'ပြေစာ ဓာတ်ပုံ', photoHint: 'ပမာဏကို ဓာတ်ပုံမှ ဖတ်ပါမည်။ မပို့မီ စစ်ပါ။', reading: 'ပြေစာကို ဖတ်နေသည်…',
     amount: 'ပမာဏ', date: 'ပြေစာပေါ်ရှိ ရက်စွဲ', unit: 'အခန်း (အခန်းတစ်ခုအတွက်ဆိုလျှင်)', noUnit: 'အခန်းအတွက် မဟုတ်ပါ', note: 'ဘာအတွက်လဲ။', notePh: 'ဥပမာ - သန့်ရှင်းရေး ပစ္စည်း',
     send: 'ပို့ရန်', sent: 'ပြေစာ တင်ပြီးပါပြီ', paidFromFloat: 'သင့်ဌာန၏ အသုံးစရိတ်ငွေမှ ပြန်ပေးပါမည်။', paidByFinance: 'ငွေစာရင်းဌာနက ငွေလွှဲ၍ ပြန်ပေးပါမည်။',
@@ -804,6 +842,14 @@ const my: PortalStrings = {
     keeper: 'သင် ထိန်းသိမ်းသော အသုံးစရိတ်ငွေ', balance: 'သင့်လက်ထဲ ရှိသင့်သော ငွေသား', float: amount => `သတ်မှတ်ငွေ ${amount}`,
     belowZero: 'သုညအောက်: နောက်တစ်ကြိမ် ဖြည့်သောအခါ ပြန်ပေးပါမည်။', low: 'နည်းလာပြီ။', askTopUp: 'ငွေဖြည့်ရန် တောင်းဆိုရန်', topUpAsked: 'ငွေဖြည့်ရန် တောင်းဆိုပြီး',
     askedTopUp: 'ငွေစာရင်းဌာနကို ငွေဖြည့်ရန် တောင်းဆိုပြီးပါပြီ။', onFloat: 'ဤလ သင့်ငွေမှ ပြေစာများ', by: name => `${name} တင်သည်`,
+  },
+  claimPay: {
+    label: 'ငွေပြန်ရမည့်နည်း', pettyCash: 'Petty Cash (Claim)', direct: 'Direct Claim to Me', supplier: 'Direct Pay to Supplier',
+    pettyCashNote: 'သင့် petty cash မှ ပြန်ပေးပါမည်။', directNote: 'ငွေစာရင်းဌာနက သင့်ဘဏ်အကောင့်သို့ လွှဲပေးပါမည်။ သင့် petty cash ကို မသုံးပါ။',
+    noFloatNote: 'သင့်တွင် petty cash မရှိသဖြင့် ငွေစာရင်းဌာနက သင့်ဘဏ်အကောင့်သို့ လွှဲပေးပါမည်။', supplierNote: 'ငွေစာရင်းဌာနက ငွေတောင်းခံလွှာပေါ်ရှိ ပစ္စည်းပေးသူကို ပေးချေပါမည်။ သင် ဘာမှ မပေးရပါ။',
+    bank: 'ဘဏ်', bankPick: 'ဘဏ် ရွေးပါ', accountNo: 'အကောင့်နံပါတ်', accountName: 'အကောင့်ပေါ်ရှိ အမည်',
+    bankNote: 'ဤနေရာတွင် ပြင်ဆင်ချက်များကို ဤတောင်းခံလွှာတွင်သာ သိမ်းထားပါမည်။', directSent: 'ငွေစာရင်းဌာနက သင့်ဘဏ်အကောင့်သို့ လွှဲပေးပါမည်။',
+    bankWrong: { bankName: 'ဘဏ် ရွေးပါ။', accountNo: 'ဂဏန်းများသာ၊ ၅ မှ ၃၀ လုံး။', accountName: 'အကောင့်ပေါ်ရှိ အမည် ထည့်ပါ။' },
   },
 };
 

@@ -1,7 +1,6 @@
-import { type Env, all, one, run, nowIso, mytToday } from './db';
+import { type Env, all, one, run, nowIso } from './db';
 import { hasColumn } from './auth';
-import { EMPLOYEE_DEFAULTS, type Bank, type Employee, type EmployeeInput, type EmployeeStatus, type PayBasis, type PaymentMethod, type TaxCategory, type TaxResidency } from './hrFields';
-import { hasPayroll } from './payroll';
+import { EMPLOYEE_DEFAULTS, type Bank, type Employee, type EmployeeStatus, type PayBasis, type PaymentMethod, type RenovationPersonInput, type TaxCategory, type TaxResidency } from './hrFields';
 
 /**
  * The employee record (migration 0165, PLAN-hr-employees.md): the HR side of an in-house cleaner or technician,
@@ -35,8 +34,9 @@ const PEOPLE = `
     ORDER BY COALESCE(e.cleaner_id = p.cleaner_id, false) DESC LIMIT 1
   ) e ON true`;
 
-/** The employees table's record columns, as a row carries them (null before migration 0170 or before the first save). */
-export interface EmployeeRecordRow {
+interface Row {
+  p_cleaner_id: string | null; p_technician_id: string | null; renovator_id?: string | null; full_name: string; phone: string | null; is_active: number; employee_id: string | null;
+  cleaner_active: number | null; technician_active: number | null; p_user_id: string | null;
   id: string | null; position: string | null; nationality: string | null; join_date: string | null;
   leader_allowance_sen: number | null; efficiency_allowance_sen: number | null; efficiency_threshold_pct: number | null;
   status: EmployeeStatus | null; resigned_at: string | null; pay_basis: PayBasis | null; basic_salary_sen: number | null; daily_rate_sen: number | null;
@@ -47,14 +47,12 @@ export interface EmployeeRecordRow {
   annual_leave_days: number | null; medical_leave_days: number | null;
 }
 
-interface Row extends EmployeeRecordRow {
-  p_cleaner_id: string | null; p_technician_id: string | null; full_name: string; phone: string | null; is_active: number; employee_id: string | null;
-  cleaner_active: number | null; technician_active: number | null; p_user_id: string | null;
-}
-
-export function toEmployeeRecord(r: EmployeeRecordRow): EmployeeInput {
+function toEmployee(r: Row): Employee {
   const d = EMPLOYEE_DEFAULTS;
   return {
+    id: r.id, cleanerId: r.p_cleaner_id, technicianId: r.p_technician_id, name: r.full_name, phone: r.phone,
+    renovatorId: r.renovator_id ?? null,
+    employeeId: r.employee_id, isActive: !!r.is_active, cleanerActive: !!r.cleaner_active, technicianActive: !!r.technician_active, userId: r.p_user_id,
     // Free text saved before the Leader tick ("Cleaning leader") reads as a leader when it says so.
     position: r.position?.toLowerCase().includes('leader') ? 'leader' : 'employee', nationality: r.nationality, joinDate: r.join_date,
     // Read before migration 0170 the columns are missing: the record's defaults apply.
@@ -69,62 +67,6 @@ export function toEmployeeRecord(r: EmployeeRecordRow): EmployeeInput {
     taxResidency: r.tax_residency, taxCategory: r.tax_category, taxChildReliefSen: r.tax_child_relief_sen,
     annualLeaveDays: r.annual_leave_days, medicalLeaveDays: r.medical_leave_days,
   };
-}
-
-function toEmployee(r: Row): Employee {
-  return {
-    id: r.id, cleanerId: r.p_cleaner_id, technicianId: r.p_technician_id, name: r.full_name, phone: r.phone,
-    employeeId: r.employee_id, isActive: !!r.is_active, cleanerActive: !!r.cleaner_active, technicianActive: !!r.technician_active, userId: r.p_user_id,
-    ...toEmployeeRecord(r),
-  };
-}
-
-export function employeeRecordColumns(e: EmployeeInput): [string, unknown][] {
-  // Resigned people keep their record; an active one has no last day.
-  const resignedAt = e.status === 'resigned' ? e.resignedAt : null;
-  return [
-    ['position', e.position], ['nationality', e.nationality], ['join_date', e.joinDate],
-    ['status', e.status], ['resigned_at', resignedAt], ['pay_basis', e.payBasis], ['basic_salary_sen', e.basicSalarySen],
-    ['daily_rate_sen', e.dailyRateSen], ['working_days_per_month', e.workingDaysPerMonth], ['working_hours_per_day', e.workingHoursPerDay],
-    ['ot_multiplier', e.otMultiplier], ['leader_allowance_sen', e.leaderAllowanceSen], ['efficiency_allowance_sen', e.efficiencyAllowanceSen],
-    ['efficiency_threshold_pct', e.efficiencyThresholdPct], ['payment_method', e.paymentMethod],
-    // Cash needs no bank, so none is kept that a payment file could pick up by mistake.
-    ['bank_name', e.paymentMethod === 'cash' ? null : e.bankName], ['bank_account', e.paymentMethod === 'cash' ? null : e.bankAccount],
-    ['epf_enabled', e.epfEnabled ? 1 : 0], ['socso_enabled', e.socsoEnabled ? 1 : 0], ['eis_enabled', e.eisEnabled ? 1 : 0], ['pcb_enabled', e.pcbEnabled ? 1 : 0],
-    ['tax_residency', e.taxResidency], ['tax_category', e.taxCategory], ['tax_child_relief_sen', e.taxChildReliefSen],
-    ['annual_leave_days', e.annualLeaveDays], ['medical_leave_days', e.medicalLeaveDays],
-  ];
-}
-
-/** Kept out of the audit trail's before/after: the trail shows that they changed, not what they are. */
-const PRIVATE: (keyof EmployeeInput)[] = ['bankAccount'];
-
-/** The record as the audit trail keeps it: private numbers become "set" or "not set". */
-export function employeeForAudit(e: { name: string }): Record<string, unknown> {
-  const out: Record<string, unknown> = { name: e.name };
-  for (const [k, v] of Object.entries(e)) {
-    if (k === 'name' || k === 'phone' || k === 'isActive' || k === 'employeeId') continue;
-    out[k] = PRIVATE.some(p => p === k) ? (v ? 'set' : 'not set') : v;
-  }
-  return out;
-}
-
-/**
- * A new basic salary takes effect from the date the form gives (the start of this month by default); payroll pays each
- * month on the salary in force on its last day (migration 0168). `before` is null when the person had no HR record yet.
- */
-export async function recordSalaryChange(env: Env, { employeeId, before, after, askedFrom, userId }: {
-  employeeId: string; before: Pick<EmployeeInput, 'basicSalarySen'> | null; after: Pick<EmployeeInput, 'payBasis' | 'basicSalarySen'>;
-  askedFrom: unknown; userId: string;
-}): Promise<void> {
-  if (after.payBasis === 'monthly' && after.basicSalarySen > 0 && (!before || before.basicSalarySen !== after.basicSalarySen) && await hasPayroll(env)) {
-    const from = typeof askedFrom === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(askedFrom) ? askedFrom : `${mytToday().slice(0, 7)}-01`;
-    await run(env, `
-      INSERT INTO employee_salary_history (id, employee_id, basic_salary_sen, effective_from, note, created_by, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT (employee_id, effective_from) DO UPDATE SET basic_salary_sen = excluded.basic_salary_sen, created_by = excluded.created_by, created_at = excluded.created_at`,
-      crypto.randomUUID(), employeeId, after.basicSalarySen, from, before ? `Was ${before.basicSalarySen} sen` : 'First salary', userId, nowIso());
-  }
 }
 
 export const isTestEmployee = ({ status }: Pick<Employee, 'status'>): boolean => status === 'test';
@@ -142,11 +84,50 @@ export async function listEmployees(env: Env): Promise<Employee[]> {
 }
 
 /** One person, found by either roster id. Null when neither is an in-house roster entry. */
-export async function findEmployee(env: Env, by: { cleanerId?: string | null; technicianId?: string | null }): Promise<Employee | null> {
+export async function findEmployee(env: Env, by: { cleanerId?: string | null; technicianId?: string | null; renovatorId?: string | null }): Promise<Employee | null> {
+  if (by.renovatorId) return findRenovationPerson(env, by.renovatorId);
   const row = by.cleanerId
     ? await one<Row>(env, `${PEOPLE} WHERE p.cleaner_id = ?`, by.cleanerId)
     : by.technicianId ? await one<Row>(env, `${PEOPLE} WHERE p.technician_id = ?`, by.technicianId) : null;
   return row ? toEmployee(row) : null;
+}
+
+export const hasRenovationDepartment = (env: Env): Promise<boolean> => hasColumn(env, 'employees', 'renovator_id').catch(() => false);
+
+const RENOVATION_PEOPLE = `
+  SELECT NULL AS p_cleaner_id, NULL AS p_technician_id, r.full_name, r.phone, r.is_active, NULL AS cleaner_active,
+    NULL AS technician_active, r.user_id AS p_user_id, NULL AS employee_id, e.*
+  FROM renovators r JOIN employees e ON e.renovator_id = r.id`;
+
+async function findRenovationPerson(env: Env, renovatorId: string): Promise<Employee | null> {
+  if (!(await hasRenovationDepartment(env))) return null;
+  const row = await one<Row>(env, `${RENOVATION_PEOPLE} WHERE r.id = ?`, renovatorId);
+  return row ? toEmployee(row) : null;
+}
+
+/** Employee Master: the cleaners and technicians, then the Renovation department. */
+export async function listEmployeeMaster(env: Env): Promise<Employee[]> {
+  if (!(await hasRenovationDepartment(env))) return listEmployees(env);
+  const [roster, renovation] = await Promise.all([
+    listEmployees(env),
+    all<Row>(env, `${RENOVATION_PEOPLE} ORDER BY r.is_active DESC, r.full_name`),
+  ]);
+  return [...roster, ...renovation.map(toEmployee)];
+}
+
+/** Adds a Renovation person (their roster entry and HR record, in one statement) or renames one. Returns the roster id. */
+export async function saveRenovationPerson(env: Env, renovatorId: string | null, person: RenovationPersonInput): Promise<string> {
+  const now = nowIso();
+  if (renovatorId) {
+    await run(env, 'UPDATE renovators SET full_name = ?, phone = ?, updated_at = ? WHERE id = ?', person.name, person.phone, now, renovatorId);
+    return renovatorId;
+  }
+  const newId = crypto.randomUUID();
+  await run(env, `
+    WITH s AS (INSERT INTO renovators (id, full_name, phone, created_at, updated_at) VALUES (?, ?, ?, ?, ?) RETURNING id)
+    INSERT INTO employees (id, renovator_id, created_at, updated_at) SELECT ?, s.id, ?, ? FROM s`,
+    newId, person.name, person.phone, now, now, crypto.randomUUID(), now, now);
+  return newId;
 }
 
 /** The in-house person a login belongs to (from "Give app access" on either roster). Null for anyone else. */

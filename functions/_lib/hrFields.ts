@@ -44,7 +44,7 @@ const text = (max: number) => z.string().trim().max(max).transform(v => v || nul
 const sen = z.int().min(0).max(100_000_000);
 
 /** What the Employees form saves. Every field is the whole value, not a change. */
-export const employeeRecord = z.object({
+export const employeeInput = z.object({
   /** Hookka's Operator / Operator Leader as one tick (owner, 26 Oct 2026): a leader, or a normal employee. */
   position: z.enum(POSITIONS),
   nationality: text(40),
@@ -72,8 +72,7 @@ export const employeeRecord = z.object({
   taxChildReliefSen: sen.nullable(),
   annualLeaveDays: z.int().min(0).max(60).nullable(),
   medicalLeaveDays: z.int().min(0).max(60).nullable(),
-});
-export const employeeInput = employeeRecord.refine(e => e.status !== 'resigned' || !!e.resignedAt, { path: ['resignedAt'], message: 'Give the last working day.' });
+}).refine(e => e.status !== 'resigned' || !!e.resignedAt, { path: ['resignedAt'], message: 'Give the last working day.' });
 export type EmployeeInput = z.infer<typeof employeeInput>;
 
 /** One person on the Employees tab: the roster entry, and the HR record (defaults until it is first saved). */
@@ -82,6 +81,7 @@ export interface Employee extends EmployeeInput {
   id: string | null;
   cleanerId: string | null;
   technicianId: string | null;
+  renovatorId: string | null;
   name: string;
   phone: string | null;
   /** EMP-001, from the login "Give app access" made; null without app access. */
@@ -110,18 +110,33 @@ export const DEPARTMENTS = ['cleaning', 'maintenance'] as const;
 export type Department = (typeof DEPARTMENTS)[number];
 export const DEPARTMENT_LABEL: Record<Department, string> = { cleaning: 'Cleaning', maintenance: 'Maintenance' };
 
-/** Dream Crafter has one department, so there is nothing to pick: the form and the list just say it. */
-export const DC_DEPARTMENT_LABEL = 'Renovation';
+export const RENOVATION_LABEL = 'Renovation';
+export const renovationPersonInput = z.object({
+  name: z.string().trim().min(1, 'Enter their name.').max(120),
+  phone: text(40),
+});
+export type RenovationPersonInput = z.infer<typeof renovationPersonInput>;
 
 /**
  * A Dream Crafter employee (migration 0185): an entry on Dream Crafter's own roster with its HR record. Kept apart from
- * Employee, which is built from The Conts' two rosters. The record is The Conts' (pay, bank, statutory); no app access.
+ * Employee, which is built from The Conts' two rosters. Only the details for now; pay comes with Dream Crafter payroll.
  */
-export const dcEmployeeInput = employeeRecord.extend({
+export interface DcEmployee {
+  /** The dc_staff id. */
+  id: string;
+  name: string;
+  phone: string | null;
+  jobTitle: string | null;
+  joinDate: string | null;
+  status: Exclude<EmployeeStatus, 'test'>;
+  resignedAt: string | null;
+}
+export const dcEmployeeInput = z.object({
   name: z.string().trim().min(1, 'Enter their name.').max(120),
   phone: text(40),
+  jobTitle: text(60),
+  joinDate: day.nullable(),
   status: z.enum(['active', 'resigned']),
-}).refine(e => e.status !== 'resigned' || !!e.resignedAt, { path: ['resignedAt'], message: 'Give the last working day.' });
+  resignedAt: day.nullable(),
+}).refine(e => e.status === 'active' || !!e.resignedAt, { path: ['resignedAt'], message: 'Give the last working day.' });
 export type DcEmployeeInput = z.infer<typeof dcEmployeeInput>;
-/** id is the dc_staff id. */
-export type DcEmployee = DcEmployeeInput & { id: string };
