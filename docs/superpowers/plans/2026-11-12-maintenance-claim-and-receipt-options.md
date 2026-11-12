@@ -251,3 +251,12 @@ The old test "a field worker hands receipts in but does not ask finance to pay" 
 1. With chew's OK: migration **0311** on production through "Apply migrations to production" with only=0311, dry run first, **before** merge. The engine writes the new columns as soon as it deploys.
 2. Then merge. Property OS and the engine both deploy from main.
 3. To test end to end: production with a test account, or staging. The engine does not run on the local PGlite copy.
+
+**Final review** (opus, 12 Nov). Ready "with fixes": 0 Critical, 3 Important. All were fixed in one pass, each with a test that failed first (04df0f8):
+- **Account numbers.** Only Ledger full sees whole account numbers on the pay-back list; view and edit see the last four digits (V3).
+- **No project on a field request.** A field worker's request may not name a project, because the refusal over a limit would show what is left of it.
+- **Field workers see their requests.** The Receipts page lists the person's requests to pay suppliers, with the status and any rejection reason. The forward lets field workers read their own requests, and a request carries an id, so a resend finds the first request.
+- **Account name prefill (a Minor, raised to Important).** `/my-bank` fills the account name with the person's own name when HR keeps none.
+- **Ruling changed.** The desk Claim box appears on an open job only, as on the phone.
+
+Deferred minors and the set-aside items are in the ledger as `Final:` lines. Release note added: the **staging** database needs 0311 too (the staging engine deploys on every merge to main).
