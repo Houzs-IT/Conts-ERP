@@ -13,3 +13,9 @@ export function passKeyStatus({ state, assigneeName, dueOn, supportRequestedAt }
   if (dueOn && dueOn < today) return 'missed';
   return assigneeName?.trim() ? 'assigned' : 'new';
 }
+
+export type PassKeyDay = 'today' | 'tomorrow';
+
+export function passKeyDay(dueOn: string | null, tomorrow: string): PassKeyDay {
+  return dueOn === tomorrow ? 'tomorrow' : 'today';
+}
