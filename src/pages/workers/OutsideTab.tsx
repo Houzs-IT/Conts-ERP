@@ -62,8 +62,8 @@ function OutsideList({ list, tabs }: { list: ListKey; tabs: ReactNode }) {
   const toast = useToast();
   const [confirmDialog, ask] = useConfirm();
   const { user } = useSession();
-  // Same rule as the roster routes: Operations.
-  const mayEdit = mayWork(user, 'operations');
+  // Same rule as the roster routes: Cleaning for cleaners, Maintenance for technicians.
+  const mayEdit = mayWork(user, list === 'cleaners' ? 'cleaning' : 'maintenance');
   const [form, setForm] = useState<{ id: string | null; draft: Draft } | null>(null);
   const [busy, setBusy] = useState(false);
   const outside = (data?.data ?? []).filter(w => w.employmentType === 'outsourced');

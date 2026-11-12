@@ -135,8 +135,8 @@ export const NAV: NavGroup[] = [
   // Maintenance; the old addresses redirect (App.tsx). Housekeeping is called Cleaning everywhere.
   { label: 'OPERATIONS', workspace: 'rental', items: [
     { key: 'today', label: 'Today', icon: 'clipboard-check', path: '/operations/today', area: 'operations', badge: 'today' },
-    { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'operations', badge: 'cleaning' },
-    { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'operations', badge: 'maintenance' },
+    { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'cleaning', badge: 'cleaning' },
+    { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'maintenance', badge: 'maintenance' },
   ] },
   // Hookka's Employees page with its eleven tabs: working hours, attendance, labour cost, payroll, advances, penalties,
   // the employee record (owner, 26 Oct 2026; PLAN-hr-employees.md).
@@ -147,29 +147,29 @@ export const NAV: NavGroup[] = [
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
     { key: 'units', label: 'Units', icon: 'building-2', path: '/properties/units', area: 'properties' },
     // Everything set to change on a later date, in one list (owner, 30 Oct 2026).
-    { key: 'scheduledChanges', label: 'Scheduled changes', icon: 'calendar-clock', path: '/properties/scheduled-changes', area: 'properties' },
+    { key: 'scheduledChanges', label: 'Scheduled changes', icon: 'calendar-clock', path: '/properties/scheduled-changes', area: 'scheduledChanges' },
     // Units we find a long-term tenant for, for the owner (staff sheet UNIT, 17 Oct 2026).
-    { key: 'agentToLet', label: 'Agent to let', icon: 'key-round', path: '/properties/agent-to-let', area: 'properties' },
+    { key: 'agentToLet', label: 'Agent to let', icon: 'key-round', path: '/properties/agent-to-let', area: 'agentToLet' },
     // Owner statements and owner payouts live on the owner (owner, 11 Oct 2026): each owner's page, and the Owners
     // list's Statements and Payouts tabs for a whole month. Their old addresses redirect (App.tsx).
     { key: 'ownerList', label: 'Owners', icon: 'user-round', path: '/owners', area: 'owners', badge: 'statements' },
-    { key: 'contracts', label: 'Contracts', icon: 'file-signature', path: '/owners/contracts', area: 'owners' },
+    { key: 'contracts', label: 'Contracts', icon: 'file-signature', path: '/owners/contracts', area: 'contracts' },
     // Each month's owner statements locked in steps, unit by unit (chew, 11 Nov 2026). Its own area, closed until management opens it.
     { key: 'ownerClose', label: 'Owner statement close', icon: 'lock', path: '/owners/close', area: 'ownerClose' },
-    // The workbook's misc deductions sheet: additional deductions and O2 by month (owner, 4 Nov 2026). Money, so the Finance area.
-    { key: 'deductions', label: 'Deductions', icon: 'receipt', path: '/properties/deductions', area: 'finance', fresh: true },
+    // The workbook's misc deductions sheet: additional deductions and O2 by month (owner, 4 Nov 2026). Its own area under Units.
+    { key: 'deductions', label: 'Deductions', icon: 'receipt', path: '/properties/deductions', area: 'deductions', fresh: true },
     // Owner B (owner, 2 Nov 2026): the new owners module, built beside Owners (A) so the two can be compared; it took
     // the Owner Showcase's menu place and permission (Performance), which is what sales staff open, and its sample
     // owner portal replaced the showcase. Its Owners, Statements and Payouts tabs follow their own areas.
     { key: 'ownerB', label: 'Owner B', icon: 'contact', path: '/owner-b', area: 'performance', fresh: true },
     // The lists the unit screens pick from: buildings, unit types, contract types (owner, 4 Nov 2026).
-    { key: 'unitSettings', label: 'Unit settings', icon: 'settings', path: '/properties/settings', area: 'properties' },
+    { key: 'unitSettings', label: 'Unit settings', icon: 'settings', path: '/properties/settings', area: 'unitSettings' },
   ] },
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
   ...financeGroups('/finance', '', 'rental'),
   { label: 'GROWTH', workspace: 'rental', items: [
     { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'pricing', full: true },
-    { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'pricing', badge: 'reviews' },
+    { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'reviews', badge: 'reviews' },
     // Guest messages from Airbnb, Booking.com and WhatsApp, below Reviews (owner, 2 Nov 2026; migration 0200 moved the
     // permission area with it, so nobody's access changed).
     { key: 'inbox', label: 'Messages', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },

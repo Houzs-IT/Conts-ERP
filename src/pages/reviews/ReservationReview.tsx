@@ -13,7 +13,7 @@ export default function ReservationReview({ review, threadId, checkOut, state, c
   review: Review | null; threadId: string | null; checkOut: string; state: string; channel: string;
 }) {
   const { user } = useSession();
-  if (!maySee(user, 'pricing')) return null;
+  if (!maySee(user, 'reviews')) return null;
   const today = todayMyt();
   const over = checkOut < today && !['cancelled', 'no_show', 'inquiry', 'pending'].includes(state);
   if (!review && !over) return null;
@@ -25,7 +25,7 @@ export default function ReservationReview({ review, threadId, checkOut, state, c
       </div>
       {review ? (
         <div className="rounded-card border border-solid border-line bg-card p-3.5">
-          <Suspense fallback={null}><ReviewCard review={review} canReply={mayWork(user, 'pricing')} compact /></Suspense>
+          <Suspense fallback={null}><ReviewCard review={review} canReply={mayWork(user, 'reviews')} compact /></Suspense>
         </div>
       ) : (
         <div className="text-copy text-muted-ink">
