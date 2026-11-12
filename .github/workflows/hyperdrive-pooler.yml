@@ -1,0 +1,55 @@
+# Points a Hyperdrive config at Supabase's transaction pooler (6543) or back to the session pooler (5432).
+# Why (12 Nov 2026): in session mode every connection Hyperdrive keeps open pins one of pos_app's 15 slots; all 12
+# pos_app connections were idle (oldest 2h45m) while requests failed with EMAXCONNSESSION. Hookka runs on 6543
+# since April for the same reason. Property OS is compatible: prepare:false, only transaction-scoped advisory locks,
+# Demo mode uses SET LOCAL. Run on staging first. Roll back by running again with port 5432.
+name: Hyperdrive pooler port
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: staging (preview) or production
+        type: choice
+        options: [staging, production]
+        default: staging
+      port:
+        description: 6543 = transaction pooler, 5432 = session pooler
+        type: choice
+        options: ['6543', '5432']
+        default: '6543'
+      action:
+        description: show = read the config only; update = change the port
+        type: choice
+        options: [show, update]
+        default: show
+jobs:
+  hyperdrive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Pick the config
+        id: pick
+        run: |
+          if [ "${{ inputs.target }}" = production ]; then echo "id=e0781ccdee9046919161c28cb95694c0" >> "$GITHUB_OUTPUT"; else echo "id=9c21c4f2b5f9470cb7df0afeb9ad633f" >> "$GITHUB_OUTPUT"; fi
+      - name: Show the config (password is never printed by wrangler)
+        run: npx wrangler hyperdrive get ${{ steps.pick.outputs.id }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 3a9ff01edda85702f9e2649fb340f1cc
+      - name: Change the port
+        if: inputs.action == 'update'
+        run: npx wrangler hyperdrive update ${{ steps.pick.outputs.id }} --origin-port ${{ inputs.port }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 3a9ff01edda85702f9e2649fb340f1cc
+      - name: Show the config after
+        if: inputs.action == 'update'
+        run: npx wrangler hyperdrive get ${{ steps.pick.outputs.id }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 3a9ff01edda85702f9e2649fb340f1cc
