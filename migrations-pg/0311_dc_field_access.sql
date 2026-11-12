@@ -16,7 +16,7 @@
 --
 -- APPLY: production through the GitHub workflow "Apply migrations to production" with only=0311, dry run first.
 -- REVERSAL, in this order (renovator logins and the Renovation crew rows block the CHECKs and the delete otherwise):
---   ALTER TABLE pos.dc_staff DROP COLUMN is_active, DROP COLUMN user_id;
+--   select demo.drop_views(); ALTER TABLE pos.dc_staff DROP COLUMN is_active, DROP COLUMN user_id;
 --   UPDATE pos.users SET role = 'technician', is_active = 0, department_id = NULL, position_id = NULL WHERE role = 'renovator';
 --     (switched off, so they cannot sign in; view-as test accounts included)
 --   DELETE FROM pos.positions WHERE department_id IN (SELECT id FROM pos.departments WHERE kind = 'renovation');
@@ -25,6 +25,7 @@
 --   ALTER TABLE pos.departments ADD CONSTRAINT departments_kind_check CHECK (kind IN ('management','staff','cleaning','maintenance'));
 --   ALTER TABLE pos.users DROP CONSTRAINT users_role_check;
 --   ALTER TABLE pos.users ADD CONSTRAINT users_role_check CHECK (role IN ('management','operations_manager','operations_staff','finance_admin','housekeeper','technician','owner'));
+--   select demo.sync();
 set local search_path = pos;
 
 ALTER TABLE dc_staff ADD COLUMN IF NOT EXISTS user_id TEXT UNIQUE REFERENCES users(id);
@@ -59,3 +60,5 @@ ALTER TABLE departments ADD CONSTRAINT departments_kind_check CHECK (kind IN ('m
 -- The name is unique ignoring case (departments_name_unique), so there is never a second Renovation crew.
 INSERT INTO departments (name, kind, side, sort) VALUES ('Renovation crew', 'renovation', 'dream_crafter', 95)
 ON CONFLICT DO NOTHING;
+
+select demo.sync();

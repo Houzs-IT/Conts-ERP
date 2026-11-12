@@ -31,9 +31,9 @@ interface CardGroupProps {
 
 function CardGroup({ title, note, cards, draft, maxMinutes, canEdit, onChange }: CardGroupProps) {
   return (
-    <section className="bg-card rounded-card border border-solid border-line px-5 py-4 flex flex-col">
+    <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] px-5 py-4 flex flex-col">
       <span className="flex flex-col gap-0.5 pb-2">
-        <span className="text-[15px] font-semibold">{title}</span>
+        <span className="text-heading font-bold">{title}</span>
         <span className="text-meta text-muted-ink">{note}</span>
       </span>
       {cards.map(({ key, label }) => (
@@ -78,8 +78,8 @@ export default function StandardTimesTab() {
   return (
     <div className="flex flex-col gap-5 max-w-[720px]">
       {error && <StaleBanner message={error} onRetry={reload} />}
-      <section className="bg-card rounded-card border border-solid border-line px-5 py-4 flex flex-col gap-0.5">
-        <span className="text-[16px] font-semibold tracking-[-0.01em]">Standard Times</span>
+      <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] px-5 py-4 flex flex-col gap-0.5">
+        <span className="text-heading font-bold tracking-[-0.005em]">Standard Times</span>
         <span className="text-meta text-muted-ink">
           How many minutes each job card should take. Employee Performance compares this with the time from Start to Done on each job,
           so you see who finishes early or late. A card left at 0 is not counted until you set it.

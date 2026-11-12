@@ -1,3 +1,4 @@
+import { FormSection } from '../../components/Card';
 import type { ReactNode } from 'react';
 import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
@@ -84,13 +85,6 @@ export function EmployeePaySections({ record: d, onChange: set, errors, salaryCh
 }
 
 export function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-0.5 [border-bottom:1px_solid_var(--color-line-soft)] pb-2">
-        <h3 className="m-0 text-copy font-semibold">{title}</h3>
-        {note && <p className="m-0 text-meta text-muted-ink">{note}</p>}
-      </div>
-      <div className="grid gap-x-4 gap-y-3 grid-cols-1 sm:grid-cols-2">{children}</div>
-    </section>
-  );
+  // The kit's form section (Conts DS v2): small caps title, the note beside it, two columns on a desk.
+  return <FormSection title={title} hint={note}>{children}</FormSection>;
 }

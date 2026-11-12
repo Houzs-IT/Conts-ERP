@@ -1,16 +1,14 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { StatusBadge, StatusDot } from '../../components/StatusBadge';
-import type { AnyTone } from '../../lib/status';
+import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
-import { FilterBar } from '../../components/FilterBar';
-import type { SegmentOption } from '../../components/Metric';
 import { useUrlState } from '../finance/listKit';
 import { Modal } from '../../components/Modal';
+import { ChoiceChips } from '../../components/ChoiceChips';
+import { ListToolbar, PhoneCard, type ToolbarFilter } from '../../components/ListToolbar';
 import { Field } from '../../components/Field';
-import { Select } from '../../components/Select';
 import { DateField, PhoneInput, phoneProblem } from '../../components/inputs';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
@@ -65,24 +63,30 @@ export default function EmployeesTab() {
   const [access, setAccess] = useState<AccessTarget | null>(null);
   const [form, setForm] = useState<{ person: Employee | null } | null>(null);
   const [given, setGiven] = useState<{ name: string; employeeId: string; pin: string } | null>(null);
+  const [query, setQuery] = useState('');
   const people = data?.data ?? [];
   const url = useUrlState();
   const requestedDepartment = url.get('dept', 'all');
   const department: DepartmentFilter = isDepartmentFilter(requestedDepartment) ? requestedDepartment : 'all';
-  const visiblePeople = people.filter(e => isInDepartment(e, department));
-  const departmentViews: SegmentOption<DepartmentFilter>[] = (['all', 'cleaning', 'maintenance'] as const).map(key => ({
-    key, label: key === 'all' ? 'All' : DEPARTMENT_FILTER_NAME[key], count: data ? people.filter(e => isInDepartment(e, key)).length : undefined,
-  }));
+  const needle = query.trim().toLowerCase();
+  // The department (main's ?dept=) and the search, both in the one toolbar.
+  const visiblePeople = people.filter(e => isInDepartment(e, department)
+    && (!needle || [e.name, e.employeeId, departmentsOf(e), POSITION_LABEL[e.position]].join(' ').toLowerCase().includes(needle)));
+  const departmentFilter: ToolbarFilter = {
+    key: 'dept', label: 'Department', allLabel: 'All', value: department === 'all' ? '' : department,
+    onChange: v => url.set({ dept: v || null, page: null }),
+    options: (['cleaning', 'maintenance'] as const).map(key => ({ value: key, label: DEPARTMENT_FILTER_NAME[key], count: data ? people.filter(e => isInDepartment(e, key)).length : undefined })),
+  };
 
   const columns = useMemo<Column<Employee>[]>(() => [
     { key: 'empNo', label: 'Emp No', value: e => e.employeeId, width: 100 },
-    { key: 'name', label: 'Name', value: e => e.name, hideable: false, width: 190, render: e => <span className="font-semibold">{e.name}</span> },
-    { key: 'departments', label: 'Departments', value: departmentsOf, width: 170 },
-    { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], width: 120 },
+    { key: 'name', label: 'Name', value: e => e.name, hideable: false, width: 170, render: e => <span className="font-semibold">{e.name}</span> },
+    { key: 'departments', label: 'Departments', value: departmentsOf, width: 140 },
+    { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], width: 104 },
     { key: 'basic', label: 'Basic Salary', type: 'money', value: e => (e.payBasis === 'daily' ? e.dailyRateSen : e.basicSalarySen), width: 140,
       render: e => e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen) },
     { key: 'status', label: 'Status', type: 'status', value: e => statusOf(e).label, status: statusOf, width: 120 },
-    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 340, align: 'right', render: e => actions(e) },
+    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 176, align: 'right', render: e => actions(e) },
   ], [mayEdit, mayRoster, mayGrant]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** The roster entries a person is on: one per department, sharing a login when both. Switching off leaves alone a
@@ -109,16 +113,21 @@ export default function EmployeesTab() {
   }
 
   function actions(e: Employee, align: 'start' | 'end' = 'end'): ReactNode {
-    // The row itself opens the form, so a click or Enter on a button here must not reach it.
+    // The row itself opens the form, so a click or Enter on a button here must not reach it. In the table the
+    // buttons are icons with their name as a tooltip until the screen is wide enough for the words, so the row stays
+    // one line and the buttons stay in view.
+    const word = (w: string) => (align === 'end' ? <span className="max-[1599px]:sr-only">{w}</span> : w);
+    const access = e.employeeId ? 'Reset PIN' : 'Give app access';
+    const onOff = e.isActive ? 'Switch off' : 'Switch on';
     return (
-      <span className={`flex gap-[7px] items-center flex-wrap ${align === 'start' ? 'justify-start' : 'justify-end'}`} onClick={ev => ev.stopPropagation()} onKeyDown={ev => ev.stopPropagation()}>
+      <span className={`flex gap-[7px] items-center ${align === 'start' ? 'flex-wrap justify-start' : 'flex-nowrap justify-end whitespace-nowrap'}`} onClick={ev => ev.stopPropagation()} onKeyDown={ev => ev.stopPropagation()}>
         {mayGrant && e.isActive && (
-          <Button size="sm" variant="tertiary" icon={<Icon name="KeyRound" size="sm" />} onClick={() => giveAccess(e)}>{e.employeeId ? 'Reset PIN' : 'Give app access'}</Button>
+          <Button size="sm" variant="tertiary" title={access} icon={<Icon name="KeyRound" size="sm" />} onClick={() => giveAccess(e)}>{word(access)}</Button>
         )}
-        {mayEdit && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setForm({ person: e })}>Edit</Button>}
+        {mayEdit && <Button size="sm" variant="tertiary" title="Edit" icon={<Icon name="Pencil" size="sm" />} onClick={() => setForm({ person: e })}>{word('Edit')}</Button>}
         {mayRoster && (
-          <Button size="sm" variant="tertiary" icon={<Icon name={e.isActive ? 'UserMinus' : 'UserCheck'} size="sm" />} onClick={() => void toggleActive(e)}>
-            {e.isActive ? 'Switch off' : 'Switch on'}
+          <Button size="sm" variant="tertiary" title={onOff} icon={<Icon name={e.isActive ? 'UserMinus' : 'UserCheck'} size="sm" />} onClick={() => void toggleActive(e)}>
+            {word(onOff)}
           </Button>
         )}
       </span>
@@ -128,21 +137,21 @@ export default function EmployeesTab() {
   return (
     <>
       {confirmDialog}
-      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? plural(people.length, 'employee') : 'Loading the list…'}</p>
+      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? (visiblePeople.length !== people.length ? `${plural(visiblePeople.length, 'employee')} of ${people.length}` : plural(people.length, 'employee')) : 'Loading the list…'}</p>
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <DataTable<Employee>
         id="employees" columns={columns} rows={loading && people.length === 0 ? null : visiblePeople}
-        viewParams={['dept']} filtered={department !== 'all'} onClearFilters={() => url.set({ dept: null, page: null })}
-        toolbar={<FilterBar<DepartmentFilter> label="Department" value={department} views={departmentViews}
-          onChange={key => url.set({ dept: key === 'all' ? null : key, page: null })} />}
+        viewParams={['dept']} filtered={department !== 'all' || !!needle} onClearFilters={() => { setQuery(''); url.set({ dept: null, page: null }); }}
+        toolbar={<ListToolbar bare className="w-full" filters={[departmentFilter]} filtersLabel="Department"
+          search={{ value: query, onChange: setQuery, placeholder: 'Name, employee no, department', label: 'Search employees' }} />}
         rowKey={e => e.cleanerId ?? e.technicianId ?? e.name} pageSize={0} noun={['employee', 'employees']} exportName="employee-master"
         rowTone={e => (e.status !== 'active' || !e.isActive ? 'muted' : null)}
         onRowClick={mayEdit ? e => setForm({ person: e }) : undefined}
         header={
           <div className="pt-5 pb-3 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
             <span className="flex flex-col gap-0.5">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Employee Master</span>
+              <span className="text-heading font-bold tracking-[-0.005em]">Employee Master</span>
               <span className="text-meta text-muted-ink">The company's own cleaners and technicians. Open a person for their pay, bank and statutory details.</span>
             </span>
             {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setForm({ person: null })}>Add employee</Button>}
@@ -150,14 +159,12 @@ export default function EmployeesTab() {
         }
         empty={{ title: 'No employees yet.', body: 'Add the first cleaner or technician.', action: mayEdit ? { label: 'Add employee', onClick: () => setForm({ person: null }) } : undefined }}
         renderCard={e => (
-          <span className="flex flex-col gap-1 min-w-0">
-            <span className="flex items-center justify-between gap-3">
-              <span className="text-copy font-semibold min-w-0 truncate">{e.name}</span>
-              <StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />
-            </span>
-            <span className="text-meta text-muted-ink">{[e.employeeId, departmentsOf(e), POSITION_LABEL[e.position]].filter(Boolean).join(' · ')}</span>
-            <span className="text-copy tabular-nums">{e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : `${rm(e.basicSalarySen)} / month`}</span>
-            <span className="pt-1">{actions(e, 'start')}</span>
+          <span className="flex flex-col gap-2 min-w-0">
+            <PhoneCard title={e.name}
+              right={e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen)}
+              meta={[e.employeeId, departmentsOf(e), POSITION_LABEL[e.position]].filter(Boolean).join(' · ')}
+              badge={<StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />} />
+            {(mayGrant || mayEdit || mayRoster) && actions(e, 'start')}
           </span>
         )}
       />
@@ -177,9 +184,9 @@ export default function EmployeesTab() {
 
 type Dept = 'cleaning' | 'maintenance';
 const ROSTER: Record<Dept, string> = { cleaning: '/housekeeping/cleaners', maintenance: '/maintenance/technicians' };
-const DEPARTMENTS: { value: Dept; label: string; tone: AnyTone }[] = [
-  { value: 'cleaning', label: 'Cleaning', tone: 'info' },
-  { value: 'maintenance', label: 'Maintenance', tone: 'warning' },
+const DEPARTMENTS: { value: Dept; label: string }[] = [
+  { value: 'cleaning', label: 'Cleaning' },
+  { value: 'maintenance', label: 'Maintenance' },
 ];
 
 /**
@@ -273,42 +280,33 @@ function EmployeeForm({ person, onClose, onSaved }: {
 
   return (
     <Modal title={creating ? 'Add employee' : name || 'Employee'} sub={creating ? 'A cleaner or technician on the company payroll.' : [person.employeeId, departmentsOf(person), POSITION_LABEL[d.position]].filter(Boolean).join(' · ')}
-      onClose={onClose} width={640}
+      onClose={onClose} width={640} eyebrow="Employee Master"
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : creating ? 'Add employee' : 'Save'}</Button>
       </>}>
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-[18px]">
         <Section title="Details">
           <Field label="Employee No" value={person?.employeeId ?? ''} readOnly placeholder={creating ? 'Given with app access' : 'No app access yet'}
             help={creating ? undefined : 'Given with app access: use Give app access on the list.'} />
           <Field label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="Nurul Huda" error={errors.name} />
           <PhoneInput label="Phone" value={phone} onChange={setPhone} error={errors.phone} />
-          <label className="sm:col-span-2 flex items-center gap-2.5 min-h-10 cursor-pointer">
-            <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={d.position === 'leader'}
-              onChange={e => setD(p => ({ ...p, position: e.target.checked ? 'leader' : 'employee', leaderAllowanceSen: e.target.checked ? p.leaderAllowanceSen : 0 }))} />
-            <span className="flex flex-col">
-              <span className="text-copy font-medium">Leader</span>
-              <span className="text-meta text-muted-ink">Leads a team and can get the leader allowance. Unticked: a normal employee.</span>
-            </span>
-          </label>
-          <fieldset className="sm:col-span-2 m-0 p-0 border-none flex flex-col gap-1.5">
-            <legend className="p-0 mb-1.5 text-meta font-medium text-muted-ink">Department</legend>
+          {/* Main's Leader tick as one-tap chips: Leader, or a normal employee; leaving Leader clears the leader allowance. */}
+          <div className="sm:col-span-2">
+            <ChoiceChips label="Position" value={d.position} help="A leader leads a team and can get the leader allowance."
+              options={[{ value: 'employee', label: POSITION_LABEL.employee }, { value: 'leader', label: POSITION_LABEL.leader }]}
+              onChange={v => setD(p => ({ ...p, position: v, leaderAllowanceSen: v === 'leader' ? p.leaderAllowanceSen : 0 }))} />
+          </div>
+          <div className="sm:col-span-2 flex flex-col gap-1.5">
             {creating || mayRoster ? (
-              <div role="radiogroup" aria-label="Department" className="flex gap-2 flex-wrap">
-                {DEPARTMENTS.map(({ value, label, tone }) => (
-                  <button key={value} type="button" role="radio" aria-checked={dept === value} onClick={() => setDept(value)}
-                    className={`inline-flex items-center gap-2 h-11 px-4 rounded-control cursor-pointer font-sans text-copy border border-solid ${dept === value ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink hover:text-ink'}`}>
-                    <StatusDot tone={tone} />{label}
-                  </button>
-                ))}
-              </div>
+              <ChoiceChips<Dept> label="Department" required={creating} value={dept ?? ''} onChange={setDept}
+                options={DEPARTMENTS.map(({ value, label }) => ({ value, label }))} />
             ) : <span className="text-copy min-h-10 flex items-center">{departmentsOf(person)}</span>}
             {isOnBoth && !dept && <span className="text-meta text-muted-ink">On both now. Pick one to keep: the other is switched off.</span>}
             {!creating && dept && dept !== wasDept && <span className="text-meta text-muted-ink">Saving moves them to {dept === 'cleaning' ? 'Cleaning' : 'Maintenance'}. Their app opens on {dept === 'cleaning' ? 'cleaning jobs' : 'repair jobs'} from the next time it loads.</span>}
             {errors.departments && <span className="text-meta text-danger">{errors.departments}</span>}
-          </fieldset>
-          <Select label="Status" showLabel size="md" value={d.status} onChange={v => set('status', isEmployeeStatus(v) ? v : 'active')}
+          </div>
+          <ChoiceChips label="Status" value={d.status} onChange={v => set('status', isEmployeeStatus(v) ? v : 'active')}
             options={EMPLOYEE_STATUSES.map(status => ({ value: status, label: EMPLOYEE_STATUS_LABEL[status] }))} />
           <DateField label="Join date" value={d.joinDate ?? ''} onChange={v => set('joinDate', v || null)} error={errors.joinDate} />
           {d.status === 'resigned' && (

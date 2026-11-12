@@ -6,6 +6,8 @@ import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
+import { FormSection } from '../../components/Card';
+import { PhoneCard, ToolbarSearch } from '../../components/ListToolbar';
 import { Field } from '../../components/Field';
 import { PhoneInput, phoneProblem } from '../../components/inputs';
 import { PillTabs } from '../../components/ops/OpsUi';
@@ -66,7 +68,10 @@ function OutsideList({ list, tabs }: { list: ListKey; tabs: ReactNode }) {
   const mayEdit = mayWork(user, list === 'cleaners' ? 'cleaning' : 'maintenance');
   const [form, setForm] = useState<{ id: string | null; draft: Draft } | null>(null);
   const [busy, setBusy] = useState(false);
-  const outside = (data?.data ?? []).filter(w => w.employmentType === 'outsourced');
+  const [query, setQuery] = useState('');
+  const allOutside = (data?.data ?? []).filter(w => w.employmentType === 'outsourced');
+  const needle = query.trim().toLowerCase();
+  const outside = needle ? allOutside.filter(w => [w.name, w.vendorName ?? '', w.phone ?? ''].join(' ').toLowerCase().includes(needle)) : allOutside;
 
   async function save() {
     if (!form) return;
@@ -125,10 +130,12 @@ function OutsideList({ list, tabs }: { list: ListKey; tabs: ReactNode }) {
         id={`${list}.outside`} columns={columns} rows={loading && !data ? null : outside} rowKey={w => w.id}
         pageSize={0} noun={[cfg.noun, `${cfg.noun}s`]} exportName={`${list}-outside`}
         rowTone={w => (w.isActive ? null : 'muted')}
+        toolbar={<ToolbarSearch value={query} onChange={setQuery} placeholder={`Name, ${cfg.vendorLabel.toLowerCase()} or phone`} label={`Search outside ${cfg.label.toLowerCase()}`} />}
+        filtered={!!needle} onClearFilters={() => setQuery('')}
         header={
           <div className="pt-5 pb-3 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
             <span className="flex flex-col gap-0.5">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Outside {cfg.label.toLowerCase()} <span className="text-meta font-normal text-muted-ink tabular-nums">{data ? outside.length : ''}</span></span>
+              <span className="text-heading font-bold tracking-[-0.005em]">Outside {cfg.label.toLowerCase()} <span className="text-meta font-normal text-muted-ink tabular-nums">{data ? allOutside.length : ''}</span></span>
               <span className="text-meta text-muted-ink">{cfg.hint}</span>
             </span>
             {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={add}>Add {cfg.noun}</Button>}
@@ -136,32 +143,26 @@ function OutsideList({ list, tabs }: { list: ListKey; tabs: ReactNode }) {
         }
         empty={{ title: `No outside ${cfg.label.toLowerCase()} yet.`, body: cfg.hint, action: mayEdit ? { label: `Add ${cfg.noun}`, onClick: add } : undefined }}
         renderCard={w => (
-          <span className="flex flex-col gap-[3px] min-w-0">
-            <span className="flex items-center gap-[9px] flex-wrap">
-              <span className="text-copy font-semibold">{w.name}</span>
-              {!w.isActive && <StatusBadge tone="neutral" label="Switched off" size="sm" />}
-            </span>
-            <span className="text-meta text-muted-ink flex gap-x-3 flex-wrap">
-              {w.vendorName && <span>{cfg.vendorLabel}: {w.vendorName}</span>}
-              {w.phone && <span>{w.phone}</span>}
-              <span>{plural(w.busy, 'open job')}{cfg.busyToday ? ' today' : ''}</span>
-            </span>
-            <span className="flex justify-start pt-1">{actions(w)}</span>
+          <span className="flex flex-col gap-2 min-w-0">
+            <PhoneCard title={w.name} right={String(w.busy)}
+              meta={[w.vendorName, w.phone, `${plural(w.busy, 'open job')}${cfg.busyToday ? ' today' : ''}`].filter(Boolean).join(' · ')}
+              badge={<StatusBadge tone={w.isActive ? 'success' : 'neutral'} label={w.isActive ? 'Active' : 'Switched off'} size="sm" />} />
+            {mayEdit && <span className="flex justify-start">{actions(w)}</span>}
           </span>
         )}
       />
 
       {form && (
-        <Modal title={form.id ? `Edit ${cfg.noun}` : `Add ${cfg.noun}`} onClose={() => !busy && setForm(null)}
+        <Modal title={form.id ? `Edit ${cfg.noun}` : `Add ${cfg.noun}`} eyebrow={`Outside ${cfg.label.toLowerCase()}`} size="md" onClose={() => !busy && setForm(null)}
           footer={<>
             <Button size="sm" variant="secondary" onClick={() => setForm(null)} disabled={busy}>Cancel</Button>
             <Button size="sm" variant="primary" loading={busy} disabled={!form.draft.name.trim() || !!phoneProblem(form.draft.phone)} disabledReason="Enter a name first." onClick={() => void save()}>Save</Button>
           </>}>
-          <div className="flex flex-col gap-4">
+          <FormSection title="Who" hint="No login: tell them about the job yourself.">
             <Field label="Name" value={form.draft.name} onChange={e => setForm({ ...form, draft: { ...form.draft, name: e.target.value } })} placeholder={cfg.namePh} disabled={busy} />
             <Field label={cfg.vendorLabel} value={form.draft.vendorName} onChange={e => setForm({ ...form, draft: { ...form.draft, vendorName: e.target.value } })} placeholder={cfg.vendorPh} disabled={busy} />
             <PhoneInput label="Phone (optional)" value={form.draft.phone} onChange={v => setForm({ ...form, draft: { ...form.draft, phone: v } })} disabled={busy} error={phoneProblem(form.draft.phone)} />
-          </div>
+          </FormSection>
         </Modal>
       )}
     </>

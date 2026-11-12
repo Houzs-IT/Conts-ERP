@@ -9,6 +9,7 @@ import { api, errorMessage } from '../lib/api';
 import { cx } from '../lib/design-tokens';
 import { amount, date as dayText, plural } from '../lib/format';
 import { INPUT } from '../components/ops/OpsUi';
+import { Segmented } from '../components/Metric';
 import { LabeledField } from './MaintenanceCatalog';
 
 /* GET/POST /api/housekeeping/clean-prices (functions/api/housekeeping/clean-prices.ts). Amounts in sen; null = not set. */
@@ -45,7 +46,7 @@ export function CleaningPriceTable({ onSaved }: { onSaved: () => void }) {
   const next = showNext ? d.next ?? null : null;
   const shown = next ? next.rows : d.rows;
   return (
-    <section className="bg-card rounded-card border border-solid border-line p-4 flex flex-col gap-3">
+    <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] p-4 flex flex-col gap-3">
       <div className="flex items-start gap-3 flex-wrap">
         <div className="flex-1 min-w-[220px]">
           <h2 className="m-0 text-heading font-semibold">Cleaning prices by number of beds (RM)</h2>
@@ -58,20 +59,16 @@ export function CleaningPriceTable({ onSaved }: { onSaved: () => void }) {
         {d.mayEdit && !editing && <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Change prices</Button>}
       </div>
       {d.next && !editing && (
-        <div role="tablist" aria-label="Which prices" className="flex gap-1 flex-wrap">
-          {[{ isNext: false, label: 'In force now' }, { isNext: true, label: `From ${dayText(d.next.effectiveFrom)}` }].map(t => (
-            <button key={t.label} type="button" role="tab" aria-selected={showNext === t.isNext} onClick={() => setShowNext(t.isNext)}
-              className={cx('h-9 px-3 rounded-control border border-solid text-copy cursor-pointer', showNext === t.isNext ? 'bg-black text-white border-black' : 'bg-card text-ink border-line')}>{t.label}</button>
-          ))}
-        </div>
+        <Segmented<'now' | 'next'> label="Which prices" value={showNext ? 'next' : 'now'} onChange={v => setShowNext(v === 'next')}
+          options={[{ key: 'now', label: 'In force now' }, { key: 'next', label: `From ${dayText(d.next.effectiveFrom)}` }]} />
       )}
       {editing && d.today
         ? <TableEditor rows={shown} fields={fields} today={d.today} start={next?.effectiveFrom ?? d.today} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); setShowNext(false); q.reload(); onSaved(); }} />
         : <PriceGrid fields={fields} first="Beds" rows={shown.map(r => ({ key: r.key, label: r.label, basic: r.basic, deep: r.deep }))} />}
       <div className="flex flex-col gap-1.5 mt-1">
-        <h3 className="m-0 text-copy font-semibold">Units with their own price</h3>
+        <h3 className="m-0 text-meta font-bold uppercase tracking-[0.12em] text-ink-2">Units with their own price</h3>
         {d.own && d.own.length > 0
-          ? <PriceGrid fields={fields} first="Unit" rows={d.own.map(u => ({ key: u.unitId, label: <span className="flex flex-col"><span><b>{u.unitNumber}</b> <span className="text-muted-ink">{u.propertyName}</span></span><span className="text-meta text-muted-ink">{plural(u.beds, 'bed')}</span></span>, basic: u.basic, deep: u.deep }))} />
+          ? <PriceGrid fields={fields} first="Unit" rows={d.own.map(u => ({ key: u.unitId, label: <span className="flex flex-col"><span><b className="font-mono">{u.unitNumber}</b> <span className="text-muted-ink">{u.propertyName}</span></span><span className="text-meta text-muted-ink">{plural(u.beds, 'bed')}</span></span>, basic: u.basic, deep: u.deep }))} />
           : <span className="text-meta text-muted-ink">No unit has its own price. Set one under Per unit.</span>}
       </div>
     </section>
@@ -90,14 +87,14 @@ function PriceGrid({ fields, first, rows, cell }: {
         <colgroup><col className="w-[24%]" />{SIDES.map(([side]) => fields.map(f => <col key={`${side}:${f}`} />))}</colgroup>
         <thead>
           <tr>
-            <th rowSpan={2} scope="col" className="text-left align-bottom pb-1.5 pr-2 text-meta font-semibold text-muted-ink">{first}</th>
+            <th rowSpan={2} scope="col" className="text-left align-bottom pb-1.5 pr-2 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink">{first}</th>
             {SIDES.map(([side, title]) => (
               <th key={side} colSpan={fields.length} scope="colgroup" className={cx('text-center pb-1 text-copy font-semibold', GROUP)}>{title}</th>
             ))}
           </tr>
           <tr>
             {SIDES.map(([side]) => fields.map((f, n) => (
-              <th key={`${side}:${f}`} scope="col" className={cx('text-right pb-1.5 px-2 text-meta font-semibold text-muted-ink', n === 0 && GROUP)}>{FIELD_LABEL[f]}</th>
+              <th key={`${side}:${f}`} scope="col" className={cx('text-right pb-1.5 px-2 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink', n === 0 && GROUP)}>{FIELD_LABEL[f]}</th>
             )))}
           </tr>
         </thead>

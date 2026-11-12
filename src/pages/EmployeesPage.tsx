@@ -1,10 +1,9 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
-import { StatTile, StatRow } from '../components/Metric';
+import { StatTile, StatRow, Segmented } from '../components/Metric';
 import { EmptyState } from '../components/States';
 import { TabBar, tabId, panelId } from '../components/TabBar';
-import { Button } from '../components/Button';
 import { useApi } from '../lib/useApi';
 import type { AttendanceLine } from '../../functions/api/attendance/index';
 import type { DcAttendanceLine } from '../../functions/api/attendance/dream-crafter';
@@ -127,22 +126,24 @@ export default function EmployeesPage({ dreamCrafter = false }: EmployeesPagePro
 
   return (
     <>
-      <PageHeader title="Employees & Attendance" sub="Worker attendance, production hours, and efficiency tracking" />
+      <PageHeader title="Employees & Attendance"
+        sub={workers === undefined ? 'Worker attendance, production hours, and efficiency tracking'
+          : `${workers} ${workers === 1 ? 'worker' : 'workers'}${!today.data ? '' : ` · ${present} clocked in today`} · attendance, production hours and efficiency`} />
       {/* The two lists are for finding a person on a phone: today's attendance figures would push them off the screen. */}
       <div className={tab === 'employee-master' || tab === 'outside' ? 'hidden md:block' : undefined}>
         <StatRow cols={4}>
           <StatTile label="Total Workers" value={workers === undefined ? undefined : String(workers)} loading={workersLoading} />
-          <StatTile label="Present" value={today.data ? String(present) : undefined} hint="Clocked in today" loading={today.loading && !today.data} />
+          <StatTile label="Present" value={today.data ? `${present} / ${lines.length}` : undefined} hint="Clocked in today" loading={today.loading && !today.data} />
           <StatTile label="Working Hours" value={today.data ? `${(minutes / 60).toFixed(1)} h` : undefined} hint="Today so far" loading={today.loading && !today.data} />
           <StatTile label="Avg Efficiency" value="—" hint="Production time not decided" />
         </StatRow>
       </div>
 
-      <div role="group" aria-label="Section" className="mt-5 mb-3 flex gap-2">
-        {SECTIONS.map(s => (
-          <Button key={s.key} size="sm" variant={s.key === section.key ? 'primary' : 'secondary'} aria-pressed={s.key === section.key}
-            onClick={() => setTab(s.tabs[0])}>{s.label}</Button>
-        ))}
+      {/* The three sections as one Segmented track (Conts DS v2), the pages of the chosen one as tabs under it. */}
+      <div className="mt-5 mb-3">
+        <Segmented<(typeof SECTIONS)[number]['key']> label="Section" value={section.key}
+          onChange={k => setTab(SECTIONS.find(s => s.key === k)!.tabs[0])}
+          options={SECTIONS.map(s => ({ key: s.key, label: s.label }))} />
       </div>
       <div className="mb-5 -mx-4 md:mx-0"><TabBar id="employees" label={`${section.label} pages`} tabs={tabsIn(section)} value={tab} onChange={setTab} /></div>
 

@@ -9,9 +9,11 @@
 -- Optional: the code reads employees.company only when it exists, and falls back to dc_staff_id until then.
 --
 -- APPLY: production through the GitHub workflow "Apply migrations to production" with only=0313, dry run first.
--- REVERSAL: ALTER TABLE pos.employees DROP COLUMN company;
+-- REVERSAL: select demo.drop_views(); ALTER TABLE pos.employees DROP COLUMN company; select demo.sync();
 set local search_path = pos;
 
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS company TEXT
   GENERATED ALWAYS AS (CASE WHEN dc_staff_id IS NOT NULL THEN 'dream_crafter' ELSE 'conts' END) STORED;
 CREATE INDEX IF NOT EXISTS employees_company_idx ON employees (company);
+
+select demo.sync();

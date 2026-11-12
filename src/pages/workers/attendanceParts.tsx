@@ -5,6 +5,8 @@ import { ConfirmButton } from '../../components/ConfirmDialog';
 import Icon from '../../components/Icon';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
+import { FormSection } from '../../components/Card';
+import { PhoneCard } from '../../components/ListToolbar';
 import { Field } from '../../components/Field';
 import { DateField, TimeField } from '../../components/inputs';
 import { useToast } from '../../components/Toast';
@@ -130,7 +132,7 @@ function FixModal<L extends PunchLine>({ line, day, onClose, onSaved, onSave, on
   }
 
   return (
-    <Modal title={`${p ? 'Fix times' : 'Key day'}: ${line.employee.name}`} sub={shownDay} onClose={onClose}
+    <Modal title={`${p ? 'Fix times' : 'Key day'}: ${line.employee.name}`} eyebrow="Attendance" size="md" sub={shownDay} onClose={onClose}
       footer={<>
         {p?.clockOutAt && onRemoveClockOut && (
           <ConfirmButton variant="tertiary" icon={<Icon name="Undo2" size="sm" />} style={{ marginRight: 'auto' }} onConfirm={remove}
@@ -140,19 +142,21 @@ function FixModal<L extends PunchLine>({ line, day, onClose, onSaved, onSave, on
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</Button>
       </>}>
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-[18px]">
         {!p && <p className="m-0 text-copy text-muted-ink">No punch on this day. Key the times they worked; the day shows as keyed by the office, with no selfie or location.{line.leave ? ' They are on approved leave this day.' : ''}</p>}
-        <div className="grid gap-x-4 gap-y-3 grid-cols-1 sm:grid-cols-2">
+        <FormSection title="Times">
           <TimeField label="Clocked in" value={clockIn} onChange={setClockIn} required error={errors.clockIn} />
           <TimeField label="Clocked out" value={clockOut} onChange={setClockOut} error={errors.clockOut} help="Empty if they are still in." />
-        </div>
-        <label className="flex items-center gap-2.5 min-h-10 cursor-pointer">
-          <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={outNextDay} onChange={e => setOutNextDay(e.target.checked)} />
-          <span className="text-copy">Clocked out the next day (shift past midnight)</span>
-        </label>
-        <Field label={p ? 'Why the change' : 'Why the office keyed it'} value={note} onChange={e => setNote(e.target.value)}
-          placeholder={p ? 'Forgot to clock out, left at 17:00' : 'Phone flat, at site from 08:00 (leader confirmed)'} error={errors.note ?? errors.date ?? errors.employeeId ?? errors.dcStaffId} />
-        {p?.note && <p className="m-0 text-meta text-muted-ink">Last fix: {p.note}</p>}
+          <label className="sm:col-span-2 flex items-center gap-2.5 min-h-10 cursor-pointer">
+            <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={outNextDay} onChange={e => setOutNextDay(e.target.checked)} />
+            <span className="text-copy">Clocked out the next day (shift past midnight)</span>
+          </label>
+        </FormSection>
+        <FormSection title="Why">
+          <div className="sm:col-span-2"><Field label={p ? 'Why the change' : 'Why the office keyed it'} value={note} onChange={e => setNote(e.target.value)}
+            placeholder={p ? 'Forgot to clock out, left at 17:00' : 'Phone flat, at site from 08:00 (leader confirmed)'} error={errors.note ?? errors.date ?? errors.employeeId ?? errors.dcStaffId} /></div>
+          {p?.note && <p className="sm:col-span-2 m-0 text-meta text-muted-ink">Last fix: {p.note}</p>}
+        </FormSection>
       </div>
     </Modal>
   );
@@ -217,7 +221,7 @@ export function DayAttendance<L extends PunchLine>({
           <div className="pt-5 pb-4 px-5 flex flex-col gap-3 [border-bottom:1px_solid_var(--color-line-soft)]">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <span className="flex flex-col gap-0.5">
-                <span className="text-[16px] font-semibold tracking-[-0.01em]">Daily Attendance</span>
+                <span className="text-heading font-bold tracking-[-0.005em]">Daily Attendance</span>
                 <span className="text-meta text-muted-ink">
                   {intro}
                   {offSite > 0 && <span className="font-semibold text-warning"> {offSite} off-site.</span>}
@@ -240,20 +244,18 @@ export function DayAttendance<L extends PunchLine>({
         }
         empty={empty}
         renderCard={l => (
-          <span className="flex flex-col gap-[3px] min-w-0">
-            <span className="flex items-center gap-[9px] flex-wrap">
-              <span className="text-copy font-semibold">{l.employee.name}</span>
-              {l.punch ? <StatusBadge tone={siteOf(l, noSiteLabel).tone} label={siteOf(l, noSiteLabel).label} size="sm" /> : absence(l)}
-            </span>
-            {l.punch && (
-              <span className="text-meta text-muted-ink flex gap-x-3 flex-wrap tabular-nums">
-                <span>{time(l.punch.clockInAt)} – {l.punch.clockOutAt ? time(l.punch.clockOutAt) : l.punch.forgotOut ? 'no clock-out' : '…'}</span>
-                {!l.punch.forgotOut && <span>{hm(l.punch.minutes)}</span>}
+          <span className="flex flex-col gap-2 min-w-0">
+            <PhoneCard title={l.employee.name}
+              right={l.punch && !l.punch.forgotOut ? hm(l.punch.minutes) : undefined}
+              meta={l.punch ? `${time(l.punch.clockInAt)} – ${l.punch.clockOutAt ? time(l.punch.clockOutAt) : l.punch.forgotOut ? 'no clock-out' : 'in now'}${l.employee.employeeId ? ` · ${l.employee.employeeId}` : ''}` : (l.employee.employeeId ?? '')}
+              badge={l.punch ? <StatusBadge tone={siteOf(l, noSiteLabel).tone} label={siteOf(l, noSiteLabel).label} size="sm" /> : absence(l)} />
+            {l.punch && <MapLinks line={l} />}
+            {(l.punch || mayFix) && (
+              <span className="flex items-center gap-2">
+                {l.punch && <Selfies line={l} photoPath={photoPath} onOpen={setPhoto} />}
+                {mayFix && <Button size="sm" variant="tertiary" icon={<Icon name={l.punch ? 'Pencil' : 'Plus'} size="sm" />} onClick={() => setFixing(l)}>{l.punch ? 'Fix' : 'Key day'}</Button>}
               </span>
             )}
-            {l.punch && <MapLinks line={l} />}
-            {l.punch && <span className="flex items-center gap-2 pt-1"><Selfies line={l} photoPath={photoPath} onOpen={setPhoto} />{mayFix && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setFixing(l)}>Fix</Button>}</span>}
-            {!l.punch && mayFix && <span className="flex pt-1"><Button size="sm" variant="tertiary" icon={<Icon name="Plus" size="sm" />} onClick={() => setFixing(l)}>Key day</Button></span>}
           </span>
         )}
       />
@@ -263,7 +265,7 @@ export function DayAttendance<L extends PunchLine>({
           onClose={() => setFixing(null)} onSaved={() => { setFixing(null); onChanged(); }} />
       )}
       {photo && (
-        <Modal title={photo.title} onClose={() => setPhoto(null)} width={420} footer={<Button size="sm" variant="secondary" onClick={() => setPhoto(null)}>Close</Button>}>
+        <Modal title={photo.title} eyebrow="Punch photo" size="sm" onClose={() => setPhoto(null)} footer={<Button size="sm" variant="secondary" onClick={() => setPhoto(null)}>Close</Button>}>
           <img src={photo.src} alt="Punch selfie" className="w-full rounded-control" />
         </Modal>
       )}
