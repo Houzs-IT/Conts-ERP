@@ -14,20 +14,32 @@ import { useApi } from '../lib/useApi';
 import { useMedia } from '../lib/useMedia';
 import { saveBlob, toXlsx, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
-import { count, monthLabel, percent, plural, rm, todayMyt, buildingName } from '../lib/format';
+import { count, dateShort, monthLabel, percent, personName, plural, rm, todayMyt, buildingName } from '../lib/format';
+import { useConfirm } from '../components/ConfirmDialog';
+import { useToast } from '../components/Toast';
+import { api, notifyFailure } from '../lib/api';
 import { overallFigures, overallTotals, occupancyLabel, GROUP_NAME, REPORT_GROUPS, type OverallInput, type OverallTotals, type ReportGroup } from '../lib/ownerOverall';
-import { GainLoss, LEVELS, OwnerOverallDetail, money, unitStatus, type Level, type ReportRow } from './OwnerOverallDetail';
+import { GainLoss, LEVELS, OwnerOverallDetail, money, unitStatus, type Level, type ReportRow, type Stage } from './OwnerOverallDetail';
 
 /** /portfolio/owner-report — the overall owner report (the owner workbook's overall report sheet) for one month: every
  *  unit's revenue, deductions, owner payout and the company's gain or loss on it, from GET /api/portfolio/owner-report.
- *  The whole month is about a row per unit, so search, filters and sorting happen here. */
+ *  The whole month is about a row per unit, so search, filters and sorting happen here.
+ *  From October 2026 a Close band shows each unit's step locks and its owner's statement: Make final once every step is
+ *  locked, Unlock final with a reason (owner statement close part 3, mockup screen 5). */
 
 interface ApiRow extends OverallInput {
-  unitId: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null;
+  unitId: string; ownerId?: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null;
+  /** The month's steps that list the unit, and the ones locked (part 3). */
+  steps?: Stage[]; locked?: Stage[];
   /** The company's share of late changes to an earlier, locked month counted this month, row by row (part 2b). */
   lateItems?: { label: string; amount: number }[];
 }
-interface Payload { month: string; rows: ApiRow[]; generatedAt: string }
+/** The owner's statement for the month, for the Final column (functions/api/portfolio/owner-report.ts OwnerFinal). */
+interface OwnerFinal { statementId: string | null; state: 'none' | 'draft' | 'final'; waiting: string | null; by: string | null; at: string | null; paid: boolean; transferring: boolean }
+interface Payload {
+  month: string; rows: ApiRow[]; generatedAt: string;
+  owners?: Record<string, OwnerFinal>; may?: { makeFinal: boolean; unlockFinal: boolean }; lockFrom?: string;
+}
 
 type Group = 'inc' | 'ded' | 'pro' | 'pay' | 'res';
 type Kind = 'money' | 'occ' | 'int' | 'ownpct' | 'gl';
@@ -61,7 +73,35 @@ const COLS: Col[] = [
   // is shown only in a month that has one.
   { key: 'late', label: 'Late changes', level: 1, group: 'res', kind: 'money' },
   { key: 'gainLoss', label: 'Gain / Loss', level: 1, group: 'res', kind: 'gl' },
+  // Gain / Loss split (part 3, spec call 12): the agent's part (GP x the contract's agent %) and what the company keeps.
+  { key: 'agent', label: 'Agent', level: 1, group: 'res', kind: 'money' },
+  { key: 'company', label: 'Company', level: 1, group: 'res', kind: 'gl' },
 ];
+
+/** The three steps a unit is locked on, as the Locks chips name them. */
+const STEP_CHIPS: { stage: Stage; label: string; name: string }[] = [
+  { stage: 'income', label: 'Income', name: 'Income' }, { stage: 'deductions', label: 'Ded.', name: 'Deductions' }, { stage: 'o2', label: 'O2', name: 'O2' },
+];
+/** A unit's step locks: a filled chip with a lock when locked, an outline when not, a dash where the step does not list it. */
+function LockChips({ steps, locked }: { steps?: Stage[]; locked?: Stage[] }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      {STEP_CHIPS.map(c => {
+        if (!steps?.includes(c.stage)) return <span key={c.stage} title={`${c.name}: not on this step`} className="inline-flex min-w-[24px] justify-center text-meta text-faint">–</span>;
+        const done = !!locked?.includes(c.stage);
+        return (
+          <span key={c.stage} title={`${c.name} ${done ? 'locked' : 'not locked'}`}
+            className={cx('inline-flex items-center gap-0.5 rounded-full px-1.5 text-[11px] font-semibold leading-[18px] whitespace-nowrap',
+              done ? 'bg-success-bg text-success' : 'text-muted-ink [box-shadow:inset_0_0_0_1px_var(--color-line)]')}>
+            {done && <Icon name="Lock" size="sm" style={{ width: 10, height: 10 }} />}{c.label}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+/** The Locks column as text, for the export. */
+const locksText = (r: ReportRow) => STEP_CHIPS.filter(c => r.steps?.includes(c.stage)).map(c => `${c.name} ${r.locked?.includes(c.stage) ? 'locked' : 'open'}`).join(', ');
 const colOf = (key: string) => COLS.find(c => c.key === key) ?? COLS[0];
 /** Money is typed in ringgit; everything else as it is shown (percent, nights). */
 const inSen = (c: Col) => c.kind === 'money' || c.kind === 'gl';
@@ -130,6 +170,8 @@ export default function OwnerOverallReportPage() {
   const [params, setParams] = useSearchParams();
   const month = MONTHS.some(o => o.value === params.get('month')) ? params.get('month')! : MONTHS[1].value;
   const { data, loading, error, reload } = useApi<Payload>(`/portfolio/owner-report?month=${month}`);
+  const toast = useToast();
+  const [confirmUi, ask] = useConfirm();
 
   const [q, setQ] = useState('');
   const [contract, setContract] = useState<Contract>('all');
@@ -152,8 +194,8 @@ export default function OwnerOverallReportPage() {
     try { localStorage.setItem(LEVEL_KEY, String(l)); } catch { /* private window: the level just isn't remembered */ }
   }, []);
 
-  const all = useMemo<ReportRow[]>(() => (data?.rows ?? []).map(({ unitId, code, building, ownerName, group, contractCode, lateItems, ...input }) =>
-    ({ ...overallFigures(input), lateItems: lateItems ?? [], unitId, code, building, ownerName, group, contractCode })), [data]);
+  const all = useMemo<ReportRow[]>(() => (data?.rows ?? []).map(({ unitId, ownerId, code, building, ownerName, group, contractCode, lateItems, steps, locked, ...input }) =>
+    ({ ...overallFigures(input), lateItems: lateItems ?? [], unitId, ownerId, code, building, ownerName, group, contractCode, steps: steps ?? [], locked: locked ?? [] })), [data]);
   const hasLate = all.some(r => r.late !== 0);
 
   const range = colOf(rangeKey);
@@ -179,6 +221,12 @@ export default function OwnerOverallReportPage() {
   const groups = REPORT_GROUPS.map(g => ({ group: g, rows: filtered.filter(r => r.group === g) })).filter(g => g.rows.length);
   // Previous / next follow the table as shown: group by group, each in the current sort.
   const order = groups.flatMap(g => g.rows);
+  // The Close band (part 3): from the month the locks start. An owner's buttons sit on the owner's first row as shown.
+  const showClose = !!data?.lockFrom && month >= data.lockFrom;
+  const owners = data?.owners ?? {};
+  const firstOfOwner = new Set<string>();
+  { const seen = new Set<string>(); for (const r of order) if (r.ownerId && !seen.has(r.ownerId)) { seen.add(r.ownerId); firstOfOwner.add(r.unitId); } }
+  const label = monthLabel(month, { long: true });
   const at = order.findIndex(r => r.unitId === selected);
   const row = at >= 0 ? order[at] : null;
   const totals = overallTotals(filtered);
@@ -229,6 +277,66 @@ export default function OwnerOverallReportPage() {
   };
   const ariaSort = (key: Key | 'code') => (sort?.key === key ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined);
 
+  async function makeFinal(r: ReportRow, o: OwnerFinal) {
+    const yes = await ask({ title: `Make the ${label} statement final for ${personName(r.ownerName)}?`,
+      body: 'Its figures are frozen, and it can then be sent to the owner.', confirmLabel: 'Make final' });
+    if (yes === null) return;
+    try {
+      const res = await api.post<{ finalised: number; failed: { id: string; reason: string }[] }>('/statements/finalise', { statementIds: [o.statementId] });
+      toast(res.finalised
+        ? { tone: 'success', title: 'Statement made final.', body: 'It can now be sent to the owner from Owner statements.' }
+        : { tone: 'warning', title: 'Not made final.', body: res.failed[0]?.reason });
+      reload();
+    } catch (err) {
+      notifyFailure(err);
+    }
+  }
+
+  async function unlockFinal(r: ReportRow, o: OwnerFinal) {
+    const reason = await ask({
+      title: `Unlock the final ${label} statement?`,
+      body: o.paid
+        ? `${personName(r.ownerName)}. Already paid: the paid amount stays. The month is worked out again with today's contract, and any difference goes to the next open month as an owner adjustment.`
+        : `${personName(r.ownerName)}. The statement goes back to draft so it can be worked out again. A payout not yet transferred is cancelled; sending the statement again makes a new one.`,
+      reason: { label: 'Why are you unlocking?', placeholder: 'Owner disputes the cleaning fee', maxLength: 500 },
+      confirmLabel: 'Unlock', danger: true,
+    });
+    if (reason === null) return;
+    try {
+      const res = await api.post<{ outcome: 'draft' | 'paid'; payoutCancelled?: boolean; posted?: { month: string; amount: number }[] }>('/statements/unlock-final', { statementId: o.statementId, reason });
+      toast(res.outcome === 'paid'
+        ? { tone: 'success', title: 'Statement unlocked.', body: res.posted?.length ? `The difference went to ${monthLabel(res.posted[0].month, { long: true })} as an owner adjustment.` : 'Nothing has changed since it was paid, so nothing was posted.' }
+        : { tone: 'success', title: 'Statement back to draft.', body: `${res.payoutCancelled ? 'Its payout is cancelled. ' : ''}Generate it again, then make it final.` });
+      reload();
+    } catch (err) {
+      notifyFailure(err);
+    }
+  }
+
+  /** The Final cell: final (by whom, when, Unlock), what it waits for, or Make final. Buttons only on the owner's first row. */
+  const finalCell = (r: ReportRow): ReactNode => {
+    const o = r.ownerId ? owners[r.ownerId] : undefined;
+    if (!o || o.state === 'none') return <span className="text-meta text-muted-ink">No statement yet</span>;
+    const first = firstOfOwner.has(r.unitId);
+    if (o.state === 'final') return (
+      <span className="flex items-center gap-2">
+        <span aria-hidden className="inline-flex text-success"><Icon name="Lock" size="sm" /></span>
+        <span className="flex min-w-0 flex-col leading-tight">
+          <span>Final{o.paid ? ' · paid' : ''}</span>
+          <span className="text-meta text-muted-ink">{[o.by, o.at ? dateShort(o.at) : null].filter(Boolean).join(' · ')}</span>
+        </span>
+        {first && data?.may?.unlockFinal && (
+          <Button size="sm" variant="ghost" className="ml-auto" disabled={o.transferring} disabledReason="The payout is being transferred. Unlock it once the transfer is paid or has failed."
+            onClick={e => { e.stopPropagation(); void unlockFinal(r, o); }}>Unlock</Button>
+        )}
+      </span>
+    );
+    if (o.waiting) return <span className="block max-w-[280px] truncate text-meta text-warning" title={o.waiting}>{o.waiting}</span>;
+    return first && data?.may?.makeFinal
+      ? <Button size="sm" variant="primary" onClick={e => { e.stopPropagation(); void makeFinal(r, o); }}>Make final</Button>
+      : <span className="text-meta text-muted-ink">Ready to make final</span>;
+  };
+
   const totalRow = (label: string, t: OverallTotals, grand: boolean) => (
     <tr>
       <td className={cx(CELL, UNIT_EDGE, 'text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink max-sm:whitespace-normal',
@@ -239,18 +347,31 @@ export default function OwnerOverallReportPage() {
           {c.key === 'ownerPct' ? null : <Value c={c} v={t[c.key]} />}
         </td>
       ))}
+      {showClose && [0, 1].map(i => (
+        <td key={`close-${i}`} className={cx(CELL, i === 0 && DIVIDER, grand ? 'bg-muted [border-top:2px_solid_var(--color-line-strong)]' : 'bg-card [border-top:1px_solid_var(--color-line-strong)]')} />
+      ))}
     </tr>
   );
 
+  /** The Final column as text: what the owner's statement waits for, or who made it final. */
+  const finalText = (r: ReportRow): string => {
+    const o = r.ownerId ? owners[r.ownerId] : undefined;
+    if (!o || o.state === 'none') return 'No statement yet';
+    if (o.state === 'final') return ['Final', o.paid ? 'paid' : null, o.by, o.at ? dateShort(o.at) : null].filter(Boolean).join(' · ');
+    return o.waiting ?? 'Ready to make final';
+  };
+
   function exportExcel() {
     const rows: ExportCell[][] = [];
+    const close = (r: ReportRow | null): ExportCell[] => (showClose ? (r ? [locksText(r), finalText(r)] : [null, null]) : []);
     for (const g of groups) {
-      for (const r of g.rows) rows.push([r.code, r.building, r.ownerName, r.contractCode ?? GROUP_NAME[r.group], ...exportFigures(r, false)]);
-      rows.push([`${GROUP_NAME[g.group]} total`, null, null, null, ...exportFigures(overallTotals(g.rows), true)]);
+      for (const r of g.rows) rows.push([r.code, r.building, r.ownerName, r.contractCode ?? GROUP_NAME[r.group], ...exportFigures(r, false), ...close(r)]);
+      rows.push([`${GROUP_NAME[g.group]} total`, null, null, null, ...exportFigures(overallTotals(g.rows), true), ...close(null)]);
     }
-    if (groups.length > 1) rows.push(['Grand total', null, null, null, ...exportFigures(totals, true)]);
+    if (groups.length > 1) rows.push(['Grand total', null, null, null, ...exportFigures(totals, true), ...close(null)]);
+    const columns: ExportColumn[] = showClose ? [...EXPORT_COLS, { label: 'Locks', kind: 'text' }, { label: 'Final', kind: 'text' }] : EXPORT_COLS;
     // Named for the report month only: the usual export name adds today's date, and two dates read as a range.
-    saveBlob(toXlsx(EXPORT_COLS, rows, monthLabel(month, { long: true })) as BlobPart, `overall-unit-report-${month}.xlsx`,
+    saveBlob(toXlsx(columns, rows, monthLabel(month, { long: true })) as BlobPart, `overall-unit-report-${month}.xlsx`,
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   }
 
@@ -301,6 +422,12 @@ export default function OwnerOverallReportPage() {
                     <b className="text-copy text-ink tabular-nums whitespace-nowrap">{rm(r.payout)}</b>
                   </span>
                   <span className="text-meta text-muted-ink tabular-nums truncate w-full">{line(r)}</span>
+                  {showClose && (
+                    <span className="flex items-center justify-between gap-2 w-full min-w-0">
+                      <LockChips steps={r.steps} locked={r.locked} />
+                      <span className="text-meta text-muted-ink truncate">{finalText(r)}</span>
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -322,6 +449,11 @@ export default function OwnerOverallReportPage() {
               {GROUP_LABEL[b.group]}
             </th>
           ))}
+          {showClose && (
+            <th scope="colgroup" colSpan={2} className={cx('px-3 pt-2 pb-1 bg-muted text-center text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]', DIVIDER)}>
+              Close
+            </th>
+          )}
         </tr>
         <tr>
           {cols.map((c, i) => (
@@ -330,13 +462,17 @@ export default function OwnerOverallReportPage() {
               {sortButton(c.key, c.label)}
             </th>
           ))}
+          {showClose && <>
+            <th scope="col" className={cx(CELL, 'bg-muted text-center text-meta font-semibold text-muted-ink [border-bottom:1px_solid_var(--color-line)]', DIVIDER)}>Locks</th>
+            <th scope="col" className={cx(CELL, 'bg-muted text-left text-meta font-semibold text-muted-ink [border-bottom:1px_solid_var(--color-line)]')}>Final</th>
+          </>}
         </tr>
       </thead>
       <tbody>
         {groups.map((g, gi) => (
           <Fragment key={g.group}>
             <tr>
-              <td colSpan={cols.length + 1} className={cx('px-3 py-1.5 bg-sunken', gi > 0 && '[border-top:1px_solid_var(--color-line)]')}>
+              <td colSpan={cols.length + 1 + (showClose ? 2 : 0)} className={cx('px-3 py-1.5 bg-sunken', gi > 0 && '[border-top:1px_solid_var(--color-line)]')}>
                 <span className="sticky left-3 text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink">
                   {GROUP_NAME[g.group]}<span className="ml-2 normal-case tracking-normal font-normal">{plural(g.rows.length, 'unit')}</span>
                 </span>
@@ -360,10 +496,14 @@ export default function OwnerOverallReportPage() {
                   </td>
                   {cols.map((c, i) => (
                     <td key={c.key} className={cx(CELL, bg, 'text-center [border-top:1px_solid_var(--color-line-soft)]', groupStart(i) && DIVIDER,
-                      i === cols.length - 1 ? FOCUS_LAST : FOCUS)}>
+                      i === cols.length - 1 && !showClose ? FOCUS_LAST : FOCUS)}>
                       <Value c={c} v={r[c.key]} />
                     </td>
                   ))}
+                  {showClose && <>
+                    <td className={cx(CELL, bg, 'text-center [border-top:1px_solid_var(--color-line-soft)]', DIVIDER, FOCUS)}><LockChips steps={r.steps} locked={r.locked} /></td>
+                    <td className={cx(CELL, bg, '[border-top:1px_solid_var(--color-line-soft)]', FOCUS_LAST)}>{finalCell(r)}</td>
+                  </>}
                 </tr>
               );
             })}
@@ -450,6 +590,7 @@ export default function OwnerOverallReportPage() {
         </aside>
       )}
       {!wide && <Drawer open={!!detail} onClose={() => setSelected(null)} width={phone ? 640 : 460} labelledBy="owner-overall-unit">{detail}</Drawer>}
+      {confirmUi}
     </div>
   );
 }

@@ -9,6 +9,7 @@
 //     keeps it apart, and a fresh payout comes when the statement is sent again); a transfer under way refuses it; a paid
 //     statement keeps its payout and a corrected contract posts the difference to the next open month, once; it is a
 //     power given one by one.
+//   - The Overall owner report: each unit's steps, locks and agent %, and each owner's final state (by whom, paid or not).
 // Needs a fresh local database (see harness.mjs) and DB_URL pointing at it, e.g.
 //   DB_URL=postgres://pos_app:local@127.0.0.1:55442/postgres API_BASE=http://localhost:8788 node scripts/api-checks/owner-close-final.mjs
 import postgres from 'postgres';
@@ -202,6 +203,26 @@ check('given Unlock final, the same person can', r.status === 200 && r.json?.out
 await db(`DELETE FROM access_rules WHERE scope = 'user' AND scope_id = $1 AND area = 'unlockFinal'`, FINANCE_ADMIN);
 await db(`UPDATE units SET contract_id = NULL WHERE id = $1`, U1);
 await db(`DELETE FROM owner_contracts WHERE id = 'ocf-contract'`);
+
+// ── The Overall owner report: Locks, Agent, Company and Final (part 3, spec goal 9) ──
+// A contract with an agent's share (10% of GP out of the operator's share), so the unit is on the report and has an agent %.
+await db(`INSERT INTO owner_contracts (id, owner_id, unit_id, management_fee_pct, agent_fee_pct, starts_on, created_at, model, revenue_model)
+  VALUES ('ocf-contract2', $1, $2, $3, 10, '2026-01-01', $4, 'management', 'management')`, OWNER, U1, fee, now);
+await db(`UPDATE units SET contract_id = 'ocf-contract2' WHERE id = $1`, U1);
+r = await call('GET', `/api/portfolio/owner-report?month=${OCT}`);
+const row1 = r.json?.rows?.find(x => x.unitId === U1);
+const mine = r.json?.owners?.[OWNER];
+check('the overall report carries each unit\'s steps, locks and agent %', r.status === 200 && row1?.ownerId === OWNER && row1?.agentPct === 10
+  && JSON.stringify(row1?.steps) === '["income","deductions","o2"]' && JSON.stringify(row1?.locked) === '["income","deductions","o2"]', JSON.stringify(row1));
+// Who made it final is the name the history recorded for the latest Make final (the account's name in this database).
+const [fin] = await db(`SELECT actor_label FROM audit_log WHERE action = 'statement.finalise' AND entity_id = $1 ORDER BY occurred_at DESC LIMIT 1`, mine?.statementId ?? '');
+check("… the owner's statement: final, by whom, paid, nothing waiting", mine?.state === 'final' && !!fin && mine?.by === fin.actor_label && !!mine?.at
+  && mine?.waiting === null && mine?.paid === true && mine?.transferring === false && !!mine?.statementId, JSON.stringify(mine));
+check('… and who may make and unlock final', r.json?.may?.makeFinal === true && r.json?.may?.unlockFinal === true && r.json?.lockFrom === '2026-10', JSON.stringify({ may: r.json?.may, lockFrom: r.json?.lockFrom }));
+r = await call('GET', `/api/portfolio/owner-report?month=${SEP}`);
+check('a month before the locks has no Final column to fill', r.status === 200 && r.json?.lockFrom === '2026-10', r.text.slice(0, 200));
+await db(`UPDATE units SET contract_id = NULL WHERE id = $1`, U1);
+await db(`DELETE FROM owner_contracts WHERE id = 'ocf-contract2'`);
 
 // Remove everything the check made.
 await dropAll();

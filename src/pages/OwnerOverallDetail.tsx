@@ -12,9 +12,13 @@ import { overallTotals, occupancyLabel, GROUP_NAME, OWNER_BASE_NAME, type Overal
  *  ownerOverall.ts; this file only lays them out. */
 
 export type Level = 1 | 2;
+/** An owner statement close step (functions/_lib/stageLocks.ts Stage). */
+export type Stage = 'income' | 'deductions' | 'o2';
 export interface ReportRow extends OverallFigures {
-  unitId: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null;
+  unitId: string; ownerId?: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null;
   lateItems?: { label: string; amount: number }[];
+  /** The month's steps that list the unit, and the ones locked (owner statement close part 3). */
+  steps?: Stage[]; locked?: Stage[];
 }
 
 export const LEVELS: { key: `${Level}`; label: string }[] = [
@@ -161,6 +165,9 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
             </div>
           )}
           <Line label="Gain / Loss" value={signed(r.gainLoss)} tone={r.gainLoss < 0 ? 'text-danger' : 'text-success'} />
+          {/* Gain / Loss split (part 3): the agent's part of the operator's share, and what the company keeps. */}
+          {r.agent !== 0 && <Line label="Agent" value={money(r.agent)} note={`GP × ${r.agentPct ?? 0}%`} />}
+          <Line label="Company" value={signed(r.company)} tone={r.company < 0 ? 'text-danger' : 'text-success'} note={r.agent !== 0 ? 'Gain / Loss less the agent' : undefined} />
         </Section>
         <Section title="Itemized deductions" level={1}>
           {deductionItems.map(([label, v]) => (
@@ -196,6 +203,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
               ['−', lt ? `Owner base = ${OWNER_BASE_NAME[r.group].toLowerCase()}` : r.o1 >= r.ltGrr ? `Owner base = O1 (GRR is ${money(r.ltGrr)})` : `Owner base = GRR (O1 is ${money(r.o1)})`, money(r.ownerBase)],
               ...(r.late ? [['+', 'Late changes from locked months', signed(r.late)] as LedgerRow] : []),
               ['=', 'Gain / Loss', signed(r.gainLoss), true],
+              ...(r.agent ? [['−', `Agent: GP × ${r.agentPct ?? 0}%`, money(r.agent)] as LedgerRow, ['=', 'Company', signed(r.company), true] as LedgerRow] : []),
             ]} />
             <p className="mt-3 rounded-control px-3 py-2 text-meta text-muted-ink [border:1px_dashed_var(--color-line)]">
               Owner payout = owner base {money(r.ownerBase)} {r.o2 < 0 ? '−' : '+'} O2 {money(Math.abs(r.o2))} = <span className="font-semibold text-ink">{money(r.payout)}</span>.

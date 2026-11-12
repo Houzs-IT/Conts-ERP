@@ -530,32 +530,44 @@ export async function unlockFinal(env: Env, who: Who, statementId: string, reaso
     const closed = await closedMonthsFor(tx, unitIds, month, 'o2');
     const at = nowIso();
     const out: { unitId: string; month: string; amount: number }[] = [];
+    const inserts: Record<string, unknown>[] = [], updates: { id: string; amount: number; kind: string }[] = [], removes: string[] = [];
+    const cInserts: Record<string, unknown>[] = [], cUpdates: { id: string; amount: number }[] = [], cRemoves: string[] = [];
     for (const d of due) {
       const target = openMonthAfter(month, closed.get(d.unitId) ?? new Set());
       const mine: PostedLate[] = posted.filter(p => p.unit_id === d.unitId).map(p => ({ id: p.id, month: p.month, amount: Number(p.amount), movable: !!p.movable }));
       const plan = planLate(d.diff, mine, target);
       if (plan.kind === 'insert') {
-        await run(tx, `INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'stage_lock', ?, ?, ?)`,
-          `adj-final-${crypto.randomUUID()}`, s.owner_id, d.unitId, plan.amount >= 0 ? 'credit' : 'charge', plan.amount, d.text, `${plan.month}-01`, ref,
-          d.held ? 'held' : 'open', who.userId, at, at);
+        inserts.push({ id: `adj-final-${crypto.randomUUID()}`, unit_id: d.unitId, kind: plan.amount >= 0 ? 'credit' : 'charge', amount: plan.amount,
+          description: d.text, occurred_on: `${plan.month}-01`, state: d.held ? 'held' : 'open' });
         out.push({ unitId: d.unitId, month: plan.month, amount: plan.amount });
       } else if (plan.kind === 'update') {
-        await run(tx, 'UPDATE owner_adjustments SET amount = ?, kind = ?, updated_at = ? WHERE id = ?', plan.amount, plan.amount >= 0 ? 'credit' : 'charge', at, plan.id);
+        updates.push({ id: plan.id, amount: plan.amount, kind: plan.amount >= 0 ? 'credit' : 'charge' });
         out.push({ unitId: d.unitId, month: mine.find(p => p.id === plan.id)?.month ?? target, amount: plan.amount });
-      } else if (plan.kind === 'remove') {
-        await run(tx, 'DELETE FROM owner_adjustments WHERE id = ?', plan.id);
-      }
+      } else if (plan.kind === 'remove') removes.push(plan.id);
       if (!company) continue;
       const cMine: PostedLate[] = company.filter(c => c.unit_id === d.unitId)
         .map(c => ({ id: c.id, month: c.month, amount: Number(c.amount), movable: !(closed.get(d.unitId)?.has(c.month) ?? false) }));
       const cPlan = planLate(d.companyDiff, cMine, target);
-      if (cPlan.kind === 'insert') {
-        await run(tx, 'INSERT INTO company_late_changes (id, unit_id, month, amount, description, reference, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          `clc-${crypto.randomUUID()}`, d.unitId, cPlan.month, cPlan.amount, d.text, ref, at, at);
-      } else if (cPlan.kind === 'update') await run(tx, 'UPDATE company_late_changes SET amount = ?, updated_at = ? WHERE id = ?', cPlan.amount, at, cPlan.id);
-      else if (cPlan.kind === 'remove') await run(tx, 'DELETE FROM company_late_changes WHERE id = ?', cPlan.id);
+      if (cPlan.kind === 'insert') cInserts.push({ id: `clc-${crypto.randomUUID()}`, unit_id: d.unitId, month: cPlan.month, amount: cPlan.amount, description: d.text });
+      else if (cPlan.kind === 'update') cUpdates.push({ id: cPlan.id, amount: cPlan.amount });
+      else if (cPlan.kind === 'remove') cRemoves.push(cPlan.id);
     }
+    // One write per kind for every unit of the owner, as the late update writes.
+    if (inserts.length) await run(tx, `
+      INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
+      SELECT x.id, ?, x.unit_id, x.kind, x.amount, x.description, x.occurred_on, ?, x.state, 'stage_lock', ?, ?, ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, kind text, amount integer, description text, occurred_on text, state text)`,
+      s.owner_id, ref, who.userId, at, at, JSON.stringify(inserts));
+    if (updates.length) await run(tx, `UPDATE owner_adjustments a SET amount = x.amount, kind = x.kind, updated_at = ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, amount integer, kind text) WHERE a.id = x.id`, at, JSON.stringify(updates));
+    if (removes.length) await run(tx, 'DELETE FROM owner_adjustments WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', JSON.stringify(removes));
+    if (cInserts.length) await run(tx, `
+      INSERT INTO company_late_changes (id, unit_id, month, amount, description, reference, created_at, updated_at)
+      SELECT x.id, x.unit_id, x.month, x.amount, x.description, ?, ?, ? FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, month text, amount integer, description text)`,
+      ref, at, at, JSON.stringify(cInserts));
+    if (cUpdates.length) await run(tx, `UPDATE company_late_changes c SET amount = x.amount, updated_at = ?
+      FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, amount integer) WHERE c.id = x.id`, at, JSON.stringify(cUpdates));
+    if (cRemoves.length) await run(tx, 'DELETE FROM company_late_changes WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', JSON.stringify(cRemoves));
     await audit(tx, { ...actor, action: 'statement.unlock_final', entityTable: 'owner_statements', entityId: statementId,
       before: { state: cur.state }, after: { state: cur.state, reason, posted: out } });
     return { ok: true as const, outcome: 'paid' as const, posted: out };
