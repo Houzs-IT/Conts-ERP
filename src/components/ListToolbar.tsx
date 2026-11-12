@@ -48,7 +48,7 @@ export interface ToolbarDate {
 /** A chip the page builds itself (a range, a quick filter), removable on its own. */
 export interface ToolbarChip { key: string; label: string; onRemove: () => void }
 
-export function ListToolbar({ search, leading, filters = [], panelExtra, chips: extraChips = [], date, after, right, below, count, bare, className, onClearAll }: {
+export function ListToolbar({ search, leading, filters = [], filtersLabel = 'Filters', panelExtra, chips: extraChips = [], date, after, right, below, count, bare, className, onClearAll }: {
   search?: { value: string; onChange: (v: string) => void; placeholder: string; label?: string; debounce?: boolean };
   /** Controls before Filters, e.g. a unit picker. */
   leading?: ReactNode;
@@ -68,6 +68,8 @@ export function ListToolbar({ search, leading, filters = [], panelExtra, chips: 
   /** Inside another card: no card of its own. */
   bare?: boolean;
   className?: string;
+  /** The panel button's name when the table below already has its own Filters button (one group, e.g. "Department"). */
+  filtersLabel?: string;
   /** Extra resets for Clear all (the page's own chips); filters and search are cleared already. */
   onClearAll?: () => void;
 }) {
@@ -108,8 +110,8 @@ export function ListToolbar({ search, leading, filters = [], panelExtra, chips: 
       {leading}
       {hasFilters && (
         <TbButton btnRef={filtersBtn} icon="ListFilter" on={nFilters > 0} expanded={panel === 'filters'} onClick={() => setPanel(p => (p === 'filters' ? null : 'filters'))}
-          label={nFilters ? `Filters, ${nFilters} on` : 'Filters'}>
-          Filters{nFilters > 0 && <span className="min-w-[18px] h-[18px] px-[5px] grid place-items-center rounded-full bg-primary text-on-primary text-caption font-semibold tabular-nums">{nFilters}</span>}
+          label={nFilters ? `${filtersLabel}, ${nFilters} on` : filtersLabel}>
+          {filtersLabel}{nFilters > 0 && <span className="min-w-[18px] h-[18px] px-[5px] grid place-items-center rounded-full bg-primary text-on-primary text-caption font-semibold tabular-nums">{nFilters}</span>}
         </TbButton>
       )}
       {date && datePreset && (
@@ -145,9 +147,9 @@ export function ListToolbar({ search, leading, filters = [], panelExtra, chips: 
       {row}
       {below && <div className="flex flex-wrap items-center gap-2 mt-2 min-w-0">{below}</div>}
       {chipRow}
-      <Panel open={panel === 'filters'} anchor={filtersBtn} onClose={() => setPanel(null)} label="Filters">
+      <Panel open={panel === 'filters'} anchor={filtersBtn} onClose={() => setPanel(null)} label={filtersLabel}>
         <div className="flex items-center justify-between gap-2 mb-1">
-          <b className="text-copy">Filters</b>
+          <b className="text-copy">{filtersLabel}</b>
           {nFilters > 0 && <button type="button" onClick={() => { for (const f of onFilters) f.onChange(allOf(f)); for (const c of extraChips) c.onRemove(); }}
             className="h-7 px-1 border-none bg-transparent text-meta font-semibold text-primary cursor-pointer">Clear all</button>}
         </div>

@@ -143,7 +143,7 @@ export default function EmployeesTab() {
       <DataTable<Employee>
         id="employees" columns={columns} rows={loading && people.length === 0 ? null : visiblePeople}
         viewParams={['dept']} filtered={department !== 'all' || !!needle} onClearFilters={() => { setQuery(''); url.set({ dept: null, page: null }); }}
-        toolbar={<ListToolbar bare className="w-full" filters={[departmentFilter]}
+        toolbar={<ListToolbar bare className="w-full" filters={[departmentFilter]} filtersLabel="Department"
           search={{ value: query, onChange: setQuery, placeholder: 'Name, employee no, department', label: 'Search employees' }} />}
         rowKey={e => e.cleanerId ?? e.technicianId ?? e.name} pageSize={0} noun={['employee', 'employees']} exportName="employee-master"
         rowTone={e => (e.status !== 'active' || !e.isActive ? 'muted' : null)}
