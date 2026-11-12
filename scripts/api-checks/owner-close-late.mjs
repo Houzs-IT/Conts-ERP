@@ -23,7 +23,8 @@ check('the month reads', r.status === 200 && Array.isArray(r.json?.units), r.tex
 if (r.status !== 200) done();
 
 // The check's own owner, building and units, so the checks before it in CI cannot get in its way. A local rerun starts
-// from a clean slate. L-01: a share split with no contract (the default fee), the misc charge on.
+// from a clean slate. L-01: a management contract at the default fee, the misc charge on. The Overall unit report
+// lists only units with a contract (#909), so the check's units that it reads have one.
 const OWNER = 'ocl-owner', PROP = 'ocl-prop', UNIT = 'ocl-u';
 const dropAll = async () => {
   const ofOwner = 'SELECT id FROM units WHERE owner_id = $1';
@@ -48,7 +49,13 @@ if (!u) done();
 
 const settings = Object.fromEntries((await db(`SELECT key, value FROM settings WHERE key IN ('locale.managementFeePct', 'finance.default_fee_pct', 'report.miscChargeMonthly')`)).map(s => [s.key, s.value]));
 const defaultFee = Number(settings['locale.managementFeePct'] ?? settings['finance.default_fee_pct'] ?? 25);
-const pct = 100 - defaultFee; // no contract and no split: the default fee
+const pct = 100 - defaultFee; // L-01's contract is at the default fee
+const contractFor = async (id, unitId) => {
+  await db(`INSERT INTO owner_contracts (id, owner_id, unit_id, management_fee_pct, starts_on, ends_on, created_at, model, revenue_model, grr_amount, minimum_guarantee, misc_charges)
+    VALUES ($1, $2, $3, $4, '2020-01-01', NULL, $5, 'management', 'management', 0, 0, 1)`, id, OWNER, unitId, defaultFee, now);
+  await db('UPDATE units SET contract_id = $1 WHERE id = $2', id, unitId);
+};
+await contractFor('ocl-cu', UNIT);
 const miscMonthly = Number(settings['report.miscChargeMonthly'] ?? 10000);
 const misc = nights => Math.round(miscMonthly * Math.min(1, nights / 31));
 const owner = net => Math.round((net * pct) / 100);
@@ -111,6 +118,7 @@ check('C2: running the late update again changes nothing', JSON.stringify(again)
     && line?.items?.[0]?.label === 'October 2026 income', JSON.stringify(own?.companyPnl));
   // A unit whose only figure in a month is the company's share of a late change still has its row.
   await db(`INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, created_at, updated_at) VALUES ('ocl-x', $1, $2, 'L-04', 0, $3, $3)`, PROP, OWNER, now);
+  await contractFor('ocl-cx', 'ocl-x');
   await db(`INSERT INTO company_late_changes (id, unit_id, month, amount, description, reference, created_at, updated_at) VALUES ('ocl-clc-x', 'ocl-x', $1, 1234, 'Check: a late change', 'stage-lock:ocl-none', $2, $2)`, NOV, now);
   const p2 = (await call('GET', `/api/portfolio/owner-report?month=${NOV}`)).json?.rows?.find(x => x.unitId === 'ocl-x');
   const y2 = (await call('GET', '/api/finance/yearly-report?year=2026')).json?.rows?.find(x => x.unitId === 'ocl-x' && x.month === NOV);
@@ -118,6 +126,8 @@ check('C2: running the late update again changes nothing', JSON.stringify(again)
   check('R5: a unit with only a late change that month is still listed in all three', p2?.late === 1234 && y2?.late === 1234 && f2?.late === 1234,
     `${JSON.stringify(p2)} | ${JSON.stringify(y2)} | ${JSON.stringify(f2)}`);
   await db(`DELETE FROM company_late_changes WHERE id = 'ocl-clc-x'`);
+  await db(`UPDATE units SET contract_id = NULL WHERE id = 'ocl-x'`);
+  await db(`DELETE FROM owner_contracts WHERE id = 'ocl-cx'`);
   await db(`DELETE FROM units WHERE id = 'ocl-x'`);
 }
 
