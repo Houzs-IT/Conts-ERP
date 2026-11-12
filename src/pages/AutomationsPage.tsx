@@ -87,14 +87,14 @@ const whenOf = (r: Rule) => WHEN[r.id] ?? r.timing;
 
 /** Sample values so the preview reads like a real message, not {placeholders}. */
 const SAMPLE: Record<string, string> = {
-  guest: 'Aisyah', property: 'Skyline KL', unit: 'A12-06', checkIn: '12 Oct', checkOut: '14 Oct', nights: '2 nights', total: 'RM 480.00',
-  dates: '12 Oct – 14 Oct', refundPosition: 'Your full payment will be refunded.', checkInTime: '15:00', checkOutTime: '11:00',
+  guest: 'Aisyah', property: 'Skyline KL', unit: 'A12-06', checkIn: '12/10/2026', checkOut: '14/10/2026', nights: '2 nights', total: 'RM 480.00',
+  dates: '12/10/2026 – 14/10/2026', refundPosition: 'Your full payment will be refunded.', checkInTime: '15:00', checkOutTime: '11:00',
   address: '12 Jalan Sultan Ismail, KL', parkingNote: 'Level P2, bay 41', doorCode: '4471', wifiName: 'Skyline-A12', wifiPass: 'stay4471',
   accessInstruction: 'Lockbox by the lift lobby.', newTime: '16:30', reviewLink: 'airbnb.com/r/...',
   period: 'Sep 2026', netPayout: 'RM 4,364.86', portalLink: 'owner.theconts.com', amount: 'RM 4,364.86', bank: 'Maybank', last4: '8212',
-  valueDate: '3 Oct 2026', reason: 'the account name does not match', occupancy: '78%', adr: 'RM 240', rating: '4.8', upcomingCount: '9',
-  title: 'an aircon repair', consequence: 'the unit stays blocked', revenueAtRisk: 'RM 1,200', expectedReturn: '20 Oct',
-  arrivalTime: '15:00', dueTime: '13:00', dueDate: '12 Oct', crew: 'Nurul', issue: 'a cracked mirror', snippet: 'Hi, is early check-in possible?',
+  valueDate: '03/10/2026', reason: 'the account name does not match', occupancy: '78%', adr: 'RM 240.00', rating: '4.8', upcomingCount: '9',
+  title: 'an aircon repair', consequence: 'the unit stays blocked', revenueAtRisk: 'RM 1,200.00', expectedReturn: '20/10/2026',
+  arrivalTime: '15:00', dueTime: '13:00', dueDate: '12/10/2026', crew: 'Nurul', issue: 'a cracked mirror', snippet: 'Hi, is early check-in possible?',
   provider: 'Channex', time: '14:06', owner: 'Tan Boon Huat', count: '4', days: '3', oldTime: '13:00', signInLink: 'erp.theconts.com',
   tempPassword: '(temporary password)', resetLink: '(reset link)', device: 'Chrome on Windows', securityLink: '(security link)',
   unlockTime: '14:21', location: 'Kuala Lumpur',
@@ -405,7 +405,7 @@ export default function AutomationsPage() {
                   <Icon name={g.icon} size="sm" />
                 </span>
                 <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-                  <span className="text-[16px] font-semibold tracking-[-0.01em]">{g.label}</span>
+                  <span className="text-heading font-semibold tracking-[-0.01em]">{g.label}</span>
                   <span className="text-meta text-muted-ink">{g.desc}</span>
                 </div>
                 <span className="text-meta font-medium text-muted-ink whitespace-nowrap tabular-nums">

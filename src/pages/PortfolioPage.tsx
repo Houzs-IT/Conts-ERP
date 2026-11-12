@@ -66,10 +66,10 @@ function BuildingTile({ b, i, money, onOpen }: { b: BuildingCard; i: number; mon
       <span className="relative flex flex-col gap-3 p-[18px]">
         <span className="flex items-end justify-between gap-3">
           <span className="flex flex-col gap-[3px] min-w-0">
-            <span className="text-[17px] leading-tight font-semibold text-white whitespace-nowrap overflow-hidden text-ellipsis">{b.name}</span>
+            <span className="text-heading leading-tight font-semibold text-white whitespace-nowrap overflow-hidden text-ellipsis">{b.name}</span>
             <span className="text-meta text-on-dark">{plural(b.units, 'unit')}{b.issues > 0 ? ` · ${b.issues} with exceptions` : ''}</span>
           </span>
-          <span className="text-[26px] leading-none font-semibold tabular-nums" style={{ color: occColour(b.occupancy) }}>{percent(b.occupancy)}</span>
+          <span className="text-headline leading-none font-semibold tabular-nums" style={{ color: occColour(b.occupancy) }}>{percent(b.occupancy)}</span>
         </span>
         <span className="h-[4px] rounded-full bg-[rgba(255,255,255,0.16)] overflow-hidden">
           <span className="block h-full rounded-full" style={{ width: `${Math.min(100, b.occupancy)}%`, background: occColour(b.occupancy) }} />
@@ -197,7 +197,8 @@ export default function PortfolioPage() {
 
       <div className="flex flex-wrap gap-3 sm:gap-4">
         {/* Until the figures arrive the tiles show a skeleton, not a zero that then jumps. Revenue leads as the dark tile. */}
-        {[tiles[3], tiles[0], tiles[1], tiles[2]].map((t, i) => (
+        {/* Without money access the money tiles are left out, not shown as dashes (one front end, access only hides). */}
+        {(money ? [tiles[3], tiles[0], tiles[1], tiles[2]] : [tiles[0], tiles[1]]).map((t, i) => (
           <div key={t.label} className={i === 0 ? 'flex-[2_1_320px] min-w-0' : 'flex-[1_1_150px] min-w-0'}>
             <StatTile label={t.label} value={data ? t.value : '—'} loading={loading && !data} hero={i === 0} />
           </div>

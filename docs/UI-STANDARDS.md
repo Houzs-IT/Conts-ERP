@@ -87,6 +87,9 @@ every pull request.
 - Form kit: `FormSection title hint`, `StayRange` (check-in to checkout with the night count, `components/inputs`),
   `ChoiceChips` (six options or fewer, channel logos), `Stepper`. Read-outs: `KeyFacts` (no orphan cell),
   `MoneyLines` (sen always, deductions in red, the total in green). `Switch` is the one on/off control.
+- Phase 2: `ListToolbar` (`components/ListToolbar.tsx`) is the one toolbar above a list or report that is not a
+  `DataTable`: search, a Filters popover whose choices carry counts, a date button with presets, removable chips with
+  Clear all, and an optional second row for the page's one either/or switch. Its panels are bottom sheets at 640px and under.
 
 ## The checks
 

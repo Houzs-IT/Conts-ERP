@@ -5,7 +5,7 @@ import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { EmptyState } from '../components/States';
-import { Select } from '../components/Select';
+import { ListToolbar } from '../components/ListToolbar';
 import { StatusBadge } from '../components/StatusBadge';
 import { useApi } from '../lib/useApi';
 import { todayMyt, monthLabel } from '../lib/format';
@@ -13,7 +13,7 @@ import { downloadTable, type ExportColumn } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { bracketMoney } from '../lib/unitPnl';
 import { monthCellsOf, standingOf, type YgrrMonthCell, type YgrrPayload, type YgrrRow, type YgrrStanding } from '../lib/ygrrReport';
-import { useUrlState, SearchBox, FilterSelect } from './finance/listKit';
+import { useUrlState } from './finance/listKit';
 
 const GRID = '[border-left:1px_solid_var(--color-line)]';
 const HEAD = 'text-right px-3 py-2 whitespace-nowrap';
@@ -45,7 +45,7 @@ function UnitsTable({ rows, month }: { rows: YgrrRow[]; month: string }): ReactE
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-copy">
         <thead>
-          <tr className="bg-muted text-meta font-semibold text-muted-ink">
+          <tr className="bg-muted text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">
             <th className="sticky left-0 z-[1] bg-muted text-left px-3 py-2 min-w-[170px]">Unit</th>
             <th className={cx('text-left px-3 py-2 whitespace-nowrap', GRID)}>Contract year</th>
             <th className={cx(HEAD, GRID)}>Owner %</th>
@@ -63,8 +63,8 @@ function UnitsTable({ rows, month }: { rows: YgrrRow[]; month: string }): ReactE
             return (
               <tr key={row.unitId} className="[border-top:1px_solid_var(--color-line)]">
                 <td className="sticky left-0 bg-card px-3 py-1.5">
-                  <span className="block whitespace-nowrap font-medium">{unitName(row)}</span>
-                  <span className="block text-caption text-muted-ink truncate max-w-[200px]" title={row.owner}>{row.owner}</span>
+                  <span className="block whitespace-nowrap font-semibold leading-tight" title={unitName(row)}>{row.number}</span>
+                  <span className="block text-meta text-muted-ink truncate max-w-[200px] leading-tight" title={row.owner}>{row.building} · {row.owner}</span>
                 </td>
                 <td className={cx('px-3 py-1.5 whitespace-nowrap', GRID)}>
                   {yearRange(row)}
@@ -108,7 +108,7 @@ function MonthGrid({ rows, months }: { rows: YgrrRow[]; months: string[] }): Rea
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-copy">
         <thead>
-          <tr className="bg-muted text-meta font-semibold text-muted-ink">
+          <tr className="bg-muted text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">
             <th className="sticky left-0 z-[1] bg-muted text-left px-3 py-2 min-w-[170px]">Unit</th>
             <th className={cx(HEAD, GRID)}>Target / month</th>
             {months.map(month => <th key={month} className={cx(HEAD, GRID)}>{monthLabel(month)}</th>)}
@@ -121,7 +121,10 @@ function MonthGrid({ rows, months }: { rows: YgrrRow[]; months: string[] }): Rea
             const cellByMonth = new Map(monthCellsOf(row).map(cell => [cell.month, cell]));
             return (
               <tr key={row.unitId} className="[border-top:1px_solid_var(--color-line)]">
-                <td className="sticky left-0 bg-card px-3 py-1.5 whitespace-nowrap">{unitName(row)}</td>
+                <td className="sticky left-0 bg-card px-3 py-1.5 whitespace-nowrap" title={unitName(row)}>
+                  <span className="block font-semibold leading-tight">{row.number}</span>
+                  <span className="block text-meta text-muted-ink leading-tight">{row.building}</span>
+                </td>
                 <td className={cx(CELL, GRID)}><Money sen={standing.guaranteedPerMonth} /></td>
                 {months.map(month => <ShareCell key={month} cell={cellByMonth.get(month)} />)}
                 <td className={cx('px-3 py-1.5 whitespace-nowrap', GRID)}><Pace aheadBy={standing.aheadBy} /></td>
@@ -172,11 +175,14 @@ export default function YgrrReportPage(): ReactElement {
       <PageHeader title="YGRR report" sub="Package D (PS YGRR)"
         right={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel} disabled={!rows.length}>Export</Button>} />
       <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Select label="Year" value={year} onChange={value => url.set({ year: value === latestYear ? null : value })} className="w-[120px]" options={yearOptions} />
-          <FilterSelect label="Building" value={building} all="All buildings" onChange={value => url.set({ building: value })} options={buildings} className="w-[200px]" />
-          <SearchBox value={url.get('q')} onChange={value => url.set({ q: value })} placeholder="Unit or owner" label="Search units" className="w-[200px]" />
-        </div>
+        <ListToolbar
+          search={{ value: url.get('q'), onChange: value => url.set({ q: value.trim() }), placeholder: 'Unit or owner', label: 'Search units' }}
+          filters={[{ key: 'building', label: 'Building', value: building, onChange: value => url.set({ building: value }), allLabel: 'All buildings',
+            options: buildings.map(b => ({ ...b, count: (data?.rows ?? []).filter(row => row.building === b.value).length })) }]}
+          date={{ label: 'Year', value: year, onChange: value => url.set({ year: value === latestYear ? null : value }),
+            presets: yearOptions.map(o => ({ ...o, sub: o.value === latestYear ? `To ${monthLabel(lastFullMonth)}` : undefined })) }}
+          count={data ? <span className="tabular-nums">Showing {rows.length} of {data.rows.length} Package D units</span> : undefined}
+        />
         {error && <StaleBanner message={data ? `Showing the last figures we have. ${error}` : error} onRetry={reload} />}
         {loading && !data ? <TableSkeleton rows={8} cols={7} />
           : !rows.length ? <EmptyState kind={building || search ? 'filtered' : 'empty'} title={`No Package D units in ${year}.`} />

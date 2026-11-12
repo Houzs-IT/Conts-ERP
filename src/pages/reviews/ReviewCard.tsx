@@ -218,8 +218,8 @@ export function ReviewCard({ review, canReply, onChanged, compact }: {
           <div className="flex gap-2 justify-between items-center flex-wrap">
             <span className="text-caption text-muted-ink tabular-nums">{draft.length} / 1,500</span>
             <div className="flex gap-2 flex-wrap">
+              <Button type="button" size="sm" variant="secondary" onClick={() => setComposing(false)}>Cancel</Button>
               <Button type="button" size="sm" variant="secondary" icon={<Icon name="Sparkles" size="sm" />} loading={drafting} onClick={() => void aiDraft()}>{draft ? 'Draft again' : 'Draft reply'}</Button>
-              <Button type="button" size="sm" variant="secondary" onClick={() => setComposing(false)}>Back</Button>
               <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!draft.trim()} disabledReason="Write a response first.">
                 {r.linked ? `Post to ${name}` : 'Save response'}
               </Button>

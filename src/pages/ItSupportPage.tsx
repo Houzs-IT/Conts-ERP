@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Search } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Card } from '../components/Card';
@@ -11,6 +10,7 @@ import { EmptyState } from '../components/States';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
 import { Segmented } from '../components/Metric';
+import { ToolbarSearch } from '../components/ListToolbar';
 import { FileDropRow } from '../components/Attachments';
 import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
@@ -122,7 +122,7 @@ function Files({ files, onChange }: { files: File[]; onChange: (f: File[]) => vo
               ) : (
                 <div title={f.name} className="w-full h-full flex flex-col items-center justify-center gap-1 rounded-control border border-solid border-line bg-page text-muted-ink">
                   <Icon name={f.type.startsWith('video/') ? 'Film' : 'FileText'} />
-                  <span className="max-w-full truncate px-1 text-[10px] font-semibold">{f.name.includes('.') ? f.name.split('.').pop()!.toUpperCase() : 'FILE'}</span>
+                  <span className="max-w-full truncate px-1 text-caption font-semibold">{f.name.includes('.') ? f.name.split('.').pop()!.toUpperCase() : 'FILE'}</span>
                 </div>
               )}
               <button type="button" aria-label={`Remove ${f.name}`} onClick={() => { setRefused(null); onChange(files.filter((_, j) => j !== i)); }}
@@ -414,11 +414,7 @@ function List({ tab, onTab, onOpen, onNew }: { tab: Tab; onTab: (t: Tab) => void
         pageSize={0} onRowClick={r => onOpen(r.code)} noun={['request', 'requests']} exportName="it-requests"
         toolbar={<>
           <Segmented label="Which requests" options={TABS.map(t => ({ key: t.key, label: t.label, count: counts[t.key] }))} value={tab} onChange={onTab} />
-          <div className="relative">
-            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search my requests" aria-label="Search my requests"
-              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[280px] max-w-full" />
-          </div>
+          <ToolbarSearch value={search} onChange={setSearch} debounce={false} placeholder="Search my requests" label="Search my requests" />
         </>}
         filtered={!!q || tab !== 'all'} onClearFilters={() => { setSearch(''); onTab('all'); }}
         empty={{ title: tab === 'active' ? 'Nothing is with IT right now.' : tab === 'resolved' ? 'No resolved requests yet.' : 'No requests match.' }} />

@@ -13,8 +13,9 @@ import { refreshNavCounts } from '../lib/navBadges';
 import { statusLabel } from '../lib/status';
 import { type Approval, type ApprovalStatus, type Decision } from '../lib/approvals';
 import { date, dateTime, plural } from '../lib/format';
-import { useUrlState, SearchBox, FilterSelect } from './finance/listKit';
-import { FilterBar } from '../components/FilterBar';
+import { useUrlState } from './finance/listKit';
+import { ListToolbar } from '../components/ListToolbar';
+import { Segmented } from '../components/Metric';
 
 interface Payload {
   view: 'pending' | 'decided'; total: number; page: number; pageSize: number;
@@ -92,25 +93,22 @@ export default function ApprovalsPage() {
     <>
       <PageHeader title="Approvals" sub={sub} />
 
-      <FilterBar label="Approval views" className="shrink-0" value={view}
-        onChange={k => url.set(k === 'decided' ? { view: 'decided', page: null } : { view: null, status: null, page: null })}
-        views={[
-          { key: 'pending', label: 'Waiting', count: data?.counts.pending },
-          { key: 'decided', label: 'Decided', count: data?.counts.decided },
+      <ListToolbar className="shrink-0"
+        search={{ value: q, onChange: v => url.set({ q: v.trim() || null, page: null }), placeholder: 'Search owner, reservation, reason or person', label: 'Search requests' }}
+        filters={[
+          { key: 'kind', label: 'Request type', value: kind, onChange: v => url.set({ kind: v || null, page: null }), allLabel: 'All request types',
+            options: (data?.kinds ?? []).map(k => ({ value: k.value, label: k.label, count: k.count })) },
+          ...(view === 'decided' ? [{ key: 'status', label: 'Outcome', value: status, onChange: (v: string) => url.set({ status: v || null, page: null }), allLabel: 'All outcomes',
+            options: (['approved', 'rejected', 'cancelled'] as ApprovalStatus[]).map(s => ({ value: s, label: statusLabel('approval', s), count: data ? data.counts[s as 'approved'] ?? 0 : undefined })) }] : []),
+          { key: 'mine', label: 'Asked by', value: mine ? '1' : '', onChange: v => url.set({ mine: v || null, page: null }), allLabel: 'Anyone', options: [{ value: '1', label: 'Asked by me' }] },
         ]}
-        tags={{
-          items: [{ key: 'mine', label: 'Asked by me' }], active: mine ? ['mine'] : [],
-          onToggle: () => url.set({ mine: mine ? null : '1', page: null }), onClear: () => url.set({ mine: null, page: null }),
-        }} />
-      <div className="flex flex-wrap gap-2 shrink-0">
-        <SearchBox className="flex-[2_1_240px]" label="Search requests" placeholder="Search owner, reservation, reason or person" value={q} onChange={v => url.set({ q: v || null, page: null })} />
-        <FilterSelect className="flex-[1_1_200px]" label="Request type" all="All request types" value={kind} onChange={v => url.set({ kind: v || null, page: null })}
-          options={(data?.kinds ?? []).map(k => ({ value: k.value, label: `${k.label} · ${k.count}` }))} />
-        {view === 'decided' && (
-          <FilterSelect className="flex-[1_1_160px]" label="Outcome" all="All outcomes" value={status} onChange={v => url.set({ status: v || null, page: null })}
-            options={(['approved', 'rejected', 'cancelled'] as ApprovalStatus[]).map(s => ({ value: s, label: data ? `${statusLabel('approval', s)} · ${data.counts[s as 'approved'] ?? 0}` : statusLabel('approval', s) }))} />
-        )}
-      </div>
+        below={<Segmented label="Approval views" value={view}
+          onChange={k => url.set(k === 'decided' ? { view: 'decided', page: null } : { view: null, status: null, page: null })}
+          options={[
+            { key: 'pending', label: 'Waiting', count: data?.counts.pending },
+            { key: 'decided', label: 'Decided', count: data?.counts.decided },
+          ]} />}
+      />
       {off && (
         <div role="status" className="shrink-0 rounded-card border border-solid border-line bg-card px-[14px] py-[11px] flex flex-col gap-[2px]">
           <span className="text-copy font-semibold text-ink">Approvals are switched off</span>

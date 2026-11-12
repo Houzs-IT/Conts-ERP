@@ -2,14 +2,14 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useState, t
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
-import { StatTile, StatRow, Segmented, Eyebrow } from '../components/Metric';
+import { StatTile, StatRow, Segmented } from '../components/Metric';
+import { ListToolbar } from '../components/ListToolbar';
 import { Select } from '../components/Select';
 import { NumberInput } from '../components/inputs';
 import { Drawer } from '../components/Dialog';
 import { EmptyState } from '../components/States';
 import Icon from '../components/Icon';
 import { TableSkeleton } from '../components/DataState';
-import { SearchBox } from './finance/listKit';
 import { useApi } from '../lib/useApi';
 import { useMedia } from '../lib/useMedia';
 import { saveBlob, toXlsx, type ExportCell, type ExportColumn } from '../lib/export';
@@ -253,14 +253,6 @@ export default function OwnerOverallReportPage() {
     <OwnerOverallDetail row={row} all={all} level={level} onLevel={setLevel} onClose={() => setSelected(null)}
       onStep={step} position={at + 1} total={order.length} />
   );
-  const chip = (key: Exclude<Quick, null>, label: string, n: number) => (
-    <button type="button" aria-pressed={quick === key} onClick={() => setQuick(v => (v === key ? null : key))}
-      className={cx('h-8 px-3 rounded-full border border-solid text-meta font-medium cursor-pointer whitespace-nowrap transition-colors duration-[var(--motion-fast)]',
-        quick === key ? 'bg-black text-white border-black' : 'bg-card text-ink border-line hover:border-line-strong')}>
-      {label} <span className={cx('tabular-nums', quick === key ? 'opacity-70' : 'text-muted-ink')}>{count(n)}</span>
-    </button>
-  );
-
   const panel = wide && !!detail;
   useLayoutEffect(() => {
     if (panel) setPanelTop(document.querySelector('[data-app-main]')?.getBoundingClientRect().top ?? 0);
@@ -314,7 +306,10 @@ export default function OwnerOverallReportPage() {
                     {/* A phone wraps the code at its hyphen (CONTINEW- / B1703A) so the Unit column stays narrow. */}
                     <span className="flex items-center gap-2 min-w-0 max-sm:max-w-[92px] sm:max-w-[200px]">
                       <span aria-hidden className={cx('h-1.5 w-1.5 shrink-0 rounded-full', st.tone === 'success' ? 'bg-success-line' : st.tone === 'critical' ? 'bg-danger-line' : 'bg-neutral-line')} />
-                      <span className="font-medium sm:truncate max-sm:leading-tight" title={`${r.code} · ${r.building}`}>{r.code}</span>
+                      <span className="flex flex-col min-w-0" title={`${r.code} · ${r.building}`}>
+                        <span className="font-semibold sm:truncate leading-tight">{r.code}</span>
+                        <span className="max-sm:hidden text-meta text-muted-ink truncate leading-tight">{r.building}{r.contractCode ? ` · ${r.contractCode}` : ''}</span>
+                      </span>
                     </span>
                   </td>
                   {cols.map((c, i) => (
@@ -348,8 +343,6 @@ export default function OwnerOverallReportPage() {
           <Button variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel}
             title="The units shown, with these filters and this sort, every column, and the totals."
             disabled={!filtered.length} disabledReason="No units to export for this month and these filters.">Export</Button>
-          <Select label="Month" value={month} options={MONTHS} className="w-[180px]"
-            onChange={v => setParams(p => { const n = new URLSearchParams(p); if (v === MONTHS[1].value) n.delete('month'); else n.set('month', v); return n; }, { replace: true })} />
         </>}
       />
 
@@ -366,43 +359,38 @@ export default function OwnerOverallReportPage() {
           tone={totals.gainLoss < 0 ? 'critical' : 'success'} hint={`${count(totals.losing)} of ${plural(totals.units, 'unit')} losing`} />
       </StatRow>
 
-      <div className="rounded-card border border-solid border-line bg-card p-3 flex flex-wrap items-end gap-x-4 gap-y-3" aria-label="Filters" role="group">
-        <div className="flex flex-col gap-1 grow sm:grow-0 min-w-[200px]">
-          <Eyebrow>Search</Eyebrow>
-          <SearchBox value={q} onChange={setQ} placeholder="Unit code or building" label="Search units" className="sm:w-[220px]" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Eyebrow>Contract</Eyebrow>
-          <Segmented label="Contract" value={contract} onChange={setContract}
-            options={[{ key: 'all' as Contract, label: 'All' }, ...chips.map(g => ({ key: g as Contract, label: GROUP_NAME[g] }))]} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Eyebrow>Detail level</Eyebrow>
-          <Segmented label="Detail level" value={`${level}`} onChange={k => setLevel(Number(k) as Level)} options={LEVELS} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Eyebrow>Range filter</Eyebrow>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Select label="Column to filter" value={rangeKey} className="w-[160px]" onChange={v => { setRangeKey(v as Key); setLo(null); setHi(null); }}
+      <ListToolbar
+        search={{ value: q, onChange: setQ, placeholder: 'Unit code or building', label: 'Search units' }}
+        filters={[{ key: 'quick', label: 'Show', value: quick ?? '', onChange: v => setQuick((v || null) as Quick), allLabel: 'Every unit', options: [
+          { value: 'losing', label: 'Losing', count: all.filter(r => r.gainLoss < 0).length },
+          { value: 'gaining', label: 'Gaining', count: all.filter(r => r.gainLoss >= 0).length },
+          { value: 'vacant', label: '0% occupancy', count: all.filter(r => r.nights === 0 && r.days > 0).length },
+        ] }]}
+        panelExtra={<>
+          <h5 className="m-0 mb-1.5 text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">Range filter</h5>
+          <div className="flex flex-col gap-1.5">
+            <Select label="Column to filter" value={rangeKey} onChange={v => { setRangeKey(v as Key); setLo(null); setHi(null); }}
               options={COLS.map(c => ({ value: c.key, label: c.label }))} />
-            <div className="w-[120px] [&_input]:h-[var(--control-height-sm)]!"><NumberInput aria-label="Minimum" value={lo} onChange={setLo} decimals={2} allowNegative
-              placeholder={extent ? `${Number(extent.min.toFixed(2))}` : 'Min'} /></div>
-            <span className="text-meta text-muted-ink">to</span>
-            <div className="w-[120px] [&_input]:h-[var(--control-height-sm)]!"><NumberInput aria-label="Maximum" value={hi} onChange={setHi} decimals={2} allowNegative
-              placeholder={extent ? `${Number(extent.max.toFixed(2))}` : 'Max'} /></div>
+            <div className="flex items-center gap-1.5">
+              <div className="flex-1 min-w-0 [&_input]:h-[var(--control-height-sm)]!"><NumberInput aria-label="Minimum" value={lo} onChange={setLo} decimals={2} allowNegative
+                placeholder={extent ? `${Number(extent.min.toFixed(2))}` : 'Min'} /></div>
+              <span className="text-meta text-muted-ink">to</span>
+              <div className="flex-1 min-w-0 [&_input]:h-[var(--control-height-sm)]!"><NumberInput aria-label="Maximum" value={hi} onChange={setHi} decimals={2} allowNegative
+                placeholder={extent ? `${Number(extent.max.toFixed(2))}` : 'Max'} /></div>
+            </div>
           </div>
-        </div>
-        <div className="flex flex-col gap-1">
-          <Eyebrow>Quick</Eyebrow>
-          <div className="flex flex-wrap gap-1.5">
-            {chip('losing', 'Losing', all.filter(r => r.gainLoss < 0).length)}
-            {chip('gaining', 'Gaining', all.filter(r => r.gainLoss >= 0).length)}
-            {chip('vacant', '0% occupancy', all.filter(r => r.nights === 0 && r.days > 0).length)}
-            <button type="button" onClick={reset} className="hit-target h-8 px-3 rounded-full border-none bg-transparent text-meta text-muted-ink cursor-pointer hover:text-ink">Reset</button>
-          </div>
-        </div>
-        <span className="ml-auto self-center text-meta text-muted-ink tabular-nums">Showing {count(filtered.length)} of {count(all.length)}</span>
-      </div>
+        </>}
+        chips={lo !== null || hi !== null ? [{ key: 'range', label: `${range.label}: ${lo ?? 'any'} to ${hi ?? 'any'}`, onRemove: () => { setLo(null); setHi(null); } }] : []}
+        date={{ label: 'Month', value: month, presets: MONTHS,
+          onChange: v => setParams(p => { const n = new URLSearchParams(p); if (v === MONTHS[1].value) n.delete('month'); else n.set('month', v); return n; }, { replace: true }) }}
+        onClearAll={() => setSort(null)}
+        below={<>
+          <Segmented label="Contract" value={contract} onChange={setContract}
+            options={[{ key: 'all' as Contract, label: 'All', count: all.length }, ...chips.map(g => ({ key: g as Contract, label: GROUP_NAME[g], count: all.filter(r => r.group === g).length }))]} />
+          <span className="ml-auto max-sm:ml-0"><Segmented label="Detail level" value={`${level}`} onChange={k => setLevel(Number(k) as Level)} options={LEVELS} /></span>
+        </>}
+        count={<span className="tabular-nums">Showing {count(filtered.length)} of {count(all.length)} · {monthLabel(month, { long: true })}</span>}
+      />
 
       {/* The page fills the screen and only the table scrolls; under 220px for it the page scrolls instead. A phone scrolls the page. */}
       <div className="max-md:h-[72vh] max-md:shrink-0 md:flex-1 md:min-h-[220px] overflow-auto overscroll-contain rounded-card border border-solid border-line bg-card" data-keep-scroll="owner-overall">
