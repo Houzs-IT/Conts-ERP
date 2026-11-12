@@ -135,6 +135,27 @@ show and change the same locks, and every figure the report shows for a locked a
 - Wording on screens and in notices: "Revenue", "Cleaning", "Utilities", "Add. ded." (in messages: "other deductions"),
   "Misc", "O2".
 
+## Builder check answers (13 Nov, my calls)
+
+A fresh reader planning from this document asked three things; each is settled here as my call:
+
+- **What the O2 amount is.** From October 2026 the Unit report's O2 (and so Owner payout) shows what the owner's
+  statement takes, the same set the O2 lock keeps: before final, the open owner adjustments dated up to the month's
+  end that no other statement holds (generation's own rule); once final, the ones on that statement. Earlier months
+  keep today's "dated in the month". Pointing at O2 lists each adjustment with its date, so one dated in an earlier
+  month (October takes September-dated adjustments entered on 10 Nov) is visible. Without this, the amount clicked and
+  the amount locked and paid could differ.
+- **What blocks Revenue.** The month's own Airbnb reconciliation (the file uploaded for that month): a line still to
+  confirm blocks the units of its reservation, as Statement close counted them. A line matched to no reservation blocks
+  nothing (it shows on Airbnb reconciliation). A month with no file uploaded blocks nothing; the Unit report and the
+  Airbnb reconciliation bar say no file is uploaded yet. A reservation paid in another month's file is checked when that
+  file is confirmed; a change it brings after Revenue is locked goes to the next open month, as any late change does.
+- **Who closes where.** Locking needs only the lock powers, wherever the control is. The Unit report stays for those
+  who can open it today (Portfolio). The Deductions page carries Cleaning and Misc bars too (Cleaning, Add. ded., Misc,
+  O2), so someone with Lock deductions and the Deductions page, but not the Unit report, can still close every
+  deductions category. The work pages' bars read a summary any lock-power holder can read. The old "Owner statement
+  close" permission (`ownerClose`) is retired with its page.
+
 ## Left to the builder
 
 - The API shape (one lock endpoint with `category`, `unitIds` and `action: lock|unlock`, or two), as long as the server

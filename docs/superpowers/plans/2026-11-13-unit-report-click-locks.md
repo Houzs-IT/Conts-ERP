@@ -115,7 +115,7 @@
 **Interfaces:**
 - Consumes: Tasks 1–2.
 - Produces:
-  - `unconfirmedRevenue(env, month): Promise<Map<string, number>>` in `lockReadiness.ts` — Airbnb reconciliation lines still to confirm, by unit (the logic now in `api/owner-close/index.ts` lines 52–60).
+  - `unconfirmedRevenue(env, month): Promise<{ byUnit: Map<string, number>; files: number }>` in `lockReadiness.ts` — the month's own reconciliation lines still to confirm, by the units of their reservation (the logic now in `api/owner-close/index.ts` lines 52–60); a line with no reservation blocks nothing; `files` = Airbnb files uploaded for the month (0 → nothing blocks, the screens say so). Routes pass `byUnit` into `lockStage` (pre-flight ruling).
   - `monthSteps(env, month, ctx?)` (renames `closeSteps`; `ctx` lets the Unit report pass its already-computed `inputs`/`dated` so the month is loaded once): `{ inputs, dated, locks, finals, steps: Record<Stage, string[]>, counts: Record<Stage, { locked; total }> }`. Revenue/Cleaning/Utilities/Add. ded./Misc list share units with activity; O2 as today.
   - `lockStage(env, who, month, stage, unitIds: string[] | 'all')` → `{ locked, already, notLockable, final, notReady: { unitId: string; reason: string }[], unknown }`; `'all'` = the stage's step units; Revenue refuses units with unconfirmed lines (`notReady`, reason "2 Airbnb reservations still to confirm.").
   - `unlockStages(env, who, month, stage, unitIds: string[] | 'all', reason: string | null)` → `{ unlocked: string[]; notLocked: string[]; refused: { unitId: string; problem: string }[]; regenerate: string[] }` — `unlockStage` per unit, each in its own transaction; a final owner's unit is refused with "Unlock the final first."
@@ -151,7 +151,8 @@
 - `POST /api/owner-close/lock { month, stage, unitIds: string[] | 'all' }` → `{ locked, already, notLockable, final, notReady }` (201 when any locked).
 - `POST /api/owner-close/unlock { month, stage, unitIds: string[] | 'all', reason?: string }` → `{ unlocked, notLocked, refused, regenerate }`; reason optional, ≤ 500.
 - Power per stage: `{ income: 'lockIncome', cleaning|utilities|additional|misc: 'lockDeductions', o2: 'lockO2' }`; unlock: `unlockStep`.
-- `GET /api/owner-close/summary?month=` (session.manage) → `{ month, lockProblem: string | null, counts: Record<Stage, { locked; total }>, notReady: { unitId; label; reason }[], may: { lock: Record<Stage, boolean>; unlock: boolean } }` — for the work pages' lock bars.
+- `GET /api/owner-close/summary?month=` (any lock power, Unlock a step, or session.manage) → `{ month, lockProblem: string | null, airbnbFiles: number, counts: Record<Stage, { locked; total }>, notReady: { unitId; label; reason }[], may: { lock: Record<Stage, boolean>; unlock: boolean } }` — for the work pages' lock bars.
+- Retire the `ownerClose` access area (its page and GET are gone): remove it from `access.ts`, the rbac matrix and `access.test.mjs`.
 - [ ] **Step 1:** run the checks from Tasks 2, 4 and 5. Expected: FAIL.
 - [ ] **Step 2: Implement** the routes and the rbac rows.
 - [ ] **Step 3: Run** `owner-close`, `owner-close-steps`, `owner-close-late`, `owner-close-final`, `utility-bills`, `airbnb-recon`, `rbac` checks and `npm test`. Expected: PASS (owner-close-final updated in Task 7).
@@ -167,8 +168,10 @@
 - Row additions: `steps: Stage[]`, `locks: Partial<Record<Stage, { by: string; at: string }>>`, `toConfirm: number`, `hints: Partial<Record<Stage, string>>` (Revenue "12 reservations, 30 nights"; Cleaning "4 cleans" plus `cleaningChecks`; Utilities the bills by name plus `utilitiesChecks`; Add. ded. the cost descriptions; Misc "RM 100 at 96.77% occupancy" or "No misc on this contract"; O2 credits/charges plus `o2Checks`).
 - Payload additions: `counts: Record<Stage, { locked; total }>`, `may: { lock: Record<Stage, boolean>; unlock: boolean; makeFinal: boolean; unlockFinal: boolean; generate: boolean }`.
 - Readiness from `monthSteps(env, month, { inputs, dated })` and `finalReadiness(env, month, ctx)` — no second `loadInputs`.
+- From `LOCK_FROM`, the month is worked out in `'open'` mode with each owner's statement id (a final owner's adjustments restricted to the ones on that statement), so O2 and Owner payout show what the statement takes — the set the O2 lock keeps (spec, builder check answers). Earlier months stay `'dated'`.
+- Payload: `airbnbFiles: number` (0 → the screen says no Airbnb file is uploaded for the month yet).
 - finalise refusal text: "Lock every category on the Unit report before marking it final."
-- [ ] **Step 1: Failing check** `owner-report-locks.mjs`: payload of a fixture month carries the six `steps`, a lock's `by`/`at`, `toConfirm` 2 on the unit with recon lines, `counts.cleaning.locked` after a cleaning lock, `may.lock.misc` for management.
+- [ ] **Step 1: Failing check** `owner-report-locks.mjs`: payload of a fixture month carries the six `steps`, a lock's `by`/`at`, `toConfirm` 2 on the unit with recon lines, `counts.cleaning.locked` after a cleaning lock, `may.lock.misc` for management; an open owner adjustment dated in September shows in October's O2 (and the O2 lock keeps it), and one attached to a final September statement does not.
 - [ ] **Step 2:** `owner-close-final.mjs`: every lock call moves to the six stages; Make final waits for Misc when only five are locked ("Waiting: Misc"); a unit with no utility bill and no misc on its contract (both RM 0) locks all six and its owner is made final (Review Focus 5).
 - [ ] **Step 3–4:** run (FAIL), implement, run (PASS).
 - [ ] **Step 5: Commit** `feat(locks): Unit report payload carries locks, hints and readiness`.
@@ -193,7 +196,7 @@
 
 **Files:**
 - Create: `src/components/LockBar.tsx`
-- Modify: `src/pages/finance/AirbnbReconPage.tsx` (LockBar for `income`, replacing the "Owner statement close" button), `src/pages/ExpensesPage.tsx` (utilities mode: LockBar for `utilities` when one month is shown), `src/pages/DeductionsPage.tsx` (LockBars for `additional` and `o2`), `src/lib/navigation.ts` (Airbnb reconciliation as a Unit report tab after Monthly; Statement close removed from Owners), `src/App.tsx` (`/owners/close` → `/portfolio/owner-report?month=…`)
+- Modify: `src/pages/finance/AirbnbReconPage.tsx` (LockBar for `income`, replacing the "Owner statement close" button), `src/pages/ExpensesPage.tsx` (utilities mode: LockBar for `utilities` when one month is shown), `src/pages/DeductionsPage.tsx` (LockBars for `cleaning`, `additional`, `misc` and `o2`), `src/lib/navigation.ts` (Airbnb reconciliation as a Unit report tab after Monthly; Statement close removed from Owners), `src/App.tsx` (`/owners/close` → `/portfolio/owner-report?month=…`)
 - Delete: `src/pages/owners/OwnerReportClosePage.tsx`
 
 **Interfaces:**
