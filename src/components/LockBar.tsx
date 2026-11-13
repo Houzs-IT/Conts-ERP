@@ -18,7 +18,7 @@ interface Summary {
   may: { lock: Record<Stage, boolean>; unlock: boolean };
 }
 interface LockAnswer { locked: string[]; already: string[]; final: string[]; notReady: { unitId: string; reason: string }[] }
-interface UnlockAnswer { unlocked: string[]; refused: { unitId: string; problem: string }[] }
+interface UnlockAnswer { unlocked: string[]; refused: { unitId: string; label: string; problem: string }[] }
 
 const shift = (ym: string, by: number) => {
   const [y, m] = ym.split('-').map(Number);
@@ -61,7 +61,7 @@ export function LockBars({ month: given, stages, onChange }: { month?: string; s
       } else {
         const res = await api.post<UnlockAnswer>('/owner-close/unlock', { month, stage, unitIds: 'all' });
         toast({ tone: res.refused.length ? 'warning' : 'success', title: res.unlocked.length ? `${long} ${name}: ${plural(res.unlocked.length, 'unit')} unlocked.` : `${long} ${name}: nothing to unlock.`,
-          body: res.refused.length ? `${plural(res.refused.length, 'unit')} still locked: their owner's statement is final. Unlock the final on the Unit report first.` : undefined });
+          body: res.refused.length ? `Still locked, their owner's statement is final: ${listed(res.refused.map(x => x.label))}. Unlock the final on the Unit report first.` : undefined });
       }
     } catch (err) {
       notifyFailure(err);

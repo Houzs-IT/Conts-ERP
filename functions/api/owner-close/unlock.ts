@@ -1,4 +1,4 @@
-import { type Env, json, fail } from '../../_lib/db';
+import { type Env, json, fail, all } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { can } from '../../_lib/access';
 import { unlockStages } from '../../_lib/ownerLocks';
@@ -8,7 +8,8 @@ import { STAGES, type Stage } from '../../_lib/stageLocks';
  *  for these units, or every unit locked in it ('all': Unlock all), and brings each back to today's data (spec call 9).
  *  No reason is needed (chew 13 Nov 2026: "小锁我觉得unlock 不要reason"); one given is kept in the history. Unlock a step
  *  is its own power (access area unlockStep), given person by person. A unit whose month's statement is final is
- *  refused: unlock the final first. Nothing unlocked and something refused answers 409 with the first reason. */
+ *  refused: unlock the final first; each refused unit comes back with its name. A list of units with nothing unlocked
+ *  and something refused answers 409 with the first reason; Unlock all answers what it did and which units it left. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -27,7 +28,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const r = await unlockStages(env, { userId: session.userId, fullName: session.fullName }, month, stage, which, reason || null);
-  if (!r.unlocked.length && r.refused.length) return fail('CONFLICT', r.refused[0].problem, 409);
+  // Each unit left locked, named as owner statements name it, so Unlock all can say which (chew, 13 Nov 2026). Only a
+  // list of units with nothing unlocked answers 409 (one cell clicked on the Unit report shows that reason).
+  const labels = new Map(r.refused.length ? (await all<{ id: string; label: string }>(env, `SELECT u.id, p.name || ' ' || u.unit_number AS label
+    FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
+    JSON.stringify(r.refused.map(x => x.unitId)))).map(x => [x.id, x.label] as const) : []);
+  const refused = r.refused.map(x => ({ ...x, label: labels.get(x.unitId) ?? x.unitId }));
+  if (which !== 'all' && !r.unlocked.length && refused.length) return fail('CONFLICT', refused[0].problem, 409);
   // regenerate: the months whose draft statement printed a difference this withdrew (generate them again before final).
-  return json({ ok: true, unlocked: r.unlocked, notLocked: r.notLocked, refused: r.refused, regenerate: r.regenerate });
+  return json({ ok: true, unlocked: r.unlocked, notLocked: r.notLocked, refused, regenerate: r.regenerate });
 };
