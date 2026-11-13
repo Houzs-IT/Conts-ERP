@@ -5,14 +5,18 @@
  * Shared by the desk's My claims page and the field portal.
  */
 import { api } from './api';
-import { todayMyt } from './format';
+import { buildingName, todayMyt } from './format';
 import { requestBillFill, type RequestBillRead } from './requestBill';
 import { bankProblem, type ClaimBank } from './claimBank';
+import type { StatusTone } from './status';
 
 export type LineDepartment = 'rental' | 'supply' | 'shared';
 export type ReceiptStatus = 'HANDED_IN' | 'CHECKED' | 'TOPPED_UP' | 'PAID_BACK' | 'REJECTED' | 'REPAID' | 'WRITTEN_OFF' | 'REPLACED';
 export type RequestStatus = 'SUBMITTED' | 'PART_PAID' | 'PAID' | 'REJECTED' | 'CLOSED' | 'WITHDRAWN';
-export interface ClaimLine { department: LineDepartment; unitId: string | null; maintenanceIssueId: string | null; projectId: number | null; accountCode: string | null; amountSen: number; description: string | null }
+export interface ClaimLine {
+  department: LineDepartment; unitId: string | null; maintenanceIssueId: string | null; projectId: number | null; accountCode: string | null; amountSen: number; description: string | null;
+  targetLabel?: string | null;
+}
 export interface ClaimFile { id: string; fileName: string; mime: string }
 export interface Receipt {
   id: string; receiptNo: string; submitterName: string; floatId: string | null; spendDate: string; amountSen: number; vendorName: string | null;
@@ -34,6 +38,19 @@ export const RECEIPT_STATUS: Record<ReceiptStatus, string> = {
 };
 export const REQUEST_STATUS: Record<RequestStatus, string> = {
   SUBMITTED: 'Waiting for payment', PART_PAID: 'Part paid', PAID: 'Paid', REJECTED: 'Rejected', CLOSED: 'Closed', WITHDRAWN: 'Withdrawn',
+};
+export function describeClaimLine(line: ClaimLine): string {
+  if (line.maintenanceIssueId) return `Maintenance job: ${line.targetLabel ?? 'not found'}`;
+  if (line.unitId) return `Unit ${buildingName(line.targetLabel)}`.trim();
+  if (line.projectId != null) return `Project ${line.targetLabel ?? ''}`.trim();
+  return `${DEPARTMENT[line.department]} department`;
+}
+export const RECEIPT_TONE: Record<ReceiptStatus, StatusTone> = {
+  HANDED_IN: 'warning', CHECKED: 'info', TOPPED_UP: 'success', PAID_BACK: 'success',
+  REJECTED: 'danger', REPAID: 'neutral', WRITTEN_OFF: 'neutral', REPLACED: 'neutral',
+};
+export const REQUEST_TONE: Record<RequestStatus, StatusTone> = {
+  SUBMITTED: 'warning', PART_PAID: 'info', PAID: 'success', REJECTED: 'danger', CLOSED: 'neutral', WITHDRAWN: 'neutral',
 };
 
 /** A receipt's file, opened in the browser (the session cookie goes with it). */

@@ -22,7 +22,7 @@ import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { docMonthTag, insertWithDocNoRetry, mintMonthlyDocNo } from '../scm/lib/doc-no';
 import { todayMyt } from '../scm/lib/my-time';
 import { apControlOf, resolveRoles } from '../acc/rules';
-import { buildLines, defaultLineSubs } from './claims-lines';
+import { buildLines, defaultLineSubs, withTargetLabels } from './claims-lines';
 import { decodeFiles, fileResponse, removeFiles, storeFiles } from './claims-files';
 import { overLimitBody, projectLimit } from './project-limit';
 import { allRows, inChunks, staffNames } from './petty-cash-store';
@@ -207,7 +207,7 @@ export const myRequestsHandler = async (c: Ctx): Promise<Response> => {
   const userId = (c.get('staff') as Staff).userId;
   const rows = (await allRows<ReqRow>((f, t) => sb.from('payment_requests').select(REQ_COLS).eq('company_id', co.companyId).eq('requester_user_id', userId).order('id').range(f, t)))
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
-  return c.json({ requests: await views(sb, co.companyId, rows) });
+  return c.json({ requests: await withTargetLabels(sb, co.companyId, await views(sb, co.companyId, rows)) });
 };
 
 export const withdrawRequestHandler = async (c: Ctx): Promise<Response> => {
