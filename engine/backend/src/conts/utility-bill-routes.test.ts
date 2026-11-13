@@ -4,7 +4,7 @@
        the provider's supplier when one is on the list, else the payee to check; the same scan twice is one request. */
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
-import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
+import { asCopies, fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
 import { myClaimsRouter } from './my-claims-routes';
 import type { Staff } from './staff-identity';
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they test */
@@ -87,5 +87,59 @@ describe('a payment request for a provider', () => {
     expect((await ask(appFor(sb, FIN), { bills: [{ ...BILLS[0], unitId: 'NOPE' }] })).status).toBe(422);
     expect((await ask(appFor(sb, FIN), { scanBatchId: '' })).status).toBe(422);
     expect(sb.tables.payment_requests).toHaveLength(0);
+  });
+});
+
+describe('a withdrawn or rejected utility request is sent again with its bills as they are now (chew, 13 Nov 2026)', () => {
+  const again = (a: Hono<any>, id: string, bills: unknown) => post(a, `/utility-bills/payment-request/${id}/resubmit`, { bills });
+  const sent = async (sb: ReturnType<typeof world>) => (await (await ask(appFor(sb, FIN))).json()) as { id: string; requestNo: string };
+
+  test('the same request and number, a line per bill as it is now, the new total, back with finance; a rejection reason stays', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    Object.assign(sb.tables.payment_requests[0], { status: 'REJECTED', reason: 'C37-13A is 45.10, not 4.51', decided_by: 'Chew' });
+    const fixed = [BILLS[0], { ...BILLS[1], amountSen: 45_100 }];
+    const r = await again(appFor(sb, FIN), first.id, fixed);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ id: first.id, requestNo: first.requestNo, amountSen: 13_118 + 45_100 });
+    expect(sb.tables.payment_requests).toHaveLength(1);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: 58_218, reason: 'C37-13A is 45.10, not 4.51', decided_by: 'Chew' });
+    expect(sb.tables.payment_request_lines.map((l: any) => [l.unit_id, l.amount_sen, l.department])).toEqual([['U1', 13_118, 'rental'], ['U2', 45_100, 'rental']]);
+  });
+
+  test('a bill taken off (owner paid, deleted) leaves its line; withdrawn by the person who sent it works the same', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    sb.tables.payment_requests[0].status = 'WITHDRAWN';
+    expect((await again(appFor(sb, FIN), first.id, [BILLS[0]])).status).toBe(200);
+    expect(sb.tables.payment_request_lines.map((l: any) => l.unit_id)).toEqual(['U1']);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: 13_118 });
+  });
+
+  test('two people press Send again at once: one goes, the other is told; one set of lines (review, 13 Nov 2026)', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    Object.assign(sb.tables.payment_requests[0], { status: 'REJECTED', updated_at: '2026-11-13T01:00:00.000Z' });
+    const OPS: Staff = { userId: 'u-ops', name: 'Wei Wen', email: 'o@x', departmentId: 'ops', side: 'both', role: 'operations_staff', field: false };
+    const copyApp = (staff: Staff) => { const a = new Hono<{ Variables: Record<string, unknown> }>(); a.use('*', async (c, next) => { c.set('supabase', asCopies(sb)); c.set('companyId', CO); c.set('staff', staff); await next(); }); a.route('/', myClaimsRouter('forward')); return a; };
+    const fixed = [BILLS[0], { ...BILLS[1], amountSen: 45_100 }];
+    const [ra, rb] = await Promise.all([again(copyApp(FIN), first.id, fixed), again(copyApp(OPS), first.id, fixed)]);
+    expect([ra.status, rb.status].sort()).toEqual([200, 409]);
+    expect(sb.tables.payment_request_lines).toHaveLength(2);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: 58_218 });
+  });
+
+  test('refused: still with finance, not a utility request, field staff, no bills, a unit that does not exist; nothing changes', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    expect((await again(appFor(sb, FIN), first.id, BILLS)).status).toBe(409);
+    sb.tables.payment_requests[0].status = 'WITHDRAWN';
+    expect((await again(appFor(sb, TECH), first.id, BILLS)).status).toBe(403);
+    expect((await again(appFor(sb, FIN), first.id, [])).status).toBe(422);
+    expect((await again(appFor(sb, FIN), first.id, [{ ...BILLS[0], unitId: 'NOPE' }])).status).toBe(422);
+    sb.tables.payment_requests.push({ id: 'R-OTHER', company_id: CO, request_no: 'PRQ-2611-0002', status: 'WITHDRAWN', source_key: null, amount_sen: 100 });
+    expect((await again(appFor(sb, FIN), 'R-OTHER', BILLS)).status).toBe(404);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'WITHDRAWN', amount_sen: 17_628 });
+    expect(sb.tables.payment_request_lines).toHaveLength(2);
   });
 });

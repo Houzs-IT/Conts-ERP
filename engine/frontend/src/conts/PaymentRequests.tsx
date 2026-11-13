@@ -11,7 +11,7 @@ import { usePrompt } from "../vendor/scm/components/PromptDialog";
 import { useChoice } from "../vendor/scm/components/ChoiceDialog";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
-import { REQUEST_STATUS, requestFileUrl, requestsPath, useFinanceAction, usePaymentRequests, type PaymentRequest } from "./claimsQueries";
+import { REQUEST_STATUS, requestFileUrl, requestStatusNote, requestsPath, useFinanceAction, usePaymentRequests, type PaymentRequest } from "./claimsQueries";
 import { FileButtons, Money, useChooseBank, usePettyOptions } from "./ClaimsParts";
 import { useLineDepartmentLabel } from "./SubDepartmentSelect";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
@@ -88,7 +88,7 @@ export function PaymentRequests() {
       render: (r) => (
         <span>
           {REQUEST_STATUS[r.status]}
-          {r.reason && <span className="block text-xs text-ink-muted">{r.reason}</span>}
+          {requestStatusNote(r) && <span className="block text-xs text-ink-muted">{requestStatusNote(r)}</span>}
           {r.vouchers.filter((v) => v.status !== "CANCELLED").map((v) => (
             <Link key={v.id} className="block text-xs underline" to={`/scm/payment-vouchers/${v.id}`}>{v.pvNumber}</Link>
           ))}

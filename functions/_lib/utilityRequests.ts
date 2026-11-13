@@ -1,4 +1,4 @@
-import { type Env, all, run } from './db';
+import { type Env, all, one, run } from './db';
 import { o2Date } from './lockGuards';
 
 /** Utility bills and their payment requests (chew, 5 Nov 2026; SOP 3.10 "手动录入也一样", "Utility bills 两张表").
@@ -43,6 +43,41 @@ export async function requestKey(expenseIds: string[]): Promise<string> {
   const text = [...expenseIds].sort().join(',');
   const hex = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, '0')).join('');
   return `bills-${hex.slice(0, 24)}`;
+}
+
+/** A request finance sent back, or its sender withdrew: its bills are fixed and it goes out again (chew, 13 Nov 2026). */
+export const RETURNED = new Set(['WITHDRAWN', 'REJECTED']);
+
+/** A request as the Utility bills screens may read it (migrations 0220, 0327: only requests a bill points at), with why
+ *  it came back; null when no bill points at it. */
+export async function requestState(env: Env, requestId: string): Promise<{ id: string; requestNo: string | null; status: string; reason: string | null; decidedBy: string | null } | null> {
+  const r = await one<{ id: string; request_no: string | null; status: string; reason: string | null; decided_by: string | null }>(env,
+    `SELECT id, request_no, status, reason, decided_by FROM utility_payment_requests() WHERE id = ?`, requestId);
+  return r ? { id: r.id, requestNo: r.request_no, status: r.status, reason: r.reason, decidedBy: r.decided_by } : null;
+}
+
+/** The bills still on a request that came back, to send it again with them as they are now: those the company pays, at
+ *  their full bills as billsToRequest sends them. `off` names the ones the owner now pays (or at nothing), which are let
+ *  go of the request once it has gone out again. */
+export async function billsOnRequest(env: Env, requestId: string): Promise<{ bills: RequestBill[]; off: string[] }> {
+  const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; reference: string | null; amount: number; owner_paid: boolean }>(env, `
+    SELECT e.id, e.unit_id, e.category, e.incurred_on, e.reference, coalesce(s.bill_sen, e.amount) AS amount, e.owner_paid
+    FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
+    WHERE e.payment_request_id = ? ORDER BY e.incurred_on, e.unit_id, e.category`, requestId);
+  const bills: RequestBill[] = [], off: string[] = [];
+  for (const r of rows) {
+    if (r.owner_paid || !(Number(r.amount) > 0) || !KINDS.includes(r.category)) { off.push(r.id); continue; }
+    bills.push({ expenseId: r.id, unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), accountNo: r.reference || null, amountSen: Number(r.amount) });
+  }
+  return { bills, off };
+}
+
+/** Bills let go of their request: they no longer go out on it. */
+export async function unlinkRequest(env: Env, expenseIds: string[]): Promise<number> {
+  if (!expenseIds.length) return 0;
+  const rows = await all<{ id: string }>(env, `UPDATE expenses SET payment_request_id = NULL, payment_request_no = NULL
+    WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) RETURNING id`, JSON.stringify(expenseIds));
+  return rows.length;
 }
 
 /** Each bill keeps the request it went out on; a bill already on one keeps that one. */

@@ -101,3 +101,26 @@ test('by payment request a cell shows what was asked for: the whole bill of a bi
   assert.equal(buildRequestCells([split]).get('u1|electricity|2026-10').amount, 31000);
   assert.equal(buildCells([split]).get('u1|electricity|2026-09').amount, 4000);
 });
+
+// Requests sent back (chew, 13 Nov 2026; SOP 3.10): each withdrawn or rejected request once, with why, its bills and the
+// total it will ask for when sent again; requests still with finance are not listed.
+test('requests sent back: one each, with the reason, who, the bills and their total, newest request number first', async () => {
+  const { sentBack } = await import('./utilityGrid.ts');
+  const req = (id, no, status, extra = {}) => ({ id, no, status, month: '2026-11', ...extra });
+  const bills = [
+    bill({ request: req('r1', 'PRQ-2611-0003', 'REJECTED', { amount: 7100, reason: 'Wrong amount', decidedBy: 'Chew' }) }),
+    bill({ unitId: 'u2', request: req('r1', 'PRQ-2611-0003', 'REJECTED', { amount: 4510, reason: 'Wrong amount', decidedBy: 'Chew' }) }),
+    bill({ request: req('r2', 'PRQ-2611-0007', 'WITHDRAWN', { amount: 1500 }) }),
+    bill({ request: req('r3', 'PRQ-2611-0009', 'SUBMITTED', { amount: 900 }) }),
+    bill({}),
+  ];
+  const out = sentBack(bills);
+  assert.deepEqual(out.map(g => g.no), ['PRQ-2611-0007', 'PRQ-2611-0003']);
+  const r1 = out.find(g => g.id === 'r1');
+  assert.equal(r1.status, 'REJECTED');
+  assert.equal(r1.reason, 'Wrong amount');
+  assert.equal(r1.decidedBy, 'Chew');
+  assert.equal(r1.bills.length, 2);
+  assert.equal(r1.amount, 11610);
+  assert.equal(out.find(g => g.id === 'r2').reason, null);
+});

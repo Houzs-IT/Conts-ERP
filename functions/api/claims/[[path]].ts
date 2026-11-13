@@ -12,7 +12,9 @@ import { fileToUpload, forwardClaims } from '../../_lib/claimsForward';
  *    POST requests (multipart)                                                                (everyone; a field worker
  *         asks finance to pay a supplier by the name on the bill only: Direct Pay to Supplier, chew 12 Nov 2026)
  *    POST float/top-up-request                                                                (a float's keeper)
- *    POST requests/:id/withdraw                                                               (office staff) */
+ *    POST requests/:id/withdraw                                                               (office staff)
+ *    POST requests/:id/resubmit (multipart): a withdrawn or rejected request changed and sent again, the same number
+ *         (chew, 13 Nov 2026)                                                                 (office staff) */
 const GET_ANYONE = /^(me|my-bank|receipts|receipts\/[^/]+\/files\/[^/]+|requests|requests\/[^/]+\/files\/[^/]+|float|jobs|units|accounts|projects)$/;
 const GET_OFFICE = /^(suppliers|purchase-orders)$/;
 const MAX_FILES = 8;
@@ -49,14 +51,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const field = isFieldRole(session.role);
   const source = field ? 'field_app' : 'web';
 
-  if (path === 'extract' || path === 'receipts' || path === 'requests') {
+  const resubmit = !field && /^requests\/[^/]+\/resubmit$/.test(path);
+  if (path === 'extract' || path === 'receipts' || path === 'requests' || resubmit) {
     const form = await readForm(request);
     if (form instanceof Response) return form;
     const files = await Promise.all(form.files.map(fileToUpload));
     const res = await forwardClaims(env, session, 'POST', `/${path}`, { ...form.data, files });
     if (res.ok && path !== 'extract') {
       const made = await res.clone().json<{ id?: string; receiptNo?: string; requestNo?: string }>().catch(() => null);
-      await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: path === 'receipts' ? 'claims.receipt' : 'claims.request',
+      await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: path === 'receipts' ? 'claims.receipt' : resubmit ? 'claims.request_resubmitted' : 'claims.request',
         entityTable: path === 'receipts' ? 'staff_receipts' : 'payment_requests', entityId: String(made?.id ?? ''),
         after: { no: made?.receiptNo ?? made?.requestNo, amountSen: form.data.amountSen, files: files.length }, source });
     }

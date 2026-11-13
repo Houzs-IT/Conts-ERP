@@ -29,6 +29,14 @@ export type PaymentRequest = {
   note: string | null; amountSen: number; status: RequestStatus; reason: string | null; decidedBy: string | null; createdAt: string;
   lines: ClaimLine[]; files: { id: string; fileName: string; mime: string }[]; vouchers: { id: string; pvNumber: string; status: string }[];
 };
+/** The line under a request's status: why it was rejected or closed; for one sent again after a rejection (it keeps its
+ *  number, chew 13 Nov 2026), that it was rejected before, by whom and why, so finance checks what changed. */
+export function requestStatusNote(r: { status: string; reason: string | null; decidedBy: string | null }): string | null {
+  if (!r.reason) return null;
+  if (r.status === "REJECTED" || r.status === "CLOSED") return r.reason;
+  return `Rejected before${r.decidedBy ? ` by ${r.decidedBy}` : ""}: ${r.reason}`;
+}
+
 export type FloatSummary = {
   id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested?: boolean;
   departmentName?: string; keeperName?: string; warnPct?: number; active?: boolean;

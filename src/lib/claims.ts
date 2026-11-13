@@ -25,6 +25,10 @@ export interface Receipt {
 export interface PaymentRequest {
   id: string; requestNo: string; type: 'PAYMENT' | 'DEPOSIT'; payeeName: string; amountSen: number; status: RequestStatus; reason: string | null;
   createdAt: string; wantedOn: string | null; note: string | null; lines: ClaimLine[]; files: ClaimFile[]; vouchers: { id: string; pvNumber: string; status: string }[];
+  /** As asked: the supplier on the list, or the PO, and who decided last (a rejection). */
+  supplierId?: string | null; purchaseOrderId?: string | null; decidedBy?: string | null;
+  /** Made from utility bills: fixed and sent again on Utility bills (lib/requestResubmit.ts). */
+  fromBills?: boolean;
 }
 export interface Me { userId: string; name: string; field: boolean; lineDepartment: LineDepartment; route: 'float' | 'finance'; keepsFloat: boolean }
 export interface MyFloat { float: { id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested: boolean }; receipts: Receipt[] }
@@ -84,8 +88,8 @@ export async function myBank(): Promise<ClaimBank | null> {
   } catch { return null; }
 }
 
-/** Hands a receipt in (or asks finance to pay): the fields as JSON beside the files. */
-export function postWithFiles<T>(path: '/claims/receipts' | '/claims/requests', data: Record<string, unknown>, files: File[]): Promise<T> {
+/** Hands a receipt in (or asks finance to pay, or sends a changed request again): the fields as JSON beside the files. */
+export function postWithFiles<T>(path: '/claims/receipts' | '/claims/requests' | `/claims/requests/${string}/resubmit`, data: Record<string, unknown>, files: File[]): Promise<T> {
   const form = new FormData();
   form.set('data', JSON.stringify(data));
   for (const f of files) form.append('file', f);
