@@ -25,9 +25,13 @@ interface PersonRowProps {
 
 type SideFilter = 'all' | UserSide;
 
+const SIDE_SHORT_LABEL: Record<UserSide, string> = { conts: 'Conts', dream_crafter: 'DC', both: 'Both' };
+
 const sideFilterOptions = (people: PermissionPerson[]): SegmentOption<SideFilter>[] => [
   { key: 'all', label: 'All', count: people.length },
-  ...SIDE_OPTIONS.map(option => ({ key: option.value, label: option.label, count: people.filter(person => person.side === option.value).length })),
+  ...SIDE_OPTIONS.map(option => ({
+    key: option.value, label: option.label, short: SIDE_SHORT_LABEL[option.value], count: people.filter(person => person.side === option.value).length,
+  })),
 ];
 
 const CUSTOM_TAG_STYLE = { background: 'var(--color-info-bg)', color: 'var(--color-info-fg)', borderColor: 'var(--color-info-line)' };
