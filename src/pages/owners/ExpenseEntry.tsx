@@ -32,8 +32,9 @@ interface UtilityRow {
   expenseId: string | null; amount: number | null; chargeTo: string | null; receiptDocumentId: string | null; recordedElsewhere: boolean;
   /** The statement that deducts the bill entered here: a later month when it came after its own month was final. */
   deductMonth?: string | null; rolled?: boolean;
-  /** "Owner paid this bill" on the bill entered, and the payment request it went out on (then it is not replaced here). */
-  ownerPaid?: boolean; paymentRequestNo?: string | null;
+  /** "Owner paid this bill" on the bill entered, and the payment request it went out on (then it is not replaced here,
+   *  unless the request came back: withdrawn, or rejected with its reason; chew, 13 Nov 2026). */
+  ownerPaid?: boolean; paymentRequestNo?: string | null; paymentRequestStatus?: string | null; paymentRequestReason?: string | null;
 }
 interface BareUnit { unitId: string; unitLabel: string; recorded?: { kind: string; kindLabel: string; amount: number; deductMonth?: string; rolled?: boolean }[] }
 /** A bill typed for a unit with no account number on file: recorded with no reference (POST rows with unitId + kind). */
@@ -77,8 +78,10 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
   }, [data]);
   const looseEntered = loose.filter(l => (l.amount ?? 0) > 0);
   const looseMissing = looseEntered.filter(l => receiptRequired(l.kind, l.payer) && !l.file);
-  // A bill already sent for payment stays as it is (SOP 3.10): shown, not entered again.
-  const fixed = (r: UtilityRow) => r.recordedElsewhere || !!r.paymentRequestNo;
+  // A bill already sent for payment stays as it is (SOP 3.10): shown, not entered again. One whose request came back is
+  // fixed here and keeps the request, which goes to finance again with Send again on Utility bills (chew, 13 Nov 2026).
+  const cameBack = (r: UtilityRow) => r.paymentRequestStatus === 'WITHDRAWN' || r.paymentRequestStatus === 'REJECTED';
+  const fixed = (r: UtilityRow) => r.recordedElsewhere || (!!r.paymentRequestNo && !cameBack(r));
   const value = (r: UtilityRow): number | null => r.accountId in amounts ? amounts[r.accountId] : (r.amount != null && !r.recordedElsewhere ? r.amount : null);
   const payer = (r: UtilityRow) => payers[r.accountId] ?? r.chargeTo ?? 'owner';
   const ownerPaid = (r: UtilityRow) => paidBy[r.accountId] ?? r.ownerPaid ?? false;
@@ -166,7 +169,12 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
                   <div key={r.accountId} className="grid grid-cols-[minmax(0,1fr)_112px] sm:grid-cols-[minmax(0,1fr)_120px_140px_150px] gap-x-3 gap-y-2 items-center py-[10px] px-3 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
                     <div className="flex flex-col min-w-0">
                       <span className="text-copy font-medium truncate" title={r.unitLabel}>{buildingName(r.unitLabel)}</span>
-                      <span className="text-meta text-muted-ink truncate">{r.kindLabel} · {r.accountNo}{r.provider ? ` · ${r.provider}` : ''}{r.recordedElsewhere ? ' · already recorded' : r.paymentRequestNo ? ` · sent for payment (${r.paymentRequestNo})` : r.expenseId ? ' · entered here' : ''}{r.rolled && r.deductMonth ? ` · deducted ${monthLabel(r.deductMonth)}` : !r.expenseId && rollsTo[r.unitId] ? ` · will be deducted ${monthLabel(rollsTo[r.unitId])}` : ''}</span>
+                      <span className="text-meta text-muted-ink truncate">{r.kindLabel} · {r.accountNo}{r.provider ? ` · ${r.provider}` : ''}{r.recordedElsewhere ? ' · already recorded' : r.paymentRequestNo ? ` · ${cameBack(r) ? (r.paymentRequestStatus === 'REJECTED' ? 'rejected' : 'withdrawn') : 'sent for payment'} (${r.paymentRequestNo})` : r.expenseId ? ' · entered here' : ''}{r.rolled && r.deductMonth ? ` · deducted ${monthLabel(r.deductMonth)}` : !r.expenseId && rollsTo[r.unitId] ? ` · will be deducted ${monthLabel(rollsTo[r.unitId])}` : ''}</span>
+                      {cameBack(r) && (
+                        <span className="text-meta text-warning">
+                          {r.paymentRequestReason ? `Finance: ${r.paymentRequestReason}. ` : ''}Fix the bill and save, then use Send again on Utility bills (By payment request).
+                        </span>
+                      )}
                     </div>
                     {fixed(r) ? (
                       <MoneyText sen={r.amount ?? 0} mode="exact" tone="muted" className="text-copy text-right" />

@@ -19,9 +19,11 @@ import { PAYER_LABEL } from '../../lib/revenueModel';
 import { useUrlState, shiftMonth } from './listKit';
 import { ListToolbar } from '../../components/ListToolbar';
 import {
-  KINDS, KIND_LABEL, billState, buildCells, buildRequestCells, months as monthsOf, requestState, unitAverages, unusual,
-  type Cell, type GridBill, type UtilityKind, type UnusualRow,
+  KINDS, KIND_LABEL, billState, buildCells, buildRequestCells, months as monthsOf, requestState, sentBack, unitAverages, unusual,
+  type Cell, type GridBill, type SentBackRequest, type UtilityKind, type UnusualRow,
 } from '../../lib/utilityGrid';
+import { api, errorMessage } from '../../lib/api';
+import { useToast } from '../../components/Toast';
 
 const UtilitiesModal = lazy(() => import('../owners/ExpenseEntry').then(m => ({ default: m.UtilitiesModal })));
 const AddUtilityBill = lazy(() => import('../../components/AddUtilityBill').then(m => ({ default: m.AddUtilityBill })));
@@ -131,6 +133,7 @@ export default function UtilityListing() {
             last month to begin with. */}
         <LockBars stages={['utilities']} onChange={reload} />
         {error && <StaleBanner message={data ? `Showing the last figures we have. ${error}` : error} onRetry={reload} />}
+        {mode === 'request' && <SentBack requests={sentBack(data?.bills ?? [])} units={data?.units ?? []} onSent={reload} />}
         {view !== 'unusual'
           ? <AllBills units={units} months={monthList} kinds={shownKinds} cells={cells} nights={data?.nights ?? {}} loading={loading && !data} mode={mode}
               filtered={!!(building || q || purpose)} onUnit={u => url.set({ unit: u.id })} onOpen={(unit, month, k, cell) => setOpen({ unit, month, kind: k, cell })} />
@@ -350,7 +353,8 @@ function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose }: { unit: 
                 ? <StatusBadge entity="utility_request" value={requestState(b.request.status)!} size="sm" />
                 : <StatusBadge entity="utility_bill" value={billState(b)} size="sm" />}
             </div>
-            {b.request && <Row label="Payment request">{b.request.no ?? 'Sent'} · {monthLabel(b.request.month)}</Row>}
+            {b.request && <Row label="Payment request">{b.request.no ?? 'Sent'} · {monthLabel(b.request.month)}{returnedLabel(b.request) ? ` · ${returnedLabel(b.request)}` : ''}</Row>}
+            {b.request?.reason && returnedLabel(b.request) && <Row label="Why">{b.request.reason}</Row>}
             {mode === 'request' && b.request?.amount != null && b.request.amount !== b.amount && <Row label="On the owner statement">{rm(b.amount)} (days inside the contract)</Row>}
             <Row label="Bill month">{monthLabel(b.billMonth)}</Row>
             <Row label="Deducted on">{monthLabel(b.deductMonth)} statement{b.rolled ? ' (late bill)' : ''}</Row>
@@ -364,6 +368,52 @@ function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose }: { unit: 
         ))}
       </div>
     </Modal>
+  );
+}
+
+/** "Rejected by Chew" or "Withdrawn" for a request that came back, else null. */
+function returnedLabel(r: { status: string; decidedBy?: string | null }): string | null {
+  if (r.status === 'REJECTED') return `Rejected${r.decidedBy ? ` by ${r.decidedBy}` : ''}`;
+  return r.status === 'WITHDRAWN' ? 'Withdrawn' : null;
+}
+
+/** Payment requests finance sent back, or that were withdrawn (chew, 13 Nov 2026; SOP 3.10): why, their bills, and Send
+ *  again, which sends the same request and number with its bills as they are now. A bill is fixed first on "Enter this
+ *  month's bills", where a bill on a request that came back can be changed and keeps the request. */
+function SentBack({ requests, units, onSent }: { requests: SentBackRequest[]; units: Unit[]; onSent: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+  if (!requests.length) return null;
+  const unitOf = new Map(units.map(u => [u.id, u]));
+  const send = async (r: SentBackRequest) => {
+    setBusy(r.id);
+    try {
+      await api.post(`/expenses/utilities/payment-requests/${encodeURIComponent(r.id)}/resend`, {});
+      toast({ tone: 'success', title: `${r.no ?? 'The payment request'} is with finance again.` });
+      onSent();
+    } catch (e) {
+      toast({ tone: 'critical', title: `${r.no ?? 'The payment request'} was not sent.`, body: errorMessage(e, 'Try again in a moment.') });
+    } finally { setBusy(null); }
+  };
+  return (
+    <section aria-label="Payment requests sent back" className="flex flex-col gap-2 p-3 rounded-card border border-solid border-warning-line bg-warning-bg">
+      <div className="flex flex-col gap-0.5">
+        <h2 className="text-copy font-semibold">Sent back to fix</h2>
+        <p className="text-meta text-muted-ink">Fix a bill on "Enter this month's bills" first. Send again sends the same request with its bills as they are now.</p>
+      </div>
+      {requests.map(r => (
+        <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-2 [border-top:1px_solid_var(--color-line)]">
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-copy font-semibold">{r.no ?? 'Payment request'} · <span className="text-warning">{returnedLabel(r)}</span> · <span className="tabular-nums">{rm(r.amount)}</span></span>
+            {r.reason && <span className="text-meta">{r.reason}</span>}
+            <span className="text-meta text-muted-ink">
+              {r.bills.length === 1 ? '1 bill' : `${r.bills.length} bills`}: {r.bills.map(b => `${unitOf.get(b.unitId) ? unitName(unitOf.get(b.unitId)!) : 'Unit'} ${KIND_LABEL[b.kind]} ${monthLabel(b.billMonth)}`).join(', ')}
+            </span>
+          </div>
+          <Button size="sm" variant="primary" loading={busy === r.id} disabled={!!busy && busy !== r.id} onClick={() => void send(r)}>Send again</Button>
+        </div>
+      ))}
+    </section>
   );
 }
 
