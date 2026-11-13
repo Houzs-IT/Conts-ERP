@@ -82,10 +82,22 @@ async function vouchersOf(sb: any, companyId: number, requestId: string): Promis
 }
 const live = (pvs: Array<{ status: string }>) => pvs.filter(p => p.status !== 'CANCELLED');
 
-/** Change a request's status only if it is still `from`: true when exactly this call changed it. */
-export async function claimRequest(sb: any, id: string, from: string, patch: Record<string, unknown>): Promise<boolean> {
-  const { data, error } = await sb.from('payment_requests').update({ ...patch, updated_at: now() }).eq('id', id).eq('status', from).select('id').maybeSingle();
+/** Change a request's status only if it is still `from` (and, with `since`, untouched since then): true when exactly this
+ *  call changed it. */
+export async function claimRequest(sb: any, id: string, from: string, patch: Record<string, unknown>, since?: string): Promise<boolean> {
+  let q = sb.from('payment_requests').update({ ...patch, updated_at: now() }).eq('id', id).eq('status', from);
+  if (since !== undefined) q = q.eq('updated_at', since);
+  const { data, error } = await q.select('id').maybeSingle();
   return !error && data != null;
+}
+
+/** A withdrawn or rejected request taken for sending again, before anything is written: a second send of it at the same
+ *  moment (two tabs, two people) finds it taken and stops, leaving nothing of its own behind (review, 13 Nov 2026). The
+ *  status goes back last, on the same claim (claimRequest with `since`). Null when someone else has it. */
+export async function takeReturned(sb: any, r: { id: string; status: string; updated_at: string }): Promise<string | null> {
+  const at = now();
+  const { data } = await sb.from('payment_requests').update({ updated_at: at }).eq('id', r.id).eq('status', r.status).eq('updated_at', r.updated_at).select('id').maybeSingle();
+  return data ? at : null;
 }
 
 /** A draft made a moment ago that lost a race is cancelled at once (never submitted, so nothing else moved). */
@@ -178,10 +190,9 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
   if (!bucket) return c.json({ error: 'not_configured', message: 'File storage is not set up yet.' }, 501);
   const b = await bodyOf(c);
   if (!b) return c.json({ error: 'invalid_json' }, 400);
-  const form = await readRequestForm(c, sb, co.companyId, staff, b);
-  if (form instanceof Response) return form;
   /* The caller may name the request's id (a uuid): sent again after a lost reply, the same request comes back instead of
-     a second one being made, so a supplier is not paid twice (final review; receipts do the same). */
+     a second one being made, so a supplier is not paid twice (final review; receipts do the same). Looked up before
+     anything is checked: by the time of the retry a job may be resolved, and refusing it would invite a second request. */
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const askedId = typeof b.id === 'string' && UUID.test(b.id) ? b.id.toLowerCase() : null;
   if (askedId) {
@@ -191,6 +202,8 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
       return c.json({ id: seen.id, requestNo: seen.request_no }, 200);
     }
   }
+  const form = await readRequestForm(c, sb, co.companyId, staff, b);
+  if (form instanceof Response) return form;
   const decoded = decodeFiles(b.files, 'the invoice, receipt or quotation');
   if (!decoded.ok) return c.json({ error: decoded.error, message: decoded.message }, decoded.status);
 
@@ -235,7 +248,7 @@ export const resubmitRequestHandler = async (c: Ctx): Promise<Response> => {
   const sb = c.get('supabase');
   const bucket = c.env?.SLIPS;
   if (!bucket) return c.json({ error: 'not_configured', message: 'File storage is not set up yet.' }, 501);
-  const { data: r } = await sb.from('payment_requests').select('id, request_no, status, source_key').eq('company_id', co.companyId).eq('id', c.req.param('id')).eq('requester_user_id', staff.userId).maybeSingle();
+  const { data: r } = await sb.from('payment_requests').select('id, request_no, status, source_key, updated_at').eq('company_id', co.companyId).eq('id', c.req.param('id')).eq('requester_user_id', staff.userId).maybeSingle();
   if (!r) return c.json({ error: 'not_found' }, 404);
   if (String(r.source_key ?? '').startsWith('utility:')) return c.json({ error: 'utility_request', message: 'Fix the bills on Utility bills and send them again from there.' }, 409);
   if (!RETURNED.has(String(r.status))) return c.json({ error: 'not_returned', message: 'Only a withdrawn or rejected request can be changed and sent again.' }, 409);
@@ -255,6 +268,8 @@ export const resubmitRequestHandler = async (c: Ctx): Promise<Response> => {
     added = decoded.files;
   }
   if (kept.length + added.length > MAX_FILES) return c.json({ error: 'validation', message: `A request holds up to ${MAX_FILES} files.` }, 422);
+  const claim = await takeReturned(sb, r);
+  if (!claim) return c.json({ error: 'not_returned', message: 'This request was changed somewhere else. Open it again.' }, 409);
 
   let stored: Awaited<ReturnType<typeof storeFiles>> = [];
   try { stored = await storeFiles(bucket, `payment-requests/${co.companyId}/${r.id}`, added); } catch {
@@ -272,7 +287,7 @@ export const resubmitRequestHandler = async (c: Ctx): Promise<Response> => {
     const fr = await sb.from('payment_request_files').insert(stored.map(s => ({ ...s, request_id: r.id })));
     if (fr.error) return fail(fr.error.message);
   }
-  if (!(await claimRequest(sb, r.id, String(r.status), { ...headerOf(form, b), status: 'SUBMITTED' }))) {
+  if (!(await claimRequest(sb, r.id, String(r.status), { ...headerOf(form, b), status: 'SUBMITTED' }, claim))) {
     return c.json({ error: 'not_returned', message: 'This request was changed somewhere else. Open it again.' }, 409);
   }
   if (dropped.length) {

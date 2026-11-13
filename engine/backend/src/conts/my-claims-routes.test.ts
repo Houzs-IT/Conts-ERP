@@ -8,7 +8,7 @@
        payment. */
 import { Hono } from 'hono';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
+import { asCopies, fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
 import { myClaimsRouter } from './my-claims-routes';
 import { requestVoucherHandler, closeRequestHandler, rejectRequestHandler } from './payment-request-routes';
 import { claimsDeps, EDIT_KEY, FULL_KEY } from './petty-cash-routes';
@@ -519,6 +519,36 @@ describe('a withdrawn or rejected request is changed and sent again, keeping its
     expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'WITHDRAWN', amount_sen: 8_000 });
     expect((await again(a, first.id, { amountSen: 7_000, lines: [{ amountSen: 7_000, department: 'rental', accountCode: '601-0001', projectId: 7 }], keepFileIds })).status).toBe(200);
     expect(await projectLimit(sb, CO, 7)).toMatchObject({ reservedSen: 7_000 });
+  });
+
+  test('sent again from two tabs at once: one goes, the other is told and changes nothing (review, 13 Nov 2026)', async () => {
+    const sb = world();
+    const first = await made(sb);
+    await post(appFor(sb, OPS, 'session'), `/requests/${first.id}/withdraw`, {});
+    sb.tables.payment_requests[0].updated_at = '2026-11-13T01:00:00.000Z'; /* the database's default; the fake has none */
+    const keep = fileIds(sb);
+    const tabs = () => { const a = new Hono<{ Variables: Record<string, unknown> }>(); a.use('*', async (c, next) => { c.set('supabase', asCopies(sb)); c.set('companyId', CO); c.set('staff', OPS); await next(); }); a.route('/', myClaimsRouter('session')); return a; };
+    const [ra, rb] = await Promise.all([
+      again(tabs(), first.id, { amountSen: 6000, lines: [{ amountSen: 6000, department: 'rental', description: 'A' }], keepFileIds: keep }),
+      again(tabs(), first.id, { amountSen: 9000, lines: [{ amountSen: 4000, department: 'rental', description: 'B1' }, { amountSen: 5000, department: 'rental', description: 'B2' }], keepFileIds: [], files: [PDF] }),
+    ]);
+    expect([ra.status, rb.status].sort()).toEqual([200, 409]);
+    const won = ra.status === 200 ? 6000 : 9000;
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: won });
+    expect(sb.tables.payment_request_lines.reduce((n: number, l: any) => n + Number(l.amount_sen), 0)).toBe(won);
+    expect(sb.tables.payment_request_files).toHaveLength(1);
+  });
+
+  test('a phone retry with the same id is recognised before anything is checked again (review, 13 Nov 2026)', async () => {
+    const sb = world();
+    const id = '11111111-2222-4333-8444-555555555555';
+    const body = { id, type: 'PAYMENT', payeeName: 'KEDAI PAIP AH SENG', amountSen: 3000, lines: [{ maintenanceIssueId: 'M1', amountSen: 3000 }], files: [PNG] };
+    expect((await post(appFor(sb, TECH), '/requests', body)).status).toBe(201);
+    sb.tables.conts_maintenance_jobs[0].state = 'resolved';
+    const retry = await post(appFor(sb, TECH), '/requests', body);
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toMatchObject({ id });
+    expect(sb.tables.payment_requests).toHaveLength(1);
   });
 
   test('a utility bill request is fixed and sent again from Utility bills, not here', async () => {

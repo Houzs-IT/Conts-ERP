@@ -17,7 +17,7 @@ import { normalizeVendor } from '../acc/bill-extract';
 import { readUtilityPage, UTILITY_READ_MODEL } from '../acc/utility-bill-read';
 import { requestAiTag } from '../services/aiUsage';
 import { decodeFiles, removeFiles, storeFiles } from './claims-files';
-import { claimRequest, RETURNED } from './payment-request-routes';
+import { claimRequest, RETURNED, takeReturned } from './payment-request-routes';
 import type { Staff } from './staff-identity';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
@@ -130,7 +130,7 @@ export const resubmitUtilityRequestHandler = async (c: Ctx): Promise<Response> =
   const refused = officeOnly(c);
   if (refused) return refused;
   const sb = c.get('supabase');
-  const { data: r } = await sb.from('payment_requests').select('id, request_no, status, source_key').eq('company_id', co.companyId).eq('id', c.req.param('id')).maybeSingle();
+  const { data: r } = await sb.from('payment_requests').select('id, request_no, status, source_key, updated_at').eq('company_id', co.companyId).eq('id', c.req.param('id')).maybeSingle();
   if (!r || !String(r.source_key ?? '').startsWith('utility:')) return c.json({ error: 'not_found' }, 404);
   if (!RETURNED.has(String(r.status))) return c.json({ error: 'not_returned', message: 'Only a withdrawn or rejected request can be sent again.' }, 409);
   const b = await bodyOf(c);
@@ -140,13 +140,14 @@ export const resubmitUtilityRequestHandler = async (c: Ctx): Promise<Response> =
   const badUnit = await unknownUnit(c, sb, lines);
   if (badUnit) return badUnit;
   const amountSen = lines.reduce((n, l) => n + l.amountSen, 0);
+  const changedElsewhere = () => c.json({ error: 'not_returned', message: 'This request was changed somewhere else. Open it again.' }, 409);
+  const claim = await takeReturned(sb, r);
+  if (!claim) return changedElsewhere();
   const gone = await sb.from('payment_request_lines').delete().eq('request_id', r.id);
   if (gone.error) return c.json({ error: 'save_failed', reason: gone.error.message }, 500);
   const ins = await sb.from('payment_request_lines').insert(lineRows(r.id, lines));
   if (ins.error) return c.json({ error: 'save_failed', reason: ins.error.message }, 500);
-  if (!(await claimRequest(sb, r.id, String(r.status), { amount_sen: amountSen, status: 'SUBMITTED' }))) {
-    return c.json({ error: 'not_returned', message: 'This request was changed somewhere else. Open it again.' }, 409);
-  }
+  if (!(await claimRequest(sb, r.id, String(r.status), { amount_sen: amountSen, status: 'SUBMITTED' }, claim))) return changedElsewhere();
   return c.json({ id: r.id, requestNo: r.request_no, amountSen }, 200);
 };
 

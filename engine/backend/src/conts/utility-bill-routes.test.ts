@@ -4,7 +4,7 @@
        the provider's supplier when one is on the list, else the payee to check; the same scan twice is one request. */
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
-import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
+import { asCopies, fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
 import { myClaimsRouter } from './my-claims-routes';
 import type { Staff } from './staff-identity';
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they test */
@@ -114,6 +114,19 @@ describe('a withdrawn or rejected utility request is sent again with its bills a
     expect((await again(appFor(sb, FIN), first.id, [BILLS[0]])).status).toBe(200);
     expect(sb.tables.payment_request_lines.map((l: any) => l.unit_id)).toEqual(['U1']);
     expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: 13_118 });
+  });
+
+  test('two people press Send again at once: one goes, the other is told; one set of lines (review, 13 Nov 2026)', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    Object.assign(sb.tables.payment_requests[0], { status: 'REJECTED', updated_at: '2026-11-13T01:00:00.000Z' });
+    const OPS: Staff = { userId: 'u-ops', name: 'Wei Wen', email: 'o@x', departmentId: 'ops', side: 'both', role: 'operations_staff', field: false };
+    const copyApp = (staff: Staff) => { const a = new Hono<{ Variables: Record<string, unknown> }>(); a.use('*', async (c, next) => { c.set('supabase', asCopies(sb)); c.set('companyId', CO); c.set('staff', staff); await next(); }); a.route('/', myClaimsRouter('forward')); return a; };
+    const fixed = [BILLS[0], { ...BILLS[1], amountSen: 45_100 }];
+    const [ra, rb] = await Promise.all([again(copyApp(FIN), first.id, fixed), again(copyApp(OPS), first.id, fixed)]);
+    expect([ra.status, rb.status].sort()).toEqual([200, 409]);
+    expect(sb.tables.payment_request_lines).toHaveLength(2);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: 58_218 });
   });
 
   test('refused: still with finance, not a utility request, field staff, no bills, a unit that does not exist; nothing changes', async () => {
