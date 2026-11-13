@@ -24,7 +24,12 @@ export type ProjectSo = Parameters<typeof resolveSoLocation>[0] & Parameters<typ
 
 export const fetchProjectSos = (): Promise<ProjectSo[]> => fetchSoExportRows<ProjectSo>({});
 
-type Field = { key: string; label: string; group: string; value: (s: ProjectSo) => string | number | null | undefined; kind?: "date" | "money" };
+export interface ProjectFacts { brand: string | null | undefined }
+
+type Field = {
+  key: string; label: string; group: string; value: (s: ProjectSo) => string | number | null | undefined; kind?: "date" | "money";
+  projectValue?: (p: ProjectFacts) => string | null | undefined;
+};
 const FIELDS: readonly Field[] = [
   { key: "so_doc_no", label: "SO No.", group: "Basic", value: (s) => s.ac_doc_no ?? s.doc_no },
   { key: "so_date", label: "Date", group: "Basic", value: (s) => s.so_date, kind: "date" },
@@ -32,7 +37,7 @@ const FIELDS: readonly Field[] = [
   { key: "so_agent", label: "Agent", group: "Basic", value: (s) => s.ac_agent ?? s.agent },
   { key: "so_debtor_name", label: "Debtor Name", group: "Basic", value: (s) => s.debtor_name },
   { key: "so_debtor_code", label: "Debtor Code", group: "Basic", value: (s) => s.ac_debtor_code ?? s.debtor_code },
-  { key: "so_branding", label: "Branding", group: "Basic", value: (s) => s.branding ?? s.ac_branding },
+  { key: "so_branding", label: "Branding", group: "Basic", value: (s) => s.branding ?? s.ac_branding, projectValue: (p) => p.brand },
   { key: "so_exemption", label: "Sales Exemption Expiry Date", group: "Basic", value: (s) => s.sales_exemption_expiry, kind: "date" },
   { key: "so_status", label: "Status", group: "Basic", value: (s) => soListStatusWord(s.status, s.delivery_state ?? null, s.lifecycle_state ?? null, s.on_hold ?? null) },
   { key: "so_note", label: "Note", group: "Basic", value: (s) => s.note },
@@ -60,11 +65,13 @@ const FIELDS: readonly Field[] = [
   { key: "so_building_type", label: "Building Type", group: "Customer", value: (s) => s.building_type },
 ];
 
-export function soColumns<T>(soOf: (row: T) => ProjectSo | undefined): Column<T>[] {
+export function soColumns<T>(soOf: (row: T) => ProjectSo | undefined, projectOf: (row: T) => ProjectFacts): Column<T>[] {
   return FIELDS.map((f) => {
     const read = (row: T): string | number | null => {
       const s = soOf(row);
-      return s ? f.value(s) ?? null : null;
+      const fromSo = s ? f.value(s) : null;
+      if (fromSo != null && fromSo !== "") return fromSo;
+      return f.projectValue?.(projectOf(row)) || null;
     };
     const show = (v: string | number | null): ReactNode => {
       if (v === null || v === "") return "-";

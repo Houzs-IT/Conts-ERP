@@ -128,7 +128,7 @@ function homeColumns(showPay: boolean): Column<TableRow>[] {
     { key: "client", label: "Client", group: "Project", width: "170px", defaultHidden: true, getValue: (x) => x.r.p.customer, render: (x) => x.r.p.customer ?? DASH },
     { key: "lead", label: "Design lead", group: "Project", width: "140px", defaultHidden: true, getValue: (x) => x.r.p.lead?.name, render: (x) => x.r.p.lead?.name ?? DASH },
   ];
-  return [...own, ...soColumns<TableRow>((x) => x.so)];
+  return [...own, ...soColumns<TableRow>((x) => x.so, (x) => x.r.p)];
 }
 
 /** The colours are set before anything else draws, so the loading line and an error already have them. */
