@@ -41,7 +41,7 @@ export const sideFits = (departmentSide: Side, side: Side) => departmentSide ===
  *  groups match its sidebar sections: Dream Crafter's since 26 Oct 2026 (migration 0172), The Conts' since 30 Oct 2026
  *  (migration 0182 moved the stored rules). */
 const CLOSED_BY_SIDE: Record<Side, string[]> = {
-  conts: ['Service cases', 'Projects', 'Supply chain', 'Dream Crafter HR'],
+  conts: ['Service cases', 'Projects', 'Supply chain'],
   dream_crafter: ['Home', 'Reservations', 'Operations', 'HR', 'Units', 'Growth'],
   both: [],
 };
@@ -107,7 +107,6 @@ export const AREAS: Area[] = [
   { key: 'scProduction', label: 'Production', group: 'Supply chain', api: [] },
   { key: 'scTransportPlan', label: 'Transportation', group: 'Supply chain', api: ['delivery-schedule', 'delivery-zones', 'driver-leave', 'drivers', 'fleet-health', 'coverage-fleet', 'vehicles', 'threepl-companies', 'rate-cards'] },
   { key: 'scWarehouse', label: 'Warehouse', group: 'Supply chain', api: ['loading-list', 'warehouses', 'racks', 'stock', 'stock-takes', 'stock-transfers'] },
-  { key: 'dcHr', label: 'Employees', group: 'Dream Crafter HR', api: [], strictRead: true },
   // 'owner': the owner portal's endpoints, which finance and management also open as an owner (?ownerId=).
   { key: 'finance', label: 'Finance', group: 'Finance', api: ['finance', 'expenses', 'statements', 'payouts', 'approvals', 'owner'], managed: true, strictRead: true },
   // The company ledger in the engine (finance phase 1): no Property OS routes, sent to the engine at sign-on.
@@ -255,7 +254,6 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | string[
   { method: 'GET', path: /^\/api\/(unit-layout-types|unit-bed-sizes)$/, area: ['properties', 'unitSettings'], why: 'The unit forms read the layout and bed size lists that Unit settings keeps.' },
   ...(['POST', 'PATCH', 'PUT', 'DELETE'] as const).map(method => ({ method, path: /^\/api\/(unit-layout-types|unit-bed-sizes|contract-types)(\/.*)?$/, area: 'unitSettings', why: 'Unit settings keeps the layout, bed size and contract type lists.' })),
   { method: 'GET', path: /^\/api\/finance\/deductions$/, area: 'deductions', why: 'The Deductions page under Units.' },
-  { method: '*', path: /^\/api\/employees\/dream-crafter$/, area: 'dcHr', why: 'Dream Crafter > HR > Employees keeps Dream Crafter\'s own staff.' },
   { method: 'POST', path: /^\/api\/expenses$/, area: ['finance', 'deductions'], why: 'Adding a deduction records an expense; Finance records them too.' },
   { method: 'DELETE', path: /^\/api\/expenses\/[^/]+$/, area: ['finance', 'deductions'], why: 'Removing a deduction removes its expense; Finance removes them too.' },
 ];

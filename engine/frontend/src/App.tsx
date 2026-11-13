@@ -58,6 +58,7 @@ const ProjectDetail = lazy(() => import("./pages/Projects").then((m) => ({ defau
 const RenovationBetaHome = lazy(() => import("./pages/renovation-beta/RenovationBetaHome").then((m) => ({ default: m.RenovationBetaHome })));
 const RenovationBetaCalendar = lazy(() => import("./pages/renovation-beta/RenovationBetaCalendar").then((m) => ({ default: m.RenovationBetaCalendar })));
 const RenovationBetaDefectQueue = lazy(() => import("./pages/renovation-beta/RenovationBetaDefectQueue").then((m) => ({ default: m.RenovationBetaDefectQueue })));
+const RenovationBetaSiteTasks = lazy(() => import("./pages/renovation-beta/RenovationBetaSiteTasks").then((m) => ({ default: m.RenovationBetaSiteTasks })));
 const RenovationBetaHandoverTemplates = lazy(() => import("./pages/renovation-beta/RenovationBetaHandoverTemplates").then((m) => ({ default: m.RenovationBetaHandoverTemplates })));
 const RenovationBetaWorkspace = lazy(() => import("./pages/renovation-beta/RenovationBetaWorkspace").then((m) => ({ default: m.RenovationBetaWorkspace })));
 const FairReportFill = lazy(() => import("./pages/FairReportFill").then((m) => ({ default: m.FairReportFill })));
@@ -589,6 +590,7 @@ export default function App() {
         <Route path="/beta/calendar" element={<PageGuard page="projects.list"><RenovationBetaCalendar /></PageGuard>} />
         {/* Handover snag list (TODO item 17): the open defects of every project, and the company's handover checklists. */}
         <Route path="/beta/defects" element={<PageGuard page="projects.defects"><RenovationBetaDefectQueue /></PageGuard>} />
+        <Route path="/beta/site-tasks" element={<PageGuard page="projects.list"><RenovationBetaSiteTasks /></PageGuard>} />
         <Route path="/beta/handover-checklists" element={<PageGuard page="projects.handover"><RenovationBetaHandoverTemplates /></PageGuard>} />
         <Route path="/beta/projects/:id" element={<PageGuard page="projects.list"><RenovationBetaWorkspace /></PageGuard>} />
         <Route

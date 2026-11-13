@@ -464,7 +464,7 @@ function Routed() {
         <Route path="/supply/it-support" element={<ItSupportPage />} />
         <Route path="/my-claims" element={<MyClaimsPage />} />
         <Route path="/supply/my-claims" element={<MyClaimsPage />} />
-        <Route path="/supply/hr/employees" element={<EmployeesPage dreamCrafter />} />
+        <Route path="/supply/hr/employees" element={<Moved to="/supply/operations/renovation" />} />
         <Route path="*" element={<NotDesignedPage />} />
       </Route>
     </Routes>
