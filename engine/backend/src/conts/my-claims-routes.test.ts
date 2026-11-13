@@ -524,9 +524,15 @@ describe('a withdrawn or rejected request is changed and sent again, keeping its
   test('a utility bill request is fixed and sent again from Utility bills, not here', async () => {
     const sb = world();
     sb.tables.payment_requests.push({ id: 'R-UTIL', company_id: CO, request_no: 'PRQ-2611-0009', type: 'PAYMENT', requester_user_id: 'u-ops', supplier_id: null, payee_name: 'TNB', payee_to_check: true,
-      purchase_order_id: null, wanted_on: null, owes_formal_invoice: false, note: null, amount_sen: 5000, status: 'WITHDRAWN', source_key: 'utility:bills-abc:TNB' });
+      purchase_order_id: null, wanted_on: null, owes_formal_invoice: false, note: null, amount_sen: 5000, status: 'WITHDRAWN', source_key: 'utility:bills-abc:TNB', created_at: '2026-11-01T02:00:00Z' });
     const res = await again(appFor(sb, OPS, 'session'), 'R-UTIL', { supplierId: undefined, payeeName: 'TNB', files: [PNG] });
     expect(res.status).toBe(409);
     expect(JSON.stringify(await res.json())).toMatch(/Utility bills/);
+    /* My claims says so before anyone tries: a request made from bills is marked. */
+    await made(sb);
+    for (const r of sb.tables.payment_requests) r.created_at ??= '2026-11-02T02:00:00Z'; /* the database's default; the fake has none */
+    const mine = ((await (await get(appFor(sb, OPS), '/requests')).json()) as any).requests as Array<{ id: string; fromBills: boolean }>;
+    expect(mine.find(r => r.id === 'R-UTIL')?.fromBills).toBe(true);
+    expect(mine.find(r => r.id !== 'R-UTIL')?.fromBills).toBe(false);
   });
 });

@@ -41,12 +41,12 @@ const forbid = (c: Ctx) => c.json({ error: 'forbidden', message: "You don't have
 const bodyOf = async (c: Ctx): Promise<Record<string, unknown> | null> => { try { return await c.req.json(); } catch { return null; } };
 const now = () => new Date().toISOString();
 const isUniqueClash = (e: { code?: string; message?: string } | null | undefined) => !!e && (e.code === '23505' || /duplicate key/i.test(String(e.message ?? '')));
-const REQ_COLS = 'id, request_no, type, requester_user_id, supplier_id, payee_name, payee_to_check, purchase_order_id, wanted_on, owes_formal_invoice, note, amount_sen, status, reason, decided_by, decided_at, created_at';
+const REQ_COLS = 'id, request_no, type, requester_user_id, supplier_id, payee_name, payee_to_check, purchase_order_id, wanted_on, owes_formal_invoice, note, amount_sen, status, reason, decided_by, decided_at, created_at, source_key';
 
 type ReqRow = {
   id: string; request_no: string; type: string; requester_user_id: string; supplier_id: string | null; payee_name: string; payee_to_check: boolean;
   purchase_order_id: string | null; wanted_on: string | null; owes_formal_invoice: boolean; note: string | null; amount_sen: number; status: string;
-  reason: string | null; decided_by: string | null; decided_at: string | null; created_at: string;
+  reason: string | null; decided_by: string | null; decided_at: string | null; created_at: string; source_key?: string | null;
 };
 type ReqLine = { id: string; request_id: string; department: string; unit_id: string | null; maintenance_issue_id: string | null; project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number; sub_department_id?: string | null };
 
@@ -65,6 +65,8 @@ async function views(sb: any, companyId: number, rows: ReqRow[]) {
     supplierId: r.supplier_id, payeeName: r.payee_name, payeeToCheck: r.payee_to_check, purchaseOrderId: r.purchase_order_id,
     wantedOn: r.wanted_on, owesFormalInvoice: r.owes_formal_invoice, note: r.note, amountSen: Number(r.amount_sen), status: r.status,
     reason: r.reason, decidedBy: r.decided_by, decidedAt: r.decided_at, createdAt: r.created_at,
+    /* Made from utility bills (utility-bill-routes.ts): fixed and sent again from Utility bills, not My claims. */
+    fromBills: String(r.source_key ?? '').startsWith('utility:'),
     lines: lines.filter(l => l.request_id === r.id).sort((a, b) => a.sort - b.sort).map(l => ({
       department: l.department, subDepartmentId: l.sub_department_id ?? null, unitId: l.unit_id, maintenanceIssueId: l.maintenance_issue_id, projectId: l.project_id, accountCode: l.account_code,
       amountSen: Number(l.amount_sen), description: l.description })),
