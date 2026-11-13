@@ -10,8 +10,8 @@ import { Hono } from 'hono';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
 import { myClaimsRouter } from './my-claims-routes';
-import { requestVoucherHandler, closeRequestHandler } from './payment-request-routes';
-import { claimsDeps, FULL_KEY } from './petty-cash-routes';
+import { requestVoucherHandler, closeRequestHandler, rejectRequestHandler } from './payment-request-routes';
+import { claimsDeps, EDIT_KEY, FULL_KEY } from './petty-cash-routes';
 import { projectLimit } from './project-limit';
 import type { Staff } from './staff-identity';
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they test */
@@ -41,7 +41,7 @@ const world = () => publicTablesOnly(fakeSb({
   accounts: ['601-0001', '906-0000'].map(code => ({ company_id: CO, account_code: code, account_name: code, account_type: 'EXPENSE', is_active: true, acc_money: false, parent_code: null, special_type: null, everyday_expense: false })),
 }), ['conts_maintenance_jobs', 'conts_units', 'conts_staff', 'projects', 'conts_employee_bank']);
 
-const bucket = () => { const m = new Map<string, ArrayBuffer>(); return { m, put: async (k: string, v: ArrayBuffer) => { m.set(k, v); }, get: async (k: string) => (m.has(k) ? { body: m.get(k) } : null) }; };
+const bucket = () => { const m = new Map<string, ArrayBuffer>(); return { m, put: async (k: string, v: ArrayBuffer) => { m.set(k, v); }, get: async (k: string) => (m.has(k) ? { body: m.get(k) } : null), delete: async (k: string) => { m.delete(k); } }; };
 const appFor = (sb: ReturnType<typeof world>, staff: Staff, source: 'session' | 'forward' = 'forward') => {
   const a = new Hono<{ Variables: Record<string, unknown> }>();
   a.use('*', async (c, next) => { c.set('supabase', sb); c.set('companyId', CO); c.set('staff', staff); await next(); });
@@ -443,5 +443,90 @@ describe('reading a receipt or a request bill', () => {
     expect(await (await read(appFor(world(), OPS), { kind: 'request', files: [PNG] })).json()).toMatchObject({ unreadable: true, amountSen: null });
     const noKey = await appFor(world(), OPS).request('/extract', { method: 'POST', body: JSON.stringify({ files: [PNG] }), headers: { 'content-type': 'application/json' } }, env);
     expect(noKey.status).toBe(503);
+  });
+});
+
+describe('a withdrawn or rejected request is changed and sent again, keeping its number (chew, 13 Nov 2026: "just change it and submit again")', () => {
+  const PDF = { name: 'quote.pdf', mime: 'application/pdf', dataBase64: btoa('%PDF-1.4 quote') };
+  const ask = (a: Hono<any>, over: Record<string, unknown> = {}) => post(a, '/requests', { type: 'PAYMENT', supplierId: 'S1', amountSen: 5000, files: [PNG], lines: [{ amountSen: 5000, department: 'rental', accountCode: '601-0001' }], ...over });
+  const again = (a: Hono<any>, id: string, over: Record<string, unknown> = {}) => post(a, `/requests/${id}/resubmit`, { type: 'PAYMENT', supplierId: 'S1', amountSen: 6000, lines: [{ amountSen: 6000, department: 'rental', description: 'Corrected' }], ...over });
+  const reject = async (sb: ReturnType<typeof world>, id: string, reason: string) => {
+    const fin = new Hono<{ Variables: Record<string, unknown> }>();
+    fin.use('*', async (c, next) => { c.set('supabase', sb); c.set('companyId', CO); c.set('houzsUser', { name: 'Chew', permissions_set: new Set([EDIT_KEY, FULL_KEY]) }); await next(); });
+    fin.post('/r/:id/reject', rejectRequestHandler);
+    return post(fin, `/r/${id}/reject`, { reason });
+  };
+  const made = async (sb: ReturnType<typeof world>, over: Record<string, unknown> = {}) => (await (await ask(appFor(sb, OPS, 'session'), over)).json()) as { id: string; requestNo: string };
+  const fileIds = (sb: ReturnType<typeof world>) => sb.tables.payment_request_files.map((f: any) => f.id as string);
+
+  test('withdrawn, changed and sent again: the same request and number, with the new amount and lines, back with finance', async () => {
+    const sb = world();
+    const a = appFor(sb, OPS, 'session');
+    const first = await made(sb);
+    expect((await post(a, `/requests/${first.id}/withdraw`, {})).status).toBe(200);
+    const keep = fileIds(sb);
+    const res = await again(a, first.id, { keepFileIds: keep });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: first.id, requestNo: first.requestNo });
+    expect(sb.tables.payment_requests).toHaveLength(1);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ id: first.id, request_no: first.requestNo, status: 'SUBMITTED', amount_sen: 6000 });
+    expect(sb.tables.payment_request_lines).toHaveLength(1);
+    expect(sb.tables.payment_request_lines[0]).toMatchObject({ request_id: first.id, amount_sen: 6000, description: 'Corrected' });
+    expect(fileIds(sb)).toEqual(keep);
+  });
+
+  test('rejected by finance, then sent again: finance still sees why it was rejected', async () => {
+    const sb = world();
+    const first = await made(sb);
+    expect((await reject(sb, first.id, 'Wrong amount on the invoice')).status).toBe(200);
+    const res = await again(appFor(sb, OPS, 'session'), first.id, { keepFileIds: fileIds(sb) });
+    expect(res.status).toBe(200);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', reason: 'Wrong amount on the invoice', decided_by: 'Chew' });
+  });
+
+  test('files: the ones kept stay, the others go, new ones are added; at least one is needed', async () => {
+    const sb = world();
+    const a = appFor(sb, OPS, 'session');
+    const first = await made(sb);
+    await post(a, `/requests/${first.id}/withdraw`, {});
+    const old = sb.tables.payment_request_files[0];
+    expect((await again(a, first.id, { keepFileIds: [] })).status).toBe(422);
+    expect(sb.tables.payment_requests[0].status).toBe('WITHDRAWN');
+    expect((await again(a, first.id, { keepFileIds: [], files: [PDF] })).status).toBe(200);
+    expect(sb.tables.payment_request_files).toHaveLength(1);
+    expect(sb.tables.payment_request_files[0]).toMatchObject({ request_id: first.id, file_name: 'quote.pdf', mime: 'application/pdf' });
+    expect(env.SLIPS.m.has(old.r2_key)).toBe(false);
+  });
+
+  test('only the person who asked, and only once it is withdrawn or rejected', async () => {
+    const sb = world();
+    const first = await made(sb);
+    const keepFileIds = fileIds(sb);
+    expect((await again(appFor(sb, OPS, 'session'), first.id, { keepFileIds })).status).toBe(409);
+    await post(appFor(sb, OPS, 'session'), `/requests/${first.id}/withdraw`, {});
+    expect((await again(appFor(sb, TECH), first.id, { supplierId: undefined, payeeName: 'X', keepFileIds })).status).toBe(404);
+    sb.tables.payment_requests[0].status = 'PAID';
+    expect((await again(appFor(sb, OPS, 'session'), first.id, { keepFileIds })).status).toBe(409);
+  });
+
+  test("checked as a new request is: over a project's limit it is refused and stays withdrawn", async () => {
+    const sb = world();
+    const a = appFor(sb, OPS, 'session');
+    const first = await made(sb, { amountSen: 8_000, lines: [{ amountSen: 8_000, department: 'rental', accountCode: '601-0001', projectId: 7 }] });
+    await post(a, `/requests/${first.id}/withdraw`, {});
+    const keepFileIds = fileIds(sb);
+    expect((await again(a, first.id, { amountSen: 20_000, lines: [{ amountSen: 20_000, department: 'rental', accountCode: '601-0001', projectId: 7 }], keepFileIds })).status).toBe(409);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'WITHDRAWN', amount_sen: 8_000 });
+    expect((await again(a, first.id, { amountSen: 7_000, lines: [{ amountSen: 7_000, department: 'rental', accountCode: '601-0001', projectId: 7 }], keepFileIds })).status).toBe(200);
+    expect(await projectLimit(sb, CO, 7)).toMatchObject({ reservedSen: 7_000 });
+  });
+
+  test('a utility bill request is fixed and sent again from Utility bills, not here', async () => {
+    const sb = world();
+    sb.tables.payment_requests.push({ id: 'R-UTIL', company_id: CO, request_no: 'PRQ-2611-0009', type: 'PAYMENT', requester_user_id: 'u-ops', supplier_id: null, payee_name: 'TNB', payee_to_check: true,
+      purchase_order_id: null, wanted_on: null, owes_formal_invoice: false, note: null, amount_sen: 5000, status: 'WITHDRAWN', source_key: 'utility:bills-abc:TNB' });
+    const res = await again(appFor(sb, OPS, 'session'), 'R-UTIL', { supplierId: undefined, payeeName: 'TNB', files: [PNG] });
+    expect(res.status).toBe(409);
+    expect(JSON.stringify(await res.json())).toMatch(/Utility bills/);
   });
 });

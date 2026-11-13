@@ -6,6 +6,8 @@
 //   GET  /requests                 my requests
 //   GET  /requests/:id/files/:fileId   a file on my request
 //   POST /requests/:id/withdraw    while no voucher exists
+//   POST /requests/:id/resubmit    a withdrawn or rejected request changed and sent again: same number
+//                                  { ...as POST /requests, keepFileIds }
 // Finance (under /accounting, behind the Ledger guard):
 //   GET  /accounting/payment-requests?status=&type=
 //   POST /accounting/payment-requests/:id/voucher    { bankAccountCode, debitAccountCode? }  (Ledger full)
@@ -22,8 +24,8 @@ import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { docMonthTag, insertWithDocNoRetry, mintMonthlyDocNo } from '../scm/lib/doc-no';
 import { todayMyt } from '../scm/lib/my-time';
 import { apControlOf, resolveRoles } from '../acc/rules';
-import { buildLines, defaultLineSubs, withTargetLabels } from './claims-lines';
-import { decodeFiles, fileResponse, removeFiles, storeFiles } from './claims-files';
+import { buildLines, defaultLineSubs, withTargetLabels, type LineRow } from './claims-lines';
+import { decodeFiles, fileResponse, MAX_FILES, removeFiles, storeFiles, type Decoded } from './claims-files';
 import { overLimitBody, projectLimit } from './project-limit';
 import { allRows, inChunks, staffNames } from './petty-cash-store';
 import { claimsDeps, EDIT_KEY, FULL_KEY } from './petty-cash-routes';
@@ -105,15 +107,12 @@ async function overLimit(sb: any, companyId: number, lines: Array<{ project_id: 
   return { over };
 }
 
-export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
-  const co = requireActiveCompanyId(c);
-  if (!co.ok) return c.json(co.refusal, 409);
-  const staff: Staff = c.get('staff');
-  const sb = c.get('supabase');
-  const bucket = c.env?.SLIPS;
-  if (!bucket) return c.json({ error: 'not_configured', message: 'File storage is not set up yet.' }, 501);
-  const b = await bodyOf(c);
-  if (!b) return c.json({ error: 'invalid_json' }, 400);
+/** A request as the person filled it in, checked as finance will pay it. */
+type RequestForm = { type: string; supplierId: string | null; payeeName: string; purchaseOrderId: string | null; wantedOn: string | null; amountSen: number; lines: LineRow[] };
+
+/** Who is paid, how much, by when and on which lines, checked alike for a new request and for one changed and sent again
+ *  after a withdraw or a rejection; or the refusal to send back. Files are each caller's own. */
+async function readRequestForm(c: Ctx, sb: any, companyId: number, staff: Staff, b: Record<string, unknown>): Promise<RequestForm | Response> {
   const type = String(b.type ?? '');
   if (type !== 'PAYMENT' && type !== 'DEPOSIT') return c.json({ error: 'validation', message: 'Choose a payment or a deposit.' }, 422);
   /* A field worker may ask finance to pay a supplier they name (chew, 12 Nov 2026: Direct Pay to Supplier on the phone's
@@ -127,6 +126,58 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
       return c.json({ error: 'validation', message: 'A project is chosen by the office.' }, 422);
     }
   }
+  let supplierId = b.supplierId ? String(b.supplierId) : null;
+  const purchaseOrderId = b.purchaseOrderId ? String(b.purchaseOrderId) : null;
+  let poProject: number | null = null;
+  if (purchaseOrderId) {
+    const { data: po } = await sb.from('purchase_orders').select('id, supplier_id, project_id').eq('company_id', companyId).eq('id', purchaseOrderId).maybeSingle();
+    if (!po) return c.json({ error: 'validation', message: 'That purchase order was not found.' }, 422);
+    supplierId = String(po.supplier_id);
+    poProject = po.project_id == null ? null : Number(po.project_id);
+  }
+  let payeeName = String(b.payeeName ?? '').trim();
+  if (supplierId) {
+    const { data: s } = await sb.from('suppliers').select('id, name').eq('company_id', companyId).eq('id', supplierId).maybeSingle();
+    if (!s) return c.json({ error: 'validation', message: 'That supplier was not found.' }, 422);
+    payeeName = String(s.name);
+  }
+  if (type === 'DEPOSIT' && !supplierId) return c.json({ error: 'validation', message: 'A deposit is paid to a supplier on the list.' }, 422);
+  if (!payeeName) return c.json({ error: 'validation', message: 'Choose who is paid.' }, 422);
+  const amountSen = Number(b.amountSen);
+  if (!(Number.isInteger(amountSen) && amountSen > 0)) return c.json({ error: 'validation', message: 'Enter the amount.' }, 422);
+  const wantedOn = DATE.test(String(b.wantedOn ?? '')) ? String(b.wantedOn) : null;
+  /* A PO's project fills lines that name none. */
+  const rawLines = Array.isArray(b.lines) && poProject != null
+    ? (b.lines as Array<Record<string, unknown>>).map(l => (l.projectId == null || l.projectId === '' ? { ...l, projectId: poProject } : l))
+    : b.lines;
+  const built = await buildLines(sb, staff, rawLines, amountSen, companyId);
+  if (!built.ok) return c.json({ error: 'validation', message: built.message }, 422);
+  /* SOP 1.1: each line starts on the person's own department's sub-department. */
+  await defaultLineSubs(sb, companyId, built.lines, { staffDepartmentId: staff.departmentId, floatId: null });
+  /* SOP 3.2: a request over a project's limit cannot be submitted. */
+  const lim = await overLimit(sb, companyId, built.lines);
+  if ('error' in lim) return c.json({ error: 'limit_unavailable', message: 'The project limit could not be read. Try again.' }, 503);
+  if (lim.over.length) return c.json(overLimitBody(lim.over), 409);
+  return { type, supplierId, payeeName, purchaseOrderId, wantedOn, amountSen, lines: built.lines };
+}
+
+/** The header fields a request is saved with, from what the person filled in. */
+const headerOf = (f: RequestForm, b: Record<string, unknown>) => ({
+  type: f.type, supplier_id: f.supplierId, payee_name: f.payeeName.slice(0, 200), payee_to_check: !f.supplierId, purchase_order_id: f.purchaseOrderId,
+  wanted_on: f.wantedOn, owes_formal_invoice: f.type === 'DEPOSIT' || b.owesFormalInvoice === true, note: b.note ? String(b.note).slice(0, 500) : null, amount_sen: f.amountSen,
+});
+
+export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const staff: Staff = c.get('staff');
+  const sb = c.get('supabase');
+  const bucket = c.env?.SLIPS;
+  if (!bucket) return c.json({ error: 'not_configured', message: 'File storage is not set up yet.' }, 501);
+  const b = await bodyOf(c);
+  if (!b) return c.json({ error: 'invalid_json' }, 400);
+  const form = await readRequestForm(c, sb, co.companyId, staff, b);
+  if (form instanceof Response) return form;
   /* The caller may name the request's id (a uuid): sent again after a lost reply, the same request comes back instead of
      a second one being made, so a supplier is not paid twice (final review; receipts do the same). */
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -138,40 +189,8 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
       return c.json({ id: seen.id, requestNo: seen.request_no }, 200);
     }
   }
-  let supplierId = b.supplierId ? String(b.supplierId) : null;
-  const purchaseOrderId = b.purchaseOrderId ? String(b.purchaseOrderId) : null;
-  let poProject: number | null = null;
-  if (purchaseOrderId) {
-    const { data: po } = await sb.from('purchase_orders').select('id, supplier_id, project_id').eq('company_id', co.companyId).eq('id', purchaseOrderId).maybeSingle();
-    if (!po) return c.json({ error: 'validation', message: 'That purchase order was not found.' }, 422);
-    supplierId = String(po.supplier_id);
-    poProject = po.project_id == null ? null : Number(po.project_id);
-  }
-  let payeeName = String(b.payeeName ?? '').trim();
-  if (supplierId) {
-    const { data: s } = await sb.from('suppliers').select('id, name').eq('company_id', co.companyId).eq('id', supplierId).maybeSingle();
-    if (!s) return c.json({ error: 'validation', message: 'That supplier was not found.' }, 422);
-    payeeName = String(s.name);
-  }
-  if (type === 'DEPOSIT' && !supplierId) return c.json({ error: 'validation', message: 'A deposit is paid to a supplier on the list.' }, 422);
-  if (!payeeName) return c.json({ error: 'validation', message: 'Choose who is paid.' }, 422);
-  const amountSen = Number(b.amountSen);
-  if (!(Number.isInteger(amountSen) && amountSen > 0)) return c.json({ error: 'validation', message: 'Enter the amount.' }, 422);
-  const wantedOn = DATE.test(String(b.wantedOn ?? '')) ? String(b.wantedOn) : null;
   const decoded = decodeFiles(b.files, 'the invoice, receipt or quotation');
   if (!decoded.ok) return c.json({ error: decoded.error, message: decoded.message }, decoded.status);
-  /* A PO's project fills lines that name none. */
-  const rawLines = Array.isArray(b.lines) && poProject != null
-    ? (b.lines as Array<Record<string, unknown>>).map(l => (l.projectId == null || l.projectId === '' ? { ...l, projectId: poProject } : l))
-    : b.lines;
-  const built = await buildLines(sb, staff, rawLines, amountSen, co.companyId);
-  if (!built.ok) return c.json({ error: 'validation', message: built.message }, 422);
-  /* SOP 1.1: each line starts on the person's own department's sub-department. */
-  await defaultLineSubs(sb, co.companyId, built.lines, { staffDepartmentId: staff.departmentId, floatId: null });
-  /* SOP 3.2: a request over a project's limit cannot be submitted. */
-  const lim = await overLimit(sb, co.companyId, built.lines);
-  if ('error' in lim) return c.json({ error: 'limit_unavailable', message: 'The project limit could not be read. Try again.' }, 503);
-  if (lim.over.length) return c.json(overLimitBody(lim.over), 409);
 
   const id = askedId ?? crypto.randomUUID();
   let stored: Awaited<ReturnType<typeof storeFiles>> = [];
@@ -187,17 +206,77 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
   const { data: row, error } = await insertWithDocNoRetry<{ id: string; request_no: string }>(
     () => mintMonthlyDocNo(sb, 'payment_requests', 'request_no', `PRQ-${docMonthTag(today)}`),
     no => sb.from('payment_requests').insert({
-      id, company_id: co.companyId, request_no: no, type, requester_user_id: staff.userId, supplier_id: supplierId, payee_name: payeeName.slice(0, 200),
-      payee_to_check: !supplierId, purchase_order_id: purchaseOrderId, wanted_on: wantedOn, owes_formal_invoice: type === 'DEPOSIT' || b.owesFormalInvoice === true,
-      note: b.note ? String(b.note).slice(0, 500) : null, amount_sen: amountSen, status: 'SUBMITTED',
+      id, company_id: co.companyId, request_no: no, requester_user_id: staff.userId, ...headerOf(form, b), status: 'SUBMITTED',
     }).select('id, request_no').single(),
   );
   if (error || !row) return fail(error?.message ?? 'insert returned nothing');
-  const ins = await sb.from('payment_request_lines').insert(built.lines.map(l => ({ ...l, request_id: id })));
+  const ins = await sb.from('payment_request_lines').insert(form.lines.map(l => ({ ...l, request_id: id })));
   if (ins.error) return fail(ins.error.message);
   const fr = await sb.from('payment_request_files').insert(stored.map(s => ({ ...s, request_id: id })));
   if (fr.error) return fail(fr.error.message);
   return c.json({ id, requestNo: row.request_no }, 201);
+};
+
+const RETURNED = new Set(['WITHDRAWN', 'REJECTED']);
+
+/** POST /requests/:id/resubmit — the person changes their own withdrawn or rejected request and sends it to finance again
+ *  (chew, 13 Nov 2026: "就修改再提交不就行了？"), instead of filling in a new one. The same request and number, checked
+ *  as a new one is (payee, lines, a project's limit). `keepFileIds` names the files that stay and `files` adds new ones;
+ *  one at least. A rejection's reason and who decided stay on the request, so finance sees why it came back. Lines and
+ *  files are saved while it is still withdrawn or rejected, where finance does not pay it; the status goes back last. A
+ *  utility bill request is fixed and sent again from Utility bills, where its bills are. */
+export const resubmitRequestHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const staff: Staff = c.get('staff');
+  const sb = c.get('supabase');
+  const bucket = c.env?.SLIPS;
+  if (!bucket) return c.json({ error: 'not_configured', message: 'File storage is not set up yet.' }, 501);
+  const { data: r } = await sb.from('payment_requests').select('id, request_no, status, source_key').eq('company_id', co.companyId).eq('id', c.req.param('id')).eq('requester_user_id', staff.userId).maybeSingle();
+  if (!r) return c.json({ error: 'not_found' }, 404);
+  if (String(r.source_key ?? '').startsWith('utility:')) return c.json({ error: 'utility_request', message: 'Fix the bills on Utility bills and send them again from there.' }, 409);
+  if (!RETURNED.has(String(r.status))) return c.json({ error: 'not_returned', message: 'Only a withdrawn or rejected request can be changed and sent again.' }, 409);
+  const b = await bodyOf(c);
+  if (!b) return c.json({ error: 'invalid_json' }, 400);
+  const form = await readRequestForm(c, sb, co.companyId, staff, b);
+  if (form instanceof Response) return form;
+
+  const { data: had } = await sb.from('payment_request_files').select('id, r2_key').eq('request_id', r.id);
+  const keep = new Set(Array.isArray(b.keepFileIds) ? (b.keepFileIds as unknown[]).map(String) : []);
+  const files = (had ?? []) as Array<{ id: string; r2_key: string }>;
+  const kept = files.filter(f => keep.has(f.id)), dropped = files.filter(f => !keep.has(f.id));
+  let added: Decoded[] = [];
+  if ((Array.isArray(b.files) && b.files.length > 0) || kept.length === 0) {
+    const decoded = decodeFiles(b.files, 'the invoice, receipt or quotation');
+    if (!decoded.ok) return c.json({ error: decoded.error, message: decoded.message }, decoded.status);
+    added = decoded.files;
+  }
+  if (kept.length + added.length > MAX_FILES) return c.json({ error: 'validation', message: `A request holds up to ${MAX_FILES} files.` }, 422);
+
+  let stored: Awaited<ReturnType<typeof storeFiles>> = [];
+  try { stored = await storeFiles(bucket, `payment-requests/${co.companyId}/${r.id}`, added); } catch {
+    return c.json({ error: 'upload_failed', message: 'The files could not be saved. Try again.' }, 502);
+  }
+  const fail = async (reason: string) => {
+    await removeFiles(bucket, stored.map(s => s.r2_key));
+    return c.json({ error: 'save_failed', reason }, 500);
+  };
+  const gone = await sb.from('payment_request_lines').delete().eq('request_id', r.id);
+  if (gone.error) return fail(gone.error.message);
+  const ins = await sb.from('payment_request_lines').insert(form.lines.map(l => ({ ...l, request_id: r.id })));
+  if (ins.error) return fail(ins.error.message);
+  if (stored.length) {
+    const fr = await sb.from('payment_request_files').insert(stored.map(s => ({ ...s, request_id: r.id })));
+    if (fr.error) return fail(fr.error.message);
+  }
+  if (!(await claimRequest(sb, r.id, String(r.status), { ...headerOf(form, b), status: 'SUBMITTED' }))) {
+    return c.json({ error: 'not_returned', message: 'This request was changed somewhere else. Open it again.' }, 409);
+  }
+  if (dropped.length) {
+    await sb.from('payment_request_files').delete().in('id', dropped.map(f => f.id));
+    await removeFiles(bucket, dropped.map(f => f.r2_key));
+  }
+  return c.json({ id: r.id, requestNo: r.request_no }, 200);
 };
 
 export const myRequestsHandler = async (c: Ctx): Promise<Response> => {
@@ -241,6 +320,7 @@ export function myRequestRoutes(r: { get: (p: string, h: (c: Ctx) => Promise<Res
   r.get('/requests', myRequestsHandler);
   r.get('/requests/:id/files/:fileId', myRequestFileHandler);
   r.post('/requests/:id/withdraw', withdrawRequestHandler);
+  r.post('/requests/:id/resubmit', resubmitRequestHandler);
 }
 
 async function loadRequest(c: Ctx, companyId: number): Promise<ReqRow | null> {
