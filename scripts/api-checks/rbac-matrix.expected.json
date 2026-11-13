@@ -592,6 +592,7 @@
  "PUT /api/rates": "AAFAFFFU",
  "PUT /api/reviews/settings": "AAFAFFFU",
  "PUT /api/settings": "AFFFFFFU",
+ "PUT /api/table-layouts/columns": "AAAAFFFU",
  "PUT /api/units/[id]/contract": "AAFFFFFU",
  "PUT /api/users/[id]/access": "AFFFFFFU",
  "PUT /api/users/[id]/category-access": "AFFFFFFU",

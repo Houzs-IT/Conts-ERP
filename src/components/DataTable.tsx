@@ -15,6 +15,7 @@ import { useToast } from './Toast';
 import { PhoneText } from './PhoneText';
 import { Floating, ToolButton, TableFilterChipsContext, type TableFilterChips, PanelItem, PanelHeading, StatusCell, ChannelCell, PersonCell, channelLabel } from './DataTableParts';
 import { useTableViews, type TableLayout, type SavedView } from './DataTableViews';
+import { accountOrderNewer, moveColumn, viewKeepsColumns } from '../lib/columnOrder';
 import { resolveRelative, isRelative } from '../lib/relativeDates';
 import { rm, date as fmtDate, dateTime as fmtDateTime, count as fmtCount, plural } from '../lib/format';
 import { phone as fmtPhone } from '../lib/phone';
@@ -283,6 +284,13 @@ function readStored(id: string): TableLayout['columns'] | null {
 function writeStored(id: string, cols: TableLayout['columns']) {
   try { localStorage.setItem(`dt:${id}:columns`, JSON.stringify(cols)); } catch { /* private window: columns reset next time */ }
 }
+/** When the person's account kept the column order this browser has (the server's time, lib/columnOrder.ts). */
+function readStoredAt(id: string): string | null {
+  try { return localStorage.getItem(`dt:${id}:columnsAt`); } catch { return null; }
+}
+function writeStoredAt(id: string, at: string) {
+  try { localStorage.setItem(`dt:${id}:columnsAt`, at); } catch { /* private window: the account's order is taken each visit */ }
+}
 
 /** Saved order and visibility laid over the page's columns: unknown keys dropped, new columns added in place. */
 function mergeColumns<R>(defs: Column<R>[], saved: TableLayout['columns'] | null): TableLayout['columns'] {
@@ -324,9 +332,19 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const [layoutCols, setLayoutCols] = useState<TableLayout['columns']>(() => mergeColumns(columns, readStored(id)));
   const colKeys = columns.map(c => c.key).join('|');
   useEffect(() => { setLayoutCols(cur => mergeColumns(columns, cur)); }, [colKeys]); // eslint-disable-line react-hooks/exhaustive-deps
-  const setCols = useCallback((next: TableLayout['columns']) => { setLayoutCols(next); writeStored(id, next); }, [id]);
+  // Each change is kept in this browser at once and, a moment later, with the person's account (saveCols, set below
+  // once the views are loaded), so the list opens the same way on any computer (chew, 13 Nov 2026: by person).
+  const saveCols = useRef<((next: TableLayout['columns']) => void) | null>(null);
+  const setCols = useCallback((next: TableLayout['columns']) => { setLayoutCols(next); writeStored(id, next); saveCols.current?.(next); }, [id]);
   const byKey = useMemo(() => new Map(columns.map(c => [c.key, c])), [columns]);
   const visible = useMemo(() => layoutCols.filter(l => !l.hidden && byKey.has(l.key)).map(l => byKey.get(l.key)!), [layoutCols, byKey]);
+  // A column header dragged onto another moves its column before or after that one (chew, 13 Nov 2026), where the
+  // Columns menu lets people show and order columns; keyboard users keep that menu's up and down buttons.
+  const canDrag = !noColumns && visible.length > 1;
+  const dragKey = useRef<string | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropAt, setDropAt] = useState<{ key: string; side: 'before' | 'after' } | null>(null);
+  const endDrag = () => { dragKey.current = null; setDragging(null); setDropAt(null); };
 
   /* ---- filters in the URL ---- */
   const filterOf = useCallback((c: Column<R>): FilterSpec | null => {
@@ -503,7 +521,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
     return { columns: layoutCols, sort: params.get(SORT) || null, pageSize: !server && s > 0 ? s : server && s > 0 ? s : null, filters };
   };
   const applyLayout = useCallback((l: TableLayout) => {
-    setCols(mergeColumns(columns, l.columns));
+    // A view that keeps no columns of its own (the ready-made company views) leaves the person's order as it is.
+    if (viewKeepsColumns(l)) setCols(mergeColumns(columns, l.columns));
     setParams(prev => {
       const next = new URLSearchParams(prev);
       for (const k of [...managedKeys, SORT, PAGE, SIZE]) next.delete(k);
@@ -516,6 +535,32 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const [activeView, setActiveView] = useState<string | null>(null);
   // The default view opens by itself, once, when the address carries no filters or sort of its own.
   const autoApplied = useRef(false);
+  // A change waits a moment before it is sent, so dragging a few columns in a row is one save; saves go one after
+  // another, so the account ends with the last. The time the account kept it is noted, so this browser does not take
+  // it back later as if it had come from another computer.
+  const saveTimer = useRef<number | null>(null);
+  const sending = useRef(0);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  useEffect(() => () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); }, []);
+  saveCols.current = noViews ? null : next => {
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      saveTimer.current = null;
+      sending.current++;
+      saveQueue.current = saveQueue.current.then(() => views.saveColumns(next))
+        .then(at => { if (at) writeStoredAt(id, at); })
+        .finally(() => { sending.current--; });
+    }, 800);
+  };
+  // The person's own column order kept with their account: taken when the account kept it later than the order this
+  // browser has (changed on another computer). A change of this browser's still waiting to be sent wins.
+  useEffect(() => {
+    const d = views.data;
+    if (!d?.columns?.length || saveTimer.current || sending.current) return;
+    if (!accountOrderNewer(d.columnsAt, readStoredAt(id))) return;
+    const own = mergeColumns(columns, d.columns);
+    setLayoutCols(own); writeStored(id, own); writeStoredAt(id, d.columnsAt!);
+  }, [views.data]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (autoApplied.current || !views.data) return;
     autoApplied.current = true;
@@ -712,8 +757,35 @@ export function DataTable<R>(props: DataTableProps<R>) {
                     const fOn = !!f && !!filterValue(c);
                     return (
                       <th key={c.key} scope="col" aria-sort={on ? (sortDir === 'desc' ? 'descending' : 'ascending') : undefined}
+                        draggable={canDrag || undefined}
+                        onDragStart={canDrag ? e => {
+                          dragKey.current = c.key; setDragging(c.key);
+                          e.dataTransfer.effectAllowed = 'move';
+                          try { e.dataTransfer.setData('text/plain', c.label || c.key); } catch { /* some browsers refuse; the drag still runs */ }
+                        } : undefined}
+                        onDragOver={canDrag ? e => {
+                          if (!dragKey.current) return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          const r = e.currentTarget.getBoundingClientRect();
+                          const side = e.clientX < r.left + r.width / 2 ? 'before' : 'after';
+                          setDropAt(d => (d?.key === c.key && d.side === side ? d : { key: c.key, side }));
+                        } : undefined}
+                        onDragLeave={canDrag ? e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropAt(d => (d?.key === c.key ? null : d)); } : undefined}
+                        onDrop={canDrag ? e => {
+                          e.preventDefault();
+                          const from = dragKey.current, at = dropAt;
+                          endDrag();
+                          if (from && at) { const next = moveColumn(layoutCols, from, at.key, at.side); if (next !== layoutCols) setCols(next); }
+                        } : undefined}
+                        onDragEnd={canDrag ? endDrag : undefined}
                         className={cx('group/th sticky top-0 z-[2] bg-muted [box-shadow:inset_0_-1px_0_var(--color-line)] py-2 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink',
-                          i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]', i === visible.length - 1 && 'pr-[22px]', right ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left')}>
+                          i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]', i === visible.length - 1 && 'pr-[22px]', right ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left',
+                          canDrag && 'cursor-grab active:cursor-grabbing', dragging === c.key && 'opacity-50',
+                          // Where the dragged column will land: a gold line on this header's left or right edge.
+                          dropAt?.key === c.key && dragging !== c.key && (dropAt.side === 'before'
+                            ? '[box-shadow:inset_2px_0_0_var(--color-gold),inset_0_-1px_0_var(--color-line)]'
+                            : '[box-shadow:inset_-2px_0_0_var(--color-gold),inset_0_-1px_0_var(--color-line)]'))}>
                         <span className={cx('relative w-fit flex items-center gap-[2px] max-w-full', right && 'ml-auto flex-row-reverse',
                           f && !fOn && '[@media(hover:hover)]:max-w-[calc(100%-26px)]',
                           fOn && (right ? '[@media(hover:hover)]:pl-[26px]' : '[@media(hover:hover)]:pr-[26px]'))}>
