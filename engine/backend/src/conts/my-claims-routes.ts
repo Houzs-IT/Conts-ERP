@@ -29,7 +29,7 @@ import { lineDepartment, resolveFloatId } from './petty-cash';
 import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, receiptView, staffNames, type FloatRow, type ReceiptRow } from './petty-cash-store';
 import type { Staff } from './staff-identity';
 import { bankDetailsOf } from './petty-cash-routes';
-import { buildLines, defaultLineSubs } from './claims-lines';
+import { buildLines, defaultLineSubs, withTargetLabels } from './claims-lines';
 import { myRequestRoutes } from './payment-request-routes';
 import { utilityBillRoutes } from './utility-bill-routes';
 
@@ -213,7 +213,8 @@ export const myReceiptsHandler = async (c: Ctx): Promise<Response> => {
   const rows = all.sort((a, b) => String(b.spend_date).localeCompare(String(a.spend_date)) || b.receipt_no.localeCompare(a.receipt_no));
   const ids = rows.map(r => r.id);
   const [lines, files, names] = await Promise.all([linesOf(sb, ids), filesOf(sb, ids), staffNames(sb)]);
-  return c.json({ receipts: rows.map(r => receiptView(r, lines.get(r.id) ?? [], files.get(r.id) ?? [], names)) });
+  const views = rows.map(r => receiptView(r, lines.get(r.id) ?? [], files.get(r.id) ?? [], names));
+  return c.json({ receipts: await withTargetLabels(sb, co.companyId, views) });
 };
 
 export const receiptFileHandler = async (c: Ctx): Promise<Response> => {

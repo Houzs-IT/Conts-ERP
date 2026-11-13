@@ -5,6 +5,7 @@ import type { Staff } from './staff-identity';
 import { receiptAccountProblem } from './petty-cash-routes';
 import { defaultSubDepartment, loadSubDepartments, projectRenoKind, projectSide, RENO_KIND_OF, subForStaffDepartment } from './sub-departments';
 import { isDepartment } from '../acc/rules';
+import { inChunks } from './petty-cash-store';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as in the routes it serves */
 export type LineRow = { department: string; unit_id: string | null; maintenance_issue_id: string | null; project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number; sub_department_id?: string | null };
@@ -101,3 +102,30 @@ export async function buildLines(sb: any, staff: Staff, raw: unknown, amountSen:
   return { ok: true, lines: out };
 }
 
+
+interface LineTargetIds { unitId: string | null; maintenanceIssueId: string | null; projectId: number | null }
+type LabelledLine<L> = L & { targetLabel: string | null };
+
+const distinctIds = (ids: Array<string | number | null>): string[] => [...new Set(ids.filter((id) => id != null).map(String))];
+
+export async function withTargetLabels<L extends LineTargetIds, T extends { lines: L[] }>(sb: any, companyId: number, items: T[]): Promise<Array<Omit<T, 'lines'> & { lines: Array<LabelledLine<L>> }>> {
+  const lines = items.flatMap((item) => item.lines);
+  const [units, jobs, projects] = await Promise.all([
+    inChunks<{ id: string; building: string; unit_number: string }>(distinctIds(lines.map((l) => l.unitId)),
+      (part, from, to) => sb.schema('public').from('conts_units').select('id, building, unit_number').in('id', part).order('id').range(from, to)),
+    inChunks<{ id: string; title: string }>(distinctIds(lines.map((l) => l.maintenanceIssueId)),
+      (part, from, to) => sb.schema('public').from('conts_maintenance_jobs').select('id, title').in('id', part).order('id').range(from, to)),
+    inChunks<{ id: number; code: string | null; name: string }>(distinctIds(lines.map((l) => l.projectId)),
+      (part, from, to) => sb.schema('public').from('projects').select('id, code, name').eq('company_id', companyId).in('id', part).order('id').range(from, to)),
+  ]);
+  const unitNames = new Map(units.map((u) => [String(u.id), `${u.building} ${u.unit_number}`]));
+  const jobTitles = new Map(jobs.map((j) => [String(j.id), j.title]));
+  const projectNames = new Map(projects.map((p) => [String(p.id), [p.code, p.name].filter(Boolean).join(' ')]));
+  const labelOf = (line: L): string | null => {
+    if (line.maintenanceIssueId) return jobTitles.get(line.maintenanceIssueId) ?? null;
+    if (line.unitId) return unitNames.get(line.unitId) ?? null;
+    if (line.projectId != null) return projectNames.get(String(line.projectId)) ?? null;
+    return null;
+  };
+  return items.map((item) => ({ ...item, lines: item.lines.map((line) => ({ ...line, targetLabel: labelOf(line) })) }));
+}

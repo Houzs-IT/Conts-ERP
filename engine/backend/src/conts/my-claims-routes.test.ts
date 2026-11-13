@@ -100,6 +100,20 @@ describe('only your own', () => {
     expect(mine.float).toMatchObject({ floatSen: 100000, balanceSen: 95500 });
     expect(mine.receipts).toHaveLength(1);
   });
+  test('looking back, each line names its job, unit or project, even after the job is resolved', async () => {
+    const sb = world();
+    await handIn(appFor(sb, TECH), { lines: [{ maintenanceIssueId: 'M1', amountSen: 4500 }] });
+    await handIn(appFor(sb, OPS, 'session'), { lines: [{ unitId: 'UNIT-A01', amountSen: 4500, department: 'rental', accountCode: '601-0001' }] });
+    await post(appFor(sb, OPS, 'session'), '/requests', { type: 'PAYMENT', supplierId: 'S1', amountSen: 5000, files: [PNG], lines: [
+      { amountSen: 3000, department: 'shared', accountCode: '906-0000', projectId: 7 },
+      { amountSen: 2000, department: 'shared', accountCode: '906-0000' },
+    ] });
+    sb.tables.conts_maintenance_jobs[0].state = 'resolved';
+    const labelsOf = (rows: any[]) => rows.flatMap(row => row.lines.map((line: any) => line.targetLabel));
+    expect(labelsOf(((await (await get(appFor(sb, TECH), '/receipts?month=2026-10')).json()) as any).receipts)).toEqual(['Tap']);
+    expect(labelsOf(((await (await get(appFor(sb, OPS), '/receipts?month=2026-10')).json()) as any).receipts)).toEqual(['Skyline A-01']);
+    expect(labelsOf(((await (await get(appFor(sb, OPS), '/requests')).json()) as any).requests)).toEqual(['SHOWROOM', null]);
+  });
   test('a field worker sees only their own open jobs', async () => {
     const jobs = await (await get(appFor(world(), TECH), '/jobs')).json() as any;
     expect(jobs.jobs.map((j: any) => j.id)).toEqual(['M1']);
