@@ -82,6 +82,9 @@ export interface Employee extends EmployeeInput {
   cleanerId: string | null;
   technicianId: string | null;
   renovatorId: string | null;
+  /** The project brand a Renovation person works under (migration 0324); null for everyone else or not yet picked. */
+  brandId: number | null;
+  brandName: string | null;
   name: string;
   phone: string | null;
   /** EMP-001, from the login "Give app access" made; null without app access. */
@@ -116,8 +119,10 @@ export const departmentOf = (person: Pick<Employee, 'cleanerId' | 'renovatorId'>
 export const renovationPersonInput = z.object({
   name: z.string().trim().min(1, 'Enter their name.').max(120),
   phone: text(40),
+  brandId: z.int({ error: 'Pick The Conts or Dream Crafter.' }).positive('Pick The Conts or Dream Crafter.'),
 });
 export type RenovationPersonInput = z.infer<typeof renovationPersonInput>;
+export interface RenovationBrand { id: number; name: string }
 
 /**
  * A Dream Crafter employee (migration 0185): an entry on Dream Crafter's own roster with its HR record. Kept apart from
