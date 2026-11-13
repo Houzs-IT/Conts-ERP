@@ -94,6 +94,15 @@ export async function followWorker(env: Env, userId: string | null, active: bool
   return true;
 }
 
+export async function moveLoginToRenovation(env: Env, userId: string): Promise<boolean> {
+  const moved = await one(env, `
+    UPDATE users SET role = 'renovator', department_id = NULL, department = NULL, position_id = NULL, position = NULL, is_active = 1, updated_at = ?
+    WHERE id = ? AND role IN (${PIN_ROLES.map(() => '?').join(', ')})
+    RETURNING id`, nowIso(), userId, ...PIN_ROLES);
+  if (moved) await revokeSessions(env, userId);
+  return !!moved;
+}
+
 export async function followDepartment(env: Env, userId: string | null): Promise<FieldKind | null> {
   if (!userId) return null;
   const roster = await one<{ cleaning: boolean; maintenance: boolean }>(env, `SELECT
