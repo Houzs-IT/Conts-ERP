@@ -25,6 +25,7 @@ import {
   DEPARTMENT, RECEIPT_STATUS, RECEIPT_TONE, REQUEST_STATUS, REQUEST_TONE, describeClaimLine, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, requestFileHref, thisMonthMyt,
   type ClaimFile, type ClaimLine, type LineDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt,
 } from '../lib/claims';
+import { canResubmit, fixOnUtilityBills, lineDraftOf, wantedOnAgain } from '../lib/requestResubmit';
 
 /**
  * My claims (finance, 28-29 Oct 2026; SOP 3.2, 6): a member of staff hands something in and follows it, and, if they
@@ -54,8 +55,11 @@ export default function MyClaimsPage() {
   const [tab, setTab] = useState<Tab>('handin');
   const [handInKind, setHandInKind] = useState<Kind>('claim');
   const [mineMonth, setMineMonth] = useState(thisMonthMyt());
-  const startHandIn = (kind: Kind) => { setHandInKind(kind); setTab('handin'); };
-  const showMine = (month: string) => { setMineMonth(month); setTab('mine'); };
+  /* A withdrawn or rejected request being changed to send again (chew, 13 Nov 2026): the Hand in form, filled in. */
+  const [editing, setEditing] = useState<PaymentRequest | null>(null);
+  const startHandIn = (kind: Kind) => { setEditing(null); setHandInKind(kind); setTab('handin'); };
+  const startEdit = (q: PaymentRequest) => { setEditing(q); setTab('handin'); };
+  const showMine = (month: string) => { setEditing(null); setMineMonth(month); setTab('mine'); };
   const tabs = [
     { key: 'handin' as const, label: 'Hand in' },
     { key: 'mine' as const, label: 'Mine' },
@@ -65,9 +69,10 @@ export default function MyClaimsPage() {
     <div className="flex flex-col gap-4">
       <PageHeader title="My claims" sub="Claim back what you paid, or ask finance to pay a supplier." />
       {me.error && <StaleBanner message={me.error} onRetry={me.reload} />}
-      <Segmented label="My claims" options={tabs} value={tab} onChange={setTab} className="self-start" />
-      {tab === 'handin' && me.data && <HandInForm me={me.data} initialKind={handInKind} onDone={showMine} />}
-      {tab === 'mine' && <Mine month={mineMonth} onMonthChange={setMineMonth} onHandIn={startHandIn} />}
+      <Segmented label="My claims" options={tabs} value={tab} onChange={t => { if (t !== 'handin') setEditing(null); setTab(t); }} className="self-start" />
+      {tab === 'handin' && me.data && <HandInForm key={editing?.id ?? 'new'} me={me.data} initialKind={editing ? 'direct' : handInKind} editing={editing}
+        onDone={showMine} onCancelEdit={() => { setEditing(null); setTab('mine'); }} />}
+      {tab === 'mine' && <Mine month={mineMonth} onMonthChange={setMineMonth} onHandIn={startHandIn} onEdit={startEdit} />}
       {tab === 'float' && <KeptFloat />}
     </div>
   );
@@ -204,14 +209,19 @@ function SupplierPicker({ value, onChange, allowNotListed }: { value: Supplier |
   );
 }
 
-/** One form: Claim to me (I paid; pay me back) or Direct pay (finance pays a supplier). What both share stays when switching. */
-function HandInForm({ me, initialKind, onDone }: { me: Me; initialKind: Kind; onDone: (mineMonth: string) => void }) {
+/** One form: Claim to me (I paid; pay me back) or Direct pay (finance pays a supplier). What both share stays when switching.
+ *  With `editing`, a withdrawn or rejected request filled in as it was, to change and send again under its own number
+ *  (chew, 13 Nov 2026); its papers stay unless removed, and new ones can be added. */
+function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
+  me: Me; initialKind: Kind; onDone: (mineMonth: string) => void; editing?: PaymentRequest | null; onCancelEdit?: () => void;
+}) {
   const toast = useToast();
   const [kind, setKind] = useState<Kind>(initialKind);
-  const [amountSen, setAmountSen] = useState<number | null>(null);
-  const [note, setNote] = useState('');
-  const [lines, setLines] = useState<LineDraft[]>([blankLine()]);
+  const [amountSen, setAmountSen] = useState<number | null>(editing?.amountSen ?? null);
+  const [note, setNote] = useState(editing?.note ?? '');
+  const [lines, setLines] = useState<LineDraft[]>(editing?.lines.length ? editing.lines.map(lineDraftOf) : [blankLine()]);
   const [files, setFiles] = useState<File[]>([]);
+  const [kept, setKept] = useState<ClaimFile[]>(editing?.files ?? []);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   /* Claim to me */
@@ -219,13 +229,13 @@ function HandInForm({ me, initialKind, onDone }: { me: Me; initialKind: Kind; on
   const [spendDate, setSpendDate] = useState(todayMyt());
   const [vendorName, setVendorName] = useState('');
   /* Direct pay */
-  const [type, setType] = useState<'PAYMENT' | 'DEPOSIT'>('PAYMENT');
-  const [supplier, setSupplier] = useState<Supplier | null>(null);
+  const [type, setType] = useState<'PAYMENT' | 'DEPOSIT'>(editing?.type ?? 'PAYMENT');
+  const [supplier, setSupplier] = useState<Supplier | null>(editing?.supplierId && !editing.purchaseOrderId ? { id: editing.supplierId, code: '', name: editing.payeeName } : null);
   const [poSearch, setPoSearch] = useState('');
-  const [po, setPo] = useState<{ id: string; label: string } | null>(null);
+  const [po, setPo] = useState<{ id: string; label: string } | null>(editing?.purchaseOrderId ? { id: editing.purchaseOrderId, label: 'The PO on this request' } : null);
   const poId = po?.id ?? '';
-  const [payeeName, setPayeeName] = useState('');
-  const [wantedOn, setWantedOn] = useState('');
+  const [payeeName, setPayeeName] = useState(editing && !editing.supplierId ? editing.payeeName : '');
+  const [wantedOn, setWantedOn] = useState(wantedOnAgain(editing?.wantedOn ?? null, todayMyt()));
   const pq = poSearch.trim();
   const pos = useApi<{ purchaseOrders: { id: string; poNumber: string; status: string; totalSen: number }[] }>(kind === 'direct' && pq.length >= 2 ? `/claims/purchase-orders?q=${encodeURIComponent(pq)}` : null);
 
@@ -279,7 +289,7 @@ function HandInForm({ me, initialKind, onDone }: { me: Me; initialKind: Kind; on
     if (kind === 'claim' && files.length === 0) return setProblem('Add a photo of the receipt.');
     if (kind === 'direct') {
       if (!supplier && !poId && (type === 'DEPOSIT' || !payeeName.trim())) return setProblem(type === 'DEPOSIT' ? 'A deposit is paid to a supplier on the list.' : 'Choose the supplier, a PO, or type who is paid.');
-      if (files.length === 0) return setProblem('Add the invoice, receipt or quotation.');
+      if (files.length + kept.length === 0) return setProblem('Add the invoice, receipt or quotation.');
     }
     const built = toLines(lines, amountSen);
     if (!built.ok) return setProblem(built.message);
@@ -290,11 +300,17 @@ function HandInForm({ me, initialKind, onDone }: { me: Me; initialKind: Kind; on
           { spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: built.lines }, files);
         toast({ tone: 'success', title: `Receipt ${made.receiptNo} handed in`, body: made.route === 'float' ? 'Your department\'s petty cash pays you back.' : 'Finance pays you back by transfer.' });
       } else {
-        const made = await postWithFiles<{ requestNo: string }>('/claims/requests', {
+        const body = {
           type, supplierId: poId ? undefined : supplier?.id, purchaseOrderId: poId || undefined, payeeName: !poId && !supplier ? payeeName.trim() || undefined : undefined,
           amountSen, wantedOn: wantedOn || undefined, note: note.trim() || undefined, lines: built.lines,
-        }, files);
-        toast({ tone: 'success', title: `Request ${made.requestNo} sent to finance` });
+        };
+        if (editing) {
+          await postWithFiles<{ requestNo: string }>(`/claims/requests/${editing.id}/resubmit`, { ...body, keepFileIds: kept.map(f => f.id) }, files);
+          toast({ tone: 'success', title: `Request ${editing.requestNo} sent to finance again` });
+        } else {
+          const made = await postWithFiles<{ requestNo: string }>('/claims/requests', body, files);
+          toast({ tone: 'success', title: `Request ${made.requestNo} sent to finance` });
+        }
       }
       onDone(kind === 'claim' ? spendDate.slice(0, 7) : thisMonthMyt());
     } catch (e) { setProblem(errorMessage(e)); } finally { setBusy(false); }
@@ -319,9 +335,19 @@ function HandInForm({ me, initialKind, onDone }: { me: Me; initialKind: Kind; on
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4 items-start">
       <Card className="p-4 sm:p-5 flex flex-col gap-4">
-        <FormSection title="What is this" hint={claim ? 'I paid; pay me back' : 'Finance pays a supplier'}>
-          <ChoiceChips label="Hand in as" value={kind} onChange={switchKind} options={[{ value: 'claim', label: 'Claim to me' }, { value: 'direct', label: 'Direct pay' }]} />
-        </FormSection>
+        {editing ? (
+          <FormSection title={`Changing ${editing.requestNo}`} hint={editing.status === 'REJECTED' ? `Rejected${editing.decidedBy ? ` by ${editing.decidedBy}` : ''}` : 'Withdrawn'}>
+            <div className="flex flex-col gap-2">
+              {editing.reason && <Problem text={editing.reason} />}
+              <p className="m-0 text-meta text-muted-ink">Change what is wrong and send it again. It keeps its number, and finance sees it again.</p>
+              {onCancelEdit && <div><Button size="sm" variant="tertiary" onClick={onCancelEdit}>Keep it as it is</Button></div>}
+            </div>
+          </FormSection>
+        ) : (
+          <FormSection title="What is this" hint={claim ? 'I paid; pay me back' : 'Finance pays a supplier'}>
+            <ChoiceChips label="Hand in as" value={kind} onChange={switchKind} options={[{ value: 'claim', label: 'Claim to me' }, { value: 'direct', label: 'Direct pay' }]} />
+          </FormSection>
+        )}
         {claim ? (
           <section className="ds-fs">
             <div className="ds-fs-h"><b>Receipt</b></div>
@@ -340,7 +366,18 @@ function HandInForm({ me, initialKind, onDone }: { me: Me; initialKind: Kind; on
             <section className="ds-fs">
               <div className="ds-fs-h"><b>Money and papers</b></div>
               <div className="flex flex-col gap-3">
-                <FileDropRow label="Add the invoice, receipt or quotation" hint="Photos or a PDF. Empty fields are filled from it; check them before you send." accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
+                {kept.length > 0 && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-meta font-semibold text-ink">Papers on the request</span>
+                    {kept.map(f => (
+                      <div key={f.id} className="flex items-center justify-between gap-2 min-h-10 px-3 rounded-control border border-solid border-line-soft">
+                        <a href={requestFileHref(editing!.id, f.id)} target="_blank" rel="noreferrer" className="min-w-0 truncate text-copy text-primary font-medium">{f.fileName}</a>
+                        <Button size="sm" variant="tertiary" aria-label={`Remove ${f.fileName}`} onClick={() => setKept(k => k.filter(x => x.id !== f.id))}>Remove</Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <FileDropRow label={kept.length ? 'Add more papers (optional)' : 'Add the invoice, receipt or quotation'} hint="Photos or a PDF. Empty fields are filled from it; check them before you send." accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
                   busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <MoneyInput label="Amount" required valueSen={amountSen} onChangeSen={setAmountSen} />
@@ -376,7 +413,7 @@ function HandInForm({ me, initialKind, onDone }: { me: Me; initialKind: Kind; on
         </section>
         {problem && <div role="alert" className={cx('px-3 py-2 rounded-control text-copy', TONE.critical.bg, TONE.critical.text)}>{problem}</div>}
         <div className="flex justify-end max-sm:[&>*]:w-full">
-          <Button variant="primary" loading={busy} disabled={reading} disabledReason="Reading the papers first." onClick={() => void send()}>{claim ? 'Hand in' : 'Send to finance'}</Button>
+          <Button variant="primary" loading={busy} disabled={reading} disabledReason="Reading the papers first." onClick={() => void send()}>{claim ? 'Hand in' : editing ? 'Send to finance again' : 'Send to finance'}</Button>
         </div>
       </Card>
       <div className="max-lg:order-first max-lg:hidden">{summary}</div>
@@ -488,13 +525,16 @@ function ReceiptDetail({ receipt, onClose }: { receipt: Receipt; onClose: () => 
   );
 }
 
-/** One request to finance in full; while finance has not started paying it, it can be withdrawn from here. */
-function RequestDetail({ request, onClose, onWithdraw }: { request: PaymentRequest; onClose: () => void; onWithdraw: () => void }) {
+/** One request to finance in full; while finance has not started paying it, it can be withdrawn from here. Once withdrawn
+ *  or rejected it can be changed and sent again under its own number (chew, 13 Nov 2026); one made from utility bills is
+ *  fixed on Utility bills. */
+function RequestDetail({ request, onClose, onWithdraw, onEdit }: { request: PaymentRequest; onClose: () => void; onWithdraw: () => void; onEdit: () => void }) {
   const vouchers = request.vouchers.filter(v => v.status !== 'CANCELLED').map(v => v.pvNumber).join(', ');
   return (
     <Modal title={`Request ${request.requestNo}`} eyebrow="My claims" size="md" onClose={onClose}
       footer={<>
         {canWithdraw(request) && <Button variant="tertiary" className="mr-auto" icon={<Icon name="Undo2" size="sm" />} onClick={onWithdraw}>Withdraw</Button>}
+        {canResubmit(request) && <Button variant="primary" className="mr-auto" icon={<Icon name="Pencil" size="sm" />} onClick={onEdit}>Edit and resubmit</Button>}
         <Button variant="secondary" onClick={onClose}>Close</Button>
       </>}>
       <KeyFacts cols={2} items={[
@@ -511,11 +551,13 @@ function RequestDetail({ request, onClose, onWithdraw }: { request: PaymentReque
       {request.note && <NoteBlock text={request.note} />}
       <Papers files={request.files} hrefOf={fileId => requestFileHref(request.id, fileId)} />
       {canWithdraw(request) && <p className="m-0 text-meta text-muted-ink">Finance has not started paying it, so you can still withdraw it.</p>}
+      {canResubmit(request) && <p className="m-0 text-meta text-muted-ink">Change what is wrong and send it again. It keeps its number.</p>}
+      {fixOnUtilityBills(request) && <p className="m-0 text-meta text-muted-ink">Made from utility bills: fix the bills on Utility bills, then use Send again there.</p>}
     </Modal>
   );
 }
 
-function Mine({ month, onMonthChange, onHandIn }: { month: string; onMonthChange: (month: string) => void; onHandIn: (kind: Kind) => void }) {
+function Mine({ month, onMonthChange, onHandIn, onEdit }: { month: string; onMonthChange: (month: string) => void; onHandIn: (kind: Kind) => void; onEdit: (q: PaymentRequest) => void }) {
   const receipts = useApi<{ receipts: Receipt[] }>(`/claims/receipts?month=${month}`);
   const requests = useApi<{ requests: PaymentRequest[] }>('/claims/requests');
   const toast = useToast();
@@ -539,6 +581,8 @@ function Mine({ month, onMonthChange, onHandIn }: { month: string; onMonthChange
       key: 'act', label: '', value: () => '', phone: 'hide', noExport: true,
       render: q => (canWithdraw(q) ? (
         <Button variant="secondary" size="sm" icon={<Icon name="Undo2" size="sm" />} onClick={e => { e.stopPropagation(); setWithdraw(q); }}>Withdraw</Button>
+      ) : canResubmit(q) ? (
+        <Button variant="secondary" size="sm" icon={<Icon name="Pencil" size="sm" />} onClick={e => { e.stopPropagation(); onEdit(q); }}>Edit and resubmit</Button>
       ) : null),
     },
   ];
@@ -550,7 +594,7 @@ function Mine({ month, onMonthChange, onHandIn }: { month: string; onMonthChange
         onRowClick={setOpenRequest} empty={{ title: 'Nothing asked yet', action: { label: 'Ask finance to pay', onClick: () => onHandIn('direct') } }} />
       {openReceipt && <ReceiptDetail receipt={openReceipt} onClose={() => setOpenReceipt(null)} />}
       {openRequest && <RequestDetail request={openRequest} onClose={() => setOpenRequest(null)}
-        onWithdraw={() => setWithdraw(openRequest)} />}
+        onWithdraw={() => setWithdraw(openRequest)} onEdit={() => { const q = openRequest; setOpenRequest(null); onEdit(q); }} />}
       <ConfirmDialog onClose={() => setWithdraw(null)} spec={withdraw && {
         title: `Withdraw ${withdraw.requestNo}?`,
         body: 'Finance has not paid it yet. Withdrawing removes it from their list; you can ask again later.',
