@@ -102,6 +102,7 @@ function RequestCard({ q }: { q: PaymentRequest }) {
 function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: () => void }) {
   const t = usePortalText();
   const tr = t.receipts;
+  const { day } = usePortalDates();
   const p = t.claimPay;
   const toast = useToast();
   const units = useApi<{ units: { id: string; building: string; unitNumber: string }[] }>('/claims/units');
@@ -196,8 +197,8 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
       {way === 'supplier' && <Field label={tr.payee} value={payeeName} onChange={e => setPayeeName(e.target.value)} placeholder={tr.payeePh} maxLength={200} />}
       <MoneyInput label={tr.amount} valueSen={amountSen} onChangeSen={setAmountSen} />
       {way === 'supplier'
-        ? <DateField label={tr.payBy} value={wantedOn} onChange={setWantedOn} min={todayMyt()} />
-        : <DateField label={tr.date} value={spendDate} onChange={v => { setSpendDate(v); dateTouched.current = true; }} max={todayMyt()} />}
+        ? <DateField label={tr.payBy} value={wantedOn} display={day} onChange={setWantedOn} min={todayMyt()} />
+        : <DateField label={tr.date} value={spendDate} display={day} onChange={v => { setSpendDate(v); dateTouched.current = true; }} max={todayMyt()} />}
       <Field label={tr.note} value={note} onChange={e => setNote(e.target.value)} placeholder={tr.notePh} maxLength={300} />
       <Select label={tr.unit} showLabel size="md" value={unitId} onChange={setUnitId}
         options={[{ value: '', label: tr.noUnit }, ...(units.data?.units ?? []).map(u => ({ value: u.id, label: `${buildingName(u.building)} ${u.unitNumber}` }))]} />
