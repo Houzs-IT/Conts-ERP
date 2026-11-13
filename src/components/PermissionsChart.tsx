@@ -1,61 +1,81 @@
 import { useState } from 'react';
 import { Card } from './Card';
-import { ConfirmDialog } from './ConfirmDialog';
+import { useConfirm } from './ConfirmDialog';
 import { Segmented } from './Metric';
-import DepartmentsView from './permissions/DepartmentsView';
-import PositionsView from './permissions/PositionsView';
-import UsersView from './permissions/UsersView';
+import { cx } from '../lib/design-tokens';
 import ListView from './permissions/ListView';
+import { MasterDetail } from './permissions/MasterDetail';
+import PeopleView from './permissions/PeopleView';
+import PersonPage from './permissions/PersonPage';
+import RolePage from './permissions/RolePage';
+import RolesView from './permissions/RolesView';
+import { isSameRole, useAccessChart, type RoleTarget } from './permissions/shared';
 
-type View = 'departments' | 'positions' | 'users' | 'list';
+type View = 'roles' | 'people' | 'setup';
 
-// Short labels keep all four on one line on a phone.
-const VIEWS: { key: View; label: string; short: string }[] = [
-  { key: 'departments', label: 'Departments', short: 'Depts' },
-  { key: 'positions', label: 'Positions', short: 'Positions' },
-  { key: 'users', label: 'Users', short: 'Users' },
-  { key: 'list', label: 'Departments and positions', short: 'Setup' },
+const VIEWS: { key: View; label: string }[] = [
+  { key: 'roles', label: 'Roles' },
+  { key: 'people', label: 'People' },
+  { key: 'setup', label: 'Setup' },
 ];
 
 const INTRO: Record<View, string> = {
-  departments: 'What each department can do in each part of the system. Set a level on a category and every area under it follows, unless the area has its own setting.',
-  positions: 'What one position adds to or takes from its department.',
-  users: 'What one person gets, and the settings that are theirs alone. A setting made for a person beats their position and department.',
-  list: 'The departments and positions people are placed in.',
+  roles: 'Pick a role to see and change what it can do. Grouped by company, then department. The Staff row covers people with no position.',
+  people: 'Pick a person to give them more or less than their role. Custom shows how many areas are set just for them.',
+  setup: 'The departments and positions people are placed in.',
 };
 
-/**
- * The Permissions tab: four views behind one switch. Access comes from three places, in this order: the person's own
- * settings (Edit user > Access), then their position, then their department. Only management can change any of it.
- * The view is local state because the page's tabs do not use the address either.
- */
 export default function PermissionsChart() {
-  const [view, setView] = useState<View>('departments');
-  const [pending, setPending] = useState(0);
-  const [asking, setAsking] = useState<View | null>(null);
+  const [view, setView] = useState<View>('roles');
+  const [selectedRole, setSelectedRole] = useState<RoleTarget | null>(null);
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [confirmDialog, ask] = useConfirm();
+  const { data: chart, error, reload } = useAccessChart();
 
-  const go = (next: View) => {
-    if (next === view) return;
-    // Unsaved picks live in the view that made them: say so before they are lost.
-    if (pending > 0) setAsking(next); else setView(next);
-  };
+  async function leaveThen(next: () => void): Promise<void> {
+    if (hasUnsavedChanges && (await ask({ title: 'Discard the unsaved changes?', confirmLabel: 'Discard changes', danger: true })) === null) return;
+    setHasUnsavedChanges(false);
+    next();
+  }
+  const switchView = (next: View) => leaveThen(() => { setView(next); setSelectedRole(null); setSelectedPersonId(null); });
+  const openRole = (target: RoleTarget) => (isSameRole(selectedRole, target) ? undefined : leaveThen(() => setSelectedRole(target)));
+  const openPerson = (personId: string) => (personId === selectedPersonId ? undefined : leaveThen(() => setSelectedPersonId(personId)));
+  const closeRole = () => leaveThen(() => setSelectedRole(null));
+  const closePerson = () => leaveThen(() => setSelectedPersonId(null));
+
+  if (view !== 'setup' && error && !chart) return <div className="p-5 text-copy text-muted-ink">{error}</div>;
+  if (view !== 'setup' && !chart) return <div className="p-5 text-copy text-muted-ink">Loading permissions…</div>;
+
+  const isDetailOpen = (view === 'roles' && selectedRole !== null) || (view === 'people' && selectedPersonId !== null);
 
   return (
-    <Card>
-      <div className="py-3 px-5 [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-2.5">
-        <Segmented label="Permissions view" value={view} onChange={go} options={VIEWS} />
+    <Card className="w-full max-w-[1120px]" style={{ overflow: 'clip' }}>
+      <div className={cx('py-3 px-5 [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-2.5', isDetailOpen && 'max-lg:hidden')}>
+        <Segmented label="Permissions view" value={view} onChange={switchView} options={VIEWS} />
         <span className="text-meta text-muted-ink leading-[1.5]">{INTRO[view]}</span>
       </div>
-      {view === 'departments' && <DepartmentsView onDirty={setPending} />}
-      {view === 'positions' && <PositionsView onDirty={setPending} />}
-      {view === 'users' && <UsersView onDirty={setPending} />}
-      {view === 'list' && <ListView onGoToDepartments={() => go('departments')} />}
-      <ConfirmDialog spec={asking ? {
-        title: 'Discard the unsaved changes?',
-        body: 'You picked levels that are not saved yet. Switching view throws them away.',
-        confirmLabel: 'Discard and switch', cancelLabel: 'Stay here',
-        onConfirm: () => { setPending(0); setView(asking); setAsking(null); },
-      } : null} onClose={() => setAsking(null)} />
+      {view === 'roles' && chart && (
+        <MasterDetail
+          list={<RolesView chart={chart} selectedRole={selectedRole} onOpen={openRole} />}
+          detail={selectedRole ? (
+            <RolePage key={`${selectedRole.departmentId}:${selectedRole.positionId ?? ''}`} chart={chart} target={selectedRole}
+              onBack={closeRole} onSaved={reload} onDirtyChange={setHasUnsavedChanges} />
+          ) : null}
+          emptyDetail="Pick a role on the left to see and change what it can do."
+        />
+      )}
+      {view === 'people' && chart && (
+        <MasterDetail
+          list={<PeopleView chart={chart} selectedPersonId={selectedPersonId} onOpen={openPerson} />}
+          detail={selectedPersonId ? (
+            <PersonPage key={selectedPersonId} personId={selectedPersonId} onBack={closePerson} onSaved={reload} onDirtyChange={setHasUnsavedChanges} />
+          ) : null}
+          emptyDetail="Pick a person on the left to see and change their access."
+        />
+      )}
+      {view === 'setup' && <ListView onGoToRoles={() => switchView('roles')} />}
+      {confirmDialog}
     </Card>
   );
 }

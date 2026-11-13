@@ -1,4 +1,5 @@
 import type { AnchorHTMLAttributes, CSSProperties, ButtonHTMLAttributes, ReactNode } from 'react';
+import { REFRESHING, useSnapshotLock } from '../lib/snapshotView';
 
 /** `outline` is another name for `secondary` and `ghost` for `tertiary`: same look, for the primary / outline / ghost naming. */
 type Variant = 'primary' | 'secondary' | 'outline' | 'tertiary' | 'ghost' | 'brand' | 'danger';
@@ -14,11 +15,14 @@ interface Props extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'
   children: ReactNode;
   /** Required whenever disabled. A disabled control must say why. */
   disabledReason?: string;
+  /** Changes nothing (opens another page, a filter, a tab), so it stays usable while the page shows a saved snapshot.
+   *  Every other button is disabled then, with the tooltip "Refreshing…" (lib/snapshotView.ts). */
+  live?: boolean;
 }
 
 const base: CSSProperties = {
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-  fontFamily: 'var(--font-sans)', fontWeight: 500, whiteSpace: 'nowrap',
+  fontFamily: 'var(--font-sans)', fontWeight: 600, whiteSpace: 'nowrap',
   // Longhands only: the variants and the disabled state set borderColor, and React warns when a
   // `border` shorthand and a borderColor longhand change between renders.
   borderRadius: 'var(--radius-control)', borderWidth: 1, borderStyle: 'solid', borderColor: 'transparent',
@@ -34,7 +38,8 @@ const sizes: Record<Size, CSSProperties> = {
 };
 
 const variants: Record<Look, CSSProperties> = {
-  primary:   { background: 'var(--color-brand-black)', color: 'var(--color-text-inverse)' },
+  // Conts DS v2: the one primary action is Conts green (black stays the brand slab).
+  primary:   { background: 'var(--color-primary)', color: 'var(--color-on-primary)', borderColor: 'var(--color-primary)' },
   secondary: { background: 'var(--color-surface-card)', color: 'var(--color-text-primary)', borderColor: 'var(--color-border-default)' },
   tertiary:  { background: 'transparent', color: 'var(--color-text-muted)' },
   brand:     { background: 'transparent', color: 'var(--color-text-accent)', borderColor: 'var(--color-brand-gold)' },
@@ -42,8 +47,12 @@ const variants: Record<Look, CSSProperties> = {
 };
 
 export function Button({
-  variant = 'secondary', size = 'md', loading, icon, children, disabled, disabledReason, style, ...rest
+  variant = 'secondary', size = 'md', loading, icon, children, disabled: ownDisabled, disabledReason: ownReason, style, live, ...rest
 }: Props) {
+  // A saved snapshot is on screen: nothing may act on it until the fresh answer has landed.
+  const locked = useSnapshotLock() && !live && !ownDisabled;
+  const disabled = ownDisabled || locked;
+  const disabledReason = locked ? REFRESHING : ownReason;
   const isDisabled = disabled || loading;
   // Busy keeps the button's own colours and label, with a spinner in front: the person sees which action is running.
   // Only a truly disabled button greys out.
@@ -52,6 +61,7 @@ export function Button({
   return (
     <button
       {...rest}
+      {...(live ? { 'data-live': '' } : {})}
       className={['ui-btn', rest.className].filter(Boolean).join(' ')}
       data-variant={look}
       disabled={isDisabled}

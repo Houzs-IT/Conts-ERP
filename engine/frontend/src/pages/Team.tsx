@@ -96,7 +96,7 @@ const QUICK_SEGMENTS = [
   ["no_photo", "No photo"],
 ] as const;
 
-// yyyy/mm/dd for the date columns — same normalisation as the SO list's
+// dd/mm/yyyy for the date columns — same normalisation as the SO list's
 // fmtDate, plus space-separated Postgres timestamps ("2026-07-22 09:14:33").
 const fmtDay = fmtDate;
 

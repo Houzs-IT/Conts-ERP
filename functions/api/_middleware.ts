@@ -1,13 +1,14 @@
-import { type Env, fail, withRequestDb, runDemo } from '../_lib/db';
+import { type Env, fail, json, poolFull, transientDb, withRequestDb, runDemo, afterResponse } from '../_lib/db';
 import { readSession, readCookie, signSession, cookie, clearCookie, sessionLimits, sessionState, isFieldRole } from '../_lib/auth';
 import { doorFor, doorRefusal } from '../_lib/door';
 import { accessFor, refusalFor } from '../_lib/access';
-import { flushWhenQuiet, FLUSH_DELAY_MS } from '../_lib/channexQueue';
+import { flushWhenQuiet, FLUSH_DELAY_MS, FLUSH_BUDGET_MS } from '../_lib/channexQueue';
 import { closePastStaysSometimes } from '../_lib/autoCheckout';
 import { twoStepSetupDue } from '../_lib/signIn';
 import { overLimit } from '../_lib/textLimits';
 import { once } from '../_lib/idempotency';
 import { demoAsked, demoAllowed } from '../_lib/demo';
+import { isPolled, withPollEtag } from '../_lib/pollEtag';
 
 /**
  * Runs before every /api endpoint. Most endpoints only check that someone is signed
@@ -50,9 +51,10 @@ const OWNER_ALLOWED: [string, RegExp][] = [
  *                connections and imports, receipts and claims (the engine), IT support (the IT Hub), system health,
  *                and user accounts and permissions. */
 const DEMO_LIVE = /^\/api\/(auth|account|owner|table-layouts)(\/|$)|^\/api\/demo$|^\/api\/(reservations|units|payouts|operations\/service-prices)\/export$/;
-const DEMO_REFUSED = /^\/api\/(statements\/(finalise|send)|payouts|integrations|import|claims|supply-chain|it-support|system|users|accounting|units\/[^/]+\/channex-setup)(\/|$)/;
+const DEMO_REFUSED = /^\/api\/(statements\/(finalise|send|unlock-final)|payouts|integrations|import|claims|supply-chain|it-support|system|users|accounting|units\/[^/]+\/channex-setup)(\/|$)/;
 
-const FIELD_ALLOWED: [string, RegExp][] = [
+/** Renovation staff (migration 0316): their own sign-in, account and notices, and their own clock, leave and pay. */
+const RENOVATION_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/auth\/session$/],
   ['POST', /^\/api\/auth\/logout$/],
   ['POST', /^\/api\/auth\/change-password$/],
@@ -60,7 +62,6 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/account\/[a-z0-9/-]+$/],
   ['GET', /^\/api\/notifications(\/count)?$/],
   ['PATCH', /^\/api\/notifications$/],
-  ['GET', /^\/api\/field\/(tasks|repairs|units)$/],
   // Their own clock-in and clock-out (HR phase 2); the handler finds their employee record from the login.
   ['GET', /^\/api\/field\/clock$/],
   ['POST', /^\/api\/field\/clock$/],
@@ -70,6 +71,11 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/field\/leave\/[^/]+\/cancel$/],
   // Their own pay: approved and paid slips, and an estimate of the month so far (HR phase 4).
   ['GET', /^\/api\/field\/pay$/],
+];
+
+const FIELD_ALLOWED: [string, RegExp][] = [
+  ...RENOVATION_ALLOWED,
+  ['GET', /^\/api\/field\/(tasks|repairs|units)$/],
   // Repair jobs on the phone: the technician's own and the unassigned ones they may pick up (the handlers check which).
   ['GET', /^\/api\/field\/repairs\/[^/]+$/],
   ['POST', /^\/api\/field\/repairs\/[^/]+\/(pick|drop|note)$/],
@@ -82,7 +88,7 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/tasks\/[^/]+\/(complete|photos)$/],
   ['DELETE', /^\/api\/tasks\/[^/]+\/photos\/[^/]+$/],
   ['POST', /^\/api\/maintenance\/issues$/],
-  ['POST', /^\/api\/maintenance\/issues\/[^/]+\/(photos|documents|start|end|support)$/],
+  ['POST', /^\/api\/maintenance\/issues\/[^/]+\/(photos|documents|start|end|support|pass-key-done)$/],
   // Taking back a photo or file they added on a repair (the handler checks it is theirs and the job is open).
   ['DELETE', /^\/api\/maintenance\/issues\/[^/]+\/(photos|documents)\/[^/]+$/],
   ['GET', /^\/api\/documents\/[^/]+\/download$/],
@@ -173,7 +179,8 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   if (isFieldRole(session.role) && SUPPLY_CHAIN.test(path)) {
     return fail('FORBIDDEN', 'Your account does not have access to supply chain records.', 403);
   }
-  if (isFieldRole(session.role) && !FIELD_ALLOWED.some(([m, re]) => m === request.method && re.test(path))) {
+  const fieldAllowed = session.role === 'renovator' ? RENOVATION_ALLOWED : FIELD_ALLOWED;
+  if (isFieldRole(session.role) && !fieldAllowed.some(([m, re]) => m === request.method && re.test(path))) {
     return fail('FORBIDDEN', 'This is not available in the field app.', 403);
   }
   // The level on Users and roles > Permissions (chosen by management, or the built-in one it shows).
@@ -199,13 +206,22 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   }
 
   // A money or document write sent again with the same Idempotency-Key gets the first answer back (functions/_lib/idempotency.ts).
-  const response = demoRun
+  const answered = demoRun
     ? await runDemo(() => once(env, forward, session.userId, () => next(forward)))
     : await once(env, forward, session.userId, () => next(forward));
+  // A screen's timed re-read of an unchanged list gets 304 and no body (functions/_lib/pollEtag.ts).
+  const response = isPolled(request.method, path)
+    ? await withPollEtag(request, answered, `${session.userId}|${session.role}|${demoRun ? 'demo' : ''}`)
+    : answered;
   closePastStaysSometimes(env, waitUntil);
   // Any write may have queued Channex updates; send them once the burst of edits has gone quiet.
   if (request.method !== 'GET' && response.status < 400) {
-    waitUntil(new Promise(r => setTimeout(r, FLUSH_DELAY_MS)).then(() => flushWhenQuiet(env)).catch(() => {}));
+    // Cloudflare cancels waitUntil work 30 s after the response (Hookka 87fc435a9), so the wait plus the flush stay
+    // inside that: the flush stops starting Channex calls once its budget is spent and leaves the rest queued for the
+    // cron worker's next minute. One client for the whole flush (db.ts afterResponse), not a connect for each statement
+    // once this request's has closed.
+    waitUntil(new Promise(r => setTimeout(r, FLUSH_DELAY_MS))
+      .then(() => afterResponse(waitUntil, () => flushWhenQuiet(env, Date.now() + FLUSH_BUDGET_MS))));
   }
   // Slide the idle deadline forward on every authenticated call, capped at the
   // absolute limit from first login (see signSession). Skipped when the endpoint
@@ -228,6 +244,15 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     // The demo store's own refusal (migration 0203, demo.refuse_write): a real-only table changed in Demo mode.
     const msg = e instanceof Error ? e.message : '';
     if (msg.startsWith('Demo: ')) return fail('DEMO_MODE', msg, 409);
+    // Every database connection was taken, through all of retryPoolFull's tries (db.ts): Supabase's session pooler admits
+    // 15 clients. Production logs, 12 Nov 2026: EMAXCONNSESSION is behind the occasional 500 on GET /api/properties and
+    // other reads. The same for a connection refused, reset or dropped before the answer (transientDb). Logged on its own
+    // line so it can be counted, and answered as busy (503, which the screen tries again) rather than as a fault. A read
+    // only: a write keeps the answer below, as it may have saved part of its work, and the browser never resends a write.
+    if (transientDb(e) && ctx.request.method === 'GET') {
+      console.error(poolFull(e) ? 'Database pool full' : 'Database connection failed', ctx.request.method, new URL(ctx.request.url).pathname, poolFull(e) ? '' : e);
+      return json({ error: { code: 'BUSY', message: 'The server is busy right now. Wait a moment and try again.' } }, 503, { 'retry-after': '1' });
+    }
     console.error('Unhandled error', ctx.request.method, new URL(ctx.request.url).pathname, e);
     // A write may have saved part of its work before it failed, so it does not claim "nothing was saved" (a person who
     // believes that and presses again can make a second copy). A read saved nothing.

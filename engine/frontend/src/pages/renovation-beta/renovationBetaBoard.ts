@@ -3,6 +3,7 @@
    server's BetaBoard instead of its sample data. Pure: nothing here reads the clock; today comes from the board.
    Plan: docs/superpowers/plans/2026-10-23-beta-project-workspace.md, section 10. */
 
+import { fmtDayMonth } from "../../vendor/shared/format";
 import type {
   BetaBoard, BetaBoardAppointment, BetaBoardProject, BetaBoardRef, BoardRange, DesignKind,
 } from "./renovationBetaBoardApi";
@@ -96,7 +97,6 @@ export interface BoardModel {
 }
 
 const MON = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] as const;
-const MS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 export const MONTHS: readonly string[] = MON;
 
 /* ---------- dates ---------- */
@@ -109,10 +109,9 @@ export function diff(a: string, b: string): number {
   return Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 864e5);
 }
 
-/** "23 Oct". */
+/** "23/10": the app's short date, day first. */
 export function ds(s: string): string {
-  const [, m, d] = s.split("-");
-  return `${Number(d)} ${MS[Number(m) - 1] ?? ""}`;
+  return fmtDayMonth(s);
 }
 
 export function ord(n: number): string {
@@ -437,7 +436,7 @@ export interface DeadlineGroups {
 
 const sortKey = (x: DueItem | ApptItem): string => x.due + (x.type === "appt" ? x.a.t : "");
 
-export function deadlineGroups(m: BoardModel, who: Viewing, canAssign: boolean): DeadlineGroups {
+export function deadlineGroups(m: BoardModel, who: Viewing): DeadlineGroups {
   const all = [...items(m, who), ...apptItems(m, who)].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
   const g: DeadlineGroups = { late: [], week: [], two: [], later: [], waiting: [], ready: [], todo: [] };
   for (const x of all) {
@@ -453,9 +452,10 @@ export function deadlineGroups(m: BoardModel, who: Viewing, canAssign: boolean):
     else if (p.design["3"].ok && !p.design["2"].s && mineAny(who, p.team["2"])) g.ready.push({ p, k: "2" });
   }
   for (const p of m.projects) {
-    /* A project with no design lead yet is shown to the whole team and to anyone who can assign. */
+    /* A project with no design lead belongs to nobody, so it is listed under Whole team only, like Progress's
+       "Not assigned" (YH, 11 Nov 2026). Before, anyone who could assign saw it whoever Viewing named. */
     if (p.unassigned) {
-      if (who === "All" || canAssign) g.todo.push({ p, k: "as" });
+      if (who === "All") g.todo.push({ p, k: "as" });
       continue;
     }
     if (!mine(who, p.lead?.id)) continue;
@@ -587,6 +587,20 @@ export function progressList(m: BoardModel, who: Viewing): DesignProject[] {
   return m.projects
     .filter((p) => mine(who, p.lead?.id) || mineAny(who, p.team["3"]) || mineAny(who, p.team["2"]) || mine(who, p.site?.id))
     .sort((a, b) => currentStep(m, a) - currentStep(m, b));
+}
+
+/** The whole team's progress as one group per person, by name: each project under everyone on any of its steps (lead,
+    3D, 2D, site), so a project handed from A to B for a step is in B's group too; projects with nobody under null. */
+export function progressByPerson(m: BoardModel): Array<{ person: PersonRef | null; projects: DesignProject[] }> {
+  const people = new Map<number, PersonRef>();
+  for (const p of m.projects) for (const x of [p.lead, ...p.team["3"], ...p.team["2"], p.site]) if (x) people.set(x.id, x);
+  const out: Array<{ person: PersonRef | null; projects: DesignProject[] }> = [...people.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((person) => ({ person, projects: progressList(m, person.id) }));
+  const seen = new Set(out.flatMap((g) => g.projects.map((p) => p.id)));
+  const none = progressList(m, "All").filter((p) => !seen.has(p.id));
+  if (none.length) out.push({ person: null, projects: none });
+  return out;
 }
 
 /** The index of the step the project is on now, or 99 when every step is done. */

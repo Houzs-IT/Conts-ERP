@@ -135,7 +135,7 @@ function CreateDrawer({ canWrite, onClose, onCreated }: { canWrite: boolean; onC
   }
 
   return (
-    <Drawer open onClose={onClose} width={820}>
+    <Drawer open onClose={onClose} dirty="typed" width={820}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">New consignment note</h2>
         <CloseButton onClick={onClose} />
@@ -200,7 +200,7 @@ function SettleDrawer({ cn, canWrite, onClose, onAct }: { cn: Cn; canWrite: bool
   }
 
   return (
-    <Drawer open onClose={onClose} width={760}>
+    <Drawer open onClose={onClose} dirty="typed" width={760}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{cn.cnNumber}</h2><StatusBadge entity="consignment_note" value={cn.status} /></div>
         <CloseButton onClick={onClose} />

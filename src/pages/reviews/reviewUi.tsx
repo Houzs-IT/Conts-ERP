@@ -23,7 +23,7 @@ export function StarMark({ className }: { className?: string }) {
 export function Stars({ n, max = 5, size = 'sm', label }: { n: number; max?: 5; size?: 'xs' | 'sm' | 'base'; label?: string }) {
   const whole = Math.round(n);
   return (
-    <span className={cx('inline-flex gap-px leading-none', size === 'xs' ? 'text-[11px]' : size === 'sm' ? 'text-[14px]' : 'text-[19px]')} role="img" aria-label={label ?? `${n} out of ${max} stars`}>
+    <span className={cx('inline-flex gap-px leading-none', size === 'xs' ? 'text-caption' : size === 'sm' ? 'text-copy' : 'text-title')} role="img" aria-label={label ?? `${n} out of ${max} stars`}>
       {Array.from({ length: max }, (_, i) => <StarMark key={i} className={i < whole ? 'text-ink' : 'text-line'} />)}
     </span>
   );

@@ -5,7 +5,7 @@ import { employeeIdsFor } from './hr';
 import { hasAttendance } from './attendance';
 import { workedMinutes } from './attendanceCalc';
 import { shiftDay, type PayRules } from './payrollCalc';
-import { DEPARTMENTS, type Department, type Employee } from './hrFields';
+import { DEPARTMENTS, departmentOf, type Department } from './hrFields';
 
 export { DEPARTMENTS, DEPARTMENT_LABEL, type Department } from './hrFields';
 
@@ -73,7 +73,7 @@ export async function saveHours(env: Env, rows: HourRow[], removed: string[], us
 }
 
 /** The department a person's punch is filed under before anyone splits the day: Cleaning when they are on both lists. */
-export const homeDepartment = (e: Pick<Employee, 'cleanerId' | 'technicianId'>): Department => (e.cleanerId ? 'cleaning' : 'maintenance');
+export const homeDepartment = departmentOf;
 
 /** A phone punch row, for the grid and for labour cost. */
 export interface PunchRow { id: string; employee_id: string; work_date: string; clock_in_at: string; clock_out_at: string | null; forgot_out: number }

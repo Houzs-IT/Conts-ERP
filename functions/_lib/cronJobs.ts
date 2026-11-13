@@ -16,6 +16,8 @@ import { hasAttendance } from './attendance';
 import { FORGOTTEN_AFTER_HOURS } from './attendanceCalc';
 import { dueDepartures, markGuestLeft } from './guestLeft';
 import { runGuestReviews } from './guestReviews';
+import { passKeyUrgencyChanges, applyPassKeyUrgency } from './passKeyJobs';
+import { syncLate } from './ownerLocks';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -157,6 +159,16 @@ export async function repairBlockSweep(env: Env, o: RunOptions = {}): Promise<Jo
   };
 }
 
+export async function passKeyUrgencySweep(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const changes = o.dryRun ? await passKeyUrgencyChanges(env) : await applyPassKeyUrgency(env);
+  const raised = changes.filter(change => change.urgency === 'urgent').length;
+  return {
+    job: 'pass-key-urgency',
+    summary: changes.length ? `${o.dryRun ? 'Would mark' : 'Marked'} ${plural(raised, 'pass key job')} Urgent and ${plural(changes.length - raised, 'pass key job')} Normal.` : 'Every pass key job already has the right urgency.',
+    items: changes.map(change => `${change.id}: ${change.urgency}`),
+  };
+}
+
 const HP_SYNCED_KEY = 'hostplatform.synced_at';
 /** A first run, with no earlier one on record, looks back this far; each run overlaps the last by a few minutes. */
 const HP_FIRST_LOOKBACK_MS = 2 * 86400e3;
@@ -268,8 +280,9 @@ export async function overdueSweep(env: Env, o: RunOptions = {}): Promise<JobRep
   const repairs = await all<{ id: string; urgency: string; reported_at: string }>(env, `
     SELECT id, urgency, reported_at FROM maintenance_issues
     WHERE state IN ('open','assigned','in_progress','reopened') AND reported_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+      AND (job_type = 'pass_key' AND due_on >= ?) IS NOT TRUE
       AND reported_at::timestamptz < (?::timestamptz - CASE WHEN urgency = 'urgent' THEN interval '1 day' ELSE interval '7 days' END)
-      AND reported_at::timestamptz > (?::timestamptz - interval '60 days')`, now, now);
+      AND reported_at::timestamptz > (?::timestamptz - interval '60 days')`, mytParts(new Date(now)).day, now, now);
   const stale = await all<{ id: string; owner: string; period_start: string }>(env, `
     SELECT s.id, o.display_name AS owner, s.period_start FROM owner_statements s JOIN owners o ON o.id = s.owner_id
     WHERE s.state = 'finalised' AND s.finalised_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' AND s.finalised_at::timestamptz < (?::timestamptz - interval '3 days')`, now);
@@ -393,10 +406,22 @@ export const CRON = {
 export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<JobReport>)[]> = {
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
   [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft, engineMailOutbox],
-  [CRON.quarterHour]: [drainOutbox, repairBlockSweep, guestReviewSweep],
-  [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep],
+  [CRON.quarterHour]: [drainOutbox, repairBlockSweep, guestReviewSweep, lateIncomeSweep],
+  [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep, passKeyUrgencySweep],
   [CRON.daily]: [dailyDigest],
 };
+
+/** Every 15 minutes: months whose income is locked (owner report close). A booking changed since, by HostPlatform,
+ *  Channex or by hand, reaches the owner as an owner adjustment on the next open month, once (functions/_lib/ownerLocks.ts).
+ *  With dryRun nothing is written. */
+export async function lateIncomeSweep(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  const r = await syncLate(env, {}, { dryRun: o.dryRun });
+  return {
+    job: 'late-income',
+    summary: o.dryRun ? `Would change ${plural(r.planned, 'late income adjustment')}.`
+      : r.planned ? `Posted ${r.inserted}, changed ${r.updated} and withdrew ${r.removed} late income adjustments.` : 'No locked month changed.',
+  };
+}
 
 /** Every 15 minutes: Airbnb guest reviews (functions/_lib/guestReviews.ts). The auto rules write reviews for stays
  *  that checked out, then every review that is due goes to Airbnb: approved and auto ones, a Bad guest's on day 13,

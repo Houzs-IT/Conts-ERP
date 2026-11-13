@@ -3,6 +3,7 @@ import type {
   StatementState, PayoutState, IntegrationState, SyncState, Tone,
 } from './types';
 import { statusOptions, statusLabel, type StatusEntity } from './status';
+import { isFieldRole } from './fieldRoles';
 
 /**
  * Status words and colours come from src/lib/status.ts (the one vocabulary); these older names read from it so
@@ -49,12 +50,12 @@ export const TONE: Record<Tone, { bg: string; fg: string; line: string }> = {
  *  tells what an office person does: that is their department and position, see `jobTitle`. */
 export const ROLE_LABEL: Record<string, string> = {
   management: 'Management', operations_staff: 'Office staff',
-  housekeeper: 'Cleaner', technician: 'Maintenance technician', owner: 'Owner',
+  housekeeper: 'Cleaner', technician: 'Maintenance technician', renovator: 'Renovation', owner: 'Owner',
 };
 
 /** What to print under a person's name: their department for office accounts, the field or owner label otherwise. */
 export const jobTitle = (u: { role: string; department?: string | null }): string => {
-  if (u.role === 'housekeeper' || u.role === 'technician' || u.role === 'owner') return ROLE_LABEL[u.role];
+  if (isFieldRole(u.role) || u.role === 'owner') return ROLE_LABEL[u.role];
   return u.department?.trim() || ROLE_LABEL[u.role] || u.role;
 };
 

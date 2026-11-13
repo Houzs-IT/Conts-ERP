@@ -1,18 +1,22 @@
 import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Modal } from '../Modal';
 import { DemoReservationBar, useDemoOn } from '../demo/DemoRecords';
-import { Drawer } from '../Dialog';
+import { Drawer, useDrawerDirty } from '../Dialog';
+import { KeyFacts } from '../KeyFacts';
+import { MoneyLines } from '../MoneyLines';
+import { ChoiceChips } from '../ChoiceChips';
 import { Button } from '../Button';
 import { Field } from '../Field';
 import { Select } from '../Select';
-import { DateField, TimeField, MoneyInput, PhoneInput, phoneProblem } from '../inputs';
+import { DateField, TimeField, MoneyInput, PhoneInput, phoneProblem, StayRange } from '../inputs';
 import Icon from '../Icon';
 import ChannelMark from '../ChannelMark';
 import { PhoneText } from '../PhoneText';
 import { useApi } from '../../lib/useApi';
 import { useToast } from '../Toast';
+import { incomeLockedToast } from '../../lib/lockNotice';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
-import { rm, date, dateRange, dateTime, time, nights as fmtNights, guests as fmtGuests, greetName } from '../../lib/format';
+import { rm, date, dateRange, dateTime, time, nights as fmtNights, guests as fmtGuests, greetName, buildingName } from '../../lib/format';
 import { CHANNEL_META, cx } from '../../lib/design-tokens';
 import { channelNote, deliveryToast, stayPhase, type ChannelSync } from '../../lib/bookingStatus';
 import { statusLabel } from '../../lib/status';
@@ -97,12 +101,12 @@ const MOVE_ICON: Partial<Record<ReservationState, string>> = {
 
 function Line({ label, value, sub, strong, minus, muted }: { label: ReactNode; value: ReactNode; sub?: string; strong?: boolean; minus?: boolean; muted?: boolean }) {
   return (
-    <div className={cx('flex justify-between items-baseline gap-3 py-[8px] px-[14px]', strong && 'bg-muted')}>
+    <div className={cx('flex justify-between items-baseline gap-3 py-[7px] mx-[14px] [border-bottom:1px_dashed_var(--color-line-soft)] last:border-b-0', strong && 'font-bold')}>
       <span className="flex flex-col min-w-0">
-        <span className={cx(strong ? 'text-copy font-semibold text-ink' : 'text-copy text-muted-ink')}>{label}</span>
+        <span className={cx(strong ? 'text-copy font-bold text-ink' : 'text-copy text-ink-2')}>{label}</span>
         {sub && <span className="text-caption text-muted-ink">{sub}</span>}
       </span>
-      <span className={cx('[font-variant-numeric:tabular-nums] whitespace-nowrap', strong ? 'text-copy font-semibold' : 'text-copy', muted && 'text-muted-ink')}>
+      <span className={cx('[font-variant-numeric:tabular-nums] whitespace-nowrap', strong ? 'text-heading font-bold text-primary' : 'text-copy', minus && 'text-danger', muted && 'text-muted-ink')}>
         {minus && typeof value === 'string' ? `− ${value}` : value}
       </span>
     </div>
@@ -110,7 +114,7 @@ function Line({ label, value, sub, strong, minus, muted }: { label: ReactNode; v
 }
 const Group = ({ title, children }: { title: string; children: ReactNode }) => (
   <div className="[border-top:1px_solid_var(--color-line-soft)] first:border-t-0 py-1">
-    <div className="px-[14px] pt-[6px] pb-[2px] text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{title}</div>
+    <div className="px-[14px] pt-[8px] pb-[2px] text-caption font-bold uppercase tracking-[0.12em] text-ink-2">{title}</div>
     {children}
   </div>
 );
@@ -187,14 +191,11 @@ function MoneyPanel({ d, onRecord, onRemove }: { d: Detail; onRecord: () => void
           </Group>
         ) : payout ? (
           <Group title="Host payout">
-            {room ? <>
-              <Line label="Accommodation" value={rm(room.amount)} />
-              {fees.map(l => <Line key={l.key} label={l.label} value={rm(l.amount)} />)}
-            </> : <Line label="Guest total" value={rm(L.guestTotal)} />}
-            {L.platformLines.map(l => (
-              <Line key={l.key} label={l.key === 'commission' ? `${feeOwner} service fee${pctOf(l.amount)}` : l.label} value={rm(l.amount)} minus />
-            ))}
-            <Line strong label="Total (MYR)" value={rm(L.expected)} />
+            <MoneyLines className="px-[14px] pb-1" lines={[
+              ...(room ? [{ label: 'Accommodation', sen: room.amount }, ...fees.map(l => ({ label: l.label, sen: l.amount }))] : [{ label: 'Guest total', sen: L.guestTotal }]),
+              ...L.platformLines.map(l => ({ label: l.key === 'commission' ? `${feeOwner} service fee${pctOf(l.amount)}` : l.label, sen: l.amount, kind: 'neg' as const })),
+              { label: 'Total (MYR)', sen: L.expected, kind: 'total' as const },
+            ]} />
           </Group>
         ) : (
           <Group title="Payments">
@@ -284,15 +285,17 @@ function Timeline({ events }: { events: TimelineEvent[] }) {
 /* Modals                                                              */
 /* ------------------------------------------------------------------ */
 
-export function CentreModal({ title, sub, onClose, children, maxWidth = 460 }: { title: string; sub?: string; onClose: () => void; children: ReactNode; maxWidth?: number }) {
-  return <Modal title={title} sub={sub} onClose={onClose} width={maxWidth} body="raw" layer="over">{children}</Modal>;
+export function CentreModal({ title, sub, onClose, children, maxWidth = 460, eyebrow, size }: {
+  title: string; sub?: string; onClose: () => void; children: ReactNode; maxWidth?: number; eyebrow?: string; size?: 'sm' | 'md' | 'lg';
+}) {
+  return <Modal title={title} sub={sub} onClose={onClose} width={maxWidth} size={size} eyebrow={eyebrow} body="raw" layer="over">{children}</Modal>;
 }
 
 /** The buttons at the foot of a CentreModal form (whose padding is px-[22px] py-4): a footer bar on the page tint, as on
  *  every other dialog, kept in view while a long form scrolls. A sticky box stops at the scroller's padding, hence -bottom-4 against the form's py-4. */
 export function ModalActions({ children }: { children: ReactNode }) {
   return (
-    <div className="sticky -bottom-4 z-[1] -mx-[22px] -mb-4 mt-1 px-[22px] py-[14px] [border-top:1px_solid_var(--color-line)] bg-page flex items-center justify-end flex-wrap gap-[9px]">
+    <div className="sticky -bottom-4 z-[1] -mx-[22px] -mb-4 mt-1 px-[22px] py-[14px] [border-top:1px_solid_var(--color-line-soft)] bg-card flex items-center justify-end flex-wrap gap-2">
       {children}
     </div>
   );
@@ -317,7 +320,7 @@ export function MessageGuestModal({ r, onClose, onSent }: { r: { id: string; gue
     setBusy(false);
   }
   return (
-    <CentreModal title={`Message ${r.guestName || 'guest'}`} sub={`Goes to the guest's ${thread} conversation when that channel is connected.`} onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal eyebrow="Reservations" title={`Message ${r.guestName || 'guest'}`} sub={`Goes to the guest's ${thread} conversation when that channel is connected.`} onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div className="flex flex-col gap-[6px]">
           <label htmlFor="bk-msg" className="text-meta font-medium text-muted-ink">Message</label>
@@ -358,10 +361,11 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
     if (!valid) return;
     setBusy(true); setError(null); setFieldErrors({});
     try {
-      const res = await api.patch<{ effects?: { channel: ChannelSync } }>(`/reservations/${d.id}/dates`, {
+      const res = await api.patch<{ effects?: { channel: ChannelSync }; notice?: string | null }>(`/reservations/${d.id}/dates`, {
         checkIn, checkOut, confirm: true, ...(priceChanged ? { grossBookingValue: totalSen } : {}),
       });
       onSaved({ checkIn, checkOut, channel: res?.effects?.channel });
+      if (res?.notice) toast(incomeLockedToast(res.notice));
     } catch (err) {
       setError(failMessage(err));
       if (err instanceof ApiFailure && err.fields) setFieldErrors(err.fields);
@@ -371,11 +375,16 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
   }
 
   return (
-    <CentreModal title="Change dates" sub="Checked against the unit's other reservations before it is saved. The guest is not messaged." onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal eyebrow="Reservations" title="Change dates" sub="Checked against the unit's other reservations before it is saved. The guest is not messaged." onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-meta text-muted-ink">
           Now: {dateRange(d.checkIn, d.checkOut)} · {fmtNights(d.nights)}{d.money.gross > 0 ? ` · ${rm(d.money.gross)}` : ''}
         </div>
+        {!inHouse ? (
+          <StayRange label="New dates" from={checkIn} to={checkOut} onChange={(f, t) => { setCheckIn(f); setCheckOut(t); }} required
+            error={fieldErrors.checkIn || fieldErrors.checkOut}
+            help={n >= 1 && (checkIn !== d.checkIn || checkOut !== d.checkOut) ? `New dates: ${dateRange(checkIn, checkOut)} · ${fmtNights(n)}` : undefined} />
+        ) : (
         <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
           <DateField label="Check-in" value={checkIn} onChange={setCheckIn} required disabled={inHouse} error={fieldErrors.checkIn}
             help={inHouse ? 'The guest is already in.' : undefined} />
@@ -383,6 +392,7 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
             error={checkIn && checkOut && n < 1 ? 'Checkout must be after check-in.' : fieldErrors.checkOut}
             help={n >= 1 && (checkIn !== d.checkIn || checkOut !== d.checkOut) ? `New dates: ${dateRange(checkIn, checkOut)} · ${fmtNights(n)}` : undefined} />
         </div>
+        )}
         {priced ? (
           <MoneyInput label="Guest total (RM)" valueSen={totalSen} onChangeSen={setTotalSen} required
             error={totalSen == null ? 'Enter the guest total, or 0.00.' : fieldErrors.grossBookingValue}
@@ -433,6 +443,8 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
       const res = await api.post<unknown>(`/reservations/${d.id}/payments`, { amount: sen, receivedOn, kind, method, reference: reference || undefined, note: note || undefined, reason: refund && reason.trim() ? reason.trim() : undefined });
       // With approvals on, a refund waits for a second person and nothing is recorded yet.
       if (isStaged(res)) { toast(stagedToast(res)); onSaved(''); setBusy(false); return; }
+      const notice = (res as { notice?: string | null } | null)?.notice;
+      if (notice) toast(incomeLockedToast(notice));
       if (refund) { onSaved(`Refund of ${rm(sen)} recorded.`); setBusy(false); return; }
       const left = Math.max(d.ledger.outstanding - sen, 0);
       onSaved(`Payment of ${rm(sen)} recorded. ${left > 0 ? `${rm(left)} still outstanding.` : 'Nothing is outstanding now.'}`);
@@ -443,29 +455,22 @@ function RecordPaymentModal({ d, onClose, onSaved }: { d: Detail; onClose: () =>
     setBusy(false);
   }
   return (
-    <CentreModal title="Record payment" sub={`Expected ${rm(d.ledger.expected)} · received ${rm(d.ledger.received)} · outstanding ${rm(d.ledger.outstanding)}`} onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal eyebrow="Reservations" title="Record payment" sub={`Expected ${rm(d.ledger.expected)} · received ${rm(d.ledger.received)} · outstanding ${rm(d.ledger.outstanding)}`} onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
-        <div role="radiogroup" aria-label="What is this" className="grid grid-cols-3 gap-1 p-1 rounded-control bg-muted">
-          {(['guest_payment', 'ota_payout', 'refund'] as const).map(k => (
-            <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => {
-              // A refund starts from what was received, never from what is still owed.
-              if ((k === 'refund') !== refund) setSen(k === 'refund' ? (d.ledger.received > 0 ? d.ledger.received : null) : (d.ledger.outstanding > 0 ? d.ledger.outstanding : null));
-              setKind(k);
-            }}
-              className={cx('h-9 rounded-[8px] border-none [font-family:inherit] text-meta cursor-pointer', kind === k ? 'bg-card font-semibold text-ink shadow-sm' : 'bg-transparent text-muted-ink')}>
-              {k === 'guest_payment' ? 'From the guest' : k === 'ota_payout' ? 'Host payout' : 'Refund'}
-            </button>
-          ))}
-        </div>
+        <ChoiceChips<Payment['kind']> label="What is this" value={kind}
+          options={[{ value: 'guest_payment', label: 'From the guest' }, { value: 'ota_payout', label: 'Host payout' }, { value: 'refund', label: 'Refund' }]}
+          onChange={k => {
+            // A refund starts from what was received, never from what is still owed.
+            if ((k === 'refund') !== refund) setSen(k === 'refund' ? (d.ledger.received > 0 ? d.ledger.received : null) : (d.ledger.outstanding > 0 ? d.ledger.outstanding : null));
+            setKind(k);
+          }} />
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <MoneyInput label="Amount (RM)" valueSen={sen} onChangeSen={setSen} minSen={1} required
             error={tooMuch ? (d.ledger.received > 0 ? `At most ${rm(d.ledger.received)}, what was received.` : 'Nothing has been received to refund.') : errors.amount} />
           <DateField label={kind === 'refund' ? 'Refunded on' : 'Received on'} value={receivedOn} max={todayIso()} onChange={setReceivedOn} required error={errors.receivedOn} />
         </div>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
-          <Select label="Method" showLabel size="md" value={method} onChange={setMethod} options={METHODS.map(m => ({ value: m, label: m }))} />
-          <Field label="Reference (optional)" value={reference} onChange={e => setReference(e.target.value)} placeholder="Bank or receipt reference" />
-        </div>
+        <ChoiceChips label="Method" value={method} onChange={setMethod} options={METHODS.map(m => ({ value: m, label: m }))} />
+        <Field label="Reference (optional)" value={reference} onChange={e => setReference(e.target.value)} placeholder="Bank or receipt reference" />
         <Field label="Note (optional)" value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Deposit, balance at check-in" />
         {refund && approvalsOn && <>
           <Field label="Why the guest is refunded (required)" value={reason} onChange={e => setReason(e.target.value)} required maxLength={500}
@@ -503,7 +508,7 @@ function TimesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => void; o
     setBusy(false);
   }
   return (
-    <CentreModal title="Check-in and checkout times" sub="For an early check-in or a late checkout. The dates do not change, and the guest is not messaged." onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal eyebrow="Reservations" title="Check-in and checkout times" sub="For an early check-in or a late checkout. The dates do not change, and the guest is not messaged." onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <TimeField label={`Check-in from (${date(d.checkIn)})`} value={inTime} onChange={setInTime} required disabled={d.state === 'checked_in'}
@@ -540,7 +545,7 @@ function PassKeyBox({ reservationId, passKey, onSaved }: { reservationId: string
   }
   return (
     <div className="flex flex-col gap-2 text-copy">
-      <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">Pass key</div>
+      <div className="text-caption font-bold uppercase tracking-[0.12em] text-ink-2">Pass key</div>
       <label className="flex items-center gap-3 min-h-11 cursor-pointer">
         <input type="checkbox" className="size-5 flex-none" checked={passKey.selfCheckIn} disabled={busy} onChange={e => void save(e.target.checked)} />
         Guest checks in by themselves (no pass key)
@@ -560,6 +565,8 @@ function NotesBox({ d, onSaved }: { d: Detail; onSaved: () => void }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => { setText(d.staffNotes ?? ''); }, [d.staffNotes]);
   const dirty = text.trim() !== (d.staffNotes ?? '').trim();
+  // Notes typed and not saved: the drawer asks before Escape or the dimmed strip closes it.
+  useDrawerDirty(dirty);
   async function save() {
     setBusy(true);
     try {
@@ -572,7 +579,7 @@ function NotesBox({ d, onSaved }: { d: Detail; onSaved: () => void }) {
   const imported = d.notes && !/^Imported from (HostPlatform|owner workbook) \([^)]*\)$/.test(d.notes.replace(/ · amounts from owner workbook$/, '')) ? d.notes : null;
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor="bk-notes" className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">Notes</label>
+      <label htmlFor="bk-notes" className="text-caption font-bold uppercase tracking-[0.12em] text-ink-2">Notes</label>
       {imported && <div className="text-meta text-muted-ink py-2 px-3 rounded-control bg-page border border-solid border-line-soft break-words">{imported}</div>}
       <textarea id="bk-notes" value={text} onChange={e => setText(e.target.value)} rows={3} maxLength={2000} placeholder="Internal notes for the team, e.g. Guest asked for a high floor"
         className="block w-full box-border text-ink bg-white border border-solid border-line rounded-control outline-none [font-family:inherit] text-copy p-[10px_12px] resize-y" />
@@ -618,7 +625,7 @@ function LateCheckoutModal({ id, s, onClose, onSaved }: { id: string; s: LateChe
     setBusy(false);
   }
   return (
-    <CentreModal title="Request late checkout" sub={`Checkout is by ${now} on ${date(s.checkOut)}. The time changes only after the guest pays.`} onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal eyebrow="Reservations" title="Request late checkout" sub={`Checkout is by ${now} on ${date(s.checkOut)}. The time changes only after the guest pays.`} onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <TimeField label="New checkout time" value={time} onChange={setTime} required
@@ -660,7 +667,7 @@ function LateCheckoutPaidModal({ id, s, lc, onClose, onSaved }: { id: string; s:
     setBusy(false);
   }
   return (
-    <CentreModal title="Guest paid for late checkout" sub={`${rm(lc.amount)} for checkout by ${lc.checkoutTime} on ${date(s.checkOut)}. Company income, not on the owner statement.`} onClose={() => { if (!busy) onClose(); }}>
+    <CentreModal eyebrow="Reservations" title="Guest paid for late checkout" sub={`${rm(lc.amount)} for checkout by ${lc.checkoutTime} on ${date(s.checkOut)}. Company income, not on the owner statement.`} onClose={() => { if (!busy) onClose(); }}>
       <form onSubmit={submit} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
         <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
           <DateField label="Received on" value={receivedOn} max={todayIso()} onChange={setReceivedOn} required error={errors.receivedOn} />
@@ -745,6 +752,7 @@ function GuestPhoneRow({ guestId, phone, onSaved }: { guestId: string; phone: st
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (!editing) setValue(shown ?? ''); }, [shown, editing]);
+  useDrawerDirty(editing && value.trim() !== (shown ?? '').trim());
   async function save() {
     const problem = value.trim() ? phoneProblem(value) : undefined;
     if (problem) { setError(problem); return; }
@@ -787,7 +795,7 @@ export function BookingDrawer({ id, summary, onClose, onChanged, onDuplicated }:
   onChanged?: (id: string) => void; onDuplicated?: (newId: string) => void;
 }) {
   return (
-    <Drawer open={!!id} onClose={onClose} width={460}>
+    <Drawer open={!!id} onClose={onClose} size="md">
       {id && <Panel key={id} id={id} summary={summary ?? null} onClose={onClose} onChanged={onChanged} onDuplicated={onDuplicated} />}
     </Drawer>
   );
@@ -831,7 +839,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   async function move(m: Move, reason?: string) {
     setBusy(true);
     try {
-      const res = await api.patch<{ state: ReservationState; effects: { channel: ChannelSync; readiness: string | null; turnoverCreated: boolean; tasksRemoved: number; tasksKept: number } }>(
+      const res = await api.patch<{ state: ReservationState; effects: { channel: ChannelSync; readiness: string | null; turnoverCreated: boolean; tasksRemoved: number; tasksKept: number }; notice?: string | null }>(
         `/reservations/${id}`, { state: m.to, ...(reason ? { reason } : {}) });
       const e = res.effects;
       const bits = [
@@ -843,6 +851,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
       ].filter(Boolean);
       // vocab-ok: 'booking' here is the status entity key, not text
       toast({ tone: m.to === 'cancelled' || m.to === 'no_show' ? 'neutral' : 'success', title: `${s!.externalRef ?? 'Reservation'} is now ${statusLabel('booking', res.state)}.`, body: bits.join(' ') || undefined });
+      if (res.notice) toast(incomeLockedToast(res.notice));
       setAsking(null);
       reload(); onChanged?.(id);
     } catch (err) {
@@ -867,8 +876,9 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
   async function removePayment(p: Payment) {
     setBusy(true);
     try {
-      await api.del(`/reservations/${id}/payments/${p.id}`);
+      const res = await api.del<{ notice?: string | null }>(`/reservations/${id}/payments/${p.id}`);
       toast({ tone: 'neutral', title: `${KIND_LABEL[p.kind]} of ${rm(p.amount)} removed.` });
+      if (res?.notice) toast(incomeLockedToast(res.notice));
       setRemoving(null); reload(); onChanged?.(id);
     } catch (err) { toast({ tone: 'critical', title: 'Payment not removed.', body: failMessage(err) }); }
     setBusy(false);
@@ -889,7 +899,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
 
   const pick = (m: Move) => { if (m.needsReason) setAsking(m); else void move(m); };
   const cancelMove = d?.moves.find(m => m.to === 'cancelled' && m.allowed);
-  const metaLine = `${s.guestName || ch.label} · ${s.propertyName} ${s.unitNumber} · ${dateRange(s.checkIn, s.checkOut)}`;
+  const metaLine = `${s.guestName || ch.label} · ${buildingName(s.propertyName)} ${s.unitNumber} · ${dateRange(s.checkIn, s.checkOut)}`;
   const saved = (msg: string) => { toast({ tone: 'success', title: msg }); reload(); onChanged?.(id); };
   const nationality = d ? countryName(d.nationality) : null;
 
@@ -901,7 +911,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
             <ChannelMark ch={s.channel} size={24} />
             <div className="flex flex-col min-w-0">
               <span className="text-heading font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{s.channel === 'owner_stay' ? (s.guestName ? `Owner stay · ${s.guestName}` : 'Owner stay') : block ? 'Blocked dates' : (s.guestName || 'No guest name')}</span>
-              <span className="text-meta text-[rgba(255,255,255,0.72)] whitespace-nowrap overflow-hidden text-ellipsis">{s.propertyName} {s.unitNumber} · {fmtNights(nights)}</span>
+              <span className="text-meta text-[rgba(255,255,255,0.72)] whitespace-nowrap overflow-hidden text-ellipsis">{buildingName(s.propertyName)} {s.unitNumber} · {fmtNights(nights)}</span>
             </div>
           </div>
           <CloseButton onClick={onClose} onDark />
@@ -928,19 +938,12 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-px bg-line border border-solid border-line rounded-card overflow-hidden">
-          {([
-            [date(s.checkIn), block ? 'From' : `Check-in${s.checkInTime ? ` · from ${s.checkInTime}` : ''}`],
-            [date(s.checkOut), block ? 'Until (the day it frees up)' : `Checkout${s.checkOutTime ? ` · by ${s.checkOutTime}` : ''}`],
-            [fmtNights(nights), 'Length'],
-            [s.guestsCount > 0 ? fmtGuests(s.guestsCount) : '—', 'Guests'],
-          ] as const).map(([v, l]) => (
-            <div key={l} className="bg-card py-[11px] px-[13px] flex flex-col gap-0.5">
-              <span className="text-copy font-semibold">{v}</span>
-              <span className="text-caption text-muted-ink">{l}</span>
-            </div>
-          ))}
-        </div>
+        <KeyFacts cols={2} items={[
+          [block ? 'From' : `Check-in${s.checkInTime ? ` · from ${s.checkInTime}` : ''}`, date(s.checkIn)],
+          [block ? 'Until (frees up)' : `Checkout${s.checkOutTime ? ` · by ${s.checkOutTime}` : ''}`, date(s.checkOut)],
+          ['Length', fmtNights(nights)],
+          ['Guests', s.guestsCount > 0 ? fmtGuests(s.guestsCount) : '—'],
+        ]} />
         {d && live && !block && (
           <button type="button" onClick={() => setTimesOpen(true)}
             className="self-start -mt-3 p-0 border-none bg-transparent [font-family:inherit] text-meta text-ink underline cursor-pointer">Change check-in or checkout time</button>
@@ -950,7 +953,7 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
 
         {!block && d && (
           <div className="flex flex-col gap-1 text-copy">
-            <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-1">Guest</div>
+            <div className="text-caption font-bold uppercase tracking-[0.12em] text-ink-2 mb-1">Guest</div>
             {d.guestId
               ? <GuestPhoneRow guestId={d.guestId} phone={d.guestPhone} onSaved={() => { reload(); onChanged?.(id); }} />
               : <div className="flex justify-between gap-3"><span className="text-muted-ink">Phone</span><span className="text-right break-all"><PhoneText value={d.guestPhone} className="text-ink" /></span></div>}
@@ -987,13 +990,13 @@ function Panel({ id, summary, onClose, onChanged, onDuplicated }: {
         {!block && d && <NotesBox d={d} onSaved={reload} />}
 
         <div>
-          <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-3">Timeline</div>
+          <div className="text-caption font-bold uppercase tracking-[0.12em] text-ink-2 mb-3">Timeline</div>
           {d ? <Timeline events={d.timeline} /> : <div className="text-meta text-muted-ink">{error ?? 'Loading…'}</div>}
         </div>
 
         <PhoneHistory>
           <div>
-            <div className="text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink mb-3">History</div>
+            <div className="text-caption font-bold uppercase tracking-[0.12em] text-ink-2 mb-3">History</div>
             <div className="rounded-card border border-solid border-line overflow-hidden bg-card">
               <RecordHistory entity="reservations" id={id} bare pageSize={10} refreshKey={data} />
             </div>

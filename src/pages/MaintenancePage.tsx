@@ -5,7 +5,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { DateField, DateTimeField, MoneyInput } from '../components/inputs';
 import Icon from '../components/Icon';
-import { Select, SearchSelect, type SelectOption } from '../components/Select';
+import { SearchSelect, type SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { Skeleton } from '../components/States';
 import { AttachmentLabel, MediaGallery, FileList, FileDropRow, PhotosPdfButton } from '../components/Attachments';
@@ -14,22 +14,31 @@ import SplitPane from '../components/SplitPane';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useApi } from '../lib/useApi';
+import { useSeedOnce } from '../lib/useSeedOnce';
 import { refreshNavCounts } from '../lib/navBadges';
 import { api, ApiFailure, errorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useUnitRoster, type RosterUnit } from '../lib/useUnitRoster';
 import { cx } from '../lib/design-tokens';
-import { rm, plural, dateShort, date, monthLabel } from '../lib/format';
+import { rm, plural, dateShort, date, monthLabel, buildingName } from '../lib/format';
 import { runEach, skippedNote } from '../lib/bulk';
 import {
-  PillTabs, Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm, PassKeyJobForm, AssigneePicker, useTechnicians, KIND_WORD } from '../components/ops/OpsUi';
+  Segmented, OpsModal, FormRow, INPUT, CloseButton, uploadTo, CATEGORY, stamp, hm, mytDay, type MediaItem, MaintenanceJobForm, PassKeyJobForm, AssigneePicker, useTechnicians, KIND_WORD, PASS_KEY_URGENCY_HINT } from '../components/ops/OpsUi';
 import type { AnyTone } from '../lib/status';
 import { StatusBadge } from '../components/StatusBadge';
+import { Segmented as MetricSegmented } from '../components/Metric';
+import { ChoiceChips } from '../components/ChoiceChips';
+import { PhoneCard, ToolbarSearch } from '../components/ListToolbar';
 import { CatalogPanel, ExchangeModal, type Sku, type SkuPayload, type CatalogInput } from './MaintenanceCatalog';
 import { ServicePrices } from './ServicePrices';
 import { PriceChangePanel } from './units/PriceChangePanel';
 import { JobMoneyPanel, JobProfitView } from '../components/ops/JobMoney';
+import { JobClaimBox } from '../components/ops/JobClaimBox';
+import { PORTAL_ENGLISH } from '../lib/portalI18n';
+import type { Me } from '../lib/claims';
 import { HistoryDisclosure, PhoneHistory, RecordHistory } from '../components/RecordHistory';
+import { passKeyStatus, passKeyDay, type PassKeyStatus, type PassKeyDay } from '../lib/passKeyStatus';
+import { typeOf, isUrgent, needsSupport, awaitingOwner, isOffDayPassKey as offDayPassKey, openOrder, type JobType } from '../lib/maintenanceOrder';
 
 /* ---------- the API's shape (functions/api/maintenance/issues.ts) ---------- */
 
@@ -47,37 +56,47 @@ interface Issue {
   /** Migration 0126: job type, severity, parts and due date; approvalStatus is Needs owner approval / Approved / Not needed. */
   jobType?: JobType; severity?: 'minor' | 'major'; dueOn?: string | null; needsParts?: boolean; partsArrivedAt?: string | null;
   approvalStatus?: 'needed' | 'approved' | 'not_needed';
-  supportRequestedAt?: string | null; supportNote?: string | null;
+  supportRequestedAt?: string | null; supportNote?: string | null; urgentByHand?: boolean;
 }
-type JobType = 'urgent' | 'pass_key' | 'normal';
 const JOB_TYPE: Record<JobType, string> = { urgent: 'Urgent', pass_key: 'Pass key', normal: 'Normal' };
-const JOB_ORDER: Record<JobType, number> = { urgent: 0, pass_key: 1, normal: 2 };
 const APPROVAL: Record<string, { label: string; tone: AnyTone }> = {
   needed: { label: 'Needs owner approval', tone: 'warning' }, approved: { label: 'Approved', tone: 'success' }, not_needed: { label: 'Not needed', tone: 'neutral' },
 };
-const typeOf = (i: Issue): JobType => i.jobType ?? (i.urgency === 'urgent' ? 'urgent' : 'normal');
-const isOffDayPassKey = (i: Issue): boolean => typeOf(i) === 'pass_key' && !!i.dueOn && i.dueOn !== mytDay(0);
+const jobBadge = (i: Issue): { label: string; tone: 'critical' | 'info' | 'neutral' } => {
+  const type = typeOf(i);
+  if (type === 'pass_key' && isUrgent(i)) return { label: 'Pass key · Urgent', tone: 'critical' };
+  return { label: JOB_TYPE[type], tone: type === 'urgent' ? 'critical' : type === 'pass_key' ? 'info' : 'neutral' };
+};
+const isOffDayPassKey = (i: Issue): boolean => offDayPassKey(i, mytDay(1));
 /** Approved, but the parts it waits for have not come: still hidden from the technicians. */
-const needsSupport = (i: Issue): boolean => i.state !== 'resolved' && !i.endedAt && !!i.supportRequestedAt;
 const waitingParts = (i: Issue) => i.state !== 'resolved' && i.approvalStatus === 'approved' && !!i.needsParts && !i.partsArrivedAt;
 /** `billing` is false until migration 0108 is applied; billing date, collected and contractor payment are then hidden. */
 interface Payload { billing?: boolean; jobTypes?: boolean; data: Issue[] }
+/** ?view=open: the Open tab's first rows and the counts, which show while the full list is still on its way. */
+interface FirstView extends Payload { partial: true; summary: { open: number; urgent: number; support: number; approval: number; passKeys: number; monthCost: number | null } }
 interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploadedAt: string; byteSize?: number }
 
 type Tab = 'open' | 'pass_key' | 'support' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'profit';
+type JobTab = Exclude<Tab, 'catalog' | 'rules' | 'profit'>;
 const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the_conts: 'Company', guest_deposit: 'Guest (from the deposit)', warranty: 'Warranty' };
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
 const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office', booking: 'Reservation' };
 const checkInAt = (i: Issue): string => i.windows[0]?.startsAt ?? i.dueOn ?? i.reportedAt;
 // The item catalog: staff pick an item (or Other) on a job; management and operations keep the list (request M3).
 const SHOW_CATALOG = true;
-const DOC_KIND: Record<string, string> = { claim: 'Claim from the technician or contractor', invoice: 'Invoice to the payer', receipt: 'Receipt', purchase: 'Bought by staff (handed in as a receipt)', pod: 'Proof of work', other: 'File' };
+/* The job's two boxes (chew, 12 Nov 2026): a claim handed in (purchase) and the second box (pod). The other kinds are no
+   longer offered; files already on jobs keep them. */
+const DOC_KIND: Record<string, string> = { purchase: 'Claim', pod: 'Receipt / Proof of work and product', claim: 'Claim from the technician or contractor', invoice: 'Invoice to the payer', receipt: 'Receipt', other: 'File' };
 /** Who the money is collected from; the company and a warranty pay their own share, so nothing is collected. */
 const COLLECT_FROM: Partial<Record<ChargeTo, string>> = { owner: 'the owner', guest_deposit: "the guest's deposit" };
 const FIELD_ROLES = ['housekeeper', 'technician'];
 
-const awaitingOwner = (i: Issue) => i.state !== 'resolved' && i.ownerApprovalRequired && !i.ownerApprovedAt && i.chargeTo === 'owner';
+const PASS_KEY_STATUS: Record<PassKeyStatus, { label: string; tone: AnyTone }> = {
+  new: { label: 'New', tone: 'neutral' }, assigned: { label: 'Assigned', tone: 'neutral' }, needs_support: { label: 'Needs support', tone: 'critical' },
+  missed: { label: 'Missed', tone: 'critical' }, done: { label: 'Pass key done', tone: 'success' },
+};
 function statusOf(i: Issue): { label: string; tone: AnyTone } {
+  if (typeOf(i) === 'pass_key') return PASS_KEY_STATUS[passKeyStatus({ state: i.state, assigneeName: i.vendorName, dueOn: i.dueOn ?? null, supportRequestedAt: i.supportRequestedAt ?? null }, mytDay(0))];
   if (i.state === 'resolved') return { label: i.finalAmount ? `Done · ${PAYER_SHORT[i.chargeTo]}` : 'Done', tone: 'success' };
   if (awaitingOwner(i)) return { label: 'Awaiting owner approval', tone: 'warning' };
   if (waitingParts(i)) return { label: 'Waiting for parts', tone: 'warning' };
@@ -87,6 +106,9 @@ function statusOf(i: Issue): { label: string; tone: AnyTone } {
   return { label: 'New', tone: 'neutral' };
 }
 
+/** How many of the Open tab's jobs the first view brings (the table's first page). */
+const FIRST_ROWS = 50;
+
 export default function MaintenancePage() {
   const toast = useToast();
   const { user } = useSession();
@@ -94,15 +116,19 @@ export default function MaintenancePage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('open');
+  const [passKeyDayShown, setPassKeyDayShown] = useState<PassKeyDay>('today');
   const [q, setQ] = useState('');
-  const [filtersTarget, setFiltersTarget] = useState<HTMLDivElement | null>(null);
   const selected = params.get('id');
   const setSelected = (id: string | null) => setParams(p => { const n = new URLSearchParams(p); if (id) n.set('id', id); else n.delete('id'); return n; }, { replace: true });
   const [creating, setCreating] = useState(false);
   const [isAddingPassKey, setIsAddingPassKey] = useState(false);
   const canAddPassKey = !!user && !FIELD_ROLES.includes(user.role) && user.role !== 'owner';
 
-  const { data, loading, error, reload: reloadData } = useApi<Payload>('/maintenance/issues');
+  const { data, loading, error, reload: reloadData, fromSnapshot } = useApi<Payload>('/maintenance/issues');
+  // Asked at the same time as the full list and much smaller, so the header, the tab counts and the Open tab's first rows
+  // show before every job has arrived (performance, 12 Nov 2026); the full list replaces it the moment it lands.
+  const first = useApi<FirstView>(data ? null : `/maintenance/issues?view=open&limit=${FIRST_ROWS}`);
+  const early = !data && first.data ? first.data : null;
   // The side menu's counts (open jobs, today's work) follow what was just done here.
   const reload = () => { reloadData(); void refreshNavCounts(); };
   const issues = data?.data ?? [];
@@ -121,24 +147,24 @@ export default function MaintenancePage() {
   const recentDone = issues.filter(i => i.state === 'resolved' && i.resolvedAt && Date.parse(i.resolvedAt) > Date.now() - 30 * 864e5);
   // The header counts what the tabs count: a job waiting for its owner sits under that tab, not under Open.
   const openTab = open.filter(i => !awaitingOwner(i) && !isOffDayPassKey(i));
-  const urgent = openTab.filter(i => typeOf(i) === 'urgent').length;
+  const urgent = openTab.filter(isUrgent).length;
   const passKeys = openTab.filter(i => typeOf(i) === 'pass_key');
+  const passKeysOn = (day: PassKeyDay): Issue[] => passKeys.filter(i => passKeyDay(i.dueOn ?? null, mytDay(1)) === day);
   const support = openTab.filter(needsSupport);
   const monthCost = issues.filter(i => i.state === 'resolved' && (i.resolvedAt ?? '').slice(0, 7) === monthStart).reduce((s, i) => s + (i.finalAmount ?? 0), 0);
 
-  const base = tab === 'open' ? openTab : tab === 'pass_key' ? passKeys : tab === 'support' ? support : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
+  const base = tab === 'open' ? openTab : tab === 'pass_key' ? passKeysOn(passKeyDayShown) : tab === 'support' ? support : tab === 'approval' ? approval : tab === 'done' ? recentDone : issues;
   const ql = q.trim().toLowerCase();
   const rows = base.filter(i => (!ql || `${unitText(i)} ${i.propertyName} ${i.title} ${i.vendorName ?? ''}`.toLowerCase().includes(ql)))
     // Open jobs in the order they are worked: Urgent, Pass key, then Normal one by one by due date (the day reported when none).
     .sort((a, b) => tab === 'pass_key' ? checkInAt(a).localeCompare(checkInAt(b))
-      : tab === 'open'
-      ? JOB_ORDER[typeOf(a)] - JOB_ORDER[typeOf(b)] || (a.dueOn ?? a.reportedAt.slice(0, 10)).localeCompare(b.dueOn ?? b.reportedAt.slice(0, 10)) || a.reportedAt.localeCompare(b.reportedAt)
+      : tab === 'open' ? openOrder(a, b)
       : b.reportedAt.localeCompare(a.reportedAt));
   // Every building with units, not only those with a job loaded (request M1): a filter that lists a building with no
   // jobs simply shows none.
   const roster = useUnitRoster();
   const buildingOptions: SelectOption[] = useMemo(() => {
-    const m = new Map<string, string>([...roster.filter(u => u.propertyId).map(u => [u.propertyId!, u.propertyName] as [string, string]), ...issues.map(i => [i.buildingId, i.propertyName] as [string, string])]);
+    const m = new Map<string, string>([...roster.filter(u => u.propertyId).map(u => [u.propertyId!, buildingName(u.propertyName)] as [string, string]), ...issues.map(i => [i.buildingId, buildingName(i.propertyName)] as [string, string])]);
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'en', { numeric: true })).map(([value, label]) => ({ value, label }));
   }, [issues, roster]);
   const unitOptions: FilterOption[] = useMemo(() => {
@@ -149,12 +175,17 @@ export default function MaintenancePage() {
     const collator = new Intl.Collator('en', { numeric: true });
     return [...byId.values()].sort((a, b) => collator.compare(a.group ?? '', b.group ?? '') || collator.compare(a.label, b.label));
   }, [issues, roster]);
-  const sel = issues.find(i => i.id === selected) ?? null;
+  const sel = issues.find(i => i.id === selected) ?? early?.data.find(i => i.id === selected) ?? null;
   const historySpend = tab === 'history' ? rows.reduce((s, i) => s + (i.finalAmount ?? 0), 0) : 0;
 
-  const sub = data
-    ? `${openTab.length} open · ${urgent} urgent${support.length ? ` · ${support.length} need support` : ''} · ${approval.length} awaiting owner approval${money ? ` · this month ${rm(monthCost)}` : ''}`
+  // Until the full list lands, the counts are the first view's (the same rules, counted on the server).
+  const counts = data ? { open: openTab.length, urgent, support: support.length, approval: approval.length, passKeys: passKeys.length, monthCost }
+    : early ? { ...early.summary, monthCost: early.summary.monthCost ?? 0 } : null;
+  const sub = counts
+    ? `${counts.open} open · ${counts.urgent} urgent${counts.support ? ` · ${counts.support} need support` : ''} · ${counts.approval} awaiting owner approval${money && !fromSnapshot && !first.fromSnapshot ? ` · this month ${rm(counts.monthCost)}` : ''}`
     : 'Maintenance jobs on every unit';
+  // The first view only fills the Open tab with no search; any other view waits for the full list.
+  const earlyRows = early && tab === 'open' && !ql ? early.data : null;
 
   async function createSku(input: CatalogInput) {
     try { await api.post('/maintenance/skus', input); toast({ tone: 'success', title: 'Item added.' }); sku.reload(); return null; }
@@ -168,13 +199,22 @@ export default function MaintenancePage() {
   const list = (
     <>
       {error && data && <StaleBanner message={`Showing the last jobs we have. ${error}`} onRetry={reload} />}
-      <IssueTable tab={tab} rows={data ? rows : null} loading={loading} error={data ? null : error} onRetry={reload} selected={selected} onSelect={setSelected}
-        money={money} canBulk={!FIELD_ROLES.includes(user!.role)} onChanged={reload} buildingOptions={buildingOptions} unitOptions={unitOptions} filtersTarget={filtersTarget}
+      <IssueTable tab={tab} rows={data ? rows : earlyRows} loading={loading} error={data || earlyRows ? null : error} onRetry={reload} selected={selected} onSelect={setSelected}
+        money={money} canBulk={!FIELD_ROLES.includes(user!.role)} onChanged={reload} buildingOptions={buildingOptions} unitOptions={unitOptions}
+        toolbar={<>
+          <ToolbarSearch value={q} onChange={setQ} placeholder="Search unit, building, problem or technician" label="Search jobs" />
+          {tab === 'pass_key' && (
+            <MetricSegmented<PassKeyDay> label="Check-in day" value={passKeyDayShown} onChange={setPassKeyDayShown} options={[
+              { key: 'today', label: 'Today', count: passKeysOn('today').length },
+              { key: 'tomorrow', label: 'Tomorrow', count: passKeysOn('tomorrow').length },
+            ]} />
+          )}
+        </>}
         filtered={!!q} onClearFilters={() => setQ('')}
         above={tab === 'history' && rows.length > 0 && money ? (
           <div className="text-copy text-muted-ink py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">{rows.length} {rows.length === 1 ? 'job' : 'jobs'} · {rm(historySpend)} spent{q ? ` matching "${q}"` : ''}</div>
         ) : undefined}
-        empty={{ title: tab === 'pass_key' ? 'No pass key handovers today.' : tab === 'support' ? 'No technician is waiting for support.' : tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open maintenance jobs.',
+        empty={{ title: tab === 'pass_key' ? `No pass key handovers ${passKeyDayShown}.` : tab === 'support' ? 'No technician is waiting for support.' : tab === 'approval' ? 'Nothing is waiting for an owner.' : tab === 'done' ? 'No job finished in the last 30 days.' : tab === 'history' ? 'No jobs yet.' : 'No open maintenance jobs.',
           action: tab === 'open' ? { label: 'Add maintenance job', onClick: () => setCreating(true) } : undefined }} />
     </>
   );
@@ -184,7 +224,7 @@ export default function MaintenancePage() {
       <PageHeader title="Maintenance" sub={sub}
         actions={<>
           <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => navigate('/hr/employees?tab=employee-master')}>Technicians</Button>
-          {data?.jobTypes && <Button size="sm" variant={tab === 'rules' ? 'primary' : 'secondary'} icon={<Icon name="ShieldCheck" size="sm" />} onClick={() => setTab(tab === 'rules' ? 'open' : 'rules')}>Approval rules</Button>}
+          {(data ?? early)?.jobTypes && <Button size="sm" variant={tab === 'rules' ? 'primary' : 'secondary'} icon={<Icon name="ShieldCheck" size="sm" />} onClick={() => setTab(tab === 'rules' ? 'open' : 'rules')}>Approval rules</Button>}
           {money && <Button size="sm" variant={tab === 'profit' ? 'primary' : 'secondary'} icon={<Icon name="TrendingUp" size="sm" />} onClick={() => setTab(tab === 'profit' ? 'open' : 'profit')}>Profit by job</Button>}
           {SHOW_CATALOG && <Button size="sm" variant={tab === 'catalog' ? 'primary' : 'secondary'} icon={<Icon name="Package" size="sm" />} onClick={() => setTab(tab === 'catalog' ? 'open' : 'catalog')}>Item catalog</Button>}
         </>}
@@ -194,27 +234,20 @@ export default function MaintenancePage() {
         </>} />
 
       {tab === 'rules' ? <ApprovalRulesPanel /> : tab === 'profit' ? <div className="flex-1 min-h-0 overflow-y-auto"><JobProfitView kind="maintenance" onOpen={id => { setTab('history'); setSelected(id); }} /></div> : tab === 'catalog' ? (
-        <MaintenanceItems fallback={<CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={mayWork(user, 'operations')} onCreate={createSku} onUpdate={updateSku} />} onChanged={sku.reload} />
+        <MaintenanceItems fallback={<CatalogPanel skus={sku.data?.data ?? []} loading={sku.loading} canWrite={mayWork(user, 'maintenance')} onCreate={createSku} onUpdate={updateSku} />} onChanged={sku.reload} />
       ) : (
         <SplitPane open={!!sel} onClose={() => setSelected(null)} width={580}
-          detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!data!.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null}
+          detail={sel ? <IssueDetail key={sel.id} issue={sel} billing={!!(data ?? early)?.billing} money={money} skus={sku.data?.data ?? []} onClose={() => setSelected(null)} onChanged={reload} /> : null}
           list={<>
-          <div className="flex flex-wrap items-start gap-2 px-5 py-3 max-md:px-4 rounded-card border border-solid border-line bg-card">
-            <label className="relative flex items-center w-[280px] max-md:w-full">
-              <span className="absolute left-3 flex text-muted-ink pointer-events-none"><Icon name="Search" size="base" /></span>
-              <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit, building, problem or technician" aria-label="Search jobs"
-                className={cx(INPUT, 'h-9 max-md:h-11 w-full pl-10 max-md:text-[16px]')} />
-            </label>
-            <div ref={setFiltersTarget} className="flex-1 min-w-0 empty:hidden" />
-          </div>
+          {/* The job tabs as one Segmented track with counts; search, Filters (with counts) and chips sit in the table's own toolbar. */}
           <div className="flex items-center gap-2 flex-wrap">
-            <PillTabs value={tab} onChange={t => { setTab(t); setSelected(null); }} tabs={[
-              { value: 'open', label: 'Open', count: data ? openTab.length : undefined },
-              ...(data?.jobTypes ? [{ value: 'pass_key' as const, label: 'Pass key', count: passKeys.length }] : []),
-              { value: 'support', label: 'Needs support', count: data ? support.length : undefined },
-              { value: 'approval', label: 'Awaiting owner approval', count: data ? approval.length : undefined },
-              { value: 'done', label: 'Done' },
-              { value: 'history', label: 'History' },
+            <MetricSegmented<JobTab> label="Jobs" value={tab as JobTab} onChange={t => { setTab(t); setSelected(null); }} options={[
+              { key: 'open', label: 'Open', count: counts?.open },
+              ...((data ?? early)?.jobTypes ? [{ key: 'pass_key' as const, label: 'Pass key', count: counts?.passKeys ?? 0 }] : []),
+              { key: 'support', label: 'Needs support', count: counts?.support, tone: counts?.support ? 'warning' as const : undefined },
+              { key: 'approval', label: 'Awaiting owner approval', short: 'Owner approval', count: counts?.approval },
+              { key: 'done', label: 'Done' },
+              { key: 'history', label: 'History' },
             ]} />
           </div>
           {list}
@@ -230,7 +263,7 @@ export default function MaintenancePage() {
 /* ---------- the list ---------- */
 
 const unitText = ({ unitNumber }: Pick<Issue, 'unitNumber'>): string => unitNumber ?? 'Building (no unit)';
-const jobLabel = (i: Issue) => `${i.propertyName} ${unitText(i)}`;
+const jobLabel = (i: Issue) => `${buildingName(i.propertyName)} ${unitText(i)}`;
 // Some rows are in progress without a start time (set before Start repair recorded one), so the state counts too.
 const started = (i: Issue) => !!i.startedAt || i.state === 'in_progress';
 type Move = 'start' | 'end' | 'reopen';
@@ -246,9 +279,9 @@ const paidText = (i: Issue) => (i.contractorPaidAt ? `Paid ${dateShort(i.contrac
 const MOVE_DONE: Record<Move, string> = { start: 'started', end: 'marked repair finished', reopen: 'reopened' };
 const COST_SLIDER_START: RangeBounds = { lowest: 0, highest: 1000 };
 
-function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, money, canBulk, onChanged, buildingOptions, unitOptions, filtersTarget, filtered, onClearFilters, empty, above }: {
+function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, money, canBulk, onChanged, buildingOptions, unitOptions, toolbar, filtered, onClearFilters, empty, above }: {
   tab: Tab; rows: Issue[] | null; loading: boolean; error: string | null; onRetry: () => void; selected: string | null; onSelect: (id: string) => void;
-  money: boolean; canBulk: boolean; onChanged: () => void; buildingOptions: SelectOption[]; unitOptions: FilterOption[]; filtersTarget: HTMLElement | null; filtered: boolean; onClearFilters: () => void;
+  money: boolean; canBulk: boolean; onChanged: () => void; buildingOptions: SelectOption[]; unitOptions: FilterOption[]; toolbar?: ReactNode; filtered: boolean; onClearFilters: () => void;
   empty: { title: string; action?: { label: string; onClick: () => void } }; above?: ReactNode;
 }) {
   const toast = useToast();
@@ -273,6 +306,11 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
   }
 
   const technicians = useTechnicians();
+  async function assignOne(issue: Issue, name: string) {
+    if (name === issue.vendorName) return;
+    try { await api.patch(`/maintenance/issues/${issue.id}`, { assigneeName: name }); toast({ tone: 'success', title: `${jobLabel(issue)} assigned to ${name}.` }); onChanged(); }
+    catch (e) { toast({ tone: 'critical', title: 'Not assigned.', body: errorMessage(e, 'Try again in a moment.') }); }
+  }
   const assigneeOptions = useMemo<FilterOption[]>(() => {
     const groupOf = (kind: string | null | undefined): string => (kind === 'in_house' ? 'In-house' : 'Contractors');
     const byName = new Map(technicians.map(t => [t.name, { value: t.name, label: t.name, group: groupOf(t.kind) }]));
@@ -283,36 +321,45 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     return [{ value: 'Unassigned', label: 'Unassigned' }, ...named];
   }, [technicians, rows]);
 
+  // Each option in the Filters panel says how many jobs of this tab it would show.
+  const n = (f: (i: Issue) => boolean) => (rows ? rows.filter(f).length : null);
+  const showsMoney = money && tab !== 'pass_key';
   const columns = useMemo<Column<Issue>[]>(() => [
-    { key: 'building', label: 'Building', value: i => i.buildingId, text: i => i.propertyName, width: 150, hidden: true,
-      filter: { kind: 'select', options: buildingOptions } },
-    { key: 'unit', label: 'Unit', value: i => i.unitId, text: i => `${unitText(i)} ${i.propertyName}`, sub: i => i.propertyName, hideable: false, width: 120,
+    { key: 'building', label: 'Building', value: i => i.buildingId, text: i => buildingName(i.propertyName), width: 150, hidden: true,
+      filter: { kind: 'select', options: buildingOptions.map(o => ({ value: o.value, label: String(o.label), count: n(i => i.buildingId === o.value) })) } },
+    { key: 'unit', label: 'Unit', value: i => i.unitId, text: i => `${unitText(i)} ${buildingName(i.propertyName)}`, sub: i => buildingName(i.propertyName), hideable: false, width: 120,
       filter: { kind: 'select', display: 'menu', options: unitOptions },
-      render: i => <b className="text-ink">{unitText(i)}</b> },
+      render: i => <b className="text-ink font-mono">{unitText(i)}</b> },
     { key: 'issue', label: 'Problem', value: i => i.title, width: 240, filter: false,
       sub: i => i.source === 'booking'
         ? <>Guest check-in {stamp(checkInAt(i))}</>
         : <>From {SOURCE[i.source] ?? i.source}{i.reporter ? ` (${i.reporter})` : ''} · {stamp(i.reportedAt)}{i.windows.length > 0 && ` · window ${stamp(i.windows[0].startsAt)}`}{i.blocksUnit && ' · unit blocked'}</>,
       render: i => <span className="block whitespace-normal text-ink">{i.title}</span> },
     { key: 'urgency', label: 'Type', type: 'status', value: i => typeOf(i),
-      status: i => ({ label: JOB_TYPE[typeOf(i)], tone: typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral' }), width: 110, phone: 'meta',
-      filter: { kind: 'select', options: Object.entries(JOB_TYPE).map(([value, label]) => ({ value, label })) } },
+      status: jobBadge, width: 140, phone: 'meta',
+      filter: { kind: 'select', options: Object.entries(JOB_TYPE).map(([value, label]) => ({ value, label, count: n(i => typeOf(i) === value) })) } },
     { key: 'status', label: 'Status', type: 'status', value: i => statusOf(i).label, status: i => { const s = statusOf(i); return { label: s.label, tone: s.tone === 'gold' ? 'neutral' : s.tone }; }, width: 160 },
     { key: 'category', label: 'Category', value: i => i.category, text: i => CATEGORY[i.category] ?? i.category, width: 120, hidden: true,
-      filter: { kind: 'select', options: Object.entries(CATEGORY).map(([value, label]) => ({ value, label })) } },
+      filter: { kind: 'select', options: Object.entries(CATEGORY).map(([value, label]) => ({ value, label, count: n(i => i.category === value) })) } },
     { key: 'assignee', label: 'Assigned to', value: i => i.vendorName ?? 'Unassigned', text: i => (i.vendorName ? `${i.vendorName} ${i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}` : 'Unassigned'), width: 160,
       filter: { kind: 'select', display: 'menu', options: assigneeOptions },
-      render: i => (i.vendorName
+      render: i => (canBulk && i.state !== 'resolved'
+        ? <span className="block" onClick={e => e.stopPropagation()}>
+            <SearchSelect label={`Assign ${jobLabel(i)}`} value={i.vendorName ?? ''} onChange={name => void assignOne(i, name)} allLabel={i.vendorName ?? 'Unassigned'}
+              placeholder="Search technicians and contractors" buttonClassName={cx('max-sm:h-11', !i.vendorName && '[&>span]:text-danger!')}
+              options={technicians.map(t => ({ value: t.name, label: t.name, group: t.kind === 'in_house' ? 'In-house' : 'Contractors' }))} />
+          </span>
+        : i.vendorName
         ? <span className="block truncate">{i.vendorName}<span className="text-muted-ink"> {i.assigneeKind === 'in_house' ? '(in-house)' : '(contractor)'}</span></span>
         : <span className="text-danger">Unassigned</span>) },
     { key: 'due', label: 'Due', type: 'date', value: i => i.dueOn ?? null, width: 110, hidden: true, filter: false },
     { key: 'approval', label: 'Owner approval', type: 'status', value: i => i.approvalStatus ?? 'not_needed',
-      filter: { kind: 'select', options: Object.entries(APPROVAL).map(([value, { label }]) => ({ value, label })) },
+      filter: { kind: 'select', options: Object.entries(APPROVAL).map(([value, { label }]) => ({ value, label, count: n(i => (i.approvalStatus ?? 'not_needed') === value) })) },
       status: i => { const a = APPROVAL[i.approvalStatus ?? 'not_needed']; return { label: a.label, tone: a.tone === 'gold' ? 'neutral' : a.tone }; }, width: 150 },
-    ...(money ? [{ key: 'cost', label: 'Cost', type: 'money' as const, value: (i: Issue) => i.finalAmount ?? i.quotedAmount, width: 110, title: 'The final cost, or the quote while the job is open.',
+    ...(showsMoney ? [{ key: 'cost', label: 'Cost', type: 'money' as const, value: (i: Issue) => i.finalAmount ?? i.quotedAmount, width: 110, title: 'The final cost, or the quote while the job is open.',
       filter: { kind: 'number' as const, bounds: COST_SLIDER_START },
       render: (i: Issue) => { const c = i.finalAmount ?? i.quotedAmount; return c == null ? <span className="text-faint">—</span> : <span className="tabular-nums whitespace-nowrap">{rm(c)}{i.finalAmount == null && <span className="text-muted-ink text-meta"> quote</span>}</span>; } }] : []),
-    ...(money ? [
+    ...(showsMoney ? [
       { key: 'billing', label: 'Billing date', type: 'date' as const, value: (i: Issue) => i.billingDate, hidden: true, width: 130, filter: false as const },
       { key: 'collected', label: 'Collected', value: (i: Issue) => i.collectedAt, hidden: true, width: 130, title: 'When the money from the payer came in.', filter: false as const,
         text: collectedText, render: (i: Issue) => <span className={i.collectedAt ? 'text-ink' : 'text-warning'}>{collectedText(i)}</span> },
@@ -322,16 +369,16 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     ] : []),
     { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150, filter: false },
     { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150, filter: false },
-  ], [money, buildingOptions, unitOptions, assigneeOptions]);
+  ], [showsMoney, buildingOptions, unitOptions, assigneeOptions, canBulk, technicians, rows]); // rows: the filter counts
 
   return (
     <>
       <DataTable<Issue>
         id="maintenance.jobs" columns={columns} rows={rows} rowKey={i => i.id} loading={loading} error={error} onRetry={onRetry}
-        renderCard={i => <JobCard i={i} money={money} />}
+        renderCard={i => <JobCard i={i} money={showsMoney} />}
         onRowClick={i => onSelect(i.id)} rowTone={i => (i.id === selected ? 'gold' : i.state === 'resolved' ? 'muted' : null)}
         noun={['job', 'jobs']} exportName="maintenance-jobs" selectionKey={tab} above={above}
-        filtered={filtered} onClearFilters={onClearFilters} inlineFiltersTarget={filtersTarget}
+        filtered={filtered} onClearFilters={onClearFilters} toolbar={toolbar}
         empty={{ title: empty.title, icon: 'Wrench', action: empty.action }}
         selectable={canBulk}
         bulkActions={(picked, clear) => {
@@ -350,28 +397,23 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
   );
 }
 
-/** The phone row: unit and cost, the problem, category and who has it, then urgency and status. */
+/** The phone card (two lines): the problem and the cost (or its type), then unit, building and who has it, status on the right. */
 function JobCard({ i, money }: { i: Issue; money: boolean }) {
   const s = statusOf(i);
   const cost = i.finalAmount ?? i.quotedAmount;
+  const type = typeOf(i) !== 'normal' ? jobBadge(i) : null;
+  const right = money && cost != null ? <>{rm(cost)}{i.finalAmount == null && <span className="text-meta text-muted-ink font-normal"> quote</span>}</>
+    : type ? <span className={type.tone === 'critical' ? 'text-danger' : 'text-ink-2'}>{type.label}</span> : null;
+  const meta = [
+    `${unitText(i)} · ${buildingName(i.propertyName)}`,
+    i.source === 'booking' ? `Guest check-in ${stamp(checkInAt(i))}` : CATEGORY[i.category] ?? i.category,
+    i.vendorName ?? 'Unassigned',
+    i.blocksUnit && i.state !== 'resolved' ? 'unit blocked' : null,
+    i.dueOn && typeOf(i) === 'normal' && i.state !== 'resolved' ? `due ${dateShort(i.dueOn)}` : null,
+  ].filter(Boolean).join(' · ');
   return (
-    <span className="flex flex-col gap-1 min-w-0">
-      <span className="flex items-baseline justify-between gap-2">
-        <span className="min-w-0 truncate"><b className="text-copy text-ink">{unitText(i)}</b><span className="text-meta text-muted-ink"> · {i.propertyName}</span></span>
-        {money && cost != null && <span className="text-copy font-medium tabular-nums whitespace-nowrap">{rm(cost)}{i.finalAmount == null && <span className="text-meta text-muted-ink font-normal"> quote</span>}</span>}
-      </span>
-      <span className="text-copy text-ink [overflow-wrap:anywhere]">{i.title}</span>
-      <span className="text-meta text-muted-ink">
-        {i.source === 'booking' ? <>Guest check-in {stamp(checkInAt(i))}</> : CATEGORY[i.category] ?? i.category} · {i.vendorName ? i.vendorName : <span className="text-danger">Unassigned</span>}{i.source !== 'booking' && <> · reported {dateShort(i.reportedAt)}</>}
-      </span>
-      <span className="flex gap-1.5 flex-wrap pt-0.5">
-        {typeOf(i) !== 'normal' && <StatusBadge tone={typeOf(i) === 'urgent' ? 'critical' : 'info'}>{JOB_TYPE[typeOf(i)]}</StatusBadge>}
-        {i.blocksUnit && i.state !== 'resolved' && <StatusBadge tone="critical">Unit blocked</StatusBadge>}
-        {i.dueOn && typeOf(i) === 'normal' && i.state !== 'resolved' && <StatusBadge tone="neutral">Due {dateShort(i.dueOn)}</StatusBadge>}
-        <StatusBadge tone={s.tone === 'gold' ? 'neutral' : s.tone}>{s.label}</StatusBadge>
-        {i.approvalStatus === 'needed' && !awaitingOwner(i) ? null : i.approvalStatus === 'approved' && <StatusBadge tone="success">Owner approved</StatusBadge>}
-      </span>
-    </span>
+    <PhoneCard title={i.title} right={right} meta={meta}
+      badge={<StatusBadge tone={s.tone === 'gold' ? 'neutral' : s.tone} size="sm">{s.label}</StatusBadge>} />
   );
 }
 
@@ -397,7 +439,7 @@ function BulkAssignModal({ rows, onClose, onDone }: { rows: Issue[]; onClose: ()
     onDone();
   }
   return (
-    <OpsModal title="Assign jobs" sub={`${plural(rows.length, 'job')} ticked. Each goes to the same technician or contractor.`} onClose={onClose} busy={busy}
+    <OpsModal title="Assign jobs" eyebrow="Maintenance" size="sm" sub={`${plural(rows.length, 'job')} ticked. Each goes to the same technician or contractor.`} onClose={onClose} busy={busy}
       footer={footer(onClose, busy, 'Assign', () => void save())}>
       <FormRow label="Assign to" error={error}><AssigneePicker value={name} onChange={v => { setName(v); setError(null); }} techs={techs} /></FormRow>
     </OpsModal>
@@ -409,6 +451,8 @@ function BulkAssignModal({ rows, onClose, onDone }: { rows: Issue[]; onClose: ()
 function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { issue: Issue; billing: boolean; money: boolean; skus: Sku[]; onClose: () => void; onChanged: () => void }) {
   const toast = useToast();
   const files = useApi<{ data: FileItem[] }>(`/maintenance/issues/${i.id}/documents`);
+  // Whether the signed-in person has petty cash: without it, the Claim box offers Direct Claim to Me only.
+  const me = useApi<Me>(money && typeOf(i) !== 'pass_key' ? '/claims/me' : null);
   const techs = useTechnicians();
   const [confirmUi, ask] = useConfirm();
   const [busy, setBusy] = useState<string | null>(null);
@@ -419,21 +463,34 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const [payer, setPayer] = useState<ChargeTo>(i.chargeTo);
   const [owedSen, setOwedSen] = useState<number | null>(i.contractorAmount);
   const [stage, setStage] = useState<'before' | 'after'>(i.endedAt || i.state === 'resolved' ? 'after' : 'before');
-  const [docKind, setDocKind] = useState('claim');
   const [windowOpen, setWindowOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [exchange, setExchange] = useState(false);
   const done = i.state === 'resolved';
+  const isTypedAssignee = !!assignee.trim() && !techs.some(t => t.name === assignee);
   const media = (files.data?.data ?? []).filter(f => f.kind === 'photo' || f.kind === 'video');
   const docs = (files.data?.data ?? []).filter(f => f.kind !== 'photo' && f.kind !== 'video');
+  const claimDocs = docs.filter(f => f.kind === 'purchase');
+  const otherDocs = docs.filter(f => f.kind !== 'purchase');
   const shownMedia = media.filter(m => (m.stage ?? 'before') === stage);
   const counts = { before: media.filter(m => (m.stage ?? 'before') === 'before').length, after: media.filter(m => m.stage === 'after').length };
   const charge = i.finalAmount ?? i.quotedAmount;
   const collectFrom = COLLECT_FROM[i.chargeTo];
+  const isPassKey = typeOf(i) === 'pass_key';
   const doneWhy = awaitingOwner(i) ? "Waiting for the owner's approval." : counts.after === 0 ? 'Add a photo of the fixed job first (Photos, Fixed).' : null;
 
   const refresh = useCallback(() => { files.reload(); onChanged(); }, [files, onChanged]);
+  // Inside its own box a file shows its date only; an older kind (a claim, invoice or receipt) keeps its name too.
+  const docRow = (d: FileItem) => ({ id: d.id, name: d.fileName, href: d.url, size: d.byteSize ?? null,
+    label: d.kind === 'purchase' || d.kind === 'pod' ? dateShort(d.uploadedAt) : `${DOC_KIND[d.kind] ?? 'File'} · ${dateShort(d.uploadedAt)}`,
+    // A claim was also handed in to finance as a receipt: it is cancelled there, not here.
+    onRemove: done || d.kind === 'purchase' ? undefined : () => void removeFile(d) });
+  const assignTo = (name: string) => void act('assign', () => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: name }), `Assigned to ${name}.`);
+  function pickAssignee(name: string) {
+    setAssignee(name);
+    if (name !== (i.vendorName ?? '') && techs.some(t => t.name === name)) assignTo(name);
+  }
   async function act(key: string, fn: () => Promise<unknown>, ok: string, body?: string) {
     setBusy(key);
     try { await fn(); toast({ tone: 'success', title: ok, body }); refresh(); return true; }
@@ -469,7 +526,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   async function uploadDocs(list: FileList) {
     const picked = Array.from(list);
     setBusy('docs');
-    const res = await runEach(picked, f => uploadTo(`/maintenance/issues/${i.id}/documents`, { kind: docKind })(f), f => f.name);
+    const res = await runEach(picked, f => uploadTo(`/maintenance/issues/${i.id}/documents`, { kind: 'pod' })(f), f => f.name);
     setBusy(null);
     toast({ tone: res.ok === 0 ? 'critical' : res.failed.length ? 'warning' : 'success', title: res.ok ? `${plural(res.ok, 'file')} attached.` : 'Nothing attached.', body: skippedNote(res.failed) || undefined });
     refresh();
@@ -498,8 +555,8 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       {confirmUi}
       <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-4 pb-4 bg-black text-white flex items-start gap-3">
         <div className="flex-1 min-w-0 flex flex-col gap-1">
-          <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{i.propertyName} · {unitText(i)}</div>
-          <div className="text-[19px] leading-tight font-semibold">{i.title}</div>
+          <div className="text-caption font-semibold tracking-[0.12em] uppercase text-gold">{buildingName(i.propertyName)} · {unitText(i)}</div>
+          <div className="text-title leading-tight font-semibold">{i.title}</div>
           <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
             {steps.map((s, k) => (
               <span key={s.label} title={s.label} className={cx('h-1.5 rounded-full flex-1 min-w-[18px]', s.on ? 'bg-gold' : k === current ? 'bg-faint' : 'bg-charcoal')} />
@@ -510,7 +567,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         <span className="[&_button]:text-white [&_button]:border-charcoal [&_button]:bg-transparent"><CloseButton onClick={onClose} /></span>
       </div>
       <div className="flex gap-1.5 flex-wrap">
-        <StatusBadge tone={typeOf(i) === 'urgent' ? 'critical' : typeOf(i) === 'pass_key' ? 'info' : 'neutral'}>{JOB_TYPE[typeOf(i)]}</StatusBadge>
+        <StatusBadge tone={jobBadge(i).tone}>{jobBadge(i).label}</StatusBadge>
         {i.approvalStatus === 'approved' && <StatusBadge tone="success">Owner approved</StatusBadge>}
         <StatusBadge tone="neutral">{CATEGORY[i.category] ?? i.category}</StatusBadge>
         <StatusBadge tone={statusOf(i).tone}>{statusOf(i).label}</StatusBadge>
@@ -563,12 +620,12 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
       {!done && (
         <section className="flex flex-col gap-2">
           <h3 className="m-0 text-copy font-semibold">Assigned to</h3>
-          <div className="max-sm:[&>div>span:last-child>button]:min-h-11"><AssigneePicker value={assignee} onChange={setAssignee} techs={techs} /></div>
-          <Button size="sm" variant="secondary" className="self-start" disabled={!assignee.trim() || assignee.trim() === (i.vendorName ?? '')} disabledReason="Pick a different person."
-            loading={busy === 'assign'} onClick={() => void act('assign', () => api.patch(`/maintenance/issues/${i.id}`, { assigneeName: assignee.trim() }), 'Job assigned.')}>Save</Button>
+          <div className="max-sm:[&>div>span:last-child>button]:min-h-11"><AssigneePicker value={assignee} onChange={pickAssignee} techs={techs} /></div>
+          {isTypedAssignee && <Button size="sm" variant="secondary" className="self-start" disabled={assignee.trim() === (i.vendorName ?? '')} disabledReason="Type a different name."
+            loading={busy === 'assign'} onClick={() => assignTo(assignee.trim())}>Save</Button>}
         </section>
       )}
-      <section className="flex flex-col gap-2 rounded-card border border-solid border-line p-3.5">
+      {!isPassKey && <section className="flex flex-col gap-2 rounded-card border border-solid border-line p-3.5">
         <h3 className="m-0 text-copy font-semibold">Items, cost and profit</h3>
         <JobMoneyPanel kind="maintenance" jobId={i.id} unitId={i.unitId} catalog={skus} onChanged={onChanged}
           itemsLocked={done ? 'The job is finished; reopen it to change its items.' : i.ownerApprovedAt && i.chargeTo === 'owner' ? 'The owner approved this quote, so its items stay as they are.' : null}
@@ -585,10 +642,10 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         {done && <p className="m-0 text-muted-ink">Item: {i.skuName ? `${i.skuName}${i.skuCode ? ` (${i.skuCode})` : ''}` : 'Other (not on the list)'}.</p>}
               {done && <p className="m-0 text-muted-ink">Item: {i.skuName ? `${i.skuName}${i.skuCode ? ` (${i.skuCode})` : ''}` : 'Other (not on the list)'}.</p>}
           </>} />
-      </section>
+      </section>}
       {done && i.vendorName && <p className="m-0 text-muted-ink">Done by {i.vendorName}{i.assigneeKind ? ` (${KIND_WORD[i.assigneeKind].toLowerCase()})` : ''}.</p>}
 
-      {money ? (
+      {isPassKey ? null : money ? (
         <section className="flex flex-col gap-2.5 rounded-card border border-solid border-line p-3.5">
           <h3 className="m-0 text-copy font-semibold">Quote and billing</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -599,12 +656,10 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
             {billing && <FormRow label="Billing date" hint="The cost goes on the unit in this month.">
               <DateField aria-label="Billing date" className={INPUT} value={billingDate} onChange={setBillingDate} />
             </FormRow>}
-            <FormRow label="Who pays">
-              {done || !i.unitId ? <span className="h-10 flex items-center">{PAYER[i.chargeTo]}</span>
-                : <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>
-                  {(['owner', 'the_conts', 'guest_deposit'] as ChargeTo[]).concat(i.chargeTo === 'warranty' ? ['warranty'] : []).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}
-                </select>}
-            </FormRow>
+            {done || !i.unitId
+              ? <FormRow label="Who pays"><span className="h-10 flex items-center">{PAYER[i.chargeTo]}</span></FormRow>
+              : <ChoiceChips<ChargeTo> label="Who pays" value={payer} onChange={setPayer}
+                  options={(['owner', 'the_conts', 'guest_deposit'] as ChargeTo[]).concat(i.chargeTo === 'warranty' ? ['warranty'] : []).map(p => ({ value: p, label: PAYER[p] }))} />}
           </div>
           {(!done || billing) && <Button size="sm" variant="secondary" className="self-start" disabled={!Object.keys(billingDelta).length} disabledReason="Change something first."
             loading={busy === 'billing'} onClick={() => void act('billing', () => api.patch(`/maintenance/issues/${i.id}`, billingDelta), 'Saved.',
@@ -658,7 +713,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
         <p className="m-0 text-muted-ink">Paid by {PAYER[i.chargeTo].toLowerCase()}.</p>
       )}
 
-      <section className="flex flex-col gap-2">
+      {!isPassKey && <section className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <h3 className="m-0 text-copy font-semibold flex-1">Repair windows</h3>
           {!done && <Button size="sm" variant="secondary" icon={<Icon name="CalendarClock" size="sm" />} onClick={() => setWindowOpen(true)}>Add window</Button>}
@@ -674,8 +729,19 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
               {w.overlaps.map(o => <span key={o.reservationId} className="text-meta text-danger">Overlaps the reservation of {o.guestName} ({dateShort(o.checkIn)} {o.checkInTime} to {dateShort(o.checkOut)} {o.checkOutTime}). Make sure the guest agreed.</span>)}
             </div>
           ))}
-      </section>
+      </section>}
 
+      {isPassKey ? (
+        <section className="flex flex-col gap-2.5">
+          <AttachmentLabel title="Proof" count={media.length}
+            hint={<PhotosPdfButton items={media} title={jobLabel(i)} sub={`Maintenance: ${i.title}`} fileStem={jobLabel(i)} label={() => 'Proof'} />} />
+          <span className="text-meta text-muted-ink">Needed before Pass key done.</span>
+          {files.loading && !files.data ? <Skeleton height={96} /> : (
+            <MediaGallery items={media} upload={done ? undefined : uploadTo(`/maintenance/issues/${i.id}/photos`, { kind: 'after' }, jobLabel(i))} onDone={refresh} onRemove={done ? undefined : m => void removePhoto(m)}
+              addLabel="Add proof" emptyText="No proof yet." />
+          )}
+        </section>
+      ) : (
       <section className="flex flex-col gap-2.5">
         <AttachmentLabel title="Photos and videos" count={media.length}
           hint={<PhotosPdfButton items={[...media].sort((a, b) => Number(a.stage === 'after') - Number(b.stage === 'after'))} title={jobLabel(i)} sub={`Maintenance: ${i.title}`} fileStem={jobLabel(i)}
@@ -690,21 +756,21 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
             addLabel={stage === 'before' ? 'Add photo of the problem' : 'Add proof it is fixed'} emptyText={stage === 'before' ? 'No photo of the problem yet.' : 'No proof yet. Add one when the job is settled.'} />
         )}
       </section>
+      )}
 
-      {money && (
-        <section className="flex flex-col gap-2">
-          <AttachmentLabel title="Claims, invoices and receipts" count={docs.length} hint="The technician's or contractor's claim, the bill to the payer, payment receipts. Accounts pay from these." />
-          <FileList files={docs.map(d => ({ id: d.id, name: d.fileName, href: d.url, size: d.byteSize ?? null, label: `${DOC_KIND[d.kind] ?? 'File'} · ${dateShort(d.uploadedAt)}`,
-            // A purchase was also handed in to finance as a receipt: it is cancelled there, not here.
-            onRemove: done || d.kind === 'purchase' ? undefined : () => void removeFile(d) }))} />
-          <div className="flex gap-2 items-start flex-wrap">
-            <Select label="Kind of file" value={docKind} onChange={setDocKind} size="md" className="w-[230px] max-sm:w-full"
-              options={['claim', 'invoice', 'receipt', 'pod'].map(k => ({ value: k, label: DOC_KIND[k] }))} />
-            <div className="flex-1 min-w-[200px]">
-              <FileDropRow label="Add files" hint="Photos or PDFs, several at once" accept="image/*,application/pdf" multiple busy={busy === 'docs'} onPick={fl => void uploadDocs(fl)} />
-            </div>
-          </div>
-        </section>
+      {money && !isPassKey && (
+        <>
+          <section className="flex flex-col gap-2">
+            <AttachmentLabel title="Claim" count={claimDocs.length} hint="The invoice for something you paid for this job, handed in to be paid back." />
+            <FileList files={claimDocs.map(docRow)} />
+            {!done && <JobClaimBox jobId={i.id} route={me.data?.route ?? null} t={PORTAL_ENGLISH} onDone={refresh} />}
+          </section>
+          <section className="flex flex-col gap-2">
+            <AttachmentLabel title="Receipt / Proof of work and product" count={otherDocs.length} hint="Receipts, and photos or PDFs of the work and the products. Kept on the job." />
+            <FileList files={otherDocs.map(docRow)} />
+            <FileDropRow label="Add files" hint="Photos or PDFs, several at once" accept="image/*,application/pdf" multiple busy={busy === 'docs'} onPick={fl => void uploadDocs(fl)} />
+          </section>
+        </>
       )}
 
       {done ? (
@@ -739,7 +805,11 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
             </section>
           )}
           {/* Phones have no hover, so the reason a button is off is written out. The bar sticks to the bottom of a long sheet on phones. */}
-          {(!started(i) || money) && <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:order-last max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:-mb-5 max-sm:px-5! max-sm:pb-4! max-sm:rounded-none! max-sm:border-x-0! max-sm:border-b-0! max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
+          {isPassKey ? <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:order-last max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:-mb-5 max-sm:px-5! max-sm:pb-4! max-sm:rounded-none! max-sm:border-x-0! max-sm:border-b-0! max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
+            <Button variant="primary" icon={<Icon name="KeyRound" size="sm" />} loading={busy === 'passKeyDone'} disabled={media.length === 0} disabledReason="Add a photo first."
+              onClick={() => void act('passKeyDone', () => api.post(`/maintenance/issues/${i.id}/pass-key-done`, {}), 'Pass key done.')}>Pass key done</Button>
+            {media.length === 0 && <span className="text-meta text-muted-ink">Add a photo first.</span>}
+          </section> : (!started(i) || money) && <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:order-last max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:-mb-5 max-sm:px-5! max-sm:pb-4! max-sm:rounded-none! max-sm:border-x-0! max-sm:border-b-0! max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
             <div className="grid grid-flow-col auto-cols-fr gap-3">
               {/* One black button, the next step: Start repair until it is under way, then Mark done. */}
               {!started(i) && <Button variant="primary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} disabled={awaitingOwner(i)} disabledReason="Waiting for the owner's approval."
@@ -775,12 +845,12 @@ function DateMark({ label, amount, at, busy, markLabel, note, onSet }: {
     <div className="flex items-center flex-wrap gap-2 py-2 [&+&]:[border-top:1px_solid_var(--color-line-soft)]">
       <span className="flex-1 min-w-[160px] flex flex-col leading-tight">
         <span className="text-meta font-medium truncate">{label}</span>
-        <span className="text-[12px] text-muted-ink tabular-nums">{amount != null ? rm(amount) : note ?? '—'}</span>
+        <span className="text-meta text-muted-ink tabular-nums">{amount != null ? rm(amount) : note ?? '—'}</span>
       </span>
       {at
-        ? <><span className="text-[12px] font-medium text-success whitespace-nowrap">{date(at)}</span><Button size="sm" variant="tertiary" loading={busy} onClick={() => onSet(null)}>Undo</Button></>
+        ? <><span className="text-meta font-medium text-success whitespace-nowrap">{date(at)}</span><Button size="sm" variant="tertiary" loading={busy} onClick={() => onSet(null)}>Undo</Button></>
         : amount == null
-          ? <span className="text-[12px] text-muted-ink whitespace-nowrap">Not yet</span>
+          ? <span className="text-meta text-muted-ink whitespace-nowrap">Not yet</span>
           : <span className="flex gap-1.5 items-center flex-none">
               <DateField aria-label={`${markLabel}: day`} className={cx(INPUT, 'h-8 w-[128px] text-meta')} value={day} max={mytDay(0)} onChange={v => v && setDay(v)} />
               <Button size="sm" variant="secondary" loading={busy} onClick={() => onSet(day)}>{markLabel}</Button>
@@ -816,7 +886,7 @@ function WindowModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => 
     catch (e) { setError(errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Add repair window" sub={`When the technician may enter ${jobLabel(issue)}. Malaysia time.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Add window', () => void save())}>
+    <OpsModal title="Add repair window" eyebrow={jobLabel(issue)} size="sm" sub="When the technician may enter. Malaysia time." onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Add window', () => void save())}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <FormRow label="From" error={error}><DateTimeField aria-label="From" className={INPUT} value={start} onChange={setStart} required /></FormRow>
         <FormRow label="To"><DateTimeField aria-label="To" className={INPUT} value={end} min={start || undefined} onChange={setEnd} required /></FormRow>
@@ -837,7 +907,7 @@ function BlockModal({ issue, onClose, onDone }: { issue: Issue; onClose: () => v
     catch (e) { setError(e instanceof ApiFailure && e.status === 409 ? 'A reservation already holds some of those nights. Pick dates when the unit is free.' : errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Block unit until fixed" sub={`${jobLabel(issue)} is blocked for these nights, and shows as under maintenance.`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Block unit', () => void save())}>
+    <OpsModal title="Block unit until fixed" eyebrow={jobLabel(issue)} size="sm" sub="The unit is blocked for these nights, and shows as under maintenance." onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Block unit', () => void save())}>
       <div className="grid grid-cols-2 gap-3">
         <FormRow label="First night" error={error}><DateField aria-label="First night" className={INPUT} value={from} onChange={v => v && setFrom(v)} /></FormRow>
         <FormRow label="Available again"><DateField aria-label="Available again" className={INPUT} value={to} min={from || undefined} onChange={v => v && setTo(v)} /></FormRow>
@@ -861,16 +931,15 @@ function CompleteModal({ issue, billing, onClose, onDone }: { issue: Issue; bill
     catch (e) { setError(errText(e)); setBusy(false); }
   }
   return (
-    <OpsModal title="Mark job done" sub={`${jobLabel(issue)} · ${issue.title}`} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Mark done', () => void save())}>
+    <OpsModal title="Mark job done" eyebrow={jobLabel(issue)} size="md" sub={issue.title} onClose={onClose} busy={busy} footer={footer(onClose, busy, 'Mark done', () => void save())}>
       <FormRow label="Final cost, RM (required)" error={error} hint="Recorded as a maintenance expense on the unit. RM 0 records nothing.">
         <MoneyInput className={INPUT} valueSen={amountSen} onChangeSen={setAmountSen} aria-label="Final cost in RM" />
       </FormRow>
       {billing && <FormRow label="Billing date" hint={billingDate ? `The cost goes on the unit's costs for ${monthLabel(billingDate)}.` : undefined}>
         <DateField aria-label="Billing date" className={INPUT} value={billingDate} onChange={setBillingDate} />
       </FormRow>}
-      <FormRow label="Who pays">
-        <select className={INPUT} value={payer} onChange={e => setPayer(e.target.value as ChargeTo)}>{((issue.unitId ? ['owner', 'the_conts', 'guest_deposit', 'warranty'] : ['the_conts']) as ChargeTo[]).map(p => <option key={p} value={p}>{PAYER[p]}</option>)}</select>
-      </FormRow>
+      <ChoiceChips<ChargeTo> label="Who pays" value={payer} onChange={setPayer}
+        options={((issue.unitId ? ['owner', 'the_conts', 'guest_deposit', 'warranty'] : ['the_conts']) as ChargeTo[]).map(p => ({ value: p, label: PAYER[p] }))} />
       {issue.blocksUnit && <span className="text-meta text-muted-ink">The unit goes back to ready, and the nights blocked for this repair become available again.</span>}
     </OpsModal>
   );
@@ -880,34 +949,39 @@ function CompleteModal({ issue, billing, onClose, onDone }: { issue: Issue; bill
  *  due date Normal jobs are worked in, and the parts it waits for. */
 function JobPlan({ i, busy, act }: { i: Issue; busy: string | null; act: (key: string, fn: () => Promise<unknown>, ok: string, body?: string) => Promise<boolean> }) {
   const patch = (key: string, body: Record<string, unknown>, ok: string, note?: string) => void act(key, () => api.patch(`/maintenance/issues/${i.id}`, body), ok, note);
+  const isPassKey = typeOf(i) === 'pass_key';
+  const isBookingPassKey = isPassKey && i.source === 'booking';
   return (
     <section className="flex flex-col gap-2.5 rounded-card border border-solid border-line p-3.5">
-      <h3 className="m-0 text-copy font-semibold">Job</h3>
-      <div className="grid grid-cols-2 gap-3">
-        <FormRow label="Type">
-          <select className={INPUT} value={typeOf(i)} disabled={busy === 'type'} onChange={e => patch('type', { jobType: e.target.value }, 'Job type saved.')}>
-            {(Object.keys(JOB_TYPE) as JobType[]).map(t => <option key={t} value={t}>{JOB_TYPE[t]}</option>)}
-          </select>
-        </FormRow>
-        <FormRow label="Severity">
-          <select className={INPUT} value={i.severity ?? 'minor'} disabled={busy === 'severity'} onChange={e => patch('severity', { severity: e.target.value }, 'Severity saved.')}>
-            <option value="minor">Minor</option><option value="major">Major</option>
-          </select>
-        </FormRow>
-        <FormRow label="Due" hint={typeOf(i) === 'normal' ? 'Normal jobs are worked one by one in this order.' : undefined}>
-          <DateField aria-label="Due date" className={INPUT} value={i.dueOn ?? ''} onChange={v => patch('due', { dueOn: v || null }, v ? 'Due date saved.' : 'Due date cleared.')} />
+      <h3 className="m-0 text-meta font-bold uppercase tracking-[0.12em] text-ink-2">Job</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <ChoiceChips<JobType> label="Type" value={typeOf(i)} disabled={busy === 'type' || isBookingPassKey}
+          options={(Object.keys(JOB_TYPE) as JobType[]).map(t => ({ value: t, label: JOB_TYPE[t] }))}
+          onChange={v => { if (v !== typeOf(i)) patch('type', { jobType: v }, 'Job type saved.'); }} />
+        {isPassKey && (
+          <ChoiceChips<'normal' | 'urgent'> label="Urgency" help={PASS_KEY_URGENCY_HINT} value={i.urgentByHand ? 'urgent' : 'normal'} disabled={busy === 'urgency'}
+            options={[{ value: 'normal', label: 'Normal' }, { value: 'urgent', label: 'Urgent' }]}
+            onChange={v => { if ((v === 'urgent') !== !!i.urgentByHand) patch('urgency', { urgentByHand: v === 'urgent' }, 'Urgency saved.'); }} />
+        )}
+        {!isPassKey && (
+          <ChoiceChips<'minor' | 'major'> label="Severity" value={(i.severity ?? 'minor') as 'minor' | 'major'} disabled={busy === 'severity'}
+            options={[{ value: 'minor', label: 'Minor' }, { value: 'major', label: 'Major' }]}
+            onChange={v => { if (v !== (i.severity ?? 'minor')) patch('severity', { severity: v }, 'Severity saved.'); }} />
+        )}
+        <FormRow label={isPassKey ? 'Check-in day' : 'Due'} hint={typeOf(i) === 'normal' ? 'Normal jobs are worked one by one in this order.' : undefined}>
+          <DateField aria-label={isPassKey ? 'Check-in day' : 'Due date'} className={INPUT} value={i.dueOn ?? ''} onChange={v => patch('due', { dueOn: v || null }, v ? 'Due date saved.' : 'Due date cleared.')} />
         </FormRow>
         <FormRow label="Owner approval">
           <span className="h-10 flex items-center"><StatusBadge tone={APPROVAL[i.approvalStatus ?? 'not_needed'].tone}>{APPROVAL[i.approvalStatus ?? 'not_needed'].label}</StatusBadge></span>
         </FormRow>
       </div>
-      <div className="flex flex-col gap-1.5 pt-2 [border-top:1px_solid_var(--color-line-soft)]">
-        <label className="flex items-center gap-2 cursor-pointer">
+      {(!isPassKey || i.approvalStatus === 'needed') && <div className="flex flex-col gap-1.5 pt-2 [border-top:1px_solid_var(--color-line-soft)]">
+        {!isPassKey && <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" className="w-4 h-4 accent-black" checked={!!i.needsParts} disabled={busy === 'parts'}
             onChange={e => patch('parts', { needsParts: e.target.checked }, e.target.checked ? 'Marked as waiting for parts.' : 'No parts needed.')} />
           Needs parts or stock
-        </label>
-        {i.needsParts && (
+        </label>}
+        {!isPassKey && i.needsParts && (
           <label className="flex items-center gap-2 cursor-pointer pl-6">
             <input type="checkbox" className="w-4 h-4 accent-black" checked={!!i.partsArrivedAt} disabled={busy === 'arrived'}
               onChange={e => patch('arrived', { partsArrived: e.target.checked }, e.target.checked ? 'Parts arrived.' : 'Parts not arrived.',
@@ -916,7 +990,7 @@ function JobPlan({ i, busy, act }: { i: Issue; busy: string | null; act: (key: s
           </label>
         )}
         {i.approvalStatus === 'needed' && <span className="text-meta text-muted-ink">The technicians do not see this job until the owner approves{i.needsParts ? ' and the parts arrive' : ''}.</span>}
-      </div>
+      </div>}
     </section>
   );
 }
@@ -931,18 +1005,20 @@ function ApprovalRulesPanel() {
   const { data, error, reload } = useApi<{ rules: Record<string, { mode: RuleMode; amount?: number }>; mayEdit: boolean }>('/maintenance/approval-rules');
   const [draft, setDraft] = useState<Record<string, { mode: RuleMode; amount?: number }> | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (data) setDraft(data.rules); }, [data]);
+  // Filled once (and again after a save), not on every answer, so a late answer never wipes a rule being changed.
+  const reseed = useSeedOnce(data, 'rules', d => setDraft(d.rules));
   const changed = !!data && !!draft && JSON.stringify(draft) !== JSON.stringify(data.rules);
   async function save() {
     if (!draft) return;
     setBusy(true);
-    try { await api.put('/maintenance/approval-rules', { rules: draft }); toast({ tone: 'success', title: 'Approval rules saved.', body: 'They apply to jobs added or changed from now on.' }); reload(); }
+    try { await api.put('/maintenance/approval-rules', { rules: draft }); toast({ tone: 'success', title: 'Approval rules saved.', body: 'They apply to jobs added or changed from now on.' }); reseed(); reload(); }
     catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); }
     finally { setBusy(false); }
   }
   return (
-    <section className="bg-card rounded-card border border-solid border-line p-4 flex flex-col gap-3 max-w-[720px]">
-      <div>
+    <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] p-4 sm:p-5 flex flex-col gap-3 max-w-[760px]">
+      <div className="flex flex-col gap-1">
+        <span className="ds-eyebrow">Approval rules</span>
         <h2 className="m-0 text-heading font-semibold">When the owner must approve</h2>
         <p className="m-0 text-meta text-muted-ink">A job that needs approval is kept from the technicians until the owner approves it, and until its parts arrive when it needs parts. Jobs that do not need it go straight to the technician. Only jobs the owner pays for are held.</p>
       </div>

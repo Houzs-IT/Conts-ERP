@@ -3,9 +3,11 @@ import { can } from '../../_lib/access';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { notify } from '../../_lib/notify';
 import { resolveUnit } from '../../_lib/ops';
-import { windowsFor, staysOverlapping } from '../../_lib/cleaning';
+import { windowsFor, staysOverlapping, type RepairWindow } from '../../_lib/cleaning';
+import { onOpenTab, openOrder, isUrgent, needsSupport, awaitingOwner, typeOf } from '../../../src/lib/maintenanceOrder';
 import { CATEGORIES, URGENCIES, SOURCES, CHARGE_TO, JOB_TYPES, SEVERITIES, DAY, assigneeUserId, pickAssignee, hasTechnicianList, hasBilling, hasBuildingJobs, jobPlaceJoin, toInstant, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../_lib/maintenance';
 import { repairNotice } from '../../_lib/notices';
+import { applyPassKeyUrgency, hasUrgentByHand } from '../../_lib/passKeyJobs';
 import { hasServicePrices, serviceBook } from '../../_lib/servicePrices';
 import { layoutKey } from '../../_lib/cleaningPrices';
 import { hasJobInvoices } from '../../_lib/jobProfit';
@@ -21,50 +23,55 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sp = new URL(request.url).searchParams;
   const state = sp.get('state');
   const unitId = sp.get('unitId');
+  // ?view=open&limit=50: the Maintenance screen's first view, sent alongside the full list so it can show before it
+  // (performance, 12 Nov 2026): the first `limit` jobs of the Open tab in its order, with the header's and tabs' counts.
+  const firstView = sp.get('view') === 'open';
+  const limit = Math.max(1, Math.min(200, Number(sp.get('limit')) || 50));
   const where: string[] = [], args: unknown[] = [];
   if (state) { where.push('m.state = ?'); args.push(state); }
+  if (firstView) where.push(`m.state != 'resolved'`);
   if (unitId) { where.push('m.unit_id = ?'); args.push(unitId); }
   const placeJoin = await jobPlaceJoin(env);
   const rows = await all<any>(env, `
     SELECT m.*, u.unit_number, p.id AS building_id, p.name AS property_name, COALESCE(r.full_name, '') AS reporter,
            s.code AS sku_code, s.name AS sku_name,
-           (SELECT COUNT(*) FROM documents d WHERE d.maintenance_id = m.id AND d.kind IN ('photo','video')) AS photo_count,
-           (SELECT COUNT(*) FROM documents d WHERE d.maintenance_id = m.id AND d.kind NOT IN ('photo','video')) AS document_count,
-           (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.maintenance_id = m.id) AS expensed,
-           (SELECT min(e.incurred_on) FROM expenses e WHERE e.maintenance_id = m.id) AS expensed_on,
+           COALESCE(dc.photo_count, 0) AS photo_count, COALESCE(dc.document_count, 0) AS document_count,
+           COALESCE(ex.expensed, 0) AS expensed, ex.expensed_on,
            (o.user_id IS NOT NULL) AS owner_has_login
     FROM maintenance_issues m
     ${placeJoin}
+    -- Counted once per table, not once per job (performance, 12 Nov 2026: four subqueries per row, with no index on
+    -- maintenance_id, read documents and expenses whole for every job).
+    LEFT JOIN (SELECT d.maintenance_id, COUNT(*) FILTER (WHERE d.kind IN ('photo','video')) AS photo_count,
+                      COUNT(*) FILTER (WHERE d.kind NOT IN ('photo','video')) AS document_count
+               FROM documents d WHERE d.maintenance_id IS NOT NULL GROUP BY d.maintenance_id) dc ON dc.maintenance_id = m.id
+    LEFT JOIN (SELECT e.maintenance_id, SUM(e.amount) AS expensed, min(e.incurred_on) AS expensed_on
+               FROM expenses e WHERE e.maintenance_id IS NOT NULL GROUP BY e.maintenance_id) ex ON ex.maintenance_id = m.id
     LEFT JOIN owners o ON o.id = u.owner_id
     LEFT JOIN users r ON r.id = m.reported_by
     LEFT JOIN maintenance_skus s ON s.id = m.sku_id
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY m.reported_at DESC`, ...args);
 
-  const windows = await windowsFor(env, rows.map(r => r.id));
   const money = can(session, 'finance', 'view');
-  const billing = await hasBilling(env);
   // What staff bought for each job and handed in as receipts (finance, 29 Oct 2026): part of the job's actual cost, never
   // charged to the owner again. Read from the engine's receipts through pos.staff_receipt_job_lines (migration 0178).
-  const purchases = new Map<string, number>();
-  if (money) {
+  const readPurchases = async () => {
+    const purchases = new Map<string, number>();
+    if (!money) return purchases;
     try {
       for (const p of await all<{ id: string; sen: number }>(env, 'SELECT maintenance_issue_id AS id, SUM(amount_sen) AS sen FROM staff_receipt_job_lines GROUP BY maintenance_issue_id')) purchases.set(p.id, Number(p.sen));
     } catch { /* before migration 0178: no receipts yet */ }
-  }
-  return json({
-    generatedAt: nowIso(),
-    // False until migration 0108 is applied: the screen then hides billing date, collected and contractor payment.
-    billing,
-    // False until migration 0126: the screen then offers Normal and Urgent only, and no severity, parts or due date.
-    jobTypes: await hasJobType(env),
-    data: rows.map(r => ({
+    return purchases;
+  };
+  const shape = (r: any, windows: Map<string, RepairWindow[]>, billing: boolean, purchases: Map<string, number>) => ({
       id: r.id, unitId: r.unit_id, unitNumber: r.unit_number, propertyName: r.property_name, buildingId: r.building_id,
       title: r.title, detail: r.detail, state: r.state,
       category: r.category ?? 'other', urgency: r.urgency ?? 'normal',
       jobType: r.job_type ?? (r.urgency === 'urgent' ? 'urgent' : 'normal'), severity: r.severity ?? 'minor', dueOn: r.due_on ?? null,
       needsParts: !!r.needs_parts, partsArrivedAt: r.parts_arrived_at ?? null,
       supportRequestedAt: r.support_requested_at ?? null, supportNote: r.support_note ?? null,
+      urgentByHand: r.urgent_by_hand === true,
       // Needs owner approval / Approved / Not needed (owner, 17 Oct 2026).
       approvalStatus: r.owner_approved_at ? 'approved' : r.owner_approval_required && r.charge_to === 'owner' ? 'needed' : 'not_needed', source: r.source ?? 'staff', sourceTaskId: r.source_task_id ?? null, reservationId: r.reservation_id ?? null,
       vendorName: r.vendor_name, assigneeName: r.vendor_name, assigneeKind: r.assignee_kind ?? null,
@@ -84,7 +91,41 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       billingDate: money && billing ? r.billing_date ?? null : null, collectedAt: money && billing ? r.collected_at ?? null : null,
       contractorAmount: money && billing ? r.contractor_amount ?? null : null, contractorPaidAt: money && billing ? r.contractor_paid_at ?? null : null,
       staffPurchasesSen: money ? purchases.get(r.id) ?? 0 : null,
-    })),
+  });
+
+  if (firstView) {
+    // The Open tab's rules and order are the screen's own (src/lib/maintenanceOrder.ts); windows are read for the page only.
+    const tomorrow = new Date(Date.now() + 8 * 3600e3 + 864e5).toISOString().slice(0, 10);
+    const facts = rows.map(r => shape(r, new Map(), false, new Map()));
+    const openTab = facts.filter(i => onOpenTab(i, tomorrow)).sort(openOrder);
+    const pageIds = openTab.slice(0, limit).map(i => i.id);
+    const month = mytToday().slice(0, 7);
+    const [windows, billing, purchases, jobTypes, cost] = await Promise.all([
+      windowsFor(env, pageIds), hasBilling(env), readPurchases(), hasJobType(env),
+      // This month's finished jobs, for the header's "this month" figure (the screen sums finalAmount by resolvedAt's month).
+      money ? one<{ sen: number }>(env, `SELECT COALESCE(SUM(final_amount), 0) AS sen FROM maintenance_issues WHERE state = 'resolved' AND left(resolved_at::text, 7) = ?`, month) : null,
+    ]);
+    const byId = new Map(rows.map(r => [r.id, r]));
+    return json({
+      generatedAt: nowIso(), billing, jobTypes, partial: true,
+      data: pageIds.map(id => shape(byId.get(id), windows, billing, purchases)),
+      summary: {
+        open: openTab.length, urgent: openTab.filter(isUrgent).length, support: openTab.filter(needsSupport).length,
+        approval: facts.filter(awaitingOwner).length, passKeys: openTab.filter(i => typeOf(i) === 'pass_key').length,
+        monthCost: money ? Number(cost?.sen ?? 0) : null,
+      },
+    });
+  }
+
+  // Independent of each other: sent together rather than one after another.
+  const [windows, billing, purchases, jobTypes] = await Promise.all([windowsFor(env, rows.map(r => r.id)), hasBilling(env), readPurchases(), hasJobType(env)]);
+  return json({
+    generatedAt: nowIso(),
+    // False until migration 0108 is applied: the screen then hides billing date, collected and contractor payment.
+    billing,
+    // False until migration 0126: the screen then offers Normal and Urgent only, and no severity, parts or due date.
+    jobTypes,
+    data: rows.map(r => shape(r, windows, billing, purchases)),
   });
 };
 
@@ -129,6 +170,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const severity = b.severity ?? 'minor';
   if (!SEVERITIES.includes(severity)) return fail('VALIDATION', 'Minor or major.', 422, { severity: 'Minor or major.' });
   if (b.dueOn != null && (typeof b.dueOn !== 'string' || !DAY.test(b.dueOn))) return fail('VALIDATION', 'Pick the due date.', 422, { dueOn: 'Pick the due date.' });
+  if (jobType === 'pass_key' && !b.dueOn) return fail('VALIDATION', 'Pick the check-in day.', 422, { dueOn: 'Pick the check-in day.' });
+  if (b.urgentByHand !== undefined && (typeof b.urgentByHand !== 'boolean' || jobType !== 'pass_key')) return fail('VALIDATION', 'Only a Pass key job has its own urgency.', 422, { urgentByHand: 'Only for Pass key.' });
   if (field && (b.needsParts != null || b.dueOn != null)) return fail('FORBIDDEN', 'The office plans parts and due dates.', 403);
   const source = b.reportSource ?? (session.role === 'housekeeper' ? 'cleaner' : 'staff');
   if (!SOURCES.includes(source)) return fail('VALIDATION', 'Say who reported it.', 422, { reportSource: 'Guest, cleaner, inspection or staff.' });
@@ -210,6 +253,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     now, now, now, ...(withUser ? [userId] : []), ...(listed ? [who?.technicianId ?? null] : []), ...(cols ? [jobType, severity, b.needsParts ? 1 : 0, b.dueOn ?? null] : []), ...(billingCols ? [internal] : []));
 
   if (lines.length) await writeLines(env, id, lines, session.userId);
+  if (jobType === 'pass_key') {
+    if (b.urgentByHand === true && await hasUrgentByHand(env)) await run(env, 'UPDATE maintenance_issues SET urgent_by_hand = TRUE WHERE id = ?', id);
+    await applyPassKeyUrgency(env);
+  }
   if (b.blocksUnit && unit) await run(env, "UPDATE units SET readiness = 'maintenance', updated_at = ? WHERE id = ?", now, unit.id);
   let overlaps: unknown[] = [];
   if (win) {

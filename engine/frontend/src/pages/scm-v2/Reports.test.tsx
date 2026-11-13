@@ -314,6 +314,6 @@ describe('the P&L opens on this fiscal year', () => {
     const { fiscalYearStart } = await import('../../conts/ledgerSettings');
     const today = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
     render(<PnLTab />);
-    expect((screen.getByLabelText('P&L from') as HTMLInputElement).value).toBe(fiscalYearStart(today, 8).replace(/-/g, '/'));
+    expect((screen.getByLabelText('P&L from') as HTMLInputElement).value).toBe(fiscalYearStart(today, 8).split('-').reverse().join('/'));
   });
 });

@@ -5,6 +5,7 @@ import { requireSession } from '../../../_lib/auth';
 import { moneySchema, moneySql, toPayment, OTA_CHANNELS } from '../../../_lib/bookingMoney';
 import { validatePayment, insertPayment, clean } from '../../../_lib/bookingPayments';
 import { approvalsEnabled, submit } from '../../../_lib/approvals';
+import { paymentIncomeNotice } from '../../../_lib/lockGuards';
 
 /** GET /api/reservations/:id/payments — the money received against one booking, oldest first. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -52,15 +53,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     const reason = clean(b.reason, 500) ?? clean(b.note, 500) ?? (on ? null : 'Refund');
     if (!reason) return fail('VALIDATION', 'Say why the guest is refunded. It goes to the person who approves it.', 422, { reason: 'Say why the guest is refunded.' });
     const amount = Math.round(Number(b.amount));
+    const notice = await paymentIncomeNotice(env, id);
     return submit(env, session, {
       kind: 'guest_refund', entity: 'reservations', entityId: id, amount, reason,
       summary: `Refund ${rmText(amount)} to the guest of ${r.external_ref ?? 'reservation ' + id}`,
       payload: { reservationId: id, amount, receivedOn: b.receivedOn, method: clean(b.method, 60), reference: clean(b.reference, 120), note: clean(b.note, 500) },
-    }, res => json({ id: res.paymentId, kind: 'refund', amount }, 201));
+    }, res => json({ id: res.paymentId, kind: 'refund', amount, notice }, 201));
   }
   const p = await insertPayment(env, { reservationId: id, amount: Math.round(Number(b.amount)), receivedOn: b.receivedOn, method: clean(b.method, 60), reference: clean(b.reference, 120), kind, note: clean(b.note, 500), userId: session.userId });
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.payment', entityTable: 'reservations', entityId: id,
     after: { paymentId: p.id, amount: p.amount, kind, receivedOn: b.receivedOn, method: p.method, reference: p.reference } });
-  return json(p, 201);
+  return json({ ...p, notice: await paymentIncomeNotice(env, id) }, 201);
 };
 

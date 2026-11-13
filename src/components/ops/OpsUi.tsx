@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Modal } from '../Modal';
+import { ChoiceChips } from '../ChoiceChips';
 import { Button } from '../Button';
 import Icon from '../Icon';
 import { MediaSourceSheet } from '../Attachments';
 import { cx } from '../../lib/design-tokens';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { SearchSelect } from '../Select';
-import { time, weekdayDate, dateTimeShort } from '../../lib/format';
+import { time, weekdayDate, dateTimeShort, buildingName } from '../../lib/format';
 import { stampPhoto } from '../../lib/photoStamp';
 import { useToast } from '../Toast';
 import { useApi } from '../../lib/useApi';
@@ -85,10 +86,12 @@ export function PillTabs<T extends string>({ value, tabs, onChange }: { value: T
 }
 
 /** A form dialog: title, body, and the buttons at the bottom right (secondary left of primary). */
-export function OpsModal({ title, sub, children, footer, onClose, busy, width = 480 }: {
+export function OpsModal({ title, sub, children, footer, onClose, busy, width = 480, size, eyebrow, aside, footNote }: {
   title: string; sub?: ReactNode; children: ReactNode; footer: ReactNode; onClose: () => void; busy?: boolean; width?: number;
+  /** The phase-1 kit: sm | md | lg width, a gold eyebrow, a right-hand summary panel and a quiet note left of the buttons. */
+  size?: 'sm' | 'md' | 'lg'; eyebrow?: string; aside?: ReactNode; footNote?: ReactNode;
 }) {
-  return <Modal title={title} sub={sub} onClose={onClose} busy={busy} width={width} footer={footer}>{children}</Modal>;
+  return <Modal title={title} sub={sub} onClose={onClose} busy={busy} width={width} size={size} eyebrow={eyebrow} aside={aside} footNote={footNote} footer={footer}>{children}</Modal>;
 }
 
 /** Label above a control, error under it. */
@@ -169,6 +172,7 @@ export function Checklist({ taskId, items, readOnly, onChange }: { taskId: strin
 
 export interface Technician { name: string; kind: 'in_house' | 'contractor'; role: string | null; userId?: string | null }
 export const KIND_WORD: Record<'in_house' | 'contractor', string> = { in_house: 'In-house', contractor: 'Contractor' };
+export const PASS_KEY_URGENCY_HINT = 'Urgent by itself on the day before check-in, on the day and when missed.';
 
 /** Who can be given a job: the company's own people and every contractor used before (GET /maintenance/technicians).
  *  The kind (in-house or contractor) follows from who is picked; a contractor not on the list is typed once. */
@@ -224,12 +228,12 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
 }) {
   const { user } = useSession();
   const office = !!user && !FIELD.includes(user.role) && user.role !== 'owner';
-  const [f, setF] = useState({ unitId: unit?.id ?? '', building: '', skuId: '', title: '', category: '', jobType: 'normal' as 'normal' | 'urgent' | 'pass_key', severity: 'minor' as 'minor' | 'major', dueOn: '', needsParts: false, detail: '', assignee: '', from: '', to: '', windowNote: '' });
+  const [f, setF] = useState({ unitId: unit?.id ?? '', building: '', skuId: '', title: '', category: '', jobType: 'normal' as 'normal' | 'urgent', severity: 'minor' as 'minor' | 'major', dueOn: '', needsParts: false, detail: '', assignee: '', from: '', to: '', windowNote: '' });
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [cats, setCats] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<{ unitId?: string; building?: string; title?: string; category?: string; detail?: string; window?: string; form?: string }>({});
+  const [error, setError] = useState<{ unitId?: string; building?: string; title?: string; category?: string; detail?: string; dueOn?: string; window?: string; form?: string }>({});
   const picked = usePickedMedia();
   const toast = useToast();
   const techs = useTechnicians(office);
@@ -237,7 +241,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
   const items = (catalog.data?.data ?? []).filter(s => s.active);
   const fromClean = !!taskId;
   const inBuilding = f.unitId === IN_BUILDING.id;
-  const buildings = [...new Map((units ?? []).flatMap(u => u.propertyId ? [[u.propertyId, u.propertyName] as const] : [])).entries()]
+  const buildings = [...new Map((units ?? []).flatMap(u => u.propertyId ? [[u.propertyId, buildingName(u.propertyName)] as const] : [])).entries()]
     .map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
   // A cleaner's damage report can name several kinds of problem at once; each becomes its own job (Conts field app, Nov 2026).
   const multi = fromClean && !office;
@@ -270,7 +274,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
       for (const category of kinds) {
         const r = await api.post<{ id: string; overlaps?: unknown[] }>('/maintenance/issues', {
           ...(inBuilding ? { propertyId: f.building } : { unitId: f.unitId }), title: f.title.trim(), detail: f.detail.trim() || undefined, category,
-          // Job type (staff comment sheet): the office has Pass key too; a cleaner reporting damage says Normal or Urgent.
+          // Job type (staff comment sheet): Pass key jobs have their own form; a cleaner reporting damage says Normal or Urgent.
           ...(office ? { jobType: f.jobType, severity: f.severity, ...(f.dueOn ? { dueOn: f.dueOn } : {}), ...(f.needsParts ? { needsParts: true } : {}) } : { urgency: f.jobType === 'urgent' ? 'urgent' : 'normal' }),
           reportSource: fromClean ? 'cleaner' : 'staff', sourceTaskId: taskId, source: 'web',
           ...(office && !inBuilding && lines.some(l => l.itemId) ? { items: linesPayload(lines), ...(lines.find(l => l.itemId && l.itemId !== 'other') ? { skuId: lines.find(l => l.itemId && l.itemId !== 'other')!.itemId } : {}) } : {}),
@@ -285,8 +289,8 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
       else {
         const fields = e instanceof ApiFailure ? e.fields ?? {} : {};
         const win = fields.windowStartsAt || fields.windowEndsAt;
-        setError({ unitId: fields.unitId, building: fields.propertyId, title: fields.title, category: fields.category, detail: fields.detail, window: win,
-          form: fields.unitId || fields.propertyId || fields.title || fields.category || fields.detail || win ? undefined : errorMessage(e, 'Not saved. Try again.') });
+        setError({ unitId: fields.unitId, building: fields.propertyId, title: fields.title, category: fields.category, detail: fields.detail, dueOn: fields.dueOn, window: win,
+          form: fields.unitId || fields.propertyId || fields.title || fields.category || fields.detail || fields.dueOn || win ? undefined : errorMessage(e, 'Not saved. Try again.') });
         setBusy(false); return;
       }
     }
@@ -294,7 +298,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
     // The job is saved; a photo that fails is named, not a reason to undo it.
     if (picked.files.length) {
       setSending(true);
-      const placeLabel = inBuilding ? buildings.find(b => b.id === f.building)?.name : (units ?? []).filter(u => u.id === f.unitId).map(u => `${u.propertyName} ${u.unitNumber}`)[0];
+      const placeLabel = inBuilding ? buildings.find(b => b.id === f.building)?.name : (units ?? []).filter(u => u.id === f.unitId).map(u => `${buildingName(u.propertyName)} ${u.unitNumber}`)[0];
       const failed = await picked.send(unit?.label ?? placeLabel ?? '', ...ids);
       if (failed.length) toast({ tone: 'warning', title: 'Job added, but some photos were not.', body: `Not added: ${failed.join(', ')}. Add them in the job's photos, under The problem.` });
     }
@@ -302,7 +306,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
   }
   const label = fromClean ? 'Report damage' : 'Add maintenance job';
   return (
-    <OpsModal title={label} sub={unit ? `${unit.label}. Opens a Maintenance job on this unit.` : office ? 'The unit, the problem and, if known, who fixes it and when. The quote and who pays are set in the job.' : 'Pick the unit and say what is wrong.'}
+    <OpsModal title={label} eyebrow="Maintenance" size="md" sub={unit ? `${unit.label}. Opens a Maintenance job on this unit.` : office ? 'The unit, the problem and, if known, who fixes it and when. The quote and who pays are set in the job.' : 'Pick the unit and say what is wrong.'}
       onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void submit()}>{label}</Button></>}>
       {!unit && (
@@ -339,31 +343,30 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
           </div>
         </FormRow>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        {!multi && (
-          <FormRow label={fromClean ? 'Problem category (optional)' : 'Problem category'} error={error.category}>
-            <select className={INPUT} value={f.category} onChange={e => { set({ category: e.target.value }); setError(x => ({ ...x, category: undefined })); }}>
-              <option value="" disabled={!fromClean}>{fromClean ? 'Not sure' : 'Pick one'}</option>
-              {Object.entries(CATEGORY).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </FormRow>
+      {/* Six kinds or fewer, two types, two severities: one-tap chips (the kit's ChoiceChips), not dropdowns. */}
+      {!multi && (
+        <div className="flex flex-col gap-1">
+          <ChoiceChips<string> label={fromClean ? 'Problem category (optional)' : 'Problem category'} required={!fromClean} value={f.category}
+            options={Object.entries(CATEGORY).map(([value, label]) => ({ value, label }))}
+            onChange={v => { set({ category: f.category === v && fromClean ? '' : v }); setError(x => ({ ...x, category: undefined })); }}
+            help={fromClean && !error.category ? 'Not sure? Leave it empty: it goes in as Other.' : undefined} />
+          {error.category && <span className="text-meta text-danger">{error.category}</span>}
+        </div>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <ChoiceChips<'normal' | 'urgent'> label={office ? 'Job type' : 'Urgency'} value={f.jobType} onChange={v => set({ jobType: v })}
+          options={[{ value: 'normal', label: 'Normal' }, { value: 'urgent', label: 'Urgent' }]}
+          help={f.jobType === 'urgent' ? 'Affects the next guest; done first.' : office ? 'Done in date order.' : undefined} />
+        {office && (
+          <ChoiceChips<'minor' | 'major'> label="Severity" value={f.severity} onChange={v => set({ severity: v })}
+            options={[{ value: 'minor', label: 'Minor' }, { value: 'major', label: 'Major' }]}
+            help="Management's approval rules can ask the owner first for major jobs." />
         )}
-        <FormRow label={office ? 'Job type' : 'Urgency'} hint={f.jobType === 'urgent' ? 'Affects the next guest; done first.' : f.jobType === 'pass_key' ? 'Hand over or collect a key.' : office ? 'Done in date order.' : undefined}>
-          <select className={INPUT} value={f.jobType} onChange={e => set({ jobType: e.target.value as 'normal' | 'urgent' | 'pass_key' })}>
-            <option value="normal">Normal</option><option value="urgent">Urgent</option>
-            {office && <option value="pass_key">Pass key</option>}
-          </select>
-        </FormRow>
       </div>
       {office && (
-        <div className="grid grid-cols-2 gap-3">
-          <FormRow label="Severity" hint="Management's approval rules can ask the owner first for major jobs.">
-            <select className={INPUT} value={f.severity} onChange={e => set({ severity: e.target.value as 'minor' | 'major' })}>
-              <option value="minor">Minor</option><option value="major">Major</option>
-            </select>
-          </FormRow>
-          <FormRow label="Due (optional)" hint="Normal jobs are worked one by one in this order.">
-            <DateField aria-label="Due date" className={INPUT} value={f.dueOn} onChange={v => set({ dueOn: v })} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <FormRow label="Due (optional)" error={error.dueOn} hint="Normal jobs are worked one by one in this order.">
+            <DateField aria-label="Due date" className={INPUT} value={f.dueOn} onChange={v => { set({ dueOn: v }); setError(x => ({ ...x, dueOn: undefined })); }} />
           </FormRow>
         </div>
       )}
@@ -414,14 +417,14 @@ type PassKeyAction = keyof typeof PASS_KEY_ACTION;
 const PHONE_INPUT = cx(INPUT, 'max-md:h-11 max-md:text-[16px]');
 
 export function PassKeyJobForm({ units, onClose, onDone }: { units: RosterUnit[]; onClose: () => void; onDone: (id: string) => void }) {
-  const [form, setForm] = useState({ unitId: '', action: 'hand_over' as PassKeyAction, startsAt: `${mytDay(0)}T15:00`, guestName: '', assignee: '', note: '' });
+  const [form, setForm] = useState({ unitId: '', action: 'hand_over' as PassKeyAction, startsAt: `${mytDay(0)}T15:00`, guestName: '', assignee: '', note: '', urgentByHand: false });
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<{ unitId?: string; startsAt?: string; form?: string }>({});
   const techs = useTechnicians();
   const update = (patch: Partial<typeof form>) => setForm(current => ({ ...current, ...patch }));
 
   async function submit() {
-    const { unitId, action, startsAt, guestName, assignee, note } = form;
+    const { unitId, action, startsAt, guestName, assignee, note, urgentByHand } = form;
     const missing = { unitId: unitId ? undefined : 'Pick the unit.', startsAt: startsAt ? undefined : 'Pick the day and time.' };
     if (missing.unitId || missing.startsAt) { setError(missing); return; }
     setIsBusy(true); setError({});
@@ -431,7 +434,7 @@ export function PassKeyJobForm({ units, onClose, onDone }: { units: RosterUnit[]
     try {
       const { id } = await api.post<{ id: string }>('/maintenance/issues', {
         unitId, title, detail: note.trim() || undefined, category: 'other', jobType: 'pass_key', severity: 'minor',
-        dueOn: startsAt.slice(0, 10), reportSource: 'staff', source: 'web', window: { startsAt, endsAt },
+        dueOn: startsAt.slice(0, 10), reportSource: 'staff', source: 'web', window: { startsAt, endsAt }, ...(urgentByHand ? { urgentByHand: true } : {}),
         ...(assignee.trim() ? { assigneeName: assignee.trim() } : {}),
       });
       onDone(id);
@@ -444,22 +447,21 @@ export function PassKeyJobForm({ units, onClose, onDone }: { units: RosterUnit[]
   }
 
   return (
-    <OpsModal title="Add pass key job" sub="One key hand-over or collection on one unit." onClose={onClose} busy={isBusy}
+    <OpsModal title="Add pass key job" eyebrow="Maintenance" size="md" sub="One key hand-over or collection on one unit." onClose={onClose} busy={isBusy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={isBusy}>Cancel</Button><Button size="sm" variant="primary" loading={isBusy} onClick={() => void submit()}>Add pass key job</Button></>}>
       <FormRow label="Unit" error={error.unitId} hint="Type the building or the unit, e.g. agile 13a.">
         <UnitPicker units={units} value={form.unitId} error={error.unitId} onChange={unitId => { update({ unitId }); setError(current => ({ ...current, unitId: undefined })); }} />
       </FormRow>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <FormRow label="Key">
-          <select className={PHONE_INPUT} value={form.action} onChange={event => update({ action: event.target.value === 'collect' ? 'collect' : 'hand_over' })}>
-            {Object.entries(PASS_KEY_ACTION).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
-        </FormRow>
+        <ChoiceChips<PassKeyAction> label="Key" value={form.action} onChange={action => update({ action })}
+          options={Object.entries(PASS_KEY_ACTION).map(([value, label]) => ({ value: value as PassKeyAction, label }))} />
         <FormRow label="When" error={error.startsAt} hint="Malaysia time.">
           <DateTimeField aria-label="When" className={PHONE_INPUT} value={form.startsAt}
             onChange={startsAt => { update({ startsAt }); setError(current => ({ ...current, startsAt: undefined })); }} />
         </FormRow>
       </div>
+      <ChoiceChips<'normal' | 'urgent'> label="Urgency" value={form.urgentByHand ? 'urgent' : 'normal'} onChange={v => update({ urgentByHand: v === 'urgent' })}
+        options={[{ value: 'normal', label: 'Normal' }, { value: 'urgent', label: 'Urgent' }]} help={PASS_KEY_URGENCY_HINT} />
       <FormRow label="Guest (optional)">
         <input className={PHONE_INPUT} value={form.guestName} onChange={event => update({ guestName: event.target.value })} maxLength={80} placeholder="e.g. Tan Wei Ming" autoComplete="off" />
       </FormRow>

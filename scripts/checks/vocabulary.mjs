@@ -195,6 +195,11 @@ export const allow = {
   // The overall owner report keeps the owner workbook's own column names (revenue, GP, LT/GRR), as the owner asked (22 Oct 2026).
   'src/pages/OwnerOverallReportPage.tsx': 'The owner workbook\'s overall report sheet, in its own column names.',
   'src/pages/OwnerOverallDetail.tsx': 'The unit drawer of that same overall report sheet, in the sheet\'s words.',
+  // The month's locks are that report's columns, named as chew named them (Unit report locks, 13 Nov 2026): Revenue is
+  // the lock on the report's Total revenue column, here and on the work pages' lock bars.
+  'src/pages/ownerReportLocks.tsx': 'The Unit report\'s lock cells, in the report\'s column names (Revenue).',
+  'src/lib/lockStages.ts': 'The Unit report\'s lock categories, in the report\'s column names (Revenue).',
+  'functions/_lib/stageLocks.ts': 'The Unit report\'s lock categories and their messages, in the report\'s column names (Revenue).',
   // The Owner Showcase is shown to prospective owners in the words of Loo Wen Wei's approved design pack (CONTS-0006,
   // 26 Oct 2026): Airbnb's guest-facing words (property, booking, check-outs), not the ERP's working vocabulary.
   'src/pages/showcase/OwnerShowcasePage.tsx': 'The sales presentation copies the approved design pack word for word.',

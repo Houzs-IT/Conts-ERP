@@ -99,12 +99,12 @@ describe('Trial Balance by department', () => {
     render(wrap(<TrialBalanceTab />));
     const asAt = screen.getByLabelText('Trial balance as at') as HTMLInputElement;
     fireEvent.focus(asAt);
-    fireEvent.change(asAt, { target: { value: '20261201' } });
+    fireEvent.change(asAt, { target: { value: '01122026' } });
     fireEvent.blur(asAt);
     expect(useAccountBalances).toHaveBeenLastCalledWith({ department: '', from: '', to: '2026-12-01' });
     const from = screen.getByLabelText('Trial balance from') as HTMLInputElement;
     fireEvent.focus(from);
-    fireEvent.change(from, { target: { value: '20261101' } });
+    fireEvent.change(from, { target: { value: '01112026' } });
     fireEvent.blur(from);
     expect(useAccountBalances).toHaveBeenLastCalledWith({ department: '', from: '2026-11-01', to: '2026-12-01' });
   });

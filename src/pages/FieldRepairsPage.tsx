@@ -15,9 +15,10 @@ import { CATEGORY, FormRow, INPUT, TEXTAREA, ProblemPhotos, Segmented, hm, uploa
 import { statusOf } from '../lib/status';
 import { usePortalText, usePortalDates, wordFor } from '../lib/portalI18n';
 import { useFieldRefresh, useFreshIds } from '../lib/fieldLive';
-import { MoneyInput } from '../components/inputs';
-import { readReceipt } from '../lib/claims';
-import { todayMyt } from '../lib/format';
+import type { Me } from '../lib/claims';
+import { JobClaimBox } from '../components/ops/JobClaimBox';
+import { todayMyt, buildingName } from '../lib/format';
+import { passKeyStatus, passKeyDay, type PassKeyDay } from '../lib/passKeyStatus';
 
 /* GET /api/field/repairs and /api/field/repairs/:id (functions/api/field/repairs*.ts). No amounts: the server never sends any. */
 interface Repair {
@@ -73,6 +74,7 @@ interface Detail {
 
 /** The repair's step in the words of the Maintenance screen (status vocabulary "maintenance"). */
 function progress(r: Repair): string {
+  if (r.jobType === 'pass_key') return passKeyStatus({ state: r.state, assigneeName: r.assigneeName, dueOn: r.dueOn ?? null, supportRequestedAt: r.supportRequestedAt ?? null }, todayMyt());
   if (r.state === 'resolved') return 'done';
   if (r.waitingForOwner) return 'awaiting_owner';
   if (r.endedAt) return 'repair_finished';
@@ -95,14 +97,15 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
     return () => window.clearTimeout(timer);
   }, [unitSearch, unitKey]);
   const query = new URLSearchParams({ ...(building ? { building } : {}), ...(category ? { category } : {}), ...(unitKey ? { unit: unitKey } : {}), ...(limit > POOL_PAGE ? { limit: String(limit) } : {}) }).toString();
-  const { data, loading, error, reload } = useApi<ListPayload>(`/field/repairs${query ? `?${query}` : ''}`);
+  const { data, loading, error, reload, poll } = useApi<ListPayload>(`/field/repairs${query ? `?${query}` : ''}`);
   // A new notice, the phone coming back to the app, or a minute passing reloads the list; a repair that just arrived carries a New mark.
   useFieldRefresh(reload);
   useEffect(() => {
-    const t = window.setInterval(() => { if (document.visibilityState === 'visible') reload(); }, 60_000);
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') poll(); }, 60_000);
     return () => window.clearInterval(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [tab, setTab] = useState<ListTab>('all');
+  const [passKeyDayShown, setPassKeyDayShown] = useState<PassKeyDay>('today');
   const [open, setOpen] = useState<string | null>(null);
   // A notice tapped in the bell: open that repair (the sheet loads it by id and says so if it is not theirs).
   useEffect(() => { if (linkRepair) { setTab('all'); setOpen(linkRepair); onLinked?.(); } }, [linkRepair]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -120,21 +123,23 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const team = (data?.team ?? []).filter(isShown);
   const passKeyTodo = todo.filter(r => r.jobType === 'pass_key');
   const passKeyPool = pool.filter(r => r.jobType === 'pass_key');
-  const myJobsShown = tab === 'pass_key' ? passKeyTodo : tab === 'ongoing' || tab === 'all' ? todo : [];
-  const poolShown = tab === 'pass_key' ? passKeyPool : tab === 'all' ? pool : [];
+  const isOnDay = (day: PassKeyDay) => (repair: Repair): boolean => passKeyDay(repair.dueOn ?? null, todayMyt(1)) === day;
+  const passKeyCountOn = (day: PassKeyDay): number => passKeyTodo.filter(isOnDay(day)).length + passKeyPool.filter(isOnDay(day)).length;
+  const myJobsShown = tab === 'pass_key' ? passKeyTodo.filter(isOnDay(passKeyDayShown)) : tab === 'ongoing' || tab === 'all' ? todo : [];
+  const poolShown = tab === 'pass_key' ? passKeyPool.filter(isOnDay(passKeyDayShown)) : tab === 'all' ? pool : [];
   const groups = [
     ...groupByUnit(myJobsShown).map(group => ({ group, offer: false })),
     ...groupByUnit(poolShown).map(group => ({ group, offer: true })),
   ];
   const finishedShown = tab === 'all' || tab === 'done' ? finished : [];
-  const emptyTitle = tab === 'pass_key' ? tr.noPassKey : tab === 'done' ? tr.noDone : tr.noMine;
+  const emptyTitle = tab === 'pass_key' ? (passKeyDayShown === 'today' ? tr.noPassKeyToday : tr.noPassKeyTomorrow) : tab === 'done' ? tr.noDone : tr.noMine;
   const tabLabel = (name: string, count: number): ReactNode => (
     <span className="flex flex-col items-center">{name}<span className="text-meta text-muted-ink tabular-nums">{count}</span></span>
   );
   const fresh = useFreshIds([...(data?.mine ?? []), ...(data?.open ?? [])].map(r => r.id), 'repairs', !!data);
   const buildingOptions = useMemo(() => {
     const byId = new Map((data?.buildings ?? []).map(b => [b.id, b]));
-    for (const r of data?.mine ?? []) if (!byId.has(r.buildingId)) byId.set(r.buildingId, { id: r.buildingId, name: r.propertyName, open: 0 });
+    for (const r of data?.mine ?? []) if (!byId.has(r.buildingId)) byId.set(r.buildingId, { id: r.buildingId, name: buildingName(r.propertyName), open: 0 });
     return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [data]);
   const allBuildingsOpen = (data?.buildings ?? []).reduce((sum, b) => sum + b.open, 0);
@@ -171,6 +176,14 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
             ]} />
         )}
       </div>
+      {data && tab === 'pass_key' && (
+        <Segmented label={t.jobs.day} value={passKeyDayShown} onChange={setPassKeyDayShown}
+          className="w-full grid grid-flow-col auto-cols-fr [&>button]:min-h-11"
+          options={[
+            { value: 'today', label: `${t.jobs.today} · ${passKeyCountOn('today')}` },
+            { value: 'tomorrow', label: `${t.jobs.tomorrow} · ${passKeyCountOn('tomorrow')}` },
+          ]} />
+      )}
       {data && (
         <FormRow label={tr.unitSearch}>
           <input type="search" enterKeyHint="search" autoComplete="off" className={cx(INPUT, 'h-11 text-[16px]')} value={unitSearch}
@@ -354,10 +367,6 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
   const d = useApi<Detail>(`/field/repairs/${id}`);
   const [busy, setBusy] = useState<string | null>(null);
   const [stage, setStage] = useState<'before' | 'after'>('before');
-  const [fileKind, setFileKind] = useState('claim');
-  /* A purchase of their own for the job (finance, 29 Oct 2026): one photo, its amount read and confirmed, handed in as a
-     receipt to be paid back from the department's petty cash or by finance. */
-  const [purchase, setPurchase] = useState<{ id: string; file: File; amountSen: number | null; spendDate: string | null } | null>(null);
   const [note, setNote] = useState('');
   const [doneNote, setDoneNote] = useState('');
   const [isAskingSupport, setIsAskingSupport] = useState(false);
@@ -367,6 +376,8 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
   const mine = !!d.data?.mine;
   const closed = j?.state === 'resolved';
   const working = mine && !closed;
+  // Whether the person has petty cash: without it, the Claim box offers Direct Claim to Me only.
+  const me = useApi<Me>(working ? '/claims/me' : null);
 
   // Once the repair has started, the photos being taken are of the finished work.
   const started = !!j?.startedAt;
@@ -401,30 +412,9 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
     if (ok === null) return;
     if (await act('drop', () => api.post(`/field/repairs/${id}/drop`, {}), tr.dropped, tr.droppedBody)) onDropped();
   }
-  async function pickPurchase(list: FileList) {
-    const file = list[0];
-    if (!file) return;
-    setBusy('reading');
-    const read = await readReceipt([file]);
-    setBusy(null);
-    // A date read the wrong way round can land in the future; then the day it is handed in is used.
-    setPurchase({ id: crypto.randomUUID(), file, amountSen: read.amountSen, spendDate: read.date && read.date <= todayMyt() ? read.date : null });
-  }
-  async function handInPurchase() {
-    if (!purchase?.amountSen) return;
-    setBusy('purchase');
-    try {
-      const res = await uploadTo(`/maintenance/issues/${id}/documents`, { kind: 'purchase', receiptId: purchase.id, amountSen: String(purchase.amountSen), ...(purchase.spendDate ? { spendDate: purchase.spendDate } : {}) })(purchase.file) as { receipt?: unknown; message?: string | null };
-      if (res.receipt === 'failed') { toast({ tone: 'warning', title: tr.notHandedIn, body: res.message ?? undefined }); return; }
-      else toast({ tone: 'success', title: tr.handedIn });
-      setPurchase(null);
-    } catch (e) { toast({ tone: 'critical', title: t.jobs.notSaved, body: errorMessage(e, t.jobs.checkSignal) }); }
-    finally { setBusy(null); refresh(); }
-  }
-
   async function uploadFiles(list: FileList) {
     setBusy('files');
-    const res = await runEach(Array.from(list), f => uploadTo(`/maintenance/issues/${id}/documents`, { kind: fileKind })(f), f => f.name);
+    const res = await runEach(Array.from(list), f => uploadTo(`/maintenance/issues/${id}/documents`, { kind: 'pod' })(f), f => f.name);
     setBusy(null);
     toast({ tone: res.ok === 0 ? 'critical' : res.failed.length ? 'warning' : 'success', title: res.ok ? tr.filesAdded(res.ok) : tr.nothingAdded, body: skippedNote(res.failed) || undefined });
     refresh();
@@ -433,6 +423,36 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
   const media = d.data?.media ?? [];
   const counts = { before: media.filter(m => m.stage === 'before').length, after: media.filter(m => m.stage === 'after').length };
   const windows = j?.windows ?? [];
+  /* The Claim box lists the claims handed in on this job (kind purchase); the second box, everything else kept on it. */
+  const jobFiles = d.data?.files ?? [];
+  const claimFiles = jobFiles.filter(f => f.kind === 'purchase');
+  const otherFiles = jobFiles.filter(f => f.kind !== 'purchase');
+  // Inside its own box a file shows its date only; an older kind (a claim, invoice or receipt) keeps its name too.
+  const fileRow = (f: FileDoc) => ({ id: f.id, name: f.fileName, href: f.url, size: f.byteSize,
+    label: f.kind === 'purchase' || f.kind === 'pod' ? short(f.uploadedAt.slice(0, 10)) : `${f.kind in tr.fileKind ? wordFor(tr.fileKind, f.kind) : tr.fileKind.other} · ${short(f.uploadedAt.slice(0, 10))}`,
+    // A claim was also handed in to finance as a receipt: it is cancelled there, not here.
+    onRemove: working && f.kind !== 'purchase' ? () => void removeFile(f) : undefined, removeLabel: `${t.jobs.remove} ${f.fileName}` });
+
+  const supportForm = (
+    <div className="flex flex-col gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-copy font-semibold">{tr.supportTitle}</span>
+        <span className="text-meta text-muted-ink">{tr.supportHint}</span>
+        <textarea className={cx(TEXTAREA, 'text-[16px]')} value={supportNote} onChange={e => setSupportNote(e.target.value)} placeholder={tr.supportPh} maxLength={1000} autoFocus />
+      </label>
+      <Button size="touch" variant="primary" className="w-full" icon={<Icon name="Send" size="sm" />} loading={busy === 'support'}
+        disabled={!supportNote.trim()} disabledReason={tr.supportNeedNote}
+        onClick={() => void act('support', () => api.post(`/maintenance/issues/${id}/support`, { note: supportNote.trim() }), tr.supportSent, tr.supportSentBody).then(ok => { if (ok) { setIsAskingSupport(false); setSupportNote(''); } })}>{tr.supportSend}</Button>
+      <Button size="touch" variant="ghost" className="w-full" onClick={() => setIsAskingSupport(false)}>{tr.form.cancel}</Button>
+    </div>
+  );
+  const supportAskedNote = j?.supportRequestedAt ? (
+    <div className="rounded-control bg-warning-bg text-warning p-3 flex flex-col gap-1">
+      <span>{tr.supportAsked(stamp(j.supportRequestedAt))}</span>
+      {j.supportNote && <span className="text-meta whitespace-pre-wrap [overflow-wrap:anywhere]">{j.supportNote}</span>}
+    </div>
+  ) : null;
+  const hasPhoto = media.length > 0;
 
   let footer: ReactNode = null;
   if (j && d.data?.mayPick) {
@@ -440,6 +460,21 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
       onClick={() => void act('pick', () => api.post(`/field/repairs/${id}/pick`, {}), tr.picked, tr.pickedBody).then(ok => { if (ok) onPicked(); })}>{tr.pickUp}</Button>;
   } else if (j && working && j.waitingForOwner) {
     footer = <p className="m-0 text-copy text-warning text-center">{tr.waitingOwner}</p>;
+  } else if (j && working && j.jobType === 'pass_key' && isAskingSupport) {
+    footer = supportForm;
+  } else if (j && working && j.jobType === 'pass_key') {
+    footer = (
+      <div className="flex flex-col gap-2">
+        {supportAskedNote}
+        <Button size="touch" variant="primary" className="w-full" icon={<Icon name="KeyRound" size="sm" />} loading={busy === 'passKeyDone'}
+          disabled={!hasPhoto} disabledReason={tr.passKeyNeedPhoto}
+          onClick={() => void act('passKeyDone', () => api.post(`/maintenance/issues/${id}/pass-key-done`, {}), tr.passKeyMarked, tr.passKeyMarkedBody)}>{tr.passKeyDone}</Button>
+        {!hasPhoto && <span className="text-meta text-muted-ink text-center">{tr.passKeyNeedPhoto}</span>}
+        {!j.supportRequestedAt && (
+          <Button size="touch" variant="secondary" className="w-full" icon={<Icon name="LifeBuoy" size="sm" />} onClick={() => setIsAskingSupport(true)}>{tr.cantDoIt}</Button>
+        )}
+      </div>
+    );
   } else if (j && working && !j.startedAt) {
     footer = (
       <div className="flex flex-col gap-2">
@@ -452,28 +487,11 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
       </div>
     );
   } else if (j && working && !j.endedAt && isAskingSupport) {
-    footer = (
-      <div className="flex flex-col gap-2">
-        <label className="flex flex-col gap-1">
-          <span className="text-copy font-semibold">{tr.supportTitle}</span>
-          <span className="text-meta text-muted-ink">{tr.supportHint}</span>
-          <textarea className={cx(TEXTAREA, 'text-[16px]')} value={supportNote} onChange={e => setSupportNote(e.target.value)} placeholder={tr.supportPh} maxLength={1000} autoFocus />
-        </label>
-        <Button size="touch" variant="primary" className="w-full" icon={<Icon name="Send" size="sm" />} loading={busy === 'support'}
-          disabled={!supportNote.trim()} disabledReason={tr.supportNeedNote}
-          onClick={() => void act('support', () => api.post(`/maintenance/issues/${id}/support`, { note: supportNote.trim() }), tr.supportSent, tr.supportSentBody).then(ok => { if (ok) { setIsAskingSupport(false); setSupportNote(''); } })}>{tr.supportSend}</Button>
-        <Button size="touch" variant="ghost" className="w-full" onClick={() => setIsAskingSupport(false)}>{tr.form.cancel}</Button>
-      </div>
-    );
+    footer = supportForm;
   } else if (j && working && !j.endedAt) {
     footer = (
       <div className="flex flex-col gap-2">
-        {j.supportRequestedAt && (
-          <div className="rounded-control bg-warning-bg text-warning p-3 flex flex-col gap-1">
-            <span>{tr.supportAsked(stamp(j.supportRequestedAt))}</span>
-            {j.supportNote && <span className="text-meta whitespace-pre-wrap [overflow-wrap:anywhere]">{j.supportNote}</span>}
-          </div>
-        )}
+        {supportAskedNote}
         <input className={cx(INPUT, 'h-11')} value={doneNote} onChange={e => setDoneNote(e.target.value)} placeholder={tr.whatYouDid} aria-label={tr.whatYouDidLabel} maxLength={1000} />
         <Button size="touch" variant="primary" className="w-full" icon={<Icon name="CircleCheck" size="sm" />} loading={busy === 'end'}
           disabled={counts.after === 0} disabledReason={tr.needAfter}
@@ -487,7 +505,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
   } else if (j && working && j.endedAt) {
     footer = <p className="m-0 text-copy text-success text-center">{tr.doneAt(hm(j.endedAt), short(j.endedAt.slice(0, 10)))}</p>;
   } else if (j && closed) {
-    footer = <p className="m-0 text-copy text-muted-ink text-center">{tr.closed(j.resolvedAt ? short(j.resolvedAt.slice(0, 10)) : null)}</p>;
+    footer = <p className="m-0 text-copy text-muted-ink text-center">{j.jobType === 'pass_key' ? tr.passKeyMarked : tr.closed(j.resolvedAt ? short(j.resolvedAt.slice(0, 10)) : null)}</p>;
   }
 
   return (
@@ -548,43 +566,41 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
               </InfoRow>
 
               <section className="flex flex-col gap-2.5">
-                <AttachmentLabel title={tr.media} count={media.length} hint={working && j.startedAt && counts.after === 0 ? tr.atLeastAfter : undefined} />
-                <Segmented label={tr.beforeOrAfter} className="[&>button]:h-11" value={stage} onChange={setStage} options={[
-                  { value: 'before', label: <>{tr.before} <span className="text-muted-ink tabular-nums">{counts.before}</span></> },
-                  { value: 'after', label: <>{tr.after} <span className="text-muted-ink tabular-nums">{counts.after}</span></> },
-                ]} />
-                <MediaGallery key={stage} items={media.filter(m => m.stage === stage)} upload={working ? uploadTo(`/maintenance/issues/${id}/photos`, { kind: stage }, placeName(j)) : undefined}
-                  onDone={refresh} onRemove={working ? m => void removePhoto(m) : undefined} addLabel={stage === 'before' ? tr.addBefore : tr.addAfter}
-                  emptyText={stage === 'before' ? tr.noBefore : tr.noAfter} />
+                {j.jobType === 'pass_key' ? (
+                  <>
+                    <AttachmentLabel title={tr.media} count={media.length} hint={working && !hasPhoto ? tr.passKeyNeedPhoto : undefined} />
+                    <MediaGallery items={media} upload={working ? uploadTo(`/maintenance/issues/${id}/photos`, { kind: 'after' }, placeName(j)) : undefined}
+                      onDone={refresh} onRemove={working ? m => void removePhoto(m) : undefined} addLabel={t.jobs.addPhoto} emptyText={t.jobs.noPhotos} />
+                  </>
+                ) : (
+                  <>
+                    <AttachmentLabel title={tr.media} count={media.length} hint={working && j.startedAt && counts.after === 0 ? tr.atLeastAfter : undefined} />
+                    <Segmented label={tr.beforeOrAfter} className="[&>button]:h-11" value={stage} onChange={setStage} options={[
+                      { value: 'before', label: <>{tr.before} <span className="text-muted-ink tabular-nums">{counts.before}</span></> },
+                      { value: 'after', label: <>{tr.after} <span className="text-muted-ink tabular-nums">{counts.after}</span></> },
+                    ]} />
+                    <MediaGallery key={stage} items={media.filter(m => m.stage === stage)} upload={working ? uploadTo(`/maintenance/issues/${id}/photos`, { kind: stage }, placeName(j)) : undefined}
+                      onDone={refresh} onRemove={working ? m => void removePhoto(m) : undefined} addLabel={stage === 'before' ? tr.addBefore : tr.addAfter}
+                      emptyText={stage === 'before' ? tr.noBefore : tr.noAfter} />
+                  </>
+                )}
               </section>
 
-              {(working || d.data!.files.length > 0) && (
+              {(working || claimFiles.length > 0) && (
                 <section className="flex flex-col gap-2">
-                  <AttachmentLabel title={tr.claims} count={d.data!.files.length} />
+                  <AttachmentLabel title={tr.claims} count={claimFiles.length} />
                   {working && <span className="text-meta text-muted-ink">{tr.claimsHint}</span>}
-                  {working && (
-                    <FormRow label={tr.fileKindLabel}>
-                      <select className={cx(INPUT, 'h-11')} value={fileKind} onChange={e => setFileKind(e.target.value)}>
-                        {['purchase', 'claim', 'receipt', 'invoice', 'pod'].map(k => <option key={k} value={k}>{wordFor(tr.fileKind, k)}</option>)}
-                      </select>
-                    </FormRow>
-                  )}
-                  {working && purchase && (
-                    <div className="flex flex-col gap-2 rounded-control bg-muted px-3 py-3">
-                      <span className="text-meta text-muted-ink">{purchase.file.name}</span>
-                      <MoneyInput label={tr.purchaseAmount} valueSen={purchase.amountSen} onChangeSen={v => setPurchase({ ...purchase, amountSen: v })} />
-                      <span className="flex gap-2">
-                        <Button size="touch" variant="primary" disabled={!purchase.amountSen || busy === 'purchase'} onClick={() => void handInPurchase()}>{tr.handIn}</Button>
-                        <Button size="touch" variant="secondary" disabled={busy === 'purchase'} onClick={() => setPurchase(null)}>{t.common.back}</Button>
-                      </span>
-                    </div>
-                  )}
-                  <FileList files={d.data!.files.map(f => ({ id: f.id, name: f.fileName, href: f.url, size: f.byteSize, label: `${f.kind in tr.fileKind ? wordFor(tr.fileKind, f.kind) : tr.fileKind.other} · ${short(f.uploadedAt.slice(0, 10))}`,
-                    // A purchase was also handed in to finance as a receipt: it is cancelled there, not here.
-                    onRemove: working && f.kind !== 'purchase' ? () => void removeFile(f) : undefined, removeLabel: `${t.jobs.remove} ${f.fileName}` }))}
-                    add={working && !purchase ? (fileKind === 'purchase'
-                      ? { label: busy === 'reading' ? tr.reading : tr.addFile, hint: tr.purchaseHint, accept: 'image/*,application/pdf', multiple: false, busy: busy === 'reading', onPick: fl => void pickPurchase(fl) }
-                      : { label: tr.addFile, hint: tr.addFileHint, accept: 'image/*,application/pdf', multiple: true, busy: busy === 'files', onPick: fl => void uploadFiles(fl) }) : undefined} />
+                  <FileList files={claimFiles.map(fileRow)} />
+                  {working && <JobClaimBox jobId={id} route={me.data?.route ?? null} t={t} touch onDone={refresh} />}
+                </section>
+              )}
+
+              {(working || otherFiles.length > 0) && (
+                <section className="flex flex-col gap-2">
+                  <AttachmentLabel title={tr.podBox} count={otherFiles.length} />
+                  {working && <span className="text-meta text-muted-ink">{tr.podHint}</span>}
+                  <FileList files={otherFiles.map(fileRow)}
+                    add={working ? { label: tr.addFile, hint: tr.addFileHint, accept: 'image/*,application/pdf', multiple: true, busy: busy === 'files', onPick: fl => void uploadFiles(fl) } : undefined} />
                 </section>
               )}
 
@@ -649,7 +665,7 @@ function ReportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
   const [error, setError] = useState<{ unitId?: string; title?: string; category?: string; detail?: string; form?: string }>({});
   const inBuildingJob = f.unitId === OTHERS_UNIT;
   const all = units.data?.data ?? [];
-  const buildings = useMemo(() => [...new Map(all.map(u => [u.propertyId, u.propertyName])).entries()].map(([id, name]) => ({ id, name })), [all]);
+  const buildings = useMemo(() => [...new Map(all.map(u => [u.propertyId, buildingName(u.propertyName)])).entries()].map(([id, name]) => ({ id, name })), [all]);
   const inBuilding = all.filter(u => u.propertyId === f.building);
   useEffect(() => { if (buildings.length === 1 && !f.building) setF(x => ({ ...x, building: buildings[0].id })); }, [buildings, f.building]);
 
@@ -669,7 +685,7 @@ function ReportSheet({ onClose, onDone }: { onClose: () => void; onDone: () => v
     }
     if (picked.files.length) {
       setSending(true);
-      const failed = await picked.send(f.unitId === OTHERS_UNIT ? buildings.find(b => b.id === f.building)?.name ?? '' : inBuilding.filter(u => u.id === f.unitId).map(u => `${u.propertyName} ${u.unitNumber}`)[0] ?? '', id);
+      const failed = await picked.send(f.unitId === OTHERS_UNIT ? buildings.find(b => b.id === f.building)?.name ?? '' : inBuilding.filter(u => u.id === f.unitId).map(u => `${buildingName(u.propertyName)} ${u.unitNumber}`)[0] ?? '', id);
       if (failed.length) toast({ tone: 'warning', title: tf.someNotAdded, body: tf.notAdded(failed.join(', ')) });
     }
     onDone();

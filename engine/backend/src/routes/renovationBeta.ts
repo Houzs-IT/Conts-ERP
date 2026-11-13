@@ -17,6 +17,8 @@ import { keepVisiblePos, loadCategoryScope, type CategoryScope } from "../servic
 import { setChecklistStatus } from "../services/projects";
 import { calendarMePersonIds } from "../services/renovation/calendarItems";
 import { syncPeopleFromUsers } from "../services/renovation/peopleSync";
+import { teamPersonIds, teamProjectSql } from "../services/renovation/teamScope";
+import { hasPermission } from "../services/permissions";
 import { isMissingRelation, loadProjectRows, loadRenovationFacts, type Db, type DbStmt } from "../services/renovation/load";
 import { renoDbFromD1 } from "../services/renovation/dbBridge";
 import { writeCachedStage } from "../services/renovation/contractSync";
@@ -207,7 +209,7 @@ app.get("/projects/:id/workspace", requirePageAccess("projects.list"), async (c)
 
 // ── Settings ─────────────────────────────────────────────────────────────
 
-app.put("/settings", requirePermission("projects.manage"), async (c) => {
+app.put("/settings", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const v = cleanBetaSettings(await body(c));
@@ -553,9 +555,14 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
   const only = c.req.query("projectId");
   const projectId = only === undefined ? null : parseId(only);
   if (only !== undefined && projectId == null) return c.json({ error: "invalid_id" }, 400);
-  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${projectId == null ? "" : ` AND p.id = ${projectId}`}`;
-  const eventScope = projectId == null ? "" : ` AND e.project_id = ${projectId}`;
   const user = c.get("user");
+  // Dream Crafter visibility (11 Nov 2026): without Full on Projects, a person sees the projects whose steps they or
+  // the people reporting to them handle, and only those people's own events (services/renovation/teamScope.ts).
+  const seeAll = hasPermission(user?.permissions_set ?? user?.permissions ?? [], "projects.manage");
+  const team = seeAll ? null : await teamPersonIds(db(c), user?.id, user?.email);
+  const teamSql = team == null ? "" : ` AND ${teamProjectSql(team)}`;
+  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${projectId == null ? "" : ` AND p.id = ${projectId}`}${teamSql}`;
+  const eventScope = `${projectId == null ? "" : ` AND e.project_id = ${projectId}`}${team == null ? "" : ` AND (e.person_id IN (${[0, ...team].join(",")}) OR (e.project_id IS NOT NULL${teamSql}))`}`;
   const hidden = financeHiddenForUser(user);
   try {
     // One query per data set over the whole scoped project list, grouped in code below.
@@ -564,7 +571,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
         .bind(companyId).first<{ d3: number; d2: number }>(),
       boardPeople(c, companyId),
       db(c).prepare(
-        `SELECT p.id::int AS id, p.code, p.name, p.building, p.unit_no, p.customer_name, coalesce(sp.name, p.salesperson_name) AS sales_name, p.created_at,
+        `SELECT p.id::int AS id, p.code, p.name, p.building, p.unit_no, p.customer_name, coalesce(sp.name, p.salesperson_name) AS sales_name, p.created_at, p.brand,
                 p.planned_handover_date::text AS handover_on,
                 p.designer_person_id::int AS lead_id, dp.name AS lead_name, p.reno_pic_person_id::int AS pic_id, rp.name AS pic_name,
                 ${designPeopleSql("3d")} AS p3_people, ${designPeopleSql("2d")} AS p2_people,

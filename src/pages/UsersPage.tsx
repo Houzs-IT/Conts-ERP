@@ -11,8 +11,8 @@ import { Field } from '../components/Field';
 import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Select } from '../components/Select';
 import { Modal } from '../components/Modal';
-import UserAccess from '../components/permissions/UserAccess';
-import { KIND_NOTE, SIDE_OPTIONS, isFieldKind, sideLabel, useDepartments } from '../components/permissions/shared';
+import { COMPANIES, KIND_NOTE, SIDE_OPTIONS, companiesOf, isFieldKind, sideLabel, useDepartments, type Company } from '../components/permissions/shared';
+import { CompanyBadges } from '../components/permissions/CompanyBadges';
 import { Segmented } from '../components/Metric';
 import { StaleBanner } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
@@ -20,7 +20,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { api, ApiFailure, errorMessage } from '../lib/api';
-import { count, date, plural } from '../lib/format';
+import { count, date, plural, personName } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Department, Tone, UserRole, UserSide } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
@@ -32,8 +32,9 @@ import { hasRealEmail } from '../lib/pin';
 /* ------------------------------------------------------------------ *
  * Users and roles — three tabs (routes.json → SYSTEM → UsersPage):
  *   1. Users        — list with department, position and reporting line; invite + edit.
- *   2. Permissions  — three views (components/PermissionsChart): what each department and position can do
- *                     in each area, and the managed list of departments and positions.
+ *   2. Permissions  — three views (components/PermissionsChart): Roles, what each position (or a department's
+ *                     default) can do in each area; People, one person's own settings on top of their role; and
+ *                     Setup, the managed list of departments and positions.
  *   3. Organisation — the reporting line (manager_id). Explicitly NOT a
  *                     permission source; permissions come from the department, position and the person's own settings.
  *   4. Sign-ins     — management only: every sign-in attempt (UsersSignIns).
@@ -69,6 +70,10 @@ const departmentNote = (d: Department | undefined): string | null => (d ? KIND_N
  *  (sideSql in functions/_lib/access.ts). */
 const sideFits = (d: Department, side: UserSide) => d.side === 'both' || d.side === side;
 
+type CompanyFilter = 'all' | Company;
+const companyText = (companies: readonly Company[]): string => (companies.length === 0 ? 'Owner portal' : companies.map(sideLabel).join(', '));
+const roleName = (u: Pick<Row, 'role' | 'position'>): string => (u.role === 'owner' ? 'Owner' : u.position?.trim() || 'No position');
+
 /** "Position · Department", skipping what is not set. */
 const jobLine = (u: Pick<Row, 'department' | 'position'>) => [u.position, u.department].map(v => (v ?? '').trim()).filter(Boolean).join(' · ');
 
@@ -76,12 +81,12 @@ const FALLBACK: Payload = {
   generatedAt: '',
   data: [
     { id: 'u1', fullName: 'Lee Wei Siang', email: 'management@theconts.com', phone: '+60 12-345 6702', role: 'management', department: 'Management', position: 'Director', managerId: null, isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-16' },
-    { id: 'u2', fullName: 'Aina Zulkifli', email: 'aina@theconts.com', phone: '+60 12-345 6701', role: 'operations_staff', department: 'Operations', position: 'Operations Manager', managerId: 'u1', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-16' },
+    { id: 'u2', fullName: 'Aina Zulkifli', email: 'aina@theconts.com', phone: '+60 12-345 6701', role: 'operations_staff', side: 'conts', department: 'Operations', position: 'Operations Manager', managerId: 'u1', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-16' },
     { id: 'u4', fullName: 'Priya Devi', email: 'finance@theconts.com', phone: '+60 12-345 6703', role: 'operations_staff', department: 'Finance', position: 'Finance Admin', managerId: 'u1', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-16' },
-    { id: 'u3', fullName: 'Chan Wei Wen', email: 'weiwen@theconts.com', phone: '+60 12-345 6704', role: 'operations_staff', department: 'Admin', position: 'Admin', managerId: 'u2', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-15' },
-    { id: 'u5', fullName: 'Nurul Huda', email: 'nurul@theconts.com', phone: '+60 12-345 6705', role: 'housekeeper', department: 'Cleaning', position: 'Cleaner', managerId: 'u2', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-16' },
-    { id: 'u6', fullName: 'Faridah Ismail', email: 'faridah@theconts.com', phone: '+60 12-345 6706', role: 'housekeeper', department: 'Cleaning', position: 'Cleaner', managerId: 'u2', isActive: true, mustChangePassword: true, lastLoginAt: null },
-    { id: 'u7', fullName: 'Hafiz Omar', email: 'hafiz@theconts.com', phone: '+60 12-345 6707', role: 'technician', department: 'Maintenance', position: 'Technician', managerId: 'u2', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-14' },
+    { id: 'u3', fullName: 'Chan Wei Wen', email: 'weiwen@theconts.com', phone: '+60 12-345 6704', role: 'operations_staff', side: 'dream_crafter', department: 'Admin', position: 'Admin', managerId: 'u2', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-15' },
+    { id: 'u5', fullName: 'Nurul Huda', email: 'nurul@theconts.com', phone: '+60 12-345 6705', role: 'housekeeper', side: 'conts', department: 'Cleaning', position: 'Cleaner', managerId: 'u2', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-16' },
+    { id: 'u6', fullName: 'Faridah Ismail', email: 'faridah@theconts.com', phone: '+60 12-345 6706', role: 'housekeeper', side: 'conts', department: 'Cleaning', position: 'Cleaner', managerId: 'u2', isActive: true, mustChangePassword: true, lastLoginAt: null },
+    { id: 'u7', fullName: 'Hafiz Omar', email: 'hafiz@theconts.com', phone: '+60 12-345 6707', role: 'technician', side: 'conts', department: 'Maintenance', position: 'Technician', managerId: 'u2', isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-14' },
     { id: 'u8', fullName: 'Tan Boon Huat', email: 'tanbh@example.com', phone: '+60 12-345 6715', role: 'owner', managerId: null, isActive: true, mustChangePassword: false, lastLoginAt: '2026-09-12' },
   ],
 };
@@ -111,7 +116,7 @@ function InviteCell({ u, onResend }: { u: Row; onResend?: () => void }) {
   return (
     <span className="flex items-center gap-2 min-w-0 flex-wrap" onClick={e => e.stopPropagation()}>
       <span className="text-meta text-muted-ink whitespace-nowrap">{u.lastInvitedAt ? `Invited ${date(u.lastInvitedAt)}` : 'Invited, date unknown'}</span>
-      {onResend && <Button size="sm" variant="secondary" icon={<Icon name="Send" size="sm" />} onClick={onResend} aria-label={`Resend invitation to ${u.fullName}`}>Resend</Button>}
+      {onResend && <Button size="sm" variant="secondary" icon={<Icon name="Send" size="sm" />} onClick={onResend} aria-label={`Resend invitation to ${personName(u.fullName)}`}>Resend</Button>}
     </span>
   );
 }
@@ -125,7 +130,7 @@ function managerOptions(staff: Row[], exclude?: string, keep?: string | null) {
   for (const s of list) seen.set(s.fullName, (seen.get(s.fullName) ?? 0) + 1);
   return list.map(s => ({
     value: s.id,
-    label: `${s.fullName}${(seen.get(s.fullName) ?? 0) > 1 ? ` (${s.email})` : ''}${s.isActive ? '' : ' (switched off)'}`,
+    label: `${personName(s.fullName)}${(seen.get(s.fullName) ?? 0) > 1 ? ` (${s.email})` : ''}${s.isActive ? '' : ' (switched off)'}`,
   }));
 }
 
@@ -156,7 +161,7 @@ export default function UsersPage() {
     () => [...added, ...(data?.data ?? [])].map(r => ({ ...r, ...edits[r.id] })),
     [added, data, edits],
   );
-  const nameById = useMemo(() => Object.fromEntries(rows.map(r => [r.id, r.fullName])), [rows]);
+  const nameById = useMemo(() => Object.fromEntries(rows.map(r => [r.id, personName(r.fullName)])), [rows]);
 
   const staff = rows.filter(r => r.role !== 'owner');
   // The managed departments and positions (Permissions > Departments and positions) feed the forms and the side label.
@@ -173,33 +178,37 @@ export default function UsersPage() {
     const d = departmentOfRow(u);
     return d && d.side !== 'both' ? d.side : u.side ?? 'both';
   }, [departmentOfRow]);
-  const sideOf = useMemo(() => (u: Row) => (u.role === 'owner' ? null : sideLabel(sideValueOf(u))), [sideValueOf]);
+  const companiesOfRow = useMemo(() => (u: Row): readonly Company[] => (u.role === 'owner' ? [] : companiesOf(sideValueOf(u))), [sideValueOf]);
+  const [companyFilter, setCompanyFilter] = useState<CompanyFilter>('all');
+  const shownRows = companyFilter === 'all' ? rows : rows.filter(u => companiesOfRow(u).includes(companyFilter));
+  const companyFilterOptions = [
+    { key: 'all' as const, label: 'All', count: rows.length },
+    ...COMPANIES.map(company => ({ key: company, label: sideLabel(company), count: rows.filter(u => companiesOfRow(u).includes(company)).length })),
+  ];
 
   const columns = useMemo<Column<Row>[]>(() => [
-    { key: 'name', label: 'Name', value: u => u.fullName, hideable: false, width: 220,
+    { key: 'name', label: 'Name', value: u => personName(u.fullName), hideable: false, width: 220,
       render: u => (
         <span className="flex items-center gap-2.5 min-w-0">
           <span className={cx('w-[30px] h-[30px] flex-none rounded-full grid place-items-center text-caption font-semibold', 'bg-muted text-muted-ink')}>
             {initials(u.fullName)}
           </span>
           <span className="flex flex-col gap-px min-w-0">
-            <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={u.fullName}>{u.fullName}</span>
+            <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={personName(u.fullName)}>{personName(u.fullName)}</span>
             <span className="text-caption text-muted-ink whitespace-nowrap">{u.phone || '—'}</span>
           </span>
         </span>
       ) },
-    // The side they work on shows under the department's name.
-    { key: 'department', label: 'Department', value: u => u.department || null, width: 160,
-      render: u => {
-        const side = u.role === 'owner' ? null : sideOf(u);
-        return u.department ? (
-          <span className="flex flex-col gap-px min-w-0" title={side ? `${u.department}, works on ${side}` : u.department}>
-            <span className="text-copy whitespace-nowrap overflow-hidden text-ellipsis">{u.department}</span>
-            {side && <span className="text-caption text-muted-ink whitespace-nowrap">{side}</span>}
-          </span>
-        ) : <span className="text-copy text-muted-ink">—</span>;
-      } },
-    { key: 'position', label: 'Position', value: u => u.position || null, width: 160 },
+    { key: 'company', label: 'Company', value: u => companyText(companiesOfRow(u)), width: 230,
+      render: u => (u.role === 'owner' ? <span className="text-copy text-muted-ink">Owner portal</span> : <CompanyBadges side={sideValueOf(u)} />) },
+    { key: 'role', label: 'Role', value: u => roleName(u), text: u => jobLine(u) || roleName(u), width: 190,
+      render: u => (
+        <span className="flex flex-col gap-px min-w-0" title={jobLine(u) || roleName(u)}>
+          <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{roleName(u)}</span>
+          {u.department && u.role !== 'owner' && <span className="text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.department}</span>}
+        </span>
+      ) },
+    { key: 'department', label: 'Department', value: u => u.department || null, hidden: true, width: 160 },
     { key: 'email', label: 'Email or employee ID', value: u => (hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'), width: 210 },
     { key: 'phone', label: 'Phone', type: 'phone', value: u => u.phone || null, hidden: true, width: 140 },
     { key: 'manager', label: 'Reports to', type: 'person', value: u => (u.managerId ? nameById[u.managerId] ?? null : null), width: 150 },
@@ -211,8 +220,8 @@ export default function UsersPage() {
     { key: 'invited', label: 'Invitation sent', type: 'date', value: u => (isInvited(u) ? u.lastInvitedAt ?? null : null), hidden: true, width: 140 },
     // The menu is read through a ref: its actions depend on state the memoised columns would otherwise hold stale.
     { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
-      render: u => <RowActions name={u.fullName} items={actionsRef.current(u)} /> },
-  ], [nameById, sideOf]);
+      render: u => <RowActions name={personName(u.fullName)} items={actionsRef.current(u)} /> },
+  ], [nameById, companiesOfRow, sideValueOf]);
   const invitedRows = rows.filter(isInvited);
   const invitedCount = invitedRows.length;
   const actionsRef = useRef<(u: Row) => RowAction[]>(() => []);
@@ -244,6 +253,8 @@ export default function UsersPage() {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) errs.email = 'Enter a valid work email.';
     if (rows.some(r => r.email.toLowerCase() === email.trim().toLowerCase())) errs.email = 'That email already has an account.';
     if (!departmentId) errs.departmentId = 'Pick a department.';
+    const positionProblem = positionProblemOf(departmentById.get(departmentId), positionId);
+    if (positionProblem) errs.positionId = positionProblem;
     if (Object.keys(errs).length) { setFieldErrors(errs); return; }
 
     setBusy(true); setFieldErrors({});
@@ -321,7 +332,7 @@ export default function UsersPage() {
 
   function confirmResend(u: Row) {
     setConfirm({
-      title: `Resend the invitation to ${u.fullName}?`,
+      title: `Resend the invitation to ${personName(u.fullName)}?`,
       body: 'They get a fresh temporary password by email. The one in the earlier email stops working.',
       meta: `Sent to ${u.email}${u.lastInvitedAt ? ` · last sent ${date(u.lastInvitedAt)}` : ''}`, confirmLabel: 'Resend invitation', busyLabel: 'Sending…',
       onConfirm: () => resendInvite(u),
@@ -342,7 +353,7 @@ export default function UsersPage() {
         if (res.delivery === 'sent') sent++;
         else if (res.delivery === 'failed' && /not configured/i.test(res.reason ?? '')) noMail++;
         else other++;
-      } catch { refused.push(u.fullName); }
+      } catch { refused.push(personName(u.fullName)); }
     }
     setBusy(false);
     setConfirm(null);
@@ -367,7 +378,7 @@ export default function UsersPage() {
       reload();
       setConfirm(null);
     } catch (err) {
-      toast({ tone: 'critical', title: `Nothing changed for ${u.fullName}.`, body: errorMessage(err, 'Try again in a moment.') });
+      toast({ tone: 'critical', title: `Nothing changed for ${personName(u.fullName)}.`, body: errorMessage(err, 'Try again in a moment.') });
     } finally {
       setBusy(false);
     }
@@ -392,50 +403,50 @@ export default function UsersPage() {
     const items: RowAction[] = [{ key: 'edit', label: 'Edit details', icon: 'Pencil', run: () => openEdit(u) }];
     if (u.isActive && invited) items.push({ key: 'invite', label: 'Resend invitation', icon: 'Send', run: () => confirmResend(u) });
     if (u.isActive && !invited) items.push({ key: 'reset', label: 'Email a password reset link', icon: 'Mail', run: () => setConfirm({
-      title: `Send ${u.fullName} a password reset link?`,
+      title: `Send ${personName(u.fullName)} a password reset link?`,
       body: 'They get an email with a link to choose a new password. It works once and expires in 60 minutes. Their current password keeps working until they use it.',
       meta: `Sent to ${u.email}`, confirmLabel: 'Send link', busyLabel: 'Sending…',
       onConfirm: () => act(u, security(u, 'reset_email'), `Reset link sent to ${u.email}.`),
     }) });
     if (u.isActive && !invited) items.push({ key: 'link', label: 'Get a reset link to pass on', icon: 'Link', run: () => makeResetLink(u) });
     if (u.isActive && !self) items.push({ key: 'temp', label: 'Reset password', icon: 'KeyRound', run: () => setConfirm({
-      title: `Reset ${u.fullName}'s password?`,
+      title: `Reset ${personName(u.fullName)}'s password?`,
       body: 'Their current password stops working and they are signed out on every device now. You get a temporary password to give them; when they sign in with it, they must choose their own before they can do anything else.',
       confirmLabel: 'Reset and sign out', busyLabel: 'Resetting…', danger: true,
       onConfirm: () => act(u, async () => {
         const res = await api.post<{ tempPassword: string }>(`/users/${u.id}/security`, { action: 'temp_password' });
-        setTempShown({ name: u.fullName, email: hasRealEmail(u.email) ? u.email : u.employeeId ?? u.email, password: res.tempPassword });
-      }, `${u.fullName}'s password was reset.`, 'They have been signed out on every device.'),
+        setTempShown({ name: personName(u.fullName), email: hasRealEmail(u.email) ? u.email : u.employeeId ?? u.email, password: res.tempPassword });
+      }, `${personName(u.fullName)}'s password was reset.`, 'They have been signed out on every device.'),
     }) });
     if (!self) items.push({ key: 'revoke', label: 'Sign out everywhere', icon: 'LogOut', run: () => setConfirm({
-      title: `Sign ${u.fullName} out everywhere?`,
+      title: `Sign ${personName(u.fullName)} out everywhere?`,
       body: 'Ends their sessions on every phone and computer straight away. Their password does not change, so they can sign in again. Use this for a lost phone or a shared computer.',
       confirmLabel: 'Sign out everywhere', busyLabel: 'Signing out…', danger: true,
-      onConfirm: () => act(u, security(u, 'revoke_sessions'), `${u.fullName} has been signed out on every device.`),
+      onConfirm: () => act(u, security(u, 'revoke_sessions'), `${personName(u.fullName)} has been signed out on every device.`),
     }) });
     if (u.twoStep && !self) items.push({ key: '2fa', label: 'Reset two-step sign-in', icon: 'ShieldOff', run: () => setConfirm({
-      title: `Reset ${u.fullName}'s two-step sign-in?`,
+      title: `Reset ${personName(u.fullName)}'s two-step sign-in?`,
       body: 'Use this when they lost their phone. Their authenticator code and backup codes stop working, and they sign in with their password alone. If their department requires two-step sign-in, they are asked to set it up again straight after signing in.',
       confirmLabel: 'Reset two-step sign-in', busyLabel: 'Resetting…', danger: true,
-      onConfirm: () => act(u, security(u, 'reset_2fa'), `${u.fullName}'s two-step sign-in was reset.`),
+      onConfirm: () => act(u, security(u, 'reset_2fa'), `${personName(u.fullName)}'s two-step sign-in was reset.`),
     }) });
     if (u.isActive && u.isLocked) items.push({ key: 'unlock', label: 'Unlock account', icon: 'LockOpen', run: () => setConfirm({
-      title: `Unlock ${u.fullName}'s account?`,
+      title: `Unlock ${personName(u.fullName)}'s account?`,
       body: 'Too many wrong passwords locked this account for a while. Unlocking lets them try again now instead of waiting.',
       confirmLabel: 'Unlock', busyLabel: 'Unlocking…',
-      onConfirm: () => act(u, security(u, 'unlock'), `${u.fullName}'s account is unlocked.`),
+      onConfirm: () => act(u, security(u, 'unlock'), `${personName(u.fullName)}'s account is unlocked.`),
     }) });
     if (u.isActive && !self) items.push({ key: 'off', label: 'Switch off account', icon: 'UserX', danger: true, run: () => setConfirm({
-      title: `Switch off ${u.fullName}'s account?`,
+      title: `Switch off ${personName(u.fullName)}'s account?`,
       body: 'They are signed out at once and cannot sign in. Nothing is deleted: their password, history and records stay, and you can switch the account back on at any time.',
       confirmLabel: 'Switch off', busyLabel: 'Switching off…', danger: true,
-      onConfirm: () => act(u, setActive(u, false), `${u.fullName}'s account is switched off.`),
+      onConfirm: () => act(u, setActive(u, false), `${personName(u.fullName)}'s account is switched off.`),
     }) });
     if (!u.isActive) items.push({ key: 'on', label: 'Switch account back on', icon: 'UserCheck', run: () => setConfirm({
-      title: `Switch ${u.fullName}'s account back on?`,
+      title: `Switch ${personName(u.fullName)}'s account back on?`,
       body: 'They can sign in again with their existing password.',
       confirmLabel: 'Switch on', busyLabel: 'Saving…',
-      onConfirm: () => act(u, setActive(u, true), `${u.fullName}'s account is switched back on.`),
+      onConfirm: () => act(u, setActive(u, true), `${personName(u.fullName)}'s account is switched back on.`),
     }) });
     return items;
   }
@@ -444,13 +455,15 @@ export default function UsersPage() {
   async function submitEdit(e: FormEvent) {
     e.preventDefault();
     if (!editing || busy) return;
-    const errs: { fullName?: string; email?: string; phone?: string } = {};
+    const errs: { fullName?: string; email?: string; phone?: string; positionId?: string } = {};
     if (!editName.trim()) errs.fullName = 'Enter a name.';
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(editEmail)) errs.email = 'Enter a valid email address.';
     // Only owners have a phone here; staff are invited without one, so their edit form matches.
     const isOwner = editing.role === 'owner';
     const phoneErr = isOwner ? phoneProblem(editPhone) : null;
     if (phoneErr) errs.phone = phoneErr;
+    const positionProblem = isOwner ? null : positionProblemOf(departmentById.get(editDepartmentId), editPositionId);
+    if (positionProblem) errs.positionId = positionProblem;
     // An owner has no department; a staff account must keep one.
     const noDepartment = !isOwner && !editDepartmentId;
     if (Object.keys(errs).length || noDepartment) { setEditErrors({ ...errs, ...(noDepartment ? { departmentId: 'Pick a department.' } : {}) }); return; }
@@ -481,7 +494,7 @@ export default function UsersPage() {
       setEditing(null);
     } catch (err) {
       if (err instanceof ApiFailure && err.fields) setEditErrors(err.fields);
-      toast({ tone: 'critical', title: `${editing.fullName} was not updated.`, body: errorMessage(err, 'Try again in a moment.') });
+      toast({ tone: 'critical', title: `${personName(editing.fullName)} was not updated.`, body: errorMessage(err, 'Try again in a moment.') });
     }
     setBusy(false);
   }
@@ -542,7 +555,7 @@ export default function UsersPage() {
               <Button variant="secondary" size="sm" icon={<Icon name="Send" size="sm" />} onClick={() => setConfirm({
                 title: `Resend the invitation to all ${plural(invitedCount, 'invited person', 'invited people')}?`,
                 body: 'Everyone who was invited and has not signed in yet gets a fresh temporary password by email. The passwords in their earlier emails stop working.',
-                meta: invitedRows.map(u => u.fullName).join(', '), confirmLabel: `Resend ${plural(invitedCount, 'invitation')}`, busyLabel: 'Sending…',
+                meta: invitedRows.map(u => personName(u.fullName)).join(', '), confirmLabel: `Resend ${plural(invitedCount, 'invitation')}`, busyLabel: 'Sending…',
                 onConfirm: resendAll,
               })}>Resend to all invited ({count(invitedCount)})</Button>
             )}
@@ -583,7 +596,9 @@ export default function UsersPage() {
       {/* ------------------------------ Users tab ------------------------------ */}
       {tab === 'users' && (
         <DataTable<Row>
-          id="users" columns={columns} rows={data ? rows : null} rowKey={u => u.id}
+          id="users" columns={columns} rows={data ? shownRows : null} rowKey={u => u.id}
+          toolbar={<Segmented label="Company" options={companyFilterOptions} value={companyFilter} onChange={setCompanyFilter} />}
+          filtered={companyFilter !== 'all'} onClearFilters={() => setCompanyFilter('all')}
           loading={loading} error={error} onRetry={reload} onRowClick={canManage ? openEdit : undefined}
           pageSize={0} noun={['account', 'accounts']} exportName="users"
           header={
@@ -600,13 +615,13 @@ export default function UsersPage() {
                   {initials(u.fullName)}
                 </span>
                 <span className="flex flex-col gap-1 min-w-0 flex-1">
-                  <span className="text-copy font-medium truncate" title={u.fullName}>{u.fullName}</span>
-                  {jobLine(u) && <span className="text-meta text-ink truncate" title={jobLine(u)}>{jobLine(u)}</span>}
+                  <span className="text-copy font-medium truncate" title={personName(u.fullName)}>{personName(u.fullName)}</span>
+                  <span className="text-meta text-ink truncate" title={jobLine(u) || roleName(u)}>{jobLine(u) || roleName(u)}</span>
                   <span className="text-meta text-muted-ink truncate" title={u.email}>{hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'}</span>
-                  <span className="flex items-center gap-1.5 flex-wrap">{sideOf(u) && u.role !== 'owner' && <StatusBadge tone="neutral" label={sideOf(u) ?? ''} size="sm" />}<StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
+                  <span className="flex items-center gap-1.5 flex-wrap">{u.role !== 'owner' && <CompanyBadges side={sideValueOf(u)} />}<StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
                   {isInvited(u) && <InviteCell u={u} onResend={canManage ? () => confirmResend(u) : undefined} />}
                 </span>
-                <RowActions name={u.fullName} items={actionsFor(u)} />
+                <RowActions name={personName(u.fullName)} items={actionsFor(u)} />
               </span>
             );
           }}
@@ -614,7 +629,7 @@ export default function UsersPage() {
       )}
 
       {/* ----------------------------- Sign-ins tab ----------------------------- */}
-      {tab === 'signins' && canManage && <UsersSignIns people={rows.map(r => ({ id: r.id, fullName: r.fullName }))} />}
+      {tab === 'signins' && canManage && <UsersSignIns people={rows.map(r => ({ id: r.id, fullName: personName(r.fullName) }))} />}
 
       {/* --------------------------- Permissions tab --------------------------- */}
       {tab === 'permissions' && <PermissionsChart />}
@@ -672,7 +687,7 @@ export default function UsersPage() {
       {editing && (
         <Modal
           width={editing.role === 'owner' ? 460 : 640}
-          title={`Edit ${editing.fullName}`}
+          title={`Edit ${personName(editing.fullName)}`}
           sub="Change the department, position, reporting line or status."
           onClose={() => setEditing(null)}
           footer={
@@ -705,7 +720,6 @@ export default function UsersPage() {
             </label>
           </form>
           <div className="mt-4 flex flex-col gap-3">
-            {editing.role !== 'owner' && <UserAccess key={editing.id} userId={editing.id} />}
             <HistoryDisclosure entity="users" id={editing.id} />
           </div>
         </Modal>
@@ -776,12 +790,12 @@ export default function UsersPage() {
             {staff.map(s => (
               <div key={s.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 items-center">
                 <div className="flex flex-col gap-px min-w-0">
-                  <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{s.fullName}</span>
+                  <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{personName(s.fullName)}</span>
                   <span className="text-caption text-muted-ink">{jobLine(s) || 'No department'}</span>
                 </div>
-                <Select label={`Manager for ${s.fullName}`} size="md" value={orgDraft[s.id] ?? ''}
+                <Select label={`Manager for ${personName(s.fullName)}`} size="md" value={orgDraft[s.id] ?? ''}
                   onChange={v => setOrgDraft(d => ({ ...d, [s.id]: v }))} placeholder="No manager"
-                  options={staff.filter(o => o.id !== s.id).map(o => ({ value: o.id, label: o.fullName }))} />
+                  options={staff.filter(o => o.id !== s.id).map(o => ({ value: o.id, label: personName(o.fullName) }))} />
               </div>
             ))}
           </form>
@@ -792,7 +806,12 @@ export default function UsersPage() {
 }
 
 /* ------------------------------ forms ------------------------------ */
-/** Works on, then department (required), then position (optional), from the managed list. Only the departments on the
+function positionProblemOf(department: Department | undefined, positionId: string): string | null {
+  if (!department || positionId) return null;
+  return department.positions.length === 0 ? `${department.name} has no positions yet. Add one under Permissions > Setup first.` : 'Pick a position.';
+}
+
+/** Works on, then department (required), then position (required), from the managed list. Only the departments on the
  *  chosen side (or on both) are offered, so a department picked earlier is cleared when the side no longer fits it.
  *  A position belongs to one department, so changing the department clears the position. */
 function PlaceFields({ departments, side, onSide, departmentId, positionId, onDepartment, onPosition, errors }: {
@@ -802,6 +821,7 @@ function PlaceFields({ departments, side, onSide, departmentId, positionId, onDe
 }) {
   const offered = departments.filter(d => !isFieldKind(d.kind) && sideFits(d, side));
   const dept = offered.find(d => d.id === departmentId);
+  const hasNoPositions = !!dept && dept.positions.length === 0;
   const pickSide = (s: UserSide) => {
     onSide(s);
     const current = departments.find(d => d.id === departmentId);
@@ -821,13 +841,19 @@ function PlaceFields({ departments, side, onSide, departmentId, positionId, onDe
           {errors.departmentId && <span className={cx('text-meta', TONE.critical.text)}>{errors.departmentId}</span>}
         </div>
         <div className="flex flex-col gap-1">
-          <Select label="Position" showLabel size="md" value={positionId} onChange={onPosition} placeholder="No position" disabled={!dept || dept.positions.length === 0}
+          <Select label="Position" showLabel size="md" value={positionId} onChange={onPosition} placeholder="Pick a position" disabled={!dept || hasNoPositions}
             options={(dept?.positions ?? []).map(p => ({ value: p.id, label: p.name }))} />
-          {errors.positionId && <span className={cx('text-meta', TONE.critical.text)}>{errors.positionId}</span>}
+          {errors.positionId && !hasNoPositions && <span className={cx('text-meta', TONE.critical.text)}>{errors.positionId}</span>}
         </div>
       </div>
       {dept && <span className="text-meta text-muted-ink">{departmentNote(dept)}</span>}
-      {offered.length === 0 && <span className="text-meta text-muted-ink">No department works on this side yet. Add one under the Permissions tab, under Departments and positions.</span>}
+      {hasNoPositions && (
+        <div role="alert" className={cx('flex items-start gap-2 py-2.5 px-3 rounded-control border border-solid text-meta', TONE.warning.bg, TONE.warning.border, TONE.warning.text)}>
+          <Icon name="AlertTriangle" size="sm" />
+          <span>{dept.name} has no positions yet. Add one under Permissions &gt; Setup first, then pick it here.</span>
+        </div>
+      )}
+      {offered.length === 0 && <span className="text-meta text-muted-ink">No department works on this side yet. Add one under Permissions, Setup.</span>}
     </div>
   );
 }
@@ -870,7 +896,7 @@ function OrgChart({ staff, nameById }: { staff: Row[]; nameById: Record<string, 
                       {initials(p.fullName)}
                     </span>
                     <div className="flex flex-col gap-px min-w-0">
-                      <span className="text-copy font-semibold whitespace-nowrap">{p.fullName}</span>
+                      <span className="text-copy font-semibold whitespace-nowrap">{personName(p.fullName)}</span>
                       <span className="text-caption text-muted-ink whitespace-nowrap" title={jobLine(p)}>{jobLine(p) || 'No department'}</span>
                     </div>
                   </div>

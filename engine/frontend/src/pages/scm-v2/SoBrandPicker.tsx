@@ -1,7 +1,7 @@
 /* Which brand this sales order is under (owner, 5 Nov 2026). It saves when picked, and a contract's letterhead follows. */
 
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBrands } from "../../lib/renovation/api";
 import { soInfoApi, soInfoErrorText } from "../projects/renovation/customerPropertyApi";
 import { useToast } from "../../vendor/scm/components/Toast";
@@ -15,16 +15,15 @@ export function SoBrandPicker({ docNo }: { docNo: string }) {
   const [error, setError] = useState<string | null>(null);
   const rows = (brands.data?.brands ?? []).filter((b) => b.active);
 
+  /* The same read the order view already made, so Edit shows the brand at once instead of loading it again. */
+  const info = useQuery({ queryKey: ["reno", "so-info", "so", docNo], queryFn: () => soInfoApi.so(docNo), staleTime: 30_000 });
   useEffect(() => {
-    let live = true;
-    soInfoApi.so(docNo).then((r) => {
-      if (!live) return;
-      const id = r.brand?.id ?? rows.find((b) => b.name === r.brand?.name)?.brandId ?? null;
-      setValue(id == null ? "" : String(id));
-    }).catch(() => undefined);
-    return () => { live = false; };
+    const r = info.data;
+    if (!r) return;
+    const id = r.brand?.id ?? rows.find((b) => b.name === r.brand?.name)?.brandId ?? null;
+    setValue(id == null ? "" : String(id));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the name match needs the brand list once it arrives
-  }, [docNo, rows.length]);
+  }, [info.data, rows.length]);
 
   const pick = async (next: string): Promise<void> => {
     if (!next || next === value) return;

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BetaBoard, BetaBoardProject } from "./renovationBetaBoardApi";
 import {
   add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, diff, ds, homeCounts, homeList, homeRow, initials, items,
-  listFor, monthCells, nextFor, progressList, rangeFor, shiftMonth, stage, status, type BoardModel, type DesignProject,
+  listFor, monthCells, nextFor, progressByPerson, progressList, rangeFor, shiftMonth, stage, status, type BoardModel, type DesignProject,
 } from "./renovationBetaBoard";
 
 const TODAY = "2026-10-23";
@@ -84,11 +84,14 @@ const get = (pid: number): DesignProject => {
   return p;
 };
 
+
+// These are Dream Crafter screens: dates read day first (YH, 11 Nov 2026).
+
 describe("dates", () => {
   it("adds and counts days without a time zone", () => {
     expect(add("2026-10-30", 3)).toBe("2026-11-02");
     expect(diff("2026-10-24", TODAY)).toBe(1);
-    expect(ds("2026-10-23")).toBe("23 Oct");
+    expect(ds("2026-10-23")).toBe("23/10");
   });
   it("makes badge letters", () => {
     expect(initials("Jia Xin")).toBe("JX");
@@ -163,7 +166,7 @@ describe("next step and Home", () => {
 
 describe("deadline groups", () => {
   it("groups by days left and keeps the waiting, ready and to-do lists", () => {
-    const g = deadlineGroups(m, "All", true);
+    const g = deadlineGroups(m, "All");
     expect(g.late).toHaveLength(0);
     expect(g.week.map((x) => `${x.p.id}:${x.type === "appt" ? x.ak : x.k}`)).toEqual(["4:3", "1:2", "5:cm", "11:sb"]);
     expect(g.two).toHaveLength(0);
@@ -172,15 +175,15 @@ describe("deadline groups", () => {
     expect(g.ready.map((x) => `${x.p.id}:${x.k}`)).toEqual(["10:2"]);
     expect(g.todo.map((x) => `${x.p.id}:${x.k}`)).toEqual(["5:sb", "13:as"]);
   });
-  it("shows only the chosen person's work", () => {
-    const g = deadlineGroups(m, 2, false);
+  it("shows only the chosen person's work, with no unassigned project in their to-do list", () => {
+    const g = deadlineGroups(m, 2);
     expect(g.week.map((x) => x.p.id)).toEqual([5]);
     expect(g.waiting.map((x) => x.p.id)).toEqual([6]);
     expect(g.todo.map((x) => `${x.p.id}:${x.k}`)).toEqual(["5:sb"]);
     expect(items(m, 3).map((x) => x.p.id)).toEqual([1]);
   });
   it("asks for PO and bookings once 2D is approved", () => {
-    const g = deadlineGroups(buildModel(board([{ ...trinity, poDoneOn: null, appointments: [] }])), "All", false);
+    const g = deadlineGroups(buildModel(board([{ ...trinity, poDoneOn: null, appointments: [] }])), "All");
     expect(g.todo.map((x) => x.k)).toEqual(["cm", "po"]);
   });
 });
@@ -194,7 +197,7 @@ describe("progress and calendar", () => {
     expect(up.title).toBe("Coming up");
     expect(up.events.map((e) => e.id)).toEqual(["ap|5|cm", "ap|11|sb"]);
     const day = listFor(m, "All", "2026-10-23");
-    expect(day.title).toBe("23 Oct · today");
+    expect(day.title).toBe("23/10 · today");
     expect(day.due.map((x) => x.p.id)).toEqual([4]);
   });
   it("builds the month grid Monday first", () => {
@@ -217,7 +220,7 @@ describe("form checks", () => {
     expect(amendDue("2026-10-23", 3)).toBe("2026-10-26");
   });
   it("keeps the site briefing after the carpentry measure", () => {
-    expect(bookIssue(get(11), "sb", "2026-10-14")).toBe("Site briefing must be after the carpentry measure (14 Oct)");
+    expect(bookIssue(get(11), "sb", "2026-10-14")).toBe("Site briefing must be after the carpentry measure (14/10)");
     expect(bookIssue(get(11), "sb", "2026-10-15")).toBeNull();
     expect(bookIssue(get(11), "cm", "2026-10-01")).toBeNull();
   });
@@ -250,6 +253,18 @@ describe("several 3D and 2D people", () => {
     expect(items(mm, 3).map((x) => [x.p.id, x.k])).toEqual([[20, "3"]]);
     expect(progressList(mm, 2).map((x) => x.id)).toEqual([20]);
     expect(items(mm, 1)).toEqual([]);
+  });
+
+  it("puts the project in the card of everyone on any of its steps, by name", () => {
+    expect(progressByPerson(mm).map((g) => [g.person?.name, g.projects.map((x) => x.id)])).toEqual([
+      ["Alex", [20]], ["Jia Xin", [20]], ["Siti Aminah", [20]], ["Yi Xuan", [20]], ["Ying Tzy", [20]],
+    ]);
+  });
+
+  it("keeps a project with nobody on it in a last card of its own", () => {
+    const g = progressByPerson(m);
+    expect(g[g.length - 1]).toMatchObject({ person: null, projects: [{ id: 13 }] });
+    expect(g.find((x) => x.person?.id === 2)?.projects.map((x) => x.id)).toEqual(progressList(m, 2).map((x) => x.id));
   });
 
   it("offers only people linked to an active account, but still names everyone", () => {

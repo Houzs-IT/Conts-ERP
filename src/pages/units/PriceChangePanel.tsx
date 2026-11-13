@@ -3,7 +3,7 @@ import { CloseButton } from '../../components/CloseButton';
 import { Drawer } from '../../components/Dialog';
 import { SearchSelect } from '../../components/Select';
 import { Skeleton } from '../../components/States';
-import { titleCase } from '../../lib/format';
+import { personName } from '../../lib/format';
 import { useApi } from '../../lib/useApi';
 import { CLEAN_KINDS } from './UnitCleaning';
 import { PercentSchedule, type PriceTarget } from './PercentSchedule';
@@ -21,7 +21,7 @@ const CLEAN_TARGETS: PriceTarget[] = CLEAN_KINDS.map(([cleanKind, name]) => ({ k
 function useScheduleUnits(): ScheduleUnit[] {
   const roster = useApi<{ data: RosterUnit[] }>('/units');
   return (roster.data?.data ?? []).map(({ id, unitNumber, propertyName, ownerName }) => (
-    { id, label: `${propertyName} ${unitNumber}`, building: propertyName, hint: titleCase(ownerName) }));
+    { id, label: `${propertyName} ${unitNumber}`, building: propertyName, hint: personName(ownerName) }));
 }
 
 function CleaningPercent({ onSaved }: { onSaved: () => void }) {
@@ -54,7 +54,7 @@ function MaintenancePercent({ items, onSaved }: { items: CatalogItem[]; onSaved:
 
 function SidePanel({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
-    <Drawer open onClose={onClose} width={560} labelledBy="price-change-title">
+    <Drawer open onClose={onClose} dirty="typed" width={560} labelledBy="price-change-title">
       <div className="flex items-start justify-between gap-3 p-5 [border-bottom:1px_solid_var(--color-line)] sticky top-0 bg-card z-[1]">
         <h2 id="price-change-title" className="m-0 text-title font-semibold [overflow-wrap:anywhere]">{title}</h2>
         <CloseButton onClick={onClose} />

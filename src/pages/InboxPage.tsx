@@ -12,14 +12,15 @@ import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure, errorMessage, ApiFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
-import { relative, time, date as fmtDate, dateRange, count, guests as fmtGuests } from '../lib/format';
+import { relative, time, date as fmtDate, dateRange, count, guests as fmtGuests, buildingName } from '../lib/format';
 import { Button } from '../components/Button';
 import { deliveryToast } from '../lib/bookingStatus';
 import { refreshNavCounts } from '../lib/navBadges';
 import { useSession } from '../lib/session';
 import { mayWork } from '../lib/areaAccess';
 import type { BookingChannel } from '../lib/types';
-import { useUrlState, SearchBox, FilterSelect, BusyBar, usePhone } from './finance/listKit';
+import { useUrlState, FilterSelect, BusyBar, usePhone } from './finance/listKit';
+import { ListToolbar } from '../components/ListToolbar';
 import { SavedRepliesMenu, SavedRepliesManager, useSavedReplies } from './inbox/SavedReplies';
 
 type Delivery = 'sent' | 'failed' | 'queued' | 'not_linked' | null;
@@ -45,7 +46,7 @@ type View = 'all' | 'unread' | 'inquiry';
 const IMAGE = /\.(png|jpe?g|gif|webp|heic)(\?|$)|placehold\.co/i;
 
 function unitLine(t: ThreadHead) {
-  const unit = [t.propertyName, t.unitNumber].filter(Boolean).join(' ');
+  const unit = [buildingName(t.propertyName), t.unitNumber].filter(Boolean).join(' ');
   const stay = t.checkIn && t.checkOut ? dateRange(t.checkIn, t.checkOut) : null;
   return [unit || null, stay ?? (t.inquiry ? 'Inquiry, no reservation yet' : null)].filter(Boolean).join(' · ');
 }
@@ -214,22 +215,19 @@ export default function InboxPage() {
         sub={totals ? `${count(totals.unread)} unread · ${count(totals.all)} conversations from Airbnb, Booking.com, Agoda and WhatsApp` : 'Airbnb, Booking.com, Agoda and WhatsApp messages together'} />
 
       {showList && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Segmented label="Show" value={view} onChange={k => url.set({ view: k === 'all' ? null : k, thread: null })}
-              options={[
-                { key: 'all', label: 'All' },
-                { key: 'unread', label: 'Unread', count: totals?.unread || undefined, tone: totals?.unread ? 'danger' : undefined },
-                { key: 'inquiry', label: 'Inquiries', count: totals?.inquiries || undefined },
-              ]} />
-          </div>
-          <div className="grid grid-cols-2 md:flex md:flex-wrap gap-2">
-            <SearchBox className="col-span-2 md:flex-[2_1_260px]" label="Search messages" placeholder="Search guest, unit or words in a message" value={f.q} onChange={v => url.set({ q: v || null, thread: null })} />
-            <FilterSelect className="md:flex-[1_1_170px]" label="Channel" all="All channels" value={f.channel} onChange={v => url.set({ channel: v || null, thread: null })} options={CHANNELS} />
-            <FilterSelect className="md:flex-[1_1_200px]" label="Unit" all="All units" value={f.unitId} onChange={v => url.set({ unitId: v || null, thread: null })}
-              options={(meta?.units ?? []).map(u => ({ value: u.id, label: u.label }))} />
-          </div>
-        </div>
+        <ListToolbar
+          search={{ value: f.q, onChange: v => url.set({ q: v.trim() || null, thread: null }), placeholder: 'Search guest, unit or words in a message', label: 'Search messages' }}
+          leading={<FilterSelect className="flex-[0_1_200px] min-w-[150px]" label="Unit" all="All units" value={f.unitId} onChange={v => url.set({ unitId: v || null, thread: null })}
+            options={(meta?.units ?? []).map(u => ({ value: u.id, label: u.label }))} />}
+          filters={[{ key: 'channel', label: 'Channel', value: f.channel, onChange: v => url.set({ channel: v || null, thread: null }), allLabel: 'All channels', options: CHANNELS }]}
+          chips={f.unitId ? [{ key: 'unit', label: `Unit: ${meta?.units.find(u => u.id === f.unitId)?.label ?? f.unitId}`, onRemove: () => url.set({ unitId: null, thread: null }) }] : []}
+          below={<Segmented label="Show" value={view} onChange={k => url.set({ view: k === 'all' ? null : k, thread: null })}
+            options={[
+              { key: 'all', label: 'All', count: totals?.all || undefined },
+              { key: 'unread', label: 'Unread', count: totals?.unread || undefined, tone: totals?.unread ? 'danger' : undefined },
+              { key: 'inquiry', label: 'Inquiries', count: totals?.inquiries || undefined },
+            ]} />}
+        />
       )}
 
       {listError && <StaleBanner message={`Showing the last messages we have. ${listError}`} onRetry={() => loadList(null)} />}
@@ -301,9 +299,9 @@ export default function InboxPage() {
                   )}
                   {open.channel && <ChannelMark ch={open.channel} size={26} />}
                   <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-                    <span className="text-[16px] font-semibold tracking-[-0.01em] [overflow-wrap:anywhere]">{open.guestName ?? 'Unknown guest'}</span>
+                    <span className="text-heading font-semibold tracking-[-0.01em] [overflow-wrap:anywhere]">{open.guestName ?? 'Unknown guest'}</span>
                     <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">
-                      {[open.propertyName, open.unitNumber].filter(Boolean).join(' ') || 'Unit not known'}
+                      {[buildingName(open.propertyName), open.unitNumber].filter(Boolean).join(' ') || 'Unit not known'}
                       {open.checkIn && open.checkOut ? ` · ${dateRange(open.checkIn, open.checkOut)}` : ''}
                       {open.guestsCount ? ` · ${fmtGuests(open.guestsCount)}` : ''}
                     </span>

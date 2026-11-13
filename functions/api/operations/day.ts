@@ -3,6 +3,7 @@ import { requireSession, isFieldRole } from '../../_lib/auth';
 import { MYT_DATE } from '../../_lib/ops';
 import { CLEAN_KINDS_SQL, LIVE_STAY_SQL, windowsOnDay, mytToday, isDay } from '../../_lib/cleaning';
 import { hasAssigneeUser, jobPlaceJoin } from '../../_lib/maintenance';
+import { hasPassKeyJobs } from '../../_lib/passKeyJobs';
 
 // The last time the booking was moved into a state, from the audit trail: when the guest was recorded in or out.
 const MOVED_AT = (state: string) => `(SELECT a.occurred_at FROM audit_log a WHERE a.entity_table = 'reservations' AND a.entity_id = r.id
@@ -22,13 +23,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
 
   const placeJoin = await jobPlaceJoin(env);
+  const hasPassKey = await hasPassKeyJobs(env);
+  const passKeyColumns = hasPassKey ? 'pk.id AS pass_key_id, pk.state AS pass_key_state, pk.vendor_name AS pass_key_technician' : 'NULL AS pass_key_id, NULL AS pass_key_state, NULL AS pass_key_technician';
+  const passKeyJoin = hasPassKey ? `LEFT JOIN maintenance_issues pk ON pk.reservation_id = r.id AND pk.job_type = 'pass_key'` : '';
   const [arrivals, departures, cleans, urgent, repairs, maintenance, available] = await Promise.all([
     all<any>(env, `
     SELECT r.id, r.state, r.channel, r.check_in_time, r.check_out, r.guests_count, u.id AS unit_id, u.unit_number, u.readiness,
            p.id AS property_id, p.name AS property_name, COALESCE(NULLIF(g.full_name, ''), CASE WHEN r.channel = 'owner_stay' THEN 'Owner stay' ELSE 'Guest' END) AS guest_name,
            (SELECT t.state FROM tasks t WHERE t.unit_id = r.unit_id AND t.kind IN ${CLEAN_KINDS_SQL} AND ${when} = r.check_in ORDER BY t.created_at DESC LIMIT 1) AS clean_state,
-           ${MOVED_AT('checked_in')} AS arrived_at
+           ${MOVED_AT('checked_in')} AS arrived_at, ${passKeyColumns}
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
+    ${passKeyJoin}
     WHERE r.check_in = ? AND ${LIVE_STAY_SQL('r')}
     ORDER BY r.check_in_time, p.name, u.unit_number`, date),
 
@@ -68,6 +73,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       checkInTime: a.check_in_time || '15:00', checkOut: a.check_out,
       unitId: a.unit_id, unitNumber: a.unit_number, readiness: a.readiness, buildingId: a.property_id, propertyName: a.property_name,
       cleanState: a.clean_state ?? null, arrivedAt: a.state === 'checked_in' || a.state === 'checked_out' ? a.arrived_at ?? null : null,
+      passKey: a.pass_key_id ? { isHandedOver: a.pass_key_state === 'resolved', technician: a.pass_key_technician?.trim() || null } : null,
     })),
     departures: departures.map(d => ({
       reservationId: d.id, state: d.state, channel: d.channel, guestName: d.guest_name, checkOutTime: d.check_out_time || '11:00',

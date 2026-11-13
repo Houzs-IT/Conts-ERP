@@ -1,6 +1,6 @@
 import { type Env, all, json, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { mineSql, hasAssigneeUser, UNASSIGNED_SQL, hasJobType, fieldVisibleSql, passKeyTodaySql, jobPlaceJoin, CATEGORIES } from '../../_lib/maintenance';
+import { mineSql, hasAssigneeUser, UNASSIGNED_SQL, hasJobType, fieldVisibleSql, passKeyShownSql, jobPlaceJoin, CATEGORIES } from '../../_lib/maintenance';
 import { fieldRepairs } from '../../_lib/fieldRepairs';
 
 const POOL_PAGE = 200;
@@ -30,9 +30,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const limit = Math.min(POOL_MAX, Math.max(POOL_PAGE, Math.trunc(Number(searchParams.get('limit')) || POOL_PAGE)));
 
   const byId = await hasAssigneeUser(env);
-  // A job waiting for the owner (or its parts) stays with the office, and a Pass key job shows only on its check-in day.
+  // A job waiting for the owner (or its parts) stays with the office, and a Pass key job shows from the day before its check-in (or once marked Urgent) until it is done.
   const hasJobTypes = await hasJobType(env);
-  const visible = `${fieldVisibleSql(hasJobTypes)} AND ${passKeyTodaySql(hasJobTypes)}`;
+  const visible = `${fieldVisibleSql(hasJobTypes)} AND ${passKeyShownSql(hasJobTypes)}`;
   const since = new Date(Date.now() - 14 * 864e5).toISOString();
   const mineArgs = byId ? [session.userId, session.userId] : [session.userId];
   const mine = await fieldRepairs(env, `${mineSql(byId)} AND ${visible} AND (m.state != 'resolved' OR m.resolved_at >= ?)`, [...mineArgs, since]);

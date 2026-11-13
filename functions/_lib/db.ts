@@ -88,7 +88,21 @@ const open = (env: Env, max: number) =>
 /** The pooler refuses a connection that would exceed its client limit before any statement is sent, so retrying
  *  that refusal cannot run anything twice. Any other error is thrown as it is. */
 // Supabase's pooler says EMAXCONNSESSION; Postgres itself says "too many clients" / "remaining connection slots are reserved".
-const poolFull = (e: unknown) => /EMAXCONNSESSION|max clients reached|too many clients|remaining connection slots/i.test(e instanceof Error ? e.message : String(e));
+export const poolFull = (e: unknown) => /EMAXCONNSESSION|max clients reached|too many clients|remaining connection slots/i.test(e instanceof Error ? e.message : String(e));
+
+/** The database could not be reached, or dropped the connection, before answering: the pool full (above), a refused,
+ *  reset or timed-out connection (postgres.js CONNECT_TIMEOUT / CONNECTION_*, the socket's ECONN*), Hyperdrive or the
+ *  Worker's socket giving up, or Postgres starting up or shutting down (SQLSTATE class 08, 57P01-57P03). A read that
+ *  meets one is worth asking again a moment later, so the API answers it as busy (503). A real SQL error (a bad column,
+ *  a constraint, a timeout on a slow query) is none of these and stays a fault. */
+const CONNECTION_CODES = new Set(['CONNECT_TIMEOUT', 'CONNECTION_CLOSED', 'CONNECTION_ENDED', 'CONNECTION_DESTROYED', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND', 'EAI_AGAIN', '57P01', '57P02', '57P03']);
+const CONNECTION_TEXT = /Network connection lost|connection attempt failed|connection (?:terminated|refused|reset|closed)|failed to connect|could not connect|Hyperdrive|socket hang up|write CONNECTION_CLOSED/i;
+export function transientDb(e: unknown): boolean {
+  if (poolFull(e)) return true;
+  const code = String((e as { code?: unknown } | null)?.code ?? '');
+  if (CONNECTION_CODES.has(code) || /^08[0-9A-Z]{3}$/.test(code)) return true;
+  return CONNECTION_TEXT.test(e instanceof Error ? e.message : String(e));
+}
 
 async function retryPoolFull<T>(work: () => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt++) {
@@ -134,6 +148,15 @@ export async function withRequestDb<T>(fn: () => Promise<T>, waitUntil: (p: Prom
     if (db) waitUntil(db.end({ timeout: 10 }).catch(() => {}));
     if (ddb) waitUntil(ddb.end({ timeout: 10 }).catch(() => {}));
   }
+}
+
+/** Work that runs after the response (waitUntil): one client of its own for all of it, closed when it ends. Without
+ *  this, work still going when its request's client has closed opened and closed a client for every statement it made
+ *  (onOwnConnection above): about ten connects in a row for one turnover sweep or Channex flush. Never throws. */
+export function afterResponse(waitUntil: (p: Promise<unknown>) => void, work: () => Promise<unknown>): Promise<void> {
+  const done = withRequestDb(work, waitUntil).then(() => {}, e => console.error('background work failed', e));
+  waitUntil(done);
+  return done;
 }
 
 /** The role `pos_app` has search_path = pos, so table names stay unqualified. In Demo mode each statement runs in a

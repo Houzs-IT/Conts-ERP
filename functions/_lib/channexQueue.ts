@@ -127,7 +127,7 @@ const ID_IN = 'id IN (SELECT jsonb_array_elements_text(?::text::jsonb))';
  * and one restrictions call per property. A property over its budget has its rows put back for the
  * next flush. Safe to run concurrently — rows are claimed atomically.
  */
-export async function flushChannexQueue(env: Env, opts: { fullSync?: boolean } = {}): Promise<FlushResult> {
+export async function flushChannexQueue(env: Env, opts: { fullSync?: boolean; deadline?: number } = {}): Promise<FlushResult> {
   const result: FlushResult = { calls: [] };
   if (!channexConfigured(env)) return result;
   // Sent rows are only kept for looking back; the outbox would otherwise grow with every sync.
@@ -137,7 +137,10 @@ export async function flushChannexQueue(env: Env, opts: { fullSync?: boolean } =
   // Anything still queued for a showroom or warehouse unit is dropped, never sent (owner, 17 Oct 2026).
   const rental = await rentalOnly(env, 'u');
   if (rental) await run(env, `DELETE FROM channex_outbox o USING units u WHERE u.id = o.unit_id AND u.purpose <> 'rental' AND o.status IN ('queued','sending','failed')`).catch(() => {});
+  const outOfTime = () => opts.deadline !== undefined && Date.now() >= opts.deadline;
   for (const kind of ['availability', 'restrictions'] as const) {
+    // Out of time: nothing more is claimed; the cron worker sends it.
+    if (outOfTime()) break;
     const rows = await all<OutboxRow & { created_at: string }>(env, `
       UPDATE channex_outbox SET status = 'sending', next_attempt_at = ?
       WHERE id IN (
@@ -155,6 +158,11 @@ export async function flushChannexQueue(env: Env, opts: { fullSync?: boolean } =
 
     for (const [propertyId, group] of byProperty) {
       const ids = group.map(r => r.id);
+      if (outOfTime()) {
+        // Handed back as due now, untouched, so the next flush (the cron worker within a minute) sends it.
+        await run(env, `UPDATE channex_outbox SET status = 'queued', next_attempt_at = ? WHERE ${ID_IN}`, nowIso(), idList(ids));
+        continue;
+      }
       const used = await one<{ n: number }>(env, `SELECT count(*)::int AS n FROM channex_calls WHERE property_id = ? AND kind = ? AND called_at > ?`, propertyId, kind, inMs(-60_000));
       if ((used?.n ?? 0) >= CALLS_PER_KIND_PER_MINUTE) {
         // Over this property's budget: hand the rows back untouched for the next flush.
@@ -164,7 +172,8 @@ export async function flushChannexQueue(env: Env, opts: { fullSync?: boolean } =
 
       let status = 0, taskId: string | null = null, error: string | null = null;
       try {
-        const res = await channexSendAri(env, kind, coalesce(group));
+        // A call is cut off at the deadline rather than cancelled by the platform half way through recording it.
+        const res = await channexSendAri(env, kind, coalesce(group), opts.deadline !== undefined ? AbortSignal.timeout(Math.max(1, opts.deadline - Date.now())) : undefined);
         status = res.status;
         taskId = res.body?.data?.[0]?.id ?? null;
         if (!res.ok) error = JSON.stringify(res.body ?? {}).slice(0, 500);
@@ -193,20 +202,28 @@ export async function flushChannexQueue(env: Env, opts: { fullSync?: boolean } =
   return result;
 }
 
-const QUIET_MS = 15_000;
+/** Was 15 s, which with the wait after it left about 14 s of the 30 s Cloudflare gives waitUntil work after a
+ *  response (Hookka 87fc435a9: work past that is cancelled mid-call). 8 s still gathers a burst of edits (a few dates
+ *  dragged, a price row typed) into one call. */
+const QUIET_MS = 8_000;
 
 /**
  * Called by the middleware after every write, once a delay a little longer than QUIET_MS has passed.
  * Sends only when nothing new has been queued for QUIET_MS, so a burst of edits leaves as one call:
  * each edit schedules its own attempt, and only the one after the last edit finds the queue quiet.
+ * `deadline` (ms since epoch): no Channex call starts after it, and none runs past it; what is left stays queued for
+ * the cron worker, which flushes every minute.
  */
-export async function flushWhenQuiet(env: Env): Promise<void> {
+export async function flushWhenQuiet(env: Env, deadline?: number): Promise<void> {
   if (!(await channexQueueHasDue(env))) return;
   const newest = await one<{ at: string | null }>(env, `SELECT max(created_at) AS at FROM channex_outbox WHERE status = 'queued'`);
   if (newest?.at && Date.parse(newest.at) > Date.now() - QUIET_MS) return;
-  await flushChannexQueue(env);
+  await flushChannexQueue(env, { deadline });
 }
 export const FLUSH_DELAY_MS = QUIET_MS + 1_000;
+/** The time the request-time flush may take after its wait: 9 s + 16 s = 25 s, 5 s inside the 30 s limit for the
+ *  statements that record the last call. */
+export const FLUSH_BUDGET_MS = 16_000;
 
 /** True when something is due, so the middleware can skip the flush entirely on most requests. */
 export async function channexQueueHasDue(env: Env): Promise<boolean> {

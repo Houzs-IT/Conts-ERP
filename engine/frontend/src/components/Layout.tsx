@@ -311,15 +311,15 @@ export function PageHeader({
            (TopNavbar hosting the tab strip inline), so the lg park is
            top-[52px]. Below lg top-14 (MobileTopBar) is unchanged. */
         (dense
-          ? "sticky top-14 lg:top-[52px] z-10 lg:z-20 -mx-3 sm:-mx-4 lg:-mx-4 px-3 sm:px-4 lg:px-4 bg-bg mb-3 flex flex-col gap-2 border-b border-border pt-3 pb-2 sm:mb-4 sm:pt-4 sm:pb-3 md:flex-row md:flex-wrap md:items-end md:justify-between"
-          : "sticky top-14 lg:top-[52px] z-10 lg:z-20 -mx-3 sm:-mx-4 lg:-mx-4 px-3 sm:px-4 lg:px-4 bg-bg mb-4 flex flex-col gap-3 border-b border-border pt-3 pb-3 sm:mb-8 sm:pt-4 sm:gap-3 sm:pb-6 md:flex-row md:flex-wrap md:items-end md:justify-between")
+          ? "page-head sticky top-14 lg:top-[52px] z-10 lg:z-20 -mx-3 sm:-mx-4 lg:-mx-4 px-3 sm:px-4 lg:px-4 bg-bg mb-3 flex flex-col gap-2 border-b border-border pt-3 pb-2 sm:mb-4 sm:pt-4 sm:pb-3 md:flex-row md:flex-wrap md:items-end md:justify-between"
+          : "page-head sticky top-14 lg:top-[52px] z-10 lg:z-20 -mx-3 sm:-mx-4 lg:-mx-4 px-3 sm:px-4 lg:px-4 bg-bg mb-4 flex flex-col gap-3 border-b border-border pt-3 pb-3 sm:mb-8 sm:pt-4 sm:gap-3 sm:pb-6 md:flex-row md:flex-wrap md:items-end md:justify-between")
       }
       ref={hostRef}
     >
       {/* md:flex-1 + a basis floor so a wide action rail (md:shrink-0) can
           never squeeze the title to a per-character column — the rail wraps
           to its own row instead (container is md:flex-wrap). */}
-      <div className="min-w-0 md:flex-1 md:basis-72">
+      <div className="page-head-text min-w-0 md:flex-1 md:basis-72">
         {showBack && (
           <button
             type="button"

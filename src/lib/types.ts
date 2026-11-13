@@ -13,14 +13,15 @@ export type BookingChannel =
   | 'airbnb' | 'booking_com' | 'agoda' | 'direct' | 'maintenance_block' | 'owner_stay';
 
 export type StatementState = 'provisional' | 'finalised' | 'sent' | 'paid';
-export type PayoutState = 'pending' | 'processing' | 'paid' | 'failed';
+/** 'cancelled': its statement was unlocked before it was paid (owner statement close part 3). */
+export type PayoutState = 'pending' | 'processing' | 'paid' | 'failed' | 'cancelled';
 export type IntegrationState = 'connected' | 'expired' | 'degraded' | 'failed';
 export type SyncState = 'queued' | 'synced' | 'failed';
 
 /** The hidden role the server works out from the department's kind (management, staff, cleaning, maintenance), plus owner.
  *  No screen shows or picks it. The two older office roles (operations manager and finance admin) are retired: what set them apart now lives in
  *  the position and department rules. */
-export type UserRole = 'management' | 'operations_staff' | 'housekeeper' | 'technician' | 'owner';
+export type UserRole = 'management' | 'operations_staff' | 'housekeeper' | 'technician' | 'renovator' | 'owner';
 
 /** Which side of the business an account works on (migration 0143): The Conts is rental, Dream Crafter the supply chain. */
 export type UserSide = 'conts' | 'dream_crafter' | 'both';
@@ -78,7 +79,8 @@ export type AccessOrigin = 'user' | 'position' | 'department' | 'fixed' | 'none'
 /** The origins a default can have: a person's own override is never part of the default. */
 export type InheritedOrigin = 'position' | 'department' | 'none';
 
-export interface AccessArea { key: string; label: string; managed: boolean }
+/** `ownGrant`: given one by one; no category baseline or group tick reaches it (owner statement close part 2b). */
+export interface AccessArea { key: string; label: string; managed: boolean; ownGrant?: boolean }
 export interface AccessCategory { group: string; areas: AccessArea[] }
 
 /** Stored rows only. A missing key means inherit (area) or not set (category); category keys are `group:<Category>`. */
@@ -87,8 +89,12 @@ export interface AccessRules {
   position: Record<string, Record<string, AccessSetting>>;
 }
 
+export interface PermissionPerson {
+  id: string; fullName: string; departmentId: string; positionId: string | null; isActive: boolean; customCount: number;
+}
+
 export interface AccessChart {
-  levels: AccessLevel[]; categories: AccessCategory[]; departments: Department[]; rules: AccessRules; canEdit: boolean;
+  levels: AccessLevel[]; categories: AccessCategory[]; departments: Department[]; rules: AccessRules; people: PermissionPerson[]; canEdit: boolean;
 }
 
 /** `level: null` deletes the stored row. Category keys take a level or null, never 'inherit'. */
@@ -100,6 +106,8 @@ export interface PersonAccessArea {
   override: AccessLevel | null;
   /** What they get with no override: what "Inherit (position default)" goes back to. */
   inherited: { level: AccessLevel; origin: InheritedOrigin };
+  /** Given one by one: the group's ticks leave it alone (owner statement close part 2b). */
+  ownGrant?: boolean;
 }
 
 export interface PersonAccess {

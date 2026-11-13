@@ -38,7 +38,7 @@
 // autotable didDrawPage hook + jsPDF putTotalPages.
 // ----------------------------------------------------------------------------
 
-import { buildDefaultSofaCells, effectiveDelivery, findModule, fmtMoneySen, SOFA_MODULES, type Cell, type Depth } from '@2990s/shared';
+import { buildDefaultSofaCells, effectiveDelivery, findModule, fmtMoneySen, isoForExport, SOFA_MODULES, type Cell, type Depth } from '@2990s/shared';
 import { formatPhone } from '@2990s/shared/phone';
 import { parseProvenanceNote } from '../../shared/transfer-vocabulary';
 import {
@@ -190,7 +190,8 @@ export function poUrgencyLabel(
   deliveryDate: string | null | undefined,
 ): 'TOP URGENT' | 'URGENT' | null {
   const toUtcDay = (d: string | null | undefined): number | null => {
-    const m = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(fmtDocDate(d));
+    // isoForExport turns either side's display shape back into yyyy-mm-dd.
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoForExport(fmtDocDate(d))));
     return m ? Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!) : null;
   };
   const from = toUtcDay(poDate);

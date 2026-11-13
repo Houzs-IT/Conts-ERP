@@ -12,11 +12,15 @@ import Icon from './Icon';
 /** Whether this page's header already shows its primary action. The shell provides it; PageHeader turns it on.
  *  An empty list then gives only the reason, and the same "New ×××" is not repeated under it (owner, Oct 2026).
  *  `forceAction` keeps the button where the empty state is the only way in. */
-const PrimaryCtx = createContext<{ has: boolean; set: (v: boolean) => void }>({ has: false, set: () => {} });
+const PrimaryCtx = createContext<{ has: boolean; set: (v: boolean) => void; path?: string }>({ has: false, set: () => {} });
 export function PagePrimaryScope({ path, children }: { path: string; children: ReactNode }) {
   const [has, set] = useState(false);
   useEffect(() => { set(false); }, [path]);
-  return <PrimaryCtx.Provider value={{ has, set }}>{children}</PrimaryCtx.Provider>;
+  return <PrimaryCtx.Provider value={{ has, set, path }}>{children}</PrimaryCtx.Provider>;
+}
+/** The shell's current path, for PageHeader's eyebrow (the menu group). Undefined outside the app shell. */
+export function usePagePath(): string | undefined {
+  return useContext(PrimaryCtx).path;
 }
 export function useMarkPagePrimary(on: boolean) {
   const { set } = useContext(PrimaryCtx);

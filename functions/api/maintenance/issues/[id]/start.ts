@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/db';
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
 import { isAssignee } from '../../../../_lib/maintenance';
+import { PASS_KEY_DONE_ONLY } from '../../../../_lib/passKeyJobs';
 
 /** POST /api/maintenance/issues/:id/start — records when the repair actually began.
  *  Approval gates the start: work waiting on an owner's decision cannot begin. */
@@ -10,8 +11,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const field = isFieldRole(session.role);
 
   const id = String(params.id);
-  const cur = await one<any>(env, 'SELECT id, state, started_at, charge_to, owner_approval_required, owner_approved_at FROM maintenance_issues WHERE id = ?', id);
+  const cur = await one<any>(env, 'SELECT id, state, job_type, started_at, charge_to, owner_approval_required, owner_approved_at FROM maintenance_issues WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That job no longer exists.', 404);
+  if (cur.job_type === 'pass_key') return fail('CONFLICT', PASS_KEY_DONE_ONLY, 409);
   if (field && !(await isAssignee(env, id, session.userId))) return fail('FORBIDDEN', 'That job is assigned to someone else.', 403);
   if (cur.state === 'resolved') return fail('CONFLICT', 'That job is already finished.', 409);
   if (cur.owner_approval_required && !cur.owner_approved_at && cur.charge_to === 'owner') {

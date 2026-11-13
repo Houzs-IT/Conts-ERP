@@ -11,7 +11,7 @@ import { CreateRenovationPanel } from "../projects/renovation/CreateRenovationPa
 import { money } from "../projects/renovation/renovationModel";
 import { BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
 import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type ConditionWord, type HomeRow, type HomeTab } from "./renovationBetaBoard";
-import { HOME_SORTS, keepOrder, matchesSearch, newestFirst, orderOf, sortFromParam, voCell, type HomeSort } from "./renovationBetaHomeModel";
+import { HOME_SORTS, keepOrder, onBrandList, matchesSearch, orderOf, sortFromParam, sortHome, voCell, type HomeSort } from "./renovationBetaHomeModel";
 import { boardApi, boardKey, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
 import { BetaSkin, useBetaPreload } from "./BetaWsUi";
@@ -24,6 +24,7 @@ import { BetaMotion, SPRING } from "./betaMotion";
 import { DataTable } from "../../components/DataTable";
 import type { Column } from "../../components/dataTableTypes";
 import { fetchProjectSos, soColumns, type ProjectSo } from "./renovationBetaSoColumns";
+import { readBoardCache, writeBoardCache } from "./boardCache";
 
 const DASH = <span style={{ color: BETA.faint }}>–</span>;
 
@@ -111,6 +112,8 @@ function homeColumns(showPay: boolean): Column<TableRow>[] {
         {x.r.p.customer && <span style={{ color: MUTED, fontSize: 12, overflowWrap: "anywhere" }}>{x.r.p.customer}</span>}
       </span>
     ) },
+    { key: "created", label: "Created", group: "Project", width: "120px", getValue: (x) => x.r.p.createdAt, render: (x) => (x.r.p.createdAt ? fmtDate(x.r.p.createdAt) : DASH),
+      filterType: "date", dateValue: (x) => x.r.p.createdAt },
     { key: "condition", label: "ID condition", group: "Project", width: "150px", getValue: (x) => x.r.word, render: (x) => <StatusCell r={x.r} /> },
     { key: "due", label: "Due", group: "Project", width: "120px", getValue: (x) => x.r.left, render: (x) => <DueCell r={x.r} /> },
     ...(showPay ? [{ key: "payment", label: "Payment", group: "Project", width: "220px", getValue: (x: TableRow) => x.r.p.payment,
@@ -140,9 +143,14 @@ export function RenovationBetaHome(): ReactElement {
 
 function HomeScreen(): ReactElement {
   const navigate = useNavigate();
-  const q = useQuery(boardKey(), () => boardApi.board(), []);
+  /* The last list shows at once and the server's answer replaces it (initialDataUpdatedAt 0 = always refetch). */
+  const [cachedBoard] = useState(() => readBoardCache<Awaited<ReturnType<typeof boardApi.board>>>("board"));
+  const [cachedSteps] = useState(() => readBoardCache<Awaited<ReturnType<typeof simpleApi.boardRows>>>("step-sla"));
+  const q = useQuery(boardKey(), async () => { const r = await boardApi.board(); writeBoardCache("board", r); return r; }, [],
+    cachedBoard ? { initialData: () => cachedBoard.data, initialDataUpdatedAt: () => 0 } : {});
   // Step and SLA come from the current project board, so both screens agree while they run side by side.
-  const steps = useQuery(["renovation-beta", "step-sla"], () => simpleApi.boardRows(), []);
+  const steps = useQuery(["renovation-beta", "step-sla"], async () => { const r = await simpleApi.boardRows(); writeBoardCache("step-sla", r); return r; }, [],
+    cachedSteps ? { initialData: () => cachedSteps.data, initialDataUpdatedAt: () => 0 } : {});
   const slaById = useMemo(() => new Map((steps.data?.data ?? []).map((r) => [r.id, r])), [steps.data]);
   const phone = useIsPhone();
   /* Every order in the company, for columns that start hidden: read only once one of them is showing. */
@@ -159,7 +167,8 @@ function HomeScreen(): ReactElement {
   /* The order rows were first shown in, per tab, sort and search: Assign and other saves reload the board, and a row
      must not jump under the finger (live run, 24 Oct 2026: the wrong project was opened). A reload starts afresh. */
   const kept = useRef<{ key: string; order: Map<number, number> } | null>(null);
-  function setParam(k: "q" | "sort", v: string): void {
+  const brand = params.get("brand") ?? "";
+  function setParam(k: "q" | "sort" | "brand", v: string): void {
     setParams((prev) => {
       const next = new URLSearchParams(prev);
       if (v && !(k === "sort" && v === "newest")) next.set(k, v); else next.delete(k);
@@ -167,15 +176,14 @@ function HomeScreen(): ReactElement {
     }, { replace: true });
   }
   const last = readLastProject();
-  const m = useMemo(() => (q.data ? buildModel(q.data) : null), [q.data]);
+  const m = useMemo(() => (q.data ? buildModel({ ...q.data, projects: q.data.projects.filter((p) => onBrandList(p, brand)) }) : null), [q.data, brand]);
 
   if (q.error && !m) return <ErrorBanner text={`The projects could not be loaded: ${q.error}`} onRetry={q.reload} />;
   if (!m) return <BetaLoading label="Loading projects" size="page" />;
 
   const counts = homeCounts(m);
   const inTab = homeList(m, tab);
-  const sorted = sort === "newest" ? newestFirst(inTab) : inTab;
-  const found = sorted.filter((p) => matchesSearch(p, query));
+  const found = sortHome(inTab, sort).filter((p) => matchesSearch(p, query));
   const viewKey = `${tab}|${sort}|${query.trim().toLowerCase()}`;
   if (!kept.current || kept.current.key !== viewKey) kept.current = { key: viewKey, order: orderOf(found) };
   const list = keepOrder(found, kept.current.order);
@@ -237,6 +245,14 @@ function HomeScreen(): ReactElement {
           )}
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: MUTED }}>
+          Brand
+          <select aria-label="Filter by brand" value={brand} onChange={(e) => setParam("brand", e.target.value)}
+            style={{ minHeight: 40, padding: "0 12px", border: `1px solid ${BETA.glassEdge}`, borderRadius: 999, background: BETA.field, font: "inherit", fontSize: 14, color: BETA.ink }}>
+            <option value="">All brands</option>
+            {[...new Set((q.data?.projects ?? []).map((p) => p.brand?.trim()).filter((b): b is string => Boolean(b)))].sort().map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: MUTED }}>
           Sort
           <select aria-label="Sort projects" value={sort} onChange={(e) => setParam("sort", e.target.value as HomeSort)}
             style={{ minHeight: 40, padding: "0 12px", border: `1px solid ${BETA.glassEdge}`, borderRadius: 999, background: BETA.field, font: "inherit", fontSize: 14, color: BETA.ink }}>
@@ -293,7 +309,7 @@ function HomeScreen(): ReactElement {
         </div>
       )}
 
-      <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · {sort === "newest" ? "newest first" : "due soonest first"} · tap a project to open it</div>
+      <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · {(HOME_SORTS.find(([k]) => k === sort)?.[1] ?? "").toLowerCase()} · tap a project to open it</div>
     </div>
     </BetaMotion>
   );

@@ -12,14 +12,15 @@ import { EmptyState, SkeletonRows } from '../components/States';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
+import { mayRun } from '../lib/areaAccess';
 import { StatusBadge } from '../components/StatusBadge';
 import { api, notifyFailure, ApiFailure } from '../lib/api';
 import { MODELS, codeName, plainOptions, fittingOptions, type ContractType, type ContractTypeOptions, type RevenueModel } from '../lib/revenueModel';
 import { useContractTypesPayload } from '../lib/useContractTypes';
-import { plural } from '../lib/format';
+import { plural, buildingName } from '../lib/format';
 import { BuildingModal } from './units/UnitForms';
 import { PROPERTIES_FALLBACK } from './units/fallback';
-import { mayEditUnits, useLayoutTypes, useBedSizes, Labeled, Select as FormSelect, CentreModal, type Building, type PropertiesPayload } from './units/shared';
+import { useLayoutTypes, useBedSizes, Labeled, Select as FormSelect, CentreModal, type Building, type PropertiesPayload } from './units/shared';
 
 /** Units > Unit settings: the lists the unit screens pick from, kept by staff instead of in code (owner, 4 Nov 2026; PLAN-unit-settings.md). */
 
@@ -40,7 +41,7 @@ export default function UnitSettingsPage() {
   const tab: TabKey = isTab(asked) ? asked : 'buildings';
   const setTab = (t: TabKey) => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); return n; }, { replace: true });
   const { user } = useSession();
-  const canEdit = mayEditUnits(user);
+  const canEdit = mayRun(user, 'unitSettings');
 
   return (
     <>
@@ -78,7 +79,7 @@ function BuildingsTab({ canEdit }: { canEdit: boolean }) {
     try {
       await api.post<{ id: string }>('/properties', b);
       setModal(null);
-      toast({ tone: 'success', title: 'Building added.', body: `${b.name} is on the list. Add units to it on the Units page.` });
+      toast({ tone: 'success', title: 'Building added.', body: `${buildingName(b.name)} is on the list. Add units to it on the Units page.` });
       props.reload();
     } catch (e) { notifyFailure(e); }
   }
@@ -86,7 +87,7 @@ function BuildingsTab({ canEdit }: { canEdit: boolean }) {
     try {
       await api.patch(`/properties/${id}`, b);
       setModal(null);
-      toast({ tone: 'success', title: 'Building updated.', body: b.name });
+      toast({ tone: 'success', title: 'Building updated.', body: buildingName(b.name) });
       props.reload();
     } catch (e) { notifyFailure(e); }
   }
@@ -94,7 +95,7 @@ function BuildingsTab({ canEdit }: { canEdit: boolean }) {
     try {
       await api.del(`/properties/${b.id}`);
       setModal(null);
-      toast({ tone: 'success', title: 'Building deleted.', body: b.name });
+      toast({ tone: 'success', title: 'Building deleted.', body: buildingName(b.name) });
       props.reload();
     } catch (e) { notifyFailure(e); }
   }
@@ -114,7 +115,7 @@ function BuildingsTab({ canEdit }: { canEdit: boolean }) {
             {buildings.map(b => (
               <li key={b.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 px-5">
                 <div className="flex flex-col min-w-0 flex-1 basis-[200px]">
-                  <span className="text-copy font-medium [overflow-wrap:anywhere]">{b.name}</span>
+                  <span className="text-copy font-medium [overflow-wrap:anywhere]">{buildingName(b.name)}</span>
                   <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{[b.city, b.state].filter(Boolean).join(' · ')}</span>
                 </div>
                 <span className="text-meta text-muted-ink">{plural(unitCount.get(b.id) ?? 0, 'unit')}</span>

@@ -120,6 +120,41 @@ jobs:
         env:
           API_BASE: http://localhost:8788
           DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Airbnb reconciliation, confirm and undo (airbnb-recon)
+        run: node scripts/api-checks/airbnb-recon.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Owner report close, income locks (owner-close)
+        run: node scripts/api-checks/owner-close.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Owner statement close, deductions and O2 locks (owner-close-steps)
+        run: node scripts/api-checks/owner-close-steps.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Owner statement close, the company share and notices (owner-close-late)
+        run: node scripts/api-checks/owner-close-late.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Owner statement close, GP and final (owner-close-final)
+        run: node scripts/api-checks/owner-close-final.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Unit report locks, click and Lock all (owner-report-locks)
+        run: node scripts/api-checks/owner-report-locks.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Owner payouts bank file grouping (payout-export)
+        run: node scripts/api-checks/payout-export.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
       - name: Demo mode guards (demo-mode)
         run: node scripts/api-checks/demo-mode.mjs
         env:

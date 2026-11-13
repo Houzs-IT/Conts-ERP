@@ -7,7 +7,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { StaleBanner, TableSkeleton } from '../components/DataState';
 import { EmptyState } from '../components/States';
 import { StatRow, StatTile } from '../components/Metric';
-import { Select } from '../components/Select';
+import { Segmented } from '../components/Metric';
 import { DataTable, type Column } from '../components/DataTable';
 import { Segmented as Tabs } from '../components/ops/OpsUi';
 import { TwoLayerTrend, CostShare } from '../components/reports/PnlCharts';
@@ -15,10 +15,11 @@ import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { monthLabel, rm, todayMyt } from '../lib/format';
+import { monthLabel, rm, todayMyt, buildingName, personName } from '../lib/format';
 import { downloadTable, type ExportCell, type ExportColumn } from '../lib/export';
 import { cx, TONE } from '../lib/design-tokens';
-import { useUrlState, SearchBox, FilterSelect, shiftMonth } from './finance/listKit';
+import { useUrlState, FilterSelect, shiftMonth } from './finance/listKit';
+import { ListToolbar } from '../components/ListToolbar';
 import {
   LINE_LABEL, COST_KEYS, pnl, sumPnl, pctOfIncome, bracketMoney, checks, gaps,
   type CostKey, type LineKey, type Limits, type Pnl, type UnitMonthInput, type Flag, type Gap,
@@ -37,7 +38,7 @@ const LINE_COLOR: Record<CostKey, string> = {
   fees: 'var(--color-chart-ink)', cleaning: 'var(--color-info-line)', electricity: 'var(--color-warning-line)', water: 'var(--color-chart-teal)',
   internet: 'var(--color-gold)', sewerage: 'var(--color-success-line)', other: 'var(--color-neutral-line)', misc: 'var(--color-faint)',
 };
-const unitName = (u: Unit | undefined, id: string) => (u ? `${u.building} ${u.number}` : id);
+const unitName = (u: Unit | undefined, id: string) => (u ? `${buildingName(u.building)} ${u.number}` : id);
 const pctText = (v: number | null) => (v == null ? '–' : `${v.toFixed(1)}%`);
 const rmText = (sen: number) => (sen < 0 ? `(${rm(-sen)})` : rm(sen));
 
@@ -70,7 +71,7 @@ export default function UnitPnlPage() {
 
   const unitById = useMemo(() => new Map((data?.units ?? []).map(u => [u.id, u])), [data]);
   const buildings = useMemo(() => [...new Set((data?.units ?? []).map(u => u.building))].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
-    .map(b => ({ value: b, label: b })), [data]);
+    .map(b => ({ value: b, label: buildingName(b) })), [data]);
   const shownUnits = useMemo(() => new Set((data?.units ?? []).filter(u => (!building || u.building === building)
     && (!unitId || u.id === unitId) && (!q || `${u.building} ${u.number} ${u.owner}`.toLowerCase().includes(q))).map(u => u.id)), [data, building, unitId, q]);
   // The contract filter goes by each month's own contract, so a unit that changed contract keeps its earlier months.
@@ -86,22 +87,22 @@ export default function UnitPnlPage() {
 
   const header = (
     <PageHeader title={focus ? `Unit P&L · ${unitName(focus, focus.id)}` : 'Unit P&L'}
-      sub={focus ? `${focus.owner} · ${focus.contract === 'LT' ? 'Fixed rent' : 'Profit share'}` : 'What each unit earned and spent, month by month: the unit’s profit, then what the company keeps.'}
+      sub={focus ? `${personName(focus.owner)} · ${focus.contract === 'LT' ? 'Fixed rent' : 'Profit share'}` : 'What each unit earned and spent, month by month: the unit’s profit, then what the company keeps.'}
       back={focus ? { label: 'All units', onClick: () => url.set({ unit: null }) } : undefined} />
   );
   const filters = (
-    <div className="flex flex-wrap items-center gap-2">
-      <Select label="Months" value={String(range)} onChange={v => url.set({ range: v === '6' ? null : v })} className="w-[170px]"
-        options={RANGES.map(r => ({ value: String(r), label: `Last ${r} months` }))} />
-      <Select label="This month" value={toDate ? '1' : ''} onChange={v => url.set({ toDate: v || null })} className="w-[190px]"
-        options={[{ value: '', label: 'Complete months only' }, { value: '1', label: `With ${monthLabel(thisMonth)} to date` }]} />
-      {!focus && <>
-        <FilterSelect label="Building" value={building} all="All buildings" onChange={v => url.set({ building: v })} options={buildings} className="w-[200px]" />
-        <FilterSelect label="Contract" value={contract} all="All contracts" onChange={v => url.set({ contract: v })}
-          options={[{ value: 'PS', label: 'Profit share' }, { value: 'LT', label: 'Fixed rent' }]} className="w-[160px]" />
-        <SearchBox value={url.get('q')} onChange={v => url.set({ q: v })} placeholder="Unit or owner" label="Search units" className="w-[200px]" />
-      </>}
-    </div>
+    <ListToolbar
+      search={focus ? undefined : { value: url.get('q'), onChange: v => url.set({ q: v.trim() }), placeholder: 'Unit or owner', label: 'Search units' }}
+      filters={focus ? [] : [
+        { key: 'building', label: 'Building', value: building, onChange: v => url.set({ building: v }), allLabel: 'All buildings',
+          options: buildings.map(b => ({ ...b, count: (data?.units ?? []).filter(u => u.building === b.value).length })) },
+        { key: 'contract', label: 'Contract', value: contract, onChange: v => url.set({ contract: v }), allLabel: 'All contracts',
+          options: [{ value: 'PS', label: 'Profit share' }, { value: 'LT', label: 'Fixed rent' }] },
+      ]}
+      date={{ label: 'Months', value: String(range), def: '6', onChange: v => url.set({ range: v === '6' ? null : v }), presets: RANGES.map(r => ({ value: String(r), label: `Last ${r} months` })) }}
+      after={<Segmented label="This month" value={toDate ? '1' : '0'} onChange={v => url.set({ toDate: v === '1' ? '1' : null })}
+        options={[{ key: '0', label: 'Complete months' }, { key: '1', label: `With ${monthLabel(thisMonth)} to date` }]} />}
+    />
   );
 
   return (
@@ -182,18 +183,22 @@ const Section = SectionCard;
 const ROWS: { key: LineKey; kind: 'income' | 'cost' | 'sub' | 'line' | 'result' }[] = [
   { key: 'guestPaid', kind: 'income' },
   ...COST_KEYS.map(k => ({ key: k as LineKey, kind: 'cost' as const })),
-  { key: 'operating', kind: 'sub' }, { key: 'owner', kind: 'line' }, { key: 'company', kind: 'result' },
+  { key: 'operating', kind: 'sub' }, { key: 'owner', kind: 'line' },
+  // The company's share of late changes to an earlier, locked month (part 2b): shown only when there is one.
+  { key: 'late', kind: 'line' }, { key: 'company', kind: 'result' },
 ];
 
 function PnlByMonth({ months, byMonth, total, mLabel }: { months: string[]; byMonth: Map<string, Pnl>; total: Pnl; mLabel: (m: string) => string }) {
   const cols = [...months.map(m => ({ key: m, label: mLabel(m), p: byMonth.get(m)! })), { key: 'total', label: 'Total', p: total }];
   const costs = (p: Pnl) => COST_KEYS.reduce((n, k) => n + p[k], 0);
+  const hasLate = cols.some(c => c.p.late !== 0);
   function exportExcel() {
     const head: ExportColumn[] = [{ label: 'Line', kind: 'text' }, ...cols.flatMap(c => [{ label: `${c.label} (RM)`, kind: 'money' as const }, { label: `${c.label} %`, kind: 'number' as const }])];
     const line = (label: string, get: (p: Pnl) => number): ExportCell[] => [label, ...cols.flatMap(c => [get(c.p) / 100, pctOfIncome(get(c.p), c.p.guestPaid)])];
     downloadTable('xlsx', 'unit-pnl-by-month', 'P&L by month', head, [
       line(LINE_LABEL.guestPaid, p => p.guestPaid), ...COST_KEYS.map(k => line(LINE_LABEL[k], p => p[k])), line('Total costs', costs),
-      line(LINE_LABEL.operating, p => p.operating), line(LINE_LABEL.owner, p => p.owner), line(LINE_LABEL.company, p => p.company),
+      line(LINE_LABEL.operating, p => p.operating), line(LINE_LABEL.owner, p => p.owner),
+      ...(hasLate ? [line(LINE_LABEL.late, p => p.late)] : []), line(LINE_LABEL.company, p => p.company),
     ]);
   }
   // Grid lines between every month and every line; each month has its amount and its % of the guest total side by side.
@@ -228,14 +233,14 @@ function PnlByMonth({ months, byMonth, total, mLabel }: { months: string[]; byMo
             </tr>
           </thead>
           <tbody>
-            {ROWS.map(r => (
+            {ROWS.filter(r => r.key !== 'late' || hasLate).map(r => (
               <PnlRow key={r.key} kind={r.kind} label={LINE_LABEL[r.key]} cells={cols.map(c => cell(c.key, c.p, r.key, r.kind !== 'cost'))}
                 extra={r.key === 'misc' ? <PnlRow kind="subtotal" label="Total costs" cells={cols.map(c => cell(c.key, c.p, 'costs', true))} /> : null} />
             ))}
           </tbody>
         </table>
       </div>
-      <p className="m-0 text-meta text-muted-ink">Guest total: what guests paid for the month’s nights. Service fees and taxes: the guest total less what the reservations paid out. Operating profit is the statement’s gross profit; company keeps is what is left after the owner’s portion (the Overall unit report’s gain or loss).</p>
+      <p className="m-0 text-meta text-muted-ink">Guest total: what guests paid for the month’s nights. Service fees and taxes: the guest total less what the reservations paid out. Operating profit is the statement’s gross profit; company keeps is what is left after the owner’s portion, plus any late changes, the company’s share of changes to an earlier, locked month (the Monthly Unit report’s gain or loss).</p>
     </Section>
   );
 }
@@ -282,6 +287,9 @@ function ByUnit({ rows, units, flags, holes, onUnit }: { rows: UnitMonthInput[];
     { key: 'utilNight', label: 'Utilities / night', type: 'money', value: r => (r.nights ? Math.round(util(r.p) / r.nights) : null), width: 130 },
     { key: 'margin', label: 'Operating margin', type: 'number', value: r => pct(r.p.operating, r.p), render: r => <span className={cx((pct(r.p.operating, r.p) ?? 0) < 0 && 'text-danger')}>{pctText(pct(r.p.operating, r.p))}</span>, width: 140 },
     { key: 'owner', label: "Owner's portion", type: 'money', value: r => r.p.owner, render: r => <Money sen={r.p.owner} />, width: 140 },
+    // Only when a unit has one: DataTable reads a column's hidden flag once, so a column that comes and goes with the
+    // data is left out instead (review finding).
+    ...(list.some(r => r.p.late !== 0) ? [{ key: 'late', label: 'Late changes', type: 'money' as const, value: (r: UnitRow) => r.p.late, render: (r: UnitRow) => <Money sen={r.p.late} />, width: 130 }] : []),
     { key: 'company', label: 'Company keeps', type: 'money', value: r => r.p.company, render: r => <Money sen={r.p.company} strong />, width: 140 },
     { key: 'checks', label: 'Checks', value: r => r.flags + r.gaps, width: 150, render: r => (
       <span className="inline-flex gap-1">

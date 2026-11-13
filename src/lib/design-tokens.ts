@@ -13,11 +13,11 @@ export interface SemanticStyle { text: string; bg: string; border: string; dot: 
 /** The meaning-based utilities from src/styles/tokens.css (@theme inline): text = AA text colour, bg = tint,
  *  border / dot = the line colour. critical is the danger tone. */
 export const TONE: Record<Tone, SemanticStyle> = {
-  success: { text: 'text-success', bg: 'bg-success-bg', border: 'border-success-line', dot: 'bg-success-line', hex: '#11694A' },
+  success: { text: 'text-success', bg: 'bg-success-bg', border: 'border-success-line', dot: 'bg-success-line', hex: '#276B46' },
   warning: { text: 'text-warning', bg: 'bg-warning-bg', border: 'border-warning-line', dot: 'bg-warning-line', hex: '#8A5A12' },
-  critical: { text: 'text-danger', bg: 'bg-danger-bg', border: 'border-danger-line', dot: 'bg-danger-line', hex: '#A8352F' },
-  info: { text: 'text-info', bg: 'bg-info-bg', border: 'border-info-line', dot: 'bg-info-line', hex: '#2E6DA4' },
-  neutral: { text: 'text-neutral', bg: 'bg-neutral-bg', border: 'border-neutral-line', dot: 'bg-neutral-line', hex: '#706D67' },
+  critical: { text: 'text-danger', bg: 'bg-danger-bg', border: 'border-danger-line', dot: 'bg-danger-line', hex: '#B23A3A' },
+  info: { text: 'text-info', bg: 'bg-info-bg', border: 'border-info-line', dot: 'bg-info-line', hex: '#2B5C9E' },
+  neutral: { text: 'text-neutral', bg: 'bg-neutral-bg', border: 'border-neutral-line', dot: 'bg-neutral-line', hex: '#5C6155' },
 };
 
 export const CHANNEL_META: Record<BookingChannel, { label: string; hex: string; tint: string; ink: string }> = {

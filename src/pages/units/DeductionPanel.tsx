@@ -79,7 +79,10 @@ export function DeductionPanel({ month, canAddO2, onClose, onSaved }: DeductionP
       }
       if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); }
       else {
-        toast({ tone: 'success', title: `${TYPE_LABEL[type]} added.`, body: o2
+        // Dated in a month whose deductions or O2 are locked, it goes to the next open month: the notice says where.
+        const notice = (res as { notice?: string | null } | null)?.notice;
+        if (notice) toast({ tone: 'info', title: `${TYPE_LABEL[type]} added.`, body: notice });
+        else toast({ tone: 'success', title: `${TYPE_LABEL[type]} added.`, body: o2
           ? `${rm(amount ?? 0)} ${direction === 'charge' ? 'off' : 'back to'} the owner, after the operator's share, on the next statement from ${monthLabel(day.slice(0, 7))}.`
           : `${rm(amount ?? 0)} off ${monthLabel(day.slice(0, 7))}, before the operator's share.` });
       }
@@ -91,7 +94,7 @@ export function DeductionPanel({ month, canAddO2, onClose, onSaved }: DeductionP
   }
 
   return (
-    <Drawer open onClose={onClose} width={480} labelledBy="deduction-title">
+    <Drawer open onClose={onClose} dirty="typed" width={480} labelledBy="deduction-title">
       <div className="flex items-center justify-between px-6 max-sm:px-4 pt-[22px] pb-3.5">
         <h2 id="deduction-title" className="m-0 text-title font-semibold">Add deduction</h2>
         <CloseButton onClick={onClose} />
@@ -112,7 +115,8 @@ export function DeductionPanel({ month, canAddO2, onClose, onSaved }: DeductionP
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <DateField label="Date" value={day} onChange={setDay}
             error={fields.incurredOn ?? fields.occurredOn ?? (validDay ? undefined : 'Enter the date.')}
-            help={validDay ? `Goes on ${monthLabel(day.slice(0, 7), { long: true })}.` : undefined} />
+            help={validDay ? (o2 ? `Dated ${monthLabel(day.slice(0, 7), { long: true })}, or the next open month if its O2 is locked.`
+              : `Goes on the ${monthLabel(day.slice(0, 7), { long: true })} statement, or on the next open one if its deductions are locked.`) : undefined} />
           <MoneyInput label="Total (RM)" placeholder="e.g. 120.50" minSen={1} valueSen={amount} onChangeSen={setAmount} error={fields.amount} />
         </div>
         <Field label="Remarks" placeholder={o2 ? 'e.g. Maintenance fee Oct 26' : 'e.g. Replaced aircon remote'} maxLength={o2 ? 200 : 300}

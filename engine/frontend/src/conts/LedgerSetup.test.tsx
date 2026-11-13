@@ -152,7 +152,7 @@ describe("Ledger setup — Books", () => {
     expect(screen.getByText(/No start date yet/)).toBeTruthy();
     const start = screen.getByLabelText("Books start on") as HTMLInputElement;
     fireEvent.focus(start);
-    fireEvent.change(start, { target: { value: "20261201" } });
+    fireEvent.change(start, { target: { value: "01122026" } });
     fireEvent.blur(start);
     fireEvent.change(screen.getByLabelText("Fiscal year ends in"), { target: { value: "12" } });
     fireEvent.click(screen.getByText("Save"));
@@ -162,7 +162,7 @@ describe("Ledger setup — Books", () => {
   it("a saved start date reads back", () => {
     settings = { ledgerStartDate: "2026-12-01", fiscalYearEndMonth: 8 };
     page();
-    expect((screen.getByLabelText("Books start on") as HTMLInputElement).value).toBe("2026/12/01");
+    expect((screen.getByLabelText("Books start on") as HTMLInputElement).value).toBe("01/12/2026");
     expect(screen.queryByText(/No start date yet/)).toBeNull();
     settings = { ledgerStartDate: null, fiscalYearEndMonth: 8 };
   });
@@ -193,7 +193,7 @@ describe("Ledger setup — Books", () => {
     page();
     const start = screen.getByLabelText("Books start on") as HTMLInputElement;
     fireEvent.focus(start);
-    fireEvent.change(start, { target: { value: "20270101" } });
+    fireEvent.change(start, { target: { value: "01012027" } });
     fireEvent.blur(start);
     fireEvent.click(screen.getByText("Save"));
     await waitFor(() => expect(confirmFn).toHaveBeenCalledTimes(1));

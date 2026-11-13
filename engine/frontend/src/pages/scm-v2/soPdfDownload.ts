@@ -2,6 +2,7 @@
    order's own Print preview does, by area. */
 
 import { fetchPrintBundle } from "../../lib/printDocumentPdf";
+import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
 import { renoGet, type BrandProfile, type ContractView } from "../../lib/renovation/api";
 import { soInfoApi } from "../projects/renovation/customerPropertyApi";
 import { projectDatesText } from "../projects/renovation/customerPropertyModel";
@@ -17,7 +18,9 @@ export function soPdfContract(contract: ContractView | undefined, brand: BrandPr
 /* The PDF's standard font has no em dash. */
 const pdfText = (t: string): string => t.replace(/—/g, "-");
 
-export async function downloadSoPdf(docNo: string, renovation: boolean): Promise<void> {
+/** renovation null reads it from the order (a renovation contract prints its brand block and instalments). "preview" shows
+    the PDF in the in-app viewer instead of saving it (the project's Open SO, feedback 11 Nov 2026). */
+export async function downloadSoPdf(docNo: string, renovation: boolean | null, action: PdfAction = "save"): Promise<void> {
   const [bundle, info, { generateSalesOrderPdf }] = await Promise.all([
     fetchPrintBundle({ doc: "so", docNo, key: docNo }),
     soInfoApi.so(docNo),
@@ -25,14 +28,14 @@ export async function downloadSoPdf(docNo: string, renovation: boolean): Promise
   ]);
   const dates = projectDatesText(info.project, "so");
   let contract: ReturnType<typeof soPdfContract>;
-  if (renovation) {
+  if (renovation ?? (bundle.header as { so_kind?: string | null }).so_kind === "RENOVATION") {
     const [view, { brands }] = await Promise.all([
       renoGet<ContractView>(`/sales-orders/${encodeURIComponent(docNo)}`),
       renoGet<{ brands: BrandProfile[] }>("/brands"),
     ]);
     contract = soPdfContract(view, brands.find((b) => b.brandId === view.header.brandId));
   }
-  await generateSalesOrderPdf(bundle.header as never, bundle.items as never, (bundle.payments ?? []) as never, "save", (bundle.pwpCodes ?? []) as never, {
+  await generateSalesOrderPdf(bundle.header as never, bundle.items as never, (bundle.payments ?? []) as never, action, (bundle.pwpCodes ?? []) as never, {
     rooms: info.roomSections.length > 0 ? { order: info.roomSections, byItem: info.itemRooms } : undefined,
     projectDates: { start: pdfText(dates.start), end: pdfText(dates.end) },
     contract,

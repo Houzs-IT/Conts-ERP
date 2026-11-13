@@ -6,3 +6,84 @@ html.conts-embedded .sticky.top-14,
 html.conts-embedded .sticky.lg\:top-\[52px\] {
   top: 0;
 }
+
+/* Every screen here sits on the Dream Crafter page that /projects/list (the Beta screens) and the ERP sidebar draw,
+   light or night as Property OS's theme says (data-beta-skin, embed.ts). Tables keep their own look in light;
+   on night they turn dark (rules at the end). The two gradients are PAGE_VISION and PAGE_NIGHT in
+   pages/renovation-beta/renovationBetaTheme.ts, copied so the main bundle does not load that module;
+   embedTheme.test.ts keeps them equal. The pinned page header takes the same fixed backdrop, so it hides what
+   scrolls under it without a seam. */
+html.conts-embedded {
+  --conts-page: linear-gradient(rgba(47,107,255,.07) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(90deg,rgba(47,107,255,.07) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(180deg,rgba(250,251,253,.30),rgba(236,239,245,.38)),linear-gradient(118deg,rgba(255,255,255,0) 58%,rgba(255,248,226,.85) 66%,rgba(255,255,255,0) 76%),radial-gradient(48% 52% at 14% 16%,#F6C9D6 0%,rgba(246,201,214,0) 72%),radial-gradient(52% 58% at 90% 34%,#BFE6EA 0%,rgba(191,230,234,0) 72%),radial-gradient(46% 46% at 40% 100%,#CBD3FA 0%,rgba(236,227,207,0) 72%),linear-gradient(160deg,#E6ECEA 0%,#ECEEF3 50%,#DDE2EC 100%);
+}
+html.conts-embedded[data-beta-skin="night"] {
+  --conts-page: linear-gradient(rgba(47,107,255,.07) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(90deg,rgba(47,107,255,.07) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(180deg,rgba(16,18,26,.25),rgba(16,18,26,.35)),radial-gradient(45% 40% at 18% 12%,rgba(70,110,255,.35) 0%,rgba(70,110,255,0) 70%),radial-gradient(40% 40% at 88% 70%,rgba(150,90,255,.28) 0%,rgba(150,90,255,0) 70%),radial-gradient(35% 35% at 50% 100%,rgba(60,180,255,.18) 0%,rgba(60,180,255,0) 70%),linear-gradient(160deg,#151823 0%,#0D0F16 100%);
+}
+html.conts-embedded main.paper-grain,
+html.conts-embedded .page-head {
+  background: var(--conts-page);
+  background-attachment: fixed;
+}
+
+/* The controls above the table (stat cards, filter strips, the table's search and buttons, header buttons) take the
+   look of /projects/list's search bar and tab strip: Beta glass on a solid base, so a menu that opens from one stays
+   readable. The table itself and anything inside a white card keep their look (dreamcrafters feedback, 11 Nov 2026).
+   Values: glass, glassSolid, glassEdge, btnGlassShadow and the inks in renovationBetaTheme.ts. */
+html.conts-embedded {
+  --conts-glass: linear-gradient(180deg,rgba(255,255,255,.86),rgba(244,246,251,.62)), #F7F8FC;
+  --conts-edge: rgba(255,255,255,.8);
+  --conts-glow: inset 0 2px 2px rgba(255,255,255,.95),inset 0 -4px 8px rgba(110,125,160,.18),0 8px 16px -6px rgba(90,105,150,.32),0 1px 2px rgba(40,50,90,.08);
+}
+html.conts-embedded[data-beta-skin="night"] {
+  --conts-glass: linear-gradient(180deg,rgba(255,255,255,.085),rgba(255,255,255,.025)), #1C2030;
+  --conts-edge: rgba(150,175,255,.24);
+  --conts-glow: inset 0 1px 1px rgba(255,255,255,.22),0 0 0 1px rgba(170,140,255,.35),0 0 18px -4px rgba(150,110,255,.45),0 10px 20px -10px rgba(0,0,0,.6);
+}
+html.conts-embedded :is(.page-head .bg-surface, .dt-bar:not(.bg-surface .dt-bar) .bg-surface, .dc-glass:not(.bg-surface .dc-glass)) {
+  background: var(--conts-glass);
+  border-color: var(--conts-edge);
+  box-shadow: var(--conts-glow);
+}
+
+/* Night: text on the page or on that glass takes the Beta night inks. */
+html.conts-embedded[data-beta-skin="night"] .page-head { border-color: rgba(150,175,255,.18); }
+html.conts-embedded[data-beta-skin="night"] :is(.page-head *, .dt-bar:not(.bg-surface .dt-bar) *, .dc-glass:not(.bg-surface .dc-glass), .dc-glass:not(.bg-surface .dc-glass) *).text-ink { color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] :is(.page-head *, .dt-bar:not(.bg-surface .dt-bar) *, .dc-glass:not(.bg-surface .dc-glass), .dc-glass:not(.bg-surface .dc-glass) *).text-ink-secondary { color: #B9C0D0; }
+html.conts-embedded[data-beta-skin="night"] :is(.page-head *, .dt-bar:not(.bg-surface .dt-bar) *, .dc-glass:not(.bg-surface .dc-glass), .dc-glass:not(.bg-surface .dc-glass) *).text-ink-muted { color: #9AA2B4; }
+html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dt-bar:not(.bg-surface .dt-bar), .dc-glass:not(.bg-surface .dc-glass)) ::placeholder { color: #9AA2B4; }
+html.conts-embedded[data-beta-skin="night"] .dc-glass:not(.bg-surface .dc-glass) :is(.text-err) { color: #FF9B90; }
+html.conts-embedded[data-beta-skin="night"] .dc-glass:not(.bg-surface .dc-glass) :is(.text-synced) { color: #7BE8D8; }
+html.conts-embedded[data-beta-skin="night"] .dc-glass:not(.bg-surface .dc-glass) :is(.text-warning-text) { color: #F7CD73; }
+/* Chips and hover tints inside the glass were pale page colours; on night they become a faint white wash. */
+html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dt-bar:not(.bg-surface .dt-bar), .dc-glass:not(.bg-surface .dc-glass)) :is(.bg-bg, .hover\:bg-primary-soft:hover) { background: rgba(255,255,255,.08); }
+/* Blue-black links and chevrons (text-primary) would vanish on night. */
+html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dt-bar:not(.bg-surface .dt-bar), .dc-glass:not(.bg-surface .dc-glass)) .text-primary { color: #EEF1F8; }
+/* A chosen pill and the black main action: flat light ink, as /projects/list marks a chosen tab, so they keep their shape. */
+html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dc-glass:not(.bg-surface .dc-glass)) .bg-primary { background: #EEF1F8; color: #151823; border-color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dc-glass:not(.bg-surface .dc-glass)) .bg-primary :is(.text-white, [class*="text-white/"]) { color: #151823; }
+html.conts-embedded[data-beta-skin="night"] :is(.page-head, .dc-glass:not(.bg-surface .dc-glass)) .bg-primary .bg-white\/20 { background: rgba(21,24,35,.12); }
+
+/* Night: the shared table (DataTable's .dt-table box) was left white, so the Beta screens' light night ink (the
+   /projects/list Project link) was near-invisible on it (YH, 11 Nov 2026). Its head, rows, stripes, lines and inks
+   take the Beta night colours (surface, ink, text2, muted, line, lineSoft in renovationBetaTheme.ts). Solid, not
+   glass: the sticky head and frozen cells must hide what scrolls under them; --dt-row(-alt) also feed those cells.
+   A table inside a white card keeps its look, as the rules above leave that card. */
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) {
+  --dt-row: #1C2030;
+  --dt-row-alt: #232736;
+  background: var(--dt-row);
+  border-color: rgba(150,175,255,.24);
+  color-scheme: dark;
+}
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) tr.bg-surface { background: var(--dt-row); }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) tr.bg-surface-dim\/35 { background: var(--dt-row-alt); }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is(.bg-surface-dim, .bg-surface-dim\/70, .hover\:bg-surface-dim:hover) { background: #2A2F42; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .bg-surface-dim\/20 { background: rgba(255,255,255,.03); }
+/* White panels and buttons inside a cell (a row's expanded lines, a cell button) take the faint night wash, as their text turns light. */
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) td :is(.bg-surface, .bg-surface-2, [class*="bg-surface-2/"]) { background: rgba(255,255,255,.04); }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .border-border { border-color: rgba(150,175,255,.18); }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .border-border-subtle { border-color: rgba(150,175,255,.11); }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-ink { color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-ink-secondary { color: #B9C0D0; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-ink-muted { color: #9AA2B4; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-primary { color: #9FC0FF; }

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef, type ReactNode } from 'react';
 import { readDevice } from './lib/deviceClass';
 import { CrashScreen } from './components/CrashScreen';
 import { Routes, Route, Outlet, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -8,7 +8,8 @@ import TwoStepPrompt from './components/TwoStepPrompt';
 import AppShell from './components/AppShell';
 import UpdateNotice from './components/UpdateNotice';
 import OwnerShell from './components/OwnerShell';
-import LoginPage from './pages/LoginPage';
+// Signed-in visits (nearly all of them) never show it, so it stays out of the entry script.
+const LoginPage = lazy(() => import('./pages/LoginPage'));
 import { HOME, homeFor, screenClosed, switchedOff } from './lib/navigation';
 import { setNavigate } from './lib/go';
 import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
@@ -21,10 +22,10 @@ const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
 // Staging only (it renders nothing elsewhere), so it stays out of the entry script.
 const ViewAs = lazy(() => import('./components/ViewAs'));
-const OwnerBPage = lazy(() => import('./pages/ownerB/OwnerBPage'));
-const OwnerBProfile = lazy(() => import('./pages/ownerB/OwnerBProfile'));
-const ViewAsOwnerPage = lazy(() => import('./pages/ownerB/ViewAsOwnerPage'));
-const SampleOwnerPortalPage = lazy(() => import('./pages/ownerB/SampleOwnerPortalPage'));
+const ViewAsOwnerPage = lazy(() => import('./pages/owners/ViewAsOwnerPage'));
+const OwnerPortalShowcasePage = lazy(() => import('./pages/owners/PortalShowcasePage'));
+const OwnerShowcasePage = lazy(() => import('./pages/showcase/OwnerShowcasePage'));
+const OwnerPortalDemoPage = lazy(() => import('./pages/showcase/OwnerPortalPage'));
 const OwnerOverallReportPage = lazy(() => import('./pages/OwnerOverallReportPage'));
 const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 const BookingsPage = lazy(() => import('./pages/BookingsPage'));
@@ -33,9 +34,10 @@ const OperationsTodayPage = lazy(() => import('./pages/OperationsTodayPage'));
 const CleaningPage = lazy(() => import('./pages/CleaningPage'));
 const EmployeesPage = lazy(() => import('./pages/EmployeesPage'));
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
-import SupplyChainEngine, { signInToEngineEarly } from './components/SupplyChainEngine';
+import SupplyChainEngine, { armEngineSignIn } from './components/SupplyChainEngine';
 import { ENGINE_PATH } from './lib/scmEngine';
 import { useApi } from './lib/useApi';
+import { prefetchScreen } from './lib/routePrefetch';
 const UnitsPage = lazy(() => import('./pages/UnitsPage'));
 const AddUnitPage = lazy(() => import('./pages/units/AddUnitPage'));
 const ProductsPage = lazy(() => import('./pages/ProductsPage'));
@@ -83,6 +85,7 @@ const StockTakesPage = lazy(() => import('./pages/StockTakesPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
 const UnitPnlPage = lazy(() => import('./pages/UnitPnlPage'));
+const AirbnbReconPage = lazy(() => import('./pages/finance/AirbnbReconPage'));
 const YearlyReportPage = lazy(() => import('./pages/YearlyReportPage'));
 const YgrrReportPage = lazy(() => import('./pages/YgrrReportPage'));
 const StatementDetailPage = lazy(() => import('./pages/StatementDetailPage'));
@@ -90,6 +93,8 @@ const OwnerIncomeReportPage = lazy(() => import('./pages/OwnerIncomeReportPage')
 const StatementsPrintPage = lazy(async () => ({ default: (await import('./pages/OwnerIncomeReportPage')).StatementsPrintPage }));
 const ApprovalsPage = lazy(() => import('./pages/ApprovalsPage'));
 const OwnersPage = lazy(() => import('./pages/OwnersPage'));
+const StatementsPage = lazy(() => import('./pages/StatementsPage'));
+const PayoutsPage = lazy(() => import('./pages/PayoutsPage'));
 const OwnerProfilePage = lazy(() => import('./pages/OwnerProfilePage'));
 const ContractsPage = lazy(() => import('./pages/ContractsPage'));
 const LettingsPage = lazy(() => import('./pages/LettingsPage'));
@@ -130,6 +135,14 @@ function SettingsHome() {
 /** A page's code is still downloading: its shape, inside the shell, after a short wait (Loading.tsx). */
 const Fallback = () => <PageSkeleton />;
 
+/** The Owner Showcase and its owner portal have no app shell around them, so they apply the access of Owners >
+ *  Owner portal and showcase themselves (brought back by the owner, 11 Nov 2026; Owner B folded into Owners, 12 Nov). */
+function ShowcaseRoute({ children }: { children: ReactNode }) {
+  const { user } = useSession();
+  if (screenClosed('/owners/portal', user?.access)) return <Navigate to={user ? homeFor(user) : '/'} replace />;
+  return <Suspense fallback={<Fallback />}>{children}</Suspense>;
+}
+
 /** Desktop shell as a layout route; the matched page renders into <Outlet />. */
 
 function AppLayout() {
@@ -147,7 +160,10 @@ function AppLayout() {
   // A screen whose area is closed to this person (Users and roles > Permissions) is not shown even by its address.
   const { user } = useSession();
   const closed = screenClosed(location.pathname, user?.access);
-  useEffect(() => { if (engine.data?.enabled && user) signInToEngineEarly(user.id); }, [engine.data?.enabled, user?.id]);
+  // A screen's first reads start now, while its code downloads (lib/routePrefetch.ts); never for a screen closed to them.
+  useEffect(() => { if (!closed) prefetchScreen(location.pathname, location.search, user); }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The early engine sign-in waits until the menu says a supply chain screen is near (Sidebar.tsx), not every page load.
+  useEffect(() => { armEngineSignIn(engine.data?.enabled && user ? user.id : null); }, [engine.data?.enabled, user?.id]);
   if (switchedOff(location.pathname)) return <Navigate to={user ? homeFor(user) : '/'} replace />;
   const engineShown = viaEngine && !closed;
   return (
@@ -215,6 +231,29 @@ function MovedStatement() {
   return <Moved to={`/owners/statements/${encodeURIComponent(id)}`} />;
 }
 
+/** The Owners list's Statements and Payouts tabs became sub-tabs with their own addresses (owner, 12 Nov 2026).
+ *  Notifications, emails and bookmarks carry /owners?view=statements, so that still opens them, keeping the filters. */
+function OwnersRoute() {
+  const q = new URLSearchParams(useLocation().search);
+  const view = q.get('view');
+  if (view !== 'statements' && view !== 'payouts') return <OwnersPage />;
+  q.delete('view');
+  const qs = q.toString();
+  return <Navigate replace to={`/owners/${view}${qs ? `?${qs}` : ''}`} />;
+}
+
+/** Owner B was folded into Owners (owner, 12 Nov 2026): its list opens Owners > Owner portal and showcase, its
+ *  Statements and Payouts tabs the Owners sub-tabs, a profile the owner profile and View as owner the same view there.
+ *  Its sample owners are gone (the company showcase is the demo), so their portals open the showcase tab. */
+function FromOwnerB() {
+  const { id = '' } = useParams();
+  const { pathname, search } = useLocation();
+  const view = new URLSearchParams(search).get('view');
+  if (!id) return <Navigate replace to={view === 'statements' || view === 'payouts' ? `/owners/${view}` : view === 'owners' ? '/owners' : '/owners/portal'} />;
+  if (pathname.startsWith('/owner-b/sample/')) return <Navigate replace to="/owners/portal" />;
+  return <Navigate replace to={`/owners/${encodeURIComponent(id)}${pathname.endsWith('/portal') ? '/portal' : ''}`} />;
+}
+
 function OwnerProfileRoute() {
   const { id = '' } = useParams();
   return <OwnerProfilePage ownerId={decodeURIComponent(id)} />;
@@ -229,13 +268,13 @@ function Routed() {
   // Emailed reset links carry a token and must work with no session at all.
   if (location.pathname === '/reset-password') {
     const token = new URLSearchParams(location.search).get('token');
-    if (token) return <LoginPage resetToken={token} />;
+    if (token) return <Suspense fallback={<BootScreen />}><LoginPage resetToken={token} /></Suspense>;
   }
-  if (!user) return <LoginPage />;
+  if (!user) return <Suspense fallback={<BootScreen />}><LoginPage /></Suspense>;
   // A temporary password (invite, or management's Reset password) must be replaced before anything else. Sign-in
   // sends the browser to /change-password, which has no screen of its own, so this holds on every address.
   if (user.mustChangePassword) {
-    return <LoginPage key="change-password" forceChangePassword />;
+    return <Suspense fallback={<BootScreen />}><LoginPage key="change-password" forceChangePassword /></Suspense>;
   }
   // Management requires two-step sign-in for this role and it is not set up: nothing else answers until it is.
   if (user.twoStepSetupRequired) {
@@ -247,6 +286,10 @@ function Routed() {
   }
   const account = location.pathname === '/account';
   // Field roles: single-column 44px shell, not the desk nav.
+  if (user.role === 'renovator') {
+    if (!account && !/^\/portal\/(clock|pay|me)(\/|$)/.test(location.pathname)) return <Navigate to="/portal/clock" replace />;
+    return <Suspense fallback={<Fallback />}><FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : location.pathname.startsWith('/portal/me') ? <FieldMePage /> : location.pathname.startsWith('/portal/pay') ? <FieldPayPage /> : <FieldClockPage />}</Suspense></FieldShell></Suspense>;
+  }
   if (user.role === 'housekeeper' || user.role === 'technician') {
     // Cleaners' and technicians' screens moved from /field (then /worker) to /portal; old bookmarks and links follow.
     if (/^\/(field|worker)(\/|$)/.test(location.pathname)) return <Navigate to={location.pathname.replace(/^\/(field|worker)/, '/portal') + location.search} replace />;
@@ -271,6 +314,9 @@ function Routed() {
       {/* The Owner Income Report prints on its own: no app shell around it. */}
       <Route path="/finance/statements/:id/report" element={<Suspense fallback={<Fallback />}><OwnerIncomeReportPage /></Suspense>} />
       <Route path="/finance/statements/print" element={<Suspense fallback={<Fallback />}><StatementsPrintPage /></Suspense>} />
+      {/* Sales staff present it to a prospective owner: full screen, no menu (CONTS-0006; back, owner 11 Nov 2026). */}
+      <Route path="/performance/showcase" element={<ShowcaseRoute><OwnerShowcasePage /></ShowcaseRoute>} />
+      <Route path="/performance/showcase/owner" element={<ShowcaseRoute><OwnerPortalDemoPage /></ShowcaseRoute>} />
       <Route element={<AppLayout />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
@@ -354,26 +400,25 @@ function Routed() {
         {/* Revenue was the same screen as Performance > Analytics (UI audit); one route, the old address redirects. */}
         <Route path="/finance/revenue" element={<Navigate to="/performance/analytics" replace />} />
         <Route path="/performance" element={<Navigate to="/performance/analytics" replace />} />
-        {/* Showcase control was removed (owner, 2 Nov 2026); old links open Owner B, which took the showcase's place. */}
-        <Route path="/performance/showcase-control" element={<Moved to="/owner-b" />} />
-        {/* The Owner Showcase became Owner B's sample owner portal, on the real portal screens (owner, 2 Nov 2026). */}
-        <Route path="/performance/showcase" element={<Moved to="/owner-b" add={{ view: 'sample' }} />} />
-        <Route path="/performance/showcase/owner" element={<Moved to="/owner-b" add={{ view: 'sample' }} />} />
+        {/* Showcase control was removed (owner, 2 Nov 2026); old links open Owners > Owner portal and showcase. */}
+        <Route path="/performance/showcase-control" element={<Moved to="/owners/portal" />} />
         {/* Owner statements and owner payouts moved onto the owner; Expenses is Accounts payable (owner, 11 Oct 2026). */}
         <Route path="/finance/payables" element={<ExpensesPage />} />
         <Route path="/finance/utility-bills" element={<ExpensesPage utilities />} />
         <Route path="/finance/unit-pnl" element={<UnitPnlPage />} />
+        <Route path="/finance/airbnb-reconciliation" element={<AirbnbReconPage />} />
         <Route path="/reports/yearly" element={<YearlyReportPage />} />
         <Route path="/reports/ygrr" element={<YgrrReportPage />} />
         <Route path="/finance/expenses" element={<Moved to="/finance/payables" />} />
-        <Route path="/finance/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
+        <Route path="/finance/statements" element={<Moved to="/owners/statements" />} />
         <Route path="/finance/statements/:id" element={<MovedStatement />} />
-        <Route path="/finance/payouts" element={<Moved to="/owners" add={{ view: 'payouts' }} />} />
+        <Route path="/finance/payouts" element={<Moved to="/owners/payouts" />} />
         <Route path="/finance/approvals" element={<ApprovalsPage />} />
         {/* The same screens in the supply chain Finance group, so that sidebar stays put (finance phase 1). */}
         <Route path="/supply/finance/payables" element={<ExpensesPage />} />
         <Route path="/supply/finance/utility-bills" element={<ExpensesPage utilities />} />
         <Route path="/supply/finance/unit-pnl" element={<UnitPnlPage />} />
+        <Route path="/supply/finance/airbnb-reconciliation" element={<AirbnbReconPage />} />
         <Route path="/supply/finance/approvals" element={<ApprovalsPage />} />
         {/* Project monitor was dropped (owner, 11 Oct 2026): old links open the project Calendar. */}
         <Route path="/projects/monitor" element={<Moved to="/projects/calendar" />} />
@@ -381,18 +426,24 @@ function Routed() {
         <Route path="/beta/home" element={<Moved to="/projects/list" />} />
         <Route path="/beta/projects" element={<Moved to="/projects/list" />} />
         <Route path="/beta/calendar" element={<Moved to="/projects/calendar" />} />
-        <Route path="/owners" element={<OwnersPage />} />
-        <Route path="/owners/:id" element={<OwnerProfileRoute />} />
+        {/* Owners, with its sub-tabs (navigation.ts): each tab keeps an address of its own. */}
+        <Route path="/owners" element={<OwnersRoute />} />
+        <Route path="/owners/statements" element={<StatementsPage />} />
+        <Route path="/owners/payouts" element={<PayoutsPage />} />
         <Route path="/owners/contracts" element={<ContractsPage />} />
-        <Route path="/owner-b" element={<OwnerBPage />} />
-        <Route path="/owner-b/:id" element={<OwnerBProfile />} />
-        <Route path="/owner-b/:id/portal" element={<ViewAsOwnerPage />} />
-        <Route path="/owner-b/sample/:id" element={<SampleOwnerPortalPage />} />
+        {/* Statement close was retired for the Unit report's locks (chew, 13 Nov 2026): its address opens the month there. */}
+        <Route path="/owners/close" element={<Moved to="/portfolio/owner-report" />} />
+        <Route path="/owners/portal" element={<OwnerPortalShowcasePage />} />
+        <Route path="/owners/:id" element={<OwnerProfileRoute />} />
+        <Route path="/owners/:id/portal" element={<ViewAsOwnerPage />} />
+        <Route path="/owner-b" element={<FromOwnerB />} />
+        <Route path="/owner-b/:id" element={<FromOwnerB />} />
+        <Route path="/owner-b/:id/portal" element={<FromOwnerB />} />
+        <Route path="/owner-b/sample/:id" element={<FromOwnerB />} />
         <Route path="/properties/agent-to-let" element={<LettingsPage />} />
         <Route path="/properties/deductions" element={<DeductionsPage />} />
         <Route path="/properties/scheduled-changes" element={<ScheduledChangesPage />} />
         <Route path="/properties/settings" element={<UnitSettingsPage />} />
-        <Route path="/owners/statements" element={<Moved to="/owners" add={{ view: 'statements' }} />} />
         <Route path="/owners/statements/:id" element={<StatementDetailPage />} />
         <Route path="/performance/analytics" element={<AnalyticsPage />} />
         <Route path="/performance/pricing" element={<PricingPage />} />

@@ -13,12 +13,12 @@ import { BusyLine, CardRowsSkeleton, RowsSkeleton } from './Loading';
 import { PageControls } from './PageControls';
 import { useToast } from './Toast';
 import { PhoneText } from './PhoneText';
-import { Floating, ToolButton, PanelItem, PanelHeading, StatusCell, ChannelCell, PersonCell, channelLabel } from './DataTableParts';
+import { Floating, ToolButton, TableFilterChipsContext, type TableFilterChips, PanelItem, PanelHeading, StatusCell, ChannelCell, PersonCell, channelLabel } from './DataTableParts';
 import { useTableViews, type TableLayout, type SavedView } from './DataTableViews';
 import { resolveRelative, isRelative } from '../lib/relativeDates';
 import { rm, date as fmtDate, dateTime as fmtDateTime, count as fmtCount, plural } from '../lib/format';
 import { phone as fmtPhone } from '../lib/phone';
-import { useMedia } from '../lib/useMedia';
+import { useWidthAtLeast } from '../lib/useMedia';
 import { downloadTable, type ExportColumn, type ExportCell, type ExportKind } from '../lib/export';
 import { cx } from '../lib/design-tokens';
 import { statusOf, type AnyTone, type StatusEntity } from '../lib/status';
@@ -45,7 +45,7 @@ export type ColumnType = 'text' | 'date' | 'datetime' | 'money' | 'number' | 're
 export type FilterKind = 'text' | 'select' | 'date' | 'number';
 export type Raw = string | number | boolean | null | undefined;
 
-export interface FilterOption { value: string; label: string; group?: string }
+export interface FilterOption { value: string; label: string; group?: string; /** How many rows this option would show, drawn after the label in the Filters panel (not in the chip). */ count?: number | null }
 
 export interface FilterSpec {
   kind: FilterKind;
@@ -95,6 +95,7 @@ export interface Column<R> {
   sortKey?: string;
   /** false: no filter. Left out: the type's filter in client mode, none in server mode. */
   filter?: FilterSpec | false;
+  filterMatch?: (r: R, picked: ReadonlySet<string>) => boolean;
   /** Hidden until someone turns it on in Columns. */
   hidden?: boolean;
   /** false: always shown (the column that names the row). */
@@ -311,8 +312,9 @@ export function DataTable<R>(props: DataTableProps<R>) {
     exportName, onExport, noun = ['row', 'rows'], renderCard, cardsOnly, maxHeight, bare, noToolbar, noViews, noColumns, footer, defaultSort, phoneSort = true,
     inlineFiltersTarget,
   } = props;
-  const isWideScreen = useMedia('(min-width: 768px)');
-  const inlineFiltersHost = isWideScreen ? inlineFiltersTarget ?? null : null;
+  const [rootBox, setRootBox] = useState<HTMLDivElement | null>(null);
+  const isTableShown = useWidthAtLeast(rootBox, 768) && !cardsOnly;
+  const inlineFiltersHost = isTableShown ? inlineFiltersTarget ?? null : null;
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const P = urlPrefix;
@@ -337,7 +339,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
     const f = filterOf(c);
     if (!f) return [];
     if (server) return f.params ? [...f.params] : f.param ? [f.param] : [];
-    return [`${P}f.${c.key}`];
+    return [f.param ?? `${P}f.${c.key}`];
   }, [filterOf, server, P]);
   /** The current value of a column filter: text / comma list / "from~to". */
   const filterValue = useCallback((c: Column<R>): string => {
@@ -367,12 +369,12 @@ export function DataTable<R>(props: DataTableProps<R>) {
   }, [filterOf, filterKeys, setParams, PAGE]);
   const allFilterKeys = useMemo(() => columns.flatMap(c => filterKeys(c)), [columns, filterKeys]);
   const activeFilters = columns.filter(c => filterValue(c));
-  const clearColumnFilters = () => setParams(prev => {
-    const next = new URLSearchParams(prev);
+  const clearColumnFilters = useCallback(() => setParams(() => {
+    const next = new URLSearchParams(window.location.search);
     for (const k of allFilterKeys) next.delete(k);
     next.delete(PAGE);
     return next;
-  }, { replace: true });
+  }, { replace: true }), [allFilterKeys, setParams, PAGE]);
 
   /* ---- sort ---- */
   const [sortCol, sortDir] = (params.get(SORT) ?? (server ? '' : defaultSort ?? '')).split(':') as [string | undefined, string | undefined];
@@ -400,7 +402,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       if (!v) continue;
       const f = filterOf(c)!;
       if (f.kind === 'text') { const n = v.toLowerCase(); out = out.filter(r => textOf(c, r).toLowerCase().includes(n)); }
-      else if (f.kind === 'select') { const set = new Set(v.split(',')); out = out.filter(r => set.has(String(typeOf(c) === 'status' && !c.value ? textOf(c, r) : rawOf(c, r) ?? ''))); }
+      else if (f.kind === 'select') { const set = new Set(v.split(',')); out = out.filter(r => c.filterMatch ? c.filterMatch(r, set) : set.has(String(typeOf(c) === 'status' && !c.value ? textOf(c, r) : rawOf(c, r) ?? ''))); }
       else if (f.kind === 'date') {
         const [a, b] = splitRange(v);
         out = out.filter(r => { const d = String(rawOf(c, r) ?? '').slice(0, 10); return !!d && (!a || d >= a) && (!b || d <= b); });
@@ -531,6 +533,23 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const colsBtn = useRef<HTMLButtonElement>(null), viewsBtn = useRef<HTMLButtonElement>(null), exportBtn = useRef<HTMLButtonElement>(null);
   const filtersBtn = useRef<HTMLButtonElement>(null), bulkExportBtn = useRef<HTMLButtonElement>(null), moreBtn = useRef<HTMLButtonElement>(null);
   const headAnchor = useRef<HTMLElement | null>(null);
+  const [chipRowClaims, setChipRowClaims] = useState(0);
+  const claimChipRow = useCallback(() => {
+    setChipRowClaims(claims => claims + 1);
+    return () => setChipRowClaims(claims => claims - 1);
+  }, []);
+  const chippedFilters = activeFilters.filter(c => panel !== `col:${c.key}`);
+  // A table with inline filters draws its own result row (count and chips) under the whole toolbar.
+  const hasResultRow = inlineFiltersTarget !== undefined;
+  const tableFilterChips: TableFilterChips = {
+    chips: hasResultRow ? [] : chippedFilters.map(c => ({
+      key: `_column:${c.key}`,
+      label: `${c.label}: ${describeFilter(c, filterOf(c)!, filterValue(c), rows ?? [])}`,
+      onRemove: () => setFilter(c, ''),
+    })),
+    clearAll: clearColumnFilters,
+    claim: claimChipRow,
+  };
   // With no height given, the table's scroll box runs to the bottom of the screen (see useFillHeight).
   const scrollBox = useFillHeight({ enabled: maxHeight === undefined, fallback: maxHeight ?? 'calc(100dvh - 300px)' });
   const [saving, setSaving] = useState<null | { name: string; scope: 'mine' | 'company'; isDefault: boolean }>(null);
@@ -539,7 +558,15 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const firstLoad = rows === null;
   const refreshing = !!loading && !firstLoad;
   const anyFilter = !!filtered || activeFilters.length > 0;
-  const clearEverything = () => { clearColumnFilters(); onClearFilters?.(); };
+  const clearEverything = () => { onClearFilters?.(); clearColumnFilters(); };
+  const filterChip = (c: Column<R>): ReactElement => (
+    <span key={c.key} className="inline-flex items-center gap-1 h-7 pl-[10px] pr-1 rounded-full bg-card border border-solid border-line text-meta max-w-full">
+      <span className="text-muted-ink whitespace-nowrap">{c.label}</span>
+      <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis">{describeFilter(c, filterOf(c)!, filterValue(c), rows ?? [])}</span>
+      <button type="button" aria-label={`Remove the ${c.label} filter`} onClick={() => setFilter(c, '')}
+        className="relative w-5 h-5 grid place-items-center rounded-full border-none bg-transparent cursor-pointer text-muted-ink hover:bg-muted before:content-[''] before:absolute before:-inset-3"><Icon name="X" size="sm" /></button>
+    </span>
+  );
   const pickCol = !!selectable;
   const minWidth = visible.reduce((n, c) => n + (c.width ?? MIN_WIDTH[typeOf(c)]), 0) + (pickCol ? 44 : 0);
   const filterable = columns.filter(c => filterOf(c));
@@ -569,7 +596,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
     <>
       {header}
       {!noToolbar && (
-        <div className="@container/tb flex items-center gap-2 flex-wrap py-[10px] px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+        <div data-live className="@container/tb flex items-start gap-2 flex-wrap py-[10px] px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
           {toolbar && <div className="dt-toolbar flex items-center gap-2 flex-wrap flex-[1_1_260px] min-w-0">{toolbar}</div>}
           <div className={cx('flex items-center gap-2 flex-wrap max-md:flex-[1_1_auto] max-md:justify-end', 'ml-auto')}>
             {actions}
@@ -578,7 +605,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
                 <span className="absolute w-px h-px overflow-hidden [clip:rect(0_0_0_0)]">Sort</span>
                 <select value={sortCol ? `${sortCol}:${sortDir === 'desc' ? 'desc' : 'asc'}` : ''} aria-label="Sort"
                   onChange={e => setParams(prev => { const next = new URLSearchParams(prev); if (e.target.value) next.set(SORT, e.target.value); else next.delete(SORT); next.delete(PAGE); return next; }, { replace: true })}
-                  className="h-9 w-full min-w-0 pl-3 pr-7 appearance-none rounded-control border border-solid border-line bg-card text-ink font-sans text-copy cursor-pointer">
+                  className="h-9 max-md:h-11 w-full min-w-0 pl-3 pr-7 appearance-none rounded-control border border-solid border-line bg-card text-ink font-sans text-copy cursor-pointer">
                   <option value="">Sort</option>
                   {sortChoices.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
@@ -586,7 +613,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
               </label>
             )}
             {filterable.length > 0 && !inlineFiltersHost && (
-              <ToolButton icon="ListFilter" label="Filter" btnRef={filtersBtn} active={panel === 'filters'} count={activeFilters.length}
+              <ToolButton icon="ListFilter" label="Filters" btnRef={filtersBtn} active={panel === 'filters'} count={activeFilters.length}
                 onClick={() => setPanel(p => (p === 'filters' ? null : 'filters'))} />
             )}
             {/* Phones: Sort and Filter stay; Views, Columns and Export move behind one "More" button,
@@ -611,31 +638,28 @@ export function DataTable<R>(props: DataTableProps<R>) {
       )}
 
       {inlineFiltersHost && createPortal(
-        <section aria-label="Filters" className="flex flex-wrap items-center gap-2">
+        <div className="contents">
           {sheetFilters.map(c => (
             <InlineFilter key={c.key} col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)}
               numberBounds={server || filterOf(c)?.kind !== 'number' ? null : numberBoundsOf(c, rows ?? [])} />
           ))}
-          {anyFilter && (
-            <div className="w-full flex flex-wrap items-center gap-2">
-              {sheetFilters.filter(c => filterValue(c)).flatMap(c => filterChipsOf(c, filterOf(c)!, filterValue(c), rows ?? [], v => setFilter(c, v)))}
-              <Button size="sm" variant="tertiary" onClick={clearEverything}>{`Clear all · showing ${fmtCount(total)} ${total === 1 ? noun[0] : noun[1]}`}</Button>
-            </div>
-          )}
-        </section>,
+        </div>,
         inlineFiltersHost,
       )}
 
-      {activeFilters.length > 0 && !inlineFiltersHost && (
+      {hasResultRow && (
+        <div className="flex items-center gap-2 flex-wrap min-h-[44px] py-1.5 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+          <span className="mr-1 text-meta font-semibold text-ink-2 tabular-nums">{rows ? `${fmtCount(total)} ${total === 1 ? noun[0] : noun[1]}` : 'Loading…'}</span>
+          {chippedFilters.map(filterChip)}
+          {activeFilters.length > 1 && (
+            <button type="button" onClick={clearEverything} className="min-h-7 px-1 text-meta font-semibold text-primary bg-transparent border-none cursor-pointer hover:underline">Clear all</button>
+          )}
+        </div>
+      )}
+
+      {!hasResultRow && chippedFilters.length > 0 && chipRowClaims === 0 && (
         <div className="flex items-center gap-2 flex-wrap py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)] bg-page">
-          {activeFilters.map(c => (
-            <span key={c.key} className="inline-flex items-center gap-1 h-7 pl-[10px] pr-1 rounded-full bg-card border border-solid border-line text-meta max-w-full">
-              <span className="text-muted-ink whitespace-nowrap">{c.label}</span>
-              <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis">{describeFilter(c, filterOf(c)!, filterValue(c), rows ?? [])}</span>
-              <button type="button" aria-label={`Remove the ${c.label} filter`} onClick={() => setFilter(c, '')}
-                className="relative w-5 h-5 grid place-items-center rounded-full border-none bg-transparent cursor-pointer text-muted-ink hover:bg-muted before:content-[''] before:absolute before:-inset-3"><Icon name="X" size="sm" /></button>
-            </span>
-          ))}
+          {chippedFilters.map(filterChip)}
           <button type="button" onClick={clearColumnFilters} className="text-meta text-muted-ink bg-transparent border-none cursor-pointer underline">Clear column filters</button>
         </div>
       )}
@@ -663,17 +687,19 @@ export function DataTable<R>(props: DataTableProps<R>) {
       {/* A wide box (the list's own width, not the window's): the table. Its own scroll box keeps the header in view and scrolls sideways when narrow. */}
       <div className={cx(cardsOnly ? 'hidden' : '@max-3xl/dt:hidden', 'relative')}>
         <BusyLine on={refreshing} />
-        <div ref={scrollBox} data-keep-scroll={id} className="overflow-auto" style={{ minHeight: firstLoad || shown.length > 6 ? 240 : undefined }} aria-busy={!!loading}>
+        <div ref={scrollBox} data-keep-scroll={id} className="overflow-auto [scrollbar-gutter:stable]" style={{ minHeight: firstLoad || shown.length > 6 ? 240 : undefined }} aria-busy={!!loading}>
           {firstLoad && !error ? <RowsSkeleton rows={8} cols={Math.min(7, visible.length || 5)} /> : errorView ?? (
             <table className="w-full border-collapse [table-layout:fixed]" style={{ minWidth }}>
               <colgroup>
                 {pickCol && <col style={{ width: 44 }} />}
                 {visible.map(c => <col key={c.key} style={{ width: `${((c.width ?? MIN_WIDTH[typeOf(c)]) / (minWidth - (pickCol ? 44 : 0))) * 100}%` }} />)}
               </colgroup>
-              <thead>
+              {/* The header line is an inset shadow on each cell, not a border: under border-collapse a sticky cell's
+                  border stays behind while it sticks, and rows scrolling under it showed through (Hookka a55394608). */}
+              <thead data-live>
                 <tr>
                   {pickCol && (
-                    <th className="sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] pl-[22px] pr-1 py-[9px] text-left">
+                    <th className="sticky top-0 z-[2] bg-muted [box-shadow:inset_0_-1px_0_var(--color-line)] pl-[22px] pr-1 py-2 text-left">
                       <input type="checkbox" aria-label="Tick every row on this page" className="w-4 h-4 cursor-pointer align-middle" checked={allOnPage}
                         ref={el => { if (el) el.indeterminate = !allOnPage && someOnPage; }} onChange={togglePage} disabled={!pickable.length} />
                     </th>
@@ -682,16 +708,18 @@ export function DataTable<R>(props: DataTableProps<R>) {
                     const k = sortKeyOf(c);
                     const on = !!k && sortCol === k;
                     const right = c.align === 'right' || (!c.align && RIGHT.includes(typeOf(c)));
-                    const f = filterOf(c);
-                    const fOn = !!filterValue(c);
+                    const f = inlineFiltersHost ? null : filterOf(c);
+                    const fOn = !!f && !!filterValue(c);
                     return (
                       <th key={c.key} scope="col" aria-sort={on ? (sortDir === 'desc' ? 'descending' : 'ascending') : undefined}
-                        className={cx('group/th sticky top-0 z-[2] bg-muted [border-bottom:1px_solid_var(--color-line)] py-[9px] text-meta font-semibold text-muted-ink',
+                        className={cx('group/th sticky top-0 z-[2] bg-muted [box-shadow:inset_0_-1px_0_var(--color-line)] py-2 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink',
                           i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]', i === visible.length - 1 && 'pr-[22px]', right ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left')}>
-                        <span className={cx('flex items-center gap-[2px] max-w-full', right && 'justify-end')}>
+                        <span className={cx('relative w-fit flex items-center gap-[2px] max-w-full', right && 'ml-auto flex-row-reverse',
+                          f && !fOn && '[@media(hover:hover)]:max-w-[calc(100%-26px)]',
+                          fOn && (right ? '[@media(hover:hover)]:pl-[26px]' : '[@media(hover:hover)]:pr-[26px]'))}>
                           {k ? (
                             <button type="button" onClick={() => toggleSort(c)} title={c.title ?? `Sort by ${c.label}`}
-                              className={cx('inline-flex items-center gap-1 min-w-0 font-sans text-meta font-semibold bg-transparent border-none cursor-pointer p-0', on ? 'text-ink' : 'text-muted-ink')}>
+                              className={cx('inline-flex items-center gap-1 min-w-0 font-sans text-caption font-bold uppercase tracking-[0.09em] bg-transparent border-none cursor-pointer p-0', on ? 'text-ink' : 'text-muted-ink')}>
                               <span className={cx('line-clamp-2 leading-[1.25] [overflow-wrap:normal]', right ? 'text-right' : 'text-left')}>{c.label}</span>
                               <Icon name={on ? (sortDir === 'desc' ? 'ArrowDown' : 'ArrowUp') : 'ChevronsUpDown'} size="sm" color={on ? 'var(--color-ink)' : 'var(--color-line-strong)'} />
                             </button>
@@ -700,10 +728,13 @@ export function DataTable<R>(props: DataTableProps<R>) {
                             <button type="button" aria-label={`Filter ${c.label}`} title={`Filter ${c.label}`}
                               onClick={e => { headAnchor.current = e.currentTarget; setPanel(p => (p === `col:${c.key}` ? null : `col:${c.key}`)); }}
                               className={cx('w-6 h-6 grid place-items-center shrink-0 rounded-[6px] border-none cursor-pointer', fOn ? 'bg-black text-white' : 'bg-transparent text-[var(--color-line-strong)] hover:text-ink hover:bg-card',
-                                // With a mouse the idle filter button floats over the cell edge and shows on hover, so the label gets
-                                // its width back and "Occupancy" no longer breaks mid-word. Touch screens keep it in place and visible.
-                                !fOn && cx('[@media(hover:hover)]:absolute [@media(hover:hover)]:top-1/2 [@media(hover:hover)]:-translate-y-1/2 [@media(hover:hover)]:bg-muted [@media(hover:hover)]:opacity-0 group-hover/th:opacity-100 focus-visible:opacity-100',
-                                  right ? 'left-1' : 'right-1'))}>
+                                // With a mouse the filter button floats beside the label, so the label gets its width back and
+                                // "Occupancy" no longer breaks mid-word; idle it shows on hover, set it stays visible. Touch screens keep it in place.
+                                '[@media(hover:hover)]:absolute [@media(hover:hover)]:top-1/2 [@media(hover:hover)]:-translate-y-1/2',
+                                !fOn && '[@media(hover:hover)]:bg-muted [@media(hover:hover)]:opacity-0 group-hover/th:opacity-100 focus-visible:opacity-100',
+                                right
+                                  ? (fOn ? '[@media(hover:hover)]:left-0' : '[@media(hover:hover)]:right-full [@media(hover:hover)]:mr-0.5')
+                                  : (fOn ? '[@media(hover:hover)]:right-0' : '[@media(hover:hover)]:left-full [@media(hover:hover)]:ml-0.5'))}>
                               <Icon name="ListFilter" size="sm" />
                             </button>
                           )}
@@ -720,17 +751,17 @@ export function DataTable<R>(props: DataTableProps<R>) {
                   return (
                     <tr key={k} onClick={onRowClick ? () => onRowClick(r) : undefined}
                       tabIndex={onRowClick ? 0 : undefined} onKeyDown={onRowClick ? e => { if (e.key === 'Enter' && e.target === e.currentTarget) onRowClick(r); } : undefined}
-                      className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', onRowClick && 'cursor-pointer hover:bg-page focus-visible:bg-page outline-none', on ? 'bg-gold-tint' : toneClass(r))}>
+                      className={cx('[border-bottom:1px_solid_var(--color-line-soft)]', onRowClick && 'cursor-pointer hover:bg-gold-tint focus-visible:bg-gold-tint outline-none', on ? 'bg-primary-soft' : toneClass(r))}>
                       {pickCol && (
-                        <td className="pl-[22px] pr-1 py-[9px] align-middle" onClick={e => e.stopPropagation()}>
+                        <td className="pl-[22px] pr-1 py-1.5 align-middle" onClick={e => e.stopPropagation()}>
                           {canPick(r) && <input type="checkbox" aria-label="Tick this row" className="w-4 h-4 cursor-pointer align-middle" checked={on} onChange={() => toggleOne(r)} />}
                         </td>
                       )}
                       {visible.map((c, i) => {
                         const right = c.align === 'right' || (!c.align && RIGHT.includes(typeOf(c)));
                         return (
-                          <td key={c.key} className={cx('py-[9px] h-[52px] align-middle text-copy min-w-0 overflow-hidden', i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]',
-                            i === visible.length - 1 && 'pr-[22px]', right ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left')}>
+                          <td key={c.key} className={cx('py-1.5 h-[var(--table-row-height)] align-middle text-copy text-ink-2 min-w-0 overflow-hidden', i === 0 && !pickCol ? 'pl-[22px] pr-[7px]' : 'px-[7px]',
+                            i === visible.length - 1 && 'pr-[22px]', right ? 'text-right tabular-nums' : c.align === 'center' ? 'text-center' : 'text-left')}>
                             <div className={cx('flex flex-col gap-px min-w-0', right && 'items-end', c.align === 'center' && 'items-center')}>
                               {cellFace(c, r)}
                               {c.sub && <span className="text-meta text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis max-w-full">{c.sub(r)}</span>}
@@ -824,7 +855,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
         const c = byKey.get(panel.slice(4));
         if (!c || !filterOf(c)) return null;
         return (
-          <Floating anchor={headAnchor} open onClose={closePanel} width={290} label={`Filter ${c.label}`}>
+          <Floating anchor={headAnchor} open onClose={closePanel} width={290} label={`Filter ${c.label}`} live>
             <div className="p-2.5 flex flex-col gap-2">
               <span className="text-meta font-semibold">{c.label}</span>
               <FilterEditor col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)} onDone={closePanel} autoFocus />
@@ -833,7 +864,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
         );
       })()}
 
-      <Floating anchor={colsBtn} fallback={moreBtn} open={panel === 'columns'} onClose={closePanel} width={300} align="right" label="Columns">
+      <Floating anchor={colsBtn} fallback={moreBtn} open={panel === 'columns'} onClose={closePanel} width={300} align="right" label="Columns" live>
         <ColumnsPanel defs={byKey} layout={layoutCols} onChange={setCols} onReset={() => setCols(mergeColumns(columns, null))} />
       </Floating>
 
@@ -855,7 +886,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       </Floating>
 
       {!noViews && (
-        <Floating anchor={viewsBtn} fallback={moreBtn} open={panel === 'views'} onClose={closePanel} width={320} align="right" label="Saved views">
+        <Floating anchor={viewsBtn} fallback={moreBtn} open={panel === 'views'} onClose={closePanel} width={320} align="right" label="Saved views" live>
           <ViewsPanel views={views} activeId={activeView} onApply={v => { setActiveView(v.id); applyLayout(v.layout); closePanel(); }}
             onSaveNew={() => { closePanel(); setSaving({ name: '', scope: 'mine', isDefault: false }); }}
             onUpdate={async v => {
@@ -877,8 +908,9 @@ export function DataTable<R>(props: DataTableProps<R>) {
     </>
   );
 
-  if (bare) return <div className="@container/dt relative">{body}</div>;
-  return <div className="@container/dt relative bg-card border border-solid border-line rounded-card [overflow:clip] shrink-0">{body}</div>;
+  const withChips = <TableFilterChipsContext.Provider value={tableFilterChips}>{body}</TableFilterChipsContext.Provider>;
+  if (bare) return <div ref={setRootBox} className="@container/dt relative">{withChips}</div>;
+  return <div ref={setRootBox} className="@container/dt relative bg-card border border-solid border-line rounded-card [overflow:clip] shrink-0">{withChips}</div>;
 }
 
 /** A phone card from the columns: title and amount on the first line, the rest as one muted line, status last. */
@@ -961,6 +993,12 @@ function numberBoundsOf<R>(col: Column<R>, rows: R[]): RangeBounds | null {
   return highest > lowest ? { lowest, highest } : null;
 }
 
+const inlineFilterButtonClass = (isOn: boolean): string => cx(
+  'h-[34px] max-md:h-11 inline-flex items-center gap-1.5 pl-2.5 pr-2 rounded-control border border-solid bg-card font-sans text-copy font-semibold whitespace-nowrap cursor-pointer',
+  'outline-none focus-visible:[box-shadow:0_0_0_2px_var(--color-gold)]',
+  isOn ? 'border-ink text-ink' : 'border-line text-ink-2 hover:bg-muted',
+);
+
 /* The one-row filter strip: one dropdown per filter, then a chip per thing picked, each removable on its own. */
 function InlineFilter<R>({ col, spec, value, rows, onChange, numberBounds }: {
   col: Column<R>; spec: FilterSpec; value: string; rows: R[]; onChange: (v: string) => void; numberBounds: RangeBounds | null;
@@ -976,37 +1014,26 @@ function InlineFilter<R>({ col, spec, value, rows, onChange, numberBounds }: {
       if (next.has(one)) next.delete(one); else next.add(one);
       onChange([...next].join(','));
     };
-    return <FilterMenu label={col.label} options={optionsFor(col, spec, rows)} picked={picked} onToggle={toggle} onClear={() => onChange('')} compact />;
+    return <ChecklistFilter label={col.label} options={optionsFor(col, spec, rows)} picked={picked} onToggle={toggle} onClear={() => onChange('')} compact />;
   }
   return (
     <>
-      <button ref={box} type="button" aria-haspopup="dialog" aria-expanded={isOpen} aria-label={`${col.label} filter`} onClick={() => setIsOpen(open => !open)}
-        className={cx('h-9 inline-flex items-center gap-1.5 pl-3 pr-2 rounded-control border border-solid bg-card font-sans text-copy cursor-pointer whitespace-nowrap', value ? 'border-ink text-ink font-medium' : 'border-line text-ink')}>
+      <button ref={box} type="button" aria-haspopup="dialog" aria-expanded={isOpen} aria-label={`${col.label} filter${value ? ', on' : ''}`} onClick={() => setIsOpen(open => !open)}
+        className={inlineFilterButtonClass(!!value)}>
         {col.label}
-        <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
+        <span className="min-w-5 h-5 grid place-items-center shrink-0">
+          {value ? <span aria-hidden className="w-2 h-2 rounded-full bg-ink" /> : <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />}
+        </span>
       </button>
-      <Floating anchor={box} open={isOpen} onClose={() => setIsOpen(false)} label={col.label} width={320}>
-        <div className="p-3">
+      <Floating anchor={box} open={isOpen} onClose={() => setIsOpen(false)} label={col.label} width={360}>
+        <div className="p-4 flex flex-col gap-3">
+          <b className="text-copy">{col.label}</b>
           {spec.kind === 'text' ? <TextFilter value={value} onChange={onChange} label={col.label} autoFocus />
             : <FilterEditor col={col} spec={spec} value={value} rows={rows} onChange={onChange} variant="sheet" numberBounds={numberBounds} />}
         </div>
       </Floating>
     </>
   );
-}
-
-function filterChipsOf<R>(col: Column<R>, spec: FilterSpec, value: string, rows: R[], onChange: (v: string) => void): ReactElement[] {
-  const chip = (key: string, text: string, onRemove: () => void) => (
-    <span key={key} className="inline-flex items-center gap-1 h-7 pl-[10px] pr-1 rounded-full bg-muted text-meta font-medium max-w-full">
-      <span className="truncate">{text}</span>
-      <button type="button" aria-label={`Remove ${text}`} onClick={onRemove}
-        className="relative w-5 h-5 grid place-items-center rounded-full border-none bg-transparent cursor-pointer text-muted-ink hover:bg-card"><Icon name="X" size="sm" /></button>
-    </span>
-  );
-  if (spec.kind !== 'select') return [chip(col.key, `${col.label}: ${describeFilter(col, spec, value, rows)}`, () => onChange(''))];
-  const options = optionsFor(col, spec, rows);
-  const picked = value.split(',');
-  return picked.map(v => chip(`${col.key}:${v}`, options.find(o => o.value === v)?.label ?? v, () => onChange(picked.filter(x => x !== v).join(','))));
 }
 
 function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, variant = 'popover', numberBounds = null }: {
@@ -1024,7 +1051,7 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, 
       if (next.has(picked)) next.delete(picked); else next.add(picked);
       onChange([...next].join(','));
     };
-    if (variant !== 'popover' && spec.display === 'menu') return <FilterMenu label={col.label} options={opts} picked={on} onToggle={toggle} onClear={() => onChange('')} />;
+    if (variant !== 'popover' && spec.display === 'menu') return <ChecklistFilter label={col.label} options={opts} picked={on} onToggle={toggle} onClear={() => onChange('')} />;
     if (variant !== 'popover') return <FilterChips label={col.label} options={opts} picked={on} hint={spec.hint} onToggle={toggle} />;
     return (
       <div className="flex flex-col gap-px max-h-[280px] overflow-y-auto" role="group" aria-label={col.label}>
@@ -1035,18 +1062,19 @@ function FilterEditor<R>({ col, spec, value, rows, onChange, onDone, autoFocus, 
             <input type={multi ? 'checkbox' : 'radio'} name={`dt-${col.key}`} checked={on.has(o.value)} className="w-4 h-4 cursor-pointer"
               onChange={() => toggle(o.value)} />
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{typeOf(col) === 'channel' ? <ChannelCell channel={o.value} /> : o.label}</span>
+            {o.count != null && <span className="ml-auto text-meta text-muted-ink tabular-nums">{fmtCount(o.count)}</span>}
           </label>
         ))}
         {on.size > 0 && <button type="button" onClick={() => onChange('')} className="self-start mt-1 text-meta text-muted-ink bg-transparent border-none cursor-pointer underline px-2">Any {col.label.toLowerCase()}</button>}
       </div>
     );
   }
-  if (variant !== 'popover') return <LiveRangeFilter kind={spec.kind} money={typeOf(col) === 'money'} label={col.label} bounds={numberBounds} hint={spec.hint} value={value} onChange={onChange} layout="stacked" />;
+  if (variant !== 'popover') return <LiveRangeFilter kind={spec.kind} money={typeOf(col) === 'money'} label={col.label} bounds={numberBounds} hint={spec.hint} value={value} onChange={onChange} />;
   return <RangeFilter kind={spec.kind} money={typeOf(col) === 'money'} hint={spec.hint} value={value} onChange={onChange} onDone={onDone} />;
 }
 
 function FilterChips({ label, options, picked, hint, onToggle }: {
-  label: string; options: { value: string; label: string }[]; picked: Set<string>; hint?: string; onToggle: (value: string) => void;
+  label: string; options: { value: string; label: string; count?: number | null }[]; picked: Set<string>; hint?: string; onToggle: (value: string) => void;
 }): ReactElement {
   const [search, setSearch] = useState('');
   const needle = search.trim().toLowerCase();
@@ -1070,6 +1098,7 @@ function FilterChips({ label, options, picked, hint, onToggle }: {
                 isPicked ? 'bg-black border-black text-white' : 'bg-card border-line text-ink hover:bg-muted')}>
               {isPicked ? <Icon name="Check" size="sm" /> : <span aria-hidden className="w-3.5 h-3.5 rounded-full border border-solid border-[var(--color-line-strong)] shrink-0" />}
               <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{o.label}</span>
+              {o.count != null && <span className={cx('text-meta tabular-nums', isPicked ? 'text-white/75' : 'text-muted-ink')}>{fmtCount(o.count)}</span>}
             </button>
           );
         })}
@@ -1079,7 +1108,7 @@ function FilterChips({ label, options, picked, hint, onToggle }: {
   );
 }
 
-function FilterMenu({ label, options, picked, onToggle, onClear, compact = false }: {
+function ChecklistFilter({ label, options, picked, onToggle, onClear, compact = false }: {
   label: string; options: FilterOption[]; picked: Set<string>; onToggle: (value: string) => void; onClear: () => void;
   /** The one-row strip: the button names the filter and counts, the chips say what is picked. */
   compact?: boolean;
@@ -1096,11 +1125,14 @@ function FilterMenu({ label, options, picked, onToggle, onClear, compact = false
   return (
     <div className={compact ? 'shrink-0' : 'w-full max-w-[360px]'}>
       <button ref={box} type="button" aria-haspopup="listbox" aria-expanded={isOpen} aria-label={`${label}: ${summary}`} onClick={() => setIsOpen(open => !open)}
-        className={cx('h-9 max-md:h-11 flex items-center gap-2 pl-3 pr-2 rounded-control border border-solid bg-card font-sans text-copy text-left cursor-pointer',
-          compact ? 'whitespace-nowrap' : 'w-full', picked.size ? 'border-ink text-ink font-medium' : compact ? 'border-line text-ink' : 'border-line text-muted-ink')}>
+        className={compact ? inlineFilterButtonClass(picked.size > 0)
+          : cx('h-9 max-md:h-11 w-full flex items-center gap-2 pl-3 pr-2 rounded-control border border-solid bg-card font-sans text-copy text-left cursor-pointer', picked.size ? 'border-ink text-ink' : 'border-line text-muted-ink')}>
         <span className={compact ? '' : 'flex-1 min-w-0 truncate'}>{compact ? label : summary}</span>
-        {picked.size > 0 && <span className="min-w-5 h-5 px-1.5 grid place-items-center rounded-full bg-ink text-card text-caption font-semibold">{picked.size}</span>}
-        <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />
+        <span className="min-w-5 h-5 grid place-items-center shrink-0">
+          {picked.size > 0
+            ? <span className="box-border min-w-[18px] h-[18px] px-[5px] grid place-items-center rounded-full bg-primary text-on-primary text-caption font-semibold tabular-nums">{picked.size}</span>
+            : <Icon name="ChevronDown" size="sm" color="var(--color-muted-ink)" />}
+        </span>
       </button>
       <Floating anchor={box} open={isOpen} onClose={close} label={label} width={Math.max(box.current?.offsetWidth ?? 0, 280)}>
         <div className="flex items-center gap-2 px-3 h-10 [border-bottom:1px_solid_var(--color-line-soft)]">
@@ -1174,9 +1206,9 @@ function RangeEnds({ kind, money, from, to, onFrom, onTo }: {
   const unit = money ? ' (RM)' : '';
   const isBackwards = isBackwardsRange(kind, from, to);
   return (
-    <div className="grid grid-cols-2 gap-2">
-      <RangeEnd kind={kind} money={money} label={kind === 'date' ? 'From' : `At least${unit}`} value={from} onChange={onFrom} />
-      <RangeEnd kind={kind} money={money} label={kind === 'date' ? 'To' : `At most${unit}`} value={to} onChange={onTo}
+    <div className="grid grid-cols-2 gap-3">
+      <RangeEnd kind={kind} money={money} label={kind === 'date' ? 'From' : `Min${unit}`} value={from} onChange={onFrom} />
+      <RangeEnd kind={kind} money={money} label={kind === 'date' ? 'To' : `Max${unit}`} value={to} onChange={onTo}
         min={kind === 'date' ? from || undefined : undefined} error={isBackwards ? (kind === 'date' ? 'Before the start.' : 'Below the minimum.') : undefined} />
     </div>
   );
@@ -1225,9 +1257,8 @@ function RangeSlider({ label, money, bounds, from, to, onFrom, onTo }: {
   );
 }
 
-function LiveRangeFilter({ kind, money, label, bounds, hint, value, onChange, layout }: {
+function LiveRangeFilter({ kind, money, label, bounds, hint, value, onChange }: {
   kind: 'date' | 'number'; money: boolean; label: string; bounds: RangeBounds | null; hint?: string; value: string; onChange: (v: string) => void;
-  layout: 'stacked' | 'row';
 }): ReactElement {
   const [savedFrom, savedTo] = splitRange(value);
   const [from, setFrom] = useState(savedFrom), [to, setTo] = useState(savedTo);
@@ -1244,21 +1275,16 @@ function LiveRangeFilter({ kind, money, label, bounds, hint, value, onChange, la
   }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { if (pendingValue.current !== null) latestOnChange.current(pendingValue.current); }, []);
   return (
-    <div className={layout === 'row' ? 'flex flex-wrap items-end gap-x-5 gap-y-2' : 'flex flex-col gap-2'}>
-      {hint && <span className="text-caption text-muted-ink">{hint}</span>}
-      {kind === 'number' && bounds ? (
-        <div className={layout === 'row' ? 'w-[360px]' : undefined}>
-          <RangeSlider label={label} money={money} bounds={bounds} from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        </div>
-      ) : (
-        <div className={layout === 'row' ? 'w-[340px]' : undefined}>
-          <RangeEnds kind={kind} money={money} from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        </div>
+    <div className="flex flex-col gap-4">
+      {hint && <span className="text-meta text-muted-ink">{hint}</span>}
+      {kind === 'number' && bounds && (
+        <RangeSlider label={label} money={money} bounds={bounds} from={from} to={to} onFrom={setFrom} onTo={setTo} />
       )}
-      {(from || to) && (
-        <button type="button" onClick={() => { setFrom(''); setTo(''); }}
-          className="self-start min-h-9 max-md:min-h-11 text-meta text-muted-ink bg-transparent border-none cursor-pointer underline px-0">Any {kind === 'date' ? 'date' : 'amount'}</button>
-      )}
+      <RangeEnds kind={kind} money={money} from={from} to={to} onFrom={setFrom} onTo={setTo} />
+      <button type="button" onClick={() => { setFrom(''); setTo(''); }} aria-hidden={!(from || to)} tabIndex={from || to ? 0 : -1}
+        className={cx('self-start min-h-9 max-md:min-h-11 -mt-2 text-meta text-muted-ink bg-transparent border-none cursor-pointer underline px-0', !(from || to) && 'invisible')}>
+        Any {kind === 'date' ? 'date' : 'amount'}
+      </button>
     </div>
   );
 }
@@ -1434,7 +1460,7 @@ function PhoneMoreMenu({ items, btnRef }: { items: { icon: string; label: string
   return (
     <span className="md:hidden @max-3xl/tb:inline">
       <button ref={btnRef} type="button" onClick={() => setOpen(true)} aria-label="More table tools" aria-haspopup="menu"
-        className="h-9 w-9 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer">
+        className="h-9 w-9 max-md:h-11 max-md:w-11 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer">
         <Icon name="Ellipsis" size="sm" />
       </button>
       {open && (

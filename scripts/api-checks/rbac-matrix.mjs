@@ -262,18 +262,18 @@ async function scenarios(ownerA, ownerB, ids) {
 
   // "No access" chosen on the chart refuses reads in that area everywhere, exports and search included,
   // while the shared unit list keeps the other screens working.
-  r = await call(M, 'PUT', '/api/users/access', { changes: [{ scope: 'position', scopeId: staffPos, key: 'reservations', level: 'none' }] });
-  check('management sets operations staff to No access on Reservations', r.status === 200, r.text.slice(0, 160));
+  r = await call(M, 'PUT', '/api/users/access', { changes: ['calendar', 'reservations', 'guests'].map(key => ({ scope: 'position', scopeId: staffPos, key, level: 'none' })) });
+  check('management sets operations staff to No access on Calendar, Reservations and Guests', r.status === 200, r.text.slice(0, 160));
   await sleep(11_000);
   for (const p of ['/api/reservations', `/api/reservations/${ids.reservations}`, '/api/reservations/export', '/api/reservations/calendar', '/api/guests', `/api/guests/${ids.guests}`, '/api/guest-documents']) {
     r = await call(S, 'GET', p);
-    check(`No access on Reservations refuses ${p.replace(/\/[0-9a-z-]{20,}$/, '/:id')}`, r.status === 403, `${r.status}`);
+    check(`No access on Calendar, Reservations and Guests refuses ${p.replace(/\/[0-9a-z-]{20,}$/, '/:id')}`, r.status === 403, `${r.status}`);
   }
   r = await call(S, 'GET', '/api/search?q=a');
-  check('No access on Reservations: search finds no bookings or guests', r.status === 200 && !r.json.some(h => h.kind === 'reservation' || h.kind === 'guest'), r.text.slice(0, 160));
+  check('No access on Calendar, Reservations and Guests: search finds no bookings or guests', r.status === 200 && !r.json.some(h => h.kind === 'reservation' || h.kind === 'guest'), r.text.slice(0, 160));
   r = await call(S, 'GET', '/api/units');
-  check('No access on Reservations: the shared unit list still answers', r.status === 200, `${r.status}`);
-  await call(M, 'PUT', '/api/users/access', { changes: [{ scope: 'position', scopeId: staffPos, key: 'reservations', level: null }] });
+  check('No access on Calendar, Reservations and Guests: the shared unit list still answers', r.status === 200, `${r.status}`);
+  await call(M, 'PUT', '/api/users/access', { changes: ['calendar', 'reservations', 'guests'].map(key => ({ scope: 'position', scopeId: staffPos, key, level: null })) });
   await sleep(11_000);
   r = await call(S, 'GET', '/api/reservations');
   check('putting the level back restores reading', r.status === 200, `${r.status}`);

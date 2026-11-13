@@ -106,6 +106,7 @@ import { useServerSort } from "../hooks/useServerSort";
 import { useFocusFromUrl } from "../hooks/useFocusFromUrl";
 import { useAuth } from "../auth/AuthContext";
 import { isSalesStaff } from "../auth/salesAccess";
+import { usePageAccess } from "../auth/PageGuard";
 import { api, buildQuery } from "../api/client";
 import { formatPhone } from "../vendor/shared/phone";
 import {
@@ -332,7 +333,6 @@ export function ServiceCases() {
   // — view selection lives in the sidebar.
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { can } = useAuth();
   // Service Maintenance (settings / lead_time) is the module's ADMIN surface.
   // Sidebar.tsx gates its nav entry on `service_cases.manage`; this page had no
   // matching gate, so the hub card below offered it to everyone the /assr route
@@ -341,7 +341,7 @@ export function ServiceCases() {
   // `service_cases.read`, so a reader without manage got the config back at 200
   // and a raw 403 toast on every write. Gate on the same permission the nav
   // uses so both agree.
-  const canManageService = can("service_cases.manage");
+  const canManageService = usePageAccess("service_cases.settings") === "full";
   const [storedView, setStoredView] = useIdentityPreference<ServiceView>(
     "assr:view",
     "cases",

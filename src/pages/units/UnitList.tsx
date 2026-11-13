@@ -6,6 +6,7 @@ import { statusOf } from '../../lib/status';
 import { PURPOSE_LABEL, USED_BY, typeOptions, packageOf } from '../../lib/revenueModel';
 import { useContractTypes } from '../../lib/useContractTypes';
 import { CodeBadge } from './UnitExtras';
+import { buildingName, personName } from '../../lib/format';
 
 const USED_BY_LABEL = Object.fromEntries(USED_BY.map(u => [u.value, u.label]));
 
@@ -24,7 +25,7 @@ export function UnitList({ units, buildings, readiness, loading, error, onRetry,
       sub: u => (u.parentUnitId ? `Part of ${code(u) ?? 'another unit'}` : u.listingName || null) },
     { key: 'listing', label: 'Listing name', value: u => u.listingName, hidden: true, width: 200 },
     { key: 'building', label: 'Building', value: u => byId.get(u.buildingId)?.name ?? '', width: 160,
-      filter: { kind: 'select', options: buildings.map(b => ({ value: b.name, label: b.name })) } },
+      filter: { kind: 'select', options: buildings.map(b => ({ value: b.name, label: buildingName(b.name) })) } },
     // Staff sheet UNIT (17 Oct 2026): what the unit is for; only rental units are on the channels.
     { key: 'purpose', label: 'Purpose', value: u => PURPOSE_LABEL[u.purpose ?? 'rental'], width: 110,
       filter: { kind: 'select', options: Object.values(PURPOSE_LABEL).map(v => ({ value: v, label: v })) } },
@@ -32,7 +33,7 @@ export function UnitList({ units, buildings, readiness, loading, error, onRetry,
       filter: { kind: 'select', options: USED_BY.map(x => ({ value: x.label, label: x.label })) } },
     { key: 'state', label: 'State', value: u => byId.get(u.buildingId)?.state ?? u.state, width: 130, filter: { kind: 'select' } },
     { key: 'city', label: 'City', value: u => byId.get(u.buildingId)?.city ?? '', hidden: true, width: 130 },
-    { key: 'owner', label: 'Owner', type: 'person', value: u => u.ownerName, width: 170 },
+    { key: 'owner', label: 'Owner', type: 'person', value: u => personName(u.ownerName), width: 170 },
     // From the contract's code, so it can never disagree with the Contract column (units.package is a stale import field).
     { key: 'package', label: 'Package', value: u => packageOf(types, u.contractCode), width: 110, filter: { kind: 'select' } },
     { key: 'code', label: 'Contract', value: u => u.contractCode ?? null, width: 96, render: u => <CodeBadge code={u.contractCode} types={types} size="sm" />,

@@ -3,7 +3,7 @@ import { verifyPassword, securitySettings } from '../../_lib/auth';
 import { doorFor, doorRefusal } from '../../_lib/door';
 import { addressRefusal, logLogin, signChallenge, twoFactorAvailable, twoFactorTables } from '../../_lib/twoFactor';
 import { completeSignIn, countFailure, lockedMessage, type SignInUser } from '../../_lib/signIn';
-import { employeeIdOf, hasEmployeeIds } from '../../_lib/fieldPin';
+import { PIN_ROLES, employeeIdOf, hasEmployeeIds } from '../../_lib/fieldPin';
 
 /**
  * POST /api/auth/login-pin { employeeId, pin } — the field app's sign-in for cleaners and technicians given app access
@@ -25,7 +25,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const user = employeeId && await hasEmployeeIds(env)
     ? await one<SignInUser & { password_hash: string; failed_attempts: number; locked_until: string | null; is_active: number }>(env,
       `SELECT id, email, full_name, password_hash, role, must_change_password, failed_attempts, locked_until, is_active${totp ? ', totp_enabled_at' : ''}
-       FROM users WHERE employee_id = ? AND role IN ('housekeeper','technician') LIMIT 1`, employeeId)
+       FROM users WHERE employee_id = ? AND role IN (${PIN_ROLES.map(() => '?').join(', ')}) LIMIT 1`, employeeId, ...PIN_ROLES)
     : null;
 
   // Same response shape and timing whether or not the account exists.

@@ -22,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (!(await hasEmployees(env)) || !(await hasPayroll(env))) return fail('NOT_MIGRATED', NOT_MIGRATED, 503);
   const me = await employeeForUser(env, session.userId);
-  if (!me) return fail('FORBIDDEN', 'Pay is for the company\'s own cleaners and technicians.', 403);
+  if (!me) return fail('FORBIDDEN', 'Pay is for the company\'s own staff.', 403);
 
   const today = mytToday();
   const asked = new URL(request.url).searchParams.get('month');

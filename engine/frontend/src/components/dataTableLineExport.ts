@@ -9,7 +9,7 @@
  *                         where getValue holds sen for sorting). Repeats per line.
  *   getValue(row)         otherwise, the grid's own value. Repeats per line.
  *   exportFormat          the Excel cell type: date = a real date cell shown
- *                         yyyy/mm/dd (AutoCount's listing format), money = number
+ *                         dd/mm/yyyy (YH, 11 Nov 2026), money = number
  *                         #,##0.00, rate = number with up to 4 decimals (a unit
  *                         price), number = a plain number, text = as is.
  *
@@ -105,7 +105,7 @@ const NUMBER_FORMAT: Record<ExportFormat, string | null> = {
   number: "General",
   money: "#,##0.00",
   rate: "#,##0.00##",
-  date: "yyyy/mm/dd",
+  date: "dd/mm/yyyy",
 };
 
 export async function writeLineExportFile(matrix: LineExportMatrix, sheetName: string, fileName: string): Promise<void> {

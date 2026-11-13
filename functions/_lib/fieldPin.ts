@@ -1,9 +1,9 @@
 import { type Env, one } from './db';
 import { hasColumn } from './auth';
 
-/** Field sign-in for cleaners and technicians (migration 0145): an employee ID (EMP-001) in users.employee_id and a
- *  6-digit PIN in users.password_hash. Only these two roles may have one. */
-export const PIN_ROLES = ['housekeeper', 'technician'];
+/** Field sign-in for cleaners, technicians and Renovation staff (migrations 0145, 0316): an employee ID (EMP-001) in
+ *  users.employee_id and a 6-digit PIN in users.password_hash. Only these roles may have one. */
+export const PIN_ROLES = ['housekeeper', 'technician', 'renovator'];
 
 /** A field account still needs a unique email; this one can never receive mail (.invalid is reserved). */
 export const NO_EMAIL_DOMAIN = '@no-email.invalid';

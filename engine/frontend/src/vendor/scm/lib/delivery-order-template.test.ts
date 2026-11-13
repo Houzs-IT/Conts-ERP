@@ -226,7 +226,7 @@ describe('Delivery Order template', () => {
     // The title top right; the number and issue date under it, the scan code beside them.
     const title = spans.find((s) => s.text === 'DELIVERY ORDER');
     expect(title).toBeDefined();
-    const meta = spans.filter((s) => [`No. : ${HEADER.do_number}`, 'Issued: 2026/08/06'].includes(s.text));
+    const meta = spans.filter((s) => [`No. : ${HEADER.do_number}`, 'Issued: 06/08/2026'].includes(s.text));
     expect(meta).toHaveLength(2);
     const qr = spans.find((s) => s.text === 'SCAN AT EACH STEP');
     expect(qr).toBeDefined();

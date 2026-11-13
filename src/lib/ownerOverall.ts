@@ -7,7 +7,11 @@
  *    PS: O1 = GP x owner %, owner base = the higher of O1 and GRR
  *    LT: owner base = LT (owner % and O1 unused)
  *    owner payout    = owner base + O2
- *    gain/loss       = GP - owner base (O2 is passed straight to the owner and does not change it)
+ *    gain/loss       = GP - owner base + late (O2 is passed straight to the owner and does not change it; late is
+ *                      the company's share of changes to an earlier, locked month that counts this month: part 2b)
+ *    agent           = PS: GP x the contract's agent %, never below 0 (the owner workbook's A PAYOUT, a guarantee
+ *                      top-up included); LT: 0. Part 3, spec call 12.
+ *    company         = gain/loss - agent, so the two always add up to gain/loss
  *
  *  `contract` picks the formula: PS for a share, LT for a fixed owner base (a long-term let's part of the rent, a GRR
  *  or master lease rent). The report groups rows by income model, ReportGroup. */
@@ -17,15 +21,15 @@ export const occupancyLabel = (pct: number): string => `${pct.toFixed(2)}%`;
 
 export type Contract = 'LT' | 'PS';
 
-/** PS: Package A, B and D. LT: Package C. NONE: no contract record yet (the unit's own split is used). */
-export type ReportGroup = 'PS' | 'LT' | 'RTR' | 'MANAGE' | 'NONE';
-export const REPORT_GROUPS: readonly ReportGroup[] = ['PS', 'LT', 'RTR', 'MANAGE', 'NONE'];
+/** PS: Package A, B and D. LT: Package C. */
+export type ReportGroup = 'PS' | 'LT' | 'RTR' | 'MANAGE';
+export const REPORT_GROUPS: readonly ReportGroup[] = ['PS', 'LT', 'RTR', 'MANAGE'];
 export const GROUP_NAME: Record<ReportGroup, string> = {
-  PS: 'Profit sharing', LT: 'Long term', RTR: 'Rent to rent', MANAGE: 'Listing management', NONE: 'No contract',
+  PS: 'Profit sharing', LT: 'Long term', RTR: 'Rent to rent', MANAGE: 'Listing management',
 };
 /** What the LT / GRR column holds for the group. */
 export const OWNER_BASE_NAME: Record<ReportGroup, string> = {
-  PS: 'GRR (guaranteed minimum)', LT: "Owner's part of the rent", RTR: 'Rent to owner', MANAGE: 'GRR (guaranteed minimum)', NONE: 'Fixed rent',
+  PS: 'GRR (guaranteed minimum)', LT: "Owner's part of the rent", RTR: 'Rent to owner', MANAGE: 'GRR (guaranteed minimum)',
 };
 
 export interface OverallInput {
@@ -35,14 +39,22 @@ export interface OverallInput {
   electricity: number; water: number; internet: number; sewerage: number;
   /** PS only: the owner's percentage of GP (80 for 80%). */
   ownerPct: number;
+  /** PS only: the agent's percentage of GP (10 for 10%), part of the operator's share; 0 when the contract has none. */
+  agentPct?: number;
   /** LT: the fixed monthly rent. PS: the monthly guaranteed minimum (GRR), 0 when there is none. */
   ltGrr: number;
   o2: number;
+  /** The company's share (sen) of late changes to an earlier month whose income or deductions were locked, counted
+   *  this month (owner statement close part 2b, chew's choice A). 0 when absent. */
+  late?: number;
   nights: number; days: number;
 }
 
 export interface OverallFigures extends OverallInput {
+  late: number;
   deductions: number; gp: number; o1: number; ownerBase: number; payout: number; gainLoss: number;
+  /** Gain / Loss split: the agent's part and what the company keeps (agent + company = gainLoss). */
+  agent: number; company: number;
   /** Percent, 0-100. */
   occupancy: number;
   revPerNight: number;
@@ -60,10 +72,13 @@ export function overallFigures(i: OverallInput): OverallFigures {
   const gp = i.revenue - deductions;
   const o1 = i.contract === 'PS' ? roundSen((gp * i.ownerPct) / 100) : 0;
   const ownerBase = i.contract === 'PS' ? Math.max(o1, i.ltGrr) : i.ltGrr;
+  const late = i.late ?? 0;
+  const gainLoss = gp - ownerBase + late;
+  const agent = i.contract === 'PS' ? Math.max(0, roundSen((gp * (i.agentPct ?? 0)) / 100)) : 0;
   return {
-    ...i, deductions, gp, o1, ownerBase,
+    ...i, late, deductions, gp, o1, ownerBase,
     payout: ownerBase + i.o2,
-    gainLoss: gp - ownerBase,
+    gainLoss, agent, company: gainLoss - agent,
     occupancy: i.days ? (i.nights / i.days) * 100 : 0,
     revPerNight: i.nights ? Math.round(i.revenue / i.nights) : 0,
     margin: i.revenue ? (gp / i.revenue) * 100 : 0,
@@ -72,8 +87,8 @@ export function overallFigures(i: OverallInput): OverallFigures {
 }
 
 /** The columns that add up across units. */
-export const SUMMED = ['revenue', 'cleaning', 'utilities', 'electricity', 'water', 'internet', 'sewerage', 'additional', 'misc', 'deductions', 'gp', 'ltGrr', 'o1', 'o2',
-  'ownerBase', 'payout', 'gainLoss', 'breakEven', 'nights', 'days'] as const;
+export const SUMMED = ['revenue', 'cleaning', 'utilities', 'electricity', 'water', 'internet', 'sewerage', 'additional', 'misc', 'deductions', 'gp', 'ltGrr', 'o1', 'o2', 'late',
+  'ownerBase', 'payout', 'gainLoss', 'agent', 'company', 'breakEven', 'nights', 'days'] as const;
 export type Summed = typeof SUMMED[number];
 
 export interface OverallTotals extends Record<Summed, number> {

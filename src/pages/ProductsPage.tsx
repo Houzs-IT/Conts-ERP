@@ -321,7 +321,7 @@ function ProductDrawer({ draft, onClose, onSubmit, onDelete }: { draft: Draft; o
   const canSubmit = f.code.trim() !== '' && f.name.trim() !== '';
 
   return (
-    <Drawer open onClose={onClose} width={640}>
+    <Drawer open onClose={onClose} dirty="typed" width={640}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">{f.id ? 'Edit product' : 'New SKU'}</h2>
         <CloseButton onClick={onClose} />

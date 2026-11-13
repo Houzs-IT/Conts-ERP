@@ -7,6 +7,7 @@ import { isTenancy } from './revenueModel';
 import { DEDUCTION_WORDS } from './unitCosts';
 import { hasCleanPrices } from './cleaningPrices';
 import { cleaningMoney, maintenanceMoney } from './jobProfit';
+import { companyLateFor } from './ownerLocks';
 
 export type Item = { label: string; amount: number };
 export type PnlRow = { label: string; amount: number; type: string; items?: Item[] };
@@ -42,7 +43,7 @@ export function cachedQuery(env: Env): Query {
  */
 export async function unitMonthPnl(env: Env, q: Query, unitId: string, month: string): Promise<{ pnl?: PnlRow[]; companyPnl?: PnlRow[] }> {
   const from = `${month}-01`, toEx = monthEndExclusive(month);
-  const [settings, inputs, example, costs] = await Promise.all([
+  const [settings, inputs, example, costs, lateRows] = await Promise.all([
     statementSettings(q),
     loadInputs(q, from, toEx, { unitId }),
     unitExample(q, unitId, month),
@@ -50,6 +51,8 @@ export async function unitMonthPnl(env: Env, q: Query, unitId: string, month: st
     all<any>(env, `SELECT e.id, e.category, e.charge_to, e.description, e.amount, e.incurred_on, t.kind AS task_kind
       FROM expenses e LEFT JOIN tasks t ON t.id = e.task_id
       WHERE e.unit_id = ? AND e.incurred_on >= ? AND e.incurred_on < ? ORDER BY e.incurred_on`, unitId, from, toEx),
+    // The company's share of late changes to an earlier, locked month that counts this month (part 2b, choice A).
+    companyLateFor(env, [unitId], month, month),
   ]);
   const m = computeMonth(month, await withYearToDate(q, inputs, month, settings), settings, 'dated').find(x => x.unitId === unitId) ?? null;
   if (!m) return {};
@@ -86,6 +89,9 @@ export async function unitMonthPnl(env: Env, q: Query, unitId: string, month: st
   pnl.push({ label: 'Net Payout to Owner', amount: m.netPayout, type: 'net' });
 
   if (!example) return { pnl };
+  const lateHere = lateRows.get(`${unitId}|${month}`);
+  const late = lateHere?.amount ?? 0;
+  const lateLine: PnlRow[] = late ? [{ label: 'Late changes from locked months', amount: late, type: 'adjustment', items: lateHere!.items }] : [];
   let companyPnl: PnlRow[];
   if (example.company) {
     // What the unit traded: the same night split of the stays on a share basis with nothing to the owner (unitExample).
@@ -103,7 +109,8 @@ export async function unitMonthPnl(env: Env, q: Query, unitId: string, month: st
         return { label: DEDUCTION_WORDS[k] ?? label, amount: items.reduce((n, i) => n + i.amount, 0), type: 'expense', items };
       }),
       { label: m.terms.model === 'master_lease' ? 'Lease rent paid to owner' : 'Guaranteed rent paid to owner', amount: neg(example.company.rentToOwner), type: 'fee' },
-      { label: "The Conts' result", amount: example.company.result, type: 'net' },
+      ...lateLine,
+      { label: "The Conts' result", amount: example.company.result + late, type: 'net' },
     ];
   } else {
     // One row per kind and payer, largest first, with every bill under it: costs others paid never reach the owner.
@@ -130,7 +137,8 @@ export async function unitMonthPnl(env: Env, q: Query, unitId: string, month: st
       ...(m.topUp ? [{ label: 'Minimum guarantee top-up paid', amount: -m.topUp, type: 'fee' }] : []),
       ...service,
       ...others,
-      { label: "The Conts' result", amount: m.operatorShare - m.topUp + othersTotal + charged - cost, type: 'net' },
+      ...lateLine,
+      { label: "The Conts' result", amount: m.operatorShare - m.topUp + othersTotal + charged - cost + late, type: 'net' },
     ];
   }
   return { pnl, companyPnl };

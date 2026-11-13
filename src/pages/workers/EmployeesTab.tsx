@@ -1,13 +1,16 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { StatusBadge, StatusDot } from '../../components/StatusBadge';
-import type { AnyTone } from '../../lib/status';
+import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
+import { ChoiceChips } from '../../components/ChoiceChips';
+import { ListToolbar } from '../../components/ListToolbar';
+import { RowActions, type RowAction } from '../../components/RowActions';
 import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
+import { FormSection } from '../../components/Card';
 import { MoneyInput, NumberInput, DateField, PhoneInput, phoneProblem } from '../../components/inputs';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
@@ -16,10 +19,10 @@ import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, notifyFailure } from '../../lib/api';
 import { mayRun, mayWork } from '../../lib/areaAccess';
 import { useSession } from '../../lib/session';
-import { rm, plural, todayMyt } from '../../lib/format';
+import { rm, todayMyt } from '../../lib/format';
 import {
   EMPLOYEE_DEFAULTS, POSITION_LABEL, MALAYSIAN_BANKS, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, TAX_RESIDENCIES, TAX_RESIDENCY_LABEL,
-  TAX_CATEGORIES, TAX_CATEGORY_LABEL, EMPLOYEE_STATUSES, EMPLOYEE_STATUS_LABEL, isEmployeeStatus, type Employee, type EmployeeInput,
+  TAX_CATEGORIES, TAX_CATEGORY_LABEL, EMPLOYEE_STATUSES, EMPLOYEE_STATUS_LABEL, RENOVATION_LABEL, isEmployeeStatus, type Employee, type EmployeeInput,
 } from '../../../functions/_lib/hrFields';
 
 /* ------------------------------------------------------------------ *
@@ -38,10 +41,19 @@ const STATUTORY: { key: 'epfEnabled' | 'socsoEnabled' | 'eisEnabled' | 'pcbEnabl
 ];
 
 /** The departments they work in now; a person switched off everywhere still shows the ones they were on. */
-const departmentsOf = ({ cleanerId, technicianId, cleanerActive, technicianActive }: Pick<Employee, 'cleanerId' | 'technicianId' | 'cleanerActive' | 'technicianActive'>): string => {
-  const working = [cleanerActive && 'Cleaning', technicianActive && 'Maintenance'].filter(Boolean);
-  return (working.length ? working : [cleanerId && 'Cleaning', technicianId && 'Maintenance'].filter(Boolean)).join(', ');
+const departmentNamesOf = ({ cleanerId, technicianId, renovatorId, cleanerActive, technicianActive }: Pick<Employee, 'cleanerId' | 'technicianId' | 'renovatorId' | 'cleanerActive' | 'technicianActive'>): string[] => {
+  if (renovatorId) return [RENOVATION_LABEL];
+  const working = [cleanerActive && 'Cleaning', technicianActive && 'Maintenance'].filter(isDepartmentName);
+  return working.length ? working : [cleanerId && 'Cleaning', technicianId && 'Maintenance'].filter(isDepartmentName);
 };
+const isDepartmentName = (name: string | false | null | undefined): name is string => !!name;
+const departmentsOf = (e: Employee): string => departmentNamesOf(e).join(', ');
+
+const DEPARTMENT_FILTER_NAME: Record<Dept, string> = { cleaning: 'Cleaning', maintenance: 'Maintenance', renovation: RENOVATION_LABEL };
+const isDept = (value: string): value is Dept => Object.hasOwn(DEPARTMENT_FILTER_NAME, value);
+const isInAnyDepartment = (e: Employee, picked: ReadonlySet<string>): boolean =>
+  [...picked].filter(isDept).some(department => departmentNamesOf(e).includes(DEPARTMENT_FILTER_NAME[department]));
+const payLabelOf = (e: Employee): string => (e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen));
 function statusOf(e: Employee): { label: string; tone: 'success' | 'neutral' | 'warning' } {
   if (e.status === 'resigned') return { label: 'Resigned', tone: 'neutral' };
   if (e.status === 'test') return { label: 'Test', tone: 'neutral' };
@@ -50,28 +62,38 @@ function statusOf(e: Employee): { label: string; tone: 'success' | 'neutral' | '
 }
 
 export default function EmployeesTab() {
-  const { data, loading, error, reload } = useApi<{ data: Employee[] }>('/employees');
+  const { data, loading, error, reload } = useApi<{ data: Employee[] }>('/employees/master');
   const { user } = useSession();
   const mayEdit = mayWork(user, 'hr');
-  // Same rules as the roster routes: Operations to switch someone off, Full on Operations to give app access.
-  const mayRoster = mayWork(user, 'operations');
+  // Same rules as the roster routes: Cleaning or Maintenance to switch someone off, Full on Today (operations) to give app access.
+  const mayRoster = mayWork(user, 'cleaning') || mayWork(user, 'maintenance');
   const mayGrant = mayRun(user, 'operations');
   const [confirmDialog, ask] = useConfirm();
   const toast = useToast();
   const [access, setAccess] = useState<AccessTarget | null>(null);
   const [form, setForm] = useState<{ person: Employee | null } | null>(null);
   const [given, setGiven] = useState<{ name: string; employeeId: string; pin: string } | null>(null);
+  const [query, setQuery] = useState('');
+  const [columnFiltersSlot, setColumnFiltersSlot] = useState<HTMLElement | null>(null);
   const people = data?.data ?? [];
+  const needle = query.trim().toLowerCase();
+  const visiblePeople = needle
+    ? people.filter(e => [e.name, e.employeeId, departmentsOf(e), POSITION_LABEL[e.position]].join(' ').toLowerCase().includes(needle))
+    : people;
 
   const columns = useMemo<Column<Employee>[]>(() => [
-    { key: 'empNo', label: 'Emp No', value: e => e.employeeId, width: 100 },
-    { key: 'name', label: 'Name', value: e => e.name, hideable: false, width: 190, render: e => <span className="font-semibold">{e.name}</span> },
-    { key: 'departments', label: 'Departments', value: departmentsOf, width: 170 },
-    { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], width: 120 },
-    { key: 'basic', label: 'Basic Salary', type: 'money', value: e => (e.payBasis === 'daily' ? e.dailyRateSen : e.basicSalarySen), width: 140,
-      render: e => e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : rm(e.basicSalarySen) },
+    { key: 'empNo', label: 'Emp No', value: e => e.employeeId, filter: false, width: 100 },
+    { key: 'name', label: 'Name', value: e => e.name, filter: false, hideable: false, width: 170, render: e => <span className="font-semibold">{e.name}</span> },
+    // param 'dept' keeps the links main and older bookmarks use (?dept=cleaning).
+    { key: 'departments', label: 'Department', value: departmentsOf, width: 140, filterMatch: isInAnyDepartment,
+      filter: { kind: 'select', param: 'dept', multi: true, options: DEPARTMENTS.map(({ value }) => ({ value, label: DEPARTMENT_FILTER_NAME[value] })) } },
+    { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], filter: { kind: 'select' }, width: 104 },
     { key: 'status', label: 'Status', type: 'status', value: e => statusOf(e).label, status: statusOf, width: 120 },
-    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 340, align: 'right', render: e => actions(e) },
+    { key: 'basic', label: 'Basic Salary', type: 'money', value: e => (e.payBasis === 'daily' ? null : e.basicSalarySen), width: 140,
+      exportValue: e => (e.payBasis === 'daily' ? e.dailyRateSen : e.basicSalarySen),
+      filter: { kind: 'number', hint: 'Monthly salary. Staff on a daily rate are left out.' },
+      render: payLabelOf },
+    { key: 'go', label: '', noExport: true, sortable: false, filter: false, width: 240, align: 'right', render: e => actions(e) },
   ], [mayEdit, mayRoster, mayGrant]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** The roster entries a person is on: one per department, sharing a login when both. Switching off leaves alone a
@@ -79,6 +101,7 @@ export default function EmployeesTab() {
   const rosterEntries = (e: Employee): { api: string; id: string }[] => [
     ...(e.cleanerId && (!e.isActive || e.cleanerActive) ? [{ api: ROSTER.cleaning, id: e.cleanerId }] : []),
     ...(e.technicianId && (!e.isActive || e.technicianActive) ? [{ api: ROSTER.maintenance, id: e.technicianId }] : []),
+    ...(e.renovatorId ? [{ api: RENOVATION_ACCESS_API, id: e.renovatorId }] : []),
   ];
 
   async function toggleActive(e: Employee) {
@@ -91,25 +114,38 @@ export default function EmployeesTab() {
   }
 
   function giveAccess(e: Employee) {
+    if (e.renovatorId) {
+      setAccess({ id: e.renovatorId, name: e.name, employeeId: e.employeeId, rosterApi: RENOVATION_ACCESS_API, appNote: APP_NOTE.renovation });
+      return;
+    }
     // Two departments share one login, so either roster entry reaches it.
     const onCleaning = !!e.cleanerId && (e.cleanerActive || !e.technicianActive);
     setAccess({ id: (onCleaning ? e.cleanerId : e.technicianId) ?? '', name: e.name, employeeId: e.employeeId,
-      rosterApi: onCleaning ? ROSTER.cleaning : ROSTER.maintenance, jobs: onCleaning ? 'cleaning jobs' : 'repair jobs' });
+      rosterApi: onCleaning ? ROSTER.cleaning : ROSTER.maintenance, appNote: onCleaning ? APP_NOTE.cleaning : APP_NOTE.maintenance });
   }
 
-  function actions(e: Employee, align: 'start' | 'end' = 'end'): ReactNode {
-    // The row itself opens the form, so a click or Enter on a button here must not reach it.
+  function rowActionsOf(e: Employee): RowAction[] {
+    const canSwitch = e.renovatorId ? mayEdit : mayRoster;
+    return [
+      ...(mayGrant && e.isActive ? [{ key: 'access', label: e.employeeId ? 'Reset PIN' : 'Give app access', icon: 'KeyRound', run: () => giveAccess(e) }] : []),
+      ...(mayEdit ? [{ key: 'edit', label: 'Edit', icon: 'Pencil', run: () => setForm({ person: e }) }] : []),
+      ...(canSwitch
+        ? [{ key: 'switch', label: e.isActive ? 'Switch off' : 'Switch on', icon: e.isActive ? 'UserMinus' : 'UserCheck', danger: e.isActive, run: () => { void toggleActive(e); } }]
+        : []),
+    ];
+  }
+
+  function actions(e: Employee): ReactNode {
+    // The row itself opens the form, so a click or Enter on a button here must not reach it. In the table the
+    // buttons are icons with their name as a tooltip until the table is wide enough for the words, so the row stays
+    // one line and the buttons stay in view.
     return (
-      <span className={`flex gap-[7px] items-center flex-wrap ${align === 'start' ? 'justify-start' : 'justify-end'}`} onClick={ev => ev.stopPropagation()} onKeyDown={ev => ev.stopPropagation()}>
-        {mayGrant && e.isActive && (
-          <Button size="sm" variant="tertiary" icon={<Icon name="KeyRound" size="sm" />} onClick={() => giveAccess(e)}>{e.employeeId ? 'Reset PIN' : 'Give app access'}</Button>
-        )}
-        {mayEdit && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setForm({ person: e })}>Edit</Button>}
-        {mayRoster && (
-          <Button size="sm" variant="tertiary" icon={<Icon name={e.isActive ? 'UserMinus' : 'UserCheck'} size="sm" />} onClick={() => void toggleActive(e)}>
-            {e.isActive ? 'Switch off' : 'Switch on'}
+      <span className="flex gap-[7px] items-center flex-nowrap justify-end whitespace-nowrap" onClick={ev => ev.stopPropagation()} onKeyDown={ev => ev.stopPropagation()}>
+        {rowActionsOf(e).map(action => (
+          <Button key={action.key} size="sm" variant="tertiary" title={action.label} icon={<Icon name={action.icon} size="sm" />} onClick={action.run}>
+            <span className="@max-[1500px]/dt:sr-only">{action.label}</span>
           </Button>
-        )}
+        ))}
       </span>
     );
   }
@@ -117,33 +153,38 @@ export default function EmployeesTab() {
   return (
     <>
       {confirmDialog}
-      <p className="m-0 mb-4 text-copy text-muted-ink">{data ? plural(people.length, 'employee') : 'Loading the list…'}</p>
       {error && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       <DataTable<Employee>
-        id="employees" columns={columns} rows={loading && people.length === 0 ? null : people}
-        rowKey={e => e.cleanerId ?? e.technicianId ?? e.name} pageSize={0} noun={['employee', 'employees']} exportName="employee-master"
+        id="employees" columns={columns} rows={loading && people.length === 0 ? null : visiblePeople}
+        defaultSort="empNo:asc" filtered={!!needle} onClearFilters={() => setQuery('')}
+        inlineFiltersTarget={columnFiltersSlot}
+        toolbar={<ListToolbar bare className="w-full" after={<span ref={setColumnFiltersSlot} className="contents" />}
+          search={{ value: query, onChange: setQuery, placeholder: 'Name or employee no', label: 'Search employees' }} />}
+        rowKey={e => e.cleanerId ?? e.technicianId ?? e.renovatorId ?? e.name} pageSize={0} noun={['employee', 'employees']} exportName="employee-master"
         rowTone={e => (e.status !== 'active' || !e.isActive ? 'muted' : null)}
         onRowClick={mayEdit ? e => setForm({ person: e }) : undefined}
         header={
-          <div className="pt-5 pb-3 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
-            <span className="flex flex-col gap-0.5">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Employee Master</span>
-              <span className="text-meta text-muted-ink">The company's own cleaners and technicians. Open a person for their pay, bank and statutory details.</span>
+          <div className="pt-5 pb-3 px-5 max-md:px-4 max-md:pt-4 flex items-center justify-between gap-3 [border-bottom:1px_solid_var(--color-line-soft)]">
+            <span className="flex flex-col gap-0.5 min-w-0">
+              <span className="text-heading font-bold tracking-[-0.005em]">Employee Master</span>
+              <span className="text-meta text-muted-ink max-md:hidden">The company's own cleaners, technicians and Renovation staff. Open a person for their pay, bank and statutory details.</span>
             </span>
-            {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setForm({ person: null })}>Add employee</Button>}
+            {mayEdit && <Button size="sm" variant="primary" className="shrink-0" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setForm({ person: null })}>Add employee</Button>}
           </div>
         }
-        empty={{ title: 'No employees yet.', body: 'Add the first cleaner or technician.', action: mayEdit ? { label: 'Add employee', onClick: () => setForm({ person: null }) } : undefined }}
+        empty={{ title: 'No employees yet.', body: 'Add the first cleaner, technician or Renovation employee.', action: mayEdit ? { label: 'Add employee', onClick: () => setForm({ person: null }) } : undefined }}
         renderCard={e => (
           <span className="flex flex-col gap-1 min-w-0">
-            <span className="flex items-center justify-between gap-3">
-              <span className="text-copy font-semibold min-w-0 truncate">{e.name}</span>
-              <StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />
+            <span className="flex items-start gap-2">
+              <span className="flex-1 min-w-0 text-heading font-semibold [overflow-wrap:anywhere]">{e.name}</span>
+              {rowActionsOf(e).length > 0 && <span className="-my-3 -mr-2"><RowActions name={e.name} items={rowActionsOf(e)} /></span>}
             </span>
-            <span className="text-meta text-muted-ink">{[e.employeeId, departmentsOf(e), POSITION_LABEL[e.position]].filter(Boolean).join(' · ')}</span>
-            <span className="text-copy tabular-nums">{e.payBasis === 'daily' ? `${rm(e.dailyRateSen)} / day` : `${rm(e.basicSalarySen)} / month`}</span>
-            <span className="pt-1">{actions(e, 'start')}</span>
+            <span className="text-copy text-muted-ink [overflow-wrap:anywhere]">{[e.employeeId, departmentsOf(e)].filter(Boolean).join(' · ')}</span>
+            <span className="flex items-center justify-between gap-3 mt-1">
+              <StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />
+              <span className="text-heading font-semibold tabular-nums whitespace-nowrap">{payLabelOf(e)}</span>
+            </span>
           </span>
         )}
       />
@@ -154,19 +195,28 @@ export default function EmployeesTab() {
       )}
       {access && <AccessModal target={access} onClose={() => setAccess(null)} onDone={reload} />}
       {given && (
-        <AccessModal target={{ id: '', name: given.name, employeeId: given.employeeId, rosterApi: '', jobs: '' }} given0={given}
+        <AccessModal target={{ id: '', name: given.name, employeeId: given.employeeId, rosterApi: '', appNote: '' }} given0={given}
           onClose={() => setGiven(null)} onDone={reload} />
       )}
     </>
   );
 }
 
-type Dept = 'cleaning' | 'maintenance';
-const ROSTER: Record<Dept, string> = { cleaning: '/housekeeping/cleaners', maintenance: '/maintenance/technicians' };
-const DEPARTMENTS: { value: Dept; label: string; tone: AnyTone }[] = [
-  { value: 'cleaning', label: 'Cleaning', tone: 'info' },
-  { value: 'maintenance', label: 'Maintenance', tone: 'warning' },
+type FieldDept = 'cleaning' | 'maintenance';
+type Dept = FieldDept | 'renovation';
+const ROSTER: Record<FieldDept, string> = { cleaning: '/housekeeping/cleaners', maintenance: '/maintenance/technicians' };
+const RENOVATION_ACCESS_API = '/employees/renovators';
+const APP_NOTE: Record<Dept, string> = {
+  cleaning: 'In the field app they see only their own cleaning jobs.',
+  maintenance: 'In the field app they see only their own repair jobs.',
+  renovation: 'Their app has nothing built in it yet: it says so and offers Settings and Log out.',
+};
+const DEPARTMENTS: { value: Dept; label: string }[] = [
+  { value: 'cleaning', label: 'Cleaning' },
+  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'renovation', label: RENOVATION_LABEL },
 ];
+const FIELD_DEPARTMENTS = DEPARTMENTS.filter((option): option is { value: FieldDept; label: string } => option.value !== 'renovation');
 
 /**
  * Add or edit one employee. Adding puts them on the roster of the department picked and, when asked, gives them app
@@ -183,16 +233,17 @@ function EmployeeForm({ person, onClose, onSaved }: {
   const start: EmployeeInput = person ?? EMPLOYEE_DEFAULTS;
   const [d, setD] = useState<EmployeeInput>(() => {
     if (!person) return { ...EMPLOYEE_DEFAULTS, joinDate: todayMyt() };
-    const { id: _id, cleanerId: _c, technicianId: _t, name: _n, phone: _p, employeeId: _e, isActive: _a, cleanerActive: _ca, technicianActive: _ta, userId: _u, ...record } = person;
+    const { id: _id, cleanerId: _c, technicianId: _t, renovatorId: _r, name: _n, phone: _p, employeeId: _e, isActive: _a, cleanerActive: _ca, technicianActive: _ta, userId: _u, ...record } = person;
     return record;
   });
   const [name, setName] = useState(person?.name ?? '');
   const [phone, setPhone] = useState(person?.phone ?? '');
   const isOnBoth = !!person?.cleanerActive && !!person.technicianActive;
-  const wasDept: Dept | null = person?.cleanerActive === person?.technicianActive ? null : person?.cleanerActive ? 'cleaning' : 'maintenance';
+  const wasDept: Dept | null = person?.renovatorId ? 'renovation'
+    : person?.cleanerActive === person?.technicianActive ? null : person?.cleanerActive ? 'cleaning' : 'maintenance';
   const [dept, setDept] = useState<Dept | null>(person ? wasDept : 'cleaning');
-  // Changing a department changes the roster, which is Operations' to run (as Switch off is).
-  const mayRoster = mayWork(user, 'operations');
+  // Changing a department changes the roster, which is Cleaning's or Maintenance's to run (as Switch off is).
+  const mayRoster = mayWork(user, 'cleaning') || mayWork(user, 'maintenance');
   const [giveAccess, setGiveAccess] = useState(mayGrant);
   const [salaryFrom, setSalaryFrom] = useState(`${todayMyt().slice(0, 7)}-01`);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -217,6 +268,16 @@ function EmployeeForm({ person, onClose, onSaved }: {
       let cleanerId = person?.cleanerId ?? null, technicianId = person?.technicianId ?? null;
       let given: { name: string; employeeId: string; pin: string } | null = null;
       const roster = { name: name.trim(), phone: phone.trim() || null };
+      if (dept === 'renovation') {
+        const { data: saved } = await api.put<{ data: Employee }>('/employees', { ...d, ...roster, department: 'renovation', renovatorId: person?.renovatorId ?? null, ...(salaryChanged ? { salaryEffectiveFrom: salaryFrom } : {}) });
+        if (creating && giveAccess && saved.renovatorId) {
+          const { employeeId, pin } = await api.post<{ employeeId: string; pin: string }>(`${RENOVATION_ACCESS_API}/${saved.renovatorId}/access`, {});
+          given = { name: roster.name, employeeId, pin };
+        }
+        toast({ tone: 'success', title: creating ? 'Employee added.' : 'Employee saved.', body: roster.name });
+        onSaved(given);
+        return;
+      }
       if (creating) {
         if (!dept) return;
         const { id } = await api.post<{ id: string }>(ROSTER[dept], { ...roster, employmentType: 'internal', vendorName: null });
@@ -258,43 +319,34 @@ function EmployeeForm({ person, onClose, onSaved }: {
   }
 
   return (
-    <Modal title={creating ? 'Add employee' : name || 'Employee'} sub={creating ? 'A cleaner or technician on the company payroll.' : [person.employeeId, departmentsOf(person), POSITION_LABEL[d.position]].filter(Boolean).join(' · ')}
-      onClose={onClose} width={640}
+    <Modal title={creating ? 'Add employee' : name || 'Employee'} sub={creating ? 'A cleaner, technician or Renovation employee on the company payroll.' : [person.employeeId, departmentsOf(person), POSITION_LABEL[d.position]].filter(Boolean).join(' · ')}
+      onClose={onClose} width={640} eyebrow="Employee Master"
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : creating ? 'Add employee' : 'Save'}</Button>
       </>}>
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-[18px]">
         <Section title="Details">
           <Field label="Employee No" value={person?.employeeId ?? ''} readOnly placeholder={creating ? 'Given with app access' : 'No app access yet'}
             help={creating ? undefined : 'Given with app access: use Give app access on the list.'} />
           <Field label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="Nurul Huda" error={errors.name} />
           <PhoneInput label="Phone" value={phone} onChange={setPhone} error={errors.phone} />
-          <label className="sm:col-span-2 flex items-center gap-2.5 min-h-10 cursor-pointer">
-            <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={d.position === 'leader'}
-              onChange={e => setD(p => ({ ...p, position: e.target.checked ? 'leader' : 'employee', leaderAllowanceSen: e.target.checked ? p.leaderAllowanceSen : 0 }))} />
-            <span className="flex flex-col">
-              <span className="text-copy font-medium">Leader</span>
-              <span className="text-meta text-muted-ink">Leads a team and can get the leader allowance. Unticked: a normal employee.</span>
-            </span>
-          </label>
-          <fieldset className="sm:col-span-2 m-0 p-0 border-none flex flex-col gap-1.5">
-            <legend className="p-0 mb-1.5 text-meta font-medium text-muted-ink">Department</legend>
-            {creating || mayRoster ? (
-              <div role="radiogroup" aria-label="Department" className="flex gap-2 flex-wrap">
-                {DEPARTMENTS.map(({ value, label, tone }) => (
-                  <button key={value} type="button" role="radio" aria-checked={dept === value} onClick={() => setDept(value)}
-                    className={`inline-flex items-center gap-2 h-11 px-4 rounded-control cursor-pointer font-sans text-copy border border-solid ${dept === value ? 'font-semibold border-gold bg-gold-tint text-ink' : 'font-medium border-line bg-card text-muted-ink hover:text-ink'}`}>
-                    <StatusDot tone={tone} />{label}
-                  </button>
-                ))}
-              </div>
+          {/* Main's Leader tick as one-tap chips: Leader, or a normal employee; leaving Leader clears the leader allowance. */}
+          <div className="sm:col-span-2">
+            <ChoiceChips label="Position" value={d.position} help="A leader leads a team and can get the leader allowance."
+              options={[{ value: 'employee', label: POSITION_LABEL.employee }, { value: 'leader', label: POSITION_LABEL.leader }]}
+              onChange={v => setD(p => ({ ...p, position: v, leaderAllowanceSen: v === 'leader' ? p.leaderAllowanceSen : 0 }))} />
+          </div>
+          <div className="sm:col-span-2 flex flex-col gap-1.5">
+            {creating || (mayRoster && !person.renovatorId) ? (
+              <ChoiceChips<Dept> label="Department" required={creating} value={dept ?? ''} onChange={setDept}
+                options={(creating ? DEPARTMENTS : FIELD_DEPARTMENTS).map(({ value, label }) => ({ value, label }))} />
             ) : <span className="text-copy min-h-10 flex items-center">{departmentsOf(person)}</span>}
             {isOnBoth && !dept && <span className="text-meta text-muted-ink">On both now. Pick one to keep: the other is switched off.</span>}
             {!creating && dept && dept !== wasDept && <span className="text-meta text-muted-ink">Saving moves them to {dept === 'cleaning' ? 'Cleaning' : 'Maintenance'}. Their app opens on {dept === 'cleaning' ? 'cleaning jobs' : 'repair jobs'} from the next time it loads.</span>}
             {errors.departments && <span className="text-meta text-danger">{errors.departments}</span>}
-          </fieldset>
-          <Select label="Status" showLabel size="md" value={d.status} onChange={v => set('status', isEmployeeStatus(v) ? v : 'active')}
+          </div>
+          <ChoiceChips label="Status" value={d.status} onChange={v => set('status', isEmployeeStatus(v) ? v : 'active')}
             options={EMPLOYEE_STATUSES.map(status => ({ value: status, label: EMPLOYEE_STATUS_LABEL[status] }))} />
           <DateField label="Join date" value={d.joinDate ?? ''} onChange={v => set('joinDate', v || null)} error={errors.joinDate} />
           {d.status === 'resigned' && (
@@ -378,13 +430,6 @@ function EmployeeForm({ person, onClose, onSaved }: {
 }
 
 function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-0.5 [border-bottom:1px_solid_var(--color-line-soft)] pb-2">
-        <h3 className="m-0 text-copy font-semibold">{title}</h3>
-        {note && <p className="m-0 text-meta text-muted-ink">{note}</p>}
-      </div>
-      <div className="grid gap-x-4 gap-y-3 grid-cols-1 sm:grid-cols-2">{children}</div>
-    </section>
-  );
+  // The kit's form section (Conts DS v2): small caps title, the note beside it, two columns on a desk.
+  return <FormSection title={title} hint={note}>{children}</FormSection>;
 }

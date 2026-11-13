@@ -98,6 +98,9 @@ function renderTab(): void {
   render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><BetaPoTab {...props} /></MemoryRouter></QueryClientProvider>);
 }
 
+
+// These are Dream Crafter screens: dates read day first (YH, 11 Nov 2026).
+
 describe("PO tab", () => {
   it("is plain text until Edit, then the fields open and the band can set every line's date", async () => {
     renderTab();
@@ -106,18 +109,18 @@ describe("PO tab", () => {
     expect(within(region).queryByLabelText(/Processing date/)).toBeNull();
     // One line PO cell: number and short date.
     expect(within(region).getByText("TC-PO-2610-006")).toBeTruthy();
-    expect(within(region).getAllByText("24 Oct").length).toBeGreaterThan(0);
+    expect(within(region).getAllByText("24/10").length).toBeGreaterThan(0);
     // One band per category, no sub-category band: processing differs between the lines (their span), delivery is set
     // on the PO line only.
     expect(within(region).queryByText("Downlights")).toBeNull();
-    expect(within(region).getAllByText("1 Nov - 2 Nov").length).toBe(1);
-    expect(within(region).getAllByText("10 Nov, 1 not set").length).toBe(1);
+    expect(within(region).getAllByText("01/11 - 02/11").length).toBe(1);
+    expect(within(region).getAllByText("10/11, 1 not set").length).toBe(1);
     // DO: the delivery order that carried line a, a link to it; line b has none yet.
     expect(await within(region).findByText("TC-DO-2610-003")).toBeTruthy();
     expect(within(region).getAllByText("Not yet").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    // SKU, qty and supplier cannot be changed here (owner, 5 Nov 2026): the remark and dates can.
+    // SKU, qty and supplier cannot be changed here (owner, 05/11/2026): the remark and dates can.
     expect(within(region).queryByLabelText(/^Qty for/)).toBeNull();
     expect(within(region).queryByRole("button", { name: /^Change SKU/ })).toBeNull();
     expect(within(region).queryByLabelText(/^Supplier for/)).toBeNull();
@@ -210,7 +213,7 @@ describe("PO tab", () => {
   });
 });
 
-describe("PO tab head (owner, 7 Nov 2026)", () => {
+describe("PO tab head (owner, 07/11/2026)", () => {
   it("has Export PDF and no Close all, Export, Quantity helper or Create PO", async () => {
     h.furniture = false;
     renderTab();

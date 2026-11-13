@@ -5,6 +5,8 @@ import { invalidateCachePrefix } from './cached-fetch';
 import type { SessionUser } from './types';
 import { go } from './go';
 import { confirmLeaving } from './useLeaveGuard';
+import { isFieldRole } from './fieldRoles';
+import { clearSnapshots, setSnapshotOwner, snapshotsReady } from './snapshots';
 
 /** The password was right and the account has two-step sign-in on: the code is asked for next. */
 export interface TwoStep { challenge: string; backupOnly: boolean }
@@ -41,12 +43,16 @@ const DEV_USER: SessionUser = {
 };
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<SessionUser | null>(null);
+  const [user, setUserState] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
+  /** The saved snapshots follow the person (lib/snapshots.ts): set before the screens render, so the first one can
+   *  use them, and a different person, role, view-as or permission set drops the ones kept before. */
+  const setUser = (next: SessionUser | null) => { setSnapshotOwner(next); setUserState(next); };
 
   const refresh = async () => {
     try {
-      const res = await api.get<{ user: SessionUser }>('/auth/session');
+      // The stored snapshots are read alongside the session (capped wait), so the first screen can show them.
+      const [res] = await Promise.all([api.get<{ user: SessionUser }>('/auth/session'), snapshotsReady()]);
       setUser(res.user);
     } catch {
       // DEV-only: with no backend running, sign in as an admin so every page is
@@ -94,12 +100,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     // Asked here, not on the move below: clearing the user removes the form that would ask.
     if (!await confirmLeaving()) return;
-    // Cleaners and technicians go back to their own door (/portal opens the PIN sign-in), the office to /.
-    const worker = user?.role === 'housekeeper' || user?.role === 'technician';
+    // Cleaners, technicians and Renovation staff go back to their own door (/portal opens the PIN sign-in), the office to /.
+    const worker = isFieldRole(user?.role);
     try { await api.post('/auth/logout'); } catch (e) { if (!(e instanceof ApiFailure)) throw e; }
     setUser(null);
     // Cached reads are kept per browser, not per person: the next person on a shared phone or desk must not see them.
     invalidateCachePrefix('');
+    clearSnapshots();
     go(worker ? '/portal' : '/');
   };
 

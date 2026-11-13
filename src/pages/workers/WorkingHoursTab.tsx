@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, lazy, Suspense } from 'react';
+import { useMemo, useState, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
@@ -10,6 +10,7 @@ import { DateField, NumberInput } from '../../components/inputs';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useApi } from '../../lib/useApi';
+import { useSeedOnce } from '../../lib/useSeedOnce';
 import { api, notifyFailure } from '../../lib/api';
 import { mayWork } from '../../lib/areaAccess';
 import { useSession } from '../../lib/session';
@@ -19,6 +20,7 @@ import { hoursFlag } from '../../lib/hoursFlag';
 import type { HoursPayload, HoursPerson, HoursPunch } from '../../../functions/api/working-hours/index';
 import { DEPARTMENTS, DEPARTMENT_LABEL, type Department } from '../../../functions/_lib/hrFields';
 import { TableSkeleton } from '../../components/DataState';
+import { ListToolbar, ToolbarDateButton, rangeDate, type ToolbarFilter, type ToolbarChip, type DatePreset } from '../../components/ListToolbar';
 // Loaded when shown: imported directly by both Pricing and HR it became a chunk every page's preload list names
 // (scripts/checks/entry-bundle.mjs).
 const HolidayList = lazy(() => import('../../components/HolidayList').then(m => ({ default: m.HolidayList })));
@@ -86,8 +88,23 @@ export default function WorkingHoursTab() {
   const [filter, setFilter] = useState<{ name: string; department: '' | Department; day: string }>({ name: '', department: '', day: '' });
   const [copyFrom, setCopyFrom] = useState(shiftDay(to, -1));
 
-  useEffect(() => { if (data) { setRows(rowsFrom(data)); setRemoved([]); } }, [data]);
-  const setRange = (f: string, t: string) => setParams(p => { const n = new URLSearchParams(p); n.set('from', f); n.set('to', t); return n; }, { replace: true });
+  // Filled once per date range (and again after a save), not on every answer, so a late answer never wipes typing.
+  const reseed = useSeedOnce(data, `${from}|${to}`, d => { setRows(rowsFrom(d)); setRemoved([]); });
+  // Both ends or neither: an open end goes back to the default, this month to today.
+  const setRange = (f: string, t: string) => setParams(p => { const n = new URLSearchParams(p); if (f && t) { n.set('from', f); n.set('to', t); } else { n.delete('from'); n.delete('to'); } return n; }, { replace: true });
+  const ranges: DatePreset[] = [
+    { key: 'today', label: 'Today', from: today, to: today },
+    { key: 'yesterday', label: 'Yesterday', from: shiftDay(today, -1), to: shiftDay(today, -1) },
+    { key: 'lastm', label: 'Last month', from: `${shiftDay(`${today.slice(0, 7)}-01`, -1).slice(0, 7)}-01`, to: shiftDay(`${today.slice(0, 7)}-01`, -1) },
+  ];
+  const deptGroup: ToolbarFilter = {
+    key: 'department', label: 'Department', allLabel: 'All departments',
+    options: DEPARTMENTS.map(d => ({ value: d, label: DEPARTMENT_LABEL[d], count: rows.filter(r => r.department === d).length })),
+    value: filter.department,
+    onChange: v => setFilter(f => ({ ...f, department: v === 'cleaning' || v === 'maintenance' ? v : '' })),
+  };
+  const clearFilters = () => setFilter({ name: '', department: '', day: '' });
+  const chips: ToolbarChip[] = filter.day ? [{ key: 'day', label: `Date: ${dayText(filter.day)}`, onRemove: () => setFilter(f => ({ ...f, day: '' })) }] : [];
 
   const people = useMemo(() => new Map((data?.people ?? []).map(p => [personKey(p), p])), [data]);
   const punchOf = useMemo(() => new Map((data?.punches ?? []).map(p => [`${p.employeeId}|${p.date}`, p])), [data]);
@@ -101,7 +118,7 @@ export default function WorkingHoursTab() {
     setRows(rs => rs.filter(x => x.key !== r.key));
   }
   const duplicate = (r: Row) => setRows(rs => {
-    const other = DEPARTMENTS.find(d => d !== r.department) ?? r.department;
+    const other = people.get(r.person)?.departments.find(d => d !== r.department) ?? r.department;
     const i = rs.findIndex(x => x.key === r.key);
     const copy: Row = { ...r, key: newKey(), entryId: null, savedAs: null, department: other, hours: null, notes: '', origin: 'split', dirty: true };
     return [...rs.slice(0, i + 1), copy, ...rs.slice(i + 1)];
@@ -137,7 +154,7 @@ export default function WorkingHoursTab() {
         }),
       });
       toast({ tone: 'success', title: 'Working hours saved.', body: `${res.saved} saved${res.removed ? `, ${res.removed} removed` : ''}. Payroll uses them from the next refresh.` });
-      reload();
+      reseed(); reload();
     } catch (e) { notifyFailure(e); }
     finally { setBusy(false); }
   }
@@ -166,15 +183,15 @@ export default function WorkingHoursTab() {
       {error && <StaleBanner message={`Showing the last hours we have. ${error}`} onRetry={reload} />}
       <PublicHolidays onChange={reload} />
 
-      <section className="bg-card rounded-card border border-solid border-line">
+      <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)]">
         <div className="pt-5 pb-3 px-5 flex flex-col gap-3 [border-bottom:1px_solid_var(--color-line-soft)]">
           <span className="flex items-baseline justify-between gap-3 flex-wrap">
-            <span className="text-[16px] font-semibold tracking-[-0.01em]">Daily Working Hours</span>
+            <span className="text-heading font-bold tracking-[-0.005em]">Daily Working Hours</span>
             <span className="text-meta text-muted-ink">{data?.shiftRules ? 'Punch hours follow the shift rules (Payroll > Pay Rules).' : 'Punch hours are clock-out minus clock-in.'}</span>
           </span>
           <span className="flex items-end gap-2 flex-wrap">
-            <div className="w-[170px] flex-none"><DateField label="From" value={from} max={to} onChange={v => v && void leave(() => setRange(v, to))} /></div>
-            <div className="w-[170px] flex-none"><DateField label="To" value={to} min={from} onChange={v => v && void leave(() => setRange(from, v))} /></div>
+            <span className="self-end"><ToolbarDateButton date={rangeDate({ label: 'Working hours for', from: params.get('from') ? from : '', to: params.get('to') ? to : '', presets: ranges,
+              anyLabel: 'This month to today', onChange: (f, t) => void leave(() => setRange(f, t)) })} /></span>
             {mayEdit && <>
               <div className="w-[170px] flex-none"><DateField label="Copy from" value={copyFrom} onChange={v => v && setCopyFrom(v)} /></div>
               <Button size="sm" variant="secondary" icon={<Icon name="Copy" size="sm" />} onClick={() => copyDay(copyFrom, to)}>Copy</Button>
@@ -194,20 +211,15 @@ export default function WorkingHoursTab() {
               ))}
             </span>
           )}
-          <span className="flex items-end gap-2 flex-wrap">
-            {multiDay && <div className="w-[170px] flex-none"><DateField label="Date" value={filter.day} min={from} max={to} onChange={v => setFilter(f => ({ ...f, day: v }))} /></div>}
-            <Field label="Employee" value={filter.name} onChange={e => setFilter(f => ({ ...f, name: e.target.value }))} placeholder="Name" />
-            <Select label="Department" showLabel size="md" className="w-[180px]" value={filter.department} placeholder="All departments"
-              onChange={v => setFilter(f => ({ ...f, department: v === 'cleaning' || v === 'maintenance' ? v : '' }))}
-              options={[{ value: '', label: 'All departments' }, ...DEPARTMENTS.map(d => ({ value: d, label: DEPARTMENT_LABEL[d] }))]} />
-            {(filter.name || filter.department || filter.day) && <Button size="sm" variant="tertiary" onClick={() => setFilter({ name: '', department: '', day: '' })}>Clear</Button>}
-          </span>
+          <ListToolbar bare filters={[deptGroup]} chips={chips} onClearAll={clearFilters}
+            search={{ value: filter.name, onChange: v => setFilter(f => ({ ...f, name: v })), placeholder: 'Employee name', label: 'Search employees' }}
+            after={multiDay && <div className="w-[170px] flex-none"><DateField label="Only this day" value={filter.day} min={from} max={to} onChange={v => setFilter(f => ({ ...f, day: v }))} /></div>} />
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-copy">
             <thead>
-              <tr className="text-left text-meta text-muted-ink [border-bottom:1px_solid_var(--color-line-soft)]">
+              <tr className="text-left text-caption font-bold uppercase tracking-[0.09em] text-muted-ink bg-muted [border-bottom:1px_solid_var(--color-line)] [&>th]:!py-2 [&>th]:!font-bold [&>th]:whitespace-nowrap">
                 {multiDay && <th className="py-2.5 px-4 font-medium">Date</th>}
                 <th className="py-2.5 px-4 font-medium">Employee</th>
                 <th className="py-2.5 px-4 font-medium">Department</th>
@@ -290,9 +302,9 @@ function HoursRow({ row: r, multiDay, people, person, punch, total, from, to, ma
  *  holiday list, shared with Pricing (functions/_lib/holidays.ts); payroll counts the entries marked Staff day off. */
 function PublicHolidays({ onChange }: { onChange: () => void }) {
   return (
-    <section className="bg-card rounded-card border border-solid border-line px-5 py-4 flex flex-col gap-3">
+    <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] px-5 py-4 flex flex-col gap-3">
       <span className="flex flex-col gap-0.5">
-        <span className="text-[16px] font-semibold tracking-[-0.01em]">Public Holidays</span>
+        <span className="text-heading font-bold tracking-[-0.005em]">Public Holidays</span>
         <span className="text-meta text-muted-ink">Mark dates so workers aren't deducted for not working that day. The same list Pricing uses; payroll counts the ones marked Staff day off.</span>
       </span>
       <Suspense fallback={<TableSkeleton rows={4} cols={3} />}><HolidayList compact onChanged={onChange} /></Suspense>
