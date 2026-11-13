@@ -150,7 +150,7 @@ export function ScmSubgroupHub({
   return (
     <div>
       <PageHeader
-        eyebrow={`Operations · Supply Chain · ${group.label}`}
+        eyebrow={`Operations · Supply chain · ${group.label}`}
         title={group.label}
         description={description}
       />

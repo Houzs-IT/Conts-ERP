@@ -8,21 +8,21 @@
 // Keeps the navbar from rendering as an empty strip.
 const ROUTE_LABELS: Array<[RegExp, string]> = [
   [/^\/$/, "Overview"],
-  [/^\/orders\/.+$/, "Sales Order"],
-  [/^\/orders$/, "Sales Orders"],
-  [/^\/delivery-orders$/, "Delivery Orders"],
+  [/^\/orders\/.+$/, "Sales order"],
+  [/^\/orders$/, "Sales orders"],
+  [/^\/delivery-orders$/, "Delivery orders"],
   [/^\/delivery\/.+$/, "Delivery"],
   [/^\/logistics$/, "Logistics"],
   [/^\/trips\/.+$/, "Trip"],
   [/^\/lorries\/.+$/, "Lorry"],
   [/^\/staff\/.+$/, "Staff"],
-  [/^\/po\/.+$/, "Purchase Order"],
-  [/^\/po$/, "Purchase Orders"],
+  [/^\/po\/.+$/, "Purchase order"],
+  [/^\/po$/, "Purchase orders"],
   [/^\/creditors\/.+$/, "Creditor"],
-  [/^\/assr\/.+$/, "Service Case"],
-  [/^\/assr$/, "Service Cases"],
-  [/^\/my-cases\/.+$/, "My Case"],
-  [/^\/my-cases$/, "My Cases"],
+  [/^\/assr\/.+$/, "Service case"],
+  [/^\/assr$/, "Service cases"],
+  [/^\/my-cases\/.+$/, "My case"],
+  [/^\/my-cases$/, "My cases"],
   [/^\/projects\/.+$/, "Project"],
   [/^\/projects$/, "Projects"],
   [/^\/sales$/, "Sales"],
@@ -30,15 +30,15 @@ const ROUTE_LABELS: Array<[RegExp, string]> = [
   [/^\/gamification$/, "Engagement"],
   [/^\/settings$/, "Settings"],
   [/^\/profile$/, "Profile"],
-  [/^\/mail-center\/.+$/, "Mail Center"],
-  [/^\/mail-center$/, "Mail Center"],
-  [/^\/agents$/, "Agent Console"],
-  [/^\/system-health$/, "System Health"],
-  [/^\/reports\/fair-report$/, "Sales Report"],
+  [/^\/mail-center\/.+$/, "Mail center"],
+  [/^\/mail-center$/, "Mail center"],
+  [/^\/agents$/, "Agent console"],
+  [/^\/system-health$/, "System health"],
+  [/^\/reports\/fair-report$/, "Sales report"],
   // The Supply Chain hub is a single-segment route, so it never reaches the
   // /scm/* segment table below (which needs a 2nd segment). Curate it here —
   // without this entry labelForPath title-cased the slug to a bare "Scm".
-  [/^\/scm$/, "Supply Chain"],
+  [/^\/scm$/, "Supply chain"],
 ];
 
 // SCM V2 routes ship dozens of /scm/* pages — hand-rolling a regex per page
@@ -49,61 +49,61 @@ const ROUTE_LABELS: Array<[RegExp, string]> = [
 // SCM route only means one map entry, not two regex lines.
 const SCM_SEGMENT_LABELS: Record<string, [string, string]> = {
   // Sales chain
-  "sales-orders": ["Sales Orders", "Sales Order"],
-  "delivery-orders": ["Delivery Orders", "Delivery Order"],
-  "sales-invoices": ["Sales Invoices", "Sales Invoice"],
-  "delivery-returns": ["Delivery Returns", "Delivery Return"],
+  "sales-orders": ["Sales orders", "Sales order"],
+  "delivery-orders": ["Delivery orders", "Delivery order"],
+  "sales-invoices": ["Sales invoices", "Sales invoice"],
+  "delivery-returns": ["Delivery returns", "Delivery return"],
   // Owner 2026-07-27 — the two amendment queues carry SHORT tab names so the
   // workspace strip stays scannable ("SO Amdt." / "PO Amdt."), and the two
   // sides are distinguishable at a glance. Detail pages push their own
   // breadcrumbs, so the descriptive titles live on-page, not here.
   "amendments": ["VO", "VO"],
   // Procurement chain
-  "purchase-orders": ["Purchase Orders", "Purchase Order"],
+  "purchase-orders": ["Purchase orders", "Purchase order"],
   "po-amendments": ["PO Amdt.", "PO Amdt."],
-  "cancel-requests": ["Cancel Requests", "Cancel Request"],
-  "purchase-invoices": ["Purchase Invoices", "Purchase Invoice"],
-  "purchase-returns": ["Purchase Returns", "Purchase Return"],
-  "grns": ["Goods Received Notes", "Goods Received Note"],
+  "cancel-requests": ["Cancel requests", "Cancel request"],
+  "purchase-invoices": ["Purchase invoices", "Purchase invoice"],
+  "purchase-returns": ["Purchase returns", "Purchase return"],
+  "grns": ["Goods received notes", "Goods received note"],
   "mrp": ["MRP", "MRP"],
   "suppliers": ["Suppliers", "Supplier"],
   // Warehouse / stock
   "warehouses": ["Warehouses", "Warehouse"],
   "inventory": ["Inventory", "Inventory"],
-  "stock-adjustments": ["Stock Adjustments", "Stock Adjustment"],
-  "stock-transfers": ["Stock Transfers", "Stock Transfer"],
-  "stock-takes": ["Stock Takes", "Stock Take"],
+  "stock-adjustments": ["Stock adjustments", "Stock adjustment"],
+  "stock-transfers": ["Stock transfers", "Stock transfer"],
+  "stock-takes": ["Stock takes", "Stock take"],
   // Products
   "products": ["Products", "Product"],
   "categories": ["Categories", "Category"],
-  "product-models": ["Product Models", "Product Model"],
-  "fabric-tracking": ["Fabric Tracking", "Fabric Tracking"],
+  "product-models": ["Product models", "Product model"],
+  "fabric-tracking": ["Fabric tracking", "Fabric tracking"],
   // Finance
   "accounting": ["Accounting", "Accounting"],
   "outstanding": ["Outstanding", "Outstanding"],
-  "unbilled-deliveries": ["Not Billed", "Delivered, Not Yet Billed"],
-  "payment-vouchers": ["Payment Vouchers", "Payment Voucher"],
+  "unbilled-deliveries": ["Not billed", "Delivered, not yet billed"],
+  "payment-vouchers": ["Payment vouchers", "Payment voucher"],
   "currencies": ["Currencies", "Currency"],
   // Transportation
   "drivers": ["Drivers", "Driver"],
-  "delivery-planning": ["Delivery Planning", "Delivery Planning"],
-  "dp-orders": ["DP Orders", "DP Order"],
-  "delivery-planning-regions": ["Delivery Planning Regions", "Delivery Planning Regions"],
+  "delivery-planning": ["Delivery planning", "Delivery planning"],
+  "dp-orders": ["DP orders", "DP order"],
+  "delivery-planning-regions": ["Delivery planning regions", "Delivery planning regions"],
   "fleet": ["Fleet", "Fleet"],
-  "lorry-capacity": ["Lorry Capacity", "Lorry Capacity"],
+  "lorry-capacity": ["Lorry capacity", "Lorry capacity"],
   // Consignment (sale side)
-  "consignment-orders": ["Consignment Orders", "Consignment Order"],
-  "consignment-notes": ["Consignment Notes", "Consignment Note"],
-  "consignment-returns": ["Consignment Returns", "Consignment Return"],
+  "consignment-orders": ["Consignment orders", "Consignment order"],
+  "consignment-notes": ["Consignment notes", "Consignment note"],
+  "consignment-returns": ["Consignment returns", "Consignment return"],
   // Consignment (purchase side)
-  "purchase-consignment-orders": ["Purchase Consignment Orders", "Purchase Consignment Order"],
-  "purchase-consignment-receives": ["Purchase Consignment Receives", "Purchase Consignment Receive"],
-  "purchase-consignment-returns": ["Purchase Consignment Returns", "Purchase Consignment Return"],
+  "purchase-consignment-orders": ["Purchase consignment orders", "Purchase consignment order"],
+  "purchase-consignment-receives": ["Purchase consignment receives", "Purchase consignment receive"],
+  "purchase-consignment-returns": ["Purchase consignment returns", "Purchase consignment return"],
   // Section hubs — the Level-2 sub-group landing pages (ScmSubgroupHub). Their
   // slug is the singular group id and the label mirrors the NAV_TABS group
   // header the hub itself renders as its title (no detail child → singular ==
   // plural). Without these, /scm/<group> title-cased the slug to "Scm".
-  "sales-order": ["Sales Order", "Sales Order"],
+  "sales-order": ["Sales order", "Sales order"],
   "consignment": ["Consignment", "Consignment"],
   "procurement": ["Procurement", "Procurement"],
   "transportation": ["Transportation", "Transportation"],
@@ -116,10 +116,10 @@ const SCM_SEGMENT_LABELS: Record<string, [string, string]> = {
 // /scm/reports/<report-slug> — its own table since these live one level
 // deeper (segs[2] is the report slug).
 const SCM_REPORT_LABELS: Record<string, string> = {
-  "sales-order-detail-listing": "SO Detail Listing",
-  "delivery-order-detail-listing": "DO Detail Listing",
-  "sales-invoice-detail-listing": "SI Detail Listing",
-  "delivery-return-detail-listing": "DR Detail Listing",
+  "sales-order-detail-listing": "SO detail listing",
+  "delivery-order-detail-listing": "DO detail listing",
+  "sales-invoice-detail-listing": "SI detail listing",
+  "delivery-return-detail-listing": "DR detail listing",
 };
 
 // /scm/hr/<leaf-slug> — HR sits one level deeper too (segs[2] is the leaf) and
@@ -127,7 +127,7 @@ const SCM_REPORT_LABELS: Record<string, string> = {
 // the NAV_TABS HR leaves. Without this, /scm/hr/* title-cased "scm" to "Scm".
 const SCM_HR_LABELS: Record<string, string> = {
   "commission": "Commission",
-  "settings": "HR Settings",
+  "settings": "HR settings",
 };
 
 // Path segments that are actions/children rather than entity IDs — used to

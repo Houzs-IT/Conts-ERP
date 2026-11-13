@@ -187,7 +187,7 @@ describe('the standard statements', () => {
   test('Balance sheet: By month has no 累计 column', () => {
     render(<BalanceSheetTab />);
     fireEvent.click(screen.getByRole('button', { name: 'By month' }));
-    expect(screen.getByRole('region', { name: 'Monthly · Balance Sheet (as at month end)' }).textContent).toBe('no 累计');
+    expect(screen.getByRole('region', { name: 'Monthly · Balance sheet (as at month end)' }).textContent).toBe('no 累计');
     expect(screen.queryByText('BALANCED')).toBeNull();
   });
 

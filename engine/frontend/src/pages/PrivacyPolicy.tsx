@@ -56,7 +56,7 @@ export function PrivacyPolicy() {
   return (
     <div style={{ background: "#fafaf7", minHeight: "100vh", color: "#23281f" }}>
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px 64px" }}>
-        <h1 style={{ fontSize: 26, margin: "18px 0 4px" }}>Privacy Policy</h1>
+        <h1 style={{ fontSize: 26, margin: "18px 0 4px" }}>Privacy policy</h1>
         <p style={meta}>
           The Conts ERP &middot; The Conts Sdn Bhd (202301027399 / 1521322-V) &middot; Last updated 5 November 2026
         </p>

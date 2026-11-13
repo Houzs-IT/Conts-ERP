@@ -74,6 +74,11 @@ html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table)
   background: var(--dt-row);
   border-color: rgba(150,175,255,.24);
   color-scheme: dark;
+  /* Cells with no colour class inherited the page's #151515 (voucher numbers 1.13:1 on prod, 13 Nov 2026). */
+  color: #EEF1F8;
+  /* Text-only tokens (tokens.css); the colour tokens below are also fills, so their inks are matched per use instead. */
+  --c-ink-soft: #B9C0D0;
+  --text-soft: #B9C0D0;
 }
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) tr.bg-surface { background: var(--dt-row); }
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) tr.bg-surface-dim\/35 { background: var(--dt-row-alt); }
@@ -118,3 +123,22 @@ html.conts-embedded[data-beta-skin="night"] .mail-center .bg-primary { backgroun
 html.conts-embedded[data-beta-skin="night"] .mail-center .bg-primary :is(.text-white, svg) { color: #151823; }
 html.conts-embedded[data-beta-skin="night"] .mail-center .bg-primary .bg-white { background: #151823; }
 html.conts-embedded[data-beta-skin="night"] .mail-center .border-primary { border-color: #EEF1F8; }
+
+/* Night: engine cells set their colours inline (docs, money, muted meta), which the class rules above cannot reach:
+   black, teal and red at 1.1-2.9:1 on the night rows (prod, 13 Nov 2026). The common ones map to the night inks
+   (5.2-14:1 on #1C2030/#2A2F42). React writes inline colours as rgb(), so that is what these match. */
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(21, 21, 21)"], [style*="color: rgb(17, 20, 15)"], [style*="color: rgb(58, 63, 54)"]) { color: #EEF1F8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(118, 123, 110)"], [style*="color: rgb(154, 160, 147)"], [style*="color: rgb(119, 115, 107)"], [style*="color: rgb(107, 113, 102)"]) { color: #B9C0D0 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(22, 105, 95)"], [style*="color: rgb(12, 63, 57)"]) { color: #7FD6C8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(17, 105, 74)"], [style*="color: rgb(47, 93, 79)"], [style*="color: rgb(44, 122, 63)"]) { color: #7FD1A8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(179, 38, 30)"], [style*="color: rgb(184, 51, 31)"], [style*="color: rgb(178, 58, 58)"], [style*="color: rgb(168, 53, 47)"], [style*="color: rgb(180, 35, 24)"]) { color: #FF9B90 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(161, 106, 46)"], [style*="color: rgb(138, 90, 0)"], [style*="color: rgb(138, 106, 47)"], [style*="color: rgb(183, 121, 31)"]) { color: #F7CD73 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) [style*="color: rgb(166, 71, 30)"] { color: #F2A27A !important; }
+/* Inline inks written as a colour token (status pills, voucher checks): the token stays, only the text colour changes. */
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: var(--c-orange"], [style*="color: var(--c-burnt"]) { color: #7FD6C8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: var(--c-green"], [style*="color: var(--c-secondary-a"]) { color: #7FD1A8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) [style*="color: var(--c-festive-b"] { color: #FF9B90 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) [style*="color: var(--fg-muted"] { color: #9AA2B4 !important; }
+/* Class inks in the night table that kept their light values: synced green (Team "Active", 2.4:1), accent gold initials (3.2:1). Pills with a solid light fill keep their dark ink. */
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-synced { color: #7BE8D8; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is(.text-accent, .text-accent-ink) { color: #F7CD73; }

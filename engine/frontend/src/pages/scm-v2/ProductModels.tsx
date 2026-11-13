@@ -294,7 +294,7 @@ export const ProductModels = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Catalog"
-        title="Product Models"
+        title="Product models"
         description={
           /* The bespoke .count chip that sat next to the title — the live
              filtered tally keeps its wording verbatim, it just reads as the
@@ -1073,7 +1073,7 @@ export function NewModelDialog({
             first Model card. Sub line is shrunk into a single sentence. */}
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'var(--space-4)', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-            <h2 className={styles.modalTitle}>New Models (bulk)</h2>
+            <h2 className={styles.modalTitle}>New models (bulk)</h2>
             <p className={styles.modalSub} style={{ margin: 0 }}>
               One row per Model. Pick sizes / compartments below — applied to every row.
             </p>

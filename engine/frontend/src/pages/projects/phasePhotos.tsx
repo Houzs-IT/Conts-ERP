@@ -30,7 +30,7 @@ export function PhasePhotosSection({ projectId }: { projectId: number }) {
   const dismantle = (photos.data?.photos ?? []).filter((p) => p.phase === "dismantle");
 
   return (
-    <PanelSection title="Phase Photos" muted>
+    <PanelSection title="Phase photos" muted>
       <div className="text-[11px] text-ink-muted">
         Uploaded by setup / dismantle crew from the Driver App.
       </div>

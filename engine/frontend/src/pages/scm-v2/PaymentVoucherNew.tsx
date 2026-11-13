@@ -676,7 +676,7 @@ export const PaymentVoucherNew = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Finance"
-        title={isRefund ? 'New Customer Refund' : isAp ? 'New AP Payment' : 'New Payment Voucher'}
+        title={isRefund ? 'New customer refund' : isAp ? 'New AP payment' : 'New payment voucher'}
         actions={
           <div className={styles.actions}>
             <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>{SAVE_HOTKEY_HINT}</span>

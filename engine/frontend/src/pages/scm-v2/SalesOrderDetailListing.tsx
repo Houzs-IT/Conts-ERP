@@ -700,7 +700,7 @@ export const SalesOrderDetailListing = () => {
       {/* ── Header — shared PageHeader (full-bleed, design-system) ─── */}
       <PageHeader back
         eyebrow="Reports"
-        title="Sales Order Details"
+        title="Sales order details"
         description="Line-item view — one row per sales-order line, with the order header repeated on every line."
         secondaryActions={[{ label: 'Back', icon: ArrowLeft, onClick: () => navigate(-1) }]}
         primaryAction={

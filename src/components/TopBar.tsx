@@ -1,6 +1,6 @@
 import { Fragment, lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { LOOKS, sidebarLookKey, useDarkTheme } from './Sidebar';
+import { LOOKS, readWs, sidebarLookKey, useDarkTheme } from './Sidebar';
 import { color, radius, text, shell, motion } from '../theme';
 import { findNav, workspaceOf } from '../lib/navigation';
 import { useNavCounts } from '../lib/navBadges';
@@ -33,8 +33,8 @@ export default function TopBar({
   const nav = findNav(path);
   // The browser tab names the page, so tabs, history and screen readers can tell pages apart.
   const pageName = nav ? (nav.page ?? nav.label) : path === '/account' ? 'My account' : path === '/notifications' ? 'Notifications' : null;
-  // A supply chain screen is Dream Crafter's side (as AppShell and the sidebar brand it), so the tab names that company.
-  const company = workspaceOf(path) === 'supply' ? 'Dream Crafter' : 'The Conts';
+  // A supply chain screen is Dream Crafter's side; a page on neither side (My account) follows the sidebar's last company switch.
+  const company = (workspaceOf(path) ?? readWs()) === 'supply' ? 'Dream Crafter' : 'The Conts';
   useEffect(() => { document.title = pageName ? `${pageName} · ${company}` : 'The Conts Property OS'; }, [pageName, company]);
   const ctl = compact ? 40 : shell.controlSm;
   const go = (p: string) => navigate?.(p);

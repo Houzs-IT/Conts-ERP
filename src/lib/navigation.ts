@@ -195,7 +195,7 @@ export const NAV: NavGroup[] = [
   // The shared email inbox on theconts.com addresses (CONTS-0004): the engine's Mail Center, as in Houzs and Hookka.
   // Mailboxes (who reads which address) is for Full only, as the engine asks mail_center.manage for it.
   { label: 'MAIL', workspace: 'rental', items: [
-    { key: 'mailCenter', label: 'Mail Center', icon: 'mail', path: '/mail', area: 'mail' },
+    { key: 'mailCenter', label: 'Mail center', icon: 'mail', path: '/mail', area: 'mail' },
     { key: 'mailboxes', label: 'Mailboxes', icon: 'at-sign', path: '/mail/mailboxes', area: 'mail', full: true },
   ] },
   { label: 'SYSTEM', workspace: 'rental', items: [
@@ -258,7 +258,7 @@ export const NAV: NavGroup[] = [
     { key: 'scProcurement', label: 'Procurement', icon: 'package', area: 'scProcurement', children: [
       { key: 'procurement', label: 'Products', icon: 'package', path: '/procurement/products' },
       { key: 'suppliers', label: 'Suppliers', icon: 'factory', path: '/procurement/suppliers' },
-      { key: 'mrp', label: 'MRP · Stock Status', icon: 'chart-column', path: '/procurement/mrp' },
+      { key: 'mrp', label: 'MRP · stock status', icon: 'chart-column', path: '/procurement/mrp' },
       { key: 'purchaseOrders', label: 'Purchase orders', icon: 'clipboard-list', path: '/procurement/purchase-orders' },
       { key: 'poAmendments', label: 'PO amendments', icon: 'file-diff', path: '/procurement/po-amendments' },
       { key: 'cancellationRequests', label: 'Cancellation requests', icon: 'ban', path: '/procurement/cancellations' },
@@ -268,7 +268,7 @@ export const NAV: NavGroup[] = [
     ] },
     { key: 'scProduction', label: 'Production', icon: 'factory', area: 'scProduction', children: [
       { key: 'productionOrders', label: 'Production orders', icon: 'clipboard-list', path: '/production/production-orders' },
-      { key: 'skuComposition', label: 'SKU Composition', icon: 'clipboard-list', path: '/production/sku-composition' },
+      { key: 'skuComposition', label: 'SKU composition', icon: 'clipboard-list', path: '/production/sku-composition' },
       { key: 'draftDelivery', label: 'Draft delivery', icon: 'truck', path: '/production/draft-delivery', phoneOnly: true },
     ] },
     { key: 'scTransportPlan', label: 'Transportation', icon: 'truck', area: 'scTransportPlan', children: [

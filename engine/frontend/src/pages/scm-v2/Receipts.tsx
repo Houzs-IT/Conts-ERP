@@ -339,7 +339,7 @@ export const Receipts = () => {
 
       {adding && (
         <Modal
-          title={editing ? `Edit ${editing.number} — saving re-posts it` : debtorMode ? 'New receipt — Other Debtor — posts when saved' : 'New receipt — posts when saved'}
+          title={editing ? `Edit ${editing.number} — saving re-posts it` : debtorMode ? 'New receipt — other debtor — posts when saved' : 'New receipt — posts when saved'}
           onClose={closeForm}
           width="min(980px, 100%)"
           ariaLabel={editing ? 'Edit receipt' : 'New receipt'}

@@ -253,7 +253,7 @@ export const FairReport = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Reports"
-        title="Sales Report"
+        title="Sales report"
         description="Exhibition sales by document stage — Sales Order, Delivery Order, Invoice. Confirmed orders only."
         primaryAction={
           <div className="flex items-center gap-2">

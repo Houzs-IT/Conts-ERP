@@ -340,7 +340,7 @@ export function SalesOrderNewGuided() {
             <Sparkles size={11} /> SCM · Sales Order · New
           </div>
           <h1 className="mt-1 font-display text-[21px] font-extrabold tracking-tight text-ink">
-            New Sales Order · Guided
+            New sales order · guided
           </h1>
           <p className="mt-0.5 text-[12px] text-ink-muted">
             Showroom-floor sofa configurator. Pick customer → model → modules →

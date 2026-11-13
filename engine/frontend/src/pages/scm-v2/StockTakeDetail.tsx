@@ -671,7 +671,7 @@ export const StockTakeDetail = () => {
       {/* ── Variance Summary ────────────────────────────────────────── */}
       <section className={styles.card}>
         <div className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Variance Summary</h2>
+          <h2 className={styles.cardTitle}>Variance summary</h2>
         </div>
         <div className={styles.cardBody}>
           <div style={{
@@ -739,7 +739,7 @@ export const StockTakeDetail = () => {
       <section className={styles.card} style={{ overflow: 'clip' }}>
         <div className={styles.cardHeader}>
           <h2 className={styles.cardTitle}>
-            Count Sheet
+            Count sheet
             <span style={{
               marginLeft: 8, fontSize: 'var(--fs-12)',
               color: 'var(--fg-muted)', fontWeight: 400,

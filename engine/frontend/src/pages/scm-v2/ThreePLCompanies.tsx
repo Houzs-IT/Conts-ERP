@@ -83,7 +83,7 @@ export const ThreePLCompanies = ({ embedded = false }: { embedded?: boolean } = 
       {!embedded && (
         <PageHeader
           eyebrow="Delivery"
-          title="3PL Companies"
+          title="3PL companies"
           description="Register each outsourced carrier with its company particulars and its fleet. A carrier's lorries, drivers and helpers join the Fleet module automatically, marked Outsource — and its rate card is set per company, on Rate Cards."
         />
       )}

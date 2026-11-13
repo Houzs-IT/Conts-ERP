@@ -126,7 +126,7 @@ export const ReceiptsPaymentsTab = () => {
         </Button>
       </div>
       {editing && <ReportLayoutEditor report="rp" onClose={() => setEditing(false)} />}
-      {monthly && <MonthlyReport<RpReport> report="receipts-payments" title="Cash Flow (every bank and cash account)" withCumulative fetchColumn={fetchColumn} linesOf={rpLines} fmt={fmtRp} pctTitle="% of the side's total" keyParts={[byParty ? 'party' : 'accounts']} />}
+      {monthly && <MonthlyReport<RpReport> report="receipts-payments" title="Cash flow (every bank and cash account)" withCumulative fetchColumn={fetchColumn} linesOf={rpLines} fmt={fmtRp} pctTitle="% of the side's total" keyParts={[byParty ? 'party' : 'accounts']} />}
       {money.length > 0 && (
         <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', alignItems: 'center' }}>
           <span style={soft}>Total covers every account · tick one to see its own column:</span>

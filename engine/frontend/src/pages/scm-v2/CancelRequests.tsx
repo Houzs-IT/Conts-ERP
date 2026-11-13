@@ -193,7 +193,7 @@ export const CancelRequests = () => {
     <div>
       <PageHeader
         eyebrow="Approval inbox"
-        title="Cancellation Requests"
+        title="Cancellation requests"
         description={
           q.isLoading
             ? 'Loading requests…'

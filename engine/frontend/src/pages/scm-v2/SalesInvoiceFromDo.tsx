@@ -393,7 +393,7 @@ export const SalesInvoiceFromDo = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Supply Chain"
-        title="Pick Delivery Order lines to invoice"
+        title="Pick delivery order lines to invoice"
         actions={
           <div className={styles.actions}>
             <Button variant="ghost" size="md" onClick={() => navigate('/scm/sales-invoices')}>

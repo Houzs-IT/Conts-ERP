@@ -415,7 +415,7 @@ function PositionEditPanel({
     <Panel
       open
       onClose={onClose}
-      title={isNew ? "New Title" : position!.name}
+      title={isNew ? "New title" : position!.name}
       subtitle={isNew ? "Create a title" : "Edit title"}
       width={420}
     >

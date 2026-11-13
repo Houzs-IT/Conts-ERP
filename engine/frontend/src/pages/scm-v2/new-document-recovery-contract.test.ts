@@ -42,7 +42,7 @@ describe.each(contracts)('$file created-document recovery contract', (contract) 
     const hiddenForm = source.slice(hiddenFormStart, hiddenFormEnd);
     /* SalesOrderNew renders its Customer card from a const (renovation mode lays the cards out differently). */
     expect(hiddenForm).toMatch(/>Customer<|\{customerCard\}/);
-    expect(hiddenForm).toContain('Line Items');
+    expect(hiddenForm).toContain('Line items');
     expect(hiddenForm).not.toContain('<PaymentsTable');
   });
 

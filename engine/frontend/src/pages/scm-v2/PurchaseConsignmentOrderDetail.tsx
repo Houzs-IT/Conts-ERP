@@ -586,7 +586,7 @@ export const PurchaseConsignmentOrderDetail = () => {
       {/* ── Line items ──────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Line Items ({isEditing ? editLines.length : visibleItems.length})</h2>
+          <h2 className={styles.cardTitle}>Line items ({isEditing ? editLines.length : visibleItems.length})</h2>
           {/* T12 — Edit mode restores the Create UI: a "+ Add item" that appends a
               blank PcLineCard (PCO is the free-entry head). Hidden while locked. */}
           {isEditing && !isLocked && (
@@ -735,7 +735,7 @@ const SupplierCard = ({
   return (
     <section className={styles.card}>
       <header className={styles.cardHeader}>
-        <h2 className={styles.cardTitle}>Supplier · Dates · Notes</h2>
+        <h2 className={styles.cardTitle}>Supplier · dates · notes</h2>
       </header>
       <div className={styles.cardBody}>
         {!isEditing ? (

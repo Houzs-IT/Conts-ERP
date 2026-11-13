@@ -1778,7 +1778,7 @@ function FieldConfigPanel({
     <Panel
       open
       onClose={onClose}
-      title="Sales Fields"
+      title="Sales fields"
       subtitle="Control what extra information reps are asked for"
       width={440}
     >

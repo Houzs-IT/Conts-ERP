@@ -212,7 +212,7 @@ export const PurchaseInvoiceFromGrn = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Procurement"
-        title="Bill a Goods-Received Note"
+        title="Bill a goods-received note"
         actions={
           <div className={styles.actions}>
             <Button variant="ghost" size="md" onClick={() => navigate('/scm/purchase-invoices')}>
@@ -234,7 +234,7 @@ export const PurchaseInvoiceFromGrn = () => {
 
       <section className={styles.card}>
         <div className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Outstanding GRN Lines</h2>
+          <h2 className={styles.cardTitle}>Outstanding GRN lines</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
             <Button variant="ghost" size="sm" onClick={clearAll} disabled={Object.keys(picks).length === 0}>
               <X {...ICON} /> Clear picks

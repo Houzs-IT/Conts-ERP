@@ -277,7 +277,7 @@ export const PurchaseConsignmentReceiveFromOrder = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Procurement"
-        title="Pick PC Order lines to receive"
+        title="Pick PC order lines to receive"
         actions={
           <div className={styles.actions}>
             <Button variant="ghost" size="md" onClick={() => navigate('/scm/purchase-consignment-receives')}>

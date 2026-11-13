@@ -349,7 +349,7 @@ export function StockTakesListV2() {
     <PullToRefresh onRefresh={onPullToRefresh}>
       <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
         <div className="min-w-0">
-          <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Stock Takes</h1>
+          <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Stock takes</h1>
           <div className="mt-0.5 text-[12.5px] text-ink-muted">
             {stats.total} take{stats.total === 1 ? "" : "s"} · {stats.open} open
           </div>
@@ -359,7 +359,7 @@ export function StockTakesListV2() {
       <div className="hidden md:block">
         <PageHeader
           eyebrow="Warehouse"
-          title="Stock Takes"
+          title="Stock takes"
           description="Physical-count reconciliation — OPEN (counting) → POSTED (variance booked as ADJUSTMENT movements) → CANCELLED."
           primaryAction={
             <Button variant="primary" icon={<Plus size={14} />} onClick={goNew}>

@@ -1407,7 +1407,7 @@ export function MailInbox() {
         <div className="flex items-center gap-2">
           <Mail className="h-6 w-6 text-accent" />
           <div>
-            <h1 className="font-display text-xl font-bold leading-tight text-ink">Mail Center</h1>
+            <h1 className="font-display text-xl font-bold leading-tight text-ink">Mail center</h1>
             <p className="text-xs text-ink-muted">
               Shared inbox · all customer email in one place
               {unreadCount > 0 ? ` · ${unreadCount} unread` : ""}

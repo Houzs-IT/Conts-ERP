@@ -340,7 +340,7 @@ export const PurchaseConsignmentOrderNew = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Procurement"
-        title="New Purchase Consignment Order"
+        title="New purchase consignment order"
         actions={
           <div className={styles.actions}>
             <Button variant="ghost" size="md" onClick={() => navigate('/scm/purchase-consignment-orders')}>

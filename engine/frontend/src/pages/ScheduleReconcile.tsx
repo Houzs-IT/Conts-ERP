@@ -62,7 +62,7 @@ export function ScheduleReconcile() {
 
   return (
     <div style={{ padding: 20, maxWidth: 960 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Schedule Reconcile</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Schedule reconcile</h1>
       <p style={{ fontSize: 13, color: "var(--fg-muted,#666)", marginBottom: 16 }}>
         Upload an organizer's latest schedule photo. It is read automatically and compared to that
         organizer's projects — moved dates, new venues, and events dropped from the schedule

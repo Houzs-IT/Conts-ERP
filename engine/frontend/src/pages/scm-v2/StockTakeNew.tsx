@@ -163,7 +163,7 @@ export const StockTakeNew = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Warehouse"
-        title="New Stock Take"
+        title="New stock take"
         actions={
           <>
             <div className={styles.actions}>

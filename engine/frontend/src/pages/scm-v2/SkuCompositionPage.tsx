@@ -109,7 +109,7 @@ export function SkuCompositionPage() {
     <div className={sku !== null ? "transition-[padding] duration-200 md:pr-[600px]" : "transition-[padding] duration-200"}>
       <PageHeader
         eyebrow="Production"
-        title="SKU Composition"
+        title="SKU composition"
         description="The raw materials one unit of a SKU uses."
         primaryAction={<Button icon={<Plus size={14} />} onClick={() => open("")}>New Composition</Button>}
       />

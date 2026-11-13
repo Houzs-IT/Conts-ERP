@@ -276,7 +276,7 @@ export const PurchaseConsignmentReturns = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Procurement"
-        title="Purchase Consignment Returns"
+        title="Purchase consignment returns"
         actions={
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
             <Button variant="primary" size="sm" onClick={() => navigate('/scm/purchase-consignment-returns/new')}>

@@ -113,7 +113,7 @@ export const SalesOrderMaintenance = () => {
     <div>
       <PageHeader
         eyebrow="Reference data"
-        title="Sales Order Maintenance"
+        title="Sales order maintenance"
         description="Reference data behind sales orders: venues, warehouses, brands, payment terms, letterheads and dropdowns."
         primaryAction={
           <Link
@@ -494,7 +494,7 @@ const MaintenanceBody = ({ canEdit, open }: { canEdit: boolean; open: ReturnType
           L4  — Postcodes in city, columns: Postcode / delete
 
           Each level also has its own Add form at the bottom. */}
-      <CollapsibleSection id="geo" title="Geo & Warehouses" open={open.isOpen('geo')} onToggle={() => open.toggle('geo')}>
+      <CollapsibleSection id="geo" title="Geo & warehouses" open={open.isOpen('geo')} onToggle={() => open.toggle('geo')}>
 
       {/* Warehouse master lives at Inventory → Warehouses — commander
           2026-05-27 "这个 warehouse 是 inventory 那边 create 的 这边 create 不到
@@ -1081,7 +1081,7 @@ const MaintenanceBody = ({ canEdit, open }: { canEdit: boolean; open: ReturnType
           same permission the API enforces, so a maintainer who may not
           re-attribute orders is not shown a tool that would 403. */}
       {canAttributeOther && (
-        <CollapsibleSection id="handover" title="Salesperson Handover" open={open.isOpen('handover')} onToggle={() => open.toggle('handover')}>
+        <CollapsibleSection id="handover" title="Salesperson handover" open={open.isOpen('handover')} onToggle={() => open.toggle('handover')}>
           <SalespersonHandover />
         </CollapsibleSection>
       )}

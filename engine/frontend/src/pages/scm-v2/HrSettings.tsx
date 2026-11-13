@@ -402,7 +402,7 @@ export const HrSettings = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="HR"
-        title="HR Settings"
+        title="HR settings"
         primaryAction={
           editMode ? (
             <div className="flex items-center gap-2">

@@ -117,7 +117,7 @@ export function ProjectMaintenanceView() {
       <div className="max-w-5xl">
         <PageHeader
           eyebrow="Operations · Projects"
-          title="Project Maintenance"
+          title="Project maintenance"
           description="The defaults every project and sales order picks from: property types and layouts, the SLA per step, site crew without a login, and the brands (letterheads)."
         />
         {/* Owner, 14 Oct 2026: property lists and brands, plus site crew without a login (everyone else is a user
@@ -137,7 +137,7 @@ export function ProjectMaintenanceView() {
     <div>
       <PageHeader
         eyebrow="Operations · Projects"
-        title="Project Maintenance"
+        title="Project maintenance"
         description="All the picker lists that drive the new-project form: brands, event types, organizers, venues, plus the default checklist that clones into every new project."
       />
       {/* Picker lists are short — pack them two-up on wide screens to
@@ -749,7 +749,7 @@ function ChecklistManager() {
 
   return (
     <CollapsibleSection
-      title="Default Checklist"
+      title="Default checklist"
       count={templates.length}
       description="Items in the chosen template are cloned into every new project of that event type. Editing here does not affect projects already created."
     >
@@ -2033,7 +2033,7 @@ function EventTypeManager() {
 
   return (
     <CollapsibleSection
-      title="Event Types"
+      title="Event types"
       count={q.data?.data?.length}
       description={'Shown in the "Event Type" dropdown when creating a project. Setting a default checklist template on a type auto-seeds the checklist for every new project of that type.'}
     >
@@ -2197,7 +2197,7 @@ function CostRateManager({ enabled = true }: { enabled?: boolean }) {
 
   return (
     <CollapsibleSection
-      title="Cost Rates"
+      title="Cost rates"
       count={q.data?.data?.length}
       description="Per-brand transport, merchandise, and commission. Saving a row recomputes auto cost lines for every active project on that brand."
     >

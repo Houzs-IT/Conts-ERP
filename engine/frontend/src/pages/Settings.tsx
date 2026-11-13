@@ -272,7 +272,7 @@ function SyncTab({
       </section>
 
       <section className="relative overflow-hidden rounded-md border border-border bg-surface p-6 shadow-stone">
-        <h2 className="mb-1 font-display text-[15px] font-bold leading-tight tracking-tight text-ink">Full Refresh</h2>
+        <h2 className="mb-1 font-display text-[15px] font-bold leading-tight tracking-tight text-ink">Full refresh</h2>
         <p className="mb-4 text-xs text-ink-muted">
           Calls <span className="font-mono">/SalesOrder/getAll</span> and upserts
           everything — ignores server-side Remark2/Attention/Remark4/
@@ -385,7 +385,7 @@ function EmailTab() {
   return (
     <section className="relative overflow-hidden rounded-md border border-border bg-surface p-6 shadow-stone">
       <h2 className="mb-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-brand text-accent">
-        <Mail size={12} /> Email Notifications
+        <Mail size={12} /> Email notifications
       </h2>
 
       {q.loading && <ListSkeleton rows={4} />}
@@ -836,7 +836,7 @@ function BrandingTab() {
   return (
     <section className="relative overflow-hidden rounded-md border border-border bg-surface p-6 shadow-stone">
       <h2 className="mb-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-brand text-accent">
-        <Building2 size={12} /> Company Identity
+        <Building2 size={12} /> Company identity
         {/* Which company's row this tab edits — switch companies in the top
             bar to edit the other one. */}
         <span className="rounded border border-border px-1.5 py-0.5 text-[9px] font-semibold text-ink-muted">

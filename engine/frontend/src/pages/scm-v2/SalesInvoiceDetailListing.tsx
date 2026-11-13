@@ -165,7 +165,7 @@ export const SalesInvoiceDetailListing = () => {
 
   return (
     <DetailListingShell<SiRow>
-      title="Sales Invoice Detail Listing"
+      title="Sales invoice detail listing"
       storageKey="si-detail-listing-grid"
       docNoPlaceholder="SI-2605-001"
       useDetailQuery={useSalesInvoiceDetailListing}

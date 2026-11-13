@@ -288,7 +288,7 @@ export function SystemHealth() {
     <div className="space-y-5">
       <PageHeader
         eyebrow="System · Health"
-        title="System Health"
+        title="System health"
         description="Live database and connection health, plus the audit trail of who changed what. Restricted to positions granted System Health access."
         actions={
           <div className="flex items-center gap-3">
@@ -730,7 +730,7 @@ function PerformancePhase2({ onOpenSetup }: { onOpenSetup: () => void }) {
             id="perf-phase2"
             className="mt-1 font-display text-[18px] font-extrabold tracking-tight text-ink"
           >
-            Performance &amp; Slow Queries
+            Performance &amp; slow queries
           </h2>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-warning-bg px-2.5 py-0.5 text-[10.5px] font-semibold text-warning-text">

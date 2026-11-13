@@ -173,7 +173,7 @@ describe('the Cash Flow tab', () => {
   test('By month opens the monthly view with 累计; PDF steps aside; the column ticks stay (docs/bugs/0916)', () => {
     render(<ReceiptsPaymentsTab />);
     fireEvent.click(screen.getByRole('button', { name: 'By month' }));
-    expect(screen.getByRole('region', { name: /Monthly · Cash Flow/ }).textContent).toBe('with 累计');
+    expect(screen.getByRole('region', { name: /Monthly · Cash flow/ }).textContent).toBe('with 累计');
     expect(screen.queryByText('Balance c/f')).toBeNull();
     expect((screen.getByText('PDF').closest('button') as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByLabelText('Column 310-0010')).toBeTruthy();

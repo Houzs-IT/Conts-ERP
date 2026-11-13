@@ -43,7 +43,7 @@ export function ScmHub() {
     <div>
       <PageHeader
         eyebrow="Operations · Supply Chain"
-        title="Supply Chain"
+        title="Supply chain"
         description="All supply-chain modules in one place — sales, consignment, procurement, warehouse and finance."
       />
 

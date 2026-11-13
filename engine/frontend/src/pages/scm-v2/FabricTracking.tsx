@@ -92,7 +92,7 @@ export const FabricTracking = () => {
       {/* ── Header — shared PageHeader (full-bleed, design-system) ─── */}
       <PageHeader
         eyebrow="Master Data"
-        title="Fabric Converter"
+        title="Fabric converter"
         primaryAction={
           <div className="flex items-stretch gap-2">
             <Button variant="secondary" icon={<Download {...ICON} />} onClick={onExport}>
@@ -220,7 +220,7 @@ const NewFabricDialog = ({ onClose }: { onClose: () => void }) => {
       <div onClick={(e) => e.stopPropagation()}
         className="w-[520px] max-w-[95vw] animate-modal-in rounded-lg border border-border bg-surface p-5 shadow-slab">
         <div className="flex items-center justify-between">
-          <h2 className="font-display text-[19px] font-extrabold leading-tight tracking-tight text-ink">New Fabric</h2>
+          <h2 className="font-display text-[19px] font-extrabold leading-tight tracking-tight text-ink">New fabric</h2>
           <IconButton icon={<X {...ICON} />} variant="ghost" size="sm" onClick={onClose} aria-label="Close" />
         </div>
 
