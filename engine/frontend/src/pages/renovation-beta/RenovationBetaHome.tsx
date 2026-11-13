@@ -114,7 +114,7 @@ function homeColumns(showPay: boolean): Column<TableRow>[] {
     ) },
     { key: "created", label: "Created", group: "Project", width: "120px", getValue: (x) => x.r.p.createdAt, render: (x) => (x.r.p.createdAt ? fmtDate(x.r.p.createdAt) : DASH),
       filterType: "date", dateValue: (x) => x.r.p.createdAt },
-    { key: "brand", label: "Brand", group: "Project", width: "130px", getValue: (x) => x.r.p.brand, render: (x) => x.r.p.brand ?? <span style={{ color: MUTED }}>Not set</span> },
+    { key: "brand", label: "Brand", group: "Project", width: "160px", getValue: (x) => x.r.p.brand, render: (x) => x.r.p.brand ?? <span style={{ color: MUTED }}>Not set</span> },
     { key: "condition", label: "ID condition", group: "Project", width: "150px", getValue: (x) => x.r.word, render: (x) => <StatusCell r={x.r} /> },
     { key: "due", label: "Due", group: "Project", width: "120px", getValue: (x) => x.r.left, render: (x) => <DueCell r={x.r} /> },
     ...(showPay ? [{ key: "payment", label: "Payment", group: "Project", width: "220px", getValue: (x: TableRow) => x.r.p.payment,
