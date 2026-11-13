@@ -43,7 +43,8 @@ const hyperdrive = { ...process.env, CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRI
 const freePort = () => new Promise(ok => { const s = createServer().listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => ok(String(port))); }); });
 const [osInspector, engineInspector] = [await freePort(), await freePort()];
 // The same Windows quirk lets a second server start on a taken port without any error, and then nothing loads.
-const taken = port => new Promise(ok => { const c = connect(port, '127.0.0.1', () => { c.destroy(); ok(true); }).on('error', () => ok(false)); });
+const isListening = (port, host) => new Promise(ok => { const c = connect(port, host, () => { c.destroy(); ok(true); }).on('error', () => ok(false)); });
+const taken = async port => (await Promise.all(['127.0.0.1', '::1'].map(host => isListening(port, host)))).some(Boolean);
 // Another session's dev run may hold the usual ports: take the next free one instead of stopping it.
 const firstFree = async (port, skip = []) => { while (skip.includes(port) || await taken(port)) port++; return port; };
 const engineApiPort = await firstFree(8787);
@@ -62,7 +63,7 @@ const apps = [
     hyperdrive],
   ['engine', 'engine/backend', [...wrangler('engine/backend'), 'dev', '--port', String(engineApiPort), '--inspector-port', engineInspector,
     '--var', `CONTS_SSO_SECRET:${sso}`, '--var', `PUBLIC_APP_URL:http://localhost:${osPort}`,
-    ...(serviceKey ? ['--var', `SUPABASE_SERVICE_ROLE_KEY:${serviceKey}`] : [])],
+    ...(serviceKey ? ['--var', `SUPABASE_URL:https://${PROJECTS[target]}.supabase.co`, '--var', `SUPABASE_SERVICE_ROLE_KEY:${serviceKey}`] : [])],
     hyperdrive],
   ['screens', 'engine/frontend', [bin('engine/frontend', 'vite', 'bin/vite.js'), '--port', String(screensPort), '--strictPort'],
     { ...process.env, VITE_API_URL: `http://localhost:${engineApiPort}` }],
