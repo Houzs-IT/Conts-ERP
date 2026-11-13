@@ -12,12 +12,15 @@ import { DataTable, type Column } from '../components/DataTable';
 import { useApi } from '../lib/useApi';
 import { useToast } from '../components/Toast';
 import { api, errorMessage } from '../lib/api';
-import { rm, date, monthLabel } from '../lib/format';
+import { rm, date, monthLabel, personName } from '../lib/format';
 import type { StatementState } from '../lib/types';
 import { RecordHistory } from '../components/RecordHistory';
 import { StatRow, StatTile } from '../components/Metric';
 import { TERMS, DEDUCTION_TERMS, deductionTerm, lineTerm, lineDetail, isSourceReference } from '../lib/statementTerms';
 import { go } from '../lib/go';
+import { statementActionToast } from '../lib/statementActions';
+import { useSession } from '../lib/session';
+import { mayWork } from '../lib/areaAccess';
 
 /** `/owners/statements/:id` (the old `/finance/statements/:id` redirects here) — one owner's statement on screen: each unit's month the way the Owner Income
  *  Report prints it (income, deductions, split, owner adjustments, payout), every line behind it with a link to
@@ -52,6 +55,8 @@ export default function StatementDetailPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  // Make final is a power given one by one (owner statement close part 3); the server checks it too.
+  const mayMakeFinal = mayWork(useSession().user, 'makeFinal');
   const { data, loading, error, reload } = useApi<{ data: Detail }>(`/statements/${encodeURIComponent(id)}`);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<'send' | 'paid' | null>(null);
@@ -61,10 +66,14 @@ export default function StatementDetailPage() {
     if (!s) return;
     setBusy(true);
     try {
-      if (kind === 'finalise') await api.post('/statements/finalise', { statementIds: [s.id] });
-      if (kind === 'send') await api.post('/statements/send', { statementIds: [s.id] });
-      if (kind === 'paid' && s.payout) await api.patch('/payouts', { id: s.payout.id, state: 'paid' });
-      toast({ tone: 'success', title: kind === 'finalise' ? 'Statement marked final.' : kind === 'send' ? 'Statement sent to the owner.' : 'Marked as paid.' });
+      if (kind === 'paid') {
+        if (s.payout) await api.patch('/payouts', { id: s.payout.id, state: 'paid' });
+        toast({ tone: 'success', title: 'Marked as paid.' });
+      } else {
+        // The server answers 200 with what it did and what it refused (a step still open, a draft out of date).
+        const res = await api.post<{ finalised?: number; sent?: number; failed?: { id: string; reason: string }[] }>(kind === 'finalise' ? '/statements/finalise' : '/statements/send', { statementIds: [s.id] });
+        toast(statementActionToast(kind, res));
+      }
       reload();
     } catch (e) {
       toast({ tone: 'critical', title: 'That did not go through.', body: errorMessage(e, 'Try again in a moment.') });
@@ -75,13 +84,13 @@ export default function StatementDetailPage() {
     return (
       <>
         <PageHeader title="Owner statement" sub={loading ? 'Loading…' : ''} />
-        {error ? <EmptyState title="This statement could not be opened." body={error} action={{ label: 'Back to statements', onClick: () => navigate('/owners?view=statements') }} />
+        {error ? <EmptyState title="This statement could not be opened." body={error} action={{ label: 'Back to statements', onClick: () => navigate('/owners/statements') }} />
           : <Card><TableSkeleton rows={8} cols={4} /></Card>}
       </>
     );
   }
 
-  const next = s.state === 'provisional' ? { label: 'Mark final', run: () => act('finalise') }
+  const next = s.state === 'provisional' ? (mayMakeFinal ? { label: 'Mark final', run: () => act('finalise') } : null)
     : s.state === 'finalised' ? { label: 'Send to owner', run: () => setConfirm('send') }
     : s.state === 'sent' && s.payout && s.payout.state !== 'paid' ? { label: 'Mark paid', run: () => setConfirm('paid') }
     : null;
@@ -91,7 +100,7 @@ export default function StatementDetailPage() {
   return (
     <>
       <PageHeader
-        title={s.owner.name}
+        title={personName(s.owner.name)}
         sub={`Owner statement · ${monthLabel(s.period, { long: true })} · ${s.units.length || 'no'} ${s.units.length === 1 ? 'unit' : 'units'}${s.source === 'owner_workbook' ? ' · from the owner workbook' : ''}`}
         right={
           <div className="flex gap-[9px] flex-wrap items-center">
@@ -178,12 +187,12 @@ export default function StatementDetailPage() {
         spec={!confirm ? null : confirm === 'send' ? {
           title: 'Send this statement to the owner?',
           body: 'The owner is emailed and sees it on the portal. A sent statement cannot be edited.',
-          meta: `${rm(s.totals.netPayout)} net payout · ${s.owner.name}`,
+          meta: `${rm(s.totals.netPayout)} net payout · ${personName(s.owner.name)}`,
           confirmLabel: 'Send', busyLabel: 'Sending...', onConfirm: () => act('send'),
         } : {
           title: 'Mark this payout as paid?',
           body: 'Record that the money has reached the owner. The statement becomes Paid.',
-          meta: `${rm(s.payout?.amount ?? 0)} · ${s.owner.name}`,
+          meta: `${rm(s.payout?.amount ?? 0)} · ${personName(s.owner.name)}`,
           danger: true, confirmLabel: 'Mark paid', busyLabel: 'Saving...', onConfirm: () => act('paid'),
         }}
       />

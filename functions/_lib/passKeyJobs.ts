@@ -3,6 +3,7 @@ import { hasColumn } from './auth';
 import { LIVE_STAY_SQL } from './cleaning';
 import { rentalOnly } from './unitPurpose';
 import { repairNotice } from './notices';
+import { MYT_DAY } from './maintenance';
 
 export type PassKeyScope = { from: string; to: string } | { reservationIds: string[] };
 
@@ -14,6 +15,30 @@ const WINDOW_NOTE = 'Guest check-in';
 const AUTO_JOB = `m.source = 'booking' AND m.job_type = 'pass_key'`;
 const UNTOUCHED = `m.state = 'open' AND (m.vendor_name IS NULL OR trim(m.vendor_name) = '') AND m.started_at IS NULL
   AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.maintenance_id = m.id)`;
+const CHECK_IN_DUE = `m.due_on <= ${MYT_DAY(1)}`;
+const urgencyDueSql = (hasUrgentByHand: boolean): string =>
+  `CASE WHEN ${hasUrgentByHand ? 'm.urgent_by_hand IS TRUE OR ' : ''}${CHECK_IN_DUE} THEN 'urgent' ELSE 'normal' END`;
+const urgencyStaleSql = (hasUrgentByHand: boolean): string =>
+  `m.job_type = 'pass_key' AND m.state != 'resolved' AND m.urgency IS DISTINCT FROM ${urgencyDueSql(hasUrgentByHand)}`;
+
+export const PASS_KEY_DONE_ONLY = 'A Pass key job is finished with Pass key done, not as a repair.';
+
+export interface UrgencyChange { id: string; urgency: string }
+
+export const hasUrgentByHand = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'urgent_by_hand').catch(() => false);
+
+export async function passKeyUrgencyChanges(env: Env): Promise<UrgencyChange[]> {
+  const byHand = await hasUrgentByHand(env);
+  return all<UrgencyChange>(env, `SELECT m.id, ${urgencyDueSql(byHand)} AS urgency FROM maintenance_issues m WHERE ${urgencyStaleSql(byHand)}`);
+}
+
+export async function applyPassKeyUrgency(env: Env): Promise<UrgencyChange[]> {
+  const byHand = await hasUrgentByHand(env);
+  return all<UrgencyChange>(env, `
+    UPDATE maintenance_issues m SET urgency = ${urgencyDueSql(byHand)}, updated_at = ?
+    WHERE ${urgencyStaleSql(byHand)}
+    RETURNING m.id, m.urgency`, nowIso());
+}
 
 export const hasPassKeyJobs = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'reservation_id').catch(() => false);
 
@@ -91,6 +116,7 @@ export async function syncPassKeyJobs(env: Env, scope: PassKeyScope, limit = 200
       )
       SELECT made.id, made.reservation_id, made.due_on, picked.starts_at FROM made JOIN picked ON picked.issue_id = made.id`, ...filter.args, mytToday(), now, now, now, WINDOW_NOTE, now);
     await logSystem(env, 'maintenance.pass_key_created', created);
+    await applyPassKeyUrgency(env);
     await noticeSameDay(env, created);
     return created.length;
   } catch (error) {

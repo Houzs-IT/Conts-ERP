@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import Icon from './Icon';
 import { cx } from '../lib/design-tokens';
+import { revealInRow } from '../lib/revealInRow';
 
 export interface TabItem<K extends string> { key: K; label: string; icon?: string }
 
@@ -19,7 +20,8 @@ const FADE = 32;
 export const tabId = (id: string, key: string): string => `${id}-tab-${key}`;
 export const panelId = (id: string): string => `${id}-panel`;
 
-/** Horizontal tabs with an indigo underline: scrolls sideways on narrow screens with faded edges, arrow keys move. */
+/** Sub-tabs with a gold underline (Conts DS v2; the --color-tab token): one line that scrolls sideways on narrow screens
+ *  with faded edges, never wraps; arrow keys move. */
 export function TabBar<K extends string>({ tabs, value, onChange, label, id }: TabBarProps<K>): JSX.Element {
   const scroller = useRef<HTMLDivElement>(null);
   const buttons = useRef(new Map<K, HTMLButtonElement>());
@@ -41,8 +43,11 @@ export function TabBar<K extends string>({ tabs, value, onChange, label, id }: T
     return () => { observer.disconnect(); el.removeEventListener('scroll', measure); };
   }, [measure]);
 
+  // The open tab is brought into view by scrolling the tab row itself, never with scrollIntoView, which also scrolls
+  // the page (Hookka e27f8a574), and only when the row overflows.
   useEffect(() => {
-    buttons.current.get(value)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const row = scroller.current, tab = buttons.current.get(value);
+    if (row && tab) revealInRow(row, tab);
   }, [value]);
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
@@ -84,3 +89,4 @@ export function TabBar<K extends string>({ tabs, value, onChange, label, id }: T
     </div>
   );
 }
+

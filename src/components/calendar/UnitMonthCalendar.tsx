@@ -10,7 +10,7 @@ import { useApi } from '../../lib/useApi';
 import { useToast } from '../Toast';
 import { api, errorMessage } from '../../lib/api';
 import { channelNote, type ChannelSync } from '../../lib/bookingStatus';
-import { todayMyt, monthLabel, plural, rm, rmShort, dateRange, count } from '../../lib/format';
+import { todayMyt, monthLabel, plural, rm, dateRange, count, buildingName } from '../../lib/format';
 import { CHANNEL } from '../../lib/vocabulary';
 import { BlockWizard } from './CalendarModals';
 import { SelectionPopover, type NightSelection } from './SelectionPopover';
@@ -117,7 +117,7 @@ function UnitPicker({ units, blocks, loading, error, reload, ym, first, next, ni
   const [q, setQ] = useState('');
   const buildings = useMemo(() => {
     const m = new Map<string, string>();
-    for (const u of units) m.set(u.propertyId ?? u.propertyName, u.propertyName);
+    for (const u of units) m.set(u.propertyId ?? u.propertyName, buildingName(u.propertyName));
     return [...m].sort((a, b) => a[1].localeCompare(b[1]));
   }, [units]);
   const rows = useMemo(() => {
@@ -164,7 +164,7 @@ function UnitPicker({ units, blocks, loading, error, reload, ym, first, next, ni
               className="min-h-[64px] flex items-center gap-3 px-4 py-2.5 border-0 [border-bottom:1px_solid_var(--color-line-soft)] bg-transparent text-left cursor-pointer text-ink font-sans">
               <span className="flex-1 min-w-0 flex flex-col gap-0.5">
                 <span className="text-[15px] font-semibold">{u.unitNumber}</span>
-                <span className="text-meta text-muted-ink truncate">{u.propertyName}{now ? ` · ${isHold(now) ? holdName(now) : 'Hosting now'}` : ' · Free tonight'}</span>
+                <span className="text-meta text-muted-ink truncate">{buildingName(u.propertyName)}{now ? ` · ${isHold(now) ? holdName(now) : 'Hosting now'}` : ' · Free tonight'}</span>
               </span>
               <span className="flex flex-col items-end gap-1 flex-none w-[74px]">
                 <span className="text-copy font-semibold tabular-nums">{pct}%</span>
@@ -240,7 +240,7 @@ function MonthView({ unit, data, ym, first, next, nights, today, error, reload, 
       <div className="flex items-end justify-between gap-3">
         <span className="flex flex-col gap-0.5 min-w-0">
           <span className="text-[22px] leading-tight font-semibold tracking-[-0.01em]">{unit.unitNumber}</span>
-          <span className="text-meta text-muted-ink truncate">{unit.propertyName}</span>
+          <span className="text-meta text-muted-ink truncate">{buildingName(unit.propertyName)}</span>
         </span>
         <MonthStep ym={ym} onMonth={onMonth} />
       </div>
@@ -268,11 +268,11 @@ function MonthView({ unit, data, ym, first, next, nights, today, error, reload, 
                 const picked = tapStart === iso;
                 return (
                   <button key={iso} type="button" onClick={() => free && !out && tapNight(iso)} disabled={!free || out || past}
-                    aria-label={`${iso}${free ? `, free, ${rmShort(priceOn(iso))}` : ''}`}
+                    aria-label={`${iso}${free ? `, free, ${rm(priceOn(iso))}` : ''}`}
                     className={`h-[68px] flex flex-col items-start justify-between p-1.5 border-0 [border-right:1px_solid_var(--color-line-soft)] last:border-r-0 bg-transparent text-left font-sans
                       ${out ? 'opacity-35' : ''} ${free && !out && !past ? 'cursor-pointer' : 'cursor-default'} ${picked ? 'bg-gold-tint!' : ''}`}>
                     <span className={`text-meta tabular-nums ${iso === today ? 'w-6 h-6 -m-0.5 grid place-items-center rounded-full bg-black text-white font-semibold' : past ? 'text-faint' : 'text-ink font-medium'}`}>{Number(iso.slice(8))}</span>
-                    {free && !out && !past && priceOn(iso) > 0 && <span className="text-[11px] text-muted-ink tabular-nums leading-none">{rmShort(priceOn(iso)).replace('RM ', '')}</span>}
+                    {free && !out && !past && priceOn(iso) > 0 && <span className="text-[11px] text-muted-ink tabular-nums leading-none">{rm(priceOn(iso)).replace('RM ', '')}</span>}
                   </button>
                 );
               })}
@@ -280,19 +280,24 @@ function MonthView({ unit, data, ym, first, next, nights, today, error, reload, 
                 const ch = CHANNEL[b.channel];
                 const hold = isHold(b), phase = phaseOf(b, today), dim = phase === 'past' || phase === 'inquiry';
                 const left = (s / 7) * 100, width = ((e - s) / 7) * 100;
-                const r = (on: boolean) => (on ? '0' : '999px');
+                const r = (on: boolean) => (on ? '0' : '5px');
+                // The same soft-tint bar as the board (Conts DS v2): channel colour at --stay-tint with a 3px edge.
+                const tint = `color-mix(in srgb, ${ch.color} var(--stay-tint, 14%), var(--color-card))`;
                 return (
                   <button key={b.id} type="button" onClick={() => setOpenBlock(b)}
                     aria-label={`${hold ? holdName(b) : displayName(b)} · ${hold ? '' : ch.label + ' · '}${dateRange(b.checkIn, b.checkOut)}`}
-                    className="absolute top-[26px] h-[26px] flex items-center gap-1 px-1.5 border-0 cursor-pointer font-sans overflow-hidden"
+                    className="absolute top-[26px] h-[24px] flex items-center gap-1 px-1.5 border-0 cursor-pointer font-sans overflow-hidden"
                     style={{
                       left: `calc(${left}% + 1px)`, width: `calc(${width}% - 2px)`,
                       borderRadius: `${r(clipL)} ${r(clipR)} ${r(clipR)} ${r(clipL)}`,
                       background: hold
                         ? `repeating-linear-gradient(135deg, color-mix(in srgb, ${ch.color} 28%, var(--color-surface-card)) 0 2px, var(--color-surface-card) 2px 7px)`
-                        : phase === 'inquiry' ? 'transparent' : dim ? ch.tint : ch.color,
-                      border: phase === 'inquiry' ? '1px dashed var(--color-line-strong)' : hold ? `1px ${ch.border} color-mix(in srgb, ${ch.color} 50%, transparent)` : 'none',
-                      color: hold || dim ? ch.ink : b.channel === 'direct' || b.channel === 'airbnb' ? 'var(--color-black)' : 'white',
+                        : phase === 'inquiry' ? 'transparent' : tint,
+                      border: phase === 'inquiry' ? `1px dashed ${ch.color}` : hold ? `1px ${ch.border} color-mix(in srgb, ${ch.color} 50%, transparent)` : 'none',
+                      borderLeft: clipL || hold ? undefined : `3px ${phase === 'inquiry' ? 'dashed' : 'solid'} ${ch.color}`,
+                      boxShadow: phase === 'hosting' || phase === 'checking_out' ? `inset 0 0 0 1px ${ch.color}` : undefined,
+                      opacity: phase === 'past' ? 0.55 : undefined,
+                      color: hold ? ch.ink : dim ? 'var(--color-muted-ink)' : 'var(--color-ink)',
                     }}>
                     {!clipL && !hold && <span className="flex-none"><ChannelMark ch={b.channel} size={16} muted={dim} /></span>}
                     <span className="text-[12px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{(() => { const name = hold ? holdName(b) : (b.guestName.split(/\s+/)[0] || ch.label); return width < 22 && !clipL ? '' : width < 22 ? name.slice(0, 1) : name; })()}</span>

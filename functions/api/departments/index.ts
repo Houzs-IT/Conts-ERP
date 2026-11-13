@@ -1,6 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { isFieldKind, isKind, isSide } from '../../_lib/access';
+import { isSide } from '../../_lib/access';
 import { cleanName, isRecord, isUniqueViolation, loadDepartment, loadDepartments } from '../../_lib/accessRules';
 
 /** GET /api/departments -> every department with its positions and head counts. Same gate as the permissions chart. */
@@ -11,8 +11,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({ departments: await loadDepartments(env), canEdit: session.role === 'management' });
 };
 
-/** POST /api/departments { name, kind, side } -> { department }. Management only. A new department has no rules, so
- *  its people see No access everywhere until management sets some. */
+/** POST /api/departments { name, side } -> { department }. Management only. A new department is always Staff and has no
+ *  rules, so its people see No access everywhere until management sets some. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response;
@@ -21,13 +21,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const b: unknown = await request.json().catch(() => null);
   const body = isRecord(b) ? b : {};
   const name = cleanName(body.name);
-  const { kind, side } = body;
+  const { side } = body;
+  const kind = 'staff';
   const fields: Record<string, string> = {};
   if (!name) fields.name = 'Enter a name of 80 characters at most.';
-  if (!isKind(kind)) fields.kind = 'Choose a kind.';
   if (!isSide(side)) fields.side = 'Choose The Conts, Dream Crafter or both.';
-  if (!name || !isKind(kind) || !isSide(side)) return fail('VALIDATION', 'Check the department details.', 400, fields);
-  if (isFieldKind(kind)) return fail('VALIDATION', 'Cleaners and technicians are added on HR > Employees.', 422, { kind: 'Choose Staff or Management.' });
+  if (!name || !isSide(side)) return fail('VALIDATION', 'Check the department details.', 400, fields);
 
   const top = await one<{ n: number | null }>(env, 'SELECT max(sort) AS n FROM departments');
   const id = crypto.randomUUID(), now = nowIso();

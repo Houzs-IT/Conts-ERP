@@ -521,9 +521,11 @@ export function Projects() {
     <div>
       {/* Renovation mode shows the original list and calendar again (owner, 14 Oct 2026); only the create form and the
           project detail differ. RenovationBoard / RenovationCalendar are kept but no longer routed. */}
-      {view === "list" && <ByProjectsMode renovation={() => <ProjectsListView renovation />} exhibition={() => <ProjectsListView />} />}
+      {/* One project list and one calendar (owner, 11 Nov 2026: "2套画面要统一"): in renovation mode the old addresses open
+          the project workspace's list and calendar, which every link and the menu already use. */}
+      {view === "list" && <ByProjectsMode renovation={() => <Navigate to="/beta/projects" replace />} exhibition={() => <ProjectsListView />} />}
       {/* Project monitor was dropped from the menus (owner, 11 Oct 2026); an old monitor link opens the Schedule. */}
-      {(view === "calendar" || view === "monitor") && <ProjectsCalendarView />}
+      {(view === "calendar" || view === "monitor") && <ByProjectsMode renovation={() => <Navigate to="/beta/calendar" replace />} exhibition={() => <ProjectsCalendarView />} />}
       {view === "finances" &&
         (canProjectFinance ? (
           <ProjectsFinancesView />

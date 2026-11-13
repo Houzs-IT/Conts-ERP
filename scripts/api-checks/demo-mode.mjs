@@ -191,7 +191,7 @@ async function wholeSystem(send, strip, unitId, realOwnerId) {
   await shows('Units list', '/api/units', 'WS-DEMO-1');
 
   // Real-only actions are refused in Demo; the guarded paths never see demo data.
-  for (const [m, path] of [['POST', '/api/statements/finalise'], ['POST', '/api/statements/send'], ['POST', '/api/payouts/run'], ['POST', '/api/integrations/channex/full-sync'], ['POST', '/api/users']]) {
+  for (const [m, path] of [['POST', '/api/statements/finalise'], ['POST', '/api/statements/unlock-final'], ['POST', '/api/statements/send'], ['POST', '/api/payouts/run'], ['POST', '/api/integrations/channex/full-sync'], ['POST', '/api/users']]) {
     r = await send('management', m, path, {});
     check(`Demo: ${path} is refused (real-only)`, r.status === 409 && r.json?.error?.code === 'DEMO_MODE', `${r.status} ${r.text.slice(0, 120)}`);
   }

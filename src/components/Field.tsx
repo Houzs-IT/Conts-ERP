@@ -18,7 +18,7 @@ export function Field({ label, help, error, numeric, trailing, style, ...rest }:
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
       {label !== undefined && (
-        <label htmlFor={id} style={{ fontSize: 'var(--text-small)', fontWeight: 500, color: 'var(--color-text-muted)' }}>
+        <label htmlFor={id} style={{ fontSize: 'var(--text-small)', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
           {label}
         </label>
       )}

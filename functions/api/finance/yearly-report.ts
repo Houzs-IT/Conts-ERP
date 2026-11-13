@@ -4,6 +4,7 @@ import { todayMyt, MYT_DATE } from '../../_lib/ops';
 import { loadInputs, computeMonthsWithYearToDate, statementSettings, hasActivity, type Query } from '../../_lib/ownerStatement';
 import { isTenancy } from '../../_lib/revenueModel';
 import { monthEndExclusive } from '../../_lib/revenue';
+import { companyLateFor } from '../../_lib/ownerLocks';
 import { taskCleanersReady } from '../../_lib/taskCleaners';
 import { hasCleanPrices, priceBook, layoutKey } from '../../_lib/cleaningPrices';
 import { CLEAN_KINDS_SQL } from '../../_lib/cleaning';
@@ -27,6 +28,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const settings = await statementSettings(q);
   const inputs = await loadInputs(q, `${year}-01-01`, monthEndExclusive(`${year}-12`));
   const computed = await computeMonthsWithYearToDate(q, inputs, months, settings);
+  // The company's share of late changes to an earlier, locked month, by the month it counts in (part 2b, choice A).
+  const late = await companyLateFor(env, null, months[0], months[months.length - 1]);
   const unitOf = new Map(inputs.units.map(u => [u.id, u]));
 
   // Cleans finished on our units, in Malaysian time, that a cleaner did: the pay screen's own set and price rule.
@@ -55,7 +58,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const used = new Set<string>();
   for (const month of months) {
     for (const m of computed.get(month) ?? []) {
-      if (!hasActivity(m)) continue;
+      const lateHere = late.get(`${m.unitId}|${month}`)?.amount ?? 0;
+      if (!hasActivity(m) && !lateHere) continue;
       const lt = m.terms.basis === 'fixed_rent';
       if (!lt && (m.terms.basis !== 'share' || isTenancy(m.terms.model))) { excludedUnits.add(m.unitId); continue; }
       const u = unitOf.get(m.unitId)!;
@@ -69,7 +73,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         additional: sum(c => c === 'additional'), misc: sum(c => c === 'misc'), ownerPct: lt ? 0 : m.terms.ownerPct ?? 0,
         // A yearly guarantee is checked once a year, not month by month (as the Overall unit report).
         ltGrr: lt ? m.fixedRent : m.terms.model === 'management_guarantee' ? m.guarantee : 0,
-        o2: m.adjustmentsTotal, nights: m.nights, days: m.days, cleanerCost: cost.get(`${m.unitId}|${month}`) ?? 0,
+        o2: m.adjustmentsTotal, nights: m.nights, days: m.days, cleanerCost: cost.get(`${m.unitId}|${month}`) ?? 0, late: lateHere,
       });
     }
   }

@@ -7,12 +7,15 @@ export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'reviews
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
 /** `icon`: drawn only in the phone menu, where each screen is its own row; the desktop shows its category's icon. */
-export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey; icon?: string; phoneOnly?: boolean }
+/** A child's `full` works as the item's does; `phone: false` leaves it off the sub-tabs at phone width (its address still opens). */
+export interface NavChild { key: string; label: string; path: string; area?: string; badge?: BadgeKey; icon?: string; phoneOnly?: boolean; full?: boolean; phone?: boolean }
 /** `full`: the screen's data is for roles with Full on its area (the server refuses Edit), so it is shown only then.
- *  `fresh`: a newly added screen, marked New in the desktop menu. */
+ *  `fresh`: a newly added screen, marked New in the desktop menu.
+ *  `tabs`: the children are one screen's sub-tabs (SubNav above the page), not a folding list: the menu shows the item
+ *  once and opens its first child this person can open (owner, 12 Nov 2026: Units and Owners hold their screens as tabs). */
 export interface NavItem {
   key: string; label: string; icon: string; path?: string; area?: string;
-  badge?: BadgeKey; children?: NavChild[]; full?: boolean; fresh?: boolean;
+  badge?: BadgeKey; children?: NavChild[]; full?: boolean; fresh?: boolean; phone?: boolean; tabs?: boolean;
 }
 /** `phone: false`: left off the menu at phone width; its screens still open by address. */
 export interface NavGroup { label: string; workspace: Workspace; items: NavItem[]; phone?: boolean }
@@ -72,7 +75,7 @@ const FINANCE_LAYOUT: Array<[part: string, entries: string[]]> = [
   ['Rental bills', ['desk:payables', 'desk:utilityBills']],
   ['Billing', ['deposit-invoices', 'other-debtors', 'credit-debit-notes', 'not-yet-billed', 'e-invoice']],
   ['Collections', ['money-received', 'official-receipts', 'debtors', 'customer-ledger', 'outstanding', 'debtor-ageing']],
-  ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon']],
+  ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon', 'desk:airbnbRecon']],
   ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'department-spend', 'renovation-projects', 'ai-usage']],
   ['Setup', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup']],
 ];
@@ -85,6 +88,8 @@ export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix:
     // What each unit earned and spent, in two layers (chew, 28 Oct 2026: it belongs in Finance).
     unitPnl: { key: `unitPnl${keySuffix}`, label: 'Unit P&L', icon: 'chart-column', path: `${prefix}/unit-pnl`, area: 'finance' },
     approvals: { key: `approvals${keySuffix}`, label: 'Approvals', icon: 'stamp', path: `${prefix}/approvals`, area: 'finance', badge: 'approvals' },
+    // Airbnb's payments matched to the bookings (chew, 10 Nov 2026): its own area, closed until management opens it.
+    airbnbRecon: { key: `airbnbRecon${keySuffix}`, label: 'Airbnb reconciliation', icon: 'arrow-left-right', path: `${prefix}/airbnb-reconciliation`, area: 'airbnbRecon' },
   };
   const ledger = new Map(LEDGER_SCREENS.map(s => [s.slug, {
     key: `ledger_${s.slug}${keySuffix}`, label: s.label, icon: LEDGER_ICON[s.slug] ?? 'book-open', path: `${prefix}/${s.slug}`, area: 'ledger',
@@ -94,7 +99,9 @@ export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix:
     label: FINANCE_PREFIX, workspace, phone: false,
     items: FINANCE_LAYOUT.map(([part, entries]): NavItem => ({
       key: `finance_${part.toLowerCase().replace(/\s+/g, '_')}${keySuffix}`, label: part, icon: FINANCE_PART_ICON[part] ?? 'folder',
-      children: entries.map(e => (e.startsWith('desk:') ? desk[e.slice(5)] : ledger.get(e))).filter((i): i is NavItem => !!i)
+      // Rental's Airbnb reconciliation is a Unit report tab (chew, 13 Nov 2026), so its Finance menu leaves it out.
+      children: entries.filter(e => !(workspace === 'rental' && e === 'desk:airbnbRecon'))
+        .map(e => (e.startsWith('desk:') ? desk[e.slice(5)] : ledger.get(e))).filter((i): i is NavItem => !!i)
         .map(i => ({ key: i.key, label: i.label, path: i.path!, area: i.area, badge: i.badge, icon: i.icon })),
     })),
   }];
@@ -113,19 +120,16 @@ export const NAV: NavGroup[] = [
     // was hard to find under System). No permission area: the engine answers each person with their own only
     // (functions/api/claims/[[path]].ts).
     { key: 'myClaims', label: 'My claims', icon: 'receipt', path: '/my-claims' },
+    // Portfolio and Performance sit in Home (the approved prototype, polish 1). Only the menu heading moved: their
+    // permission areas keep the Reports group (functions/_lib/access.ts), so stored rules are unchanged.
     { key: 'portfolio', label: 'Portfolio', icon: 'layers', path: '/portfolio', area: 'portfolio' },
-    { key: 'unitReport', label: 'Overall unit report', icon: 'file-spreadsheet', path: '/portfolio/owner-report', area: 'portfolio', full: true },
     { key: 'analytics', label: 'Performance', icon: 'trending-up', path: '/performance/analytics', area: 'performance', full: true },
-  ] },
-  // Reports sit under Home (owner, 29 Oct 2026), with their own permission area since 30 Oct 2026.
-  { label: 'REPORTS', workspace: 'rental', phone: false, items: [
-    { key: 'yearlyReport', label: 'Yearly unit report', icon: 'file-spreadsheet', path: '/reports/yearly', area: 'reports', fresh: true },
-    { key: 'ygrrReport', label: 'YGRR report', icon: 'shield-check', path: '/reports/ygrr', area: 'reports', fresh: true },
+    // The three unit reports are one Unit report under Units now (owner, 12 Nov 2026).
   ] },
   { label: 'RESERVATIONS', workspace: 'rental', items: [
-    { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'reservations' },
+    { key: 'calendar', label: 'Calendar', icon: 'calendar-days', path: '/reservations/calendar', area: 'calendar' },
     { key: 'bookings', label: 'Reservations', icon: 'book-open', path: '/reservations/bookings', area: 'reservations' },
-    { key: 'guests', label: 'Guests', icon: 'users', path: '/reservations/guests', area: 'reservations' },
+    { key: 'guests', label: 'Guests', icon: 'users', path: '/reservations/guests', area: 'guests' },
     // Invoices and receipts issued to guests: guest invoicing, so it sits with reservations. Still money work, so
     // its permission area stays Finance (who can open it does not change).
   ] },
@@ -133,39 +137,56 @@ export const NAV: NavGroup[] = [
   // Maintenance; the old addresses redirect (App.tsx). Housekeeping is called Cleaning everywhere.
   { label: 'OPERATIONS', workspace: 'rental', items: [
     { key: 'today', label: 'Today', icon: 'clipboard-check', path: '/operations/today', area: 'operations', badge: 'today' },
-    { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'operations', badge: 'cleaning' },
-    { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'operations', badge: 'maintenance' },
+    { key: 'cleaning', label: 'Cleaning', icon: 'sparkles', path: '/operations/cleaning', area: 'cleaning', badge: 'cleaning' },
+    { key: 'maintenance', label: 'Maintenance', icon: 'wrench', path: '/operations/maintenance', area: 'maintenance', badge: 'maintenance' },
   ] },
   // Hookka's Employees page with its eleven tabs: working hours, attendance, labour cost, payroll, advances, penalties,
   // the employee record (owner, 26 Oct 2026; PLAN-hr-employees.md).
   { label: 'HR', workspace: 'rental', items: [
     { key: 'employees', label: 'Employees', icon: 'users', path: '/hr/employees', area: 'hr' },
   ] },
+  /* Three entries, each one screen with its related screens as sub-tabs (owner, 12 Nov 2026). Every tab keeps its
+     own address and permission area, so old links and bookmarks still open it. */
   { label: 'UNITS', workspace: 'rental', items: [
+    // One Unit report: the month, the year and YGRR are views of the same report (owner, 12 Nov 2026). It replaced the
+    // Overall unit report, Yearly unit report and YGRR report entries under Reports.
+    { key: 'unitReport', label: 'Unit report', icon: 'file-spreadsheet', tabs: true, children: [
+      { key: 'unitReportMonthly', label: 'Monthly', path: '/portfolio/owner-report', area: 'portfolio', full: true },
+      // Airbnb's payments are confirmed here before the month's Revenue is locked, so it sits beside Monthly (chew,
+      // 13 Nov 2026: take it out of Finance and put it under the Unit report). It keeps its address and permission area.
+      { key: 'unitReportAirbnb', label: 'Airbnb reconciliation', path: '/finance/airbnb-reconciliation', area: 'airbnbRecon', phone: false },
+      { key: 'yearlyReport', label: 'Yearly', path: '/reports/yearly', area: 'reports', phone: false },
+      { key: 'ygrrReport', label: 'YGRR', path: '/reports/ygrr', area: 'reports', phone: false },
+    ] },
     // Buildings, the unit record and access codes are one Units screen (owner, 8 Oct).
-    { key: 'units', label: 'Units', icon: 'building-2', path: '/properties/units', area: 'properties' },
-    // Everything set to change on a later date, in one list (owner, 30 Oct 2026).
-    { key: 'scheduledChanges', label: 'Scheduled changes', icon: 'calendar-clock', path: '/properties/scheduled-changes', area: 'properties' },
-    // Units we find a long-term tenant for, for the owner (staff sheet UNIT, 17 Oct 2026).
-    { key: 'agentToLet', label: 'Agent to let', icon: 'key-round', path: '/properties/agent-to-let', area: 'properties' },
-    // Owner statements and owner payouts live on the owner (owner, 11 Oct 2026): each owner's page, and the Owners
-    // list's Statements and Payouts tabs for a whole month. Their old addresses redirect (App.tsx).
-    { key: 'ownerList', label: 'Owners', icon: 'user-round', path: '/owners', area: 'owners', badge: 'statements' },
-    { key: 'contracts', label: 'Contracts', icon: 'file-signature', path: '/owners/contracts', area: 'owners' },
-    // The workbook's misc deductions sheet: additional deductions and O2 by month (owner, 4 Nov 2026). Money, so the Finance area.
-    { key: 'deductions', label: 'Deductions', icon: 'receipt', path: '/properties/deductions', area: 'finance', fresh: true },
-    // Owner B (owner, 2 Nov 2026): the new owners module, built beside Owners (A) so the two can be compared; it took
-    // the Owner Showcase's menu place and permission (Performance), which is what sales staff open, and its sample
-    // owner portal replaced the showcase. Its Owners, Statements and Payouts tabs follow their own areas.
-    { key: 'ownerB', label: 'Owner B', icon: 'contact', path: '/owner-b', area: 'performance', fresh: true },
-    // The lists the unit screens pick from: buildings, unit types, contract types (owner, 4 Nov 2026).
-    { key: 'unitSettings', label: 'Unit settings', icon: 'settings', path: '/properties/settings', area: 'properties' },
+    { key: 'units', label: 'Units', icon: 'building-2', tabs: true, children: [
+      { key: 'unitList', label: 'All units', path: '/properties/units', area: 'properties' },
+      // Everything set to change on a later date, in one list (owner, 30 Oct 2026).
+      { key: 'scheduledChanges', label: 'Scheduled changes', path: '/properties/scheduled-changes', area: 'scheduledChanges' },
+      // Units we find a long-term tenant for, for the owner (staff sheet UNIT, 17 Oct 2026).
+      { key: 'agentToLet', label: 'Agent to let', path: '/properties/agent-to-let', area: 'agentToLet' },
+      // The lists the unit screens pick from: buildings, unit types, contract types (owner, 4 Nov 2026).
+      { key: 'unitSettings', label: 'Unit settings', path: '/properties/settings', area: 'unitSettings' },
+    ] },
+    // Owner statements and owner payouts live on the owner (owner, 11 Oct 2026): each owner's page, and these tabs for a
+    // whole month. Money is not worked on the phone, so those two stay off the phone's tabs (their links still open).
+    { key: 'ownerList', label: 'Owners', icon: 'user-round', tabs: true, children: [
+      { key: 'owners', label: 'Owners', path: '/owners', area: 'owners' },
+      { key: 'ownerStatements', label: 'Owner statements', path: '/owners/statements', area: 'finance', badge: 'statements', phone: false },
+      { key: 'ownerPayouts', label: 'Owner payouts', path: '/owners/payouts', area: 'finance', phone: false },
+      { key: 'contracts', label: 'Contracts', path: '/owners/contracts', area: 'contracts' },
+      // The workbook's misc deductions sheet: additional deductions and O2 by month (owner, 4 Nov 2026).
+      { key: 'deductions', label: 'Deductions', path: '/properties/deductions', area: 'deductions' },
+      // Owner B folded into Owners (owner, 12 Nov 2026): the company showcase and portal access. It keeps Owner B's
+      // permission area (Performance), which is what sales staff open. View as owner is on the owner profile.
+      { key: 'ownerPortal', label: 'Owner portal and showcase', path: '/owners/portal', area: 'performance' },
+    ] },
   ] },
   // Finance's desk work. Not on the phone (owner, 11 Oct 2026: money is not needed on the phone).
   ...financeGroups('/finance', '', 'rental'),
   { label: 'GROWTH', workspace: 'rental', items: [
     { key: 'pricing', label: 'Pricing', icon: 'tag', path: '/performance/pricing', area: 'pricing', full: true },
-    { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'pricing', badge: 'reviews' },
+    { key: 'reviews', label: 'Reviews', icon: 'star', path: '/performance/reviews', area: 'reviews', badge: 'reviews' },
     // Guest messages from Airbnb, Booking.com and WhatsApp, below Reviews (owner, 2 Nov 2026; migration 0200 moved the
     // permission area with it, so nobody's access changed).
     { key: 'inbox', label: 'Messages', icon: 'inbox', path: '/communication/inbox', area: 'comms', badge: 'inbox' },
@@ -181,7 +202,7 @@ export const NAV: NavGroup[] = [
     { key: 'users', label: 'Users and roles', icon: 'shield-check', path: '/system/users', area: 'users' },
     { key: 'integrations', label: 'Integrations', icon: 'plug', path: '/system/integrations', area: 'integrations' },
     // My account and Notifications are every person's own, so they carry an area no role is ever denied.
-    { key: 'settings', label: 'Settings', icon: 'settings', area: 'settings', children: [
+    { key: 'settings', label: 'Settings', icon: 'settings', area: 'settings', tabs: true, children: [
       ...SETTINGS_SECTIONS.map(s => ({ key: `settings_${s.key}`, label: s.label, path: `/system/settings/${s.key}` })),
       { key: 'myAccount', label: 'My account', path: '/account', area: 'account' },
       { key: 'notifications', label: 'Notifications', path: '/notifications', area: 'account' },
@@ -201,9 +222,9 @@ export const NAV: NavGroup[] = [
   ] },
   { label: 'SERVICE CASES', workspace: 'supply', items: [
     { key: 'serviceCaseList', label: 'Service cases', icon: 'zap', path: '/service/cases', area: 'serviceCases' },
-    { key: 'serviceMetrics', label: 'Quality metrics', icon: 'trending-up', path: '/service/metrics', area: 'serviceCases' },
-    { key: 'serviceMaintenance', label: 'Case settings', icon: 'settings', path: '/service/maintenance', area: 'serviceCases', full: true },
-    { key: 'myCases', label: 'My cases', icon: 'inbox', path: '/service/my-cases', area: 'serviceCases' },
+    { key: 'serviceMetrics', label: 'Quality metrics', icon: 'trending-up', path: '/service/metrics', area: 'serviceMetrics' },
+    { key: 'serviceMaintenance', label: 'Case settings', icon: 'settings', path: '/service/maintenance', area: 'serviceSettings', full: true },
+    { key: 'myCases', label: 'My cases', icon: 'inbox', path: '/service/my-cases', area: 'serviceMyCases' },
   ] },
   /* The engine's renovation screens are the Projects pages (owner, 3 Nov 2026): Beta's Home and Calendar replaced the
      old Project list and Schedule, keeping those addresses (scmEngine.ts), and the Beta group is gone. */
@@ -211,10 +232,10 @@ export const NAV: NavGroup[] = [
     { key: 'projectList', label: 'Projects', icon: 'folder-kanban', path: '/projects/list', area: 'projects' },
     { key: 'projectCalendar', label: 'Calendar', icon: 'calendar-days', path: '/projects/calendar', area: 'projects' },
     // Handover snag list (TODO item 17): every project's open defects, and the checklists a handover check starts from.
-    { key: 'projectDefects', label: 'Defects', icon: 'clipboard-check', path: '/projects/defects', area: 'projects' },
-    { key: 'projectHandoverChecklists', label: 'Handover checklists', icon: 'list-checks', path: '/projects/handover-checklists', area: 'projects' },
-    { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', area: 'projects', full: true },
-    { key: 'projectMaintenance', label: 'Project settings', icon: 'settings', path: '/projects/maintenance', area: 'projects', full: true },
+    { key: 'projectDefects', label: 'Defects', icon: 'clipboard-check', path: '/projects/defects', area: 'projectDefects' },
+    { key: 'projectHandoverChecklists', label: 'Handover checklists', icon: 'list-checks', path: '/projects/handover-checklists', area: 'projectHandover' },
+    { key: 'projectFinances', label: 'Finances', icon: 'wallet', path: '/projects/finances', area: 'projectFinances', full: true },
+    { key: 'projectMaintenance', label: 'Project settings', icon: 'settings', path: '/projects/maintenance', area: 'projectSettings', full: true },
   ] },
   { label: 'SUPPLY CHAIN', workspace: 'supply', items: [
     { key: 'scSales', label: 'Sales order', icon: 'shopping-cart', area: 'scSales', children: [
@@ -245,7 +266,7 @@ export const NAV: NavGroup[] = [
       { key: 'purchaseInvoices', label: 'Purchase invoices', icon: 'receipt-text', path: '/procurement/purchase-invoices', area: 'scInvoices' },
       { key: 'purchaseReturns', label: 'Purchase returns', icon: 'package-x', path: '/procurement/purchase-returns' },
     ] },
-    { key: 'scProduction', label: 'Production', icon: 'factory', area: 'scProcurement', children: [
+    { key: 'scProduction', label: 'Production', icon: 'factory', area: 'scProduction', children: [
       { key: 'productionOrders', label: 'Production orders', icon: 'clipboard-list', path: '/production/production-orders' },
       { key: 'skuComposition', label: 'SKU Composition', icon: 'clipboard-list', path: '/production/sku-composition' },
       { key: 'draftDelivery', label: 'Draft delivery', icon: 'truck', path: '/production/draft-delivery', phoneOnly: true },
@@ -270,7 +291,7 @@ export const NAV: NavGroup[] = [
   ] },
   // Dream Crafter's own HR (owner, 30 Oct 2026): one Employees page, laid out as The Conts'. Shares its label with the Rental HR group.
   { label: 'HR', workspace: 'supply', items: [
-    { key: 'dcEmployees', label: 'Employees', icon: 'users', path: '/supply/hr/employees', area: 'hr', fresh: true },
+    { key: 'dcEmployees', label: 'Employees', icon: 'users', path: '/supply/hr/employees', area: 'dcHr', fresh: true },
   ] },
   // The same Finance as in Rental (finance phase 1): one set of company books for both sides, so the supply chain
   // sidebar stays put while finance works.
@@ -314,7 +335,7 @@ export function switchedOff(path: string): boolean {
 
 /** Menu areas (and single menu keys) whose screens exist only in the supply chain engine: hidden where it is not set up. */
 const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'ledger', 'mail'];
-const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'owner'];
+const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'renovator', 'owner'];
 
 /** Areas (and menu keys) closed to a role: from its permission levels where the session carries them, else the built-in list. */
 function denied(role: UserRole, access?: Record<string, AccessLevel>): string[] {
@@ -347,7 +368,8 @@ export function screenClosed(path: string, access?: Record<string, AccessLevel>)
   const area = areaOfPath(path);
   if (!area) return false;
   if (access[area] === 'none') return true;
-  const item = NAV.flatMap(g => g.items).find(i => i.path === path);
+  const items = NAV.flatMap(g => g.items);
+  const item = items.find(i => i.path === path) ?? items.flatMap(i => i.children ?? []).find(c => c.path === path);
   return !!item?.full && access[area] !== 'full';
 }
 
@@ -365,12 +387,13 @@ function navGroups(role: UserRole, engine: boolean, access?: Record<string, Acce
   if (deny.includes('*')) return [];
   const open = (key: string, area: string) => !deny.includes(key) && !deny.includes(area);
   const enough = (i: NavItem) => !i.full || !access || FIXED_ROLES.includes(role) || access[areaOfItem(i)] === 'full';
+  const enoughChild = (i: NavItem, c: NavChild) => !c.full || !access || FIXED_ROLES.includes(role) || access[areaOfChild(i, c)] === 'full';
   // A parent closed to this role still shows the children with an open area of their own (Sales invoices under
   // Sales order); a child without its own area follows its parent.
   return NAV
     .map(g => ({ ...g, items: g.items
       .filter(i => (i.children || open(i.key, areaOfItem(i))) && enough(i))
-      .map(i => i.children ? { ...i, children: i.children.filter(c => open(c.key, areaOfChild(i, c)) && (!!c.area || open(i.key, areaOfItem(i)))) } : i)
+      .map(i => i.children ? { ...i, children: i.children.filter(c => open(c.key, areaOfChild(i, c)) && (!!c.area || open(i.key, areaOfItem(i))) && enoughChild(i, c)) } : i)
       .filter(i => !i.children || i.children.length > 0) }))
     .filter(g => g.items.length > 0);
 }
@@ -402,15 +425,32 @@ export function workspaceOf(path: string): Workspace | null {
   if (SUPPLY_OFF_MENU[path]) return 'supply';
   for (const g of NAV) for (const it of g.items) {
     if (it.path && (path === it.path || (it.path !== '/' && path.startsWith(it.path + '/')))) return g.workspace;
-    if (it.children?.some(c => c.path === path)) return g.workspace;
+    if (it.children?.some(c => c.path === path || (it.tabs && path.startsWith(c.path + '/')))) return g.workspace;
   }
   return null;
 }
 
+/** The sub-tabs to draw above a page: its menu item's tabs this person can open (the menu's own rule), when there are
+ *  at least two. `groups` is the person's menu (navFor). A record under a tab (/properties/units/C-37-13A) keeps
+ *  its tab selected. On a phone, tabs marked `phone: false` are left out unless they are the one open. */
+export function subTabsFor(groups: NavGroup[], path: string, phone = false): { item: NavItem; tabs: NavChild[]; current: string | null } | null {
+  for (const g of groups) for (const it of g.items) {
+    if (!it.tabs || !it.children) continue;
+    const hit = it.children.find(c => c.path === path) ?? it.children.filter(c => path.startsWith(c.path + '/')).sort((a, b) => b.path.length - a.path.length)[0];
+    if (!hit) continue;
+    const tabs = it.children.filter(c => !phone || c.phone !== false || c.key === hit.key);
+    return tabs.length >= 2 ? { item: it, tabs, current: hit.key } : null;
+  }
+  return null;
+}
+
+/** Where a menu entry opens: its own address, or its first sub-tab or child this person can open. */
+export const entryPath = (it: NavItem): string | undefined => it.path ?? it.children?.[0]?.path;
+
 /** role → landing path. The server returns this as `home`; kept here for the client guard. */
 export const HOME: Record<UserRole, string> = {
   management: '/', operations_staff: '/operations/today', housekeeper: '/portal/today',
-  technician: '/portal/today', owner: '/owner',
+  technician: '/portal/today', renovator: '/portal/today', owner: '/owner',
 };
 
 /** Landing path from the role, side and department. Keep in step with homeFor in functions/_lib/door.ts: the Finance
@@ -426,10 +466,8 @@ export const homeFor = (who: Pick<SessionUser, 'role' | 'side' | 'department'>):
 /** Pages below a menu entry, for the third breadcrumb ("Units / Owners / Owner statement"). */
 const SUB_PAGES: [RegExp, string][] = [
   [/^\/owners\/statements\/[^/]+$/, 'Owner statement'],
-  [/^\/owner-b\/sample\/[^/]+$/, 'Owner portal (sample)'],
-  [/^\/owner-b\/[^/]+\/portal$/, 'View as owner'],
-  [/^\/owner-b\/(?!sample$)[^/]+$/, 'Owner profile'],
-  [/^\/owners\/(?!contracts$|statements$)[^/]+$/, 'Owner profile'],
+  [/^\/owners\/[^/]+\/portal$/, 'View as owner'],
+  [/^\/owners\/(?!contracts$|statements$|payouts$|close$|portal$)[^/]+$/, 'Owner profile'],
   [/^\/properties\/units\/new$/, 'Add unit'],
   [/^\/properties\/units\/[^/]+$/, 'Unit'],
   [/^\/system\/integrations\/hostplatform$/, 'HostPlatform import'],
@@ -446,7 +484,8 @@ const RENTAL_OFF_MENU: Record<string, { group: string; item: string; page?: stri
 export function findNav(path: string): { group: string; item: string; label: string; page?: string } | null {
   for (const g of NAV) for (const it of g.items) {
     if (it.path === path) return { group: groupName(g.label), item: it.label, label: it.label };
-    for (const c of it.children ?? []) if (c.path === path) return { group: it.label, item: it.label, label: c.label };
+    // A sub-tab reads "Units / Owners / Contracts"; a folding child "Sales order / Sales orders".
+    for (const c of it.children ?? []) if (c.path === path) return it.tabs ? { group: groupName(g.label), item: it.label, label: c.label } : { group: it.label, item: it.label, label: c.label };
   }
   const off = SUPPLY_OFF_MENU[path];
   if (off) return { group: off[0], item: off[1], label: off[1] };

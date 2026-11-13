@@ -57,14 +57,14 @@ const mytParts = (iso: string) => {
 /** 09/16: month and day, no year (the engine's fmtDayMonth). */
 const md = (iso: string) => fmtDayMonth(iso);
 
-/** 2026/09/16: year first, numeric (owner, 3 Nov 2026; the engine's rule). */
+/** 16/09/2026: day first, numeric (YH, 11 Nov 2026; the engine's rule). */
 export const date = (iso: string) => fmtDate(iso);
 
 /** A YYYY-MM-DD day (or YYYY-MM-15 for a month) in another language, for the portal (src/lib/portalI18n.ts). */
 export const dateIn = (locale: string, day: string, opts: Intl.DateTimeFormatOptions) =>
   new Intl.DateTimeFormat(locale, { ...opts, timeZone: MYT }).format(new Date(`${day.slice(0, 10)}T12:00:00+08:00`));
 
-/** 2026/09/16 – 2026/09/29: both ends in full, so neither can be misread. */
+/** 16/09/2026 – 29/09/2026: both ends in full, so neither can be misread. */
 export const dateRange = (fromIso: string, toIso: string) => `${date(fromIso)} – ${date(toIso)}`;
 
 /** 15:00 — 24-hour, MYT */
@@ -97,13 +97,13 @@ export const monthLabel = (iso: string, opts?: { long?: boolean }) => {
 /** 2026 */
 export const year = (iso: string) => String(mytParts(iso).y);
 
-/** 2026/09/16 14:06 */
+/** 16/09/2026 14:06 */
 export const dateTime = (iso: string) => fmtDateTime(iso);
 
-/** 09/16: month and day, no year, where the year is plain from the page. */
+/** 16/09: day and month, no year, where the year is plain from the page. */
 export const dateShort = (iso: string) => md(iso);
 
-/** Sunday, 2026/10/25: the weekday spelled out, the date numeric. */
+/** Sunday, 25/10/2026: the weekday spelled out, the date numeric. */
 export const dateLong = (iso: string) => {
   const p = mytParts(iso);
   const day = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()];
@@ -160,12 +160,39 @@ export const greetName = (fullName: string | null | undefined, fallback = 'there
 
 export const humanize = (code: string) => code.replace(/[_.]+/g, ' ').trim().toLowerCase().replace(/^./, c => c.toUpperCase());
 
-/** ALL-CAPS names from imports read in Title Case; company suffixes stay upper case. The stored value is unchanged. */
-export const titleCase = (name: string) => {
-  if (!name || name !== name.toUpperCase() || !/[A-Z]/.test(name)) return name;
-  const KEEP = new Set(['SDN', 'BHD', 'PLT', 'LLP', 'A/L', 'A/P', 'B/L', 'S/O', 'D/O']);
-  return name.split(/(\s+)/).map(w => KEEP.has(w.replace(/[.,]/g, '')) ? w
-    : w.toLowerCase().replace(/(^|[-'(/])([a-z])/g, (_, a: string, b: string) => a + b.toUpperCase())).join('');
+/** Short place and company abbreviations that stay in capitals inside a title-cased name. */
+const KEEP_UPPER = new Set(['SDN', 'BHD', 'PLT', 'LLP', 'A/L', 'A/P', 'B/L', 'S/O', 'D/O',
+  'KL', 'PJ', 'DK', 'RC', 'JB', 'KLCC', 'KLIA', 'TTDI', 'OUG', 'USJ', 'MRT', 'LRT', 'YTL', 'UOA', 'II', 'III', 'IV']);
+
+/** One word of a name, title-cased for display. Words with a digit (unit codes, SS2, MK2) keep what is stored, except
+ *  ordinals (8TH -> 8th); a word already in mixed case is kept; short abbreviations stay in capitals. */
+const displayWord = (w: string, place = false) => {
+  if (!/[A-Za-z]/.test(w)) return w;
+  const bare = w.replace(/[.,()]/g, '');
+  if (/\d/.test(w)) return /^\d+(ST|ND|RD|TH)$/i.test(bare) ? w.toLowerCase() : w;
+  const upper = w === w.toUpperCase(), lower = w === w.toLowerCase();
+  if (!upper && !lower) return w;
+  // In a building name a short word with no vowel is an abbreviation (KL, PJ, DK); in a person's name it may be a
+  // surname (NG), so only the fixed list applies there.
+  if (upper && (KEEP_UPPER.has(bare.toUpperCase()) || (place && bare.length <= 3 && !/[AEIOUY]/.test(bare)))) return w;
+  return w.toLowerCase().replace(/(^|[-'(/&])([a-z])/g, (_, a: string, b: string) => a + b.toUpperCase());
+};
+
+const titleWords = (s: string, place = false) => s.split(/(\s+)/).map(w => displayWord(w, place)).join('');
+
+/** ALL-CAPS or all-lowercase names read in Title Case; company suffixes, short abbreviations (KL, SS2) and unit codes
+ *  stay as stored. A name a person typed in mixed case is kept. The stored value is unchanged. */
+export const titleCase = (name: string) => (!name || /^[A-Z]{1,3}$/.test(name.trim()) ? name : titleWords(name));
+
+/** A building as shown everywhere: AGILE BUKIT BINTANG -> Agile Bukit Bintang, SKYLINE KL D49-03A -> Skyline KL D49-03A,
+ *  8TH STELLAR -> 8th Stellar. Display only: the stored name is unchanged. */
+export const buildingName = (name: string | null | undefined) => (name ? titleWords(name.trim(), true) : '');
+
+/** A person as shown: ALEX GOH -> Alex Goh, FONG -> Fong. A one-word initialism such as YH stays as it is. */
+export const personName = (name: string | null | undefined) => {
+  const n = (name ?? '').trim();
+  if (!n) return '';
+  return titleCase(n);
 };
 
 /** Sat 10/10: short weekday, then month/day, for day headers on Cleaning, Today and the field app. */

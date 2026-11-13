@@ -497,6 +497,19 @@ type SoItem = {
    Hoisted to module scope so the edit-mode seed effect can map every line
    without re-allocating the function each render. Mirrors the snake_case →
    camelCase field mapping the per-row editor used before. */
+/* A date the operator did not touch follows the line as it now is: a processing or delivery date set elsewhere (the
+   project's PO tab) while this order was open in Edit must not be saved back as blank (11 Nov 2026, TC-SO-2611-029). */
+export function keepUntouchedDates(draft: SoLineDraft, was: SoLineDraft | undefined, now: SoLineDraft | undefined): SoLineDraft {
+  if (!was || !now) return draft;
+  const out = { ...draft };
+  if ((draft.lineProcessingDate ?? null) === (was.lineProcessingDate ?? null)) out.lineProcessingDate = now.lineProcessingDate;
+  if ((draft.lineDeliveryDate ?? null) === (was.lineDeliveryDate ?? null) && draft.lineDeliveryDateOverridden === was.lineDeliveryDateOverridden) {
+    out.lineDeliveryDate = now.lineDeliveryDate;
+    out.lineDeliveryDateOverridden = now.lineDeliveryDateOverridden;
+  }
+  return out;
+}
+
 const draftFromItem = (it: SoItem): SoLineDraft => ({
   itemCode:       it.item_code ?? '',
   itemGroup:      it.item_group ?? 'others',
@@ -1641,11 +1654,12 @@ export const SalesOrderDetail = () => {
     // gone ones. A naive re-seed used to wipe unsaved picks (docs/bugs/).
     const orig: Record<string, SoLineDraft> = {};
     for (const it of items) orig[it.id] = draftFromItem(it);
+    const before = originalDraftsRef.current;
     originalDraftsRef.current = orig;
     setEditingDrafts((prev) => {
       const alive = new Set(items.map((it) => it.id));
       const next: Record<string, SoLineDraft> = {};
-      for (const id of Object.keys(prev)) if (alive.has(id)) next[id] = prev[id];
+      for (const id of Object.keys(prev)) if (alive.has(id)) next[id] = keepUntouchedDates(prev[id], before[id], orig[id]);
       for (const it of items) if (!(it.id in next)) next[it.id] = draftFromItem(it);
       return next;
     });

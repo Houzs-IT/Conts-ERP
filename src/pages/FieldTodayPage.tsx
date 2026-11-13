@@ -22,6 +22,7 @@ import { isCleanOverdue, daysPast } from '../lib/cleanOverdue';
 import { cleanRowTone } from '../lib/cleanRowTone';
 import { usePortalText, usePortalDates, wordFor, type PortalStrings } from '../lib/portalI18n';
 import { useFieldRefresh, useFreshIds } from '../lib/fieldLive';
+import { buildingName } from '../lib/format';
 
 /** Days a job is past its day, 0 when it is today's or later. */
 const daysLate = (day: string) => daysPast(day, Date.now());
@@ -63,7 +64,7 @@ function byCleaner(jobs: Job[]): CleanerGroup[] {
 const jobOrder = (j: Job): CleanOrderInput => ({
   checkIn: j.next?.checkInTime ?? j.nextLater?.checkInTime ?? null, checkInDay: j.next ? j.day : j.nextLater?.day ?? null, day: j.day,
   guestIn: !!j.previous && !j.guestOut && !j.done && j.state !== 'in_progress', checkOut: j.previous?.checkOutTime ?? null,
-  done: j.done, building: j.unit.propertyName, unit: j.unit.unitNumber,
+  done: j.done, building: buildingName(j.unit.propertyName), unit: j.unit.unitNumber,
 });
 /** Overdue by the one rule (lib/cleanOverdue): not done at the next guest's check-in, or by the end of its day. */
 const jobOverdue = (j: Job, now: number) => isCleanOverdue({ day: j.day, checkIn: j.next?.checkInTime ?? null, done: j.done }, now);
@@ -72,7 +73,7 @@ interface Group { id: string; name: string; jobs: Job[] }
  *  cleaner's order (owner, 2 Nov 2026). Recomputed from every answer, so a changed time re-sorts on the next refresh. */
 function byBuilding(jobs: Job[]): Group[] {
   const m = new Map<string, Group>();
-  for (const j of jobs) { const g = m.get(j.buildingId) ?? { id: j.buildingId, name: j.unit.propertyName, jobs: [] }; g.jobs.push(j); m.set(j.buildingId, g); }
+  for (const j of jobs) { const g = m.get(j.buildingId) ?? { id: j.buildingId, name: buildingName(j.unit.propertyName), jobs: [] }; g.jobs.push(j); m.set(j.buildingId, g); }
   for (const g of m.values()) g.jobs = sortForCleaner(g.jobs, jobOrder);
   return sortBuildings([...m.values()], g => g.name, g => g.id === 'external');
 }
@@ -88,13 +89,13 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   const { weekday } = usePortalDates();
   const [pick, setPick] = useState<'today' | 'tomorrow'>('today');
   const date = pick === 'today' ? mytDay(0) : mytDay(1);
-  const { data, loading, error, reload } = useApi<ListPayload>(`/field/tasks?date=${date}`);
+  const { data, loading, error, reload, poll } = useApi<ListPayload>(`/field/tasks?date=${date}`);
   // A new notice, or the phone coming back to the app, reloads the list now; a job that just arrived carries a New mark.
   useFieldRefresh(reload);
   // The office ticks the guest out or changes a time on its board: the list catches up every 30 seconds, as the board does,
   // and when the phone comes back to the app.
   useEffect(() => {
-    const tick = () => { if (document.visibilityState === 'visible') reload(); };
+    const tick = () => { if (document.visibilityState === 'visible') poll(); };
     const t = window.setInterval(tick, 30_000);
     document.addEventListener('visibilitychange', tick);
     return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', tick); };
@@ -136,7 +137,7 @@ export default function FieldTodayPage({ linkTask, onLinked }: { linkTask?: stri
   const overdueCount = overdue.reduce((n, g) => n + g.jobs.length, 0);
   const left = jobs.filter(j => !j.done).length;
   const buildingOptions = useMemo(() => {
-    const byId = new Map([...(data?.rows ?? []), ...(data?.open ?? []), ...(data?.team ?? [])].map(j => [j.buildingId, j.unit.propertyName]));
+    const byId = new Map([...(data?.rows ?? []), ...(data?.open ?? []), ...(data?.team ?? [])].map(j => [j.buildingId, buildingName(j.unit.propertyName)]));
     return [...byId].map(([id, name]) => ({ id, name })).sort((first, second) => first.name.localeCompare(second.name));
   }, [data]);
   const tabLabel = (name: string, count: number): ReactNode => (
@@ -388,7 +389,7 @@ function TaskDetail({ job: j, now, offered, onClose, onChanged, onTaken }: { job
         <button type="button" onClick={onClose} aria-label={t.jobs.back}
           className="w-11 h-11 flex-none grid place-items-center rounded-control bg-transparent border-none text-white cursor-pointer"><Icon name="ArrowLeft" size="nav" /></button>
         <div className="flex-1 min-w-0 flex flex-col gap-1 pt-0.5">
-          <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{j.unit.propertyName}</div>
+          <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{buildingName(j.unit.propertyName)}</div>
           <div id={`task-title-${j.id}`} className="text-[19px] leading-tight font-semibold [overflow-wrap:anywhere]">{j.unit.unitNumber} · {cleanName(t, j)}</div>
           {size && <div className="text-meta text-on-dark">{size}</div>}
           <div className="mt-1 flex items-center gap-2 flex-wrap">
@@ -450,7 +451,7 @@ function TaskDetail({ job: j, now, offered, onClose, onChanged, onTaken }: { job
         {/* Photos only once the job is started: photos taken before the start would not prove the finished work. Uploading
             never completes the job; Mark complete in the bar below is its own tap (owner, 2 Nov 2026). */}
         {!offered && phase !== 'todo' && (detail.data
-          ? <CleanProof taskId={j.id} unitLabel={`${j.unit.propertyName} ${j.unit.unitNumber}`} media={detail.data.media} done={j.done} onUploaded={() => { detail.reload(); onChanged(); }}
+          ? <CleanProof taskId={j.id} unitLabel={`${buildingName(j.unit.propertyName)} ${j.unit.unitNumber}`} media={detail.data.media} done={j.done} onUploaded={() => { detail.reload(); onChanged(); }}
               onRemove={m => void remove(m)}
               hint={phase === 'started' ? <StatusBadge tone="warning">{t.jobs.proofRequired}</StatusBadge>
                 : phase === 'proof' ? <StatusBadge tone="success"><span className="inline-flex items-center gap-1">{t.jobs.proofAttached}<Icon name="Check" size="sm" style={{ width: 13, height: 13 }} /></span></StatusBadge>
@@ -509,7 +510,7 @@ function TaskDetail({ job: j, now, offered, onClose, onChanged, onTaken }: { job
         </div>
       )}
       {confirm}
-      {damage && <ReportDamageModal unitId={j.unitId} unitLabel={`${j.unit.propertyName} ${j.unit.unitNumber}`} taskId={j.id} onClose={() => setDamage(false)}
+      {damage && <ReportDamageModal unitId={j.unitId} unitLabel={`${buildingName(j.unit.propertyName)} ${j.unit.unitNumber}`} taskId={j.id} onClose={() => setDamage(false)}
         onDone={() => { setDamage(false); toast({ tone: 'success', title: t.jobs.damageReported, body: t.jobs.officeHasIt }); }} />}
     </>
   );

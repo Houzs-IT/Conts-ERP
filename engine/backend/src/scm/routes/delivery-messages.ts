@@ -47,9 +47,11 @@ function normalizePhone(raw: unknown): string | null {
   return digits.length >= 8 ? `+${digits}` : null;
 }
 
-/** ISO YYYY-MM-DD → the template payload's YYYY/MM/DD. */
-function payloadDate(iso: string | null | undefined): string {
-  return String(iso ?? '').slice(0, 10).replace(/-/g, '/');
+/** ISO YYYY-MM-DD → the template payload's DD/MM/YYYY (YH, 11 Nov 2026). Connect
+ *  only shows it as text, in the WhatsApp template and the contact panel. */
+export function payloadDate(iso: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ?? ''));
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
 }
 
 const sendSchema = z.object({
@@ -104,7 +106,7 @@ deliveryMessages.post('/send', async (c) => {
   for (const [phone, group] of byPhone) {
     const groupDocs = group.map((r) => String(r.doc_no));
     // ref = the number the customer knows (the AutoCount doc if linked, else
-    // ours); effective (amended ?? original) date as yyyy/mm/dd, as the board.
+    // ours); effective (amended ?? original) date as dd/mm/yyyy, as the board.
     const orders: ConnectOrder[] = group.map((r) => ({
       ref: String(r.linked_ac_docno ?? r.doc_no ?? ''),
       branding: String(r.branding ?? ''),

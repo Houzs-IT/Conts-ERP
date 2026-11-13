@@ -8,7 +8,7 @@
 //   GET   /accounting/petty-cash/floats/:id/receipts?month=YYYY-MM
 //   POST  /accounting/petty-cash/floats/:id/top-up         { bankAccountCode }  -> a draft voucher to the keeper
 //   POST  /accounting/petty-cash/floats/:id/returned       { amountSen, date, note? }
-//   GET   /accounting/petty-cash/receipts?month=           receipts finance pays back (no float)
+//   GET   /accounting/petty-cash/receipts?month=           receipts finance pays back (no float), each with the bank it goes to
 //   GET   /accounting/petty-cash/receipts/:id/files/:fileId
 //   POST  /accounting/petty-cash/receipts/check            { items: [{ id, amountSen?, lines? }] }
 //   POST  /accounting/petty-cash/receipts/:id/reject       { reason }
@@ -335,7 +335,16 @@ export const financeReceiptsHandler = async (c: Ctx): Promise<Response> => {
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
   const rows = (await receiptsWhere(sb, co.companyId, null, c.req.query('month'))).sort((a, b) => String(a.spend_date).localeCompare(String(b.spend_date)));
-  return c.json({ receipts: await receiptViews(sb, co.companyId, rows) });
+  const [views, saved] = await Promise.all([receiptViews(sb, co.companyId, rows), savedBanksOf(sb, co.companyId, rows.map(r => r.submitter_user_id))]);
+  /* Reading bank details is Ledger full's, as on GET /accounting/staff-bank (final review): view and edit see the bank,
+     the name and the flags, with only the last four digits of the account. */
+  const full = hasHouzsPerm(c, FULL_KEY);
+  return c.json({
+    receipts: views.map((v, i) => {
+      const bank = payBackBank(rows[i], saved.get(rows[i].submitter_user_id) ?? null);
+      return { ...v, bank: bank && !full ? { ...bank, accountNo: lastFour(bank.accountNo) } : bank };
+    }),
+  });
 };
 
 export const financeReceiptFileHandler = async (c: Ctx): Promise<Response> => {
@@ -556,14 +565,48 @@ export const topUpHandler = async (c: Ctx): Promise<Response> => {
   return c.json({ pvId: made.id, pvNumber: made.pvNumber, amountSen: amount }, 201);
 };
 
-/** Bank details for paying a person back: finance's own record first, else the HR employee record. */
-export async function bankDetailsOf(sb: any, companyId: number, userId: string): Promise<{ bankName: string; accountNo: string; accountName: string | null } | null> {
-  const { data: own } = await sb.from('staff_bank_details').select('bank_name, account_no, account_name').eq('company_id', companyId).eq('user_id', userId).maybeSingle();
-  if (own) return { bankName: own.bank_name, accountNo: own.account_no, accountName: own.account_name };
+type SavedBank = { bankName: string; accountNo: string; accountName: string | null };
+
+/** Saved bank details for paying people back, per person: finance's own record first, else the HR employee record.
+ *  Only read: a Direct Claim to Me keeps the bank given on it and never changes these (chew, 12 Nov 2026). */
+export async function savedBanksOf(sb: any, companyId: number, userIds: string[]): Promise<Map<string, SavedBank>> {
+  const ids = [...new Set(userIds)];
+  const out = new Map<string, SavedBank>();
+  if (ids.length === 0) return out;
+  const [{ data: own }, { data: hr }] = await Promise.all([
+    sb.from('staff_bank_details').select('user_id, bank_name, account_no, account_name').eq('company_id', companyId).in('user_id', ids),
+    sb.schema('public').from('conts_employee_bank').select('user_id, bank_name, bank_account').in('user_id', ids),
+  ]);
+  for (const o of (own ?? []) as Array<{ user_id: string; bank_name: string; account_no: string; account_name: string | null }>) {
+    out.set(String(o.user_id), { bankName: o.bank_name, accountNo: o.account_no, accountName: o.account_name });
+  }
   /* A person on both rosters has two HR rows; the first with an account will do. */
-  const { data: hr } = await sb.schema('public').from('conts_employee_bank').select('bank_name, bank_account').eq('user_id', userId);
-  const row = ((hr ?? []) as Array<{ bank_name: string | null; bank_account: string | null }>).find(h => h.bank_account);
-  return row ? { bankName: String(row.bank_name ?? ''), accountNo: String(row.bank_account), accountName: null } : null;
+  for (const h of (hr ?? []) as Array<{ user_id: string; bank_name: string | null; bank_account: string | null }>) {
+    if (h.bank_account && !out.has(String(h.user_id))) out.set(String(h.user_id), { bankName: String(h.bank_name ?? ''), accountNo: String(h.bank_account), accountName: null });
+  }
+  return out;
+}
+
+/** Bank details for paying a person back: finance's own record first, else the HR employee record. */
+export async function bankDetailsOf(sb: any, companyId: number, userId: string): Promise<SavedBank | null> {
+  return (await savedBanksOf(sb, companyId, [userId])).get(userId) ?? null;
+}
+
+const digitsOf = (v: string) => v.replace(/[\s-]/g, '');
+/** An account number shown to someone who may not read it whole: its last four digits. */
+const lastFour = (v: string) => `•••• ${digitsOf(v).slice(-4)}`;
+/** Where a receipt finance pays back goes: the bank given on the claim (Direct Claim to Me), else the person's saved
+ *  details; null when there is neither. differsFromSaved tells finance that the claim's account number is not the
+ *  saved one, or that nothing is saved to compare it with. */
+export function payBackBank(r: Pick<ReceiptRow, 'payee_bank_name' | 'payee_account_no' | 'payee_account_name'>, saved: SavedBank | null):
+  (SavedBank & { fromClaim: boolean; differsFromSaved: boolean }) | null {
+  if (r.payee_account_no) {
+    return {
+      bankName: r.payee_bank_name ?? '', accountNo: r.payee_account_no, accountName: r.payee_account_name ?? null, fromClaim: true,
+      differsFromSaved: !saved || digitsOf(saved.accountNo) !== digitsOf(r.payee_account_no),
+    };
+  }
+  return saved ? { ...saved, fromClaim: false, differsFromSaved: false } : null;
 }
 
 export const receiptVoucherHandler = async (c: Ctx): Promise<Response> => {
@@ -578,7 +621,8 @@ export const receiptVoucherHandler = async (c: Ctx): Promise<Response> => {
   if (!r) return c.json({ error: 'not_found' }, 404);
   if (r.float_id) return c.json({ error: 'paid_from_float', message: 'This receipt is paid from petty cash.' }, 409);
   if (r.status !== 'CHECKED' || r.payback_pv_id) return c.json({ error: 'not_checked', message: 'Check the receipt before paying it back.' }, 409);
-  const details = await bankDetailsOf(sb, co.companyId, r.submitter_user_id);
+  /* The bank given on a Direct Claim to Me wins over the saved details, which stay as they are. */
+  const details = payBackBank(r, await bankDetailsOf(sb, co.companyId, r.submitter_user_id));
   if (!details) return c.json({ error: 'bank_details_missing', message: 'Bank details missing — add them before paying this person back.' }, 409);
   const lines = (await linesOf(sb, [r.id])).get(r.id) ?? [];
   const names = await staffNames(sb);

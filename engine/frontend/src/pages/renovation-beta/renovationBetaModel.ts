@@ -1,6 +1,7 @@
 /* Pure rules behind the Beta project workspace, bundle A (plan section 9). No React, no calls: every function
    takes today (Malaysia time, YYYY-MM-DD) as a value so the rules can be tested on fixed dates. */
 
+import { fmtDate, fmtDayMonth } from "../../vendor/shared/format";
 import { INTERNAL_TASKS, RENO_STAGES, STAGE_LABEL, TASK_CATEGORIES } from "../../vendor/shared/renovation-stages";
 import { CATEGORY_LABEL, type TimelineDoc, type TimelineEntry } from "../projects/renovation/renovationTimelineModel";
 import type { BetaTabKey } from "./renovationBetaTabs";
@@ -248,7 +249,7 @@ export function todoList(input: TodoInput): TodoRow[] {
     deadlines, booked appointments, waiting for client, ready to start and to book. The handover date is left out, the
     header already shows it. Wording and buttons follow Calendar's Deadlines view. */
 export function designTodoRows(m: BoardModel, p: DesignProject, canAssign: boolean, customerPhone: string | null): TodoRow[] {
-  const g = deadlineGroups(m, "All", canAssign);
+  const g = deadlineGroups(m, "All");
   const rows: TodoRow[] = [];
 
   for (const x of [...g.late, ...g.week, ...g.two, ...g.later]) {
@@ -480,28 +481,24 @@ export function filterFeed(items: readonly FeedItem[], room: string): FeedItem[]
   return items.filter((i) => (room === NO_ROOM ? !i.room : i.room === room));
 }
 
-/* ---------- Dates as the mockup prints them ---------- */
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+/* ---------- Dates: the app's one rule (dd/mm/yyyy, YH 11 Nov 2026) ---------- */
 
 function ymd(iso: string | null | undefined): [number, number, number] | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
   return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
 }
 
-/** "14 Oct" (the mockup never prints the year on a card); "-" when there is no date. Fixed month names, not the browser's locale. */
+/** "14/10" (a card never prints the year); "-" when there is no date. */
 export function dayMonth(iso: string | null | undefined): string {
-  const p = ymd(iso);
-  return p ? `${p[2]} ${MONTHS[p[1] - 1] ?? ""}` : "-";
+  return ymd(iso) ? fmtDayMonth(iso!.slice(0, 10)) : "-";
 }
 
-/** "15 Nov 2026"; "-" when there is no date. */
+/** "15/11/2026"; "-" when there is no date. */
 export function dayMonthYear(iso: string | null | undefined): string {
-  const p = ymd(iso);
-  return p ? `${p[2]} ${MONTHS[p[1] - 1] ?? ""} ${p[0]}` : "-";
+  return ymd(iso) ? fmtDate(iso!.slice(0, 10)) : "-";
 }
 
-/** A day's heading: "14 Oct", with the year when it is not today's year. */
+/** A day's heading: "14/10", with the year when it is not today's year. */
 export function dayHeading(dayValue: string, today: string): string {
   return ymd(dayValue)?.[0] === ymd(today)?.[0] ? dayMonth(dayValue) : dayMonthYear(dayValue);
 }

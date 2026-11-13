@@ -70,8 +70,8 @@ const MYT_OFFSET_MS = 8 * 60 * 60 * 1000;
 // naive-wall-clock branch the Projects copy grew on 2026-08-12, so a crew time
 // typed as 11:00 printed as 19:00).
 
-// "Printed 2026/07/30 11:05 PM" — the sign-off footer's print stamp
-// (Nico 2026-07-30: yyyy/mm/dd [hh:mm @AM/PM]). MYT like fmtDateTime.
+// "Printed 30/07/2026 11:05 PM" — the sign-off footer's print stamp
+// (Nico 2026-07-30: date [hh:mm @AM/PM]; day first since YH, 11 Nov 2026). MYT like fmtDateTime.
 function printedStamp(): string {
   const d = new Date(Date.now() + MYT_OFFSET_MS);
   const yyyy = d.getUTCFullYear();
@@ -81,7 +81,7 @@ function printedStamp(): string {
   const ampm = h24 >= 12 ? "PM" : "AM";
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
   const min = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${yyyy}/${mm}/${dd} ${h12}:${min} ${ampm}`;
+  return `${dd}/${mm}/${yyyy} ${h12}:${min} ${ampm}`;
 }
 
 /* The stage wording moved to scm/shared/assr-stage-labels.ts (assrStageLabel).

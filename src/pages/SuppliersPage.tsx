@@ -1,7 +1,9 @@
 import { mayRun } from '../lib/areaAccess';
 import { FormSection } from '../components/Card';
 import { useMemo, useState } from 'react';
-import { Search, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
+import { ToolbarSearch } from '../components/ListToolbar';
+import { ChoiceChips } from '../components/ChoiceChips';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
@@ -131,11 +133,7 @@ export default function SuppliersPage() {
         noun={['supplier', 'suppliers']} exportName="suppliers"
         toolbar={<>
           <Segmented label="Status" options={[{ key: 'all' as const, label: 'All' }, ...STATUSES.map(s => ({ key: s, label: statusLabel('supplier', s) }))]} value={statusFilter} onChange={setStatusFilter} />
-          <div className="relative">
-            <Search size={16} strokeWidth={1.75} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-ink" />
-            <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search suppliers..." aria-label="Search suppliers"
-              className="h-9 box-border pl-10 pr-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none w-[240px] max-w-full" />
-          </div>
+          <ToolbarSearch value={search} onChange={setSearch} debounce={false} placeholder="Search name, code or category" label="Search suppliers" />
         </>}
         filtered={!!q || statusFilter !== 'all'} onClearFilters={() => { setSearch(''); setStatusFilter('all'); }}
         empty={{ title: 'No suppliers yet.', body: 'Add the suppliers you buy furniture, fittings and services from.', action: canWrite ? { label: 'New supplier', onClick: () => setDrawer({ draft: emptyDraft(), isNew: true }) } : undefined }} />
@@ -168,16 +166,19 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
   }
 
   return (
-    <Drawer open onClose={onClose} width={680}>
-      <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
-        <h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New supplier' : 'Edit supplier'}</h2>
+    <Drawer open onClose={onClose} dirty="typed" size="lg">
+      <div className="flex items-start justify-between gap-3 px-6 max-sm:px-4 pt-[22px] pb-3.5">
+        <div className="flex flex-col gap-1 min-w-0">
+          <span className="ds-eyebrow">Suppliers</span>
+          <h2 className="m-0 text-title font-semibold truncate">{isNew ? 'New supplier' : draft.name || 'Edit supplier'}</h2>
+        </div>
         <CloseButton onClick={onClose} />
       </div>
-      <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
+      <div className="px-6 max-sm:px-4 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <Section title="Identity">
           <Field label="Code" placeholder="e.g. SUP-EMMA" value={f.code} onChange={set('code')} />
           <Field label="Name" placeholder="Supplier name" value={f.name} onChange={set('name')} />
-          <Sel label="Status" value={f.status} onChange={set('status')} options={STATUSES.map(s => ({ value: s, label: statusLabel('supplier', s) }))} />
+          <ChoiceChips label="Status" value={f.status} onChange={v => setF(s => ({ ...s, status: v }))} options={STATUSES.map(s => ({ value: s, label: statusLabel('supplier', s) }))} />
           <Field label="Category" placeholder="e.g. Sofa, Bedframe" value={f.category} onChange={set('category')} />
           <Field label="Supplier type" placeholder="Manufacturer / Trader / 3PL" value={f.supplierType} onChange={set('supplierType')} />
           <Field label="Business nature" placeholder="Optional" value={f.businessNature} onChange={set('businessNature')} />
@@ -211,7 +212,7 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
           <div className="sm:col-span-2"><Field label="Notes" placeholder="Optional" value={f.notes} onChange={set('notes')} /></div>
         </Section>
       </div>
-      <div className="flex justify-between items-center gap-2.5 px-6 py-3.5 [border-top:1px_solid_var(--color-line)] bg-page">
+      <div className="flex justify-between items-center gap-2.5 px-6 max-sm:px-4 py-3.5 [border-top:1px_solid_var(--color-line)] bg-card">
         <div>{onDelete && <ConfirmButton icon={<Trash2 size={15} strokeWidth={1.75} />} confirm={{ title: `Delete supplier ${draft.name}?`, body: 'It is deleted for good and drops off the supplier list.', confirmLabel: 'Delete supplier', cancelLabel: 'Keep it' }} onConfirm={onDelete}>Delete</ConfirmButton>}</div>
         <div className="flex gap-2.5">
           <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
@@ -224,14 +225,3 @@ function SupplierDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Dr
 
 const Section = FormSection;
 
-function Sel({ label, value, onChange, options }: { label: string; value: string; onChange: (e: { target: { value: string } }) => void; options: { value: string; label: string }[] }) {
-  return (
-    <div className="flex flex-col gap-[7px]">
-      <label className="text-[12px] font-medium text-muted-ink">{label}</label>
-      <select value={value} onChange={onChange}
-        className="h-10 w-full box-border px-3 py-0 font-sans text-[14px] text-ink bg-card border border-solid border-line rounded-control outline-none cursor-pointer">
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </div>
-  );
-}

@@ -7,7 +7,7 @@ import { computePay, type PayFigures, type PayRules } from '../../_lib/payrollCa
 import { hasPayroll, NOT_MIGRATED, isPeriod, throughDay, periodEnded, onPayroll, monthInputs, payslipsFor, readPayRules, type PayslipView } from '../../_lib/payroll';
 
 export interface PayrollLine {
-  employee: Pick<Employee, 'id' | 'name' | 'employeeId' | 'cleanerId' | 'technicianId' | 'payBasis' | 'paymentMethod' | 'bankName'>
+  employee: Pick<Employee, 'id' | 'name' | 'employeeId' | 'cleanerId' | 'technicianId' | 'renovatorId' | 'payBasis' | 'paymentMethod' | 'bankName'>
     /** Last working day, for someone who resigned: the slip docks every working day after it. */
     & { resignedAt: string | null };
   /** The stored slip, once the month has been run. */
@@ -47,7 +47,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const lines: PayrollLine[] = people.map(e => {
     const input = e.id ? inputs.get(e.id) : undefined;
     return {
-      employee: { id: e.id, name: e.name, employeeId: e.employeeId, cleanerId: e.cleanerId, technicianId: e.technicianId, payBasis: e.payBasis, paymentMethod: e.paymentMethod, bankName: e.bankName,
+      employee: { id: e.id, name: e.name, employeeId: e.employeeId, cleanerId: e.cleanerId, technicianId: e.technicianId, renovatorId: e.renovatorId, payBasis: e.payBasis, paymentMethod: e.paymentMethod, bankName: e.bankName,
         resignedAt: e.status === 'resigned' ? e.resignedAt : null },
       payslip: (e.id && slipBy.get(e.id)) || null,
       estimate: input ? computePay(input) : null,

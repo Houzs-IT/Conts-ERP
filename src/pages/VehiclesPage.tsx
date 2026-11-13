@@ -80,7 +80,7 @@ function VehicleDrawer({ draft, onClose, onSave, onDelete }: { draft: Draft; onC
   const set = <K extends keyof Draft>(k: K) => (e: { target: { value: string } }) => setF(s => ({ ...s, [k]: e.target.value as Draft[K] }));
   const canSave = f.code.trim() !== '';
   return (
-    <Drawer open onClose={onClose} width={480}>
+    <Drawer open onClose={onClose} dirty="typed" width={480}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">{draft.isNew ? 'New vehicle' : 'Edit vehicle'}</h2>
         <CloseButton onClick={onClose} />

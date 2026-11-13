@@ -17,6 +17,12 @@ export interface Area {
   /** Kept for the Permissions chart's wording. Reads are refused at "No access" in every area now; the few
    *  reads other screens share across areas are listed in SHARED_READS instead. */
   strictRead?: boolean;
+  /** Given one by one: no category baseline reaches it, and the group's ticks on Users and roles leave it alone. Only a
+   *  setting of its own, for a person, a position or a department, opens it (owner statement close part 2b: chew gives
+   *  the lock powers to the colleagues who do each part, "lock 的功能我会自己assign 去相关做的同事去lock"). */
+  ownGrant?: boolean;
+  /** Off the Permissions chart: its pages are switched off for everyone (SWITCHED_OFF_AREAS in src/lib/navigation.ts). */
+  hidden?: boolean;
 }
 
 /** Which side of the business an account works on (migration 0143): The Conts is rental, Dream Crafter the supply
@@ -35,8 +41,8 @@ export const sideFits = (departmentSide: Side, side: Side) => departmentSide ===
  *  groups match its sidebar sections: Dream Crafter's since 26 Oct 2026 (migration 0172), The Conts' since 30 Oct 2026
  *  (migration 0182 moved the stored rules). */
 const CLOSED_BY_SIDE: Record<Side, string[]> = {
-  conts: ['Service cases', 'Projects', 'Supply chain'],
-  dream_crafter: ['Home', 'Reports', 'Reservations', 'Operations', 'HR', 'Units', 'Growth'],
+  conts: ['Service cases', 'Projects', 'Supply chain', 'Dream Crafter HR'],
+  dream_crafter: ['Home', 'Reservations', 'Operations', 'HR', 'Units', 'Growth'],
   both: [],
 };
 /** Management always sees both sides, so nobody can lock the system out of one. */
@@ -45,35 +51,73 @@ const offSide = (kind: DepartmentKind, side: Side, area: Area): boolean => close
 
 // The Conts' groups are its sidebar sections, in menu order (owner, 30 Oct 2026), and each area sits in the section
 // its pages are in. Areas whose pages sat in two sections were split: Pricing and reviews off Performance,
-// Automations off Messages, Reports off Finance (migration 0182 copied their stored rules).
+// Automations off Messages, Reports off Finance (migration 0182 copied their stored rules). The Reports section left the
+// menu (12 Nov 2026): Portfolio and Performance moved to Home, Reports to Units (migration 0318 pinned their levels).
 export const AREAS: Area[] = [
   { key: 'dashboard', label: 'Dashboard', group: 'Home', api: ['dashboard'] },
   { key: 'portfolio', label: 'Portfolio', group: 'Home', api: ['portfolio'], managed: true, strictRead: true },
-  { key: 'performance', label: 'Performance', group: 'Home', api: ['analytics'] },
-  // The yearly unit report. Its figures are Finance's, so it stays management-only like Finance.
-  { key: 'reports', label: 'Reports', group: 'Reports', api: [], managed: true, strictRead: true },
+  { key: 'performance', label: 'Performance', group: 'Home', api: ['analytics', 'showcase'] },
   // Reservations arrive from the channels through the API; finance reads them but does not create or change them (owner, 11 Oct 2026).
-  { key: 'reservations', label: 'Reservations', group: 'Reservations', api: ['reservations', 'guests', 'blocks', 'guest-documents'] },
-  { key: 'operations', label: 'Operations', group: 'Operations', api: ['operations', 'housekeeping', 'maintenance', 'tasks'] },
+  { key: 'calendar', label: 'Calendar', group: 'Reservations', api: ['blocks'] },
+  { key: 'reservations', label: 'Reservations', group: 'Reservations', api: ['reservations', 'guest-documents'] },
+  { key: 'guests', label: 'Guests', group: 'Reservations', api: ['guests'] },
+  { key: 'operations', label: 'Today', group: 'Operations', api: ['operations'] },
+  { key: 'cleaning', label: 'Cleaning', group: 'Operations', api: ['housekeeping', 'tasks'] },
+  { key: 'maintenance', label: 'Maintenance', group: 'Operations', api: ['maintenance'] },
   // Field staff's HR record: IC, bank, salary and statutory (PLAN-hr-employees.md). Its own group so Operations staff do
   // not see pay by default. The cleaner and technician rosters themselves stay under Operations.
   { key: 'hr', label: 'Employees', group: 'HR', api: ['employees', 'attendance', 'punch-sites', 'leaves', 'payroll', 'working-hours', 'penalties', 'labor-cost'], strictRead: true },
+  // The yearly unit report. Its figures are Finance's, so it stays management-only like Finance.
+  { key: 'reports', label: 'Unit report: yearly and YGRR', group: 'Units', api: [], managed: true, strictRead: true },
   { key: 'properties', label: 'Units', group: 'Units', api: ['properties', 'units', 'unit-layout-types', 'unit-bed-sizes', 'contract-types', 'inventory', 'access-credentials', 'residence-rules', 'lettings'] },
-  { key: 'owners', label: 'Owners', group: 'Units', api: ['owners', 'contracts'] },
+  { key: 'scheduledChanges', label: 'Scheduled changes', group: 'Units', api: [] },
+  { key: 'agentToLet', label: 'Agent to let', group: 'Units', api: [] },
+  { key: 'unitSettings', label: 'Unit settings', group: 'Units', api: [] },
+  { key: 'owners', label: 'Owners', group: 'Units', api: ['owners'] },
+  { key: 'contracts', label: 'Contracts', group: 'Units', api: ['contracts'] },
+  { key: 'deductions', label: 'Deductions', group: 'Units', api: [], managed: true, strictRead: true },
+  // Owner statement close (chew, 11 Nov 2026): each month's owner statements locked in stages, unit by unit. The page is its
+  // own area; locking each stage and unlocking are separate powers chew gives person by person ("lock 的功能我会自己
+  // assign 去相关做的同事去lock"). Migrations 0302 and 0303 closed them for every department until management opens them.
+  { key: 'lockIncome', label: 'Lock income', group: 'Units', api: [], managed: true, ownGrant: true },
+  { key: 'lockDeductions', label: 'Lock deductions', group: 'Units', api: [], managed: true, ownGrant: true },
+  { key: 'lockO2', label: 'Lock O2', group: 'Units', api: [], managed: true, ownGrant: true },
+  { key: 'unlockStep', label: 'Unlock a step', group: 'Units', api: [], managed: true, ownGrant: true },
+  // Owner statement close part 3 (chew, 11 Nov 2026: "final 解锁权限我也能assign"): making a statement final and unlocking
+  // a final one are powers of their own, given one by one like the locks.
+  { key: 'makeFinal', label: 'Make final', group: 'Units', api: [], managed: true, ownGrant: true },
+  { key: 'unlockFinal', label: 'Unlock final', group: 'Units', api: [], managed: true, ownGrant: true },
   { key: 'serviceCases', label: 'Service cases', group: 'Service cases', api: [] },
+  { key: 'serviceMetrics', label: 'Quality metrics', group: 'Service cases', api: [] },
+  // Picker lists and SLA lead times; changing them needs Full, as it did on Service cases.
+  { key: 'serviceSettings', label: 'Case settings', group: 'Service cases', api: [] },
+  { key: 'serviceMyCases', label: 'My cases', group: 'Service cases', api: [] },
   { key: 'projects', label: 'Projects', group: 'Projects', api: [] },
+  { key: 'projectDefects', label: 'Defects', group: 'Projects', api: [] },
+  { key: 'projectHandover', label: 'Handover checklists', group: 'Projects', api: [] },
+  // Cost and profit: the engine opens it at Full only, as the menu does.
+  { key: 'projectFinances', label: 'Finances', group: 'Projects', api: [] },
+  // Brands, event types, crews, venues and the other lists; Full only, as it was on Projects. Calendar stays with Projects:
+  // it reads the same board as the Projects list.
+  { key: 'projectSettings', label: 'Project settings', group: 'Projects', api: [] },
   { key: 'scSales', label: 'Sales order', group: 'Supply chain', api: ['sales-orders', 'so-amendments', 'delivery-orders', 'sales-returns', 'customers'] },
   { key: 'scInvoices', label: 'Invoices and payments', group: 'Supply chain', api: ['payment-vouchers', 'purchase-invoices', 'sales-invoices', 'unbilled-deliveries', 'credit-notes', 'accounting'], managed: true, strictRead: true },
-  { key: 'scConsignment', label: 'Consignment', group: 'Supply chain', api: ['consignment-notes', 'purchase-consignment'] },
+  { key: 'scConsignment', label: 'Consignment', group: 'Supply chain', api: ['consignment-notes', 'purchase-consignment'], hidden: true },
   { key: 'scProcurement', label: 'Procurement', group: 'Supply chain', api: ['products', 'product-models', 'categories', 'fabrics', 'suppliers', 'mrp', 'purchase-orders', 'goods-receipts', 'purchase-returns'] },
+  { key: 'scProduction', label: 'Production', group: 'Supply chain', api: [] },
   { key: 'scTransportPlan', label: 'Transportation', group: 'Supply chain', api: ['delivery-schedule', 'delivery-zones', 'driver-leave', 'drivers', 'fleet-health', 'coverage-fleet', 'vehicles', 'threepl-companies', 'rate-cards'] },
   { key: 'scWarehouse', label: 'Warehouse', group: 'Supply chain', api: ['loading-list', 'warehouses', 'racks', 'stock', 'stock-takes', 'stock-transfers'] },
+  { key: 'dcHr', label: 'Employees', group: 'Dream Crafter HR', api: [], strictRead: true },
   // 'owner': the owner portal's endpoints, which finance and management also open as an owner (?ownerId=).
   { key: 'finance', label: 'Finance', group: 'Finance', api: ['finance', 'expenses', 'statements', 'payouts', 'approvals', 'owner'], managed: true, strictRead: true },
   // The company ledger in the engine (finance phase 1): no Property OS routes, sent to the engine at sign-on.
   // Operations managers read the rest of Finance but never the company books.
   { key: 'ledger', label: 'Ledger', group: 'Finance', api: [], managed: true, strictRead: true },
-  { key: 'pricing', label: 'Pricing and reviews', group: 'Growth', api: ['pricing', 'rates', 'reviews'] },
+  // Airbnb's payments matched to the bookings (chew, 10 Nov 2026). Migration 0258 closed it for every department until
+  // management opens it (chew: "到时我才给权限"), so no Finance baseline reaches it.
+  { key: 'airbnbRecon', label: 'Airbnb reconciliation', group: 'Finance', api: ['airbnb-recon'], managed: true, strictRead: true },
+  { key: 'pricing', label: 'Pricing', group: 'Growth', api: ['pricing', 'rates'] },
+  { key: 'reviews', label: 'Reviews', group: 'Growth', api: ['reviews'] },
   // Messages sat under Reservations from 30 Oct to 2 Nov 2026; migration 0200 pinned its stored levels when it moved here.
   { key: 'comms', label: 'Messages', group: 'Growth', api: ['messages'] },
   { key: 'automations', label: 'Automations', group: 'Growth', api: ['automations'] },
@@ -108,6 +152,7 @@ export const isKind = (v: unknown): v is DepartmentKind => v === 'management' ||
 /** Cleaning and Maintenance hold the cleaners' and technicians' logins, which are managed on HR > Employees only (owner,
  *  23 Oct 2026): no department screen or user form creates one, moves anyone into or out of one, or changes its kind. */
 export const isFieldKind = (kind: DepartmentKind): boolean => kind === 'cleaning' || kind === 'maintenance';
+export const needsPosition = (kind: DepartmentKind): boolean => kind !== 'management';
 /** Where a person's level in an area comes from. 'fixed': management, always Full. 'none': nothing sets it. */
 export type Origin = 'department' | 'position' | 'user' | 'fixed' | 'none';
 export type RuleMap = ReadonlyMap<string, Setting>;
@@ -142,7 +187,8 @@ export function resolveFor(rules: Rules, who: Pick<Who, 'kind'>, area: Area): Re
     ['position', rules.position.rules, group],
     ['department', rules.department.rules, group],
   ];
-  for (const [origin, map, key] of steps) {
+  // A power given one by one takes no category baseline.
+  for (const [origin, map, key] of area.ownGrant ? steps.slice(0, 3) : steps) {
     const level = levelIn(map, key);
     if (level) return { level, origin };
   }
@@ -170,16 +216,17 @@ export async function rulesFor(env: Env, who: Who): Promise<Rules> {
  * area is the one that calls them. Matched before the segment. area null: a read every desk role needs whatever
  * its levels (a picker's reference list); the handler's own checks still apply.
  */
-export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; why: string }[] = [
+export const ROUTE_AREAS: { method: string; path: RegExp; area: string | string[] | null; why: string }[] = [
   { method: 'GET', path: /^\/api\/units$/, area: null, why: 'The unit list feeds every unit picker (calendar, cleaning, maintenance, reservations, expenses).' },
   { method: 'GET', path: /^\/api\/housekeeping\/(cleaners|crew)$/, area: null, why: 'Names of the cleaners for the assign pickers on the dashboard and in reservations.' },
-  { method: 'GET', path: /^\/api\/integrations$/, area: 'reservations', why: 'The calendar shows which channels each unit is connected to.' },
-  { method: 'POST', path: /^\/api\/integrations\/sync$/, area: 'reservations', why: 'The calendar\'s button that gets new reservations from the channels.' },
+  { method: 'GET', path: /^\/api\/reservations\/calendar$/, area: 'calendar', why: 'The reservation calendar grid is the Calendar page.' },
+  { method: 'GET', path: /^\/api\/integrations$/, area: 'calendar', why: 'The calendar shows which channels each unit is connected to.' },
+  { method: 'POST', path: /^\/api\/integrations\/sync$/, area: 'calendar', why: 'The calendar\'s button that gets new reservations from the channels.' },
   { method: 'PATCH', path: /^\/api\/units\/[^/]+\/bank-account$/, area: 'owners', why: 'Choosing which of the owner\'s bank accounts a unit is paid to is owner payout work.' },
   { method: 'POST', path: /^\/api\/owners\/[^/]+\/notify$/, area: 'dashboard', why: 'The dashboard\'s exception action that tells an owner about a problem with their unit.' },
   { method: 'POST', path: /^\/api\/messages$/, area: 'reservations', why: 'Messaging a guest from a reservation or a guest record; the Messages inbox keeps its own area.' },
-  { method: 'GET', path: /^\/api\/finance\/yearly-report$/, area: 'reports', why: 'The yearly unit report sits under Reports in the menu.' },
-  { method: 'GET', path: /^\/api\/finance\/ygrr-report$/, area: 'reports', why: 'The YGRR report (Package D) sits under Reports in the menu.' },
+  { method: 'GET', path: /^\/api\/finance\/yearly-report$/, area: 'reports', why: 'The yearly unit report is a tab of Units > Unit report.' },
+  { method: 'GET', path: /^\/api\/finance\/ygrr-report$/, area: 'reports', why: 'The YGRR report (Package D) is a tab of Units > Unit report.' },
   // Finance reads bookings but does not make or change them (owner, 11 Oct 2026); taking a guest's payment, recording
   // a channel payout and issuing a receipt are finance's own work, so those writes follow the Finance area.
   { method: 'POST', path: /^\/api\/reservations\/[^/]+\/payments$/, area: 'finance', why: 'Recording a guest payment on a reservation is money work.' },
@@ -195,12 +242,33 @@ export const ROUTE_AREAS: { method: string; path: RegExp; area: string | null; w
   // One public holiday list for the whole company (migration 0202), kept from Pricing and from HR: the handlers let in
   // Pricing (Full to change) or Employees (edit to change), whichever the person has (functions/_lib/holidays.ts).
   ...(['GET', 'POST', 'PUT', 'DELETE'] as const).map(method => ({ method, path: /^\/api\/holidays(\/[^/]+)?$/, area: null, why: 'The public holiday list is shared by Pricing and HR; its handlers check either area.' })),
+  { method: 'POST', path: /^\/api\/owner-close\/(lock|unlock)$/, area: null, why: 'Each category has its own lock power and unlocking has its own (lockIncome, lockDeductions, lockO2, unlockStep); the handlers check them.' },
+  { method: 'GET', path: /^\/api\/owner-close\/summary$/, area: null, why: 'The lock bars on the work pages: anyone with a lock power or Unlock a step, and finance and management; the handler checks.' },
+  { method: 'POST', path: /^\/api\/statements\/(finalise|unlock-final)$/, area: null, why: 'Make final and Unlock final are powers given one by one (makeFinal, unlockFinal); the handlers check them.' },
+  { method: 'POST', path: /^\/api\/housekeeping\/guest-left$/, area: ['operations', 'cleaning'], why: 'Today and Cleaning both mark a guest as left.' },
+  { method: '*', path: /^\/api\/housekeeping\/(price-raise|unit-prices)$/, area: ['cleaning', 'maintenance'], why: 'The price list and its scheduled raises sit on Cleaning and Maintenance.' },
+  { method: '*', path: /^\/api\/maintenance\/skus(\/[^/]+)?$/, area: ['cleaning', 'maintenance'], why: 'The service price list on Cleaning and Maintenance edits the repair SKUs.' },
+  { method: '*', path: /^\/api\/operations\/(service-prices|job-money|job-invoices|job-profit)(\/.*)?$/, area: ['cleaning', 'maintenance'], why: 'Service prices and job money are shown on both Cleaning and Maintenance.' },
+  { method: 'GET', path: /^\/api\/units\/scheduled-changes$/, area: 'scheduledChanges', why: 'The Scheduled changes page.' },
+  { method: '*', path: /^\/api\/lettings(\/[^/]+)?$/, area: ['properties', 'agentToLet'], why: 'Lettings show on a unit and on Agent to let.' },
+  { method: '*', path: /^\/api\/properties(\/[^/]+)?$/, area: ['properties', 'unitSettings'], why: 'Buildings are added and changed from Units and from Unit settings.' },
+  { method: 'GET', path: /^\/api\/(unit-layout-types|unit-bed-sizes)$/, area: ['properties', 'unitSettings'], why: 'The unit forms read the layout and bed size lists that Unit settings keeps.' },
+  ...(['POST', 'PATCH', 'PUT', 'DELETE'] as const).map(method => ({ method, path: /^\/api\/(unit-layout-types|unit-bed-sizes|contract-types)(\/.*)?$/, area: 'unitSettings', why: 'Unit settings keeps the layout, bed size and contract type lists.' })),
+  { method: 'GET', path: /^\/api\/finance\/deductions$/, area: 'deductions', why: 'The Deductions page under Units.' },
+  { method: '*', path: /^\/api\/employees\/dream-crafter$/, area: 'dcHr', why: 'Dream Crafter > HR > Employees keeps Dream Crafter\'s own staff.' },
+  { method: 'POST', path: /^\/api\/expenses$/, area: ['finance', 'deductions'], why: 'Adding a deduction records an expense; Finance records them too.' },
+  { method: 'DELETE', path: /^\/api\/expenses\/[^/]+$/, area: ['finance', 'deductions'], why: 'Removing a deduction removes its expense; Finance removes them too.' },
 ];
 
-function routeArea(method: string, path: string): Area | null {
-  const o = ROUTE_AREAS.find(r => (r.method === method || (method === 'HEAD' && r.method === 'GET')) && r.path.test(path));
-  if (o) return o.area ? BY_KEY.get(o.area) ?? null : null;
-  return areaForPath(path);
+export function routeAreas(method: string, path: string): Area[] | null {
+  const route = ROUTE_AREAS.find(r => (r.method === '*' || r.method === method || (method === 'HEAD' && r.method === 'GET')) && r.path.test(path));
+  if (!route) {
+    const area = areaForPath(path);
+    return area ? [area] : null;
+  }
+  if (route.area === null) return null;
+  const areas = [route.area].flat().map(key => BY_KEY.get(key)).filter((area): area is Area => !!area);
+  return areas.length > 0 ? areas : null;
 }
 
 const CACHE_MS = 10_000;
@@ -239,8 +307,10 @@ export function kindOf(a: Pick<Actor, 'role' | 'kind'>): DepartmentKind {
   if (a.kind) return a.kind;
   return a.role === 'management' ? 'management' : a.role === 'housekeeper' ? 'cleaning' : a.role === 'technician' ? 'maintenance' : 'staff';
 }
+/** Owners and Renovation staff (who have no department) never have a desk area. */
+const hasNoDeskAreas = (role: string): boolean => role === 'owner' || role === 'renovator';
 /** Whether the person's levels come from department, position and user rules: desk staff, not owners or field accounts. */
-const isStaff = (a: Actor): boolean => a.role !== 'owner' && kindOf(a) === 'staff';
+const isStaff = (a: Actor): boolean => !hasNoDeskAreas(a.role) && kindOf(a) === 'staff';
 const whoOf = (a: Actor): Who => ({ userId: a.userId, departmentId: a.departmentId ?? null, positionId: a.positionId ?? null, kind: kindOf(a) });
 
 export interface Access { area: Area | null; level: Level; chosen: boolean; role: string; staff: boolean }
@@ -253,12 +323,19 @@ export async function accessFor(env: Env, who: Actor, path: string, method = 'GE
   const { role } = who;
   const kind = kindOf(who);
   const staff = isStaff(who);
-  const area = routeArea(method, path);
-  if (!area) return { area: null, level: 'full', chosen: false, role, staff };
+  const areas = routeAreas(method, path);
+  if (!areas) return { area: null, level: 'full', chosen: false, role, staff };
   // Closed by the account's side: treated as a chosen No access, so the handlers' own role lists give way too.
-  if (offSide(kind, who.side ?? 'both', area)) return { area, level: 'none', chosen: true, role, staff };
-  if (!staff) return { area, level: kind === 'management' ? 'full' : 'none', chosen: false, role, staff };
-  return { area, level: resolveFor(await rulesCached(env, whoOf(who)), whoOf(who), area).level, chosen: true, role, staff };
+  const openAreas = areas.filter(area => !offSide(kind, who.side ?? 'both', area));
+  if (openAreas.length === 0) return { area: areas[0], level: 'none', chosen: true, role, staff };
+  if (!staff) return { area: openAreas[0], level: kind === 'management' ? 'full' : 'none', chosen: false, role, staff };
+  const rules = await rulesCached(env, whoOf(who));
+  const best = highestLevelOf(openAreas.map(area => ({ area, level: resolveFor(rules, whoOf(who), area).level })));
+  return { area: best.area, level: best.level, chosen: true, role, staff };
+}
+
+export function highestLevelOf(candidates: { area: Area; level: Level }[]): { area: Area; level: Level } {
+  return candidates.reduce((best, candidate) => (RANK[candidate.level] > RANK[best.level] ? candidate : best));
 }
 
 /** Whether the management-only actions in the request's area are open to this person. */
@@ -283,7 +360,7 @@ export async function levelsFor(env: Env, who: Actor): Promise<Record<string, Le
   const side = who.side ?? 'both';
   const w = whoOf(who);
   const rules = isStaff(who) ? await rulesCached(env, w) : noRules;
-  return Object.fromEntries(AREAS.map(a => [a.key, offSide(kind, side, a) || who.role === 'owner' ? 'none' : resolveFor(rules, w, a).level]));
+  return Object.fromEntries(AREAS.map(a => [a.key, offSide(kind, side, a) || hasNoDeskAreas(who.role) ? 'none' : resolveFor(rules, w, a).level]));
 }
 
 /** One area's level for the person, for a handler whose action belongs to a different area than the request's path
@@ -316,7 +393,7 @@ export async function peopleWithAccess(env: Env, areaKey: string, min: Level): P
   const out: { id: string; kind: DepartmentKind }[] = [];
   for (const p of people) {
     const kind = kindOf({ role: p.role, kind: isKind(p.kind) ? p.kind : null });
-    if (kind !== 'management' && kind !== 'staff') continue;
+    if ((kind !== 'management' && kind !== 'staff') || hasNoDeskAreas(p.role)) continue;
     if (offSide(kind, isSide(p.side) ? p.side : 'both', area)) continue;
     const rules: Rules = { department: { rules: mapFor('department', p.department_id) }, position: { rules: mapFor('position', p.position_id) }, user: { rules: mapFor('user', p.id) } };
     if (RANK[resolveFor(rules, { kind }, area).level] >= RANK[min]) out.push({ id: p.id, kind });

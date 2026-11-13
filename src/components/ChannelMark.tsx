@@ -65,12 +65,12 @@ export default function ChannelMark({
         width: box, height: box, flex: 'none', borderRadius: Math.round(box * 0.28),
         display: 'grid', placeItems: 'center', lineHeight: 1, fontWeight: 700,
         fontSize: px, letterSpacing: c.glyph.length > 1 ? '-0.03em' : 0,
-        background: muted ? '#F1F0ED' : conts ? color.black : c.fill,
-        color: muted ? '#706D67' : c.markInk,
+        background: muted ? 'var(--color-sunken)' : conts ? color.black : c.fill,
+        color: muted ? 'var(--color-muted-ink)' : c.markInk,
         // A gold hairline keeps the black tile visible on dark surfaces (the reservation drawer's header).
         boxShadow: conts && !muted ? 'inset 0 0 0 1px rgba(200,164,106,0.45)' : undefined,
       }}
-    >{conts ? <ContsTowers box={box} ink={muted ? '#5C5952' : color.gold} /> : logo ? <Glyph ch={ch} /> : c.glyph}</span>
+    >{conts ? <ContsTowers box={box} ink={muted ? 'var(--color-muted-ink)' : color.gold} /> : logo ? <Glyph ch={ch} /> : c.glyph}</span>
   );
 }
 

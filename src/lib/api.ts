@@ -1,16 +1,27 @@
 import type { ApiError } from './types';
+import { clearSnapshots, saveSnapshot } from './snapshots';
 
+// Fields written out rather than as constructor parameter properties, so Node can load this file for tests (type
+// stripping does not support those).
 export class ApiFailure extends Error {
+  status: number;
+  code: string;
+  fields?: Record<string, string>;
+  body?: unknown;
   constructor(
-    public status: number,
-    public code: string,
+    status: number,
+    code: string,
     /** Already user-safe. Render it directly — see api.md conventions. */
     message: string,
-    public fields?: Record<string, string>,
-    public body?: unknown,
+    fields?: Record<string, string>,
+    body?: unknown,
   ) {
     super(message);
     this.name = 'ApiFailure';
+    this.status = status;
+    this.code = code;
+    this.fields = fields;
+    this.body = body;
   }
 }
 
@@ -62,16 +73,68 @@ export function friendlyMessage(status: number, code: string | undefined, messag
  *  screen never shows data from before a change it might have made. Capped so a long session does not grow it. */
 export const readCache = new Map<string, unknown>();
 const READ_CACHE_MAX = 80;
-export function remember(path: string, data: unknown) {
+const answeredAt = new Map<string, number>();
+/** How many writes have started or finished in this tab. A read notes it when it is sent: if it has moved by the time
+ *  the answer lands, a write ran in between and the answer may be from before it, so it is not kept (a screen opened
+ *  after the save would otherwise show the old figures as if fresh). Moved when a write starts and again when it ends,
+ *  so a read sent while a write is on its way does not count either. */
+let writes = 0;
+export const writeCount = () => writes;
+/** Other tabs of this browser hear of each write, so a read one of them sent before it is not kept either (its
+ *  snapshot would otherwise come back on the next visit as if it were current). */
+const writesElsewhere: BroadcastChannel | null = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('conts-writes') : null;
+if (writesElsewhere) {
+  writesElsewhere.onmessage = () => forgetAll(false);
+  // Node (the tests) would otherwise stay running for it.
+  (writesElsewhere as BroadcastChannel & { unref?: () => void }).unref?.();
+}
+function forgetAll(stored: boolean) { writes++; readCache.clear(); answeredAt.clear(); clearSnapshots({ stored }); }
+/** A write started or finished: everything kept may be out of date, the saved snapshots (lib/snapshots.ts) included. */
+export function wrote() { forgetAll(true); try { writesElsewhere?.postMessage(1); } catch { /* closed */ } }
+/** Reads answered with Cache-Control: no-store. Never kept as a snapshot. */
+const noStore = new Set<string>();
+/** Keeps a read's answer. `sentAt` is writeCount() when the read was sent; an answer sent before the latest write is
+ *  not kept. The main screens' reads are also kept as a snapshot for the next visit (lib/snapshots.ts decides which). */
+export function remember(path: string, data: unknown, sentAt?: number) {
+  if (sentAt !== undefined && sentAt !== writes) return;
   readCache.delete(path);
   readCache.set(path, data);
-  if (readCache.size > READ_CACHE_MAX) readCache.delete(readCache.keys().next().value!);
+  answeredAt.set(path, Date.now());
+  if (sentAt !== undefined && !noStore.has(path)) saveSnapshot(path, data);
+  if (readCache.size > READ_CACHE_MAX) { const oldest = readCache.keys().next().value!; readCache.delete(oldest); answeredAt.delete(oldest); }
+}
+/** True when the kept answer for this read arrived within the last `ms` (and no write has emptied the cache since):
+ *  a screen opened or a tab switched back that soon shows it without asking the server again. */
+export function answeredWithin(path: string, ms: number): boolean {
+  const at = answeredAt.get(path);
+  return readCache.has(path) && at !== undefined && Date.now() - at < ms;
 }
 
 const RETRY_STATUS = new Set([502, 503, 504]);
+/** A read is also tried again after a plain 500: it saved nothing, and a burst of reads (moving quickly between pages)
+ *  can meet a database hiccup that the next try does not (polish 1: Units showed an empty tree until a reload). */
+const RETRY_READ_STATUS = new Set([500, 502, 503, 504]);
 
-/** Money and document writes: payments, payouts, statements, expenses, credit notes, guest documents, owner adjustments. */
-const ONCE = /^\/(reservations\/[^/]+\/payments(\/[^/]+)?|payouts(\/run)?|statements\/(generate|finalise|send|[^/]+\/adjust)|expenses(\/utilities)?|credit-notes(\/[^/]+)?|guest-documents(\/[^/]+\/void)?|owners\/[^/]+\/adjustments(\/[^/]+)?|payment-vouchers(\/[^/]+)?)$/;
+/** True for a request the browser or the page cancelled (an AbortController, a page being left): not a failure, so
+ *  nothing should show an error for it. */
+export const isAbort = (e: unknown): boolean =>
+  (e instanceof DOMException || e instanceof Error) && e.name === 'AbortError';
+
+/** Money and document writes: payments, payouts, statements, expenses, credit notes, guest documents, owner adjustments
+ *  (deductions). And every form that creates a record, where a second copy is as bad as a second payment: a
+ *  reservation, a block, a cleaning job, a maintenance job, a receipt or payment request (claims), an owner, a unit, a
+ *  contract, a guest. The server honours the key on every write (functions/api/_middleware.ts, once()). */
+const ONCE = /^\/(reservations(\/[^/]+\/payments(\/[^/]+)?)?|payouts(\/run)?|statements\/(generate|finalise|send|[^/]+\/adjust)|expenses(\/utilities)?|credit-notes(\/[^/]+)?|guest-documents(\/[^/]+\/void)?|owners(\/[^/]+\/adjustments(\/[^/]+)?)?|payment-vouchers(\/[^/]+)?|blocks|housekeeping\/tasks|maintenance\/issues|claims\/(receipts|requests)|units|contracts|guests)$/;
+
+/** What a write says, to tell a second send of the same write from a new one. A form with files (a receipt) is told by
+ *  its fields and each file's name, size and date. */
+function contentOf(body: RequestInit['body']): string | null {
+  if (typeof body === 'string') return body;
+  if (typeof FormData !== 'undefined' && body instanceof FormData) {
+    return JSON.stringify([...body.entries()].map(([k, v]) => [k, typeof v === 'string' ? v : `${v.name}|${v.size}|${(v as File).lastModified ?? ''}`]));
+  }
+  return null;
+}
 /** The Idempotency-Key of each money or document write still in flight, or whose answer never arrived, by its exact
  *  content. Sending the same write again (a second click, or a retry after "Could not reach the server") reuses the
  *  key, so the server hands back the first answer instead of saving it twice. Once an answer arrives the key is let
@@ -81,9 +144,20 @@ const KEEP_UNANSWERED_MS = 10 * 60_000;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isRead = !init?.method || init.method === 'GET';
-  if (!isRead) readCache.clear();
-  const intent = !isRead && init?.method !== 'DELETE' && typeof init?.body === 'string' && ONCE.test(path.split('?')[0])
-    ? `${init.method} ${path} ${init.body}` : null;
+  if (!isRead) {
+    wrote();
+    try { return await requestOnce<T>(path, init, isRead); } finally { wrote(); }
+  }
+  return requestOnce<T>(path, init, isRead);
+}
+
+/** A write whose answer never arrived, or arrived as a gateway error, may still have been saved: the server can carry
+ *  on after the gateway gave up. "Try again" would invite a second copy, so it says to check first. */
+const MAYBE_SAVED = 'No answer came back from the server in time, so this change may still have been saved. Refresh the page and check before trying again.';
+
+async function requestOnce<T>(path: string, init: RequestInit | undefined, isRead: boolean): Promise<T> {
+  const content = !isRead && init?.method !== 'DELETE' && ONCE.test(path.split('?')[0]) ? contentOf(init?.body) : null;
+  const intent = content !== null ? `${init?.method} ${path} ${content}` : null;
   const key = intent ? writeKeys.get(intent) ?? crypto.randomUUID() : null;
   if (intent && key) writeKeys.set(intent, key);
   const send = () => fetch(`/api${path}`, {
@@ -95,17 +169,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   // A cold Hyperdrive pool after a quiet spell answers the first read with a gateway error; one retry clears it.
-  // Writes are never retried: the first attempt may have been applied.
+  // Writes are never retried, not even after a 503: the first attempt may have been applied. (One carrying an
+  // Idempotency-Key could be, since the server would hand back the first answer; nothing replays them yet.)
   let res: Response | undefined;
   for (let attempt = 0; attempt < (isRead ? 2 : 1); attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, 300));
     try {
       res = await send();
-    } catch {
+    } catch (e) {
+      // A cancelled request is passed on as it is (useApi ignores it); it is not "could not reach the server".
+      if (isAbort(e) || init?.signal?.aborted) throw e;
       res = undefined;
       continue;
     }
-    if (!RETRY_STATUS.has(res.status)) break;
+    if (!(isRead ? RETRY_READ_STATUS : RETRY_STATUS).has(res.status)) break;
   }
   if (intent) {
     // A 409 with Retry-After is "the first one is still being saved": that one's answer is still to come.
@@ -113,8 +190,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (answered) writeKeys.delete(intent);
     else setTimeout(() => { if (writeKeys.get(intent) === key) writeKeys.delete(intent); }, KEEP_UNANSWERED_MS);
   }
-  if (!res) throw new ApiFailure(0, 'NETWORK', CODE_MESSAGE.NETWORK);
+  if (!res) throw new ApiFailure(0, 'NETWORK', isRead ? CODE_MESSAGE.NETWORK : MAYBE_SAVED);
 
+  if (isRead) {
+    if (/no-store/i.test(res.headers.get('cache-control') ?? '')) noStore.add(path); else noStore.delete(path);
+  }
   if (res.status === 204) return undefined as T;
 
   const text = await res.text();
@@ -126,6 +206,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const code = e.error?.code ?? (res.status >= 500 ? 'INTERNAL' : 'UNKNOWN');
     // The account is on a temporary password: the session re-reads itself and the app shows "Set a new password".
     if (code === 'PASSWORD_CHANGE_REQUIRED') window.dispatchEvent(new Event('conts:password-change-required'));
+    // A gateway error on a write: the platform's answer, not our server's, so it says nothing about whether it saved.
+    if (!isRead && RETRY_STATUS.has(res.status) && !e.error?.message) throw new ApiFailure(res.status, code, MAYBE_SAVED, undefined, body);
     throw new ApiFailure(res.status, code, friendlyMessage(res.status, code, e.error?.message), e.error?.fields, body);
   }
   if (text && body === null) throw new ApiFailure(res.status, 'INTERNAL', 'The server sent an answer this screen could not read. Refresh the page and try again.');

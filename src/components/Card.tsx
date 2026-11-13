@@ -22,7 +22,7 @@ export function Card({ children, style, className }: { children: ReactNode; styl
 export function CardHeader({ title, right }: { title: string; right?: ReactNode }) {
   return (
     <div style={{ padding: '20px 20px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-      <span style={{ fontSize: text.heading, fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</span>
+      <span style={{ fontSize: text.heading, fontWeight: 700, letterSpacing: '-0.005em' }}>{title}</span>
       {right}
     </div>
   );
@@ -48,13 +48,14 @@ export function Meta({ label, value, mono }: { label: string; value: string; mon
   );
 }
 
-/** A group of fields in a create / edit form: a small caps title over a two-column grid (one column on phones). */
-export function FormSection({ title, children }: { title: string; children: ReactNode }) {
+/** A group of fields in a create / edit form: a small caps title (and an optional hint on the right) over a
+ *  two-column grid, one column on phones. Sections that follow each other are parted by a dashed rule (Conts DS v2). */
+export function FormSection({ title, hint, children }: { title: string; hint?: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-2.5">
-      <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-ink">{title}</div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">{children}</div>
-    </div>
+    <section className="ds-fs">
+      <div className="ds-fs-h"><b>{title}</b>{hint && <span>{hint}</span>}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{children}</div>
+    </section>
   );
 }
 

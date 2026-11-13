@@ -28,7 +28,7 @@ describe('DateField retype', () => {
     const { onSave, onInvalid, box } = retype('2026-10-30', '30/13/2026');
     expect(onSave).not.toHaveBeenCalled();
     expect(onInvalid).toHaveBeenCalledWith('30/13/2026');
-    expect(box.value).toBe('2026/10/30');
+    expect(box.value).toBe('30/10/2026');
   });
 
   test('on an empty field the wrong text clears, nothing is saved', () => {

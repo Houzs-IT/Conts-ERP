@@ -8,6 +8,7 @@ import { countryName } from '../../_lib/guestCountry';
 import { moneySchema, moneySql } from '../../_lib/bookingMoney';
 import { checkSen, checkInt, checkDate, checkPhone, invalid, type Fields } from '../../_lib/validate';
 import { bookingNotice } from '../../_lib/notices';
+import { countsAsIncome, incomeNotice, stayMonthsOf } from '../../_lib/lockGuards';
 import { demoOn, tablesFor } from '../../_lib/demo';
 
 /** GET /api/reservations?view=&todo=&ch=&building=&st=&country=&from=&to=&nightsMin=&nightsMax=&page=&size=&sort=&q=&ref=&guest=&unit=&stay=&gross=&status=
@@ -133,5 +134,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const sync = await holdOnChannels(env, b.unitId, b.checkIn, b.checkOut, false, id);
   await bookingNotice(env, id, 'created', session.userId);
   await ensureTurnovers(env, { reservationIds: [id] });
-  return json({ id, externalRef: ref, effects: { channel: sync } }, 201);
+  // A new reservation counts in income at once (it is saved confirmed): told when its month's income is locked.
+  const notice = countsAsIncome('confirmed', channel) ? await incomeNotice(env, b.unitId, stayMonthsOf(b.checkIn, b.checkOut)) : null;
+  return json({ id, externalRef: ref, effects: { channel: sync }, notice }, 201);
 };

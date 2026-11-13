@@ -8,11 +8,12 @@ import { MoneyText } from '../components/MoneyText';
 import { DataTable, type Column } from '../components/DataTable';
 import { FilterBar } from '../components/FilterBar';
 import { StatTile, StatRow } from '../components/Metric';
+import { LockBars } from '../components/LockBar';
 import { ConfirmDialog, type ConfirmSpec } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { api, notifyFailure } from '../lib/api';
 import { useApi } from '../lib/useApi';
-import { monthLabel, rm, titleCase, todayMyt } from '../lib/format';
+import { monthLabel, rm, todayMyt, personName } from '../lib/format';
 import { statusOf, statusLabel } from '../lib/status';
 import { useUrlState, SearchBox, MonthStepper, shiftMonth } from './finance/listKit';
 import { DeductionPanel, type DeductionType } from './units/DeductionPanel';
@@ -87,7 +88,7 @@ export default function DeductionsPage(): JSX.Element {
     { key: 'total', label: 'Total', type: 'money', value: r => r.amount, width: 130,
       render: r => <MoneyText sen={r.amount} mode="exact" className="tabular-nums whitespace-nowrap" /> },
     { key: 'remarks', label: 'Remarks', value: r => r.remarks, width: 240, render: r => <span className="truncate block" title={r.remarks}>{r.remarks || '—'}</span> },
-    { key: 'owner', label: 'Owner', type: 'person', value: r => (r.ownerName ? titleCase(r.ownerName) : null), width: 160 },
+    { key: 'owner', label: 'Owner', type: 'person', value: r => (r.ownerName ? personName(r.ownerName) : null), width: 160 },
     { key: 'status', label: 'Status', type: 'status', value: r => statusLabel('deduction', r.status), status: r => statusOf('deduction', r.status), width: 160, filter: { kind: 'select' } },
     { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
       render: r => removeButton(r, 'w-[30px] h-[30px]') },
@@ -102,6 +103,8 @@ export default function DeductionsPage(): JSX.Element {
         <StatTile label="Owner adjustments (O2)" value={money(data ? sum(o2) : undefined)} loading={loading && !data} hint="After the operator's share" />
         <StatTile label="Effect on payouts" value={money(data ? sum(rows) : undefined)} loading={loading && !data} hint={`${monthLabel(month)}, all owners`} />
       </StatRow>
+      {/* The month's Cleaning, Add. ded., Misc and O2 locks (Unit report locks; the Unit report locks them unit by unit). */}
+      <LockBars month={month} stages={['cleaning', 'additional', 'misc', 'o2']} onChange={reload} />
       <DataTable<DeductionLine> id="deductions" columns={columns} rows={data ? visible : null} rowKey={r => `${r.type}-${r.id}`} loading={loading} error={error} onRetry={reload}
         onRowClick={r => { if (r.ownerId) navigate(`/owners/${encodeURIComponent(r.ownerId)}`); }}
         viewParams={['month', 'type', 'q']} filtered={filter !== 'all' || !!q} onClearFilters={() => url.set({ type: null, q: null, page: null })}

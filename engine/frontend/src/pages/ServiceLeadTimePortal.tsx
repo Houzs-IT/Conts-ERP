@@ -15,7 +15,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import { useQuery } from "../hooks/useQuery";
 import { useToast } from "../hooks/useToast";
-import { useAuth } from "../auth/AuthContext";
+import { usePageAccess } from "../auth/PageGuard";
 import { Button } from "../components/Button";
 import { ListSkeleton } from "../components/Skeleton";
 
@@ -33,9 +33,8 @@ const STAGE_ORDER: { value: string; label: string; short: string }[] = [
 ];
 
 export function ServiceLeadTimePortal() {
-  const { can } = useAuth();
   const toast = useToast();
-  const canManage = can("service_cases.manage");
+  const canManage = usePageAccess("service_cases.settings") === "full";
 
   return (
     <div className="space-y-6">

@@ -77,7 +77,7 @@ import { requireLeafAccount } from './accounting-chart';
 import { planPvRateAdoption, isRateRetainedFromPv, roundRate6 } from '../lib/pv-rate-adoption';
 import { recostFromGrn } from '../lib/recost';
 import { fmtSen } from '../shared/format';
-import { checkVoucherLimit, lineDepartmentOfProject, overLimitBody, resolveVoucherProject } from '../../conts/project-limit';
+import { billProjectLines, checkVoucherLimit, lineDepartmentOfProject, overLimitBody, resolveVoucherProject, settlementProjects } from '../../conts/project-limit';
 import { loadSubDepartments, projectRenoKind, resolveLineSub, RENO_KIND_OF, type SubDepartment } from '../../conts/sub-departments';
 
 export const paymentVouchers = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -236,6 +236,27 @@ async function settledDepartmentLegs<L extends DebitLeg>(
 
 /* ── Normalise + validate the incoming lines, recompute the header total ──── */
 type PvLineRow = { line_no: number; description: string | null; debit_account_code: string; amount_sen: number; department: Department; unit_id?: string | null; project_id?: number | null; sub_department_id?: string | null };
+
+/** Conts (chew 11 Nov 2026): a supplier payment over bills of two or more projects is one voucher split by project —
+    its line(s) on the supplier's AP control become one line per project, each bill's amount spread over its lines'
+    projects in proportion (settlementProjects), what it pays beyond the bills on a line naming none. Each project's
+    limit then counts its own share. Other lines (a bank charge) name no project. The department and sub-department
+    stay as the control line had them: posting splits the AP leg by the bills' departments (settledDepartmentLegs). */
+async function splitBillLines<R extends PvLineRow>(
+  sb: any, companyId: number, rows: R[], control: string | null, allocations: ReadonlyArray<AllocationRow>,
+): Promise<{ ok: true; rows: R[] } | { ok: false; status: 400 | 500; body: Record<string, unknown> }> {
+  const onControl = rows.filter((r) => control != null && r.debit_account_code === control);
+  if (onControl.length === 0) {
+    return { ok: false, status: 400, body: { error: 'many_projects', message: "These bills belong to more than one project, and the voucher has no line on the supplier's account to split between them." } };
+  }
+  const loaded = await billProjectLines(sb, companyId, allocations);
+  if (!loaded.ok) return { ok: false, status: 500, body: { error: 'load_failed', reason: loaded.error } };
+  const parts = settlementProjects(onControl.reduce((s, r) => s + r.amount_sen, 0), loaded.bills);
+  const first = onControl[0]!;
+  const split = parts.map((p) => ({ ...first, project_id: p.projectId, amount_sen: p.sen }));
+  const others = rows.filter((r) => !onControl.includes(r)).map((r) => ({ ...r, project_id: null }));
+  return { ok: true, rows: [...split, ...others].map((r, i) => ({ ...r, line_no: i + 1 })) };
+}
 
 const KIND_LABEL: Record<string, string> = { RENOVATION: 'a Dream Crafter', INHOUSE_RENOVATION: 'a The Conts' };
 
@@ -799,6 +820,13 @@ export const createPaymentVoucherCore = async (c: any, body: Record<string, unkn
   const vp = await resolveVoucherProject(sb, activeCompanyId(c) ?? 0, body.projectId, { piIds: piIdsOf(allocBuilt.rows), apInvoiceIds: apInvoiceIdsOf(allocBuilt.rows) });
   if (!vp.ok) return c.json(vp.body, vp.status);
   const voucherProject = vp.projectId;
+  /* Bills of two or more projects: its AP line split by project (chew 11 Nov 2026), worked out before anything is written. */
+  let lineRows = built.rows as Array<PvLineRow>;
+  if (vp.split && allocBuilt.rows.length > 0) {
+    const sp = await splitBillLines(sb, activeCompanyId(c) ?? 0, lineRows, own.control, allocBuilt.rows);
+    if (!sp.ok) return c.json(sp.body, sp.status);
+    lineRows = sp.rows;
+  }
   const currency = normalizeCurrency(body.currency);
   /* Migration 0082 — the rate auto-fills from the currency MASTER (rate_to_myr)
      unless the body sends an explicit one; MYR ⇒ 1, a strict no-op. */
@@ -846,13 +874,14 @@ export const createPaymentVoucherCore = async (c: any, body: Record<string, unkn
     return coId == null ? del : scopeToCompanyId(del, coId);
   };
 
-  /* A voucher paying bills pays one project, on every line. A plain voucher's lines keep the project each names; the
-     header's (an older caller) fills the lines that name neither a unit nor a project. */
+  /* A voucher paying bills pays their one project, on every line, or is split over their projects (lineRows). A plain
+     voucher's lines keep the project each names; the header's (an older caller) fills the lines that name neither a
+     unit nor a project. */
   const paysBills = allocBuilt.rows.length > 0;
-  const rowsWithId = built.rows.map((r) => ({ ...r, pv_id: h.id,
-    project_id: paysBills ? voucherProject
-      : (r as Partial<PvLineRow>).project_id != null ? (r as Partial<PvLineRow>).project_id
-      : (r as Partial<PvLineRow>).unit_id ? null : voucherProject }));
+  const rowsWithId = lineRows.map((r) => ({ ...r, pv_id: h.id,
+    project_id: paysBills ? (vp.split ? r.project_id ?? null : voucherProject)
+      : r.project_id != null ? r.project_id
+      : r.unit_id ? null : voucherProject }));
   const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(rowsWithId, c));
   if (lErr) { await rollbackHeader(); return c.json({ error: 'lines_insert_failed', reason: lErr.message }, 500); }
 
@@ -941,6 +970,9 @@ export const updatePaymentVoucherHandler = async (c: any) => {
   /* A voucher paying bills pays one project on every line; a plain voucher's lines each keep their own
      (plan 2026-11-02-voucher-line-purpose). */
   let paysBills = false;
+  /* Bills of two or more projects (chew 11 Nov 2026): the voucher's AP line is split over them, by what it pays each. */
+  let splitBills = false;
+  let billAllocs: AllocationRow[] = [];
   if (body.projectId !== undefined || body.allocations !== undefined || body.lines !== undefined) {
     const { data: was } = await sb.from('payment_voucher_lines').select('project_id').eq('company_id', co.companyId).eq('pv_id', id).limit(1);
     const before0 = ((was ?? []) as Array<{ project_id: number | null }>)[0]?.project_id ?? null;
@@ -949,14 +981,17 @@ export const updatePaymentVoucherHandler = async (c: any) => {
       const ab = buildAllocations(body.allocations);
       if ('error' in ab) return c.json({ error: ab.error }, 400);
       bills = { piIds: piIdsOf(ab.rows), apInvoiceIds: apInvoiceIdsOf(ab.rows) };
+      billAllocs = ab.rows;
     } else {
-      const { data: al } = await sb.from('pv_allocations').select('pi_id, ap_invoice_id').eq('company_id', co.companyId).eq('pv_id', id);
-      const rows = (al ?? []) as Array<{ pi_id: string | null; ap_invoice_id: string | null }>;
+      const { data: al } = await sb.from('pv_allocations').select('pi_id, ap_invoice_id, amount_sen').eq('company_id', co.companyId).eq('pv_id', id);
+      const rows = (al ?? []) as Array<{ pi_id: string | null; ap_invoice_id: string | null; amount_sen: number }>;
       bills = { piIds: rows.map((r) => r.pi_id).filter(Boolean) as string[], apInvoiceIds: rows.map((r) => r.ap_invoice_id).filter(Boolean) as string[] };
+      billAllocs = rows.map((r) => ({ pi_id: r.pi_id, ap_invoice_id: r.ap_invoice_id, amount_sen: Number(r.amount_sen ?? 0) }));
     }
     const vp = await resolveVoucherProject(sb, co.companyId, body.projectId !== undefined ? body.projectId : before0, bills);
     if (!vp.ok) return c.json(vp.body, vp.status);
     voucherProject = vp.projectId;
+    splitBills = vp.split;
     /* Bills linked while it was a supplier payment no longer decide its lines once it is something else. */
     const purposeNow = normalizePurpose(body.purpose !== undefined ? body.purpose : before.purpose);
     paysBills = purposeNow === 'SUPPLIER_PAYMENT' && bills.piIds.length + bills.apInvoiceIds.length > 0;
@@ -1081,8 +1116,15 @@ export const updatePaymentVoucherHandler = async (c: any) => {
       const sub_department_id = r.sub_department_id !== undefined ? r.sub_department_id : h0 && h0.department === r.department ? h0.sub_department_id ?? null : null;
       return { ...r, unit_id, project_id, sub_department_id };
     });
+    /* Bills of two or more projects: the AP line split over them (chew 11 Nov 2026), before the old lines go. */
+    let finalRows = keptRows;
+    if (paysBills && splitBills) {
+      const sp = await splitBillLines(sb, co.companyId, keptRows, own.control, billAllocs);
+      if (!sp.ok) return c.json(sp.body, sp.status);
+      finalRows = sp.rows;
+    }
     await sb.from('payment_voucher_lines').delete().eq('pv_id', id);
-    const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(keptRows.map((r) => ({ ...r, pv_id: id })), c));
+    const { error: lErr } = await sb.from('payment_voucher_lines').insert(stampCompany(finalRows.map((r) => ({ ...r, pv_id: id })), c));
     if (lErr) return c.json({ error: 'lines_update_failed', reason: lErr.message }, 500);
     updates.total_sen = built.total;
     newTotal = built.total;
@@ -1127,7 +1169,20 @@ export const updatePaymentVoucherHandler = async (c: any) => {
   /* The header's project on lines the edit did not rewrite: every line of a voucher paying bills; on a plain voucher
      only when the header names one, and only lines naming neither a unit nor a project (a voucher made from a payment
      request or a receipt keeps its lines' own projects). */
-  if (voucherProject !== undefined && body.lines === undefined && (paysBills || body.projectId !== undefined)) {
+  if (voucherProject !== undefined && body.lines === undefined && paysBills && splitBills) {
+    /* Bills of two or more projects and no new lines (chew 11 Nov 2026): the lines it has, split again over the bills. */
+    const { data: hadRows, error: hrErr } = await sb.from('payment_voucher_lines')
+      .select('line_no, description, debit_account_code, amount_sen, department, unit_id, project_id, sub_department_id')
+      .eq('company_id', co.companyId).eq('pv_id', id).order('line_no');
+    if (hrErr) return c.json({ error: 'load_failed', reason: hrErr.message }, 500);
+    const ownNow = await supplierOwnControl(c, body.purpose !== undefined ? body.purpose : before.purpose, body.supplierId !== undefined ? body.supplierId : before.supplier_id);
+    if ('resp' in ownNow) return ownNow.resp;
+    const sp = await splitBillLines(sb, co.companyId, ((hadRows ?? []) as Array<PvLineRow>).map((r) => ({ ...r, amount_sen: Number(r.amount_sen) })), ownNow.control, billAllocs);
+    if (!sp.ok) return c.json(sp.body, sp.status);
+    await sb.from('payment_voucher_lines').delete().eq('company_id', co.companyId).eq('pv_id', id);
+    const { error: sErr } = await sb.from('payment_voucher_lines').insert(stampCompany(sp.rows.map((r) => ({ ...r, pv_id: id })), c));
+    if (sErr) return c.json({ error: 'update_failed', reason: sErr.message }, 500);
+  } else if (voucherProject !== undefined && body.lines === undefined && (paysBills || body.projectId !== undefined)) {
     let q = sb.from('payment_voucher_lines').update({ project_id: voucherProject }).eq('company_id', co.companyId).eq('pv_id', id);
     if (!paysBills) q = q.is('unit_id', null).is('project_id', null);
     const { error: pErr } = await q;

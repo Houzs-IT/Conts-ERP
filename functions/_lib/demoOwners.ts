@@ -49,12 +49,16 @@ export async function createSampleOwner(env: Env, b: NewSampleOwner, actor: stri
     .filter(c => !NOT_COPIED.has(c) && !c.startsWith('channex_'));
   const list = cols.map(c => `"${c}"`).join(', ');
   const copies = real.map(u => ({ id: newDemoId('u'), from: u.id, unit_number: `${u.unit_number} (sample)`, base_rate: Number(u.base_rate) }));
+  /* Guaranteed rent is no longer offered and the units table refuses a new GRR unit, so a GRR unit is shown to a prospect
+     as profit share, the model sold today (11 Nov 2026: the copy failed on a GRR unit and left a sample owner with none). */
+  const pick = (c: string) => c === 'split_kind' ? `CASE WHEN p."split_kind" = 'GRR — guaranteed rent' THEN 'Profit share' ELSE p."split_kind" END` : `p."${c}"`;
+  let reservations = 0, reviews = 0;
+  try {
   await run(env, `INSERT INTO demo.units (id, owner_id, unit_number, demo_by, demo_at, ${list})
-    SELECT x.id, ?, x.unit_number, ?, ?, ${cols.map(c => `p."${c}"`).join(', ')}
+    SELECT x.id, ?, x.unit_number, ?, ?, ${cols.map(pick).join(', ')}
     FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, "from" text, unit_number text) JOIN units p ON p.id = x."from"`,
     ownerId, actor, at, JSON.stringify(copies));
 
-  let reservations = 0, reviews = 0;
   if (b.fill !== false) {
     const made = sampleStays(ownerId, copies);
     if (made.guests.length) {
@@ -73,6 +77,11 @@ export async function createSampleOwner(env: Env, b: NewSampleOwner, actor: stri
         actor, at, JSON.stringify(made.reviews));
     }
     reservations = made.stays.length; reviews = made.reviews.length;
+  }
+  } catch (e) {
+    /* Never leave half a sample owner behind: the list would show one with no units and nothing to open. */
+    await removeSampleOwner(env, ownerId).catch(() => undefined);
+    throw e;
   }
   return { id: ownerId, units: copies.length, reservations, reviews };
 }

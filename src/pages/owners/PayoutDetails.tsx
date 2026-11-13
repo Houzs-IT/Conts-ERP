@@ -5,7 +5,7 @@ import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
 import { useToast } from '../../components/Toast';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
-import { masked, titleCase } from '../../lib/format';
+import { masked, personName } from '../../lib/format';
 import { bankName, BANK_NAME } from '../../lib/vocabulary';
 import { BANKS } from '../units/shared';
 import { Section, Modal, type Owner } from './shared';
@@ -93,7 +93,7 @@ function EditPayout({ owner, onClose, onSaved }: { owner: Owner; onClose: () => 
       const r = await api.patch<{ changed: boolean }>(`/owners/${encodeURIComponent(owner.id)}`, {
         bankName: bank, accountHolder: holder, ...(account.trim() ? { bankAccount: account.trim() } : {}),
       });
-      toast({ tone: 'success', title: r.changed ? 'Payout details saved.' : 'Nothing changed.', body: r.changed ? `${titleCase(owner.displayName)}'s statements and payouts use them from now on.` : undefined });
+      toast({ tone: 'success', title: r.changed ? 'Payout details saved.' : 'Nothing changed.', body: r.changed ? `${personName(owner.displayName)}'s statements and payouts use them from now on.` : undefined });
       onSaved();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);
@@ -101,7 +101,7 @@ function EditPayout({ owner, onClose, onSaved }: { owner: Owner; onClose: () => 
     } finally { setBusy(false); }
   }
   return (
-    <Modal title="Edit payout details" sub={`Where ${titleCase(owner.displayName)} is paid. Applies to every unit they own.`} onClose={onClose}
+    <Modal title="Edit payout details" sub={`Where ${personName(owner.displayName)} is paid. Applies to every unit they own.`} onClose={onClose}
       submitLabel={busy ? 'Saving...' : 'Save details'} canSubmit={!busy} onSubmit={() => void save()}>
       <Select showLabel size="md" label="Bank" value={bank} onChange={setBank} placeholder="Choose the bank"
         options={codes.map(c => ({ value: c, label: BANK_NAME[c.toUpperCase()] ? `${bankName(c)} (${c})` : c }))} />

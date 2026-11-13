@@ -7,6 +7,7 @@
 import { api } from './api';
 import { todayMyt } from './format';
 import { requestBillFill, type RequestBillRead } from './requestBill';
+import { bankProblem, type ClaimBank } from './claimBank';
 
 export type LineDepartment = 'rental' | 'supply' | 'shared';
 export type ReceiptStatus = 'HANDED_IN' | 'CHECKED' | 'TOPPED_UP' | 'PAID_BACK' | 'REJECTED' | 'REPAID' | 'WRITTEN_OFF' | 'REPLACED';
@@ -53,6 +54,16 @@ export async function readRequestBill(files: File[]): Promise<RequestBillRead> {
   try { return await api.post('/claims/extract', form); } catch { return { amountSen: null, date: null, vendorName: null }; }
 }
 export { requestBillFill };
+
+export { bankProblem, type ClaimBank };
+/** The person's own saved bank details, to prefill a Direct Claim to Me; null when none are saved or the read fails, and
+ *  the person types them. Only read: what is changed on the claim stays on the claim. */
+export async function myBank(): Promise<ClaimBank | null> {
+  try {
+    const { bank } = await api.get<{ bank: { bankName: string | null; accountNo: string | null; accountName: string | null } | null }>('/claims/my-bank');
+    return bank ? { bankName: bank.bankName ?? '', accountNo: bank.accountNo ?? '', accountName: bank.accountName ?? '' } : null;
+  } catch { return null; }
+}
 
 /** Hands a receipt in (or asks finance to pay): the fields as JSON beside the files. */
 export function postWithFiles<T>(path: '/claims/receipts' | '/claims/requests', data: Record<string, unknown>, files: File[]): Promise<T> {

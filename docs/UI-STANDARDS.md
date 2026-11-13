@@ -69,6 +69,28 @@ every pull request.
 - Every handler that changes data writes `audit()` (directly or through the `_lib` function it calls). Exceptions are
   allow-listed with their reason in `scripts/checks/require-audit.mjs`.
 
+## 8. Conts DS v2 (Nov 2026 redesign, phase 1: tokens and shared components)
+
+- Tokens: green-tinted neutrals, a darker canvas (`bg-page`) behind white cards with `--shadow-card`, the black slab,
+  champagne gold, and Conts green `--color-primary` for the one primary button (`bg-primary`, `text-primary`). Radii
+  10px controls, 14px cards, 16px dialogs. Light in `tokens.css` and `src/styles/tokens.css`; dark in
+  `src/styles/theme-dark.css`. Component classes (`ds-*`) live in `src/styles/components.css`.
+- `PageHeader` shows a gold eyebrow (the menu group, or `eyebrow="..."`, or `eyebrow={false}`); below 900px its plain
+  secondary `Button`s fold into one More menu (`HeaderActions`).
+- A menu entry marked `tabs` in `navigation.ts` (Unit report, Units, Owners, Settings) is one row in the menu; its
+  screens show as sub-tabs above the page (`SubNav`, drawn by AppShell, `.ds-subnav`). Each tab keeps its own address
+  and permission area; pages do not draw this bar themselves. The phone tab bar is the person's four main screens + Menu.
+- `StatTile hero` leads its row and spans it on a phone. `Segmented` is a white track with the chosen option on black.
+  `TabBar` and `DrawerTabs` have the gold underline. `DataTable` rows are about 40px with an uppercase sticky header.
+- `Modal size="sm|md|lg"`, `eyebrow`, `aside`, `footNote`; a bottom sheet at 640px and under. `Drawer size="md|lg|xl"`,
+  full screen on a phone.
+- Form kit: `FormSection title hint`, `StayRange` (check-in to checkout with the night count, `components/inputs`),
+  `ChoiceChips` (six options or fewer, channel logos), `Stepper`. Read-outs: `KeyFacts` (no orphan cell),
+  `MoneyLines` (sen always, deductions in red, the total in green). `Switch` is the one on/off control.
+- Phase 2: `ListToolbar` (`components/ListToolbar.tsx`) is the one toolbar above a list or report that is not a
+  `DataTable`: search, a Filters popover whose choices carry counts, a date button with presets, removable chips with
+  Clear all, and an optional second row for the page's one either/or switch. Its panels are bottom sheets at 640px and under.
+
 ## The checks
 
 | Check (`scripts/checks/`) | Fails on |

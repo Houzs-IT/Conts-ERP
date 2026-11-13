@@ -5,7 +5,7 @@ import { Field } from '../../components/Field';
 import { PercentInput, PhoneInput, DateField, phoneProblem } from '../../components/inputs';
 import { useApi } from '../../lib/useApi';
 import type { RosterUnit } from '../../lib/useUnitRoster';
-import { rm, monthLabel, titleCase } from '../../lib/format';
+import { rm, monthLabel, buildingName, personName } from '../../lib/format';
 import { MoneyText } from '../../components/MoneyText';
 import { StatusBadge } from '../../components/StatusBadge';
 import Icon from '../../components/Icon';
@@ -135,8 +135,8 @@ export function Roll({ label, value, strong }: { label: string; value: string | 
     <div className="flex flex-col gap-2 min-w-0">
       <Eyebrow>{label}</Eyebrow>
       {value === undefined
-        ? <div className={cx('skeleton w-[min(120px,70%)]', strong ? 'h-[24px] sm:h-[28px]' : 'h-[18px] sm:h-[20px]')} />
-        : <Figure value={value} className={cx('leading-none font-medium text-ink', strong ? 'text-[24px] sm:text-[28px] tracking-[-0.025em]' : 'text-[18px] sm:text-[20px] tracking-[-0.015em]')} />}
+        ? <div className={cx('skeleton w-[min(120px,70%)]', strong ? 'h-[26px]' : 'h-[19px]')} />
+        : <Figure value={value} className={cx('leading-none font-medium text-ink', strong ? 'text-[26px] font-semibold tracking-[-0.025em]' : 'text-[19px] tracking-[-0.015em]')} />}
     </div>
   );
 }
@@ -144,7 +144,7 @@ export function Section({ title, action, children }: { title: string; action?: R
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
+        <span className="text-[15px] font-semibold tracking-[-0.01em]">{title}</span>
         {action}
       </div>
       {children}
@@ -303,14 +303,14 @@ export function LinkUnitModal({ owner, units, onClose, onSubmit }: { owner: stri
   const choices = units.filter(u => u.ownerName !== owner);
   const [unitId, setUnitId] = useState('');
   const chosen = choices.find(u => u.id === unitId);
-  const unitLabel = chosen ? `${chosen.propertyName} ${chosen.unitNumber}` : '';
+  const unitLabel = chosen ? `${buildingName(chosen.propertyName)} ${chosen.unitNumber}` : '';
   const [feePct, setFeePct] = useState<number | null>(25);
   const canSubmit = unitId !== '' && feePct != null;
   return (
-    <Modal title="Link a unit" sub={`Assign a unit to ${titleCase(owner)} and preset how the owner is paid.`} onClose={onClose} submitLabel="Link unit" canSubmit={canSubmit}
+    <Modal title="Link a unit" sub={`Assign a unit to ${personName(owner)} and preset how the owner is paid.`} onClose={onClose} submitLabel="Link unit" canSubmit={canSubmit}
       onSubmit={() => onSubmit(line(unitId, unitLabel, 'management', feePct ?? undefined, undefined, 0, 0, 0, 0))}>
       <SearchSelect showLabel label="Unit" allLabel="Choose a unit" placeholder="Search unit or building" value={unitId} onChange={v => setUnitId(v)}
-        options={choices.map(u => ({ value: u.id, label: u.unitNumber, group: u.propertyName, hint: u.ownerName ? `now ${titleCase(u.ownerName)}` : undefined }))} />
+        options={choices.map(u => ({ value: u.id, label: u.unitNumber, group: buildingName(u.propertyName), hint: u.ownerName ? `now ${personName(u.ownerName)}` : undefined }))} />
       <PercentInput label="Operator share %" value={feePct} onChange={setFeePct} help="Overrides the owner default for this unit. The Conts keeps this share; the owner receives the rest. Set another contract type on the unit's Contract tab." />
     </Modal>
   );
@@ -322,7 +322,7 @@ export function ContractModal({ owner, onClose, onSubmit }: { owner: string; onC
   const [renewsOn, setRenewsOn] = useState('');
   const canSubmit = startedOn !== '';
   return (
-    <Modal title="Management agreement" sub={`Record the contract terms for ${titleCase(owner)}.`} onClose={onClose} submitLabel="Save contract" canSubmit={canSubmit}
+    <Modal title="Management agreement" sub={`Record the contract terms for ${personName(owner)}.`} onClose={onClose} submitLabel="Save contract" canSubmit={canSubmit}
       onSubmit={() => onSubmit({ feePct: feePct ?? 0, startedOn, renewsOn: renewsOn || null })}>
       <PercentInput label="Operator share %" value={feePct} onChange={setFeePct} help="Set 0 for a GRR-only arrangement." />
       <div className="grid grid-cols-2 gap-3">

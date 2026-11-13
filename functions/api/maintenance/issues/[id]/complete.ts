@@ -2,8 +2,10 @@ import { type Env, one, run, json, fail, audit, nowIso } from '../../../../_lib/
 import { requireSession } from '../../../../_lib/auth';
 import { CHARGE_TO, DAY, hasBilling } from '../../../../_lib/maintenance';
 import { isPeriodLocked } from '../../../../_lib/expenses';
+import { keptCostProblem } from '../../../../_lib/lockGuards';
 import { releaseRepairBlocks } from '../../../../_lib/repairBlocks';
 import { repairNotice } from '../../../../_lib/notices';
+import { PASS_KEY_DONE_ONLY } from '../../../../_lib/passKeyJobs';
 
 /** POST /api/maintenance/issues/:id/complete { finalAmount, chargeTo?, billingDate? } — closes the job, puts a blocked unit back
  *  on sale and raises the expense on the unit with the payer chosen (owner through the statement, the company, the guest's
@@ -25,8 +27,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (b?.billingDate != null && (typeof b.billingDate !== 'string' || !DAY.test(b.billingDate))) return fail('VALIDATION', 'Pick the billing date.', 422, { billingDate: 'Pick the billing date.' });
   const billing = await hasBilling(env);
 
-  const cur = await one<any>(env, `SELECT id, state, unit_id, title, blocks_unit, charge_to, owner_approval_required, owner_approved_at${billing ? ', billing_date' : ''} FROM maintenance_issues WHERE id = ?`, id);
+  const cur = await one<any>(env, `SELECT id, state, job_type, unit_id, title, blocks_unit, charge_to, owner_approval_required, owner_approved_at${billing ? ', billing_date' : ''} FROM maintenance_issues WHERE id = ?`, id);
   if (!cur) return fail('NOT_FOUND', 'That job no longer exists.', 404);
+  if (cur.job_type === 'pass_key') return fail('CONFLICT', PASS_KEY_DONE_ONLY, 409);
   if (cur.state === 'resolved') return json({ ok: true });
   const chargeTo: string = b?.chargeTo ?? cur.charge_to;
   if (!cur.unit_id && chargeTo !== 'the_conts') return fail('VALIDATION', 'A job in the building is paid by The Conts.', 422, { chargeTo: 'A job in the building is paid by The Conts.' });
@@ -36,11 +39,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
   const billingDate: string | null = billing ? (b?.billingDate ?? cur.billing_date ?? null) : null;
   const day = billingDate ?? today;
-  const prior = await one<{ id: string; incurred_on: string; amount: number }>(env, 'SELECT id, incurred_on, amount FROM expenses WHERE maintenance_id = ? ORDER BY created_at LIMIT 1', id);
+  const prior = await one<{ id: string; incurred_on: string; amount: number; deduct_month: string; charge_to: string; category: string; description: string | null }>(env, 'SELECT id, incurred_on, amount, deduct_month, charge_to, category, description FROM expenses WHERE maintenance_id = ? ORDER BY created_at LIMIT 1', id);
   const expenseOn = amount > 0 && cur.unit_id ? day : null;
   const unchanged = !!prior && Number(prior.amount) === amount && prior.incurred_on === day;
   if (amount > 0 && cur.unit_id && !unchanged && await isPeriodLocked(env, cur.unit_id, day)) return fail('PERIOD_LOCKED', "That month's owner statement is already final, so the cost cannot be added to it. Pick a later billing date.", 409, { billingDate: 'That month is closed.' });
   if (prior && !unchanged && await isPeriodLocked(env, cur.unit_id, prior.incurred_on)) return fail('PERIOD_LOCKED', 'This job was finished before and its cost is on an owner statement that is already final. Ask finance to adjust it there.', 409);
+  // Finishing again at RM 0 removes the job's cost: refused while a lock keeps it, whatever its category is now.
+  const lockedPrior = prior && amount <= 0 ? await keptCostProblem(env, prior.id) : null;
+  if (lockedPrior) return fail('PERIOD_LOCKED', lockedPrior, 409);
   await run(env, `UPDATE maintenance_issues SET state = 'resolved', final_amount = ?, charge_to = ?, resolved_at = ?, blocks_unit = 0${billing ? ', billing_date = ?' : ''}, updated_at = ? WHERE id = ?`,
     amount, chargeTo, now, ...(billing ? [billingDate ?? (amount > 0 ? day : null)] : []), now, id);
   if (cur.blocks_unit) {

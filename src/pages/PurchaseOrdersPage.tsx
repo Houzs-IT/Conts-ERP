@@ -197,7 +197,7 @@ function PoDrawer({ po, isNew, suppliers, warehouses, canWrite, onClose, onCreat
   }
 
   return (
-    <Drawer open onClose={onClose} width={880}>
+    <Drawer open onClose={onClose} dirty="typed" width={880}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <div className="flex items-center gap-3">
           <h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New purchase order' : po.poNumber}</h2>

@@ -174,7 +174,7 @@ function ItemDrawer({ id, list, onClose, onChanged }: { id: string; list: ListPa
   const i = q.data;
   const reload = () => { q.reload(); onChanged(); };
   return (
-    <Drawer open onClose={onClose} width={620}>
+    <Drawer open onClose={onClose} dirty="typed" width={620}>
       <div className="px-5 pt-5 pb-3 flex items-start gap-3 [border-bottom:1px_solid_var(--color-line)]">
         <div className="flex-1 min-w-0 flex flex-col gap-1">
           <span className="text-meta text-muted-ink">{i ? `${i.code} · ${DOMAIN_LABEL[i.domain]} · ${SUB_LABEL[i.category] ?? i.category}` : 'Loading'}</span>

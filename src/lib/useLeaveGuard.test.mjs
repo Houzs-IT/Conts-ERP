@@ -1,7 +1,15 @@
 // node --test src/lib/useLeaveGuard.test.mjs. Which moves count as leaving a form with unsaved changes.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { confirmLeaving, leavesPlace } from './useLeaveGuard.ts';
+import { register } from 'node:module';
+
+// useLeaveGuard.ts imports './unsavedWork' with no extension, as Vite allows; Node needs '.ts'.
+register('data:text/javascript,' + encodeURIComponent(`
+  export async function resolve(specifier, context, next) {
+    try { return await next(specifier, context); }
+    catch (e) { if (specifier.startsWith('.') && !/\\.[cm]?[jt]sx?$/.test(specifier)) return next(specifier + '.ts', context); throw e; }
+  }`));
+const { confirmLeaving, leavesPlace } = await import('./useLeaveGuard.ts');
 
 const here = { pathname: '/properties/units/a', search: '?tab=details' };
 const params = ['tab', 'view'];

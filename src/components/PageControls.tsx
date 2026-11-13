@@ -18,7 +18,7 @@ export function PageControls({ page, pageSize, total, onPage, onSize, sizes = [2
   const to = Math.min(total, page * pageSize);
   const btn = 'w-8 h-8 grid place-items-center rounded-control border border-solid border-line bg-card text-ink cursor-pointer disabled:cursor-not-allowed disabled:text-faint disabled:bg-muted';
   return (
-    <div className={cx('flex items-center justify-between gap-3 flex-wrap py-[10px] px-[22px] text-meta text-muted-ink', className)}>
+    <div data-live className={cx('flex items-center justify-between gap-3 flex-wrap py-[10px] px-[22px] text-meta text-muted-ink', className)}>
       <span className="[font-variant-numeric:tabular-nums]">{total ? `${n(from)}–${n(to)} of ${n(total)} ${noun}` : `0 ${noun}`}</span>
       <div className="flex items-center gap-2">
         {onSize && (

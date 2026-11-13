@@ -5,6 +5,7 @@ import { Button } from '../../components/Button';
 import { MoneyText } from '../../components/MoneyText';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
+import { useSeedOnce } from '../../lib/useSeedOnce';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { date, monthLabel, rm, todayMyt } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
@@ -70,7 +71,9 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
     if (!current.id && allowedCodes?.length && !allowedCodes.includes(o.contractCode)) return { ...o, contractCode: allowedCodes[0], revenueModel: typeOf(types, allowedCodes[0])?.revenueModel ?? o.revenueModel };
     return o;
   }, [current, allowedCodes, types]);
-  useEffect(() => { if (original) { setDraft(original); setMode('update'); setFields({}); setPreview(null); setPicked(false); } }, [original]);
+  // Filled once per unit and contract (and again after a save), not on every answer, so a late answer never wipes an
+  // edit. The contract types are part of the key: the form reads its starting code from them once they arrive.
+  const reseed = useSeedOnce(original, `${unitId}|${current?.id ?? ''}|${types.length}`, o => { setDraft(o); setMode('update'); setFields({}); setPreview(null); setPicked(false); });
   const d = draft ?? original;
   // A contract with no saved type is read from its terms; saving would lock that guess in, so the type is chosen first.
   const typeUnset = !!current?.id && current.typeStored === false && mode === 'update';
@@ -109,7 +112,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
       const r = await api.put<{ split: boolean }>(`/units/${encodeURIComponent(unitId)}/contract`, { ...bodyOf(d, options), mode });
       toast({ tone: 'success', title: mode === 'new' ? 'New contract started.' : 'Contract saved.',
         body: `${codeName(types, d.contractCode)}: ${codeLabel(types, d.contractCode)}.${r.split ? ' This unit now has its own contract; the other units keep theirs.' : ''} Draft owner statements change when regenerated; final ones keep their figures.` });
-      setMode('update'); reload(); onSaved();
+      setMode('update'); reseed(); reload(); onSaved();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);
       toast({ tone: 'critical', title: 'Contract was not saved.', body: errorMessage(e, 'Try again in a moment.') });
@@ -126,7 +129,7 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3 py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
           <div className="flex flex-col gap-1 min-w-0">
-            <span className="text-[16px] font-semibold tracking-[-0.01em]">Income model</span>
+            <span className="text-[15px] font-semibold tracking-[-0.01em]">Income model</span>
             <span className="text-meta text-muted-ink">
               {current.id && current.contractCode && <><CodeBadge code={current.contractCode} types={types} size="sm" />{' '}</>}
               {current.id && current.startsOn && current.startsOn.slice(0, 10) > todayMyt() ? <>Starts {date(current.startsOn)} · {current.termsLabel}{data!.untilThen ? <>. Until then: {data!.untilThen.termsLabel}</> : ''}</>
@@ -161,13 +164,13 @@ export default function ContractTab({ unitId, canEdit, onSaved, footer }: { unit
 
       {extending && current.id && <ExtendContractModal unitId={unitId} unitLabel={data!.unit.label}
         current={{ code: current.contractCode ?? codeFromModel(types, current.revenueModel), termsLabel: current.termsLabel, startsOn: current.startsOn, endsOn: current.endsOn }}
-        onClose={() => setExtending(false)} onSaved={() => { setExtending(false); reload(); onSaved(); }} />}
+        onClose={() => setExtending(false)} onSaved={() => { setExtending(false); reseed(); reload(); onSaved(); }} />}
       <StatementExample example={example} month={data!.month} draft={dirty && !!preview} busy={previewing} />
 
       {data!.history.length > 0 && (
         <Card>
           <div id="contract-history" className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
-            <span className="text-[16px] font-semibold tracking-[-0.01em]">Contract history</span>
+            <span className="text-[15px] font-semibold tracking-[-0.01em]">Contract history</span>
             <span className="text-meta text-muted-ink">Earlier contracts of this unit. A month before the current contract started is worked out on the one in force then.</span>
           </div>
           <DataTable<ContractView> id="unit.contracts" urlPrefix="ct." bare noViews noToolbar pageSize={0} maxHeight="none"
@@ -195,7 +198,7 @@ export function StatementExample({ example: x, month, draft, busy }: { example: 
   return (
     <Card>
       <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-wrap items-baseline justify-between gap-2">
-        <span className="text-[16px] font-semibold tracking-[-0.01em]">How the {monthLabel(month)} statement works</span>
+        <span className="text-[15px] font-semibold tracking-[-0.01em]">How the {monthLabel(month)} statement works</span>
         <span className="text-meta text-muted-ink">{busy ? 'Working it out…' : draft ? 'On the terms in the form (not saved)' : `This unit's real ${monthLabel(month)} figures`}</span>
       </div>
       {!x ? <div className="py-4 px-5 text-copy text-muted-ink">No figures for {monthLabel(month)}.</div> : (

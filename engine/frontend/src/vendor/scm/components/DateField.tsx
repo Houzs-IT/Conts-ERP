@@ -1,10 +1,10 @@
-// DateField — controlled date input that ALWAYS displays YYYY/MM/DD,
+// DateField — controlled date input that ALWAYS displays DD/MM/YYYY,
 // regardless of the operating-system locale.
 //
 // Why this exists (Commander 2026-06-18): native <input type="date"> renders
 // its value in the browser/OS locale — so the same field showed one order on
 // one machine and another elsewhere. A controlled text field fixes the DISPLAY
-// (house format is year-first YYYY/MM/DD since owner 2026-09-25) while a hidden
+// (house format is day-first DD/MM/YYYY since YH, 11 Nov 2026) while a hidden
 // native date input still provides the OS calendar picker. The on-the-wire
 // contract is unchanged: `value` is an ISO `YYYY-MM-DD` string (or '') and
 // `onChange` emits the same.
@@ -53,13 +53,13 @@ export type DateFieldProps = {
   required?: boolean;
 };
 
-/** Digits → the YYYY/MM/DD mask as far as they reach: "2026" → "2026", "202603"
- *  → "2026/03", "20260331" → "2026/03/31". */
+/** Digits → the DD/MM/YYYY mask as far as they reach: "31" → "31", "3103"
+ *  → "31/03", "31032026" → "31/03/2026". */
 export function maskDmy(digits: string): string {
   const d = digits.slice(0, 8);
-  if (d.length <= 4) return d;
-  if (d.length <= 6) return `${d.slice(0, 4)}/${d.slice(4)}`;
-  return `${d.slice(0, 4)}/${d.slice(4, 6)}/${d.slice(6)}`;
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
 }
 
 /** True when every `/` in `raw` sits where `maskDmy` itself would have written
@@ -80,9 +80,9 @@ export function maskDmy(digits: string): string {
  *  alone by the `^[\d/]*$` guard at the call site. */
 export function separatorsAreMaskOwn(raw: string): boolean {
   for (let i = 0; i < raw.length; i++) {
-    // YYYY/MM/DD: the mask writes '/' after the year (index 4) and the month
-    // (index 7); a '/' anywhere else is the operator's own, so leave it alone.
-    if (raw[i] === '/' && i !== 4 && i !== 7) return false;
+    // DD/MM/YYYY: the mask writes '/' after the day (index 2) and the month
+    // (index 5); a '/' anywhere else is the operator's own, so leave it alone.
+    if (raw[i] === '/' && i !== 2 && i !== 5) return false;
   }
   return true;
 }
@@ -137,24 +137,23 @@ function useCoarsePointer(): boolean {
   return coarse;
 }
 
-/** "2026-05-31" → "2026/05/31". Returns '' for empty/malformed. */
+/** "2026-05-31" → "31/05/2026". Returns '' for empty/malformed. */
 export function isoToDmy(iso: string | null | undefined): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ?? ''));
-  return m ? `${m[1]}/${m[2]}/${m[3]}` : '';
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
 }
 
-/** "2026/05/31" → "2026-05-31". Returns null if not a real calendar date.
- *  Tolerates 1–2 digit month/day and `-`/`.` separators, and the digits typed
- *  straight through with no separator at all (20260531), read year-first like
- *  the display. */
+/** "31/05/2026" → "2026-05-31". Returns null if not a real calendar date.
+ *  Tolerates 1–2 digit day/month and `-`/`.` separators, and the digits typed
+ *  straight through with no separator at all (31052026), read day-first like
+ *  the display. A year-first date (2026/05/31, an older paste) is unambiguous
+ *  with its 4-digit year in front, so it is still read. */
 export function parseDmy(text: string): string | null {
   const t = text.trim();
-  const compact = /^(\d{4})(\d{2})(\d{2})$/.exec(t);
-  const spaced = compact ? null : /^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})$/.exec(t);
-  // Day-first with a 4-digit year last (30/10/2026) is how the sheet-era staff
-  // type a date, and is unambiguous, so it is read rather than refused (HC-0164).
-  const dayFirst = compact || spaced ? null : /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/.exec(t);
-  const m = compact ?? spaced ?? (dayFirst && [dayFirst[0], dayFirst[3], dayFirst[2], dayFirst[1]]);
+  const compact = /^(\d{2})(\d{2})(\d{4})$/.exec(t);
+  const dayFirst = compact ?? /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/.exec(t);
+  const yearFirst = dayFirst ? null : /^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})$/.exec(t);
+  const m = yearFirst ?? (dayFirst && [dayFirst[0], dayFirst[3], dayFirst[2], dayFirst[1]]);
   if (!m) return null;
   const yyyy = Number(m[1]);
   const mm = Number(m[2]);
@@ -176,7 +175,7 @@ export function DateField({
   max,
   disabled = false,
   fullWidth = false,
-  placeholder = 'yyyy/mm/dd',
+  placeholder = 'dd/mm/yyyy',
   title,
   'aria-label': ariaLabel,
   invalid = false,
@@ -288,7 +287,7 @@ export function DateField({
       />
       {draftInvalid && (
         <span id={errorId} className={styles.draftError} role="alert">
-          Not a date — use yyyy/mm/dd
+          Not a date — use dd/mm/yyyy
         </span>
       )}
       <button
