@@ -23,6 +23,7 @@ import { rm, todayMyt } from '../../lib/format';
 import {
   EMPLOYEE_DEFAULTS, POSITION_LABEL, MALAYSIAN_BANKS, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, TAX_RESIDENCIES, TAX_RESIDENCY_LABEL,
   TAX_CATEGORIES, TAX_CATEGORY_LABEL, EMPLOYEE_STATUSES, EMPLOYEE_STATUS_LABEL, RENOVATION_LABEL, isEmployeeStatus, type Employee, type EmployeeInput,
+  type RenovationBrand,
 } from '../../../functions/_lib/hrFields';
 
 /* ------------------------------------------------------------------ *
@@ -78,7 +79,7 @@ export default function EmployeesTab() {
   const people = data?.data ?? [];
   const needle = query.trim().toLowerCase();
   const visiblePeople = needle
-    ? people.filter(e => [e.name, e.employeeId, departmentsOf(e), POSITION_LABEL[e.position]].join(' ').toLowerCase().includes(needle))
+    ? people.filter(e => [e.name, e.employeeId, departmentsOf(e), e.brandName, POSITION_LABEL[e.position]].join(' ').toLowerCase().includes(needle))
     : people;
 
   const columns = useMemo<Column<Employee>[]>(() => [
@@ -87,6 +88,7 @@ export default function EmployeesTab() {
     // param 'dept' keeps the links main and older bookmarks use (?dept=cleaning).
     { key: 'departments', label: 'Department', value: departmentsOf, width: 140, filterMatch: isInAnyDepartment,
       filter: { kind: 'select', param: 'dept', multi: true, options: DEPARTMENTS.map(({ value }) => ({ value, label: DEPARTMENT_FILTER_NAME[value] })) } },
+    { key: 'brand', label: 'Brand', value: e => e.brandName, filter: { kind: 'select' }, width: 130 },
     { key: 'position', label: 'Position', value: e => POSITION_LABEL[e.position], filter: { kind: 'select' }, width: 104 },
     { key: 'status', label: 'Status', type: 'status', value: e => statusOf(e).label, status: statusOf, width: 120 },
     { key: 'basic', label: 'Basic Salary', type: 'money', value: e => (e.payBasis === 'daily' ? null : e.basicSalarySen), width: 140,
@@ -180,7 +182,7 @@ export default function EmployeesTab() {
               <span className="flex-1 min-w-0 text-heading font-semibold [overflow-wrap:anywhere]">{e.name}</span>
               {rowActionsOf(e).length > 0 && <span className="-my-3 -mr-2"><RowActions name={e.name} items={rowActionsOf(e)} /></span>}
             </span>
-            <span className="text-copy text-muted-ink [overflow-wrap:anywhere]">{[e.employeeId, departmentsOf(e)].filter(Boolean).join(' · ')}</span>
+            <span className="text-copy text-muted-ink [overflow-wrap:anywhere]">{[e.employeeId, departmentsOf(e), e.brandName].filter(Boolean).join(' · ')}</span>
             <span className="flex items-center justify-between gap-3 mt-1">
               <StatusBadge tone={statusOf(e).tone} label={statusOf(e).label} size="sm" />
               <span className="text-heading font-semibold tabular-nums whitespace-nowrap">{payLabelOf(e)}</span>
@@ -242,6 +244,8 @@ function EmployeeForm({ person, onClose, onSaved }: {
   const wasDept: Dept | null = person?.renovatorId ? 'renovation'
     : person?.cleanerActive === person?.technicianActive ? null : person?.cleanerActive ? 'cleaning' : 'maintenance';
   const [dept, setDept] = useState<Dept | null>(person ? wasDept : 'cleaning');
+  const brands = useApi<{ data: RenovationBrand[] }>(dept === 'renovation' ? '/employees/renovation-brands' : null);
+  const [brandId, setBrandId] = useState(person?.brandId == null ? '' : String(person.brandId));
   // Changing a department changes the roster, which is Cleaning's or Maintenance's to run (as Switch off is).
   const mayRoster = mayWork(user, 'cleaning') || mayWork(user, 'maintenance');
   const [giveAccess, setGiveAccess] = useState(mayGrant);
@@ -258,6 +262,7 @@ function EmployeeForm({ person, onClose, onSaved }: {
     const phoneError = phone.trim() ? phoneProblem(phone) : null;
     if (phoneError) problems.phone = phoneError;
     if (creating && !dept) problems.departments = 'Pick a department.';
+    if (dept === 'renovation' && !brandId) problems.brandId = 'Pick The Conts or Dream Crafter.';
     const deptChanged = !!person && mayRoster && dept !== null && dept !== wasDept;
     const isNewRoster = !!person && !(dept === 'cleaning' ? person.cleanerId : person.technicianId);
     if (deptChanged && isNewRoster && !person?.userId) problems.departments = 'Moving them needs their app login: use Give app access on the list first, then move them.';
@@ -269,7 +274,7 @@ function EmployeeForm({ person, onClose, onSaved }: {
       let given: { name: string; employeeId: string; pin: string } | null = null;
       const roster = { name: name.trim(), phone: phone.trim() || null };
       if (dept === 'renovation') {
-        const { data: saved } = await api.put<{ data: Employee }>('/employees', { ...d, ...roster, department: 'renovation', renovatorId: person?.renovatorId ?? null, ...(salaryChanged ? { salaryEffectiveFrom: salaryFrom } : {}) });
+        const { data: saved } = await api.put<{ data: Employee }>('/employees', { ...d, ...roster, department: 'renovation', renovatorId: person?.renovatorId ?? null, brandId: Number(brandId), ...(salaryChanged ? { salaryEffectiveFrom: salaryFrom } : {}) });
         if (creating && giveAccess && saved.renovatorId) {
           const { employeeId, pin } = await api.post<{ employeeId: string; pin: string }>(`${RENOVATION_ACCESS_API}/${saved.renovatorId}/access`, {});
           given = { name: roster.name, employeeId, pin };
@@ -345,7 +350,17 @@ function EmployeeForm({ person, onClose, onSaved }: {
             {isOnBoth && !dept && <span className="text-meta text-muted-ink">On both now. Pick one to keep: the other is switched off.</span>}
             {!creating && dept && dept !== wasDept && <span className="text-meta text-muted-ink">Saving moves them to {dept === 'cleaning' ? 'Cleaning' : 'Maintenance'}. Their app opens on {dept === 'cleaning' ? 'cleaning jobs' : 'repair jobs'} from the next time it loads.</span>}
             {errors.departments && <span className="text-meta text-danger">{errors.departments}</span>}
+            {!creating && !person.renovatorId && mayRoster && <span className="text-meta text-muted-ink">Moving someone into Renovation: switch them off here, then add them again with Renovation picked.</span>}
           </div>
+          {dept === 'renovation' && (
+            <div className="sm:col-span-2 flex flex-col gap-1.5">
+              <ChoiceChips label="Brand" required value={brandId} onChange={setBrandId}
+                help="The brand they work under. Their projects and claims follow it."
+                options={(brands.data?.data ?? []).map(({ id, name }) => ({ value: String(id), label: name }))} />
+              {brands.error && <span className="text-meta text-danger">Could not load the brands. {brands.error}</span>}
+              {errors.brandId && <span className="text-meta text-danger">{errors.brandId}</span>}
+            </div>
+          )}
           <ChoiceChips label="Status" value={d.status} onChange={v => set('status', isEmployeeStatus(v) ? v : 'active')}
             options={EMPLOYEE_STATUSES.map(status => ({ value: status, label: EMPLOYEE_STATUS_LABEL[status] }))} />
           <DateField label="Join date" value={d.joinDate ?? ''} onChange={v => set('joinDate', v || null)} error={errors.joinDate} />

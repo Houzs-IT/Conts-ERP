@@ -30,13 +30,13 @@ const labels = (m: RowMenuItem[]) => m.map((x) => (x.divider ? "—" : x.label))
    only what it is about. No `do_refs` / `si_refs`, so these rows offer exactly
    one print entry — `Print` — and the chain entries are pinned in
    printChain.test.ts against rows that DO carry them. */
-const R = (o: { status?: string | null; on_hold?: boolean | null } = {}): Row =>
+const R = (o: { status?: string | null; on_hold?: boolean | null; migrated_readonly?: boolean } = {}): Row =>
   ({ doc_no: "SO-0001", ...o });
 const noop = () => {};
 
 const soMenu = (over: Partial<Parameters<typeof salesOrderRowMenu<Row>>[0]> = {}) =>
   salesOrderRowMenu<Row>({
-    open: noop, edit: noop, print: noop, confirm: noop, transferToDo: noop,
+    open: noop, edit: noop, copyAsNew: noop, print: noop, confirm: noop, transferToDo: noop,
     setStatus: noop, close: noop, setHold: noop, cancel: noop, reopen: noop, canDeliver: true,
     ...over,
   });
@@ -132,7 +132,7 @@ describe("Print, for the whole chain", () => {
   test("every chain document is offered, in the first group, before the separator", () => {
     const items = labels(soMenu()(withChain()));
     expect(items.slice(0, items.indexOf("—"))).toEqual([
-      "Open", "Edit", "Print",
+      "Open", "Edit", "Copy as new", "Print",
       "Print Delivery Order HC-DO-2608-003",
       "Print Delivery Order HC-DO-2608-004",
       "Print Sales Invoice HC-SI-2608-007",
@@ -156,7 +156,7 @@ describe("Print, for the whole chain", () => {
      Order" — the entry is not BUILT, so nothing renders and no separator moves. */
   test("an order with nothing downstream offers Print and nothing else", () => {
     const items = labels(soMenu()(withChain({ do_refs: [], si_refs: [] })));
-    expect(items.slice(0, items.indexOf("—"))).toEqual(["Open", "Edit", "Print"]);
+    expect(items.slice(0, items.indexOf("—"))).toEqual(["Open", "Edit", "Copy as new", "Print"]);
     expect(items.some((l) => l.startsWith("Print "))).toBe(false);
   });
 
@@ -165,7 +165,17 @@ describe("Print, for the whole chain", () => {
   test("the groups after Print are untouched", () => {
     const items = labels(soMenu()(withChain({ status: "DRAFT", do_refs: [], si_refs: [] })));
     expect(items).toEqual([
-      "Open", "Edit", "Print", "—", "Confirm", "Put On Hold", "—", "Request cancellation",
+      "Open", "Edit", "Copy as new", "Print", "—", "Confirm", "Put On Hold", "—", "Request cancellation",
     ]);
+  });
+});
+
+describe("Copy as new", () => {
+  test.each(["DRAFT", "CONFIRMED", "CANCELLED", "CLOSED"])("is offered on %s", (status) => {
+    expect(labels(soMenu()(R({ status })))).toContain("Copy as new");
+  });
+
+  test("is offered on an order carried over from AutoCount", () => {
+    expect(labels(soMenu()(R({ status: "CONFIRMED", migrated_readonly: true })))).toContain("Copy as new");
   });
 });

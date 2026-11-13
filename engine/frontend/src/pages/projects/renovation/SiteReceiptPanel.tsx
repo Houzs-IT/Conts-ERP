@@ -3,6 +3,7 @@
 
 import { Link } from "react-router-dom";
 import { MapPin, Printer } from "lucide-react";
+import { fmtDateTime } from "@2990s/shared";
 import { api } from "../../../api/client";
 import { useQuery } from "../../../hooks/useQuery";
 import { renovationApi } from "./renovationApi";
@@ -16,7 +17,7 @@ export function SiteReceiptPanel({ grnId }: { grnId: string | undefined }) {
     supervisor_name: string | null; customer_signer_name: string | null; supervisor_signature_r2_key: string | null; customer_signature_r2_key: string | null; site_notes: string | null;
   };
   const pid = Number(r.project_id);
-  const when = r.site_received_at ? new Date(r.site_received_at).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur", dateStyle: "medium", timeStyle: "short" }) : "-";
+  const when = fmtDateTime(r.site_received_at);
   return (
     <section className="mt-4 rounded-lg border border-border bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">

@@ -114,6 +114,7 @@ function homeColumns(showPay: boolean): Column<TableRow>[] {
     ) },
     { key: "created", label: "Created", group: "Project", width: "120px", getValue: (x) => x.r.p.createdAt, render: (x) => (x.r.p.createdAt ? fmtDate(x.r.p.createdAt) : DASH),
       filterType: "date", dateValue: (x) => x.r.p.createdAt },
+    { key: "brand", label: "Brand", group: "Project", width: "170px", getValue: (x) => x.r.p.brand, render: (x) => x.r.p.brand ?? <span style={{ color: MUTED }}>Not set</span> },
     { key: "condition", label: "ID condition", group: "Project", width: "150px", getValue: (x) => x.r.word, render: (x) => <StatusCell r={x.r} /> },
     { key: "due", label: "Due", group: "Project", width: "120px", getValue: (x) => x.r.left, render: (x) => <DueCell r={x.r} /> },
     ...(showPay ? [{ key: "payment", label: "Payment", group: "Project", width: "220px", getValue: (x: TableRow) => x.r.p.payment,
@@ -330,7 +331,7 @@ function PhoneCard({ r, sla, onOpen }: { r: HomeRow; sla: Sla; onOpen: () => voi
           <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
             <span style={{ alignSelf: "flex-start", padding: "1px 7px", borderRadius: 10, background: tagBg, color: tagInk, fontSize: 11, fontWeight: 600 }}>{p.tag.toUpperCase()}</span>
             <span style={{ fontWeight: 700, fontSize: 15, overflowWrap: "anywhere" }}>{p.title}</span>
-            {p.customer && <span style={{ fontWeight: 500, fontSize: 12, color: MUTED }}>{p.customer}</span>}
+            {(p.customer || p.brand) && <span style={{ fontWeight: 500, fontSize: 12, color: MUTED, overflowWrap: "anywhere" }}>{[p.customer, p.brand].filter(Boolean).join(" · ")}</span>}
           </span>
           <DueCell r={r} small />
         </span>

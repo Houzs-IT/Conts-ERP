@@ -1,6 +1,6 @@
 import { type Env, all, one, run, nowIso } from './db';
 import { hasColumn } from './auth';
-import { EMPLOYEE_DEFAULTS, type Bank, type Employee, type EmployeeStatus, type PayBasis, type PaymentMethod, type RenovationPersonInput, type TaxCategory, type TaxResidency } from './hrFields';
+import { EMPLOYEE_DEFAULTS, type Bank, type Employee, type EmployeeStatus, type PayBasis, type PaymentMethod, type RenovationBrand, type RenovationPersonInput, type TaxCategory, type TaxResidency } from './hrFields';
 
 /**
  * The employee record (migration 0165, PLAN-hr-employees.md): the HR side of an in-house cleaner, technician or
@@ -36,7 +36,8 @@ const PEOPLE = `
   ) e ON true`;
 
 interface Row {
-  p_cleaner_id: string | null; p_technician_id: string | null; renovator_id?: string | null; full_name: string; phone: string | null; is_active: number; employee_id: string | null;
+  p_cleaner_id: string | null; p_technician_id: string | null; renovator_id?: string | null;
+  brand_id?: string | number | null; brand_name?: string | null; full_name: string; phone: string | null; is_active: number; employee_id: string | null;
   cleaner_active: number | null; technician_active: number | null; p_user_id: string | null;
   id: string | null; position: string | null; nationality: string | null; join_date: string | null;
   leader_allowance_sen: number | null; efficiency_allowance_sen: number | null; efficiency_threshold_pct: number | null;
@@ -53,6 +54,7 @@ function toEmployee(r: Row): Employee {
   return {
     id: r.id, cleanerId: r.p_cleaner_id, technicianId: r.p_technician_id, name: r.full_name, phone: r.phone,
     renovatorId: r.renovator_id ?? null,
+    brandId: r.brand_id == null ? null : Number(r.brand_id), brandName: r.brand_name ?? null,
     employeeId: r.employee_id, isActive: !!r.is_active, cleanerActive: !!r.cleaner_active, technicianActive: !!r.technician_active, userId: r.p_user_id,
     // Free text saved before the Leader tick ("Cleaning leader") reads as a leader when it says so.
     position: r.position?.toLowerCase().includes('leader') ? 'leader' : 'employee', nationality: r.nationality, joinDate: r.join_date,
@@ -82,7 +84,7 @@ export const notTestTechnician = (technician: string): string => `NOT EXISTS (SE
 export async function listEmployees(env: Env): Promise<Employee[]> {
   const [roster, renovation] = await Promise.all([
     all<Row>(env, `${PEOPLE} ORDER BY p.is_active DESC, p.full_name`),
-    hasRenovationDepartment(env).then(isMigrated => (isMigrated ? all<Row>(env, `${RENOVATION_PEOPLE} ORDER BY r.is_active DESC, r.full_name`) : [])),
+    hasRenovationDepartment(env).then(async isMigrated => (isMigrated ? all<Row>(env, `${await renovationPeople(env)} ORDER BY r.is_active DESC, r.full_name`) : [])),
   ]);
   return [...roster, ...renovation].map(toEmployee);
 }
@@ -98,38 +100,57 @@ export async function findEmployee(env: Env, by: { cleanerId?: string | null; te
 
 export const hasRenovationDepartment = (env: Env): Promise<boolean> => hasColumn(env, 'employees', 'renovator_id');
 
-const RENOVATION_PEOPLE = `
+export const hasRenovatorBrand = (env: Env): Promise<boolean> => hasColumn(env, 'renovators', 'brand_id');
+
+async function renovationPeople(env: Env): Promise<string> {
+  const brand = await hasRenovatorBrand(env)
+    ? { columns: 'r.brand_id, rb.name AS brand_name,', join: 'LEFT JOIN public.renovation_brands rb ON rb.id = r.brand_id' }
+    : { columns: '', join: '' };
+  return `
   SELECT NULL AS p_cleaner_id, NULL AS p_technician_id, r.full_name, r.phone, r.is_active, NULL AS cleaner_active,
-    NULL AS technician_active, r.user_id AS p_user_id, u.employee_id, e.*
+    NULL AS technician_active, r.user_id AS p_user_id, u.employee_id, ${brand.columns} e.*
   FROM renovators r JOIN employees e ON e.renovator_id = r.id
-  LEFT JOIN users u ON u.id = r.user_id`;
+  LEFT JOIN users u ON u.id = r.user_id
+  ${brand.join}`;
+}
 
 async function findRenovationPerson(env: Env, renovatorId: string): Promise<Employee | null> {
   if (!(await hasRenovationDepartment(env))) return null;
-  const row = await one<Row>(env, `${RENOVATION_PEOPLE} WHERE r.id = ?`, renovatorId);
+  const row = await one<Row>(env, `${await renovationPeople(env)} WHERE r.id = ?`, renovatorId);
   return row ? toEmployee(row) : null;
 }
 
+/** The brands a Renovation person can work under, in the engine's order. Empty before migration 0324. */
+export async function listRenovationBrands(env: Env): Promise<RenovationBrand[]> {
+  if (!(await hasRenovatorBrand(env))) return [];
+  const rows = await all<{ id: string | number; name: string }>(env,
+    'SELECT id, name FROM public.renovation_brands WHERE active ORDER BY sort_order, name');
+  return rows.map(({ id, name }) => ({ id: Number(id), name }));
+}
+
+export const isActiveRenovationBrand = async (env: Env, brandId: number): Promise<boolean> =>
+  !!(await one(env, 'SELECT 1 AS x FROM public.renovation_brands WHERE id = ? AND active', brandId));
 
 /** Adds a Renovation person (their roster entry and HR record, in one statement) or renames one. Returns the roster id. */
 export async function saveRenovationPerson(env: Env, renovatorId: string | null, person: RenovationPersonInput): Promise<string> {
   const now = nowIso();
   if (renovatorId) {
-    await run(env, 'UPDATE renovators SET full_name = ?, phone = ?, updated_at = ? WHERE id = ?', person.name, person.phone, now, renovatorId);
+    await run(env, 'UPDATE renovators SET full_name = ?, phone = ?, brand_id = ?, updated_at = ? WHERE id = ?',
+      person.name, person.phone, person.brandId, now, renovatorId);
     return renovatorId;
   }
   const newId = crypto.randomUUID();
   await run(env, `
-    WITH s AS (INSERT INTO renovators (id, full_name, phone, created_at, updated_at) VALUES (?, ?, ?, ?, ?) RETURNING id)
+    WITH s AS (INSERT INTO renovators (id, full_name, phone, brand_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id)
     INSERT INTO employees (id, renovator_id, created_at, updated_at) SELECT ?, s.id, ?, ? FROM s`,
-    newId, person.name, person.phone, now, now, crypto.randomUUID(), now, now);
+    newId, person.name, person.phone, person.brandId, now, now, crypto.randomUUID(), now, now);
   return newId;
 }
 
 /** The in-house person a login belongs to (from "Give app access" on any roster). Null for anyone else. */
 export async function employeeForUser(env: Env, userId: string): Promise<Employee | null> {
   const row = await one<Row>(env, `${PEOPLE} WHERE p.user_id = ?`, userId)
-    ?? (await hasRenovationDepartment(env) ? await one<Row>(env, `${RENOVATION_PEOPLE} WHERE r.user_id = ?`, userId) : null);
+    ?? (await hasRenovationDepartment(env) ? await one<Row>(env, `${await renovationPeople(env)} WHERE r.user_id = ?`, userId) : null);
   return row ? toEmployee(row) : null;
 }
 
