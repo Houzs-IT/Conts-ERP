@@ -125,6 +125,21 @@ export async function liveContractOfProject(db: RenoDb, projectId: number): Prom
   return r?.doc_no ?? null;
 }
 
+export interface ContractBrand { id: number; name: string }
+
+/** The brand a new contract carries: the quotation's, else the one picked on its project (owner, 13 Nov 2026). */
+export async function contractBrand(db: RenoDb, quotationBrandId: number | null, projectId: number | null): Promise<ContractBrand | null> {
+  const [row] = quotationBrandId
+    ? await db.q<{ id: string; name: string }>(`select id, name from public.project_brands where id = $1`, [quotationBrandId])
+    : projectId
+      ? await db.q<{ id: string; name: string }>(
+        `select b.id, b.name from public.projects p
+           join public.project_brands b on b.company_id = p.company_id and lower(trim(b.name)) = lower(trim(p.brand))
+          where p.id = $1 order by b.active desc, b.id limit 1`, [projectId])
+      : [];
+  return row ? { id: Number(row.id), name: row.name } : null;
+}
+
 export async function convertQuotationToSo(
   db: RenoDb,
   actor: RenoActor,
@@ -168,7 +183,7 @@ export async function convertQuotationToSo(
   const contractSen = rows.reduce((s, r) => s + r.total_sen, 0);
   if (contractSen !== rev.totals.finalSen) throw new Error(`convert ${q.quoteNo}: mirrored rows sum ${contractSen} but the quotation totals ${rev.totals.finalSen}`);
 
-  const [brand] = q.brandId ? await db.q<{ name: string }>(`select name from public.project_brands where id = $1`, [q.brandId]) : [];
+  const brand = await contractBrand(db, q.brandId ?? null, q.projectId ?? null);
   const debtorName = h.customerName || h.attention || 'Customer';
   /* Conts (finance phase 1.5; SOP 2.1): the contract's customer as a debtor under its control — renovation 301-0000
      or inhouse renovation 302-0000, by the project's kind else the brand's (contractOrderKind) — so its invoices and
@@ -222,7 +237,7 @@ export async function convertQuotationToSo(
         attention, customer_name, building, unit_no, prepared_by, doc_date, last_amended, intro, terms_note, doc_discount_sen, doc_discount_label,
         promo_lines, discount_so_item_id, original_contract_sen, term_template_id, created_by, advance_account_code)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::date, $15::date, $16, $17, $18, $19, $20::text::jsonb, $21, $22, $23, $24, $25)`,
-    [docNo, actor.companyId, q.projectId, quotationId, rev.id, rev.docNo, q.brandId, h.printFormat, h.attention, debtorName, h.building, h.unitNo,
+    [docNo, actor.companyId, q.projectId, quotationId, rev.id, rev.docNo, brand?.id ?? null, h.printFormat, h.attention, debtorName, h.building, h.unitNo,
       h.preparedBy, soDate, h.lastAmended, h.intro, h.termsNote, h.docDiscountSen, h.docDiscountLabel, JSON.stringify(h.promoLines), discountItemId,
       revised, h.termTemplateId, actor.name, advanceAccountCode],
   );
