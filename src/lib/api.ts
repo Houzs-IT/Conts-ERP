@@ -142,8 +142,13 @@ function contentOf(body: RequestInit['body']): string | null {
 const writeKeys = new Map<string, string>();
 const KEEP_UNANSWERED_MS = 10 * 60_000;
 
+/** Writes that change no figures anyone reads: a person's own column order for a list (dragged headers, Columns menu).
+ *  They leave the kept reads and snapshots alone, here and in other tabs. */
+const LAYOUT_ONLY = /^\/table-layouts\/columns$/;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isRead = !init?.method || init.method === 'GET';
+  if (!isRead && LAYOUT_ONLY.test(path.split('?')[0])) return requestOnce<T>(path, init, isRead);
   if (!isRead) {
     wrote();
     try { return await requestOnce<T>(path, init, isRead); } finally { wrote(); }

@@ -19,12 +19,16 @@ export interface Layout {
 export const mayUseViews = (role: string) => role !== 'owner' && !isFieldRole(role);
 export const mayShare = (s: { levels?: Record<string, Level> }): boolean => can(s, 'finance', 'view');
 
-/** The layout as stored, or the reason it is refused. Unknown keys are dropped. */
-export function cleanLayout(v: unknown): Layout | string {
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return 'The view is missing its layout.';
-  const o = v as Record<string, unknown>;
-  if (o.columns !== undefined && !Array.isArray(o.columns)) return 'One of the columns in this view is not valid.';
-  const cols = Array.isArray(o.columns) ? o.columns : [];
+/** The row that keeps a person's own column order for a list (functions/api/table-layouts/columns.ts, chew 13 Nov 2026).
+ *  Names starting with two underscores are kept for rows like it: no saved view may take one, and the views list
+ *  leaves them out. */
+export const WORKING_NAME = '__columns__';
+export const isReservedName = (name: string) => name.startsWith('__');
+
+/** A layout's columns as stored (each key once, with its hidden flag), or the reason they are refused. */
+export function cleanColumns(v: unknown): Layout['columns'] | string {
+  if (v !== undefined && !Array.isArray(v)) return 'One of the columns in this view is not valid.';
+  const cols = Array.isArray(v) ? v : [];
   if (cols.length > 80) return 'A view can hold at most 80 columns.';
   const columns: Layout['columns'] = [];
   const seen = new Set<string>();
@@ -34,6 +38,15 @@ export function cleanLayout(v: unknown): Layout | string {
     seen.add(key);
     columns.push({ key, hidden: !!(c as { hidden?: unknown }).hidden });
   }
+  return columns;
+}
+
+/** The layout as stored, or the reason it is refused. Unknown keys are dropped. */
+export function cleanLayout(v: unknown): Layout | string {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return 'The view is missing its layout.';
+  const o = v as Record<string, unknown>;
+  const columns = cleanColumns(o.columns);
+  if (typeof columns === 'string') return columns;
   const sort = typeof o.sort === 'string' && o.sort ? o.sort.slice(0, 80) : null;
   const size = Number(o.pageSize);
   const pageSize = Number.isInteger(size) && size >= 10 && size <= 1000 ? size : null;
