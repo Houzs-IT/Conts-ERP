@@ -289,9 +289,8 @@ export const NAV: NavGroup[] = [
     ] },
     // Houzs keeps credit / debit notes under Finance > Money in; finance roles only.
   ] },
-  // Dream Crafter's own HR (owner, 30 Oct 2026): one Employees page, laid out as The Conts'. Shares its label with the Rental HR group.
-  { label: 'HR', workspace: 'supply', items: [
-    { key: 'dcEmployees', label: 'Employees', icon: 'users', path: '/supply/hr/employees', area: 'dcHr', fresh: true },
+  { label: 'OPERATIONS', workspace: 'supply', items: [
+    { key: 'dcRenovation', label: 'Renovation', icon: 'hammer', path: '/supply/operations/renovation', area: 'projects' },
   ] },
   // The same Finance as in Rental (finance phase 1): one set of company books for both sides, so the supply chain
   // sidebar stays put while finance works.

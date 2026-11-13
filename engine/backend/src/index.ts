@@ -137,6 +137,7 @@ import renovation from "./routes/renovation";
 import renovationBeta from "./routes/renovationBeta";
 import renovationBetaSheets from "./routes/renovationBetaSheets";
 import renovationBetaHandover from "./routes/renovationBetaHandover";
+import renovationBetaSiteTasks from "./routes/renovationBetaSiteTasks";
 import { drainEmailOutbox, sendEmail } from "./services/email";
 import { sweepAllCostAlerts } from "./acc/reno-cost-alerts";
 import { runClientErrorDigest } from "./services/clientErrors";
@@ -501,6 +502,7 @@ app.route("/api/beta", renovationBeta);
 app.route("/api/beta", renovationBetaSheets);
 // Handover checklists, the checks walked from them and the defect queue (TODO item 17, migration 0296).
 app.route("/api/beta", renovationBetaHandover);
+app.route("/api/beta", renovationBetaSiteTasks);
 app.route("/api/sales", sales);
 app.route("/api/finance", finance);
 app.route("/api/stockitems", stockItems);

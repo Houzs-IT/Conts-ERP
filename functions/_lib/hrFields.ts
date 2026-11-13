@@ -123,27 +123,3 @@ export const renovationPersonInput = z.object({
 });
 export type RenovationPersonInput = z.infer<typeof renovationPersonInput>;
 export interface RenovationBrand { id: number; name: string }
-
-/**
- * A Dream Crafter employee (migration 0185): an entry on Dream Crafter's own roster with its HR record. Kept apart from
- * Employee, which is built from The Conts' two rosters. Only the details for now; pay comes with Dream Crafter payroll.
- */
-export interface DcEmployee {
-  /** The dc_staff id. */
-  id: string;
-  name: string;
-  phone: string | null;
-  jobTitle: string | null;
-  joinDate: string | null;
-  status: Exclude<EmployeeStatus, 'test'>;
-  resignedAt: string | null;
-}
-export const dcEmployeeInput = z.object({
-  name: z.string().trim().min(1, 'Enter their name.').max(120),
-  phone: text(40),
-  jobTitle: text(60),
-  joinDate: day.nullable(),
-  status: z.enum(['active', 'resigned']),
-  resignedAt: day.nullable(),
-}).refine(e => e.status === 'active' || !!e.resignedAt, { path: ['resignedAt'], message: 'Give the last working day.' });
-export type DcEmployeeInput = z.infer<typeof dcEmployeeInput>;
