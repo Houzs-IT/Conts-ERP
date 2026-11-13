@@ -580,9 +580,12 @@ export default function OwnerOverallReportPage() {
         </p>
       )}
 
-      {/* The page fills the screen and only the table scrolls; under 220px for it the page scrolls instead. A phone scrolls the page. */}
+      {/* The table fills the screen below the tiles and scrolls on its own, and keeps at least about 12 rows (chew,
+          13 Nov 2026: 3 rows was too small): 680px, or the screen below the top bar when that is less, so the whole table
+          and its scroll bar still fit. On a shorter screen the page scrolls (the tiles go up), and a scroll that reaches
+          the table's top or end carries on to the page. A phone scrolls the page. */}
       {phone && <div className="overflow-hidden rounded-card border border-solid border-line bg-card">{body}</div>}
-      <div hidden={phone} className="max-md:h-[72vh] max-md:shrink-0 md:flex-1 md:min-h-[220px] overflow-auto overscroll-contain rounded-card border border-solid border-line bg-card" data-keep-scroll="owner-overall">
+      <div hidden={phone} className="max-md:h-[72vh] max-md:shrink-0 md:flex-1 md:min-h-[min(680px,calc(100vh-130px))] overflow-auto overscroll-x-contain rounded-card border border-solid border-line bg-card" data-keep-scroll="owner-overall">
         {phone ? null : body}
       </div>
       {panel && (

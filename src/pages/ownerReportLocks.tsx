@@ -310,13 +310,15 @@ export function FinalCell({ r, f, first, onClick, busy }: { r: ReportRow; f?: Ow
   );
 }
 
-/** A Whole column cell's two buttons (third header row). */
+/** A Whole column cell's two buttons (third header row), side by side on one line so the row stays low and the table
+ *  keeps its rows (chew, 13 Nov 2026). */
 export function ColumnButtons({ onLock, onUnlock, busy, wide, name }: { onLock: () => void; onUnlock: () => void; busy: 'lock' | 'unlock' | null; wide?: boolean; name: string }) {
   const btn = 'bg-transparent border-0 p-0 font-sans text-meta cursor-pointer whitespace-nowrap hover:underline disabled:opacity-60 disabled:cursor-default';
   return (
-    <span className={cx('flex items-center justify-center gap-x-3 gap-y-0.5', wide ? 'flex-row' : 'flex-col')}>
-      {wide && <span className="text-meta font-semibold text-lock-ink">{name}</span>}
+    <span className="flex items-center justify-center gap-x-1.5 whitespace-nowrap">
+      {wide && <span className="mr-1.5 text-meta font-semibold text-lock-ink">{name}</span>}
       <button type="button" className={cx(btn, 'font-semibold text-lock-ink')} disabled={!!busy} onClick={onLock} aria-label={`Lock all ${name}`}>{busy === 'lock' ? 'Locking…' : 'Lock all'}</button>
+      <span aria-hidden className="text-meta text-faint">·</span>
       <button type="button" className={cx(btn, 'text-ink-2')} disabled={!!busy} onClick={onUnlock} aria-label={`Unlock all ${name}`}>{busy === 'unlock' ? 'Unlocking…' : 'Unlock all'}</button>
     </span>
   );
