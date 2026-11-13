@@ -201,7 +201,15 @@ export default function MaintenancePage() {
       {error && data && <StaleBanner message={`Showing the last jobs we have. ${error}`} onRetry={reload} />}
       <IssueTable tab={tab} rows={data ? rows : earlyRows} loading={loading} error={data || earlyRows ? null : error} onRetry={reload} selected={selected} onSelect={setSelected}
         money={money} canBulk={!FIELD_ROLES.includes(user!.role)} onChanged={reload} buildingOptions={buildingOptions} unitOptions={unitOptions}
-        toolbar={<ToolbarSearch value={q} onChange={setQ} placeholder="Search unit, building, problem or technician" label="Search jobs" />}
+        toolbar={<>
+          <ToolbarSearch value={q} onChange={setQ} placeholder="Search unit, building, problem or technician" label="Search jobs" />
+          {tab === 'pass_key' && (
+            <MetricSegmented<PassKeyDay> label="Check-in day" value={passKeyDayShown} onChange={setPassKeyDayShown} options={[
+              { key: 'today', label: 'Today', count: passKeysOn('today').length },
+              { key: 'tomorrow', label: 'Tomorrow', count: passKeysOn('tomorrow').length },
+            ]} />
+          )}
+        </>}
         filtered={!!q} onClearFilters={() => setQ('')}
         above={tab === 'history' && rows.length > 0 && money ? (
           <div className="text-copy text-muted-ink py-2 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line-soft)]">{rows.length} {rows.length === 1 ? 'job' : 'jobs'} · {rm(historySpend)} spent{q ? ` matching "${q}"` : ''}</div>
@@ -241,12 +249,6 @@ export default function MaintenancePage() {
               { key: 'done', label: 'Done' },
               { key: 'history', label: 'History' },
             ]} />
-            {tab === 'pass_key' && (
-              <MetricSegmented<PassKeyDay> label="Check-in day" value={passKeyDayShown} onChange={setPassKeyDayShown} options={[
-                { key: 'today', label: 'Today', count: passKeysOn('today').length },
-                { key: 'tomorrow', label: 'Tomorrow', count: passKeysOn('tomorrow').length },
-              ]} />
-            )}
           </div>
           {list}
         </>} />
@@ -321,6 +323,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
 
   // Each option in the Filters panel says how many jobs of this tab it would show.
   const n = (f: (i: Issue) => boolean) => (rows ? rows.filter(f).length : null);
+  const showsMoney = money && tab !== 'pass_key';
   const columns = useMemo<Column<Issue>[]>(() => [
     { key: 'building', label: 'Building', value: i => i.buildingId, text: i => buildingName(i.propertyName), width: 150, hidden: true,
       filter: { kind: 'select', options: buildingOptions.map(o => ({ value: o.value, label: String(o.label), count: n(i => i.buildingId === o.value) })) } },
@@ -353,10 +356,10 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     { key: 'approval', label: 'Owner approval', type: 'status', value: i => i.approvalStatus ?? 'not_needed',
       filter: { kind: 'select', options: Object.entries(APPROVAL).map(([value, { label }]) => ({ value, label, count: n(i => (i.approvalStatus ?? 'not_needed') === value) })) },
       status: i => { const a = APPROVAL[i.approvalStatus ?? 'not_needed']; return { label: a.label, tone: a.tone === 'gold' ? 'neutral' : a.tone }; }, width: 150 },
-    ...(money ? [{ key: 'cost', label: 'Cost', type: 'money' as const, value: (i: Issue) => i.finalAmount ?? i.quotedAmount, width: 110, title: 'The final cost, or the quote while the job is open.',
+    ...(showsMoney ? [{ key: 'cost', label: 'Cost', type: 'money' as const, value: (i: Issue) => i.finalAmount ?? i.quotedAmount, width: 110, title: 'The final cost, or the quote while the job is open.',
       filter: { kind: 'number' as const, bounds: COST_SLIDER_START },
       render: (i: Issue) => { const c = i.finalAmount ?? i.quotedAmount; return c == null ? <span className="text-faint">—</span> : <span className="tabular-nums whitespace-nowrap">{rm(c)}{i.finalAmount == null && <span className="text-muted-ink text-meta"> quote</span>}</span>; } }] : []),
-    ...(money ? [
+    ...(showsMoney ? [
       { key: 'billing', label: 'Billing date', type: 'date' as const, value: (i: Issue) => i.billingDate, hidden: true, width: 130, filter: false as const },
       { key: 'collected', label: 'Collected', value: (i: Issue) => i.collectedAt, hidden: true, width: 130, title: 'When the money from the payer came in.', filter: false as const,
         text: collectedText, render: (i: Issue) => <span className={i.collectedAt ? 'text-ink' : 'text-warning'}>{collectedText(i)}</span> },
@@ -366,13 +369,13 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     ] : []),
     { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150, filter: false },
     { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150, filter: false },
-  ], [money, buildingOptions, unitOptions, assigneeOptions, canBulk, technicians, rows]); // rows: the filter counts
+  ], [showsMoney, buildingOptions, unitOptions, assigneeOptions, canBulk, technicians, rows]); // rows: the filter counts
 
   return (
     <>
       <DataTable<Issue>
         id="maintenance.jobs" columns={columns} rows={rows} rowKey={i => i.id} loading={loading} error={error} onRetry={onRetry}
-        renderCard={i => <JobCard i={i} money={money} />}
+        renderCard={i => <JobCard i={i} money={showsMoney} />}
         onRowClick={i => onSelect(i.id)} rowTone={i => (i.id === selected ? 'gold' : i.state === 'resolved' ? 'muted' : null)}
         noun={['job', 'jobs']} exportName="maintenance-jobs" selectionKey={tab} above={above}
         filtered={filtered} onClearFilters={onClearFilters} toolbar={toolbar}
