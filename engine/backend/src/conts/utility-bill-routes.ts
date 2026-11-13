@@ -5,6 +5,7 @@
 //   POST /utility-bills/read              { file: { name, mime, dataBase64 } } -> { read, model }
 //   POST /utility-bills/payment-request   { provider, scanBatchId, note?, bills: [{ unitId, kind, billMonth, accountNo, amountSen }], files? }
 //                                          -> { id, requestNo, amountSen }; 201 new, 200 when this scan's request exists
+//   POST /utility-bills/payment-request/:id/resubmit   { bills }  a withdrawn or rejected one, sent again: same number
 // The bills a scan records for the company to pay go to finance as one request per provider (chew, 2 Nov 2026: A): a
 // Rental line per bill with its unit and no account (finance sets it on the voucher), made out to the provider's
 // supplier when one is on the list, else to the provider's name for finance to link.
@@ -16,6 +17,7 @@ import { normalizeVendor } from '../acc/bill-extract';
 import { readUtilityPage, UTILITY_READ_MODEL } from '../acc/utility-bill-read';
 import { requestAiTag } from '../services/aiUsage';
 import { decodeFiles, removeFiles, storeFiles } from './claims-files';
+import { claimRequest, RETURNED } from './payment-request-routes';
 import type { Staff } from './staff-identity';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
@@ -58,24 +60,16 @@ export const utilityRequestHandler = async (c: Ctx): Promise<Response> => {
   const provider = String(b.provider ?? '').trim().slice(0, 100);
   const batch = String(b.scanBatchId ?? '').trim();
   if (!provider || !batch) return c.json({ error: 'validation', message: 'Name the provider and the scan.' }, 422);
-  const bills = Array.isArray(b.bills) ? (b.bills as Array<Record<string, unknown>>) : [];
-  if (!bills.length || bills.length > 500) return c.json({ error: 'validation', message: 'Send the bills to pay (up to 500).' }, 422);
-  const lines = bills.map((x, i) => ({
-    unitId: String(x.unitId ?? ''), amountSen: Number(x.amountSen), sort: i,
-    description: [KIND_LABEL[String(x.kind)] ?? 'Utility', MONTH.test(String(x.billMonth ?? '')) ? String(x.billMonth) : null, x.accountNo ? String(x.accountNo).slice(0, 40) : null].filter(Boolean).join(' '),
-  }));
-  if (lines.some(l => !l.unitId || !Number.isInteger(l.amountSen) || l.amountSen <= 0)) return c.json({ error: 'validation', message: 'Every bill needs its unit and an amount.' }, 422);
+  const lines = billLines(c, b.bills);
+  if (lines instanceof Response) return lines;
 
   const sourceKey = `utility:${batch.slice(0, 80)}:${provider}`;
   const existing = async () => (await sb.from('payment_requests').select('id, request_no, amount_sen').eq('company_id', co.companyId).eq('source_key', sourceKey).maybeSingle()).data as { id: string; request_no: string; amount_sen: number } | null;
   const done = await existing();
   if (done) return c.json({ id: done.id, requestNo: done.request_no, amountSen: Number(done.amount_sen) }, 200);
 
-  const unitIds = [...new Set(lines.map(l => l.unitId))];
-  const { data: units, error: uErr } = await sb.schema('public').from('conts_units').select('id').in('id', unitIds);
-  if (uErr) return c.json({ error: 'read_failed', reason: uErr.message }, 500);
-  const known = new Set(((units ?? []) as Array<{ id: string }>).map(u => u.id));
-  if (unitIds.some(u => !known.has(u))) return c.json({ error: 'validation', message: 'A bill names a unit that does not exist.' }, 422);
+  const badUnit = await unknownUnit(c, sb, lines);
+  if (badUnit) return badUnit;
 
   const { data: sups } = await sb.from('suppliers').select('id, name').eq('company_id', co.companyId);
   const supplier = providerSupplier(provider, (sups ?? []) as Array<{ id: string; name: string }>);
@@ -116,10 +110,7 @@ export const utilityRequestHandler = async (c: Ctx): Promise<Response> => {
     }
     return fail(error?.message ?? 'insert returned nothing');
   }
-  const ins = await sb.from('payment_request_lines').insert(lines.map(l => ({
-    id: crypto.randomUUID(), request_id: id, department: 'rental', unit_id: l.unitId, maintenance_issue_id: null, project_id: null,
-    account_code: null, amount_sen: l.amountSen, description: l.description, sort: l.sort,
-  })));
+  const ins = await sb.from('payment_request_lines').insert(lineRows(id, lines));
   if (ins.error) return fail(ins.error.message);
   if (stored.length) {
     const fr = await sb.from('payment_request_files').insert(stored.map(s => ({ ...s, request_id: id })));
@@ -128,7 +119,68 @@ export const utilityRequestHandler = async (c: Ctx): Promise<Response> => {
   return c.json({ id, requestNo: row.request_no, amountSen }, 201);
 };
 
+/** POST /utility-bills/payment-request/:id/resubmit { bills } — a utility request that was withdrawn or rejected goes back
+ *  to finance with its bills as they are now (chew, 13 Nov 2026: change it and send it again): the same request and
+ *  number, a Rental line per bill, the new total. A bill taken off it (now owner paid, or deleted) is simply not sent.
+ *  Any office staff may send it, as any may record the bills; a rejection's reason and who decided stay for finance to
+ *  see, and the scan's files stay. The lines are saved while it is still returned; the status goes back last. */
+export const resubmitUtilityRequestHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const refused = officeOnly(c);
+  if (refused) return refused;
+  const sb = c.get('supabase');
+  const { data: r } = await sb.from('payment_requests').select('id, request_no, status, source_key').eq('company_id', co.companyId).eq('id', c.req.param('id')).maybeSingle();
+  if (!r || !String(r.source_key ?? '').startsWith('utility:')) return c.json({ error: 'not_found' }, 404);
+  if (!RETURNED.has(String(r.status))) return c.json({ error: 'not_returned', message: 'Only a withdrawn or rejected request can be sent again.' }, 409);
+  const b = await bodyOf(c);
+  if (!b) return c.json({ error: 'invalid_json' }, 400);
+  const lines = billLines(c, b.bills);
+  if (lines instanceof Response) return lines;
+  const badUnit = await unknownUnit(c, sb, lines);
+  if (badUnit) return badUnit;
+  const amountSen = lines.reduce((n, l) => n + l.amountSen, 0);
+  const gone = await sb.from('payment_request_lines').delete().eq('request_id', r.id);
+  if (gone.error) return c.json({ error: 'save_failed', reason: gone.error.message }, 500);
+  const ins = await sb.from('payment_request_lines').insert(lineRows(r.id, lines));
+  if (ins.error) return c.json({ error: 'save_failed', reason: ins.error.message }, 500);
+  if (!(await claimRequest(sb, r.id, String(r.status), { amount_sen: amountSen, status: 'SUBMITTED' }))) {
+    return c.json({ error: 'not_returned', message: 'This request was changed somewhere else. Open it again.' }, 409);
+  }
+  return c.json({ id: r.id, requestNo: r.request_no, amountSen }, 200);
+};
+
+type BillLine = { unitId: string; amountSen: number; sort: number; description: string };
+
+/** A Rental line per bill, each with its unit and amount ("Electricity 2026-10 2104010945XX02"); or the refusal. */
+function billLines(c: Ctx, raw: unknown): BillLine[] | Response {
+  const bills = Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : [];
+  if (!bills.length || bills.length > 500) return c.json({ error: 'validation', message: 'Send the bills to pay (up to 500).' }, 422);
+  const lines = bills.map((x, i) => ({
+    unitId: String(x.unitId ?? ''), amountSen: Number(x.amountSen), sort: i,
+    description: [KIND_LABEL[String(x.kind)] ?? 'Utility', MONTH.test(String(x.billMonth ?? '')) ? String(x.billMonth) : null, x.accountNo ? String(x.accountNo).slice(0, 40) : null].filter(Boolean).join(' '),
+  }));
+  if (lines.some(l => !l.unitId || !Number.isInteger(l.amountSen) || l.amountSen <= 0)) return c.json({ error: 'validation', message: 'Every bill needs its unit and an amount.' }, 422);
+  return lines;
+}
+
+/** The refusal when a bill names a unit that does not exist, else null. */
+async function unknownUnit(c: Ctx, sb: any, lines: BillLine[]): Promise<Response | null> {
+  const unitIds = [...new Set(lines.map(l => l.unitId))];
+  const { data: units, error: uErr } = await sb.schema('public').from('conts_units').select('id').in('id', unitIds);
+  if (uErr) return c.json({ error: 'read_failed', reason: uErr.message }, 500);
+  const known = new Set(((units ?? []) as Array<{ id: string }>).map(u => u.id));
+  return unitIds.some(u => !known.has(u)) ? c.json({ error: 'validation', message: 'A bill names a unit that does not exist.' }, 422) : null;
+}
+
+/** The request's lines: a Rental line per bill, with its unit and no account (finance sets it on the voucher). */
+const lineRows = (requestId: string, lines: BillLine[]) => lines.map(l => ({
+  id: crypto.randomUUID(), request_id: requestId, department: 'rental', unit_id: l.unitId, maintenance_issue_id: null, project_id: null,
+  account_code: null, amount_sen: l.amountSen, description: l.description, sort: l.sort,
+}));
+
 export function utilityBillRoutes(r: { post: (p: string, h: (c: Ctx) => Promise<Response>) => unknown }) {
   r.post('/utility-bills/read', readPageHandler);
   r.post('/utility-bills/payment-request', utilityRequestHandler);
+  r.post('/utility-bills/payment-request/:id/resubmit', resubmitUtilityRequestHandler);
 }

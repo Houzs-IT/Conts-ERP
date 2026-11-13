@@ -81,7 +81,7 @@ async function vouchersOf(sb: any, companyId: number, requestId: string): Promis
 const live = (pvs: Array<{ status: string }>) => pvs.filter(p => p.status !== 'CANCELLED');
 
 /** Change a request's status only if it is still `from`: true when exactly this call changed it. */
-async function claimRequest(sb: any, id: string, from: string, patch: Record<string, unknown>): Promise<boolean> {
+export async function claimRequest(sb: any, id: string, from: string, patch: Record<string, unknown>): Promise<boolean> {
   const { data, error } = await sb.from('payment_requests').update({ ...patch, updated_at: now() }).eq('id', id).eq('status', from).select('id').maybeSingle();
   return !error && data != null;
 }
@@ -217,7 +217,8 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
   return c.json({ id, requestNo: row.request_no }, 201);
 };
 
-const RETURNED = new Set(['WITHDRAWN', 'REJECTED']);
+/** A request its asker may change and send again (resubmitRequestHandler; utility-bill-routes for a utility one). */
+export const RETURNED = new Set(['WITHDRAWN', 'REJECTED']);
 
 /** POST /requests/:id/resubmit — the person changes their own withdrawn or rejected request and sends it to finance again
  *  (chew, 13 Nov 2026: "就修改再提交不就行了？"), instead of filling in a new one. The same request and number, checked
