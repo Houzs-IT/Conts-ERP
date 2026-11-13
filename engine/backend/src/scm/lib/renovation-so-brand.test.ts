@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { RenoDb } from './renovation-db';
-import { contractBrand } from './renovation-so';
+import { contractBrand, fillProjectBrand } from './renovation-so';
 
 interface Call { sql: string; params: readonly unknown[] }
 
@@ -29,6 +29,23 @@ describe('contractBrand', () => {
     expect(await contractBrand(fakeDb([]).db, null, 97)).toBeNull();
     const { db, calls } = fakeDb([]);
     expect(await contractBrand(db, null, null)).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('fillProjectBrand', () => {
+  test('setsTheBrandOnlyOnAProjectWithNone', async () => {
+    const { db, calls } = fakeDb([]);
+    await fillProjectBrand(db, 97, 'Dream Crafter');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.sql).toMatch(/update public\.projects set brand = \$2[\s\S]*where id = \$1 and nullif\(trim\(brand\), ''\) is null/i);
+    expect(calls[0]?.params).toEqual([97, 'Dream Crafter']);
+  });
+
+  test('doesNothingWithoutAProjectOrABrand', async () => {
+    const { db, calls } = fakeDb([]);
+    await fillProjectBrand(db, null, 'The Conts');
+    await fillProjectBrand(db, 97, null);
     expect(calls).toHaveLength(0);
   });
 });
