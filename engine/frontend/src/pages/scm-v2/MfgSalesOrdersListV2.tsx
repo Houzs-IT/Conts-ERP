@@ -262,14 +262,12 @@ const brandTone = (r: SoRow): BrandTone => (/dream crafter|the conts/i.test(r.br
 function SplitDropdown({
   onFromQuotation,
   onImport,
-  onDuplicate,
   canMaintain,
 }: {
   onFromQuotation: () => void;
   onImport: () => void;
-  onDuplicate: () => void;
-  /* SO Maintenance is director-only (owner 2026-07-15). Import-from-file and
-     Duplicate-last-SO both land on /scm/sales-orders/maintenance, so they are
+  /* SO Maintenance is director-only (owner 2026-07-15). Import-from-file
+     lands on /scm/sales-orders/maintenance, so it is
      hidden from a non-director (OFF, not hide — no menu entry, and the route
      itself Forbids). "New from quotation" stays for everyone. */
   canMaintain: boolean;
@@ -318,16 +316,6 @@ function SplitDropdown({
                   }}
                 >
                   Import from file
-                </button>
-                <button
-                  type="button"
-                  className="block w-full px-3.5 py-2 text-left text-[12.5px] text-ink hover:bg-primary-soft"
-                  onClick={() => {
-                    setOpen(false);
-                    onDuplicate();
-                  }}
-                >
-                  Duplicate last SO
                 </button>
               </>
             )}
@@ -1235,8 +1223,8 @@ export function MfgSalesOrdersListV2() {
   const goSoMaintenance = () => navigate("/scm/sales-orders/maintenance");
   const goFromQuotation = () => navigate("/scm/sales-orders/new/guided");
   const goImport = () => navigate("/scm/sales-orders/maintenance?tab=import");
-  const goDuplicate = () => navigate("/scm/sales-orders/maintenance?tab=duplicate");
   const goEdit = (r: SoRow) => navigate(`/scm/sales-orders/${r.doc_no}?edit=1`);
+  const goCopyAsNew = (r: SoRow) => navigate(`/scm/sales-orders/new?copyFrom=${encodeURIComponent(r.doc_no)}`);
   const printDocument = usePrintDocument();
   const goFullPage = (r: SoRow) => navigate(`/scm/sales-orders/${r.doc_no}`);
   const doConfirm = (r: SoRow) =>
@@ -1295,7 +1283,7 @@ export function MfgSalesOrdersListV2() {
     setHold.mutate({ key: r.doc_no, onHold });
   };
   const soContextMenu = salesOrderRowMenu<SoRow>({
-    open: goFullPage, edit: goEdit, print: printDocument,
+    open: goFullPage, edit: goEdit, copyAsNew: goCopyAsNew, print: printDocument,
     confirm: doConfirm, transferToDo: doDeliver, reopen: doReopen,
     setStatus: setSoStatus, close: doCloseSo, setHold: setSoHold, cancel: doCancelSo, canDeliver,
   });
@@ -1994,7 +1982,6 @@ export function MfgSalesOrdersListV2() {
                 <SplitDropdown
                   onFromQuotation={goFromQuotation}
                   onImport={goImport}
-                  onDuplicate={goDuplicate}
                   canMaintain={canMaintain}
                 />
               </div>

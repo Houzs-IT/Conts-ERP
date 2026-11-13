@@ -1,7 +1,7 @@
 import { mayWork } from '../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
-import { hasEmployees, listEmployees, findEmployee, hasRenovationDepartment, saveRenovationPerson } from '../../_lib/hr';
+import { hasEmployees, listEmployees, findEmployee, hasRenovationDepartment, hasRenovatorBrand, isActiveRenovationBrand, saveRenovationPerson } from '../../_lib/hr';
 import { employeeInput, renovationPersonInput, type Employee, type EmployeeInput } from '../../_lib/hrFields';
 import { hasPayroll } from '../../_lib/payroll';
 
@@ -101,9 +101,13 @@ const isRenovationSave = (body: Record<string, unknown> | null): boolean =>
 
 async function saveRenovationRoster(env: Env, body: Record<string, unknown> | null): Promise<{ renovatorId: string; isNew: boolean } | Response> {
   if (!(await hasRenovationDepartment(env))) return fail('NOT_MIGRATED', 'The Renovation department needs a database update (migration 0315) that has not been applied yet.', 503);
+  if (!(await hasRenovatorBrand(env))) return fail('NOT_MIGRATED', 'The Renovation brand needs a database update (migration 0324) that has not been applied yet.', 503);
   const roster = renovationPersonInput.safeParse(body);
   if (!roster.success) {
     return fail('VALIDATION', 'Some fields need a fix.', 422, Object.fromEntries(roster.error.issues.map(i => [String(i.path[0] ?? 'form'), i.message])));
+  }
+  if (!(await isActiveRenovationBrand(env, roster.data.brandId))) {
+    return fail('VALIDATION', 'Some fields need a fix.', 422, { brandId: 'That brand is no longer in use. Pick another.' });
   }
   const askedId = typeof body?.renovatorId === 'string' ? body.renovatorId : null;
   if (askedId && !(await findEmployee(env, { renovatorId: askedId }))) return fail('NOT_FOUND', 'That person is not in the Renovation department.', 404);

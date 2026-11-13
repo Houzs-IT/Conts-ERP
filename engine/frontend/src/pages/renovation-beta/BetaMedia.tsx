@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactElement, type TouchEvent } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Download, FileText, ImageOff, Play, X } from "lucide-react";
+import { fmtDateTime } from "@2990s/shared";
 import { api } from "../../api/client";
 import { BETA } from "./renovationBetaTheme";
 
@@ -207,9 +208,7 @@ export function MediaStrip({ items, label, size = 72, max = 8 }: { items: readon
 
 function when(at: string | null | undefined): string | null {
   if (!at) return null;
-  const t = Date.parse(at);
-  if (Number.isNaN(t)) return null;
-  return new Date(t).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return Number.isNaN(Date.parse(at)) ? null : fmtDateTime(at);
 }
 
 /** The gallery: one item large, arrows and swipe between items, Esc closes. */

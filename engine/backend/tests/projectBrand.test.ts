@@ -6,7 +6,7 @@
 //   • the project is saved WITH the brand and finance type, in the one INSERT (placeholders and values line up).
 import { describe, expect, test } from "vitest";
 import type { Db } from "../src/services/renovation/load";
-import { brandOfSo, projectBrandFrom } from "../src/services/renovation/projectBrand";
+import { brandOfSo, projectBrandFrom, shareBrandWithProject } from "../src/services/renovation/projectBrand";
 import { createRenovationProject } from "../src/services/renovation/create";
 
 type BrandRow = { id: number; name: string; finance_kind: string | null; active: number; company_id: number };
@@ -113,5 +113,24 @@ describe("the project is saved with its brand", () => {
     await createRenovationProject(db, { name: "X", projectTypeId: 1, customerKind: "customer", customerName: "Tan", renoPicPersonId: 6 }, 7, 1);
     const pic = args.indexOf(6);
     expect(args.slice(pic + 2, pic + 4)).toEqual([null, null]);
+  });
+});
+
+describe("a sales order linked to a project shares one brand", () => {
+  test("fills only the blank side, both ways, never overwriting", async () => {
+    const statements: Array<{ sql: string; args: unknown[] }> = [];
+    const db = {
+      prepare: (sql: string) => ({
+        bind: (...args: unknown[]) => ({ run: async () => { statements.push({ sql, args }); return {}; } }),
+      }),
+    } as unknown as Db;
+    await shareBrandWithProject(db, "TC-SO-2611-031", 330);
+    expect(statements).toHaveLength(3);
+    const [soFromProject, contractFromProject, projectFromSo] = statements;
+    expect(soFromProject?.sql).toMatch(/UPDATE scm\.mfg_sales_orders s SET branding = p\.brand[\s\S]*nullif\(trim\(s\.branding\), ''\) IS NULL AND nullif\(trim\(p\.brand\), ''\) IS NOT NULL/);
+    expect(soFromProject?.args).toEqual(["TC-SO-2611-031", 330]);
+    expect(contractFromProject?.sql).toMatch(/UPDATE scm\.reno_so_contracts k SET brand_id = b\.id[\s\S]*k\.brand_id IS NULL/);
+    expect(projectFromSo?.sql).toMatch(/UPDATE projects p SET brand = s\.branding[\s\S]*nullif\(trim\(p\.brand\), ''\) IS NULL AND nullif\(trim\(s\.branding\), ''\) IS NOT NULL/);
+    expect(projectFromSo?.args).toEqual([330, "TC-SO-2611-031"]);
   });
 });
