@@ -156,6 +156,17 @@ const loose = randomUUID();
 await sql`insert into expenses (id, unit_id, category, description, amount, currency, incurred_on, deduct_month, charge_to, created_at) values (${loose}, ${B.id}, 'sewerage', 'IWK', 2400, 'MYR', '2027-09-30', '2027-09', 'owner', ${now})`;
 const iwk = await R.billsToRequest(env, [loose]);
 check('a bill with no account provider goes under its kind: Indah Water', iwk.length === 1 && iwk[0].provider === 'Indah Water' && iwk[0].bills[0].amountSen === 2400, iwk);
+// A request sent back (chew, 13 Nov 2026: change it and send it again): "Send again" sends the bills still on it that the
+// company pays, at their full bills, and lets go of one the owner now pays.
+const on1 = await R.billsOnRequest(env, 'req-1');
+check('the bills on a request, at their full bills', on1.bills.map(b => b.expenseId).sort().join() === [e1.id, e4.id].sort().join() && on1.bills.map(b => b.amountSen).sort().join() === '31000,9000' && on1.off.length === 0, on1);
+await sql`update expenses set owner_paid = true where id = ${e4.id}`;
+const on1b = await R.billsOnRequest(env, 'req-1');
+check('a bill now paid by the owner is no longer sent, and is named to let go', on1b.bills.map(b => b.expenseId).join() === e1.id && on1b.off.join() === e4.id, on1b);
+const let1 = await R.unlinkRequest(env, on1b.off);
+const [l4] = await sql`select payment_request_id, payment_request_no from expenses where id = ${e4.id}`;
+check('let go: the bill keeps no request', let1 === 1 && l4.payment_request_id === null && l4.payment_request_no === null, { let1, l4 });
+check('a request with no bills has nothing to send', (await R.billsOnRequest(env, 'req-none')).bills.length === 0);
 
 await sql.end();
 db.kill();

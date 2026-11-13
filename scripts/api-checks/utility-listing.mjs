@@ -132,9 +132,45 @@ check('with no finance system to reach, the request is not made and the bill kee
 r = await call('POST', '/api/expenses/utilities/payment-requests', { expenseIds: [june2?.id], provider: 'TNB' }, 'housekeeper');
 check('only finance and management send utility bills for payment', r.status === 403, r.status);
 
+// A request finance sent back, or its sender withdrew (chew, 13 Nov 2026: change it and send it again; SOP 3.10): its
+// bills are fixed on the month screen and keep the request, the screens say why it came back, and "Send again" sends the
+// same request with the bills as they are now.
+const reqC = randomUUID(), reqD = randomUUID();
+await db(`INSERT INTO scm.payment_requests (id, company_id, request_no, type, requester_user_id, payee_name, amount_sen, status, reason, decided_by, created_at)
+  VALUES ($1, $3, 'PRQ-CHK-003', 'PAYMENT', 'chk', 'TNB', 5100, 'REJECTED', 'The July bill is RM 71.00, not RM 51.00', 'Chew', '2029-08-02T10:00:00+08:00'),
+         ($2, $3, 'PRQ-CHK-004', 'PAYMENT', 'chk', 'TNB', 1500, 'WITHDRAWN', null, null, '2029-08-03T10:00:00+08:00')`, reqC, reqD, co.id)
+  .catch(e => check('returned payment requests seeded', false, e.message));
+const julyBill = await bill({ kind: 'electricity', amount: 5100, date: '2029-07-31', chargeTo: 'the_conts' });
+await db(`UPDATE expenses SET reference = 'CHK-ACC-1', payment_request_id = $1, payment_request_no = 'PRQ-CHK-003' WHERE id = $2`, reqC, julyBill);
+r = await call('GET', `/api/expenses/utilities?month=2029-07&unitId=${a.id}`);
+const julyLine = (r.json?.data ?? []).find(x => x.accountId === acc);
+check('the month screen says the request came back, and why', julyLine?.paymentRequestNo === 'PRQ-CHK-003' && julyLine?.paymentRequestStatus === 'REJECTED'
+  && julyLine?.paymentRequestReason === 'The July bill is RM 71.00, not RM 51.00', JSON.stringify(julyLine));
+r = await call('POST', '/api/expenses/utilities', { month: '2029-07', rows: [{ accountId: acc, amount: 7100, chargeTo: 'the_conts' }] });
+const [julyFixed] = await db(`SELECT id, amount, payment_request_id, payment_request_no FROM expenses WHERE unit_id = $1 AND reference = 'CHK-ACC-1' AND incurred_on >= '2029-07-01' AND incurred_on < '2029-08-01'`, a.id);
+check('a bill on a request that came back is fixed on the month screen and keeps the request, so it is not sent as a new one',
+  r.status === 201 && r.json?.saved === 1 && !(r.json?.requested ?? []).length && (r.json?.toPay ?? []).length === 0
+  && julyFixed?.amount === 7100 && julyFixed?.payment_request_id === reqC && julyFixed?.payment_request_no === 'PRQ-CHK-003', JSON.stringify({ r: r.json, julyFixed }));
+r = await call('GET', '/api/expenses/utility-listing?from=2029-07&to=2029-08&by=request');
+const sentBack = (r.json?.bills ?? []).find(x => x.id === julyFixed?.id);
+check('by request: a returned request carries why it came back and who sent it back', sentBack?.request?.status === 'REJECTED'
+  && sentBack?.request?.reason === 'The July bill is RM 71.00, not RM 51.00' && sentBack?.request?.decidedBy === 'Chew', JSON.stringify(sentBack));
+r = await call('POST', `/api/expenses/utilities/payment-requests/${reqA}/resend`, {});
+check('"Send again" is refused while finance still has the request', r.status === 409, `${r.status} ${r.text.slice(0, 200)}`);
+const ownerPaidBill = await bill({ kind: 'water', amount: 1500, date: '2029-07-31', chargeTo: 'the_conts' });
+await db(`UPDATE expenses SET owner_paid = true, payment_request_id = $1, payment_request_no = 'PRQ-CHK-004' WHERE id = $2`, reqD, ownerPaidBill);
+r = await call('POST', `/api/expenses/utilities/payment-requests/${reqD}/resend`, {});
+check('"Send again" with no bill left for the company to pay is refused', r.status === 422, `${r.status} ${r.text.slice(0, 200)}`);
+r = await call('POST', `/api/expenses/utilities/payment-requests/${reqC}/resend`, {});
+const [julyAfter] = await db(`SELECT payment_request_id FROM expenses WHERE id = $1`, julyFixed?.id ?? '');
+check('"Send again" goes to the finance system (not reachable here), and the bill keeps its request', r.status >= 400 && ![404, 409, 422].includes(r.status) && julyAfter?.payment_request_id === reqC,
+  `${r.status} ${r.text.slice(0, 200)}`);
+r = await call('POST', `/api/expenses/utilities/payment-requests/${reqC}/resend`, {}, 'housekeeper');
+check('only finance and management send a utility request again', r.status === 403, r.status);
+
 await db(`DELETE FROM owner_adjustments WHERE expense_id IN (SELECT id FROM expenses WHERE unit_id = $1 AND incurred_on >= '2029-01-01' AND incurred_on < '2030-01-01')`, a.id);
 await db(`DELETE FROM unit_utility_accounts WHERE id = $1`, acc);
-await db(`DELETE FROM scm.payment_requests WHERE id IN ($1, $2)`, reqA, reqB);
+await db(`DELETE FROM scm.payment_requests WHERE id IN ($1, $2, $3, $4)`, reqA, reqB, reqC, reqD);
 for (const u of [a, b]) await db(`DELETE FROM expenses WHERE unit_id = $1 AND incurred_on >= '2028-10-01' AND incurred_on < '2030-01-01'`, u.id);
 await db(`DELETE FROM owner_statements WHERE owner_id = $1 AND period_start = '2029-03-01'`, a.owner_id);
 await db(`DELETE FROM reservations WHERE unit_id = $1 AND check_in = '2029-03-29'`, a.id);

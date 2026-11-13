@@ -179,5 +179,11 @@ r = await call('GET', '/api/claims/requests', undefined, 'technician');
 check('a field worker reads their own requests to pay suppliers (forwarded, not refused)', r.status !== 404 && r.status !== 403, `${r.status} ${r.text.slice(0, 200)}`);
 r = await call('GET', '/api/claims/suppliers', undefined, 'technician');
 check('the supplier list stays the office\'s', r.status === 404, `${r.status} ${r.text.slice(0, 200)}`);
+// A withdrawn or rejected request is changed and sent again from My claims on the desk (chew, 13 Nov 2026): the office's
+// way through the forward, as withdrawing is; the phone has no such screen.
+r = await call('POST', '/api/claims/requests/00000000-0000-4000-8000-000000000000/resubmit', {});
+check('the office sends a changed request again through the forward', r.status !== 404 && r.status !== 403, `${r.status} ${r.text.slice(0, 200)}`);
+r = await call('POST', '/api/claims/requests/00000000-0000-4000-8000-000000000000/resubmit', {}, 'technician');
+check('a field worker does not, as they do not withdraw either', r.status === 404, `${r.status} ${r.text.slice(0, 200)}`);
 
 done();

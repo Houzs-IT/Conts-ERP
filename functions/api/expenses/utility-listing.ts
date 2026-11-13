@@ -41,7 +41,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     WITH b AS (
       SELECT e.id, e.unit_id, e.category, e.incurred_on, e.deduct_month, e.amount, e.charge_to, e.record_only, e.rolled,
              e.receipt_document_id, e.reference, ${LOCKED_SQL} AS final,
-             e.payment_request_id, e.payment_request_no, r.status AS request_status,
+             e.payment_request_id, e.payment_request_no, r.status AS request_status, r.reason AS request_reason, r.decided_by AS request_decided_by,
              to_char(r.created_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM') AS request_month,
              coalesce(sc.bill_sen, e.amount) AS request_sen
       FROM expenses e JOIN units u ON u.id = e.unit_id
@@ -77,7 +77,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       amount: Number(b.amount), chargeTo: b.charge_to, recordOnly: !!b.record_only, final: !!b.final,
       receiptId: b.receipt_document_id ?? null, reference: b.reference ?? null, rolled: !!b.rolled,
       request: b.payment_request_id && b.request_status
-        ? { id: b.payment_request_id, no: b.payment_request_no ?? null, status: b.request_status, month: b.request_month, amount: Number(b.request_sen) }
+        ? { id: b.payment_request_id, no: b.payment_request_no ?? null, status: b.request_status, month: b.request_month, amount: Number(b.request_sen),
+            // Why finance sent it back, and who (migration 0324), so its bills can be fixed and the request sent again.
+            reason: b.request_reason ?? null, decidedBy: b.request_decided_by ?? null }
         : null,
     })),
     nights,
