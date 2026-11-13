@@ -4,7 +4,8 @@ import { fileToUpload, forwardClaims } from '../../_lib/claimsForward';
 
 /** /api/claims/* — a member of staff's own receipts, petty cash and payment requests, forwarded to the engine on their
  *  behalf (functions/_lib/claimsForward.ts). Only these paths pass; the engine limits every answer to the person.
- *    GET  me, my-bank, receipts, receipts/:id/files/:fileId, requests, float, jobs, units, accounts, projects   (everyone;
+ *    GET  me, my-bank, receipts, receipts/:id/files/:fileId, requests, requests/:id/files/:fileId, float, jobs, units,
+ *         accounts, projects                                                                  (everyone;
  *         requests are the person's own: a field worker sees what became of a Direct Pay to Supplier)
  *    GET  suppliers, purchase-orders                                                          (office staff)
  *    POST extract, receipts            multipart: `data` (JSON) and `file` (one or more)       (everyone)
@@ -12,7 +13,7 @@ import { fileToUpload, forwardClaims } from '../../_lib/claimsForward';
  *         asks finance to pay a supplier by the name on the bill only: Direct Pay to Supplier, chew 12 Nov 2026)
  *    POST float/top-up-request                                                                (a float's keeper)
  *    POST requests/:id/withdraw                                                               (office staff) */
-const GET_ANYONE = /^(me|my-bank|receipts|receipts\/[^/]+\/files\/[^/]+|requests|float|jobs|units|accounts|projects)$/;
+const GET_ANYONE = /^(me|my-bank|receipts|receipts\/[^/]+\/files\/[^/]+|requests|requests\/[^/]+\/files\/[^/]+|float|jobs|units|accounts|projects)$/;
 const GET_OFFICE = /^(suppliers|purchase-orders)$/;
 const MAX_FILES = 8;
 const MAX_BYTES = 25 * 1024 * 1024;

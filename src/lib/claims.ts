@@ -13,13 +13,14 @@ export type LineDepartment = 'rental' | 'supply' | 'shared';
 export type ReceiptStatus = 'HANDED_IN' | 'CHECKED' | 'TOPPED_UP' | 'PAID_BACK' | 'REJECTED' | 'REPAID' | 'WRITTEN_OFF' | 'REPLACED';
 export type RequestStatus = 'SUBMITTED' | 'PART_PAID' | 'PAID' | 'REJECTED' | 'CLOSED' | 'WITHDRAWN';
 export interface ClaimLine { department: LineDepartment; unitId: string | null; maintenanceIssueId: string | null; projectId: number | null; accountCode: string | null; amountSen: number; description: string | null }
+export interface ClaimFile { id: string; fileName: string; mime: string }
 export interface Receipt {
   id: string; receiptNo: string; submitterName: string; floatId: string | null; spendDate: string; amountSen: number; vendorName: string | null;
-  note: string | null; status: ReceiptStatus; rejectReason: string | null; lines: ClaimLine[]; files: { id: string; fileName: string; mime: string }[];
+  note: string | null; status: ReceiptStatus; rejectReason: string | null; lines: ClaimLine[]; files: ClaimFile[];
 }
 export interface PaymentRequest {
   id: string; requestNo: string; type: 'PAYMENT' | 'DEPOSIT'; payeeName: string; amountSen: number; status: RequestStatus; reason: string | null;
-  createdAt: string; wantedOn: string | null; lines: ClaimLine[]; vouchers: { id: string; pvNumber: string; status: string }[];
+  createdAt: string; wantedOn: string | null; note: string | null; lines: ClaimLine[]; files: ClaimFile[]; vouchers: { id: string; pvNumber: string; status: string }[];
 }
 export interface Me { userId: string; name: string; field: boolean; lineDepartment: LineDepartment; route: 'float' | 'finance'; keepsFloat: boolean }
 export interface MyFloat { float: { id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested: boolean }; receipts: Receipt[] }
@@ -37,6 +38,7 @@ export const REQUEST_STATUS: Record<RequestStatus, string> = {
 
 /** A receipt's file, opened in the browser (the session cookie goes with it). */
 export const receiptFileHref = (receiptId: string, fileId: string) => `/api/claims/receipts/${receiptId}/files/${fileId}`;
+export const requestFileHref = (requestId: string, fileId: string) => `/api/claims/requests/${requestId}/files/${fileId}`;
 
 /** What the photo says: the amount, the date and the shop, or nothing when it cannot be read. */
 export async function readReceipt(files: File[]): Promise<{ amountSen: number | null; date: string | null; vendorName: string | null }> {
