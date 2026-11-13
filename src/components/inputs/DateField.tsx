@@ -53,7 +53,7 @@ function NativeField({ kind, value, onChange, label, help, error, min, max, clas
       onChange={e => onChange(e.target.value)}
       onBlur={() => setTouched(true)}
       onClick={display ? openPicker : undefined}
-      className={display ? 'absolute inset-0 w-full h-full m-0 p-0 opacity-0 cursor-pointer' : cx(className ?? 'field-input', PHONE_SIZING)}
+      className={display ? 'absolute inset-0 w-full h-full m-0 p-0 border-0 opacity-0 cursor-pointer' : cx(className ?? 'field-input', PHONE_SIZING)}
       style={display ? undefined : { ...errorBorder, ...style }}
     />
   );
@@ -61,8 +61,8 @@ function NativeField({ kind, value, onChange, label, help, error, min, max, clas
     <InputShell id={id} label={label} help={help} error={shown}>
       {display ? (
         <div
-          className={cx(className ?? 'field-input', 'relative flex items-center justify-between gap-2 px-3 focus-within:border-[var(--color-border-focus)] focus-within:shadow-[var(--focus-ring)]')}
-          style={{ ...errorBorder, ...style }}
+          className={cx(className ?? 'field-input', 'relative focus-within:shadow-[var(--focus-ring)]')}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, ...errorBorder, ...style }}
         >
           <span className="text-[16px] sm:text-copy tabular-nums truncate">{value ? display(value) : ''}</span>
           <Icon name="CalendarDays" size="sm" color="var(--color-text-muted)" />
