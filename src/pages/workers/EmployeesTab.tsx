@@ -101,6 +101,7 @@ export default function EmployeesTab() {
   const rosterEntries = (e: Employee): { api: string; id: string }[] => [
     ...(e.cleanerId && (!e.isActive || e.cleanerActive) ? [{ api: ROSTER.cleaning, id: e.cleanerId }] : []),
     ...(e.technicianId && (!e.isActive || e.technicianActive) ? [{ api: ROSTER.maintenance, id: e.technicianId }] : []),
+    ...(e.renovatorId ? [{ api: RENOVATION_ACCESS_API, id: e.renovatorId }] : []),
   ];
 
   async function toggleActive(e: Employee) {
@@ -124,11 +125,11 @@ export default function EmployeesTab() {
   }
 
   function rowActionsOf(e: Employee): RowAction[] {
-    const isOnFieldRoster = !e.renovatorId;
+    const canSwitch = e.renovatorId ? mayEdit : mayRoster;
     return [
       ...(mayGrant && e.isActive ? [{ key: 'access', label: e.employeeId ? 'Reset PIN' : 'Give app access', icon: 'KeyRound', run: () => giveAccess(e) }] : []),
       ...(mayEdit ? [{ key: 'edit', label: 'Edit', icon: 'Pencil', run: () => setForm({ person: e }) }] : []),
-      ...(mayRoster && isOnFieldRoster
+      ...(canSwitch
         ? [{ key: 'switch', label: e.isActive ? 'Switch off' : 'Switch on', icon: e.isActive ? 'UserMinus' : 'UserCheck', danger: e.isActive, run: () => { void toggleActive(e); } }]
         : []),
     ];
