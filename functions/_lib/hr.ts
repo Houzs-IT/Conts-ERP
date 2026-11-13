@@ -1,5 +1,6 @@
-import { type Env, all, one, run, nowIso } from './db';
+import { type Env, all, one, run, nowIso, transaction } from './db';
 import { hasColumn } from './auth';
+import { moveLoginToRenovation } from './fieldAccess';
 import { EMPLOYEE_DEFAULTS, type Bank, type Employee, type EmployeeStatus, type PayBasis, type PaymentMethod, type RenovationBrand, type RenovationPersonInput, type TaxCategory, type TaxResidency } from './hrFields';
 
 /**
@@ -146,6 +147,22 @@ export async function saveRenovationPerson(env: Env, renovatorId: string | null,
     newId, person.name, person.phone, person.brandId, now, now, crypto.randomUUID(), now, now);
   return newId;
 }
+
+export async function moveIntoRenovation(env: Env, from: Employee, person: RenovationPersonInput): Promise<string> {
+  return transaction(env, async tx => {
+    const renovatorId = await saveRenovationPerson(tx, null, person);
+    const now = nowIso();
+    if (from.cleanerId) await run(tx, 'UPDATE cleaners SET is_active = 0, updated_at = ? WHERE id = ?', now, from.cleanerId);
+    if (from.technicianId) await run(tx, 'UPDATE technicians SET is_active = 0, updated_at = ? WHERE id = ?', now, from.technicianId);
+    if (from.userId && await moveLoginToRenovation(tx, from.userId)) {
+      await run(tx, 'UPDATE renovators SET user_id = ?, updated_at = ? WHERE id = ?', from.userId, now, renovatorId);
+    }
+    return renovatorId;
+  });
+}
+
+export const isInRenovation = async (env: Env, userId: string): Promise<boolean> =>
+  !!(await one(env, 'SELECT 1 AS x FROM renovators WHERE user_id = ?', userId));
 
 /** The in-house person a login belongs to (from "Give app access" on any roster). Null for anyone else. */
 export async function employeeForUser(env: Env, userId: string): Promise<Employee | null> {

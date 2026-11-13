@@ -218,7 +218,11 @@ const DEPARTMENTS: { value: Dept; label: string }[] = [
   { value: 'maintenance', label: 'Maintenance' },
   { value: 'renovation', label: RENOVATION_LABEL },
 ];
-const FIELD_DEPARTMENTS = DEPARTMENTS.filter((option): option is { value: FieldDept; label: string } => option.value !== 'renovation');
+const MOVE_NOTE: Record<Dept, string> = {
+  cleaning: 'Saving moves them to Cleaning. Their app opens on cleaning jobs from the next time it loads.',
+  maintenance: 'Saving moves them to Maintenance. Their app opens on repair jobs from the next time it loads.',
+  renovation: `Saving moves them to ${RENOVATION_LABEL} with the pay below. Their old entry is switched off and keeps its pay history. Their employee no and PIN stay; they sign in again.`,
+};
 
 /**
  * Add or edit one employee. Adding puts them on the roster of the department picked and, when asked, gives them app
@@ -265,7 +269,7 @@ function EmployeeForm({ person, onClose, onSaved }: {
     if (dept === 'renovation' && !brandId) problems.brandId = 'Pick The Conts or Dream Crafter.';
     const deptChanged = !!person && mayRoster && dept !== null && dept !== wasDept;
     const isNewRoster = !!person && !(dept === 'cleaning' ? person.cleanerId : person.technicianId);
-    if (deptChanged && isNewRoster && !person?.userId) problems.departments = 'Moving them needs their app login: use Give app access on the list first, then move them.';
+    if (deptChanged && dept !== 'renovation' && isNewRoster && !person?.userId) problems.departments = 'Moving them needs their app login: use Give app access on the list first, then move them.';
     if (Object.keys(problems).length) { setErrors(problems); return; }
     setBusy(true);
     setErrors({});
@@ -274,7 +278,7 @@ function EmployeeForm({ person, onClose, onSaved }: {
       let given: { name: string; employeeId: string; pin: string } | null = null;
       const roster = { name: name.trim(), phone: phone.trim() || null };
       if (dept === 'renovation') {
-        const { data: saved } = await api.put<{ data: Employee }>('/employees', { ...d, ...roster, department: 'renovation', renovatorId: person?.renovatorId ?? null, brandId: Number(brandId), ...(salaryChanged ? { salaryEffectiveFrom: salaryFrom } : {}) });
+        const { data: saved } = await api.put<{ data: Employee }>('/employees', { ...d, ...roster, department: 'renovation', renovatorId: person?.renovatorId ?? null, cleanerId: person?.cleanerId ?? null, technicianId: person?.technicianId ?? null, brandId: Number(brandId), ...(salaryChanged ? { salaryEffectiveFrom: salaryFrom } : {}) });
         if (creating && giveAccess && saved.renovatorId) {
           const { employeeId, pin } = await api.post<{ employeeId: string; pin: string }>(`${RENOVATION_ACCESS_API}/${saved.renovatorId}/access`, {});
           given = { name: roster.name, employeeId, pin };
@@ -345,12 +349,11 @@ function EmployeeForm({ person, onClose, onSaved }: {
           <div className="sm:col-span-2 flex flex-col gap-1.5">
             {creating || (mayRoster && !person.renovatorId) ? (
               <ChoiceChips<Dept> label="Department" required={creating} value={dept ?? ''} onChange={setDept}
-                options={(creating ? DEPARTMENTS : FIELD_DEPARTMENTS).map(({ value, label }) => ({ value, label }))} />
+                options={DEPARTMENTS.map(({ value, label }) => ({ value, label }))} />
             ) : <span className="text-copy min-h-10 flex items-center">{departmentsOf(person)}</span>}
             {isOnBoth && !dept && <span className="text-meta text-muted-ink">On both now. Pick one to keep: the other is switched off.</span>}
-            {!creating && dept && dept !== wasDept && <span className="text-meta text-muted-ink">Saving moves them to {dept === 'cleaning' ? 'Cleaning' : 'Maintenance'}. Their app opens on {dept === 'cleaning' ? 'cleaning jobs' : 'repair jobs'} from the next time it loads.</span>}
+            {!creating && dept && dept !== wasDept && <span className="text-meta text-muted-ink">{MOVE_NOTE[dept]}</span>}
             {errors.departments && <span className="text-meta text-danger">{errors.departments}</span>}
-            {!creating && !person.renovatorId && mayRoster && <span className="text-meta text-muted-ink">Moving someone into Renovation: switch them off here, then add them again with Renovation picked.</span>}
           </div>
           {dept === 'renovation' && (
             <div className="sm:col-span-2 flex flex-col gap-1.5">
