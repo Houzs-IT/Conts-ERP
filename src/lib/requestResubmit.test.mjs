@@ -33,3 +33,14 @@ test('a pay-by date already past is not offered again', () => {
   assert.equal(wantedOnAgain('2026-11-01', '2026-11-13'), '');
   assert.equal(wantedOnAgain(null, '2026-11-13'), '');
 });
+
+// Review, 13 Nov 2026: a request sent again keeps its old reason as a record; once it is with finance (or paid) again it
+// reads "Rejected before", not as a rejection now, on the person's own screen as on finance's list.
+test('a rejection reason reads as the reason now while rejected or closed, and as "Rejected before" once sent again', async () => {
+  const { reasonNote } = await import('./requestResubmit.ts');
+  assert.deepEqual(reasonNote({ status: 'REJECTED', reason: 'Wrong amount', decidedBy: 'Chew' }), { text: 'Wrong amount', now: true });
+  assert.deepEqual(reasonNote({ status: 'CLOSED', reason: 'Supplier gave a discount', decidedBy: 'Chew' }), { text: 'Supplier gave a discount', now: true });
+  assert.deepEqual(reasonNote({ status: 'SUBMITTED', reason: 'Wrong amount', decidedBy: 'Chew' }), { text: 'Rejected before by Chew: Wrong amount', now: false });
+  assert.deepEqual(reasonNote({ status: 'PAID', reason: 'Wrong amount' }), { text: 'Rejected before: Wrong amount', now: false });
+  assert.equal(reasonNote({ status: 'SUBMITTED', reason: null }), null);
+});

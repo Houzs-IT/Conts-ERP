@@ -25,7 +25,7 @@ import {
   DEPARTMENT, RECEIPT_STATUS, RECEIPT_TONE, REQUEST_STATUS, REQUEST_TONE, describeClaimLine, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, requestFileHref, thisMonthMyt,
   type ClaimFile, type ClaimLine, type LineDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt,
 } from '../lib/claims';
-import { canResubmit, fixOnUtilityBills, lineDraftOf, wantedOnAgain } from '../lib/requestResubmit';
+import { canResubmit, fixOnUtilityBills, lineDraftOf, reasonNote, wantedOnAgain } from '../lib/requestResubmit';
 
 /**
  * My claims (finance, 28-29 Oct 2026; SOP 3.2, 6): a member of staff hands something in and follows it, and, if they
@@ -546,7 +546,7 @@ function RequestDetail({ request, onClose, onWithdraw, onEdit }: { request: Paym
         { label: 'Pay by', value: request.wantedOn ? date(request.wantedOn) : 'Not set' },
         ...(vouchers ? [{ label: 'Payment voucher', value: vouchers }] : []),
       ]} />
-      {request.reason && <Problem text={request.reason} />}
+      {reasonNote(request) && (reasonNote(request)!.now ? <Problem text={reasonNote(request)!.text} /> : <p className="m-0 text-meta text-muted-ink">{reasonNote(request)!.text}</p>)}
       <DetailLines lines={request.lines} totalSen={request.amountSen} />
       {request.note && <NoteBlock text={request.note} />}
       <Papers files={request.files} hrefOf={fileId => requestFileHref(request.id, fileId)} />
@@ -576,7 +576,11 @@ function Mine({ month, onMonthChange, onHandIn, onEdit }: { month: string; onMon
     { key: 'no', label: 'Request', value: q => q.requestNo },
     { key: 'pay', label: 'Paid to', value: q => q.payeeName, sub: q => (q.type === 'DEPOSIT' ? 'Deposit' : null), phone: 'title' },
     { key: 'amount', label: 'Amount', type: 'money', value: q => q.amountSen },
-    { key: 'status', label: 'Status', type: 'status', status: requestStatus, sub: q => q.reason ?? q.vouchers.filter(v => v.status !== 'CANCELLED').map(v => v.pvNumber).join(', ') },
+    { key: 'status', label: 'Status', type: 'status', status: requestStatus, sub: q => {
+      // The reason now while rejected; once sent again, its vouchers, else "Rejected before" (review, 13 Nov 2026).
+      const note = reasonNote(q), pvs = q.vouchers.filter(v => v.status !== 'CANCELLED').map(v => v.pvNumber).join(', ');
+      return note?.now ? note.text : pvs || note?.text || '';
+    } },
     {
       key: 'act', label: '', value: () => '', phone: 'hide', noExport: true,
       render: q => (canWithdraw(q) ? (

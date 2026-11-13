@@ -17,5 +17,13 @@ export function lineDraftOf(l: { unitId: string | null; maintenanceIssueId: stri
   return { where, unitId: l.unitId ?? '', jobId: l.maintenanceIssueId ?? '', projectId: l.projectId != null ? String(l.projectId) : '', amountSen: l.amountSen, description: l.description ?? '' };
 }
 
+/** How a request's reason reads (review, 13 Nov 2026): the reason now while it is rejected or closed; once it has been
+ *  sent again it is kept as a record and reads "Rejected before", as on finance's list (engine requestStatusNote). */
+export function reasonNote(q: { status: string; reason: string | null; decidedBy?: string | null }): { text: string; now: boolean } | null {
+  if (!q.reason) return null;
+  if (q.status === 'REJECTED' || q.status === 'CLOSED') return { text: q.reason, now: true };
+  return { text: `Rejected before${q.decidedBy ? ` by ${q.decidedBy}` : ''}: ${q.reason}`, now: false };
+}
+
 /** The pay-by date to start from: the request's own, unless it has passed (the form takes today or later). */
 export const wantedOnAgain = (wantedOn: string | null, today: string): string => (wantedOn && wantedOn >= today ? wantedOn : '');
