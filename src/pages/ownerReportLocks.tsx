@@ -29,7 +29,11 @@ const NO_GENERATE = 'Make final generates the statement again first, which needs
 
 export interface LockMay { lock: Record<Stage, boolean>; unlock: boolean; makeFinal: boolean; unlockFinal: boolean; generate: boolean }
 /** The owner's statement for the month (functions/api/portfolio/owner-report.ts OwnerFinal). */
-export interface OwnerFinal { statementId: string | null; state: 'none' | 'draft' | 'final'; waiting: string | null; by: string | null; at: string | null; paid: boolean; transferring: boolean }
+export interface OwnerFinal {
+  statementId: string | null; state: 'none' | 'draft' | 'final'; waiting: string | null; by: string | null; at: string | null; paid: boolean; transferring: boolean;
+  /** Nothing in the month goes on this owner's statement (a master lease with no owner adjustment): no Make final. */
+  noStatement?: boolean;
+}
 type Lock = { by: string; at: string };
 export type CellState = 'locked' | 'blocked' | 'open';
 
@@ -160,9 +164,12 @@ export function useReportLocks(o: { month: string; may?: LockMay; rows: ReportRo
         toast({ tone: left ? 'warning' : 'success', title: res.locked.length ? `${name}: ${plural(res.locked.length, 'unit')} locked.` : `${name}: nothing more to lock.`,
           body: [offReport(res.locked), left].filter(Boolean).join(' ') || undefined });
       } else {
-        const res = await api.post<{ unlocked: string[]; refused: { unitId: string; problem: string }[]; regenerate?: string[] }>('/owner-close/unlock', { month: o.month, stage, unitIds: 'all' });
-        toast({ tone: res.refused.length ? 'warning' : 'success', title: res.unlocked.length ? `${name}: ${plural(res.unlocked.length, 'unit')} unlocked.` : `${name}: nothing to unlock.`,
-          body: [offReport(res.unlocked), res.refused.length ? `Still locked, their owner's statement is final: ${names(res.refused.map(x => x.unitId))}.` : '', stale(res.regenerate)]
+        const res = await api.post<{ unlocked: string[]; refused: { unitId: string; label: string; problem: string }[]; regenerate?: string[] }>('/owner-close/unlock', { month: o.month, stage, unitIds: 'all' });
+        // The units left locked by name: the report's code, or the name the statement uses for one not on the report.
+        const kept = listed(res.refused.map(x => o.rows.find(r => r.unitId === x.unitId)?.code ?? x.label), 7);
+        toast({ tone: res.refused.length ? 'warning' : 'success',
+          title: res.unlocked.length ? `${name}: ${plural(res.unlocked.length, 'unit')} unlocked.` : res.refused.length ? `${name}: nothing unlocked.` : `${name}: nothing to unlock.`,
+          body: [offReport(res.unlocked), res.refused.length ? `Still locked, their owner's statement is final: ${kept}. Unlock the final first.` : '', stale(res.regenerate)]
             .filter(Boolean).join(' ') || undefined });
       }
     } catch (err) {
@@ -192,7 +199,7 @@ export function useReportLocks(o: { month: string; may?: LockMay; rows: ReportRo
 
   async function finalOne(r: ReportRow) {
     const f = finalOf(r);
-    if (!r.ownerId || !f) return;
+    if (!r.ownerId || !f || f.noStatement) return;
     if (f.state === 'final') { await unlockFinal(r, f); return; }
     if (!o.may?.makeFinal) { toast({ tone: 'warning', title: "You can't make a statement final.", body: 'Ask management for the Make final permission.' }); return; }
     if (!o.may.generate) { toast({ tone: 'warning', title: "You can't make a statement final.", body: NO_GENERATE }); return; }
@@ -230,7 +237,7 @@ export function useReportLocks(o: { month: string; may?: LockMay; rows: ReportRo
     if (!o.may?.makeFinal) { toast({ tone: 'warning', title: "You can't make statements final.", body: 'Ask management for the Make final permission.' }); return; }
     if (!o.may.generate) { toast({ tone: 'warning', title: "You can't make statements final.", body: NO_GENERATE }); return; }
     const all = Object.entries(o.owners).filter(([id]) => o.rows.some(r => r.ownerId === id));
-    const ready = all.filter(([, f]) => f.state !== 'final' && !f.waiting).map(([id]) => id);
+    const ready = all.filter(([, f]) => f.state !== 'final' && !f.waiting && !f.noStatement).map(([id]) => id);
     // Who still waits, by name (spec: Lock all "names who still waits").
     const waiting = all.filter(([, f]) => f.state !== 'final' && !!f.waiting).map(([id]) => personName(o.rows.find(r => r.ownerId === id)?.ownerName ?? ''));
     const waits = waiting.length ? `Still waiting for locks: ${listed(waiting, 5)}.` : '';
@@ -292,6 +299,8 @@ export function FinalCell({ r, f, first, onClick, busy }: { r: ReportRow; f?: Ow
     </button>
   );
   if (f.waiting) return <span className="block max-w-[260px] truncate text-meta text-muted-ink" title={f.waiting}>{f.waiting}</span>;
+  // Nothing in the month goes on this owner's statement (a master lease with no owner adjustment): nothing to make final.
+  if (f.noStatement) return <span className="text-meta text-muted-ink" title="Nothing this month goes on this owner's statement, so there is nothing to make final.">No statement this month</span>;
   return (
     <button type="button" onClick={e => { e.stopPropagation(); onClick(); }} disabled={busy}
       title={`Every category of ${personName(r.ownerName)}'s units is locked. Click to make the statement final (it is generated again first).`}

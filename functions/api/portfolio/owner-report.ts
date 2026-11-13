@@ -11,8 +11,9 @@ import { companyLateFor, finalReadiness, monthSteps } from '../../_lib/ownerLock
 import { unconfirmedRevenue } from '../../_lib/lockReadiness';
 import { lockMay } from '../../_lib/lockPowers';
 import { can } from '../../_lib/access';
+import { PLACEHOLDER_OWNER } from '../../_lib/hostplatformImport';
 import {
-  LOCK_FROM, STAGES, finalWaiting, waitingText, cleaningChecks, utilitiesChecks, o2Checks, notReadyText, monthLabel, type FinalUnit, type Stage,
+  LOCK_FROM, STAGES, finalWaiting, waitingText, cleaningChecks, utilitiesChecks, o2Checks, notReadyText, monthLabel, lockMonthProblem, type FinalUnit, type Stage,
 } from '../../_lib/stageLocks';
 import type { ReportGroup } from '../../../src/lib/ownerOverall';
 
@@ -45,6 +46,9 @@ const asFixedRent = (u: UnitRow): UnitRow => ({
 export interface OwnerFinal {
   statementId: string | null; state: 'none' | 'draft' | 'final'; waiting: string | null;
   by: string | null; at: string | null; paid: boolean; transferring: boolean;
+  /** Nothing in the month goes on the owner's statement (a master lease with no owner adjustment, or an owner still to be
+   *  confirmed), so Generate makes none and there is nothing to make final (chew, 13 Nov 2026). */
+  noStatement: boolean;
 }
 
 /** GET /api/portfolio/owner-report?month=2026-09 — the overall owner report (the owner workbook's overall report sheet): one row
@@ -174,6 +178,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     all<{ statement_id: string; state: string }>(env, `SELECT DISTINCT ON (statement_id) statement_id, state FROM payouts
       WHERE state <> 'cancelled' AND statement_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY statement_id, created_at DESC, id DESC`, ids),
   ]) : [[], []];
+  // The owners Generate makes a statement for: as generate.ts does, a unit with something in the month, its owner known.
+  const unknownOwner = new Set(inputs.units.filter(u => u.owner_name.toLowerCase() === PLACEHOLDER_OWNER.toLowerCase()).map(u => u.owner_id));
+  const withStatement = new Set(months.filter(m => hasActivity(m) && !unknownOwner.has(m.ownerId)).map(m => m.ownerId));
   const owners: Record<string, OwnerFinal> = {};
   for (const ownerId of new Set(rows.map(r => r.ownerId))) {
     const st = statements.find(s => s.owner_id === ownerId);
@@ -187,10 +194,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       waiting: open.length ? waitingText(open, units.length) : null,
       by: by?.actor_label ?? null, at: by?.occurred_at ?? null,
       paid: st?.state === 'paid' || pay?.state === 'paid', transferring: pay?.state === 'processing',
+      noStatement: !st && !withStatement.has(ownerId),
     };
   }
   return json({
     generatedAt: nowIso(), month, rows, owners, lockFrom: LOCK_FROM,
+    // Why the month cannot be locked (a month not yet ended, or before the locks start): the screen shows no locks then.
+    lockProblem: lockMonthProblem(month, todayMyt()),
     // The Whole column row: per category how many of the units it lists are locked; and the month's Airbnb files.
     counts: step?.counts ?? null, airbnbFiles: revenue.files,
     may: { ...lockMay(session), makeFinal: can(session, 'makeFinal', 'edit'), unlockFinal: can(session, 'unlockFinal', 'edit'),

@@ -26,8 +26,15 @@ const SIX = ['income', 'cleaning', 'utilities', 'additional', 'misc', 'o2'];
 // The check's own owner, building and unit with a management contract (the Unit report lists units with a contract), so
 // the checks before it in CI cannot get in its way. A local rerun starts from a clean slate.
 const OWNER = 'orl-owner', PROP = 'orl-prop', UNIT = 'orl-u', CODE = 'HMORLCHK01', FILE = 'owner-report-locks-check.csv';
+// A master-lease unit of its own owner, in the same building (chew, 13 Nov 2026: no Make final where nothing is due).
+const ML_OWNER = 'orl-ml-owner', ML_UNIT = 'orl-ml-u';
 const dropAll = async () => {
   const ofOwner = 'SELECT id FROM units WHERE owner_id = $1';
+  await db(`DELETE FROM reservations WHERE unit_id IN (${ofOwner})`, ML_OWNER);
+  await db(`UPDATE units SET contract_id = NULL WHERE owner_id = $1`, ML_OWNER);
+  await db(`DELETE FROM owner_contracts WHERE owner_id = $1`, ML_OWNER);
+  await db(`DELETE FROM units WHERE owner_id = $1`, ML_OWNER);
+  await db(`DELETE FROM owners WHERE id = $1`, ML_OWNER);
   await db(`DELETE FROM airbnb_recon_decisions WHERE code = $1`, CODE).catch(() => {});
   await db(`DELETE FROM airbnb_recon_files WHERE file_name = $1`, FILE).catch(() => {});
   await db(`DELETE FROM company_late_changes WHERE unit_id IN (${ofOwner})`, OWNER);
@@ -52,6 +59,14 @@ await db(`INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, 
 await db(`INSERT INTO owner_contracts (id, owner_id, unit_id, management_fee_pct, starts_on, ends_on, created_at, model, revenue_model, grr_amount, minimum_guarantee, misc_charges)
   VALUES ('orl-c', $1, $2, $3, '2020-01-01', NULL, $4, 'management', 'management', 0, 0, 1)`, OWNER, UNIT, fee, now);
 await db(`UPDATE units SET contract_id = 'orl-c' WHERE id = $1`, UNIT);
+// The master-lease unit: a stay in October and no owner adjustment, so its owner has no statement for the month.
+await db(`INSERT INTO owners (id, display_name, email, created_at, updated_at) VALUES ($1, 'Lease Owner', 'lease-owner@example.invalid', $2, $2)`, ML_OWNER, now);
+await db(`INSERT INTO units (id, property_id, owner_id, unit_number, base_rate, misc_charges, created_at, updated_at) VALUES ($1, $2, $3, 'K-02', 0, 0, $4, $4)`, ML_UNIT, PROP, ML_OWNER, now);
+await db(`INSERT INTO owner_contracts (id, owner_id, unit_id, management_fee_pct, starts_on, ends_on, created_at, model, revenue_model, grr_amount, minimum_guarantee, misc_charges)
+  VALUES ('orl-ml-c', $1, $2, 10, '2026-01-01', '2026-12-31', $3, 'management', 'master_lease', 300000, 0, 0)`, ML_OWNER, ML_UNIT, now);
+await db(`UPDATE units SET contract_id = 'orl-ml-c' WHERE id = $1`, ML_UNIT);
+await db(`INSERT INTO reservations (id, unit_id, channel, external_ref, state, check_in, check_out, guests_count, gross_booking_value, channel_fee, collected_revenue, created_at, updated_at)
+  VALUES ('orl-ml-s', $1, 'direct', 'orl-ml-s', 'checked_out', '2026-10-05', '2026-10-09', 2, 40000, 0, 40000, $2, $2)`, ML_UNIT, now);
 
 // October: an Airbnb stay that Airbnb paid differently (to confirm), a direct stay, a clean, an electricity bill and an
 // aircon service charged to the owner.
@@ -93,6 +108,18 @@ const unlock = (stage, unitIds, reason) => call('POST', '/api/owner-close/unlock
 let j = await report();
 let row = rowOf(j);
 check('the unit is on all six categories, none locked yet', !!row && JSON.stringify(row.steps) === JSON.stringify(SIX) && Object.keys(row.locks ?? {}).length === 0, JSON.stringify({ steps: row?.steps, locks: row?.locks }));
+// chew, 13 Nov 2026: an owner with no statement for the month (a master lease, no owner adjustment) is marked so, and
+// the Final cell says so instead of offering Make final; the share owner is not.
+check('an owner with no statement this month is marked so; the share owner is not',
+  j?.owners?.[ML_OWNER]?.noStatement === true && j?.owners?.[OWNER]?.noStatement === false, JSON.stringify({ lease: j?.owners?.[ML_OWNER], share: j?.owners?.[OWNER] }));
+// chew, 13 Nov 2026: a month that has not ended shows no locks; the report says why. October can be locked.
+{
+  const thisMonth = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7); // MYT
+  const named = new Date(`${thisMonth}-01T00:00:00Z`).toLocaleString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const cur = await call('GET', `/api/portfolio/owner-report?month=${thisMonth}`);
+  check("a month that has not ended says why it can't be locked; October can be", cur.status === 200
+    && cur.json?.lockProblem === `${named} has not ended yet.` && j?.lockProblem === null, `${String(cur.json?.lockProblem)} / ${String(j?.lockProblem)}`);
+}
 check('its Revenue waits for one Airbnb reservation to be confirmed', row?.toConfirm === 1, String(row?.toConfirm));
 check('each amount says what is in it', /2 reservations/.test(row?.hints?.income ?? '') && /Electricity/.test(row?.hints?.utilities ?? '')
   && /aircon service/i.test(row?.hints?.additional ?? '') && /occupancy/.test(row?.hints?.misc ?? '') && /September charge entered late/.test(row?.hints?.o2 ?? ''),
@@ -134,6 +161,16 @@ check('Unlock all, with no reason, unlocks every unit whose owner is not final a
 await db(`UPDATE owner_statements SET state = 'provisional', finalised_at = NULL WHERE owner_id = $1 AND period_start = '2026-10-01'`, OWNER);
 r = await unlock('misc', [UNIT]);
 check('… and once the owner is no longer final, it unlocks too', r.status === 200 && (r.json?.unlocked ?? []).includes(UNIT), r.text);
+
+// chew, 13 Nov 2026: Unlock all where every locked unit's owner is final answers which units stay locked, by name,
+// instead of refusing with one reason that names nobody.
+await lock('misc', [UNIT]);
+await db(`UPDATE owner_statements SET state = 'finalised', finalised_at = $2 WHERE owner_id = $1 AND period_start = '2026-10-01'`, OWNER, now);
+r = await unlock('misc', 'all');
+check('Unlock all where the locked units are final names them', r.status === 200
+  && (r.json?.refused ?? []).some(x => x.unitId === UNIT && x.label === 'Lock Court K-01' && /final/.test(x.problem)), r.text.slice(0, 300));
+await db(`UPDATE owner_statements SET state = 'provisional', finalised_at = NULL WHERE owner_id = $1 AND period_start = '2026-10-01'`, OWNER);
+await unlock('misc', [UNIT]);
 
 // Review Focus 3: Lock all on Revenue skips exactly the units with Airbnb reservations still to confirm and locks the
 // rest (a unit with nothing to confirm, as in a month with no Airbnb file, locks). Undone at once: every unit of October.

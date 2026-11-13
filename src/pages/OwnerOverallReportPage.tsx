@@ -40,6 +40,8 @@ interface Payload {
   owners?: Record<string, OwnerFinal>; may?: LockMay; lockFrom?: string;
   /** The month's Airbnb payout files: none means Revenue has nothing to confirm yet. */
   airbnbFiles?: number;
+  /** Why the month cannot be locked (not yet ended): no locks are shown then. */
+  lockProblem?: string | null;
 }
 
 type Group = 'inc' | 'ded' | 'pro' | 'pay' | 'res';
@@ -204,7 +206,9 @@ export default function OwnerOverallReportPage() {
   // Previous / next follow the table as shown: group by group, each in the current sort.
   const order = groups.flatMap(g => g.rows);
   // The locks and the Close band: from the month the locks start. An owner's Final sits on the owner's first row as shown.
-  const showClose = !!data?.lockFrom && month >= data.lockFrom;
+  // A month not yet ended shows no locks and no Final (chew, 13 Nov 2026): nothing in it can be locked yet.
+  const showClose = !!data?.lockFrom && month >= data.lockFrom && !data.lockProblem;
+  const notYet = !!data?.lockFrom && month >= data.lockFrom && !!data.lockProblem;
   const firstOfOwner = new Set<string>();
   { const seen = new Set<string>(); for (const r of order) if (r.ownerId && !seen.has(r.ownerId)) { seen.add(r.ownerId); firstOfOwner.add(r.unitId); } }
   const label = monthLabel(month, { long: true });
@@ -563,6 +567,12 @@ export default function OwnerOverallReportPage() {
         count={<span className="tabular-nums">Showing {count(filtered.length)} of {count(all.length)} · {monthLabel(month, { long: true })}</span>}
       />
 
+      {notYet && (
+        <p className="m-0 flex items-start gap-2 text-meta text-muted-ink">
+          <span aria-hidden className="inline-flex pt-px text-info"><Icon name="Info" size="sm" /></span>
+          <span>{data?.lockProblem} Its amounts can be locked, and its statements made final, once the month ends.</span>
+        </p>
+      )}
       {showClose && data?.airbnbFiles === 0 && all.length > 0 && (
         <p className="m-0 flex items-start gap-2 text-meta text-muted-ink">
           <span aria-hidden className="inline-flex pt-px text-info"><Icon name="Info" size="sm" /></span>
