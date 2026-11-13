@@ -6,6 +6,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { fmtDayMonth } from "@2990s/shared";
 import { PageHeader } from "../../../components/Layout";
 import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
@@ -162,7 +163,7 @@ export function RenovationCalendar({ canWrite, embedded = false, initialPersonId
               return (
                 <section key={d}>
                   <h3 className={cn("text-xs font-semibold uppercase tracking-wide", d === today ? "text-primary" : "text-ink-secondary")}>
-                    {new Date(`${d}T00:00:00Z`).toLocaleDateString("en-MY", { weekday: "long", day: "numeric", month: "short", timeZone: "UTC" })}
+                    {new Date(`${d}T00:00:00Z`).toLocaleDateString("en-MY", { weekday: "long", timeZone: "UTC" })} {fmtDayMonth(d)}
                   </h3>
                   <ul className="mt-1 space-y-1">
                     {list.map((t) => (
