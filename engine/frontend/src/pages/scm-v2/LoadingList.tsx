@@ -74,7 +74,7 @@ export const LoadingList = () => {
     <div className="mx-auto w-full max-w-4xl space-y-4 p-4">
       <PageHeader
         eyebrow="Warehouse"
-        title="Loading List"
+        title="Loading list"
         description="Delivery orders waiting to load — what is on each, where it goes, and which lorry takes it. Scan the printed delivery order to confirm loading."
       />
 

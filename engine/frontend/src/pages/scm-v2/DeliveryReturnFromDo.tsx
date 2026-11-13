@@ -371,7 +371,7 @@ export const DeliveryReturnFromDo = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Supply Chain"
-        title="Pick Delivery Order lines to return"
+        title="Pick delivery order lines to return"
         actions={
           <>
             <div className={styles.actions}>

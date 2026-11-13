@@ -286,7 +286,7 @@ export const BalanceSheetTab = () => {
         {!monthly && q.data && <ExportButtons sheet={sheet} fileBase={`balance-sheet-${asOf}`} />}
       </div>
       {editing && <ReportLayoutEditor report="balance_sheet" onClose={() => setEditing(false)} />}
-      {monthly && <MonthlyReport<BsResponse> report="balance-sheet" title="Balance Sheet (as at month end)" withCumulative={false} fetchColumn={fetchBsColumn} linesOf={balanceSheetLines} fmt={fmtSenPlain} pctTitle="% of total assets" />}
+      {monthly && <MonthlyReport<BsResponse> report="balance-sheet" title="Balance sheet (as at month end)" withCumulative={false} fetchColumn={fetchBsColumn} linesOf={balanceSheetLines} fmt={fmtSenPlain} pctTitle="% of total assets" />}
       {!monthly && q.isLoading && <div style={soft}>Adding the ledger up…</div>}
       {!monthly && q.isError && <div style={{ fontSize: 'var(--fs-13)', color: 'var(--c-danger, #a33)' }}>The statement did not load — pick the date again to retry.</div>}
       {!monthly && q.data && lay && (

@@ -369,7 +369,7 @@ function ChatSystemRow({ a }: { a: ActivityRow }) {
         {a.from_value && a.to_value && a.from_value !== a.to_value && (
           <span className="ml-1">
             <span className="font-mono">{a.from_value}</span>
-            <span className="mx-1 text-ink-muted/70">→</span>
+            <span className="mx-1 text-ink-muted">→</span>
             <span className="font-mono">{a.to_value}</span>
           </span>
         )}
@@ -385,9 +385,9 @@ function ChatSystemRow({ a }: { a: ActivityRow }) {
         )}
         {a.note && <span className="ml-1">· {a.note}</span>}
         {a.user_name && (
-          <span className="ml-1 text-ink-muted/80">· {a.user_name}</span>
+          <span className="ml-1 text-ink-muted">· {a.user_name}</span>
         )}
-        <span className="ml-1.5 font-mono text-ink-muted/70">
+        <span className="ml-1.5 font-mono text-ink-muted">
           {relativeTime(a.created_at)}
         </span>
       </div>

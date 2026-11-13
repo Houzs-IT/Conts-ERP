@@ -61,7 +61,7 @@ function HealthBanner({ tone, label, detail }: { tone: BannerTone; label: string
       <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: c.fg, animation: tone === 'loading' ? undefined : 'pulse-soft 2.4s ease-in-out infinite' }} />
       <div className="min-w-0 flex-1">
         <div className="text-copy font-semibold">{label}</div>
-        {detail && <div className="mt-0.5 text-meta opacity-90">{detail}</div>}
+        {detail && <div className="mt-0.5 text-meta">{detail}</div>}
       </div>
     </div>
   );

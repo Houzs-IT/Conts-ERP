@@ -40,7 +40,7 @@ export function Breadcrumbs({
             {i > 0 && (
               <ChevronRight
                 size={12}
-                className="shrink-0 text-ink-muted/50"
+                className="shrink-0 text-ink-muted"
                 strokeWidth={2}
               />
             )}

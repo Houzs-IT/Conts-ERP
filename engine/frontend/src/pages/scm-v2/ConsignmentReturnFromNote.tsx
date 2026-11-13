@@ -295,7 +295,7 @@ export const ConsignmentReturnFromNote = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Supply Chain"
-        title="Pick Consignment Note lines to return"
+        title="Pick consignment note lines to return"
         actions={
           <>
             <div className={styles.actions}>

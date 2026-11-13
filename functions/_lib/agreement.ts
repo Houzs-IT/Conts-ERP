@@ -53,7 +53,7 @@ export const usedKeys = (body: string) => [...new Set([...body.matchAll(/\{\{\s*
 
 export interface Template { id: string; version: number; title: string; body: string; createdAt: string; createdBy: string | null }
 
-export async function templatesReady(env: Env) { return hasColumn(env, 'agreement_templates', 'body').catch(() => false); }
+export async function templatesReady(env: Env) { return hasColumn(env, 'agreement_templates', 'body'); }
 export async function currentTemplate(env: Env): Promise<Template | null> {
   if (!(await templatesReady(env))) return null;
   const r = await one<any>(env, 'SELECT id, version, title, body, created_at, created_by_label FROM agreement_templates ORDER BY version DESC LIMIT 1');
@@ -63,8 +63,8 @@ export async function currentTemplate(env: Env): Promise<Template | null> {
 /** The values for one unit's agreement, and the placeholders the template uses that have no value yet. */
 export async function agreementValues(env: Env, unitId: string, body: string): Promise<{ values: Record<string, string>; missing: { key: string; label: string; where: string }[]; contractId: string | null } | null> {
   const q: Query = (sql, ...args) => all(env, sql, ...args);
-  const ownerAddr = await hasColumn(env, 'owners', 'address_lines').catch(() => false);
-  const codeCol = await hasColumn(env, 'owner_contracts', 'contract_code').catch(() => false);
+  const ownerAddr = await hasColumn(env, 'owners', 'address_lines');
+  const codeCol = await hasColumn(env, 'owner_contracts', 'contract_code');
   const u = await one<any>(env, `
     SELECT u.id, u.unit_number, u.unit_code, u.address, u.bedrooms, u.bathrooms, u.layout_type, u.package, u.split_kind, u.split_value, u.misc_charges,
            p.name AS building, p.address_line, p.city, p.state, p.postcode,

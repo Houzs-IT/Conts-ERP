@@ -3,7 +3,7 @@ import { type Session, hasColumn } from './auth';
 import { technicianFor } from './notify';
 
 /** Migration 0144: the technician list (HR > Employees) and each job's link to it. */
-export const hasTechnicianList = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'technician_id').catch(() => false);
+export const hasTechnicianList = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'technician_id');
 
 /** The logins an in-house entry on the technician list may be linked to. */
 export const TECH_LOGIN_ROLES = ['technician', 'housekeeper', 'operations_staff'];
@@ -41,7 +41,7 @@ export async function pickAssignee(env: Env, session: Session, raw: string): Pro
  *  active account with that name, or null for a contractor or a name two accounts share. Undefined when the column is
  *  not on this database, so callers write nothing new. */
 export async function assigneeUserId(env: Env, name: string | null): Promise<string | null | undefined> {
-  if (!(await hasColumn(env, 'maintenance_issues', 'assignee_user_id').catch(() => false))) return undefined;
+  if (!(await hasColumn(env, 'maintenance_issues', 'assignee_user_id'))) return undefined;
   const ids = name ? await technicianFor(env, name) : [];
   return ids.length === 1 ? ids[0] : null;
 }
@@ -67,10 +67,10 @@ export function toInstant(v: unknown): string | null {
 
 /** Migration 0108: billing date, money collected, and what the technician or contractor is owed and when it was paid.
  *  Without it those fields are left out of every read and refused on write, and the job works as before. */
-export const hasBilling = (env: Env) => hasColumn(env, 'maintenance_issues', 'billing_date').catch(() => false);
+export const hasBilling = (env: Env) => hasColumn(env, 'maintenance_issues', 'billing_date');
 
 /** Migration 0255: property_id on a job that sits in a building, not a unit. Without it every job has a unit. */
-export const hasBuildingJobs = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'property_id').catch(() => false);
+export const hasBuildingJobs = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'property_id');
 
 export const BUILDING_JOB_LABEL = 'Building (no unit)';
 
@@ -96,9 +96,9 @@ export function mineSql(byId: boolean) {
   return byId ? `(m.assignee_user_id = ? OR (m.assignee_user_id IS NULL AND ${named}))` : named;
 }
 
-export const hasAssigneeUser = (env: Env) => hasColumn(env, 'maintenance_issues', 'assignee_user_id').catch(() => false);
+export const hasAssigneeUser = (env: Env) => hasColumn(env, 'maintenance_issues', 'assignee_user_id');
 
-export const hasSupportRequest = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'support_requested_at').catch(() => false);
+export const hasSupportRequest = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'support_requested_at');
 
 /** Whether a repair job is the signed-in field user's: the rule every field write on a repair checks. */
 export async function isAssignee(env: Env, id: string, userId: string): Promise<boolean> {
@@ -122,7 +122,7 @@ export const SEVERITIES = ['minor', 'major'] as const;
 export const urgencyOf = (jobType: string) => (jobType === 'urgent' ? 'urgent' : 'normal');
 
 /** Migration 0126: job type, severity, parts and due date. Without it jobs are Normal or Urgent as before. */
-export const hasJobType = (env: Env) => hasColumn(env, 'maintenance_issues', 'job_type').catch(() => false);
+export const hasJobType = (env: Env) => hasColumn(env, 'maintenance_issues', 'job_type');
 
 /** Management's rule per problem category for when the owner must approve a job before work starts
  *  (Maintenance > Approval rules, owner 17 Oct 2026): never, always, only Major jobs, or when the quote is over an amount. */

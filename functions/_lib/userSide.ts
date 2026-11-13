@@ -4,7 +4,7 @@ import { isSide, isKind, sideSql, type DepartmentKind, type Side } from './acces
 
 /** Migration 0143: which side of the business a staff account works on (Side in access.ts). Before the migration
  *  runs every account reads 'both'. */
-export const userSideReady = (env: Env) => hasColumn(env, 'users', 'side').catch(() => false);
+export const userSideReady = (env: Env) => hasColumn(env, 'users', 'side');
 
 /** Where an account sits, read where a sign-in issues a fresh cookie (migration 0145). The side follows sideSql in
  *  access.ts: the department's, or the person's own in a department on both sides (and for an owner, who has none). */

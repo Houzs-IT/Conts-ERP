@@ -1024,7 +1024,7 @@ export function AutoCountSync() {
     <div className="space-y-4">
       <PageHeader
         eyebrow="System · AutoCount"
-        title="AutoCount Sync"
+        title="AutoCount sync"
         description="Every document this company has sent to AutoCount, whether it arrived, and — when it did not — what happened and what to do about it."
         actions={
           <Button

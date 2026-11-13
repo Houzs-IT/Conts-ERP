@@ -300,7 +300,7 @@ export const ApInvoices = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Finance"
-        title="AP Invoices"
+        title="AP invoices"
         actions={canCreate ? (
           <span style={{ display: 'inline-flex', gap: 'var(--space-4)', alignItems: 'center' }}>
             {/* The pile: many supplier bills at once, read and split one AP

@@ -188,7 +188,7 @@ const IncomeStatementCard = ({ periods }: { periods: DashboardPeriod[] }) => {
     { id: 'vs-last', label: periods.length > 0 && periods[0]!.months.length > 1 ? 'vs last quarter' : 'vs last month', cells: vsLast.map((v) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`)) },
   ];
   return (
-    <CardShell title="Income Statement" controls={<Tabs options={METRICS} value={metricKey} onChange={setMetricKey} />}>
+    <CardShell title="Income statement" controls={<Tabs options={METRICS} value={metricKey} onChange={setMetricKey} />}>
       <DashboardChart labels={periods.map(labelOf)} bars={bars} lines={lines} ariaLabel={`${metric.label} — actual bars, forecast line`} />
       <FiguresTable periods={periods} rows={rows} ariaLabel={`${metric.label} figures`} />
     </CardShell>
@@ -366,7 +366,7 @@ const CashFlowCard = ({ periods }: { periods: DashboardPeriod[] }) => {
     })) : []),
   ];
   return (
-    <CardShell title="Cash Flow" controls={<><Tabs options={CASH_TABS} value={tab} onChange={setTab} /><Button variant="ghost" size="sm" onClick={() => setDetail((d) => !d)}>{detail ? 'Summary' : 'Detail'}</Button></>}>
+    <CardShell title="Cash flow" controls={<><Tabs options={CASH_TABS} value={tab} onChange={setTab} /><Button variant="ghost" size="sm" onClick={() => setDetail((d) => !d)}>{detail ? 'Summary' : 'Detail'}</Button></>}>
       <DashboardChart labels={periods.map(labelOf)} bars={bars} ariaLabel={`Cash ${tab} per period`} />
       <FiguresTable periods={periods} rows={rows} ariaLabel="Cash flow figures" />
     </CardShell>
@@ -392,7 +392,7 @@ const BalanceSheetCard = ({ periods }: { periods: DashboardPeriod[] }) => {
     { id: 'check', label: 'Self-check (must be 0.00)', cells: periods.map((p) => fmtOrDash(p.balanceSheet?.checkSen)), tone: periods.map((p) => (p.balanceSheet == null || p.balanceSheet.checkSen === 0 ? null : 'bad')) },
   ];
   return (
-    <CardShell title="Balance Sheet">
+    <CardShell title="Balance sheet">
       <DashboardChart labels={periods.map(labelOf)} bars={bars} lines={lines} ariaLabel="Assets and liabilities, debt-to-asset % on the right axis" />
       <FiguresTable periods={periods} rows={rows} ariaLabel="Balance sheet figures" />
     </CardShell>
@@ -418,7 +418,7 @@ const RatiosCard = ({ periods }: { periods: DashboardPeriod[] }) => {
   const lines: ChartLine[] = [{ key: def.key, label: def.label, color: PETROL, values }];
   const rows: TableRow[] = [{ id: def.key, label: def.label, cells: values.map((v) => (def.unit === 'pct' ? fmtPct(v) : fmtRatio(v))), strong: true }];
   return (
-    <CardShell title="Financial Ratios" controls={<Tabs options={RATIOS} value={key} onChange={setKey} />}>
+    <CardShell title="Financial ratios" controls={<Tabs options={RATIOS} value={key} onChange={setKey} />}>
       <DashboardChart labels={periods.map(labelOf)} bars={[]} lines={lines} unit={def.unit} ariaLabel={`${def.label} per period`} />
       <FiguresTable periods={periods} rows={rows} ariaLabel="Ratio figures" />
       <div style={soft}>Margins off the period's P&L; current and quick ratios, ROE and ROA off the balance sheet at the period's end (ROE and ROA on the period's net profit, not annualised).</div>

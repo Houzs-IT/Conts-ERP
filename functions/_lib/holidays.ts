@@ -7,7 +7,7 @@ import type { PublicHoliday } from './leaveRules';
  *  Leave, read by pricing (holiday prices, sent to Channex) and by leave and payroll (staff days off).
  *  Before 0202 the list lived in settings 'hr.public_holidays' and HR alone used it; readers fall back to it. */
 
-export const holidaysReady = (env: Env): Promise<boolean> => hasColumn(env, 'public_holidays', 'id').catch(() => false);
+export const holidaysReady = (env: Env): Promise<boolean> => hasColumn(env, 'public_holidays', 'id');
 export const HOLIDAYS_NOT_MIGRATED = 'The shared public holiday list needs a database update (migration 0202) that has not been applied yet.';
 export const OLD_HOLIDAYS_KEY = 'hr.public_holidays';
 

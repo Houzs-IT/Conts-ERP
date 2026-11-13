@@ -236,7 +236,7 @@ export const AutoSchedule = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Delivery"
-        title="Delivery Date Arrangement"
+        title="Delivery date arrangement"
         description="Tick pending orders and propose delivery dates by postcode zone — apply writes the amended date only; lorries and times are arranged next in Delivery Time Arrangement."
       />
 

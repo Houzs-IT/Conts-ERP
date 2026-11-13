@@ -88,7 +88,7 @@ export const Fleet = ({ embedded = false }: { embedded?: boolean } = {}) => {
       {!embedded && (
         <PageHeader
           eyebrow="Delivery"
-          title="Driver & Helper"
+          title="Driver & helper"
           description="Open and manage your drivers, helpers, and lorries."
         />
       )}
@@ -289,7 +289,7 @@ const CreateDriverDrawer = ({ onClose }: { onClose: () => void }) => {
       <div className={styles.backdrop} onClick={onClose} />
       <aside className={styles.drawer}>
         <header className={styles.drawerHeader}>
-          <h2 className={styles.drawerTitle}>New Driver</h2>
+          <h2 className={styles.drawerTitle}>New driver</h2>
           <button type="button" className={styles.iconBtn} onClick={onClose}><X {...ICON} /></button>
         </header>
         <div className={styles.drawerBody}>
@@ -454,7 +454,7 @@ const CreateHelperDrawer = ({ onClose }: { onClose: () => void }) => {
       <div className={styles.backdrop} onClick={onClose} />
       <aside className={styles.drawer}>
         <header className={styles.drawerHeader}>
-          <h2 className={styles.drawerTitle}>New Helper</h2>
+          <h2 className={styles.drawerTitle}>New helper</h2>
           <button type="button" className={styles.iconBtn} onClick={onClose}><X {...ICON} /></button>
         </header>
         <div className={styles.drawerBody}>
@@ -679,7 +679,7 @@ const CreateLorryDrawer = ({ onClose }: { onClose: () => void }) => {
       <div className={styles.backdrop} onClick={onClose} />
       <aside className={styles.drawer}>
         <header className={styles.drawerHeader}>
-          <h2 className={styles.drawerTitle}>New Lorry</h2>
+          <h2 className={styles.drawerTitle}>New lorry</h2>
           <button type="button" className={styles.iconBtn} onClick={onClose}><X {...ICON} /></button>
         </header>
         <div className={styles.drawerBody}>

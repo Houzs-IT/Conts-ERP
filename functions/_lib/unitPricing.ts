@@ -17,7 +17,7 @@ export interface UnitPricing {
   state: string | null;
 }
 
-export const pricingReady = (env: Env): Promise<boolean> => hasColumn(env, 'units', 'holiday_rate').catch(() => false);
+export const pricingReady = (env: Env): Promise<boolean> => hasColumn(env, 'units', 'holiday_rate');
 const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 const IN = 'IN (SELECT jsonb_array_elements_text(?::text::jsonb))';
 

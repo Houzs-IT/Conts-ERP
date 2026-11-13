@@ -129,7 +129,7 @@ export function DetailLayout({
                     isLast ? "font-semibold text-ink" : "text-ink-secondary"
                   )}
                 >
-                  {i > 0 && <span className="mr-1 text-ink-muted/50">/</span>}
+                  {i > 0 && <span className="mr-1 text-ink-muted">/</span>}
                   {item.label}
                 </span>
               );

@@ -43,7 +43,7 @@ const variants: Record<Look, CSSProperties> = {
   secondary: { background: 'var(--color-surface-card)', color: 'var(--color-text-primary)', borderColor: 'var(--color-border-default)' },
   tertiary:  { background: 'transparent', color: 'var(--color-text-muted)' },
   brand:     { background: 'transparent', color: 'var(--color-text-accent)', borderColor: 'var(--color-brand-gold)' },
-  danger:    { background: 'var(--color-critical-solid)', color: 'var(--color-text-inverse)' },
+  danger:    { background: 'var(--color-critical-solid)', color: 'var(--color-on-danger-solid)' },
 };
 
 export function Button({

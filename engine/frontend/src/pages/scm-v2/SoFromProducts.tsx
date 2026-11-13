@@ -356,7 +356,7 @@ export const SoFromProducts = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Supply Chain"
-        title="Generate SO from Products"
+        title="Generate SO from products"
         actions={
           <div className={styles.actions}>
             <Button variant="ghost" size="md" onClick={() => navigate('/scm/sales-orders')}>

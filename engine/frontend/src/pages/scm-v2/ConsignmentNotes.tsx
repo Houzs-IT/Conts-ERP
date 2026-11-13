@@ -413,7 +413,7 @@ export const ConsignmentNotes = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Supply Chain"
-        title="Consignment Notes"
+        title="Consignment notes"
         actions={
           <div style={{ display: 'inline-flex', gap: 'var(--space-2)' }}>
             <Button variant="primary" size="sm" onClick={onNew}>

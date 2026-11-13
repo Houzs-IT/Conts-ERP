@@ -279,7 +279,7 @@ export function StockAdjustments() {
     <div>
       <PageHeader
         eyebrow="Inventory"
-        title="Stock Adjustments"
+        title="Stock adjustments"
         description="Manual stock corrections across every warehouse — damage, recounts, transfers and supplier returns, fully audit-logged."
         primaryAction={
           <Button

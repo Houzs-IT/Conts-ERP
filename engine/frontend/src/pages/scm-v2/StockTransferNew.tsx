@@ -313,7 +313,7 @@ const StockTransferForm = ({ onStartNew }: { onStartNew: () => void }) => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Warehouse"
-        title="New Stock Transfer"
+        title="New stock transfer"
         actions={
           created ? (
             <div className={styles.actions}>

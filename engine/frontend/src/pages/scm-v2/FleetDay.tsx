@@ -565,7 +565,7 @@ export function FleetDay() {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Delivery"
-        title="Last Mile Delivery"
+        title="Last mile delivery"
         description="The day's time-arranged orders and their trips — manage crew on the trip cards, watch every lorry's route on the side map, and print the driver run-sheet."
         primaryAction={
           <Button variant="secondary" icon={<Printer size={14} />} onClick={() => goPrint()} disabled={trips.length === 0}>

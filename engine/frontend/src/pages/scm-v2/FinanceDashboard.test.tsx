@@ -121,7 +121,7 @@ describe('the Financial Dashboard page', () => {
     /* The forecast's line has one segment (Sep → Oct) and two points: August has no forecast, so nothing is drawn there. */
     expect(document.querySelectorAll('[data-segment="forecast"]').length).toBe(1);
     expect(document.querySelectorAll('[data-point="forecast"]').length).toBe(2);
-    expect(inCard('Income Statement', '[data-group="actual"]')).toBe(2);
+    expect(inCard('Income statement', '[data-group="actual"]')).toBe(2);
     fireEvent.click(screen.getByRole('tab', { name: 'Net Profit' }));
     expect(cells('actual')).toEqual(['19,000.00', '18,000.00', '—']);
     expect(cells('actual-pct')).toEqual(['19.0%', '36.0%', '—']);

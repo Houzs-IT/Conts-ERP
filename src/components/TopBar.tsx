@@ -1,8 +1,8 @@
-import { Fragment, lazy, Suspense, useEffect, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
+import { Fragment, lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { LOOKS, sidebarLookKey, useDarkTheme } from './Sidebar';
+import { LOOKS, readWs, sidebarLookKey, useDarkTheme } from './Sidebar';
 import { color, radius, text, shell, motion } from '../theme';
-import { findNav } from '../lib/navigation';
+import { findNav, workspaceOf } from '../lib/navigation';
 import { useNavCounts } from '../lib/navBadges';
 import { relative } from '../lib/format';
 import Icon from './Icon';
@@ -33,7 +33,9 @@ export default function TopBar({
   const nav = findNav(path);
   // The browser tab names the page, so tabs, history and screen readers can tell pages apart.
   const pageName = nav ? (nav.page ?? nav.label) : path === '/account' ? 'My account' : path === '/notifications' ? 'Notifications' : null;
-  useEffect(() => { document.title = pageName ? `${pageName} · The Conts` : 'The Conts Property OS'; }, [pageName]);
+  // A supply chain screen is Dream Crafter's side; a page on neither side (My account) follows the sidebar's last company switch.
+  const company = (workspaceOf(path) ?? readWs()) === 'supply' ? 'Dream Crafter' : 'The Conts';
+  useEffect(() => { document.title = pageName ? `${pageName} · ${company}` : 'The Conts Property OS'; }, [pageName, company]);
   const ctl = compact ? 40 : shell.controlSm;
   const go = (p: string) => navigate?.(p);
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -60,6 +62,33 @@ export default function TopBar({
   /* ------------------------ notifications ------------------------ */
   const counts = useNavCounts(path);
   const channelSync = counts?.channels;
+  // lastSentAt is the last ARI call Channex accepted (functions/api/nav/badges.ts). Calls only go out when something
+  // changes (a rate, a block), never on a timer, and HostPlatform-imported bookings never call Channex: weeks of
+  // silence are normal (prod, 19 Oct–13 Nov 2026: 0 queued, 0 failed), so only refused updates warn.
+  const sentDays = channelSync?.lastSentAt ? Math.floor((Date.now() - Date.parse(channelSync.lastSentAt)) / 864e5) : 0;
+  const syncWarn = !!channelSync?.failed;
+  const syncText = channelSync?.failed ? 'Channel updates need attention'
+    : channelSync?.lastSentAt ? `Sent to channels ${sentDays >= 2 ? `${sentDays} days ago` : relative(channelSync.lastSentAt).toLowerCase()}`
+    : 'Channels connected';
+
+  /* The search button goes icon-only when its label would be cut short (the SegmentedRow pattern in Metric.tsx):
+     it comes back once the space around it is wider than when it went. */
+  const searchLabel = useRef<HTMLSpanElement>(null);
+  const searchRow = useRef<HTMLDivElement>(null);
+  const [searchIcon, setSearchIcon] = useState(false);
+  const searchIconAt = useRef(0);
+  useLayoutEffect(() => {
+    const el = searchLabel.current;
+    if (el && el.scrollWidth > el.clientWidth + 1) { searchIconAt.current = searchRow.current?.clientWidth ?? 0; setSearchIcon(true); }
+  });
+  useEffect(() => {
+    const row = searchRow.current;
+    if (compact || !row || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => { if (row.clientWidth > searchIconAt.current + 1) setSearchIcon(false); });
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [compact]);
+  const searchSquare = compact || searchIcon;
 
   /* The Beta screens wear the glass look of the Project Workspace designs (v10 light, v13 night): the bar floats as a
      glass pill, as the designs draw their top bar. The colour tokens are re-set on the bar only, so the search box,
@@ -102,27 +131,26 @@ export default function TopBar({
         })()}
       </nav>}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: compact ? 'none' : '1 1 auto', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
-        <button type="button" onClick={() => setSearchOpen(true)} aria-label="Search" aria-keyshortcuts="/ Control+K Meta+K"
-          style={compact
-            ? { width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', padding: 0, border: `1px solid ${color.border}`, borderRadius: radius.control, background: color.card, color: color.ink, cursor: 'pointer' }
+      <div ref={searchRow} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: compact ? 'none' : '1 1 auto', justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
+        <button type="button" onClick={() => setSearchOpen(true)} aria-label="Search" aria-keyshortcuts="/ Control+K Meta+K" title={searchIcon ? 'Search' : undefined}
+          style={searchSquare
+            ? { width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', padding: 0, border: `1px solid ${color.border}`, borderRadius: dc ? radius.pill : radius.control, background: color.card, color: color.ink, cursor: 'pointer' }
             : { display: 'flex', alignItems: 'center', gap: 8, height: shell.controlSm, padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: dc ? radius.pill : radius.control, background: color.card, color: color.textMuted, flex: '0 1 260px', minWidth: 44, overflow: 'hidden', cursor: 'text', font: 'inherit', textAlign: 'left' }}>
           <Icon name="Search" size={compact ? 'nav' : 'sm'} />
-          {!compact && <span style={{ fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Search anything</span>}
-          {!compact && <span style={{ marginLeft: 'auto', fontSize: text.micro, color: color.faint, flex: 'none' }}>{isMac ? '⌘K' : 'Ctrl K'}</span>}
+          {!searchSquare && <span ref={searchLabel} style={{ fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Search anything</span>}
+          {!searchSquare && <span style={{ marginLeft: 'auto', fontSize: text.micro, color: color.faint, flex: 'none' }}>{isMac ? '⌘K' : 'Ctrl K'}</span>}
         </button>
 
         {/* Shown only when units are really connected to a booking site; never a fixed figure. */}
         {channelSync && channelSync.units > 0 && (
-          <Link to="/system/integrations" title={channelSync.failed ? 'Channel updates need attention' : 'Channels connected · open Integrations'}
-            aria-label={compact ? (channelSync.failed ? 'Channel updates need attention' : 'Channels connected') : undefined}
+          <Link to="/system/integrations" title={`${syncText} · open Integrations`} aria-label={compact ? syncText : undefined}
             style={compact
-              ? { width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', boxSizing: 'border-box', border: `1px solid ${color.border}`, borderRadius: radius.control }
+              ? { position: 'relative', width: ctl, height: ctl, flex: 'none', display: 'grid', placeItems: 'center', boxSizing: 'border-box', border: `1px solid ${color.border}`, borderRadius: radius.control, color: color.ink }
               : { display: 'flex', alignItems: 'center', gap: 7, height: shell.controlSm, flex: 'none', padding: '0 12px', border: `1px solid ${color.border}`, borderRadius: radius.control, fontSize: text.small, whiteSpace: 'nowrap', color: color.textMuted, textDecoration: 'none' }}>
-            <span className={channelSync.failed ? undefined : 'animate-live'} style={{ width: compact ? 8 : 6, height: compact ? 8 : 6, borderRadius: radius.pill, background: channelSync.failed ? 'var(--color-warning-line)' : 'var(--color-success-line)' }} />
-            {!compact && <span>{channelSync.failed
-              ? 'Channel updates need attention'
-              : channelSync.lastSentAt ? `Sent to channels ${relative(channelSync.lastSentAt)}` : 'Channels connected'}</span>}
+            {/* Phone: a sync icon says what the control is; the dot on its corner says how it stands. */}
+            {compact && <Icon name="RefreshCw" size="nav" />}
+            <span className={syncWarn ? undefined : 'animate-live'} style={{ width: compact ? 8 : 6, height: compact ? 8 : 6, borderRadius: radius.pill, background: syncWarn ? 'var(--color-warning-line)' : 'var(--color-success-line)', ...(compact && { position: 'absolute', top: 6, right: 6, boxShadow: `0 0 0 2px ${color.card}` }) }} />
+            {!compact && <span>{syncText}</span>}
           </Link>
         )}
 

@@ -398,7 +398,7 @@ export function UnbilledDeliveriesV2() {
     <PullToRefresh onRefresh={onPullToRefresh}>
       <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
         <div className="min-w-0">
-          <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Not Yet Billed</h1>
+          <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Not yet billed</h1>
           <div className="mt-0.5 text-[12.5px] text-ink-muted">
             {statsPending ? (
               "Loading…"
@@ -414,7 +414,7 @@ export function UnbilledDeliveriesV2() {
       <div className="hidden md:block">
         <PageHeader
           eyebrow="Finance"
-          title="Delivered, Not Yet Billed"
+          title="Delivered, not yet billed"
           description="Goods that have left the warehouse with no invoice against them. Counted line by line, so a delivery that was only partly invoiced still shows the part nobody charged for. The newest month is normal billing lag — the money is in the old rows."
         />
       </div>

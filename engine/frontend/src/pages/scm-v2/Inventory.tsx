@@ -1421,7 +1421,7 @@ const ProductBreakdownDrawer = ({
         className="w-[920px] max-w-[96vw] overflow-auto bg-bg p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
           <div>
-            <h2 className="font-display text-[18px] font-extrabold leading-tight tracking-tight text-ink">Stock Breakdown</h2>
+            <h2 className="font-display text-[18px] font-extrabold leading-tight tracking-tight text-ink">Stock breakdown</h2>
             <p className="mt-1 text-[13px] text-ink-secondary">
               <span className={styles.codeChip}>{code}</span> {name}
             </p>
@@ -1961,7 +1961,7 @@ const WarehouseDrawer = ({
         className="w-[480px] max-w-[95vw] overflow-auto bg-bg p-5">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-3">
           <h2 className="font-display text-[20px] font-extrabold leading-tight tracking-tight text-ink">
-            {editing ? 'Edit Warehouse' : 'New Warehouse'}
+            {editing ? 'Edit warehouse' : 'New warehouse'}
           </h2>
           <button type="button" className={styles.chip} onClick={onClose}>
             <X {...ICON} />

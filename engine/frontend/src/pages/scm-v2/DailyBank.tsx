@@ -84,7 +84,7 @@ export const DailyBank = () => {
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow="Finance" title="Daily Bank" />
+      <PageHeader eyebrow="Finance" title="Daily bank" />
 
       <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
         <button type="button" style={btnStyle(view === 'board')} onClick={() => setView('board')}>Board</button>

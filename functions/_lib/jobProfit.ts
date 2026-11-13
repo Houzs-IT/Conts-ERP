@@ -10,7 +10,7 @@ import { priceBook, layoutKey } from './cleaningPrices';
  *  actual cost is The Conts' figure; nothing here is shown to an owner. */
 /** Who sees a job's actual cost and profit: the roles that see repair amounts today. */
 
-export const hasJobInvoices = (env: Env) => hasColumn(env, 'expenses', 'invoice_task_id').catch(() => false);
+export const hasJobInvoices = (env: Env) => hasColumn(env, 'expenses', 'invoice_task_id');
 
 export type CostSource = 'invoice' | 'estimate' | 'cleaner_pay' | null;
 export interface Invoice { id: string; supplier: string | null; invoiceNo: string | null; date: string; amount: number; documentId: string | null; enteredBy: string | null }
@@ -78,7 +78,7 @@ export async function cleaningMoney(env: Env, ids: string[]): Promise<Map<string
   const out = new Map<string, JobMoney>();
   if (!ids.length) return out;
   const ready = await hasJobInvoices(env);
-  const layout = (await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'u.layout_type' : 'NULL::text';
+  const layout = (await hasColumn(env, 'units', 'layout_type')) ? 'u.layout_type' : 'NULL::text';
   const json = JSON.stringify(ids);
   const [jobs, charged, invoices] = await Promise.all([
     all<any>(env, `SELECT t.id, t.kind, t.unit_id, t.amount, t.cleaner_pay, u.bedrooms, ${layout} AS layout_type, COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at

@@ -1158,7 +1158,7 @@ export function DeliveryOrderNewV2() {
             </button>
             <div className="min-w-0">
               <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-                {editId ? "Edit Delivery Order" : "New Delivery Order"}
+                {editId ? "Edit delivery order" : "New delivery order"}
               </h1>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-[12.5px] text-ink-secondary">
                 <span>{editId ? "Editing · changes save in place" : "Draft · not yet saved"}</span>

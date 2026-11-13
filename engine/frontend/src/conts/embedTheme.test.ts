@@ -27,4 +27,15 @@ describe("Theme hand-off", () => {
     expect(css).toMatch(/\[data-beta-skin="night"\] \.dt-table:not\(\.bg-surface \.dt-table\) \.text-ink \{ color: #EEF1F8; \}/);
     expect(night).toContain("--beta-ink:#EEF1F8;");
   });
+
+  it("the night Mail Center (embed.css) takes the Beta night surface and inks", () => {
+    const css = readFileSync(resolve(__dirname, "embed.css"), "utf8");
+    const night = BETA_SKIN_CSS.slice(BETA_SKIN_CSS.indexOf('html[data-beta-skin="night"]{'));
+    expect(css).toContain('[data-beta-skin="night"] .mail-center .bg-surface { background: #1C2030; }');
+    expect(night).toContain("--beta-surface:#1C2030;");
+    for (const [ink, token] of [["#EEF1F8", "ink"], ["#B9C0D0", "text2"], ["#9AA2B4", "muted"]]) {
+      expect(css).toMatch(new RegExp(`\\.mail-center :is\\(\\[class\\^="text-ink[^)]*\\) \\{ color: ${ink}; \\}`));
+      expect(night).toContain(`--beta-${token}:${ink};`);
+    }
+  });
 });

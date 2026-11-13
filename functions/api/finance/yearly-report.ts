@@ -37,7 +37,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   let unpricedCleans = 0;
   if (await hasCleanPrices(env)) {
     const team = (await taskCleanersReady(env)) ? 'EXISTS (SELECT 1 FROM task_cleaners tc WHERE tc.task_id = t.id AND tc.cleaner_id IS NOT NULL)' : 'FALSE';
-    const layout = (await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'u.layout_type' : 'NULL::text';
+    const layout = (await hasColumn(env, 'units', 'layout_type')) ? 'u.layout_type' : 'NULL::text';
     const jobs = await all<{ unit_id: string; kind: string; cleaner_pay: number | null; month: string; day_at: string; bedrooms: number | null; layout_type: string | null }>(env, `
       SELECT t.unit_id, t.kind, t.cleaner_pay, substr(${MYT_DATE('t.completed_at')}, 1, 7) AS month, COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at,
              u.bedrooms, ${layout} AS layout_type

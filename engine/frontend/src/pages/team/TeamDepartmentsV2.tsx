@@ -362,7 +362,7 @@ function DeptEditor({
     <Panel
       open
       onClose={onClose}
-      title={dept ? `Edit ${dept.name}` : "New Department"}
+      title={dept ? `Edit ${dept.name}` : "New department"}
       footer={
         <div className="flex items-center justify-between gap-2">
           {dept ? (

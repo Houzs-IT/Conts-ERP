@@ -11,7 +11,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!session.manage) return fail('FORBIDDEN', 'Only management, finance and operations managers can change lettings.', 403);
-  if (!(await hasColumn(env, 'unit_lettings', 'id').catch(() => false))) return fail('NOT_READY', 'Agent to let needs the latest database update.', 501);
+  if (!(await hasColumn(env, 'unit_lettings', 'id'))) return fail('NOT_READY', 'Agent to let needs the latest database update.', 501);
   const id = String(params.id);
   const cur = await one<any>(env, 'SELECT * FROM unit_lettings WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That record no longer exists.', 404);

@@ -15,7 +15,7 @@ export { DEPARTMENTS, DEPARTMENT_LABEL, type Department } from './hrFields';
  * punches; payroll reads them (payroll.ts monthInputs).
  */
 
-export const hasWorkingHours = (env: Env): Promise<boolean> => hasColumn(env, 'working_hour_entries', 'id').catch(() => false);
+export const hasWorkingHours = (env: Env): Promise<boolean> => hasColumn(env, 'working_hour_entries', 'id');
 export const NOT_MIGRATED = 'Working Hours needs a database update (migration 0171) that has not been applied yet.';
 /** The longest range the grid reads at once: two months. */
 export const MAX_RANGE_DAYS = 62;

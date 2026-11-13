@@ -3,7 +3,7 @@ import { hasColumn } from './auth';
 
 /** Migration 0110 (owner address and alternate contact) is applied by hand per environment. Until it is, reads send
  *  no address and saves ignore the address keys, so the owner page keeps working with the columns absent. */
-export const ownerDetailsReady = (env: Env) => hasColumn(env, 'owners', 'address_lines').catch(() => false);
+export const ownerDetailsReady = (env: Env) => hasColumn(env, 'owners', 'address_lines');
 
 export interface OwnerAddress { lines: string | null; postcode: string | null; city: string | null; state: string | null; country: string | null }
 export interface AltContact { name: string | null; phone: string | null; relation: string | null }

@@ -707,7 +707,7 @@ export const PurchaseInvoiceDetail = () => {
       {/* ── Line items ──────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Line Items ({isEditing ? editLines.length : visibleItems.length})</h2>
+          <h2 className={styles.cardTitle}>Line items ({isEditing ? editLines.length : visibleItems.length})</h2>
           {/* T12 — Edit mode restores the Create UI: a "+ Add item" that appends a
               blank PoLineCard (PI is free-entry). Hidden while the PI is locked.
               "Transfer from GRN" sits in the top header toolbar beside Save,
@@ -890,7 +890,7 @@ const SupplierCard = ({
   return (
     <section className={styles.card}>
       <header className={styles.cardHeader}>
-        <h2 className={styles.cardTitle}>Supplier · Dates · Notes</h2>
+        <h2 className={styles.cardTitle}>Supplier · dates · notes</h2>
       </header>
       <div className={styles.cardBody}>
         {!isEditing ? (

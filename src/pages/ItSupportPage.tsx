@@ -281,7 +281,7 @@ function OneRequest({ code }: { code: string }) {
             <span className="text-meta text-muted-ink">{kindLabel(t.type)} · {t.assignee_name ? `Handled by ${t.assignee_name}` : 'Not picked up yet'}</span>
           </div>
           <h2 className="m-0 text-title font-semibold [overflow-wrap:anywhere]">{t.title}</h2>
-          {t.description && <p className="m-0 text-copy leading-[1.55] whitespace-pre-wrap [overflow-wrap:anywhere]">{t.description}</p>}
+          {t.description && <p className="m-0 text-copy leading-[1.55] whitespace-pre-wrap [overflow-wrap:anywhere]">{t.description.replace(/\\r\\n|\\n|\\r/g, '\n')}</p>}
           {t.status === 'resolved' && (
             <div className="flex items-center gap-3 flex-wrap bg-success-bg rounded-control px-3 py-2.5">
               <span className="text-copy flex-1 min-w-[220px]">IT has marked this as done. If it is fixed, confirm to close it. If not, reply below and it goes back to IT.</span>

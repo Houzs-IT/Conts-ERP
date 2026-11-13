@@ -8,7 +8,7 @@ import { EMPLOYEE_DEFAULTS, type Bank, type Employee, type EmployeeStatus, type 
  * ported from Hookka's Employee Master. The database side; the fields and their rules are in hrFields.ts.
  */
 
-export const hasEmployees = (env: Env): Promise<boolean> => hasColumn(env, 'employees', 'id').catch(() => false);
+export const hasEmployees = (env: Env): Promise<boolean> => hasColumn(env, 'employees', 'id');
 
 /**
  * Every in-house person on the two rosters, one row each: an in-house cleaner (with the in-house technician entry of the
@@ -96,7 +96,7 @@ export async function findEmployee(env: Env, by: { cleanerId?: string | null; te
   return row ? toEmployee(row) : null;
 }
 
-export const hasRenovationDepartment = (env: Env): Promise<boolean> => hasColumn(env, 'employees', 'renovator_id').catch(() => false);
+export const hasRenovationDepartment = (env: Env): Promise<boolean> => hasColumn(env, 'employees', 'renovator_id');
 
 const RENOVATION_PEOPLE = `
   SELECT NULL AS p_cleaner_id, NULL AS p_technician_id, r.full_name, r.phone, r.is_active, NULL AS cleaner_active,

@@ -556,7 +556,7 @@ export const ChartOfAccounts = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Finance"
-        title="Chart of Accounts"
+        title="Chart of accounts"
         actions={canManage ? (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             <button

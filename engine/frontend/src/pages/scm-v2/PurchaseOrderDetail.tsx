@@ -1289,7 +1289,7 @@ export const PurchaseOrderDetail = () => {
       {/* ── Line items ──────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Line Items ({isEditing ? editLines.length : visibleItems.length})</h2>
+          <h2 className={styles.cardTitle}>Line items ({isEditing ? editLines.length : visibleItems.length})</h2>
           {/* Owner 2026-06-19 — Edit mode restores the Create UI: a "+ Add item"
               that appends a blank PoLineCard (committed by the page-level Save).
               Hidden while the PO is locked. */}
@@ -1596,7 +1596,7 @@ const SupplierCard = ({
   return (
     <section className={styles.card}>
       <header className={styles.cardHeader}>
-        <h2 className={styles.cardTitle}>Supplier · Dates · Notes</h2>
+        <h2 className={styles.cardTitle}>Supplier · dates · notes</h2>
         {/* Commander 2026-05-29 — the card's own Save is gone; the single top
             "Save" commits the whole PO draft (header + line edits). */}
       </header>

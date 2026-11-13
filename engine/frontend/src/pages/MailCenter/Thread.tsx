@@ -448,7 +448,7 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
   const isClosed = thread?.status === "closed";
 
   return (
-    <div className={cn("space-y-4", !embedded && "mx-auto max-w-3xl")}>
+    <div className={cn("mail-center space-y-4", !embedded && "mx-auto max-w-3xl")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         {!embedded ? (
           <button
@@ -536,7 +536,7 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
                   {thread.counterpartyName || thread.counterpartyEmail || "(unknown sender)"}
                 </strong>
                 {thread.counterpartyName && thread.counterpartyEmail && (
-                  <span className="text-ink-muted/80"> &lt;{thread.counterpartyEmail}&gt;</span>
+                  <span className="text-ink-muted"> &lt;{thread.counterpartyEmail}&gt;</span>
                 )}
               </span>
               {thread.mailboxAddress && (

@@ -148,7 +148,7 @@ export function ChangeLog() {
   return (
     <div className="space-y-3 p-3 sm:p-4">
       <PageHeader
-        title="Change Log"
+        title="Change log"
         description="Who changed which document, when, and from what to what"
         actions={
           <Button

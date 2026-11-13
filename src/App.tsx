@@ -371,7 +371,7 @@ function Routed() {
         <Route path="/consignment/purchase-return" element={<PlaceholderPage title="Purchase consignment return" />} />
         <Route path="/procurement/po-amendments" element={<PlaceholderPage title="PO amendments" />} />
         <Route path="/production/production-orders" element={<PlaceholderPage title="Production orders" />} />
-        <Route path="/production/sku-composition" element={<PlaceholderPage title="SKU Composition" />} />
+        <Route path="/production/sku-composition" element={<PlaceholderPage title="SKU composition" />} />
         <Route path="/production/draft-delivery" element={<PlaceholderPage title="Draft delivery" />} />
         <Route path="/procurement/cancellations" element={<PlaceholderPage title="Cancellation requests" />} />
         <Route path="/sales/unbilled" element={<UnbilledDeliveriesPage />} />

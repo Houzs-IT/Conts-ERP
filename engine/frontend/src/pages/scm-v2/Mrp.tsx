@@ -135,7 +135,7 @@ function LeadTimesDialog({ onClose, warehouses }: { onClose: () => void; warehou
   return (
     <div className={styles.dialogBackdrop} onClick={onClose}>
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <h2 className={styles.dialogTitle}>Lead Times</h2>
+        <h2 className={styles.dialogTitle}>Lead times</h2>
         <p className={styles.dialogBody}>
           How many days <strong>before</strong> the customer delivery date each category&rsquo;s PO is
           ordered. When you Proceed PO, the PO delivery date is set this many days earlier so the
@@ -916,7 +916,7 @@ export const Mrp = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Planning"
-        title="MRP · Stock Status Report"
+        title="MRP · stock status report"
         actions={
           <>
             {/* Group 1 — VIEW SWITCH: segmented toggle, one connected control with

@@ -12,7 +12,7 @@ import { computePay, parsePayRules, type PayFigures, type PayInput, type PayRule
 
 /** Payroll on the database (migration 0168, PLAN-hr-employees.md phase 4). The arithmetic is in payrollCalc.ts. */
 
-export const hasPayroll = (env: Env): Promise<boolean> => hasColumn(env, 'payslips', 'id').catch(() => false);
+export const hasPayroll = (env: Env): Promise<boolean> => hasColumn(env, 'payslips', 'id');
 export const NOT_MIGRATED = 'Payroll needs a database update (migration 0168) that has not been applied yet.';
 export const RULES_KEY = 'hr.pay_rules';
 export const isPeriod = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v);

@@ -22,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const bedPricing = service ? await bedPricingMode(env) : 'size';
   const seePrices = !!session.manage, seeContracts = !!session.manage || can(session, 'finance', 'view');
 
-  const layout = (await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'u.layout_type' : 'NULL::text';
+  const layout = (await hasColumn(env, 'units', 'layout_type')) ? 'u.layout_type' : 'NULL::text';
   const own = dated ? await all<any>(env, `
     SELECT o.unit_id, o.item_id, o.effective_from, o.owner_price, o.internal_cost, o.updated_at, by_user.full_name AS set_by,
            s.name, s.domain, s.clean_kind, u.unit_number, u.unit_code, u.bedrooms, ${layout} AS layout_type, p.name AS building, ow.display_name AS owner_name

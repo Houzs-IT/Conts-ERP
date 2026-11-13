@@ -74,6 +74,11 @@ html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table)
   background: var(--dt-row);
   border-color: rgba(150,175,255,.24);
   color-scheme: dark;
+  /* Cells with no colour class inherited the page's #151515 (voucher numbers 1.13:1 on prod, 13 Nov 2026). */
+  color: #EEF1F8;
+  /* Text-only tokens (tokens.css); the colour tokens below are also fills, so their inks are matched per use instead. */
+  --c-ink-soft: #B9C0D0;
+  --text-soft: #B9C0D0;
 }
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) tr.bg-surface { background: var(--dt-row); }
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) tr.bg-surface-dim\/35 { background: var(--dt-row-alt); }
@@ -87,3 +92,55 @@ html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table)
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-ink-secondary { color: #B9C0D0; }
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-ink-muted { color: #9AA2B4; }
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-primary { color: #9FC0FF; }
+
+/* Night: the Mail Center (pages/MailCenter, root class .mail-center) draws its panels, fields and buttons straight on
+   the page, outside any table or glass, so they stayed white and its dark inks (the title, folder and department names)
+   vanished on the night page (YH, 13 Nov 2026). Inside it they take the same Beta night colours as the table above
+   (surface, ink, text2, muted, line, chip, pick in renovationBetaTheme.ts) and the chosen-pill look of the rules above.
+   An email body (a frame on white) keeps its own colours. */
+html.conts-embedded[data-beta-skin="night"] .mail-center { color: #EEF1F8; color-scheme: dark; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .bg-surface { background: #1C2030; }
+html.conts-embedded[data-beta-skin="night"] .mail-center :is(.bg-surface-dim, [class^="bg-surface-dim/"], [class*=" bg-surface-dim/"]) { background: rgba(255,255,255,.05); }
+html.conts-embedded[data-beta-skin="night"] .mail-center :is(.hover\:bg-surface-dim, [class*="hover:bg-surface-dim/"], .hover\:bg-surface):hover { background: rgba(255,255,255,.08); }
+/* [class^="x"], [class*=" x"] match the class x (with any /opacity) but not hover:x.
+   Chosen folder, mailbox, tab and unread row: the night pick wash, not a pale page colour. */
+html.conts-embedded[data-beta-skin="night"] .mail-center :is([class^="bg-accent-soft"], [class*=" bg-accent-soft"], .bg-primary-soft, [class^="bg-primary/"], [class*=" bg-primary/"]) { background: rgba(255,255,255,.12); }
+html.conts-embedded[data-beta-skin="night"] .mail-center [class*="hover:bg-primary/"]:hover { background: rgba(255,255,255,.12); }
+html.conts-embedded[data-beta-skin="night"] .mail-center :is(.border-border, [class*="border-border/"], .divide-border > *) { border-color: rgba(150,175,255,.18); }
+html.conts-embedded[data-beta-skin="night"] .mail-center :is([class^="text-ink"], [class*=" text-ink"]) { color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] .mail-center :is([class^="text-ink-secondary"], [class*=" text-ink-secondary"]) { color: #B9C0D0; }
+html.conts-embedded[data-beta-skin="night"] .mail-center :is([class^="text-ink-muted"], [class*=" text-ink-muted"]) { color: #9AA2B4; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .text-primary-ink { color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .text-primary { color: #9FC0FF; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .hover\:text-ink:hover { color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] .mail-center ::placeholder { color: #9AA2B4; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .text-err { color: #FF9B90; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .bg-err-bg { background: rgba(255,110,100,.16); }
+html.conts-embedded[data-beta-skin="night"] .mail-center .bg-warning-bg { background: rgba(245,190,80,.16); }
+html.conts-embedded[data-beta-skin="night"] .mail-center .text-warning-text { color: #F7CD73; }
+/* The black main action ("New email", Reply, a switched-on toggle) and the chosen tab's underline: flat light ink. */
+html.conts-embedded[data-beta-skin="night"] .mail-center .bg-primary { background: #EEF1F8; color: #151823; border-color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .bg-primary :is(.text-white, svg) { color: #151823; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .bg-primary .bg-white { background: #151823; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .border-primary { border-color: #EEF1F8; }
+
+/* Each list holds the source colour and the one conts/palette.mjs swaps it to at build (e.g. #767b6e -> rgb(112, 109, 103)):
+   the swap rewrites declaration values, never these selectors. */
+/* Night: engine cells set their colours inline (docs, money, muted meta), which the class rules above cannot reach:
+   black, teal and red at 1.1-2.9:1 on the night rows (prod, 13 Nov 2026). The common ones map to the night inks
+   (5.2-14:1 on #1C2030/#2A2F42). React writes inline colours as rgb(), so that is what these match. */
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(21, 21, 21)"], [style*="color: rgb(17, 20, 15)"], [style*="color: rgb(58, 63, 54)"], [style*="color: rgb(30, 30, 30)"], [style*="color: rgb(43, 43, 43)"]) { color: #EEF1F8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(118, 123, 110)"], [style*="color: rgb(154, 160, 147)"], [style*="color: rgb(119, 115, 107)"], [style*="color: rgb(107, 113, 102)"], [style*="color: rgb(112, 109, 103)"], [style*="color: rgb(74, 72, 68)"]) { color: #B9C0D0 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(22, 105, 95)"], [style*="color: rgb(12, 63, 57)"]) { color: #7FD6C8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(17, 105, 74)"], [style*="color: rgb(47, 93, 79)"], [style*="color: rgb(44, 122, 63)"]) { color: #7FD1A8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(179, 38, 30)"], [style*="color: rgb(184, 51, 31)"], [style*="color: rgb(178, 58, 58)"], [style*="color: rgb(168, 53, 47)"], [style*="color: rgb(180, 35, 24)"]) { color: #FF9B90 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: rgb(161, 106, 46)"], [style*="color: rgb(138, 90, 0)"], [style*="color: rgb(138, 106, 47)"], [style*="color: rgb(183, 121, 31)"], [style*="color: rgb(138, 90, 18)"], [style*="color: rgb(117, 88, 31)"]) { color: #F7CD73 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) [style*="color: rgb(166, 71, 30)"] { color: #F2A27A !important; }
+/* Inline inks written as a colour token (status pills, voucher checks): the token stays, only the text colour changes. */
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: var(--c-orange"], [style*="color: var(--c-burnt"]) { color: #7FD6C8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: var(--c-green"], [style*="color: var(--c-secondary-a"]) { color: #7FD1A8 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) [style*="color: var(--c-festive-b"] { color: #FF9B90 !important; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) [style*="color: var(--fg-muted"] { color: #9AA2B4 !important; }
+/* Class inks in the night table that kept their light values: synced green (Team "Active", 2.4:1), accent gold initials (3.2:1). Pills with a solid light fill keep their dark ink. */
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-synced { color: #7BE8D8; }
+html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is(.text-accent, .text-accent-ink) { color: #F7CD73; }

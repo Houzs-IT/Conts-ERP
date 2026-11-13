@@ -77,7 +77,7 @@ export const DeliveryMaintenance = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Reference data"
-        title="Coverage & Fleet"
+        title="Coverage & fleet"
         description="Who covers which postcodes, how each building type is handled, and the crew and lorries that go. Every screen here is the same one as its own page."
         actions={
           <Link

@@ -219,7 +219,7 @@ export const OfficialReceipts = () => {
           onPrint={async () => { await generateReceiptPdf(printFor, { action: 'print' }); setPrintFor(null); }}
           onDownload={async () => { await generateReceiptPdf(printFor, { action: 'save' }); setPrintFor(null); }} />
       )}
-      <PageHeader eyebrow="Finance" title="Official Receipts" />
+      <PageHeader eyebrow="Finance" title="Official receipts" />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {([['', 'All'], ['DRAFT', 'Waiting for confirmation'], ['FORMAL', 'Confirmed']] as const).map(([v, label]) => (
           <button key={v || 'all'} type="button" style={btn(status === v)} onClick={() => setStatus(v)}>{label}</button>

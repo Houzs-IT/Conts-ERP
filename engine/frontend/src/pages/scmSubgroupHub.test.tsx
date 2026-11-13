@@ -74,9 +74,9 @@ describe("ScmSubgroupHub — a Sales Director sees only their own sales modules"
       </MemoryRouter>,
     );
     // Granted tiles (scm.sales.orders=full, delivery/invoices=view) render.
-    expect(screen.getByText("Sales Orders")).toBeTruthy();
-    expect(screen.getByText("Delivery Orders")).toBeTruthy();
-    expect(screen.getByText("Sales Invoices")).toBeTruthy();
+    expect(screen.getByText("Sales orders")).toBeTruthy();
+    expect(screen.getByText("Delivery orders")).toBeTruthy();
+    expect(screen.getByText("Sales invoices")).toBeTruthy();
     // scm.sales.returns = none → the tile is filtered out (own-modules-only).
     expect(screen.queryByText("Delivery Returns")).toBeNull();
   });

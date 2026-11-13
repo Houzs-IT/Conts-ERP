@@ -292,7 +292,7 @@ export const PurchaseConsignmentReceives = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Procurement"
-        title="Purchase Consignment Receives"
+        title="Purchase consignment receives"
         actions={
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
             <Button variant="primary" size="sm" onClick={() => navigate('/scm/purchase-consignment-receives/new')}>

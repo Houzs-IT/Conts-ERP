@@ -817,7 +817,7 @@ export function PurchaseReturnsListV2() {
       <div className={cn("transition-[padding] duration-200", selected ? "md:pr-[540px]" : "")}>
         <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
           <div className="min-w-0">
-            <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Purchase Returns</h1>
+            <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Purchase returns</h1>
             <div className="mt-0.5 text-[12.5px] text-ink-muted">
               {stats.total} return{stats.total === 1 ? "" : "s"} · <span className="font-money text-synced">{fmtRm(stats.credit)}</span> credit
             </div>
@@ -827,7 +827,7 @@ export function PurchaseReturnsListV2() {
         <div className="hidden md:block">
           <PageHeader
             eyebrow="Procurement"
-            title="Purchase Returns"
+            title="Purchase returns"
             description="Goods returned to suppliers — Draft through Completed. Click any row for the quick view; open the full page to edit."
             primaryAction={
               <div className="flex items-stretch">

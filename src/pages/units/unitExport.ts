@@ -3,7 +3,7 @@ import { downloadTable, type ExportCell, type ExportColumn } from '../../lib/exp
 import { PURPOSE_LABEL, USED_BY, codeName, packageOf, type ContractType } from '../../lib/revenueModel';
 import { statusLabel } from '../../lib/status';
 import type { UnitReadiness } from '../../lib/types';
-import { layoutLabel, type Building, type Unit } from './shared';
+import { layoutLabel, buildingArea, type Building, type Unit } from './shared';
 
 const USED_BY_LABEL: Record<string, string> = Object.fromEntries(USED_BY.map(u => [u.value, u.label]));
 
@@ -39,7 +39,7 @@ export function unitExportRows(units: Unit[], buildings: Building[], readiness: 
     const x = extras[u.id];
     return [
       u.unitCode, u.parentUnitId ? code.get(u.parentUnitId) ?? '' : '',
-      b?.name, b?.fullAccessCard ? 'Yes' : 'No', b?.city, b?.state ?? u.state, u.address,
+      b?.name, b?.fullAccessCard ? 'Yes' : 'No', b && buildingArea(b),b?.state ?? u.state, u.address,
       readiness[u.id] ? statusLabel('readiness', readiness[u.id]) : '', PURPOSE_LABEL[purpose], u.usedBy ? USED_BY_LABEL[u.usedBy] ?? u.usedBy : '',
       layoutLabel(u.layoutType) ?? u.layoutType, u.bedrooms, u.bathrooms, u.sizeSqft,
       u.bedsLabel,

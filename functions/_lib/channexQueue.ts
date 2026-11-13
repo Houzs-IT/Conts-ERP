@@ -132,7 +132,9 @@ export async function flushChannexQueue(env: Env, opts: { fullSync?: boolean; de
   if (!channexConfigured(env)) return result;
   // Sent rows are only kept for looking back; the outbox would otherwise grow with every sync.
   await run(env, `DELETE FROM channex_outbox WHERE status = 'sent' AND sent_at < ?`, inMs(-SENT_KEPT_MS)).catch(() => {});
-  await run(env, `DELETE FROM channex_calls WHERE called_at < ?`, inMs(-CALLS_KEPT_MS)).catch(() => {});
+  // The last accepted call stays, however old: the header's "Sent to channels" reads it (functions/api/nav/badges.ts).
+  await run(env, `DELETE FROM channex_calls WHERE called_at < ?
+    AND NOT (status BETWEEN 200 AND 299 AND called_at = (SELECT max(called_at) FROM channex_calls WHERE status BETWEEN 200 AND 299))`, inMs(-CALLS_KEPT_MS)).catch(() => {});
 
   // Anything still queued for a showroom or warehouse unit is dropped, never sent (owner, 17 Oct 2026).
   const rental = await rentalOnly(env, 'u');

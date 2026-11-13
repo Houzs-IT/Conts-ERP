@@ -41,7 +41,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   // hold the old nights and sell the new ones to someone else.
   if (['airbnb', 'booking_com', 'agoda'].includes(cur.channel)) {
     const site = cur.channel === 'airbnb' ? 'Airbnb' : cur.channel === 'booking_com' ? 'Booking.com' : 'Agoda';
-    return fail('OTA_LOCKED', `This is a ${site} reservation: its dates are set on ${site}. Change them there; the change comes back here by itself.`, 409);
+    return fail('OTA_LOCKED', `This reservation came from ${site}: its dates are set on ${site}. Change them there; the change comes back here by itself.`, 409);
   }
   if (cur.state === 'checked_in' && b.checkIn !== cur.check_in) return fail('CONFLICT', 'The guest is already in. Only the checkout date can change.', 409);
 

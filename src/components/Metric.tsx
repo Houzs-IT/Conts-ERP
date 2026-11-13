@@ -12,6 +12,8 @@ export function Eyebrow({ children, className }: { children: ReactNode; classNam
   return <span className={cx('text-caption font-semibold uppercase tracking-[0.12em]', !coloured && 'text-muted-ink', className)}>{children}</span>;
 }
 
+const UNIT = 'font-medium text-muted-ink [.dash-hero_&]:text-[color:var(--color-text-on-dark-muted)]';
+
 /** "RM 12,450" and "86.2%" with the unit set smaller than the number, so the eye lands on the figure. */
 export function Figure({ value, className }: { value: string; className?: string }) {
   let unit: string | null = null, num = value, after = false;
@@ -19,9 +21,10 @@ export function Figure({ value, className }: { value: string; className?: string
   else if (value.endsWith('%')) { unit = '%'; num = value.slice(0, -1); after = true; }
   return (
     <span className={cx('inline-flex items-baseline whitespace-nowrap tabular-nums', className)} title={value}>
-      {unit && !after && <span className="text-[0.5em] font-medium mr-[0.28em] opacity-60 tracking-normal">{unit}</span>}
+      {/* Never under the 12px meta step, and quiet by the muted token (the on-dark one on a hero card), not by opacity. */}
+      {unit && !after && <span className={cx(UNIT, 'text-[length:max(var(--text-meta),0.5em)] mr-[0.28em] tracking-normal')}>{unit}</span>}
       <span>{num}</span>
-      {unit && after && <span className="text-[0.55em] font-medium ml-[0.12em] opacity-60">{unit}</span>}
+      {unit && after && <span className={cx(UNIT, 'text-[length:max(var(--text-meta),0.55em)] ml-[0.12em]')}>{unit}</span>}
     </span>
   );
 }

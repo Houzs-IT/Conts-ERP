@@ -307,7 +307,7 @@ export const DeliveryResidenceRules = ({ embedded = false }: { embedded?: boolea
       {!embedded && (
         <PageHeader
           eyebrow="Delivery"
-          title="Residence Rules"
+          title="Residence rules"
           description="Per residence type, how long a delivery takes (service duration, in hours) and any access rules — no-delivery time windows, service-lift booking, gated-community registration. The scheduler will use these; set the values to match your operation."
           actions={
             <Button variant="primary" size="md" onClick={() => setCreating(true)}>
@@ -389,7 +389,7 @@ const CreateRuleDrawer = ({ onClose }: { onClose: () => void }) => {
       <div className={styles.backdrop} onClick={onClose} />
       <aside className={styles.drawer}>
         <header className={styles.drawerHeader}>
-          <h2 className={styles.drawerTitle}>New Residence Type</h2>
+          <h2 className={styles.drawerTitle}>New residence type</h2>
           <button type="button" className={styles.iconBtn} onClick={onClose}><X {...ICON} /></button>
         </header>
         <div className={styles.drawerBody}>

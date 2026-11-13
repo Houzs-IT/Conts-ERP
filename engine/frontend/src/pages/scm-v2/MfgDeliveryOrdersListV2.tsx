@@ -1606,7 +1606,7 @@ export function MfgDeliveryOrdersListV2() {
       <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
         <div className="min-w-0">
           <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-            Delivery Orders
+            Delivery orders
           </h1>
           <div className="mt-0.5 text-[12.5px] text-ink-muted">
             {total} order{total === 1 ? "" : "s"} ·{" "}
@@ -1621,7 +1621,7 @@ export function MfgDeliveryOrdersListV2() {
         <div className="px-4 sm:px-6">
           <PageHeader
             eyebrow="Sales"
-            title="Delivery Orders"
+            title="Delivery orders"
             description={`Every ${shortCompanyName(branding.companyName)} delivery order — Loaded to Delivered. Click any row for the quick view; open the full page to edit.`}
             primaryAction={
               canWriteDo ? (

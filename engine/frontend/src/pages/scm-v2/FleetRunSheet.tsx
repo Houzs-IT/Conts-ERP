@@ -98,7 +98,7 @@ export function FleetRunSheet() {
             {/* header */}
             <div className="mb-3 flex items-start justify-between gap-4 border-b border-border pb-3">
               <div>
-                <h1 className="text-[18px] font-bold text-ink">Driver Run-Sheet</h1>
+                <h1 className="text-[18px] font-bold text-ink">Driver run-sheet</h1>
                 <p className="text-[12.5px] text-ink-secondary">{fmtDate(date)}</p>
               </div>
               <div className="text-right">

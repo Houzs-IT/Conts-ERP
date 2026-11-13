@@ -258,7 +258,7 @@ export const DpOrders = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Delivery"
-        title="DP Orders"
+        title="DP orders"
         description="Every delivery-planning job order — setup, dismantle, supplier pickup — across all statuses. The board only shows plannable jobs; this registry keeps cancelled and source-linked orders reachable. Schedule a pending job to mint its DP number."
         actions={(
           <Button variant="primary" onClick={() => setShowNewDp(true)}>

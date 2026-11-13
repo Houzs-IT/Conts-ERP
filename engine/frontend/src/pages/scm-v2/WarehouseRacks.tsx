@@ -738,7 +738,7 @@ function RackFormDrawer({
     <div className={formStyles.backdrop} onClick={onClose}>
       <div className={formStyles.drawer} onClick={(e) => e.stopPropagation()}>
         <div className={formStyles.drawerHeader}>
-          <h2 className={formStyles.drawerTitle}>{editing ? 'Edit Rack' : 'New Rack'}</h2>
+          <h2 className={formStyles.drawerTitle}>{editing ? 'Edit rack' : 'New rack'}</h2>
           <button type="button" onClick={onClose} className={formStyles.codeChip}>Close</button>
         </div>
         <div className={formStyles.drawerBody}>
@@ -844,7 +844,7 @@ function SeedRacksModal({
     <div className={formStyles.backdrop} onClick={onClose}>
       <div className={formStyles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={formStyles.drawerHeader}>
-          <h2 className={formStyles.drawerTitle}>Seed Racks</h2>
+          <h2 className={formStyles.drawerTitle}>Seed racks</h2>
           <button type="button" onClick={onClose} className={formStyles.codeChip}>Close</button>
         </div>
         <div className={formStyles.modalBody}>

@@ -34,7 +34,7 @@ async function fieldOwns(env: Env, userId: string, table: string, id: string) {
   if (table === 'maintenance_issues') {
     // A job assigned since migration 0105 names its technician's account; older jobs (and a database without the
     // column) are matched by the technician's name, as before.
-    const byId = await hasColumn(env, 'maintenance_issues', 'assignee_user_id').catch(() => false);
+    const byId = await hasColumn(env, 'maintenance_issues', 'assignee_user_id');
     const named = 'lower(m.vendor_name) = (SELECT lower(full_name) FROM users WHERE id = ?)';
     return !!(await one(env, `
       SELECT 1 AS x FROM maintenance_issues m

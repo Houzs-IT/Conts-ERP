@@ -2176,7 +2176,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           Same card + same field layout as Detail's Order Info. */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Order Info</h2>
+          <h2 className={styles.cardTitle}>Order info</h2>
         </header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
@@ -2294,7 +2294,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           Mirrors Detail's Emergency Contact card field-for-field. */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Emergency Contact</h2>
+          <h2 className={styles.cardTitle}>Emergency contact</h2>
           <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
             Used only if we cannot reach the customer on delivery day
           </span>
@@ -2349,7 +2349,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           the top of the card so commander can defer the address. */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Delivery Address</h2>
+          <h2 className={styles.cardTitle}>Delivery address</h2>
         </header>
         <div className={styles.cardBody}>
           {!reno && (
@@ -2501,7 +2501,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           validates and tells the operator EXACTLY what's missing. */}
       <PageHeader back
         eyebrow={asQuotation ? `Quotation${quoteView?.quotation.projectName ? ` · ${quoteView.quotation.projectName}` : ''}` : 'Sales order'}
-        title={quoteView ? quoteView.revision.docNo : asQuotation ? 'New Quotation' : createdDocNo ? `Complete Sales Order ${createdDocNo}` : 'New Sales Order'}
+        title={quoteView ? quoteView.revision.docNo : asQuotation ? 'New quotation' : createdDocNo ? `Complete Sales Order ${createdDocNo}` : 'New sales order'}
         description={quoteView
           ? `${debtorName || 'No customer yet'}${renoInfo.building ? ` · ${renoInfo.building} ${renoInfo.unitNo}` : ''}`
           : asQuotation
@@ -2679,7 +2679,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
       ) : (
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Line Items ({lines.length})</h2>
+          <h2 className={styles.cardTitle}>Line items ({lines.length})</h2>
         </header>
         <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {lines.map((line, idx) => renderNewLine(line, idx))}

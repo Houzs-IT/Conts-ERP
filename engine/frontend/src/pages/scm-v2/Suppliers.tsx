@@ -558,7 +558,7 @@ const SupplierCreateDrawer = ({ onClose }: { onClose: () => void }) => (
     <div className={styles.backdrop} onClick={onClose} />
     <aside className={styles.drawer}>
       <header className={styles.drawerHeader}>
-        <h2 className={styles.drawerTitle}>New Supplier</h2>
+        <h2 className={styles.drawerTitle}>New supplier</h2>
         <button type="button" className={styles.iconBtn} onClick={onClose} aria-label="Close">
           <X {...ICON} />
         </button>

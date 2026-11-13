@@ -81,7 +81,7 @@ export function FairReportFill() {
 
   return (
     <div style={{ padding: 20, maxWidth: 1000 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Fair Report Fill</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Fair report fill</h1>
       <p style={{ fontSize: 13, color: "var(--fg-muted, #666)", marginBottom: 16 }}>
         Upload a FAIR REPORT (.xlsx). Each event sheet is read for revenue, COGS by category
         (Mattress/Sofa · Bedframe · Accessories) and salesperson sales, then matched to a project.

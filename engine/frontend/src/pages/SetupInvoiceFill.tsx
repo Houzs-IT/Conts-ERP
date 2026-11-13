@@ -59,7 +59,7 @@ export function SetupInvoiceFill() {
 
   return (
     <div style={{ padding: 20, maxWidth: 820 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Setup Invoice</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Setup invoice</h1>
       <p style={{ fontSize: 13, color: "var(--fg-muted,#666)", marginBottom: 16 }}>
         Upload a scanned setup / booth invoice. The vendor and total are read automatically; pick the
         project and apply to add it as a <strong>setup</strong> cost line to that project's P&L.

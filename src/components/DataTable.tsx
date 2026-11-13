@@ -855,7 +855,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
         const c = byKey.get(panel.slice(4));
         if (!c || !filterOf(c)) return null;
         return (
-          <Floating anchor={headAnchor} open onClose={closePanel} width={290} label={`Filter ${c.label}`} live>
+          <Floating anchor={headAnchor} open onClose={closePanel} width={290} label={`Filter ${c.label}`} live takeFocus>
             <div className="p-2.5 flex flex-col gap-2">
               <span className="text-meta font-semibold">{c.label}</span>
               <FilterEditor col={c} spec={filterOf(c)!} value={filterValue(c)} rows={rows ?? []} onChange={v => setFilter(c, v)} onDone={closePanel} autoFocus />
@@ -864,11 +864,11 @@ export function DataTable<R>(props: DataTableProps<R>) {
         );
       })()}
 
-      <Floating anchor={colsBtn} fallback={moreBtn} open={panel === 'columns'} onClose={closePanel} width={300} align="right" label="Columns" live>
+      <Floating anchor={colsBtn} fallback={moreBtn} open={panel === 'columns'} onClose={closePanel} width={300} align="right" label="Columns" live takeFocus>
         <ColumnsPanel defs={byKey} layout={layoutCols} onChange={setCols} onReset={() => setCols(mergeColumns(columns, null))} />
       </Floating>
 
-      <Floating anchor={exportBtn} fallback={moreBtn} open={panel === 'export'} onClose={closePanel} width={300} align="right" label="Export">
+      <Floating anchor={exportBtn} fallback={moreBtn} open={panel === 'export'} onClose={closePanel} width={300} align="right" label="Export" takeFocus>
         <div className="py-1">
           <PanelHeading>{server ? `All ${fmtCount(total)} matching ${noun[1]}` : `${fmtCount(processed.length)} ${processed.length === 1 ? noun[0] : noun[1]}`}{onExport ? '' : ` · ${plural(exportCols.length, 'column')}`}</PanelHeading>
           <PanelItem icon="FileSpreadsheet" label="Excel (.xlsx)" hint={onExport?.hint ?? 'Money as numbers in RM, dates as dates.'} onClick={() => { closePanel(); void doExport('xlsx'); }}
@@ -878,7 +878,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
         </div>
       </Floating>
 
-      <Floating anchor={bulkExportBtn} open={panel === 'bulkExport'} onClose={closePanel} width={260} align="right" label="Export ticked rows">
+      <Floating anchor={bulkExportBtn} open={panel === 'bulkExport'} onClose={closePanel} width={260} align="right" label="Export ticked rows" takeFocus>
         <div className="py-1">
           <PanelItem icon="FileSpreadsheet" label="Excel (.xlsx)" onClick={() => { closePanel(); void doExport('xlsx', pickedRows); }} />
           {!onExport && <PanelItem icon="FileText" label="CSV" onClick={() => { closePanel(); void doExport('csv', pickedRows); }} />}
@@ -886,7 +886,7 @@ export function DataTable<R>(props: DataTableProps<R>) {
       </Floating>
 
       {!noViews && (
-        <Floating anchor={viewsBtn} fallback={moreBtn} open={panel === 'views'} onClose={closePanel} width={320} align="right" label="Saved views" live>
+        <Floating anchor={viewsBtn} fallback={moreBtn} open={panel === 'views'} onClose={closePanel} width={320} align="right" label="Saved views" live takeFocus>
           <ViewsPanel views={views} activeId={activeView} onApply={v => { setActiveView(v.id); applyLayout(v.layout); closePanel(); }}
             onSaveNew={() => { closePanel(); setSaving({ name: '', scope: 'mine', isDefault: false }); }}
             onUpdate={async v => {

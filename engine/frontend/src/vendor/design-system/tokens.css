@@ -32,6 +32,9 @@
   --c-burnt:        #0c3f39;   /* was #A6471E — Theme C primary-ink      */
   --c-paper:        #f4f6f3;   /* was #F4F3F2 — Theme C surface-2        */
   --c-ink:          #11140f;   /* was #221F20 — Theme C ink             */
+  /* Soft text: pages read these with #777 / #8a8578 fallbacks (4.48 and 3.68:1 on white). 5.03:1. */
+  --c-ink-soft:     #6b7166;
+  --text-soft:      #6b7166;
 
   /* Secondary, season-driven (swap A/B per campaign) */
   --c-secondary-a:  #2F5D4F;   /* default earth: forest/teal           */

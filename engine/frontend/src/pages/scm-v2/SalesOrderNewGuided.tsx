@@ -340,7 +340,7 @@ export function SalesOrderNewGuided() {
             <Sparkles size={11} /> SCM · Sales Order · New
           </div>
           <h1 className="mt-1 font-display text-[21px] font-extrabold tracking-tight text-ink">
-            New Sales Order · Guided
+            New sales order · guided
           </h1>
           <p className="mt-0.5 text-[12px] text-ink-muted">
             Showroom-floor sofa configurator. Pick customer → model → modules →
@@ -1405,7 +1405,7 @@ function FieldLabel({
         {label}
         {required && <span className="ml-1 text-err">*</span>}
         {hint && !required && (
-          <span className="ml-1.5 normal-case tracking-normal text-ink-muted/80">
+          <span className="ml-1.5 normal-case tracking-normal text-ink-muted">
             · {hint}
           </span>
         )}
