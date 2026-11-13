@@ -5,7 +5,7 @@ import { dcEmployeeInput, type DcEmployee } from '../../_lib/hrFields';
 
 const MANAGE = ['management']; // everyone else follows their level in HR (functions/_lib/access.ts)
 const NOT_MIGRATED = 'Dream Crafter employees need a database update (migration 0185) that has not been applied yet.';
-const hasDcStaff = (env: Env): Promise<boolean> => hasColumn(env, 'employees', 'dc_staff_id').catch(() => false);
+const hasDcStaff = (env: Env): Promise<boolean> => hasColumn(env, 'employees', 'dc_staff_id');
 
 interface Row { id: string; full_name: string; phone: string | null; position: string | null; join_date: string | null; status: DcEmployee['status']; resigned_at: string | null }
 const PEOPLE = 'SELECT d.id, d.full_name, d.phone, e.position, e.join_date, e.status, e.resigned_at FROM dc_staff d JOIN employees e ON e.dc_staff_id = d.id';

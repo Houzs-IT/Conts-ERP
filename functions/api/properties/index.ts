@@ -18,7 +18,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const banking = session.manage || can(session, 'finance', 'view');
 
   // full_access_card is migration 0161.
-  const card = (await hasColumn(env, 'properties', 'full_access_card').catch(() => false)) ? 'full_access_card' : 'false AS full_access_card';
+  const card = (await hasColumn(env, 'properties', 'full_access_card')) ? 'full_access_card' : 'false AS full_access_card';
   const passKey = (await hasPassKeyJobs(env)) ? 'needs_pass_key' : 'false AS needs_pass_key';
   const [buildings, units, expenses, docs, { defaultFeePct }, extras, types, sizes] = await Promise.all([
     all<any>(env, `SELECT id, name, city, state, postcode, ${card}, ${passKey} FROM properties ORDER BY state, name`),
@@ -93,7 +93,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const id = crypto.randomUUID(), now = nowIso();
   await run(env, `INSERT INTO properties (id, name, address_line, city, state, created_at, updated_at) VALUES (?, ?, '', ?, ?, ?, ?)`,
     id, b.name.trim(), String(b.city ?? '').trim(), b.state.trim(), now, now);
-  if (b.fullAccessCard === true && (await hasColumn(env, 'properties', 'full_access_card').catch(() => false))) await run(env, 'UPDATE properties SET full_access_card = true WHERE id = ?', id);
+  if (b.fullAccessCard === true && (await hasColumn(env, 'properties', 'full_access_card'))) await run(env, 'UPDATE properties SET full_access_card = true WHERE id = ?', id);
   if (b.needsPassKey === true && (await hasPassKeyJobs(env))) await run(env, 'UPDATE properties SET needs_pass_key = true WHERE id = ?', id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'property.create', entityTable: 'properties', entityId: id, after: { name: b.name, fullAccessCard: b.fullAccessCard === true, needsPassKey: b.needsPassKey === true } });
   return json({ id }, 201);

@@ -9,7 +9,7 @@ export const PRICE_KINDS = ['turnover', 'deep_clean', 'light_clean'] as const;
 export const LAYOUTS = ['studio', '1_bedroom', '2_bedroom', '3_bedroom', '4_plus_bedroom', 'duplex', 'dual_key', 'penthouse', 'other'] as const;
 
 /** Migration 0126. Without it there are no price tables and no external jobs. */
-export const hasCleanPrices = (env: Env) => hasColumn(env, 'tasks', 'amount').catch(() => false);
+export const hasCleanPrices = (env: Env) => hasColumn(env, 'tasks', 'amount');
 
 /** The price-table row a unit falls in: its Type, else its bedrooms (0 studio, 4 or more 4+), else Other. Any Type the
  *  database holds is valid (staff keep the list since 0161); one not priced yet shows as price not set. */
@@ -55,7 +55,7 @@ export async function priceBook(env: Env, unitIds: string[]): Promise<(unitId: s
 /** The amounts for one clean on one unit, on the clean's day (default today). */
 export async function cleanAmounts(env: Env, unitId: string, kind: string, day?: string | null): Promise<CleanAmounts> {
   const u = await one<{ layout: string | null; bedrooms: number | null }>(env,
-    `SELECT ${(await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'layout_type' : 'NULL::text'} AS layout, bedrooms FROM units WHERE id = ?`, unitId);
+    `SELECT ${(await hasColumn(env, 'units', 'layout_type')) ? 'layout_type' : 'NULL::text'} AS layout, bedrooms FROM units WHERE id = ?`, unitId);
   if (!u) return { internal: null, external: null, source: null };
   return (await priceBook(env, [unitId]))(unitId, kind, layoutKey(u.layout, u.bedrooms), day);
 }

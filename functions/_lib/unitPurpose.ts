@@ -20,7 +20,7 @@ export type BedSize = string;
 export interface Bed { size: BedSize; quantity: number }
 
 /** True once migration 0125 is on this database. */
-export const purposeReady = (env: Env) => hasColumn(env, 'units', 'purpose').catch(() => false);
+export const purposeReady = (env: Env) => hasColumn(env, 'units', 'purpose');
 
 /** " AND u.purpose = 'rental'" when the column exists, else nothing (every unit was a rental before 0125). */
 export async function rentalOnly(env: Env, alias = 'u'): Promise<string> {

@@ -4,7 +4,7 @@ import { hasColumn } from './auth';
 /** Several cleaners on one cleaning job (migration 0122, task_cleaners). tasks.cleaner_id / tasks.assignee_id stay the
  *  FIRST cleaner, so code that reads only them keeps working; everything that asks "is this my job" or "who is on it"
  *  goes through here. Before the migration is applied, a job has the one cleaner of the old columns. */
-export const taskCleanersReady = (env: Env) => hasColumn(env, 'task_cleaners', 'task_id').catch(() => false);
+export const taskCleanersReady = (env: Env) => hasColumn(env, 'task_cleaners', 'task_id');
 
 /** SQL true when the signed-in person is on job `a` (as its first cleaner or any listed one). Bind mineArgs after it. */
 export const mineSql = (ready: boolean, a = 't') => (ready

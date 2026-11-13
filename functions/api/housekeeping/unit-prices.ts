@@ -29,8 +29,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'Only the office sees cleaning prices.', 403);
   if (!(await hasCleanPrices(env))) return json({ ready: false, rows: [], mayEdit: false });
-  const layout = (await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'u.layout_type' : 'NULL::text';
-  const beds = (await hasColumn(env, 'units', 'beds').catch(() => false)) ? 'u.beds::text' : 'NULL::text';
+  const layout = (await hasColumn(env, 'units', 'layout_type')) ? 'u.layout_type' : 'NULL::text';
+  const beds = (await hasColumn(env, 'units', 'beds')) ? 'u.beds::text' : 'NULL::text';
   const only = new URL(request.url).searchParams.get('unitId');
   const units = await all<any>(env, `
     SELECT u.id, u.unit_number, u.bedrooms, ${layout} AS layout_type, ${beds} AS beds, p.id AS property_id, p.name AS property_name

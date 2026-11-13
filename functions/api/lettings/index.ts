@@ -4,7 +4,7 @@ import { maySee, can } from '../../_lib/access';
 import { invalidLetting, REMIND_DAYS, type LettingInput } from '../../_lib/lettings';
 
 const READ = ['management']; // everyone else follows the area's level (mayWork / maySee / mayRun)
-const ready = (env: Env) => hasColumn(env, 'unit_lettings', 'id').catch(() => false);
+const ready = (env: Env) => hasColumn(env, 'unit_lettings', 'id');
 
 /** GET /api/lettings[?unitId=] — every Agent-to-let record (or one unit's), latest change first, with the unit and
  *  owner, and whether a rented unit's agreement ends within REMIND_DAYS (time to find next year's tenant). */

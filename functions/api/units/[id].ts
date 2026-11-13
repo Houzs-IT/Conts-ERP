@@ -49,7 +49,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     if (!(await one(env, 'SELECT 1 AS x FROM owners WHERE id = ?', to))) return fail('NOT_FOUND', 'That owner does not exist.', 404, { ownerId: 'Pick an owner.' });
     // A contract belongs to one owner, so it does not follow the unit to the next. Neither does the old owner's bank account (0180).
     if (to !== cur.owner_id) {
-      const clearBank = (await hasColumn(env, 'units', 'bank_account_id').catch(() => false)) ? ', bank_account_id = NULL, bank_account_chosen = false' : '';
+      const clearBank = (await hasColumn(env, 'units', 'bank_account_id')) ? ', bank_account_id = NULL, bank_account_chosen = false' : '';
       await run(env, `UPDATE units SET owner_id = ?, contract_id = NULL${clearBank}, updated_at = ? WHERE id = ?`, to, now, id);
       cur.owner_id = to;
     }
