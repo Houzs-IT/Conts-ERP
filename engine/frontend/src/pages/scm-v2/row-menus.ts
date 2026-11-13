@@ -203,6 +203,8 @@ const norm = (s: string | null | undefined) => String(s ?? "").toUpperCase();
 export function salesOrderRowMenu<R extends StatusRow & SoChainRow & MigratedRow>(h: {
   open: (r: R) => void;
   edit: (r: R) => void;
+  /* Owner, 13 Nov 2026: a new SO seeded from this one (customer and lines); any status, a carried-over one too. */
+  copyAsNew: (r: R) => void;
   print: (t: PrintTarget) => void;
   confirm: (r: R) => void;
   transferToDo: (r: R) => void;
@@ -237,6 +239,7 @@ export function salesOrderRowMenu<R extends StatusRow & SoChainRow & MigratedRow
       return buildRowMenu(
         [
           { label: "Open", onClick: () => h.open(r) },
+          { label: "Copy as new", onClick: () => h.copyAsNew(r) },
           ...printEntries(salesOrderPrintChain(r), { print: h.print, open: () => h.open(r) }),
         ],
         [], [], [],
@@ -246,6 +249,7 @@ export function salesOrderRowMenu<R extends StatusRow & SoChainRow & MigratedRow
       [
         { label: "Open", onClick: () => h.open(r) },
         { label: "Edit", onClick: () => h.edit(r) },
+        { label: "Copy as new", onClick: () => h.copyAsNew(r) },
         ...printEntries(salesOrderPrintChain(r), { print: h.print, open: () => h.open(r) }),
       ],
       [
