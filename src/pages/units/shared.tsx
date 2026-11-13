@@ -91,11 +91,15 @@ export interface Unit {
 export interface Bed { size: string; quantity: number }
 export interface Bay { id?: string; lotNumber: string; level: string | null; note: string | null }
 export interface Building {
-  id: string; name: string; city: string; state: string;
+  id: string; name: string;
+  /** As stored; the edit form saves it back, so it never carries the postcode. */
+  city: string; postcode?: string | null; state: string;
   /** Migration 0161: the building's card alone opens the lobby, lift and car park. */
   fullAccessCard?: boolean;
   needsPassKey?: boolean;
 }
+/** The building's area as shown: "Imbi, 55100". Display only, never saved. */
+export const buildingArea = (b: Pick<Building, 'city' | 'postcode'>) => [b.city, b.postcode].filter(Boolean).join(', ');
 export interface PropertiesPayload { buildings: Building[]; units: Unit[]; generatedAt: string }
 
 /* ---- GET /api/units/detail: the record for one unit ---- */

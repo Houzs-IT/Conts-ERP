@@ -330,9 +330,9 @@ export function ThreadList({
         {folder === "inbox" && (
           <>
             <p className="max-w-xs text-[11px] leading-snug text-ink-muted/70">
-              Incoming mail syncs in automatically every few minutes. Mail is
-              scoped to the active company — if a mailbox looks empty, check the
-              company selector at the top right.
+              New mail arrives every few minutes. You only see mail for the
+              company you are in. To change company, use the switch at the top
+              of the left menu.
             </p>
             <button
               onClick={onInjectTest}
@@ -1400,7 +1400,8 @@ export function MailInbox() {
   const allVisibleSelected = interactiveVisible.length > 0 && selectedCount >= interactiveVisible.length;
 
   return (
-    <div className="space-y-4">
+    // mail-center: the night look inside Property OS hangs off this class (conts/embed.css).
+    <div className="mail-center space-y-4">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">

@@ -87,3 +87,34 @@ html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table)
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-ink-secondary { color: #B9C0D0; }
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-ink-muted { color: #9AA2B4; }
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-primary { color: #9FC0FF; }
+
+/* Night: the Mail Center (pages/MailCenter, root class .mail-center) draws its panels, fields and buttons straight on
+   the page, outside any table or glass, so they stayed white and its dark inks (the title, folder and department names)
+   vanished on the night page (YH, 13 Nov 2026). Inside it they take the same Beta night colours as the table above
+   (surface, ink, text2, muted, line, chip, pick in renovationBetaTheme.ts) and the chosen-pill look of the rules above.
+   An email body (a frame on white) keeps its own colours. */
+html.conts-embedded[data-beta-skin="night"] .mail-center { color: #EEF1F8; color-scheme: dark; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .bg-surface { background: #1C2030; }
+html.conts-embedded[data-beta-skin="night"] .mail-center :is(.bg-surface-dim, [class^="bg-surface-dim/"], [class*=" bg-surface-dim/"]) { background: rgba(255,255,255,.05); }
+html.conts-embedded[data-beta-skin="night"] .mail-center :is(.hover\:bg-surface-dim, [class*="hover:bg-surface-dim/"], .hover\:bg-surface):hover { background: rgba(255,255,255,.08); }
+/* [class^="x"], [class*=" x"] match the class x (with any /opacity) but not hover:x.
+   Chosen folder, mailbox, tab and unread row: the night pick wash, not a pale page colour. */
+html.conts-embedded[data-beta-skin="night"] .mail-center :is([class^="bg-accent-soft"], [class*=" bg-accent-soft"], .bg-primary-soft, [class^="bg-primary/"], [class*=" bg-primary/"]) { background: rgba(255,255,255,.12); }
+html.conts-embedded[data-beta-skin="night"] .mail-center [class*="hover:bg-primary/"]:hover { background: rgba(255,255,255,.12); }
+html.conts-embedded[data-beta-skin="night"] .mail-center :is(.border-border, [class*="border-border/"], .divide-border > *) { border-color: rgba(150,175,255,.18); }
+html.conts-embedded[data-beta-skin="night"] .mail-center :is([class^="text-ink"], [class*=" text-ink"]) { color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] .mail-center :is([class^="text-ink-secondary"], [class*=" text-ink-secondary"]) { color: #B9C0D0; }
+html.conts-embedded[data-beta-skin="night"] .mail-center :is([class^="text-ink-muted"], [class*=" text-ink-muted"]) { color: #9AA2B4; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .text-primary-ink { color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .text-primary { color: #9FC0FF; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .hover\:text-ink:hover { color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] .mail-center ::placeholder { color: #9AA2B4; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .text-err { color: #FF9B90; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .bg-err-bg { background: rgba(255,110,100,.16); }
+html.conts-embedded[data-beta-skin="night"] .mail-center .bg-warning-bg { background: rgba(245,190,80,.16); }
+html.conts-embedded[data-beta-skin="night"] .mail-center .text-warning-text { color: #F7CD73; }
+/* The black main action ("New email", Reply, a switched-on toggle) and the chosen tab's underline: flat light ink. */
+html.conts-embedded[data-beta-skin="night"] .mail-center .bg-primary { background: #EEF1F8; color: #151823; border-color: #EEF1F8; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .bg-primary :is(.text-white, svg) { color: #151823; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .bg-primary .bg-white { background: #151823; }
+html.conts-embedded[data-beta-skin="night"] .mail-center .border-primary { border-color: #EEF1F8; }

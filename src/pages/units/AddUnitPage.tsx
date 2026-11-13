@@ -23,7 +23,7 @@ import { BuildingModal, useOwnerOptions } from './UnitForms';
 import { ContractFields, blankDraft, bodyOf, problems, type Draft } from './contractForm';
 import { PROPERTIES_FALLBACK } from './fallback';
 import { EMPTY_FORM, STEPS, hasInput, layoutToSave, stepAt, stepOfField, stepProblems, type AddUnitForm, type StepIndex } from './addUnitRules';
-import { mayEditUnits, isPlaceholderOwner, layoutFromBedrooms, useLayoutTypes, SectionHead, Grid3, NumberRow, Labeled, Select, ReadOnly, type Building, type PropertiesPayload } from './shared';
+import { mayEditUnits, isPlaceholderOwner, layoutFromBedrooms, useLayoutTypes, SectionHead, Grid3, NumberRow, Labeled, Select, ReadOnly, buildingArea, type Building, type PropertiesPayload } from './shared';
 
 interface NewUnitBody {
   buildingId: string; ownerId?: string; listingName: string; unitCode: string; address?: string;
@@ -225,7 +225,7 @@ export default function AddUnitPage(): ReactElement {
                     <ReadOnly>{building?.state ?? 'Pick a building'}</ReadOnly>
                   </Labeled>
                   <Labeled label="Address" span2>
-                    <Field label="" aria-label="Address" placeholder={building?.city} value={form.address} error={shownErrors.address} onChange={e => edit({ address: e.target.value })} />
+                    <Field label="" aria-label="Address" placeholder={building && buildingArea(building)} value={form.address} error={shownErrors.address} onChange={e => edit({ address: e.target.value })} />
                   </Labeled>
                 </Grid3>
 

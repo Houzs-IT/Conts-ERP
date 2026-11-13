@@ -9,8 +9,6 @@ import { extrasFor, purposeReady, bedsLabel, baysLabel } from '../../_lib/unitPu
 import { bedSizes } from '../../_lib/bedSizes';
 import { hasPassKeyJobs } from '../../_lib/passKeyJobs';
 
-const area = (city: string, postcode: string | null) => (postcode ? `${city}, ${postcode}` : city);
-
 /** GET /api/properties — every building and every unit with its owner, package, monthly expenses and contract (the Units screen's tree and forms). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -54,7 +52,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   return json({
     generatedAt: nowIso(),
-    buildings: buildings.map(b => ({ id: b.id, name: b.name, city: area(b.city, b.postcode), state: b.state, fullAccessCard: b.full_access_card === true, needsPassKey: b.needs_pass_key === true })),
+    buildings: buildings.map(b => ({ id: b.id, name: b.name, city: b.city, postcode: b.postcode ?? null, state: b.state, fullAccessCard: b.full_access_card === true, needsPassKey: b.needs_pass_key === true })),
     units: units.map(u => ({
       id: u.id, buildingId: u.property_id, parentUnitId: u.parent_unit_id ?? null,
       listingName: u.listing_name ?? '', unitCode: u.unit_code ?? u.unit_number, state: u.state,

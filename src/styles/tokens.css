@@ -62,8 +62,13 @@ body { margin: 0; }
   }
 }
 
-@media (max-width: 639.98px) {
-  input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea { font-size: 16px; }
+/* Phones: iOS Safari zooms in on focus of any field under 16px. An !important in the base layer outranks every
+   later layer's !important (text-copy! in utilities), unlayered rules (textarea.field-input) and inline styles.
+   No field is set above 16px today; one that is would be capped to 16 here on phones. */
+@layer base {
+  @media (max-width: 639.98px) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea { font-size: 16px !important; }
+  }
 }
 
 /* Design tokens -> Tailwind theme. Utilities such as text-ink, bg-page, bg-gold,

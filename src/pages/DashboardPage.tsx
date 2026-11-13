@@ -490,7 +490,7 @@ export default function DashboardPage() {
               const to = KPI_LINK[k.key];
               const occ = k.key === 'occupancy' ? Number(k.value) : null;
               return (
-                <StatTile key={k.key} label={`${KPI_LABEL[k.key] ?? humanize(k.key)}${k.estimate ? ' (estimate)' : ''}`} value={kpiValue(k)} className={KPI_FLEX}
+                <StatTile key={k.key} label={`${KPI_LABEL[k.key] ?? humanize(k.key)}${k.estimate ? (period ? ` · ${shortMonth(period)} estimate` : ' (estimate)') : ''}`} value={kpiValue(k)} className={KPI_FLEX}
                   onClick={to ? () => go(to) : undefined}
                   hint={occ != null && Number.isFinite(occ) ? <OccupancyRing pct={occ} /> : undefined} />
               );

@@ -5,7 +5,7 @@ import Icon from '../../components/Icon';
 import { cx } from '../../lib/design-tokens';
 import type { UnitReadiness } from '../../lib/types';
 import { buildingName, personName } from '../../lib/format';
-import type { Building, Unit } from './shared';
+import { buildingArea, type Building, type Unit } from './shared';
 import { MODEL, PURPOSE_LABEL, codeName } from '../../lib/revenueModel';
 import { useContractTypes } from '../../lib/useContractTypes';
 import { statusLabel, statusOf, TONE_STYLE } from '../../lib/status';
@@ -140,7 +140,7 @@ export default function UnitTree({ buildings, units, selectedId, readiness, canE
                       <span className="[transition:transform_160ms] text-muted-ink flex flex-none" style={{ transform: `rotate(${open ? 90 : 0}deg)` }}><Icon name="ChevronRight" size="sm" /></span>
                       <span className="min-w-0 flex-1">
                         <span className="block text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={b.name}>{buildingName(b.name)}</span>
-                        {b.city && <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{b.city}</span>}
+                        {b.city && <span className="block text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{buildingArea(b)}</span>}
                       </span>
                       <span className="flex-none min-w-[26px] h-[20px] px-1.5 box-border rounded-pill bg-muted text-caption font-semibold text-muted-ink grid place-items-center [font-variant-numeric:tabular-nums]"
                         title={`${us.length} ${us.length === 1 ? 'unit' : 'units'}`}>{us.length}</span>
