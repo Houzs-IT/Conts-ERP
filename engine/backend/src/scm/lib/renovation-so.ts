@@ -140,6 +140,16 @@ export async function contractBrand(db: RenoDb, quotationBrandId: number | null,
   return row ? { id: Number(row.id), name: row.name } : null;
 }
 
+/** A project with no brand picked takes its contract's, so Client & team shows what the SO prints. */
+export async function fillProjectBrand(db: RenoDb, projectId: number | null, brandName: string | null): Promise<void> {
+  if (!projectId || !brandName) return;
+  await db.q(
+    `update public.projects set brand = $2, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+      where id = $1 and nullif(trim(brand), '') is null`,
+    [projectId, brandName],
+  );
+}
+
 export async function convertQuotationToSo(
   db: RenoDb,
   actor: RenoActor,
@@ -224,6 +234,7 @@ export async function convertQuotationToSo(
       h.building || null, h.unitNo || null, `Renovation contract from quotation ${rev.docNo}`, actor.staffId, actor.companyId, debtorCode, customerId,
       wh?.code ?? null, wh?.id ?? null, state],
   );
+  await fillProjectBrand(db, q.projectId ?? null, brand?.name ?? null);
   await insertSoItems(db, docNo, rows, { companyId: actor.companyId, debtorName, lineDate: soDate });
   const revised = await recomputeSoHeader(db, docNo);
   await insertSections(db, { kind: 'so', id: docNo }, sections, actor.companyId);

@@ -20,6 +20,7 @@ import { activeCompanyId, activeCompanySql } from '../lib/companyScope';
 import type { Env, Variables } from '../env';
 import type { Db } from '../../services/renovation/load';
 import { refreshProjectDates } from '../../services/renovation/projectDates';
+import { shareBrandWithProject } from '../../services/renovation/projectBrand';
 import {
   propertyColumnsReady,
   readProjectShared,
@@ -170,6 +171,7 @@ export async function applyRenovationSoInfo(
     const shared: SoShared | null = await readSoShared(db, docNo);
     if (!shared) return { ok: false, status: 404, body: { error: 'so_not_found' } };
     await writeSoToProject(db, input.projectId, shared, ctx.actorId, ctx.companyId, docNo);
+    await shareBrandWithProject(db, docNo, input.projectId);
   }
   return { ok: true, projectId: input.projectId };
 }

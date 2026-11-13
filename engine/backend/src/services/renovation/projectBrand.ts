@@ -53,3 +53,24 @@ export async function brandOfSo(
     .bind(name, companyId).first<BrandRow>();
   return row ? toBrand(row) : null;
 }
+
+const BLANK = (column: string): string => `nullif(trim(${column}), '') IS NULL`;
+const FILLED = (column: string): string => `nullif(trim(${column}), '') IS NOT NULL`;
+
+/** A sales order linked to a project shares one brand with it (owner, 13 Nov 2026): whichever side has none takes the
+    other's. A brand already set on either side is never overwritten. */
+export async function shareBrandWithProject(db: Db, docNo: string, projectId: number): Promise<void> {
+  await db.prepare(
+    `UPDATE scm.mfg_sales_orders s SET branding = p.brand, updated_at = now()
+       FROM projects p WHERE s.doc_no = ? AND p.id = ? AND ${BLANK("s.branding")} AND ${FILLED("p.brand")}`,
+  ).bind(docNo, projectId).run();
+  await db.prepare(
+    `UPDATE scm.reno_so_contracts k SET brand_id = b.id
+       FROM projects p JOIN public.project_brands b ON b.company_id = p.company_id AND lower(trim(b.name)) = lower(trim(p.brand))
+      WHERE k.so_doc_no = ? AND p.id = ? AND k.brand_id IS NULL`,
+  ).bind(docNo, projectId).run();
+  await db.prepare(
+    `UPDATE projects p SET brand = s.branding, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+       FROM scm.mfg_sales_orders s WHERE p.id = ? AND s.doc_no = ? AND ${BLANK("p.brand")} AND ${FILLED("s.branding")}`,
+  ).bind(projectId, docNo).run();
+}
