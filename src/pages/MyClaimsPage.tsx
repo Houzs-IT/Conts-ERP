@@ -460,6 +460,10 @@ function Papers({ files, hrefOf }: { files: ClaimFile[]; hrefOf: (fileId: string
   );
 }
 
+function WrappedFact({ text }: { text: string }) {
+  return <span className="whitespace-normal [overflow-wrap:anywhere]">{text}</span>;
+}
+
 function Problem({ text }: { text: string }) {
   return <div role="note" className={cx('px-3 py-2 rounded-control text-copy', TONE.critical.bg, TONE.critical.text)}>{text}</div>;
 }
@@ -473,7 +477,7 @@ function ReceiptDetail({ receipt, onClose }: { receipt: Receipt; onClose: () => 
         { label: 'Amount', value: rm(receipt.amountSen) },
         { label: 'Status', value: RECEIPT_STATUS[receipt.status] },
         { label: 'Date on the receipt', value: date(receipt.spendDate) },
-        { label: 'Shop', value: receipt.vendorName ?? '—' },
+        { label: 'Shop', value: <WrappedFact text={receipt.vendorName ?? '—'} /> },
         { label: 'Paid back by', value: paybackRoute(receipt) },
       ]} />
       {receipt.rejectReason && <Problem text={receipt.rejectReason} />}
@@ -489,12 +493,14 @@ function RequestDetail({ request, onClose, onWithdraw }: { request: PaymentReque
   const vouchers = request.vouchers.filter(v => v.status !== 'CANCELLED').map(v => v.pvNumber).join(', ');
   return (
     <Modal title={`Request ${request.requestNo}`} eyebrow="My claims" size="md" onClose={onClose}
-      footNote={canWithdraw(request) ? <Button variant="tertiary" icon={<Icon name="Undo2" size="sm" />} onClick={onWithdraw}>Withdraw</Button> : undefined}
-      footer={<Button variant="secondary" onClick={onClose}>Close</Button>}>
+      footer={<>
+        {canWithdraw(request) && <Button variant="tertiary" className="mr-auto" icon={<Icon name="Undo2" size="sm" />} onClick={onWithdraw}>Withdraw</Button>}
+        <Button variant="secondary" onClick={onClose}>Close</Button>
+      </>}>
       <KeyFacts cols={2} items={[
         { label: 'Amount', value: rm(request.amountSen) },
         { label: 'Status', value: REQUEST_STATUS[request.status] },
-        { label: 'Paid to', value: request.payeeName },
+        { label: 'Paid to', value: <WrappedFact text={request.payeeName} /> },
         { label: 'Type', value: request.type === 'DEPOSIT' ? 'A deposit' : 'A payment' },
         { label: 'Asked on', value: date(request.createdAt) },
         { label: 'Pay by', value: request.wantedOn ? date(request.wantedOn) : 'Not set' },
