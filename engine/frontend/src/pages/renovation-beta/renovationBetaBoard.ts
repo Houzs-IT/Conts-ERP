@@ -37,6 +37,8 @@ export interface DesignProject {
   /** Building and unit, as the mockup's first name part. */
   title: string;
   customer: string | null;
+  /** The brand it is sold under, as picked on Client & team; null when none is picked yet. */
+  brand: string | null;
   salesName: string | null;
   createdOn: string | null;
   /** When it was made (ISO), for "newest first"; falls back to the day. */
@@ -243,6 +245,7 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
       code: p.code,
       title,
       customer,
+      brand: p.brand?.trim() || null,
       salesName: p.salesName,
       createdOn: p.createdOn,
       createdAt: p.createdAt ?? (p.createdOn ? `${p.createdOn}T00:00:00Z` : null),
