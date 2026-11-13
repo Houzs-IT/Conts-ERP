@@ -15,7 +15,9 @@ import { useToast } from './Toast';
 import { PhoneText } from './PhoneText';
 import { Floating, ToolButton, TableFilterChipsContext, type TableFilterChips, PanelItem, PanelHeading, StatusCell, ChannelCell, PersonCell, channelLabel } from './DataTableParts';
 import { useTableViews, type TableLayout, type SavedView } from './DataTableViews';
-import { accountOrderNewer, moveColumn, viewKeepsColumns } from '../lib/columnOrder';
+import { accountOrderNewer, columnControls, columnSaver, COLUMN_DRAG_TYPE, dropSide, layoutKeys, moveColumn, readLayout, viewKeepsColumns, type LayoutKeys } from '../lib/columnOrder';
+import { useSession } from '../lib/session';
+import { isFieldRole } from '../lib/fieldRoles';
 import { resolveRelative, isRelative } from '../lib/relativeDates';
 import { rm, date as fmtDate, dateTime as fmtDateTime, count as fmtCount, plural } from '../lib/format';
 import { phone as fmtPhone } from '../lib/phone';
@@ -278,18 +280,19 @@ function cellFace<R>(c: Column<R>, r: R): ReactNode {
   }
 }
 
-function readStored(id: string): TableLayout['columns'] | null {
-  try { const v = localStorage.getItem(`dt:${id}:columns`); return v ? JSON.parse(v) : null; } catch { return null; }
+/** This browser's storage, or null where it is refused. Layouts are kept per person (lib/columnOrder.ts layoutKeys). */
+function browserStorage(): Storage | null {
+  try { return localStorage; } catch { return null; }
 }
-function writeStored(id: string, cols: TableLayout['columns']) {
-  try { localStorage.setItem(`dt:${id}:columns`, JSON.stringify(cols)); } catch { /* private window: columns reset next time */ }
+function writeStored(keys: LayoutKeys, cols: TableLayout['columns']) {
+  try { localStorage.setItem(keys.columns, JSON.stringify(cols)); } catch { /* private window: columns reset next time */ }
 }
-/** When the person's account kept the column order this browser has (the server's time, lib/columnOrder.ts). */
-function readStoredAt(id: string): string | null {
-  try { return localStorage.getItem(`dt:${id}:columnsAt`); } catch { return null; }
+/** When the person's account kept the column order this browser has for them (the server's time, lib/columnOrder.ts). */
+function readStoredAt(keys: LayoutKeys): string | null {
+  try { return localStorage.getItem(keys.at); } catch { return null; }
 }
-function writeStoredAt(id: string, at: string) {
-  try { localStorage.setItem(`dt:${id}:columnsAt`, at); } catch { /* private window: the account's order is taken each visit */ }
+function writeStoredAt(keys: LayoutKeys, at: string) {
+  try { localStorage.setItem(keys.at, at); } catch { /* private window: the account's order is taken each visit */ }
 }
 
 /** Saved order and visibility laid over the page's columns: unknown keys dropped, new columns added in place. */
@@ -329,18 +332,23 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const SORT = `${P}sort`, PAGE = `${P}page`, SIZE = `${P}size`;
 
   /* ---- columns: order and visibility ---- */
-  const [layoutCols, setLayoutCols] = useState<TableLayout['columns']>(() => mergeColumns(columns, readStored(id)));
+  // Kept per person in this browser, so a shared computer keeps each person's own (lib/columnOrder.ts layoutKeys).
+  const { user } = useSession();
+  const keys = useMemo(() => layoutKeys(user?.id, id), [user?.id, id]);
+  const [layoutCols, setLayoutCols] = useState<TableLayout['columns']>(() => mergeColumns(columns, readLayout(browserStorage(), keys)));
   const colKeys = columns.map(c => c.key).join('|');
   useEffect(() => { setLayoutCols(cur => mergeColumns(columns, cur)); }, [colKeys]); // eslint-disable-line react-hooks/exhaustive-deps
   // Each change is kept in this browser at once and, a moment later, with the person's account (saveCols, set below
   // once the views are loaded), so the list opens the same way on any computer (chew, 13 Nov 2026: by person).
   const saveCols = useRef<((next: TableLayout['columns']) => void) | null>(null);
-  const setCols = useCallback((next: TableLayout['columns']) => { setLayoutCols(next); writeStored(id, next); saveCols.current?.(next); }, [id]);
+  const setCols = useCallback((next: TableLayout['columns']) => { setLayoutCols(next); writeStored(keys, next); saveCols.current?.(next); }, [keys]);
   const byKey = useMemo(() => new Map(columns.map(c => [c.key, c])), [columns]);
   const visible = useMemo(() => layoutCols.filter(l => !l.hidden && byKey.has(l.key)).map(l => byKey.get(l.key)!), [layoutCols, byKey]);
-  // A column header dragged onto another moves its column before or after that one (chew, 13 Nov 2026), where the
-  // Columns menu lets people show and order columns; keyboard users keep that menu's up and down buttons.
-  const canDrag = !noColumns && visible.length > 1;
+  // A column header dragged onto another moves its column before or after that one (chew, 13 Nov 2026), on lists with
+  // the Columns menu, which lets people put a column back and keeps keyboard users' up and down buttons. The order goes
+  // with desk accounts on every such list (lib/columnOrder.ts columnControls).
+  const ctl = columnControls({ noToolbar, noColumns, desk: !!user && user.role !== 'owner' && !isFieldRole(user.role), visible: visible.length });
+  const canDrag = ctl.drag;
   const dragKey = useRef<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropAt, setDropAt] = useState<{ key: string; side: 'before' | 'after' } | null>(null);
@@ -510,7 +518,8 @@ export function DataTable<R>(props: DataTableProps<R>) {
   }
 
   /* ---- saved views ---- */
-  const views = useTableViews(noViews ? null : id);
+  // Read for the saved views, and on lists without them for the person's own column order.
+  const views = useTableViews(!noViews || ctl.account ? id : null);
   const managedKeys = useMemo(() => [...allFilterKeys, ...viewParams], [allFilterKeys, viewParams]);
   const currentLayout = (): TableLayout => {
     const filters: Record<string, string> = {};
@@ -535,34 +544,26 @@ export function DataTable<R>(props: DataTableProps<R>) {
   const [activeView, setActiveView] = useState<string | null>(null);
   // The default view opens by itself, once, when the address carries no filters or sort of its own.
   const autoApplied = useRef(false);
-  // A change waits a moment before it is sent, so dragging a few columns in a row is one save; saves go one after
-  // another, so the account ends with the last. The time the account kept it is noted, so this browser does not take
-  // it back later as if it had come from another computer.
-  const saveTimer = useRef<number | null>(null);
-  const sending = useRef(0);
-  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
-  useEffect(() => () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); }, []);
-  saveCols.current = noViews ? null : next => {
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      saveTimer.current = null;
-      sending.current++;
-      saveQueue.current = saveQueue.current.then(() => views.saveColumns(next))
-        .then(at => { if (at) writeStoredAt(id, at); })
-        .finally(() => { sending.current--; });
-    }, 800);
-  };
+  // Changes go to the person's account a moment after the last one, one save after another, and at once when the list
+  // is left (lib/columnOrder.ts columnSaver). The time the account kept it is noted, so this browser does not take it
+  // back later as if it had come from another computer.
+  const sendCols = useRef(views.saveColumns);
+  sendCols.current = views.saveColumns;
+  const saver = useMemo(() => columnSaver<TableLayout['columns']>(cols => sendCols.current(cols), at => writeStoredAt(keys, at)), [keys]);
+  useEffect(() => () => saver.flush(), [saver]);
+  saveCols.current = ctl.account ? saver.schedule : null;
   // The person's own column order kept with their account: taken when the account kept it later than the order this
-  // browser has (changed on another computer). A change of this browser's still waiting to be sent wins.
+  // browser has for them (changed on another computer). A change of this browser's still waiting to be sent wins.
   useEffect(() => {
     const d = views.data;
-    if (!d?.columns?.length || saveTimer.current || sending.current) return;
-    if (!accountOrderNewer(d.columnsAt, readStoredAt(id))) return;
+    if (!ctl.account || !d?.columns?.length || saver.pending()) return;
+    if (!accountOrderNewer(d.columnsAt, readStoredAt(keys))) return;
     const own = mergeColumns(columns, d.columns);
-    setLayoutCols(own); writeStored(id, own); writeStoredAt(id, d.columnsAt!);
+    setLayoutCols(own); writeStored(keys, own); writeStoredAt(keys, d.columnsAt!);
   }, [views.data]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (autoApplied.current || !views.data) return;
+    // Lists without saved views read the views answer only for the person's column order.
+    if (noViews || autoApplied.current || !views.data) return;
     autoApplied.current = true;
     const urlHasState = [...managedKeys, SORT].some(k => params.get(k));
     const def = views.data.mine.find(v => v.isDefault) ?? views.data.company.find(v => v.isDefault);
@@ -761,22 +762,24 @@ export function DataTable<R>(props: DataTableProps<R>) {
                         onDragStart={canDrag ? e => {
                           dragKey.current = c.key; setDragging(c.key);
                           e.dataTransfer.effectAllowed = 'move';
-                          try { e.dataTransfer.setData('text/plain', c.label || c.key); } catch { /* some browsers refuse; the drag still runs */ }
+                          // Firefox starts a drag only with some data set; a kind of its own, so a search box let go over
+                          // does not take the column's name as typing (lib/columnOrder.ts COLUMN_DRAG_TYPE).
+                          try { e.dataTransfer.setData(COLUMN_DRAG_TYPE, c.key); } catch { /* some browsers refuse; the drag still runs */ }
                         } : undefined}
                         onDragOver={canDrag ? e => {
                           if (!dragKey.current) return;
                           e.preventDefault();
                           e.dataTransfer.dropEffect = 'move';
-                          const r = e.currentTarget.getBoundingClientRect();
-                          const side = e.clientX < r.left + r.width / 2 ? 'before' : 'after';
+                          const side = dropSide(e.clientX, e.currentTarget.getBoundingClientRect());
                           setDropAt(d => (d?.key === c.key && d.side === side ? d : { key: c.key, side }));
                         } : undefined}
                         onDragLeave={canDrag ? e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropAt(d => (d?.key === c.key ? null : d)); } : undefined}
                         onDrop={canDrag ? e => {
                           e.preventDefault();
-                          const from = dragKey.current, at = dropAt;
+                          // Where the pointer is let go, not the gold line, which may not have caught up with it yet.
+                          const from = dragKey.current, side = dropSide(e.clientX, e.currentTarget.getBoundingClientRect());
                           endDrag();
-                          if (from && at) { const next = moveColumn(layoutCols, from, at.key, at.side); if (next !== layoutCols) setCols(next); }
+                          if (from) { const next = moveColumn(layoutCols, from, c.key, side); if (next !== layoutCols) setCols(next); }
                         } : undefined}
                         onDragEnd={canDrag ? endDrag : undefined}
                         className={cx('group/th sticky top-0 z-[2] bg-muted [box-shadow:inset_0_-1px_0_var(--color-line)] py-2 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink',
