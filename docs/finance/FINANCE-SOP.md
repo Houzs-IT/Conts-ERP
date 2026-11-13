@@ -780,9 +780,9 @@
 - 业主的报表已经 final 的，那些金额点了不会解锁，会说「Unlock the final first」。
 - 手机上只看「6 of 6 locked」这样的数字，锁要在电脑上做。
 
-**整列：Lock all / Unlock all**
+**整列：Whole column 那一行的 Lock · Unlock**
 
-- 表头下面有一行「Whole column」，每个类别都有 **Lock all** 和 **Unlock all**，一按就锁或解整个月（「我想要也可以一键unlock」）。不管上面有没有搜索或筛选，都是整个月。
+- 表头下面有一行「Whole column」，每个类别都有 **Lock · Unlock**（整列锁、整列解锁），一按就锁或解整个月（「我想要也可以一键unlock」）。不管上面有没有搜索或筛选，都是整个月。
 - Lock all 会跳过还不能锁的单位，并在提示里写出是哪几个。
 - 没有合约的单位不在 Unit report 上（系统用默认条件算它们的报表），但整列的锁也会锁到它们；提示会写「… of them have no contract for the month, so they are not on this report.」。2026 年 10 月正式库有 22 个这样的单位，它们的业主都没有其他有合约的单位。
 
@@ -792,7 +792,7 @@
 - 还没锁完：写还在等什么，例如「Waiting: Revenue, Utilities and O2」。
 - 全部锁了：**Make final**。按下去系统**先重新 Generate 那份报表，再 final**，所以锁完以后不用再去按 Generate。Generate 要 Finance 的编辑权限，没有的人按 Make final 会被告知。
 - final 了：青色「Final · 谁 · 几号」。点它就是 **Unlock final，要写原因**（规则跟以前一样，见下面）。
-- Final 栏的 Whole column：**Lock all** 把所有已经锁完的业主一次 final，并写出还在等的业主名字；**Unlock all** 把这个月所有 final 的报表一次解锁，写一个原因。
+- Final 栏的 Whole column：**Lock** 把所有已经锁完的业主一次 final，并写出还在等的业主名字；**Unlock** 把这个月所有 final 的报表一次解锁，写一个原因。
 
 **什么时候不能锁**
 
