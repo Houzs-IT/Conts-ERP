@@ -315,6 +315,7 @@
  "PATCH /api/departments/[id]": "AFFFFFFU",
  "PATCH /api/departments/positions/[id]": "AFFFFFFU",
  "PATCH /api/drivers/[id]": "AFFFFFFU",
+ "PATCH /api/employees/renovators/[id]": "AFFFFFFU",
  "PATCH /api/expenses/[id]": "AFFAFFFU",
  "PATCH /api/fabrics/[id]": "AFFFFFFU",
  "PATCH /api/field/tasks/[id]/kind": "FFFFAAFU",

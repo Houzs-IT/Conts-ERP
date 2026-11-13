@@ -244,6 +244,94 @@ export function ComboInput({ value, onChange, options, label, placeholder, maxLe
   );
 }
 
+export function ComboSelect({ value, onChange, options, label, placeholder = 'Type to search' }: {
+  value: string; onChange: (v: string) => void; options: SelectOption[]; label: string; placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState<string | null>(null);
+  const [active, setActive] = useState(0);
+  const [limit, setLimit] = useState(PAGE);
+  const field = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const id = useId();
+  const listId = `${id}-list`;
+  const current = options.find(o => o.value === value);
+
+  const sorted = useMemo(() => [...options].sort((a, b) =>
+    COLLATOR.compare(a.group ?? '', b.group ?? '') || COLLATOR.compare(a.label, b.label)), [options]);
+  const shown = useMemo(() => {
+    const words = (query ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return sorted;
+    return sorted.filter(o => {
+      const text = `${o.group ?? ''} ${o.label} ${o.hint ?? ''} ${o.keywords ?? ''}`.toLowerCase();
+      return words.every(word => text.includes(word));
+    });
+  }, [sorted, query]);
+  const drawn = shown.slice(0, Math.max(limit, active + 1));
+
+  useEffect(() => { setActive(0); setLimit(PAGE); }, [query]);
+  useEffect(() => { if (open) document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: 'nearest' }); }, [active, open, listId]);
+
+  const openList = () => { setOpen(true); setActive(Math.max(0, sorted.findIndex(o => o.value === value))); };
+  const close = () => { setOpen(false); setQuery(null); };
+  const choose = (option?: SelectOption) => { if (!option || option.disabled) return; onChange(option.value); close(); };
+  const onListScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const box = e.currentTarget;
+    if (drawn.length < shown.length && box.scrollTop + box.clientHeight >= box.scrollHeight - 120) setLimit(n => n + PAGE);
+  };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) openList(); else setActive(a => Math.min(a + 1, shown.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(a - 1, 0)); }
+    else if (e.key === 'Enter' && open) { e.preventDefault(); choose(shown[active]); }
+    else if (e.key === 'Escape' && open) { e.preventDefault(); close(); }
+    else if (e.key === 'Tab') close();
+  };
+
+  let lastGroup: string | undefined;
+  return (
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <label htmlFor={id} style={{ fontSize: 'var(--text-small)', fontWeight: 600, color: 'var(--color-text-secondary)' }}>{label}</label>
+      <div ref={field} className="relative flex items-center min-w-0">
+        <input ref={input} id={id} value={query ?? current?.label ?? ''} placeholder={current?.label ?? placeholder} autoComplete="off"
+          role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={listId}
+          aria-activedescendant={open && shown[active] ? `${listId}-${active}` : undefined}
+          onFocus={e => { e.currentTarget.select(); openList(); }}
+          onClick={() => { if (!open) openList(); }}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onKeyDown={onKey}
+          className="field-input" style={{ paddingRight: 36 }} />
+        <button type="button" tabIndex={-1} aria-label={`Show ${label.toLowerCase()} list`} onMouseDown={e => e.preventDefault()}
+          onClick={() => { if (open) close(); else { input.current?.focus(); openList(); } }}
+          className="absolute right-1 w-8 h-8 grid place-items-center bg-transparent border-none cursor-pointer text-muted-ink">
+          <Icon name="ChevronDown" size="sm" />
+        </button>
+      </div>
+      <Floating anchor={field} open={open} onClose={close} label={label} width={field.current?.offsetWidth} maxHeight={300}>
+        <div id={listId} role="listbox" aria-label={label} className="max-h-[300px] overflow-y-auto py-1" onScroll={onListScroll}>
+          {shown.length === 0 && <div className="px-3 py-3 text-meta text-muted-ink">No match for "{(query ?? '').trim()}".</div>}
+          {drawn.map((o, i) => {
+            const head = o.group && o.group !== lastGroup ? o.group : null;
+            lastGroup = o.group;
+            return (
+              <Fragment key={`${o.value}-${i}`}>
+                {head && <div className="px-3 pt-2 pb-1 text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{head}</div>}
+                <div id={`${listId}-${i}`} role="option" aria-selected={o.value === value} aria-disabled={o.disabled}
+                  onMouseEnter={() => setActive(i)} onMouseDown={e => { e.preventDefault(); choose(o); }}
+                  className={cx('mx-1 px-2.5 py-[7px] max-md:min-h-11 rounded-control flex items-center gap-2 text-copy cursor-pointer',
+                    i === active && 'bg-muted', o.value === value && 'font-semibold', o.disabled && 'text-faint cursor-not-allowed')}>
+                  <span className="flex-1 min-w-0 truncate">{o.label}</span>
+                  {o.hint && <span className="text-caption text-muted-ink flex-none">{o.hint}</span>}
+                  {o.value === value && <Icon name="Check" size="sm" />}
+                </div>
+              </Fragment>
+            );
+          })}
+        </div>
+      </Floating>
+    </div>
+  );
+}
+
 export interface MenuItem { key: string; label: string; hint?: string; icon?: string; danger?: boolean; disabledReason?: string; onSelect: () => void }
 
 /**
