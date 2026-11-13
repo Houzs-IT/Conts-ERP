@@ -36,7 +36,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     LEFT JOIN LATERAL (SELECT x.id, x.amount, x.charge_to, x.reference, x.receipt_document_id, x.deduct_month, x.rolled, x.record_only, x.owner_paid, x.payment_request_no, x.payment_request_id FROM expenses x WHERE x.unit_id = a.unit_id AND x.category = a.kind
                        AND (x.reference = a.account_no OR x.reference IS NULL OR x.reference = '')
                        AND x.incurred_on >= ? AND x.incurred_on < ? ORDER BY (x.reference = a.account_no) DESC NULLS LAST, x.created_at DESC LIMIT 1) e ON true
-    LEFT JOIN utility_payment_requests() r ON r.id = e.payment_request_id -- migrations 0220, 0324
+    LEFT JOIN utility_payment_requests() r ON r.id = e.payment_request_id -- migrations 0220, 0327
     WHERE a.kind IN ('electricity','water','internet','sewerage') ${ownerId ? 'AND u.owner_id = ?' : ''} ${unitId ? 'AND u.id = ?' : ''}
     ORDER BY p.name, u.unit_number, a.kind`,
     `${month}-01`, `${nextMonth(month)}-01`,

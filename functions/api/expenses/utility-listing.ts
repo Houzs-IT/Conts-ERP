@@ -78,7 +78,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       receiptId: b.receipt_document_id ?? null, reference: b.reference ?? null, rolled: !!b.rolled,
       request: b.payment_request_id && b.request_status
         ? { id: b.payment_request_id, no: b.payment_request_no ?? null, status: b.request_status, month: b.request_month, amount: Number(b.request_sen),
-            // Why finance sent it back, and who (migration 0324), so its bills can be fixed and the request sent again.
+            // Why finance sent it back, and who (migration 0327), so its bills can be fixed and the request sent again.
             reason: b.request_reason ?? null, decidedBy: b.request_decided_by ?? null }
         : null,
     })),

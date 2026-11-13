@@ -4,7 +4,7 @@
 //   DB_URL=postgres://postgres@127.0.0.1:55441/postgres API_BASE=http://localhost:8891 node scripts/api-checks/utility-listing.mjs
 import postgres from 'postgres';
 import { randomUUID } from 'node:crypto';
-import { call, check, done } from './harness.mjs';
+import { call, check, cookieFor, done } from './harness.mjs';
 
 const DB_URL = process.env.DB_URL;
 if (!DB_URL || !/@(127\.0\.0\.1|localhost)[:/]/.test(DB_URL)) { console.error('Set DB_URL to the local test database.'); process.exit(2); }
@@ -160,13 +160,24 @@ check('"Send again" is refused while finance still has the request', r.status ==
 const ownerPaidBill = await bill({ kind: 'water', amount: 1500, date: '2029-07-31', chargeTo: 'the_conts' });
 await db(`UPDATE expenses SET owner_paid = true, payment_request_id = $1, payment_request_no = 'PRQ-CHK-004' WHERE id = $2`, reqD, ownerPaidBill);
 r = await call('POST', `/api/expenses/utilities/payment-requests/${reqD}/resend`, {});
-check('"Send again" with no bill left for the company to pay is refused', r.status === 422, `${r.status} ${r.text.slice(0, 200)}`);
+const [paidOff] = await db(`SELECT payment_request_id FROM expenses WHERE id = $1`, ownerPaidBill);
+check('"Send again" with no bill left for the company to pay is refused, and the owner-paid bill lets go of the request (so it leaves Sent back to fix)',
+  r.status === 422 && paidOff?.payment_request_id === null, `${r.status} ${r.text.slice(0, 200)} ${JSON.stringify(paidOff)}`);
 r = await call('POST', `/api/expenses/utilities/payment-requests/${reqC}/resend`, {});
 const [julyAfter] = await db(`SELECT payment_request_id FROM expenses WHERE id = $1`, julyFixed?.id ?? '');
 check('"Send again" goes to the finance system (not reachable here), and the bill keeps its request', r.status >= 400 && ![404, 409, 422].includes(r.status) && julyAfter?.payment_request_id === reqC,
   `${r.status} ${r.text.slice(0, 200)}`);
 r = await call('POST', `/api/expenses/utilities/payment-requests/${reqC}/resend`, {}, 'housekeeper');
 check('only finance and management send a utility request again', r.status === 403, r.status);
+// Demo mode sends nothing to finance (review, 13 Nov 2026): not Send again, nor a utility request made from bills.
+const inDemo = async (path, body) => {
+  const x = await fetch(`${process.env.API_BASE}${path}`, { method: 'POST', headers: { cookie: `${cookieFor('management')}; tc_demo=1`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  return { status: x.status, text: await x.text() };
+};
+r = await inDemo(`/api/expenses/utilities/payment-requests/${reqC}/resend`, {});
+check('in Demo mode, Send again sends nothing to finance', r.status === 409 && /Demo/.test(r.text), `${r.status} ${r.text.slice(0, 200)}`);
+r = await inDemo('/api/expenses/utilities/payment-requests', { expenseIds: [june2?.id], provider: 'TNB' });
+check('in Demo mode, bills are not sent to finance either', r.status === 409 && /Demo/.test(r.text), `${r.status} ${r.text.slice(0, 200)}`);
 
 await db(`DELETE FROM owner_adjustments WHERE expense_id IN (SELECT id FROM expenses WHERE unit_id = $1 AND incurred_on >= '2029-01-01' AND incurred_on < '2030-01-01')`, a.id);
 await db(`DELETE FROM unit_utility_accounts WHERE id = $1`, acc);

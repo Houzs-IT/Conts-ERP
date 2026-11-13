@@ -48,7 +48,7 @@ export async function requestKey(expenseIds: string[]): Promise<string> {
 /** A request finance sent back, or its sender withdrew: its bills are fixed and it goes out again (chew, 13 Nov 2026). */
 export const RETURNED = new Set(['WITHDRAWN', 'REJECTED']);
 
-/** A request as the Utility bills screens may read it (migrations 0220, 0324: only requests a bill points at), with why
+/** A request as the Utility bills screens may read it (migrations 0220, 0327: only requests a bill points at), with why
  *  it came back; null when no bill points at it. */
 export async function requestState(env: Env, requestId: string): Promise<{ id: string; requestNo: string | null; status: string; reason: string | null; decidedBy: string | null } | null> {
   const r = await one<{ id: string; request_no: string | null; status: string; reason: string | null; decided_by: string | null }>(env,
