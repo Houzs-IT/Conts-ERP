@@ -63,6 +63,15 @@ export function Drawer({ open, onClose, children, width = 480, size, labelledBy,
     let done = false;
     return () => { if (!done) { done = true; held.current--; } };
   }, []);
+  // No labelledBy given: the drawer is named by its first heading, so a screen reader does not announce a nameless dialog.
+  useEffect(() => {
+    const p = panel.current;
+    if (!open || !p || labelledBy) return;
+    const h = p.querySelector<HTMLElement>('h1, h2, h3');
+    if (!h) return;
+    if (!h.id) h.id = `drawer-title-${Math.random().toString(36).slice(2, 8)}`;
+    p.setAttribute('aria-labelledby', h.id);
+  });
   const requestClose = useCallback(async () => {
     const s = state.current;
     if (s.dirty === true || (s.dirty === 'typed' && typed.current) || held.current > 0) {

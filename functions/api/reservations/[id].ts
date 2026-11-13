@@ -197,7 +197,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
       invoiceReason: invoiceRefusal({ channel: row.channel, state: row.state, gross_booking_value: Number(row.gross_booking_value) }, payments),
       // A booking site owns its bookings' dates and price: they change on the site and come back through Channex.
       changeDates: live && !ota,
-      changeDatesReason: !live ? 'A past, cancelled or no-show reservation cannot move.' : ota ? `This is a ${CHANNEL_LABEL[row.channel]} reservation: its dates and price are set on ${CHANNEL_LABEL[row.channel]}. Change them there; the change comes back here by itself.` : null,
+      changeDatesReason: !live ? 'A past, cancelled or no-show reservation cannot move.' : ota ? `This reservation came from ${CHANNEL_LABEL[row.channel]}: its dates and price are set on ${CHANNEL_LABEL[row.channel]}. Change them there; the change comes back here by itself.` : null,
       recordPayment: schema.payments && can(session, 'finance', 'edit') && row.channel !== 'maintenance_block' && row.channel !== 'owner_stay',
       editDetails: true,
       paymentsReady: schema.payments,
