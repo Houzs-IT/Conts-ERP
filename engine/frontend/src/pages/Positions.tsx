@@ -190,7 +190,7 @@ export function PositionsTab() {
                     setDragOverKey(null);
                   }}
                   title="Drag to reorder department"
-                  className="cursor-grab text-ink-muted/60 hover:text-accent active:cursor-grabbing"
+                  className="cursor-grab text-ink-muted hover:text-accent active:cursor-grabbing"
                 >
                   <GripVertical size={14} />
                 </span>
@@ -239,7 +239,7 @@ export function PositionsTab() {
                         setDragOverKey(null);
                       }}
                       title="Drag to reorder, or onto a department to move it"
-                      className="shrink-0 cursor-grab pl-1 text-ink-muted/40 transition-colors hover:text-accent active:cursor-grabbing"
+                      className="shrink-0 cursor-grab pl-1 text-ink-muted transition-colors hover:text-accent active:cursor-grabbing"
                     >
                       <GripVertical size={12} />
                     </span>

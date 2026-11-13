@@ -1405,7 +1405,7 @@ function FieldLabel({
         {label}
         {required && <span className="ml-1 text-err">*</span>}
         {hint && !required && (
-          <span className="ml-1.5 normal-case tracking-normal text-ink-muted/80">
+          <span className="ml-1.5 normal-case tracking-normal text-ink-muted">
             · {hint}
           </span>
         )}

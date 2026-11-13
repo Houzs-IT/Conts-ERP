@@ -43,8 +43,7 @@ const variants: Record<Look, CSSProperties> = {
   secondary: { background: 'var(--color-surface-card)', color: 'var(--color-text-primary)', borderColor: 'var(--color-border-default)' },
   tertiary:  { background: 'transparent', color: 'var(--color-text-muted)' },
   brand:     { background: 'transparent', color: 'var(--color-text-accent)', borderColor: 'var(--color-brand-gold)' },
-  // White on the red in both themes (5.9:1); dark mode's text-inverse is near-black (3.1:1).
-  danger:    { background: 'var(--color-critical-solid)', color: '#FFFFFF' },
+  danger:    { background: 'var(--color-critical-solid)', color: 'var(--color-on-danger-solid)' },
 };
 
 export function Button({

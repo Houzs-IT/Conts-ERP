@@ -140,6 +140,8 @@
 :root[data-theme="theconts-dark"] .text-warning { color: var(--color-warning-fg); }
 :root[data-theme="theconts-dark"] .text-danger,
 :root[data-theme="theconts-dark"] .text-critical { color: var(--color-critical-fg); }
+/* The same red on a child ("Unassigned" in a picker button, MaintenancePage). */
+:root[data-theme="theconts-dark"] .\[\&\>span\]\:text-danger\! > span { color: var(--color-critical-fg) !important; }
 :root[data-theme="theconts-dark"] .text-info { color: var(--color-info-fg); }
 :root[data-theme="theconts-dark"] .text-neutral { color: var(--color-neutral-fg); }
 :root[data-theme="theconts-dark"] .text-accent { color: var(--color-accent-fg); }

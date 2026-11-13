@@ -314,7 +314,7 @@ export function ThreadList({
   if (loading) {
     return (
       <div role="status" aria-live="polite" className="flex flex-col items-center justify-center gap-1.5 px-4 py-10 text-center">
-        <InboxIcon className="h-6 w-6 text-ink-muted/40" />
+        <InboxIcon className="h-6 w-6 text-ink-muted" />
         <p className="text-xs font-medium text-ink-muted">Loading…</p>
       </div>
     );
@@ -323,13 +323,13 @@ export function ThreadList({
   if (threads.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-1.5 px-4 py-10 text-center">
-        <InboxIcon className="h-6 w-6 text-ink-muted/40" />
+        <InboxIcon className="h-6 w-6 text-ink-muted" />
         <p className="text-xs font-medium text-ink-muted">
           {emptyLabel(folder)}
         </p>
         {folder === "inbox" && (
           <>
-            <p className="max-w-xs text-[11px] leading-snug text-ink-muted/70">
+            <p className="max-w-xs text-[11px] leading-snug text-ink-muted">
               New mail arrives every few minutes. You only see mail for the
               company you are in. To change company, use the switch at the top
               of the left menu.
@@ -507,7 +507,7 @@ function RowLead({
         }}
         aria-label={starred ? "Unstar" : "Star"}
         title={starred ? "Unstar" : "Star"}
-        className="flex items-center px-1 text-ink-muted/40 hover:text-amber-500"
+        className="flex items-center px-1 text-ink-muted hover:text-amber-500"
       >
         <Star className={cn("h-4 w-4", starred && "fill-amber-400 text-amber-500")} />
       </button>
@@ -613,7 +613,7 @@ function CompactRow({
           </span>
           {t.messageCount > 1 && <span className="text-ink-muted"> ({t.messageCount})</span>}
           {t.lastSnippet && (
-            <span className="text-ink-muted/70">{" — "}{cleanSnippet(t.lastSnippet)}</span>
+            <span className="text-ink-muted">{" — "}{cleanSnippet(t.lastSnippet)}</span>
           )}
         </span>
       </button>
@@ -662,9 +662,9 @@ function ComfortableRow({
           {unread ? (
             <span className="h-2.5 w-2.5 rounded-full bg-primary" />
           ) : t.lastDirection === "outbound" ? (
-            <ArrowUpRight className="h-3.5 w-3.5 text-ink-muted/50" />
+            <ArrowUpRight className="h-3.5 w-3.5 text-ink-muted" />
           ) : (
-            <ArrowDownLeft className="h-3.5 w-3.5 text-ink-muted/50" />
+            <ArrowDownLeft className="h-3.5 w-3.5 text-ink-muted" />
           )}
         </div>
         <div className="min-w-0 flex-1">
@@ -683,7 +683,7 @@ function ComfortableRow({
             )}
           </div>
           {t.lastSnippet && (
-            <p className="truncate text-xs text-ink-muted/80">{cleanSnippet(t.lastSnippet)}</p>
+            <p className="truncate text-xs text-ink-muted">{cleanSnippet(t.lastSnippet)}</p>
           )}
           {chips.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
@@ -750,7 +750,7 @@ function RowIconButton({
         e.stopPropagation();
         onClick();
       }}
-      className="rounded p-1.5 text-ink-muted/70 transition hover:bg-surface-dim hover:text-ink"
+      className="rounded p-1.5 text-ink-muted transition hover:bg-surface-dim hover:text-ink"
     >
       {children}
     </button>
@@ -816,9 +816,9 @@ function DraftsList({
       <>
         {legacyNotice}
         <div className="flex flex-col items-center justify-center gap-1.5 px-4 py-10 text-center">
-          <FileText className="h-6 w-6 text-ink-muted/40" />
+          <FileText className="h-6 w-6 text-ink-muted" />
           <p className="text-xs font-medium text-ink-muted">No drafts</p>
-          <p className="max-w-xs text-[11px] leading-snug text-ink-muted/70">
+          <p className="max-w-xs text-[11px] leading-snug text-ink-muted">
             Start a new email and choose "Save draft" to keep it here. Drafts are
             stored on this device only.
           </p>
@@ -836,7 +836,7 @@ function DraftsList({
             onClick={() => onResume(d)}
             className="flex min-w-0 flex-1 items-start gap-2 px-4 py-3 text-left"
           >
-            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted/60" />
+            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate text-sm font-medium text-ink/90">
@@ -847,7 +847,7 @@ function DraftsList({
                 </span>
               </div>
               <p className="truncate text-xs text-ink-muted">To {d.to?.trim() || "—"}</p>
-              {d.body && <p className="truncate text-xs text-ink-muted/80">{d.body}</p>}
+              {d.body && <p className="truncate text-xs text-ink-muted">{d.body}</p>}
             </div>
           </button>
           <div className="flex shrink-0 items-center pr-2 opacity-0 transition group-hover:opacity-100">
@@ -1512,13 +1512,13 @@ export function MailInbox() {
           {/* LABELS */}
           <div className="space-y-0.5">
             <div className="flex items-center justify-between px-3 pb-0.5 pt-1">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted/70">Labels</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Labels</p>
               <button
                 type="button"
                 onClick={() => setLabelManagerOpen(true)}
                 title="Manage labels"
                 aria-label="Manage labels"
-                className="rounded p-0.5 text-ink-muted/60 transition hover:bg-surface-dim hover:text-ink"
+                className="rounded p-0.5 text-ink-muted transition hover:bg-surface-dim hover:text-ink"
               >
                 <Settings2 className="h-3.5 w-3.5" />
               </button>
@@ -1527,7 +1527,7 @@ export function MailInbox() {
               <button
                 type="button"
                 onClick={() => setLabelManagerOpen(true)}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs text-ink-muted/70 transition hover:bg-surface-dim"
+                className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs text-ink-muted transition hover:bg-surface-dim"
               >
                 <Plus className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">Create a label</span>
@@ -1557,7 +1557,7 @@ export function MailInbox() {
 
           {/* MAILBOX SWITCHER */}
           <div className="space-y-0.5 border-t border-border/60 pt-2">
-            <p className="px-3 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted/70">
+            <p className="px-3 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
               Mailboxes
             </p>
             <MailboxItem
@@ -1566,7 +1566,7 @@ export function MailInbox() {
               unread={unreadCount}
               onClick={() => setFilter({ kind: "all" })}
             />
-            <p className="flex items-center gap-1.5 px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-ink-muted/70">
+            <p className="flex items-center gap-1.5 px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
               <Building2 className="h-3 w-3" />
               Departments
             </p>
@@ -1586,7 +1586,7 @@ export function MailInbox() {
             ))}
             {personalMailboxes.length > 0 && (
               <>
-                <p className="flex items-center gap-1.5 px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-ink-muted/70">
+                <p className="flex items-center gap-1.5 px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
                   <UserIcon className="h-3 w-3" />
                   Other
                 </p>
@@ -1636,7 +1636,7 @@ export function MailInbox() {
                 />
                 {selectedCount > 0 ? `${selectedCount} selected` : "Select"}
               </label>
-              <span className="text-[11px] text-ink-muted/70">
+              <span className="text-[11px] text-ink-muted">
                 {/* Server total across the active filters (not just what's
                     loaded). Falls back to the loaded count for Drafts. */}
                 {listTotal} {listTotal === 1 ? "conversation" : "conversations"}
@@ -1720,7 +1720,7 @@ export function MailInbox() {
               </div>
             ) : (
               <div className="flex h-full min-h-[360px] flex-col items-center justify-center gap-2 px-6 text-center">
-                <Mail className="h-8 w-8 text-ink-muted/30" />
+                <Mail className="h-8 w-8 text-ink-muted" />
                 <p className="text-sm text-ink-muted">Select a conversation to read it here</p>
               </div>
             )}
@@ -1947,7 +1947,7 @@ function OutboxPanel({ q }: { q: string }) {
         </div>
       ) : items.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-1.5 px-4 py-10 text-center">
-          <Bell className="h-6 w-6 text-ink-muted/40" />
+          <Bell className="h-6 w-6 text-ink-muted" />
           <p className="text-sm text-ink-muted">
             No auto-sent emails {statusFilter || needle ? "in this filter" : "yet"}.
           </p>
@@ -1981,13 +1981,13 @@ function OutboxPanel({ q }: { q: string }) {
                   <span className="block truncate text-xs text-ink-muted">
                     {it.subject}
                     {it.snippet && (
-                      <span className="text-ink-muted/70">
+                      <span className="text-ink-muted">
                         {" — "}
                         {it.snippet}
                       </span>
                     )}
                     {it.attachmentNames.length > 0 && (
-                      <span className="ml-1 text-ink-muted/70">
+                      <span className="ml-1 text-ink-muted">
                         · {it.attachmentNames.length} attachment
                         {it.attachmentNames.length === 1 ? "" : "s"}
                       </span>
@@ -2245,17 +2245,17 @@ function ViewSettingsMenu({ prefs }: { prefs: MailViewPrefs }) {
           role="menu"
           className="absolute right-0 top-full z-30 mt-1 w-64 rounded-md border border-border bg-surface p-3 text-left shadow-slab"
         >
-          <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-muted/70">Density</p>
+          <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Density</p>
           <div className="mb-3 grid grid-cols-2 gap-1">
             <SegButton icon={Rows4} label="Compact" active={prefs.density === "compact"} onClick={() => setDensity("compact")} />
             <SegButton icon={Rows3} label="Comfortable" active={prefs.density === "comfortable"} onClick={() => setDensity("comfortable")} />
           </div>
-          <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-muted/70">Reading pane</p>
+          <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Reading pane</p>
           <div className="mb-3 grid grid-cols-2 gap-1">
             <SegButton icon={PanelRight} label="Split" active={prefs.readingPane === "split"} onClick={() => setReadingPane("split")} />
             <SegButton icon={Square} label="No split" active={prefs.readingPane === "full"} onClick={() => setReadingPane("full")} />
           </div>
-          <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-muted/70">Category tabs</p>
+          <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Category tabs</p>
           <button
             type="button"
             role="menuitemcheckbox"
@@ -2264,7 +2264,7 @@ function ViewSettingsMenu({ prefs }: { prefs: MailViewPrefs }) {
             className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm text-ink/80 transition hover:bg-surface-dim"
           >
             <span className="flex items-center gap-2">
-              <Bell className="h-4 w-4 text-ink-muted/60" />
+              <Bell className="h-4 w-4 text-ink-muted" />
               Show Primary / Notifications
             </span>
             <span
@@ -2276,7 +2276,7 @@ function ViewSettingsMenu({ prefs }: { prefs: MailViewPrefs }) {
               <span className={cn("h-3 w-3 rounded-full bg-white transition-transform", prefs.categoryTabs && "translate-x-3")} />
             </span>
           </button>
-          <p className="mt-2 px-1 text-[10px] leading-snug text-ink-muted/70">
+          <p className="mt-2 px-1 text-[10px] leading-snug text-ink-muted">
             These choices are saved on this browser.
           </p>
         </div>
@@ -2338,7 +2338,7 @@ function FolderItem({
       )}
     >
       <span className="flex min-w-0 items-center gap-2.5">
-        <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-ink-muted/60")} />
+        <Icon className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-ink-muted")} />
         <span className="truncate">{label}</span>
       </span>
       {badge !== undefined && badge > 0 && (
@@ -2546,7 +2546,7 @@ function MailboxItem({
       )}
     >
       <span className="flex min-w-0 items-center gap-2">
-        <CheckCheck className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-ink-muted/60")} />
+        <CheckCheck className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-ink-muted")} />
         <span className="truncate">{label}</span>
       </span>
       {unread > 0 && (
@@ -2601,7 +2601,7 @@ function DeptGroup({
           onClick={() => setExpanded((v) => !v)}
           aria-label={expanded ? `Collapse ${dept}` : `Expand ${dept}`}
           aria-expanded={expanded}
-          className="flex shrink-0 items-center justify-center rounded p-1 text-ink-muted/70 hover:text-ink"
+          className="flex shrink-0 items-center justify-center rounded p-1 text-ink-muted hover:text-ink"
         >
           <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-90")} />
         </button>
@@ -2611,9 +2611,9 @@ function DeptGroup({
           className="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 text-left"
         >
           <span className="flex min-w-0 items-center gap-2">
-            <Users className={cn("h-4 w-4 shrink-0", deptActive ? "text-primary" : "text-ink-muted/60")} />
+            <Users className={cn("h-4 w-4 shrink-0", deptActive ? "text-primary" : "text-ink-muted")} />
             <span className="truncate font-medium">{dept}</span>
-            <span className="shrink-0 text-[11px] font-normal text-ink-muted/70">{realCount}</span>
+            <span className="shrink-0 text-[11px] font-normal text-ink-muted">{realCount}</span>
           </span>
           {unreadForDept > 0 && (
             <span
@@ -2631,7 +2631,7 @@ function DeptGroup({
       {expanded && (
         <div className="ml-3 space-y-0.5 border-l border-border/60 pl-2">
           {entries.length === 0 && (
-            <p className="px-2 py-1.5 text-[11px] italic text-ink-muted/50">No mailbox yet</p>
+            <p className="px-2 py-1.5 text-[11px] italic text-ink-muted">No mailbox yet</p>
           )}
           {entries.map((e) => {
             if (e.kind === "missing") {
@@ -2678,7 +2678,7 @@ function MissingMailboxItem({
     return (
       <div
         title={`${address} — not set up yet`}
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink-muted/50"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink-muted"
       >
         <Mail className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">{address}</span>
@@ -2691,7 +2691,7 @@ function MissingMailboxItem({
       type="button"
       onClick={onSetup}
       title={`Set up the shared mailbox ${address}`}
-      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-ink-muted/70 transition hover:bg-surface-dim hover:text-ink"
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-ink-muted transition hover:bg-surface-dim hover:text-ink"
     >
       <Mail className="h-3.5 w-3.5 shrink-0" />
       <span className="truncate">{address}</span>
@@ -2729,7 +2729,7 @@ function PersonItem({
       )}
     >
       <span className="flex min-w-0 items-center gap-2">
-        <Icon className={cn("h-3.5 w-3.5 shrink-0", active ? "text-primary" : "text-ink-muted/50")} />
+        <Icon className={cn("h-3.5 w-3.5 shrink-0", active ? "text-primary" : "text-ink-muted")} />
         <span className="truncate">{label}</span>
       </span>
       {unread > 0 && (
@@ -2961,7 +2961,7 @@ function LabelManagerRow({
         disabled={busy}
         title="Delete label"
         aria-label={`Delete ${label.name}`}
-        className="rounded p-1 text-ink-muted/70 transition hover:bg-surface-dim hover:text-err disabled:opacity-50"
+        className="rounded p-1 text-ink-muted transition hover:bg-surface-dim hover:text-err disabled:opacity-50"
       >
         <Trash2 className="h-4 w-4" />
       </button>

@@ -1145,7 +1145,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
           <span className="text-[10px] font-semibold uppercase tracking-brand text-ink-muted">
             Sections (stages)
           </span>
-          <span className="font-mono text-[9.5px] text-ink-muted/70">
+          <span className="font-mono text-[9.5px] text-ink-muted">
             {sections.length} defined
           </span>
         </div>
@@ -1409,7 +1409,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
                               >
                                 <ChevronDown size={14} />
                               </button>
-                              <span className="ml-1 font-mono text-[10px] text-ink-muted/70">
+                              <span className="ml-1 font-mono text-[10px] text-ink-muted">
                                 {blockIdx + 1}
                               </span>
                             </div>
@@ -2360,7 +2360,7 @@ function RateField({
     <label className="flex flex-col gap-1">
       <span className="text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
         {label}
-        {optional && <span className="ml-1 normal-case text-ink-muted/70">(optional)</span>}
+        {optional && <span className="ml-1 normal-case text-ink-muted">(optional)</span>}
       </span>
       <input
         type="number"

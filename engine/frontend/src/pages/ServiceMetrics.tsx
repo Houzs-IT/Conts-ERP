@@ -851,7 +851,7 @@ function StageFunnel({ data }: { data: AssrSummaryV31["stage_funnel"] }) {
                 <span
                   className={cn(
                     "text-[13px] font-bold",
-                    r.total > 0 ? "text-ink" : "text-ink-muted/40"
+                    r.total > 0 ? "text-ink" : "text-ink-muted"
                   )}
                 >
                   {r.total}

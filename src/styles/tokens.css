@@ -122,6 +122,8 @@ body { margin: 0; }
   --color-primary-soft: #E1EFEC;
   --color-primary-ink: #0C3F37;
   --color-on-primary: #FFFFFF;
+  /* Text on the solid red (danger button): white in both themes, 5.9:1; dark's text-inverse is near-black (3.1:1). */
+  --color-on-danger-solid: #FFFFFF;
 
   /* text-on-dark: the quiet line on a black panel or photo tile. Pages used the class before it existed, so the
      Portfolio tiles drew it in page ink, unreadable on the photo. */

@@ -1414,7 +1414,7 @@ function StageStatStrip({
                   <span
                     className={cn(
                       "font-mono text-[13px] font-bold leading-none",
-                      isActive ? "text-primary" : empty ? "text-ink-muted/60" : "text-ink",
+                      isActive ? "text-primary" : empty ? "text-ink-muted" : "text-ink",
                     )}
                   >
                     {ready ? s.total : "—"}
@@ -1564,7 +1564,7 @@ function CasesBoardView({
               </div>
               <div className="flex-1 space-y-2 p-2">
                 {items.length === 0 ? (
-                  <p className="px-1 py-4 text-center text-[11px] text-ink-muted/70">
+                  <p className="px-1 py-4 text-center text-[11px] text-ink-muted">
                     Nothing here
                   </p>
                 ) : (
@@ -3862,7 +3862,7 @@ function DetailContent({
                 .sort((x, y) => x.order - y.order)
                 .map((g) => (
                   <div key={g.label} className="mb-2">
-                    <div className="mb-1 text-[9.5px] font-semibold uppercase tracking-wide text-ink-muted/80">
+                    <div className="mb-1 text-[9.5px] font-semibold uppercase tracking-wide text-ink-muted">
                       {g.label} ({g.items.length})
                     </div>
                     <div className="grid grid-cols-3 gap-2">
@@ -5948,7 +5948,7 @@ function WorkflowCard({
                 >
                   {s.short}
                 </span>
-                <span className="mt-0.5 px-0.5 text-center text-[7.5px] leading-tight text-ink-muted/80">
+                <span className="mt-0.5 px-0.5 text-center text-[7.5px] leading-tight text-ink-muted">
                   {s.desc}
                 </span>
                 {current && subStatus && (
@@ -6297,7 +6297,7 @@ function InspectionCard({
       title={
         <>
           QC Inspection{" "}
-          <span className="font-normal normal-case tracking-normal text-ink-muted/70">— after supplier return</span>
+          <span className="font-normal normal-case tracking-normal text-ink-muted">— after supplier return</span>
         </>
       }
     >
@@ -6581,7 +6581,7 @@ function VerificationCard({
       title={
         <>
           QC Issue Inspection{" "}
-          <span className="font-normal normal-case tracking-normal text-ink-muted/70">— on receipt</span>
+          <span className="font-normal normal-case tracking-normal text-ink-muted">— on receipt</span>
         </>
       }
     >

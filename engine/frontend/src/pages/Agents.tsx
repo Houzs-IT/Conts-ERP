@@ -608,7 +608,7 @@ function RunHistory({ meta }: { meta: FamilyMeta }) {
       >
         <RefreshCw size={13} />
         Run history
-        <span className="text-ink-muted/70">{open ? "(hide)" : "(show)"}</span>
+        <span className="text-ink-muted">{open ? "(hide)" : "(show)"}</span>
       </button>
       {open &&
         (q.loading && !q.data ? (

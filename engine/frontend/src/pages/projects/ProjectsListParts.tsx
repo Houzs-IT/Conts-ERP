@@ -184,7 +184,7 @@ export function MultiSelectFilter({
               className={cn(
                 "text-[10.5px] font-semibold",
                 selected.length === 0
-                  ? "cursor-default text-ink-muted/50"
+                  ? "cursor-default text-ink-muted"
                   : "text-ink-secondary hover:text-err",
               )}
             >

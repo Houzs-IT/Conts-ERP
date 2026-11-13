@@ -346,7 +346,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
       render: i => (canBulk && i.state !== 'resolved'
         ? <span className="block" onClick={e => e.stopPropagation()}>
             <SearchSelect label={`Assign ${jobLabel(i)}`} value={i.vendorName ?? ''} onChange={name => void assignOne(i, name)} allLabel={i.vendorName ?? 'Unassigned'}
-              placeholder="Search technicians and contractors" buttonClassName={cx('max-sm:h-11', !i.vendorName && '[&>span]:text-[var(--color-critical-fg)]!')}
+              placeholder="Search technicians and contractors" buttonClassName={cx('max-sm:h-11', !i.vendorName && '[&>span]:text-danger!')}
               options={technicians.map(t => ({ value: t.name, label: t.name, group: t.kind === 'in_house' ? 'In-house' : 'Contractors' }))} />
           </span>
         : i.vendorName

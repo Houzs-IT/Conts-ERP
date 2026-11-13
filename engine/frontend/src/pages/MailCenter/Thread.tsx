@@ -536,7 +536,7 @@ export function MailThread({ id: idProp, embedded = false }: MailThreadProps = {
                   {thread.counterpartyName || thread.counterpartyEmail || "(unknown sender)"}
                 </strong>
                 {thread.counterpartyName && thread.counterpartyEmail && (
-                  <span className="text-ink-muted/80"> &lt;{thread.counterpartyEmail}&gt;</span>
+                  <span className="text-ink-muted"> &lt;{thread.counterpartyEmail}&gt;</span>
                 )}
               </span>
               {thread.mailboxAddress && (

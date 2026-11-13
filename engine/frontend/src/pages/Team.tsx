@@ -4585,13 +4585,13 @@ function DivisionColumn({
           <span className="truncate text-[9.5px] font-semibold uppercase tracking-wide text-ink-muted">
             {division || "—"}
           </span>
-          <span className="text-[9px] text-ink-muted/60">{members.length}</span>
+          <span className="text-[9px] text-ink-muted">{members.length}</span>
         </div>
       )}
       {clusters.map((c, ci) => (
         <div key={ci} className="flex flex-col gap-2">
           {c.label && (
-            <div className="px-0.5 text-[9px] font-medium uppercase tracking-wide text-ink-muted/80">
+            <div className="px-0.5 text-[9px] font-medium uppercase tracking-wide text-ink-muted">
               {c.label}
             </div>
           )}
