@@ -31,7 +31,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const rows = await all<any>(env, `
     SELECT a.id, a.unit_id, a.kind, a.account_no, a.provider, u.unit_number, p.name AS property_name, e.id AS expense_id, e.amount, e.charge_to, e.reference AS e_ref, e.receipt_document_id, e.deduct_month, e.rolled, e.record_only,
-           e.owner_paid, e.payment_request_no, r.status AS request_status, r.reason AS request_reason
+           e.owner_paid, e.payment_request_no, r.status AS request_status, r.reason AS request_reason,
+           EXISTS (SELECT 1 FROM utility_bill_scans s WHERE s.expense_id = e.id AND (coalesce(e.record_only, false) OR s.bill_sen <> e.amount)) AS split_scan
     FROM unit_utility_accounts a JOIN units u ON u.id = a.unit_id JOIN properties p ON p.id = u.property_id
     LEFT JOIN LATERAL (SELECT x.id, x.amount, x.charge_to, x.reference, x.receipt_document_id, x.deduct_month, x.rolled, x.record_only, x.owner_paid, x.payment_request_no, x.payment_request_id FROM expenses x WHERE x.unit_id = a.unit_id AND x.category = a.kind
                        AND (x.reference = a.account_no OR x.reference IS NULL OR x.reference = '')
@@ -72,6 +73,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       // request came back: withdrawn, or rejected with its reason; chew, 13 Nov 2026).
       ownerPaid: !!r.owner_paid, paymentRequestNo: r.payment_request_no ?? null,
       paymentRequestStatus: r.request_status ?? null, paymentRequestReason: r.request_reason ?? null,
+      // Scanned and split at the contract (or record only): shown as it is, never changed here (review, 13 Nov 2026).
+      splitScan: !!r.split_scan,
       // A bill recorded some other way (the owner workbook import, Accounts payable) is shown but not replaced here.
       recordedElsewhere: !!r.expense_id && r.e_ref !== r.account_no,
     })),
@@ -138,9 +141,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       SELECT DISTINCT unit_id, category FROM expenses WHERE unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
         AND incurred_on >= ? AND incurred_on < ?`, JSON.stringify(unitBills.map(r => r.unitId)), from, to) : Promise.resolve([]),
     // The bills this save would replace, and the statement each is deducted on.
-    picked.length ? all<{ id: string; unit_id: string; category: string; reference: string; deduct_month: string; payment_request_id: string | null; payment_request_no: string | null; requested: boolean; request_status: string | null }>(env, `
-      SELECT e.id, e.unit_id, e.category, e.reference, e.deduct_month, e.payment_request_id, e.payment_request_no, e.payment_request_id IS NOT NULL AS requested, r.status AS request_status
-      FROM expenses e LEFT JOIN utility_payment_requests() r ON r.id = e.payment_request_id
+    picked.length ? all<{ id: string; unit_id: string; category: string; reference: string; deduct_month: string; payment_request_id: string | null; payment_request_no: string | null;
+      requested: boolean; request_status: string | null; amount: number; charge_to: string; owner_paid: boolean; record_only: boolean; scan_id: string | null; bill_sen: number | null }>(env, `
+      SELECT e.id, e.unit_id, e.category, e.reference, e.deduct_month, e.payment_request_id, e.payment_request_no, e.payment_request_id IS NOT NULL AS requested, r.status AS request_status,
+             e.amount, e.charge_to, e.owner_paid, coalesce(e.record_only, false) AS record_only, s.id AS scan_id, s.bill_sen
+      FROM expenses e LEFT JOIN utility_payment_requests() r ON r.id = e.payment_request_id LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
       WHERE e.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND e.incurred_on >= ? AND e.incurred_on < ?`, JSON.stringify(unitIds), from, to) : Promise.resolve([]),
   ]);
   const finalFor = (unitId: string) => finals.get(unitId) ?? new Set<string>();
@@ -160,19 +165,33 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const cameBack = (x: { requested: boolean; request_status: string | null }) => x.requested && RETURNED.has(String(x.request_status ?? ''));
   const onRequest = new Set(current.filter(x => x.requested && !cameBack(x)).map(keyOfBill));
   const keptRequest = new Map(current.filter(cameBack).map(x => [keyOfBill(x), { id: x.payment_request_id, no: x.payment_request_no }]));
+  // Review, 13 Nov 2026. A scanned bill split at the contract (the share inside it here, the rest an owner line, the whole
+  // bill on its scan) or kept record only is not replaced from this screen: a new entry would drop the split and the
+  // owner line, and the request would ask for the share. A returned bill sent as it already is stays as it is. A scanned
+  // whole bill is fixed here and its scan follows the new bill, at the new amount, so the request asks for that.
+  const returned = new Map(current.filter(cameBack).map(x => [keyOfBill(x), x]));
+  const splitScan = (x: { scan_id: string | null; bill_sen: number | null; amount: number; record_only: boolean }) =>
+    !!x.scan_id && (x.record_only || (x.bill_sen != null && Number(x.bill_sen) !== Number(x.amount)));
+  const asBefore = (r: { amount: number; chargeTo?: string; ownerPaid?: boolean; receiptDocumentId?: string | null }, x: { amount: number; charge_to: string; owner_paid: boolean }) =>
+    r.amount === Number(x.amount) && (r.chargeTo ?? 'owner') === x.charge_to && (r.ownerPaid === true) === !!x.owner_paid && !r.receiptDocumentId;
   const keptReceipt = new Map(onFile.map(x => [`${x.unit_id}|${x.category}|${x.reference}`, x.receipt_document_id]));
   const knownReceipts = new Set(known.map(x => x.id));
   if (given.some(id => !knownReceipts.has(id))) return fail('VALIDATION', 'A receipt was not found. Upload it again.', 422);
 
   const blank = new Set(blankRows.map(x => `${x.unit_id}|${x.category}`));
   const saved: string[] = [], locked: string[] = [], elsewhere: string[] = [], requested: string[] = [], rolled: { key: string; deductMonth: string }[] = [], now = nowIso();
+  const scanned: string[] = [], unchanged: string[] = [], followScans: { scanId: string; expenseId: string; amount: number }[] = [];
   // One bill per unit, kind and account number: a later row for the same account replaces an earlier one, as before.
   const bills = new Map<string, { id: string; unit_id: string; kind: string; description: string; amount: number; account_no: string; charge_to: string; receipt: string | null; accountId: string; deduct_month: string; rolled: boolean; owner_paid: boolean; payment_request_id: string | null; payment_request_no: string | null }>();
   for (const { r, a } of picked) {
     if (onFinal.has(`${a.unit_id}|${a.kind}|${a.account_no}`) || onKept.has(`${a.unit_id}|${a.kind}|${a.account_no}`)) { locked.push(a.account_no); continue; }
     if (onRequest.has(`${a.unit_id}|${a.kind}|${a.account_no}`)) { requested.push(a.account_no); continue; }
     if (blank.has(`${a.unit_id}|${a.kind}`)) { elsewhere.push(a.account_no); continue; }
+    const back = returned.get(`${a.unit_id}|${a.kind}|${a.account_no}`);
+    if (back && splitScan(back)) { scanned.push(a.account_no); continue; }
+    if (back && asBefore(r, back)) { unchanged.push(a.account_no); continue; }
     const id = crypto.randomUUID();
+    if (back?.scan_id) followScans.push({ scanId: back.scan_id, expenseId: id, amount: r.amount });
     bills.set(`${a.unit_id}|${a.kind}|${a.account_no}`, {
       id, unit_id: a.unit_id, kind: a.kind, description: `${KIND_LABEL[a.kind]} ${monthName(month)}${a.provider ? ` (${a.provider})` : ''}`,
       amount: r.amount, account_no: a.account_no, charge_to: r.chargeTo ?? 'owner',
@@ -225,6 +244,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         FROM jsonb_to_recordset(?::text::jsonb) AS x(id text, unit_id text, kind text, description text, amount bigint, account_no text, charge_to text, receipt text, deduct_month text, rolled boolean, owner_paid boolean, payment_request_id text, payment_request_no text)`,
         date, session.userId, now, JSON.stringify(rowsOut));
     }
+    // A scanned whole bill fixed here keeps its scan, at the new amount (the delete above let go of it).
+    if (followScans.length) {
+      await run(tx, `UPDATE utility_bill_scans s SET expense_id = x.expense_id, bill_sen = x.amount
+        FROM jsonb_to_recordset(?::text::jsonb) AS x(scan_id text, expense_id text, amount integer) WHERE s.id = x.scan_id`,
+        JSON.stringify(followScans.map(f => ({ scan_id: f.scanId, expense_id: f.expenseId, amount: f.amount }))));
+    }
     if (looseOut.length) {
       await run(tx, `
         INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, deduct_month, rolled, reference, charge_to, receipt_document_id, created_by, created_at, owner_paid)
@@ -236,10 +261,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await ownerPaidCredit(tx, { expenseId: x.id, unitId: x.unit_id, ownerId: ownerOf.get(x.unit_id)!, kind: x.kind, label: x.description, amountSen: x.amount,
         deductMonth: x.deduct_month, accountNo: (x as { account_no?: string }).account_no || null }, session.userId, now);
     }
-    await audit(tx, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.utilities', entityTable: 'expenses', entityId: month, after: { month, saved: saved.length, locked: locked.length, recordedElsewhere: elsewhere.length, requested: requested.length, ownerPaid: paidByOwner.length, rolled } });
+    await audit(tx, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.utilities', entityTable: 'expenses', entityId: month, after: { month, saved: saved.length, locked: locked.length, recordedElsewhere: elsewhere.length, requested: requested.length, ownerPaid: paidByOwner.length, rolled, scanned: scanned.length, unchanged: unchanged.length } });
   });
   // What the company pays goes to finance next, one payment request per provider (POST .../utilities/payment-requests).
   const toPay = (await billsToRequest(env, [...rowsOut, ...looseOut].map(x => x.id)))
     .map(g => ({ provider: g.provider, count: g.bills.length, amountSen: g.bills.reduce((n, x) => n + x.amountSen, 0), expenseIds: g.bills.map(x => x.expenseId) }));
-  return json({ saved: saved.length, locked, recordedElsewhere: elsewhere, requested, rolled, toPay }, 201);
+  return json({ saved: saved.length, locked, recordedElsewhere: elsewhere, requested, rolled, toPay, scanned, unchanged }, 201);
 };

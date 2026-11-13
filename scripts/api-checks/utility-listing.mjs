@@ -4,7 +4,7 @@
 //   DB_URL=postgres://postgres@127.0.0.1:55441/postgres API_BASE=http://localhost:8891 node scripts/api-checks/utility-listing.mjs
 import postgres from 'postgres';
 import { randomUUID } from 'node:crypto';
-import { call, check, cookieFor, done } from './harness.mjs';
+import { call, check, cookieFor, done, receiptFor } from './harness.mjs';
 
 const DB_URL = process.env.DB_URL;
 if (!DB_URL || !/@(127\.0\.0\.1|localhost)[:/]/.test(DB_URL)) { console.error('Set DB_URL to the local test database.'); process.exit(2); }
@@ -169,6 +169,49 @@ check('"Send again" goes to the finance system (not reachable here), and the bil
   `${r.status} ${r.text.slice(0, 200)}`);
 r = await call('POST', `/api/expenses/utilities/payment-requests/${reqC}/resend`, {}, 'housekeeper');
 check('only finance and management send a utility request again', r.status === 403, r.status);
+// A scanned bill on a request that came back (review, 13 Nov 2026): one split at the contract stays exactly as it is,
+// its owner line and full bill kept; a scanned whole bill is fixed and its scan follows the new bill, at the new amount;
+// a returned bill sent unchanged is left as it is.
+const reqE = randomUUID(), acc2 = randomUUID(), acc3 = randomUUID(), scanS = randomUUID(), scanW = randomUUID();
+await db(`INSERT INTO scm.payment_requests (id, company_id, request_no, type, requester_user_id, payee_name, amount_sen, status, reason, decided_by, created_at)
+  VALUES ($1, $2, 'PRQ-CHK-005', 'PAYMENT', 'chk', 'Air Selangor', 40900, 'REJECTED', 'Check the August bills', 'Chew', '2029-09-02T10:00:00+08:00')`, reqE, co.id)
+  .catch(e => check('August request seeded', false, e.message));
+for (const [id, kind, no] of [[acc2, 'water', 'CHK-ACC-2'], [acc3, 'internet', 'CHK-ACC-3']]) {
+  await db(`INSERT INTO unit_utility_accounts (id, unit_id, kind, account_no, provider, created_at, updated_at) VALUES ($1, $2, $3, $4, 'Check', now()::text, now()::text)`, id, a.id, kind, no);
+}
+const splitBill = await bill({ kind: 'water', amount: 4000, date: '2029-08-31', chargeTo: 'the_conts' });
+const wholeBill = await bill({ kind: 'internet', amount: 9900, date: '2029-08-31', chargeTo: 'the_conts' });
+await db(`UPDATE expenses SET reference = 'CHK-ACC-2', payment_request_id = $1, payment_request_no = 'PRQ-CHK-005' WHERE id = $2`, reqE, splitBill);
+await db(`UPDATE expenses SET reference = 'CHK-ACC-3', payment_request_id = $1, payment_request_no = 'PRQ-CHK-005' WHERE id = $2`, reqE, wholeBill);
+const splitLine = randomUUID();
+await db(`INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, state, source, expense_id, created_at, updated_at)
+  VALUES ($1, $2, $3, 'charge', -27000, 'Water, days outside the contract', '2029-08-31', 'open', 'manual', $4, now()::text, now()::text)`, splitLine, a.owner_id, a.id, splitBill)
+  .catch(e => check('split owner line seeded', false, e.message));
+const scanDoc = await receiptFor(a.id);
+for (const [id, expenseId, sen, no] of [[scanS, splitBill, 31000, 'CHK-ACC-2'], [scanW, wholeBill, 9900, 'CHK-ACC-3']]) {
+  await db(`INSERT INTO utility_bill_scans (id, batch_id, document_id, model, read, colour, expense_id, bill_sen, provider, account_no, created_by, created_at)
+    VALUES ($1, 'chk-sent-back', $2, 'check', '{}'::jsonb, 'green', $3, $4, 'Check', $5, 'chk', now()::text)`, id, scanDoc, expenseId, sen, no)
+    .catch(e => check('scans seeded', false, e.message));
+}
+r = await call('GET', `/api/expenses/utilities?month=2029-08&unitId=${a.id}`);
+const augLines = Object.fromEntries((r.json?.data ?? []).map(x => [x.accountNo, x]));
+check('the month screen marks a scanned bill split at the contract, so it is shown as it is, not to change', augLines['CHK-ACC-2']?.splitScan === true && augLines['CHK-ACC-3']?.splitScan === false,
+  JSON.stringify([augLines['CHK-ACC-2'], augLines['CHK-ACC-3']]));
+r = await call('POST', '/api/expenses/utilities', { month: '2029-08', rows: [{ accountId: acc2, amount: 5000, chargeTo: 'the_conts' }, { accountId: acc3, amount: 10900, chargeTo: 'the_conts' }] });
+const [splitStill] = await db(`SELECT amount, payment_request_id FROM expenses WHERE id = $1`, splitBill);
+const splitLineStill = await db(`SELECT 1 FROM owner_adjustments WHERE id = $1`, splitLine);
+const [wholeNew] = await db(`SELECT id, amount, payment_request_id FROM expenses WHERE unit_id = $1 AND reference = 'CHK-ACC-3' AND incurred_on >= '2029-08-01' AND incurred_on < '2029-09-01'`, a.id);
+const [scanWNow] = await db(`SELECT expense_id, bill_sen FROM utility_bill_scans WHERE id = $1`, scanW);
+check('a scanned bill split at the contract is not changed on the month screen: its amount, owner line and request stay',
+  r.status === 201 && (r.json?.scanned ?? []).includes('CHK-ACC-2') && splitStill?.amount === 4000 && splitStill?.payment_request_id === reqE && splitLineStill.length === 1,
+  JSON.stringify({ r: r.json, splitStill, splitLineStill }));
+check('a scanned whole bill is fixed, keeps the request, and its scan follows the new bill at the new amount',
+  wholeNew?.amount === 10900 && wholeNew?.payment_request_id === reqE && scanWNow?.expense_id === wholeNew?.id && scanWNow?.bill_sen === 10900,
+  JSON.stringify({ wholeNew, scanWNow }));
+r = await call('POST', '/api/expenses/utilities', { month: '2029-08', rows: [{ accountId: acc3, amount: 10900, chargeTo: 'the_conts' }] });
+const [wholeAgain] = await db(`SELECT id FROM expenses WHERE unit_id = $1 AND reference = 'CHK-ACC-3' AND incurred_on >= '2029-08-01' AND incurred_on < '2029-09-01'`, a.id);
+check('a returned bill sent unchanged is left as it is', r.status === 201 && (r.json?.unchanged ?? []).includes('CHK-ACC-3') && wholeAgain?.id === wholeNew?.id, JSON.stringify({ r: r.json, wholeAgain }));
+
 // Demo mode sends nothing to finance (review, 13 Nov 2026): not Send again, nor a utility request made from bills.
 const inDemo = async (path, body) => {
   const x = await fetch(`${process.env.API_BASE}${path}`, { method: 'POST', headers: { cookie: `${cookieFor('management')}; tc_demo=1`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -181,7 +224,9 @@ check('in Demo mode, bills are not sent to finance either', r.status === 409 && 
 
 await db(`DELETE FROM owner_adjustments WHERE expense_id IN (SELECT id FROM expenses WHERE unit_id = $1 AND incurred_on >= '2029-01-01' AND incurred_on < '2030-01-01')`, a.id);
 await db(`DELETE FROM unit_utility_accounts WHERE id = $1`, acc);
-await db(`DELETE FROM scm.payment_requests WHERE id IN ($1, $2, $3, $4)`, reqA, reqB, reqC, reqD);
+await db(`DELETE FROM utility_bill_scans WHERE batch_id = 'chk-sent-back'`);
+await db(`DELETE FROM unit_utility_accounts WHERE id IN ($1, $2)`, acc2, acc3);
+await db(`DELETE FROM scm.payment_requests WHERE id IN ($1, $2, $3, $4, $5)`, reqA, reqB, reqC, reqD, reqE);
 for (const u of [a, b]) await db(`DELETE FROM expenses WHERE unit_id = $1 AND incurred_on >= '2028-10-01' AND incurred_on < '2030-01-01'`, u.id);
 await db(`DELETE FROM owner_statements WHERE owner_id = $1 AND period_start = '2029-03-01'`, a.owner_id);
 await db(`DELETE FROM reservations WHERE unit_id = $1 AND check_in = '2029-03-29'`, a.id);
