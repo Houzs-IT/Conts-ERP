@@ -66,9 +66,6 @@ interface Payload { data: Row[]; generatedAt: string }
 /** The departments and positions come from the managed list (Permissions > Departments and positions), so nothing is typed
  *  here. Cleaners and technicians are not offered: they are added on HR > Employees. */
 const departmentNote = (d: Department | undefined): string | null => (d ? KIND_NOTE[d.kind] ?? null : null);
-/** A department on one side puts everyone in it there; in one on both sides the person's own choice stands
- *  (sideSql in functions/_lib/access.ts). */
-const sideFits = (d: Department, side: UserSide) => d.side === 'both' || d.side === side;
 
 type CompanyFilter = 'all' | Company;
 const companyText = (companies: readonly Company[]): string => (companies.length === 0 ? 'Owner portal' : companies.map(sideLabel).join(', '));
@@ -811,32 +808,24 @@ function positionProblemOf(department: Department | undefined, positionId: strin
   return department.positions.length === 0 ? `${department.name} has no positions yet. Add one under Permissions > Setup first.` : 'Pick a position.';
 }
 
-/** Works on, then department (required), then position (required), from the managed list. Only the departments on the
- *  chosen side (or on both) are offered, so a department picked earlier is cleared when the side no longer fits it.
- *  A position belongs to one department, so changing the department clears the position. */
 function PlaceFields({ departments, side, onSide, departmentId, positionId, onDepartment, onPosition, errors }: {
   departments: Department[]; side: UserSide; onSide: (s: UserSide) => void; departmentId: string; positionId: string;
   onDepartment: (id: string) => void; onPosition: (id: string) => void;
   errors: { side?: string; departmentId?: string; positionId?: string };
 }) {
-  const offered = departments.filter(d => !isFieldKind(d.kind) && sideFits(d, side));
+  const offered = departments.filter(d => !isFieldKind(d.kind));
   const dept = offered.find(d => d.id === departmentId);
   const hasNoPositions = !!dept && dept.positions.length === 0;
-  const pickSide = (s: UserSide) => {
-    onSide(s);
-    const current = departments.find(d => d.id === departmentId);
-    if (current && !sideFits(current, s)) onDepartment('');
+  const pickDepartment = (id: string) => {
+    onDepartment(id);
+    const picked = offered.find(d => d.id === id);
+    if (picked && picked.side !== 'both') onSide(picked.side);
   };
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-meta font-medium text-ink">Works on</span>
-        <Segmented label="Works on" value={side} onChange={pickSide} options={SIDE_OPTIONS.map(o => ({ key: o.value, label: o.label }))} />
-        {errors.side && <span className={cx('text-meta', TONE.critical.text)}>{errors.side}</span>}
-      </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
         <div className="flex flex-col gap-1">
-          <Select label="Department" showLabel size="md" value={departmentId} onChange={onDepartment} placeholder="Pick a department"
+          <Select label="Department" showLabel size="md" value={departmentId} onChange={pickDepartment} placeholder="Pick a department"
             options={offered.map(d => ({ value: d.id, label: d.name }))} />
           {errors.departmentId && <span className={cx('text-meta', TONE.critical.text)}>{errors.departmentId}</span>}
         </div>
@@ -847,13 +836,22 @@ function PlaceFields({ departments, side, onSide, departmentId, positionId, onDe
         </div>
       </div>
       {dept && <span className="text-meta text-muted-ink">{departmentNote(dept)}</span>}
+      {dept?.side === 'both' && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-meta font-medium text-ink">Works on</span>
+          <Segmented label="Works on" value={side} onChange={onSide} options={SIDE_OPTIONS.map(o => ({ key: o.value, label: o.label }))} />
+          <span className="text-meta text-muted-ink">{dept.name} covers both companies, so pick which one this person works on.</span>
+        </div>
+      )}
+      {dept && dept.side !== 'both' && <span className="text-meta text-muted-ink">Works on {sideLabel(dept.side)}, like everyone in {dept.name}.</span>}
+      {errors.side && <span className={cx('text-meta', TONE.critical.text)}>{errors.side}</span>}
       {hasNoPositions && (
         <div role="alert" className={cx('flex items-start gap-2 py-2.5 px-3 rounded-control border border-solid text-meta', TONE.warning.bg, TONE.warning.border, TONE.warning.text)}>
           <Icon name="AlertTriangle" size="sm" />
           <span>{dept.name} has no positions yet. Add one under Permissions &gt; Setup first, then pick it here.</span>
         </div>
       )}
-      {offered.length === 0 && <span className="text-meta text-muted-ink">No department works on this side yet. Add one under Permissions, Setup.</span>}
+      {offered.length === 0 && <span className="text-meta text-muted-ink">No office department yet. Add one under Permissions, Setup.</span>}
     </div>
   );
 }
