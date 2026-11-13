@@ -22,8 +22,8 @@ import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
 import { date, monthLabel, rm, todayMyt, buildingName } from '../lib/format';
 import {
-  DEPARTMENT, RECEIPT_STATUS, REQUEST_STATUS, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, thisMonthMyt,
-  type ClaimLine, type LineDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt,
+  DEPARTMENT, RECEIPT_STATUS, REQUEST_STATUS, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, requestFileHref, thisMonthMyt,
+  type ClaimFile, type ClaimLine, type LineDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt,
 } from '../lib/claims';
 
 /**
@@ -397,9 +397,11 @@ const canWithdraw = (q: PaymentRequest) => q.status === 'SUBMITTED' && q.voucher
 
 function TableTitle({ title, count }: { title: string; count?: number }) {
   return (
-    <span className="flex items-baseline gap-2 min-w-0 mr-1">
-      <span className="text-[16px] font-semibold tracking-[-0.01em] truncate">{title}</span>
-      {count !== undefined && <span className="text-meta text-muted-ink tabular-nums">{count}</span>}
+    <span className="flex items-center min-h-[34px] max-md:min-h-11 min-w-0 mr-1">
+      <span className="flex items-baseline gap-2 min-w-0">
+        <span className="text-[16px] font-semibold tracking-[-0.01em] truncate">{title}</span>
+        {count !== undefined && <span className="text-meta text-muted-ink tabular-nums">{count}</span>}
+      </span>
     </span>
   );
 }
@@ -426,6 +428,32 @@ function DetailLines({ lines, totalSen, describeLine }: { lines: ClaimLine[]; to
   );
 }
 
+function NoteBlock({ text }: { text: string }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <span className="ds-eyebrow">Note</span>
+      <p className="m-0 text-copy text-ink whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</p>
+    </section>
+  );
+}
+
+function Papers({ files, hrefOf }: { files: ClaimFile[]; hrefOf: (fileId: string) => string }) {
+  if (files.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-2">
+      <span className="ds-eyebrow">Papers</span>
+      <div className="flex flex-wrap gap-2">
+        {files.map(file => (
+          <ButtonLink key={file.id} href={hrefOf(file.id)} target="_blank" rel="noreferrer" size="sm" className="max-w-full max-md:min-h-11"
+            icon={<Icon name={file.mime === 'application/pdf' ? 'FileText' : 'Image'} size="sm" />}>
+            <span className="truncate">{file.fileName}</span>
+          </ButtonLink>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Problem({ text }: { text: string }) {
   return <div role="note" className={cx('px-3 py-2 rounded-control text-copy', TONE.critical.bg, TONE.critical.text)}>{text}</div>;
 }
@@ -444,18 +472,8 @@ function ReceiptDetail({ receipt, describeLine, onClose }: { receipt: Receipt; d
       ]} />
       {receipt.rejectReason && <Problem text={receipt.rejectReason} />}
       <DetailLines lines={receipt.lines} totalSen={receipt.amountSen} describeLine={describeLine} />
-      {receipt.note && <KeyFacts cols={1} items={[{ label: 'Note', value: receipt.note }]} />}
-      {receipt.files.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <span className="ds-eyebrow">Papers</span>
-          <div className="flex flex-wrap gap-2">
-            {receipt.files.map(f => (
-              <ButtonLink key={f.id} href={receiptFileHref(receipt.id, f.id)} target="_blank" rel="noreferrer" size="sm"
-                icon={<Icon name={f.mime === 'application/pdf' ? 'FileText' : 'Image'} size="sm" />}>{f.fileName}</ButtonLink>
-            ))}
-          </div>
-        </section>
-      )}
+      {receipt.note && <NoteBlock text={receipt.note} />}
+      <Papers files={receipt.files} hrefOf={fileId => receiptFileHref(receipt.id, fileId)} />
     </Modal>
   );
 }
@@ -480,6 +498,8 @@ function RequestDetail({ request, describeLine, onClose, onWithdraw }: { request
       ]} />
       {request.reason && <Problem text={request.reason} />}
       <DetailLines lines={request.lines} totalSen={request.amountSen} describeLine={describeLine} />
+      {request.note && <NoteBlock text={request.note} />}
+      <Papers files={request.files} hrefOf={fileId => requestFileHref(request.id, fileId)} />
       {canWithdraw(request) && <p className="m-0 text-meta text-muted-ink">Finance has not started paying it, so you can still withdraw it.</p>}
     </Modal>
   );

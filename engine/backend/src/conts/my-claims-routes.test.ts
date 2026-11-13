@@ -170,6 +170,15 @@ describe('payment requests', () => {
   const realCreate = claimsDeps.createVoucher;
   afterEach(() => { claimsDeps.createVoucher = realCreate; });
 
+  test('the requester reads the note and opens the files on their own request; nobody else opens them', async () => {
+    const sb = world();
+    const made = await (await ask(appFor(sb, OPS, 'session'), { note: 'Pay before Friday' })).json() as { id: string };
+    const fileId = sb.tables.payment_request_files[0].id;
+    const mine = ((await (await get(appFor(sb, OPS), '/requests')).json()) as any).requests[0];
+    expect(mine).toMatchObject({ note: 'Pay before Friday', files: [{ id: fileId, fileName: 'r.png', mime: 'image/png' }] });
+    expect((await get(appFor(sb, OPS), `/requests/${made.id}/files/${fileId}`)).status).toBe(200);
+    expect((await get(appFor(sb, TECH), `/requests/${made.id}/files/${fileId}`)).status).toBe(404);
+  });
   test('a deposit names a supplier; a PO fills it', async () => {
     const sb = world();
     const a = appFor(sb, OPS, 'session');

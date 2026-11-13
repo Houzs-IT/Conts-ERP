@@ -4,6 +4,7 @@
 // Staff (mounted on the claims router, so limited to the caller):
 //   POST /requests                 { type, supplierId?, payeeName?, purchaseOrderId?, wantedOn?, owesFormalInvoice?, note?, amountSen, lines, files }
 //   GET  /requests                 my requests
+//   GET  /requests/:id/files/:fileId   a file on my request
 //   POST /requests/:id/withdraw    while no voucher exists
 // Finance (under /accounting, behind the Ledger guard):
 //   GET  /accounting/payment-requests?status=&type=
@@ -222,10 +223,23 @@ export const withdrawRequestHandler = async (c: Ctx): Promise<Response> => {
   return c.json({ ok: true });
 };
 
+export const myRequestFileHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const { data: request } = await sb.from('payment_requests').select('id').eq('company_id', co.companyId).eq('id', c.req.param('id')).eq('requester_user_id', (c.get('staff') as Staff).userId).maybeSingle();
+  if (!request) return c.json({ error: 'not_found' }, 404);
+  const { data: file } = await sb.from('payment_request_files').select('r2_key, file_name, mime').eq('request_id', request.id).eq('id', c.req.param('fileId')).maybeSingle();
+  const stored = file ? await c.env?.SLIPS?.get(file.r2_key) : null;
+  if (!file || !stored) return c.json({ error: 'not_found' }, 404);
+  return fileResponse(stored, file.file_name, file.mime);
+};
+
 /** Adds the staff request routes to the claims router. */
 export function myRequestRoutes(r: { get: (p: string, h: (c: Ctx) => Promise<Response>) => unknown; post: (p: string, h: (c: Ctx) => Promise<Response>) => unknown }) {
   r.post('/requests', submitRequestHandler);
   r.get('/requests', myRequestsHandler);
+  r.get('/requests/:id/files/:fileId', myRequestFileHandler);
   r.post('/requests/:id/withdraw', withdrawRequestHandler);
 }
 
