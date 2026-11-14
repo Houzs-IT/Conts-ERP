@@ -17,6 +17,14 @@ export interface Env {
   CHANNEX_WEBHOOK_SECRET?: string;
   /** Channex server (wrangler.toml var): https://staging.channex.io on preview, https://app.channex.io on production. */
   CHANNEX_BASE_URL?: string;
+  /** Houzs Connect guest-messaging push (functions/_lib/connect.ts). CONNECT_WEBHOOK_URL is the Connect
+   *  server (defaults to https://chat.houzscentury.com in code if unset); CONNECT_WEBHOOK_KEY is the shared
+   *  x-connect-key secret Nico provides. With the KEY unset the whole feature is inert — nothing is sent.
+   *  CONNECT_AUTOMATIONS (optional) lists the automation names operators may pick (JSON array or comma-
+   *  separated); empty means the UI offers a free-text name. */
+  CONNECT_WEBHOOK_URL?: string;
+  CONNECT_WEBHOOK_KEY?: string;
+  CONNECT_AUTOMATIONS?: string;
   /** HostPlatform External API (functions/_lib/hostplatform.ts): its server (wrangler.toml var) and our access token
    *  (secret). HostPlatform has no test server for us, so both point at the live one; with either unset nothing is pulled. */
   HOSTPLATFORM_BASE_URL?: string;
