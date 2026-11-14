@@ -47,6 +47,9 @@ RESET_TOKEN_MINUTES = "60"
 QUIET_HOURS_START = "22"
 QUIET_HOURS_END = "8"
 CHANNEX_BASE_URL = "https://app.channex.io"
+# Houzs Connect guest-messaging push (functions/_lib/connect.ts). The URL is public; the shared key is
+# the secret CONNECT_WEBHOOK_KEY below. Leaving the key unset keeps the whole feature inert.
+CONNECT_WEBHOOK_URL = "https://chat.houzscentury.com"
 # HostPlatform External API (functions/_lib/hostplatform.ts). The token is the secret HOSTPLATFORM_ACCESS_TOKEN.
 HOSTPLATFORM_BASE_URL = "https://nebulapi-asg.hostplatform.com"
 # The supply chain engine on production (engine/, put live with scripts/engine-production.mjs). Supply chain,
@@ -64,6 +67,11 @@ SCM_ENGINE_SITE = "https://theconts-scm-live.pages.dev"
 #   MAIL_API_KEY       optional. Transactional email provider.
 #   WHATSAPP_TOKEN     optional. WhatsApp Business Cloud API token.
 #   WHATSAPP_PHONE_ID  optional. WhatsApp Business phone number id.
+#   CONNECT_WEBHOOK_KEY  optional. Shared x-connect-key for the Houzs Connect guest-messaging push
+#                      (functions/_lib/connect.ts). LEAVE UNSET until go-live: without it the feature
+#                      is inert and no template is ever sent. Nico provides the value; set it with
+#                      `wrangler secret put CONNECT_WEBHOOK_KEY`. Optionally set CONNECT_AUTOMATIONS
+#                      (a var, JSON array or comma-separated) to the automation names operators pick.
 #
 # Without the mail or WhatsApp values, notify() records the send as queued and
 # returns without throwing — a missing provider never breaks the action that
@@ -96,6 +104,8 @@ RESET_TOKEN_MINUTES = "60"
 QUIET_HOURS_START = "22"
 QUIET_HOURS_END = "8"
 CHANNEX_BASE_URL = "https://staging.channex.io"
+# Houzs Connect has no separate test server; staging also points at prod but stays inert without CONNECT_WEBHOOK_KEY.
+CONNECT_WEBHOOK_URL = "https://chat.houzscentury.com"
 # HostPlatform has no test server for us: staging reads the live one too (read-only; real guest data lands in the staging database).
 HOSTPLATFORM_BASE_URL = "https://nebulapi-asg.hostplatform.com"
 # Staging only: management can view the system as another account (functions/api/auth/view-as.ts).

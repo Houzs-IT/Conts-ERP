@@ -18,6 +18,7 @@ import { runEach, skippedNote } from '../lib/bulk';
 import Icon from '../components/Icon';
 import ChannelMark from '../components/ChannelMark';
 import { CentreModal, ModalActions } from '../components/booking/BookingDrawer';
+import { ConnectTemplatePanel } from '../components/ConnectTemplatePanel';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
 import { guestsListPath } from '../lib/screenQueries';
@@ -820,17 +821,20 @@ function MessageModal({ g, onClose, onSend }: { g: Guest; onClose: () => void; o
   const [busy, setBusy] = useState(false);
   return (
     <CentreModal eyebrow="Reservations" title={`Message ${g.fullName}`} sub={`Goes to the guest's latest conversation on ${threadName(g.channel)}.`} onClose={() => { if (!busy) onClose(); }}>
-      <form onSubmit={async (e: FormEvent) => { e.preventDefault(); if (!body.trim()) return; setBusy(true); await onSend(body.trim()); setBusy(false); }} className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
-        <div className="flex flex-col gap-[6px]">
-          <label htmlFor="msg-body" className={labelClass}>Message</label>
-          <textarea id="msg-body" required value={body} onChange={e => setBody(e.target.value)} rows={4}
-            placeholder={`Hi ${greetName(g.fullName)}, just checking that everything is fine…`} className={cx(fieldBase, 'p-[10px_12px] resize-y')} />
-        </div>
-        <ModalActions>
-          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!body.trim()} disabledReason="Write a message first.">Send message</Button>
-        </ModalActions>
-      </form>
+      <div className="px-[22px] py-4 flex flex-col gap-[14px] overflow-y-auto min-h-0">
+        <form onSubmit={async (e: FormEvent) => { e.preventDefault(); if (!body.trim()) return; setBusy(true); await onSend(body.trim()); setBusy(false); }} className="flex flex-col gap-[14px]">
+          <div className="flex flex-col gap-[6px]">
+            <label htmlFor="msg-body" className={labelClass}>Message</label>
+            <textarea id="msg-body" required value={body} onChange={e => setBody(e.target.value)} rows={4}
+              placeholder={`Hi ${greetName(g.fullName)}, just checking that everything is fine…`} className={cx(fieldBase, 'p-[10px_12px] resize-y')} />
+          </div>
+          <div className="flex items-center justify-end flex-wrap gap-2">
+            <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!body.trim()} disabledReason="Write a message first.">Send message</Button>
+          </div>
+        </form>
+        <ConnectTemplatePanel guestId={g.id} guestName={g.fullName} onSent={onClose} />
+      </div>
     </CentreModal>
   );
 }
