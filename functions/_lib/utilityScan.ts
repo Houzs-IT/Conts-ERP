@@ -216,7 +216,7 @@ class Refused extends Error { constructor(public scanId: string, message: string
 /** The bills of one save (`scanIds`) the company pays (not ticked "Owner paid"), by provider, for the payment requests. */
 export async function billsToPay(env: Env, batchId: string, scanIds: string[], provider?: string): Promise<{ provider: string; scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; billDate: string | null; accountNo: string | null; amountSen: number }[] }[]> {
   const rows = await all<{ id: string; expense_id: string; provider: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; account_no: string | null; bill_sen: number }>(env, `
-    SELECT s.id, s.expense_id, s.provider, e.unit_id, e.category, e.incurred_on, to_char(coalesce(e.period_to, e.incurred_on), 'YYYY-MM-DD') AS bill_date, s.account_no, s.bill_sen FROM utility_bill_scans s JOIN expenses e ON e.id = s.expense_id
+    SELECT s.id, s.expense_id, s.provider, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, s.account_no, s.bill_sen FROM utility_bill_scans s JOIN expenses e ON e.id = s.expense_id
     WHERE s.batch_id = ? AND NOT s.owner_paid AND s.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
     ORDER BY s.provider, e.incurred_on, e.unit_id`, batchId, JSON.stringify(scanIds));
   const out = new Map<string, { scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; billDate: string | null; accountNo: string | null; amountSen: number }[] }>();

@@ -21,7 +21,7 @@ export interface RequestBill { expenseId: string; unitId: string; kind: string; 
 export async function billsToRequest(env: Env, expenseIds: string[], provider?: string): Promise<{ provider: string; bills: RequestBill[] }[]> {
   if (!expenseIds.length) return [];
   const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; reference: string | null; amount: number; provider: string | null }>(env, `
-    SELECT e.id, e.unit_id, e.category, e.incurred_on, to_char(coalesce(e.period_to, e.incurred_on), 'YYYY-MM-DD') AS bill_date, e.reference, coalesce(s.bill_sen, e.amount) AS amount,
+    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, e.reference, coalesce(s.bill_sen, e.amount) AS amount,
            coalesce(nullif(s.provider, ''), (SELECT a.provider FROM unit_utility_accounts a WHERE a.unit_id = e.unit_id AND a.kind = e.category AND a.account_no = e.reference
              AND coalesce(a.provider, '') <> '' ORDER BY a.created_at LIMIT 1)) AS provider
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
@@ -63,7 +63,7 @@ export async function requestState(env: Env, requestId: string): Promise<{ id: s
  *  go of the request once it has gone out again. */
 export async function billsOnRequest(env: Env, requestId: string): Promise<{ bills: RequestBill[]; off: string[] }> {
   const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; reference: string | null; amount: number; owner_paid: boolean }>(env, `
-    SELECT e.id, e.unit_id, e.category, e.incurred_on, to_char(coalesce(e.period_to, e.incurred_on), 'YYYY-MM-DD') AS bill_date, e.reference, coalesce(s.bill_sen, e.amount) AS amount, e.owner_paid
+    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, e.reference, coalesce(s.bill_sen, e.amount) AS amount, e.owner_paid
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
     WHERE e.payment_request_id = ? ORDER BY e.incurred_on, e.unit_id, e.category`, requestId);
   const bills: RequestBill[] = [], off: string[] = [];
