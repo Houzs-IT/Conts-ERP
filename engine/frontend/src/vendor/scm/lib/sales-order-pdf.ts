@@ -44,12 +44,14 @@ import {
   ensureBrandingLogoLoaded,
   ensureBrandLogoLoaded,
   getBrandLogoCache,
+  getBrandingLogoCache,
 } from '../../../lib/branding';
 /* The status WORD comes from the one home for it, never from a caser here:
    what this document prints and what the screen shows must be the same word.
    docs/modules/document-status-vocabulary.md §1. */
 import { statusLabel } from './status-pill';
 import { CONTS_LINES_BY_NAME } from '../../../conts/flowRules';
+import { drawWatermark, letterheadLogoOf, watermarkImage } from '../../../lib/renovation/doc-watermark';
 
 /* Conts prints a line by its description, no Item Code column (owner, 16 Nov 2026: one PDF for the whole system,
    the SO's, without the code). */
@@ -463,6 +465,10 @@ export async function renderSalesOrderInto(
   /* A contract prints under its own brand, whose logo is the one uploaded under Brands. */
   const letterheadLogoKey = opts?.contract ? opts.contract.logoKey ?? null : brandLogoKey;
   if (letterheadLogoKey) await ensureBrandLogoLoaded(letterheadLogoKey);
+  /* The letterhead's logo, faint and slanted behind every page (owner, 17 Nov 2026). */
+  const watermark = CONTS_LINES_BY_NAME
+    ? await watermarkImage(letterheadLogoOf(opts?.contract?.brandName ?? COMPANY.shortName, getBrandLogoCache(letterheadLogoKey) ?? (opts?.contract ? null : getBrandingLogoCache())))
+    : null;
 
   // ── Header (shared pdf-common letterhead) ─────────────────────────
   let y = drawHeader(doc, {
@@ -928,9 +934,11 @@ export async function renderSalesOrderInto(
   const pageCount = doc.getNumberOfPages();
   for (let p = startPage; p <= pageCount; p += 1) {
     doc.setPage(p);
+    if (watermark) drawWatermark(doc, watermark);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(110);
     doc.text(header.doc_no, margin, 290);
-    doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(header.so_date)}`, pageW / 2, 290, { align: 'center' });
+    /* Conts: no "The Conts ERP · date" in the middle (owner, 17 Nov 2026). */
+    if (!CONTS_LINES_BY_NAME) doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(header.so_date)}`, pageW / 2, 290, { align: 'center' });
     doc.text(`Page ${p} of ${pageCount}`, pageW - margin, 290, { align: 'right' });
     doc.setTextColor(0);
   }
