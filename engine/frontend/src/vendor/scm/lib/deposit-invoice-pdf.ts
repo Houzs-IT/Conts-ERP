@@ -15,7 +15,8 @@ import {
   amountInWordsMyr, fmtRm, fmtDocDate, safeName, type PdfAction,
 } from './pdf-common';
 import { getBrandingCache } from '../../../lib/branding';
-import { PAYMENT_METHOD_DEFAULT_LABELS } from './payment-methods';
+import { PAYMENT_METHOD_DEFAULT_LABELS } from './payment-methods';
+import { stampWatermark } from '../../../lib/renovation/doc-watermark';
 
 export type DepositInvoicePdfData = {
   di_number: string;
@@ -113,5 +114,6 @@ export async function generateDepositInvoicesPdf(list: DepositInvoicePdfData[], 
     if (i > 0) doc.addPage('a5', 'landscape');
     renderDepositInvoiceInto(doc, d);
   });
+  stampWatermark(doc);
   deliverPdfBlob(doc.output('blob'), 'deposit-invoices.pdf', opts?.action ?? 'save');
 }

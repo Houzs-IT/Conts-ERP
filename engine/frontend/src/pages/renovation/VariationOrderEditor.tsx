@@ -6,17 +6,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { CheckCircle2, Printer, Save, Send } from 'lucide-react';
+import { QuotationSoPrint } from '../scm-v2/renovationQuotationPrint';
 import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
 import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapModal';
 import { useAuth } from '../../auth/AuthContext';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { lineAmounts, qtyLabel } from '../../vendor/shared/renovation-money';
-import { contractPostingWarning, refusalOf, renoSend, sectionsForSave, useBrands, useContract, useRenoMutation, useVo, type ContractPosting, type DocLine, type DocSection } from '../../lib/renovation/api';
+import { contractPostingWarning, refusalOf, renoSend, sectionsForSave, useBrands, useContract, useRenoMutation, useVo, type ContractPosting, type DocHeader, type DocLine, type DocSection } from '../../lib/renovation/api';
 import { useToast } from '../../hooks/useToast';
-import { buildPrintDoc } from '../../lib/renovation/print-doc';
 import { amountsOf, blankSection, DocEditor } from './DocEditor';
-import { PrintDialog } from './PrintDialog';
 import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
 import { Card, ErrorBanner, Field, inputCls, rm, StatusPill, todayIso } from './shared';
 import { cn } from '../../lib/utils';
@@ -228,12 +227,9 @@ export function VariationOrderEditor() {
           <ErrorBanner error={error} />
         </div>
       </ModalOverlay>
-      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="variation order" docNo={v.voNo} brandName={brand?.name} defaultFormat={contract.data?.header.printFormat ?? 'AMOUNT'}
-        build={(format) => buildPrintDoc({
-          kind: 'VARIATION_ORDER', docNo: v.voNo, format, brand, reference: `Contract ${v.soDocNo}`,
-          header: { ...(contract.data?.header ?? {}), customerName: contract.data?.header.customerName || contract.data?.debtorName || '', docDate: docDate, lastAmended: null, docDiscountSen: 0, promoLines: [] },
-          sections: printSections,
-        })} />
+      <QuotationSoPrint kind="VARIATION_ORDER" open={printOpen} onClose={() => setPrintOpen(false)} docNo={v.voNo} status={v.status} reference={v.soDocNo}
+        header={{ ...(contract.data?.header ?? ({} as DocHeader)), customerName: contract.data?.header.customerName || contract.data?.debtorName || '', docDate, lastAmended: null, docDiscountSen: 0, promoLines: [] }}
+        sections={printSections} instalments={[]} brand={brand} />
     </div>
   );
 }

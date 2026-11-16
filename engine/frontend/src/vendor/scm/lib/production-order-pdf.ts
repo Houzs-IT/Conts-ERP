@@ -78,7 +78,8 @@ import { authedFetch } from './authed-fetch';
 type ProductionPdfSo = { doc_no: string; debtor_name?: string | null; phone?: string | null; email?: string | null; address1?: string | null; address2?: string | null; city?: string | null; postcode?: string | null };
 type ProductionPdfMaterial = { item_code: string; description: string | null; uom: string | null; qty_needed: number | string; processing_date: string | null; delivery_date: string | null; notes?: string | null };
 import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
-import { deliverToAddress } from './warehouse-print';
+import { deliverToAddress } from './warehouse-print';
+import { stampWatermark } from '../../../lib/renovation/doc-watermark';
 
 type PoHeader = {
   production_time_hours?: number | string | null;
@@ -890,6 +891,7 @@ export async function productionOrderPdfBase64(
   await renderProductionOrderInto(doc, autoTable, header, items, opts);
   finalizePoPdf(doc);
   // 'datauristring' → "data:application/pdf;base64,XXXX"; keep the base64 tail.
+  stampWatermark(doc);
   const uri = doc.output('datauristring');
   return uri.slice(uri.indexOf(',') + 1);
 }
