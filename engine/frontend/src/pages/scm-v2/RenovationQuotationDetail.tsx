@@ -12,7 +12,7 @@ import { DocAttachments } from '../../components/doc-attachments/DocAttachments'
 import { coverageStateOf } from '../../components/coverage-state';
 import { DataTable } from '../../components/DataTable';
 import { DetailAside, DetailGrid, DetailMain, Section } from '../../components/DetailLayout';
-import { refusalOf, useQuotation, type QuotationView } from '../../lib/renovation/api';
+import { refusalOf, useBrands, useQuotation, type QuotationView } from '../../lib/renovation/api';
 import { PRINT_FORMATS } from '../../lib/renovation/print-formats';
 import { DATA_TABLE_LAYOUT_FAMILIES } from '../../components/dataTableLayoutFamilies';
 import { categoryRooms, roomOrdered } from '../../vendor/scm/lib/so-print-rooms';
@@ -66,6 +66,9 @@ function QuotationView_({ view }: { view: QuotationView }) {
     staleTime: 30_000,
   });
   const info = blockFromQuote(header, quotation.projectId);
+  /* The brand cell the sales order shows, so the two order-info grids line up (owner, 16 Nov 2026). */
+  const brands = useBrands();
+  const brandName = brands.data?.brands.find((b) => b.brandId === quotation.brandId)?.name ?? null;
   const status = STATUS[quotation.status] ?? STATUS.DRAFT;
   const totals = revision.totals;
   const money = (sen: number) => fmtMoney(sen, 'MYR');
@@ -117,7 +120,7 @@ function QuotationView_({ view }: { view: QuotationView }) {
             <DetailGrid>
               <DetailMain>
                 <Section title="Order info">
-                  <RenovationOrderInfoCells info={info} project={project.data?.project ?? null} payment={null} />
+                  <RenovationOrderInfoCells info={info} project={project.data?.project ?? null} payment={null} brand={brandName} />
                 </Section>
                 <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2 [&>section]:h-full">
                   <Section title="Customer">
