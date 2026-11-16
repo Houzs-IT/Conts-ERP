@@ -161,6 +161,14 @@ describe('the request follows its bill', () => {
     await releaseRequestsOfBillBestEffort(sb, 'API-1');
     expect(req(sb, 'Q1')).toMatchObject({ ap_invoice_id: null, status: 'SUBMITTED' });
   });
+  test("the bill's supplier, corrected on the bill, is the request's payee (chew, 16 Nov 2026)", async () => {
+    const sb = world();
+    await post(finance(sb), '/r/Q1/ap-invoice', { debitAccountCode: '601-0009' });
+    sb.tables.suppliers.push({ id: 'S2', company_id: CO, code: '400-B002', name: 'BETTER TILES SDN BHD', control_account: null });
+    sb.tables.ap_invoices[0].supplier_id = 'S2';
+    await afterBillSavedBestEffort(sb, 'API-1');
+    expect(req(sb, 'Q1')).toMatchObject({ supplier_id: 'S2', payee_name: 'BETTER TILES SDN BHD', payee_to_check: false });
+  });
   test('a deposit request is not rewritten by its bill', async () => {
     const sb = world();
     await post(finance(sb), '/r/D1/ap-invoice', { debitAccountCode: '601-0009' });

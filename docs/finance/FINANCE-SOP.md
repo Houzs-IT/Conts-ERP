@@ -277,6 +277,7 @@
   - **报价单先入账**：AP invoice 勾「Quotation (no formal invoice yet)」照常 Post（借费用、贷供应商）。订金的申请转出来默认就是报价。正式发票来了，在同一张 AP invoice 按「Replace with formal invoice」：填正式发票号码和日期（费用记在这个日期），明细和金额照正式发票改，可多可少；系统冲回旧分录、按新的重新过账。欠发票清单 = AP invoices 列表里 Ref 显示「Quotation」的。
   - **金额以 AP invoice 为准**：申请跟着 AP invoice 付清才算 PAID（发票比申请多或少都一样）；订金申请照旧按订金金额。
   - **申请自动跟着 AP invoice 更新**：说明、金额、项目、unit，加行或删行都同步；原本申请的内容保留，在 My claims 的「As first asked」看得到，标「Updated from the invoice」。
+  - **在付款凭证或 AP invoice 上改，申请也跟着改**（chew 确认，2026-11-16：员工交错的资料，财务在凭证或 AP invoice 上改，不在 Payment requests 改）：凭证保存（或草稿再编辑）后，这张凭证独自在付的申请换成凭证上的明细（说明、金额、部门、项目、unit、科目）和合计；凭证只付一个收款人时，申请的收款人也换成凭证上的。报销单同样换成凭证上的明细。AP invoice 换了供应商，申请的收款人也跟着换。原本申请的内容都保留。
   - **付尾款不用重填**：订金已付、AP invoice 还有欠款的订金申请，申请人在 My claims 按「Ask for the balance」，系统开一张尾款申请（金额 = AP invoice 还欠的，明细照 AP invoice 按比例分），关联订金申请和 AP invoice；同一张订金一次只能有一张未付的尾款申请。
   - Utility bills 的申请（付给 TNB 这类 creditor）也可以转，一行一个 unit，最多 500 行。
 - **付款申请的两种付法**（chew 确认，2026-11-16）：

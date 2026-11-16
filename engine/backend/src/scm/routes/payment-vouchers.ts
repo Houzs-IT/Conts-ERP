@@ -68,6 +68,7 @@ import { postNowHandler } from '../../conts/pv-post-now';
 import { afterVoucherCancelledBestEffort, afterVoucherPostedBestEffort } from "../../conts/claims-voucher-hooks";
 import { checkClaimLinks, linkClaimsToVoucher } from "../../conts/combined-voucher";
 import { copyPapers, toVoucher } from "../../conts/copy-papers";
+import { syncFromVoucherBestEffort } from "../../conts/voucher-sync";
 import { normalizeCurrency, normalizeExchangeRate, masterRateForCurrency } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { recordEntityAudit, diffFields, compactChanges, fieldChange, statusChange, assertAuditWritable, auditUnavailableBody } from '../lib/entity-audit';
@@ -930,6 +931,8 @@ export const createPaymentVoucherCore = async (c: any, body: Record<string, unkn
       await sb.from('payment_vouchers').update({ status: 'CANCELLED', updated_at: new Date().toISOString() }).eq('id', h.id).eq('status', 'DRAFT');
       return c.json({ error: 'already_vouchered', message: lost }, 409);
     }
+    /* What finance changed on the form goes back to them (chew, 16 Nov 2026). */
+    await syncFromVoucherBestEffort(sb, h.id);
     /* The papers handed in with them come onto the voucher (chew, 16 Nov 2026). */
     if (claimCo != null) {
       await copyPapers(c, sb, claimCo, {
@@ -1125,8 +1128,8 @@ export const updatePaymentVoucherHandler = async (c: any) => {
     /* A line the edit does not name a unit or a project for keeps the one it had (by line number): the unit unless it
        is no longer Rental, the project unless it now names a unit. A voucher paying bills pays its one project on every
        line; on a plain voucher a project named in the header (an older caller) fills only lines naming neither. */
-    const { data: hadLines } = await sb.from('payment_voucher_lines').select('line_no, unit_id, project_id, department, sub_department_id').eq('pv_id', id);
-    const had = new Map(((hadLines ?? []) as Array<{ line_no: number; unit_id: string | null; project_id: number | null; department: Department; sub_department_id?: string | null }>).map((l) => [Number(l.line_no), l]));
+    const { data: hadLines } = await sb.from('payment_voucher_lines').select('line_no, unit_id, project_id, department, sub_department_id, payment_request_id, staff_receipt_id').eq('pv_id', id);
+    const had = new Map(((hadLines ?? []) as Array<{ line_no: number; unit_id: string | null; project_id: number | null; department: Department; sub_department_id?: string | null; payment_request_id?: string | null; staff_receipt_id?: string | null }>).map((l) => [Number(l.line_no), l]));
     const keptRows = built.rows.map((r) => {
       const unit_id = r.unit_id !== undefined ? r.unit_id : r.department === 'rental' && r.project_id == null ? had.get(r.line_no)?.unit_id ?? null : null;
       const project_id = paysBills ? voucherProject ?? null
@@ -1137,7 +1140,12 @@ export const updatePaymentVoucherHandler = async (c: any) => {
       /* The sub-department too (SOP 1.1): kept when the edit names none and the line stays in its department. */
       const h0 = had.get(r.line_no);
       const sub_department_id = r.sub_department_id !== undefined ? r.sub_department_id : h0 && h0.department === r.department ? h0.sub_department_id ?? null : null;
-      return { ...r, unit_id, project_id, sub_department_id };
+      /* Conts (0330): a line keeps the payment request or claim it pays, by line number, through the edit. */
+      const pays = paysBills ? {} : {
+        ...(h0?.payment_request_id ? { payment_request_id: h0.payment_request_id } : {}),
+        ...(h0?.staff_receipt_id ? { staff_receipt_id: h0.staff_receipt_id } : {}),
+      };
+      return { ...r, unit_id, project_id, sub_department_id, ...pays };
     });
     /* Bills of two or more projects: the AP line split over them (chew 11 Nov 2026), before the old lines go. */
     let finalRows = keptRows;
@@ -1242,6 +1250,8 @@ export const updatePaymentVoucherHandler = async (c: any) => {
     });
   }
 
+  /* Conts: what finance corrected on the draft goes back to the requests and claims it pays (chew, 16 Nov 2026). */
+  await syncFromVoucherBestEffort(sb, id);
   return c.json({ paymentVoucher: data });
 };
 paymentVouchers.patch('/:id', updatePaymentVoucherHandler);
