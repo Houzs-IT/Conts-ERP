@@ -50,9 +50,20 @@ export const billRefusal = (c: Ctx, bill: { invoiceNumber: string }) =>
  *  asked_lines. A deposit stays the deposit. Then every request paid through the bill settles again. Best effort. */
 export async function afterBillSavedBestEffort(sb: Db, billId: string): Promise<void> {
   try {
-    const { data: bill } = await sb.from('ap_invoices').select('id, status, total_sen, payment_request_id').eq('id', billId).maybeSingle();
-    const b = bill as { id: string; status: string; total_sen: number; payment_request_id: string | null } | null;
+    const { data: bill } = await sb.from('ap_invoices').select('id, status, total_sen, payment_request_id, supplier_id').eq('id', billId).maybeSingle();
+    const b = bill as { id: string; status: string; total_sen: number; payment_request_id: string | null; supplier_id: string | null } | null;
     if (b && b.status !== 'CANCELLED' && b.payment_request_id) await followBill(sb, b);
+    /* The bill's supplier is the payee of every open request paid through it (chew, 16 Nov 2026: corrected on the bill). */
+    if (b && b.status !== 'CANCELLED' && b.supplier_id) {
+      const { data: s } = await sb.from('suppliers').select('id, name').eq('id', b.supplier_id).maybeSingle();
+      const sup = s as { id: string; name: string } | null;
+      if (sup) {
+        await sb.from('payment_requests').update({ supplier_id: sup.id, payee_name: sup.name, payee_to_check: false, updated_at: new Date().toISOString() })
+          .eq('ap_invoice_id', b.id).in('status', ['SUBMITTED', 'PART_PAID']).neq('supplier_id', sup.id);
+        await sb.from('payment_requests').update({ supplier_id: sup.id, payee_name: sup.name, payee_to_check: false, updated_at: new Date().toISOString() })
+          .eq('ap_invoice_id', b.id).in('status', ['SUBMITTED', 'PART_PAID']).is('supplier_id', null);
+      }
+    }
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error(`[claims] the request of AP invoice ${billId} did not follow it:`, (e as Error).message);
