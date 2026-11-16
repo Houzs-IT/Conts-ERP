@@ -6,7 +6,7 @@
 // Cancelling undoes exactly what posting did. Posting again (or the already-posted path) adds nothing: the money paid
 // in is unique per voucher, and every other step only moves rows still in the state it expects. Best effort, like the
 // refund hooks beside it: a failure is logged and never undoes the voucher.
-import { requestStatus } from './payment-requests';
+import { linkedRequestStatus, requestStatus } from './payment-requests';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as in the voucher routes */
 type Db = any;
@@ -31,13 +31,36 @@ async function voucherSen(sb: Db, pvIds: string[]): Promise<number> {
   return ((data ?? []) as Array<{ amount_sen: number }>).reduce((n, l) => n + Number(l.amount_sen), 0);
 }
 
-async function settleRequest(sb: Db, requestId: string): Promise<void> {
-  const req = must(await sb.from('payment_requests').select('id, amount_sen, status').eq('id', requestId).maybeSingle()) as { amount_sen: number; status: string } | null | undefined;
+/** A request's status from what pays it: its own posted vouchers, and, when it is paid through an AP invoice (chew,
+ *  15 Nov 2026), what that bill has had paid since the request was linked (payment-requests.ts linkedRequestStatus). */
+export async function settleRequest(sb: Db, requestId: string): Promise<void> {
+  const req = must(await sb.from('payment_requests').select('id, type, amount_sen, status, ap_invoice_id, ap_paid_before_sen').eq('id', requestId).maybeSingle()) as
+    { type?: string; amount_sen: number; status: string; ap_invoice_id?: string | null; ap_paid_before_sen?: number | null } | null | undefined;
   if (!req) return;
   const pvs = (must(await sb.from('payment_vouchers').select('id').eq('payment_request_id', requestId).eq('status', 'POSTED')) ?? []) as Array<{ id: string }>;
   const paid = await voucherSen(sb, pvs.map(p => p.id));
-  const next = requestStatus(Number(req.amount_sen), paid, String(req.status));
+  let ap: { status: string; paidSen: number } | null = null;
+  if (req.ap_invoice_id) {
+    const bill = must(await sb.from('ap_invoices').select('status, paid_sen').eq('id', req.ap_invoice_id).maybeSingle()) as { status: string; paid_sen: number } | null | undefined;
+    if (bill) ap = { status: String(bill.status), paidSen: Number(bill.paid_sen ?? 0) };
+  }
+  const next = req.ap_invoice_id
+    ? linkedRequestStatus({ type: String(req.type ?? 'PAYMENT'), amountSen: Number(req.amount_sen), current: String(req.status), ownPaidSen: paid, ap, apPaidBeforeSen: Number(req.ap_paid_before_sen ?? 0) })
+    : requestStatus(Number(req.amount_sen), paid, String(req.status));
   if (next !== req.status) must(await sb.from('payment_requests').update({ status: next, updated_at: stamp() }).eq('id', requestId));
+}
+
+/** Every request paid through this AP invoice, settled again: its paid, status or total just moved (a voucher allocating
+ *  to it posted or was cancelled, an advance was applied, the bill was edited). Best effort: a failure is logged and
+ *  never undoes what moved the bill. */
+export async function settleRequestsOfBillBestEffort(sb: Db, apInvoiceId: string): Promise<void> {
+  try {
+    const rows = (must(await sb.from('payment_requests').select('id').eq('ap_invoice_id', apInvoiceId)) ?? []) as Array<{ id: string }>;
+    for (const r of rows) await settleRequest(sb, r.id);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(`[claims] settling the requests of AP invoice ${apInvoiceId} failed:`, (e as Error).message);
+  }
 }
 
 export async function afterVoucherPostedBestEffort(sb: Db, pvId: string): Promise<void> {

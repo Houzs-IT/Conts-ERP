@@ -272,6 +272,13 @@
 - 先凭报价单或形式发票付款时，财务可以标记「还欠正式发票」。
 - 系统有一个欠发票清单，持续追踪，正式发票上传后才算结清。
 - 正式发票来了，抵扣已付的订金或预付款，只付差额。
+- **付款申请转 AP invoice**（chew 确认，2026-11-15；设计 docs/superpowers/specs/2026-11-15-request-to-ap-invoice-design.md）：
+  - 可选。财务在 Payment requests 按「Make AP invoice」：供应商、每一行（说明、金额、部门、小部门、项目、unit）、附件、希望付款日期都带过去；明细没有科目的，选一个费用科目。转了以后，这张申请在 **Payment voucher 页面**付（选供应商、勾这张 AP invoice），申请上不再有 Make voucher、Reject，也不能撤回或再提交；要改就改 AP invoice，或先取消它。
+  - **报价单先入账**：AP invoice 勾「Quotation (no formal invoice yet)」照常 Post（借费用、贷供应商）。订金的申请转出来默认就是报价。正式发票来了，在同一张 AP invoice 按「Replace with formal invoice」：填正式发票号码和日期（费用记在这个日期），明细和金额照正式发票改，可多可少；系统冲回旧分录、按新的重新过账。欠发票清单 = AP invoices 列表里 Ref 显示「Quotation」的。
+  - **金额以 AP invoice 为准**：申请跟着 AP invoice 付清才算 PAID（发票比申请多或少都一样）；订金申请照旧按订金金额。
+  - **申请自动跟着 AP invoice 更新**：说明、金额、项目、unit，加行或删行都同步；原本申请的内容保留，在 My claims 的「As first asked」看得到，标「Updated from the invoice」。
+  - **付尾款不用重填**：订金已付、AP invoice 还有欠款的订金申请，申请人在 My claims 按「Ask for the balance」，系统开一张尾款申请（金额 = AP invoice 还欠的，明细照 AP invoice 按比例分），关联订金申请和 AP invoice；同一张订金一次只能有一张未付的尾款申请。
+  - Utility bills 的申请（付给 TNB 这类 creditor）也可以转，一行一个 unit，最多 500 行。
 
 ### 3.9 付款之后
 

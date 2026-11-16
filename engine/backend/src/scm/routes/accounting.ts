@@ -287,6 +287,7 @@ accounting.post('/payment-requests/:id/reject', paymentRequests.rejectRequestHan
 accounting.post('/payment-requests/:id/close', paymentRequests.closeRequestHandler);
 accounting.patch('/payment-requests/:id/supplier', paymentRequests.linkSupplierHandler);
 accounting.get('/payment-requests/:id/files/:fileId', paymentRequests.requestFileHandler);
+accounting.post('/payment-requests/:id/ap-invoice', paymentRequests.makeRequestApInvoiceHandler);
 accounting.post('/debtors', createDebtorHandler);
 accounting.patch('/debtors/:id', patchDebtorHandler);
 accounting.put('/chart/rename', chartRenameHandler);

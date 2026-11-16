@@ -31,14 +31,24 @@ export type ApListRow = {
   paidSen: number;
   outstandingSen: number;
   status: string;
+  /** Conts (chew, 15 Nov 2026): a quotation booked before its formal invoice (SOP 3.8). */
+  provisional?: boolean;
 };
 
 export type ApInvoiceHeader = {
   id: string; invoice_number: string; supplier_id: string; supplier_invoice_ref: string | null;
   invoice_date: string; due_date: string | null; currency: string; total_sen: number; paid_sen: number;
   status: string; notes: string | null; posted_at: string | null; posted_by: string | null;
+  /** Conts (chew, 15 Nov 2026): the payment request it was made from, and a quotation not yet replaced by its formal invoice. */
+  payment_request_id?: string | null; provisional?: boolean;
 };
-export type ApInvoiceLine = { id: string; line_no: number; description: string | null; debit_account_code: string; amount_sen: number };
+export type ApInvoiceLine = {
+  id: string; line_no: number; description: string | null; debit_account_code: string; amount_sen: number;
+  /** Conts: the unit, and the payment request line it came from (kept through every edit). */
+  unit_id?: string | null; source_request_line_id?: string | null;
+};
+/** Conts: the payment requests paid through a bill — the one it was made from, a deposit's balance. */
+export type ApInvoiceRequest = { id: string; requestNo: string; type: 'PAYMENT' | 'DEPOSIT'; status: string; amountSen: number; balance: boolean };
 
 export const useApInvoices = (kind: ApListKind = 'ALL') => useQuery({
   queryKey: ['ap-invoices', kind],
@@ -48,7 +58,7 @@ export const useApInvoices = (kind: ApListKind = 'ALL') => useQuery({
 
 export const useApInvoiceDetail = (id: string | null) => useQuery({
   queryKey: ['ap-invoice', id],
-  queryFn: () => authedFetch<{ invoice: ApInvoiceHeader; lines: ApInvoiceLine[]; supplier: { id: string; code: string; name: string } | null }>(`/ap-invoices/${id}`),
+  queryFn: () => authedFetch<{ invoice: ApInvoiceHeader; lines: ApInvoiceLine[]; supplier: { id: string; code: string; name: string } | null; requests?: ApInvoiceRequest[] }>(`/ap-invoices/${id}`),
   enabled: !!id,
 });
 
@@ -58,12 +68,12 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>) => {
   void qc.invalidateQueries({ queryKey: ['ap-aging'] });
 };
 
-export type ApInvoiceLineInput = { description?: string; debitAccountCode: string; amountSen: number };
+export type ApInvoiceLineInput = { description?: string; debitAccountCode: string; amountSen: number; unitId?: string | null; sourceRequestLineId?: string | null };
 
 export const useCreateApInvoice = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { supplierId: string; supplierInvoiceRef?: string; invoiceDate: string; dueDate?: string | null; notes?: string; lines: ApInvoiceLineInput[] }) =>
+    mutationFn: (body: { supplierId: string; supplierInvoiceRef?: string; invoiceDate: string; dueDate?: string | null; notes?: string; provisional?: boolean; lines: ApInvoiceLineInput[] }) =>
       authedFetch<{ ok: boolean; invoice: ApInvoiceHeader }>(`/ap-invoices`, { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: () => invalidate(qc),
   });
@@ -74,7 +84,7 @@ export const useCreateApInvoice = () => {
 export const useUpdateApInvoice = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Partial<{ supplierId: string; supplierInvoiceRef: string | null; invoiceDate: string; dueDate: string | null; notes: string | null; lines: ApInvoiceLineInput[] }> }) =>
+    mutationFn: ({ id, body }: { id: string; body: Partial<{ supplierId: string; supplierInvoiceRef: string | null; invoiceDate: string; dueDate: string | null; notes: string | null; provisional: boolean; lines: ApInvoiceLineInput[] }> }) =>
       authedFetch<{ ok: boolean; invoice: ApInvoiceHeader; reposted?: boolean; jeNo?: string }>(`/ap-invoices/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     onSuccess: () => invalidate(qc),
   });

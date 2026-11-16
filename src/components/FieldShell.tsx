@@ -16,10 +16,10 @@ const TABS: { to: string; label: keyof PortalStrings['nav']; icon: string; match
   { to: '/portal/pay', label: 'pay', icon: 'Wallet', match: p => p.startsWith('/portal/pay') },
   { to: '/portal/me', label: 'me', icon: 'CircleUser', match: p => p.startsWith('/portal/me') },
 ];
-/** Renovation staff have no cleaning jobs or receipts: their site Jobs (units done), then their own clock, pay and leave. */
+/** Renovation staff have no cleaning jobs: their site Jobs (units done), then their own receipts, clock, pay and leave. */
 const RENOVATION_TABS: typeof TABS = [
   { to: '/portal/jobs', label: 'jobs', icon: 'ClipboardList', match: path => path.startsWith('/portal/jobs') },
-  ...TABS.filter(tab => tab.label === 'clock' || tab.label === 'pay' || tab.label === 'me'),
+  ...TABS.filter(tab => tab.label === 'receipts' || tab.label === 'clock' || tab.label === 'pay' || tab.label === 'me'),
 ];
 
 /** Housekeepers and technicians work on a phone, in a car park, one-handed.

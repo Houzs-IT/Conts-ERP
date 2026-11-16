@@ -26,6 +26,7 @@ import {
   type ClaimFile, type ClaimLine, type LineDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt,
 } from '../lib/claims';
 import { canResubmit, fixOnUtilityBills, lineDraftOf, reasonNote, wantedOnAgain } from '../lib/requestResubmit';
+import { balanceSen, billLabel, canAskBalance, onBill, updatedFromBill } from '../lib/requestApInvoice';
 
 /**
  * My claims (finance, 28-29 Oct 2026; SOP 3.2, 6): a member of staff hands something in and follows it, and, if they
@@ -426,7 +427,8 @@ function Files({ r }: { r: Receipt }) {
   return <>{r.files.map((f, i) => <a key={f.id} href={receiptFileHref(r.id, f.id)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="mr-2 text-primary font-medium">{f.mime === 'application/pdf' ? 'PDF' : 'Photo'}{r.files.length > 1 ? ` ${i + 1}` : ''}</a>)}</>;
 }
 
-const canWithdraw = (q: PaymentRequest) => q.status === 'SUBMITTED' && q.vouchers.length === 0;
+/* One paid through an AP invoice is changed on the invoice by finance, not withdrawn (chew, 15 Nov 2026). */
+const canWithdraw = (q: PaymentRequest) => q.status === 'SUBMITTED' && q.vouchers.length === 0 && !onBill(q);
 
 const receiptStatus = (receipt: Receipt) => ({ label: RECEIPT_STATUS[receipt.status], tone: RECEIPT_TONE[receipt.status] });
 const requestStatus = (request: PaymentRequest) => ({ label: REQUEST_STATUS[request.status], tone: REQUEST_TONE[request.status] });
@@ -528,13 +530,15 @@ function ReceiptDetail({ receipt, onClose }: { receipt: Receipt; onClose: () => 
 /** One request to finance in full; while finance has not started paying it, it can be withdrawn from here. Once withdrawn
  *  or rejected it can be changed and sent again under its own number (chew, 13 Nov 2026); one made from utility bills is
  *  fixed on Utility bills. */
-function RequestDetail({ request, onClose, onWithdraw, onEdit }: { request: PaymentRequest; onClose: () => void; onWithdraw: () => void; onEdit: () => void }) {
+function RequestDetail({ request, onClose, onWithdraw, onEdit, onBalance }: { request: PaymentRequest; onClose: () => void; onWithdraw: () => void; onEdit: () => void; onBalance: () => void }) {
   const vouchers = request.vouchers.filter(v => v.status !== 'CANCELLED').map(v => v.pvNumber).join(', ');
+  const bill = billLabel(request);
   return (
     <Modal title={`Request ${request.requestNo}`} eyebrow="My claims" size="md" onClose={onClose}
       footer={<>
         {canWithdraw(request) && <Button variant="tertiary" className="mr-auto" icon={<Icon name="Undo2" size="sm" />} onClick={onWithdraw}>Withdraw</Button>}
         {canResubmit(request) && <Button variant="primary" className="mr-auto" icon={<Icon name="Pencil" size="sm" />} onClick={onEdit}>Edit and resubmit</Button>}
+        {canAskBalance(request) && <Button variant="primary" className="mr-auto" icon={<Icon name="Send" size="sm" />} onClick={onBalance}>Ask for the balance</Button>}
         <Button variant="secondary" onClick={onClose}>Close</Button>
       </>}>
       <KeyFacts cols={2} items={[
@@ -545,14 +549,27 @@ function RequestDetail({ request, onClose, onWithdraw, onEdit }: { request: Paym
         { label: 'Asked on', value: date(request.createdAt) },
         { label: 'Pay by', value: request.wantedOn ? date(request.wantedOn) : 'Not set' },
         ...(vouchers ? [{ label: 'Payment voucher', value: vouchers }] : []),
+        ...(bill ? [{ label: 'AP invoice', value: bill }] : []),
+        ...(request.parentRequestNo ? [{ label: 'Balance of', value: request.parentRequestNo }] : []),
+        ...((request.balanceRequests ?? []).length ? [{ label: 'Balance asked on', value: (request.balanceRequests ?? []).map(b => b.requestNo).join(', ') }] : []),
       ]} />
       {reasonNote(request) && (reasonNote(request)!.now ? <Problem text={reasonNote(request)!.text} /> : <p className="m-0 text-meta text-muted-ink">{reasonNote(request)!.text}</p>)}
+      {updatedFromBill(request) && <p className="m-0 text-meta text-muted-ink">Updated from the invoice: finance changed it to match the supplier's invoice.</p>}
       <DetailLines lines={request.lines} totalSen={request.amountSen} />
+      {updatedFromBill(request) && (
+        <details className="text-meta">
+          <summary className="cursor-pointer text-muted-ink">As first asked{request.askedAmountSen != null ? ` · ${rm(request.askedAmountSen)}` : ''}</summary>
+          <ul className="m-0 mt-1 pl-4">
+            {(request.askedLines ?? []).map((l, i) => <li key={i}>{l.description || 'Line'} · {rm(l.amountSen)}</li>)}
+          </ul>
+        </details>
+      )}
       {request.note && <NoteBlock text={request.note} />}
       <Papers files={request.files} hrefOf={fileId => requestFileHref(request.id, fileId)} />
       {canWithdraw(request) && <p className="m-0 text-meta text-muted-ink">Finance has not started paying it, so you can still withdraw it.</p>}
       {canResubmit(request) && <p className="m-0 text-meta text-muted-ink">Change what is wrong and send it again. It keeps its number.</p>}
       {fixOnUtilityBills(request) && <p className="m-0 text-meta text-muted-ink">Made from utility bills: fix the bills on Utility bills, then use Send again there.</p>}
+      {canAskBalance(request) && <p className="m-0 text-meta text-muted-ink">The deposit is paid. Ask for the balance ({rm(balanceSen(request))}) when the work is done: nothing to fill in again.</p>}
     </Modal>
   );
 }
@@ -562,6 +579,7 @@ function Mine({ month, onMonthChange, onHandIn, onEdit }: { month: string; onMon
   const requests = useApi<{ requests: PaymentRequest[] }>('/claims/requests');
   const toast = useToast();
   const [withdraw, setWithdraw] = useState<PaymentRequest | null>(null);
+  const [balance, setBalance] = useState<PaymentRequest | null>(null);
   const [openReceipt, setOpenReceipt] = useState<Receipt | null>(null);
   const [openRequest, setOpenRequest] = useState<PaymentRequest | null>(null);
   const rCols: Column<Receipt>[] = [
@@ -579,7 +597,7 @@ function Mine({ month, onMonthChange, onHandIn, onEdit }: { month: string; onMon
     { key: 'status', label: 'Status', type: 'status', status: requestStatus, sub: q => {
       // The reason now while rejected; once sent again, its vouchers, else "Rejected before" (review, 13 Nov 2026).
       const note = reasonNote(q), pvs = q.vouchers.filter(v => v.status !== 'CANCELLED').map(v => v.pvNumber).join(', ');
-      return note?.now ? note.text : pvs || note?.text || '';
+      return note?.now ? note.text : pvs || billLabel(q) || note?.text || '';
     } },
     {
       key: 'act', label: '', value: () => '', phone: 'hide', noExport: true,
@@ -587,6 +605,8 @@ function Mine({ month, onMonthChange, onHandIn, onEdit }: { month: string; onMon
         <Button variant="secondary" size="sm" icon={<Icon name="Undo2" size="sm" />} onClick={e => { e.stopPropagation(); setWithdraw(q); }}>Withdraw</Button>
       ) : canResubmit(q) ? (
         <Button variant="secondary" size="sm" icon={<Icon name="Pencil" size="sm" />} onClick={e => { e.stopPropagation(); onEdit(q); }}>Edit and resubmit</Button>
+      ) : canAskBalance(q) ? (
+        <Button variant="secondary" size="sm" icon={<Icon name="Send" size="sm" />} onClick={e => { e.stopPropagation(); setBalance(q); }}>Ask for the balance</Button>
       ) : null),
     },
   ];
@@ -598,7 +618,25 @@ function Mine({ month, onMonthChange, onHandIn, onEdit }: { month: string; onMon
         onRowClick={setOpenRequest} empty={{ title: 'Nothing asked yet', action: { label: 'Ask finance to pay', onClick: () => onHandIn('direct') } }} />
       {openReceipt && <ReceiptDetail receipt={openReceipt} onClose={() => setOpenReceipt(null)} />}
       {openRequest && <RequestDetail request={openRequest} onClose={() => setOpenRequest(null)}
-        onWithdraw={() => setWithdraw(openRequest)} onEdit={() => { const q = openRequest; setOpenRequest(null); onEdit(q); }} />}
+        onWithdraw={() => setWithdraw(openRequest)} onEdit={() => { const q = openRequest; setOpenRequest(null); onEdit(q); }}
+        onBalance={() => setBalance(openRequest)} />}
+      <ConfirmDialog onClose={() => setBalance(null)} spec={balance && {
+        title: `Ask for the balance of ${balance.requestNo}?`,
+        body: `Finance is asked to pay ${balance.payeeName} the rest of ${billLabel(balance) ?? 'the invoice'}: ${rm(balanceSen(balance))}. The lines, projects and units come from the invoice; nothing to fill in again.`,
+        confirmLabel: 'Ask for the balance', busyLabel: 'Sending',
+        onConfirm: async () => {
+          try {
+            const made = await postWithFiles<{ requestNo: string }>(`/claims/requests/${balance.id}/balance`, {}, []);
+            toast({ tone: 'success', title: `Balance asked for on ${made.requestNo}` });
+            setOpenRequest(null);
+            requests.reload();
+          } catch (e) {
+            toast({ tone: 'critical', title: 'Not sent', body: errorMessage(e) });
+          } finally {
+            setBalance(null);
+          }
+        },
+      }} />
       <ConfirmDialog onClose={() => setWithdraw(null)} spec={withdraw && {
         title: `Withdraw ${withdraw.requestNo}?`,
         body: 'Finance has not paid it yet. Withdrawing removes it from their list; you can ask again later.',

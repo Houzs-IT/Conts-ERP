@@ -18,6 +18,7 @@ import { readUtilityPage, UTILITY_READ_MODEL } from '../acc/utility-bill-read';
 import { requestAiTag } from '../services/aiUsage';
 import { decodeFiles, removeFiles, storeFiles } from './claims-files';
 import { claimRequest, RETURNED, takeReturned } from './payment-request-routes';
+import { billRefusal, liveBillOf } from './request-ap-invoice';
 import type { Staff } from './staff-identity';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
@@ -133,6 +134,8 @@ export const resubmitUtilityRequestHandler = async (c: Ctx): Promise<Response> =
   const { data: r } = await sb.from('payment_requests').select('id, request_no, status, source_key, updated_at').eq('company_id', co.companyId).eq('id', c.req.param('id')).maybeSingle();
   if (!r || !String(r.source_key ?? '').startsWith('utility:')) return c.json({ error: 'not_found' }, 404);
   if (!RETURNED.has(String(r.status))) return c.json({ error: 'not_returned', message: 'Only a withdrawn or rejected request can be sent again.' }, 409);
+  const bill = await liveBillOf(sb, r.id);
+  if (bill) return billRefusal(c, bill);
   const b = await bodyOf(c);
   if (!b) return c.json({ error: 'invalid_json' }, 400);
   const lines = billLines(c, b.bills);
