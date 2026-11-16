@@ -16,8 +16,11 @@ const TABS: { to: string; label: keyof PortalStrings['nav']; icon: string; match
   { to: '/portal/pay', label: 'pay', icon: 'Wallet', match: p => p.startsWith('/portal/pay') },
   { to: '/portal/me', label: 'me', icon: 'CircleUser', match: p => p.startsWith('/portal/me') },
 ];
-/** Renovation staff have no jobs or receipts in the portal: their own clock, pay and leave. */
-const RENOVATION_TABS = TABS.filter(tab => tab.label === 'clock' || tab.label === 'pay' || tab.label === 'me');
+/** Renovation staff have no cleaning jobs or receipts: their site Jobs (units done), then their own clock, pay and leave. */
+const RENOVATION_TABS: typeof TABS = [
+  { to: '/portal/jobs', label: 'jobs', icon: 'ClipboardList', match: path => path.startsWith('/portal/jobs') },
+  ...TABS.filter(tab => tab.label === 'clock' || tab.label === 'pay' || tab.label === 'me'),
+];
 
 /** Housekeepers and technicians work on a phone, in a car park, one-handed.
  *  One column, 44px targets, and the whole page scrolls normally. */
@@ -27,7 +30,7 @@ export default function FieldShell({ children }: { children: ReactNode }) {
   const atAccount = path === '/account';
   const isRenovator = user!.role === 'renovator';
   const tabs = isRenovator ? RENOVATION_TABS : TABS;
-  const home = isRenovator ? '/portal/clock' : '/portal/today';
+  const home = isRenovator ? '/portal/jobs' : '/portal/today';
   const lang = usePortalLang();
   const t = usePortalText();
   // The page's language follows the portal's, so screen readers and fonts read Chinese and Burmese right.

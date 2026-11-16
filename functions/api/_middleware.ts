@@ -71,6 +71,9 @@ const RENOVATION_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/field\/leave\/[^/]+\/cancel$/],
   // Their own pay: approved and paid slips, and an estimate of the month so far (HR phase 4).
   ['GET', /^\/api\/field\/pay$/],
+  // Their brand's renovation jobs and units done, forwarded to the engine (functions/api/field/site-work/[[path]].ts).
+  ['GET', /^\/api\/field\/site-work\/jobs$/],
+  ['PUT', /^\/api\/field\/site-work\/lines\/[A-Za-z0-9-]+\/progress$/],
 ];
 
 const FIELD_ALLOWED: [string, RegExp][] = [

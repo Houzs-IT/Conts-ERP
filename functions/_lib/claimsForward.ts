@@ -8,17 +8,17 @@ import { claimsAssertion, scmEngineConfigured } from './scmEngine';
  *  docs/superpowers/specs/2026-10-28-payment-requests-petty-cash-design.md §4.3). Property OS forwards each call, server
  *  to server, with a signed statement of who it is for; the engine checks it and limits every answer to that person.
  *  Nobody needs an engine account to hand in a receipt. */
-export async function forwardClaims(env: Env, session: Session, method: 'GET' | 'POST', enginePath: string, body?: unknown): Promise<Response> {
+export async function forwardToEngine(env: Env, session: Session, mount: 'claims-forward' | 'site-forward', notConfiguredMessage: string, method: 'GET' | 'POST' | 'PUT', enginePath: string, body?: unknown): Promise<Response> {
   // Demo mode sends nothing to finance: a utility bill sent for payment, or sent again, would reach the real engine
   // (review, 13 Nov 2026). Reads stay live, as the session middleware reads real-only areas.
   if (method !== 'GET' && inDemo()) return fail('DEMO_MODE', DEMO_NOTHING_SENT, 409);
-  if (!scmEngineConfigured(env)) return fail('NOT_CONFIGURED', 'Claims are not set up on this environment yet.', 501);
+  if (!scmEngineConfigured(env)) return fail('NOT_CONFIGURED', notConfiguredMessage, 501);
   let res: Response;
   try {
     /* Each path segment is encoded again, so nothing in a path can step outside the claims routes. */
     const [pathPart, query = ''] = enginePath.split('?');
     const safe = pathPart.split('/').map(seg => encodeURIComponent(decodeURIComponent(seg))).join('/');
-    res = await fetch(`${env.SCM_ENGINE_API!.replace(/\/+$/, '')}/api/claims-forward${safe}${query ? `?${query}` : ''}`, {
+    res = await fetch(`${env.SCM_ENGINE_API!.replace(/\/+$/, '')}/api/${mount}${safe}${query ? `?${query}` : ''}`, {
       method,
       headers: { 'x-conts-staff': await claimsAssertion(env, session), ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -40,6 +40,9 @@ export async function forwardClaims(env: Env, session: Session, method: 'GET' | 
   }
   return json(data ?? {}, res.status);
 }
+
+export const forwardClaims = (env: Env, session: Session, method: 'GET' | 'POST', enginePath: string, body?: unknown): Promise<Response> =>
+  forwardToEngine(env, session, 'claims-forward', 'Claims are not set up on this environment yet.', method, enginePath, body);
 
 /** A file from a form, as the engine takes it. */
 export async function fileToUpload(file: File): Promise<{ name: string; mime: string; dataBase64: string }> {
