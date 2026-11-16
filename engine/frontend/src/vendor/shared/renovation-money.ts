@@ -136,11 +136,14 @@ export function lineCostSen(l: Pick<MoneyLine, 'kind' | 'qty' | 'measureMilli'> 
   return l.measureMilli !== null ? roundDiv(l.measureMilli * l.unitCostSen, MEASURE_SCALE) : l.qty * l.unitCostSen;
 }
 
-/** What the Qty column prints: the count and its unit code ("42.6 FT", "1 LOT", "2 PCS"), or just "3". */
+/** What the Qty column prints: "42.6FT", "LS", "1 SET", "FULL UNIT", "3". */
 export function qtyLabel(l: Pick<MoneyLine, 'qty' | 'measureMilli' | 'measureUom' | 'uom'>): string {
   const uom = String(l.measureUom ?? l.uom ?? '').toUpperCase();
-  if (l.measureMilli !== null && l.measureMilli !== undefined) return `${formatMeasure(l.measureMilli)} ${uom || 'FT'}`;
-  return uom ? `${l.qty} ${uom}` : String(l.qty);
+  if (l.measureMilli !== null && l.measureMilli !== undefined) return `${formatMeasure(l.measureMilli)}${uomPrintLabel(uom || 'FT')}`;
+  if (uom === 'LOT') return 'LS';
+  if (uom === 'FULL') return 'FULL UNIT';
+  if (uom === 'SET') return `${l.qty} SET`;
+  return String(l.qty);
 }
 
 export interface TotalsSection {
