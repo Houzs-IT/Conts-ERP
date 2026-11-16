@@ -39,7 +39,7 @@ describe('AVA Residence B31-09, format 1 (amount only)', () => {
   test('measured line prints "20FT" and its rate "15/FT"; lump-sum section prints its price on the band', () => {
     const rows = buildRows(d);
     const track = rows.find((r) => r.type === 'line' && r.cells.desc?.startsWith('RECESSED'));
-    expect(track?.type === 'line' && [track.cells.qty, track.cells.unit, track.cells.amount]).toEqual(['20FT', '15.00/FT', '300.00']);
+    expect(track?.type === 'line' && [track.cells.qty, track.cells.unit, track.cells.amount]).toEqual(['20 FT', '15.00/FT', '300.00']);
     const curtain = rows.find((r) => r.type === 'band' && r.text.startsWith('CURTAIN'));
     expect(curtain?.type === 'band' && curtain.amount).toBe('3,231.00');
     const room = rows.find((r) => r.type === 'line' && r.cells.desc === 'MASTER 10 FT');
@@ -56,7 +56,7 @@ describe("D'Clover A-3A-3A, format 3 (discount detail)", () => {
   const d = dclover();
   const layout = layoutDocument(d, undefined, { density: 'compact' });
 
-  test('page 1: list TOTAL 37,215.52 with the net subtotal 20,577.71 above it', () => {
+  test('page 1: list TOTAL 37,215.52, net 20,577.71 kept for the summary', () => {
     expect(layout.pages[0].listSen).toBe(RM(37215.52));
     expect(layout.pages[0].netSen).toBe(RM(20577.71));
     expect(pageTotalSen(d, layout.pages[0])).toBe(RM(37215.52));
@@ -74,9 +74,9 @@ describe("D'Clover A-3A-3A, format 3 (discount detail)", () => {
     ]);
   });
 
-  test('disc price is the discounted amount, the % beside it, amount at list', () => {
+  test('disc price is the discounted amount, the amount off with its % beside it, amount at list', () => {
     const wall = buildRows(d).find((r) => r.type === 'line' && r.cells.desc === 'WALL CABINET');
-    expect(wall?.type === 'line' && [wall.cells.discPrice, wall.cells.disc, wall.cells.amount]).toEqual(['2,686.46', '-40%', '4,477.44']);
+    expect(wall?.type === 'line' && [wall.cells.discPrice, wall.cells.disc, wall.cells.amount]).toEqual(['2,686.46', '1,790.98 (40%)', '4,477.44']);
     const shelf = buildRows(d).find((r) => r.type === 'line' && r.cells.desc?.startsWith('WALL SHELF'));
     expect(shelf?.type === 'line' && [shelf.cells.qty, shelf.cells.discPrice, shelf.cells.amount]).toEqual(['3', '1,123.20', '1,872.00']);
   });
@@ -102,7 +102,7 @@ describe('the other formats', () => {
   test('promotion vs standard (KL 48): promotion = unit price, standard = list price, total at promotion', () => {
     const d = kl48();
     const rows = buildRows(d).filter((r) => r.type === 'line');
-    expect([rows[0].cells.promo, rows[0].cells.standard, rows[0].cells.qty]).toEqual(['1,800.00', '2,000.00', 'FULL UNIT']);
+    expect([rows[0].cells.promo, rows[0].cells.standard, rows[0].cells.qty]).toEqual(['1,800.00', '2,000.00', '1 FULL']);
     // The sample prints 14,200; its lines add to 14,600 (owner question 1: lines are the rule).
     expect(layoutDocument(d).closing.summary.finalSen).toBe(RM(14600));
   });
@@ -114,6 +114,18 @@ describe('the other formats', () => {
     expect(rows[1].cells.amount).toBe('FOC');
     const s = layoutDocument(d).closing.summary;
     expect(summaryRows(d, s).map((r) => [r.label, r.sen])).toEqual([['TOTAL (RM)', RM(2015)], ['SHOWROOM DISCOUNT (RM)', RM(15)], ['GRAND TOTAL', RM(2000)]]);
+  });
+
+  test('unit price format prints qty with its unit and shows the discount as -50% (600.00) beside the amount charged', () => {
+    const d = doc('UNIT_PRICE', [section('OTHER', [
+      item('Project Management & Transportation', 1200, { uom: 'LOT', discountBp: 5000 }),
+      item('Recessed track', 15, { measureMilli: 20_000, measureUom: 'FT' }),
+    ])]);
+    const lines = buildRows(d).filter((r) => r.type === 'line');
+    expect(lines.map((r) => r.type === 'line' && [r.cells.qty, r.cells.unit, r.cells.disc, r.cells.amount])).toEqual([
+      ['1 LOT', '1,200.00', '-50% (600.00)', '600.00'],
+      ['20 FT', '15.00', '', '300.00'],
+    ]);
   });
 
   test('a long document breaks by itself and never leaves a band alone at a page foot', () => {
@@ -158,6 +170,20 @@ describe('quotation layout (QT-2611-017)', () => {
       ['1', 'Built-in - Shoe cabinet', 'W: 3 FT × H: FH × D: 400 MM'], ['2', 'Built-in Ep', ''], ['3', 'Study table @ Bedroom', ''],
     ]);
     expect(lines[0].cells.discPrice).toBe('1,995.00');
+  });
+
+  test('discount detail shows the original unit price next to the discounted one', () => {
+    const [line] = buildRows(doc('DISCOUNT', [section('OTHER', [item('Project management', 1200, { discountBp: 5000 })])])).filter((r) => r.type === 'line');
+    expect(line.type === 'line' && line.cells).toMatchObject({ unit: '1,200.00', disc: '600.00 (50%)', discPrice: '600.00', amount: '1,200.00' });
+  });
+
+  test('a typed amount with no % set prints the amount off and the % it works out to', () => {
+    const lines = buildRows(doc('DISCOUNT', [section('A', [
+      item('Typed lower', 33825.36, { amountOverrideSen: RM(20295.22) }),
+      item('Typed odd', 1000, { amountOverrideSen: RM(876.5) }),
+      item('No discount', 500),
+    ])])).filter((r) => r.type === 'line');
+    expect(lines.map((r) => r.type === 'line' && r.cells.disc)).toEqual(['13,530.14 (40%)', '123.50 (12.35%)', '']);
   });
 
   test('a dimension sub-line adds its height', () => {
