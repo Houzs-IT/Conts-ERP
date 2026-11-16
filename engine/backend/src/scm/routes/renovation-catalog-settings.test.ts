@@ -1,5 +1,5 @@
 /* Sub-category settings (Products > SKU Master > Sub-categories): what can be
- * added, renamed and hidden, and what stays fixed (the Works trades and the site-trade services, the rows
+ * added, renamed and hidden, and what stays fixed (the site-trade services, the rows
  * old Houzs categories map through, the last shown one of a group). */
 import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
@@ -85,11 +85,20 @@ describe('sub-category settings', () => {
     sb.tables.product_sub_categories = sb.tables.product_sub_categories.filter((r) => r.code !== 'ROMAN_BLINDS');
   });
 
-  it('refuses a name that already exists, and anything under Works', async () => {
+  it('refuses a name that already exists', async () => {
     expect((await send('POST', '/sub-categories', { group: 'SERVICE', label: 'delivery' })).status).toBe(409);
     expect((await send('POST', '/sub-categories', { group: 'SERVICE', label: 'Sofa' })).status).toBe(409);
-    expect((await send('POST', '/sub-categories', { group: 'WORKS', label: 'Roofing' })).status).toBe(400);
-    expect((await send('PATCH', '/sub-categories/HACKING', { label: 'Demolition' })).status).toBe(400);
+    expect((await send('POST', '/sub-categories', { group: 'WORKS', label: 'hacking' })).status).toBe(409);
+  });
+
+  it('adds and renames Works trades', async () => {
+    const added = await send('POST', '/sub-categories', { group: 'WORKS', label: 'Roofing' });
+    expect(added.status).toBe(201);
+    expect(await added.json()).toMatchObject({ code: 'ROOFING' });
+    expect((await send('PATCH', '/sub-categories/HACKING', { label: 'Demolition' })).status).toBe(200);
+    expect(sb.tables.product_sub_categories.find((r) => r.code === 'ROOFING')).toMatchObject({ group_code: 'WORKS', sort_order: 30 });
+    sb.tables.product_sub_categories = sb.tables.product_sub_categories.filter((r) => r.code !== 'ROOFING');
+    await send('PATCH', '/sub-categories/HACKING', { label: 'Hacking' });
   });
 
   it('the site-trade services filed under Service (cleaning, aircon install, project management) stay fixed', async () => {

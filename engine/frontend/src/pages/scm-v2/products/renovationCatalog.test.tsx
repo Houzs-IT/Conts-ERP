@@ -130,6 +130,14 @@ describe('RenovationSubCategorySettings', () => {
     expect((screen.getByLabelText('Move Airbnb setup down') as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByLabelText('Move Delivery down') as HTMLButtonElement).disabled).toBe(false);
   });
+
+  test('Works trades can be renamed, hidden and added to', async () => {
+    h.catalog = { canEdit: true, subCategories: SUB_CATEGORIES.map((x) => ({ ...x, active: true })) };
+    wrap(<RenovationSubCategorySettings initialGroup="WORKS" onClose={() => {}} />);
+    expect(await screen.findByLabelText('Name of Protection')).toBeTruthy();
+    expect(screen.getByLabelText('Hide Hacking')).toBeTruthy();
+    expect(screen.getByLabelText('New sub-category')).toBeTruthy();
+  });
 });
 
 describe('CatalogCategoryPicker', () => {
