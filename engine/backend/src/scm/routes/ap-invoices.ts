@@ -48,21 +48,31 @@ import {
 } from './ap-invoice-files';
 import { supabaseAuth } from '../middleware/auth';
 import { fmtSen } from '../shared/format';
+import { afterBillSavedBestEffort, releaseRequestsOfBillBestEffort } from '../../conts/request-ap-invoice';
+
+const isUniqueClash = (e: { code?: string; message?: string } | null | undefined) => !!e && (e.code === '23505' || /duplicate key/i.test(String(e.message ?? '')));
 
 type Row = Record<string, any>;
 
 const NO_PERM = (what: string) => ({ error: `You don't have permission to ${what}.` });
 
-const HEADER = 'id, company_id, invoice_number, supplier_id, supplier_invoice_ref, invoice_date, due_date, currency, exchange_rate, total_sen, paid_sen, status, notes, created_at, created_by, posted_at, posted_by, cancelled_at, cancelled_by';
-const LINE = 'id, line_no, description, debit_account_code, amount_sen, department, project_id, sub_department_id';
+const HEADER = 'id, company_id, invoice_number, supplier_id, supplier_invoice_ref, invoice_date, due_date, currency, exchange_rate, total_sen, paid_sen, status, notes, created_at, created_by, posted_at, posted_by, cancelled_at, cancelled_by, payment_request_id, provisional';
+const LINE = 'id, line_no, description, debit_account_code, amount_sen, department, project_id, sub_department_id, unit_id, source_request_line_id';
 
-/* Conts: each line's department (finance phase 1, spec 3.5); none is Supply chain. */
-type CleanLine = { description: string | null; code: string; amountSen: number; department: Department; projectId: number | null; subDepartmentId: string | null };
+/* Conts: each line's department (finance phase 1, spec 3.5); none is Supply chain. The unit, and the payment request line
+   it came from (chew, 15 Nov 2026: a request becomes an AP invoice; spec 2026-11-15-request-to-ap-invoice-design.md). */
+type CleanLine = { description: string | null; code: string; amountSen: number; department: Department; projectId: number | null; subDepartmentId: string | null; unitId: string | null; sourceRequestLineId: string | null };
 
-/** 1–50 lines, each with a leaf account and a positive integer sen. */
-function buildLines(raw: unknown): { lines: CleanLine[]; total: number } | { error: string; message: string } {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Lines a bill takes: 50, or as many as a utility payment request holds when the bill is made from a request (one line
+    per unit's bill, up to 500). */
+const MAX_LINES = 50;
+const MAX_REQUEST_LINES = 500;
+
+/** 1–50 lines (500 on a bill made from a payment request), each with a leaf account and a positive integer sen. */
+function buildLines(raw: unknown, maxLines = MAX_LINES): { lines: CleanLine[]; total: number } | { error: string; message: string } {
   const arr = Array.isArray(raw) ? raw : [];
-  if (arr.length === 0 || arr.length > 50) return { error: 'lines_required', message: 'An AP invoice takes 1 to 50 lines.' };
+  if (arr.length === 0 || arr.length > maxLines) return { error: 'lines_required', message: `An AP invoice takes 1 to ${maxLines} lines.` };
   const lines: CleanLine[] = [];
   for (const [i, l] of arr.entries()) {
     const code = String(l?.debitAccountCode ?? '').trim();
@@ -77,9 +87,12 @@ function buildLines(raw: unknown): { lines: CleanLine[]; total: number } | { err
     /* The project a cost belongs to (a renovation subcontractor's bill): blank = none. */
     const project = l?.projectId == null || l.projectId === '' ? null : Number(l.projectId);
     if (project != null && !Number.isSafeInteger(project)) return { error: 'bad_line', message: `Line ${i + 1}: choose the project from the list.` };
+    const unitId = l?.unitId == null || String(l.unitId).trim() === '' ? null : String(l.unitId).trim().slice(0, 80);
+    const source = l?.sourceRequestLineId && UUID.test(String(l.sourceRequestLineId)) ? String(l.sourceRequestLineId).toLowerCase() : null;
     lines.push({
       description: l?.description ? String(l.description).trim() : null, code, amountSen: amount,
       department: isDepartment(l?.department) ? l.department : DEFAULT_DEPARTMENT, projectId: project, subDepartmentId: null,
+      unitId, sourceRequestLineId: source,
     });
   }
   return { lines, total: lines.reduce((s, l) => s + l.amountSen, 0) };
@@ -179,6 +192,8 @@ function shape(kind: 'API' | 'PI', r: Row): Row {
     paidSen: paid,
     outstandingSen: Math.max(0, total - paid),
     status: String(r.status ?? ''),
+    /* A quotation booked before its formal invoice (chew, 15 Nov 2026; SOP 3.8). */
+    provisional: r.provisional === true,
   };
 }
 
@@ -193,7 +208,11 @@ export const apInvoiceDetailHandler = async (c: any): Promise<Response> => {
   ]);
   if (lines.error) return c.json({ error: 'load_failed', reason: lines.error.message }, 500);
   if (sup.error) return c.json({ error: 'load_failed', reason: sup.error.message }, 500);
-  return c.json({ invoice: found.inv, lines: lines.data ?? [], supplier: sup.data ?? null });
+  /* The payment requests paid through it: the one it was made from, and a deposit's balance (chew, 15 Nov 2026). */
+  const { data: reqs } = await sb.from('payment_requests').select('id, request_no, type, status, amount_sen, parent_request_id')
+    .eq('company_id', found.inv.company_id).eq('ap_invoice_id', found.inv.id);
+  const requests = ((reqs ?? []) as Row[]).map((r) => ({ id: r.id, requestNo: r.request_no, type: r.type, status: r.status, amountSen: Number(r.amount_sen), balance: !!r.parent_request_id }));
+  return c.json({ invoice: found.inv, lines: lines.data ?? [], supplier: sup.data ?? null, requests });
 };
 
 /* ── POST / — raise a DRAFT ──────────────────────────────────────────────── */
@@ -201,10 +220,20 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
   if (!hasHouzsPerm(c, 'scm.payment_voucher.create') && !hasHouzsPerm(c, 'scm.payment_voucher.write')) {
     return c.json(NO_PERM('raise an AP invoice'), 403);
   }
-  const co = requireActiveCompanyId(c);
-  if (!co.ok) return c.json(co.refusal, 409);
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  return createApInvoiceCore(c, body);
+};
+
+/** Raise a DRAFT bill from `body` (the POST / fields). `from` is set only by the engine itself: a bill made from a
+    payment request (conts/request-ap-invoice.ts) names it, and takes as many lines as the request has. */
+export async function createApInvoiceCore(c: any, body: any, from: { paymentRequestId?: string } = {}): Promise<Response> {
+  if (!hasHouzsPerm(c, 'scm.payment_voucher.create') && !hasHouzsPerm(c, 'scm.payment_voucher.write')) {
+    return c.json(NO_PERM('raise an AP invoice'), 403);
+  }
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  if (!body || typeof body !== 'object') return c.json({ error: 'invalid_json' }, 400);
 
   const supplierId = String(body.supplierId ?? '').trim();
   if (!supplierId) return c.json({ error: 'supplier_required', message: 'Pick the supplier this bill is from.' }, 400);
@@ -212,7 +241,7 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
   if (currency !== 'MYR') {
     return c.json({ error: 'currency_unsupported', message: 'AP invoices are MYR in this first cut — a foreign bill goes through a purchase invoice, which carries the rate.' }, 400);
   }
-  const built = buildLines(body.lines);
+  const built = buildLines(body.lines, from.paymentRequestId ? MAX_REQUEST_LINES : MAX_LINES);
   if ('error' in built) return c.json({ error: built.error, message: built.message }, 400);
   const badSub = await subRefusal(c, co.companyId, built.lines, body.lines);
   if (badSub) return badSub;
@@ -246,7 +275,12 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
     status: 'DRAFT',
     notes: body.notes ? String(body.notes).trim() : null,
     created_by: String(c.get('user')?.id ?? ''),
+    provisional: body.provisional === true,
+    ...(from.paymentRequestId ? { payment_request_id: from.paymentRequestId } : {}),
   }).select(HEADER).single();
+  if (insErr && from.paymentRequestId && isUniqueClash(insErr)) {
+    return c.json({ error: 'bill_exists', message: 'This request already has an AP invoice.' }, 409);
+  }
   if (insErr || !inv) return c.json({ error: 'save_failed', reason: insErr?.message ?? 'insert returned nothing' }, 500);
 
   const { error: lineErr } = await sb.from('ap_invoice_lines').insert(built.lines.map((l, i) => ({
@@ -259,6 +293,8 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
     department: l.department,
     project_id: l.projectId,
     ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
+    unit_id: l.unitId,
+    source_request_line_id: l.sourceRequestLineId,
   })));
   if (lineErr) {
     await sb.from('ap_invoices').delete().eq('company_id', co.companyId).eq('id', (inv as Row).id);
@@ -274,7 +310,7 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
     lines: built.lines.map((l, i) => ({ line_no: i + 1, debit_account_code: l.code })),
   });
   return c.json({ ok: true, invoice: inv }, 201);
-};
+}
 
 /* ── PATCH /:id — every field may change (owner 2026-09-06: edit 这个不能全部
    都设成可以改吗). A DRAFT simply changes. A POSTED bill RE-POSTS: the
@@ -318,6 +354,8 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
   if (body.invoiceDate !== undefined) patch.invoice_date = dateOrNull(body.invoiceDate) ?? inv.invoice_date;
   if (body.dueDate !== undefined) patch.due_date = dateOrNull(body.dueDate);
   if (body.notes !== undefined) patch.notes = body.notes ? String(body.notes).trim() : null;
+  /* Quotation → formal invoice: unticked when the formal invoice replaces it (chew, 15 Nov 2026). */
+  if (body.provisional !== undefined) patch.provisional = body.provisional === true;
   /* A posted bill is not moved across the ledger start; before it, the books
      stay as they were (Conts). Checked before the first write. */
   let side: 'after' | 'before' = 'after';
@@ -329,7 +367,7 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
   }
   let rebuilt: { lines: CleanLine[]; total: number } | null = null;
   if (body.lines !== undefined) {
-    const built = buildLines(body.lines);
+    const built = buildLines(body.lines, inv.payment_request_id ? MAX_REQUEST_LINES : MAX_LINES);
     if ('error' in built) return c.json({ error: built.error, message: built.message }, 400);
     const { data: hadSubs } = await sb.from('ap_invoice_lines').select('line_no, sub_department_id').eq('company_id', co.companyId).eq('invoice_id', inv.id).order('line_no');
     const badSub = await subRefusal(c, co.companyId, built.lines, body.lines, ((hadSubs ?? []) as Array<{ sub_department_id?: string | null }>).map((h) => h.sub_department_id ?? null));
@@ -348,6 +386,7 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
       company_id: co.companyId, invoice_id: inv.id, line_no: i + 1,
       description: l.description, debit_account_code: l.code, amount_sen: l.amountSen, department: l.department, project_id: l.projectId,
       ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
+      unit_id: l.unitId, source_request_line_id: l.sourceRequestLineId,
     })));
     if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
     patch.total_sen = built.total;
@@ -359,6 +398,9 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
   }
   const { data, error } = await sb.from('ap_invoices').update(patch).eq('company_id', co.companyId).eq('id', inv.id).select(HEADER).maybeSingle();
   if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  /* The request it was made from follows the bill; every request paid through it settles again (a new total may make
+     it paid). Conts, chew 15 Nov 2026. */
+  await afterBillSavedBestEffort(sb, inv.id);
   if (!posted) return c.json({ ok: true, invoice: data });
   if (side === 'before') return c.json({ ok: true, invoice: data, reposted: false });
 
@@ -458,6 +500,8 @@ export const cancelApInvoiceHandler = async (c: any): Promise<Response> => {
     status: 'CANCELLED', cancelled_at: new Date().toISOString(), cancelled_by: String(c.get('houzsUser')?.name ?? c.get('user')?.id ?? ''), updated_at: new Date().toISOString(),
   }).eq('company_id', co.companyId).eq('id', inv.id);
   if (upErr) return c.json({ error: 'save_failed', reason: upErr.message }, 500);
+  /* The requests paid through it are let go: they are paid by their own vouchers again, or get a new bill. */
+  await releaseRequestsOfBillBestEffort(sb, inv.id);
   return c.json({ ok: true });
 };
 

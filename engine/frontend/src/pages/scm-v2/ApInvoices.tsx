@@ -31,7 +31,7 @@
 // ----------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Camera, Plus, Printer } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { useAccounts, postableAccounts, type Account } from '../../vendor/scm/lib/accounting-queries';
@@ -39,7 +39,7 @@ import { useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
 import {
   useApInvoices, useApInvoiceDetail, useCreateApInvoice, useUpdateApInvoice, usePostApInvoice, useCancelApInvoice,
   useApInvoiceFiles, useUploadApInvoiceFile, useDeleteApInvoiceFile, fetchApInvoiceFileBlobUrl,
-  type ApListKind, type ApListRow, type ApInvoiceHeader, type ApInvoiceLine,
+  type ApListKind, type ApListRow, type ApInvoiceHeader, type ApInvoiceLine, type ApInvoiceRequest,
 } from '../../vendor/scm/lib/ap-invoice-queries';
 import type { PvFilePayload, BillExtraction, VendorMemory } from '../../vendor/scm/lib/payment-voucher-queries';
 import { takePvFiles } from '../../vendor/scm/lib/pv-file-handoff';
@@ -58,6 +58,7 @@ import { humaniseStatusKey } from '../../vendor/scm/lib/status-pill';
 import { DataTable, type Column } from '../../components/DataTable';
 import { cancelledDocNoClass, cancelledRowClass } from '../../lib/scm';
 import { departmentOf } from '../../conts/department';
+import { UnitName } from '../../conts/Pickers';
 import { ApInvoiceForm, emptyApForm, formFromExtraction, scanNoteFor, type ApFormMode, type ApFormSubmit, type ApFormValues } from './ApInvoiceForm';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
@@ -87,7 +88,7 @@ const Meta = ({ label, value }: { label: string; value: React.ReactNode }) => (
   </div>
 );
 
-type Detail = { invoice: ApInvoiceHeader; lines: ApInvoiceLine[]; supplier: { id: string; code: string; name: string } | null };
+type Detail = { invoice: ApInvoiceHeader; lines: ApInvoiceLine[]; supplier: { id: string; code: string; name: string } | null; requests?: ApInvoiceRequest[] };
 /** The form's values from a bill: an EDIT keeps everything, a COPY keeps the
     supplier, description and lines and starts the paper afresh — no supplier
     number, today's date, no due date, a new number on save. */
@@ -97,8 +98,11 @@ const fromDetail = (d: Detail, copy: boolean): ApFormValues => ({
   invoiceDate: copy ? myt() : d.invoice.invoice_date,
   dueDate: copy ? '' : (d.invoice.due_date ?? ''),
   description: d.invoice.notes ?? '',
+  /* A copy is a new bill: not a quotation of the request the original came from. */
+  provisional: copy ? false : d.invoice.provisional === true,
   lines: d.lines.map((l, i) => ({ rid: i + 1, description: l.description ?? '', debitAccountCode: l.debit_account_code, amountSen: l.amount_sen, department: departmentOf((l as { department?: unknown }).department),
-    projectId: (l as { project_id?: number | null }).project_id ?? null, subDepartmentId: (l as { sub_department_id?: string | null }).sub_department_id ?? null })),
+    projectId: (l as { project_id?: number | null }).project_id ?? null, subDepartmentId: (l as { sub_department_id?: string | null }).sub_department_id ?? null,
+    unitId: l.unit_id ?? null, sourceRequestLineId: copy ? null : (l.source_request_line_id ?? null) })),
 });
 
 type FormState = {
@@ -118,7 +122,9 @@ export const ApInvoices = () => {
   const [kind, setKind] = useState<ApListKind>('ALL');
   const listQ = useApInvoices(kind);
   const rows = listQ.data?.rows ?? [];
-  const [detailId, setDetailId] = useState<string | null>(null);
+  /* ?open=<id> opens a bill straight away: the link from a payment request (chew, 15 Nov 2026). */
+  const [searchParams] = useSearchParams();
+  const [detailId, setDetailId] = useState<string | null>(searchParams.get('open'));
   const detailQ = useApInvoiceDetail(detailId);
   const detail = detailQ.data;
 
@@ -276,7 +282,12 @@ export const ApInvoices = () => {
       render: (r) => <>{r.supplierName ?? '—'}{r.supplierCode ? <span style={soft}> · {r.supplierCode}</span> : null}</>,
       getValue: (r) => r.supplierName ?? '',
     },
-    { key: 'ref', label: 'Ref', render: (r) => r.supplierInvoiceRef ?? '—', getValue: (r) => r.supplierInvoiceRef ?? '' },
+    {
+      key: 'ref', label: 'Ref',
+      /* A quotation booked before its formal invoice says so (SOP 3.8: the list of formal invoices still owed). */
+      render: (r) => (r.provisional ? <span style={{ color: 'var(--c-orange)', fontWeight: 600 }}>Quotation</span> : (r.supplierInvoiceRef ?? '—')),
+      getValue: (r) => (r.provisional ? 'Quotation' : (r.supplierInvoiceRef ?? '')),
+    },
     { key: 'description', label: 'Description', width: '260px', render: (r) => r.description ?? '—', getValue: (r) => r.description ?? '' },
     { key: 'date', label: 'Date', render: (r) => fmtDateOrDash(r.invoiceDate), getValue: (r) => r.invoiceDate, exportFormat: 'date' },
     { key: 'due', label: 'Due', render: (r) => fmtDateOrDash(r.dueDate), getValue: (r) => r.dueDate, exportFormat: 'date' },
@@ -384,10 +395,20 @@ export const ApInvoices = () => {
         >
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 'var(--space-3)', fontSize: 'var(--fs-13)' }}>
             <Meta label="Supplier" value={<span><span style={mono}>{detail.supplier?.code ?? ''}</span> {detail.supplier?.name ?? '—'}</span>} />
-            <Meta label="Supplier's invoice no." value={detail.invoice.supplier_invoice_ref ?? '—'} />
+            <Meta label="Supplier's invoice no." value={detail.invoice.provisional
+              ? <span style={{ color: 'var(--c-orange)', fontWeight: 600 }}>Quotation — no formal invoice yet</span>
+              : (detail.invoice.supplier_invoice_ref ?? '—')} />
             <Meta label="Invoice date" value={fmtDateOrDash(detail.invoice.invoice_date)} />
             <Meta label="Due date" value={fmtDateOrDash(detail.invoice.due_date)} />
             <Meta label="Description" value={detail.invoice.notes ?? '—'} />
+            {(detail.requests ?? []).length > 0 && (
+              <Meta label="Payment requests" value={(detail.requests ?? []).map((q) => (
+                <span key={q.id} style={{ display: 'block' }}>
+                  <span style={mono}>{q.requestNo}</span>
+                  <span style={soft}> · {q.type === 'DEPOSIT' ? 'deposit' : q.balance ? 'balance' : 'payment'} · {humaniseStatusKey(q.status)} · {fmtSen(q.amountSen)}</span>
+                </span>
+              ))} />
+            )}
           </div>
           <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 'var(--fs-13)' }}>
             <thead>
@@ -395,6 +416,7 @@ export const ApInvoices = () => {
                 <th style={{ ...th, width: 36 }}>#</th>
                 <th style={th}>Account</th>
                 <th style={th}>Description</th>
+                <th style={th}>Unit</th>
                 <th style={{ ...th, textAlign: 'right' }}>Amount</th>
                 <th style={th} aria-label="Files" />
               </tr>
@@ -405,12 +427,13 @@ export const ApInvoices = () => {
                   <td style={{ ...td, ...mono, color: 'var(--fg-muted)' }}>{l.line_no}</td>
                   <td style={td}><span style={mono}>{l.debit_account_code}</span>{accountName(l.debit_account_code) ? <span style={soft}> · {accountName(l.debit_account_code)}</span> : null}</td>
                   <td style={td}>{l.description ?? '—'}</td>
+                  <td style={td}>{l.unit_id ? <UnitName id={l.unit_id} /> : '—'}</td>
                   <td style={{ ...td, ...right }}>{fmtSen(l.amount_sen)}</td>
                   <td style={{ ...td, ...right }}><LineFilesButton docType="ap_invoice" docId={detail.invoice.id} lineId={l.id} canEdit={canCreate && detail.invoice.status !== 'CANCELLED'} /></td>
                 </tr>
               ))}
               <tr style={{ borderTop: '1px solid var(--border-weak, #e3e1da)' }}>
-                <td colSpan={3} style={{ ...td, fontWeight: 600 }}>Total · paid {fmtSen(detail.invoice.paid_sen)}</td>
+                <td colSpan={4} style={{ ...td, fontWeight: 600 }}>Total · paid {fmtSen(detail.invoice.paid_sen)}</td>
                 <td style={{ ...td, ...right, fontWeight: 700 }}>{fmtSen(detail.invoice.total_sen)}</td>
                 <td style={td} />
               </tr>

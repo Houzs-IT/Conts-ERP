@@ -29,6 +29,13 @@ export interface PaymentRequest {
   supplierId?: string | null; purchaseOrderId?: string | null; decidedBy?: string | null;
   /** Made from utility bills: fixed and sent again on Utility bills (lib/requestResubmit.ts). */
   fromBills?: boolean;
+  /** The AP invoice it is paid through (chew, 15 Nov 2026; lib/requestApInvoice.ts): a quotation until the formal invoice
+   *  comes; a balance's deposit and a deposit's balance requests; what was first asked, once the invoice changed it. */
+  apInvoice?: { id: string; invoiceNumber: string; status: string; provisional: boolean; totalSen: number; paidSen: number } | null;
+  parentRequestNo?: string | null;
+  balanceRequests?: { id: string; requestNo: string; status: string }[];
+  askedLines?: Array<{ amountSen: number; description: string | null }> | null;
+  askedAmountSen?: number | null;
 }
 export interface Me { userId: string; name: string; field: boolean; lineDepartment: LineDepartment; route: 'float' | 'finance'; keepsFloat: boolean }
 export interface MyFloat { float: { id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested: boolean }; receipts: Receipt[] }
@@ -89,7 +96,7 @@ export async function myBank(): Promise<ClaimBank | null> {
 }
 
 /** Hands a receipt in (or asks finance to pay, or sends a changed request again): the fields as JSON beside the files. */
-export function postWithFiles<T>(path: '/claims/receipts' | '/claims/requests' | `/claims/requests/${string}/resubmit`, data: Record<string, unknown>, files: File[]): Promise<T> {
+export function postWithFiles<T>(path: '/claims/receipts' | '/claims/requests' | `/claims/requests/${string}/resubmit` | `/claims/requests/${string}/balance`, data: Record<string, unknown>, files: File[]): Promise<T> {
   const form = new FormData();
   form.set('data', JSON.stringify(data));
   for (const f of files) form.append('file', f);

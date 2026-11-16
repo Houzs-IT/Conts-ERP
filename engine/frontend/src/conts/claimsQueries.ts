@@ -28,6 +28,12 @@ export type PaymentRequest = {
   payeeName: string; payeeToCheck: boolean; purchaseOrderId: string | null; wantedOn: string | null; owesFormalInvoice: boolean;
   note: string | null; amountSen: number; status: RequestStatus; reason: string | null; decidedBy: string | null; createdAt: string;
   lines: ClaimLine[]; files: { id: string; fileName: string; mime: string }[]; vouchers: { id: string; pvNumber: string; status: string }[];
+  /** Conts (chew, 15 Nov 2026): the AP invoice it is paid through (then paid on the Payment voucher page, against the
+   *  bill); a balance's deposit, a deposit's balance requests; what was first asked, once the bill changed it. */
+  apInvoice?: { id: string; invoiceNumber: string; status: string; provisional: boolean; totalSen: number; paidSen: number } | null;
+  parentRequestNo?: string | null;
+  balanceRequests?: { id: string; requestNo: string; status: string }[];
+  askedLines?: unknown[] | null; askedAmountSen?: number | null;
 };
 /** The line under a request's status: why it was rejected or closed; for one sent again after a rejection (it keeps its
  *  number, chew 13 Nov 2026), that it was rejected before, by whom and why, so finance checks what changed. */
