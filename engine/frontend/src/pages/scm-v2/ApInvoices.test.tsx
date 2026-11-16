@@ -74,6 +74,11 @@ vi.mock('../../vendor/scm/lib/payment-voucher-queries', () => ({
   fileToBase64: async (f: File) => `b64:${f.name}`,
   PV_FILE_ACCEPT: 'image/jpeg,image/png,image/webp,application/pdf',
 }));
+/* A request's papers, fetched as the finance file route serves them (chew, 16 Nov 2026: the bill reader reads them). */
+vi.mock('../../conts/claimsQueries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../conts/claimsQueries')>()),
+  requestFileUrl: async (requestId: string, fileId: string) => `blob:${requestId}/${fileId}`,
+}));
 vi.mock('../../vendor/scm/lib/ap-invoice-listing-pdf', () => ({
   generateApListingPdf: (rows: unknown, filter: unknown) => listingAsync(rows, filter),
 }));
@@ -319,6 +324,25 @@ describe('the bill pile hands one bill over as one AP invoice', () => {
     fireEvent.click(within(d).getByText('Save as draft'));
     await waitFor(() => expect(createAsync).toHaveBeenCalledTimes(2));
     expect(createAsync.mock.calls[1]![0]).toMatchObject({ paymentRequestId: 'Q2', supplierId: 'sup-h' });
+  });
+
+  test("a request's papers are read as the form opens: number, date and descriptions from the bill (chew, 16 Nov 2026)", async () => {
+    extractAsync.mockClear();
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(new Blob(['%PDF']))) as typeof fetch;
+    const revoke = URL.revokeObjectURL;
+    URL.revokeObjectURL = () => {};
+    const req = { id: 'Q3', requestNo: 'PRQ-2611-003', type: 'PAYMENT', supplierId: 'sup-h', payeeName: 'Houzs Venture', wantedOn: null, note: null,
+      lines: [{ id: 'Q3-L1', description: 'rent', amountSen: 400_000, department: 'rental', projectId: null, unitId: null }],
+      files: [{ id: 'F1', fileName: 'invoice.pdf', mime: 'application/pdf' }] };
+    render(<MemoryRouter initialEntries={[{ pathname: '/scm/ap-invoices', state: { fromRequests: [req] } }]}><ApInvoices /></MemoryRouter>);
+    await waitFor(() => expect(extractAsync).toHaveBeenCalledWith([{ files: [{ name: 'invoice.pdf', mime: 'application/pdf', dataBase64: 'b64:invoice.pdf' }] }]));
+    const d = await waitFor(() => dialog());
+    await waitFor(() => expect((within(d).getByLabelText('Supplier invoice ref') as HTMLInputElement).value).toBe('HVH-0912'));
+    expect((within(d).getByLabelText('line 1 description') as HTMLInputElement).value).toBe('RENT SEPT');
+    expect(within(d).getByText(/Read from the request's papers/)).toBeTruthy();
+    globalThis.fetch = realFetch;
+    URL.revokeObjectURL = revoke;
   });
 
   test('the Files card in the pop-out: a draft bill may lose a file; a posted bill keeps its files but still takes one', () => {
