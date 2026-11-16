@@ -31,6 +31,7 @@ import {
   type SubCategoryDef,
   type UomDef,
 } from '../shared/renovation-catalog';
+import { taskCategoryDef } from '../shared/renovation-stages';
 import type { RenoDb } from '../lib/renovation-db';
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
@@ -135,6 +136,8 @@ renovationCatalogSettings.post('/sub-categories', async (c) => {
   if (code.length < 2 || !/^[A-Z]/.test(code)) return refuse(c, 400, 'invalid_label', 'The name needs to start with a letter.');
   /* A code that is also a category (SOFA, SERVICE, ...) would read as a legacy category on import. */
   if ((CATALOG_GROUPS as readonly string[]).includes(code) || groups.some((g) => g.code === code)) return refuse(c, 409, 'code_taken', `"${label}" is already a group name.`);
+  const taskCategory = group === 'WORKS' ? taskCategoryDef(code) : null;
+  if (taskCategory) return refuse(c, 409, 'task_category_taken', `"${label}" is already the site task "${taskCategory.label}". Pick another name for the trade.`);
 
   let all: SubCategoryDef[];
   try { all = await loadSubCategories(sb); } catch (e) { return c.json({ error: 'load_failed', message: (e as Error).message }, 500); }

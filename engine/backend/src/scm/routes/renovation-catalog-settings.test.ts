@@ -91,6 +91,13 @@ describe('sub-category settings', () => {
     expect((await send('POST', '/sub-categories', { group: 'WORKS', label: 'hacking' })).status).toBe(409);
   });
 
+  it('refuses a Works trade named like a site task category', async () => {
+    const carpentry = await send('POST', '/sub-categories', { group: 'WORKS', label: 'Carpentry' });
+    expect(carpentry.status).toBe(409);
+    expect(await carpentry.json()).toMatchObject({ error: 'task_category_taken' });
+    expect(sb.tables.product_sub_categories.some((r) => r.code === 'CARPENTRY')).toBe(false);
+  });
+
   it('adds and renames Works trades', async () => {
     const added = await send('POST', '/sub-categories', { group: 'WORKS', label: 'Roofing' });
     expect(added.status).toBe(201);
