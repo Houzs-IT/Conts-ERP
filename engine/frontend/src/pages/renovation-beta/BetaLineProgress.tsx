@@ -105,7 +105,7 @@ export function LineProgressCell({ line }: { line: RequirementLine }): ReactElem
   const share = line.qty > 0 ? Math.min(1, line.doneQty / line.qty) : 0;
   if (!canUpdate && line.doneQty === 0) return null;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", maxWidth: "100%" }}>
       {isDone
         ? <WsBadge tone={TONE_DONE}>Done {dayMonth(line.doneAt)}</WsBadge>
         : (

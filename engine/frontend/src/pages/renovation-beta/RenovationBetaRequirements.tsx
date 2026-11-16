@@ -260,7 +260,7 @@ function LineRow({ line }: { line: RequirementLine }): ReactElement {
         <span style={{ fontSize: 14, fontWeight: 600, overflowWrap: "anywhere" }}>{line.name}</span>
         {line.remark && <span style={{ fontSize: 13, color: WS.text2, overflowWrap: "anywhere" }}>{line.remark}</span>}
       </span>
-      <span style={{ flex: "0 0 auto", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 10px", fontSize: 13, color: WS.text2 }}>
+      <span style={{ flex: "0 1 auto", minWidth: 0, maxWidth: "100%", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 10px", fontSize: 13, color: WS.text2 }}>
         <span style={{ whiteSpace: "nowrap" }}>Qty {formatQty(line.qty)} {line.uom.toLowerCase()}</span>
         {line.onSiteBy && <span style={{ whiteSpace: "nowrap" }}>On site by {dayMonth(line.onSiteBy)}</span>}
         <WsBadge tone={line.isOnPo ? TONE_ACCENT : TONE_QUIET}>{line.isOnPo ? "On PO" : "Not on PO"}</WsBadge>

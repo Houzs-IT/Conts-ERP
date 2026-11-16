@@ -25,8 +25,8 @@ export function LineProgressDialog({ line, isSaving, onSave, onClose }: LineProg
       onClose={onClose}
       footer={(
         <>
-          <WsBtn onClick={onClose}>Cancel</WsBtn>
-          <WsBtn kind="dark" disabled={isSaving || isUnchanged} onClick={() => onSave(doneQty)}>
+          <WsBtn size="lg" onClick={onClose}>Cancel</WsBtn>
+          <WsBtn kind="dark" size="lg" disabled={isSaving || isUnchanged} onClick={() => onSave(doneQty)}>
             {isSaving ? "Saving" : `Save ${formatQty(doneQty)} of ${formatQty(line.qty)}`}
           </WsBtn>
         </>
