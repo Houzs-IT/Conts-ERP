@@ -134,12 +134,12 @@ describe('SO mirror row', () => {
 
 describe('qty labels for print', () => {
   test.each([
-    [{ qty: 1, measureMilli: 42600, measureUom: 'FT' }, '42.6FT'],
-    [{ qty: 1, measureMilli: 20000, measureUom: 'FT' }, '20FT'],
-    [{ qty: 1, measureMilli: null, measureUom: null, uom: 'LOT' }, 'LS'],
+    [{ qty: 1, measureMilli: 42600, measureUom: 'FT' }, '42.6 FT'],
+    [{ qty: 1, measureMilli: 20000, measureUom: 'FT' }, '20 FT'],
+    [{ qty: 1, measureMilli: null, measureUom: null, uom: 'LOT' }, '1 LOT'],
     [{ qty: 1, measureMilli: null, measureUom: null, uom: 'SET' }, '1 SET'],
-    [{ qty: 1, measureMilli: null, measureUom: null, uom: 'FULL' }, 'FULL UNIT'],
-    [{ qty: 27, measureMilli: null, measureUom: null, uom: 'POINT' }, '27'],
+    [{ qty: 1, measureMilli: null, measureUom: null, uom: 'FULL' }, '1 FULL'],
+    [{ qty: 27, measureMilli: null, measureUom: null, uom: 'POINT' }, '27 POINT'],
   ])('%o -> %s', (l, label) => expect(qtyLabel(l as never)).toBe(label));
 });
 

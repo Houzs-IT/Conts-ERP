@@ -9,7 +9,7 @@
    page totals here are the ones its tests pin. */
 
 import type { jsPDF as JsPdf } from 'jspdf';
-import { PRINT_FORMATS, type ColumnKey } from './print-formats';
+import { PRINT_FORMATS } from './print-formats';
 import { A4, BODY_TOP, FOOTER_TOP, layoutDocument, pageTotalSen, ROW_HEIGHTS, summaryRows, type Density, type Layout, type WrapFn } from './print-layout';
 import { drawDocLetterhead } from './renovation-doc-theme';
 import { clientContactLine, DOC_TITLE, rmGrouped, type PrintDoc } from './print-model';
@@ -119,15 +119,6 @@ function drawInfo(pdf: JsPdf, d: PrintDoc, plan: InfoPlan): void {
   }
 }
 
-function columnRight(d: PrintDoc, key: ColumnKey): number {
-  let x = M;
-  for (const c of PRINT_FORMATS[d.format].columns) {
-    x += c.width;
-    if (c.key === key) return x;
-  }
-  return RIGHT;
-}
-
 function drawColumnHeader(pdf: JsPdf, d: PrintDoc, bodyTop: number): void {
   const cols = PRINT_FORMATS[d.format].columns;
   let x = M;
@@ -145,11 +136,6 @@ function drawFooter(pdf: JsPdf, d: PrintDoc, layout: Layout, pageIdx: number): v
   const total = pageTotalSen(d, page);
   const boxX = 124;
   let y = FOOTER_TOP;
-  if (PRINT_FORMATS[d.format].netSubtotal && page.netSen !== page.listSen && page.rows.length) {
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7);
-    pdf.text(rmGrouped(page.netSen), columnRight(d, 'discPrice') - 1, y - 1.5, { align: 'right' });
-  }
   // The last page of a qty-only document prints its package total once, in the summary.
   const blankLastTotal = page.isLast && total === null;
   if ((page.rows.length || !page.isLast) && !blankLastTotal) {
