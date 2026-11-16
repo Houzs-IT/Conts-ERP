@@ -5,7 +5,7 @@ import { missingVariantAxes } from "../vendor/shared/so-variant-rule";
 export { CONTS_SOFA_MIX_RULE_ON, CONTS_ADDRESS_LINE_CAP } from "./flowFlags";
 /** A PO line taken from an SO line asks only for the options that SO line has. */
 export const CONTS_PO_VARIANTS_FOLLOW_SO = true as boolean;
-/** SO lines are read by name (the code under it); Houzs reads them by code. */
+/** SO lines are read by name (no code); Houzs reads them by code. */
 export const CONTS_LINES_BY_NAME = true as boolean;
 
 /** The option labels a PO line still lacks. `soVariants` undefined = not taken from an SO line: Houzs rule. */
@@ -24,8 +24,8 @@ export function poMissingOptionLabels(
   return missing.filter((a) => has(a.key)).map((a) => a.label);
 }
 
-/** An order line's two lines of identity, Conts reading: the product NAME first, the code (and options) under it.
-    Falls back to the code when the line has no name. */
+/** An order line's two lines of identity, Conts reading: the product NAME, its options under it. No product code
+    (owner, 16 Nov 2026: drop the code, the description is enough); the code shows only when the line has no name. */
 export function contsLineIdentity(input: { code?: string | null; description?: string | null; variant?: string | null }): {
   primary: string;
   secondary: string | null;
@@ -34,6 +34,6 @@ export function contsLineIdentity(input: { code?: string | null; description?: s
   const name = String(input.description ?? "").trim();
   const variant = String(input.variant ?? "").trim();
   const primary = name || code;
-  const sub = [name && code && name !== code ? code : "", variant && variant !== primary ? variant : ""].filter(Boolean).join(" · ");
+  const sub = variant && variant !== primary ? variant : "";
   return { primary, secondary: sub || null };
 }

@@ -24,6 +24,7 @@ import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerProper
 import { HeaderForm, InstalmentEditor, totalsOfSections, TotalsCard } from './DocParts';
 import { QuotationCustomerCard } from './QuotationCustomerCard';
 import { PrintDialog } from './PrintDialog';
+import { useLineCategory } from '../scm-v2/soPrintPreview';
 import { useRenovationDraft } from '../../lib/renovation/renovationFormDraft';
 import { RenovationDraftBanner } from './renovationDraftBanner';
 import { Card, ErrorBanner, fmtDate, StatusPill, todayIso } from './shared';
@@ -48,6 +49,7 @@ export function QuotationEditor() {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
+  const groupOf = useLineCategory(printOpen);
   /* What keeps the customer + property block from saving (an invalid sq ft), [] when fine. */
   const [partyProblems, setPartyProblems] = useState<string[]>([]);
 
@@ -210,7 +212,7 @@ export function QuotationEditor() {
           <div className="flex items-center justify-between gap-3"><span className="text-[13px] text-ink-secondary">Unsaved changes</span><Button icon={<Save size={15} />} disabled={run.isPending} onClick={save}>{run.isPending ? 'Saving…' : 'Save'}</Button></div>
         </div>
       )}
-      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="quotation" docNo={revision.docNo} brandName={brand?.name} defaultFormat={header.printFormat}
+      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="quotation" docNo={revision.docNo} brandName={brand?.name} defaultFormat={header.printFormat} groupOf={groupOf}
         build={(format) => buildPrintDoc({ kind: 'QUOTATION', docNo: revision.docNo, format, brand, header, sections, instalments })} />
     </div>
   );

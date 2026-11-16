@@ -141,6 +141,9 @@ reports.get('/sales-order-detail-listing', async (c) => {
        mechanism the DO/SI listings below already use for docNo/debtorCode). */
     if (scopeIds) q = q.in('mfg_sales_orders.salesperson_id', scopeIds);
     q = scopeToCompany(q, c); // multi-company: isolate to the active company
+    /* A cancelled line is no longer part of the order: listing it made the export's lines add up to more than the
+       order total (owner, 16 Nov 2026: 517 cancelled lines on 17 orders). */
+    q = q.not('cancelled', 'is', true);
     // Sort: line-level for item_code, header-level (joined) for date/doc_no.
     if (sortBy === 'item_code') {
       q = q.order('item_code', { ascending: true });

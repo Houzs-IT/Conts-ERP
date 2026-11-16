@@ -16,6 +16,7 @@ import { buildPrintDoc } from '../../lib/renovation/print-doc';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { HeaderForm, InstalmentEditor, totalsOfSections, TotalsCard } from '../renovation/DocParts';
 import { PrintDialog } from '../renovation/PrintDialog';
+import { useLineCategory } from './soPrintPreview';
 import { Card, ErrorBanner, todayIso } from '../renovation/shared';
 
 /** The header a copied quotation starts with: who the customer is and where the work is are cleared (the copy is
@@ -50,6 +51,8 @@ export function QuotationActions({ view, canQuote, editable, sections, header, i
   const [, setParams] = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
+  /* By area or by category, as the sales order prints (owner, 16 Nov 2026: the quotation and SO print the same). */
+  const groupOf = useLineCategory(printOpen);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
   const busy = run.isPending;
   const current = canQuote && !quotation.lockedAt && revision.revNo === quotation.currentRev;
@@ -123,7 +126,7 @@ export function QuotationActions({ view, canQuote, editable, sections, header, i
       {current && quotation.status === 'ACCEPTED' && <Button disabled={busy} onClick={convert}>Convert to sales order</Button>}
       {editable && <Button icon={<Pencil size={15} />} disabled={busy} onClick={onEdit}>Edit</Button>}
       {error && <div className="basis-full"><ErrorBanner error={error} onClose={() => setError(null)} /></div>}
-      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="quotation" docNo={revision.docNo} brandName={brand?.name} defaultFormat={header.printFormat}
+      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="quotation" docNo={revision.docNo} brandName={brand?.name} defaultFormat={header.printFormat} groupOf={groupOf}
         build={(format) => buildPrintDoc({ kind: 'QUOTATION', docNo: revision.docNo, format, brand, header, sections, instalments })} />
     </>
   );
