@@ -31,7 +31,7 @@ import { groupEvidence, type EvidencePhoto } from "../services/renovation/pod";
 import { renderPodNoteHtml } from "../services/renovation/podNote";
 import { syncTradeTasks, writeCachedStage } from "../services/renovation/contractSync";
 import { syncProjectDates } from "../services/renovation/projectDates";
-import { completionRefusal, markTaskDone } from "../services/renovation/taskCompletion";
+import { completionRefusal, markTaskDone, startTask } from "../services/renovation/taskCompletion";
 import { syncStepSla } from "../services/renovation/stepSla";
 import renovationProject from "./renovationProject";
 import renovationMonitor from "./renovationMonitor";
@@ -394,8 +394,7 @@ app.post("/trade-tasks/:taskId/start", requirePermission("projects.write"), fail
   const task = await taskWithProject(c, taskId);
   if (!task) return c.json({ error: "not_found" }, 404);
   if (task.state === "skipped" || task.state === "done") return c.json({ error: `task_${task.state}` }, 409);
-  await db(c).prepare(`UPDATE project_trade_tasks SET state = 'in_progress', actual_start = coalesce(actual_start, ?::date), updated_at = now() WHERE id = ?`)
-    .bind(todayMyt(), taskId).run();
+  await startTask(db(c), taskId, todayMyt());
   return c.json({ ok: true });
 }));
 

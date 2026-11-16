@@ -1,4 +1,4 @@
-import type { Db } from "./load";
+import type { Db, DbStmt } from "./load";
 
 export interface CompletableTask {
   id: number;
@@ -23,9 +23,16 @@ export async function completionRefusal(db: Db, task: CompletableTask): Promise<
   return task.state === "skipped" ? "task_skipped" : null;
 }
 
+export const markTaskDoneStatement = (db: Db, taskId: number, actor: CompletionActor): DbStmt => db.prepare(
+  `UPDATE project_trade_tasks SET state = 'done', actual_start = coalesce(actual_start, ?::date), actual_end = ?::date,
+          done_by = ?, done_at = now(), notes = coalesce(?, notes), updated_at = now() WHERE id = ?`,
+).bind(actor.today, actor.today, actor.userId, actor.note, taskId);
+
 export async function markTaskDone(db: Db, taskId: number, actor: CompletionActor): Promise<void> {
-  await db.prepare(
-    `UPDATE project_trade_tasks SET state = 'done', actual_start = coalesce(actual_start, ?::date), actual_end = ?::date,
-            done_by = ?, done_at = now(), notes = coalesce(?, notes), updated_at = now() WHERE id = ?`,
-  ).bind(actor.today, actor.today, actor.userId, actor.note, taskId).run();
+  await markTaskDoneStatement(db, taskId, actor).run();
+}
+
+export async function startTask(db: Db, taskId: number, today: string): Promise<void> {
+  await db.prepare(`UPDATE project_trade_tasks SET state = 'in_progress', actual_start = coalesce(actual_start, ?::date), updated_at = now() WHERE id = ?`)
+    .bind(today, taskId).run();
 }

@@ -7,10 +7,10 @@ import { BetaLoading } from "./BetaLoading";
 import {
   BetaSkin, WS, WsBadge, WsEmpty, WsPageHead, WsStyle, inputStyle, TONE_ACCENT, TONE_ALERT, TONE_DONE, TONE_QUIET, TONE_WAIT,
 } from "./BetaWsUi";
-import { requirementsApi, type RequirementLine, type RequirementProject, type TradePlan, type TradePlanStatus } from "./renovationBetaRequirementsApi";
+import { requirementsApi, type RequirementLine, type RequirementProject, type TradeLog, type TradePlan, type TradePlanStatus } from "./renovationBetaRequirementsApi";
 import {
-  PLAN_STATUS_LABEL, brandOptions, filterProjectLines, formatQty, groupByRoom, groupByTrade, hasPlanDates, isPlanLate, onPoCount, planDates, plural, progressText, proofPhotoUrl, proofThumbnails, roomSummary,
-  type GroupCard, type RoomGroup, type TradeGroup,
+  PLAN_STATUS_LABEL, brandOptions, filterProjectLines, formatQty, groupByRoom, groupByTrade, hasPlanDates, isPlanLate, onPoCount, planDates, plural, progressText, proofPhotoUrl, proofThumbnails, roomSummary, tradeHeading,
+  type GroupCard, type RoomGroup, type TradeGroup, type TradeHeadingTone,
 } from "./renovationBetaRequirementsModel";
 import { onBrandList } from "./renovationBetaHomeModel";
 import { dayMonth } from "./renovationBetaModel";
@@ -31,6 +31,13 @@ const PLAN_STATUS_TONE: Record<TradePlanStatus, BetaTone> = {
   unscheduled: TONE_WAIT,
   done: TONE_DONE,
   skipped: TONE_QUIET,
+};
+
+const HEADING_TONE: Record<TradeHeadingTone, BetaTone> = {
+  open: TONE_QUIET,
+  in_progress: TONE_ACCENT,
+  done: TONE_DONE,
+  waiting: TONE_WAIT,
 };
 
 interface Toggles {
@@ -168,7 +175,7 @@ function ProjectSection({ project, lines, toggles }: { project: RequirementProje
       </div>
       {isOpen && (
         <div id={sectionKey}>
-          {groupByRoom(lines).map((room) => <RoomSection key={room.name} room={room} plans={project.plans} sectionKey={`${sectionKey}-room-${room.name}`} toggles={toggles} />)}
+          {groupByRoom(lines).map((room) => <RoomSection key={room.name} room={room} plans={project.plans} logs={project.tradeLog} sectionKey={`${sectionKey}-room-${room.name}`} toggles={toggles} />)}
         </div>
       )}
     </section>
@@ -179,9 +186,10 @@ interface SectionProps {
   sectionKey: string;
   toggles: Toggles;
   plans: TradePlan[];
+  logs: TradeLog[];
 }
 
-function RoomSection({ room, sectionKey, toggles, plans }: SectionProps & { room: RoomGroup }): ReactElement {
+function RoomSection({ room, sectionKey, toggles, plans, logs }: SectionProps & { room: RoomGroup }): ReactElement {
   const isOpen = toggles.isOpen(sectionKey);
   return (
     <div style={{ borderTop: `1px solid ${BETA.line}` }}>
@@ -192,14 +200,14 @@ function RoomSection({ room, sectionKey, toggles, plans }: SectionProps & { room
       </SectionHeader>
       {isOpen && (
         <div id={sectionKey}>
-          {room.cards.map((card) => <GroupSection key={card.key} card={card} plans={plans} sectionKey={`${sectionKey}-${card.key}`} toggles={toggles} />)}
+          {room.cards.map((card) => <GroupSection key={card.key} card={card} plans={plans} logs={logs} sectionKey={`${sectionKey}-${card.key}`} toggles={toggles} />)}
         </div>
       )}
     </div>
   );
 }
 
-function GroupSection({ card, sectionKey, toggles, plans }: SectionProps & { card: GroupCard }): ReactElement {
+function GroupSection({ card, sectionKey, toggles, plans, logs }: SectionProps & { card: GroupCard }): ReactElement {
   const isOpen = toggles.isOpen(sectionKey);
   const [bar, tint, text] = GROUP_BANDS[card.key];
   const Chevron = isOpen ? ChevronDown : ChevronRight;
@@ -216,7 +224,7 @@ function GroupSection({ card, sectionKey, toggles, plans }: SectionProps & { car
       </button>
       {isOpen && (
         <div id={sectionKey}>
-          {groupByTrade(card.lines, plans).map((trade) => <TradeBlock key={trade.key} trade={trade} />)}
+          {groupByTrade(card.lines, plans, logs).map((trade) => <TradeBlock key={trade.key} trade={trade} />)}
         </div>
       )}
     </div>
@@ -224,11 +232,15 @@ function GroupSection({ card, sectionKey, toggles, plans }: SectionProps & { car
 }
 
 function TradeBlock({ trade }: { trade: TradeGroup }): ReactElement {
+  const heading = tradeHeading(trade.plans, trade.log);
   return (
     <div style={{ borderTop: `1px solid ${BETA.line}` }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 12px", minHeight: 40, padding: "8px 14px 8px 44px", background: WS.panel }}>
         <span style={{ fontSize: 13, fontWeight: 700 }}>{trade.label}</span>
         <span style={{ fontSize: 13, color: BETA.muted }}>{progressText(trade.lines)}</span>
+        {heading && (
+          <span style={{ minWidth: 0, maxWidth: "100%", padding: "3px 10px", borderRadius: 12, background: HEADING_TONE[heading.tone][1], color: HEADING_TONE[heading.tone][0], fontSize: 12, fontWeight: 600, overflowWrap: "anywhere" }}>{heading.text}</span>
+        )}
         {trade.plans.length === 0
           ? <span style={{ fontSize: 13, color: BETA.muted }}>Not planned yet</span>
           : trade.plans.map((plan) => <PlanChip key={plan.taskId} plan={plan} isNamed={trade.plans.length > 1} />)}

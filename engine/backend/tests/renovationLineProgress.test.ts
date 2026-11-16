@@ -44,33 +44,22 @@ const taskUpdates = (runs: Array<{ sql: string; args: unknown[] }>): unknown[] =
 describe("units done on a line", () => {
   test("a part count is saved and closes nothing", async () => {
     const { database, runs } = scriptedDb({ line: worksLine(), tasks: [task({})] });
-    expect(await setLineDoneQty(database, "line-1", 2, ACTOR)).toEqual({ projectId: 13, previousDoneQty: 0, doneQty: 2, completedTasks: [] });
+    expect(await setLineDoneQty(database, "line-1", 2, ACTOR)).toEqual({ projectId: 13, previousDoneQty: 0, doneQty: 2 });
     expect(runs[0].sql).toContain("INSERT INTO project_line_progress");
     expect(runs[0].args).toEqual(["line-1", 13, 1, 2, 5, null]);
     expect(taskUpdates(runs)).toEqual([]);
   });
 
-  test("the full count on the last unfinished line closes the trade's open in-house tasks", async () => {
+  test("the full count on the last unfinished line no longer closes the trade", async () => {
     const { database, runs } = scriptedDb({ line: worksLine({ done_qty: "2" }), remaining: 0, tasks: [task({ id: 1 }), task({ id: 2, state: "done" })] });
-    const outcome = await setLineDoneQty(database, "line-1", 3, ACTOR);
-    expect(outcome).toMatchObject({ previousDoneQty: 2, doneQty: 3, completedTasks: [task({ id: 1 })] });
-    expect(taskUpdates(runs)).toEqual([1]);
-  });
-
-  test("the full count with other lines unfinished closes nothing", async () => {
-    const { database, runs } = scriptedDb({ line: worksLine(), remaining: 1, tasks: [task({})] });
-    expect(await setLineDoneQty(database, "line-1", 3, ACTOR)).toMatchObject({ completedTasks: [] });
+    expect(await setLineDoneQty(database, "line-1", 3, ACTOR)).toEqual({ projectId: 13, previousDoneQty: 2, doneQty: 3 });
     expect(taskUpdates(runs)).toEqual([]);
   });
 
-  test("a subcontracted trade with PO lines waits for its goods", async () => {
-    const { database } = scriptedDb({ line: worksLine(), remaining: 0, tasks: [task({ fulfilment_kind: "po" })], poLinkedTaskIds: [1] });
-    expect(await setLineDoneQty(database, "line-1", 3, ACTOR)).toMatchObject({ completedTasks: [] });
-  });
-
-  test("Built-in lines close the carpentry task", async () => {
-    const { database } = scriptedDb({ line: worksLine({ cat_code: "BUILTIN", sub_code: "WARDROBE", qty: "1" }), remaining: 0, tasks: [task({ id: 7, trade_code: "CAT:CARPENTRY" })] });
-    expect(await setLineDoneQty(database, "line-1", 1, ACTOR)).toMatchObject({ completedTasks: [task({ id: 7, trade_code: "CAT:CARPENTRY" })] });
+  test("a Built-in line saved to full leaves the carpentry task open too", async () => {
+    const { database, runs } = scriptedDb({ line: worksLine({ cat_code: "BUILTIN", sub_code: "WARDROBE", qty: "1" }), remaining: 0, tasks: [task({ id: 7, trade_code: "CAT:CARPENTRY" })] });
+    expect(await setLineDoneQty(database, "line-1", 1, ACTOR)).toMatchObject({ doneQty: 1 });
+    expect(taskUpdates(runs)).toEqual([]);
   });
 
   test("zero deletes the row", async () => {
@@ -143,11 +132,11 @@ describe("progress route", () => {
     expect((await routeApp(database, [])({ doneQty: 1 })).status).toBe(403);
   });
 
-  test("answers the saved count and the tasks it closed", async () => {
+  test("answers the saved count and closes no task", async () => {
     const { database } = scriptedDb({ line: worksLine(), remaining: 0, tasks: [task({ id: 3 })] });
     const response = await routeApp(database)({ doneQty: 3 });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, previousDoneQty: 0, doneQty: 3, completedTaskIds: [3] });
+    expect(await response.json()).toEqual({ ok: true, previousDoneQty: 0, doneQty: 3, completedTaskIds: [] });
   });
 
   test("refuses a count that is not a number in words", async () => {

@@ -18,7 +18,6 @@ interface SavedProgress {
   previousDoneQty: number;
   doneQty: number;
   qty: number;
-  hasClosedTrade: boolean;
   didReopenTrade: boolean;
 }
 
@@ -51,7 +50,7 @@ export function useLineProgress(isReady: boolean): LineProgressState {
   const [saved, setSaved] = useState<SavedProgress | null>(null);
 
   useEffect(() => {
-    if (!saved || saved.hasClosedTrade) return undefined;
+    if (!saved) return undefined;
     const timer = window.setTimeout(() => setSaved(null), UNDO_WINDOW_MILLISECONDS);
     return () => window.clearTimeout(timer);
   }, [saved]);
@@ -68,8 +67,8 @@ export function useLineProgress(isReady: boolean): LineProgressState {
     setIsSaving(true);
     setError(null);
     try {
-      const { previousDoneQty, completedTaskIds, didReopenTrade } = await send(line.id, doneQty, line.isTradeClosed && doneQty < line.doneQty);
-      setSaved({ lineId: line.id, lineLabel: lineLabelOf(line), previousDoneQty, doneQty, qty: line.qty, hasClosedTrade: completedTaskIds.length > 0, didReopenTrade: didReopenTrade === true });
+      const { previousDoneQty, didReopenTrade } = await send(line.id, doneQty, line.isTradeClosed && doneQty < line.doneQty);
+      setSaved({ lineId: line.id, lineLabel: lineLabelOf(line), previousDoneQty, doneQty, qty: line.qty, didReopenTrade: didReopenTrade === true });
       setEditingLine(null);
     } catch (failure) {
       setError(errorText(failure));
@@ -125,7 +124,6 @@ export function LineProgressCell({ line }: { line: RequirementLine }): ReactElem
 }
 
 function savedText(saved: SavedProgress): string {
-  if (saved.hasClosedTrade) return `${saved.lineLabel}: all done. Every line of its trade is done, so the site task is closed.`;
   return `${saved.lineLabel}: ${formatQty(saved.doneQty)} of ${formatQty(saved.qty)} done`;
 }
 
@@ -141,9 +139,7 @@ export function LineProgressLayer({ progress }: { progress: LineProgressState })
           padding: "8px 8px 8px 16px", borderRadius: 14, background: BETA.ink, color: BETA.surface, fontSize: 14, boxShadow: BETA.glassShadow,
         }}>
           <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{savedText(saved)}</span>
-          {saved.hasClosedTrade
-            ? <WsBtn size="lg" onClick={progress.dismissSaved}>OK</WsBtn>
-            : <WsBtn size="lg" onClick={progress.undo}>Undo</WsBtn>}
+          <WsBtn size="lg" onClick={progress.undo}>Undo</WsBtn>
         </div>
       )}
     </>

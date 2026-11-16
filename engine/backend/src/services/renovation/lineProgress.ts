@@ -1,7 +1,7 @@
 import type { Db, DbStmt } from "./load";
 import { storeProofFiles, writeProofRows, type LineProof } from "./lineProof";
 import { BUILT_IN_TASK_CATEGORY, LIVE_BOARD_LINE, SO_LINE_CATEGORY_JOIN } from "./requirementBoard";
-import { completionRefusal, markTaskDone } from "./taskCompletion";
+import { completionRefusal } from "./taskCompletion";
 
 export interface LineActor {
   userId: number | null;
@@ -33,7 +33,6 @@ export interface ProgressSaved {
   projectId: number;
   previousDoneQty: number;
   doneQty: number;
-  completedTasks: TradeTaskRow[];
   reopenedTasks?: TradeTaskRow[];
   photoCount?: number;
 }
@@ -69,32 +68,6 @@ async function tradeTasksOf(db: Db, line: ProgressLine): Promise<TradeTaskRow[]>
   return results ?? [];
 }
 
-async function unfinishedTradeLineCount(db: Db, line: ProgressLine): Promise<number> {
-  const subSql = isBuiltIn(line) ? "" : " AND prod.sub_category = ?";
-  const row = await db.prepare(
-    `SELECT count(*)::int AS remaining
-       FROM scm.mfg_sales_order_items i
-       JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
-       LEFT JOIN project_line_progress lp ON lp.so_item_id = i.id
-       ${SO_LINE_CATEGORY_JOIN}
-      WHERE so.project_id = ? AND ${LIVE_BOARD_LINE} AND cg.code = ?${subSql}
-        AND coalesce(lp.done_qty, 0) < i.qty`,
-  ).bind(...[line.project_id, line.cat_code, ...(isBuiltIn(line) ? [] : [line.sub_code])]).first<{ remaining: number }>();
-  return Number(row?.remaining ?? 0);
-}
-
-async function completeTradeIfAllDone(db: Db, line: ProgressLine, actor: LineActor): Promise<TradeTaskRow[]> {
-  if (await unfinishedTradeLineCount(db, line) > 0) return [];
-  const openTasks = (await tradeTasksOf(db, line)).filter((task) => task.state !== "done");
-  const completed: TradeTaskRow[] = [];
-  for (const task of openTasks) {
-    if (await completionRefusal(db, task)) continue;
-    await markTaskDone(db, task.id, { userId: actor.userId, today: actor.today, note: null });
-    completed.push(task);
-  }
-  return completed;
-}
-
 export type ReopenRefusal = "line_not_found" | "po_receipt";
 
 async function isBlockedByPoReceipt(db: Db, doneTasks: readonly TradeTaskRow[]): Promise<boolean> {
@@ -108,7 +81,7 @@ const reopenStatements = (db: Db, doneTasks: readonly TradeTaskRow[]): DbStmt[] 
   `UPDATE project_trade_tasks SET state = 'in_progress', done_at = NULL, done_by = NULL, actual_end = NULL, updated_at = now() WHERE id = ?`,
 ).bind(task.id));
 
-async function runTogether(db: Db, statements: readonly DbStmt[]): Promise<void> {
+export async function runTogether(db: Db, statements: readonly DbStmt[]): Promise<void> {
   if (db.batch) {
     await db.batch([...statements]);
     return;
@@ -129,7 +102,7 @@ export function doneQtyRefusal(doneQty: number, lineQty: number): "invalid_qty" 
   return Number.isFinite(doneQty) && doneQty >= 0 && doneQty <= lineQty ? null : "invalid_qty";
 }
 
-async function personIdOf(db: Db, posUserId: string, companyId: number): Promise<number | null> {
+export async function personIdOf(db: Db, posUserId: string, companyId: number): Promise<number | null> {
   const row = await db.prepare(`SELECT id::int AS id FROM project_people WHERE company_id = ? AND pos_user_id = ? LIMIT 1`).bind(companyId, posUserId).first<{ id: number }>();
   return row?.id ?? null;
 }
@@ -165,12 +138,11 @@ export async function setLineDoneQty(db: Db, soItemId: string, doneQty: number, 
   }
   const personId = actor.personId ?? (actor.posUserId ? await personIdOf(db, actor.posUserId, line.company_id) : null);
   const { proof = null } = options;
-  const storedFiles = proof ? await storeProofFiles(proof, line.project_id) : [];
+  const storedFiles = proof ? await storeProofFiles(proof, line.project_id, { stage: "progress", doneQty }) : [];
   await runTogether(db, [...reopenStatements(db, doneTasks), doneQtyStatement(db, line, doneQty, actor.userId, personId)]);
-  const completedTasks = doneQty === lineQty ? await completeTradeIfAllDone(db, line, actor) : [];
-  const photoCount = proof ? await writeProofRows(db, line.project_id, line.company_id, line.id, storedFiles) : undefined;
+  const photoCount = proof ? await writeProofRows(db, line.project_id, line.company_id, { kind: "line", soItemId: line.id }, storedFiles) : undefined;
   return {
-    projectId: line.project_id, previousDoneQty, doneQty, completedTasks,
+    projectId: line.project_id, previousDoneQty, doneQty,
     ...(doneTasks.length > 0 ? { reopenedTasks: doneTasks } : {}),
     ...(photoCount === undefined ? {} : { photoCount }),
   };

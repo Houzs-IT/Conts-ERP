@@ -1,4 +1,4 @@
-import type { RequirementGroup, RequirementLine, RequirementProject, TradePlan, TradePlanStatus } from "./renovationBetaRequirementsApi";
+import type { RequirementGroup, RequirementLine, RequirementProject, TradeLog, TradePlan, TradePlanStatus } from "./renovationBetaRequirementsApi";
 import { dayMonth } from "./renovationBetaModel";
 
 export const NO_ROOM = "No room";
@@ -28,6 +28,7 @@ export interface TradeGroup {
   label: string;
   lines: RequirementLine[];
   plans: TradePlan[];
+  log: TradeLog | null;
 }
 
 export const BUILT_IN_PLAN_KEY = "BUILTIN";
@@ -39,15 +40,33 @@ export function hasPlanDates({ plannedStart, plannedEnd }: Pick<TradePlan, "plan
   return Boolean(plannedStart ?? plannedEnd);
 }
 
-export function groupByTrade(lines: readonly RequirementLine[], plans: readonly TradePlan[]): TradeGroup[] {
+export function groupByTrade(lines: readonly RequirementLine[], plans: readonly TradePlan[], logs: readonly TradeLog[] = []): TradeGroup[] {
   const trades = new Map<string, TradeGroup>();
   for (const line of lines) {
     const key = line.planKey ?? line.itemCode;
-    const trade = trades.get(key) ?? { key, label: tradeLabelOf(line), lines: [], plans: plans.filter((plan) => plan.planKey === key) };
+    const trade = trades.get(key) ?? { key, label: tradeLabelOf(line), lines: [], plans: plans.filter((plan) => plan.planKey === key), log: logs.find((log) => log.planKey === key) ?? null };
     trade.lines.push(line);
     trades.set(key, trade);
   }
   return [...trades.values()];
+}
+
+export type TradeHeadingTone = "open" | "in_progress" | "done" | "waiting";
+
+export interface TradeHeading {
+  tone: TradeHeadingTone;
+  text: string;
+}
+
+export function tradeHeading(plans: readonly TradePlan[], log: TradeLog | null): TradeHeading | null {
+  if (plans.length === 0) return null;
+  if (plans.every((plan) => plan.state === "done")) return { tone: "done", text: "Done" };
+  if (plans.some((plan) => plan.isWaitingForReceipt)) return { tone: "waiting", text: "Waiting for receipt" };
+  if (plans.every((plan) => plan.state === "open")) return { tone: "open", text: "Not started" };
+  const latest = log?.days[0];
+  const dayText = latest ? ` · Day ${latest.day}` : "";
+  const updateText = latest ? ` · last update ${dayMonth(latest.date)}${latest.by[0] ? ` by ${latest.by[0]}` : ""}` : "";
+  return { tone: "in_progress", text: `In progress${dayText}${updateText}` };
 }
 
 const GROUP_LABELS: ReadonlyArray<readonly [RequirementGroup, string]> = [

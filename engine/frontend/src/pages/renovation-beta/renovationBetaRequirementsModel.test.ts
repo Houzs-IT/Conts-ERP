@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { RequirementLine, RequirementProject, TradePlan } from "./renovationBetaRequirementsApi";
 import {
-  NO_ROOM, brandOptions, clampDoneQty, filterProjectLines, groupByRoom, groupByTrade, isLineDone, lineProgressText, onPoCount, planDates, progressText, proofPhotoUrl, proofThumbnails, roomSummary,
+  NO_ROOM, brandOptions, clampDoneQty, filterProjectLines, groupByRoom, groupByTrade, isLineDone, lineProgressText, onPoCount, planDates, progressText, proofPhotoUrl, proofThumbnails, roomSummary, tradeHeading,
 } from "./renovationBetaRequirementsModel";
 
 function line(overrides: Partial<RequirementLine>): RequirementLine {
@@ -13,11 +13,11 @@ function line(overrides: Partial<RequirementLine>): RequirementLine {
 }
 
 function project(overrides: Partial<RequirementProject>): RequirementProject {
-  return { id: 13, code: "RN-2509-003", name: "BARON B11-07 MS LEE", brand: "The Conts", lines: [], plans: [], ...overrides };
+  return { id: 13, code: "RN-2509-003", name: "BARON B11-07 MS LEE", brand: "The Conts", lines: [], plans: [], tradeLog: [], ...overrides };
 }
 
 function plan(overrides: Partial<TradePlan>): TradePlan {
-  return { taskId: 1, planKey: "ELECTRICAL", label: "WIRING & HACKING", plannedStart: null, plannedEnd: null, status: "unscheduled", ...overrides };
+  return { taskId: 1, planKey: "ELECTRICAL", label: "WIRING & HACKING", plannedStart: null, plannedEnd: null, status: "unscheduled", state: "open", startedOn: null, isWaitingForReceipt: false, ...overrides };
 }
 
 describe("requirement board grouping", () => {
@@ -111,5 +111,25 @@ describe("proof photo thumbnails", () => {
 
   test("a photo opens through its own project's file route", () => {
     expect(proofPhotoUrl("renovation/7/proof-1.jpg")).toBe("/api/renovation/7/files?key=renovation%2F7%2Fproof-1.jpg");
+  });
+});
+
+describe("trade heading", () => {
+  const log = { planKey: "ELECTRICAL", days: [{ day: 3, date: "2026-11-16", updateCount: 2, photoCount: 4, by: ["Ali", "Kumar"] }] };
+
+  test("no task reads as no heading, and a task not started reads Not started", () => {
+    expect(tradeHeading([], null)).toBeNull();
+    expect(tradeHeading([plan({})], null)).toEqual({ tone: "open", text: "Not started" });
+  });
+
+  test("an open trade shows its day, last update and who made it", () => {
+    expect(tradeHeading([plan({ state: "in_progress", startedOn: "2026-11-14" })], log)).toEqual({ tone: "in_progress", text: "In progress · Day 3 · last update 16/11 by Ali" });
+    expect(tradeHeading([plan({ state: "in_progress" })], null)).toEqual({ tone: "in_progress", text: "In progress" });
+  });
+
+  test("done only when every task is done, and a PO hold says Waiting for receipt", () => {
+    expect(tradeHeading([plan({ state: "done" }), plan({ taskId: 2, state: "done" })], log)?.text).toBe("Done");
+    expect(tradeHeading([plan({ state: "done" }), plan({ taskId: 2, state: "in_progress" })], log)?.tone).toBe("in_progress");
+    expect(tradeHeading([plan({ state: "in_progress", isWaitingForReceipt: true })], log)).toEqual({ tone: "waiting", text: "Waiting for receipt" });
   });
 });

@@ -3,6 +3,7 @@ import { MEDIA_ACTION, metaOf, parseTarget } from "./betaMedia";
 import { todayMyt } from "../../scm/lib/my-time";
 import { isMissingRelation, type Db } from "./load";
 import { tradeTaskStatus, type TaskStatus } from "./tradeTasks";
+import { buildTradeLogs, finishedTaskIds, type TradeLog, type TradeMediaRow } from "./tradeLog";
 
 export const REQUIREMENT_LINE_LIMIT = 5000;
 
@@ -104,6 +105,8 @@ export interface RequirementLine {
   latestPhotoBy: string | null;
 }
 
+export type TradeState = "open" | "in_progress" | "done";
+
 export interface TradePlan {
   taskId: number;
   planKey: string;
@@ -111,6 +114,9 @@ export interface TradePlan {
   plannedStart: string | null;
   plannedEnd: string | null;
   status: TaskStatus;
+  state: TradeState;
+  startedOn: string | null;
+  isWaitingForReceipt: boolean;
 }
 
 export interface RequirementProject {
@@ -120,6 +126,7 @@ export interface RequirementProject {
   brand: string | null;
   lines: RequirementLine[];
   plans: TradePlan[];
+  tradeLog: TradeLog[];
 }
 
 export interface RequirementBoard {
@@ -134,6 +141,7 @@ export interface RequirementBoardRows {
   plans: readonly TradePlanRow[];
   ticks: readonly LineTickRow[] | null;
   proofs?: readonly LineProofRow[];
+  tradeMedia?: readonly TradeMediaRow[];
 }
 
 const trimmedOrNull = (value: string | null): string | null => value?.trim() || null;
@@ -186,16 +194,21 @@ export function planKeyOfTask(row: Pick<TradePlanRow, "trade_code" | "category_c
   return row.trade_code.includes(":") ? null : row.trade_code;
 }
 
-export function tradePlanOf(row: TradePlanRow, today: string): TradePlan | null {
+export function tradePlanOf(row: TradePlanRow, today: string, finishedIds: ReadonlySet<number> = new Set()): TradePlan | null {
   const planKey = planKeyOfTask(row);
   if (!planKey) return null;
+  const status = tradeTaskStatus({ ...row, poFullyReceived: row.po_fully_received === true }, today);
+  const state: TradeState = status === "done" ? "done" : row.state === "in_progress" || row.actual_start ? "in_progress" : "open";
   return {
     taskId: Number(row.id),
     planKey,
     label: trimmedOrNull(row.label) ?? planKey,
     plannedStart: dayOf(row.planned_start),
     plannedEnd: dayOf(row.planned_end),
-    status: tradeTaskStatus({ ...row, poFullyReceived: row.po_fully_received === true }, today),
+    status,
+    state,
+    startedOn: dayOf(row.actual_start),
+    isWaitingForReceipt: state !== "done" && row.fulfilment_kind === "po" && finishedIds.has(Number(row.id)),
   };
 }
 
@@ -215,17 +228,26 @@ export function buildRequirementBoard(rows: RequirementBoardRows, scope: Categor
   const linesByProject = groupByProject(visibleLines, (row) => Number(row.project_id));
   const plansByProject = groupByProject(rows.plans, (row) => Number(row.project_id));
   const proofByLine = proofsByLine(rows.proofs ?? []);
+  const mediaByProject = groupByProject(rows.tradeMedia ?? [], (row) => Number(row.project_id));
+  const finishedIds = finishedTaskIds(rows.tradeMedia ?? []);
   const tickByLine = new Map((rows.ticks ?? []).map((tick) => [tick.so_item_id, tick] as const));
   const projects = rows.projects.map((row) => {
     const id = Number(row.project_id);
     const closedPlanKeys = new Set((plansByProject.get(id) ?? []).filter((plan) => plan.state === "done").map(planKeyOfTask).filter((key): key is string => key !== null));
+    const projectPlans = (plansByProject.get(id) ?? []).map((plan) => tradePlanOf(plan, today, finishedIds)).filter((plan): plan is TradePlan => plan !== null);
+    const projectLines = linesByProject.get(id) ?? [];
     return {
       id,
       code: row.project_code,
       name: row.project_name ?? row.project_code ?? `Project ${id}`,
       brand: trimmedOrNull(row.brand),
-      lines: (linesByProject.get(id) ?? []).map((line) => requirementLineOf(line, tickByLine.get(line.id) ?? null, closedPlanKeys, proofByLine.get(line.id))).filter((line): line is RequirementLine => line !== null),
-      plans: (plansByProject.get(id) ?? []).map((plan) => tradePlanOf(plan, today)).filter((plan): plan is TradePlan => plan !== null),
+      lines: projectLines.map((line) => requirementLineOf(line, tickByLine.get(line.id) ?? null, closedPlanKeys, proofByLine.get(line.id))).filter((line): line is RequirementLine => line !== null),
+      plans: projectPlans,
+      tradeLog: buildTradeLogs(
+        projectPlans.map((plan) => ({ taskId: plan.taskId, planKey: plan.planKey, actualStart: plan.startedOn })),
+        projectLines.map((line) => ({ id: line.id, planKey: GROUP_OF_CATEGORY[line.cat_code] === "builtin" ? BUILT_IN_PLAN_KEY : line.sub_code })),
+        mediaByProject.get(id) ?? [],
+      ),
     };
   });
   return {
@@ -298,6 +320,14 @@ const PROOFS_SQL = (filter: RequirementBoardFilter): string =>
     WHERE ranked.proof_rank <= ${PROOF_THUMBNAIL_LIMIT}
     ORDER BY ranked.target, ranked.proof_rank`;
 
+const TRADE_MEDIA_SQL = (filter: RequirementBoardFilter): string =>
+  `SELECT a.project_id::int AS project_id, a.from_value AS target,
+          (a.created_at::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur')::date::text AS day, a.note
+     FROM project_activity a
+     JOIN projects p ON p.id = a.project_id
+    WHERE a.action = '${MEDIA_ACTION}' AND (a.from_value LIKE 'task:%' OR a.from_value LIKE 'line:%') AND a.archived_at IS NULL AND a.to_value IS NOT NULL
+      AND ${LIVE_RENOVATION_PROJECTS(filter)}`;
+
 export const isMissingColumn = (error: unknown): boolean => (error as { code?: string } | null)?.code === "42703";
 
 async function readTicks(db: Db, filter: RequirementBoardFilter): Promise<LineTickRow[] | null> {
@@ -311,14 +341,15 @@ async function readTicks(db: Db, filter: RequirementBoardFilter): Promise<LineTi
 
 export async function loadRequirementBoard(db: Db, filter: RequirementBoardFilter): Promise<RequirementBoard> {
   const bindings = brandBindings(filter);
-  const [scope, projects, lines, plans, ticks, proofs] = await Promise.all([
+  const [scope, projects, lines, plans, ticks, proofs, tradeMedia] = await Promise.all([
     filter.categoryScope,
     db.prepare(PROJECTS_SQL(filter)).bind(...bindings).all<RequirementProjectRow>(),
     db.prepare(LINES_SQL(filter)).bind(...bindings).all<RequirementLineRow>(),
     db.prepare(PLANS_SQL(filter)).bind(...bindings).all<TradePlanRow>(),
     readTicks(db, filter),
     db.prepare(PROOFS_SQL(filter)).bind(...bindings).all<LineProofRow>(),
+    db.prepare(TRADE_MEDIA_SQL(filter)).bind(...bindings).all<TradeMediaRow>(),
   ]);
-  const rows = { projects: projects.results ?? [], lines: lines.results ?? [], plans: plans.results ?? [], ticks, proofs: proofs.results ?? [] };
+  const rows = { projects: projects.results ?? [], lines: lines.results ?? [], plans: plans.results ?? [], ticks, proofs: proofs.results ?? [], tradeMedia: tradeMedia.results ?? [] };
   return buildRequirementBoard(rows, scope, todayMyt());
 }

@@ -192,12 +192,11 @@ describe("renovator crew routes", () => {
     expect(calls.some((call) => call.sql.includes("INSERT INTO project_line_progress"))).toBe(false);
   });
 
-  test("a save that finishes the trade answers the closed task and logs it naming the renovator", async () => {
-    const { database, calls } = scriptedDb({ brand: "The Conts", line: worksLine, remaining: 0, tasks: [{ ...closedTask, id: 9, state: "open" }] });
+  test("a save to the full count leaves the trade open", async () => {
+    const { database, calls } = scriptedDb({ brand: "The Conts", line: worksLine, remaining: 0, tasks: [{ ...closedTask, id: 9, state: "in_progress" }] });
     const response = await crewApp(database).save({ doneQty: 3, photos: [PHOTO] });
-    expect(await response.json()).toMatchObject({ completedTaskIds: [9], photoCount: 2 });
-    const log = calls.find((call) => call.sql.includes("INSERT INTO project_activity") && call.args[1] === "task_done");
-    expect(log?.args).toEqual([13, "task_done", "ELECTRICAL", "done", "Every line ticked on the phone by Ah Seng", null, 1]);
+    expect(await response.json()).toMatchObject({ completedTaskIds: [], photoCount: 2 });
+    expect(calls.some((call) => call.sql.includes("state = 'done'") || call.args[1] === "task_done")).toBe(false);
   });
 
   test("the person is looked up in the line's own company", async () => {
@@ -218,6 +217,6 @@ describe("renovator crew routes", () => {
   test("the jobs list reads every line's photos in one query", async () => {
     const { database, calls } = scriptedDb({ brand: "The Conts" });
     await crewApp(database).jobs();
-    expect(calls.filter((call) => call.sql.includes("line:%"))).toHaveLength(1);
+    expect(calls.filter((call) => call.sql.includes("line:%") && call.sql.includes("ranked"))).toHaveLength(1);
   });
 });

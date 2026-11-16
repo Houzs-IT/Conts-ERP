@@ -4,7 +4,7 @@ import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanyId, activeCompanySql } from "../scm/lib/companyScope";
 import { todayMyt } from "../scm/lib/my-time";
 import { isMissingRelation, type Db } from "../services/renovation/load";
-import { logTradesDone, reopenLineTrade, setLineDoneQty, type LineActor, type TradeTaskRow } from "../services/renovation/lineProgress";
+import { reopenLineTrade, setLineDoneQty, type LineActor, type TradeTaskRow } from "../services/renovation/lineProgress";
 import { loadCategoryScope } from "../services/categoryAccess";
 import { isMissingColumn, loadRequirementBoard } from "../services/renovation/requirementBoard";
 
@@ -74,10 +74,9 @@ app.put("/requirements/lines/:soItemId/progress", requirePermission("projects.wr
       const [status, message] = PROGRESS_REFUSALS[outcome];
       return c.json({ error: outcome, message }, status);
     }
-    await logTradesDone(db(c), outcome.projectId, outcome.completedTasks, activeCompanyId(c) ?? 1, lineActor(c).userId, "Every line ticked");
     if (outcome.reopenedTasks) await logTradesReopened(c, outcome.projectId, outcome.reopenedTasks);
     return c.json({
-      ok: true, previousDoneQty: outcome.previousDoneQty, doneQty: outcome.doneQty, completedTaskIds: outcome.completedTasks.map((task) => task.id),
+      ok: true, previousDoneQty: outcome.previousDoneQty, doneQty: outcome.doneQty, completedTaskIds: [],
       ...(outcome.reopenedTasks ? { didReopenTrade: true } : {}),
     });
   } catch (error) {

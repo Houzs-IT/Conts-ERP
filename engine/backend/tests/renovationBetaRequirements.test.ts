@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { Hono } from "hono";
 import requirements from "../src/routes/renovationBetaRequirements";
+import type { TradeMediaRow } from "../src/services/renovation/tradeLog";
 import {
   REQUIREMENT_LINE_LIMIT, buildRequirementBoard, type LineProofRow, type RequirementLineRow, type RequirementProjectRow, type TradePlanRow,
 } from "../src/services/renovation/requirementBoard";
@@ -31,10 +32,11 @@ function board(lines: RequirementLineRow[], plans: TradePlanRow[] = [], projects
   return buildRequirementBoard({ projects, lines, plans, ticks: [] }, scope, TODAY);
 }
 
-function scriptedDb(projects: RequirementProjectRow[], lines: RequirementLineRow[], plans: TradePlanRow[] = [], proofs: LineProofRow[] = []) {
+function scriptedDb(projects: RequirementProjectRow[], lines: RequirementLineRow[], plans: TradePlanRow[] = [], proofs: LineProofRow[] = [], tradeMedia: TradeMediaRow[] = []) {
   const ran: string[] = [];
   const answerFor = (sql: string): unknown[] => {
     if (sql.includes("conts_category_access")) return [];
+    if (sql.includes("'task:%'")) return tradeMedia;
     if (sql.includes("beta_media")) return proofs;
     if (sql.includes("FROM project_trade_tasks")) return plans;
     return sql.includes("mfg_sales_order_items") ? lines : projects;
@@ -136,6 +138,50 @@ describe("requirement board", () => {
     expect(without).toMatchObject({ photoCount: 0, latestPhotoKeys: [], latestPhotoBy: null });
   });
 
+  test("a plan reads its state, start day and a crew finish held by a PO", () => {
+    const plans = [
+      planRow({ id: 1, trade_code: "ELECTRICAL" }),
+      planRow({ id: 2, trade_code: "PROTECTION", state: "in_progress", actual_start: "2026-11-14" }),
+      planRow({ id: 3, trade_code: "PAINTING", state: "done", actual_start: "2026-11-10", actual_end: "2026-11-12" }),
+      planRow({ id: 4, trade_code: "CAT:CARPENTRY", category_code: "CARPENTRY", state: "in_progress", fulfilment_kind: "po", po_fully_received: false }),
+    ];
+    const tradeMedia = [{ project_id: 7, target: "task:4", day: "2026-11-16", note: JSON.stringify({ name: "a.jpg", stage: "finish", by: "Ali" }) }];
+    const rows = { projects: [projectRow({})], lines: [lineRow({})], plans, ticks: [], tradeMedia };
+    expect(buildRequirementBoard(rows, null, TODAY).projects[0].plans.map((plan) => [plan.taskId, plan.state, plan.startedOn, plan.isWaitingForReceipt])).toEqual([
+      [1, "open", null, false], [2, "in_progress", "2026-11-14", false], [3, "done", "2026-11-10", false], [4, "in_progress", null, true],
+    ]);
+  });
+
+  test("the trade log groups photos by Malaysia day, newest first, counting days from the start", () => {
+    const note = (by: string): string => JSON.stringify({ name: "a.jpg", by });
+    const tradeMedia = [
+      { project_id: 7, target: "task:1", day: "2026-11-14", note: note("Ali") },
+      { project_id: 7, target: "line:a", day: "2026-11-16", note: note("Ali") },
+      { project_id: 7, target: "line:a", day: "2026-11-16", note: note("Kumar") },
+      { project_id: 7, target: "line:b", day: "2026-11-16", note: note("Ali") },
+      { project_id: 8, target: "task:1", day: "2026-11-15", note: null },
+    ];
+    const lines = [lineRow({ id: "a", sub_code: "ELECTRICAL" }), lineRow({ id: "b", sub_code: "ELECTRICAL" })];
+    const plans = [planRow({ id: 1, state: "in_progress", actual_start: "2026-11-14" })];
+    const { tradeLog } = buildRequirementBoard({ projects: [projectRow({})], lines, plans, ticks: [], tradeMedia }, null, TODAY).projects[0];
+    expect(tradeLog).toEqual([{
+      planKey: "ELECTRICAL",
+      days: [
+        { day: 3, date: "2026-11-16", updateCount: 2, photoCount: 3, by: ["Ali", "Kumar"] },
+        { day: 1, date: "2026-11-14", updateCount: 1, photoCount: 1, by: ["Ali"] },
+      ],
+    }]);
+  });
+
+  test("the board reads every trade's photos in one query, by Malaysia day", async () => {
+    const { database, ran } = scriptedDb([projectRow({})], [lineRow({})]);
+    await boardApp(database)();
+    const logSql = ran.filter((sql) => sql.includes("'task:%'"));
+    expect(logSql).toHaveLength(1);
+    expect(logSql[0]).toContain("a.created_at::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur'");
+    expect(logSql[0]).toMatch(/p\.company_id\s*=\s*1/);
+  });
+
   test("no progress table reads as not switched on, with nothing done", () => {
     const notReady = buildRequirementBoard({ projects: [projectRow({})], lines: [lineRow({})], plans: [], ticks: null }, null, TODAY);
     expect([notReady.areTicksReady, notReady.projects[0].lines[0].doneQty]).toEqual([false, 0]);
@@ -179,7 +225,7 @@ describe("GET /api/beta/requirements", () => {
   test("the board reads every line's photos in one query, with the company and live-project rules", async () => {
     const { database, ran } = scriptedDb([projectRow({})], [lineRow({})]);
     await boardApp(database)();
-    const proofSql = ran.filter((sql) => sql.includes("beta_media"));
+    const proofSql = ran.filter((sql) => sql.includes("beta_media") && !sql.includes("'task:%'"));
     expect(proofSql).toHaveLength(1);
     expect(proofSql[0]).toMatch(/p\.company_id\s*=\s*1/);
     expect(proofSql[0]).toContain("p.archived_at IS NULL");

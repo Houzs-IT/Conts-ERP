@@ -25,6 +25,8 @@ export interface RequirementLine {
 
 export type TradePlanStatus = "skipped" | "done" | "in_progress" | "overdue" | "late_start" | "planned" | "unscheduled";
 
+export type TradeState = "open" | "in_progress" | "done";
+
 export interface TradePlan {
   taskId: number;
   planKey: string;
@@ -32,6 +34,22 @@ export interface TradePlan {
   plannedStart: string | null;
   plannedEnd: string | null;
   status: TradePlanStatus;
+  state: TradeState;
+  startedOn: string | null;
+  isWaitingForReceipt: boolean;
+}
+
+export interface TradeLogDay {
+  day: number;
+  date: string;
+  updateCount: number;
+  photoCount: number;
+  by: string[];
+}
+
+export interface TradeLog {
+  planKey: string;
+  days: TradeLogDay[];
 }
 
 export interface RequirementProject {
@@ -41,6 +59,7 @@ export interface RequirementProject {
   brand: string | null;
   lines: RequirementLine[];
   plans: TradePlan[];
+  tradeLog: TradeLog[];
 }
 
 export interface RequirementBoard {
@@ -53,7 +72,6 @@ export interface ProgressAnswer {
   ok: true;
   previousDoneQty: number;
   doneQty: number;
-  completedTaskIds: number[];
   didReopenTrade?: boolean;
 }
 

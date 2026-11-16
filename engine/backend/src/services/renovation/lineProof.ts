@@ -1,4 +1,4 @@
-import { MEDIA_ACTION, MEDIA_IMAGE_MAX_BYTES, mediaRowsJson, targetCode, type MediaItemIn } from "./betaMedia";
+import { MEDIA_ACTION, MEDIA_IMAGE_MAX_BYTES, mediaRowsJson, targetCode, type MediaItemIn, type MediaMeta, type MediaTarget } from "./betaMedia";
 import type { Db } from "./load";
 
 export const PROOF_MIN_PHOTOS = 1;
@@ -22,6 +22,16 @@ export interface LineProof {
   photos: readonly ProofPhoto[];
   bucket: ProofBucket;
   by: string;
+}
+
+export interface ProofStageMeta {
+  stage: "start" | "progress" | "finish";
+  doneQty?: number;
+}
+
+export interface ProofItem {
+  key: string;
+  meta: MediaMeta & ProofStageMeta;
 }
 
 export type ProofRefusal = { error: "photo_required" | "photo_invalid"; message: string };
@@ -65,23 +75,24 @@ export function parseProofPhotos(value: unknown): ProofPhoto[] | ProofRefusal {
 
 export const isProofRefusal = (value: ProofPhoto[] | ProofRefusal): value is ProofRefusal => !Array.isArray(value);
 
-export async function storeProofFiles(proof: LineProof, projectId: number): Promise<MediaItemIn[]> {
-  const items: MediaItemIn[] = [];
+export async function storeProofFiles(proof: LineProof, projectId: number, stageMeta: ProofStageMeta): Promise<ProofItem[]> {
+  const items: ProofItem[] = [];
   for (const photo of proof.photos) {
     const key = `renovation/${projectId}/proof-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${PROOF_TYPES[photo.mime]}`;
     await proof.bucket.put(key, photo.bytes, { httpMetadata: { contentType: photo.mime } });
-    items.push({ key, meta: { name: photo.name, mime: photo.mime, size: photo.bytes.byteLength, area: null, note: null, by: proof.by } });
+    items.push({ key, meta: { name: photo.name, mime: photo.mime, size: photo.bytes.byteLength, area: null, note: null, by: proof.by, ...stageMeta } });
   }
   return items;
 }
 
-export async function writeProofRows(db: Db, projectId: number, companyId: number, soItemId: string, items: readonly MediaItemIn[]): Promise<number> {
+export async function writeProofRows(db: Db, projectId: number, companyId: number, target: MediaTarget, items: readonly MediaItemIn[]): Promise<number> {
+  const from = targetCode(target);
   await db.prepare(
     `INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
      SELECT ?::bigint, '${MEDIA_ACTION}', ?::text, x.key, x.meta, NULL, ?::bigint FROM jsonb_to_recordset(?::text::jsonb) AS x(key text, meta text)`,
-  ).bind(projectId, targetCode({ kind: "line", soItemId }), companyId, mediaRowsJson(items)).run();
+  ).bind(projectId, from, companyId, mediaRowsJson(items)).run();
   const row = await db.prepare(
     `SELECT count(*)::int AS photo_count FROM project_activity WHERE project_id = ? AND action = '${MEDIA_ACTION}' AND from_value = ? AND archived_at IS NULL`,
-  ).bind(projectId, targetCode({ kind: "line", soItemId })).first<{ photo_count: number }>();
+  ).bind(projectId, from).first<{ photo_count: number }>();
   return Number(row?.photo_count ?? items.length);
 }
