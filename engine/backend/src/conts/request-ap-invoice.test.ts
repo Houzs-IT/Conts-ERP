@@ -185,6 +185,17 @@ describe('asking for the balance', () => {
     await settleRequest(sb, made.id);
     expect(req(sb, made.id).status).toBe('SUBMITTED');
   });
+  test('the formal invoice may come with it: kept on the balance request, which then owes none (chew, 16 Nov 2026)', async () => {
+    const sb = world();
+    await post(finance(sb), '/r/D1/ap-invoice', { debitAccountCode: '601-0009' });
+    Object.assign(sb.tables.ap_invoices[0], { status: 'PARTIALLY_PAID', total_sen: 10_000, paid_sen: 3_000 });
+    sb.tables.ap_invoice_lines[0].amount_sen = 10_000;
+    const res = await post(staffApp(sb), '/requests/D1/balance', { files: [{ name: 'invoice.png', mime: 'image/png', dataBase64: btoa('png-bytes') }] });
+    expect(res.status).toBe(201);
+    const made = await res.json() as { id: string };
+    expect(req(sb, made.id).owes_formal_invoice).toBe(false);
+    expect(sb.tables.payment_request_files.filter(f => f.request_id === made.id).map(f => f.file_name)).toEqual(['invoice.png']);
+  });
   test('nothing filled in again: what the bill still owes, over its lines; once at a time; paid as the bill is', async () => {
     const sb = world();
     const staff = staffApp(sb);
