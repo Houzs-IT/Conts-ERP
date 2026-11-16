@@ -16,6 +16,7 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { contractSplit, type SplitContract } from '../../lib/utilitySplit';
 import { pdfToJpegs, photoForReader } from '../../lib/pdfPages';
 import { pageFileName } from '../../lib/scanPage';
+import { nextToRead, pagesToSkip } from '../../lib/scanPages';
 
 /** Scan bills (finance, chew 2 Nov 2026; plan docs/superpowers/plans/2026-11-02-utility-bill-scan.md Task 5): pick a
  *  month's PDFs or photos; every page is read (three at a time, no time limit) and shown as it finishes, with the unit
@@ -27,12 +28,14 @@ type Kind = 'electricity' | 'water' | 'internet' | 'sewerage';
 type Read = {
   kind: string; provider: string | null; billMonth: string | null; periodFrom: string | null; periodTo: string | null;
   amountDueSen: number | null; currentChargesSen: number | null; accountNoVisible: string | null; accountNoFull: string | null; confidenceNotes: string | null;
+  /** "Page 1 of 5" as printed (chew, 16 Nov 2026): a bill's later pages are not read. */
+  pageNo?: number | null; pageCount?: number | null;
 };
 type Match = { colour: 'green' | 'amber' | 'red'; accountId: string | null; alreadyRecorded: boolean; reasons: string[] };
 type ScanAnswer = { scanId: string; read: Read; match: Match; unitId: string | null; candidates: { accountId: string; unitId: string | null; clues: string[] }[] };
 type Row = {
   key: string; file: File; fileName: string; pageNo: number; thumb: string;
-  state: 'waiting' | 'reading' | 'done' | 'failed' | 'recorded'; problem?: string;
+  state: 'waiting' | 'reading' | 'done' | 'failed' | 'recorded' | 'skipped'; problem?: string;
   scan?: ScanAnswer;
   kind: Kind | ''; billMonth: string; periodFrom: string; periodTo: string; amountSen: number | null; unitId: string;
   /** The account the page matched, kept while its unit is the one proposed (a unit can have two meters of a kind). */
@@ -80,10 +83,11 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
   const commit = (next: Row[]) => { rowsRef.current = next; setRows(next); };
   const patch = (key: string, p: Partial<Row>) => commit(rowsRef.current.map(r => (r.key === key ? { ...r, ...p } : r)));
 
-  /* Three pages at a time; a slow page holds up only its own slot. */
+  /* Three pages at a time; a slow page holds up only its own slot. A page waits for the page before it in its PDF, so a
+     bill's later pages are known before they are read, and not read (lib/scanPages.ts). */
   function pump() {
     while (!stopped.current && running.current < AT_ONCE) {
-      const next = rowsRef.current.find(r => r.state === 'waiting');
+      const next = nextToRead(rowsRef.current);
       if (!next) return;
       running.current++;
       patch(next.key, { state: 'reading' });
@@ -102,6 +106,16 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
       const doc = await api.post<{ id: string }>('/documents', fd);
       const s = await api.post<ScanAnswer>('/expenses/utilities/scan', { documentId: doc.id, batchId });
       const kind = (KINDS.some(k => k.value === s.read.kind) ? s.read.kind : '') as Kind | '';
+      /* A later page of a bill, or page 1 of a bill of several: those other pages are not read nor recorded. */
+      const skip = new Set(pagesToSkip(row, s.read, rowsRef.current));
+      if (skip.has(row.key)) {
+        patch(row.key, { state: 'skipped', scan: s, tick: false, problem: `Page ${s.read.pageNo} of the bill: not recorded on its own` });
+        return;
+      }
+      if (skip.size) {
+        commit(rowsRef.current.map(r => (skip.has(r.key) && (r.state === 'waiting' || r.state === 'failed' || r.state === 'done')
+          ? { ...r, state: 'skipped', tick: false, problem: `Page ${r.pageNo - row.pageNo + 1} of the bill on page ${row.pageNo}: not read` } : r)));
+      }
       patch(row.key, {
         state: 'done', scan: s, kind, billMonth: s.read.billMonth ?? '', periodFrom: s.read.periodFrom ?? '', periodTo: s.read.periodTo ?? '',
         amountSen: s.read.currentChargesSen, unitId: s.unitId ?? '', accountId: s.unitId ? s.match.accountId : null,
@@ -250,7 +264,7 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
                   const c = r.scan ? COLOUR[r.scan.match.colour] : null;
                   const split = splitText(r);
                   return (
-                    <tr key={r.key} className={r.state === 'recorded' ? 'opacity-60' : undefined}>
+                    <tr key={r.key} className={r.state === 'recorded' || r.state === 'skipped' ? 'opacity-60' : undefined}>
                       <td className={cell}>
                         <input type="checkbox" aria-label={`Record page ${r.pageNo} of ${r.fileName}`} checked={r.tick} disabled={!editable}
                           onChange={e => patch(r.key, { tick: e.target.checked })} />
@@ -290,6 +304,7 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
                           </div>
                         )}
                         {r.state === 'recorded' && <span>Recorded</span>}
+                        {r.state === 'skipped' && <span className="text-[var(--color-text-muted)]">{r.problem}</span>}
                         {c && r.state === 'done' && (
                           <div className="flex flex-col gap-1">
                             <span className="self-start"><StatusBadge tone={c.tone} label={c.label} size="sm" /></span>
