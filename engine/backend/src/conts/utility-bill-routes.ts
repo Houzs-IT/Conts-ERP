@@ -41,12 +41,36 @@ export const readPageHandler = async (c: Ctx): Promise<Response> => {
   return c.json(r);
 };
 
-/** The provider's supplier: the same name, or a listed name that starts with it ("Indah Water" -> "INDAH WATER
-    KONSORTIUM SDN BHD"). A name merely containing it ("TIME" in "OVERTIME TRADING") is not taken. */
+/* The long names on the bills and their short forms on the supplier list, as one (chew, 16 Nov 2026: TNB's bills went
+   to finance "to be checked" because the list names it differently; water is paid to each building's management). */
+const SHORT_FORMS: Array<[RegExp, string]> = [
+  [/\bTENAGA NASIONAL\b/g, 'TNB'],
+  [/\bINDAH WATER KONSORTIUM\b/g, 'IWK'],
+  [/\b(?:PERBADANAN PENGURUSAN|MANAGEMENT CORPORATION)\b/g, 'MC'],
+  [/\b(?:BADAN PENGURUSAN BERSAMA|JOINT MANAGEMENT BODY)\b/g, 'JMB'],
+];
+/** A provider's or supplier's name as compared: upper case, no "Sdn Bhd" / "Berhad"; as written, and with the long names
+ *  in their short forms (both are tried). */
+export function providerKeys(name: string): string[] {
+  const plain = normalizeVendor(name).replace(/\bBERHAD\b/g, ' ').replace(/\s+/g, ' ').trim();
+  let short = plain;
+  for (const [long, abbr] of SHORT_FORMS) short = short.replace(long, abbr);
+  return [...new Set([plain, short.replace(/\s+/g, ' ').trim()])].filter(Boolean);
+}
+
+/** The provider's supplier: the same name ("Tenaga Nasional Berhad" -> "TNB", "TENAGA NASIONAL BHD"; "Perbadanan
+    Pengurusan Skyline" -> "MC SKYLINE"), else the one listed name that starts with it ("Indah Water" -> "INDAH WATER
+    KONSORTIUM SDN BHD"), else the one listed name it starts with ("Skyline Residence Management Office" -> "SKYLINE
+    RESIDENCE"). A name merely containing it ("TIME" in "OVERTIME TRADING") is not taken, nor two that fit alike. */
 export function providerSupplier(provider: string, suppliers: Array<{ id: string; name: string }>): { id: string; name: string } | null {
-  const p = normalizeVendor(provider);
-  if (!p) return null;
-  return suppliers.find(s => normalizeVendor(s.name) === p) ?? suppliers.find(s => normalizeVendor(s.name).startsWith(`${p} `)) ?? null;
+  const ps = providerKeys(provider);
+  if (!ps.length) return null;
+  const keyed = suppliers.map(s => ({ s, ks: providerKeys(s.name) })).filter(x => x.ks.length);
+  const fits = (test: (p: string, k: string) => boolean) => keyed.filter(x => ps.some(p => x.ks.some(k => test(p, k))));
+  const one = (xs: typeof keyed) => (xs.length === 1 ? xs[0]!.s : null);
+  const exact = fits((p, k) => p === k);
+  if (exact.length) return one(exact);
+  return one(fits((p, k) => k.startsWith(`${p} `))) ?? one(fits((p, k) => p.startsWith(`${k} `)));
 }
 
 export const utilityRequestHandler = async (c: Ctx): Promise<Response> => {
