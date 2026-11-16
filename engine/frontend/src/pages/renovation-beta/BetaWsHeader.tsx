@@ -198,10 +198,10 @@ export function BetaWsStepper({ items, hold }: { items: StepperItem[]; hold: str
                   <span style={{ width: 12, height: 12, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#FFFFFF,#FFE3EA)", boxShadow: "0 0 6px rgba(255,255,255,.9)" }} />
                 </div>
               ) : (
-                <div style={{ ...dot, zIndex: 1, width: 30, height: 30, background: BETA.stepNext, border: `1px solid ${BETA.stepNextEdge}`, boxShadow: BETA.stepNextShadow }} />
+                <div aria-hidden="true" style={{ ...dot, zIndex: 1, width: 30, height: 30, background: BETA.stepNext, border: `1.5px solid ${BETA.stepNextEdge}`, boxShadow: BETA.stepNextShadow, color: BETA.muted, fontSize: 12, fontWeight: 600 }}>{i + 1}</div>
               )}
               <div className="step-text" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                <div style={{ fontSize: 13, fontWeight: now ? 700 : 600, color: now ? BETA.stepNow : done ? BETA.ink : BETA.muted }}>
+                <div style={{ fontSize: 13, fontWeight: now ? 700 : 600, color: now || done ? BETA.ink : BETA.muted }}>
                   {s.label}<span className="sr">{done ? " (done)" : now ? " (current step)" : " (not yet)"}</span>
                 </div>
                 <div style={{ fontSize: 12, fontWeight: now ? 600 : 400, color: now ? BETA.stepNow : BETA.faint }}>{s.sub}</div>
@@ -213,7 +213,7 @@ export function BetaWsStepper({ items, hold }: { items: StepperItem[]; hold: str
       </ol>
       {cap && (
         <div className="step-cap" aria-hidden="true" style={{ flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: "4px 8px", marginTop: 12, padding: "0 8px", textAlign: "center", fontSize: 13 }}>
-          <span style={{ fontWeight: 700, color: cap.state === "current" ? BETA.stepNow : BETA.ink }}>{cap.label}</span>
+          <span style={{ fontWeight: 700, color: BETA.ink }}>{cap.label}</span>
           {cap.sub !== "-" && <span style={{ fontWeight: 600, color: cap.state === "current" ? BETA.stepNow : BETA.muted }}>{cap.sub}</span>}
           {cap.state === "current" && hold && <WsBadge tone={TONE_WAIT} size={11}>{hold}</WsBadge>}
           <span style={{ width: "100%", fontSize: 12, color: BETA.faint }}>Step {capAt + 1} of {items.length}</span>

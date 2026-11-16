@@ -303,7 +303,7 @@ function OrganizerManager() {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Add organizer name…"
-          className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
           Add
@@ -414,7 +414,7 @@ function ContractorManager() {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Add contractor name…"
-          className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
           Add
@@ -582,7 +582,7 @@ function VenueManager() {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Venue name…"
-          className="h-9 min-w-0 sm:col-span-3 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 min-w-0 sm:col-span-3 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <StatePicker
           value={stateField}
@@ -597,7 +597,7 @@ function VenueManager() {
           onChange={(e) => setCountryField(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           disabled={knownCountries.length === 0}
-          className="h-9 min-w-0 rounded-md border border-border bg-surface px-2 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 min-w-0 rounded-md border border-border bg-surface px-2 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         >
           <option value="">
             {knownCountries.length === 0 ? "no countries" : "— country —"}
@@ -611,7 +611,7 @@ function VenueManager() {
           onChange={(e) => setCityField(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           disabled={!stateField || cityOptions.length === 0}
-          className="h-9 min-w-0 rounded-md border border-border bg-surface px-2 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 min-w-0 rounded-md border border-border bg-surface px-2 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         >
           <option value="">
             {!stateField ? "pick state first" : cityOptions.length === 0 ? "no cities" : "— city —"}
@@ -626,14 +626,14 @@ function VenueManager() {
           onKeyDown={(e) => e.key === "Enter" && add()}
           inputMode="numeric"
           placeholder="postcode"
-          className="h-9 min-w-0 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 min-w-0 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <input
           value={sizeField}
           onChange={(e) => setSizeField(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="size"
-          className="h-9 min-w-0 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 min-w-0 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
           Add
@@ -694,7 +694,7 @@ function VenueManager() {
                 if (next !== (v.size ?? "")) patch(v.id, { size: next || null });
               }}
               placeholder="size"
-              className="h-8 w-28 min-w-0 rounded-md border border-border bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              className="h-8 w-28 min-w-0 rounded-md border border-border bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
             />
             <RowActionsMenu
               items={[
@@ -1420,7 +1420,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
                                 if (e.target.value !== item.title)
                                   patchItem(item.id, { title: e.target.value });
                               }}
-                              className="h-7 rounded-md border border-border bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                              className="h-7 rounded-md border border-border bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
                             />
                             <input
                               defaultValue={item.role_label ?? ""}
@@ -1432,7 +1432,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
                               }}
                               placeholder="Role"
                               title="Display-only owner tag (e.g. DRIVER, SALES PIC, BD, PURCHASER)"
-                              className="h-7 w-full rounded-md border border-border bg-surface px-2 text-[11px] uppercase tracking-wider outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                              className="h-7 w-full rounded-md border border-border bg-surface px-2 text-[11px] uppercase tracking-wider outline-none focus:border-primary focus:ring-2 focus:ring-primary"
                             />
                             <input
                               defaultValue={item.due_offset_days ?? ""}
@@ -1447,7 +1447,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
                               type="number"
                               placeholder="±d"
                               title="Days from project start_date (negative = before)"
-                              className="h-7 w-full rounded-md border border-border bg-surface px-2 text-[11px] tabular-nums outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                              className="h-7 w-full rounded-md border border-border bg-surface px-2 text-[11px] tabular-nums outline-none focus:border-primary focus:ring-2 focus:ring-primary"
                             />
                             {/* State strip — visible chips for the
                                 review-required and crew-visible flags
@@ -1524,7 +1524,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
                             }}
                             placeholder="New task title…"
                             autoFocus
-                            className="h-8 rounded-md border border-accent/40 bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                            className="h-8 rounded-md border border-accent/40 bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
                           />
                           <input
                             value={newOffset}
@@ -1535,7 +1535,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
                             placeholder="Days from start"
                             title="Days from project start_date (negative = before)"
                             type="number"
-                            className="h-8 rounded-md border border-border bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                            className="h-8 rounded-md border border-border bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
                           />
                           <Button
                             variant="primary"
@@ -1951,7 +1951,7 @@ function BrandManager() {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="New brand name…"
-          className="h-9 min-w-[200px] flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 min-w-[200px] flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
           Add
@@ -2043,7 +2043,7 @@ function EventTypeManager() {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="New event type name…"
-          className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
           Add

@@ -288,7 +288,7 @@ function SharePanel({ p, rows }: { p: BetaTabProps; rows: readonly Row[] }): Rea
       {link && (
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, background: WS.panel, border: `1px solid ${BETA.line}` }}>
           <input readOnly aria-label="Client link" value={link.url} onFocus={(e) => e.currentTarget.select()}
-            style={{ flex: "1 1 280px", minWidth: 0, border: 0, background: "transparent", font: "inherit", fontSize: 13, color: BETA.ink, outline: "none" }} />
+            style={{ flex: "1 1 280px", minWidth: 0, border: 0, background: "transparent", font: "inherit", fontSize: 13, color: BETA.ink }} />
           <span style={{ ...metaStyle, whiteSpace: "nowrap" }}>Read only · valid until {dayMonthYear(link.until)}</span>
         </div>
       )}
