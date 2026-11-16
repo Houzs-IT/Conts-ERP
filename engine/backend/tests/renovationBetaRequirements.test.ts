@@ -14,7 +14,7 @@ function projectRow(overrides: Partial<RequirementProjectRow>): RequirementProje
 function lineRow(overrides: Partial<RequirementLineRow>): RequirementLineRow {
   return {
     id: "line-1", project_id: 7, item_code: "RN-PROTECTION", description: "Works - Protection", remark: null,
-    qty: "1", uom: "UNIT", room: "Common area", cat_code: "WORKS", sub_code: "PROTECTION", is_on_po: false, deliver_on: null,
+    qty: "1", uom: "UNIT", room: "Common area", cat_code: "WORKS", sub_code: "PROTECTION", sub_label: "Protection", is_on_po: false, deliver_on: null,
     ...overrides,
   };
 }
@@ -64,7 +64,7 @@ describe("requirement board", () => {
     const [line] = board([lineRow({ remark: " FLOOR PROTECTION ", qty: "20", is_on_po: true, deliver_on: "2026-11-20T00:00:00Z" })]).projects[0].lines;
     expect(line).toEqual({
       id: "line-1", itemCode: "RN-PROTECTION", name: "Works - Protection", remark: "FLOOR PROTECTION",
-      qty: 20, uom: "UNIT", room: "Common area", group: "works", isOnPo: true, planKey: "PROTECTION", onSiteBy: "2026-11-20",
+      qty: 20, uom: "UNIT", room: "Common area", group: "works", isOnPo: true, planKey: "PROTECTION", tradeLabel: "Protection", onSiteBy: "2026-11-20",
     });
   });
 

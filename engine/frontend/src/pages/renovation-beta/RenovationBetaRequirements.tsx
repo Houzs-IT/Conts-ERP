@@ -8,7 +8,7 @@ import {
 } from "./BetaWsUi";
 import { requirementsApi, type RequirementLine, type RequirementProject, type TradePlan, type TradePlanStatus } from "./renovationBetaRequirementsApi";
 import {
-  PLAN_STATUS_LABEL, brandOptions, filterProjectLines, groupByRoom, groupByTrade, isPlanLate, onPoCount, planDates, plural, roomSummary,
+  PLAN_STATUS_LABEL, brandOptions, filterProjectLines, groupByRoom, groupByTrade, hasPlanDates, isPlanLate, onPoCount, planDates, plural, roomSummary,
   type GroupCard, type RoomGroup, type TradeGroup,
 } from "./renovationBetaRequirementsModel";
 import { onBrandList } from "./renovationBetaHomeModel";
@@ -238,9 +238,9 @@ function PlanChip({ plan, isNamed }: { plan: TradePlan; isNamed: boolean }): Rea
   const isLate = isPlanLate(plan.status);
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: isLate ? WS.red : WS.text2, fontWeight: isLate ? 700 : 400 }}>
-      <CalendarDays size={13} aria-hidden="true" />
-      {isNamed && <span>{plan.label} ·</span>}
-      {planDates(plan)}
+      {hasPlanDates(plan) && <CalendarDays size={13} aria-hidden="true" />}
+      {isNamed && <span>{plan.label}{hasPlanDates(plan) && " ·"}</span>}
+      {hasPlanDates(plan) && planDates(plan)}
       <WsBadge tone={PLAN_STATUS_TONE[plan.status]}>{PLAN_STATUS_LABEL[plan.status]}</WsBadge>
     </span>
   );

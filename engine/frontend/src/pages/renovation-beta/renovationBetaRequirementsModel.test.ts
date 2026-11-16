@@ -5,7 +5,7 @@ import { NO_ROOM, brandOptions, filterProjectLines, groupByRoom, groupByTrade, o
 function line(overrides: Partial<RequirementLine>): RequirementLine {
   return {
     id: "a", itemCode: "RN-PROTECTION", name: "Works - Protection", remark: null, qty: 1, uom: "UNIT",
-    room: "Common area", group: "works", isOnPo: false, planKey: "PROTECTION", onSiteBy: null,
+    room: "Common area", group: "works", isOnPo: false, planKey: "PROTECTION", tradeLabel: null, onSiteBy: null,
     ...overrides,
   };
 }
@@ -49,6 +49,11 @@ describe("requirement board plans", () => {
     expect(trades.map((trade) => [trade.label, trade.lines.map((item) => item.id), trade.plans.map((item) => item.taskId)])).toEqual([
       ["Electrical", ["a", "c"], [1, 2]], ["Protection", ["b"], []],
     ]);
+  });
+
+  test("the trade is named by its catalog label when the line's name is only a note", () => {
+    const [trade] = groupByTrade([line({ name: "FLOOR PROTECTION", tradeLabel: "Protection" })], []);
+    expect(trade.label).toBe("Protection");
   });
 
   test("Built-in lines sit under one Carpentry group with the carpentry plan", () => {

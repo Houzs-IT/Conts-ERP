@@ -28,7 +28,7 @@ const PROJECTS_SQL = (companyScope: string): string =>
 const LINES_SQL = (companyScope: string): string =>
   `SELECT i.id::text AS id, p.id::int AS project_id, i.item_code, i.description, i.remark, i.qty, i.uom,
           coalesce(nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim((SELECT l.room FROM scm.reno_doc_lines l WHERE l.so_item_id = i.id LIMIT 1)), ''), nullif(trim(i.location), '')) AS room,
-          cg.code AS cat_code, sc.code AS sub_code,
+          cg.code AS cat_code, sc.code AS sub_code, sc.label AS sub_label,
           EXISTS (SELECT 1 FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
                    WHERE pi.so_item_id = i.id AND po.status::text <> 'CANCELLED') AS is_on_po,
           plan.deliver_on::text AS deliver_on

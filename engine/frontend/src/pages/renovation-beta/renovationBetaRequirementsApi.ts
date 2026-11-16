@@ -13,6 +13,7 @@ export interface RequirementLine {
   group: RequirementGroup;
   isOnPo: boolean;
   planKey: string | null;
+  tradeLabel: string | null;
   onSiteBy: string | null;
 }
 

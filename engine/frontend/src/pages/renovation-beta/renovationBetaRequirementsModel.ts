@@ -33,7 +33,11 @@ export interface TradeGroup {
 export const BUILT_IN_PLAN_KEY = "BUILTIN";
 
 const tradeLabelOf = (line: RequirementLine): string =>
-  line.planKey === BUILT_IN_PLAN_KEY ? "Carpentry" : line.name.replace(/^works\s*-\s*/i, "");
+  line.planKey === BUILT_IN_PLAN_KEY ? "Carpentry" : line.tradeLabel ?? line.name.replace(/^works\s*-\s*/i, "");
+
+export function hasPlanDates({ plannedStart, plannedEnd }: Pick<TradePlan, "plannedStart" | "plannedEnd">): boolean {
+  return Boolean(plannedStart ?? plannedEnd);
+}
 
 export function groupByTrade(lines: readonly RequirementLine[], plans: readonly TradePlan[]): TradeGroup[] {
   const trades = new Map<string, TradeGroup>();

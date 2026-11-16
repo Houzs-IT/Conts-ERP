@@ -34,6 +34,7 @@ export interface RequirementLineRow {
   room: string | null;
   cat_code: string;
   sub_code: string | null;
+  sub_label: string | null;
   is_on_po: boolean;
   deliver_on: string | null;
 }
@@ -64,6 +65,7 @@ export interface RequirementLine {
   group: RequirementGroup;
   isOnPo: boolean;
   planKey: string | null;
+  tradeLabel: string | null;
   onSiteBy: string | null;
 }
 
@@ -115,6 +117,7 @@ export function requirementLineOf(row: RequirementLineRow): RequirementLine | nu
     group,
     isOnPo: row.is_on_po,
     planKey: group === "builtin" ? BUILT_IN_PLAN_KEY : row.sub_code,
+    tradeLabel: group === "works" ? trimmedOrNull(row.sub_label) : null,
     onSiteBy: dayOf(row.deliver_on),
   };
 }
