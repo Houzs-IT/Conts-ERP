@@ -53,7 +53,7 @@ const OWNER_ALLOWED: [string, RegExp][] = [
 const DEMO_LIVE = /^\/api\/(auth|account|owner|table-layouts)(\/|$)|^\/api\/demo$|^\/api\/(reservations|units|payouts|operations\/service-prices)\/export$/;
 const DEMO_REFUSED = /^\/api\/(statements\/(finalise|send|unlock-final)|payouts|integrations|import|claims|supply-chain|it-support|system|users|accounting|units\/[^/]+\/channex-setup)(\/|$)/;
 
-/** Renovation staff (migration 0316): their own sign-in, account and notices, and their own clock, leave and pay. */
+/** Renovation staff (migration 0316): their own sign-in, account and notices, and their own clock, leave, pay and receipts. */
 const RENOVATION_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/auth\/session$/],
   ['POST', /^\/api\/auth\/logout$/],
@@ -71,6 +71,11 @@ const RENOVATION_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/field\/leave\/[^/]+\/cancel$/],
   // Their own pay: approved and paid slips, and an estimate of the month so far (HR phase 4).
   ['GET', /^\/api\/field\/pay$/],
+  // Their own receipts and, for a float's keeper, the float (finance, 29 Oct 2026): forwarded to the engine, which limits
+  // every answer to the person. The handler (functions/api/claims/[[path]].ts) passes only its own short list of paths,
+  // and refuses the office-only ones (requests, suppliers, purchase orders) for field accounts.
+  ['GET', /^\/api\/claims\/[a-z0-9_/-]+$/i],
+  ['POST', /^\/api\/claims\/[a-z0-9_/-]+$/i],
 ];
 
 const FIELD_ALLOWED: [string, RegExp][] = [
@@ -94,11 +99,6 @@ const FIELD_ALLOWED: [string, RegExp][] = [
   ['GET', /^\/api\/documents\/[^/]+\/download$/],
   // The history of their own cleans and repairs (functions/api/audit/index.ts limits it to those).
   ['GET', /^\/api\/audit$/],
-  // Their own receipts and, for a float's keeper, the float (finance, 29 Oct 2026): forwarded to the engine, which limits
-  // every answer to the person. The handler (functions/api/claims/[[path]].ts) passes only its own short list of paths,
-  // and refuses the office-only ones (requests, suppliers, purchase orders) for field accounts.
-  ['GET', /^\/api\/claims\/[a-z0-9_/-]+$/i],
-  ['POST', /^\/api\/claims\/[a-z0-9_/-]+$/i],
 ];
 
 /** Supply chain endpoints only check for a signed-in user, and carry prices and costs;
