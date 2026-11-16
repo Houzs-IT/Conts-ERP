@@ -53,7 +53,7 @@ export function sectionsByLayout(sections: PrintSectionInput[], layout: PrintLay
 
 export async function printBrand(brand: BrandProfile | undefined): Promise<PrintBrand> {
   if (!brand) {
-    return { name: 'The Conts', companyLines: [], contactLine: '', bankLine: '', termsLines: [], intro: 'We refer to our meeting with regards the above captioned matter and we are pleased to submit our quotation as follow : -', signatoryCompany: 'THE CONTS SDN BHD' };
+    return { name: 'The Conts', companyLines: [], contactLine: '', bankLine: '', termsLines: [], intro: 'With reference to our meeting regarding the above matter, we are pleased to submit our quotation as follows:', signatoryCompany: 'THE CONTS SDN BHD' };
   }
   if (brand.logoR2Key) await ensureBrandLogoLoaded(brand.logoR2Key);
   const logo = getBrandLogoCache(brand.logoR2Key);

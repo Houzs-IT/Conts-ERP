@@ -6,7 +6,7 @@
 //     list and net totals (typed amount); last page TOTAL 137,866.56 / DISCOUNT 42,623.42 / FINAL 95,243.14.
 import { describe, expect, test } from 'vitest';
 import { closingHeight, layoutDocument, pageTotalSen, summaryRows } from './print-layout';
-import { buildRows, rmPlain } from './print-model';
+import { buildRows, clientContactLine, rmGrouped, splitDimensions } from './print-model';
 import { AVA, DC_REST, dclover, doc, item, kl48, RM, section, skyline } from './print-fixtures';
 
 describe('AVA Residence B31-09, format 1 (amount only)', () => {
@@ -18,7 +18,7 @@ describe('AVA Residence B31-09, format 1 (amount only)', () => {
   });
 
   test('page totals print as the sample does', () => {
-    expect(layout.pages.map((p) => rmPlain(pageTotalSen(d, p)!))).toEqual(['11418', '11830', '6057.5', '10080', '6561', '-40']);
+    expect(layout.pages.map((p) => rmGrouped(pageTotalSen(d, p)!))).toEqual(['11,418.00', '11,830.00', '6,057.50', '10,080.00', '6,561.00', '-40.00']);
   });
 
   test('GRAND TOTAL 45,906.5 on the last page; no closing page needed', () => {
@@ -28,27 +28,26 @@ describe('AVA Residence B31-09, format 1 (amount only)', () => {
     expect(layout.pages.at(-1)!.isLast).toBe(true);
   });
 
-  test('numbering restarts per section, add-ons and dimensions unnumbered', () => {
+  test('numbering runs through the whole document, add-ons and dimensions unnumbered', () => {
     const rows = buildRows(d).filter((r) => r.type === 'line');
-    const nums = rows.map((r) => r.cells.no ?? '');
-    expect(nums.slice(0, 4)).toEqual(['1', '', '', '']);
-    const wiring = rows.find((r) => r.cells.desc?.startsWith('LOOPING NEW LIGHTING POINT'));
-    expect(wiring?.cells.no).toBe('1');
+    const nums = rows.map((r) => r.cells.no ?? '').filter(Boolean);
+    expect(nums.slice(0, 1).concat(rows.map((r) => r.cells.no ?? '').slice(1, 4))).toEqual(['1', '', '', '']);
+    expect(nums).toEqual(nums.map((_, i) => String(i + 1)));
   });
 
   test('measured line prints "20FT" and its rate "15/FT"; lump-sum section prints its price on the band', () => {
     const rows = buildRows(d);
     const track = rows.find((r) => r.type === 'line' && r.cells.desc?.startsWith('RECESSED'));
-    expect(track?.type === 'line' && [track.cells.qty, track.cells.unit, track.cells.amount]).toEqual(['20FT', '15/FT', '300']);
+    expect(track?.type === 'line' && [track.cells.qty, track.cells.unit, track.cells.amount]).toEqual(['20FT', '15.00/FT', '300.00']);
     const curtain = rows.find((r) => r.type === 'band' && r.text.startsWith('CURTAIN'));
-    expect(curtain?.type === 'band' && curtain.amount).toBe('3231');
+    expect(curtain?.type === 'band' && curtain.amount).toBe('3,231.00');
     const room = rows.find((r) => r.type === 'line' && r.cells.desc === 'MASTER 10 FT');
-    expect(room?.type === 'line' && room.cells.no).toBe('1');
+    expect(room?.type === 'line' && Number(room.cells.no)).toBeGreaterThan(1);
   });
 
   test('waived line keeps its pink highlight and negative amount', () => {
     const waived = buildRows(d).find((r) => r.type === 'line' && r.cells.desc?.startsWith('DEFECT CHECK'));
-    expect(waived?.type === 'line' && [waived.highlight, waived.cells.amount]).toEqual(['PINK', '-550']);
+    expect(waived?.type === 'line' && [waived.highlight, waived.cells.amount]).toEqual(['PINK', '-550.00']);
   });
 });
 
@@ -76,9 +75,9 @@ describe("D'Clover A-3A-3A, format 3 (discount detail)", () => {
 
   test('disc price is the discounted amount, the % beside it, amount at list', () => {
     const wall = buildRows(d).find((r) => r.type === 'line' && r.cells.desc === 'WALL CABINET');
-    expect(wall?.type === 'line' && [wall.cells.discPrice, wall.cells.disc, wall.cells.amount]).toEqual(['2686.46', '-40%', '4477.44']);
+    expect(wall?.type === 'line' && [wall.cells.discPrice, wall.cells.disc, wall.cells.amount]).toEqual(['2,686.46', '-40%', '4,477.44']);
     const shelf = buildRows(d).find((r) => r.type === 'line' && r.cells.desc?.startsWith('WALL SHELF'));
-    expect(shelf?.type === 'line' && [shelf.cells.qty, shelf.cells.discPrice, shelf.cells.amount]).toEqual(['3', '1123.2', '1872']);
+    expect(shelf?.type === 'line' && [shelf.cells.qty, shelf.cells.discPrice, shelf.cells.amount]).toEqual(['3', '1,123.20', '1,872.00']);
   });
 
   test('payment terms carry each instalment; normal density pushes page 1 over two pages', () => {
@@ -102,7 +101,7 @@ describe('the other formats', () => {
   test('promotion vs standard (KL 48): promotion = unit price, standard = list price, total at promotion', () => {
     const d = kl48();
     const rows = buildRows(d).filter((r) => r.type === 'line');
-    expect([rows[0].cells.promo, rows[0].cells.standard, rows[0].cells.qty]).toEqual(['1800', '2000', 'FULL UNIT']);
+    expect([rows[0].cells.promo, rows[0].cells.standard, rows[0].cells.qty]).toEqual(['1,800.00', '2,000.00', 'FULL UNIT']);
     // The sample prints 14,200; its lines add to 14,600 (owner question 1: lines are the rule).
     expect(layoutDocument(d).closing.summary.finalSen).toBe(RM(14600));
   });
@@ -110,7 +109,7 @@ describe('the other formats', () => {
   test('unit price format; FOC prints FOC; document discount adds TOTAL -> DISCOUNT -> GRAND TOTAL', () => {
     const d = doc('UNIT_PRICE', [section('X', [item('LOOPING NEW LIGHTING POINT', 65, { qty: 31 }), item('DESIGN', 800, { isFoc: true })])], { docDiscountSen: RM(15), docDiscountLabel: 'Showroom discount' });
     const rows = buildRows(d).filter((r) => r.type === 'line');
-    expect([rows[0].cells.unit, rows[0].cells.amount]).toEqual(['65', '2015']);
+    expect([rows[0].cells.unit, rows[0].cells.amount]).toEqual(['65.00', '2,015.00']);
     expect(rows[1].cells.amount).toBe('FOC');
     const s = layoutDocument(d).closing.summary;
     expect(summaryRows(d, s).map((r) => [r.label, r.sen])).toEqual([['TOTAL (RM)', RM(2015)], ['SHOWROOM DISCOUNT (RM)', RM(15)], ['GRAND TOTAL', RM(2000)]]);
@@ -134,5 +133,43 @@ describe('closingHeight', () => {
     const instalments = [1, 2, 3, 4].map((seq) => ({ seq, label: `${seq}`, pctBp: 2500, description: 'x' }));
     const { height } = closingHeight({ promoLines: [], instalments, kind: 'SALES_ORDER' } as never, wrap);
     expect(height).toBeCloseTo(6 + 10.5 + 4 * (3 * 3.9 + 1.2) + 4 + 34);
+  });
+});
+
+describe('quotation layout (QT-2611-017)', () => {
+  test('dimensions move to a sub-line, normalised; the title keeps its words', () => {
+    expect(splitDimensions('Built-in - Shoe cabinet - W : 3 FT X H : FH X D : 400 MM')).toEqual({ title: 'Built-in - Shoe cabinet', dimensions: 'W: 3 FT × H: FH × D: 400 MM' });
+    expect(splitDimensions('Built-in TV Console - W : 7.9  FT X H : 450MM  X D : 400 MM')).toEqual({ title: 'Built-in TV Console', dimensions: 'W: 7.9 FT × H: 450 MM × D: 400 MM' });
+    expect(splitDimensions('Built-in Wall Cabinet - ( L SHAPE ) - W : 10 FT X H : 3 FT X D : 1 FT').title).toBe('Built-in Wall Cabinet - ( L SHAPE )');
+    expect(splitDimensions('Built-in Ep')).toEqual({ title: 'Built-in Ep', dimensions: '' });
+    expect(splitDimensions('LED STRIP: WARM WHITE')).toEqual({ title: 'LED STRIP: WARM WHITE', dimensions: '' });
+  });
+
+  test('a line under its own area banner drops "@ area"; banners print upper case on the light blue', () => {
+    const d = doc('DISCOUNT', [
+      section('entrance area', [item('Built-in - Shoe cabinet - W : 3 FT X H : FH X D : 400 MM', 1995, { room: 'entrance area' })]),
+      section('SUITE 2 (GROUND FLOOR)', [item('Built-in Ep @ SUITE 2 (GROUND FLOOR)', 310, { qty: 2, room: 'SUITE 2 ( GROUND FLOOR )' }), item('Study table', 850, { room: 'Bedroom' })]),
+    ]);
+    const rows = buildRows(d);
+    expect(rows[0]).toMatchObject({ type: 'band', text: 'ENTRANCE AREA', color: '#DCE8F5' });
+    const lines = rows.filter((r) => r.type === 'line');
+    expect(lines.map((r) => [r.cells.no, r.cells.desc, r.dimensions])).toEqual([
+      ['1', 'Built-in - Shoe cabinet', 'W: 3 FT × H: FH × D: 400 MM'], ['2', 'Built-in Ep', ''], ['3', 'Study table @ Bedroom', ''],
+    ]);
+    expect(lines[0].cells.discPrice).toBe('1,995.00');
+  });
+
+  test('a dimension sub-line adds its height', () => {
+    const plain = layoutDocument(doc('AMOUNT', [section('A', [item('Shoe cabinet', 10)])])).pages[0].rows[1];
+    const sized = layoutDocument(doc('AMOUNT', [section('A', [item('Shoe cabinet - W : 3 FT', 10)])])).pages[0].rows[1];
+    expect(sized.dimensionLines).toEqual(['W: 3 FT']);
+    expect(sized.heightMm).toBeGreaterThan(plain.heightMm);
+  });
+
+  test('the contact line leaves out the unit and building printed on the right', () => {
+    expect(clientContactLine({ customerPhone: '+60162210711', siteAddress: 'LEBUH RAYA KUALA LUMPUR - SEREMBAN\nTAMAN SERDANG RAYA\nA-13-10 QUAVER RESIDENCE', building: 'QUAVER RESIDENCE', unitNo: 'A-13-10' }))
+      .toBe('+60162210711 · LEBUH RAYA KUALA LUMPUR - SEREMBAN, TAMAN SERDANG RAYA');
+    expect(clientContactLine({ customerPhone: '', siteAddress: 'No 1, Jalan 1\nTAMAN SERDANG RAYA, A-13-10 QUAVER RESIDENCE', building: 'QUAVER RESIDENCE', unitNo: '1' }))
+      .toBe('No 1, Jalan 1, TAMAN SERDANG RAYA, A-13-10 QUAVER RESIDENCE');
   });
 });
