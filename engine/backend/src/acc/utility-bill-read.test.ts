@@ -22,6 +22,22 @@ describe('coerceUtilityRead', () => {
 
 /* chew 3 Nov 2026, after the September TNB run: a bill goes to the month its period ENDS (06/08-05/09 is September),
    and what is recorded is Caj Semasa (this period's charges), never Jumlah Perlu Dibayar or Baki Terdahulu. */
+/* chew 16 Nov 2026: what is paid is the current charges with their rounding (TNB Caj Semasa 314.24 + Pelarasan
+   Penggenapan 0.01 = 314.25; Unifi 94.34 + 0.01 = 94.35), and a bill's later pages are known by "Page 1 of 5". */
+describe('the rounding and the pages of a bill', () => {
+  test('the rounding is added to the current charges; a misread one (more than a few sen) is left out', () => {
+    expect(coerceUtilityRead({ currentCharges: '314.24', rounding: '0.01', amountDue: '314.25' })).toMatchObject({ currentChargesSen: 31425, roundingSen: 1, amountDueSen: 31425 });
+    expect(coerceUtilityRead({ currentCharges: '94.37', rounding: '-0.02' }).currentChargesSen).toBe(9435);
+    expect(coerceUtilityRead({ currentCharges: '100.00', rounding: '' }).currentChargesSen).toBe(10000);
+    expect(coerceUtilityRead({ currentCharges: '100.00', rounding: '12.00' })).toMatchObject({ currentChargesSen: 10000, roundingSen: null });
+    expect(coerceUtilityRead({ currentCharges: '', rounding: '0.01' }).currentChargesSen).toBeNull();
+  });
+  test('the page number and the number of pages, as printed', () => {
+    expect(coerceUtilityRead({ pageNo: '1', pageCount: '5' })).toMatchObject({ pageNo: 1, pageCount: 5 });
+    expect(coerceUtilityRead({ pageNo: '', pageCount: 'two' })).toMatchObject({ pageNo: null, pageCount: null });
+  });
+});
+
 describe('the month and the amount finance records', () => {
   test('the bill month is the month the printed period ends, whatever the model said', () => {
     expect(coerceUtilityRead({ billMonth: '2026-08', periodFrom: '2026-08-06', periodTo: '2026-09-05', currentCharges: '377.50' }).billMonth).toBe('2026-09');
