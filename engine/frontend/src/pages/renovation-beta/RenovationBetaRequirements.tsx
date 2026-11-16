@@ -151,7 +151,7 @@ function BoardScreen(): ReactElement {
           <input type="search" value={search} placeholder="Project, room, SKU, item" style={{ ...inputStyle, fontSize: 16, paddingLeft: 32 }} onChange={(event) => changeSearch(event.target.value)} />
         </label>
       </div>
-      {ticks.error && <p role="alert" style={{ margin: 0, fontSize: 14, color: WS.red }}>The tick did not save: {ticks.error}</p>}
+      {ticks.error && <p role="alert" style={{ margin: 0, fontSize: 14, color: WS.red }}>That change did not save: {ticks.error}</p>}
       {ticks.notice && <p role="status" style={{ margin: 0, fontSize: 14, color: WS.green }}>{ticks.notice}</p>}
       {query.data?.isTruncated && (
         <p role="status" style={{ margin: 0, fontSize: 13, color: WS.amber }}>Only the first lines are shown. Pick a brand or search to narrow the list.</p>
@@ -312,17 +312,21 @@ function LineRow({ line }: { line: RequirementLine }): ReactElement {
   const { canTick } = useContext(LineTicksContext);
   const isDone = line.doneAt !== null;
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 14px", minHeight: 44, padding: canTick ? "0 14px 0 4px" : "8px 14px 8px 44px" }}>
-      {canTick && <LineTickBox line={line} />}
-      <span style={{ flex: "0 1 160px", minWidth: 0, fontFamily: "var(--font-mono, monospace)", fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{line.itemCode}</span>
-      <span style={{ flex: "2 1 220px", minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-        <span style={{ fontSize: 14, fontWeight: 600, overflowWrap: "anywhere", color: isDone ? BETA.muted : undefined }}>{line.name}</span>
-        {line.remark && <span style={{ fontSize: 13, color: WS.text2, overflowWrap: "anywhere" }}>{line.remark}</span>}
-      </span>
-      <span style={{ flex: "0 0 auto", fontSize: 13, color: WS.text2, whiteSpace: "nowrap" }}>Qty {line.qty} {line.uom.toLowerCase()}</span>
-      {line.onSiteBy && <span style={{ flex: "0 0 auto", fontSize: 13, color: WS.text2, whiteSpace: "nowrap" }}>On site by {dayMonth(line.onSiteBy)}</span>}
-      <WsBadge tone={line.isOnPo ? TONE_ACCENT : TONE_QUIET}>{line.isOnPo ? "On PO" : "Not on PO"}</WsBadge>
-      {isDone && <WsBadge tone={TONE_DONE}>Done {dayMonth(line.doneAt)}</WsBadge>}
+    <div style={{ display: "flex", alignItems: "flex-start", minHeight: 44, padding: "0 14px 0 4px" }}>
+      {canTick ? <LineTickBox line={line} /> : <span aria-hidden="true" style={{ flexShrink: 0, width: 44 }} />}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 14px", padding: "10px 0" }}>
+        <span style={{ flex: "0 1 160px", minWidth: 0, fontFamily: "var(--font-mono, monospace)", fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{line.itemCode}</span>
+        <span style={{ flex: "2 1 220px", minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ fontSize: 14, fontWeight: 600, overflowWrap: "anywhere", color: isDone ? BETA.muted : undefined }}>{line.name}</span>
+          {line.remark && <span style={{ fontSize: 13, color: WS.text2, overflowWrap: "anywhere" }}>{line.remark}</span>}
+        </span>
+        <span style={{ flex: "0 0 auto", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 10px", fontSize: 13, color: WS.text2 }}>
+          <span style={{ whiteSpace: "nowrap" }}>Qty {line.qty} {line.uom.toLowerCase()}</span>
+          {line.onSiteBy && <span style={{ whiteSpace: "nowrap" }}>On site by {dayMonth(line.onSiteBy)}</span>}
+          <WsBadge tone={line.isOnPo ? TONE_ACCENT : TONE_QUIET}>{line.isOnPo ? "On PO" : "Not on PO"}</WsBadge>
+          {isDone && <WsBadge tone={TONE_DONE}>Done {dayMonth(line.doneAt)}</WsBadge>}
+        </span>
+      </div>
     </div>
   );
 }
