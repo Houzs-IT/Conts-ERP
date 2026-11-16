@@ -2,6 +2,8 @@ import { api } from "../../api/client";
 
 export type SiteTaskStatus = "skipped" | "done" | "in_progress" | "overdue" | "late_start" | "planned" | "unscheduled";
 
+export type SiteTaskWorkGroup = "works" | "builtin";
+
 export interface SiteTaskCrewMember {
   id: number;
   name: string;
@@ -16,6 +18,7 @@ export interface SiteTask {
   unitNo: string | null;
   brand: string | null;
   label: string;
+  workGroup: SiteTaskWorkGroup;
   isSubcontracted: boolean;
   supplierName: string | null;
   crew: SiteTaskCrewMember[];
