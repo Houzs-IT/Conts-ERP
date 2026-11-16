@@ -150,18 +150,7 @@ export function splitDimensions(description: string): SplitDescription {
 
 function pct(bp: number): string {
   const n = (bp / 100).toFixed(bp % 100 ? 2 : 0);
-  return `${n.includes('.') ? n.replace(/0+$/, '') : n}%`;
-}
-
-interface LineDiscount {
-  percent: string;
-  amount: string;
-}
-
-function lineDiscount(discountBp: number, listSen: number, netSen: number): LineDiscount | null {
-  const paidShare = listSen ? netSen / listSen : 1;
-  const bp = discountBp || (paidShare >= 0 && paidShare < 1 ? Math.round((1 - paidShare) * 10_000) : 0);
-  return bp ? { percent: pct(bp), amount: rmGrouped(listSen - netSen) } : null;
+  return `-${n.includes('.') ? n.replace(/0+$/, '') : n}%`;
 }
 
 export function buildRows(doc: Pick<PrintDoc, 'sections' | 'format'>): PrintRow[] {
@@ -207,21 +196,15 @@ export function buildRows(doc: Pick<PrintDoc, 'sections' | 'format'>): PrintRow[
               if (measured) cells.unit = `${rate}/${uomPrintLabel(l.measureUom ?? 'FT')}`;
               cells.amount = money;
               break;
-            case 'UNIT_PRICE': {
-              const discount = l.isFoc ? null : lineDiscount(l.discountBp, listSen, netSen);
-              cells.unit = rate;
-              cells.disc = discount ? `-${discount.percent} (${discount.amount})` : '';
+            case 'UNIT_PRICE':
+              cells.unit = measured ? `${rate}/${uomPrintLabel(l.measureUom ?? 'FT')}` : rate;
               cells.amount = money;
               break;
-            }
-            case 'DISCOUNT': {
-              const discount = l.isFoc ? null : lineDiscount(l.discountBp, listSen, netSen);
-              cells.unit = measured ? `${rate}/${uomPrintLabel(l.measureUom ?? 'FT')}` : rate;
-              cells.disc = discount ? `${discount.amount} (${discount.percent})` : '';
+            case 'DISCOUNT':
               cells.discPrice = l.isFoc ? 'FOC' : rmGrouped(netSen);
+              cells.disc = l.discountBp ? pct(l.discountBp) : '';
               cells.amount = rmGrouped(listSen);
               break;
-            }
             case 'PROMO_STANDARD':
               cells.promo = l.isFoc ? 'FOC' : rate;
               cells.standard = l.listPriceSen ? rmGrouped(l.listPriceSen) : '';
