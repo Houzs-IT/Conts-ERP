@@ -1,5 +1,5 @@
-// Conts only (not part of Houzs's code): /scm/petty-cash — every department's float at a glance, the receipts finance
-// pays back by bank transfer (departments with no float), and people pointed at another department's float (SOP 6;
+// Conts only (not part of Houzs's code): /scm/petty-cash — every department's float at a glance, and people pointed at
+// another department's float (SOP 6; the claims finance pays back by transfer are on Payment requests since 16 Nov 2026;
 // design docs/superpowers/specs/2026-10-28-payment-requests-petty-cash-design.md §4.5, §4.7). A float opens on its own
 // page with its receipts.
 import { useMemo, useState } from "react";
@@ -11,15 +11,11 @@ import { DataTable, type Column } from "../components/DataTable";
 import { usePrompt } from "../vendor/scm/components/PromptDialog";
 import { useChoice } from "../vendor/scm/components/ChoiceDialog";
 import { useAuth } from "../auth/AuthContext";
-import {
-  RECEIPT_STATUS, financeReceiptFileUrl, pettyPath, useFinanceAction, useFinanceReceipts, useFloats, useOverrides,
-  type FloatRow, type Receipt,
-} from "./claimsQueries";
-import { FileButtons, Money, thisMonth, useChooseBank, usePettyOptions } from "./ClaimsParts";
-import { useLineDepartmentLabel } from "./SubDepartmentSelect";
+import { pettyPath, useFinanceAction, useFloats, useOverrides, type FloatRow } from "./claimsQueries";
+import { Money, usePettyOptions } from "./ClaimsParts";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
 
-type Tab = "floats" | "finance" | "overrides";
+type Tab = "floats" | "overrides";
 const ringgitToSen = (v: string): number | null => {
   const n = Number(v.replace(/[,\s]/g, "").replace(/^RM/i, ""));
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
@@ -116,7 +112,7 @@ export function PettyCash() {
           subtitle={`${live.reduce((n, f) => n + f.waitingCheckCount, 0)} receipts`} />
       </div>
       <div role="tablist" style={{ display: "flex", gap: 8 }}>
-        {([["floats", "Floats"], ["finance", "Paid back by finance"], ["overrides", "People on another float"]] as [Tab, string][]).map(([k, label]) => (
+        {([["floats", "Floats"], ["overrides", "People on another float"]] as [Tab, string][]).map(([k, label]) => (
           <Button key={k} role="tab" aria-selected={tab === k} variant={tab === k ? "primary" : "secondary"} className="h-8" onClick={() => setTab(k)}>{label}</Button>
         ))}
       </div>
@@ -126,111 +122,7 @@ export function PettyCash() {
           error={floats.isError ? "The floats did not load." : null} emptyLabel="No petty cash floats yet." getRowKey={(f) => f.id}
           onRowClick={(f) => navigate(`/scm/petty-cash/${f.id}`)} />
       )}
-      {tab === "finance" && <FinancePaysBack run={run} />}
       {tab === "overrides" && <Overrides run={run} floats={live} />}
-    </div>
-  );
-}
-
-/** Receipts from people whose department has no float: finance checks them and pays them back by transfer, one at a time
- *  or several ticked on one voucher (chew, 16 Nov 2026: a person's claims handed in separately, paid back at once). */
-function FinancePaysBack({ run }: { run: (path: string, body: unknown, method?: "POST" | "PATCH" | "PUT") => Promise<Record<string, unknown> | null> }) {
-  const [month, setMonth] = useState(thisMonth());
-  const q = useFinanceReceipts(month);
-  const opts = usePettyOptions();
-  const deptLabel = useLineDepartmentLabel();
-  const { can } = useAuth();
-  const full = can("scm.payment_voucher.approve");
-  const [ticked, setTicked] = useState<Set<string>>(new Set());
-  const payable = (r: Receipt) => r.status === "CHECKED" && !r.paybackPvId;
-  const tickedRows = (q.data?.receipts ?? []).filter((r) => ticked.has(r.id) && payable(r));
-  const edit = can("scm.payment_voucher.write");
-  const prompt = usePrompt();
-  const choose = useChoice();
-  const chooseBank = useChooseBank();
-  const navigate = useNavigate();
-
-  const check = async (r: Receipt) => {
-    const accounts = opts.data?.expenseAccounts ?? [];
-    const lines = [];
-    for (const l of r.lines) {
-      const code = l.accountCode ?? await choose({ title: `What was ${l.description ?? r.vendorName ?? "this"} for?`, body: <Money sen={l.amountSen} />, options: accounts.map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })) });
-      if (!code) return;
-      lines.push({ ...l, accountCode: code });
-    }
-    await run(`${pettyPath}/receipts/check`, { items: [{ id: r.id, lines }] });
-  };
-  const reject = async (r: Receipt) => {
-    const reason = await prompt({ title: `Reject ${r.receiptNo}?`, placeholder: "Why", multiline: true, confirmLabel: "Reject", validate: (v) => (v.trim() ? null : "Say why, so the person knows.") });
-    if (reason != null) await run(`${pettyPath}/receipts/${r.id}/reject`, { reason });
-  };
-  const payBack = async (r: Receipt) => {
-    const bank = await chooseBank(opts.data?.banks ?? [], `Pay ${r.submitterName} back from which bank?`);
-    if (!bank) return;
-    const made = await run(`${pettyPath}/receipts/${r.id}/voucher`, { bankAccountCode: bank });
-    if (made?.pvId) navigate(`/scm/payment-vouchers/${String(made.pvId)}`);
-  };
-  /* One voucher for the ticked claims: each line names its claim, each is paid back when it posts. */
-  const payBackTogether = async () => {
-    const bank = await chooseBank(opts.data?.banks ?? [], `Pay ${tickedRows.length} claims back from which bank?`);
-    if (!bank) return;
-    const made = await run("/accounting/vouchers/from-claims", { receiptIds: tickedRows.map((r) => r.id), bankAccountCode: bank });
-    if (made?.pvId) { setTicked(new Set()); navigate(`/scm/payment-vouchers/${String(made.pvId)}`); }
-  };
-
-  const columns: Column<Receipt>[] = [
-    { key: "date", label: "Date", render: (r) => r.spendDate, getValue: (r) => r.spendDate },
-    { key: "no", label: "Receipt", render: (r) => r.receiptNo, getValue: (r) => r.receiptNo },
-    { key: "by", label: "Handed in by", render: (r) => r.submitterName, getValue: (r) => r.submitterName },
-    {
-      key: "bank", label: "Paid to", getValue: (r) => r.bank?.accountNo ?? "",
-      render: (r) => (r.bank ? (
-        <span>
-          {r.bank.bankName} {r.bank.accountNo}
-          {r.bank.differsFromSaved && <span className="ml-1 rounded bg-err-bg px-1 text-xs text-err">Not the saved account</span>}
-          {r.bank.accountName && <span className="block text-xs text-ink-muted">{r.bank.accountName}</span>}
-        </span>
-      ) : <span className="text-xs text-err">No bank details</span>),
-    },
-    { key: "what", label: "For", render: (r) => [r.vendorName, r.lines.map((l) => l.description).filter(Boolean).join("; ")].filter(Boolean).join(" — ") || "—", getValue: (r) => r.vendorName ?? "" },
-    { key: "dept", label: "Department", render: (r) => [...new Set(r.lines.map(deptLabel))].join(", "), getValue: (r) => (r.lines[0] ? deptLabel(r.lines[0]) : "") },
-    { key: "amount", label: "Amount", align: "right", render: (r) => <Money sen={r.amountSen} strong />, getValue: (r) => r.amountSen },
-    { key: "files", label: "Receipt", render: (r) => <FileButtons files={r.files} open={(f, mime) => financeReceiptFileUrl(r.id, f, mime)} />, getValue: (r) => r.files.length },
-    { key: "status", label: "Status", render: (r) => <span>{RECEIPT_STATUS[r.status]}{r.rejectReason && <span className="block text-xs text-ink-muted">{r.rejectReason}</span>}{r.overLimit && <span className="block text-xs text-err">Project over its limit</span>}</span>, getValue: (r) => r.status },
-    {
-      key: "act", label: "", getValue: () => "",
-      render: (r) => (
-        <span style={{ display: "grid", gridTemplateColumns: "repeat(2, 104px)", gap: 6, alignItems: "center" }}>
-          {edit && r.status === "HANDED_IN" && <Button className="h-8 w-full justify-center" onClick={() => void check(r)}>Check</Button>}
-          {edit && r.status === "HANDED_IN" && <Button className="h-8 w-full justify-center" variant="secondary" onClick={() => void reject(r)}>Reject</Button>}
-          {full && payable(r) && <Button className="h-8 w-full justify-center" onClick={() => void payBack(r)}>Pay back</Button>}
-          {r.paybackPvId && <Link className="text-xs underline" to={`/scm/payment-vouchers/${r.paybackPvId}`}>Voucher</Link>}
-        </span>
-      ),
-    },
-  ];
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <label className={styles.field} style={{ maxWidth: 200 }}>
-        <span className={styles.fieldLabel}>Month</span>
-        <input type="month" className={styles.fieldInput} value={month} onChange={(e) => setMonth(e.target.value)} />
-      </label>
-      {full && tickedRows.length > 0 && (
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontWeight: 600 }}>{tickedRows.length} ticked · <Money sen={tickedRows.reduce((n, r) => n + r.amountSen, 0)} /></span>
-          <Button className="h-8" onClick={() => void payBackTogether()}>Pay back on one voucher</Button>
-          <Button className="h-8" variant="ghost" onClick={() => setTicked(new Set())}>Clear</Button>
-        </div>
-      )}
-      <DataTable<Receipt> tableId="conts-petty-finance" columns={columns} rows={q.data ? q.data.receipts : null} loading={q.isLoading}
-        error={q.isError ? "The receipts did not load." : null} emptyLabel="No receipts to pay back this month." getRowKey={(r) => r.id}
-        selection={full ? {
-          selectedIds: ticked,
-          onToggle: (id: string) => setTicked((t) => { const n = new Set(t); if (n.has(id)) n.delete(id); else n.add(id); return n; }),
-          onToggleAll: (keys: string[], all: boolean) => setTicked(all ? new Set() : new Set(keys)),
-          rowLabel: (r: Receipt) => `Tick ${r.receiptNo}`,
-          isDisabled: (id: string) => !(q.data?.receipts ?? []).some((r) => r.id === id && payable(r)),
-        } : undefined} />
     </div>
   );
 }

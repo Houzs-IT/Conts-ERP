@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import type { FloatRow, PaymentRequest } from "./claimsQueries";
+import type { FloatRow, PaymentRequest, Receipt } from "./claimsQueries";
 
 // Finance's petty cash and payment requests (Conts; SOP 3.2, 6). Pinned: the overview's totals and a low float; the
 // a new float sends the account chosen, only free ones offered; a float without its account is flagged; a rejection is not sent without a reason; who sees which action.
@@ -19,12 +19,20 @@ const request: PaymentRequest = {
   createdAt: "2026-10-20T00:00:00Z", lines: [{ id: "L1", department: "supply", unitId: null, maintenanceIssueId: null, projectId: 7, accountCode: "601-0001", amountSen: 500000, description: "Cabinet deposit" }],
   files: [], vouchers: [],
 };
+/* Staff claims paid back by finance, listed on Payment requests beside the requests (chew, 16 Nov 2026). */
+let claims: Receipt[] = [];
+const claim = (status: Receipt["status"]): Receipt => ({
+  id: "R1", receiptNo: "CLM-2611-001", submitterUserId: "u5", submitterName: "Jiaxin", floatId: null, spendDate: "2026-11-08", amountSen: 10090,
+  vendorName: "OpenAI OpCo, LLC", note: null, status, rejectReason: null, checkedAt: null, checkedBy: null, topUpPvId: null, paybackPvId: null, replacesId: null,
+  source: "web", lines: [{ id: "RL1", department: "shared", unitId: null, maintenanceIssueId: null, projectId: null, accountCode: status === "CHECKED" ? "906-0000" : null, amountSen: 10090, description: "ChatGPT" }],
+  files: [], bank: { bankName: "Maybank", accountNo: "1234567890", accountName: null, fromClaim: true, differsFromSaved: false },
+});
 /* The sub-departments a line names (SOP 1.1). */
 vi.mock("./subDepartmentQueries", () => ({ useSubDepartments: () => ({ data: { subDepartments: [] } }) }));
 vi.mock("./claimsQueries", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./claimsQueries")>()),
   useFloats: () => ({ data: { floats, totals: { floatSen: 150000, balanceSen: 13000, waitingCheckSen: 4500 } }, isLoading: false, isError: false, refetch: vi.fn() }),
-  useFinanceReceipts: () => ({ data: { receipts: [] }, isLoading: false, isError: false }),
+  useFinanceReceipts: () => ({ data: { receipts: claims }, isLoading: false, isError: false }),
   useOverrides: () => ({ data: { overrides: [] } }),
   usePaymentRequests: () => ({ data: { requests: [request] }, isLoading: false, isError: false }),
   useFinanceAction: () => ({ mutateAsync: act, isPending: false }),
@@ -95,6 +103,20 @@ describe("Payment requests", () => {
     fireEvent.click(screen.getByText("Make voucher"));
     expect(await screen.findByText("opened ACE Q1:500000")).toBeTruthy();
     expect(act).not.toHaveBeenCalled();
+  });
+  it("a staff claim is on the list too: checked first, then paid by voucher with the requests (chew, 16 Nov 2026)", async () => {
+    claims = [claim("HANDED_IN")];
+    const { unmount } = render(<MemoryRouter><PaymentRequests /></MemoryRouter>);
+    expect(screen.getByText("CLM-2611-001")).toBeTruthy();
+    expect(screen.getByText("Check")).toBeTruthy();
+    expect(screen.getAllByText("Make voucher")).toHaveLength(1);
+    unmount();
+    claims = [claim("CHECKED")];
+    const Probe = () => { const st = useLocation().state as { claimsPrefill?: { lines: Array<{ staffReceiptId?: string; accountCode?: string | null }> } } | null; return <div>{`opened ${st?.claimsPrefill?.lines.map((l) => `${l.staffReceiptId}:${l.accountCode}`).join(",")}`}</div>; };
+    render(<MemoryRouter initialEntries={["/r"]}><Routes><Route path="/r" element={<PaymentRequests />} /><Route path="/scm/payment-vouchers/new" element={<Probe />} /></Routes></MemoryRouter>);
+    fireEvent.click(screen.getAllByText("Make voucher").at(-1)!);
+    expect(await screen.findByText("opened R1:906-0000")).toBeTruthy();
+    claims = [];
   });
   it("without Ledger full there is no Make voucher", () => {
     full = false;
