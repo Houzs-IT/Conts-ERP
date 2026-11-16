@@ -34,31 +34,31 @@ export interface FormatDef {
 }
 
 const no: ColumnDef = { key: 'no', label: 'No', width: 10, align: 'center' };
-const qty: ColumnDef = { key: 'qty', label: 'Qty', width: 13, align: 'center' };
+const qty: ColumnDef = { key: 'qty', label: 'Qty', width: 18, align: 'center' };
 const amount: ColumnDef = { key: 'amount', label: 'Amount (RM)', width: 29, align: 'right' };
 
 export const PRINT_FORMATS: Record<PrintFormat, FormatDef> = {
   AMOUNT: {
     format: 'AMOUNT', label: 'Amount only', hint: 'No, description, qty and amount, with page totals',
-    columns: [no, { key: 'desc', label: 'Item Description', width: 108, align: 'left' }, qty,
+    columns: [no, { key: 'desc', label: 'Item Description', width: 103, align: 'left' }, qty,
       { key: 'unit', label: 'Unit Price', width: 22, align: 'center' }, amount],
     pageTotal: 'net', netSubtotal: false,
   },
   UNIT_PRICE: {
     format: 'UNIT_PRICE', label: 'Unit price', hint: 'Unit price and amount on every line',
-    columns: [no, { key: 'desc', label: 'Item Description', width: 108, align: 'left' }, qty,
+    columns: [no, { key: 'desc', label: 'Item Description', width: 103, align: 'left' }, qty,
       { key: 'unit', label: 'Unit Price', width: 22, align: 'right' }, amount],
     pageTotal: 'net', netSubtotal: false,
   },
   DISCOUNT: {
     format: 'DISCOUNT', label: 'Discount detail', hint: 'Disc price and disc %, amount at list; total, discount, final total',
-    columns: [no, { key: 'desc', label: 'Item Description', width: 88, align: 'left' }, qty,
+    columns: [no, { key: 'desc', label: 'Item Description', width: 83, align: 'left' }, qty,
       { key: 'discPrice', label: 'Disc Price (RM)', width: 29, align: 'right' }, { key: 'disc', label: '', width: 13, align: 'center' }, amount],
     pageTotal: 'list', netSubtotal: true,
   },
   QTY_ONLY: {
     format: 'QTY_ONLY', label: 'Qty only', hint: 'No prices; one package total on the last page',
-    columns: [no, { key: 'desc', label: 'Item Description', width: 159, align: 'left' }, qty],
+    columns: [no, { key: 'desc', label: 'Item Description', width: 154, align: 'left' }, qty],
     pageTotal: 'none', netSubtotal: false,
   },
   PROMO_STANDARD: {

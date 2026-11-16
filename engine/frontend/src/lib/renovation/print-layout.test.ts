@@ -7,6 +7,7 @@
 import { describe, expect, test } from 'vitest';
 import { closingHeight, layoutDocument, pageTotalSen, summaryRows } from './print-layout';
 import { buildRows, clientContactLine, rmGrouped, splitDimensions } from './print-model';
+import { PRINT_FORMAT_LIST, PRINT_FORMATS } from './print-formats';
 import { AVA, DC_REST, dclover, doc, item, kl48, RM, section, skyline } from './print-fixtures';
 
 describe('AVA Residence B31-09, format 1 (amount only)', () => {
@@ -171,5 +172,15 @@ describe('quotation layout (QT-2611-017)', () => {
       .toBe('+60162210711 · LEBUH RAYA KUALA LUMPUR - SEREMBAN, TAMAN SERDANG RAYA');
     expect(clientContactLine({ customerPhone: '', siteAddress: 'No 1, Jalan 1\nTAMAN SERDANG RAYA, A-13-10 QUAVER RESIDENCE', building: 'QUAVER RESIDENCE', unitNo: '1' }))
       .toBe('No 1, Jalan 1, TAMAN SERDANG RAYA, A-13-10 QUAVER RESIDENCE');
+  });
+});
+
+describe('print columns', () => {
+  test('every format fills the 182 mm line and keeps Qty wide enough for a measured quantity', () => {
+    for (const format of PRINT_FORMAT_LIST) {
+      const { columns } = PRINT_FORMATS[format];
+      expect(columns.reduce((sum, column) => sum + column.width, 0), format).toBe(182);
+      expect(columns.find((column) => column.key === 'qty')?.width ?? 0, format).toBeGreaterThanOrEqual(18);
+    }
   });
 });
