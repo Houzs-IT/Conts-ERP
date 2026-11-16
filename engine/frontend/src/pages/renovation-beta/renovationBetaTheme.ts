@@ -148,6 +148,13 @@ export const TONES: { readonly [F in ToneFamily]: { readonly [K in ToneKey]: str
   return out as { readonly [F in ToneFamily]: { readonly [K in ToneKey]: string } };
 })();
 
+/** One colour per category band, in the mockup's spirit: [bar, band background, text]. */
+const BAND_BARS = ["#1A6B66", "#B4540A", "#1F4E8C", "#7A3E9D", "#2E7D32", "#A12622"] as const;
+/* The band's tint and text are mixed from its bar colour, so the same six read on a light and a dark page. */
+export const BANDS: ReadonlyArray<readonly [string, string, string]> = BAND_BARS.map((bar) => [
+  bar, `color-mix(in srgb, ${bar} 14%, transparent)`, `color-mix(in srgb, ${bar} 60%, ${BETA.ink})`,
+] as const);
+
 /** The light values as written, for what cannot read a CSS variable (a PDF, a canvas). Take the plain colours from it;
     the gradients and shadows are only for CSS. */
 export const BETA_HEX: { readonly [K in BetaToken]: string } = (() => {

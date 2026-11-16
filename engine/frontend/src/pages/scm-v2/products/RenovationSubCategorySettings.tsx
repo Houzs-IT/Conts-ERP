@@ -1,15 +1,14 @@
 /* Sub-category settings for the renovation SKU Master: add, rename, reorder and
    hide the sub-categories of a group. Groups are fixed (each sets a project stage
-   and photo rule), so are the Works trades (they follow the site stage order)
-   and the site-trade services filed under Service (aircon install, cleaning,
-   project management).
+   and photo rule), so are the site-trade services filed under Service (aircon
+   install, cleaning, project management). A Works sub-category is a site trade.
    Hide, not delete: SKUs and documents keep the code, and a hidden one still
    shows on the SKU that has it. Rules are checked server-side
    (backend scm/routes/renovation-catalog-settings.ts). */
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, Eye, EyeOff, Plus, X } from 'lucide-react';
 import { Button } from '../../../components/Button';
-import { FIXED_SUB_GROUPS, isFixedSub, subCategoriesOf, type CatalogGroup, type SubCategoryDef } from '../../../vendor/shared/renovation-catalog';
+import { isFixedSub, subCategoriesOf, type CatalogGroup, type SubCategoryDef } from '../../../vendor/shared/renovation-catalog';
 import { useAddSubCategory, useRenovationCatalog, useUpdateSubCategory } from '../../../vendor/scm/lib/renovation-catalog-queries';
 import styles from '../Products.module.css';
 
@@ -19,12 +18,11 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
   const catalog = useRenovationCatalog();
   const add = useAddSubCategory();
   const update = useUpdateSubCategory();
-  const [group, setGroup] = useState<CatalogGroup>(initialGroup && !FIXED_SUB_GROUPS.includes(initialGroup) ? initialGroup : 'BUILTIN');
+  const [group, setGroup] = useState<CatalogGroup>(initialGroup ?? 'WORKS');
   const [newLabel, setNewLabel] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const fixed = FIXED_SUB_GROUPS.includes(group);
-  const editable = catalog.canEdit && !fixed;
+  const editable = catalog.canEdit;
   const subs = subCategoriesOf(group, catalog.all);
   const busy = add.isPending || update.isPending;
 
@@ -78,12 +76,15 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
           </label>
 
           <p className="text-[12px] text-ink-secondary">
-            {fixed
-              ? 'Works trades follow the site stage order, so they cannot be changed here.'
-              : catalog.canEdit
-                ? 'Hidden sub-categories stay on the SKUs that already have them, but cannot be picked for new ones. A new group is added under Accounting > Item Groups.'
-                : 'You can view this list. Changing it needs permission to edit products.'}
+            {catalog.canEdit
+              ? 'Hidden sub-categories stay on the SKUs that already have them, but cannot be picked for new ones. A new group is added under Accounting > Item Groups.'
+              : 'You can view this list. Changing it needs permission to edit products.'}
           </p>
+          {group === 'WORKS' && catalog.canEdit && (
+            <p className="text-[12px] text-ink-secondary">
+              Each Works sub-category is a site trade. A new one gets its own site task, placed after the built-in trades. The order here is only the list order.
+            </p>
+          )}
           {catalog.query.error && (
             <p role="alert" className="text-[12px] text-red-700">
               Could not load the saved list, showing the built-in one: {errText(catalog.query.error)}

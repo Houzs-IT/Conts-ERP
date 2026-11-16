@@ -32,7 +32,7 @@ import { betaMediaApi } from "./renovationBetaMediaApi";
 import { PhotoUploadDialog, type UploadTarget } from "./BetaPhotoUpload";
 import { BetaLineMaterials } from "./BetaLineMaterials";
 import { LineApprovedDrawings } from "./BetaApprovedDrawings";
-import { BETA, TONES } from "./renovationBetaTheme";
+import { BANDS, BETA, TONES } from "./renovationBetaTheme";
 import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
@@ -49,13 +49,6 @@ import type { SoLineCoverage } from "../../vendor/scm/lib/sales-order-queries";
 import { useProjectLineStock } from "./renovationBetaStock";
 import { downloadSoPdfs } from "../scm-v2/soPdfDownload";
 import { bandParts, columnWidth, moveColumn, usePoColumns, type PoColumn } from "./renovationPoColumns";
-
-/** One colour per category band, in the mockup's spirit: [bar, band background, text]. */
-const BAND_BARS = ["#1A6B66", "#B4540A", "#1F4E8C", "#7A3E9D", "#2E7D32", "#A12622"] as const;
-/* The band's tint and text are mixed from its bar colour, so the same six read on a light and a dark page. */
-const BANDS: ReadonlyArray<readonly [string, string, string]> = BAND_BARS.map((bar) => [
-  bar, `color-mix(in srgb, ${bar} 14%, transparent)`, `color-mix(in srgb, ${bar} 60%, ${BETA.ink})`,
-] as const);
 
 const EDIT_BG = TONES.amber.soft;
 const EDIT_LINE = TONES.amber.line;

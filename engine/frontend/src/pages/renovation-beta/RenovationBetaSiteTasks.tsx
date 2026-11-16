@@ -9,12 +9,12 @@ import {
 } from "./BetaWsUi";
 import { siteTasksApi, type SiteTask, type SiteTaskStatus } from "./renovationBetaSiteTasksApi";
 import {
-  EVERYONE, SITE_TASK_TABS, STATUS_LABEL, brandOptions, groupByProject, hasNoOneOnIt, isLate, matchesFilters, tabCounts, tasksOfTab, whoLine, whoOptions,
-  type ProjectGroup, type SiteTaskTab,
+  EVERYONE, SITE_TASK_TABS, STATUS_LABEL, brandOptions, groupByProject, groupByWork, hasNoOneOnIt, isLate, matchesFilters, tabCounts, tasksOfTab, whoLine, whoOptions,
+  type ProjectGroup, type SiteTaskTab, type WorkGroupCard,
 } from "./renovationBetaSiteTasksModel";
 import { onBrandList } from "./renovationBetaHomeModel";
 import { dayMonth, mytDay } from "./renovationBetaModel";
-import { BETA, type BetaTone } from "./renovationBetaTheme";
+import { BANDS, BETA, type BetaTone } from "./renovationBetaTheme";
 
 const projectSiteHref = (projectId: number): string => `/beta/projects/${projectId}?tab=site`;
 
@@ -59,15 +59,15 @@ function BoardScreen(): ReactElement {
   );
   const hasNoTasks = board.open.length === 0 && board.history.length === 0;
   const isSearching = search.trim() !== "";
-  const [toggledProjectIds, setToggledProjectIds] = useState<ReadonlySet<number>>(new Set());
-  const isProjectOpen = (projectId: number): boolean => toggledProjectIds.has(projectId) !== isSearching;
-  const toggleProject = (projectId: number): void => setToggledProjectIds((current) => {
+  const [toggledSectionKeys, setToggledSectionKeys] = useState<ReadonlySet<string>>(new Set());
+  const isSectionOpen = (sectionKey: string): boolean => toggledSectionKeys.has(sectionKey) !== isSearching;
+  const toggleSection = (sectionKey: string): void => setToggledSectionKeys((current) => {
     const next = new Set(current);
-    if (!next.delete(projectId)) next.add(projectId);
+    if (!next.delete(sectionKey)) next.add(sectionKey);
     return next;
   });
   const changeSearch = (nextSearch: string): void => {
-    if ((nextSearch.trim() !== "") !== isSearching) setToggledProjectIds(new Set());
+    if ((nextSearch.trim() !== "") !== isSearching) setToggledSectionKeys(new Set());
     setSearch(nextSearch);
   };
 
@@ -114,7 +114,7 @@ function BoardScreen(): ReactElement {
         : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {groups.map((group) => (
-              <ProjectSection key={group.projectId} group={group} isOpen={isProjectOpen(group.projectId)} onToggle={() => toggleProject(group.projectId)} />
+              <ProjectSection key={group.projectId} group={group} isSectionOpen={isSectionOpen} onToggleSection={toggleSection} />
             ))}
           </div>
         )}
@@ -124,28 +124,36 @@ function BoardScreen(): ReactElement {
 
 interface ProjectSectionProps {
   group: ProjectGroup;
-  isOpen: boolean;
-  onToggle: () => void;
+  isSectionOpen: (sectionKey: string) => boolean;
+  onToggleSection: (sectionKey: string) => void;
 }
 
-function ProjectSection({ group, isOpen, onToggle }: ProjectSectionProps): ReactElement {
+function TaskCount({ tasks }: { tasks: readonly SiteTask[] }): ReactElement {
+  const lateCount = tasks.filter(isLate).length;
+  return (
+    <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 400, color: BETA.muted, whiteSpace: "nowrap" }}>
+      {tasks.length} task{tasks.length === 1 ? "" : "s"}
+      {lateCount > 0 && <span style={{ color: WS.red, fontWeight: 600 }}> · {lateCount} late</span>}
+    </span>
+  );
+}
+
+function ProjectSection({ group, isSectionOpen, onToggleSection }: ProjectSectionProps): ReactElement {
+  const sectionKey = `project-${group.projectId}`;
+  const isOpen = isSectionOpen(sectionKey);
   const Chevron = isOpen ? ChevronDown : ChevronRight;
-  const lateCount = group.tasks.filter(isLate).length;
-  const listId = `site-tasks-project-${group.projectId}`;
+  const listId = `site-tasks-${sectionKey}`;
   return (
     <section aria-label={group.label} style={{ background: BETA.surface, border: `1px solid ${BETA.line}`, borderRadius: 12, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "stretch", background: WS.panel }}>
-        <button type="button" aria-expanded={isOpen} aria-controls={listId} onClick={onToggle}
+        <button type="button" aria-expanded={isOpen} aria-controls={listId} onClick={() => onToggleSection(sectionKey)}
           style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8, minHeight: 48, padding: "10px 8px 10px 12px", border: 0, background: "transparent", color: "inherit", font: "inherit", textAlign: "left", cursor: "pointer" }}>
           <Chevron size={18} aria-hidden="true" style={{ flexShrink: 0, color: BETA.muted }} />
           <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 700, overflowWrap: "anywhere" }}>
             {group.label}
             {group.brand && <span style={{ fontSize: 13, fontWeight: 400, color: BETA.muted }}> · {group.brand}</span>}
           </span>
-          <span style={{ flexShrink: 0, fontSize: 13, color: BETA.muted, whiteSpace: "nowrap" }}>
-            {group.tasks.length} task{group.tasks.length === 1 ? "" : "s"}
-            {lateCount > 0 && <span style={{ color: WS.red, fontWeight: 600 }}> · {lateCount} late</span>}
-          </span>
+          <TaskCount tasks={group.tasks} />
         </button>
         <Link to={projectSiteHref(group.projectId)} aria-label={`Open ${group.label}`} title="Open project"
           style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", width: 48, color: BETA.muted, borderLeft: `1px solid ${BETA.line}` }}>
@@ -153,11 +161,49 @@ function ProjectSection({ group, isOpen, onToggle }: ProjectSectionProps): React
         </Link>
       </div>
       {isOpen && (
-        <ul id={listId} style={{ listStyle: "none", margin: 0, padding: 0 }}>
-          {group.tasks.map((task) => <li key={task.id} style={{ borderTop: `1px solid ${BETA.line}` }}><TaskRow task={task} /></li>)}
-        </ul>
+        <div id={listId}>
+          {groupByWork(group.tasks).map((card) => {
+            const cardKey = `${sectionKey}-${card.key}`;
+            return <WorkCardSection key={card.key} card={card} listId={`site-tasks-${cardKey}`} isOpen={isSectionOpen(cardKey)} onToggle={() => onToggleSection(cardKey)} />;
+          })}
+        </div>
       )}
     </section>
+  );
+}
+
+const WORK_CARD_BANDS: Record<WorkGroupCard["key"], (typeof BANDS)[number]> = {
+  works: BANDS[0],
+  builtin: BANDS[1],
+};
+
+interface WorkCardSectionProps {
+  card: WorkGroupCard;
+  listId: string;
+  isOpen: boolean;
+  onToggle: () => void;
+}
+
+function WorkCardSection({ card, listId, isOpen, onToggle }: WorkCardSectionProps): ReactElement {
+  const Chevron = isOpen ? ChevronDown : ChevronRight;
+  const [bar, tint, text] = WORK_CARD_BANDS[card.key];
+  return (
+    <div style={{ borderTop: `1px solid ${BETA.line}` }}>
+      <button type="button" aria-expanded={isOpen} aria-controls={listId} onClick={onToggle}
+        style={{
+          display: "flex", alignItems: "center", gap: 8, width: "100%", minHeight: 44, padding: "8px 14px 8px 10px", border: 0,
+          borderLeft: `4px solid ${bar}`, background: tint, color: text, font: "inherit", fontSize: 15, fontWeight: 700, textAlign: "left", cursor: "pointer",
+        }}>
+        <Chevron size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
+        <span style={{ flex: 1, minWidth: 0 }}>{card.label}</span>
+        <TaskCount tasks={card.tasks} />
+      </button>
+      {isOpen && (
+        <ul id={listId} style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          {card.tasks.map((task) => <li key={task.id} style={{ borderTop: `1px solid ${BETA.line}` }}><TaskRow task={task} /></li>)}
+        </ul>
+      )}
+    </div>
   );
 }
 

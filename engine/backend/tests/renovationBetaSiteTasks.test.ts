@@ -9,7 +9,7 @@ const TODAY = "2026-11-13";
 function taskRow(overrides: Partial<SiteTaskRow>): SiteTaskRow {
   return {
     id: 1, project_id: 7, project_code: "RN-0007", project_name: "Vortex A-12-03", building: "Vortex", unit_no: "A-12-03", brand: null,
-    label: "Painting", fulfilment_kind: "internal", state: "pending", supplier_name: null, crew: null,
+    label: "Painting", stage_key: "hardware", fulfilment_kind: "internal", state: "pending", supplier_name: null, crew: null,
     planned_start: null, planned_end: null, actual_start: null, actual_end: null, po_fully_received: null, last_photo_at: null,
     ...overrides,
   };
@@ -66,6 +66,16 @@ describe("site task board", () => {
     expect(task).toMatchObject({ brand: "Dream Crafter", isSubcontracted: false, supplierName: null, crew: [{ id: 3, name: "Ali" }], status: "overdue" });
   });
 
+  test("furniture-stage tasks go on the Built-in card; every other stage goes on Works", () => {
+    const board = buildSiteTaskBoard([
+      taskRow({ id: 1, stage_key: "hardware" }),
+      taskRow({ id: 2, stage_key: "furniture" }),
+      taskRow({ id: 3, stage_key: "handover" }),
+      taskRow({ id: 4, stage_key: "soft_furnishing" }),
+    ], TODAY);
+    expect(board.open.map((task) => [task.id, task.workGroup])).toEqual([[1, "works"], [2, "builtin"], [3, "works"], [4, "works"]]);
+  });
+
   test("a full page of rows says the list was cut short", () => {
     const rows = Array.from({ length: SITE_TASK_LIMIT }, (_, index) => taskRow({ id: index + 1 }));
     expect(buildSiteTaskBoard(rows, TODAY).isTruncated).toBe(true);
@@ -93,6 +103,7 @@ describe("GET /api/beta/site-tasks", () => {
     expect(ran).toHaveLength(1);
     expect(ran[0].sql).toContain("p.project_kind = 'renovation' AND p.archived_at IS NULL");
     expect(ran[0].sql).toContain("p.brand");
+    expect(ran[0].sql).toContain("t.stage_key");
     expect(ran[0].sql).toMatch(/p\.company_id\s*=\s*1/);
     expect(ran[0].args).toEqual([MEDIA_ACTION]);
   });

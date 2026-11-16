@@ -6,9 +6,9 @@
 // born under Accounting > Item Groups (accounting-item-groups.ts), which extends the
 // category enum and adds it to this list. Sub-categories can be added, renamed, reordered
 // and hidden, never deleted: SKUs, PO/GRN lines and procurement dates store the
-// code. WORKS sub-categories are the site trades and stay fixed too
-// (FIXED_SUB_GROUPS), as do the site-trade services under SERVICE
-// (isFixedSub). The list is shared by every company, like the table.
+// code. A WORKS sub-category is a site trade; one added here gets its task laid
+// out after the built-in trade order. The site-trade services under SERVICE stay
+// fixed (isFixedSub). The list is shared by every company, like the table.
 // Writes need the same permission as editing a SKU (canWriteScmConfig).
 //
 // Units (migration 0118) are edited here too. A unit's code is what prints and
@@ -24,7 +24,6 @@ import { canWriteScmConfig } from '../lib/houzs-perms';
 import type { Env, Variables } from '../env';
 import {
   CATALOG_GROUPS,
-  FIXED_SUB_GROUPS,
   isCatalogGroup,
   isFixedSub,
   subCategoryCodeOf,
@@ -32,6 +31,7 @@ import {
   type SubCategoryDef,
   type UomDef,
 } from '../shared/renovation-catalog';
+import { taskCategoryDef } from '../shared/renovation-stages';
 import type { RenoDb } from '../lib/renovation-db';
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
@@ -130,13 +130,14 @@ renovationCatalogSettings.post('/sub-categories', async (c) => {
   let groups: Array<{ code: string; label: string }>;
   try { groups = await loadCategoryGroups(sb); } catch (e) { return c.json({ error: 'load_failed', message: (e as Error).message }, 500); }
   if (!isCatalogGroup(group) && !groups.some((g) => g.code === group)) return refuse(c, 400, 'invalid_group', 'Pick a group.');
-  if ((FIXED_SUB_GROUPS as readonly string[]).includes(group)) return refuse(c, 400, 'group_fixed', 'Works trades follow the site stage order and cannot be changed here.');
   const label = cleanLabel(b.label);
   if (!label) return refuse(c, 400, 'invalid_label', 'Type a name of up to 60 characters.');
   const code = subCategoryCodeOf(label);
   if (code.length < 2 || !/^[A-Z]/.test(code)) return refuse(c, 400, 'invalid_label', 'The name needs to start with a letter.');
   /* A code that is also a category (SOFA, SERVICE, ...) would read as a legacy category on import. */
   if ((CATALOG_GROUPS as readonly string[]).includes(code) || groups.some((g) => g.code === code)) return refuse(c, 409, 'code_taken', `"${label}" is already a group name.`);
+  const taskCategory = group === 'WORKS' ? taskCategoryDef(code) : null;
+  if (taskCategory) return refuse(c, 409, 'task_category_taken', `"${label}" is already the site task "${taskCategory.label}". Pick another name for the trade.`);
 
   let all: SubCategoryDef[];
   try { all = await loadSubCategories(sb); } catch (e) { return c.json({ error: 'load_failed', message: (e as Error).message }, 500); }
@@ -166,7 +167,7 @@ renovationCatalogSettings.patch('/sub-categories/:code', async (c) => {
   try { all = await loadSubCategories(sb); } catch (e) { return c.json({ error: 'load_failed', message: (e as Error).message }, 500); }
   const cur = all.find((s) => s.code === code);
   if (!cur) return refuse(c, 404, 'not_found', 'That sub-category does not exist.');
-  if (isFixedSub(cur.group, cur.code)) return refuse(c, 400, 'group_fixed', 'Works trades follow the site stage order and cannot be changed here.');
+  if (isFixedSub(cur.group, cur.code)) return refuse(c, 400, 'group_fixed', `"${cur.label}" works as a site trade and cannot be changed here.`);
 
   const patch: Record<string, unknown> = {};
   if (b.label !== undefined) {

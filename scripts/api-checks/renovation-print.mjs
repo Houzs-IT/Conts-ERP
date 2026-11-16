@@ -22,7 +22,7 @@ const out = await build({
     contents: `export * from './src/lib/renovation/print-fixtures.ts';
 export { renderRenovationDoc } from './src/lib/renovation/renovation-doc-pdf.ts';
 export { pageTotalSen, summaryRows } from './src/lib/renovation/print-layout.ts';
-export { rmPlain } from './src/lib/renovation/print-model.ts';
+export { rmGrouped } from './src/lib/renovation/print-model.ts';
 export { jsPDF } from 'jspdf';`,
     resolveDir: fe, loader: 'ts',
   },
@@ -53,7 +53,7 @@ for (const [name, d, density] of jobs) {
   const pdf = new M.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
   const layout = M.renderRenovationDoc(pdf, d, density);
   writeFileSync(join(outDir, `${name}.pdf`), Buffer.from(pdf.output('arraybuffer')));
-  const totals = layout.pages.map((p) => { const t = M.pageTotalSen(d, p); return t === null ? '-' : M.rmPlain(t); });
-  const summary = M.summaryRows(d, layout.closing.summary).map((r) => `${r.label} ${M.rmPlain(r.sen)}`).join(' / ');
+  const totals = layout.pages.map((p) => { const t = M.pageTotalSen(d, p); return t === null ? '-' : M.rmGrouped(t); });
+  const summary = M.summaryRows(d, layout.closing.summary).map((r) => `${r.label} ${M.rmGrouped(r.sen)}`).join(' / ');
   console.log(`${name}: ${layout.pages.length} page(s); page totals ${totals.join(' / ')}; ${summary}`);
 }

@@ -14,7 +14,7 @@ const db = (c: Ctx): Db => c.env.DB as unknown as Db;
 
 const SITE_TASKS_SQL = (companyScope: string): string =>
   `SELECT t.id::int AS id, t.project_id::int AS project_id, p.code AS project_code, p.name AS project_name, p.building, p.unit_no, p.brand,
-          t.label, t.fulfilment_kind, t.state, sup.name AS supplier_name,
+          t.label, t.stage_key, t.fulfilment_kind, t.state, sup.name AS supplier_name,
           (SELECT json_agg(json_build_object('id', pp.id::int, 'name', pp.name) ORDER BY pp.name)
              FROM project_trade_task_assignees a JOIN project_people pp ON pp.id = a.person_id WHERE a.task_id = t.id) AS crew,
           t.planned_start::text AS planned_start, t.planned_end::text AS planned_end,
