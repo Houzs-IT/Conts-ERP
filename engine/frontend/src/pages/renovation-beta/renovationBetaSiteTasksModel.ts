@@ -1,4 +1,4 @@
-import type { SiteTask, SiteTaskBoard, SiteTaskStatus } from "./renovationBetaSiteTasksApi";
+import type { SiteTask, SiteTaskBoard, SiteTaskStatus, SiteTaskWorkGroup } from "./renovationBetaSiteTasksApi";
 
 export const SITE_TASK_TABS = [
   ["open", "All open"],
@@ -97,6 +97,23 @@ export function groupByProject(tasks: readonly SiteTask[]): ProjectGroup[] {
     groups.set(task.projectId, group);
   }
   return [...groups.values()];
+}
+
+const WORK_GROUP_LABELS: ReadonlyArray<readonly [SiteTaskWorkGroup, string]> = [
+  ["works", "Works"],
+  ["builtin", "Built-in"],
+];
+
+export interface WorkGroupCard {
+  key: SiteTaskWorkGroup;
+  label: string;
+  tasks: SiteTask[];
+}
+
+export function groupByWork(tasks: readonly SiteTask[]): WorkGroupCard[] {
+  return WORK_GROUP_LABELS
+    .map(([key, label]) => ({ key, label, tasks: tasks.filter((task) => task.workGroup === key) }))
+    .filter((card) => card.tasks.length > 0);
 }
 
 export function brandOptions(tasks: readonly SiteTask[]): string[] {

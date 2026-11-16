@@ -2,6 +2,14 @@ import { tradeTaskStatus, type TaskStatus } from "./tradeTasks";
 
 export const SITE_TASK_LIMIT = 3000;
 
+export type SiteTaskWorkGroup = "works" | "builtin";
+
+const BUILT_IN_STAGES: ReadonlySet<string> = new Set(["furniture"]);
+
+export function workGroupOfStage(stageKey: string): SiteTaskWorkGroup {
+  return BUILT_IN_STAGES.has(stageKey) ? "builtin" : "works";
+}
+
 export interface SiteTaskCrewMember {
   id: number;
   name: string;
@@ -16,6 +24,7 @@ export interface SiteTaskRow {
   unit_no: string | null;
   brand: string | null;
   label: string | null;
+  stage_key: string;
   fulfilment_kind: string;
   state: string;
   supplier_name: string | null;
@@ -37,6 +46,7 @@ export interface SiteTask {
   unitNo: string | null;
   brand: string | null;
   label: string;
+  workGroup: SiteTaskWorkGroup;
   isSubcontracted: boolean;
   supplierName: string | null;
   crew: SiteTaskCrewMember[];
@@ -68,6 +78,7 @@ export function siteTaskOf(row: SiteTaskRow, today: string): SiteTask {
     unitNo: row.unit_no,
     brand: row.brand?.trim() || null,
     label: row.label ?? "Site task",
+    workGroup: workGroupOfStage(row.stage_key),
     isSubcontracted,
     supplierName: isSubcontracted ? row.supplier_name : null,
     crew: row.crew ?? [],

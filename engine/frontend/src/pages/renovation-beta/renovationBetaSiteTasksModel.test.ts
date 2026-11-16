@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
 import type { SiteTask, SiteTaskBoard } from "./renovationBetaSiteTasksApi";
-import { EVERYONE, brandOptions, groupByProject, matchesFilters, tabCounts, tasksOfTab, whoLine, whoOptions } from "./renovationBetaSiteTasksModel";
+import { EVERYONE, brandOptions, groupByProject, groupByWork, matchesFilters, tabCounts, tasksOfTab, whoLine, whoOptions } from "./renovationBetaSiteTasksModel";
 
 function siteTask(overrides: Partial<SiteTask>): SiteTask {
   return {
     id: 1, projectId: 7, projectCode: "RN-0007", projectName: "Vortex A-12-03", building: "Vortex", unitNo: "A-12-03", brand: null,
-    label: "Painting", isSubcontracted: false, supplierName: null, crew: [], plannedStart: null, plannedEnd: null,
+    label: "Painting", workGroup: "works", isSubcontracted: false, supplierName: null, crew: [], plannedStart: null, plannedEnd: null,
     finishedOn: null, lastPhotoAt: null, status: "planned",
     ...overrides,
   };
@@ -58,6 +58,12 @@ describe("site task filters", () => {
 
   test("tasks group under their project in first-seen order", () => {
     expect(groupByProject(board.open).map((group) => [group.label, group.brand, group.tasks.length])).toEqual([["Vortex A-12-03", null, 4], ["Arte B-08-01", "The Conts", 1]]);
+  });
+
+  test("a project's tasks split into Works then Built-in, and an empty card is left out", () => {
+    const tasks = [siteTask({ id: 1, workGroup: "builtin" }), siteTask({ id: 2 }), siteTask({ id: 3, workGroup: "builtin" })];
+    expect(groupByWork(tasks).map((card) => [card.label, card.tasks.map((task) => task.id)])).toEqual([["Works", [2]], ["Built-in", [1, 3]]]);
+    expect(groupByWork([siteTask({ id: 4 })]).map((card) => card.key)).toEqual(["works"]);
   });
 
   test("brands list each named brand once, sorted; search finds a brand", () => {
