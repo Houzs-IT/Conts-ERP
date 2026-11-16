@@ -21,6 +21,8 @@ export interface RenoLine {
   photoCount: number;
 }
 
+export type RenoTradeState = 'open' | 'in_progress' | 'done';
+
 export interface RenoPlan {
   taskId: number;
   planKey: string;
@@ -28,6 +30,21 @@ export interface RenoPlan {
   plannedStart: string | null;
   plannedEnd: string | null;
   status: RenoPlanStatus;
+  state: RenoTradeState;
+  startedOn: string | null;
+}
+
+export interface RenoTradeDay {
+  day: number;
+  date: string;
+  updateCount: number;
+  photoCount: number;
+  by: string[];
+}
+
+export interface RenoTradeLog {
+  planKey: string;
+  days: RenoTradeDay[];
 }
 
 export interface RenoProject {
@@ -37,6 +54,7 @@ export interface RenoProject {
   brand: string | null;
   lines: RenoLine[];
   plans: RenoPlan[];
+  tradeLog: RenoTradeLog[];
 }
 
 export interface RenoJobsResponse {
@@ -51,6 +69,18 @@ export interface RenoProgressResponse {
   doneQty: number;
   completedTaskIds: number[];
   photoCount: number;
+}
+
+export interface RenoTradeStartResponse {
+  ok: true;
+  startedOn: string;
+}
+
+export interface RenoTradeFinishResponse {
+  ok: true;
+  linesCompleted: number;
+  closedTaskIds: number[];
+  waitingForReceipt: boolean;
 }
 
 export interface RenoTradeGroup {
@@ -83,6 +113,7 @@ export const MAX_PROOF_PHOTOS = 10;
 const PHOTO_LONGEST_SIDE = 1600;
 const PHOTO_QUALITY = 0.8;
 const KUALA_LUMPUR_OFFSET_MS = 8 * 60 * 60 * 1000;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const roundCount = (value: number): number => Math.round(value * 100) / 100;
 
@@ -152,13 +183,22 @@ export function sortedLines(lines: RenoLine[]): RenoLine[] {
 
 const STATUS_URGENCY: RenoPlanStatus[] = ['overdue', 'late_start', 'in_progress', 'planned', 'unscheduled', 'done', 'skipped'];
 
+export function mergeTradeState(plans: Pick<RenoPlan, 'status' | 'state'>[]): RenoTradeState {
+  const live = plans.filter(plan => plan.status !== 'skipped');
+  if (live.length > 0 && live.every(plan => plan.state === 'done')) return 'done';
+  return live.some(plan => plan.state !== 'open') ? 'in_progress' : 'open';
+}
+
 export function mergePlans(plans: RenoPlan[]): RenoPlan | null {
   const [first] = plans;
   if (!first) return null;
+  const live = plans.filter(plan => plan.status !== 'skipped');
+  const taskId = (live.find(plan => plan.state !== 'done') ?? live[0] ?? first).taskId;
+  const startedOn = plans.flatMap(plan => (plan.startedOn ? [plan.startedOn] : [])).sort()[0] ?? null;
   const starts = plans.flatMap(plan => (plan.plannedStart ? [plan.plannedStart] : [])).sort();
   const ends = plans.flatMap(plan => (plan.plannedEnd ? [plan.plannedEnd] : [])).sort();
   const status = STATUS_URGENCY.find(candidate => plans.some(plan => plan.status === candidate)) ?? first.status;
-  return { ...first, status, plannedStart: starts[0] ?? null, plannedEnd: ends[ends.length - 1] ?? null };
+  return { ...first, taskId, state: mergeTradeState(plans), startedOn, status, plannedStart: starts[0] ?? null, plannedEnd: ends[ends.length - 1] ?? null };
 }
 
 function groupByTrade(lines: RenoLine[], plans: RenoPlan[], fallbackLabel: string): RenoTradeGroup[] {
@@ -193,6 +233,22 @@ export function groupByRoom(project: Pick<RenoProject, 'lines' | 'plans'>): Reno
       carpentry: builtInLines.length > 0 ? { key: 'carpentry', label: CARPENTRY_LABEL, plan: carpentryPlan, lines: builtInLines } : null,
     };
   });
+}
+
+export function tradeDayNumber(startedOn: string | null, now: number = Date.now()): number | null {
+  const started = startedOn ? Date.parse(`${startedOn.slice(0, 10)}T00:00:00Z`) : Number.NaN;
+  if (!Number.isFinite(started)) return null;
+  const today = Date.parse(`${new Date(now + KUALA_LUMPUR_OFFSET_MS).toISOString().slice(0, 10)}T00:00:00Z`);
+  return Math.max(1, Math.round((today - started) / MS_PER_DAY) + 1);
+}
+
+export function linesToFinish(lines: RenoLine[]): RenoLine[] {
+  return lines.filter(line => !isLineDone(line));
+}
+
+export function latestDoneDay(lines: Pick<RenoLine, 'doneAt'>[]): string | null {
+  const latest = lines.flatMap(line => (line.doneAt ? [line.doneAt] : [])).sort().pop();
+  return formatDoneDay(latest ?? null);
 }
 
 export function summarizeProject(project: Pick<RenoProject, 'lines' | 'plans'>): RenoProjectSummary {

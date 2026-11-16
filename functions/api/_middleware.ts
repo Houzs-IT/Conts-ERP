@@ -76,6 +76,7 @@ const RENOVATION_ALLOWED: [string, RegExp][] = [
 const RENOVATOR_ONLY: [string, RegExp][] = [
   ['GET', /^\/api\/field\/site-work\/jobs$/],
   ['POST', /^\/api\/field\/site-work\/lines\/[A-Za-z0-9-]+\/progress$/],
+  ['POST', /^\/api\/field\/site-work\/trades\/[0-9]+\/(start|finish)$/],
 ];
 
 const FIELD_ALLOWED: [string, RegExp][] = [

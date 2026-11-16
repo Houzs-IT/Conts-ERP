@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { clampDoneCount, doneText, isLineDone, formatPlanDates, formatDoneDay, groupByRoom, parseCount, summarizeProject } = await import('./renoJobs.ts');
+const { clampDoneCount, doneText, isLineDone, formatPlanDates, formatDoneDay, groupByRoom, parseCount, summarizeProject, tradeDayNumber, linesToFinish, latestDoneDay } = await import('./renoJobs.ts');
 
 const line = (over) => ({
   id: 'l1', itemCode: 'W-1', name: 'Tile floor', remark: null, qty: 3, uom: 'unit', room: 'Kitchen', group: 'works', isOnPo: false,
   planKey: 'tiling', tradeLabel: 'Tiling', onSiteBy: null, doneQty: 0, doneAt: null, isTradeClosed: false, photoCount: 0, ...over,
 });
-const plan = (over) => ({ taskId: 1, planKey: 'tiling', label: 'Tiling', plannedStart: '2026-11-12', plannedEnd: '2026-11-20', status: 'planned', ...over });
+const plan = (over) => ({ taskId: 1, planKey: 'tiling', label: 'Tiling', plannedStart: '2026-11-12', plannedEnd: '2026-11-20', status: 'planned', state: 'open', startedOn: null, ...over });
 
 test('a count stays between 0 and the line qty, and junk becomes 0', () => {
   assert.equal(clampDoneCount(5, 3), 3);
@@ -81,7 +81,7 @@ test('a trade with several plans shows its most urgent status and its latest end
   const project = {
     lines: [line({ planKey: 'electrical', tradeLabel: 'Electrical' })],
     plans: [
-      plan({ taskId: 1, planKey: 'electrical', status: 'done', plannedStart: '2026-11-01', plannedEnd: '2026-11-05' }),
+      plan({ taskId: 1, planKey: 'electrical', status: 'done', state: 'done', plannedStart: '2026-11-01', plannedEnd: '2026-11-05' }),
       plan({ taskId: 2, planKey: 'electrical', status: 'late_start', plannedStart: '2026-11-10', plannedEnd: '2026-11-25' }),
       plan({ taskId: 3, planKey: 'electrical', status: 'planned', plannedStart: '2026-11-20', plannedEnd: '2026-11-22' }),
     ],
@@ -90,4 +90,28 @@ test('a trade with several plans shows its most urgent status and its latest end
   assert.equal(kitchen.trades[0].plan?.status, 'late_start');
   assert.equal(kitchen.trades[0].plan?.plannedEnd, '2026-11-25');
   assert.equal(kitchen.trades[0].plan?.plannedStart, '2026-11-01');
+});
+
+test('a trade is open until a task starts and done only when every live task is done', () => {
+  const merged = plans => groupByRoom({ lines: [line()], plans })[0].trades[0].plan;
+  assert.equal(merged([plan()]).state, 'open');
+  assert.equal(merged([plan({ state: 'in_progress', startedOn: '2026-11-14' })]).state, 'in_progress');
+  assert.equal(merged([plan({ state: 'done' }), plan({ taskId: 2 })]).state, 'in_progress');
+  assert.equal(merged([plan({ state: 'done' }), plan({ taskId: 2, status: 'skipped' })]).state, 'done');
+  assert.equal(merged([plan({ taskId: 1, state: 'done' }), plan({ taskId: 2, startedOn: '2026-11-10' })]).taskId, 2);
+  assert.equal(merged([plan({ startedOn: '2026-11-14' }), plan({ taskId: 2, startedOn: '2026-11-12' })]).startedOn, '2026-11-12');
+});
+
+test('the day number counts the start day as Day 1 in Kuala Lumpur time', () => {
+  assert.equal(tradeDayNumber('2026-11-14', Date.parse('2026-11-14T02:00:00Z')), 1);
+  assert.equal(tradeDayNumber('2026-11-14', Date.parse('2026-11-16T01:00:00Z')), 3);
+  assert.equal(tradeDayNumber('2026-11-14', Date.parse('2026-11-15T17:00:00Z')), 3);
+  assert.equal(tradeDayNumber(null), null);
+});
+
+test('finishing lists only the lines not yet full, and the finish day is the latest done line', () => {
+  const lines = [line({ id: 'a', doneQty: 3 }), line({ id: 'b', doneQty: 1 }), line({ id: 'c' })];
+  assert.deepEqual(linesToFinish(lines).map(item => item.id), ['b', 'c']);
+  assert.equal(latestDoneDay([{ doneAt: '2026-11-14T02:00:00Z' }, { doneAt: '2026-11-15T17:30:00Z' }, { doneAt: null }]), '16/11');
+  assert.equal(latestDoneDay([{ doneAt: null }]), null);
 });

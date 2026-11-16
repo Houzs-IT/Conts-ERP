@@ -7,14 +7,18 @@ import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { color, radius, text, tone } from '../../theme';
 import { usePortalText } from '../../lib/portalI18n';
 import {
-  CARPENTRY_LABEL, NO_ROOM_LABEL, WORKS_LABEL, formatCount, formatDoneDay, formatPlanDates, groupByRoom, isLineDone, isPlanLate, summarizeProject,
-  type RenoJobsResponse, type RenoLine, type RenoPlan, type RenoProgressResponse, type RenoProject, type RenoRoomGroup, type RenoTradeGroup,
+  CARPENTRY_LABEL, NO_ROOM_LABEL, WORKS_LABEL, formatCount, formatDayMonth, formatDoneDay, formatPlanDates, groupByRoom, isLineDone, isPlanLate, latestDoneDay, summarizeProject, tradeDayNumber,
+  type RenoJobsResponse, type RenoLine, type RenoPlan, type RenoProgressResponse, type RenoProject, type RenoRoomGroup, type RenoTradeDay, type RenoTradeFinishResponse,
+  type RenoTradeGroup, type RenoTradeStartResponse,
 } from '../../lib/renoJobs';
 import RenoJobSheet from './RenoJobSheet';
+import RenoTradeSheet, { type RenoTradeMode } from './RenoTradeSheet';
 
 const NOTICE_MS = 8000;
 const NO_BRAND_CODE = 'NO_BRAND';
 const NOTICE_CLEARANCE = 150;
+const VISIBLE_DAYS = 3;
+const TRADE_BUTTON_HEIGHT = 48;
 
 interface LoadFailure {
   code: string;
@@ -28,11 +32,26 @@ interface SavedNotice {
   qty: number;
 }
 
-interface ClosedNotice {
-  kind: 'closed';
+interface TradeNotice {
+  kind: 'started' | 'finished';
+  label: string;
 }
 
-type Notice = SavedNotice | ClosedNotice;
+type Notice = SavedNotice | TradeNotice;
+
+interface TradeSheetState {
+  mode: RenoTradeMode;
+  trade: RenoTradeGroup;
+  label: string;
+}
+
+interface TradeActions {
+  canUpdate: boolean;
+  waitingKeys: ReadonlySet<string>;
+  onUpdate: (line: RenoLine) => void;
+  onStart: (trade: RenoTradeGroup, label: string) => void;
+  onFinish: (trade: RenoTradeGroup, label: string) => void;
+}
 
 const CARD: CSSProperties = {
   background: color.card, border: `1px solid ${color.border}`, borderRadius: radius.card, boxShadow: 'var(--shadow-card)', boxSizing: 'border-box',
@@ -84,25 +103,70 @@ function LineCard({ line, canUpdate, onUpdate }: { line: RenoLine; canUpdate: bo
   );
 }
 
-function TradeSection({ trade, canUpdate, onUpdate }: { trade: RenoTradeGroup; canUpdate: boolean; onUpdate: (line: RenoLine) => void }) {
+function DayLog({ days }: { days: RenoTradeDay[] }) {
   const t = usePortalText().renoJobs;
-  const dates = trade.plan ? formatPlanDates(trade.plan) : null;
+  const [isAll, setIsAll] = useState(false);
+  if (days.length === 0) return null;
+  const shown = isAll ? days : days.slice(0, VISIBLE_DAYS);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {shown.map(day => (
+        <span key={day.date} style={{ fontSize: text.copy, color: color.inkSecondary, overflowWrap: 'anywhere' }}>
+          {t.dayLog(day.day, formatDayMonth(day.date) ?? day.date, day.photoCount, day.by.join(', '))}
+        </span>
+      ))}
+      {days.length > VISIBLE_DAYS && (
+        <Button variant="tertiary" size="touch" onClick={() => setIsAll(open => !open)} style={{ alignSelf: 'flex-start' }}>{isAll ? t.showLess : t.showAll}</Button>
+      )}
+    </div>
+  );
+}
+
+function TradeSection({ trade, days, actions }: { trade: RenoTradeGroup; days: RenoTradeDay[]; actions: TradeActions }) {
+  const t = usePortalText().renoJobs;
+  const { canUpdate, waitingKeys, onUpdate, onStart, onFinish } = actions;
+  const { plan } = trade;
+  const dates = plan ? formatPlanDates(plan) : null;
   const label = trade.label === CARPENTRY_LABEL ? t.carpentry : trade.label === WORKS_LABEL ? t.works : trade.label;
+  const isLive = plan !== null && plan.status !== 'skipped';
+  const state = isLive ? plan.state : null;
+  const isWaiting = plan !== null && waitingKeys.has(plan.planKey);
+  const dayNumber = tradeDayNumber(plan?.startedOn ?? null);
+  const startedDay = formatDayMonth(plan?.startedOn ?? null);
+  const finishedDay = latestDoneDay(trade.lines);
+  const statusText = state === 'in_progress'
+    ? [t.inProgress, dayNumber === null ? null : t.dayNumber(dayNumber), startedDay ? t.startedOn(startedDay) : null].filter(Boolean).join(' · ')
+    : state === 'done'
+      ? (finishedDay ? t.finishedOn(finishedDay) : t.done)
+      : state === 'open' ? t.notStarted : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          <span style={{ fontSize: text.heading, fontWeight: 700, color: color.ink }}>{label}</span>
+          <span style={{ fontSize: text.heading, fontWeight: 700, color: color.ink, overflowWrap: 'anywhere' }}>{label}</span>
           {dates && <span style={{ fontSize: text.meta, color: color.textMuted }}>{dates}</span>}
         </div>
-        <PlanChip plan={trade.plan} />
+        <PlanChip plan={plan} />
       </div>
+      {statusText && <span style={{ fontSize: text.copy, fontWeight: 600, color: state === 'done' ? tone.success.fg : color.ink, overflowWrap: 'anywhere' }}>{statusText}</span>}
+      {state === 'in_progress' && <DayLog days={days} />}
+      {isWaiting && state === 'in_progress' && <span role="note" style={{ fontSize: text.copy, color: tone.info.fg, overflowWrap: 'anywhere' }}>{t.waitingReceipt}</span>}
+      {canUpdate && state === 'open' && (
+        <Button variant="primary" size="touch" onClick={() => onStart(trade, label)} style={{ width: '100%', minHeight: TRADE_BUTTON_HEIGHT }}>{t.startWork}</Button>
+      )}
+      {canUpdate && state === 'in_progress' && !isWaiting && (
+        <Button variant="primary" size="touch" onClick={() => onFinish(trade, label)} style={{ width: '100%', minHeight: TRADE_BUTTON_HEIGHT }}>{t.finishTrade(label)}</Button>
+      )}
       {trade.lines.map(line => <LineCard key={line.id} line={line} canUpdate={canUpdate} onUpdate={onUpdate} />)}
     </div>
   );
 }
 
-function RoomSection({ room, isOpenAtStart, canUpdate, onUpdate }: { room: RenoRoomGroup; isOpenAtStart: boolean; canUpdate: boolean; onUpdate: (line: RenoLine) => void }) {
+function daysOf(tradeLog: RenoProject['tradeLog'], trade: RenoTradeGroup): RenoTradeDay[] {
+  return tradeLog.find(entry => entry.planKey === trade.plan?.planKey)?.days ?? [];
+}
+
+function RoomSection({ room, tradeLog, isOpenAtStart, actions }: { room: RenoRoomGroup; tradeLog: RenoProject['tradeLog']; isOpenAtStart: boolean; actions: TradeActions }) {
   const t = usePortalText().renoJobs;
   const [isOpen, setIsOpen] = useState(isOpenAtStart);
   const doneCount = room.lines.filter(isLineDone).length;
@@ -116,8 +180,8 @@ function RoomSection({ room, isOpenAtStart, canUpdate, onUpdate }: { room: RenoR
       </button>
       {isOpen && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {room.trades.map(trade => <TradeSection key={trade.key} trade={trade} canUpdate={canUpdate} onUpdate={onUpdate} />)}
-          {room.carpentry && <TradeSection trade={room.carpentry} canUpdate={canUpdate} onUpdate={onUpdate} />}
+          {room.trades.map(trade => <TradeSection key={trade.key} trade={trade} days={daysOf(tradeLog, trade)} actions={actions} />)}
+          {room.carpentry && <TradeSection trade={room.carpentry} days={daysOf(tradeLog, room.carpentry)} actions={actions} />}
         </div>
       )}
     </section>
@@ -141,7 +205,7 @@ function ProjectCard({ project, onOpen }: { project: RenoProject; onOpen: () => 
   );
 }
 
-function ProjectView({ project, canUpdate, failureText, onBack, onUpdate }: { project: RenoProject; canUpdate: boolean; failureText: string | null; onBack: () => void; onUpdate: (line: RenoLine) => void }) {
+function ProjectView({ project, actions, failureText, onBack }: { project: RenoProject; actions: TradeActions; failureText: string | null; onBack: () => void }) {
   const t = usePortalText().renoJobs;
   const rooms = groupByRoom(project);
   return (
@@ -154,7 +218,7 @@ function ProjectView({ project, canUpdate, failureText, onBack, onUpdate }: { pr
         <h1 style={{ margin: 0, fontSize: text.title, fontWeight: 700, color: color.ink, overflowWrap: 'anywhere', minWidth: 0 }}>{project.name}</h1>
       </div>
       {failureText && <span role="alert" style={{ fontSize: text.copy, color: tone.critical.fg }}>{failureText}</span>}
-      {rooms.map((room, index) => <RoomSection key={room.room} room={room} isOpenAtStart={index === 0} canUpdate={canUpdate} onUpdate={onUpdate} />)}
+      {rooms.map((room, index) => <RoomSection key={room.room} room={room} tradeLog={project.tradeLog} isOpenAtStart={index === 0} actions={actions} />)}
     </>
   );
 }
@@ -167,6 +231,8 @@ export default function RenoJobsPage() {
   const [failure, setFailure] = useState<LoadFailure | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sheetLine, setSheetLine] = useState<RenoLine | null>(null);
+  const [tradeSheet, setTradeSheet] = useState<TradeSheetState | null>(null);
+  const [waitingKeys, setWaitingKeys] = useState<ReadonlySet<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -185,7 +251,7 @@ export default function RenoJobsPage() {
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
-    if (notice?.kind !== 'saved') return undefined;
+    if (!notice) return undefined;
     const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
     return () => window.clearTimeout(timer);
   }, [notice]);
@@ -204,9 +270,7 @@ export default function RenoJobsPage() {
       const result = await api.post<RenoProgressResponse>(`/field/site-work/lines/${encodeURIComponent(line.id)}/progress`, form);
       patchDoneQty(line.id, result.doneQty, result.photoCount);
       setSheetLine(null);
-      setNotice(result.completedTaskIds.length > 0
-        ? { kind: 'closed' }
-        : { kind: 'saved', label: line.remark?.trim() || line.name, doneQty: result.doneQty, qty: line.qty });
+      setNotice({ kind: 'saved', label: line.remark?.trim() || line.name, doneQty: result.doneQty, qty: line.qty });
       void load();
     } catch (error) {
       setSheetError(errorMessage(error));
@@ -215,8 +279,42 @@ export default function RenoJobsPage() {
     }
   };
 
+  const submitTrade = async ({ mode, trade, label }: TradeSheetState, photos: File[]): Promise<void> => {
+    const taskId = trade.plan?.taskId;
+    if (taskId === undefined) return;
+    setIsSaving(true);
+    setSheetError(null);
+    try {
+      const form = new FormData();
+      photos.forEach(photo => form.append('photo', photo, photo.name));
+      const path = `/field/site-work/trades/${taskId}/${mode}`;
+      if (mode === 'finish') {
+        const result = await api.post<RenoTradeFinishResponse>(path, form);
+        const planKey = trade.plan?.planKey;
+        if (result.waitingForReceipt && planKey) setWaitingKeys(current => new Set(current).add(planKey));
+      } else {
+        await api.post<RenoTradeStartResponse>(path, form);
+      }
+      setTradeSheet(null);
+      setNotice({ kind: mode === 'finish' ? 'finished' : 'started', label });
+      void load();
+    } catch (error) {
+      setSheetError(errorMessage(error));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const actions: TradeActions = {
+    canUpdate: data?.areTicksReady ?? false,
+    waitingKeys,
+    onUpdate: line => { setSheetError(null); setSheetLine(line); },
+    onStart: (trade, label) => { setSheetError(null); setTradeSheet({ mode: 'start', trade, label }); },
+    onFinish: (trade, label) => { setSheetError(null); setTradeSheet({ mode: 'finish', trade, label }); },
+  };
+
   const openProject = data?.projects.find(project => String(project.id) === openProjectId) ?? null;
-  const canUpdate = data?.areTicksReady ?? false;
+  const { canUpdate } = actions;
 
   const body = ((): ReactNode => {
     if (isLoading && !data) {
@@ -229,7 +327,7 @@ export default function RenoJobsPage() {
       return <EmptyState icon="CircleAlert" title={t.loadFailTitle} body={failure?.message} action={{ label: t.tryAgain, onClick: () => { setIsLoading(true); void load(); } }} forceAction />;
     }
     if (openProject) {
-      return <ProjectView project={openProject} canUpdate={canUpdate} failureText={failure?.message ?? null} onBack={() => setSearchParams({})} onUpdate={line => { setSheetError(null); setSheetLine(line); }} />;
+      return <ProjectView project={openProject} actions={actions} failureText={failure?.message ?? null} onBack={() => setSearchParams({})} />;
     }
     return (
       <>
@@ -246,19 +344,24 @@ export default function RenoJobsPage() {
     );
   })();
 
+  const noticeText = ((): string => {
+    if (!notice) return '';
+    if (notice.kind === 'saved') return t.saved(notice.label, t.ofText(formatCount(notice.doneQty), formatCount(notice.qty)));
+    return notice.kind === 'started' ? t.tradeStartedNotice(notice.label) : t.tradeFinishedNotice(notice.label);
+  })();
+
   return (
     <>
       {body}
       {sheetLine && <RenoJobSheet line={sheetLine} isSaving={isSaving} errorText={sheetError} onCancel={() => setSheetLine(null)} onSave={(doneQty, photos) => void save(sheetLine, doneQty, photos)} />}
+      {tradeSheet && <RenoTradeSheet mode={tradeSheet.mode} label={tradeSheet.label} lines={tradeSheet.trade.lines} isSaving={isSaving} errorText={sheetError} onCancel={() => setTradeSheet(null)} onSubmit={photos => void submitTrade(tradeSheet, photos)} />}
       {notice && <div aria-hidden style={{ height: NOTICE_CLEARANCE }} />}
       {notice && (
         <div role="status" style={{
           position: 'fixed', left: 12, right: 12, bottom: 'calc(64px + env(safe-area-inset-bottom))', zIndex: 30, maxWidth: 536, margin: '0 auto', boxSizing: 'border-box',
           background: color.fillStrong, color: color.onFillStrong, borderRadius: radius.card, padding: '8px 8px 8px 14px', display: 'flex', alignItems: 'center', gap: 10, minHeight: 60,
         }}>
-          <span style={{ flex: 1, minWidth: 0, fontSize: text.copy, fontWeight: 600, overflowWrap: 'anywhere' }}>
-            {notice.kind === 'saved' ? t.saved(notice.label, t.ofText(formatCount(notice.doneQty), formatCount(notice.qty))) : t.tradeClosedNotice}
-          </span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: text.copy, fontWeight: 600, overflowWrap: 'anywhere' }}>{noticeText}</span>
           <Button variant="tertiary" size="touch" onClick={() => setNotice(null)} style={{ color: color.onFillStrong }}>{t.ok}</Button>
         </div>
       )}
