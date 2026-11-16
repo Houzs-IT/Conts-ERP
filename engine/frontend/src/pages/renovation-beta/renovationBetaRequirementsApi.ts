@@ -15,6 +15,7 @@ export interface RequirementLine {
   planKey: string | null;
   tradeLabel: string | null;
   onSiteBy: string | null;
+  doneQty: number;
   doneAt: string | null;
 }
 
@@ -44,13 +45,15 @@ export interface RequirementBoard {
   areTicksReady: boolean;
 }
 
-export interface TickAnswer {
+export interface ProgressAnswer {
   ok: true;
+  previousDoneQty: number;
+  doneQty: number;
   completedTaskIds: number[];
 }
 
 export const requirementsApi = {
   board: (): Promise<RequirementBoard> => api.get<RequirementBoard>("/api/beta/requirements"),
-  tick: (lineId: string): Promise<TickAnswer> => api.put<TickAnswer>(`/api/beta/requirements/lines/${encodeURIComponent(lineId)}/done`, {}),
-  untick: (lineId: string): Promise<{ ok: true }> => api.del<{ ok: true }>(`/api/beta/requirements/lines/${encodeURIComponent(lineId)}/done`),
+  setProgress: (lineId: string, doneQty: number): Promise<ProgressAnswer> =>
+    api.put<ProgressAnswer>(`/api/beta/requirements/lines/${encodeURIComponent(lineId)}/progress`, { doneQty }),
 };

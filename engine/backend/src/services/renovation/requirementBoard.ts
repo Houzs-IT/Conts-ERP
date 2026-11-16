@@ -68,6 +68,7 @@ export interface TradePlanRow {
 export interface LineTickRow {
   so_item_id: string;
   done_at: string;
+  done_qty: number | string;
 }
 
 export interface RequirementLine {
@@ -83,6 +84,7 @@ export interface RequirementLine {
   planKey: string | null;
   tradeLabel: string | null;
   onSiteBy: string | null;
+  doneQty: number;
   doneAt: string | null;
 }
 
@@ -121,16 +123,18 @@ const trimmedOrNull = (value: string | null): string | null => value?.trim() || 
 
 const dayOf = (value: string | null): string | null => (value ? value.slice(0, 10) : null);
 
-export function requirementLineOf(row: RequirementLineRow, doneAt: string | null = null): RequirementLine | null {
+export function requirementLineOf(row: RequirementLineRow, tick: LineTickRow | null = null): RequirementLine | null {
   const group = GROUP_OF_CATEGORY[row.cat_code];
   if (!group) return null;
   const itemCode = row.item_code ?? "";
+  const qty = Number(row.qty);
+  const doneQty = Number(tick?.done_qty ?? 0);
   return {
     id: row.id,
     itemCode,
     name: trimmedOrNull(row.description) ?? itemCode,
     remark: trimmedOrNull(row.remark),
-    qty: Number(row.qty),
+    qty,
     uom: row.uom ?? "UNIT",
     room: trimmedOrNull(row.room),
     group,
@@ -138,7 +142,8 @@ export function requirementLineOf(row: RequirementLineRow, doneAt: string | null
     planKey: group === "builtin" ? BUILT_IN_PLAN_KEY : row.sub_code,
     tradeLabel: group === "works" ? trimmedOrNull(row.sub_label) : null,
     onSiteBy: dayOf(row.deliver_on),
-    doneAt,
+    doneQty,
+    doneAt: tick && doneQty >= qty ? tick.done_at : null,
   };
 }
 
@@ -175,7 +180,7 @@ export function buildRequirementBoard(rows: RequirementBoardRows, scope: Categor
   const visibleLines = rows.lines.filter((row) => lineVisible(scope, row.cat_code, row.sub_code));
   const linesByProject = groupByProject(visibleLines, (row) => Number(row.project_id));
   const plansByProject = groupByProject(rows.plans, (row) => Number(row.project_id));
-  const doneAtByLine = new Map((rows.ticks ?? []).map((tick) => [tick.so_item_id, tick.done_at] as const));
+  const tickByLine = new Map((rows.ticks ?? []).map((tick) => [tick.so_item_id, tick] as const));
   const projects = rows.projects.map((row) => {
     const id = Number(row.project_id);
     return {
@@ -183,7 +188,7 @@ export function buildRequirementBoard(rows: RequirementBoardRows, scope: Categor
       code: row.project_code,
       name: row.project_name ?? row.project_code ?? `Project ${id}`,
       brand: trimmedOrNull(row.brand),
-      lines: (linesByProject.get(id) ?? []).map((line) => requirementLineOf(line, doneAtByLine.get(line.id) ?? null)).filter((line): line is RequirementLine => line !== null),
+      lines: (linesByProject.get(id) ?? []).map((line) => requirementLineOf(line, tickByLine.get(line.id) ?? null)).filter((line): line is RequirementLine => line !== null),
       plans: (plansByProject.get(id) ?? []).map((plan) => tradePlanOf(plan, today)).filter((plan): plan is TradePlan => plan !== null),
     };
   });

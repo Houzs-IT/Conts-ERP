@@ -9,12 +9,14 @@ export interface LineActor {
   today: string;
 }
 
-export interface TickedLine {
+export interface ProgressLine {
   id: string;
   project_id: number;
   company_id: number;
   cat_code: string;
   sub_code: string | null;
+  qty: number | string;
+  done_qty: number | string | null;
 }
 
 export interface TradeTaskRow {
@@ -24,27 +26,31 @@ export interface TradeTaskRow {
   state: string;
 }
 
-export interface TickOutcome {
+export interface ProgressSaved {
   projectId: number;
+  previousDoneQty: number;
+  doneQty: number;
   completedTasks: TradeTaskRow[];
 }
 
-export type UntickRefusal = "line_not_found" | "trade_complete";
+export type ProgressRefusal = "line_not_found" | "invalid_qty" | "trade_complete";
 
-const isBuiltIn = (line: TickedLine): boolean => line.cat_code === "BUILTIN";
+const isBuiltIn = (line: ProgressLine): boolean => line.cat_code === "BUILTIN";
 
-async function loadBoardLine(db: Db, soItemId: string, companySql: string): Promise<TickedLine | null> {
+async function loadProgressLine(db: Db, soItemId: string, companySql: string): Promise<ProgressLine | null> {
   return db.prepare(
-    `SELECT i.id::text AS id, p.id::int AS project_id, p.company_id::int AS company_id, cg.code AS cat_code, prod.sub_category AS sub_code
+    `SELECT i.id::text AS id, p.id::int AS project_id, p.company_id::int AS company_id, cg.code AS cat_code, prod.sub_category AS sub_code,
+            i.qty, lp.done_qty
        FROM scm.mfg_sales_order_items i
        JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
        JOIN projects p ON p.id = so.project_id
+       LEFT JOIN project_line_progress lp ON lp.so_item_id = i.id
        ${SO_LINE_CATEGORY_JOIN}
       WHERE i.id::text = ? AND p.project_kind = 'renovation' AND p.archived_at IS NULL${companySql} AND ${LIVE_BOARD_LINE}`,
-  ).bind(soItemId).first<TickedLine>();
+  ).bind(soItemId).first<ProgressLine>();
 }
 
-async function tradeTasksOf(db: Db, line: TickedLine): Promise<TradeTaskRow[]> {
+async function tradeTasksOf(db: Db, line: ProgressLine): Promise<TradeTaskRow[]> {
   const matchSql = isBuiltIn(line) ? "t.category_code = ?" : "t.trade_code = ?";
   const { results } = await db.prepare(
     `SELECT t.id::int AS id, t.trade_code, t.fulfilment_kind, t.state FROM project_trade_tasks t
@@ -53,21 +59,22 @@ async function tradeTasksOf(db: Db, line: TickedLine): Promise<TradeTaskRow[]> {
   return results ?? [];
 }
 
-async function untickedTradeLineCount(db: Db, line: TickedLine): Promise<number> {
+async function unfinishedTradeLineCount(db: Db, line: ProgressLine): Promise<number> {
   const subSql = isBuiltIn(line) ? "" : " AND prod.sub_category = ?";
   const row = await db.prepare(
     `SELECT count(*)::int AS remaining
        FROM scm.mfg_sales_order_items i
        JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
+       LEFT JOIN project_line_progress lp ON lp.so_item_id = i.id
        ${SO_LINE_CATEGORY_JOIN}
       WHERE so.project_id = ? AND ${LIVE_BOARD_LINE} AND cg.code = ?${subSql}
-        AND NOT EXISTS (SELECT 1 FROM project_line_progress lp WHERE lp.so_item_id = i.id)`,
+        AND coalesce(lp.done_qty, 0) < i.qty`,
   ).bind(...[line.project_id, line.cat_code, ...(isBuiltIn(line) ? [] : [line.sub_code])]).first<{ remaining: number }>();
   return Number(row?.remaining ?? 0);
 }
 
-async function completeTradeIfAllTicked(db: Db, line: TickedLine, actor: LineActor): Promise<TradeTaskRow[]> {
-  if (await untickedTradeLineCount(db, line) > 0) return [];
+async function completeTradeIfAllDone(db: Db, line: ProgressLine, actor: LineActor): Promise<TradeTaskRow[]> {
+  if (await unfinishedTradeLineCount(db, line) > 0) return [];
   const openTasks = (await tradeTasksOf(db, line)).filter((task) => task.state !== "done");
   const completed: TradeTaskRow[] = [];
   for (const task of openTasks) {
@@ -78,20 +85,32 @@ async function completeTradeIfAllTicked(db: Db, line: TickedLine, actor: LineAct
   return completed;
 }
 
-export async function tickLine(db: Db, soItemId: string, actor: LineActor): Promise<TickOutcome | "line_not_found"> {
-  const line = await loadBoardLine(db, soItemId, actor.companySql);
-  if (!line) return "line_not_found";
-  await db.prepare(
-    `INSERT INTO project_line_progress (so_item_id, project_id, company_id, done_by_user_id, done_by_person_id)
-     VALUES (?::uuid, ?, ?, ?, ?) ON CONFLICT (so_item_id) DO NOTHING`,
-  ).bind(line.id, line.project_id, line.company_id, actor.userId, actor.personId).run();
-  return { projectId: line.project_id, completedTasks: await completeTradeIfAllTicked(db, line, actor) };
+export function doneQtyRefusal(doneQty: number, lineQty: number): "invalid_qty" | null {
+  return Number.isFinite(doneQty) && doneQty >= 0 && doneQty <= lineQty ? null : "invalid_qty";
 }
 
-export async function untickLine(db: Db, soItemId: string, actor: LineActor): Promise<{ projectId: number } | UntickRefusal> {
-  const line = await loadBoardLine(db, soItemId, actor.companySql);
+async function writeDoneQty(db: Db, line: ProgressLine, doneQty: number, actor: LineActor): Promise<void> {
+  if (doneQty === 0) {
+    await db.prepare(`DELETE FROM project_line_progress WHERE so_item_id = ?::uuid`).bind(line.id).run();
+    return;
+  }
+  await db.prepare(
+    `INSERT INTO project_line_progress (so_item_id, project_id, company_id, done_qty, done_by_user_id, done_by_person_id)
+     VALUES (?::uuid, ?, ?, ?, ?, ?)
+     ON CONFLICT (so_item_id) DO UPDATE SET done_qty = excluded.done_qty, done_at = now(),
+       done_by_user_id = excluded.done_by_user_id, done_by_person_id = excluded.done_by_person_id`,
+  ).bind(line.id, line.project_id, line.company_id, doneQty, actor.userId, actor.personId).run();
+}
+
+export async function setLineDoneQty(db: Db, soItemId: string, doneQty: number, actor: LineActor): Promise<ProgressSaved | ProgressRefusal> {
+  const line = await loadProgressLine(db, soItemId, actor.companySql);
   if (!line) return "line_not_found";
-  if ((await tradeTasksOf(db, line)).some((task) => task.state === "done")) return "trade_complete";
-  await db.prepare(`DELETE FROM project_line_progress WHERE so_item_id = ?::uuid`).bind(line.id).run();
-  return { projectId: line.project_id };
+  const lineQty = Number(line.qty);
+  const previousDoneQty = Number(line.done_qty ?? 0);
+  const refusal = doneQtyRefusal(doneQty, lineQty);
+  if (refusal) return refusal;
+  if (doneQty < previousDoneQty && (await tradeTasksOf(db, line)).some((task) => task.state === "done")) return "trade_complete";
+  await writeDoneQty(db, line, doneQty, actor);
+  const completedTasks = doneQty === lineQty ? await completeTradeIfAllDone(db, line, actor) : [];
+  return { projectId: line.project_id, previousDoneQty, doneQty, completedTasks };
 }

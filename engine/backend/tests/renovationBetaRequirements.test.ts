@@ -64,7 +64,7 @@ describe("requirement board", () => {
     const [line] = board([lineRow({ remark: " FLOOR PROTECTION ", qty: "20", is_on_po: true, deliver_on: "2026-11-20T00:00:00Z" })]).projects[0].lines;
     expect(line).toEqual({
       id: "line-1", itemCode: "RN-PROTECTION", name: "Works - Protection", remark: "FLOOR PROTECTION",
-      qty: 20, uom: "UNIT", room: "Common area", group: "works", isOnPo: true, planKey: "PROTECTION", tradeLabel: "Protection", onSiteBy: "2026-11-20", doneAt: null,
+      qty: 20, uom: "UNIT", room: "Common area", group: "works", isOnPo: true, planKey: "PROTECTION", tradeLabel: "Protection", onSiteBy: "2026-11-20", doneQty: 0, doneAt: null,
     });
   });
 
@@ -104,11 +104,15 @@ describe("requirement board", () => {
     expect(plans[0]).toMatchObject({ label: "WIRING & HACKING", plannedStart: "2026-11-10", plannedEnd: "2026-11-12" });
   });
 
-  test("a ticked line carries when it was ticked; no tick table reads as not switched on", () => {
-    const ticked = buildRequirementBoard({ projects: [projectRow({})], lines: [lineRow({})], plans: [], ticks: [{ so_item_id: "line-1", done_at: "2026-11-16T03:00:00Z" }] }, null, TODAY);
-    expect([ticked.areTicksReady, ticked.projects[0].lines[0].doneAt]).toEqual([true, "2026-11-16T03:00:00Z"]);
+  test("a line carries its units done, and a done date only once every unit is done", () => {
+    const rows = (doneQty: string) => ({ projects: [projectRow({})], lines: [lineRow({ qty: "3" })], plans: [], ticks: [{ so_item_id: "line-1", done_at: "2026-11-16T03:00:00Z", done_qty: doneQty }] });
+    expect(buildRequirementBoard(rows("2"), null, TODAY).projects[0].lines[0]).toMatchObject({ doneQty: 2, doneAt: null });
+    expect(buildRequirementBoard(rows("3"), null, TODAY).projects[0].lines[0]).toMatchObject({ doneQty: 3, doneAt: "2026-11-16T03:00:00Z" });
+  });
+
+  test("no progress table reads as not switched on, with nothing done", () => {
     const notReady = buildRequirementBoard({ projects: [projectRow({})], lines: [lineRow({})], plans: [], ticks: null }, null, TODAY);
-    expect([notReady.areTicksReady, notReady.projects[0].lines[0].doneAt]).toEqual([false, null]);
+    expect([notReady.areTicksReady, notReady.projects[0].lines[0].doneQty]).toEqual([false, 0]);
   });
 
   test("a subcontracted trade whose PO is fully received reads as done", () => {

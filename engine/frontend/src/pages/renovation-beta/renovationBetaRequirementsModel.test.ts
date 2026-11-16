@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vitest";
 import type { RequirementLine, RequirementProject, TradePlan } from "./renovationBetaRequirementsApi";
-import { NO_ROOM, brandOptions, filterProjectLines, groupByRoom, groupByTrade, onPoCount, planDates, progressText, roomSummary } from "./renovationBetaRequirementsModel";
+import {
+  NO_ROOM, brandOptions, clampDoneQty, filterProjectLines, groupByRoom, groupByTrade, isLineDone, lineProgressText, onPoCount, planDates, progressText, roomSummary,
+} from "./renovationBetaRequirementsModel";
 
 function line(overrides: Partial<RequirementLine>): RequirementLine {
   return {
     id: "a", itemCode: "RN-PROTECTION", name: "Works - Protection", remark: null, qty: 1, uom: "UNIT",
-    room: "Common area", group: "works", isOnPo: false, planKey: "PROTECTION", tradeLabel: null, onSiteBy: null, doneAt: null,
+    room: "Common area", group: "works", isOnPo: false, planKey: "PROTECTION", tradeLabel: null, onSiteBy: null, doneQty: 0, doneAt: null,
     ...overrides,
   };
 }
@@ -33,8 +35,15 @@ describe("requirement board grouping", () => {
     expect(groupByRoom([line({})])[0].cards.map((card) => card.key)).toEqual(["works"]);
   });
 
-  test("progress counts the ticked lines out of all of them", () => {
-    expect(progressText([line({ doneAt: "2026-11-16T03:00:00Z" }), line({}), line({})])).toBe("1 of 3 done");
+  test("a line is done only when every unit is done, and lines done count only those", () => {
+    const partly = line({ qty: 3, doneQty: 2 });
+    const fully = line({ qty: 3, doneQty: 3 });
+    expect([isLineDone(partly), isLineDone(fully), lineProgressText(partly)]).toEqual([false, true, "2 of 3"]);
+    expect(progressText([fully, partly, line({})])).toBe("1 of 3 done");
+  });
+
+  test("units done stay between none and the line's qty", () => {
+    expect([clampDoneQty(-1, 3), clampDoneQty(5, 3), clampDoneQty(Number.NaN, 3), clampDoneQty(2, 3)]).toEqual([0, 3, 0, 2]);
   });
 
   test("on PO counts only lines a live PO holds", () => {

@@ -1,12 +1,12 @@
 import { describe, expect, test } from "vitest";
 import { Hono } from "hono";
 import requirements from "../src/routes/renovationBetaRequirements";
-import { tickLine, untickLine, type LineActor, type TickedLine, type TradeTaskRow } from "../src/services/renovation/lineProgress";
+import { doneQtyRefusal, setLineDoneQty, type LineActor, type ProgressLine, type TradeTaskRow } from "../src/services/renovation/lineProgress";
 
 const ACTOR: LineActor = { userId: 5, personId: null, companySql: " AND p.company_id = 1", today: "2026-11-16" };
 
 interface Script {
-  line?: TickedLine | null;
+  line?: ProgressLine | null;
   remaining?: number;
   tasks?: TradeTaskRow[];
   poLinkedTaskIds?: number[];
@@ -16,9 +16,10 @@ interface Script {
 function scriptedDb(script: Script) {
   const runs: Array<{ sql: string; args: unknown[] }> = [];
   const answer = (sql: string, args: unknown[]) => {
+    if (script.missingTable && sql.includes("project_line_progress")) throw Object.assign(new Error("relation does not exist"), { code: "42P01" });
     if (sql.includes("count(*)::int AS remaining")) return { remaining: script.remaining ?? 0 };
     if (sql.includes("project_trade_task_lines")) return script.poLinkedTaskIds?.includes(Number(args[0])) ? { x: 1 } : null;
-    if (sql.includes("FROM scm.mfg_sales_order_items i") && sql.includes("i.id::text = ?")) return script.line ?? null;
+    if (sql.includes("i.id::text = ?")) return script.line ?? null;
     return null;
   };
   const statement = (sql: string, args: unknown[] = []) => ({
@@ -26,7 +27,6 @@ function scriptedDb(script: Script) {
     first: async () => answer(sql, args),
     all: async () => ({ results: sql.includes("FROM project_trade_tasks t") ? script.tasks ?? [] : [] }),
     run: async () => {
-      if (script.missingTable && sql.includes("project_line_progress")) throw Object.assign(new Error("relation does not exist"), { code: "42P01" });
       runs.push({ sql, args });
       return {};
     },
@@ -34,54 +34,66 @@ function scriptedDb(script: Script) {
   return { runs, database: { prepare: (sql: string) => statement(sql) } };
 }
 
-const worksLine: TickedLine = { id: "line-1", project_id: 13, company_id: 1, cat_code: "WORKS", sub_code: "ELECTRICAL" };
-const builtInLine: TickedLine = { id: "line-2", project_id: 13, company_id: 1, cat_code: "BUILTIN", sub_code: "WARDROBE" };
+const worksLine = (overrides: Partial<ProgressLine> = {}): ProgressLine => ({
+  id: "line-1", project_id: 13, company_id: 1, cat_code: "WORKS", sub_code: "ELECTRICAL", qty: "3", done_qty: null, ...overrides,
+});
 const task = (overrides: Partial<TradeTaskRow>): TradeTaskRow => ({ id: 1, trade_code: "ELECTRICAL", fulfilment_kind: "internal", state: "open", ...overrides });
+const taskUpdates = (runs: Array<{ sql: string; args: unknown[] }>): unknown[] =>
+  runs.filter((run) => run.sql.includes("UPDATE project_trade_tasks SET state = 'done'")).map((run) => run.args.at(-1));
 
-describe("ticking a line", () => {
-  test("the last unticked line of a trade completes its open in-house tasks", async () => {
-    const { database, runs } = scriptedDb({ line: worksLine, remaining: 0, tasks: [task({ id: 1 }), task({ id: 2, state: "done" })] });
-    const outcome = await tickLine(database, "line-1", ACTOR);
-    expect(outcome).toEqual({ projectId: 13, completedTasks: [task({ id: 1 })] });
+describe("units done on a line", () => {
+  test("a part count is saved and closes nothing", async () => {
+    const { database, runs } = scriptedDb({ line: worksLine(), tasks: [task({})] });
+    expect(await setLineDoneQty(database, "line-1", 2, ACTOR)).toEqual({ projectId: 13, previousDoneQty: 0, doneQty: 2, completedTasks: [] });
     expect(runs[0].sql).toContain("INSERT INTO project_line_progress");
-    expect(runs[0].args).toEqual(["line-1", 13, 1, 5, null]);
-    expect(runs.filter((run) => run.sql.includes("UPDATE project_trade_tasks SET state = 'done'")).map((run) => run.args.at(-1))).toEqual([1]);
+    expect(runs[0].args).toEqual(["line-1", 13, 1, 2, 5, null]);
+    expect(taskUpdates(runs)).toEqual([]);
   });
 
-  test("a trade with lines still unticked completes nothing", async () => {
-    const { database, runs } = scriptedDb({ line: worksLine, remaining: 2, tasks: [task({})] });
-    expect(await tickLine(database, "line-1", ACTOR)).toEqual({ projectId: 13, completedTasks: [] });
-    expect(runs.some((run) => run.sql.includes("UPDATE project_trade_tasks"))).toBe(false);
+  test("the full count on the last unfinished line closes the trade's open in-house tasks", async () => {
+    const { database, runs } = scriptedDb({ line: worksLine({ done_qty: "2" }), remaining: 0, tasks: [task({ id: 1 }), task({ id: 2, state: "done" })] });
+    const outcome = await setLineDoneQty(database, "line-1", 3, ACTOR);
+    expect(outcome).toMatchObject({ previousDoneQty: 2, doneQty: 3, completedTasks: [task({ id: 1 })] });
+    expect(taskUpdates(runs)).toEqual([1]);
   });
 
-  test("a subcontracted trade with PO lines waits for its goods, even when every line is ticked", async () => {
-    const { database } = scriptedDb({ line: worksLine, remaining: 0, tasks: [task({ fulfilment_kind: "po" })], poLinkedTaskIds: [1] });
-    expect(await tickLine(database, "line-1", ACTOR)).toEqual({ projectId: 13, completedTasks: [] });
+  test("the full count with other lines unfinished closes nothing", async () => {
+    const { database, runs } = scriptedDb({ line: worksLine(), remaining: 1, tasks: [task({})] });
+    expect(await setLineDoneQty(database, "line-1", 3, ACTOR)).toMatchObject({ completedTasks: [] });
+    expect(taskUpdates(runs)).toEqual([]);
   });
 
-  test("Built-in lines complete the carpentry task, matched by its category", async () => {
-    const { database } = scriptedDb({ line: builtInLine, remaining: 0, tasks: [task({ id: 7, trade_code: "CAT:CARPENTRY" })] });
-    const outcome = await tickLine(database, "line-2", ACTOR);
-    expect(outcome !== "line_not_found" && outcome.completedTasks.map((done) => done.id)).toEqual([7]);
+  test("a subcontracted trade with PO lines waits for its goods", async () => {
+    const { database } = scriptedDb({ line: worksLine(), remaining: 0, tasks: [task({ fulfilment_kind: "po" })], poLinkedTaskIds: [1] });
+    expect(await setLineDoneQty(database, "line-1", 3, ACTOR)).toMatchObject({ completedTasks: [] });
+  });
+
+  test("Built-in lines close the carpentry task", async () => {
+    const { database } = scriptedDb({ line: worksLine({ cat_code: "BUILTIN", sub_code: "WARDROBE", qty: "1" }), remaining: 0, tasks: [task({ id: 7, trade_code: "CAT:CARPENTRY" })] });
+    expect(await setLineDoneQty(database, "line-1", 1, ACTOR)).toMatchObject({ completedTasks: [task({ id: 7, trade_code: "CAT:CARPENTRY" })] });
+  });
+
+  test("zero deletes the row", async () => {
+    const { database, runs } = scriptedDb({ line: worksLine({ done_qty: "2" }), tasks: [task({})] });
+    expect(await setLineDoneQty(database, "line-1", 0, ACTOR)).toMatchObject({ previousDoneQty: 2, doneQty: 0 });
+    expect(runs.map((run) => run.sql)).toEqual([expect.stringContaining("DELETE FROM project_line_progress")]);
+  });
+
+  test("a count cannot go down once the trade is done, but can go up", async () => {
+    const lowered = scriptedDb({ line: worksLine({ done_qty: "3" }), tasks: [task({ state: "done" })] });
+    expect(await setLineDoneQty(lowered.database, "line-1", 2, ACTOR)).toBe("trade_complete");
+    expect(lowered.runs).toEqual([]);
+    const raised = scriptedDb({ line: worksLine({ done_qty: "1" }), remaining: 1, tasks: [task({ state: "done" })] });
+    expect(await setLineDoneQty(raised.database, "line-1", 2, ACTOR)).toMatchObject({ doneQty: 2 });
+  });
+
+  test("a count outside 0 to the line's qty, or not a number, is refused", () => {
+    expect([doneQtyRefusal(-1, 3), doneQtyRefusal(4, 3), doneQtyRefusal(Number.NaN, 3), doneQtyRefusal(1.5, 3)]).toEqual(["invalid_qty", "invalid_qty", "invalid_qty", null]);
   });
 
   test("a line that is not a live Works or Built-in line is refused", async () => {
     const { database, runs } = scriptedDb({ line: null });
-    expect(await tickLine(database, "nope", ACTOR)).toBe("line_not_found");
-    expect(runs).toEqual([]);
-  });
-});
-
-describe("unticking a line", () => {
-  test("is allowed while the trade is open, and deletes the tick", async () => {
-    const { database, runs } = scriptedDb({ line: worksLine, tasks: [task({})] });
-    expect(await untickLine(database, "line-1", ACTOR)).toEqual({ projectId: 13 });
-    expect(runs.map((run) => run.sql)).toEqual([expect.stringContaining("DELETE FROM project_line_progress")]);
-  });
-
-  test("is refused once the trade is done", async () => {
-    const { database, runs } = scriptedDb({ line: worksLine, tasks: [task({ state: "done" })] });
-    expect(await untickLine(database, "line-1", ACTOR)).toBe("trade_complete");
+    expect(await setLineDoneQty(database, "nope", 1, ACTOR)).toBe("line_not_found");
     expect(runs).toEqual([]);
   });
 });
@@ -94,33 +106,40 @@ function routeApp(database: unknown, permissions: string[] = ["projects.write"])
     await next();
   });
   app.route("/api/beta", requirements);
-  return (method: string) => app.request("/api/beta/requirements/lines/line-1/done", { method }, { DB: database });
+  return (body: unknown) => app.request("/api/beta/requirements/lines/line-1/progress", { method: "PUT", body: JSON.stringify(body), headers: { "content-type": "application/json" } }, { DB: database });
 }
 
-describe("tick routes", () => {
-  test("need projects.write", async () => {
-    const { database } = scriptedDb({ line: worksLine });
-    expect((await routeApp(database, [])("PUT")).status).toBe(403);
+describe("progress route", () => {
+  test("needs projects.write", async () => {
+    const { database } = scriptedDb({ line: worksLine() });
+    expect((await routeApp(database, [])({ doneQty: 1 })).status).toBe(403);
   });
 
-  test("answer the completed tasks", async () => {
-    const { database } = scriptedDb({ line: worksLine, remaining: 0, tasks: [task({ id: 3 })] });
-    const response = await routeApp(database)("PUT");
+  test("answers the saved count and the tasks it closed", async () => {
+    const { database } = scriptedDb({ line: worksLine(), remaining: 0, tasks: [task({ id: 3 })] });
+    const response = await routeApp(database)({ doneQty: 3 });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, completedTaskIds: [3] });
+    expect(await response.json()).toEqual({ ok: true, previousDoneQty: 0, doneQty: 3, completedTaskIds: [3] });
   });
 
-  test("say ticks are not switched on before the migration", async () => {
-    const { database } = scriptedDb({ line: worksLine, missingTable: true });
-    const response = await routeApp(database)("PUT");
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ error: "ticks_not_ready" });
+  test("refuses a count that is not a number in words", async () => {
+    const { database } = scriptedDb({ line: worksLine() });
+    const response = await routeApp(database)({ doneQty: "3" });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid_qty" });
   });
 
-  test("refuse to untick a done trade in words", async () => {
-    const { database } = scriptedDb({ line: worksLine, tasks: [task({ state: "done" })] });
-    const response = await routeApp(database)("DELETE");
+  test("refuses to lower a done trade's line in words", async () => {
+    const { database } = scriptedDb({ line: worksLine({ done_qty: "3" }), tasks: [task({ state: "done" })] });
+    const response = await routeApp(database)({ doneQty: 1 });
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: "trade_complete" });
+  });
+
+  test("says progress is not switched on before the migration", async () => {
+    const { database } = scriptedDb({ line: worksLine(), missingTable: true });
+    const response = await routeApp(database)({ doneQty: 1 });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: "progress_not_ready" });
   });
 });

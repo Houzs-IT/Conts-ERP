@@ -84,8 +84,24 @@ export function groupByRoom(lines: readonly RequirementLine[]): RoomGroup[] {
   return [...rooms].map(([name, roomLines]) => ({ name, lines: roomLines, cards: groupCards(roomLines) }));
 }
 
+export function isLineDone(line: Pick<RequirementLine, "doneQty" | "qty">): boolean {
+  return line.doneQty >= line.qty;
+}
+
+export function formatQty(qty: number): string {
+  return String(Number(qty.toFixed(3)));
+}
+
+export function lineProgressText(line: Pick<RequirementLine, "doneQty" | "qty">): string {
+  return `${formatQty(line.doneQty)} of ${formatQty(line.qty)}`;
+}
+
+export function clampDoneQty(doneQty: number, lineQty: number): number {
+  return Number.isFinite(doneQty) ? Math.min(lineQty, Math.max(0, doneQty)) : 0;
+}
+
 export function doneCount(lines: readonly RequirementLine[]): number {
-  return lines.filter((line) => line.doneAt !== null).length;
+  return lines.filter(isLineDone).length;
 }
 
 export function progressText(lines: readonly RequirementLine[]): string {

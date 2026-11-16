@@ -4,7 +4,7 @@ import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanyId, activeCompanySql } from "../scm/lib/companyScope";
 import { todayMyt } from "../scm/lib/my-time";
 import { isMissingRelation, type Db } from "../services/renovation/load";
-import { tickLine, untickLine, type LineActor, type TradeTaskRow } from "../services/renovation/lineProgress";
+import { setLineDoneQty, type LineActor, type TradeTaskRow } from "../services/renovation/lineProgress";
 import { loadCategoryScope } from "../services/categoryAccess";
 import {
   LIVE_BOARD_LINE, REQUIREMENT_LINE_LIMIT, SO_LINE_CATEGORY_JOIN, buildRequirementBoard, type RequirementLineRow, type LineTickRow, type RequirementProjectRow, type TradePlanRow,
@@ -53,16 +53,18 @@ const PLANS_SQL = (companyScope: string): string =>
     ORDER BY t.project_id, t.seq`;
 
 const TICKS_SQL = (companyScope: string): string =>
-  `SELECT lp.so_item_id::text AS so_item_id, lp.done_at::text AS done_at
+  `SELECT lp.so_item_id::text AS so_item_id, lp.done_at::text AS done_at, lp.done_qty
      FROM project_line_progress lp
      JOIN projects p ON p.id = lp.project_id
     WHERE ${LIVE_RENOVATION_PROJECTS(companyScope)}`;
+
+const isMissingColumn = (error: unknown): boolean => (error as { code?: string } | null)?.code === "42703";
 
 async function readTicks(database: Db, companyScope: string): Promise<LineTickRow[] | null> {
   try {
     return (await database.prepare(TICKS_SQL(companyScope)).all<LineTickRow>()).results ?? [];
   } catch (error) {
-    if (isMissingRelation(error)) return null;
+    if (isMissingRelation(error) || isMissingColumn(error)) return null;
     throw error;
   }
 }
@@ -92,8 +94,7 @@ const lineActor = (c: Ctx): LineActor => ({
   today: todayMyt(),
 });
 
-const TICKS_NOT_READY = { error: "ticks_not_ready", message: "Line ticks are not switched on yet on this server." } as const;
-const LINE_NOT_FOUND = { error: "not_found", message: "That line is not a Works or Built-in line of a live renovation project." } as const;
+const TICKS_NOT_READY = { error: "progress_not_ready", message: "Line progress is not switched on yet on this server." } as const;
 
 async function logTradesDone(c: Ctx, projectId: number, tasks: readonly TradeTaskRow[]): Promise<void> {
   for (const task of tasks) {
@@ -102,26 +103,25 @@ async function logTradesDone(c: Ctx, projectId: number, tasks: readonly TradeTas
   }
 }
 
-app.put("/requirements/lines/:soItemId/done", requirePermission("projects.write"), async (c) => {
-  try {
-    const outcome = await tickLine(db(c), c.req.param("soItemId"), lineActor(c));
-    if (outcome === "line_not_found") return c.json(LINE_NOT_FOUND, 404);
-    await logTradesDone(c, outcome.projectId, outcome.completedTasks);
-    return c.json({ ok: true, completedTaskIds: outcome.completedTasks.map((task) => task.id) });
-  } catch (error) {
-    if (isMissingRelation(error)) return c.json(TICKS_NOT_READY, 409);
-    throw error;
-  }
-});
+const PROGRESS_REFUSALS = {
+  line_not_found: [404, "That line is not a Works or Built-in line of a live renovation project."],
+  invalid_qty: [400, "Units done must be a number from 0 up to the line's qty."],
+  trade_complete: [409, "This trade is already done, so its lines cannot go back. Reopen it on the project's Site tab first."],
+} as const;
 
-app.delete("/requirements/lines/:soItemId/done", requirePermission("projects.write"), async (c) => {
+app.put("/requirements/lines/:soItemId/progress", requirePermission("projects.write"), async (c) => {
+  const body = await c.req.json<{ doneQty?: unknown }>().catch(() => ({ doneQty: undefined }));
+  const doneQty = typeof body.doneQty === "number" ? body.doneQty : Number.NaN;
   try {
-    const outcome = await untickLine(db(c), c.req.param("soItemId"), lineActor(c));
-    if (outcome === "line_not_found") return c.json(LINE_NOT_FOUND, 404);
-    if (outcome === "trade_complete") return c.json({ error: outcome, message: "This trade is already done. Reopen it on the project's Site tab first." }, 409);
-    return c.json({ ok: true });
+    const outcome = await setLineDoneQty(db(c), c.req.param("soItemId"), doneQty, lineActor(c));
+    if (typeof outcome === "string") {
+      const [status, message] = PROGRESS_REFUSALS[outcome];
+      return c.json({ error: outcome, message }, status);
+    }
+    await logTradesDone(c, outcome.projectId, outcome.completedTasks);
+    return c.json({ ok: true, previousDoneQty: outcome.previousDoneQty, doneQty: outcome.doneQty, completedTaskIds: outcome.completedTasks.map((task) => task.id) });
   } catch (error) {
-    if (isMissingRelation(error)) return c.json(TICKS_NOT_READY, 409);
+    if (isMissingRelation(error) || isMissingColumn(error)) return c.json(TICKS_NOT_READY, 409);
     throw error;
   }
 });
