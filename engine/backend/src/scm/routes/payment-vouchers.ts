@@ -67,6 +67,7 @@ import { hasHouzsPerm } from '../lib/houzs-perms';
 import { postNowHandler } from '../../conts/pv-post-now';
 import { afterVoucherCancelledBestEffort, afterVoucherPostedBestEffort } from "../../conts/claims-voucher-hooks";
 import { checkClaimLinks, linkClaimsToVoucher } from "../../conts/combined-voucher";
+import { copyPapers, toVoucher } from "../../conts/copy-papers";
 import { normalizeCurrency, normalizeExchangeRate, masterRateForCurrency } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { recordEntityAudit, diffFields, compactChanges, fieldChange, statusChange, assertAuditWritable, auditUnavailableBody } from '../lib/entity-audit';
@@ -928,6 +929,13 @@ export const createPaymentVoucherCore = async (c: any, body: Record<string, unkn
     if (lost) {
       await sb.from('payment_vouchers').update({ status: 'CANCELLED', updated_at: new Date().toISOString() }).eq('id', h.id).eq('status', 'DRAFT');
       return c.json({ error: 'already_vouchered', message: lost }, 409);
+    }
+    /* The papers handed in with them come onto the voucher (chew, 16 Nov 2026). */
+    if (claimCo != null) {
+      await copyPapers(c, sb, claimCo, {
+        requestIds: claims.links.map((l) => l.paymentRequestId).filter((x): x is string => !!x),
+        receiptIds: claims.links.map((l) => l.staffReceiptId).filter((x): x is string => !!x),
+      }, toVoucher(h.id));
     }
   }
 
