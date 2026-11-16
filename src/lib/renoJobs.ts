@@ -18,6 +18,7 @@ export interface RenoLine {
   doneQty: number;
   doneAt: string | null;
   isTradeClosed: boolean;
+  photoCount: number;
 }
 
 export interface RenoPlan {
@@ -49,6 +50,7 @@ export interface RenoProgressResponse {
   previousDoneQty: number;
   doneQty: number;
   completedTaskIds: number[];
+  photoCount: number;
 }
 
 export interface RenoTradeGroup {
@@ -75,6 +77,12 @@ export interface RenoProjectSummary {
 
 export const NO_ROOM_LABEL = 'No room';
 export const CARPENTRY_LABEL = 'Carpentry';
+export const WORKS_LABEL = 'Works';
+export const MAX_PROOF_PHOTOS = 10;
+
+const PHOTO_LONGEST_SIDE = 1600;
+const PHOTO_QUALITY = 0.8;
+const KUALA_LUMPUR_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 const roundCount = (value: number): number => Math.round(value * 100) / 100;
 
@@ -95,6 +103,31 @@ export function doneText(doneQty: number, qty: number): string {
   return `${formatCount(doneQty)} of ${formatCount(qty)}`;
 }
 
+export function parseCount(raw: string): number | null {
+  const trimmed = raw.trim();
+  return /^(\d+([.,]\d*)?|[.,]\d+)$/.test(trimmed) ? Number(trimmed.replace(',', '.')) : null;
+}
+
+export function formatDoneDay(isoInstant: string | null): string | null {
+  const time = isoInstant ? Date.parse(isoInstant) : Number.NaN;
+  return Number.isFinite(time) ? formatDayMonth(new Date(time + KUALA_LUMPUR_OFFSET_MS).toISOString()) : null;
+}
+
+export async function shrinkPhoto(file: File): Promise<File> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, PHOTO_LONGEST_SIDE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', PHOTO_QUALITY));
+    return blob ? new File([blob], `${file.name.replace(/\.[^.]*$/, '') || 'photo'}.jpg`, { type: 'image/jpeg' }) : file;
+  } catch {
+    return file;
+  }
+}
+
 export function formatDayMonth(isoDate: string | null): string | null {
   const match = isoDate?.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!match) return null;
@@ -113,18 +146,19 @@ export function isPlanLate(plan: Pick<RenoPlan, 'status'>): boolean {
   return plan.status === 'overdue' || plan.status === 'late_start';
 }
 
-export const PLAN_STATUS_LABEL: Record<RenoPlanStatus, string> = {
-  skipped: 'Skipped',
-  done: 'Done',
-  in_progress: 'In progress',
-  overdue: 'Late',
-  late_start: 'Late to start',
-  planned: 'Planned',
-  unscheduled: 'Not planned yet',
-};
-
 export function sortedLines(lines: RenoLine[]): RenoLine[] {
   return [...lines].sort((first, second) => first.itemCode.localeCompare(second.itemCode, undefined, { numeric: true }));
+}
+
+const STATUS_URGENCY: RenoPlanStatus[] = ['overdue', 'late_start', 'in_progress', 'planned', 'unscheduled', 'done', 'skipped'];
+
+export function mergePlans(plans: RenoPlan[]): RenoPlan | null {
+  const [first] = plans;
+  if (!first) return null;
+  const starts = plans.flatMap(plan => (plan.plannedStart ? [plan.plannedStart] : [])).sort();
+  const ends = plans.flatMap(plan => (plan.plannedEnd ? [plan.plannedEnd] : [])).sort();
+  const status = STATUS_URGENCY.find(candidate => plans.some(plan => plan.status === candidate)) ?? first.status;
+  return { ...first, status, plannedStart: starts[0] ?? null, plannedEnd: ends[ends.length - 1] ?? null };
 }
 
 function groupByTrade(lines: RenoLine[], plans: RenoPlan[], fallbackLabel: string): RenoTradeGroup[] {
@@ -136,7 +170,7 @@ function groupByTrade(lines: RenoLine[], plans: RenoPlan[], fallbackLabel: strin
       existing.lines.push(line);
       continue;
     }
-    const plan = plans.find(candidate => candidate.planKey === line.planKey) ?? null;
+    const plan = mergePlans(plans.filter(candidate => candidate.planKey === line.planKey));
     groups.set(key, { key, label: plan?.label ?? line.tradeLabel ?? fallbackLabel, plan, lines: [line] });
   }
   return [...groups.values()];
@@ -151,11 +185,11 @@ export function groupByRoom(project: Pick<RenoProject, 'lines' | 'plans'>): Reno
   return [...rooms.entries()].map(([room, lines]) => {
     const builtInLines = lines.filter(line => line.group === 'builtin');
     const [firstBuiltIn] = builtInLines;
-    const carpentryPlan = firstBuiltIn ? project.plans.find(plan => plan.planKey === firstBuiltIn.planKey) ?? null : null;
+    const carpentryPlan = firstBuiltIn ? mergePlans(project.plans.filter(plan => plan.planKey === firstBuiltIn.planKey)) : null;
     return {
       room,
       lines,
-      trades: groupByTrade(lines.filter(line => line.group === 'works'), project.plans, 'Works'),
+      trades: groupByTrade(lines.filter(line => line.group === 'works'), project.plans, WORKS_LABEL),
       carpentry: builtInLines.length > 0 ? { key: 'carpentry', label: CARPENTRY_LABEL, plan: carpentryPlan, lines: builtInLines } : null,
     };
   });

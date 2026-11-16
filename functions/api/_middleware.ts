@@ -71,9 +71,11 @@ const RENOVATION_ALLOWED: [string, RegExp][] = [
   ['POST', /^\/api\/field\/leave\/[^/]+\/cancel$/],
   // Their own pay: approved and paid slips, and an estimate of the month so far (HR phase 4).
   ['GET', /^\/api\/field\/pay$/],
-  // Their brand's renovation jobs and units done, forwarded to the engine (functions/api/field/site-work/[[path]].ts).
+];
+
+const RENOVATOR_ONLY: [string, RegExp][] = [
   ['GET', /^\/api\/field\/site-work\/jobs$/],
-  ['PUT', /^\/api\/field\/site-work\/lines\/[A-Za-z0-9-]+\/progress$/],
+  ['POST', /^\/api\/field\/site-work\/lines\/[A-Za-z0-9-]+\/progress$/],
 ];
 
 const FIELD_ALLOWED: [string, RegExp][] = [
@@ -180,7 +182,7 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   if (isFieldRole(session.role) && SUPPLY_CHAIN.test(path)) {
     return fail('FORBIDDEN', 'Your account does not have access to supply chain records.', 403);
   }
-  const fieldAllowed = session.role === 'renovator' ? RENOVATION_ALLOWED : FIELD_ALLOWED;
+  const fieldAllowed = session.role === 'renovator' ? [...RENOVATION_ALLOWED, ...RENOVATOR_ONLY] : FIELD_ALLOWED;
   if (isFieldRole(session.role) && !fieldAllowed.some(([m, re]) => m === request.method && re.test(path))) {
     return fail('FORBIDDEN', 'This is not available in the field app.', 403);
   }

@@ -1,12 +1,11 @@
-// node --test src/lib/renoJobs.test.mjs. The renovator's Jobs tab: how the engine's lines are grouped and counted.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { clampDoneCount, doneText, isLineDone, formatPlanDates, groupByRoom, summarizeProject } = await import('./renoJobs.ts');
+const { clampDoneCount, doneText, isLineDone, formatPlanDates, formatDoneDay, groupByRoom, parseCount, summarizeProject } = await import('./renoJobs.ts');
 
 const line = (over) => ({
   id: 'l1', itemCode: 'W-1', name: 'Tile floor', remark: null, qty: 3, uom: 'unit', room: 'Kitchen', group: 'works', isOnPo: false,
-  planKey: 'tiling', tradeLabel: 'Tiling', onSiteBy: null, doneQty: 0, doneAt: null, isTradeClosed: false, ...over,
+  planKey: 'tiling', tradeLabel: 'Tiling', onSiteBy: null, doneQty: 0, doneAt: null, isTradeClosed: false, photoCount: 0, ...over,
 });
 const plan = (over) => ({ taskId: 1, planKey: 'tiling', label: 'Tiling', plannedStart: '2026-11-12', plannedEnd: '2026-11-20', status: 'planned', ...over });
 
@@ -58,4 +57,37 @@ test('a project summary counts lines and flags a late trade', () => {
     plans: [plan({ status: 'late_start' })],
   };
   assert.deepEqual(summarizeProject(project), { worksCount: 1, builtInCount: 1, doneLineCount: 1, lineCount: 2, isLate: true });
+});
+
+test('a typed count is a number or null, never 0 by accident', () => {
+  assert.equal(parseCount('2'), 2);
+  assert.equal(parseCount(' 2,5 '), 2.5);
+  assert.equal(parseCount('.5'), 0.5);
+  assert.equal(parseCount(''), null);
+  assert.equal(parseCount('abc'), null);
+  assert.equal(parseCount('1e3'), null);
+  assert.equal(parseCount('-1'), null);
+  assert.equal(parseCount('1.2.3'), null);
+});
+
+test('a done time reads as the day and month in Kuala Lumpur', () => {
+  assert.equal(formatDoneDay('2026-11-15T17:30:00Z'), '16/11');
+  assert.equal(formatDoneDay('2026-11-15T15:30:00Z'), '15/11');
+  assert.equal(formatDoneDay(null), null);
+  assert.equal(formatDoneDay('nope'), null);
+});
+
+test('a trade with several plans shows its most urgent status and its latest end date', () => {
+  const project = {
+    lines: [line({ planKey: 'electrical', tradeLabel: 'Electrical' })],
+    plans: [
+      plan({ taskId: 1, planKey: 'electrical', status: 'done', plannedStart: '2026-11-01', plannedEnd: '2026-11-05' }),
+      plan({ taskId: 2, planKey: 'electrical', status: 'late_start', plannedStart: '2026-11-10', plannedEnd: '2026-11-25' }),
+      plan({ taskId: 3, planKey: 'electrical', status: 'planned', plannedStart: '2026-11-20', plannedEnd: '2026-11-22' }),
+    ],
+  };
+  const [kitchen] = groupByRoom(project);
+  assert.equal(kitchen.trades[0].plan?.status, 'late_start');
+  assert.equal(kitchen.trades[0].plan?.plannedEnd, '2026-11-25');
+  assert.equal(kitchen.trades[0].plan?.plannedStart, '2026-11-01');
 });
