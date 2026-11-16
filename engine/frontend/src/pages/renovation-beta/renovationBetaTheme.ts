@@ -43,18 +43,18 @@ const BASE_TOKENS = {
   surface: ["#FFFFFF", "#1C2030"],
   field: ["rgba(255,255,255,.8)", "rgba(255,255,255,.06)"],
   ink: ["#111216", "#EEF1F8"],
-  muted: ["#6B6B6B", "#9AA2B4"],
+  muted: ["#5E5E5E", "#ADB4C5"],
   text2: ["#4A4A4A", "#B9C0D0"],
-  faint: ["#8E8E8E", "#7E869A"],
+  faint: ["#6B6B6B", "#A7AEBF"],
   line: ["rgba(10,10,10,.1)", "rgba(150,175,255,.18)"],
   lineSoft: ["rgba(10,10,10,.07)", "rgba(150,175,255,.11)"],
-  border: ["rgba(10,10,10,.22)", "rgba(150,175,255,.3)"],
-  dash: ["#B4B4B4", "#5E6678"],
+  border: ["rgba(10,10,10,.5)", "rgba(150,175,255,.6)"],
+  dash: ["#7E7E7E", "#7A8399"],
   scrim: ["rgba(17,18,22,.45)", "rgba(5,7,12,.72)"],
   accent: ["#0F5F58", "#7BE8D8"],
   accentInk: ["#0B4A44", "#A6F2E6"],
   /* A solid fill that carries white text: a done dot, a check, a "today" circle; and a small dark tag or avatar. */
-  accentFill: ["#0F5F58", "#1F8F82"],
+  accentFill: ["#0F5F58", "#13665D"],
   avatar: ["#111216", "rgba(120,160,255,.28)"],
   focus: ["#2F6BFF", "#9FC0FF"],
   /* Flat tints inside a card: a panel, a table head, a chip, the row that was opened last, a teal highlight. */
@@ -77,7 +77,7 @@ const BASE_TOKENS = {
   /* Buttons: the blue pill for the main action, the glass pill for the rest. */
   blue: ["#2F6BFF", "#7FA6FF"],
   blueSoft: ["#E6EDFF", "rgba(80,130,255,.18)"],
-  btnMain: ["linear-gradient(180deg,rgba(47,107,255,.97) 0%,rgba(31,91,234,.94) 100%)", "linear-gradient(180deg,rgba(120,170,255,.55) 0%,rgba(50,100,230,.45) 100%)"],
+  btnMain: ["linear-gradient(180deg,rgba(40,96,240,.97) 0%,rgba(31,91,234,.94) 100%)", "linear-gradient(180deg,rgba(120,170,255,.55) 0%,rgba(50,100,230,.45) 100%)"],
   btnMainShadow: [
     "inset 0 2px 3px rgba(255,255,255,.55),inset 0 -5px 10px rgba(10,40,140,.3),0 10px 22px -8px rgba(47,107,255,.6),0 0 24px rgba(90,150,255,.55),0 0 0 1px rgba(160,200,255,.6)",
     "inset 0 1px 2px rgba(255,255,255,.55),inset 0 -6px 12px rgba(20,50,160,.35),0 0 0 1px rgba(150,195,255,.7),0 0 28px rgba(70,140,255,.7),0 12px 24px -10px rgba(0,0,0,.6)",
@@ -97,14 +97,14 @@ const BASE_TOKENS = {
   /* The glass pill sits on a white card, so a white edge made it vanish: it gets a slate edge in the light skin. */
   btnGlassEdge: ["rgba(55,70,125,.65)", "rgba(150,175,255,.24)"],
   /* The project stepper: the track, a step not reached yet, the step in progress and a step done. */
-  stepTrack: ["rgba(255,255,255,.55)", "rgba(255,255,255,.08)"],
+  stepTrack: ["#D5D9E3", "#3A4055"],
   stepNext: ["linear-gradient(180deg,rgba(255,255,255,.9),rgba(240,244,250,.55))", "linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.04))"],
   stepNextShadow: [
     "inset 0 2px 2px rgba(255,255,255,.95),inset 0 -3px 6px rgba(110,125,160,.15),0 4px 10px -4px rgba(90,105,150,.3)",
     "inset 0 1px 2px rgba(255,255,255,.2),inset 0 -3px 6px rgba(0,0,0,.2),0 4px 10px -4px rgba(0,0,0,.5)",
   ],
-  stepNextEdge: ["rgba(255,255,255,.85)", "rgba(150,175,255,.3)"],
-  stepNow: ["#D63C5E", "#FF7A93"],
+  stepNextEdge: ["#7A8397", "#6E778C"],
+  stepNow: ["#B8304F", "#FF8FA4"],
   /* The four payment tiles: paid, needs attention, and later. */
   payPaid: ["linear-gradient(135deg,#DDF4F2 0%,#C7E4F4 100%)", "linear-gradient(135deg,rgba(40,200,180,.16) 0%,rgba(60,150,255,.1) 100%)"],
   payAlert: ["linear-gradient(135deg,#FFEAD8 0%,#FAD3DE 100%)", "linear-gradient(135deg,rgba(245,190,80,.16) 0%,rgba(255,120,170,.1) 100%)"],
@@ -249,7 +249,7 @@ export const BETA_STAGE: Readonly<Record<"A" | "B" | "C" | "D" | "E", BetaTone>>
   E: pair("accent"),
 };
 
-const TAG_FAMILIES = ["red", "amber", "accent", "grey"] as const satisfies readonly ToneFamily[];
+const TAG_FAMILIES = ["amber", "accent", "grey"] as const satisfies readonly ToneFamily[];
 
 /** Building tags are labels, not states: the design tints each building, so the tint comes from the name (the design's
     own string hash) and one building always gets the same one. */

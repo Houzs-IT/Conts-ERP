@@ -12,7 +12,7 @@ import { WS, WsBadge, WsBtn, WsDialog, WsPdfTile, TONE_QUIET, TONE_WAIT } from "
 import { useGuarded, type ViewedFile } from "./betaShared";
 import { dayMonthYear } from "./renovationBetaModel";
 import { removedSheetsOf, sheetsApi, sizeText, type SetSheet, type SheetKind } from "./renovationBetaSheets";
-import { BETA } from "./renovationBetaTheme";
+import { BETA, BETA_HEX } from "./renovationBetaTheme";
 
 const IMAGE = /\.(png|jpe?g|webp|gif)$/i;
 const PDF = /\.pdf$/i;
@@ -189,7 +189,7 @@ export function SheetGrid({ projectId, sheets, changed, onView, onError, edit }:
                 <SheetThumb projectId={projectId} sheet={x} />
                 {changed && (
                   <span style={{ position: "absolute", top: 6, left: 6, padding: "2px 7px", borderRadius: 4, fontSize: 11, fontWeight: 600,
-                    background: isNew ? WS.amberBtn : "rgba(255,255,255,0.92)", color: isNew ? "#FFFFFF" : WS.text2 }}>
+                    background: isNew ? WS.amberBtn : "rgba(255,255,255,0.92)", color: isNew ? "#FFFFFF" : BETA_HEX.text2 }}>
                     {isNew ? "Changed" : "Same"}
                   </span>
                 )}

@@ -210,7 +210,7 @@ function HomeScreen(): ReactElement {
         <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: "-.02em" }}>All projects</h1>
         {can("projects.write") && (
           <button type="button" onClick={() => setCreating(true)}
-            style={{ position: "absolute", top: 0, right: 0, minHeight: 40, padding: "0 16px", border: 0, borderRadius: 999, background: BETA.ink, color: "#fff", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
+            style={{ position: "absolute", top: 0, right: 0, minHeight: 40, padding: "0 16px", border: 0, borderRadius: 999, background: BETA.ink, color: BETA.selInkText, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
             + New project
           </button>
         )}
@@ -236,7 +236,7 @@ function HomeScreen(): ReactElement {
             placeholder="Search name, building, unit, client, RN- code, SO no or person"
             value={query}
             onChange={(e) => setParam("q", e.target.value)}
-            style={{ width: "100%", minHeight: 46, padding: "0 40px 0 40px", border: `1px solid ${BETA.glassEdge}`, borderRadius: 999, background: BETA.field, boxShadow: BETA.btnGlassShadow, font: "inherit", fontSize: 15, color: BETA.ink, boxSizing: "border-box" }}
+            style={{ width: "100%", minHeight: 46, padding: "0 40px 0 40px", border: `1px solid ${BETA.border}`, borderRadius: 999, background: BETA.field, boxShadow: BETA.btnGlassShadow, font: "inherit", fontSize: 15, color: BETA.ink, boxSizing: "border-box" }}
           />
           {query && (
             <button type="button" aria-label="Clear the search" onClick={() => setParam("q", "")}
