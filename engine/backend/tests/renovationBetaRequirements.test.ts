@@ -64,8 +64,19 @@ describe("requirement board", () => {
     const [line] = board([lineRow({ remark: " FLOOR PROTECTION ", qty: "20", is_on_po: true, deliver_on: "2026-11-20T00:00:00Z" })]).projects[0].lines;
     expect(line).toEqual({
       id: "line-1", itemCode: "RN-PROTECTION", name: "Works - Protection", remark: "FLOOR PROTECTION",
-      qty: 20, uom: "UNIT", room: "Common area", group: "works", isOnPo: true, planKey: "PROTECTION", tradeLabel: "Protection", onSiteBy: "2026-11-20", doneQty: 0, doneAt: null,
+      qty: 20, uom: "UNIT", room: "Common area", group: "works", isOnPo: true, planKey: "PROTECTION", tradeLabel: "Protection", onSiteBy: "2026-11-20", doneQty: 0, doneAt: null, isTradeClosed: false,
     });
+  });
+
+  test("a line knows when its trade's site task is done, by the task's state", () => {
+    const lines = [lineRow({ id: "a", sub_code: "ELECTRICAL" }), lineRow({ id: "b", sub_code: "PROTECTION" }), lineRow({ id: "c", cat_code: "BUILTIN", sub_code: "WARDROBE" })];
+    const plans = [
+      planRow({ id: 1, trade_code: "ELECTRICAL", state: "open" }),
+      planRow({ id: 2, trade_code: "ELECTRICAL", category_code: "LIGHTING_FAN", state: "done" }),
+      planRow({ id: 3, trade_code: "CAT:CARPENTRY", category_code: "CARPENTRY", state: "done" }),
+      planRow({ id: 4, trade_code: "PROTECTION", state: "in_progress", actual_end: "2026-11-16" }),
+    ];
+    expect(board(lines, plans).projects[0].lines.map((line) => [line.id, line.isTradeClosed])).toEqual([["a", true], ["b", false], ["c", true]]);
   });
 
   test("Works and Built-in lines are kept; other categories are left out", () => {

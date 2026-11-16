@@ -86,6 +86,7 @@ export interface RequirementLine {
   onSiteBy: string | null;
   doneQty: number;
   doneAt: string | null;
+  isTradeClosed: boolean;
 }
 
 export interface TradePlan {
@@ -123,12 +124,13 @@ const trimmedOrNull = (value: string | null): string | null => value?.trim() || 
 
 const dayOf = (value: string | null): string | null => (value ? value.slice(0, 10) : null);
 
-export function requirementLineOf(row: RequirementLineRow, tick: LineTickRow | null = null): RequirementLine | null {
+export function requirementLineOf(row: RequirementLineRow, tick: LineTickRow | null = null, closedPlanKeys: ReadonlySet<string> = new Set()): RequirementLine | null {
   const group = GROUP_OF_CATEGORY[row.cat_code];
   if (!group) return null;
   const itemCode = row.item_code ?? "";
   const qty = Number(row.qty);
   const doneQty = Number(tick?.done_qty ?? 0);
+  const planKey = group === "builtin" ? BUILT_IN_PLAN_KEY : row.sub_code;
   return {
     id: row.id,
     itemCode,
@@ -139,11 +141,12 @@ export function requirementLineOf(row: RequirementLineRow, tick: LineTickRow | n
     room: trimmedOrNull(row.room),
     group,
     isOnPo: row.is_on_po,
-    planKey: group === "builtin" ? BUILT_IN_PLAN_KEY : row.sub_code,
+    planKey,
     tradeLabel: group === "works" ? trimmedOrNull(row.sub_label) : null,
     onSiteBy: dayOf(row.deliver_on),
     doneQty,
     doneAt: tick && doneQty >= qty ? tick.done_at : null,
+    isTradeClosed: planKey !== null && closedPlanKeys.has(planKey),
   };
 }
 
@@ -183,12 +186,13 @@ export function buildRequirementBoard(rows: RequirementBoardRows, scope: Categor
   const tickByLine = new Map((rows.ticks ?? []).map((tick) => [tick.so_item_id, tick] as const));
   const projects = rows.projects.map((row) => {
     const id = Number(row.project_id);
+    const closedPlanKeys = new Set((plansByProject.get(id) ?? []).filter((plan) => plan.state === "done").map(planKeyOfTask).filter((key): key is string => key !== null));
     return {
       id,
       code: row.project_code,
       name: row.project_name ?? row.project_code ?? `Project ${id}`,
       brand: trimmedOrNull(row.brand),
-      lines: (linesByProject.get(id) ?? []).map((line) => requirementLineOf(line, tickByLine.get(line.id) ?? null)).filter((line): line is RequirementLine => line !== null),
+      lines: (linesByProject.get(id) ?? []).map((line) => requirementLineOf(line, tickByLine.get(line.id) ?? null, closedPlanKeys)).filter((line): line is RequirementLine => line !== null),
       plans: (plansByProject.get(id) ?? []).map((plan) => tradePlanOf(plan, today)).filter((plan): plan is TradePlan => plan !== null),
     };
   });

@@ -85,6 +85,23 @@ async function completeTradeIfAllDone(db: Db, line: ProgressLine, actor: LineAct
   return completed;
 }
 
+export type ReopenRefusal = "line_not_found" | "po_receipt";
+
+export async function reopenLineTrade(db: Db, soItemId: string, actorCompanySql: string): Promise<{ projectId: number; reopenedTasks: TradeTaskRow[] } | ReopenRefusal> {
+  const line = await loadProgressLine(db, soItemId, actorCompanySql);
+  if (!line) return "line_not_found";
+  const doneTasks = (await tradeTasksOf(db, line)).filter((task) => task.state === "done");
+  for (const task of doneTasks) {
+    if (await completionRefusal(db, task) === "po_task_completes_on_receipt") return "po_receipt";
+  }
+  for (const task of doneTasks) {
+    await db.prepare(
+      `UPDATE project_trade_tasks SET state = 'in_progress', done_at = NULL, done_by = NULL, actual_end = NULL, updated_at = now() WHERE id = ?`,
+    ).bind(task.id).run();
+  }
+  return { projectId: line.project_id, reopenedTasks: doneTasks };
+}
+
 export function doneQtyRefusal(doneQty: number, lineQty: number): "invalid_qty" | null {
   return Number.isFinite(doneQty) && doneQty >= 0 && doneQty <= lineQty ? null : "invalid_qty";
 }

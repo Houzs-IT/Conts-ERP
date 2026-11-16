@@ -150,6 +150,7 @@ export function activityText(a: Row): { title: string; body: string | null } {
     case "task_added": return { title: "Site task added", body: to ? taskCodeLabel(to) : null };
     case "task_fulfilment": return { title: `Site task now ${to === "po" ? "by purchase order" : "by in-house crew"}`, body: note };
     case "task_done": return { title: "Site task done", body: [from ? taskCodeLabel(from) : null, note].filter(Boolean).join(": ") || null };
+    case "task_reopened": return { title: "Site task reopened", body: from ? taskCodeLabel(from) : null };
     case "task_skipped": return { title: "Site task skipped", body: [from ? taskCodeLabel(from) : null, note].filter(Boolean).join(": ") || null };
     case "beta_media": return mediaActivityText(from, note);
     case "handover_signed": return { title: "Handover signed", body: to ? `Signed by ${to}` : null };

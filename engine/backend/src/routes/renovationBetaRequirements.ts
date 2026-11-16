@@ -4,7 +4,7 @@ import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanyId, activeCompanySql } from "../scm/lib/companyScope";
 import { todayMyt } from "../scm/lib/my-time";
 import { isMissingRelation, type Db } from "../services/renovation/load";
-import { setLineDoneQty, type LineActor, type TradeTaskRow } from "../services/renovation/lineProgress";
+import { reopenLineTrade, setLineDoneQty, type LineActor, type TradeTaskRow } from "../services/renovation/lineProgress";
 import { loadCategoryScope } from "../services/categoryAccess";
 import {
   LIVE_BOARD_LINE, REQUIREMENT_LINE_LIMIT, SO_LINE_CATEGORY_JOIN, buildRequirementBoard, type RequirementLineRow, type LineTickRow, type RequirementProjectRow, type TradePlanRow,
@@ -106,8 +106,35 @@ async function logTradesDone(c: Ctx, projectId: number, tasks: readonly TradeTas
 const PROGRESS_REFUSALS = {
   line_not_found: [404, "That line is not a Works or Built-in line of a live renovation project."],
   invalid_qty: [400, "Units done must be a number from 0 up to the line's qty."],
-  trade_complete: [409, "This trade is already done, so its lines cannot go back. Reopen it on the project's Site tab first."],
+  trade_complete: [409, "This trade is already done, so its lines cannot go back. Press Reopen on the line first."],
 } as const;
+
+const REOPEN_REFUSALS = {
+  line_not_found: PROGRESS_REFUSALS.line_not_found,
+  po_receipt: [409, "This trade was closed when its purchase order was received, so it cannot be reopened here."],
+} as const;
+
+async function logTradesReopened(c: Ctx, projectId: number, tasks: readonly TradeTaskRow[]): Promise<void> {
+  for (const task of tasks) {
+    await db(c).prepare(`INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .bind(projectId, "task_reopened", task.trade_code, "in_progress", "Reopened from the Renovation board", lineActor(c).userId, activeCompanyId(c) ?? 1).run();
+  }
+}
+
+app.post("/requirements/lines/:soItemId/reopen", requirePermission("projects.write"), async (c) => {
+  try {
+    const outcome = await reopenLineTrade(db(c), c.req.param("soItemId"), lineActor(c).companySql);
+    if (typeof outcome === "string") {
+      const [status, message] = REOPEN_REFUSALS[outcome];
+      return c.json({ error: outcome, message }, status);
+    }
+    await logTradesReopened(c, outcome.projectId, outcome.reopenedTasks);
+    return c.json({ ok: true, reopenedTaskIds: outcome.reopenedTasks.map((task) => task.id) });
+  } catch (error) {
+    if (isMissingRelation(error) || isMissingColumn(error)) return c.json(TICKS_NOT_READY, 409);
+    throw error;
+  }
+});
 
 app.put("/requirements/lines/:soItemId/progress", requirePermission("projects.write"), async (c) => {
   const body = await c.req.json<{ doneQty?: unknown }>().catch(() => ({ doneQty: undefined }));

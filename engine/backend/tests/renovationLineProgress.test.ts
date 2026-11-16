@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { Hono } from "hono";
 import requirements from "../src/routes/renovationBetaRequirements";
-import { doneQtyRefusal, setLineDoneQty, type LineActor, type ProgressLine, type TradeTaskRow } from "../src/services/renovation/lineProgress";
+import { doneQtyRefusal, reopenLineTrade, setLineDoneQty, type LineActor, type ProgressLine, type TradeTaskRow } from "../src/services/renovation/lineProgress";
 
 const ACTOR: LineActor = { userId: 5, personId: null, companySql: " AND p.company_id = 1", today: "2026-11-16" };
 
@@ -98,7 +98,35 @@ describe("units done on a line", () => {
   });
 });
 
-function routeApp(database: unknown, permissions: string[] = ["projects.write"]) {
+describe("reopening a line's trade", () => {
+  const reopens = (runs: Array<{ sql: string; args: unknown[] }>): unknown[] =>
+    runs.filter((run) => run.sql.includes("SET state = 'in_progress', done_at = NULL")).map((run) => run.args.at(-1));
+
+  test("sets each done task of the trade back to in progress and leaves the others", async () => {
+    const { database, runs } = scriptedDb({ line: worksLine({ done_qty: "3" }), tasks: [task({ id: 1, state: "done" }), task({ id: 2, state: "open" }), task({ id: 3, state: "done" })] });
+    expect(await reopenLineTrade(database, "line-1", ACTOR.companySql)).toEqual({ projectId: 13, reopenedTasks: [task({ id: 1, state: "done" }), task({ id: 3, state: "done" })] });
+    expect(reopens(runs)).toEqual([1, 3]);
+  });
+
+  test("a trade with nothing done reopens nothing", async () => {
+    const { database, runs } = scriptedDb({ line: worksLine(), tasks: [task({})] });
+    expect(await reopenLineTrade(database, "line-1", ACTOR.companySql)).toMatchObject({ reopenedTasks: [] });
+    expect(runs).toEqual([]);
+  });
+
+  test("a task closed by a purchase order receipt is not reopened", async () => {
+    const { database, runs } = scriptedDb({ line: worksLine(), tasks: [task({ id: 1, state: "done" }), task({ id: 2, state: "done", fulfilment_kind: "po" })], poLinkedTaskIds: [2] });
+    expect(await reopenLineTrade(database, "line-1", ACTOR.companySql)).toBe("po_receipt");
+    expect(runs).toEqual([]);
+  });
+
+  test("a line that is not a live Works or Built-in line is refused", async () => {
+    const { database } = scriptedDb({ line: null });
+    expect(await reopenLineTrade(database, "nope", ACTOR.companySql)).toBe("line_not_found");
+  });
+});
+
+function routeApp(database: unknown, permissions: string[] = ["projects.write"], path = "/api/beta/requirements/lines/line-1/progress", method = "PUT") {
   const app = new Hono();
   app.use("*", async (c, next) => {
     c.set("user" as never, { id: 5, email: "office@example.test", permissions, page_access: { "projects.list": "view" } } as never);
@@ -106,7 +134,7 @@ function routeApp(database: unknown, permissions: string[] = ["projects.write"])
     await next();
   });
   app.route("/api/beta", requirements);
-  return (body: unknown) => app.request("/api/beta/requirements/lines/line-1/progress", { method: "PUT", body: JSON.stringify(body), headers: { "content-type": "application/json" } }, { DB: database });
+  return (body: unknown) => app.request(path, { method, body: JSON.stringify(body), headers: { "content-type": "application/json" } }, { DB: database });
 }
 
 describe("progress route", () => {
@@ -134,6 +162,15 @@ describe("progress route", () => {
     const response = await routeApp(database)({ doneQty: 1 });
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: "trade_complete" });
+  });
+
+  test("reopen answers the tasks it reopened and needs projects.write", async () => {
+    const { database } = scriptedDb({ line: worksLine({ done_qty: "3" }), tasks: [task({ id: 3, state: "done" })] });
+    const reopen = (permissions: string[]) => routeApp(database, permissions, "/api/beta/requirements/lines/line-1/reopen", "POST")({});
+    expect((await reopen([])).status).toBe(403);
+    const response = await reopen(["projects.write"]);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, reopenedTaskIds: [3] });
   });
 
   test("says progress is not switched on before the migration", async () => {

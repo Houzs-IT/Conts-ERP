@@ -7,7 +7,7 @@ import {
 function line(overrides: Partial<RequirementLine>): RequirementLine {
   return {
     id: "a", itemCode: "RN-PROTECTION", name: "Works - Protection", remark: null, qty: 1, uom: "UNIT",
-    room: "Common area", group: "works", isOnPo: false, planKey: "PROTECTION", tradeLabel: null, onSiteBy: null, doneQty: 0, doneAt: null,
+    room: "Common area", group: "works", isOnPo: false, planKey: "PROTECTION", tradeLabel: null, onSiteBy: null, doneQty: 0, doneAt: null, isTradeClosed: false,
     ...overrides,
   };
 }
