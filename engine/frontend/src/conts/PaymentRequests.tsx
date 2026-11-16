@@ -42,6 +42,8 @@ export function PaymentRequests() {
     try { return await act.mutateAsync({ path, body, method }); } catch (e) { setNote(e instanceof Error ? e.message : "Not saved."); return null; }
   };
   const makeApInvoice = async (r: PaymentRequest) => {
+    /* A payee not on the list yet: finance picks the supplier here first (chew, 16 Nov 2026: 财务这里也可以自行选). */
+    if (!r.supplierId && !(await linkSupplier(r))) return;
     /* A deposit is paid on a quotation; a payment may be on the formal invoice or on a quotation (SOP 3.8). */
     const provisional = r.type === "DEPOSIT" ? true : await choose({
       title: `${r.requestNo}: what is the paper?`,
@@ -76,14 +78,16 @@ export function PaymentRequests() {
       validate: (v) => (v.trim() ? null : "Say why.") });
     if (reason != null) await run(`${requestsPath}/${r.id}/close`, { reason });
   };
-  const linkSupplier = async (r: PaymentRequest) => {
+  /** True once the request names the supplier chosen here. */
+  const linkSupplier = async (r: PaymentRequest): Promise<boolean> => {
     const term = await prompt({ title: `Which supplier is ${r.payeeName}?`, placeholder: "Type part of the name or code", confirmLabel: "Search" });
-    if (!term?.trim()) return;
+    if (!term?.trim()) return false;
     const found = await api.get<{ suppliers: { id: string; code: string; name: string }[] }>(`/api/claims/suppliers?q=${encodeURIComponent(term.trim())}`).catch((e: unknown) => { setNote(e instanceof Error ? e.message : "The suppliers could not be searched."); return null; });
-    if (!found) return;
-    if (found.suppliers.length === 0) { setNote(`No supplier matches "${term.trim()}". Add the supplier first.`); return; }
+    if (!found) return false;
+    if (found.suppliers.length === 0) { setNote(`No supplier matches "${term.trim()}". Add the supplier first.`); return false; }
     const id = await choose({ title: "Link to this supplier", options: found.suppliers.slice(0, 12).map((s) => ({ value: s.id, label: `${s.code} ${s.name}` })) });
-    if (id) await run(`${requestsPath}/${r.id}/supplier`, { supplierId: id }, "PATCH");
+    if (!id) return false;
+    return (await run(`${requestsPath}/${r.id}/supplier`, { supplierId: id }, "PATCH")) != null;
   };
 
   const columns = useMemo<Column<PaymentRequest>[]>(() => [
@@ -130,11 +134,10 @@ export function PaymentRequests() {
       render: (r) => {
         const open = r.status === "SUBMITTED" || r.status === "PART_PAID";
         /* The AP invoice: a payment while nothing pays it yet; a deposit while open or once paid (its quotation). */
-        /* Shown also before the payee is linked (chew, 16 Nov 2026: "我也没有看到 make ap invoice"), but only made once it
-           is a supplier on the list: an AP invoice is a supplier's bill. */
+        /* Shown also before the payee is linked (chew, 16 Nov 2026): finance picks the supplier first, then the bill is made. */
         const canBill = edit && !r.apInvoice && (r.type === "DEPOSIT" ? open || r.status === "PAID" : open && r.vouchers.every((v) => v.status === "CANCELLED"));
         const billButton = canBill && (
-          <Button className="h-8" variant="secondary" disabled={act.isPending || !r.supplierId} title={!r.supplierId ? "Link the payee to a supplier first." : undefined}
+          <Button className="h-8" variant="secondary" disabled={act.isPending} title={!r.supplierId ? "Choose the supplier, then the AP invoice is made." : undefined}
             onClick={() => void makeApInvoice(r)}>Make AP invoice</Button>
         );
         if (!open) return billButton || null;

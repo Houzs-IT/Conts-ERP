@@ -48,7 +48,11 @@ vi.mock('../../conts/subDepartmentQueries', () => ({
   ] } }),
 }));
 vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
-vi.mock('../../conts/projectLimitQueries', () => ({ useProjectOptions: () => ({ data: { projects: [{ id: 7, code: 'P7', name: 'SKYLINE D-25-13', funding: 'customer' }] } }) }));
+vi.mock('../../conts/projectLimitQueries', () => ({
+  useProjectOptions: () => ({ data: { projects: [{ id: 7, code: 'P7', name: 'SKYLINE D-25-13', funding: 'customer' }] } }),
+  /* A line's unit (chew, 15 Nov 2026: a bill made from a payment request keeps its units). */
+  useUnitOptions: () => ({ data: { units: [{ id: 'u-1', building: 'SKYLINE', unitNumber: 'D-25-13' }] } }),
+}));
 vi.mock('../../vendor/scm/lib/ap-invoice-queries', () => ({
   useApInvoices: () => ({ data: { rows: ROWS }, isLoading: false, isError: false, error: null }),
   useApInvoiceDetail: (id: string | null) => ({ data: id ? {
@@ -181,7 +185,7 @@ describe('raising an AP invoice', () => {
     fireEvent.click(screen.getByText('New AP invoice'));
     const d = dialog();
     const amountHead = within(d).getByText('Amount (RM)');
-    expect([...amountHead.parentElement!.children].map((c) => c.textContent)).toEqual(['Account', 'Description', 'Amount (RM)', 'Department', 'Project', '']);
+    expect([...amountHead.parentElement!.children].map((c) => c.textContent)).toEqual(['Account', 'Description', 'Amount (RM)', 'Department', 'Project', 'Unit', '']);
 
     fireEvent.keyDown(within(d).getByLabelText('line 1 amount'), { key: 'Insert' });
     expect(within(d).getByLabelText('line 2 amount')).toBeTruthy();
