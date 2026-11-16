@@ -50,6 +50,22 @@ describe('reading a page', () => {
   });
 });
 
+describe("a provider's supplier on the list (chew, 16 Nov 2026)", () => {
+  test('long names on the bill find the short names on the list, and the other way round; two alike find none', async () => {
+    const { providerSupplier } = await import('./utility-bill-routes');
+    const list = (...names: string[]) => names.map((name, i) => ({ id: `S${i}`, name }));
+    expect(providerSupplier('Tenaga Nasional Berhad', list('TNB', 'ACE HARDWARE'))?.name).toBe('TNB');
+    expect(providerSupplier('Tenaga Nasional Berhad', list('TENAGA NASIONAL BHD'))?.name).toBe('TENAGA NASIONAL BHD');
+    expect(providerSupplier('TNB', list('Tenaga Nasional Berhad'))?.name).toBe('Tenaga Nasional Berhad');
+    expect(providerSupplier('Perbadanan Pengurusan Skyline Residence', list('MC SKYLINE RESIDENCE', 'MC AGILE'))?.name).toBe('MC SKYLINE RESIDENCE');
+    expect(providerSupplier('Joint Management Body Agile Bukit Bintang', list('JMB AGILE BUKIT BINTANG'))?.name).toBe('JMB AGILE BUKIT BINTANG');
+    expect(providerSupplier('Skyline Residence Management Office', list('SKYLINE RESIDENCE', 'ACE'))?.name).toBe('SKYLINE RESIDENCE');
+    expect(providerSupplier('Indah Water', list('INDAH WATER KONSORTIUM SDN BHD'))?.name).toBe('INDAH WATER KONSORTIUM SDN BHD');
+    expect(providerSupplier('TIME', list('OVERTIME TRADING'))).toBeNull();
+    expect(providerSupplier('Skyline', list('SKYLINE RESIDENCE', 'SKYLINE MALL'))).toBeNull();
+  });
+});
+
 describe('a payment request for a provider', () => {
   test('one request, one Rental line per bill with its unit, no account, total = the bills', async () => {
     const sb = world();
