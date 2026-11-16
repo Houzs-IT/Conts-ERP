@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
 import type { RequirementLine, RequirementProject, TradePlan } from "./renovationBetaRequirementsApi";
 import {
-  NO_ROOM, brandOptions, clampDoneQty, filterProjectLines, groupByRoom, groupByTrade, isLineDone, lineProgressText, onPoCount, planDates, progressText, roomSummary,
+  NO_ROOM, brandOptions, clampDoneQty, filterProjectLines, groupByRoom, groupByTrade, isLineDone, lineProgressText, onPoCount, planDates, progressText, proofPhotoUrl, proofThumbnails, roomSummary,
 } from "./renovationBetaRequirementsModel";
 
 function line(overrides: Partial<RequirementLine>): RequirementLine {
   return {
     id: "a", itemCode: "RN-PROTECTION", name: "Works - Protection", remark: null, qty: 1, uom: "UNIT",
-    room: "Common area", group: "works", isOnPo: false, planKey: "PROTECTION", tradeLabel: null, onSiteBy: null, doneQty: 0, doneAt: null, isTradeClosed: false,
+    room: "Common area", group: "works", isOnPo: false, planKey: "PROTECTION", tradeLabel: null, onSiteBy: null, doneQty: 0, doneAt: null, isTradeClosed: false, photoCount: 0, latestPhotoKeys: [], latestPhotoBy: null,
     ...overrides,
   };
 }
@@ -98,5 +98,18 @@ describe("requirement board search and brands", () => {
 
   test("brands list each named brand once, sorted", () => {
     expect(brandOptions([baron, project({ brand: "Dream Crafter" }), project({ brand: null }), baron])).toEqual(["Dream Crafter", "The Conts"]);
+  });
+});
+
+describe("proof photo thumbnails", () => {
+  test("shows up to three newest photos and counts the rest", () => {
+    const keys = ["renovation/7/proof-4.jpg", "renovation/7/proof-3.jpg", "renovation/7/proof-2.jpg", "renovation/7/proof-1.jpg"];
+    expect(proofThumbnails(line({ photoCount: 6, latestPhotoKeys: keys }))).toEqual({ keys: keys.slice(0, 3), extra: 3 });
+    expect(proofThumbnails(line({ photoCount: 2, latestPhotoKeys: keys.slice(0, 2) }))).toEqual({ keys: keys.slice(0, 2), extra: 0 });
+    expect(proofThumbnails(line({}))).toEqual({ keys: [], extra: 0 });
+  });
+
+  test("a photo opens through its own project's file route", () => {
+    expect(proofPhotoUrl("renovation/7/proof-1.jpg")).toBe("/api/renovation/7/files?key=renovation%2F7%2Fproof-1.jpg");
   });
 });

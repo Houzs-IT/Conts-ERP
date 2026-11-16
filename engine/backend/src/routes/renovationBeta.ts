@@ -1401,7 +1401,7 @@ app.post("/projects/:id/media", requirePermission("projects.write"), async (c) =
   if (co == null) return c.json({ error: "not_found" }, 404);
   const b = await body(c);
   const target = parseTarget(typeof b.target === "string" ? b.target : "progress");
-  if (!target || target.kind === "defect") return c.json({ error: "target_invalid", message: "Say what the photos are for." }, 400);
+  if (!target || target.kind === "defect" || target.kind === "line") return c.json({ error: "target_invalid", message: "Say what the photos are for." }, 400);
   if (target.kind === "task") {
     const t = await db(c).prepare(`SELECT id FROM project_trade_tasks WHERE id = ? AND project_id = ?`).bind(target.taskId, id).first();
     if (!t) return c.json({ error: "task_not_found", message: "That site step is not on this project." }, 404);
@@ -1519,11 +1519,14 @@ app.get("/projects/:id/photos", requirePageAccess("projects.list"), async (c) =>
       const t = parseTarget(m.target);
       if (!t || t.kind === "defect") continue;
       const meta = metaOf(m.note, m.key);
-      const step = t.kind === "task" ? taskName.get(t.taskId) ?? "Site step" : null;
+      const sender = meta.by ?? m.by;
+      const step = t.kind === "task" ? taskName.get(t.taskId) ?? "Site step" : t.kind === "line" ? "Line proof" : null;
       out.push({
         id: `media-${m.id}`, path: fileUrl(id, m.key), kind: mediaKindOf(meta.mime, meta.name), name: meta.name, at: m.at, area: meta.area, category: "progress",
         label: step,
-        group: t.kind === "task" ? { key: `task:${t.taskId}`, title: `Site step: ${step ?? "Site step"}` } : { key: `progress:${m.at ?? m.id}:${m.by ?? ""}`, title: m.by ? `Site photos by ${m.by}` : "Site photos" },
+        group: t.kind === "task" ? { key: `task:${t.taskId}`, title: `Site step: ${step ?? "Site step"}` }
+          : t.kind === "line" ? { key: `line:${t.soItemId}`, title: sender ? `Line proof by ${sender}` : "Line proof" }
+          : { key: `progress:${m.at ?? m.id}:${m.by ?? ""}`, title: m.by ? `Site photos by ${m.by}` : "Site photos" },
         note: meta.note,
       });
     }

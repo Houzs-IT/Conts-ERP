@@ -100,6 +100,18 @@ export function clampDoneQty(doneQty: number, lineQty: number): number {
   return Number.isFinite(doneQty) ? Math.min(lineQty, Math.max(0, doneQty)) : 0;
 }
 
+export const PROOF_THUMBNAILS_SHOWN = 3;
+
+export function proofPhotoUrl(key: string): string {
+  const projectId = /^renovation\/(\d+)\//.exec(key)?.[1] ?? "0";
+  return `/api/renovation/${projectId}/files?key=${encodeURIComponent(key)}`;
+}
+
+export function proofThumbnails(line: Pick<RequirementLine, "photoCount" | "latestPhotoKeys">): { keys: string[]; extra: number } {
+  const keys = line.latestPhotoKeys.slice(0, PROOF_THUMBNAILS_SHOWN);
+  return { keys, extra: Math.max(0, line.photoCount - keys.length) };
+}
+
 export function doneCount(lines: readonly RequirementLine[]): number {
   return lines.filter(isLineDone).length;
 }

@@ -18,6 +18,9 @@ export interface RequirementLine {
   doneQty: number;
   doneAt: string | null;
   isTradeClosed: boolean;
+  photoCount: number;
+  latestPhotoKeys: string[];
+  latestPhotoBy: string | null;
 }
 
 export type TradePlanStatus = "skipped" | "done" | "in_progress" | "overdue" | "late_start" | "planned" | "unscheduled";
@@ -51,17 +54,11 @@ export interface ProgressAnswer {
   previousDoneQty: number;
   doneQty: number;
   completedTaskIds: number[];
-}
-
-export interface ReopenAnswer {
-  ok: true;
-  reopenedTaskIds: number[];
+  didReopenTrade?: boolean;
 }
 
 export const requirementsApi = {
-  reopenTrade: (lineId: string): Promise<ReopenAnswer> =>
-    api.post<ReopenAnswer>(`/api/beta/requirements/lines/${encodeURIComponent(lineId)}/reopen`, {}),
   board: (): Promise<RequirementBoard> => api.get<RequirementBoard>("/api/beta/requirements"),
-  setProgress: (lineId: string, doneQty: number): Promise<ProgressAnswer> =>
-    api.put<ProgressAnswer>(`/api/beta/requirements/lines/${encodeURIComponent(lineId)}/progress`, { doneQty }),
+  setProgress: (lineId: string, doneQty: number, shouldReopenTrade: boolean): Promise<ProgressAnswer> =>
+    api.put<ProgressAnswer>(`/api/beta/requirements/lines/${encodeURIComponent(lineId)}/progress`, { doneQty, shouldReopenTrade }),
 };

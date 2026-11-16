@@ -52,11 +52,13 @@ export function mediaCap(mime: string): number | null {
 export type MediaTarget =
   | { kind: "progress" }
   | { kind: "task"; taskId: number }
+  | { kind: "line"; soItemId: string }
   | { kind: "defect"; defectId: number; side: "before" | "after"; round: number };
 
 export function targetCode(t: MediaTarget): string {
   if (t.kind === "progress") return "progress";
   if (t.kind === "task") return `task:${t.taskId}`;
+  if (t.kind === "line") return `line:${t.soItemId}`;
   return t.side === "before" ? `defect:${t.defectId}:before` : `defect:${t.defectId}:after:${t.round}`;
 }
 
@@ -65,6 +67,8 @@ export function parseTarget(s: string | null | undefined): MediaTarget | null {
   if (v === "progress") return { kind: "progress" };
   let m = /^task:(\d+)$/.exec(v);
   if (m) return { kind: "task", taskId: Number(m[1]) };
+  m = /^line:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(v);
+  if (m) return { kind: "line", soItemId: m[1] };
   m = /^defect:(\d+):before$/.exec(v);
   if (m) return { kind: "defect", defectId: Number(m[1]), side: "before", round: 0 };
   m = /^defect:(\d+):after:(\d+)$/.exec(v);
@@ -72,7 +76,7 @@ export function parseTarget(s: string | null | undefined): MediaTarget | null {
   return null;
 }
 
-export interface MediaMeta { name: string; mime: string; size: number | null; area: string | null; note: string | null }
+export interface MediaMeta { name: string; mime: string; size: number | null; area: string | null; note: string | null; by?: string | null }
 
 export interface MediaItemIn { key: string; meta: MediaMeta }
 
@@ -133,7 +137,7 @@ export function metaOf(note: unknown, key: string): MediaMeta {
   const name = text(o.name, 200) ?? key.split("/").pop() ?? "file";
   const mime = typeof o.mime === "string" ? o.mime : "";
   const size = Number(o.size);
-  return { name, mime, size: Number.isFinite(size) && size > 0 ? size : null, area: text(o.area, MEDIA_AREA_MAX), note: text(o.note, MEDIA_NOTE_MAX) };
+  return { name, mime, size: Number.isFinite(size) && size > 0 ? size : null, area: text(o.area, MEDIA_AREA_MAX), note: text(o.note, MEDIA_NOTE_MAX), by: text(o.by, 120) };
 }
 
 /** The rows to insert for a list, as JSON for jsonb_to_recordset(key text, meta text). */
@@ -146,7 +150,7 @@ export function mediaActivityText(from: string | null, note: string | null): { t
   const t = parseTarget(from);
   const meta = metaOf(note, "");
   const what = meta.mime.startsWith("video/") ? "Video" : "Photo";
-  const where = !t ? "" : t.kind === "progress" ? " from site" : t.kind === "task" ? " to a site step" : t.side === "before" ? " to a defect (before)" : " to a defect (after the fix)";
+  const where = !t ? "" : t.kind === "progress" ? " from site" : t.kind === "task" ? " to a site step" : t.kind === "line" ? " as line proof" : t.side === "before" ? " to a defect (before)" : " to a defect (after the fix)";
   return { title: `${what} added${where}`, body: [meta.area, meta.note].filter(Boolean).join(" · ") || null };
 }
 

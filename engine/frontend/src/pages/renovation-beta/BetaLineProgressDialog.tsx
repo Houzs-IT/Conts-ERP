@@ -32,7 +32,7 @@ export function LineProgressDialog({ line, isSaving, onSave, onClose }: LineProg
         </>
       )}
     >
-      {line.isTradeClosed && <p style={{ margin: 0, fontSize: 14, color: WS.text2 }}>This trade is done. Saving a lower count reopens its site task.</p>}
+      {line.isTradeClosed && doneQty < line.doneQty && <p style={{ margin: 0, fontSize: 14, color: WS.text2 }}>Saving a lower count reopens this trade.</p>}
       <p style={{ margin: 0, fontSize: 14, color: WS.text2 }}>How many are done?</p>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14 }}>
         <WsBtn style={stepButtonStyle} disabled={doneQty <= 0} onClick={() => changeBy(-1)}>

@@ -9,7 +9,7 @@ import {
 } from "./BetaWsUi";
 import { requirementsApi, type RequirementLine, type RequirementProject, type TradePlan, type TradePlanStatus } from "./renovationBetaRequirementsApi";
 import {
-  PLAN_STATUS_LABEL, brandOptions, filterProjectLines, formatQty, groupByRoom, groupByTrade, hasPlanDates, isPlanLate, onPoCount, planDates, plural, progressText, roomSummary,
+  PLAN_STATUS_LABEL, brandOptions, filterProjectLines, formatQty, groupByRoom, groupByTrade, hasPlanDates, isPlanLate, onPoCount, planDates, plural, progressText, proofPhotoUrl, proofThumbnails, roomSummary,
   type GroupCard, type RoomGroup, type TradeGroup,
 } from "./renovationBetaRequirementsModel";
 import { onBrandList } from "./renovationBetaHomeModel";
@@ -252,6 +252,22 @@ function PlanChip({ plan, isNamed }: { plan: TradePlan; isNamed: boolean }): Rea
   );
 }
 
+function ProofThumbnails({ line }: { line: RequirementLine }): ReactElement | null {
+  const { keys, extra } = proofThumbnails(line);
+  if (keys.length === 0) return null;
+  return (
+    <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, maxWidth: "100%" }}>
+      {keys.map((key) => (
+        <a key={key} href={proofPhotoUrl(key)} target="_blank" rel="noreferrer" aria-label="Open proof photo" style={{ display: "block", width: 44, height: 44, flex: "0 0 44px" }}>
+          <img src={proofPhotoUrl(key)} alt="Proof of work" loading="lazy" style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, border: `1px solid ${BETA.line}`, display: "block" }} />
+        </a>
+      ))}
+      {extra > 0 && <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>+{extra}</span>}
+      {line.latestPhotoBy && <span style={{ fontSize: 12, color: BETA.muted, minWidth: 0, overflowWrap: "anywhere" }}>by {line.latestPhotoBy}</span>}
+    </span>
+  );
+}
+
 function LineRow({ line }: { line: RequirementLine }): ReactElement {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 14px", minHeight: 44, padding: "8px 14px 8px 44px" }}>
@@ -265,6 +281,7 @@ function LineRow({ line }: { line: RequirementLine }): ReactElement {
         {line.onSiteBy && <span style={{ whiteSpace: "nowrap" }}>On site by {dayMonth(line.onSiteBy)}</span>}
         <WsBadge tone={line.isOnPo ? TONE_ACCENT : TONE_QUIET}>{line.isOnPo ? "On PO" : "Not on PO"}</WsBadge>
         <LineProgressCell line={line} />
+        <ProofThumbnails line={line} />
       </span>
     </div>
   );

@@ -164,6 +164,35 @@ describe("progress route", () => {
     expect(await response.json()).toMatchObject({ error: "trade_complete" });
   });
 
+  test("one save reopens a closed trade and lowers the count, and logs the reopening", async () => {
+    const { database, runs } = scriptedDb({ line: worksLine({ done_qty: "3" }), tasks: [task({ id: 3, state: "done" })] });
+    const response = await routeApp(database)({ doneQty: 1, shouldReopenTrade: true });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, previousDoneQty: 3, doneQty: 1, completedTaskIds: [], didReopenTrade: true });
+    const order = runs.map((run) => (run.sql.includes("SET state = 'in_progress'") ? "reopen" : run.sql.includes("INSERT INTO project_line_progress") ? "count" : run.sql.includes("task_reopened") || run.args.includes("task_reopened") ? "log" : "other"));
+    expect(order.filter((step) => step !== "other")).toEqual(["reopen", "count", "log"]);
+  });
+
+  test("a lower count on a closed trade is still refused unless the call asks to reopen it", async () => {
+    const { database } = scriptedDb({ line: worksLine({ done_qty: "3" }), tasks: [task({ state: "done" })] });
+    expect((await routeApp(database)({ doneQty: 1, shouldReopenTrade: false })).status).toBe(409);
+  });
+
+  test("asking to reopen does nothing when the count goes up or the trade is open", async () => {
+    const { database, runs } = scriptedDb({ line: worksLine({ done_qty: "1" }), remaining: 1, tasks: [task({ state: "done" })] });
+    const response = await routeApp(database)({ doneQty: 2, shouldReopenTrade: true });
+    expect(await response.json()).toEqual({ ok: true, previousDoneQty: 1, doneQty: 2, completedTaskIds: [] });
+    expect(runs.some((run) => run.sql.includes("SET state = 'in_progress'"))).toBe(false);
+  });
+
+  test("a trade closed by a PO receipt cannot be reopened by a lower count", async () => {
+    const { database, runs } = scriptedDb({ line: worksLine({ done_qty: "3" }), tasks: [task({ id: 2, state: "done", fulfilment_kind: "po" })], poLinkedTaskIds: [2] });
+    const response = await routeApp(database)({ doneQty: 1, shouldReopenTrade: true });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: "po_receipt" });
+    expect(runs).toEqual([]);
+  });
+
   test("reopen answers the tasks it reopened and needs projects.write", async () => {
     const { database } = scriptedDb({ line: worksLine({ done_qty: "3" }), tasks: [task({ id: 3, state: "done" })] });
     const reopen = (permissions: string[]) => routeApp(database, permissions, "/api/beta/requirements/lines/line-1/reopen", "POST")({});

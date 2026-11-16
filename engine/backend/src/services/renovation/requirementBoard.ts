@@ -1,4 +1,5 @@
 import { lineVisible, type CategoryScope } from "../categoryAccess";
+import { MEDIA_ACTION, metaOf, parseTarget } from "./betaMedia";
 import { todayMyt } from "../../scm/lib/my-time";
 import { isMissingRelation, type Db } from "./load";
 import { tradeTaskStatus, type TaskStatus } from "./tradeTasks";
@@ -73,6 +74,15 @@ export interface LineTickRow {
   done_qty: number | string;
 }
 
+export interface LineProofRow {
+  target: string;
+  key: string;
+  note: string | null;
+  total: number | string;
+}
+
+export const PROOF_THUMBNAIL_LIMIT = 4;
+
 export interface RequirementLine {
   id: string;
   itemCode: string;
@@ -89,6 +99,9 @@ export interface RequirementLine {
   doneQty: number;
   doneAt: string | null;
   isTradeClosed: boolean;
+  photoCount: number;
+  latestPhotoKeys: string[];
+  latestPhotoBy: string | null;
 }
 
 export interface TradePlan {
@@ -120,13 +133,14 @@ export interface RequirementBoardRows {
   lines: readonly RequirementLineRow[];
   plans: readonly TradePlanRow[];
   ticks: readonly LineTickRow[] | null;
+  proofs?: readonly LineProofRow[];
 }
 
 const trimmedOrNull = (value: string | null): string | null => value?.trim() || null;
 
 const dayOf = (value: string | null): string | null => (value ? value.slice(0, 10) : null);
 
-export function requirementLineOf(row: RequirementLineRow, tick: LineTickRow | null = null, closedPlanKeys: ReadonlySet<string> = new Set()): RequirementLine | null {
+export function requirementLineOf(row: RequirementLineRow, tick: LineTickRow | null = null, closedPlanKeys: ReadonlySet<string> = new Set(), proofs: readonly LineProofRow[] = []): RequirementLine | null {
   const group = GROUP_OF_CATEGORY[row.cat_code];
   if (!group) return null;
   const itemCode = row.item_code ?? "";
@@ -149,7 +163,22 @@ export function requirementLineOf(row: RequirementLineRow, tick: LineTickRow | n
     doneQty,
     doneAt: tick && doneQty >= qty ? tick.done_at : null,
     isTradeClosed: planKey !== null && closedPlanKeys.has(planKey),
+    photoCount: Number(proofs[0]?.total ?? 0),
+    latestPhotoKeys: proofs.map((proof) => proof.key),
+    latestPhotoBy: proofs[0] ? metaOf(proofs[0].note, proofs[0].key).by ?? null : null,
   };
+}
+
+function proofsByLine(rows: readonly LineProofRow[]): Map<string, LineProofRow[]> {
+  const byLine = new Map<string, LineProofRow[]>();
+  for (const row of rows) {
+    const target = parseTarget(row.target);
+    if (target?.kind !== "line") continue;
+    const lineRows = byLine.get(target.soItemId) ?? [];
+    lineRows.push(row);
+    byLine.set(target.soItemId, lineRows);
+  }
+  return byLine;
 }
 
 export function planKeyOfTask(row: Pick<TradePlanRow, "trade_code" | "category_code">): string | null {
@@ -185,6 +214,7 @@ export function buildRequirementBoard(rows: RequirementBoardRows, scope: Categor
   const visibleLines = rows.lines.filter((row) => lineVisible(scope, row.cat_code, row.sub_code));
   const linesByProject = groupByProject(visibleLines, (row) => Number(row.project_id));
   const plansByProject = groupByProject(rows.plans, (row) => Number(row.project_id));
+  const proofByLine = proofsByLine(rows.proofs ?? []);
   const tickByLine = new Map((rows.ticks ?? []).map((tick) => [tick.so_item_id, tick] as const));
   const projects = rows.projects.map((row) => {
     const id = Number(row.project_id);
@@ -194,7 +224,7 @@ export function buildRequirementBoard(rows: RequirementBoardRows, scope: Categor
       code: row.project_code,
       name: row.project_name ?? row.project_code ?? `Project ${id}`,
       brand: trimmedOrNull(row.brand),
-      lines: (linesByProject.get(id) ?? []).map((line) => requirementLineOf(line, tickByLine.get(line.id) ?? null, closedPlanKeys)).filter((line): line is RequirementLine => line !== null),
+      lines: (linesByProject.get(id) ?? []).map((line) => requirementLineOf(line, tickByLine.get(line.id) ?? null, closedPlanKeys, proofByLine.get(line.id))).filter((line): line is RequirementLine => line !== null),
       plans: (plansByProject.get(id) ?? []).map((plan) => tradePlanOf(plan, today)).filter((plan): plan is TradePlan => plan !== null),
     };
   });
@@ -207,7 +237,7 @@ export function buildRequirementBoard(rows: RequirementBoardRows, scope: Categor
 
 export interface RequirementBoardFilter {
   companySql: string;
-  categoryScope: CategoryScope | null;
+  categoryScope: CategoryScope | null | Promise<CategoryScope | null>;
   brandName: string | null;
 }
 
@@ -256,6 +286,18 @@ const TICKS_SQL = (filter: RequirementBoardFilter): string =>
      JOIN projects p ON p.id = lp.project_id
     WHERE ${LIVE_RENOVATION_PROJECTS(filter)}`;
 
+const PROOFS_SQL = (filter: RequirementBoardFilter): string =>
+  `SELECT ranked.target, ranked.key, ranked.note, ranked.total
+     FROM (SELECT a.from_value AS target, a.to_value AS key, a.note,
+                  count(*) OVER (PARTITION BY a.from_value)::int AS total,
+                  row_number() OVER (PARTITION BY a.from_value ORDER BY a.id DESC) AS proof_rank
+             FROM project_activity a
+             JOIN projects p ON p.id = a.project_id
+            WHERE a.action = '${MEDIA_ACTION}' AND a.from_value LIKE 'line:%' AND a.archived_at IS NULL AND a.to_value IS NOT NULL
+              AND ${LIVE_RENOVATION_PROJECTS(filter)}) ranked
+    WHERE ranked.proof_rank <= ${PROOF_THUMBNAIL_LIMIT}
+    ORDER BY ranked.target, ranked.proof_rank`;
+
 export const isMissingColumn = (error: unknown): boolean => (error as { code?: string } | null)?.code === "42703";
 
 async function readTicks(db: Db, filter: RequirementBoardFilter): Promise<LineTickRow[] | null> {
@@ -269,12 +311,14 @@ async function readTicks(db: Db, filter: RequirementBoardFilter): Promise<LineTi
 
 export async function loadRequirementBoard(db: Db, filter: RequirementBoardFilter): Promise<RequirementBoard> {
   const bindings = brandBindings(filter);
-  const [projects, lines, plans, ticks] = await Promise.all([
+  const [scope, projects, lines, plans, ticks, proofs] = await Promise.all([
+    filter.categoryScope,
     db.prepare(PROJECTS_SQL(filter)).bind(...bindings).all<RequirementProjectRow>(),
     db.prepare(LINES_SQL(filter)).bind(...bindings).all<RequirementLineRow>(),
     db.prepare(PLANS_SQL(filter)).bind(...bindings).all<TradePlanRow>(),
     readTicks(db, filter),
+    db.prepare(PROOFS_SQL(filter)).bind(...bindings).all<LineProofRow>(),
   ]);
-  const rows = { projects: projects.results ?? [], lines: lines.results ?? [], plans: plans.results ?? [], ticks };
-  return buildRequirementBoard(rows, filter.categoryScope, todayMyt());
+  const rows = { projects: projects.results ?? [], lines: lines.results ?? [], plans: plans.results ?? [], ticks, proofs: proofs.results ?? [] };
+  return buildRequirementBoard(rows, scope, todayMyt());
 }

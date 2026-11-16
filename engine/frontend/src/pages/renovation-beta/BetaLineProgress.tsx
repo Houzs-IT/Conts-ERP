@@ -5,7 +5,7 @@ import { errorText } from "../projects/renovation/renovationModel";
 import { invalidateBeta } from "./renovationBetaBoardApi";
 import { WS, WsBadge, WsBtn, TONE_DONE } from "./BetaWsUi";
 import { LineProgressDialog } from "./BetaLineProgressDialog";
-import { requirementsApi, type RequirementLine } from "./renovationBetaRequirementsApi";
+import { requirementsApi, type ProgressAnswer, type RequirementLine } from "./renovationBetaRequirementsApi";
 import { formatQty, isLineDone, lineProgressText } from "./renovationBetaRequirementsModel";
 import { dayMonth } from "./renovationBetaModel";
 import { BETA } from "./renovationBetaTheme";
@@ -19,7 +19,7 @@ interface SavedProgress {
   doneQty: number;
   qty: number;
   hasClosedTrade: boolean;
-  wasTradeClosed: boolean;
+  didReopenTrade: boolean;
 }
 
 export interface LineProgressControls {
@@ -56,19 +56,20 @@ export function useLineProgress(isReady: boolean): LineProgressState {
     return () => window.clearTimeout(timer);
   }, [saved]);
 
-  const send = async (lineId: string, doneQty: number, shouldReopenTrade: boolean): Promise<{ previousDoneQty: number; completedTaskIds: number[] }> => {
-    if (shouldReopenTrade) await requirementsApi.reopenTrade(lineId);
-    const answer = await requirementsApi.setProgress(lineId, doneQty);
-    await invalidateBeta(queryClient);
-    return answer;
+  const send = async (lineId: string, doneQty: number, shouldReopenTrade: boolean): Promise<ProgressAnswer> => {
+    try {
+      return await requirementsApi.setProgress(lineId, doneQty, shouldReopenTrade);
+    } finally {
+      await invalidateBeta(queryClient);
+    }
   };
 
   const save = async (line: RequirementLine, doneQty: number): Promise<void> => {
     setIsSaving(true);
     setError(null);
     try {
-      const { previousDoneQty, completedTaskIds } = await send(line.id, doneQty, line.isTradeClosed && doneQty < line.doneQty);
-      setSaved({ lineId: line.id, lineLabel: lineLabelOf(line), previousDoneQty, doneQty, qty: line.qty, hasClosedTrade: completedTaskIds.length > 0, wasTradeClosed: line.isTradeClosed });
+      const { previousDoneQty, completedTaskIds, didReopenTrade } = await send(line.id, doneQty, line.isTradeClosed && doneQty < line.doneQty);
+      setSaved({ lineId: line.id, lineLabel: lineLabelOf(line), previousDoneQty, doneQty, qty: line.qty, hasClosedTrade: completedTaskIds.length > 0, didReopenTrade: didReopenTrade === true });
       setEditingLine(null);
     } catch (failure) {
       setError(errorText(failure));
@@ -81,7 +82,7 @@ export function useLineProgress(isReady: boolean): LineProgressState {
     setSaved(null);
     setError(null);
     try {
-      await send(undone.lineId, undone.previousDoneQty, undone.wasTradeClosed && undone.previousDoneQty < undone.doneQty);
+      await send(undone.lineId, undone.previousDoneQty, undone.didReopenTrade && undone.previousDoneQty < undone.doneQty);
     } catch (failure) {
       setError(errorText(failure));
     }
@@ -118,7 +119,7 @@ export function LineProgressCell({ line }: { line: RequirementLine }): ReactElem
             {lineProgressText(line)} done
           </span>
         )}
-      {canUpdate && <WsBtn size="lg" onClick={() => openLine(line)} style={{ minHeight: 44 }}>{line.isTradeClosed ? "Reopen" : "Update"}</WsBtn>}
+      {canUpdate && <WsBtn size="lg" onClick={() => openLine(line)} style={{ minHeight: 44 }}>Update</WsBtn>}
     </span>
   );
 }

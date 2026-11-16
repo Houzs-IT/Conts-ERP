@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { Hono } from "hono";
 import requirements from "../src/routes/renovationBetaRequirements";
 import {
-  REQUIREMENT_LINE_LIMIT, buildRequirementBoard, type RequirementLineRow, type RequirementProjectRow, type TradePlanRow,
+  REQUIREMENT_LINE_LIMIT, buildRequirementBoard, type LineProofRow, type RequirementLineRow, type RequirementProjectRow, type TradePlanRow,
 } from "../src/services/renovation/requirementBoard";
 
 const TODAY = "2026-11-16";
@@ -31,10 +31,11 @@ function board(lines: RequirementLineRow[], plans: TradePlanRow[] = [], projects
   return buildRequirementBoard({ projects, lines, plans, ticks: [] }, scope, TODAY);
 }
 
-function scriptedDb(projects: RequirementProjectRow[], lines: RequirementLineRow[], plans: TradePlanRow[] = []) {
+function scriptedDb(projects: RequirementProjectRow[], lines: RequirementLineRow[], plans: TradePlanRow[] = [], proofs: LineProofRow[] = []) {
   const ran: string[] = [];
   const answerFor = (sql: string): unknown[] => {
     if (sql.includes("conts_category_access")) return [];
+    if (sql.includes("beta_media")) return proofs;
     if (sql.includes("FROM project_trade_tasks")) return plans;
     return sql.includes("mfg_sales_order_items") ? lines : projects;
   };
@@ -65,6 +66,7 @@ describe("requirement board", () => {
     expect(line).toEqual({
       id: "line-1", itemCode: "RN-PROTECTION", name: "Works - Protection", remark: "FLOOR PROTECTION",
       qty: 20, uom: "UNIT", room: "Common area", group: "works", isOnPo: true, planKey: "PROTECTION", tradeLabel: "Protection", onSiteBy: "2026-11-20", doneQty: 0, doneAt: null, isTradeClosed: false,
+      photoCount: 0, latestPhotoKeys: [], latestPhotoBy: null,
     });
   });
 
@@ -121,6 +123,19 @@ describe("requirement board", () => {
     expect(buildRequirementBoard(rows("3"), null, TODAY).projects[0].lines[0]).toMatchObject({ doneQty: 3, doneAt: "2026-11-16T03:00:00Z" });
   });
 
+  test("a line carries its proof photo count, the newest keys and who sent the latest", () => {
+    const proofs: LineProofRow[] = [
+      { target: "line:0b6f3c1e-8f0e-4b43-9d0e-2a1c5d7e9a10", key: "renovation/7/proof-3.jpg", note: JSON.stringify({ name: "c.jpg", by: "Ah Seng" }), total: 3 },
+      { target: "line:0b6f3c1e-8f0e-4b43-9d0e-2a1c5d7e9a10", key: "renovation/7/proof-2.jpg", note: null, total: 3 },
+      { target: "line:0b6f3c1e-8f0e-4b43-9d0e-2a1c5d7e9a10", key: "renovation/7/proof-1.jpg", note: null, total: 3 },
+      { target: "defect:4:before", key: "renovation/7/other.jpg", note: null, total: 1 },
+    ];
+    const rows = { projects: [projectRow({})], lines: [lineRow({ id: "0b6f3c1e-8f0e-4b43-9d0e-2a1c5d7e9a10" }), lineRow({ id: "line-2" })], plans: [], ticks: [], proofs };
+    const [withPhotos, without] = buildRequirementBoard(rows, null, TODAY).projects[0].lines;
+    expect(withPhotos).toMatchObject({ photoCount: 3, latestPhotoKeys: ["renovation/7/proof-3.jpg", "renovation/7/proof-2.jpg", "renovation/7/proof-1.jpg"], latestPhotoBy: "Ah Seng" });
+    expect(without).toMatchObject({ photoCount: 0, latestPhotoKeys: [], latestPhotoBy: null });
+  });
+
   test("no progress table reads as not switched on, with nothing done", () => {
     const notReady = buildRequirementBoard({ projects: [projectRow({})], lines: [lineRow({})], plans: [], ticks: null }, null, TODAY);
     expect([notReady.areTicksReady, notReady.projects[0].lines[0].doneQty]).toEqual([false, 0]);
@@ -159,6 +174,15 @@ describe("GET /api/beta/requirements", () => {
     expect(linesSql).toMatch(/p\.company_id\s*=\s*1/);
     expect(linesSql).toContain("cg.code IN ('WORKS', 'BUILTIN')");
     expect(linesSql).not.toMatch(/price|total_sen/);
+  });
+
+  test("the board reads every line's photos in one query, with the company and live-project rules", async () => {
+    const { database, ran } = scriptedDb([projectRow({})], [lineRow({})]);
+    await boardApp(database)();
+    const proofSql = ran.filter((sql) => sql.includes("beta_media"));
+    expect(proofSql).toHaveLength(1);
+    expect(proofSql[0]).toMatch(/p\.company_id\s*=\s*1/);
+    expect(proofSql[0]).toContain("p.archived_at IS NULL");
   });
 
   test("a failed read answers 500 in words", async () => {
