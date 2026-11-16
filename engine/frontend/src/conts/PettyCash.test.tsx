@@ -21,6 +21,7 @@ const request: PaymentRequest = {
 };
 /* Staff claims paid back by finance, listed on Payment requests beside the requests (chew, 16 Nov 2026). */
 let claims: Receipt[] = [];
+let requests: PaymentRequest[] | null = null;
 const claim = (status: Receipt["status"]): Receipt => ({
   id: "R1", receiptNo: "CLM-2611-001", submitterUserId: "u5", submitterName: "Jiaxin", floatId: null, spendDate: "2026-11-08", amountSen: 10090,
   vendorName: "OpenAI OpCo, LLC", note: null, status, rejectReason: null, checkedAt: null, checkedBy: null, topUpPvId: null, paybackPvId: null, replacesId: null,
@@ -34,7 +35,7 @@ vi.mock("./claimsQueries", async (importOriginal) => ({
   useFloats: () => ({ data: { floats, totals: { floatSen: 150000, balanceSen: 13000, waitingCheckSen: 4500 } }, isLoading: false, isError: false, refetch: vi.fn() }),
   useFinanceReceipts: () => ({ data: { receipts: claims }, isLoading: false, isError: false }),
   useOverrides: () => ({ data: { overrides: [] } }),
-  usePaymentRequests: () => ({ data: { requests: [request] }, isLoading: false, isError: false }),
+  usePaymentRequests: () => ({ data: { requests: requests ?? [request] }, isLoading: false, isError: false }),
   useFinanceAction: () => ({ mutateAsync: act, isPending: false }),
 }));
 vi.mock("./ClaimsParts", async (importOriginal) => ({
@@ -117,6 +118,16 @@ describe("Payment requests", () => {
     fireEvent.click(screen.getAllByText("Make voucher").at(-1)!);
     expect(await screen.findByText("opened R1:906-0000")).toBeTruthy();
     claims = [];
+  });
+  it("a utility request is paid by voucher against its accrual, never an AP invoice (chew, 16 Nov 2026)", async () => {
+    requests = [{ ...request, id: "QU", requestNo: "PRQ-2611-009", type: "PAYMENT", payeeName: "TNB", fromBills: true, owesFormalInvoice: false,
+      lines: [{ id: "LU", department: "rental", unitId: "U1", maintenanceIssueId: null, projectId: null, accountCode: null, amountSen: 31425, description: "Electricity 2026-11 2102353477XX" }] }];
+    const Probe = () => { const st = useLocation().state as { claimsPrefill?: { lines: Array<{ accountCode?: string | null }> } } | null; return <div>{`opened ${st?.claimsPrefill?.lines.map((l) => l.accountCode).join(",")}`}</div>; };
+    render(<MemoryRouter initialEntries={["/r"]}><Routes><Route path="/r" element={<PaymentRequests />} /><Route path="/scm/payment-vouchers/new" element={<Probe />} /></Routes></MemoryRouter>);
+    expect(screen.queryByText("Make AP invoice")).toBeNull();
+    fireEvent.click(screen.getByText("Make voucher"));
+    expect(await screen.findByText("opened 420-0010")).toBeTruthy();
+    requests = null;
   });
   it("without Ledger full there is no Make voucher", () => {
     full = false;

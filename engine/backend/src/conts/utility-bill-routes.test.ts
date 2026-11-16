@@ -79,6 +79,12 @@ describe('a payment request for a provider', () => {
       ['rental', 'U2', null, 4_510, 'Electricity 2026-10 2200118899XX11'],
     ]);
   });
+  test("each line starts on its kind's accrual account, when the chart has it (chew, 16 Nov 2026)", async () => {
+    const sb = world();
+    sb.tables.accounts = [{ company_id: CO, account_code: '420-0010', is_active: true }, { company_id: CO, account_code: '420-0020', is_active: true }];
+    expect((await ask(appFor(sb, FIN), { bills: [BILLS[0], { ...BILLS[1], kind: 'sewerage' }] })).status).toBe(201);
+    expect(sb.tables.payment_request_lines.map(l => l.account_code)).toEqual(['420-0010', null]);
+  });
   test("the provider's supplier when one is on the list (this company's only)", async () => {
     const sb = world();
     expect((await ask(appFor(sb, FIN), { provider: 'Indah Water', bills: [{ ...BILLS[0], kind: 'sewerage' }] })).status).toBe(201);

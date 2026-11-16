@@ -35,8 +35,9 @@ type Line = PaymentRequest["lines"][number];
 const OPEN = (r: PaymentRequest) => r.status === "SUBMITTED" || r.status === "PART_PAID";
 /** Make voucher: open, not paid through an AP invoice, no voucher being prepared. */
 const canVoucher = (r: PaymentRequest) => OPEN(r) && !r.apInvoice && !r.vouchers.some((v) => v.status === "DRAFT");
-/** Make AP invoice: a payment while nothing pays it yet; a deposit while open or once paid (its quotation). */
-const canBill = (r: PaymentRequest) => !r.apInvoice && (r.type === "DEPOSIT" ? OPEN(r) || r.status === "PAID" : OPEN(r) && r.vouchers.every((v) => v.status === "CANCELLED"));
+/** Make AP invoice: a payment while nothing pays it yet; a deposit while open or once paid (its quotation). Never a
+ *  utility request: those are paid by voucher against their accrual (chew, 16 Nov 2026). */
+const canBill = (r: PaymentRequest) => !r.fromBills && !r.apInvoice && (r.type === "DEPOSIT" ? OPEN(r) || r.status === "PAID" : OPEN(r) && r.vouchers.every((v) => v.status === "CANCELLED"));
 /** A claim paid back now: checked, no voucher on it yet. */
 const claimPayable = (c: Receipt) => c.status === "CHECKED" && !c.paybackPvId;
 
@@ -52,6 +53,12 @@ const payee = (r: Row) => (r.kind === "request" ? r.q.payeeName : r.c.submitterN
 const amount = (r: Row) => (r.kind === "request" ? r.q.amountSen : r.c.amountSen);
 const waiting = (r: Row) => (r.kind === "request" ? OPEN(r.q) : r.c.status === "HANDED_IN" || r.c.status === "CHECKED");
 
+/* A utility request made before its lines carried their accrual account: the account from the line's kind, as the
+   engine now sets it (conts/utility-bill-routes.ts UTILITY_ACCRUAL; chew, 16 Nov 2026). */
+const UTILITY_ACCRUAL: Array<[RegExp, string]> = [[/^Electricity\b/, "420-0010"], [/^Water\b/, "420-0020"], [/^Internet\b/, "420-0030"], [/^Indah Water\b/, "420-0040"]];
+const accountOf = (r: PaymentRequest, l: Line): string | null =>
+  l.accountCode ?? (r.fromBills ? UTILITY_ACCRUAL.find(([kind]) => kind.test(l.description ?? ""))?.[1] ?? null : null);
+
 /** The New voucher form's lines, payee and notes from these requests and claims (chew, 16 Nov 2026). */
 const voucherPrefill = (rows: Row[]): ClaimsPrefill => {
   const payees = [...new Set(rows.map(payee))];
@@ -65,7 +72,7 @@ const voucherPrefill = (rows: Row[]): ClaimsPrefill => {
     lines: rows.flatMap((r): ClaimsPrefill["lines"] => (r.kind === "request"
       ? r.q.lines.map((l) => ({
         description: [many ? r.q.payeeName : null, l.description ?? r.q.requestNo].filter(Boolean).join(" · "), amountSen: l.amountSen,
-        department: l.department, unitId: l.unitId, projectId: l.projectId, subDepartmentId: l.subDepartmentId ?? null, accountCode: l.accountCode, paymentRequestId: r.q.id,
+        department: l.department, unitId: l.unitId, projectId: l.projectId, subDepartmentId: l.subDepartmentId ?? null, accountCode: accountOf(r.q, l), paymentRequestId: r.q.id,
       }))
       : r.c.lines.map((l) => ({
         description: [many ? r.c.submitterName : null, l.description ?? r.c.vendorName ?? `Receipt ${r.c.receiptNo}`].filter(Boolean).join(" · "), amountSen: l.amountSen,
@@ -267,8 +274,9 @@ export function PaymentRequests() {
           <span style={{ fontWeight: 600 }}>{tickedRows.length} ticked · <Money sen={tickedRows.reduce((n, r) => n + amount(r), 0)} /></span>
           {full && <Button className="h-8" disabled={act.isPending} onClick={() => openVoucher(tickedRows)}>Make one voucher</Button>}
           {edit && (
-            <Button className="h-8" variant="secondary" disabled={act.isPending || tickedRequests.length !== tickedRows.length}
-              title={tickedRequests.length !== tickedRows.length ? "A claim is paid back by voucher, not an AP invoice: untick the claims." : undefined}
+            <Button className="h-8" variant="secondary" disabled={act.isPending || tickedRequests.length !== tickedRows.length || tickedRequests.some((r) => r.fromBills)}
+              title={tickedRequests.length !== tickedRows.length ? "A claim is paid back by voucher, not an AP invoice: untick the claims."
+                : tickedRequests.some((r) => r.fromBills) ? "Utility bills are paid by voucher against their accrual: untick them." : undefined}
               onClick={() => openBills(tickedRequests)}>Make AP invoices</Button>
           )}
           <Button className="h-8" variant="ghost" onClick={() => setTicked(new Set())}>Clear</Button>

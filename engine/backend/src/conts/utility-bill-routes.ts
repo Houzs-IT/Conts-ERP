@@ -135,7 +135,7 @@ export const utilityRequestHandler = async (c: Ctx): Promise<Response> => {
     }
     return fail(error?.message ?? 'insert returned nothing');
   }
-  const ins = await sb.from('payment_request_lines').insert(lineRows(id, lines));
+  const ins = await sb.from('payment_request_lines').insert(lineRows(id, lines, await accrualAccounts(sb, co.companyId)));
   if (ins.error) return fail(ins.error.message);
   if (stored.length) {
     const fr = await sb.from('payment_request_files').insert(stored.map(s => ({ ...s, request_id: id })));
@@ -172,20 +172,32 @@ export const resubmitUtilityRequestHandler = async (c: Ctx): Promise<Response> =
   if (!claim) return changedElsewhere();
   const gone = await sb.from('payment_request_lines').delete().eq('request_id', r.id);
   if (gone.error) return c.json({ error: 'save_failed', reason: gone.error.message }, 500);
-  const ins = await sb.from('payment_request_lines').insert(lineRows(r.id, lines));
+  const ins = await sb.from('payment_request_lines').insert(lineRows(r.id, lines, await accrualAccounts(sb, co.companyId)));
   if (ins.error) return c.json({ error: 'save_failed', reason: ins.error.message }, 500);
   if (!(await claimRequest(sb, r.id, String(r.status), { amount_sen: amountSen, status: 'SUBMITTED' }, claim))) return changedElsewhere();
   return c.json({ id: r.id, requestNo: r.request_no, amountSen }, 200);
 };
 
-type BillLine = { unitId: string; amountSen: number; sort: number; description: string };
+type BillLine = { unitId: string; amountSen: number; sort: number; description: string; kind: string };
+
+/* Each kind's accrual (chew, 16 Nov 2026: utilities are paid against "ACCRUAL - ABNB UTILITIES", one account per kind;
+   no supplier, no AP invoice). The line starts on it, so Make voucher books the payment against the accrual. */
+export const UTILITY_ACCRUAL: Record<string, string> = { electricity: '420-0010', water: '420-0020', internet: '420-0030', sewerage: '420-0040' };
+
+/** The kinds whose accrual account is on this company's chart and in use; a kind without one starts with no account. */
+async function accrualAccounts(sb: any, companyId: number): Promise<Map<string, string>> {
+  const codes = [...new Set(Object.values(UTILITY_ACCRUAL))];
+  const { data } = await sb.from('accounts').select('account_code, is_active').eq('company_id', companyId).in('account_code', codes);
+  const live = new Set(((data ?? []) as Array<{ account_code: string; is_active: boolean | null }>).filter(a => a.is_active !== false).map(a => a.account_code));
+  return new Map(Object.entries(UTILITY_ACCRUAL).filter(([, code]) => live.has(code)));
+}
 
 /** A Rental line per bill, each with its unit and amount ("Electricity 2026-10 2104010945XX02"); or the refusal. */
 function billLines(c: Ctx, raw: unknown): BillLine[] | Response {
   const bills = Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : [];
   if (!bills.length || bills.length > 500) return c.json({ error: 'validation', message: 'Send the bills to pay (up to 500).' }, 422);
   const lines = bills.map((x, i) => ({
-    unitId: String(x.unitId ?? ''), amountSen: Number(x.amountSen), sort: i,
+    unitId: String(x.unitId ?? ''), amountSen: Number(x.amountSen), sort: i, kind: String(x.kind ?? ''),
     description: [KIND_LABEL[String(x.kind)] ?? 'Utility', MONTH.test(String(x.billMonth ?? '')) ? String(x.billMonth) : null, x.accountNo ? String(x.accountNo).slice(0, 40) : null].filter(Boolean).join(' '),
   }));
   if (lines.some(l => !l.unitId || !Number.isInteger(l.amountSen) || l.amountSen <= 0)) return c.json({ error: 'validation', message: 'Every bill needs its unit and an amount.' }, 422);
@@ -201,10 +213,10 @@ async function unknownUnit(c: Ctx, sb: any, lines: BillLine[]): Promise<Response
   return unitIds.some(u => !known.has(u)) ? c.json({ error: 'validation', message: 'A bill names a unit that does not exist.' }, 422) : null;
 }
 
-/** The request's lines: a Rental line per bill, with its unit and no account (finance sets it on the voucher). */
-const lineRows = (requestId: string, lines: BillLine[]) => lines.map(l => ({
+/** The request's lines: a Rental line per bill, with its unit and its kind's accrual account (none when the chart lacks it). */
+const lineRows = (requestId: string, lines: BillLine[], accruals: Map<string, string>) => lines.map(l => ({
   id: crypto.randomUUID(), request_id: requestId, department: 'rental', unit_id: l.unitId, maintenance_issue_id: null, project_id: null,
-  account_code: null, amount_sen: l.amountSen, description: l.description, sort: l.sort,
+  account_code: accruals.get(l.kind) ?? null, amount_sen: l.amountSen, description: l.description, sort: l.sort,
 }));
 
 export function utilityBillRoutes(r: { post: (p: string, h: (c: Ctx) => Promise<Response>) => unknown }) {
