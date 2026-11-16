@@ -138,6 +138,12 @@ describe('RenovationSubCategorySettings', () => {
     expect(screen.getByLabelText('Hide Hacking')).toBeTruthy();
     expect(screen.getByLabelText('New sub-category')).toBeTruthy();
   });
+
+  test('opens on Works when no group is picked', async () => {
+    h.catalog = { canEdit: true, subCategories: SUB_CATEGORIES.map((x) => ({ ...x, active: true })) };
+    wrap(<RenovationSubCategorySettings initialGroup={null} onClose={() => {}} />);
+    expect(((await screen.findByLabelText('Group')) as HTMLSelectElement).value).toBe('WORKS');
+  });
 });
 
 describe('CatalogCategoryPicker', () => {

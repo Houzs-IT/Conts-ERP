@@ -18,7 +18,7 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
   const catalog = useRenovationCatalog();
   const add = useAddSubCategory();
   const update = useUpdateSubCategory();
-  const [group, setGroup] = useState<CatalogGroup>(initialGroup ?? 'BUILTIN');
+  const [group, setGroup] = useState<CatalogGroup>(initialGroup ?? 'WORKS');
   const [newLabel, setNewLabel] = useState('');
   const [error, setError] = useState<string | null>(null);
 
