@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Copy, FileCheck2, Printer, Save, Send } from 'lucide-react';
+import { QuotationSoPrint } from '../scm-v2/renovationQuotationPrint';
 import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
 import { useAuth } from '../../auth/AuthContext';
@@ -16,15 +17,12 @@ import {
   contractPostingWarning, instalmentsForSave, refusalOf, renoSend, sectionsForSave, useBrands, useQuotation, useRenoMutation, useTerms,
   type ContractPosting, type DocHeader, type DocSection, type Instalment,
 } from '../../lib/renovation/api';
-import { buildPrintDoc } from '../../lib/renovation/print-doc';
 import { DocEditor, type RoomLayout } from './DocEditor';
 import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
 import { useQuery } from '@tanstack/react-query';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import { HeaderForm, InstalmentEditor, totalsOfSections, TotalsCard } from './DocParts';
 import { QuotationCustomerCard } from './QuotationCustomerCard';
-import { PrintDialog } from './PrintDialog';
-import { useLineCategory } from '../scm-v2/soPrintPreview';
 import { useRenovationDraft } from '../../lib/renovation/renovationFormDraft';
 import { RenovationDraftBanner } from './renovationDraftBanner';
 import { Card, ErrorBanner, fmtDate, StatusPill, todayIso } from './shared';
@@ -49,7 +47,6 @@ export function QuotationEditor() {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
-  const groupOf = useLineCategory(printOpen);
   /* What keeps the customer + property block from saving (an invalid sq ft), [] when fine. */
   const [partyProblems, setPartyProblems] = useState<string[]>([]);
 
@@ -212,8 +209,8 @@ export function QuotationEditor() {
           <div className="flex items-center justify-between gap-3"><span className="text-[13px] text-ink-secondary">Unsaved changes</span><Button icon={<Save size={15} />} disabled={run.isPending} onClick={save}>{run.isPending ? 'Saving…' : 'Save'}</Button></div>
         </div>
       )}
-      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="quotation" docNo={revision.docNo} brandName={brand?.name} defaultFormat={header.printFormat} groupOf={groupOf}
-        build={(format) => buildPrintDoc({ kind: 'QUOTATION', docNo: revision.docNo, format, brand, header, sections, instalments })} />
+      <QuotationSoPrint open={printOpen} onClose={() => setPrintOpen(false)} docNo={revision.docNo} status={quotation.status} header={header} sections={sections}
+        instalments={instalments} brand={brand} />
     </div>
   );
 }

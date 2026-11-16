@@ -13,7 +13,6 @@ import { coverageStateOf } from '../../components/coverage-state';
 import { DataTable } from '../../components/DataTable';
 import { DetailAside, DetailGrid, DetailMain, Section } from '../../components/DetailLayout';
 import { refusalOf, useBrands, useQuotation, type QuotationView } from '../../lib/renovation/api';
-import { PRINT_FORMATS } from '../../lib/renovation/print-formats';
 import { DATA_TABLE_LAYOUT_FAMILIES } from '../../components/dataTableLayoutFamilies';
 import { categoryRooms, roomOrdered } from '../../vendor/scm/lib/so-print-rooms';
 import { useMfgProducts } from '../../vendor/scm/lib/mfg-products-queries';
@@ -175,7 +174,6 @@ function QuotationView_({ view }: { view: QuotationView }) {
               <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-3">
                 <Field label="Attention" value={header.attention || '—'} muted={!header.attention} />
                 <Field label="Prepared by" value={header.preparedBy || '—'} muted={!header.preparedBy} />
-                <Field label="Print format" value={PRINT_FORMATS[header.printFormat].label} />
                 {header.docDiscountSen > 0 && <Field label={header.docDiscountLabel || 'Discount'} value={money(header.docDiscountSen)} />}
                 {header.intro && <Field label="Intro sentence" value={header.intro} />}
               </div>

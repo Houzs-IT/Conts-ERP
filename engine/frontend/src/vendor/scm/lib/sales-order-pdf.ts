@@ -49,6 +49,12 @@ import {
    what this document prints and what the screen shows must be the same word.
    docs/modules/document-status-vocabulary.md §1. */
 import { statusLabel } from './status-pill';
+import { CONTS_LINES_BY_NAME } from '../../../conts/flowRules';
+
+/* Conts prints a line by its description, no Item Code column (owner, 16 Nov 2026: one PDF for the whole system,
+   the SO's, without the code). */
+const SHOW_CODE = !CONTS_LINES_BY_NAME;
+const LINE_COLS = SHOW_CODE ? 7 : 6;
 
 // ----------------------------------------------------------------------------
 // Sales Order PDF generator — dynamic jspdf import so it doesn't bloat the
@@ -347,7 +353,9 @@ export async function renderSalesOrderInto(
   pwpCodes: SoPwpCodeRow[] = [],
   opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms;
     /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
-    projectDates?: { start: string; end: string }; contract?: SoPdfContract },
+    projectDates?: { start: string; end: string }; contract?: SoPdfContract;
+    /* A quotation prints on this same layout (owner, 17 Nov 2026: one PDF for the whole system): nothing is paid yet. */
+    quotation?: boolean },
 ): Promise<void> {
   /* A cancelled line must never reach a CUSTOMER document — not as a printed
      row and not inside a total. The gate lives HERE, in the one function both
@@ -626,7 +634,7 @@ export async function renderSalesOrderInto(
       : composed;
     return [
       String(itIdx + 1),
-      it.item_code,
+      ...(SHOW_CODE ? [it.item_code] : []),
       lines.join('\n'),
       `${it.qty} ${it.uom}`,
       fmtRm(it.unit_price_sen, header.currency),
@@ -649,7 +657,7 @@ export async function renderSalesOrderInto(
   const pushRoomSubtotal = () => {
     if (!rooms || lastGroup == null) return;
     bodyRows.push([
-      { content: `Subtotal - ${lastGroup}`, colSpan: 6, styles: { fontStyle: 'bold', halign: 'right', textColor: 60 } },
+      { content: `Subtotal - ${lastGroup}`, colSpan: LINE_COLS - 1, styles: { fontStyle: 'bold', halign: 'right', textColor: 60 } },
       { content: fmtRm(roomSubtotal, header.currency), styles: { fontStyle: 'bold', halign: 'right', fontSize: 7.5 } },
     ]);
   };
@@ -658,7 +666,7 @@ export async function renderSalesOrderInto(
       const room = roomLabel(rooms, it.id);
       if (room !== lastGroup) {
         pushRoomSubtotal();
-        bodyRows.push([{ content: room.toUpperCase(), colSpan: 7, styles: sectionRowStyles }]);
+        bodyRows.push([{ content: room.toUpperCase(), colSpan: LINE_COLS, styles: sectionRowStyles }]);
         lastGroup = room;
         roomSubtotal = 0;
       }
@@ -672,7 +680,7 @@ export async function renderSalesOrderInto(
         /* The category's NAME, not its code: `fabric_accessory` printed as
            FABRIC_ACCESSORY on HC-SO-2609-071 while every screen says Sofa
            Accessory (owner 2026-09-15). An unknown group still prints as stored. */
-        content: mfgCategoryLabel(grp).toUpperCase(), colSpan: 7,
+        content: mfgCategoryLabel(grp).toUpperCase(), colSpan: LINE_COLS,
         styles: sectionRowStyles,
       }]);
       lastGroup = grp;
@@ -683,7 +691,7 @@ export async function renderSalesOrderInto(
 
   autoTable(doc, {
     startY: y,
-    head: [['#', 'Item Code', 'Description', 'Qty', 'Unit Price', 'Discount', 'Amount (RM)']],
+    head: [SHOW_CODE ? ['#', 'Item Code', 'Description', 'Qty', 'Unit Price', 'Discount', 'Amount (RM)'] : ['#', 'Description', 'Qty', 'Unit Price', 'Discount', 'Amount (RM)']],
     body: bodyRows,
     theme: 'plain',
     rowPageBreak: 'avoid',
@@ -693,7 +701,7 @@ export async function renderSalesOrderInto(
        numeric columns are 7.5 pt, right-aligned. Fixed widths sum to ~114 mm of
        182 usable (A4 − 2×14 margins), leaving ~68 mm for Description ('auto',
        the only column allowed to wrap). */
-    columnStyles: {
+    columnStyles: SHOW_CODE ? {
       0: { cellWidth: 8, halign: 'right', fontSize: 7.5 },
       1: { cellWidth: 28 },
       2: { cellWidth: 'auto' },
@@ -701,6 +709,13 @@ export async function renderSalesOrderInto(
       4: { cellWidth: 24, halign: 'right', fontSize: 7.5 },
       5: { cellWidth: 16, halign: 'right', fontSize: 7.5 },
       6: { cellWidth: 24, halign: 'right', fontSize: 7.5 },
+    } : {
+      0: { cellWidth: 8, halign: 'right', fontSize: 7.5 },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 16, halign: 'right', fontSize: 7.5 },
+      3: { cellWidth: 26, halign: 'right', fontSize: 7.5 },
+      4: { cellWidth: 20, halign: 'right', fontSize: 7.5 },
+      5: { cellWidth: 26, halign: 'right', fontSize: 7.5 },
     },
     margin: { left: margin, right: margin },
   });
@@ -734,6 +749,8 @@ export async function renderSalesOrderInto(
   // ── PAYMENTS RECEIVED ledger ──────────────────────────────────────
   // Sources transactions from the payments ledger (mfg_sales_order_payments)
   // instead of the legacy single-row header columns (deprecated PR-C).
+  /* A quotation has no payments block: nothing is paid on a quotation. */
+  if (!opts?.quotation) {
   if (ty > 250) { doc.addPage(); ty = margin; }
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
@@ -774,6 +791,7 @@ export async function renderSalesOrderInto(
     });
     ty = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? ty) + 6;
   }
+  }
 
   // ── Totals: SUBTOTAL / PAID TO DATE / TOTAL / BALANCE DUE ─────────
   /* POS-printout parity: the SO model has no separate subtotal — the grand
@@ -804,6 +822,14 @@ export async function renderSalesOrderInto(
   /* Standard-checklist tax line — the SO model carries no header tax (prices
      are tax-inclusive / exempt), so this prints as a dash, not a number. */
   drawRow('Tax',          '—',                                   ty);     ty += 4;
+  if (opts?.quotation) {
+    ty += 2;
+    doc.setDrawColor(0);
+    doc.line(totalsX, ty, pageW - margin, ty);
+    doc.setFontSize(11);
+    drawRow('TOTAL', fmtRm(subtotalSen, header.currency), ty + 5, true);
+    ty += 12;
+  } else {
   drawRow('Total',        fmtRm(subtotalSen, header.currency), ty);     ty += 4;
   drawRow('Paid to date', fmtRm(paidSen,     header.currency), ty);     ty += 2;
   doc.setDrawColor(0);
@@ -816,6 +842,7 @@ export async function renderSalesOrderInto(
     true,
   );
   ty += 12;
+  }
 
   // Expected-deposit line — only shown when the commander has set one
   // on the header. Keeps the "target vs. collected" distinction visible.
@@ -922,7 +949,9 @@ export async function generateSalesOrderPdf(
   pwpCodes: SoPwpCodeRow[] = [],
   opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms;
     /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
-    projectDates?: { start: string; end: string }; contract?: SoPdfContract },
+    projectDates?: { start: string; end: string }; contract?: SoPdfContract;
+    /* A quotation prints on this same layout (owner, 17 Nov 2026: one PDF for the whole system): nothing is paid yet. */
+    quotation?: boolean },
 ): Promise<void> {
   // Dynamic import — code-split into a vendor chunk.
   const { jsPDF } = await import('jspdf');

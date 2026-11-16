@@ -25,9 +25,6 @@ import {
   CONTRACT_NEXT_STATUS, contractPostingWarning, refusalOf, renoSend, useBrands, useContract, useContractPosting, usePoFlags, useRenoMutation,
   type BillingInstalment, type ContractPosting, type ContractView, type DocLine,
 } from '../../lib/renovation/api';
-import { buildPrintDoc } from '../../lib/renovation/print-doc';
-import { PrintDialog } from './PrintDialog';
-import { useLineCategory } from '../scm-v2/soPrintPreview';
 import { ContractProjectCard } from './ContractProjectCard';
 import { DocAttachments, LineFilesButton } from '../../components/doc-attachments/DocAttachments';
 import { Card, ErrorBanner, Field, fmtDate, inputCls, MoneyInput, pctLabel, rm, Stat, StatusPill, todayIso } from './shared';
@@ -218,8 +215,6 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
   const [error, setError] = useState<string | null>(null);
   const [billing, setBilling] = useState<BillingInstalment | null>(null);
   const [crediting, setCrediting] = useState(false);
-  const [printOpen, setPrintOpen] = useState(false);
-  const groupOf = useLineCategory(printOpen);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
   /* An old contract link lands here with where it was going (#po-flags). */
   const { hash } = useLocation();
@@ -286,7 +281,6 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill status={k.status} />
-            <Button variant="secondary" icon={<Printer size={15} />} onClick={() => setPrintOpen(true)}>Contract PDF</Button>
             {contractActions}
           </div>
         </div>
@@ -299,7 +293,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
           actions={(
             <div className="flex flex-wrap items-center gap-2">
               <StatusPill status={k.status} />
-              <Button variant="secondary" icon={<Printer size={15} />} onClick={() => setPrintOpen(true)}>Print</Button>
+              <Button variant="secondary" icon={<Printer size={15} />} onClick={() => navigate(`/scm/sales-orders/${k.docNo}?print=1`)}>Print</Button>
               {contractActions}
             </div>
           )}
@@ -401,9 +395,6 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
       {!embedded && <DocAttachments docType="sales_order" docId={k.docNo} canEdit={k.status !== 'CANCELLED'} />}
       <BillDialog c={k} inst={billing} onClose={() => setBilling(null)} />
       <CreditDialog c={k} open={crediting} onClose={() => setCrediting(false)} />
-      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="sales order" docNo={k.docNo} brandName={brand?.name} defaultFormat={k.header.printFormat} groupOf={groupOf}
-        rows={[{ label: "Customer", value: k.header.customerName || k.debtorName || "-" }]}
-        build={(format) => buildPrintDoc({ kind: 'SALES_ORDER', docNo: k.docNo, format, brand, header: { ...k.header, customerName: k.header.customerName || k.debtorName, docDate: k.header.docDate ?? k.soDate /* eslint-disable-line @typescript-eslint/no-unnecessary-condition -- doc_date may be null on older SOs; fall back to the SO date */ }, sections: k.sections, instalments: k.instalments })} />
     </div>
   );
 }
