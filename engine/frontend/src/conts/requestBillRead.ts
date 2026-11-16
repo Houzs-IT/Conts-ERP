@@ -4,6 +4,7 @@
 // lands on the form. Pure, so it is tested on its own.
 import type { BillExtraction, VendorMemory } from "../vendor/scm/lib/payment-voucher-queries";
 import { upperFill } from "../vendor/scm/lib/ocr-fill";
+import { fmtSen } from "../vendor/shared/format";
 import type { ApFormLine, ApFormValues } from "../pages/scm-v2/ApInvoiceForm";
 
 export type ReadBill = { extraction: BillExtraction; supplierMatch: { id: string; name: string } | null; memory: VendorMemory | null };
@@ -54,7 +55,7 @@ export function fillFromPapers(base: ApFormValues, read: ReadBill): { values: Ap
     !base.supplierId && read.supplierMatch ? `Looks like supplier ${read.supplierMatch.name}.` : null,
     account ? `Account ${account} filled from your last ${read.memory?.payeeName ?? "same-vendor"} bill — check it.` : null,
     ex.totalSen != null && ex.totalSen !== lines.reduce((n, l) => n + (l.amountSen > 0 ? l.amountSen : 0), 0)
-      ? `The bill's total is RM ${(ex.totalSen / 100).toFixed(2)}, the lines here come to RM ${(lines.reduce((n, l) => n + l.amountSen, 0) / 100).toFixed(2)}.` : null,
+      ? `The bill's total is ${fmtSen(ex.totalSen)}, the lines here come to ${fmtSen(lines.reduce((n, l) => n + l.amountSen, 0))}.` : null,
   ].filter(Boolean).join(" ");
   return { values, note };
 }
