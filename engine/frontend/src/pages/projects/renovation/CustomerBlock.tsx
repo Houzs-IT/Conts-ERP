@@ -21,7 +21,9 @@ import { Search, X } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { PhoneInput } from "../../../vendor/scm/components/PhoneInput";
 import { StatePicker } from "../../../vendor/scm/components/StatePicker";
+import { SearchableSelect } from "../../../vendor/scm/components/SearchableSelect";
 import { useLocalities, countryForState } from "../../../vendor/scm/lib/localities-queries";
+import { useAddressCascade, pickState, pickCity, cityPlaceholder } from "../../../vendor/scm/lib/address-cascade";
 import { useStateWarehouseMappings } from "../../../vendor/scm/lib/state-warehouse-queries";
 import { usePickableStaff } from "../../../vendor/scm/lib/admin-queries";
 import { soInfoApi } from "./customerPropertyApi";
@@ -203,8 +205,11 @@ export function CustomerBlock({
   const typeMissingFromList = value.propertyType && !types.some((t) => t.label === value.propertyType);
   const layoutOptions = layouts.filter((l) => l.active || l.id === pickedLayout?.id);
 
+  /* Address: the same locality cascade the sales order uses (scm.my_localities). */
   const loc = useLocalities();
   const rows = useMemo(() => loc.data ?? [], [loc.data]);
+  const { cities } = useAddressCascade(rows, value.state, value.city);
+  const triple = { state: value.state, city: value.city, postcode: value.postcode };
   const country = (value.state ? countryForState(rows, value.state) : null) ?? (value.country || "Malaysia");
   const mappings = useStateWarehouseMappings();
   const salesLocation = useMemo(() => {
@@ -315,11 +320,13 @@ export function CustomerBlock({
         </Cell>
         <Cell label="State">
           <StatePicker value={value.state} selectClassName={input} disabled={off("state")}
-            onChange={(next) => set({ state: next })} />
+            onChange={(next) => onChange({ ...value, ...pickState(next), postcode: value.postcode })} />
         </Cell>
-        <Cell label="City" htmlFor={id("city")}>
-          <input id={id("city")} className={input} value={value.city} disabled={off("city")} autoComplete="address-level2"
-            placeholder="e.g. Alor Setar" onChange={(e) => set({ city: e.target.value })} />
+        <Cell label="City">
+          <SearchableSelect className={input} value={value.city} disabled={off("city") || loc.isLoading} ariaLabel="City"
+            placeholder={loc.isLoading ? "Loading..." : cityPlaceholder(value.state)}
+            options={cities.map((c) => ({ value: c, label: c }))}
+            onChange={(c) => onChange({ ...value, ...pickCity(rows, triple, c), postcode: value.postcode })} />
         </Cell>
         <Cell label="Postcode" htmlFor={id("postcode")}>
           <input id={id("postcode")} className={input} value={value.postcode} disabled={off("postcode")} inputMode="numeric"
