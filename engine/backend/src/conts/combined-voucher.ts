@@ -14,6 +14,7 @@ import { claimsDeps, FULL_KEY, isFloatAccountCode, NOT_A_BANK, payBackBank, save
 import { linesOf, staffNames, type ReceiptLineRow } from './petty-cash-store';
 import { liveBillOf } from './request-ap-invoice';
 import { requestPayments } from './request-vouchers';
+import { copyPapers, toVoucher } from './copy-papers';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 type Ctx = any;
@@ -145,6 +146,8 @@ export async function makeCombinedVoucher(c: Ctx, input: { requestIds: string[];
       return c.json({ error: 'not_open', message: 'A request was closed while the voucher was being made.' }, 409);
     }
   }
+  /* The papers handed in with them come onto the voucher (chew, 16 Nov 2026). */
+  await copyPapers(c, sb, co.companyId, { requestIds: reqs.map(r => r.id), receiptIds: receipts.map(r => r.id) }, toVoucher(made.id));
   return c.json({ pvId: made.id, pvNumber: made.pvNumber }, 201);
 }
 

@@ -15,6 +15,7 @@ import { decodeFiles, removeFiles, storeFiles } from './claims-files';
 import { settleRequest, settleRequestsOfBillBestEffort } from './claims-voucher-hooks';
 import { spreadSen } from './payment-requests';
 import { requestPayments } from './request-vouchers';
+import { copyPapers, toBill } from './copy-papers';
 import type { Staff } from './staff-identity';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
@@ -130,32 +131,6 @@ export async function releaseRequestsOfBillBestEffort(sb: Db, billId: string): P
   }
 }
 
-const EXT: Record<string, string> = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
-
-/** The request's papers copied onto the bill (its own copies: deleting one never deletes the other's). Best effort. */
-async function copyFiles(c: Ctx, sb: Db, companyId: number, requestId: string, billId: string): Promise<number> {
-  const bucket = c.env?.SLIPS;
-  if (!bucket) return 0;
-  const { data } = await sb.from('payment_request_files').select('r2_key, file_name, mime, byte_size').eq('request_id', requestId);
-  let n = 0;
-  for (const [i, f] of ((data ?? []) as Array<{ r2_key: string; file_name: string; mime: string; byte_size: number }>).entries()) {
-    try {
-      const obj = await bucket.get(f.r2_key);
-      if (!obj) continue;
-      const bytes = await obj.arrayBuffer();
-      const key = `ap-invoice-files/${companyId}/${billId}/${crypto.randomUUID()}.${EXT[f.mime] ?? 'bin'}`;
-      await bucket.put(key, bytes, { httpMetadata: { contentType: f.mime } });
-      const ins = await sb.from('acc_ap_invoice_files').insert({
-        company_id: companyId, ap_invoice_id: billId, file_key: key, file_name: f.file_name, mime: f.mime, size_bytes: bytes.byteLength, sort_no: i + 1,
-        created_by: String(c.get('user')?.id ?? ''),
-      });
-      if (ins.error) { await bucket.delete(key); continue; }
-      n += 1;
-    } catch { /* one file that cannot be copied is left on the request */ }
-  }
-  return n;
-}
-
 type BillableRequest = { id: string; request_no: string; type: string; status: string; supplier_id: string | null; payee_to_check: boolean; wanted_on: string | null; note: string | null; ap_invoice_id: string | null };
 
 /** A request an AP invoice may be made from (chew, 15 Nov 2026): a payment while it is open with no voucher; a deposit
@@ -196,7 +171,7 @@ export async function linkBillToRequest(c: Ctx, sb: Db, companyId: number, r: Bi
     await sb.from('ap_invoices').update({ status: 'CANCELLED', cancelled_at: now(), updated_at: now() }).eq('id', inv.id).eq('status', 'DRAFT');
     return c.json({ error: 'bill_exists', message: `${r.request_no} was just given an AP invoice. Open it again.` }, 409);
   }
-  await copyFiles(c, sb, companyId, r.id, inv.id);
+  await copyPapers(c, sb, companyId, { requestIds: [r.id] }, toBill(inv.id));
   return null;
 }
 
