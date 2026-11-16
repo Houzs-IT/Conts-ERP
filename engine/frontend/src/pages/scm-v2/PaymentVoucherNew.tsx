@@ -81,6 +81,8 @@ type DraftLine = PurposeDraft & {
 export type ClaimsPrefill = {
   payeeName: string; notes: string; sources: string[];
   lines: Array<{ description: string; amountSen: number; department: string; unitId: string | null; projectId: number | null; subDepartmentId: string | null;
+    /** Its account when it has one already (a staff claim, set when checked). */
+    accountCode?: string | null;
     paymentRequestId?: string | null; staffReceiptId?: string | null }>;
 };
 
@@ -249,7 +251,7 @@ export const PaymentVoucherNew = () => {
       const pre = st.claimsPrefill;
       const drafted = pre.lines.map((l) => ({
         ...newLine(purposeOfSaved({ department: departmentOf(l.department), unitId: l.unitId, projectId: l.projectId, subDepartmentId: l.subDepartmentId })),
-        description: l.description, amountSen: l.amountSen, debitAccountCode: '',
+        description: l.description, amountSen: l.amountSen, debitAccountCode: l.accountCode ?? '',
       }));
       setPayeeName(pre.payeeName);
       setNotes(pre.notes);
