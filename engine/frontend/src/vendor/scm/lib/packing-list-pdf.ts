@@ -32,7 +32,9 @@ import {
 } from './pdf-common';
 import { drawQrIntoPdf } from './pdf-qr';
 import { loadingOrder, fmtM3, formatRacksCompact } from './packing-list-model';
-import type { PackingListRow, PackingStop } from './packing-list-queries';
+import type { PackingListRow, PackingStop } from './packing-list-queries';
+/* Conts prints no "The Conts ERP · date" footer (owner, 17 Nov 2026). */
+import { CONTS_LINES_BY_NAME } from '../../../conts/flowRules';
 
 const MARGIN = 14;
 /* 14mm, DOWN FROM 16 (owner, 2026-08-27: 「我不要 16mm，只想要 10mm，太大了可能
@@ -156,7 +158,7 @@ export async function renderPackingListInto(
     doc.setPage(p);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(110);
     doc.text(list.trip_no ?? 'Packing list', MARGIN, 290);
-    doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(list.trip_date ?? opts.date)}`, pageW / 2, 290, { align: 'center' });
+    if (!CONTS_LINES_BY_NAME) doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(list.trip_date ?? opts.date)}`, pageW / 2, 290, { align: 'center' });
     doc.text(`Page ${p} of ${pageCount}`, rightEdge, 290, { align: 'right' });
     doc.setTextColor(0);
   }

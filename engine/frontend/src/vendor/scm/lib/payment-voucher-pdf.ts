@@ -26,7 +26,10 @@ import {
 /* The status WORD comes from the one home for it (POSTED prints "Approved" —
    the four-layer vocabulary, docs/modules/document-status-vocabulary.md). */
 import { statusLabel } from './status-pill';
-import { fetchPvPrintBundle } from './payment-voucher-queries';
+import { fetchPvPrintBundle } from './payment-voucher-queries';
+/* Conts prints no "The Conts ERP · date" footer (owner, 17 Nov 2026). */
+import { CONTS_LINES_BY_NAME } from '../../../conts/flowRules';
+import { stampWatermark } from '../../../lib/renovation/doc-watermark';
 
 export type PvPdfHeader = {
   pv_number: string; status: string; voucher_date: string | null;
@@ -233,7 +236,7 @@ export async function renderPaymentVoucherInto(
     doc.setPage(p);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(110);
     doc.text(header.pv_number, margin, 290);
-    doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(header.voucher_date)}`, pageW / 2, 290, { align: 'center' });
+    if (!CONTS_LINES_BY_NAME) doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(header.voucher_date)}`, pageW / 2, 290, { align: 'center' });
     doc.text(`Page ${p} of ${pageCount}`, pageW - margin, 290, { align: 'right' });
     doc.setTextColor(0);
   }
@@ -271,6 +274,7 @@ export async function generatePaymentVoucherPdf(
     deliverPdf(doc, fileName, opts?.action);
     return;
   }
+  stampWatermark(doc);
   const blob = await fetchPvPrintBundle([
     { pvId: opts.withFilesOf, voucherBase64: pdfBytesToBase64(doc.output('arraybuffer') as ArrayBuffer) },
   ]);

@@ -269,7 +269,8 @@ describe('money PDFs place the totals block below the line items', () => {
       }],
     );
 
-    const itemRowYs = rowYsFor(draws, itemCodes);
+    /* Conts prints a line by its description, no Item Code column (owner, 16 Nov 2026). */
+    const itemRowYs = rowYsFor(draws, itemCodes.map((_, idx) => `Sales order line ${idx + 1}`));
     const lastItemRowY = Math.max(...itemRowYs);
 
     // First finalY read: the PAYMENTS RECEIVED heading sits below the items.
