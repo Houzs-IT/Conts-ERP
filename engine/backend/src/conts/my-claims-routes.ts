@@ -30,6 +30,7 @@ import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, rec
 import type { Staff } from './staff-identity';
 import { bankDetailsOf } from './petty-cash-routes';
 import { buildLines, defaultLineSubs, withTargetLabels } from './claims-lines';
+import { loadSubDepartments, subForStaffDepartment } from './sub-departments';
 import { myRequestRoutes } from './payment-request-routes';
 import { utilityBillRoutes } from './utility-bill-routes';
 
@@ -309,6 +310,20 @@ export const projectsHandler = async (c: Ctx): Promise<Response> => {
   return c.json({ projects });
 };
 
+/** The sub-departments a line can be put on (SOP 1.1: 自动带出部门（可以改）; chew 16 Nov 2026): the active ones, by
+ *  department, and the one the person's own lines start on (their staff department's, else their side's built-in row). */
+export const subDepartmentsHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const s = staffOf(c);
+  const loaded = await loadSubDepartments(c.get('supabase'), co.companyId);
+  if (!loaded.ok) return c.json({ error: 'load_failed', reason: loaded.error }, 500);
+  let mine: string | null = null;
+  try { mine = subForStaffDepartment(loaded.list, s.departmentId, lineDepartment(s.side)).id; } catch { /* not set up yet */ }
+  const subDepartments = loaded.list.filter(x => x.active).map(x => ({ id: x.id, department: x.department, name: x.name }));
+  return c.json({ subDepartments, mine });
+};
+
 /** Suppliers and purchase orders to ask finance to pay, by name or number. Office staff only. */
 export const suppliersHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
@@ -355,6 +370,7 @@ export function myClaimsRouter(source: 'session' | 'forward') {
   r.get('/units', unitsHandler);
   r.get('/accounts', accountsHandler);
   r.get('/projects', projectsHandler);
+  r.get('/sub-departments', subDepartmentsHandler);
   r.get('/suppliers', suppliersHandler);
   r.get('/purchase-orders', purchaseOrdersHandler);
   myRequestRoutes(r);

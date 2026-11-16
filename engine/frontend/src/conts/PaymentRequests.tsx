@@ -130,9 +130,12 @@ export function PaymentRequests() {
       render: (r) => {
         const open = r.status === "SUBMITTED" || r.status === "PART_PAID";
         /* The AP invoice: a payment while nothing pays it yet; a deposit while open or once paid (its quotation). */
-        const canBill = edit && !r.apInvoice && !!r.supplierId && (r.type === "DEPOSIT" ? open || r.status === "PAID" : open && r.vouchers.every((v) => v.status === "CANCELLED"));
+        /* Shown also before the payee is linked (chew, 16 Nov 2026: "我也没有看到 make ap invoice"), but only made once it
+           is a supplier on the list: an AP invoice is a supplier's bill. */
+        const canBill = edit && !r.apInvoice && (r.type === "DEPOSIT" ? open || r.status === "PAID" : open && r.vouchers.every((v) => v.status === "CANCELLED"));
         const billButton = canBill && (
-          <Button className="h-8" variant="secondary" disabled={act.isPending} onClick={() => void makeApInvoice(r)}>Make AP invoice</Button>
+          <Button className="h-8" variant="secondary" disabled={act.isPending || !r.supplierId} title={!r.supplierId ? "Link the payee to a supplier first." : undefined}
+            onClick={() => void makeApInvoice(r)}>Make AP invoice</Button>
         );
         if (!open) return billButton || null;
         /* Paid through its AP invoice: on the Payment voucher page, against the bill. */

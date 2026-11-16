@@ -94,3 +94,36 @@ describe('a staff line on a project', () => {
     expect(b[0]).toMatchObject({ department: 'rental', sub_department_id: 's-cln' });
   });
 });
+
+/* SOP 1.1 自动带出部门（可以改） (chew, 16 Nov 2026): the person may put a line on another sub-department; it is kept, checked
+   against the list and against the line's project; a maintenance job's line stays the job's. */
+describe('a sub-department the person chose on the line', () => {
+  const staff = { userId: 'u1', name: 'A', email: 'a@x', departmentId: 'dept-cln', side: 'conts', role: 'operations_staff', field: false } as const;
+  const withProjects = () => {
+    const sb = world();
+    sb.tables.projects = [{ id: 7, company_id: CO, name: 'SHOWROOM', funding: 'internal', internal_department: 'rental', finance_kind: null, brand: null }];
+    sb.tables.project_brands = [];
+    sb.tables.conts_maintenance_jobs = [{ id: 'job-1', unit_id: 'u-a31', assignee_user_id: 'u1', state: 'open' }];
+    return sb;
+  };
+  test('is kept and sets the department; the default fills only the lines left alone', async () => {
+    const { buildLines } = await import('./claims-lines');
+    const sb = withProjects();
+    const built = await buildLines(sb, staff as never, [{ amountSen: 3000, subDepartmentId: 's-co' }, { amountSen: 2000 }], 5000, CO);
+    expect(built.ok).toBe(true);
+    const lines = (built as { lines: LineRow[] }).lines;
+    await defaultLineSubs(sb, CO, lines, { staffDepartmentId: 'dept-cln', floatId: null });
+    expect(lines.map(l => [l.department, l.sub_department_id])).toEqual([['shared', 's-co'], ['rental', 's-cln']]);
+  });
+  test('one not on the list, or not fitting the project, is refused; a job line stays Maintenance', async () => {
+    const { buildLines } = await import('./claims-lines');
+    const sb = withProjects();
+    expect(await buildLines(sb, staff as never, [{ amountSen: 5000, subDepartmentId: 's-gone' }], 5000, CO)).toMatchObject({ ok: false });
+    const mismatch = await buildLines(sb, staff as never, [{ amountSen: 5000, subDepartmentId: 's-dc', projectId: 7 }], 5000, CO);
+    expect(mismatch).toMatchObject({ ok: false, message: expect.stringContaining('SHOWROOM') });
+    const job = await buildLines(sb, staff as never, [{ amountSen: 5000, subDepartmentId: 's-co', maintenanceIssueId: 'job-1' }], 5000, CO);
+    const jl = (job as { lines: LineRow[] }).lines;
+    await defaultLineSubs(sb, CO, jl, { staffDepartmentId: 'dept-cln', floatId: null });
+    expect(jl[0]).toMatchObject({ department: 'rental', sub_department_id: 's-mnt' });
+  });
+});
