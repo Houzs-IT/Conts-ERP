@@ -17,7 +17,6 @@ export const A4 = { width: 210, height: 297, margin: 14 } as const;
 /** Where the body starts under the repeated header block, and where the footer starts. */
 export const BODY_TOP = 88;
 export const FOOTER_TOP = 250;
-export const BODY_HEIGHT = FOOTER_TOP - BODY_TOP;
 export type Density = 'normal' | 'compact';
 /** Row heights per density. The samples differ: AVA prints about 15 rows a page, the D'Clover
     sheet (Excel "fit to page") about 35. 'compact' is the second, offered at print time. */
@@ -43,7 +42,7 @@ export const approxWrap: WrapFn = (text, widthMm, bold) => {
   return out;
 };
 
-export type LaidRow = PrintRow & { textLines: string[]; heightMm: number };
+export type LaidRow = PrintRow & { textLines: string[]; dimensionLines: string[]; heightMm: number };
 
 export interface LayoutPage {
   index: number;
@@ -66,6 +65,7 @@ export interface Layout {
   pages: LayoutPage[];
   closing: ClosingBlock;
   density: Density;
+  bodyTop: number;
 }
 
 function descWidth(doc: Pick<PrintDoc, 'format'>): number {
@@ -92,8 +92,10 @@ export function closingHeight(doc: Pick<PrintDoc, 'promoLines' | 'instalments' |
   return { height: h, termsLines };
 }
 
-export function layoutDocument(doc: PrintDoc, wrap: WrapFn = approxWrap, opts: { density?: Density } = {}): Layout {
+export function layoutDocument(doc: PrintDoc, wrap: WrapFn = approxWrap, opts: { density?: Density; bodyTop?: number } = {}): Layout {
   const density = opts.density ?? 'normal';
+  const bodyTop = Math.max(BODY_TOP, opts.bodyTop ?? BODY_TOP);
+  const bodyHeight = FOOTER_TOP - bodyTop;
   const rows = buildRows(doc);
   const width = descWidth(doc);
   const pages: LayoutPage[] = [];
@@ -104,10 +106,11 @@ export function layoutDocument(doc: PrintDoc, wrap: WrapFn = approxWrap, opts: {
   for (const r of rows) {
     const text = r.type === 'band' ? r.text : r.type === 'line' ? (r.cells.desc ?? '') : '';
     const textLines = r.type === 'spacer' ? [] : wrap(text, r.type === 'band' ? width - 24 : width, r.type === 'band' || r.bold);
-    const laid: LaidRow = { ...r, textLines, heightMm: rowHeight(r, textLines.length, density) };
+    const dimensionLines = r.type === 'line' && r.dimensions ? wrap(r.dimensions, width, false) : [];
+    const laid: LaidRow = { ...r, textLines, dimensionLines, heightMm: rowHeight(r, textLines.length + dimensionLines.length, density) };
     if (laid.type === 'spacer' && !hasContent()) continue;
     const forced = laid.type !== 'spacer' && laid.pageBreakBefore && hasContent();
-    if (forced || cur.usedMm + laid.heightMm > BODY_HEIGHT) {
+    if (forced || cur.usedMm + laid.heightMm > bodyHeight) {
       // Never leave a section band alone at the foot of a page.
       const carry: LaidRow[] = [];
       while (cur.rows.length && (cur.rows[cur.rows.length - 1].type === 'band' || cur.rows[cur.rows.length - 1].type === 'spacer')) {
@@ -134,10 +137,10 @@ export function layoutDocument(doc: PrintDoc, wrap: WrapFn = approxWrap, opts: {
   const summary = summaryOf(rows, doc.docDiscountSen);
   const { height, termsLines } = closingHeight(doc, wrap);
   const last = pages[pages.length - 1];
-  const ownPage = last.usedMm + height > BODY_HEIGHT;
+  const ownPage = last.usedMm + height > bodyHeight;
   if (ownPage) pages.push({ index: pages.length, rows: [], usedMm: 0, netSen: 0, listSen: 0, isLast: false });
   pages[pages.length - 1].isLast = true;
-  return { pages, closing: { summary, ownPage, heightMm: height, termsLines }, density };
+  return { pages, closing: { summary, ownPage, heightMm: height, termsLines }, density, bodyTop };
 }
 
 /** What a page's TOTAL box shows, per format ('' = box left blank). */

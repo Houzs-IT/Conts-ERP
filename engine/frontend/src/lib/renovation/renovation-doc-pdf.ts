@@ -1,17 +1,18 @@
 /* Draws a renovation document (quotation, sales order, variation order) as an
    A4 portrait PDF in the layout of the owner's samples: brand letterhead and
-   title, company block, Attention / To with LAST AMEND on the left and Prepared
-   By / Building / Unit / Date on the right, the intro sentence, the column
-   header, section colour bands, the rows, a TOTAL box on every page, the bank
+   title, company block, Attention / To with the contact, property and LAST
+   AMEND on the left and Prepared By / Building / Unit / Date on the right (empty
+   Attention and Prepared By rows left out), the intro sentence, the column
+   header, centred section banners, the rows with their dimension sub-line, a TOTAL box on every page, the bank
    line and terms, and on the last page the summary, promotion lines, payment
    terms and two signature blocks. Pagination comes from print-layout.ts so the
    page totals here are the ones its tests pin. */
 
 import type { jsPDF as JsPdf } from 'jspdf';
-import { PRINT_FORMATS } from './print-formats';
+import { PRINT_FORMATS, type ColumnKey } from './print-formats';
 import { A4, BODY_TOP, FOOTER_TOP, layoutDocument, pageTotalSen, ROW_HEIGHTS, summaryRows, type Density, type Layout, type WrapFn } from './print-layout';
 import { drawDocLetterhead } from './renovation-doc-theme';
-import { DOC_TITLE, rmGrouped, rmPlain, type PrintDoc } from './print-model';
+import { clientContactLine, DOC_TITLE, rmGrouped, type PrintDoc } from './print-model';
 
 const M = A4.margin;
 const RIGHT = A4.width - M;
@@ -37,57 +38,104 @@ function drawLetterhead(pdf: JsPdf, d: PrintDoc): void {
   drawDocLetterhead(pdf, { title: DOC_TITLE[d.kind], name: b.name, logo: b.logo, lines: [...b.companyLines, b.contactLine], meta: [{ label: '', value: d.docNo }], margin: M });
 }
 
-function drawInfo(pdf: JsPdf, d: PrintDoc): void {
-  const h = d.header;
-  const y0 = BODY_TOP - 30;
-  pdf.setFontSize(7.5);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('Attention', M + 2, y0);
-  pdf.text('To', M + 2, y0 + 4.6);
-  pdf.text(h.customerName || h.attention, M + 26, y0 + 4.6, { maxWidth: 90 });
-  /* Second line: the attention when it differs from the customer, else the quotation's phone and site address
-     (mig 0116). Third line: the property, then the last-amended date. Blank parts print nothing. */
-  const second = h.attention && h.customerName && h.attention !== h.customerName
-    ? h.attention
-    : [h.customerPhone, (h.siteAddress ?? '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean).join(', ')].filter(Boolean).join(' · ');
-  if (second) {
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(second, M + 26, y0 + 9.2, { maxWidth: 90 });
+const INFO_TOP = BODY_TOP - 31;
+const INFO_ROW = 4.6;
+const WRAPPED_LINE = 3.7;
+const BLOCK_GAP = 1;
+const CLIENT_VALUE_X = M + 26;
+const META_LABEL_X = 126;
+const META_VALUE_X = META_LABEL_X + 20;
+
+interface InfoText {
+  text: string;
+  x: number;
+  y: number;
+  bold: boolean;
+}
+
+interface InfoPlan {
+  texts: InfoText[];
+  ruleY: number;
+  bodyTop: number;
+}
+
+function placeLines(pdf: JsPdf, texts: InfoText[], line: { text: string; x: number; y: number; width: number; bold: boolean }): number {
+  pdf.setFont('helvetica', line.bold ? 'bold' : 'normal');
+  const lines = pdf.splitTextToSize(line.text, line.width) as string[];
+  lines.forEach((text, i) => texts.push({ text, x: line.x, y: line.y + i * WRAPPED_LINE, bold: line.bold }));
+  return line.y + Math.max(0, lines.length - 1) * WRAPPED_LINE;
+}
+
+function planClient(pdf: JsPdf, h: PrintDoc['header'], texts: InfoText[]): number {
+  const width = META_LABEL_X - 4 - CLIENT_VALUE_X;
+  const attention = h.customerName && h.attention !== h.customerName ? h.attention : '';
+  let y = INFO_TOP;
+  if (attention) {
+    texts.push({ text: 'Attention', x: M + 2, y, bold: true });
+    y = placeLines(pdf, texts, { text: attention, x: CLIENT_VALUE_X, y, width, bold: false }) + INFO_ROW;
   }
-  const third = [h.property, h.lastAmended ? `LAST AMEND : ${dmy(h.lastAmended)}` : ''].filter(Boolean).join('   ');
-  if (third) {
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(third, M + 26, y0 + 13.8, { maxWidth: 90 });
+  texts.push({ text: 'To', x: M + 2, y, bold: true });
+  y = placeLines(pdf, texts, { text: h.customerName || h.attention || ' ', x: CLIENT_VALUE_X, y, width, bold: true });
+  const property = [h.property, h.lastAmended ? `LAST AMEND : ${dmy(h.lastAmended)}` : ''].filter(Boolean).join('   ');
+  for (const block of [clientContactLine(h), property].filter(Boolean)) {
+    y = placeLines(pdf, texts, { text: block, x: CLIENT_VALUE_X, y: y + WRAPPED_LINE + BLOCK_GAP, width, bold: false });
   }
-  const lx = 128;
-  const vx = RIGHT - 18;
+  return y;
+}
+
+function planMeta(pdf: JsPdf, h: PrintDoc['header'], texts: InfoText[]): number {
   const rows: Array<[string, string]> = [['Prepared By', h.preparedBy], ['Building', h.building], ['Unit', h.unitNo], ['Date', dmy(h.docDate, true)]];
-  rows.forEach(([label, value], i) => {
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(label, lx, y0 + i * 4.6);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(value || '', vx, y0 + i * 4.6, { align: 'center' });
-  });
+  let y = INFO_TOP - INFO_ROW;
+  for (const [label, value] of rows.filter(([label, value]) => label !== 'Prepared By' || value)) {
+    y += INFO_ROW;
+    texts.push({ text: `${label}:`, x: META_LABEL_X, y, bold: true });
+    y = placeLines(pdf, texts, { text: value || ' ', x: META_VALUE_X, y, width: RIGHT - META_VALUE_X, bold: false });
+  }
+  return y;
+}
+
+function planInfo(pdf: JsPdf, d: PrintDoc): InfoPlan {
+  pdf.setFontSize(7.5);
+  const texts: InfoText[] = [];
+  const ruleY = Math.max(BODY_TOP - 13.8, planClient(pdf, d.header, texts) + 2, planMeta(pdf, d.header, texts) + 2);
+  return { texts, ruleY, bodyTop: ruleY + 13.8 };
+}
+
+function drawInfo(pdf: JsPdf, d: PrintDoc, plan: InfoPlan): void {
+  pdf.setFontSize(7.5);
+  for (const { text, x, y, bold } of plan.texts) {
+    pdf.setFont('helvetica', bold ? 'bold' : 'normal');
+    pdf.text(text, x, y);
+  }
   pdf.setLineWidth(0.3);
-  pdf.line(M, y0 + 16.2, RIGHT, y0 + 16.2);
+  pdf.line(M, plan.ruleY, RIGHT, plan.ruleY);
   pdf.setFont('helvetica', 'italic');
   pdf.setFontSize(7);
-  const intro = (h.intro ?? '') || d.brand.intro;
-  pdf.text(intro, M, y0 + 19.8, { maxWidth: RIGHT - M });
+  const intro = (d.header.intro ?? '') || d.brand.intro;
+  pdf.text(intro, M, plan.ruleY + 3.6, { maxWidth: RIGHT - M });
   if (d.reference) {
     pdf.setFont('helvetica', 'bold');
-    pdf.text(d.reference, RIGHT, y0 + 19.8, { align: 'right' });
+    pdf.text(d.reference, RIGHT, plan.ruleY + 3.6, { align: 'right' });
   }
 }
 
-function drawColumnHeader(pdf: JsPdf, d: PrintDoc): void {
+function columnRight(d: PrintDoc, key: ColumnKey): number {
+  let x = M;
+  for (const c of PRINT_FORMATS[d.format].columns) {
+    x += c.width;
+    if (c.key === key) return x;
+  }
+  return RIGHT;
+}
+
+function drawColumnHeader(pdf: JsPdf, d: PrintDoc, bodyTop: number): void {
   const cols = PRINT_FORMATS[d.format].columns;
   let x = M;
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(8);
   for (const c of cols) {
     const tx = c.align === 'right' ? x + c.width - 1 : c.align === 'center' ? x + c.width / 2 : x + 1;
-    pdf.text(c.label, tx, BODY_TOP - 3, { align: c.align === 'right' ? 'right' : c.align === 'center' ? 'center' : 'left' });
+    pdf.text(c.label, tx, bodyTop - 3, { align: c.align === 'right' ? 'right' : c.align === 'center' ? 'center' : 'left' });
     x += c.width;
   }
 }
@@ -100,7 +148,7 @@ function drawFooter(pdf: JsPdf, d: PrintDoc, layout: Layout, pageIdx: number): v
   if (PRINT_FORMATS[d.format].netSubtotal && page.netSen !== page.listSen && page.rows.length) {
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(7);
-    pdf.text(rmPlain(page.netSen), 146, y - 1.5, { align: 'center' });
+    pdf.text(rmGrouped(page.netSen), columnRight(d, 'discPrice') - 1, y - 1.5, { align: 'right' });
   }
   // The last page of a qty-only document prints its package total once, in the summary.
   const blankLastTotal = page.isLast && total === null;
@@ -111,7 +159,7 @@ function drawFooter(pdf: JsPdf, d: PrintDoc, layout: Layout, pageIdx: number): v
     pdf.setFontSize(7.5);
     pdf.text('TOTAL (RM)', boxX + 22, y + 4.2, { align: 'center' });
     pdf.setFontSize(9);
-    pdf.text(total === null ? '' : rmPlain(total), RIGHT - 14, y + 4.2, { align: 'center' });
+    pdf.text(total === null ? '' : rmGrouped(total), RIGHT - 1, y + 4.2, { align: 'right' });
     pdf.setLineWidth(0.6);
     pdf.line(boxX, y + 6.2, RIGHT, y + 6.2);
     y += 6.4;
@@ -126,7 +174,7 @@ function drawFooter(pdf: JsPdf, d: PrintDoc, layout: Layout, pageIdx: number): v
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(r.tone === 'final' ? 8.5 : 7.5);
       pdf.text(label, boxX + 22, y + 4, { align: 'center' });
-      pdf.text(d.format === 'DISCOUNT' ? rmGrouped(r.sen) : rmPlain(r.sen), RIGHT - 14, y + 4, { align: 'center' });
+      pdf.text(rmGrouped(r.sen), RIGHT - 1, y + 4, { align: 'right' });
       pdf.setLineWidth(0.3);
       pdf.line(boxX, y + 5.6, RIGHT, y + 5.6);
       y += 5.8;
@@ -165,7 +213,7 @@ function drawFooter(pdf: JsPdf, d: PrintDoc, layout: Layout, pageIdx: number): v
 function drawRows(pdf: JsPdf, d: PrintDoc, layout: Layout, pageIdx: number, density: Density): number {
   const cols = PRINT_FORMATS[d.format].columns;
   const h = ROW_HEIGHTS[density];
-  let y = BODY_TOP;
+  let y = layout.bodyTop;
   for (const r of layout.pages[pageIdx].rows) {
     if (r.type === 'spacer') { y += r.heightMm; continue; }
     if (r.type === 'band') {
@@ -173,8 +221,7 @@ function drawRows(pdf: JsPdf, d: PrintDoc, layout: Layout, pageIdx: number, dens
       if (rgb) { pdf.setFillColor(rgb[0], rgb[1], rgb[2]); pdf.rect(M, y, RIGHT - M, r.heightMm, 'F'); }
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(h.fontPt);
-      const descX = M + cols[0].width + 1;
-      r.textLines.forEach((t, i) => pdf.text(t, descX, y + h.band * 0.68 + i * h.extraLine));
+      r.textLines.forEach((t, i) => pdf.text(t, (M + RIGHT) / 2, y + h.band * 0.68 + i * h.extraLine, { align: 'center' }));
       if (r.amount) {
         const amt = cols.find((c) => c.key === 'amount');
         if (amt) pdf.text(r.amount, RIGHT - 1, y + h.band * 0.68, { align: 'right' });
@@ -191,6 +238,14 @@ function drawRows(pdf: JsPdf, d: PrintDoc, layout: Layout, pageIdx: number, dens
       pdf.setFont('helvetica', c.key === 'desc' && r.bold ? 'bold' : c.key === 'no' ? 'bold' : 'normal');
       if (c.key === 'desc') {
         r.textLines.forEach((t, i) => pdf.text(t, x + 1, base + i * h.extraLine));
+        if (r.dimensionLines.length) {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(h.fontPt - 0.8);
+          pdf.setTextColor(51);
+          r.dimensionLines.forEach((t, i) => pdf.text(t, x + 1, base + (r.textLines.length + i) * h.extraLine));
+          pdf.setTextColor(0);
+          pdf.setFontSize(h.fontPt);
+        }
       } else {
         const v = r.cells[c.key];
         if (v) {
@@ -264,14 +319,15 @@ export function renderRenovationDoc(pdf: JsPdf, d: PrintDoc, density: Density = 
     pdf.setFontSize(fontPt);
     return pdf.splitTextToSize(text || ' ', w) as string[];
   };
-  const layout = layoutDocument(d, wrap, { density });
+  const info = planInfo(pdf, d);
+  const layout = layoutDocument(d, wrap, { density, bodyTop: info.bodyTop });
   layout.pages.forEach((_, i) => {
     if (i > 0) pdf.addPage();
     drawLetterhead(pdf, d);
-    drawInfo(pdf, d);
-    drawColumnHeader(pdf, d);
+    drawInfo(pdf, d, info);
+    drawColumnHeader(pdf, d, layout.bodyTop);
     const endY = drawRows(pdf, d, layout, i, density);
-    if (layout.pages[i].isLast) drawClosing(pdf, d, layout, layout.closing.ownPage ? BODY_TOP - 6 : endY);
+    if (layout.pages[i].isLast) drawClosing(pdf, d, layout, layout.closing.ownPage ? layout.bodyTop - 6 : endY);
     drawFooter(pdf, d, layout, i);
   });
   return layout;
