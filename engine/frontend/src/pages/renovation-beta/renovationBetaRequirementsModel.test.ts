@@ -1,17 +1,21 @@
 import { describe, expect, test } from "vitest";
-import type { RequirementLine, RequirementProject } from "./renovationBetaRequirementsApi";
-import { NO_ROOM, brandOptions, filterProjectLines, groupByRoom, onPoCount, roomSummary } from "./renovationBetaRequirementsModel";
+import type { RequirementLine, RequirementProject, TradePlan } from "./renovationBetaRequirementsApi";
+import { NO_ROOM, brandOptions, filterProjectLines, groupByRoom, groupByTrade, onPoCount, planDates, roomSummary } from "./renovationBetaRequirementsModel";
 
 function line(overrides: Partial<RequirementLine>): RequirementLine {
   return {
     id: "a", itemCode: "RN-PROTECTION", name: "Works - Protection", remark: null, qty: 1, uom: "UNIT",
-    room: "Common area", group: "works", isOnPo: false,
+    room: "Common area", group: "works", isOnPo: false, planKey: "PROTECTION", onSiteBy: null,
     ...overrides,
   };
 }
 
 function project(overrides: Partial<RequirementProject>): RequirementProject {
-  return { id: 13, code: "RN-2509-003", name: "BARON B11-07 MS LEE", brand: "The Conts", lines: [], ...overrides };
+  return { id: 13, code: "RN-2509-003", name: "BARON B11-07 MS LEE", brand: "The Conts", lines: [], plans: [], ...overrides };
+}
+
+function plan(overrides: Partial<TradePlan>): TradePlan {
+  return { taskId: 1, planKey: "ELECTRICAL", label: "WIRING & HACKING", plannedStart: null, plannedEnd: null, status: "unscheduled", ...overrides };
 }
 
 describe("requirement board grouping", () => {
@@ -31,6 +35,31 @@ describe("requirement board grouping", () => {
 
   test("on PO counts only lines a live PO holds", () => {
     expect(onPoCount([line({ isOnPo: true }), line({}), line({ isOnPo: true })])).toBe(2);
+  });
+});
+
+describe("requirement board plans", () => {
+  test("Works lines group by trade with that trade's plans; a trade with no task has none", () => {
+    const lines = [
+      line({ id: "a", planKey: "ELECTRICAL", name: "Works - Electrical" }),
+      line({ id: "b", planKey: "PROTECTION", name: "Works - Protection" }),
+      line({ id: "c", planKey: "ELECTRICAL", name: "Works - Electrical" }),
+    ];
+    const trades = groupByTrade(lines, [plan({ taskId: 1 }), plan({ taskId: 2, label: "LIGHTING & FAN INSTALLATION" }), plan({ taskId: 3, planKey: "PAINTING" })]);
+    expect(trades.map((trade) => [trade.label, trade.lines.map((item) => item.id), trade.plans.map((item) => item.taskId)])).toEqual([
+      ["Electrical", ["a", "c"], [1, 2]], ["Protection", ["b"], []],
+    ]);
+  });
+
+  test("Built-in lines sit under one Carpentry group with the carpentry plan", () => {
+    const [trade] = groupByTrade([line({ group: "builtin", planKey: "BUILTIN", name: "Built-in - Wardrobe" })], [plan({ planKey: "BUILTIN", label: "CARPENTRY" })]);
+    expect([trade.label, trade.plans.length]).toEqual(["Carpentry", 1]);
+  });
+
+  test("dates read as a range, a single day, or No dates", () => {
+    expect(planDates({ plannedStart: "2026-02-11", plannedEnd: "2026-02-13" })).toMatch(/ to /);
+    expect(planDates({ plannedStart: "2026-02-11", plannedEnd: "2026-02-11" })).not.toMatch(/ to /);
+    expect(planDates({ plannedStart: null, plannedEnd: null })).toBe("No dates");
   });
 });
 

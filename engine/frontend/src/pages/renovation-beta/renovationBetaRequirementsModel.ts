@@ -1,6 +1,50 @@
-import type { RequirementGroup, RequirementLine, RequirementProject } from "./renovationBetaRequirementsApi";
+import type { RequirementGroup, RequirementLine, RequirementProject, TradePlan, TradePlanStatus } from "./renovationBetaRequirementsApi";
+import { dayMonth } from "./renovationBetaModel";
 
 export const NO_ROOM = "No room";
+
+export const PLAN_STATUS_LABEL: Record<TradePlanStatus, string> = {
+  overdue: "Late",
+  late_start: "Not started",
+  in_progress: "In progress",
+  planned: "Planned",
+  unscheduled: "No dates",
+  done: "Done",
+  skipped: "Skipped",
+};
+
+export function isPlanLate(status: TradePlanStatus): boolean {
+  return status === "overdue" || status === "late_start";
+}
+
+export function planDates({ plannedStart, plannedEnd }: Pick<TradePlan, "plannedStart" | "plannedEnd">): string {
+  if (plannedStart && plannedEnd && plannedStart !== plannedEnd) return `${dayMonth(plannedStart)} to ${dayMonth(plannedEnd)}`;
+  if (plannedStart ?? plannedEnd) return dayMonth(plannedStart ?? plannedEnd);
+  return "No dates";
+}
+
+export interface TradeGroup {
+  key: string;
+  label: string;
+  lines: RequirementLine[];
+  plans: TradePlan[];
+}
+
+export const BUILT_IN_PLAN_KEY = "BUILTIN";
+
+const tradeLabelOf = (line: RequirementLine): string =>
+  line.planKey === BUILT_IN_PLAN_KEY ? "Carpentry" : line.name.replace(/^works\s*-\s*/i, "");
+
+export function groupByTrade(lines: readonly RequirementLine[], plans: readonly TradePlan[]): TradeGroup[] {
+  const trades = new Map<string, TradeGroup>();
+  for (const line of lines) {
+    const key = line.planKey ?? line.itemCode;
+    const trade = trades.get(key) ?? { key, label: tradeLabelOf(line), lines: [], plans: plans.filter((plan) => plan.planKey === key) };
+    trade.lines.push(line);
+    trades.set(key, trade);
+  }
+  return [...trades.values()];
+}
 
 const GROUP_LABELS: ReadonlyArray<readonly [RequirementGroup, string]> = [
   ["works", "Works"],

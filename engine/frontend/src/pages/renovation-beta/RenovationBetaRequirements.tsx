@@ -1,21 +1,35 @@
 import { useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, ChevronDown, ChevronRight, DoorOpen, Search } from "lucide-react";
+import { ArrowUpRight, CalendarDays, ChevronDown, ChevronRight, DoorOpen, Search } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
 import { BetaLoading } from "./BetaLoading";
-import { BetaSkin, WS, WsBadge, WsEmpty, WsPageHead, WsStyle, inputStyle, TONE_ACCENT, TONE_QUIET } from "./BetaWsUi";
-import { requirementsApi, type RequirementLine, type RequirementProject } from "./renovationBetaRequirementsApi";
 import {
-  brandOptions, filterProjectLines, groupByRoom, onPoCount, plural, roomSummary, type GroupCard, type RoomGroup,
+  BetaSkin, WS, WsBadge, WsEmpty, WsPageHead, WsStyle, inputStyle, TONE_ACCENT, TONE_ALERT, TONE_DONE, TONE_QUIET, TONE_WAIT,
+} from "./BetaWsUi";
+import { requirementsApi, type RequirementLine, type RequirementProject, type TradePlan, type TradePlanStatus } from "./renovationBetaRequirementsApi";
+import {
+  PLAN_STATUS_LABEL, brandOptions, filterProjectLines, groupByRoom, groupByTrade, isPlanLate, onPoCount, planDates, plural, roomSummary,
+  type GroupCard, type RoomGroup, type TradeGroup,
 } from "./renovationBetaRequirementsModel";
 import { onBrandList } from "./renovationBetaHomeModel";
-import { BANDS, BETA } from "./renovationBetaTheme";
+import { dayMonth } from "./renovationBetaModel";
+import { BANDS, BETA, type BetaTone } from "./renovationBetaTheme";
 
 const projectSoHref = (projectId: number): string => `/beta/projects/${projectId}?tab=po`;
 
 const GROUP_BANDS: Record<GroupCard["key"], (typeof BANDS)[number]> = {
   works: BANDS[0],
   builtin: BANDS[1],
+};
+
+const PLAN_STATUS_TONE: Record<TradePlanStatus, BetaTone> = {
+  overdue: TONE_ALERT,
+  late_start: TONE_ALERT,
+  in_progress: TONE_ACCENT,
+  planned: TONE_QUIET,
+  unscheduled: TONE_WAIT,
+  done: TONE_DONE,
+  skipped: TONE_QUIET,
 };
 
 interface Toggles {
@@ -149,14 +163,20 @@ function ProjectSection({ project, lines, toggles }: { project: RequirementProje
       </div>
       {isOpen && (
         <div id={sectionKey}>
-          {groupByRoom(lines).map((room) => <RoomSection key={room.name} room={room} sectionKey={`${sectionKey}-room-${room.name}`} toggles={toggles} />)}
+          {groupByRoom(lines).map((room) => <RoomSection key={room.name} room={room} plans={project.plans} sectionKey={`${sectionKey}-room-${room.name}`} toggles={toggles} />)}
         </div>
       )}
     </section>
   );
 }
 
-function RoomSection({ room, sectionKey, toggles }: { room: RoomGroup; sectionKey: string; toggles: Toggles }): ReactElement {
+interface SectionProps {
+  sectionKey: string;
+  toggles: Toggles;
+  plans: TradePlan[];
+}
+
+function RoomSection({ room, sectionKey, toggles, plans }: SectionProps & { room: RoomGroup }): ReactElement {
   const isOpen = toggles.isOpen(sectionKey);
   return (
     <div style={{ borderTop: `1px solid ${BETA.line}` }}>
@@ -167,14 +187,14 @@ function RoomSection({ room, sectionKey, toggles }: { room: RoomGroup; sectionKe
       </SectionHeader>
       {isOpen && (
         <div id={sectionKey}>
-          {room.cards.map((card) => <GroupSection key={card.key} card={card} sectionKey={`${sectionKey}-${card.key}`} toggles={toggles} />)}
+          {room.cards.map((card) => <GroupSection key={card.key} card={card} plans={plans} sectionKey={`${sectionKey}-${card.key}`} toggles={toggles} />)}
         </div>
       )}
     </div>
   );
 }
 
-function GroupSection({ card, sectionKey, toggles }: { card: GroupCard; sectionKey: string; toggles: Toggles }): ReactElement {
+function GroupSection({ card, sectionKey, toggles, plans }: SectionProps & { card: GroupCard }): ReactElement {
   const isOpen = toggles.isOpen(sectionKey);
   const [bar, tint, text] = GROUP_BANDS[card.key];
   const Chevron = isOpen ? ChevronDown : ChevronRight;
@@ -190,11 +210,39 @@ function GroupSection({ card, sectionKey, toggles }: { card: GroupCard; sectionK
         <span style={countStyle}>{plural(card.lines.length, "line")} · {onPoCount(card.lines)} on PO</span>
       </button>
       {isOpen && (
-        <ul id={sectionKey} style={{ listStyle: "none", margin: 0, padding: 0 }}>
-          {card.lines.map((line) => <li key={line.id} style={{ borderTop: `1px solid ${BETA.line}` }}><LineRow line={line} /></li>)}
-        </ul>
+        <div id={sectionKey}>
+          {groupByTrade(card.lines, plans).map((trade) => <TradeBlock key={trade.key} trade={trade} />)}
+        </div>
       )}
     </div>
+  );
+}
+
+function TradeBlock({ trade }: { trade: TradeGroup }): ReactElement {
+  return (
+    <div style={{ borderTop: `1px solid ${BETA.line}` }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 12px", minHeight: 40, padding: "8px 14px 8px 44px", background: WS.panel }}>
+        <span style={{ fontSize: 13, fontWeight: 700 }}>{trade.label}</span>
+        {trade.plans.length === 0
+          ? <span style={{ fontSize: 13, color: BETA.muted }}>Not planned yet</span>
+          : trade.plans.map((plan) => <PlanChip key={plan.taskId} plan={plan} isNamed={trade.plans.length > 1} />)}
+      </div>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+        {trade.lines.map((line) => <li key={line.id} style={{ borderTop: `1px solid ${BETA.line}` }}><LineRow line={line} /></li>)}
+      </ul>
+    </div>
+  );
+}
+
+function PlanChip({ plan, isNamed }: { plan: TradePlan; isNamed: boolean }): ReactElement {
+  const isLate = isPlanLate(plan.status);
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: isLate ? WS.red : WS.text2, fontWeight: isLate ? 700 : 400 }}>
+      <CalendarDays size={13} aria-hidden="true" />
+      {isNamed && <span>{plan.label} ·</span>}
+      {planDates(plan)}
+      <WsBadge tone={PLAN_STATUS_TONE[plan.status]}>{PLAN_STATUS_LABEL[plan.status]}</WsBadge>
+    </span>
   );
 }
 
@@ -207,6 +255,7 @@ function LineRow({ line }: { line: RequirementLine }): ReactElement {
         {line.remark && <span style={{ fontSize: 13, color: WS.text2, overflowWrap: "anywhere" }}>{line.remark}</span>}
       </span>
       <span style={{ flex: "0 0 auto", fontSize: 13, color: WS.text2, whiteSpace: "nowrap" }}>Qty {line.qty} {line.uom.toLowerCase()}</span>
+      {line.onSiteBy && <span style={{ flex: "0 0 auto", fontSize: 13, color: WS.text2, whiteSpace: "nowrap" }}>On site by {dayMonth(line.onSiteBy)}</span>}
       <WsBadge tone={line.isOnPo ? TONE_ACCENT : TONE_QUIET}>{line.isOnPo ? "On PO" : "Not on PO"}</WsBadge>
     </div>
   );
