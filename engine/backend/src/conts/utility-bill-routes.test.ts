@@ -85,6 +85,11 @@ describe('a payment request for a provider', () => {
     expect((await ask(appFor(sb, FIN), { bills: [BILLS[0], { ...BILLS[1], kind: 'sewerage' }] })).status).toBe(201);
     expect(sb.tables.payment_request_lines.map(l => l.account_code)).toEqual(['420-0010', null]);
   });
+  test("each line keeps its bill's date, the day its expense is booked on; a date that is not one is dropped", async () => {
+    const sb = world();
+    expect((await ask(appFor(sb, FIN), { bills: [{ ...BILLS[0], billDate: '2026-10-24' }, { ...BILLS[1], billDate: '24/10/2026' }] })).status).toBe(201);
+    expect(sb.tables.payment_request_lines.map(l => l.bill_date)).toEqual(['2026-10-24', null]);
+  });
   test("the provider's supplier when one is on the list (this company's only)", async () => {
     const sb = world();
     expect((await ask(appFor(sb, FIN), { provider: 'Indah Water', bills: [{ ...BILLS[0], kind: 'sewerage' }] })).status).toBe(201);

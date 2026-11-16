@@ -8,6 +8,7 @@
 // refund hooks beside it: a failure is logged and never undoes the voucher.
 import { linkedRequestStatus, requestStatus } from './payment-requests';
 import { postedPaid } from './request-vouchers';
+import { utilityAccrualBestEffort } from './utility-accrual';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as in the voucher routes */
 type Db = any;
@@ -54,7 +55,10 @@ export async function settleRequest(sb: Db, requestId: string): Promise<void> {
   const next = req.ap_invoice_id
     ? linkedRequestStatus({ type: String(req.type ?? 'PAYMENT'), amountSen: Number(req.amount_sen), current: String(req.status), ownPaidSen: paid, ap, apPaidBeforeSen: Number(req.ap_paid_before_sen ?? 0) })
     : requestStatus(Number(req.amount_sen), paid, String(req.status));
-  if (next !== req.status) must(await sb.from('payment_requests').update({ status: next, updated_at: stamp() }).eq('id', requestId));
+  const was = String(req.status);
+  if (next !== was) must(await sb.from('payment_requests').update({ status: next, updated_at: stamp() }).eq('id', requestId));
+  /* A utility bill's expense, against its accrual on the bill's own date, once it is paid (utility-accrual.ts). */
+  if (next === 'PAID' || was === 'PAID') await utilityAccrualBestEffort(sb, requestId, was, next);
 }
 
 /** Every request paid through this AP invoice, settled again: its paid, status or total just moved (a voucher allocating
