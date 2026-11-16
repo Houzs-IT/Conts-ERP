@@ -287,8 +287,8 @@ function Routed() {
   const account = location.pathname === '/account';
   // Field roles: single-column 44px shell, not the desk nav.
   if (user.role === 'renovator') {
-    if (!account && !/^\/portal\/(clock|pay|me)(\/|$)/.test(location.pathname)) return <Navigate to="/portal/clock" replace />;
-    return <Suspense fallback={<Fallback />}><FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : location.pathname.startsWith('/portal/me') ? <FieldMePage /> : location.pathname.startsWith('/portal/pay') ? <FieldPayPage /> : <FieldClockPage />}</Suspense></FieldShell></Suspense>;
+    if (!account && !/^\/portal\/(clock|pay|me|receipts)(\/|$)/.test(location.pathname)) return <Navigate to="/portal/clock" replace />;
+    return <Suspense fallback={<Fallback />}><FieldShell><Suspense fallback={<Fallback />}>{account ? <AccountPage /> : location.pathname.startsWith('/portal/me') ? <FieldMePage /> : location.pathname.startsWith('/portal/pay') ? <FieldPayPage /> : location.pathname.startsWith('/portal/receipts') ? <FieldReceiptsPage /> : <FieldClockPage />}</Suspense></FieldShell></Suspense>;
   }
   if (user.role === 'housekeeper' || user.role === 'technician') {
     // Cleaners' and technicians' screens moved from /field (then /worker) to /portal; old bookmarks and links follow.
