@@ -1,8 +1,8 @@
 import type { Db, DbStmt } from "./load";
-import { logTradesDone, personIdOf, runTogether, type LineActor, type TradeTaskRow } from "./lineProgress";
-import { storeProofFiles, writeProofRows, type LineProof } from "./lineProof";
+import { personIdOf, runTogether, tradeDoneLogStatements, type LineActor, type TradeTaskRow } from "./lineProgress";
+import { proofRowsStatement, storeProofFiles, type LineProof } from "./lineProof";
 import { BUILT_IN_TASK_CATEGORY, LIVE_BOARD_LINE, SO_LINE_CATEGORY_JOIN } from "./requirementBoard";
-import { completionRefusal, markTaskDoneStatement, startTask } from "./taskCompletion";
+import { completionRefusal, markTaskDoneStatement, startTaskStatement } from "./taskCompletion";
 
 export type TradeRefusal = "task_not_found" | "trade_done" | "trade_skipped" | "not_started";
 
@@ -37,7 +37,7 @@ async function loadBrandTask(db: Db, taskId: number, actor: LineActor): Promise<
        FROM project_trade_tasks t
        JOIN projects p ON p.id = t.project_id
       WHERE t.id = ? AND p.project_kind = 'renovation' AND p.archived_at IS NULL${actor.companySql} AND lower(trim(p.brand)) = lower(trim(?))`,
-  ).bind(taskId, actor.brandName ?? "").first<TradeTask>();
+  ).bind(taskId, actor.brandName ?? null).first<TradeTask>();
   if (!task) return null;
   return isBuiltInTask(task) || !task.trade_code.includes(":") ? task : null;
 }
@@ -85,8 +85,10 @@ export async function startTrade(db: Db, taskId: number, actor: LineActor, proof
   if (typeof trade === "string") return trade;
   const { task, tasks } = trade;
   const files = await storeProofFiles(proof, task.project_id, { stage: "start" });
-  for (const sibling of tasks.filter((candidate) => !hasStarted(candidate))) await startTask(db, sibling.id, actor.today);
-  await writeProofRows(db, task.project_id, task.company_id, { kind: "task", taskId: task.id }, files);
+  await runTogether(db, [
+    ...tasks.filter((candidate) => !hasStarted(candidate)).map((sibling) => startTaskStatement(db, sibling.id, actor.today)),
+    proofRowsStatement(db, task.project_id, task.company_id, { kind: "task", taskId: task.id }, files),
+  ]);
   const earliest = tasks.map((sibling) => sibling.actual_start?.slice(0, 10)).filter((day): day is string => Boolean(day)).sort().at(0);
   return { startedOn: earliest ?? actor.today };
 }
@@ -115,8 +117,8 @@ export async function finishTrade(db: Db, taskId: number, actor: LineActor, proo
   await runTogether(db, [
     ...(lines.length > 0 ? [fullQtyStatement(db, task, lines, actor, personId)] : []),
     ...closing.map((sibling) => markTaskDoneStatement(db, sibling.id, { userId: actor.userId, today: actor.today, note: null })),
+    proofRowsStatement(db, task.project_id, task.company_id, { kind: "task", taskId: task.id }, files),
+    ...tradeDoneLogStatements(db, task.project_id, closing, task.company_id, actor.userId, `Finished on the phone by ${proof.by}`),
   ]);
-  await writeProofRows(db, task.project_id, task.company_id, { kind: "task", taskId: task.id }, files);
-  await logTradesDone(db, task.project_id, closing, task.company_id, actor.userId, `Finished on the phone by ${proof.by}`);
   return { linesCompleted: lines.length, closedTaskIds: closing.map((sibling) => sibling.id), waitingForReceipt };
 }

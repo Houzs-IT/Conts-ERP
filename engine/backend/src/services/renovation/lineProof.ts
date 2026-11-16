@@ -1,5 +1,5 @@
 import { MEDIA_ACTION, MEDIA_IMAGE_MAX_BYTES, mediaRowsJson, targetCode, type MediaItemIn, type MediaMeta, type MediaTarget } from "./betaMedia";
-import type { Db } from "./load";
+import type { Db, DbStmt } from "./load";
 
 export const PROOF_MIN_PHOTOS = 1;
 export const PROOF_MAX_PHOTOS = 10;
@@ -85,14 +85,14 @@ export async function storeProofFiles(proof: LineProof, projectId: number, stage
   return items;
 }
 
-export async function writeProofRows(db: Db, projectId: number, companyId: number, target: MediaTarget, items: readonly MediaItemIn[]): Promise<number> {
-  const from = targetCode(target);
-  await db.prepare(
-    `INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
-     SELECT ?::bigint, '${MEDIA_ACTION}', ?::text, x.key, x.meta, NULL, ?::bigint FROM jsonb_to_recordset(?::text::jsonb) AS x(key text, meta text)`,
-  ).bind(projectId, from, companyId, mediaRowsJson(items)).run();
+export const proofRowsStatement = (db: Db, projectId: number, companyId: number, target: MediaTarget, items: readonly MediaItemIn[]): DbStmt => db.prepare(
+  `INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
+   SELECT ?::bigint, '${MEDIA_ACTION}', ?::text, x.key, x.meta, NULL, ?::bigint FROM jsonb_to_recordset(?::text::jsonb) AS x(key text, meta text)`,
+).bind(projectId, targetCode(target), companyId, mediaRowsJson(items));
+
+export async function proofCount(db: Db, projectId: number, target: MediaTarget): Promise<number> {
   const row = await db.prepare(
     `SELECT count(*)::int AS photo_count FROM project_activity WHERE project_id = ? AND action = '${MEDIA_ACTION}' AND from_value = ? AND archived_at IS NULL`,
-  ).bind(projectId, from).first<{ photo_count: number }>();
-  return Number(row?.photo_count ?? items.length);
+  ).bind(projectId, targetCode(target)).first<{ photo_count: number }>();
+  return Number(row?.photo_count ?? 0);
 }

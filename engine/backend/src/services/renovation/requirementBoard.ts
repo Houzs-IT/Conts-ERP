@@ -194,7 +194,7 @@ export function planKeyOfTask(row: Pick<TradePlanRow, "trade_code" | "category_c
   return row.trade_code.includes(":") ? null : row.trade_code;
 }
 
-export function tradePlanOf(row: TradePlanRow, today: string, finishedIds: ReadonlySet<number> = new Set()): TradePlan | null {
+export function tradePlanOf(row: TradePlanRow, today: string, finishedPlanKeys: ReadonlySet<string> = new Set()): TradePlan | null {
   const planKey = planKeyOfTask(row);
   if (!planKey) return null;
   const status = tradeTaskStatus({ ...row, poFullyReceived: row.po_fully_received === true }, today);
@@ -208,7 +208,7 @@ export function tradePlanOf(row: TradePlanRow, today: string, finishedIds: Reado
     status,
     state,
     startedOn: dayOf(row.actual_start),
-    isWaitingForReceipt: state !== "done" && row.fulfilment_kind === "po" && finishedIds.has(Number(row.id)),
+    isWaitingForReceipt: state !== "done" && row.fulfilment_kind === "po" && finishedPlanKeys.has(planKey),
   };
 }
 
@@ -234,7 +234,8 @@ export function buildRequirementBoard(rows: RequirementBoardRows, scope: Categor
   const projects = rows.projects.map((row) => {
     const id = Number(row.project_id);
     const closedPlanKeys = new Set((plansByProject.get(id) ?? []).filter((plan) => plan.state === "done").map(planKeyOfTask).filter((key): key is string => key !== null));
-    const projectPlans = (plansByProject.get(id) ?? []).map((plan) => tradePlanOf(plan, today, finishedIds)).filter((plan): plan is TradePlan => plan !== null);
+    const finishedPlanKeys = new Set((plansByProject.get(id) ?? []).filter((plan) => finishedIds.has(Number(plan.id))).map(planKeyOfTask).filter((key): key is string => key !== null));
+    const projectPlans = (plansByProject.get(id) ?? []).map((plan) => tradePlanOf(plan, today, finishedPlanKeys)).filter((plan): plan is TradePlan => plan !== null);
     const projectLines = linesByProject.get(id) ?? [];
     return {
       id,
@@ -326,7 +327,8 @@ const TRADE_MEDIA_SQL = (filter: RequirementBoardFilter): string =>
      FROM project_activity a
      JOIN projects p ON p.id = a.project_id
     WHERE a.action = '${MEDIA_ACTION}' AND (a.from_value LIKE 'task:%' OR a.from_value LIKE 'line:%') AND a.archived_at IS NULL AND a.to_value IS NOT NULL
-      AND ${LIVE_RENOVATION_PROJECTS(filter)}`;
+      AND ${LIVE_RENOVATION_PROJECTS(filter)}
+    ORDER BY a.id DESC`;
 
 export const isMissingColumn = (error: unknown): boolean => (error as { code?: string } | null)?.code === "42703";
 

@@ -153,14 +153,16 @@ describe("finish a trade", () => {
     expect(calls.some((call) => call.args[1] === "task_done")).toBe(true);
   });
 
-  test("runs the line fill and the task closes in one batch when the database has one", async () => {
+  test("runs the line fill, the task close, the photo rows and the done log in one batch, so a failure leaves Finish to press again", async () => {
     const { database, bucket, calls } = scriptedDb({ task: started, lines });
     const batches: number[] = [];
     const batching = { prepare: database.prepare, batch: async (statements: unknown[]) => { batches.push(statements.length); return []; } };
     const response = await crewApp(batching, bucket).finish(1, { photos: [PHOTO] });
     expect(response.status).toBe(200);
-    expect(batches).toEqual([2]);
+    expect(batches).toEqual([4]);
     expect(calls.some((call) => call.sql.includes("INSERT INTO project_line_progress"))).toBe(false);
+    expect(calls.some((call) => call.sql.includes("beta_media") && call.sql.includes("jsonb_to_recordset"))).toBe(false);
+    expect(calls.some((call) => call.args[1] === "task_done")).toBe(false);
   });
 
   test("a task fulfilled by a PO with PO lines waits for receipt and is not closed", async () => {

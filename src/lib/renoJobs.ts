@@ -32,6 +32,7 @@ export interface RenoPlan {
   status: RenoPlanStatus;
   state: RenoTradeState;
   startedOn: string | null;
+  isWaitingForReceipt: boolean;
 }
 
 export interface RenoTradeDay {
@@ -67,7 +68,6 @@ export interface RenoProgressResponse {
   ok: true;
   previousDoneQty: number;
   doneQty: number;
-  completedTaskIds: number[];
   photoCount: number;
 }
 
@@ -88,6 +88,7 @@ export interface RenoTradeGroup {
   label: string;
   plan: RenoPlan | null;
   lines: RenoLine[];
+  tradeLines: RenoLine[];
 }
 
 export interface RenoRoomGroup {
@@ -198,20 +199,24 @@ export function mergePlans(plans: RenoPlan[]): RenoPlan | null {
   const starts = plans.flatMap(plan => (plan.plannedStart ? [plan.plannedStart] : [])).sort();
   const ends = plans.flatMap(plan => (plan.plannedEnd ? [plan.plannedEnd] : [])).sort();
   const status = STATUS_URGENCY.find(candidate => plans.some(plan => plan.status === candidate)) ?? first.status;
-  return { ...first, taskId, state: mergeTradeState(plans), startedOn, status, plannedStart: starts[0] ?? null, plannedEnd: ends[ends.length - 1] ?? null };
+  const isWaitingForReceipt = plans.some(plan => plan.isWaitingForReceipt);
+  return { ...first, taskId, state: mergeTradeState(plans), startedOn, status, isWaitingForReceipt, plannedStart: starts[0] ?? null, plannedEnd: ends[ends.length - 1] ?? null };
 }
 
-function groupByTrade(lines: RenoLine[], plans: RenoPlan[], fallbackLabel: string): RenoTradeGroup[] {
+const tradeKeyOf = (line: RenoLine, fallbackLabel: string): string => line.planKey ?? `label:${line.tradeLabel ?? fallbackLabel}`;
+
+function groupByTrade(lines: RenoLine[], project: Pick<RenoProject, 'lines' | 'plans'>, fallbackLabel: string): RenoTradeGroup[] {
   const groups = new Map<string, RenoTradeGroup>();
   for (const line of lines) {
-    const key = line.planKey ?? `label:${line.tradeLabel ?? fallbackLabel}`;
+    const key = tradeKeyOf(line, fallbackLabel);
     const existing = groups.get(key);
     if (existing) {
       existing.lines.push(line);
       continue;
     }
-    const plan = mergePlans(plans.filter(candidate => candidate.planKey === line.planKey));
-    groups.set(key, { key, label: plan?.label ?? line.tradeLabel ?? fallbackLabel, plan, lines: [line] });
+    const plan = mergePlans(project.plans.filter(candidate => candidate.planKey === line.planKey));
+    const tradeLines = sortedLines(project.lines.filter(candidate => candidate.group === 'works' && tradeKeyOf(candidate, fallbackLabel) === key));
+    groups.set(key, { key, label: line.tradeLabel ?? plan?.label ?? fallbackLabel, plan, lines: [line], tradeLines });
   }
   return [...groups.values()];
 }
@@ -229,8 +234,10 @@ export function groupByRoom(project: Pick<RenoProject, 'lines' | 'plans'>): Reno
     return {
       room,
       lines,
-      trades: groupByTrade(lines.filter(line => line.group === 'works'), project.plans, WORKS_LABEL),
-      carpentry: builtInLines.length > 0 ? { key: 'carpentry', label: CARPENTRY_LABEL, plan: carpentryPlan, lines: builtInLines } : null,
+      trades: groupByTrade(lines.filter(line => line.group === 'works'), project, WORKS_LABEL),
+      carpentry: builtInLines.length > 0
+        ? { key: 'carpentry', label: CARPENTRY_LABEL, plan: carpentryPlan, lines: builtInLines, tradeLines: sortedLines(project.lines.filter(line => line.group === 'builtin')) }
+        : null,
     };
   });
 }

@@ -1,5 +1,5 @@
 import type { RequirementGroup, RequirementLine, RequirementProject, TradeLog, TradePlan, TradePlanStatus } from "./renovationBetaRequirementsApi";
-import { dayMonth } from "./renovationBetaModel";
+import { dayMonth, mytDay } from "./renovationBetaModel";
 
 export const NO_ROOM = "No room";
 
@@ -58,13 +58,22 @@ export interface TradeHeading {
   text: string;
 }
 
-export function tradeHeading(plans: readonly TradePlan[], log: TradeLog | null): TradeHeading | null {
+const MS_PER_DAY = 86_400_000;
+
+function tradeDayNumber(plans: readonly TradePlan[], today: string): number | null {
+  const [startedOn] = plans.flatMap((plan) => (plan.startedOn ? [plan.startedOn] : [])).sort();
+  if (!startedOn) return null;
+  return Math.max(1, Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${startedOn}T00:00:00Z`)) / MS_PER_DAY) + 1);
+}
+
+export function tradeHeading(plans: readonly TradePlan[], log: TradeLog | null, today: string = mytDay(new Date().toISOString())): TradeHeading | null {
   if (plans.length === 0) return null;
   if (plans.every((plan) => plan.state === "done")) return { tone: "done", text: "Done" };
   if (plans.some((plan) => plan.isWaitingForReceipt)) return { tone: "waiting", text: "Waiting for receipt" };
   if (plans.every((plan) => plan.state === "open")) return { tone: "open", text: "Not started" };
   const latest = log?.days[0];
-  const dayText = latest ? ` · Day ${latest.day}` : "";
+  const day = tradeDayNumber(plans, today);
+  const dayText = day === null ? "" : ` · Day ${day}`;
   const updateText = latest ? ` · last update ${dayMonth(latest.date)}${latest.by[0] ? ` by ${latest.by[0]}` : ""}` : "";
   return { tone: "in_progress", text: `In progress${dayText}${updateText}` };
 }

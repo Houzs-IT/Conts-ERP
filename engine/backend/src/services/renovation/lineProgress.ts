@@ -1,5 +1,5 @@
 import type { Db, DbStmt } from "./load";
-import { storeProofFiles, writeProofRows, type LineProof } from "./lineProof";
+import { proofCount, proofRowsStatement, storeProofFiles, type LineProof } from "./lineProof";
 import { BUILT_IN_TASK_CATEGORY, LIVE_BOARD_LINE, SO_LINE_CATEGORY_JOIN } from "./requirementBoard";
 import { completionRefusal } from "./taskCompletion";
 
@@ -117,12 +117,9 @@ function doneQtyStatement(db: Db, line: ProgressLine, doneQty: number, userId: n
   ).bind(line.id, line.project_id, line.company_id, doneQty, userId, personId);
 }
 
-export async function logTradesDone(db: Db, projectId: number, tasks: readonly TradeTaskRow[], companyId: number, userId: number | null, note: string): Promise<void> {
-  for (const task of tasks) {
-    await db.prepare(`INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .bind(projectId, "task_done", task.trade_code, "done", note, userId, companyId).run();
-  }
-}
+export const tradeDoneLogStatements = (db: Db, projectId: number, tasks: readonly TradeTaskRow[], companyId: number, userId: number | null, note: string): DbStmt[] =>
+  tasks.map((task) => db.prepare(`INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .bind(projectId, "task_done", task.trade_code, "done", note, userId, companyId));
 
 export async function setLineDoneQty(db: Db, soItemId: string, doneQty: number, actor: LineActor, options: SaveOptions = {}): Promise<ProgressSaved | ProgressRefusal> {
   const line = await loadProgressLine(db, soItemId, actor.companySql, actor.brandName ?? null);
@@ -139,8 +136,13 @@ export async function setLineDoneQty(db: Db, soItemId: string, doneQty: number, 
   const personId = actor.personId ?? (actor.posUserId ? await personIdOf(db, actor.posUserId, line.company_id) : null);
   const { proof = null } = options;
   const storedFiles = proof ? await storeProofFiles(proof, line.project_id, { stage: "progress", doneQty }) : [];
-  await runTogether(db, [...reopenStatements(db, doneTasks), doneQtyStatement(db, line, doneQty, actor.userId, personId)]);
-  const photoCount = proof ? await writeProofRows(db, line.project_id, line.company_id, { kind: "line", soItemId: line.id }, storedFiles) : undefined;
+  const target = { kind: "line", soItemId: line.id } as const;
+  await runTogether(db, [
+    ...reopenStatements(db, doneTasks),
+    doneQtyStatement(db, line, doneQty, actor.userId, personId),
+    ...(proof ? [proofRowsStatement(db, line.project_id, line.company_id, target, storedFiles)] : []),
+  ]);
+  const photoCount = proof ? await proofCount(db, line.project_id, target) : undefined;
   return {
     projectId: line.project_id, previousDoneQty, doneQty,
     ...(doneTasks.length > 0 ? { reopenedTasks: doneTasks } : {}),

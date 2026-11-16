@@ -34,7 +34,7 @@ export default function RenoTradeSheet({ mode, label, lines, isSaving, errorText
           <span style={{ fontSize: text.copy, color: color.textMuted }}>{open.length > 0 ? t.finishListTitle : t.finishNoLines}</span>
           {open.map(line => (
             <div key={line.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, minHeight: 44, borderBottom: `1px solid ${color.border}` }}>
-              <span style={{ minWidth: 0, fontSize: text.copy, color: color.ink, overflowWrap: 'anywhere' }}>{line.remark?.trim() || line.name}</span>
+              <span style={{ minWidth: 0, fontSize: text.copy, color: color.ink, overflowWrap: 'anywhere' }}>{line.room?.trim() ? `${line.room.trim()} · ` : ''}{line.remark?.trim() || line.name}</span>
               <span style={{ flex: 'none', fontSize: text.copy, fontWeight: 600, color: color.textMuted }}>{t.ofText(formatCount(line.doneQty), formatCount(line.qty))}</span>
             </div>
           ))}

@@ -19,6 +19,7 @@ const NO_BRAND_CODE = 'NO_BRAND';
 const NOTICE_CLEARANCE = 150;
 const VISIBLE_DAYS = 3;
 const TRADE_BUTTON_HEIGHT = 48;
+const STALE_STATUSES: ReadonlySet<number> = new Set([404, 409]);
 
 interface LoadFailure {
   code: string;
@@ -47,7 +48,6 @@ interface TradeSheetState {
 
 interface TradeActions {
   canUpdate: boolean;
-  waitingKeys: ReadonlySet<string>;
   onUpdate: (line: RenoLine) => void;
   onStart: (trade: RenoTradeGroup, label: string) => void;
   onFinish: (trade: RenoTradeGroup, label: string) => void;
@@ -124,16 +124,16 @@ function DayLog({ days }: { days: RenoTradeDay[] }) {
 
 function TradeSection({ trade, days, actions }: { trade: RenoTradeGroup; days: RenoTradeDay[]; actions: TradeActions }) {
   const t = usePortalText().renoJobs;
-  const { canUpdate, waitingKeys, onUpdate, onStart, onFinish } = actions;
+  const { canUpdate, onUpdate, onStart, onFinish } = actions;
   const { plan } = trade;
   const dates = plan ? formatPlanDates(plan) : null;
   const label = trade.label === CARPENTRY_LABEL ? t.carpentry : trade.label === WORKS_LABEL ? t.works : trade.label;
   const isLive = plan !== null && plan.status !== 'skipped';
   const state = isLive ? plan.state : null;
-  const isWaiting = plan !== null && waitingKeys.has(plan.planKey);
+  const isWaiting = plan?.isWaitingForReceipt ?? false;
   const dayNumber = tradeDayNumber(plan?.startedOn ?? null);
   const startedDay = formatDayMonth(plan?.startedOn ?? null);
-  const finishedDay = latestDoneDay(trade.lines);
+  const finishedDay = latestDoneDay(trade.tradeLines);
   const statusText = state === 'in_progress'
     ? [t.inProgress, dayNumber === null ? null : t.dayNumber(dayNumber), startedDay ? t.startedOn(startedDay) : null].filter(Boolean).join(' · ')
     : state === 'done'
@@ -155,9 +155,9 @@ function TradeSection({ trade, days, actions }: { trade: RenoTradeGroup; days: R
         <Button variant="primary" size="touch" onClick={() => onStart(trade, label)} style={{ width: '100%', minHeight: TRADE_BUTTON_HEIGHT }}>{t.startWork}</Button>
       )}
       {canUpdate && state === 'in_progress' && !isWaiting && (
-        <Button variant="primary" size="touch" onClick={() => onFinish(trade, label)} style={{ width: '100%', minHeight: TRADE_BUTTON_HEIGHT }}>{t.finishTrade(label)}</Button>
+        <Button variant="primary" size="touch" onClick={() => onFinish(trade, label)} style={{ width: '100%', minHeight: TRADE_BUTTON_HEIGHT, whiteSpace: 'normal', padding: '10px 18px' }}>{t.finishTrade(label)}</Button>
       )}
-      {trade.lines.map(line => <LineCard key={line.id} line={line} canUpdate={canUpdate} onUpdate={onUpdate} />)}
+      {trade.lines.map(line => <LineCard key={line.id} line={line} canUpdate={canUpdate && state !== 'open'} onUpdate={onUpdate} />)}
     </div>
   );
 }
@@ -232,7 +232,6 @@ export default function RenoJobsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [sheetLine, setSheetLine] = useState<RenoLine | null>(null);
   const [tradeSheet, setTradeSheet] = useState<TradeSheetState | null>(null);
-  const [waitingKeys, setWaitingKeys] = useState<ReadonlySet<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -288,18 +287,13 @@ export default function RenoJobsPage() {
       const form = new FormData();
       photos.forEach(photo => form.append('photo', photo, photo.name));
       const path = `/field/site-work/trades/${taskId}/${mode}`;
-      if (mode === 'finish') {
-        const result = await api.post<RenoTradeFinishResponse>(path, form);
-        const planKey = trade.plan?.planKey;
-        if (result.waitingForReceipt && planKey) setWaitingKeys(current => new Set(current).add(planKey));
-      } else {
-        await api.post<RenoTradeStartResponse>(path, form);
-      }
+      await api.post<RenoTradeFinishResponse | RenoTradeStartResponse>(path, form);
       setTradeSheet(null);
       setNotice({ kind: mode === 'finish' ? 'finished' : 'started', label });
       void load();
     } catch (error) {
       setSheetError(errorMessage(error));
+      if (error instanceof ApiFailure && STALE_STATUSES.has(error.status)) void load();
     } finally {
       setIsSaving(false);
     }
@@ -307,7 +301,6 @@ export default function RenoJobsPage() {
 
   const actions: TradeActions = {
     canUpdate: data?.areTicksReady ?? false,
-    waitingKeys,
     onUpdate: line => { setSheetError(null); setSheetLine(line); },
     onStart: (trade, label) => { setSheetError(null); setTradeSheet({ mode: 'start', trade, label }); },
     onFinish: (trade, label) => { setSheetError(null); setTradeSheet({ mode: 'finish', trade, label }); },
@@ -354,7 +347,7 @@ export default function RenoJobsPage() {
     <>
       {body}
       {sheetLine && <RenoJobSheet line={sheetLine} isSaving={isSaving} errorText={sheetError} onCancel={() => setSheetLine(null)} onSave={(doneQty, photos) => void save(sheetLine, doneQty, photos)} />}
-      {tradeSheet && <RenoTradeSheet mode={tradeSheet.mode} label={tradeSheet.label} lines={tradeSheet.trade.lines} isSaving={isSaving} errorText={sheetError} onCancel={() => setTradeSheet(null)} onSubmit={photos => void submitTrade(tradeSheet, photos)} />}
+      {tradeSheet && <RenoTradeSheet mode={tradeSheet.mode} label={tradeSheet.label} lines={tradeSheet.trade.tradeLines} isSaving={isSaving} errorText={sheetError} onCancel={() => setTradeSheet(null)} onSubmit={photos => void submitTrade(tradeSheet, photos)} />}
       {notice && <div aria-hidden style={{ height: NOTICE_CLEARANCE }} />}
       {notice && (
         <div role="status" style={{

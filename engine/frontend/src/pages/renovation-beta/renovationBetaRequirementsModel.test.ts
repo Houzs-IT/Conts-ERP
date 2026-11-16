@@ -123,7 +123,8 @@ describe("trade heading", () => {
   });
 
   test("an open trade shows its day, last update and who made it", () => {
-    expect(tradeHeading([plan({ state: "in_progress", startedOn: "2026-11-14" })], log)).toEqual({ tone: "in_progress", text: "In progress · Day 3 · last update 16/11 by Ali" });
+    expect(tradeHeading([plan({ state: "in_progress", startedOn: "2026-11-14" })], log, "2026-11-16")).toEqual({ tone: "in_progress", text: "In progress · Day 3 · last update 16/11 by Ali" });
+    expect(tradeHeading([plan({ state: "in_progress", startedOn: "2026-11-14" })], log, "2026-11-23")?.text).toBe("In progress · Day 10 · last update 16/11 by Ali");
     expect(tradeHeading([plan({ state: "in_progress" })], null)).toEqual({ tone: "in_progress", text: "In progress" });
   });
 

@@ -25,14 +25,18 @@ export async function completionRefusal(db: Db, task: CompletableTask): Promise<
 
 export const markTaskDoneStatement = (db: Db, taskId: number, actor: CompletionActor): DbStmt => db.prepare(
   `UPDATE project_trade_tasks SET state = 'done', actual_start = coalesce(actual_start, ?::date), actual_end = ?::date,
-          done_by = ?, done_at = now(), notes = coalesce(?, notes), updated_at = now() WHERE id = ?`,
+          done_by = ?, done_at = now(), notes = coalesce(?, notes), updated_at = now() WHERE id = ? AND state <> 'done'`,
 ).bind(actor.today, actor.today, actor.userId, actor.note, taskId);
 
 export async function markTaskDone(db: Db, taskId: number, actor: CompletionActor): Promise<void> {
   await markTaskDoneStatement(db, taskId, actor).run();
 }
 
+export const startTaskStatement = (db: Db, taskId: number, today: string): DbStmt => db.prepare(
+  `UPDATE project_trade_tasks SET state = 'in_progress', actual_start = coalesce(actual_start, ?::date), updated_at = now()
+    WHERE id = ? AND state NOT IN ('done', 'skipped')`,
+).bind(today, taskId);
+
 export async function startTask(db: Db, taskId: number, today: string): Promise<void> {
-  await db.prepare(`UPDATE project_trade_tasks SET state = 'in_progress', actual_start = coalesce(actual_start, ?::date), updated_at = now() WHERE id = ?`)
-    .bind(today, taskId).run();
+  await startTaskStatement(db, taskId, today).run();
 }
