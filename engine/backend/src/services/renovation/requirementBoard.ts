@@ -1,4 +1,6 @@
 import { lineVisible, type CategoryScope } from "../categoryAccess";
+import { todayMyt } from "../../scm/lib/my-time";
+import { isMissingRelation, type Db } from "./load";
 import { tradeTaskStatus, type TaskStatus } from "./tradeTasks";
 
 export const REQUIREMENT_LINE_LIMIT = 5000;
@@ -201,4 +203,78 @@ export function buildRequirementBoard(rows: RequirementBoardRows, scope: Categor
     isTruncated: rows.lines.length >= REQUIREMENT_LINE_LIMIT,
     areTicksReady: rows.ticks !== null,
   };
+}
+
+export interface RequirementBoardFilter {
+  companySql: string;
+  categoryScope: CategoryScope | null;
+  brandName: string | null;
+}
+
+const LIVE_RENOVATION_PROJECTS = (filter: RequirementBoardFilter): string =>
+  `p.project_kind = 'renovation' AND p.archived_at IS NULL${filter.companySql}${filter.brandName === null ? "" : " AND lower(trim(p.brand)) = lower(trim(?))"}`;
+
+const brandBindings = (filter: RequirementBoardFilter): string[] => (filter.brandName === null ? [] : [filter.brandName]);
+
+const PROJECTS_SQL = (filter: RequirementBoardFilter): string =>
+  `SELECT p.id::int AS project_id, p.code AS project_code, p.name AS project_name, p.brand
+     FROM projects p
+    WHERE ${LIVE_RENOVATION_PROJECTS(filter)}
+    ORDER BY p.code`;
+
+const LINES_SQL = (filter: RequirementBoardFilter): string =>
+  `SELECT i.id::text AS id, p.id::int AS project_id, i.item_code, i.description, i.remark, i.qty, i.uom,
+          coalesce(nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim((SELECT l.room FROM scm.reno_doc_lines l WHERE l.so_item_id = i.id LIMIT 1)), ''), nullif(trim(i.location), '')) AS room,
+          cg.code AS cat_code, sc.code AS sub_code, sc.label AS sub_label,
+          EXISTS (SELECT 1 FROM scm.purchase_order_items pi JOIN scm.purchase_orders po ON po.id = pi.purchase_order_id
+                   WHERE pi.so_item_id = i.id AND po.status::text <> 'CANCELLED') AS is_on_po,
+          plan.deliver_on::text AS deliver_on
+     FROM scm.mfg_sales_order_items i
+     JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
+     JOIN projects p ON p.id = so.project_id
+     LEFT JOIN scm.reno_beta_line_plans plan ON plan.so_item_id = i.id
+     ${SO_LINE_CATEGORY_JOIN}
+    WHERE ${LIVE_RENOVATION_PROJECTS(filter)} AND ${LIVE_BOARD_LINE}
+    ORDER BY p.code, so.so_date NULLS LAST, i.doc_no, i.line_no NULLS LAST
+    LIMIT ${REQUIREMENT_LINE_LIMIT}`;
+
+const PLANS_SQL = (filter: RequirementBoardFilter): string =>
+  `SELECT t.id::int AS id, t.project_id::int AS project_id, t.trade_code, t.category_code, t.label, t.state, t.fulfilment_kind,
+          t.planned_start::text AS planned_start, t.planned_end::text AS planned_end,
+          t.actual_start::text AS actual_start, t.actual_end::text AS actual_end,
+          (EXISTS (SELECT 1 FROM project_trade_task_lines l WHERE l.task_id = t.id AND l.purchase_order_item_id IS NOT NULL)
+            AND NOT EXISTS (SELECT 1 FROM project_trade_task_lines l JOIN scm.purchase_order_items poi ON poi.id = l.purchase_order_item_id
+                             WHERE l.task_id = t.id AND poi.received_qty < poi.qty)) AS po_fully_received
+     FROM project_trade_tasks t
+     JOIN projects p ON p.id = t.project_id
+    WHERE ${LIVE_RENOVATION_PROJECTS(filter)} AND t.state <> 'skipped' AND t.trade_code NOT LIKE 'INTERNAL:%'
+    ORDER BY t.project_id, t.seq`;
+
+const TICKS_SQL = (filter: RequirementBoardFilter): string =>
+  `SELECT lp.so_item_id::text AS so_item_id, lp.done_at::text AS done_at, lp.done_qty
+     FROM project_line_progress lp
+     JOIN projects p ON p.id = lp.project_id
+    WHERE ${LIVE_RENOVATION_PROJECTS(filter)}`;
+
+export const isMissingColumn = (error: unknown): boolean => (error as { code?: string } | null)?.code === "42703";
+
+async function readTicks(db: Db, filter: RequirementBoardFilter): Promise<LineTickRow[] | null> {
+  try {
+    return (await db.prepare(TICKS_SQL(filter)).bind(...brandBindings(filter)).all<LineTickRow>()).results ?? [];
+  } catch (error) {
+    if (isMissingRelation(error) || isMissingColumn(error)) return null;
+    throw error;
+  }
+}
+
+export async function loadRequirementBoard(db: Db, filter: RequirementBoardFilter): Promise<RequirementBoard> {
+  const bindings = brandBindings(filter);
+  const [projects, lines, plans, ticks] = await Promise.all([
+    db.prepare(PROJECTS_SQL(filter)).bind(...bindings).all<RequirementProjectRow>(),
+    db.prepare(LINES_SQL(filter)).bind(...bindings).all<RequirementLineRow>(),
+    db.prepare(PLANS_SQL(filter)).bind(...bindings).all<TradePlanRow>(),
+    readTicks(db, filter),
+  ]);
+  const rows = { projects: projects.results ?? [], lines: lines.results ?? [], plans: plans.results ?? [], ticks };
+  return buildRequirementBoard(rows, filter.categoryScope, todayMyt());
 }

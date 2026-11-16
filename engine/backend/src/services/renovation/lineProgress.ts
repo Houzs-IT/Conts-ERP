@@ -6,6 +6,7 @@ export interface LineActor {
   userId: number | null;
   personId: number | null;
   companySql: string;
+  brandName?: string | null;
   today: string;
 }
 
@@ -37,7 +38,7 @@ export type ProgressRefusal = "line_not_found" | "invalid_qty" | "trade_complete
 
 const isBuiltIn = (line: ProgressLine): boolean => line.cat_code === "BUILTIN";
 
-async function loadProgressLine(db: Db, soItemId: string, companySql: string): Promise<ProgressLine | null> {
+async function loadProgressLine(db: Db, soItemId: string, companySql: string, brandName: string | null = null): Promise<ProgressLine | null> {
   return db.prepare(
     `SELECT i.id::text AS id, p.id::int AS project_id, p.company_id::int AS company_id, cg.code AS cat_code, prod.sub_category AS sub_code,
             i.qty, lp.done_qty
@@ -46,8 +47,8 @@ async function loadProgressLine(db: Db, soItemId: string, companySql: string): P
        JOIN projects p ON p.id = so.project_id
        LEFT JOIN project_line_progress lp ON lp.so_item_id = i.id
        ${SO_LINE_CATEGORY_JOIN}
-      WHERE i.id::text = ? AND p.project_kind = 'renovation' AND p.archived_at IS NULL${companySql} AND ${LIVE_BOARD_LINE}`,
-  ).bind(soItemId).first<ProgressLine>();
+      WHERE i.id::text = ? AND p.project_kind = 'renovation' AND p.archived_at IS NULL${companySql}${brandName === null ? "" : " AND lower(trim(p.brand)) = lower(trim(?))"} AND ${LIVE_BOARD_LINE}`,
+  ).bind(...(brandName === null ? [soItemId] : [soItemId, brandName])).first<ProgressLine>();
 }
 
 async function tradeTasksOf(db: Db, line: ProgressLine): Promise<TradeTaskRow[]> {
@@ -120,7 +121,7 @@ async function writeDoneQty(db: Db, line: ProgressLine, doneQty: number, actor: 
 }
 
 export async function setLineDoneQty(db: Db, soItemId: string, doneQty: number, actor: LineActor): Promise<ProgressSaved | ProgressRefusal> {
-  const line = await loadProgressLine(db, soItemId, actor.companySql);
+  const line = await loadProgressLine(db, soItemId, actor.companySql, actor.brandName ?? null);
   if (!line) return "line_not_found";
   const lineQty = Number(line.qty);
   const previousDoneQty = Number(line.done_qty ?? 0);

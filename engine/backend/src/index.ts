@@ -30,6 +30,7 @@ import contsSso from "./conts/sso";
 import renovationGlobalSearch from "./routes/renovationGlobalSearch";
 import contsMailCron from "./conts/mail-cron";
 import { myClaimsRouter } from "./conts/my-claims-routes";
+import siteForwardRoutes from "./conts/site-forward-routes";
 import { claimsClient, staffFromAssertion, staffFromSession } from "./conts/staff-identity";
 import totpRoutes from "./routes/totp";
 import users from "./routes/users";
@@ -418,6 +419,10 @@ app.route("/api/public/beta-client", renovationBetaClientPublic);
 // sign-on secret, naming the person; every query is limited to them (conts/staff-identity.ts, conts/my-claims-routes.ts).
 app.use("/api/claims-forward/*", claimsClient, staffFromAssertion, companyContext);
 app.route("/api/claims-forward", myClaimsRouter("forward"));
+// Conts: the renovator's Jobs tab on Property OS's phone, forwarded the same way: the brand's live renovation lines and
+// the units-done save (conts/site-forward-routes.ts). Renovators only; no reopen.
+app.use("/api/site-forward/*", claimsClient, staffFromAssertion, companyContext);
+app.route("/api/site-forward", siteForwardRoutes);
 // Conts: the supply chain half of Property OS's top-bar search, server to server with a signed statement of who is asking
 // and what their role may open (routes/renovationGlobalSearch.ts). No engine session is made.
 app.route("/api/conts-search", renovationGlobalSearch);
