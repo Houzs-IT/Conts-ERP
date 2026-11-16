@@ -72,8 +72,8 @@ export async function syncFromVoucherBestEffort(sb: Db, pvId: string): Promise<v
           patch.amount_sen = mine.reduce((n, l) => n + l.amount_sen, 0);
           const gone = await sb.from('payment_request_lines').delete().eq('request_id', q);
           if (gone.error) throw new Error(gone.error.message);
-          /* A maintenance job a line named stays on the line in its place. */
-          const ins = await sb.from('payment_request_lines').insert(mine.map((l, i) => ({ ...l, maintenance_issue_id: current[i]?.maintenance_issue_id ?? null, sort: i, request_id: q })));
+          /* A maintenance job a line named, and a bill's date, stay on the line in its place. */
+          const ins = await sb.from('payment_request_lines').insert(mine.map((l, i) => ({ ...l, maintenance_issue_id: current[i]?.maintenance_issue_id ?? null, bill_date: current[i]?.bill_date ?? null, sort: i, request_id: q })));
           if (ins.error) {
             await sb.from('payment_request_lines').insert(current.map(({ id: _i, ...l }) => l));
             throw new Error(ins.error.message);

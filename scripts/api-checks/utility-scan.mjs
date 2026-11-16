@@ -114,6 +114,7 @@ check('wholly before the contract: record-only, the whole RM 90 an O2 charge', r
 // The payment request: only the bills the company pays, at the full bill.
 const pay = await M.billsToPay(env, BATCH, [s1, s2, s4]);
 check('to pay: TNB, the split bill at its full RM 310 and the August one; not the one the owner paid', pay.length === 1 && pay[0].provider === 'TNB' && pay[0].bills.map(b => b.amountSen).sort().join() === '31000,9000' && pay[0].bills.every(b => b.unitId === A.id) && pay[0].scanIds.sort().join() === [s1, s4].sort().join(), pay);
+check("to pay: each bill's date is the end of its printed period, the day its expense is booked on", pay[0].bills.map(b => b.billDate).sort().join() === '2027-08-14,2027-09-14', pay[0].bills);
 
 // A unit with two meters of one kind: each page names its account, and both bills of the month go in.
 const [meter1, meter2] = [randomUUID(), randomUUID()];

@@ -24,7 +24,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const unlinked = await unlinkRequest(env, off);
   if (!bills.length) return fail('VALIDATION', `No bill on ${state.requestNo ?? 'this request'} is left for the company to pay, so it is not sent again.`, 422);
   const res = await forwardClaims(env, session, 'POST', `/utility-bills/payment-request/${encodeURIComponent(id)}/resubmit`, {
-    bills: bills.map(({ unitId, kind, billMonth, accountNo, amountSen }) => ({ unitId, kind, billMonth, accountNo, amountSen })),
+    bills: bills.map(({ unitId, kind, billMonth, billDate, accountNo, amountSen }) => ({ unitId, kind, billMonth, billDate, accountNo, amountSen })),
   });
   if (!res.ok) return res;
   const sent = await res.json<{ id?: string; requestNo?: string; amountSen?: number }>().catch(() => null);

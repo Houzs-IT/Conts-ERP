@@ -3,7 +3,7 @@
 // units and records them; the engine reads a page (it holds the Anthropic key) and keeps the payment requests.
 // Mounted on the claims router, office staff only (Property OS lets finance and management in):
 //   POST /utility-bills/read              { file: { name, mime, dataBase64 } } -> { read, model }
-//   POST /utility-bills/payment-request   { provider, scanBatchId, note?, bills: [{ unitId, kind, billMonth, accountNo, amountSen }], files? }
+//   POST /utility-bills/payment-request   { provider, scanBatchId, note?, bills: [{ unitId, kind, billMonth, billDate?, accountNo, amountSen }], files? }
 //                                          -> { id, requestNo, amountSen }; 201 new, 200 when this scan's request exists
 //   POST /utility-bills/payment-request/:id/resubmit   { bills }  a withdrawn or rejected one, sent again: same number
 // The bills a scan records for the company to pay go to finance as one request per provider (chew, 2 Nov 2026: A): a
@@ -24,6 +24,7 @@ import type { Staff } from './staff-identity';
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 type Ctx = any;
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const DAY = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const KIND_LABEL: Record<string, string> = { electricity: 'Electricity', water: 'Water', sewerage: 'Indah Water', internet: 'Internet', other: 'Utility' };
 const bodyOf = async (c: Ctx): Promise<Record<string, unknown> | null> => { try { return await c.req.json(); } catch { return null; } };
 const officeOnly = (c: Ctx) => ((c.get('staff') as Staff).field ? c.json({ error: 'forbidden', message: 'Utility bills are entered by finance.' }, 403) : null);
@@ -178,7 +179,7 @@ export const resubmitUtilityRequestHandler = async (c: Ctx): Promise<Response> =
   return c.json({ id: r.id, requestNo: r.request_no, amountSen }, 200);
 };
 
-type BillLine = { unitId: string; amountSen: number; sort: number; description: string; kind: string };
+type BillLine = { unitId: string; amountSen: number; sort: number; description: string; kind: string; billDate: string | null };
 
 /* Each kind's accrual (chew, 16 Nov 2026: utilities are paid against "ACCRUAL - ABNB UTILITIES", one account per kind;
    no supplier, no AP invoice). The line starts on it, so Make voucher books the payment against the accrual. */
@@ -198,6 +199,8 @@ function billLines(c: Ctx, raw: unknown): BillLine[] | Response {
   if (!bills.length || bills.length > 500) return c.json({ error: 'validation', message: 'Send the bills to pay (up to 500).' }, 422);
   const lines = bills.map((x, i) => ({
     unitId: String(x.unitId ?? ''), amountSen: Number(x.amountSen), sort: i, kind: String(x.kind ?? ''),
+    /* The day its expense is booked on when it is paid: the end of the bill's period (utility-accrual.ts). */
+    billDate: DAY.test(String(x.billDate ?? '')) ? String(x.billDate) : null,
     description: [KIND_LABEL[String(x.kind)] ?? 'Utility', MONTH.test(String(x.billMonth ?? '')) ? String(x.billMonth) : null, x.accountNo ? String(x.accountNo).slice(0, 40) : null].filter(Boolean).join(' '),
   }));
   if (lines.some(l => !l.unitId || !Number.isInteger(l.amountSen) || l.amountSen <= 0)) return c.json({ error: 'validation', message: 'Every bill needs its unit and an amount.' }, 422);
@@ -216,7 +219,7 @@ async function unknownUnit(c: Ctx, sb: any, lines: BillLine[]): Promise<Response
 /** The request's lines: a Rental line per bill, with its unit and its kind's accrual account (none when the chart lacks it). */
 const lineRows = (requestId: string, lines: BillLine[], accruals: Map<string, string>) => lines.map(l => ({
   id: crypto.randomUUID(), request_id: requestId, department: 'rental', unit_id: l.unitId, maintenance_issue_id: null, project_id: null,
-  account_code: accruals.get(l.kind) ?? null, amount_sen: l.amountSen, description: l.description, sort: l.sort,
+  account_code: accruals.get(l.kind) ?? null, amount_sen: l.amountSen, description: l.description, sort: l.sort, bill_date: l.billDate,
 }));
 
 export function utilityBillRoutes(r: { post: (p: string, h: (c: Ctx) => Promise<Response>) => unknown }) {
