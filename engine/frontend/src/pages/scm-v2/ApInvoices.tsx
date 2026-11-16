@@ -41,7 +41,9 @@ import {
   useApInvoiceFiles, useUploadApInvoiceFile, useDeleteApInvoiceFile, fetchApInvoiceFileBlobUrl,
   type ApListKind, type ApListRow, type ApInvoiceHeader, type ApInvoiceLine, type ApInvoiceRequest,
 } from '../../vendor/scm/lib/ap-invoice-queries';
-import type { PvFilePayload, BillExtraction, VendorMemory } from '../../vendor/scm/lib/payment-voucher-queries';
+import { fileToBase64, PV_FILE_ACCEPT, useExtractBills, type PvFilePayload, type BillExtraction, type VendorMemory } from '../../vendor/scm/lib/payment-voucher-queries';
+import { requestFileUrl } from '../../conts/claimsQueries';
+import { fillFromPapers, type ReadBill } from '../../conts/requestBillRead';
 import { takePvFiles } from '../../vendor/scm/lib/pv-file-handoff';
 import { generateApListingPdf } from '../../vendor/scm/lib/ap-invoice-listing-pdf';
 import { DocFilesCard } from '../../vendor/scm/components/DocFilesCard';
@@ -110,6 +112,8 @@ const fromDetail = (d: Detail, copy: boolean): ApFormValues => ({
 export type RequestForBill = {
   id: string; requestNo: string; type: 'PAYMENT' | 'DEPOSIT'; supplierId: string | null; payeeName: string; wantedOn: string | null; note: string | null;
   lines: Array<{ id?: string; description: string | null; amountSen: number; department: string; projectId: number | null; unitId: string | null; subDepartmentId?: string | null }>;
+  /** Its papers: read by the bill reader when the form opens (chew, 16 Nov 2026). */
+  files?: Array<{ id: string; fileName: string; mime: string }>;
 };
 const formFromRequest = (r: RequestForBill): ApFormValues => ({
   supplierId: r.supplierId ?? '', supplierRef: '', invoiceDate: myt(), dueDate: r.wantedOn ?? '',
@@ -187,18 +191,49 @@ export const ApInvoices = () => {
   const navigate = useNavigate();
   /* The payment requests still to make bills from, after the one open now. */
   const [requestQueue, setRequestQueue] = useState<RequestForBill[]>([]);
-  const openFromRequest = (list: RequestForBill[], of: number) => {
+  const extractBills = useExtractBills();
+  const [reading, setReading] = useState<string | null>(null);
+  /* The request's papers, read as Scan bill reads one bill (its pages together); null when there are none or they
+     cannot be read — the form then opens as the request filled it. */
+  const readPapers = async (r: RequestForBill): Promise<ReadBill | null> => {
+    const papers = (r.files ?? []).filter((f) => PV_FILE_ACCEPT.split(',').includes(f.mime)).slice(0, 8);
+    if (papers.length === 0) return null;
+    try {
+      const files = await Promise.all(papers.map(async (f) => {
+        const url = await requestFileUrl(r.id, f.id, f.mime);
+        const blob = await (await fetch(url)).blob();
+        URL.revokeObjectURL(url);
+        return { name: f.fileName, mime: f.mime, dataBase64: await fileToBase64(new File([blob], f.fileName, { type: f.mime })) };
+      }));
+      const bill = (await extractBills.mutateAsync([{ files }])).bills.at(0);
+      return bill?.ok ? { extraction: bill.extraction, supplierMatch: bill.supplierMatch, memory: bill.memory } : null;
+    } catch { return null; }
+  };
+  const openFromRequest = async (list: RequestForBill[], of: number) => {
     const [first, ...rest] = list;
     setRequestQueue(rest);
     if (!first) { setForm(null); return; }
     const missingSupplier = !first.supplierId ? ` Paid to "${first.payeeName}" as typed: choose the supplier.` : '';
-    setForm({ mode: 'new', initial: formFromRequest(first), fromRequest: { request: first, n: of - rest.length, of },
-      scan: { files: [], note: `From ${first.requestNo}: choose each line's account, then save.${missingSupplier}` } });
+    let initial = formFromRequest(first);
+    let note = `From ${first.requestNo}: choose each line's account, then save.${missingSupplier}`;
+    if ((first.files ?? []).length > 0) {
+      setReading(`Reading ${first.requestNo}'s papers…`);
+      const read = await readPapers(first);
+      setReading(null);
+      if (read) {
+        const filled = fillFromPapers(initial, read);
+        initial = filled.values;
+        note = `From ${first.requestNo}. ${filled.note}${initial.supplierId ? '' : missingSupplier}`;
+      } else {
+        note = `From ${first.requestNo}: its papers could not be read — fill in from them. Choose each line's account, then save.${missingSupplier}`;
+      }
+    }
+    setForm({ mode: 'new', initial, fromRequest: { request: first, n: of - rest.length, of }, scan: { files: [], note } });
   };
   useEffect(() => {
     const st = location.state as { fromRequests?: RequestForBill[] } | null;
     if (!st?.fromRequests?.length) return;
-    openFromRequest(st.fromRequests, st.fromRequests.length);
+    void openFromRequest(st.fromRequests, st.fromRequests.length);
     navigate(location.pathname, { replace: true, state: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
@@ -252,7 +287,7 @@ export const ApInvoices = () => {
       }
       /* From payment requests: the next one opens; the last one shows its bill. */
       if (form.fromRequest && requestQueue.length > 0) {
-        openFromRequest(requestQueue, form.fromRequest.of);
+        void openFromRequest(requestQueue, form.fromRequest.of);
         void notify({ title: `${res.invoice.invoice_number} raised from ${form.fromRequest.request.requestNo}`, body: 'Next request opened.', tone: 'info' });
         return;
       }
@@ -369,6 +404,7 @@ export const ApInvoices = () => {
         ) : undefined}
       />
 
+      {reading && <div role="status" style={{ color: 'var(--c-orange)', fontWeight: 600 }}>{reading}</div>}
       <section className={styles.card}>
         <div className={styles.cardHeader}>
           <h2 className={styles.cardTitle}>Supplier invoices — both kinds</h2>

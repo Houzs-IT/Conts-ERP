@@ -77,6 +77,7 @@ const voucherPrefill = (rows: Row[]): ClaimsPrefill => {
 const billsPrefill = (rs: PaymentRequest[]): RequestForBill[] => rs.map((r) => ({
   id: r.id, requestNo: r.requestNo, type: r.type, supplierId: r.supplierId, payeeName: r.payeeName, wantedOn: r.wantedOn, note: r.note,
   lines: r.lines.map((l) => ({ id: l.id, description: l.description, amountSen: l.amountSen, department: l.department, projectId: l.projectId, unitId: l.unitId, subDepartmentId: l.subDepartmentId ?? null })),
+  files: r.files,
 }));
 
 /* The row's buttons in fixed places and widths, so every row lines up (chew, 16 Nov 2026). */
