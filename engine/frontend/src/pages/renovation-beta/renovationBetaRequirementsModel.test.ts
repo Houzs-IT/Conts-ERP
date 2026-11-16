@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
 import type { RequirementLine, RequirementProject, TradePlan } from "./renovationBetaRequirementsApi";
-import { NO_ROOM, brandOptions, filterProjectLines, groupByRoom, groupByTrade, onPoCount, planDates, roomSummary } from "./renovationBetaRequirementsModel";
+import { NO_ROOM, brandOptions, filterProjectLines, groupByRoom, groupByTrade, onPoCount, planDates, progressText, roomSummary } from "./renovationBetaRequirementsModel";
 
 function line(overrides: Partial<RequirementLine>): RequirementLine {
   return {
     id: "a", itemCode: "RN-PROTECTION", name: "Works - Protection", remark: null, qty: 1, uom: "UNIT",
-    room: "Common area", group: "works", isOnPo: false, planKey: "PROTECTION", tradeLabel: null, onSiteBy: null,
+    room: "Common area", group: "works", isOnPo: false, planKey: "PROTECTION", tradeLabel: null, onSiteBy: null, doneAt: null,
     ...overrides,
   };
 }
@@ -31,6 +31,10 @@ describe("requirement board grouping", () => {
     expect(room.cards.map((card) => [card.label, card.lines.map((item) => item.id)])).toEqual([["Works", ["b"]], ["Built-in", ["a", "c"]]]);
     expect(roomSummary(room)).toBe("Works 1 · Built-in 2");
     expect(groupByRoom([line({})])[0].cards.map((card) => card.key)).toEqual(["works"]);
+  });
+
+  test("progress counts the ticked lines out of all of them", () => {
+    expect(progressText([line({ doneAt: "2026-11-16T03:00:00Z" }), line({}), line({})])).toBe("1 of 3 done");
   });
 
   test("on PO counts only lines a live PO holds", () => {

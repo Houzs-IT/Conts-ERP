@@ -1,14 +1,18 @@
-import { useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, CalendarDays, ChevronDown, ChevronRight, DoorOpen, Search } from "lucide-react";
 import { useQuery } from "../../hooks/useQuery";
+import { useAuth } from "../../auth/AuthContext";
+import { errorText } from "../projects/renovation/renovationModel";
+import { invalidateBeta } from "./renovationBetaBoardApi";
 import { BetaLoading } from "./BetaLoading";
 import {
   BetaSkin, WS, WsBadge, WsEmpty, WsPageHead, WsStyle, inputStyle, TONE_ACCENT, TONE_ALERT, TONE_DONE, TONE_QUIET, TONE_WAIT,
 } from "./BetaWsUi";
 import { requirementsApi, type RequirementLine, type RequirementProject, type TradePlan, type TradePlanStatus } from "./renovationBetaRequirementsApi";
 import {
-  PLAN_STATUS_LABEL, brandOptions, filterProjectLines, groupByRoom, groupByTrade, hasPlanDates, isPlanLate, onPoCount, planDates, plural, roomSummary,
+  PLAN_STATUS_LABEL, brandOptions, filterProjectLines, groupByRoom, groupByTrade, hasPlanDates, isPlanLate, onPoCount, planDates, plural, progressText, roomSummary,
   type GroupCard, type RoomGroup, type TradeGroup,
 } from "./renovationBetaRequirementsModel";
 import { onBrandList } from "./renovationBetaHomeModel";
@@ -35,6 +39,46 @@ const PLAN_STATUS_TONE: Record<TradePlanStatus, BetaTone> = {
 interface Toggles {
   isOpen: (sectionKey: string) => boolean;
   toggle: (sectionKey: string) => void;
+}
+
+interface LineTicks {
+  canTick: boolean;
+  busyLineId: string | null;
+  toggleLine: (line: RequirementLine) => void;
+}
+
+const LineTicksContext = createContext<LineTicks>({ canTick: false, busyLineId: null, toggleLine: () => undefined });
+
+interface LineTickState extends LineTicks {
+  error: string | null;
+  notice: string | null;
+}
+
+function useLineTicks(areTicksReady: boolean): LineTickState {
+  const { can } = useAuth();
+  const queryClient = useQueryClient();
+  const [busyLineId, setBusyLineId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const toggleLine = async (line: RequirementLine): Promise<void> => {
+    setBusyLineId(line.id);
+    setError(null);
+    setNotice(null);
+    try {
+      if (line.doneAt) {
+        await requirementsApi.untick(line.id);
+      } else {
+        const { completedTaskIds } = await requirementsApi.tick(line.id);
+        if (completedTaskIds.length > 0) setNotice("Every line of that trade is ticked, so its site task is now done.");
+      }
+      await invalidateBeta(queryClient);
+    } catch (failure) {
+      setError(errorText(failure));
+    } finally {
+      setBusyLineId(null);
+    }
+  };
+  return { canTick: areTicksReady && can("projects.write"), busyLineId, toggleLine: (line) => void toggleLine(line), error, notice };
 }
 
 interface ShownProject {
@@ -70,6 +114,7 @@ function BoardScreen(): ReactElement {
   const [brand, setBrand] = useState("");
   const isSearching = search.trim() !== "";
   const toggles = useToggles(isSearching);
+  const ticks = useLineTicks(query.data?.areTicksReady ?? false);
   const allProjects = useMemo(() => query.data?.projects ?? [], [query.data]);
   const brands = useMemo(() => brandOptions(allProjects), [allProjects]);
   const brandProjects = useMemo(() => allProjects.filter((project) => onBrandList(project, brand)), [allProjects, brand]);
@@ -106,6 +151,8 @@ function BoardScreen(): ReactElement {
           <input type="search" value={search} placeholder="Project, room, SKU, item" style={{ ...inputStyle, fontSize: 16, paddingLeft: 32 }} onChange={(event) => changeSearch(event.target.value)} />
         </label>
       </div>
+      {ticks.error && <p role="alert" style={{ margin: 0, fontSize: 14, color: WS.red }}>The tick did not save: {ticks.error}</p>}
+      {ticks.notice && <p role="status" style={{ margin: 0, fontSize: 14, color: WS.green }}>{ticks.notice}</p>}
       {query.data?.isTruncated && (
         <p role="status" style={{ margin: 0, fontSize: 13, color: WS.amber }}>Only the first lines are shown. Pick a brand or search to narrow the list.</p>
       )}
@@ -114,9 +161,11 @@ function BoardScreen(): ReactElement {
         : query.error && !query.data ? <p role="alert" style={{ fontSize: 14, color: WS.red }}>The renovation lines could not be loaded: {query.error}</p>
         : shown.length === 0 ? <WsEmpty>{isSearching ? "Nothing matches." : "No project has Works or Built-in lines yet. They appear here once a quotation is converted to a sales order."}</WsEmpty>
         : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {shown.map(({ project, lines }) => <ProjectSection key={project.id} project={project} lines={lines} toggles={toggles} />)}
-          </div>
+          <LineTicksContext.Provider value={ticks}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {shown.map(({ project, lines }) => <ProjectSection key={project.id} project={project} lines={lines} toggles={toggles} />)}
+            </div>
+          </LineTicksContext.Provider>
         )}
     </div>
   );
@@ -207,7 +256,7 @@ function GroupSection({ card, sectionKey, toggles, plans }: SectionProps & { car
         }}>
         <Chevron size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
         <span style={{ flex: 1, minWidth: 0 }}>{card.label}</span>
-        <span style={countStyle}>{plural(card.lines.length, "line")} · {onPoCount(card.lines)} on PO</span>
+        <span style={countStyle}>{progressText(card.lines)} · {onPoCount(card.lines)} on PO</span>
       </button>
       {isOpen && (
         <div id={sectionKey}>
@@ -223,6 +272,7 @@ function TradeBlock({ trade }: { trade: TradeGroup }): ReactElement {
     <div style={{ borderTop: `1px solid ${BETA.line}` }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 12px", minHeight: 40, padding: "8px 14px 8px 44px", background: WS.panel }}>
         <span style={{ fontSize: 13, fontWeight: 700 }}>{trade.label}</span>
+        <span style={{ fontSize: 13, color: BETA.muted }}>{progressText(trade.lines)}</span>
         {trade.plans.length === 0
           ? <span style={{ fontSize: 13, color: BETA.muted }}>Not planned yet</span>
           : trade.plans.map((plan) => <PlanChip key={plan.taskId} plan={plan} isNamed={trade.plans.length > 1} />)}
@@ -246,17 +296,33 @@ function PlanChip({ plan, isNamed }: { plan: TradePlan; isNamed: boolean }): Rea
   );
 }
 
-function LineRow({ line }: { line: RequirementLine }): ReactElement {
+function LineTickBox({ line }: { line: RequirementLine }): ReactElement {
+  const { busyLineId, toggleLine } = useContext(LineTicksContext);
+  const isDone = line.doneAt !== null;
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 14px", minHeight: 44, padding: "8px 14px 8px 44px" }}>
+    <label style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44, cursor: "pointer" }}>
+      <input type="checkbox" checked={isDone} disabled={busyLineId === line.id} onChange={() => toggleLine(line)}
+        aria-label={`${isDone ? "Untick" : "Tick"} ${line.remark ?? line.name}`}
+        style={{ width: 20, height: 20, margin: 0, accentColor: WS.green, cursor: "pointer" }} />
+    </label>
+  );
+}
+
+function LineRow({ line }: { line: RequirementLine }): ReactElement {
+  const { canTick } = useContext(LineTicksContext);
+  const isDone = line.doneAt !== null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 14px", minHeight: 44, padding: canTick ? "0 14px 0 4px" : "8px 14px 8px 44px" }}>
+      {canTick && <LineTickBox line={line} />}
       <span style={{ flex: "0 1 160px", minWidth: 0, fontFamily: "var(--font-mono, monospace)", fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{line.itemCode}</span>
       <span style={{ flex: "2 1 220px", minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-        <span style={{ fontSize: 14, fontWeight: 600, overflowWrap: "anywhere" }}>{line.name}</span>
+        <span style={{ fontSize: 14, fontWeight: 600, overflowWrap: "anywhere", color: isDone ? BETA.muted : undefined }}>{line.name}</span>
         {line.remark && <span style={{ fontSize: 13, color: WS.text2, overflowWrap: "anywhere" }}>{line.remark}</span>}
       </span>
       <span style={{ flex: "0 0 auto", fontSize: 13, color: WS.text2, whiteSpace: "nowrap" }}>Qty {line.qty} {line.uom.toLowerCase()}</span>
       {line.onSiteBy && <span style={{ flex: "0 0 auto", fontSize: 13, color: WS.text2, whiteSpace: "nowrap" }}>On site by {dayMonth(line.onSiteBy)}</span>}
       <WsBadge tone={line.isOnPo ? TONE_ACCENT : TONE_QUIET}>{line.isOnPo ? "On PO" : "Not on PO"}</WsBadge>
+      {isDone && <WsBadge tone={TONE_DONE}>Done {dayMonth(line.doneAt)}</WsBadge>}
     </div>
   );
 }

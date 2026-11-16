@@ -31,6 +31,7 @@ import { groupEvidence, type EvidencePhoto } from "../services/renovation/pod";
 import { renderPodNoteHtml } from "../services/renovation/podNote";
 import { syncTradeTasks, writeCachedStage } from "../services/renovation/contractSync";
 import { syncProjectDates } from "../services/renovation/projectDates";
+import { completionRefusal, markTaskDone } from "../services/renovation/taskCompletion";
 import { syncStepSla } from "../services/renovation/stepSla";
 import renovationProject from "./renovationProject";
 import renovationMonitor from "./renovationMonitor";
@@ -403,17 +404,12 @@ app.post("/trade-tasks/:taskId/complete", requirePermission("projects.write"), a
   if (!taskId) return c.json({ error: "invalid_id" }, 400);
   const task = await taskWithProject(c, taskId);
   if (!task) return c.json({ error: "not_found" }, 404);
-  if (task.fulfilment_kind === "po") {
-    /* A PO task with PO lines completes on receipt; one added by hand with no PO line (e.g. curtain by a contractor) is ticked. */
-    const linked = await db(c).prepare(`SELECT 1 AS x FROM project_trade_task_lines WHERE task_id = ? AND purchase_order_item_id IS NOT NULL LIMIT 1`).bind(taskId).first();
-    if (linked) return c.json({ error: "po_task_completes_on_receipt", message: "A subcontracted task completes when its purchase order is received on site." }, 409);
-  }
-  if (task.state === "skipped") return c.json({ error: "task_skipped" }, 409);
+  /* A PO task with PO lines completes on receipt; one added by hand with no PO line (e.g. curtain by a contractor) is ticked. */
+  const refusal = await completionRefusal(db(c), task);
+  if (refusal === "po_task_completes_on_receipt") return c.json({ error: refusal, message: "A subcontracted task completes when its purchase order is received on site." }, 409);
+  if (refusal) return c.json({ error: refusal }, 409);
   const b = await c.req.json<{ note?: string }>().catch(() => ({} as { note?: string }));
-  await db(c).prepare(
-    `UPDATE project_trade_tasks SET state = 'done', actual_start = coalesce(actual_start, ?::date), actual_end = ?::date,
-            done_by = ?, done_at = now(), notes = coalesce(?, notes), updated_at = now() WHERE id = ?`,
-  ).bind(todayMyt(), todayMyt(), userId(c), b.note ?? null, taskId).run();
+  await markTaskDone(db(c), taskId, { userId: userId(c), today: todayMyt(), note: b.note ?? null });
   await logActivity(c, task.project_id, "task_done", task.trade_code, "done", b.note ?? null);
   return c.json({ ok: true });
 });

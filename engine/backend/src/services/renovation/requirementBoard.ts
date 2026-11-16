@@ -14,7 +14,18 @@ export const BOARD_CATEGORY_CODES: readonly string[] = Object.keys(GROUP_OF_CATE
 
 export const BUILT_IN_PLAN_KEY = "BUILTIN";
 
-const BUILT_IN_TASK_CATEGORY = "CARPENTRY";
+export const BUILT_IN_TASK_CATEGORY = "CARPENTRY";
+
+export const BOARD_CATEGORY_LIST = BOARD_CATEGORY_CODES.map((code) => `'${code}'`).join(", ");
+
+export const SO_LINE_CATEGORY_JOIN =
+  `LEFT JOIN LATERAL (SELECT pr.category_group, pr.sub_category FROM scm.mfg_products pr
+                       WHERE pr.code = i.item_code AND pr.company_id = so.company_id ORDER BY (pr.status::text = 'ACTIVE') DESC LIMIT 1) prod ON true
+   JOIN scm.product_category_groups cg ON cg.code = prod.category_group
+   LEFT JOIN scm.product_sub_categories sc ON sc.group_code = cg.code AND sc.code = prod.sub_category`;
+
+export const LIVE_BOARD_LINE =
+  `so.status::text <> 'CANCELLED' AND NOT coalesce(i.cancelled, false) AND cg.code IN (${BOARD_CATEGORY_LIST})`;
 
 export interface RequirementProjectRow {
   project_id: number;
@@ -54,6 +65,11 @@ export interface TradePlanRow {
   po_fully_received: boolean | null;
 }
 
+export interface LineTickRow {
+  so_item_id: string;
+  done_at: string;
+}
+
 export interface RequirementLine {
   id: string;
   itemCode: string;
@@ -67,6 +83,7 @@ export interface RequirementLine {
   planKey: string | null;
   tradeLabel: string | null;
   onSiteBy: string | null;
+  doneAt: string | null;
 }
 
 export interface TradePlan {
@@ -90,19 +107,21 @@ export interface RequirementProject {
 export interface RequirementBoard {
   projects: RequirementProject[];
   isTruncated: boolean;
+  areTicksReady: boolean;
 }
 
 export interface RequirementBoardRows {
   projects: readonly RequirementProjectRow[];
   lines: readonly RequirementLineRow[];
   plans: readonly TradePlanRow[];
+  ticks: readonly LineTickRow[] | null;
 }
 
 const trimmedOrNull = (value: string | null): string | null => value?.trim() || null;
 
 const dayOf = (value: string | null): string | null => (value ? value.slice(0, 10) : null);
 
-export function requirementLineOf(row: RequirementLineRow): RequirementLine | null {
+export function requirementLineOf(row: RequirementLineRow, doneAt: string | null = null): RequirementLine | null {
   const group = GROUP_OF_CATEGORY[row.cat_code];
   if (!group) return null;
   const itemCode = row.item_code ?? "";
@@ -119,6 +138,7 @@ export function requirementLineOf(row: RequirementLineRow): RequirementLine | nu
     planKey: group === "builtin" ? BUILT_IN_PLAN_KEY : row.sub_code,
     tradeLabel: group === "works" ? trimmedOrNull(row.sub_label) : null,
     onSiteBy: dayOf(row.deliver_on),
+    doneAt,
   };
 }
 
@@ -155,6 +175,7 @@ export function buildRequirementBoard(rows: RequirementBoardRows, scope: Categor
   const visibleLines = rows.lines.filter((row) => lineVisible(scope, row.cat_code, row.sub_code));
   const linesByProject = groupByProject(visibleLines, (row) => Number(row.project_id));
   const plansByProject = groupByProject(rows.plans, (row) => Number(row.project_id));
+  const doneAtByLine = new Map((rows.ticks ?? []).map((tick) => [tick.so_item_id, tick.done_at] as const));
   const projects = rows.projects.map((row) => {
     const id = Number(row.project_id);
     return {
@@ -162,12 +183,13 @@ export function buildRequirementBoard(rows: RequirementBoardRows, scope: Categor
       code: row.project_code,
       name: row.project_name ?? row.project_code ?? `Project ${id}`,
       brand: trimmedOrNull(row.brand),
-      lines: (linesByProject.get(id) ?? []).map(requirementLineOf).filter((line): line is RequirementLine => line !== null),
+      lines: (linesByProject.get(id) ?? []).map((line) => requirementLineOf(line, doneAtByLine.get(line.id) ?? null)).filter((line): line is RequirementLine => line !== null),
       plans: (plansByProject.get(id) ?? []).map((plan) => tradePlanOf(plan, today)).filter((plan): plan is TradePlan => plan !== null),
     };
   });
   return {
     projects: [...projects.filter((project) => project.lines.length > 0), ...projects.filter((project) => project.lines.length === 0)],
     isTruncated: rows.lines.length >= REQUIREMENT_LINE_LIMIT,
+    areTicksReady: rows.ticks !== null,
   };
 }

@@ -28,7 +28,7 @@ function planRow(overrides: Partial<TradePlanRow>): TradePlanRow {
 }
 
 function board(lines: RequirementLineRow[], plans: TradePlanRow[] = [], projects: RequirementProjectRow[] = [projectRow({})], scope: Parameters<typeof buildRequirementBoard>[1] = null) {
-  return buildRequirementBoard({ projects, lines, plans }, scope, TODAY);
+  return buildRequirementBoard({ projects, lines, plans, ticks: [] }, scope, TODAY);
 }
 
 function scriptedDb(projects: RequirementProjectRow[], lines: RequirementLineRow[], plans: TradePlanRow[] = []) {
@@ -64,7 +64,7 @@ describe("requirement board", () => {
     const [line] = board([lineRow({ remark: " FLOOR PROTECTION ", qty: "20", is_on_po: true, deliver_on: "2026-11-20T00:00:00Z" })]).projects[0].lines;
     expect(line).toEqual({
       id: "line-1", itemCode: "RN-PROTECTION", name: "Works - Protection", remark: "FLOOR PROTECTION",
-      qty: 20, uom: "UNIT", room: "Common area", group: "works", isOnPo: true, planKey: "PROTECTION", tradeLabel: "Protection", onSiteBy: "2026-11-20",
+      qty: 20, uom: "UNIT", room: "Common area", group: "works", isOnPo: true, planKey: "PROTECTION", tradeLabel: "Protection", onSiteBy: "2026-11-20", doneAt: null,
     });
   });
 
@@ -102,6 +102,13 @@ describe("requirement board", () => {
     ]).projects[0];
     expect(plans.map((plan) => [plan.taskId, plan.planKey, plan.status])).toEqual([[1, "ELECTRICAL", "overdue"], [2, "ELECTRICAL", "planned"], [3, "BUILTIN", "done"]]);
     expect(plans[0]).toMatchObject({ label: "WIRING & HACKING", plannedStart: "2026-11-10", plannedEnd: "2026-11-12" });
+  });
+
+  test("a ticked line carries when it was ticked; no tick table reads as not switched on", () => {
+    const ticked = buildRequirementBoard({ projects: [projectRow({})], lines: [lineRow({})], plans: [], ticks: [{ so_item_id: "line-1", done_at: "2026-11-16T03:00:00Z" }] }, null, TODAY);
+    expect([ticked.areTicksReady, ticked.projects[0].lines[0].doneAt]).toEqual([true, "2026-11-16T03:00:00Z"]);
+    const notReady = buildRequirementBoard({ projects: [projectRow({})], lines: [lineRow({})], plans: [], ticks: null }, null, TODAY);
+    expect([notReady.areTicksReady, notReady.projects[0].lines[0].doneAt]).toEqual([false, null]);
   });
 
   test("a subcontracted trade whose PO is fully received reads as done", () => {

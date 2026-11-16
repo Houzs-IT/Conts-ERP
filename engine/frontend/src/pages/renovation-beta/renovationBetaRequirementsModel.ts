@@ -84,6 +84,14 @@ export function groupByRoom(lines: readonly RequirementLine[]): RoomGroup[] {
   return [...rooms].map(([name, roomLines]) => ({ name, lines: roomLines, cards: groupCards(roomLines) }));
 }
 
+export function doneCount(lines: readonly RequirementLine[]): number {
+  return lines.filter((line) => line.doneAt !== null).length;
+}
+
+export function progressText(lines: readonly RequirementLine[]): string {
+  return `${doneCount(lines)} of ${lines.length} done`;
+}
+
 export function onPoCount(lines: readonly RequirementLine[]): number {
   return lines.filter((line) => line.isOnPo).length;
 }

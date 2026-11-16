@@ -1,20 +1,19 @@
 import { Hono, type Context } from "hono";
 import type { Env } from "../types";
-import { requirePageAccess } from "../middleware/auth";
-import { activeCompanySql } from "../scm/lib/companyScope";
+import { requirePageAccess, requirePermission } from "../middleware/auth";
+import { activeCompanyId, activeCompanySql } from "../scm/lib/companyScope";
 import { todayMyt } from "../scm/lib/my-time";
-import type { Db } from "../services/renovation/load";
+import { isMissingRelation, type Db } from "../services/renovation/load";
+import { tickLine, untickLine, type LineActor, type TradeTaskRow } from "../services/renovation/lineProgress";
 import { loadCategoryScope } from "../services/categoryAccess";
 import {
-  BOARD_CATEGORY_CODES, REQUIREMENT_LINE_LIMIT, buildRequirementBoard, type RequirementLineRow, type RequirementProjectRow, type TradePlanRow,
+  LIVE_BOARD_LINE, REQUIREMENT_LINE_LIMIT, SO_LINE_CATEGORY_JOIN, buildRequirementBoard, type RequirementLineRow, type LineTickRow, type RequirementProjectRow, type TradePlanRow,
 } from "../services/renovation/requirementBoard";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
 
 const db = (c: Ctx): Db => c.env.DB as unknown as Db;
-
-const BOARD_CATEGORY_LIST = BOARD_CATEGORY_CODES.map((code) => `'${code}'`).join(", ");
 
 const LIVE_RENOVATION_PROJECTS = (companyScope: string): string =>
   `p.project_kind = 'renovation' AND p.archived_at IS NULL${companyScope}`;
@@ -36,12 +35,8 @@ const LINES_SQL = (companyScope: string): string =>
      JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
      JOIN projects p ON p.id = so.project_id
      LEFT JOIN scm.reno_beta_line_plans plan ON plan.so_item_id = i.id
-     LEFT JOIN LATERAL (SELECT pr.category_group, pr.sub_category FROM scm.mfg_products pr
-                         WHERE pr.code = i.item_code AND pr.company_id = so.company_id ORDER BY (pr.status::text = 'ACTIVE') DESC LIMIT 1) prod ON true
-     JOIN scm.product_category_groups cg ON cg.code = prod.category_group
-     LEFT JOIN scm.product_sub_categories sc ON sc.group_code = cg.code AND sc.code = prod.sub_category
-    WHERE ${LIVE_RENOVATION_PROJECTS(companyScope)} AND so.status::text <> 'CANCELLED'
-      AND NOT coalesce(i.cancelled, false) AND cg.code IN (${BOARD_CATEGORY_LIST})
+     ${SO_LINE_CATEGORY_JOIN}
+    WHERE ${LIVE_RENOVATION_PROJECTS(companyScope)} AND ${LIVE_BOARD_LINE}
     ORDER BY p.code, so.so_date NULLS LAST, i.doc_no, i.line_no NULLS LAST
     LIMIT ${REQUIREMENT_LINE_LIMIT}`;
 
@@ -57,20 +52,77 @@ const PLANS_SQL = (companyScope: string): string =>
     WHERE ${LIVE_RENOVATION_PROJECTS(companyScope)} AND t.state <> 'skipped' AND t.trade_code NOT LIKE 'INTERNAL:%'
     ORDER BY t.project_id, t.seq`;
 
+const TICKS_SQL = (companyScope: string): string =>
+  `SELECT lp.so_item_id::text AS so_item_id, lp.done_at::text AS done_at
+     FROM project_line_progress lp
+     JOIN projects p ON p.id = lp.project_id
+    WHERE ${LIVE_RENOVATION_PROJECTS(companyScope)}`;
+
+async function readTicks(database: Db, companyScope: string): Promise<LineTickRow[] | null> {
+  try {
+    return (await database.prepare(TICKS_SQL(companyScope)).all<LineTickRow>()).results ?? [];
+  } catch (error) {
+    if (isMissingRelation(error)) return null;
+    throw error;
+  }
+}
+
 app.get("/requirements", requirePageAccess("projects.list"), async (c) => {
   try {
     const companyScope = activeCompanySql(c, "p.company_id");
-    const [projects, lines, plans, scope] = await Promise.all([
+    const [projects, lines, plans, ticks, scope] = await Promise.all([
       db(c).prepare(PROJECTS_SQL(companyScope)).all<RequirementProjectRow>(),
       db(c).prepare(LINES_SQL(companyScope)).all<RequirementLineRow>(),
       db(c).prepare(PLANS_SQL(companyScope)).all<TradePlanRow>(),
+      readTicks(db(c), companyScope),
       loadCategoryScope(db(c), c.get("user")),
     ]);
-    const rows = { projects: projects.results ?? [], lines: lines.results ?? [], plans: plans.results ?? [] };
+    const rows = { projects: projects.results ?? [], lines: lines.results ?? [], plans: plans.results ?? [], ticks };
     return c.json(buildRequirementBoard(rows, scope, todayMyt()));
   } catch (error) {
     console.error("[renovation-beta] requirement board read failed", error);
     return c.json({ error: "renovation_read_failed", message: "The renovation lines could not be read. Try again." }, 500);
+  }
+});
+
+const lineActor = (c: Ctx): LineActor => ({
+  userId: Number(c.get("user").id) || null,
+  personId: null,
+  companySql: activeCompanySql(c, "p.company_id"),
+  today: todayMyt(),
+});
+
+const TICKS_NOT_READY = { error: "ticks_not_ready", message: "Line ticks are not switched on yet on this server." } as const;
+const LINE_NOT_FOUND = { error: "not_found", message: "That line is not a Works or Built-in line of a live renovation project." } as const;
+
+async function logTradesDone(c: Ctx, projectId: number, tasks: readonly TradeTaskRow[]): Promise<void> {
+  for (const task of tasks) {
+    await db(c).prepare(`INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .bind(projectId, "task_done", task.trade_code, "done", "Every line ticked", lineActor(c).userId, activeCompanyId(c) ?? 1).run();
+  }
+}
+
+app.put("/requirements/lines/:soItemId/done", requirePermission("projects.write"), async (c) => {
+  try {
+    const outcome = await tickLine(db(c), c.req.param("soItemId"), lineActor(c));
+    if (outcome === "line_not_found") return c.json(LINE_NOT_FOUND, 404);
+    await logTradesDone(c, outcome.projectId, outcome.completedTasks);
+    return c.json({ ok: true, completedTaskIds: outcome.completedTasks.map((task) => task.id) });
+  } catch (error) {
+    if (isMissingRelation(error)) return c.json(TICKS_NOT_READY, 409);
+    throw error;
+  }
+});
+
+app.delete("/requirements/lines/:soItemId/done", requirePermission("projects.write"), async (c) => {
+  try {
+    const outcome = await untickLine(db(c), c.req.param("soItemId"), lineActor(c));
+    if (outcome === "line_not_found") return c.json(LINE_NOT_FOUND, 404);
+    if (outcome === "trade_complete") return c.json({ error: outcome, message: "This trade is already done. Reopen it on the project's Site tab first." }, 409);
+    return c.json({ ok: true });
+  } catch (error) {
+    if (isMissingRelation(error)) return c.json(TICKS_NOT_READY, 409);
+    throw error;
   }
 });
 
