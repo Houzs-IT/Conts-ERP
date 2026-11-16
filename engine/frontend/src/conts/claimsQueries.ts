@@ -32,6 +32,8 @@ export type PaymentRequest = {
   lines: ClaimLine[]; files: { id: string; fileName: string; mime: string }[]; vouchers: { id: string; pvNumber: string; status: string }[];
   /** Conts (chew, 15 Nov 2026): the AP invoice it is paid through (then paid on the Payment voucher page, against the
    *  bill); a balance's deposit, a deposit's balance requests; what was first asked, once the bill changed it. */
+  /** Made from utility bills (Utility bills): paid by voucher against the accrual, never through an AP invoice. */
+  fromBills?: boolean;
   apInvoice?: { id: string; invoiceNumber: string; status: string; provisional: boolean; totalSen: number; paidSen: number } | null;
   parentRequestNo?: string | null;
   balanceRequests?: { id: string; requestNo: string; status: string }[];
