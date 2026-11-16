@@ -8,6 +8,8 @@ import { authedFetch } from "../vendor/scm/lib/authed-fetch";
 export type LineDepartment = "rental" | "supply" | "shared";
 export type ReceiptStatus = "HANDED_IN" | "CHECKED" | "TOPPED_UP" | "PAID_BACK" | "REJECTED" | "REPAID" | "WRITTEN_OFF" | "REPLACED";
 export type ClaimLine = {
+  /** A request line's id: the account finance chooses for it on Make voucher / Make AP invoice is keyed by it. */
+  id?: string;
   department: LineDepartment; unitId: string | null; maintenanceIssueId: string | null; projectId: number | null;
   accountCode: string | null; amountSen: number; description: string | null;
   /** Its sub-department (SOP 1.1; chew 4 Nov 2026): set on hand-in, changed by finance while checking. */

@@ -7,6 +7,7 @@ import { describe, expect, test } from 'vitest';
 import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
 import { defaultLineSubs, type LineRow } from './claims-lines';
 import { parseLines } from './petty-cash-routes';
+import type { Staff } from './staff-identity';
 
 const CO = 1;
 const sub = (id: string, department: string, name: string, fixed_key: string | null, staff_department_id: string | null = null) =>
@@ -98,7 +99,7 @@ describe('a staff line on a project', () => {
 /* SOP 1.1 自动带出部门（可以改） (chew, 16 Nov 2026): the person may put a line on another sub-department; it is kept, checked
    against the list and against the line's project; a maintenance job's line stays the job's. */
 describe('a sub-department the person chose on the line', () => {
-  const staff = { userId: 'u1', name: 'A', email: 'a@x', departmentId: 'dept-cln', side: 'conts', role: 'operations_staff', field: false } as const;
+  const staff: Staff = { userId: 'u1', name: 'A', email: 'a@x', departmentId: 'dept-cln', side: 'conts', role: 'operations_staff', field: false };
   const withProjects = () => {
     const sb = world();
     sb.tables.projects = [{ id: 7, company_id: CO, name: 'SHOWROOM', funding: 'internal', internal_department: 'rental', finance_kind: null, brand: null }];
@@ -109,7 +110,7 @@ describe('a sub-department the person chose on the line', () => {
   test('is kept and sets the department; the default fills only the lines left alone', async () => {
     const { buildLines } = await import('./claims-lines');
     const sb = withProjects();
-    const built = await buildLines(sb, staff as never, [{ amountSen: 3000, subDepartmentId: 's-co' }, { amountSen: 2000 }], 5000, CO);
+    const built = await buildLines(sb, staff, [{ amountSen: 3000, subDepartmentId: 's-co' }, { amountSen: 2000 }], 5000, CO);
     expect(built.ok).toBe(true);
     const lines = (built as { lines: LineRow[] }).lines;
     await defaultLineSubs(sb, CO, lines, { staffDepartmentId: 'dept-cln', floatId: null });
@@ -118,10 +119,10 @@ describe('a sub-department the person chose on the line', () => {
   test('one not on the list, or not fitting the project, is refused; a job line stays Maintenance', async () => {
     const { buildLines } = await import('./claims-lines');
     const sb = withProjects();
-    expect(await buildLines(sb, staff as never, [{ amountSen: 5000, subDepartmentId: 's-gone' }], 5000, CO)).toMatchObject({ ok: false });
-    const mismatch = await buildLines(sb, staff as never, [{ amountSen: 5000, subDepartmentId: 's-dc', projectId: 7 }], 5000, CO);
+    expect(await buildLines(sb, staff, [{ amountSen: 5000, subDepartmentId: 's-gone' }], 5000, CO)).toMatchObject({ ok: false });
+    const mismatch = await buildLines(sb, staff, [{ amountSen: 5000, subDepartmentId: 's-dc', projectId: 7 }], 5000, CO);
     expect(mismatch).toMatchObject({ ok: false, message: expect.stringContaining('SHOWROOM') });
-    const job = await buildLines(sb, staff as never, [{ amountSen: 5000, subDepartmentId: 's-co', maintenanceIssueId: 'job-1' }], 5000, CO);
+    const job = await buildLines(sb, staff, [{ amountSen: 5000, subDepartmentId: 's-co', maintenanceIssueId: 'job-1' }], 5000, CO);
     const jl = (job as { lines: LineRow[] }).lines;
     await defaultLineSubs(sb, CO, jl, { staffDepartmentId: 'dept-cln', floatId: null });
     expect(jl[0]).toMatchObject({ department: 'rental', sub_department_id: 's-mnt' });

@@ -88,6 +88,7 @@ import { approveLimitRequestHandler, createLimitRequestHandler, getLimitSettings
 import { projectOfPurchaseInvoice } from '../../conts/project-limit';
 import * as pettyCash from '../../conts/petty-cash-routes';
 import * as paymentRequests from '../../conts/payment-request-routes';
+import * as combinedVoucher from '../../conts/combined-voucher';
 import { assertAuditWritable, auditUnavailableBody, compactChanges, fieldChange, recordEntityAudit, type AuditActor } from '../lib/entity-audit';
 import { journalEntryEdit } from './accounting-journal-edit';
 import { reportLayoutGet, reportLayoutPut, reportLayoutReset } from './accounting-report-layouts';
@@ -288,6 +289,8 @@ accounting.post('/payment-requests/:id/close', paymentRequests.closeRequestHandl
 accounting.patch('/payment-requests/:id/supplier', paymentRequests.linkSupplierHandler);
 accounting.get('/payment-requests/:id/files/:fileId', paymentRequests.requestFileHandler);
 accounting.post('/payment-requests/:id/ap-invoice', paymentRequests.makeRequestApInvoiceHandler);
+/* Conts: one voucher for several ticked requests and staff claims (conts/combined-voucher.ts; chew 16 Nov 2026). */
+accounting.post('/vouchers/from-claims', combinedVoucher.combinedVoucherHandler);
 accounting.post('/debtors', createDebtorHandler);
 accounting.patch('/debtors/:id', patchDebtorHandler);
 accounting.put('/chart/rename', chartRenameHandler);

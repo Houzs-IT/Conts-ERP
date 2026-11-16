@@ -16,7 +16,7 @@ const floats: FloatRow[] = [
 const request: PaymentRequest = {
   id: "Q1", requestNo: "PRQ-2610-001", type: "DEPOSIT", requesterUserId: "u3", requesterName: "Wei Wen", supplierId: "S1", payeeName: "ACE", payeeToCheck: false,
   purchaseOrderId: null, wantedOn: null, owesFormalInvoice: true, note: null, amountSen: 500000, status: "SUBMITTED", reason: null, decidedBy: null,
-  createdAt: "2026-10-20T00:00:00Z", lines: [{ department: "supply", unitId: null, maintenanceIssueId: null, projectId: 7, accountCode: "601-0001", amountSen: 500000, description: "Cabinet deposit" }],
+  createdAt: "2026-10-20T00:00:00Z", lines: [{ id: "L1", department: "supply", unitId: null, maintenanceIssueId: null, projectId: 7, accountCode: "601-0001", amountSen: 500000, description: "Cabinet deposit" }],
   files: [], vouchers: [],
 };
 /* The sub-departments a line names (SOP 1.1). */
@@ -88,11 +88,16 @@ describe("Payment requests", () => {
     await waitFor(() => expect(promptFn).toHaveBeenCalled());
     expect(act).not.toHaveBeenCalled();
   });
-  it("making the voucher asks for the bank and sends it", async () => {
+  it("making the voucher shows each line's account, asks for the bank and sends them (chew, 16 Nov 2026)", async () => {
     act.mockClear();
     render(<MemoryRouter><PaymentRequests /></MemoryRouter>);
     fireEvent.click(screen.getByText("Make voucher"));
-    await waitFor(() => expect(act).toHaveBeenCalledWith({ path: "/accounting/payment-requests/Q1/voucher", body: { bankAccountCode: "310-0010" }, method: "POST" }));
+    /* The dialog: the line's own account already in, the bank still to choose. */
+    const make = screen.getAllByText("Make voucher").at(-1)!;
+    expect((make.closest("button") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Bank"), { target: { value: "310-0010" } });
+    fireEvent.click(make);
+    await waitFor(() => expect(act).toHaveBeenCalledWith({ path: "/accounting/vouchers/from-claims", body: { requestIds: ["Q1"], bankAccountCode: "310-0010", accounts: { L1: "601-0001" } }, method: "POST" }));
   });
   it("without Ledger full there is no Make voucher", () => {
     full = false;

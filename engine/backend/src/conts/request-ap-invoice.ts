@@ -92,7 +92,7 @@ async function followBill(sb: Db, b: { id: string; total_sen: number; payment_re
       row: {
         id, request_id: req.id, department: l.department ?? old?.department ?? 'supply', sub_department_id: l.sub_department_id ?? null,
         unit_id: l.unit_id ?? null, maintenance_issue_id: old?.maintenance_issue_id ?? null, project_id: l.project_id ?? null,
-        account_code: l.debit_account_code ?? null, amount_sen: Number(l.amount_sen), description: l.description ?? null, sort: i,
+        account_code: l.debit_account_code, amount_sen: Number(l.amount_sen), description: l.description ?? null, sort: i,
       },
     };
   });
@@ -188,8 +188,11 @@ export const makeRequestApInvoiceHandler = async (c: Ctx): Promise<Response> => 
   const { data: lineRows } = await sb.from('payment_request_lines').select('*').eq('request_id', r.id);
   const lines = ((lineRows ?? []) as ReqLine[]).sort((x, y) => x.sort - y.sort);
   if (lines.length === 0) return c.json({ error: 'lines_required', message: 'This request has no lines.' }, 409);
+  /* Each line on the account finance chose for it (chew, 16 Nov 2026: 科目行本来就我选的), else its own, else the one given. */
+  const chosen = b.accounts && typeof b.accounts === 'object' ? (b.accounts as Record<string, unknown>) : {};
   const fallback = b.debitAccountCode ? String(b.debitAccountCode).trim() : '';
-  if (lines.some(l => !l.account_code) && !fallback) return c.json({ error: 'account_missing', message: 'Choose the expense account for the lines that have none.' }, 422);
+  const accountOf = (l: ReqLine) => String(chosen[l.id] ?? '').trim() || l.account_code || fallback;
+  if (lines.some(l => !accountOf(l))) return c.json({ error: 'account_missing', message: `${r.request_no}: choose the account for each line.` }, 422);
 
   const { createApInvoiceCore } = await import('../scm/routes/ap-invoices');
   const made = await createApInvoiceCore(c, {
@@ -200,7 +203,7 @@ export const makeRequestApInvoiceHandler = async (c: Ctx): Promise<Response> => 
     provisional: deposit ? b.provisional !== false : b.provisional === true,
     notes: `Payment request ${r.request_no}${deposit ? ' (deposit)' : ''}${r.note ? ` — ${r.note}` : ''}`,
     lines: lines.map(l => ({
-      description: l.description ?? r.request_no, debitAccountCode: l.account_code ?? fallback, amountSen: Number(l.amount_sen),
+      description: l.description ?? r.request_no, debitAccountCode: accountOf(l), amountSen: Number(l.amount_sen),
       department: l.department, subDepartmentId: l.sub_department_id ?? undefined, projectId: l.project_id, unitId: l.unit_id, sourceRequestLineId: l.id,
     })),
   }, { paymentRequestId: r.id });
@@ -243,7 +246,7 @@ export const balanceRequestHandler = async (c: Ctx): Promise<Response> => {
   const open = ((kids ?? []) as Array<{ request_no: string; status: string }>).find(k => k.status === 'SUBMITTED' || k.status === 'PART_PAID');
   if (open) return c.json({ error: 'balance_open', message: `The balance is already asked for on ${open.request_no}.` }, 409);
   const { data: billRow } = await sb.from('ap_invoices').select('id, total_sen, paid_sen, provisional, due_date').eq('id', bill.id).maybeSingle();
-  const inv = billRow as { id: string; total_sen: number; paid_sen: number; provisional: boolean; due_date: string | null } | null;
+  const inv = billRow as { id: string; total_sen: number; paid_sen: number | null; provisional: boolean; due_date: string | null } | null;
   if (!inv) return c.json({ error: 'no_bill' }, 409);
   /* A deposit paid by its own voucher (Make voucher, before the bill) is an advance until finance knocks it off against
      the bill: it is not asked for again. What the bill has had paid is taken to include the deposit once it covers it. */
@@ -293,7 +296,7 @@ export const balanceRequestHandler = async (c: Ctx): Promise<Response> => {
   }
   const ins = await sb.from('payment_request_lines').insert(spread.map((l, i) => ({
     id: crypto.randomUUID(), request_id: id, department: l.department ?? 'supply', sub_department_id: l.sub_department_id ?? null, unit_id: l.unit_id ?? null,
-    maintenance_issue_id: null, project_id: l.project_id ?? null, account_code: l.debit_account_code ?? null, amount_sen: l.amountSen, description: l.description ?? null, sort: i,
+    maintenance_issue_id: null, project_id: l.project_id ?? null, account_code: l.debit_account_code, amount_sen: l.amountSen, description: l.description ?? null, sort: i,
   })));
   if (ins.error) return fail(ins.error.message);
   if (stored.length) {
