@@ -1,7 +1,9 @@
 // Conts only (not part of Houzs's code): /scm/payment-requests — what staff ask finance to pay: a supplier, against a PO
 // or not, or a deposit (SOP 3.2, 3.5; design docs/superpowers/specs/2026-10-28-payment-requests-petty-cash-design.md
 // §4.6). Waiting requests come first, oldest first. Finance makes the voucher (it then goes through the usual check
-// and approval), rejects with a reason, closes one paid short, or links a typed-in payee to a supplier.
+// and approval), rejects with a reason, closes one paid short, or links a typed-in payee to a supplier. Or makes the
+// request's AP invoice (chew, 15 Nov 2026): the request is then paid on the Payment voucher page, against the bill; a
+// deposit's bill is the quotation, replaced by the formal invoice when it comes.
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/Layout";
@@ -38,6 +40,25 @@ export function PaymentRequests() {
   const run = async (path: string, body: unknown, method: "POST" | "PATCH" = "POST") => {
     setNote(null);
     try { return await act.mutateAsync({ path, body, method }); } catch (e) { setNote(e instanceof Error ? e.message : "Not saved."); return null; }
+  };
+  const makeApInvoice = async (r: PaymentRequest) => {
+    /* A deposit is paid on a quotation; a payment may be on the formal invoice or on a quotation (SOP 3.8). */
+    const provisional = r.type === "DEPOSIT" ? true : await choose({
+      title: `${r.requestNo}: what is the paper?`,
+      options: [{ value: "invoice", label: "The formal invoice" }, { value: "quotation", label: "A quotation (no formal invoice yet)" }],
+    }).then((v) => (v == null ? null : v === "quotation"));
+    if (provisional == null) return;
+    let debitAccountCode: string | undefined;
+    if (r.lines.some((l) => !l.accountCode)) {
+      const picked = await choose({
+        title: `Which expense account for ${r.requestNo}?`,
+        options: (opts.data?.expenseAccounts ?? []).map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })),
+      });
+      if (!picked) return;
+      debitAccountCode = picked;
+    }
+    const made = await run(`${requestsPath}/${r.id}/ap-invoice`, { debitAccountCode, provisional });
+    if (made?.apInvoiceId) navigate(`/scm/ap-invoices?open=${encodeURIComponent(String(made.apInvoiceId))}`);
   };
   const makeVoucher = async (r: PaymentRequest) => {
     const bank = await chooseBank(opts.data?.banks ?? [], `Pay ${r.requestNo} from which bank?`);
@@ -92,6 +113,15 @@ export function PaymentRequests() {
           {r.vouchers.filter((v) => v.status !== "CANCELLED").map((v) => (
             <Link key={v.id} className="block text-xs underline" to={`/scm/payment-vouchers/${v.id}`}>{v.pvNumber}</Link>
           ))}
+          {r.apInvoice && (
+            <Link className="block text-xs underline" to={`/scm/ap-invoices?open=${encodeURIComponent(r.apInvoice.id)}`}>
+              {r.apInvoice.invoiceNumber}{r.apInvoice.provisional ? " (quotation)" : ""}
+            </Link>
+          )}
+          {r.parentRequestNo && <span className="block text-xs text-ink-muted">Balance of {r.parentRequestNo}</span>}
+          {r.askedAmountSen != null && r.askedAmountSen !== r.amountSen && (
+            <span className="block text-xs text-ink-muted">Asked <Money sen={r.askedAmountSen} />; now as the invoice</span>
+          )}
         </span>
       ),
     },
@@ -99,10 +129,18 @@ export function PaymentRequests() {
       key: "act", label: "", getValue: () => "",
       render: (r) => {
         const open = r.status === "SUBMITTED" || r.status === "PART_PAID";
-        if (!open) return null;
+        /* The AP invoice: a payment while nothing pays it yet; a deposit while open or once paid (its quotation). */
+        const canBill = edit && !r.apInvoice && !!r.supplierId && (r.type === "DEPOSIT" ? open || r.status === "PAID" : open && r.vouchers.every((v) => v.status === "CANCELLED"));
+        const billButton = canBill && (
+          <Button className="h-8" variant="secondary" disabled={act.isPending} onClick={() => void makeApInvoice(r)}>Make AP invoice</Button>
+        );
+        if (!open) return billButton || null;
+        /* Paid through its AP invoice: on the Payment voucher page, against the bill. */
+        if (r.apInvoice) return <span className="text-xs text-ink-muted">Pay {r.apInvoice.invoiceNumber} on Payment vouchers</span>;
         const drafting = r.vouchers.some((v) => v.status === "DRAFT");
         return (
           <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+            {billButton}
             {full && !drafting && <Button className="h-8" disabled={act.isPending || (r.payeeToCheck && !r.supplierId)} title={r.payeeToCheck && !r.supplierId ? "Link the payee to a supplier first." : undefined} onClick={() => void makeVoucher(r)}>Make voucher</Button>}
             {edit && r.payeeToCheck && <Button className="h-8" variant="secondary" disabled={act.isPending} onClick={() => void linkSupplier(r)}>Link supplier</Button>}
             {edit && r.status === "SUBMITTED" && r.vouchers.length === 0 && <Button className="h-8" variant="secondary" disabled={act.isPending} onClick={() => void reject(r)}>Reject</Button>}

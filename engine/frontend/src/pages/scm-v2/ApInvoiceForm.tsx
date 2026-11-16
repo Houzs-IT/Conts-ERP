@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { type Department } from '../../conts/department';
 import { nextLineSub, SubDepartmentSelect } from '../../conts/SubDepartmentSelect';
-import { ProjectPicker } from '../../conts/Pickers';
+import { ProjectPicker, UnitPicker } from '../../conts/Pickers';
 import { X } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
@@ -34,13 +34,15 @@ import styles from './SalesOrderDetail.module.css';
 /* Conts: each line's department (finance phase 1, spec 3.5), required before saving. */
 /* Conts: and the project a cost belongs to (a renovation subcontractor's bill), blank for none — the renovation
    completion % reads booked cost by project. */
-export type ApFormLine = { rid: number; description: string; debitAccountCode: string; amountSen: number; department: Department | ''; projectId?: number | null; subDepartmentId?: string | null };
-export type ApFormValues = { supplierId: string; supplierRef: string; invoiceDate: string; dueDate: string; description: string; lines: ApFormLine[] };
+/* Conts (chew, 15 Nov 2026): the unit, and the payment request line a bill line came from (kept through every edit, so
+   the request follows its bill line by line); a bill may be a quotation booked before its formal invoice. */
+export type ApFormLine = { rid: number; description: string; debitAccountCode: string; amountSen: number; department: Department | ''; projectId?: number | null; subDepartmentId?: string | null; unitId?: string | null; sourceRequestLineId?: string | null };
+export type ApFormValues = { supplierId: string; supplierRef: string; invoiceDate: string; dueDate: string; description: string; lines: ApFormLine[]; provisional?: boolean };
 export type ApFormMode = 'new' | 'edit' | 'copy';
 /** What the routes take — POST / for new and copy, PATCH /:id for edit. */
 export type ApFormSubmit = {
-  supplierId: string; supplierInvoiceRef?: string; invoiceDate: string; dueDate: string | null; notes?: string;
-  lines: Array<{ description?: string; debitAccountCode: string; amountSen: number; department?: Department; projectId?: number | null }>;
+  supplierId: string; supplierInvoiceRef?: string; invoiceDate: string; dueDate: string | null; notes?: string; provisional: boolean;
+  lines: Array<{ description?: string; debitAccountCode: string; amountSen: number; department?: Department; projectId?: number | null; unitId?: string | null; sourceRequestLineId?: string | null }>;
 };
 
 const myt = (): string => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
@@ -53,6 +55,7 @@ export const toSubmit = (v: ApFormValues): ApFormSubmit => ({
   invoiceDate: v.invoiceDate,
   dueDate: v.dueDate || null,
   ...(v.description.trim() ? { notes: v.description.trim() } : {}),
+  provisional: v.provisional === true,
   lines: v.lines
     .filter((l) => l.debitAccountCode && l.amountSen > 0)
     .map((l) => ({
@@ -60,6 +63,8 @@ export const toSubmit = (v: ApFormValues): ApFormSubmit => ({
       debitAccountCode: l.debitAccountCode, amountSen: l.amountSen, ...(l.department ? { department: l.department } : {}),
       ...(l.subDepartmentId ? { subDepartmentId: l.subDepartmentId } : {}),
       projectId: l.projectId ?? null,
+      unitId: l.unitId ?? null,
+      ...(l.sourceRequestLineId ? { sourceRequestLineId: l.sourceRequestLineId } : {}),
     })),
 });
 
@@ -201,6 +206,14 @@ export const ApInvoiceForm = ({
   };
 
   const saveLabel = mode === 'edit' ? (posted ? 'Save & re-post' : 'Save changes') : 'Save as draft';
+  /* A quotation on the books, its formal invoice come (chew, 15 Nov 2026): the same bill is changed to match it — the
+     invoice's number and date (the date the expense is booked on, by default), its lines and amounts, more or less. */
+  const wasQuotation = mode === 'edit' && initial.provisional === true;
+  const refRef = useRef<HTMLInputElement>(null);
+  const replaceWithInvoice = () => {
+    set({ provisional: false, invoiceDate: myt() });
+    setTimeout(() => refRef.current?.focus(), 0);
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', fontSize: 'var(--fs-13)' }}>
@@ -232,6 +245,16 @@ export const ApInvoiceForm = ({
           )}
         </div>
       )}
+      {wasQuotation && (
+        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap', fontSize: 'var(--fs-12)' }}>
+          {v.provisional
+            ? <>
+                <span style={{ color: 'var(--c-orange)' }}>This is a quotation, booked before its formal invoice.</span>
+                <Button variant="secondary" size="sm" onClick={replaceWithInvoice}>Replace with formal invoice</Button>
+              </>
+            : <span style={{ color: 'var(--c-orange)' }}>Replacing the quotation: enter the formal invoice's number and date, and its lines and amounts as it reads (more or less is fine). The expense is booked on the invoice date.</span>}
+        </div>
+      )}
       {posted && (
         <div style={{ fontSize: 'var(--fs-12)', color: 'var(--c-orange)' }}>
           This bill is on the books — saving re-posts it: the old journal gets a contra, a fresh one books what you save.
@@ -250,7 +273,7 @@ export const ApInvoiceForm = ({
         </label>
         <label className={styles.field}>
           <span className={styles.fieldLabel}>Supplier's invoice no.</span>
-          <input className={styles.fieldInput} value={v.supplierRef} onChange={(e) => set({ supplierRef: e.target.value })} aria-label="Supplier invoice ref" placeholder="As printed on the bill" />
+          <input ref={refRef} className={styles.fieldInput} value={v.supplierRef} onChange={(e) => set({ supplierRef: e.target.value })} aria-label="Supplier invoice ref" placeholder="As printed on the bill" />
         </label>
         <label className={styles.field}>
           <span className={styles.fieldLabel}>Invoice date *</span>
@@ -266,6 +289,11 @@ export const ApInvoiceForm = ({
         <input className={styles.fieldInput} value={v.description} onChange={(e) => set({ description: e.target.value })} aria-label="AP invoice description"
           placeholder="What this bill is for — shows on the list and prints on the listing" />
       </label>
+      <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 'var(--fs-13)' }}>
+        <input type="checkbox" checked={v.provisional === true} onChange={(e) => set({ provisional: e.target.checked })} aria-label="Quotation, no formal invoice yet" />
+        Quotation (no formal invoice yet)
+        <span style={soft}>— booked now; replaced by the formal invoice when it comes (SOP 3.8)</span>
+      </label>
 
       {/* The lines, in the owner's order: account number, description, amount.
           Insert anywhere in the table adds a line and lands on it. */}
@@ -278,6 +306,7 @@ export const ApInvoiceForm = ({
             <th style={{ ...th, textAlign: 'right', width: 150 }}>Amount (RM)</th>
             <th style={{ ...th, width: 150 }}>Department</th>
             <th style={{ ...th, width: 180 }}>Project</th>
+            <th style={{ ...th, width: 160 }}>Unit</th>
             <th style={{ ...th, width: 36 }} />
           </tr>
         </thead>
@@ -307,6 +336,10 @@ export const ApInvoiceForm = ({
                   value={l.projectId ?? null} onChange={(id) => patchLine(l.rid, { projectId: id })} />
               </td>
               <td style={td}>
+                <UnitPicker inputClass={styles.fieldInput} ariaLabel={`line ${l.rid} unit`} placeholder="No unit"
+                  value={l.unitId ?? null} onChange={(id) => patchLine(l.rid, { unitId: id })} />
+              </td>
+              <td style={td}>
                 {v.lines.length > 1 && (
                   <button type="button" aria-label={`remove line ${l.rid}`} onClick={() => removeLine(l.rid)} style={iconBtn}>
                     <X size={14} strokeWidth={1.75} />
@@ -323,6 +356,7 @@ export const ApInvoiceForm = ({
               <span style={{ ...soft, marginLeft: 'var(--space-3)' }}>Insert adds a line · Enter on an amount moves down</span>
             </td>
             <td style={{ ...td, ...right, fontWeight: 700, color: belowPaid ? 'var(--c-festive-b, #B8331F)' : undefined }}>Total {fmtSen(total)}</td>
+            <td />
             <td />
             <td />
           </tr>

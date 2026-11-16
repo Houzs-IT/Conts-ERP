@@ -8,6 +8,7 @@
 //   POST /requests/:id/withdraw    while no voucher exists
 //   POST /requests/:id/resubmit    a withdrawn or rejected request changed and sent again: same number
 //                                  { ...as POST /requests, keepFileIds }
+//   POST /requests/:id/balance     the rest of a paid deposit's AP invoice (request-ap-invoice.ts)
 // Finance (under /accounting, behind the Ledger guard):
 //   GET  /accounting/payment-requests?status=&type=
 //   POST /accounting/payment-requests/:id/voucher    { bankAccountCode, debitAccountCode? }  (Ledger full)
@@ -15,6 +16,8 @@
 //   POST /accounting/payment-requests/:id/close      { reason }    (Ledger full; part paid)
 //   PATCH /accounting/payment-requests/:id/supplier  { supplierId } (Ledger edit; while open)
 //   GET  /accounting/payment-requests/:id/files/:fileId
+//   POST /accounting/payment-requests/:id/ap-invoice  { debitAccountCode?, provisional? }  (raise AP invoices;
+//        request-ap-invoice.ts): the request becomes an AP invoice and is paid against it on the Payment voucher page
 // A request has at most one draft voucher at a time (a unique index); each voucher pays what is still owed, line by
 // line, and keeps each line's project and unit. A status change claims the row first, and creating a voucher checks
 // afterwards that the request was still open, so a withdraw, reject or close racing a voucher cannot leave money going
@@ -31,6 +34,9 @@ import { allRows, inChunks, staffNames } from './petty-cash-store';
 import { claimsDeps, EDIT_KEY, FULL_KEY } from './petty-cash-routes';
 import { linesStillOwed } from './payment-requests';
 import type { Staff } from './staff-identity';
+import { balanceRequestHandler, billRefusal, liveBillOf, makeRequestApInvoiceHandler } from './request-ap-invoice';
+
+export { makeRequestApInvoiceHandler };
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
 type Ctx = any;
@@ -41,12 +47,13 @@ const forbid = (c: Ctx) => c.json({ error: 'forbidden', message: "You don't have
 const bodyOf = async (c: Ctx): Promise<Record<string, unknown> | null> => { try { return await c.req.json(); } catch { return null; } };
 const now = () => new Date().toISOString();
 const isUniqueClash = (e: { code?: string; message?: string } | null | undefined) => !!e && (e.code === '23505' || /duplicate key/i.test(String(e.message ?? '')));
-const REQ_COLS = 'id, request_no, type, requester_user_id, supplier_id, payee_name, payee_to_check, purchase_order_id, wanted_on, owes_formal_invoice, note, amount_sen, status, reason, decided_by, decided_at, created_at, source_key';
+const REQ_COLS = 'id, request_no, type, requester_user_id, supplier_id, payee_name, payee_to_check, purchase_order_id, wanted_on, owes_formal_invoice, note, amount_sen, status, reason, decided_by, decided_at, created_at, source_key, ap_invoice_id, parent_request_id, asked_lines, asked_amount_sen';
 
 type ReqRow = {
   id: string; request_no: string; type: string; requester_user_id: string; supplier_id: string | null; payee_name: string; payee_to_check: boolean;
   purchase_order_id: string | null; wanted_on: string | null; owes_formal_invoice: boolean; note: string | null; amount_sen: number; status: string;
   reason: string | null; decided_by: string | null; decided_at: string | null; created_at: string; source_key?: string | null;
+  ap_invoice_id?: string | null; parent_request_id?: string | null; asked_lines?: unknown; asked_amount_sen?: number | null;
 };
 type ReqLine = { id: string; request_id: string; department: string; unit_id: string | null; maintenance_issue_id: string | null; project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number; sub_department_id?: string | null };
 
@@ -54,12 +61,20 @@ type ReqLine = { id: string; request_id: string; department: string; unit_id: st
 async function views(sb: any, companyId: number, rows: ReqRow[]) {
   const ids = rows.map(r => r.id);
   if (ids.length === 0) return [];
-  const [lines, files, pvs, names] = await Promise.all([
+  const billIds = [...new Set(rows.map(r => r.ap_invoice_id).filter((x): x is string => !!x))];
+  const parentIds = [...new Set(rows.map(r => r.parent_request_id).filter((x): x is string => !!x))];
+  const [lines, files, pvs, names, bills, kids, parents] = await Promise.all([
     inChunks<ReqLine>(ids, (part, f, t) => sb.from('payment_request_lines').select('*').in('request_id', part).order('id').range(f, t)),
     inChunks<{ id: string; request_id: string; file_name: string; mime: string }>(ids, (part, f, t) => sb.from('payment_request_files').select('id, request_id, file_name, mime').in('request_id', part).order('id').range(f, t)),
     inChunks<{ id: string; pv_number: string; status: string; payment_request_id: string }>(ids, (part, f, t) => sb.from('payment_vouchers').select('id, pv_number, status, payment_request_id').eq('company_id', companyId).in('payment_request_id', part).order('id').range(f, t)),
     staffNames(sb),
+    /* The AP invoice each is paid through, the balance asked on a deposit, a balance's deposit (chew, 15 Nov 2026). */
+    inChunks<{ id: string; invoice_number: string; status: string; provisional: boolean; total_sen: number; paid_sen: number }>(billIds, (part, f, t) => sb.from('ap_invoices').select('id, invoice_number, status, provisional, total_sen, paid_sen').in('id', part).order('id').range(f, t)),
+    inChunks<{ id: string; request_no: string; status: string; parent_request_id: string }>(ids, (part, f, t) => sb.from('payment_requests').select('id, request_no, status, parent_request_id').in('parent_request_id', part).order('id').range(f, t)),
+    inChunks<{ id: string; request_no: string }>(parentIds, (part, f, t) => sb.from('payment_requests').select('id, request_no').in('id', part).order('id').range(f, t)),
   ]);
+  const billOf = new Map(bills.map(b => [b.id, b]));
+  const parentNo = new Map(parents.map(p => [p.id, p.request_no]));
   return rows.map(r => ({
     id: r.id, requestNo: r.request_no, type: r.type, requesterUserId: r.requester_user_id, requesterName: names.get(r.requester_user_id) ?? '',
     supplierId: r.supplier_id, payeeName: r.payee_name, payeeToCheck: r.payee_to_check, purchaseOrderId: r.purchase_order_id,
@@ -67,6 +82,18 @@ async function views(sb: any, companyId: number, rows: ReqRow[]) {
     reason: r.reason, decidedBy: r.decided_by, decidedAt: r.decided_at, createdAt: r.created_at,
     /* Made from utility bills (utility-bill-routes.ts): fixed and sent again from Utility bills, not My claims. */
     fromBills: String(r.source_key ?? '').startsWith('utility:'),
+    apInvoice: (() => {
+      const b = r.ap_invoice_id ? billOf.get(r.ap_invoice_id) : undefined;
+      return b && b.status !== 'CANCELLED'
+        ? { id: b.id, invoiceNumber: b.invoice_number, status: b.status, provisional: b.provisional === true, totalSen: Number(b.total_sen), paidSen: Number(b.paid_sen ?? 0) }
+        : null;
+    })(),
+    /* A balance request names its deposit; a deposit names the balance asked on it (the newest). */
+    parentRequestNo: r.parent_request_id ? parentNo.get(r.parent_request_id) ?? null : null,
+    balanceRequests: kids.filter(k => k.parent_request_id === r.id).map(k => ({ id: k.id, requestNo: k.request_no, status: k.status })),
+    /* What was first asked, once the AP invoice changed it (the request follows its bill). */
+    askedLines: Array.isArray(r.asked_lines) ? r.asked_lines : null,
+    askedAmountSen: r.asked_amount_sen == null ? null : Number(r.asked_amount_sen),
     lines: lines.filter(l => l.request_id === r.id).sort((a, b) => a.sort - b.sort).map(l => ({
       department: l.department, subDepartmentId: l.sub_department_id ?? null, unitId: l.unit_id, maintenanceIssueId: l.maintenance_issue_id, projectId: l.project_id, accountCode: l.account_code,
       amountSen: Number(l.amount_sen), description: l.description })),
@@ -252,6 +279,8 @@ export const resubmitRequestHandler = async (c: Ctx): Promise<Response> => {
   if (!r) return c.json({ error: 'not_found' }, 404);
   if (String(r.source_key ?? '').startsWith('utility:')) return c.json({ error: 'utility_request', message: 'Fix the bills on Utility bills and send them again from there.' }, 409);
   if (!RETURNED.has(String(r.status))) return c.json({ error: 'not_returned', message: 'Only a withdrawn or rejected request can be changed and sent again.' }, 409);
+  const liveBill = await liveBillOf(sb, r.id);
+  if (liveBill) return billRefusal(c, liveBill);
   const b = await bodyOf(c);
   if (!b) return c.json({ error: 'invalid_json' }, 400);
   const form = await readRequestForm(c, sb, co.companyId, staff, b);
@@ -313,6 +342,8 @@ export const withdrawRequestHandler = async (c: Ctx): Promise<Response> => {
   const sb = c.get('supabase');
   const { data: r } = await sb.from('payment_requests').select('id, status').eq('company_id', co.companyId).eq('id', c.req.param('id')).eq('requester_user_id', (c.get('staff') as Staff).userId).maybeSingle();
   if (!r) return c.json({ error: 'not_found' }, 404);
+  const bill = await liveBillOf(sb, r.id);
+  if (bill) return billRefusal(c, bill);
   const refused = () => c.json({ error: 'cannot_withdraw', message: 'Finance has started paying this request.' }, 409);
   if (!(await claimRequest(sb, r.id, 'SUBMITTED', { status: 'WITHDRAWN' }))) return refused();
   /* Claimed; a voucher made in the meantime wins, and the request goes back. */
@@ -339,6 +370,7 @@ export function myRequestRoutes(r: { get: (p: string, h: (c: Ctx) => Promise<Res
   r.get('/requests/:id/files/:fileId', myRequestFileHandler);
   r.post('/requests/:id/withdraw', withdrawRequestHandler);
   r.post('/requests/:id/resubmit', resubmitRequestHandler);
+  r.post('/requests/:id/balance', balanceRequestHandler);
 }
 
 async function loadRequest(c: Ctx, companyId: number): Promise<ReqRow | null> {
@@ -376,6 +408,9 @@ export const requestVoucherHandler = async (c: Ctx): Promise<Response> => {
   const r = await loadRequest(c, co.companyId);
   if (!r) return c.json({ error: 'not_found' }, 404);
   if (!OPEN.has(r.status)) return c.json({ error: 'not_open', message: 'This request is not waiting for payment.' }, 409);
+  /* One paid through an AP invoice is paid on the Payment voucher page, against the bill (chew, 15 Nov 2026). */
+  const bill = await liveBillOf(sb, r.id);
+  if (bill) return c.json({ error: 'has_ap_invoice', message: `Pay AP invoice ${bill.invoiceNumber} on the Payment voucher page.` }, 409);
   if (r.payee_to_check && !r.supplier_id) return c.json({ error: 'payee_to_check', message: 'Link the payee to a supplier on the list before paying.' }, 409);
   const pvs = await vouchersOf(sb, co.companyId, r.id);
   if (pvs.some(p => p.status === 'DRAFT')) return c.json({ error: 'voucher_open', message: 'A voucher for this request is already being prepared. Finish or cancel it first.' }, 409);
@@ -442,6 +477,8 @@ export const rejectRequestHandler = async (c: Ctx): Promise<Response> => {
   const sb = c.get('supabase');
   const r = await loadRequest(c, co.companyId);
   if (!r) return c.json({ error: 'not_found' }, 404);
+  const bill = await liveBillOf(sb, r.id);
+  if (bill) return billRefusal(c, bill);
   const refused = () => c.json({ error: 'not_open', message: 'Only a request with no voucher can be rejected.' }, 409);
   if (!(await claimRequest(sb, r.id, 'SUBMITTED', { status: 'REJECTED', reason: reason.slice(0, 500), decided_by: who(c), decided_at: now() }))) return refused();
   if (live(await vouchersOf(sb, co.companyId, r.id)).length > 0) {
@@ -480,6 +517,8 @@ export const linkSupplierHandler = async (c: Ctx): Promise<Response> => {
   const r = await loadRequest(c, co.companyId);
   if (!r) return c.json({ error: 'not_found' }, 404);
   if (!OPEN.has(r.status)) return c.json({ error: 'not_open', message: 'This request is no longer waiting for payment.' }, 409);
+  const bill = await liveBillOf(sb, r.id);
+  if (bill) return billRefusal(c, bill);
   if (live(await vouchersOf(sb, co.companyId, r.id)).length > 0) return c.json({ error: 'voucher_exists', message: 'A voucher already pays this request; cancel it before changing the supplier.' }, 409);
   const { data: s } = supplierId ? await sb.from('suppliers').select('id, name').eq('company_id', co.companyId).eq('id', supplierId).maybeSingle() : { data: null };
   if (!s) return c.json({ error: 'validation', message: 'Choose a supplier on the list.' }, 422);
