@@ -154,3 +154,69 @@ export const combinedVoucherHandler = async (c: Ctx): Promise<Response> => {
   const accounts = b.accounts && typeof b.accounts === 'object' ? Object.fromEntries(Object.entries(b.accounts as Record<string, unknown>).map(([k, v]) => [k, String(v ?? '')])) : {};
   return makeCombinedVoucher(c, { requestIds: ids(b.requestIds), receiptIds: ids(b.receiptIds), bankAccountCode: String(b.bankAccountCode ?? ''), accounts });
 };
+
+/** What a voucher line pays: a payment request, a staff claim, or neither. */
+export type ClaimLink = { paymentRequestId: string | null; staffReceiptId: string | null };
+
+/** The New voucher form opened from payment requests or claims (chew, 16 Nov 2026: the accounts are chosen on the
+ *  voucher itself) names, per line, what it pays: `claimLinks`, one per line. Each must still be payable: a request open,
+ *  not paid through an AP invoice, not on another draft; a claim checked, not from a float, not being paid back. */
+export async function checkClaimLinks(sb: Db, companyId: number, raw: unknown, lineCount: number): Promise<{ ok: true; links: ClaimLink[] } | { ok: false; status: 409 | 400; body: Record<string, unknown> }> {
+  if (raw == null) return { ok: true, links: [] };
+  if (!Array.isArray(raw) || raw.length !== lineCount) return { ok: false, status: 400, body: { error: 'claim_links_invalid', message: 'Open the requests again and make the voucher from there.' } };
+  const links: ClaimLink[] = (raw as Array<Record<string, unknown> | null>).map(l => ({
+    paymentRequestId: l?.paymentRequestId ? String(l.paymentRequestId) : null, staffReceiptId: l?.staffReceiptId ? String(l.staffReceiptId) : null,
+  }));
+  const reqIds = [...new Set(links.map(l => l.paymentRequestId).filter((x): x is string => !!x))];
+  const recIds = [...new Set(links.map(l => l.staffReceiptId).filter((x): x is string => !!x))];
+  const problems: string[] = [];
+  if (reqIds.length) {
+    const { data } = await sb.from('payment_requests').select('id, request_no, status').eq('company_id', companyId).in('id', reqIds);
+    const rows = (data ?? []) as Array<{ id: string; request_no: string; status: string }>;
+    if (rows.length !== reqIds.length) problems.push('A request was not found.');
+    const pays = await requestPayments(sb, reqIds);
+    for (const r of rows) {
+      if (!OPEN.has(r.status)) { problems.push(`${r.request_no} is not waiting for payment.`); continue; }
+      const bill = await liveBillOf(sb, r.id);
+      if (bill) { problems.push(`${r.request_no} is paid through AP invoice ${bill.invoiceNumber}.`); continue; }
+      const drafting = (pays.vouchers.get(r.id) ?? []).find(v => v.status === 'DRAFT');
+      if (drafting) problems.push(`${r.request_no} is already on voucher ${drafting.pv_number}.`);
+    }
+  }
+  if (recIds.length) {
+    const { data } = await sb.from('staff_receipts').select('id, receipt_no, float_id, status, payback_pv_id').eq('company_id', companyId).in('id', recIds);
+    const rows = (data ?? []) as Array<{ id: string; receipt_no: string; float_id: string | null; status: string; payback_pv_id: string | null }>;
+    if (rows.length !== recIds.length) problems.push('A claim was not found.');
+    for (const r of rows) {
+      if (r.float_id) problems.push(`${r.receipt_no} is paid from petty cash.`);
+      else if (r.status !== 'CHECKED' || r.payback_pv_id) problems.push(`${r.receipt_no} is not checked, or is already being paid back.`);
+    }
+  }
+  if (problems.length) return { ok: false, status: 409, body: { error: 'cannot_pay', message: problems.join(' '), problems } };
+  return { ok: true, links };
+}
+
+/** The voucher just made names what each line pays (line_no order), the one request or claim alone on the voucher too,
+ *  and each claim takes it. A claim taken meanwhile: the message, and the caller drops the voucher. */
+export async function linkClaimsToVoucher(sb: Db, pvId: string, links: ClaimLink[]): Promise<string | null> {
+  if (!links.some(l => l.paymentRequestId || l.staffReceiptId)) return null;
+  for (const [i, l] of links.entries()) {
+    if (!l.paymentRequestId && !l.staffReceiptId) continue;
+    const up = await sb.from('payment_voucher_lines').update({ payment_request_id: l.paymentRequestId, staff_receipt_id: l.staffReceiptId }).eq('pv_id', pvId).eq('line_no', i + 1);
+    if (up.error) return up.error.message;
+  }
+  const reqIds = [...new Set(links.map(l => l.paymentRequestId).filter((x): x is string => !!x))];
+  const recIds = [...new Set(links.map(l => l.staffReceiptId).filter((x): x is string => !!x))];
+  if (reqIds.length + recIds.length === 1) {
+    const link = await sb.from('payment_vouchers').update(reqIds.length ? { payment_request_id: reqIds[0] } : { staff_receipt_id: recIds[0] }).eq('id', pvId);
+    if (link.error) return 'A voucher for this was just made.';
+  }
+  for (const id of recIds) {
+    const { data: won } = await sb.from('staff_receipts').update({ payback_pv_id: pvId, updated_at: now() }).eq('id', id).is('payback_pv_id', null).select('id').maybeSingle();
+    if (!won) {
+      await sb.from('staff_receipts').update({ payback_pv_id: null, updated_at: now() }).eq('payback_pv_id', pvId);
+      return 'A claim was just put on another voucher.';
+    }
+  }
+  return null;
+}

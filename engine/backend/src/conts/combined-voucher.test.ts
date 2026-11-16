@@ -90,3 +90,26 @@ describe('one voucher for what was ticked', () => {
     expect((await res.json() as { message: string }).message).toContain('HCAPI-2611-001');
   });
 });
+
+/* The New voucher form opened from payment requests (chew, 16 Nov 2026: the accounts are chosen on the voucher): each
+   line names what it pays; checked before the voucher is written, linked after. */
+describe('a voucher made on the New voucher form from requests', () => {
+  test('links checked first; then each line names its request, a claim takes the voucher', async () => {
+    const { checkClaimLinks, linkClaimsToVoucher } = await import('./combined-voucher');
+    const sb = world();
+    expect(await checkClaimLinks(sb, CO, undefined, 2)).toEqual({ ok: true, links: [] });
+    expect(await checkClaimLinks(sb, CO, [{ paymentRequestId: 'Q1' }], 2)).toMatchObject({ ok: false, status: 400 });
+    sb.tables.payment_requests[1]!.status = 'WITHDRAWN';
+    expect(await checkClaimLinks(sb, CO, [{ paymentRequestId: 'Q1' }, { paymentRequestId: 'Q2' }], 2)).toMatchObject({ ok: false, body: { message: expect.stringContaining('PRQ-2611-002') } });
+    sb.tables.payment_requests[1]!.status = 'SUBMITTED';
+    const ok = await checkClaimLinks(sb, CO, [{ paymentRequestId: 'Q1' }, { staffReceiptId: 'R1' }], 2);
+    if (!ok.ok) throw new Error('the links should pass');
+    sb.tables.payment_vouchers.push({ id: 'PV9', company_id: CO, pv_number: 'PV9', status: 'DRAFT', payment_request_id: null, staff_receipt_id: null });
+    sb.tables.payment_voucher_lines.push({ id: 'a', pv_id: 'PV9', line_no: 1, amount_sen: 3_000 }, { id: 'b', pv_id: 'PV9', line_no: 2, amount_sen: 1_500 });
+    expect(await linkClaimsToVoucher(sb, 'PV9', ok.links)).toBeNull();
+    expect(sb.tables.payment_voucher_lines.map(l => [l.payment_request_id, l.staff_receipt_id])).toEqual([['Q1', null], [null, 'R1']]);
+    expect(sb.tables.staff_receipts[0].payback_pv_id).toBe('PV9');
+    /* Q1 is on that draft now: a second voucher for it is refused. */
+    expect(await checkClaimLinks(sb, CO, [{ paymentRequestId: 'Q1' }], 1)).toMatchObject({ ok: false, body: { message: expect.stringContaining('PV9') } });
+  });
+});

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import type { FloatRow, PaymentRequest } from "./claimsQueries";
 
 // Finance's petty cash and payment requests (Conts; SOP 3.2, 6). Pinned: the overview's totals and a low float; the
@@ -88,16 +88,13 @@ describe("Payment requests", () => {
     await waitFor(() => expect(promptFn).toHaveBeenCalled());
     expect(act).not.toHaveBeenCalled();
   });
-  it("making the voucher shows each line's account, asks for the bank and sends them (chew, 16 Nov 2026)", async () => {
+  it("Make voucher opens the New voucher form filled in from the request, the account left to choose (chew, 16 Nov 2026)", async () => {
     act.mockClear();
-    render(<MemoryRouter><PaymentRequests /></MemoryRouter>);
+    const Probe = () => { const st = useLocation().state as { claimsPrefill?: { payeeName: string; lines: Array<{ paymentRequestId: string; amountSen: number }> } } | null; return <div>{`opened ${st?.claimsPrefill?.payeeName} ${st?.claimsPrefill?.lines.map((l) => `${l.paymentRequestId}:${l.amountSen}`).join(",")}`}</div>; };
+    render(<MemoryRouter initialEntries={["/r"]}><Routes><Route path="/r" element={<PaymentRequests />} /><Route path="/scm/payment-vouchers/new" element={<Probe />} /></Routes></MemoryRouter>);
     fireEvent.click(screen.getByText("Make voucher"));
-    /* The dialog: the line's own account already in, the bank still to choose. */
-    const make = screen.getAllByText("Make voucher").at(-1)!;
-    expect((make.closest("button") as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText("Bank"), { target: { value: "310-0010" } });
-    fireEvent.click(make);
-    await waitFor(() => expect(act).toHaveBeenCalledWith({ path: "/accounting/vouchers/from-claims", body: { requestIds: ["Q1"], bankAccountCode: "310-0010", accounts: { L1: "601-0001" } }, method: "POST" }));
+    expect(await screen.findByText("opened ACE Q1:500000")).toBeTruthy();
+    expect(act).not.toHaveBeenCalled();
   });
   it("without Ledger full there is no Make voucher", () => {
     full = false;

@@ -66,6 +66,7 @@ import { scopeToCompany, activeCompanyId, stampCompany, companyDocPrefix,
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { postNowHandler } from '../../conts/pv-post-now';
 import { afterVoucherCancelledBestEffort, afterVoucherPostedBestEffort } from "../../conts/claims-voucher-hooks";
+import { checkClaimLinks, linkClaimsToVoucher } from "../../conts/combined-voucher";
 import { normalizeCurrency, normalizeExchangeRate, masterRateForCurrency } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { recordEntityAudit, diffFields, compactChanges, fieldChange, statusChange, assertAuditWritable, auditUnavailableBody } from '../lib/entity-audit';
@@ -841,6 +842,11 @@ export const createPaymentVoucherCore = async (c: any, body: Record<string, unkn
      yet moved. */
   const pf = await assertAuditWritable(sb, { entityType: 'PAYMENT_VOUCHER', action: 'CREATE', companyId: activeCompanyId(c) });
   if (!pf.ok) return c.json(auditUnavailableBody(), 409);
+  /* Conts (chew, 16 Nov 2026): a voucher opened from payment requests or staff claims names, per line, what it pays
+     (conts/combined-voucher.ts); checked before anything is written. */
+  const claimCo = activeCompanyId(c);
+  const claims = claimCo == null ? null : await checkClaimLinks(sb, claimCo, body.claimLinks, built.rows.length);
+  if (claims && !claims.ok) return c.json(claims.body, claims.status);
 
   const voucherDate = dateOrNull(body.voucherDate) ?? todayMyt();
   const { data: header, error: hErr } = await insertWithDocNoRetry<{ id: string; pv_number: string }>(
@@ -915,6 +921,15 @@ export const createPaymentVoucherCore = async (c: any, body: Record<string, unkn
       ...(refund && refund.ok ? [fieldChange('refundSourceDocNo', null, String(refund.fields.refund_source_doc_no))] : []),
     ]),
   });
+
+  /* Conts: each line names the request or claim it pays; a claim taken meanwhile drops this voucher. */
+  if (claims?.ok && claims.links.length) {
+    const lost = await linkClaimsToVoucher(sb, h.id, claims.links);
+    if (lost) {
+      await sb.from('payment_vouchers').update({ status: 'CANCELLED', updated_at: new Date().toISOString() }).eq('id', h.id).eq('status', 'DRAFT');
+      return c.json({ error: 'already_vouchered', message: lost }, 409);
+    }
+  }
 
   /* Vendor memory (0341) — after every rollback path, so only a voucher that
      actually stands teaches. */
