@@ -592,6 +592,39 @@ function RequestDetail({ request, onClose, onWithdraw, onEdit, onBalance }: { re
   );
 }
 
+/** Ask for the balance of a paid deposit (chew, 15 Nov 2026), nothing filled in again; the supplier's formal invoice may
+ *  come with it (chew, 16 Nov 2026), for finance to replace the quotation with. */
+function BalanceDialog({ request, onClose, onSent }: { request: PaymentRequest; onClose: () => void; onSent: () => void }) {
+  const toast = useToast();
+  const [files, setFiles] = useState<File[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const send = async () => {
+    setBusy(true); setProblem(null);
+    try {
+      const made = await postWithFiles<{ requestNo: string }>(`/claims/requests/${request.id}/balance`, {}, files);
+      toast({ tone: 'success', title: `Balance asked for on ${made.requestNo}`, body: files.length ? 'The formal invoice goes to finance with it.' : undefined });
+      onSent();
+    } catch (e) { setProblem(errorMessage(e)); } finally { setBusy(false); }
+  };
+  return (
+    <Modal title={`Ask for the balance of ${request.requestNo}`} eyebrow="My claims" size="md" onClose={onClose} busy={busy} dirty={files.length > 0}
+      footer={<>
+        <Button variant="secondary" className="mr-auto" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button variant="primary" loading={busy} onClick={() => void send()}>Ask for the balance</Button>
+      </>}>
+      <p className="m-0 text-copy">
+        Finance is asked to pay {request.payeeName} the rest of {billLabel(request) ?? 'the invoice'}: <b className="tabular-nums">{rm(balanceSen(request))}</b>.
+        The lines, projects and units come from the invoice; nothing to fill in again.
+      </p>
+      <FileDropRow label="Attach the formal invoice (optional)" hint="Photos or a PDF. Finance replaces the quotation with it." accept="image/*,application/pdf" multiple
+        onPick={l => setFiles(f => [...f, ...Array.from(l)].slice(0, 8))} chosen={files.length ? files.map(f => f.name).join(', ') : null} disabled={busy} />
+      {files.length > 0 && <div><Button variant="tertiary" size="sm" onClick={() => setFiles([])} disabled={busy}>Remove the files</Button></div>}
+      {problem && <Problem text={problem} />}
+    </Modal>
+  );
+}
+
 function Mine({ month, onMonthChange, onHandIn, onEdit }: { month: string; onMonthChange: (month: string) => void; onHandIn: (kind: Kind) => void; onEdit: (q: PaymentRequest) => void }) {
   const receipts = useApi<{ receipts: Receipt[] }>(`/claims/receipts?month=${month}`);
   const requests = useApi<{ requests: PaymentRequest[] }>('/claims/requests');
@@ -638,23 +671,8 @@ function Mine({ month, onMonthChange, onHandIn, onEdit }: { month: string; onMon
       {openRequest && <RequestDetail request={openRequest} onClose={() => setOpenRequest(null)}
         onWithdraw={() => setWithdraw(openRequest)} onEdit={() => { const q = openRequest; setOpenRequest(null); onEdit(q); }}
         onBalance={() => setBalance(openRequest)} />}
-      <ConfirmDialog onClose={() => setBalance(null)} spec={balance && {
-        title: `Ask for the balance of ${balance.requestNo}?`,
-        body: `Finance is asked to pay ${balance.payeeName} the rest of ${billLabel(balance) ?? 'the invoice'}: ${rm(balanceSen(balance))}. The lines, projects and units come from the invoice; nothing to fill in again.`,
-        confirmLabel: 'Ask for the balance', busyLabel: 'Sending',
-        onConfirm: async () => {
-          try {
-            const made = await postWithFiles<{ requestNo: string }>(`/claims/requests/${balance.id}/balance`, {}, []);
-            toast({ tone: 'success', title: `Balance asked for on ${made.requestNo}` });
-            setOpenRequest(null);
-            requests.reload();
-          } catch (e) {
-            toast({ tone: 'critical', title: 'Not sent', body: errorMessage(e) });
-          } finally {
-            setBalance(null);
-          }
-        },
-      }} />
+      {balance && <BalanceDialog request={balance} onClose={() => setBalance(null)}
+        onSent={() => { setBalance(null); setOpenRequest(null); requests.reload(); }} />}
       <ConfirmDialog onClose={() => setWithdraw(null)} spec={withdraw && {
         title: `Withdraw ${withdraw.requestNo}?`,
         body: 'Finance has not paid it yet. Withdrawing removes it from their list; you can ask again later.',
