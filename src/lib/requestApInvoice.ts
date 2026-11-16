@@ -24,7 +24,12 @@ export const canAskBalance = (q: Q): boolean =>
 export const onBill = (q: Q): boolean => !!q.apInvoice;
 
 /** The bill as the request shows it: "HCAPI-2611-004 (quotation)". */
-export const billLabel = (q: Q): string | null => (q.apInvoice ? `${q.apInvoice.invoiceNumber}${q.apInvoice.provisional ? ' (quotation)' : ''}` : null);
+export function billLabel(q: Q): string | null {
+  const bill = q.apInvoice;
+  if (!bill) return null;
+  const quote = bill.provisional === true;
+  return quote ? bill.invoiceNumber + ' (quotation)' : bill.invoiceNumber;
+}
 
 /** Changed by its bill: what was first asked differs from what it asks now. */
 export const updatedFromBill = (q: { amountSen: number; askedAmountSen?: number | null; askedLines?: unknown[] | null }): boolean =>
