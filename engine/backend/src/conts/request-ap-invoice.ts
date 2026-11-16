@@ -14,6 +14,7 @@ import { todayMyt } from '../scm/lib/my-time';
 import { decodeFiles, removeFiles, storeFiles } from './claims-files';
 import { settleRequest, settleRequestsOfBillBestEffort } from './claims-voucher-hooks';
 import { spreadSen } from './payment-requests';
+import { requestPayments } from './request-vouchers';
 import type { Staff } from './staff-identity';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
@@ -92,7 +93,7 @@ async function followBill(sb: Db, b: { id: string; total_sen: number; payment_re
       row: {
         id, request_id: req.id, department: l.department ?? old?.department ?? 'supply', sub_department_id: l.sub_department_id ?? null,
         unit_id: l.unit_id ?? null, maintenance_issue_id: old?.maintenance_issue_id ?? null, project_id: l.project_id ?? null,
-        account_code: l.debit_account_code ?? null, amount_sen: Number(l.amount_sen), description: l.description ?? null, sort: i,
+        account_code: l.debit_account_code, amount_sen: Number(l.amount_sen), description: l.description ?? null, sort: i,
       },
     };
   });
@@ -155,11 +156,53 @@ async function copyFiles(c: Ctx, sb: Db, companyId: number, requestId: string, b
   return n;
 }
 
-/** POST /accounting/payment-requests/:id/ap-invoice — finance makes the request's AP invoice (chew, 15 Nov 2026): a
- *  DRAFT bill with the request's supplier, due date, lines (description, amount, department, sub-department, project,
- *  unit; the line's own account, else `debitAccountCode`) and papers. A payment while it is open with no voucher; a
- *  deposit while open or once paid (the quotation, booked first; its formal invoice later replaces it on the same bill).
- *  The request is then paid on the Payment voucher page, against the bill. */
+type BillableRequest = { id: string; request_no: string; type: string; status: string; supplier_id: string | null; payee_to_check: boolean; wanted_on: string | null; note: string | null; ap_invoice_id: string | null };
+
+/** A request an AP invoice may be made from (chew, 15 Nov 2026): a payment while it is open with no voucher; a deposit
+ *  while open or once paid (its quotation, booked first). Not one that already has a live bill. The refusal otherwise. */
+export async function billableRequest(c: Ctx, sb: Db, companyId: number, requestId: string): Promise<{ ok: true; r: BillableRequest } | { ok: false; res: Response }> {
+  const { data: q } = await sb.from('payment_requests').select('id, request_no, type, status, supplier_id, payee_to_check, wanted_on, note, ap_invoice_id')
+    .eq('company_id', companyId).eq('id', requestId).maybeSingle();
+  const r = q as BillableRequest | null;
+  if (!r) return { ok: false, res: c.json({ error: 'not_found', message: 'That payment request was not found.' }, 404) };
+  const bill = await liveBillOf(sb, r.id);
+  if (bill) return { ok: false, res: c.json({ error: 'bill_exists', message: `${r.request_no} already has AP invoice ${bill.invoiceNumber}.`, apInvoiceId: bill.id }, 409) };
+  const deposit = r.type === 'DEPOSIT';
+  if (deposit ? !(OPEN.has(r.status) || r.status === 'PAID') : !OPEN.has(r.status)) {
+    return { ok: false, res: c.json({ error: 'not_open', message: deposit ? `${r.request_no}: this deposit request is not open or paid.` : `${r.request_no} is not waiting for payment.` }, 409) };
+  }
+  if (!deposit) {
+    const { vouchers } = await requestPayments(sb, [r.id]);
+    if ((vouchers.get(r.id) ?? []).some(p => p.status !== 'CANCELLED')) {
+      return { ok: false, res: c.json({ error: 'voucher_exists', message: `A voucher already pays ${r.request_no}. Cancel it first.` }, 409) };
+    }
+  }
+  return { ok: true, r };
+}
+
+/** The request takes the bill just made (only if it has none: a second save loses, and its draft goes), the bill's
+ *  supplier when the payee was typed in, and its papers are copied onto the bill. The refusal otherwise. */
+export async function linkBillToRequest(c: Ctx, sb: Db, companyId: number, r: BillableRequest, inv: { id: string; supplier_id?: string | null }): Promise<Response | null> {
+  const patch: Record<string, unknown> = { ap_invoice_id: inv.id, ap_paid_before_sen: 0, updated_at: now() };
+  /* A payee typed in is the supplier finance chose on the bill (chew, 16 Nov 2026: 财务这里也可以自行选). */
+  if (!r.supplier_id && inv.supplier_id) {
+    const { data: s } = await sb.from('suppliers').select('id, name').eq('company_id', companyId).eq('id', inv.supplier_id).maybeSingle();
+    if (s) Object.assign(patch, { supplier_id: (s as { id: string }).id, payee_name: (s as { name: string }).name, payee_to_check: false });
+  }
+  /* (A cancelled bill it still names counts as none: billableRequest said so.) */
+  const claim = sb.from('payment_requests').update(patch).eq('id', r.id);
+  const { data: linked } = await (r.ap_invoice_id ? claim.eq('ap_invoice_id', r.ap_invoice_id) : claim.is('ap_invoice_id', null)).select('id').maybeSingle();
+  if (!linked) {
+    await sb.from('ap_invoices').update({ status: 'CANCELLED', cancelled_at: now(), updated_at: now() }).eq('id', inv.id).eq('status', 'DRAFT');
+    return c.json({ error: 'bill_exists', message: `${r.request_no} was just given an AP invoice. Open it again.` }, 409);
+  }
+  await copyFiles(c, sb, companyId, r.id, inv.id);
+  return null;
+}
+
+/** POST /accounting/payment-requests/:id/ap-invoice — the request's AP invoice made at once, from its own lines (each on
+ *  the account given for it, else its own, else `debitAccountCode`). The screens open the New AP invoice form filled in
+ *  from the request instead (POST /ap-invoices with paymentRequestId), where finance chooses the accounts. */
 export const makeRequestApInvoiceHandler = async (c: Ctx): Promise<Response> => {
   if (!hasHouzsPerm(c, 'scm.payment_voucher.create') && !hasHouzsPerm(c, 'scm.payment_voucher.write')) {
     return c.json({ error: "You don't have permission to raise an AP invoice." }, 403);
@@ -168,28 +211,18 @@ export const makeRequestApInvoiceHandler = async (c: Ctx): Promise<Response> => 
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
   const b = (await bodyOf(c)) ?? {};
-  const { data: q } = await sb.from('payment_requests').select('id, request_no, type, status, supplier_id, payee_to_check, wanted_on, note, ap_invoice_id')
-    .eq('company_id', co.companyId).eq('id', c.req.param('id')).maybeSingle();
-  const r = q as { id: string; request_no: string; type: string; status: string; supplier_id: string | null; payee_to_check: boolean; wanted_on: string | null; note: string | null; ap_invoice_id: string | null } | null;
-  if (!r) return c.json({ error: 'not_found' }, 404);
-  const bill = await liveBillOf(sb, r.id);
-  if (bill) return c.json({ error: 'bill_exists', message: `This request already has AP invoice ${bill.invoiceNumber}.`, apInvoiceId: bill.id }, 409);
+  const got = await billableRequest(c, sb, co.companyId, String(c.req.param('id')));
+  if (!got.ok) return got.res;
+  const r = got.r;
   if (!r.supplier_id) return c.json({ error: 'payee_to_check', message: 'Link the payee to a supplier on the list first: an AP invoice is a supplier\'s bill.' }, 409);
   const deposit = r.type === 'DEPOSIT';
-  if (deposit ? !(OPEN.has(r.status) || r.status === 'PAID') : !OPEN.has(r.status)) {
-    return c.json({ error: 'not_open', message: deposit ? 'This deposit request is not open or paid.' : 'This request is not waiting for payment.' }, 409);
-  }
-  if (!deposit) {
-    const { data: pvs } = await sb.from('payment_vouchers').select('id, status').eq('company_id', co.companyId).eq('payment_request_id', r.id);
-    if (((pvs ?? []) as Array<{ status: string }>).some(p => p.status !== 'CANCELLED')) {
-      return c.json({ error: 'voucher_exists', message: 'A voucher already pays this request. Cancel it first, or pay the rest from the request.' }, 409);
-    }
-  }
   const { data: lineRows } = await sb.from('payment_request_lines').select('*').eq('request_id', r.id);
   const lines = ((lineRows ?? []) as ReqLine[]).sort((x, y) => x.sort - y.sort);
   if (lines.length === 0) return c.json({ error: 'lines_required', message: 'This request has no lines.' }, 409);
+  const chosen = b.accounts && typeof b.accounts === 'object' ? (b.accounts as Record<string, unknown>) : {};
   const fallback = b.debitAccountCode ? String(b.debitAccountCode).trim() : '';
-  if (lines.some(l => !l.account_code) && !fallback) return c.json({ error: 'account_missing', message: 'Choose the expense account for the lines that have none.' }, 422);
+  const accountOf = (l: ReqLine) => String(chosen[l.id] ?? '').trim() || l.account_code || fallback;
+  if (lines.some(l => !accountOf(l))) return c.json({ error: 'account_missing', message: `${r.request_no}: choose the account for each line.` }, 422);
 
   const { createApInvoiceCore } = await import('../scm/routes/ap-invoices');
   const made = await createApInvoiceCore(c, {
@@ -200,23 +233,15 @@ export const makeRequestApInvoiceHandler = async (c: Ctx): Promise<Response> => 
     provisional: deposit ? b.provisional !== false : b.provisional === true,
     notes: `Payment request ${r.request_no}${deposit ? ' (deposit)' : ''}${r.note ? ` — ${r.note}` : ''}`,
     lines: lines.map(l => ({
-      description: l.description ?? r.request_no, debitAccountCode: l.account_code ?? fallback, amountSen: Number(l.amount_sen),
+      description: l.description ?? r.request_no, debitAccountCode: accountOf(l), amountSen: Number(l.amount_sen),
       department: l.department, subDepartmentId: l.sub_department_id ?? undefined, projectId: l.project_id, unitId: l.unit_id, sourceRequestLineId: l.id,
     })),
   }, { paymentRequestId: r.id });
-  const json = (await made.json()) as { invoice?: { id: string; invoice_number: string } } & Record<string, unknown>;
+  const json = (await made.json()) as { invoice?: { id: string; invoice_number: string; supplier_id?: string } } & Record<string, unknown>;
   if (made.status !== 201 || !json.invoice) return c.json(json, made.status as 400);
-  const inv = json.invoice;
-  /* The request takes the bill only if it has none: a second click loses here, and its draft goes. */
-  /* (A cancelled bill it still names counts as none: liveBillOf said so above.) */
-  const claim = sb.from('payment_requests').update({ ap_invoice_id: inv.id, ap_paid_before_sen: 0, updated_at: now() }).eq('id', r.id);
-  const { data: linked } = await (r.ap_invoice_id ? claim.eq('ap_invoice_id', r.ap_invoice_id) : claim.is('ap_invoice_id', null)).select('id').maybeSingle();
-  if (!linked) {
-    await sb.from('ap_invoices').update({ status: 'CANCELLED', cancelled_at: now(), updated_at: now() }).eq('id', inv.id).eq('status', 'DRAFT');
-    return c.json({ error: 'bill_exists', message: 'This request was just given an AP invoice. Open it again.' }, 409);
-  }
-  const files = await copyFiles(c, sb, co.companyId, r.id, inv.id);
-  return c.json({ apInvoiceId: inv.id, invoiceNumber: inv.invoice_number, files }, 201);
+  const refused = await linkBillToRequest(c, sb, co.companyId, r, json.invoice);
+  if (refused) return refused;
+  return c.json({ apInvoiceId: json.invoice.id, invoiceNumber: json.invoice.invoice_number }, 201);
 };
 
 /** POST /requests/:id/balance — the requester asks finance for the rest of a deposit's bill, with nothing filled in again
@@ -243,7 +268,7 @@ export const balanceRequestHandler = async (c: Ctx): Promise<Response> => {
   const open = ((kids ?? []) as Array<{ request_no: string; status: string }>).find(k => k.status === 'SUBMITTED' || k.status === 'PART_PAID');
   if (open) return c.json({ error: 'balance_open', message: `The balance is already asked for on ${open.request_no}.` }, 409);
   const { data: billRow } = await sb.from('ap_invoices').select('id, total_sen, paid_sen, provisional, due_date').eq('id', bill.id).maybeSingle();
-  const inv = billRow as { id: string; total_sen: number; paid_sen: number; provisional: boolean; due_date: string | null } | null;
+  const inv = billRow as { id: string; total_sen: number; paid_sen: number | null; provisional: boolean; due_date: string | null } | null;
   if (!inv) return c.json({ error: 'no_bill' }, 409);
   /* A deposit paid by its own voucher (Make voucher, before the bill) is an advance until finance knocks it off against
      the bill: it is not asked for again. What the bill has had paid is taken to include the deposit once it covers it. */
@@ -293,7 +318,7 @@ export const balanceRequestHandler = async (c: Ctx): Promise<Response> => {
   }
   const ins = await sb.from('payment_request_lines').insert(spread.map((l, i) => ({
     id: crypto.randomUUID(), request_id: id, department: l.department ?? 'supply', sub_department_id: l.sub_department_id ?? null, unit_id: l.unit_id ?? null,
-    maintenance_issue_id: null, project_id: l.project_id ?? null, account_code: l.debit_account_code ?? null, amount_sen: l.amountSen, description: l.description ?? null, sort: i,
+    maintenance_issue_id: null, project_id: l.project_id ?? null, account_code: l.debit_account_code, amount_sen: l.amountSen, description: l.description ?? null, sort: i,
   })));
   if (ins.error) return fail(ins.error.message);
   if (stored.length) {

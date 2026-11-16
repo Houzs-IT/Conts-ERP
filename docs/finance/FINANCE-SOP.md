@@ -279,6 +279,9 @@
   - **申请自动跟着 AP invoice 更新**：说明、金额、项目、unit，加行或删行都同步；原本申请的内容保留，在 My claims 的「As first asked」看得到，标「Updated from the invoice」。
   - **付尾款不用重填**：订金已付、AP invoice 还有欠款的订金申请，申请人在 My claims 按「Ask for the balance」，系统开一张尾款申请（金额 = AP invoice 还欠的，明细照 AP invoice 按比例分），关联订金申请和 AP invoice；同一张订金一次只能有一张未付的尾款申请。
   - Utility bills 的申请（付给 TNB 这类 creditor）也可以转，一行一个 unit，最多 500 行。
+- **付款申请的两种付法**（chew 确认，2026-11-16）：
+  - **Make voucher**：打开平常的「新付款凭证」表格，收款人、每一行（说明、金额、部门、项目、unit）已经填好，财务在表格里逐行选科目、选银行再保存。借每一行的科目、贷银行（不再借记供应商应付）。收款人不在名单里也可以开。可以勾几张申请一起开**一张**凭证，不同收款人也可以（收款人显示 Various，每行写名字）；员工的报销单（Claim to me）在 Petty cash 的 Finance pays back 也可以勾几张，一张凭证一起还。凭证过账后，每张申请、每张报销单各自按自己那几行变成已付。
+  - **Make AP invoice**：打开平常的「新 AP invoice」表格，已经填好；财务在表格里选供应商（收款人是手打的话）和每一行的科目再保存。可以勾几张一起开，一张申请一张 AP invoice，一张接一张打开（第 1 张，共 3 张）。付款在 Payment voucher 页面（选供应商、勾 AP invoice）。订金要冲抵正式发票的，走这一条。
 
 ### 3.9 付款之后
 

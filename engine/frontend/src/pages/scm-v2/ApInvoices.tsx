@@ -105,8 +105,25 @@ const fromDetail = (d: Detail, copy: boolean): ApFormValues => ({
     unitId: l.unit_id ?? null, sourceRequestLineId: copy ? null : (l.source_request_line_id ?? null) })),
 });
 
+/** Conts (chew, 16 Nov 2026): Make AP invoice on payment requests opens the New form filled in from each, one after
+    another; finance chooses the supplier (when typed in) and the accounts here. */
+export type RequestForBill = {
+  id: string; requestNo: string; type: 'PAYMENT' | 'DEPOSIT'; supplierId: string | null; payeeName: string; wantedOn: string | null; note: string | null;
+  lines: Array<{ id?: string; description: string | null; amountSen: number; department: string; projectId: number | null; unitId: string | null; subDepartmentId?: string | null }>;
+};
+const formFromRequest = (r: RequestForBill): ApFormValues => ({
+  supplierId: r.supplierId ?? '', supplierRef: '', invoiceDate: myt(), dueDate: r.wantedOn ?? '',
+  description: `Payment request ${r.requestNo}${r.type === 'DEPOSIT' ? ' (deposit)' : ''}${r.note ? ` — ${r.note}` : ''}`,
+  /* A deposit is paid on a quotation: its bill is the quotation until the formal invoice comes (SOP 3.8). */
+  provisional: r.type === 'DEPOSIT',
+  lines: r.lines.map((l, i) => ({ rid: i + 1, description: l.description ?? '', debitAccountCode: '', amountSen: l.amountSen, department: departmentOf(l.department),
+    projectId: l.projectId, subDepartmentId: l.subDepartmentId ?? null, unitId: l.unitId, sourceRequestLineId: l.id ?? null })),
+});
+
 type FormState = {
   mode: ApFormMode; initial: ApFormValues; invoiceId?: string; invoiceNumber?: string; posted?: boolean; paidSen?: number;
+  /** Opened from a payment request: which, and where it is in the line of them ("2 of 3"). */
+  fromRequest?: { request: RequestForBill; n: number; of: number };
   /** A bill handed over from the pile page: its read pages and the reader's sentence. */
   scan?: { files: PvFilePayload[]; note: string };
 };
@@ -168,6 +185,23 @@ export const ApInvoices = () => {
      the state is consumed once and cleared, so a refresh does not re-open it. */
   const location = useLocation();
   const navigate = useNavigate();
+  /* The payment requests still to make bills from, after the one open now. */
+  const [requestQueue, setRequestQueue] = useState<RequestForBill[]>([]);
+  const openFromRequest = (list: RequestForBill[], of: number) => {
+    const [first, ...rest] = list;
+    setRequestQueue(rest);
+    if (!first) { setForm(null); return; }
+    const missingSupplier = !first.supplierId ? ` Paid to "${first.payeeName}" as typed: choose the supplier.` : '';
+    setForm({ mode: 'new', initial: formFromRequest(first), fromRequest: { request: first, n: of - rest.length, of },
+      scan: { files: [], note: `From ${first.requestNo}: choose each line's account, then save.${missingSupplier}` } });
+  };
+  useEffect(() => {
+    const st = location.state as { fromRequests?: RequestForBill[] } | null;
+    if (!st?.fromRequests?.length) return;
+    openFromRequest(st.fromRequests, st.fromRequests.length);
+    navigate(location.pathname, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
   useEffect(() => {
     const st = location.state as { apPrefill?: { extraction: BillExtraction; supplierMatch: { id: string; name: string } | null; memory: VendorMemory | null } } | null;
     if (!st?.apPrefill) return;
@@ -199,7 +233,7 @@ export const ApInvoices = () => {
         });
         return;
       }
-      const res = await create.mutateAsync(values);
+      const res = await create.mutateAsync(form.fromRequest ? { ...values, paymentRequestId: form.fromRequest.request.id } : values);
       /* Attach the scanned bill AFTER the invoice exists — sequentially, so
          sort_no (= print order) is the scan order. A failed upload never
          un-saves the bill: the notice says what still needs adding, and the
@@ -215,6 +249,12 @@ export const ApInvoices = () => {
           attachErr = e instanceof Error ? e.message : 'The file could not be uploaded.';
           break;
         }
+      }
+      /* From payment requests: the next one opens; the last one shows its bill. */
+      if (form.fromRequest && requestQueue.length > 0) {
+        openFromRequest(requestQueue, form.fromRequest.of);
+        void notify({ title: `${res.invoice.invoice_number} raised from ${form.fromRequest.request.requestNo}`, body: 'Next request opened.', tone: 'info' });
+        return;
       }
       setForm(null);
       setDetailId(res.invoice.id);
@@ -303,7 +343,9 @@ export const ApInvoices = () => {
     { key: 'status', label: 'Status', render: (r) => <span style={{ fontSize: 'var(--fs-11)' }}>{humaniseStatusKey(r.status)}</span>, getValue: (r) => r.status },
   ], []);
 
-  const formTitle = form?.mode === 'edit'
+  const formTitle = form?.fromRequest
+    ? `New AP invoice — from ${form.fromRequest.request.requestNo}${form.fromRequest.of > 1 ? ` (${form.fromRequest.n} of ${form.fromRequest.of})` : ''}`
+    : form?.mode === 'edit'
     ? `Edit ${form.invoiceNumber ?? 'AP invoice'}`
     : form?.mode === 'copy' ? `New AP invoice — copied from ${form.invoiceNumber ?? 'a bill'}` : 'New AP invoice — a supplier bill not for stock';
 
@@ -446,9 +488,9 @@ export const ApInvoices = () => {
       )}
 
       {form && (
-        <Modal title={formTitle} onClose={() => setForm(null)} ariaLabel={formTitle}>
+        <Modal title={formTitle} onClose={() => { setForm(null); setRequestQueue([]); }} ariaLabel={formTitle}>
           <ApInvoiceForm
-            key={`${form.mode}-${form.invoiceId ?? 'new'}${form.scan ? '-scan' : ''}`}
+            key={`${form.mode}-${form.invoiceId ?? 'new'}${form.scan ? '-scan' : ''}${form.fromRequest ? `-${form.fromRequest.request.id}` : ''}`}
             mode={form.mode}
             initial={form.initial}
             initialFiles={form.scan?.files}
@@ -460,7 +502,7 @@ export const ApInvoices = () => {
             paidSen={form.paidSen}
             saving={create.isPending || update.isPending || uploadFile.isPending}
             onSubmit={submitForm}
-            onCancel={() => setForm(null)}
+            onCancel={() => { setForm(null); setRequestQueue([]); }}
           />
         </Modal>
       )}

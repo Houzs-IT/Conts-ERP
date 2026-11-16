@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import type { FloatRow, PaymentRequest } from "./claimsQueries";
 
 // Finance's petty cash and payment requests (Conts; SOP 3.2, 6). Pinned: the overview's totals and a low float; the
@@ -16,7 +16,7 @@ const floats: FloatRow[] = [
 const request: PaymentRequest = {
   id: "Q1", requestNo: "PRQ-2610-001", type: "DEPOSIT", requesterUserId: "u3", requesterName: "Wei Wen", supplierId: "S1", payeeName: "ACE", payeeToCheck: false,
   purchaseOrderId: null, wantedOn: null, owesFormalInvoice: true, note: null, amountSen: 500000, status: "SUBMITTED", reason: null, decidedBy: null,
-  createdAt: "2026-10-20T00:00:00Z", lines: [{ department: "supply", unitId: null, maintenanceIssueId: null, projectId: 7, accountCode: "601-0001", amountSen: 500000, description: "Cabinet deposit" }],
+  createdAt: "2026-10-20T00:00:00Z", lines: [{ id: "L1", department: "supply", unitId: null, maintenanceIssueId: null, projectId: 7, accountCode: "601-0001", amountSen: 500000, description: "Cabinet deposit" }],
   files: [], vouchers: [],
 };
 /* The sub-departments a line names (SOP 1.1). */
@@ -88,11 +88,13 @@ describe("Payment requests", () => {
     await waitFor(() => expect(promptFn).toHaveBeenCalled());
     expect(act).not.toHaveBeenCalled();
   });
-  it("making the voucher asks for the bank and sends it", async () => {
+  it("Make voucher opens the New voucher form filled in from the request, the account left to choose (chew, 16 Nov 2026)", async () => {
     act.mockClear();
-    render(<MemoryRouter><PaymentRequests /></MemoryRouter>);
+    const Probe = () => { const st = useLocation().state as { claimsPrefill?: { payeeName: string; lines: Array<{ paymentRequestId: string; amountSen: number }> } } | null; return <div>{`opened ${st?.claimsPrefill?.payeeName} ${st?.claimsPrefill?.lines.map((l) => `${l.paymentRequestId}:${l.amountSen}`).join(",")}`}</div>; };
+    render(<MemoryRouter initialEntries={["/r"]}><Routes><Route path="/r" element={<PaymentRequests />} /><Route path="/scm/payment-vouchers/new" element={<Probe />} /></Routes></MemoryRouter>);
     fireEvent.click(screen.getByText("Make voucher"));
-    await waitFor(() => expect(act).toHaveBeenCalledWith({ path: "/accounting/payment-requests/Q1/voucher", body: { bankAccountCode: "310-0010" }, method: "POST" }));
+    expect(await screen.findByText("opened ACE Q1:500000")).toBeTruthy();
+    expect(act).not.toHaveBeenCalled();
   });
   it("without Ledger full there is no Make voucher", () => {
     full = false;

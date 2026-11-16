@@ -77,6 +77,13 @@ type DraftLine = PurposeDraft & {
   amountSen:      number;
 };
 
+/** Conts (chew, 16 Nov 2026): Make voucher on payment requests opens this form filled in (location.state). */
+export type ClaimsPrefill = {
+  payeeName: string; notes: string; sources: string[];
+  lines: Array<{ description: string; amountSen: number; department: string; unitId: string | null; projectId: number | null; subDepartmentId: string | null;
+    paymentRequestId?: string | null; staffReceiptId?: string | null }>;
+};
+
 const newLine = (purpose: PurposeDraft = purposeOfNew([])): DraftLine => ({
   rid:              `l${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   description:      '',
@@ -235,7 +242,21 @@ export const PaymentVoucherNew = () => {
      pv-file-handoff.ts); take() clears, so only set when something was
      actually taken (a double-run effect must not wipe the first take). */
   useEffect(() => {
-    const st = location.state as { billPrefill?: { extraction: BillExtraction; lines?: Array<{ description: string | null; amountSen: number | null }>; memory?: VendorMemory | null } } | null;
+    const st = location.state as { billPrefill?: { extraction: BillExtraction; lines?: Array<{ description: string | null; amountSen: number | null }>; memory?: VendorMemory | null }; claimsPrefill?: ClaimsPrefill } | null;
+    /* Conts (chew, 16 Nov 2026): opened from payment requests (Make voucher): the payee, notes and each line filled in, the
+       accounts left for finance to choose here; each line remembers the request it pays. */
+    if (st?.claimsPrefill) {
+      const pre = st.claimsPrefill;
+      const drafted = pre.lines.map((l) => ({
+        ...newLine(purposeOfSaved({ department: departmentOf(l.department), unitId: l.unitId, projectId: l.projectId, subDepartmentId: l.subDepartmentId })),
+        description: l.description, amountSen: l.amountSen, debitAccountCode: '',
+      }));
+      setPayeeName(pre.payeeName);
+      setNotes(pre.notes);
+      setLines(drafted);
+      setClaimLinks(Object.fromEntries(drafted.map((d, i) => [d.rid, { paymentRequestId: pre.lines[i]!.paymentRequestId ?? null, staffReceiptId: pre.lines[i]!.staffReceiptId ?? null }])));
+      setScanNote(`From ${pre.sources.join(', ')} — choose each line's account, then save.`);
+    }
     if (st?.billPrefill) {
       applyExtraction(st.billPrefill.extraction, { lines: st.billPrefill.lines, memory: st.billPrefill.memory });
       const carried = takePvFiles();
@@ -290,6 +311,8 @@ export const PaymentVoucherNew = () => {
      supplier's currency (below). */
   const [currencyOverride, setCurrencyOverride]   = useState<string | null>(null);
   const [lines, setLines]                         = useState<DraftLine[]>([newLine()]);
+  /* Conts: each line opened from a payment request or claim, by line, what it pays (conts/combined-voucher.ts). */
+  const [claimLinks, setClaimLinks]               = useState<Record<string, { paymentRequestId: string | null; staffReceiptId: string | null }>>({});
   /* Each Project line's project: its funding and side set the line's tag before the save. */
   const sideOf = useProjectSides();
   /* Each line's sub-department (SOP 1.1; chew 4 Nov 2026). */
@@ -581,6 +604,8 @@ export const PaymentVoucherNew = () => {
     if (isAp && !supplierId) { setDialog({ title: 'Pick a supplier', body: 'An AP Payment settles a supplier — choose whose invoices this pays.' }); return; }
     if (isAp && totalSen === 0) { setDialog({ title: 'Nothing to pay yet', body: 'Tick an invoice, type a partial amount, or enter a prepay figure.' }); return; }
     if (!isAp && realLines.length === 0) { setDialog({ title: 'Add at least one line', body: 'Each line needs a debit account and an amount > 0.' }); return; }
+    /* A line from a payment request is paid only with its account: none is left out by mistake. */
+    if (!isAp && lines.some((l) => claimLinks[l.rid] && l.amountSen > 0 && !l.debitAccountCode)) { setDialog({ title: 'Choose each line\'s account', body: 'Every line from the payment requests needs its account.' }); return; }
     if (!isAp) {
       /* A Unit line names its unit, a Project line its project. */
       const missing = missingTarget(lines.map((l, i) => ({ ...l, n: i + 1 })).filter((l) => l.debitAccountCode && l.amountSen > 0));
@@ -635,6 +660,10 @@ export const PaymentVoucherNew = () => {
           : 1,
         lines: sendLines,
         ...(sendAllocations.length > 0 ? { allocations: sendAllocations } : {}),
+        /* What each line pays, when opened from payment requests or claims. */
+        ...(!isAp && !transferMode && !isRefund && Object.keys(claimLinks).length > 0
+          ? { claimLinks: realLines.map((l) => claimLinks[l.rid] ?? { paymentRequestId: null, staffReceiptId: null }) }
+          : {}),
       });
       /* Attach the scanned bill AFTER the voucher exists — sequentially, so
          sort_no (= print order) is the scan order. A failed upload never

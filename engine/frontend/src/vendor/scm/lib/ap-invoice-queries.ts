@@ -73,9 +73,11 @@ export type ApInvoiceLineInput = { description?: string; debitAccountCode: strin
 export const useCreateApInvoice = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { supplierId: string; supplierInvoiceRef?: string; invoiceDate: string; dueDate?: string | null; notes?: string; provisional?: boolean; lines: ApInvoiceLineInput[] }) =>
+    mutationFn: (body: { supplierId: string; supplierInvoiceRef?: string; invoiceDate: string; dueDate?: string | null; notes?: string; provisional?: boolean; lines: ApInvoiceLineInput[];
+      /** Conts: the payment request this bill is made from (it takes the bill on save). */
+      paymentRequestId?: string }) =>
       authedFetch<{ ok: boolean; invoice: ApInvoiceHeader }>(`/ap-invoices`, { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: () => invalidate(qc),
+    onSuccess: () => { invalidate(qc); void qc.invalidateQueries({ queryKey: ['payment-requests'] }); },
   });
 };
 

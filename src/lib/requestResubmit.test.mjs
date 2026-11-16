@@ -21,10 +21,13 @@ test('a request made from utility bills is fixed on Utility bills, not in My cla
 test('a saved line comes back into the form as it was: a job, a unit, a project or nothing, with its amount and words', () => {
   const line = { unitId: null, maintenanceIssueId: null, projectId: null, amountSen: 5000, description: null };
   assert.deepEqual(lineDraftOf({ ...line, maintenanceIssueId: 'M1', unitId: 'U1', description: 'Tap' }),
-    { where: 'job', unitId: 'U1', jobId: 'M1', projectId: '', amountSen: 5000, description: 'Tap' });
-  assert.deepEqual(lineDraftOf({ ...line, unitId: 'U1' }), { where: 'unit', unitId: 'U1', jobId: '', projectId: '', amountSen: 5000, description: '' });
-  assert.deepEqual(lineDraftOf({ ...line, projectId: 7 }), { where: 'project', unitId: '', jobId: '', projectId: '7', amountSen: 5000, description: '' });
-  assert.deepEqual(lineDraftOf(line), { where: 'none', unitId: '', jobId: '', projectId: '', amountSen: 5000, description: '' });
+    { where: 'job', unitId: 'U1', jobId: 'M1', projectId: '', amountSen: 5000, description: 'Tap', subDepartmentId: '' });
+  assert.deepEqual(lineDraftOf({ ...line, unitId: 'U1' }), { where: 'unit', unitId: 'U1', jobId: '', projectId: '', amountSen: 5000, description: '', subDepartmentId: '' });
+  assert.deepEqual(lineDraftOf({ ...line, projectId: 7 }), { where: 'project', unitId: '', jobId: '', projectId: '7', amountSen: 5000, description: '', subDepartmentId: '' });
+  assert.deepEqual(lineDraftOf(line), { where: 'none', unitId: '', jobId: '', projectId: '', amountSen: 5000, description: '', subDepartmentId: '' });
+  /* The department it was on comes back too; a job's line is the job's. */
+  assert.equal(lineDraftOf({ ...line, subDepartmentId: 's-co' }).subDepartmentId, 's-co');
+  assert.equal(lineDraftOf({ ...line, maintenanceIssueId: 'M1', subDepartmentId: 's-co' }).subDepartmentId, '');
 });
 
 test('a pay-by date already past is not offered again', () => {

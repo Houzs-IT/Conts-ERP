@@ -250,10 +250,11 @@ describe('payment requests', () => {
     fin.use('*', async (c, next) => { c.set('supabase', sb); c.set('companyId', CO); c.set('houzsUser', { name: 'Chew', permissions_set: new Set([FULL_KEY]) }); await next(); });
     fin.post('/r/:id/voucher', requestVoucherHandler);
     fin.post('/r/:id/close', closeRequestHandler);
-    expect((await post(fin, `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(201);
-    /* It pays the supplier: every line on the supplier's creditors control, so the deposit stands as an advance. */
-    expect(body).toMatchObject({ purpose: 'SUPPLIER_PAYMENT', supplierId: 'S1' });
-    expect((body.lines as Array<{ debitAccountCode: string; amountSen: number }>)).toEqual([expect.objectContaining({ debitAccountCode: '400-0000', amountSen: 8_000 })]);
+    expect((await post(fin, `/r/${made.id}/voucher`, { bankAccountCode: '310-0010', debitAccountCode: '601-0001' })).status).toBe(201);
+    /* Make voucher is an ordinary voucher (chew, 16 Nov 2026): each line on the account finance chose, not the supplier's
+       control; a deposit to be offset later goes through an AP invoice instead. */
+    expect(body).toMatchObject({ purpose: 'OTHER', payeeName: 'ACE HARDWARE' });
+    expect((body.lines as Array<{ debitAccountCode: string; amountSen: number }>)).toEqual([expect.objectContaining({ debitAccountCode: '601-0001', amountSen: 8_000 })]);
     expect(sb.tables.payment_vouchers[0].payment_request_id).toBe(made.id);
     expect((await post(a, `/requests/${made.id}/withdraw`, {})).status).toBe(409);
     /* Part paid by a 3,000 voucher, then closed: the rest is freed. */
@@ -282,13 +283,13 @@ describe('nothing paid twice, nothing half-saved', () => {
     const made = await (await ask(appFor(sb, OPS, 'session'))).json() as { id: string };
     const bodies: Array<Record<string, unknown>> = [];
     claimsDeps.createVoucher = async (_c, b) => { bodies.push(b); const id = `PV${bodies.length}`; sb.tables.payment_vouchers.push({ id, company_id: CO, status: 'DRAFT' }); return { ok: true, id, pvNumber: id }; };
-    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(201);
-    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(409);
+    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010', debitAccountCode: '601-0001' })).status).toBe(201);
+    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010', debitAccountCode: '601-0001' })).status).toBe(409);
     /* The first voucher posts 3,500 of the 5,000: the first line is paid, and 1,500 of the second is still owed. */
     sb.tables.payment_vouchers[0].status = 'POSTED';
     sb.tables.payment_voucher_lines.push({ pv_id: 'PV1', company_id: CO, amount_sen: 3_500, project_id: null, debit_account_code: '400-0000' });
     sb.tables.payment_requests[0].status = 'PART_PAID';
-    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(201);
+    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010', debitAccountCode: '601-0001' })).status).toBe(201);
     expect((bodies[1].lines as Array<{ amountSen: number }>).map(l => l.amountSen)).toEqual([1_500]);
   });
 
@@ -296,7 +297,7 @@ describe('nothing paid twice, nothing half-saved', () => {
     const sb = world();
     const made = await (await ask(appFor(sb, OPS, 'session'))).json() as { id: string };
     claimsDeps.createVoucher = async () => { sb.tables.payment_vouchers.push({ id: 'PV1', company_id: CO, status: 'DRAFT' }); sb.tables.payment_requests[0].status = 'WITHDRAWN'; return { ok: true, id: 'PV1', pvNumber: 'PV1' }; };
-    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(409);
+    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010', debitAccountCode: '601-0001' })).status).toBe(409);
     expect(sb.tables.payment_vouchers[0].status).toBe('CANCELLED');
   });
 
@@ -396,7 +397,7 @@ describe('sub-departments on staff documents', () => {
     const fin = new Hono<{ Variables: Record<string, unknown> }>();
     fin.use('*', async (c, next) => { c.set('supabase', sb); c.set('companyId', CO); c.set('houzsUser', { name: 'Chew', permissions_set: new Set([FULL_KEY]) }); await next(); });
     fin.post('/r/:id/voucher', requestVoucherHandler);
-    const r = await post(fin, `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' });
+    const r = await post(fin, `/r/${made.id}/voucher`, { bankAccountCode: '310-0010', debitAccountCode: '601-0001' });
     expect(r.status, await r.clone().text()).toBe(201);
     expect(sb.tables.payment_voucher_lines[0]).toMatchObject({ sub_department_id: 's-co' });
   });

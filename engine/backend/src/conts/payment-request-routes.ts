@@ -35,6 +35,8 @@ import { claimsDeps, EDIT_KEY, FULL_KEY } from './petty-cash-routes';
 import { linesStillOwed } from './payment-requests';
 import type { Staff } from './staff-identity';
 import { balanceRequestHandler, billRefusal, liveBillOf, makeRequestApInvoiceHandler } from './request-ap-invoice';
+import { makeCombinedVoucher } from './combined-voucher';
+import { requestPayments, type PvRef } from './request-vouchers';
 
 export { makeRequestApInvoiceHandler };
 
@@ -66,10 +68,11 @@ async function views(sb: any, companyId: number, rows: ReqRow[]) {
   const [lines, files, pvs, names, bills, kids, parents] = await Promise.all([
     inChunks<ReqLine>(ids, (part, f, t) => sb.from('payment_request_lines').select('*').in('request_id', part).order('id').range(f, t)),
     inChunks<{ id: string; request_id: string; file_name: string; mime: string }>(ids, (part, f, t) => sb.from('payment_request_files').select('id, request_id, file_name, mime').in('request_id', part).order('id').range(f, t)),
-    inChunks<{ id: string; pv_number: string; status: string; payment_request_id: string }>(ids, (part, f, t) => sb.from('payment_vouchers').select('id, pv_number, status, payment_request_id').eq('company_id', companyId).in('payment_request_id', part).order('id').range(f, t)),
+    /* Its vouchers: one for it alone, or one paying several that names it on a line (0330). */
+    requestPayments(sb, ids).then(p => p.vouchers),
     staffNames(sb),
     /* The AP invoice each is paid through, the balance asked on a deposit, a balance's deposit (chew, 15 Nov 2026). */
-    inChunks<{ id: string; invoice_number: string; status: string; provisional: boolean; total_sen: number; paid_sen: number }>(billIds, (part, f, t) => sb.from('ap_invoices').select('id, invoice_number, status, provisional, total_sen, paid_sen').in('id', part).order('id').range(f, t)),
+    inChunks<{ id: string; invoice_number: string; status: string; provisional: boolean; total_sen: number; paid_sen: number | null }>(billIds, (part, f, t) => sb.from('ap_invoices').select('id, invoice_number, status, provisional, total_sen, paid_sen').in('id', part).order('id').range(f, t)),
     inChunks<{ id: string; request_no: string; status: string; parent_request_id: string }>(ids, (part, f, t) => sb.from('payment_requests').select('id, request_no, status, parent_request_id').in('parent_request_id', part).order('id').range(f, t)),
     inChunks<{ id: string; request_no: string }>(parentIds, (part, f, t) => sb.from('payment_requests').select('id, request_no').in('id', part).order('id').range(f, t)),
   ]);
@@ -95,17 +98,16 @@ async function views(sb: any, companyId: number, rows: ReqRow[]) {
     askedLines: Array.isArray(r.asked_lines) ? r.asked_lines : null,
     askedAmountSen: r.asked_amount_sen == null ? null : Number(r.asked_amount_sen),
     lines: lines.filter(l => l.request_id === r.id).sort((a, b) => a.sort - b.sort).map(l => ({
-      department: l.department, subDepartmentId: l.sub_department_id ?? null, unitId: l.unit_id, maintenanceIssueId: l.maintenance_issue_id, projectId: l.project_id, accountCode: l.account_code,
+      /* Its id: the account finance chooses for it on Make voucher / Make AP invoice is keyed by it. */
+      id: l.id, department: l.department, subDepartmentId: l.sub_department_id ?? null, unitId: l.unit_id, maintenanceIssueId: l.maintenance_issue_id, projectId: l.project_id, accountCode: l.account_code,
       amountSen: Number(l.amount_sen), description: l.description })),
     files: files.filter(f => f.request_id === r.id).map(f => ({ id: f.id, fileName: f.file_name, mime: f.mime })),
-    vouchers: pvs.filter(p => p.payment_request_id === r.id).map(p => ({ id: p.id, pvNumber: p.pv_number, status: p.status })),
+    vouchers: (pvs.get(r.id) ?? []).map(p => ({ id: p.id, pvNumber: p.pv_number, status: p.status })),
   }));
 }
 
-async function vouchersOf(sb: any, companyId: number, requestId: string): Promise<Array<{ id: string; status: string }>> {
-  const { data, error } = await sb.from('payment_vouchers').select('id, status').eq('company_id', companyId).eq('payment_request_id', requestId);
-  if (error) throw new Error(error.message);
-  return (data ?? []) as Array<{ id: string; status: string }>;
+async function vouchersOf(sb: any, _companyId: number, requestId: string): Promise<PvRef[]> {
+  return (await requestPayments(sb, [requestId])).vouchers.get(requestId) ?? [];
 }
 const live = (pvs: Array<{ status: string }>) => pvs.filter(p => p.status !== 'CANCELLED');
 
@@ -396,76 +398,16 @@ export const listRequestsHandler = async (c: Ctx): Promise<Response> => {
   return c.json({ requests: await views(sb, co.companyId, rows) });
 };
 
+/** POST /accounting/payment-requests/:id/voucher { bankAccountCode, accounts?, debitAccountCode? } — Make voucher on one
+ *  request: an ordinary voucher, each line on the account finance chose (chew, 16 Nov 2026: the first of the two ways; the
+ *  other is an AP invoice, paid on the Payment voucher page). The same as ticking one request (combined-voucher.ts). */
 export const requestVoucherHandler = async (c: Ctx): Promise<Response> => {
-  if (!hasHouzsPerm(c, FULL_KEY)) return forbid(c);
-  const co = requireActiveCompanyId(c);
-  if (!co.ok) return c.json(co.refusal, 409);
   const b = (await bodyOf(c)) ?? {};
-  const bank = String(b.bankAccountCode ?? '').trim();
-  if (!bank) return c.json({ error: 'validation', message: 'Choose the bank this is paid from.' }, 422);
-  const fallback = b.debitAccountCode ? String(b.debitAccountCode).trim() : null;
-  const sb = c.get('supabase');
-  const r = await loadRequest(c, co.companyId);
-  if (!r) return c.json({ error: 'not_found' }, 404);
-  if (!OPEN.has(r.status)) return c.json({ error: 'not_open', message: 'This request is not waiting for payment.' }, 409);
-  /* One paid through an AP invoice is paid on the Payment voucher page, against the bill (chew, 15 Nov 2026). */
-  const bill = await liveBillOf(sb, r.id);
-  if (bill) return c.json({ error: 'has_ap_invoice', message: `Pay AP invoice ${bill.invoiceNumber} on the Payment voucher page.` }, 409);
-  if (r.payee_to_check && !r.supplier_id) return c.json({ error: 'payee_to_check', message: 'Link the payee to a supplier on the list before paying.' }, 409);
-  const pvs = await vouchersOf(sb, co.companyId, r.id);
-  if (pvs.some(p => p.status === 'DRAFT')) return c.json({ error: 'voucher_open', message: 'A voucher for this request is already being prepared. Finish or cancel it first.' }, 409);
-  const { data: lineRows } = await sb.from('payment_request_lines').select('*').eq('request_id', r.id);
-  const requestLines = ((lineRows ?? []) as ReqLine[]).sort((a, x) => a.sort - x.sort);
-  const { data: paidRows } = pvs.length ? await sb.from('payment_voucher_lines').select('amount_sen, pv_id').in('pv_id', pvs.filter(p => p.status === 'POSTED').map(p => p.id)) : { data: [] };
-  const paid = ((paidRows ?? []) as Array<{ amount_sen: number }>).reduce((n, l) => n + Number(l.amount_sen), 0);
-  const owed = linesStillOwed(requestLines.map(l => ({ ...l, amount_sen: Number(l.amount_sen) })), paid);
-  if (owed.length === 0) return c.json({ error: 'nothing_owed', message: 'This request is already paid in full.' }, 409);
-
-  /* With a supplier, the voucher pays the supplier: every line debits the supplier's own creditors control, so a deposit
-     stands as an advance on the supplier and the later invoice is set off against it. Without one it pays the cost. */
-  let debitOf: (l: ReqLine) => string | null;
-  let supplier: { id: string; name: string } | null = null;
-  if (r.supplier_id) {
-    const { data: s } = await sb.from('suppliers').select('id, code, name, control_account').eq('company_id', co.companyId).eq('id', r.supplier_id).maybeSingle();
-    if (!s) return c.json({ error: 'validation', message: 'The supplier on this request was not found.' }, 409);
-    const control = apControlOf(await resolveRoles(sb, co.companyId), { code: s.code, control_account: s.control_account });
-    debitOf = () => control;
-    supplier = { id: s.id, name: s.name };
-  } else {
-    if (owed.some(l => !l.account_code) && !fallback) return c.json({ error: 'account_missing', message: 'Choose the account for the lines that have none.' }, 422);
-    debitOf = l => l.account_code ?? fallback;
-  }
-  const made = await claimsDeps.createVoucher(c, {
-    payeeName: supplier?.name ?? r.payee_name, supplierId: supplier?.id, creditAccountCode: bank,
-    purpose: supplier ? 'SUPPLIER_PAYMENT' : 'OTHER',
-    lines: owed.map(l => ({ debitAccountCode: debitOf(l), amountSen: l.amount_sen, description: l.description ?? r.request_no, department: l.department })),
-    notes: `Payment request ${r.request_no}${r.type === 'DEPOSIT' ? ' (deposit)' : ''}${r.note ? ` — ${r.note}` : ''}`,
+  const accounts = b.accounts && typeof b.accounts === 'object' ? Object.fromEntries(Object.entries(b.accounts as Record<string, unknown>).map(([k, v]) => [k, String(v ?? '')])) : {};
+  return makeCombinedVoucher(c, {
+    requestIds: [String(c.req.param('id'))], receiptIds: [], bankAccountCode: String(b.bankAccountCode ?? ''), accounts,
+    fallbackAccount: b.debitAccountCode ? String(b.debitAccountCode) : undefined,
   });
-  if (!made.ok) return c.json(made.body, made.status as 400);
-  const link = await sb.from('payment_vouchers').update({ payment_request_id: r.id }).eq('id', made.id);
-  if (link.error) {
-    await dropDraft(sb, made.id);
-    if (isUniqueClash(link.error)) return c.json({ error: 'voucher_open', message: 'A voucher for this request was just made.' }, 409);
-    return c.json({ error: 'update_failed', reason: link.error.message }, 500);
-  }
-  /* Each voucher line keeps its request line's project and unit. */
-  /* Each voucher line keeps its request line's project and unit, except a line on an everyday-expense account (rent,
-     utilities): it is outside the project limit on the request, and stays outside it on the voucher, which debits the
-     supplier's control rather than that account. */
-  const codes = [...new Set(owed.map(l => l.account_code).filter((x): x is string => !!x))];
-  const { data: ev } = codes.length ? await sb.from('accounts').select('account_code, everyday_expense').eq('company_id', co.companyId).in('account_code', codes) : { data: [] };
-  const everyday = new Set(((ev ?? []) as Array<{ account_code: string; everyday_expense: boolean | null }>).filter(x => x.everyday_expense === true).map(x => x.account_code));
-  for (const [i, l] of owed.entries()) {
-    const up = await sb.from('payment_voucher_lines').update({ project_id: l.account_code && everyday.has(l.account_code) ? null : l.project_id, unit_id: l.unit_id, sub_department_id: l.sub_department_id ?? null }).eq('pv_id', made.id).eq('line_no', i + 1);
-    if (up.error) { await dropDraft(sb, made.id); return c.json({ error: 'update_failed', reason: up.error.message }, 500); }
-  }
-  /* Withdrawn, rejected or closed while the voucher was being made: the request wins and the draft goes. */
-  const { data: still } = await sb.from('payment_requests').select('status').eq('id', r.id).maybeSingle();
-  if (!still || !OPEN.has(String(still.status))) {
-    await dropDraft(sb, made.id);
-    return c.json({ error: 'not_open', message: 'This request was closed while the voucher was being made.' }, 409);
-  }
-  return c.json({ pvId: made.id, pvNumber: made.pvNumber }, 201);
 };
 
 export const rejectRequestHandler = async (c: Ctx): Promise<Response> => {
@@ -498,8 +440,12 @@ export const closeRequestHandler = async (c: Ctx): Promise<Response> => {
   const r = await loadRequest(c, co.companyId);
   if (!r) return c.json({ error: 'not_found' }, 404);
   /* A voucher already submitted for approval is cancelled on the voucher screen first, with its own trail. */
-  const { data: inApproval } = await sb.from('payment_vouchers').select('id, pv_number').eq('company_id', co.companyId).eq('payment_request_id', r.id).eq('status', 'DRAFT').not('submitted_at', 'is', null);
-  if ((inApproval ?? []).length > 0) return c.json({ error: 'voucher_in_approval', message: `Voucher ${(inApproval as Array<{ pv_number: string }>)[0].pv_number} is in approval. Cancel it first.` }, 409);
+  const mine = await vouchersOf(sb, co.companyId, r.id);
+  const inApproval = mine.find(p => p.status === 'DRAFT' && !!p.submitted_at);
+  if (inApproval) return c.json({ error: 'voucher_in_approval', message: `Voucher ${inApproval.pv_number} is in approval. Cancel it first.` }, 409);
+  /* A draft paying other requests or claims too is theirs as well: cancelled on the voucher screen, not from here. */
+  const shared = mine.find(p => p.status === 'DRAFT' && p.payment_request_id !== r.id);
+  if (shared) return c.json({ error: 'voucher_shared', message: `Voucher ${shared.pv_number} also pays other requests. Cancel it on the voucher screen first.` }, 409);
   if (!(await claimRequest(sb, r.id, 'PART_PAID', { status: 'CLOSED', reason: reason.slice(0, 500), decided_by: who(c), decided_at: now() }))) {
     return c.json({ error: 'not_part_paid', message: 'Only a part-paid request can be closed.' }, 409);
   }

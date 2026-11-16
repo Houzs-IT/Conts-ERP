@@ -135,11 +135,11 @@ async function floatAccountOf(sb: any, companyId: number, floatId: string): Prom
 }
 
 /** A float's account (any float's, open or closed) is cash in a keeper's hands, never the bank a voucher is paid from. */
-async function isFloatAccountCode(sb: any, companyId: number, code: string): Promise<boolean> {
+export async function isFloatAccountCode(sb: any, companyId: number, code: string): Promise<boolean> {
   const { data } = await sb.from('petty_cash_floats').select('id').eq('company_id', companyId).eq('account_code', code).limit(1);
   return ((data ?? []) as unknown[]).length > 0;
 }
-const NOT_A_BANK = { error: 'bank_is_petty_cash', message: "That is a petty cash float's account: choose the bank the money is paid from." };
+export const NOT_A_BANK = { error: 'bank_is_petty_cash', message: "That is a petty cash float's account: choose the bank the money is paid from." };
 
 /** Whether anything has happened on a float yet: money paid in or returned, a receipt handed in, or a top-up voucher
  *  (even a draft: it was sized from the balance). Until then the cash it started with may be corrected. A failed read

@@ -14,6 +14,7 @@
 import { paginateAll } from '../scm/lib/paginate-all';
 import { receiptCountsForLimit, type ReceiptStatus } from './petty-cash';
 import { requestReservation } from './payment-requests';
+import { requestPayments } from './request-vouchers';
 import { awaitsConfirmation, confirmedPaymentIds } from '../acc/receipts';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as in the modules it sits beside */
@@ -93,8 +94,9 @@ async function claimsOnProject(sb: Db, companyId: number, projectId: number): Pr
     const openRows = ((qs ?? []) as Array<{ id: string; status: string; ap_invoice_id?: string | null }>).filter((q) => q.status === 'SUBMITTED' || q.status === 'PART_PAID');
     const open = openRows.map((q) => q.id);
     if (open.length) {
-      const { data: pvs, error: pErr } = await sb.from('payment_vouchers').select('id, payment_request_id, status, submitted_at').eq('company_id', companyId).in('payment_request_id', open);
-      if (pErr) return { ok: false, error: pErr.message };
+      /* Its own vouchers: one for it alone, or one paying several that names it on a line (0330). */
+      let pays: Awaited<ReturnType<typeof requestPayments>>;
+      try { pays = await requestPayments(sb, open); } catch (e) { return { ok: false, error: (e as Error).message }; }
       /* A request paid through an AP invoice (chew, 15 Nov 2026) is paid by vouchers made on the Payment voucher page,
          which name the bill, not the request: they take over from it as its own vouchers do. */
       const billOf = new Map(openRows.filter((q) => !!q.ap_invoice_id).map((q) => [q.id, String(q.ap_invoice_id)]));
@@ -108,28 +110,26 @@ async function claimsOnProject(sb: Db, companyId: number, projectId: number): Pr
         ? await sb.from('payment_vouchers').select('id, status, submitted_at').eq('company_id', companyId).in('id', billPvIds)
         : { data: [], error: null };
       if (bpErr) return { ok: false, error: bpErr.message };
+      /* Only vouchers that reserve or use the limit themselves take over from the request: posted, or submitted. */
       const counts = (p: { status: string; submitted_at: string | null }) => p.status === 'POSTED' || (p.status === 'DRAFT' && !!p.submitted_at);
-      const vouchers = ((pvs ?? []) as Array<{ id: string; payment_request_id: string; status: string; submitted_at: string | null }>)
-        /* Only vouchers that reserve or use the limit themselves take over from the request: posted, or submitted. */
-        .filter(counts);
       const billVouchers = new Set(((billPvs ?? []) as Array<{ id: string; status: string; submitted_at: string | null }>).filter(counts).map((p) => p.id));
-      const pvIds = [...new Set([...vouchers.map((p) => p.id), ...billVouchers])];
-      const { data: vls, error: vErr } = pvIds.length
-        ? await sb.from('payment_voucher_lines').select('pv_id, project_id, amount_sen').eq('company_id', companyId).in('pv_id', pvIds)
+      const { data: bls, error: vErr } = billVouchers.size
+        ? await sb.from('payment_voucher_lines').select('pv_id, project_id, amount_sen').eq('company_id', companyId).in('pv_id', [...billVouchers])
         : { data: [], error: null };
       if (vErr) return { ok: false, error: vErr.message };
-      const reqOfPv = new Map(vouchers.map((p) => [p.id, p.payment_request_id]));
       const billsOfPv = new Map<string, Set<string>>();
       for (const a of (allocs ?? []) as Array<{ pv_id: string; ap_invoice_id: string }>) {
         if (!billVouchers.has(a.pv_id)) continue;
         billsOfPv.set(a.pv_id, (billsOfPv.get(a.pv_id) ?? new Set()).add(String(a.ap_invoice_id)));
       }
+      const asPaid = (l: { project_id?: number | null; amount_sen: number }) => ({ projectId: l.project_id == null ? null : Number(l.project_id), amountSen: Number(l.amount_sen) });
       for (const q of open) {
         const own = qCounted.filter((l) => l.request_id === q).map((l) => ({ projectId: projectId, amountSen: Number(l.amount_sen) }));
         const bill = billOf.get(q);
-        const paid = ((vls ?? []) as Array<{ pv_id: string; project_id: number | null; amount_sen: number }>)
-          .filter((l) => reqOfPv.get(l.pv_id) === q || (!!bill && !!billsOfPv.get(l.pv_id)?.has(bill)))
-          .map((l) => ({ projectId: l.project_id == null ? null : Number(l.project_id), amountSen: Number(l.amount_sen) }));
+        const paid = [
+          ...(pays.lines.get(q) ?? []).filter((l) => counts(l.pv)).map(asPaid),
+          ...((bls ?? []) as Array<{ pv_id: string; project_id: number | null; amount_sen: number }>).filter((l) => !!bill && !!billsOfPv.get(l.pv_id)?.has(bill)).map(asPaid),
+        ];
         reservedSen += requestReservation(own, paid).get(projectId) ?? 0;
       }
     }

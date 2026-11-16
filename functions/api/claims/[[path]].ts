@@ -17,7 +17,7 @@ import { fileToUpload, forwardClaims } from '../../_lib/claimsForward';
  *         (chew, 13 Nov 2026)                                                                 (office staff)
  *    POST requests/:id/balance (multipart): the rest of a paid deposit's AP invoice, nothing filled in again; the formal
  *         invoice may come with it (chew, 15 Nov 2026)                                         (office staff) */
-const GET_ANYONE = /^(me|my-bank|receipts|receipts\/[^/]+\/files\/[^/]+|requests|requests\/[^/]+\/files\/[^/]+|float|jobs|units|accounts|projects)$/;
+const GET_ANYONE = /^(me|my-bank|receipts|receipts\/[^/]+\/files\/[^/]+|requests|requests\/[^/]+\/files\/[^/]+|float|jobs|units|accounts|projects|sub-departments)$/;
 const GET_OFFICE = /^(suppliers|purchase-orders)$/;
 const MAX_FILES = 8;
 const MAX_BYTES = 25 * 1024 * 1024;

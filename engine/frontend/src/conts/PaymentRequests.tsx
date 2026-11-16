@@ -1,25 +1,55 @@
 // Conts only (not part of Houzs's code): /scm/payment-requests — what staff ask finance to pay: a supplier, against a PO
 // or not, or a deposit (SOP 3.2, 3.5; design docs/superpowers/specs/2026-10-28-payment-requests-petty-cash-design.md
-// §4.6). Waiting requests come first, oldest first. Finance makes the voucher (it then goes through the usual check
-// and approval), rejects with a reason, closes one paid short, or links a typed-in payee to a supplier. Or makes the
-// request's AP invoice (chew, 15 Nov 2026): the request is then paid on the Payment voucher page, against the bill; a
-// deposit's bill is the quotation, replaced by the formal invoice when it comes.
+// §4.6). Waiting requests come first, oldest first. Two ways to pay (chew, 16 Nov 2026):
+//   Make voucher     opens the New voucher form filled in from one request or several ticked (any payees), where
+//                    finance chooses each line's account; each line remembers the request it pays;
+//   Make AP invoice  opens the New AP invoice form filled in, one per request (a deposit's is its quotation), where
+//                    finance chooses the supplier (a payee typed in) and the accounts; paid on the Payment voucher page.
+// Finance also rejects with a reason, or closes one paid short.
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/Layout";
 import { Button } from "../components/Button";
 import { DataTable, type Column } from "../components/DataTable";
 import { usePrompt } from "../vendor/scm/components/PromptDialog";
-import { useChoice } from "../vendor/scm/components/ChoiceDialog";
 import { useAuth } from "../auth/AuthContext";
-import { api } from "../api/client";
 import { REQUEST_STATUS, requestFileUrl, requestStatusNote, requestsPath, useFinanceAction, usePaymentRequests, type PaymentRequest } from "./claimsQueries";
-import { FileButtons, Money, useChooseBank, usePettyOptions } from "./ClaimsParts";
+import { FileButtons, Money, usePettyOptions } from "./ClaimsParts";
 import { useLineDepartmentLabel } from "./SubDepartmentSelect";
+import type { ClaimsPrefill } from "../pages/scm-v2/PaymentVoucherNew";
+import type { RequestForBill } from "../pages/scm-v2/ApInvoices";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
 
 const lineSummaryWith = (label: (l: PaymentRequest["lines"][number]) => string) => (r: PaymentRequest) =>
   r.lines.map((l) => [label(l), l.accountCode, l.description].filter(Boolean).join(" · ")).join("; ");
+
+const OPEN = (r: PaymentRequest) => r.status === "SUBMITTED" || r.status === "PART_PAID";
+/** Make voucher: open, not paid through an AP invoice, no voucher being prepared. */
+const canVoucher = (r: PaymentRequest) => OPEN(r) && !r.apInvoice && !r.vouchers.some((v) => v.status === "DRAFT");
+/** Make AP invoice: a payment while nothing pays it yet; a deposit while open or once paid (its quotation). */
+const canBill = (r: PaymentRequest) => !r.apInvoice && (r.type === "DEPOSIT" ? OPEN(r) || r.status === "PAID" : OPEN(r) && r.vouchers.every((v) => v.status === "CANCELLED"));
+/** The New voucher form's lines, payee and notes from these requests (chew, 16 Nov 2026). */
+const voucherPrefill = (rs: PaymentRequest[]): ClaimsPrefill => {
+  const payees = [...new Set(rs.map((r) => r.payeeName))];
+  return {
+    payeeName: payees.length === 1 ? payees[0]! : `Various (${payees.length})`,
+    notes: rs.map((r) => `${r.requestNo} ${r.payeeName}${r.type === "DEPOSIT" ? " (deposit)" : ""}${r.note ? ` — ${r.note}` : ""}`).join("\n"),
+    sources: rs.map((r) => r.requestNo),
+    lines: rs.flatMap((r) => r.lines.map((l) => ({
+      description: [payees.length > 1 ? r.payeeName : null, l.description ?? r.requestNo].filter(Boolean).join(" · "), amountSen: l.amountSen,
+      department: l.department, unitId: l.unitId, projectId: l.projectId, subDepartmentId: l.subDepartmentId ?? null, paymentRequestId: r.id,
+    }))),
+  };
+};
+/** The New AP invoice form's requests, one bill each. */
+const billsPrefill = (rs: PaymentRequest[]): RequestForBill[] => rs.map((r) => ({
+  id: r.id, requestNo: r.requestNo, type: r.type, supplierId: r.supplierId, payeeName: r.payeeName, wantedOn: r.wantedOn, note: r.note,
+  lines: r.lines.map((l) => ({ id: l.id, description: l.description, amountSen: l.amountSen, department: l.department, projectId: l.projectId, unitId: l.unitId, subDepartmentId: l.subDepartmentId ?? null })),
+}));
+
+/* The row's buttons in fixed places and widths, so every row lines up (chew, 16 Nov 2026). */
+const actionGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, 128px)", gap: 6, alignItems: "center" };
+const slotBtn = "h-8 w-full justify-center";
 
 export function PaymentRequests() {
   const [status, setStatus] = useState("SUBMITTED");
@@ -29,43 +59,22 @@ export function PaymentRequests() {
   const opts = usePettyOptions();
   const act = useFinanceAction();
   const prompt = usePrompt();
-  const choose = useChoice();
-  const chooseBank = useChooseBank();
   const navigate = useNavigate();
   const { can } = useAuth();
   const full = can("scm.payment_voucher.approve");
   const edit = can("scm.payment_voucher.write");
   const [note, setNote] = useState<string | null>(null);
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const rows = q.data ? q.data.requests : null;
+  const tickedRows = (rows ?? []).filter((r) => ticked.has(r.id));
 
   const run = async (path: string, body: unknown, method: "POST" | "PATCH" = "POST") => {
     setNote(null);
     try { return await act.mutateAsync({ path, body, method }); } catch (e) { setNote(e instanceof Error ? e.message : "Not saved."); return null; }
   };
-  const makeApInvoice = async (r: PaymentRequest) => {
-    /* A deposit is paid on a quotation; a payment may be on the formal invoice or on a quotation (SOP 3.8). */
-    const provisional = r.type === "DEPOSIT" ? true : await choose({
-      title: `${r.requestNo}: what is the paper?`,
-      options: [{ value: "invoice", label: "The formal invoice" }, { value: "quotation", label: "A quotation (no formal invoice yet)" }],
-    }).then((v) => (v == null ? null : v === "quotation"));
-    if (provisional == null) return;
-    let debitAccountCode: string | undefined;
-    if (r.lines.some((l) => !l.accountCode)) {
-      const picked = await choose({
-        title: `Which expense account for ${r.requestNo}?`,
-        options: (opts.data?.expenseAccounts ?? []).map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })),
-      });
-      if (!picked) return;
-      debitAccountCode = picked;
-    }
-    const made = await run(`${requestsPath}/${r.id}/ap-invoice`, { debitAccountCode, provisional });
-    if (made?.apInvoiceId) navigate(`/scm/ap-invoices?open=${encodeURIComponent(String(made.apInvoiceId))}`);
-  };
-  const makeVoucher = async (r: PaymentRequest) => {
-    const bank = await chooseBank(opts.data?.banks ?? [], `Pay ${r.requestNo} from which bank?`);
-    if (!bank) return;
-    const made = await run(`${requestsPath}/${r.id}/voucher`, { bankAccountCode: bank });
-    if (made?.pvId) navigate(`/scm/payment-vouchers/${String(made.pvId)}`);
-  };
+  /* Paid exactly as the forms say: the accounts (and a payee's supplier) are chosen there (chew, 16 Nov 2026). */
+  const openVoucher = (rs: PaymentRequest[]) => { setTicked(new Set()); navigate("/scm/payment-vouchers/new", { state: { claimsPrefill: voucherPrefill(rs) } }); };
+  const openBills = (rs: PaymentRequest[]) => { setTicked(new Set()); navigate("/scm/ap-invoices", { state: { fromRequests: billsPrefill(rs) } }); };
   const reject = async (r: PaymentRequest) => {
     const reason = await prompt({ title: `Reject ${r.requestNo}?`, body: `${r.requesterName} asked to pay ${r.payeeName}.`, placeholder: "Why", multiline: true, confirmLabel: "Reject",
       validate: (v) => (v.trim() ? null : "Say why, so the person knows.") });
@@ -75,15 +84,6 @@ export function PaymentRequests() {
     const reason = await prompt({ title: `Close ${r.requestNo} as paid?`, body: "What is still owed will not be paid.", placeholder: "Why it is closed short", multiline: true, confirmLabel: "Close",
       validate: (v) => (v.trim() ? null : "Say why.") });
     if (reason != null) await run(`${requestsPath}/${r.id}/close`, { reason });
-  };
-  const linkSupplier = async (r: PaymentRequest) => {
-    const term = await prompt({ title: `Which supplier is ${r.payeeName}?`, placeholder: "Type part of the name or code", confirmLabel: "Search" });
-    if (!term?.trim()) return;
-    const found = await api.get<{ suppliers: { id: string; code: string; name: string }[] }>(`/api/claims/suppliers?q=${encodeURIComponent(term.trim())}`).catch((e: unknown) => { setNote(e instanceof Error ? e.message : "The suppliers could not be searched."); return null; });
-    if (!found) return;
-    if (found.suppliers.length === 0) { setNote(`No supplier matches "${term.trim()}". Add the supplier first.`); return; }
-    const id = await choose({ title: "Link to this supplier", options: found.suppliers.slice(0, 12).map((s) => ({ value: s.id, label: `${s.code} ${s.name}` })) });
-    if (id) await run(`${requestsPath}/${r.id}/supplier`, { supplierId: id }, "PATCH");
   };
 
   const columns = useMemo<Column<PaymentRequest>[]>(() => [
@@ -128,23 +128,22 @@ export function PaymentRequests() {
     {
       key: "act", label: "", getValue: () => "",
       render: (r) => {
-        const open = r.status === "SUBMITTED" || r.status === "PART_PAID";
-        /* The AP invoice: a payment while nothing pays it yet; a deposit while open or once paid (its quotation). */
-        const canBill = edit && !r.apInvoice && !!r.supplierId && (r.type === "DEPOSIT" ? open || r.status === "PAID" : open && r.vouchers.every((v) => v.status === "CANCELLED"));
-        const billButton = canBill && (
-          <Button className="h-8" variant="secondary" disabled={act.isPending} onClick={() => void makeApInvoice(r)}>Make AP invoice</Button>
-        );
-        if (!open) return billButton || null;
         /* Paid through its AP invoice: on the Payment voucher page, against the bill. */
-        if (r.apInvoice) return <span className="text-xs text-ink-muted">Pay {r.apInvoice.invoiceNumber} on Payment vouchers</span>;
-        const drafting = r.vouchers.some((v) => v.status === "DRAFT");
+        if (r.apInvoice && OPEN(r)) return <span className="text-xs text-ink-muted">Pay {r.apInvoice.invoiceNumber} on Payment vouchers</span>;
+        const voucher = full && canVoucher(r), bill = edit && canBill(r);
+        const rejectable = edit && r.status === "SUBMITTED" && r.vouchers.length === 0 && !r.apInvoice;
+        const closable = full && r.status === "PART_PAID";
+        if (!voucher && !bill && !rejectable && !closable) return null;
+        const third = rejectable
+          ? <Button className={slotBtn} variant="secondary" disabled={act.isPending} onClick={() => void reject(r)}>Reject</Button>
+          : closable ? <Button className={slotBtn} variant="secondary" disabled={act.isPending} onClick={() => void close(r)}>Close</Button> : <span />;
         return (
-          <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
-            {billButton}
-            {full && !drafting && <Button className="h-8" disabled={act.isPending || (r.payeeToCheck && !r.supplierId)} title={r.payeeToCheck && !r.supplierId ? "Link the payee to a supplier first." : undefined} onClick={() => void makeVoucher(r)}>Make voucher</Button>}
-            {edit && r.payeeToCheck && <Button className="h-8" variant="secondary" disabled={act.isPending} onClick={() => void linkSupplier(r)}>Link supplier</Button>}
-            {edit && r.status === "SUBMITTED" && r.vouchers.length === 0 && <Button className="h-8" variant="secondary" disabled={act.isPending} onClick={() => void reject(r)}>Reject</Button>}
-            {full && r.status === "PART_PAID" && <Button className="h-8" variant="secondary" disabled={act.isPending} onClick={() => void close(r)}>Close</Button>}
+          <span style={actionGrid}>
+            {voucher ? <Button className={slotBtn} disabled={act.isPending} onClick={() => openVoucher([r])}>Make voucher</Button> : <span />}
+            {bill
+              ? <Button className={slotBtn} variant="secondary" disabled={act.isPending} onClick={() => openBills([r])}>Make AP invoice</Button>
+              : <span />}
+            {third}
           </span>
         );
       },
@@ -168,14 +167,30 @@ export function PaymentRequests() {
         </select>
       </label>
       {note && <div role="alert" className="text-err">{note}</div>}
+      {/* Ticked: one voucher for them all, or an AP invoice each (chew, 16 Nov 2026). Finance checks what is ticked; the
+          engine still refuses, by name, one already being paid or paid through an AP invoice. */}
+      {tickedRows.length > 0 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 600 }}>{tickedRows.length} ticked · <Money sen={tickedRows.reduce((n, r) => n + r.amountSen, 0)} /></span>
+          {full && <Button className="h-8" disabled={act.isPending} onClick={() => openVoucher(tickedRows)}>Make one voucher</Button>}
+          {edit && <Button className="h-8" variant="secondary" disabled={act.isPending} onClick={() => openBills(tickedRows)}>Make AP invoices</Button>}
+          <Button className="h-8" variant="ghost" onClick={() => setTicked(new Set())}>Clear</Button>
+        </div>
+      )}
       <DataTable<PaymentRequest>
         tableId="conts-payment-requests"
         columns={columns}
-        rows={q.data ? q.data.requests : null}
+        rows={rows}
         loading={q.isLoading}
         error={q.isError ? "The requests did not load." : null}
         emptyLabel="No requests."
         getRowKey={(r) => r.id}
+        selection={{
+          selectedIds: ticked,
+          onToggle: (id: string) => setTicked((t) => { const n = new Set(t); if (n.has(id)) n.delete(id); else n.add(id); return n; }),
+          onToggleAll: (keys: string[], all: boolean) => setTicked(all ? new Set() : new Set(keys)),
+          rowLabel: (r: PaymentRequest) => `Tick ${r.requestNo}`,
+        }}
       />
     </div>
   );

@@ -48,7 +48,7 @@ import {
 } from './ap-invoice-files';
 import { supabaseAuth } from '../middleware/auth';
 import { fmtSen } from '../shared/format';
-import { afterBillSavedBestEffort, releaseRequestsOfBillBestEffort } from '../../conts/request-ap-invoice';
+import { afterBillSavedBestEffort, billableRequest, linkBillToRequest, releaseRequestsOfBillBestEffort } from '../../conts/request-ap-invoice';
 
 const isUniqueClash = (e: { code?: string; message?: string } | null | undefined) => !!e && (e.code === '23505' || /duplicate key/i.test(String(e.message ?? '')));
 
@@ -222,7 +222,23 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
   }
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
-  return createApInvoiceCore(c, body);
+  /* Conts (chew, 16 Nov 2026): the New AP invoice form opened from a payment request names it; the bill is checked to be
+     one the request may have, made, and the request takes it (conts/request-ap-invoice.ts). */
+  const requestId = typeof body?.paymentRequestId === 'string' ? body.paymentRequestId.trim() : '';
+  if (!requestId) return createApInvoiceCore(c, body);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const got = await billableRequest(c, sb, co.companyId, requestId);
+  if (!got.ok) return got.res;
+  const made = await createApInvoiceCore(c, body, { paymentRequestId: requestId });
+  if (made.status !== 201) return made;
+  const json = (await made.clone().json()) as { invoice: { id: string; supplier_id: string } };
+  const refused = await linkBillToRequest(c, sb, co.companyId, got.r, json.invoice);
+  if (refused) return refused;
+  /* What finance changed on the form (amounts, lines) the request follows, as on any save of the bill. */
+  await afterBillSavedBestEffort(sb, json.invoice.id);
+  return made;
 };
 
 /** Raise a DRAFT bill from `body` (the POST / fields). `from` is set only by the engine itself: a bill made from a

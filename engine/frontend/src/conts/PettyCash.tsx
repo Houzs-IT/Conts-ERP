@@ -132,7 +132,8 @@ export function PettyCash() {
   );
 }
 
-/** Receipts from people whose department has no float: finance checks them and pays each back by transfer. */
+/** Receipts from people whose department has no float: finance checks them and pays them back by transfer, one at a time
+ *  or several ticked on one voucher (chew, 16 Nov 2026: a person's claims handed in separately, paid back at once). */
 function FinancePaysBack({ run }: { run: (path: string, body: unknown, method?: "POST" | "PATCH" | "PUT") => Promise<Record<string, unknown> | null> }) {
   const [month, setMonth] = useState(thisMonth());
   const q = useFinanceReceipts(month);
@@ -140,6 +141,9 @@ function FinancePaysBack({ run }: { run: (path: string, body: unknown, method?: 
   const deptLabel = useLineDepartmentLabel();
   const { can } = useAuth();
   const full = can("scm.payment_voucher.approve");
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const payable = (r: Receipt) => r.status === "CHECKED" && !r.paybackPvId;
+  const tickedRows = (q.data?.receipts ?? []).filter((r) => ticked.has(r.id) && payable(r));
   const edit = can("scm.payment_voucher.write");
   const prompt = usePrompt();
   const choose = useChoice();
@@ -166,6 +170,13 @@ function FinancePaysBack({ run }: { run: (path: string, body: unknown, method?: 
     const made = await run(`${pettyPath}/receipts/${r.id}/voucher`, { bankAccountCode: bank });
     if (made?.pvId) navigate(`/scm/payment-vouchers/${String(made.pvId)}`);
   };
+  /* One voucher for the ticked claims: each line names its claim, each is paid back when it posts. */
+  const payBackTogether = async () => {
+    const bank = await chooseBank(opts.data?.banks ?? [], `Pay ${tickedRows.length} claims back from which bank?`);
+    if (!bank) return;
+    const made = await run("/accounting/vouchers/from-claims", { receiptIds: tickedRows.map((r) => r.id), bankAccountCode: bank });
+    if (made?.pvId) { setTicked(new Set()); navigate(`/scm/payment-vouchers/${String(made.pvId)}`); }
+  };
 
   const columns: Column<Receipt>[] = [
     { key: "date", label: "Date", render: (r) => r.spendDate, getValue: (r) => r.spendDate },
@@ -189,10 +200,10 @@ function FinancePaysBack({ run }: { run: (path: string, body: unknown, method?: 
     {
       key: "act", label: "", getValue: () => "",
       render: (r) => (
-        <span style={{ display: "inline-flex", gap: 6 }}>
-          {edit && r.status === "HANDED_IN" && <Button className="h-8" onClick={() => void check(r)}>Check</Button>}
-          {edit && r.status === "HANDED_IN" && <Button className="h-8" variant="secondary" onClick={() => void reject(r)}>Reject</Button>}
-          {full && r.status === "CHECKED" && !r.paybackPvId && <Button className="h-8" onClick={() => void payBack(r)}>Pay back</Button>}
+        <span style={{ display: "grid", gridTemplateColumns: "repeat(2, 104px)", gap: 6, alignItems: "center" }}>
+          {edit && r.status === "HANDED_IN" && <Button className="h-8 w-full justify-center" onClick={() => void check(r)}>Check</Button>}
+          {edit && r.status === "HANDED_IN" && <Button className="h-8 w-full justify-center" variant="secondary" onClick={() => void reject(r)}>Reject</Button>}
+          {full && payable(r) && <Button className="h-8 w-full justify-center" onClick={() => void payBack(r)}>Pay back</Button>}
           {r.paybackPvId && <Link className="text-xs underline" to={`/scm/payment-vouchers/${r.paybackPvId}`}>Voucher</Link>}
         </span>
       ),
@@ -204,8 +215,22 @@ function FinancePaysBack({ run }: { run: (path: string, body: unknown, method?: 
         <span className={styles.fieldLabel}>Month</span>
         <input type="month" className={styles.fieldInput} value={month} onChange={(e) => setMonth(e.target.value)} />
       </label>
+      {full && tickedRows.length > 0 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 600 }}>{tickedRows.length} ticked · <Money sen={tickedRows.reduce((n, r) => n + r.amountSen, 0)} /></span>
+          <Button className="h-8" onClick={() => void payBackTogether()}>Pay back on one voucher</Button>
+          <Button className="h-8" variant="ghost" onClick={() => setTicked(new Set())}>Clear</Button>
+        </div>
+      )}
       <DataTable<Receipt> tableId="conts-petty-finance" columns={columns} rows={q.data ? q.data.receipts : null} loading={q.isLoading}
-        error={q.isError ? "The receipts did not load." : null} emptyLabel="No receipts to pay back this month." getRowKey={(r) => r.id} />
+        error={q.isError ? "The receipts did not load." : null} emptyLabel="No receipts to pay back this month." getRowKey={(r) => r.id}
+        selection={full ? {
+          selectedIds: ticked,
+          onToggle: (id: string) => setTicked((t) => { const n = new Set(t); if (n.has(id)) n.delete(id); else n.add(id); return n; }),
+          onToggleAll: (keys: string[], all: boolean) => setTicked(all ? new Set() : new Set(keys)),
+          rowLabel: (r: Receipt) => `Tick ${r.receiptNo}`,
+          isDisabled: (id: string) => !(q.data?.receipts ?? []).some((r) => r.id === id && payable(r)),
+        } : undefined} />
     </div>
   );
 }

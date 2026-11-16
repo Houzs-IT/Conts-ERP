@@ -12,9 +12,11 @@ export const fixOnUtilityBills = (q: { status: string; fromBills?: boolean }): b
 
 /** A saved line as the form edits it: what it is for (a maintenance job, a unit, a project or nothing), its amount and
  *  words. A job's line also names the job's unit; it comes back as the job. */
-export function lineDraftOf(l: { unitId: string | null; maintenanceIssueId: string | null; projectId: number | null; amountSen: number; description: string | null }) {
+export function lineDraftOf(l: { unitId: string | null; maintenanceIssueId: string | null; projectId: number | null; amountSen: number; description: string | null; subDepartmentId?: string | null }) {
   const where: 'job' | 'unit' | 'project' | 'none' = l.maintenanceIssueId ? 'job' : l.unitId ? 'unit' : l.projectId != null ? 'project' : 'none';
-  return { where, unitId: l.unitId ?? '', jobId: l.maintenanceIssueId ?? '', projectId: l.projectId != null ? String(l.projectId) : '', amountSen: l.amountSen, description: l.description ?? '' };
+  return { where, unitId: l.unitId ?? '', jobId: l.maintenanceIssueId ?? '', projectId: l.projectId != null ? String(l.projectId) : '', amountSen: l.amountSen, description: l.description ?? '',
+    /* The sub-department the line was on (a job's line is the job's: Maintenance). */
+    subDepartmentId: l.maintenanceIssueId ? '' : l.subDepartmentId ?? '' };
 }
 
 /** How a request's reason reads (review, 13 Nov 2026): the reason now while it is rejected or closed; once it has been

@@ -23,7 +23,7 @@ import { api, errorMessage } from '../lib/api';
 import { date, monthLabel, rm, todayMyt, buildingName } from '../lib/format';
 import {
   DEPARTMENT, RECEIPT_STATUS, RECEIPT_TONE, REQUEST_STATUS, REQUEST_TONE, describeClaimLine, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, requestFileHref, thisMonthMyt,
-  type ClaimFile, type ClaimLine, type LineDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt,
+  type ClaimFile, type ClaimLine, type LineDepartment, type LineSubDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt,
 } from '../lib/claims';
 import { canResubmit, fixOnUtilityBills, lineDraftOf, reasonNote, wantedOnAgain } from '../lib/requestResubmit';
 import { balanceSen, billLabel, canAskBalance, onBill, updatedFromBill } from '../lib/requestApInvoice';
@@ -38,10 +38,12 @@ import { balanceSen, billLabel, canAskBalance, onBill, updatedFromBill } from '.
  */
 type Tab = 'handin' | 'mine' | 'float';
 type Kind = 'claim' | 'direct';
-type LineDraft = { where: 'none' | 'unit' | 'job' | 'project'; unitId: string; jobId: string; projectId: string; amountSen: number | null; description: string };
+/* subDepartmentId: '' starts the line on the person's own department (the engine fills it); else the one chosen (SOP 1.1, the department
+   starts as the person's and may be changed; chew 16 Nov 2026). */
+type LineDraft = { where: 'none' | 'unit' | 'job' | 'project'; unitId: string; jobId: string; projectId: string; amountSen: number | null; description: string; subDepartmentId: string };
 type Supplier = { id: string; code: string; name: string };
 
-const blankLine = (): LineDraft => ({ where: 'none', unitId: '', jobId: '', projectId: '', amountSen: null, description: '' });
+const blankLine = (): LineDraft => ({ where: 'none', unitId: '', jobId: '', projectId: '', amountSen: null, description: '', subDepartmentId: '' });
 const lastMonths = (n: number): SelectOption[] => {
   const [y, m] = thisMonthMyt().split('-').map(Number);
   return Array.from({ length: n }, (_, i) => {
@@ -83,6 +85,9 @@ interface LineTargets {
   unitOptions: SelectOption[];
   jobOptions: SelectOption[];
   projectOptions: SelectOption[];
+  /** The sub-departments, grouped by department, and the person's own (the one a line starts on). */
+  subOptions: SelectOption[];
+  mineSub: LineSubDepartment | null;
 }
 
 /** What a line can be for (units grouped by building, jobs with their unit, projects). */
@@ -90,18 +95,23 @@ function useLineTargets(): LineTargets {
   const units = useApi<{ units: { id: string; building: string; unitNumber: string }[] }>('/claims/units');
   const jobs = useApi<{ jobs: { id: string; unitId: string; title: string }[] }>('/claims/jobs');
   const projects = useApi<{ projects: { id: number; code: string | null; name: string }[] }>('/claims/projects');
+  const subs = useApi<{ subDepartments: LineSubDepartment[]; mine: string | null }>('/claims/sub-departments');
   return useMemo(() => {
     const unitOptions = (units.data?.units ?? []).map(u => ({ value: u.id, label: `${buildingName(u.building)} ${u.unitNumber}`, group: buildingName(u.building) }));
     const unitLabels = new Map(unitOptions.map(o => [o.value, o.label]));
     const jobOptions = (jobs.data?.jobs ?? []).map(j => ({ value: j.id, label: j.title, hint: unitLabels.get(j.unitId) }));
     const projectOptions = (projects.data?.projects ?? []).map(p => ({ value: String(p.id), label: [p.code, p.name].filter(Boolean).join(' ') }));
-    return { unitOptions, jobOptions, projectOptions };
-  }, [units.data, jobs.data, projects.data]);
+    const list = subs.data?.subDepartments ?? [];
+    const mineSub = list.find(x => x.id === subs.data?.mine) ?? null;
+    const subOptions = list.map(x => ({ value: x.id, label: x.id === mineSub?.id ? `${x.name} (your department)` : x.name, group: DEPARTMENT[x.department] }));
+    return { unitOptions, jobOptions, projectOptions, subOptions, mineSub };
+  }, [units.data, jobs.data, projects.data, subs.data]);
 }
 
-/** The cost lines: what it was for. The department is the person's (a maintenance job's is Rental); finance sets the account. */
+/** The cost lines: what it was for, and the department: the person's own to start with, which they may change (SOP 1.1;
+ *  chew 16 Nov 2026). A maintenance job's line is the job's, Maintenance. Finance sets the account. */
 function LinesEditor({ lines, setLines, totalSen, department }: { lines: LineDraft[]; setLines: (l: LineDraft[]) => void; totalSen: number | null; department: LineDepartment }) {
-  const { unitOptions, jobOptions, projectOptions } = useLineTargets();
+  const { unitOptions, jobOptions, projectOptions, subOptions, mineSub } = useLineTargets();
   const set = (i: number, patch: Partial<LineDraft>) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const split = lines.length > 1;
   return (
@@ -114,12 +124,19 @@ function LinesEditor({ lines, setLines, totalSen, department }: { lines: LineDra
               <Button variant="ghost" size="sm" onClick={() => setLines(lines.filter((_, j) => j !== i))}>Remove</Button>
             </div>
           )}
-          <div className="flex flex-col gap-1">
-            <span className="text-meta font-semibold text-ink">Department</span>
-            <span className="text-copy text-muted-ink">
-              {l.where === 'job' ? `${DEPARTMENT.rental} (a maintenance job)` : `${DEPARTMENT[department]} (from your department)`}
-            </span>
-          </div>
+          {l.where === 'job' || subOptions.length === 0 ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-meta font-semibold text-ink">Department</span>
+              <span className="text-copy text-muted-ink">
+                {l.where === 'job' ? `${DEPARTMENT.rental} (a maintenance job)` : `${DEPARTMENT[department]} (from your department)`}
+              </span>
+            </div>
+          ) : (
+            <div className="sm:max-w-[360px]">
+              <ComboSelect label="Department" value={l.subDepartmentId || mineSub?.id || ''} onChange={v => set(i, { subDepartmentId: v === mineSub?.id ? '' : v })}
+                placeholder="Type a department" options={subOptions} />
+            </div>
+          )}
           <ChoiceChips label="For" value={l.where} onChange={v => set(i, { where: v })}
             options={[{ value: 'none', label: 'The department' }, { value: 'unit', label: 'A unit' }, { value: 'job', label: 'A maintenance job' }, { value: 'project', label: 'A project' }]} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
@@ -159,6 +176,7 @@ function toLines(lines: LineDraft[], totalSen: number): { ok: true; lines: NewLi
       amountSen, description: l.description.trim() || undefined,
       ...(l.where === 'unit' ? { unitId: l.unitId } : {}), ...(l.where === 'job' ? { maintenanceIssueId: l.jobId } : {}),
       ...(l.where === 'project' ? { projectId: Number(l.projectId) } : {}),
+      ...(l.where !== 'job' && l.subDepartmentId ? { subDepartmentId: l.subDepartmentId } : {}),
     });
   }
   if (out.reduce((n, l) => n + l.amountSen, 0) !== totalSen) return { ok: false, message: 'The lines must add up to the amount.' };
