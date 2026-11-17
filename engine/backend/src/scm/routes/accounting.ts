@@ -82,6 +82,7 @@ import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './account
 import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal, cutoverDocuments } from '../../acc/opening';
 import { importOpeningDeposits, reverseOpeningDeposits } from '../../acc/opening-deposits';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
+import { mergeDebtors } from '../../acc/debtor-merge';
 import { AUTOCOUNT_MAX_DOCS, importAutocountJournals, reverseAutocountJournals, type AutocountJournal } from '../../acc/autocount-journals';
 import { partyLedgerHandler } from '../../conts/party-ledger';
 import { createSubDepartmentHandler, listStaffDepartmentsHandler, listSubDepartmentsHandler, updateSubDepartmentHandler } from '../../conts/sub-department-routes';
@@ -294,6 +295,20 @@ accounting.post('/payment-requests/:id/ap-invoice', paymentRequests.makeRequestA
 accounting.post('/vouchers/from-claims', combinedVoucher.combinedVoucherHandler);
 accounting.post('/debtors', createDebtorHandler);
 accounting.patch('/debtors/:id', patchDebtorHandler);
+
+/* One customer under two codes, merged into the one kept (acc/debtor-merge.ts; chew, 17 Nov 2026). */
+export const debtorMergeHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const r = await mergeDebtors(c.get('supabase'), co.companyId, String(body?.from ?? ''), String(body?.to ?? ''),
+    String(body?.date ?? todayMyt()), body?.dryRun !== false);
+  if (!r.ok) return c.json({ error: r.error }, r.status as 400);
+  return c.json(r.merge);
+};
+accounting.post('/debtors/merge', debtorMergeHandler);
 accounting.put('/chart/rename', chartRenameHandler);
 accounting.put('/chart/update', chartUpdateHandler);
 accounting.post('/chart/account', chartCreateHandler);
