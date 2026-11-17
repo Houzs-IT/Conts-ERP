@@ -15,7 +15,6 @@ import { paginateAll } from '../scm/lib/paginate-all';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { todayMyt } from '../scm/lib/my-time';
 import { nextInstalmentAmount } from '../scm/shared/renovation-money';
-import { confirmedPaymentIds } from './receipts';
 import { contractCompletions, inChunks, type ContractCompletion } from './reno-completion';
 import { goLiveOf } from './go-live';
 import { countsInTheBooks } from './reversal-pairs';
@@ -142,15 +141,11 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
   const apIds = [...new Set(apLines.map((l) => String(l.invoice_id)))];
   /* As at the date: bills dated by then and posted (a draft is not owed yet). */
   const livePis = pis.filter((x) => !['CANCELLED', 'DRAFT'].includes(String(x.status).toUpperCase()) && day(x.invoice_date) <= asOf);
-  const [soOk, siOk, aps, advJes] = await Promise.all([
-    confirmedPaymentIds(sb, companyId, 'SOPAY', soPays.map((p) => String(p.id))),
-    confirmedPaymentIds(sb, companyId, 'SIPAY', siPays.map((p) => String(p.id))),
+  const [aps, advJes] = await Promise.all([
     inChunks(apIds, (b, f, t) => sb.from('ap_invoices').select('id, status, total_sen, invoice_date').eq('company_id', companyId).in('id', b).order('id').range(f, t), 'AP invoices'),
     inChunks([...new Set([...advLines, ...depLines].map((l) => String(l.journal_entry_id)))], (b, f, t) => sb.from('journal_entries').select('id, entry_date, posted, reversed, reversed_by_je')
       .eq('company_id', companyId).in('id', b).order('id').range(f, t), 'advance entries'),
   ]);
-  if (!soOk.ok) fail('receipts', { message: soOk.reason });
-  if (!siOk.ok) fail('receipts', { message: siOk.reason });
   const liveAps = aps.filter((a) => !['CANCELLED', 'DRAFT'].includes(String(a.status).toUpperCase()) && day(a.invoice_date) <= asOf);
 
   /* What was paid on each bill by the date: posted vouchers dated by then (paid_sen is today's figure). */
@@ -197,12 +192,17 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
     at.push({ date: day(p.paid_at), sen: Number(p.amount_sen ?? 0) });
     paidBy.set(doc, at);
   };
-  for (const p of soPays) if ((soOk as { ids: Set<string> }).ids.has(String(p.id))) addPay(String(p.so_doc_no), p);
-  for (const p of siPays) if ((siOk as { ids: Set<string> }).ids.has(String(p.id))) addPay(siDoc.get(String(p.sales_invoice_id)), p);
+  /* Every payment recorded on the contract counts from the day it is recorded, confirmed or not: finance reconciles
+     the bank later (chew, 17 Nov 2026). A contract AutoCount carried (seeded with its go-live amount) takes only the
+     payments from go-live on: AutoCount's figures already hold the earlier ones. */
+  const goLive = goLiveOf(settings.data as Row | null);
+  const seeded = new Set(contracts.filter((k) => k.golive_contract_sen != null).map((k) => String(k.so_doc_no)));
+  const counts = (doc: string | undefined, p: Row) => !doc || !seeded.has(doc) || !goLive || day(p.paid_at) >= goLive;
+  for (const p of soPays) if (counts(String(p.so_doc_no), p)) addPay(String(p.so_doc_no), p);
+  for (const p of siPays) { const doc = siDoc.get(String(p.sales_invoice_id)); if (counts(doc, p)) addPay(doc, p); }
   /* What AutoCount collected before go-live, on the day before it. A contract seeded with its go-live amount was
      invoiced whole by AutoCount ("TOTAL SALES ORDER"): collected is that amount less what was still open, plus what was
      paid ahead. One seeded with only what AutoCount invoiced takes that less what was open. */
-  const goLive = goLiveOf(settings.data as Row | null);
   if (goLive) {
     const eve = new Date(Date.parse(`${goLive}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
     for (const k of contracts) {
