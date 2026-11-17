@@ -95,6 +95,25 @@ describe('parseChartXlsx — the AutoCount report shape', () => {
     expect(p.unknownSections).toEqual(['MYSTERY SECTION']);
   });
 
+  test('three levels indented 0, 4 and 6 spaces stay three levels (chew, 17 Nov 2026)', () => {
+    const aoa = [
+      ['Acc. No.', 'Description', null, 'Currency'],
+      ['EXPENSES'],
+      ['630-0000', 'ABNB - COST OF GOOD SOLD', null, 'MYR'],
+      ['    650-0000', 'ABNB UTILITY & EXPENSE', null, 'MYR'],
+      ['      650-0010', 'ABNB WATER EXPENSE', null, 'MYR'],
+      ['      650-0020', 'ABNB ELECTRICAL EXPENSE', null, 'MYR'],
+      ['    640-0000', 'ABNB - PURCHASE', null, 'MYR'],
+      ['      640-0010', 'PURCHASE - ABNB', null, 'MYR'],
+      ['900-B001', 'BANK CHARGES', null, 'MYR'],
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Sheet');
+    const parent = Object.fromEntries(parseChartXlsx(wb, SECTIONS).rows.map((r) => [r.code, r.parentCode]));
+    expect(parent).toEqual({ '630-0000': null, '650-0000': '630-0000', '650-0010': '650-0000', '650-0020': '650-0000',
+      '640-0000': '630-0000', '640-0010': '640-0000', '900-B001': null });
+  });
+
   /* The Conts export (finance, 22 Oct 2026): the name sits in column 3, the currency in 9, the special type in 16 under
      a "Special Acc Type" label one row above the header. Every customer (SDR) and supplier (SCR) is a sub-account of
      its control in AutoCount; here they are parties, not accounts — a control with sub-accounts could not be posted. */
