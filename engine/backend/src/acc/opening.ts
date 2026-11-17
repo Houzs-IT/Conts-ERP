@@ -8,6 +8,7 @@
 //     source OPENING) that pays their later invoices; a supplier's becomes an opening payment voucher (migration 0332,
 //     posting nothing) holding a supplier advance that knocks off their later bills;
 //   · a check that the two agree, and that the trial balance and each bank read as AutoCount's.
+import { stampOrderDeposit } from '../scm/lib/si-order-deposit';
 import { postJournal, reverseJournal } from './engine';
 import { loadLedgerSettings } from './ledger-settings';
 import { apControlOf, resolveRoles } from './rules';
@@ -327,8 +328,8 @@ export type OpeningCheck = {
 type CheckDoc = {
   total_sen: number | null; paid_sen: number | null; status: string | null; invoice_date: string | null;
   opening_balance: boolean | null; migrated_no_stock: boolean | null; supplier_id?: string | null; debtor_code?: string | null;
-  /** A sales invoice settled from its order's deposit (paid_sen stays 0 on it). */
-  so_deposit_applied_sen?: number | null; so_doc_no?: string | null;
+  /** A sales invoice settled from its order's deposit (paid_sen stays 0 on it): stamped after the read. */
+  id?: string; so_deposit_applied_sen?: number | null; so_doc_no?: string | null;
 };
 type ContractLine = { source_type: string; source_doc_no: string | null; account_code: string; debit_sen: number; credit_sen: number; reversed: boolean | null };
 /** The contract journals of acc/reno-ledger.ts: signing, change, cancel. */
@@ -347,7 +348,7 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
     resolveRoles(sb, companyId),
     activeOpening(sb, companyId),
     paginateAll((from, to) => sb.from('accounts').select('account_code, account_name, acc_money, special_type').eq('company_id', companyId).order('account_code').range(from, to)),
-    allDocs<CheckDoc>(sb, 'sales_invoices', companyId, `${DOC_COLS}, debtor_code, so_deposit_applied_sen, so_doc_no`),
+    allDocs<CheckDoc>(sb, 'sales_invoices', companyId, `${DOC_COLS}, id, debtor_code, so_doc_no`),
     allDocs<CheckDoc>(sb, 'purchase_invoices', companyId, `${DOC_COLS}, supplier_id`),
     paginateAll((from, to) => sb.from('suppliers').select('id, code, control_account').eq('company_id', companyId).order('id').range(from, to)),
     paginateAll((from, to) => sb.from('debtors').select('code, control_account').eq('company_id', companyId).order('code').range(from, to)),
@@ -369,6 +370,9 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
   if (credits.error) return { ok: false, error: `The customer credits could not be read: ${(credits.error as { message?: string }).message ?? ''}` };
   if (advances.error) return { ok: false, error: `The payment vouchers could not be read: ${(advances.error as { message?: string }).message ?? ''}` };
   if (!apis.ok) return { ok: false, error: `The AP invoices could not be read: ${apis.error}` };
+  /* The deposit an ERP invoice was settled from is not on the invoice; it is worked out from its order the way the
+     invoice list does (scm/lib/si-order-deposit.ts). A failed read leaves it unknown, so the invoice counts in full. */
+  await stampOrderDeposit(sb, sis.rows.filter((d) => d.opening_balance !== true && d.so_doc_no), companyId);
   if (contracts.error) return { ok: false, error: `The renovation contracts could not be read: ${(contracts.error as { message?: string }).message ?? ''}` };
   const supplierOf = new Map(((sups.data ?? []) as Array<{ id: string; code: string; control_account: string | null }>).map((x) => [x.id, x]));
   const debtorControlOf = new Map(((debtors.data ?? []) as Array<{ code: string; control_account: string }>).map((x) => [x.code, x.control_account]));

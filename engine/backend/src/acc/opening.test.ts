@@ -214,7 +214,9 @@ describe('the opening check', () => {
     sb.tables.v_gl_entries.push(gl({ account_code: '300-0000', debit_sen: 80_000, credit_sen: 0 }, 'RCON', 'SO-1'));
     sb.tables.v_gl_entries.push(gl({ account_code: '300-0000', debit_sen: 0, credit_sen: 10_000 }, 'SOPAY', 'SO-1'));
     sb.tables.sales_invoices.push({ id: 'si-1', company_id: CO, invoice_number: 'SI-1', debtor_code: '300-A001', so_doc_no: 'SO-1', invoice_date: '2026-11-20',
-      total_sen: 10_000, paid_sen: 0, so_deposit_applied_sen: 10_000, status: 'PAID', opening_balance: false, migrated_no_stock: false });
+      total_sen: 10_000, paid_sen: 0, status: 'PAID', opening_balance: false, migrated_no_stock: false });
+    sb.tables.mfg_sales_orders = [{ doc_no: 'SO-1', company_id: CO, total_revenue_sen: 80_000, deposit_sen: 10_000 }];
+    sb.tables.mfg_sales_order_payments = [{ so_doc_no: 'SO-1', amount_sen: 10_000, is_deposit: true }];
     sb.tables.ap_invoices.push({ id: 'ap-1', company_id: CO, supplier_id: 'sup-1', invoice_date: '2026-11-20', total_sen: 30_000, paid_sen: 0, status: 'POSTED' });
     await importOpeningReceivables(sb, CO, [{ docNo: 'IV-1', debtorName: 'A', debtorCode: '300-A001', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 50_000 }], ACTOR);
 
