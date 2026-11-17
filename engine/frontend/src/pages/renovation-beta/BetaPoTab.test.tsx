@@ -120,11 +120,12 @@ describe("PO tab", () => {
     expect(within(region).getAllByText("Not yet").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    // SKU, qty and supplier cannot be changed here (owner, 05/11/2026): the remark and dates can.
+    // SKU and qty cannot be changed here (owner, 05/11/2026): the remark and dates can, and (owner, 17/11/2026) the
+    // supplier and receiving warehouse of a line still waiting for its PO; a line on a PO shows its PO's as text.
     expect(within(region).queryByLabelText(/^Qty for/)).toBeNull();
     expect(within(region).queryByRole("button", { name: /^Change SKU/ })).toBeNull();
-    expect(within(region).queryByLabelText(/^Supplier for/)).toBeNull();
-    expect(within(region).queryByRole("columnheader", { name: "Supplier" })).toBeNull();
+    expect(within(region).getByRole("columnheader", { name: /^Supplier/ })).toBeTruthy();
+    expect(within(region).getByRole("columnheader", { name: /^Receive at/ })).toBeTruthy();
     expect(within(region).getAllByRole("button", { name: /Add a remark to/ }).length).toBe(2);
     // The PO's own date is changed in the PO: the number opens its editor.
     expect(within(region).queryByLabelText("PO date of TC-PO-2610-006")).toBeNull();
