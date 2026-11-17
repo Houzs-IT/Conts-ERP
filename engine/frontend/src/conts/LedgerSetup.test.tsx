@@ -49,6 +49,7 @@ vi.mock("./opening", async (importOriginal) => ({
     : { isSuccess: false, isError: false, data: undefined }),
   useImportOpening: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useReverseOpening: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRefreshAfterOpening: () => () => undefined,
 }));
 let floats: Array<{ active: boolean }> = [];
 vi.mock("./claimsQueries", () => ({

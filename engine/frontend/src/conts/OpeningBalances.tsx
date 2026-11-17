@@ -6,8 +6,8 @@ import { Button } from "@2990s/design-system";
 import { SetupCard } from "./SetupCard";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import {
-  OPENING_COLUMNS, downloadTemplate, parseJournalGrid, parsePayablesGrid, parseReceivablesGrid, readWorkbookGrid, useImportOpening,
-  useOpeningCheck, useReverseOpening, type ControlLine, type OpeningCheck, type OpeningImportResult, type OpeningKind, type ParsedSheet,
+  AUTOCOUNT_COLUMNS, AUTOCOUNT_OPTIONAL, OPENING_COLUMNS, downloadTemplate, importAutocount, parseAutocountGrid, parseJournalGrid, parsePayablesGrid, parseReceivablesGrid, readWorkbookGrid, useImportOpening,
+  useOpeningCheck, useReverseOpening, type ControlLine, type OpeningCheck, type OpeningImportResult, type OpeningKind, type ParsedSheet, type AutocountImport, type AutocountSheet, useRefreshAfterOpening,
 } from "./opening";
 
 const GOOD = "var(--c-secondary-a, #2F5D4F)";
@@ -34,6 +34,7 @@ export function OpeningBalances({ canSave, ledgerStartDate }: { canSave: boolean
             hint="AutoCount's outstanding debtor list. They post nothing (the journal holds the amount) but show in the ageing and take payments. A minus (a receipt or credit note not yet knocked off) becomes a credit the customer spends on later invoices." />
           <UploadPanel kind="payables" canSave={canSave} title="3. Bills the company still owes"
             hint="AutoCount's outstanding creditor list. The supplier code must match a supplier in the system. A minus (a payment not yet knocked off) becomes an opening payment voucher holding an advance that knocks off later bills." />
+          <AutocountPanel canSave={canSave} />
         </>
       )}
     </SetupCard>
@@ -234,6 +235,74 @@ function UploadPanel({ kind, title, hint, canSave }: { kind: OpeningKind; title:
         <ul style={{ margin: 0, paddingLeft: 18, color: BAD, fontSize: "var(--fs-13)" }}>
           {rowErrors.map((e) => <li key={e.docNo}>{e.docNo}: {e.error}</li>)}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/** AutoCount's books after the ledger start (chew, 17 Nov 2026): the ledger's lines in one sheet, a row each, booked as
+    one journal per document, a hundred at a time. Sending the same sheet again books nothing twice. */
+function AutocountPanel({ canSave }: { canSave: boolean }) {
+  const refresh = useRefreshAfterOpening();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [sheet, setSheet] = useState<AutocountSheet | null>(null);
+  const [fileName, setFileName] = useState("");
+  const [progress, setProgress] = useState<string | null>(null);
+  const [result, setResult] = useState<AutocountImport | null>(null);
+  const busy = progress != null && result == null;
+  const onFile = async (f: File | undefined) => {
+    setResult(null); setProgress(null);
+    if (!f) return;
+    setFileName(f.name);
+    setSheet(parseAutocountGrid(await readWorkbookGrid(f)));
+  };
+  const go = async () => {
+    if (!sheet) return;
+    setResult(null); setProgress(`0 of ${sheet.docs.length}`);
+    const r = await importAutocount(sheet.docs, (done, total) => setProgress(`${done} of ${total}`));
+    setResult(r);
+    refresh();
+  };
+  const ready = canSave && !!sheet && !sheet.error && sheet.docs.length > 0 && sheet.problems.length === 0 && !busy;
+  return (
+    <div style={{ borderTop: "1px solid var(--line)", paddingTop: "var(--space-3)", display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+      <b>4. AutoCount&apos;s books after the start</b>
+      <span style={{ fontSize: "var(--fs-12)", color: MUTED }}>
+        The general ledger kept in AutoCount from the day the books start, a row per line. Each Doc no is one journal on its own date; a customer&apos;s or
+        supplier&apos;s AutoCount account posts to its control with the party kept. Columns: {AUTOCOUNT_COLUMNS.join(", ")}; optional {AUTOCOUNT_OPTIONAL.join(", ")}.
+      </span>
+      <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
+        <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()} disabled={!canSave || busy}>Upload Excel</Button>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} aria-label="AutoCount ledger file" onChange={(e) => void onFile(e.target.files?.[0])} />
+        {fileName && sheet && <span style={{ fontSize: "var(--fs-12)", color: MUTED }}>{fileName}</span>}
+      </div>
+      {sheet?.error && <p style={{ margin: 0, color: BAD }}>{sheet.error}</p>}
+      {sheet && !sheet.error && (
+        <>
+          <div style={{ fontSize: "var(--fs-13)" }} data-testid="autocount-summary">
+            {sheet.docs.length} documents · {sheet.lines} lines · Dr {rm(sheet.debitSen)} · Cr {rm(sheet.creditSen)}
+          </div>
+          {sheet.problems.length > 0 && (
+            <ul style={{ margin: 0, paddingLeft: 18, color: BAD, fontSize: "var(--fs-12)" }}>
+              {sheet.problems.slice(0, 20).map((p) => <li key={p}>{p}</li>)}
+              {sheet.problems.length > 20 && <li>and {sheet.problems.length - 20} more</li>}
+            </ul>
+          )}
+          <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+            <Button variant="primary" size="sm" onClick={() => void go()} disabled={!ready}>{busy ? "Booking…" : "Book the journals"}</Button>
+            {progress && <span style={{ fontSize: "var(--fs-12)", color: MUTED }}>{progress} documents</span>}
+          </div>
+        </>
+      )}
+      {result && (
+        <div style={{ fontSize: "var(--fs-13)", color: result.errors.length ? BAD : GOOD }} data-testid="autocount-result">
+          {result.posted} booked, {result.already} already there{result.errors.length ? `, ${result.errors.length} refused` : ""}.
+          {result.errors.length > 0 && (
+            <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: "var(--fs-12)" }}>
+              {result.errors.slice(0, 50).map((e) => <li key={e.docNo + e.error}>{e.docNo}: {e.error}</li>)}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );
