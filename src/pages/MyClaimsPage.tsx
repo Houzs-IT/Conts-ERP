@@ -311,6 +311,19 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
      a payee typed while reading): pick()'s own variables are the values from when the files were chosen. */
   const formNow = useRef({ amountSen, hasSupplierOrPo: false, payeeName, wantedOn, note, billTotalSen, depositPct });
   formNow.current = { amountSen, hasSupplierOrPo: !!supplier || !!poId, payeeName, wantedOn, note, billTotalSen, depositPct };
+  /* A figure the papers put in follows the kind (chew, 17 Nov 2026: read as a payment's amount, then switched to a
+     deposit, it sat in the deposit amount): a deposit's bill total is the payment's amount, and back. Typed figures stay. */
+  const switchType = (t: 'PAYMENT' | 'DEPOSIT') => {
+    if (t === type) return;
+    setType(t);
+    const r = readFig.current;
+    if (t === 'DEPOSIT' && amountSen != null && amountSen === r.amountSen && billTotalSen == null) {
+      setBillTotalSen(amountSen); r.totalSen = amountSen; r.amountSen = null;
+      const share = depositSen(amountSen, depositPct); setAmountSen(share);
+    } else if (t === 'PAYMENT' && billTotalSen != null && billTotalSen === r.totalSen && (amountSen == null || amountSen === depositSen(billTotalSen, depositPct))) {
+      setAmountSen(billTotalSen); r.amountSen = billTotalSen; r.totalSen = null; setBillTotalSen(null);
+    }
+  };
   /* The figures the last papers read put in: papers picked again replace those, never a figure the person typed
      (chew, 17 Nov 2026: a new quotation's total did not replace the old one's). */
   const readFig = useRef<{ amountSen: number | null; totalSen: number | null }>({ amountSen: null, totalSen: null });
@@ -452,7 +465,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
                 )}
                 <FileDropRow label={kept.length ? 'Add more papers (optional)' : 'Add the invoice, receipt or quotation'} hint="Photos or a PDF. Empty fields are filled from it; check them before you send." accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
                   busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
-                <ChoiceChips label="What to pay" value={type} onChange={setType} options={[{ value: 'PAYMENT', label: 'A payment' }, { value: 'DEPOSIT', label: 'A deposit' }]}
+                <ChoiceChips label="What to pay" value={type} onChange={switchType} options={[{ value: 'PAYMENT', label: 'A payment' }, { value: 'DEPOSIT', label: 'A deposit' }]}
                   help={type === 'PAYMENT' ? 'A bill to pay: an invoice or a receipt from the supplier.' : 'Paid before the bill, to a supplier on the list; their bill later is set off against it.'} />
                 {/* A deposit is a percent of the bill or quotation, or an amount typed; either way the amount stays the one
                     to change (chew, 17 Nov 2026: a percent or an amount). The percent follows a typed amount back. */}
