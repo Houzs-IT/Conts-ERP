@@ -1,7 +1,7 @@
 /* The books kept in AutoCount after the ledger start, as journals (chew, 17 Nov 2026). */
 import { describe, expect, test } from 'vitest';
 import { fakeSb, type Row } from '../scm/lib/fake-postgrest';
-import { importAutocountJournals } from './autocount-journals';
+import { importAutocountJournals, reverseAutocountJournals } from './autocount-journals';
 
 const CO = 1;
 const acct = (code: string, type: string): Row => ({ account_code: code, account_name: code, account_type: type, parent_code: null, is_active: true, company_id: CO });
@@ -54,5 +54,16 @@ describe('AutoCount documents as journals', () => {
     expect(r.posted).toBe(1);
     expect(r.errors.map((e) => e.docNo)).toEqual(['X1', 'X2', 'X3']);
     expect(r.errors[0]!.error).toContain('999-9999');
+  });
+  test('a document the ERP had booked already is taken back on its own day; one never booked is said so', async () => {
+    const sb = world();
+    await importAutocountJournals(sb, CO, [{ docNo: 'PI-002712', date: '2026-10-19', lines: [{ accountCode: '601-0010', debitSen: 182_200, creditSen: 0 }, { accountCode: '400-H006', debitSen: 0, creditSen: 182_200 }] }]);
+    const r = await reverseAutocountJournals(sb, CO, ['PI-002712', 'PI-009999'], 'is TC-API-2611-010');
+    expect(r).toEqual({ reversed: ['PI-002712'], missing: ['PI-009999'], errors: [] });
+    const contra = sb.tables.journal_entries.find((j) => j.source_type !== 'ACJ');
+    expect(contra).toMatchObject({ entry_date: '2026-10-19' });
+    const net = sb.tables.journal_entry_lines.filter((l) => l.account_code === '405-0000').reduce((t, l) => t + Number(l.credit_sen) - Number(l.debit_sen), 0);
+    expect(net).toBe(0);
+    expect((await reverseAutocountJournals(sb, CO, ['PI-002712'], 'again')).missing).toEqual(['PI-002712']);
   });
 });

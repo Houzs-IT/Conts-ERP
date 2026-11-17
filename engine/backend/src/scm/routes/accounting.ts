@@ -82,7 +82,7 @@ import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './account
 import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal, cutoverDocuments } from '../../acc/opening';
 import { importOpeningDeposits, reverseOpeningDeposits } from '../../acc/opening-deposits';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
-import { AUTOCOUNT_MAX_DOCS, importAutocountJournals, type AutocountJournal } from '../../acc/autocount-journals';
+import { AUTOCOUNT_MAX_DOCS, importAutocountJournals, reverseAutocountJournals, type AutocountJournal } from '../../acc/autocount-journals';
 import { partyLedgerHandler } from '../../conts/party-ledger';
 import { createSubDepartmentHandler, listStaffDepartmentsHandler, listSubDepartmentsHandler, updateSubDepartmentHandler } from '../../conts/sub-department-routes';
 import { approveLimitRequestHandler, createLimitRequestHandler, getLimitSettingsHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler, setLimitSettingsHandler } from '../../conts/project-limit-routes';
@@ -610,6 +610,21 @@ export const autocountJournalsHandler = async (c: AccCtx): Promise<Response> => 
   return c.json(await importAutocountJournals(c.get('supabase'), co.companyId, docs as AutocountJournal[]));
 };
 accounting.post('/opening/autocount-journals', autocountJournalsHandler);
+
+/* An AutoCount document that turns out to be paper the ERP had booked already: its journal is taken back, on its own day. */
+export const autocountReverseHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const docNos = body?.docNos;
+  const why = typeof body?.why === 'string' && body.why.trim() ? body.why.trim() : 'booked in the ERP already';
+  if (!Array.isArray(docNos) || docNos.length === 0) return c.json({ error: 'Send the document numbers.' }, 400);
+  if (docNos.length > AUTOCOUNT_MAX_DOCS) return c.json({ error: `At most ${AUTOCOUNT_MAX_DOCS} documents at a time.` }, 400);
+  return c.json(await reverseAutocountJournals(c.get('supabase'), co.companyId, docNos.map(String), why));
+};
+accounting.post('/opening/autocount-journals/reverse', autocountReverseHandler);
 
 /* The open documents brought to AutoCount's as at the day it stopped (acc/opening.ts cutoverDocuments; chew, 17 Nov
    2026). { asOf, receivables, payables, dryRun }: a dry run says what it would remove, keep and add. */
