@@ -5,7 +5,7 @@
 // the party's control (its debtor's control, its supplier's control) with the party kept on the line, as every document
 // of the ledger posts. A code the chart has is the chart's (405-0001 is an account, not a supplier). The lines arrive
 // with their department, unit and project already worked out from AutoCount's project (the caller's mapping).
-import { postJournal } from './engine';
+import { postJournal, reverseJournal } from './engine';
 import { apControlOf, isDepartment, resolveRoles } from './rules';
 import type { RuleLine } from './rules';
 import { paginateAll } from '../scm/lib/paginate-all';
@@ -88,6 +88,27 @@ export async function importAutocountJournals(sb: Db, companyId: number, docs: A
   }
   if (docs.length > AUTOCOUNT_MAX_DOCS) {
     for (const d of docs.slice(AUTOCOUNT_MAX_DOCS)) out.errors.push({ docNo: text(d.docNo), error: `At most ${AUTOCOUNT_MAX_DOCS} documents at a time.` });
+  }
+  return out;
+}
+
+export type AutocountReverseResult = { reversed: string[]; missing: string[]; errors: { docNo: string; error: string }[] };
+
+/** Takes back AutoCount documents found to be the same paper the ERP had already booked (chew: the ERP's is kept). The
+ *  contra is dated as the original, so the ledger on any later day is as if AutoCount's had never come in. */
+export async function reverseAutocountJournals(sb: Db, companyId: number, docNos: string[], why: string): Promise<AutocountReverseResult> {
+  const out: AutocountReverseResult = { reversed: [], missing: [], errors: [] };
+  for (const docNo of [...new Set(docNos.map(text).filter(Boolean))].slice(0, AUTOCOUNT_MAX_DOCS)) {
+    const { data, error } = await sb.from('journal_entries').select('entry_date, reversed')
+      .eq('company_id', companyId).eq('source_type', AUTOCOUNT_SOURCE).eq('source_doc_no', docNo);
+    if (error) { out.errors.push({ docNo, error: error.message }); continue; }
+    const live = ((data ?? []) as Array<{ entry_date: string; reversed: boolean | null }>).find((j) => !j.reversed);
+    if (!live) { out.missing.push(docNo); continue; }
+    const r = await reverseJournal(sb, { sourceType: AUTOCOUNT_SOURCE, sourceDocNo: docNo, companyId, entryDate: live.entry_date,
+      narration: (o) => `Reversal of ${o.je_no}: AutoCount ${docNo} ${why}`.slice(0, 500) });
+    if (!r.ok) out.errors.push({ docNo, error: `${r.status}${r.reason ? `: ${r.reason}` : ''}` });
+    else if (r.status === 'reversed' || r.status === 'already_reversed') out.reversed.push(docNo);
+    else out.missing.push(docNo);
   }
   return out;
 }
