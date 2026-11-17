@@ -83,6 +83,7 @@ import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, 
 import { importOpeningDeposits, reverseOpeningDeposits } from '../../acc/opening-deposits';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
 import { mergeDebtors } from '../../acc/debtor-merge';
+import { discardDraftJournal } from '../../acc/draft-journal';
 import { AUTOCOUNT_MAX_DOCS, importAutocountJournals, reverseAutocountJournals, type AutocountJournal } from '../../acc/autocount-journals';
 import { partyLedgerHandler } from '../../conts/party-ledger';
 import { createSubDepartmentHandler, listStaffDepartmentsHandler, listSubDepartmentsHandler, updateSubDepartmentHandler } from '../../conts/sub-department-routes';
@@ -1572,6 +1573,17 @@ export const journalEntryReverseHandler = async (c: AccCtx): Promise<Response> =
   return c.json({ ok: true, ...('jeNo' in r ? { jeNo: r.jeNo, jeId: r.jeId } : {}), status: r.status });
 };
 accounting.post('/journal-entries/:id/reverse', journalEntryReverseHandler);
+
+/* A manual draft thrown away (acc/draft-journal.ts): it booked nothing, so there is nothing to reverse. */
+export const journalEntryDiscardHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const r = await discardDraftJournal(c.get('supabase'), co.companyId, String(c.req.param('id') ?? ''));
+  if (!r.ok) return c.json({ error: r.error }, r.status);
+  return c.json(r);
+};
+accounting.delete('/journal-entries/:id', journalEntryDiscardHandler);
 
 /* GET /control-check — reconciliation layer 1 (brief 3.5): control account
    vs the documents that are supposed to explain it, named to the doc.
