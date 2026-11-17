@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import { Card, FormSection } from '../components/Card';
 import { Button, ButtonLink } from '../components/Button';
@@ -278,15 +278,18 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
   const [spendDate, setSpendDate] = useState(todayMyt());
   const [vendorName, setVendorName] = useState('');
   /* Direct pay */
-  const [type, setType] = useState<'PAYMENT' | 'DEPOSIT'>(editing?.type ?? 'PAYMENT');
-  /* A deposit as a share of the bill or quotation, or its amount typed straight in (chew, 17 Nov 2026). */
-  const [billTotalSen, setBillTotalSen] = useState<number | null>(null);
+  /* No payment-or-deposit choice (chew, 17 Nov 2026): the bill or quotation total is paid whole, unless a deposit is
+     filled in, as a percent of it or an amount; then the request is that deposit. */
+  const [billTotalSen, setBillTotalSen] = useState<number | null>(editing && editing.type !== 'DEPOSIT' ? editing.amountSen : null);
   const [depositPct, setDepositPct] = useState('');
-  const shareOf = (total: number | null, pct: string) => { const sen = depositSen(total, pct); if (sen != null) setAmountSen(sen); };
-  /* The note finance reads: the share, when the amount is still that share of the total. */
+  const [depositAmtSen, setDepositAmtSen] = useState<number | null>(editing?.type === 'DEPOSIT' ? editing.amountSen : null);
+  const type: 'PAYMENT' | 'DEPOSIT' = depositAmtSen != null && depositAmtSen > 0 ? 'DEPOSIT' : 'PAYMENT';
+  const shareOf = (total: number | null, pct: string) => { if (pct.trim()) setDepositAmtSen(depositSen(total, pct)); };
+  /* The note finance reads: the share, when the deposit is still that share of the total. */
   const depositNote = () => {
     const share = type === 'DEPOSIT' ? depositSen(billTotalSen, depositPct) : null;
-    const said = share != null && share === amountSen ? `Deposit ${depositPct.trim()}% of ${rm(billTotalSen!)}` : '';
+    const said = share != null && share === depositAmtSen ? `Deposit ${depositPct.trim()}% of ${rm(billTotalSen!)}`
+      : type === 'DEPOSIT' && billTotalSen ? `Deposit of ${rm(billTotalSen)}` : '';
     return [said, note.trim()].filter(Boolean).join(' · ');
   };
   const [supplier, setSupplier] = useState<Supplier | null>(editing?.supplierId && !editing.purchaseOrderId ? { id: editing.supplierId, code: '', name: editing.payeeName } : null);
@@ -311,19 +314,8 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
      a payee typed while reading): pick()'s own variables are the values from when the files were chosen. */
   const formNow = useRef({ amountSen, hasSupplierOrPo: false, payeeName, wantedOn, note, billTotalSen, depositPct });
   formNow.current = { amountSen, hasSupplierOrPo: !!supplier || !!poId, payeeName, wantedOn, note, billTotalSen, depositPct };
-  /* A figure the papers put in follows the kind (chew, 17 Nov 2026: read as a payment's amount, then switched to a
-     deposit, it sat in the deposit amount): a deposit's bill total is the payment's amount, and back. Typed figures stay. */
-  const switchType = (t: 'PAYMENT' | 'DEPOSIT') => {
-    if (t === type) return;
-    setType(t);
-    const r = readFig.current;
-    if (t === 'DEPOSIT' && amountSen != null && amountSen === r.amountSen && billTotalSen == null) {
-      setBillTotalSen(amountSen); r.totalSen = amountSen; r.amountSen = null;
-      const share = depositSen(amountSen, depositPct); setAmountSen(share);
-    } else if (t === 'PAYMENT' && billTotalSen != null && billTotalSen === r.totalSen && (amountSen == null || amountSen === depositSen(billTotalSen, depositPct))) {
-      setAmountSen(billTotalSen); r.amountSen = billTotalSen; r.totalSen = null; setBillTotalSen(null);
-    }
-  };
+  /* What Direct pay asks for: the deposit when there is one, else the whole bill. */
+  useEffect(() => { if (kind === 'direct') setAmountSen(type === 'DEPOSIT' ? depositAmtSen : billTotalSen); }, [kind, type, depositAmtSen, billTotalSen]);
   /* The figures the last papers read put in: papers picked again replace those, never a figure the person typed
      (chew, 17 Nov 2026: a new quotation's total did not replace the old one's). */
   const readFig = useRef<{ amountSen: number | null; totalSen: number | null }>({ amountSen: null, totalSen: null });
@@ -349,9 +341,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
       const fill = requestBillFill(read, { ...formNow.current, today: todayMyt() });
       /* A deposit's bill is the whole quotation: its total, of which the deposit is a share. */
       const f = formNow.current;
-      if (type === 'DEPOSIT') {
-        if (takeRead('totalSen', f.billTotalSen, read.amountSen, setBillTotalSen)) shareOf(read.amountSen!, f.depositPct);
-      } else takeRead('amountSen', f.amountSen, read.amountSen, setAmountSen);
+      if (takeRead('totalSen', f.billTotalSen, read.amountSen, setBillTotalSen)) shareOf(read.amountSen!, f.depositPct);
       if (fill.supplier && !formNow.current.hasSupplierOrPo) setSupplier(s => s ?? fill.supplier!);
       if (fill.payeeName) setPayeeName(v => v || fill.payeeName!);
       if (fill.wantedOn) setWantedOn(v => v || fill.wantedOn!);
@@ -371,9 +361,10 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
 
   async function send() {
     setProblem(null);
-    if (!amountSen || amountSen <= 0) return setProblem(kind === 'claim' ? 'Enter the amount on the receipt.' : 'Enter the amount.');
+    if (!amountSen || amountSen <= 0) return setProblem(kind === 'claim' ? 'Enter the amount on the receipt.' : 'Enter the bill or quotation total.');
     if (kind === 'claim' && files.length === 0) return setProblem('Add a photo of the receipt.');
     if (kind === 'direct') {
+      if (type === 'DEPOSIT' && billTotalSen != null && depositAmtSen! >= billTotalSen) return setProblem('A deposit is less than the bill: clear the deposit to pay the whole bill.');
       if (!supplier && !poId && (type === 'DEPOSIT' || !payeeName.trim())) return setProblem(type === 'DEPOSIT' ? 'A deposit is paid to a supplier on the list.' : 'Choose the supplier, a PO, or type who is paid.');
       if (files.length + kept.length === 0) return setProblem('Add the invoice, receipt or quotation.');
     }
@@ -465,20 +456,17 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
                 )}
                 <FileDropRow label={kept.length ? 'Add more papers (optional)' : 'Add the invoice, receipt or quotation'} hint="Photos or a PDF. Empty fields are filled from it; check them before you send." accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
                   busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
-                <ChoiceChips label="What to pay" value={type} onChange={switchType} options={[{ value: 'PAYMENT', label: 'A payment' }, { value: 'DEPOSIT', label: 'A deposit' }]}
-                  help={type === 'PAYMENT' ? 'A bill to pay: an invoice or a receipt from the supplier.' : 'Paid before the bill, to a supplier on the list; their bill later is set off against it.'} />
-                {/* A deposit is a percent of the bill or quotation, or an amount typed; either way the amount stays the one
-                    to change (chew, 17 Nov 2026: a percent or an amount). The percent follows a typed amount back. */}
-                {type === 'DEPOSIT' ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                    <MoneyInput label="Bill or quotation total" valueSen={billTotalSen} onChangeSen={v => { setBillTotalSen(v); shareOf(v, depositPct); }} />
-                    <Field label="Deposit %" numeric inputMode="decimal" value={depositPct} trailing="%" placeholder="e.g. 50"
-                      onChange={e => { setDepositPct(e.target.value); shareOf(billTotalSen, e.target.value); }} />
-                    <MoneyInput label="Deposit amount" required valueSen={amountSen} onChangeSen={v => { setAmountSen(v); setDepositPct(percentOf(v, billTotalSen) ?? depositPct); }} />
-                  </div>
-                ) : (
-                  <MoneyInput label="Amount" required valueSen={amountSen} onChangeSen={setAmountSen} />
-                )}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                  <MoneyInput label="Bill or quotation total" required valueSen={billTotalSen} onChangeSen={v => { setBillTotalSen(v); shareOf(v, depositPct); }} />
+                  <Field label="Deposit % (optional)" numeric inputMode="decimal" value={depositPct} trailing="%" placeholder="e.g. 50"
+                    onChange={e => { setDepositPct(e.target.value); setDepositAmtSen(e.target.value.trim() ? depositSen(billTotalSen, e.target.value) : null); }} />
+                  <MoneyInput label="Deposit amount (optional)" valueSen={depositAmtSen} onChangeSen={v => { setDepositAmtSen(v); setDepositPct(v == null ? '' : percentOf(v, billTotalSen) ?? depositPct); }} />
+                </div>
+                <p className="m-0 text-meta text-muted-ink">
+                  {type === 'DEPOSIT'
+                    ? `A deposit of ${rm(depositAmtSen!)}: paid before the bill, to a supplier on the list; the balance is asked for later.`
+                    : 'Pays the whole bill. To pay a deposit only, fill its percent or its amount.'}
+                </p>
                 <div className="sm:max-w-[50%]">
                   <DateField label="Pay by (optional)" value={wantedOn} onChange={setWantedOn} min={todayMyt()} />
                 </div>
