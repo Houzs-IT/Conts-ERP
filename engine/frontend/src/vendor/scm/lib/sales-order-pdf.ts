@@ -642,7 +642,7 @@ export async function renderSalesOrderInto(
       ...(opts?.timetable
         ? [opts.timetable[it.id]?.orderOn ? fmtDocDate(opts.timetable[it.id]!.orderOn!) : '—', opts.timetable[it.id]?.deliverOn ? fmtDocDate(opts.timetable[it.id]!.deliverOn!) : '—']
         : [fmtRm(it.unit_price_sen, header.currency), it.discount_sen > 0 ? fmtRm(it.discount_sen, header.currency) : '—']),
-      fmtRm(it.total_sen, header.currency),
+      ...(opts?.timetable ? [] : [fmtRm(it.total_sen, header.currency)]),
     ];
   });
 
@@ -654,13 +654,15 @@ export async function renderSalesOrderInto(
   /* One divider style for category and room header rows. */
   const sectionRowStyles = { fontStyle: 'bold', textColor: 40, halign: 'left', lineWidth: { top: 0.4 } as never } as const;
   const bodyRows: RowInput[] = [];
+  /* The timetable carries no money at all (owner, 18 Nov 2026): no amount column, no subtotals, totals or terms. */
+  const cols = opts?.timetable ? LINE_COLS - 1 : LINE_COLS;
   let lastGroup: string | null = null;
   /* Renovation mode: each room closes with its subtotal (owner, 24 Oct 2026, "By area"). */
   let roomSubtotal = 0;
   const pushRoomSubtotal = () => {
-    if (!rooms || lastGroup == null) return;
+    if (!rooms || lastGroup == null || opts?.timetable) return;
     bodyRows.push([
-      { content: `Subtotal - ${lastGroup}`, colSpan: LINE_COLS - 1, styles: { fontStyle: 'bold', halign: 'right', textColor: 60 } },
+      { content: `Subtotal - ${lastGroup}`, colSpan: cols - 1, styles: { fontStyle: 'bold', halign: 'right', textColor: 60 } },
       { content: fmtRm(roomSubtotal, header.currency), styles: { fontStyle: 'bold', halign: 'right', fontSize: 7.5 } },
     ]);
   };
@@ -669,7 +671,7 @@ export async function renderSalesOrderInto(
       const room = roomLabel(rooms, it.id);
       if (room !== lastGroup) {
         pushRoomSubtotal();
-        bodyRows.push([{ content: room.toUpperCase(), colSpan: LINE_COLS, styles: sectionRowStyles }]);
+        bodyRows.push([{ content: room.toUpperCase(), colSpan: cols, styles: sectionRowStyles }]);
         lastGroup = room;
         roomSubtotal = 0;
       }
@@ -683,7 +685,7 @@ export async function renderSalesOrderInto(
         /* The category's NAME, not its code: `fabric_accessory` printed as
            FABRIC_ACCESSORY on HC-SO-2609-071 while every screen says Sofa
            Accessory (owner 2026-09-15). An unknown group still prints as stored. */
-        content: mfgCategoryLabel(grp).toUpperCase(), colSpan: LINE_COLS,
+        content: mfgCategoryLabel(grp).toUpperCase(), colSpan: cols,
         styles: sectionRowStyles,
       }]);
       lastGroup = grp;
@@ -695,8 +697,8 @@ export async function renderSalesOrderInto(
   autoTable(doc, {
     startY: y,
     head: [(() => {
-      const mid = opts?.timetable ? ['Processing', 'Delivery'] : ['Unit Price', 'Discount'];
-      return SHOW_CODE ? ['#', 'Item Code', 'Description', 'Qty', ...mid, 'Amount (RM)'] : ['#', 'Description', 'Qty', ...mid, 'Amount (RM)'];
+      const tail = opts?.timetable ? ['Processing', 'Delivery'] : ['Unit Price', 'Discount', 'Amount (RM)'];
+      return SHOW_CODE ? ['#', 'Item Code', 'Description', 'Qty', ...tail] : ['#', 'Description', 'Qty', ...tail];
     })()],
     body: bodyRows,
     theme: 'plain',
@@ -707,7 +709,13 @@ export async function renderSalesOrderInto(
        numeric columns are 7.5 pt, right-aligned. Fixed widths sum to ~114 mm of
        182 usable (A4 − 2×14 margins), leaving ~68 mm for Description ('auto',
        the only column allowed to wrap). */
-    columnStyles: SHOW_CODE ? {
+    columnStyles: opts?.timetable && !SHOW_CODE ? {
+      0: { cellWidth: 8, halign: 'right', fontSize: 7.5 },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 20, halign: 'right', fontSize: 7.5 },
+      3: { cellWidth: 28, halign: 'right', fontSize: 7.5 },
+      4: { cellWidth: 28, halign: 'right', fontSize: 7.5 },
+    } : SHOW_CODE ? {
       0: { cellWidth: 8, halign: 'right', fontSize: 7.5 },
       1: { cellWidth: 28 },
       2: { cellWidth: 'auto' },
@@ -799,6 +807,7 @@ export async function renderSalesOrderInto(
   }
   }
 
+  if (!opts?.timetable) {
   // ── Totals: SUBTOTAL / PAID TO DATE / TOTAL / BALANCE DUE ─────────
   /* POS-printout parity: the SO model has no separate subtotal — the grand
      total stands in (add-ons ride inside the line totals). Paid-to-date
@@ -871,6 +880,7 @@ export async function renderSalesOrderInto(
     margin, awTopY + 1,
   );
   doc.setTextColor(0);
+  }
 
   // ── Signature boxes — customer (with stored POS signature) + company ──
   if (ty > 225) { doc.addPage(); ty = margin; }
@@ -906,7 +916,7 @@ export async function renderSalesOrderInto(
 
   // ── Numbered terms (POS RECEIPT_TERMS wording) ────────────────────
   /* A contract printed from the list or the phone has no brand terms to hand: the furniture receipt terms are not its terms. */
-  const noTerms = !opts?.contract && (header as { so_kind?: string | null }).so_kind === 'RENOVATION';
+  const noTerms = !!opts?.timetable || (!opts?.contract && (header as { so_kind?: string | null }).so_kind === 'RENOVATION');
   if (!noTerms) {
   if (ty > 255) { doc.addPage(); ty = margin; }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8);

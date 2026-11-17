@@ -129,14 +129,18 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const [dropOn, setDropOn] = useState<PoColumn | null>(null);
   /* Categories, subcategories and lines sort by date; a dragged one keeps its place (owner, 17 Nov 2026). */
   const hand = useHandOrder(p.projectId);
-  const [dragItem, setDragItem] = useState<{ level: "cat" | "sub" | "line"; key: string; parent: string } | null>(null);
+  const [dragItem, setDragItem] = useState<{ level: "cat" | "sub" | "line"; key: string; parent: string; label: string } | null>(null);
+  /* Where the pointer is while dragging: the dragged item's card follows it (owner, 18 Nov 2026). */
+  const [ghostAt, setGhostAt] = useState<{ x: number; y: number } | null>(null);
   const [dropKey, setDropKey] = useState<string | null>(null);
   useEffect(() => {
     if (!dragItem) return;
     /* Let go anywhere: a row that takes the drop has already handled it. */
-    const up = (): void => { window.setTimeout(() => { setDragItem(null); setDropKey(null); }, 0); };
+    const up = (): void => { window.setTimeout(() => { setDragItem(null); setDropKey(null); setGhostAt(null); }, 0); };
+    const move = (e: PointerEvent): void => setGhostAt({ x: e.clientX, y: e.clientY });
     window.addEventListener("pointerup", up);
-    return () => window.removeEventListener("pointerup", up);
+    window.addEventListener("pointermove", move);
+    return () => { window.removeEventListener("pointerup", up); window.removeEventListener("pointermove", move); };
   }, [dragItem]);
   const { can } = useAuth();
   const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
@@ -160,12 +164,12 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const bandOf = useMemo(() => new Map(baseTree.map((c, i) => [c.key, BANDS[i % BANDS.length]])), [baseTree]);
   const tree = useMemo(() => applyHandOrder(sortByDates(baseTree), hand.hand), [baseTree, hand.hand]);
   /* What a draggable band or line needs: siblings move among themselves only. */
-  const dragProps = (level: "cat" | "sub" | "line", key: string, parent: string, siblings: readonly string[]): BandDrag | undefined => {
+  const dragProps = (level: "cat" | "sub" | "line", key: string, parent: string, siblings: readonly string[], label: string): BandDrag | undefined => {
     if (siblings.length < 2) return undefined;
     const mine = !!dragItem && dragItem.level === level && dragItem.parent === parent;
     return {
       dragging: dragItem?.key === key, target: mine && dropKey === key && dragItem.key !== key, active: mine,
-      onStart: () => setDragItem({ level, key, parent }),
+      onStart: () => setDragItem({ level, key, parent, label }),
       onEnter: () => { if (mine) setDropKey(key); },
       onDrop: () => {
         if (mine && dragItem.key !== key) {
@@ -370,6 +374,16 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   return (
     <>
       <style>{DATE_CSS}</style>
+      {dragItem && ghostAt && (
+        <div aria-hidden="true" style={{
+          position: "fixed", left: ghostAt.x + 14, top: ghostAt.y - 14, zIndex: 1000, pointerEvents: "none",
+          background: BETA.surface, border: `1px solid ${BETA.accent}`, borderRadius: 8, padding: "6px 10px",
+          boxShadow: "0 6px 18px rgba(0,0,0,.18)", fontSize: 13, fontWeight: 600, color: BETA.accentInk, maxWidth: 320,
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 6,
+        }}>
+          <GripVertical size={14} aria-hidden="true" />{dragItem.label}
+        </div>
+      )}
       <WsPageHead
         title="SO"
         sub={editing
@@ -467,12 +481,12 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                     const subKeys = c.subs.map((sub) => sub.key);
                     return [
                       <Band key={c.key} band={band} label={c.label} hint={catHint(catLines, d.finance)} open={open} onToggle={() => toggle(c.key)} columns={columns}
-                        dates={bandDates(c.key, c.label, catLines)} drag={dragProps("cat", c.key, "", tree.map((x) => x.key))} />,
+                        dates={bandDates(c.key, c.label, catLines)} drag={dragProps("cat", c.key, "", tree.map((x) => x.key), c.label)} />,
                       ...(open ? c.subs.flatMap((sub) => [
                         ...(view === "category" && sub.label
-                          ? [<SubRow key={`sub:${sub.key}`} label={sub.label} count={sub.items.length} span={columns.length} band={band} drag={dragProps("sub", sub.key, c.key, subKeys)} />]
+                          ? [<SubRow key={`sub:${sub.key}`} label={sub.label} count={sub.items.length} span={columns.length} band={band} drag={dragProps("sub", sub.key, c.key, subKeys, sub.label)} />]
                           : []),
-                        ...sub.items.map((l) => <LineRow key={l.id} {...cell(l)} columns={columns} drag={dragProps("line", l.id, sub.key, sub.items.map((x) => x.id))} />),
+                        ...sub.items.map((l) => <LineRow key={l.id} {...cell(l)} columns={columns} drag={dragProps("line", l.id, sub.key, sub.items.map((x) => x.id), l.description)} />),
                       ]) : []),
                     ];
                   })}
@@ -640,7 +654,7 @@ function Band({ band, label, hint, open, onToggle, columns, dates, drag }: { ban
   const td: CSSProperties = { padding: "0 6px", background: band[1], borderBottom: `1px solid ${BETA.line}`, verticalAlign: "middle", overflow: "hidden" };
   return (
     <tr onPointerEnter={drag?.onEnter} onPointerUp={drag?.active ? drag.onDrop : undefined}
-      style={{ opacity: drag?.dragging ? 0.5 : 1, boxShadow: drag?.target ? `inset 0 2px 0 ${WS.tealLine}` : undefined, cursor: drag?.active ? "grabbing" : undefined }}>
+      style={{ opacity: drag?.dragging ? 0.5 : 1, boxShadow: drag?.target ? `inset 0 3px 0 ${BETA.accent}` : undefined, cursor: drag?.active ? "grabbing" : undefined }}>
       {bandParts(columns).map((p, i) => p.kind === "orderOn" || p.kind === "deliverOn"
         ? <td key={i} style={td}><GroupDate g={dates} which={p.kind} /></td>
         : p.kind === "blank" ? <td key={i} colSpan={p.span} style={td} /> : (
@@ -943,7 +957,7 @@ function LineRow(r: RowCtx & { columns: readonly PoColumn[]; drag?: BandDrag }):
   const drag = r.drag;
   return (
     <tr onPointerEnter={drag?.onEnter} onPointerUp={drag?.active ? drag.onDrop : undefined}
-      style={{ opacity: r.l.goesTo === "client" ? 0.75 : drag?.dragging ? 0.5 : 1, background: touched ? TONES.amber.soft : undefined, boxShadow: drag?.target ? `inset 0 2px 0 ${WS.tealLine}` : undefined }}>
+      style={{ opacity: r.l.goesTo === "client" ? 0.75 : drag?.dragging ? 0.5 : 1, background: touched ? TONES.amber.soft : undefined, boxShadow: drag?.target ? `inset 0 3px 0 ${BETA.accent}` : undefined }}>
       {r.columns.map((c, i) => (
         <td key={c} style={{ ...cellStyle, paddingLeft: i === 0 ? (drag ? 2 : 12) : cellStyle.paddingLeft, textAlign: COLUMN_HEAD[c].right ? "right" : undefined }}>
           {i === 0 && drag ? (
@@ -1014,7 +1028,7 @@ function Grip({ label, drag, color }: { label: string; drag: BandDrag; color: st
 function SubRow({ label, count, span, band, drag }: { label: string; count: number; span: number; band: readonly [string, string, string]; drag?: BandDrag }): ReactElement {
   return (
     <tr onPointerEnter={drag?.onEnter} onPointerUp={drag?.active ? drag.onDrop : undefined}
-      style={{ opacity: drag?.dragging ? 0.5 : 1, boxShadow: drag?.target ? `inset 0 2px 0 ${WS.tealLine}` : undefined }}>
+      style={{ opacity: drag?.dragging ? 0.5 : 1, boxShadow: drag?.target ? `inset 0 3px 0 ${BETA.accent}` : undefined }}>
       <td colSpan={span} style={{ padding: 0, borderBottom: `1px solid ${WS.rowLine}`, background: BETA.surface }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4, minHeight: 28, paddingLeft: drag ? 14 : 30, borderLeft: `4px solid ${band[1]}` }}>
           {drag && <Grip label={label} drag={drag} color={band[2]} />}

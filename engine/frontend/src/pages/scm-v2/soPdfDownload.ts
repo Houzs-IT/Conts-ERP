@@ -46,7 +46,9 @@ export async function downloadSoPdf(docNo: string, renovation: boolean | null, a
     contract = soPdfContract(view, brands.find((b) => b.brandId === view.header.brandId));
   }
   const rank = new Map((layout?.itemOrder ?? []).map((id, i) => [id, i]));
-  const items = layout?.itemOrder ? [...(bundle.items as Array<{ id: string }>)].sort((a, b) => (rank.get(a.id) ?? 1e9) - (rank.get(b.id) ?? 1e9)) : bundle.items;
+  const ordered = layout?.itemOrder ? [...(bundle.items as Array<{ id: string }>)].sort((a, b) => (rank.get(a.id) ?? 1e9) - (rank.get(b.id) ?? 1e9)) : bundle.items;
+  /* The timetable lists only the lines the tab shows: a credit note's money line has no dates to plan (owner, 18 Nov 2026). */
+  const items = layout?.timetable && layout.itemOrder ? (ordered as Array<{ id: string }>).filter((it) => rank.has(it.id)) : ordered;
   await generateSalesOrderPdf(bundle.header as never, items as never, (bundle.payments ?? []) as never, action, (bundle.pwpCodes ?? []) as never, {
     rooms: layout?.rooms ?? (info.roomSections.length > 0 ? { order: info.roomSections, byItem: info.itemRooms } : undefined),
     timetable: layout?.timetable,
