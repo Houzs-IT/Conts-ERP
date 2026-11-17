@@ -120,7 +120,7 @@ describe('the go-live preview', () => {
       { ...good, soDocNo: OLD2, debtorCode: '301-NONE', advanceAccountCode: '500-0000', billedBeforeGoLiveSen: 2_000_001 },
     ]);
     expect(p[0]).toEqual([expect.stringContaining('2990-SO-NOPE is not a renovation contract')]);
-    expect(p[1]).toEqual([expect.stringContaining('signed on or after the ledger start')]);
+    expect(p[1]).toEqual([expect.stringContaining('signed on or after go-live')]);
     expect(p[2]).toEqual([expect.stringContaining('listed more than once'), expect.stringContaining('300-C001 is under 300-0000, not 301, 302 or 303')]);
     /* Listed twice, and every other fault of the row named. */
     expect(p[3]).toEqual(expect.arrayContaining([
