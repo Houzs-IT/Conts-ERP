@@ -19,7 +19,8 @@
 // write fence), so this import is the one place it changes after conversion.
 
 import { paginateAll } from '../scm/lib/paginate-all';
-import { isBeforeLedgerStart, loadLedgerSettings } from './ledger-settings';
+import { loadLedgerSettings } from './ledger-settings';
+import { renoGoLiveDay } from './go-live';
 import { ALLOC_BILL_CREDIT, ALLOC_CREDIT, ALLOC_INVOICE, CONTRACT_CANCELLED, CONTRACT_CHANGED, CONTRACT_SIGNED } from './reno-ledger';
 import { ADVANCE_PARENT } from './reno-advance-account';
 import { fmtSen } from '../scm/shared/format';
@@ -113,6 +114,9 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
     const ls = await loadLedgerSettings(sb, companyId);
     if (!ls.ok) return { ok: false, error: 'The ledger settings could not be read.' };
     const start = ls.settings.ledgerStartDate;
+    const gl = await renoGoLiveDay(sb, companyId);
+    if (!gl.ok) return { ok: false, error: `The go-live day could not be read: ${gl.error}` };
+    const goLive = gl.day ?? start;
 
     const docs = [...new Set(rows.map((r) => r.soDocNo).filter(Boolean))];
     const debtorCodes = [...new Set(rows.map((r) => r.debtorCode).filter(Boolean))];
@@ -124,6 +128,9 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
     const contracts = await readIn<{ so_doc_no: string; company_id: number | null; advance_account_code: string | null; billed_before_golive_sen: number | null; golive_cost_sen: number | null }>(
       sb, 'reno_so_contracts', 'so_doc_no, company_id, advance_account_code, billed_before_golive_sen, golive_cost_sen', 'so_doc_no', docs);
     const debtors = await readIn<{ code: string; control_account: string | null }>(sb, 'debtors', 'code, control_account', 'code', debtorCodes, byCompany);
+    const signedRows = await readIn<{ source_doc_no: string; reversed: boolean | null; source_type: string }>(
+      sb, 'journal_entries', 'source_doc_no, reversed, source_type', 'source_doc_no', docs, byCompany);
+    const signedInLedger = new Set(signedRows.filter((j) => j.source_type === CONTRACT_SIGNED && j.reversed !== true).map((j) => j.source_doc_no));
     const accounts = await readIn<{ account_code: string; parent_code: string | null; is_active: boolean | null }>(
       sb, 'accounts', 'account_code, parent_code, is_active', 'account_code', accountCodes, byCompany);
     const children = await readIn<{ parent_code: string }>(sb, 'accounts', 'parent_code', 'parent_code', accountCodes, byCompany);
@@ -177,8 +184,10 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
         problems.push(`${r.soDocNo} is not a renovation contract of this company.`);
       } else if (so?.status === 'CANCELLED') {
         problems.push(`${r.soDocNo} is cancelled: there is nothing to seed.`);
-      } else if (so && start && !isBeforeLedgerStart(String(so.so_date ?? '').slice(0, 10), ls.settings)) {
-        problems.push(`${r.soDocNo} was signed on or after the ledger start (${start}): it posts through the ledger, not this import.`);
+      } else if (so && goLive && !(String(so.so_date ?? '').slice(0, 10) < goLive)) {
+        problems.push(`${r.soDocNo} was signed on or after go-live (${goLive}): it posts through the ledger, not this import.`);
+      } else if (r.soDocNo && signedInLedger.has(r.soDocNo)) {
+        problems.push(`${r.soDocNo} was signed in the ledger already (its contract journal is posted): it is not AutoCount's to seed.`);
       }
 
       const debtor = debtorOf.get(r.debtorCode);
