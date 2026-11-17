@@ -883,6 +883,8 @@ export async function renderSalesOrderInto(
   }
 
   // ── Signature boxes — customer (with stored POS signature) + company ──
+  /* The timetable is a schedule, not a document anyone signs (owner, 18 Nov 2026). */
+  if (!opts?.timetable) {
   if (ty > 225) { doc.addPage(); ty = margin; }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
   doc.text('Customer Signature', margin, ty);
@@ -913,6 +915,7 @@ export async function renderSalesOrderInto(
   );
   doc.setTextColor(0);
   ty += 6;
+  }
 
   // ── Numbered terms (POS RECEIPT_TERMS wording) ────────────────────
   /* A contract printed from the list or the phone has no brand terms to hand: the furniture receipt terms are not its terms. */
