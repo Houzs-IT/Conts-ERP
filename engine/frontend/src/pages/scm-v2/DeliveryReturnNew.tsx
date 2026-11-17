@@ -395,7 +395,7 @@ export const DeliveryReturnNew = () => {
 
       {/* ── RETURN INFO ── */}
       <section className={styles.card}>
-        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Return Info</h2></header>
+        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Return info</h2></header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
             <label className={styles.field}>
@@ -434,7 +434,7 @@ export const DeliveryReturnNew = () => {
       {/* ── EMERGENCY CONTACT ── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Emergency Contact</h2>
+          <h2 className={styles.cardTitle}>Emergency contact</h2>
           <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
             Used only if we cannot reach the customer on collection day
           </span>
@@ -466,7 +466,7 @@ export const DeliveryReturnNew = () => {
 
       {/* ── DELIVERY ADDRESS ── */}
       <section className={styles.card}>
-        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Delivery Address</h2></header>
+        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Delivery address</h2></header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
             <label className={styles.field} style={{ gridColumn: 'span 4' }}>
@@ -513,7 +513,7 @@ export const DeliveryReturnNew = () => {
 
       {/* ── RETURNED ITEMS ── */}
       <section className={styles.card}>
-        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Returned Items ({lines.length})</h2></header>
+        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Returned items ({lines.length})</h2></header>
         <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {lines.map((line, idx) => (
             <SoLineCard

@@ -8,3 +8,4 @@ export { EmployeeIdInput } from './EmployeeIdInput';
 export { DateField, TimeField, DateTimeField } from './DateField';
 export { parseScaled, formatScaled } from './numberText';
 export { PHONE_SIZING } from './InputShell';
+export { StayRange, nightsBetween } from './StayRange';

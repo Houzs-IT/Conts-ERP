@@ -421,7 +421,7 @@ export function Trips() {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Delivery"
-        title="Delivery Time Arrangement"
+        title="Delivery time arrangement"
         description="For each delivery day, decide which zone goes first and the order of stops within it — crew and lorries are assigned next in Last Mile Delivery."
       />
 

@@ -3,6 +3,7 @@ import { rmText } from '../../../../_lib/format';
 import { requireSession } from '../../../../_lib/auth';
 import { mayChangeAdjustments } from '../../../../_lib/ownerScope';
 import { approvalsEnabled, submit } from '../../../../_lib/approvals';
+import { o2LockProblem, releaseProblem } from '../../../../_lib/lockGuards';
 
 const LOCKED = ['finalised', 'sent', 'paid'];
 
@@ -22,8 +23,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (!mayChangeAdjustments(session)) return fail('FORBIDDEN', 'Only management, finance and operations managers can change owner adjustments.', 403);
   const ownerId = String(params.id), id = String(params.adjId);
 
-  const cur = await one<{ state: string; occurred_on: string; statement_id: string | null; statement_state: string | null; period_start: string | null }>(env, `
-    SELECT a.state, a.occurred_on, a.statement_id, s.state AS statement_state, s.period_start
+  const cur = await one<{ state: string; occurred_on: string; unit_id: string | null; statement_id: string | null; statement_state: string | null; period_start: string | null }>(env, `
+    SELECT a.state, a.occurred_on, a.unit_id, a.statement_id, s.state AS statement_state, s.period_start
     FROM owner_adjustments a LEFT JOIN owner_statements s ON s.id = a.statement_id WHERE a.id = ? AND a.owner_id = ?`, id, ownerId);
   if (!cur) return fail('NOT_FOUND', 'That adjustment no longer exists.', 404);
 
@@ -43,6 +44,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       if (locked) return fail('PERIOD_LOCKED', 'That month\'s statement for this owner is already final. Pick a later month.', 409, { month: 'Already final.' });
       occurredOn = `${month}-01`;
     }
+    // Not into a month whose O2 is locked for the unit it counts on (owner statement close).
+    const locked = await releaseProblem(env, { owner_id: ownerId, unit_id: cur.unit_id }, String(occurredOn).slice(0, 7));
+    if (locked) return fail('PERIOD_LOCKED', locked, 409, { month: 'This month\'s O2 is locked.' });
     const done = await one(env, `UPDATE owner_adjustments SET state = 'open', occurred_on = ?, statement_id = NULL, updated_at = ? WHERE id = ? AND state = 'held' RETURNING id`, occurredOn, now, id);
     if (!done) return fail('WRONG_STATE', 'Someone else changed this adjustment. Reload and try again.', 409);
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner_adjustment.release', entityTable: 'owner_adjustments', entityId: id,
@@ -54,6 +58,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     const allowed = action === 'hold' ? ['open'] : ['open', 'held'];
     if (!allowed.includes(cur.state)) return fail('WRONG_STATE', action === 'hold' ? 'Only an open adjustment can be held.' : 'This adjustment is already settled.', 409);
     if (onFinal) return fail('ON_FINAL_STATEMENT', `The ${String(cur.period_start).slice(0, 7)} statement already carries this adjustment and is final.`, 409);
+    const locked = await o2LockProblem(env, { id, owner_id: ownerId, unit_id: cur.unit_id, occurred_on: cur.occurred_on, state: cur.state }, action);
+    if (locked) return fail('PERIOD_LOCKED', locked, 409);
     const note = String(b?.note ?? '').trim();
     if (action === 'settle' && (!note || note.length > 300)) return fail('VALIDATION', 'Say where it was settled, in up to 300 characters.', 422, { note: 'Say where it was settled.' });
     if (action === 'settle' && cur.state === 'held') {
@@ -90,8 +96,8 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   if (!mayChangeAdjustments(session)) return fail('FORBIDDEN', 'Only management, finance and operations managers can remove owner adjustments.', 403);
   const ownerId = String(params.id), id = String(params.adjId);
 
-  const cur = await one<{ kind: string; amount: number; description: string; occurred_on: string; state: string; statement_id: string | null; statement_state: string | null; period_start: string | null }>(env, `
-    SELECT a.kind, a.amount, a.description, a.occurred_on, a.state, a.statement_id, s.state AS statement_state, s.period_start
+  const cur = await one<{ kind: string; amount: number; description: string; occurred_on: string; state: string; unit_id: string | null; statement_id: string | null; statement_state: string | null; period_start: string | null }>(env, `
+    SELECT a.kind, a.amount, a.description, a.occurred_on, a.state, a.unit_id, a.statement_id, s.state AS statement_state, s.period_start
     FROM owner_adjustments a LEFT JOIN owner_statements s ON s.id = a.statement_id WHERE a.id = ? AND a.owner_id = ?`, id, ownerId);
   if (!cur) return fail('NOT_FOUND', 'That adjustment no longer exists.', 404);
   if (cur.statement_id && LOCKED.includes(cur.statement_state ?? '')) {
@@ -100,6 +106,8 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   if (await one(env, `SELECT 1 AS x FROM approval_requests WHERE kind = 'debt_write_off' AND status = 'pending' AND payload->>'adjustmentId' = ?`, id)) {
     return fail('ALREADY_REQUESTED', 'A write-off of this debt is waiting for approval. Reject it first.', 409);
   }
+  const locked = await o2LockProblem(env, { id, owner_id: ownerId, unit_id: cur.unit_id, occurred_on: cur.occurred_on, state: cur.state }, 'delete');
+  if (locked) return fail('PERIOD_LOCKED', locked, 409);
 
   await run(env, 'DELETE FROM owner_adjustments WHERE id = ? AND owner_id = ?', id, ownerId);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner_adjustment.delete', entityTable: 'owner_adjustments', entityId: id,

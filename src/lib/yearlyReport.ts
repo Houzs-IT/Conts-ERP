@@ -7,6 +7,8 @@ export interface YearlyRow {
   unitId: string; month: string; contract: 'LT' | 'PS';
   revenue: number; cleaning: number; electricity: number; water: number; internet: number; sewerage: number;
   additional: number; misc: number; ownerPct: number; ltGrr: number; o2: number; nights: number; days: number;
+  /** The company's share of late changes to an earlier, locked month that counts this month (part 2b). 0 when absent. */
+  late?: number;
   /** What The Conts paid cleaners for the cleans finished on the unit that month. */
   cleanerCost: number;
 }
@@ -26,6 +28,7 @@ export const BLOCKS = [
   { key: 'gp', label: 'Gross profit' },
   { key: 'payout', label: 'Owner payout' },
   { key: 'company', label: 'The Conts' },
+  { key: 'late', label: 'The Conts: late changes' },
   { key: 'electricity', label: 'Electric' },
   { key: 'water', label: 'Water' },
   { key: 'sewerage', label: 'Indah Water' },
@@ -46,7 +49,7 @@ export function figures(r: YearlyRow, rules: ReportRules = REPORT_RULES): Figure
   const ownerBase = r.contract === 'PS' ? Math.max(roundSen((gp * r.ownerPct) / 100), r.ltGrr) : r.ltGrr;
   const cleaning = r.contract === 'LT' && !rules.ltOwnerPaysCleaning ? 0 : r.cleaning;
   return {
-    revenue: r.revenue, gp, payout: ownerBase + (rules.ownerPayoutIncludesO2 ? r.o2 : 0), company: gp - ownerBase,
+    revenue: r.revenue, gp, payout: ownerBase + (rules.ownerPayoutIncludesO2 ? r.o2 : 0), company: gp - ownerBase + (r.late ?? 0), late: r.late ?? 0,
     electricity: r.electricity, water: r.water, sewerage: r.sewerage, internet: r.internet,
     cleanerCost: r.cleanerCost, cleaningOwner: cleaning, cleaningEarned: cleaning - r.cleanerCost,
   };

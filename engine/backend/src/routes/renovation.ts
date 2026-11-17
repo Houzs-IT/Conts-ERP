@@ -7,7 +7,7 @@
 
 import { Hono, type Context } from "hono";
 import type { Env } from "../types";
-import { requirePageAccess, requirePermission } from "../middleware/auth";
+import { requireAnyAccess, requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanyId, activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
 import { financeHiddenForUser } from "../services/pmsAccess";
 import { todayMyt } from "../scm/lib/my-time";
@@ -109,7 +109,7 @@ app.route("/", renovationTimeline);
 
 // ── Mode: which Projects screens this install shows (app_settings projects_mode, mig 0082) ──
 
-app.get("/mode", requirePageAccess("projects.list"), async (c) => {
+app.get("/mode", requireAnyAccess(["projects.list", "projects.maintenance"]), async (c) => {
   try {
     const row = await db(c).prepare(`SELECT value FROM app_settings WHERE key = 'projects_mode'`).bind().first<{ value: string | null }>();
     return c.json({ mode: row?.value === "renovation" ? "renovation" : "exhibition" });
@@ -121,7 +121,7 @@ app.get("/mode", requirePageAccess("projects.list"), async (c) => {
 
 // ── Project types ────────────────────────────────────────────────────────
 
-app.get("/types", requirePageAccess("projects.list"), async (c) => {
+app.get("/types", requireAnyAccess(["projects.list", "projects.maintenance"]), async (c) => {
   const res = await db(c).prepare(
     `SELECT id::int AS id, slug, name, to_json(stage_keys) AS stage_keys, checklist_template_id::int AS checklist_template_id, sort_order, active FROM project_types WHERE true${coSql(c)} ORDER BY sort_order, name`,
   ).bind().all();
@@ -135,7 +135,7 @@ function cleanStageKeys(x: unknown): string[] | null {
   return RENO_STAGES.filter((k) => keys.includes(k));
 }
 
-app.post("/types", requirePermission("projects.manage"), async (c) => {
+app.post("/types", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const b = await c.req.json<{ name?: string; slug?: string; stageKeys?: unknown; sortOrder?: number }>();
@@ -149,7 +149,7 @@ app.post("/types", requirePermission("projects.manage"), async (c) => {
   return c.json({ id: row?.id }, 201);
 });
 
-app.patch("/types/:id", requirePermission("projects.manage"), async (c) => {
+app.patch("/types/:id", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
   const b = await c.req.json<{ name?: string; stageKeys?: unknown; active?: boolean; sortOrder?: number }>();

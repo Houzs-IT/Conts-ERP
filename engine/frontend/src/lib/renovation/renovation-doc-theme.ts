@@ -8,6 +8,7 @@
 
 import type { jsPDF as JsPdf } from 'jspdf';
 import { brandLogoFor } from './brand-logos';
+import { rememberLetterheadLogo } from './doc-watermark';
 
 /* The company block and contact line of The Conts in SO Maintenance: what every document that does not follow a brand
    prints (owner, 6 Nov 2026), so one place sets the phone and address. A PDF is drawn outside React, hence a plain value. */
@@ -84,6 +85,7 @@ export function drawDocLetterheadAt(pdf: JsPdf, o: LetterheadOpts): { bottom: nu
   const logoW = logo.width * scale;
   const logoH = logo.height * scale;
   pdf.addImage(logo.dataUrl, logo.format, M, t.logoTop, logoW, logoH);
+  rememberLetterheadLogo(pdf, logo);
 
   // One "Label: value" text per row; a row with no label prints its value alone.
   const meta = (o.meta ?? []).filter((m) => m.value).map((m) => {

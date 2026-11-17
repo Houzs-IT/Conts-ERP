@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
@@ -8,9 +8,12 @@ import { EmptyState, Skeleton } from '../components/States';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
+import { useSeedOnce } from '../lib/useSeedOnce';
 import { cx } from '../lib/design-tokens';
-import { rm, monthLabel, plural } from '../lib/format';
+import { rm, monthLabel, plural, buildingName } from '../lib/format';
 import { INPUT, mytDay } from '../components/ops/OpsUi';
+import { Segmented } from '../components/Metric';
+import { ToolbarSearch } from '../components/ListToolbar';
 import { ServicePrices } from './ServicePrices';
 import { CleaningPriceTable } from './CleaningPriceTable';
 import { PriceChangePanel } from './units/PriceChangePanel';
@@ -78,35 +81,31 @@ function PriceTableCard({ data, onSaved }: { data: PriceTable; onSaved: () => vo
   const [kind, setKind] = useState(data.kinds[0] ?? 'turnover');
   const [draft, setDraft] = useState<Record<string, PriceRow>>({});
   const [busy, setBusy] = useState(false);
-  useEffect(() => { setDraft({}); }, [data]);
+  // Cleared after a save, once the saved prices are read back; not on every answer, which wiped prices being typed.
+  const reseed = useSeedOnce(data, 'prices', () => setDraft({}));
   const rows = data.rows.filter(r => r.kind === kind).map(r => draft[`${r.kind}:${r.layout}`] ?? r);
   const changed = Object.keys(draft).length > 0;
   const set = (r: PriceRow, p: Partial<PriceRow>) => setDraft(d => ({ ...d, [`${r.kind}:${r.layout}`]: { ...r, ...p } }));
   const notSet = data.rows.filter(r => r.internalCost == null && r.externalCharge == null).length;
   async function save() {
     setBusy(true);
-    try { await api.put('/housekeeping/prices', { rows: Object.values(draft) }); toast({ tone: 'success', title: 'Prices saved.', body: 'Cleaning jobs not yet finished use them from now on.' }); onSaved(); }
+    try { await api.put('/housekeeping/prices', { rows: Object.values(draft) }); toast({ tone: 'success', title: 'Prices saved.', body: 'Cleaning jobs not yet finished use them from now on.' }); reseed(); onSaved(); }
     catch (e) { toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') }); }
     finally { setBusy(false); }
   }
   return (
-    <section className="bg-card rounded-card border border-solid border-line p-4 flex flex-col gap-3">
+    <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] p-4 flex flex-col gap-3">
       <div className="flex items-start gap-3 flex-wrap">
         <div className="flex-1 min-w-[200px]">
           <h2 className="m-0 text-heading font-semibold">Price table</h2>
           <p className="m-0 text-meta text-muted-ink">Cleaning jobs made from reservations take their amount from here, by the unit's layout. {notSet ? `${notSet} of ${data.rows.length} prices are not set yet: those cleaning jobs show "Price not set" and are charged at the old rate.` : 'Every price is set.'}</p>
         </div>
-        <div role="tablist" className="flex gap-1">
-          {data.kinds.map(k => (
-            <button key={k} type="button" role="tab" aria-selected={k === kind} onClick={() => setKind(k)}
-              className={cx('h-9 px-3 rounded-control border border-solid text-copy cursor-pointer', k === kind ? 'bg-black text-white border-black' : 'bg-card text-ink border-line')}>{KIND[k] ?? k}</button>
-          ))}
-        </div>
+        <Segmented<string> label="Clean type" value={kind} onChange={setKind} options={data.kinds.map(k => ({ key: k, label: KIND[k] ?? k }))} />
       </div>
       <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 gap-y-2 items-center text-copy">
-        <span className="text-meta font-semibold text-muted-ink">Layout</span>
-        <span className="text-meta font-semibold text-muted-ink">Owner price</span>
-        <span className="text-meta font-semibold text-muted-ink">Internal cost</span>
+        <span className="text-caption font-bold uppercase tracking-[0.09em] text-muted-ink">Layout</span>
+        <span className="text-caption font-bold uppercase tracking-[0.09em] text-muted-ink">Owner price</span>
+        <span className="text-caption font-bold uppercase tracking-[0.09em] text-muted-ink">Internal cost</span>
         {rows.map(r => (
           <div key={r.layout} className="contents">
             <span>{LAYOUT[r.layout] ?? r.layout}</span>
@@ -140,7 +139,7 @@ function UnitPricesCard({ rows, mayEdit, byBed, byCount, guest, onSaved }: { row
   const own = (rows ?? []).filter(r => Object.values(r.prices).some(p => p.override)).length;
   const withoutBeds = (rows ?? []).filter(r => !r.beds).length;
   return (
-    <section className="bg-card rounded-card border border-solid border-line p-4 flex flex-col gap-3">
+    <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] p-4 flex flex-col gap-3">
       <div className="flex items-start gap-3 flex-wrap">
         <div className="flex-1 min-w-[200px]">
           <h2 className="m-0 text-heading font-semibold">Per unit</h2>
@@ -152,14 +151,12 @@ function UnitPricesCard({ rows, mayEdit, byBed, byCount, guest, onSaved }: { row
             : 'No bed size prices yet. Enter them in the list above (Basic clean, Deep clean) and every unit\'s price fills in from its beds.'}</p>}
           {withoutBeds > 0 && <p className="m-0 mt-1 text-meta text-warning">{plural(withoutBeds, 'unit')} with no beds recorded. Add the beds on the unit's Settings, or they take the "No beds recorded" price.</p>}
         </div>
-        <select className={cx(INPUT, 'h-9 w-auto')} value={kind} onChange={e => setKind(e.target.value)} aria-label="Clean type">
-          {Object.entries(KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
-        <input className={cx(INPUT, 'h-9 w-[220px] max-md:w-full')} value={q} onChange={e => setQ(e.target.value)} placeholder="Search unit or building" aria-label="Search units" />
+        <Segmented<string> label="Clean type" value={kind} onChange={setKind} options={Object.entries(KIND).map(([k, l]) => ({ key: k, label: l }))} />
+        <ToolbarSearch value={q} onChange={setQ} placeholder="Search unit or building" label="Search units" />
       </div>
       {!rows ? <Skeleton height={120} /> : shown.length === 0 ? <span className="text-muted-ink">No unit matches.</span> : (
         <div className="flex flex-col">
-          <div className={cx('hidden md:grid gap-3 text-meta font-semibold text-muted-ink pb-2', cols)}>
+          <div className={cx('hidden md:grid gap-3 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink pb-2', cols)}>
             <span>Unit</span><span>Beds</span><span>Owner price</span>{guest && <span>Guest price</span>}<span>Internal cost</span><span />
           </div>
           {shown.map(r => {
@@ -168,7 +165,7 @@ function UnitPricesCard({ rows, mayEdit, byBed, byCount, guest, onSaved }: { row
               ? <UnitPriceEdit key={r.unitId} row={r} kind={kind} guest={guest} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onSaved(); }} />
               : (
                 <div key={r.unitId} className={cx('grid grid-cols-2 gap-x-3 gap-y-1 py-2 [border-top:1px_solid_var(--color-line-soft)] items-center text-copy', cols)}>
-                  <span className="col-span-2 md:col-span-1"><b>{r.unitNumber}</b> <span className="text-muted-ink">{r.propertyName}</span></span>
+                  <span className="col-span-2 md:col-span-1"><b className="font-mono">{r.unitNumber}</b> <span className="text-muted-ink">{buildingName(r.propertyName)}</span></span>
                   {r.beds
                     ? <span className="flex flex-col min-w-0"><span>{plural(r.bedCount ?? 0, 'bed')}</span><span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{r.beds}</span></span>
                     : <span className="text-warning">No beds recorded</span>}
@@ -203,7 +200,7 @@ function UnitPriceEdit({ row, kind, guest, onClose, onSaved }: { row: UnitRow; k
   }
   return (
     <div className="py-3 [border-top:1px_solid_var(--color-line-soft)] flex flex-col gap-2 bg-page -mx-4 px-4">
-      <b>{row.unitNumber} <span className="font-normal text-muted-ink">{row.propertyName} · {KIND[kind]} clean</span></b>
+      <b><span className="font-mono">{row.unitNumber}</span> <span className="font-normal text-muted-ink">{buildingName(row.propertyName)} · {KIND[kind]} clean</span></b>
       <div className={cx('grid gap-3', guest ? 'grid-cols-[repeat(auto-fit,minmax(140px,1fr))]' : 'grid-cols-2')}>
         <label className="flex flex-col gap-1 text-meta text-muted-ink">Owner price<MoneyInput className={INPUT} valueSen={charge} onChangeSen={setCharge} placeholder={p?.source === 'table' && p.externalCharge != null ? `List ${(p.externalCharge / 100).toFixed(2)}` : 'Not set'} aria-label="Owner price" /></label>
         {guest && <label className="flex flex-col gap-1 text-meta text-muted-ink">Guest price<MoneyInput className={INPUT} valueSen={guestCharge} onChangeSen={setGuestCharge} placeholder={p?.source === 'table' && p.guestCharge != null ? `List ${(p.guestCharge / 100).toFixed(2)}` : 'Not set'} aria-label="Guest price" /></label>}
@@ -242,8 +239,8 @@ export function PayView({ tabs }: { tabs: ReactNode }) {
       {loading && !data ? <Skeleton height={160} /> : data && !data.ready ? (
         <EmptyState icon="Sparkles" title="Cleaner pay is not switched on yet." body="It needs a database update (migration 0126)." />
       ) : rows.length === 0 ? <EmptyState icon="Sparkles" title={`No finished cleaning jobs in ${monthLabel(`${month}-01`)}.`} /> : (
-        <section className="bg-card rounded-card border border-solid border-line p-4 flex flex-col">
-          <div className="hidden md:grid grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] gap-3 text-meta font-semibold text-muted-ink pb-2">
+        <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] p-4 flex flex-col">
+          <div className="hidden md:grid grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] gap-3 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink pb-2">
             <span>Cleaner</span><span>Our units</span><span>External jobs</span><span>Not priced</span><span className="text-right" title="What each cleaner is paid: the internal cost of the cleaning jobs they finished.">Pay (internal cost)</span>
           </div>
           {rows.map(r => (

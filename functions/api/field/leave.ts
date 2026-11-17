@@ -7,7 +7,7 @@ import { hasLeaves, NOT_MIGRATED, readHolidays, leavesInYear, overlapping, toLea
 import { leaveRequest, calendarDays, LEAVE_TYPE_LABEL } from '../../_lib/leaveRules';
 import { day } from '../../_lib/notices';
 
-const NOT_ON_LIST = 'Leave is for the company\'s own cleaners and technicians. Ask the office to add you.';
+const NOT_ON_LIST = 'Leave is for the company\'s own staff. Ask the office to add you.';
 /** How far back a request may start: a medical certificate is often brought in after the days off. */
 const BACKDATE_DAYS = 30;
 

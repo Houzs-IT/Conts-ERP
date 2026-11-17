@@ -50,6 +50,16 @@ test('set the amount: the guest total moves so the net is Airbnb’s; the fee st
   assert.deepEqual(final.changes[0].openMonths, [], 'October was final: the share goes on November instead');
 });
 
+test('a month whose income is locked is neither open nor final: no statement to generate again, no flat share', () => {
+  const lockedOct = () => new Set(['2026-10']);
+  const p = planLine({ code: 'HMQFZYBTXQ', action: 'set_amount', newAmount: 29_766 }, [stay()], '2026-11-11', none, pct70, lockedOct);
+  assert.equal(p.ok, true);
+  assert.deepEqual(p.changes[0].openMonths, [], 'October is locked: its statement keeps the locked income');
+  assert.deepEqual(p.shares, [], 'the late difference is worked out through the contract by the lock, not as a flat share');
+  const across = planLine({ code: 'HMACROSS', action: 'set_amount', newAmount: 60_000 }, [stay({ checkIn: '2026-10-30', checkOut: '2026-11-02' })], '2026-11-11', none, pct70, lockedOct);
+  assert.deepEqual(across.changes[0].openMonths, ['2026-11'], 'November is open: it follows when generated');
+});
+
 test('set the amount over two units, and leave a cancelled one alone', () => {
   const p = planLine({ code: 'HMTWO', action: 'set_amount', newAmount: 60_000 }, [
     stay({ id: 'a', unitId: 'u1', gross: 30_000, fee: 5_000 }), stay({ id: 'b', unitId: 'u2', gross: 30_000, fee: 5_000 }), stay({ id: 'c', state: 'cancelled' }),
@@ -138,4 +148,23 @@ test('undo: refused once the reservation moved on, a statement with the change i
   assert.match(undoProblem(applied, { ...fine, adjustments: new Map([['a1', { state: 'settled', final: false }]]) }), /held or settled/);
   assert.equal(undoProblem(applied, { ...fine, adjustments: new Map() }), null, 'a credit removed by hand is simply gone');
   assert.equal(undoProblem({ changes: [], shares: [], incomeIds: [] }, fine), null, 'kept as it is: nothing to put back');
+});
+
+test('a confirmed change on a final month is posted past a month whose O2 is locked', () => {
+  // October is final, so the owner's share of the change goes on the next open month; November's O2 is locked for the
+  // unit (owner statement close), so that is December.
+  const novO2 = () => new Set(['2026-11']);
+  const p = planLine({ code: 'HMQFZYBTXQ', action: 'set_amount', newAmount: 29_766 }, [stay()], '2026-11-11', oct, pct70, none, novO2);
+  assert.deepEqual(p.shares, [{ unitId: 'u1', reservationId: 'r1', sen: 4_197, months: ['2026-10'], onMonth: '2026-12' }]);
+});
+
+test('undo: refused while an O2 lock keeps the owner’s share it made (the locked month could never be made final)', () => {
+  const applied = {
+    changes: [{ id: 'r1', unitId: 'u1', before: { gross: 28_196, state: 'checked_out' }, after: { gross: 34_191, state: 'checked_out' }, openMonths: [] }],
+    shares: [{ unitId: 'u1', reservationId: 'r1', sen: 4_197, months: ['2026-09'], onMonth: '2026-10', adjustmentId: 'a1' }],
+    incomeIds: [],
+  };
+  const locked = 'October 2026 O2 is locked for Vista 22-04. Ask someone who can unlock a step to unlock it first.';
+  const now = { stays: new Map([['r1', { gross: 34_191, state: 'checked_out' }]]), finalMonthsOf: none, adjustments: new Map([['a1', { state: 'open', final: false, locked }]]) };
+  assert.equal(undoProblem(applied, now), locked);
 });

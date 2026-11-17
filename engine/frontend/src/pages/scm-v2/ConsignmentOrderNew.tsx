@@ -614,7 +614,7 @@ export const ConsignmentOrderNew = () => {
       {/* Top bar */}
       <PageHeader back
         eyebrow="Supply Chain"
-        title="New Consignment Order"
+        title="New consignment order"
         actions={
           <>
             <div className={styles.actions}>
@@ -744,7 +744,7 @@ export const ConsignmentOrderNew = () => {
       {/* ── ORDER INFO ──────────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Order Info</h2>
+          <h2 className={styles.cardTitle}>Order info</h2>
         </header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
@@ -835,7 +835,7 @@ export const ConsignmentOrderNew = () => {
       {/* ── EMERGENCY CONTACT ─────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Emergency Contact</h2>
+          <h2 className={styles.cardTitle}>Emergency contact</h2>
           <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
             Used only if we cannot reach the customer on delivery day
           </span>
@@ -882,7 +882,7 @@ export const ConsignmentOrderNew = () => {
       {/* ── DELIVERY ADDRESS ──────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Delivery Address</h2>
+          <h2 className={styles.cardTitle}>Delivery address</h2>
         </header>
         <div className={styles.cardBody}>
           <label
@@ -1006,7 +1006,7 @@ export const ConsignmentOrderNew = () => {
       {/* ── LINE ITEMS ────────────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Line Items ({lines.length})</h2>
+          <h2 className={styles.cardTitle}>Line items ({lines.length})</h2>
         </header>
         <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {lines.map((line, idx) => (

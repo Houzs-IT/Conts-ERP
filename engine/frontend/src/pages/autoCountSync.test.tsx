@@ -88,7 +88,7 @@ async function mount(body: AcOutboxResponse | Error, path = "/autocount-sync") {
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  return screen.findByText("AutoCount Sync");
+  return screen.findByText("AutoCount sync");
 }
 
 const chip = (name: RegExp) => screen.getByRole("button", { name });

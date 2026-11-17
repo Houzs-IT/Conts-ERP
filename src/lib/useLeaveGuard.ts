@@ -1,5 +1,6 @@
 import { useContext, useEffect, useRef } from 'react';
 import { UNSAFE_NavigationContext, parsePath, useLocation, type Navigator } from 'react-router-dom';
+import { holdUnsavedWork } from './unsavedWork';
 
 export interface Place { pathname: string; search: string }
 
@@ -40,6 +41,8 @@ export function useLeaveGuard(dirty: boolean, confirmLeave: () => Promise<boolea
 
   useEffect(() => {
     if (!dirty) return;
+    // A deploy does not reload the tab by itself while this form holds unsaved work (main.tsx).
+    const releaseWork = holdUnsavedWork();
     const { push, replace } = navigator;
     const onPop = (e: PopStateEvent) => {
       const delta = historyIndex() - latest.current.index;
@@ -56,6 +59,7 @@ export function useLeaveGuard(dirty: boolean, confirmLeave: () => Promise<boolea
       window.removeEventListener('popstate', onPop, { capture: true });
       window.removeEventListener('beforeunload', onUnload);
       askOpenGuard = null;
+      releaseWork();
     };
     const ask = async () => {
       const leave = await latest.current.confirmLeave();

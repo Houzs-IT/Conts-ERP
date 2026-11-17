@@ -34,6 +34,7 @@ export function doorRefusal(door: Door, role: string): string | null {
 export function homeFor(who: { role: string; kind?: DepartmentKind | null; side?: string; department?: string | null }): string {
   const { role, side, department } = who;
   if (role === 'owner') return '/owner';
+  if (role === 'renovator') return '/portal/today';
   const kind = kindOf({ role, kind: who.kind });
   if (kind === 'management') return '/';
   if (kind === 'cleaning' || kind === 'maintenance') return '/portal/today';

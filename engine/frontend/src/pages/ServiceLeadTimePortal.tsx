@@ -15,7 +15,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import { useQuery } from "../hooks/useQuery";
 import { useToast } from "../hooks/useToast";
-import { useAuth } from "../auth/AuthContext";
+import { usePageAccess } from "../auth/PageGuard";
 import { Button } from "../components/Button";
 import { ListSkeleton } from "../components/Skeleton";
 
@@ -33,9 +33,8 @@ const STAGE_ORDER: { value: string; label: string; short: string }[] = [
 ];
 
 export function ServiceLeadTimePortal() {
-  const { can } = useAuth();
   const toast = useToast();
-  const canManage = can("service_cases.manage");
+  const canManage = usePageAccess("service_cases.settings") === "full";
 
   return (
     <div className="space-y-6">
@@ -94,7 +93,7 @@ function PriorityTargetsSection({
     <section className="rounded-lg border border-border bg-surface">
       <header className="border-b border-border px-4 py-3">
         <h2 className="font-display text-[15px] font-bold leading-tight tracking-tight text-ink">
-          Lead Time — By Priority
+          Lead time — by priority
         </h2>
         <p className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
           Per-priority stage targets in days. The priority a case is created with

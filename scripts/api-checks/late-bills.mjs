@@ -63,8 +63,11 @@ await db(`DELETE FROM expenses WHERE id = $1`, seeded);
 await generate(m2);
 
 // ── Saving a bill for a final month (Task 2) ──
-r = await call('POST', '/api/statements/finalise', { statementIds: [(await statementFor(m1)).id] });
-check(`${m1} finalised`, r.status === 200, r.text);
+// Made final in the database: from October 2026 Make final needs every step locked (owner statement close part 3), and a
+// month that has not ended cannot be locked; this check is about bills for a final month.
+const makeFinal = async m => db(`UPDATE owner_statements SET state = 'finalised', finalised_at = $2 WHERE id = $1`, (await statementFor(m)).id, new Date().toISOString());
+await makeFinal(m1);
+check(`${m1} finalised`, (await statementFor(m1)).state === 'finalised');
 const finalBefore = await totalOf(m1);
 const doc = await receipt('late-water.pdf');
 r = await call('POST', '/api/expenses/utilities', { month: m1, rows: [{ unitId: unit.id, kind: 'water', amount: 4500, receiptDocumentId: doc }] });
@@ -89,8 +92,8 @@ check('the bills screen reads its deduction month', JSON.stringify(r.json ?? {})
 
 r = await call('PATCH', `/api/expenses/${late?.id}`, { amount: 4600 });
 check('a rolled bill can be corrected while its deduction month is open', r.status === 200, r.text);
-r = await call('POST', '/api/statements/finalise', { statementIds: [(await statementFor(m2)).id] });
-check(`${m2} finalised`, r.status === 200, r.text);
+await makeFinal(m2);
+check(`${m2} finalised`, (await statementFor(m2)).state === 'finalised');
 r = await call('PATCH', `/api/expenses/${late?.id}`, { amount: 4700 });
 check('once its deduction month is final it cannot be changed', r.status === 409, r.text);
 r = await call('POST', '/api/expenses/utilities', { month: m1, rows: [{ unitId: unit.id, kind: 'water', amount: 9900, receiptDocumentId: doc }] });

@@ -16,7 +16,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return fail('VALIDATION', 'Pick a month.', 422, { month: 'YYYY-MM' });
   if (!(await hasCleanPrices(env))) return json({ month, ready: false, rows: [] });
   const ready = await taskCleanersReady(env);
-  const layout = (await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'u.layout_type' : 'NULL::text';
+  const layout = (await hasColumn(env, 'units', 'layout_type')) ? 'u.layout_type' : 'NULL::text';
   const jobs = await all<any>(env, `
     SELECT t.id, t.kind, t.unit_id, t.cleaner_pay, t.amount, t.cleaner_id, COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at, u.bedrooms, ${layout} AS layout_type,
            ${ready ? '(SELECT json_agg(tc.cleaner_id)::text FROM task_cleaners tc WHERE tc.task_id = t.id AND tc.cleaner_id IS NOT NULL)' : 'NULL::text'} AS team

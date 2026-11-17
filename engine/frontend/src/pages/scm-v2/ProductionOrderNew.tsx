@@ -766,7 +766,7 @@ export const ProductionOrderNew = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Production"
-        title="New Production Order"
+        title="New production order"
         actions={
           <div className={styles.actions}>
             {/* PR — Commander 2026-05-27: parity with Production Order list — quick swap into

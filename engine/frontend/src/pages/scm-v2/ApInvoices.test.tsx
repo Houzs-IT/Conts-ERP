@@ -48,7 +48,11 @@ vi.mock('../../conts/subDepartmentQueries', () => ({
   ] } }),
 }));
 vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
-vi.mock('../../conts/projectLimitQueries', () => ({ useProjectOptions: () => ({ data: { projects: [{ id: 7, code: 'P7', name: 'SKYLINE D-25-13', funding: 'customer' }] } }) }));
+vi.mock('../../conts/projectLimitQueries', () => ({
+  useProjectOptions: () => ({ data: { projects: [{ id: 7, code: 'P7', name: 'SKYLINE D-25-13', funding: 'customer' }] } }),
+  /* A line's unit (chew, 15 Nov 2026: a bill made from a payment request keeps its units). */
+  useUnitOptions: () => ({ data: { units: [{ id: 'u-1', building: 'SKYLINE', unitNumber: 'D-25-13' }] } }),
+}));
 vi.mock('../../vendor/scm/lib/ap-invoice-queries', () => ({
   useApInvoices: () => ({ data: { rows: ROWS }, isLoading: false, isError: false, error: null }),
   useApInvoiceDetail: (id: string | null) => ({ data: id ? {
@@ -69,6 +73,11 @@ vi.mock('../../vendor/scm/lib/payment-voucher-queries', () => ({
   useExtractBills: () => ({ mutateAsync: extractAsync, isPending: false }),
   fileToBase64: async (f: File) => `b64:${f.name}`,
   PV_FILE_ACCEPT: 'image/jpeg,image/png,image/webp,application/pdf',
+}));
+/* A request's papers, fetched as the finance file route serves them (chew, 16 Nov 2026: the bill reader reads them). */
+vi.mock('../../conts/claimsQueries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../conts/claimsQueries')>()),
+  requestFileUrl: async (requestId: string, fileId: string) => `blob:${requestId}/${fileId}`,
 }));
 vi.mock('../../vendor/scm/lib/ap-invoice-listing-pdf', () => ({
   generateApListingPdf: (rows: unknown, filter: unknown) => listingAsync(rows, filter),
@@ -181,7 +190,7 @@ describe('raising an AP invoice', () => {
     fireEvent.click(screen.getByText('New AP invoice'));
     const d = dialog();
     const amountHead = within(d).getByText('Amount (RM)');
-    expect([...amountHead.parentElement!.children].map((c) => c.textContent)).toEqual(['Account', 'Description', 'Amount (RM)', 'Department', 'Project', '']);
+    expect([...amountHead.parentElement!.children].map((c) => c.textContent)).toEqual(['Account', 'Description', 'Amount (RM)', 'Department', 'Project', 'Unit', '']);
 
     fireEvent.keyDown(within(d).getByLabelText('line 1 amount'), { key: 'Insert' });
     expect(within(d).getByLabelText('line 2 amount')).toBeTruthy();
@@ -282,6 +291,58 @@ describe('the bill pile hands one bill over as one AP invoice', () => {
       lines: [{ description: 'RENT OCT', debitAccountCode: '900-A001', amountSen: 150_000, department: 'rental', subDepartmentId: 's-gen' }],
     });
     await waitFor(() => expect(uploadAsync).toHaveBeenCalledWith({ invoiceId: 'api-2', file: { name: 'rent.pdf', mime: 'application/pdf', dataBase64: 'b64:rent.pdf' } }));
+  });
+
+  /* Conts (chew, 16 Nov 2026): Make AP invoice on payment requests opens this form filled in, one request after another;
+     finance chooses the supplier of a payee typed in and each line's account here, and the save names the request. */
+  test('payment requests open the New form one after another; the supplier and accounts are chosen here', async () => {
+    createAsync.mockClear();
+    const req = (id: string, no: string, supplierId: string | null) => ({ id, requestNo: no, type: 'PAYMENT', supplierId, payeeName: 'Houzs Venture', wantedOn: '2026-11-30', note: null,
+      lines: [{ id: `${id}-L1`, description: 'Rent Nov', amountSen: 150_000, department: 'rental', projectId: null, unitId: 'u-1', subDepartmentId: 's-gen' }] });
+    render(<MemoryRouter initialEntries={[{ pathname: '/scm/ap-invoices', state: { fromRequests: [req('Q1', 'PRQ-2611-001', null), req('Q2', 'PRQ-2611-002', 'sup-h')] } }]}><ApInvoices /></MemoryRouter>);
+    let d = dialog();
+    expect(within(d).getByText(/from PRQ-2611-001 \(1 of 2\)/)).toBeTruthy();
+    expect(within(d).getByText(/choose the supplier/)).toBeTruthy();
+    expect((within(d).getByLabelText('line 1 description') as HTMLInputElement).value).toBe('Rent Nov');
+    fireEvent.focus(within(d).getByLabelText('AP invoice supplier'));
+    fireEvent.mouseDown(screen.getByText('405-H001 · HOUZS VENTURE HOLDING SDN BHD'));
+    const pick = () => {
+      const box = within(d).getAllByRole('combobox').find((el) => (el as HTMLInputElement).placeholder.includes('account this line'))!;
+      fireEvent.focus(box);
+      fireEvent.mouseDown(screen.getByText('900-A001 · RENTAL'));
+    };
+    pick();
+    fireEvent.click(within(d).getByText('Save as draft'));
+    await waitFor(() => expect(createAsync).toHaveBeenCalledTimes(1));
+    expect(createAsync.mock.calls[0]![0]).toMatchObject({
+      paymentRequestId: 'Q1', supplierId: 'sup-h', dueDate: '2026-11-30', provisional: false,
+      lines: [{ description: 'Rent Nov', debitAccountCode: '900-A001', amountSen: 150_000, unitId: 'u-1', sourceRequestLineId: 'Q1-L1' }],
+    });
+    d = dialog();
+    expect(within(d).getByText(/from PRQ-2611-002 \(2 of 2\)/)).toBeTruthy();
+    pick();
+    fireEvent.click(within(d).getByText('Save as draft'));
+    await waitFor(() => expect(createAsync).toHaveBeenCalledTimes(2));
+    expect(createAsync.mock.calls[1]![0]).toMatchObject({ paymentRequestId: 'Q2', supplierId: 'sup-h' });
+  });
+
+  test("a request's papers are read as the form opens: number, date and descriptions from the bill (chew, 16 Nov 2026)", async () => {
+    extractAsync.mockClear();
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(new Blob(['%PDF']))) as typeof fetch;
+    const revoke = URL.revokeObjectURL;
+    URL.revokeObjectURL = () => {};
+    const req = { id: 'Q3', requestNo: 'PRQ-2611-003', type: 'PAYMENT', supplierId: 'sup-h', payeeName: 'Houzs Venture', wantedOn: null, note: null,
+      lines: [{ id: 'Q3-L1', description: 'rent', amountSen: 400_000, department: 'rental', projectId: null, unitId: null }],
+      files: [{ id: 'F1', fileName: 'invoice.pdf', mime: 'application/pdf' }] };
+    render(<MemoryRouter initialEntries={[{ pathname: '/scm/ap-invoices', state: { fromRequests: [req] } }]}><ApInvoices /></MemoryRouter>);
+    await waitFor(() => expect(extractAsync).toHaveBeenCalledWith([{ files: [{ name: 'invoice.pdf', mime: 'application/pdf', dataBase64: 'b64:invoice.pdf' }] }]));
+    const d = await waitFor(() => dialog());
+    await waitFor(() => expect((within(d).getByLabelText('Supplier invoice ref') as HTMLInputElement).value).toBe('HVH-0912'));
+    expect((within(d).getByLabelText('line 1 description') as HTMLInputElement).value).toBe('RENT SEPT');
+    expect(within(d).getByText(/Read from the request's papers/)).toBeTruthy();
+    globalThis.fetch = realFetch;
+    URL.revokeObjectURL = revoke;
   });
 
   test('the Files card in the pop-out: a draft bill may lose a file; a posted bill keeps its files but still takes one', () => {

@@ -137,7 +137,7 @@ app.get("/event-types", async (c) => {
   return c.json({ data: rows.results ?? [] });
 });
 
-app.post("/event-types", requirePermission("projects.manage"), async (c) => {
+app.post("/event-types", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const body = await c.req.json<{
     slug?: string;
     name?: string;
@@ -168,7 +168,7 @@ app.post("/event-types", requirePermission("projects.manage"), async (c) => {
   return c.json({ id: r.meta.last_row_id, slug, name }, 201);
 });
 
-app.patch("/event-types/:id", requirePermission("projects.manage"), async (c) => {
+app.patch("/event-types/:id", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (!id) return c.json({ error: "Invalid ID." }, 400);
   const body = await c.req.json<{
@@ -208,7 +208,7 @@ app.patch("/event-types/:id", requirePermission("projects.manage"), async (c) =>
   return c.json({ ok: true });
 });
 
-app.delete("/event-types/:id", requirePermission("projects.manage"), async (c) => {
+app.delete("/event-types/:id", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (!id) return c.json({ error: "Invalid ID." }, 400);
   // Soft-delete: set active=0. Projects pointing at this type keep
@@ -253,7 +253,7 @@ app.get("/brands", async (c) => {
   return c.json({ data: all });
 });
 
-app.post("/brands", requirePermission("projects.manage"), async (c) => {
+app.post("/brands", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const body = await c.req.json<{
     name?: string;
     color?: string;
@@ -300,7 +300,7 @@ app.post("/brands", requirePermission("projects.manage"), async (c) => {
   return c.json({ id: r.meta.last_row_id, name, color }, 201);
 });
 
-app.patch("/brands/:id", requirePermission("projects.manage"), async (c) => {
+app.patch("/brands/:id", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (!id) return c.json({ error: "Invalid ID." }, 400);
   // Scope every read + write in this handler to the active company, so a
@@ -395,7 +395,7 @@ app.patch("/brands/:id", requirePermission("projects.manage"), async (c) => {
   return c.json({ ok: true });
 });
 
-app.delete("/brands/:id", requirePermission("projects.manage"), async (c) => {
+app.delete("/brands/:id", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (!id) return c.json({ error: "Invalid ID." }, 400);
   // ?hard=1 removes the row entirely (owner 2026-07-23 asked for a real
@@ -427,7 +427,7 @@ app.delete("/brands/:id", requirePermission("projects.manage"), async (c) => {
 // Bulk reorder. Mirrors the checklist-template items reorder pattern:
 // renumber sort_order in steps of 10 by ID position so future inserts
 // can slot between two rows without a full pass.
-app.put("/brands/reorder", requirePermission("projects.manage"), async (c) => {
+app.put("/brands/reorder", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const body = await c.req.json<{ ids?: unknown }>();
   if (!Array.isArray(body.ids) || !body.ids.every((n) => Number.isInteger(n))) {
     return c.json({ error: "ids must be an array of integers" }, 400);
@@ -501,7 +501,7 @@ app.get("/brands/logo", async (c) => {
  * a NEW key and every consumer (blob-URL previews, the PDF brand-logo
  * memo) can use the key itself as the cache-buster.
  */
-app.post("/brands/:id/logo", requirePermission("projects.manage"), async (c) => {
+app.post("/brands/:id/logo", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (!id) return c.json({ error: "Invalid ID." }, 400);
   const contentType = (c.req.header("content-type") || "").split(";")[0].trim().toLowerCase();
@@ -613,9 +613,9 @@ export const deleteBrandLogoHandler = async (c: HandlerCtx) => {
   });
   return c.json({ ok: true });
 };
-app.delete("/brands/:id/logo", requirePermission("projects.manage"), deleteBrandLogoHandler);
+app.delete("/brands/:id/logo", requirePageAccess("projects.maintenance", "full"), deleteBrandLogoHandler);
 
-app.put("/event-types/reorder", requirePermission("projects.manage"), async (c) => {
+app.put("/event-types/reorder", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const body = await c.req.json<{ ids?: unknown }>();
   if (!Array.isArray(body.ids) || !body.ids.every((n) => Number.isInteger(n))) {
     return c.json({ error: "ids must be an array of integers" }, 400);
@@ -659,7 +659,7 @@ app.get("/cost-rates", requirePageAccess("projects.finances"), async (c) => {
   return c.json({ data: rows.results ?? [] });
 });
 
-app.put("/cost-rates/:brand", requirePermission("projects.manage"), async (c) => {
+app.put("/cost-rates/:brand", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const brand = decodeURIComponent(c.req.param("brand")).trim();
   if (!brand) return c.json({ error: "brand required" }, 400);
   const user = c.get("user");
@@ -1378,7 +1378,7 @@ app.post("/organizers", requirePermission("projects.write"), async (c) => {
   return c.json({ id: r.meta.last_row_id, name }, 201);
 });
 
-app.delete("/organizers/:id", requirePermission("projects.manage"), async (c) => {
+app.delete("/organizers/:id", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (isNaN(id)) return c.json({ error: "Invalid ID" }, 400);
   await c.env.DB.prepare(
@@ -1431,7 +1431,7 @@ app.post("/contractors", requirePermission("projects.write"), async (c) => {
   return c.json({ id: r.meta.last_row_id, name }, 201);
 });
 
-app.delete("/contractors/:id", requirePermission("projects.manage"), async (c) => {
+app.delete("/contractors/:id", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (isNaN(id)) return c.json({ error: "Invalid ID" }, 400);
   await c.env.DB.prepare(
@@ -1445,7 +1445,7 @@ app.delete("/contractors/:id", requirePermission("projects.manage"), async (c) =
 // What this contractor's public link exports on one press: the month on screen
 // or the whole year (owner 2026-09-09; mig 20260909T0800). A row setting, not a
 // list of names in code, so the office flips it from Project Maintenance.
-app.patch("/contractors/:id", requirePermission("projects.manage"), async (c) => {
+app.patch("/contractors/:id", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (isNaN(id)) return c.json({ error: "Invalid ID" }, 400);
   const body = await c.req.json<{ share_export_scope?: string }>();
@@ -1476,7 +1476,7 @@ app.post("/contractors/:id/share-link", requirePermission("projects.write"), asy
   return c.json({ token });
 });
 
-app.delete("/contractors/:id/share-link", requirePermission("projects.manage"), async (c) => {
+app.delete("/contractors/:id/share-link", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (isNaN(id)) return c.json({ error: "Invalid ID" }, 400);
   const row = await c.env.DB.prepare(
@@ -1634,7 +1634,7 @@ app.post("/venues", requirePermission("projects.write"), async (c) => {
   return c.json({ id: r.meta.last_row_id, name, state: body.state ?? null }, 201);
 });
 
-app.patch("/venues/:id", requirePermission("projects.manage"), async (c) => {
+app.patch("/venues/:id", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (isNaN(id)) return c.json({ error: "Invalid ID" }, 400);
   // Scope the UPDATE to the active company so a 2990-context request can't reach
@@ -1685,7 +1685,7 @@ app.patch("/venues/:id", requirePermission("projects.manage"), async (c) => {
   return c.json({ ok: true });
 });
 
-app.delete("/venues/:id", requirePermission("projects.manage"), async (c) => {
+app.delete("/venues/:id", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseInt(c.req.param("id"), 10);
   if (isNaN(id)) return c.json({ error: "Invalid ID" }, 400);
   // Same company guard as PATCH above / DELETE /brands/:id: a 2990-context

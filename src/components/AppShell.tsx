@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useScrollMemory } from '../lib/useScrollMemory';
 import { useDevice } from '../lib/deviceClass';
 import Sidebar, { useDarkTheme } from './Sidebar';
@@ -7,6 +7,7 @@ import { DemoBand } from './DemoMode';
 import { Logo } from './Logo';
 import { RefreshLine } from './Loading';
 import MobileTabBar, { TAB_BAR_HEIGHT } from './MobileTabBar';
+import SubNav from './SubNav';
 import { PagePrimaryScope } from './States';
 import { color, dcGlass } from '../theme';
 import { workspaceOf } from '../lib/navigation';
@@ -14,6 +15,14 @@ import { workspaceOf } from '../lib/navigation';
 /** Persisted so the collapse choice survives a reload (BUTTONS §2, Writes = localStorage).
  *  Storage can throw (private mode, blocked cookies), so every access is guarded. */
 const NAV_COLLAPSED_KEY = 'conts.shell.navCollapsed';
+
+const DESK_BOTTOM_PADDING_PX = 40;
+const PHONE_GAP_ABOVE_TAB_BAR_PX = 24;
+
+function stickyBottomOffset(isFlush: boolean, isNarrow: boolean): string {
+  if (isFlush) return '0px';
+  return `-${isNarrow ? PHONE_GAP_ABOVE_TAB_BAR_PX : DESK_BOTTOM_PADDING_PX}px`;
+}
 
 /** Tablets start on the 68px rail so content gets the width; an explicit choice always wins. */
 function readNavOpen(defaultOpen: boolean): boolean {
@@ -77,7 +86,11 @@ export default function AppShell({
           <div data-print-hide style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: 'calc(8px + env(safe-area-inset-top)) 16px 8px', background: color.card, borderBottom: `1px solid ${color.border}` }}>
             {/* Phones navigate from the bottom tab bar. */}
             <Logo variant="mark" size="sm" brand={dc ? 'dreamCrafter' : 'theConts'} />
-            <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600, letterSpacing: dc ? '0.08em' : '0.18em', color: color.ink }}>{dc ? 'DREAM CRAFTER' : 'THE CONTS'}</span>
+            {/* The name shows whole or not at all (never "THE C…"): when it does not fit beside the controls it wraps,
+                after the empty first item, onto a second line that the fixed height clips. */}
+            <span aria-hidden style={{ flex: '1 1 auto', minWidth: 0, height: 18, lineHeight: '18px', overflow: 'hidden', display: 'flex', flexWrap: 'wrap', fontSize: 12, fontWeight: 600, letterSpacing: dc ? '0.08em' : '0.18em', color: color.ink }}>
+              <span /><span style={{ whiteSpace: 'nowrap' }}>{dc ? 'DREAM CRAFTER' : 'THE CONTS'}</span>
+            </span>
             <TopBar path={path} navigate={navigate} action={action} compact />
           </div>
         )}
@@ -86,9 +99,12 @@ export default function AppShell({
         {/* The phone's bottom padding clears the home indicator / browser bar (safe area). */}
         <main ref={mainRef} data-app-main tabIndex={-1} className="app-main" style={{
           flex: 1, minHeight: 0, overflowY: flush ? 'hidden' : 'auto', overflowX: 'hidden', scrollbarGutter: flush ? 'auto' : undefined,
-          padding: flush ? (isNarrow ? `0 0 calc(${TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom))` : 0) : isNarrow ? `16px 16px calc(${TAB_BAR_HEIGHT + 24}px + env(safe-area-inset-bottom))` : '24px 28px 40px',
+          padding: flush ? (isNarrow ? `0 0 calc(${TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom))` : 0) : isNarrow ? `16px 16px calc(${TAB_BAR_HEIGHT + PHONE_GAP_ABOVE_TAB_BAR_PX}px + env(safe-area-inset-bottom))` : `24px 28px ${DESK_BOTTOM_PADDING_PX}px`,
           display: 'flex', flexDirection: 'column', gap: flush ? 0 : isNarrow ? 16 : 20,
-        }}>
+          '--sticky-bottom-offset': stickyBottomOffset(flush ?? false, isNarrow),
+        } as CSSProperties}>
+          {/* A menu entry that holds several screens draws them as sub-tabs above the page (owner, 12 Nov 2026). */}
+          {!flush && <SubNav path={path} navigate={navigate} phone={isNarrow} />}
           <PagePrimaryScope path={path}>{children}</PagePrimaryScope>
         </main>
         {isNarrow && <MobileTabBar path={path} navigate={navigate} />}

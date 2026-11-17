@@ -4,13 +4,14 @@
      · nobody reads another person's receipt or file, and a keeper reads only their own float;
      · a proper receipt replaces a rejected one and keeps its float; the old one stops counting;
      · a request: a deposit names a supplier; over a project's limit it is refused; withdrawn only before a voucher;
-       a field worker hands receipts in but does not ask finance to pay; a deposit's voucher is a supplier payment. */
+       a field worker asks finance to pay a supplier by name only (chew, 12 Nov 2026); a deposit's voucher is a supplier
+       payment. */
 import { Hono } from 'hono';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
+import { asCopies, fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
 import { myClaimsRouter } from './my-claims-routes';
-import { requestVoucherHandler, closeRequestHandler } from './payment-request-routes';
-import { claimsDeps, FULL_KEY } from './petty-cash-routes';
+import { requestVoucherHandler, closeRequestHandler, rejectRequestHandler } from './payment-request-routes';
+import { claimsDeps, EDIT_KEY, FULL_KEY } from './petty-cash-routes';
 import { projectLimit } from './project-limit';
 import type { Staff } from './staff-identity';
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they test */
@@ -25,7 +26,7 @@ const PNG = { name: 'r.png', mime: 'image/png', dataBase64: btoa('png-bytes') };
 const world = () => publicTablesOnly(fakeSb({
   petty_cash_floats: [{ id: 'F1', company_id: CO, department_id: 'maint', keeper_user_id: 'u-keeper', float_sen: 100000, warn_pct: 20, active: true, topup_requested_at: null }],
   petty_cash_overrides: [], petty_cash_events: [{ id: 'E1', float_id: 'F1', kind: 'PAID_IN', amount_sen: 100000, event_date: '2026-11-01' }],
-  staff_receipts: [], staff_receipt_lines: [], staff_receipt_files: [],
+  staff_receipts: [], staff_receipt_lines: [], staff_receipt_files: [], staff_bank_details: [], conts_employee_bank: [],
   payment_requests: [], payment_request_lines: [], payment_request_files: [], payment_vouchers: [], payment_voucher_lines: [],
   conts_maintenance_jobs: [
     { id: 'M1', unit_id: 'UNIT-A01', title: 'Tap', assignee_user_id: 'u-tech', state: 'in_progress' },
@@ -38,9 +39,9 @@ const world = () => publicTablesOnly(fakeSb({
   projects: [{ id: 7, company_id: CO, name: 'SHOWROOM', funding: 'internal', limit_pct_bp: null, budget_sen: 10_000 }],
   project_limit_requests: [], acc_company_settings: [{ company_id: CO, project_limit_pct_bp: 7000 }],
   accounts: ['601-0001', '906-0000'].map(code => ({ company_id: CO, account_code: code, account_name: code, account_type: 'EXPENSE', is_active: true, acc_money: false, parent_code: null, special_type: null, everyday_expense: false })),
-}), ['conts_maintenance_jobs', 'conts_units', 'conts_staff', 'projects']);
+}), ['conts_maintenance_jobs', 'conts_units', 'conts_staff', 'projects', 'conts_employee_bank']);
 
-const bucket = () => { const m = new Map<string, ArrayBuffer>(); return { m, put: async (k: string, v: ArrayBuffer) => { m.set(k, v); }, get: async (k: string) => (m.has(k) ? { body: m.get(k) } : null) }; };
+const bucket = () => { const m = new Map<string, ArrayBuffer>(); return { m, put: async (k: string, v: ArrayBuffer) => { m.set(k, v); }, get: async (k: string) => (m.has(k) ? { body: m.get(k) } : null), delete: async (k: string) => { m.delete(k); } }; };
 const appFor = (sb: ReturnType<typeof world>, staff: Staff, source: 'session' | 'forward' = 'forward') => {
   const a = new Hono<{ Variables: Record<string, unknown> }>();
   a.use('*', async (c, next) => { c.set('supabase', sb); c.set('companyId', CO); c.set('staff', staff); await next(); });
@@ -99,6 +100,20 @@ describe('only your own', () => {
     expect(mine.float).toMatchObject({ floatSen: 100000, balanceSen: 95500 });
     expect(mine.receipts).toHaveLength(1);
   });
+  test('looking back, each line names its job, unit or project, even after the job is resolved', async () => {
+    const sb = world();
+    await handIn(appFor(sb, TECH), { lines: [{ maintenanceIssueId: 'M1', amountSen: 4500 }] });
+    await handIn(appFor(sb, OPS, 'session'), { lines: [{ unitId: 'UNIT-A01', amountSen: 4500, department: 'rental', accountCode: '601-0001' }] });
+    await post(appFor(sb, OPS, 'session'), '/requests', { type: 'PAYMENT', supplierId: 'S1', amountSen: 5000, files: [PNG], lines: [
+      { amountSen: 3000, department: 'shared', accountCode: '906-0000', projectId: 7 },
+      { amountSen: 2000, department: 'shared', accountCode: '906-0000' },
+    ] });
+    sb.tables.conts_maintenance_jobs[0].state = 'resolved';
+    const labelsOf = (rows: any[]) => rows.flatMap(row => row.lines.map((line: any) => line.targetLabel));
+    expect(labelsOf(((await (await get(appFor(sb, TECH), '/receipts?month=2026-10')).json()) as any).receipts)).toEqual(['Tap']);
+    expect(labelsOf(((await (await get(appFor(sb, OPS), '/receipts?month=2026-10')).json()) as any).receipts)).toEqual(['Skyline A-01']);
+    expect(labelsOf(((await (await get(appFor(sb, OPS), '/requests')).json()) as any).requests)).toEqual(['SHOWROOM', null]);
+  });
   test('a field worker sees only their own open jobs', async () => {
     const jobs = await (await get(appFor(world(), TECH), '/jobs')).json() as any;
     expect(jobs.jobs.map((j: any) => j.id)).toEqual(['M1']);
@@ -118,18 +133,106 @@ describe('replacing a rejected receipt', () => {
   });
 });
 
+describe('Direct Claim to Me (chew, 12 Nov 2026): finance pays it back, to the bank given on the claim', () => {
+  const BANK = { bankName: 'Maybank', accountNo: '1234567890', accountName: 'AH WAI' };
+  test('D1: a claim finance pays back is on no float and keeps the bank given on it', async () => {
+    const sb = world();
+    expect(await (await handIn(appFor(sb, TECH), { payBack: 'finance', bank: BANK })).json()).toMatchObject({ route: 'finance' });
+    expect(sb.tables.staff_receipts[0]).toMatchObject({ float_id: null, payee_bank_name: 'Maybank', payee_account_no: '1234567890', payee_account_name: 'AH WAI' });
+  });
+  test('D2: with no bank, an account number with letters, or no bank or name, it is refused', async () => {
+    const a = appFor(world(), TECH);
+    expect((await handIn(a, { payBack: 'finance' })).status).toBe(422);
+    expect((await handIn(a, { payBack: 'finance', bank: { ...BANK, accountNo: '12AB5678' } })).status).toBe(422);
+    expect((await handIn(a, { payBack: 'finance', bank: { ...BANK, accountNo: '1234' } })).status).toBe(422);
+    expect((await handIn(a, { payBack: 'finance', bank: { ...BANK, bankName: '' } })).status).toBe(422);
+    expect((await handIn(a, { payBack: 'finance', bank: { ...BANK, accountName: ' ' } })).status).toBe(422);
+  });
+  test('D3: without payBack the float pays, as before, and no bank is kept on the claim', async () => {
+    const sb = world();
+    expect(await (await handIn(appFor(sb, TECH), { bank: BANK })).json()).toMatchObject({ route: 'float' });
+    expect(sb.tables.staff_receipts[0].float_id).toBe('F1');
+    expect(sb.tables.staff_receipts[0].payee_account_no ?? null).toBeNull();
+  });
+  test("D4: my bank shows the saved details (finance's first, else HR) and writes nothing", async () => {
+    const sb = world();
+    sb.tables.conts_employee_bank.push({ user_id: 'u-tech', bank_name: 'CIMB Bank', bank_account: '5550001111' });
+    expect(await (await get(appFor(sb, TECH), '/my-bank')).json()).toMatchObject({ bank: { bankName: 'CIMB Bank', accountNo: '5550001111' } });
+    sb.tables.staff_bank_details.push({ company_id: CO, user_id: 'u-tech', bank_name: 'Maybank', account_no: '1234567890', account_name: 'AH WAI' });
+    expect(await (await get(appFor(sb, TECH), '/my-bank')).json()).toMatchObject({ bank: { bankName: 'Maybank', accountNo: '1234567890', accountName: 'AH WAI' } });
+    expect(await (await get(appFor(sb, OPS), '/my-bank')).json()).toEqual({ bank: null });
+    expect(sb.tables.staff_bank_details).toHaveLength(1);
+    expect(sb.tables.conts_employee_bank).toHaveLength(1);
+  });
+  test("my bank: HR keeps no name on the account, so the person's own name fills it (final review)", async () => {
+    const sb = world();
+    sb.tables.conts_employee_bank.push({ user_id: 'u-tech', bank_name: 'CIMB Bank', bank_account: '5550001111' });
+    expect(await (await get(appFor(sb, TECH), '/my-bank')).json()).toEqual({ bank: { bankName: 'CIMB Bank', accountNo: '5550001111', accountName: 'Ah Wai' } });
+    expect(sb.tables.conts_employee_bank).toEqual([{ user_id: 'u-tech', bank_name: 'CIMB Bank', bank_account: '5550001111' }]);
+  });
+  test('a replacement for a rejected direct claim stays with finance and takes the new bank', async () => {
+    const sb = world();
+    const first = await (await handIn(appFor(sb, TECH), { payBack: 'finance', bank: BANK })).json() as { id: string };
+    sb.tables.staff_receipts[0].status = 'REJECTED';
+    expect((await handIn(appFor(sb, TECH), { replacesId: first.id, payBack: 'finance', bank: { ...BANK, accountNo: '999888777' } })).status).toBe(201);
+    expect(sb.tables.staff_receipts[1]).toMatchObject({ float_id: null, payee_account_no: '999888777' });
+  });
+});
+
 describe('payment requests', () => {
   const ask = (a: Hono<any>, over: Record<string, unknown> = {}) => post(a, '/requests', { type: 'PAYMENT', supplierId: 'S1', amountSen: 5000, files: [PNG], lines: [{ amountSen: 5000, department: 'rental', accountCode: '601-0001' }], ...over });
   const realCreate = claimsDeps.createVoucher;
   afterEach(() => { claimsDeps.createVoucher = realCreate; });
 
-  test('a deposit names a supplier; a PO fills it; a field worker cannot ask', async () => {
+  test('the requester reads the note and opens the files on their own request; nobody else opens them', async () => {
+    const sb = world();
+    const made = await (await ask(appFor(sb, OPS, 'session'), { note: 'Pay before Friday' })).json() as { id: string };
+    const fileId = sb.tables.payment_request_files[0].id;
+    const mine = ((await (await get(appFor(sb, OPS), '/requests')).json()) as any).requests[0];
+    expect(mine).toMatchObject({ note: 'Pay before Friday', files: [{ id: fileId, fileName: 'r.png', mime: 'image/png' }] });
+    expect((await get(appFor(sb, OPS), `/requests/${made.id}/files/${fileId}`)).status).toBe(200);
+    expect((await get(appFor(sb, TECH), `/requests/${made.id}/files/${fileId}`)).status).toBe(404);
+  });
+  test('a deposit names a supplier; a PO fills it', async () => {
     const sb = world();
     const a = appFor(sb, OPS, 'session');
     expect((await ask(a, { type: 'DEPOSIT', supplierId: undefined, payeeName: 'Someone' })).status).toBe(422);
     expect((await ask(a, { supplierId: undefined, purchaseOrderId: 'PO1' })).status).toBe(201);
     expect(sb.tables.payment_requests[0]).toMatchObject({ supplier_id: 'S1', payee_name: 'ACE HARDWARE', payee_to_check: false, status: 'SUBMITTED' });
-    expect((await ask(appFor(sb, TECH))).status).toBe(403);
+  });
+  test('a field worker asks finance to pay a supplier by name only: no list, no PO, no deposit (chew, 12 Nov 2026)', async () => {
+    const sb = world();
+    const a = appFor(sb, TECH);
+    const byName = { supplierId: undefined, payeeName: 'KEDAI PAIP AH SENG', lines: [{ amountSen: 5000, department: 'rental', description: 'Pipe' }] };
+    expect((await ask(a, byName)).status).toBe(201);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ supplier_id: null, payee_name: 'KEDAI PAIP AH SENG', type: 'PAYMENT', status: 'SUBMITTED' });
+    expect((await ask(a, { ...byName, supplierId: 'S1' })).status).toBe(422);
+    expect((await ask(a, { ...byName, purchaseOrderId: 'PO1' })).status).toBe(422);
+    expect((await ask(a, { ...byName, type: 'DEPOSIT' })).status).toBe(422);
+    expect((await ask(a, { ...byName, payeeName: ' ' })).status).toBe(422);
+    expect(sb.tables.payment_requests).toHaveLength(1);
+  });
+  test("a field worker's request names no project: a project's limit stays with the office (final review)", async () => {
+    const sb = world();
+    const res = await ask(appFor(sb, TECH), { supplierId: undefined, payeeName: 'KEDAI PAIP AH SENG', lines: [{ amountSen: 5000, department: 'rental', description: 'Pipe', projectId: 7 }] });
+    expect(res.status).toBe(422);
+    expect(JSON.stringify(await res.json())).not.toMatch(/leftSen|left of its limit/);
+    expect(sb.tables.payment_requests).toHaveLength(0);
+  });
+  test('a request sent again with the same id is found, not made twice; another person cannot take the id (final review)', async () => {
+    const sb = world();
+    const id = '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b';
+    const byName = { id, supplierId: undefined, payeeName: 'KEDAI PAIP AH SENG', lines: [{ amountSen: 5000, department: 'rental', description: 'Pipe' }] };
+    const first = await ask(appFor(sb, TECH), byName);
+    expect(first.status).toBe(201);
+    const made = await first.json() as { id: string; requestNo: string };
+    expect(made.id).toBe(id);
+    const again = await ask(appFor(sb, TECH), byName);
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({ id, requestNo: made.requestNo });
+    expect(sb.tables.payment_requests).toHaveLength(1);
+    expect((await ask(appFor(sb, OPS), { ...byName, supplierId: 'S1' })).status).toBe(409);
+    expect(sb.tables.payment_requests).toHaveLength(1);
   });
   test('over a project\'s limit it is refused', async () => {
     const a = appFor(world(), OPS, 'session');
@@ -147,10 +250,11 @@ describe('payment requests', () => {
     fin.use('*', async (c, next) => { c.set('supabase', sb); c.set('companyId', CO); c.set('houzsUser', { name: 'Chew', permissions_set: new Set([FULL_KEY]) }); await next(); });
     fin.post('/r/:id/voucher', requestVoucherHandler);
     fin.post('/r/:id/close', closeRequestHandler);
-    expect((await post(fin, `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(201);
-    /* It pays the supplier: every line on the supplier's creditors control, so the deposit stands as an advance. */
-    expect(body).toMatchObject({ purpose: 'SUPPLIER_PAYMENT', supplierId: 'S1' });
-    expect((body.lines as Array<{ debitAccountCode: string; amountSen: number }>)).toEqual([expect.objectContaining({ debitAccountCode: '400-0000', amountSen: 8_000 })]);
+    expect((await post(fin, `/r/${made.id}/voucher`, { bankAccountCode: '310-0010', debitAccountCode: '601-0001' })).status).toBe(201);
+    /* Make voucher is an ordinary voucher (chew, 16 Nov 2026): each line on the account finance chose, not the supplier's
+       control; a deposit to be offset later goes through an AP invoice instead. */
+    expect(body).toMatchObject({ purpose: 'OTHER', payeeName: 'ACE HARDWARE' });
+    expect((body.lines as Array<{ debitAccountCode: string; amountSen: number }>)).toEqual([expect.objectContaining({ debitAccountCode: '601-0001', amountSen: 8_000 })]);
     expect(sb.tables.payment_vouchers[0].payment_request_id).toBe(made.id);
     expect((await post(a, `/requests/${made.id}/withdraw`, {})).status).toBe(409);
     /* Part paid by a 3,000 voucher, then closed: the rest is freed. */
@@ -179,13 +283,13 @@ describe('nothing paid twice, nothing half-saved', () => {
     const made = await (await ask(appFor(sb, OPS, 'session'))).json() as { id: string };
     const bodies: Array<Record<string, unknown>> = [];
     claimsDeps.createVoucher = async (_c, b) => { bodies.push(b); const id = `PV${bodies.length}`; sb.tables.payment_vouchers.push({ id, company_id: CO, status: 'DRAFT' }); return { ok: true, id, pvNumber: id }; };
-    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(201);
-    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(409);
+    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010', debitAccountCode: '601-0001' })).status).toBe(201);
+    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010', debitAccountCode: '601-0001' })).status).toBe(409);
     /* The first voucher posts 3,500 of the 5,000: the first line is paid, and 1,500 of the second is still owed. */
     sb.tables.payment_vouchers[0].status = 'POSTED';
     sb.tables.payment_voucher_lines.push({ pv_id: 'PV1', company_id: CO, amount_sen: 3_500, project_id: null, debit_account_code: '400-0000' });
     sb.tables.payment_requests[0].status = 'PART_PAID';
-    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(201);
+    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010', debitAccountCode: '601-0001' })).status).toBe(201);
     expect((bodies[1].lines as Array<{ amountSen: number }>).map(l => l.amountSen)).toEqual([1_500]);
   });
 
@@ -193,7 +297,7 @@ describe('nothing paid twice, nothing half-saved', () => {
     const sb = world();
     const made = await (await ask(appFor(sb, OPS, 'session'))).json() as { id: string };
     claimsDeps.createVoucher = async () => { sb.tables.payment_vouchers.push({ id: 'PV1', company_id: CO, status: 'DRAFT' }); sb.tables.payment_requests[0].status = 'WITHDRAWN'; return { ok: true, id: 'PV1', pvNumber: 'PV1' }; };
-    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' })).status).toBe(409);
+    expect((await post(finance(sb), `/r/${made.id}/voucher`, { bankAccountCode: '310-0010', debitAccountCode: '601-0001' })).status).toBe(409);
     expect(sb.tables.payment_vouchers[0].status).toBe('CANCELLED');
   });
 
@@ -293,7 +397,7 @@ describe('sub-departments on staff documents', () => {
     const fin = new Hono<{ Variables: Record<string, unknown> }>();
     fin.use('*', async (c, next) => { c.set('supabase', sb); c.set('companyId', CO); c.set('houzsUser', { name: 'Chew', permissions_set: new Set([FULL_KEY]) }); await next(); });
     fin.post('/r/:id/voucher', requestVoucherHandler);
-    const r = await post(fin, `/r/${made.id}/voucher`, { bankAccountCode: '310-0010' });
+    const r = await post(fin, `/r/${made.id}/voucher`, { bankAccountCode: '310-0010', debitAccountCode: '601-0001' });
     expect(r.status, await r.clone().text()).toBe(201);
     expect(sb.tables.payment_voucher_lines[0]).toMatchObject({ sub_department_id: 's-co' });
   });
@@ -340,5 +444,126 @@ describe('reading a receipt or a request bill', () => {
     expect(await (await read(appFor(world(), OPS), { kind: 'request', files: [PNG] })).json()).toMatchObject({ unreadable: true, amountSen: null });
     const noKey = await appFor(world(), OPS).request('/extract', { method: 'POST', body: JSON.stringify({ files: [PNG] }), headers: { 'content-type': 'application/json' } }, env);
     expect(noKey.status).toBe(503);
+  });
+});
+
+describe('a withdrawn or rejected request is changed and sent again, keeping its number (chew, 13 Nov 2026: "just change it and submit again")', () => {
+  const PDF = { name: 'quote.pdf', mime: 'application/pdf', dataBase64: btoa('%PDF-1.4 quote') };
+  const ask = (a: Hono<any>, over: Record<string, unknown> = {}) => post(a, '/requests', { type: 'PAYMENT', supplierId: 'S1', amountSen: 5000, files: [PNG], lines: [{ amountSen: 5000, department: 'rental', accountCode: '601-0001' }], ...over });
+  const again = (a: Hono<any>, id: string, over: Record<string, unknown> = {}) => post(a, `/requests/${id}/resubmit`, { type: 'PAYMENT', supplierId: 'S1', amountSen: 6000, lines: [{ amountSen: 6000, department: 'rental', description: 'Corrected' }], ...over });
+  const reject = async (sb: ReturnType<typeof world>, id: string, reason: string) => {
+    const fin = new Hono<{ Variables: Record<string, unknown> }>();
+    fin.use('*', async (c, next) => { c.set('supabase', sb); c.set('companyId', CO); c.set('houzsUser', { name: 'Chew', permissions_set: new Set([EDIT_KEY, FULL_KEY]) }); await next(); });
+    fin.post('/r/:id/reject', rejectRequestHandler);
+    return post(fin, `/r/${id}/reject`, { reason });
+  };
+  const made = async (sb: ReturnType<typeof world>, over: Record<string, unknown> = {}) => (await (await ask(appFor(sb, OPS, 'session'), over)).json()) as { id: string; requestNo: string };
+  const fileIds = (sb: ReturnType<typeof world>) => sb.tables.payment_request_files.map((f: any) => f.id as string);
+
+  test('withdrawn, changed and sent again: the same request and number, with the new amount and lines, back with finance', async () => {
+    const sb = world();
+    const a = appFor(sb, OPS, 'session');
+    const first = await made(sb);
+    expect((await post(a, `/requests/${first.id}/withdraw`, {})).status).toBe(200);
+    const keep = fileIds(sb);
+    const res = await again(a, first.id, { keepFileIds: keep });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: first.id, requestNo: first.requestNo });
+    expect(sb.tables.payment_requests).toHaveLength(1);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ id: first.id, request_no: first.requestNo, status: 'SUBMITTED', amount_sen: 6000 });
+    expect(sb.tables.payment_request_lines).toHaveLength(1);
+    expect(sb.tables.payment_request_lines[0]).toMatchObject({ request_id: first.id, amount_sen: 6000, description: 'Corrected' });
+    expect(fileIds(sb)).toEqual(keep);
+  });
+
+  test('rejected by finance, then sent again: finance still sees why it was rejected', async () => {
+    const sb = world();
+    const first = await made(sb);
+    expect((await reject(sb, first.id, 'Wrong amount on the invoice')).status).toBe(200);
+    const res = await again(appFor(sb, OPS, 'session'), first.id, { keepFileIds: fileIds(sb) });
+    expect(res.status).toBe(200);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', reason: 'Wrong amount on the invoice', decided_by: 'Chew' });
+  });
+
+  test('files: the ones kept stay, the others go, new ones are added; at least one is needed', async () => {
+    const sb = world();
+    const a = appFor(sb, OPS, 'session');
+    const first = await made(sb);
+    await post(a, `/requests/${first.id}/withdraw`, {});
+    const old = sb.tables.payment_request_files[0];
+    expect((await again(a, first.id, { keepFileIds: [] })).status).toBe(422);
+    expect(sb.tables.payment_requests[0].status).toBe('WITHDRAWN');
+    expect((await again(a, first.id, { keepFileIds: [], files: [PDF] })).status).toBe(200);
+    expect(sb.tables.payment_request_files).toHaveLength(1);
+    expect(sb.tables.payment_request_files[0]).toMatchObject({ request_id: first.id, file_name: 'quote.pdf', mime: 'application/pdf' });
+    expect(env.SLIPS.m.has(old.r2_key)).toBe(false);
+  });
+
+  test('only the person who asked, and only once it is withdrawn or rejected', async () => {
+    const sb = world();
+    const first = await made(sb);
+    const keepFileIds = fileIds(sb);
+    expect((await again(appFor(sb, OPS, 'session'), first.id, { keepFileIds })).status).toBe(409);
+    await post(appFor(sb, OPS, 'session'), `/requests/${first.id}/withdraw`, {});
+    expect((await again(appFor(sb, TECH), first.id, { supplierId: undefined, payeeName: 'X', keepFileIds })).status).toBe(404);
+    sb.tables.payment_requests[0].status = 'PAID';
+    expect((await again(appFor(sb, OPS, 'session'), first.id, { keepFileIds })).status).toBe(409);
+  });
+
+  test("checked as a new request is: over a project's limit it is refused and stays withdrawn", async () => {
+    const sb = world();
+    const a = appFor(sb, OPS, 'session');
+    const first = await made(sb, { amountSen: 8_000, lines: [{ amountSen: 8_000, department: 'rental', accountCode: '601-0001', projectId: 7 }] });
+    await post(a, `/requests/${first.id}/withdraw`, {});
+    const keepFileIds = fileIds(sb);
+    expect((await again(a, first.id, { amountSen: 20_000, lines: [{ amountSen: 20_000, department: 'rental', accountCode: '601-0001', projectId: 7 }], keepFileIds })).status).toBe(409);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'WITHDRAWN', amount_sen: 8_000 });
+    expect((await again(a, first.id, { amountSen: 7_000, lines: [{ amountSen: 7_000, department: 'rental', accountCode: '601-0001', projectId: 7 }], keepFileIds })).status).toBe(200);
+    expect(await projectLimit(sb, CO, 7)).toMatchObject({ reservedSen: 7_000 });
+  });
+
+  test('sent again from two tabs at once: one goes, the other is told and changes nothing (review, 13 Nov 2026)', async () => {
+    const sb = world();
+    const first = await made(sb);
+    await post(appFor(sb, OPS, 'session'), `/requests/${first.id}/withdraw`, {});
+    sb.tables.payment_requests[0].updated_at = '2026-11-13T01:00:00.000Z'; /* the database's default; the fake has none */
+    const keep = fileIds(sb);
+    const tabs = () => { const a = new Hono<{ Variables: Record<string, unknown> }>(); a.use('*', async (c, next) => { c.set('supabase', asCopies(sb)); c.set('companyId', CO); c.set('staff', OPS); await next(); }); a.route('/', myClaimsRouter('session')); return a; };
+    const [ra, rb] = await Promise.all([
+      again(tabs(), first.id, { amountSen: 6000, lines: [{ amountSen: 6000, department: 'rental', description: 'A' }], keepFileIds: keep }),
+      again(tabs(), first.id, { amountSen: 9000, lines: [{ amountSen: 4000, department: 'rental', description: 'B1' }, { amountSen: 5000, department: 'rental', description: 'B2' }], keepFileIds: [], files: [PDF] }),
+    ]);
+    expect([ra.status, rb.status].sort()).toEqual([200, 409]);
+    const won = ra.status === 200 ? 6000 : 9000;
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: won });
+    expect(sb.tables.payment_request_lines.reduce((n: number, l: any) => n + Number(l.amount_sen), 0)).toBe(won);
+    expect(sb.tables.payment_request_files).toHaveLength(1);
+  });
+
+  test('a phone retry with the same id is recognised before anything is checked again (review, 13 Nov 2026)', async () => {
+    const sb = world();
+    const id = '11111111-2222-4333-8444-555555555555';
+    const body = { id, type: 'PAYMENT', payeeName: 'KEDAI PAIP AH SENG', amountSen: 3000, lines: [{ maintenanceIssueId: 'M1', amountSen: 3000 }], files: [PNG] };
+    expect((await post(appFor(sb, TECH), '/requests', body)).status).toBe(201);
+    sb.tables.conts_maintenance_jobs[0].state = 'resolved';
+    const retry = await post(appFor(sb, TECH), '/requests', body);
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toMatchObject({ id });
+    expect(sb.tables.payment_requests).toHaveLength(1);
+  });
+
+  test('a utility bill request is fixed and sent again from Utility bills, not here', async () => {
+    const sb = world();
+    sb.tables.payment_requests.push({ id: 'R-UTIL', company_id: CO, request_no: 'PRQ-2611-0009', type: 'PAYMENT', requester_user_id: 'u-ops', supplier_id: null, payee_name: 'TNB', payee_to_check: true,
+      purchase_order_id: null, wanted_on: null, owes_formal_invoice: false, note: null, amount_sen: 5000, status: 'WITHDRAWN', source_key: 'utility:bills-abc:TNB', created_at: '2026-11-01T02:00:00Z' });
+    const res = await again(appFor(sb, OPS, 'session'), 'R-UTIL', { supplierId: undefined, payeeName: 'TNB', files: [PNG] });
+    expect(res.status).toBe(409);
+    expect(JSON.stringify(await res.json())).toMatch(/Utility bills/);
+    /* My claims says so before anyone tries: a request made from bills is marked. */
+    await made(sb);
+    for (const r of sb.tables.payment_requests) r.created_at ??= '2026-11-02T02:00:00Z'; /* the database's default; the fake has none */
+    const mine = ((await (await get(appFor(sb, OPS), '/requests')).json()) as any).requests as Array<{ id: string; fromBills: boolean }>;
+    expect(mine.find(r => r.id === 'R-UTIL')?.fromBills).toBe(true);
+    expect(mine.find(r => r.id !== 'R-UTIL')?.fromBills).toBe(false);
   });
 });

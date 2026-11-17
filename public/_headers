@@ -1,0 +1,20 @@
+# Cloudflare Pages response headers (served from dist/_headers). Pages adds the headers of EVERY rule that matches a
+# path rather than only the most specific one, so these rules stay narrow (Houzs and Hookka both learned this).
+#
+# Not set: a long immutable Cache-Control on /assets/*. The 404 for a missing chunk (public/assets/404.html) is served
+# under the chunk's own address, and the browser would keep that for a year, so a chunk that appears a moment later
+# (a deploy still spreading) would stay missing in that browser.
+
+# The entry page names this build's chunks: always asked again, so a deploy reaches the next load.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+
+# Read by open tabs to notice a new deploy (src/components/UpdateNotice.tsx).
+/version.json
+  Cache-Control: no-store
+
+# A body is only ever run as what its content type says, never guessed from what it contains.
+/assets/*
+  X-Content-Type-Options: nosniff

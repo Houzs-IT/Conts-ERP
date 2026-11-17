@@ -38,9 +38,9 @@ function DeadlineChip({ x, who }: { x: DueItem; who: Viewing }): ReactElement {
 }
 
 function EventChip({ e, who }: { e: CalEvent; who: Viewing }): ReactElement {
-  const [ink, bg] = BETA_CHIP[groupOf(e.type)];
+  const [ink, bg] = e.done ? BETA_CHIP.meet : BETA_CHIP[groupOf(e.type)];
   return (
-    <div style={{ ...CHIP, borderLeft: `3px solid ${ink}`, background: bg, color: ink, fontWeight: 600, opacity: e.done ? 0.5 : 1 }}>
+    <div style={{ ...CHIP, borderLeft: `3px solid ${ink}`, background: bg, color: ink, fontWeight: 600 }}>
       {who === "All" && e.who && <Badge name={e.who.name} />}
       <span style={{ ...CLAMP, textDecoration: e.done ? "line-through" : undefined }}>{e.t ? `${e.t} ` : ""}{e.note || typeLabel(e.type)}</span>
     </div>
@@ -107,7 +107,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
                   onClick={() => onPick(day)}
                   style={{
                     minHeight: cellH, textAlign: "left", display: "flex", flexDirection: "column", alignItems: phone ? "center" : undefined, gap: 3, padding: phone ? "4px 2px" : 6, border: 0, borderTop: `1px solid ${BETA.lineSoft}`,
-                    background: isSel ? BETA.pick : BETA.row, outline: isSel ? `2px solid ${BETA.selInk}` : "none", outlineOffset: -2, font: "inherit", cursor: "pointer", minWidth: 0, color: BETA.ink,
+                    background: isSel ? BETA.pick : BETA.row, boxShadow: isSel ? `inset 0 0 0 2px ${BETA.selInk}` : undefined, font: "inherit", cursor: "pointer", minWidth: 0, color: BETA.ink,
                   }}
                 >
                   <span style={{ alignSelf: phone ? "center" : "flex-start", minWidth: 24, height: 24, borderRadius: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: isToday ? 700 : 500, background: isToday ? BETA.accentFill : "transparent", color: isToday ? "#FFFFFF" : BETA.ink }}>{d}</span>
@@ -159,7 +159,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
                   {canWrite && <span style={{ fontSize: 12, color: BETA.accent, fontWeight: 600 }}>Edit</span>}
                 </>
               );
-              const row: CSSProperties = { width: "100%", display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 0", border: 0, background: "transparent", textAlign: "left", font: "inherit", opacity: e.done ? 0.55 : 1, color: BETA.ink };
+              const row: CSSProperties = { width: "100%", display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 0", border: 0, background: "transparent", textAlign: "left", font: "inherit", color: BETA.ink };
               return (
                 <li key={e.id} style={{ borderTop: `1px solid ${BETA.lineSoft}` }}>
                   {canWrite ? <button type="button" onClick={() => onEditEvent(e)} style={{ ...row, cursor: "pointer" }}>{body}</button> : <div style={row}>{body}</div>}

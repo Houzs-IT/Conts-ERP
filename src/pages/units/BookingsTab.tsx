@@ -113,7 +113,7 @@ export default function BookingsTab({ unitId }: { unitId: string }) {
       header={
         <div className="py-4 px-5 flex flex-col gap-3 [border-bottom:1px_solid_var(--color-line-soft)]">
           <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[16px] font-semibold tracking-[-0.01em]">Reservations</span>
+            <span className="text-[15px] font-semibold tracking-[-0.01em]">Reservations</span>
             <span className="text-meta text-muted-ink min-h-[18px]">{summary ?? (d ? '' : 'Loading…')}</span>
           </div>
           <StatusChips label="Which reservations" value={when} onChange={setWhen}

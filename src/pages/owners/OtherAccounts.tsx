@@ -7,7 +7,7 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
-import { masked, plural, titleCase } from '../../lib/format';
+import { masked, plural, personName } from '../../lib/format';
 import { bankName, BANK_NAME } from '../../lib/vocabulary';
 import type { OwnerBankAccount, OwnerBankAccountInput } from '../../lib/types';
 import { BANKS } from '../units/shared';
@@ -108,7 +108,7 @@ function AccountForm({ owner, base, account, onClose, onSaved }: { owner: Owner;
     } finally { setBusy(false); }
   }
   return (
-    <Modal title={account ? 'Edit account' : 'Add account'} sub={`Another bank account for ${titleCase(owner.displayName)}. A unit pays to it only when you pick it on the unit.`} onClose={onClose}
+    <Modal title={account ? 'Edit account' : 'Add account'} sub={`Another bank account for ${personName(owner.displayName)}. A unit pays to it only when you pick it on the unit.`} onClose={onClose}
       submitLabel={busy ? 'Saving...' : 'Save account'} canSubmit={!busy && !!bank && !!holder.trim() && (!!account || !!number.trim())} onSubmit={() => void save()}>
       <Field label="Name for this account (optional)" placeholder="e.g. Regalia" maxLength={60} value={label} onChange={e => setLabel(e.target.value)} error={fields.label} />
       <Select showLabel size="md" label="Bank" value={bank} onChange={setBank} placeholder="Choose the bank"

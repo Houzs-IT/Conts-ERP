@@ -248,7 +248,7 @@ export const DeliveryPlanningRegions = ({ embedded = false }: { embedded?: boole
       {!embedded && (
         <PageHeader
           eyebrow="Delivery"
-          title="Delivery Regions"
+          title="Delivery regions"
           description="The region buckets (tabs) on Delivery Planning, with the areas each one covers. Assign which states fall under each region in SO Maintenance."
           actions={
             <Button variant="primary" size="md" onClick={() => setCreating(true)}>
@@ -306,7 +306,7 @@ const CreateRegionDrawer = ({ onClose, nextSort }: { onClose: () => void; nextSo
       <div className={styles.backdrop} onClick={onClose} />
       <aside className={styles.drawer}>
         <header className={styles.drawerHeader}>
-          <h2 className={styles.drawerTitle}>New Region</h2>
+          <h2 className={styles.drawerTitle}>New region</h2>
           <button type="button" className={styles.iconBtn} onClick={onClose}><X {...ICON} /></button>
         </header>
         <div className={styles.drawerBody}>

@@ -169,7 +169,7 @@ function NewNoteDrawer({ suppliers, salesInvoices, purchaseInvoices, canWrite, o
   }
 
   return (
-    <Drawer open onClose={onClose} width={760}>
+    <Drawer open onClose={onClose} dirty="typed" width={760}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <h2 className="m-0 text-[19px] font-semibold">New note</h2>
         <CloseButton onClick={onClose} />

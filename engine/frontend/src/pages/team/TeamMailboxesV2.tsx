@@ -584,7 +584,7 @@ function MailboxCreatePanel({
     <Panel
       open
       onClose={onClose}
-      title="New Mailbox"
+      title="New mailbox"
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>

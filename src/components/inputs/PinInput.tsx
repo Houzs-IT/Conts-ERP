@@ -41,7 +41,7 @@ export function PinInput({ value, onChange, length = 6, label = 'PIN', autoCompl
             return (
               <div key={i} aria-hidden
                 className={cx(
-                  'h-12 grid place-items-center rounded-control border border-solid bg-card text-[20px] font-semibold tabular-nums text-ink transition-[border-color,box-shadow] duration-[var(--motion-fast)]',
+                  'h-12 grid place-items-center rounded-control border border-solid bg-card text-title font-semibold tabular-nums text-ink transition-[border-color,box-shadow] duration-[var(--motion-fast)]',
                   error ? 'border-danger-line'
                     : active ? 'border-[var(--color-border-focus)] [box-shadow:0_0_0_3px_color-mix(in_srgb,var(--color-border-focus)_45%,transparent)]'
                     : digit ? 'border-ink' : 'border-[var(--color-line-input)]',

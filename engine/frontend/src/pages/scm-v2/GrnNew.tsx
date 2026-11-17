@@ -1406,7 +1406,7 @@ export const GrnNew = () => {
       <div className="lg:pr-32" style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <section className={styles.card} style={{ maxWidth: 640, width: '100%' }}>
           <div className={styles.cardHeader}>
-            <h2 className={styles.cardTitle}>Line Summary</h2>
+            <h2 className={styles.cardTitle}>Line summary</h2>
           </div>
           <div className={styles.cardBody} style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-13)' }}>

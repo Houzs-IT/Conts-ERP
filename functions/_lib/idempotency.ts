@@ -7,12 +7,29 @@ export function idempotencyTable(env: Env) {
 }
 
 const WRITES = new Set(['POST', 'PATCH', 'PUT']);
+/** The largest answer kept for a replay. */
 const MAX_BODY = 1024 * 1024;
+/** The largest request matched by its content: a receipt with its photos (claims allow 25 MB of files) still counts. */
+const MAX_REQUEST = 30 * 1024 * 1024;
 // The same sentence the API middleware answers a thrown write with: the write may have saved part of its work.
 const THREW = JSON.stringify({ error: { code: 'INTERNAL', message: 'Something went wrong on our side. Refresh the page to see whether the change was saved before trying again; if it keeps happening, tell IT.' } });
 
-async function sha256(text: string) {
-  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, '0')).join('');
+async function sha256(head: string, body: ArrayBuffer) {
+  const prefix = new TextEncoder().encode(head);
+  const joined = new Uint8Array(prefix.byteLength + body.byteLength);
+  joined.set(prefix, 0);
+  joined.set(new Uint8Array(body), prefix.byteLength);
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', joined))].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** The browser picks a new random boundary each time it sends a form with files, so the same form sent twice differs
+ *  only there. It is taken out before the two are compared. */
+export function sameForm(contentType: string | null, body: ArrayBuffer): ArrayBuffer {
+  const boundary = /^multipart\/form-data;.*\bboundary="?([^";]+)"?/i.exec(contentType ?? '')?.[1];
+  if (!boundary) return body;
+  // latin1 maps every byte to one character and back, so nothing else in the body changes.
+  const text = new TextDecoder('latin1').decode(body).split(boundary).join('');
+  return new TextEncoder().encode(text).buffer as ArrayBuffer;
 }
 
 /**
@@ -27,10 +44,11 @@ export async function once(env: Env, request: Request, userId: string, write: ()
   if (raw === null || !WRITES.has(request.method) || !(await idempotencyTable(env))) return write();
   const key = raw.trim();
   if (!/^[\x21-\x7e]{1,200}$/.test(key)) return fail('VALIDATION', 'The request key sent with this change is not valid. Refresh the page and try again.', 400);
-  const body = await request.clone().text();
-  if (body.length > MAX_BODY) return write();
+  // Bytes, not text: a form with files (a receipt and its photos) is matched exactly too.
+  const body = await request.clone().arrayBuffer();
+  if (body.byteLength > MAX_REQUEST) return write();
   const url = new URL(request.url);
-  const hash = await sha256(`${request.method}\n${url.pathname}${url.search}\n${body}`);
+  const hash = await sha256(`${request.method}\n${url.pathname}${url.search}\n`, sameForm(request.headers.get('content-type'), body));
 
   let claimed = false;
   try {

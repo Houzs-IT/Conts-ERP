@@ -55,9 +55,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // records they cannot open or an alert whose link answers "no access".
   const sees = (area: string) => session.role === 'management' || lv[area] !== 'none';
   const money = sees('finance');
-  const ops = sees('operations'), inbox = sees('comms') ? n.inbox : 0, sync = sees('integrations');
+  const ops = sees('operations'), cleans = sees('cleaning'), repairs = sees('maintenance');
+  const inbox = sees('comms') ? n.inbox : 0, sync = sees('integrations');
   // Reviews: reviews waiting for a reply plus Airbnb guests still to be reviewed inside the window.
-  const reviewsOn = sees('pricing'), rr = rv?.reviews_reply ?? 0, rd = rv?.reviews_due ?? 0, reviews = reviewsOn ? rr + rd : 0;
+  const reviewsOn = sees('reviews'), rr = rv?.reviews_reply ?? 0, rd = rv?.reviews_due ?? 0, reviews = reviewsOn ? rr + rd : 0;
 
   type Alert = { key: string; title: string; body: string; target: string; tone: 'critical' | 'warning' | 'info'; count: number };
   const alerts: Alert[] = [];
@@ -76,9 +77,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // Today counts the day's check-ins and checkouts; Cleaning counts the open clean jobs up to today (carried-over ones included).
   return json({
-    channels, today: ops ? n.today : 0, reviews, cleaning: ops ? n.cleaning : 0, maintenance: ops ? n.maintenance : 0, inbox,
+    channels, today: ops ? n.today : 0, reviews, cleaning: cleans ? n.cleaning : 0, maintenance: repairs ? n.maintenance : 0, inbox,
     // What the maintenance count is made of, for the menu's tooltip: the same split as the Maintenance header.
-    maintenanceAwaiting: ops ? n.maintenance_awaiting : 0,
+    maintenanceAwaiting: repairs ? n.maintenance_awaiting : 0,
     statements: money ? n.statements : 0, approvals, approvalsOn, alerts,
   });
 };

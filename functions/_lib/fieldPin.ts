@@ -1,9 +1,9 @@
 import { type Env, one } from './db';
 import { hasColumn } from './auth';
 
-/** Field sign-in for cleaners and technicians (migration 0145): an employee ID (EMP-001) in users.employee_id and a
- *  6-digit PIN in users.password_hash. Only these two roles may have one. */
-export const PIN_ROLES = ['housekeeper', 'technician'];
+/** Field sign-in for cleaners, technicians and Renovation staff (migrations 0145, 0316): an employee ID (EMP-001) in
+ *  users.employee_id and a 6-digit PIN in users.password_hash. Only these roles may have one. */
+export const PIN_ROLES = ['housekeeper', 'technician', 'renovator'];
 
 /** A field account still needs a unique email; this one can never receive mail (.invalid is reserved). */
 export const NO_EMAIL_DOMAIN = '@no-email.invalid';
@@ -22,7 +22,7 @@ export function employeeIdOf(raw: unknown): string | null {
 
 export const isPin = (v: unknown): v is string => typeof v === 'string' && /^\d{6}$/.test(v);
 
-export const hasEmployeeIds = (env: Env): Promise<boolean> => hasColumn(env, 'users', 'employee_id').catch(() => false);
+export const hasEmployeeIds = (env: Env): Promise<boolean> => hasColumn(env, 'users', 'employee_id');
 
 /** The account's employee ID when it signs in with one (and a PIN), so a new secret for it must be a PIN. */
 export async function employeeIdOfUser(env: Env, userId: string): Promise<string | null> {

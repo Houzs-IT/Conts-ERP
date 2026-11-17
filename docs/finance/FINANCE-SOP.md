@@ -104,7 +104,7 @@
 
 | 来源 | 谁录入 / 提交 | 何时产生应付 |
 |---|---|---|
-| 付款申请：报销、部门付款、订金 / 预付 | 办公室员工和主管（现场员工的费用由主管代提） | 提交后 |
+| 付款申请：报销、部门付款、订金 / 预付 | 办公室员工和主管；现场员工只能在手机 Receipts 页用「Direct Pay to Supplier」申请付款给供应商（见 6，2026-11-12） | 提交后 |
 | 供应商发票 | 采购 | 录入后 |
 | 承包商请款 | 运营 | 维修工作完成、填好欠承包商的金额后 |
 | Rental 账单（水电、清洁等） | 财务或运营 | 录入后 |
@@ -245,11 +245,13 @@
 - 不设多级审批。
 - 申请提交后**自动进入待付款**。
 - 财务检查：没问题就开付款凭证（PV）付款；有问题就**拒绝**，必须写原因。拒绝后退回申请人，预留的额度退回。
+- **撤回或被拒绝的申请可以修改再提交**（chew 确认，2026-11-13：「就修改再提交不就行了？」）：申请人在 My claims 按「Edit and resubmit」，原来的资料（收款人、金额、明细、备注、附件）都已填好，改好再提交。**申请号不变**，状态回到已提交，财务重新审核；之前的拒绝原因和重新提交的时间留在记录里。不用另开新申请，也不用复制。水电账单的申请改法不同，见 3.10。
 - 申请人随时看得到自己申请的状态：
 
 ```
 已提交 → 待付款 → 部分已付 → 已付
-           ↘ 已拒绝（附原因）
+   ↓        ↘ 已拒绝（附原因）─┐
+已撤回 ──────────────────────┴→ 修改再提交 → 已提交（申请号不变）
 ```
 
 ### 3.6 付款中心
@@ -270,6 +272,18 @@
 - 先凭报价单或形式发票付款时，财务可以标记「还欠正式发票」。
 - 系统有一个欠发票清单，持续追踪，正式发票上传后才算结清。
 - 正式发票来了，抵扣已付的订金或预付款，只付差额。
+- **付款申请转 AP invoice**（chew 确认，2026-11-15；设计 docs/superpowers/specs/2026-11-15-request-to-ap-invoice-design.md）：
+  - 可选。财务在 Payment requests 按「Make AP invoice」：供应商、每一行（说明、金额、部门、小部门、项目、unit）、附件、希望付款日期都带过去；明细没有科目的，选一个费用科目。转了以后，这张申请在 **Payment voucher 页面**付（选供应商、勾这张 AP invoice），申请上不再有 Make voucher、Reject，也不能撤回或再提交；要改就改 AP invoice，或先取消它。
+  - **报价单先入账**：AP invoice 勾「Quotation (no formal invoice yet)」照常 Post（借费用、贷供应商）。订金的申请转出来默认就是报价。正式发票来了，在同一张 AP invoice 按「Replace with formal invoice」：填正式发票号码和日期（费用记在这个日期），明细和金额照正式发票改，可多可少；系统冲回旧分录、按新的重新过账。欠发票清单 = AP invoices 列表里 Ref 显示「Quotation」的。
+  - **金额以 AP invoice 为准**：申请跟着 AP invoice 付清才算 PAID（发票比申请多或少都一样）；订金申请照旧按订金金额。
+  - **申请自动跟着 AP invoice 更新**：说明、金额、项目、unit，加行或删行都同步；原本申请的内容保留，在 My claims 的「As first asked」看得到，标「Updated from the invoice」。
+  - **在付款凭证或 AP invoice 上改，申请也跟着改**（chew 确认，2026-11-16：员工交错的资料，财务在凭证或 AP invoice 上改，不在 Payment requests 改）：凭证保存（或草稿再编辑）后，这张凭证独自在付的申请换成凭证上的明细（说明、金额、部门、项目、unit、科目）和合计；凭证只付一个收款人时，申请的收款人也换成凭证上的。报销单同样换成凭证上的明细。AP invoice 换了供应商，申请的收款人也跟着换。原本申请的内容都保留。
+  - **付尾款不用重填**：订金已付、AP invoice 还有欠款的订金申请，申请人在 My claims 按「Ask for the balance」，系统开一张尾款申请（金额 = AP invoice 还欠的，明细照 AP invoice 按比例分），关联订金申请和 AP invoice；同一张订金一次只能有一张未付的尾款申请。
+  - **水电申请不走 AP invoice**（chew 确认，2026-11-16）：Utility bills 送出的申请，每一行按种类带出应计科目：电 420-0010 ACCRUAL - ABNB ELECTRICAL、水 420-0020 WATER CHARGE、网络 420-0030 INTERNET CHARGE、Indah Water 420-0040（财务开好后才用得上）。按 Make voucher 就借记这些 Accrual、贷银行，不用选供应商。
+  - **水电费用按账单期间入账**（chew 确认，2026-11-16）：付款单过账、申请变成 PAID 之后，系统自动记一笔 借 费用 / 贷 Accrual（来源 UTA，单号 `申请号/日期`），日期是账单期间的最后一天（没有期间就用账单日期），不是付款日；那个月已经关了也照样记，只有早于账本起始日才挪到起始日。对照：420-0010 → 650-0020 ELECTRICAL、420-0020 → 650-0010 WATER、420-0030 → 650-0030 INTERNET、420-0040 → 650-0130 Indah Water（650-0040 是 ABNB CLEANING EXPENSE，不能用；chew 确认，2026-11-17）。财务在付款单上把某行改成别的科目（直接记费用），这一行就不再记；费用科目还没开的种类也先跳过。付款单取消、申请不再是 PAID，这几笔就冲销（冲销日为当天）。
+- **付款申请的两种付法**（chew 确认，2026-11-16）：
+  - **Make voucher**：打开平常的「新付款凭证」表格，收款人、每一行（说明、金额、部门、项目、unit）已经填好，财务在表格里逐行选科目、选银行再保存。借每一行的科目、贷银行（不再借记供应商应付）。收款人不在名单里也可以开。可以勾几张申请一起开**一张**凭证，不同收款人也可以（收款人显示 Various，每行写名字）；员工的报销单（Claim to me，没有零用金、由财务转账还的）也列在 **Payment requests**（chew 确认，2026-11-16：也是付款，只是付的人是员工），先按 Check 核对科目，再 Make voucher；可以和付款申请勾在一起开一张凭证。凭证过账后，每张申请、每张报销单各自按自己那几行变成已付。
+  - **Make AP invoice**：打开平常的「新 AP invoice」表格，已经填好；财务在表格里选供应商（收款人是手打的话）和每一行的科目再保存。可以勾几张一起开，一张申请一张 AP invoice，一张接一张打开（第 1 张，共 3 张）。付款在 Payment voucher 页面（选供应商、勾 AP invoice）。订金要冲抵正式发票的，走这一条。
 
 ### 3.9 付款之后
 
@@ -295,6 +309,7 @@
   - **公司付的账单**（没打勾）入账后自动送 payment request 给财务，每个供应商每次入账一张，附账单清单（单位、户口号码、金额）和扫描的 PDF。
 - **账单算哪个月**（财务确认，2026-11-03 / 11-05）：扫描的账单按**账单期间结束的月份**算（06.08–05.09 算 9 月），金额记 Caj Semasa（本期费用）；电费、水费、网络费、Indah Water 都一样。那个月的业主结算单已经定稿，就扣在还没结账的最早月份（标「late bill」）。
 - **手动录入也一样**（财务确认，2026-11-05）：「Enter this month's bills」和「Add utility bill」也有「Owner paid this bill」的勾，规则跟扫描一样：打勾的照常扣、再用 O2 全额还给业主，不送 payment request；没打勾的保存后自动送 payment request，每个供应商每次保存一张。已经送了 payment request 的账单不能再在这里替换。
+- **水电的 payment request 被撤回或拒绝**（chew 确认，2026-11-13）：在 Utility bills 页面先把账单改对，再按「Send again」：同一张 payment request 按账单现在的金额更新，**申请号不变**，送回财务重新审核。这种申请从账单来，所以不在 My claims 直接改明细，免得申请和账单对不上。
 - **Utility bills 两张表**（财务确认，2026-11-05）：
   - **By bill month**（原本的表）：账单放在它所属的月份，颜色看业主有没有扣。
   - **By payment request**：账单放在它的 payment request 开出来的月份，颜色看 payment request 的状态（等付款、部分已付、已付）。退回或撤回的不算。没有 payment request 的账单（旧的手动录入）不在这张表。
@@ -657,11 +672,21 @@
 - 部门决定要填什么：装修部门的收据大多要选项目（只在 Supply chain 系统用）；用在项目上的，算进项目额度，超出只标记、不拦住。
 - 用在项目上的，同时扣项目额度。因为钱已经花出去，超出额度时不能拦住，只能标记超出、提醒财务。
 - **一个提交画面**（财务确认，2026-10-28）：先选这笔是什么。
-  - **维修**：选自己的维修单，unit 和部门自动带出。在维修单上传自己的收据（文件类型选「My purchase」）就自动生成，不用选谁付、不用上传两次（2026-10-29 改：原本要选"我的零用金"或"报销给我"）。这笔是维修单的成本，业主照报价扣（3.11），**不会从这笔再扣业主**。
+  - **维修**：选自己的维修单，unit 和部门自动带出。维修单上有两个格子，手机和电脑一样（财务确认，2026-11-12；原本是选文件类型「My purchase」）：
+    - **Claim**：上传发票，**发票和金额一定要有**，然后选怎么还钱（维修单还没完成才可以提交，手机和电脑一样）：
+      - **Petty Cash (Claim)**（默认）：从自己的零用金扣，跟以前一样。没有零用金的人看不到这个选项。
+      - **Direct Claim to Me**：**不扣零用金**，财务直接转账给他。要填银行资料：系统先带出存着的银行资料（财务存的优先，没有就用 HR 的），他确认时可以改；**改的只存在这张单上，不会改到财务或 HR 存的银行资料**。HR 的资料没有户口名字，就先带出他自己的名字。
+    - **Receipt / Proof of work and product**：可以放多个文件（收据、工作和产品的照片或 PDF），只存在维修单上，不算报销，可选。
+    - 原本的四种文件类型（我的报销单、收据、发票、工作证明）不再出现；以前上传的文件照旧，显示在第二个格子。
+    - 这笔是维修单的成本，业主照报价扣（3.11），**不会从这笔再扣业主**。
+  - **手机 Receipts 页三个选项**（财务确认，2026-11-12）：
+    - **Petty Cash (Claim)**（默认）：从零用金扣。没有零用金的人看不到。
+    - **Direct Claim to Me**：财务转账给他，跟上面一样要确认银行资料。
+    - **Direct Pay to Supplier**：财务直接付款给账单上的供应商，他自己不用付钱。拍账单，系统读出供应商名字和金额；现场员工只填账单上的名字，不选供应商名单、不连 PO、不选项目、不能申请订金。提交后变成一张付款申请（3.2），财务付款时再对上供应商。他在 Receipts 页看得到自己的这些申请：状态，被拒绝的话也看得到原因。网络不好重发，同一张不会变成两张。
   - **Claim**：一般开销。
-  - 金额用 OCR 从收据读出，**提交的人（包括现场员工）提交时看得到并确认**；读不出就自己填（财务确认，2026-10-29）。现场员工看得到自己收据的金额，但看不到零用金余额，也看不到维修单的报价和成本。
+  - 金额用 OCR 从收据读出，**提交的人（包括现场员工）提交时看得到并确认**；读不出就自己填（财务确认，2026-10-29）。**不用等 OCR 读完**：读的时候可以自己填金额并提交，读出来的不会盖掉已经填的（2026-11-12）。现场员工看得到自己收据的金额，但看不到零用金余额，也看不到维修单的报价和成本。
 - 给 unit 买、要业主付、但不是维修的东西（例如热水壶）：第一版先不处理，照现在的做法由运营在 Property OS 录进业主结算单（财务确认，2026-10-29）。每个人看到哪几种，以后在用户设定里绑定。
-- **按部门**（财务确认，2026-10-29）：**一个部门一份零用金**，由一个保管人保管（任何员工都可以，不一定是上司）。部门里的人提交的收据都从这份扣，保管人用现金还给他们。个别员工可以在设定里改成向别的部门的零用金 claim。部门没有零用金的，收据转给财务当 claim。有零用金的部门，收据一律从零用金扣，保管人**不能**转给财务；钱不够就申请补回（财务确认，2026-10-29）。
+- **按部门**（财务确认，2026-10-29）：**一个部门一份零用金**，由一个保管人保管（任何员工都可以，不一定是上司）。部门里的人提交的收据都从这份扣，保管人用现金还给他们。个别员工可以在设定里改成向别的部门的零用金 claim。部门没有零用金的，收据转给财务当 claim。有零用金的部门，收据默认从零用金扣；提交的人自己可以选 **Direct Claim to Me**，改由财务转账给他（2026-11-12）。提交以后保管人**不能**再转给财务；钱不够就申请补回（财务确认，2026-10-29）。
 - **普通员工**在手机上看不到金额和余额（财务确认，2026-10-29）。
 - **买货**（财务确认，2026-10-29）：
   - 维修零件进仓库，成本用加权平均，用了才算费用；拿货的规则要和管理层确认后再定。
@@ -670,6 +695,7 @@
 
 **核对**
 - 财务核对每笔使用的收据。
+- **财务付款的收据显示钱转去哪里**（2026-11-12）：Finance 的「Paid back by finance」清单每笔有「Paid to」：Direct Claim to Me 用单上确认的户口，其他的用存着的银行资料。单上的户口号码跟存着的不一样，或者根本没有存着的，会标「Not the saved account」，**先核对再付**。完整的户口号码只有 Ledger full（负责付款的人）看得到；只有查看或编辑权限的人只看到后四位，导出也一样。没有任何银行资料的标「No bank details」，要先补。付款单（PV）的备注写的是单上的户口。
 - 有问题可以拒绝，并写原因：持有人要补收据，否则这笔由持有人自己承担。
 
 **清单**（财务确认，2026-10-28）
@@ -737,6 +763,108 @@
 - 锁账功能要做，**先不启用**，以后在设置里打开。
 - 启用后：月结之后那个月的记录不能再改，错误在当前月份用调整分录修正；有权限的人可以重新打开已锁的月份。
 - 系统现有的规则保留：业主结算单定稿后，那个月的 Rental 费用不能再改。
+
+### 9.1 业主报表的锁（在 Unit report 上锁，2026-11-13 改版）
+
+每个月的业主报表按类别检查，查好一类就锁一类；一个业主名下所有单位的类别都锁了，才可以 final。2026-11-13 起，**锁都在 Units › Unit report › Monthly 上做**（chew：「锁整合起来」「点那个 amount 就锁」），原来的 Owners › Statement close 页已经拿掉，旧链接会打开同一个月的 Unit report。设计：`docs/superpowers/specs/2026-11-13-unit-report-click-locks-design.md`（第一版：`docs/superpowers/specs/2026-11-11-owner-report-stage-locks-design.md`）。
+
+**一个月怎么锁完（chew 2026-11-13）**
+
+1. 上传 Airbnb 文件，在 **Unit report › Airbnb reconciliation**（这一页从 Finance 搬到 Unit report 的分页，在 Monthly 旁边）确认完 → 用那页上面的锁条 **Lock all** 锁 Revenue，或在 Monthly 一格一格点。
+2. **Finance › Utility bills** 输入或扫描完水电账单 → 用那页的锁条锁 Utilities（锁条有自己的月份，默认上个月，可以前后切换）。
+3. **Owners › Deductions** 加完 Add. ded. 和 O2 → 用那页的锁条锁 Add. ded.、O2；Cleaning 和 Misc 也在这页锁。
+4. 回到 **Unit report › Monthly** 看数字：锁了的金额是青色、左边有锁头。一个业主的单位全部锁了，Final 那一格出现 **Make final**，按下去就 final。
+
+两边是同一个锁（「两边是互通的」）：在工作页面锁了，Unit report 马上看到；在 Unit report 锁了，工作页面的锁条也会算进去。
+
+**六个类别**
+
+- **Revenue**：这个月的订单收入（Unit report 的 Total revenue）。
+- **Cleaning**：清洁费。
+- **Utilities**：电、水、网络、Indah Water 四种账单一起锁（L2 Full detail 看到四栏，点任何一栏都是同一个锁）。
+- **Add. ded.**：其他扣业主的费用（维修、Deductions 页的 additional deduction、其他）。
+- **Misc**：misc 费（有 misc 的合约，RM 100 × 入住率）。
+- **O2**：这个月的报表会拿的业主调整（owner adjustments）。
+
+原来的一个「Deductions」锁拆成 Cleaning、Utilities、Add. ded.、Misc 四个，每个只管自己那一部分（chew：「这个我想要分开」）。Revenue、Cleaning、Utilities、Add. ded.、Misc 列出这个月有业主报表、按分成算的单位（长租也算）；O2 列出这个月报表上的所有单位。固定租金和 master lease 只有 O2。
+
+**在 Unit report 上点金额锁、再点解锁**
+
+- 点一下可以锁的金额就锁上，再点一下就解锁。**解锁单个金额不用写原因**（「小锁我觉得unlock 不要reason，毕竟我有大锁」），History 一样记下是谁、几时。
+- 没锁的金额左边是淡色的开锁图标；锁了是青色加锁头。鼠标停在金额上，会显示里面有什么（几个订单、几晚；几次清洁；哪些账单；misc 按多少入住率；哪些 O2），还有系统的提醒（有退房没收清洁费、合约到期还有水电账单、hold 着的欠款、跟上个月一样的 O2）。提醒只是提醒，**不会挡住**。
+- 业主的报表已经 final 的，那些金额点了不会解锁，会说「Unlock the final first」。
+- 手机上只看「6 of 6 locked」这样的数字，锁要在电脑上做。
+
+**整列：Whole column 那一行的 Lock · Unlock**
+
+- 表头下面有一行「Whole column」，每个类别都有 **Lock · Unlock**（整列锁、整列解锁），一按就锁或解整个月（「我想要也可以一键unlock」）。不管上面有没有搜索或筛选，都是整个月。
+- Lock all 会跳过还不能锁的单位，并在提示里写出是哪几个。
+- 没有合约的单位不在 Unit report 上（系统用默认条件算它们的报表），但整列的锁也会锁到它们；提示会写「… of them have no contract for the month, so they are not on this report.」。2026 年 10 月正式库有 22 个这样的单位，它们的业主都没有其他有合约的单位。
+
+**Final 也是一个锁**（「可以把final 这个给锁也做在这边吗」）
+
+- Final 栏在每个业主排在最前面的那一行（同一个业主的其他行写「Same owner」）。
+- 还没锁完：写还在等什么，例如「Waiting: Revenue, Utilities and O2」。
+- 全部锁了：**Make final**。按下去系统**先重新 Generate 那份报表，再 final**，所以锁完以后不用再去按 Generate。Generate 要 Finance 的编辑权限，没有的人按 Make final 会被告知。
+- final 了：青色「Final · 谁 · 几号」。点它就是 **Unlock final，要写原因**（规则跟以前一样，见下面）。
+- Final 栏的 Whole column：**Lock** 把所有已经锁完的业主一次 final，并写出还在等的业主名字；**Unlock** 把这个月所有 final 的报表一次解锁，写一个原因。
+
+**什么时候不能锁**
+
+- **Revenue 还有 Airbnb 订单没确认**：那一格是琥珀色、有警告图标，点了会说「1 Airbnb reservation still to confirm. Confirm it on the Airbnb reconciliation tab first.」Lock all 会跳过并写出单位。服务器也会挡，不只是画面。
+- **空白或 0 不会挡**：没有数字也可以锁（「别因为空白或没数额就不让锁」「这个别写死，因为可能真的迟来」）。这个月还没有 Airbnb 文件的话，Unit report 和锁条会写「No Airbnb payout file is uploaded for … yet」，Revenue 还是可以锁。
+- 2026 年 10 月以前的月份不能锁（9 月及以前是业主 Excel 导入、已付）。**还没过完的月份也不能锁**（以马来西亚时间算，例如 11 月 13 日最多只能锁到 10 月）。
+- 那个月业主报表已经 final 的单位，不能再锁。
+
+**锁了以后**
+
+- **那个类别的数字不会再变。** 之后改了的东西，差额自动变成**下一个 O2 还没锁、也还没 final 的月份**的 O2，按合约重新算业主那一份（保底也算进去），不是直接乘分成 %；年保底的单位先 hold，等人看过再放。每个锁的差额各自一笔（例如 Cleaning 锁一笔、Utilities 锁一笔），同一个锁只会有一笔，不会重复；生成报表、对账确认或撤回、以及每 15 分钟都会核对一次。只有**新进来的费用**是放到下一个**同一类别**还没锁的月份（见下面）。
+  - **订单**（Airbnb 对账确认、手改订单、HostPlatform 或 Channex 取消）：Revenue 的差额变成下个月的 O2（「Late change to … income for October 2026 (income locked)」）。
+  - **锁了以后才进来的费用**（水电账单、扫描账单、清洁费、维修费、手动加的费用）：放到下一个**同一类别**还没锁、也还没 final 的月份扣，报表上写「(late bill)」；输入的人会看到提示，例如「October 2026 utilities are locked for … This cost goes on the November 2026 statement.」
+  - **改已锁的费用**：可以改。那个月保留原来的数字，差额变成下个月的 O2（例如「Late change to … utilities for October 2026 (utilities locked)」）。例子：电费 412.35 改成 421.35，10 月照样扣 412.35，11 月多一笔 O2，扣业主那一份（业主拿 75% 就是 6.75）。
+  - **费用换了类别**（例如本来记成清洁，改成维修）：两个类别都锁了的话，每个锁只算自己那一部分，加起来跟一次算的一样。
+  - **删已锁的费用**：不行，要先解锁那个类别。水电账单页面要替换锁住月份的账单、维修单以 RM 0 重新完成要删掉锁住月份的费用，也会被挡。
+  - **misc**：Misc 锁的时候定下来。之后订单让 misc 变了：**Misc 锁了**，差额是 Misc 锁自己的一笔（「Late change to … misc for October 2026 (misc locked)」）；**Misc 没锁、Revenue 锁了**，misc 的差额跟着 Revenue 的差额一起去下个月（先算 Revenue，再算其他类别）。
+- **O2 锁了以后**：那个月的报表只拿锁的时候那些 O2，其他开着的 O2 放到下一个月。锁了以后新加的 O2（业主页、单位的扣款、业主自付水电退回、扫描账单的业主行、审批通过的 O2）日期自动改到下一个 O2 还没锁、也还没 final 的月份，画面会提示；没有指定单位的 O2 看业主的第一个单位。已锁的 O2 不能 hold、settle、删除；hold 着的欠款不能 release 到锁住的月份。
+- **草稿上已经印出来的 O2 之后变了或没了**：那份草稿按 Mark final 会被挡（「An owner adjustment changed after this draft was made. Generate the statement again, then mark it final.」）。在 Unit report 按 Make final 会先重新 Generate，所以不会遇到。
+- **解锁**：解锁后那个月回到最新的数字：之前因为锁而移到下个月的差额会拿回来；如果那笔已经在 final 的报表上，就留在那里，解锁的月份多一笔相反的调整（「Already settled on the … statement」），业主不会多拿或少拿。那个月自己的报表已经 final，就不能解锁（先 Unlock final）。被拿回的差额如果已经印在下个月的草稿上，解锁时会提醒那份草稿过时了；在 Unit report 按 Make final 会重新 Generate。
+
+**公司那一份**（chew 2026-11-11 选 A）
+
+- 锁了以后才改的订单或费用，差额里**公司那一份**，跟业主的 O2 放在**同一个月**，算进公司那个月的数字；锁住的月份，公司的数字也不再变。例子：10 月锁了以后 Airbnb 多付 RM100，业主那份 RM75 进 11 月 O2，公司那份 RM25 算进 11 月：
+  - **Unit report**：多一栏「Late changes」（只有那个月有这种差额才出现），算进 Gain / Loss；点开单位，「Revenue and profitability」列出每一笔（例如「October 2026 income +25.00」）。
+  - **Yearly report**：「The Conts」包含它，另外有一块「The Conts: late changes」（有数字才出现）。
+  - **Finance › Unit P&L**：多一行「Late changes (company's share)」，算进「Company keeps」。
+  - **单位页 Financials**：The Conts 那边多一行「Late changes from locked months」，算进 The Conts' result。
+- 一个月的公司数字什么时候完全定下来：所有类别都锁了以后；合约改了（例如分成 %）也会改变公司的数字，要等 Final 才定下来。
+- 年保底（PS YGRR）的单位，合约年度最后一个月有 top-up：公司那一份照报表同样的算法（不扣 top-up）。
+- 那笔所在月份的 O2 锁了或 final 了，就不再动；之后的差额放到再下一个月。解锁：还能动的拿回来；已经定下来的留着，解锁的月份多一笔相反的数字（「Already counted in November 2026」），公司不会算两次。
+- 只管业主报表会算的数字（订单、扣款、misc、保底）。公司自己付的费用、清洁和维修的利润照旧。首页 Dashboard 的 management fees 不变。
+- 固定租金（GRR）：**不做**。公司老板 2026-11-04 取消了 GRR（migration 0206），正式库没有 GRR 单位。
+
+**手改订单的提示**
+
+- 改日期（订单详情，或在 Calendar 拖动）、新建订单、改状态（确认、取消、no-show）、在没有 host payout 的订单记录或删除付款，只要碰到 **Revenue 已锁的月份**，画面会提示，例如：「October 2026 income is locked for Vista 22-04. The difference goes to November 2026.」那个月的数字不变，差额由系统放到下一个开着的月份。HostPlatform、Channex 的自动同步没有人可以提示，差额照样会处理。
+
+**Unlock final**（要写原因，记在 History）
+
+- 还没付（final，或已 send、付款还是 Pending 或 Failed）：回到草稿，付款变 **Cancelled**：不会再转账，付款批次会跳过它。重新 final、send 以后，会有一笔新的付款。
+- 转账中（Processing）：不能解锁，等转好或失败再解。
+- 已付：付了的钱不变。用今天的合约重新算那个月，差额做成 owner adjustment，放到下一个开着的月份；公司那份反过来算进同一个月。解锁第二次不会重复放。
+- 那个月的锁还在。要改某一个金额，先 Unlock final，再点那个金额解锁。
+
+**Unit report 其他栏位**
+
+- Gain / Loss 分成 **Agent**（GP × 合约的 agent %；长租是 0；GP 是负数时是 0）和 **Company**（Gain / Loss 减 Agent）。
+- **合约的 agent %**：正式库的合约全都是空的，所以 Agent 栏现在都是 0。清单已按十月 V2 的「整体报告」整理好，等 chew 确认才填。只填 agent %，业主拿的钱不变。
+- Export 的 Excel：每个类别一栏（Locked / Open，不适用的留空），加 Final。
+
+**权限**（Users and roles，Units 组，「Set on its own」：只能单独打开，给个人、职位或整个部门都可以；管理层一直有）
+
+- **Lock income**：锁 Revenue。**Lock deductions**：锁 Cleaning、Utilities、Add. ded.、Misc。**Lock O2**：锁 O2。**Unlock a step**：解锁（单个金额和 Unlock all）。
+- **Make final**、**Unlock final**：跟以前一样；Make final 还要 Finance 的编辑权限（它会先 Generate）。
+- 看得到锁的人：能打开 Unit report、Utility bills、Deductions、Airbnb reconciliation 其中一页的人，或有上面任何一个锁的权限的人。没有权限的人看得到哪些锁了，但锁条上没有按钮；在 Unit report 点了会说要找管理层开哪个权限。
+- 原来的「Owner statement close」看页面权限已经拿掉（那一页没有了）。
 
 ---
 

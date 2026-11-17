@@ -2,6 +2,7 @@ import { type Env, all, one, run, json, fail, audit, nowIso, mytToday } from '..
 import { requireSession, isFieldRole } from '../../../../_lib/auth';
 import { isAssignee } from '../../../../_lib/maintenance';
 import { fileToUpload, forwardClaims } from '../../../../_lib/claimsForward';
+import { bankProblem } from '../../../../../src/lib/claimBank';
 
 /** GET /api/maintenance/issues/:id/documents — the job's files: before and after photos and videos, the proof of
  *  work and the invoice, oldest first, each with its download address. */
@@ -26,11 +27,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 
 const MAX_BYTES = 15 * 1024 * 1024;
 
-/** POST /api/maintenance/issues/:id/documents — multipart `file`, `kind`: claim (the technician's or contractor's bill
- *  to the company), invoice (the bill to the owner or guest), receipt (proof a payment was made), pod (proof of work),
- *  purchase (something the person bought for the job with their own or their department's petty cash: with
- *  `amountSen`, and optionally `spendDate` and `vendorName`, it is also handed in as a receipt on this job, to be paid
- *  back; the job's cost, never charged to the owner again — finance, 28-29 Oct 2026).
+/** POST /api/maintenance/issues/:id/documents — multipart `file`, `kind`:
+ *  purchase — the job's claim (chew, 12 Nov 2026: the Claim box, on the phone and the desk alike): the invoice for
+ *    something the person paid for the job. With `amountSen`, and optionally `spendDate` and `vendorName`, it is
+ *    also handed in as a receipt on this job, to be paid back; the job's cost, never charged to the owner again (finance,
+ *    28-29 Oct 2026). Paid back from the person's petty cash (Petty Cash (Claim), the default), or with
+ *    `payBack`=finance (Direct Claim to Me) by finance, to the bank sent as `bankName`, `accountNo` and
+ *    `accountName`: kept on the claim only, never on the person's saved records.
+ *  pod — "Receipt / Proof of work and product" (the second box): stored on the job only.
+ *  claim, invoice, receipt — the old kinds, no longer offered on the screens; still taken, and the files already on
+ *    jobs keep them.
  *  Accounts pay the contractor from these, and they back the expense on the owner statement. A technician on the phone
  *  adds them only to a job that is theirs and still open. Stored in R2 (binding MEDIA); without that binding the request
  *  is refused, not faked. */
@@ -53,11 +59,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const kind = ['pod', 'invoice', 'claim', 'receipt', 'purchase'].includes(String(form?.get('kind'))) ? String(form?.get('kind')) : 'other'; // counted as a document, not a photo
   const amountSen = Number(form?.get('amountSen'));
   const spendDate = /^\d{4}-\d{2}-\d{2}$/.test(String(form?.get('spendDate') ?? '')) ? String(form?.get('spendDate')) : null;
+  const payBack = String(form?.get('payBack') ?? '') === 'finance' ? 'finance' : 'float';
+  const bank = { bankName: String(form?.get('bankName') ?? ''), accountNo: String(form?.get('accountNo') ?? ''), accountName: String(form?.get('accountName') ?? '') };
   // A purchase is checked before anything is saved: what the finance system would refuse is refused here first.
   if (kind === 'purchase') {
     if (!(Number.isInteger(amountSen) && amountSen > 0)) return fail('VALIDATION', 'Enter the amount on the receipt.', 422, { amountSen: 'Enter the amount.' });
     if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type)) return fail('VALIDATION', 'A receipt must be a photo (JPEG, PNG, WebP) or a PDF.', 422);
     if (spendDate && spendDate > mytToday()) return fail('VALIDATION', 'The receipt date cannot be in the future.', 422, { spendDate: 'Check the date.' });
+    const badBank = payBack === 'finance' ? bankProblem(bank) : null;
+    if (badBank) return fail('VALIDATION', 'Enter the bank the money goes to: the bank, the account number (digits only) and the name on the account.', 422, { [badBank]: 'Check this.' });
   }
   const upload = kind === 'purchase' ? await fileToUpload(file) : null;
 
@@ -81,11 +91,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   // The same photo is handed in as a receipt on this job; the document stays saved even if the finance system is down.
   const res = await forwardClaims(env, session, 'POST', '/receipts', {
     id: docId, ...(spendDate ? { spendDate } : {}), amountSen, vendorName: form?.get('vendorName') ? String(form.get('vendorName')).slice(0, 200) : undefined,
-    lines: [{ maintenanceIssueId: id, amountSen }], files: [upload],
+    lines: [{ maintenanceIssueId: id, amountSen }], files: [upload], ...(payBack === 'finance' ? { payBack, bank } : {}),
   });
   const body = await res.json<{ id?: string; receiptNo?: string; route?: string; error?: { message?: string } }>().catch(() => null);
   if (!res.ok || !body?.receiptNo) return json({ documentId: docId, receipt: 'failed', message: body?.error?.message ?? null }, 201);
-  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'claims.receipt', entityTable: 'staff_receipts', entityId: String(body.id), after: { no: body.receiptNo, amountSen, maintenanceId: id }, source: field ? 'field_app' : 'web' });
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'claims.receipt', entityTable: 'staff_receipts', entityId: String(body.id), after: { no: body.receiptNo, amountSen, maintenanceId: id, payBack }, source: field ? 'field_app' : 'web' });
   return json({ documentId: docId, receipt: { receiptNo: body.receiptNo, route: body.route } }, 201);
 };
 

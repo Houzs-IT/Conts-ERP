@@ -1,4 +1,5 @@
-import { type Env, one, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
+import { type Env, one, json, fail, audit, nowIso, transaction } from '../../_lib/db';
+import { costNotice } from '../../_lib/lockGuards';
 import { rmText } from '../../_lib/format';
 import { requireSession } from '../../_lib/auth';
 import { isIsoDate } from '../../_lib/validate';
@@ -13,7 +14,8 @@ import { billsToRequest, ownerPaidCredit } from '../../_lib/utilityRequests';
  *  the owner pays also needs its receipt (src/lib/receipts.ts). A utility bill for a month whose statement is final is
  *  deducted on the next open statement; anything else needs an open month. A utility bill may be marked "Owner paid this
  *  bill" (chew, 5 Nov 2026; SOP 3.10): the full bill goes back to the owner as an O2 credit, as on Scan bills; one the
- *  company pays comes back in `toPay`, for POST /api/expenses/utilities/payment-requests. */
+ *  company pays comes back in `toPay`, for POST /api/expenses/utilities/payment-requests. A cost dated in a month whose
+ *  deductions are locked (owner statement close) goes on the next open statement; `notice` says so. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -63,18 +65,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // maintenance rollup) points at its parent so the L2→L3 drill-down can nest it.
   // Manually added monthly expenses leave it null and stay top-level.
   const now = nowIso();
-  await transaction(env, async tx => {
-    await run(tx, `
+  const saved = await transaction(env, async tx => {
+    const row = await one<{ deduct_month: string; rolled: boolean }>(tx, `
       INSERT INTO expenses (id, unit_id, maintenance_id, task_id, parent_expense_id, category, description, amount, currency, incurred_on, deduct_month, rolled, reference, charge_to, receipt_document_id, created_by, created_at, owner_paid)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING deduct_month, rolled`,
       id, unit.id, b.maintenanceId ?? null, b.taskId ?? null, b.parentExpenseId ?? null, b.category, String(b.description ?? '').slice(0, 300), b.amount,
       b.incurredOn, deduction?.deductMonth ?? null, deduction?.rolled ?? false, b.reference ?? null, b.chargeTo ?? 'owner', b.receiptDocumentId ?? null, session.userId, now, ownerPaid);
     if (ownerPaid && b.amount > 0) {
       await ownerPaidCredit(tx, { expenseId: id, unitId: unit.id, ownerId: ownerId!, kind: b.category, label: String(b.description ?? '').trim() || expenseCategoryLabel(b.category),
-        amountSen: b.amount, deductMonth: deduction?.deductMonth ?? b.incurredOn.slice(0, 7), accountNo: b.reference ?? null }, session.userId, now);
+        amountSen: b.amount, deductMonth: row?.deduct_month ?? b.incurredOn.slice(0, 7), accountNo: b.reference ?? null }, session.userId, now);
     }
     await audit(tx, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.create', entityTable: 'expenses', entityId: id, after: { unitId: unit.id, category: b.category, amount: b.amount, incurredOn: b.incurredOn, chargeTo: b.chargeTo ?? 'owner', ownerPaid } });
+    return { deductMonth: row?.deduct_month ?? b.incurredOn.slice(0, 7), rolled: !!row?.rolled };
   });
   const toPay = isUtility(b.category) ? (await billsToRequest(env, [id])).map(g => ({ provider: g.provider, count: g.bills.length, amountSen: g.bills.reduce((n, x) => n + x.amountSen, 0), expenseIds: g.bills.map(x => x.expenseId) })) : [];
-  return json({ id, deductMonth: deduction?.deductMonth ?? b.incurredOn.slice(0, 7), rolled: deduction?.rolled ?? false, toPay }, 201);
+  const notice = (b.chargeTo ?? 'owner') === 'owner' ? await costNotice(env, { unitId: unit.id, incurredOn: b.incurredOn, deductMonth: saved.deductMonth, category: b.category, description: b.description ?? null }) : null;
+  return json({ id, deductMonth: saved.deductMonth, rolled: saved.rolled, toPay, notice }, 201);
 };

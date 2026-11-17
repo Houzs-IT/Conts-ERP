@@ -496,7 +496,7 @@ export const SupplierDetail = () => {
           <header className={styles.cardHeader}>
             <h2 className={styles.cardTitle}>
               <Tag {...ICON} style={{ color: '#0c3f39' }} />
-              Combo Pricing · {supplier.name}
+              Combo pricing · {supplier.name}
             </h2>
           </header>
           <div className={styles.cardBody}>
@@ -607,7 +607,7 @@ const SupplierOverviewPanel = ({
       <header className={styles.cardHeader}>
         <h2 className={styles.cardTitle}>
           <TrendingUp {...ICON} style={{ color: '#0c3f39' }} />
-          Last 10 Purchase Orders
+          Last 10 purchase orders
           <span className={styles.cardTitleCount}>({score?.totalPOs ?? 0} total)</span>
         </h2>
       </header>
@@ -742,7 +742,7 @@ const SupplierSkuPricingPanel = ({
             ? <ChevronDown {...SM_ICON} style={{ color: '#767b6e' }} />
             : <ChevronRight {...SM_ICON} style={{ color: '#767b6e' }} />}
           <Package {...ICON} style={{ color: '#0c3f39' }} />
-          SKU Mappings
+          SKU mappings
           <span className={styles.cardTitleCount}>
             {bindings.length === 0
               ? '(no codes yet)'
@@ -2360,7 +2360,7 @@ const SupplierInfoCard = ({
           {bodyVisible
             ? <ChevronDown {...SM_ICON} style={{ color: '#767b6e' }} />
             : <ChevronRight {...SM_ICON} style={{ color: '#767b6e' }} />}
-          Supplier Info
+          Supplier info
         </h2>
         {/* stopPropagation so the Edit / Save / Cancel buttons don't also
             toggle the collapse state. */}

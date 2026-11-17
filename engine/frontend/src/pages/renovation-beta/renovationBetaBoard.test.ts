@@ -166,7 +166,7 @@ describe("next step and Home", () => {
 
 describe("deadline groups", () => {
   it("groups by days left and keeps the waiting, ready and to-do lists", () => {
-    const g = deadlineGroups(m, "All", true);
+    const g = deadlineGroups(m, "All");
     expect(g.late).toHaveLength(0);
     expect(g.week.map((x) => `${x.p.id}:${x.type === "appt" ? x.ak : x.k}`)).toEqual(["4:3", "1:2", "5:cm", "11:sb"]);
     expect(g.two).toHaveLength(0);
@@ -175,15 +175,15 @@ describe("deadline groups", () => {
     expect(g.ready.map((x) => `${x.p.id}:${x.k}`)).toEqual(["10:2"]);
     expect(g.todo.map((x) => `${x.p.id}:${x.k}`)).toEqual(["5:sb", "13:as"]);
   });
-  it("shows only the chosen person's work", () => {
-    const g = deadlineGroups(m, 2, false);
+  it("shows only the chosen person's work, with no unassigned project in their to-do list", () => {
+    const g = deadlineGroups(m, 2);
     expect(g.week.map((x) => x.p.id)).toEqual([5]);
     expect(g.waiting.map((x) => x.p.id)).toEqual([6]);
     expect(g.todo.map((x) => `${x.p.id}:${x.k}`)).toEqual(["5:sb"]);
     expect(items(m, 3).map((x) => x.p.id)).toEqual([1]);
   });
   it("asks for PO and bookings once 2D is approved", () => {
-    const g = deadlineGroups(buildModel(board([{ ...trinity, poDoneOn: null, appointments: [] }])), "All", false);
+    const g = deadlineGroups(buildModel(board([{ ...trinity, poDoneOn: null, appointments: [] }])), "All");
     expect(g.todo.map((x) => x.k)).toEqual(["cm", "po"]);
   });
 });

@@ -21,6 +21,13 @@ describe("task names follow the Notion categories", () => {
     expect(part).toMatchObject({ categoryCode: "PARTITION", label: "PARTITION", fulfilmentKind: "po" });
     expect(plan.create.find((t) => t.tradeCode === "INTERNAL:qc")).toMatchObject({ categoryCode: "QC", label: "QC", fulfilmentKind: "internal" });
   });
+
+  test("a Works trade added in settings gets one task after the built-in trades", () => {
+    const plan = planTradeTasks({ works: [works("ROOFING", "a", "po1")], existing: [], typeStageKeys: ["hardware"] });
+    const roofing = plan.create.filter((t) => t.tradeCode === "ROOFING");
+    expect(roofing).toHaveLength(1);
+    expect(roofing[0]).toMatchObject({ fixPhase: "single", stageKey: "hardware", seq: 900, categoryCode: null, label: "ROOFING", purchaseOrderId: "po1" });
+  });
 });
 
 describe("in-house crew and repeats", () => {

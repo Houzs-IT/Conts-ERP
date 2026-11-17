@@ -111,12 +111,12 @@ export function FilterSelect({ label, value, onChange, all, options, className }
 }
 
 /** Previous / next month stepper. */
-export function MonthStepper({ label, onStep, note }: { label: string; onStep: (by: number) => void; note?: string }) {
+export function MonthStepper({ label, onStep, note, nextDisabled = false }: { label: string; onStep: (by: number) => void; note?: string; nextDisabled?: boolean }) {
   return (
     <div className="flex items-center h-9 rounded-control border border-solid border-line bg-card shrink-0">
       <button aria-label="Previous month" onClick={() => onStep(-1)} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink hover:text-ink"><Icon name="ChevronLeft" size="sm" /></button>
       <span className="px-1 min-w-[96px] text-center text-copy font-medium tabular-nums whitespace-nowrap">{label}{note ? <span className="text-muted-ink font-normal"> · {note}</span> : null}</span>
-      <button aria-label="Next month" onClick={() => onStep(1)} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink hover:text-ink"><Icon name="ChevronRight" size="sm" /></button>
+      <button aria-label="Next month" onClick={() => onStep(1)} disabled={nextDisabled} className="h-full w-8 grid place-items-center cursor-pointer bg-transparent border-none text-muted-ink hover:text-ink disabled:cursor-default disabled:opacity-40 disabled:hover:text-muted-ink"><Icon name="ChevronRight" size="sm" /></button>
     </div>
   );
 }

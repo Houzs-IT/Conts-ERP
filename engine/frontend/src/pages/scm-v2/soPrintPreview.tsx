@@ -59,7 +59,9 @@ export function useLineCategory(enabled: boolean): (l: { itemCode?: string | nul
 }
 
 /** The SO's Print preview: summary card, the layout picker for an order with rooms, and the three exits. */
-export function SoPrintPreview({ open, onClose, docNo, companyName, rows, layout, onViewPdf, onPrint, onDownload }: {
+export function SoPrintPreview({ open, onClose, docNo, companyName, rows, layout, onViewPdf, onPrint, onDownload, docTitle = "Sales Order" }: {
+  /** A quotation prints on this same preview (owner, 17 Nov 2026). */
+  docTitle?: string;
   open: boolean;
   companyName?: string;
   onClose: () => void;
@@ -74,7 +76,7 @@ export function SoPrintPreview({ open, onClose, docNo, companyName, rows, layout
     <PrintPreviewModal
       open={open}
       onClose={onClose}
-      docTitle="Sales Order"
+      docTitle={docTitle}
       docNo={docNo}
       companyName={companyName}
       rows={rows}

@@ -92,7 +92,7 @@ function NewDrawer({ openSos, onClose, onCreated }: { openSos: { id: string; doc
     onCreated(schedFallback([{ id: `dsch-new-${crypto.randomUUID().slice(0, 8)}`, salesOrderId: soId, soDocNo: so?.docNo ?? '', customerName: so?.customerName ?? '', plannedDate, notes, status: 'UNPLANNED' }]).data[0], req);
   }
   return (
-    <Drawer open onClose={onClose} width={520}>
+    <Drawer open onClose={onClose} dirty="typed" width={520}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">Schedule a sales order</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="flex flex-col gap-[7px]"><label className="text-[12px] font-medium text-muted-ink">Sales order</label>
@@ -124,7 +124,7 @@ function EditDrawer({ row, onClose, onSaved, onDelete }: { row: Sched; onClose: 
     onSaved({ ...f, driverName, vehicleCode, status }, req);
   }
   return (
-    <Drawer open onClose={onClose} width={560}>
+    <Drawer open onClose={onClose} dirty="typed" width={560}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{row.soDocNo}</h2><StatusBadge entity="delivery_schedule" value={f.status} /></div><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="text-[13px] text-muted-ink">{row.customerName}</div>

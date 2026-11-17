@@ -99,7 +99,7 @@ function ThreePlDrawer({ draft, isNew, onClose, onSave, onDelete }: { draft: Thr
   const phoneBad = !!(phoneProblem(f.contactPhone) || phoneProblem(f.officePhone));
   const canSave = f.code.trim() !== '' && f.name.trim() !== '' && !phoneBad && !emailBad(f.email);
   return (
-    <Drawer open onClose={onClose} width={620}>
+    <Drawer open onClose={onClose} dirty="typed" width={620}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New 3PL company' : 'Edit 3PL company'}</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <Section title="Identity">

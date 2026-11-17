@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#151515" />
+    <meta name="theme-color" content="#121714" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <!-- "default", not "black-translucent": the translucent bar drew the page under the clock and battery and left a
          blank strip under the bottom tab bar in the installed iPhone app. -->
@@ -18,11 +18,11 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'" />
     <style>
       /* Opening screen. Here rather than in the app's stylesheet so it draws before any CSS or script arrives. */
-      html { background: #FAF9F6; }
-      .boot-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: #FAF9F6; font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif; color: #706D67; animation: boot-in 300ms ease-out both; }
-      .boot-mark { width: 52px; height: 52px; border-radius: 13px; background: #151515; display: grid; place-items: center; box-shadow: 0 10px 28px -14px rgba(21, 21, 21, 0.5); }
+      html { background: #EEF0EC; }
+      .boot-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: #EEF0EC; font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif; color: #706D67; animation: boot-in 300ms ease-out both; }
+      .boot-mark { width: 52px; height: 52px; border-radius: 13px; background: #121714; display: grid; place-items: center; box-shadow: 0 10px 28px -14px rgba(21, 21, 21, 0.5); }
       .boot-mark img { display: block; transform: translate(-1.55px, -0.72px); } /* optical centre, as MARK_OPTICAL in Logo.tsx */
-      .boot-track { position: relative; width: 72px; height: 2px; border-radius: 2px; overflow: hidden; background: #EDEAE4; opacity: 0; animation: boot-in 300ms ease-out 400ms both; }
+      .boot-track { position: relative; width: 72px; height: 2px; border-radius: 2px; overflow: hidden; background: #E3E6E0; opacity: 0; animation: boot-in 300ms ease-out 400ms both; }
       .boot-bar { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: 2px; background: #C8A46A; animation: boot-travel 1.4s cubic-bezier(0.45, 0, 0.25, 1) infinite; }
       /* React's copy takes over mid-animation: it must not fade in a second time. */
       .boot-live, .boot-live .boot-track { animation: none; opacity: 1; }

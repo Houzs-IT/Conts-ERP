@@ -33,7 +33,7 @@ const TABS: { key: Tab; label: string }[] = [
 export default function ReviewsPage() {
   const url = useUrlState();
   const { user } = useSession();
-  const canReply = mayWork(user, 'pricing');
+  const canReply = mayWork(user, 'reviews');
   const raw = url.get('tab');
   const tab: Tab = (TABS.some(t => t.key === raw) ? raw : 'overview') as Tab;
   const demoOn = useDemoOn();

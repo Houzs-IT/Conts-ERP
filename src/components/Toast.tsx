@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { TONE } from '../lib/vocabulary';
 import type { Tone } from '../lib/types';
@@ -10,11 +10,15 @@ const Ctx = createContext<{ push: (t: Omit<Toast, 'id'>) => void } | null>(null)
 /** A toast is never the only record of something the user must revisit. */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<Toast[]>([]);
+  // Each toast's dismiss timer, cleared if the provider goes away first (Houzs 16717662f): no state set after unmount.
+  const timers = useRef(new Set<number>());
+  useEffect(() => () => { timers.current.forEach(t => window.clearTimeout(t)); timers.current.clear(); }, []);
 
   const push = useCallback((t: Omit<Toast, 'id'>) => {
     const id = Date.now() + Math.random();
     setItems(xs => [...xs, { ...t, id }]);
-    setTimeout(() => setItems(xs => xs.filter(x => x.id !== id)), 5200);
+    const timer = window.setTimeout(() => { timers.current.delete(timer); setItems(xs => xs.filter(x => x.id !== id)); }, 5200);
+    timers.current.add(timer);
   }, []);
 
   useEffect(() => {

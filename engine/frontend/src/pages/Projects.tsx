@@ -521,9 +521,11 @@ export function Projects() {
     <div>
       {/* Renovation mode shows the original list and calendar again (owner, 14 Oct 2026); only the create form and the
           project detail differ. RenovationBoard / RenovationCalendar are kept but no longer routed. */}
-      {view === "list" && <ByProjectsMode renovation={() => <ProjectsListView renovation />} exhibition={() => <ProjectsListView />} />}
+      {/* One project list and one calendar (owner, 11 Nov 2026: "2套画面要统一"): in renovation mode the old addresses open
+          the project workspace's list and calendar, which every link and the menu already use. */}
+      {view === "list" && <ByProjectsMode renovation={() => <Navigate to="/beta/projects" replace />} exhibition={() => <ProjectsListView />} />}
       {/* Project monitor was dropped from the menus (owner, 11 Oct 2026); an old monitor link opens the Schedule. */}
-      {(view === "calendar" || view === "monitor") && <ProjectsCalendarView />}
+      {(view === "calendar" || view === "monitor") && <ByProjectsMode renovation={() => <Navigate to="/beta/calendar" replace />} exhibition={() => <ProjectsCalendarView />} />}
       {view === "finances" &&
         (canProjectFinance ? (
           <ProjectsFinancesView />
@@ -1266,7 +1268,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
     <div>
       <PageHeader
         eyebrow="Operations · Projects"
-        title="Project List"
+        title="Project list"
         description={renovation ? "Renovation projects — open one for design, site tasks, procurement and handover" : "Exhibitions and solo events — lifecycle, checklist, logistics, finance"}
         secondaryActions={
           can("projects.manage")
@@ -1848,7 +1850,7 @@ function ProjectsFinancesView() {
       {tab === "pnl" && (
         <PnlCalendar
           scope="projects"
-          title="Project Cost — Monthly"
+          title="Project cost — monthly"
           subtitle="Total project cost (COGS + other cost lines) across all projects, grouped by month."
         />
       )}
@@ -2720,7 +2722,7 @@ function ProjectsAnalyticsView() {
               (Layer 3). */}
           <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <BreakdownCard
-              title="By Brand"
+              title="By brand"
               rows={d.by_brand}
               groupBy="brand"
               filters={drillFilters}
@@ -2728,7 +2730,7 @@ function ProjectsAnalyticsView() {
               onOpenProject={(id) => navigate(`/projects/${id}`)}
             />
             <BreakdownCard
-              title="By Event Type"
+              title="By event type"
               rows={d.by_event_type}
               groupBy="event_type"
               filters={drillFilters}
@@ -2736,7 +2738,7 @@ function ProjectsAnalyticsView() {
               onOpenProject={(id) => navigate(`/projects/${id}`)}
             />
             <BreakdownCard
-              title="By Organizer"
+              title="By organizer"
               rows={d.by_organizer}
               groupBy="organizer"
               filters={drillFilters}
@@ -2744,7 +2746,7 @@ function ProjectsAnalyticsView() {
               onOpenProject={(id) => navigate(`/projects/${id}`)}
             />
             <BreakdownCard
-              title="By Venue"
+              title="By venue"
               rows={d.by_venue}
               groupBy="venue"
               filters={drillFilters}
@@ -2752,7 +2754,7 @@ function ProjectsAnalyticsView() {
               onOpenProject={(id) => navigate(`/projects/${id}`)}
             />
             <BreakdownCard
-              title="By Month"
+              title="By month"
               rows={d.by_month}
               groupBy="month"
               filters={drillFilters}
@@ -3938,7 +3940,7 @@ function ProjectTeamSection({
   }
 
   return (
-    <PanelSection title="Project Team">
+    <PanelSection title="Project team">
       {/* PIC row */}
       <div>
         <div className="mb-1 flex items-center gap-1.5 text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
@@ -4217,7 +4219,7 @@ function ProjectSpecStrip({
       <header className="mb-2 flex items-center justify-between border-b border-border-strong pb-2">
         <div className="flex items-baseline gap-3">
           <h2 className="text-[10px] font-semibold uppercase tracking-brand text-ink-muted">
-            Project Detail
+            Project detail
           </h2>
         </div>
         {fullAccess && (

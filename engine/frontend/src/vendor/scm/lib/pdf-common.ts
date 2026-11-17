@@ -19,7 +19,8 @@ import {
 } from '../../../lib/branding';
 import { canonicalizeSinglePhone, formatPhone } from '../../shared/phone';
 import { drawDocLetterhead, getDocLetterhead } from '../../../lib/renovation/renovation-doc-theme';
-import { pushEscape } from '../../../lib/escapeStack';
+import { pushEscape } from '../../../lib/escapeStack';
+import { stampWatermark } from '../../../lib/renovation/doc-watermark';
 
 /* HOUZS letterhead — name / reg no / address / phone / email now come from the
    centralised Branding config (one editable record in Settings → Branding),
@@ -677,6 +678,7 @@ export function deliverPdf(
   filename: string,
   action: PdfAction = 'save',
 ): void {
+  stampWatermark(doc);
   if (action === 'save') {
     doc.save(filename);
     return;

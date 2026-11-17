@@ -249,7 +249,7 @@ export function todoList(input: TodoInput): TodoRow[] {
     deadlines, booked appointments, waiting for client, ready to start and to book. The handover date is left out, the
     header already shows it. Wording and buttons follow Calendar's Deadlines view. */
 export function designTodoRows(m: BoardModel, p: DesignProject, canAssign: boolean, customerPhone: string | null): TodoRow[] {
-  const g = deadlineGroups(m, "All", canAssign);
+  const g = deadlineGroups(m, "All");
   const rows: TodoRow[] = [];
 
   for (const x of [...g.late, ...g.week, ...g.two, ...g.later]) {

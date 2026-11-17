@@ -332,8 +332,9 @@ describe('Delivery Order template', () => {
     // sheet of unlabelled numbers is not a delivery note. (The closing block
     // can take a page of its own when the rows run to the bottom of the last
     // sheet; that page carries no rows, so it needs no header.)
-    const headerPages = new Set(spans.filter((s) => s.text === 'ITEM CODE').map((s) => s.page));
-    const rowPages = new Set(spans.filter((s) => s.text.startsWith('XAMMAR-')).map((s) => s.page));
+    /* Conts prints no Item Code column (owner, 17 Nov 2026): the header is found by DESCRIPTION, a row by its description. */
+    const headerPages = new Set(spans.filter((s) => s.text === 'DESCRIPTION').map((s) => s.page));
+    const rowPages = new Set(spans.filter((s) => s.text.startsWith('SOFA XAMMAR ')).map((s) => s.page));
     expect(rowPages.size).toBeGreaterThan(1);
     for (const page of rowPages) expect(headerPages.has(page)).toBe(true);
 
@@ -508,6 +509,10 @@ describe('Delivery Order template', () => {
       tall(4, '5FT', '152X190CM'),
       short(5, 'NTYR-MEMORY FOAM CONTOUR PILLOW'),
       short(6, 'MATTRESS PROTECTOR TENCEL (KING)'),
+      /* Without the Item Code column (Conts, 17 Nov 2026) rows are shorter: three more lines reach the same band. */
+      short(7, 'BOLSTER TENCEL (KING)'),
+      short(8, 'FITTED SHEET TENCEL (KING)'),
+      short(9, 'PILLOW CASE TENCEL (PAIR) WITH ENVELOPE CLOSURE AND PIPED EDGE, IVORY WHITE, SET OF TWO'),
     ];
     // A real DO carries a scan token, so the "SCAN AT EACH STEP" QR is part of
     // the letterhead height — the case only reproduces HC-DO-2609-167 with it.

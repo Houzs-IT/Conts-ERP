@@ -488,3 +488,30 @@ export function requirePageAccess(
     await next();
   };
 }
+
+/** A read that more than one page shows: any one of the pages (at partial or more), or any one of the permission
+ *  keys, lets it through. Sets `access_level` to the best page level reached, or partial when a key let it through. */
+export function requireAnyAccess(
+  pageKeys: string[],
+  permissions: string[] = [],
+): MiddlewareHandler<{ Bindings: Env }> {
+  return async (c, next) => {
+    const user = c.get("user");
+    if (!user) return c.json({ error: "Your session has expired. Please sign in again." }, 401);
+    const granted = user.permissions_set ?? user.permissions;
+    if (hasPermission(granted, "*")) {
+      c.set("access_level", "full");
+      await next();
+      return;
+    }
+    const levels = pageKeys
+      .map((key) => (user.page_access?.[key] ?? "none") as AccessLevel)
+      .filter((level) => meetsLevel(level, "partial"));
+    const best = levels.find((level) => levels.every((other) => meetsLevel(level, other)));
+    if (!best && !permissions.some((key) => hasPermission(granted, key))) {
+      return c.json({ error: "You don't have permission to view this page." }, 403);
+    }
+    c.set("access_level", best ?? "partial");
+    await next();
+  };
+}

@@ -5,6 +5,7 @@ import { requireSession } from '../../../../_lib/auth';
 import { can } from '../../../../_lib/access';
 import { isIsoDate } from '../../../../_lib/validate';
 import { mayChangeAdjustments as mayChange } from '../../../../_lib/ownerScope';
+import { o2Date } from '../../../../_lib/lockGuards';
 
 /** Money for or against an owner outside bookings and expenses (owner_adjustments, migration 0052): workbook
  *  credits, debts carried over, and manual credits and charges. Amounts are signed sen: positive adds to the
@@ -67,13 +68,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (reference && reference.length > 200) fields.reference = 'Keep the reference under 200 characters.';
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the highlighted fields.', 422, fields);
 
-  // With approvals on, a credit or charge waits for a second person (functions/_lib/approvals.ts).
+  // A date in a month whose O2 is locked for the unit (owner statement close) moves to the next open month; `notice`
+  // says so. With approvals on, a credit or charge waits for a second person (functions/_lib/approvals.ts).
+  const dated = await o2Date(env, ownerId, unitId, occurredOn);
   const signed = kind === 'credit' ? amount : -amount;
   const owner = await one<{ display_name: string }>(env, 'SELECT display_name FROM owners WHERE id = ?', ownerId);
   const reason = String(b?.reason ?? '').trim() || description;
   return submit(env, session, {
     kind: 'owner_adjustment', entity: 'owners', entityId: ownerId, amount, reason,
     summary: `${kind === 'credit' ? 'Credit' : 'Charge'} ${rmText(amount)} ${kind === 'credit' ? 'to' : 'against'} ${owner?.display_name ?? 'owner'}: ${description}`,
-    payload: { ownerId, unitId, kind, amount: signed, description, occurredOn, reference },
-  }, r => json({ id: r.adjustmentId, state: 'open' }, 201));
+    payload: { ownerId, unitId, kind, amount: signed, description, occurredOn: dated.occurredOn, reference },
+  }, r => json({ id: r.adjustmentId, state: 'open', notice: dated.notice }, 201));
 };

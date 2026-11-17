@@ -11,7 +11,7 @@ import { EmptyState } from '../../components/States';
 import { useToast } from '../../components/Toast';
 import { api, errorMessage } from '../../lib/api';
 import { channel as CH } from '../../theme';
-import { rm, plural, count } from '../../lib/format';
+import { rm, plural, count, buildingName } from '../../lib/format';
 import { TONE, cx } from '../../lib/design-tokens';
 import { SearchBox } from '../finance/listKit';
 import { LEVEL_LABEL, type Level, type PricedUnit, type SaleChannel } from './types';
@@ -115,7 +115,7 @@ export function BatchEdit({ units, onSaved }: { units: PricedUnit[]; onSaved: ()
       <Card style={{ flex: '1 1 300px', minWidth: 0, maxWidth: 420 }}>
         <div className="py-3 px-3 [border-bottom:1px_solid_var(--color-line)] flex flex-col gap-2">
           <SearchBox label="Search units" placeholder="Search unit or building" value={q} onChange={setQ} />
-          <Select label="Building" value={building} onChange={setBuilding} placeholder={`All buildings · ${buildings.length}`} options={buildings.map(b => ({ value: b, label: b }))} />
+          <Select label="Building" value={building} onChange={setBuilding} placeholder={`All buildings · ${buildings.length}`} options={buildings.map(b => ({ value: b, label: buildingName(b) }))} />
           <label className="flex items-center gap-2 px-1 text-meta cursor-pointer">
             <input type="checkbox" className="w-4 h-4 accent-ink" checked={allShown} ref={el => { if (el) el.indeterminate = !allShown && shown.some(u => picked.has(u.unitId)); }}
               onChange={() => { setPicked(p => { const n = new Set(p); shown.forEach(u => (allShown ? n.delete(u.unitId) : n.add(u.unitId))); return n; }); setPreview(null); }} />
@@ -132,7 +132,7 @@ export function BatchEdit({ units, onSaved }: { units: PricedUnit[]; onSaved: ()
                   onChange={e => { setPicked(p => { const n = new Set(p); if (e.target.checked) n.add(u.unitId); else n.delete(u.unitId); return n; }); setPreview(null); }} />
                 <span className="flex flex-col min-w-0 flex-1">
                   <span className="text-copy font-semibold">{u.unitNumber}</span>
-                  <span className="text-caption text-muted-ink truncate">{u.propertyName}</span>
+                  <span className="text-caption text-muted-ink truncate">{buildingName(u.propertyName)}</span>
                 </span>
                 <span className="text-caption text-muted-ink tabular-nums text-right">
                   {u.baseRate > 0 ? rm(u.baseRate, { cents: false }) : <span className={TONE.critical.text}>No price</span>}
@@ -193,7 +193,7 @@ export function BatchEdit({ units, onSaved }: { units: PricedUnit[]; onSaved: ()
               {preview.units.map(u => (
                 <li key={u.unitId} className="py-2.5 px-5 [border-top:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
                   <span className="flex items-center gap-2 flex-wrap">
-                    <span className="text-copy font-semibold">{u.propertyName} {u.unitNumber}</span>
+                    <span className="text-copy font-semibold">{buildingName(u.propertyName)} {u.unitNumber}</span>
                     {u.error ? <StatusBadge tone="critical" label="Cannot change" size="sm" /> : !u.changes?.prices.length && !u.changes?.rules.length && !u.changes?.eve ? <StatusBadge tone="neutral" label="No change" size="sm" /> : null}
                   </span>
                   {u.error && <span className={cx('text-meta', TONE.critical.text)}>{u.error}</span>}

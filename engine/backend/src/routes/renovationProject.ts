@@ -17,7 +17,7 @@
 import { MEDIA_TYPES, MEDIA_VIDEO_MAX_BYTES } from "../services/renovation/betaMedia";
 import { Hono, type Context } from "hono";
 import type { Env } from "../types";
-import { requirePageAccess, requirePermission } from "../middleware/auth";
+import { requireAnyAccess, requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
 import { financeHiddenForUser } from "../services/pmsAccess";
 import { todayMyt } from "../scm/lib/my-time";
@@ -117,7 +117,7 @@ const PP_COLS = `pp.id::int AS id, pp.name, to_json(pp.roles) AS roles, pp.activ
    people not linked to an account and carrying the site_crew role stay pickable as site task crew only (`crew`),
    kept in Project Maintenance. `linked` says whether a row follows an account (its name and on/off come from
    Users and roles, not from here). Before migration 0113 the list is the people master as it was. */
-app.get("/people", requirePageAccess("projects.list"), async (c) => {
+app.get("/people", requireAnyAccess(["projects.list", "projects.maintenance"]), async (c) => {
   const role = c.req.query("role") ?? "";
   if (role && !(PERSON_ROLES as readonly string[]).includes(role)) return c.json({ error: "role_invalid" }, 400);
   const active = c.req.query("active");
@@ -147,7 +147,7 @@ app.get("/people", requirePageAccess("projects.list"), async (c) => {
 
 /* Which projects and site tasks each person is crew on (owner, 16 Oct 2026: Project Maintenance shows it next to
    every crew member without a login). Open tasks first; archived projects left out. */
-app.get("/crew-assignments", requirePageAccess("projects.list"), async (c) => {
+app.get("/crew-assignments", requireAnyAccess(["projects.list", "projects.maintenance"]), async (c) => {
   const res = await db(c).prepare(
     `SELECT a.person_id::int AS person_id, t.id::int AS task_id, t.label, t.state, t.planned_start::text AS planned_start,
             t.planned_end::text AS planned_end, p.id::int AS project_id, p.code AS project_code, p.name AS project_name
@@ -160,7 +160,7 @@ app.get("/crew-assignments", requirePageAccess("projects.list"), async (c) => {
   return c.json({ data: res.results ?? [] });
 });
 
-app.post("/people", requirePermission("projects.manage"), async (c) => {
+app.post("/people", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const v = cleanPerson(await body(c));
@@ -172,7 +172,7 @@ app.post("/people", requirePermission("projects.manage"), async (c) => {
   return c.json({ id: row?.id }, 201);
 });
 
-app.patch("/people/:personId", requirePermission("projects.manage"), async (c) => {
+app.patch("/people/:personId", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const id = parseId(c.req.param("personId"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
   const v = cleanPerson(await body(c), true);
@@ -196,7 +196,7 @@ app.patch("/people/:personId", requirePermission("projects.manage"), async (c) =
 
 // ── Flow steps and task categories (Project Maintenance) ────────────────
 
-app.get("/flow-steps", requirePageAccess("projects.list"), async (c) => {
+app.get("/flow-steps", requireAnyAccess(["projects.list", "projects.maintenance"]), async (c) => {
   const res = await db(c).prepare(
     `SELECT s.step_key, s.label, s.sort_order, s.active, (to_jsonb(s)->>'sla_days')::int AS sla_days
        FROM project_flow_steps s WHERE true${coSql(c, "s.company_id")} ORDER BY s.sort_order, s.step_key`,
@@ -213,7 +213,7 @@ function cleanSlaDays(v: unknown): number | null | undefined {
 
 /* SLA per step (owner, 16 Oct 2026; migration 0121): the default days a project may stay in a step. A project copies
    it when it enters the step (services/renovation/stepSla.ts). Audited. */
-app.put("/flow-steps/:key/sla", requirePermission("projects.manage"), async (c) => {
+app.put("/flow-steps/:key/sla", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const key = c.req.param("key");
   if (!isFlowStepKey(key) || key === "closed") return c.json({ error: "step_invalid", message: "Closed has no SLA." }, 400);
   if (!(await stepSlaReady(db(c)))) return c.json({ error: "sla_not_ready", message: "SLA needs a database update (migration 0121) that is not applied yet." }, 409);
@@ -230,7 +230,7 @@ app.put("/flow-steps/:key/sla", requirePermission("projects.manage"), async (c) 
   return c.json({ ok: true, days });
 });
 
-app.patch("/flow-steps/:key", requirePermission("projects.manage"), async (c) => {
+app.patch("/flow-steps/:key", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const key = c.req.param("key");
   if (!isFlowStepKey(key)) return c.json({ error: "step_invalid" }, 400);
   const b = await body(c);
@@ -247,7 +247,7 @@ app.patch("/flow-steps/:key", requirePermission("projects.manage"), async (c) =>
   return c.json({ ok: true });
 });
 
-app.get("/task-categories", requirePageAccess("projects.list"), async (c) => {
+app.get("/task-categories", requireAnyAccess(["projects.list", "projects.maintenance"]), async (c) => {
   const res = await db(c).prepare(
     `SELECT code, label, stage_key, trade_code, fix_phase, internal_key, trade_default, sort_order, active, notion
        FROM project_task_categories WHERE true${coSql(c)} ORDER BY sort_order, code`,
@@ -255,7 +255,7 @@ app.get("/task-categories", requirePageAccess("projects.list"), async (c) => {
   return c.json({ data: res.results ?? [] });
 });
 
-app.patch("/task-categories/:code", requirePermission("projects.manage"), async (c) => {
+app.patch("/task-categories/:code", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const code = c.req.param("code").toUpperCase();
   if (!taskCategoryDef(code)) return c.json({ error: "category_invalid" }, 400);
   const b = await body(c);

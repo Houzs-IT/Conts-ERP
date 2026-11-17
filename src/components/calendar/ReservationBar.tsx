@@ -4,16 +4,16 @@ import { CHANNEL } from '../../lib/vocabulary';
 import { dateRange, nights as nightsLabel, rm } from '../../lib/format';
 import type { CalendarBlock as Block } from './types';
 import { stayPhase } from '../../lib/bookingStatus';
+import './stay.css';
 
 /*
  * What a reservation bar on the Calendar says, by how much room it has. Borrowed from Airbnb's multi-calendar
- * (status shading: who is in now reads darker than who is coming, past stays fade), Hostaway (a thin channel colour
- * on the bar's edge rather than a full channel fill) and Guesty (the name never cut mid-word; the full detail lives
+ * (status shading: who is in now is outlined, past stays fade), Hostaway (the channel colour as a 3px edge on a soft
+ * tint of it, Conts DS v2) and Guesty (the name never cut mid-word; the full detail lives
  * in a hover card). Rules, by nights visible in the window:
  *   1 night   channel mark over the first name, or initials when the first name does not fit
- *   2 nights  first name, and "2 nights" under it
- *   3-5       the full name (whole words that fit), price under it
- *   6+        the full name, price and nights under it
+ *   2+ nights the host payout first, then the nights (owner, 12 Nov 2026); the name (whole words that fit) under
+ *             it, the first name only on a 2-night bar
  * Blocked nights and owner stays are hatched so they never read as a guest.
  */
 
@@ -86,25 +86,30 @@ export function BarContent({ b, visible, width, nights }: { b: Block; visible: n
       </span>
     );
   }
-  const line1 = visible <= 2 && !hold ? (fitWords(name.split(/\s+/)[0] ?? '', room) ?? initials(name)) : (fitWords(name, room) ?? initials(name));
-  const parts = hold
-    ? [visible >= 3 && b.reason ? b.reason : '', visible >= 3 ? nightsLabel(nights) : ''].filter(Boolean)
-    : [price, nightsLabel(nights)].filter(Boolean);
+  const who = visible <= 2 && !hold ? (fitWords(name.split(/\s+/)[0] ?? '', room) ?? initials(name)) : (fitWords(name, room) ?? initials(name));
   // Whole parts only: cutting the joined text by words left a dangling separator ("RM 334.37 ·").
-  const both = parts.join(' · ');
-  const line2 = textWidth(both) <= room ? both : parts[0] && textWidth(parts[0]) <= room ? parts[0] : (fitWords(parts[0] ?? '', room) ?? '');
+  const fit = (parts: string[]) => {
+    const both = parts.join(' · ');
+    return textWidth(both) <= room ? both : parts[0] && textWidth(parts[0]) <= room ? parts[0] : (fitWords(parts[0] ?? '', room) ?? '');
+  };
+  // A guest's bar leads with the money: host payout first, then the nights (owner, 12 Nov 2026), the name under it.
+  // A hold leads with what it is (Owner stay, Repair, Blocked), then the reason and nights.
+  const line1 = hold ? who : (fit([price, nightsLabel(nights)].filter(Boolean)) || who);
+  const line2 = hold
+    ? fit([visible >= 3 && b.reason ? b.reason : '', visible >= 3 ? nightsLabel(nights) : ''].filter(Boolean))
+    : line1 === who ? '' : who;
   return (
     <>
       <ChannelMark ch={b.channel} size={16} />
       <span className="min-w-0 flex flex-col">
-        <span className="text-meta leading-[15px] font-semibold whitespace-nowrap overflow-hidden">{line1}</span>
-        {line2 && <span className="text-caption leading-[14px] whitespace-nowrap overflow-hidden opacity-80 [font-variant-numeric:tabular-nums]">{line2}</span>}
+        <span className="text-meta leading-[15px] font-semibold whitespace-nowrap overflow-hidden [font-variant-numeric:tabular-nums]">{line1}</span>
+        {line2 && <span className="text-caption leading-[14px] whitespace-nowrap overflow-hidden opacity-80">{line2}</span>}
       </span>
     </>
   );
 }
 
-/** The bar's look: a quiet card with the channel colour as a 3px left edge; status sets the shade. In Demo mode a
+/** The bar's look: a soft tint of the channel colour with the colour as a 3px left edge; status sets the shade. In Demo mode a
  *  sample stay, or a real one changed in Demo mode, has a dashed blue outline. */
 export function barStyle(b: Block, phase: StayPhase, clipL: boolean, clipR: boolean): CSSProperties {
   const look = stayLook(b, phase, clipL, clipR);
@@ -116,7 +121,7 @@ function stayLook(b: Block, phase: StayPhase, clipL: boolean, clipR: boolean): C
   const ch = CHANNEL[b.channel];
   const r = (on: boolean) => (on ? 0 : 6);
   const radius = `${r(clipL)}px ${r(clipR)}px ${r(clipR)}px ${r(clipL)}px`;
-  if (phase === 'inquiry') return { color: 'var(--color-text-muted)', background: 'transparent', border: '1px dashed var(--color-line-strong)', borderRadius: radius };
+  if (phase === 'inquiry') return { color: 'var(--color-muted-ink)', background: 'transparent', border: `1px dashed ${ch.color}`, borderLeftWidth: clipL ? 1 : 3, borderRadius: radius };
   if (phase === 'hold') {
     const stripe = b.channel === 'owner_stay' ? 'var(--color-line)' : `color-mix(in srgb, ${ch.color} 22%, var(--color-surface-card))`;
     return {
@@ -125,14 +130,16 @@ function stayLook(b: Block, phase: StayPhase, clipL: boolean, clipR: boolean): C
       border: `1px ${ch.border} color-mix(in srgb, ${ch.color} 45%, transparent)`,
     };
   }
-  const edge = clipL ? undefined : `3px solid ${ch.color}`;
-  if (phase === 'hosting' || phase === 'checking_out') {
-    return { color: 'var(--color-text-primary)', background: 'var(--color-surface-sunken)', border: '1px solid var(--color-line-strong)', borderLeft: edge, borderRadius: radius };
-  }
-  if (phase === 'past') {
-    return { color: 'var(--color-text-muted)', background: 'var(--color-surface-page)', border: '1px solid var(--color-line)', borderLeft: clipL ? undefined : `3px solid color-mix(in srgb, ${ch.color} 45%, transparent)`, borderRadius: radius };
-  }
-  return { color: 'var(--color-text-primary)', background: 'var(--color-surface-card)', border: '1px solid var(--color-line-strong)', borderLeft: edge, borderRadius: radius };
+  // Soft tint of the channel colour with the colour as a 3px left edge (prototype rops-bar): staying now adds a thin
+  // outline in the channel colour, past stays fade. A bar cut by the window's left edge has no edge.
+  const tint = `color-mix(in srgb, ${ch.color} var(--stay-tint, 14%), var(--color-card))`;
+  const base: CSSProperties = {
+    color: 'var(--color-ink)', background: tint, border: 0, borderRadius: radius,
+    borderLeft: clipL ? undefined : `3px solid ${ch.color}`,
+  };
+  if (phase === 'hosting' || phase === 'checking_out') return { ...base, boxShadow: `inset 0 0 0 1px ${ch.color}` };
+  if (phase === 'past') return { ...base, opacity: 0.55 };
+  return base;
 }
 
 /** The full detail of a bar, shown by the pointer on hover (desktop). */

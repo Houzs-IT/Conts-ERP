@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { color, channel as CH } from '../theme';
@@ -27,7 +27,7 @@ import { PurposeBadge, CodeBadge } from './units/UnitExtras';
 import LettingTab from './units/LettingTab';
 import { useToast } from '../components/Toast';
 import { useSession } from '../lib/session';
-import { rm, dateRange, date, monthLabel, plural, titleCase } from '../lib/format';
+import { rm, dateRange, date, monthLabel, plural, buildingName, personName } from '../lib/format';
 import type { UnitReadiness } from '../lib/types';
 import UnitTree, { firstUnitId } from './units/UnitTree';
 import AccessTab from './units/AccessTab';
@@ -57,6 +57,22 @@ function useSmUp() {
   const [v, setV] = useState(read);
   useEffect(() => { if (typeof window === 'undefined' || !('matchMedia' in window)) return; const m = window.matchMedia(q); const f = () => setV(m.matches); m.addEventListener('change', f); return () => m.removeEventListener('change', f); }, []);
   return v;
+}
+
+/** A section further down the phone's one-page record: drawn, and its data read, once it scrolls near the screen
+ *  (performance, 12 Nov 2026: every section's reads, the owner list and cleaning prices among them, used to start
+ *  together the moment the record opened, behind the part on screen). Until then it keeps its place with a skeleton. */
+function NearView({ children }: { children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(() => typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    if (near || !box.current) return;
+    const io = new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting)) setNear(true); }, { rootMargin: '600px 0px' });
+    io.observe(box.current);
+    return () => io.disconnect();
+  }, [near]);
+  if (near) return <>{children}</>;
+  return <div ref={box} aria-hidden className="skeleton h-[160px] rounded-card" />;
 }
 
 function useWide() {
@@ -223,7 +239,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     try {
       await api.post<{ id: string }>('/properties', b);
       setModal(null);
-      toast({ tone: 'success', title: 'Building added.', body: `${b.name} — add units to it.` });
+      toast({ tone: 'success', title: 'Building added.', body: `${buildingName(b.name)} — add units to it.` });
       props.reload();
     } catch (e) { notifyFailure(e); }
   }
@@ -231,7 +247,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     try {
       await api.patch(`/properties/${id}`, b);
       setModal(null);
-      toast({ tone: 'success', title: 'Building updated.', body: b.name });
+      toast({ tone: 'success', title: 'Building updated.', body: buildingName(b.name) });
       reloadAll();
     } catch (e) { notifyFailure(e); }
   }
@@ -239,7 +255,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
     try {
       await api.del(`/properties/${b.id}`);
       setModal(null);
-      toast({ tone: 'success', title: 'Building deleted.', body: b.name });
+      toast({ tone: 'success', title: 'Building deleted.', body: buildingName(b.name) });
       props.reload();
     } catch (e) { notifyFailure(e); }
   }
@@ -269,7 +285,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
         {canEdit && <Button size="sm" variant="secondary" icon={<Icon name="Plus" size="sm" />} onClick={() => setModal({ kind: 'building' })}>Add building</Button>}
         <Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} disabled={units.length === 0} title="Download every unit with every field as an Excel file"
           onClick={() => exportUnits(units, buildings, readiness, types)}>Export all units</Button>
-        <Button size="sm" variant="secondary" icon={<Icon name={listMode ? 'FolderTree' : 'Table2'} size="sm" />} onClick={() => setListMode(!listMode)}>{listMode ? 'Tree and record' : 'List of all units'}</Button>
+        <Button size="sm" variant="secondary" icon={<Icon name={listMode ? 'FolderTree' : 'Table2'} size="sm" />} live onClick={() => setListMode(!listMode)}>{listMode ? 'Tree and record' : 'List of all units'}</Button>
       </>}
       primary={canEdit ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => navigate('/properties/units/new')}>Add unit</Button> : undefined} />
   );
@@ -328,7 +344,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
   }
 
   const building = buildings.find(b => b.id === form?.buildingId);
-  const unitLabel = form ? (form.unitCode || form.listingName || 'this unit') : d ? `${d.unit.propertyName} ${d.unit.unitNumber}` : 'this unit';
+  const unitLabel = form ? (form.unitCode || form.listingName || 'this unit') : d ? `${buildingName(d.unit.propertyName)} ${d.unit.unitNumber}` : 'this unit';
 
   return (
     <div className="flex flex-col gap-5 min-w-0">
@@ -344,7 +360,7 @@ export default function UnitsPage({ unitId }: { unitId: string }) {
             className="xl:hidden flex items-center gap-3 w-full py-[11px] px-[14px] bg-card border border-solid border-line rounded-card cursor-pointer [font-family:inherit] text-copy text-left">
             <Icon name="Building2" size="sm" color={color.textMuted} />
             <span className="flex-1 min-w-0">
-              <span className="block text-caption text-muted-ink">{building?.name ?? 'Unit'}</span>
+              <span className="block text-caption text-muted-ink">{building?.name ? buildingName(building.name) : 'Unit'}</span>
               <span className="block text-copy font-semibold whitespace-nowrap overflow-hidden text-ellipsis">{form?.unitCode || form?.listingName || 'Choose a unit'}</span>
             </span>
             <span className="text-meta font-medium text-gold-ink flex-none">{treeOpen ? 'Close' : 'Change unit'}</span>
@@ -411,6 +427,8 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
   // Each section keeps its own component and data; only the tab gate is lifted. Desktop is unchanged.
   const stacked = !wideRecord;
   const on = (k: Tab) => stacked || shown === k;
+  // On a phone every section is on the page: those below the overview wait until they scroll near (NearView).
+  const later = (n: ReactNode) => (stacked ? <NearView>{n}</NearView> : n);
   // On a phone the strip scrolls sideways; keep the open tab in view (a link can land on the last one).
   useEffect(() => {
     const strip = tabsRef.current, el = strip?.querySelector<HTMLElement>(`[data-tab="${shown}"]`);
@@ -444,16 +462,17 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
     downloadFile('/expenses/report', { unitId: form.id, period: fmonth }).catch(notifyFailure);
   }
   const needsForm = <Card><div className="p-8 text-center text-copy text-muted-ink">This unit's master data is not available to your role.</div></Card>;
-  const title = form?.listingName || `${u.propertyName} ${u.unitNumber}`;
+  const title = form?.listingName || `${buildingName(u.propertyName)} ${u.unitNumber}`;
   const stem = unitLabel.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'unit';
-  const subtitle = [form?.unitCode || u.unitNumber, building?.name ?? u.propertyName].filter(Boolean).join(' · ');
+  const subtitle = [form?.unitCode || u.unitNumber, buildingName(building?.name ?? u.propertyName)].filter(Boolean).join(' · ');
 
   return (
     <>
       <Card>
         <div className="pt-[14px] px-[14px] pb-0">
-          <CoverPhotoDrop photo={photo} onPick={takeFile} busy={uploading} className="h-[96px] sm:h-[128px]"
-            label="Add a photo of this unit" hint="Drop an image here, or click to browse" />
+          <CoverPhotoDrop photo={photo} onPick={takeFile} busy={uploading} className="h-[120px]"
+            standIn={{ place: buildingName(building?.name ?? u.propertyName), code: form?.unitCode || u.unitNumber }} canAdd={canEdit}
+            label="Add photos of this unit" hint="Drop an image here, or click to browse" />
         </div>
 
         <div className="pt-[18px] px-5 sm:px-6 pb-4 flex items-start justify-between gap-6 flex-wrap">
@@ -485,7 +504,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           {/* Owner names run long (several co-owners, company names); they wrap instead of running off a phone. */}
           <div className="flex flex-col gap-1 min-w-0 max-w-full sm:max-w-[45%] items-start">
             <Eyebrow>Owner</Eyebrow>
-            <Link to={`/owners/${encodeURIComponent(u.owner.id)}`} className="text-heading font-semibold no-underline text-ink! [overflow-wrap:anywhere]">{titleCase(u.owner.name)}</Link>
+            <Link to={`/owners/${encodeURIComponent(u.owner.id)}`} className="text-heading font-semibold no-underline text-ink! [overflow-wrap:anywhere]">{personName(u.owner.name)}</Link>
             {u.contract && <span className="text-meta text-muted-ink">{u.termsLabel ?? `${u.contract.managementFeePct}%`} · {u.contract.renewsOn ? `renews ${date(u.contract.renewsOn)}` : 'No renewal date'}</span>}
           </div>
         </div>
@@ -497,7 +516,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
           ] : [['Purpose', u.purpose === 'warehouse' ? 'Warehouse' : 'Showroom'], ['Car park bays', form?.parkingBays?.length ? String(form.parkingBays.length) : '—'], ['Open maintenance jobs', String(openIssues)]]).map(([label, value]) => (
             <div key={label} className="flex flex-col gap-2 min-w-0">
               <Eyebrow>{label}</Eyebrow>
-              <Figure value={value} className="text-[20px] sm:text-[24px] font-medium tracking-[-0.02em] leading-none text-ink" />
+              <Figure value={value} className="text-[19px] font-semibold tracking-[-0.02em] leading-none text-ink" />
             </div>
           ))}
         </div>
@@ -549,7 +568,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       )}
 
       {stacked && on('details') && <h3 className="m-0 mt-2 text-heading font-semibold">Details and owner</h3>}
-      {on('details') && (form ? (
+      {on('details') && later(form ? (
         <Card>
           <SaveBar title="Details & owner" sub="Four steps: listing, space, owner, then cleaning prices and income model." dirty={dirty} saving={saving} canEdit={canEdit} onSave={onSave}
             extra={canEdit ? <Button size="sm" variant="tertiary" icon={<Icon name="Trash2" size="sm" />} onClick={onDelete}>Delete unit</Button> : undefined} />
@@ -558,7 +577,7 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       ) : needsForm)}
 
       {stacked && on('contract') && <h3 className="m-0 mt-2 text-heading font-semibold">Contract and documents</h3>}
-      {on('contract') && (money
+      {on('contract') && later(money
         ? <><PaysTo unitId={u.id} ownerId={u.owner.id} accountId={u.bankAccountId ?? null} canEdit={mayChoosePayAccount(user)} onSaved={reloadDetail}
             mainAccount={form?.bankAccount ? `${bankName(form.bankName) ?? form.bankName} ${form.bankAccount}` : undefined} />
           <ContractTab key={u.id} unitId={u.id} canEdit={canEdit} onSaved={reload}
@@ -569,15 +588,15 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
         </>)}
 
       {stacked && on('access') && <h3 className="m-0 mt-2 text-heading font-semibold">Access and keys</h3>}
-      {on('access') && <AccessTab key={u.id} unitId={u.id} unitLabel={unitLabel} parking={form?.parkingLabel} fullAccessCard={building?.fullAccessCard} />}
+      {on('access') && later(<AccessTab key={u.id} unitId={u.id} unitLabel={unitLabel} parking={form?.parkingLabel} fullAccessCard={building?.fullAccessCard} />)}
 
       {stacked && on('reservations') && <h3 className="m-0 mt-2 text-heading font-semibold">Reservations</h3>}
-      {on('reservations') && <BookingsTab key={u.id} unitId={u.id} />}
+      {on('reservations') && later(<BookingsTab key={u.id} unitId={u.id} />)}
 
       {stacked && on('operations') && <h3 className="m-0 mt-2 text-heading font-semibold">Cleaning, maintenance and fit-out</h3>}
-      {on('operations') && <JobsTab key={u.id} unitId={u.id} stem={stem} />}
+      {on('operations') && later(<JobsTab key={u.id} unitId={u.id} stem={stem} />)}
       {stacked && on('financials') && <h3 className="m-0 mt-2 text-heading font-semibold">Financials</h3>}
-      {on('financials') && d.pnl && (
+      {on('financials') && d.pnl && later(
         <>
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <MonthStepper month={fmonth} onChange={setFmonth} />
@@ -595,10 +614,10 @@ function UnitRecord({ d, form, buildings, building, unitLabel, tab, setTab, canE
       )}
 
       {stacked && on('letting') && <h3 className="m-0 mt-2 text-heading font-semibold">Agent to let</h3>}
-      {on('letting') && <LettingTab key={u.id} unitId={u.id} canEdit={canEdit} money={money} />}
+      {on('letting') && later(<LettingTab key={u.id} unitId={u.id} canEdit={canEdit} money={money} />)}
 
       {stacked && on('activity') && <h3 className="m-0 mt-2 text-heading font-semibold">History of changes</h3>}
-      {on('activity') && (
+      {on('activity') && later(
         <RecordHistory key={u.id} entity="units" id={u.id} refreshKey={d}
           also={u.contract?.id ? [['owner_contracts', u.contract.id]] : undefined} />
       )}

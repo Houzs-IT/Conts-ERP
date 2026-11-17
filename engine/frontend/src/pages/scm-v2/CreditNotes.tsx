@@ -113,7 +113,7 @@ export const CreditNotes = () => {
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow="Finance" title="Credit & Debit Notes"
+      <PageHeader eyebrow="Finance" title="Credit & debit notes"
         description="A credit note to a customer, a debit note to a customer, a credit note from a supplier. Raised as a draft, posted to the ledger, cancelled by contra."
         primaryAction={<Button size="sm" onClick={() => setForm({ mode: 'new', values: emptyForm() })}><Plus size={16} strokeWidth={1.75} /> New note</Button>} />
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>

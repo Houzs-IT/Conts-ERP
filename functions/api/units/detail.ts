@@ -1,7 +1,8 @@
 import { type Env, all, one, json, fail, mytToday } from '../../_lib/db';
 import { purposeReady } from '../../_lib/unitPurpose';
 import { requireSession } from '../../_lib/auth';
-import { can } from '../../_lib/access';
+import { can, maySee } from '../../_lib/access';
+import { firstUnitId } from '../../../src/lib/unitOrder';
 import { stampMyt } from '../../_lib/ops';
 import { stayMonths, metrics, monthEndExclusive, daysInMonth as daysInMonthOf } from '../../_lib/revenue';
 import { statementSettings } from '../../_lib/ownerStatement';
@@ -26,7 +27,25 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!session) return response!;
 
   const url = new URL(request.url);
-  const unitId = url.searchParams.get('unitId');
+  let unitId = url.searchParams.get('unitId');
+  // ?first=1: the unit the Units screen opens when its address names none, picked by the screen's own rule
+  // (src/lib/unitOrder.ts) from the same buildings and units /api/properties gives it. The screen asks for this while
+  // that list is still loading (src/lib/routePrefetch.ts), instead of waiting for the list to know which unit to ask
+  // for (performance, 12 Nov 2026). Same access as /api/properties, since it reveals which unit tops that list.
+  if (!unitId && url.searchParams.get('first') === '1') {
+    if (!maySee(session, ['management'])) return fail('FORBIDDEN', 'Unit records are visible to people with Units access.', 403);
+    const [buildings, units] = await Promise.all([
+      all<{ id: string; name: string; state: string | null }>(env, 'SELECT id, name, state FROM properties'),
+      all<{ id: string; property_id: string; parent_unit_id: string | null; unit_code: string | null; unit_number: string; listing_name: string | null }>(env, `
+        SELECT u.id, u.property_id, u.parent_unit_id, u.unit_code, u.unit_number, u.listing_name
+        FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
+        ORDER BY p.name, u.unit_number`),
+    ]);
+    unitId = firstUnitId(buildings, units.map(u => ({
+      id: u.id, buildingId: u.property_id, parentUnitId: u.parent_unit_id, unitCode: u.unit_code ?? u.unit_number, listingName: u.listing_name ?? '',
+    }))) ?? null;
+    if (!unitId) return fail('NOT_FOUND', 'There are no units yet.', 404);
+  }
   if (!unitId) return fail('VALIDATION', 'A unit is required.', 422);
 
   const ownerAddress = await ownerDetailsReady(env);

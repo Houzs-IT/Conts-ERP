@@ -159,7 +159,7 @@ function SoDrawer({ so, isNew, canWrite, onClose, onSave, onAct, totalsOf }: {
   const outstanding = Math.max(0, (isNew ? total : so.totalSen) - so.paidSen);
 
   return (
-    <Drawer open onClose={onClose} width={880}>
+    <Drawer open onClose={onClose} dirty="typed" width={880}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5">
         <div className="flex items-center gap-3"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'New sales order' : so.docNo}</h2>{!isNew && <StatusBadge entity="sales_order" value={so.status} />}</div>
         <CloseButton onClick={onClose} />

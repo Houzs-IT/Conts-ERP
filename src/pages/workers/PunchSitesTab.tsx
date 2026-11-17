@@ -5,6 +5,8 @@ import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
+import { KeyFacts } from '../../components/KeyFacts';
+import { PhoneCard } from '../../components/ListToolbar';
 import { NumberInput } from '../../components/inputs';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
@@ -78,36 +80,32 @@ export default function PunchSitesTab() {
         rowTone={s => (located(s) ? null : 'muted')}
         header={
           <div className="pt-5 pb-3 px-5 flex flex-col gap-0.5 [border-bottom:1px_solid_var(--color-line-soft)]">
-            <span className="text-[16px] font-semibold tracking-[-0.01em]">Punch Sites <span className="text-meta font-normal text-muted-ink tabular-nums">{data ? `${withLocation} of ${sites.length} on the map` : ''}</span></span>
+            <span className="text-heading font-bold tracking-[-0.005em]">Punch Sites <span className="text-meta font-normal text-muted-ink tabular-nums">{data ? `${withLocation} of ${sites.length} on the map` : ''}</span></span>
             <span className="text-meta text-muted-ink max-w-[760px]">{hint}{data && withLocation < sites.length ? ' A building with no map location cannot read as on site; its location comes with the building from HostPlatform.' : ''}</span>
           </div>
         }
         empty={{ title: 'No buildings yet.', body: hint }}
         renderCard={s => (
-          <span className="flex flex-col gap-[3px] min-w-0">
-            <span className="flex items-center gap-[9px] flex-wrap">
-              <span className="text-copy font-semibold">{s.name}</span>
-              {!located(s) && <StatusBadge tone="warning" label="No map location" size="sm" />}
-            </span>
-            <span className="text-meta text-muted-ink flex gap-x-3 flex-wrap tabular-nums">
-              {located(s) && <a href={mapLink(s.lat, s.lng)} target="_blank" rel="noopener noreferrer" className="text-muted-ink underline underline-offset-2">{pinText(s)}</a>}
-              <span>{radiusText(s)}</span>
-            </span>
-            {mayEdit && <span className="flex justify-start pt-1"><Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => edit(s)}>Radius</Button></span>}
+          <span className="flex flex-col gap-2 min-w-0">
+            <PhoneCard title={s.name} right={radiusText(s)}
+              meta={located(s) ? pinText(s) : 'Not on the map'}
+              badge={located(s) ? undefined : <StatusBadge tone="warning" label="No map location" size="sm" />} />
+            {mayEdit && <span className="flex justify-start"><Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => edit(s)}>Radius</Button></span>}
           </span>
         )}
       />
 
       {editing && (
-        <Modal title={`Punch radius: ${editing.site.name}`} onClose={() => !busy && setEditing(null)}
+        <Modal title={`Punch radius: ${editing.site.name}`} eyebrow="Punch Sites" size="sm" onClose={() => !busy && setEditing(null)}
           footer={<>
             {editing.site.radiusM !== null && (
-              <Button size="sm" variant="tertiary" style={{ marginRight: 'auto' }} disabled={busy} onClick={() => void save(null)}>Use the default ({fallback} m)</Button>
+              <Button size="sm" variant="tertiary" className="mr-auto" disabled={busy} onClick={() => void save(null)}>Use the default ({fallback} m)</Button>
             )}
             <Button size="sm" variant="secondary" onClick={() => setEditing(null)} disabled={busy}>Cancel</Button>
             <Button size="sm" variant="primary" loading={busy} disabled={editing.radiusM == null} disabledReason="Enter a radius." onClick={() => void save(editing.radiusM)}>Save</Button>
           </>}>
           <div className="flex flex-col gap-4">
+            <KeyFacts items={[['Map location', located(editing.site) ? pinText(editing.site) : 'Not set'], ['Now', radiusText(editing.site)]]} />
             {!located(editing.site) && <p className="m-0 text-copy text-muted-ink">This building has no map location yet, so no punch can read as at it until it has one.</p>}
             <NumberInput label="Radius" value={editing.radiusM} onChange={v => setEditing({ ...editing, radiusM: v })}
               min={RADIUS_MIN} max={RADIUS_MAX} suffix="m" disabled={busy} error={fieldError}

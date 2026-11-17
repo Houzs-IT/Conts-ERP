@@ -66,7 +66,7 @@ export function SavedRepliesManager({ replies, onClose, onChanged }: { replies: 
   return (
     <Modal title="Saved replies" sub="Short replies anyone in Messages can insert, then change before sending." onClose={onClose} width={560}
       footer={editing
-        ? <><Button variant="secondary" onClick={() => { setEditing(null); setErrors({}); }}>Back</Button><Button variant="primary" loading={busy} onClick={save}>{editing.id ? 'Save changes' : 'Add saved reply'}</Button></>
+        ? <><Button variant="secondary" onClick={() => { setEditing(null); setErrors({}); }}>Cancel</Button><Button variant="primary" loading={busy} onClick={save}>{editing.id ? 'Save changes' : 'Add saved reply'}</Button></>
         : <><Button variant="secondary" onClick={onClose}>Done</Button><Button variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setEditing({ id: null, title: '', body: '' })}>New saved reply</Button></>}>
       {confirmEl}
       {editing ? (

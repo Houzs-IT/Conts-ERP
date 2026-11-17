@@ -388,7 +388,7 @@ export const StockCard = () => {
       {!warehouseId && (
         <section>
           <header className={chrome.cardHeader}>
-            <h2 className={chrome.cardTitle}>Per-Warehouse Balance</h2>
+            <h2 className={chrome.cardTitle}>Per-warehouse balance</h2>
           </header>
           <DataTable<(typeof breakdownAll)[number]>
             tableId="stock-card-warehouse-balance"
@@ -567,7 +567,7 @@ export const StockCard = () => {
         >
           <h2 className={chrome.cardTitle} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             {lotsOpen ? <ChevronDown size={14} strokeWidth={1.75} /> : <ChevronRight size={14} strokeWidth={1.75} />}
-            FIFO Lots ({lots.length}{includeClosed ? ' · incl closed' : ' · open only'})
+            FIFO lots ({lots.length}{includeClosed ? ' · incl closed' : ' · open only'})
           </h2>
           <label
             style={{

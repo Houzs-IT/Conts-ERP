@@ -564,7 +564,7 @@ export function PortalSupplierCasePage() {
       {/* Goods Returned Note — read-only, from Houzs */}
       <section className="mt-5 rounded-lg border border-border bg-surface p-5">
         <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
-          Goods Returned Note <span className="ml-1 normal-case tracking-normal text-ink-muted/70">from The Conts</span>
+          Goods Returned Note <span className="ml-1 normal-case tracking-normal text-ink-muted">from The Conts</span>
         </h2>
         <div className="whitespace-pre-line text-sm">
           {cs.goods_returned_note?.trim() || (

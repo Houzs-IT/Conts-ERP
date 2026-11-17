@@ -18,7 +18,7 @@
  */
 import { Hono } from "hono";
 import type { Env } from "../types";
-import { requirePermission } from "../middleware/auth";
+import { requireAnyAccess, requirePageAccess, requirePermission } from "../middleware/auth";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -38,7 +38,7 @@ const STAGES = [
 // profile is flagged so the frontend can highlight it without a
 // second request.
 
-app.get("/profiles", requirePermission("service_cases.read"), async (c) => {
+app.get("/profiles", requireAnyAccess(["service_cases.settings"], ["service_cases.read"]), async (c) => {
   const profiles = await c.env.DB.prepare(
     `SELECT id, name, description, is_active, created_at, updated_at
        FROM assr_lead_time_profiles
@@ -80,7 +80,7 @@ app.get("/profiles", requirePermission("service_cases.read"), async (c) => {
 // profile is inactive on create — admins explicitly activate it later
 // via PATCH /profiles/:id/activate.
 
-app.post("/profiles", requirePermission("service_cases.manage"), async (c) => {
+app.post("/profiles", requirePageAccess("service_cases.settings", "full"), async (c) => {
   const body = await c.req.json<{ name?: string; description?: string }>();
   const name = (body.name || "").trim();
   if (!name) return c.json({ error: "name is required" }, 400);
@@ -129,7 +129,7 @@ app.post("/profiles", requirePermission("service_cases.manage"), async (c) => {
 // In-flight cases keep their stamped lead_time_profile_id (proposal
 // §10 "Effective date") in both modes.
 
-app.patch("/profiles/:id/activate", requirePermission("service_cases.manage"), async (c) => {
+app.patch("/profiles/:id/activate", requirePageAccess("service_cases.settings", "full"), async (c) => {
   const userId = (c as any).get?.("userId") ?? 0;
   const id = parseInt(c.req.param("id"), 10);
   if (isNaN(id)) return c.json({ error: "bad id" }, 400);
@@ -199,7 +199,7 @@ app.patch("/profiles/:id/activate", requirePermission("service_cases.manage"), a
 // Used by the Lead Time portal to render the "Scheduled activations"
 // panel — every row that hasn't fired or been cancelled yet.
 
-app.get("/scheduled", requirePermission("service_cases.read"), async (c) => {
+app.get("/scheduled", requireAnyAccess(["service_cases.settings"], ["service_cases.read"]), async (c) => {
   const rows = await c.env.DB.prepare(
     `SELECT s.id, s.profile_id, p.name AS profile_name,
             s.scheduled_for, s.scheduled_by, u.name AS scheduled_by_name,
@@ -213,7 +213,7 @@ app.get("/scheduled", requirePermission("service_cases.read"), async (c) => {
   return c.json({ data: rows.results ?? [] });
 });
 
-app.delete("/scheduled/:id", requirePermission("service_cases.manage"), async (c) => {
+app.delete("/scheduled/:id", requirePageAccess("service_cases.settings", "full"), async (c) => {
   const userId = (c as any).get?.("userId") ?? 0;
   const id = parseInt(c.req.param("id"), 10);
   if (isNaN(id)) return c.json({ error: "bad id" }, 400);
@@ -245,7 +245,7 @@ app.delete("/scheduled/:id", requirePermission("service_cases.manage"), async (c
 // Paginated. Each row is one actual activation event (manual or
 // scheduled-fired), joined to user + profile names for display.
 
-app.get("/activations", requirePermission("service_cases.read"), async (c) => {
+app.get("/activations", requireAnyAccess(["service_cases.settings"], ["service_cases.read"]), async (c) => {
   const page = parseInt(c.req.query("page") || "1", 10);
   const perPage = Math.min(parseInt(c.req.query("per_page") || "50", 10), 200);
   const offset = (page - 1) * perPage;
@@ -290,7 +290,7 @@ app.get("/activations", requirePermission("service_cases.read"), async (c) => {
 // transition prefers priority targets over the active profile, so
 // editing here flexes Urgent / Low without flipping the global profile.
 
-app.get("/priority-targets", requirePermission("service_cases.read"), async (c) => {
+app.get("/priority-targets", requireAnyAccess(["service_cases.settings"], ["service_cases.read"]), async (c) => {
   const priorities = await c.env.DB.prepare(
     `SELECT id, slug, name, sort_order
        FROM assr_priorities
@@ -315,7 +315,7 @@ app.get("/priority-targets", requirePermission("service_cases.read"), async (c) 
 // per-priority cells can be missing (the lookup falls back to the
 // profile), so this handler INSERTs when no row exists and UPDATEs
 // otherwise. Reason ≥ 10 chars enforced for the audit trail.
-app.patch("/priority-targets", requirePermission("service_cases.manage"), async (c) => {
+app.patch("/priority-targets", requirePageAccess("service_cases.settings", "full"), async (c) => {
   const body = await c.req.json<{
     priority_id?: number;
     stage?: string;
@@ -359,7 +359,7 @@ app.patch("/priority-targets", requirePermission("service_cases.manage"), async 
   return c.json({ ok: true, before_days: beforeDays, after_days: newDays });
 });
 
-app.patch("/targets/:id", requirePermission("service_cases.manage"), async (c) => {
+app.patch("/targets/:id", requirePageAccess("service_cases.settings", "full"), async (c) => {
   const userId = (c as any).get?.("userId") ?? 0;
   const id = parseInt(c.req.param("id"), 10);
   if (isNaN(id)) return c.json({ error: "bad id" }, 400);
@@ -402,7 +402,7 @@ app.patch("/targets/:id", requirePermission("service_cases.manage"), async (c) =
 // Paginated audit log. Defaults to all profiles; pass ?profile_id=N
 // to scope to one.
 
-app.get("/amendments", requirePermission("service_cases.read"), async (c) => {
+app.get("/amendments", requireAnyAccess(["service_cases.settings"], ["service_cases.read"]), async (c) => {
   const profileId = c.req.query("profile_id");
   const page = parseInt(c.req.query("page") || "1", 10);
   const perPage = Math.min(parseInt(c.req.query("per_page") || "50", 10), 200);
@@ -446,7 +446,7 @@ app.get("/amendments", requirePermission("service_cases.read"), async (c) => {
 
 // ── Catalogue (referenced by frontend for stage labels) ─────────────
 
-app.get("/stages", requirePermission("service_cases.read"), (c) => {
+app.get("/stages", requireAnyAccess(["service_cases.settings"], ["service_cases.read"]), (c) => {
   return c.json({ stages: STAGES });
 });
 

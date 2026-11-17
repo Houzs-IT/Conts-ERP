@@ -48,7 +48,7 @@ export default function FinancialsTab({ unitId, month }: { unitId: string; month
     <>
       <Card>
         <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
-          <span className="text-[16px] font-semibold tracking-[-0.01em]">Owner statement · {period}</span>
+          <span className="text-[15px] font-semibold tracking-[-0.01em]">Owner statement · {period}</span>
           <span className="text-meta text-muted-ink [text-wrap:pretty]">
             Every line of the owner statement for this unit, by its income model: the reservations split by night into the month, each cost the owner pays (nil ones too), the operator's share and the payout.
             {d?.current ? ' The month is not closed yet, so the figures still move.' : ''}
@@ -59,7 +59,7 @@ export default function FinancialsTab({ unitId, month }: { unitId: string; month
       {(d?.companyPnl || !d) && (
         <Card>
           <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line-soft)] flex flex-col gap-1">
-            <span className="text-[16px] font-semibold tracking-[-0.01em]">The Conts' P&amp;L · {period}</span>
+            <span className="text-[15px] font-semibold tracking-[-0.01em]">The Conts' P&amp;L · {period}</span>
             <span className="text-meta text-muted-ink [text-wrap:pretty]">What The Conts keeps or pays on this unit. On a guaranteed-rent unit: every reservation and every cost on the unit, whoever paid it, under the fixed rent to the owner. Costs paid by The Conts, a tenant or a guest never reach the owner statement.</span>
           </div>
           {d?.companyPnl ? <PnlTable rows={d.companyPnl} /> : loading}

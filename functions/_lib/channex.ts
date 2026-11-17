@@ -110,8 +110,8 @@ export function channexGuestReview(env: Env, reviewId: string, p: {
 
 /** Whole-currency-unit rate (e.g. 150.00), not sen — confirmed against the demo property. */
 /** One ARI call carrying every value in the batch — the only way the outbox (channexQueue.ts) talks to Channex. */
-export function channexSendAri(env: Env, kind: 'availability' | 'restrictions', values: Record<string, unknown>[]) {
-  return channexFetch<{ data?: { id: string; type: string }[] }>(env, `/${kind}`, { method: 'POST', body: JSON.stringify({ values }) });
+export function channexSendAri(env: Env, kind: 'availability' | 'restrictions', values: Record<string, unknown>[], signal?: AbortSignal) {
+  return channexFetch<{ data?: { id: string; type: string }[] }>(env, `/${kind}`, { method: 'POST', body: JSON.stringify({ values }), signal });
 }
 
 

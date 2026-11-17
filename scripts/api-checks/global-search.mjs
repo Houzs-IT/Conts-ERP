@@ -243,10 +243,11 @@ r = await search(tag, 'operations_staff');
 check('staff with Warehouse only find stock documents and no consignment documents', has(r.hits, 'stock_transfer') && has(r.hits, 'stock_take') && has(r.hits, 'stock_adjustment') && !has(r.hits, 'consignment_order'), JSON.stringify([...new Set(r.hits.map(h => h.kind))]));
 await setLevel('scWarehouse', 'none');
 await setLevel('reservations', 'none');
+await setLevel('guests', 'none');
 await sleep(11_000);
 r = await search(tag, 'operations_staff');
 check('no supply chain area at all: no supply chain results and no notice', !r.hits.some(h => !['unit', 'building', 'maintenance', 'cleaning', 'owner'].includes(h.kind)), JSON.stringify([...new Set(r.hits.map(h => h.kind))]));
-for (const k of ['scSales', 'scProcurement', 'scInvoices', 'serviceCases', 'projects', 'reservations', 'scConsignment', 'scWarehouse']) await setLevel(k, null);
+for (const k of ['scSales', 'scProcurement', 'scInvoices', 'serviceCases', 'projects', 'reservations', 'guests', 'scConsignment', 'scWarehouse']) await setLevel(k, null);
 await sql`update pos.departments set side = ${sides.department} where id = ${pos.department_id}`;
 await sql`update pos.users set side = ${sides.person} where email = 'weiwen@theconts.com'`;
 

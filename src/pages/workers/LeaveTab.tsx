@@ -6,6 +6,8 @@ import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Modal } from '../../components/Modal';
+import { KeyFacts } from '../../components/KeyFacts';
+import { PhoneCard } from '../../components/ListToolbar';
 import { Field } from '../../components/Field';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
@@ -88,9 +90,9 @@ export default function LeaveTab() {
       </div>
 
       <div className="flex flex-col gap-5">
-        <section className="bg-card rounded-card border border-solid border-line">
+        <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)]">
           <div className="pt-5 pb-3 px-5 flex items-baseline justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
-            <span className="text-[16px] font-semibold tracking-[-0.01em]">Waiting for a decision <span className="text-meta text-muted-ink font-normal tabular-nums">{pending.length}</span></span>
+            <span className="text-heading font-bold tracking-[-0.005em]">Waiting for a decision <span className="text-meta text-muted-ink font-normal tabular-nums">{pending.length}</span></span>
             <span className="text-meta text-muted-ink">Approving takes the days from their balance. The person is told on their phone.</span>
           </div>
           {loading && !data && <p className="m-0 px-5 py-4 text-copy text-muted-ink">Loading…</p>}
@@ -120,19 +122,19 @@ export default function LeaveTab() {
           pageSize={0} noun={['person', 'people']} exportName={`leave-balances-${year}`}
           header={
             <div className="pt-5 pb-3 px-5 flex items-baseline justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Balances {year}</span>
+              <span className="text-heading font-bold tracking-[-0.005em]">Balances {year}</span>
               <span className="text-meta text-muted-ink">By the Employment Act for their years of service, unless their employee record sets a number.</span>
             </div>
           }
           empty={{ title: 'No in-house staff yet.', body: 'Add an internal cleaner or an in-house technician first.' }}
-          renderCard={p => (
-            <span className="flex flex-col gap-[3px]">
-              <span className="text-copy font-semibold">{p.employee.name}</span>
-              <span className="text-meta text-muted-ink tabular-nums flex gap-x-3 flex-wrap">
-                {p.balances.map(b => <span key={b.type} className={b.left < 0 ? 'text-danger' : ''}>{LEAVE_TYPE_LABEL[b.type]}: {b.left} of {b.allowance} left</span>)}
-              </span>
-            </span>
-          )}
+          renderCard={p => {
+            const annual = p.balances.find(b => b.type === 'annual');
+            return (
+              <PhoneCard title={p.employee.name}
+                right={annual ? <span className={annual.left < 0 ? 'text-danger' : undefined}>{annual.left} / {annual.allowance}</span> : undefined}
+                meta={p.balances.map(b => `${LEAVE_TYPE_LABEL[b.type]} ${b.left} of ${b.allowance} left`).join(' · ')} />
+            );
+          }}
         />
 
         <DataTable<Request>
@@ -140,22 +142,21 @@ export default function LeaveTab() {
           pageSize={0} noun={['request', 'requests']} exportName={`leave-requests-${year}`}
           header={
             <div className="pt-5 pb-3 px-5 [border-bottom:1px_solid_var(--color-line-soft)]">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">All requests {year}</span>
+              <span className="text-heading font-bold tracking-[-0.005em]">All requests {year}</span>
             </div>
           }
           empty={{ title: 'No leave this year.', body: 'Requests from the portal show here.' }}
           renderCard={l => (
-            <span className="flex flex-col gap-[3px]">
-              <span className="flex items-center gap-2 flex-wrap"><span className="text-copy font-semibold">{l.name}</span><StatusBadge entity="leave" value={l.status} size="sm" /></span>
-              <span className="text-meta text-muted-ink">{LEAVE_TYPE_LABEL[l.type]} · {span(l)} · {days(l.chargeable)}</span>
-            </span>
+            <PhoneCard title={l.name} right={days(l.chargeable)}
+              meta={`${LEAVE_TYPE_LABEL[l.type]} · ${span(l)}`}
+              badge={<StatusBadge entity="leave" value={l.status} size="sm" />} />
           )}
         />
 
-        <section className="bg-card rounded-card border border-solid border-line">
+        <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)]">
           <div className="pt-5 pb-3 px-5 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
             <span className="flex flex-col gap-0.5">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Public holidays</span>
+              <span className="text-heading font-bold tracking-[-0.005em]">Public holidays</span>
               <span className="text-meta text-muted-ink">Not taken from anyone's leave. Payroll pays work on these days at the holiday rate.</span>
             </span>
             {mayDecide && data && <Button size="sm" variant="secondary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setEditingHolidays(true)}>Edit list</Button>}
@@ -197,13 +198,14 @@ function DecideModal({ leave, decision, onClose, onDone }: { leave: Request; dec
 
   return (
     <Modal title={decision === 'approve' ? 'Approve leave?' : withdrawing ? 'Withdraw approved leave?' : 'Reject leave?'}
-      sub={`${leave.name} · ${LEAVE_TYPE_LABEL[leave.type]} · ${span(leave)} · ${days(leave.chargeable)}`} onClose={onClose}
+      eyebrow="Leave" size="sm" sub={leave.name} onClose={onClose}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button size="sm" variant={decision === 'approve' ? 'primary' : 'danger'} onClick={() => void send()} disabled={busy}>
           {busy ? 'Saving…' : decision === 'approve' ? 'Approve' : withdrawing ? 'Withdraw' : 'Reject'}
         </Button>
       </>}>
+      <KeyFacts items={[['Type', LEAVE_TYPE_LABEL[leave.type]], ['Days', days(leave.chargeable)], ['When', span(leave)]]} cols={leave.startDate === leave.endDate ? 3 : 2} />
       <Field label={decision === 'approve' ? 'Note to them (optional)' : 'Why (they see this)'} value={note} onChange={e => setNote(e.target.value)}
         placeholder={decision === 'approve' ? 'Enjoy the break' : 'Too many people off that week'} error={error} />
     </Modal>
@@ -213,7 +215,7 @@ function DecideModal({ leave, decision, onClose, onDone }: { leave: Request; dec
 /** The company's one public holiday list (shared with Pricing): leave balances leave out the ones marked Staff day off. */
 function HolidaysModal({ onDone }: { onDone: () => void }) {
   return (
-    <Modal title="Public holidays" sub="One list for the whole company, kept here and on Pricing. Balances leave out the ones marked Staff day off." onClose={onDone} width={720}
+    <Modal title="Public holidays" eyebrow="Leave" size="lg" sub="One list for the whole company, kept here and on Pricing. Balances leave out the ones marked Staff day off." onClose={onDone}
       footer={<Button size="sm" variant="primary" onClick={onDone}>Done</Button>}>
       <Suspense fallback={<TableSkeleton rows={4} cols={3} />}><HolidayList compact /></Suspense>
     </Modal>

@@ -60,7 +60,7 @@ function TotalsLine({ rows }: { rows: JobTotals[] }) {
 function SectionHeading({ title, note }: { title: string; note: string }) {
   return (
     <span className="flex flex-col gap-0.5 pt-2">
-      <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
+      <span className="text-heading font-bold tracking-[-0.005em]">{title}</span>
       <span className="text-meta text-muted-ink">{note}</span>
     </span>
   );
@@ -105,9 +105,9 @@ export default function EmployeePerformanceTab() {
   return (
     <div className="flex flex-col gap-5">
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
-      <section className="bg-card rounded-card border border-solid border-line px-5 py-4 flex flex-col gap-3">
+      <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] px-5 py-4 flex flex-col gap-3">
         <span className="flex flex-col gap-0.5">
-          <span className="text-[16px] font-semibold tracking-[-0.01em]">Employee Performance</span>
+          <span className="text-heading font-bold tracking-[-0.005em]">Employee Performance</span>
           <span className="text-meta text-muted-ink">Repairs and cleaning jobs each in-house person finished, by the day the job was done, against the Standard Times cards. A job with two people counts for both.</span>
         </span>
         <RangeControls from={from} to={to} set={set} />

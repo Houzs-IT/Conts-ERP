@@ -1,0 +1,4 @@
+/* Calendar stay bars (Conts DS v2, owner 12 Nov 2026): a soft tint of the channel colour, 14% on light and 24% on
+   dark so the bar reads on both, with the channel colour as a 3px left edge. Used by ReservationBar's barStyle. */
+:root { --stay-tint: 14%; }
+:root[data-theme="theconts-dark"], :root[data-theme="dark"] { --stay-tint: 24%; }

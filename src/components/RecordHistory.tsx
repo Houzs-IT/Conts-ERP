@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, errorMessage } from '../lib/api';
-import { rm, date, dateTime, humanize, titleCase, monthLabel, count, plural } from '../lib/format';
+import { rm, date, dateTime, humanize, monthLabel, count, plural, personName } from '../lib/format';
 import { ROLE_LABEL, CHANNEL } from '../lib/vocabulary';
 import { Skeleton } from './States';
 import { StaleBanner } from './DataState';
@@ -148,7 +148,7 @@ function show(k: string, v: unknown, names: Record<string, string>, types: reado
     if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return date(v);
     if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) return dateTime(v);
     if (kind === 'text' && /^[a-z]+(_[a-z]+)+$/.test(v)) return humanize(v);
-    return v.length > 160 ? `${v.slice(0, 160)}...` : (k === 'owner' || k === 'displayName' ? titleCase(v) : v);
+    return v.length > 160 ? `${v.slice(0, 160)}...` : (k === 'owner' || k === 'displayName' ? personName(v) : v);
   }
   if (Array.isArray(v)) return v.map(x => (typeof x === 'string' ? x : JSON.stringify(x))).join(', ') || 'none';
   if (typeof v === 'number') return count(v);

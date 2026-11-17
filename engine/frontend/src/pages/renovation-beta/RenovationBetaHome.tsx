@@ -24,6 +24,7 @@ import { BetaMotion, SPRING } from "./betaMotion";
 import { DataTable } from "../../components/DataTable";
 import type { Column } from "../../components/dataTableTypes";
 import { fetchProjectSos, soColumns, type ProjectSo } from "./renovationBetaSoColumns";
+import { readBoardCache, writeBoardCache } from "./boardCache";
 
 const DASH = <span style={{ color: BETA.faint }}>–</span>;
 
@@ -113,6 +114,7 @@ function homeColumns(showPay: boolean): Column<TableRow>[] {
     ) },
     { key: "created", label: "Created", group: "Project", width: "120px", getValue: (x) => x.r.p.createdAt, render: (x) => (x.r.p.createdAt ? fmtDate(x.r.p.createdAt) : DASH),
       filterType: "date", dateValue: (x) => x.r.p.createdAt },
+    { key: "brand", label: "Brand", group: "Project", width: "170px", getValue: (x) => x.r.p.brand, render: (x) => x.r.p.brand ?? <span style={{ color: MUTED }}>Not set</span> },
     { key: "condition", label: "ID condition", group: "Project", width: "150px", getValue: (x) => x.r.word, render: (x) => <StatusCell r={x.r} /> },
     { key: "due", label: "Due", group: "Project", width: "120px", getValue: (x) => x.r.left, render: (x) => <DueCell r={x.r} /> },
     ...(showPay ? [{ key: "payment", label: "Payment", group: "Project", width: "220px", getValue: (x: TableRow) => x.r.p.payment,
@@ -126,7 +128,7 @@ function homeColumns(showPay: boolean): Column<TableRow>[] {
     { key: "client", label: "Client", group: "Project", width: "170px", defaultHidden: true, getValue: (x) => x.r.p.customer, render: (x) => x.r.p.customer ?? DASH },
     { key: "lead", label: "Design lead", group: "Project", width: "140px", defaultHidden: true, getValue: (x) => x.r.p.lead?.name, render: (x) => x.r.p.lead?.name ?? DASH },
   ];
-  return [...own, ...soColumns<TableRow>((x) => x.so)];
+  return [...own, ...soColumns<TableRow>((x) => x.so, (x) => x.r.p)];
 }
 
 /** The colours are set before anything else draws, so the loading line and an error already have them. */
@@ -142,9 +144,14 @@ export function RenovationBetaHome(): ReactElement {
 
 function HomeScreen(): ReactElement {
   const navigate = useNavigate();
-  const q = useQuery(boardKey(), () => boardApi.board(), []);
+  /* The last list shows at once and the server's answer replaces it (initialDataUpdatedAt 0 = always refetch). */
+  const [cachedBoard] = useState(() => readBoardCache<Awaited<ReturnType<typeof boardApi.board>>>("board"));
+  const [cachedSteps] = useState(() => readBoardCache<Awaited<ReturnType<typeof simpleApi.boardRows>>>("step-sla"));
+  const q = useQuery(boardKey(), async () => { const r = await boardApi.board(); writeBoardCache("board", r); return r; }, [],
+    cachedBoard ? { initialData: () => cachedBoard.data, initialDataUpdatedAt: () => 0 } : {});
   // Step and SLA come from the current project board, so both screens agree while they run side by side.
-  const steps = useQuery(["renovation-beta", "step-sla"], () => simpleApi.boardRows(), []);
+  const steps = useQuery(["renovation-beta", "step-sla"], async () => { const r = await simpleApi.boardRows(); writeBoardCache("step-sla", r); return r; }, [],
+    cachedSteps ? { initialData: () => cachedSteps.data, initialDataUpdatedAt: () => 0 } : {});
   const slaById = useMemo(() => new Map((steps.data?.data ?? []).map((r) => [r.id, r])), [steps.data]);
   const phone = useIsPhone();
   /* Every order in the company, for columns that start hidden: read only once one of them is showing. */
@@ -203,7 +210,7 @@ function HomeScreen(): ReactElement {
         <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: "-.02em" }}>All projects</h1>
         {can("projects.write") && (
           <button type="button" onClick={() => setCreating(true)}
-            style={{ position: "absolute", top: 0, right: 0, minHeight: 40, padding: "0 16px", border: 0, borderRadius: 999, background: BETA.ink, color: "#fff", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
+            style={{ position: "absolute", top: 0, right: 0, minHeight: 40, padding: "0 16px", border: 0, borderRadius: 999, background: BETA.ink, color: BETA.selInkText, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
             + New project
           </button>
         )}
@@ -229,7 +236,7 @@ function HomeScreen(): ReactElement {
             placeholder="Search name, building, unit, client, RN- code, SO no or person"
             value={query}
             onChange={(e) => setParam("q", e.target.value)}
-            style={{ width: "100%", minHeight: 46, padding: "0 40px 0 40px", border: `1px solid ${BETA.glassEdge}`, borderRadius: 999, background: BETA.field, boxShadow: BETA.btnGlassShadow, font: "inherit", fontSize: 15, color: BETA.ink, boxSizing: "border-box" }}
+            style={{ width: "100%", minHeight: 46, padding: "0 40px 0 40px", border: `1px solid ${BETA.border}`, borderRadius: 999, background: BETA.field, boxShadow: BETA.btnGlassShadow, font: "inherit", fontSize: 15, color: BETA.ink, boxSizing: "border-box" }}
           />
           {query && (
             <button type="button" aria-label="Clear the search" onClick={() => setParam("q", "")}
@@ -324,7 +331,7 @@ function PhoneCard({ r, sla, onOpen }: { r: HomeRow; sla: Sla; onOpen: () => voi
           <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
             <span style={{ alignSelf: "flex-start", padding: "1px 7px", borderRadius: 10, background: tagBg, color: tagInk, fontSize: 11, fontWeight: 600 }}>{p.tag.toUpperCase()}</span>
             <span style={{ fontWeight: 700, fontSize: 15, overflowWrap: "anywhere" }}>{p.title}</span>
-            {p.customer && <span style={{ fontWeight: 500, fontSize: 12, color: MUTED }}>{p.customer}</span>}
+            {(p.customer || p.brand) && <span style={{ fontWeight: 500, fontSize: 12, color: MUTED, overflowWrap: "anywhere" }}>{[p.customer, p.brand].filter(Boolean).join(" · ")}</span>}
           </span>
           <DueCell r={r} small />
         </span>

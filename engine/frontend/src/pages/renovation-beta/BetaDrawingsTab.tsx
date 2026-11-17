@@ -670,7 +670,7 @@ function WaitingView({ kind, v, p, busy, onEdit, onRemind, newSet, hasApproved }
           )}
         </li>
         <li style={card(`1px solid ${BETA.line}`, BETA.head, 14)}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{dot("transparent", "3", `2px solid ${BETA.border}`)}<span style={{ fontWeight: 700, color: WS.text2 }}>{is2d ? "Becomes the site set" : "Becomes the approved set"}</span></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{dot("transparent", <span style={{ color: WS.text2 }}>3</span>, `2px solid ${BETA.border}`)}<span style={{ fontWeight: 700, color: WS.text2 }}>{is2d ? "Becomes the site set" : "Becomes the approved set"}</span></div>
           <div style={{ fontSize: 13, color: BETA.muted }}>
             {hasApproved && own.length
               ? `The ${plural(own.length, `new ${word}`)} replace${own.length === 1 ? "s" : ""} the old ${own.length === 1 ? "one" : "ones"} in the set below. Nothing to upload again.`

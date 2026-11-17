@@ -5,8 +5,9 @@ import { EmptyState } from '../../components/States';
 import { StaleBanner, TableSkeleton } from '../../components/DataState';
 import { DateField } from '../../components/inputs/DateField';
 import { api, errorMessage } from '../../lib/api';
-import { count, plural } from '../../lib/format';
-import { useUrlState, SearchBox, FilterSelect, BusyBar } from '../finance/listKit';
+import { count, date, plural, buildingName } from '../../lib/format';
+import { useUrlState, FilterSelect, BusyBar } from '../finance/listKit';
+import { ListToolbar } from '../../components/ListToolbar';
 import { ReviewCard, type Review } from './ReviewCard';
 import { BAD_REVIEW_MAX, tagInfo } from '../../lib/reviewRules';
 
@@ -69,38 +70,38 @@ export function ReviewFeed({ bad, canReply, fixed }: { bad: boolean; canReply: b
   return (
     <>
       {bad && <p className="m-0 text-copy text-muted-ink">Every review of {BAD_REVIEW_MAX} stars or fewer, newest first.</p>}
-      <div className="grid grid-cols-2 md:flex md:flex-wrap gap-2">
-        <SearchBox className="col-span-2 md:flex-[2_1_240px]" label="Search reviews" placeholder="Search guest, unit, reservation or words in the review" value={f.q} onChange={v => set({ q: v || null })} />
-        <FilterSelect className="md:flex-[1_1_150px]" label="Channel" all="All channels" value={f.channel} onChange={v => set({ channel: v || null })} options={CHANNELS} />
-        <FilterSelect className="md:flex-[1_1_170px]" label="Building" all="All buildings" value={f.propertyId} onChange={v => set({ propertyId: v || null, unitId: null })}
-          options={(meta?.buildings ?? []).map(b => ({ value: b.id, label: b.label }))} />
-        <FilterSelect className="md:flex-[1_1_190px]" label="Unit" all="All units" value={f.unitId} onChange={v => set({ unitId: v || null })}
-          options={visibleUnits.map(u => ({ value: u.id, label: u.label }))} />
-        {!bad && (
-          <FilterSelect className="md:flex-[1_1_130px]" label="Rating" all="Any rating" value={f.rating} onChange={v => set({ rating: v || null })}
-            options={[5, 4, 3, 2, 1].map(n => ({ value: String(n), label: `${n} ${n === 1 ? 'star' : 'stars'}` }))} />
-        )}
-        <FilterSelect className="md:flex-[1_1_170px]" label="Reply" all="Any reply state" value={f.reply} onChange={v => set({ reply: v || null })}
-          options={[{ value: 'needs_reply', label: 'Needs reply' }, { value: 'replied', label: 'Replied' }, { value: 'not_posted', label: 'Saved, not posted' }]} />
-        <FilterSelect className="md:flex-[1_1_170px]" label="Show" all="Every review" value={f.hidden === '1' ? 'hidden' : f.lowClean === '1' ? 'lowClean' : ''}
-          onChange={v => set({ hidden: v === 'hidden' ? '1' : null, lowClean: v === 'lowClean' ? '1' : null })}
-          options={[{ value: 'hidden', label: 'Hidden until you review the guest' }, { value: 'lowClean', label: 'Low cleanliness' }]} />
-        <div className="md:w-[160px]"><DateField aria-label="Reviewed from" value={f.from} onChange={v => set({ from: v || null })} max={f.to || undefined} /></div>
-        <div className="md:w-[160px]"><DateField aria-label="Reviewed to" value={f.to} onChange={v => set({ to: v || null })} min={f.from || undefined} /></div>
-      </div>
-      <div className="flex items-center justify-between gap-3 flex-wrap text-meta text-muted-ink">
-        <span>{meta ? (rows && rows.length < meta.total ? `Showing ${count(rows.length)} of ${plural(meta.total, bad ? 'bad review' : 'review')}` : plural(meta.total, bad ? 'bad review' : 'review')) : 'Loading…'}</span>
-        <span className="flex items-center gap-3">
-          <button type="button" onClick={() => set({ matched: f.matched === 'no' ? null : 'no' })}
-            className="bg-transparent border-none p-0 cursor-pointer text-ink-2 underline [font-family:inherit] text-meta">
-            {f.matched === 'no' ? 'Show every review' : 'Only reviews with no reservation matched'}
-          </button>
-          {f.tag && <span className="text-ink">Tag: {tagInfo(f.tag).label}</span>}
-          {filtered && <button type="button" onClick={() => set({ q: null, channel: null, propertyId: null, unitId: null, rating: null, reply: null, from: null, to: null, matched: null, hidden: null, tag: null, lowClean: null })}
-            className="bg-transparent border-none p-0 cursor-pointer text-ink-2 underline [font-family:inherit] text-meta">Clear filters</button>}
-        </span>
-      </div>
-
+      <ListToolbar
+        search={{ value: f.q, onChange: v => set({ q: v.trim() || null }), placeholder: 'Search guest, unit, reservation or words in the review', label: 'Search reviews' }}
+        leading={<FilterSelect className="flex-[0_1_190px] min-w-[150px]" label="Unit" all="All units" value={f.unitId} onChange={v => set({ unitId: v || null })}
+          options={visibleUnits.map(u => ({ value: u.id, label: u.label }))} />}
+        filters={[
+          { key: 'channel', label: 'Channel', value: f.channel, onChange: v => set({ channel: v || null }), allLabel: 'All channels', options: CHANNELS },
+          { key: 'building', label: 'Building', value: f.propertyId, onChange: v => set({ propertyId: v || null, unitId: null }), allLabel: 'All buildings',
+            options: (meta?.buildings ?? []).map(b => ({ value: b.id, label: buildingName(b.label) })) },
+          ...(!bad ? [{ key: 'rating', label: 'Rating', value: f.rating, onChange: (v: string) => set({ rating: v || null }), allLabel: 'Any rating',
+            options: [5, 4, 3, 2, 1].map(n => ({ value: String(n), label: `${n} ${n === 1 ? 'star' : 'stars'}` })) }] : []),
+          { key: 'reply', label: 'Reply', value: f.reply, onChange: v => set({ reply: v || null }), allLabel: 'Any reply state',
+            options: [{ value: 'needs_reply', label: 'Needs reply' }, { value: 'replied', label: 'Replied' }, { value: 'not_posted', label: 'Saved, not posted' }] },
+          { key: 'show', label: 'Show', value: f.hidden === '1' ? 'hidden' : f.lowClean === '1' ? 'lowClean' : '', allLabel: 'Every review',
+            onChange: v => set({ hidden: v === 'hidden' ? '1' : null, lowClean: v === 'lowClean' ? '1' : null }),
+            options: [{ value: 'hidden', label: 'Hidden until you review the guest' }, { value: 'lowClean', label: 'Low cleanliness' }] },
+          { key: 'matched', label: 'Reservation', value: f.matched, onChange: v => set({ matched: v || null }), allLabel: 'Every review',
+            options: [{ value: 'no', label: 'No reservation matched' }] },
+        ]}
+        panelExtra={<>
+          <h5 className="m-0 mb-1.5 text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">Reviewed</h5>
+          <div className="grid grid-cols-2 gap-1.5">
+            <DateField aria-label="Reviewed from" value={f.from} onChange={v => set({ from: v || null })} max={f.to || undefined} />
+            <DateField aria-label="Reviewed to" value={f.to} onChange={v => set({ to: v || null })} min={f.from || undefined} />
+          </div>
+        </>}
+        chips={[
+          ...(f.unitId ? [{ key: 'unit', label: `Unit: ${units.find(u => u.id === f.unitId)?.label ?? f.unitId}`, onRemove: () => set({ unitId: null }) }] : []),
+          ...(f.from || f.to ? [{ key: 'dates', label: `Reviewed: ${f.from ? date(f.from) : 'any'} to ${f.to ? date(f.to) : 'any'}`, onRemove: () => set({ from: null, to: null }) }] : []),
+          ...(f.tag ? [{ key: 'tag', label: `Tag: ${tagInfo(f.tag).label}`, onRemove: () => set({ tag: null }) }] : []),
+        ]}
+        count={<span className="tabular-nums">{meta ? (rows && rows.length < meta.total ? `Showing ${count(rows.length)} of ${plural(meta.total, bad ? 'bad review' : 'review')}` : plural(meta.total, bad ? 'bad review' : 'review')) : 'Loading reviews'}</span>}
+      />
       {error && <StaleBanner message={`Showing the last reviews we have. ${error}`} onRetry={() => load(1)} />}
       {rows === null ? (
         <Card><TableSkeleton rows={4} cols={3} /></Card>

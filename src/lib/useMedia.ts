@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 
 /** Subscribes to a media query and re-renders when it flips (window resize, rotation). */
 export function useMedia(query: string): boolean {
@@ -20,4 +20,17 @@ export function useNow(ms = 30000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), ms); return () => clearInterval(t); }, [ms]);
   return now;
+}
+
+/** Whether an element is at least `minWidthPx` wide, following its own size (a container query in JS). */
+export function useWidthAtLeast(element: HTMLElement | null, minWidthPx: number): boolean {
+  const [isWide, setIsWide] = useState(false);
+  useLayoutEffect(() => {
+    if (!element) return;
+    setIsWide(element.clientWidth >= minWidthPx);
+    const observer = new ResizeObserver(([entry]) => setIsWide(entry.contentRect.width >= minWidthPx));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element, minWidthPx]);
+  return isWide;
 }

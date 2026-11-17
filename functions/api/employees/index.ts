@@ -1,8 +1,8 @@
-import { mayWork } from '../../_lib/access';
+import { can, mayWork } from '../../_lib/access';
 import { type Env, one, run, json, fail, audit, nowIso, mytToday } from '../../_lib/db';
-import { requireSession, isFieldRole } from '../../_lib/auth';
-import { hasEmployees, listEmployees, findEmployee } from '../../_lib/hr';
-import { employeeInput, type Employee, type EmployeeInput } from '../../_lib/hrFields';
+import { requireSession, isFieldRole, type Session } from '../../_lib/auth';
+import { hasEmployees, listEmployees, findEmployee, hasRenovationDepartment, hasRenovatorBrand, isActiveRenovationBrand, saveRenovationPerson, moveIntoRenovation, isInRenovation } from '../../_lib/hr';
+import { employeeInput, renovationPersonInput, type Employee, type EmployeeInput, type RenovationPersonInput } from '../../_lib/hrFields';
 import { hasPayroll } from '../../_lib/payroll';
 
 const MANAGE = ['management']; // everyone else follows their level in HR (functions/_lib/access.ts)
@@ -35,9 +35,16 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     const fields = Object.fromEntries(parsed.error.issues.map(i => [String(i.path[0] ?? 'form'), i.message]));
     return fail('VALIDATION', 'Some fields need a fix.', 422, fields);
   }
-  const by = { cleanerId: typeof b?.cleanerId === 'string' ? b.cleanerId : null, technicianId: typeof b?.technicianId === 'string' ? b.technicianId : null };
-  const before = await findEmployee(env, by);
-  if (!before) return fail('NOT_FOUND', 'That person is not an in-house cleaner or technician.', 404);
+  const renovation = isRenovationSave(b) ? await saveRenovationRoster(env, session, b) : null;
+  if (renovation instanceof Response) return renovation;
+  const by = {
+    cleanerId: typeof b?.cleanerId === 'string' ? b.cleanerId : null,
+    technicianId: typeof b?.technicianId === 'string' ? b.technicianId : null,
+    renovatorId: renovation?.renovatorId ?? null,
+  };
+  const found = await findEmployee(env, by);
+  if (!found) return fail('NOT_FOUND', 'That person is not an in-house cleaner, technician or Renovation employee.', 404);
+  const before = renovation?.isNew ? { ...found, id: null } : found;
 
   const e = parsed.data;
   // Resigned people keep their record; an active one has no last day.
@@ -55,7 +62,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     ['annual_leave_days', e.annualLeaveDays], ['medical_leave_days', e.medicalLeaveDays],
   ];
   const now = nowIso();
-  let id = before.id;
+  let id = found.id;
   if (id) {
     // Attach the other roster id if this person has since appeared on both lists and no other record holds it.
     const other = before.cleanerId && !(await one(env, 'SELECT 1 AS x FROM employees WHERE cleaner_id = ? AND id <> ?', before.cleanerId, id)) ? before.cleanerId : null;
@@ -88,6 +95,49 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   });
   return json({ data: after });
 };
+
+const isRenovationSave = (body: Record<string, unknown> | null): boolean =>
+  body?.department === 'renovation' || typeof body?.renovatorId === 'string';
+
+async function saveRenovationRoster(env: Env, session: Session, body: Record<string, unknown> | null): Promise<{ renovatorId: string; isNew: boolean } | Response> {
+  if (!(await hasRenovationDepartment(env))) return fail('NOT_MIGRATED', 'The Renovation department needs a database update (migration 0315) that has not been applied yet.', 503);
+  if (!(await hasRenovatorBrand(env))) return fail('NOT_MIGRATED', 'The Renovation brand needs a database update (migration 0324) that has not been applied yet.', 503);
+  const roster = renovationPersonInput.safeParse(body);
+  if (!roster.success) {
+    return fail('VALIDATION', 'Some fields need a fix.', 422, Object.fromEntries(roster.error.issues.map(i => [String(i.path[0] ?? 'form'), i.message])));
+  }
+  if (!(await isActiveRenovationBrand(env, roster.data.brandId))) {
+    return fail('VALIDATION', 'Some fields need a fix.', 422, { brandId: 'That brand is no longer in use. Pick another.' });
+  }
+  const askedId = typeof body?.renovatorId === 'string' ? body.renovatorId : null;
+  if (askedId && !(await findEmployee(env, { renovatorId: askedId }))) return fail('NOT_FOUND', 'That person is not in the Renovation department.', 404);
+  const movingFrom = askedId ? null : fieldRosterIdsOf(body);
+  if (movingFrom) return moveFromFieldRoster(env, session, movingFrom, roster.data);
+  return { renovatorId: await saveRenovationPerson(env, askedId, roster.data), isNew: !askedId };
+}
+
+function fieldRosterIdsOf(body: Record<string, unknown> | null): { cleanerId: string | null; technicianId: string | null } | null {
+  const cleanerId = typeof body?.cleanerId === 'string' ? body.cleanerId : null;
+  const technicianId = typeof body?.technicianId === 'string' ? body.technicianId : null;
+  return cleanerId || technicianId ? { cleanerId, technicianId } : null;
+}
+
+async function moveFromFieldRoster(env: Env, session: Session, by: { cleanerId: string | null; technicianId: string | null }, person: RenovationPersonInput): Promise<{ renovatorId: string; isNew: boolean } | Response> {
+  if (!can(session, 'cleaning', 'edit') && !can(session, 'maintenance', 'edit')) {
+    return fail('FORBIDDEN', 'Moving someone off Cleaning or Maintenance is for those who run the roster.', 403);
+  }
+  const from = await findEmployee(env, by);
+  if (!from) return fail('NOT_FOUND', 'That person is not an in-house cleaner or technician.', 404);
+  if (from.userId && await isInRenovation(env, from.userId)) {
+    return fail('VALIDATION', 'Some fields need a fix.', 422, { departments: 'Their app login is already on a Renovation entry. Switch that one on instead.' });
+  }
+  const renovatorId = await moveIntoRenovation(env, from, person);
+  await audit(env, {
+    actorId: session.userId, actorLabel: session.fullName, action: 'hr.employee_move_to_renovation', entityTable: 'renovators', entityId: renovatorId,
+    before: { cleanerId: from.cleanerId, technicianId: from.technicianId }, after: { renovatorId, brandId: person.brandId },
+  });
+  return { renovatorId, isNew: true };
+}
 
 /** The record as the audit trail keeps it: private numbers become "set" or "not set". */
 function forAudit(e: Employee): Record<string, unknown> {

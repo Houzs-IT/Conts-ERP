@@ -223,7 +223,7 @@ export const OtherDebtors = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Finance"
-        title="Other Debtors"
+        title="Other debtors"
         actions={canCreate ? (
           <button type="button" onClick={() => setPartyForm('new')}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--c-orange)', fontWeight: 600, cursor: 'pointer', fontSize: 'var(--fs-13)', background: 'none', border: 'none', padding: 0 }}>

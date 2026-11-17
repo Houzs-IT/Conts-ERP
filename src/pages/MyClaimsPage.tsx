@@ -1,23 +1,32 @@
 import { useMemo, useRef, useState } from 'react';
 import PageHeader from '../components/PageHeader';
-import { Card } from '../components/Card';
-import { Button } from '../components/Button';
+import { Card, FormSection } from '../components/Card';
+import { Button, ButtonLink } from '../components/Button';
 import { Field } from '../components/Field';
-import { Select, type SelectOption } from '../components/Select';
-import { Segmented } from '../components/Metric';
+import { ComboSelect, Select, type SelectOption } from '../components/Select';
+import { Segmented, StatTile } from '../components/Metric';
+import { ChoiceChips } from '../components/ChoiceChips';
+import { KeyFacts } from '../components/KeyFacts';
+import { MoneyLines } from '../components/MoneyLines';
+import { ListToolbar } from '../components/ListToolbar';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { StaleBanner } from '../components/DataState';
+import Icon from '../components/Icon';
+import { TONE, cx } from '../lib/design-tokens';
 import { DataTable, type Column } from '../components/DataTable';
 import { FileDropRow } from '../components/Attachments';
-import { MoneyText } from '../components/MoneyText';
 import { MoneyInput, DateField } from '../components/inputs';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
-import { monthLabel, rm, todayMyt } from '../lib/format';
+import { date, monthLabel, rm, todayMyt, buildingName } from '../lib/format';
 import {
-  DEPARTMENT, RECEIPT_STATUS, REQUEST_STATUS, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, thisMonthMyt,
-  type LineDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt,
+  DEPARTMENT, RECEIPT_STATUS, RECEIPT_TONE, REQUEST_STATUS, REQUEST_TONE, describeClaimLine, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, requestFileHref, thisMonthMyt,
+  type ClaimFile, type ClaimLine, type LineDepartment, type LineSubDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt,
 } from '../lib/claims';
+import { canResubmit, fixOnUtilityBills, lineDraftOf, reasonNote, wantedOnAgain } from '../lib/requestResubmit';
+import { balanceSen, billLabel, canAskBalance, onBill, updatedFromBill } from '../lib/requestApInvoice';
 
 /**
  * My claims (finance, 28-29 Oct 2026; SOP 3.2, 6): a member of staff hands something in and follows it, and, if they
@@ -29,10 +38,12 @@ import {
  */
 type Tab = 'handin' | 'mine' | 'float';
 type Kind = 'claim' | 'direct';
-type LineDraft = { where: 'none' | 'unit' | 'job' | 'project'; unitId: string; jobId: string; projectId: string; amountSen: number | null; description: string };
+/* subDepartmentId: '' starts the line on the person's own department (the engine fills it); else the one chosen (SOP 1.1, the department
+   starts as the person's and may be changed; chew 16 Nov 2026). */
+type LineDraft = { where: 'none' | 'unit' | 'job' | 'project'; unitId: string; jobId: string; projectId: string; amountSen: number | null; description: string; subDepartmentId: string };
 type Supplier = { id: string; code: string; name: string };
 
-const blankLine = (): LineDraft => ({ where: 'none', unitId: '', jobId: '', projectId: '', amountSen: null, description: '' });
+const blankLine = (): LineDraft => ({ where: 'none', unitId: '', jobId: '', projectId: '', amountSen: null, description: '', subDepartmentId: '' });
 const lastMonths = (n: number): SelectOption[] => {
   const [y, m] = thisMonthMyt().split('-').map(Number);
   return Array.from({ length: n }, (_, i) => {
@@ -45,57 +56,105 @@ const lastMonths = (n: number): SelectOption[] => {
 export default function MyClaimsPage() {
   const me = useApi<Me>('/claims/me');
   const [tab, setTab] = useState<Tab>('handin');
+  const [handInKind, setHandInKind] = useState<Kind>('claim');
+  const [mineMonth, setMineMonth] = useState(thisMonthMyt());
+  /* A withdrawn or rejected request being changed to send again (chew, 13 Nov 2026): the Hand in form, filled in. */
+  const [editing, setEditing] = useState<PaymentRequest | null>(null);
+  const startHandIn = (kind: Kind) => { setEditing(null); setHandInKind(kind); setTab('handin'); };
+  const startEdit = (q: PaymentRequest) => { setEditing(q); setTab('handin'); };
+  const showMine = (month: string) => { setEditing(null); setMineMonth(month); setTab('mine'); };
   const tabs = [
     { key: 'handin' as const, label: 'Hand in' },
     { key: 'mine' as const, label: 'Mine' },
     ...(me.data?.keepsFloat ? [{ key: 'float' as const, label: 'Petty cash I keep' }] : []),
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="flex flex-col gap-4">
       <PageHeader title="My claims" sub="Claim back what you paid, or ask finance to pay a supplier." />
-      {me.error && <Card style={{ padding: 16 }}>{me.error}</Card>}
-      <Segmented label="My claims" options={tabs} value={tab} onChange={setTab} />
-      {tab === 'handin' && me.data && <HandInForm me={me.data} onDone={() => setTab('mine')} />}
-      {tab === 'mine' && <Mine />}
+      {me.error && <StaleBanner message={me.error} onRetry={me.reload} />}
+      <Segmented label="My claims" options={tabs} value={tab} onChange={t => { if (t !== 'handin') setEditing(null); setTab(t); }} className="self-start" />
+      {tab === 'handin' && me.data && <HandInForm key={editing?.id ?? 'new'} me={me.data} initialKind={editing ? 'direct' : handInKind} editing={editing}
+        onDone={showMine} onCancelEdit={() => { setEditing(null); setTab('mine'); }} />}
+      {tab === 'mine' && <Mine month={mineMonth} onMonthChange={setMineMonth} onHandIn={startHandIn} onEdit={startEdit} />}
       {tab === 'float' && <KeptFloat />}
     </div>
   );
 }
 
-/** The cost lines: what it was for. The department is the person's (a maintenance job's is Rental); finance sets the account. */
-function LinesEditor({ lines, setLines, totalSen, department }: { lines: LineDraft[]; setLines: (l: LineDraft[]) => void; totalSen: number | null; department: LineDepartment }) {
+interface LineTargets {
+  unitOptions: SelectOption[];
+  jobOptions: SelectOption[];
+  projectOptions: SelectOption[];
+  /** The sub-departments, grouped by department, and the person's own (the one a line starts on). */
+  subOptions: SelectOption[];
+  mineSub: LineSubDepartment | null;
+}
+
+/** What a line can be for (units grouped by building, jobs with their unit, projects). */
+function useLineTargets(): LineTargets {
   const units = useApi<{ units: { id: string; building: string; unitNumber: string }[] }>('/claims/units');
   const jobs = useApi<{ jobs: { id: string; unitId: string; title: string }[] }>('/claims/jobs');
   const projects = useApi<{ projects: { id: number; code: string | null; name: string }[] }>('/claims/projects');
+  const subs = useApi<{ subDepartments: LineSubDepartment[]; mine: string | null }>('/claims/sub-departments');
+  return useMemo(() => {
+    const unitOptions = (units.data?.units ?? []).map(u => ({ value: u.id, label: `${buildingName(u.building)} ${u.unitNumber}`, group: buildingName(u.building) }));
+    const unitLabels = new Map(unitOptions.map(o => [o.value, o.label]));
+    const jobOptions = (jobs.data?.jobs ?? []).map(j => ({ value: j.id, label: j.title, hint: unitLabels.get(j.unitId) }));
+    const projectOptions = (projects.data?.projects ?? []).map(p => ({ value: String(p.id), label: [p.code, p.name].filter(Boolean).join(' ') }));
+    const list = subs.data?.subDepartments ?? [];
+    const mineSub = list.find(x => x.id === subs.data?.mine) ?? null;
+    const subOptions = list.map(x => ({ value: x.id, label: x.id === mineSub?.id ? `${x.name} (your department)` : x.name, group: DEPARTMENT[x.department] }));
+    return { unitOptions, jobOptions, projectOptions, subOptions, mineSub };
+  }, [units.data, jobs.data, projects.data, subs.data]);
+}
+
+/** The cost lines: what it was for, and the department: the person's own to start with, which they may change (SOP 1.1;
+ *  chew 16 Nov 2026). A maintenance job's line is the job's, Maintenance. Finance sets the account. */
+function LinesEditor({ lines, setLines, totalSen, department }: { lines: LineDraft[]; setLines: (l: LineDraft[]) => void; totalSen: number | null; department: LineDepartment }) {
+  const { unitOptions, jobOptions, projectOptions, subOptions, mineSub } = useLineTargets();
   const set = (i: number, patch: Partial<LineDraft>) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const split = lines.length > 1;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div className="flex flex-col gap-3">
       {lines.map((l, i) => (
-        <div key={i} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, alignItems: 'end', paddingTop: i ? 12 : 0, borderTop: i ? '1px solid var(--color-border-muted)' : undefined }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 'var(--text-small)', fontWeight: 600 }}>Department</span>
-            <span style={{ padding: '8px 0', color: 'var(--color-text-muted)' }}>
-              {l.where === 'job' ? `${DEPARTMENT.rental} (a maintenance job)` : `${DEPARTMENT[department]} (from your department)`}
-            </span>
-          </div>
-          <Select label="For" showLabel value={l.where} onChange={v => set(i, { where: v as LineDraft['where'] })}
+        <div key={i} className={cx('flex flex-col gap-3', i > 0 && 'pt-3 [border-top:1px_dashed_var(--color-line)]')}>
+          {split && (
+            <div className="flex items-center justify-between gap-2">
+              <b className="text-copy">Line {i + 1}</b>
+              <Button variant="ghost" size="sm" onClick={() => setLines(lines.filter((_, j) => j !== i))}>Remove</Button>
+            </div>
+          )}
+          {l.where === 'job' || subOptions.length === 0 ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-meta font-semibold text-ink">Department</span>
+              <span className="text-copy text-muted-ink">
+                {l.where === 'job' ? `${DEPARTMENT.rental} (a maintenance job)` : `${DEPARTMENT[department]} (from your department)`}
+              </span>
+            </div>
+          ) : (
+            <div className="sm:max-w-[360px]">
+              <ComboSelect label="Department" value={l.subDepartmentId || mineSub?.id || ''} onChange={v => set(i, { subDepartmentId: v === mineSub?.id ? '' : v })}
+                placeholder="Type a department" options={subOptions} />
+            </div>
+          )}
+          <ChoiceChips label="For" value={l.where} onChange={v => set(i, { where: v })}
             options={[{ value: 'none', label: 'The department' }, { value: 'unit', label: 'A unit' }, { value: 'job', label: 'A maintenance job' }, { value: 'project', label: 'A project' }]} />
-          {l.where === 'unit' && <Select label="Unit" showLabel value={l.unitId} onChange={v => set(i, { unitId: v })} placeholder="Choose the unit"
-            options={(units.data?.units ?? []).map(u => ({ value: u.id, label: `${u.building} ${u.unitNumber}` }))} />}
-          {l.where === 'job' && <Select label="Maintenance job" showLabel value={l.jobId} onChange={v => set(i, { jobId: v })} placeholder="Choose the job"
-            options={(jobs.data?.jobs ?? []).map(j => ({ value: j.id, label: j.title }))} />}
-          {l.where === 'project' && <Select label="Project" showLabel value={l.projectId} onChange={v => set(i, { projectId: v })} placeholder="Choose the project"
-            options={(projects.data?.projects ?? []).map(p => ({ value: String(p.id), label: [p.code, p.name].filter(Boolean).join(' ') }))} />}
-          <Field label="Description" value={l.description} onChange={e => set(i, { description: e.target.value })} placeholder="e.g. tap for the kitchen" maxLength={300} />
-          {split && <MoneyInput label="Amount" valueSen={l.amountSen} onChangeSen={v => set(i, { amountSen: v })} />}
-          {split && <Button variant="ghost" onClick={() => setLines(lines.filter((_, j) => j !== i))}>Remove</Button>}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+            {l.where === 'unit' && <ComboSelect label="Unit" value={l.unitId} onChange={v => set(i, { unitId: v })}
+              placeholder="Type a building or unit" options={unitOptions} />}
+            {l.where === 'job' && <ComboSelect label="Maintenance job" value={l.jobId} onChange={v => set(i, { jobId: v })}
+              placeholder="Type the job or its unit" options={jobOptions} />}
+            {l.where === 'project' && <ComboSelect label="Project" value={l.projectId} onChange={v => set(i, { projectId: v })}
+              placeholder="Type the project name or code" options={projectOptions} />}
+            <Field label="Description" value={l.description} onChange={e => set(i, { description: e.target.value })} placeholder="e.g. tap for the kitchen" maxLength={300} />
+            {split && <MoneyInput label="Amount" required valueSen={l.amountSen} onChangeSen={v => set(i, { amountSen: v })} />}
+          </div>
         </div>
       ))}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-        <Button variant="ghost" onClick={() => setLines([...lines.map((l, j) => (j === 0 && !split ? { ...l, amountSen: totalSen } : l)), blankLine()])}>Split across more lines</Button>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="ghost" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => setLines([...lines.map((l, j) => (j === 0 && !split ? { ...l, amountSen: totalSen } : l)), blankLine()])}>Split across more lines</Button>
         {split && totalSen != null && (
-          <span style={{ fontSize: 'var(--text-small)', color: 'var(--color-text-muted)' }}>
+          <span className="text-meta text-muted-ink tabular-nums">
             Lines add up to {rm(lines.reduce((n, l) => n + (l.amountSen ?? 0), 0))} of {rm(totalSen)}
           </span>
         )}
@@ -117,6 +176,7 @@ function toLines(lines: LineDraft[], totalSen: number): { ok: true; lines: NewLi
       amountSen, description: l.description.trim() || undefined,
       ...(l.where === 'unit' ? { unitId: l.unitId } : {}), ...(l.where === 'job' ? { maintenanceIssueId: l.jobId } : {}),
       ...(l.where === 'project' ? { projectId: Number(l.projectId) } : {}),
+      ...(l.where !== 'job' && l.subDepartmentId ? { subDepartmentId: l.subDepartmentId } : {}),
     });
   }
   if (out.reduce((n, l) => n + l.amountSen, 0) !== totalSen) return { ok: false, message: 'The lines must add up to the amount.' };
@@ -133,36 +193,34 @@ function SupplierPicker({ value, onChange, allowNotListed }: { value: Supplier |
     return (all.data?.suppliers ?? []).filter(s => words.every(w => `${s.code} ${s.name}`.toLowerCase().includes(w)));
   }, [all.data, q]);
   const pick = (s: Supplier | null) => { onChange(s); setOpen(false); setQ(''); };
-  const cell: React.CSSProperties = { padding: '8px 10px', borderBottom: '1px solid var(--color-border-muted)', textAlign: 'left', cursor: 'pointer' };
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 'var(--text-small)', fontWeight: 600 }}>Supplier</span>
-      <Button variant="secondary" onClick={() => setOpen(true)} aria-label="Supplier">
-        {value ? `${value.code} ${value.name}` : allowNotListed ? 'Choose the supplier, or not on the list…' : 'Choose the supplier…'}
-      </Button>
+    <div className="flex flex-col gap-1">
+      <span className="text-meta font-semibold text-ink">Supplier</span>
+      <button type="button" onClick={() => setOpen(true)} aria-label="Supplier"
+        className="h-[var(--control-height)] min-h-10 flex items-center justify-between gap-2 px-3 rounded-control border border-solid border-line-input bg-card font-sans text-copy text-left text-ink cursor-pointer hover:border-line-strong">
+        <span className={cx('truncate', !value && 'text-muted-ink')}>{value ? `${value.code} ${value.name}` : allowNotListed ? 'Choose the supplier, or not on the list' : 'Choose the supplier'}</span>
+        <Icon name="ChevronDown" size="sm" />
+      </button>
       {open && (
-        <Modal title="Choose the supplier" onClose={() => setOpen(false)} width={640} dirty={false} footer={<Button variant="ghost" onClick={() => setOpen(false)}>Close</Button>}>
+        <Modal title="Choose the supplier" eyebrow="My claims" size="md" onClose={() => setOpen(false)} dirty={false}
+          footer={<Button variant="secondary" size="sm" onClick={() => setOpen(false)}>Cancel</Button>}>
           <Field label="Search" value={q} onChange={e => setQ(e.target.value)} placeholder="Name or code" autoFocus />
-          <div style={{ maxHeight: '55vh', overflow: 'auto', marginTop: 12, border: '1px solid var(--color-border-muted)', borderRadius: 8 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr><th style={{ ...cell, cursor: 'default' }}>Code</th><th style={{ ...cell, cursor: 'default' }}>Name</th></tr></thead>
-              <tbody>
-                {allowNotListed && (
-                  <tr onClick={() => pick(null)} tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') pick(null); }}>
-                    <td style={cell} colSpan={2}><b>Not on the list</b> <span style={{ color: 'var(--color-text-muted)' }}>— type who is paid; finance checks them</span></td>
-                  </tr>
-                )}
-                {all.loading && <tr><td style={cell} colSpan={2}>Loading…</td></tr>}
-                {!all.loading && rows.length === 0 && <tr><td style={cell} colSpan={2}>No supplier matches.</td></tr>}
-                {rows.map(s => (
-                  <tr key={s.id} onClick={() => pick(s)} tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') pick(s); }}
-                    style={{ background: value?.id === s.id ? 'var(--color-surface-muted)' : undefined }}>
-                    <td style={{ ...cell, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{s.code}</td>
-                    <td style={cell}>{s.name}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-3 max-h-[55vh] overflow-auto rounded-control border border-solid border-line-soft">
+            {allowNotListed && (
+              <button type="button" onClick={() => pick(null)} className="w-full flex items-center justify-between gap-3 min-h-11 px-3 py-2 bg-transparent border-0 [border-bottom:1px_solid_var(--color-line-soft)] font-sans text-left cursor-pointer hover:bg-muted">
+                <span className="flex flex-col"><b className="text-copy">Not on the list</b><span className="text-meta text-muted-ink">Type who is paid; finance checks them</span></span>
+                <Icon name="ChevronRight" size="sm" />
+              </button>
+            )}
+            {all.loading && <div className="px-3 py-3 text-copy text-muted-ink">Loading suppliers</div>}
+            {!all.loading && rows.length === 0 && <div className="px-3 py-3 text-copy text-muted-ink">No supplier matches.</div>}
+            {rows.map(s => (
+              <button key={s.id} type="button" onClick={() => pick(s)} aria-pressed={value?.id === s.id}
+                className={cx('w-full flex items-center gap-3 min-h-10 px-3 py-2 border-0 [border-bottom:1px_solid_var(--color-line-soft)] font-sans text-copy text-left cursor-pointer hover:bg-muted', value?.id === s.id ? 'bg-muted' : 'bg-transparent')}>
+                <span className="font-mono text-meta text-muted-ink whitespace-nowrap">{s.code}</span>
+                <span className="min-w-0 truncate">{s.name}</span>
+              </button>
+            ))}
           </div>
         </Modal>
       )}
@@ -170,14 +228,19 @@ function SupplierPicker({ value, onChange, allowNotListed }: { value: Supplier |
   );
 }
 
-/** One form: Claim to me (I paid; pay me back) or Direct pay (finance pays a supplier). What both share stays when switching. */
-function HandInForm({ me, onDone }: { me: Me; onDone: () => void }) {
+/** One form: Claim to me (I paid; pay me back) or Direct pay (finance pays a supplier). What both share stays when switching.
+ *  With `editing`, a withdrawn or rejected request filled in as it was, to change and send again under its own number
+ *  (chew, 13 Nov 2026); its papers stay unless removed, and new ones can be added. */
+function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
+  me: Me; initialKind: Kind; onDone: (mineMonth: string) => void; editing?: PaymentRequest | null; onCancelEdit?: () => void;
+}) {
   const toast = useToast();
-  const [kind, setKind] = useState<Kind>('claim');
-  const [amountSen, setAmountSen] = useState<number | null>(null);
-  const [note, setNote] = useState('');
-  const [lines, setLines] = useState<LineDraft[]>([blankLine()]);
+  const [kind, setKind] = useState<Kind>(initialKind);
+  const [amountSen, setAmountSen] = useState<number | null>(editing?.amountSen ?? null);
+  const [note, setNote] = useState(editing?.note ?? '');
+  const [lines, setLines] = useState<LineDraft[]>(editing?.lines.length ? editing.lines.map(lineDraftOf) : [blankLine()]);
   const [files, setFiles] = useState<File[]>([]);
+  const [kept, setKept] = useState<ClaimFile[]>(editing?.files ?? []);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   /* Claim to me */
@@ -185,13 +248,13 @@ function HandInForm({ me, onDone }: { me: Me; onDone: () => void }) {
   const [spendDate, setSpendDate] = useState(todayMyt());
   const [vendorName, setVendorName] = useState('');
   /* Direct pay */
-  const [type, setType] = useState<'PAYMENT' | 'DEPOSIT'>('PAYMENT');
-  const [supplier, setSupplier] = useState<Supplier | null>(null);
+  const [type, setType] = useState<'PAYMENT' | 'DEPOSIT'>(editing?.type ?? 'PAYMENT');
+  const [supplier, setSupplier] = useState<Supplier | null>(editing?.supplierId && !editing.purchaseOrderId ? { id: editing.supplierId, code: '', name: editing.payeeName } : null);
   const [poSearch, setPoSearch] = useState('');
-  const [po, setPo] = useState<{ id: string; label: string } | null>(null);
+  const [po, setPo] = useState<{ id: string; label: string } | null>(editing?.purchaseOrderId ? { id: editing.purchaseOrderId, label: 'The PO on this request' } : null);
   const poId = po?.id ?? '';
-  const [payeeName, setPayeeName] = useState('');
-  const [wantedOn, setWantedOn] = useState('');
+  const [payeeName, setPayeeName] = useState(editing && !editing.supplierId ? editing.payeeName : '');
+  const [wantedOn, setWantedOn] = useState(wantedOnAgain(editing?.wantedOn ?? null, todayMyt()));
   const pq = poSearch.trim();
   const pos = useApi<{ purchaseOrders: { id: string; poNumber: string; status: string; totalSen: number }[] }>(kind === 'direct' && pq.length >= 2 ? `/claims/purchase-orders?q=${encodeURIComponent(pq)}` : null);
 
@@ -245,7 +308,7 @@ function HandInForm({ me, onDone }: { me: Me; onDone: () => void }) {
     if (kind === 'claim' && files.length === 0) return setProblem('Add a photo of the receipt.');
     if (kind === 'direct') {
       if (!supplier && !poId && (type === 'DEPOSIT' || !payeeName.trim())) return setProblem(type === 'DEPOSIT' ? 'A deposit is paid to a supplier on the list.' : 'Choose the supplier, a PO, or type who is paid.');
-      if (files.length === 0) return setProblem('Add the invoice, receipt or quotation.');
+      if (files.length + kept.length === 0) return setProblem('Add the invoice, receipt or quotation.');
     }
     const built = toLines(lines, amountSen);
     if (!built.ok) return setProblem(built.message);
@@ -256,106 +319,377 @@ function HandInForm({ me, onDone }: { me: Me; onDone: () => void }) {
           { spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: built.lines }, files);
         toast({ tone: 'success', title: `Receipt ${made.receiptNo} handed in`, body: made.route === 'float' ? 'Your department\'s petty cash pays you back.' : 'Finance pays you back by transfer.' });
       } else {
-        const made = await postWithFiles<{ requestNo: string }>('/claims/requests', {
+        const body = {
           type, supplierId: poId ? undefined : supplier?.id, purchaseOrderId: poId || undefined, payeeName: !poId && !supplier ? payeeName.trim() || undefined : undefined,
           amountSen, wantedOn: wantedOn || undefined, note: note.trim() || undefined, lines: built.lines,
-        }, files);
-        toast({ tone: 'success', title: `Request ${made.requestNo} sent to finance` });
+        };
+        if (editing) {
+          await postWithFiles<{ requestNo: string }>(`/claims/requests/${editing.id}/resubmit`, { ...body, keepFileIds: kept.map(f => f.id) }, files);
+          toast({ tone: 'success', title: `Request ${editing.requestNo} sent to finance again` });
+        } else {
+          const made = await postWithFiles<{ requestNo: string }>('/claims/requests', body, files);
+          toast({ tone: 'success', title: `Request ${made.requestNo} sent to finance` });
+        }
       }
-      onDone();
+      onDone(kind === 'claim' ? spendDate.slice(0, 7) : thisMonthMyt());
     } catch (e) { setProblem(errorMessage(e)); } finally { setBusy(false); }
   }
 
-  return (
-    <Card style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <Segmented label="What is this?" options={[{ key: 'claim' as const, label: 'Claim to me' }, { key: 'direct' as const, label: 'Direct pay' }]} value={kind} onChange={switchKind} />
-      {kind === 'claim' ? (
-        <>
-          <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>
-            I paid. {me.route === 'float' ? 'Your department\'s petty cash pays you back.' : 'Your department has no petty cash: finance pays you back by bank transfer.'}
-          </p>
-          <FileDropRow label="Add the receipt" hint="Photos or a PDF. The amount is read from it; check it before you send." accept="image/*,application/pdf" multiple
-            onPick={l => void pick(l)} busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-            <DateField label="Date on the receipt" value={spendDate} onChange={v => { setSpendDate(v); dateTyped.current = true; }} max={todayMyt()} />
-            <MoneyInput label="Amount" valueSen={amountSen} onChangeSen={setAmountSen} />
-            <Field label="Shop (optional)" value={vendorName} onChange={e => setVendorName(e.target.value)} maxLength={200} />
-          </div>
-        </>
-      ) : (
-        <>
-          <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>Finance pays a supplier.</p>
-          <Segmented label="What to pay" options={[{ key: 'PAYMENT' as const, label: 'A payment' }, { key: 'DEPOSIT' as const, label: 'A deposit' }]} value={type} onChange={setType} />
-          <span style={{ fontSize: 'var(--text-small)', color: 'var(--color-text-muted)' }}>
-            {type === 'PAYMENT' ? 'A bill to pay: an invoice or a receipt from the supplier.' : 'Paid before the bill, to a supplier on the list; their bill later is set off against it.'}
-          </span>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, alignItems: 'end' }}>
-            <Field label="Find a PO (optional)" value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="PO number" />
-            {/* The chosen PO stays an option when a new search no longer finds it, so the box never shows "Not against a
-                PO" while one is still chosen. */}
-            <Select label="Purchase order" showLabel value={poId} onChange={v => { const o = poOptions.find(x => x.value === v); setPo(o ? { id: o.value, label: o.label } : null); if (o) setSupplier(null); }}
-              options={[{ value: '', label: 'Not against a PO' }, ...poOptions]} />
-            {!poId && <SupplierPicker value={supplier} onChange={setSupplier} allowNotListed={type === 'PAYMENT'} />}
-            {!poId && !supplier && type === 'PAYMENT' && <Field label="Pay to (not on the list)" value={payeeName} onChange={e => setPayeeName(e.target.value)} maxLength={200} help="Finance checks the payee before paying." />}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-            <MoneyInput label="Amount" valueSen={amountSen} onChangeSen={setAmountSen} />
-            <DateField label="Pay by (optional)" value={wantedOn} onChange={setWantedOn} min={todayMyt()} />
-          </div>
-          <FileDropRow label="Add the invoice, receipt or quotation" hint="Photos or a PDF. Empty fields are filled from it; check them before you send." accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
-            busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
-        </>
-      )}
-      <LinesEditor lines={lines} setLines={setLines} totalSen={amountSen} department={me.lineDepartment} />
-      <Field label="Note" value={note} onChange={e => setNote(e.target.value)} maxLength={500} placeholder="Anything finance should know" />
-      {problem && <div role="alert" style={{ color: 'var(--color-critical-fg)' }}>{problem}</div>}
-      <div><Button disabled={busy || reading} onClick={() => void send()}>{busy ? 'Sending…' : kind === 'claim' ? 'Hand in' : 'Send to finance'}</Button></div>
+  const claim = kind === 'claim';
+  const summary = (
+    <Card className="p-4 flex flex-col gap-3 lg:sticky lg:top-0">
+      <span className="ds-eyebrow">Summary</span>
+      <KeyFacts cols={2} items={[
+        { label: 'Hand in as', value: claim ? 'Claim to me' : 'Direct pay' },
+        { label: 'Lines', value: String(lines.length) },
+        { label: 'Amount', value: amountSen ? rm(amountSen) : 'Not entered' },
+        { label: claim ? 'Paid back by' : 'Paid by', value: claim ? (me.route === 'float' ? 'Petty cash' : 'Finance, by transfer') : 'Finance, by transfer' },
+      ]} />
+      <p className="m-0 text-meta text-muted-ink">
+        {claim ? (me.route === 'float' ? 'Your department keeps petty cash, so it pays you back once the receipt is checked.' : 'Your department has no petty cash: finance pays you back by bank transfer.')
+          : 'Finance pays the supplier after checking the bill and the payee. Finance chooses the account while checking.'}
+      </p>
     </Card>
+  );
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4 items-start">
+      <Card className="p-4 sm:p-5 flex flex-col gap-4">
+        {editing ? (
+          <FormSection title={`Changing ${editing.requestNo}`} hint={editing.status === 'REJECTED' ? `Rejected${editing.decidedBy ? ` by ${editing.decidedBy}` : ''}` : 'Withdrawn'}>
+            <div className="flex flex-col gap-2">
+              {editing.reason && <Problem text={editing.reason} />}
+              <p className="m-0 text-meta text-muted-ink">Change what is wrong and send it again. It keeps its number, and finance sees it again.</p>
+              {onCancelEdit && <div><Button size="sm" variant="tertiary" onClick={onCancelEdit}>Keep it as it is</Button></div>}
+            </div>
+          </FormSection>
+        ) : (
+          <FormSection title="What is this" hint={claim ? 'I paid; pay me back' : 'Finance pays a supplier'}>
+            <ChoiceChips label="Hand in as" value={kind} onChange={switchKind} options={[{ value: 'claim', label: 'Claim to me' }, { value: 'direct', label: 'Direct pay' }]} />
+          </FormSection>
+        )}
+        {claim ? (
+          <section className="ds-fs">
+            <div className="ds-fs-h"><b>Receipt</b></div>
+            <div className="flex flex-col gap-3">
+              <FileDropRow label="Add the receipt" hint="Photos or a PDF. The amount is read from it; check it before you send." accept="image/*,application/pdf" multiple
+                onPick={l => void pick(l)} busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <DateField label="Date on the receipt" required value={spendDate} onChange={v => { setSpendDate(v); dateTyped.current = true; }} max={todayMyt()} />
+                <MoneyInput label="Amount" required valueSen={amountSen} onChangeSen={setAmountSen} />
+                <Field label="Shop (optional)" value={vendorName} onChange={e => setVendorName(e.target.value)} maxLength={200} />
+              </div>
+            </div>
+          </section>
+        ) : (
+          <>
+            <section className="ds-fs">
+              <div className="ds-fs-h"><b>Money and papers</b></div>
+              <div className="flex flex-col gap-3">
+                {kept.length > 0 && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-meta font-semibold text-ink">Papers on the request</span>
+                    {kept.map(f => (
+                      <div key={f.id} className="flex items-center justify-between gap-2 min-h-10 px-3 rounded-control border border-solid border-line-soft">
+                        <a href={requestFileHref(editing!.id, f.id)} target="_blank" rel="noreferrer" className="min-w-0 truncate text-copy text-primary font-medium">{f.fileName}</a>
+                        <Button size="sm" variant="tertiary" aria-label={`Remove ${f.fileName}`} onClick={() => setKept(k => k.filter(x => x.id !== f.id))}>Remove</Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <FileDropRow label={kept.length ? 'Add more papers (optional)' : 'Add the invoice, receipt or quotation'} hint="Photos or a PDF. Empty fields are filled from it; check them before you send." accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
+                  busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <MoneyInput label="Amount" required valueSen={amountSen} onChangeSen={setAmountSen} />
+                  <DateField label="Pay by (optional)" value={wantedOn} onChange={setWantedOn} min={todayMyt()} />
+                </div>
+              </div>
+            </section>
+            <section className="ds-fs">
+              <div className="ds-fs-h"><b>Who is paid</b></div>
+              <div className="flex flex-col gap-3">
+                <ChoiceChips label="What to pay" value={type} onChange={setType} options={[{ value: 'PAYMENT', label: 'A payment' }, { value: 'DEPOSIT', label: 'A deposit' }]}
+                  help={type === 'PAYMENT' ? 'A bill to pay: an invoice or a receipt from the supplier.' : 'Paid before the bill, to a supplier on the list; their bill later is set off against it.'} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                  <Field label="Find a PO (optional)" value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="PO number" />
+                  {/* The chosen PO stays an option when a new search no longer finds it, so the box never shows "Not against a
+                      PO" while one is still chosen. */}
+                  <Select label="Purchase order" showLabel value={poId} onChange={v => { const o = poOptions.find(x => x.value === v); setPo(o ? { id: o.value, label: o.label } : null); if (o) setSupplier(null); }}
+                    options={[{ value: '', label: 'Not against a PO' }, ...poOptions]} />
+                  {!poId && <SupplierPicker value={supplier} onChange={setSupplier} allowNotListed={type === 'PAYMENT'} />}
+                  {!poId && !supplier && type === 'PAYMENT' && <Field label="Pay to (not on the list)" value={payeeName} onChange={e => setPayeeName(e.target.value)} maxLength={200} help="Finance checks the payee before paying." />}
+                </div>
+              </div>
+            </section>
+          </>
+        )}
+        <section className="ds-fs">
+          <div className="ds-fs-h"><b>What it was for</b><span>{lines.length > 1 ? 'The lines must add up to the amount' : 'Finance chooses the account while checking'}</span></div>
+          <LinesEditor lines={lines} setLines={setLines} totalSen={amountSen} department={me.lineDepartment} />
+        </section>
+        <section className="ds-fs">
+          <div className="ds-fs-h"><b>Note</b></div>
+          <Field label="Anything finance should know (optional)" value={note} onChange={e => setNote(e.target.value)} maxLength={500} />
+        </section>
+        {problem && <div role="alert" className={cx('px-3 py-2 rounded-control text-copy', TONE.critical.bg, TONE.critical.text)}>{problem}</div>}
+        <div className="flex justify-end max-sm:[&>*]:w-full">
+          <Button variant="primary" loading={busy} disabled={reading} disabledReason="Reading the papers first." onClick={() => void send()}>{claim ? 'Hand in' : editing ? 'Send to finance again' : 'Send to finance'}</Button>
+        </div>
+      </Card>
+      <div className="max-lg:order-first max-lg:hidden">{summary}</div>
+    </div>
   );
 }
 
 function Files({ r }: { r: Receipt }) {
   if (!r.files.length) return <>—</>;
-  return <>{r.files.map((f, i) => <a key={f.id} href={receiptFileHref(r.id, f.id)} target="_blank" rel="noreferrer" style={{ marginRight: 8 }}>{f.mime === 'application/pdf' ? 'PDF' : 'Photo'}{r.files.length > 1 ? ` ${i + 1}` : ''}</a>)}</>;
+  return <>{r.files.map((f, i) => <a key={f.id} href={receiptFileHref(r.id, f.id)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="mr-2 text-primary font-medium">{f.mime === 'application/pdf' ? 'PDF' : 'Photo'}{r.files.length > 1 ? ` ${i + 1}` : ''}</a>)}</>;
 }
 
-function Mine() {
-  const [month, setMonth] = useState(thisMonthMyt());
+/* One paid through an AP invoice is changed on the invoice by finance, not withdrawn (chew, 15 Nov 2026). */
+const canWithdraw = (q: PaymentRequest) => q.status === 'SUBMITTED' && q.vouchers.length === 0 && !onBill(q);
+
+const receiptStatus = (receipt: Receipt) => ({ label: RECEIPT_STATUS[receipt.status], tone: RECEIPT_TONE[receipt.status] });
+const requestStatus = (request: PaymentRequest) => ({ label: REQUEST_STATUS[request.status], tone: REQUEST_TONE[request.status] });
+const paybackRoute = (receipt: Receipt) => (receipt.floatId ? 'Petty cash' : 'Finance, by transfer');
+const noReceiptsIn = (month: string) => `No receipts in ${monthLabel(month, { long: true })}`;
+
+function monthOptions(selectedMonth: string): SelectOption[] {
+  const recentMonths = lastMonths(12);
+  if (recentMonths.some(option => option.value === selectedMonth)) return recentMonths;
+  return [...recentMonths, { value: selectedMonth, label: monthLabel(selectedMonth, { long: true }) }];
+}
+
+function TableTitle({ title, count, note }: { title: string; count?: number; note?: string }) {
+  return (
+    <span className="flex items-center min-h-[34px] max-md:min-h-11 min-w-0 mr-1">
+      <span className="flex items-baseline gap-2 min-w-0">
+        <span className="text-heading font-semibold truncate">{title}</span>
+        {count !== undefined && <span className="text-meta text-muted-ink tabular-nums">{count}</span>}
+        {note && <span className="text-meta text-muted-ink whitespace-nowrap">· {note}</span>}
+      </span>
+    </span>
+  );
+}
+
+function MonthToolbar({ title, count, month, onMonthChange }: { title: string; count?: number; month: string; onMonthChange: (month: string) => void }) {
+  const months = useMemo(() => monthOptions(month), [month]);
+  return (
+    <ListToolbar bare className="w-full" leading={<TableTitle title={title} count={count} />}
+      date={{ label: 'Month', value: month, onChange: onMonthChange, presets: months.map(m => ({ value: m.value, label: String(m.label) })) }} />
+  );
+}
+
+function DetailLines({ lines, totalSen }: { lines: ClaimLine[]; totalSen: number }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <span className="ds-eyebrow">What it was for</span>
+      <MoneyLines lines={[
+        ...lines.map(l => ({ label: [describeClaimLine(l), l.description].filter(Boolean).join(' · '), sen: l.amountSen })),
+        ...(lines.length > 1 ? [{ label: 'Total', sen: totalSen, kind: 'total' as const }] : []),
+      ]} />
+    </section>
+  );
+}
+
+function NoteBlock({ text }: { text: string }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <span className="ds-eyebrow">Note</span>
+      <p className="m-0 text-copy text-ink whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</p>
+    </section>
+  );
+}
+
+function Papers({ files, hrefOf }: { files: ClaimFile[]; hrefOf: (fileId: string) => string }) {
+  if (files.length === 0) return null;
+  return (
+    <section className="flex flex-col gap-2">
+      <span className="ds-eyebrow">Papers</span>
+      <div className="flex flex-wrap gap-2">
+        {files.map(file => (
+          <ButtonLink key={file.id} href={hrefOf(file.id)} target="_blank" rel="noreferrer" size="sm" className="max-w-full max-md:min-h-11"
+            icon={<Icon name={file.mime === 'application/pdf' ? 'FileText' : 'Image'} size="sm" />}>
+            <span className="truncate">{file.fileName}</span>
+          </ButtonLink>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WrappedFact({ text }: { text: string }) {
+  return <span className="whitespace-normal [overflow-wrap:anywhere]">{text}</span>;
+}
+
+function Problem({ text }: { text: string }) {
+  return <div role="note" className={cx('px-3 py-2 rounded-control text-copy', TONE.critical.bg, TONE.critical.text)}>{text}</div>;
+}
+
+/** One receipt in full, for looking back at it: what was paid, what for, how it is paid back, and the photos. */
+function ReceiptDetail({ receipt, onClose }: { receipt: Receipt; onClose: () => void }) {
+  return (
+    <Modal title={`Receipt ${receipt.receiptNo}`} eyebrow="My claims" size="md" onClose={onClose}
+      footer={<Button variant="secondary" onClick={onClose}>Close</Button>}>
+      <KeyFacts cols={2} items={[
+        { label: 'Amount', value: rm(receipt.amountSen) },
+        { label: 'Status', value: RECEIPT_STATUS[receipt.status] },
+        { label: 'Date on the receipt', value: date(receipt.spendDate) },
+        { label: 'Shop', value: <WrappedFact text={receipt.vendorName ?? '—'} /> },
+        { label: 'Paid back by', value: paybackRoute(receipt) },
+      ]} />
+      {receipt.rejectReason && <Problem text={receipt.rejectReason} />}
+      <DetailLines lines={receipt.lines} totalSen={receipt.amountSen} />
+      {receipt.note && <NoteBlock text={receipt.note} />}
+      <Papers files={receipt.files} hrefOf={fileId => receiptFileHref(receipt.id, fileId)} />
+    </Modal>
+  );
+}
+
+/** One request to finance in full; while finance has not started paying it, it can be withdrawn from here. Once withdrawn
+ *  or rejected it can be changed and sent again under its own number (chew, 13 Nov 2026); one made from utility bills is
+ *  fixed on Utility bills. */
+function RequestDetail({ request, onClose, onWithdraw, onEdit, onBalance }: { request: PaymentRequest; onClose: () => void; onWithdraw: () => void; onEdit: () => void; onBalance: () => void }) {
+  const vouchers = request.vouchers.filter(v => v.status !== 'CANCELLED').map(v => v.pvNumber).join(', ');
+  const bill = billLabel(request);
+  return (
+    <Modal title={`Request ${request.requestNo}`} eyebrow="My claims" size="md" onClose={onClose}
+      footer={<>
+        {canWithdraw(request) && <Button variant="tertiary" className="mr-auto" icon={<Icon name="Undo2" size="sm" />} onClick={onWithdraw}>Withdraw</Button>}
+        {canResubmit(request) && <Button variant="primary" className="mr-auto" icon={<Icon name="Pencil" size="sm" />} onClick={onEdit}>Edit and resubmit</Button>}
+        {canAskBalance(request) && <Button variant="primary" className="mr-auto" icon={<Icon name="Send" size="sm" />} onClick={onBalance}>Ask for the balance</Button>}
+        <Button variant="secondary" onClick={onClose}>Close</Button>
+      </>}>
+      <KeyFacts cols={2} items={[
+        { label: 'Amount', value: rm(request.amountSen) },
+        { label: 'Status', value: REQUEST_STATUS[request.status] },
+        { label: 'Paid to', value: <WrappedFact text={request.payeeName} /> },
+        { label: 'Type', value: request.type === 'DEPOSIT' ? 'A deposit' : 'A payment' },
+        { label: 'Asked on', value: date(request.createdAt) },
+        { label: 'Pay by', value: request.wantedOn ? date(request.wantedOn) : 'Not set' },
+        ...(vouchers ? [{ label: 'Payment voucher', value: vouchers }] : []),
+        ...(bill ? [{ label: 'AP invoice', value: bill }] : []),
+        ...(request.parentRequestNo ? [{ label: 'Balance of', value: request.parentRequestNo }] : []),
+        ...((request.balanceRequests ?? []).length ? [{ label: 'Balance asked on', value: (request.balanceRequests ?? []).map(b => b.requestNo).join(', ') }] : []),
+      ]} />
+      {reasonNote(request) && (reasonNote(request)!.now ? <Problem text={reasonNote(request)!.text} /> : <p className="m-0 text-meta text-muted-ink">{reasonNote(request)!.text}</p>)}
+      {updatedFromBill(request) && <p className="m-0 text-meta text-muted-ink">Updated from the invoice: finance changed it to match the supplier's invoice.</p>}
+      <DetailLines lines={request.lines} totalSen={request.amountSen} />
+      {updatedFromBill(request) && (
+        <details className="text-meta">
+          <summary className="cursor-pointer text-muted-ink">As first asked{request.askedAmountSen != null ? ` · ${rm(request.askedAmountSen)}` : ''}</summary>
+          <ul className="m-0 mt-1 pl-4">
+            {(request.askedLines ?? []).map((l, i) => <li key={i}>{l.description || 'Line'} · {rm(l.amountSen)}</li>)}
+          </ul>
+        </details>
+      )}
+      {request.note && <NoteBlock text={request.note} />}
+      <Papers files={request.files} hrefOf={fileId => requestFileHref(request.id, fileId)} />
+      {canWithdraw(request) && <p className="m-0 text-meta text-muted-ink">Finance has not started paying it, so you can still withdraw it.</p>}
+      {canResubmit(request) && <p className="m-0 text-meta text-muted-ink">Change what is wrong and send it again. It keeps its number.</p>}
+      {fixOnUtilityBills(request) && <p className="m-0 text-meta text-muted-ink">Made from utility bills: fix the bills on Utility bills, then use Send again there.</p>}
+      {canAskBalance(request) && <p className="m-0 text-meta text-muted-ink">The deposit is paid. Ask for the balance ({rm(balanceSen(request))}) when the work is done: nothing to fill in again.</p>}
+    </Modal>
+  );
+}
+
+/** Ask for the balance of a paid deposit (chew, 15 Nov 2026), nothing filled in again; the supplier's formal invoice may
+ *  come with it (chew, 16 Nov 2026), for finance to replace the quotation with. */
+function BalanceDialog({ request, onClose, onSent }: { request: PaymentRequest; onClose: () => void; onSent: () => void }) {
+  const toast = useToast();
+  const [files, setFiles] = useState<File[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const send = async () => {
+    setBusy(true); setProblem(null);
+    try {
+      const made = await postWithFiles<{ requestNo: string }>(`/claims/requests/${request.id}/balance`, {}, files);
+      toast({ tone: 'success', title: `Balance asked for on ${made.requestNo}`, body: files.length ? 'The formal invoice goes to finance with it.' : undefined });
+      onSent();
+    } catch (e) { setProblem(errorMessage(e)); } finally { setBusy(false); }
+  };
+  return (
+    <Modal title={`Ask for the balance of ${request.requestNo}`} eyebrow="My claims" size="md" onClose={onClose} busy={busy} dirty={files.length > 0}
+      footer={<>
+        <Button variant="secondary" className="mr-auto" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button variant="primary" loading={busy} onClick={() => void send()}>Ask for the balance</Button>
+      </>}>
+      <p className="m-0 text-copy">
+        Finance is asked to pay {request.payeeName} the rest of {billLabel(request) ?? 'the invoice'}: <b className="tabular-nums">{rm(balanceSen(request))}</b>.
+        The lines, projects and units come from the invoice; nothing to fill in again.
+      </p>
+      <FileDropRow label="Attach the formal invoice (optional)" hint="Photos or a PDF. Finance replaces the quotation with it." accept="image/*,application/pdf" multiple
+        onPick={l => setFiles(f => [...f, ...Array.from(l)].slice(0, 8))} chosen={files.length ? files.map(f => f.name).join(', ') : null} disabled={busy} />
+      {files.length > 0 && <div><Button variant="tertiary" size="sm" onClick={() => setFiles([])} disabled={busy}>Remove the files</Button></div>}
+      {problem && <Problem text={problem} />}
+    </Modal>
+  );
+}
+
+function Mine({ month, onMonthChange, onHandIn, onEdit }: { month: string; onMonthChange: (month: string) => void; onHandIn: (kind: Kind) => void; onEdit: (q: PaymentRequest) => void }) {
   const receipts = useApi<{ receipts: Receipt[] }>(`/claims/receipts?month=${month}`);
   const requests = useApi<{ requests: PaymentRequest[] }>('/claims/requests');
   const toast = useToast();
-  const months = useMemo(() => lastMonths(12), []);
+  const [withdraw, setWithdraw] = useState<PaymentRequest | null>(null);
+  const [balance, setBalance] = useState<PaymentRequest | null>(null);
+  const [openReceipt, setOpenReceipt] = useState<Receipt | null>(null);
+  const [openRequest, setOpenRequest] = useState<PaymentRequest | null>(null);
   const rCols: Column<Receipt>[] = [
     { key: 'date', label: 'Date', type: 'date', value: r => r.spendDate },
     { key: 'no', label: 'Receipt', value: r => r.receiptNo },
     { key: 'shop', label: 'Shop', value: r => r.vendorName ?? '', sub: r => r.lines.map(l => l.description).filter(Boolean).join('; ') },
     { key: 'amount', label: 'Amount', type: 'money', value: r => r.amountSen },
-    { key: 'status', label: 'Status', value: r => RECEIPT_STATUS[r.status], sub: r => r.rejectReason ?? (r.floatId ? 'Paid from petty cash' : 'Paid back by finance') },
-    { key: 'files', label: 'Receipt', value: r => r.files.length, render: r => <Files r={r} /> },
+    { key: 'status', label: 'Status', type: 'status', status: receiptStatus, sub: r => r.rejectReason ?? paybackRoute(r) },
   ];
   const qCols: Column<PaymentRequest>[] = [
-    { key: 'on', label: 'Asked on', type: 'date', value: q => q.createdAt.slice(0, 10) },
+    { key: 'on', label: 'Asked on', type: 'date', value: q => q.createdAt, phone: 'meta' },
     { key: 'no', label: 'Request', value: q => q.requestNo },
-    { key: 'pay', label: 'Pay', value: q => q.payeeName, sub: q => (q.type === 'DEPOSIT' ? 'Deposit' : null) },
+    { key: 'pay', label: 'Paid to', value: q => q.payeeName, sub: q => (q.type === 'DEPOSIT' ? 'Deposit' : null), phone: 'title' },
     { key: 'amount', label: 'Amount', type: 'money', value: q => q.amountSen },
-    { key: 'status', label: 'Status', value: q => REQUEST_STATUS[q.status], sub: q => q.reason ?? q.vouchers.filter(v => v.status !== 'CANCELLED').map(v => v.pvNumber).join(', ') },
+    { key: 'status', label: 'Status', type: 'status', status: requestStatus, sub: q => {
+      // The reason now while rejected; once sent again, its vouchers, else "Rejected before" (review, 13 Nov 2026).
+      const note = reasonNote(q), pvs = q.vouchers.filter(v => v.status !== 'CANCELLED').map(v => v.pvNumber).join(', ');
+      return note?.now ? note.text : pvs || billLabel(q) || note?.text || '';
+    } },
     {
-      key: 'act', label: '', value: () => '',
-      render: q => (q.status === 'SUBMITTED' && q.vouchers.length === 0 ? (
-        <Button variant="ghost" onClick={async () => {
-          try { await api.post(`/claims/requests/${q.id}/withdraw`, {}); toast({ tone: 'success', title: `${q.requestNo} withdrawn` }); requests.reload(); }
-          catch (e) { toast({ tone: 'critical', title: 'Not withdrawn', body: errorMessage(e) }); }
-        }}>Withdraw</Button>
+      key: 'act', label: '', value: () => '', phone: 'hide', noExport: true,
+      render: q => (canWithdraw(q) ? (
+        <Button variant="secondary" size="sm" icon={<Icon name="Undo2" size="sm" />} onClick={e => { e.stopPropagation(); setWithdraw(q); }}>Withdraw</Button>
+      ) : canResubmit(q) ? (
+        <Button variant="secondary" size="sm" icon={<Icon name="Pencil" size="sm" />} onClick={e => { e.stopPropagation(); onEdit(q); }}>Edit and resubmit</Button>
+      ) : canAskBalance(q) ? (
+        <Button variant="secondary" size="sm" icon={<Icon name="Send" size="sm" />} onClick={e => { e.stopPropagation(); setBalance(q); }}>Ask for the balance</Button>
       ) : null),
     },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ maxWidth: 240 }}><Select label="Month" showLabel value={month} onChange={setMonth} options={months} /></div>
-      <DataTable id="my-claims-receipts" header="My receipts" columns={rCols} rows={receipts.data?.receipts ?? null} rowKey={r => r.id} loading={receipts.loading} error={receipts.error} onRetry={receipts.reload}
-        empty={{ title: 'No receipts this month' }} />
-      <DataTable id="my-claims-requests" header="Asked finance to pay" columns={qCols} rows={requests.data?.requests ?? null} rowKey={q => q.id} loading={requests.loading} error={requests.error} onRetry={requests.reload}
-        empty={{ title: 'Nothing asked yet' }} />
+    <div className="flex flex-col gap-4">
+      <DataTable id="my-claims-receipts" toolbar={<MonthToolbar title="My receipts" count={receipts.data?.receipts.length} month={month} onMonthChange={onMonthChange} />} columns={rCols} rows={receipts.data?.receipts ?? null} rowKey={r => r.id} loading={receipts.loading} error={receipts.error} onRetry={receipts.reload}
+        onRowClick={setOpenReceipt} empty={{ title: noReceiptsIn(month), body: 'Receipts are listed by the date on the receipt.', action: { label: 'Hand in a receipt', onClick: () => onHandIn('claim') } }} />
+      <DataTable id="my-claims-requests" toolbar={<TableTitle title="Asked finance to pay" count={requests.data?.requests.length} note="all months" />} columns={qCols} rows={requests.data?.requests ?? null} rowKey={q => q.id} loading={requests.loading} error={requests.error} onRetry={requests.reload}
+        onRowClick={setOpenRequest} empty={{ title: 'Nothing asked yet', action: { label: 'Ask finance to pay', onClick: () => onHandIn('direct') } }} />
+      {openReceipt && <ReceiptDetail receipt={openReceipt} onClose={() => setOpenReceipt(null)} />}
+      {openRequest && <RequestDetail request={openRequest} onClose={() => setOpenRequest(null)}
+        onWithdraw={() => setWithdraw(openRequest)} onEdit={() => { const q = openRequest; setOpenRequest(null); onEdit(q); }}
+        onBalance={() => setBalance(openRequest)} />}
+      {balance && <BalanceDialog request={balance} onClose={() => setBalance(null)}
+        onSent={() => { setBalance(null); setOpenRequest(null); requests.reload(); }} />}
+      <ConfirmDialog onClose={() => setWithdraw(null)} spec={withdraw && {
+        title: `Withdraw ${withdraw.requestNo}?`,
+        body: 'Finance has not paid it yet. Withdrawing removes it from their list; you can ask again later.',
+        confirmLabel: 'Withdraw request', busyLabel: 'Withdrawing', danger: true,
+        onConfirm: async () => {
+          try {
+            await api.post(`/claims/requests/${withdraw.id}/withdraw`, {});
+            toast({ tone: 'success', title: `${withdraw.requestNo} withdrawn` });
+            setOpenRequest(null);
+            requests.reload();
+          } catch (e) {
+            toast({ tone: 'critical', title: 'Not withdrawn', body: errorMessage(e) });
+          } finally {
+            setWithdraw(null);
+          }
+        },
+      }} />
     </div>
   );
 }
@@ -364,34 +698,33 @@ function KeptFloat() {
   const [month, setMonth] = useState(thisMonthMyt());
   const q = useApi<MyFloat>(`/claims/float?month=${month}`);
   const toast = useToast();
-  const months = useMemo(() => lastMonths(12), []);
   const f = q.data?.float;
   const cols: Column<Receipt>[] = [
     { key: 'date', label: 'Date', type: 'date', value: r => r.spendDate },
     { key: 'by', label: 'Handed in by', value: r => r.submitterName },
     { key: 'shop', label: 'Shop', value: r => r.vendorName ?? '', sub: r => r.lines.map(l => l.description).filter(Boolean).join('; ') },
     { key: 'amount', label: 'Amount', type: 'money', value: r => r.amountSen },
-    { key: 'status', label: 'Status', value: r => RECEIPT_STATUS[r.status], sub: r => r.rejectReason },
+    { key: 'status', label: 'Status', type: 'status', status: receiptStatus, sub: r => r.rejectReason },
     { key: 'files', label: 'Receipt', value: r => r.files.length, render: r => <Files r={r} /> },
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="flex flex-col gap-4">
       {f && (
-        <Card style={{ padding: 20, display: 'flex', gap: 32, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div><div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-small)' }}>Cash you should hold</div><MoneyText sen={f.balanceSen} mode="exact" strong style={{ fontSize: 28 }} /></div>
-          <div><div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-small)' }}>Float</div><MoneyText sen={f.floatSen} mode="exact" /></div>
-          <div style={{ color: f.balanceSen < 0 || f.low ? 'var(--color-critical-fg)' : 'var(--color-text-muted)', fontSize: 'var(--text-small)' }}>
-            {f.balanceSen < 0 ? 'Below zero: you have paid in your own money; the next top-up pays it back.' : f.low ? 'Running low.' : f.lastTopUpOn ? `Last topped up ${f.lastTopUpOn}.` : 'Not topped up yet.'}
-          </div>
-          <Button variant="secondary" disabled={f.topUpRequested} onClick={async () => {
-            try { await api.post('/claims/float/top-up-request', {}); toast({ tone: 'success', title: 'Finance has been asked for a top-up' }); q.reload(); }
-            catch (e) { toast({ tone: 'critical', title: 'Not sent', body: errorMessage(e) }); }
-          }}>{f.topUpRequested ? 'Top-up asked for' : 'Ask for a top-up'}</Button>
-        </Card>
+        <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.6fr)] gap-3">
+          <StatTile hero className="col-span-2 lg:col-span-1" label="Cash you should hold" value={rm(f.balanceSen)}
+            hint={f.balanceSen < 0 ? 'Below zero: you have paid in your own money; the next top-up pays it back.' : f.low ? 'Running low.' : f.lastTopUpOn ? `Last topped up ${date(f.lastTopUpOn)}.` : 'Not topped up yet.'} />
+          <StatTile label="Float" value={rm(f.floatSen)} hint="What the department keeps" />
+          <Card className="col-span-2 lg:col-span-1 p-4 flex flex-col justify-between gap-3">
+            <span className="text-meta text-muted-ink">When the cash runs low, ask finance to top the float back up.</span>
+            <div><Button variant="secondary" size="sm" disabled={f.topUpRequested} disabledReason="Finance has been asked already." onClick={async () => {
+              try { await api.post('/claims/float/top-up-request', {}); toast({ tone: 'success', title: 'Finance has been asked for a top-up' }); q.reload(); }
+              catch (e) { toast({ tone: 'critical', title: 'Not sent', body: errorMessage(e) }); }
+            }}>{f.topUpRequested ? 'Top-up asked for' : 'Ask for a top-up'}</Button></div>
+          </Card>
+        </div>
       )}
-      <div style={{ maxWidth: 240 }}><Select label="Month" showLabel value={month} onChange={setMonth} options={months} /></div>
-      <DataTable id="my-claims-float" header="Receipts on the float" columns={cols} rows={q.data?.receipts ?? null} rowKey={r => r.id} loading={q.loading} error={q.error} onRetry={q.reload}
-        empty={{ title: 'No receipts this month' }} />
+      <DataTable id="my-claims-float" toolbar={<MonthToolbar title="Receipts on the float" count={q.data?.receipts.length} month={month} onMonthChange={setMonth} />} columns={cols} rows={q.data?.receipts ?? null} rowKey={r => r.id} loading={q.loading} error={q.error} onRetry={q.reload}
+        empty={{ title: noReceiptsIn(month) }} />
     </div>
   );
 }

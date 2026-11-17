@@ -83,7 +83,7 @@ export function Profile() {
     <div className="max-w-3xl">
       <PageHeader
         eyebrow="Account"
-        title="Your Profile"
+        title="Your profile"
         description="Display name, password, and account info."
       />
 
@@ -520,7 +520,7 @@ function TwoFactorSection() {
         </div>
         <div>
           <h2 className="text-[10px] font-semibold uppercase tracking-brand text-accent">
-            Two-Factor Authentication
+            Two-factor authentication
           </h2>
           <div className="text-[12px] text-ink-secondary">
             Protect your account with an authenticator app (Google Authenticator,

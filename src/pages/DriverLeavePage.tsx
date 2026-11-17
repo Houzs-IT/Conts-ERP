@@ -101,7 +101,7 @@ function LeaveDrawer({ drivers, canWrite, onClose, onCreate }: { drivers: Driver
   }
 
   return (
-    <Drawer open onClose={onClose} width={560}>
+    <Drawer open onClose={onClose} dirty="typed" width={560}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New driver leave</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="flex flex-col gap-[7px]">

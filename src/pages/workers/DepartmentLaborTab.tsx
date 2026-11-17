@@ -22,15 +22,16 @@ export default function DepartmentLaborTab() {
   const hours = depts.reduce((n, d) => n + d.hours, 0);
   const cost = depts.reduce((n, d) => n + d.costSen, 0);
   const under = depts.reduce((n, d) => n + (d.underRecordedSen ?? 0), 0);
-  const th = 'py-2.5 px-4 font-medium text-left';
-  const td = 'py-2.5 px-4 [border-top:1px_solid_var(--color-line-soft)] tabular-nums';
+  const th = 'py-2 px-4 text-caption font-bold uppercase tracking-[0.09em] text-left whitespace-nowrap bg-muted [border-bottom:1px_solid_var(--color-line)]';
+  const td = 'py-2 px-4 [border-top:1px_solid_var(--color-line-soft)] tabular-nums text-right';
+  const thR = `${th} text-right`;
 
   return (
     <div className="flex flex-col gap-5">
       {error && <StaleBanner message={`Showing the last figures we have. ${error}`} onRetry={reload} />}
-      <section className="bg-card rounded-card border border-solid border-line px-5 py-4 flex flex-col gap-3">
+      <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] px-5 py-4 flex flex-col gap-3">
         <span className="flex flex-col gap-0.5">
-          <span className="text-[16px] font-semibold tracking-[-0.01em]">Department Labor</span>
+          <span className="text-heading font-bold tracking-[-0.005em]">Department Labor</span>
           <span className="text-meta text-muted-ink">Hours and labour cost per department from Working Hours. Pick one finished month to see it with employer statutory and the payroll gap.</span>
         </span>
         <RangeControls from={from} to={to} set={set} />
@@ -42,23 +43,23 @@ export default function DepartmentLaborTab() {
         <StatTile label="Estimated labor cost" value={data ? rm(loaded ? cost + under : cost) : undefined} hint={loaded ? 'Incl. employer statutory and paid days off' : 'Logged hours only'} loading={loading && !data} />
       </StatRow>
 
-      <section className="bg-card rounded-card border border-solid border-line overflow-x-auto">
+      <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] overflow-x-auto">
         <table className="w-full border-collapse text-copy">
-          <thead><tr className="text-meta text-muted-ink">
-            <th className={th}>Department</th><th className={th}>Total Hours</th><th className={th}>Workers</th>
-            <th className={th}>{loaded ? 'Logged labor' : 'Estimated Labor Cost'}</th>
-            {loaded && <><th className={th}>Under-recorded</th><th className={th}>Labor (incl. EPF)</th></>}
+          <thead><tr className="text-muted-ink">
+            <th className={th}>Department</th><th className={thR}>Total Hours</th><th className={thR}>Workers</th>
+            <th className={thR}>{loaded ? 'Logged labor' : 'Estimated Labor Cost'}</th>
+            {loaded && <><th className={thR}>Under-recorded</th><th className={thR}>Labor (incl. EPF)</th></>}
           </tr></thead>
           <tbody>
             {depts.map(d => (
               <tr key={d.department}>
-                <td className="py-2.5 px-4 [border-top:1px_solid_var(--color-line-soft)] font-semibold">{DEPARTMENT_LABEL[d.department]}</td>
+                <td className="py-2 px-4 [border-top:1px_solid_var(--color-line-soft)] font-semibold">{DEPARTMENT_LABEL[d.department]}</td>
                 <td className={td}>{d.hours}</td><td className={td}>{d.workers}</td><td className={td}>{rm(d.costSen)}</td>
                 {loaded && <><td className={td}>{rm(d.underRecordedSen ?? 0)}</td><td className={`${td} font-semibold`}>{rm(d.costSen + (d.underRecordedSen ?? 0))}</td></>}
               </tr>
             ))}
             <tr className="font-semibold bg-page">
-              <td className="py-2.5 px-4 [border-top:1px_solid_var(--color-line)]">TOTAL</td>
+              <td className="py-2 px-4 [border-top:1px_solid_var(--color-line)]">TOTAL</td>
               <td className={td}>{hours.toFixed(2)}</td><td className={td}>{depts.reduce((n, d) => n + d.workers, 0)}</td>
               <td className={td}>{rm(cost)}</td>
               {loaded && <><td className={td}>{rm(under)}</td><td className={td}>{rm(cost + under)}</td></>}

@@ -31,9 +31,9 @@ export function OpeningBalances({ canSave, ledgerStartDate }: { canSave: boolean
           <UploadPanel kind="journal" canSave={canSave} title="1. Opening journal — AutoCount's trial balance"
             hint={`Every account's balance on ${check.data?.openingDay ?? "the day before the books start"}, profit and loss of this year included. Amounts in RM.`} />
           <UploadPanel kind="receivables" canSave={canSave} title="2. Invoices customers still owe"
-            hint="AutoCount's outstanding debtor list. They post nothing (the journal holds the amount) but show in the ageing and take payments." />
+            hint="AutoCount's outstanding debtor list. They post nothing (the journal holds the amount) but show in the ageing and take payments. A minus (a receipt or credit note not yet knocked off) becomes a credit the customer spends on later invoices." />
           <UploadPanel kind="payables" canSave={canSave} title="3. Bills the company still owes"
-            hint="AutoCount's outstanding creditor list. The supplier code must match a supplier in the system." />
+            hint="AutoCount's outstanding creditor list. The supplier code must match a supplier in the system. A minus (a payment not yet knocked off) becomes an opening payment voucher holding an advance that knocks off later bills." />
         </>
       )}
     </SetupCard>

@@ -2338,7 +2338,7 @@ function DataTableInner<T, L>({
       )}
       {showTable && (
         <div
-          className="rounded-lg border border-border bg-surface shadow-stone sm:block sm:overflow-hidden"
+          className="dt-table rounded-lg border border-border bg-surface shadow-stone sm:block sm:overflow-hidden"
           style={freezeBoxStyle}
         >
           <div
@@ -2717,8 +2717,9 @@ function DataTableInner<T, L>({
                   // <tr>, which doesn't paint over the sliding siblings).
                   // Odd-row value = `surface-dim` (#ecebe2) at 35% over the
                   // white surface, pre-blended so there's no visible seam.
+                  // The variables are the Dream Crafter night rows (conts/embed.css).
                   const stickyBg =
-                    rowIdx % 2 === 0 ? "#ffffff" : "#f8f8f5";
+                    rowIdx % 2 === 0 ? "var(--dt-row, #ffffff)" : "var(--dt-row-alt, #f8f8f5)";
                   // A falsy key means this row has nothing to drill into: no chevron.
                   const expId = expandable ? expansionId(row) || null : null;
                   const isExpanded = expId != null && expandedRowsEffective.has(expId);

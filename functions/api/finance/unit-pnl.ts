@@ -4,6 +4,7 @@ import { todayMyt } from '../../_lib/ops';
 import { loadInputs, computeMonthsWithYearToDate, statementSettings, hasActivity, type Query } from '../../_lib/ownerStatement';
 import { isTenancy } from '../../_lib/revenueModel';
 import { monthEndExclusive } from '../../_lib/revenue';
+import { companyLateFor } from '../../_lib/ownerLocks';
 import { spreadGuestPaid, type Limits, type UnitMonthInput } from '../../../src/lib/unitPnl';
 
 /** GET /api/finance/unit-pnl?from=YYYY-MM&to=YYYY-MM — the unit P&L report (plan
@@ -36,6 +37,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const settings = await statementSettings(q);
   const inputs = await loadInputs(q, `${all6[0]}-01`, monthEndExclusive(to));
   const computed = await computeMonthsWithYearToDate(q, inputs, all6, settings);
+  // The company's share of late changes to an earlier, locked month, by the month it counts in (part 2b, choice A).
+  const late = await companyLateFor(env, null, all6[0], to);
   const unitOf = new Map(inputs.units.map(u => [u.id, u]));
   // What guests paid, by reservation: the same reservations the statement counts, grouped by unit.
   const stays = new Map<string, { id: string; check_in: string; check_out: string; gross_booking_value: number }[]>();
@@ -58,7 +61,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     for (const m of computed.get(month) ?? []) {
       const lt = m.terms.basis === 'fixed_rent';
       if (!lt && (m.terms.basis !== 'share' || isTenancy(m.terms.model))) { if (month === to && hasActivity(m)) excluded++; continue; }
-      if (hasActivity(m)) active.add(m.unitId);
+      const lateHere = late.get(`${m.unitId}|${month}`)?.amount ?? 0;
+      if (hasActivity(m) || lateHere) active.add(m.unitId);
       const u = unitOf.get(m.unitId)!;
       const sum = (pick: (c: string) => boolean) => m.deductionGroups.filter(g => pick(g.category)).reduce((n, g) => n + g.amount, 0);
       // The statement's own income for each reservation this month: it stands in where a reservation has no guest total.
@@ -78,7 +82,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         ownerPct: lt ? 0 : m.terms.ownerPct ?? 0,
         // A yearly guarantee is checked once a year, not month by month (as the Overall unit report).
         ltGrr: lt ? m.fixedRent : m.terms.model === 'management_guarantee' ? m.guarantee : 0,
-        nights: m.nights, days: m.days, recordOnlyElectricity: recordOnly.get(`${m.unitId}|${month}`) ?? 0,
+        nights: m.nights, days: m.days, recordOnlyElectricity: recordOnly.get(`${m.unitId}|${month}`) ?? 0, late: lateHere,
       });
     }
   }

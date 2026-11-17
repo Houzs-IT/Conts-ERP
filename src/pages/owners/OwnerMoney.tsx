@@ -13,12 +13,15 @@ import { useApi } from '../../lib/useApi';
 import { useToast } from '../../components/Toast';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
 import { refreshNavCounts } from '../../lib/navBadges';
-import { rm, monthLabel, titleCase, date as fmtDate, masked } from '../../lib/format';
+import { rm, monthLabel, date as fmtDate, masked, personName } from '../../lib/format';
 import { bankName } from '../../lib/vocabulary';
 import { statusOf } from '../../lib/status';
 import type { PayoutState, StatementState } from '../../lib/types';
 import { Section } from './shared';
 import { Link } from 'react-router-dom';
+import { statementActionToast } from '../../lib/statementActions';
+import { useSession } from '../../lib/session';
+import { mayWork } from '../../lib/areaAccess';
 
 /**
  * Owner statements and owner payouts on the owner (owner, 11 Oct 2026: "owner payout is basically the same as owner;
@@ -53,6 +56,7 @@ export const payoutStatus = (p: PayoutRow) =>
   p.state === 'paid' ? (p.paidAt ? `Paid · ${fmtDate(p.paidAt)}` : 'Paid')
     : p.state === 'processing' ? 'Transfer in progress'
     : p.state === 'failed' ? 'Failed'
+    : p.state === 'cancelled' ? 'Cancelled'
     : 'Not paid yet';
 export const PayoutBadge = ({ p, size }: { p: PayoutRow; size?: 'sm' | 'md' }) => (
   <StatusBadge label={payoutStatus(p)} tone={statusOf('payout', p.state).tone} size={size} />
@@ -94,7 +98,7 @@ export function OwnerPayouts({ ownerId, onChanged }: { ownerId: string; onChange
   };
 
   return (
-    <Section title="Owner payouts" action={<Link to="/owners?view=payouts" className="text-meta text-gold-ink no-underline font-medium">All owners</Link>}>
+    <Section title="Owner payouts" action={<Link to="/owners/payouts" className="text-meta text-gold-ink no-underline font-medium">All owners</Link>}>
       <div className="border border-solid border-line rounded-card overflow-hidden">
         {error && !data ? <div className="p-4 text-copy text-critical">{error}</div>
           : loading && !data ? <div className="p-4"><div className="skeleton h-12" /></div>
@@ -137,6 +141,8 @@ export function StatementSteps({ statementId, unitsLabel, onChanged }: { stateme
   const [confirm, setConfirm] = useState<'send' | 'paid' | null>(null);
   const [adjusting, setAdjusting] = useState(false);
   const s = data?.data;
+  // Make final is a power given one by one (owner statement close part 3); the server checks it too.
+  const mayMakeFinal = mayWork(useSession().user, 'makeFinal');
   if (!s) return null;
 
   const done = () => { reload(); onChanged(); void refreshNavCounts(); };
@@ -144,10 +150,14 @@ export function StatementSteps({ statementId, unitsLabel, onChanged }: { stateme
     if (!s) return;
     setBusy(true);
     try {
-      if (kind === 'finalise') await api.post('/statements/finalise', { statementIds: [s.id] });
-      if (kind === 'send') await api.post('/statements/send', { statementIds: [s.id] });
-      if (kind === 'paid' && s.payout) await api.patch('/payouts', { id: s.payout.id, state: 'paid' });
-      toast({ tone: 'success', title: kind === 'finalise' ? 'Statement marked final.' : kind === 'send' ? 'Statement sent to the owner.' : 'Marked as paid.' });
+      if (kind === 'paid') {
+        if (s.payout) await api.patch('/payouts', { id: s.payout.id, state: 'paid' });
+        toast({ tone: 'success', title: 'Marked as paid.' });
+      } else {
+        // The server answers 200 with what it did and what it refused (a step still open, a draft out of date).
+        const res = await api.post<{ finalised?: number; sent?: number; failed?: { id: string; reason: string }[] }>(kind === 'finalise' ? '/statements/finalise' : '/statements/send', { statementIds: [s.id] });
+        toast(statementActionToast(kind, res));
+      }
       done();
     } catch (e) {
       toast({ tone: 'critical', title: 'That did not go through.', body: errorMessage(e, 'Try again in a moment.') });
@@ -171,24 +181,24 @@ export function StatementSteps({ statementId, unitsLabel, onChanged }: { stateme
   const unpaid = s.state === 'sent' && s.payout && s.payout.state !== 'paid';
   return (
     <>
-      {s.state === 'provisional' && <Button size="sm" variant="secondary" loading={busy && !confirm} onClick={() => void act('finalise')}>Mark final</Button>}
+      {s.state === 'provisional' && mayMakeFinal && <Button size="sm" variant="secondary" loading={busy && !confirm} onClick={() => void act('finalise')}>Mark final</Button>}
       {s.state === 'finalised' && <Button size="sm" variant="secondary" icon={<Icon name="Send" size="sm" />} onClick={() => setConfirm('send')}>Send to owner</Button>}
       {unpaid && <Button size="sm" variant="secondary" icon={<Icon name="CheckCircle2" size="sm" />} onClick={() => setConfirm('paid')}>Mark paid</Button>}
       {editable && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setAdjusting(true)}>Add adjustment</Button>}
       {adjusting && (
-        <AdjustDialog target={{ ownerName: s.owner.name, unitsLabel, netPayout: s.totals.netPayout }} busy={busy}
+        <AdjustDialog target={{ ownerName: personName(s.owner.name), unitsLabel, netPayout: s.totals.netPayout }} busy={busy}
           onClose={() => { if (!busy) setAdjusting(false); }} onSubmit={(label, sen) => void adjust(label, sen)} />
       )}
       <ConfirmDialog busy={busy} onClose={() => { if (!busy) setConfirm(null); }}
         spec={!confirm ? null : confirm === 'send' ? {
           title: 'Send this statement to the owner?',
           body: 'The owner is emailed and sees it on the portal. A sent statement cannot be edited.',
-          meta: `${rm(s.totals.netPayout)} Net Payout to Owner · ${titleCase(s.owner.name)} · ${monthLabel(s.period)}`,
+          meta: `${rm(s.totals.netPayout)} Net Payout to Owner · ${personName(s.owner.name)} · ${monthLabel(s.period)}`,
           confirmLabel: 'Send', busyLabel: 'Sending...', onConfirm: () => act('send'),
         } : {
           title: 'Mark this owner payout as paid?',
           body: 'Record that the money has reached the owner. The statement becomes Paid.',
-          meta: `${rm(s.payout?.amount ?? 0)} · ${titleCase(s.owner.name)} · ${monthLabel(s.period)}`,
+          meta: `${rm(s.payout?.amount ?? 0)} · ${personName(s.owner.name)} · ${monthLabel(s.period)}`,
           danger: true, confirmLabel: 'Mark paid', busyLabel: 'Saving...', onConfirm: () => act('paid'),
         }} />
     </>

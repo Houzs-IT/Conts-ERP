@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { StaleBanner } from './DataState';
+import { RowsSkeleton } from './Loading';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../lib/api';
+import { findNav } from '../lib/navigation';
 import { menuPathFor } from '../lib/scmEngine';
 import { useSession } from '../lib/session';
 import { color } from '../theme';
@@ -22,18 +24,40 @@ const readLastEnginePath = (menu: string): string | null => {
 type EngineSession = { site: string; token: string; sessionPass: string | null };
 const requestEngineSession = () => api.post<EngineSession>('/supply-chain/engine-session');
 // Kept with the person it was made for, so someone signing in next on the same tab never receives it.
-let earlySignIn: { userId: string; session: Promise<EngineSession> } | null = null;
+let earlySignIn: { userId: string; at: number; session: Promise<EngineSession> } | null = null;
 let frameOpenedBy: string | null = null;
+// Who may be signed in early: set by the app shell once it knows the engine is on for this person, else null.
+let armedFor: string | null = null;
+// The menu can ask (its effects run before the shell's) before the shell knows the engine is on.
+let askedBeforeArmed = false;
+const earlyFor = (userId: string) =>
+  earlySignIn?.userId === userId && Date.now() - earlySignIn.at < ENGINE_SIGN_IN_MAX_AGE_MS ? earlySignIn.session : null;
 
-/** For people who have used Supply chain on this browser before: signs in to the engine while they are still on a
- *  Rental page, so their first Supply chain click does not wait for it. */
+/** For people who have used Supply chain on this browser before: signs in to the engine just before they need it
+ *  (engineSoon below), so their first Supply chain click does not wait for it. One sign-in serves until it is a day
+ *  old (ENGINE_SIGN_IN_MAX_AGE_MS), however often it is asked for. */
 export function signInToEngineEarly(userId: string) {
   let usedBefore = false;
   try { usedBefore = localStorage.getItem(USED_SUPPLY_CHAIN_KEY) === '1'; } catch { /* storage blocked */ }
-  if (!usedBefore || frameOpenedBy === userId || earlySignIn?.userId === userId) return;
+  if (!usedBefore || frameOpenedBy === userId || earlyFor(userId)) return;
   const session = requestEngineSession();
   session.catch(() => { /* the frame asks again when it opens */ });
-  earlySignIn = { userId, session };
+  earlySignIn = { userId, at: Date.now(), session };
+}
+
+/** The app shell says whether this person may use the engine here (null: not, or not known yet). */
+export function armEngineSignIn(userId: string | null) {
+  armedFor = userId;
+  if (userId && askedBeforeArmed) signInToEngineEarly(userId);
+  askedBeforeArmed = false;
+}
+
+/** A supply chain screen is about to be wanted (the Supply chain side of the menu is open, or the pointer is on an
+ *  engine menu item): sign in early then, never on every page load (performance, 12 Nov 2026: the sign-in took about
+ *  1s on every Rental page load, for screens that never use it). */
+export function engineSoon() {
+  if (armedFor) signInToEngineEarly(armedFor);
+  else askedBeforeArmed = true;
 }
 
 /** The supply chain engine's screen for the current menu item, shown inside this app. The server signs
@@ -45,6 +69,9 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
   const [attempt, setAttempt] = useState(0);
   const [started, setStarted] = useState(false);
   const frame = useRef<HTMLIFrameElement>(null);
+  // Until the engine's page has loaded, the frame holds about:blank: a post to the engine's origin is refused then,
+  // with a console warning. Its load event or its 'conts:ready' says it is there; a new frame (after an error) starts over.
+  const frameLoaded = useRef(false);
   const site = useRef('');
   const location = useLocation();
   // Only for the load it was saved for: any later menu click or link goes where it says.
@@ -69,7 +96,7 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
     setStarted(false);
     frameOpenedBy = userId;
     try { localStorage.setItem(USED_SUPPLY_CHAIN_KEY, '1'); } catch { /* storage blocked */ }
-    const early = earlySignIn?.userId === userId ? earlySignIn.session : null;
+    const early = earlyFor(userId);
     earlySignIn = null;
     (early ? early.catch(requestEngineSession) : requestEngineSession())
       .then(r => {
@@ -97,14 +124,14 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
   // The frame's Dream Crafter screens follow the theme: told when it is ready (below) and whenever data-theme changes.
   const tellTheme = () => {
     const theme = document.documentElement.dataset.theme === 'theconts-dark' ? 'dark' : 'light';
-    if (site.current) frame.current?.contentWindow?.postMessage({ type: 'conts:theme', theme }, site.current);
+    if (site.current && frameLoaded.current) frame.current?.contentWindow?.postMessage({ type: 'conts:theme', theme }, site.current);
   };
   useEffect(() => {
     const mo = new MutationObserver(tellTheme);
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     return () => mo.disconnect();
   }, []);
-  const steer = () => { if (site.current) frame.current?.contentWindow?.postMessage({ type: 'conts:navigate', path: wanted.current }, site.current); };
+  const steer = () => { if (site.current && frameLoaded.current) frame.current?.contentWindow?.postMessage({ type: 'conts:navigate', path: wanted.current }, site.current); };
   // On every menu click, the item already open included (location.key changes), so it leaves a record. The path is
   // watched too: an address typed or changed in the bar twice in a row keeps the same key ("default").
   useEffect(() => {
@@ -117,6 +144,7 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
       if (e.origin !== site.current || e.source !== frame.current?.contentWindow) return;
       // The engine says when it has started, in case a menu click arrived before it was listening.
       if (e.data?.type === 'conts:ready') {
+        frameLoaded.current = true;
         // The frame's own Refresh reloads it alone: it goes back to the record it was on, not to this menu's list.
         const back = readLastEnginePath(here.current);
         if (back) wanted.current = back;
@@ -137,17 +165,32 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
+  useEffect(() => { if (error) frameLoaded.current = false; }, [error]);
+  // Fires after the engine's page has loaded (its 'conts:ready' usually comes first): steer and theme then, as on ready.
+  const onFrameLoad = () => {
+    if (frameLoaded.current) return;
+    frameLoaded.current = true;
+    steer();
+    tellTheme();
+  };
+
   if (error) {
     return (
       <div style={{ padding: '24px 28px' }}><StaleBanner message={error} onRetry={() => setAttempt(n => n + 1)} /></div>
     );
   }
-  const opening = <div style={{ padding: '24px 28px', fontSize: 13.5, color: color.textMuted }}>Opening supply chain…</div>;
+  // Names the menu item that was opened (Mail Center, Sales orders…), not the module behind it.
+  const opening = (
+    <div role="status" style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ fontSize: 13.5, color: color.textMuted }}>Opening {findNav(location.pathname)?.label ?? 'this screen'}…</div>
+      <RowsSkeleton rows={6} cols={4} header={false} />
+    </div>
+  );
   if (!src) return opening;
   // The frame loads underneath; the message stays over it until the engine shows a screen.
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-      <iframe ref={frame} src={src} title="Supply chain"
+      <iframe ref={frame} src={src} title="Supply chain" onLoad={onFrameLoad}
         style={{ flex: 1, width: '100%', minHeight: 0, border: 'none', display: 'block', background: color.page }} />
       {!started && <div style={{ position: 'absolute', inset: 0, background: color.page }}>{opening}</div>}
     </div>

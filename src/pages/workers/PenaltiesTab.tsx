@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
 import { StaleBanner } from '../../components/DataState';
 import { DataTable, type Column } from '../../components/DataTable';
-import { StatTile, StatRow } from '../../components/Metric';
+import { StatTile, StatRow, Segmented } from '../../components/Metric';
 import { Modal } from '../../components/Modal';
 import { Field } from '../../components/Field';
 import { Select } from '../../components/Select';
 import { MoneyInput, DateField } from '../../components/inputs';
-import { PillTabs } from '../../components/ops/OpsUi';
+import { FormSection } from '../../components/Card';
+import { KeyFacts } from '../../components/KeyFacts';
+import { MoneyLines } from '../../components/MoneyLines';
+import { PhoneCard, ToolbarSearch } from '../../components/ListToolbar';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useApi } from '../../lib/useApi';
@@ -71,29 +74,26 @@ export default function PenaltiesTab() {
       <DataTable<Penalty>
         id="penalties" columns={columns} rows={loading && !data ? null : shown} rowKey={p => p.id} pageSize={0}
         noun={['penalty', 'penalties']} exportName="worker-penalties" onRowClick={setOpen}
+        toolbar={<ToolbarSearch value={search} onChange={setSearch} placeholder="Penalty no., job, reason or worker" label="Search penalties" />}
+        filtered={!!needle || filter !== 'all'} onClearFilters={() => { setSearch(''); setFilter('all'); }}
         header={
           <div className="pt-5 pb-3 px-5 flex flex-col gap-3 [border-bottom:1px_solid_var(--color-line-soft)]">
             <span className="flex items-center justify-between gap-3 flex-wrap">
-              <span className="text-[16px] font-semibold tracking-[-0.01em]">Worker Penalty</span>
+              <span className="text-heading font-bold tracking-[-0.005em]">Worker Penalty</span>
               {mayEdit && <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => setEditing({ penalty: null })}>New penalty</Button>}
             </span>
-            <span className="flex items-end gap-3 flex-wrap">
-              <span className="w-[280px] max-w-full"><Field aria-label="Search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Penalty no., job, worker…" /></span>
-              <PillTabs<Filter> value={filter} onChange={setFilter} tabs={[
-                { value: 'all', label: 'All', count: all.length }, { value: 'draft', label: 'Draft', count: count('draft') },
-                { value: 'pending', label: 'Pending Approval', count: count('pending') }, { value: 'approved', label: 'Approved', count: count('approved') },
-                { value: 'posted', label: 'Posted', count: count('posted') },
-              ]} />
-            </span>
+            <Segmented<Filter> label="Penalty status" value={filter} onChange={setFilter} options={[
+              { key: 'all', label: 'All', count: all.length }, { key: 'draft', label: 'Draft', count: count('draft') },
+              { key: 'pending', label: 'Pending Approval', short: 'Pending', count: count('pending'), tone: count('pending') ? 'warning' : undefined },
+              { key: 'approved', label: 'Approved', count: count('approved') }, { key: 'posted', label: 'Posted', count: count('posted') },
+            ]} />
           </div>
         }
         empty={{ title: 'No penalties.', body: 'A penalty is raised against a cleaning or repair job and taken off the workers\' pay once approved.', action: mayEdit ? { label: 'New penalty', onClick: () => setEditing({ penalty: null }) } : undefined }}
         renderCard={p => (
-          <span className="flex flex-col gap-[3px]">
-            <span className="flex items-center gap-2 flex-wrap"><span className="text-copy font-semibold tabular-nums">{p.penaltyNo}</span><StatusBadge entity="penalty" value={p.status} size="sm" /></span>
-            <span className="text-meta text-muted-ink">{dayText(p.date)} · {rm(p.totalSen)} · {workers(p)}</span>
-            <span className="text-meta">{p.reason}</span>
-          </span>
+          <PhoneCard title={p.penaltyNo} right={rm(p.totalSen)}
+            meta={[dayText(p.date), workers(p), p.reason].filter(Boolean).join(' · ')}
+            badge={<StatusBadge entity="penalty" value={p.status} size="sm" />} />
         )}
       />
 
@@ -127,13 +127,12 @@ function Detail({ penalty: p, onClose, onEdit, onChange }: { penalty: Penalty; o
     try { await api.del(`/penalties/${p.id}`); toast({ tone: 'success', title: 'Draft deleted.', body: p.penaltyNo }); onChange(); }
     catch (e) { notifyFailure(e); }
   }
-  const row = (k: string, v: ReactNode) => <span className="flex justify-between gap-3 py-1 text-copy"><span className="text-muted-ink">{k}</span><span className="text-right">{v}</span></span>;
 
   return (
-    <Modal title={p.penaltyNo} sub={`${dayText(p.date)} · ${rm(p.totalSen)}`} onClose={onClose} width={600}
+    <Modal title={p.penaltyNo} eyebrow="Worker Penalty" size="md" sub={`${dayText(p.date)} · ${rm(p.totalSen)}`} onClose={onClose}
       footer={<>
         {p.status === 'draft' && mayEdit && <>
-          <Button size="sm" variant="tertiary" icon={<Icon name="Trash2" size="sm" />} onClick={() => void remove()} disabled={busy}>Delete</Button>
+          <Button size="sm" variant="tertiary" className="mr-auto" icon={<Icon name="Trash2" size="sm" />} onClick={() => void remove()} disabled={busy}>Delete</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="Pencil" size="sm" />} onClick={onEdit} disabled={busy}>Edit</Button>
           <Button size="sm" variant="primary" onClick={() => void act('submit')} disabled={busy || !p.lines.length}>Submit</Button>
         </>}
@@ -142,7 +141,7 @@ function Detail({ penalty: p, onClose, onEdit, onChange }: { penalty: Penalty; o
           <Button size="sm" variant="primary" icon={<Icon name="Check" size="sm" />} onClick={() => void act('approve')} disabled={busy}>Approve</Button>
         </>}
         {p.status === 'pending' && full && rejecting && <>
-          <Button size="sm" variant="secondary" onClick={() => setRejecting(false)} disabled={busy}>Back</Button>
+          <Button size="sm" variant="secondary" onClick={() => setRejecting(false)} disabled={busy}>Cancel</Button>
           <Button size="sm" variant="danger" onClick={() => void act('reject', { reason })} disabled={busy || !reason.trim()}>Reject</Button>
         </>}
         {p.status === 'approved' && full && <Button size="sm" variant="secondary" onClick={() => void act('revoke')} disabled={busy}>Revoke</Button>}
@@ -150,28 +149,26 @@ function Detail({ penalty: p, onClose, onEdit, onChange }: { penalty: Penalty; o
       </>}>
       {confirmDialog}
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col">
-          {row('Status', <StatusBadge entity="penalty" value={p.status} size="sm" />)}
-          {row('Job', p.jobRef ?? 'None')}
-          {row('Reason', p.reason)}
-          {p.remarks && row('Remarks', p.remarks)}
-          {row('Raised by', p.createdBy ?? '')}
-          {p.approvedBy && row('Approved by', `${p.approvedBy}${p.approvedAt ? `, ${date(p.approvedAt)}` : ''}`)}
-          {p.rejectedReason && p.status === 'draft' && row('Sent back because', <span className="text-danger">{p.rejectedReason}</span>)}
+        <KeyFacts items={[
+          ['Status', <StatusBadge key="s" entity="penalty" value={p.status} size="sm" />],
+          ['Job', p.jobRef ?? 'None'],
+          ['Raised by', p.createdBy ?? '—'],
+          ...(p.approvedBy ? [['Approved by', `${p.approvedBy}${p.approvedAt ? `, ${date(p.approvedAt)}` : ''}`] as const] : []),
+        ]} />
+        <div className="flex flex-col gap-1">
+          <span className="text-caption font-semibold uppercase tracking-[0.12em] text-muted-ink">Reason</span>
+          <span className="text-copy">{p.reason}</span>
+          {p.remarks && <span className="text-meta text-muted-ink">{p.remarks}</span>}
+          {p.rejectedReason && p.status === 'draft' && <span className="text-meta text-danger">Sent back because: {p.rejectedReason}</span>}
         </div>
-        <div className="flex flex-col">
-          <span className="text-meta font-semibold text-muted-ink pb-1">RESPONSIBLE WORKERS</span>
-          {p.lines.length === 0 && <span className="text-copy text-muted-ink">No workers yet.</span>}
-          {p.lines.map(l => (
-            <span key={l.id} className="flex items-center justify-between gap-3 py-1.5 text-copy [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
-              <span className="font-semibold">{l.name}</span>
-              <span className="flex items-center gap-3 text-meta text-muted-ink">
-                <span>{l.payrollPeriod ? monthName(l.payrollPeriod) : 'Not on payroll yet'}</span>
-                <span>{l.posted ? 'Deducted' : l.payrollPeriod ? 'To deduct' : ''}</span>
-                <span className="text-copy text-ink tabular-nums">{rm(l.amountSen)}</span>
-              </span>
-            </span>
-          ))}
+        <div className="flex flex-col gap-1">
+          <span className="text-caption font-semibold uppercase tracking-[0.12em] text-muted-ink">Responsible workers</span>
+          {p.lines.length === 0 ? <span className="text-copy text-muted-ink">No workers yet.</span> : (
+            <MoneyLines lines={[
+              ...p.lines.map(l => ({ label: `${l.name} · ${l.payrollPeriod ? monthName(l.payrollPeriod) : 'Not on payroll yet'}${l.posted ? ' · Deducted' : l.payrollPeriod ? ' · To deduct' : ''}`, sen: l.amountSen })),
+              { label: 'Total', sen: p.totalSen, kind: 'total' as const },
+            ]} />
+          )}
         </div>
         {rejecting && <Field label="Why it goes back (they see this)" value={reason} onChange={e => setReason(e.target.value)} placeholder="Amount does not match the damage report" />}
       </div>
@@ -239,15 +236,15 @@ function Editor({ penalty, onClose, onDone }: { penalty: Penalty | null; onClose
 
   const total = lines.reduce((n, l) => n + (l.amountSen ?? 0), 0);
   return (
-    <Modal title={penalty ? `Edit ${penalty.penaltyNo}` : 'New penalty'} sub="Raised against a cleaning or repair job, shared out to the workers responsible." onClose={onClose} width={640}
+    <Modal title={penalty ? `Edit ${penalty.penaltyNo}` : 'New penalty'} eyebrow="Worker Penalty" size="lg" sub="Raised against a cleaning or repair job, shared out to the workers responsible." onClose={onClose}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button size="sm" variant="secondary" onClick={() => void save(false)} disabled={busy}>Save Draft</Button>
         <Button size="sm" variant="primary" onClick={() => void save(true)} disabled={busy || !lines.length}>Save &amp; Submit</Button>
       </>}>
-      <div className="flex flex-col gap-5">
-        <section className="flex flex-col gap-2">
-          <h3 className="m-0 text-copy font-semibold">1. Job</h3>
+      <div className="flex flex-col gap-[18px]">
+        <FormSection title="Job" hint="Optional">
+          <div className="sm:col-span-2 flex flex-col gap-2">
           {job ? (
             <span className="flex items-center justify-between gap-3 rounded-control border border-solid border-line px-3 py-2">
               <span className="flex flex-col"><span className="text-copy font-semibold">{job.ref}</span><span className="text-meta text-muted-ink">{job.kind === 'cleaning' ? 'Cleaning job' : 'Repair job'}</span></span>
@@ -269,22 +266,20 @@ function Editor({ penalty, onClose, onDone }: { penalty: Penalty | null; onClose
               )}
             </>
           )}
-        </section>
+          </div>
+        </FormSection>
 
-        <div className="grid gap-x-4 gap-y-3 grid-cols-1 sm:grid-cols-2">
+        <FormSection title="Penalty">
           <DateField label="Date" value={day} onChange={v => v && setDay(v)} required error={errors.date} />
           <span />
           <div className="sm:col-span-2"><Field label="Reason for penalty" value={reason} onChange={e => setReason(e.target.value)} placeholder="Broken glass left in the unit after cleaning" error={errors.reason} /></div>
           <div className="sm:col-span-2"><Field label="Remarks (optional)" value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="Owner sent photos; cost of replacement RM 120" /></div>
-        </div>
+        </FormSection>
 
-        <section className="flex flex-col gap-2">
-          <span className="flex items-baseline justify-between">
-            <h3 className="m-0 text-copy font-semibold">Workers</h3>
-            <span className="text-meta text-muted-ink tabular-nums">Total {rm(total)}</span>
-          </span>
+        <FormSection title="Workers" hint={<span className="tabular-nums">Total {rm(total)}</span>}>
+          <div className="sm:col-span-2 flex flex-col gap-2">
           {lines.map(l => (
-            <span key={l.key} className="grid gap-2 grid-cols-[1fr_150px_auto] items-end">
+            <span key={l.key} className="grid gap-2 grid-cols-[minmax(0,1fr)_150px_auto] max-sm:grid-cols-[minmax(0,1fr)_auto] items-end">
               <Select label="Worker" size="md" value={l.person} placeholder="Pick a worker" onChange={v => setLines(ls => ls.map(x => (x.key === l.key ? { ...x, person: v } : x)))}
                 options={staff.map(e => ({ value: personKey(e), label: e.employeeId ? `${e.employeeId} · ${e.name}` : e.name }))} />
               <MoneyInput aria-label="Amount (RM)" valueSen={l.amountSen} onChangeSen={v => setLines(ls => ls.map(x => (x.key === l.key ? { ...x, amountSen: v } : x)))} placeholder="Amount" />
@@ -293,7 +288,8 @@ function Editor({ penalty, onClose, onDone }: { penalty: Penalty | null; onClose
           ))}
           <span><Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setLines(ls => [...ls, { key: `w${++seq}`, person: '', amountSen: null }])}>Add worker</Button></span>
           {errors.lines && <span className="text-meta text-danger">{errors.lines}</span>}
-        </section>
+          </div>
+        </FormSection>
       </div>
     </Modal>
   );

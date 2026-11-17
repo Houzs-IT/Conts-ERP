@@ -114,7 +114,7 @@ function CreateDrawer({ warehouses, canWrite, onClose, onCreated }: { warehouses
   }
 
   return (
-    <Drawer open onClose={onClose} width={720}>
+    <Drawer open onClose={onClose} dirty="typed" width={720}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New stock transfer</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">

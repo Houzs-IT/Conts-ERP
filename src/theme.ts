@@ -2,25 +2,28 @@
  *  Components read from this object; nothing hard-codes a brand hex. */
 
 export const color = {
-  goldTint: 'var(--color-gold-tint, #FBF7F0)', gold200: '#EADCBD', gold300: '#DDC597',
-  gold: '#C8A46A', goldInk: 'var(--color-gold-ink, #8A6A2F)',
-  black: '#151515', charcoal: '#242424', basalt700: '#1E1E1E',
+  goldTint: 'var(--color-gold-tint, #F9F6EF)', goldSoft: 'var(--color-gold-soft, #F3ECDF)', gold200: '#EADCBD', gold300: '#DDC597',
+  gold: '#C8A46A', goldInk: 'var(--color-gold-ink, #87612A)',
+  /** Conts DS v2: the black slab is a touch green. */
+  black: '#121714', charcoal: '#242824', basalt700: '#1B201D',
+  /** Conts green: the one primary action per page. Follows the theme. */
+  primary: 'var(--color-primary, #1A6152)', primaryHover: 'var(--color-primary-hover, #134A3F)', primarySoft: 'var(--color-primary-soft, #E1EFEC)', onPrimary: 'var(--color-on-primary, #FFFFFF)',
   /** A strong fill and its text: black with white in light mode, lifted to warm charcoal in dark (theme-dark.css), where plain black vanishes on the cards. */
   fillStrong: 'var(--color-fill-strong, #151515)', onFillStrong: 'var(--color-on-fill-strong, #FFFFFF)', fillRing: 'var(--color-fill-ring, transparent)',
-  dim: '#8A8680', onDark: '#DEDAD3',
-  page: 'var(--color-page, #FAF9F6)', card: 'var(--color-card, #FFFFFF)', muted: 'var(--color-muted, #F1F0ED)', sunken: 'var(--color-sunken, #EDEAE4)',
-  border: 'var(--color-line, #DEDAD3)', borderMuted: 'var(--color-line-soft, #EDEAE4)', borderStrong: 'var(--color-line-strong, #C7C1B6)',
-  ink: 'var(--color-ink, #252525)', inkSecondary: 'var(--color-ink-2, #4A4844)', textMuted: 'var(--color-muted-ink, #706D67)', faint: 'var(--color-faint, #A8A29A)',
+  dim: '#8F8A82', onDark: '#D9D4CB',
+  page: 'var(--color-page, #EEF0EC)', card: 'var(--color-card, #FFFFFF)', muted: 'var(--color-muted, #F4F6F3)', sunken: 'var(--color-sunken, #E3E6E0)',
+  border: 'var(--color-line, #D6D9D2)', borderMuted: 'var(--color-line-soft, #E3E6E0)', borderStrong: 'var(--color-line-strong, #C2C6BD)',
+  ink: 'var(--color-ink, #11140F)', inkSecondary: 'var(--color-ink-2, #3B4035)', textMuted: 'var(--color-muted-ink, #5C6155)', faint: 'var(--color-faint, #7D8378)',
 } as const;
 
 /** bg / fg / line. fg is AA on bg; line is for dots, borders, fills.
  *  The brand guide's base hexes fail AA as badge text — they live on `line`. */
 export const tone = {
-  success:  { bg: '#E9F5EF', fg: '#11694A', line: '#16845B' },
-  warning:  { bg: '#FFF4D8', fg: '#8A5A12', line: '#B7791F' },
-  critical: { bg: '#FCECEB', fg: '#A8352F', line: '#C2413B' },
-  info:     { bg: '#EAF2FA', fg: '#2E6DA4', line: '#2E6DA4' },
-  neutral:  { bg: '#F1F0ED', fg: '#706D67', line: '#C7C1B6' },
+  success:  { bg: '#E3F1E8', fg: '#276B46', line: '#2F7D52' },
+  warning:  { bg: '#F6EBD5', fg: '#8A5A12', line: '#C98A1E' },
+  critical: { bg: '#F8EAEA', fg: '#B23A3A', line: '#B23A3A' },
+  info:     { bg: '#E6EEF8', fg: '#2B5C9E', line: '#2B5C9E' },
+  neutral:  { bg: '#F4F6F3', fg: '#5C6155', line: '#C2C6BD' },
 } as const;
 
 /** label, fill, borderStyle, tint, ink, glyph, markInk.
@@ -49,14 +52,15 @@ export const text = {
 } as const;
 
 export const space = { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 8: 32, 10: 40, 12: 48 } as const;
-export const radius = { xs: 4, sm: 6, control: 8, card: 12, pill: 999 } as const;
+/** Conts DS v2: 10px controls, 14px cards, 16px dialogs. */
+export const radius = { xs: 4, sm: 6, control: 10, card: 14, dialog: 16, pill: 999 } as const;
 
 export const shadow = {
-  // Warm-tinted, layered: a hairline contact shadow plus a soft ambient one, so surfaces lift without a hard edge.
-  card: '0 1px 2px 0 rgba(40,32,20,0.04), 0 2px 8px -2px rgba(40,32,20,0.06)',
-  raised: '0 1px 2px 0 rgba(40,32,20,0.05), 0 6px 16px -4px rgba(40,32,20,0.10)',
-  dropdown: '0 2px 4px -1px rgba(40,32,20,0.06), 0 12px 28px -6px rgba(40,32,20,0.16)',
-  overlay: '0 4px 8px -2px rgba(21,21,21,0.08), 0 24px 48px -12px rgba(21,21,21,0.28)',
+  // Conts DS v2: the stone shadow under white cards on the darker canvas. Read from the tokens, so dark mode has its own.
+  card: 'var(--shadow-card)',
+  raised: 'var(--shadow-raised)',
+  dropdown: 'var(--shadow-dropdown)',
+  overlay: 'var(--shadow-overlay)',
 } as const;
 
 export const motion = {
@@ -65,7 +69,7 @@ export const motion = {
 } as const;
 
 export const shell = {
-  sidebar: 244, sidebarCollapsed: 68, contentMax: 1600,
+  sidebar: 256, sidebarCollapsed: 68, contentMax: 1600,
   control: 40, controlSm: 36, controlTouch: 44,
   navItem: 34, navItemL3: 30,
 } as const;

@@ -32,6 +32,16 @@ export function toSen(v: unknown): number | null {
   return Math.round(Number(s) * 100);
 }
 
+/** An outstanding amount → sen, a minus kept: on the ageing lists a minus is money paid ahead (a receipt, a credit
+ *  note or a payment not yet knocked off). "-1,234.56", "(1,234.56)" and -1234.56 are -123456; blank is 0. */
+export function toSignedSen(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? Math.round(v * 100) : null;
+  const s = String(v ?? "").trim().replace(/,/g, "");
+  const neg = /^\(.*\)$/.test(s) || s.startsWith("-");
+  const sen = toSen(s.replace(/^\((.*)\)$/, "$1").replace(/^-/, ""));
+  return sen == null ? null : neg ? -sen : sen;
+}
+
 /** A date cell → YYYY-MM-DD. Takes a real date, 2026-10-05, or 05/10/2026 (day first, as AutoCount prints it). */
 export function toDay(v: unknown): string | null {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -93,28 +103,28 @@ function parseDocs<T>(grid: unknown[][], kind: "receivables" | "payables", make:
 
 export function parseReceivablesGrid(grid: unknown[][]): ParsedSheet<ArRow> {
   return parseDocs(grid, "receivables", (c) => {
-    const sen = toSen(c.Outstanding);
+    const sen = toSignedSen(c.Outstanding);
     const value = {
       docNo: String(c["Invoice no"] ?? "").trim(), debtorCode: String(c["Customer code"] ?? "").trim(), debtorName: String(c.Customer ?? "").trim(),
       invoiceDate: toDay(c["Invoice date"]) ?? "", dueDate: toDay(c["Due date"]) ?? "", outstandingSen: sen ?? 0,
     };
     const problem = !value.docNo ? "No invoice number." : !value.debtorCode ? "No customer code." : !value.debtorName ? "No customer."
       : !value.invoiceDate ? "The invoice date is not a date." : !value.dueDate ? "The due date is not a date."
-      : !sen ? "The outstanding amount must be a plain RM figure above zero." : null;
+      : !sen ? "The outstanding amount must be a plain RM figure, not zero (a minus is money paid ahead)." : null;
     return { value, problem };
   });
 }
 
 export function parsePayablesGrid(grid: unknown[][]): ParsedSheet<ApRow> {
   return parseDocs(grid, "payables", (c) => {
-    const sen = toSen(c.Outstanding);
+    const sen = toSignedSen(c.Outstanding);
     const value = {
       docNo: String(c["Bill no"] ?? "").trim(), supplierCode: String(c["Supplier code"] ?? "").trim(),
       invoiceDate: toDay(c["Bill date"]) ?? "", dueDate: toDay(c["Due date"]) ?? "", outstandingSen: sen ?? 0,
     };
     const problem = !value.docNo ? "No bill number." : !value.supplierCode ? "No supplier code."
       : !value.invoiceDate ? "The bill date is not a date." : !value.dueDate ? "The due date is not a date."
-      : !sen ? "The outstanding amount must be a plain RM figure above zero." : null;
+      : !sen ? "The outstanding amount must be a plain RM figure, not zero (a minus is money paid ahead)." : null;
     return { value, problem };
   });
 }

@@ -20,7 +20,10 @@ export type UtilityRead = {
   periodFrom: string | null;         // YYYY-MM-DD as printed
   periodTo: string | null;
   amountDueSen: number | null;       // Jumlah Perlu Dibayar: shown, never recorded (it carries arrears and credits)
-  currentChargesSen: number | null;  // Caj Semasa: what finance records (chew, 3 Nov 2026)
+  currentChargesSen: number | null;  // Caj Semasa and its rounding: what finance records and pays (chew, 3 and 16 Nov 2026)
+  roundingSen: number | null;        // Pelarasan Penggenapan / Rounding Amount, already inside currentChargesSen
+  pageNo: number | null;             // "Page 1 of 5", "ms 1 / 2": this page's number, and how many pages the bill has
+  pageCount: number | null;
   accountNoVisible: string | null;   // as printed, masked digits as X
   accountNoFull: string | null;      // only where it is printed whole (barcode line, Indah Water, Maxis)
   depositSen: number | null;
@@ -40,7 +43,7 @@ export type UtilityRead = {
 const str = { type: 'string' };
 const FIELDS: Record<string, unknown> = {
   kind: { type: 'string', enum: [...UTILITY_KINDS] }, provider: str, billMonth: str, periodFrom: str, periodTo: str,
-  amountDue: str, currentCharges: str, accountNoVisible: str, accountNoFull: str, deposit: str, invoiceNo: str,
+  amountDue: str, currentCharges: str, rounding: str, pageNo: str, pageCount: str, accountNoVisible: str, accountNoFull: str, deposit: str, invoiceNo: str,
   premiseAddress: str, buildingName: str, unitText: str, ownerName: str, meterPrevious: str, meterCurrent: str, confidenceNotes: str,
 };
 export const UTILITY_READ_SCHEMA = { type: 'object', properties: FIELDS, required: Object.keys(FIELDS), additionalProperties: false };
@@ -49,7 +52,9 @@ const PROMPT = `You are reading ONE page of a Malaysian utility bill for a prope
 - kind: electricity (TNB), water (Air Selangor, SYABAS, or a building management water bill), sewerage (Indah Water), internet (TIME, Maxis, Unifi, U Mobile…), other.
 - billMonth: YYYY-MM of the bill. When a period is printed, the month the period ends in (06.08.2026 - 05.09.2026 is 2026-09). periodFrom / periodTo: YYYY-MM-DD as printed ("Tempoh Bil", "Billing period").
 - currentCharges: THIS period's charges ("Caj Semasa", "Current charges"), as printed, e.g. "377.50". This is the figure finance records. It is never the previous balance ("Baki Terdahulu"), a payment or an adjustment ("Pelarasan"), and never the amount due when that includes arrears.
-- amountDue: the amount to pay now ("Jumlah Perlu Dibayar", "Amount due"), as printed. Use "" when not printed; never 0 for a figure you cannot read.
+- rounding: the rounding adjustment of THIS bill as printed ("Pelarasan Penggenapan", "Rounding Amount", "Rounding Adj."), signed, e.g. "0.01" or "-0.02". It is what turns the current charges into the round sum paid (TNB 314.24 + 0.01 = 314.25). "" when not printed.
+- amountDue: the amount to pay now ("Jumlah Bil Anda", "Jumlah Perlu Dibayar", "Total Amount Payable", "Amount due"), as printed. Use "" when not printed; never 0 for a figure you cannot read.
+- pageNo / pageCount: the page number and the bill's number of pages as printed on this page ("Page 1 of 5" is "1" and "5"; TNB's "ms 1 / 2" is "1" and "2"). "" when not printed.
 - accountNoVisible: the account number exactly as printed, masked digits as X (TNB prints e.g. 2104010945XX02). accountNoFull: only when the whole number is printed somewhere (barcode text, Indah Water, Maxis).
 - deposit: the security deposit ("Deposit", "Cagaran") when printed.
 - premiseAddress, buildingName, unitText (e.g. "C-37-13A"), ownerName (the account holder) as printed.
@@ -70,6 +75,10 @@ const text = (v: unknown, max = 300): string | null => {
   const t = typeof v === 'string' ? v.replace(INVISIBLE, '').trim() : '';
   return t ? t.slice(0, max) : null;
 };
+/* A rounding is a few sen at most (Malaysia rounds to 5 sen); anything larger is a misread, left out. */
+const smallRounding = (sen: number | null): number | null => (sen != null && Math.abs(sen) <= 4 ? sen : null);
+const withRounding = (current: number | null, rounding: number | null): number | null => (current == null ? null : current + (smallRounding(rounding) ?? 0));
+const pageNumber = (v: unknown): number | null => { const n = Number(String(v ?? '').trim()); return Number.isInteger(n) && n > 0 && n < 100 ? n : null; };
 const isoDate = (v: unknown): string | null => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) ? v : null);
 const reading = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && /^\d+(\.\d+)?$/.test(v.replace(/,/g, '')) ? Number(v.replace(/,/g, '')) : null);
 
@@ -86,7 +95,10 @@ export function coerceUtilityRead(raw: unknown): UtilityRead {
   const mask = (v: unknown) => text(v, 40)?.replace(/[*x•]/g, 'X') ?? null;
   return {
     kind, provider: text(o.provider, 100), billMonth: month, periodFrom, periodTo,
-    amountDueSen: rmToSen(o.amountDue), currentChargesSen: rmToSen(o.currentCharges),
+    amountDueSen: rmToSen(o.amountDue),
+    /* What is paid is the current charges with their rounding (chew, 16 Nov 2026: TNB's 314.24 + 0.01, "我要还的是 314.25"). */
+    currentChargesSen: withRounding(rmToSen(o.currentCharges), rmToSen(o.rounding)), roundingSen: smallRounding(rmToSen(o.rounding)),
+    pageNo: pageNumber(o.pageNo), pageCount: pageNumber(o.pageCount),
     accountNoVisible: mask(o.accountNoVisible), accountNoFull: text(o.accountNoFull, 40), depositSen: rmToSen(o.deposit),
     invoiceNo: text(o.invoiceNo, 60), premiseAddress: text(o.premiseAddress), buildingName: text(o.buildingName, 120),
     unitText: text(o.unitText, 40), ownerName: text(o.ownerName, 120), meterPrevious: reading(o.meterPrevious), meterCurrent: reading(o.meterCurrent),

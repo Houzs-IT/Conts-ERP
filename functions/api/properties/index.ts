@@ -9,8 +9,6 @@ import { extrasFor, purposeReady, bedsLabel, baysLabel } from '../../_lib/unitPu
 import { bedSizes } from '../../_lib/bedSizes';
 import { hasPassKeyJobs } from '../../_lib/passKeyJobs';
 
-const area = (city: string, postcode: string | null) => (postcode ? `${city}, ${postcode}` : city);
-
 /** GET /api/properties — every building and every unit with its owner, package, monthly expenses and contract (the Units screen's tree and forms). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
@@ -20,7 +18,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const banking = session.manage || can(session, 'finance', 'view');
 
   // full_access_card is migration 0161.
-  const card = (await hasColumn(env, 'properties', 'full_access_card').catch(() => false)) ? 'full_access_card' : 'false AS full_access_card';
+  const card = (await hasColumn(env, 'properties', 'full_access_card')) ? 'full_access_card' : 'false AS full_access_card';
   const passKey = (await hasPassKeyJobs(env)) ? 'needs_pass_key' : 'false AS needs_pass_key';
   const [buildings, units, expenses, docs, { defaultFeePct }, extras, types, sizes] = await Promise.all([
     all<any>(env, `SELECT id, name, city, state, postcode, ${card}, ${passKey} FROM properties ORDER BY state, name`),
@@ -44,9 +42,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     bedSizes(env),
   ]);
 
+  // Each unit's monthly costs and contract files, grouped once rather than searched for every unit (same order).
+  const byUnit = <T extends { unit_id: string }>(list: T[]) => {
+    const m = new Map<string, T[]>();
+    for (const x of list) { const l = m.get(x.unit_id); if (l) l.push(x); else m.set(x.unit_id, [x]); }
+    return m;
+  };
+  const expensesOf = byUnit(expenses), docsOf = byUnit(docs);
+
   return json({
     generatedAt: nowIso(),
-    buildings: buildings.map(b => ({ id: b.id, name: b.name, city: area(b.city, b.postcode), state: b.state, fullAccessCard: b.full_access_card === true, needsPassKey: b.needs_pass_key === true })),
+    buildings: buildings.map(b => ({ id: b.id, name: b.name, city: b.city, postcode: b.postcode ?? null, state: b.state, fullAccessCard: b.full_access_card === true, needsPassKey: b.needs_pass_key === true })),
     units: units.map(u => ({
       id: u.id, buildingId: u.property_id, parentUnitId: u.parent_unit_id ?? null,
       listingName: u.listing_name ?? '', unitCode: u.unit_code ?? u.unit_number, state: u.state,
@@ -61,13 +67,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       // Migration 0125: what the unit is for, its beds and its car park bays.
       ...(() => { const x = extras.get(u.id); return { purpose: x?.purpose ?? 'rental', usedBy: x?.usedBy ?? null, beds: x?.beds ?? [], bedsLabel: bedsLabel(x?.beds ?? [], sizes), parkingBays: x?.parkingBays ?? [], parkingLabel: baysLabel(x?.parkingBays ?? []) }; })(),
       bedrooms: u.bedrooms, bathrooms: u.bathrooms, sizeSqft: u.size_sqft ?? null, layoutType: u.layout_type ?? null, ...(banking ? { baseRate: Number(u.base_rate), cleaningPrice: u.cleaning_price == null ? null : Number(u.cleaning_price), deepCleaningPrice: u.deep_cleaning_price == null ? null : Number(u.deep_cleaning_price) } : {}),
-      expenses: expenses.filter(e => e.unit_id === u.id).map(e => ({ id: e.id, category: e.category, amount: Number(e.amount), note: e.note })),
+      expenses: (expensesOf.get(u.id) ?? []).map(e => ({ id: e.id, category: e.category, amount: Number(e.amount), note: e.note })),
       contract: {
         feePct: u.management_fee_pct ?? 25, startedOn: u.starts_on ?? '', renewsOn: u.renews_on ?? '',
         // Package D's monthly minimum (sen), read-only here: it comes from the owner workbook import.
         ...(banking ? { minimumGuarantee: Number(u.minimum_guarantee ?? 0), minimumGuaranteeAnnual: u.minimum_guarantee_annual == null ? null : Number(u.minimum_guarantee_annual),
           guaranteeStartsOn: u.guarantee_starts_on ?? null, guaranteeEndsOn: u.guarantee_ends_on ?? null } : {}),
-        documents: docs.filter(d => d.unit_id === u.id).map(d => ({ id: d.id, name: d.file_name })),
+        documents: (docsOf.get(u.id) ?? []).map(d => ({ id: d.id, name: d.file_name })),
       },
     })),
   });
@@ -87,7 +93,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const id = crypto.randomUUID(), now = nowIso();
   await run(env, `INSERT INTO properties (id, name, address_line, city, state, created_at, updated_at) VALUES (?, ?, '', ?, ?, ?, ?)`,
     id, b.name.trim(), String(b.city ?? '').trim(), b.state.trim(), now, now);
-  if (b.fullAccessCard === true && (await hasColumn(env, 'properties', 'full_access_card').catch(() => false))) await run(env, 'UPDATE properties SET full_access_card = true WHERE id = ?', id);
+  if (b.fullAccessCard === true && (await hasColumn(env, 'properties', 'full_access_card'))) await run(env, 'UPDATE properties SET full_access_card = true WHERE id = ?', id);
   if (b.needsPassKey === true && (await hasPassKeyJobs(env))) await run(env, 'UPDATE properties SET needs_pass_key = true WHERE id = ?', id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'property.create', entityTable: 'properties', entityId: id, after: { name: b.name, fullAccessCard: b.fullAccessCard === true, needsPassKey: b.needsPassKey === true } });
   return json({ id }, 201);

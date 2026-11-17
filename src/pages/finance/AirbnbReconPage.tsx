@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import PageHeader from '../../components/PageHeader';
+import { LockBars } from '../../components/LockBar';
 import { SectionCard } from '../../components/Card';
 import { Button } from '../../components/Button';
 import Icon from '../../components/Icon';
@@ -53,6 +54,8 @@ interface Line {
   payments: { id: string; date: string; amount: number; inMonth: boolean }[];
   reservation: number; adjustment: number; extra: number; aircover: number; difference: number | null;
   decision?: Decision | null; preview?: Preview | null; previewSet?: Preview | null; bulk?: boolean;
+  /** Months of this line's stays whose income is locked for their unit (Owner statement close). */
+  lockedMonths?: string[];
 }
 interface IncomeType { id: string; parentId: string | null; name: string; systemKey: string | null; matchWords: string | null; active: boolean; sortOrder: number }
 interface RuleTotal { rule: Rule; label: string; count: number; system: number; airbnb: number; difference: number }
@@ -210,7 +213,7 @@ export default function AirbnbReconPage() {
     : null;
   const ruleChip = ruleFilter ? (
     <button type="button" onClick={() => url.set({ rule: null })} className="bg-transparent border-0 p-0 cursor-pointer" title="Show every rule">
-      <StatusBadge tone={RULE_TONE[ruleFilter]} label={<>{ruleText(ruleFilter)} ✕</>} />
+      <StatusBadge tone={RULE_TONE[ruleFilter]} label={<span className="inline-flex items-center gap-1">{ruleText(ruleFilter)}<Icon name="X" size="sm" style={{ width: 12, height: 12 }} /></span>} />
     </button>
   ) : null;
 
@@ -223,6 +226,9 @@ export default function AirbnbReconPage() {
       <input ref={fileRef} type="file" accept=".csv,text/csv" multiple onChange={onFiles} className="hidden" aria-hidden />
       <div className="flex flex-col gap-4">
         {error && <StaleBanner message={data ? `Showing the last figures we have. ${error}` : error} onRetry={reload} />}
+        {/* The month's Revenue lock (Unit report locks): once its reservations are confirmed, lock it here or unit by unit
+            on the Unit report; both are the same locks. */}
+        {data?.ready && <LockBars month={month} stages={['income']} onChange={reload} />}
         {loading && !data ? <TableSkeleton rows={8} cols={6} />
           : data && !data.ready ? <EmptyState title="Airbnb reconciliation is not set up yet." body="It is waiting for a database update (migration 0258)." />
           : data && !(data.files?.length || lines.length) ? (
@@ -234,7 +240,7 @@ export default function AirbnbReconPage() {
               <Files files={data.files ?? []} />
               <StatRow cols={4}>
                 <StatTile label="Paid to the bank" value={rm(t.bank)}
-                  hint={t.bank === t.money ? <span className="text-success">✓ Equals the money for reservations</span> : <span className="text-warning">Money for reservations {rm(t.money)}: {signed(t.money - t.bank)} apart</span>} />
+                  hint={t.bank === t.money ? <span className="inline-flex items-center gap-1 text-success"><Icon name="Check" size="sm" style={{ width: 13, height: 13 }} />Equals the money for reservations</span> : <span className="text-warning">Money for reservations {rm(t.money)}: {signed(t.money - t.bank)} apart</span>} />
                 <StatTile label="Reservations equal" value={`${count(equal)} of ${count(counted)}`} hint={counted ? `${((equal / counted) * 100).toFixed(1)}% need nothing` : undefined} />
                 <StatTile label="To confirm" value={count(open.length)} tone={open.length ? 'warning' : undefined} onClick={() => url.set({ view: null, rule: null })} active={view === 'confirm'}
                   hint={[done.length ? `${count(done.length)} done` : '', change ? `amounts would go ${change > 0 ? 'up' : 'down'} by ${rm(Math.abs(change))}` : ''].filter(Boolean).join(' · ') || 'No reservation amount to change'} />
@@ -523,6 +529,9 @@ function ConfirmWindow({ line, month, types, ruleText, onClose, onDone }: {
       )}
 
       <Field label="Note (optional)" value={note} maxLength={500} onChange={e => setNote(e.target.value)} placeholder="Why, if it is not obvious" />
+      {!!line.lockedMonths?.length && (
+        <p className="m-0 text-meta text-muted-ink">{line.lockedMonths.map(m => monthLabel(m, { long: true })).join(' and ')} income is locked for this unit, so the owner's share of this change goes to the next open month as an owner adjustment.</p>
+      )}
       <p className="m-0 text-meta text-muted-ink">Keep as it is closes the line and changes nothing. Either can be undone from Confirmed.</p>
     </Modal>
   );

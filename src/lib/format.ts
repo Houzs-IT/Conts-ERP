@@ -160,12 +160,39 @@ export const greetName = (fullName: string | null | undefined, fallback = 'there
 
 export const humanize = (code: string) => code.replace(/[_.]+/g, ' ').trim().toLowerCase().replace(/^./, c => c.toUpperCase());
 
-/** ALL-CAPS names from imports read in Title Case; company suffixes stay upper case. The stored value is unchanged. */
-export const titleCase = (name: string) => {
-  if (!name || name !== name.toUpperCase() || !/[A-Z]/.test(name)) return name;
-  const KEEP = new Set(['SDN', 'BHD', 'PLT', 'LLP', 'A/L', 'A/P', 'B/L', 'S/O', 'D/O']);
-  return name.split(/(\s+)/).map(w => KEEP.has(w.replace(/[.,]/g, '')) ? w
-    : w.toLowerCase().replace(/(^|[-'(/])([a-z])/g, (_, a: string, b: string) => a + b.toUpperCase())).join('');
+/** Short place and company abbreviations that stay in capitals inside a title-cased name. */
+const KEEP_UPPER = new Set(['SDN', 'BHD', 'PLT', 'LLP', 'A/L', 'A/P', 'B/L', 'S/O', 'D/O',
+  'KL', 'PJ', 'DK', 'RC', 'JB', 'KLCC', 'KLIA', 'TTDI', 'OUG', 'USJ', 'MRT', 'LRT', 'YTL', 'UOA', 'II', 'III', 'IV']);
+
+/** One word of a name, title-cased for display. Words with a digit (unit codes, SS2, MK2) keep what is stored, except
+ *  ordinals (8TH -> 8th); a word already in mixed case is kept; short abbreviations stay in capitals. */
+const displayWord = (w: string, place = false) => {
+  if (!/[A-Za-z]/.test(w)) return w;
+  const bare = w.replace(/[.,()]/g, '');
+  if (/\d/.test(w)) return /^\d+(ST|ND|RD|TH)$/i.test(bare) ? w.toLowerCase() : w;
+  const upper = w === w.toUpperCase(), lower = w === w.toLowerCase();
+  if (!upper && !lower) return w;
+  // In a building name a short word with no vowel is an abbreviation (KL, PJ, DK); in a person's name it may be a
+  // surname (NG), so only the fixed list applies there.
+  if (upper && (KEEP_UPPER.has(bare.toUpperCase()) || (place && bare.length <= 3 && !/[AEIOUY]/.test(bare)))) return w;
+  return w.toLowerCase().replace(/(^|[-'(/&])([a-z])/g, (_, a: string, b: string) => a + b.toUpperCase());
+};
+
+const titleWords = (s: string, place = false) => s.split(/(\s+)/).map(w => displayWord(w, place)).join('');
+
+/** ALL-CAPS or all-lowercase names read in Title Case; company suffixes, short abbreviations (KL, SS2) and unit codes
+ *  stay as stored. A name a person typed in mixed case is kept. The stored value is unchanged. */
+export const titleCase = (name: string) => (!name || /^[A-Z]{1,3}$/.test(name.trim()) ? name : titleWords(name));
+
+/** A building as shown everywhere: AGILE BUKIT BINTANG -> Agile Bukit Bintang, SKYLINE KL D49-03A -> Skyline KL D49-03A,
+ *  8TH STELLAR -> 8th Stellar. Display only: the stored name is unchanged. */
+export const buildingName = (name: string | null | undefined) => (name ? titleWords(name.trim(), true) : '');
+
+/** A person as shown: ALEX GOH -> Alex Goh, FONG -> Fong. A one-word initialism such as YH stays as it is. */
+export const personName = (name: string | null | undefined) => {
+  const n = (name ?? '').trim();
+  if (!n) return '';
+  return titleCase(n);
 };
 
 /** Sat 10/10: short weekday, then month/day, for day headers on Cleaning, Today and the field app. */

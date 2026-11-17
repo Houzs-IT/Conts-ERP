@@ -12,7 +12,7 @@ import { api, notifyFailure } from '../../lib/api';
 import { COMMISSION, type ChannelRule } from '../../lib/pricing';
 import { channel as CH } from '../../theme';
 import { SYNC } from '../../lib/vocabulary';
-import { rm, date } from '../../lib/format';
+import { rm, date, buildingName } from '../../lib/format';
 import { TONE, cx } from '../../lib/design-tokens';
 import { EditableMoney } from './EditableMoney';
 import { usePhone } from '../finance/listKit';
@@ -106,7 +106,7 @@ export function UnitPrices({ unit, levelsReady, onSaved }: { unit: PricedUnit; l
     <Card style={{ flex: '1 1 520px', minWidth: 0 }}>
       <div className="py-4 px-5 [border-bottom:1px_solid_var(--color-line)] flex items-start justify-between gap-4 flex-wrap">
         <div className="flex flex-col gap-0.5 min-w-0">
-          <span className="text-heading font-semibold">{unit.propertyName} {unit.unitNumber}</span>
+          <span className="text-heading font-semibold">{buildingName(unit.propertyName)} {unit.unitNumber}</span>
           <span className="text-meta text-muted-ink">
             {unit.state ?? 'State not recognised'} · Tap a price to change it. It saves straight away and goes to connected channels by itself.
           </span>

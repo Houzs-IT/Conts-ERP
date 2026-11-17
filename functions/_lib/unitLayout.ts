@@ -5,14 +5,14 @@ import { hasColumn } from './auth';
  *  type when the unit has one. units.layout_type comes with the units work (migration 0123) and may not be on the
  *  database yet, so it is read only when the column exists. */
 export async function unitLayoutSql(env: Env, alias = 'u'): Promise<string> {
-  const has = await hasColumn(env, 'units', 'layout_type').catch(() => false);
+  const has = await hasColumn(env, 'units', 'layout_type');
   return has ? `${alias}.layout_type::text` : 'NULL::text';
 }
 
 /** How many beds and mattresses the unit sleeps on, from units.beds (migration 0125), for the cleaning screens:
  *  the cleaner brings that many sets of linen (staff sheet CLEANING, 23 Oct 2026). NULL before 0125. */
 export async function unitMattressesSql(env: Env, alias = 'u'): Promise<string> {
-  const has = await hasColumn(env, 'units', 'beds').catch(() => false);
+  const has = await hasColumn(env, 'units', 'beds');
   return has ? `(SELECT SUM((b->>'quantity')::int) FROM jsonb_array_elements(CASE WHEN jsonb_typeof(${alias}.beds) = 'array' THEN ${alias}.beds ELSE '[]'::jsonb END) b)` : 'NULL::int';
 }
 

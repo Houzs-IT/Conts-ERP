@@ -312,8 +312,8 @@ const STOREKEEPER_SUPERVISOR_ROWS: readonly PolicyRow[] = [
 // the shared events board without any operational surface, so a fail-open FULL
 // map (which it had until this row) was the whole point defeated.
 //
-// The Projects group renders for its ONE Calendar sub-tab; the List / Finances /
-// Maintenance sub-tabs carry explicit `none` rows so the L1 `projects` = view
+// The Projects group renders for its ONE Calendar sub-tab; the List / Defects /
+// Handover / Finances / Maintenance sub-tabs carry explicit `none` rows so the L1 `projects` = view
 // does not cascade onto them (same override mechanism as the Storekeeper
 // warehouse denials).
 //
@@ -329,6 +329,8 @@ const CALENDAR_VIEWER_ROWS: readonly PolicyRow[] = [
   { page_key: "projects", level: "view" },
   { page_key: "projects.calendar", level: "view" },
   { page_key: "projects.list", level: "none" },
+  { page_key: "projects.defects", level: "none" },
+  { page_key: "projects.handover", level: "none" },
   { page_key: "projects.finances", level: "none" },
   { page_key: "projects.maintenance", level: "none" },
   { page_key: "scm", level: "none" },

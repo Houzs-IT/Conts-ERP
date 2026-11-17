@@ -5,7 +5,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { DateField, MoneyInput, TimeField } from '../components/inputs';
 import Icon from '../components/Icon';
-import { Select, type SelectOption } from '../components/Select';
+import type { SelectOption } from '../components/Select';
 import { StaleBanner } from '../components/DataState';
 import { EmptyState, Skeleton } from '../components/States';
 import { AttachmentLabel, PhotosPdfButton } from '../components/Attachments';
@@ -13,6 +13,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { BulkAssignCleaner } from '../components/BulkAssignCleaner';
 import { CleanerChecklist, CleanerChips, cleanerHint } from '../components/CleanerPicks';
 import { Floating } from '../components/DataTableParts';
+import { ListToolbar, defaultDatePresets, rangeDate, PhoneCard, type ToolbarFilter } from '../components/ListToolbar';
 import { LateCheckoutBlock } from '../components/booking/BookingDrawer';
 import { sizeLine } from '../lib/unitSize';
 import SplitPane from '../components/SplitPane';
@@ -28,7 +29,7 @@ import { useSession } from '../lib/session';
 import { runEach, skippedNote } from '../lib/bulk';
 import { fetchAllPages } from '../lib/export';
 import { cx } from '../lib/design-tokens';
-import { rm, plural, count } from '../lib/format';
+import { rm, plural, count, buildingName } from '../lib/format';
 import type { Tone } from '../lib/types';
 import { PhoneHistory, RecordHistory } from '../components/RecordHistory';
 import { PricesView, PayView } from './CleaningSetup';
@@ -39,6 +40,8 @@ import {
 import { statusOf } from '../lib/status';
 import { cleanRowTone, type CleanRowTone } from '../lib/cleanRowTone';
 import { StatusBadge } from '../components/StatusBadge';
+import { ChoiceChips } from '../components/ChoiceChips';
+import { KeyFacts } from '../components/KeyFacts';
 import { PhoneJobCard, PhoneJobList, PhoneStayTime } from '../components/ops/PhoneJobCard';
 import { CleanProof, stageCounts, stageOf } from '../components/ops/CleanProof';
 import { sortForCleaner, sortBuildings, type CleanOrderInput } from '../lib/cleanOrder';
@@ -98,13 +101,7 @@ const KIND_NAME: Record<string, string> = { turnover: 'Basic clean', deep_clean:
 /** A job still titled by its type follows the type; a title someone typed stays. */
 const cleanTitle = (kind: string, title: string) => (Object.values(KIND_NAME).includes(title) ? KIND_NAME[kind] ?? title : title);
 
-/** Basic (BC) is the default and Deep (DC) the other choice (26 Oct 2026). Light only shows on an old Light job. */
-function CleanTypeOptions({ current }: { current?: string }) {
-  return <>
-    <option value="turnover">Basic clean (BC)</option><option value="deep_clean">Deep clean (DC)</option>
-    {current === 'light_clean' && <option value="light_clean">Light clean</option>}
-  </>;
-}
+/* Basic (BC) is the default and Deep (DC) the other choice (26 Oct 2026); Light only shows on an old Light job. */
 const COST_SOURCE: Record<string, string> = { unit: "the unit's own price", history: 'last charged on this unit', default: 'standard rate', job: 'set on this job', table: 'price table' };
 
 export default function CleaningPage() {
@@ -147,7 +144,6 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const date = pick === 'today' ? mytDay(0) : pick === 'tomorrow' ? mytDay(1) : picked;
   const [cleaner, setCleaner] = useState('');
   const [building, setBuilding] = useState('');
-  const [filtersOpen, setFiltersOpen] = useState(false);
   // Status switch: All (the default, ready units on top), To do (not started, incl. checkouts with no job), In progress, Done.
   const [phase, setPhase] = useState<'all' | 'todo' | 'doing' | 'done'>('all');
   const [selected, setSelected] = useState<string | null>(null);
@@ -158,18 +154,19 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const { user } = useSession();
   // Closing overdue jobs in bulk is management's (functions/api/housekeeping/overdue.ts); cleaners never see it.
-  const mayBulk = mayRun(user, 'operations');
+  const mayBulk = mayRun(user, 'cleaning');
   const [overdueOpen, setOverdueOpen] = useState(() => { try { return localStorage.getItem('cleaning.overdueOpen') === '1'; } catch { return false; } });
   const toggleOverdue = () => setOverdueOpen(v => { try { localStorage.setItem('cleaning.overdueOpen', v ? '0' : '1'); } catch { /* private window */ } return !v; });
   const [picks, setPicks] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<'done' | 'cancel' | null>(null);
 
-  const { data, loading, error, reload: reloadData } = useApi<Board>(`/housekeeping/board?date=${date}`);
+  const { data, loading, error, reload: reloadData, poll } = useApi<Board>(`/housekeeping/board?date=${date}`);
   // The side menu's counts (open jobs, today's work) follow what was just done here.
   const reload = () => { reloadData(); void refreshNavCounts(); };
   // A cleaner finishing on the phone shows here without anyone pressing refresh.
   useEffect(() => {
-    const tick = () => { if (document.visibilityState === 'visible') reloadData(); };
+    // poll, not reload: a slow board read is let finish rather than stacked under another.
+    const tick = () => { if (document.visibilityState === 'visible') poll(); };
     const t = window.setInterval(tick, 30_000);
     document.addEventListener('visibilitychange', tick);
     return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', tick); };
@@ -182,13 +179,21 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
 
   const buildingOptions: SelectOption[] = useMemo(() => {
     const m = new Map<string, string>();
-    for (const r of rows) m.set(r.buildingId, r.propertyName);
-    for (const d of departures) m.set(d.buildingId, d.propertyName);
+    for (const r of rows) m.set(r.buildingId, buildingName(r.propertyName));
+    for (const d of departures) m.set(d.buildingId, buildingName(d.propertyName));
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ value, label }));
   }, [rows, departures]);
   const cleanerOptions: SelectOption[] = [{ value: 'none', label: 'Unassigned' }, ...cleaners.map(c => ({ value: c.id, label: c.name }))];
 
   const phaseOf = (r: Row) => (r.status === 'done' ? 'done' : r.status === 'cleaning' ? 'doing' : 'todo');
+  // The Filters panel: each option with how many of the day's jobs it would show.
+  const unassignedRow = (r: Row) => !r.cleanerId && !r.assigneeId && !r.assigneeName;
+  const filterGroups: ToolbarFilter[] = [
+    { key: 'cleaner', label: 'Cleaner', allLabel: 'All cleaners', value: cleaner, onChange: setCleaner,
+      options: cleanerOptions.map(o => ({ value: o.value, label: o.label, count: rows.filter(r => (o.value === 'none' ? unassignedRow(r) : r.cleanerId === o.value || r.cleaners.some(c => c.cleanerId === o.value))).length })) },
+    { key: 'building', label: 'Building', allLabel: 'All buildings', value: building, onChange: setBuilding,
+      options: buildingOptions.map(o => ({ value: o.value, label: String(o.label), count: rows.filter(r => r.buildingId === o.value).length + departures.filter(d => d.buildingId === o.value).length })) },
+  ];
   const filteredRows = rows.filter(r => (!building || r.buildingId === building)
     && (!cleaner || (cleaner === 'none' ? !r.cleanerId && !r.assigneeId && !r.assigneeName : r.cleanerId === cleaner || r.cleaners.some(c => c.cleanerId === cleaner))));
   const phaseCount = { todo: filteredRows.filter(r => phaseOf(r) === 'todo').length, doing: filteredRows.filter(r => phaseOf(r) === 'doing').length, done: filteredRows.filter(r => phaseOf(r) === 'done').length };
@@ -205,8 +210,8 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const toGroups = (rs: Row[], deps: Departure[], reps: RepairOnDay[], tag: string) => {
     const m = new Map<string, { id: string; key: string; name: string; rows: Row[]; departures: Departure[]; repairs: RepairOnDay[] }>();
     const get = (id: string, name: string) => m.get(id) ?? (m.set(id, { id, key: `${tag}${id}`, name, rows: [], departures: [], repairs: [] }), m.get(id)!);
-    for (const r of rs) get(r.buildingId, r.propertyName).rows.push(r);
-    for (const d of deps) get(d.buildingId, d.propertyName).departures.push(d);
+    for (const r of rs) get(r.buildingId, buildingName(r.propertyName)).rows.push(r);
+    for (const d of deps) get(d.buildingId, buildingName(d.propertyName)).departures.push(d);
     for (const w of reps) if (m.has(w.buildingId)) m.get(w.buildingId)!.repairs.push(w);
     // Inside each building, the cleaner's order (lib/cleanOrder): units ready to clean by next check-in, then guests still
     // in by checkout time, then done. The buildings themselves always A to Z (owner, 2 Nov 2026).
@@ -371,24 +376,18 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         { value: 'doing', label: `In progress · ${phaseCount.doing}` },
         { value: 'done', label: `Done · ${phaseCount.done}` },
       ]} />
-      <div className="flex items-end gap-2 flex-wrap">
-        <Segmented label="Day" value={pick} onChange={setPick}
-          options={[{ value: 'today', label: 'Today' }, { value: 'tomorrow', label: 'Tomorrow' }, { value: 'pick', label: 'Pick date' }]} />
-        {/* Phones: the two dropdowns fold behind one button so the first jobs show on the first screen. */}
-        <span className="md:hidden">
-          <Button size="sm" variant="secondary" icon={<Icon name="ListFilter" size="sm" />} onClick={() => setFiltersOpen(v => !v)} aria-expanded={filtersOpen}>
-            Filter{cleaner || building ? ` · ${[cleaner, building].filter(Boolean).length}` : ''}
-          </Button>
-        </span>
-        {pick === 'pick' && <DateField aria-label="Day" value={picked} onChange={v => v && setPicked(v)} className={cx(INPUT, 'h-9 w-auto')} />}
-        <Select label="Cleaner" value={cleaner} onChange={setCleaner} options={cleanerOptions} placeholder="All cleaners" className={cx('flex-1 min-w-[140px] md:flex-none md:w-[160px]', !filtersOpen && 'max-md:hidden')} />
-        <Select label="Building" value={building} onChange={setBuilding} options={buildingOptions} placeholder="All buildings" className={cx('flex-1 min-w-[140px] md:flex-none md:w-[180px]', !filtersOpen && 'max-md:hidden')} />
-        {visibleDepartures.length > 0 && (
-          <Button size="sm" variant="brand" loading={busy === 'plan-all'} onClick={() => void planAll()} className="ml-auto max-md:ml-0 max-md:w-full">
+      {/* Day, then Cleaner and Building behind one Filters button (a bottom sheet on a phone), what is on as chips below. */}
+      <ListToolbar bare filters={filterGroups}
+        leading={<>
+          <Segmented label="Day" value={pick} onChange={setPick}
+            options={[{ value: 'today', label: 'Today' }, { value: 'tomorrow', label: 'Tomorrow' }, { value: 'pick', label: 'Pick date' }]} />
+          {pick === 'pick' && <DateField aria-label="Day" value={picked} onChange={v => v && setPicked(v)} className={cx(INPUT, 'h-9 w-auto')} />}
+        </>}
+        right={visibleDepartures.length > 0 && (
+          <Button size="sm" variant="brand" loading={busy === 'plan-all'} onClick={() => void planAll()} className="max-md:w-full">
             Plan cleaning for {visibleDepartures.length} {visibleDepartures.length === 1 ? 'checkout' : 'checkouts'}
           </Button>
-        )}
-      </div>
+        )} />
 
       <SplitPane list={list} open={!!sel} onClose={() => setSelected(null)} width={580}
         detail={sel ? <CleanDetail key={sel.id} row={sel} now={now} onClose={() => setSelected(null)} onChanged={reload} onGuestLeft={() => void guestLeft({ taskId: sel.id }, sel.unitNumber)}
@@ -441,14 +440,14 @@ function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'c
     <ul className="m-0 p-0 list-none max-h-[180px] overflow-y-auto rounded-control border border-solid border-line divide-y divide-[var(--color-line-soft)]">
       {jobs.map(j => (
         <li key={j.id} className="px-3 py-1.5 text-copy flex items-baseline gap-2">
-          <b>{j.unitNumber}</b><span className="text-muted-ink truncate">{j.propertyName}</span>
+          <b>{j.unitNumber}</b><span className="text-muted-ink truncate">{buildingName(j.propertyName)}</span>
           <span className="ml-auto text-meta text-muted-ink whitespace-nowrap">{dayLabel(j.day)}</span>
         </li>
       ))}
     </ul>
   );
   return action === 'done' ? (
-    <OpsModal title={`Mark ${plural(n, 'overdue cleaning job')} done?`} onClose={onClose} busy={busy}
+    <OpsModal title={`Mark ${plural(n, 'overdue cleaning job')} done?`} eyebrow="Cleaning" size="sm" onClose={onClose} busy={busy}
       sub="Recorded as done by you, now, with the note 'closed in bulk'. No photo is asked for. Each one is charged to its unit like a finished clean, on the job's own day."
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Back</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Mark {plural(n, 'job')} done</Button></>}>
       {list}
@@ -456,7 +455,7 @@ function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'c
       {error && <p role="alert" className="m-0 text-copy text-danger">{error}</p>}
     </OpsModal>
   ) : (
-    <OpsModal title={`Cancel ${plural(n, 'overdue cleaning job')}?`} onClose={onClose} busy={busy}
+    <OpsModal title={`Cancel ${plural(n, 'overdue cleaning job')}?`} eyebrow="Cleaning" size="sm" onClose={onClose} busy={busy}
       sub="The jobs are removed and nothing is charged. The reason is kept in the history. A job a cleaner started, or one with photos, is kept: mark it done instead."
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Back</Button><Button size="sm" variant="danger" loading={busy} onClick={() => void save()}>Cancel {plural(n, 'job')}</Button></>}>
       {list}
@@ -547,7 +546,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
         <button type="button" onClick={() => setShut(v => !v)} aria-expanded={!shut}
           className="min-w-0 mr-auto flex items-center gap-2 flex-wrap bg-transparent border-none p-0 cursor-pointer text-left text-ink [font-family:inherit]">
           <Icon name={shut ? 'ChevronRight' : 'ChevronDown'} size="sm" color="var(--color-muted-ink)" />
-          <span className="text-[16px] font-semibold tracking-[-0.005em]">{group.name}</span>
+          <span className="text-heading font-semibold tracking-[-0.005em]">{group.name}</span>
           <span className="text-meta text-muted-ink tabular-nums">{plural(group.rows.length, 'job')} · {doneN} done</span>
           {group.departures.length > 0 && <StatusBadge tone="critical">{group.departures.length} to plan</StatusBadge>}
         </button>
@@ -650,7 +649,7 @@ function CleanerChip({ r, cleaners, assigning, onAssign }: { r: Row; cleaners: C
                 <label key={c.id} className={cx('min-h-11 flex items-center gap-2.5 px-2.5 py-1.5 rounded-[8px] cursor-pointer text-copy', on ? 'bg-gold-tint' : 'hover:bg-muted')}>
                   <input type="checkbox" checked={on} onChange={() => toggle(c.id)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); apply(); } }}
                     className="w-4 h-4 m-0 flex-none accent-[var(--color-brand-black)]" />
-                  <span aria-hidden className="flex-none w-8 h-8 rounded-full grid place-items-center bg-muted text-ink text-[11px] font-semibold">{initials(c.name)}</span>
+                  <span aria-hidden className="flex-none w-8 h-8 rounded-full grid place-items-center bg-muted text-ink text-caption font-semibold">{initials(c.name)}</span>
                   <span className="min-w-0 flex-1 flex flex-col">
                     <span className="truncate font-medium text-ink">{c.name}</span>
                     <span className="truncate text-meta text-muted-ink">{cleanerHint(c)}</span>
@@ -678,8 +677,9 @@ const CARD_TONE: Record<NonNullable<CleanRowTone>, { border: string; pill: 'crit
   overdue: { border: 'border-danger-line', pill: 'critical' },
   out: { border: 'border-warning-line', pill: 'warning' },
 };
-const CARD = 'rounded-card border-2 border-solid p-4 text-copy flex flex-col gap-2.5 min-w-0';
-const CARD_TITLE = 'text-[17px] leading-tight font-bold text-ink [overflow-wrap:anywhere]';
+// The prototype's job card (rops-cj): a white card with a 2px edge, red when the checkout passed, amber once the guest is out.
+const CARD = 'rounded-card border-2 border-solid p-3.5 text-copy flex flex-col gap-[9px] min-w-0';
+const CARD_TITLE = 'text-heading leading-tight font-bold font-mono text-ink [overflow-wrap:anywhere]';
 const CARD_NOTE = 'pl-6 text-meta';
 
 /** One job on tablet and up, laid out like the reference board. Every card has the same rows in the same order (title and
@@ -804,12 +804,12 @@ const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2)
 const rowOrder = (r: Row): CleanOrderInput => ({
   checkIn: r.next?.checkInTime ?? r.nextLater?.checkInTime ?? null, checkInDay: r.next ? r.day : r.nextLater?.day ?? null, day: r.day,
   guestIn: !!r.previous && !r.guestOut && r.status !== 'cleaning' && r.status !== 'done', checkOut: r.previous?.checkOutTime ?? null,
-  done: r.status === 'done', building: r.propertyName, unit: r.unitNumber,
+  done: r.status === 'done', building: buildingName(r.propertyName), unit: r.unitNumber,
 });
 const departureOrder = (d: Departure, day: string): CleanOrderInput => ({
   checkIn: d.next?.checkInTime ?? d.nextLater?.checkInTime ?? null, checkInDay: d.next ? day : d.nextLater?.day ?? null, day,
   guestIn: d.state !== 'checked_out', checkOut: d.checkOutTime,
-  building: d.propertyName, unit: d.unitNumber,
+  building: buildingName(d.propertyName), unit: d.unitNumber,
 });
 /** "Auto at 11:00" or "Auto at 13:00 (late checkout)": the system marked the guest out at the checkout time (lib/guestLeft). */
 const autoLabel = (r: Row) => `Auto at ${hm(r.guestLeftAt)}${r.previous?.lateCheckOut ? ' (late checkout)' : ''}`;
@@ -856,7 +856,7 @@ function PhoneCleanCard({ r, now, active, busy, onSelect, onGuestLeft, onUndoLef
       right={<span className="flex items-center" title={names.join(', ') || undefined}>
         {names.length ? <>
           {names.slice(0, 2).map((n, i) => (
-            <span key={i} aria-hidden className={cx('w-6 h-6 rounded-full grid place-items-center bg-muted text-ink text-[10px] font-semibold border-2 border-solid border-card', i > 0 && '-ml-1.5')}>{initials(n)}</span>
+            <span key={i} aria-hidden className={cx('w-6 h-6 rounded-full grid place-items-center bg-muted text-ink text-caption font-semibold border-2 border-solid border-card', i > 0 && '-ml-1.5')}>{initials(n)}</span>
           ))}
           {names.length > 2 && <span aria-hidden className="ml-1 font-semibold">+{names.length - 2}</span>}
           {names.length === 1 && <span aria-hidden className="ml-1.5 max-w-[96px] truncate text-ink">{names[0]!.split(/\s+/)[0]}</span>}
@@ -978,7 +978,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
   // Only After files are proof of work; a Before photo never unlocks Mark complete (owner, 2 Nov 2026).
   const files = data ? stageCounts(data.media).after : row.photoCount + row.videoCount;
   const used = row.startedAt ? (Date.parse(row.completedAt ?? new Date(now).toISOString()) - Date.parse(row.startedAt)) / 60000 : null;
-  const unitLabel = `${row.propertyName} ${row.unitNumber}`;
+  const unitLabel = `${buildingName(row.propertyName)} ${row.unitNumber}`;
   const kind = picked.kind ?? row.kind;
   const kindName = KIND_NAME[kind] ?? 'Basic clean';
   const cleanerName = shownTeam.length ? shownTeam.map(id => teamNames[id] ?? cleaners.find(c => c.id === id)?.name ?? 'Cleaner').join(', ') : row.assigneeName;
@@ -992,8 +992,8 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
     <div className="ops-detail flex flex-col gap-4 p-5 text-copy">
       <div className="sticky top-0 z-[2] -mx-5 -mt-5 px-5 pt-4 pb-4 bg-black text-white flex items-start gap-3">
         <div className="flex-1 min-w-0 flex flex-col gap-1">
-          <div className="text-[11px] font-semibold tracking-[0.12em] uppercase text-gold">{row.propertyName}</div>
-          <div className="text-[19px] leading-tight font-semibold">{row.unitNumber} · {kindName}</div>
+          <div className="text-caption font-semibold tracking-[0.12em] uppercase text-gold">{buildingName(row.propertyName)}</div>
+          <div className="text-title leading-tight font-semibold"><span className="font-mono">{row.unitNumber}</span> · {kindName}</div>
           {size && <div className="text-meta text-on-dark">{size}</div>}
           <div className="mt-1 flex items-center gap-2 flex-wrap">
             <StatusBadge tone={st.tone}>{done && row.completedAt ? `Done ${hm(row.completedAt)}` : st.label}</StatusBadge>
@@ -1005,22 +1005,15 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
       {error && <StaleBanner message={error} onRetry={reload} />}
 
       {done ? (
-        <div className="rounded-control border border-solid border-line p-3 grid grid-cols-2 gap-x-3 gap-y-1">
-          <span className="text-meta text-muted-ink">{shownTeam.length > 1 ? 'Cleaners' : 'Cleaner'}</span><span className="text-meta text-muted-ink">Type</span>
-          <b>{cleanerName ?? 'Not recorded'}</b><b>{kindName}</b>
-        </div>
+        <KeyFacts items={[[shownTeam.length > 1 ? 'Cleaners' : 'Cleaner', cleanerName ?? 'Not recorded'], ['Type', kindName]]} />
       ) : (
         <section className="flex flex-col gap-2.5">
           <FormRow label={shownTeam.length > 1 ? 'Cleaners' : 'Cleaner'} hint={!shownTeam.length && row.assigneeName ? `Now with ${row.assigneeName}, who is not on the cleaner roster.` : undefined}>
             <CleanerChips cleaners={cleaners} value={shownTeam} names={teamNames} onChange={saveTeam} disabled={busy === 'assign'} required />
           </FormRow>
-          <div className="grid grid-cols-2 gap-2.5">
-          <FormRow label="Type">
-            <select className={INPUT} value={kind} disabled={busy === 'kind'} onChange={e => { const v = e.target.value; setPicked(p => ({ ...p, kind: v })); void act('kind', () => api.patch(`/housekeeping/tasks/${row.id}`, { kind: v, title: cleanTitle(v, row.title) }), 'Cleaning type changed.').then(ok => { if (!ok) setPicked(p => ({ ...p, kind: undefined })); }); }}>
-              <CleanTypeOptions current={row.kind} />
-            </select>
-          </FormRow>
-          </div>
+          <ChoiceChips<string> label="Type" value={kind} disabled={busy === 'kind'}
+            options={[{ value: 'turnover', label: 'Basic clean (BC)' }, { value: 'deep_clean', label: 'Deep clean (DC)' }, ...(row.kind === 'light_clean' ? [{ value: 'light_clean', label: 'Light clean' }] : [])]}
+            onChange={v => { if (v === kind) return; setPicked(p => ({ ...p, kind: v })); void act('kind', () => api.patch(`/housekeeping/tasks/${row.id}`, { kind: v, title: cleanTitle(v, row.title) }), 'Cleaning type changed.').then(ok => { if (!ok) setPicked(p => ({ ...p, kind: undefined })); }); }} />
         </section>
       )}
 
@@ -1092,13 +1085,13 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
       {data?.cost && <CleanAmount taskId={row.id} cost={data.cost} external={!!row.external} done={done} kindName={kindName} onSaved={refresh} />}
       {data?.cost && (
         <section className="flex flex-col gap-2">
-          <h3 className="m-0 text-copy font-semibold">Cost and profit</h3>
+          <h3 className="m-0 text-meta font-bold uppercase tracking-[0.12em] text-ink-2">Cost and profit</h3>
           <JobMoneyPanel kind="cleaning" jobId={row.id} unitId={row.unitId ?? null} onChanged={refresh} />
         </section>
       )}
 
       {!row.external && <section className="flex flex-col gap-2">
-        <h3 className="m-0 text-copy font-semibold">Door access</h3>
+        <h3 className="m-0 text-meta font-bold uppercase tracking-[0.12em] text-ink-2">Door access</h3>
         {!data ? <Skeleton height={36} /> : data.access.length === 0 ? <span className="text-muted-ink">No access details on this unit. Add them on the unit's Access tab.</span>
           : data.access.map(a => (
             <div key={a.id} className="rounded-control bg-muted p-2.5 flex flex-col gap-1">
@@ -1118,7 +1111,7 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
 
       {data && data.damage.length > 0 && (
         <section className="flex flex-col gap-1">
-          <h3 className="m-0 text-copy font-semibold">Damage reported</h3>
+          <h3 className="m-0 text-meta font-bold uppercase tracking-[0.12em] text-ink-2">Damage reported</h3>
           {data.damage.map(d => <Link key={d.id} to={`/operations/maintenance?id=${d.id}`} className="text-gold-ink">{d.title} · {stamp(d.reportedAt)}</Link>)}
         </section>
       )}
@@ -1241,7 +1234,7 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
     } catch (e) { setError({ form: errorMessage(e, 'Not saved. Try again.') }); setBusy(false); }
   }
   return (
-    <OpsModal title="Add cleaning job" sub="For a deep clean, a refresh, a cleaning job no reservation created, or a job at an outside address." onClose={onClose} busy={busy}
+    <OpsModal title="Add cleaning job" eyebrow="Cleaning" size="md" sub="For a deep clean, a refresh, a cleaning job no reservation created, or a job at an outside address." onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Add cleaning job</Button></>}>
       <FormRow label="Unit" error={error.unit} hint="One of our units, or External for a job at another address.">
         <UnitPicker units={units} value={unitId} onChange={v => { setUnitId(v); setError(x => ({ ...x, unit: undefined })); }} pinned={EXTERNAL_CHOICE} placeholder="Search building or unit, or External" />
@@ -1260,9 +1253,8 @@ function NewCleanModal({ date, onClose, onDone }: { date: string; onClose: () =>
       <div className="grid grid-cols-2 gap-3">
         <FormRow label="Day"><DateField aria-label="Day" className={INPUT} value={day} onChange={v => v && setDay(v)} /></FormRow>
         {picksType ? (
-          <FormRow label="Type">
-            <select className={INPUT} value={kind} onChange={e => setKind(e.target.value)}><CleanTypeOptions /></select>
-          </FormRow>
+          <ChoiceChips<string> label="Type" value={kind} onChange={setKind}
+            options={[{ value: 'turnover', label: 'Basic clean (BC)' }, { value: 'deep_clean', label: 'Deep clean (DC)' }]} />
         ) : (
           <FormRow label="Type" hint="The cleaning team switches it to Deep clean when needed."><span className="text-copy">Basic clean (BC)</span></FormRow>
         )}
@@ -1326,7 +1318,7 @@ function AssignBuildingModal({ building, date, onClose, onDone }: { building: { 
     } catch (e) { setError(errorMessage(e, 'Not saved. Try again.')); setBusy(false); }
   }
   return (
-    <OpsModal title={`Assign ${building.name}`} sub={`Every unfinished cleaning job in this building on ${dayLabel(date)} goes to the cleaners you tick. Tick two or more to send a team to every unit.`} onClose={onClose} busy={busy}
+    <OpsModal title={`Assign ${building.name}`} eyebrow="Cleaning" size="md" sub={`Every unfinished cleaning job in this building on ${dayLabel(date)} goes to the cleaners you tick. Tick two or more to send a team to every unit.`} onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Assign</Button></>}>
       <CleanerChecklist cleaners={cleaners} value={cleanerIds} onChange={ids => { setCleanerIds(ids); setError(null); }} error={error} day={date} />
       <label className="flex items-center gap-2 text-copy cursor-pointer">
@@ -1356,7 +1348,7 @@ const TASK_STATE: Record<string, { label: string; tone: Tone }> = {
   resolved: { label: 'Done', tone: 'success' },
 };
 const FIELD_ROLES = ['housekeeper', 'technician'];
-const historyLabel = (r: HistoryRow) => `${r.propertyName} ${r.unitNumber}`;
+const historyLabel = (r: HistoryRow) => `${buildingName(r.propertyName)} ${r.unitNumber}`;
 
 function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
   const toast = useToast();
@@ -1424,7 +1416,7 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
 
   const columns = useMemo<Column<HistoryRow>[]>(() => [
     { key: 'day', label: 'Day', type: 'date', value: r => r.date, sortKey: 'day', width: 120, render: r => <span className="tabular-nums whitespace-nowrap">{dayLabel(r.date)}</span> },
-    { key: 'building', label: 'Building', value: r => r.propertyName, sortKey: 'building', width: 170 },
+    { key: 'building', label: 'Building', value: r => buildingName(r.propertyName), sortKey: 'building', width: 170 },
     { key: 'unit', label: 'Unit', value: r => r.unitNumber, sortKey: 'unit', width: 100, hideable: false, render: r => <span className="font-medium">{r.unitNumber}</span> },
     { key: 'kind', label: 'Type', value: r => r.kind, text: r => KIND_LABEL[r.kind] ?? r.kind, sortKey: 'kind', width: 100 },
     { key: 'cleaner', label: 'Cleaner', type: 'person', value: r => r.assigneeName ?? r.sheetCleaner, sortKey: 'cleaner', width: 160 },
@@ -1435,6 +1427,13 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
   ], [show]);
 
   const filtered = !!(urlQ || cleaner || params.get('from') || params.get('to'));
+  // Show (Finished is the default, so it is not a chip) and Cleaner, behind the one Filters button.
+  const historyGroups: ToolbarFilter[] = [
+    { key: 'state', label: 'Show', allLabel: SHOW[0].label, value: show, onChange: v => setParam('state', v),
+      options: SHOW.filter(o => o.value).map(o => ({ value: o.value, label: o.label })) },
+    { key: 'cleaner', label: 'Cleaner', allLabel: 'All cleaners', value: cleaner, onChange: v => setParam('cleaner', v),
+      options: cleaners.map(c => ({ value: c.id, label: c.name })) },
+  ];
   const clearAll = () => { setDraft(''); update(p => ['q', 'cleaner', 'from', 'to'].forEach(k => p.delete(k))); };
   const showLabel = show === 'active' ? 'unfinished cleaning jobs' : show === 'all' ? 'cleaning jobs' : 'finished cleaning jobs';
 
@@ -1455,24 +1454,21 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
           <Button size="sm" variant="secondary" icon={<Icon name="Play" size="sm" />} loading={bulkBusy === 'start'} onClick={() => void bulkMove(picked, 'start', clear)}>Start</Button>
           <Button size="sm" variant="primary" icon={<Icon name="CheckCircle2" size="sm" />} onClick={() => setConfirmDone({ rows: picked, clear })}>Mark done</Button>
         </>}
-        toolbar={<>
-          <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Search unit or building" aria-label="Search" className={cx(INPUT, 'h-9 w-[220px] max-md:w-full')} />
-          <Select label="Show" value={show} onChange={v => setParam('state', v)} options={SHOW} className="w-[150px] max-md:flex-1 max-md:min-w-[130px]" />
-          <Select label="Cleaner" value={cleaner} onChange={v => setParam('cleaner', v)} options={cleaners.map(c => ({ value: c.id, label: c.name }))} placeholder="All cleaners" className="w-[160px] max-md:flex-1 max-md:min-w-[130px]" />
-          <label className="flex items-center gap-1.5 text-meta text-muted-ink max-md:w-full">From <DateField aria-label="From" value={from} max={to || undefined} onChange={v => { if (v) setParam('from', v); }} className={cx(INPUT, 'h-9 w-auto max-md:flex-1 max-md:min-w-0 max-md:px-2')} /></label>
-          <label className="flex items-center gap-1.5 text-meta text-muted-ink max-md:w-full">To <DateField aria-label="To" value={to} min={from || undefined} onChange={v => { if (v) setParam('to', v); }} className={cx(INPUT, 'h-9 w-auto max-md:flex-1 max-md:min-w-0 max-md:px-2')} /></label>
-        </>}
+        toolbar={<ListToolbar bare className="w-full" filters={historyGroups} onClearAll={clearAll}
+          search={{ value: draft, onChange: setDraft, placeholder: 'Search unit or building', label: 'Search', debounce: false }}
+          date={rangeDate({ label: 'Cleaning jobs on these days', anyLabel: 'Past 30 days', from: params.get('from') ?? '', to: params.get('to') ?? '',
+            presets: defaultDatePresets().filter(x => x.key !== 'next7'),
+            onChange: (f, t) => update(p => { if (f) p.set('from', f); else p.delete('from'); if (t) p.set('to', t); else p.delete('to'); }) })} />}
         renderCard={r => (
-          <span className="flex flex-col gap-0.5 text-copy min-w-0">
-            <span className="flex justify-between gap-2"><b>{r.propertyName} {r.unitNumber}</b><span className="text-muted-ink whitespace-nowrap">{dayLabel(r.date)}</span></span>
-            <span className="text-muted-ink">{KIND_LABEL[r.kind] ?? r.kind} · {r.assigneeName ?? r.sheetCleaner ?? 'No cleaner recorded'} · {r.photoCount} proof{show ? ` · ${TASK_STATE[r.state]?.label ?? r.state}` : ''}</span>
-          </span>
+          <PhoneCard title={<span className="font-mono">{r.unitNumber}</span>} right={<span className="text-copy text-muted-ink font-normal">{dayLabel(r.date)}</span>}
+            meta={`${buildingName(r.propertyName)} · ${KIND_LABEL[r.kind] ?? r.kind} · ${r.assigneeName ?? r.sheetCleaner ?? 'No cleaner recorded'} · ${r.photoCount} proof`}
+            badge={show ? <StatusBadge tone={TASK_STATE[r.state]?.tone ?? 'neutral'} size="sm">{TASK_STATE[r.state]?.label ?? r.state}</StatusBadge> : undefined} />
         )}
       />
       {bulkAssign && <BulkAssignCleaner taskIds={bulkAssign.ids} onClose={() => setBulkAssign(null)}
         onDone={() => { bulkAssign.clear(); setBulkAssign(null); reload(); }} />}
       {confirmDone && (
-        <OpsModal title={`Mark ${plural(confirmDone.rows.length, 'cleaning job')} done?`} onClose={() => setConfirmDone(null)} busy={bulkBusy === 'done'}
+        <OpsModal title={`Mark ${plural(confirmDone.rows.length, 'cleaning job')} done?`} eyebrow="Cleaning" size="sm" onClose={() => setConfirmDone(null)} busy={bulkBusy === 'done'}
           sub="Each unit turns Ready and its cleaning job is charged to the unit. A cleaning job with no photo or video is refused and named afterwards."
           footer={<>
             <Button size="sm" variant="secondary" onClick={() => setConfirmDone(null)} disabled={bulkBusy === 'done'}>Cancel</Button>

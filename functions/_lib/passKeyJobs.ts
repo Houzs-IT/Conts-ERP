@@ -25,7 +25,7 @@ export const PASS_KEY_DONE_ONLY = 'A Pass key job is finished with Pass key done
 
 export interface UrgencyChange { id: string; urgency: string }
 
-export const hasUrgentByHand = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'urgent_by_hand').catch(() => false);
+export const hasUrgentByHand = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'urgent_by_hand');
 
 export async function passKeyUrgencyChanges(env: Env): Promise<UrgencyChange[]> {
   const byHand = await hasUrgentByHand(env);
@@ -40,7 +40,7 @@ export async function applyPassKeyUrgency(env: Env): Promise<UrgencyChange[]> {
     RETURNING m.id, m.urgency`, nowIso());
 }
 
-export const hasPassKeyJobs = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'reservation_id').catch(() => false);
+export const hasPassKeyJobs = (env: Env): Promise<boolean> => hasColumn(env, 'maintenance_issues', 'reservation_id');
 
 function scopeFilter(scope: PassKeyScope): ScopeFilter | null {
   if ('reservationIds' in scope) {

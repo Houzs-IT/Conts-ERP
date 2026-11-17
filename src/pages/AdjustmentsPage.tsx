@@ -116,7 +116,7 @@ function AdjustDrawer({ warehouses, canWrite, onClose, onCreate }: { warehouses:
   }
 
   return (
-    <Drawer open onClose={onClose} width={520}>
+    <Drawer open onClose={onClose} dirty="typed" width={520}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">New stock adjustment</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <Field label="Item code" placeholder="e.g. SF-3S-GRY" value={itemCode} onChange={e => setItemCode(e.target.value)} />

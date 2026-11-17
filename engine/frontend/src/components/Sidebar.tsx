@@ -248,7 +248,7 @@ export const ALL_NAV_TABS: NavTab[] = [
   {
     section: "workspace",
     to: "/scm/sales-orders",
-    label: "Sales Orders",
+    label: "Sales orders",
     icon: ShoppingCart,
     anyPerm: ["*", "scm.access"],
     anyAccess: ["scm.sales.orders"],
@@ -270,7 +270,7 @@ export const ALL_NAV_TABS: NavTab[] = [
   // chevron still expands the sub-menu (Quality Metrics / Maintenance).
   {
     section: "operations",
-    label: "Service Cases",
+    label: "Service cases",
     icon: Zap,
     groupId: "service",
     to: "/assr?view=hub",
@@ -288,7 +288,7 @@ export const ALL_NAV_TABS: NavTab[] = [
     children: [
       {
         to: "/assr?view=cases",
-        label: "Service Cases",
+        label: "Service cases",
         icon: ClipboardList,
         perm: "service_cases.read",
         pageAccess: "service_cases.cases",
@@ -303,7 +303,7 @@ export const ALL_NAV_TABS: NavTab[] = [
       },
       {
         to: "/assr?view=metrics",
-        label: "Quality Metrics",
+        label: "Quality metrics",
         icon: ShieldCheck,
         perm: "service_cases.read",
         pageAccess: "service_cases.metrics",
@@ -315,7 +315,7 @@ export const ALL_NAV_TABS: NavTab[] = [
         // Lead Time tab. Old /assr?view=lead_time URL still works
         // (redirects in ServiceCases.tsx).
         to: "/assr?view=settings",
-        label: "Service Maintenance",
+        label: "Service maintenance",
         icon: Wrench,
         perm: "service_cases.manage",
         hideForSalesRep: true,
@@ -326,7 +326,7 @@ export const ALL_NAV_TABS: NavTab[] = [
         // any user with service_cases.read gets the tab but they'll see
         // an empty list until a case's sales_agent matches their name.
         to: "/my-cases",
-        label: "My Cases",
+        label: "My cases",
         icon: ClipboardCheck,
         perm: "service_cases.read",
         // Sales staff get My Cases without the service_cases.read permission.
@@ -382,7 +382,7 @@ export const ALL_NAV_TABS: NavTab[] = [
       },
       {
         to: "/projects?view=maintenance",
-        label: "Project Maintenance",
+        label: "Project maintenance",
         icon: Wrench,
         pageAccessFull: "projects.maintenance",
       },
@@ -398,7 +398,7 @@ export const ALL_NAV_TABS: NavTab[] = [
   // Header links to the /scm Hub; chevron expands the inline subtree.
   {
     section: "operations",
-    label: "Supply Chain",
+    label: "Supply chain",
     icon: Boxes,
     groupId: "scm",
     // Points at the Hub landing page instead of expanding inline (the Hub
@@ -435,7 +435,7 @@ export const ALL_NAV_TABS: NavTab[] = [
       // allowSales).
       {
         to: "/scm/sales-orders",
-        label: "Sales Orders",
+        label: "Sales orders",
         icon: ShoppingCart,
         salesRepOnly: true,
       },
@@ -464,13 +464,13 @@ export const ALL_NAV_TABS: NavTab[] = [
       // subgroup below.
       {
         to: "/scm/delivery-orders",
-        label: "Delivery Orders",
+        label: "Delivery orders",
         icon: Send,
         salesRepOnly: true,
       },
       {
         to: "/scm/sales-invoices",
-        label: "Sales Invoices",
+        label: "Sales invoices",
         icon: FileText,
         salesRepOnly: true,
       },
@@ -493,14 +493,14 @@ export const ALL_NAV_TABS: NavTab[] = [
         // A rep never sees this subgroup (they get the flat rep Sales-Orders
         // leaf above instead); office/director keep the full Sales-Order flow.
         hideForSalesRep: true,
-        label: "Sales Order",
+        label: "Sales order",
         icon: ShoppingCart,
         groupId: "scm-sales",
         to: "/scm/sales-order",
         anyPerm: ["*", "scm.access"],
         anyAccess: ["scm.sales", "scm.sales.orders", "scm.sales.delivery", "scm.sales.invoices", "scm.sales.returns"],
         children: [
-          { to: "/scm/sales-orders", label: "Sales Orders", icon: ShoppingCart, anyPerm: ["*", "scm.access"], anyAccess: ["scm.sales.orders"] },
+          { to: "/scm/sales-orders", label: "Sales orders", icon: ShoppingCart, anyPerm: ["*", "scm.access"], anyAccess: ["scm.sales.orders"] },
           // Renovation quotations, contracts and VOs (Conts, 2026-10-09).
           { to: "/scm/renovation/quotations", label: "Quotations", icon: FileText, anyPerm: ["*", "scm.access"], anyAccess: ["scm.sales.orders"], hideForSalesRep: true },
           // The office / director path to Amendments. A rep reaches it via the
@@ -508,9 +508,9 @@ export const ALL_NAV_TABS: NavTab[] = [
           // DO / SI siblings — belt-and-braces against the parent's flag being
           // removed, which would otherwise render the row TWICE for a rep.
           { to: "/scm/amendments", label: "VO", icon: History, anyPerm: ["*", "scm.access", "scm.amendment.create", "scm.amendment.supplier_confirm", "scm.amendment.approve_so", "scm.amendment.approve_po", "scm.so_cancel.approve_l1", "scm.so_cancel.approve_l2"], anyAccess: ["scm.sales.orders"], hideForSalesRep: true, badge: "amendment-approvals" },
-          { to: "/scm/delivery-orders", label: "Delivery Orders", icon: Send, anyPerm: ["*", "scm.access"], anyAccess: ["scm.sales.delivery"], hideForSalesRep: true },
-          { to: "/scm/sales-invoices", label: "Sales Invoices", icon: FileText, anyPerm: ["*", "scm.access"], anyAccess: ["scm.sales.invoices"], hideForSalesRep: true },
-          { to: "/scm/delivery-returns", label: "Delivery Returns", icon: RotateCcw, anyPerm: ["*", "scm.access"], anyAccess: ["scm.sales.returns"], hideForSales: true },
+          { to: "/scm/delivery-orders", label: "Delivery orders", icon: Send, anyPerm: ["*", "scm.access"], anyAccess: ["scm.sales.delivery"], hideForSalesRep: true },
+          { to: "/scm/sales-invoices", label: "Sales invoices", icon: FileText, anyPerm: ["*", "scm.access"], anyAccess: ["scm.sales.invoices"], hideForSalesRep: true },
+          { to: "/scm/delivery-returns", label: "Delivery returns", icon: RotateCcw, anyPerm: ["*", "scm.access"], anyAccess: ["scm.sales.returns"], hideForSales: true },
         ],
       },
       {
@@ -522,12 +522,12 @@ export const ALL_NAV_TABS: NavTab[] = [
         anyPerm: ["*", "scm.access"],
         anyAccess: ["scm.consignment", "scm.consignment.orders", "scm.consignment.notes", "scm.consignment.returns", "scm.consignment.po_orders", "scm.consignment.po_receives", "scm.consignment.po_returns"],
         children: [
-          { to: "/scm/consignment-orders", label: "Consignment Order", icon: Handshake, anyPerm: ["*", "scm.access"], anyAccess: ["scm.consignment.orders"] },
-          { to: "/scm/consignment-notes", label: "Consignment Note", icon: FileText, anyPerm: ["*", "scm.access"], anyAccess: ["scm.consignment.notes"] },
-          { to: "/scm/consignment-returns", label: "Consignment Return", icon: CornerUpLeft, anyPerm: ["*", "scm.access"], anyAccess: ["scm.consignment.returns"] },
-          { to: "/scm/purchase-consignment-orders", label: "Purchase Consignment Order", icon: HandCoins, anyPerm: ["*", "scm.access"], anyAccess: ["scm.consignment.po_orders"] },
-          { to: "/scm/purchase-consignment-receives", label: "Purchase Consignment Receive", icon: PackageOpen, anyPerm: ["*", "scm.access"], anyAccess: ["scm.consignment.po_receives"] },
-          { to: "/scm/purchase-consignment-returns", label: "Purchase Consignment Return", icon: Reply, anyPerm: ["*", "scm.access"], anyAccess: ["scm.consignment.po_returns"] },
+          { to: "/scm/consignment-orders", label: "Consignment order", icon: Handshake, anyPerm: ["*", "scm.access"], anyAccess: ["scm.consignment.orders"] },
+          { to: "/scm/consignment-notes", label: "Consignment note", icon: FileText, anyPerm: ["*", "scm.access"], anyAccess: ["scm.consignment.notes"] },
+          { to: "/scm/consignment-returns", label: "Consignment return", icon: CornerUpLeft, anyPerm: ["*", "scm.access"], anyAccess: ["scm.consignment.returns"] },
+          { to: "/scm/purchase-consignment-orders", label: "Purchase consignment order", icon: HandCoins, anyPerm: ["*", "scm.access"], anyAccess: ["scm.consignment.po_orders"] },
+          { to: "/scm/purchase-consignment-receives", label: "Purchase consignment receive", icon: PackageOpen, anyPerm: ["*", "scm.access"], anyAccess: ["scm.consignment.po_receives"] },
+          { to: "/scm/purchase-consignment-returns", label: "Purchase consignment return", icon: Reply, anyPerm: ["*", "scm.access"], anyAccess: ["scm.consignment.po_returns"] },
         ],
       },
       {
@@ -539,15 +539,15 @@ export const ALL_NAV_TABS: NavTab[] = [
         anyPerm: ["*", "scm.access"],
         anyAccess: ["scm.procurement", "scm.procurement.products", "scm.procurement.suppliers", "scm.procurement.mrp", "scm.procurement.po", "scm.procurement.grn", "scm.procurement.pi", "scm.procurement.pr"],
         children: [
-          { to: "/scm/products", label: "Products & Maintenance", icon: Sofa, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.products"], hideForSalesRep: true },
+          { to: "/scm/products", label: "Products & maintenance", icon: Sofa, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.products"], hideForSalesRep: true },
           { to: "/scm/suppliers", label: "Suppliers", icon: Truck, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.suppliers"], hideForSalesRep: true },
-          { to: "/scm/mrp", label: "MRP · Stock Status", icon: Calculator, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.mrp"], hideForSalesRep: true },
-          { to: "/scm/purchase-orders", label: "Purchase Orders", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.po"], hideForSalesRep: true },
-          { to: "/scm/po-amendments", label: "PO Amendments", icon: History, anyPerm: ["*", "scm.access", "scm.po_amendment.create", "scm.po_amendment.approve"], anyAccess: ["scm.procurement.po"], hideForSalesRep: true, badge: "po-amendment-approvals" },
-          { to: "/scm/cancel-requests", label: "Cancellation Requests", icon: ClipboardCheck, anyPerm: ["*", "scm.access", "scm.so_cancel.approve_l1", "scm.so_cancel.approve_l2"], anyAccess: ["scm.procurement.po", "scm.sales.orders"], hideForSalesRep: true },
-          { to: "/scm/grns", label: "Goods Receipt", icon: PackageCheck, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.grn"], hideForSalesRep: true },
-          { to: "/scm/purchase-invoices", label: "Purchase Invoices", icon: ReceiptText, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.pi"], hideForSalesRep: true },
-          { to: "/scm/purchase-returns", label: "Purchase Returns", icon: Undo2, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.pr"], hideForSalesRep: true },
+          { to: "/scm/mrp", label: "MRP · stock status", icon: Calculator, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.mrp"], hideForSalesRep: true },
+          { to: "/scm/purchase-orders", label: "Purchase orders", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.po"], hideForSalesRep: true },
+          { to: "/scm/po-amendments", label: "PO amendments", icon: History, anyPerm: ["*", "scm.access", "scm.po_amendment.create", "scm.po_amendment.approve"], anyAccess: ["scm.procurement.po"], hideForSalesRep: true, badge: "po-amendment-approvals" },
+          { to: "/scm/cancel-requests", label: "Cancellation requests", icon: ClipboardCheck, anyPerm: ["*", "scm.access", "scm.so_cancel.approve_l1", "scm.so_cancel.approve_l2"], anyAccess: ["scm.procurement.po", "scm.sales.orders"], hideForSalesRep: true },
+          { to: "/scm/grns", label: "Goods receipt", icon: PackageCheck, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.grn"], hideForSalesRep: true },
+          { to: "/scm/purchase-invoices", label: "Purchase invoices", icon: ReceiptText, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.pi"], hideForSalesRep: true },
+          { to: "/scm/purchase-returns", label: "Purchase returns", icon: Undo2, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.pr"], hideForSalesRep: true },
         ],
       },
       {
@@ -559,8 +559,8 @@ export const ALL_NAV_TABS: NavTab[] = [
         anyAccess: ["scm.procurement.production"],
         hideForSalesRep: true,
         children: [
-          { to: "/scm/production-orders", label: "Production Orders", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.production"], hideForSalesRep: true },
-          { to: "/scm/sku-composition", label: "SKU Composition", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.production"], hideForSalesRep: true },
+          { to: "/scm/production-orders", label: "Production orders", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.production"], hideForSalesRep: true },
+          { to: "/scm/sku-composition", label: "SKU composition", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.procurement.production"], hideForSalesRep: true },
         ],
       },
       {
@@ -573,17 +573,17 @@ export const ALL_NAV_TABS: NavTab[] = [
         anyAccess: ["scm.transportation", "scm.transportation.drivers"],
         children: [
           // Daily dispatch flow — the pages used every day, in workflow order.
-          { to: "/scm/delivery-planning", label: "Delivery Planning", icon: Send, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
-          { to: "/scm/dp-orders", label: "DP Orders", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
-          { to: "/scm/auto-schedule", label: "Delivery Date Arrangement", icon: Wand2, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
-          { to: "/scm/trips", label: "Delivery Time Arrangement", icon: Send, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
-          { to: "/scm/fleet-day", label: "Last Mile Delivery", icon: MapPinned, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
+          { to: "/scm/delivery-planning", label: "Delivery planning", icon: Send, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
+          { to: "/scm/dp-orders", label: "DP orders", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
+          { to: "/scm/auto-schedule", label: "Delivery date arrangement", icon: Wand2, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
+          { to: "/scm/trips", label: "Delivery time arrangement", icon: Send, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
+          { to: "/scm/fleet-day", label: "Last mile delivery", icon: MapPinned, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
           // Fleet operations — capacity and leave. Fleet Health moved DOWN into
           // Maintenance (2026-08-02): it is reference-data upkeep on the in-house
           // lorries, not a daily dispatch view. The lorry/driver REGISTRY
           // (/scm/fleet) is in Maintenance too.
-          { to: "/scm/lorry-capacity", label: "Lorry Capacity", icon: BarChart3, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
-          { to: "/scm/driver-leave", label: "Crew Leave", icon: CalendarOff, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
+          { to: "/scm/lorry-capacity", label: "Lorry capacity", icon: BarChart3, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
+          { to: "/scm/driver-leave", label: "Crew leave", icon: CalendarOff, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
           /* "Drivers" (/scm/drivers) retired 2026-07-17 — it duplicated the Drivers
              section of Fleet above, and sat here with the SAME Truck icon and the
              SAME scm.transportation.drivers access key, which is what made the
@@ -616,16 +616,16 @@ export const ALL_NAV_TABS: NavTab[] = [
             to: "/scm/delivery-maintenance",
             anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true,
             children: [
-              { to: "/scm/delivery-maintenance", label: "Coverage & Fleet", icon: Map, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
-              { to: "/scm/delivery-zones", label: "Delivery Zones", icon: MapPinned, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
-              { to: "/scm/delivery-rate-cards", label: "Carriers & Rates", icon: Handshake, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
+              { to: "/scm/delivery-maintenance", label: "Coverage & fleet", icon: Map, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
+              { to: "/scm/delivery-zones", label: "Delivery zones", icon: MapPinned, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
+              { to: "/scm/delivery-rate-cards", label: "Carriers & rates", icon: Handshake, anyPerm: ["*", "scm.access"], anyAccess: ["scm.transportation.drivers"], hideForSalesRep: true },
               /* Fleet Health joined Maintenance 2026-08-02 (owner: "你把 Fleet
                  Health 加进去 Maintenance 的地方"). It keeps its OWN gate —
                  `fleet.read`, not the scm.transportation.drivers area key the
                  three rows above share — because compliance and workshop spend
                  are read by people who do not dispatch. A row's gate travels
                  with the row, not with the group it is filed under. */
-              { to: "/fleet-health", label: "Fleet Health", icon: Wrench, perm: "fleet.read", hideForSalesRep: true },
+              { to: "/fleet-health", label: "Fleet health", icon: Wrench, perm: "fleet.read", hideForSalesRep: true },
             ],
           },
         ],
@@ -642,14 +642,14 @@ export const ALL_NAV_TABS: NavTab[] = [
           // Loading List (owner 2026-08-25) — the storekeeper's daily "what to
           // load" queue (no prices). Same gate as Inventory (scm.warehouse.inventory,
           // the Storekeeper's grant) so the warehouse line sees it first.
-          { to: "/scm/loading-list", label: "Loading List", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.warehouse.inventory"], hideForSalesRep: true },
+          { to: "/scm/loading-list", label: "Loading list", icon: ClipboardList, anyPerm: ["*", "scm.access"], anyAccess: ["scm.warehouse.inventory"], hideForSalesRep: true },
           // Warehouses master sits at the TOP of the group (2990 parity) — it's
           // the location registry every other warehouse doc binds against.
           { to: "/scm/warehouses", label: "Warehouses", icon: Warehouse, anyPerm: ["*", "scm.access"], anyAccess: ["scm.warehouse.inventory"], hideForSalesRep: true },
           // Racks & Bins (owner 2026-09-11) — promoted from a button on the
           // Warehouses page to its own nav item, sitting under Warehouses. Same
           // gate as Inventory (the rack overview / floor plan + stock I/O page).
-          { to: "/scm/warehouses/racks", label: "Racks & Bins", icon: Boxes, anyPerm: ["*", "scm.access"], anyAccess: ["scm.warehouse.inventory"], hideForSalesRep: true },
+          { to: "/scm/warehouses/racks", label: "Racks & bins", icon: Boxes, anyPerm: ["*", "scm.access"], anyAccess: ["scm.warehouse.inventory"], hideForSalesRep: true },
           { to: "/scm/inventory", label: "Inventory", icon: Package, anyPerm: ["*", "scm.access"], anyAccess: ["scm.warehouse.inventory"], hideForSalesRep: true },
           // Stock ADJUSTMENT is its own permission now (owner 2026-07-18):
           // POST /inventory/adjustments is gated on scm.warehouse.adjustments by a
@@ -659,7 +659,7 @@ export const ALL_NAV_TABS: NavTab[] = [
           // adjustments grant (e.g. Storekeeper) sees Inventory but NOT Adjustments.
           { to: "/scm/stock-adjustments", label: "Adjustments", icon: SlidersHorizontal, anyPerm: ["*", "scm.access"], anyAccess: ["scm.warehouse.adjustments"], hideForSalesRep: true },
           { to: "/scm/stock-transfers", label: "Transfers", icon: ArrowLeftRight, anyPerm: ["*", "scm.access"], anyAccess: ["scm.warehouse.transfers"], hideForSalesRep: true },
-          { to: "/scm/stock-takes", label: "Stock Take", icon: ClipboardCheck, anyPerm: ["*", "scm.access"], anyAccess: ["scm.warehouse.stock_take"], hideForSalesRep: true },
+          { to: "/scm/stock-takes", label: "Stock take", icon: ClipboardCheck, anyPerm: ["*", "scm.access"], anyAccess: ["scm.warehouse.stock_take"], hideForSalesRep: true },
         ],
       },
     ],
@@ -707,28 +707,28 @@ export const ALL_NAV_TABS: NavTab[] = [
         icon: HandCoins,
         groupId: "scm-finance-in",
         children: [
-          { to: "/scm/official-receipts", label: "Official Receipts", icon: Receipt, anyPerm: ["*", "scm.access", "scm.payment_voucher.post", "scm.sales_order.write"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/official-receipts", label: "Official receipts", icon: Receipt, anyPerm: ["*", "scm.access", "scm.payment_voucher.post", "scm.sales_order.write"], anyAccess: ["scm.finance.accounting"] },
           // Deposit invoices (owner 2026-09-12; docs/bugs/0828) — born with a
           // customer payment when the company's switch is on; beside the
           // receipt the same payment is born with.
-          { to: "/scm/deposit-invoices", label: "Deposit Invoices", icon: Receipt, anyPerm: ["*", "scm.access", "scm.payment_voucher.post", "scm.sales_order.write"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/deposit-invoices", label: "Deposit invoices", icon: Receipt, anyPerm: ["*", "scm.access", "scm.payment_voucher.post", "scm.sales_order.write"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/receipts", label: "Receipts", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
           // Debtors (Conts, finance phase 1.5) — every customer under its control, coded like AutoCount.
-          { to: "/scm/party-ledger?kind=debtor", label: "Customer Ledger", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/party-ledger?kind=debtor", label: "Customer ledger", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/debtors", label: "Debtors", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           // E-invoice (Conts) — renovation invoices and credit notes prepared for LHDN; nothing is sent yet.
           { to: "/scm/einvoice", label: "E-invoice", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           // Renovation projects (Conts, SOP 4.2.3) — completion % and the money per project; management only.
-          { to: "/scm/reno-projects", label: "Renovation Projects", icon: AlertCircle, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"], badge: "reno-cost-alerts" },
-          { to: "/scm/rental-unit-costs", label: "Rental Unit Costs", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/department-spend", label: "Spending by Department", icon: FileText, anyPerm: ["*", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/other-debtors", label: "Other Debtors", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/reno-projects", label: "Renovation projects", icon: AlertCircle, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"], badge: "reno-cost-alerts" },
+          { to: "/scm/rental-unit-costs", label: "Rental unit costs", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/department-spend", label: "Spending by department", icon: FileText, anyPerm: ["*", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/other-debtors", label: "Other debtors", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/outstanding", label: "Outstanding", icon: AlertCircle, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.outstanding"] },
-          { to: "/scm/unbilled-deliveries", label: "Not Yet Billed", icon: HandCoins, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.outstanding"] },
+          { to: "/scm/unbilled-deliveries", label: "Not yet billed", icon: HandCoins, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.outstanding"] },
           // Credit and debit notes (owner 2026-09-12; docs/bugs/0827) — the
           // customer's CN / DN and the supplier's SCN; the PV key family, like
           // the AP invoice they sit beside.
-          { to: "/scm/credit-notes", label: "Credit / Debit Notes", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/credit-notes", label: "Credit / debit notes", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
         ],
       },
       {
@@ -736,12 +736,12 @@ export const ALL_NAV_TABS: NavTab[] = [
         icon: Wallet,
         groupId: "scm-finance-out",
         children: [
-          { to: "/scm/payment-vouchers", label: "Payment Vouchers", icon: Wallet, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write", "scm.payment_voucher.post", "scm.payment_voucher.cancel"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/ap-invoices", label: "AP Invoices", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/payment-requests", label: "Payment Requests", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/petty-cash", label: "Petty Cash", icon: Wallet, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/limit-requests", label: "Limit Requests", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.project_limit.approve"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/party-ledger?kind=creditor", label: "Supplier Ledger", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/payment-vouchers", label: "Payment vouchers", icon: Wallet, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write", "scm.payment_voucher.post", "scm.payment_voucher.cancel"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/ap-invoices", label: "AP invoices", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/payment-requests", label: "Payment requests", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/petty-cash", label: "Petty cash", icon: Wallet, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/limit-requests", label: "Limit requests", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.project_limit.approve"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/party-ledger?kind=creditor", label: "Supplier ledger", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
         ],
       },
       {
@@ -749,9 +749,9 @@ export const ALL_NAV_TABS: NavTab[] = [
         icon: Landmark,
         groupId: "scm-finance-bank",
         children: [
-          { to: "/scm/daily-bank", label: "Daily Bank", icon: Landmark, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/merchant-recon", label: "Merchant Recon", icon: CreditCard, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/bank-recon", label: "Bank Recon", icon: Banknote, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/daily-bank", label: "Daily bank", icon: Landmark, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/merchant-recon", label: "Merchant recon", icon: CreditCard, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/bank-recon", label: "Bank recon", icon: Banknote, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
         ],
       },
       {
@@ -759,9 +759,9 @@ export const ALL_NAV_TABS: NavTab[] = [
         icon: BookOpen,
         groupId: "scm-finance-books",
         children: [
-          { to: "/scm/accounting?tab=je", label: "Journal Entries", icon: BookOpen, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/accounting?tab=gl", label: "General Ledger", icon: FileText, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/accounting?tab=tb", label: "Trial Balance", icon: Receipt, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/accounting?tab=je", label: "Journal entries", icon: BookOpen, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/accounting?tab=gl", label: "General ledger", icon: FileText, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/accounting?tab=tb", label: "Trial balance", icon: Receipt, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/accounting?tab=close", label: "Month-end", icon: History, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/accounting?tab=check", label: "Self-check", icon: ClipboardCheck, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
         ],
@@ -772,10 +772,10 @@ export const ALL_NAV_TABS: NavTab[] = [
         groupId: "scm-finance-reports",
         children: [
           { to: "/scm/accounting?tab=pnl", label: "P&L", icon: BarChart3, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/accounting?tab=bs", label: "Balance Sheet", icon: LayoutDashboard, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/accounting?tab=rp", label: "Cash Flow", icon: Banknote, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/accounting?tab=ar", label: "AR Aging", icon: HandCoins, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/accounting?tab=ap", label: "AP Aging", icon: Wallet, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/accounting?tab=bs", label: "Balance sheet", icon: LayoutDashboard, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/accounting?tab=rp", label: "Cash flow", icon: Banknote, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/accounting?tab=ar", label: "AR aging", icon: HandCoins, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/accounting?tab=ap", label: "AP aging", icon: Wallet, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
           // Finance's corrections to recorded payments (docs/bugs/0785) — a
           // report, so it lives with the reports (owner: 包括那个 finance 改
           // sales order 的报告).
@@ -786,7 +786,7 @@ export const ALL_NAV_TABS: NavTab[] = [
           { to: "/scm/accounting?tab=charges", label: "Merchant charges", icon: CreditCard, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
           // The month's orders per group against a budgeted operating expense (owner 2026-09-12; docs/bugs/0835).
           { to: "/scm/accounting?tab=performance", label: "Performance P&L", icon: BarChart3, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/reports/fair-report", label: "Sales Report", icon: BarChart3, requireFairReport: true, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance", "scm.finance.accounting", "scm.finance.outstanding", "projects.finances"] },
+          { to: "/reports/fair-report", label: "Sales report", icon: BarChart3, requireFairReport: true, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance", "scm.finance.accounting", "scm.finance.outstanding", "projects.finances"] },
         ],
       },
       {
@@ -806,9 +806,9 @@ export const ALL_NAV_TABS: NavTab[] = [
         icon: SettingsIcon,
         groupId: "scm-finance-setup",
         children: [
-          { to: "/scm/chart-of-accounts", label: "Chart of Accounts", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/accounting?tab=groups", label: "Item Groups", icon: SettingsIcon, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
-          { to: "/scm/settlement-setup", label: "Recon Setup", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/chart-of-accounts", label: "Chart of accounts", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/accounting?tab=groups", label: "Item groups", icon: SettingsIcon, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/settlement-setup", label: "Recon setup", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/currencies", label: "Currencies", icon: DollarSign, anyPerm: ["*", "scm.currency.manage"] },
         ],
       },
@@ -853,7 +853,7 @@ export const ALL_NAV_TABS: NavTab[] = [
       { to: "/scm/hr/commission", label: "Commission", icon: DollarSign, anyPerm: ["*", "scm.hr.read", "scm.hr.manage"] },
       // Settings is an EDITOR — read-only holders are not shown a page whose
       // every control the API would reject (2990 bounces them to the report).
-      { to: "/scm/hr/settings", label: "HR Settings", icon: SlidersHorizontal, anyPerm: ["*", "scm.hr.manage"] },
+      { to: "/scm/hr/settings", label: "HR settings", icon: SlidersHorizontal, anyPerm: ["*", "scm.hr.manage"] },
     ],
   },
 
@@ -862,7 +862,7 @@ export const ALL_NAV_TABS: NavTab[] = [
   {
     section: "operations",
     to: "/mail-center",
-    label: "Mail Center",
+    label: "Mail center",
     icon: Mail,
     anyPerm: ["mail_center.read"],
   },
@@ -924,23 +924,23 @@ export const ALL_NAV_TABS: NavTab[] = [
       // (docs/bugs/0931-a-new-title-could-not-be-created-anywhere-the-positions-tab.md)
       // and is reached from there; the phone menu is built from these rows and
       // keeps Positions out (mobileMenuGates.test.ts), so no leaf here.
-      { to: "/team?tab=orgchart2", label: "Org Chart", icon: Network, perm: "users.read", pageAccess: "team", showForSalesDirector: true },
+      { to: "/team?tab=orgchart2", label: "Org chart", icon: Network, perm: "users.read", pageAccess: "team", showForSalesDirector: true },
       { to: "/team?tab=departments2", label: "Departments", icon: Building2, perm: "users.read", pageAccess: "team" },
       { to: "/team?tab=mail2", label: "Mailboxes", icon: Mail, perm: "mail_center.manage", pageAccess: "team" },
-      { to: "/team?tab=permissions", label: "Roles & Permissions", icon: ShieldCheck, perm: "roles.read", pageAccess: "team" },
+      { to: "/team?tab=permissions", label: "Roles & permissions", icon: ShieldCheck, perm: "roles.read", pageAccess: "team" },
     ],
   },
   {
     section: "system",
     to: "/system-health",
-    label: "System Health",
+    label: "System health",
     icon: Activity,
     pageAccess: "system_health",
   },
   {
     section: "system",
     to: "/change-log",
-    label: "Change Log",
+    label: "Change log",
     icon: History,
     anyPerm: ["*", "scm.changelog.read", "settings.manage"],
   },
@@ -958,7 +958,7 @@ export const ALL_NAV_TABS: NavTab[] = [
   {
     section: "system",
     to: "/agents",
-    label: "Agent Console",
+    label: "Agent console",
     icon: Bot,
     anyPerm: ["*"],
   },

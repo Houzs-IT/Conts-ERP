@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { color, radius, text, shadow } from '../theme';
 import { useApi } from '../lib/useApi';
-import { date, dateRange, humanize, titleCase } from '../lib/format';
+import { date, dateRange, humanize, personName } from '../lib/format';
 import { stateLabel } from '../lib/vocabulary';
 import type { BookingChannel } from '../lib/types';
 import Icon from './Icon';
@@ -182,7 +182,7 @@ export default function GlobalSearch({ compact, onClose, go }: {
                     ? <ChannelMark ch={r.channel} size={30} />
                     : <span style={{ width: 30, height: 30, flex: 'none', borderRadius: radius.sm, background: color.sunken, color: color.inkSecondary, display: 'grid', placeItems: 'center' }}><Icon name={KIND[r.kind]?.icon ?? 'Search'} size="sm" /></span>}
                   <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, flex: 1 }}>
-                    <span style={{ fontSize: text.copy, fontWeight: 500, color: color.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.kind === 'owner' ? titleCase(r.label) : r.label}</span>
+                    <span style={{ fontSize: text.copy, fontWeight: 500, color: color.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.kind === 'owner' ? personName(r.label) : r.label}</span>
                     <span style={{ fontSize: text.meta, color: color.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subline(r)}</span>
                   </span>
                   {r.ref && <span style={{ flex: 'none', fontFamily: 'var(--font-mono)', fontSize: text.caption, color: color.inkSecondary, background: color.muted, borderRadius: 4, padding: '2px 6px' }}>{r.ref}</span>}

@@ -1725,7 +1725,7 @@ export function SalesInvoicesListV2() {
       <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
         <div className="min-w-0">
           <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-            Sales Invoices
+            Sales invoices
           </h1>
           <div className="mt-0.5 text-[12.5px] text-ink-muted">
             {total} invoice{total === 1 ? "" : "s"} ·{" "}
@@ -1739,7 +1739,7 @@ export function SalesInvoicesListV2() {
         <div className="px-4 sm:px-6">
           <PageHeader
             eyebrow="Sales"
-            title="Sales Invoices"
+            title="Sales invoices"
             description={`Every ${shortCompanyName(branding.companyName)} sales invoice — Submitted to Paid. Click any row for the quick view; open the full page to edit or record a payment.`}
             primaryAction={
               /* Export lines is a READ under the caller's sales scope, so a

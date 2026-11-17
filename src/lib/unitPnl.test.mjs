@@ -1,7 +1,7 @@
 // node --test src/lib/unitPnl.test.mjs (npm test). The unit P&L report's rules (plan docs/superpowers/plans/2026-10-28-unit-pnl.md).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pnl, sumPnl, pctOfIncome, bracketMoney, spreadGuestPaid, checks, gaps } from './unitPnl.ts';
+import { pnl, sumPnl, pctOfIncome, bracketMoney, spreadGuestPaid, checks, gaps, LINE_KEYS } from './unitPnl.ts';
 import { overallFigures } from './ownerOverall.ts';
 
 const row = (o = {}) => ({ unitId: 'u1', month: '2026-09', contract: 'PS', guestPaid: 1_000_000, guestPaidMissing: false, gross: 850_000,
@@ -14,6 +14,20 @@ test('a profit-share unit: fees, operating profit, owner portion and what the co
   assert.equal(p.operating, 650_000);
   assert.equal(p.owner, 520_000);
   assert.equal(p.company, 130_000);
+});
+test("the company's share of a late change from a locked month: its own line, in what the company keeps (part 2b, choice A)", () => {
+  const a = pnl(row()), b = pnl(row({ late: 2500 }));
+  assert.equal(a.late, 0);
+  assert.equal(b.late, 2500);
+  assert.equal(b.company - a.company, 2500);
+  assert.equal(b.operating, a.operating);
+  assert.equal(b.owner, a.owner);
+  assert.deepEqual(LINE_KEYS.slice(-3), ['owner', 'late', 'company']);
+  const r = row({ late: 2500 });
+  const o = overallFigures({ contract: r.contract, revenue: r.gross, cleaning: r.cleaning, utilities: r.electricity + r.water + r.internet + r.sewerage,
+    electricity: r.electricity, water: r.water, internet: r.internet, sewerage: r.sewerage, additional: r.other, misc: r.misc,
+    ownerPct: r.ownerPct, ltGrr: r.ltGrr, o2: 0, nights: r.nights, days: r.days, late: r.late });
+  assert.equal(b.company, o.gainLoss);
 });
 test('operating profit equals the statement GP (gross less deductions)', () => {
   const r = row(); const p = pnl(r);

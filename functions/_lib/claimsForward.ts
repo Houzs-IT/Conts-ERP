@@ -1,4 +1,6 @@
-import { type Env, json, fail } from './db';
+import { type Env, json, fail, inDemo } from './db';
+
+export const DEMO_NOTHING_SENT = 'Demo: nothing is sent to finance while Demo mode is on. Turn Demo mode off to send it.';
 import { type Session } from './auth';
 import { claimsAssertion, scmEngineConfigured } from './scmEngine';
 
@@ -7,6 +9,9 @@ import { claimsAssertion, scmEngineConfigured } from './scmEngine';
  *  to server, with a signed statement of who it is for; the engine checks it and limits every answer to that person.
  *  Nobody needs an engine account to hand in a receipt. */
 export async function forwardClaims(env: Env, session: Session, method: 'GET' | 'POST', enginePath: string, body?: unknown): Promise<Response> {
+  // Demo mode sends nothing to finance: a utility bill sent for payment, or sent again, would reach the real engine
+  // (review, 13 Nov 2026). Reads stay live, as the session middleware reads real-only areas.
+  if (method !== 'GET' && inDemo()) return fail('DEMO_MODE', DEMO_NOTHING_SENT, 409);
   if (!scmEngineConfigured(env)) return fail('NOT_CONFIGURED', 'Claims are not set up on this environment yet.', 501);
   let res: Response;
   try {

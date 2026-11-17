@@ -5,7 +5,7 @@ import { twoFactorTables } from '../../_lib/twoFactor';
 import { userJobReady } from '../../_lib/userJob';
 import { hasEmployeeIds } from '../../_lib/fieldPin';
 import { userSideReady } from '../../_lib/userSide';
-import { isFieldKind, isSide, maySee, roleForKind, sideFits } from '../../_lib/access';
+import { isFieldKind, isSide, maySee, needsPosition, roleForKind, sideFits } from '../../_lib/access';
 import { isRecord, loadDepartment } from '../../_lib/accessRules';
 
 const MANAGE = ['management'];
@@ -25,7 +25,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       COALESCE(locked_until::timestamptz > now(), false) AS is_locked, ${totp ? 'totp_enabled_at IS NOT NULL' : 'false'} AS two_step,
       (SELECT max(a.occurred_at) FROM audit_log a WHERE a.entity_table = 'users' AND a.entity_id = users.id
          AND a.action IN ('user.invite', 'user.resend_invite')) AS last_invited_at
-    FROM users WHERE role NOT IN ('housekeeper', 'technician') ORDER BY role, full_name`);
+    FROM users WHERE role NOT IN ('housekeeper', 'technician', 'renovator') ORDER BY role, full_name`);
   return json({
     generatedAt: nowIso(),
     jobFields: job,
@@ -71,6 +71,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!sideFits(department.side, side)) return fail('VALIDATION', `${department.name} works on one side only.`, 422, { departmentId: `${department.name} is not on that side.` });
   const position = typeof positionId === 'string' && positionId ? department.positions.find(p => p.id === positionId) ?? null : null;
   if (typeof positionId === 'string' && positionId && !position) return fail('VALIDATION', 'That position is not in the department.', 422, { positionId: 'Choose a position of this department.' });
+  if (!position && needsPosition(department.kind)) return fail('VALIDATION', `Pick a position in ${department.name}.`, 422, { positionId: 'Pick a position.' });
 
   if (await one(env, 'SELECT 1 AS x FROM users WHERE email = ?', email)) return fail('DUPLICATE', 'An account already uses that email address.', 409, { email: 'Already in use.' });
   if (managerId && !(await one(env, 'SELECT 1 AS x FROM users WHERE id = ?', managerId))) return fail('VALIDATION', 'That manager does not exist.', 422, { managerId: 'Pick a manager from the list.' });

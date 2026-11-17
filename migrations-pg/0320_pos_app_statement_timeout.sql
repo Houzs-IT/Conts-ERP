@@ -1,0 +1,15 @@
+-- A statement the API sends may run for at most 30 seconds (lessons from the sister ERPs, Houzs 06793c08f, 12 Nov 2026).
+-- Until now nothing limited one: a slow or stuck query held its connection, out of the 15 the session pooler admits,
+-- until the platform gave up on the request, while every other request waited for a connection. Postgres now cancels
+-- it at 30 s (error 57014), the request answers with the usual error and the connection is free again. pg_stat_statements (12 Nov) shows
+-- the slowest regular reads average 1-2 s, with rare lock-wait spikes up to 104 s; 30 s cuts those spikes without
+-- touching normal work (the owner-statement query averages 1.4 s).
+--
+-- A role default: it applies to every new connection pos_app opens (the API through Hyperdrive and the cron worker);
+-- connections already open keep the old setting until they are replaced. Not per request (SET LOCAL inside each
+-- transaction): that would cost a round trip on every transaction and leave plain statements unlimited.
+-- Applies to pos_app only: migrations run as postgres and the engine as scm_engine, neither limited by this.
+--
+-- APPLY: production through the GitHub workflow "Apply migrations to production" with only=0320, dry run first.
+-- REVERSAL: alter role pos_app reset statement_timeout;
+alter role pos_app set statement_timeout = '30s';

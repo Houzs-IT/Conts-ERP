@@ -11,7 +11,7 @@ export function ListPager({ page, pageSize, total, onPage, busy, noun = 'rows' }
   const from = (page - 1) * pageSize + 1, to = Math.min(total, page * pageSize);
   const btn = 'w-9 h-9 grid place-items-center rounded-control border border-solid border-line bg-card cursor-pointer text-ink hover:bg-muted disabled:cursor-default disabled:text-faint disabled:hover:bg-card';
   return (
-    <div className="flex items-center justify-between gap-3 py-[10px] px-5 [border-top:1px_solid_var(--color-line-soft)]">
+    <div data-live className="flex items-center justify-between gap-3 py-[10px] px-5 [border-top:1px_solid_var(--color-line-soft)]">
       <span className="text-meta text-muted-ink [font-variant-numeric:tabular-nums]" aria-live="polite">
         {count(from)}–{count(to)} of {count(total)} {noun}
       </span>

@@ -53,10 +53,12 @@ function fakeDb(answer: (sql: string, args: unknown[]) => unknown) {
   };
 }
 
-function appWith(db: unknown, permissions: string[] = ["projects.write", "projects.manage"], router: Hono<never> = handover as never) {
+const ALL_PROJECT_PAGES = { "projects.list": "full", "projects.defects": "full", "projects.handover": "full" };
+
+function appWith(db: unknown, permissions: string[] = ["projects.write", "projects.manage"], router: Hono<never> = handover as never, pageAccess: Record<string, string> = ALL_PROJECT_PAGES) {
   const app = new Hono();
   app.use("*", async (c, next) => {
-    c.set("user" as never, { id: 5, permissions, page_access: { "projects.list": "full" } } as never);
+    c.set("user" as never, { id: 5, permissions, page_access: pageAccess } as never);
     c.set("companyId" as never, 1 as never);
     await next();
   });
@@ -78,10 +80,21 @@ describe("handover checklist routes against a pretend database", () => {
     expect(await res.json()).toMatchObject({ error: "not_ready" });
   });
 
-  test("templates are written only with projects.manage", async () => {
+  test("templates are written only with Full on Handover checklists", async () => {
     const { db } = fakeDb(() => ({ id: 1 }));
-    const res = await appWith(db, ["projects.write"])("POST", "/handover-templates", { name: "A", items: [{ item: "Door" }] });
+    const pages = { ...ALL_PROJECT_PAGES, "projects.handover": "edit" };
+    const res = await appWith(db, ["projects.write", "projects.manage"], handover as never, pages)("POST", "/handover-templates", { name: "A", items: [{ item: "Door" }] });
     expect(res.status).toBe(403);
+  });
+
+  test("the checklists read with the project list or Handover checklists; the queue needs Defects", async () => {
+    const { db } = fakeDb(() => null);
+    const handoverOnly = appWith(db, [], handover as never, { "projects.handover": "view" });
+    expect((await handoverOnly("GET", "/handover-templates")).status).toBe(200);
+    expect((await handoverOnly("GET", "/defect-queue")).status).toBe(403);
+    const listOnly = appWith(db, [], handover as never, { "projects.list": "view" });
+    expect((await listOnly("GET", "/handover-templates")).status).toBe(200);
+    expect((await listOnly("GET", "/defect-queue")).status).toBe(403);
   });
 
   test("a new template is written with its items in order, for the active company", async () => {

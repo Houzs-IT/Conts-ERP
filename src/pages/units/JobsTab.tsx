@@ -73,7 +73,7 @@ export default function JobsTab({ unitId, stem }: { unitId: string; stem: string
 
   const head = (title: string, n: number | undefined) => (
     <div className="flex flex-col gap-0.5 min-w-0">
-      <span className="text-[16px] font-semibold tracking-[-0.01em]">{title}</span>
+      <span className="text-[15px] font-semibold tracking-[-0.01em]">{title}</span>
       <span className="text-meta text-muted-ink min-h-[18px]">{n == null ? 'Loading…' : from || to ? `${n} in these dates` : `${n} in all`}</span>
     </div>
   );

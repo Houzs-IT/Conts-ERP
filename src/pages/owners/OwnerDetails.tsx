@@ -7,7 +7,7 @@ import { PhoneInput, phoneProblem } from '../../components/inputs';
 import { PhoneText } from '../../components/PhoneText';
 import { useToast } from '../../components/Toast';
 import { api, ApiFailure, errorMessage } from '../../lib/api';
-import { masked, titleCase } from '../../lib/format';
+import { masked, personName } from '../../lib/format';
 import { DetailRow, useReveal } from './PayoutDetails';
 import { Modal, addressLines, type Owner } from './shared';
 
@@ -31,12 +31,12 @@ export function OwnerDetails({ owner, ready, canEdit, onSaved }: { owner: Owner;
     <Card>
       <div className="p-5 flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em]">Owner details</h2>
+          <h2 className="m-0 text-[15px] font-semibold tracking-[-0.01em]">Owner details</h2>
           {canEdit && <Button size="sm" variant="tertiary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setEditing(true)}>Edit</Button>}
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-x-8">
           <div className="flex flex-col">
-            <DetailRow label="Name" value={titleCase(owner.displayName)} />
+            <DetailRow label="Name" value={personName(owner.displayName)} />
             <DetailRow label="Legal name" value={owner.legalName || none} />
             <DetailRow label="IC / passport" value={ic ?? none}
               reveal={owner.icLast4 ? { shown: shown.ic !== undefined, busy: busy === 'ic', onToggle: () => void reveal('ic') } : undefined} />
@@ -110,7 +110,7 @@ function EditDetails({ owner, ready, onClose, onSaved }: { owner: Owner; ready: 
   }
 
   return (
-    <Modal title="Edit owner details" sub={`${titleCase(owner.displayName)}: name, contact details${ready ? ', address' : ''} and notes.`} onClose={onClose}
+    <Modal title="Edit owner details" sub={`${personName(owner.displayName)}: name, contact details${ready ? ', address' : ''} and notes.`} onClose={onClose}
       submitLabel={busy ? 'Saving...' : 'Save details'} canSubmit={canSubmit} onSubmit={() => void save()}>
       <Field label="Owner name" maxLength={120} value={f.displayName} onChange={set('displayName')} error={err('displayName')} />
       <Field label="Legal name" placeholder="As on the IC, passport or company registration" maxLength={160} value={f.legalName} onChange={set('legalName')} error={err('legalName')} />

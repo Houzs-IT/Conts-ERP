@@ -19,7 +19,8 @@ export const allow = {
   'functions/api/units/[id]/channels/airbnb-link.ts': 'Asks Channex for an Airbnb sign-in link; the connection is stored and audited when Airbnb sends the person back.',
   'functions/api/units/[id]/channels/lookup.ts': 'Read-only check of a Hotel ID with Channex, sent as POST; nothing is stored.',
   'functions/api/properties/[id]/channels/lookup.ts': 'Read-only check of a Hotel ID with Channex for a building, sent as POST; nothing is stored.',
-  'functions/api/system/health/hub-report.ts': 'Reads the live health and sends it to the IT Hub, every 5 minutes; nothing in Conts is stored or changed.',
+  'functions/api/table-layouts/columns.ts': 'Keeps a person\'s own column order for a list, a display preference saved on each header drag; no business record changes.',
+  'functions/api/system/health/hub-report.ts':'Reads the live health and sends it to the IT Hub, every 5 minutes; nothing in Conts is stored or changed.',
 };
 
 export const def = {

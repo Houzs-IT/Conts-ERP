@@ -3,19 +3,19 @@ import { color } from '../theme';
 import { cx } from '../lib/design-tokens';
 import { useApi } from '../lib/useApi';
 import { api, downloadFile, errorMessage } from '../lib/api';
-import { date, percent, rating, monthLabel, count, plural } from '../lib/format';
+import { date, percent, rating, monthLabel, count, plural, buildingName } from '../lib/format';
 import { TASK } from '../lib/vocabulary';
 import type { TaskState, PayoutState } from '../lib/types';
 import { StatusBadge } from '../components/StatusBadge';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Button } from '../components/Button';
-import PageHeader from '../components/PageHeader';
 import { EmptyState } from '../components/States';
 import { Eyebrow, StatRow, StatTile } from '../components/Metric';
 import { MoneyText, moneyString } from '../components/MoneyText';
 import Icon from '../components/Icon';
 import { useToast } from '../components/Toast';
 import { Link } from 'react-router-dom';
+import { hueOf, monoOf, buildingOf, useDisplayFont } from './showcase/parts';
 
 /**
  * Owner portal `/owner`. The owner sees ONLY their own data — every endpoint
@@ -115,8 +115,8 @@ const HEALTH: { issues: HealthIssue[] } = {
 
 const DOCS: { data: OwnerDoc[] } = {
   data: [
-    { id: 'd1', type: 'statement', refId: 's1', title: 'Statement — August 2026', meta: 'Final 1 Sep 2026 · PDF', issuedAt: '2026-09-01' },
-    { id: 'd2', type: 'contract', title: 'Contract', meta: 'Signed 12 Jan 2026 · 25% To Operator', issuedAt: '2026-01-12' },
+    { id: 'd1', type: 'statement', refId: 's1', title: 'Statement — August 2026', meta: 'Final 01/09/2026 · PDF', issuedAt: '2026-09-01' },
+    { id: 'd2', type: 'contract', title: 'Contract', meta: 'Signed 12/01/2026 · 25% To Operator', issuedAt: '2026-01-12' },
     { id: 'd3', type: 'invoice', title: 'CoolTech Services — INV-2026-0912', meta: 'Aircon service · RM 78.00', issuedAt: '2026-09-12' },
     { id: 'd4', type: 'report', title: 'Annual earnings report 2025', meta: 'PDF', issuedAt: '2026-01-05' },
   ],
@@ -145,6 +145,22 @@ const BREAKDOWN: StatementDetail = {
 /** Finished jobs shown before "Show more" in Unit health. */
 const DONE_SHOWN = 3;
 
+/** The portal's cards: white on the canvas with the soft card shadow (v2). */
+const CARD = 'bg-card border border-solid border-line-soft rounded-[18px] [box-shadow:var(--shadow-card,0_1px_0_rgba(17,24,16,.04),0_4px_18px_-8px_rgba(17,24,16,.13))]';
+
+/** A unit's photo stand-in: its building's own soft colour and monogram, so each building looks different. */
+function UnitPhoto({ label }: { label: string }) {
+  const b = buildingOf(label);
+  const h = hueOf(b);
+  return (
+    <div aria-hidden className="relative h-[96px] rounded-xl overflow-hidden flex items-end px-3 py-2.5"
+      style={{ background: `linear-gradient(135deg, hsl(${h} 40% 56%), hsl(${h + 35} 34% 40%))` }}>
+      <b className="absolute right-3 top-1/2 -translate-y-1/2 font-[Manrope,var(--font-sans)] font-extrabold text-[40px] leading-none tracking-[-0.05em] text-white/30">{monoOf(b)}</b>
+      <small className="relative text-caption font-bold tracking-[0.14em] uppercase text-white/90 [text-shadow:0_1px_2px_rgba(0,0,0,.25)]">{buildingName(b)}</small>
+    </div>
+  );
+}
+
 const DOC_ICON: Record<OwnerDoc['type'], string> = {
   statement: 'FileText', contract: 'FileSignature', invoice: 'ReceiptText', report: 'FileBarChart',
 };
@@ -170,6 +186,7 @@ export default function OwnerPortalPage({ source }: { source?: PortalSource } = 
   const health = useApi<{ issues: HealthIssue[] }>(pathFor('/owner/property-health', source), source ? undefined : HEALTH);
   const docs = useApi<{ data: OwnerDoc[] }>(pathFor('/owner/documents', source), source ? undefined : DOCS);
   const toast = useToast();
+  useDisplayFont();
 
   const [approved, setApproved] = useState<Record<string, true>>({});
   const [approve, setApprove] = useState<HealthIssue | null>(null);
@@ -239,7 +256,7 @@ export default function OwnerPortalPage({ source }: { source?: PortalSource } = 
 
   const statsCards = [
     { label: 'Occupancy', value: percent(st.stats.occupancy), note: monthLabel(st.period) },
-    { label: 'Avg nightly price', value: st.stats.adr ? moneyString(st.stats.adr, 'whole') : '—', note: monthLabel(st.period) },
+    { label: 'Avg nightly price', value: st.stats.adr ? moneyString(st.stats.adr, 'exact') : '—', note: monthLabel(st.period) },
     { label: 'Reservations', value: count(st.stats.bookings), note: monthLabel(st.period) },
     { label: 'Guest rating', value: st.stats.rating != null ? rating(st.stats.rating) : '—', note: `${plural(st.stats.reviews, 'review')}, last 12 months` },
   ];
@@ -253,31 +270,45 @@ export default function OwnerPortalPage({ source }: { source?: PortalSource } = 
           <span className="text-muted-ink">A sample owner and sample reservations from Demo mode. Not a real owner, statement or payout.</span>
         </div>
       )}
-      <PageHeader
-        title="Your units"
-        sub={st.units.length
-          ? st.units.map((u, i) => (
-              <span key={u.id}>
-                {i > 0 && ' · '}
-                {st.sample ? u.label : <Link to={`/properties/units/${encodeURIComponent(u.id)}`} className="no-underline text-inherit!">{u.label}</Link>}
-              </span>
-            ))
-          : 'No units are on your account yet.'}
-      />
+      {/* A calm website for owners (v2 prototype, screens/portals.js): display title, then their units as cards. */}
+      <header className="flex flex-col gap-1">
+        <span className="ds-eyebrow">Owner portal</span>
+        <h1 className="m-0 font-[Manrope,var(--font-sans)] font-extrabold text-[40px] max-[760px]:text-[26px] leading-[1.08] tracking-[-0.035em] text-ink">Your units</h1>
+        <span className="text-heading text-ink-2">{st.units.length ? `${plural(st.units.length, 'unit')} managed by The Conts` : 'No units are on your account yet.'}</span>
+      </header>
+      {st.units.length > 0 && (
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(240px,100%),1fr))]">
+          {st.units.map(u => {
+            const card = (
+              <>
+                <UnitPhoto label={u.label} />
+                <span className="px-1.5 pb-1 text-copy font-semibold text-ink [overflow-wrap:anywhere]">{buildingName(u.label)}</span>
+              </>
+            );
+            return st.sample
+              ? <div key={u.id} className={cx(CARD, 'p-2 flex flex-col gap-2.5 min-w-0')}>{card}</div>
+              : <Link key={u.id} to={`/properties/units/${encodeURIComponent(u.id)}`} className={cx(CARD, 'p-2 flex flex-col gap-2.5 min-w-0 no-underline hover:border-line')}>{card}</Link>;
+          })}
+        </div>
+      )}
 
-      {/* Statement summary — the gross → fees → expenses → net chain */}
-      <section className="relative bg-black text-white rounded-card p-5 sm:p-6 flex justify-between gap-6 flex-wrap overflow-hidden">
-        <span aria-hidden className="absolute left-5 sm:left-6 top-0 h-[2px] w-8 bg-gold" />
+      {/* Statement summary — the gross → fees → expenses → net chain. Owners see only Final owner statements
+          (the API sends no other); should a draft ever arrive, its figures are not shown. */}
+      {!st.isFinal ? (
+        <section className={cx(CARD, 'p-6 flex items-center gap-3')}>
+          <Icon name="Hourglass" size="base" color="var(--color-gold-ink)" />
+          <span className="flex flex-col gap-0.5"><b className="text-heading">Your {monthLabel(st.period)} owner statement is being prepared.</b><span className="text-copy text-muted-ink">It appears here as soon as it is Final.</span></span>
+        </section>
+      ) : (
+      <section className="relative text-white rounded-[18px] p-5 sm:p-7 flex justify-between gap-6 flex-wrap overflow-hidden border border-solid border-transparent [:root[data-theme=theconts-dark]_&]:border-line [:root[data-theme=dark]_&]:border-line [background:radial-gradient(circle_at_100%_0,rgba(200,164,106,.22),transparent_320px),var(--color-black)]">
         <div className="flex flex-col gap-2.5 min-w-[220px]">
           <Eyebrow className="text-gold!">Net Payout to Owner · {monthLabel(st.period)}</Eyebrow>
-          <MoneyText sen={st.payout.amount} mode="exact" className="text-[32px] sm:text-[40px] leading-none font-medium tracking-[-0.025em] text-white" />
+          <MoneyText sen={st.payout.amount} mode="exact" className="font-[Manrope,var(--font-sans)] font-extrabold text-[56px] max-[760px]:text-[40px] leading-none tracking-[-0.045em] text-white [overflow-wrap:anywhere]" />
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge entity="payout" value={st.payout.state} size="sm" />
             {payoutLine && <span className="text-meta text-[var(--color-text-on-dark)]">{payoutLine}</span>}
           </div>
-          <span className={cx('mt-1 text-meta', st.isFinal ? 'text-[var(--color-text-on-dark-muted)]' : 'text-[var(--color-gold-300)]')}>
-            {st.isFinal ? 'Final owner statement.' : 'Draft figures. This owner statement is not final and may change.'}
-          </span>
+          <span className="mt-1 text-meta text-[var(--color-text-on-dark-muted)]">Final owner statement.</span>
         </div>
 
         <div className="flex flex-col gap-3 min-w-[min(260px,100%)] flex-1">
@@ -301,9 +332,10 @@ export default function OwnerPortalPage({ source }: { source?: PortalSource } = 
           </Button>
         </div>
       </section>
+      )}
 
       {/* Report drill-down — combined statement → per-unit → per-line */}
-      {st.statementId && <StatementBreakdown statementId={st.statementId} source={source} />}
+      {st.statementId && st.isFinal && <StatementBreakdown statementId={st.statementId} source={source} />}
 
       {/* Performance stats */}
       <StatRow cols={4}>
@@ -312,10 +344,10 @@ export default function OwnerPortalPage({ source }: { source?: PortalSource } = 
 
       <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))]">
         {/* Earnings trend — inline SVG */}
-        <section className="bg-card border border-solid border-line rounded-card p-5 flex flex-col gap-1">
-          <span className="text-[16px] font-semibold tracking-[-0.01em]">Earnings over time</span>
+        <section className={cx(CARD, 'p-5 flex flex-col gap-1')}>
+          <span className="text-heading font-semibold tracking-[-0.01em]">Earnings over time</span>
           <span className="text-meta text-muted-ink">
-            Net Payout to Owner, RM · {trend.data ? `last ${trend.data.months} months · ` : ''}{trend.data?.unitLabel ?? st.unitsLabel}
+            Net Payout to Owner, RM · {trend.data ? `last ${trend.data.months} months · ` : ''}{trend.data?.unitLabel ? buildingName(trend.data.unitLabel) : st.unitsLabel}
           </span>
           {points.length ? <TrendChart points={points} /> : !trend.data ? null : (
             <EmptyState bare icon="ChartLine" title="No earnings yet" body="Earnings appear after your first statement." />
@@ -323,8 +355,8 @@ export default function OwnerPortalPage({ source }: { source?: PortalSource } = 
         </section>
 
         {/* Property health */}
-        <section className="bg-card border border-solid border-line rounded-card overflow-hidden flex flex-col">
-          <div className="px-5 py-[18px] text-[16px] font-semibold tracking-[-0.01em] [border-bottom:1px_solid_var(--color-line-soft)]">Unit health</div>
+        <section className={cx(CARD, 'overflow-hidden flex flex-col')}>
+          <div className="px-5 py-4 text-heading font-semibold tracking-[-0.01em] [border-bottom:1px_solid_var(--color-line-soft)]">Unit health</div>
           {health.data && rows.length === 0 && <EmptyState bare icon="Wrench" title="No maintenance on your units" body="Repairs and quotes that need your approval appear here." />}
           {[...openJobs, ...(showAllDone ? doneJobs : doneJobs.slice(0, DONE_SHOWN))].map(i => {
             const v = TASK[i.state];
@@ -354,8 +386,8 @@ export default function OwnerPortalPage({ source }: { source?: PortalSource } = 
       </div>
 
       {/* Documents */}
-      <section className="bg-card border border-solid border-line rounded-card overflow-hidden">
-        <div className="px-5 py-[18px] text-[16px] font-semibold tracking-[-0.01em] [border-bottom:1px_solid_var(--color-line-soft)]">Documents</div>
+      <section className={cx(CARD, 'overflow-hidden')}>
+        <div className="px-5 py-4 text-heading font-semibold tracking-[-0.01em] [border-bottom:1px_solid_var(--color-line-soft)]">Documents</div>
         {docs.data && documents.length === 0 && <EmptyState bare icon="FileText" title="No documents yet" body="Your statements and contract will appear here." />}
         {docYears.map(([year, list], yi) => (
           <details key={year} open={yi === 0} className="[&[open]>summary_.chev]:rotate-90 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
@@ -389,7 +421,7 @@ export default function OwnerPortalPage({ source }: { source?: PortalSource } = 
         spec={!approve ? null : {
           title: `Approve ${moneyString(approve.quotedAmount ?? 0, 'exact')} for ${approve.title.toLowerCase()}?`,
           body: 'The Conts will schedule the work and deduct the amount from your next statement.',
-          meta: [`Quoted ${date(approve.reportedAt)}`, approve.vendorName && `by ${approve.vendorName}`, approve.unitLabel].filter(Boolean).join(' · '),
+          meta: [`Quoted ${date(approve.reportedAt)}`, approve.vendorName && `by ${approve.vendorName}`, buildingName(approve.unitLabel)].filter(Boolean).join(' · '),
           confirmLabel: 'Approve quote', busyLabel: 'Approving…', onConfirm: doApprove,
         }}
       />
@@ -410,9 +442,9 @@ function StatementBreakdown({ statementId, source }: { statementId: string; sour
   const multi = data.units.length > 1;
 
   return (
-    <section className="bg-card border border-solid border-line rounded-card overflow-hidden">
-      <div className="px-5 py-[18px] flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
-        <span className="text-[16px] font-semibold tracking-[-0.01em]">Statement breakdown</span>
+    <section className={cx(CARD, 'overflow-hidden')}>
+      <div className="px-5 py-4 flex items-center justify-between gap-3 flex-wrap [border-bottom:1px_solid_var(--color-line-soft)]">
+        <span className="text-heading font-semibold tracking-[-0.01em]">Statement breakdown</span>
         <span className="text-meta text-muted-ink">
           {monthLabel(data.period)} · {multi ? `${plural(data.units.length, 'unit')} · tap a unit to open` : data.unitsLabel}
         </span>
@@ -431,7 +463,7 @@ function StatementBreakdown({ statementId, source }: { statementId: string; sour
               >
                 <span className="flex items-center gap-2 min-w-0">
                   <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size="sm" color="var(--color-muted-ink)" />
-                  <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{u.label}</span>
+                  <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{buildingName(u.label)}</span>
                 </span>
                 <MoneyText sen={u.net} mode="exact" strong className="text-copy" />
               </button>
@@ -439,7 +471,7 @@ function StatementBreakdown({ statementId, source }: { statementId: string; sour
 
             {open && (
               <div className={multi ? 'px-5 pb-4 pt-0' : 'px-5 py-4'}>
-                {!multi && <div className="text-copy font-medium mb-2.5">{u.label}</div>}
+                {!multi && <div className="text-copy font-medium mb-2.5">{buildingName(u.label)}</div>}
                 <div className="flex flex-col">
                   {u.lines.map((l, i) => (
                     <div key={i} className="flex items-center justify-between gap-3 py-2 [border-bottom:1px_solid_var(--color-line-soft)]">
@@ -467,7 +499,7 @@ function StatementBreakdown({ statementId, source }: { statementId: string; sour
 
 /** Owner-safe, factual language only — no internal shorthand (guide 15.2). */
 function issueLine(i: HealthIssue, showUnit: boolean): string {
-  const where = showUnit ? `${i.unitLabel}. ` : '';
+  const where = showUnit ? `${buildingName(i.unitLabel)}. ` : '';
   if (i.state === 'waiting') {
     return `${where}Quoted ${i.quotedAmount != null ? moneyString(i.quotedAmount, 'exact') : ''}${i.vendorName ? ` by ${i.vendorName}` : ''} on ${date(i.reportedAt)}. Your approval is needed.`;
   }
@@ -509,7 +541,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
   const area = `${line} L${x(points.length - 1).toFixed(1)},${baseY} L${x(0).toFixed(1)},${baseY} Z`;
   const last = points[points.length - 1];
   const lastX = x(points.length - 1), lastY = y(last.netPayout);
-  const desc = points.map(p => `${monthLabel(p.period)} ${moneyString(p.netPayout, 'whole')}`).join(', ');
+  const desc = points.map(p => `${monthLabel(p.period)} ${moneyString(p.netPayout, 'exact')}`).join(', ');
 
   return (
     <div ref={box} className="mt-1.5 min-w-0">
@@ -524,7 +556,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
       <path d={area} fill="url(#owner-trend-fill)" />
       <path d={line} fill="none" stroke={color.gold} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
       <circle cx={lastX} cy={lastY} r="4.5" fill={color.gold} stroke={color.card} strokeWidth="2" />
-      <text x={lastX} y={Math.max(14, lastY - 12)} textAnchor="end" fontSize="12" fontWeight="600" fill={color.goldInk}>{moneyString(last.netPayout, 'whole')}</text>
+      <text x={lastX} y={Math.max(14, lastY - 12)} textAnchor="end" fontSize="12" fontWeight="600" fill={color.goldInk}>{moneyString(last.netPayout, 'exact')}</text>
       {points.map((p, i) => (points.length - 1 - i) % every === 0 && (
         <text key={p.period} x={x(i)} y={H - 12} textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'} fontSize="11" fill={color.textMuted}>{monthLabel(p.period)}</text>
       ))}

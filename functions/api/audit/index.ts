@@ -7,10 +7,10 @@ import { levelsFor } from '../../_lib/access';
 /** The area (functions/_lib/access.ts) whose records each history belongs to: a role that cannot open the
  *  area cannot read the history of its records either. Tables not listed are management and finance only. */
 const ENTITY_AREA: Record<string, string> = {
-  reservations: 'reservations', guests: 'reservations',
+  reservations: 'reservations', guests: 'guests',
   units: 'properties', properties: 'properties', access_credentials: 'properties',
-  tasks: 'operations', maintenance_issues: 'operations', cleaners: 'operations',
-  owners: 'owners', owner_contracts: 'owners', owner_adjustments: 'owners',
+  tasks: 'cleaning', maintenance_issues: 'maintenance', cleaners: 'cleaning',
+  owners: 'owners', owner_contracts: 'contracts', owner_adjustments: 'owners',
   owner_statements: 'finance', payouts: 'finance', expenses: 'finance',
   users: 'users',
 };
@@ -34,7 +34,7 @@ async function fieldOwns(env: Env, userId: string, table: string, id: string) {
   if (table === 'maintenance_issues') {
     // A job assigned since migration 0105 names its technician's account; older jobs (and a database without the
     // column) are matched by the technician's name, as before.
-    const byId = await hasColumn(env, 'maintenance_issues', 'assignee_user_id').catch(() => false);
+    const byId = await hasColumn(env, 'maintenance_issues', 'assignee_user_id');
     const named = 'lower(m.vendor_name) = (SELECT lower(full_name) FROM users WHERE id = ?)';
     return !!(await one(env, `
       SELECT 1 AS x FROM maintenance_issues m

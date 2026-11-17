@@ -8,6 +8,7 @@ import { useApi } from '../lib/useApi';
 import { count, dateTime, relative } from '../lib/format';
 import { DataTable, type Column } from '../components/DataTable';
 import { cx } from '../lib/design-tokens';
+import { BUILD_ID } from '../lib/buildId';
 import { StatRow, StatTile, Segmented } from '../components/Metric';
 
 // System Health, laid out like the Hookka /admin/health page so the two can be moved between systems:
@@ -60,7 +61,7 @@ function HealthBanner({ tone, label, detail }: { tone: BannerTone; label: string
       <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: c.fg, animation: tone === 'loading' ? undefined : 'pulse-soft 2.4s ease-in-out infinite' }} />
       <div className="min-w-0 flex-1">
         <div className="text-copy font-semibold">{label}</div>
-        {detail && <div className="mt-0.5 text-meta opacity-90">{detail}</div>}
+        {detail && <div className="mt-0.5 text-meta">{detail}</div>}
       </div>
     </div>
   );
@@ -114,7 +115,7 @@ function AuditDiff({ before, after }: { before: Detail; after: Detail }) {
 }
 
 const panel = 'rounded-card border border-solid border-line bg-card p-5';
-const panelTitle = 'text-[16px] font-semibold tracking-[-0.01em] text-ink';
+const panelTitle = 'text-heading font-semibold tracking-[-0.01em] text-ink';
 
 export default function SystemHealthPage() {
   const [range, setRange] = useState<Range>('7d');
@@ -125,7 +126,8 @@ export default function SystemHealthPage() {
   const feed = useApi<AuditFeed>(`/system/health/audit-feed?range=${range}${sensitiveOnly ? '&sensitive=1' : ''}&limit=${limit}`);
   const navigate = useNavigate();
   const reloadLive = live.reload, reloadFeed = feed.reload;
-  useEffect(() => { const t = setInterval(() => { if (document.visibilityState === 'visible') reloadLive(); }, REFRESH_MS); return () => clearInterval(t); }, [reloadLive]);
+  const pollLive = live.poll;
+  useEffect(() => { const t = setInterval(() => { if (document.visibilityState === 'visible') pollLive(); }, REFRESH_MS); return () => clearInterval(t); }, [pollLive]);
 
   const d = live.data;
   const banner = useMemo<{ tone: BannerTone; label: string; detail: string }>(() => {
@@ -148,7 +150,7 @@ export default function SystemHealthPage() {
   return (
     <>
       <PageHeader title="System health"
-        sub={d ? `Checked ${relative(d.time).replace(/^Just now$/, 'just now')} · this version published ${dateTime(__BUILD_ID__)}` : 'Live state of the database, storage, integrations and recent changes.'}
+        sub={d ? `Checked ${relative(d.time).replace(/^Just now$/, 'just now')} · this version published ${dateTime(BUILD_ID)}` : 'Live state of the database, storage, integrations and recent changes.'}
         actions={<Button size="sm" variant="secondary" icon={<Icon name="RefreshCw" size="sm" />} loading={live.loading && !!d} onClick={() => { reloadLive(); reloadFeed(); }}>Refresh</Button>} />
 
       <HealthBanner tone={banner.tone} label={banner.label} detail={banner.detail} />

@@ -57,6 +57,7 @@ export const ENGINE_PATH: Record<string, string> = {
   '/projects/list': '/beta/projects',
   '/projects/calendar': '/beta/calendar',
   '/projects/defects': '/beta/defects',
+  '/supply/operations/renovation': '/beta/site-tasks',
   '/projects/handover-checklists': '/beta/handover-checklists',
   '/projects/finances': '/projects?view=finances',
   '/projects/maintenance': '/projects?view=maintenance',

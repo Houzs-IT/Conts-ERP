@@ -1,6 +1,6 @@
 import { type Env, all, mytToday } from './db';
 import { listEmployees, isTestEmployee } from './hr';
-import type { Department, Employee } from './hrFields';
+import { DEPARTMENTS, type Department, type Employee } from './hrFields';
 import { readHolidays } from './leave';
 import { readPayRules, hasPayroll } from './payroll';
 import { hasWorkingHours, entriesBetween, punchesBetween, punchHours, homeDepartment } from './workingHours';
@@ -137,7 +137,7 @@ export async function laborCost(env: Env, from: string, to: string, showRevenue:
   }
 
   const billedBy = (d: Department): number | null => (revenue ? revenue.filter(r => (r.kind === 'cleaning' ? 'cleaning' : 'maintenance') === d).reduce((n, r) => n + r.billedSen, 0) : null);
-  const lines: DepartmentLine[] = (['cleaning', 'maintenance'] as const)
+  const lines: DepartmentLine[] = DEPARTMENTS
     .filter(d => !department || d === department)
     .map(d => ({
       ...(departments.find(x => x.department === d) ?? { department: d, hours: 0, workers: 0, costSen: 0 }),

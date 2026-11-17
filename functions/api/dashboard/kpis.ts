@@ -4,14 +4,26 @@ import { stayMonths, metrics, monthEndExclusive, toDate } from '../../_lib/reven
 import { requireSession } from '../../_lib/auth';
 import { can } from '../../_lib/access';
 import { ownerMonths } from '../../_lib/ownerEstimate';
+import { scopeCached } from '../../_lib/scopeCache';
 
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+/** GET /api/dashboard/kpis — the month's tiles. The same for everyone who sees the same figures, so it is worked out
+ *  at most once a minute per scope (functions/_lib/scopeCache.ts); `cachedAt` says when, and `generatedAt` (the
+ *  dashboard's "Last updated") is that same moment. */
+export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
 
   const url = new URL(request.url);
   const period = url.searchParams.get('period') ?? mytToday().slice(0, 7);
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return fail('VALIDATION', 'Period must look like 2026-08.', 422);
+  const money = session.manage || can(session, 'finance', 'view');
+  // Everything the answer depends on: the month, today (the month in progress stops at today), and whether the money
+  // tiles are in it.
+  const scope = `dashboard/kpis|${period}|${mytToday()}|${money ? 'money' : 'occupancy'}`;
+  return json(await scopeCached(env, request, scope, () => kpis(env, period, money), { waitUntil }));
+};
+
+async function kpis(env: Env, period: string, money: boolean) {
 
   // functions/_lib/revenue.ts: gross value and nights split by night into the month, to date like Portfolio (the
   // month in progress stops at today). Occupancy, ADR and RevPAR are over listed units (the nights that could be
@@ -20,7 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const [rows, listedUnits, ownerByMonth] = await Promise.all([
     stayMonths(env, `${period}-01`, toExclusive),
     rentalOnly(env, 'units').then(r => all<{ id: string }>(env, `SELECT id FROM units WHERE is_listed = 1${r}`)),
-    (session.manage || can(session, 'finance', 'view')) ? ownerMonths(env, [period]) : Promise.resolve(undefined),
+    money ? ownerMonths(env, [period]) : Promise.resolve(undefined),
   ]);
   const listedIds = new Set(listedUnits.map(u => u.id));
   const listed = metrics(rows.filter(r => listedIds.has(r.unit_id)), listedIds.size * days);
@@ -31,7 +43,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const kpis = [
     { key: 'occupancy', value: listed.occupancy.toFixed(1), unit: 'percent' },
-    ...(session.manage || can(session, 'finance', 'view') ? [
+    ...(money ? [
       { key: 'accommodation_revenue', value: everything.gross, currency: 'MYR' },
       { key: 'adr', value: listed.adr, currency: 'MYR' },
       { key: 'revpar', value: listed.revpar, currency: 'MYR' },
@@ -39,5 +51,5 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ] : []),
   ];
 
-  return json({ generatedAt: new Date().toISOString(), period, kpis });
-};
+  return { generatedAt: new Date().toISOString(), period, kpis };
+}

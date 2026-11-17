@@ -1,6 +1,7 @@
 import { type Env, one, run, json, fail, audit } from '../../../../_lib/db';
 import { can } from '../../../../_lib/access';
 import { requireSession } from '../../../../_lib/auth';
+import { paymentIncomeNotice } from '../../../../_lib/lockGuards';
 
 /** DELETE /api/reservations/:id/payments/:paymentId — removes a payment typed in by mistake. A payout line that came
  *  from the owner workbook is refused: it is rewritten by the next import, so it is corrected in the workbook. Audited
@@ -20,5 +21,5 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   await run(env, 'DELETE FROM booking_payments WHERE id = ?', p.id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'reservation.payment_removed', entityTable: 'reservations', entityId: p.reservation_id,
     before: { paymentId: p.id, amount: Number(p.amount), kind: p.kind, receivedOn: p.received_on, method: p.method, reference: p.reference, note: p.note, createdBy: p.created_by, createdAt: p.created_at } });
-  return json({ id: p.id, removed: true });
+  return json({ id: p.id, removed: true, notice: await paymentIncomeNotice(env, p.reservation_id) });
 };

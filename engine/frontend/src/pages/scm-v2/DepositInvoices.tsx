@@ -96,7 +96,7 @@ export const DepositInvoices = () => {
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow="Finance" title="Deposit Invoices"
+      <PageHeader eyebrow="Finance" title="Deposit invoices"
         description="One invoice per customer payment received before the order's final invoice — issued by itself when the switch is on, booked Dr the customer / Cr Deposit pay by customer. An edited payment cancels its invoice and takes the next number; a deleted one cancels it. At the final invoice each one is closed by a credit note of its own." />
 
       <SwitchCard />

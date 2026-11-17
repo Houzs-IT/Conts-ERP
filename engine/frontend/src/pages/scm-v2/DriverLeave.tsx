@@ -127,7 +127,7 @@ export const DriverLeave = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Delivery"
-        title="Crew Leave"
+        title="Crew leave"
         description="Record when a driver or helper is unavailable for delivery. On the covered days the Auto-Schedule assigner will not crew them, and the trip assignment pickers flag them as on leave — you can still hand-pick anyone, the flag is a warning, not a block."
       />
 

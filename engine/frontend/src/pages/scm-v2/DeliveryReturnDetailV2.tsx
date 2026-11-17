@@ -1079,7 +1079,7 @@ function DeliveryReturnDetailV2ReadOnly() {
             {/* Delivery address + Emergency contact — same layout as DO/SI
                 V2. The return may involve a driver going back out to
                 collect goods, so the address is genuinely useful. */}
-            <Section title="Pickup / Return address">
+            <Section title="Pickup / return address">
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-[1.4fr_1fr] sm:divide-x sm:divide-border-subtle">
                 <div className="sm:pr-6">
                   <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">

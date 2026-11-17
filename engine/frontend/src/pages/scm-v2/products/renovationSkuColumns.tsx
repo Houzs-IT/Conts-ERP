@@ -48,7 +48,7 @@ export function renovationSkuColumns(opts: {
 }): Column<MfgProductRow>[] {
   const { subLabel, uomPrint } = opts;
   const cols: Column<MfgProductRow>[] = [
-    { key: 'photo', label: 'Photo', width: '64px', disableSort: true, disableFilter: true, render: (r) => <SkuThumb row={r} /> },
+    { key: 'photo', label: 'Photo', width: '76px', className: 'text-clip', disableSort: true, disableFilter: true, render: (r) => <SkuThumb row={r} /> },
     { key: 'code', label: 'Product Code', exportLabel: 'code', width: '150px', getValue: (r) => r.code, render: (r) => <span className="font-money text-[13px]">{r.code}</span> },
     { key: 'name', label: 'Description', exportLabel: 'name', width: '260px', getValue: (r) => r.name, render: (r) => <span className="text-[13px]">{r.name}</span> },
     { key: 'group', label: 'Group', exportLabel: 'category', exportValue: (r) => r.category, width: '120px', getValue: (r) => groupLabel(r), render: (r) => groupLabel(r) },

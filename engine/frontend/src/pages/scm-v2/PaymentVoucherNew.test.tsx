@@ -120,7 +120,7 @@ const draw = (url: string) => render(
 describe('the AP Payment (?type=ap)', () => {
   test('supplier required, no hand-written lines, tick pays in full, and the save debits AP', async () => {
     draw('/scm/payment-vouchers/new?type=ap');
-    expect(screen.getByText('New AP Payment')).toBeTruthy();
+    expect(screen.getByText('New AP payment')).toBeTruthy();
     /* No expense-lines card — the GL line is composed, not typed. */
     expect(screen.queryByText('Lines')).toBeNull();
 
@@ -233,7 +233,7 @@ describe('opened from a purchase invoice', () => {
 
   test('a plain Payment Voucher ignores both', () => {
     draw('/scm/payment-vouchers/new?supplier=sup-1&pi=pi-1');
-    expect(screen.getByText('New Payment Voucher')).toBeTruthy();
+    expect(screen.getByText('New payment voucher')).toBeTruthy();
     expect(screen.queryByLabelText('Pay 2990-PI-2609-001 in full')).toBeNull();
   });
 });
@@ -318,7 +318,7 @@ describe('copy as new (?copyFrom=…)', () => {
 describe('the plain Payment Voucher (/new)', () => {
   test('expense lines only — no supplier, no PI section, and Paid From offers only money', () => {
     draw('/scm/payment-vouchers/new');
-    expect(screen.getByText('New Payment Voucher')).toBeTruthy();
+    expect(screen.getByText('New payment voucher')).toBeTruthy();
     expect(screen.getByText('Lines')).toBeTruthy();
     expect(screen.queryByLabelText(/Supplier/)).toBeNull();
     expect(screen.queryByText('Apply to PI')).toBeNull();
@@ -561,7 +561,7 @@ describe('the Customer Refund (?type=refund, §14)', () => {
       deposits: { count: 2, standingSen: 150000 },
     };
     draw('/scm/payment-vouchers/new?type=refund');
-    expect(screen.getByText('New Customer Refund')).toBeTruthy();
+    expect(screen.getByText('New customer refund')).toBeTruthy();
     /* No lines card, no payee box, no transfer toggle — the body is the document. */
     expect(screen.queryByText('Lines')).toBeNull();
     expect(screen.queryByText('内部转账 Transfer')).toBeNull();

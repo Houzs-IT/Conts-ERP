@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { StaleBanner } from '../../components/DataState';
 import { Skeleton } from '../../components/States';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
+import { useSeedOnce } from '../../lib/useSeedOnce';
 import { api, errorMessage } from '../../lib/api';
 import type { JobTimesPayload } from '../../../functions/api/employees/job-times';
 
@@ -31,9 +32,9 @@ interface CardGroupProps {
 
 function CardGroup({ title, note, cards, draft, maxMinutes, canEdit, onChange }: CardGroupProps) {
   return (
-    <section className="bg-card rounded-card border border-solid border-line px-5 py-4 flex flex-col">
+    <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] px-5 py-4 flex flex-col">
       <span className="flex flex-col gap-0.5 pb-2">
-        <span className="text-[15px] font-semibold">{title}</span>
+        <span className="text-heading font-bold">{title}</span>
         <span className="text-meta text-muted-ink">{note}</span>
       </span>
       {cards.map(({ key, label }) => (
@@ -53,7 +54,8 @@ export default function StandardTimesTab() {
   const { data, error, reload } = useApi<JobTimesPayload>('/employees/job-times');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  useEffect(() => { if (data) setDraft(toDraft(data.minutes)); }, [data]);
+  // Filled once (and again after a save), not on every answer, so a late answer never wipes typing.
+  const reseed = useSeedOnce(data, 'job-times', d => setDraft(toDraft(d.minutes)));
 
   const saved = data ? toDraft(data.minutes) : null;
   const hasChanges = !!draft && !!saved && Object.keys(saved).some(card => draft[card] !== saved[card]);
@@ -67,7 +69,7 @@ export default function StandardTimesTab() {
       const minutes = Object.fromEntries(Object.entries(draft).map(([card, text]) => [card, Number(text)]));
       await api.put('/employees/job-times', { minutes });
       toast({ tone: 'success', title: 'Standard times saved.', body: 'Employee Performance uses them straight away.' });
-      reload();
+      reseed(); reload();
     } catch (saveError) {
       toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(saveError, 'Try again in a moment.') });
     } finally {
@@ -78,8 +80,8 @@ export default function StandardTimesTab() {
   return (
     <div className="flex flex-col gap-5 max-w-[720px]">
       {error && <StaleBanner message={error} onRetry={reload} />}
-      <section className="bg-card rounded-card border border-solid border-line px-5 py-4 flex flex-col gap-0.5">
-        <span className="text-[16px] font-semibold tracking-[-0.01em]">Standard Times</span>
+      <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] px-5 py-4 flex flex-col gap-0.5">
+        <span className="text-heading font-bold tracking-[-0.005em]">Standard Times</span>
         <span className="text-meta text-muted-ink">
           How many minutes each job card should take. Employee Performance compares this with the time from Start to Done on each job,
           so you see who finishes early or late. A card left at 0 is not counted until you set it.

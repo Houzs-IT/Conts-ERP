@@ -10,7 +10,7 @@ import { useConfirm } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { api, notifyFailure } from '../lib/api';
-import { date, plural, rm, titleCase } from '../lib/format';
+import { date, plural, rm, personName } from '../lib/format';
 import type { StatusTone } from '../lib/status';
 import { useUrlState, SearchBox } from './finance/listKit';
 import { PriceChangePanel, type PriceKind } from './units/PriceChangePanel';
@@ -74,7 +74,7 @@ export default function ScheduledChangesPage() {
     { key: 'what', label: 'What changes', value: r => nameOf(r), width: 150 },
     { key: 'now', label: 'Now', value: r => textNow(r), width: 220 },
     { key: 'next', label: 'Changes to', value: r => textNext(r), width: 220 },
-    { key: 'owner', label: 'Owner', type: 'person', value: r => (r.ownerName ? titleCase(r.ownerName) : null), hidden: true, width: 150 },
+    { key: 'owner', label: 'Owner', type: 'person', value: r => (r.ownerName ? personName(r.ownerName) : null), hidden: true, width: 150 },
     { key: 'setBy', label: 'Set by', value: r => r.setBy, width: 120, sub: r => (r.setAt ? date(r.setAt) : null) },
     { key: 'action', label: '', value: () => null, hideable: false, filter: false, sortable: false, width: 90,
       render: r => (data?.mayEdit && r.scope === 'unit' && r.kind !== 'contract'

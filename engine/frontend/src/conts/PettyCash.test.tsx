@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import type { FloatRow, PaymentRequest } from "./claimsQueries";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import type { FloatRow, PaymentRequest, Receipt } from "./claimsQueries";
 
 // Finance's petty cash and payment requests (Conts; SOP 3.2, 6). Pinned: the overview's totals and a low float; the
 // a new float sends the account chosen, only free ones offered; a float without its account is flagged; a rejection is not sent without a reason; who sees which action.
@@ -16,17 +16,26 @@ const floats: FloatRow[] = [
 const request: PaymentRequest = {
   id: "Q1", requestNo: "PRQ-2610-001", type: "DEPOSIT", requesterUserId: "u3", requesterName: "Wei Wen", supplierId: "S1", payeeName: "ACE", payeeToCheck: false,
   purchaseOrderId: null, wantedOn: null, owesFormalInvoice: true, note: null, amountSen: 500000, status: "SUBMITTED", reason: null, decidedBy: null,
-  createdAt: "2026-10-20T00:00:00Z", lines: [{ department: "supply", unitId: null, maintenanceIssueId: null, projectId: 7, accountCode: "601-0001", amountSen: 500000, description: "Cabinet deposit" }],
+  createdAt: "2026-10-20T00:00:00Z", lines: [{ id: "L1", department: "supply", unitId: null, maintenanceIssueId: null, projectId: 7, accountCode: "601-0001", amountSen: 500000, description: "Cabinet deposit" }],
   files: [], vouchers: [],
 };
+/* Staff claims paid back by finance, listed on Payment requests beside the requests (chew, 16 Nov 2026). */
+let claims: Receipt[] = [];
+let requests: PaymentRequest[] | null = null;
+const claim = (status: Receipt["status"]): Receipt => ({
+  id: "R1", receiptNo: "CLM-2611-001", submitterUserId: "u5", submitterName: "Jiaxin", floatId: null, spendDate: "2026-11-08", amountSen: 10090,
+  vendorName: "OpenAI OpCo, LLC", note: null, status, rejectReason: null, checkedAt: null, checkedBy: null, topUpPvId: null, paybackPvId: null, replacesId: null,
+  source: "web", lines: [{ id: "RL1", department: "shared", unitId: null, maintenanceIssueId: null, projectId: null, accountCode: status === "CHECKED" ? "906-0000" : null, amountSen: 10090, description: "ChatGPT" }],
+  files: [], bank: { bankName: "Maybank", accountNo: "1234567890", accountName: null, fromClaim: true, differsFromSaved: false },
+});
 /* The sub-departments a line names (SOP 1.1). */
 vi.mock("./subDepartmentQueries", () => ({ useSubDepartments: () => ({ data: { subDepartments: [] } }) }));
 vi.mock("./claimsQueries", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./claimsQueries")>()),
   useFloats: () => ({ data: { floats, totals: { floatSen: 150000, balanceSen: 13000, waitingCheckSen: 4500 } }, isLoading: false, isError: false, refetch: vi.fn() }),
-  useFinanceReceipts: () => ({ data: { receipts: [] }, isLoading: false, isError: false }),
+  useFinanceReceipts: () => ({ data: { receipts: claims }, isLoading: false, isError: false }),
   useOverrides: () => ({ data: { overrides: [] } }),
-  usePaymentRequests: () => ({ data: { requests: [request] }, isLoading: false, isError: false }),
+  usePaymentRequests: () => ({ data: { requests: requests ?? [request] }, isLoading: false, isError: false }),
   useFinanceAction: () => ({ mutateAsync: act, isPending: false }),
 }));
 vi.mock("./ClaimsParts", async (importOriginal) => ({
@@ -88,11 +97,37 @@ describe("Payment requests", () => {
     await waitFor(() => expect(promptFn).toHaveBeenCalled());
     expect(act).not.toHaveBeenCalled();
   });
-  it("making the voucher asks for the bank and sends it", async () => {
+  it("Make voucher opens the New voucher form filled in from the request, the account left to choose (chew, 16 Nov 2026)", async () => {
     act.mockClear();
-    render(<MemoryRouter><PaymentRequests /></MemoryRouter>);
+    const Probe = () => { const st = useLocation().state as { claimsPrefill?: { payeeName: string; lines: Array<{ paymentRequestId: string; amountSen: number }> } } | null; return <div>{`opened ${st?.claimsPrefill?.payeeName} ${st?.claimsPrefill?.lines.map((l) => `${l.paymentRequestId}:${l.amountSen}`).join(",")}`}</div>; };
+    render(<MemoryRouter initialEntries={["/r"]}><Routes><Route path="/r" element={<PaymentRequests />} /><Route path="/scm/payment-vouchers/new" element={<Probe />} /></Routes></MemoryRouter>);
     fireEvent.click(screen.getByText("Make voucher"));
-    await waitFor(() => expect(act).toHaveBeenCalledWith({ path: "/accounting/payment-requests/Q1/voucher", body: { bankAccountCode: "310-0010" }, method: "POST" }));
+    expect(await screen.findByText("opened ACE Q1:500000")).toBeTruthy();
+    expect(act).not.toHaveBeenCalled();
+  });
+  it("a staff claim is on the list too: checked first, then paid by voucher with the requests (chew, 16 Nov 2026)", async () => {
+    claims = [claim("HANDED_IN")];
+    const { unmount } = render(<MemoryRouter><PaymentRequests /></MemoryRouter>);
+    expect(screen.getByText("CLM-2611-001")).toBeTruthy();
+    expect(screen.getByText("Check")).toBeTruthy();
+    expect(screen.getAllByText("Make voucher")).toHaveLength(1);
+    unmount();
+    claims = [claim("CHECKED")];
+    const Probe = () => { const st = useLocation().state as { claimsPrefill?: { lines: Array<{ staffReceiptId?: string; accountCode?: string | null }> } } | null; return <div>{`opened ${st?.claimsPrefill?.lines.map((l) => `${l.staffReceiptId}:${l.accountCode}`).join(",")}`}</div>; };
+    render(<MemoryRouter initialEntries={["/r"]}><Routes><Route path="/r" element={<PaymentRequests />} /><Route path="/scm/payment-vouchers/new" element={<Probe />} /></Routes></MemoryRouter>);
+    fireEvent.click(screen.getAllByText("Make voucher").at(-1)!);
+    expect(await screen.findByText("opened R1:906-0000")).toBeTruthy();
+    claims = [];
+  });
+  it("a utility request is paid by voucher against its accrual, never an AP invoice (chew, 16 Nov 2026)", async () => {
+    requests = [{ ...request, id: "QU", requestNo: "PRQ-2611-009", type: "PAYMENT", payeeName: "TNB", fromBills: true, owesFormalInvoice: false,
+      lines: [{ id: "LU", department: "rental", unitId: "U1", maintenanceIssueId: null, projectId: null, accountCode: null, amountSen: 31425, description: "Electricity 2026-11 2102353477XX" }] }];
+    const Probe = () => { const st = useLocation().state as { claimsPrefill?: { lines: Array<{ accountCode?: string | null }> } } | null; return <div>{`opened ${st?.claimsPrefill?.lines.map((l) => l.accountCode).join(",")}`}</div>; };
+    render(<MemoryRouter initialEntries={["/r"]}><Routes><Route path="/r" element={<PaymentRequests />} /><Route path="/scm/payment-vouchers/new" element={<Probe />} /></Routes></MemoryRouter>);
+    expect(screen.queryByText("Make AP invoice")).toBeNull();
+    fireEvent.click(screen.getByText("Make voucher"));
+    expect(await screen.findByText("opened 420-0010")).toBeTruthy();
+    requests = null;
   });
   it("without Ledger full there is no Make voucher", () => {
     full = false;

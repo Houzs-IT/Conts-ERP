@@ -6,6 +6,7 @@ import { findClash, clashResponseBody, withUnitLock } from './reservations';
 import { channexConfigured } from './channex';
 import { channexMappingFor, syncAvailabilityIfLinked } from './channexSync';
 import { bookingNotice } from './notices';
+import { countsAsIncome, incomeNotice, stayMonthsOf } from './lockGuards';
 
 /**
  * Booking status: which moves are allowed, who may make them, and what each one does.
@@ -135,6 +136,8 @@ export interface MoveResult {
     /** Tasks left in place because someone already picked them up. */
     tasksKept: number;
   };
+  /** When the move takes the stay into or out of income in a month whose income is locked: where the difference goes. */
+  notice: string | null;
 }
 
 type Refusal = { status: number; body: unknown };
@@ -149,7 +152,7 @@ export async function applyMove(env: Env, session: Session & { manage?: boolean 
 
   const target = to as State;
   const noEffects = { channel: null, readiness: null, turnoverCreated: false, tasksRemoved: 0, tasksKept: 0 };
-  if (cur.state === target) return { id, state: target, effects: noEffects };
+  if (cur.state === target) return { id, state: target, effects: noEffects, notice: null };
 
   const isBlock = BLOCK_CHANNELS.includes(cur.channel);
   // A block or owner stay has no guest lifecycle: it is either held or removed.
@@ -244,7 +247,10 @@ export async function applyMove(env: Env, session: Session & { manage?: boolean 
     before: { state: cur.state }, after: { state: target, ...(why ? { reason: why } : {}), ...(effects.tasksRemoved ? { tasksRemoved: effects.tasksRemoved } : {}) },
   });
   if (target === 'cancelled' || target === 'no_show' || target === 'checked_out') await bookingNotice(env, id, target, session.userId);
-  return { id, state: target, effects };
+  // Into or out of the owner statement's income (confirmed, cancelled, a no-show) in a month whose income is locked.
+  const notice = countsAsIncome(cur.state, cur.channel) !== countsAsIncome(target, cur.channel)
+    ? await incomeNotice(env, cur.unit_id, stayMonthsOf(cur.check_in, cur.check_out)) : null;
+  return { id, state: target, effects, notice };
 }
 
 /** Removes this booking's open tasks of one title that nobody has picked up (no cleaner, not started, no photo).

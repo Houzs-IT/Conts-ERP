@@ -216,7 +216,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
 
           <div className="flex flex-col gap-2.5">
             <span className={`${labelCaps} text-gold-ink`}>{c.eyebrow}</span>
-            <h1 className="login-display m-0 text-[36px] leading-[1.1]">{c.heading}</h1>
+            <h1 className="login-display m-0 text-headline leading-[1.15]">{c.heading}</h1>
             <div className="text-copy text-muted-ink text-pretty">{c.sub}</div>
           </div>
 
@@ -272,7 +272,7 @@ export default function LoginPage({ forceChangePassword = false, resetToken = nu
               <div className="flex flex-col gap-2 p-4 border border-solid border-line rounded-control bg-page">
                 {policy.map(p => (
                   <div key={p.label} className="flex items-center gap-2 text-meta">
-                    <span className={`w-[13px] text-center ${p.ok ? 'text-success' : 'text-muted-ink'}`}>{p.ok ? '✓' : '○'}</span>
+                    <span className={`inline-flex ${p.ok ? 'text-success' : 'text-muted-ink'}`}><Icon name={p.ok ? 'CircleCheck' : 'Circle'} size="sm" style={{ width: 13, height: 13 }} /></span>
                     <span className={p.ok ? 'text-ink' : 'text-muted-ink'}>{p.label}</span>
                   </div>
                 ))}

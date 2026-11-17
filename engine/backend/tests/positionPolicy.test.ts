@@ -65,6 +65,8 @@ const EXPECTED_WHITELIST: Record<string, Record<string, AccessLevel>> = {
     projects: "view",
     "projects.list": "view", // inherits the L1 parent
     "projects.calendar": "view", // inherits the L1 parent
+    "projects.defects": "view", // inherits the L1 parent (was read through projects.list)
+    "projects.handover": "view", // inherits the L1 parent (was read through projects.list)
   },
   Helper: {
     "scm.transportation": "view",
@@ -72,6 +74,8 @@ const EXPECTED_WHITELIST: Record<string, Record<string, AccessLevel>> = {
     projects: "view",
     "projects.list": "view",
     "projects.calendar": "view",
+    "projects.defects": "view",
+    "projects.handover": "view",
   },
   Storekeeper: {
     "scm.transportation": "view",
@@ -85,6 +89,8 @@ const EXPECTED_WHITELIST: Record<string, Record<string, AccessLevel>> = {
     projects: "view",
     "projects.list": "view", // inherits the L1 parent
     "projects.calendar": "view", // inherits the L1 parent
+    "projects.defects": "view", // inherits the L1 parent (was read through projects.list)
+    "projects.handover": "view", // inherits the L1 parent (was read through projects.list)
     // transfers / stock_take / adjustments explicitly none — asserted by the
     // "all else none" sweep below.
   },
@@ -99,6 +105,8 @@ const EXPECTED_WHITELIST: Record<string, Record<string, AccessLevel>> = {
     projects: "view",
     "projects.list": "view", // inherits the L1 parent
     "projects.calendar": "view", // inherits the L1 parent
+    "projects.defects": "view", // inherits the L1 parent (was read through projects.list)
+    "projects.handover": "view", // inherits the L1 parent (was read through projects.list)
   },
   // Calendar ONLY (owner 2026-08-26). Projects group renders for the one Calendar
   // sub-tab; projects.list / finances / maintenance carry explicit none rows and

@@ -379,7 +379,7 @@ export const PurchaseConsignmentReturnNew = () => {
       {/* Items card — card-per-line. */}
       <section className={styles.card}>
         <div className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Items to Return</h2>
+          <h2 className={styles.cardTitle}>Items to return</h2>
           <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
             {validLines.length} line{validLines.length === 1 ? '' : 's'} · refund {fmtRm(subtotalSen)}
           </span>

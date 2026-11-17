@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseJournalGrid, parsePayablesGrid, parseReceivablesGrid, toDay, toSen } from "./opening";
+import { parseJournalGrid, parsePayablesGrid, parseReceivablesGrid, toDay, toSen, toSignedSen } from "./opening";
 
 // Reading AutoCount's three opening lists (finance phase 1, spec 3.8).
 describe("opening balance sheets", () => {
@@ -46,5 +46,21 @@ describe("opening balance sheets", () => {
     expect(ar.rows[1].error).toMatch(/outstanding/);
     const ap = parsePayablesGrid([["Bill no", "Supplier code", "Bill date", "Due date", "Outstanding"], ["PI-1", "400-T001", "2026-10-01", "2026-10-31", 300]]);
     expect(ap.rows[0]).toMatchObject({ value: { supplierCode: "400-T001", outstandingSen: 30000 }, error: null });
+  });
+});
+
+describe("a minus on the ageing lists (money paid ahead)", () => {
+  it("reads a minus, brackets and a negative number; still refuses text and zero", () => {
+    expect(toSignedSen("-1,234.56")).toBe(-123456);
+    expect(toSignedSen("(1,234.56)")).toBe(-123456);
+    expect(toSignedSen(-582)).toBe(-58200);
+    expect(toSignedSen("230")).toBe(23000);
+    expect(toSignedSen("abc")).toBeNull();
+    const g = parsePayablesGrid([
+      ["Bill no", "Supplier code", "Bill date", "Due date", "Outstanding"],
+      ["HPV-2507-149", "400-0002", "2025-07-29", "2025-07-29", -4136],
+      ["Z", "400-0002", "2025-07-29", "2025-07-29", 0],
+    ]);
+    expect(g.rows.map((r) => [r.value.outstandingSen, r.error])).toEqual([[-413600, null], [0, expect.stringContaining("not zero")]]);
   });
 });

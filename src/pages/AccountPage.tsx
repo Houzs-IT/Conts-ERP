@@ -346,7 +346,7 @@ function PasswordCard({ pin }: { pin: boolean }) {
         <PasswordField label={`New ${word}`} value={next} required autoComplete="new-password" onChange={e => setNext(pin ? digitsOnly(e.target.value) : e.target.value)} error={errors.password} {...(pin ? PIN_INPUT : {})} />
         <div className="flex flex-col gap-1.5">
           {policy.map(p => (
-            <span key={p.label} className={`text-meta ${p.ok ? 'text-success' : 'text-muted-ink'}`}>{p.ok ? '✓' : '○'} {p.label}</span>
+            <span key={p.label} className={`inline-flex items-center gap-1.5 text-meta ${p.ok ? 'text-success' : 'text-muted-ink'}`}><Icon name={p.ok ? 'CircleCheck' : 'Circle'} size="sm" style={{ width: 13, height: 13 }} />{p.label}</span>
           ))}
         </div>
         <div><Button type="submit" variant="primary" size="sm" loading={busy} disabled={!policy.every(p => p.ok) || !current}>{pin ? 'Change PIN' : 'Change password'}</Button></div>

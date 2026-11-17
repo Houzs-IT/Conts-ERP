@@ -800,7 +800,7 @@ export const PurchaseOrderNew = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Procurement"
-        title="New Purchase Order"
+        title="New purchase order"
         actions={
           <div className={styles.actions}>
             {/* PR — Commander 2026-05-27: parity with PO list — quick swap into

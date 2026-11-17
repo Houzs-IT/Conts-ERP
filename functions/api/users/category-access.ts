@@ -1,6 +1,7 @@
 import { type Env, all, json, fail } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { catalogTree, choiceOfRows, type CategoryChoice } from '../../_lib/categoryCatalog';
+import { loadCategoryCatalog } from '../../_lib/categoryCatalogDb';
 import { categoryAccessReady, notMigrated } from '../../_lib/categoryAccessReady';
 
 interface LimitedPerson extends CategoryChoice { userId: string }
@@ -13,10 +14,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (session.role !== 'management') return fail('FORBIDDEN', 'Only management can see category access.', 403);
   if (!(await categoryAccessReady(env))) return notMigrated();
 
+  const catalog = await loadCategoryCatalog(env);
   const rows = await all<{ user_id: string; group_code: string; sub_code: string | null }>(env,
     'SELECT user_id, group_code, sub_code FROM person_category_access ORDER BY user_id, group_code, sub_code');
   const byUser = new Map<string, { group_code: string; sub_code: string | null }[]>();
   for (const { user_id, ...row } of rows) byUser.set(user_id, [...(byUser.get(user_id) ?? []), row]);
-  const limited: LimitedPerson[] = [...byUser].map(([userId, list]) => ({ userId, ...choiceOfRows(list) }));
-  return json({ catalog: catalogTree(), limited });
+  const limited: LimitedPerson[] = [...byUser].map(([userId, list]) => ({ userId, ...choiceOfRows(list, catalog) }));
+  return json({ catalog: catalogTree(catalog), limited });
 };

@@ -649,7 +649,7 @@ export function PortalCaseDetailPage() {
                 <Star
                   key={n}
                   size={20}
-                  className={n <= (cs.satisfaction_rating ?? 0) ? "fill-amber-400 text-amber-400" : "text-ink-muted/40"}
+                  className={n <= (cs.satisfaction_rating ?? 0) ? "fill-amber-400 text-amber-400" : "text-ink-muted"}
                 />
               ))}
             </div>

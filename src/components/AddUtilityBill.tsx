@@ -4,6 +4,7 @@ import { Button } from './Button';
 import { UnitPicker } from './UnitPicker';
 import { useUnitRoster } from '../lib/useUnitRoster';
 import { BillModal } from '../pages/owners/Costs';
+import { buildingName } from '../lib/format';
 
 /** "Add utility bill" from anywhere (Accounts payable, a unit's Financials tab): the unit's Wi-Fi, water, electricity,
  *  IndahWater bill or an additional deduction, through the one bill form the owner page uses (Costs.tsx BillModal:
@@ -16,7 +17,7 @@ export function AddUtilityBill({ unitId: given, month, onClose, onSaved }: { uni
 
 
   if (picked && unit) {
-    return <BillModal units={[{ id: unit.id, label: `${unit.propertyName} ${unit.unitNumber}` }]} defaultUnitId={unit.id} ownerId={unit.ownerId ?? ''}
+    return <BillModal units={[{ id: unit.id, label: `${buildingName(unit.propertyName)} ${unit.unitNumber}` }]} defaultUnitId={unit.id} ownerId={unit.ownerId ?? ''}
       canAdjust={false} month={month} onClose={onClose} onSaved={onSaved} />;
   }
   if (picked) return null; // the roster is still loading

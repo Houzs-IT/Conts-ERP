@@ -1195,7 +1195,7 @@ export function PurchaseInvoicesListV2() {
         <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
           <div className="min-w-0">
             <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-              Purchase Invoices
+              Purchase invoices
             </h1>
             <div className="mt-0.5 text-[12.5px] text-ink-muted">
               {total} PI{total === 1 ? "" : "s"} ·{" "}
@@ -1207,7 +1207,7 @@ export function PurchaseInvoicesListV2() {
         <div className="hidden md:block">
           <PageHeader
             eyebrow="Procurement"
-            title="Purchase Invoices"
+            title="Purchase invoices"
             description="Every invoice raised by a supplier — Draft to Paid. Click any row for the quick view; open the full page to edit or record a payment."
             primaryAction={
               <div className="flex items-stretch gap-2">

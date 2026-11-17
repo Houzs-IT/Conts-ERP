@@ -117,7 +117,7 @@ function RecDrawer({ draft, isNew, vehicles, onClose, onSave, onDelete }: { draf
   const dueBeforeService = !!f.nextDueDate && !!f.serviceDate && f.nextDueDate < f.serviceDate;
   const canSave = f.vehicleId !== '' && f.serviceDate !== '' && !dueBeforeService;
   return (
-    <Drawer open onClose={onClose} width={600}>
+    <Drawer open onClose={onClose} dirty="typed" width={600}>
       <div className="flex items-center justify-between px-6 pt-[22px] pb-3.5"><h2 className="m-0 text-[19px] font-semibold">{isNew ? 'Log maintenance' : 'Edit record'}</h2><CloseButton onClick={onClose} /></div>
       <div className="px-6 pb-5 overflow-y-auto grow flex flex-col gap-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">

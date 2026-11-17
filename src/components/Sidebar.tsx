@@ -1,7 +1,7 @@
 import { type CSSProperties, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
 import { color, dcGlass, shell, radius, motion, text } from '../theme';
-import { groupName, navFor, withoutOffItems, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, type Workspace } from '../lib/navigation';
+import { entryPath, groupName, navFor, withoutOffItems, workspaceOf, WORKSPACE_LABEL, type BadgeKey, type NavGroup, type Workspace } from '../lib/navigation';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { confirmLeaving } from '../lib/useLeaveGuard';
@@ -14,6 +14,17 @@ import { ThemeToggle } from './ThemeToggle';
 import { DARK_MODE_READY } from '../lib/theme';
 import { cx } from '../lib/design-tokens';
 import { count as countLabel } from '../lib/format';
+import { opensInPlace } from '../lib/linkClick';
+import { ENGINE_PATH } from '../lib/scmEngine';
+import { engineSoon } from './SupplyChainEngine';
+import { preloadRoute } from '../lib/routeChunks';
+
+/** The pointer is on a menu link: start its screen's code downloading (lib/routeChunks.ts), and sign in to the
+ *  supply chain engine early when the link opens one of its screens. */
+function linkSoon(path: string) {
+  preloadRoute(path);
+  if (ENGINE_PATH[path]) engineSoon();
+}
 
 interface Props { path: string; navigate: (p: string) => void; open: boolean; onToggle: () => void }
 
@@ -68,8 +79,9 @@ const GLASS_SHAPE: CSSProperties = { backdropFilter: 'blur(30px) saturate(1.6)',
 export const LOOKS: Record<SidebarLookKey, SidebarLook> = {
   conts: {
     shellBg: color.black, card: null,
-    textOn: 'var(--color-text-inverse)', text: color.onDark, muted: color.dim, faint: color.faint, line: color.charcoal,
-    activeBg: color.charcoal, activeShadow: `inset 2px 0 0 ${color.gold}`,
+    textOn: 'var(--color-text-inverse)', text: color.onDark, muted: color.dim, faint: color.faint, line: 'rgba(255,255,255,0.08)',
+    // Conts DS v2: the selected item sits on a soft gold wash with a gold icon.
+    activeBg: 'rgba(200,164,106,0.15)', activeShadow: `inset 2px 0 0 ${color.gold}`,
     // The same gold bar as a top-level item: the tint alone was too faint to find.
     childOnBg: 'rgba(200,164,106,0.14)', childOnShadow: `inset 2px 0 0 ${color.gold}`,
     // Badge text uses the menu's own text colours: gold and dim on these washes fell under 4.5:1.
@@ -123,7 +135,7 @@ export const sidebarLookKey = (dreamCrafter: boolean, dark: boolean): SidebarLoo
 
 function parentOf(groups: NavGroup[], path: string) {
   for (const g of groups) for (const it of g.items)
-    if (it.children?.some(c => c.path === path)) return it.key;
+    if (!it.tabs && it.children?.some(c => c.path === path)) return it.key;
   return null;
 }
 
@@ -172,6 +184,8 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   const [ws, setWs] = useState<Workspace>(() => workspaceOf(path) ?? readWs());
   useEffect(() => { const w = workspaceOf(path); if (w) { setWs(w); saveWs(w); } }, [path]);
   useEffect(() => rememberPage(path), [path]);
+  // The Supply chain side is open: its screens are near, so the engine signs in now rather than on the first click.
+  useEffect(() => { if (hasSupply && ws === 'supply') engineSoon(); }, [hasSupply, ws]);
   const pick = async (w: Workspace): Promise<void> => {
     const first = all.find(g => g.workspace === w)?.items[0];
     const target = first?.path ?? first?.children?.[0]?.path;
@@ -264,7 +278,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
         open ? (
           <div role="tablist" aria-label="Workspace" style={{ margin: '12px 10px 0', padding: 3, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, borderRadius: radius.control, background: look.track }}>
             {(['rental', 'supply'] as Workspace[]).map(w => (
-              <button key={w} role="tab" aria-selected={ws === w} onClick={() => void pick(w)}
+              <button key={w} role="tab" aria-selected={ws === w} onClick={() => void pick(w)} onPointerEnter={w === 'supply' ? engineSoon : undefined}
                 // A real border, not a shadow, so high-contrast mode still shows which side is chosen.
                 style={{ height: 28, borderRadius: 6, border: `1px solid ${ws === w ? look.tabOnBorder : 'transparent'}`, cursor: 'pointer', font: 'inherit', fontSize: text.meta, fontWeight: 500,
                   background: ws === w ? look.tabOnBg : 'transparent', color: ws === w ? look.tabOnInk : look.text, boxShadow: ws === w ? look.tabOnShadow : undefined }}>
@@ -311,63 +325,78 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
               <div aria-hidden style={{ height: 1, margin: '4px 8px 6px', background: look.divider }} />
             )}
             {!sectionCollapsed && g.items.map(it => {
-              const isOpen = open && (expanded[it.key] ?? activeParent === it.key);
-              const selfActive = it.key === selected || (!!it.children && activeParent === it.key && !isOpen);
+              // An entry whose screens are sub-tabs (Units, Owners, Settings) is one row: it never folds open, and it is
+              // selected on any of its tabs and their records.
+              const tabbed = !!it.tabs && !!it.children;
+              const isOpen = open && !tabbed && (expanded[it.key] ?? activeParent === it.key);
+              const selfActive = it.key === selected || (tabbed && it.children!.some(c => c.key === selected)) || (!!it.children && !tabbed && activeParent === it.key && !isOpen);
               const n = countOf(it.badge) || (it.children ?? []).reduce((s, c) => s + countOf(c.badge), 0);
+              const tip = n > 0 ? `${it.label}: ${countWords(it.badge ?? it.children?.find(c => countOf(c.badge))?.badge, n)}` : it.label;
+              const named = n > 0 ? `${it.label}, ${countWords(it.badge ?? it.children?.find(c => countOf(c.badge))?.badge, n)}` : it.label;
+              const itemStyle: CSSProperties = {
+                position: 'relative', display: 'flex', alignItems: 'center', gap: 10, height: look.itemH,
+                padding: open ? (look.tile ? '0 6px' : '0 9px') : 0, justifyContent: open ? 'flex-start' : 'center',
+                borderRadius: look.tile ? 10 : radius.control, cursor: 'pointer', border: 'none', width: '100%',
+                font: 'inherit', textAlign: 'left', textDecoration: 'none', boxSizing: 'border-box',
+                transition: `background ${motion.fast} ease-out`,
+                color: selfActive ? look.textOn : look.text,
+                background: selfActive ? look.activeBg : 'transparent',
+                boxShadow: selfActive ? look.activeShadow : 'none',
+                fontWeight: selfActive ? look.weightOn : undefined,
+              };
+              const itemInner = (
+                <>
+                  {look.tile
+                    ? <span aria-hidden style={{ width: 30, height: 30, flex: 'none', borderRadius: 9, display: 'grid', placeItems: 'center', ...look.tile }}><Icon name={toPascal(it.icon)} size="sm" /></span>
+                    : <Icon name={toPascal(it.icon)} size="nav" />}
+                  {open && <span style={{ flex: 1, minWidth: 0, fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.label}</span>}
+                  {open && it.fresh && n === 0 && <span style={{ fontSize: text.micro, fontWeight: 700, padding: '1px 6px', borderRadius: radius.pill, flex: 'none', background: color.gold, color: color.black }}>New</span>}
+                  {open && (!it.children || tabbed) && n > 0 && <span style={badge(selfActive)}>{countLabel(n)}</span>}
+                  {/* The rail shows a dot where the full menu shows a count. */}
+                  {!open && n > 0 && <span aria-hidden style={{ position: 'absolute', top: look.tile ? 4 : 6, right: look.tile ? 6 : 10, width: 7, height: 7, borderRadius: 999, background: look.dot, boxShadow: `0 0 0 2px ${look.dotRing}` }} />}
+                  {open && it.children && !tabbed && (
+                    <span style={{ display: 'flex', opacity: 0.6, transition: `transform 180ms ${motion.ease}`, transform: `rotate(${isOpen ? 90 : 0}deg)` }}>
+                      <Icon name="ChevronRight" size="sm" />
+                    </span>
+                  )}
+                </>
+              );
+              const leafPath = tabbed ? entryPath(it) : !it.children ? it.path : undefined;
               return (
                 <div key={it.key} style={{ display: 'flex', flexDirection: 'column' }}>
-                  <button type="button"
-                    title={n > 0 ? `${it.label}: ${countWords(it.badge ?? it.children?.find(c => countOf(c.badge))?.badge, n)}` : it.label}
-                    aria-label={n > 0 ? `${it.label}, ${countWords(it.badge ?? it.children?.find(c => countOf(c.badge))?.badge, n)}` : it.label}
-                    aria-current={selfActive && !it.children ? 'page' : undefined}
-                    aria-expanded={open && it.children ? isOpen : undefined}
-                    onClick={() => {
-                      if (it.children) {
+                  {leafPath ? (
+                    // A link, so right-click, Ctrl or Cmd + click and middle click open it in a new tab (chew, 11 Nov 2026).
+                    <a href={leafPath} title={tip} aria-label={named} aria-current={selfActive ? 'page' : undefined} style={itemStyle}
+                      onPointerEnter={() => linkSoon(leafPath)}
+                      onClick={e => { if (!opensInPlace(e)) return; e.preventDefault(); navigate(leafPath); }}>
+                      {itemInner}
+                    </a>
+                  ) : (
+                    <button type="button" title={tip} aria-label={named} aria-expanded={open && it.children ? isOpen : undefined} style={itemStyle}
+                      onClick={() => {
+                        if (!it.children) return;
                         if (!open) { navigate(it.children[0].path); return; }
                         const willOpen = !(expanded[it.key] ?? activeParent === it.key);
                         setExpanded(e => ({ ...e, [it.key]: willOpen }));
                         if (willOpen && activeParent !== it.key) navigate(it.children[0].path);
-                      } else if (it.path) navigate(it.path);
-                    }}
-                    style={{
-                      position: 'relative', display: 'flex', alignItems: 'center', gap: 10, height: look.itemH,
-                      padding: open ? (look.tile ? '0 6px' : '0 9px') : 0, justifyContent: open ? 'flex-start' : 'center',
-                      borderRadius: look.tile ? 10 : radius.control, cursor: 'pointer', border: 'none', width: '100%',
-                      font: 'inherit', textAlign: 'left',
-                      transition: `background ${motion.fast} ease-out`,
-                      color: selfActive ? look.textOn : look.text,
-                      background: selfActive ? look.activeBg : 'transparent',
-                      boxShadow: selfActive ? look.activeShadow : 'none',
-                      fontWeight: selfActive ? look.weightOn : undefined,
-                    }}
-                  >
-                    {look.tile
-                      ? <span aria-hidden style={{ width: 30, height: 30, flex: 'none', borderRadius: 9, display: 'grid', placeItems: 'center', ...look.tile }}><Icon name={toPascal(it.icon)} size="sm" /></span>
-                      : <Icon name={toPascal(it.icon)} size="nav" />}
-                    {open && <span style={{ flex: 1, minWidth: 0, fontSize: text.copy, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.label}</span>}
-                    {open && it.fresh && n === 0 && <span style={{ fontSize: text.micro, fontWeight: 700, padding: '1px 6px', borderRadius: radius.pill, flex: 'none', background: color.gold, color: color.black }}>New</span>}
-                    {open && !it.children && n > 0 && <span style={badge(selfActive)}>{countLabel(n)}</span>}
-                    {/* The rail shows a dot where the full menu shows a count. */}
-                    {!open && n > 0 && <span aria-hidden style={{ position: 'absolute', top: look.tile ? 4 : 6, right: look.tile ? 6 : 10, width: 7, height: 7, borderRadius: 999, background: look.dot, boxShadow: `0 0 0 2px ${look.dotRing}` }} />}
-                    {open && it.children && (
-                      <span style={{ display: 'flex', opacity: 0.6, transition: `transform 180ms ${motion.ease}`, transform: `rotate(${isOpen ? 90 : 0}deg)` }}>
-                        <Icon name="ChevronRight" size="sm" />
-                      </span>
-                    )}
-                  </button>
+                      }}>
+                      {itemInner}
+                    </button>
+                  )}
 
                   {isOpen && it.children && (
                     <div style={{ margin: `2px 0 4px ${look.tile ? 22 : 20}px`, paddingLeft: 12, borderLeft: `1px solid ${look.rule}`, display: 'flex', flexDirection: 'column', gap: 1 }}>
                       {it.children.map(c => {
                         const on = c.path === path;
                         return (
-                          <button key={c.key} type="button" onClick={() => navigate(c.path)} aria-current={on ? 'page' : undefined}
+                          <a key={c.key} href={c.path} onClick={e => { if (!opensInPlace(e)) return; e.preventDefault(); navigate(c.path); }} aria-current={on ? 'page' : undefined}
+                            onPointerEnter={() => linkSoon(c.path)}
                             aria-label={countOf(c.badge) > 0 ? `${c.label}, ${countWords(c.badge, countOf(c.badge))}` : c.label}
                             title={countOf(c.badge) > 0 ? `${c.label}: ${countWords(c.badge, countOf(c.badge))}` : undefined}
                             style={{
                               display: 'flex', alignItems: 'center', gap: 8, height: shell.navItemL3,
                               padding: '0 9px', borderRadius: 7, cursor: 'pointer', border: 'none', width: '100%',
-                              font: 'inherit', textAlign: 'left',
+                              font: 'inherit', textAlign: 'left', textDecoration: 'none', boxSizing: 'border-box',
                               color: on ? look.textOn : look.faint,
                               background: on ? look.childOnBg : 'transparent',
                               boxShadow: on ? look.childOnShadow : 'none',
@@ -375,7 +404,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
                             }}>
                             <span style={{ flex: 1, minWidth: 0, fontSize: text.meta, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
                             {countOf(c.badge) > 0 && <span style={badge(on)}>{countLabel(countOf(c.badge))}</span>}
-                          </button>
+                          </a>
                         );
                       })}
                     </div>

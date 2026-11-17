@@ -155,7 +155,7 @@ function SkuModal({ sku, onClose, onSave, onToggleActive }: {
   return (
     <Modal title={sku ? 'Edit catalog item' : 'New catalog item'}
       sub="A repair item with a preset selling price. Picking it on a job fills the quote — still editable."
-      onClose={onClose} width={520}
+      onClose={onClose} eyebrow="Item catalog" size="md"
       footer={<>
         {sku && onToggleActive && (sku.active
           ? <ConfirmButton variant="secondary" onConfirm={onToggleActive} confirm={{ title: `Retire ${sku.name}?`,
@@ -220,7 +220,7 @@ export function ExchangeModal({ jobLabel, skus, onClose, onExchange }: {
   const valid = !!sku && n >= 1 && n <= sku.stockOnHand;
 
   return (
-    <Modal title="Request to exchange" sub={`Draw a part from the maintenance store for ${jobLabel}.`} onClose={onClose} width={480}
+    <Modal title="Request to exchange" eyebrow={jobLabel} size="sm" sub="Draw a part from the maintenance store for this job." onClose={onClose}
       footer={<>
         <Button size="sm" variant="secondary" onClick={onClose}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={() => sku && valid && onExchange(sku, n)} disabled={!valid}

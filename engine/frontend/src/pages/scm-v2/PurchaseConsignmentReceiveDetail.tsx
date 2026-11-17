@@ -418,7 +418,7 @@ export const PurchaseConsignmentReceiveDetail = () => {
       {/* ── Line items ──────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Line Items ({visibleItems.length})</h2>
+          <h2 className={styles.cardTitle}>Line items ({visibleItems.length})</h2>
         </header>
 
         {visibleItems.length === 0 ? (
@@ -701,7 +701,7 @@ const SupplierCard = ({
   return (
     <section className={styles.card}>
       <header className={styles.cardHeader}>
-        <h2 className={styles.cardTitle}>Supplier · Dates · Notes</h2>
+        <h2 className={styles.cardTitle}>Supplier · dates · notes</h2>
       </header>
       <div className={styles.cardBody}>
         {!isEditing ? (

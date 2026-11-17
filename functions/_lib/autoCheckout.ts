@@ -1,4 +1,4 @@
-import { type Env, all, run, nowIso, mytToday } from './db';
+import { type Env, all, run, nowIso, mytToday, afterResponse } from './db';
 
 /** A stay whose checkout date has passed but which nobody moved off "checked in" (11 Oct 2026: 17 such stays on
  *  production, all due out on 10 Oct; imports and channel syncs set checked_in and nothing ever moved them on).
@@ -29,5 +29,6 @@ export function closePastStaysSometimes(env: Env, waitUntil: (p: Promise<unknown
   const now = Date.now();
   if (now - lastRun < 15 * 60_000) return;
   lastRun = now;
-  waitUntil(closePastStays(env).catch(() => { lastRun = 0; }));
+  // One client for both its statements (db.ts afterResponse), however long the request's own stays open.
+  afterResponse(waitUntil, () => closePastStays(env).catch(() => { lastRun = 0; }));
 }

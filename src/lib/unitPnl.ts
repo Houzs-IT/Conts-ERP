@@ -4,12 +4,12 @@
  *  The owner's portion follows the Overall unit report's rule (ownerOverall.ts overallFigures; unitPnl.test.mjs checks
  *  the two agree), written out here because node --test cannot load a sibling module imported without its extension. */
 
-export const LINE_KEYS = ['guestPaid', 'fees', 'cleaning', 'electricity', 'water', 'internet', 'sewerage', 'other', 'misc', 'operating', 'owner', 'company'] as const;
+export const LINE_KEYS = ['guestPaid', 'fees', 'cleaning', 'electricity', 'water', 'internet', 'sewerage', 'other', 'misc', 'operating', 'owner', 'late', 'company'] as const;
 export type LineKey = typeof LINE_KEYS[number];
 export const LINE_LABEL: Record<LineKey, string> = {
   guestPaid: 'Guest total', fees: 'Service fees and taxes', cleaning: 'Cleaning', electricity: 'Electricity', water: 'Water',
   internet: 'Internet', sewerage: 'Indah Water', other: 'Other costs', misc: 'Misc charge',
-  operating: 'Operating profit', owner: "Owner's portion", company: 'Company keeps',
+  operating: 'Operating profit', owner: "Owner's portion", late: "Late changes (company's share)", company: 'Company keeps',
 };
 /** The cost lines between guest paid and operating profit, in order. */
 export const COST_KEYS = ['fees', 'cleaning', 'electricity', 'water', 'internet', 'sewerage', 'other', 'misc'] as const;
@@ -26,6 +26,8 @@ export interface UnitMonthInput {
   /** Utility bills kept for the records only (settled months, not on the statement): not a cost here, but an
    *  electricity bill among them means the month is not missing one. */
   recordOnlyElectricity?: number;
+  /** The company's share of late changes to an earlier, locked month that counts this month (part 2b). 0 when absent. */
+  late?: number;
 }
 export type Pnl = Record<LineKey, number>;
 
@@ -39,7 +41,7 @@ export function pnl(i: UnitMonthInput): Pnl {
   return {
     guestPaid: i.guestPaid, fees: i.guestPaid - i.gross, cleaning: i.cleaning, electricity: i.electricity, water: i.water,
     internet: i.internet, sewerage: i.sewerage, other: i.other, misc: i.misc,
-    operating: gp, owner, company: gp - owner,
+    operating: gp, owner, late: i.late ?? 0, company: gp - owner + (i.late ?? 0),
   };
 }
 

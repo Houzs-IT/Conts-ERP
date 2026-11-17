@@ -271,7 +271,7 @@ export const LorryCapacity = () => {
       <PageHeader
         dense
         eyebrow="Delivery · TMS"
-        title="Lorry Capacity"
+        title="Lorry capacity"
         description={`Working days Mon–Sat · ${workingDays} in range · ${fmtDate(from)} – ${fmtDate(to)}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">

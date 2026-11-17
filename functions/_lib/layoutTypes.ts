@@ -11,7 +11,7 @@ export const BUILT_IN_LAYOUTS: readonly LayoutTypeRow[] = [
   ['duplex', 'Duplex'], ['dual_key', 'Dual key'], ['penthouse', 'Penthouse'], ['other', 'Other'],
 ].map(([key, label], n) => ({ key, label, sortOrder: key === 'other' ? 1000 : (n + 1) * 10, isActive: true }));
 
-export const layoutTypesReady = (env: Env): Promise<boolean> => hasColumn(env, 'unit_layout_types', 'key').catch(() => false);
+export const layoutTypesReady = (env: Env): Promise<boolean> => hasColumn(env, 'unit_layout_types', 'key');
 
 /** Every type, hidden ones too (a unit may still have one), in the order staff set. */
 export async function layoutTypes(env: Env): Promise<LayoutTypeRow[]> {

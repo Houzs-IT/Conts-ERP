@@ -19,7 +19,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (await one(env, 'SELECT 1 AS x FROM properties WHERE lower(name) = lower(?) AND id <> ?', name, id)) return fail('CONFLICT', 'A building with that name already exists.', 409, { name: 'That name is taken.' });
 
   await run(env, 'UPDATE properties SET name = ?, city = ?, state = ?, updated_at = ? WHERE id = ?', name, city, state, nowIso(), id);
-  const card = typeof b?.fullAccessCard === 'boolean' && (await hasColumn(env, 'properties', 'full_access_card').catch(() => false)) ? b.fullAccessCard as boolean : undefined;
+  const card = typeof b?.fullAccessCard === 'boolean' && (await hasColumn(env, 'properties', 'full_access_card')) ? b.fullAccessCard as boolean : undefined;
   if (card !== undefined) await run(env, 'UPDATE properties SET full_access_card = ? WHERE id = ?', card, id);
   const passKey = typeof b?.needsPassKey === 'boolean' && (await hasPassKeyJobs(env)) ? b.needsPassKey as boolean : undefined;
   if (passKey !== undefined) await run(env, 'UPDATE properties SET needs_pass_key = ? WHERE id = ?', passKey, id);

@@ -333,7 +333,7 @@ export const PaymentVouchers = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Finance"
-        title="Payment Vouchers"
+        title="Payment vouchers"
         actions={
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
             {canCreate && (

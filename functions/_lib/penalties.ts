@@ -10,7 +10,7 @@ import { BUILDING_JOB_LABEL } from './maintenance';
  * for the payroll month it lands on.
  */
 
-export const hasPenalties = (env: Env): Promise<boolean> => hasColumn(env, 'worker_penalties', 'id').catch(() => false);
+export const hasPenalties = (env: Env): Promise<boolean> => hasColumn(env, 'worker_penalties', 'id');
 export const NOT_MIGRATED = 'Worker Penalty needs a database update (migration 0173) that has not been applied yet.';
 export const PENALTY_STATUSES = ['draft', 'pending', 'approved', 'posted'] as const;
 export type PenaltyStatus = (typeof PENALTY_STATUSES)[number];

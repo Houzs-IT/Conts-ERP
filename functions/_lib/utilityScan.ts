@@ -1,6 +1,8 @@
 import { type Env, all, one, run, audit, nowIso, transaction } from './db';
 import { numericDay } from './format';
-import { CHARGE_TO, finalMonthsFor } from './expenses';
+import { CHARGE_TO } from './expenses';
+import { closedMonthsFor } from './ownerLocks';
+import { o2Date } from './lockGuards';
 import { firstOpenMonth } from '../../src/lib/deductMonth';
 import { contractSplit, type SplitContract } from '../../src/lib/utilitySplit';
 import type { AccountMark, RecentBill } from '../../src/lib/utilityMatch';
@@ -100,7 +102,8 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
   const unitOf = new Map(ctx.units.map(u => [u.id, u]));
   const missing = rows.find(r => !unitOf.has(r.unitId));
   if (missing) return bad(missing.scanId, 'That unit was not found.');
-  const finals = await finalMonthsFor(env, [...new Set(rows.map(r => r.unitId))], rows.map(r => r.billMonth).sort()[0]);
+  // A bill month that is final, or whose utilities are locked (Unit report locks), goes on the next open month.
+  const finals = await closedMonthsFor(env, [...new Set(rows.map(r => r.unitId))], rows.map(r => r.billMonth).sort()[0], 'utilities');
   const now = nowIso();
   const rolled: { scanId: string; deductMonth: string }[] = [], notSplit: string[] = [];
   let ownerLines = 0, alreadyDone = 0;
@@ -169,7 +172,7 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
           if (!owner) throw new Refused(r.scanId, 'This unit has no owner to put the owner line on.');
           await run(tx, `INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, expense_id, created_by, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', 'manual', ?, ?, ?, ?)`,
-            crypto.randomUUID(), owner, r.unitId, amount > 0 ? 'credit' : 'charge', amount, description, `${deductMonth}-01`, account!.account_no, expenseId, session.userId, now, now);
+            crypto.randomUUID(), owner, r.unitId, amount > 0 ? 'credit' : 'charge', amount, description, (await o2Date(tx, owner, r.unitId, `${deductMonth}-01`)).occurredOn, account!.account_no, expenseId, session.userId, now, now);
           ownerLines++;
         };
         if (split.kind === 'split') {
@@ -211,18 +214,18 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
 class Refused extends Error { constructor(public scanId: string, message: string) { super(message); } }
 
 /** The bills of one save (`scanIds`) the company pays (not ticked "Owner paid"), by provider, for the payment requests. */
-export async function billsToPay(env: Env, batchId: string, scanIds: string[], provider?: string): Promise<{ provider: string; scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[] }[]> {
-  const rows = await all<{ id: string; expense_id: string; provider: string; unit_id: string; category: string; incurred_on: string; account_no: string | null; bill_sen: number }>(env, `
-    SELECT s.id, s.expense_id, s.provider, e.unit_id, e.category, e.incurred_on, s.account_no, s.bill_sen FROM utility_bill_scans s JOIN expenses e ON e.id = s.expense_id
+export async function billsToPay(env: Env, batchId: string, scanIds: string[], provider?: string): Promise<{ provider: string; scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; billDate: string | null; accountNo: string | null; amountSen: number }[] }[]> {
+  const rows = await all<{ id: string; expense_id: string; provider: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; account_no: string | null; bill_sen: number }>(env, `
+    SELECT s.id, s.expense_id, s.provider, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, s.account_no, s.bill_sen FROM utility_bill_scans s JOIN expenses e ON e.id = s.expense_id
     WHERE s.batch_id = ? AND NOT s.owner_paid AND s.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
     ORDER BY s.provider, e.incurred_on, e.unit_id`, batchId, JSON.stringify(scanIds));
-  const out = new Map<string, { scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[] }>();
+  const out = new Map<string, { scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; billDate: string | null; accountNo: string | null; amountSen: number }[] }>();
   for (const r of rows) {
     if (provider && r.provider !== provider) continue;
     const g = out.get(r.provider) ?? { scanIds: [], expenseIds: [], bills: [] };
     g.scanIds.push(r.id);
     g.expenseIds.push(r.expense_id);
-    g.bills.push({ unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), accountNo: r.account_no, amountSen: Number(r.bill_sen) });
+    g.bills.push({ unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), billDate: r.bill_date ?? null, accountNo: r.account_no, amountSen: Number(r.bill_sen) });
     out.set(r.provider, g);
   }
   return [...out].map(([p, g]) => ({ provider: p, ...g }));

@@ -37,6 +37,8 @@ export interface DesignProject {
   /** Building and unit, as the mockup's first name part. */
   title: string;
   customer: string | null;
+  /** The brand it is sold under, as picked on Client & team; null when none is picked yet. */
+  brand: string | null;
   salesName: string | null;
   createdOn: string | null;
   /** When it was made (ISO), for "newest first"; falls back to the day. */
@@ -243,6 +245,7 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
       code: p.code,
       title,
       customer,
+      brand: p.brand?.trim() || null,
       salesName: p.salesName,
       createdOn: p.createdOn,
       createdAt: p.createdAt ?? (p.createdOn ? `${p.createdOn}T00:00:00Z` : null),
@@ -436,7 +439,7 @@ export interface DeadlineGroups {
 
 const sortKey = (x: DueItem | ApptItem): string => x.due + (x.type === "appt" ? x.a.t : "");
 
-export function deadlineGroups(m: BoardModel, who: Viewing, canAssign: boolean): DeadlineGroups {
+export function deadlineGroups(m: BoardModel, who: Viewing): DeadlineGroups {
   const all = [...items(m, who), ...apptItems(m, who)].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
   const g: DeadlineGroups = { late: [], week: [], two: [], later: [], waiting: [], ready: [], todo: [] };
   for (const x of all) {
@@ -452,9 +455,10 @@ export function deadlineGroups(m: BoardModel, who: Viewing, canAssign: boolean):
     else if (p.design["3"].ok && !p.design["2"].s && mineAny(who, p.team["2"])) g.ready.push({ p, k: "2" });
   }
   for (const p of m.projects) {
-    /* A project with no design lead yet is shown to the whole team and to anyone who can assign. */
+    /* A project with no design lead belongs to nobody, so it is listed under Whole team only, like Progress's
+       "Not assigned" (YH, 11 Nov 2026). Before, anyone who could assign saw it whoever Viewing named. */
     if (p.unassigned) {
-      if (who === "All" || canAssign) g.todo.push({ p, k: "as" });
+      if (who === "All") g.todo.push({ p, k: "as" });
       continue;
     }
     if (!mine(who, p.lead?.id)) continue;

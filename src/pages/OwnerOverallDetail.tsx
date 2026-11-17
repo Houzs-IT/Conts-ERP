@@ -1,18 +1,25 @@
 import { type ReactNode } from 'react';
 import { cx } from '../lib/design-tokens';
-import { amount, percent, plural } from '../lib/format';
+import { amount, percent, plural, buildingName, personName } from '../lib/format';
 import { StatusBadge } from '../components/StatusBadge';
 import { Segmented } from '../components/Metric';
 import { CloseButton } from '../components/CloseButton';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { overallTotals, occupancyLabel, GROUP_NAME, OWNER_BASE_NAME, type OverallFigures, type ReportGroup } from '../lib/ownerOverall';
+import type { Stage } from '../lib/lockStages';
 
 /** The overall owner report's unit drawer: L1 breakdown, L2 full detail. Every figure comes from
  *  ownerOverall.ts; this file only lays them out. */
 
 export type Level = 1 | 2;
-export interface ReportRow extends OverallFigures { unitId: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null }
+export interface ReportRow extends OverallFigures {
+  unitId: string; ownerId?: string; code: string; building: string; ownerName: string; group: ReportGroup; contractCode: string | null;
+  lateItems?: { label: string; amount: number }[];
+  /** The categories that list the unit, who locked each and when, its Airbnb reservations still to confirm (Revenue
+   *  waits for them) and what is in each amount (Unit report locks). */
+  steps?: Stage[]; locks?: Partial<Record<Stage, { by: string; at: string }>>; toConfirm?: number; hints?: Partial<Record<Stage, string>>;
+}
 
 export const LEVELS: { key: `${Level}`; label: string }[] = [
   { key: '1', label: 'L1 Breakdown' }, { key: '2', label: 'L2 Full detail' },
@@ -99,7 +106,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
           <div className="min-w-0">
             <div className="text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink">{GROUP_NAME[r.group]}{r.contractCode && ` · ${r.contractCode}`}</div>
             <h2 id="owner-overall-unit" className="text-title font-semibold truncate">{r.code}</h2>
-            <div className="text-meta text-muted-ink truncate">{r.building} · {r.ownerName}</div>
+            <div className="text-meta text-muted-ink truncate">{buildingName(r.building)} · {personName(r.ownerName)}</div>
             <div className="mt-1.5"><StatusBadge size="sm" tone={st.tone} label={st.label} /></div>
           </div>
           <CloseButton onClick={onClose} />
@@ -122,10 +129,11 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
             </div>
           </div>
           <div className="mt-3 flex h-2.5 w-full overflow-hidden rounded-full bg-muted" role="img"
-            aria-label={`Revenue ${money(r.revenue)}: deductions ${money(r.deductions)}, owner base ${money(r.ownerBase)}, kept ${money(Math.max(r.gainLoss, 0))}`}>
+            aria-label={`Revenue ${money(r.revenue)}: deductions ${money(r.deductions)}, owner base ${money(r.ownerBase)}, kept ${money(Math.max(r.gainLoss - r.late, 0))}`}>
             <span className="h-full bg-warning-line" style={{ width: width(r.deductions) }} />
             <span className="h-full bg-info-line" style={{ width: width(r.ownerBase) }} />
-            <span className="h-full bg-success-line" style={{ width: width(r.gainLoss) }} />
+            {/* The month's own split of its revenue: a late change from an earlier month is listed below, not drawn here. */}
+            <span className="h-full bg-success-line" style={{ width: width(r.gainLoss - r.late) }} />
           </div>
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-meta text-muted-ink">
             <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-[2px] bg-warning-line" />Deductions</span>
@@ -143,7 +151,23 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
         <Section title="Revenue and profitability" level={1}>
           <Line label="Total revenue" value={r.revenue ? money(r.revenue) : '—'} tone={r.revenue ? undefined : 'text-faint'} />
           <Line label="Gross profit (GP)" value={money(r.gp)} tone={r.gp < 0 ? 'text-danger' : undefined} />
+          {r.late !== 0 && (
+            <div className="py-1.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-muted-ink">Late changes from locked months</span>
+                <span className={cx('tabular-nums', r.late < 0 ? 'text-danger' : 'text-ink')}>{signed(r.late)}</span>
+              </div>
+              {(r.lateItems ?? []).map((x, i) => (
+                <div key={`${i}-${x.label}`} className="mt-0.5 flex items-baseline justify-between gap-3 text-meta text-muted-ink">
+                  <span>{x.label}</span><span className="tabular-nums">{signed(x.amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <Line label="Gain / Loss" value={signed(r.gainLoss)} tone={r.gainLoss < 0 ? 'text-danger' : 'text-success'} />
+          {/* Gain / Loss split (part 3): the agent's part of the operator's share, and what the company keeps. */}
+          {r.agent !== 0 && <Line label="Agent" value={money(r.agent)} note={`GP × ${r.agentPct ?? 0}%`} />}
+          <Line label="Company" value={signed(r.company)} tone={r.company < 0 ? 'text-danger' : 'text-success'} note={r.agent !== 0 ? 'Gain / Loss less the agent' : undefined} />
         </Section>
         <Section title="Itemized deductions" level={1}>
           {deductionItems.map(([label, v]) => (
@@ -177,7 +201,9 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
               ['=', 'Gross profit (GP)', money(r.gp), true],
               ...(lt ? [] : [['×', `Owner share ${r.ownerPct}% gives O1`, money(r.o1)] as LedgerRow]),
               ['−', lt ? `Owner base = ${OWNER_BASE_NAME[r.group].toLowerCase()}` : r.o1 >= r.ltGrr ? `Owner base = O1 (GRR is ${money(r.ltGrr)})` : `Owner base = GRR (O1 is ${money(r.o1)})`, money(r.ownerBase)],
+              ...(r.late ? [['+', 'Late changes from locked months', signed(r.late)] as LedgerRow] : []),
               ['=', 'Gain / Loss', signed(r.gainLoss), true],
+              ...(r.agent ? [['−', `Agent: GP × ${r.agentPct ?? 0}%`, money(r.agent)] as LedgerRow, ['=', 'Company', signed(r.company), true] as LedgerRow] : []),
             ]} />
             <p className="mt-3 rounded-control px-3 py-2 text-meta text-muted-ink [border:1px_dashed_var(--color-line)]">
               Owner payout = owner base {money(r.ownerBase)} {r.o2 < 0 ? '−' : '+'} O2 {money(Math.abs(r.o2))} = <span className="font-semibold text-ink">{money(r.payout)}</span>.
@@ -206,7 +232,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
               <span className="text-muted-ink">Gain / Loss vs average<span className="ml-1.5 text-meta text-faint">{signed(Math.round(avg(peers, x => x.gainLoss)))}</span></span>
               {delta(r.gainLoss, avg(peers, x => x.gainLoss), signed(Math.round(r.gainLoss - avg(peers, x => x.gainLoss))))}
             </div>
-            <Line label="Same building average" note={`${r.building} · ${plural(building.length, 'unit')}`}
+            <Line label="Same building average" note={`${buildingName(r.building)} · ${plural(building.length, 'unit')}`}
               value={signed(Math.round(avg(building, x => x.gainLoss)))} tone={avg(building, x => x.gainLoss) < 0 ? 'text-danger' : 'text-success'} />
           </Section>
         </>}

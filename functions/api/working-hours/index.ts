@@ -46,7 +46,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .filter((e: Employee) => (e.isActive && e.status === 'active') || (e.id && withRows.has(e.id)))
     .map(e => ({
       id: e.id, cleanerId: e.cleanerId, technicianId: e.technicianId, name: e.name, employeeId: e.employeeId, hoursPerDay: e.workingHoursPerDay,
-      home: homeDepartment(e), departments: [e.cleanerId ? 'cleaning' as const : null, e.technicianId ? 'maintenance' as const : null].filter((d): d is Department => !!d),
+      home: homeDepartment(e), departments: [e.cleanerId ? 'cleaning' as const : null, e.technicianId ? 'maintenance' as const : null, e.renovatorId ? 'renovation' as const : null].filter((d): d is Department => !!d),
     }));
   const hoursPerDay = new Map(people.map(p => [p.id, p.hoursPerDay]));
 

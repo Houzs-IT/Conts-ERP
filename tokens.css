@@ -19,9 +19,9 @@
 [data-theme="theconts"] {
 
   /* ---------- Brand core ---------- */
-  --color-brand-black: #151515;   /* PROVISIONAL */
+  --color-brand-black: #121714;   /* Conts DS v2: the black slab, a touch green */
   --color-brand-gold:  #C8A46A;   /* PROVISIONAL — champagne gold */
-  --color-brand-stone: #FAF9F6;   /* PROVISIONAL — warm white workspace */
+  --color-brand-stone: #EEF0EC;   /* Conts DS v2: the canvas behind white cards, tinted toward the green */
   --color-brand-white: #FFFFFF;
 
   /* ---------- Gold scale (generated from #C8A46A) ----------
@@ -72,78 +72,90 @@
    * guide's hexes are retained as -line (non-text) and -fg is darkened to pass. Info and
    * neutral already passed and are unchanged.
    * Ratios were computed with the WCAG relative-luminance formula, not estimated. */
-  --color-success:     #E9F5EF;
-  --color-success-fg:  #11694A;   /* 5.97:1 on tint, 6.68:1 on white. Guide value #16845B = 4.18:1 */
-  --color-success-line:#16845B;   /* guide §4.2 value, non-text use */
-  --color-warning:     #FFF4D8;
-  --color-warning-fg:  #8A5A12;   /* 5.40:1 on tint, 5.91:1 on white. Guide value #B7791F = 3.32:1 */
-  --color-warning-line:#B7791F;
-  --color-critical:    #FCECEB;
-  --color-critical-fg: #A8352F;   /* 5.70:1 on tint, 6.53:1 on white. Guide value #C2413B = 4.45:1 */
-  --color-critical-line:#C2413B;
-  --color-info:        #EAF2FA;
-  --color-info-fg:     #2E6DA4;   /* 4.83:1 on tint — guide value, passes unchanged */
-  --color-info-line:   #2E6DA4;
-  --color-neutral:     #F1F0ED;
-  --color-neutral-fg:  #706D67;   /* 4.52:1 on tint — guide value, passes unchanged */
-  --color-neutral-line:#C7C1B6;
+  /* Conts DS v2 (Nov 2026 redesign): the prototype's status pairs. Its success text #2F7D52 is 4.31:1 on its tint, so
+   * the text is one step darker (#276B46, 5.50:1) and #2F7D52 stays as the line colour. */
+  --color-success:     #E3F1E8;
+  --color-success-fg:  #276B46;   /* 5.50:1 on tint */
+  --color-success-line:#2F7D52;
+  --color-warning:     #F6EBD5;
+  --color-warning-fg:  #8A5A12;   /* 5.00:1 on tint */
+  --color-warning-line:#C98A1E;
+  --color-critical:    #F8EAEA;
+  --color-critical-fg: #B23A3A;   /* 5.04:1 on tint */
+  --color-critical-line:#B23A3A;
+  --color-info:        #E6EEF8;
+  --color-info-fg:     #2B5C9E;   /* 5.74:1 on tint */
+  --color-info-line:   #2B5C9E;
+  --color-neutral:     #F4F6F3;
+  --color-neutral-fg:  #5C6155;   /* 5.86:1 on tint */
+  --color-neutral-line:#C2C6BD;
+
+  /* ---------- Primary action (Conts DS v2): Conts green, for the one primary button and "on" states ----------
+   * Black stays the brand slab (sidebar, hero tile, selected segment); gold stays identity and focus. */
+  --color-primary:       #1A6152;   /* 7.30:1 under white text */
+  --color-primary-hover: #134A3F;
+  --color-primary-soft:  #E1EFEC;
+  --color-primary-ink:   #0C3F37;   /* text on the soft tint, 9.97:1 */
+  --color-on-primary:    #FFFFFF;
 
   /* Solid semantic fills. White text on these: #A8352F = 6.53:1, #11694A = 6.68:1 */
-  --color-critical-solid: #A8352F;
-  --color-critical-solid-hover: #8F2C27;
-  --color-success-solid: #11694A;
-  --color-success-solid-hover: #0E5C41;
+  --color-critical-solid: #B23A3A;
+  --color-critical-solid-hover: #962F2F;
+  --color-success-solid: #276B46;
+  --color-success-solid-hover: #1F5839;
 
   /* ---------- Sidebar (the dark shell) ---------- */
-  --color-sidebar-bg:          #151515;
-  --color-sidebar-bg-elevated: #1E1E1E;
-  --color-sidebar-text:        #DEDAD3;
-  --color-sidebar-text-muted:  #8A8680;
-  --color-sidebar-text-active: #FFFFFF;
+  --color-sidebar-bg:          #121714;
+  --color-sidebar-bg-elevated: #1B201D;
+  --color-sidebar-text:        #D9D4CB;
+  --color-sidebar-text-muted:  #8F8A82;
+  --color-sidebar-text-active: #F3E3C2;
   --color-sidebar-accent:      #C8A46A;
-  --color-sidebar-hover:       rgba(255, 255, 255, 0.06);
-  --color-sidebar-active:      #242424;
+  --color-sidebar-hover:       rgba(255, 255, 255, 0.05);
+  --color-sidebar-active:      rgba(200, 164, 106, 0.15);
   --color-sidebar-active-l3:   rgba(200, 164, 106, 0.14);
   --color-sidebar-border:      #242424;
   --color-sidebar-guide:       rgba(255, 255, 255, 0.12);
 
   /* ---------- Surfaces ---------- */
-  --color-surface-page:     #FAF9F6;
+  /* Conts DS v2: one neutral family tinted toward the green; a darker canvas behind white cards. */
+  --color-surface-page:     #EEF0EC;   /* the canvas */
   --color-surface-card:     #FFFFFF;
   --color-surface-elevated: #FFFFFF;
-  --color-surface-muted:    #F1F0ED;   /* table headers, tertiary surface */
-  --color-surface-sunken:   #EDEAE4;
-  --color-surface-inverse:  #151515;
-  --color-surface-selected: #FBF7F0;   /* gold-50: selected row */
-  --color-surface-hover:    #FAF9F6;
-  --color-surface-press:    #F1F0ED;
-  --color-surface-scrim:    rgba(21, 21, 21, 0.44);
-  --color-surface-skeleton: #EDEAE4;
+  --color-surface-muted:    #F4F6F3;   /* table headers, tertiary surface */
+  --color-surface-sunken:   #E3E6E0;
+  --color-surface-inverse:  #121714;
+  --color-surface-selected: #F9F6EF;   /* gold tint: selected and hovered row */
+  --color-surface-hover:    #F4F6F3;
+  --color-surface-press:    #E3E6E0;
+  --color-surface-scrim:    rgba(21, 21, 21, 0.42);
+  --color-surface-skeleton: #E3E6E0;
 
   /* ---------- Text ---------- */
-  --color-text-primary:   #252525;   /* PROVISIONAL */
-  --color-text-secondary: #4A4844;
-  --color-text-muted:     #706D67;   /* PROVISIONAL */
-  --color-text-faint:     #A8A29A;   /* placeholders and disabled only — never body copy */
+  --color-text-primary:   #11140F;
+  --color-text-secondary: #3B4035;
+  --color-text-muted:     #5C6155;   /* 5.56:1 on the canvas */
+  --color-text-faint:     #7D8378;   /* placeholders, disabled and quiet counts; 3.90:1 on white */
   --color-text-inverse:   #FFFFFF;
-  --color-text-on-dark:   #DEDAD3;   /* 13.10:1 on #151515 — body and labels on the shell */
-  --color-text-on-dark-muted: #8A8680; /* 5.04:1 — quietest micro labels. NEVER a white alpha:
+  --color-text-on-dark:   #D9D4CB;   /* 12.28:1 on #121714 — body and labels on the shell */
+  --color-text-on-dark-muted: #8F8A82; /* 5.3:1 — quietest micro labels. NEVER a white alpha:
                                           rgba(255,255,255,0.3) on #121110 is 2.72:1 and fails AA */
-  --color-text-accent:    #8A6A2F;   /* gold-family text on light surfaces */
-  --color-text-link:      #252525;
-  --color-text-link-hover:#8A6A2F;
+  --color-text-accent:    #87612A;   /* gold-family text on light surfaces, 5.57:1 on white */
+  --color-text-link:      #11140F;
+  --color-text-link-hover:#87612A;
 
   /* ---------- Borders ---------- */
-  --color-border-default:  #DEDAD3;   /* PROVISIONAL */
-  --color-border-strong:   #C7C1B6;
-  --color-border-muted:    #EDEAE4;   /* inner dividers inside a bordered card */
-  --color-border-hairline: #E5E1DA;
-  --color-border-inverse:  #151515;
+  --color-border-default:  #D6D9D2;
+  --color-border-strong:   #C2C6BD;
+  --color-border-muted:    #E3E6E0;   /* inner dividers inside a bordered card */
+  --color-border-hairline: #E3E6E0;
+  --color-border-inverse:  #121714;
   --color-border-focus:    #C8A46A;
   --color-border-on-dark:  rgba(255, 255, 255, 0.10);
 
   /* ---------- Focus ---------- */
-  --focus-ring: 0 0 0 2px rgba(200, 164, 106, 0.35);
+  /* Conts DS v2: a soft gold tint around the gold border, not a hard outline. */
+  --focus-ring: 0 0 0 3px rgba(200, 164, 106, 0.24);
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;
 
@@ -244,22 +256,26 @@
   --radius-xl:  16px;
   --radius-full:999px;
 
-  --radius-control: var(--radius-md);   /* buttons, inputs, selects */
-  --radius-card:    var(--radius-lg);   /* cards, dialogs, panels */
+  /* Conts DS v2: 10px controls, 14px cards (prototype --r-md / --r-lg). */
+  --radius-control: 10px;               /* buttons, inputs, selects */
+  --radius-card:    14px;               /* cards, dialogs, panels */
+  --radius-dialog:  16px;               /* centred dialogs */
+  --radius-sheet:   18px;               /* phone bottom sheets (top corners) */
   --radius-pill:    var(--radius-full); /* status badges, compact filters */
 
   /* ---------- Elevation (brand guide 7.1) ----------
    * Flat is the default: a 1px border and no shadow. Shadows are reserved for
    * things that genuinely float. */
   --shadow-flat:     none;
-  --shadow-card:     0 1px 2px 0 rgba(21, 21, 21, 0.04), 0 0 0 1px rgba(21, 21, 21, 0.04);
-  --shadow-raised:   0 2px 8px 0 rgba(21, 21, 21, 0.06);
-  --shadow-dropdown: 0 4px 6px -1px rgba(21, 21, 21, 0.08), 0 2px 4px -2px rgba(21, 21, 21, 0.06);
-  --shadow-overlay:  0 12px 32px 0 rgba(21, 21, 21, 0.16);
+  /* Conts DS v2: a stone shadow under white cards on the darker canvas. */
+  --shadow-card:     0 1px 0 rgba(17, 24, 16, 0.04), 0 4px 18px -8px rgba(17, 24, 16, 0.13);
+  --shadow-raised:   0 1px 0 rgba(17, 24, 16, 0.06), 0 12px 32px -16px rgba(17, 24, 16, 0.26);
+  --shadow-dropdown: 0 2px 4px -1px rgba(17, 24, 16, 0.06), 0 12px 28px -6px rgba(17, 24, 16, 0.16);
+  --shadow-overlay:  0 24px 60px -20px rgba(17, 24, 16, 0.35);
   --shadow-modal:    0 20px 25px -5px rgba(21, 21, 21, 0.12), 0 8px 10px -6px rgba(21, 21, 21, 0.10);
 
   /* ---------- Shell and grid (brand guide 6.1) ---------- */
-  --shell-sidebar-width:     244px;
+  --shell-sidebar-width:     256px;
   --shell-sidebar-collapsed: 68px;
   --shell-content-max:       1600px;
   --shell-grid-columns:      12;
@@ -273,8 +289,9 @@
   --control-height-sm:     36px;  /* toolbar and filter row */
   --control-height-touch:  44px;  /* touch, field app, owner portal */
   --touch-target-min:      44px;
-  --table-row-height:      48px;
-  --table-row-height-compact: 40px;
+  /* Conts DS v2: dense tables, about 40px a row. */
+  --table-row-height:      40px;
+  --table-row-height-compact: 36px;
 
   /* ---------- Navigation depth (L1 group → L2 item → L3 child) ---------- */
   --nav-item-height:     34px;
@@ -457,9 +474,9 @@ a:hover { color: var(--color-text-link-hover); }
   display: block;
   width: 100%;
   height: var(--control-height);
-  padding: 0 14px;
+  padding: 0 12px;
   font-family: var(--font-sans);
-  font-size: var(--text-body);
+  font-size: 13px;   /* Conts DS v2: the copy step of the type scale; phones get 16px (InputShell) */
   color: var(--color-text-primary);
   background: var(--color-surface-card);
   border: 1px solid var(--color-border-default);
@@ -472,7 +489,7 @@ a:hover { color: var(--color-text-link-hover); }
 .field-input:focus { border-color: var(--color-border-focus); box-shadow: var(--focus-ring); }
 .field-input[readonly] { background: var(--color-surface-muted); color: var(--color-text-muted); }
 .field-input[aria-invalid="true"] { border-color: var(--color-critical-line); }
-textarea.field-input { height: auto; padding: 11px 14px; resize: vertical; }
+textarea.field-input { height: auto; padding: 9px 12px; resize: vertical; }
 select.field-input { appearance: none; cursor: pointer; }
 
 @media (pointer: coarse) {

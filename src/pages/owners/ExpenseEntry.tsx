@@ -8,7 +8,7 @@ import Icon from '../../components/Icon';
 import { useToast } from '../../components/Toast';
 import { useApi } from '../../lib/useApi';
 import { api, ApiFailure, downloadFile, errorMessage, notifyFailure } from '../../lib/api';
-import { monthLabel, titleCase, rm } from '../../lib/format';
+import { monthLabel, rm, buildingName } from '../../lib/format';
 import { cx } from '../../lib/design-tokens';
 import { PAYERS } from '../../lib/revenueModel';
 import { Field } from '../../components/Field';
@@ -32,8 +32,11 @@ interface UtilityRow {
   expenseId: string | null; amount: number | null; chargeTo: string | null; receiptDocumentId: string | null; recordedElsewhere: boolean;
   /** The statement that deducts the bill entered here: a later month when it came after its own month was final. */
   deductMonth?: string | null; rolled?: boolean;
-  /** "Owner paid this bill" on the bill entered, and the payment request it went out on (then it is not replaced here). */
-  ownerPaid?: boolean; paymentRequestNo?: string | null;
+  /** "Owner paid this bill" on the bill entered, and the payment request it went out on (then it is not replaced here,
+   *  unless the request came back: withdrawn, or rejected with its reason; chew, 13 Nov 2026). */
+  ownerPaid?: boolean; paymentRequestNo?: string | null; paymentRequestStatus?: string | null; paymentRequestReason?: string | null;
+  /** Scanned and split at the contract (or record only): never changed here, also once its request came back. */
+  splitScan?: boolean;
 }
 interface BareUnit { unitId: string; unitLabel: string; recorded?: { kind: string; kindLabel: string; amount: number; deductMonth?: string; rolled?: boolean }[] }
 /** A bill typed for a unit with no account number on file: recorded with no reference (POST rows with unitId + kind). */
@@ -48,10 +51,14 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
   const toast = useToast();
   const [month, setMonth] = useState(initial);
   const scope = ownerId ? `&ownerId=${encodeURIComponent(ownerId)}` : unitId ? `&unitId=${encodeURIComponent(unitId)}` : '';
-  const { data, loading, error, reload } = useApi<{ data: UtilityRow[]; unitsWithoutAccount?: BareUnit[]; rollsTo?: Record<string, string> }>(`/expenses/utilities?month=${month}${scope}`);
+  const { data, loading, error, reload } = useApi<{ data: UtilityRow[]; unitsWithoutAccount?: BareUnit[]; rollsTo?: Record<string, string>; rollsWhy?: Record<string, 'final' | 'locked'> }>(`/expenses/utilities?month=${month}${scope}`);
   // Units whose statement for this month is already final: their bills are deducted on the next open statement.
   const rollsTo = data?.rollsTo ?? {};
   const rollMonths = [...new Set(Object.values(rollsTo))].sort();
+  // Why each unit's bills go to a later statement: its month is final, or its deductions are locked (owner statement close).
+  const lockedN = Object.keys(rollsTo).filter(u => data?.rollsWhy?.[u] === 'locked').length, finalN = Object.keys(rollsTo).length - lockedN;
+  const units = (n: number) => (n === 1 ? 'one unit' : `${n} units`);
+  const rollReason = [lockedN ? `${monthLabel(month)} deductions are locked for ${units(lockedN)}` : '', finalN ? `${monthLabel(month)} is final for ${units(finalN)}` : ''].filter(Boolean).join(', and ');
   const [amounts, setAmounts] = useState<Record<string, number | null>>({});
   const [payers, setPayers] = useState<Record<string, string>>({});
   const [receipts, setReceipts] = useState<Record<string, File | null>>({});
@@ -73,12 +80,17 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
   }, [data]);
   const looseEntered = loose.filter(l => (l.amount ?? 0) > 0);
   const looseMissing = looseEntered.filter(l => receiptRequired(l.kind, l.payer) && !l.file);
-  // A bill already sent for payment stays as it is (SOP 3.10): shown, not entered again.
-  const fixed = (r: UtilityRow) => r.recordedElsewhere || !!r.paymentRequestNo;
+  // A bill already sent for payment stays as it is (SOP 3.10): shown, not entered again. One whose request came back is
+  // fixed here and keeps the request, which goes to finance again with Send again on Utility bills (chew, 13 Nov 2026).
+  const cameBack = (r: UtilityRow) => r.paymentRequestStatus === 'WITHDRAWN' || r.paymentRequestStatus === 'REJECTED';
+  // A scanned bill split at the contract stays as it is even then: a new entry would drop its owner line (review).
+  const fixed = (r: UtilityRow) => r.recordedElsewhere || (!!r.paymentRequestNo && (!cameBack(r) || !!r.splitScan));
   const value = (r: UtilityRow): number | null => r.accountId in amounts ? amounts[r.accountId] : (r.amount != null && !r.recordedElsewhere ? r.amount : null);
   const payer = (r: UtilityRow) => payers[r.accountId] ?? r.chargeTo ?? 'owner';
   const ownerPaid = (r: UtilityRow) => paidBy[r.accountId] ?? r.ownerPaid ?? false;
-  const entered = rows.filter(r => !fixed(r) && (value(r) ?? 0) > 0);
+  // A bill on a request that came back goes only when it was changed here; one left alone stays exactly as it was (review).
+  const touched = (r: UtilityRow) => r.accountId in amounts || r.accountId in payers || r.accountId in paidBy || !!receipts[r.accountId];
+  const entered = rows.filter(r => !fixed(r) && (value(r) ?? 0) > 0 && (!cameBack(r) || touched(r)));
   const needsReceipt = (r: UtilityRow) => receiptRequired(r.kind, payer(r)) && !receipts[r.accountId] && !r.receiptDocumentId;
   const missing = [...entered.filter(needsReceipt), ...looseMissing];
   const count = entered.length + looseEntered.length;
@@ -103,7 +115,7 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
         fd.append('file', l.file); fd.append('unitId', l.unitId); fd.append('kind', 'receipt');
         uploaded[`${l.unitId}:${l.kind}`] = (await api.post<{ id: string }>('/documents', fd)).id;
       }
-      const r = await api.post<{ saved: number; locked: string[]; recordedElsewhere: string[]; requested?: string[]; rolled?: { key: string; deductMonth: string }[]; toPay?: ToPay[] }>('/expenses/utilities', {
+      const r = await api.post<{ saved: number; locked: string[]; recordedElsewhere: string[]; requested?: string[]; rolled?: { key: string; deductMonth: string }[]; toPay?: ToPay[]; scanned?: string[] }>('/expenses/utilities', {
         month, date: billDate, rows: [
           ...entered.map(x => ({ accountId: x.accountId, amount: value(x), chargeTo: payer(x), receiptDocumentId: uploaded[x.accountId] ?? null, ownerPaid: ownerPaid(x) })),
           ...looseEntered.map(l => ({ unitId: l.unitId, kind: l.kind, amount: l.amount, chargeTo: l.payer, receiptDocumentId: uploaded[`${l.unitId}:${l.kind}`] ?? null, ownerPaid: !!l.ownerPaid })),
@@ -112,11 +124,11 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
       // The bills the company pays go to finance, one payment request per provider (as on Scan bills).
       const requests = await sendUtilityRequests(r.toPay);
       const sentNote = requestsNote(requests);
-      const skipped = r.locked.length + r.recordedElsewhere.length + (r.requested?.length ?? 0) + requests.failed.length;
+      const skipped = r.locked.length + r.recordedElsewhere.length + (r.requested?.length ?? 0) + (r.scanned?.length ?? 0) + requests.failed.length;
       const late = r.rolled ?? [];
       const lateNote = late.length ? `${late.length} ${late.length === 1 ? 'goes' : 'go'} on the ${[...new Set(late.map(x => monthLabel(x.deductMonth)))].join(' or ')} statement as ${late.length === 1 ? 'a late bill' : 'late bills'}. ` : '';
       toast({ tone: skipped ? 'warning' : 'success', title: `${r.saved} ${r.saved === 1 ? 'bill' : 'bills'} recorded for ${monthLabel(month)}.`,
-        body: `${lateNote}${r.locked.length ? `${r.locked.length} skipped: already on a final statement. ` : ''}${r.recordedElsewhere.length ? `${r.recordedElsewhere.length} already recorded another way. ` : ''}${r.requested?.length ? `${r.requested.length} skipped: already sent for payment. ` : ''}${sentNote}`.trim() || 'Owner-paid bills go on the owner statement with their receipts.' });
+        body: `${lateNote}${r.locked.length ? `${r.locked.length} skipped: already on a final statement. ` : ''}${r.recordedElsewhere.length ? `${r.recordedElsewhere.length} already recorded another way. ` : ''}${r.requested?.length ? `${r.requested.length} skipped: already sent for payment. ` : ''}${r.scanned?.length ? `${r.scanned.length} not changed: scanned and split at the contract. ` : ''}${sentNote}`.trim() || 'Owner-paid bills go on the owner statement with their receipts.' });
       onSaved(); onClose();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setRowErrors(e.fields);
@@ -143,7 +155,7 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
       </div>
       {rollMonths.length > 0 && (
         <div role="note" className="text-copy rounded-control border border-solid border-line bg-muted px-3 py-2">
-          {monthLabel(month)} is final for {Object.keys(rollsTo).length === 1 ? 'one unit' : `${Object.keys(rollsTo).length} units`}. Bills entered for {Object.keys(rollsTo).length === 1 ? 'it' : 'them'} will be deducted on the {rollMonths.map(m => monthLabel(m)).join(' or ')} statement.
+          {rollReason}. Bills entered for {Object.keys(rollsTo).length === 1 ? 'it' : 'them'} will be deducted on the {rollMonths.map(m => monthLabel(m)).join(' or ')} statement.
         </div>
       )}
       <div className="w-[220px] max-w-full">
@@ -161,8 +173,16 @@ export function UtilitiesModal({ ownerId, unitId, month: initial, onClose, onSav
                 return (
                   <div key={r.accountId} className="grid grid-cols-[minmax(0,1fr)_112px] sm:grid-cols-[minmax(0,1fr)_120px_140px_150px] gap-x-3 gap-y-2 items-center py-[10px] px-3 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
                     <div className="flex flex-col min-w-0">
-                      <span className="text-copy font-medium truncate" title={r.unitLabel}>{titleCase(r.unitLabel)}</span>
-                      <span className="text-meta text-muted-ink truncate">{r.kindLabel} · {r.accountNo}{r.provider ? ` · ${r.provider}` : ''}{r.recordedElsewhere ? ' · already recorded' : r.paymentRequestNo ? ` · sent for payment (${r.paymentRequestNo})` : r.expenseId ? ' · entered here' : ''}{r.rolled && r.deductMonth ? ` · deducted ${monthLabel(r.deductMonth)}` : !r.expenseId && rollsTo[r.unitId] ? ` · will be deducted ${monthLabel(rollsTo[r.unitId])}` : ''}</span>
+                      <span className="text-copy font-medium truncate" title={r.unitLabel}>{buildingName(r.unitLabel)}</span>
+                      <span className="text-meta text-muted-ink truncate">{r.kindLabel} · {r.accountNo}{r.provider ? ` · ${r.provider}` : ''}{r.recordedElsewhere ? ' · already recorded' : r.paymentRequestNo ? ` · ${cameBack(r) ? (r.paymentRequestStatus === 'REJECTED' ? 'rejected' : 'withdrawn') : 'sent for payment'} (${r.paymentRequestNo})` : r.expenseId ? ' · entered here' : ''}{r.rolled && r.deductMonth ? ` · deducted ${monthLabel(r.deductMonth)}` : !r.expenseId && rollsTo[r.unitId] ? ` · will be deducted ${monthLabel(rollsTo[r.unitId])}` : ''}</span>
+                      {cameBack(r) && (
+                        <span className="text-meta text-warning">
+                          {r.paymentRequestReason ? `Finance: ${r.paymentRequestReason}. ` : ''}
+                          {r.splitScan
+                            ? 'Scanned and split at the contract, so it is not changed here; ask IT to correct it.'
+                            : 'Fix the bill and save, then use Send again on Utility bills (By payment request).'}
+                        </span>
+                      )}
                     </div>
                     {fixed(r) ? (
                       <MoneyText sen={r.amount ?? 0} mode="exact" tone="muted" className="text-copy text-right" />
@@ -256,7 +276,7 @@ function NoAccountUnits({ units, lines, setLines, errors, onAdded }: {
           return (
             <div key={u.unitId} className="py-[10px] px-3 flex flex-col gap-2 [border-bottom:1px_solid_var(--color-line-soft)] last:border-b-0">
               <span className="flex flex-col min-w-0">
-                <span className="text-copy font-medium truncate" title={u.unitLabel}>{titleCase(u.unitLabel)}</span>
+                <span className="text-copy font-medium truncate" title={u.unitLabel}>{buildingName(u.unitLabel)}</span>
                 <span className="text-meta text-muted-ink">
                   No account on file, a bill can still go in.
                   {(u.recorded ?? []).length > 0 && ` Already recorded this month: ${u.recorded!.map(x => `${kindLabel(x.kind)} ${rm(x.amount)}${x.rolled && x.deductMonth ? ` (deducted ${monthLabel(x.deductMonth)})` : ''}`).join(', ')}.`}
@@ -264,10 +284,10 @@ function NoAccountUnits({ units, lines, setLines, errors, onAdded }: {
               </span>
               {mine.map(l => {
                 const owes = (l.amount ?? 0) > 0 && receiptRequired(l.kind, l.payer);
-                const what = `${titleCase(u.unitLabel)} ${kindLabel(l.kind)}`;
+                const what = `${buildingName(u.unitLabel)} ${kindLabel(l.kind)}`;
                 return (
                   <div key={l.key} className="grid grid-cols-[minmax(0,1fr)_112px] sm:grid-cols-[minmax(0,1fr)_120px_140px_150px] gap-x-3 gap-y-2 items-center">
-                    <Select size="sm" label={`Which bill for ${titleCase(u.unitLabel)}`} className="w-full" value={l.kind}
+                    <Select size="sm" label={`Which bill for ${buildingName(u.unitLabel)}`} className="w-full" value={l.kind}
                       onChange={v => patch(l.key, { kind: v })} options={ACCOUNT_KINDS.filter(k => k.value === l.kind || !taken.has(k.value))} />
                     <MoneyInput aria-label={`${what} amount in ringgit`} valueSen={l.amount} onChangeSen={sen => patch(l.key, { amount: sen })}
                       className="field-input h-[38px]! min-w-0 text-right tabular-nums" />
@@ -313,7 +333,7 @@ function AddAccountForm({ unitId, unitLabel, onCancel, onAdded }: { unitId: stri
     setBusy(true); setFields({});
     try {
       await api.post('/expenses/utility-accounts', { unitId, kind, accountNo: accountNo.trim(), provider: provider.trim() || null });
-      toast({ tone: 'success', title: 'Account added.', body: `${titleCase(unitLabel)} now has a line for its ${ACCOUNT_KINDS.find(k => k.value === kind)?.label ?? kind} bill.` });
+      toast({ tone: 'success', title: 'Account added.', body: `${buildingName(unitLabel)} now has a line for its ${ACCOUNT_KINDS.find(k => k.value === kind)?.label ?? kind} bill.` });
       onAdded();
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFields(e.fields);
