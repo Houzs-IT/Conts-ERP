@@ -3,7 +3,7 @@
 // scripts/api-checks/renovation-sales.mjs.
 import { describe, expect, test } from 'vitest';
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections } from './renovation-validate';
-import { renovationFenceApplies } from './renovation-write-fence';
+import { customerOnlyPatch, renovationFenceApplies } from './renovation-write-fence';
 import { groupForPo, needsPurchaseOrder } from './renovation-po-split';
 import { quotationTransitionAllowed, revisionDocNo, mergeHeader } from './renovation-quotation';
 import { contractTransitionAllowed, mirrorRowsFor } from './renovation-so';
@@ -91,6 +91,12 @@ describe('write fence on /mfg-sales-orders', () => {
     ['GET', 'items', false],
   ])('%s /:docNo/%s refused for a renovation SO: %s', (method, rest, refused) => {
     expect(renovationFenceApplies(method, rest)).toBe(refused);
+  });  test('a contract takes a header change that only names its customer', () => {
+    expect(customerOnlyPatch({ debtorCode: '301-M144', debtorName: 'MR WAYNE' })).toBe(true);
+    expect(customerOnlyPatch({ debtorCode: '301-M144' })).toBe(true);
+    expect(customerOnlyPatch({ debtorCode: '301-M144', soDate: '2026-08-10' })).toBe(false);
+    expect(customerOnlyPatch({})).toBe(false);
+    expect(customerOnlyPatch(null)).toBe(false);
   });
 });
 
