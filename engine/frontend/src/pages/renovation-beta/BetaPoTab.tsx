@@ -37,7 +37,7 @@ import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
   amountAfter, byAreaBlocks, byCategory, livePo, specLocked, SPEC_LOCKED_NOTE, dateFixedReason, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
-  linesApi, postVo, refusalText, withDate,
+  linesApi, picksSupplier, postVo, refusalText, supplierOf, withDate,
   contractLineEdits, postContractLines, variantsAfter, voBatches,
   type LineEdit, type LinesAnswer, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
@@ -64,6 +64,7 @@ const headStyle: CSSProperties = { ...thStyle, padding: "8px 6px", fontSize: 11.
 const COLUMN_HEAD: Record<PoColumn, { label: string; title?: string; right?: boolean }> = {
   sku: { label: "SKU" }, desc: { label: "Description" }, variants: { label: "Variants" }, qty: { label: "Qty", right: true }, amount: { label: "Amount", right: true },
   orderOn: { label: "Processing", title: "Processing date: when to place the order" }, deliverOn: { label: "Delivery", title: "Delivery date" },
+  supplier: { label: "Supplier", title: "Who the line is bought from; MRP and Create PO start from it" }, warehouse: { label: "Receive at", title: "The warehouse the goods are received at; MRP and the PO follow it" },
   stock: { label: "Stock", title: "Same verdict as the sales order page" }, po: { label: "PO" }, gr: { label: "GR" }, do: { label: "DO" },
 };
 
@@ -306,6 +307,19 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   };
 
 
+  /* The supplier and receiving warehouse of a line still waiting for its PO (owner, 17 Nov 2026: picked here again, MRP
+     follows). They save as they are picked, like the dates. */
+  const saveSupplier = async (l: ManagedLine, supplierId: string): Promise<void> => {
+    if (!supplierId || supplierId === l.supplierId) return;
+    setBusyKey(`${l.id}:supplier`);
+    try { await linesApi.saveSupplier(p.projectId, l.id, supplierId); q.reload(); } catch (e) { p.onError(refusalText(e)); } finally { setBusyKey(null); }
+  };
+  const saveWarehouse = async (l: ManagedLine, warehouseId: string): Promise<void> => {
+    if (!warehouseId || warehouseId === l.warehouseId) return;
+    setBusyKey(`${l.id}:warehouse`);
+    try { await linesApi.saveWarehouse(p.projectId, l.id, warehouseId); q.reload(); } catch (e) { p.onError(refusalText(e)); } finally { setBusyKey(null); }
+  };
+
   const setNoPo = async (l: ManagedLine, noPo: boolean): Promise<void> => {
     setBusyKey(`${l.id}:noPo`);
     try { await linesApi.savePlan(p.projectId, l.id, { noPo }); q.reload(); } catch (e) { p.onError(refusalText(e)); } finally { setBusyKey(null); }
@@ -348,6 +362,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     l, projectId: p.projectId, hideArea: view === "area", edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
     setEdit: (patch) => setEdit(l.id, patch), openMaterials: () => setMaterialsOf(l), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
+    saveSupplier: (id) => void saveSupplier(l, id), suppliers: d.suppliers ?? [], saveWarehouse: (id) => void saveWarehouse(l, id), warehouses: d.warehouses ?? [],
     stock: stockByLine.get(l.id),
     grDocs: lineDocs(l.id, deliveries, "goods_received"), doDocs: lineDocs(l.id, deliveries, "delivery_order"), openDoc,
   });
@@ -669,6 +684,10 @@ interface RowCtx {
   pickVariants: () => void;
   saveDate: (which: PlanDate, value: string) => void;
   setNoPo: (v: boolean) => void;
+  saveSupplier: (supplierId: string) => void;
+  suppliers: ReadonlyArray<{ id: string; name: string }>;
+  saveWarehouse: (warehouseId: string) => void;
+  warehouses: ReadonlyArray<{ id: string; code: string; name: string }>;
   stock: SoLineCoverage | undefined;
   grDocs: LineDoc[];
   doDocs: LineDoc[];
@@ -914,7 +933,8 @@ function StockCell({ r }: { r: RowCtx }): ReactElement {
 
 const LINE_CELLS: Record<PoColumn, (r: RowCtx) => ReactElement> = {
   sku: (r) => <SkuCell {...r} />, desc: (r) => <DescCell {...r} />, variants: (r) => <VariantCell {...r} />, qty: (r) => <QtyCell {...r} />, amount: (r) => <AmountCell {...r} />,
-  orderOn: (r) => <ProcessingCell r={r} />, deliverOn: (r) => <DeliveryCell r={r} />, stock: (r) => <StockCell r={r} />, po: (r) => <PoCell r={r} />,
+  orderOn: (r) => <ProcessingCell r={r} />, deliverOn: (r) => <DeliveryCell r={r} />, supplier: (r) => <SupplierCell r={r} />, warehouse: (r) => <WarehouseCell r={r} />,
+  stock: (r) => <StockCell r={r} />, po: (r) => <PoCell r={r} />,
   gr: (r) => <DocCell docs={r.grDocs} state={grState(r.l)} tab="gr" open={r.openDoc} />, do: (r) => <DocCell docs={r.doDocs} state={r.l.do} tab="do" open={r.openDoc} />,
 };
 
@@ -936,6 +956,47 @@ function LineRow(r: RowCtx & { columns: readonly PoColumn[]; drag?: BandDrag }):
       ))}
     </tr>
   );
+}
+
+/** Who the line is bought from: in Edit mode a dropdown until a PO holds the line, then the PO's supplier as text. */
+function SupplierCell({ r }: { r: RowCtx }): ReactElement {
+  if (r.editable && r.plansReady && picksSupplier(r.l)) return <SupplierPick r={r} />;
+  const name = supplierOf(r.l);
+  return name ? <span title={name} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{name}</span> : <span style={metaStyle}>-</span>;
+}
+
+/** The SKU's bound suppliers, main first and starred, then every other supplier; picking one of those binds it. */
+function SupplierPick({ r }: { r: RowCtx }): ReactElement {
+  const choices = r.l.supplierChoices ?? [];
+  const others = r.suppliers.filter((s) => !choices.some((c) => c.id === s.id));
+  const busy = r.busyKey === `${r.l.id}:supplier`;
+  const picked = [...choices, ...others].some((c) => c.id === r.l.supplierId) ? r.l.supplierId ?? "" : "";
+  return (
+    <select aria-label={`Supplier for ${r.l.description}`} value={picked} disabled={busy} onChange={(ev) => r.saveSupplier(ev.target.value)}
+      title={picked ? undefined : "No supplier on this line yet"}
+      style={{ ...editInput, width: "100%", height: 26, minHeight: 26, fontSize: 12, color: picked ? undefined : WS.amber }}>
+      {!picked && <option value="">{busy ? "Saving..." : "Pick a supplier"}</option>}
+      {choices.map((c) => <option key={c.id} value={c.id}>{c.main ? "\u2605 " : ""}{c.name}{c.main ? " (main)" : ""}</option>)}
+      {others.length > 0 && <optgroup label="Other suppliers">{others.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>}
+    </select>
+  );
+}
+
+/** Where the goods are received: in Edit mode a dropdown until a PO holds the line, then text. */
+function WarehouseCell({ r }: { r: RowCtx }): ReactElement {
+  const name = r.l.warehouseName ?? null;
+  if (r.editable && r.plansReady && picksSupplier(r.l) && r.warehouses.length > 0) {
+    const busy = r.busyKey === `${r.l.id}:warehouse`;
+    const picked = r.warehouses.some((w) => w.id === r.l.warehouseId) ? r.l.warehouseId ?? "" : "";
+    return (
+      <select aria-label={`Receive ${r.l.description} at`} value={picked} disabled={busy} onChange={(ev) => r.saveWarehouse(ev.target.value)}
+        style={{ ...editInput, width: "100%", height: 26, minHeight: 26, fontSize: 12, color: picked ? undefined : WS.amber }}>
+        {!picked && <option value="">{busy ? "Saving..." : "Pick a warehouse"}</option>}
+        {r.warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+      </select>
+    );
+  }
+  return name ? <span title={name} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{name}</span> : <span style={metaStyle}>-</span>;
 }
 
 /** The handle a band, subcategory or line is dragged by. */
@@ -984,6 +1045,10 @@ function LineCard(r: RowCtx): ReactElement {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
         {field("Processing", <ProcessingCell r={r} />)}
         {field("Delivery", <DeliveryCell r={r} />)}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+        {field("Supplier", <SupplierCell r={r} />)}
+        {field("Receive at", <WarehouseCell r={r} />)}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
         {field("PO", <PoCell r={r} />)}

@@ -1039,6 +1039,34 @@ app.put("/projects/:id/lines/:itemId/supplier", requirePermission("projects.writ
   return c.json({ ok: true, supplierId, supplierName: bound.name });
 });
 
+/* Where a line's goods are received, picked on the SO tab before its PO (owner, 17 Nov 2026): the SO line's warehouse,
+   which MRP groups the line by and the PO it raises is delivered to. Once a PO holds the line, its location is the PO's. */
+app.put("/projects/:id/lines/:itemId/warehouse", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const b = await body(c);
+  const warehouseId = typeof b.warehouseId === "string" ? b.warehouseId.trim() : "";
+  if (!warehouseId) return c.json({ error: "invalid_warehouse", message: "Pick a warehouse." }, 400);
+  const line = await projectLine(db(c), id, co, c.req.param("itemId"), await categoryScope(c));
+  if (!line) return c.json({ error: "not_found" }, 404);
+  const state = await lineSupplierState(db(c), line.id);
+  if (state.poNumber) return c.json({ error: "line_on_po", message: `${state.poNumber} already buys ${state.itemCode}: it is received where the PO says.` }, 409);
+  const wh = await db(c).prepare(`SELECT id::text AS id, name FROM scm.warehouses WHERE id::text = ? AND company_id = ? AND is_active`)
+    .bind(warehouseId, co).first<{ id: string; name: string }>();
+  if (!wh) return c.json({ error: "warehouse_not_found", message: "That warehouse could not be found." }, 400);
+  try {
+    await db(c).prepare(`UPDATE scm.mfg_sales_order_items SET warehouse_id = ?::uuid WHERE id::text = ? AND company_id = ?`)
+      .bind(wh.id, line.id, co).run();
+    await activityStmt(c, id, co, "beta_line_warehouse", null, line.doc_no, `${state.itemCode}: received at ${wh.name}`).run();
+  } catch (e) {
+    console.error("[renovation-beta] line warehouse save failed", e);
+    return c.json({ error: "warehouse_save_failed", message: "The warehouse could not be saved. Try again.", detail: readDetail(e) }, 500);
+  }
+  return c.json({ ok: true, warehouseId: wh.id, warehouseName: wh.name });
+});
+
 /** A read-only link for the client to the Client PO list. The token carries the project and company, signed. */
 app.post("/projects/:id/client-link", requirePermission("projects.write"), async (c) => {
   const id = parseId(c.req.param("id"));
