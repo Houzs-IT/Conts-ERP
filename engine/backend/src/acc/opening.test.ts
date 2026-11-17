@@ -21,7 +21,7 @@ function world(over: Record<string, Row[]> = {}, start: string | null = '2026-12
   return fakeSb({
     accounts: CHART.map((a) => ({ ...a })), acc_account_roles: [], journal_entries: [], journal_entry_lines: [],
     acc_company_settings: start ? [{ company_id: CO, ledger_start_date: start, fiscal_year_end_month: 8 }] : [],
-    sales_invoices: [], purchase_invoices: [],
+    sales_invoices: [], purchase_invoices: [], customer_credits: [], payment_vouchers: [], acc_supplier_advances: [],
     suppliers: [{ id: 'sup-1', code: '400-T001', name: 'TODERN', company_id: CO }, { id: 'sup-2', code: '405-L001', name: 'LANDLORD', company_id: CO }],
     ...over,
   });
@@ -116,6 +116,65 @@ describe('opening receivables and payables', () => {
     expect(sb.tables.purchase_invoices[0]).toMatchObject({
       invoice_number: 'PI-001', supplier_id: 'sup-1', opening_balance: true, status: 'POSTED', total_sen: 30_000,
     });
+  });
+});
+
+describe('a minus on the ageing: money paid ahead (chew, 17 Nov 2026)', () => {
+  test("a customer's minus is a credit they spend later, dated as AutoCount had it; once only", async () => {
+    const sb = world();
+    const rows = [
+      { docNo: 'IV-1', debtorName: 'Ah Meng', debtorCode: '300-A001', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 50_000 },
+      { docNo: 'OR-003163', debtorName: 'Ah Meng', debtorCode: '300-A001', invoiceDate: '2026-04-10', dueDate: '2026-04-10', outstandingSen: -58_200 },
+    ];
+    expect(await importOpeningReceivables(sb, CO, rows, ACTOR)).toEqual({ created: 2, skipped: 0, errors: [] });
+    expect(sb.tables.sales_invoices).toHaveLength(1);
+    expect(sb.tables.customer_credits).toEqual([expect.objectContaining({
+      company_id: CO, debtor_code: '300-A001', amount_sen: 58_200, source_type: 'OPENING', source_doc_no: 'OR-003163', entry_date: '2026-04-10',
+    })]);
+    expect(await importOpeningReceivables(sb, CO, rows, ACTOR)).toEqual({ created: 0, skipped: 2, errors: [] });
+    expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+  test("a supplier's minus is an opening voucher, posting nothing, holding an advance for their later bills; once only", async () => {
+    const sb = world();
+    const rows = [
+      { docNo: 'IN-01728', supplierCode: '400-T001', invoiceDate: '2026-08-02', dueDate: '2026-08-02', outstandingSen: 23_000 },
+      { docNo: 'HPV-2507-149', supplierCode: '400-T001', invoiceDate: '2025-07-29', dueDate: '2025-07-29', outstandingSen: -413_600 },
+    ];
+    expect(await importOpeningPayables(sb, CO, rows, ACTOR)).toEqual({ created: 2, skipped: 0, errors: [] });
+    const [pv] = sb.tables.payment_vouchers;
+    expect(pv).toMatchObject({ pv_number: 'OB-HPV-2507-149', supplier_id: 'sup-1', status: 'POSTED', opening_balance: true, total_sen: 413_600,
+      voucher_date: '2025-07-29', payee_name: 'TODERN', credit_account_code: '400-0000' });
+    expect(sb.tables.acc_supplier_advances).toEqual([expect.objectContaining({ pv_id: pv!.id, supplier_id: 'sup-1', amount_sen: 413_600, applied_sen: 0 })]);
+    expect(await importOpeningPayables(sb, CO, rows, ACTOR)).toEqual({ created: 0, skipped: 2, errors: [] });
+    expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+  test('zero is still refused', async () => {
+    const sb = world();
+    const r = await importOpeningPayables(sb, CO, [{ docNo: 'X', supplierCode: '400-T001', invoiceDate: '2026-08-02', dueDate: '2026-08-02', outstandingSen: 0 }], ACTOR);
+    expect(r.errors[0]!.error).toContain('zero');
+  });
+  test('the check nets what was paid ahead off each control', async () => {
+    const sb = world();
+    await importOpeningJournal(sb, CO, BALANCED, ACTOR);
+    const je = sb.tables.journal_entries[0];
+    sb.tables.v_gl_entries = sb.tables.journal_entry_lines.map((l) => ({
+      ...l, company_id: CO, entry_date: je.entry_date, posted: true, reversed: false, reversed_by_je: null,
+      account_name: l.account_code, account_type: CHART.find((a) => a.account_code === l.account_code)!.account_type,
+    }));
+    await importOpeningReceivables(sb, CO, [
+      { docNo: 'IV-1', debtorName: 'A', debtorCode: '300-A001', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 60_000 },
+      { docNo: 'OR-1', debtorName: 'A', debtorCode: '300-A001', invoiceDate: '2026-10-06', dueDate: '2026-10-06', outstandingSen: -10_000 },
+    ], ACTOR);
+    await importOpeningPayables(sb, CO, [
+      { docNo: 'PI-1', supplierCode: '400-T001', invoiceDate: '2026-10-01', dueDate: '2026-10-31', outstandingSen: 35_000 },
+      { docNo: 'PV-1', supplierCode: '400-T001', invoiceDate: '2026-10-02', dueDate: '2026-10-02', outstandingSen: -5_000 },
+    ], ACTOR);
+    const r = await openingCheck(sb, CO);
+    expect(r.ok && r.controls.slice(0, 2)).toEqual([
+      { role: 'AR', accountCode: '300-0000', controlSen: 50_000, documentsSen: 50_000, erpDocuments: 0 },
+      { role: 'AP', accountCode: '400-0000', controlSen: 30_000, documentsSen: 30_000, erpDocuments: 0 },
+    ]);
+    expect(r).toMatchObject({ balanced: true });
   });
 });
 

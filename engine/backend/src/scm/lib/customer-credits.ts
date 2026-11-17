@@ -26,6 +26,7 @@ export type CreditSourceType =
   | 'OVERPAY'            // payment recorded > remaining due → excess turned into credit
   | 'APPLIED_TO_SI'      // negative entry — credit applied to a new invoice
   | 'MANUAL_ADJUST'      // operator-entered adjustment
+  | 'OPENING'            // paid ahead before the books started, from AutoCount's debtor ageing (acc/opening.ts)
   | 'CUSTOMER_REFUND'    // negative entry — a Customer Refund voucher paid the credit out in cash (lib/pv-refund.ts)
   | 'CUSTOMER_REFUND_REVERSAL'; // that voucher was cancelled — the credit comes back
 
