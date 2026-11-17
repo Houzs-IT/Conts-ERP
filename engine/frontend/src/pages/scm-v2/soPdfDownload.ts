@@ -3,6 +3,7 @@
 
 import { fetchPrintBundle } from "../../lib/printDocumentPdf";
 import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
+import type { SoPrintRooms } from "../../vendor/scm/lib/so-print-rooms";
 import { renoGet, type BrandProfile, type ContractView } from "../../lib/renovation/api";
 import { soInfoApi } from "../projects/renovation/customerPropertyApi";
 import { projectDatesText } from "../projects/renovation/customerPropertyModel";
@@ -20,7 +21,16 @@ const pdfText = (t: string): string => t.replace(/—/g, "-");
 
 /** renovation null reads it from the order (a renovation contract prints its brand block and instalments). "preview" shows
     the PDF in the in-app viewer instead of saving it (the project's Open SO, feedback 11 Nov 2026). */
-export async function downloadSoPdf(docNo: string, renovation: boolean | null, action: PdfAction = "save"): Promise<void> {
+/** `layout`: the areas or categories (and their order) to print by, as a screen shows them; `timetable`: the line dates,
+    which print in place of the unit price and discount (owner, 17 Nov 2026). */
+export interface SoPdfLayout {
+  rooms?: SoPrintRooms;
+  /** Line ids in the order a screen shows them; the PDF lists each section's lines in it. */
+  itemOrder?: string[];
+  timetable?: Record<string, { orderOn: string | null; deliverOn: string | null }>;
+}
+
+export async function downloadSoPdf(docNo: string, renovation: boolean | null, action: PdfAction = "save", layout?: SoPdfLayout): Promise<void> {
   const [bundle, info, { generateSalesOrderPdf }] = await Promise.all([
     fetchPrintBundle({ doc: "so", docNo, key: docNo }),
     soInfoApi.so(docNo),
@@ -35,14 +45,18 @@ export async function downloadSoPdf(docNo: string, renovation: boolean | null, a
     ]);
     contract = soPdfContract(view, brands.find((b) => b.brandId === view.header.brandId));
   }
-  await generateSalesOrderPdf(bundle.header as never, bundle.items as never, (bundle.payments ?? []) as never, action, (bundle.pwpCodes ?? []) as never, {
-    rooms: info.roomSections.length > 0 ? { order: info.roomSections, byItem: info.itemRooms } : undefined,
+  const rank = new Map((layout?.itemOrder ?? []).map((id, i) => [id, i]));
+  const items = layout?.itemOrder ? [...(bundle.items as Array<{ id: string }>)].sort((a, b) => (rank.get(a.id) ?? 1e9) - (rank.get(b.id) ?? 1e9)) : bundle.items;
+  await generateSalesOrderPdf(bundle.header as never, items as never, (bundle.payments ?? []) as never, action, (bundle.pwpCodes ?? []) as never, {
+    rooms: layout?.rooms ?? (info.roomSections.length > 0 ? { order: info.roomSections, byItem: info.itemRooms } : undefined),
+    timetable: layout?.timetable,
+    ...(layout?.timetable ? { docTitle: "TIMETABLE" } : {}),
     projectDates: { start: pdfText(dates.start), end: pdfText(dates.end) },
     contract,
   });
 }
 
 /** One file per order, one after the other: a browser refuses several downloads started at once. */
-export async function downloadSoPdfs(orders: ReadonlyArray<{ docNo: string; renovation?: boolean }>): Promise<void> {
-  for (const o of orders) await downloadSoPdf(o.docNo, !!o.renovation);
+export async function downloadSoPdfs(orders: ReadonlyArray<{ docNo: string; renovation?: boolean }>, layout?: SoPdfLayout): Promise<void> {
+  for (const o of orders) await downloadSoPdf(o.docNo, !!o.renovation, "save", layout);
 }

@@ -355,7 +355,9 @@ export async function renderSalesOrderInto(
     /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
     projectDates?: { start: string; end: string }; contract?: SoPdfContract;
     /* A quotation prints on this same layout (owner, 17 Nov 2026: one PDF for the whole system): nothing is paid yet. */
-    quotation?: boolean },
+    quotation?: boolean;
+    /* The timetable (owner, 17 Nov 2026): each line's processing and delivery dates in place of its unit price and discount; no payments. */
+    timetable?: Record<string, { orderOn: string | null; deliverOn: string | null }> },
 ): Promise<void> {
   /* A cancelled line must never reach a CUSTOMER document — not as a printed
      row and not inside a total. The gate lives HERE, in the one function both
@@ -637,8 +639,9 @@ export async function renderSalesOrderInto(
       ...(SHOW_CODE ? [it.item_code] : []),
       lines.join('\n'),
       `${it.qty} ${it.uom}`,
-      fmtRm(it.unit_price_sen, header.currency),
-      it.discount_sen > 0 ? fmtRm(it.discount_sen, header.currency) : '—',
+      ...(opts?.timetable
+        ? [opts.timetable[it.id]?.orderOn ? fmtDocDate(opts.timetable[it.id]!.orderOn!) : '—', opts.timetable[it.id]?.deliverOn ? fmtDocDate(opts.timetable[it.id]!.deliverOn!) : '—']
+        : [fmtRm(it.unit_price_sen, header.currency), it.discount_sen > 0 ? fmtRm(it.discount_sen, header.currency) : '—']),
       fmtRm(it.total_sen, header.currency),
     ];
   });
@@ -691,7 +694,10 @@ export async function renderSalesOrderInto(
 
   autoTable(doc, {
     startY: y,
-    head: [SHOW_CODE ? ['#', 'Item Code', 'Description', 'Qty', 'Unit Price', 'Discount', 'Amount (RM)'] : ['#', 'Description', 'Qty', 'Unit Price', 'Discount', 'Amount (RM)']],
+    head: [(() => {
+      const mid = opts?.timetable ? ['Processing', 'Delivery'] : ['Unit Price', 'Discount'];
+      return SHOW_CODE ? ['#', 'Item Code', 'Description', 'Qty', ...mid, 'Amount (RM)'] : ['#', 'Description', 'Qty', ...mid, 'Amount (RM)'];
+    })()],
     body: bodyRows,
     theme: 'plain',
     rowPageBreak: 'avoid',
@@ -750,7 +756,7 @@ export async function renderSalesOrderInto(
   // Sources transactions from the payments ledger (mfg_sales_order_payments)
   // instead of the legacy single-row header columns (deprecated PR-C).
   /* A quotation has no payments block: nothing is paid on a quotation. */
-  if (!opts?.quotation) {
+  if (!(opts?.quotation || opts?.timetable)) {
   if (ty > 250) { doc.addPage(); ty = margin; }
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
@@ -822,7 +828,7 @@ export async function renderSalesOrderInto(
   /* Standard-checklist tax line — the SO model carries no header tax (prices
      are tax-inclusive / exempt), so this prints as a dash, not a number. */
   drawRow('Tax',          '—',                                   ty);     ty += 4;
-  if (opts?.quotation) {
+  if ((opts?.quotation || opts?.timetable)) {
     ty += 2;
     doc.setDrawColor(0);
     doc.line(totalsX, ty, pageW - margin, ty);
@@ -952,7 +958,9 @@ export async function generateSalesOrderPdf(
     /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
     projectDates?: { start: string; end: string }; contract?: SoPdfContract;
     /* A quotation prints on this same layout (owner, 17 Nov 2026: one PDF for the whole system): nothing is paid yet. */
-    quotation?: boolean },
+    quotation?: boolean;
+    /* The timetable (owner, 17 Nov 2026): each line's processing and delivery dates in place of its unit price and discount; no payments. */
+    timetable?: Record<string, { orderOn: string | null; deliverOn: string | null }> },
 ): Promise<void> {
   // Dynamic import — code-split into a vendor chunk.
   const { jsPDF } = await import('jspdf');
