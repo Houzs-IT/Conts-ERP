@@ -131,6 +131,10 @@ describe('the go-live preview', () => {
     ]));
   });
 
+  test("a project's account filed under AutoCount's month is accepted", async () => {
+    expect((await problemsOf(world(), [{ ...good, advanceAccountCode: '480-H001-1' }]))[0]).toEqual([]);
+  });
+
   test('a header (an account with children) cannot be the advance account', async () => {
     expect((await problemsOf(world(), [{ ...good, advanceAccountCode: '480-H001' }]))[0]).toEqual([expect.stringContaining('480-H001 has sub-accounts')]);
   });
