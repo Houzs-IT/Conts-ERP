@@ -79,7 +79,7 @@ import { piPeriodicBackfill } from './accounting-pi-backfill';
 import { renoOpeningApply, renoOpeningPreview } from './accounting-reno-opening';
 import { stockCloseStatus, stockCloseRun } from './accounting-stock-close';
 import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './accounting-reports';
-import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
+import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal, cutoverDocuments } from '../../acc/opening';
 import { importOpeningDeposits, reverseOpeningDeposits } from '../../acc/opening-deposits';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
 import { AUTOCOUNT_MAX_DOCS, importAutocountJournals, type AutocountJournal } from '../../acc/autocount-journals';
@@ -610,6 +610,22 @@ export const autocountJournalsHandler = async (c: AccCtx): Promise<Response> => 
   return c.json(await importAutocountJournals(c.get('supabase'), co.companyId, docs as AutocountJournal[]));
 };
 accounting.post('/opening/autocount-journals', autocountJournalsHandler);
+
+/* The open documents brought to AutoCount's as at the day it stopped (acc/opening.ts cutoverDocuments; chew, 17 Nov
+   2026). { asOf, receivables, payables, dryRun }: a dry run says what it would remove, keep and add. */
+export const cutoverHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const ar = Array.isArray(body?.receivables) ? body!.receivables as never[] : [];
+  const ap = Array.isArray(body?.payables) ? body!.payables as never[] : [];
+  if (ar.length + ap.length > OPENING_MAX_ROWS) return c.json({ error: `At most ${OPENING_MAX_ROWS} rows at a time.` }, 400);
+  const r = await cutoverDocuments(c.get('supabase'), co.companyId, String(body?.asOf ?? ''), ar, ap, actorId(c), body?.dryRun !== false);
+  return 'ok' in r && r.ok === false ? c.json({ error: r.error }, 409) : c.json(r);
+};
+accounting.post('/opening/cutover', cutoverHandler);
 
 export const openingCheckHandler = async (c: AccCtx): Promise<Response> => {
   if (!requireGlPost(c)) return c.json({ error: "You don't have permission to read the opening balances." }, 403);

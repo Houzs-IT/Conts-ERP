@@ -148,6 +148,8 @@ export function downloadTemplate(kind: OpeningKind): void {
 export type ControlLine = { role: "AR" | "AP" | "AP_OTHER"; accountCode: string; controlSen: number; documentsSen: number; erpDocuments: number };
 export type OpeningCheck = {
   ok: true; openingDay: string; openingJeNo: string | null; openingJeDate: string | null;
+  /** The day the controls and the open documents are compared on: the documents' cut-over when set (migration 0333). */
+  documentsDay?: string;
   trialDebitSen: number; trialCreditSen: number;
   controls: ControlLine[];
   banks: { accountCode: string; name: string; balanceSen: number }[];

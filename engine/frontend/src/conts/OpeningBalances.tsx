@@ -73,7 +73,7 @@ function CheckPanel({ check, canSave }: { check: OpeningCheck; canSave: boolean 
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
       <div style={{ fontWeight: 700, color: check.balanced ? GOOD : BAD }} data-testid="opening-verdict">
         {check.balanced ? "✓ The opening balances agree" : "✗ The opening balances do not agree yet"}
-        <span style={{ fontWeight: 400, color: MUTED }}> — as at {check.openingDay}
+        <span style={{ fontWeight: 400, color: MUTED }}> — as at {check.documentsDay && check.documentsDay !== check.openingDay ? `${check.documentsDay} (the documents' cut-over; the opening journal on ${check.openingDay})` : check.openingDay}
           {check.openingJeNo ? `, journal ${check.openingJeNo}` : ", no opening journal yet"}</span>
       </div>
       {note && <p style={{ margin: 0, color: BAD }}>{note}</p>}
@@ -105,7 +105,7 @@ function CheckPanel({ check, canSave }: { check: OpeningCheck; canSave: boolean 
         </table>
       </div>
       <p style={{ margin: 0, fontSize: "var(--fs-12)", color: MUTED }}>
-        Also compare the trial balance total ({rm(check.trialDebitSen)}) and each bank below with AutoCount's figures on {check.openingDay}.
+        Also compare the trial balance total ({rm(check.trialDebitSen)}) and each bank below with AutoCount's figures on {check.documentsDay ?? check.openingDay}.
       </p>
       {check.banks.length > 0 && (
         <div style={{ overflowX: "auto" }}>
