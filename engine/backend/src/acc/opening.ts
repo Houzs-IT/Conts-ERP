@@ -129,7 +129,7 @@ function rowProblem(row: { docNo: string; invoiceDate: string; dueDate: string; 
 }
 
 /** Every invoice (or bill) of the company, paged past PostgREST's row ceiling. */
-async function allDocs<T>(sb: Db, table: 'sales_invoices' | 'purchase_invoices', companyId: number, columns: string): Promise<{ ok: true; rows: T[] } | { ok: false; error: string }> {
+async function allDocs<T>(sb: Db, table: 'sales_invoices' | 'purchase_invoices' | 'ap_invoices', companyId: number, columns: string): Promise<{ ok: true; rows: T[] } | { ok: false; error: string }> {
   const { data, error } = await paginateAll((from, to) => sb.from(table).select(columns).eq('company_id', companyId).order('id').range(from, to));
   if (error) return { ok: false, error: (error as { message?: string }).message ?? String(error) };
   return { ok: true, rows: (data ?? []) as T[] };
@@ -300,8 +300,11 @@ export type ControlLine = {
   accountCode: string;
   controlSen: number;
   documentsSen: number;
-  /** Of those documents, the ones raised in the ERP before the books started (counted at what is still owed). */
+  /** Of those documents, the ones raised in the ERP (counted at what is still owed). */
   erpDocuments: number;
+  /** Renovation contracts the ERP posted whole to the customer at signing, less what has been invoiced on them: the
+      part of the control no invoice explains yet (acc/reno-ledger.ts). Customer controls only; 0 elsewhere. */
+  unbilledContractsSen: number;
 };
 
 export type OpeningCheck = {
@@ -324,7 +327,12 @@ export type OpeningCheck = {
 type CheckDoc = {
   total_sen: number | null; paid_sen: number | null; status: string | null; invoice_date: string | null;
   opening_balance: boolean | null; migrated_no_stock: boolean | null; supplier_id?: string | null; debtor_code?: string | null;
+  /** A sales invoice settled from its order's deposit (paid_sen stays 0 on it). */
+  so_deposit_applied_sen?: number | null; so_doc_no?: string | null;
 };
+type ContractLine = { source_type: string; source_doc_no: string | null; account_code: string; debit_sen: number; credit_sen: number; reversed: boolean | null };
+/** The contract journals of acc/reno-ledger.ts: signing, change, cancel. */
+const CONTRACT_SOURCES = ['RCON', 'RVO', 'RCAN'];
 
 /** The figures on the opening day, side by side with what explains them. The documents side is the ageing as it
     stands for that day: the opening documents at their imported amount, plus anything raised in the ERP and dated
@@ -334,18 +342,22 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
   const day = await documentsDayOf(sb, companyId);
   if (!day.ok) return day;
   const DOC_COLS = 'total_sen, paid_sen, status, invoice_date, opening_balance, migrated_no_stock';
-  const [sums, roles, opening, chart, sis, pis, sups, debtors, credits, advances] = await Promise.all([
+  const [sums, roles, opening, chart, sis, pis, sups, debtors, credits, advances, apis, contracts] = await Promise.all([
     loadSums(sb, companyId, null, day.day),
     resolveRoles(sb, companyId),
     activeOpening(sb, companyId),
     paginateAll((from, to) => sb.from('accounts').select('account_code, account_name, acc_money, special_type').eq('company_id', companyId).order('account_code').range(from, to)),
-    allDocs<CheckDoc>(sb, 'sales_invoices', companyId, `${DOC_COLS}, debtor_code`),
+    allDocs<CheckDoc>(sb, 'sales_invoices', companyId, `${DOC_COLS}, debtor_code, so_deposit_applied_sen, so_doc_no`),
     allDocs<CheckDoc>(sb, 'purchase_invoices', companyId, `${DOC_COLS}, supplier_id`),
     paginateAll((from, to) => sb.from('suppliers').select('id, code, control_account').eq('company_id', companyId).order('id').range(from, to)),
     paginateAll((from, to) => sb.from('debtors').select('code, control_account').eq('company_id', companyId).order('code').range(from, to)),
     /* What was paid ahead before the books started: it nets each control down (chew, 17 Nov 2026). */
     paginateAll((from, to) => sb.from('customer_credits').select('debtor_code, amount_sen').eq('company_id', companyId).eq('source_type', OPENING_CREDIT).order('id').range(from, to)),
     paginateAll((from, to) => sb.from('payment_vouchers').select('id, supplier_id, total_sen, status').eq('company_id', companyId).eq('opening_balance', true).order('id').range(from, to)),
+    /* The ERP's own supplier bills (the AP invoices page), beside the procurement ones. */
+    allDocs<CheckDoc>(sb, 'ap_invoices', companyId, 'total_sen, paid_sen, status, invoice_date, supplier_id'),
+    paginateAll((from, to) => sb.from('v_gl_entries').select('source_type, source_doc_no, account_code, debit_sen, credit_sen, reversed')
+      .eq('company_id', companyId).in('source_type', CONTRACT_SOURCES).lte('entry_date', day.day).order('line_id').range(from, to)),
   ]);
   if (!sums.ok) return { ok: false, error: `The ledger could not be read: ${sums.reason}` };
   if (!opening.ok) return { ok: false, error: `The journal could not be read: ${opening.error}` };
@@ -356,6 +368,8 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
   if (debtors.error) return { ok: false, error: `The customers could not be read: ${(debtors.error as { message?: string }).message ?? ''}` };
   if (credits.error) return { ok: false, error: `The customer credits could not be read: ${(credits.error as { message?: string }).message ?? ''}` };
   if (advances.error) return { ok: false, error: `The payment vouchers could not be read: ${(advances.error as { message?: string }).message ?? ''}` };
+  if (!apis.ok) return { ok: false, error: `The AP invoices could not be read: ${apis.error}` };
+  if (contracts.error) return { ok: false, error: `The renovation contracts could not be read: ${(contracts.error as { message?: string }).message ?? ''}` };
   const supplierOf = new Map(((sups.data ?? []) as Array<{ id: string; code: string; control_account: string | null }>).map((x) => [x.id, x]));
   const debtorControlOf = new Map(((debtors.data ?? []) as Array<{ code: string; control_account: string }>).map((x) => [x.code, x.control_account]));
 
@@ -370,8 +384,32 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
     if (st === 'CANCELLED' || st === 'DRAFT' || d.migrated_no_stock === true) return null;
     if (d.opening_balance === true) return { sen: Number(d.total_sen ?? 0), erp: false };
     if (!d.invoice_date || d.invoice_date > day.day) return null;
-    return { sen: Number(d.total_sen ?? 0) - Number(d.paid_sen ?? 0), erp: true };
+    return { sen: Number(d.total_sen ?? 0) - Number(d.paid_sen ?? 0) - Number(d.so_deposit_applied_sen ?? 0), erp: true };
   };
+  /* Each contract's net on its customer's control (a change or cancel is numbered <SO>-n), less what the ERP has
+     invoiced on that order by the day: what the customer is down for that no invoice shows yet. */
+  const contractOf = new Map<string, { account: string; sen: number }>();
+  const contractLines = ((contracts.data ?? []) as ContractLine[]).filter((l) => l.reversed !== true && l.source_doc_no);
+  const signed = new Set(contractLines.filter((l) => l.source_type === 'RCON').map((l) => String(l.source_doc_no)));
+  const controlCodes = new Set([...debtorControlOf.values(), roles.AR]);
+  for (const l of contractLines) {
+    if (!controlCodes.has(l.account_code)) continue;
+    const doc = String(l.source_doc_no);
+    const so = signed.has(doc) ? doc : doc.replace(/-\d+$/, '');
+    const c = contractOf.get(so) ?? { account: l.account_code, sen: 0 };
+    c.sen += Number(l.debit_sen) - Number(l.credit_sen);
+    contractOf.set(so, c);
+  }
+  const billedOn = new Map<string, number>();
+  for (const d of sis.rows) {
+    const so = d.so_doc_no ? String(d.so_doc_no) : '';
+    if (!so || !contractOf.has(so) || d.opening_balance === true) continue;
+    const st = String(d.status ?? '').toUpperCase();
+    if (st === 'CANCELLED' || st === 'DRAFT' || !d.invoice_date || d.invoice_date > day.day) continue;
+    billedOn.set(so, (billedOn.get(so) ?? 0) + Number(d.total_sen ?? 0));
+  }
+  const unbilledOn = new Map<string, number>();
+  for (const [so, c] of contractOf) unbilledOn.set(c.account, (unbilledOn.get(c.account) ?? 0) + Math.max(0, c.sen - (billedOn.get(so) ?? 0)));
   const line = (role: ControlLine['role'], accountCode: string, sign: 1 | -1, docs: CheckDoc[]): ControlLine => {
     let documentsSen = 0;
     let erpDocuments = 0;
@@ -381,7 +419,7 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
       documentsSen += o.sen;
       if (o.erp) erpDocuments += 1;
     }
-    return { role, accountCode, controlSen: sign * net(accountCode) || 0 /* never -0 */, documentsSen, erpDocuments };
+    return { role, accountCode, controlSen: sign * net(accountCode) || 0 /* never -0 */, documentsSen, erpDocuments, unbilledContractsSen: role === 'AR' ? unbilledOn.get(accountCode) ?? 0 : 0 };
   };
   /* Conts (finance phase 1.5): each invoice on its customer's control (scm.debtors), each bill on its supplier's
      (its control_account, else the 405- rule) — where every posting puts them. Every customer and supplier control
@@ -400,7 +438,7 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
   const aheadAp = ((advances.data ?? []) as Array<{ supplier_id: string; total_sen: number; status: string }>)
     .map((x): CheckDoc => ({ total_sen: -Number(x.total_sen), paid_sen: 0, status: x.status, invoice_date: null, opening_balance: true, migrated_no_stock: false, supplier_id: x.supplier_id }));
   const arDocs = [...sis.rows, ...aheadAr];
-  const apDocs = [...pis.rows, ...aheadAp];
+  const apDocs = [...pis.rows, ...aheadAp, ...apis.rows.map((d): CheckDoc => ({ ...d, opening_balance: false, migrated_no_stock: false }))];
   const arCodes = ordered([roles.AR], [...arDocs.map(arOf), ...chartRows.filter((a) => a.special_type === 'SDC' && a.account_code !== roles.AR_OTHER).map((a) => a.account_code)]);
   const apCodes = ordered([roles.AP, roles.AP_OTHER], [...apDocs.map(apOf), ...chartRows.filter((a) => a.special_type === 'SCC').map((a) => a.account_code)]);
   const controls = [
@@ -420,7 +458,7 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
     trialDebitSen: sums.sums.reduce((t, s) => t + s.drSen, 0),
     trialCreditSen: sums.sums.reduce((t, s) => t + s.crSen, 0),
     controls, banks,
-    balanced: opening.je != null && opening.je.entry_date === day.openingDay && controls.every((c) => c.controlSen === c.documentsSen),
+    balanced: opening.je != null && opening.je.entry_date === day.openingDay && controls.every((c) => c.controlSen === c.documentsSen + c.unbilledContractsSen),
   };
 }
 

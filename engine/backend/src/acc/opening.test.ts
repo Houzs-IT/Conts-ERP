@@ -21,7 +21,7 @@ function world(over: Record<string, Row[]> = {}, start: string | null = '2026-12
   return fakeSb({
     accounts: CHART.map((a) => ({ ...a })), acc_account_roles: [], journal_entries: [], journal_entry_lines: [],
     acc_company_settings: start ? [{ company_id: CO, ledger_start_date: start, fiscal_year_end_month: 8 }] : [],
-    sales_invoices: [], purchase_invoices: [], customer_credits: [], payment_vouchers: [], acc_supplier_advances: [],
+    sales_invoices: [], purchase_invoices: [], ap_invoices: [], customer_credits: [], payment_vouchers: [], acc_supplier_advances: [],
     suppliers: [{ id: 'sup-1', code: '400-T001', name: 'TODERN', company_id: CO }, { id: 'sup-2', code: '405-L001', name: 'LANDLORD', company_id: CO }],
     ...over,
   });
@@ -171,8 +171,8 @@ describe('a minus on the ageing: money paid ahead (chew, 17 Nov 2026)', () => {
     ], ACTOR);
     const r = await openingCheck(sb, CO);
     expect(r.ok && r.controls.slice(0, 2)).toEqual([
-      { role: 'AR', accountCode: '300-0000', controlSen: 50_000, documentsSen: 50_000, erpDocuments: 0 },
-      { role: 'AP', accountCode: '400-0000', controlSen: 30_000, documentsSen: 30_000, erpDocuments: 0 },
+      { role: 'AR', accountCode: '300-0000', controlSen: 50_000, documentsSen: 50_000, erpDocuments: 0, unbilledContractsSen: 0 },
+      { role: 'AP', accountCode: '400-0000', controlSen: 30_000, documentsSen: 30_000, erpDocuments: 0, unbilledContractsSen: 0 },
     ]);
     expect(r).toMatchObject({ balanced: true });
   });
@@ -194,14 +194,36 @@ describe('the opening check', () => {
     const r = await openingCheck(sb, CO);
     expect(r).toMatchObject({ ok: true, openingDay: '2026-11-30', trialDebitSen: 150_000, trialCreditSen: 150_000, balanced: false });
     expect(r.ok && r.controls).toEqual([
-      { role: 'AR', accountCode: '300-0000', controlSen: 50_000, documentsSen: 50_000, erpDocuments: 0 },
-      { role: 'AP', accountCode: '400-0000', controlSen: 30_000, documentsSen: 20_000, erpDocuments: 0 },
-      { role: 'AP_OTHER', accountCode: '405-0000', controlSen: 0, documentsSen: 0, erpDocuments: 0 },
+      { role: 'AR', accountCode: '300-0000', controlSen: 50_000, documentsSen: 50_000, erpDocuments: 0, unbilledContractsSen: 0 },
+      { role: 'AP', accountCode: '400-0000', controlSen: 30_000, documentsSen: 20_000, erpDocuments: 0, unbilledContractsSen: 0 },
+      { role: 'AP_OTHER', accountCode: '405-0000', controlSen: 0, documentsSen: 0, erpDocuments: 0, unbilledContractsSen: 0 },
     ]);
     expect(r.ok && r.banks).toEqual([{ accountCode: '310-0001', name: 'Acct 310-0001', balanceSen: 100_000 }]);
 
     await importOpeningPayables(sb, CO, [{ docNo: 'PI-2', supplierCode: '400-T001', invoiceDate: '2026-10-02', dueDate: '2026-11-01', outstandingSen: 10_000 }], ACTOR);
     expect(await openingCheck(sb, CO)).toMatchObject({ balanced: true });
+  });
+
+  test("the ERP's own bills count; an invoice settled from its deposit owes nothing; a contract's unbilled part is shown", async () => {
+    const sb = world();
+    await importOpeningJournal(sb, CO, BALANCED, ACTOR);
+    const je = sb.tables.journal_entries[0];
+    const gl = (l: Row, type = 'OPENING', doc: string | null = null) => ({ ...l, company_id: CO, entry_date: je.entry_date, posted: true, reversed: false, reversed_by_je: null, source_type: type, source_doc_no: doc });
+    sb.tables.v_gl_entries = sb.tables.journal_entry_lines.map((l) => gl(l));
+    // A contract signed for 80,000 on 300-0000, its deposit invoice of 10,000 settled from the deposit (10,000 received).
+    sb.tables.v_gl_entries.push(gl({ account_code: '300-0000', debit_sen: 80_000, credit_sen: 0 }, 'RCON', 'SO-1'));
+    sb.tables.v_gl_entries.push(gl({ account_code: '300-0000', debit_sen: 0, credit_sen: 10_000 }, 'SOPAY', 'SO-1'));
+    sb.tables.sales_invoices.push({ id: 'si-1', company_id: CO, invoice_number: 'SI-1', debtor_code: '300-A001', so_doc_no: 'SO-1', invoice_date: '2026-11-20',
+      total_sen: 10_000, paid_sen: 0, so_deposit_applied_sen: 10_000, status: 'PAID', opening_balance: false, migrated_no_stock: false });
+    sb.tables.ap_invoices.push({ id: 'ap-1', company_id: CO, supplier_id: 'sup-1', invoice_date: '2026-11-20', total_sen: 30_000, paid_sen: 0, status: 'POSTED' });
+    await importOpeningReceivables(sb, CO, [{ docNo: 'IV-1', debtorName: 'A', debtorCode: '300-A001', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 50_000 }], ACTOR);
+
+    const r = await openingCheck(sb, CO);
+    expect(r.ok && r.controls.slice(0, 2)).toEqual([
+      { role: 'AR', accountCode: '300-0000', controlSen: 120_000, documentsSen: 50_000, erpDocuments: 1, unbilledContractsSen: 70_000 },
+      { role: 'AP', accountCode: '400-0000', controlSen: 30_000, documentsSen: 30_000, erpDocuments: 1, unbilledContractsSen: 0 },
+    ]);
+    expect(r).toMatchObject({ balanced: true });
   });
 });
 
