@@ -20,10 +20,12 @@ const PASS_THROUGH = [
 /** A header PATCH that only names the customer (the same customer filed under two codes, merged into one; chew, 17 Nov
     2026): it touches neither the lines nor the money, so a renovation contract takes it. */
 const CUSTOMER_FIELDS = new Set(['debtorCode', 'debtorName']);
+/** The order's version rides along with every header save (the stale-screen guard), so it is allowed beside them. */
+const ALSO_ALLOWED = new Set(['version']);
 export function customerOnlyPatch(body: unknown): boolean {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
   const keys = Object.keys(body);
-  return keys.length > 0 && keys.every((k) => CUSTOMER_FIELDS.has(k));
+  return keys.some((k) => CUSTOMER_FIELDS.has(k)) && keys.every((k) => CUSTOMER_FIELDS.has(k) || ALSO_ALLOWED.has(k));
 }
 
 /** `rest` is the path after /:docNo/ (empty for /:docNo itself). */

@@ -96,6 +96,8 @@ describe('write fence on /mfg-sales-orders', () => {
     expect(customerOnlyPatch({ debtorCode: '301-M144' })).toBe(true);
     expect(customerOnlyPatch({ debtorCode: '301-M144', soDate: '2026-08-10' })).toBe(false);
     expect(customerOnlyPatch({})).toBe(false);
+    expect(customerOnlyPatch({ debtorCode: '301-M144', version: 2 })).toBe(true);
+    expect(customerOnlyPatch({ version: 2 })).toBe(false);
     expect(customerOnlyPatch(null)).toBe(false);
   });
 });
