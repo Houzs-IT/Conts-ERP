@@ -82,6 +82,7 @@ import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './account
 import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
 import { importOpeningDeposits, reverseOpeningDeposits } from '../../acc/opening-deposits';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
+import { AUTOCOUNT_MAX_DOCS, importAutocountJournals, type AutocountJournal } from '../../acc/autocount-journals';
 import { partyLedgerHandler } from '../../conts/party-ledger';
 import { createSubDepartmentHandler, listStaffDepartmentsHandler, listSubDepartmentsHandler, updateSubDepartmentHandler } from '../../conts/sub-department-routes';
 import { approveLimitRequestHandler, createLimitRequestHandler, getLimitSettingsHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler, setLimitSettingsHandler } from '../../conts/project-limit-routes';
@@ -595,6 +596,20 @@ export const openingPayablesHandler = async (c: AccCtx): Promise<Response> => {
   return c.json(await importOpeningPayables(c.get('supabase'), b.companyId, b.items, actorId(c)));
 };
 accounting.post('/opening/payables', openingPayablesHandler);
+
+/* The books kept in AutoCount after the ledger start, as journals (acc/autocount-journals.ts; chew, 17 Nov 2026). */
+export const autocountJournalsHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const docs = body?.docs;
+  if (!Array.isArray(docs) || docs.length === 0) return c.json({ error: 'Send the documents.' }, 400);
+  if (docs.length > AUTOCOUNT_MAX_DOCS) return c.json({ error: `At most ${AUTOCOUNT_MAX_DOCS} documents at a time.` }, 400);
+  return c.json(await importAutocountJournals(c.get('supabase'), co.companyId, docs as AutocountJournal[]));
+};
+accounting.post('/opening/autocount-journals', autocountJournalsHandler);
 
 export const openingCheckHandler = async (c: AccCtx): Promise<Response> => {
   if (!requireGlPost(c)) return c.json({ error: "You don't have permission to read the opening balances." }, 403);
