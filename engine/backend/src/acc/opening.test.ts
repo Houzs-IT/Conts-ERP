@@ -3,7 +3,7 @@
 import { describe, expect, test } from 'vitest';
 import { fakeSb, type Row } from '../scm/lib/fake-postgrest';
 import {
-  importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal,
+  cutoverDocuments, importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal,
 } from './opening';
 
 const CO = 1;
@@ -327,5 +327,41 @@ describe('the opening check, control by control', () => {
     expect(r.ok && r.controls.find((x) => x.accountCode === '301-0000')).toMatchObject({ role: 'AR', controlSen: 50_000, documentsSen: 50_000 });
     expect(r.ok && r.controls.find((x) => x.accountCode === '300-0000')).toMatchObject({ controlSen: 0, documentsSen: 0 });
     expect(r).toMatchObject({ balanced: true });
+  });
+});
+
+describe('the documents cut-over (chew, 17 Nov 2026)', () => {
+  const docsWorld = () => world({ sales_invoice_payments: [], pv_allocations: [] }, '2026-09-01');
+  test('a dry run says what it would do and changes nothing; the run removes the untouched opening documents and takes the new day', async () => {
+    const sb = docsWorld();
+    sb.tables.acc_company_settings[0]!.documents_cutover_date = null;
+    await importOpeningReceivables(sb, CO, [
+      { docNo: 'IV-1', debtorName: 'A', debtorCode: '300-A001', invoiceDate: '2026-08-05', dueDate: '2026-08-05', outstandingSen: 50_000 },
+      { docNo: 'IV-2', debtorName: 'A', debtorCode: '300-A001', invoiceDate: '2026-08-06', dueDate: '2026-08-06', outstandingSen: 10_000 },
+    ], ACTOR);
+    await importOpeningPayables(sb, CO, [
+      { docNo: 'PI-1', supplierCode: '400-T001', invoiceDate: '2026-08-01', dueDate: '2026-08-31', outstandingSen: 20_000 },
+      { docNo: 'PV-9', supplierCode: '400-T001', invoiceDate: '2026-08-02', dueDate: '2026-08-02', outstandingSen: -5_000 },
+    ], ACTOR);
+    /* IV-2 was paid in the ERP: it stays. */
+    const iv2 = sb.tables.sales_invoices.find((x) => x.invoice_number === 'IV-2')!;
+    sb.tables.sales_invoice_payments.push({ id: 'p1', sales_invoice_id: iv2.id });
+    const ar = [{ docNo: 'IV-30', debtorName: 'A', debtorCode: '300-A001', invoiceDate: '2026-10-20', dueDate: '2026-10-20', outstandingSen: 7_000 }];
+    const ap = [{ docNo: 'PI-40', supplierCode: '400-T001', invoiceDate: '2026-11-10', dueDate: '2026-11-30', outstandingSen: 3_000 }];
+    const dry = await cutoverDocuments(sb, CO, '2026-11-16', ar, ap, ACTOR, true);
+    expect(dry).toMatchObject({ done: false, remove: { invoices: 1, credits: 0, bills: 1, advances: 1 }, kept: [{ docNo: 'IV-2' }], incoming: { receivables: 1, payables: 1 } });
+    expect(sb.tables.sales_invoices).toHaveLength(2);
+    const run = await cutoverDocuments(sb, CO, '2026-11-16', ar, ap, ACTOR, false);
+    expect(run).toMatchObject({ done: true, receivables: { created: 1, errors: [] }, payables: { created: 1, errors: [] } });
+    expect(sb.tables.sales_invoices.map((x) => x.invoice_number).sort()).toEqual(['IV-2', 'IV-30']);
+    expect(sb.tables.purchase_invoices.map((x) => x.invoice_number)).toEqual(['PI-40']);
+    expect(sb.tables.payment_vouchers).toHaveLength(0);
+    expect(sb.tables.acc_supplier_advances).toHaveLength(0);
+    expect(sb.tables.acc_company_settings[0]!.documents_cutover_date).toBe('2026-11-16');
+    expect(sb.tables.journal_entries).toHaveLength(0);
+  });
+  test('a cut-over not after the opening day is refused', async () => {
+    const sb = docsWorld();
+    expect(await cutoverDocuments(sb, CO, '2026-08-31', [], [], ACTOR, true)).toMatchObject({ ok: false });
   });
 });

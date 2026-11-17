@@ -51,6 +51,16 @@ async function openingDayOf(sb: Db, companyId: number): Promise<{ ok: true; day:
   return { ok: true, day: dayBefore(ls.settings.ledgerStartDate) };
 }
 
+/** The day the open documents stand at: the documents' cut-over when one is set (migration 0333: AutoCount kept the
+    books after the start, so its open invoices and bills are taken as at the day it stopped), else the opening day. */
+async function documentsDayOf(sb: Db, companyId: number): Promise<{ ok: true; day: string; openingDay: string; cutover: boolean } | { ok: false; error: string }> {
+  const opening = await openingDayOf(sb, companyId);
+  if (!opening.ok) return opening;
+  const { data } = await sb.from('acc_company_settings').select('documents_cutover_date').eq('company_id', companyId).maybeSingle();
+  const cut = String((data as { documents_cutover_date?: string | null } | null)?.documents_cutover_date ?? '').slice(0, 10);
+  return isDay(cut) && cut > opening.day ? { ok: true, day: cut, openingDay: opening.day, cutover: true } : { ok: true, day: opening.day, openingDay: opening.day, cutover: false };
+}
+
 /** The OPENING journal that counts now (not reversed), if any. */
 async function activeOpening(sb: Db, companyId: number): Promise<{ ok: true; je: { id: string; je_no: string; entry_date: string } | null } | { ok: false; error: string }> {
   const { data, error } = await sb.from('journal_entries').select('id, je_no, entry_date, reversed')
@@ -113,7 +123,7 @@ function rowProblem(row: { docNo: string; invoiceDate: string; dueDate: string; 
   if (!row.docNo) return 'The document number is empty.';
   if (!isDay(row.invoiceDate)) return 'The document date is not a date (YYYY-MM-DD).';
   if (!isDay(row.dueDate)) return 'The due date is not a date (YYYY-MM-DD).';
-  if (row.invoiceDate > openingDay) return `Dated after the opening day ${openingDay}: it belongs in the books, not the opening balances.`;
+  if (row.invoiceDate > openingDay) return `Dated after ${openingDay}, the day the open documents stand at: it belongs in the books, not the opening lists.`;
   if (!Number.isInteger(row.outstandingSen) || row.outstandingSen === 0) return 'The outstanding amount must not be zero.';
   return null;
 }
@@ -172,7 +182,7 @@ async function insertInChunks(sb: Db, table: string, todo: Pending[], out: Openi
 export async function importOpeningReceivables(sb: Db, companyId: number, rows: OpeningArRow[], createdBy: string): Promise<OpeningImportResult> {
   const out: OpeningImportResult = { created: 0, skipped: 0, errors: [] };
   const todo: Pending[] = [];
-  const day = await openingDayOf(sb, companyId);
+  const day = await documentsDayOf(sb, companyId);
   if (!day.ok) return { ...out, errors: rows.map((r) => ({ docNo: text(r.docNo), error: day.error })) };
   const docs = await docIndex(sb, 'sales_invoices', companyId);
   if (!docs.ok) return { ...out, errors: rows.map((r) => ({ docNo: text(r.docNo), error: `The invoices could not be read: ${docs.error}` })) };
@@ -218,7 +228,7 @@ export async function importOpeningReceivables(sb: Db, companyId: number, rows: 
 export async function importOpeningPayables(sb: Db, companyId: number, rows: OpeningApRow[], createdBy: string): Promise<OpeningImportResult> {
   const out: OpeningImportResult = { created: 0, skipped: 0, errors: [] };
   const todo: Pending[] = [];
-  const day = await openingDayOf(sb, companyId);
+  const day = await documentsDayOf(sb, companyId);
   if (!day.ok) return { ...out, errors: rows.map((r) => ({ docNo: text(r.docNo), error: day.error })) };
   const docs = await docIndex(sb, 'purchase_invoices', companyId);
   if (!docs.ok) return { ...out, errors: rows.map((r) => ({ docNo: text(r.docNo), error: `The bills could not be read: ${docs.error}` })) };
@@ -297,6 +307,8 @@ export type ControlLine = {
 export type OpeningCheck = {
   ok: true;
   openingDay: string;
+  /** The day the controls and documents are compared on: the documents' cut-over when set, else the opening day. */
+  documentsDay: string;
   /** The OPENING journal now in the books, if any, and the day it is dated (a moved start date shows here). */
   openingJeNo: string | null;
   openingJeDate: string | null;
@@ -318,7 +330,8 @@ type CheckDoc = {
     stands for that day: the opening documents at their imported amount, plus anything raised in the ERP and dated
     before the books started (not posted, so the opening journal carries it too). */
 export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCheck | { ok: false; error: string }> {
-  const day = await openingDayOf(sb, companyId);
+  /* The controls and the documents are compared on the day the documents stand at (the cut-over when one is set). */
+  const day = await documentsDayOf(sb, companyId);
   if (!day.ok) return day;
   const DOC_COLS = 'total_sen, paid_sen, status, invoice_date, opening_balance, migrated_no_stock';
   const [sums, roles, opening, chart, sis, pis, sups, debtors, credits, advances] = await Promise.all([
@@ -400,12 +413,76 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
     .map((a) => ({ accountCode: a.account_code, name: a.account_name ?? a.account_code, balanceSen: net(a.account_code) }));
   return {
     ok: true,
-    openingDay: day.day,
+    openingDay: day.openingDay,
+    documentsDay: day.day,
     openingJeNo: opening.je?.je_no ?? null,
     openingJeDate: opening.je?.entry_date ?? null,
     trialDebitSen: sums.sums.reduce((t, s) => t + s.drSen, 0),
     trialCreditSen: sums.sums.reduce((t, s) => t + s.crSen, 0),
     controls, banks,
-    balanced: opening.je != null && opening.je.entry_date === day.day && controls.every((c) => c.controlSen === c.documentsSen),
+    balanced: opening.je != null && opening.je.entry_date === day.openingDay && controls.every((c) => c.controlSen === c.documentsSen),
   };
+}
+
+/* ── The documents' cut-over (chew, 17 Nov 2026) ─────────────────────────────────────────────────────────────────── */
+export type CutoverPlan = {
+  asOf: string;
+  remove: { invoices: number; credits: number; bills: number; advances: number };
+  /** Opening documents the ERP has already settled against (a payment, a credit spent, an allocation): kept as they are. */
+  kept: { docNo: string; why: string }[];
+  incoming: { receivables: number; payables: number };
+};
+export type CutoverResult = CutoverPlan & { done: boolean; receivables?: OpeningImportResult; payables?: OpeningImportResult };
+
+/** The open documents brought to AutoCount's as at `asOf` (the day it stopped keeping the books): the opening ones the
+    ERP has not touched are taken out (they post nothing: their money is in the OPENING journal, and AutoCount's ledger
+    after it came in as journals), the cut-over is set, and AutoCount's open documents on that day go in as the opening
+    lists do. The ledger does not move. `dryRun` says what would happen and changes nothing. */
+export async function cutoverDocuments(sb: Db, companyId: number, asOf: string, ar: OpeningArRow[], ap: OpeningApRow[], createdBy: string, dryRun: boolean): Promise<CutoverResult | { ok: false; error: string }> {
+  const opening = await openingDayOf(sb, companyId);
+  if (!opening.ok) return opening;
+  if (!isDay(asOf) || asOf <= opening.day) return { ok: false, error: `The cut-over must be a day after ${opening.day}.` };
+  const read = async (q: any) => { const { data, error } = await q; if (error) throw new Error(error.message); return (data ?? []) as any[]; };
+  try {
+    const sis = await read(sb.from('sales_invoices').select('id, invoice_number, paid_sen').eq('company_id', companyId).eq('opening_balance', true));
+    const siPaid = sis.length ? await read(sb.from('sales_invoice_payments').select('sales_invoice_id').in('sales_invoice_id', sis.map((x) => x.id))) : [];
+    const credits = await read(sb.from('customer_credits').select('id, debtor_code, source_doc_no').eq('company_id', companyId).eq('source_type', OPENING_CREDIT));
+    const spent = credits.length ? await read(sb.from('customer_credits').select('debtor_code').eq('company_id', companyId).in('debtor_code', [...new Set(credits.map((c) => c.debtor_code))]).neq('source_type', OPENING_CREDIT)) : [];
+    const pis = await read(sb.from('purchase_invoices').select('id, invoice_number, paid_sen').eq('company_id', companyId).eq('opening_balance', true));
+    const piPaid = pis.length ? await read(sb.from('pv_allocations').select('pi_id').in('pi_id', pis.map((x) => x.id))) : [];
+    const pvs = await read(sb.from('payment_vouchers').select('id, pv_number').eq('company_id', companyId).eq('opening_balance', true));
+    const advs = pvs.length ? await read(sb.from('acc_supplier_advances').select('pv_id, applied_sen').in('pv_id', pvs.map((x) => x.id))) : [];
+
+    const kept: { docNo: string; why: string }[] = [];
+    const paidSi = new Set(siPaid.map((p) => p.sales_invoice_id));
+    const siGo = sis.filter((x) => { const k = Number(x.paid_sen) > 0 || paidSi.has(x.id); if (k) kept.push({ docNo: x.invoice_number, why: 'a payment in the ERP' }); return !k; });
+    const spentBy = new Set(spent.map((c) => c.debtor_code));
+    const crGo = credits.filter((x) => { const k = spentBy.has(x.debtor_code); if (k) kept.push({ docNo: x.source_doc_no, why: 'the customer has spent or added credit in the ERP' }); return !k; });
+    const paidPi = new Set(piPaid.map((p) => p.pi_id));
+    const piGo = pis.filter((x) => { const k = Number(x.paid_sen) > 0 || paidPi.has(x.id); if (k) kept.push({ docNo: x.invoice_number, why: 'a payment in the ERP' }); return !k; });
+    const used = new Set(advs.filter((a) => Number(a.applied_sen) > 0).map((a) => a.pv_id));
+    const pvGo = pvs.filter((x) => { const k = used.has(x.id); if (k) kept.push({ docNo: x.pv_number, why: 'its advance is knocked off in the ERP' }); return !k; });
+
+    const plan: CutoverPlan = { asOf, remove: { invoices: siGo.length, credits: crGo.length, bills: piGo.length, advances: pvGo.length }, kept, incoming: { receivables: ar.length, payables: ap.length } };
+    if (dryRun) return { ...plan, done: false };
+
+    const del = async (table: string, ids: string[]) => {
+      for (let i = 0; i < ids.length; i += 200) { const { error } = await sb.from(table).delete().in('id', ids.slice(i, i + 200)); if (error) throw new Error(`${table}: ${error.message}`); }
+    };
+    await del('customer_credits', crGo.map((x) => x.id));
+    await del('sales_invoices', siGo.map((x) => x.id));
+    await del('purchase_invoices', piGo.map((x) => x.id));
+    for (let i = 0; i < pvGo.length; i += 200) {
+      const ids = pvGo.slice(i, i + 200).map((x) => x.id);
+      const a = await sb.from('acc_supplier_advances').delete().in('pv_id', ids); if (a.error) throw new Error(`acc_supplier_advances: ${a.error.message}`);
+    }
+    await del('payment_vouchers', pvGo.map((x) => x.id));
+    const set = await sb.from('acc_company_settings').update({ documents_cutover_date: asOf }).eq('company_id', companyId);
+    if (set.error) throw new Error(`settings: ${set.error.message}`);
+    const receivables = ar.length ? await importOpeningReceivables(sb, companyId, ar, createdBy) : undefined;
+    const payables = ap.length ? await importOpeningPayables(sb, companyId, ap, createdBy) : undefined;
+    return { ...plan, done: true, receivables, payables };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
