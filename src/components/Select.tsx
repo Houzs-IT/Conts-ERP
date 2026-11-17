@@ -55,6 +55,11 @@ export function Select({ value, onChange, options, label, showLabel, placeholder
   );
 }
 
+/* A group's heading in the open lists stands out from its rows (chew, 17 Nov 2026: "Renovation, Rental, Shared" should
+   be plain to see): darker, bolder, with a rule above every group but the first. */
+const GROUP_HEAD = 'px-3 pt-2.5 pb-1 text-meta font-bold uppercase tracking-[0.06em] text-ink';
+const GROUP_RULE = 'mt-1.5 border-0 border-t border-solid border-line';
+
 /**
  * A searchable picker for long lists (139 units): type to filter, options grouped (by building) and
  * sorted A to Z, arrow keys and Enter to choose, Escape to close. `allLabel` adds a first "All ..." row.
@@ -145,7 +150,7 @@ export function SearchSelect({ value, onChange, options, label, showLabel, allLa
               lastGroup = o.group;
               return (
                 <div key={`${o.value}-${i}`}>
-                  {head && <div className="px-3 pt-2 pb-1 text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{head}</div>}
+                  {head && <div className={cx(GROUP_HEAD, i > 0 && GROUP_RULE)}>{head}</div>}
                   <div id={`${listId}-${i}`} role="option" aria-selected={o.value === value} aria-disabled={o.disabled}
                     onMouseEnter={() => setActive(i)} onMouseDown={e => { e.preventDefault(); choose(o); }}
                     className={cx('mx-1 px-2.5 py-[7px] rounded-control flex items-center gap-2 text-copy cursor-pointer',
@@ -227,7 +232,7 @@ export function ComboInput({ value, onChange, options, label, placeholder, maxLe
             lastGroup = o.group;
             return (
               <Fragment key={`${o.value}-${i}`}>
-                {head && <div className="px-3 pt-2 pb-1 text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{head}</div>}
+                {head && <div className={cx(GROUP_HEAD, i > 0 && GROUP_RULE)}>{head}</div>}
                 <div id={`${listId}-${i}`} role="option" aria-selected={o.value === value}
                   onMouseEnter={() => setActive(i)} onMouseDown={e => { e.preventDefault(); pick(o); }}
                   className={cx('mx-1 px-2.5 py-[7px] rounded-control flex items-center gap-2 text-copy cursor-pointer', i === active && 'bg-muted', o.value === value && 'font-semibold')}>
@@ -314,7 +319,7 @@ export function ComboSelect({ value, onChange, options, label, placeholder = 'Ty
             lastGroup = o.group;
             return (
               <Fragment key={`${o.value}-${i}`}>
-                {head && <div className="px-3 pt-2 pb-1 text-caption font-semibold uppercase tracking-[0.06em] text-muted-ink">{head}</div>}
+                {head && <div className={cx(GROUP_HEAD, i > 0 && GROUP_RULE)}>{head}</div>}
                 <div id={`${listId}-${i}`} role="option" aria-selected={o.value === value} aria-disabled={o.disabled}
                   onMouseEnter={() => setActive(i)} onMouseDown={e => { e.preventDefault(); choose(o); }}
                   className={cx('mx-1 px-2.5 py-[7px] max-md:min-h-11 rounded-control flex items-center gap-2 text-copy cursor-pointer',
