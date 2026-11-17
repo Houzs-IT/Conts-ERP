@@ -6,3 +6,9 @@ export function depositSen(totalSen: number | null, percent: string): number | n
   if (totalSen == null || totalSen <= 0 || !String(percent).trim() || !Number.isFinite(pct) || pct <= 0 || pct > 100) return null;
   return Math.round((totalSen * pct) / 100);
 }
+
+/** The percent a typed deposit is of the total, to two places ("33.33"); null without a total. */
+export function percentOf(amountSen: number | null, totalSen: number | null): string | null {
+  if (amountSen == null || totalSen == null || totalSen <= 0) return null;
+  return String(Math.round((amountSen / totalSen) * 10_000) / 100);
+}

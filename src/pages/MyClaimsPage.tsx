@@ -27,7 +27,7 @@ import {
 } from '../lib/claims';
 import { canResubmit, fixOnUtilityBills, lineDraftOf, reasonNote, wantedOnAgain } from '../lib/requestResubmit';
 import { balanceSen, billLabel, canAskBalance, onBill, updatedFromBill } from '../lib/requestApInvoice';
-import { depositSen } from '../lib/deposit';
+import { depositSen, percentOf } from '../lib/deposit';
 
 /**
  * My claims (finance, 28-29 Oct 2026; SOP 3.2, 6): a member of staff hands something in and follows it, and, if they
@@ -129,6 +129,7 @@ function LineTargetFields({ line: l, sub, targets, onPick }: { line: LineDraft; 
     return <div className="flex flex-col gap-1"><span className="text-meta font-semibold text-ink">For</span><span className="text-copy text-muted-ink">Whole company</span></div>;
   }
   if (sub?.department === 'supply') {
+    if (projects.length === 0) return <div className="flex flex-col gap-1"><span className="text-meta font-semibold text-ink">Project</span><span className="text-copy text-muted-ink">No open project of this brand: {sub.name}'s own cost</span></div>;
     return <ComboSelect label="Project (optional)" value={l.where === 'project' ? l.projectId : ''} onChange={pickProject}
       placeholder={`No project: ${sub.name}'s own cost`} options={projects} />;
   }
@@ -138,8 +139,9 @@ function LineTargetFields({ line: l, sub, targets, onPick }: { line: LineDraft; 
         placeholder="Type a building or unit" options={targets.unitOptions} />
       {sub?.maintenance && <ComboSelect label="Or a maintenance job" value={l.where === 'job' ? l.jobId : ''} onChange={v => onPick(v ? only('job', { jobId: v }) : only('none', {}))}
         placeholder="Type the job or its unit" options={targets.jobOptions} />}
-      <ComboSelect label="Or a project" value={l.where === 'project' ? l.projectId : ''} onChange={pickProject}
-        placeholder="Type the project name or code" options={projects} />
+      {/* The company's own Rental projects only; none open, no box (chew, 17 Nov 2026). */}
+      {projects.length > 0 && <ComboSelect label="Or a project" value={l.where === 'project' ? l.projectId : ''} onChange={pickProject}
+        placeholder="Type the project name or code" options={projects} />}
     </>
   );
 }
@@ -440,8 +442,21 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
                 )}
                 <FileDropRow label={kept.length ? 'Add more papers (optional)' : 'Add the invoice, receipt or quotation'} hint="Photos or a PDF. Empty fields are filled from it; check them before you send." accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
                   busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <ChoiceChips label="What to pay" value={type} onChange={setType} options={[{ value: 'PAYMENT', label: 'A payment' }, { value: 'DEPOSIT', label: 'A deposit' }]}
+                  help={type === 'PAYMENT' ? 'A bill to pay: an invoice or a receipt from the supplier.' : 'Paid before the bill, to a supplier on the list; their bill later is set off against it.'} />
+                {/* A deposit is a percent of the bill or quotation, or an amount typed; either way the amount stays the one
+                    to change (chew, 17 Nov 2026: a percent or an amount). The percent follows a typed amount back. */}
+                {type === 'DEPOSIT' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                    <MoneyInput label="Bill or quotation total" valueSen={billTotalSen} onChangeSen={v => { setBillTotalSen(v); shareOf(v, depositPct); }} />
+                    <Field label="Deposit %" numeric inputMode="decimal" value={depositPct} trailing="%" placeholder="e.g. 50"
+                      onChange={e => { setDepositPct(e.target.value); shareOf(billTotalSen, e.target.value); }} />
+                    <MoneyInput label="Deposit amount" required valueSen={amountSen} onChangeSen={v => { setAmountSen(v); setDepositPct(percentOf(v, billTotalSen) ?? depositPct); }} />
+                  </div>
+                ) : (
                   <MoneyInput label="Amount" required valueSen={amountSen} onChangeSen={setAmountSen} />
+                )}
+                <div className="sm:max-w-[50%]">
                   <DateField label="Pay by (optional)" value={wantedOn} onChange={setWantedOn} min={todayMyt()} />
                 </div>
               </div>
@@ -449,16 +464,6 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
             <section className="ds-fs">
               <div className="ds-fs-h"><b>Who is paid</b></div>
               <div className="flex flex-col gap-3">
-                <ChoiceChips label="What to pay" value={type} onChange={setType} options={[{ value: 'PAYMENT', label: 'A payment' }, { value: 'DEPOSIT', label: 'A deposit' }]}
-                  help={type === 'PAYMENT' ? 'A bill to pay: an invoice or a receipt from the supplier.' : 'Paid before the bill, to a supplier on the list; their bill later is set off against it.'} />
-                {type === 'DEPOSIT' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-                    <MoneyInput label="Bill or quotation total (optional)" valueSen={billTotalSen} onChangeSen={v => { setBillTotalSen(v); shareOf(v, depositPct); }} />
-                    <Field label="Deposit %" numeric inputMode="decimal" value={depositPct} trailing="%" placeholder="e.g. 50"
-                      onChange={e => { setDepositPct(e.target.value); shareOf(billTotalSen, e.target.value); }}
-                      help="Works out the amount above; or type the amount yourself." />
-                  </div>
-                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
                   <Field label="Find a PO (optional)" value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="PO number" />
                   {/* The chosen PO stays an option when a new search no longer finds it, so the box never shows "Not against a

@@ -17,3 +17,10 @@ test('nothing while the total or the percent is missing or out of range', () => 
   assert.equal(depositSen(1_000_000, '120'), null);
   assert.equal(depositSen(1_000_000, 'abc'), null);
 });
+
+test('a typed deposit shows its percent of the total, to two places', async () => {
+  const { percentOf } = await import('./deposit.ts');
+  assert.equal(percentOf(300_000, 1_000_000), '30');
+  assert.equal(percentOf(333_333, 1_000_000), '33.33');
+  assert.equal(percentOf(500_000, null), null);
+});
