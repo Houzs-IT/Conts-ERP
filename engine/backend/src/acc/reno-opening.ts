@@ -172,10 +172,10 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
       const contractSen = so
         ? items.filter((i) => i.doc_no === r.soDocNo && i.cancelled !== true && i.item_code !== 'RENO-CREDIT').reduce((s, i) => s + Number(i.total_sen ?? 0), 0)
         : null;
-      /* The contract at go-live: today's less the VOs approved or dated on or after the ledger start (they post as RVO). */
-      const afterStart = start
+      /* The contract at go-live: today's less the VOs approved or dated on or after go-live (they post as RVO). */
+      const afterStart = goLive
         ? vos.filter((v) => v.so_doc_no === r.soDocNo && v.status === 'APPROVED'
-          && ((v.doc_date != null && String(v.doc_date).slice(0, 10) >= start) || (v.approved_at != null && mytDay(v.approved_at) >= start)))
+          && ((v.doc_date != null && String(v.doc_date).slice(0, 10) >= goLive) || (v.approved_at != null && mytDay(v.approved_at) >= goLive)))
           .reduce((s, v) => s + Number(v.net_sen ?? 0), 0)
         : 0;
       const goLiveContractSen = contractSen == null ? null : contractSen - afterStart;
