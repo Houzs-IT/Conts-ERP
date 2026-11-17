@@ -14,8 +14,9 @@ import type { RuleLine } from '../acc/rules';
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as in the modules it sits beside */
 type Db = any;
 
-/** Each accrual's expense: 420-0010 electrical, 420-0020 water, 420-0030 internet, 420-0040 Indah Water. */
-export const ACCRUAL_EXPENSE: Record<string, string> = { '420-0010': '650-0020', '420-0020': '650-0010', '420-0030': '650-0030', '420-0040': '650-0040' };
+/** Each accrual's expense: 420-0010 electrical, 420-0020 water, 420-0030 internet, 420-0040 Indah Water. Indah Water's
+ *  expense is 650-0130, not 650-0040, which is ABNB CLEANING EXPENSE in the chart (chew, 17 Nov 2026). */
+export const ACCRUAL_EXPENSE: Record<string, string> = { '420-0010': '650-0020', '420-0020': '650-0010', '420-0030': '650-0030', '420-0040': '650-0130' };
 export const ACCRUAL_SOURCE = 'UTA';
 
 type Line = { account_code: string | null; amount_sen: number; bill_date: string | null; description: string | null; unit_id: string | null; sort: number };

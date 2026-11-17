@@ -66,6 +66,18 @@ describe('a utility request paid: its expense against the accrual, on the bill d
     expect(entries(sb).map(e => e.doc)).toEqual(['PRQ-2611-007/2026-10-24']);
     expect(linesOf(sb, 'PRQ-2611-007/2026-10-24')).toEqual([['650-0010', 2_000, 0, 'U2'], ['420-0020', 0, 2_000, 'U2']]);
   });
+  test("Indah Water books to 650-0130; 650-0040 is cleaning, never Indah Water's (chew, 17 Nov 2026)", async () => {
+    const sb = world({ chart: ['420-0040', '650-0040'].map(c => acct(c)) });
+    sb.tables.payment_request_lines = [{ id: 'L9', request_id: 'Q1', sort: 0, account_code: '420-0040', amount_sen: 20_000, bill_date: '2026-10-31', description: 'Indah Water 2026-10', unit_id: 'U1' }];
+    sb.tables.payment_voucher_lines[0].amount_sen = 20_000;
+    sb.tables.payment_requests[0].amount_sen = 20_000;
+    await settleRequest(sb, 'Q1');
+    expect(sb.tables.journal_entries).toHaveLength(0);
+    sb.tables.accounts.push(acct('650-0130'));
+    sb.tables.payment_requests[0].status = 'SUBMITTED';
+    await settleRequest(sb, 'Q1');
+    expect(linesOf(sb, 'PRQ-2611-007/2026-10-31')).toEqual([['650-0130', 20_000, 0, 'U1'], ['420-0040', 0, 20_000, 'U1']]);
+  });
   test('a bill from before the books start is booked on the start date', async () => {
     const sb = world({ start: '2026-10-01' });
     await settleRequest(sb, 'Q1');

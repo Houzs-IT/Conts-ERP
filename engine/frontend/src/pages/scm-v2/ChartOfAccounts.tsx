@@ -90,6 +90,10 @@ export function parseChartXlsx(wb: XLSX.WorkBook, known: ReadonlyArray<AccountSe
   const unknownSections: string[] = [];
   let section = '';
   const prevByDepth: Record<number, string> = {};
+  /* The level is the indent's rank among the widths the file uses, not its width / 4: AutoCount indents its three
+     levels by 0, 4 and 6 spaces, and width / 4 read the third as the second (chew, 17 Nov 2026: the chart came in two
+     levels deep). */
+  const widths = [...new Set(grid.map((r) => String(r[0] ?? '').match(CODE_RE)?.[1]?.length).filter((w): w is number => w != null))].sort((x, y) => x - y);
   for (const r of grid) {
     const c0 = String(r[0] ?? '');
     const m = c0.match(CODE_RE);
@@ -105,7 +109,7 @@ export function parseChartXlsx(wb: XLSX.WorkBook, known: ReadonlyArray<AccountSe
       }
       continue;
     }
-    const depth = Math.floor(m[1]!.length / 4);
+    const depth = widths.indexOf(m[1]!.length);
     const code = m[2]!;
     const special = r[col.special] != null ? String(r[col.special]).trim().toUpperCase() : '';
     const name = String(r[col.name] ?? '').trim() || code;
