@@ -134,6 +134,15 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
     const accounts = await readIn<{ account_code: string; parent_code: string | null; is_active: boolean | null }>(
       sb, 'accounts', 'account_code, parent_code, is_active', 'account_code', accountCodes, byCompany);
     const children = await readIn<{ parent_code: string }>(sb, 'accounts', 'parent_code', 'parent_code', accountCodes, byCompany);
+    /* AutoCount files a project's account under its month (480-0000 > 480-0009 ACCRUAL SALES - SEP'26 > 480-B003): a
+       grandchild of the advance parent is as good as a child. */
+    const parentCodes = [...new Set(accounts.map((x) => String(x.parent_code ?? '')).filter((c) => c && !ADVANCE_PARENTS.includes(c)))];
+    const parents = await readIn<{ account_code: string; parent_code: string | null }>(sb, 'accounts', 'account_code, parent_code', 'account_code', parentCodes, byCompany);
+    const grandOf = new Map(parents.map((x) => [x.account_code, String(x.parent_code ?? '')]));
+    const underAdvance = (parent: string | null | undefined): boolean => {
+      const p = String(parent ?? '');
+      return ADVANCE_PARENTS.includes(p) || ADVANCE_PARENTS.includes(grandOf.get(p) ?? '');
+    };
     const allocs = await readIn<{ so_doc_no: string; source_type: string; source_doc_no: string }>(
       sb, 'reno_revenue_allocations', 'so_doc_no, source_type, source_doc_no', 'so_doc_no', docs, byCompany);
     const vos = await readIn<{ so_doc_no: string; status: string; doc_date: string | null; approved_at: string | null; net_sen: number | null }>(
@@ -202,7 +211,7 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
 
       const acc = accountOf.get(r.advanceAccountCode);
       if (!r.advanceAccountCode) problems.push('No advance account.');
-      else if (!acc || !ADVANCE_PARENTS.includes(String(acc.parent_code ?? ''))) {
+      else if (!acc || !underAdvance(acc.parent_code)) {
         problems.push(`${r.advanceAccountCode} is not a sub-account of ${ADVANCE_PARENTS.join(' or ')} in the chart.`);
       } else if (acc.is_active === false) problems.push(`${r.advanceAccountCode} is deactivated in the chart.`);
       else if (isHeader.has(r.advanceAccountCode)) problems.push(`${r.advanceAccountCode} has sub-accounts of its own: pick the project's own account.`);
