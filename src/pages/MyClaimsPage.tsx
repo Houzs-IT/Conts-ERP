@@ -309,11 +309,21 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
   const switchKind = (k: Kind) => { if (k !== kind) { readNo.current++; setReading(false); setKind(k); setFiles([]); setProblem(null); } };
   /* The form as it is NOW, for a bill read that comes back after the person changed it (a PO or supplier picked,
      a payee typed while reading): pick()'s own variables are the values from when the files were chosen. */
-  const formNow = useRef({ amountSen, hasSupplierOrPo: false, payeeName, wantedOn, note });
-  formNow.current = { amountSen, hasSupplierOrPo: !!supplier || !!poId, payeeName, wantedOn, note };
+  const formNow = useRef({ amountSen, hasSupplierOrPo: false, payeeName, wantedOn, note, billTotalSen, depositPct });
+  formNow.current = { amountSen, hasSupplierOrPo: !!supplier || !!poId, payeeName, wantedOn, note, billTotalSen, depositPct };
+  /* The figures the last papers read put in: papers picked again replace those, never a figure the person typed
+     (chew, 17 Nov 2026: a new quotation's total did not replace the old one's). */
+  const readFig = useRef<{ amountSen: number | null; totalSen: number | null }>({ amountSen: null, totalSen: null });
+  const takeRead = (key: 'amountSen' | 'totalSen', now: number | null, read: number | null | undefined, set: (v: number) => void): boolean => {
+    if (read == null || read <= 0 || (now != null && now !== readFig.current[key])) return false;
+    readFig.current[key] = read;
+    set(read);
+    return true;
+  };
 
   async function pick(list: FileList) {
-    const chosen = [...files, ...Array.from(list)].slice(0, 8);
+    /* The papers picked replace the ones before ("Click or drop to replace"); every page of one bill is picked together. */
+    const chosen = Array.from(list).slice(0, 8);
     setFiles(chosen);
     if (kind === 'direct') {
       /* The bill fills what is still empty (Houzs payment-request-bill.ts): amount, the supplier it names, pay by,
@@ -325,10 +335,10 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
       setReading(false);
       const fill = requestBillFill(read, { ...formNow.current, today: todayMyt() });
       /* A deposit's bill is the whole quotation: its total, of which the deposit is a share. */
-      if (fill.amountSen != null) {
-        if (type === 'DEPOSIT') setBillTotalSen(t => { const total = t ?? fill.amountSen!; shareOf(total, depositPct); return total; });
-        else setAmountSen(a => a ?? fill.amountSen!);
-      }
+      const f = formNow.current;
+      if (type === 'DEPOSIT') {
+        if (takeRead('totalSen', f.billTotalSen, read.amountSen, setBillTotalSen)) shareOf(read.amountSen!, f.depositPct);
+      } else takeRead('amountSen', f.amountSen, read.amountSen, setAmountSen);
       if (fill.supplier && !formNow.current.hasSupplierOrPo) setSupplier(s => s ?? fill.supplier!);
       if (fill.payeeName) setPayeeName(v => v || fill.payeeName!);
       if (fill.wantedOn) setWantedOn(v => v || fill.wantedOn!);
@@ -340,8 +350,8 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
     const read = await readReceipt(chosen);
     if (mine !== readNo.current) return;
     setReading(false);
-    /* Only what is still empty when the read comes back: a figure typed while it was reading stays. */
-    if (read.amountSen != null) setAmountSen(a => a ?? read.amountSen);
+    /* A figure typed (now or while it was reading) stays; one the last papers put in is replaced. */
+    takeRead('amountSen', formNow.current.amountSen, read.amountSen, setAmountSen);
     if (read.date && read.date <= todayMyt() && !dateTyped.current) setSpendDate(read.date);
     if (read.vendorName) setVendorName(v => v || read.vendorName || '');
   }
