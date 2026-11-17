@@ -30,7 +30,7 @@ import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, rec
 import type { Staff } from './staff-identity';
 import { bankDetailsOf } from './petty-cash-routes';
 import { buildLines, defaultLineSubs, withTargetLabels } from './claims-lines';
-import { loadSubDepartments, subForStaffDepartment } from './sub-departments';
+import { RENO_KIND_OF, loadSubDepartments, projectRenoKind, projectSide, subForStaffDepartment } from './sub-departments';
 import { myRequestRoutes } from './payment-request-routes';
 import { utilityBillRoutes } from './utility-bill-routes';
 
@@ -299,13 +299,18 @@ export const accountsHandler = async (c: Ctx): Promise<Response> => {
   return c.json({ accounts });
 };
 
-/** Projects a cost can be put on: the company's projects not archived. */
+/** Projects a cost can be put on: the company's projects not archived, each with its side (the company's own Rental
+ *  project is Rental, every other one Renovation) and brand, so a line offers only those that fit its department, as the
+ *  payment voucher does (chew, 17 Nov 2026). */
 export const projectsHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const { data, error } = await c.get('supabase').schema('public').from('projects').select('id, code, name, archived_at').eq('company_id', co.companyId).is('archived_at', null);
+  const sb = c.get('supabase');
+  const { data, error } = await sb.schema('public').from('projects').select('id, code, name, archived_at, funding, internal_department').eq('company_id', co.companyId).is('archived_at', null);
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-  const projects = ((data ?? []) as Array<{ id: number; code: string | null; name: string }>).map(p => ({ id: Number(p.id), code: p.code, name: p.name }))
+  const rows = (data ?? []) as Array<{ id: number; code: string | null; name: string; funding: string | null; internal_department: string | null }>;
+  const kinds = await projectRenoKind(sb, co.companyId, rows.map(p => Number(p.id)));
+  const projects = rows.map(p => ({ id: Number(p.id), code: p.code, name: p.name, side: projectSide(p), renoKind: kinds.get(Number(p.id)) ?? null }))
     .sort((a, b) => a.name.localeCompare(b.name));
   return c.json({ projects });
 };
@@ -320,7 +325,9 @@ export const subDepartmentsHandler = async (c: Ctx): Promise<Response> => {
   if (!loaded.ok) return c.json({ error: 'load_failed', reason: loaded.error }, 500);
   let mine: string | null = null;
   try { mine = subForStaffDepartment(loaded.list, s.departmentId, lineDepartment(s.side)).id; } catch { /* not set up yet */ }
-  const subDepartments = loaded.list.filter(x => x.active).map(x => ({ id: x.id, department: x.department, name: x.name }));
+  /* renoKind: the brand a Renovation sub-department's projects are; maintenance: a Rental one whose lines may name a job. */
+  const subDepartments = loaded.list.filter(x => x.active).map(x => ({ id: x.id, department: x.department, name: x.name,
+    renoKind: x.fixedKey ? RENO_KIND_OF[x.fixedKey] ?? null : null, maintenance: x.department === 'rental' && /maint/i.test(x.name) }));
   return c.json({ subDepartments, mine });
 };
 

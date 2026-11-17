@@ -23,10 +23,11 @@ import { api, errorMessage } from '../lib/api';
 import { date, monthLabel, rm, todayMyt, buildingName } from '../lib/format';
 import {
   DEPARTMENT, RECEIPT_STATUS, RECEIPT_TONE, REQUEST_STATUS, REQUEST_TONE, describeClaimLine, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, requestFileHref, thisMonthMyt,
-  type ClaimFile, type ClaimLine, type LineDepartment, type LineSubDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt,
+  type ClaimFile, type ClaimLine, type LineDepartment, type LineSubDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt
 } from '../lib/claims';
 import { canResubmit, fixOnUtilityBills, lineDraftOf, reasonNote, wantedOnAgain } from '../lib/requestResubmit';
 import { balanceSen, billLabel, canAskBalance, onBill, updatedFromBill } from '../lib/requestApInvoice';
+import { depositSen } from '../lib/deposit';
 
 /**
  * My claims (finance, 28-29 Oct 2026; SOP 3.2, 6): a member of staff hands something in and follows it, and, if they
@@ -81,10 +82,13 @@ export default function MyClaimsPage() {
   );
 }
 
+type LineProject = { id: number; code: string | null; name: string; side?: LineDepartment; renoKind?: 'RENOVATION' | 'INHOUSE_RENOVATION' | null };
 interface LineTargets {
   unitOptions: SelectOption[];
   jobOptions: SelectOption[];
-  projectOptions: SelectOption[];
+  /** The projects that fit a sub-department, as the payment voucher offers them: its side, and a Renovation one's brand. */
+  projectsFor: (sub: LineSubDepartment | null) => SelectOption[];
+  subs: LineSubDepartment[];
   /** The sub-departments, grouped by department, and the person's own (the one a line starts on). */
   subOptions: SelectOption[];
   mineSub: LineSubDepartment | null;
@@ -94,24 +98,56 @@ interface LineTargets {
 function useLineTargets(): LineTargets {
   const units = useApi<{ units: { id: string; building: string; unitNumber: string }[] }>('/claims/units');
   const jobs = useApi<{ jobs: { id: string; unitId: string; title: string }[] }>('/claims/jobs');
-  const projects = useApi<{ projects: { id: number; code: string | null; name: string }[] }>('/claims/projects');
+  const projects = useApi<{ projects: LineProject[] }>('/claims/projects');
   const subs = useApi<{ subDepartments: LineSubDepartment[]; mine: string | null }>('/claims/sub-departments');
   return useMemo(() => {
     const unitOptions = (units.data?.units ?? []).map(u => ({ value: u.id, label: `${buildingName(u.building)} ${u.unitNumber}`, group: buildingName(u.building) }));
     const unitLabels = new Map(unitOptions.map(o => [o.value, o.label]));
     const jobOptions = (jobs.data?.jobs ?? []).map(j => ({ value: j.id, label: j.title, hint: unitLabels.get(j.unitId) }));
-    const projectOptions = (projects.data?.projects ?? []).map(p => ({ value: String(p.id), label: [p.code, p.name].filter(Boolean).join(' ') }));
+    const all = projects.data?.projects ?? [];
+    const projectsFor = (sub: LineSubDepartment | null) => all
+      .filter(p => !sub || (sub.department !== 'shared' && (!p.side || p.side === sub.department) && (!sub.renoKind || !p.renoKind || p.renoKind === sub.renoKind)))
+      .map(p => ({ value: String(p.id), label: [p.code, p.name].filter(Boolean).join(' ') }));
     const list = subs.data?.subDepartments ?? [];
     const mineSub = list.find(x => x.id === subs.data?.mine) ?? null;
     const subOptions = list.map(x => ({ value: x.id, label: x.id === mineSub?.id ? `${x.name} (your department)` : x.name, group: DEPARTMENT[x.department] }));
-    return { unitOptions, jobOptions, projectOptions, subOptions, mineSub };
+    return { unitOptions, jobOptions, projectsFor, subs: list, subOptions, mineSub };
   }, [units.data, jobs.data, projects.data, subs.data]);
 }
 
-/** The cost lines: what it was for, and the department: the person's own to start with, which they may change (SOP 1.1;
- *  chew 16 Nov 2026). A maintenance job's line is the job's, Maintenance. Finance sets the account. */
+/** The cost lines, as the payment voucher takes them (chew, 17 Nov 2026): the department first (the person's own to start
+ *  with, which they may change; SOP 1.1), then what it brings: a Rental line's unit or Rental project (and a Maintenance
+ *  line's job), a Renovation line's project of its brand (optional), nothing for the Company. Finance sets the account. */
+/** What a line's department brings, as on the payment voucher: Rental its unit or a Rental project (Maintenance also a job),
+ *  Renovation a project of its brand (optional), the Company nothing. One of them at a time. */
+function LineTargetFields({ line: l, sub, targets, onPick }: { line: LineDraft; sub: LineSubDepartment | null; targets: LineTargets; onPick: (p: Partial<LineDraft>) => void }) {
+  const only = (where: LineDraft['where'], patch: Partial<LineDraft>): Partial<LineDraft> =>
+    ({ where, unitId: '', jobId: '', projectId: '', ...patch });
+  const pickProject = (v: string) => onPick(v ? only('project', { projectId: v }) : only('none', {}));
+  const projects = targets.projectsFor(sub);
+  if (sub?.department === 'shared') {
+    return <div className="flex flex-col gap-1"><span className="text-meta font-semibold text-ink">For</span><span className="text-copy text-muted-ink">Whole company</span></div>;
+  }
+  if (sub?.department === 'supply') {
+    return <ComboSelect label="Project (optional)" value={l.where === 'project' ? l.projectId : ''} onChange={pickProject}
+      placeholder={`No project: ${sub.name}'s own cost`} options={projects} />;
+  }
+  return (
+    <>
+      <ComboSelect label="Unit" value={l.where === 'unit' ? l.unitId : ''} onChange={v => onPick(v ? only('unit', { unitId: v }) : only('none', {}))}
+        placeholder="Type a building or unit" options={targets.unitOptions} />
+      {sub?.maintenance && <ComboSelect label="Or a maintenance job" value={l.where === 'job' ? l.jobId : ''} onChange={v => onPick(v ? only('job', { jobId: v }) : only('none', {}))}
+        placeholder="Type the job or its unit" options={targets.jobOptions} />}
+      <ComboSelect label="Or a project" value={l.where === 'project' ? l.projectId : ''} onChange={pickProject}
+        placeholder="Type the project name or code" options={projects} />
+    </>
+  );
+}
+
 function LinesEditor({ lines, setLines, totalSen, department }: { lines: LineDraft[]; setLines: (l: LineDraft[]) => void; totalSen: number | null; department: LineDepartment }) {
-  const { unitOptions, jobOptions, projectOptions, subOptions, mineSub } = useLineTargets();
+  const targets = useLineTargets();
+  const { subOptions, mineSub, subs } = targets;
+  const subOf = (l: LineDraft) => subs.find(x => x.id === (l.subDepartmentId || mineSub?.id)) ?? null;
   const set = (i: number, patch: Partial<LineDraft>) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const split = lines.length > 1;
   return (
@@ -124,28 +160,20 @@ function LinesEditor({ lines, setLines, totalSen, department }: { lines: LineDra
               <Button variant="ghost" size="sm" onClick={() => setLines(lines.filter((_, j) => j !== i))}>Remove</Button>
             </div>
           )}
-          {l.where === 'job' || subOptions.length === 0 ? (
+          {subOptions.length === 0 ? (
             <div className="flex flex-col gap-1">
               <span className="text-meta font-semibold text-ink">Department</span>
-              <span className="text-copy text-muted-ink">
-                {l.where === 'job' ? `${DEPARTMENT.rental} (a maintenance job)` : `${DEPARTMENT[department]} (from your department)`}
-              </span>
+              <span className="text-copy text-muted-ink">{`${DEPARTMENT[department]} (from your department)`}</span>
             </div>
           ) : (
             <div className="sm:max-w-[360px]">
-              <ComboSelect label="Department" value={l.subDepartmentId || mineSub?.id || ''} onChange={v => set(i, { subDepartmentId: v === mineSub?.id ? '' : v })}
+              <ComboSelect label="Department" value={l.subDepartmentId || mineSub?.id || ''}
+                onChange={v => set(i, { subDepartmentId: v === mineSub?.id ? '' : v, where: 'none', unitId: '', jobId: '', projectId: '' })}
                 placeholder="Type a department" options={subOptions} />
             </div>
           )}
-          <ChoiceChips label="For" value={l.where} onChange={v => set(i, { where: v })}
-            options={[{ value: 'none', label: 'The department' }, { value: 'unit', label: 'A unit' }, { value: 'job', label: 'A maintenance job' }, { value: 'project', label: 'A project' }]} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-            {l.where === 'unit' && <ComboSelect label="Unit" value={l.unitId} onChange={v => set(i, { unitId: v })}
-              placeholder="Type a building or unit" options={unitOptions} />}
-            {l.where === 'job' && <ComboSelect label="Maintenance job" value={l.jobId} onChange={v => set(i, { jobId: v })}
-              placeholder="Type the job or its unit" options={jobOptions} />}
-            {l.where === 'project' && <ComboSelect label="Project" value={l.projectId} onChange={v => set(i, { projectId: v })}
-              placeholder="Type the project name or code" options={projectOptions} />}
+            <LineTargetFields line={l} sub={subOf(l)} targets={targets} onPick={patch => set(i, patch)} />
             <Field label="Description" value={l.description} onChange={e => set(i, { description: e.target.value })} placeholder="e.g. tap for the kitchen" maxLength={300} />
             {split && <MoneyInput label="Amount" required valueSen={l.amountSen} onChangeSen={v => set(i, { amountSen: v })} />}
           </div>
@@ -249,6 +277,16 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
   const [vendorName, setVendorName] = useState('');
   /* Direct pay */
   const [type, setType] = useState<'PAYMENT' | 'DEPOSIT'>(editing?.type ?? 'PAYMENT');
+  /* A deposit as a share of the bill or quotation, or its amount typed straight in (chew, 17 Nov 2026). */
+  const [billTotalSen, setBillTotalSen] = useState<number | null>(null);
+  const [depositPct, setDepositPct] = useState('');
+  const shareOf = (total: number | null, pct: string) => { const sen = depositSen(total, pct); if (sen != null) setAmountSen(sen); };
+  /* The note finance reads: the share, when the amount is still that share of the total. */
+  const depositNote = () => {
+    const share = type === 'DEPOSIT' ? depositSen(billTotalSen, depositPct) : null;
+    const said = share != null && share === amountSen ? `Deposit ${depositPct.trim()}% of ${rm(billTotalSen!)}` : '';
+    return [said, note.trim()].filter(Boolean).join(' · ');
+  };
   const [supplier, setSupplier] = useState<Supplier | null>(editing?.supplierId && !editing.purchaseOrderId ? { id: editing.supplierId, code: '', name: editing.payeeName } : null);
   const [poSearch, setPoSearch] = useState('');
   const [po, setPo] = useState<{ id: string; label: string } | null>(editing?.purchaseOrderId ? { id: editing.purchaseOrderId, label: 'The PO on this request' } : null);
@@ -284,7 +322,11 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
       if (mine !== readNo.current) return;
       setReading(false);
       const fill = requestBillFill(read, { ...formNow.current, today: todayMyt() });
-      if (fill.amountSen != null) setAmountSen(a => a ?? fill.amountSen!);
+      /* A deposit's bill is the whole quotation: its total, of which the deposit is a share. */
+      if (fill.amountSen != null) {
+        if (type === 'DEPOSIT') setBillTotalSen(t => { const total = t ?? fill.amountSen!; shareOf(total, depositPct); return total; });
+        else setAmountSen(a => a ?? fill.amountSen!);
+      }
       if (fill.supplier && !formNow.current.hasSupplierOrPo) setSupplier(s => s ?? fill.supplier!);
       if (fill.payeeName) setPayeeName(v => v || fill.payeeName!);
       if (fill.wantedOn) setWantedOn(v => v || fill.wantedOn!);
@@ -321,7 +363,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
       } else {
         const body = {
           type, supplierId: poId ? undefined : supplier?.id, purchaseOrderId: poId || undefined, payeeName: !poId && !supplier ? payeeName.trim() || undefined : undefined,
-          amountSen, wantedOn: wantedOn || undefined, note: note.trim() || undefined, lines: built.lines,
+          amountSen, wantedOn: wantedOn || undefined, note: depositNote() || undefined, lines: built.lines,
         };
         if (editing) {
           await postWithFiles<{ requestNo: string }>(`/claims/requests/${editing.id}/resubmit`, { ...body, keepFileIds: kept.map(f => f.id) }, files);
@@ -409,6 +451,14 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
               <div className="flex flex-col gap-3">
                 <ChoiceChips label="What to pay" value={type} onChange={setType} options={[{ value: 'PAYMENT', label: 'A payment' }, { value: 'DEPOSIT', label: 'A deposit' }]}
                   help={type === 'PAYMENT' ? 'A bill to pay: an invoice or a receipt from the supplier.' : 'Paid before the bill, to a supplier on the list; their bill later is set off against it.'} />
+                {type === 'DEPOSIT' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                    <MoneyInput label="Bill or quotation total (optional)" valueSen={billTotalSen} onChangeSen={v => { setBillTotalSen(v); shareOf(v, depositPct); }} />
+                    <Field label="Deposit %" numeric inputMode="decimal" value={depositPct} trailing="%" placeholder="e.g. 50"
+                      onChange={e => { setDepositPct(e.target.value); shareOf(billTotalSen, e.target.value); }}
+                      help="Works out the amount above; or type the amount yourself." />
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
                   <Field label="Find a PO (optional)" value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="PO number" />
                   {/* The chosen PO stays an option when a new search no longer finds it, so the box never shows "Not against a
