@@ -145,7 +145,7 @@ export function downloadTemplate(kind: OpeningKind): void {
 
 /* ── The server ─────────────────────────────────────────────────────────────────────────────────────────────── */
 /** One control account against the documents that should explain it (backend/src/acc/opening.ts ControlLine). */
-export type ControlLine = { role: "AR" | "AP" | "AP_OTHER"; accountCode: string; controlSen: number; documentsSen: number; erpDocuments: number };
+export type ControlLine = { role: "AR" | "AP" | "AP_OTHER"; accountCode: string; controlSen: number; documentsSen: number; erpDocuments: number; unbilledContractsSen?: number };
 export type OpeningCheck = {
   ok: true; openingDay: string; openingJeNo: string | null; openingJeDate: string | null;
   /** The day the controls and the open documents are compared on: the documents' cut-over when set (migration 0333). */

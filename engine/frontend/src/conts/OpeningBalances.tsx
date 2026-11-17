@@ -59,6 +59,7 @@ function CheckPanel({ check, canSave }: { check: OpeningCheck; canSave: boolean 
   const askConfirm = useConfirm();
   const [note, setNote] = useState<string | null>(null);
   const erpDocs = check.controls.reduce((t, c) => t + c.erpDocuments, 0);
+  const unbilled = check.controls.filter((c) => (c.unbilledContractsSen ?? 0) !== 0);
   const onReverse = async () => {
     if (!check.openingJeNo) return;
     if (!(await askConfirm({
@@ -84,7 +85,13 @@ function CheckPanel({ check, canSave }: { check: OpeningCheck; canSave: boolean 
       )}
       {erpDocs > 0 && (
         <p style={{ margin: 0, fontSize: "var(--fs-12)", color: MUTED }}>
-          {erpDocs} invoice{erpDocs === 1 ? "" : "s"} or bill{erpDocs === 1 ? "" : "s"} raised in the ERP before the books started {erpDocs === 1 ? "is" : "are"} counted too, at what is still owed on them.
+          {erpDocs} invoice{erpDocs === 1 ? "" : "s"} or bill{erpDocs === 1 ? "" : "s"} raised in the ERP {erpDocs === 1 ? "is" : "are"} counted too, at what is still owed on them.
+        </p>
+      )}
+      {unbilled.length > 0 && (
+        <p style={{ margin: 0, fontSize: "var(--fs-12)", color: MUTED }} data-testid="opening-unbilled">
+          Renovation contracts are posted whole to the customer when signed, so the control also carries what is not invoiced yet:{" "}
+          {unbilled.map((c) => `${c.accountCode} RM ${rm(c.unbilledContractsSen ?? 0)}`).join(", ")}. It is counted on the documents side.
         </p>
       )}
       <div style={{ overflowX: "auto" }}>
@@ -99,7 +106,8 @@ function CheckPanel({ check, canSave }: { check: OpeningCheck; canSave: boolean 
             <Compare label="Trial balance" left={check.trialDebitSen} leftLabel="Dr" right={check.trialCreditSen} rightLabel="Cr" />
             {check.controls.map((c) => (
               <Compare key={c.accountCode} label={`${CONTROL_LABEL[c.role]} (${c.accountCode})`} left={c.controlSen} leftLabel="control"
-                right={c.documentsSen} rightLabel={c.role === "AR" ? "invoices" : "bills"} />
+                right={c.documentsSen + (c.unbilledContractsSen ?? 0)}
+                rightLabel={c.role !== "AR" ? "bills" : c.unbilledContractsSen ? "invoices + unbilled contracts" : "invoices"} />
             ))}
           </tbody>
         </table>
