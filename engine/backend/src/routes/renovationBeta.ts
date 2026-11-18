@@ -9,6 +9,7 @@ import { TRANSIENT_CONN_RE } from "../db/d1-compat";
 import type { Env } from "../types";
 import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
+import { goLiveOf } from "../acc/go-live";
 import { billingViews } from "../scm/lib/renovation-billing";
 import { todayMyt } from "../scm/lib/my-time";
 import { builtinPosOf, poDrawings, projectDrawings, recordDrawingAmendments } from "../services/renovation/betaBuiltinPo";
@@ -139,17 +140,58 @@ async function receiptsOf(c: Ctx, docNos: readonly string[]): Promise<Map<string
   return out;
 }
 
+interface CarriedRow { doc_no: string; golive_sen: number; open_sen: number; ahead_sen: number; sole: boolean }
+
+/** What AutoCount collected on the contracts it carried (seeded at go-live; acc/reno-opening): the go-live amount
+    less what its customer still had open, plus what they had paid ahead (acc/reno-projects reads it the same way). It
+    is one payment on the eve of go-live; the order's own payments before go-live are AutoCount's already. */
+async function autocountCollected(c: Ctx, companyId: number, docNos: readonly string[]): Promise<{ goLive: string | null; bySo: Map<string, number> }> {
+  const bySo = new Map<string, number>();
+  const set = await db(c).prepare(`SELECT ledger_start_date::text AS ledger_start_date, documents_cutover_date::text AS documents_cutover_date
+     FROM scm.acc_company_settings WHERE company_id = ?`).bind(companyId).first<{ ledger_start_date: string | null; documents_cutover_date: string | null }>();
+  const goLive = goLiveOf(set ?? null);
+  if (!goLive || docNos.length === 0) return { goLive, bySo };
+  const rows = (await db(c).prepare(
+    `WITH k AS (
+       SELECT so.doc_no, so.debtor_code, rc.golive_contract_sen
+         FROM scm.mfg_sales_orders so JOIN scm.reno_so_contracts rc ON rc.so_doc_no = so.doc_no
+        WHERE so.company_id = ? AND rc.golive_contract_sen IS NOT NULL AND so.doc_no IN (SELECT jsonb_array_elements_text(?::text::jsonb)))
+     SELECT k.doc_no, k.golive_contract_sen::bigint AS golive_sen,
+            COALESCE((SELECT sum(i.total_sen) FROM scm.sales_invoices i WHERE i.company_id = ? AND i.opening_balance AND i.debtor_code = k.debtor_code
+                       AND upper(i.status::text) NOT IN ('DRAFT', 'CANCELLED', 'VOID')), 0)::bigint AS open_sen,
+            COALESCE((SELECT sum(cc.amount_sen) FROM scm.customer_credits cc WHERE cc.company_id = ? AND cc.source_type = 'OPENING'
+                       AND cc.debtor_code = k.debtor_code), 0)::bigint AS ahead_sen,
+            (SELECT count(*) FROM scm.mfg_sales_orders o WHERE o.company_id = ? AND o.debtor_code = k.debtor_code AND o.status::text <> 'CANCELLED') = 1 AS sole
+       FROM k`,
+  ).bind(companyId, JSON.stringify(docNos), companyId, companyId, companyId).all<CarriedRow>()).results ?? [];
+  for (const r of rows) {
+    if (!r.sole) continue;
+    const sen = Number(r.golive_sen) + Number(r.ahead_sen) - Number(r.open_sen);
+    if (sen > 0) bySo.set(r.doc_no, sen);
+  }
+  return { goLive, bySo };
+}
+
+const dayBefore = (d: string): string => new Date(Date.parse(`${d}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+
 /** Payments per project from its live sales order: the renovation contract's instalments, or four plain payments. */
 async function projectPayments(c: Ctx, companyId: number, sos: readonly ProjectSoRow[]): Promise<Map<number, BetaPayments>> {
   const out = new Map<number, BetaPayments>();
   const reno = sos.filter((s) => s.kind === "RENOVATION").map((s) => s.doc_no);
-  const [views, receipts] = await Promise.all([
+  const [views, receipts, carried] = await Promise.all([
     reno.length > 0 ? billingViews(renoDbFromD1(db(c)), reno, companyId) : Promise.resolve(new Map()),
     receiptsOf(c, sos.map((s) => s.doc_no)),
+    autocountCollected(c, companyId, reno),
   ]);
   for (const so of sos) {
     const view = so.kind === "RENOVATION" ? views.get(so.doc_no) ?? null : null;
-    out.set(Number(so.project_id), paymentsOf(view, { docNo: so.doc_no, totalSen: Number(so.total_sen ?? 0), receipts: receipts.get(so.doc_no) ?? [] }));
+    let mine = receipts.get(so.doc_no) ?? [];
+    const before = carried.bySo.get(so.doc_no);
+    if (before != null && carried.goLive) {
+      const goLive = carried.goLive;
+      mine = [{ paidOn: dayBefore(goLive), amountSen: before, method: "autocount" }, ...mine.filter((r) => r.paidOn >= goLive)];
+    }
+    out.set(Number(so.project_id), paymentsOf(view, { docNo: so.doc_no, totalSen: Number(so.total_sen ?? 0), receipts: mine }));
   }
   return out;
 }
