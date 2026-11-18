@@ -153,12 +153,16 @@ async function bringToPdf(db: RenoDb, actor: RenoActor, docNo: string, v: DataVe
   const live: Live[] = (await readSections(db, { kind: 'so', id: docNo })).flatMap((s) => s.lines)
     .filter((l) => (l.kind === 'ITEM' || l.kind === 'CHILD') && !l.omittedByVoId && !l.soItemCancelled)
     .map((l) => ({ id: l.id, itemCode: l.itemCode ?? null, description: l.description ?? '', qty: Number(l.qty ?? 1), netSen: l.netSen }));
-  /* an adjustment line from an earlier import or update stays: the new adjustment only closes what is left */
-  const { omit, add } = pair(live.filter((l) => !ADJUSTMENTS.includes(l.description)), targetOf(v));
-  const addSen = add.reduce((t, a) => t + (a.line.netSen ?? 0), 0);
-  const omitSen = omit.reduce((t, l) => t + l.netSen, 0);
+  const paired = pair(live, targetOf(v));
+  const add = paired.add;
+  let omit = paired.omit;
   const before = await revisedContractSen(db, docNo);
-  const gap = v.payableSen - (before + addSen - omitSen);
+  const addSen = add.reduce((t, a) => t + (a.line.netSen ?? 0), 0);
+  let gap = v.payableSen - (before + addSen - omit.reduce((t, l) => t + l.netSen, 0));
+  /* an earlier adjustment line that would only be omitted and added back at the same amount stays */
+  const oldAdj = omit.filter((l) => ADJUSTMENTS.includes(l.description));
+  const oldAdjSen = oldAdj.reduce((t, l) => t + l.netSen, 0);
+  if (oldAdj.length && gap === oldAdjSen) { omit = omit.filter((l) => !oldAdj.includes(l)); gap = 0; }
   if (!omit.length && !add.length && gap === 0) return { voNo: null, before, omit, add, gap };
   const bySection = new Map<string, Record<string, unknown>[]>();
   for (const a of add) bySection.set(a.heading, [...(bySection.get(a.heading) ?? []), { ...lineInput(a.line), voChange: 'ADD' }]);
