@@ -36,6 +36,9 @@ const CONTS_REFS: Record<string, string> = { cweomoenhsjvsxfsmiiw: 'PRODUCTION',
 const SYSTEM_STAFF = '00000000-0000-4000-8000-000000000001';
 const TODAY = new Date().toISOString().slice(0, 10);
 const PACKAGE = 'Package price (not priced per line on the signed SO)';
+/* The rest between the lines and the printed final total is the SO's discount changing, so the line says so. */
+const ADJUST = 'Discount adjustment as per Notion SO';
+const ADJUSTMENTS = [ADJUST, 'Price adjustment to the revised SO total'];
 
 interface DataLine { kind: 'ITEM' | 'TEXT'; itemCode?: string; description: string; qty?: number; unitPriceSen?: number; discountBp?: number; netSen?: number }
 interface DataSection { heading: string; lumpSumSen?: number; lines: DataLine[] }
@@ -150,7 +153,8 @@ async function bringToPdf(db: RenoDb, actor: RenoActor, docNo: string, v: DataVe
   const live: Live[] = (await readSections(db, { kind: 'so', id: docNo })).flatMap((s) => s.lines)
     .filter((l) => (l.kind === 'ITEM' || l.kind === 'CHILD') && !l.omittedByVoId && !l.soItemCancelled)
     .map((l) => ({ id: l.id, itemCode: l.itemCode ?? null, description: l.description ?? '', qty: Number(l.qty ?? 1), netSen: l.netSen }));
-  const { omit, add } = pair(live, targetOf(v));
+  /* an adjustment line from an earlier import or update stays: the new adjustment only closes what is left */
+  const { omit, add } = pair(live.filter((l) => !ADJUSTMENTS.includes(l.description)), targetOf(v));
   const addSen = add.reduce((t, a) => t + (a.line.netSen ?? 0), 0);
   const omitSen = omit.reduce((t, l) => t + l.netSen, 0);
   const before = await revisedContractSen(db, docNo);
@@ -160,7 +164,7 @@ async function bringToPdf(db: RenoDb, actor: RenoActor, docNo: string, v: DataVe
   for (const a of add) bySection.set(a.heading, [...(bySection.get(a.heading) ?? []), { ...lineInput(a.line), voChange: 'ADD' }]);
   const voSections: Array<{ heading: string; lines: Record<string, unknown>[] }> = [...bySection.entries()].map(([heading, lines]) => ({ heading, lines }));
   if (omit.length) voSections.push({ heading: 'Omitted', lines: omit.map((l) => ({ kind: 'ITEM', voChange: 'OMIT', omitTargetLineId: l.id, description: '' })) });
-  if (gap !== 0) voSections.push({ heading: 'Adjustment', lines: [{ ...lineInput({ kind: 'ITEM', itemCode: mainCode(v), description: 'Price adjustment to the revised SO total', qty: 1, unitPriceSen: gap, netSen: gap }), voChange: 'ADD' }] });
+  if (gap !== 0) voSections.push({ heading: 'Adjustment', lines: [{ ...lineInput({ kind: 'ITEM', itemCode: mainCode(v), description: ADJUST, qty: 1, unitPriceSen: gap, netSen: gap }), voChange: 'ADD' }] });
   const vo = await createVo(db, actor, docNo, { title: `As per Notion SO ${v.lastAmended ?? v.docDate ?? ''} (${v.file})`.slice(0, 200) });
   const [row] = await db.q<{ version: number }>(`select version from scm.reno_variation_orders where id = $1`, [vo.id]);
   const saved = await saveVo(db, actor, vo.id, { version: Number(row.version), docDate: TODAY, sections: norm(voSections, 'vo') });
