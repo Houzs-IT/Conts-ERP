@@ -282,6 +282,18 @@ describe('Apply', () => {
     expect((sb.tables.journal_entries as Row[]).map((j) => [j.source_type, j.source_doc_no, j.entry_date])).toEqual([['RVO', `${OLD}-1`, '2026-11-05']]);
   });
 
+  test('an omission VO after go-live: invoiced in full before go-live is still accepted', async () => {
+    const sb = world({
+      reno_variation_orders: [
+        { id: 'vo-9', company_id: CO, so_doc_no: OLD, vo_no: 'VO-9', seq: 1, status: 'APPROVED', doc_date: '2026-11-18', approved_at: '2026-11-18T02:00:00Z', net_sen: -500_000 },
+      ],
+    });
+    (sb.tables.mfg_sales_order_items as Row[]).push(item('a9', OLD, -500_000));
+    const pv = await previewRenoOpening(sb, CO, [{ ...good, billedBeforeGoLiveSen: 10_000_000 }]);
+    expect(pv).toMatchObject({ ok: true, rows: [{ problems: [], contractSen: 9_500_000, goLiveContractSen: 10_000_000 }] });
+    expect((await problemsOf(sb, [{ ...good, billedBeforeGoLiveSen: 10_000_001 }]))[0]).toEqual([expect.stringContaining('more than the contract at go-live')]);
+  });
+
   test('a second Apply keeps the first baseline (a VO posted since stays counted)', async () => {
     const sb = world();
     await applyRenoOpening(sb, CO, [good], fakeTx(sb));

@@ -218,8 +218,10 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
 
       if (!Number.isInteger(r.billedBeforeGoLiveSen) || r.billedBeforeGoLiveSen < 0) {
         problems.push('The amount invoiced before go-live must be a plain RM figure, zero or more.');
-      } else if (contractSen != null && r.billedBeforeGoLiveSen > contractSen) {
-        problems.push(`${fmtSen(r.billedBeforeGoLiveSen)} invoiced before go-live is more than the contract (${fmtSen(contractSen)}).`);
+      } else if (goLiveContractSen != null && r.billedBeforeGoLiveSen > goLiveContractSen) {
+        /* Against the contract at go-live: an omission VO approved since (D BRIGHTON, 18 Nov 2026) lowers today's
+           contract but not what was rightly invoiced before go-live. */
+        problems.push(`${fmtSen(r.billedBeforeGoLiveSen)} invoiced before go-live is more than the contract at go-live (${fmtSen(goLiveContractSen)}).`);
       }
 
       if (r.costBeforeGoLiveSen != null && (!Number.isInteger(r.costBeforeGoLiveSen) || r.costBeforeGoLiveSen < 0)) {
