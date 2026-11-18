@@ -10,11 +10,13 @@
 //   Make AP invoice  (requests only) opens the New AP invoice form filled in, one per request (a deposit's is its
 //                    quotation), where finance chooses the supplier and the accounts; paid on the Payment voucher page.
 // Finance also checks a claim (its accounts), rejects with a reason, or closes a request paid short.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/Layout";
 import { Button } from "../components/Button";
 import { DataTable, type Column } from "../components/DataTable";
+import { TabStrip } from "../components/TabStrip";
+import { ResizableDetailDrawer } from "../components/ResizableDetailDrawer";
 import { usePrompt } from "../vendor/scm/components/PromptDialog";
 import { useChoice } from "../vendor/scm/components/ChoiceDialog";
 import { useAuth } from "../auth/AuthContext";
@@ -46,6 +48,13 @@ const CLAIMS_SHOWN: Record<string, Receipt["status"][]> = {
   SUBMITTED: ["HANDED_IN", "CHECKED"], PART_PAID: [], PAID: ["PAID_BACK"], REJECTED: ["REJECTED"], CLOSED: ["WRITTEN_OFF"], WITHDRAWN: [],
 };
 
+type UtilKind = "electricity" | "water" | "internet" | "sewerage";
+const UTIL_KINDS: [UtilKind, string][] = [["electricity", "Electricity"], ["water", "Water"], ["internet", "Wifi"], ["sewerage", "Indah Water"]];
+/** A utility request's kind, from its lines ("Electricity 2026-11 …", "Indah Water …"); one request is one provider. */
+const utilKindOf = (r: PaymentRequest): UtilKind | null => {
+  const d = r.lines.map((l) => l.description ?? "").join(" ");
+  return /indah water/i.test(d) ? "sewerage" : /^\s*electricity/im.test(d) ? "electricity" : /^\s*water/im.test(d) ? "water" : /^\s*internet/im.test(d) ? "internet" : null;
+};
 const no = (r: Row) => (r.kind === "request" ? r.q.requestNo : r.c.receiptNo);
 const askedOn = (r: Row) => (r.kind === "request" ? r.q.createdAt.slice(0, 10) : r.c.spendDate);
 const by = (r: Row) => (r.kind === "request" ? r.q.requesterName : r.c.submitterName);
@@ -93,6 +102,10 @@ const slotBtn = "h-8 w-full justify-center";
 
 export function PaymentRequests() {
   const [status, setStatus] = useState("SUBMITTED");
+  /* Utility bills on a tab of their own (chew, 18 Nov 2026): they are paid against their accrual, by due date. */
+  const [tab, setTab] = useState<"other" | "utilities">("other");
+  /* Within utilities, by kind (chew, 18 Nov 2026): electricity, water, wifi, Indah Water. */
+  const [utilKind, setUtilKind] = useState<UtilKind | "">("");
   const q = usePaymentRequests(status);
   const claimsQ = useFinanceReceipts("");
   /* Each line's sub-department (SOP 1.1), "No unit" on a team's line without one. */
@@ -108,15 +121,20 @@ export function PaymentRequests() {
   const edit = can("scm.payment_voucher.write");
   const [note, setNote] = useState<string | null>(null);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
+  /* The row opened on the side (chew, 18 Nov 2026: "我点不进去这个 request"). */
+  const [opened, setOpened] = useState<Row | null>(null);
 
   const rows = useMemo<Row[] | null>(() => {
     if (!q.data) return null;
     const shown = status ? CLAIMS_SHOWN[status] ?? [] : null;
     const claims = (claimsQ.data?.receipts ?? []).filter((c) => (shown ? shown.includes(c.status) : c.status !== "REPLACED"));
     const all: Row[] = [...q.data.requests.map((x) => ({ kind: "request" as const, id: x.id, q: x })), ...claims.map((c) => ({ kind: "claim" as const, id: `claim:${c.id}`, c }))];
-    /* Waiting first, oldest first; the rest newest first. */
-    return all.sort((a, b) => Number(waiting(b)) - Number(waiting(a)) || (waiting(a) ? askedOn(a).localeCompare(askedOn(b)) : askedOn(b).localeCompare(askedOn(a))));
-  }, [q.data, claimsQ.data, status]);
+    const isUtility = (r: Row) => r.kind === "request" && r.q.fromBills;
+    const mine = all.filter((r) => (tab === "utilities" ? isUtility(r) && (!utilKind || (r.kind === "request" && utilKindOf(r.q) === utilKind)) : !isUtility(r)));
+    /* Utilities: the soonest due first. Otherwise waiting first, oldest first; the rest newest first. */
+    if (tab === "utilities") return mine.sort((a, b) => (a.kind === "request" ? a.q.wantedOn ?? "9999" : "9999").localeCompare(b.kind === "request" ? b.q.wantedOn ?? "9999" : "9999"));
+    return mine.sort((a, b) => Number(waiting(b)) - Number(waiting(a)) || (waiting(a) ? askedOn(a).localeCompare(askedOn(b)) : askedOn(b).localeCompare(askedOn(a))));
+  }, [q.data, claimsQ.data, status, tab, utilKind]);
   const tickedRows = (rows ?? []).filter((r) => ticked.has(r.id));
   const tickedRequests = tickedRows.flatMap((r) => (r.kind === "request" ? [r.q] : []));
 
@@ -179,7 +197,7 @@ export function PaymentRequests() {
       getValue: (r) => (r.kind === "request" ? lineSummary(r.q.lines) : r.c.vendorName ?? ""),
     },
     { key: "amount", label: "Amount", align: "right", render: (r) => <Money sen={amount(r)} strong />, getValue: amount },
-    { key: "wanted", label: "Wanted by", render: (r) => (r.kind === "request" ? r.q.wantedOn ?? "—" : "—"), getValue: (r) => (r.kind === "request" ? r.q.wantedOn ?? "" : "") },
+    { key: "wanted", label: tab === "utilities" ? "Due" : "Wanted by", render: (r) => (r.kind === "request" ? r.q.wantedOn ?? "—" : "—"), getValue: (r) => (r.kind === "request" ? r.q.wantedOn ?? "" : "") },
     {
       key: "files", label: "Documents", getValue: (r) => (r.kind === "request" ? r.q.files.length : r.c.files.length),
       render: (r) => (r.kind === "request"
@@ -249,7 +267,7 @@ export function PaymentRequests() {
       },
     },
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the actions read the latest options and permissions through closures
-  ], [full, edit, act.isPending, opts.data, deptLabel]);
+  ], [full, edit, act.isPending, opts.data, deptLabel, tab]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -266,6 +284,23 @@ export function PaymentRequests() {
           <option value="">All</option>
         </select>
       </label>
+      <TabStrip<"other" | "utilities">
+        value={tab}
+        onChange={(t) => { setTab(t); setTicked(new Set()); }}
+        options={[
+          { value: "other", label: "Requests & claims" },
+          { value: "utilities", label: "Utility bills", count: (q.data?.requests ?? []).filter((x) => x.fromBills).length || undefined },
+        ]}
+      />
+      {tab === "utilities" && (
+        <TabStrip<UtilKind | "">
+          value={utilKind}
+          onChange={(k) => { setUtilKind(k); setTicked(new Set()); }}
+          options={[{ value: "" as const, label: "All" }, ...UTIL_KINDS.map(([k, label]) => ({
+            value: k, label, count: (q.data?.requests ?? []).filter((x) => x.fromBills && utilKindOf(x) === k).length || undefined,
+          }))]}
+        />
+      )}
       {note && <div role="alert" className="text-err">{note}</div>}
       {/* Ticked: one voucher for them all (requests and claims together), or an AP invoice per request (chew, 16 Nov
           2026). Finance checks what is ticked; the engine still refuses, by name, one already being paid. */}
@@ -290,6 +325,7 @@ export function PaymentRequests() {
         error={q.isError ? "The requests did not load." : claimsQ.isError ? "The claims did not load." : null}
         emptyLabel="No requests."
         getRowKey={(r) => r.id}
+        onRowClick={(r: Row) => setOpened(r)}
         selection={{
           selectedIds: ticked,
           onToggle: (id: string) => setTicked((t) => { const n = new Set(t); if (n.has(id)) n.delete(id); else n.add(id); return n; }),
@@ -297,6 +333,68 @@ export function PaymentRequests() {
           rowLabel: (r: Row) => `Tick ${no(r)}`,
         }}
       />
+      <ResizableDetailDrawer open={opened != null} onClose={() => setOpened(null)} ariaLabel={opened ? `Request ${no(opened)}` : "Request"}>
+        {opened && <RowDetail r={opened} lineText={(l) => [deptLabel(l), l.accountCode, l.description].filter(Boolean).join(" · ")} />}
+      </ResizableDetailDrawer>
+    </div>
+  );
+}
+
+/** One request or claim in full: who, what for, each line, its files and vouchers. */
+function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
+  const field = (label: string, value: ReactNode) => (
+    <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 8, fontSize: 13 }}>
+      <span className="text-ink-muted">{label}</span><span>{value ?? "—"}</span>
+    </div>
+  );
+  const lines = r.kind === "request" ? r.q.lines : r.c.lines;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
+      <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{no(r)}</h2>
+      {r.kind === "request" ? (
+        <>
+          {field("Status", <>{REQUEST_STATUS[r.q.status]}{requestStatusNote(r.q) && <span className="block text-xs text-ink-muted">{requestStatusNote(r.q)}</span>}</>)}
+          {field("Asked on", askedOn(r))}
+          {field("By", r.q.requesterName)}
+          {field("Pay", <>{r.q.payeeName}{r.q.type === "DEPOSIT" ? " (deposit)" : ""}{r.q.payeeToCheck ? <span className="ml-1 text-xs text-err">to be checked</span> : null}</>)}
+          {field(r.q.fromBills ? "Due" : "Wanted by", r.q.wantedOn)}
+          {field("Amount", <Money sen={r.q.amountSen} />)}
+          {field("Note", r.q.note)}
+          {r.q.apInvoice && field("AP invoice", r.q.apInvoice.invoiceNumber)}
+          {r.q.vouchers.length > 0 && field("Vouchers", r.q.vouchers.map((v) => (
+            <Link key={v.id} className="block underline" to={`/scm/payment-vouchers/${v.id}`}>{v.pvNumber} ({v.status.toLowerCase()})</Link>
+          )))}
+        </>
+      ) : (
+        <>
+          {field("Status", RECEIPT_STATUS[r.c.status])}
+          {field("Spent on", r.c.spendDate)}
+          {field("By", r.c.submitterName)}
+          {field("Shop", r.c.vendorName)}
+          {field("Bank", r.c.bank ? `${r.c.bank.bankName} ${r.c.bank.accountNo}` : <span className="text-err">No bank details</span>)}
+          {field("Amount", <Money sen={r.c.amountSen} />)}
+          {field("Note", r.c.note)}
+        </>
+      )}
+      <div>
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>Lines ({lines.length})</div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <tbody>
+            {lines.map((l, i) => (
+              <tr key={l.id ?? i} style={{ borderTop: "1px solid var(--line)" }}>
+                <td style={{ padding: "6px 4px" }}>{lineText(l)}</td>
+                <td style={{ padding: "6px 4px", textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}><Money sen={l.amountSen} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>Documents</div>
+        {r.kind === "request"
+          ? <FileButtons files={r.q.files} open={(f, mime) => requestFileUrl(r.q.id, f, mime)} />
+          : <FileButtons files={r.c.files} open={(f, mime) => financeReceiptFileUrl(r.c.id, f, mime)} />}
+      </div>
     </div>
   );
 }

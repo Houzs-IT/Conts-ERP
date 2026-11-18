@@ -17,6 +17,17 @@ const PASS_THROUGH = [
   /^photos(\/.*)?$/,
 ];
 
+/** A header PATCH that only names the customer (the same customer filed under two codes, merged into one; chew, 17 Nov
+    2026): it touches neither the lines nor the money, so a renovation contract takes it. */
+const CUSTOMER_FIELDS = new Set(['debtorCode', 'debtorName']);
+/** The order's version rides along with every header save (the stale-screen guard), so it is allowed beside them. */
+const ALSO_ALLOWED = new Set(['version']);
+export function customerOnlyPatch(body: unknown): boolean {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+  const keys = Object.keys(body);
+  return keys.some((k) => CUSTOMER_FIELDS.has(k)) && keys.every((k) => CUSTOMER_FIELDS.has(k) || ALSO_ALLOWED.has(k));
+}
+
 /** `rest` is the path after /:docNo/ (empty for /:docNo itself). */
 export function renovationFenceApplies(method: string, rest: string): boolean {
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return false;
@@ -47,6 +58,7 @@ export function renovationSoWriteFence(
       return c.json({ error: 'so_kind_unreadable', message: 'Could not confirm what kind of order this is. Nothing was changed; try again.' }, 503);
     }
     if (r.kind === 'RENOVATION') {
+      if (c.req.method === 'PATCH' && !m[2] && customerOnlyPatch(await c.req.json().catch(() => null))) return next();
       if (cancelContract && c.req.method === 'PATCH' && m[2] === 'status') {
         const body = (await c.req.json().catch(() => null)) as { status?: unknown } | null;
         if (String(body?.status ?? '').trim().toUpperCase() === 'CANCELLED') return cancelContract(c, docNo);

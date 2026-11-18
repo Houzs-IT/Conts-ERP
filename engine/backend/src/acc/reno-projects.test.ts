@@ -48,7 +48,7 @@ function world(over: Record<string, Row[]> = {}) {
     sales_invoice_payments: [
       { id: 'p1', company_id: CO, sales_invoice_id: 'si1', paid_at: '2026-11-05T02:00:00Z', amount_sen: 1_000_000 },
       { id: 'p2', company_id: CO, sales_invoice_id: 'si2', paid_at: '2026-11-25T02:00:00Z', amount_sen: 1_000_000 },
-      { id: 'p3', company_id: CO, sales_invoice_id: 'si2', paid_at: '2026-11-28T02:00:00Z', amount_sen: 500_000 }, // not confirmed
+      { id: 'p3', company_id: CO, sales_invoice_id: 'si2', paid_at: '2026-11-28T02:00:00Z', amount_sen: 500_000 }, // not confirmed yet: counts all the same (chew, 17 Nov 2026)
     ],
     acc_official_receipts: [
       { company_id: CO, payment_source: 'SIPAY', payment_id: 'p1', status: 'FORMAL' },
@@ -85,7 +85,7 @@ describe('renovation project status rows', () => {
       soDocNo: SO, projectName: 'SKYLINE D-25-13', customerCode: '301-M002', customerName: 'MS LEE', salesperson: 'ALEX',
       brand: 'The Conts', kind: 'RENOVATION', status: 'RENO_IN_PROGRESS', stage: 'CARPENTRY', handoverDate: '2026-11-25', delayed: true,
       contractSen: 10_000_000, voSen: 1_000_000, revisedContractSen: 11_000_000,
-      receivedSen: 2_000_000, outstandingSen: 9_000_000, collectedBp: 1818,
+      receivedSen: 2_500_000, outstandingSen: 8_500_000, collectedBp: 2273,
       nextInstalment: { seq: 3, label: 'Handover', amountSen: 6_000_000, trigger: 'manual' },
       invoicedSen: 5_000_000, advanceLeftSen: 6_000_000,
       expectedCostSen: 7_100_000, costSpentSen: 5_550_000, completionBp: 7817, earnedSen: 8_598_592, differenceSen: -3_598_592,
@@ -198,10 +198,19 @@ describe('close-out of a contract signed before go-live', () => {
     return w;
   };
 
+  it('a contract AutoCount carried takes only the payments from go-live on', async () => {
+    const w = old();
+    w.tables.acc_company_settings[0]!.documents_cutover_date = '2026-11-20';
+    w.tables.reno_so_contracts[0]!.golive_contract_sen = 5_000_000;
+    const r = (await renoProjectRows(w, CO, '2026-11-30'))[0]!;
+    /* RM 50,000 seeded less RM 10,000 open = RM 40,000 by go-live (21 Nov); then RM 10,000 + RM 5,000 recorded after it. */
+    expect(r.receivedSen).toBe(5_500_000);
+  });
+
   it('counts AutoCount collection and the opening invoice paid since', async () => {
     const r = (await renoProjectRows(old(), CO, '2026-11-30'))[0]!;
-    /* RM 40,000 before go-live + RM 10,000 on the opening invoice + RM 20,000 confirmed since on the new invoices. */
-    expect(r.receivedSen).toBe(7_000_000);
+    /* RM 40,000 before go-live + RM 10,000 on the opening invoice + RM 25,000 recorded since on the new invoices. */
+    expect(r.receivedSen).toBe(7_500_000);
   });
 
   it('a deposit is known when the opening balances carry none on 330-0040', async () => {

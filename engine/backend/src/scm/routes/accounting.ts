@@ -79,9 +79,12 @@ import { piPeriodicBackfill } from './accounting-pi-backfill';
 import { renoOpeningApply, renoOpeningPreview } from './accounting-reno-opening';
 import { stockCloseStatus, stockCloseRun } from './accounting-stock-close';
 import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './accounting-reports';
-import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
+import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal, cutoverDocuments } from '../../acc/opening';
 import { importOpeningDeposits, reverseOpeningDeposits } from '../../acc/opening-deposits';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
+import { mergeDebtors } from '../../acc/debtor-merge';
+import { discardDraftJournal } from '../../acc/draft-journal';
+import { AUTOCOUNT_MAX_DOCS, importAutocountJournals, reverseAutocountJournals, type AutocountJournal } from '../../acc/autocount-journals';
 import { partyLedgerHandler } from '../../conts/party-ledger';
 import { createSubDepartmentHandler, listStaffDepartmentsHandler, listSubDepartmentsHandler, updateSubDepartmentHandler } from '../../conts/sub-department-routes';
 import { approveLimitRequestHandler, createLimitRequestHandler, getLimitSettingsHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler, setLimitSettingsHandler } from '../../conts/project-limit-routes';
@@ -278,6 +281,7 @@ accounting.post('/petty-cash/receipts/:id/write-off', pettyCash.writeOffReceiptH
 accounting.post('/petty-cash/receipts/:id/voucher', pettyCash.receiptVoucherHandler);
 accounting.get('/petty-cash/overrides', pettyCash.listOverridesHandler);
 accounting.put('/petty-cash/overrides', pettyCash.putOverridesHandler);
+accounting.get('/staff-banks', pettyCash.listStaffBanksHandler);
 accounting.get('/staff-bank/:userId', pettyCash.getStaffBankHandler);
 accounting.put('/staff-bank/:userId', pettyCash.putStaffBankHandler);
 accounting.get('/petty-cash/receipts/:id/files/:fileId', pettyCash.financeReceiptFileHandler);
@@ -293,6 +297,20 @@ accounting.post('/payment-requests/:id/ap-invoice', paymentRequests.makeRequestA
 accounting.post('/vouchers/from-claims', combinedVoucher.combinedVoucherHandler);
 accounting.post('/debtors', createDebtorHandler);
 accounting.patch('/debtors/:id', patchDebtorHandler);
+
+/* One customer under two codes, merged into the one kept (acc/debtor-merge.ts; chew, 17 Nov 2026). */
+export const debtorMergeHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const r = await mergeDebtors(c.get('supabase'), co.companyId, String(body?.from ?? ''), String(body?.to ?? ''),
+    String(body?.date ?? todayMyt()), body?.dryRun !== false);
+  if (!r.ok) return c.json({ error: r.error }, r.status as 400);
+  return c.json(r.merge);
+};
+accounting.post('/debtors/merge', debtorMergeHandler);
 accounting.put('/chart/rename', chartRenameHandler);
 accounting.put('/chart/update', chartUpdateHandler);
 accounting.post('/chart/account', chartCreateHandler);
@@ -595,6 +613,51 @@ export const openingPayablesHandler = async (c: AccCtx): Promise<Response> => {
   return c.json(await importOpeningPayables(c.get('supabase'), b.companyId, b.items, actorId(c)));
 };
 accounting.post('/opening/payables', openingPayablesHandler);
+
+/* The books kept in AutoCount after the ledger start, as journals (acc/autocount-journals.ts; chew, 17 Nov 2026). */
+export const autocountJournalsHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const docs = body?.docs;
+  if (!Array.isArray(docs) || docs.length === 0) return c.json({ error: 'Send the documents.' }, 400);
+  if (docs.length > AUTOCOUNT_MAX_DOCS) return c.json({ error: `At most ${AUTOCOUNT_MAX_DOCS} documents at a time.` }, 400);
+  return c.json(await importAutocountJournals(c.get('supabase'), co.companyId, docs as AutocountJournal[]));
+};
+accounting.post('/opening/autocount-journals', autocountJournalsHandler);
+
+/* An AutoCount document that turns out to be paper the ERP had booked already: its journal is taken back, on its own day. */
+export const autocountReverseHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const docNos = body?.docNos;
+  const why = typeof body?.why === 'string' && body.why.trim() ? body.why.trim() : 'booked in the ERP already';
+  if (!Array.isArray(docNos) || docNos.length === 0) return c.json({ error: 'Send the document numbers.' }, 400);
+  if (docNos.length > AUTOCOUNT_MAX_DOCS) return c.json({ error: `At most ${AUTOCOUNT_MAX_DOCS} documents at a time.` }, 400);
+  return c.json(await reverseAutocountJournals(c.get('supabase'), co.companyId, docNos.map(String), why));
+};
+accounting.post('/opening/autocount-journals/reverse', autocountReverseHandler);
+
+/* The open documents brought to AutoCount's as at the day it stopped (acc/opening.ts cutoverDocuments; chew, 17 Nov
+   2026). { asOf, receivables, payables, dryRun }: a dry run says what it would remove, keep and add. */
+export const cutoverHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const ar = Array.isArray(body?.receivables) ? body!.receivables as never[] : [];
+  const ap = Array.isArray(body?.payables) ? body!.payables as never[] : [];
+  if (ar.length + ap.length > OPENING_MAX_ROWS) return c.json({ error: `At most ${OPENING_MAX_ROWS} rows at a time.` }, 400);
+  const r = await cutoverDocuments(c.get('supabase'), co.companyId, String(body?.asOf ?? ''), ar, ap, actorId(c), body?.dryRun !== false);
+  return 'ok' in r && r.ok === false ? c.json({ error: r.error }, 409) : c.json(r);
+};
+accounting.post('/opening/cutover', cutoverHandler);
 
 export const openingCheckHandler = async (c: AccCtx): Promise<Response> => {
   if (!requireGlPost(c)) return c.json({ error: "You don't have permission to read the opening balances." }, 403);
@@ -1511,6 +1574,17 @@ export const journalEntryReverseHandler = async (c: AccCtx): Promise<Response> =
   return c.json({ ok: true, ...('jeNo' in r ? { jeNo: r.jeNo, jeId: r.jeId } : {}), status: r.status });
 };
 accounting.post('/journal-entries/:id/reverse', journalEntryReverseHandler);
+
+/* A manual draft thrown away (acc/draft-journal.ts): it booked nothing, so there is nothing to reverse. */
+export const journalEntryDiscardHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const r = await discardDraftJournal(c.get('supabase'), co.companyId, String(c.req.param('id') ?? ''));
+  if (!r.ok) return c.json({ error: r.error }, r.status);
+  return c.json(r);
+};
+accounting.delete('/journal-entries/:id', journalEntryDiscardHandler);
 
 /* GET /control-check — reconciliation layer 1 (brief 3.5): control account
    vs the documents that are supposed to explain it, named to the doc.

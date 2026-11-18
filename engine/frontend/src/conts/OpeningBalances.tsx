@@ -6,8 +6,8 @@ import { Button } from "@2990s/design-system";
 import { SetupCard } from "./SetupCard";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import {
-  OPENING_COLUMNS, downloadTemplate, parseJournalGrid, parsePayablesGrid, parseReceivablesGrid, readWorkbookGrid, useImportOpening,
-  useOpeningCheck, useReverseOpening, type ControlLine, type OpeningCheck, type OpeningImportResult, type OpeningKind, type ParsedSheet,
+  AUTOCOUNT_COLUMNS, AUTOCOUNT_OPTIONAL, OPENING_COLUMNS, downloadTemplate, importAutocount, parseAutocountGrid, parseJournalGrid, parsePayablesGrid, parseReceivablesGrid, readWorkbookGrid, useImportOpening,
+  useOpeningCheck, useReverseOpening, type ControlLine, type OpeningCheck, type OpeningImportResult, type OpeningKind, type ParsedSheet, type AutocountImport, type AutocountSheet, useRefreshAfterOpening,
 } from "./opening";
 
 const GOOD = "var(--c-secondary-a, #2F5D4F)";
@@ -34,6 +34,7 @@ export function OpeningBalances({ canSave, ledgerStartDate }: { canSave: boolean
             hint="AutoCount's outstanding debtor list. They post nothing (the journal holds the amount) but show in the ageing and take payments. A minus (a receipt or credit note not yet knocked off) becomes a credit the customer spends on later invoices." />
           <UploadPanel kind="payables" canSave={canSave} title="3. Bills the company still owes"
             hint="AutoCount's outstanding creditor list. The supplier code must match a supplier in the system. A minus (a payment not yet knocked off) becomes an opening payment voucher holding an advance that knocks off later bills." />
+          <AutocountPanel canSave={canSave} />
         </>
       )}
     </SetupCard>
@@ -58,6 +59,7 @@ function CheckPanel({ check, canSave }: { check: OpeningCheck; canSave: boolean 
   const askConfirm = useConfirm();
   const [note, setNote] = useState<string | null>(null);
   const erpDocs = check.controls.reduce((t, c) => t + c.erpDocuments, 0);
+  const unbilled = check.controls.filter((c) => (c.unbilledContractsSen ?? 0) !== 0);
   const onReverse = async () => {
     if (!check.openingJeNo) return;
     if (!(await askConfirm({
@@ -72,7 +74,7 @@ function CheckPanel({ check, canSave }: { check: OpeningCheck; canSave: boolean 
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
       <div style={{ fontWeight: 700, color: check.balanced ? GOOD : BAD }} data-testid="opening-verdict">
         {check.balanced ? "✓ The opening balances agree" : "✗ The opening balances do not agree yet"}
-        <span style={{ fontWeight: 400, color: MUTED }}> — as at {check.openingDay}
+        <span style={{ fontWeight: 400, color: MUTED }}> — as at {check.documentsDay && check.documentsDay !== check.openingDay ? `${check.documentsDay} (the documents' cut-over; the opening journal on ${check.openingDay})` : check.openingDay}
           {check.openingJeNo ? `, journal ${check.openingJeNo}` : ", no opening journal yet"}</span>
       </div>
       {note && <p style={{ margin: 0, color: BAD }}>{note}</p>}
@@ -83,7 +85,13 @@ function CheckPanel({ check, canSave }: { check: OpeningCheck; canSave: boolean 
       )}
       {erpDocs > 0 && (
         <p style={{ margin: 0, fontSize: "var(--fs-12)", color: MUTED }}>
-          {erpDocs} invoice{erpDocs === 1 ? "" : "s"} or bill{erpDocs === 1 ? "" : "s"} raised in the ERP before the books started {erpDocs === 1 ? "is" : "are"} counted too, at what is still owed on them.
+          {erpDocs} invoice{erpDocs === 1 ? "" : "s"} or bill{erpDocs === 1 ? "" : "s"} raised in the ERP {erpDocs === 1 ? "is" : "are"} counted too, at what is still owed on them.
+        </p>
+      )}
+      {unbilled.length > 0 && (
+        <p style={{ margin: 0, fontSize: "var(--fs-12)", color: MUTED }} data-testid="opening-unbilled">
+          Renovation contracts are posted whole to the customer when signed, so the control also carries what is not invoiced yet:{" "}
+          {unbilled.map((c) => `${c.accountCode} RM ${rm(c.unbilledContractsSen ?? 0)}`).join(", ")}. It is counted on the documents side.
         </p>
       )}
       <div style={{ overflowX: "auto" }}>
@@ -98,13 +106,14 @@ function CheckPanel({ check, canSave }: { check: OpeningCheck; canSave: boolean 
             <Compare label="Trial balance" left={check.trialDebitSen} leftLabel="Dr" right={check.trialCreditSen} rightLabel="Cr" />
             {check.controls.map((c) => (
               <Compare key={c.accountCode} label={`${CONTROL_LABEL[c.role]} (${c.accountCode})`} left={c.controlSen} leftLabel="control"
-                right={c.documentsSen} rightLabel={c.role === "AR" ? "invoices" : "bills"} />
+                right={c.documentsSen + (c.unbilledContractsSen ?? 0)}
+                rightLabel={c.role !== "AR" ? "bills" : c.unbilledContractsSen ? "invoices + unbilled contracts" : "invoices"} />
             ))}
           </tbody>
         </table>
       </div>
       <p style={{ margin: 0, fontSize: "var(--fs-12)", color: MUTED }}>
-        Also compare the trial balance total ({rm(check.trialDebitSen)}) and each bank below with AutoCount's figures on {check.openingDay}.
+        Also compare the trial balance total ({rm(check.trialDebitSen)}) and each bank below with AutoCount's figures on {check.documentsDay ?? check.openingDay}.
       </p>
       {check.banks.length > 0 && (
         <div style={{ overflowX: "auto" }}>
@@ -234,6 +243,74 @@ function UploadPanel({ kind, title, hint, canSave }: { kind: OpeningKind; title:
         <ul style={{ margin: 0, paddingLeft: 18, color: BAD, fontSize: "var(--fs-13)" }}>
           {rowErrors.map((e) => <li key={e.docNo}>{e.docNo}: {e.error}</li>)}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/** AutoCount's books after the ledger start (chew, 17 Nov 2026): the ledger's lines in one sheet, a row each, booked as
+    one journal per document, a hundred at a time. Sending the same sheet again books nothing twice. */
+function AutocountPanel({ canSave }: { canSave: boolean }) {
+  const refresh = useRefreshAfterOpening();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [sheet, setSheet] = useState<AutocountSheet | null>(null);
+  const [fileName, setFileName] = useState("");
+  const [progress, setProgress] = useState<string | null>(null);
+  const [result, setResult] = useState<AutocountImport | null>(null);
+  const busy = progress != null && result == null;
+  const onFile = async (f: File | undefined) => {
+    setResult(null); setProgress(null);
+    if (!f) return;
+    setFileName(f.name);
+    setSheet(parseAutocountGrid(await readWorkbookGrid(f)));
+  };
+  const go = async () => {
+    if (!sheet) return;
+    setResult(null); setProgress(`0 of ${sheet.docs.length}`);
+    const r = await importAutocount(sheet.docs, (done, total) => setProgress(`${done} of ${total}`));
+    setResult(r);
+    refresh();
+  };
+  const ready = canSave && !!sheet && !sheet.error && sheet.docs.length > 0 && sheet.problems.length === 0 && !busy;
+  return (
+    <div style={{ borderTop: "1px solid var(--line)", paddingTop: "var(--space-3)", display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+      <b>4. AutoCount&apos;s books after the start</b>
+      <span style={{ fontSize: "var(--fs-12)", color: MUTED }}>
+        The general ledger kept in AutoCount from the day the books start, a row per line. Each Doc no is one journal on its own date; a customer&apos;s or
+        supplier&apos;s AutoCount account posts to its control with the party kept. Columns: {AUTOCOUNT_COLUMNS.join(", ")}; optional {AUTOCOUNT_OPTIONAL.join(", ")}.
+      </span>
+      <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
+        <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()} disabled={!canSave || busy}>Upload Excel</Button>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} aria-label="AutoCount ledger file" onChange={(e) => void onFile(e.target.files?.[0])} />
+        {fileName && sheet && <span style={{ fontSize: "var(--fs-12)", color: MUTED }}>{fileName}</span>}
+      </div>
+      {sheet?.error && <p style={{ margin: 0, color: BAD }}>{sheet.error}</p>}
+      {sheet && !sheet.error && (
+        <>
+          <div style={{ fontSize: "var(--fs-13)" }} data-testid="autocount-summary">
+            {sheet.docs.length} documents · {sheet.lines} lines · Dr {rm(sheet.debitSen)} · Cr {rm(sheet.creditSen)}
+          </div>
+          {sheet.problems.length > 0 && (
+            <ul style={{ margin: 0, paddingLeft: 18, color: BAD, fontSize: "var(--fs-12)" }}>
+              {sheet.problems.slice(0, 20).map((p) => <li key={p}>{p}</li>)}
+              {sheet.problems.length > 20 && <li>and {sheet.problems.length - 20} more</li>}
+            </ul>
+          )}
+          <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+            <Button variant="primary" size="sm" onClick={() => void go()} disabled={!ready}>{busy ? "Booking…" : "Book the journals"}</Button>
+            {progress && <span style={{ fontSize: "var(--fs-12)", color: MUTED }}>{progress} documents</span>}
+          </div>
+        </>
+      )}
+      {result && (
+        <div style={{ fontSize: "var(--fs-13)", color: result.errors.length ? BAD : GOOD }} data-testid="autocount-result">
+          {result.posted} booked, {result.already} already there{result.errors.length ? `, ${result.errors.length} refused` : ""}.
+          {result.errors.length > 0 && (
+            <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: "var(--fs-12)" }}>
+              {result.errors.slice(0, 50).map((e) => <li key={e.docNo + e.error}>{e.docNo}: {e.error}</li>)}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );

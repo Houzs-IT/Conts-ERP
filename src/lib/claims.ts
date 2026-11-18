@@ -42,7 +42,9 @@ export interface MyFloat { float: { id: string; floatSen: number; balanceSen: nu
 /** A line as staff send it: the engine sets the department from the person and finance sets the account (2 Nov 2026). */
 export interface NewLine { unitId?: string; maintenanceIssueId?: string; projectId?: number; amountSen: number; description?: string; subDepartmentId?: string }
 /** A sub-department a line can be put on (SOP 1.1: the department starts as the person's, and may be changed): GET /claims/sub-departments. */
-export interface LineSubDepartment { id: string; department: LineDepartment; name: string }
+export interface LineSubDepartment { id: string; department: LineDepartment; name: string;
+  /** A Renovation sub-department's brand (its projects'); a Rental one whose lines may name a maintenance job. */
+  renoKind?: 'RENOVATION' | 'INHOUSE_RENOVATION' | null; maintenance?: boolean }
 
 export const DEPARTMENT: Record<LineDepartment, string> = { rental: 'Rental', supply: 'Renovation', shared: 'Shared' };
 export const RECEIPT_STATUS: Record<ReceiptStatus, string> = {

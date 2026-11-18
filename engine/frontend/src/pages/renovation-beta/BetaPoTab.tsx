@@ -13,10 +13,10 @@
    PO and the GR and DO links their tabs (owner, 4 Nov 2026). A PO a VO changed is flagged until purchasing confirms the
    PO change. */
 
-import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { ProductionOrderChips } from "../scm-v2/ProductionOrderChips";
-import { AlertTriangle, Camera, ChevronDown, ChevronRight, FileDown, Pencil } from "lucide-react";
+import { AlertTriangle, Camera, ChevronDown, ChevronRight, FileDown, GripVertical, Pencil } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { buildQueryKey, useQuery } from "../../hooks/useQuery";
 import { useQueryClient } from "@tanstack/react-query";
@@ -37,7 +37,7 @@ import { voPoApi } from "./renovationBetaVoPo";
 import { LinePhotoThumbs, photoCount, type LinePhotoSet } from "./BetaLinePhotos";
 import {
   amountAfter, byAreaBlocks, byCategory, livePo, specLocked, SPEC_LOCKED_NOTE, dateFixedReason, dateSettable, editProblem, editWords, effectiveEdit, groupDate, groupDateTargets, groupRange, lineDates, lineLate,
-  linesApi, postVo, refusalText, withDate,
+  linesApi, picksSupplier, postVo, refusalText, supplierOf, withDate,
   contractLineEdits, postContractLines, variantsAfter, voBatches,
   type LineEdit, type LinesAnswer, type VoBatch, type ManagedLine, type PendingPoChange, type PostedVo,
 } from "./renovationBetaLines";
@@ -48,7 +48,8 @@ import { SoStockPill } from "../../components/SoSourceChips";
 import type { SoLineCoverage } from "../../vendor/scm/lib/sales-order-queries";
 import { useProjectLineStock } from "./renovationBetaStock";
 import { downloadSoPdfs } from "../scm-v2/soPdfDownload";
-import { bandParts, columnWidth, moveColumn, usePoColumns, type PoColumn } from "./renovationPoColumns";
+import type { SoPrintRooms } from "../../vendor/scm/lib/so-print-rooms";
+import { applyHandOrder, bandParts, MIN_COLUMN_PCT, moveCategory, moveColumn, sortByDates, useHandOrder, usePoColumns, usePoColumnWidths, type PoColumn } from "./renovationPoColumns";
 
 const EDIT_BG = TONES.amber.soft;
 const EDIT_LINE = TONES.amber.line;
@@ -63,6 +64,7 @@ const headStyle: CSSProperties = { ...thStyle, padding: "8px 6px", fontSize: 11.
 const COLUMN_HEAD: Record<PoColumn, { label: string; title?: string; right?: boolean }> = {
   sku: { label: "SKU" }, desc: { label: "Description" }, variants: { label: "Variants" }, qty: { label: "Qty", right: true }, amount: { label: "Amount", right: true },
   orderOn: { label: "Processing", title: "Processing date: when to place the order" }, deliverOn: { label: "Delivery", title: "Delivery date" },
+  supplier: { label: "Supplier", title: "Who the line is bought from; MRP and Create PO start from it" }, warehouse: { label: "Receive at", title: "The warehouse the goods are received at; MRP and the PO follow it" },
   stock: { label: "Stock", title: "Same verdict as the sales order page" }, po: { label: "PO" }, gr: { label: "GR" }, do: { label: "DO" },
 };
 
@@ -97,8 +99,49 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   const photos = useQuery(["renovation-beta", "photos", p.projectId], () => betaMediaApi.photos(p.projectId), [p.projectId]);
   const [uploading, setUploading] = useState<UploadTarget | null>(null);
   const { order, moved, setOrder } = usePoColumns();
+  const { widths, widthOf, setWidths } = usePoColumnWidths();
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  /* Dragging a column's right edge sets its width; the next column gives or takes the same amount. */
+  const startResize = (ev: ReactPointerEvent, c: PoColumn): void => {
+    ev.preventDefault(); ev.stopPropagation();
+    const tableW = tableRef.current?.getBoundingClientRect().width ?? 0;
+    const i = (columns as readonly PoColumn[]).indexOf(c);
+    const next = columns[i + 1];
+    if (!tableW || !next) return;
+    const start = ev.clientX;
+    const a0 = widthOf(c, d.finance), b0 = widthOf(next, d.finance);
+    let last: Record<string, number> = widths;
+    const move = (e: PointerEvent): void => {
+      const dPct = ((e.clientX - start) / tableW) * 100;
+      const a = Math.min(a0 + b0 - MIN_COLUMN_PCT, Math.max(MIN_COLUMN_PCT, a0 + dPct));
+      last = { ...widths, [c]: Math.round(a * 10) / 10, [next]: Math.round((a0 + b0 - a) * 10) / 10 };
+      setLiveWidths(last);
+    };
+    const up = (): void => {
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+      setLiveWidths(null); setWidths(last);
+    };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  };
+  const [liveWidths, setLiveWidths] = useState<Record<string, number> | null>(null);
+  const shownWidth = (c: PoColumn): number => liveWidths?.[c] ?? widthOf(c, d.finance);
   const [dragging, setDragging] = useState<PoColumn | null>(null);
   const [dropOn, setDropOn] = useState<PoColumn | null>(null);
+  /* Categories, subcategories and lines sort by date; a dragged one keeps its place (owner, 17 Nov 2026). */
+  const hand = useHandOrder(p.projectId);
+  const [dragItem, setDragItem] = useState<{ level: "cat" | "sub" | "line"; key: string; parent: string; label: string } | null>(null);
+  /* Where the pointer is while dragging: the dragged item's card follows it (owner, 18 Nov 2026). */
+  const [ghostAt, setGhostAt] = useState<{ x: number; y: number } | null>(null);
+  const [dropKey, setDropKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!dragItem) return;
+    /* Let go anywhere: a row that takes the drop has already handled it. */
+    const up = (): void => { window.setTimeout(() => { setDragItem(null); setDropKey(null); setGhostAt(null); }, 0); };
+    const move = (e: PointerEvent): void => setGhostAt({ x: e.clientX, y: e.clientY });
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointermove", move);
+    return () => { window.removeEventListener("pointerup", up); window.removeEventListener("pointermove", move); };
+  }, [dragItem]);
   const { can } = useAuth();
   const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
   const [edits, setEdits] = useState<Record<string, LineEdit>>({});
@@ -116,7 +159,27 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
 
   const lines = q.data?.lines ?? [];
   const [view, setView] = useState<"category" | "area">("category");
-  const tree = useMemo(() => (view === "area" ? byAreaBlocks(lines) : byCategory(lines)), [lines, view]);
+  const baseTree = useMemo(() => (view === "area" ? byAreaBlocks(lines) : byCategory(lines)), [lines, view]);
+  /* A category keeps its colour wherever it moves to. */
+  const bandOf = useMemo(() => new Map(baseTree.map((c, i) => [c.key, BANDS[i % BANDS.length]])), [baseTree]);
+  const tree = useMemo(() => applyHandOrder(sortByDates(baseTree), hand.hand), [baseTree, hand.hand]);
+  /* What a draggable band or line needs: siblings move among themselves only. */
+  const dragProps = (level: "cat" | "sub" | "line", key: string, parent: string, siblings: readonly string[], label: string): BandDrag | undefined => {
+    if (siblings.length < 2) return undefined;
+    const mine = !!dragItem && dragItem.level === level && dragItem.parent === parent;
+    return {
+      dragging: dragItem?.key === key, target: mine && dropKey === key && dragItem.key !== key, active: mine,
+      onStart: () => setDragItem({ level, key, parent, label }),
+      onEnter: () => { if (mine) setDropKey(key); },
+      onDrop: () => {
+        if (mine && dragItem.key !== key) {
+          const next = moveCategory(siblings, dragItem.key, key);
+          if (level === "cat") hand.setCats(next); else if (level === "sub") hand.setSubs(parent, next); else hand.setLines(parent, next);
+        }
+        setDragItem(null); setDropKey(null);
+      },
+    };
+  };
   const batches = useMemo(() => voBatches(lines, edits), [lines, edits]);
   const problems = useMemo(() => lines.map((l) => editProblem(effectiveEdit(l, edits[l.id]))).filter((x): x is string => !!x), [lines, edits]);
   const pendingByPo = useMemo(() => {
@@ -131,7 +194,8 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   if (!q.data) return <BetaLoading label="Loading PO" />;
   const d = q.data;
   const editable = p.canWrite && editing;
-  const columns = d.finance ? order : order.filter((c) => c !== "amount");
+  /* The description is enough: no SKU column (owner, 17 Nov 2026). */
+  const columns = (d.finance ? order : order.filter((c) => c !== "amount")).filter((c) => c !== "sku");
   const toggle = (key: string): void => setClosed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const setEdit = (id: string, patch: Partial<LineEdit>): void => setEdits((e) => ({ ...e, [id]: { ...e[id], ...patch } }));
   const nextVo = (vo.data?.vos.length ?? 0) + 1;
@@ -247,6 +311,19 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   };
 
 
+  /* The supplier and receiving warehouse of a line still waiting for its PO (owner, 17 Nov 2026: picked here again, MRP
+     follows). They save as they are picked, like the dates. */
+  const saveSupplier = async (l: ManagedLine, supplierId: string): Promise<void> => {
+    if (!supplierId || supplierId === l.supplierId) return;
+    setBusyKey(`${l.id}:supplier`);
+    try { await linesApi.saveSupplier(p.projectId, l.id, supplierId); q.reload(); } catch (e) { p.onError(refusalText(e)); } finally { setBusyKey(null); }
+  };
+  const saveWarehouse = async (l: ManagedLine, warehouseId: string): Promise<void> => {
+    if (!warehouseId || warehouseId === l.warehouseId) return;
+    setBusyKey(`${l.id}:warehouse`);
+    try { await linesApi.saveWarehouse(p.projectId, l.id, warehouseId); q.reload(); } catch (e) { p.onError(refusalText(e)); } finally { setBusyKey(null); }
+  };
+
   const setNoPo = async (l: ManagedLine, noPo: boolean): Promise<void> => {
     setBusyKey(`${l.id}:noPo`);
     try { await linesApi.savePlan(p.projectId, l.id, { noPo }); q.reload(); } catch (e) { p.onError(refusalText(e)); } finally { setBusyKey(null); }
@@ -259,10 +336,20 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
     finally { setBusyKey(null); }
   };
 
-  /* The sales order's own PDF, as its page downloads it; one file per order of the project. */
-  const exportPdf = async (): Promise<void> => {
+  /* The sales order's own PDF, one file per order of the project, laid out as the tab shows it: by category or by area,
+     in the order the bands were dragged to (owner, 17 Nov 2026). The timetable is the same PDF with each line's
+     processing and delivery dates where the unit price and discount go. */
+  const shownRooms = (): SoPrintRooms => ({
+    order: tree.map((c) => c.label),
+    byItem: Object.fromEntries(tree.flatMap((c) => c.subs.flatMap((sub) => sub.items.map((l) => [l.id, c.label])))),
+  });
+  const exportPdf = async (timetable: boolean): Promise<void> => {
     setExporting(true);
-    try { await downloadSoPdfs(d.sos); } catch (e) { p.onError(refusalText(e)); } finally { setExporting(false); }
+    try {
+      const dates = timetable ? Object.fromEntries(lines.map((l) => [l.id, { orderOn: l.plan.orderOn, deliverOn: l.plan.deliverOn }])) : undefined;
+      const itemOrder = tree.flatMap((c) => c.subs.flatMap((sub) => sub.items.map((l) => l.id)));
+      await downloadSoPdfs(d.sos, { rooms: shownRooms(), itemOrder, timetable: dates });
+    } catch (e) { p.onError(refusalText(e)); } finally { setExporting(false); }
   };
 
   const changedCount = batches.reduce((n, b) => n + b.lines.length, 0);
@@ -276,9 +363,10 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
 
   const deliveries = site.data?.deliveries ?? [];
   const cell = (l: ManagedLine): RowCtx => ({
-    l, projectId: p.projectId, edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
+    l, projectId: p.projectId, hideArea: view === "area", edit: edits[l.id], editable: editable && l.voLocked, contract: contractSo.has(l.soDocNo), finance: d.finance, today: p.today, plansReady: d.plansReady, busyKey,
     refusal: edits[l.id] ? refusals[l.soDocNo] ?? null : null, pending: l.pos.flatMap((x) => pendingByPo.get(x.poId) ?? []),
     setEdit: (patch) => setEdit(l.id, patch), openMaterials: () => setMaterialsOf(l), pickVariants: () => setVarying(l), saveDate: (w, v) => void saveDate(l, w, v), setNoPo: (v) => void setNoPo(l, v),
+    saveSupplier: (id) => void saveSupplier(l, id), suppliers: d.suppliers ?? [], saveWarehouse: (id) => void saveWarehouse(l, id), warehouses: d.warehouses ?? [],
     stock: stockByLine.get(l.id),
     grDocs: lineDocs(l.id, deliveries, "goods_received"), doDocs: lineDocs(l.id, deliveries, "delivery_order"), openDoc,
   });
@@ -286,6 +374,16 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
   return (
     <>
       <style>{DATE_CSS}</style>
+      {dragItem && ghostAt && (
+        <div aria-hidden="true" style={{
+          position: "fixed", left: ghostAt.x + 14, top: ghostAt.y - 14, zIndex: 1000, pointerEvents: "none",
+          background: BETA.surface, border: `1px solid ${BETA.accent}`, borderRadius: 8, padding: "6px 10px",
+          boxShadow: "0 6px 18px rgba(0,0,0,.18)", fontSize: 13, fontWeight: 600, color: BETA.accentInk, maxWidth: 320,
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 6,
+        }}>
+          <GripVertical size={14} aria-hidden="true" />{dragItem.label}
+        </div>
+      )}
       <WsPageHead
         title="SO"
         sub={editing
@@ -299,7 +397,9 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
             {p.canWrite && (photos.data?.docs.pos.length ?? 0) > 0 && (
               <button type="button" style={btnStyle("outline", "sm")} onClick={() => setUploading({ kind: "po", id: photos.data?.docs.pos[0]?.id ?? "" })}><Camera size={14} aria-hidden="true" />Upload photos</button>
             )}
-            {d.sos.length > 0 && <button type="button" style={btnStyle("outline", "sm")} disabled={exporting} onClick={() => void exportPdf()}><FileDown size={14} aria-hidden="true" />{exporting ? "Exporting..." : "Export PDF"}</button>}
+            {d.sos.length > 0 && <button type="button" style={btnStyle("outline", "sm")} disabled={exporting} onClick={() => void exportPdf(false)}><FileDown size={14} aria-hidden="true" />{exporting ? "Exporting..." : "Export SO"}</button>}
+            {d.sos.length > 0 && <button type="button" style={btnStyle("outline", "sm")} disabled={exporting} onClick={() => void exportPdf(true)}
+              title="The SO's lines with their processing and delivery dates, laid out as shown here"><FileDown size={14} aria-hidden="true" />Export timetable</button>}
           </span>
         )}
       />
@@ -342,25 +442,33 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
         <p style={{ margin: 0, fontSize: 13, color: WS.text2 }}>A draft order's lines are changed on the order itself; they show here read only until it is confirmed.</p>
       )}
 
-      {moved && (width === 0 || width >= TABLE_MIN) && (
-        <button type="button" onClick={() => setOrder(null)} style={{ ...btnStyle("outline", "sm"), alignSelf: "flex-end" }}>Reset columns</button>
+      {hand.moved && (
+        <button type="button" onClick={hand.reset} title="Order every category, subcategory and line by processing date again" style={{ ...btnStyle("outline", "sm"), alignSelf: "flex-end" }}>Back to date order</button>
+      )}
+      {(moved || Object.keys(widths).length > 0) && (width === 0 || width >= TABLE_MIN) && (
+        <button type="button" onClick={() => { setOrder(null); setWidths(null); }} style={{ ...btnStyle("outline", "sm"), alignSelf: "flex-end" }}>Reset columns</button>
       )}
 
       <div ref={wrapRef} style={{ width: "100%", minWidth: 0 }}>
         {tree.length === 0 ? <WsEmpty>{d.categoryRestricted ? "No lines you can see for this project." : <>No sales order yet. Make a quotation for this project and convert it. <Link to={`/scm/renovation/quotations/new?projectId=${p.projectId}`}>New Quotation</Link></>}</WsEmpty>
           : width === 0 || width >= TABLE_MIN ? (
             <div role="region" aria-label="Sales order lines" style={{ border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
-              <table onPointerLeave={() => { setDragging(null); setDropOn(null); }} style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
-                <colgroup>{columns.map((c) => <col key={c} style={{ width: `${columnWidth(c, d.finance)}%` }} />)}</colgroup>
+              <table ref={tableRef} onPointerLeave={() => { setDragging(null); setDropOn(null); setDragItem(null); setDropKey(null); }} style={{ width: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
+                <colgroup>{columns.map((c) => <col key={c} style={{ width: `${shownWidth(c)}%` }} />)}</colgroup>
                 <thead>
                   <tr>
-                    {columns.map((c) => (
+                    {columns.map((c, ci) => (
                       <th key={c} title={`${COLUMN_HEAD[c].title ?? COLUMN_HEAD[c].label} (drag to move)`}
                         onPointerDown={(ev) => { ev.preventDefault(); setDragging(c); }}
                         onPointerEnter={() => { if (dragging) setDropOn(c); }}
                         onPointerUp={() => { if (dragging) setOrder(moveColumn(order, dragging, c)); setDragging(null); setDropOn(null); }}
-                        style={{ ...headStyle, ...(COLUMN_HEAD[c].right ? { textAlign: "right" as const } : {}), cursor: dragging ? "grabbing" : "grab", userSelect: "none", touchAction: "none", boxShadow: dropOn === c && dragging !== c ? `inset 2px 0 0 ${WS.tealLine}` : undefined, opacity: dragging === c ? 0.5 : 1 }}>
+                        style={{ ...headStyle, position: "relative", overflow: "visible", ...(COLUMN_HEAD[c].right ? { textAlign: "right" as const } : {}), cursor: dragging ? "grabbing" : "grab", userSelect: "none", touchAction: "none", boxShadow: dropOn === c && dragging !== c ? `inset 2px 0 0 ${WS.tealLine}` : undefined, opacity: dragging === c ? 0.5 : 1 }}>
                         {COLUMN_HEAD[c].label}
+                        {ci < columns.length - 1 && (
+                          <span role="separator" aria-orientation="vertical" aria-label={`Resize ${COLUMN_HEAD[c].label}`} title="Drag to make this column wider or narrower"
+                            onPointerDown={(ev) => startResize(ev, c)}
+                            style={{ position: "absolute", top: 0, right: -3, width: 7, height: "100%", cursor: "col-resize", zIndex: 1, touchAction: "none" }} />
+                        )}
                       </th>
                     ))}
                   </tr>
@@ -368,12 +476,18 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                 <tbody className="stag">
                   {tree.map((c, ci) => {
                     const open = !closed.has(c.key);
-                    const band = BANDS[ci % BANDS.length];
+                    const band = bandOf.get(c.key) ?? BANDS[ci % BANDS.length];
                     const catLines = c.subs.flatMap((s) => s.items);
+                    const subKeys = c.subs.map((sub) => sub.key);
                     return [
                       <Band key={c.key} band={band} label={c.label} hint={catHint(catLines, d.finance)} open={open} onToggle={() => toggle(c.key)} columns={columns}
-                        dates={bandDates(c.key, c.label, catLines)} />,
-                      ...(open ? catLines.map((l) => <LineRow key={l.id} {...cell(l)} columns={columns} />) : []),
+                        dates={bandDates(c.key, c.label, catLines)} drag={dragProps("cat", c.key, "", tree.map((x) => x.key), c.label)} />,
+                      ...(open ? c.subs.flatMap((sub) => [
+                        ...(view === "category" && sub.label
+                          ? [<SubRow key={`sub:${sub.key}`} label={sub.label} count={sub.items.length} span={columns.length} band={band} drag={dragProps("sub", sub.key, c.key, subKeys, sub.label)} />]
+                          : []),
+                        ...sub.items.map((l) => <LineRow key={l.id} {...cell(l)} columns={columns} drag={dragProps("line", l.id, sub.key, sub.items.map((x) => x.id), l.description)} />),
+                      ]) : []),
                     ];
                   })}
                 </tbody>
@@ -382,7 +496,7 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
           ) : (
             <ul aria-label="Sales order lines" style={{ listStyle: "none", margin: 0, padding: 0, border: `1px solid ${BETA.line}`, borderRadius: 10, overflow: "hidden", background: BETA.surface }}>
               {tree.map((c, ci) => {
-                const band = BANDS[ci % BANDS.length];
+                const band = bandOf.get(c.key) ?? BANDS[ci % BANDS.length];
                 const open = !closed.has(c.key);
                 return (
                   <li key={c.key}>
@@ -401,7 +515,10 @@ export function BetaPoTab(p: BetaTabProps): ReactElement {
                             </span>
                           ))}
                         </li>
-                        {c.subs.flatMap((s) => s.items).map((l) => <LineCard key={l.id} {...cell(l)} />)}
+                        {c.subs.flatMap((sub) => [
+                          ...(view === "category" && sub.label ? [<li key={`sub:${sub.key}`} style={{ padding: "6px 12px", fontSize: 12.5, fontWeight: 600, color: band[2], borderBottom: `1px solid ${WS.rowLine}` }}>{sub.label}</li>] : []),
+                          ...sub.items.map((l) => <LineCard key={l.id} {...cell(l)} />),
+                        ])}
                       </ul>
                     )}
                   </li>
@@ -521,25 +638,40 @@ function GroupDate({ g, which }: { g: BandDates; which: PlanDate }): ReactElemen
   return <span title={v === "mixed" ? spanTitle : `${what}: every line`} style={{ display: "block", fontSize: 12, fontWeight: 600, color: v === "mixed" ? BETA.muted : WS.text2, ...ellipsis }}>{v === "mixed" ? spanText : dayMonthYear(v)}</span>;
 }
 
-function Band({ band, label, hint, open, onToggle, columns, dates }: { band: readonly [string, string, string]; label: string; hint: string; open: boolean; onToggle: () => void; columns: readonly PoColumn[]; dates: BandDates }): ReactElement {
+interface BandDrag {
+  dragging: boolean;
+  /** The band the dragged one would land on. */
+  target: boolean;
+  /** Some band is being dragged. */
+  active: boolean;
+  onStart: () => void;
+  onEnter: () => void;
+  onDrop: () => void;
+}
+
+function Band({ band, label, hint, open, onToggle, columns, dates, drag }: { band: readonly [string, string, string]; label: string; hint: string; open: boolean; onToggle: () => void; columns: readonly PoColumn[]; dates: BandDates; drag?: BandDrag }): ReactElement {
   const Icon = open ? ChevronDown : ChevronRight;
   const td: CSSProperties = { padding: "0 6px", background: band[1], borderBottom: `1px solid ${BETA.line}`, verticalAlign: "middle", overflow: "hidden" };
   return (
-    <tr>
+    <tr onPointerEnter={drag?.onEnter} onPointerUp={drag?.active ? drag.onDrop : undefined}
+      style={{ opacity: drag?.dragging ? 0.5 : 1, boxShadow: drag?.target ? `inset 0 3px 0 ${BETA.accent}` : undefined, cursor: drag?.active ? "grabbing" : undefined }}>
       {bandParts(columns).map((p, i) => p.kind === "orderOn" || p.kind === "deliverOn"
         ? <td key={i} style={td}><GroupDate g={dates} which={p.kind} /></td>
         : p.kind === "blank" ? <td key={i} colSpan={p.span} style={td} /> : (
       <td key={i} colSpan={p.span} style={{ ...td, padding: 0 }}>
+        <div style={{ display: "flex", alignItems: "stretch", borderLeft: `4px solid ${band[0]}` }}>
+        {drag && <Grip label={label} drag={drag} color={band[2]} />}
         <button type="button" aria-expanded={open} onClick={onToggle}
           style={{
-            display: "flex", alignItems: "center", gap: 8, width: "100%", minHeight: 38, overflow: "hidden", padding: "0 12px 0 8px", border: 0,
-            borderLeft: `4px solid ${band[0]}`, background: "transparent", color: band[2], font: "inherit",
+            display: "flex", alignItems: "center", gap: 8, flex: "1 1 auto", minWidth: 0, minHeight: 38, overflow: "hidden", padding: drag ? "0 12px 0 4px" : "0 12px 0 8px", border: 0,
+            background: "transparent", color: band[2], font: "inherit",
             fontSize: 15, fontWeight: 700, cursor: "pointer", textAlign: "left",
           }}>
           <Icon size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
           <span style={{ flex: "1 1 auto", ...ellipsis }}>{label}</span>
           <span style={{ flex: "0 1 auto", fontSize: 12, fontWeight: 500, color: WS.text2, ...ellipsis }}>{hint}</span>
         </button>
+        </div>
       </td>
       ))}
     </tr>
@@ -548,6 +680,8 @@ function Band({ band, label, hint, open, onToggle, columns, dates }: { band: rea
 
 interface RowCtx {
   projectId?: number;
+  /** By area: the band already names the area, so the line does not repeat it (owner, 17 Nov 2026). */
+  hideArea?: boolean;
   l: ManagedLine;
   edit: LineEdit | undefined;
   editable: boolean;
@@ -564,6 +698,10 @@ interface RowCtx {
   pickVariants: () => void;
   saveDate: (which: PlanDate, value: string) => void;
   setNoPo: (v: boolean) => void;
+  saveSupplier: (supplierId: string) => void;
+  suppliers: ReadonlyArray<{ id: string; name: string }>;
+  saveWarehouse: (warehouseId: string) => void;
+  warehouses: ReadonlyArray<{ id: string; code: string; name: string }>;
   stock: SoLineCoverage | undefined;
   grDocs: LineDoc[];
   doDocs: LineDoc[];
@@ -600,7 +738,7 @@ function RemarkControl(r: RowCtx): ReactElement | null {
 function DescCell(r: RowCtx): ReactElement {
   const e = changed(r);
   const name = e?.pickedName ?? r.l.description;
-  const meta = r.l.area ?? "";
+  const meta = r.hideArea ? "" : r.l.area ?? "";
   const photos = linePhotoSet(r.l);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
@@ -809,17 +947,95 @@ function StockCell({ r }: { r: RowCtx }): ReactElement {
 
 const LINE_CELLS: Record<PoColumn, (r: RowCtx) => ReactElement> = {
   sku: (r) => <SkuCell {...r} />, desc: (r) => <DescCell {...r} />, variants: (r) => <VariantCell {...r} />, qty: (r) => <QtyCell {...r} />, amount: (r) => <AmountCell {...r} />,
-  orderOn: (r) => <ProcessingCell r={r} />, deliverOn: (r) => <DeliveryCell r={r} />, stock: (r) => <StockCell r={r} />, po: (r) => <PoCell r={r} />,
+  orderOn: (r) => <ProcessingCell r={r} />, deliverOn: (r) => <DeliveryCell r={r} />, supplier: (r) => <SupplierCell r={r} />, warehouse: (r) => <WarehouseCell r={r} />,
+  stock: (r) => <StockCell r={r} />, po: (r) => <PoCell r={r} />,
   gr: (r) => <DocCell docs={r.grDocs} state={grState(r.l)} tab="gr" open={r.openDoc} />, do: (r) => <DocCell docs={r.doDocs} state={r.l.do} tab="do" open={r.openDoc} />,
 };
 
-function LineRow(r: RowCtx & { columns: readonly PoColumn[] }): ReactElement {
+function LineRow(r: RowCtx & { columns: readonly PoColumn[]; drag?: BandDrag }): ReactElement {
   const touched = changed(r) !== null;
+  const drag = r.drag;
   return (
-    <tr style={{ opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? TONES.amber.soft : undefined }}>
+    <tr onPointerEnter={drag?.onEnter} onPointerUp={drag?.active ? drag.onDrop : undefined}
+      style={{ opacity: r.l.goesTo === "client" ? 0.75 : drag?.dragging ? 0.5 : 1, background: touched ? TONES.amber.soft : undefined, boxShadow: drag?.target ? `inset 0 3px 0 ${BETA.accent}` : undefined }}>
       {r.columns.map((c, i) => (
-        <td key={c} style={{ ...cellStyle, paddingLeft: i === 0 ? 12 : cellStyle.paddingLeft, textAlign: COLUMN_HEAD[c].right ? "right" : undefined }}>{LINE_CELLS[c](r)}</td>
+        <td key={c} style={{ ...cellStyle, paddingLeft: i === 0 ? (drag ? 2 : 12) : cellStyle.paddingLeft, textAlign: COLUMN_HEAD[c].right ? "right" : undefined }}>
+          {i === 0 && drag ? (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 2, minWidth: 0 }}>
+              <Grip label={r.l.description} drag={drag} color={BETA.muted} />
+              <div style={{ flex: "1 1 auto", minWidth: 0 }}>{LINE_CELLS[c](r)}</div>
+            </div>
+          ) : LINE_CELLS[c](r)}
+        </td>
       ))}
+    </tr>
+  );
+}
+
+/** Who the line is bought from: in Edit mode a dropdown until a PO holds the line, then the PO's supplier as text. */
+function SupplierCell({ r }: { r: RowCtx }): ReactElement {
+  if (r.editable && r.plansReady && picksSupplier(r.l)) return <SupplierPick r={r} />;
+  const name = supplierOf(r.l);
+  return name ? <span title={name} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{name}</span> : <span style={metaStyle}>-</span>;
+}
+
+/** The SKU's bound suppliers, main first and starred, then every other supplier; picking one of those binds it. */
+function SupplierPick({ r }: { r: RowCtx }): ReactElement {
+  const choices = r.l.supplierChoices ?? [];
+  const others = r.suppliers.filter((s) => !choices.some((c) => c.id === s.id));
+  const busy = r.busyKey === `${r.l.id}:supplier`;
+  const picked = [...choices, ...others].some((c) => c.id === r.l.supplierId) ? r.l.supplierId ?? "" : "";
+  return (
+    <select aria-label={`Supplier for ${r.l.description}`} value={picked} disabled={busy} onChange={(ev) => r.saveSupplier(ev.target.value)}
+      title={picked ? undefined : "No supplier on this line yet"}
+      style={{ ...editInput, width: "100%", height: 26, minHeight: 26, fontSize: 12, color: picked ? undefined : WS.amber }}>
+      {!picked && <option value="">{busy ? "Saving..." : "Pick a supplier"}</option>}
+      {choices.map((c) => <option key={c.id} value={c.id}>{c.main ? "\u2605 " : ""}{c.name}{c.main ? " (main)" : ""}</option>)}
+      {others.length > 0 && <optgroup label="Other suppliers">{others.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>}
+    </select>
+  );
+}
+
+/** Where the goods are received: in Edit mode a dropdown until a PO holds the line, then text. */
+function WarehouseCell({ r }: { r: RowCtx }): ReactElement {
+  const name = r.l.warehouseName ?? null;
+  if (r.editable && r.plansReady && picksSupplier(r.l) && r.warehouses.length > 0) {
+    const busy = r.busyKey === `${r.l.id}:warehouse`;
+    const picked = r.warehouses.some((w) => w.id === r.l.warehouseId) ? r.l.warehouseId ?? "" : "";
+    return (
+      <select aria-label={`Receive ${r.l.description} at`} value={picked} disabled={busy} onChange={(ev) => r.saveWarehouse(ev.target.value)}
+        style={{ ...editInput, width: "100%", height: 26, minHeight: 26, fontSize: 12, color: picked ? undefined : WS.amber }}>
+        {!picked && <option value="">{busy ? "Saving..." : "Pick a warehouse"}</option>}
+        {r.warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+      </select>
+    );
+  }
+  return name ? <span title={name} style={{ display: "block", fontSize: 12.5, ...ellipsis }}>{name}</span> : <span style={metaStyle}>-</span>;
+}
+
+/** The handle a band, subcategory or line is dragged by. */
+function Grip({ label, drag, color }: { label: string; drag: BandDrag; color: string }): ReactElement {
+  return (
+    <span role="button" aria-label={`Drag ${label} up or down`} title="Drag to move up or down"
+      onPointerDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); drag.onStart(); }}
+      style={{ display: "flex", alignItems: "center", alignSelf: "stretch", padding: "0 2px 0 6px", color, cursor: drag.active ? "grabbing" : "grab", touchAction: "none", userSelect: "none", flexShrink: 0 }}>
+      <GripVertical size={14} aria-hidden="true" />
+    </span>
+  );
+}
+
+/** A subcategory's heading under its category band, one step in. */
+function SubRow({ label, count, span, band, drag }: { label: string; count: number; span: number; band: readonly [string, string, string]; drag?: BandDrag }): ReactElement {
+  return (
+    <tr onPointerEnter={drag?.onEnter} onPointerUp={drag?.active ? drag.onDrop : undefined}
+      style={{ opacity: drag?.dragging ? 0.5 : 1, boxShadow: drag?.target ? `inset 0 3px 0 ${BETA.accent}` : undefined }}>
+      <td colSpan={span} style={{ padding: 0, borderBottom: `1px solid ${WS.rowLine}`, background: BETA.surface }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, minHeight: 28, paddingLeft: drag ? 14 : 30, borderLeft: `4px solid ${band[1]}` }}>
+          {drag && <Grip label={label} drag={drag} color={band[2]} />}
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: band[2], ...ellipsis }}>{label}</span>
+          <span style={{ fontSize: 11.5, color: WS.text2 }}>{count} line{count === 1 ? "" : "s"}</span>
+        </div>
+      </td>
     </tr>
   );
 }
@@ -832,11 +1048,10 @@ function LineCard(r: RowCtx): ReactElement {
   );
   return (
     <li style={{ padding: "10px 12px", borderBottom: `1px solid ${WS.rowLine}`, display: "flex", flexDirection: "column", gap: 8, opacity: r.l.goesTo === "client" ? 0.75 : 1, background: touched ? TONES.amber.soft : BETA.surface }}>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, alignItems: "center" }}>
-        <SkuCell {...r} />
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, alignItems: "start" }}>
+        <DescCell {...r} />
         {r.finance && <AmountCell {...r} />}
       </div>
-      <DescCell {...r} />
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 72px", gap: 8 }}>
         {field("Variants", <VariantCell {...r} />)}
         {field(`Qty (${r.l.uom})`, <QtyCell {...r} />)}
@@ -844,6 +1059,10 @@ function LineCard(r: RowCtx): ReactElement {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
         {field("Processing", <ProcessingCell r={r} />)}
         {field("Delivery", <DeliveryCell r={r} />)}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+        {field("Supplier", <SupplierCell r={r} />)}
+        {field("Receive at", <WarehouseCell r={r} />)}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
         {field("PO", <PoCell r={r} />)}

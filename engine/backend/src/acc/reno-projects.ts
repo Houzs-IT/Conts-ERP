@@ -15,8 +15,8 @@ import { paginateAll } from '../scm/lib/paginate-all';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
 import { todayMyt } from '../scm/lib/my-time';
 import { nextInstalmentAmount } from '../scm/shared/renovation-money';
-import { confirmedPaymentIds } from './receipts';
 import { contractCompletions, inChunks, type ContractCompletion } from './reno-completion';
+import { goLiveOf } from './go-live';
 import { countsInTheBooks } from './reversal-pairs';
 import { closeOutOf, RENOVATION_DEPOSIT_ACCOUNT, type CloseOut } from './reno-close-out';
 import { OPENING_DEPOSITS } from './opening-deposits';
@@ -70,7 +70,7 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
   const projectIds = [...new Set(comps.map((c) => c.projectId).filter((p): p is number => p != null))];
 
   const [contracts, orders, projects, instalments, bills, soPays, invoices, pos] = await Promise.all([
-    inChunks(docs, (b, f, t) => sb.from('reno_so_contracts').select('so_doc_no, original_contract_sen, advance_account_code, customer_name, doc_date, billed_before_golive_sen')
+    inChunks(docs, (b, f, t) => sb.from('reno_so_contracts').select('so_doc_no, original_contract_sen, advance_account_code, customer_name, doc_date, billed_before_golive_sen, golive_contract_sen')
       .eq('company_id', companyId).in('so_doc_no', b).order('so_doc_no').range(f, t), 'contracts'),
     inChunks(docs, (b, f, t) => sb.from('mfg_sales_orders').select('doc_no, debtor_code, debtor_name, agent').eq('company_id', companyId).in('doc_no', b).order('doc_no').range(f, t), 'orders'),
     inChunks(projectIds, (b, f, t) => sb.schema('public').from('projects').select('id, code, name, reno_stage, planned_handover_date, salesperson_name')
@@ -90,6 +90,14 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
   const soleDebtors = [...docsOfDebtor].filter(([, d]) => d.length === 1).map(([code]) => code);
   const openingSis = await inChunks(soleDebtors, (b, f, t) => sb.from('sales_invoices').select('id, so_doc_no, status, debtor_code, total_sen, opening_balance')
     .eq('company_id', companyId).eq('opening_balance', true).in('debtor_code', b).order('id').range(f, t), 'opening invoices');
+  /* What the customer had paid ahead at go-live (opening customer credits): collected too. */
+  const openingCredits = await inChunks(soleDebtors, (b, f, t) => sb.from('customer_credits').select('id, debtor_code, amount_sen')
+    .eq('company_id', companyId).eq('source_type', 'OPENING').in('debtor_code', b).order('id').range(f, t), 'opening credits');
+  const paidAhead = new Map<string, number>();
+  for (const c of openingCredits) {
+    const doc = docsOfDebtor.get(String(c.debtor_code))?.[0];
+    if (doc) paidAhead.set(doc, (paidAhead.get(doc) ?? 0) + Number(c.amount_sen ?? 0));
+  }
   const openingOutstanding = new Map<string, number>();
   for (const i of openingSis) {
     if (['DRAFT', 'CANCELLED', 'VOID'].includes(String(i.status).toUpperCase())) continue;
@@ -113,7 +121,7 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
     /* SOP 4.2.2: each project's building deposit, on 330-0040 by project (chew 2 Nov 2026). */
     inChunks(projectIds, (b, f, t) => sb.from('journal_entry_lines').select('id, journal_entry_id, project_id, debit_sen, credit_sen').eq('company_id', companyId)
       .eq('account_code', RENOVATION_DEPOSIT_ACCOUNT).in('project_id', b).order('id').range(f, t), 'deposit lines'),
-    sb.from('acc_company_settings').select('ledger_start_date').eq('company_id', companyId).maybeSingle(),
+    sb.from('acc_company_settings').select('ledger_start_date, documents_cutover_date').eq('company_id', companyId).maybeSingle(),
     sb.from('journal_entries').select('id, posted, reversed, reversed_by_je').eq('company_id', companyId).eq('source_type', OPENING_DEPOSITS),
   ]);
   if (settings.error) fail('settings', settings.error);
@@ -133,15 +141,11 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
   const apIds = [...new Set(apLines.map((l) => String(l.invoice_id)))];
   /* As at the date: bills dated by then and posted (a draft is not owed yet). */
   const livePis = pis.filter((x) => !['CANCELLED', 'DRAFT'].includes(String(x.status).toUpperCase()) && day(x.invoice_date) <= asOf);
-  const [soOk, siOk, aps, advJes] = await Promise.all([
-    confirmedPaymentIds(sb, companyId, 'SOPAY', soPays.map((p) => String(p.id))),
-    confirmedPaymentIds(sb, companyId, 'SIPAY', siPays.map((p) => String(p.id))),
+  const [aps, advJes] = await Promise.all([
     inChunks(apIds, (b, f, t) => sb.from('ap_invoices').select('id, status, total_sen, invoice_date').eq('company_id', companyId).in('id', b).order('id').range(f, t), 'AP invoices'),
     inChunks([...new Set([...advLines, ...depLines].map((l) => String(l.journal_entry_id)))], (b, f, t) => sb.from('journal_entries').select('id, entry_date, posted, reversed, reversed_by_je')
       .eq('company_id', companyId).in('id', b).order('id').range(f, t), 'advance entries'),
   ]);
-  if (!soOk.ok) fail('receipts', { message: soOk.reason });
-  if (!siOk.ok) fail('receipts', { message: siOk.reason });
   const liveAps = aps.filter((a) => !['CANCELLED', 'DRAFT'].includes(String(a.status).toUpperCase()) && day(a.invoice_date) <= asOf);
 
   /* What was paid on each bill by the date: posted vouchers dated by then (paid_sen is today's figure). */
@@ -188,14 +192,24 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
     at.push({ date: day(p.paid_at), sen: Number(p.amount_sen ?? 0) });
     paidBy.set(doc, at);
   };
-  for (const p of soPays) if ((soOk as { ids: Set<string> }).ids.has(String(p.id))) addPay(String(p.so_doc_no), p);
-  for (const p of siPays) if ((siOk as { ids: Set<string> }).ids.has(String(p.id))) addPay(siDoc.get(String(p.sales_invoice_id)), p);
-  /* What AutoCount collected before go-live: what it invoiced less what was still open at go-live, on the day before. */
-  if (ledgerStart) {
-    const eve = new Date(Date.parse(`${ledgerStart}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  /* Every payment recorded on the contract counts from the day it is recorded, confirmed or not: finance reconciles
+     the bank later (chew, 17 Nov 2026). A contract AutoCount carried (seeded with its go-live amount) takes only the
+     payments from go-live on: AutoCount's figures already hold the earlier ones. */
+  const goLive = goLiveOf(settings.data as Row | null);
+  const seeded = new Set(contracts.filter((k) => k.golive_contract_sen != null).map((k) => String(k.so_doc_no)));
+  const counts = (doc: string | undefined, p: Row) => !doc || !seeded.has(doc) || !goLive || day(p.paid_at) >= goLive;
+  for (const p of soPays) if (counts(String(p.so_doc_no), p)) addPay(String(p.so_doc_no), p);
+  for (const p of siPays) { const doc = siDoc.get(String(p.sales_invoice_id)); if (counts(doc, p)) addPay(doc, p); }
+  /* What AutoCount collected before go-live, on the day before it. A contract seeded with its go-live amount was
+     invoiced whole by AutoCount ("TOTAL SALES ORDER"): collected is that amount less what was still open, plus what was
+     paid ahead. One seeded with only what AutoCount invoiced takes that less what was open. */
+  if (goLive) {
+    const eve = new Date(Date.parse(`${goLive}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
     for (const k of contracts) {
-      const before = Number(k.billed_before_golive_sen ?? 0) - (openingOutstanding.get(String(k.so_doc_no)) ?? 0);
-      if (before > 0) addPay(String(k.so_doc_no), { paid_at: eve, amount_sen: before });
+      const doc = String(k.so_doc_no);
+      const base = k.golive_contract_sen != null ? Number(k.golive_contract_sen) + (paidAhead.get(doc) ?? 0) : Number(k.billed_before_golive_sen ?? 0);
+      const before = base - (openingOutstanding.get(doc) ?? 0);
+      if (before > 0) addPay(doc, { paid_at: eve, amount_sen: before });
     }
   }
 

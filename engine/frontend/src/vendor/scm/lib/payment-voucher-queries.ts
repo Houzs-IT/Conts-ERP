@@ -55,6 +55,9 @@ export type PaymentVoucherRow = Record<string, unknown> & {
       yet knocked off) — the list paints such rows and offers a chip. 0 when
       none. Server: listPaymentVouchersHandler. */
   advance_remaining_sen?: number | null;
+  /** Conts (chew, 18 Nov 2026): where the money goes: the supplier's bank, or for a claim paid back the claim's or the
+   *  person's saved bank (list only). */
+  payee_bank?: { bankName: string; accountNo: string; accountName: string | null } | null;
 };
 
 export type PaymentVoucherAllocation = {

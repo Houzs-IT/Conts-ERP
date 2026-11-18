@@ -88,6 +88,7 @@ export const STAFF_ROUTE_PATTERNS = [
   "/scm/rental-unit-costs",
   "/scm/limit-requests",
   "/scm/payment-requests",
+  "/scm/staff-banks",
   "/scm/petty-cash",
   "/scm/petty-cash/:id",
   "/scm/party-ledger",

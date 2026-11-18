@@ -3,12 +3,12 @@ import { api, errorMessage } from './api';
 /** What a utility bill save hands back for finance to pay: one group per provider (functions/_lib/utilityRequests.ts). */
 export interface ToPay { provider: string; count: number; amountSen: number; expenseIds: string[] }
 
-/** Sends each provider's bills as one payment request (POST /api/expenses/utilities/payment-requests; chew, 5 Nov 2026,
- *  SOP 3.10). A provider that fails is listed, not retried: its bills stay recorded without a request, and saving them
- *  again sends them. */
+/** Sends each bill as its own payment request (POST /api/expenses/utilities/payment-requests; chew, 5 Nov 2026, SOP 3.10;
+ *  one request per bill, chew, 18 Nov 2026). A bill that fails is listed, not retried: it stays recorded without a
+ *  request, and saving it again sends it. */
 export async function sendUtilityRequests(toPay: ToPay[] | undefined): Promise<{ sent: { provider: string; requestNo: string | null }[]; failed: { provider: string; message: string }[] }> {
   const sent: { provider: string; requestNo: string | null }[] = [], failed: { provider: string; message: string }[] = [];
-  for (const g of toPay ?? []) {
+  for (const g of (toPay ?? []).flatMap(t => t.expenseIds.map(id => ({ ...t, expenseIds: [id] })))) {
     try {
       const r = await api.post<{ requestNo: string | null }>('/expenses/utilities/payment-requests', { expenseIds: g.expenseIds, provider: g.provider });
       sent.push({ provider: g.provider, requestNo: r.requestNo ?? null });

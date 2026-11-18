@@ -355,7 +355,9 @@ export async function renderSalesOrderInto(
     /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
     projectDates?: { start: string; end: string }; contract?: SoPdfContract;
     /* A quotation prints on this same layout (owner, 17 Nov 2026: one PDF for the whole system): nothing is paid yet. */
-    quotation?: boolean },
+    quotation?: boolean;
+    /* The timetable (owner, 17 Nov 2026): each line's processing and delivery dates in place of its unit price and discount; no payments. */
+    timetable?: Record<string, { orderOn: string | null; deliverOn: string | null }> },
 ): Promise<void> {
   /* A cancelled line must never reach a CUSTOMER document — not as a printed
      row and not inside a total. The gate lives HERE, in the one function both
@@ -637,9 +639,10 @@ export async function renderSalesOrderInto(
       ...(SHOW_CODE ? [it.item_code] : []),
       lines.join('\n'),
       `${it.qty} ${it.uom}`,
-      fmtRm(it.unit_price_sen, header.currency),
-      it.discount_sen > 0 ? fmtRm(it.discount_sen, header.currency) : '—',
-      fmtRm(it.total_sen, header.currency),
+      ...(opts?.timetable
+        ? [opts.timetable[it.id]?.orderOn ? fmtDocDate(opts.timetable[it.id]!.orderOn!) : '—', opts.timetable[it.id]?.deliverOn ? fmtDocDate(opts.timetable[it.id]!.deliverOn!) : '—']
+        : [fmtRm(it.unit_price_sen, header.currency), it.discount_sen > 0 ? fmtRm(it.discount_sen, header.currency) : '—']),
+      ...(opts?.timetable ? [] : [fmtRm(it.total_sen, header.currency)]),
     ];
   });
 
@@ -651,13 +654,15 @@ export async function renderSalesOrderInto(
   /* One divider style for category and room header rows. */
   const sectionRowStyles = { fontStyle: 'bold', textColor: 40, halign: 'left', lineWidth: { top: 0.4 } as never } as const;
   const bodyRows: RowInput[] = [];
+  /* The timetable carries no money at all (owner, 18 Nov 2026): no amount column, no subtotals, totals or terms. */
+  const cols = opts?.timetable ? LINE_COLS - 1 : LINE_COLS;
   let lastGroup: string | null = null;
   /* Renovation mode: each room closes with its subtotal (owner, 24 Oct 2026, "By area"). */
   let roomSubtotal = 0;
   const pushRoomSubtotal = () => {
-    if (!rooms || lastGroup == null) return;
+    if (!rooms || lastGroup == null || opts?.timetable) return;
     bodyRows.push([
-      { content: `Subtotal - ${lastGroup}`, colSpan: LINE_COLS - 1, styles: { fontStyle: 'bold', halign: 'right', textColor: 60 } },
+      { content: `Subtotal - ${lastGroup}`, colSpan: cols - 1, styles: { fontStyle: 'bold', halign: 'right', textColor: 60 } },
       { content: fmtRm(roomSubtotal, header.currency), styles: { fontStyle: 'bold', halign: 'right', fontSize: 7.5 } },
     ]);
   };
@@ -666,7 +671,7 @@ export async function renderSalesOrderInto(
       const room = roomLabel(rooms, it.id);
       if (room !== lastGroup) {
         pushRoomSubtotal();
-        bodyRows.push([{ content: room.toUpperCase(), colSpan: LINE_COLS, styles: sectionRowStyles }]);
+        bodyRows.push([{ content: room.toUpperCase(), colSpan: cols, styles: sectionRowStyles }]);
         lastGroup = room;
         roomSubtotal = 0;
       }
@@ -680,7 +685,7 @@ export async function renderSalesOrderInto(
         /* The category's NAME, not its code: `fabric_accessory` printed as
            FABRIC_ACCESSORY on HC-SO-2609-071 while every screen says Sofa
            Accessory (owner 2026-09-15). An unknown group still prints as stored. */
-        content: mfgCategoryLabel(grp).toUpperCase(), colSpan: LINE_COLS,
+        content: mfgCategoryLabel(grp).toUpperCase(), colSpan: cols,
         styles: sectionRowStyles,
       }]);
       lastGroup = grp;
@@ -691,7 +696,10 @@ export async function renderSalesOrderInto(
 
   autoTable(doc, {
     startY: y,
-    head: [SHOW_CODE ? ['#', 'Item Code', 'Description', 'Qty', 'Unit Price', 'Discount', 'Amount (RM)'] : ['#', 'Description', 'Qty', 'Unit Price', 'Discount', 'Amount (RM)']],
+    head: [(() => {
+      const tail = opts?.timetable ? ['Processing', 'Delivery'] : ['Unit Price', 'Discount', 'Amount (RM)'];
+      return SHOW_CODE ? ['#', 'Item Code', 'Description', 'Qty', ...tail] : ['#', 'Description', 'Qty', ...tail];
+    })()],
     body: bodyRows,
     theme: 'plain',
     rowPageBreak: 'avoid',
@@ -701,7 +709,13 @@ export async function renderSalesOrderInto(
        numeric columns are 7.5 pt, right-aligned. Fixed widths sum to ~114 mm of
        182 usable (A4 − 2×14 margins), leaving ~68 mm for Description ('auto',
        the only column allowed to wrap). */
-    columnStyles: SHOW_CODE ? {
+    columnStyles: opts?.timetable && !SHOW_CODE ? {
+      0: { cellWidth: 8, halign: 'right', fontSize: 7.5 },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 20, halign: 'right', fontSize: 7.5 },
+      3: { cellWidth: 28, halign: 'right', fontSize: 7.5 },
+      4: { cellWidth: 28, halign: 'right', fontSize: 7.5 },
+    } : SHOW_CODE ? {
       0: { cellWidth: 8, halign: 'right', fontSize: 7.5 },
       1: { cellWidth: 28 },
       2: { cellWidth: 'auto' },
@@ -750,7 +764,7 @@ export async function renderSalesOrderInto(
   // Sources transactions from the payments ledger (mfg_sales_order_payments)
   // instead of the legacy single-row header columns (deprecated PR-C).
   /* A quotation has no payments block: nothing is paid on a quotation. */
-  if (!opts?.quotation) {
+  if (!(opts?.quotation || opts?.timetable)) {
   if (ty > 250) { doc.addPage(); ty = margin; }
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
@@ -793,6 +807,7 @@ export async function renderSalesOrderInto(
   }
   }
 
+  if (!opts?.timetable) {
   // ── Totals: SUBTOTAL / PAID TO DATE / TOTAL / BALANCE DUE ─────────
   /* POS-printout parity: the SO model has no separate subtotal — the grand
      total stands in (add-ons ride inside the line totals). Paid-to-date
@@ -822,7 +837,7 @@ export async function renderSalesOrderInto(
   /* Standard-checklist tax line — the SO model carries no header tax (prices
      are tax-inclusive / exempt), so this prints as a dash, not a number. */
   drawRow('Tax',          '—',                                   ty);     ty += 4;
-  if (opts?.quotation) {
+  if ((opts?.quotation || opts?.timetable)) {
     ty += 2;
     doc.setDrawColor(0);
     doc.line(totalsX, ty, pageW - margin, ty);
@@ -865,8 +880,11 @@ export async function renderSalesOrderInto(
     margin, awTopY + 1,
   );
   doc.setTextColor(0);
+  }
 
   // ── Signature boxes — customer (with stored POS signature) + company ──
+  /* The timetable is a schedule, not a document anyone signs (owner, 18 Nov 2026). */
+  if (!opts?.timetable) {
   if (ty > 225) { doc.addPage(); ty = margin; }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
   doc.text('Customer Signature', margin, ty);
@@ -897,10 +915,11 @@ export async function renderSalesOrderInto(
   );
   doc.setTextColor(0);
   ty += 6;
+  }
 
   // ── Numbered terms (POS RECEIPT_TERMS wording) ────────────────────
   /* A contract printed from the list or the phone has no brand terms to hand: the furniture receipt terms are not its terms. */
-  const noTerms = !opts?.contract && (header as { so_kind?: string | null }).so_kind === 'RENOVATION';
+  const noTerms = !!opts?.timetable || (!opts?.contract && (header as { so_kind?: string | null }).so_kind === 'RENOVATION');
   if (!noTerms) {
   if (ty > 255) { doc.addPage(); ty = margin; }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
@@ -952,7 +971,9 @@ export async function generateSalesOrderPdf(
     /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
     projectDates?: { start: string; end: string }; contract?: SoPdfContract;
     /* A quotation prints on this same layout (owner, 17 Nov 2026: one PDF for the whole system): nothing is paid yet. */
-    quotation?: boolean },
+    quotation?: boolean;
+    /* The timetable (owner, 17 Nov 2026): each line's processing and delivery dates in place of its unit price and discount; no payments. */
+    timetable?: Record<string, { orderOn: string | null; deliverOn: string | null }> },
 ): Promise<void> {
   // Dynamic import — code-split into a vendor chunk.
   const { jsPDF } = await import('jspdf');

@@ -120,7 +120,7 @@ describe('the go-live preview', () => {
       { ...good, soDocNo: OLD2, debtorCode: '301-NONE', advanceAccountCode: '500-0000', billedBeforeGoLiveSen: 2_000_001 },
     ]);
     expect(p[0]).toEqual([expect.stringContaining('2990-SO-NOPE is not a renovation contract')]);
-    expect(p[1]).toEqual([expect.stringContaining('signed on or after the ledger start')]);
+    expect(p[1]).toEqual([expect.stringContaining('signed on or after go-live')]);
     expect(p[2]).toEqual([expect.stringContaining('listed more than once'), expect.stringContaining('300-C001 is under 300-0000, not 301, 302 or 303')]);
     /* Listed twice, and every other fault of the row named. */
     expect(p[3]).toEqual(expect.arrayContaining([
@@ -129,6 +129,10 @@ describe('the go-live preview', () => {
       expect.stringContaining('500-0000 is not a sub-account of 480-0000 or 481-0000'),
       expect.stringContaining('more than the contract'),
     ]));
+  });
+
+  test("a project's account filed under AutoCount's month is accepted", async () => {
+    expect((await problemsOf(world(), [{ ...good, advanceAccountCode: '480-H001-1' }]))[0]).toEqual([]);
   });
 
   test('a header (an account with children) cannot be the advance account', async () => {

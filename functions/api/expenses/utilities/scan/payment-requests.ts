@@ -29,7 +29,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const [group] = await billsToPay(env, batchId, scanIds, provider);
   if (!group) return fail('NOT_FOUND', `No ${provider} bills of this save are left for the company to pay.`, 404);
   const files = await Promise.all(picked.map(fileToUpload));
-  const res = await forwardClaims(env, session, 'POST', '/utility-bills/payment-request', { provider, scanBatchId: `${batchId}#${part}`, bills: group.bills, files });
+  /* A request per bill (chew, 18 Nov 2026): the bill's page names its request, so two bills of a provider in one save are two. */
+  const key = scanIds.length === 1 ? `${batchId}#${part}:${scanIds[0]}` : `${batchId}#${part}`;
+  const res = await forwardClaims(env, session, 'POST', '/utility-bills/payment-request', { provider, scanBatchId: key, bills: group.bills, files });
   if (res.ok) {
     /* Each bill keeps the request it went out on (Utility bills "By payment request"; chew, 5 Nov 2026). */
     const made = await res.clone().json<{ id?: string; requestNo?: string }>().catch(() => null);

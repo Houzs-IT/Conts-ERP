@@ -19,7 +19,8 @@
 // write fence), so this import is the one place it changes after conversion.
 
 import { paginateAll } from '../scm/lib/paginate-all';
-import { isBeforeLedgerStart, loadLedgerSettings } from './ledger-settings';
+import { loadLedgerSettings } from './ledger-settings';
+import { renoGoLiveDay } from './go-live';
 import { ALLOC_BILL_CREDIT, ALLOC_CREDIT, ALLOC_INVOICE, CONTRACT_CANCELLED, CONTRACT_CHANGED, CONTRACT_SIGNED } from './reno-ledger';
 import { ADVANCE_PARENT } from './reno-advance-account';
 import { fmtSen } from '../scm/shared/format';
@@ -113,6 +114,9 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
     const ls = await loadLedgerSettings(sb, companyId);
     if (!ls.ok) return { ok: false, error: 'The ledger settings could not be read.' };
     const start = ls.settings.ledgerStartDate;
+    const gl = await renoGoLiveDay(sb, companyId);
+    if (!gl.ok) return { ok: false, error: `The go-live day could not be read: ${gl.error}` };
+    const goLive = gl.day ?? start;
 
     const docs = [...new Set(rows.map((r) => r.soDocNo).filter(Boolean))];
     const debtorCodes = [...new Set(rows.map((r) => r.debtorCode).filter(Boolean))];
@@ -124,9 +128,21 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
     const contracts = await readIn<{ so_doc_no: string; company_id: number | null; advance_account_code: string | null; billed_before_golive_sen: number | null; golive_cost_sen: number | null }>(
       sb, 'reno_so_contracts', 'so_doc_no, company_id, advance_account_code, billed_before_golive_sen, golive_cost_sen', 'so_doc_no', docs);
     const debtors = await readIn<{ code: string; control_account: string | null }>(sb, 'debtors', 'code, control_account', 'code', debtorCodes, byCompany);
+    const signedRows = await readIn<{ source_doc_no: string; reversed: boolean | null; source_type: string }>(
+      sb, 'journal_entries', 'source_doc_no, reversed, source_type', 'source_doc_no', docs, byCompany);
+    const signedInLedger = new Set(signedRows.filter((j) => j.source_type === CONTRACT_SIGNED && j.reversed !== true).map((j) => j.source_doc_no));
     const accounts = await readIn<{ account_code: string; parent_code: string | null; is_active: boolean | null }>(
       sb, 'accounts', 'account_code, parent_code, is_active', 'account_code', accountCodes, byCompany);
     const children = await readIn<{ parent_code: string }>(sb, 'accounts', 'parent_code', 'parent_code', accountCodes, byCompany);
+    /* AutoCount files a project's account under its month (480-0000 > 480-0009 ACCRUAL SALES - SEP'26 > 480-B003): a
+       grandchild of the advance parent is as good as a child. */
+    const parentCodes = [...new Set(accounts.map((x) => String(x.parent_code ?? '')).filter((c) => c && !ADVANCE_PARENTS.includes(c)))];
+    const parents = await readIn<{ account_code: string; parent_code: string | null }>(sb, 'accounts', 'account_code, parent_code', 'account_code', parentCodes, byCompany);
+    const grandOf = new Map(parents.map((x) => [x.account_code, String(x.parent_code ?? '')]));
+    const underAdvance = (parent: string | null | undefined): boolean => {
+      const p = String(parent ?? '');
+      return ADVANCE_PARENTS.includes(p) || ADVANCE_PARENTS.includes(grandOf.get(p) ?? '');
+    };
     const allocs = await readIn<{ so_doc_no: string; source_type: string; source_doc_no: string }>(
       sb, 'reno_revenue_allocations', 'so_doc_no, source_type, source_doc_no', 'so_doc_no', docs, byCompany);
     const vos = await readIn<{ so_doc_no: string; status: string; doc_date: string | null; approved_at: string | null; net_sen: number | null }>(
@@ -156,10 +172,10 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
       const contractSen = so
         ? items.filter((i) => i.doc_no === r.soDocNo && i.cancelled !== true && i.item_code !== 'RENO-CREDIT').reduce((s, i) => s + Number(i.total_sen ?? 0), 0)
         : null;
-      /* The contract at go-live: today's less the VOs approved or dated on or after the ledger start (they post as RVO). */
-      const afterStart = start
+      /* The contract at go-live: today's less the VOs approved or dated on or after go-live (they post as RVO). */
+      const afterStart = goLive
         ? vos.filter((v) => v.so_doc_no === r.soDocNo && v.status === 'APPROVED'
-          && ((v.doc_date != null && String(v.doc_date).slice(0, 10) >= start) || (v.approved_at != null && mytDay(v.approved_at) >= start)))
+          && ((v.doc_date != null && String(v.doc_date).slice(0, 10) >= goLive) || (v.approved_at != null && mytDay(v.approved_at) >= goLive)))
           .reduce((s, v) => s + Number(v.net_sen ?? 0), 0)
         : 0;
       const goLiveContractSen = contractSen == null ? null : contractSen - afterStart;
@@ -177,8 +193,10 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
         problems.push(`${r.soDocNo} is not a renovation contract of this company.`);
       } else if (so?.status === 'CANCELLED') {
         problems.push(`${r.soDocNo} is cancelled: there is nothing to seed.`);
-      } else if (so && start && !isBeforeLedgerStart(String(so.so_date ?? '').slice(0, 10), ls.settings)) {
-        problems.push(`${r.soDocNo} was signed on or after the ledger start (${start}): it posts through the ledger, not this import.`);
+      } else if (so && goLive && !(String(so.so_date ?? '').slice(0, 10) < goLive)) {
+        problems.push(`${r.soDocNo} was signed on or after go-live (${goLive}): it posts through the ledger, not this import.`);
+      } else if (r.soDocNo && signedInLedger.has(r.soDocNo)) {
+        problems.push(`${r.soDocNo} was signed in the ledger already (its contract journal is posted): it is not AutoCount's to seed.`);
       }
 
       const debtor = debtorOf.get(r.debtorCode);
@@ -193,7 +211,7 @@ export async function previewRenoOpening(sb: Sb, companyId: number, input: RenoO
 
       const acc = accountOf.get(r.advanceAccountCode);
       if (!r.advanceAccountCode) problems.push('No advance account.');
-      else if (!acc || !ADVANCE_PARENTS.includes(String(acc.parent_code ?? ''))) {
+      else if (!acc || !underAdvance(acc.parent_code)) {
         problems.push(`${r.advanceAccountCode} is not a sub-account of ${ADVANCE_PARENTS.join(' or ')} in the chart.`);
       } else if (acc.is_active === false) problems.push(`${r.advanceAccountCode} is deactivated in the chart.`);
       else if (isHeader.has(r.advanceAccountCode)) problems.push(`${r.advanceAccountCode} has sub-accounts of its own: pick the project's own account.`);

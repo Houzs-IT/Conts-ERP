@@ -29,7 +29,7 @@ import { recomputeSiPaid } from '../lib/si-order-deposit';
 import { applyVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
 import { voucherForPoPayment } from '../lib/renovation-po-voucher';
 import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule } from '../lib/renovation-po-schedule';
-import { listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
+import { applyTermsToContract, listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS } from '../lib/renovation-validate';
 import { onRenovationSoLinesChanged } from '../lib/renovation-hooks';
 import { postSiRevenue } from '../lib/post-si-revenue';
@@ -427,6 +427,13 @@ async function spendCustomerCredit(c: Context<{ Bindings: Env; Variables: Variab
     return 0;
   }
 }
+
+/* A contract's payment terms set again from a template, while nothing is billed (lib/renovation-terms). */
+renovation.post('/sales-orders/:docNo/instalments/terms', handle(PERM.terms, async (c, { tx }) => {
+  const b = await json(c);
+  const actor = actorOf(c);
+  return c.json(await tx((db) => applyTermsToContract(db, actor.companyId, param(c, 'docNo'), String(b.templateId ?? ''))));
+}));
 
 renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(PERM.bill, async (c, { tx }) => {
   const b = await json(c);

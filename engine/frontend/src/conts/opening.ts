@@ -145,9 +145,11 @@ export function downloadTemplate(kind: OpeningKind): void {
 
 /* ── The server ─────────────────────────────────────────────────────────────────────────────────────────────── */
 /** One control account against the documents that should explain it (backend/src/acc/opening.ts ControlLine). */
-export type ControlLine = { role: "AR" | "AP" | "AP_OTHER"; accountCode: string; controlSen: number; documentsSen: number; erpDocuments: number };
+export type ControlLine = { role: "AR" | "AP" | "AP_OTHER"; accountCode: string; controlSen: number; documentsSen: number; erpDocuments: number; unbilledContractsSen?: number };
 export type OpeningCheck = {
   ok: true; openingDay: string; openingJeNo: string | null; openingJeDate: string | null;
+  /** The day the controls and the open documents are compared on: the documents' cut-over when set (migration 0333). */
+  documentsDay?: string;
   trialDebitSen: number; trialCreditSen: number;
   controls: ControlLine[];
   banks: { accountCode: string; name: string; balanceSen: number }[];
@@ -184,9 +186,72 @@ export const useReverseOpening = () => {
   });
 };
 
+/** What reads the balances again after an import (the AutoCount ledger books outside a mutation hook). */
+export const useRefreshAfterOpening = (): (() => void) => {
+  const qc = useQueryClient();
+  return () => invalidateOpening(qc);
+};
+
 export function invalidateOpening(qc: ReturnType<typeof useQueryClient>): void {
   for (const key of [CHECK_KEY, ["account-balances"], ["report-bs"], ["report-pnl"], ["finance-dashboard"], ["ar-aging"], ["ap-aging"],
     ["control-check"], ["journal-entries"], ["gl-entries"], ["gl-ledger"], ["sales-invoices"], ["purchase-invoices"]]) {
     void qc.invalidateQueries({ queryKey: key });
   }
+}
+
+/* ── AutoCount's books after the ledger start, as journals (backend/src/acc/autocount-journals.ts; chew, 17 Nov 2026) ── */
+export const AUTOCOUNT_COLUMNS = ["Doc no", "Date", "Account", "Debit", "Credit"] as const;
+export const AUTOCOUNT_OPTIONAL = ["Kind", "Description", "Department", "Unit", "Project"] as const;
+export type AutocountLine = { accountCode: string; debitSen: number; creditSen: number; notes?: string; department?: string; unitId?: string; projectId?: number };
+export type AutocountDoc = { docNo: string; date: string; kind?: string; narration?: string; lines: AutocountLine[] };
+export type AutocountSheet = { docs: AutocountDoc[]; lines: number; debitSen: number; creditSen: number; problems: string[]; error: string | null };
+export type AutocountImport = { posted: number; already: number; errors: { docNo: string; error: string }[] };
+const DEPTS = new Set(["rental", "supply", "shared"]);
+
+/** The ledger's lines, one row each, grouped into documents by Doc no; what is wrong with a row or a document, by name. */
+export function parseAutocountGrid(grid: unknown[][]): AutocountSheet {
+  const g = readGrid(grid, AUTOCOUNT_COLUMNS, AUTOCOUNT_OPTIONAL);
+  const out: AutocountSheet = { docs: [], lines: 0, debitSen: 0, creditSen: 0, problems: [], error: g.error };
+  const byNo = new Map<string, AutocountDoc>();
+  for (const { line, cells } of g.rows) {
+    const docNo = String(cells["Doc no"] ?? "").trim();
+    const date = toDay(cells.Date);
+    const accountCode = String(cells.Account ?? "").trim().toUpperCase();
+    const dr = toSen(cells.Debit), cr = toSen(cells.Credit);
+    const dept = String(cells.Department ?? "").trim().toLowerCase();
+    const project = String(cells.Project ?? "").trim();
+    const bad = !docNo ? "no Doc no" : !date ? "the date is not a date" : !accountCode ? "no account" : dr == null || cr == null ? "the amount is not a plain RM figure"
+      : dept && !DEPTS.has(dept) ? `department ${dept} is not rental, supply or shared` : project && !/^\d+$/.test(project) ? "the project is not a project number" : null;
+    if (bad) { out.problems.push(`Row ${line}: ${bad}.`); continue; }
+    const doc = byNo.get(docNo) ?? { docNo, date: date!, kind: String(cells.Kind ?? "").trim() || undefined, lines: [] };
+    if (doc.date !== date) { out.problems.push(`Row ${line}: ${docNo} has two dates.`); continue; }
+    const notes = String(cells.Description ?? "").trim();
+    if (!doc.narration && notes) doc.narration = notes.slice(0, 120);
+    doc.lines.push({ accountCode, debitSen: dr!, creditSen: cr!, ...(notes ? { notes: notes.slice(0, 200) } : {}), ...(dept ? { department: dept } : {}),
+      ...(String(cells.Unit ?? "").trim() ? { unitId: String(cells.Unit).trim() } : {}), ...(project ? { projectId: Number(project) } : {}) });
+    byNo.set(docNo, doc);
+    out.lines += 1; out.debitSen += dr!; out.creditSen += cr!;
+  }
+  out.docs = [...byNo.values()];
+  for (const d of out.docs) {
+    const net = d.lines.reduce((n, l) => n + l.debitSen - l.creditSen, 0);
+    if (net !== 0) out.problems.push(`${d.docNo}: debit and credit differ by ${(net / 100).toFixed(2)}.`);
+  }
+  return out;
+}
+
+/** Books the documents a hundred at a time, telling how far it got; what each batch refused is kept, the rest go on. */
+export async function importAutocount(docs: AutocountDoc[], onBatch: (done: number, total: number) => void): Promise<AutocountImport> {
+  const out: AutocountImport = { posted: 0, already: 0, errors: [] };
+  for (let i = 0; i < docs.length; i += 100) {
+    const part = docs.slice(i, i + 100);
+    try {
+      const r = await authedFetch<AutocountImport>("/accounting/opening/autocount-journals", { method: "POST", body: JSON.stringify({ docs: part }) });
+      out.posted += r.posted; out.already += r.already; out.errors.push(...r.errors);
+    } catch (e) {
+      out.errors.push(...part.map((d) => ({ docNo: d.docNo, error: e instanceof Error ? e.message : "The batch failed." })));
+    }
+    onBatch(Math.min(i + 100, docs.length), docs.length);
+  }
+  return out;
 }

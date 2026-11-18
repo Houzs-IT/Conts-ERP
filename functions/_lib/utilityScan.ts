@@ -71,6 +71,8 @@ export async function recentBills(env: Env, kind: string, month: string): Promis
 export type RecordRow = {
   scanId: string; unitId: string; accountId?: string | null; kind: string; billMonth: string;
   periodFrom?: string | null; periodTo?: string | null; amountSen: number; chargeTo?: string; ownerPaid?: boolean;
+  /** The day the bill must be paid by, as printed (chew, 18 Nov 2026). */
+  dueDate?: string | null;
 };
 export type RecordResult =
   | { ok: true; recorded: number; alreadyDone: number; rolled: { scanId: string; deductMonth: string }[]; ownerLines: number; notSplit: string[];
@@ -90,6 +92,7 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
     if (!r.unitId) return bad(r.scanId, 'Pick the unit');
     if ((r.periodFrom && !DATE.test(r.periodFrom)) || (r.periodTo && !DATE.test(r.periodTo)) || (!!r.periodFrom !== !!r.periodTo)) return bad(r.scanId, 'Enter both dates of the period, or neither.');
     if (r.periodFrom && r.periodTo && r.periodTo < r.periodFrom) return bad(r.scanId, 'The period ends before it starts.');
+    if (r.dueDate && !DATE.test(r.dueDate)) return bad(r.scanId, 'Enter the due date as a date.');
     if (r.chargeTo !== undefined && !CHARGE_TO.includes(r.chargeTo)) return bad(r.scanId, 'Choose who pays the bill.');
   }
   if (new Set(rows.map(r => r.scanId)).size !== rows.length) return { ok: false, status: 422, code: 'VALIDATION', message: 'A page is in the list twice.' };
@@ -194,8 +197,8 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
           account.id, (read.accountNoVisible as string | null) ?? (read.accountNoFull as string | null) ?? null,
           typeof read.depositSen === 'number' ? read.depositSen : null, (read.buildingName as string | null) ?? null, (read.ownerName as string | null) ?? null,
           meter, r.billMonth, now);
-        await run(tx, `UPDATE utility_bill_scans SET expense_id = ?, owner_paid = ?, bill_sen = ?, provider = ?, account_no = ? WHERE id = ?`,
-          expenseId, !!r.ownerPaid, r.amountSen, provider, account.account_no, r.scanId);
+        await run(tx, `UPDATE utility_bill_scans SET expense_id = ?, owner_paid = ?, bill_sen = ?, provider = ?, account_no = ?, due_date = ?::date WHERE id = ?`,
+          expenseId, !!r.ownerPaid, r.amountSen, provider, account.account_no, r.dueDate || null, r.scanId);
         /* The page was uploaded before anyone knew its unit; it is that unit's receipt now. */
         await run(tx, 'UPDATE documents SET unit_id = ? WHERE id = ? AND unit_id IS NULL', r.unitId, scan.document_id);
       }
@@ -206,26 +209,27 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
     if (e instanceof Refused) return { ok: false, status: 409, code: e.message === 'Already recorded' ? 'ALREADY_RECORDED' : 'REFUSED', message: e.message, fields: { [e.scanId]: e.message } };
     throw e;
   }
+  /* One payment request per bill (chew, 18 Nov 2026), so finance pays and files each on its own, by its due date. */
   const toPay = (await billsToPay(env, batchId, rows.map(r => r.scanId)))
-    .map(g => ({ provider: g.provider, count: g.bills.length, amountSen: g.bills.reduce((n, x) => n + x.amountSen, 0), scanIds: g.scanIds }));
+    .flatMap(g => g.bills.map((x, i) => ({ provider: g.provider, count: 1, amountSen: x.amountSen, scanIds: [g.scanIds[i]!] })));
   return { ok: true, recorded: rows.length - alreadyDone, alreadyDone, rolled, ownerLines, notSplit, toPay };
 }
 
 class Refused extends Error { constructor(public scanId: string, message: string) { super(message); } }
 
 /** The bills of one save (`scanIds`) the company pays (not ticked "Owner paid"), by provider, for the payment requests. */
-export async function billsToPay(env: Env, batchId: string, scanIds: string[], provider?: string): Promise<{ provider: string; scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; billDate: string | null; accountNo: string | null; amountSen: number }[] }[]> {
-  const rows = await all<{ id: string; expense_id: string; provider: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; account_no: string | null; bill_sen: number }>(env, `
-    SELECT s.id, s.expense_id, s.provider, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, s.account_no, s.bill_sen FROM utility_bill_scans s JOIN expenses e ON e.id = s.expense_id
+export async function billsToPay(env: Env, batchId: string, scanIds: string[], provider?: string): Promise<{ provider: string; scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; billDate: string | null; dueDate: string | null; accountNo: string | null; amountSen: number }[] }[]> {
+  const rows = await all<{ id: string; expense_id: string; provider: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; due_date: string | null; account_no: string | null; bill_sen: number }>(env, `
+    SELECT s.id, s.expense_id, s.provider, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, s.account_no, s.bill_sen FROM utility_bill_scans s JOIN expenses e ON e.id = s.expense_id
     WHERE s.batch_id = ? AND NOT s.owner_paid AND s.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
     ORDER BY s.provider, e.incurred_on, e.unit_id`, batchId, JSON.stringify(scanIds));
-  const out = new Map<string, { scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; billDate: string | null; accountNo: string | null; amountSen: number }[] }>();
+  const out = new Map<string, { scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; billDate: string | null; dueDate: string | null; accountNo: string | null; amountSen: number }[] }>();
   for (const r of rows) {
     if (provider && r.provider !== provider) continue;
     const g = out.get(r.provider) ?? { scanIds: [], expenseIds: [], bills: [] };
     g.scanIds.push(r.id);
     g.expenseIds.push(r.expense_id);
-    g.bills.push({ unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), billDate: r.bill_date ?? null, accountNo: r.account_no, amountSen: Number(r.bill_sen) });
+    g.bills.push({ unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), billDate: r.bill_date ?? null, dueDate: r.due_date ?? null, accountNo: r.account_no, amountSen: Number(r.bill_sen) });
     out.set(r.provider, g);
   }
   return [...out].map(([p, g]) => ({ provider: p, ...g }));

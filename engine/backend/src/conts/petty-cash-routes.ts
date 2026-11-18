@@ -685,6 +685,35 @@ export const getStaffBankHandler = async (c: Ctx): Promise<Response> => {
   return c.json({ details: await bankDetailsOf(c.get('supabase'), co.companyId, c.req.param('userId')) });
 };
 
+/** GET /accounting/staff-banks — every active staff member with the bank they are paid back to (chew, 18 Nov 2026: a
+ *  page to keep them): finance's own record, else the HR employee record, else none. Ledger full only. */
+export const listStaffBanksHandler = async (c: Ctx): Promise<Response> => {
+  if (!hasHouzsPerm(c, FULL_KEY)) return forbid(c);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const [{ data: staff, error }, { data: depts }] = await Promise.all([
+    sb.schema('public').from('conts_staff').select('id, full_name, department_id, active'),
+    sb.schema('public').from('conts_departments').select('id, name'),
+  ]);
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  const live = ((staff ?? []) as Array<{ id: string; full_name: string; department_id: string | null; active: boolean }>).filter((s) => s.active);
+  const ids = live.map((s) => String(s.id));
+  const [{ data: own }, saved] = await Promise.all([
+    ids.length ? sb.from('staff_bank_details').select('user_id').eq('company_id', co.companyId).in('user_id', ids) : Promise.resolve({ data: [] }),
+    savedBanksOf(sb, co.companyId, ids),
+  ]);
+  const ownSet = new Set(((own ?? []) as Array<{ user_id: string }>).map((o) => String(o.user_id)));
+  const deptOf = new Map(((depts ?? []) as Array<{ id: string; name: string }>).map((d) => [String(d.id), d.name]));
+  return c.json({
+    staff: live.map((s) => {
+      const bank = saved.get(String(s.id)) ?? null;
+      return { userId: String(s.id), name: s.full_name, department: s.department_id ? deptOf.get(String(s.department_id)) ?? null : null,
+        bank, source: bank ? (ownSet.has(String(s.id)) ? 'finance' : 'hr') : null };
+    }).sort((a, b) => a.name.localeCompare(b.name)),
+  });
+};
+
 export const putStaffBankHandler = async (c: Ctx): Promise<Response> => {
   if (!hasHouzsPerm(c, FULL_KEY)) return forbid(c);
   const co = requireActiveCompanyId(c);
