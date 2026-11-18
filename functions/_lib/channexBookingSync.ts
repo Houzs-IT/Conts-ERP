@@ -66,9 +66,26 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
   const checkOut: string | undefined = room.checkout_date ?? a.departure_date;
   if (!checkIn || !checkOut) return auditSkip(env, entry.id, 'missing_dates', a);
 
-  const existing = await one<{ id: string; state: string; unit_id: string; check_in: string; check_out: string }>(env,
+  let existing = await one<{ id: string; state: string; unit_id: string; check_in: string; check_out: string }>(env,
     'SELECT id, state, unit_id, check_in, check_out FROM reservations WHERE channex_booking_id = ?', a.booking_id);
   const now = nowIso();
+
+  // A booking the Host Platform import brought in carries the site's reservation number but no Channex ID. Moving a
+  // building to Channex loads its future bookings again, so claim that one instead of adding it a second time.
+  if (!existing && a.ota_reservation_code) {
+    existing = await one<{ id: string; state: string; unit_id: string; check_in: string; check_out: string }>(env,
+      `SELECT id, state, unit_id, check_in, check_out FROM reservations WHERE unit_id = ? AND external_ref = ? AND channex_booking_id IS NULL LIMIT 1`,
+      unit.id, String(a.ota_reservation_code));
+    if (existing) {
+      await run(env, 'UPDATE reservations SET channex_booking_id = ?, updated_at = ? WHERE id = ?', a.booking_id, now, existing.id);
+      await audit(env, { actorId: null, actorLabel: 'Channex', action: 'channex.booking_claimed', entityTable: 'reservations', entityId: existing.id,
+        after: { channexBookingId: a.booking_id, otaReservationCode: a.ota_reservation_code } });
+      // The loaded copy lacks guest details and commission (Channex docs), so the imported booking keeps its own
+      // unless the stay itself changed.
+      if (a.status !== 'cancelled' && existing.state !== 'cancelled' && existing.check_in === checkIn
+        && existing.check_out === checkOut) return true;
+    }
+  }
 
   if (a.status === 'cancelled') {
     if (existing && existing.state !== 'cancelled') {
@@ -88,7 +105,9 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
   // A booking with no name gets its reference in the placeholder, so nameless guests do not all become one record.
   const ref = a.ota_reservation_code ?? a.unique_id ?? a.booking_id ?? '';
   const guestName = [a.customer?.name, a.customer?.surname].filter(Boolean).join(' ').trim() || `${a.ota_name ?? 'Channel'} guest${ref ? ` ${ref}` : ''}`;
-  const guestId = await upsertGuest(env, { fullName: guestName, email: a.customer?.mail ?? null, phone: a.customer?.phone ?? null });
+  // A booking already here keeps its guest when the site sent no name, rather than becoming the placeholder.
+  const keepGuest = !!existing && !(a.customer?.name || a.customer?.surname);
+  const guestId = keepGuest ? null : await upsertGuest(env, { fullName: guestName, email: a.customer?.mail ?? null, phone: a.customer?.phone ?? null });
   // Booking value and the site's fee: Channex's amount is the payout on Airbnb (channexAmounts.ts).
   const { grossSen: amountSen, feeSen, source: amountSource } = bookingAmounts(a, room.amount);
   // Owner statements count what the booking site pays out (collected_revenue; functions/_lib/ownerStatement.ts).
@@ -98,9 +117,9 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
   if (existing) {
     // A modification carries dates, guests and money only. Where the guest is in the stay is ours: a guest already
     // checked in or out stays so (this used to reset them to confirmed); a cancelled booking the site sends again is live.
-    await run(env, `UPDATE reservations SET guest_id = ?, check_in = ?, check_out = ?, guests_count = ?, gross_booking_value = ?, channel_fee = ?, collected_revenue = ?, currency = ?,
+    await run(env, `UPDATE reservations SET guest_id = CASE WHEN ?::boolean THEN guest_id ELSE ? END, check_in = ?, check_out = ?, guests_count = ?, gross_booking_value = ?, channel_fee = ?, collected_revenue = ?, currency = ?,
       state = CASE WHEN state IN ('checked_in','checked_out','no_show') THEN state ELSE 'confirmed' END, updated_at = ? WHERE id = ?`,
-      guestId, checkIn, checkOut, guestsCount, amountSen, feeSen, payoutSen, a.currency ?? 'MYR', now, existing.id);
+      keepGuest, guestId, checkIn, checkOut, guestsCount, amountSen, feeSen, payoutSen, a.currency ?? 'MYR', now, existing.id);
     // A changed stay frees the nights it left and takes the ones it moved to.
     if (existing.check_in !== checkIn || existing.check_out !== checkOut || existing.state === 'cancelled') {
       if (existing.state !== 'cancelled') await reopen(env, unit.id, existing.check_in, existing.check_out, existing.id);
