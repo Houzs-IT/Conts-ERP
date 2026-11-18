@@ -208,7 +208,7 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
       <Field label={tr.note} value={note} onChange={e => setNote(e.target.value)} placeholder={tr.notePh} maxLength={300} />
       {onProjects
         ? <Select label={tr.project} showLabel size="md" value={projectId} onChange={setProjectId}
-            options={[{ value: '', label: tr.noProject }, ...(projects.data?.projects ?? []).filter(x => x.side === 'supply').map(x => ({ value: String(x.id), label: x.code ? `${x.code} · ${x.name}` : x.name }))]} />
+            options={[{ value: '', label: tr.noProject }, ...(projects.data?.projects ?? []).filter(x => x.side === 'supply').map(x => ({ value: String(x.id), label: x.code ? `${x.code} - ${x.name}` : x.name }))]} />
         : <Select label={tr.unit} showLabel size="md" value={unitId} onChange={setUnitId}
             options={[{ value: '', label: tr.noUnit }, ...(units.data?.units ?? []).map(u => ({ value: u.id, label: `${buildingName(u.building)} ${u.unitNumber}` }))]} />}
       {way === 'finance' && (
