@@ -56,6 +56,10 @@ export type SupplierRow = {
   supplier_type: string | null;
   category: string | null;
   tin_number: string | null;
+  /** Conts 0336: where the supplier is paid (on the record, not the list). */
+  bank_name?: string | null;
+  bank_account_no?: string | null;
+  bank_account_name?: string | null;
   business_reg_no: string | null;
   postcode: string | null;
   area: string | null;
