@@ -124,6 +124,9 @@ describe("Payment requests", () => {
       lines: [{ id: "LU", department: "rental", unitId: "U1", maintenanceIssueId: null, projectId: null, accountCode: null, amountSen: 31425, description: "Electricity 2026-11 2102353477XX" }] }];
     const Probe = () => { const st = useLocation().state as { claimsPrefill?: { lines: Array<{ accountCode?: string | null }> } } | null; return <div>{`opened ${st?.claimsPrefill?.lines.map((l) => l.accountCode).join(",")}`}</div>; };
     render(<MemoryRouter initialEntries={["/r"]}><Routes><Route path="/r" element={<PaymentRequests />} /><Route path="/scm/payment-vouchers/new" element={<Probe />} /></Routes></MemoryRouter>);
+    /* Utility bills are on their own tab (chew, 18 Nov 2026). */
+    expect(screen.queryByText("PRQ-2611-009")).toBeNull();
+    fireEvent.click(screen.getByText(/^Utility bills/));
     expect(screen.queryByText("Make AP invoice")).toBeNull();
     fireEvent.click(screen.getByText("Make voucher"));
     expect(await screen.findByText("opened 420-0010")).toBeTruthy();
