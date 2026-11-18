@@ -22,7 +22,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const sent = group.bills.map(x => x.expenseId);
   const res = await forwardClaims(env, session, 'POST', '/utility-bills/payment-request', {
     provider, scanBatchId: await requestKey(sent), note: `${sent.length} ${provider} bills entered on the Utility bills screen.`,
-    bills: group.bills.map(({ unitId, kind, billMonth, billDate, accountNo, amountSen }) => ({ unitId, kind, billMonth, billDate, accountNo, amountSen })),
+    bills: group.bills.map(({ unitId, kind, billMonth, billDate, dueDate, accountNo, amountSen }) => ({ unitId, kind, billMonth, billDate, dueDate, accountNo, amountSen })),
   });
   if (!res.ok) return res;
   const made = await res.json<{ id?: string; requestNo?: string; amountSen?: number }>().catch(() => null);
