@@ -209,8 +209,9 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
     if (e instanceof Refused) return { ok: false, status: 409, code: e.message === 'Already recorded' ? 'ALREADY_RECORDED' : 'REFUSED', message: e.message, fields: { [e.scanId]: e.message } };
     throw e;
   }
+  /* One payment request per bill (chew, 18 Nov 2026), so finance pays and files each on its own, by its due date. */
   const toPay = (await billsToPay(env, batchId, rows.map(r => r.scanId)))
-    .map(g => ({ provider: g.provider, count: g.bills.length, amountSen: g.bills.reduce((n, x) => n + x.amountSen, 0), scanIds: g.scanIds }));
+    .flatMap(g => g.bills.map((x, i) => ({ provider: g.provider, count: 1, amountSen: x.amountSen, scanIds: [g.scanIds[i]!] })));
   return { ok: true, recorded: rows.length - alreadyDone, alreadyDone, rolled, ownerLines, notSplit, toPay };
 }
 
