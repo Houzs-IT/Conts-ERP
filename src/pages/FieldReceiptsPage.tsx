@@ -106,6 +106,10 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
   const p = t.claimPay;
   const toast = useToast();
   const units = useApi<{ units: { id: string; building: string; unitNumber: string }[] }>('/claims/units');
+  /* Renovation staff put a cost on its project (chew, 18 Nov 2026: CK 1's bill for ASTRUM R-13-03 went to Company). */
+  const onProjects = me.lineDepartment === 'supply';
+  const projects = useApi<{ projects: { id: number; code: string | null; name: string; side: string }[] }>(onProjects ? '/claims/projects' : null);
+  const [projectId, setProjectId] = useState('');
   /* Petty Cash (Claim) is the default, and is not offered to someone with no petty cash. */
   const pettyCashOffered = me.route !== 'finance';
   const [chosen, setChosen] = useState<Way>(pettyCashOffered ? 'float' : 'finance');
@@ -160,7 +164,9 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
     setProblem(null);
     if (files.length === 0) return setProblem(way === 'supplier' ? tr.needBill : tr.needPhoto);
     if (!amountSen || amountSen <= 0) return setProblem(tr.needAmount);
-    const line = { department: me.lineDepartment, amountSen, description: note.trim() || undefined, ...(unitId ? { unitId } : {}) };
+    if (onProjects && !projectId) return setProblem(tr.needProject);
+    const line = { department: me.lineDepartment, amountSen, description: note.trim() || undefined,
+      ...(onProjects ? { projectId: Number(projectId) } : unitId ? { unitId } : {}) };
     if (way === 'supplier' && !payeeName.trim()) return setProblem(tr.needPayee);
     const badBank = way === 'finance' ? bankProblem(bank) : null;
     if (badBank) return setWrongBank(badBank);
@@ -200,8 +206,11 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
         ? <DateField label={tr.payBy} value={wantedOn} display={day} onChange={setWantedOn} min={todayMyt()} />
         : <DateField label={tr.date} value={spendDate} display={day} onChange={v => { setSpendDate(v); dateTouched.current = true; }} max={todayMyt()} />}
       <Field label={tr.note} value={note} onChange={e => setNote(e.target.value)} placeholder={tr.notePh} maxLength={300} />
-      <Select label={tr.unit} showLabel size="md" value={unitId} onChange={setUnitId}
-        options={[{ value: '', label: tr.noUnit }, ...(units.data?.units ?? []).map(u => ({ value: u.id, label: `${buildingName(u.building)} ${u.unitNumber}` }))]} />
+      {onProjects
+        ? <Select label={tr.project} showLabel size="md" value={projectId} onChange={setProjectId}
+            options={[{ value: '', label: tr.noProject }, ...(projects.data?.projects ?? []).filter(x => x.side === 'supply').map(x => ({ value: String(x.id), label: x.code ? `${x.code} · ${x.name}` : x.name }))]} />
+        : <Select label={tr.unit} showLabel size="md" value={unitId} onChange={setUnitId}
+            options={[{ value: '', label: tr.noUnit }, ...(units.data?.units ?? []).map(u => ({ value: u.id, label: `${buildingName(u.building)} ${u.unitNumber}` }))]} />}
       {way === 'finance' && (
         <ClaimBankFields bank={bank} wrong={wrongBank} t={t} touch
           onChange={(k, v) => { setBank(b => ({ ...b, [k]: v })); if (wrongBank === k) setWrongBank(null); }} />
