@@ -122,6 +122,9 @@ type DraftLine = {
   itemGroup:      string | null;
   /* A line keyed by account instead of an item (chew, 18 Nov 2026): it books to this purchase account. */
   accountCode?:   string;
+  /* The line opened for a stock item (chew, 18 Nov 2026): a manual line shows only account, description, qty and price
+     until "Use a stock item" opens the item code and stock group. A line with an item code is always open. */
+  useItem?:       boolean;
   variants:       Record<string, unknown> | null;
   qty:            number;
   unitPriceSen: number;
@@ -923,6 +926,9 @@ export const PurchaseInvoiceNew = () => {
                 return variants;
               })() });
             const isManualLine = l.grnItemId === null;
+            const compact = isManualLine && !l.useItem && !l.itemCode.trim();
+            const linkBtn: React.CSSProperties = { alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+              color: 'var(--c-accent, #8a6d3b)', fontSize: 'var(--fs-12)', fontWeight: 600 };
             return (
               <div key={l.rid} style={{
                 background: 'var(--c-paper)', border: '1px solid var(--line)',
@@ -958,6 +964,42 @@ export const PurchaseInvoiceNew = () => {
                   </div>
                 </div>
 
+                {compact ? (
+                  <>
+                    {/* The everyday line (chew, 18 Nov 2026): account, description, qty, unit price, total, one row. */}
+                    <div style={{ display: 'grid', gap: 'var(--space-3)', alignItems: 'end',
+                      gridTemplateColumns: 'minmax(180px, 2fr) minmax(200px, 3fr) minmax(70px, 0.7fr) minmax(110px, 1fr) minmax(110px, 1fr)' }}>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Account</span>
+                        <AccountSelect accounts={lineAccounts} value={l.accountCode ?? ''} className={styles.fieldInput}
+                          onChange={(code) => chooseLineAccount(l.rid, code, l.itemGroup)} placeholder="— purchase account —" />
+                      </label>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Description</span>
+                        <input type="text" value={l.materialName} onChange={(e) => setLine(l.rid, { materialName: e.target.value })}
+                          aria-label={`line ${idx + 1} description`} placeholder="What was bought" className={styles.fieldInput} />
+                      </label>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Qty</span>
+                        <NumberInput value={l.qty} sign="unsigned" decimal={false}
+                          onValueChange={(n) => setLine(l.rid, { qty: Math.max(0, n ?? 0) })}
+                          className={styles.fieldInput} style={{ textAlign: 'right' }} />
+                      </label>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Unit Price ({currency})</span>
+                        <MoneyInput bare valueSen={l.unitPriceSen}
+                          onCommit={(sen) => setLine(l.rid, { unitPriceSen: sen ?? 0 })}
+                          inputClassName={styles.fieldInput} selectOnFocus />
+                      </label>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Line Total</span>
+                        <input type="text" readOnly value={fmtRm(lineTotal, currency)} className={styles.fieldInput}
+                          style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', background: 'var(--c-cream)', color: 'var(--fg-muted)' }} />
+                      </label>
+                    </div>
+                    <button type="button" style={linkBtn} onClick={() => setLine(l.rid, { useItem: true })}>+ Use a stock item</button>
+                  </>
+                ) : (<>
                 {/* Identity row — Item Code (Internal) + Description */}
                 <div className={styles.formGrid2}>
                   <label className={styles.field}>
@@ -1115,6 +1157,10 @@ export const PurchaseInvoiceNew = () => {
                       style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', background: 'var(--c-cream)', color: 'var(--fg-muted)' }} />
                   </label>
                 </div>
+                {isManualLine && !l.itemCode.trim() && (
+                  <button type="button" style={linkBtn} onClick={() => setLine(l.rid, { useItem: false, itemGroup: null })}>Account only, no stock item</button>
+                )}
+                </>)}
               </div>
             );
           })}
