@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
 import { StaleBanner } from '../components/DataState';
-import { Select } from '../components/Select';
+import { SearchSelect, Select } from '../components/Select';
 import { Field } from '../components/Field';
 import { MoneyInput, DateField } from '../components/inputs';
 import { FileDropRow } from '../components/Attachments';
@@ -207,8 +207,9 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
         : <DateField label={tr.date} value={spendDate} display={day} onChange={v => { setSpendDate(v); dateTouched.current = true; }} max={todayMyt()} />}
       <Field label={tr.note} value={note} onChange={e => setNote(e.target.value)} placeholder={tr.notePh} maxLength={300} />
       {onProjects
-        ? <Select label={tr.project} showLabel size="md" value={projectId} onChange={setProjectId}
-            options={[{ value: '', label: tr.noProject }, ...(projects.data?.projects ?? []).filter(x => x.side === 'supply').map(x => ({ value: String(x.id), label: x.code ? `${x.code} ┊ ${x.name}` : x.name }))]} />
+        /* Type a word of the project (chew, 18 Nov 2026: "可以打关键字眼快速搜索？"): ASTRUM, R-13-03, RN-2607. */
+        ? <SearchSelect label={tr.project} showLabel size="md" value={projectId} onChange={setProjectId} allLabel={tr.noProject} placeholder={tr.searchProject}
+            options={(projects.data?.projects ?? []).filter(x => x.side === 'supply').map(x => ({ value: String(x.id), label: x.code ? `${x.code} ┊ ${x.name}` : x.name }))} />
         : <Select label={tr.unit} showLabel size="md" value={unitId} onChange={setUnitId}
             options={[{ value: '', label: tr.noUnit }, ...(units.data?.units ?? []).map(u => ({ value: u.id, label: `${buildingName(u.building)} ${u.unitNumber}` }))]} />}
       {way === 'finance' && (
