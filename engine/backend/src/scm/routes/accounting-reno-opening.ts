@@ -30,6 +30,8 @@ async function readRows(c: any): Promise<{ ok: true; companyId: number; rows: Re
     rows: rows.map((r: any) => ({
       soDocNo: String(r?.soDocNo ?? ''), debtorCode: String(r?.debtorCode ?? ''), advanceAccountCode: String(r?.advanceAccountCode ?? ''),
       billedBeforeGoLiveSen: Number(r?.billedBeforeGoLiveSen),
+      /* Blank keeps what is saved; a figure (sen) is AutoCount's project cost before go-live. */
+      costBeforeGoLiveSen: r?.costBeforeGoLiveSen == null || r?.costBeforeGoLiveSen === '' ? null : Number(r.costBeforeGoLiveSen),
     })),
   };
 }
