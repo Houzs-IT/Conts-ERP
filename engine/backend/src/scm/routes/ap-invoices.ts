@@ -57,11 +57,11 @@ type Row = Record<string, any>;
 const NO_PERM = (what: string) => ({ error: `You don't have permission to ${what}.` });
 
 const HEADER = 'id, company_id, invoice_number, supplier_id, supplier_invoice_ref, invoice_date, due_date, currency, exchange_rate, total_sen, paid_sen, status, notes, created_at, created_by, posted_at, posted_by, cancelled_at, cancelled_by, payment_request_id, provisional';
-const LINE = 'id, line_no, description, debit_account_code, amount_sen, department, project_id, sub_department_id, unit_id, source_request_line_id';
+const LINE = 'id, line_no, description, debit_account_code, amount_sen, department, project_id, sub_department_id, unit_id, source_request_line_id, item_group';
 
 /* Conts: each line's department (finance phase 1, spec 3.5); none is Supply chain. The unit, and the payment request line
    it came from (chew, 15 Nov 2026: a request becomes an AP invoice; spec 2026-11-15-request-to-ap-invoice-design.md). */
-type CleanLine = { description: string | null; code: string; amountSen: number; department: Department; projectId: number | null; subDepartmentId: string | null; unitId: string | null; sourceRequestLineId: string | null };
+type CleanLine = { description: string | null; code: string; amountSen: number; department: Department; projectId: number | null; subDepartmentId: string | null; unitId: string | null; sourceRequestLineId: string | null; itemGroup: string | null };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Lines a bill takes: 50, or as many as a utility payment request holds when the bill is made from a request (one line
@@ -89,10 +89,13 @@ function buildLines(raw: unknown, maxLines = MAX_LINES): { lines: CleanLine[]; t
     if (project != null && !Number.isSafeInteger(project)) return { error: 'bad_line', message: `Line ${i + 1}: choose the project from the list.` };
     const unitId = l?.unitId == null || String(l.unitId).trim() === '' ? null : String(l.unitId).trim().slice(0, 80);
     const source = l?.sourceRequestLineId && UUID.test(String(l.sourceRequestLineId)) ? String(l.sourceRequestLineId).toLowerCase() : null;
+    /* The stock group the line buys (chew, 18 Nov 2026), blank for none: a group code, as the item groups page names it. */
+    const group = String(l?.itemGroup ?? '').trim().toUpperCase();
+    if (group && !/^[A-Z0-9_]{1,40}$/.test(group)) return { error: 'bad_line', message: `Line ${i + 1}: choose the stock group from the list.` };
     lines.push({
       description: l?.description ? String(l.description).trim() : null, code, amountSen: amount,
       department: isDepartment(l?.department) ? l.department : DEFAULT_DEPARTMENT, projectId: project, subDepartmentId: null,
-      unitId, sourceRequestLineId: source,
+      unitId, sourceRequestLineId: source, itemGroup: group || null,
     });
   }
   return { lines, total: lines.reduce((s, l) => s + l.amountSen, 0) };
@@ -311,6 +314,7 @@ export async function createApInvoiceCore(c: any, body: any, from: { paymentRequ
     ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
     unit_id: l.unitId,
     source_request_line_id: l.sourceRequestLineId,
+    ...(l.itemGroup ? { item_group: l.itemGroup } : {}),
   })));
   if (lineErr) {
     await sb.from('ap_invoices').delete().eq('company_id', co.companyId).eq('id', (inv as Row).id);
@@ -403,6 +407,7 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
       description: l.description, debit_account_code: l.code, amount_sen: l.amountSen, department: l.department, project_id: l.projectId,
       ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
       unit_id: l.unitId, source_request_line_id: l.sourceRequestLineId,
+      ...(l.itemGroup ? { item_group: l.itemGroup } : {}),
     })));
     if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
     patch.total_sen = built.total;

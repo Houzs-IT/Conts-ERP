@@ -61,7 +61,8 @@ import { DataTable, type Column } from '../../components/DataTable';
 import { cancelledDocNoClass, cancelledRowClass } from '../../lib/scm';
 import { departmentOf } from '../../conts/department';
 import { UnitName } from '../../conts/Pickers';
-import { ApInvoiceForm, emptyApForm, formFromExtraction, scanNoteFor, type ApFormMode, type ApFormSubmit, type ApFormValues } from './ApInvoiceForm';
+import { ApInvoiceForm, emptyApForm, formFromExtraction, scanNoteFor, type ApFormMode, type ApFormSubmit, type ApFormValues, type ApItemGroup } from './ApInvoiceForm';
+import { useItemGroups } from './accounting-phase1-queries';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 const myt = (): string => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
@@ -104,7 +105,8 @@ const fromDetail = (d: Detail, copy: boolean): ApFormValues => ({
   provisional: copy ? false : d.invoice.provisional === true,
   lines: d.lines.map((l, i) => ({ rid: i + 1, description: l.description ?? '', debitAccountCode: l.debit_account_code, amountSen: l.amount_sen, department: departmentOf((l as { department?: unknown }).department),
     projectId: (l as { project_id?: number | null }).project_id ?? null, subDepartmentId: (l as { sub_department_id?: string | null }).sub_department_id ?? null,
-    unitId: l.unit_id ?? null, sourceRequestLineId: copy ? null : (l.source_request_line_id ?? null) })),
+    unitId: l.unit_id ?? null, sourceRequestLineId: copy ? null : (l.source_request_line_id ?? null),
+    itemGroup: (l as { item_group?: string | null }).item_group ?? null })),
 });
 
 /** Conts (chew, 16 Nov 2026): Make AP invoice on payment requests opens the New form filled in from each, one after
@@ -169,6 +171,15 @@ export const ApInvoices = () => {
      not a header (父户不记账) — the same door the PV's lines walk, from the
      one home (postableAccounts, docs/bugs/0693). */
   const lineAccounts = useMemo<Account[]>(() => postableAccounts(accountsQ.data?.accounts ?? []), [accountsQ.data]);
+  /* The stock groups and the account each buys on, for this company (Item group accounts). */
+  const groupsQ = useItemGroups();
+  const itemGroups = useMemo<ApItemGroup[]>(() => {
+    const co = groupsQ.data?.companies.at(0)?.id;
+    return (groupsQ.data?.groups ?? []).filter((g) => g.isActive).map((g) => {
+      const bound: { purchase?: string } | undefined = co == null ? undefined : g.bindings[String(co)];
+      return { code: g.code, name: g.name, purchaseAccount: bound?.purchase ?? null };
+    });
+  }, [groupsQ.data]);
   /* The detail names accounts off the UNFILTERED chart — a posted bill on a
      since-inactive account must still print that account's name. */
   const accountName = (code: string): string => (accountsQ.data?.accounts ?? []).find((a) => a.account_code === code)?.account_name ?? '';
@@ -534,6 +545,7 @@ export const ApInvoices = () => {
             suppliers={suppliersQ.data ?? []}
             suppliersLoading={suppliersQ.isLoading}
             lineAccounts={lineAccounts}
+            itemGroups={itemGroups}
             posted={form.posted}
             paidSen={form.paidSen}
             saving={create.isPending || update.isPending || uploadFile.isPending}

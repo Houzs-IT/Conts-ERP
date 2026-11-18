@@ -397,6 +397,16 @@ describe('projects on an AP invoice', () => {
       .toEqual([['900-A001', 7], ['900-A002', null], ['405-0000', null]]);
   });
 
+  test('a line keeps its stock group (blank for none); a group that is not a code is refused', async () => {
+    const { app, sb } = harness();
+    expect((await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [
+      { debitAccountCode: '900-A001', amountSen: 1_000, itemGroup: 'works' },
+      { debitAccountCode: '900-A002', amountSen: 2_000 },
+    ] })).status).toBe(201);
+    expect(sb.tables.ap_invoice_lines.map((l) => l.item_group ?? null)).toEqual(['WORKS', null]);
+    expect((await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [{ debitAccountCode: '900-A001', amountSen: 1_000, itemGroup: 'not a group!' }] })).status).toBe(400);
+  });
+
   test('a project that is not a number, or not one of this company’s, is refused', async () => {
     const { app, sb } = harness({ projects: [{ id: 7, company_id: 99, name: 'OTHER' }] });
     const bad = await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [{ debitAccountCode: '900-A001', amountSen: 100, projectId: 'skyline' }] });
