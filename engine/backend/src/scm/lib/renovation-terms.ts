@@ -6,6 +6,8 @@ import type { RenoActor } from './renovation-quotation';
 import { INSTALMENT_TRIGGERS, PO_PAYABLE_ON } from './renovation-validate';
 import { instalmentPctError } from '../shared/renovation-money';
 import { isStageKey } from '../shared/renovation-stages';
+import { instalmentsFromTerms } from './renovation-quotation';
+import { insertInstalments } from './renovation-doc-lines';
 
 export async function listTermTemplates(db: RenoDb, companyId: number, kind?: 'CUSTOMER' | 'PO' | null) {
   const tpls = await db.q(
@@ -123,4 +125,20 @@ export async function saveBrandProfile(db: RenoDb, actor: RenoActor, brandId: nu
     [brandId, actor.companyId, JSON.stringify(b.companyLines), b.contactLine, b.bankLine, JSON.stringify(b.termsLines), b.intro, b.signatoryCompany, actor.name],
   );
   await auditEntity(db, { companyId: actor.companyId, entityType: 'reno_brand_profile', entityId: String(brandId), docNo: brand.name, action: 'UPDATE', actorName: actor.name });
+}
+
+/** A contract's instalments set again from a customer payment-term template (chew, 18 Nov 2026: contracts brought in
+ *  with the default 30/30/35/5 are 15/50/30/5). Only while none of its instalments has been billed: a bill holds its
+ *  instalment's share. */
+export async function applyTermsToContract(db: RenoDb, companyId: number, soDocNo: string, templateId: string): Promise<{ soDocNo: string; instalments: number }> {
+  const so = await db.q<{ doc_no: string }>(
+    `select doc_no from scm.mfg_sales_orders where doc_no = $1 and company_id = $2 and so_kind = 'RENOVATION' and status::text <> 'CANCELLED'`, [soDocNo, companyId]);
+  if (!so.length) throw refuse(404, 'not_found', `${soDocNo} is not a live renovation contract.`);
+  const billed = await db.q<{ n: number }>(`select count(*)::int as n from scm.reno_instalment_bills where so_doc_no = $1`, [soDocNo]);
+  if (Number(billed[0]?.n ?? 0) > 0) throw refuse(409, 'already_billed', `${soDocNo} has instalments billed already; its payment terms can no longer change.`);
+  const { rows } = await instalmentsFromTerms(db, companyId, templateId);
+  if (!rows.length) throw refuse(422, 'empty_terms', 'That payment-term template has no instalments.');
+  await db.q(`delete from scm.reno_doc_instalments where so_doc_no = $1`, [soDocNo]);
+  await insertInstalments(db, { kind: 'so', id: soDocNo }, rows, companyId);
+  return { soDocNo, instalments: rows.length };
 }
