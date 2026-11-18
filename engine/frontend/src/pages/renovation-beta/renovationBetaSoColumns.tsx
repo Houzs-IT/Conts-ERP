@@ -87,8 +87,9 @@ export function soColumns<T>(soOf: (row: T) => ProjectSo | undefined, projectOf:
       return f.kind === "money" ? money(Number(v)) : v;
     };
     return {
-      key: f.key, label: f.label, group: `Sales order: ${f.group}`, width: "140px", defaultHidden: true, align: f.kind === "money" ? "right" : undefined,
-      getValue: read, render: (row: T) => <span style={{ fontSize: 12.5 }}>{show(read(row))}</span>,
+      key: f.key, label: f.label, group: `Sales order: ${f.group}`, width: f.kind === "money" ? "160px" : "140px", defaultHidden: true, align: f.kind === "money" ? "right" : undefined,
+      /* Amounts line up digit under digit and are never cut short (chew, 18 Nov 2026). */
+      getValue: read, render: (row: T) => <span style={f.kind === "money" ? { fontSize: 12.5, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" } : { fontSize: 12.5 }}>{show(read(row))}</span>,
       ...(f.kind === "date" ? { filterType: "date" as const, dateValue: (row: T) => { const v = read(row); return v === null ? null : String(v); } } : {}),
       ...(f.kind === "money" ? { filterType: "number" as const, numberValue: (row: T) => { const v = read(row); return v === null ? null : Number(v); } } : {}),
     };
