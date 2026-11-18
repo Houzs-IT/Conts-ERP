@@ -3,7 +3,7 @@
 // units and records them; the engine reads a page (it holds the Anthropic key) and keeps the payment requests.
 // Mounted on the claims router, office staff only (Property OS lets finance and management in):
 //   POST /utility-bills/read              { file: { name, mime, dataBase64 } } -> { read, model }
-//   POST /utility-bills/payment-request   { provider, scanBatchId, note?, bills: [{ unitId, kind, billMonth, billDate?, accountNo, amountSen }], files? }
+//   POST /utility-bills/payment-request   { provider, scanBatchId, note?, bills: [{ unitId, kind, billMonth, billDate?, dueDate?, accountNo, amountSen }], files? }
 //                                          -> { id, requestNo, amountSen }; 201 new, 200 when this scan's request exists
 //   POST /utility-bills/payment-request/:id/resubmit   { bills }  a withdrawn or rejected one, sent again: same number
 // The bills a scan records for the company to pay go to finance as one request per provider (chew, 2 Nov 2026: A): a
@@ -122,7 +122,7 @@ export const utilityRequestHandler = async (c: Ctx): Promise<Response> => {
     no => sb.from('payment_requests').insert({
       id, company_id: co.companyId, request_no: no, type: 'PAYMENT', requester_user_id: staff.userId,
       supplier_id: supplier?.id ?? null, payee_name: (supplier?.name ?? provider).slice(0, 200), payee_to_check: !supplier,
-      purchase_order_id: null, wanted_on: null, owes_formal_invoice: false, source_key: sourceKey,
+      purchase_order_id: null, wanted_on: earliestDue(lines), owes_formal_invoice: false, source_key: sourceKey,
       note: (b.note ? String(b.note) : `${lines.length} ${provider} bills from a scan on the Utility bills screen.`).slice(0, 500),
       amount_sen: amountSen, status: 'SUBMITTED',
     }).select('id, request_no').single(),
@@ -175,11 +175,15 @@ export const resubmitUtilityRequestHandler = async (c: Ctx): Promise<Response> =
   if (gone.error) return c.json({ error: 'save_failed', reason: gone.error.message }, 500);
   const ins = await sb.from('payment_request_lines').insert(lineRows(r.id, lines, await accrualAccounts(sb, co.companyId)));
   if (ins.error) return c.json({ error: 'save_failed', reason: ins.error.message }, 500);
-  if (!(await claimRequest(sb, r.id, String(r.status), { amount_sen: amountSen, status: 'SUBMITTED' }, claim))) return changedElsewhere();
+  if (!(await claimRequest(sb, r.id, String(r.status), { amount_sen: amountSen, wanted_on: earliestDue(lines), status: 'SUBMITTED' }, claim))) return changedElsewhere();
   return c.json({ id: r.id, requestNo: r.request_no, amountSen }, 200);
 };
 
-type BillLine = { unitId: string; amountSen: number; sort: number; description: string; kind: string; billDate: string | null };
+type BillLine = { unitId: string; amountSen: number; sort: number; description: string; kind: string; billDate: string | null; dueDate: string | null };
+
+/** The day the request has to be paid by: the earliest due date its bills print (chew, 18 Nov 2026), shown to finance as
+    the request's "Wanted by". Null when none of them printed one. */
+export const earliestDue = (lines: BillLine[]): string | null => lines.map(l => l.dueDate).filter((d): d is string => !!d).sort()[0] ?? null;
 
 /* Each kind's accrual (chew, 16 Nov 2026: utilities are paid against "ACCRUAL - ABNB UTILITIES", one account per kind;
    no supplier, no AP invoice). The line starts on it, so Make voucher books the payment against the accrual. */
@@ -201,6 +205,7 @@ function billLines(c: Ctx, raw: unknown): BillLine[] | Response {
     unitId: String(x.unitId ?? ''), amountSen: Number(x.amountSen), sort: i, kind: String(x.kind ?? ''),
     /* The day its expense is booked on when it is paid: the end of the bill's period (utility-accrual.ts). */
     billDate: DAY.test(String(x.billDate ?? '')) ? String(x.billDate) : null,
+    dueDate: DAY.test(String(x.dueDate ?? '')) ? String(x.dueDate) : null,
     description: [KIND_LABEL[String(x.kind)] ?? 'Utility', MONTH.test(String(x.billMonth ?? '')) ? String(x.billMonth) : null, x.accountNo ? String(x.accountNo).slice(0, 40) : null].filter(Boolean).join(' '),
   }));
   if (lines.some(l => !l.unitId || !Number.isInteger(l.amountSen) || l.amountSen <= 0)) return c.json({ error: 'validation', message: 'Every bill needs its unit and an amount.' }, 422);

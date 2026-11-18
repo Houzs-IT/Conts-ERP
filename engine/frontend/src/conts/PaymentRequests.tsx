@@ -15,6 +15,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/Layout";
 import { Button } from "../components/Button";
 import { DataTable, type Column } from "../components/DataTable";
+import { TabStrip } from "../components/TabStrip";
 import { usePrompt } from "../vendor/scm/components/PromptDialog";
 import { useChoice } from "../vendor/scm/components/ChoiceDialog";
 import { useAuth } from "../auth/AuthContext";
@@ -46,6 +47,13 @@ const CLAIMS_SHOWN: Record<string, Receipt["status"][]> = {
   SUBMITTED: ["HANDED_IN", "CHECKED"], PART_PAID: [], PAID: ["PAID_BACK"], REJECTED: ["REJECTED"], CLOSED: ["WRITTEN_OFF"], WITHDRAWN: [],
 };
 
+type UtilKind = "electricity" | "water" | "internet" | "sewerage";
+const UTIL_KINDS: [UtilKind, string][] = [["electricity", "Electricity"], ["water", "Water"], ["internet", "Wifi"], ["sewerage", "Indah Water"]];
+/** A utility request's kind, from its lines ("Electricity 2026-11 …", "Indah Water …"); one request is one provider. */
+const utilKindOf = (r: PaymentRequest): UtilKind | null => {
+  const d = r.lines.map((l) => l.description ?? "").join(" ");
+  return /indah water/i.test(d) ? "sewerage" : /^\s*electricity/im.test(d) ? "electricity" : /^\s*water/im.test(d) ? "water" : /^\s*internet/im.test(d) ? "internet" : null;
+};
 const no = (r: Row) => (r.kind === "request" ? r.q.requestNo : r.c.receiptNo);
 const askedOn = (r: Row) => (r.kind === "request" ? r.q.createdAt.slice(0, 10) : r.c.spendDate);
 const by = (r: Row) => (r.kind === "request" ? r.q.requesterName : r.c.submitterName);
@@ -93,6 +101,10 @@ const slotBtn = "h-8 w-full justify-center";
 
 export function PaymentRequests() {
   const [status, setStatus] = useState("SUBMITTED");
+  /* Utility bills on a tab of their own (chew, 18 Nov 2026): they are paid against their accrual, by due date. */
+  const [tab, setTab] = useState<"other" | "utilities">("other");
+  /* Within utilities, by kind (chew, 18 Nov 2026): electricity, water, wifi, Indah Water. */
+  const [utilKind, setUtilKind] = useState<UtilKind | "">("");
   const q = usePaymentRequests(status);
   const claimsQ = useFinanceReceipts("");
   /* Each line's sub-department (SOP 1.1), "No unit" on a team's line without one. */
@@ -114,9 +126,12 @@ export function PaymentRequests() {
     const shown = status ? CLAIMS_SHOWN[status] ?? [] : null;
     const claims = (claimsQ.data?.receipts ?? []).filter((c) => (shown ? shown.includes(c.status) : c.status !== "REPLACED"));
     const all: Row[] = [...q.data.requests.map((x) => ({ kind: "request" as const, id: x.id, q: x })), ...claims.map((c) => ({ kind: "claim" as const, id: `claim:${c.id}`, c }))];
-    /* Waiting first, oldest first; the rest newest first. */
-    return all.sort((a, b) => Number(waiting(b)) - Number(waiting(a)) || (waiting(a) ? askedOn(a).localeCompare(askedOn(b)) : askedOn(b).localeCompare(askedOn(a))));
-  }, [q.data, claimsQ.data, status]);
+    const isUtility = (r: Row) => r.kind === "request" && r.q.fromBills;
+    const mine = all.filter((r) => (tab === "utilities" ? isUtility(r) && (!utilKind || (r.kind === "request" && utilKindOf(r.q) === utilKind)) : !isUtility(r)));
+    /* Utilities: the soonest due first. Otherwise waiting first, oldest first; the rest newest first. */
+    if (tab === "utilities") return mine.sort((a, b) => (a.kind === "request" ? a.q.wantedOn ?? "9999" : "9999").localeCompare(b.kind === "request" ? b.q.wantedOn ?? "9999" : "9999"));
+    return mine.sort((a, b) => Number(waiting(b)) - Number(waiting(a)) || (waiting(a) ? askedOn(a).localeCompare(askedOn(b)) : askedOn(b).localeCompare(askedOn(a))));
+  }, [q.data, claimsQ.data, status, tab, utilKind]);
   const tickedRows = (rows ?? []).filter((r) => ticked.has(r.id));
   const tickedRequests = tickedRows.flatMap((r) => (r.kind === "request" ? [r.q] : []));
 
@@ -179,7 +194,7 @@ export function PaymentRequests() {
       getValue: (r) => (r.kind === "request" ? lineSummary(r.q.lines) : r.c.vendorName ?? ""),
     },
     { key: "amount", label: "Amount", align: "right", render: (r) => <Money sen={amount(r)} strong />, getValue: amount },
-    { key: "wanted", label: "Wanted by", render: (r) => (r.kind === "request" ? r.q.wantedOn ?? "—" : "—"), getValue: (r) => (r.kind === "request" ? r.q.wantedOn ?? "" : "") },
+    { key: "wanted", label: tab === "utilities" ? "Due" : "Wanted by", render: (r) => (r.kind === "request" ? r.q.wantedOn ?? "—" : "—"), getValue: (r) => (r.kind === "request" ? r.q.wantedOn ?? "" : "") },
     {
       key: "files", label: "Documents", getValue: (r) => (r.kind === "request" ? r.q.files.length : r.c.files.length),
       render: (r) => (r.kind === "request"
@@ -249,7 +264,7 @@ export function PaymentRequests() {
       },
     },
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the actions read the latest options and permissions through closures
-  ], [full, edit, act.isPending, opts.data, deptLabel]);
+  ], [full, edit, act.isPending, opts.data, deptLabel, tab]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -266,6 +281,23 @@ export function PaymentRequests() {
           <option value="">All</option>
         </select>
       </label>
+      <TabStrip<"other" | "utilities">
+        value={tab}
+        onChange={(t) => { setTab(t); setTicked(new Set()); }}
+        options={[
+          { value: "other", label: "Requests & claims" },
+          { value: "utilities", label: "Utility bills", count: (q.data?.requests ?? []).filter((x) => x.fromBills).length || undefined },
+        ]}
+      />
+      {tab === "utilities" && (
+        <TabStrip<UtilKind | "">
+          value={utilKind}
+          onChange={(k) => { setUtilKind(k); setTicked(new Set()); }}
+          options={[{ value: "" as const, label: "All" }, ...UTIL_KINDS.map(([k, label]) => ({
+            value: k, label, count: (q.data?.requests ?? []).filter((x) => x.fromBills && utilKindOf(x) === k).length || undefined,
+          }))]}
+        />
+      )}
       {note && <div role="alert" className="text-err">{note}</div>}
       {/* Ticked: one voucher for them all (requests and claims together), or an AP invoice per request (chew, 16 Nov
           2026). Finance checks what is ticked; the engine still refuses, by name, one already being paid. */}
