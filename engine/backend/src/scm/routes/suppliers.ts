@@ -73,6 +73,8 @@ const SUPPLIER_BASE_COLS =
   'business_reg_no, postcode, area, mobile, fax, website, attention, business_nature, ' +
   'currency, statement_type, aging_basis, credit_limit_sen, country, ' +
   'registration_no, nature_of_business, exemption_no, phone2, control_account'; // control_account: Conts 0156 (the list view has it since 0158)
+/* Conts 0336 (chew, 18 Nov 2026): where a supplier is paid. On the record only, not the list view. */
+const SUPPLIER_BANK_COLS = 'bank_name, bank_account_no, bank_account_name';
 /* Mig 0131 — SO-style structured pickup address (the DP supplier-pickup auto-fill
    prefers these over the legacy single `address` line). Added to the base table
    AFTER the list view froze its `s.*` expansion (0084), so they exist on the base
@@ -82,7 +84,7 @@ const SUPPLIER_STRUCTURED_ADDRESS_COLS = 'address1, address2, address3, address4
 /* Base-table column set — used by the DETAIL / create / patch reads, which hit
    `scm.suppliers` directly (not the view) and so can see the structured address. */
 const SUPPLIER_COLS =
-  `${SUPPLIER_BASE_COLS}, ${SUPPLIER_STRUCTURED_ADDRESS_COLS}, created_at, updated_at`;
+  `${SUPPLIER_BASE_COLS}, ${SUPPLIER_STRUCTURED_ADDRESS_COLS}, ${SUPPLIER_BANK_COLS}, created_at, updated_at`;
 
 /* PR — Commander 2026-05-27 ("当 Assign SKU 之后，你就会知道它是什么 Category 了呀"):
    List endpoint queries the `suppliers_with_derived_category` view (migration
@@ -605,6 +607,8 @@ export const patchSupplierHandler = async (c: any) => {
     /* Mig 0131 — structured pickup address. */
     ['address1', 'address1'], ['address2', 'address2'], ['address3', 'address3'],
     ['address4', 'address4'], ['city', 'city'],
+    /* Conts 0336 — where the supplier is paid. */
+    ['bankName', 'bank_name'], ['bankAccountNo', 'bank_account_no'], ['bankAccountName', 'bank_account_name'],
   ];
   /* Task #91 — normalize phone-like columns to E.164 on PATCH too.
      Mig 0028 — phone2 joins the same normalization set. */
