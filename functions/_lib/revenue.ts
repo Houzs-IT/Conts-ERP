@@ -1,13 +1,14 @@
 /** Revenue and occupancy, defined once (owner ruling, Oct 2026):
  *   - a stay's money and nights are split by night into the period they fall in (a 7-night stay from
  *     31 Jul counts 1 night and 1/7 of its value in July, 6 nights and 6/7 in August);
- *   - revenue is the GROSS booking value (what the guest paid, before the booking site's fee);
+ *   - revenue is what the stay brings in, the same number the owner statement and the Unit report use (owner, 19 Nov
+ *     2026, replacing the gross booking value): from October 2026 the host payout (after the booking site's fee), else
+ *     the payout recorded against the stay; `gross` keeps its name for the callers;
  *   - occupancy = booked nights / nights available in the period (the workbook's "29 nights = 96.67%" is
  *     29 / 30 days of September);
  *   - maintenance blocks, owner stays and cancelled bookings are not revenue and not booked nights.
  *  ADR = gross / booked nights; RevPAR = gross / available nights.
- *  Owner statements use the same night split (functions/_lib/ownerStatement.ts) but on what the booking
- *  site paid out (collected revenue), because that is what the owner workbook calls Hospitality Income. */
+ *  Owner statements use the same night split and the same money (functions/_lib/ownerStatement.ts stayIncomeParts). */
 import { type Env, all } from './db';
 
 /** SQL condition for a stay that counts, on reservations aliased `r`. */
@@ -34,6 +35,10 @@ export function toDate(from: string, periodEndExclusive: string, today: string) 
 /** The share of a stay's amount that belongs to `nights` of its `total` nights. Not rounded: callers round once. */
 export const prorate = (amount: number, nights: number, total: number) => (total > 0 ? (amount * nights) / total : 0);
 
+/** From this month on, a stay's income is its host payout as the calendar shows it (owner, 3 Nov 2026), not the payout
+ *  recorded later. Earlier months keep the recorded payout, so they still agree with the owner workbook. */
+export const NET_INCOME_FROM = '2026-10';
+
 export interface StayMonthRow { month: string; unit_id: string; channel: string; nights: number; gross: number; collected: number }
 
 /** Booked nights, gross and collected revenue per month, unit and channel for stays overlapping
@@ -46,7 +51,10 @@ export async function stayMonths(env: Env, from: string, toExclusive: string, op
       SELECT LEAST((d + interval '1 month')::date, ?::date) AS me, GREATEST(d::date, ?::date) AS mf, to_char(d, 'YYYY-MM') AS month
       FROM generate_series(date_trunc('month', ?::timestamp), ?::timestamp - interval '1 day', interval '1 month') AS d
     ), s AS (
-      SELECT m.month, r.unit_id, r.channel, r.gross_booking_value, r.collected_revenue,
+      SELECT m.month, r.unit_id, r.channel, r.collected_revenue,
+             -- The host payout as ownerStatement.ts loadInputs reads it: the booking value less the site's fee.
+             CASE WHEN m.month >= '${NET_INCOME_FROM}' AND r.gross_booking_value - COALESCE(r.channel_fee, 0) > 0
+               THEN r.gross_booking_value - COALESCE(r.channel_fee, 0) ELSE r.collected_revenue END AS income,
              (r.check_out::date - r.check_in::date) AS total,
              (LEAST(r.check_out::date, m.me) - GREATEST(r.check_in::date, m.mf)) AS nights
       FROM reservations r JOIN m ON r.check_in::date < m.me AND r.check_out::date > m.mf
@@ -54,7 +62,7 @@ export async function stayMonths(env: Env, from: string, toExclusive: string, op
       WHERE ${COUNTED_STAY} AND r.check_in < ? AND r.check_out > ? ${opts.unitId ? 'AND r.unit_id = ?' : ''}
     )
     SELECT month, unit_id, channel, SUM(nights)::int AS nights,
-           COALESCE(SUM(gross_booking_value::numeric * nights / NULLIF(total, 0)), 0)::float8 AS gross,
+           COALESCE(SUM(income::numeric * nights / NULLIF(total, 0)), 0)::float8 AS gross,
            COALESCE(SUM(collected_revenue::numeric * nights / NULLIF(total, 0)), 0)::float8 AS collected
     FROM s WHERE nights > 0 GROUP BY month, unit_id, channel`, ...args);
   return rows.map(r => ({ ...r, nights: Number(r.nights), gross: Number(r.gross), collected: Number(r.collected) }));

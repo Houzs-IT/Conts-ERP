@@ -16,7 +16,7 @@ import { saveBlob, toXlsx, type ExportCell, type ExportColumn } from '../lib/exp
 import { cx } from '../lib/design-tokens';
 import { count, dateShort, monthLabel, percent, plural, rm, todayMyt, buildingName } from '../lib/format';
 import { useConfirm } from '../components/ConfirmDialog';
-import { overallFigures, overallTotals, occupancyLabel, GROUP_NAME, REPORT_GROUPS, type OverallInput, type OverallTotals, type ReportGroup } from '../lib/ownerOverall';
+import { overallFigures, overallTotals, occupancyLabel, reportWords, GROUP_NAME, REPORT_GROUPS, type OverallInput, type OverallTotals, type ReportGroup } from '../lib/ownerOverall';
 import { GainLoss, LEVELS, OwnerOverallDetail, money, unitStatus, type Level, type ReportRow } from './OwnerOverallDetail';
 import { STAGES, STAGE_LABEL, type Stage } from '../lib/lockStages';
 import { ColumnButtons, FinalCell, LockCell, LockIcon, STAGE_OF, cellTone, useReportLocks, type CellState, type LockMay, type OwnerFinal } from './ownerReportLocks';
@@ -55,7 +55,7 @@ const GROUP_TONE: Partial<Record<Group, string>> = { inc: 'text-success', ded: '
 const COLS: Col[] = [
   { key: 'occupancy', label: 'Occupancy', level: 1, group: 'inc', kind: 'occ' },
   { key: 'nights', label: 'Nights', level: 2, group: 'inc', kind: 'int' },
-  { key: 'revenue', label: 'Total revenue', level: 1, group: 'inc', kind: 'money' },
+  { key: 'revenue', label: 'Income', level: 1, group: 'inc', kind: 'money' },
   { key: 'revPerNight', label: 'Rev / night', level: 2, group: 'inc', kind: 'money' },
   { key: 'cleaning', label: 'Cleaning', level: 1, group: 'ded', kind: 'money' },
   { key: 'electricity', label: 'Electricity', level: 2, group: 'ded', kind: 'money' },
@@ -65,8 +65,8 @@ const COLS: Col[] = [
   { key: 'utilities', label: 'Utilities', level: 1, group: 'ded', kind: 'money' },
   { key: 'additional', label: 'Add. ded.', level: 1, group: 'ded', kind: 'money' },
   { key: 'misc', label: 'Misc', level: 1, group: 'ded', kind: 'money' },
-  { key: 'deductions', label: 'Total deduction', level: 1, group: 'ded', kind: 'money' },
-  { key: 'gp', label: 'GP', level: 1, group: 'pro', kind: 'money' },
+  { key: 'deductions', label: 'Deduction', level: 1, group: 'ded', kind: 'money' },
+  { key: 'gp', label: 'Net Income', level: 1, group: 'pro', kind: 'money' },
   { key: 'ownerPct', label: 'Owner %', level: 1, group: 'pay', kind: 'ownpct' },
   { key: 'ltGrr', label: 'LT / GRR', level: 1, group: 'pay', kind: 'money' },
   { key: 'o1', label: 'O1', level: 1, group: 'pay', kind: 'money' },
@@ -75,10 +75,10 @@ const COLS: Col[] = [
   // The company's share of late changes to an earlier, locked month (part 2b, chew's choice A), in Gain / Loss. The column
   // is shown only in a month that has one.
   { key: 'late', label: 'Late changes', level: 1, group: 'res', kind: 'money' },
-  { key: 'gainLoss', label: 'Gain / Loss', level: 1, group: 'res', kind: 'gl' },
+  { key: 'gainLoss', label: 'Management Fee / Rent Income', level: 1, group: 'res', kind: 'gl' },
   // Gain / Loss split (part 3, spec call 12): the agent's part (GP x the contract's agent %) and what the company keeps.
   { key: 'agent', label: 'Agent', level: 1, group: 'res', kind: 'money' },
-  { key: 'company', label: 'Company', level: 1, group: 'res', kind: 'gl' },
+  { key: 'company', label: 'Management Income / Rent Income', level: 1, group: 'res', kind: 'gl' },
 ];
 
 const colOf = (key: string) => COLS.find(c => c.key === key) ?? COLS[0];
@@ -153,6 +153,10 @@ export default function OwnerOverallReportPage() {
 
   const [q, setQ] = useState('');
   const [contract, setContract] = useState<Contract>('all');
+  // Income, deductions, what is left and the company's part are named by the kind shown (reportWords).
+  const words = reportWords(contract);
+  const labelOf = (c: Col): string => c.key === 'revenue' ? words.income : c.key === 'deductions' ? words.deduction
+    : c.key === 'gp' ? words.net : c.key === 'gainLoss' ? words.result : c.key === 'company' ? words.company : c.label;
   const [level, setLevelState] = useState<Level>(readLevel);
   const [rangeKey, setRangeKey] = useState<Key>('gainLoss');
   const [lo, setLo] = useState<number | null>(null);
@@ -334,7 +338,7 @@ export default function OwnerOverallReportPage() {
 
   const present = REPORT_GROUPS.map(g => ({ group: g, n: all.filter(r => r.group === g).length })).filter(g => g.n);
   // Rent to rent keeps its chip even in a month with no such unit (owner, 5 Nov 2026).
-  const chips: ReportGroup[] = [...present.map(p => p.group).filter(g => g !== 'RTR'), 'RTR'];
+  const chips: ReportGroup[] = REPORT_GROUPS.filter(g => g === 'RTR' || present.some(p => p.group === g));
   const detail = row && (
     <OwnerOverallDetail row={row} all={all} level={level} onLevel={setLevel} onClose={() => setSelected(null)}
       onStep={step} position={at + 1} total={order.length} />
@@ -423,7 +427,7 @@ export default function OwnerOverallReportPage() {
           {cols.map((c, i) => (
             <th key={c.key} scope="col" aria-sort={ariaSort(c.key)}
               className={cx(CELL, 'bg-muted text-center', showClose ? '[border-bottom:1px_solid_var(--color-line-soft)]' : '[border-bottom:1px_solid_var(--color-line)]', groupStart(i) && DIVIDER)}>
-              {sortButton(c.key, c.label)}
+              {sortButton(c.key, labelOf(c))}
             </th>
           ))}
           {showClose && (
@@ -512,7 +516,7 @@ export default function OwnerOverallReportPage() {
           {[plural(all.length, 'unit'), ...present.map(g => `${count(g.n)} ${GROUP_NAME[g.group].toLowerCase()}`), 'amounts in RM']
             .map((part, n) => <span key={n}>{n > 0 && ' · '}<span className="inline-block">{part}</span></span>)}
           {/* The definition gets its own line, so it never wraps into the counts. */}
-          <span className="block text-meta">Gain/Loss = GP − owner base (the owner's part of the rent, the fixed rent, or the higher of O1 and GRR), before O2{hasLate ? ', plus late changes: the company’s share of changes to an earlier, locked month' : ''}</span>
+          <span className="block text-meta">{words.result} = {words.net} − owner base (the fixed rent, or the higher of O1 and GRR), before O2{hasLate ? ', plus late changes: the company’s share of changes to an earlier, locked month' : ''}</span>
         </> : 'Every unit\'s month, as on the owner statements'}
         actions={<>
           <Button variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel}
@@ -523,15 +527,16 @@ export default function OwnerOverallReportPage() {
 
       <StatRow cols={5}>
         {/* Full width until the five tiles share one row, so the two-column grid has no tile left alone. */}
-        <StatTile hero className="col-span-2 xl:col-span-1" label="Total revenue" value={data ? rm(totals.revenue) : undefined} loading={loading && !data}
+        <StatTile hero className="col-span-2 xl:col-span-1" label={words.income} value={data ? rm(totals.revenue) : undefined} loading={loading && !data}
           hint={`${plural(totals.units, 'unit')} · ${occupancyLabel(totals.occupancy)} occupancy`} />
-        <StatTile label="Total deduction" value={data ? rm(totals.deductions) : undefined} loading={loading && !data}
-          hint={totals.revenue ? `${percent((totals.deductions / totals.revenue) * 100)} of revenue` : '—'} />
-        <StatTile label="Gross profit" value={data ? rm(totals.gp) : undefined} loading={loading && !data}
+        <StatTile label={words.deduction} value={data ? rm(totals.deductions) : undefined} loading={loading && !data}
+          hint={totals.revenue ? `${percent((totals.deductions / totals.revenue) * 100)} of income` : '—'} />
+        <StatTile label={words.net} value={data ? rm(totals.gp) : undefined} loading={loading && !data}
           hint={totals.revenue ? `${percent(totals.margin)} margin` : '—'} />
         <StatTile label="Owner payout" value={data ? rm(totals.payout) : undefined} loading={loading && !data} hint="Every income model, with O2" />
-        <StatTile label="Gain / Loss" value={data ? rm(totals.gainLoss) : undefined} loading={loading && !data}
-          tone={totals.gainLoss < 0 ? 'critical' : 'success'} hint={`${count(totals.losing)} of ${plural(totals.units, 'unit')} losing`} />
+        <StatTile label={words.company} value={data ? rm(totals.company) : undefined} loading={loading && !data}
+          tone={totals.company < 0 ? 'critical' : 'success'}
+          hint={totals.agent ? `${words.result} ${rm(totals.gainLoss)} less agent ${rm(totals.agent)}` : `${count(totals.losing)} of ${plural(totals.units, 'unit')} below zero`} />
       </StatRow>
 
       <ListToolbar
@@ -545,7 +550,7 @@ export default function OwnerOverallReportPage() {
           <h5 className="m-0 mb-1.5 text-caption font-semibold uppercase tracking-[0.08em] text-muted-ink">Range filter</h5>
           <div className="flex flex-col gap-1.5">
             <Select label="Column to filter" value={rangeKey} onChange={v => { setRangeKey(v as Key); setLo(null); setHi(null); }}
-              options={COLS.map(c => ({ value: c.key, label: c.label }))} />
+              options={COLS.map(c => ({ value: c.key, label: labelOf(c) }))} />
             <div className="flex items-center gap-1.5">
               <div className="flex-1 min-w-0 [&_input]:h-[var(--control-height-sm)]!"><NumberInput aria-label="Minimum" value={lo} onChange={setLo} decimals={2} allowNegative
                 placeholder={extent ? `${Number(extent.min.toFixed(2))}` : 'Min'} /></div>
