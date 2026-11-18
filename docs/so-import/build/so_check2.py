@@ -3,6 +3,7 @@ R=json.load(open('so_parsed.json',encoding='utf-8'))
 def payable(d):
     st=d['stated']
     if st.get('FINAL TOTAL'): return st['FINAL TOTAL'][-1],'final'
+    if st.get('GRANDROW'): return st['GRANDROW'][-1],'grandrow'
     s_=lines(d)
     for k,how in (('FINAL TOTAL X','finalx'),('GRAND TOTAL X','grandx'),('RM','rm'),('GRAND TOTAL','grand')):
         if st.get(k) and (s_ == 0 or st[k][-1] >= 0.5 * s_): return st[k][-1],how
@@ -14,6 +15,7 @@ def qn(q):
     try: return float(q)
     except: return 1.0
 def net(i, discfmt=True):
+    if i.get('rate'): return 0
     p,a=i['price'],i['amt']
     if p is not None and a is not None:
         if abs(qn(i['qty'])*p-a)<1: return a
