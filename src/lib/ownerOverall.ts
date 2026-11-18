@@ -40,11 +40,11 @@ export type ReportView = ReportGroup | 'all';
 export interface ReportWords { income: string; deduction: string; net: string; result: string; company: string }
 export function reportWords(view: ReportView): ReportWords {
   const kind = view === 'MANAGE' || view === 'RTR' ? 'Rental' : view === 'all' ? '' : 'Reservation';
-  // The company's part (owner, 19 Nov 2026): on a share it is Management Income (Management Fee before the agent); on a
+  // The company's part (owner, 19 Nov 2026): on a share it is Management Income (its Operator share before the agent); on a
   // unit the company trades and pays the owner a fixed rent it is the rent income it makes: LT / RTR Rent Income.
   const fee = view === 'PS' || view === 'MANAGE';
   const rent = view === 'LT' ? 'LT Rent Income' : view === 'RTR' ? 'RTR Rent Income' : view === 'NONE' ? 'Company Income' : null;
-  const result = fee ? 'Management Fee' : rent ?? 'Management Fee / Rent Income';
+  const result = fee ? 'Operator share' : rent ?? 'Operator share / Rent Income';
   const company = fee ? 'Management Income' : rent ?? 'Management Income / Rent Income';
   return kind
     ? { income: `${kind} Income`, deduction: `${kind} Deduction`, net: `Net ${kind} Income`, result, company }

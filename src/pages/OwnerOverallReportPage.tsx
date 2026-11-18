@@ -75,7 +75,7 @@ const COLS: Col[] = [
   // The company's share of late changes to an earlier, locked month (part 2b, chew's choice A), in Gain / Loss. The column
   // is shown only in a month that has one.
   { key: 'late', label: 'Late changes', level: 1, group: 'res', kind: 'money' },
-  { key: 'gainLoss', label: 'Management Fee / Rent Income', level: 1, group: 'res', kind: 'gl' },
+  { key: 'gainLoss', label: 'Operator share / Rent Income', level: 1, group: 'res', kind: 'gl' },
   // Gain / Loss split (part 3, spec call 12): the agent's part (GP x the contract's agent %) and what the company keeps.
   { key: 'agent', label: 'Agent', level: 1, group: 'res', kind: 'money' },
   { key: 'company', label: 'Management Income / Rent Income', level: 1, group: 'res', kind: 'gl' },
