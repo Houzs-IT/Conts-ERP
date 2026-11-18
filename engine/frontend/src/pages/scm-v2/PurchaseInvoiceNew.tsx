@@ -73,7 +73,6 @@ import type { PvFilePayload } from '../../vendor/scm/lib/payment-voucher-queries
 import { uploadDocFile } from '../../components/doc-attachments/docAttachmentsApi';
 import { useAccounts, postableAccounts } from '../../vendor/scm/lib/accounting-queries';
 import { AccountSelect } from '../../vendor/scm/components/AccountSelect';
-import { accountForGroup, groupForAccount, useItemGroupAccounts } from './itemGroupAccount';
 
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
@@ -372,16 +371,9 @@ export const PurchaseInvoiceNew = () => {
   const setLine  = (rid: string, patch: Partial<DraftLine>) =>
     setLines((prev) => prev.map((l) => (l.rid === rid ? { ...l, ...patch } : l)));
   const dropLine = (rid: string) => setLines((prev) => prev.filter((l) => l.rid !== rid));
-  /* A line's stock group and account fill each other (chew, 18 Nov 2026). */
-  const groupAccounts = useItemGroupAccounts();
+  /* The accounts a line keyed by account may name (chew, 18 Nov 2026): ordinary leaves only. */
   const accountsQ = useAccounts();
   const lineAccounts = useMemo(() => postableAccounts(accountsQ.data?.accounts ?? []), [accountsQ.data]);
-  const chooseLineGroup = (rid: string, code: string) => {
-    const account = code ? accountForGroup(groupAccounts, code) : null;
-    setLine(rid, { itemGroup: code || null, ...(account ? { accountCode: account } : {}) });
-  };
-  const chooseLineAccount = (rid: string, code: string, had: string | null) =>
-    setLine(rid, { accountCode: code, itemGroup: groupForAccount(groupAccounts, code, had) ?? (code ? null : had) });
 
   const subtotalSen = useMemo(
     () => lines.reduce((s, l) => s + l.qty * l.unitPriceSen, 0),
@@ -929,6 +921,40 @@ export const PurchaseInvoiceNew = () => {
             const compact = isManualLine && !l.useItem && !l.itemCode.trim();
             const linkBtn: React.CSSProperties = { alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
               color: 'var(--c-accent, #8a6d3b)', fontSize: 'var(--fs-12)', fontWeight: 600 };
+            /* The everyday line (chew, 18 Nov 2026): account, description, qty, unit price, total, one row; opening it for a
+               stock item only adds the item code above (its product brings its stock group). */
+            const compactRow = (
+              <div style={{ display: 'grid', gap: 'var(--space-3)', alignItems: 'end',
+                      gridTemplateColumns: 'minmax(180px, 2fr) minmax(200px, 3fr) minmax(70px, 0.7fr) minmax(110px, 1fr) minmax(110px, 1fr)' }}>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Account</span>
+                        <AccountSelect accounts={lineAccounts} value={l.accountCode ?? ''} className={styles.fieldInput}
+                          onChange={(code) => setLine(l.rid, { accountCode: code })} placeholder="— purchase account —" />
+                      </label>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Description</span>
+                        <input type="text" value={l.materialName} onChange={(e) => setLine(l.rid, { materialName: e.target.value })}
+                          aria-label={`line ${idx + 1} description`} placeholder="What was bought" className={styles.fieldInput} />
+                      </label>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Qty</span>
+                        <NumberInput value={l.qty} sign="unsigned" decimal={false}
+                          onValueChange={(n) => setLine(l.rid, { qty: Math.max(0, n ?? 0) })}
+                          className={styles.fieldInput} style={{ textAlign: 'right' }} />
+                      </label>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Unit Price ({currency})</span>
+                        <MoneyInput bare valueSen={l.unitPriceSen}
+                          onCommit={(sen) => setLine(l.rid, { unitPriceSen: sen ?? 0 })}
+                          inputClassName={styles.fieldInput} selectOnFocus />
+                      </label>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Line Total</span>
+                        <input type="text" readOnly value={fmtRm(lineTotal, currency)} className={styles.fieldInput}
+                          style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', background: 'var(--c-cream)', color: 'var(--fg-muted)' }} />
+                      </label>
+                    </div>
+            );
             return (
               <div key={l.rid} style={{
                 background: 'var(--c-paper)', border: '1px solid var(--line)',
@@ -966,38 +992,8 @@ export const PurchaseInvoiceNew = () => {
 
                 {compact ? (
                   <>
-                    {/* The everyday line (chew, 18 Nov 2026): account, description, qty, unit price, total, one row. */}
-                    <div style={{ display: 'grid', gap: 'var(--space-3)', alignItems: 'end',
-                      gridTemplateColumns: 'minmax(180px, 2fr) minmax(200px, 3fr) minmax(70px, 0.7fr) minmax(110px, 1fr) minmax(110px, 1fr)' }}>
-                      <label className={styles.field}>
-                        <span className={styles.fieldLabel}>Account</span>
-                        <AccountSelect accounts={lineAccounts} value={l.accountCode ?? ''} className={styles.fieldInput}
-                          onChange={(code) => chooseLineAccount(l.rid, code, l.itemGroup)} placeholder="— purchase account —" />
-                      </label>
-                      <label className={styles.field}>
-                        <span className={styles.fieldLabel}>Description</span>
-                        <input type="text" value={l.materialName} onChange={(e) => setLine(l.rid, { materialName: e.target.value })}
-                          aria-label={`line ${idx + 1} description`} placeholder="What was bought" className={styles.fieldInput} />
-                      </label>
-                      <label className={styles.field}>
-                        <span className={styles.fieldLabel}>Qty</span>
-                        <NumberInput value={l.qty} sign="unsigned" decimal={false}
-                          onValueChange={(n) => setLine(l.rid, { qty: Math.max(0, n ?? 0) })}
-                          className={styles.fieldInput} style={{ textAlign: 'right' }} />
-                      </label>
-                      <label className={styles.field}>
-                        <span className={styles.fieldLabel}>Unit Price ({currency})</span>
-                        <MoneyInput bare valueSen={l.unitPriceSen}
-                          onCommit={(sen) => setLine(l.rid, { unitPriceSen: sen ?? 0 })}
-                          inputClassName={styles.fieldInput} selectOnFocus />
-                      </label>
-                      <label className={styles.field}>
-                        <span className={styles.fieldLabel}>Line Total</span>
-                        <input type="text" readOnly value={fmtRm(lineTotal, currency)} className={styles.fieldInput}
-                          style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', background: 'var(--c-cream)', color: 'var(--fg-muted)' }} />
-                      </label>
-                    </div>
-                    <button type="button" style={linkBtn} onClick={() => setLine(l.rid, { useItem: true })}>+ Use a stock item</button>
+                    {compactRow}
+                    <button type="button" style={linkBtn} onClick={() => setLine(l.rid, { useItem: true })}>+ Use a stock item code</button>
                   </>
                 ) : (<>
                 {/* Identity row — Item Code (Internal) + Description */}
@@ -1044,14 +1040,13 @@ export const PurchaseInvoiceNew = () => {
                         style={{ fontFamily: 'var(--font-mono)', background: 'var(--c-cream)', color: 'var(--fg-muted)' }} />
                     )}
                   </label>
-                  <label className={styles.field}>
-                    <span className={styles.fieldLabel}>Description</span>
-                    <input type="text" value={l.materialName} onChange={(e) => setLine(l.rid, { materialName: e.target.value })}
-                      readOnly={!isManualLine}
-                      placeholder={isManualLine ? '(auto-filled when an item is picked — editable)' : ''}
-                      className={styles.fieldInput}
-                      style={!isManualLine ? { background: 'var(--c-cream)', color: 'var(--fg-muted)' } : undefined} />
-                  </label>
+                  {!isManualLine && (
+                    <label className={styles.field}>
+                      <span className={styles.fieldLabel}>Description</span>
+                      <input type="text" readOnly value={l.materialName} className={styles.fieldInput}
+                        style={{ background: 'var(--c-cream)', color: 'var(--fg-muted)' }} />
+                    </label>
+                  )}
                 </div>
 
                 {/* PO/GRN-sourced lines: read-only variant summary. */}
@@ -1113,27 +1108,7 @@ export const PurchaseInvoiceNew = () => {
                   </div>
                 )}
 
-                {/* Stock group · Account — a manual line may be keyed by account instead of an item (chew, 18 Nov 2026):
-                    the group fills its purchase account, the account names its group. */}
-                {isManualLine && (
-                  <div className={styles.formGrid2}>
-                    <label className={styles.field}>
-                      <span className={styles.fieldLabel}>Stock group</span>
-                      <select className={styles.fieldInput} aria-label={`line ${idx + 1} stock group`}
-                        value={groupAccounts.find((g) => g.code.toUpperCase() === (l.itemGroup ?? '').toUpperCase())?.code ?? ''}
-                        onChange={(e) => chooseLineGroup(l.rid, e.target.value)}>
-                        <option value="">—</option>
-                        {groupAccounts.map((g) => <option key={g.code} value={g.code}>{g.name}</option>)}
-                      </select>
-                    </label>
-                    <label className={styles.field}>
-                      <span className={styles.fieldLabel}>Account {l.itemCode.trim() ? '(blank = by stock group)' : ''}</span>
-                      <AccountSelect accounts={lineAccounts} value={l.accountCode ?? ''} className={styles.fieldInput}
-                        onChange={(code) => chooseLineAccount(l.rid, code, l.itemGroup)} placeholder="— purchase account —" />
-                    </label>
-                  </div>
-                )}
-
+                {isManualLine ? compactRow : (<>
                 {/* Fields row — Qty · Unit Price · Line Total */}
                 <div className={styles.formGrid4} style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
                   <label className={styles.field}>
@@ -1147,9 +1122,7 @@ export const PurchaseInvoiceNew = () => {
                     <MoneyInput bare valueSen={l.unitPriceSen}
                       onCommit={(sen) => setLine(l.rid, { unitPriceSen: sen ?? 0 })}
                       inputClassName={styles.fieldInput} selectOnFocus />
-                    {!isManualLine && (
-                      <PoPriceReference poUnitPriceSen={l.poUnitPriceSen} piUnitPriceSen={l.unitPriceSen} fmt={(sen) => fmtRm(sen, currency)} />
-                    )}
+                    <PoPriceReference poUnitPriceSen={l.poUnitPriceSen} piUnitPriceSen={l.unitPriceSen} fmt={(sen) => fmtRm(sen, currency)} />
                   </label>
                   <label className={styles.field}>
                     <span className={styles.fieldLabel}>Line Total</span>
@@ -1157,8 +1130,9 @@ export const PurchaseInvoiceNew = () => {
                       style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', background: 'var(--c-cream)', color: 'var(--fg-muted)' }} />
                   </label>
                 </div>
+                </>)}
                 {isManualLine && !l.itemCode.trim() && (
-                  <button type="button" style={linkBtn} onClick={() => setLine(l.rid, { useItem: false, itemGroup: null })}>Account only, no stock item</button>
+                  <button type="button" style={linkBtn} onClick={() => setLine(l.rid, { useItem: false })}>Account only, no stock item</button>
                 )}
                 </>)}
               </div>
