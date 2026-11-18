@@ -24,12 +24,17 @@ export type ProjectSo = Parameters<typeof resolveSoLocation>[0] & Parameters<typ
 
 export const fetchProjectSos = (): Promise<ProjectSo[]> => fetchSoExportRows<ProjectSo>({});
 
-export interface ProjectFacts { brand: string | null | undefined }
+/** `outstandingSen`: what the project board says is still to collect (it counts AutoCount's collections on the
+    contracts it carried, which the order's own paid figure does not); null when the board has no payment figure. */
+export interface ProjectFacts { brand: string | null | undefined; outstandingSen?: number | null }
 
 type Field = {
   key: string; label: string; group: string; value: (s: ProjectSo) => string | number | null | undefined; kind?: "date" | "money";
   projectValue?: (p: ProjectFacts) => string | null | undefined;
+  /** Read before the order's own figure when it answers (not null). */
+  boardValue?: (s: ProjectSo, p: ProjectFacts) => number | null;
 };
+const boardBalance = (p: ProjectFacts): number | null => (p.outstandingSen == null ? null : p.outstandingSen);
 const FIELDS: readonly Field[] = [
   { key: "so_doc_no", label: "SO No.", group: "Basic", value: (s) => s.ac_doc_no ?? s.doc_no },
   { key: "so_date", label: "Date", group: "Basic", value: (s) => s.so_date, kind: "date" },
@@ -43,8 +48,9 @@ const FIELDS: readonly Field[] = [
   { key: "so_note", label: "Note", group: "Basic", value: (s) => s.note },
   { key: "so_currency", label: "Curr. Code", group: "Amounts", value: (s) => s.currency ?? "MYR" },
   { key: "so_total", label: "Total", group: "Amounts", value: (s) => s.local_total_sen, kind: "money" },
-  { key: "so_paid", label: "Paid", group: "Amounts", value: (s) => s.paid_total_sen ?? s.paid_sen, kind: "money" },
-  { key: "so_balance", label: "Balance", group: "Amounts", value: (s) => s.balance_sen_live ?? s.balance_sen, kind: "money" },
+  { key: "so_paid", label: "Paid", group: "Amounts", value: (s) => s.paid_total_sen ?? s.paid_sen, kind: "money",
+    boardValue: (s, p) => { const b = boardBalance(p); return b == null || s.local_total_sen == null ? null : Math.max(0, Number(s.local_total_sen) - b); } },
+  { key: "so_balance", label: "Balance", group: "Amounts", value: (s) => s.balance_sen_live ?? s.balance_sen, kind: "money", boardValue: (_s, p) => boardBalance(p) },
   { key: "so_deposit", label: "Deposit", group: "Amounts", value: (s) => s.deposit_sen, kind: "money" },
   { key: "so_payment_method", label: "Payment Method", group: "Amounts", value: (s) => s.payment_methods_summary || s.payment_method },
   { key: "so_location", label: "Sales Location", group: "Logistics", value: (s) => resolveSoLocation(s).label },
@@ -69,6 +75,8 @@ export function soColumns<T>(soOf: (row: T) => ProjectSo | undefined, projectOf:
   return FIELDS.map((f) => {
     const read = (row: T): string | number | null => {
       const s = soOf(row);
+      const fromBoard = s && f.boardValue ? f.boardValue(s, projectOf(row)) : null;
+      if (fromBoard != null) return fromBoard;
       const fromSo = s ? f.value(s) : null;
       if (fromSo != null && fromSo !== "") return fromSo;
       return f.projectValue?.(projectOf(row)) || null;
