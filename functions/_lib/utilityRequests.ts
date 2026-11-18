@@ -12,7 +12,7 @@ const KIND_LABEL: Record<string, string> = { electricity: 'Electricity', water: 
 
 /** billDate: the day the bill's expense belongs to: the end of its printed period, else its bill date as entered (chew,
  *  16 Nov 2026: the engine books the expense against the accrual on it when the bill is paid). */
-export interface RequestBill { expenseId: string; unitId: string; kind: string; billMonth: string; billDate: string | null; accountNo: string | null; amountSen: number }
+export interface RequestBill { expenseId: string; unitId: string; kind: string; billMonth: string; billDate: string | null; dueDate: string | null; accountNo: string | null; amountSen: number }
 
 /** The bills among `expenseIds` still to be sent for payment, by provider: utility bills not paid by the owner, above
  *  zero and not on a request yet. The company pays the provider the whole bill: a scanned bill split at the contract
@@ -20,8 +20,8 @@ export interface RequestBill { expenseId: string; unitId: string; kind: string; 
  *  The provider is the scan's, else the bill's account's, else the kind ("Indah Water"); `provider` keeps one group. */
 export async function billsToRequest(env: Env, expenseIds: string[], provider?: string): Promise<{ provider: string; bills: RequestBill[] }[]> {
   if (!expenseIds.length) return [];
-  const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; reference: string | null; amount: number; provider: string | null }>(env, `
-    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, e.reference, coalesce(s.bill_sen, e.amount) AS amount,
+  const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; due_date: string | null; reference: string | null; amount: number; provider: string | null }>(env, `
+    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, coalesce(s.bill_sen, e.amount) AS amount,
            coalesce(nullif(s.provider, ''), (SELECT a.provider FROM unit_utility_accounts a WHERE a.unit_id = e.unit_id AND a.kind = e.category AND a.account_no = e.reference
              AND coalesce(a.provider, '') <> '' ORDER BY a.created_at LIMIT 1)) AS provider
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
@@ -34,7 +34,7 @@ export async function billsToRequest(env: Env, expenseIds: string[], provider?: 
     const p = (r.provider ?? '').trim() || KIND_LABEL[r.category];
     if (provider && p !== provider) continue;
     const list = out.get(p) ?? [];
-    list.push({ expenseId: r.id, unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), billDate: r.bill_date ?? null, accountNo: r.reference || null, amountSen: Number(r.amount) });
+    list.push({ expenseId: r.id, unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), billDate: r.bill_date ?? null, dueDate: r.due_date ?? null, accountNo: r.reference || null, amountSen: Number(r.amount) });
     out.set(p, list);
   }
   return [...out].map(([p, bills]) => ({ provider: p, bills }));
@@ -62,14 +62,14 @@ export async function requestState(env: Env, requestId: string): Promise<{ id: s
  *  their full bills as billsToRequest sends them. `off` names the ones the owner now pays (or at nothing), which are let
  *  go of the request once it has gone out again. */
 export async function billsOnRequest(env: Env, requestId: string): Promise<{ bills: RequestBill[]; off: string[] }> {
-  const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; reference: string | null; amount: number; owner_paid: boolean }>(env, `
-    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, e.reference, coalesce(s.bill_sen, e.amount) AS amount, e.owner_paid
+  const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; due_date: string | null; reference: string | null; amount: number; owner_paid: boolean }>(env, `
+    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, coalesce(s.bill_sen, e.amount) AS amount, e.owner_paid
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
     WHERE e.payment_request_id = ? ORDER BY e.incurred_on, e.unit_id, e.category`, requestId);
   const bills: RequestBill[] = [], off: string[] = [];
   for (const r of rows) {
     if (r.owner_paid || !(Number(r.amount) > 0) || !KINDS.includes(r.category)) { off.push(r.id); continue; }
-    bills.push({ expenseId: r.id, unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), billDate: r.bill_date ?? null, accountNo: r.reference || null, amountSen: Number(r.amount) });
+    bills.push({ expenseId: r.id, unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), billDate: r.bill_date ?? null, dueDate: r.due_date ?? null, accountNo: r.reference || null, amountSen: Number(r.amount) });
   }
   return { bills, off };
 }

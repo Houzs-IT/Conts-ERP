@@ -27,6 +27,8 @@ import { nextToRead, pagesToSkip } from '../../lib/scanPages';
 type Kind = 'electricity' | 'water' | 'internet' | 'sewerage';
 type Read = {
   kind: string; provider: string | null; billMonth: string | null; periodFrom: string | null; periodTo: string | null;
+  /** The day to pay by, as printed (chew, 18 Nov 2026). */
+  dueDate?: string | null;
   amountDueSen: number | null; currentChargesSen: number | null; accountNoVisible: string | null; accountNoFull: string | null; confidenceNotes: string | null;
   /** "Page 1 of 5" as printed (chew, 16 Nov 2026): a bill's later pages are not read. */
   pageNo?: number | null; pageCount?: number | null;
@@ -37,7 +39,7 @@ type Row = {
   key: string; file: File; fileName: string; pageNo: number; thumb: string;
   state: 'waiting' | 'reading' | 'done' | 'failed' | 'recorded' | 'skipped'; problem?: string;
   scan?: ScanAnswer;
-  kind: Kind | ''; billMonth: string; periodFrom: string; periodTo: string; amountSen: number | null; unitId: string;
+  kind: Kind | ''; billMonth: string; periodFrom: string; periodTo: string; dueDate: string; amountSen: number | null; unitId: string;
   /** The account the page matched, kept while its unit is the one proposed (a unit can have two meters of a kind). */
   accountId: string | null;
   ownerPaid: boolean; tick: boolean;
@@ -117,7 +119,7 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
           ? { ...r, state: 'skipped', tick: false, problem: `Page ${r.pageNo - row.pageNo + 1} of the bill on page ${row.pageNo}: not read` } : r)));
       }
       patch(row.key, {
-        state: 'done', scan: s, kind, billMonth: s.read.billMonth ?? '', periodFrom: s.read.periodFrom ?? '', periodTo: s.read.periodTo ?? '',
+        state: 'done', scan: s, kind, billMonth: s.read.billMonth ?? '', periodFrom: s.read.periodFrom ?? '', periodTo: s.read.periodTo ?? '', dueDate: s.read.dueDate ?? '',
         amountSen: s.read.currentChargesSen, unitId: s.unitId ?? '', accountId: s.unitId ? s.match.accountId : null,
         tick: s.match.colour === 'green' && !s.match.alreadyRecorded,
       });
@@ -136,7 +138,7 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
       const add = (b: Blob, pageNo: number) => {
         commit([...rowsRef.current, {
           key: crypto.randomUUID(), file, fileName: file.name, pageNo, thumb: URL.createObjectURL(b), state: 'waiting',
-          kind: '', billMonth: '', periodFrom: '', periodTo: '', amountSen: null, unitId: '', accountId: null, ownerPaid: false, tick: false,
+          kind: '', billMonth: '', periodFrom: '', periodTo: '', dueDate: '', amountSen: null, unitId: '', accountId: null, ownerPaid: false, tick: false,
         }]);
         pump();
       };
@@ -181,7 +183,7 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
         '/expenses/utilities/scan/record', {
           batchId, rows: recordable.map(r => ({
             scanId: r.scan!.scanId, unitId: r.unitId, accountId: r.accountId, kind: r.kind, billMonth: r.billMonth, amountSen: r.amountSen,
-            periodFrom: r.periodFrom || null, periodTo: r.periodTo || null, ownerPaid: r.ownerPaid,
+            periodFrom: r.periodFrom || null, periodTo: r.periodTo || null, dueDate: r.dueDate || null, ownerPaid: r.ownerPaid,
           })),
         });
       const done = new Set(recordable.map(r => r.key));
@@ -286,7 +288,12 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
                           {split && <span className="text-[var(--color-text-muted)]">{split}</span>}
                         </div>
                       </td>
-                      <td className={`${cell} min-w-[8rem]`}><MoneyInput aria-label="Amount" valueSen={r.amountSen} onChangeSen={v => patch(r.key, { amountSen: v })} disabled={!editable} /></td>
+                      <td className={`${cell} min-w-[9rem]`}>
+                        <div className="flex flex-col gap-1">
+                          <MoneyInput aria-label="Amount" valueSen={r.amountSen} onChangeSen={v => patch(r.key, { amountSen: v })} disabled={!editable} />
+                          <DateField aria-label="Due date" help="Due" value={r.dueDate} onChange={v => patch(r.key, { dueDate: v })} />
+                        </div>
+                      </td>
                       <td className={`${cell} min-w-[14rem]`}>
                         <UnitPicker label="Unit" units={roster} value={r.unitId} disabled={!editable}
                           onChange={id => patch(r.key, { unitId: id, accountId: id && id === r.scan?.unitId ? r.scan.match.accountId : null, tick: r.tick || !!id })} />

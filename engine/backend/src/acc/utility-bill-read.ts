@@ -19,6 +19,7 @@ export type UtilityRead = {
   billMonth: string | null;          // YYYY-MM; for a period bill the month it ENDS in (chew, 3 Nov 2026)
   periodFrom: string | null;         // YYYY-MM-DD as printed
   periodTo: string | null;
+  dueDate: string | null;            // YYYY-MM-DD: the day to pay by, as printed ("Tarikh Akhir Bayaran"; chew, 18 Nov 2026)
   amountDueSen: number | null;       // Jumlah Perlu Dibayar: shown, never recorded (it carries arrears and credits)
   currentChargesSen: number | null;  // Caj Semasa and its rounding: what finance records and pays (chew, 3 and 16 Nov 2026)
   roundingSen: number | null;        // Pelarasan Penggenapan / Rounding Amount, already inside currentChargesSen
@@ -42,7 +43,7 @@ export type UtilityRead = {
    text and coerced here: the model copies "1,311.18", we do the arithmetic, and "" becomes null, never 0. */
 const str = { type: 'string' };
 const FIELDS: Record<string, unknown> = {
-  kind: { type: 'string', enum: [...UTILITY_KINDS] }, provider: str, billMonth: str, periodFrom: str, periodTo: str,
+  kind: { type: 'string', enum: [...UTILITY_KINDS] }, provider: str, billMonth: str, periodFrom: str, periodTo: str, dueDate: str,
   amountDue: str, currentCharges: str, rounding: str, pageNo: str, pageCount: str, accountNoVisible: str, accountNoFull: str, deposit: str, invoiceNo: str,
   premiseAddress: str, buildingName: str, unitText: str, ownerName: str, meterPrevious: str, meterCurrent: str, confidenceNotes: str,
 };
@@ -51,6 +52,7 @@ export const UTILITY_READ_SCHEMA = { type: 'object', properties: FIELDS, require
 const PROMPT = `You are reading ONE page of a Malaysian utility bill for a property manager's finance clerk. Copy what is printed; never guess.
 - kind: electricity (TNB), water (Air Selangor, SYABAS, or a building management water bill), sewerage (Indah Water), internet (TIME, Maxis, Unifi, U Mobile…), other.
 - billMonth: YYYY-MM of the bill. When a period is printed, the month the period ends in (06.08.2026 - 05.09.2026 is 2026-09). periodFrom / periodTo: YYYY-MM-DD as printed ("Tempoh Bil", "Billing period").
+- dueDate: YYYY-MM-DD of the day the bill must be paid by, as printed ("Tarikh Akhir Bayaran", "Bayar Sebelum", "Due date", "Payment due", "Pay before"). It is never the bill date or the period. "" when not printed.
 - currentCharges: THIS period's charges ("Caj Semasa", "Current charges"), as printed, e.g. "377.50". This is the figure finance records. It is never the previous balance ("Baki Terdahulu"), a payment or an adjustment ("Pelarasan"), and never the amount due when that includes arrears.
 - rounding: the rounding adjustment of THIS bill as printed ("Pelarasan Penggenapan", "Rounding Amount", "Rounding Adj."), signed, e.g. "0.01" or "-0.02". It is what turns the current charges into the round sum paid (TNB 314.24 + 0.01 = 314.25). "" when not printed.
 - amountDue: the amount to pay now ("Jumlah Bil Anda", "Jumlah Perlu Dibayar", "Total Amount Payable", "Amount due"), as printed. Use "" when not printed; never 0 for a figure you cannot read.
@@ -94,7 +96,7 @@ export function coerceUtilityRead(raw: unknown): UtilityRead {
   const month = periodTo && days >= 0 && days <= 100 ? periodTo.slice(0, 7) : said;
   const mask = (v: unknown) => text(v, 40)?.replace(/[*x•]/g, 'X') ?? null;
   return {
-    kind, provider: text(o.provider, 100), billMonth: month, periodFrom, periodTo,
+    kind, provider: text(o.provider, 100), billMonth: month, periodFrom, periodTo, dueDate: isoDate(o.dueDate),
     amountDueSen: rmToSen(o.amountDue),
     /* What is paid is the current charges with their rounding (chew, 16 Nov 2026: TNB's 314.24 + 0.01, "我要还的是 314.25"). */
     currentChargesSen: withRounding(rmToSen(o.currentCharges), rmToSen(o.rounding)), roundingSen: smallRounding(rmToSen(o.rounding)),

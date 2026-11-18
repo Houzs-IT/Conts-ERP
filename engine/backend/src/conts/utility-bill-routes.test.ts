@@ -170,3 +170,14 @@ describe('a withdrawn or rejected utility request is sent again with its bills a
     expect(sb.tables.payment_request_lines).toHaveLength(2);
   });
 });
+
+import { earliestDue } from './utility-bill-routes';
+describe('the request is wanted by its earliest due date (chew, 18 Nov 2026)', () => {
+  const line = (dueDate: string | null) => ({ unitId: 'u', amountSen: 100, sort: 0, description: 'Electricity', kind: 'electricity', billDate: null, dueDate });
+  test('the soonest of the bills that print one', () => {
+    expect(earliestDue([line('2026-12-09'), line(null), line('2026-12-03')])).toBe('2026-12-03');
+  });
+  test('none when no bill prints one', () => {
+    expect(earliestDue([line(null)])).toBeNull();
+  });
+});
