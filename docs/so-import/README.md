@@ -114,3 +114,9 @@ amount match (or the SKU, qty and amount, so wording fixes alone do not churn li
 omitted / added, and a "Price adjustment" line for any rest so the revised contract equals the printed final total.
 The two projects with no SO yet (AVA KIARA BAY D21-11 MR YAU, SAFFIRE NEW OFFICE) get their SO created the way the
 first import did. Rooms already set on an SO are kept; only new lines take a room from their wording.
+
+Applied on production 18 Nov 2026 (dry-run three times first): 26 SOs changed by one VO each, 2 SOs created
+(TC-SO-2512-003 AVA KIARA BAY D21-11 MR YAU, TC-SO-2610-068 SAFFIRE NEW OFFICE), 53 already matching, 0 failed.
+Checked afterwards: a fresh dry-run reports all 81 matching; every SO's total equals its PDF's final total; qty, unit
+price and amount of every priced line equal the PDF's (78 SOs exactly; 3 carry one extra line, the lump-sum heading
+their PDF prices as a section). The one-off workflow was then removed.
