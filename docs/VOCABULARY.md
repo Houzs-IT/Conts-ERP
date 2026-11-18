@@ -53,6 +53,7 @@ All 17 are decided. Rows 1 to 10 were the owner's choices; rows 11 to 17 follow 
 | 15 | Inbox | **Messages** | Airbnb | 2 + help text |
 | 16 | ADR / RevPAR | **Avg nightly price / Earnings per available night** | Plain | 20 |
 | 17 | Net payout / net owner payout / owner payout | **Net Payout to Owner** (the month's figure); **Owner payout** (the bank transfer; the screen becomes "Owner payouts") | Owner report | 22 |
+| 18 | Unit report money (Monthly, Yearly): total revenue / total deduction / GP / gain-loss on a share | **Reservation Income, Reservation Deduction, Net Reservation Income** (stays: profit sharing, long term); **Rental Income, Rental Deduction, Net Rental Income** (a tenant's rent: listing management, rent to rent). The company's part: **Operator share** before the agent and **Management Income** after it on a share; **LT Rent Income / RTR Rent Income** on a unit the company trades. Owner, 19 Nov 2026. | Owner | Unit report |
 ---
 
 ## 2. Rental side (Airbnb's words)

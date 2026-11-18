@@ -669,4 +669,5 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Project SO tab nets delivery returns (PR #792); a returned line reads PENDING, as on the sales order page.
 - Production photos follow the upload standard (PR #793): sheet after each shot, Record video. A real phone recording a video has not been tried.
 - Payments on the project Overview read Not confirmed until Finance confirms the receipt; tied to the accounting mapping above.
-- Unit report Yearly: show all four contract kinds as Monthly does (Profit sharing, Long term, Listing management, Rent to rent); today Long term and Rent to rent are left out, Listing management sits under Profit share and the Fixed rent tab is always 0. Design: https://claude.ai/artifact/W2xYDHH59oQJzrfjGvsT8w. Also 4030 finished cleans have no price, so Yearly cleaner pay is short. Owner: later.
+- Cleaning price list starts 1 Nov 2026, so 4,898 cleans finished Jan to Oct 2026 have no cleaner pay on Yearly. Owner: fix later (19 Nov 2026).
+- 13 rental units have no contract (Star Residences 1-45-10, Trofi 2 B35-05, Anggun 2010 and Star Residences 113A10 have stays); they show under No contract on the Unit report until staff add one.

@@ -36,7 +36,7 @@
  *  exact night split, miscellaneous charges from the exact occupancy); net income = income - deductions; the owner's
  *  share = net x OWNER%, rounded; the operator's share is the rest. Every line on the page can be checked by hand
  *  and the statement adds up to the sen. */
-import { prorate, nightsInWindow, daysInMonth, monthEndExclusive } from './revenue';
+import { prorate, nightsInWindow, daysInMonth, monthEndExclusive, NET_INCOME_FROM } from './revenue';
 import { modelOf, isTenancy, type RevenueModel } from './revenueModel';
 import { DEDUCTION_TERMS } from '../../src/lib/statementTerms';
 import { COST_STAGES, costStageOf, type CostStage, type Stage } from './stageLocks';
@@ -272,10 +272,7 @@ const ymd = (d: string) => d.slice(0, 10);
 
 const partsOf = (s: StayRow): StayPart[] => s.parts ?? [{ check_in: s.check_in, check_out: s.check_out, amount: Number(s.collected_revenue) }];
 
-/** From this month on, a stay's income is its host payout as the calendar shows it (owner, 3 Nov 2026: "overall unit report
- *  的income 要和calender 的income 一样 ... 拿net amount"), not the payout recorded later. Earlier months keep the recorded
- *  payout, so they still agree with the owner workbook. */
-export const NET_INCOME_FROM = '2026-10';
+export { NET_INCOME_FROM } from './revenue';
 
 /** The pieces a stay's income in `month` is worked out from. A stay with no host payout (no booking value, e.g. a direct
  *  booking paid by hand) keeps the money recorded against it, as the calendar has nothing to show for it either. */
@@ -340,13 +337,15 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   if (left < 0) floors[floors.length - 1] += left;
 
   // Deductions, by the workbook's rows.
-  // A master lease deducts nothing from the owner: every cost of the unit is the company's. A cost category whose lock is
+  // A master lease and a long-term let deduct nothing from the owner: every cost of the unit is the company's, and the
+  // owner gets the whole rent (owner, 19 Nov 2026: "long term 是我们自己出的", as the workbook's LT rows). A cost category whose lock is
   // on takes the costs that lock kept, as they were; an open one takes today's costs of the category, less any cost a
   // lock of this month keeps (a cost re-categorised after a lock still counts once, where it was kept). The misc charge
   // likewise, when misc is locked.
   const thisMonth = (c: CostRow) => c.unit_id === unit.id && deductMonthOf(c) === month;
   const keptIds = new Set(COST_STAGES.flatMap(s => kept?.[s]?.costs.map(c => c.id) ?? []));
-  const stageCosts = Object.fromEntries(COST_STAGES.map(s => [s, terms.basis === 'none' ? []
+  const companyCosts = terms.basis === 'none' || isTenancy(terms.model);
+  const stageCosts = Object.fromEntries(COST_STAGES.map(s => [s, companyCosts ? []
     : kept?.[s] ? kept[s]!.costs.filter(thisMonth)
     : costs.filter(c => thisMonth(c) && !keptIds.has(c.id) && costStageOf(c.category, c.description) === s)])) as Record<CostStage, CostRow[]>;
   const myCosts = COST_STAGES.flatMap(s => stageCosts[s]).sort((a, b) => a.incurred_on.localeCompare(b.incurred_on));

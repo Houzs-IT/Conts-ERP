@@ -109,6 +109,8 @@ const bNights = win.b.e - win.b.s, bOctNights = 32 - win.b.s;
 const report = async (month, role) => (await call('GET', `/api/portfolio/owner-report?month=${month}`, undefined, role)).json;
 const summary = async (month, role) => (await call('GET', `/api/owner-close/summary?month=${month}`, undefined, role)).json;
 const income = async (month, unitId) => (await report(month))?.rows?.find(x => x.unitId === unitId)?.revenue;
+// A long-term let's rent is what the owner is paid (the owner base); its income is the company's stays (owner, 19 Nov 2026).
+const rentOf = async (month, unitId) => (await report(month))?.rows?.find(x => x.unitId === unitId)?.ltGrr;
 const lateOf = unitId => db(`SELECT id, amount, occurred_on, state, reference, description FROM owner_adjustments WHERE unit_id = $1 AND source = 'stage_lock' ORDER BY created_at, id`, unitId);
 const generate = (month, ownerId) => call('POST', '/api/statements/generate', { period: month, ownerIds: [ownerId] });
 const lock = (unitId, month = OCT, stage = 'income', role) => call('POST', '/api/owner-close/lock', { month, stage, unitIds: [unitId] }, role);
@@ -263,10 +265,11 @@ await db(`INSERT INTO owner_contracts (id, owner_id, unit_id, management_fee_pct
   VALUES ($1, $2, $3, 10, '2026-01-01', '2026-12-31', $4, 'management', 'long_term', 300000, 0, 0)
   ON CONFLICT (id) DO UPDATE SET ends_on = '2026-12-31', revenue_model = 'long_term', grr_amount = 300000, management_fee_pct = 10`, LTC, lt.owner_id, lt.id, now);
 await db(`UPDATE units SET contract_id = $1 WHERE id = $2`, LTC, lt.id);
-check('a long-term let earns its rent', (await income(OCT, lt.id)) === 300000, String(await income(OCT, lt.id)));
+// The contract keeps 10% for the operator, so the owner is paid 90% of the RM 3,000 rent.
+check('a long-term let pays its owner the rent', (await rentOf(OCT, lt.id)) === 270000, String(await rentOf(OCT, lt.id)));
 r = await lock(lt.id);
 await db(`UPDATE owner_contracts SET ends_on = '2026-10-15' WHERE id = $1`, LTC);
-check('its locked rent stays when the tenancy dates change', (await income(OCT, lt.id)) === 300000, String(await income(OCT, lt.id)));
+check('its locked rent stays when the tenancy dates change', (await rentOf(OCT, lt.id)) === 270000, String(await rentOf(OCT, lt.id)));
 await generate(NOV, lt.owner_id);
 const ltLate = await lateOf(lt.id);
 // Live October: 15 of 31 days, RM 1,451.61; the owner keeps 90% of the rent, so the owner's difference is -RM 1,393.55.
