@@ -352,4 +352,10 @@ describe('the routes', () => {
     const ok = await call(fin, '/accounting/renovation-opening/apply', { rows: [good] });
     expect(ok.status).toBe(503);
   });
+
+  test('the cost before go-live reaches the check: a figure is kept, blank stays blank', async () => {
+    const fin = app(world(), ['scm.payment_voucher.post']);
+    const pv = await call(fin, '/accounting/renovation-opening/preview', { rows: [{ ...good, costBeforeGoLiveSen: 2_000_000 }, { ...good, soDocNo: OLD, costBeforeGoLiveSen: '' }] });
+    expect(pv.body.rows.map((r: { costBeforeGoLiveSen: number | null }) => r.costBeforeGoLiveSen)).toEqual([2_000_000, null]);
+  });
 });
