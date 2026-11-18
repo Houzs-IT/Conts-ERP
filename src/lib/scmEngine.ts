@@ -18,6 +18,7 @@ export const LEDGER_SCREENS: readonly LedgerScreen[] = [
   { slug: 'ledger-setup', label: 'Ledger setup', enginePath: '/scm/ledger-setup' },
   // Every other finance screen in the engine (chew, 2 Nov 2026: Payment requests could not be found; the menu lacked them).
   { slug: 'payment-requests', label: 'Payment requests', enginePath: '/scm/payment-requests' },
+  { slug: 'staff-banks', label: 'Staff bank details', enginePath: '/scm/staff-banks' },
   { slug: 'limit-requests', label: 'Limit requests', enginePath: '/scm/limit-requests' },
   { slug: 'petty-cash', label: 'Petty cash', enginePath: '/scm/petty-cash' },
   { slug: 'ap-invoices', label: 'AP invoices', enginePath: '/scm/ap-invoices' },

@@ -739,6 +739,7 @@ export const ALL_NAV_TABS: NavTab[] = [
           { to: "/scm/payment-vouchers", label: "Payment vouchers", icon: Wallet, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write", "scm.payment_voucher.post", "scm.payment_voucher.cancel"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/ap-invoices", label: "AP invoices", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/payment-requests", label: "Payment requests", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write"], anyAccess: ["scm.finance.accounting"] },
+          { to: "/scm/staff-banks", label: "Staff bank details", icon: FileText, anyPerm: ["*", "scm.payment_voucher.approve"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/petty-cash", label: "Petty cash", icon: Wallet, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/limit-requests", label: "Limit requests", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.project_limit.approve"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/party-ledger?kind=creditor", label: "Supplier ledger", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
