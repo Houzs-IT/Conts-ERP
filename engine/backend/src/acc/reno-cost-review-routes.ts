@@ -126,7 +126,9 @@ export const changeExpectedCostHandler = async (c: Ctx): Promise<Response> => {
     return c.json({ error: 'load_failed', reason: e instanceof Error ? e.message : String(e) }, 500);
   }
   if (!comp) return c.json({ error: 'not_found', message: 'No live renovation contract with that number.' }, 404);
-  if (comp.handedOver || comp.status === 'CANCELLED') {
+  /* A handed-over project may still get its first expected cost (none was ever set: chew, 18 Nov 2026, the old
+     AutoCount contracts); a handed-over project is 100% complete whatever it says, so revenue does not move. */
+  if (comp.status === 'CANCELLED' || (comp.handedOver && comp.expectedCostSen !== 0)) {
     return c.json({ error: 'closed', message: 'This project is handed over or cancelled; its expected cost can no longer change.' }, 409);
   }
   const stale = () => c.json({ error: 'stale', message: 'The expected cost has changed since you opened this. Reload the page and look again.' }, 409);
