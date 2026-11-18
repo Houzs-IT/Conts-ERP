@@ -36,13 +36,13 @@ import styles from './SalesOrderDetail.module.css';
    completion % reads booked cost by project. */
 /* Conts (chew, 15 Nov 2026): the unit, and the payment request line a bill line came from (kept through every edit, so
    the request follows its bill line by line); a bill may be a quotation booked before its formal invoice. */
-export type ApFormLine = { rid: number; description: string; debitAccountCode: string; amountSen: number; department: Department | ''; projectId?: number | null; subDepartmentId?: string | null; unitId?: string | null; sourceRequestLineId?: string | null; itemGroup?: string | null };
+export type ApFormLine = { rid: number; description: string; debitAccountCode: string; amountSen: number; department: Department | ''; projectId?: number | null; subDepartmentId?: string | null; unitId?: string | null; sourceRequestLineId?: string | null };
 export type ApFormValues = { supplierId: string; supplierRef: string; invoiceDate: string; dueDate: string; description: string; lines: ApFormLine[]; provisional?: boolean };
 export type ApFormMode = 'new' | 'edit' | 'copy';
 /** What the routes take — POST / for new and copy, PATCH /:id for edit. */
 export type ApFormSubmit = {
   supplierId: string; supplierInvoiceRef?: string; invoiceDate: string; dueDate: string | null; notes?: string; provisional: boolean;
-  lines: Array<{ description?: string; debitAccountCode: string; amountSen: number; department?: Department; projectId?: number | null; unitId?: string | null; sourceRequestLineId?: string | null; itemGroup?: string }>;
+  lines: Array<{ description?: string; debitAccountCode: string; amountSen: number; department?: Department; projectId?: number | null; unitId?: string | null; sourceRequestLineId?: string | null }>;
 };
 
 const myt = (): string => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
@@ -65,25 +65,8 @@ export const toSubmit = (v: ApFormValues): ApFormSubmit => ({
       projectId: l.projectId ?? null,
       unitId: l.unitId ?? null,
       ...(l.sourceRequestLineId ? { sourceRequestLineId: l.sourceRequestLineId } : {}),
-      ...(l.itemGroup ? { itemGroup: l.itemGroup } : {}),
     })),
 });
-
-/** A stock group and the account its goods are bought on (Item group accounts), null when not bound yet. */
-export type ApItemGroup = { code: string; name: string; purchaseAccount: string | null };
-
-/** The group fills the account (chew, 18 Nov 2026: default by stock group); a group with no account bound leaves it. */
-export const accountForGroup = (groups: readonly ApItemGroup[], code: string): string | null =>
-  groups.find((g) => g.code === code)?.purchaseAccount ?? null;
-
-/** And the account fills the group, when exactly one group buys on it; otherwise the line keeps the group it had,
-    unless that group buys on another account. */
-export const groupForAccount = (groups: readonly ApItemGroup[], account: string, had: string | null | undefined): string | null => {
-  const on = groups.filter((g) => g.purchaseAccount === account);
-  if (on.length === 1) return on[0]!.code;
-  const kept = groups.find((g) => g.code === had);
-  return kept && (kept.purchaseAccount == null || kept.purchaseAccount === account) ? kept.code : null;
-};
 
 /** The project every line shares, for the bill's own Project box: null when they differ or name none. */
 export const sharedProject = (lines: readonly ApFormLine[]): number | null => {
@@ -136,7 +119,7 @@ const right: React.CSSProperties = { textAlign: 'right', fontFamily: 'var(--font
 const iconBtn: React.CSSProperties = { border: 'none', background: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: 2 };
 
 export const ApInvoiceForm = ({
-  mode, initial, suppliers, suppliersLoading = false, lineAccounts, itemGroups = [], posted = false, paidSen = 0, saving, onSubmit, onCancel,
+  mode, initial, suppliers, suppliersLoading = false, lineAccounts, posted = false, paidSen = 0, saving, onSubmit, onCancel,
   initialFiles, initialNote,
 }: {
   mode: ApFormMode;
@@ -144,8 +127,6 @@ export const ApInvoiceForm = ({
   suppliers: Array<{ id: string; code: string; name: string }>;
   suppliersLoading?: boolean;
   lineAccounts: Account[];
-  /** The stock groups and their purchase accounts: a line's group and account fill each other. */
-  itemGroups?: ApItemGroup[];
   /** A bill handed over from the pile page: its read pages, waiting to attach
       on save, and the reader's sentence about it. */
   initialFiles?: PvFilePayload[];
@@ -170,14 +151,6 @@ export const ApInvoiceForm = ({
     setBillProject(id);
     setV((prev) => ({ ...prev, lines: prev.lines.map((l) => ({ ...l, projectId: id })) }));
   };
-  const chooseGroup = (rid: number, code: string) =>
-    setV((prev) => ({ ...prev, lines: prev.lines.map((l) => {
-      if (l.rid !== rid) return l;
-      const account = code ? accountForGroup(itemGroups, code) : null;
-      return { ...l, itemGroup: code || null, ...(account ? { debitAccountCode: account } : {}) };
-    }) }));
-  const chooseAccount = (rid: number, code: string) =>
-    setV((prev) => ({ ...prev, lines: prev.lines.map((l) => (l.rid === rid ? { ...l, debitAccountCode: code, itemGroup: groupForAccount(itemGroups, code, l.itemGroup) } : l)) }));
 
   /* Insert adds a line and LANDS on it (owner: 按 Ins 直接加然后直接跳到那一行);
      Enter on an amount hops to the next line's account, adding one when
@@ -346,8 +319,7 @@ export const ApInvoiceForm = ({
         onKeyDown={(e) => { if (e.key === 'Insert') { e.preventDefault(); addLine(true); } }}>
         <thead>
           <tr>
-            <th style={{ ...th, width: 150 }}>Stock group</th>
-            <th style={{ ...th, width: '28%' }}>Account</th>
+            <th style={{ ...th, width: '34%' }}>Account</th>
             <th style={th}>Description</th>
             <th style={{ ...th, textAlign: 'right', width: 150 }}>Amount (RM)</th>
             <th style={{ ...th, width: 150 }}>Department</th>
@@ -360,15 +332,8 @@ export const ApInvoiceForm = ({
           {v.lines.map((l) => (
             <tr key={l.rid} data-line={l.rid}>
               <td style={td}>
-                <select className={styles.fieldInput} style={{ width: '100%' }} aria-label={`line ${l.rid} stock group`}
-                  value={l.itemGroup ?? ''} onChange={(e) => chooseGroup(l.rid, e.target.value)}>
-                  <option value="">—</option>
-                  {itemGroups.map((g) => <option key={g.code} value={g.code}>{g.name}</option>)}
-                </select>
-              </td>
-              <td style={td}>
                 <AccountSelect accounts={lineAccounts} value={l.debitAccountCode} className={styles.fieldInput}
-                  onChange={(code) => chooseAccount(l.rid, code)} placeholder="— account this line charges —" />
+                  onChange={(code) => patchLine(l.rid, { debitAccountCode: code })} placeholder="— account this line charges —" />
               </td>
               <td style={td}>
                 <input className={styles.fieldInput} style={{ width: '100%' }} placeholder="Description" value={l.description} aria-label={`line ${l.rid} description`}
@@ -404,7 +369,7 @@ export const ApInvoiceForm = ({
         </tbody>
         <tfoot>
           <tr style={{ borderTop: '1px solid var(--border-weak, #e3e1da)' }}>
-            <td colSpan={3} style={td}>
+            <td colSpan={2} style={td}>
               <AddLineButton variant="ghost" onClick={() => addLine(true)} />
               <span style={{ ...soft, marginLeft: 'var(--space-3)' }}>Insert adds a line · Enter on an amount moves down</span>
             </td>

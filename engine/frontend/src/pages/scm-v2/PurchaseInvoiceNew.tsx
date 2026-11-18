@@ -71,6 +71,9 @@ import { DateField } from "../../vendor/scm/components/DateField";
 import { takePvFiles, pvFileToFile } from '../../vendor/scm/lib/pv-file-handoff';
 import type { PvFilePayload } from '../../vendor/scm/lib/payment-voucher-queries';
 import { uploadDocFile } from '../../components/doc-attachments/docAttachmentsApi';
+import { useAccounts, postableAccounts } from '../../vendor/scm/lib/accounting-queries';
+import { AccountSelect } from '../../vendor/scm/components/AccountSelect';
+import { accountForGroup, groupForAccount, useItemGroupAccounts } from './itemGroupAccount';
 
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
@@ -117,6 +120,8 @@ type DraftLine = {
      ("PO 有什么内容，Purchase Invoice 也应该随之对应"). GRN-sourced lines carry
      the GRN line's category + variants; manual lines pick them below. */
   itemGroup:      string | null;
+  /* A line keyed by account instead of an item (chew, 18 Nov 2026): it books to this purchase account. */
+  accountCode?:   string;
   variants:       Record<string, unknown> | null;
   qty:            number;
   unitPriceSen: number;
@@ -364,6 +369,16 @@ export const PurchaseInvoiceNew = () => {
   const setLine  = (rid: string, patch: Partial<DraftLine>) =>
     setLines((prev) => prev.map((l) => (l.rid === rid ? { ...l, ...patch } : l)));
   const dropLine = (rid: string) => setLines((prev) => prev.filter((l) => l.rid !== rid));
+  /* A line's stock group and account fill each other (chew, 18 Nov 2026). */
+  const groupAccounts = useItemGroupAccounts();
+  const accountsQ = useAccounts();
+  const lineAccounts = useMemo(() => postableAccounts(accountsQ.data?.accounts ?? []), [accountsQ.data]);
+  const chooseLineGroup = (rid: string, code: string) => {
+    const account = code ? accountForGroup(groupAccounts, code) : null;
+    setLine(rid, { itemGroup: code || null, ...(account ? { accountCode: account } : {}) });
+  };
+  const chooseLineAccount = (rid: string, code: string, had: string | null) =>
+    setLine(rid, { accountCode: code, itemGroup: groupForAccount(groupAccounts, code, had) ?? (code ? null : had) });
 
   const subtotalSen = useMemo(
     () => lines.reduce((s, l) => s + l.qty * l.unitPriceSen, 0),
@@ -554,10 +569,10 @@ export const PurchaseInvoiceNew = () => {
         : 'This GRN is missing a supplier — reopen it and try again.' });
       return;
     }
-    // Drop the blank starter line(s) — only real items (with a code) are saved.
-    const realLines = lines.filter((l) => l.itemCode.trim());
+    // Drop the blank starter line(s) — only real lines (an item, or an account) are saved.
+    const realLines = lines.filter((l) => l.itemCode.trim() || l.accountCode);
     if (realLines.length === 0) {
-      setDialog({ title: 'Add at least one item', body: 'Pick at least one SKU to invoice.' });
+      setDialog({ title: 'Add at least one line', body: 'Pick an item, or an account, for at least one line.' });
       return;
     }
     if (!canSave) { setDialog({ title: 'Check the quantities', body: 'Each line needs qty > 0.' }); return; }
@@ -596,6 +611,7 @@ export const PurchaseInvoiceNew = () => {
           // so the PI reflects WHAT was billed, same as the GRN/PO upstream.
           itemGroup:      l.itemGroup,
           variants:       l.variants,
+          ...(l.accountCode ? { accountCode: l.accountCode } : {}),
         })),
       });
       /* Attach the scanned bill AFTER the invoice exists, in scan order. A failed
@@ -1052,6 +1068,27 @@ export const PurchaseInvoiceNew = () => {
                         showPrices={false}
                       />
                     </div>
+                  </div>
+                )}
+
+                {/* Stock group · Account — a manual line may be keyed by account instead of an item (chew, 18 Nov 2026):
+                    the group fills its purchase account, the account names its group. */}
+                {isManualLine && (
+                  <div className={styles.formGrid2}>
+                    <label className={styles.field}>
+                      <span className={styles.fieldLabel}>Stock group</span>
+                      <select className={styles.fieldInput} aria-label={`line ${idx + 1} stock group`}
+                        value={groupAccounts.find((g) => g.code.toUpperCase() === (l.itemGroup ?? '').toUpperCase())?.code ?? ''}
+                        onChange={(e) => chooseLineGroup(l.rid, e.target.value)}>
+                        <option value="">—</option>
+                        {groupAccounts.map((g) => <option key={g.code} value={g.code}>{g.name}</option>)}
+                      </select>
+                    </label>
+                    <label className={styles.field}>
+                      <span className={styles.fieldLabel}>Account {l.itemCode.trim() ? '(blank = by stock group)' : ''}</span>
+                      <AccountSelect accounts={lineAccounts} value={l.accountCode ?? ''} className={styles.fieldInput}
+                        onChange={(code) => chooseLineAccount(l.rid, code, l.itemGroup)} placeholder="— purchase account —" />
+                    </label>
                   </div>
                 )}
 

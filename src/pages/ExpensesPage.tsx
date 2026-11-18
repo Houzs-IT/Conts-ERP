@@ -66,7 +66,7 @@ const ADD_CATEGORIES: Category[] = ['internet', 'electricity', 'water', 'cleanin
 
 type ChargeTo = 'owner' | 'guest_deposit' | 'the_conts' | 'warranty';
 const CHARGE_LABEL: Record<string, string> = {
-  owner: 'Owner', guest_deposit: 'Guest deposit', the_conts: 'The Conts', warranty: 'Warranty',
+  owner: 'Owner (sharing)', guest_deposit: 'Guest deposit', the_conts: 'The Conts', warranty: 'Warranty',
 };
 
 interface Expense {
