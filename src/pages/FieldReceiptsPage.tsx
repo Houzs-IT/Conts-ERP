@@ -207,7 +207,7 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
         : <DateField label={tr.date} value={spendDate} display={day} onChange={v => { setSpendDate(v); dateTouched.current = true; }} max={todayMyt()} />}
       <Field label={tr.note} value={note} onChange={e => setNote(e.target.value)} placeholder={tr.notePh} maxLength={300} />
       {onProjects
-        /* Type a word of the project (chew, 18 Nov 2026: "可以打关键字眼快速搜索？"): ASTRUM, R-13-03, RN-2607. */
+        /* Type a word of the project (chew, 18 Nov 2026: search it by keyword): ASTRUM, R-13-03, RN-2607. */
         ? <SearchSelect label={tr.project} showLabel size="md" value={projectId} onChange={setProjectId} allLabel={tr.noProject} placeholder={tr.searchProject}
             options={(projects.data?.projects ?? []).filter(x => x.side === 'supply').map(x => ({ value: String(x.id), label: x.code ? `${x.code} ┊ ${x.name}` : x.name }))} />
         : <Select label={tr.unit} showLabel size="md" value={unitId} onChange={setUnitId}
