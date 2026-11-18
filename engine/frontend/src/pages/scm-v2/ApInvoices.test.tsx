@@ -93,14 +93,6 @@ vi.mock('../../vendor/scm/lib/accounting-queries', async (importOriginal) => ({
     { account_code: '400-0000', account_name: 'ACCOUNT PAYABLE', account_type: 'LIABILITY', parent_code: null, is_active: true, acc_money: false, special_type: 'SCC' },
   ] }, isLoading: false }),
 }));
-/* The stock groups and the account each buys on (chew, 18 Nov 2026): Works on 900-A002, Furniture not bound yet. */
-vi.mock('./accounting-phase1-queries', () => ({
-  useItemGroups: () => ({ data: { companies: [{ id: 1, code: 'HOUZS' }], groups: [
-    { code: 'WORKS', name: 'Works', isActive: true, bindings: { 1: { purchase: '900-A002', sales: '500-0000', salesReturn: '510-0000', purchaseReturn: '690-0000' } } },
-    { code: 'FURNITURE', name: 'Furniture', isActive: true, bindings: {} },
-    { code: 'OLD', name: 'Old group', isActive: false, bindings: {} },
-  ] } }),
-}));
 vi.mock('../../vendor/scm/lib/suppliers-queries', () => ({
   useSuppliers: () => ({ data: [{ id: 'sup-h', code: '405-H001', name: 'HOUZS VENTURE HOLDING SDN BHD' }], isLoading: false }),
 }));
@@ -193,46 +185,30 @@ describe('raising an AP invoice', () => {
     });
   });
 
-  test('the stock group fills the account and the account fills the group; the bill project fills every line, added ones too', async () => {
+  test('the bill project fills every line, added ones too', async () => {
     createAsync.mockClear();
     draw();
     fireEvent.click(screen.getByText('New AP invoice'));
     const d = dialog();
     fireEvent.focus(within(d).getByLabelText('AP invoice supplier'));
     fireEvent.mouseDown(screen.getByText('405-H001 · HOUZS VENTURE HOLDING SDN BHD'));
-    const groups = within(d).getByLabelText('line 1 stock group') as HTMLSelectElement;
-    expect([...groups.options].map((o) => o.text)).toEqual(['—', 'Works', 'Furniture']);
-    fireEvent.change(groups, { target: { value: 'WORKS' } });
-    const account = () => within(d).getAllByRole('combobox').find((el) => (el as HTMLInputElement).placeholder?.includes('account this line'))! as HTMLInputElement;
-    expect(account().value).toContain('900-A002');
-    /* A group with no account bound leaves the account as it was. */
-    fireEvent.change(groups, { target: { value: 'FURNITURE' } });
-    expect(account().value).toContain('900-A002');
-    /* An account bought on by one group names it; one no group buys on clears a group bound elsewhere. */
-    fireEvent.focus(account());
-    fireEvent.mouseDown(screen.getByText('900-A001 · RENTAL'));
-    expect(groups.value).toBe('FURNITURE');
-    fireEvent.change(groups, { target: { value: 'WORKS' } });
-    fireEvent.focus(account());
-    fireEvent.mouseDown(screen.getByText('900-A001 · RENTAL'));
-    expect(groups.value).toBe('');
-    fireEvent.focus(account());
+    const account = (n: number) => within(d).getAllByRole('combobox').filter((el) => (el as HTMLInputElement).placeholder?.includes('account this line'))[n - 1]!;
+    fireEvent.focus(account(1));
     fireEvent.mouseDown(screen.getByText('900-A002 · SERVICE FEE'));
-    expect(groups.value).toBe('WORKS');
     setAmount('line 1 amount', '100');
     fireEvent.change(within(d).getByLabelText('line 1 department'), { target: { value: 's-dc' } });
-
     fireEvent.click(within(d).getByRole('combobox', { name: 'Bill project' }));
     fireEvent.click(screen.getByText('SKYLINE D-25-13'));
     fireEvent.keyDown(within(d).getByLabelText('line 1 amount'), { key: 'Insert' });
-    fireEvent.change(within(d).getByLabelText('line 2 stock group'), { target: { value: 'WORKS' } });
+    fireEvent.focus(account(2));
+    fireEvent.mouseDown(screen.getByText('900-A001 · RENTAL'));
     setAmount('line 2 amount', '50');
     fireEvent.change(within(d).getByLabelText('line 2 department'), { target: { value: 's-dc' } });
     fireEvent.click(within(d).getByText('Save as draft'));
     await waitFor(() => expect(createAsync).toHaveBeenCalled());
     expect(createAsync.mock.calls[0]![0]).toMatchObject({ lines: [
-      { debitAccountCode: '900-A002', amountSen: 10_000, projectId: 7, itemGroup: 'WORKS' },
-      { debitAccountCode: '900-A002', amountSen: 5_000, projectId: 7, itemGroup: 'WORKS' },
+      { debitAccountCode: '900-A002', amountSen: 10_000, projectId: 7 },
+      { debitAccountCode: '900-A001', amountSen: 5_000, projectId: 7 },
     ] });
   });
 
@@ -241,7 +217,7 @@ describe('raising an AP invoice', () => {
     fireEvent.click(screen.getByText('New AP invoice'));
     const d = dialog();
     const amountHead = within(d).getByText('Amount (RM)');
-    expect([...amountHead.parentElement!.children].map((c) => c.textContent)).toEqual(['Stock group', 'Account', 'Description', 'Amount (RM)', 'Department', 'Project', 'Unit', '']);
+    expect([...amountHead.parentElement!.children].map((c) => c.textContent)).toEqual(['Account', 'Description', 'Amount (RM)', 'Department', 'Project', 'Unit', '']);
 
     fireEvent.keyDown(within(d).getByLabelText('line 1 amount'), { key: 'Insert' });
     expect(within(d).getByLabelText('line 2 amount')).toBeTruthy();

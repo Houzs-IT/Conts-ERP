@@ -37,7 +37,9 @@ import { resolveLineAccounts, type LineAccountKey } from './reno-accounts';
 const isRenovation = (it: GroupSplitLine): boolean => String(it.item_group ?? '').trim().toUpperCase() === 'RENOVATION';
 type Db = any;
 
-export type GroupSplitLine = { item_group: string | null; line_total_sen: number | null; item_code?: string | null };
+/** `account_code`: a purchase line keyed by account (chew, 18 Nov 2026, stock codes not complete yet): it books there,
+    whatever its group (none needed). */
+export type GroupSplitLine = { item_group: string | null; line_total_sen: number | null; item_code?: string | null; account_code?: string | null };
 export type GroupAmount = { groupCode: string; accountCode: string; myrSen: number };
 export type GroupSplitResult =
   | { ok: true; groups: GroupAmount[] }
@@ -83,7 +85,15 @@ export async function splitByItemGroup(
   /* A line's key: "GROUP" (its own group, or its product's with no sub-category) or "GROUP / SUB". */
   const keyOf = new Map<string, LineAccountKey>();
   const foreignByGroup = new Map<string, number>();
+  const ownAccount = new Map<string, string>();
   for (const it of p.items) {
+    const own = p.account === 'purchase_account' ? String(it.account_code ?? '').trim() : '';
+    if (own) {
+      const label = `account ${own}`;
+      ownAccount.set(label, own);
+      foreignByGroup.set(label, (foreignByGroup.get(label) ?? 0) + Number(it.line_total_sen ?? 0));
+      continue;
+    }
     const prod = isRenovation(it) ? productOf.get(String(it.item_code ?? '').trim()) : undefined;
     const g = prod?.group ?? String(it.item_group ?? '').trim().toUpperCase();
     if (!g) {
@@ -94,14 +104,14 @@ export async function splitByItemGroup(
     foreignByGroup.set(label, (foreignByGroup.get(label) ?? 0) + Number(it.line_total_sen ?? 0));
   }
   const groupCodes = [...foreignByGroup.keys()];
-  const accountOf = new Map<string, string>();
+  const accountOf = new Map<string, string>(ownAccount);
   const subKeys = groupCodes.filter((k) => keyOf.has(k));
   if (subKeys.length > 0) {
     const res = await resolveLineAccounts(sb, p.companyId as number, subKeys.map((k) => keyOf.get(k) as LineAccountKey), p.account);
     if (!res.ok) return { ok: false, status: res.status, reason: `${p.docNo}: ${res.reason}` };
     for (const k of subKeys) accountOf.set(k, res.accountOf(keyOf.get(k) as LineAccountKey));
   }
-  const plainCodes = groupCodes.filter((k) => !keyOf.has(k));
+  const plainCodes = groupCodes.filter((k) => !keyOf.has(k) && !ownAccount.has(k));
   if (plainCodes.length > 0) {
     const { data: bindsRaw, error: bindsErr } = await sb
       .from('acc_item_group_accounts')

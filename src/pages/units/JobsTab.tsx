@@ -18,7 +18,7 @@ interface RepairRow {
 }
 interface Payload { cleaning: CleanRow[]; maintenance: RepairRow[] }
 
-const CHARGE_LABEL: Record<string, string> = { owner: 'Owner', guest_deposit: 'Guest deposit', the_conts: 'The Conts', warranty: 'Warranty' };
+const CHARGE_LABEL: Record<string, string> = { owner: 'Owner (sharing)', guest_deposit: 'Guest deposit', the_conts: 'The Conts', warranty: 'Warranty' };
 const CLEAN_ORDER: CleanStatus[] = ['unassigned', 'waiting', 'cleaning', 'done'];
 const REPAIR_ORDER: RepairStatus[] = ['new', 'assigned', 'awaiting_owner', 'in_progress', 'repair_finished', 'done'];
 

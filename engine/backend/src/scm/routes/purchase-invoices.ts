@@ -19,6 +19,7 @@ import {
   sortSoLinesByGroupRank,
 } from '../shared/so-line-display';
 import { postPiAccounting, reversePiAccounting, resyncPiAccounting } from './accounting';
+import { requireLeafAccount } from './accounting-chart';
 import { inHouseSupplierId } from '../lib/grn-from-po-core';
 import { isCustomerGoods } from '../lib/renovation-flow-rules';
 import { recostForPi, recostFromGrn } from '../lib/recost';
@@ -80,7 +81,7 @@ const HEADER = PI_HEADER_COLS;
 const ITEM =
   'id, purchase_invoice_id, grn_item_id, material_kind, item_code, material_name, qty, unit_price_sen, line_total_sen, notes, ' +
   /* PR #42 — variant fields (migration 0057) */
-  'item_group, description, description2, uom, discount_sen, variants, ' +
+  'item_group, account_code, description, description2, uom, discount_sen, variants, ' +
   'gap_inches, divan_height_inches, divan_price_sen, leg_height_inches, leg_price_sen, ' +
   'custom_specials, line_suffix, special_order_price_sen, unit_cost_sen, po_unit_price_sen, created_at';
 
@@ -714,6 +715,27 @@ purchaseInvoices.post('/', async (c) => {
     }
   }
 
+  /* A line keyed by account (chew, 18 Nov 2026: stock codes are not complete yet): no item, the purchase account it
+     books to instead. Only ordinary LEAVES, the door every hand-chosen debit walks (headers and controls refuse). */
+  for (const [i, it] of items.entries()) {
+    const code = String(it.accountCode ?? '').trim();
+    if (!code && !String(it.itemCode ?? '').trim()) {
+      return refuseWithoutWriting(c, { error: 'line_needs_item_or_account', reason: `Line ${i + 1}: choose an item or an account.` }, 400);
+    }
+  }
+  for (const code of [...new Set(items.map((it) => String(it.accountCode ?? '').trim()).filter(Boolean))]) {
+    const coId = activeCompanyId(c);
+    if (coId == null) return refuseWithoutWriting(c, { error: 'company_required', reason: 'Choose the company first.' }, 409);
+    const { data: known, error: knownErr } = await c.get('supabase').from('accounts').select('account_code, is_active')
+      .eq('company_id', coId).eq('account_code', code).maybeSingle();
+    if (knownErr) return refuseWithoutWriting(c, { error: 'load_failed', reason: knownErr.message }, 500);
+    if (!known || (known as { is_active?: boolean | null }).is_active === false) {
+      return refuseWithoutWriting(c, { error: 'unknown_account', reason: `${code} is not an active account in the chart.` }, 400);
+    }
+    const leafErr = await requireLeafAccount(c, coId, code);
+    if (leafErr) return refuseWithoutWriting(c, await leafErr.json() as Record<string, unknown>, leafErr.status as 400);
+  }
+
   let subtotal = 0;
   /* Reject non-finite line numbers BEFORE the map — the Math.max(0, ...) clamp
      below stops a negative total but NOT a NaN (Math.max(0, NaN) is NaN), so a
@@ -751,6 +773,7 @@ purchaseInvoices.post('/', async (c) => {
       // path). Columns exist on purchase_invoice_items (migration 0057).
       item_group: (it.itemGroup as string | null | undefined) ?? null,
       variants: (it.variants as Record<string, unknown> | null | undefined) ?? null,
+      ...(String(it.accountCode ?? '').trim() ? { account_code: String(it.accountCode).trim() } : {}),
     };
   });
 

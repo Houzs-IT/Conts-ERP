@@ -35,12 +35,12 @@ export const MODEL_TONE: Record<RevenueModel, StatusTone> = {
 
 /** Who pays an expense (expenses.charge_to). Only the owner's reach the statement. */
 export const PAYERS: { value: string; label: string; help: string }[] = [
-  { value: 'owner', label: 'Owner (via statement)', help: 'Deducted on the owner statement.' },
+  { value: 'owner', label: 'Owner (sharing)', help: 'Deducted on the owner statement before the share, so owner and company bear it by the contract split.' },
   { value: 'the_conts', label: 'The Conts', help: 'The Conts pays. Shows in The Conts\' share of the unit only.' },
   { value: 'tenant', label: 'Tenant', help: 'The tenant pays. Not on the owner statement.' },
   { value: 'guest_deposit', label: 'Guest', help: 'Charged to the guest (deposit). Not on the owner statement.' },
 ];
-export const PAYER_LABEL: Record<string, string> = { owner: 'Owner', the_conts: 'The Conts', tenant: 'Tenant', guest_deposit: 'Guest deposit', warranty: 'Warranty' };
+export const PAYER_LABEL: Record<string, string> = { owner: 'Owner (sharing)', the_conts: 'The Conts', tenant: 'Tenant', guest_deposit: 'Guest deposit', warranty: 'Warranty' };
 
 /** The categories an expense is entered under, in the owner's words. Value = expenses.category. */
 export const ENTRY_CATEGORIES: { value: string; label: string }[] = [
