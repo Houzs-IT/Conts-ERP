@@ -149,8 +149,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       toConfirm: revenue.byUnit.get(m.unitId) ?? 0,
       hints: lockable ? hintsFor(m) : {},
       // A yearly guarantee is checked once a year (its true-up lands on the statement as a top-up), not month by month.
-      // A long-term let's owner base is the owner's part of the rent; GRR and master lease, the fixed rent.
-      ltGrr: none ? 0 : !share ? f.fixedRent : f.terms.model === 'management_guarantee' ? f.guarantee : 0,
+      // A long-term let's owner base is the rent its statement pays (by the tenancy's days, as locked); a master lease's, the fixed rent.
+      ltGrr: none ? 0 : isTenancy(m.terms.model) ? m.payoutBeforeAdjustments : !share ? f.fixedRent : f.terms.model === 'management_guarantee' ? f.guarantee : 0,
       // A tenancy is let by the month, not by the night, so it stays out of occupancy. The statement's nights leave out
       // owner stays and HostPlatform free stays (both owner_stay), so occupancy matches the misc charge (owner, 4 Nov 2026).
       o2: m.adjustmentsTotal, nights: f.nights, days: f.days,

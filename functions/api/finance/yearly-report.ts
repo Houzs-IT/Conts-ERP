@@ -85,7 +85,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         electricity: sum(c => c === 'electricity'), water: sum(c => c === 'water'), internet: sum(c => c === 'internet'), sewerage: sum(c => c === 'sewerage'),
         additional: sum(c => c === 'additional'), misc: sum(c => c === 'misc'), ownerPct: none ? 100 : share ? f.terms.ownerPct ?? 0 : 0,
         // A yearly guarantee is checked once a year, not month by month (as the Monthly view).
-        ltGrr: none ? 0 : !share ? f.fixedRent : f.terms.model === 'management_guarantee' ? f.guarantee : 0,
+        // A long-term let's owner base is the rent its statement pays (by the tenancy's days, as locked); a master lease's, the fixed rent.
+        ltGrr: none ? 0 : isTenancy(m.terms.model) ? m.payoutBeforeAdjustments : !share ? f.fixedRent : f.terms.model === 'management_guarantee' ? f.guarantee : 0,
         o2: m.adjustmentsTotal, nights: f.nights, days: f.days, cleanerCost: cost.get(`${m.unitId}|${month}`) ?? 0, late: lateHere,
       });
     }
