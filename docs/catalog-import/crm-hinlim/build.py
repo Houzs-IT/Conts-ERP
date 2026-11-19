@@ -140,7 +140,7 @@ for r in rows[1:]:
         material=clean(col(r, 'Material Remark')), assembly=clean(col(r, 'Assembly Type')), pack=pack,
         carton=carton, gross=gross, nett=nett, cubic=cubic,
         m3_milli=int((Decimal(str(cubic)) * 1000).quantize(Decimal('1'), rounding=ROUND_HALF_UP)) if cubic else 0,
-        uom='SET' if pack.upper().startswith('1SET') else 'PCS',
+        uom='SET' if pack.upper().startswith('1SET') or re.search(r'\bSET OF\b', name.upper()) else 'PCS',
         rrp_usd=col(r, 'RRP (USD)'),
     )
     lines = [('Size', k['size']), ('Colour', k['colour']), ('Material', k['material']), ('Assembly', k['assembly']),
@@ -221,7 +221,7 @@ sql = f"""-- REVERSAL: delete from scm.supplier_binding_price_history where note
 --    {', '.join(f'{SUB_LABEL[s]} {n}' for s, n in per_sub.most_common())}.
 --  * Name = SKU Description; branding = the list's brand ({', '.join(f'{b} {n}' for b, n in per_brand.most_common())});
 --    description = size, colour, material, assembly, pack, carton, weights, cubic, Hin Lim code; unit_m3_milli = Cubic x 1000;
---    unit SET for a "1SET/..." pack, else PCS; cost_price_sen = Houzs Century Cost Price (MYR) x 100; no selling price.
+--    unit SET for a "1SET/..." pack or a "SET OF" name, else PCS; cost_price_sen = Houzs Century Cost Price (MYR) x 100; no selling price.
 --  * Each SKU a model of its own (model_code = SKU code), Active, company {COMPANY_ID} (The Conts).
 --  * Main supplier {SUPPLIER_NAME} ({SUPPLIER_CODE}): one scm.supplier_material_bindings row per SKU (material_kind
 --    mfg_product, supplier_sku = Hin Lim code, unit_price_sen = cost, valid from {TODAY}, main unless the SKU already has a
@@ -422,7 +422,7 @@ qs = [
     ['Stools and benches go to Dining as asked, including ottoman-like stools (FINN STOOL) and the dressing-table stool set (put under Tables).',
      ''],
     ['Code format <type>-HLM-<Hin Lim code> confirmed by the owner (19 Nov 2026); it lives in one function in build.py (our_code).', ''],
-    ['Units: SET for a "1SET/..." pack (dining sets), PCS for everything else.',
+    ['Units: SET for a "1SET/..." pack (dining sets) or a "SET OF" name (e.g. SANDRA set of 2), PCS for everything else.',
      ', '.join(k['code'] for k in skus if k['uom'] == 'SET')],
 ]
 if name_dups:

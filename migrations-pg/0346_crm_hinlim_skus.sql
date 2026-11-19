@@ -13,7 +13,7 @@
 --    Dining 196, Loose storage 134, Tables 129, Sofa 87, Bedframe 21, Accessory 14.
 --  * Name = SKU Description; branding = the list's brand (NESTHOUZ 213, NUHOOM 200, LUOOMA 68, NESTNORDIC 50, NUHOOM - BASIC 27, FYND 23);
 --    description = size, colour, material, assembly, pack, carton, weights, cubic, Hin Lim code; unit_m3_milli = Cubic x 1000;
---    unit SET for a "1SET/..." pack, else PCS; cost_price_sen = Houzs Century Cost Price (MYR) x 100; no selling price.
+--    unit SET for a "1SET/..." pack or a "SET OF" name, else PCS; cost_price_sen = Houzs Century Cost Price (MYR) x 100; no selling price.
 --  * Each SKU a model of its own (model_code = SKU code), Active, company 1 (The Conts).
 --  * Main supplier HIN LIM FURNITURE MANUFACTURER SDN BHD (400-H004): one scm.supplier_material_bindings row per SKU (material_kind
 --    mfg_product, supplier_sku = Hin Lim code, unit_price_sen = cost, valid from 2026-11-19, main unless the SKU already has a
@@ -705,7 +705,7 @@ select x.*, (select s.id from scm.suppliers s where s.company_id = 1
 "code": "FUR-HLM-132053",
 "name": "SANDRA SET OF 2 COFFEE TABLE 109",
 "sub_category": "TABLES",
-"uom": "PCS",
+"uom": "SET",
 "cost": 21300,
 "m3": 51,
 "branding": "NESTHOUZ",
@@ -729,7 +729,7 @@ select x.*, (select s.id from scm.suppliers s where s.company_id = 1
 "code": "FUR-HLM-132055",
 "name": "SANDRA SET OF 2 COFFEE TABLE 102",
 "sub_category": "TABLES",
-"uom": "PCS",
+"uom": "SET",
 "cost": 21300,
 "m3": 51,
 "branding": "NESTHOUZ",
