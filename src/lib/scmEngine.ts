@@ -124,5 +124,8 @@ export function menuPathFor(enginePath: string, current?: string | null): string
   if (tied.length === 0) return null;
   if (current && tied.includes(current)) return current;
   const sameSide = current ? tied.filter(m => inRental(m) === inRental(current)) : [];
+  /* A screen only the other side's sidebar holds (a purchase invoice opened from Finance → AP invoices) opens under
+     the menu it was opened from: the sidebar stays where the user is (chew, 19 Nov 2026). */
+  if (current && sameSide.length === 0) return current;
   return (sameSide.length ? sameSide : tied)[(sameSide.length ? sameSide : tied).length - 1];
 }
