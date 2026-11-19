@@ -97,7 +97,7 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
     if (r.periodFrom && r.periodTo && r.periodTo < r.periodFrom) return bad(r.scanId, 'The period ends before it starts.');
     if (r.dueDate && !DATE.test(r.dueDate)) return bad(r.scanId, 'Enter the due date as a date.');
     if (r.chargeTo !== undefined && !CHARGE_TO.includes(r.chargeTo)) return bad(r.scanId, 'Choose who pays the bill.');
-    if (r.ownerPartSen != null && (!Number.isInteger(r.ownerPartSen) || r.ownerPartSen < 0 || r.ownerPartSen > r.amountSen)) return bad(r.scanId, "The owner's own part must be between RM 0.00 and the bill.");
+    if (r.ownerPartSen != null && (!Number.isInteger(r.ownerPartSen) || r.ownerPartSen < 0 || r.ownerPartSen > r.amountSen)) return bad(r.scanId, "The owner's own part is more than the bill. If the bill has a previous balance, put the whole bill, balance included, in Amount.");
     if (r.ownerPartSen && (r.chargeTo ?? 'owner') !== 'owner') return bad(r.scanId, "Only a bill the owner shares can have an owner's own part.");
   }
   if (new Set(rows.map(r => r.scanId)).size !== rows.length) return { ok: false, status: 422, code: 'VALIDATION', message: 'A page is in the list twice.' };
