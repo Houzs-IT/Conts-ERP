@@ -96,6 +96,8 @@ export interface ProjectRow {
   /* filled by the app, never typed (migration 0117, projectDates.ts) */
   start_date?: string | null;
   end_date?: string | null;
+  /* The works start, set by Start project (migration 0340): SLA lines are dated from it. */
+  works_started_on?: string | null;
 }
 
 export const PROJECT_COLS =
@@ -106,7 +108,7 @@ export const PROJECT_COLS =
   "p.sales_person_id::int AS sales_person_id, sp.name AS sales_person_name, p.designer_person_id::int AS designer_person_id, " +
   "dp.name AS designer_person_name, p.reno_pic_person_id::int AS reno_pic_person_id, rp.name AS reno_pic_person_name, " +
   "p.flow_manual_step, p.flow_manual_base_step, p.flow_manual_reason, p.flow_manual_by::int AS flow_manual_by, p.flow_manual_at, " +
-  "p.hold_flag, p.hold_note, p.hold_at, p.source, p.source_ref, p.start_date, p.end_date";
+  "p.hold_flag, p.hold_note, p.hold_at, p.source, p.source_ref, p.start_date, p.end_date, p.works_started_on::text AS works_started_on";
 
 export const PROJECT_PEOPLE_JOINS =
   "LEFT JOIN project_people sp ON sp.id = p.sales_person_id " +

@@ -35,7 +35,7 @@ export function blankLine(kind: RenoLineKind): DocLine {
   return {
     kind, room: '', itemCode: null, description: '', qty: 1, measure: null, measureUom: null, uom: kind === 'ITEM' || kind === 'CHILD' ? 'UNIT' : null,
     unitPriceSen: 0, listPriceSen: null, discountBp: 0, amountOverrideSen: null, isFoc: false, supplyByOwner: false, highlight: 'NONE',
-    supplierId: null, unitCostSen: 0, stageCode: null, pageBreakBefore: false,
+    supplierId: null, unitCostSen: 0, stageCode: null, processingAfterDays: null, deliveryAfterDays: null, pageBreakBefore: false,
   };
 }
 
@@ -168,6 +168,13 @@ interface LineProps {
   files?: LineFilesTarget;
 }
 
+/** A typed SLA day count: blank is no SLA; anything else a whole number from 0 to 3650. */
+function slaDays(v: string): number | null {
+  if (v.trim() === '') return null;
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.min(3650, Math.max(0, n)) : null;
+}
+
 function LineExtras({ line, disabled, showCost, onChange, suppliers }: Pick<LineProps, 'line' | 'disabled' | 'showCost' | 'onChange' | 'suppliers'>) {
   const priced = line.kind === 'ITEM' || line.kind === 'CHILD';
   const units = useRenovationCatalog().pickableUoms(line.uom).filter((u) => !u.measure);
@@ -204,6 +211,18 @@ function LineExtras({ line, disabled, showCost, onChange, suppliers }: Pick<Line
             <option value="">From product</option>
             {RENO_STAGES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
           </select>
+        </label>
+      )}
+      {priced && (
+        <label className="flex flex-col gap-0.5 text-[11px] text-ink-muted" title="Days after the project's Start project date">Processing (days after start)
+          <input className={inputCls} type="number" min={0} max={3650} inputMode="numeric" disabled={disabled} value={line.processingAfterDays ?? ''} placeholder="No SLA"
+            onChange={(e) => onChange({ processingAfterDays: slaDays(e.target.value) })} />
+        </label>
+      )}
+      {priced && (
+        <label className="flex flex-col gap-0.5 text-[11px] text-ink-muted" title="Days after the project's Start project date">Delivery (days after start)
+          <input className={inputCls} type="number" min={0} max={3650} inputMode="numeric" disabled={disabled} value={line.deliveryAfterDays ?? ''} placeholder="No SLA"
+            onChange={(e) => onChange({ deliveryAfterDays: slaDays(e.target.value) })} />
         </label>
       )}
       {priced && showCost && (

@@ -389,7 +389,7 @@ export async function saveLinePlan(db: Db, soItemId: string, companyId: number, 
     `INSERT INTO scm.reno_beta_line_plans (so_item_id, company_id, order_on, deliver_on, no_po, updated_by, updated_at)
      VALUES (?::uuid, ?, ?::date, ?::date, ?, ?, now())
      ON CONFLICT (so_item_id) DO UPDATE SET order_on = excluded.order_on, deliver_on = excluded.deliver_on, no_po = excluded.no_po,
-       updated_by = excluded.updated_by, updated_at = now()`,
+       updated_by = excluded.updated_by, updated_at = now(), from_sla = false`,
   ).bind(soItemId, companyId, next.orderOn, next.deliverOn, next.noPo, userId).run();
   return next;
 }
@@ -429,7 +429,7 @@ export async function saveLinePlans(
        SELECT x.id, ?, x.order_on, x.deliver_on, x.no_po, ?, now()
          FROM jsonb_to_recordset(?::text::jsonb) AS x(id uuid, order_on date, deliver_on date, no_po boolean)
        ON CONFLICT (so_item_id) DO UPDATE SET order_on = excluded.order_on, deliver_on = excluded.deliver_on, no_po = excluded.no_po,
-         updated_by = excluded.updated_by, updated_at = now()`,
+         updated_by = excluded.updated_by, updated_at = now(), from_sla = false`,
     ).bind(companyId, userId, JSON.stringify(rows)).run();
   }
   return { saved: rows.map((r) => r.id), refused, docNos: [...docNos] };

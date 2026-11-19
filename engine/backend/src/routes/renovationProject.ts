@@ -36,6 +36,7 @@ import { writeCachedStage } from "../services/renovation/contractSync";
 import { syncProjectDates } from "../services/renovation/projectDates";
 import { stepSlaReady, syncStepSla } from "../services/renovation/stepSla";
 import { audit } from "../services/audit";
+import { FILL_SLA_DATES_SQL } from "../scm/lib/renovation-sla";
 import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
 import { staffViewReady, syncPeopleFromUsers } from "../services/renovation/peopleSync";
 
@@ -415,6 +416,28 @@ app.post("/:id/step", requirePermission("projects.write"), failClosed(async (c) 
   ]);
   await resyncDates(c, id);
   return c.json({ ok: true });
+}));
+
+/* Start project (owner, 19 Nov 2026): the works start date. Every sales order line from a package template that carries
+   SLA days gets its processing and delivery date from it (scm/lib/renovation-sla.ts); moving the date again re-dates the
+   lines still on their SLA, never a date typed by hand. */
+app.post("/:id/start", requirePermission("projects.write"), failClosed(async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const date = String((await body(c)).date ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) return c.json({ error: "date_invalid", message: "Pick the date the works start." }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const before = await db(c).prepare(`SELECT works_started_on::text AS d FROM projects WHERE id = ?`).bind(id).first<{ d: string | null }>();
+  await db(c).prepare(`UPDATE projects SET works_started_on = ?::date, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`).bind(date, id).run();
+  const dated = await db(c).prepare(FILL_SLA_DATES_SQL.replace("$1", "?")).bind(id).all<{ so_item_id: string }>();
+  const n = dated.results?.length ?? 0;
+  await audit(c, {
+    action: "project.works_start", entityType: "project", entityId: String(id),
+    summary: `Works start ${before?.d ? `moved from ${before.d} ` : ""}to ${date}; ${n} sales order line${n === 1 ? "" : "s"} dated from the package template SLA`,
+    meta: { before: before?.d ?? null, after: date, dated: n },
+  });
+  return c.json({ ok: true, startedOn: date, dated: n });
 }));
 
 app.post("/:id/step/follow-data", requirePermission("projects.write"), failClosed(async (c) => {
