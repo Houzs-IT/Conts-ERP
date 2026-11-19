@@ -12,7 +12,7 @@ const step = (i: StageInputs, code: string) => designSteps(i, TODAY).find((s) =>
 
 describe("Design steps (same rules as the Beta board's Design progress)", () => {
   test("the works In Design in their order, then Variants", () => {
-    expect(designSteps(empty, TODAY).map((s) => s.code)).toEqual(["measure", "w3d", "w2d", "payment_2", "carpentry", "briefing", "variants"]);
+    expect(designSteps(empty, TODAY).map((s) => s.code)).toEqual(["measure", "w3d", "w2d", "carpentry", "briefing", "variants"]);
   });
   test("a work taken out of Design or archived is not a step; a custom work In Design is", () => {
     const workTypes = [
@@ -56,10 +56,13 @@ describe("Design steps (same rules as the Beta board's Design progress)", () => 
     expect(step({ ...empty, files: [f1, f2], notes: [{ ...late, closedOn: "2026-11-13" }], reviews: [{ fileId: 2, approvedOn: "2026-11-11" }] }, "w3d").done).toBe(true);
     expect(step(empty, "w2d")).toMatchObject({ done: false, state: "Not started" });
   });
+  // Second payment left Design work (migration 0344); a company that still had the rule would read it this way.
   test("second payment: two instalments fully received", () => {
-    expect(step(empty, "payment_2")).toMatchObject({ done: false, state: "Waiting payment" });
-    expect(step({ ...empty, payment: { contractSen: 1, receivedSen: 1, paidInstalments: 2 } }, "payment_2").done).toBe(true);
-    expect(step({ ...empty, payment: null }, "payment_2")).toMatchObject({ done: false, state: "No sales order" });
+    const withPay = { ...empty, workTypes: [...empty.workTypes, { id: 98, code: "payment_2", label: "Second payment", rule: "payment_2" as const, bookable: false, inDesign: true, sortOrder: 40, active: true, system: true }] };
+    const step2 = (f: typeof withPay) => designSteps(f, TODAY).find((s) => s.code === "payment_2")!;
+    expect(step2(withPay)).toMatchObject({ done: false, state: "Waiting payment" });
+    expect(step2({ ...withPay, payment: { contractSen: 1, receivedSen: 1, paidInstalments: 2 } }).done).toBe(true);
+    expect(step2({ ...withPay, payment: null })).toMatchObject({ done: false, state: "No sales order" });
   });
   test("variants: lines exist and none misses a required variant", () => {
     expect(step(empty, "variants")).toMatchObject({ done: false, state: "No sales order lines" });
