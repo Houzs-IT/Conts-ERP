@@ -45,9 +45,9 @@ function Cell({ sen, strong }: { sen: number | null; strong?: boolean }) {
   return <span className={cx('tabular-nums', b.negative && 'text-danger', strong && 'font-semibold')}>{b.text}</span>;
 }
 
-/** One kind's units in a grid, with its total row. A unit with nothing in any month of this figure is not listed. */
+/** One kind's units in a grid, with its total row. A unit with nothing but zeros in this figure is not listed (a zero shows as a dash). */
 interface Part { group: ReportGroup; grid: BlockGrid }
-const listed = (grid: BlockGrid, units: Unit[]) => units.filter(u => (grid.units[u.id] ?? []).some(v => v !== null));
+const listed = (grid: BlockGrid, units: Unit[]) => units.filter(u => (grid.units[u.id] ?? []).some(v => v !== null && v !== 0));
 const codes = (rows: readonly YearlyRow[]) => {
   const m = new Map<string, string>();
   for (const r of rows) if (r.contractCode) m.set(r.unitId, r.contractCode);
