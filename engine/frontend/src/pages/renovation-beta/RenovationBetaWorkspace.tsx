@@ -25,6 +25,7 @@ import { BetaTimelineTab } from "./BetaTimelineTab";
 import { BetaVoTab } from "./BetaVoTab";
 import { BetaDialogs, type BetaDialog } from "./BetaForms";
 import { DeleteProjectButton } from "./BetaDeleteProject";
+import { StartProjectButton } from "./BetaStartProject";
 import { BetaWsHeader, BetaWsStepper } from "./BetaWsHeader";
 import { BetaSkin, useBetaPreload, WS, WsNotice, WsStyle } from "./BetaWsUi";
 import type { BetaTabProps, BoardView } from "./betaShared";
@@ -126,7 +127,10 @@ function WorkspaceScreen(): ReactElement {
       <WsStyle />
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={SPRING}>
         <BetaWsHeader d={d} p={board.p} people={board.m.everyone} canWrite={can("projects.write")} today={today} openDialog={setDialog}
-          actions={canDelete ? <DeleteProjectButton project={{ id, code: p.code, name: p.name }} onError={onError} /> : undefined} />
+          actions={<>
+            {can("projects.write") && <StartProjectButton projectId={id} startedOn={p.works_started_on ?? null} today={today} onError={onError} />}
+            {canDelete && <DeleteProjectButton project={{ id, code: p.code, name: p.name }} onError={onError} />}
+          </>} />
       </motion.div>
       <BetaWsStepper items={items} hold={hold} />
 

@@ -10,6 +10,7 @@
    - patchContract: cosmetic edits only (prices change through a VO).
    - setContractStatus: Confirmed -> In progress -> Completed -> Closed, or Cancelled. */
 
+import { fillSlaDates } from './renovation-sla';
 import { auditEntity, auditSo, mintDocNo, refuse, todayKl, yymmOf, type RenoDb } from './renovation-db';
 import { contractOrderKind, ensureDebtorSql } from '../../conts/parties';
 import { openAdvanceAccountSql } from '../../acc/reno-advance-account';
@@ -238,6 +239,8 @@ export async function convertQuotationToSo(
   await insertSoItems(db, docNo, rows, { companyId: actor.companyId, debtorName, lineDate: soDate });
   const revised = await recomputeSoHeader(db, docNo);
   await insertSections(db, { kind: 'so', id: docNo }, sections, actor.companyId);
+  // A project already started dates the template lines at once (package template SLA).
+  await fillSlaDates(db, q.projectId ?? null);
   await stampContractFromQuotation(db, docNo, {
     projectId: q.projectId, companyId: actor.companyId, building: h.building, unitNo: h.unitNo, sections,
     property: { siteAddress: h.siteAddress, propertyType: h.propertyType, layoutLabel: h.layoutLabel, bedrooms: h.bedrooms, bathrooms: h.bathrooms, builtUpSqft: h.builtUpSqft, landAreaSqft: h.landAreaSqft, landSize: h.landSize, salespersonId: h.salespersonId, state: h.state, city: h.city, postcode: h.postcode, country: h.country, salesLocation: h.salesLocation },

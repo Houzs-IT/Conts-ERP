@@ -108,7 +108,7 @@ export async function stampCreatedProcessingDates(db: Db, docNo: string, company
     if (!/^\d{4}-\d{2}-\d{2}$/.test(s.date)) continue;
     await db.prepare(
       `INSERT INTO scm.reno_beta_line_plans (so_item_id, company_id, order_on) VALUES (?::uuid, ?, ?::date)
-       ON CONFLICT (so_item_id) DO UPDATE SET order_on = excluded.order_on, updated_at = now()`,
+       ON CONFLICT (so_item_id) DO UPDATE SET order_on = excluded.order_on, updated_at = now(), from_sla = false`,
     ).bind(row!.id, companyId, s.date).run();
   }
 }

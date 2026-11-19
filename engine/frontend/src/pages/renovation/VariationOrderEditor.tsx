@@ -4,7 +4,7 @@
 // up the difference, and PO lines that bought omitted work are flagged.
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Printer, Save, Send } from 'lucide-react';
 import { QuotationSoPrint } from '../scm-v2/renovationQuotationPrint';
 import { PageHeader } from '../../components/Layout';
@@ -21,6 +21,8 @@ import { Card, ErrorBanner, Field, inputCls, rm, StatusPill, todayIso } from './
 import { cn } from '../../lib/utils';
 import { useRenovationDraft } from '../../lib/renovation/renovationFormDraft';
 import { RenovationDraftBanner } from './renovationDraftBanner';
+import { loadTemplateSections } from './fromTemplate';
+import { useTemplates } from '../../lib/renovation/api';
 
 interface OmitPick { lineId: string; omitQty: number | null }
 
@@ -48,6 +50,20 @@ export function VariationOrderEditor() {
   const [signedName, setSignedName] = useState('');
   const [printOpen, setPrintOpen] = useState(false);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
+  const [params, setParams] = useSearchParams();
+  const templates = useTemplates();
+  /* A package template's sections go into the Add part (From template on the sales order, or the picker here). A
+     blank starting section is replaced, so the VO holds just the template. */
+  const addTemplate = async (templateId: string): Promise<void> => {
+    if (!templateId) return;
+    try {
+      const t = await loadTemplateSections(templateId);
+      setAdds((cur) => [...cur.filter((s) => s.lines.some((l) => l.itemCode || l.description.trim())), ...t.sections]);
+      setTitle((cur) => cur.trim() ? cur : `From package template ${t.name}`);
+      setDirty(true);
+      toast.success(`${t.name} added. Check the lines, then save.`);
+    } catch (e) { setError(refusalOf(e).message); }
+  };
 
   useEffect(() => {
     if (!vo.data) return;
@@ -61,6 +77,13 @@ export function VariationOrderEditor() {
     setSignedName(vo.data.signedName ?? '');
     setDirty(false);
   }, [vo.data]);
+  const fromTemplate = params.get('template');
+  useEffect(() => {
+    if (!fromTemplate || !vo.data || vo.data.status !== 'DRAFT') return;
+    setParams((p) => { const n = new URLSearchParams(p); n.delete('template'); return n; }, { replace: true });
+    void addTemplate(fromTemplate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the VO has loaded
+  }, [fromTemplate, vo.data?.id]);
 
   const draftValue = useMemo(() => ({ title, docDate, adds, omits }), [title, docDate, adds, omits]);
   const draft = useRenovationDraft(
@@ -166,7 +189,15 @@ export function VariationOrderEditor() {
             </div>
           </Card>
           <div>
-            <h2 className="mb-2 text-[13.5px] font-semibold text-ink">Add</h2>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-[13.5px] font-semibold text-ink">Add</h2>
+              {editable && (templates.data?.templates ?? []).some((t) => t.active) && (
+                <select className={cn(inputCls, 'h-8 w-auto')} value="" onChange={(e) => void addTemplate(e.target.value)} aria-label="Add a package template">
+                  <option value="">Add from package template</option>
+                  {(templates.data?.templates ?? []).filter((t) => t.active).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              )}
+            </div>
             <DocEditor sections={adds} disabled={!editable} allowLumpSum={false} onChange={(s) => { setAdds(s); setDirty(true); }}
               files={{ docType: 'variation_order', docId: v.id, canEdit: filesEditable }} />
           </div>

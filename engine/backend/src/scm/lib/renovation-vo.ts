@@ -20,6 +20,7 @@
    Applying never reprices other lines (applySoAmendment would reprice the whole
    order with furniture pricing, which is why it is not used here). */
 
+import { fillSlaDates } from './renovation-sla';
 import { auditSo, refuse, todayKl, type RenoDb } from './renovation-db';
 import { insertSections, readSections, toMoneyLine, type DocLineOut } from './renovation-doc-lines';
 import { insertSoItems, mirrorRowsFor, readContractHead, recomputeSoHeader, RENO_LIVE_STATUSES } from './renovation-so';
@@ -330,6 +331,9 @@ export async function applyVo(
   await insertSoItems(db, soDocNo, rows, { companyId: actor.companyId, debtorName: head.debtorName, lineDate: todayKl() });
   const [so] = await db.q<{ n: number }>(`select coalesce(max(sort_order), 0)::int as n from scm.reno_doc_sections where so_doc_no = $1`, [soDocNo]);
   await insertSections(db, { kind: 'so', id: soDocNo }, addSections, actor.companyId, { voId: id, sortOffset: Number(so.n) });
+  // Lines a VO adds from a package template get their SLA dates when the project is already started.
+  const [proj] = await db.q<{ project_id: number | null }>(`select project_id from scm.mfg_sales_orders where doc_no = $1`, [soDocNo]);
+  await fillSlaDates(db, proj?.project_id == null ? null : Number(proj.project_id));
   for (const r of rows) {
     await db.q(
       `insert into scm.so_amendment_lines (amendment_id, sales_order_item_id, change_type, new_item_code, new_qty, new_unit_price_sen, new_discount_sen, company_id)
@@ -509,7 +513,7 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
     const line: NormLine = {
       id: crypto.randomUUID(), parentId: null, kind: 'ITEM', sortOrder: 0, room, itemCode: a.itemCode.trim(), description: prod.name, qty: a.qty,
       measureMilli: null, measureUom: null, uom: prod.uom, unitPriceSen: a.unitPriceSen, listPriceSen: null, discountBp: 0, amountOverrideSen: null,
-      isFoc: false, supplyByOwner: false, highlight: 'NONE', supplierId: prod.supplierId, unitCostSen: prod.costSen, stageCode: null,
+      isFoc: false, supplyByOwner: false, highlight: 'NONE', supplierId: prod.supplierId, unitCostSen: prod.costSen, stageCode: null, processingAfterDays: null, deliveryAfterDays: null,
       pageBreakBefore: false, voChange: 'ADD', omitTargetLineId: null, omitQty: null,
     };
     put(room || 'Additional works', line);
@@ -573,8 +577,8 @@ export async function carryToAddedLine(db: RenoDb, a: QuickAdd, to: string, grou
     );
   }
   await db.q(
-    `insert into scm.reno_beta_line_plans (so_item_id, company_id, order_on, deliver_on, no_po, updated_by, updated_at)
-     select $1, company_id, order_on, deliver_on, no_po and $3, updated_by, now() from scm.reno_beta_line_plans where so_item_id = $2
+    `insert into scm.reno_beta_line_plans (so_item_id, company_id, order_on, deliver_on, no_po, updated_by, updated_at, from_sla)
+     select $1, company_id, order_on, deliver_on, no_po and $3, updated_by, now(), from_sla from scm.reno_beta_line_plans where so_item_id = $2
      on conflict (so_item_id) do nothing`,
     [to, a.fromSoItemId, a.sameSku],
   );
