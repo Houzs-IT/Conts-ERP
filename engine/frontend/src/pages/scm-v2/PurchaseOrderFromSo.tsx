@@ -19,7 +19,8 @@
 // Routing: /scm/purchase-orders/from-so.
 // ----------------------------------------------------------------------------
 
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 // HOUZS VENDOR — Link + useSearchParams live on 'react-router-dom' in
 // react-router v6 (the version Houzs ships). Only the import specifier changed.
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -28,11 +29,14 @@ import { Button } from '@2990s/design-system';
 import { fmtDateOrDash, fmtMoneySen, fmtQty } from '@2990s/shared';
 import { VariantDescription } from '../../vendor/scm/components/VariantDescription';
 import {
-  useOutstandingSoItems,
+  useOutstandingSoItemsPaged,
+  outstandingSoPageUrl,
   useCreatePosFromSoItems,
   usePurchaseOrderDetail,
   type OutstandingSoItem,
+  type OutstandingSoPage,
 } from '../../vendor/scm/lib/suppliers-queries';
+import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import { DataGridCompat, type GridColumn } from '../../components/DataGridCompat';
 import { useIdempotencyKey } from '../../lib/idempotency';
 import { readScmHandoff, writeScmHandoff } from '../../lib/scmHandoffStorage';
@@ -43,7 +47,6 @@ import { PageHeader } from '../../components/Layout';
 import { soRefOfCamelStamp } from '../../lib/so-ref-search';
 import { DateField } from "../../vendor/scm/components/DateField";
 import { useCategoryOptions, withRowCategories } from '../../vendor/scm/lib/renovation-catalog-queries';
-import { categoryMatches } from '../../vendor/shared/renovation-catalog';
 import { SoLineStatusCell, soLineStatusText, useSoLineStatus } from './SoLineStatus';
 import { mrpProjectLabel } from './mrp-model-pipeline';
 
@@ -74,13 +77,22 @@ const DATE_FIELD_OPTIONS = [
 ] as const;
 type DateField = typeof DATE_FIELD_OPTIONS[number]['value'];
 
-/** Resolve the date string for a row given the active date-field selector. */
-const rowDateFor = (r: OutstandingSoItem, field: DateField): string | null => {
-  if (field === 'soDate')     return r.soDate ?? null;
-  if (field === 'processing') return r.processingDate ?? null;
-  // delivery — prefer the SO line's own date, fall back to the SO header date.
-  return r.lineDeliveryDate ?? r.deliveryDate ?? null;
-};
+/* The search, category and date filters run on the server (lib/outstanding-so-page.ts), which applies them exactly as
+   this screen used to; the screen only asks for pages. */
+
+/** Every outstanding line of one SO, page by page: a sofa set converts as a unit, and its members may sit on a page
+    not loaded yet or outside the current search. */
+async function fetchDocLines(docNo: string): Promise<OutstandingSoItem[]> {
+  const out: OutstandingSoItem[] = [];
+  let cursor: string | null = null;
+  for (let n = 0; n < 20; n++) {
+    const page: OutstandingSoPage = await authedFetch<OutstandingSoPage>(outstandingSoPageUrl({ docNo }, cursor, 200));
+    out.push(...page.items);
+    if (!page.nextCursor) break;
+    cursor = page.nextCursor;
+  }
+  return out;
+}
 
 type Pick = { picked: boolean; qty: number };
 
@@ -88,7 +100,7 @@ const projectTitleOf = (r: OutstandingSoItem): string => r.projectName?.trim() |
 
 export const PurchaseOrderFromSo = () => {
   const navigate = useNavigate();
-  const itemsQ   = useOutstandingSoItems();
+  const queryClient = useQueryClient();
 
   /* Commander 2026-05-29 — when opened from a PO ("Transfer from Sales Order" / "Add Line
      Item"), ?poId scopes this picker to that PO: it locks to the PO's supplier
@@ -120,11 +132,57 @@ export const PurchaseOrderFromSo = () => {
   const [dateField, setDateField] = useState<DateField>('soDate');
   const [dateFrom, setDateFrom]   = useState<string>('');
   const [dateTo, setDateTo]       = useState<string>('');
+  // Search box: sent to the server a moment after typing stops (owner, 19 Nov 2026).
+  const [searchText, setSearchText] = useState<string>('');
+  const [q, setQ] = useState<string>('');
+  useEffect(() => {
+    const t = setTimeout(() => setQ(searchText.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchText]);
 
   // In-app result dialog (validation only now — the grid feeds the form).
   const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string } | null>(null);
+  // The SO whose sofa set is being read before it is ticked.
+  const [setLoadingDoc, setSetLoadingDoc] = useState<string | null>(null);
 
-  const items = useMemo(() => itemsQ.data ?? [], [itemsQ.data]);
+  const filters = useMemo(() => ({ q, category, dateField, dateFrom, dateTo }), [q, category, dateField, dateFrom, dateTo]);
+  const itemsQ = useOutstandingSoItemsPaged(filters);
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = itemsQ;
+  const total = itemsQ.data?.pages[0]?.total ?? null;
+
+  /* Every row this screen has been shown, kept across pages, searches and filter changes: a picked line stays picked
+     (and stays on the PO) when the search moves away from it. */
+  const rowCache = useRef(new Map<string, OutstandingSoItem>());
+  const items = useMemo(() => {
+    const seen = new Set<string>();
+    const out: OutstandingSoItem[] = [];
+    for (const page of itemsQ.data?.pages ?? []) {
+      for (const r of page.items) {
+        if (seen.has(r.soItemId)) continue;
+        seen.add(r.soItemId);
+        out.push(r);
+        rowCache.current.set(r.soItemId, r);
+      }
+    }
+    return out;
+  }, [itemsQ.data]);
+  const rowOf = (id: string): OutstandingSoItem | undefined => rowCache.current.get(id);
+
+  /* Load the next page when the line under the grid is in view. Re-observed after every page, because observe() reports
+     the current state at once: a page that added few rows leaves the line in view and asks for the next. A failed page
+     waits for the button rather than retrying by itself. */
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const pageCount = itemsQ.data?.pages.length ?? 0;
+  const nextPageFailed = itemsQ.isFetchNextPageError;
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el || !hasNextPage || isFetchingNextPage || nextPageFailed || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) void fetchNextPage();
+    }, { rootMargin: '400px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [pageCount, hasNextPage, isFetchingNextPage, nextPageFailed, fetchNextPage]);
 
   /* Commander 2026-05-30 — the New PO form stashes its current draft
      (poNewDraft) before sending us here. Build a per-soItemId draft qty map so:
@@ -154,19 +212,9 @@ export const PurchaseOrderFromSo = () => {
 
   // ── Filtered rows fed to the grid ────────────────────────────────────
   const rows = useMemo(() => {
-    return items.filter((r) => {
-      if (effectiveRemaining(r) <= 0) return false;
-      if (category !== 'all' && !categoryMatches(r.itemGroup, category)) return false;
-      if (dateFrom || dateTo) {
-        const d = rowDateFor(r, dateField);
-        if (!d) return false;
-        if (dateFrom && d < dateFrom) return false;
-        if (dateTo   && d > dateTo)   return false;
-      }
-      return true;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- column accessors derive from the pick/qty state already in deps; listing the helpers would only rebuild the columns for no behavioural change
-  }, [items, draftQtyById, category, dateField, dateFrom, dateTo]);
+    return items.filter((r) => effectiveRemaining(r) > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- effectiveRemaining reads only draftQtyById, which is in deps
+  }, [items, draftQtyById]);
 
   // One supplier per PO (Commander 2026-05-29) — once a bound line is ticked,
   // lines from other suppliers lock. Unbound ("— none —") lines don't lock.
@@ -176,11 +224,11 @@ export const PurchaseOrderFromSo = () => {
     if (targetPoSupplierCode) return targetPoSupplierCode;
     for (const [id, v] of Object.entries(picks)) {
       if (!v.picked) continue;
-      const row = items.find((r) => r.soItemId === id);
+      const row = rowCache.current.get(id);
       if (row?.mainSupplierCode) return row.mainSupplierCode;
     }
     return null;
-  }, [picks, items, targetPoSupplierCode]);
+  }, [picks, targetPoSupplierCode]);
 
   // A row is LOCKED when a different bound supplier is already picked.
   // Commander 2026-05-29: "不让勾选了，那为什么不把选项置灰呢" — grey these out
@@ -193,7 +241,7 @@ export const PurchaseOrderFromSo = () => {
 
   // ── Pick helpers ─────────────────────────────────────────────────────
   const togglePick = (id: string, remaining: number) => {
-    const row = items.find((r) => r.soItemId === id);
+    const row = rowOf(id);
     if (!row) return;
     // Block ticking a different bound supplier than the one already locked.
     if (row.mainSupplierCode && lockedSupplier && row.mainSupplierCode !== lockedSupplier
@@ -205,14 +253,44 @@ export const PurchaseOrderFromSo = () => {
        SAME SO travel together on the sofa's PO ("pillow 开在 sofa 里面就要跟 sofa
        的 PO 一起"). Ticking ANY set member ticks the whole set. An accessory only
        joins a set when its SO actually contains a sofa — accessories on a
-       sofa-less SO behave as normal standalone lines. */
+       sofa-less SO behave as normal standalone lines.
+       The list is loaded a page at a time, so the SO's other lines are read from the server first (every outstanding
+       line of that SO, whatever the search), the same set the whole list used to hold. */
     const grp = (row.itemGroup ?? '').toLowerCase();
-    const docHasSofa = items.some(
+    if (grp === 'sofa' || grp === 'accessory') {
+      if (setLoadingDoc) return;
+      setSetLoadingDoc(row.soDocNo);
+      queryClient.fetchQuery({
+        queryKey: ['mfg-purchase-orders', 'outstanding-so-items', 'doc', row.soDocNo],
+        queryFn: () => fetchDocLines(row.soDocNo),
+        staleTime: 30_000,
+      })
+        .then((docLines) => {
+          for (const r of docLines) rowCache.current.set(r.soItemId, r);
+          const lines = docLines.some((r) => r.soItemId === row.soItemId) ? docLines : [row, ...docLines];
+          applyPick(row, lines, turningOn, remaining);
+        })
+        .catch((e: unknown) => setDialog({
+          title: 'Could not read the sofa set',
+          body: `The other lines of SO ${row.soDocNo} could not be loaded, so nothing was ticked. Please try again.${e instanceof Error ? `\n${e.message}` : ''}`,
+        }))
+        .finally(() => setSetLoadingDoc(null));
+      return;
+    }
+    applyPick(row, [row], turningOn, remaining);
+  };
+
+  /** Tick or untick `row`, with its whole sofa set when it belongs to one. `docLines` are the outstanding lines of
+      its SO (just `[row]` for a line that cannot be in a set). */
+  const applyPick = (row: OutstandingSoItem, docLines: OutstandingSoItem[], turningOn: boolean, remaining: number) => {
+    const id = row.soItemId;
+    const grp = (row.itemGroup ?? '').toLowerCase();
+    const docHasSofa = docLines.some(
       (r) => r.soDocNo === row.soDocNo && (r.itemGroup ?? '').toLowerCase() === 'sofa',
     );
     const isSetMember = grp === 'sofa' || (grp === 'accessory' && docHasSofa);
     if (isSetMember) {
-      const members = items.filter((r) => {
+      const members = docLines.filter((r) => {
         if (r.soDocNo !== row.soDocNo) return false;
         const g = (r.itemGroup ?? '').toLowerCase();
         return g === 'sofa' || g === 'accessory';
@@ -482,7 +560,7 @@ export const PurchaseOrderFromSo = () => {
 
     const out = picked
       .map(([soItemId, v]) => {
-        const row = items.find((r) => r.soItemId === soItemId);
+        const row = rowOf(soItemId);
         return row ? { ...row, _pickQty: v.qty } : null;
       })
       .filter(Boolean);
@@ -505,6 +583,15 @@ export const PurchaseOrderFromSo = () => {
 
       <span style={{ width: 1, height: 20, background: 'var(--line)' }} aria-hidden />
 
+      <input
+        type="search"
+        value={searchText}
+        onChange={(e) => setSearchText(e.target.value)}
+        placeholder="Search SO, ref, project, customer, item…"
+        aria-label="Search outstanding SO lines"
+        style={{ ...FILTER_INPUT, width: 260 }}
+      />
+
       <Filter size={14} strokeWidth={1.75} style={{ color: 'var(--fg-muted)' }} aria-label="Filters" />
 
       {/* Category filter */}
@@ -514,7 +601,7 @@ export const PurchaseOrderFromSo = () => {
         style={FILTER_INPUT}
         aria-label="Category filter"
       >
-        {[{ value: 'all', label: 'All categories' }, ...withRowCategories(categoryOptions, items.map((r) => r.itemGroup))].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {[{ value: 'all', label: 'All categories' }, ...withRowCategories(categoryOptions, [...items.map((r) => r.itemGroup), category === 'all' ? null : category])].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
 
       {/* Date-range filter — pick which date field + from/to. */}
@@ -529,10 +616,10 @@ export const PurchaseOrderFromSo = () => {
       <DateField value={dateFrom} onChange={(iso) => setDateFrom(iso)} style={FILTER_INPUT} aria-label="Date from"/>
       <span style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-11)' }}>→</span>
       <DateField value={dateTo} onChange={(iso) => setDateTo(iso)} style={FILTER_INPUT} aria-label="Date to"/>
-      {(category !== 'all' || dateFrom || dateTo) && (
+      {(category !== 'all' || dateFrom || dateTo || searchText) && (
         <button
           type="button"
-          onClick={() => { setCategory('all'); setDateFrom(''); setDateTo(''); }}
+          onClick={() => { setCategory('all'); setDateFrom(''); setDateTo(''); setSearchText(''); setQ(''); }}
           style={{
             background: 'transparent', border: '1px solid var(--line)',
             borderRadius: 'var(--radius-sm)', padding: '0 10px', height: 28,
@@ -595,7 +682,8 @@ export const PurchaseOrderFromSo = () => {
         columns={columns}
         storageKey={STORAGE_KEY}
         rowKey={(r) => r.soItemId}
-        searchPlaceholder="Search SO, project, customer, item…"
+        /* The search box in the toolbar searches on the server; the grid's own box would only search the loaded page. */
+        hideSearch
         /* Commander 2026-05-28 — click anywhere on a row to toggle its pick
            (the checkbox is just a visual). */
         onRowClick={(r) => togglePick(r.soItemId, r.remainingQty)}
@@ -626,9 +714,35 @@ export const PurchaseOrderFromSo = () => {
         emptyMessage={itemsQ.isError
           ? "We couldn't load the outstanding lines, so this list is incomplete. That is not the same as there being none left — please refresh and try again."
           : items.length > 0
-            ? `None of the ${items.length} outstanding SO line(s) that loaded match the filters on this screen. Clear the filters to see them.`
-            : "This search came back with no outstanding SO lines. That is not the same as everything having been converted — the list only covers the company you are working in, and lines it cannot see look identical to lines that are done. Open the sales order and check its balance before treating this as nothing left to purchase."}
+            ? `The ${items.length} outstanding SO line(s) loaded so far are already held by the PO draft you came from.${hasNextPage ? ' More lines are still to load below.' : ''}`
+            : hasNextPage || itemsQ.isFetching
+              ? 'No matching line in the part of the list read so far. More is still loading below.'
+              : (q || category !== 'all' || dateFrom || dateTo)
+                ? 'No outstanding SO line matches this search and these filters. That is not the same as there being none left: clear the search and filters to see the full list.'
+                : "This search came back with no outstanding SO lines. That is not the same as everything having been converted — the list only covers the company you are working in, and lines it cannot see look identical to lines that are done. Open the sales order and check its balance before treating this as nothing left to purchase."}
       />
+
+      {/* Load on scroll (owner, 19 Nov 2026): the next page is asked for when this line comes into view, or by the button. */}
+      <div
+        ref={loadMoreRef}
+        style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-2) 0', fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}
+      >
+        {!itemsQ.isLoading && (
+          <span>
+            {`Showing ${rows.length} line${rows.length === 1 ? '' : 's'}`}
+            {total != null && hasNextPage ? ` · up to ${total} match` : ''}
+            {setLoadingDoc ? ` · loading the sofa set on ${setLoadingDoc}…` : ''}
+          </span>
+        )}
+        {itemsQ.isFetchNextPageError && (
+          <span style={{ color: 'var(--c-festive-b, #B8331F)' }}>The next lines could not be loaded.</span>
+        )}
+        {hasNextPage && (
+          <Button variant="ghost" size="sm" onClick={() => { void fetchNextPage(); }} disabled={isFetchingNextPage}>
+            {isFetchingNextPage ? 'Loading…' : itemsQ.isFetchNextPageError ? 'Try again' : 'Load more'}
+          </Button>
+        )}
+      </div>
 
       {dialog && (
         <ActionResultDialog

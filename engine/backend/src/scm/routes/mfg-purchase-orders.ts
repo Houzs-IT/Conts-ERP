@@ -18,7 +18,7 @@
 
 import { readStatusMoney } from '../lib/status-money';
 import { isPoLineOverReceived } from '../lib/qty-cap';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { PO_STATUS_BUCKETS } from '../lib/po-status-buckets';
 import { HELD_OR_TERM, isDocumentHeld } from '../lib/document-hold';
 import { PO_HEADER_COLS, PO_LIST_SELECT, poListSelect, filterPoList, orderPoList, readPoListFilters, stampPoListGrns } from '../lib/po-list-read';
@@ -47,6 +47,7 @@ import { VALID_CURRENCIES, VALID_KINDS } from '../lib/purchase-doc-vocab';
 import { resolveMaintenanceConfigForSupplier, poVariantPricingInput } from '../lib/po-pricing';
 import { readMfgProductBindings } from '../lib/supplier-bindings';
 import { loadOutstandingSoLines } from '../lib/outstanding-so-lines';
+import { parseOutstandingSoPageQuery, readOutstandingSoCandidates, encodeCursor, type CandidateRow } from '../lib/outstanding-so-page';
 import { poHasDownstream } from '../lib/downstream-lock';
 import { cascadePoSupplierDate, recordedSupplierDate, supplierDatePatchGate, SUPPLIER_DATE_SLOT_COL, type SupplierDateSlot } from '../lib/po-supplier-date-cascade';
 import { description2InputsChanged } from '../lib/po-line-description2';
@@ -522,31 +523,23 @@ mfgPurchaseOrders.get('/', async (c) => {
  * tries to cast "outstanding-so-items" to a uuid → 500. (Bug fix
  * 2026-05-28: the PO-from-SO page showed "no outstanding lines" because
  * this endpoint was 500-ing from being shadowed by `/:id`.) */
-mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
-  const supabase = c.get('supabase');
-  // Pull SO items with remaining qty > 0, joining the parent SO so we
-  // can filter cancelled SOs + show debtor + branding + dates.
-  /* Commander 2026-05-28 — PO-from-SO redesign. Surface three extra fields
-     so the frontend grid can render Processing Date + derive each PO line's
-     warehouse (from the SO's sales_location) + delivery date (from the SO
-     LINE's own line_delivery_date). processing_date + sales_location
-     come off the SO header; line_delivery_date off the item. */
-  /* PAGED — lib/outstanding-so-lines.ts. This read carried a `.limit(500)` with
-     all three of the filters that decide the answer running after it in JS, so
-     the picker offered at most 500 of the company's 15,050 live SO lines
-     (measured 2026-09-08, docs/bugs/0677) chosen by document number. */
-  /* The pooled MRP compute below needs nothing from these lines, and it is most of this request's time (measured on
-     production 19 Nov 2026: ~3 s quiet, ~24 s under load, against the browser's 30 s wait). Started here so it runs
-     while the lines, bindings and projects are read instead of after them. Settled into a value so an early return
-     cannot leave a rejected promise behind. */
-  const mrpRun = (async () => computeMrp(supabase, { catFilter: null, whFilter: null, includeUndated: true, companyId: activeCompanyId(c), leadBuffers: await loadLeadBuffers(c.env.DB) }))()
-    .then((res) => ({ ok: true as const, res }), (err: unknown) => ({ ok: false as const, err }));
-  const { data: items, error } = await loadOutstandingSoLines(
-    supabase,
-    (q) => scopeToCompany(q, c),
-  );
-  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+type PoCtx = Context<{ Bindings: Env; Variables: Variables }>;
+type MrpOutcome = { ok: true; res: Awaited<ReturnType<typeof computeMrp>> } | { ok: false; err: unknown };
 
+/* The MRP run the picker judges its lines by, started before the lines are read so the two overlap. `itemCodes` limits
+   it to the codes of one page (computeMrp: the allocation is per code, so the page's figures are the whole run's).
+   Settled into a value so an early return cannot leave a rejected promise behind. */
+function startPickerMrp(c: PoCtx, itemCodes: readonly string[] | null, focusLineIds: readonly string[] | null = null): Promise<MrpOutcome> {
+  const supabase = c.get('supabase');
+  return (async () => computeMrp(supabase, { catFilter: null, whFilter: null, includeUndated: true, companyId: activeCompanyId(c), leadBuffers: await loadLeadBuffers(c.env.DB), itemCodes, focusLineIds }))()
+    .then((res) => ({ ok: true as const, res }), (err: unknown) => ({ ok: false as const, err }));
+}
+
+/* From raw SO lines to the picker's rows: project names, main suppliers, the pooled shortage, and the lines a PO is
+   still needed for. Shared by the whole list and the paged mode, so both answer a line the same way. The order of
+   `items` is kept. */
+async function outstandingSoRows(c: PoCtx, items: unknown[] | null, mrpRun: Promise<MrpOutcome>) {
+  const supabase = c.get('supabase');
   type Row = {
     id: string; doc_no: string; item_code: string; description: string | null;
     item_group: string; qty: number; po_qty_picked: number; unit_price_sen: number;
@@ -692,7 +685,40 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
       };
     });
 
-  return c.json({ items: outstanding });
+  return outstanding;
+}
+
+mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
+  const supabase = c.get('supabase');
+  const parsed = parseOutstandingSoPageQuery(c.req.query());
+  if (!parsed.ok) return c.json({ error: 'bad_cursor', reason: parsed.reason }, 400);
+  /* PAGED MODE (owner, 19 Nov 2026) — `?limit=` asks for one page: lib/outstanding-so-page.ts reads the page's lines with
+     the search and filters, and the stock check runs on that page's item codes only. */
+  if (parsed.page) {
+    const page = parsed.page;
+    const cand = await readOutstandingSoCandidates<{ item_code: string } & CandidateRow>(
+      supabase, (q) => scopeToCompany(q, c), activeCompanyId(c), page,
+    );
+    if (cand.error) return c.json({ error: 'load_failed', reason: cand.error }, 500);
+    const codes = [...new Set(cand.rows.map((r) => r.item_code).filter(Boolean))];
+    const rows = cand.rows.length === 0 ? [] : await outstandingSoRows(c, cand.rows, startPickerMrp(c, codes, cand.rows.map((r) => r.id)));
+    const items = page.supplier ? rows.filter((r) => r.mainSupplierCode === page.supplier) : rows;
+    return c.json({ items, nextCursor: cand.nextCursor ? encodeCursor(cand.nextCursor) : null, total: cand.total, pageSize: page.limit });
+  }
+  /* The WHOLE LIST (no `limit`): the mobile convert wizard and the PO detail page.
+     PAGED READ — lib/outstanding-so-lines.ts. This read carried a `.limit(500)` with
+     all three of the filters that decide the answer running after it in JS, so
+     the picker offered at most 500 of the company's 15,050 live SO lines
+     (measured 2026-09-08, docs/bugs/0677) chosen by document number.
+     The pooled MRP compute needs nothing from these lines and is most of this request's time (measured on production
+     19 Nov 2026: ~3 s quiet, ~24 s under load), so it is started first and runs while the lines are read. */
+  const mrpRun = startPickerMrp(c, null);
+  const { data: items, error } = await loadOutstandingSoLines(
+    supabase,
+    (q) => scopeToCompany(q, c),
+  );
+  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
+  return c.json({ items: await outstandingSoRows(c, items, mrpRun) });
 });
 
 /* ── SO-line candidates for the allocation editor (mig 0235) ─────────────────
