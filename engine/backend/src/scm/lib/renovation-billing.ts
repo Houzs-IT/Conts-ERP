@@ -61,7 +61,7 @@ export async function billingView(runner: RenoDb | UnsafeRunner, soDocNo: string
   return view;
 }
 
-/** billingView for many contracts in four queries (the project board reads every
+/** billingView for many contracts in five queries sent together (the project board reads every
     project's contract at once). SOs that do not exist are absent from the map. */
 export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: readonly string[], companyId?: number): Promise<Map<string, BillingView>> {
   const db = renoDbOf(runner);
@@ -69,45 +69,48 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
   const docs = [...new Set(soDocNos)];
   if (docs.length === 0) return out;
   const docsJson = JSON.stringify(docs);
-  const sos = await db.q<{ doc_no: string; status: string; original_contract_sen: number | null; revised_sen: number; billed_before_golive_sen: number | string | null }>(
-    `select o.doc_no, o.status::text as status, c.original_contract_sen, c.billed_before_golive_sen,
-            (select coalesce(sum(i.total_sen), 0)::int from scm.mfg_sales_order_items i where i.doc_no = o.doc_no and not i.cancelled) as revised_sen
-       from scm.mfg_sales_orders o
-       left join scm.reno_so_contracts c on c.so_doc_no = o.doc_no
-      where o.doc_no in (select jsonb_array_elements_text($1::text::jsonb)) and ($2::bigint is null or o.company_id = $2)`,
-    [docsJson, companyId ?? null],
-  );
+  /* The five reads are independent: sent together, one round trip instead of five. */
+  const [sos, instRows, bills, creditRows, orderPaid] = await Promise.all([
+    db.q<{ doc_no: string; status: string; original_contract_sen: number | null; revised_sen: number; billed_before_golive_sen: number | string | null }>(
+      `select o.doc_no, o.status::text as status, c.original_contract_sen, c.billed_before_golive_sen,
+              (select coalesce(sum(i.total_sen), 0)::int from scm.mfg_sales_order_items i where i.doc_no = o.doc_no and not i.cancelled) as revised_sen
+         from scm.mfg_sales_orders o
+         left join scm.reno_so_contracts c on c.so_doc_no = o.doc_no
+        where o.doc_no in (select jsonb_array_elements_text($1::text::jsonb)) and ($2::bigint is null or o.company_id = $2)`,
+      [docsJson, companyId ?? null],
+    ),
+    db.q<{ id: string; so_doc_no: string; seq: number; label: string; pct_bp: number; description: string; stage_code: string | null; trigger: string }>(
+      `select id, so_doc_no, seq, label, pct_bp, description, stage_code, trigger from scm.reno_doc_instalments
+        where so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) order by so_doc_no, seq`,
+      [docsJson],
+    ),
+    db.q<{
+      so_doc_no: string; instalment_id: string; seq: number; kind: BillRow['kind']; amount_sen: number; invoice_date: string; invoice_number: string | null;
+      sales_invoice_id: string | null; note_number: string | null; credit_note_id: string | null; paid_sen: number | null; si_status: string | null; cn_status: string | null;
+    }>(
+      `select b.so_doc_no, b.instalment_id, b.seq, b.kind, b.amount_sen, b.invoice_date::text as invoice_date, b.invoice_number, b.sales_invoice_id,
+              b.note_number, b.credit_note_id, si.paid_sen, si.status::text as si_status, cn.status as cn_status
+         from scm.reno_instalment_bills b
+         left join scm.sales_invoices si on si.id = b.sales_invoice_id
+         left join scm.acc_credit_notes cn on cn.id = b.credit_note_id
+        where b.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) order by b.so_doc_no, b.seq`,
+      [docsJson],
+    ),
+    db.q<{ so_doc_no: string; credit_note_id: string | null; note_number: string | null; amount_sen: number; note_date: string | null; reason: string | null; cn_status: string | null }>(
+      `select cc.so_doc_no, cc.credit_note_id, cc.note_number, cc.amount_sen, cn.note_date::text as note_date, cn.reason, cn.status as cn_status
+         from scm.reno_contract_credits cc
+         left join scm.acc_credit_notes cn on cn.id = cc.credit_note_id
+        where cc.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) and coalesce(cn.status, '') <> 'CANCELLED'
+        order by cc.so_doc_no, cc.created_at`,
+      [docsJson],
+    ),
+    db.q<{ so_doc_no: string; paid_sen: number | string }>(
+      `select p.so_doc_no, coalesce(sum(p.amount_sen), 0)::bigint as paid_sen from scm.mfg_sales_order_payments p
+        where p.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) group by p.so_doc_no`,
+      [docsJson],
+    ),
+  ]);
   if (sos.length === 0) return out;
-  const instRows = await db.q<{ id: string; so_doc_no: string; seq: number; label: string; pct_bp: number; description: string; stage_code: string | null; trigger: string }>(
-    `select id, so_doc_no, seq, label, pct_bp, description, stage_code, trigger from scm.reno_doc_instalments
-      where so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) order by so_doc_no, seq`,
-    [docsJson],
-  );
-  const bills = await db.q<{
-    so_doc_no: string; instalment_id: string; seq: number; kind: BillRow['kind']; amount_sen: number; invoice_date: string; invoice_number: string | null;
-    sales_invoice_id: string | null; note_number: string | null; credit_note_id: string | null; paid_sen: number | null; si_status: string | null; cn_status: string | null;
-  }>(
-    `select b.so_doc_no, b.instalment_id, b.seq, b.kind, b.amount_sen, b.invoice_date::text as invoice_date, b.invoice_number, b.sales_invoice_id,
-            b.note_number, b.credit_note_id, si.paid_sen, si.status::text as si_status, cn.status as cn_status
-       from scm.reno_instalment_bills b
-       left join scm.sales_invoices si on si.id = b.sales_invoice_id
-       left join scm.acc_credit_notes cn on cn.id = b.credit_note_id
-      where b.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) order by b.so_doc_no, b.seq`,
-    [docsJson],
-  );
-  const creditRows = await db.q<{ so_doc_no: string; credit_note_id: string | null; note_number: string | null; amount_sen: number; note_date: string | null; reason: string | null; cn_status: string | null }>(
-    `select cc.so_doc_no, cc.credit_note_id, cc.note_number, cc.amount_sen, cn.note_date::text as note_date, cn.reason, cn.status as cn_status
-       from scm.reno_contract_credits cc
-       left join scm.acc_credit_notes cn on cn.id = cc.credit_note_id
-      where cc.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) and coalesce(cn.status, '') <> 'CANCELLED'
-      order by cc.so_doc_no, cc.created_at`,
-    [docsJson],
-  );
-  const orderPaid = await db.q<{ so_doc_no: string; paid_sen: number | string }>(
-    `select p.so_doc_no, coalesce(sum(p.amount_sen), 0)::bigint as paid_sen from scm.mfg_sales_order_payments p
-      where p.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) group by p.so_doc_no`,
-    [docsJson],
-  );
   const orderPaidOf = new Map(orderPaid.map((r) => [r.so_doc_no, Number(r.paid_sen)]));
   for (const so of sos) {
     const instalments = instRows

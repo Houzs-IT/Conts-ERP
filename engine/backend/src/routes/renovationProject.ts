@@ -356,38 +356,41 @@ app.get("/key-log", requirePageAccess("projects.list"), async (c) => {
 app.get("/design-records", requirePageAccess("projects.list"), async (c) => {
   const pid = c.req.query("projectId") ? parseId(c.req.query("projectId")) : null;
   if (c.req.query("projectId") && !pid) return c.json({ error: "invalid_id" }, 400);
-  const measures = await db(c).prepare(
-    `SELECT r.id::int AS id, r.project_id::int AS project_id, r.kind, r.done_on::text AS done_on, r.person_id::int AS person_id, pp.name AS person_name,
-            r.note, r.recorded_by::int AS recorded_by, r.created_at, r.source, r.source_ref,
-            coalesce((SELECT json_agg(json_build_object('id', x.id::int, 'name', x.name) ORDER BY lower(x.name))
-                        FROM project_design_record_people rp JOIN project_people x ON x.id = rp.person_id WHERE rp.record_id = r.id), '[]'::json) AS people,
-            coalesce((SELECT json_agg(json_build_object('id', rf.id::int, 'file_name', rf.file_name, 'r2_key', rf.r2_key, 'content_type', rf.content_type) ORDER BY rf.id)
-                        FROM project_design_record_files rf WHERE rf.record_id = r.id), '[]'::json) AS files
-       FROM project_design_records r JOIN projects p ON p.id = r.project_id LEFT JOIN project_people pp ON pp.id = r.person_id
-      WHERE (?::bigint IS NULL OR r.project_id = ?::bigint)${coSql(c, "p.company_id")}
-      ORDER BY r.done_on DESC NULLS LAST, r.id DESC LIMIT 2000`,
-  ).bind(pid, pid).all();
-  const files = await db(c).prepare(
-    `SELECT f.id::int AS id, f.project_id::int AS project_id, f.kind, f.version, f.file_name, f.content_type, f.size_bytes, f.r2_key, f.external_url,
-            f.person_id::int AS person_id, pp.name AS person_name, f.uploaded_by::int AS uploaded_by, u.name AS uploaded_by_name, f.uploaded_at, f.note,
-            f.submitted_on::text AS submitted_on, f.next_person_id::int AS next_person_id, np.name AS next_person_name, f.source, f.source_ref,
-            coalesce((SELECT json_agg(json_build_object('id', x.id::int, 'name', x.name) ORDER BY lower(x.name))
-                        FROM project_design_file_people fp JOIN project_people x ON x.id = fp.person_id WHERE fp.file_id = f.id), '[]'::json) AS people
-       FROM project_design_files f JOIN projects p ON p.id = f.project_id
-       LEFT JOIN project_people pp ON pp.id = f.person_id LEFT JOIN project_people np ON np.id = f.next_person_id
-       LEFT JOIN users u ON u.id = f.uploaded_by
-      WHERE (?::bigint IS NULL OR f.project_id = ?::bigint)${coSql(c, "p.company_id")}
-      ORDER BY f.project_id, f.kind, f.version DESC LIMIT 5000`,
-  ).bind(pid, pid).all();
-  const notes = await db(c).prepare(
-    `SELECT n.id::int AS id, n.project_id::int AS project_id, n.kind, n.noted_on::text AS noted_on, n.requested_by_person_id::int AS requested_by_person_id,
-            pp.name AS requested_by_person_name, n.requested_by_text, n.note, n.created_at, u.name AS created_by_name,
-            n.closed_by_file_id::int AS closed_by_file_id, n.closed_at
-       FROM project_design_notes n JOIN projects p ON p.id = n.project_id
-       LEFT JOIN project_people pp ON pp.id = n.requested_by_person_id LEFT JOIN users u ON u.id = n.created_by
-      WHERE (?::bigint IS NULL OR n.project_id = ?::bigint)${coSql(c, "p.company_id")}
-      ORDER BY n.project_id, n.noted_on DESC, n.id DESC LIMIT 5000`,
-  ).bind(pid, pid).all();
+  // Three independent reads, sent together.
+  const [measures, files, notes] = await Promise.all([
+    db(c).prepare(
+      `SELECT r.id::int AS id, r.project_id::int AS project_id, r.kind, r.done_on::text AS done_on, r.person_id::int AS person_id, pp.name AS person_name,
+              r.note, r.recorded_by::int AS recorded_by, r.created_at, r.source, r.source_ref,
+              coalesce((SELECT json_agg(json_build_object('id', x.id::int, 'name', x.name) ORDER BY lower(x.name))
+                          FROM project_design_record_people rp JOIN project_people x ON x.id = rp.person_id WHERE rp.record_id = r.id), '[]'::json) AS people,
+              coalesce((SELECT json_agg(json_build_object('id', rf.id::int, 'file_name', rf.file_name, 'r2_key', rf.r2_key, 'content_type', rf.content_type) ORDER BY rf.id)
+                          FROM project_design_record_files rf WHERE rf.record_id = r.id), '[]'::json) AS files
+         FROM project_design_records r JOIN projects p ON p.id = r.project_id LEFT JOIN project_people pp ON pp.id = r.person_id
+        WHERE (?::bigint IS NULL OR r.project_id = ?::bigint)${coSql(c, "p.company_id")}
+        ORDER BY r.done_on DESC NULLS LAST, r.id DESC LIMIT 2000`,
+    ).bind(pid, pid).all(),
+    db(c).prepare(
+      `SELECT f.id::int AS id, f.project_id::int AS project_id, f.kind, f.version, f.file_name, f.content_type, f.size_bytes, f.r2_key, f.external_url,
+              f.person_id::int AS person_id, pp.name AS person_name, f.uploaded_by::int AS uploaded_by, u.name AS uploaded_by_name, f.uploaded_at, f.note,
+              f.submitted_on::text AS submitted_on, f.next_person_id::int AS next_person_id, np.name AS next_person_name, f.source, f.source_ref,
+              coalesce((SELECT json_agg(json_build_object('id', x.id::int, 'name', x.name) ORDER BY lower(x.name))
+                          FROM project_design_file_people fp JOIN project_people x ON x.id = fp.person_id WHERE fp.file_id = f.id), '[]'::json) AS people
+         FROM project_design_files f JOIN projects p ON p.id = f.project_id
+         LEFT JOIN project_people pp ON pp.id = f.person_id LEFT JOIN project_people np ON np.id = f.next_person_id
+         LEFT JOIN users u ON u.id = f.uploaded_by
+        WHERE (?::bigint IS NULL OR f.project_id = ?::bigint)${coSql(c, "p.company_id")}
+        ORDER BY f.project_id, f.kind, f.version DESC LIMIT 5000`,
+    ).bind(pid, pid).all(),
+    db(c).prepare(
+      `SELECT n.id::int AS id, n.project_id::int AS project_id, n.kind, n.noted_on::text AS noted_on, n.requested_by_person_id::int AS requested_by_person_id,
+              pp.name AS requested_by_person_name, n.requested_by_text, n.note, n.created_at, u.name AS created_by_name,
+              n.closed_by_file_id::int AS closed_by_file_id, n.closed_at
+         FROM project_design_notes n JOIN projects p ON p.id = n.project_id
+         LEFT JOIN project_people pp ON pp.id = n.requested_by_person_id LEFT JOIN users u ON u.id = n.created_by
+        WHERE (?::bigint IS NULL OR n.project_id = ?::bigint)${coSql(c, "p.company_id")}
+        ORDER BY n.project_id, n.noted_on DESC, n.id DESC LIMIT 5000`,
+    ).bind(pid, pid).all(),
+  ]);
   return c.json({ measures: measures.results ?? [], files: files.results ?? [], notes: notes.results ?? [] });
 });
 

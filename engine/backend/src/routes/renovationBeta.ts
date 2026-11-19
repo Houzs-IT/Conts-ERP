@@ -54,7 +54,7 @@ import { HANDOVER_NOT_READY, itemFailRefusal } from "../services/renovation/hand
 import { chainTimeline, statusWords } from "../services/renovation/betaTimelineChain";
 import { datedAt, plainEntry, readProjectTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineDoc, type TimelineEntry } from "../services/renovation/timeline";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
-import { attachmentsReady, linkedFilesFor, listFilesFor, orderLineFiles, podFiles, textArray, type DocFile } from "../scm/lib/doc-attachments";
+import { attachmentsReady, linkedFilesFor, listFilesFor, orderLineFiles, podFilesFor, textArray, type DocFile } from "../scm/lib/doc-attachments";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -130,22 +130,25 @@ app.get("/projects/:id/workspace", requirePageAccess("projects.list"), async (c)
   const co = await projectCompany(c, id);
   if (co == null) return c.json({ error: "not_found" }, 404);
   try {
-    const settings = await db(c).prepare(`SELECT design_3d_days::int AS d3, design_2d_days::int AS d2 FROM project_beta_settings WHERE company_id = ?`)
-      .bind(co).first<{ d3: number; d2: number }>();
-    const reviews = await db(c).prepare(
-      `SELECT file_id::int AS file_id, sent_on::text AS sent_on, due_on::text AS due_on, approved_on::text AS approved_on, approved_by_name, approval_note
-         FROM project_design_file_reviews WHERE project_id = ? ORDER BY file_id`,
-    ).bind(id).all<{ file_id: number; sent_on: string | null; due_on: string | null; approved_on: string | null; approved_by_name: string | null; approval_note: string | null }>();
-    const defects = await db(c).prepare(
-      `SELECT d.id::int AS id, d.phase, d.location, d.item_description, d.trade, d.due_date::text AS due_date, d.reported_at, u.name AS reported_by_name,
-              d.photo_r2_key, d.after_photo_r2_key, ${TS("d.fixed_at")} AS fixed_at, ${TS("d.closed_at")} AS closed_at, d.redo_count::int AS redo_count
-         FROM project_defects d LEFT JOIN users u ON u.id = d.reported_by
-        WHERE d.project_id = ? AND d.archived_at IS NULL ORDER BY d.id`,
-    ).bind(id).all<{
-      id: number; phase: string; location: string | null; item_description: string | null; trade: string | null; due_date: string | null; reported_at: string | null;
-      reported_by_name: string | null; photo_r2_key: string | null; after_photo_r2_key: string | null; fixed_at: string | null; closed_at: string | null; redo_count: number;
-    }>();
-    const payments = await paymentsFor(c, id, co);
+    // Four independent reads, sent together.
+    const [settings, reviews, defects, payments] = await Promise.all([
+      db(c).prepare(`SELECT design_3d_days::int AS d3, design_2d_days::int AS d2 FROM project_beta_settings WHERE company_id = ?`)
+        .bind(co).first<{ d3: number; d2: number }>(),
+      db(c).prepare(
+        `SELECT file_id::int AS file_id, sent_on::text AS sent_on, due_on::text AS due_on, approved_on::text AS approved_on, approved_by_name, approval_note
+           FROM project_design_file_reviews WHERE project_id = ? ORDER BY file_id`,
+      ).bind(id).all<{ file_id: number; sent_on: string | null; due_on: string | null; approved_on: string | null; approved_by_name: string | null; approval_note: string | null }>(),
+      db(c).prepare(
+        `SELECT d.id::int AS id, d.phase, d.location, d.item_description, d.trade, d.due_date::text AS due_date, d.reported_at, u.name AS reported_by_name,
+                d.photo_r2_key, d.after_photo_r2_key, ${TS("d.fixed_at")} AS fixed_at, ${TS("d.closed_at")} AS closed_at, d.redo_count::int AS redo_count
+           FROM project_defects d LEFT JOIN users u ON u.id = d.reported_by
+          WHERE d.project_id = ? AND d.archived_at IS NULL ORDER BY d.id`,
+      ).bind(id).all<{
+        id: number; phase: string; location: string | null; item_description: string | null; trade: string | null; due_date: string | null; reported_at: string | null;
+        reported_by_name: string | null; photo_r2_key: string | null; after_photo_r2_key: string | null; fixed_at: string | null; closed_at: string | null; redo_count: number;
+      }>(),
+      paymentsFor(c, id, co),
+    ]);
     return c.json({
       settings: { design3dDays: settings?.d3 ?? BETA_DEFAULT_3D_DAYS, design2dDays: settings?.d2 ?? BETA_DEFAULT_2D_DAYS },
       reviews: (reviews.results ?? []).map((r) => ({
@@ -1123,8 +1126,12 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
     ...dos.map((d) => ({ type: "delivery_order" as const, id: String(d.id) })),
     ...grs.map((g) => ({ type: "goods_received" as const, id: String(g.id) })),
   ];
-  const attached = ready ? await listFilesFor(db(c), docRefs, companyId) : new Map<string, DocFile[]>();
-  const linked = ready ? await linkedFilesFor(db(c), docRefs, companyId) : new Map<string, Array<DocFile & { key: string }>>();
+  // The uploads, the linked files and every delivery order's proof of delivery: three reads sent together, not one per order.
+  const [attached, linked, podsByDo] = await Promise.all([
+    ready ? listFilesFor(db(c), docRefs, companyId) : Promise.resolve(new Map<string, DocFile[]>()),
+    ready ? linkedFilesFor(db(c), docRefs, companyId) : Promise.resolve(new Map<string, Array<DocFile & { key: string }>>()),
+    podFilesFor(db(c), dos.map((d) => String(d.id))).catch(() => new Map<string, Array<DocFile & { key: string }>>()),
+  ]);
   const areasOf = (rows: Row[], id: string) => uniqueAreas(rows.filter((r) => r.doc_id === id).map((r) => str(r.area)));
   const linesOf = (rows: Row[], id: string): DeliveryLine[] => rows.filter((r) => r.doc_id === id)
     .map((r) => ({ soItemId: str(r.so_item_id), poLineId: str(r.po_line_id), qty: Number(r.qty ?? 0) }));
@@ -1146,7 +1153,7 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
   for (const d of dos) {
     const id = String(d.id);
     const photos: SitePhoto[] = [];
-    const pods = await podFiles(db(c), id).catch(() => []);
+    const pods = podsByDo.get(id) ?? [];
     for (const pod of pods) {
       photos.push({ id: `${pod.id}-${id}`, path: docPath("delivery_order", id, pod.id), name: "Proof of delivery", image: true, kind: "image", area: null, at: pod.at || null, source: "pod" });
     }
