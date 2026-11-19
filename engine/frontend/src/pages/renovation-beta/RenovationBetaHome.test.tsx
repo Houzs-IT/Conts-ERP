@@ -1,4 +1,4 @@
-/* Home and Calendar render from a board answer: the words the mockup shows, the tab counts, the row opening a project,
+/* Home and Calendar render from a board answer: the words the mockup shows, the step filter and its counts, the row opening a project,
    the Deadlines groups, and + Add project going to the New project form. */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
@@ -88,8 +88,10 @@ describe("Beta Home", () => {
     renderAt("/beta/projects?brand=Dream%20Crafter");
     expect(await screen.findByRole("heading", { name: "All projects" })).toBeTruthy();
     expect(screen.getByText("3 projects")).toBeTruthy();
-    const tabs = within(screen.getByRole("tablist", { name: "Project groups" })).getAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["All projects3", "Site Measure1", "3D1", "2D0", "Carpentry · Site · PO1", "Done Design0"]);
+    const row = within(screen.getByRole("group", { name: "Project groups" })).getAllByRole("button");
+    expect(row.map((t) => t.textContent)).toEqual(["All projects3", "Measure1", "3D1", "2D0", "2nd payment1", "Carpentry0", "Site PIC0", "Variants0", "Done Design0"]);
+    // No step is lit until one is picked.
+    expect(row.filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.textContent)).toEqual(["All projects3"]);
     expect(screen.getAllByText("Pending").length).toBe(2);
     expect(screen.getByText("Progress")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Assign/ })).toBeNull();
@@ -142,7 +144,7 @@ describe("Beta Home", () => {
     fireEvent.change(box, { target: { value: "RN-2610-006" } });
     expect(within(screen.getByRole("table")).getAllByRole("link").map((a) => a.textContent)).toEqual(["Bukit Jalil The Park 2"]);
     // The tab counts follow the search.
-    expect(within(screen.getByRole("tablist", { name: "Project groups" })).getAllByRole("tab")[0].textContent).toBe("All projects1");
+    expect(within(screen.getByRole("group", { name: "Project groups" })).getAllByRole("button")[0].textContent).toBe("All projects1");
   });
 
   it("opens a project from its row and remembers it", async () => {
@@ -153,19 +155,39 @@ describe("Beta Home", () => {
     expect(window.localStorage.getItem("beta:lastProject")).toBe("4");
   });
 
-  it("keeps a column set per tab: hiding a column on 3D leaves All projects alone", async () => {
+  it("filters by the current Design step; picking the lit step again shows every project", async () => {
+    renderAt("/beta/projects?brand=Dream%20Crafter");
+    await screen.findByRole("heading", { name: "All projects" });
+    const names = (): string[] => within(screen.getByRole("table")).getAllByRole("link").map((a) => String(a.textContent));
+    const step = (name: RegExp) => screen.getByRole("button", { name });
+    fireEvent.click(step(/^3D:/));
+    expect(step(/^3D:/).getAttribute("aria-pressed")).toBe("true");
+    expect(names()).toEqual(["Baron C-20-08"]);
+    fireEvent.click(step(/^Measure:/));
+    expect(names()).toEqual(["Bukit Jalil The Park 2"]);
+    expect(step(/^3D:/).getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(step(/^Measure:/));
+    expect(names()).toEqual(["Bukit Jalil The Park 2", "Seri Riana C-12-03", "Baron C-20-08"]);
+    expect(step(/^Measure:/).getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(step(/^Done Design/));
+    expect(screen.getByText("No projects here.")).toBeTruthy();
+    fireEvent.click(step(/^All projects/));
+    expect(names().length).toBe(3);
+  });
+
+  it("keeps a column set per filter: hiding a column on 3D leaves All projects alone", async () => {
     window.localStorage.clear();
-    window.localStorage.setItem("dt:hidden:projects-home-B", JSON.stringify(["created"]));
+    window.localStorage.setItem("dt:hidden:projects-home-step-w3d", JSON.stringify(["created"]));
     renderAt("/beta/projects?brand=Dream%20Crafter");
     await screen.findByRole("heading", { name: "All projects" });
     const heads = (): string[] => within(screen.getByRole("table")).getAllByRole("columnheader").map((c) => c.textContent ?? "");
     expect(heads().some((t) => t.includes("Created"))).toBe(true);
-    fireEvent.click(screen.getByRole("tab", { name: /^3D/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^3D:/ }));
     expect(heads().some((t) => t.includes("Created"))).toBe(false);
-    fireEvent.click(screen.getByRole("tab", { name: /^All projects/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^All projects/ }));
     expect(heads().some((t) => t.includes("Created"))).toBe(true);
-    // The other stage tabs start from the All projects columns, untouched by 3D.
-    fireEvent.click(screen.getByRole("tab", { name: /^Site Measure/ }));
+    // The other steps start from the All projects columns, untouched by 3D.
+    fireEvent.click(screen.getByRole("button", { name: /^Measure:/ }));
     expect(heads().some((t) => t.includes("Created"))).toBe(true);
   });
 

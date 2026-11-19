@@ -1,5 +1,5 @@
 /* Beta > Home: the mockup's "All projects" screen (app.js renderHome, markup id="homeArea"). The title, the counts,
-   five tabs, the table on a desktop and the cards on a phone, the footer line. A row opens the Beta project.
+   the Design step filter, the table on a desktop and the cards on a phone, the footer line. A row opens the Beta project.
    Plan: docs/superpowers/plans/2026-10-23-beta-project-workspace.md, section 10. */
 
 import { useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
@@ -10,7 +10,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { CreateRenovationPanel } from "../projects/renovation/CreateRenovationPanel";
 import { money } from "../projects/renovation/renovationModel";
 import { BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
-import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type ConditionWord, type HomeRow, type HomeTab } from "./renovationBetaBoard";
+import { buildModel, designSteps, filterCounts, homeCounts, homeList, homeRow, shortLeft, type BoardModel, type ConditionWord, type HomeFilter, type HomeRow } from "./renovationBetaBoard";
 import { HOME_SORTS, keepOrder, onBrandList, matchesSearch, orderOf, sortFromParam, sortHome, voCell, type HomeSort } from "./renovationBetaHomeModel";
 import { boardApi, boardKey, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
@@ -25,6 +25,13 @@ import { DataTable } from "../../components/DataTable";
 import type { Column } from "../../components/dataTableTypes";
 import { fetchProjectSos, soColumns, type ProjectSo } from "./renovationBetaSoColumns";
 import { readBoardCache, writeBoardCache } from "./boardCache";
+
+/** Each filter keeps its own columns (owner 2026-11-19). "All projects" stays on the original key so nobody's
+    arrangement moves, Done Design keeps the key its old tab had, and each Design step has one by its code; they all
+    start from the All projects columns until arranged on their own. */
+export function layoutKey(f: HomeFilter): string {
+  return f === "all" ? "projects-home" : f === "done" ? "projects-home-E" : `projects-home-step-${f.slice(5)}`;
+}
 
 const DASH = <span style={{ color: BETA.faint }}>–</span>;
 
@@ -165,13 +172,13 @@ function HomeScreen(): ReactElement {
   const sos = useQuery(["renovation-beta", "project-sos"], () => fetchProjectSos(), [], { enabled: !phone && soColumnsShown });
   const soByDoc = useMemo(() => new Map((sos.data ?? []).map((s) => [s.doc_no, s])), [sos.data]);
   const today = mytDay(new Date().toISOString());
-  const [tab, setTab] = useState<HomeTab>("all");
+  const [filter, setFilter] = useState<HomeFilter>("all");
   const { can } = useAuth();
   const [creating, setCreating] = useState(false);
   const [params, setParams] = useSearchParams();
   const query = params.get("q") ?? "";
   const sort = sortFromParam(params.get("sort"));
-  /* The order rows were first shown in, per tab, sort and search: Assign and other saves reload the board, and a row
+  /* The order rows were first shown in, per filter, sort and search: Assign and other saves reload the board, and a row
      must not jump under the finger (live run, 24 Oct 2026: the wrong project was opened). A reload starts afresh. */
   const kept = useRef<{ key: string; order: Map<number, number> } | null>(null);
   const brand = params.get("brand") ?? "";
@@ -189,13 +196,13 @@ function HomeScreen(): ReactElement {
   if (!m) return <BetaLoading label="Loading projects" size="page" />;
 
   const counts = homeCounts(m);
-  const inTab = homeList(m, tab);
-  const found = sortHome(inTab, sort).filter((p) => matchesSearch(p, query));
-  const viewKey = `${tab}|${sort}|${query.trim().toLowerCase()}`;
+  const inFilter = homeList(m, filter);
+  const found = sortHome(inFilter, sort).filter((p) => matchesSearch(p, query));
+  const viewKey = `${filter}|${sort}|${query.trim().toLowerCase()}`;
   if (!kept.current || kept.current.key !== viewKey) kept.current = { key: viewKey, order: orderOf(found) };
   const list = keepOrder(found, kept.current.order);
   const rows = list.map((p) => homeRow(m, p));
-  const tabCount = (key: HomeTab): number => (query.trim() ? homeList(m, key).filter((p) => matchesSearch(p, query)).length : counts.tabs[key]);
+  const shownCounts = query.trim() ? filterCounts(m, m.projects.filter((p) => matchesSearch(p, query))) : counts;
   const showPay = m.projects.some((p) => p.payment != null);
 
   function open(id: number): void {
@@ -266,35 +273,10 @@ function HomeScreen(): ReactElement {
             {HOME_SORTS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
           </select>
         </label>
-        {query.trim() && <span role="status" style={{ fontSize: 13, fontWeight: 600, color: INK_SOFT }}>{list.length} of {inTab.length}</span>}
+        {query.trim() && <span role="status" style={{ fontSize: 13, fontWeight: 600, color: INK_SOFT }}>{list.length} of {inFilter.length}</span>}
       </div>
 
-      {/* One row that scrolls sideways when narrow: wrapped, the five groups took three uneven rows on a phone. */}
-      <div role="tablist" aria-label="Project groups" style={{ display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "none", borderBottom: `1px solid ${BETA.line}`,
-        // A solid backing: the page's grid lines ran through the tab labels.
-        background: BETA.glassSolid, padding: "4px 8px 0", borderRadius: "12px 12px 0 0" }}>
-        {HOME_TABS.map(([key, label]) => {
-          const on = tab === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={on}
-              onClick={() => setTab(key)}
-              style={{
-                display: "inline-flex", flex: "none", whiteSpace: "nowrap", alignItems: "center", gap: 6, minHeight: 40, padding: "0 12px", border: 0, borderRadius: "8px 8px 0 0",
-                marginBottom: -1, background: on ? BETA.chip : "transparent", borderBottom: "3px solid transparent", position: "relative", font: "inherit", fontSize: 14,
-                fontWeight: on ? 700 : 500, color: on ? BETA.ink : MUTED, cursor: "pointer",
-              }}
-            >
-              {label}
-              <span style={{ fontSize: 12, color: MUTED }}>{tabCount(key)}</span>
-              {on && <motion.span layoutId="home-tab-ink" transition={SPRING} aria-hidden="true" style={{ position: "absolute", left: 6, right: 6, bottom: -3, height: 3, borderRadius: "3px 3px 0 0", background: BETA.selInk }} />}
-            </button>
-          );
-        })}
-      </div>
+      <StepFilter m={m} filter={filter} counts={shownCounts} onPick={setFilter} />
 
       {phone ? (
         <ol className="stag" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -304,11 +286,8 @@ function HomeScreen(): ReactElement {
       ) : (
         <div style={{ ...CARD, overflow: "hidden" }}>
           <DataTable<TableRow>
-            key={tab}
-            /* Each tab keeps its own columns (owner 2026-11-19). "All projects"
-               stays on the original key so nobody's arrangement moves; the stage
-               tabs start from it until they are arranged on their own. */
-            tableId={tab === "all" ? "projects-home" : `projects-home-${tab}`}
+            key={filter}
+            tableId={layoutKey(filter)}
             layoutSeedId="projects-home"
             onDisplayKeys={(keys) => setSoColumnsShown(keys.some((k) => k.startsWith("so_")))}
             documentLabel="Projects"
@@ -324,6 +303,54 @@ function HomeScreen(): ReactElement {
       <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · {(HOME_SORTS.find(([k]) => k === sort)?.[1] ?? "").toLowerCase()} · tap a project to open it</div>
     </div>
     </BetaMotion>
+  );
+}
+
+type Counts = { all: number; done: number; steps: Record<string, number> };
+
+/** All projects, the Design steps as the Progress view's row of circles, and Done Design, in one row that scrolls
+    sideways when narrow. No circle is lit until one is picked; picking the lit one again shows every project. */
+function StepFilter({ m, filter, counts, onPick }: { m: BoardModel; filter: HomeFilter; counts: Counts; onPick: (f: HomeFilter) => void }): ReactElement {
+  const plain = (f: "all" | "done", label: string, n: number): ReactElement => {
+    const on = filter === f;
+    return (
+      <button type="button" aria-pressed={on} onClick={() => onPick(f === "done" && on ? "all" : f)}
+        style={{
+          display: "inline-flex", flex: "none", whiteSpace: "nowrap", alignItems: "center", gap: 6, minHeight: 40, padding: "0 12px", border: 0, borderRadius: 8,
+          background: on ? BETA.chip : "transparent", position: "relative", font: "inherit", fontSize: 14,
+          fontWeight: on ? 700 : 500, color: on ? BETA.ink : MUTED, cursor: "pointer",
+        }}>
+        {label}
+        <span style={{ fontSize: 12, color: MUTED }}>{n}</span>
+        {on && <motion.span layoutId="home-tab-ink" transition={SPRING} aria-hidden="true" style={{ position: "absolute", left: 6, right: 6, bottom: 0, height: 3, borderRadius: 3, background: BETA.selInk }} />}
+      </button>
+    );
+  };
+  const steps = designSteps(m);
+  return (
+    <div role="group" aria-label="Project groups" style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", gap: 8, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "none", borderBottom: `1px solid ${BETA.line}`,
+      // A solid backing: the page's grid lines ran through the labels.
+      background: BETA.glassSolid, padding: "8px 8px", borderRadius: "12px 12px 0 0" }}>
+      {plain("all", "All projects", counts.all)}
+      <div style={{ flex: "1 0 auto", minWidth: steps.length * 76, display: "flex" }}>
+        {steps.map(([code, label], i) => {
+          const key: HomeFilter = `step:${code}`;
+          const on = filter === key;
+          const n = counts.steps[code] ?? 0;
+          return (
+            <button key={code} type="button" aria-pressed={on} aria-label={`${label}: ${n} ${n === 1 ? "project" : "projects"} at this step`}
+              onClick={() => onPick(on ? "all" : key)}
+              style={{ flex: "1 1 0", minWidth: 76, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, position: "relative", padding: "2px 0", border: 0, background: "transparent", font: "inherit", cursor: "pointer" }}>
+              {i > 0 && <span aria-hidden="true" style={{ position: "absolute", top: 13, right: "50%", width: "100%", height: 2, background: BETA.line }} />}
+              <span aria-hidden="true" style={{ position: "relative", width: 22, height: 22, borderRadius: 11, display: "inline-flex", alignItems: "center", justifyContent: "center", background: on ? BETA.accentFill : BETA.surface, border: `2px solid ${on ? TONES.accent.dot : BETA.border}`, boxSizing: "border-box" }} />
+              <span style={{ fontSize: 11, fontWeight: on ? 700 : 500, color: on ? BETA.accentInk : MUTED, whiteSpace: "nowrap" }}>{label}</span>
+              <span style={{ fontSize: 11, fontWeight: on ? 700 : 500, color: on ? BETA.accentInk : INK_SOFT }}>{n}</span>
+            </button>
+          );
+        })}
+      </div>
+      {plain("done", "Done Design", counts.done)}
+    </div>
   );
 }
 

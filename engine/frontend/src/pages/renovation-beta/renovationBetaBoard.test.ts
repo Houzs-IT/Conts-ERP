@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BetaBoard, BetaBoardProject } from "./renovationBetaBoardApi";
 import {
-  add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, diff, ds, homeCounts, homeList, homeRow, initials, items,
+  add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, designSteps, diff, ds, homeCounts, homeList, homeRow, initials, items,
   listFor, monthCells, nextFor, progressByPerson, progressList, rangeFor, shiftMonth, stage, status, type BoardModel, type DesignProject,
 } from "./renovationBetaBoard";
 
@@ -150,9 +150,13 @@ describe("next step and Home", () => {
     expect(nextFor(m, get(6))).toMatchObject({ t: "3D waiting for client", d: null });
     expect(nextFor(m, get(1))).toMatchObject({ t: "2D due", d: "2026-10-24" });
   });
-  it("counts the tabs and sorts unassigned first, soonest next", () => {
+  it("counts each Design step filter and sorts unassigned first, soonest next", () => {
     const c = homeCounts(m);
-    expect(c.tabs).toEqual({ all: 7, A: 1, B: 2, C: 2, D: 2, E: 0 });
+    expect(c.all).toBe(7);
+    expect(c.done + Object.values(c.steps).reduce((a, b) => a + b, 0)).toBe(7);
+    expect(Object.keys(c.steps)).toEqual(designSteps(m).map(([k]) => k));
+    for (const [k] of designSteps(m)) expect(homeList(m, `step:${k}`).length).toBe(c.steps[k]);
+    expect(homeList(m, "done").length).toBe(c.done);
     expect(c.late).toBe(0);
     expect(c.week).toBe(4);
     expect(homeList(m, "all").map((p) => p.id)).toEqual([13, 4, 5, 1, 11, 6, 10]);
