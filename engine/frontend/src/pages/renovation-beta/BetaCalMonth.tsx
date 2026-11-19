@@ -37,12 +37,14 @@ function DeadlineChip({ x, who }: { x: DueItem; who: Viewing }): ReactElement {
   );
 }
 
-function EventChip({ e, who }: { e: CalEvent; who: Viewing }): ReactElement {
+/* The project is named on the chip, as on a deadline chip: before, two bookings on one day read the same and only the
+   side list said which unit each was for. */
+function EventChip({ e, who, project }: { e: CalEvent; who: Viewing; project: string }): ReactElement {
   const [ink, bg] = e.done ? BETA_CHIP.meet : BETA_CHIP[groupOf(e.type)];
   return (
     <div style={{ ...CHIP, borderLeft: `3px solid ${ink}`, background: bg, color: ink, fontWeight: 600 }}>
       {who === "All" && e.who && <Badge name={e.who.name} />}
-      <span style={{ ...CLAMP, textDecoration: e.done ? "line-through" : undefined }}>{e.t ? `${e.t} ` : ""}{e.note || typeLabel(e.type)}</span>
+      <span style={{ ...CLAMP, textDecoration: e.done ? "line-through" : undefined }}>{e.t ? `${e.t} ` : ""}{e.note || typeLabel(e.type)}{project ? ` · ${project}` : ""}</span>
     </div>
   );
 }
@@ -93,7 +95,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
               const evs = eventsOn(m, who, day);
               const chips = [
                 ...dues.map((x) => <DeadlineChip key={`d${x.p.id}${x.k}`} x={x} who={who} />),
-                ...evs.map((e) => <EventChip key={e.id} e={e} who={who} />),
+                ...evs.map((e) => <EventChip key={e.id} e={e} who={who} project={projectTitle(m, e.projectId)} />),
               ];
               const dots = [...dues.map(() => TONES.red.dot), ...evs.map((e) => BETA_CHIP[groupOf(e.type)][0])];
               const isToday = day === m.today;

@@ -9,7 +9,7 @@ import { peopleOptions, personLabel, usePeople } from "../projects/renovation/Pe
 import type { Person } from "../projects/renovation/simpleApi";
 import {
   add, amendDue, APPT_LABEL, apptKindOf, apptWho, apptWithDefault, bookIssue, dateHints, designKind, ds, initials, ord,
-  personInfo, type ApptKey, type BoardModel, type CalEvent, type DesignProject, type Kind, type Viewing,
+  personInfo, WORK_APPT, type ApptKey, type BoardModel, type CalEvent, type DesignProject, type Kind, type Viewing,
 } from "./renovationBetaBoard";
 import {
   addAmendment, assignPeople, boardApi, type EventBody,
@@ -355,9 +355,25 @@ function WorkForm({ env, ev, day, preset }: { env: FormEnv; ev: CalEvent | null;
   const [done, setDone] = useState(ev?.done ?? false);
   const save = useSave(env);
 
+  /* Site measure, Carpentry measure and Site briefing for a project are that project's appointment, the one Book time
+     on the Design progress row saves. Saved as a plain calendar entry they showed on the calendar only: the row still said
+     Not booked and the to-do list still asked to book it. */
+  const apptKey = WORK_APPT[type];
+  const apptProject = apptKey && project ? m.byId.get(Number(project)) : undefined;
+  const replaces = apptKey && apptProject ? apptProject.appts[apptKey] : undefined;
+
   async function submit(): Promise<void> {
     await save.run(async () => {
       if (!types.some((w) => w.code === type)) throw new Error("Pick a type.");
+      if (apptKey && apptProject) {
+        const issue = bookIssue(apptProject, apptKey, d);
+        if (issue) throw new Error(issue);
+        await boardApi.saveAppointment(apptProject.id, apptKindOf(apptKey), {
+          onDate: d, atTime: t || null, personId: num(person), withText: note.trim() || replaces?.with || apptWithDefault(apptProject, apptKey),
+        });
+        if (ev?.eventId != null) await boardApi.deleteEvent(ev.eventId);
+        return { text: `Booked ${ds(d)}${t ? ` ${t}` : ""} · ${APPT_LABEL[apptKey].toLowerCase()} of ${apptProject.title}`, jumpTo: d };
+      }
       const body: EventBody = { projectId: num(project), onDate: d, atTime: t || null, type, note: note.trim() || null, personId: num(person) };
       if (ev?.eventId != null) await boardApi.saveEvent(ev.eventId, { ...body, done });
       else await boardApi.addEvent(body);
@@ -399,7 +415,12 @@ function WorkForm({ env, ev, day, preset }: { env: FormEnv; ev: CalEvent | null;
           </select>
         </Field>
       </div>
-      {!isNew && (
+      {apptProject && apptKey && (
+        <div style={NOTE}>
+          Saved as the {APPT_LABEL[apptKey].toLowerCase()} of {apptProject.title}{replaces?.d ? `, in place of the one booked for ${ds(replaces.d)}` : ""}. The note is who it is with.
+        </div>
+      )}
+      {!isNew && !apptProject && (
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
           <input type="checkbox" name="done" checked={done} onChange={(e) => setDone(e.target.checked)} style={{ width: 18, height: 18, accentColor: BETA.accent }} />
           Done
@@ -459,7 +480,8 @@ function BookForm({ env, p, k }: { env: FormEnv; p: DesignProject; k: ApptKey })
   const isNew = !a?.d;
   const [d, setD] = useState(a?.d ?? "");
   const [t, setT] = useState(a?.t ?? "");
-  const [person, setPerson] = useState<string>(String(a ? apptWho(p, a)?.id ?? "" : p.lead?.id ?? ""));
+  // With no design lead yet, the person booking is the one going, so the booking is on someone's own calendar.
+  const [person, setPerson] = useState<string>(String(a ? apptWho(p, a)?.id ?? "" : p.lead?.id ?? m.mePersonId ?? ""));
   const [withText, setWithText] = useState(a?.with || apptWithDefault(p, k));
   const [done, setDone] = useState(a?.done ?? false);
   const save = useSave(env);

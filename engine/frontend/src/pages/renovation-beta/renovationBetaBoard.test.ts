@@ -290,3 +290,24 @@ describe("several 3D and 2D people", () => {
     expect(old.team["2"]).toEqual([JX]);
   });
 });
+
+describe("calendar entries (audit, 20 Nov 2026)", () => {
+  const ev = (eid: number, onDate: string, type: string, done = false) => ({ id: eid, projectId: 5, onDate, atTime: "10:00", type, note: null, personId: 2, done });
+  const withEvents = buildModel({ ...board([trinity]), events: [ev(1, "2026-10-20", "client"), ev(2, "2026-10-23", "client"), ev(3, "2026-10-30", "carpentry"), ev(4, "2026-10-21", "unknown_type")] });
+  const byId = (eid: number) => withEvents.events.find((e) => e.eventId === eid);
+
+  it("marks a booked work done once its day has passed, as an appointment is", () => {
+    expect(byId(1)?.done).toBe(true);
+    expect(byId(2)?.done).toBe(false);
+    expect(byId(3)?.done).toBe(false);
+  });
+
+  it("leaves a type that is not a bookable work as it is stored", () => {
+    expect(byId(4)?.done).toBe(false);
+  });
+
+  it("keeps the booking's own date and time (no time zone shift)", () => {
+    expect(byId(2)).toMatchObject({ d: "2026-10-23", t: "10:00" });
+    expect(listFor(withEvents, 2, "2026-10-23").events.map((e) => e.eventId)).toEqual([2]);
+  });
+});

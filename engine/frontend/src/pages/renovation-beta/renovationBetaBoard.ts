@@ -188,8 +188,11 @@ function rememberWorkTypes(list: BetaWorkType[]): BetaWorkType[] {
   return list;
 }
 const GROUP: Readonly<Record<string, EventGroup>> = {
-  update: "upd", client: "meet", measure: "meet", briefing: "meet", meeting: "meet", w3d: "work", w2d: "work", amend: "work", po: "work",
+  update: "upd", client: "meet", measure: "meet", carpentry: "meet", briefing: "meet", meeting: "meet", w3d: "work", w2d: "work", amend: "work", po: "work",
 };
+/** The works of the list that are a project's appointment (Book time on the Design progress row): booked on the calendar
+    with a project, they are saved as that appointment, so the row, the to-do list and the step read the same booking. */
+export const WORK_APPT: Readonly<Record<string, ApptKey>> = { measure: "msr", carpentry: "cm", briefing: "sb" };
 export const groupOf = (type: string): EventGroup => GROUP[type] ?? "work";
 
 export function isEventType(v: string): v is EventTypeKey {
@@ -304,9 +307,14 @@ export function buildModel(board: BetaBoard): BoardModel {
   }));
   const people = everyone.filter((x) => x.offered).map((x) => ({ id: x.id, name: x.name }));
   const person = new Map(everyone.map((x) => [x.id, { id: x.id, name: x.name }] as const));
+  const workTypes = rememberWorkTypes(board.workTypes?.length ? board.workTypes : LEGACY_WORK_TYPES);
+  const bookable = new Set(workTypes.filter((w) => w.bookable).map((w) => w.code));
+  /* A booked work is done once its day has passed (owner, 19 Nov 2026), as an appointment is (adone): before, a stored
+     entry stayed open on the calendar after its day while the Design progress row already said Done. */
   const events: CalEvent[] = board.events.map((e) => ({
     id: `e${e.id}`, d: e.onDate, t: e.atTime?.slice(0, 5) ?? "", type: e.type, note: e.note ?? "",
-    who: e.personId == null ? null : person.get(e.personId) ?? null, projectId: e.projectId, done: e.done, eventId: e.id, appt: null,
+    who: e.personId == null ? null : person.get(e.personId) ?? null, projectId: e.projectId,
+    done: e.done || (bookable.has(e.type) && e.onDate < board.today), eventId: e.id, appt: null,
   }));
   return {
     today: board.today,
@@ -318,7 +326,7 @@ export function buildModel(board: BetaBoard): BoardModel {
     projects,
     byId,
     events,
-    workTypes: rememberWorkTypes(board.workTypes?.length ? board.workTypes : LEGACY_WORK_TYPES),
+    workTypes,
   };
 }
 
