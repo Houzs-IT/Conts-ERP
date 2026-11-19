@@ -3,7 +3,7 @@
    deducted, and where each line goes (PO: we buy it; Client PO: the client buys it). "New VO" opens the VO screen of
    the project's current SO. No approval step is added here; each VO's own screen keeps its existing flow. */
 
-import { FromTemplateButton } from "../renovation/fromTemplate";
+import { FromPackageButton } from "../renovation/renovationPackagePick";
 import { useEffect, useState, type ReactElement } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ExternalLink, FilePlus2 } from "lucide-react";
@@ -129,7 +129,7 @@ function NewVo({ p, so }: { p: BetaTabProps; so: VoAnswer["so"] }): ReactElement
   };
   return (
     <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8 }}>
-      <FromTemplateButton docNo={so.docNo} onError={p.onError} style={{ ...btnStyle("outline", "lg"), borderRadius: 10 }} />
+      <FromPackageButton docNo={so.docNo} onError={p.onError} style={{ ...btnStyle("outline", "lg"), borderRadius: 10 }} />
       <button type="button" disabled={busy} onClick={() => void start()} style={style}><FilePlus2 size={16} aria-hidden="true" />{busy ? "Opening..." : "New VO"}</button>
     </span>
   );

@@ -501,6 +501,8 @@ export const ALL_NAV_TABS: NavTab[] = [
         anyAccess: ["scm.sales", "scm.sales.orders", "scm.sales.delivery", "scm.sales.invoices", "scm.sales.returns"],
         children: [
           { to: "/scm/sales-orders", label: "Sales orders", icon: ShoppingCart, anyPerm: ["*", "scm.access"], anyAccess: ["scm.sales.orders"] },
+          // The Packages module (owner, 20 Nov 2026): packages and kits the SO / VO product search offers.
+          { to: "/scm/renovation/packages", label: "Packages", icon: Package, anyPerm: ["*", "scm.access"], anyAccess: ["scm.sales.orders"], hideForSalesRep: true },
           // Renovation quotations, contracts and VOs (Conts, 2026-10-09).
           { to: "/scm/renovation/quotations", label: "Quotations", icon: FileText, anyPerm: ["*", "scm.access"], anyAccess: ["scm.sales.orders"], hideForSalesRep: true },
           // The office / director path to Amendments. A rep reaches it via the

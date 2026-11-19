@@ -52,7 +52,7 @@ const PERM = {
   poSplit: 'scm.renovation.po_split',
 } as const;
 
-function actorOf(c: C): RenoActor {
+export function actorOf(c: C): RenoActor {
   const hu = c.get('houzsUser');
   return {
     name: hu?.name ?? hu?.email ?? null,
@@ -63,17 +63,17 @@ function actorOf(c: C): RenoActor {
   };
 }
 
-const param = (c: C, name: string): string => {
+export const param = (c: C, name: string): string => {
   const v = c.req.param(name);
   if (!v) throw new RenoError(400, 'missing_param', `Missing ${name}.`);
   return v;
 };
 
-const json = async (c: C): Promise<Record<string, any>> => {
+export const json = async (c: C): Promise<Record<string, any>> => {
   try { return (await c.req.json()) ?? {}; } catch { throw new RenoError(400, 'invalid_json', 'The request body is not valid JSON.'); }
 };
 
-function need<T>(r: { ok: true; value: T } | { ok: false; problems: string[] }): T {
+export function need<T>(r: { ok: true; value: T } | { ok: false; problems: string[] }): T {
   if (!r.ok) throw new RenoError(422, 'invalid_document', r.problems.slice(0, 8).join(' '), { problems: r.problems });
   return r.value;
 }
@@ -85,7 +85,7 @@ const intParam = (v: unknown, name: string): number => {
 };
 
 /** Runs a handler with a DB connection; turns RenoError into JSON. */
-function handle(perm: string | null, fn: (c: C, ctx: { sqlRead: RenoDb; tx: <T>(f: (db: RenoDb) => Promise<T>) => Promise<T> }) => Promise<Response>) {
+export function handle(perm: string | null, fn: (c: C, ctx: { sqlRead: RenoDb; tx: <T>(f: (db: RenoDb) => Promise<T>) => Promise<T> }) => Promise<Response>) {
   return async (c: C) => {
     if (perm && !hasHouzsPerm(c, perm)) return c.json({ error: 'forbidden', message: `You need the "${perm}" permission for this.` }, 403);
     const sql = sqlFor(c.env);

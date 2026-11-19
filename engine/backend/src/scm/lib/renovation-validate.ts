@@ -41,6 +41,8 @@ const lineSchema = z.object({
   /* Package template SLA (owner, 19 Nov 2026): days after the project starts. */
   processingAfterDays: int.min(0).max(3650).nullable().optional(),
   deliveryAfterDays: int.min(0).max(3650).nullable().optional(),
+  /* Packages module (owner, 20 Nov 2026): the package this line was added from; screen only, never printed. */
+  fromPackageId: z.string().uuid().nullable().optional(),
   pageBreakBefore: z.boolean().optional().default(false),
   voChange: z.enum(['ADD', 'OMIT']).nullable().optional(),
   omitTargetLineId: z.string().uuid().nullable().optional(),
@@ -90,6 +92,8 @@ export interface NormLine {
   /** Days after the project starts that the line is processed / delivered (package template SLA); null = no SLA. */
   processingAfterDays: number | null;
   deliveryAfterDays: number | null;
+  /** The package (scm.reno_quotation_templates) the line was added from; null when typed by hand. */
+  fromPackageId?: string | null;
   pageBreakBefore: boolean;
   voChange: 'ADD' | 'OMIT' | null;
   omitTargetLineId: string | null;
@@ -184,6 +188,7 @@ export function normaliseSections(input: unknown, mode: 'doc' | 'vo' = 'doc', uo
         stageCode: l.stageCode ?? null,
         processingAfterDays: l.processingAfterDays ?? null,
         deliveryAfterDays: l.deliveryAfterDays ?? null,
+        fromPackageId: l.fromPackageId ?? null,
         pageBreakBefore: l.pageBreakBefore,
         voChange: mode === 'vo' ? (l.voChange ?? 'ADD') : null,
         omitTargetLineId: mode === 'vo' ? (l.omitTargetLineId ?? null) : null,

@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, Printer, Save, Send } from 'lucide-react';
+import { CheckCircle2, Package, Printer, Save, Send } from 'lucide-react';
 import { QuotationSoPrint } from '../scm-v2/renovationQuotationPrint';
 import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
@@ -22,7 +22,16 @@ import { cn } from '../../lib/utils';
 import { useRenovationDraft } from '../../lib/renovation/renovationFormDraft';
 import { RenovationDraftBanner } from './renovationDraftBanner';
 import { loadTemplateSections } from './fromTemplate';
-import { useTemplates } from '../../lib/renovation/api';
+import { usePackages } from '../../lib/renovation/renovationPackagesApi';
+import { PackageConfirmDialog, PackagePickerDialog, type PackageAdd } from './renovationPackagePick';
+import { PkgMark } from './renovationPackageParts';
+import { withPackageAdd } from './renovationPackageAdd';
+
+/* Packages (owner, 20 Nov 2026): a package or kit picked in the product search or with From package opens its confirm
+   dialog; the ticked lines join the Add part as additions, each remembering the package. A kit with no area goes into
+   the area the user is in. The banner says what came from each package; Change picks reopens the dialog, Remove these
+   lines takes them all out. None of it is printed. */
+interface ConfirmOpen { packageId: string; defaultArea: string; sectionIndex: number | null; lineIndex: number | null; replace: boolean }
 
 interface OmitPick { lineId: string; omitQty: number | null }
 
@@ -51,9 +60,22 @@ export function VariationOrderEditor() {
   const [printOpen, setPrintOpen] = useState(false);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
   const [params, setParams] = useSearchParams();
-  const templates = useTemplates();
-  /* A package template's sections go into the Add part (From template on the sales order, or the picker here). A
-     blank starting section is replaced, so the VO holds just the template. */
+  const packages = usePackages();
+  const pkgById = useMemo(() => new Map((packages.data?.packages ?? []).map((x) => [x.id, x])), [packages.data]);
+  const packageCodes = useMemo(() => Object.fromEntries([...pkgById.values()].map((x) => [x.id, x.code])), [pkgById]);
+  const [confirm, setConfirm] = useState<ConfirmOpen | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const addPackage = (a: PackageAdd) => {
+    if (!confirm) return;
+    const kind = pkgById.get(a.packageId)?.kind ?? 'PACKAGE';
+    setAdds((cur) => withPackageAdd(cur, a, kind, confirm, confirm.replace));
+    setTitle((cur) => (cur.trim() ? cur : `From package ${a.code}`));
+    setDirty(true);
+    setConfirm(null);
+    toast.success(`${a.code} added. Check the lines, then save.`);
+  };
+  const lastArea = (): string => [...adds].reverse().find((s) => s.heading.trim())?.heading ?? '';
+  /* An old From template link (?template=) still works: the template's sections go into the Add part. */
   const addTemplate = async (templateId: string): Promise<void> => {
     if (!templateId) return;
     try {
@@ -77,6 +99,13 @@ export function VariationOrderEditor() {
     setSignedName(vo.data.signedName ?? '');
     setDirty(false);
   }, [vo.data]);
+  const fromPackage = params.get('package');
+  useEffect(() => {
+    if (!fromPackage || !vo.data || vo.data.status !== 'DRAFT') return;
+    setParams((p) => { const n = new URLSearchParams(p); n.delete('package'); return n; }, { replace: true });
+    setConfirm({ packageId: fromPackage, defaultArea: '', sectionIndex: null, lineIndex: null, replace: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the VO has loaded
+  }, [fromPackage, vo.data?.id]);
   const fromTemplate = params.get('template');
   useEffect(() => {
     if (!fromTemplate || !vo.data || vo.data.status !== 'DRAFT') return;
@@ -111,6 +140,16 @@ export function VariationOrderEditor() {
   }, 0);
   const netSen = v.status === 'APPROVED' ? v.totals.netSen : addSen + omitSen;
 
+  const packageGroups = [...new Set(adds.flatMap((s) => s.lines.map((l) => l.fromPackageId).filter((x): x is string => Boolean(x))))].map((pid) => {
+    const ls = adds.flatMap((s) => s.lines.filter((l) => l.fromPackageId === pid && (l.kind === 'ITEM' || l.kind === 'CHILD')));
+    const row = pkgById.get(pid);
+    return { id: pid, code: row?.code ?? null, name: row?.name ?? '', n: ls.length, m: row?.lines ?? 0, sen: ls.reduce((t, l) => t + amountsOf(l).netSen, 0),
+      area: adds.find((s) => s.lines.some((l) => l.fromPackageId === pid))?.heading ?? '' };
+  });
+  const removePackage = (pid: string) => {
+    setAdds(adds.map((s) => ({ ...s, lines: s.lines.filter((l) => l.fromPackageId !== pid) })).filter((s) => s.lines.length > 0));
+    setDirty(true);
+  };
   const bodySections = (): unknown[] => {
     /* The form opens with an empty line to type in: a VO that only omits must not be refused for it. */
     const typed = adds.map((s) => ({ ...s, lines: s.lines.filter((l) => l.kind !== 'ITEM' || l.itemCode || l.description.trim() || amountsOf(l).netSen !== 0) })).filter((s) => s.lines.length > 0);
@@ -191,15 +230,23 @@ export function VariationOrderEditor() {
           <div>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-[13.5px] font-semibold text-ink">Add</h2>
-              {editable && (templates.data?.templates ?? []).some((t) => t.active) && (
-                <select className={cn(inputCls, 'h-8 w-auto')} value="" onChange={(e) => void addTemplate(e.target.value)} aria-label="Add a package template">
-                  <option value="">Add from package template</option>
-                  {(templates.data?.templates ?? []).filter((t) => t.active).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              )}
+              {editable && <Button variant="secondary" className="h-8" icon={<Package size={14} />} onClick={() => setPickerOpen(true)}>From package</Button>}
             </div>
+            {packageGroups.map((g) => (
+              <div key={g.id} className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-[#e7b7d3] bg-[#fbe7f2]/60 px-3 py-2 text-[13px] text-ink">
+                <PkgMark code={g.code} />
+                <span><b>{g.code ?? 'Package'}</b>{g.name ? ` ${g.name}` : ''} added: {g.n}{g.m ? ` of ${g.m}` : ''} line{g.n === 1 ? '' : 's'}, {rm(g.sen)}</span>
+                <span className="flex-1" />
+                {editable && <Button variant="secondary" className="h-7 px-2 text-[12px]" onClick={() => setConfirm({ packageId: g.id, defaultArea: g.area, sectionIndex: null, lineIndex: null, replace: true })}>Change picks</Button>}
+                {editable && <Button variant="secondary" className="h-7 px-2 text-[12px]" onClick={() => removePackage(g.id)}>Remove these lines</Button>}
+              </div>
+            ))}
             <DocEditor sections={adds} disabled={!editable} allowLumpSum={false} onChange={(s) => { setAdds(s); setDirty(true); }}
-              files={{ docType: 'variation_order', docId: v.id, canEdit: filesEditable }} />
+              files={{ docType: 'variation_order', docId: v.id, canEdit: filesEditable }} packageCodes={packageCodes}
+              onPickPackage={editable ? (h, si, li) => setConfirm({ packageId: h.id, defaultArea: adds[si]?.heading ?? '', sectionIndex: si, lineIndex: li, replace: false }) : undefined} />
+            <PackagePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} onPick={(h) => { setPickerOpen(false); setConfirm({ packageId: h.id, defaultArea: lastArea(), sectionIndex: null, lineIndex: null, replace: false }); }} />
+            <PackageConfirmDialog packageId={confirm?.packageId ?? null} defaultArea={confirm?.defaultArea ?? ''} onClose={() => setConfirm(null)} onAdd={addPackage}
+              initial={confirm?.replace ? adds.map((s) => ({ ...s, lines: s.lines.filter((l) => l.fromPackageId === confirm.packageId) })).filter((s) => s.lines.length > 0) : undefined} />
           </div>
           <Card title="Omit from the contract" dense>
             {v.status === 'APPROVED' ? (
