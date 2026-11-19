@@ -21,7 +21,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!session.manage) return fail('FORBIDDEN', 'Utility bills are entered by finance and management.', 403);
-  const b = await request.json<{ documentId?: string; batchId?: string }>().catch(() => null);
+  const b = await request.json<{ documentId?: string; batchId?: string; peek?: boolean }>().catch(() => null);
   const documentId = String(b?.documentId ?? ''), batchId = String(b?.batchId ?? '').slice(0, 80);
   if (!documentId || !batchId) return fail('VALIDATION', 'Upload the page first.', 422);
   const doc = await one<{ storage_key: string; mime_type: string; file_name: string }>(env, `SELECT storage_key, mime_type, file_name FROM documents WHERE id = ? AND kind = 'receipt'`, documentId);
@@ -36,6 +36,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const res = await forwardClaims(env, session, 'POST', '/utility-bills/read', { file: { name: doc.file_name, mime: doc.mime_type, dataBase64: btoa(bin) } });
   if (!res.ok) return res;
   const { read, model } = await res.json<{ read: BillReadLite & Record<string, unknown>; model: string }>();
+  // A later page read only for what page 1 left out (its period; chew, 19 Nov 2026): nothing is kept or matched.
+  if (b?.peek === true) return json({ read, model });
   const [{ accounts }, recent] = await Promise.all([scanContext(env), read.billMonth ? recentBills(env, read.kind, read.billMonth) : Promise.resolve([])]);
   const match = matchBill(read, accounts, recent);
   const scanId = crypto.randomUUID();
