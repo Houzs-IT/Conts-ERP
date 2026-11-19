@@ -236,6 +236,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
     if (k === 'cleaning') return `${n} to clean`;
     if (k === 'statements') return `${n} final, not sent`;
     if (k === 'approvals') return `${n} waiting for approval`;
+    if (k === 'paymentRequests') return `${n} waiting for payment`;
     return `${n} new`;
   };
 

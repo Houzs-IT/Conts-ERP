@@ -567,3 +567,19 @@ describe('a withdrawn or rejected request is changed and sent again, keeping its
     expect(mine.find(r => r.id !== 'R-UTIL')?.fromBills).toBe(false);
   });
 });
+
+describe('the waiting count on the Payment requests menu', () => {
+  test('requests still submitted and finance-paid claims handed in or checked; field staff get 0', async () => {
+    const sb = world();
+    sb.tables.payment_requests.push(
+      { id: 'R1', company_id: CO, status: 'SUBMITTED' }, { id: 'R2', company_id: CO, status: 'PAID' },
+      { id: 'R3', company_id: CO, status: 'SUBMITTED' }, { id: 'R4', company_id: 2, status: 'SUBMITTED' },
+    );
+    sb.tables.staff_receipts.push(
+      { id: 'C1', company_id: CO, float_id: null, status: 'HANDED_IN' }, { id: 'C2', company_id: CO, float_id: null, status: 'CHECKED' },
+      { id: 'C3', company_id: CO, float_id: null, status: 'PAID_BACK' }, { id: 'C4', company_id: CO, float_id: 'F1', status: 'HANDED_IN' },
+    );
+    expect(await (await get(appFor(sb, OPS), '/finance-waiting')).json()).toEqual({ count: 4, requests: 2, claims: 2 });
+    expect(await (await get(appFor(sb, TECH), '/finance-waiting')).json()).toEqual({ count: 0, requests: 0, claims: 0 });
+  });
+});

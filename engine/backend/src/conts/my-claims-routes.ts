@@ -16,6 +16,8 @@
 //   GET  /accounts, /projects       what a cost is, and the project it is on
 //   GET  /suppliers?q=, /purchase-orders?q=   who finance pays (office staff)
 //   POST /utility-bills/*          scanned utility bills from Property OS (utility-bill-routes.ts; office staff)
+//   GET  /finance-waiting          how many payment requests and claims wait for finance to pay (office staff; Property
+//                                  OS shows it on the Payment requests menu entry only to those who open the Ledger)
 import { paginateAll } from '../scm/lib/paginate-all';
 import { Hono } from 'hono';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
@@ -362,6 +364,23 @@ export const purchaseOrdersHandler = async (c: Ctx): Promise<Response> => {
 };
 
 /** The staff router. `source` marks which mount it is, for the receipt's source. */
+/** The Payment requests screen's "Waiting for payment" view, as one number (chew, 19 Nov 2026: the menu shows how many
+ *  are pending): requests still SUBMITTED, and claims finance pays back (no float) handed in or checked. Only a count
+ *  leaves here, never a row; field staff get 0. */
+export const financeWaitingHandler = async (c: Ctx): Promise<Response> => {
+  if (staffOf(c).field) return c.json({ count: 0, requests: 0, claims: 0 });
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const [rq, cl] = await Promise.all([
+    sb.from('payment_requests').select('id', { count: 'exact', head: true }).eq('company_id', co.companyId).eq('status', 'SUBMITTED'),
+    sb.from('staff_receipts').select('id', { count: 'exact', head: true }).eq('company_id', co.companyId).is('float_id', null).in('status', ['HANDED_IN', 'CHECKED']),
+  ]);
+  if (rq.error || cl.error) return c.json({ error: 'count_failed', message: 'The waiting count could not be read.' }, 500);
+  const requests = Number(rq.count ?? 0), claims = Number(cl.count ?? 0);
+  return c.json({ count: requests + claims, requests, claims });
+};
+
 export function myClaimsRouter(source: 'session' | 'forward') {
   const r = new Hono<{ Variables: Record<string, unknown> }>();
   r.use('*', async (c, next) => { c.set('claimsSource', source); await next(); });
@@ -378,6 +397,7 @@ export function myClaimsRouter(source: 'session' | 'forward') {
   r.get('/accounts', accountsHandler);
   r.get('/projects', projectsHandler);
   r.get('/sub-departments', subDepartmentsHandler);
+  r.get('/finance-waiting', financeWaitingHandler);
   r.get('/suppliers', suppliersHandler);
   r.get('/purchase-orders', purchaseOrdersHandler);
   myRequestRoutes(r);

@@ -2,7 +2,7 @@ import type { UserRole, AccessLevel, SessionUser } from './types';
 import { LEDGER_SCREENS } from './scmEngine';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
-export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'reviews' | 'statements' | 'approvals' | 'itSupport';
+export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'reviews' | 'statements' | 'approvals' | 'itSupport' | 'paymentRequests';
 /** The sidebar shows one workspace at a time. Rental (The Conts) is the daily work; supply chain (Dream Crafter) sits behind the switch. */
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
@@ -93,6 +93,8 @@ export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix:
   };
   const ledger = new Map(LEDGER_SCREENS.map(s => [s.slug, {
     key: `ledger_${s.slug}${keySuffix}`, label: s.label, icon: LEDGER_ICON[s.slug] ?? 'book-open', path: `${prefix}/${s.slug}`, area: 'ledger',
+    // How many wait for finance to pay (chew, 19 Nov 2026), as the screen's "Waiting for payment" view counts them.
+    ...(s.slug === 'payment-requests' ? { badge: 'paymentRequests' as BadgeKey } : {}),
   } as NavItem]));
   /* One FINANCE group (chew, 2 Nov 2026: one Finance category with its parts inside): each part opens to its screens. */
   return [{
