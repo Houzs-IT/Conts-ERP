@@ -100,7 +100,25 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
     }
   }
 
-  async function readOne(row: Row) {
+  /* The row's fields as the reader saw them. */
+  const fromScan = (s: ScanAnswer): Partial<Row> => {
+    const kind = (KINDS.some(k => k.value === s.read.kind) ? s.read.kind : '') as Kind | '';
+    return {
+      state: 'done', scan: s, problem: undefined, kind, billMonth: s.read.billMonth ?? '', periodFrom: s.read.periodFrom ?? '', periodTo: s.read.periodTo ?? '', dueDate: s.read.dueDate ?? '',
+      amountSen: s.read.currentChargesSen, unitId: s.unitId ?? '', accountId: s.unitId ? s.match.accountId : null,
+      tick: s.match.colour === 'green' && !s.match.alreadyRecorded,
+    };
+  };
+
+  /* A page taken for a later page of a bill is opened as a bill of its own (chew, 19 Nov 2026: the page count the reader
+     sees is not to lock anyone out): read now if it was never read, and nothing else is skipped because of it. */
+  async function ownBill(row: Row) {
+    if (row.scan) { patch(row.key, fromScan(row.scan)); return; }
+    patch(row.key, { state: 'reading', problem: undefined });
+    await readOne(row, true);
+  }
+
+  async function readOne(row: Row, own = false) {
     try {
       const fd = new FormData();
       /* Sent as the type it really is: a PNG labelled JPEG is refused by the reader. */
@@ -110,9 +128,8 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
       fd.append('kind', 'receipt');
       const doc = await api.post<{ id: string }>('/documents', fd);
       const s = await api.post<ScanAnswer>('/expenses/utilities/scan', { documentId: doc.id, batchId });
-      const kind = (KINDS.some(k => k.value === s.read.kind) ? s.read.kind : '') as Kind | '';
       /* A later page of a bill, or page 1 of a bill of several: those other pages are not read nor recorded. */
-      const skip = new Set(pagesToSkip(row, s.read, rowsRef.current));
+      const skip = new Set(own ? [] : pagesToSkip(row, s.read, rowsRef.current));
       if (skip.has(row.key)) {
         patch(row.key, { state: 'skipped', scan: s, tick: false, problem: `Page ${s.read.pageNo} of the bill: not recorded on its own` });
         return;
@@ -121,11 +138,7 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
         commit(rowsRef.current.map(r => (skip.has(r.key) && (r.state === 'waiting' || r.state === 'failed' || r.state === 'done')
           ? { ...r, state: 'skipped', tick: false, problem: `Page ${r.pageNo - row.pageNo + 1} of the bill on page ${row.pageNo}: not read` } : r)));
       }
-      patch(row.key, {
-        state: 'done', scan: s, kind, billMonth: s.read.billMonth ?? '', periodFrom: s.read.periodFrom ?? '', periodTo: s.read.periodTo ?? '', dueDate: s.read.dueDate ?? '',
-        amountSen: s.read.currentChargesSen, unitId: s.unitId ?? '', accountId: s.unitId ? s.match.accountId : null,
-        tick: s.match.colour === 'green' && !s.match.alreadyRecorded,
-      });
+      patch(row.key, fromScan(s));
     } catch (e) {
       patch(row.key, { state: 'failed', problem: errorMessage(e) });
     }
@@ -237,13 +250,19 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
     const s = contractSplit({ from: r.periodFrom, to: r.periodTo }, r.amountSen, contractsOf.get(r.unitId) ?? []);
     return s.kind === 'split' ? s.outsideSen : null;
   };
+  /* What the row saves (functions/_lib/utilityScan.ts): a typed part is the owner's whole, and the rest of the bill is
+     still split by days at the contract (chew, 19 Nov 2026). */
   const splitText = (r: Row) => {
-    if (r.ownerPartSen != null && r.amountSen && !r.ownerPaid) return `Owner alone ${rm(r.ownerPartSen)} · shared ${rm(Math.max(0, r.amountSen - r.ownerPartSen))} (set by hand)`;
-    if (!r.unitId || !r.periodFrom || !r.periodTo || !r.amountSen) return null;
-    const s = contractSplit({ from: r.periodFrom, to: r.periodTo }, r.amountSen, contractsOf.get(r.unitId) ?? []);
+    const typed = r.ownerPartSen != null && !r.ownerPaid ? r.ownerPartSen : 0;
+    if (!r.amountSen || typed > r.amountSen) return null;
+    const rest = r.amountSen - typed;
+    const s = r.unitId && r.periodFrom && r.periodTo ? contractSplit({ from: r.periodFrom, to: r.periodTo }, rest, contractsOf.get(r.unitId) ?? []) : { kind: 'none' as const };
     if (s.kind === 'two-contracts') return 'Two contracts in this period: split by hand';
-    if (s.kind !== 'split') return null;
-    return `${s.outsideDays} days owner alone ${rm(s.outsideSen)} · ${s.insideDays} days shared ${rm(s.insideSen)}`;
+    const days = s.kind === 'split' ? `${s.outsideDays} days outside the contract ${rm(s.outsideSen)}` : '';
+    if (!typed && !days) return null;
+    const owner = typed + (s.kind === 'split' ? s.outsideSen : 0);
+    const shared = s.kind === 'split' ? `${s.insideDays} days shared ${rm(s.insideSen)}` : `shared ${rm(rest)}`;
+    return `Owner alone ${rm(owner)} (${[typed ? `${rm(typed)} set by hand` : '', days].filter(Boolean).join(' + ')}) · ${shared}`;
   };
 
   return (
@@ -331,7 +350,12 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
                           </div>
                         )}
                         {r.state === 'recorded' && <span>Recorded</span>}
-                        {r.state === 'skipped' && <span className="text-[var(--color-text-muted)]">{r.problem}</span>}
+                        {r.state === 'skipped' && (
+                          <span className="flex flex-col items-start gap-1">
+                            <span className="text-[var(--color-text-muted)]">{r.problem}</span>
+                            <Button size="sm" variant="secondary" onClick={() => void ownBill(r)}>Record as its own bill</Button>
+                          </span>
+                        )}
                         {c && r.state === 'done' && (
                           <div className="flex flex-col gap-1">
                             <span className="self-start"><StatusBadge tone={c.tone} label={c.label} size="sm" /></span>

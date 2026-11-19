@@ -73,8 +73,8 @@ export type RecordRow = {
   periodFrom?: string | null; periodTo?: string | null; amountSen: number; chargeTo?: string; ownerPaid?: boolean;
   /** The day the bill must be paid by, as printed (chew, 18 Nov 2026). */
   dueDate?: string | null;
-  /** The part the owner bears alone, after the share, set by hand (chew, 19 Nov 2026: scanned bills must still take a hand edit); left out,
-   *  it is the days outside the contract as worked out. */
+  /** A part the owner bears alone whatever the dates (a previous balance, say), set by hand (chew, 19 Nov 2026: scanned
+   *  bills must still take a hand edit). The rest of the bill is split by days at the contract as when it is left out. */
   ownerPartSen?: number | null;
 };
 export type RecordResult =
@@ -159,11 +159,14 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
         const deductMonth = firstOpenMonth(r.billMonth, finals.get(r.unitId) ?? new Set());
         if (deductMonth !== r.billMonth) rolled.push({ scanId: r.scanId, deductMonth });
         const unit = unitOf.get(r.unitId)!;
-        const split = r.periodFrom && r.periodTo ? contractSplit({ from: r.periodFrom, to: r.periodTo }, r.amountSen, unit.contracts) : { kind: 'none' as const };
-        if (split.kind === 'two-contracts') notSplit.push(r.scanId);
-        /* The owner's own part: as typed, else the days outside the contract. */
+        /* The owner's own part: what is typed (a previous balance, say) is the owner's whole; the rest of the bill is split by
+           days at the contract as ever (chew, 19 Nov 2026: R-16-22's typed arrears had stopped the 29 days before its
+           contract from counting). Nothing typed: only the days outside the contract. */
         const manualPart = r.ownerPartSen != null;
-        const part = manualPart ? r.ownerPartSen! : split.kind === 'split' ? split.outsideSen : 0;
+        const typed = manualPart ? r.ownerPartSen! : 0;
+        const split = r.periodFrom && r.periodTo ? contractSplit({ from: r.periodFrom, to: r.periodTo }, r.amountSen - typed, unit.contracts) : { kind: 'none' as const };
+        if (split.kind === 'two-contracts') notSplit.push(r.scanId);
+        const part = typed + (split.kind === 'split' ? split.outsideSen : 0);
         const inside = r.amountSen - part;
         const label = `${KIND_LABEL[r.kind]} ${monthName(r.billMonth)}${provider ? ` (${provider})` : ''}`;
         const expenseId = crypto.randomUUID();
@@ -171,7 +174,7 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
             receipt_document_id, period_from, period_to, created_by, created_at, owner_paid)
           VALUES (?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           expenseId, r.unitId, r.kind,
-          !manualPart && split.kind === 'split' && inside > 0 ? `${label}, ${split.insideDays} of ${split.totalDays} days in the contract` : label,
+          split.kind === 'split' && inside > 0 ? `${label}, ${split.insideDays} of ${split.totalDays} days in the contract` : label,
           inside > 0 ? inside : r.amountSen, lastDay(r.billMonth), deductMonth, deductMonth !== r.billMonth, inside <= 0,
           account.account_no, r.chargeTo ?? 'owner', scan.document_id, r.periodFrom ?? null, r.periodTo ?? null, session.userId, now, !!r.ownerPaid);
 
@@ -186,9 +189,8 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
             crypto.randomUUID(), owner, r.unitId, amount > 0 ? 'credit' : 'charge', amount, description, (await o2Date(tx, owner, r.unitId, `${deductMonth}-01`)).occurredOn, account!.account_no, expenseId, session.userId, now, now);
           ownerLines++;
         };
-        if (manualPart) {
-          if (part > 0) await adjust(-part, `${label}: the owner's own part`);
-        } else if (split.kind === 'split') {
+        if (typed > 0) await adjust(-typed, `${label}: the owner's own part`);
+        if (split.kind === 'split' && split.outsideSen > 0) {
           await adjust(-split.outsideSen, `${KIND_LABEL[r.kind]} ${shortDate(r.periodFrom!)}–${shortDate(r.periodTo!)}: ${split.outsideDays} of ${split.totalDays} days outside the contract`);
         }
         if (r.ownerPaid) await adjust(r.amountSen, `${label}, paid by the owner`);
