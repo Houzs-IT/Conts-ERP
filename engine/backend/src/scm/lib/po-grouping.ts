@@ -17,10 +17,10 @@
 // the SO line asked for it. The supplier is the physical "one PO = one supplier"
 // constraint, so Per SO still gives an SO with two suppliers two POs.
 //
-// Two rules the toggle cannot override. A renovation PO holds one category
-// (mig 0116's trigger refuses the lines otherwise), and Works and Built-in are
-// made for one unit, so their PO belongs to one SO even in Combined (owner, 6
-// Nov 2026): two customers on one in-house PO jam production Complete.
+// One rule the toggle cannot override: Works and Built-in are made for one
+// unit, so their PO belongs to one SO even in Combined (owner, 6 Nov 2026): two
+// customers on one in-house PO jam production Complete. A PO may mix categories
+// (owner, 19 Nov 2026), so the category no longer splits a PO.
 // ----------------------------------------------------------------------------
 
 import { chunkIn } from './paginate-all';
@@ -42,8 +42,8 @@ export interface GroupKeyInput {
 /** The bucket key for one line. Same key = same PO (within one convert batch). */
 export function groupKeyFor(input: GroupKeyInput, toggle: PoMode): string {
   const supplier = `${input.warehouseId ?? 'null'}::${input.supplierId}`;
-  const base = input.categoryGroup ? `${supplier}::cat:${input.categoryGroup}` : supplier;
-  return toggle === 'per-so' || input.unitBound ? `${base}::so:${input.soDocNo}` : base;
+  /* No category in the key: a PO may mix categories (owner, 19 Nov 2026; migration 0345 lifted mig 0116's refusal). */
+  return toggle === 'per-so' || input.unitBound ? `${supplier}::so:${input.soDocNo}` : supplier;
 }
 
 /** A bucket with no warehouse lands as a DRAFT, and a draft to our own team makes no production order. Works and Built-in

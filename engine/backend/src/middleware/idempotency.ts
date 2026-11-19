@@ -4,6 +4,8 @@ import type { Env } from "../types";
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const MAX_KEY_LENGTH = 200;
 const MAX_IDEMPOTENCY_BODY_BYTES = 1024 * 1024;
+/** A reservation with no status after this long belongs to a request that died; see takeOverStale. */
+export const STALE_CLAIM_MS = 5 * 60 * 1000;
 const BODYLESS_STATUS = new Set([204, 205, 304]);
 const IDEMPOTENCY_OUTCOME_HEADER = "Idempotency-Outcome";
 const NO_WRITE_OUTCOME = "no-write";
@@ -295,11 +297,30 @@ export const idempotency: MiddlewareHandler<{ Bindings: Env }> = async (c, next)
     );
   };
 
+  /* A claim that never finished: the Worker died mid-request (a resource limit, a deploy), so nothing ever wrote its
+     status and every later press answered "already going through" until the daily sweep (production, 19 Nov 2026:
+     an SO amendment save left a reserved key at 17:59 that blocked the retries). No request runs for minutes, so a
+     reservation older than STALE_CLAIM_MS is taken over by this request: one conditional UPDATE, so of two presses
+     racing for it only one wins and the other still sees in-flight. */
+  const takeOverStale = async (): Promise<boolean> => {
+    const cutoff = `${new Date(Date.now() - STALE_CLAIM_MS).toISOString().slice(0, 19).replace("T", " ")}+00:00`;
+    const res = await db
+      .prepare(
+        `UPDATE idempotency_keys
+            SET request_hash = ?, created_at = CURRENT_TIMESTAMP
+          WHERE user_id = ? AND tenant_scope = ? AND key = ? AND scope = ?
+            AND status_code IS NULL AND created_at < ?`,
+      )
+      .bind(requestHash, userId, tenant, key, scope, cutoff)
+      .run();
+    return Number((res as { meta?: { changes?: number } } | null)?.meta?.changes ?? 0) > 0;
+  };
+
   try {
     const existing = await findExisting();
-    if (existing) return respondToExisting(existing);
+    if (existing && !(existing.status_code == null && (await takeOverStale()))) return respondToExisting(existing);
 
-    await db
+    if (!existing) await db
       .prepare(
         `INSERT INTO idempotency_keys
            (key, scope, user_id, tenant_scope, request_hash)

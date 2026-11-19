@@ -36,7 +36,7 @@ import {
   type MaterialKind,
   type OutstandingSoItem,
 } from '../../vendor/scm/lib/suppliers-queries';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { outcomeOfError, useContentBoundIdempotencyKey } from '../../lib/idempotency';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readScmHandoff, removeScmHandoff, writeScmHandoff } from '../../lib/scmHandoffStorage';
 import { useMfgProducts, useMaintenanceConfig, useSpecialAddons, mfgCategoryLabel } from '../../vendor/scm/lib/mfg-products-queries';
@@ -143,7 +143,10 @@ export const PurchaseOrderNew = () => {
      exactly one PO: stable across re-renders (lazy init) and across a re-press
      after a stalled submit — which is the point, since a duplicate PO orders and
      pays for the same goods twice from a real supplier — and fresh on remount. */
-  const idemKey  = useIdempotencyKey();
+  /* Bound to the form's CONTENT as well (lib/idempotency.ts, createContentBoundKey): the same form re-pressed replays,
+     a form corrected after a refusal is a new request (owner, 19 Nov 2026: a refused save followed by an edit answered
+     "an earlier submission with different details already finished"). */
+  const poKeys   = useContentBoundIdempotencyKey();
   const notify   = useNotify();
 
   // ── Header state ────────────────────────────────────────────────────
@@ -730,7 +733,6 @@ export const PurchaseOrderNew = () => {
     }));
 
     const basePayload = {
-      idempotencyKey: idemKey,
       supplierId,
       currency,
       poDate,
@@ -751,11 +753,12 @@ export const PurchaseOrderNew = () => {
        qty_exceeds_remaining. On confirm we replay the SAME create with
        confirmOverConvert set — the server marked that 409 no-write, so the
        idempotency key re-runs instead of replaying the rejection. */
-    const runCreate = (confirmOverConvert = false) => {
+    const runCreate = (idempotencyKey: string, confirmOverConvert = false) => {
       create.mutate(
-        confirmOverConvert ? { ...basePayload, confirmOverConvert } : basePayload,
+        confirmOverConvert ? { ...basePayload, idempotencyKey, confirmOverConvert } : { ...basePayload, idempotencyKey },
         {
           onSuccess: async (res) => {
+            poKeys.settle('succeeded');
             /* THE ACCOUNTS MAY HAVE REFUSED IT, and nothing said so before
                2026-08-19: the reason went into a queue behind a permission key
                buyers do not hold. BEFORE the navigation, so the page change
@@ -766,6 +769,7 @@ export const PurchaseOrderNew = () => {
             navigate(`/scm/purchase-orders/${res.id}`);
           },
           onError: async (err) => {
+            poKeys.settle(outcomeOfError(err));
             const e = err as { status?: number; body?: string } | null;
             if (
               !confirmOverConvert && e?.status === 409 &&
@@ -785,7 +789,7 @@ export const PurchaseOrderNew = () => {
                 confirmLabel: 'Create anyway',
                 danger: true,
               });
-              if (proceed) runCreate(true);
+              if (proceed) runCreate(idempotencyKey, true);
               return;
             }
             notify({ title: 'Save failed', body: `${err instanceof Error ? err.message : 'Something went wrong.'}`, tone: 'error' });
@@ -793,7 +797,21 @@ export const PurchaseOrderNew = () => {
         },
       );
     };
-    runCreate();
+    void (async () => {
+      const decision = poKeys.keyFor(basePayload);
+      let key = decision.key;
+      if (decision.needsConfirm) {
+        const again = await serviceConfirm({
+          title: 'Your last save did not get an answer',
+          body: 'It may already have created this purchase order. Check Procurement > Purchase Orders first.\n\nCreate this changed version as a purchase order anyway?',
+          confirmLabel: 'Create changed version',
+          danger: true,
+        });
+        if (!again) return;
+        key = poKeys.confirmNewKey(basePayload);
+      }
+      if (key) runCreate(key);
+    })();
   };
 
   return (
@@ -1036,7 +1054,13 @@ export const PurchaseOrderNew = () => {
         <div className={styles.cardHeader}>
           <h2 className={styles.cardTitle}>Items</h2>
           <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
-            {supplierId
+            {/* "Pick any item from 0 SKUs" was printed while the catalogue was still loading or had failed (owner,
+                19 Nov 2026), which reads as an empty catalogue. */}
+            {allSkus.isLoading
+              ? 'Loading items…'
+              : allSkus.isError
+              ? "The item list couldn't be loaded — refresh the page to try again."
+              : supplierId
               ? (pickable.length > 0
                   ? `${pickable.length} item(s) bound to this supplier — picker filters to these`
                   // PR — Commander 2026-05-28: a supplier with no SKU bindings used

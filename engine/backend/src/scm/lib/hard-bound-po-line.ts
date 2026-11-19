@@ -52,7 +52,7 @@ export function soLinkCategoryMismatch(
   const poG = (po.itemGroup as string | null) ?? null;
   return {
     error: 'so_link_category_mismatch',
-    message: `This line is ${poG ?? 'uncategorised'} but the Sales Order line is ${so.item_group ?? 'uncategorised'}. Correct the category on one of them, then link it.`,
+    message: `${String(po.itemCode ?? so.item_code ?? '').trim() || 'This line'} is ${poG ?? 'uncategorised'} here but ${so.item_group ?? 'uncategorised'} on its Sales Order line. Correct the category on one of them, then link it.`,
     itemGroup: poG,
     soItemGroup: so.item_group ?? null,
   };

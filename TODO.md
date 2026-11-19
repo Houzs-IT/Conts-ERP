@@ -676,6 +676,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Stage rules of 19 Nov 2026 are server-side (engine services/renovation/flow.ts, stageRules.ts, stageLoad.ts); the project detail sends flow.stages. The screens still draw the old stepper (renovationBetaModel.ts stepperItems) and the Project List still orders Design before Signed: frontend to switch to flow.stages.
 - Handover by hand and Close have an API (POST /api/renovation/:id/flow-stage/:key/complete|reopen) but no button yet.
 - Renovation category done = every line of the category delivered (DO). A Client PO line that never gets a DO would hold Renovation open: owner to confirm.
+- Before merging fix/po-from-so-picker: apply migrations-pg/0345_po_mixed_categories.sql to production (a PO may mix categories, owner 19 Nov 2026); until then the database still refuses a mixed renovation PO, now with the reason shown and the form savable again after a fix.
 
 ## Project page speed (perf/project-page-speed, 19 Nov 2026)
 - Site tab: linkedFilesFor still reads each on-site GR/DO twin one after another (onsiteTwinFiles, about 3 reads each); batch it if the Site tab stays slow.

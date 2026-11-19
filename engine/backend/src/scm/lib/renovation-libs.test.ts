@@ -209,13 +209,18 @@ describe('PO split grouping', () => {
     expect(r.blocked).toEqual([]);
   });
 
-  test('one supplier, two category groups: two POs, never one mixed PO (owner, 14 Oct 2026)', () => {
+  test('one supplier, two category groups: one PO holding both (owner, 19 Nov 2026: a PO may mix categories)', () => {
     const r = groupForPo([
       row({ description: 'switch', category: 'WORKS' }),
       row({ description: 'wardrobe', category: 'BUILTIN' }),
       row({ description: 'socket', category: 'WORKS' }),
     ]);
-    expect(r.groups.map((g) => [g.categoryGroup, g.lines.map((l) => l.description)])).toEqual([['BUILTIN', ['wardrobe']], ['WORKS', ['switch', 'socket']]]);
+    expect(r.groups.map((g) => [g.categoryGroup, g.lines.map((l) => l.description)])).toEqual([['', ['switch', 'wardrobe', 'socket']]]);
+  });
+
+  test('one supplier, one category group: the PO names that category', () => {
+    const r = groupForPo([row({ description: 'switch', category: 'WORKS' }), row({ description: 'socket', category: 'WORKS' })]);
+    expect(r.groups.map((g) => g.categoryGroup)).toEqual(['WORKS']);
   });
 
   test('measured lines order one unit at measure x cost; partly ordered lines order the rest', () => {

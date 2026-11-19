@@ -173,7 +173,9 @@ import { FairDayPicker, FairPicker } from '../../components/FairPicker';
 import { fairDayCheck, fairEditPatch, fairEventOf, fairPickValue, linkedEvent, type LinkedFair } from '../../components/fairPick';
 import { useStateWarehouseMappings } from '../../vendor/scm/lib/state-warehouse-queries';
 import { useDebouncedValue } from '../../vendor/scm/lib/hooks';
-import { newIdempotencyKey } from '../../lib/idempotency';
+import { createContentBoundKey, newIdempotencyKey, outcomeOfError, type ContentBoundKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
+import { useRenovationDraft } from '../../lib/renovation/renovationFormDraft';
 import { useSoVariantCascade, useSoLineDeliveryDateCascade } from './use-so-variant-cascade';
 import {
   dropStagedAdd, firstBlankStagedAdd, namedStagedAdds,
@@ -889,7 +891,10 @@ export const SalesOrderDetail = () => {
      of filing a second amendment (the number is minted `count + 1`, so a second
      one is a real duplicate). A later, genuinely separate amendment is a new
      edit session and therefore a new key. */
-  const amendKeyRef = useRef<string | null>(null);
+  /* Bound to the amendment's CONTENT within the session (lib/idempotency.ts, createContentBoundKey): a re-press of
+     the same change replays, while a change corrected after a refusal is a new request instead of "an earlier
+     submission with different details already finished" (owner, 19 Nov 2026). */
+  const amendKeyRef = useRef<ContentBoundKey | null>(null);
   /* The ADD key rides on the ROW now (StagedAddLine.idempotencyKey): one key
      shared across distinct inserts would replay the first for all of them. */
   const activeLineLeaseRef = useRef<string | null>(null);
@@ -898,7 +903,44 @@ export const SalesOrderDetail = () => {
   const returnToDetail = () => {
     if (docNo) navigate(`/scm/sales-orders/${docNo}`, { replace: true });
   };
+  /* The edited lines are kept in this browser while editing (lib/renovation/renovationFormDraft.ts), so a failed save
+     followed by a refresh does not lose them: the page offers to restore them (owner, 19 Nov 2026). Lines only; the
+     header fields reload from the order. Cleared when the edit session ends (Save or Cancel). */
+  const lineDraftValue = useMemo(() => {
+    const removed = Object.keys(originalDraftsRef.current).filter((id) => !(id in editingDrafts));
+    return { drafts: editingDrafts, adds: addingDrafts, removed };
+  }, [editingDrafts, addingDrafts]);
+  const lineDraftDirty = isEditing && (
+    addingDrafts.length > 0
+    || lineDraftValue.removed.length > 0
+    || Object.entries(editingDrafts).some(([id, d]) => {
+      const orig = originalDraftsRef.current[id];
+      return !orig || lineCommitSig(d) !== lineCommitSig(orig);
+    }));
+  const lineDraft = useRenovationDraft(
+    isEditing && docNo ? `so-edit-lines:${docNo}` : null,
+    lineDraftValue,
+    lineDraftDirty,
+    header?.version ?? null,
+  );
+  const restoreLineDraft = (restore: boolean) => {
+    const offered = lineDraft.offered;
+    if (restore && offered) {
+      const { drafts, adds, removed } = offered.v;
+      setEditingDrafts((prev) => {
+        const next: Record<string, SoLineDraft> = {};
+        for (const id of Object.keys(prev)) {
+          if (removed.includes(id)) continue;
+          next[id] = drafts[id] ?? prev[id]!;
+        }
+        return next;
+      });
+      setAddingDrafts(adds);
+    }
+    lineDraft.answer(restore);
+  };
   const endEditSession = () => {
+    lineDraft.clear();
     amendKeyRef.current = null;
     activeLineLeaseRef.current = null;
     returnToDetail();
@@ -1492,14 +1534,32 @@ export const SalesOrderDetail = () => {
             skips ONLY this: the save above is the whole of that edit. */
       let createdRes: unknown = null;
       if (plan === 'AMENDMENT') {
-        amendKeyRef.current ??= newIdempotencyKey();
-        createdRes = await createAmendment.mutateAsync({
-          docNo: header.doc_no,
-          reason: answer.reason,
-          lines,
-          headerChanges,
-          idempotencyKey: amendKeyRef.current,
-        });
+        const keys = (amendKeyRef.current ??= createContentBoundKey());
+        const content = { reason: answer.reason, lines, headerChanges };
+        const decision = keys.keyFor(content);
+        let key = decision.key;
+        if (decision.needsConfirm) {
+          const again = await serviceConfirm({
+            title: 'Your last save did not get an answer',
+            body: 'It may already have recorded the earlier change. Open the order history to check first.\n\nSave this changed version anyway?',
+            confirmLabel: 'Save changed version',
+          });
+          if (!again) { setSavingOrder(false); return; }
+          key = keys.confirmNewKey(content);
+        }
+        try {
+          createdRes = await createAmendment.mutateAsync({
+            docNo: header.doc_no,
+            reason: answer.reason,
+            lines,
+            headerChanges,
+            idempotencyKey: key ?? undefined,
+          });
+          keys.settle('succeeded');
+        } catch (err) {
+          keys.settle(outcomeOfError(err));
+          throw err;
+        }
       }
       setSavingOrder(false);
       endEditSession();
@@ -2312,6 +2372,18 @@ export const SalesOrderDetail = () => {
 
       <div className="space-y-3 py-5">
         <MigratedReadonlyBanner header={header} />
+
+        {isEditing && lineDraft.offered && (
+          <div className={styles.bannerWarn} role="status">
+            <strong>Unsaved line changes from {new Date(lineDraft.offered.ts).toLocaleString()}.</strong>
+            <span>
+              {lineDraft.stale ? 'The order was saved again after them, so check each line before saving. ' : ''}
+              Restore them?
+            </span>
+            <Button variant="primary" onClick={() => restoreLineDraft(true)}>Restore</Button>
+            <Button variant="ghost" onClick={() => restoreLineDraft(false)}>Discard</Button>
+          </div>
+        )}
 
         {/* PR-A — Inline error from the page-level Save. Cleared on Edit / Cancel / next successful Save. */}
         {saveError && (
