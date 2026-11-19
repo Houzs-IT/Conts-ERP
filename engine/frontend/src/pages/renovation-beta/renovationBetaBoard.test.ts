@@ -102,11 +102,9 @@ describe("dates", () => {
 describe("status words", () => {
   it("follows the mockup for each condition", () => {
     expect(conditionText(m, get(4))).toBe("B - 3D amendment");
-    // After 2D the first open work of Design work comes next: here the second payment (owner, 19 Nov 2026).
-    expect(conditionText(m, get(5))).toBe("D - Pending second payment");
-    const paid = (p: DesignProject): DesignProject => ({ ...p, paid: 2 });
-    expect(conditionText(m, paid(get(5)))).toBe("D - Carpentry measure booked");
-    expect(conditionText(m, paid(get(11)))).toBe("D - Site briefing booked");
+    // After 2D the first open work of Design work comes next (owner, 19 Nov 2026; Second payment is no longer a work).
+    expect(conditionText(m, get(5))).toBe("D - Carpentry measure booked");
+    expect(conditionText(m, get(11))).toBe("D - Site briefing booked");
     expect(conditionText(m, get(13))).toBe("A - New · team not assigned");
     expect(conditionText(m, get(6))).toBe("B - 3D sent · waiting client");
     expect(conditionText(m, get(1))).toBe("C - 2D in progress");

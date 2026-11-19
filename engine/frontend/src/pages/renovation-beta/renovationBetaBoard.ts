@@ -176,7 +176,7 @@ export const typeLabel = (type: string): string => TYPE_LABEL[type] ?? type;
 /** The old fixed list, for a server without migration 0342. */
 export const LEGACY_WORK_TYPES: BetaWorkType[] = [
   ["measure", "Site measure", "measure", true, 10, true], ["w3d", "3D", "approve_3d", true, 20, true], ["w2d", "2D", "approve_2d", true, 30, true],
-  ["payment_2", "Second payment", "payment_2", true, 40, true], ["carpentry", "Carpentry measure", "booking", true, 50, true], ["briefing", "Site briefing", "booking", true, 60, true],
+  ["carpentry", "Carpentry measure", "booking", true, 50, true], ["briefing", "Site briefing", "booking", true, 60, true],
   ["update", "Drawing update", "booking", false, 110, false], ["client", "Client meeting", "booking", false, 120, false], ["meeting", "Internal meeting", "booking", false, 130, false],
   ["amend", "Amendment", "booking", false, 140, false], ["po", "PO / C.PO", "booking", false, 150, false],
 ].map(([code, label, rule, inDesign, sortOrder, system], i) => ({

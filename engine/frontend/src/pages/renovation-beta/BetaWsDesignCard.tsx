@@ -105,9 +105,7 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
         buttons: canWrite ? (
           <>
             {btn("Edit", () => openDialog({ t: "book", projectId: p.id, key }))}
-            {key === "msr"
-              ? btn("Done", () => openDialog({ t: "measured", projectId: p.id }), BTN_MAIN)
-              : btn("Done", () => void act(() => boardApi.appointmentDone(p.id, apptKindOf(key)), "Marked done"), BTN_MAIN)}
+            {btn("Done", () => void act(() => boardApi.appointmentDone(p.id, apptKindOf(key)), "Marked done"), BTN_MAIN)}
           </>
         ) : null,
       };
@@ -118,7 +116,6 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
       buttons: canWrite ? (
         <>
           {btn("Book time", () => openDialog({ t: "book", projectId: p.id, key }), BTN_MAIN)}
-          {key === "msr" && btn("Record measure", () => openDialog({ t: "measured", projectId: p.id }))}
         </>
       ) : null,
     };
