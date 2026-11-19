@@ -27,6 +27,7 @@ import { BetaDialogs, type BetaDialog } from "./BetaForms";
 import { DeleteProjectButton } from "./BetaDeleteProject";
 import { StartProjectButton } from "./BetaStartProject";
 import { BetaWsHeader, BetaWsStepper } from "./BetaWsHeader";
+import { designLayer, renovationCategoriesOf, renovationLayer, STAGE_RULE, type StageLayer } from "./betaStageLayers";
 import { BetaSkin, useBetaPreload, WS, WsNotice, WsStyle } from "./BetaWsUi";
 import type { BetaTabProps, BoardView } from "./betaShared";
 import { betaApi } from "./renovationBetaApi";
@@ -116,6 +117,12 @@ function WorkspaceScreen(): ReactElement {
   const items = stepperItems({
     steps: d.flow.steps, currentKey: d.flow.current, currentIndex: d.flow.currentIndex, soDate: (d.signedSo ?? d.so)?.so_date ?? null, soStatus: (d.signedSo ?? d.so)?.status ?? null, handoverOn: p.handed_over_at ?? p.planned_handover_date, tasks: d.tasks, today, sla: d.stepSla ?? null,
   });
+  // The second layer (owner, 19 Nov 2026): Design from Design work, Renovation from the catalog categories when the
+  // server sends them; the other stages say when they complete.
+  const layers: Record<string, StageLayer> = Object.fromEntries(d.flow.steps.map((st) => [st.key, {
+    rule: STAGE_RULE[st.key] ?? "",
+    steps: st.key === "design" ? designLayer(board.m, board.p) : st.key === "renovation" ? renovationLayer(renovationCategoriesOf(d)) : null,
+  }]));
   const hold = d.hold ? (d.hold.flag === "in_defect" ? "In defect" : "On hold") : null;
   // A project opened by mistake (chew, 10 Nov 2026). Once it has a contract it is never offered; the server refuses
   // any project with a document on it anyway.
@@ -132,7 +139,7 @@ function WorkspaceScreen(): ReactElement {
             {canDelete && <DeleteProjectButton project={{ id, code: p.code, name: p.name }} onError={onError} />}
           </>} />
       </motion.div>
-      <BetaWsStepper items={items} hold={hold} />
+      <BetaWsStepper items={items} hold={hold} layers={layers} />
 
       <nav ref={tabsRef} aria-label="Project sections" className="tabs">
         {BETA_TABS.map((t) => (
