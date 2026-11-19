@@ -7,7 +7,7 @@
 // is verbatim.
 
 import { useMemo } from 'react';
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from './authed-fetch';
 import { poListParams, type PoListFilterParams } from './po-list-export';
 import type { PoListLine } from './po-line-export-columns';
@@ -940,6 +940,50 @@ export function useOutstandingSoItems() {
     staleTime: 30_000,
     /* Each try re-runs the whole MRP plan on the server; a failed one is shown, not silently re-sent (authed-fetch.ts,
        SLOW_READ_PATH). The error message on the picker says to refresh. */
+    retry: false,
+  });
+}
+
+/** The picker's search and filters, sent to the server (owner, 19 Nov 2026: search on the server, load on scroll). */
+export type OutstandingSoPageFilters = {
+  q: string;
+  category: string;           // 'all' for none
+  dateField: 'soDate' | 'processing' | 'delivery';
+  dateFrom: string;
+  dateTo: string;
+};
+
+export type OutstandingSoPage = {
+  items: OutstandingSoItem[];
+  nextCursor: string | null;
+  /** Open SO lines matching the search before the stock check: an upper bound. Sent with the first page only. */
+  total: number | null;
+  pageSize: number;
+};
+
+export const OUTSTANDING_SO_PAGE_SIZE = 100;
+
+export function outstandingSoPageUrl(f: Partial<OutstandingSoPageFilters> & { docNo?: string }, cursor: string | null, limit = OUTSTANDING_SO_PAGE_SIZE): string {
+  const p = new URLSearchParams({ limit: String(limit) });
+  if (cursor) p.set('cursor', cursor);
+  if (f.q?.trim()) p.set('q', f.q.trim());
+  if (f.category && f.category !== 'all') p.set('category', f.category);
+  if (f.dateFrom || f.dateTo) p.set('dateField', f.dateField ?? 'soDate');
+  if (f.dateFrom) p.set('dateFrom', f.dateFrom);
+  if (f.dateTo) p.set('dateTo', f.dateTo);
+  if (f.docNo) p.set('docNo', f.docNo);
+  return `/mfg-purchase-orders/outstanding-so-items?${p.toString()}`;
+}
+
+/** One page at a time of the outstanding SO lines; the next page loads when the screen asks for it. */
+export function useOutstandingSoItemsPaged(filters: OutstandingSoPageFilters) {
+  return useInfiniteQuery({
+    queryKey: ['mfg-purchase-orders', 'outstanding-so-items', 'paged', filters],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => authedFetch<OutstandingSoPage>(outstandingSoPageUrl(filters, pageParam), { signal }),
+    getNextPageParam: (last) => last.nextCursor,
+    staleTime: 30_000,
+    /* A failed page is shown, not silently re-sent (authed-fetch.ts, SLOW_READ_PATH). */
     retry: false,
   });
 }

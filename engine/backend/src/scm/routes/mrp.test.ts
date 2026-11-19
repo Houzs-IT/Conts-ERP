@@ -1750,3 +1750,59 @@ describe('MRP reads a contract line settings', () => {
     expect(l?.plannedSupplier).toEqual({ supplierId: 'S9', code: 'ACME', name: 'Acme' });
   });
 });
+
+describe('computeMrp — itemCodes plans one page of codes with the whole run\'s figures (PO-from-SO paging, 19 Nov 2026)', () => {
+  const line = (id: string, code: string, qty: number, date: string): Row => ({
+    ...demandRed(qty), id, doc_no: `SO-${id}`, item_code: code, line_delivery_date: date,
+    so: { debtor_name: 'Acme', status: 'CONFIRMED', so_date: '2026-07-01', customer_delivery_date: date, processing_date: null, customer_state: null },
+  });
+  const tables = () => fakeSb({
+    ...BASE_TABLES,
+    mfg_sales_order_items: [
+      line('a1', 'BF-100', 4, '2026-11-01'), line('a2', 'BF-100', 4, '2026-11-05'), line('a3', 'BF-100', 4, '2026-11-09'),
+      line('b1', 'BF-200', 3, '2026-11-02'),
+    ],
+    purchase_order_items: [poLine('PO-RED', 2, { fabricCode: 'RED' }, '2026-10-20')],
+    inventory_balances: [
+      { item_code: 'BF-100', warehouse_id: 'W1', variant_key: 'fabriccode=red', qty: 5 },
+      { item_code: 'BF-200', warehouse_id: 'W1', variant_key: 'fabriccode=red', qty: 1 },
+    ],
+  });
+  const shortages = (r: Awaited<ReturnType<typeof computeMrp>>) =>
+    Object.fromEntries(r.skus.flatMap((s) => s.lines).map((l) => [l.soItemId, l.shortageQty]));
+
+  test('the page codes read the same shortages as the whole company, and other codes are not planned', async () => {
+    const whole = shortages(await computeMrp(asSb(tables()), opts));
+    const page = shortages(await computeMrp(asSb(tables()), { ...opts, itemCodes: ['BF-100'] }));
+    expect(Object.keys(page).sort()).toEqual(['a1', 'a2', 'a3']);
+    for (const id of ['a1', 'a2', 'a3']) expect(page[id]).toBe(whole[id]);
+    // 12 needed against 5 in stock + 2 on PO: the latest line is the short one, so the walk really ran.
+    expect(page.a3).toBeGreaterThan(0);
+    expect(whole.b1).toBe(2);
+  });
+
+  test('focus: a code with no stock and no PO is planned from the focus lines alone, with the same figures', async () => {
+    const withUnsupplied = () => fakeSb({
+      ...BASE_TABLES,
+      mfg_sales_order_items: [
+        line('a1', 'BF-100', 4, '2026-11-01'), line('a2', 'BF-100', 4, '2026-11-05'), line('a3', 'BF-100', 4, '2026-11-09'),
+        line('r1', 'RN-WORK', 2, '2026-11-01'), line('r2', 'RN-WORK', 5, '2026-11-03'), line('r3', 'RN-WORK', 1, '2026-11-04'),
+      ],
+      purchase_order_items: [poLine('PO-RED', 2, { fabricCode: 'RED' }, '2026-10-20')],
+      inventory_balances: [{ item_code: 'BF-100', warehouse_id: 'W1', variant_key: 'fabriccode=red', qty: 5 }],
+    });
+    const whole = shortages(await computeMrp(asSb(withUnsupplied()), opts));
+    const focus = shortages(await computeMrp(asSb(withUnsupplied()), { ...opts, itemCodes: ['BF-100', 'RN-WORK'], focusLineIds: ['a3', 'r2'] }));
+    // The supplied code is planned whole (its walk needs every line); the unsupplied one only for the focus line.
+    expect(Object.keys(focus).sort()).toEqual(['a1', 'a2', 'a3', 'r2']);
+    expect(focus.a3).toBe(whole.a3);
+    expect(focus.r2).toBe(whole.r2);
+    expect(focus.r2).toBe(5);
+  });
+
+  test('omitted or null plans every code, as before', async () => {
+    const a = shortages(await computeMrp(asSb(tables()), opts));
+    const b = shortages(await computeMrp(asSb(tables()), { ...opts, itemCodes: null }));
+    expect(b).toEqual(a);
+  });
+});
