@@ -106,7 +106,9 @@ async function resyncDates(c: Ctx, id: number): Promise<void> {
 app.get("/board-rows", requirePageAccess("projects.list"), failClosed(async (c) => {
   const hideMoney = financeHiddenForUser(c.get("user"));
   const list = await loadViews(c, { includeArchived: c.req.query("archived") === "1" });
-  return c.json({ data: list.map(({ f, v }) => boardRowOf(f, v, { hideMoney })), arrivalLabels: SUPPLY_CONDITION_LABEL });
+  // Every catalog category in catalog order, for the list's Renovation layer; each view carries the full catalog.
+  const categories = (list[0]?.v.stageLayers.renovation.categories ?? []).map((k) => ({ code: k.code, label: k.label }));
+  return c.json({ data: list.map(({ f, v }) => boardRowOf(f, v, { hideMoney })), arrivalLabels: SUPPLY_CONDITION_LABEL, categories });
 }));
 
 // ── People master ────────────────────────────────────────────────────────

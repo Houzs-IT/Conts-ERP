@@ -127,6 +127,8 @@ export interface BoardRowV2 {
   vo: { has: boolean; count: number; approved: number } | null;
   handoverDate: string | null;
   plannedHandoverDate: string | null;
+  /** Older servers leave it out. */
+  renovationCategories?: Array<{ code: string; done: boolean }>;
   /** The day the project was created, and the day it reached Closed (null until then); filled by the system
       (migration 0117). Optional: an engine older than 15 Oct 2026 does not send them. */
   startDate?: string | null;
@@ -206,7 +208,7 @@ export interface WorkTypeRow {
 }
 
 export const simpleApi = {
-  boardRows: (archived = false) => api.get<{ data: BoardRowV2[] }>(`${R}/board-rows${archived ? "?archived=1" : ""}`),
+  boardRows: (archived = false) => api.get<{ data: BoardRowV2[]; categories?: Array<{ code: string; label: string }> }>(`${R}/board-rows${archived ? "?archived=1" : ""}`),
   detail: (id: number) => api.get<ProjectDetailV2>(`${R}/${id}`),
   people: (q: { role?: PersonRole; active?: boolean } = {}) => {
     const p = new URLSearchParams();

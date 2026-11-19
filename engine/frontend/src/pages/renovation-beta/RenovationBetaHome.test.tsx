@@ -6,7 +6,11 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { BetaBoard } from "./renovationBetaBoardApi";
 
-const h = vi.hoisted(() => ({ board: null as unknown, can: true, puts: [] as Array<{ path: string; body: unknown }> }));
+const h = vi.hoisted(() => ({
+  board: null as unknown, can: true, puts: [] as Array<{ path: string; body: unknown }>,
+  // Per-project overrides of the board row (stage, categories) and the catalog categories the server lists.
+  row: {} as Record<number, Record<string, unknown>>, cats: [] as Array<{ code: string; label: string }>,
+}));
 
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
@@ -16,7 +20,7 @@ vi.mock("../../api/client", async (importOriginal) => {
       ...actual.api,
       // The list's stage per project comes from the project board rows; every project here is in Design.
       get: async (path: string) => (String(path).includes("board-rows")
-        ? { data: (h.board as { projects: Array<{ id: number }> }).projects.map((p) => ({ id: p.id, step: { key: "design", label: "Design" }, sla: null, renoPic: { id: null, name: null } })) }
+        ? { data: (h.board as { projects: Array<{ id: number }> }).projects.map((p) => ({ id: p.id, step: { key: "design", label: "Design" }, sla: null, renoPic: { id: null, name: null }, ...(h.row[p.id] ?? {}) })), categories: h.cats }
         : h.board),
       put: async (path: string, body: unknown) => { h.puts.push({ path, body }); return { ok: true }; },
     },
@@ -58,6 +62,8 @@ beforeEach(() => {
   phone = false;
   h.can = true;
   h.puts = [];
+  h.row = {};
+  h.cats = [];
   window.matchMedia = ((query: string) => ({
     matches: phone && query.includes("719px"), media: query, addEventListener: () => undefined, removeEventListener: () => undefined,
   })) as unknown as typeof window.matchMedia;
@@ -179,6 +185,26 @@ describe("Beta Home", () => {
     expect(screen.getByText("No projects here.")).toBeTruthy();
     fireEvent.click(step(/^Ordering:/));
     expect(names().length).toBe(3);
+  });
+
+  it("filters Renovation by a catalog category that is still open on the project", async () => {
+    const ids = (h.board as { projects: Array<{ id: number }> }).projects.map((p) => p.id);
+    h.cats = [{ code: "WORKS", label: "Works" }, { code: "LIGHTING", label: "Lighting" }, { code: "SERVICE", label: "Service" }];
+    h.row[ids[0]!] = { step: { key: "renovation", label: "Renovation" }, renovationCategories: [{ code: "WORKS", done: false }, { code: "LIGHTING", done: true }] };
+    h.row[ids[1]!] = { step: { key: "renovation", label: "Renovation" }, renovationCategories: [{ code: "LIGHTING", done: false }] };
+    renderAt("/beta/projects?brand=Dream%20Crafter");
+    await screen.findByRole("heading", { name: "All projects" });
+    const names = (): string[] => within(screen.getByRole("table")).getAllByRole("link").map((a) => String(a.textContent));
+    fireEvent.click(await screen.findByRole("button", { name: "Renovation: 2 projects" }));
+    // Every catalog category is offered, counted by the Renovation projects where it is not complete.
+    expect(screen.getByRole("button", { name: "Works: 1 project" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Lighting: 1 project" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Service: 0 projects" })).toBeTruthy();
+    expect(names().length).toBe(2);
+    fireEvent.click(screen.getByRole("button", { name: "Lighting: 1 project" }));
+    expect(names().length).toBe(1);
+    fireEvent.click(screen.getByRole("button", { name: "Lighting: 1 project" }));
+    expect(names().length).toBe(2);
   });
 
   it("keeps a column set per filter: hiding a column on 3D leaves All projects alone", async () => {
