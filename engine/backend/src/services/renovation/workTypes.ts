@@ -28,7 +28,6 @@ export const LEGACY_WORK_TYPES: readonly WorkType[] = [
   { code: "measure", label: "Site measure", rule: "measure", bookable: true, inDesign: true, sortOrder: 10, system: true },
   { code: "w3d", label: "3D", rule: "approve_3d", bookable: true, inDesign: true, sortOrder: 20, system: true },
   { code: "w2d", label: "2D", rule: "approve_2d", bookable: true, inDesign: true, sortOrder: 30, system: true },
-  { code: "payment_2", label: "Second payment", rule: "payment_2", bookable: false, inDesign: true, sortOrder: 40, system: true },
   { code: "carpentry", label: "Carpentry measure", rule: "booking", bookable: true, inDesign: true, sortOrder: 50, system: true },
   { code: "briefing", label: "Site briefing", rule: "booking", bookable: true, inDesign: true, sortOrder: 60, system: true },
   { code: "update", label: "Drawing update", rule: "booking", bookable: true, inDesign: false, sortOrder: 110, system: false },

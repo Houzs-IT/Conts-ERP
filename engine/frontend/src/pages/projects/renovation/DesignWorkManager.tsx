@@ -4,8 +4,8 @@
    passed. The built-in works keep their own rule and cannot be removed. Variants is not a work: the system checks it
    after the list. */
 
-import { useState } from "react";
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { useState, type DragEvent } from "react";
+import { GripVertical, Plus, Trash2 } from "lucide-react";
 import { Button } from "../../../components/Button";
 import { useQuery } from "../../../hooks/useQuery";
 import { cn } from "../../../lib/utils";
@@ -18,7 +18,7 @@ const RULE_TEXT: Record<WorkTypeRow["rule"], string> = {
   measure: "Done once the booked measure day has passed, or a measure is recorded",
   approve_3d: "Done when Record approval is pressed",
   approve_2d: "Done when Record approval is pressed",
-  payment_2: "Done when the second payment is received",
+  payment_2: "Done when the second payment is received (no longer a work)",
 };
 
 export function DesignWorkManager() {
@@ -35,18 +35,28 @@ export function DesignWorkManager() {
     setBusy(true);
     try { await fn(); q.reload(); } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
   }
-  const swap = (a: WorkTypeRow, b: WorkTypeRow) => run(async () => {
-    await simpleApi.patchWorkType(a.code, { sortOrder: b.sortOrder });
-    await simpleApi.patchWorkType(b.code, { sortOrder: a.sortOrder === b.sortOrder ? a.sortOrder + 1 : a.sortOrder });
+  /* Drag a row to its place (owner, 19 Nov 2026); the list is renumbered 10, 20, 30 ... and only rows whose number
+     changed are saved. */
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+  const move = (from: string, to: string) => run(async () => {
+    const list = rows.map((w) => w.code);
+    const at = list.indexOf(from), dest = list.indexOf(to);
+    if (at < 0 || dest < 0 || at === dest) return;
+    list.splice(dest, 0, ...list.splice(at, 1));
+    for (const [i, code] of list.entries()) {
+      const w = rows.find((x) => x.code === code)!;
+      if (w.sortOrder !== (i + 1) * 10) await simpleApi.patchWorkType(code, { sortOrder: (i + 1) * 10 });
+    }
   });
 
   return (
     <section className="rounded-md border border-border bg-surface p-4 sm:p-6 min-w-0">
       <h2 className="text-[10px] font-semibold uppercase tracking-brand text-accent">Design work</h2>
       <p className="mt-1 mb-4 text-[12px] text-ink-secondary">
-        The works of a project, in order. Every one is a type in Add work on the calendar; the ones in Design are the rows of Design progress and the steps of the Design stage.
-        A bookable work picks a date and time and is done once its day has passed, with that day recorded. Built-in works keep their own rule and cannot be removed.
-        Variants is checked by the system after this list: done when every sales order line has its variants picked.
+        The works of a project, in order: drag a row to move it. Every work is a type in Add work on the calendar. Ticked under Show in Design progress, it is also a row of Design progress
+        on the project page and a step of the Design stage. A bookable work is booked from Design progress or the calendar (date, time, who), shows on the calendar, and is done once its day has passed.
+        Built-in works keep their own rule and cannot be removed. Variants is checked by the system after this list: done when every sales order line has its variants picked.
       </p>
       {error && <p role="alert" className="mb-2 text-sm text-err">{error}</p>}
       {q.error && <p role="alert" className="mb-2 text-sm text-err">{q.error}</p>}
@@ -54,9 +64,9 @@ export function DesignWorkManager() {
         <table className="w-full min-w-[720px] text-sm">
           <thead>
             <tr className="text-left text-[11px] uppercase tracking-wide text-ink-secondary">
-              <th className="py-2 pr-2 font-semibold">Order</th>
+              <th className="py-2 pr-2 font-semibold"><span className="sr-only">Drag to move</span></th>
               <th className="py-2 pr-2 font-semibold">Work</th>
-              <th className="py-2 pr-2 font-semibold">In Design</th>
+              <th className="py-2 pr-2 font-semibold">Show in Design progress</th>
               <th className="py-2 pr-2 font-semibold">Bookable</th>
               <th className="py-2 pr-2 font-semibold">Complete when</th>
               <th className="py-2 pr-2 font-semibold">On</th>
@@ -64,10 +74,14 @@ export function DesignWorkManager() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((w, i) => (
-              <WorkRow key={w.code} w={w} busy={busy}
-                onUp={i > 0 ? () => void swap(w, rows[i - 1]!) : undefined}
-                onDown={i < rows.length - 1 ? () => void swap(w, rows[i + 1]!) : undefined}
+            {rows.map((w) => (
+              <WorkRow key={w.code} w={w} busy={busy} dragging={dragging === w.code} over={over === w.code && dragging !== w.code}
+                drag={{
+                  onDragStart: () => setDragging(w.code),
+                  onDragEnd: () => { setDragging(null); setOver(null); },
+                  onDragOver: (e) => { e.preventDefault(); if (over !== w.code) setOver(w.code); },
+                  onDrop: (e) => { e.preventDefault(); const from = dragging; setDragging(null); setOver(null); if (from) void move(from, w.code); },
+                }}
                 onSave={(patch) => void run(() => simpleApi.patchWorkType(w.code, patch))}
                 onRemove={() => void run(async () => {
                   const r = await simpleApi.deleteWorkType(w.code);
@@ -86,27 +100,29 @@ export function DesignWorkManager() {
           <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lighting site check" maxLength={60} />
         </label>
         <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={bookable} onChange={(e) => setBookable(e.target.checked)} /> Bookable (date and time)</label>
-        <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={inDesign} onChange={(e) => setInDesign(e.target.checked)} /> In Design</label>
+        <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={inDesign} onChange={(e) => setInDesign(e.target.checked)} /> Show in Design progress</label>
         <Button type="submit" disabled={busy || !name.trim()} icon={<Plus size={15} />}>Add work</Button>
       </form>
     </section>
   );
 }
 
-function WorkRow({ w, busy, onUp, onDown, onSave, onRemove }: {
-  w: WorkTypeRow; busy: boolean; onUp?: () => void; onDown?: () => void;
+interface DragHandlers {
+  onDragStart: () => void; onDragEnd: () => void; onDragOver: (e: DragEvent<HTMLTableRowElement>) => void; onDrop: (e: DragEvent<HTMLTableRowElement>) => void;
+}
+
+function WorkRow({ w, busy, dragging, over, drag, onSave, onRemove }: {
+  w: WorkTypeRow; busy: boolean; dragging: boolean; over: boolean; drag: DragHandlers;
   onSave: (patch: Partial<Pick<WorkTypeRow, "label" | "bookable" | "inDesign" | "active">>) => void; onRemove: () => void;
 }) {
   const [label, setLabel] = useState(w.label);
   const fixedBooking = w.system && w.rule === "booking";
   const fixedOther = w.system && w.rule !== "booking" && w.rule !== "measure";
   return (
-    <tr className={cn("border-t border-border align-middle", !w.active && "opacity-60")}>
+    <tr draggable={!busy} {...drag}
+      className={cn("border-t border-border align-middle", !w.active && "opacity-60", dragging && "opacity-40", over && "[box-shadow:inset_0_2px_0_var(--color-primary)]")}>
       <td className="py-2 pr-2">
-        <div className="flex gap-1">
-          <button type="button" className="rounded border border-border p-1 disabled:opacity-30" aria-label={`Move ${w.label} up`} disabled={!onUp || busy} onClick={onUp}><ArrowUp size={14} /></button>
-          <button type="button" className="rounded border border-border p-1 disabled:opacity-30" aria-label={`Move ${w.label} down`} disabled={!onDown || busy} onClick={onDown}><ArrowDown size={14} /></button>
-        </div>
+        <span className="inline-flex cursor-grab items-center text-ink-secondary active:cursor-grabbing" title="Drag to move" aria-label={`Drag ${w.label} to move it`}><GripVertical size={16} /></span>
       </td>
       <td className="py-2 pr-2">
         <div className="flex items-center gap-2">
