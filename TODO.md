@@ -180,6 +180,9 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Dashboard operator share and owner payout now come from the statement engine (whole months, estimate). Not checked against production's 4,152 reservations: no real-size data on this machine.
 - api-checks nav-badges, operations (housekeeper web access refused by the field-app middleware) and owners (owner phone validation) fail on local demo data in code this branch does not touch.
 
+## Hin Lim SKUs from the Houzs Century CRM list (feat/crm-sku-import, migration 0346, 19 Nov 2026)
+- Owner to look over docs/catalog-import/crm-hinlim/review.xlsx (yellow rows, Questions), then apply 0346 to production and merge.
+
 ## Renovation catalog first import (feat/catalog-first-import, no migration, 20 Oct 2026, docs/catalog-import/)
 - Owner to answer the Questions sheet of docs/catalog-import/catalog-review.xlsx (units BOX/BAG/ROLL, Track light, mark-up, stone unit, 2990 sofas, tools left out).
 - Lead: dry-run scripts/catalog-first-import.mjs against production, check the read-only SQL in docs/catalog-import/README.md, then apply.
