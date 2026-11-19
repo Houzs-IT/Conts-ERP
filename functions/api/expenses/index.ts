@@ -7,7 +7,7 @@ import { resolveUnit } from '../../_lib/ops';
 import { EXPENSE_CATEGORIES, CHARGE_TO, isPeriodLocked, isUtility, utilityDeduction, expenseCategoryLabel, expenseDayLabel } from '../../_lib/expenses';
 import { approvalSettings, approvalsEnabled, stage } from '../../_lib/approvals';
 import { receiptRequired, RECEIPT_REQUIRED } from '../../../src/lib/receipts';
-import { billsToRequest, ownerPaidCredit } from '../../_lib/utilityRequests';
+import { billsToRequest, ownerOwnPart, ownerPaidCredit } from '../../_lib/utilityRequests';
 
 /** POST /api/expenses { unitId | unitNumber (+propertyName), category, amount, incurredOn, description, reference, chargeTo, receiptDocumentId, ownerPaid? }
  *  Every deduction needs a category, an amount and a date: that is what makes an owner statement explainable. A bill
@@ -31,6 +31,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (b?.receiptDocumentId !== undefined && b.receiptDocumentId !== null && typeof b.receiptDocumentId !== 'string') fields.receipt = 'Upload the receipt again.';
   if (b?.ownerPaid !== undefined && typeof b.ownerPaid !== 'boolean') fields.ownerPaid = 'Tick or untick "Owner paid this bill".';
   if (b?.ownerPaid === true && !isUtility(b?.category)) fields.ownerPaid = 'Only a utility bill can be marked as paid by the owner.';
+  /* The part the owner bears alone, after the share (chew, 19 Nov 2026): a shared utility bill only, up to the bill. */
+  const ownerPart = b?.ownerPartSen == null || b.ownerPartSen === 0 ? 0 : b.ownerPartSen;
+  if (ownerPart && (!Number.isInteger(ownerPart) || ownerPart < 0 || ownerPart > b?.amount)) fields.ownerPartSen = "The owner's own part must be between RM 0.00 and the bill.";
+  else if (ownerPart && (!isUtility(b?.category) || (b?.chargeTo ?? 'owner') !== 'owner' || b?.ownerPaid === true)) fields.ownerPartSen = "Only a utility bill the owner shares can have an owner's own part.";
   if (Object.keys(fields).length) return fail('VALIDATION', 'Every expense needs a category, amount and date.', 422, fields);
 
   const unit = await resolveUnit(env, b.unitId ?? b.unitNumber, b.propertyName);
@@ -38,8 +42,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!unit) return fail('NOT_FOUND', 'That unit does not exist.', 404, { unitId: 'Pick a unit that exists.' });
   const deduction = isUtility(b.category) ? await utilityDeduction(env, unit.id, b.incurredOn) : null;
   const ownerPaid = b.ownerPaid === true;
-  const ownerId = ownerPaid ? (await one<{ owner_id: string | null }>(env, 'SELECT owner_id FROM units WHERE id = ?', unit.id))?.owner_id ?? null : null;
+  const ownerId = ownerPaid || ownerPart ? (await one<{ owner_id: string | null }>(env, 'SELECT owner_id FROM units WHERE id = ?', unit.id))?.owner_id ?? null : null;
   if (ownerPaid && !ownerId) return fail('VALIDATION', 'This unit has no owner to give the bill back to.', 422, { ownerPaid: 'This unit has no owner.' });
+  if (ownerPart && !ownerId) return fail('VALIDATION', "This unit has no owner to charge the owner's own part to.", 422, { ownerPartSen: 'This unit has no owner.' });
   if (!deduction && await isPeriodLocked(env, unit.id, b.incurredOn)) return fail('PERIOD_LOCKED', 'That month\'s owner statement is already final, so nothing can be added to it.', 409, { incurredOn: 'This period is locked.' });
 
   if (!b.receiptDocumentId && receiptRequired(b.category, b.chargeTo)) return fail('RECEIPT_REQUIRED', RECEIPT_REQUIRED, 422, { receipt: RECEIPT_REQUIRED });
@@ -55,7 +60,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       reason: String(b.reason ?? '').trim() || String(b.description ?? '').trim() || `${expenseCategoryLabel(b.category)} expense`,
       summary: `Expense ${rmText(b.amount)} on ${label?.name ?? 'unit'} (${expenseCategoryLabel(b.category)}, ${expenseDayLabel(b.incurredOn)})${b.description ? `: ${String(b.description).slice(0, 120)}` : ''}`,
       payload: { op: 'create', unitId: unit.id, category: b.category, description: String(b.description ?? '').slice(0, 300), amount: b.amount, incurredOn: b.incurredOn,
-        reference: b.reference ?? null, chargeTo: b.chargeTo ?? 'owner', receiptDocumentId: b.receiptDocumentId ?? null, ownerPaid,
+        reference: b.reference ?? null, chargeTo: b.chargeTo ?? 'owner', receiptDocumentId: b.receiptDocumentId ?? null, ownerPaid, ownerPartSen: ownerPart,
         maintenanceId: b.maintenanceId ?? null, taskId: b.taskId ?? null, parentExpenseId: b.parentExpenseId ?? null },
     });
     return json(staged, 202);
@@ -69,11 +74,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const row = await one<{ deduct_month: string; rolled: boolean }>(tx, `
       INSERT INTO expenses (id, unit_id, maintenance_id, task_id, parent_expense_id, category, description, amount, currency, incurred_on, deduct_month, rolled, reference, charge_to, receipt_document_id, created_by, created_at, owner_paid)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING deduct_month, rolled`,
-      id, unit.id, b.maintenanceId ?? null, b.taskId ?? null, b.parentExpenseId ?? null, b.category, String(b.description ?? '').slice(0, 300), b.amount,
+      id, unit.id, b.maintenanceId ?? null, b.taskId ?? null, b.parentExpenseId ?? null, b.category, String(b.description ?? '').slice(0, 300), b.amount - ownerPart,
       b.incurredOn, deduction?.deductMonth ?? null, deduction?.rolled ?? false, b.reference ?? null, b.chargeTo ?? 'owner', b.receiptDocumentId ?? null, session.userId, now, ownerPaid);
     if (ownerPaid && b.amount > 0) {
       await ownerPaidCredit(tx, { expenseId: id, unitId: unit.id, ownerId: ownerId!, kind: b.category, label: String(b.description ?? '').trim() || expenseCategoryLabel(b.category),
         amountSen: b.amount, deductMonth: row?.deduct_month ?? b.incurredOn.slice(0, 7), accountNo: b.reference ?? null }, session.userId, now);
+    }
+    if (ownerPart) {
+      await ownerOwnPart(tx, { expenseId: id, unitId: unit.id, ownerId: ownerId!, label: String(b.description ?? '').trim() || expenseCategoryLabel(b.category),
+        amountSen: ownerPart, deductMonth: row?.deduct_month ?? b.incurredOn.slice(0, 7), accountNo: b.reference ?? null }, session.userId, now);
     }
     await audit(tx, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.create', entityTable: 'expenses', entityId: id, after: { unitId: unit.id, category: b.category, amount: b.amount, incurredOn: b.incurredOn, chargeTo: b.chargeTo ?? 'owner', ownerPaid } });
     return { deductMonth: row?.deduct_month ?? b.incurredOn.slice(0, 7), rolled: !!row?.rolled };

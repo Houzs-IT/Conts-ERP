@@ -20,7 +20,7 @@ import type { Session } from './auth';
 import { can } from './access';
 import { insertPayment } from './bookingPayments';
 import { isPeriodLocked, isExpenseLocked, isUtility, utilityDeduction } from './expenses';
-import { ownerPaidCredit } from './utilityRequests';
+import { ownerOwnPart, ownerPaidCredit } from './utilityRequests';
 import { o2Date } from './lockGuards';
 import { notifyUsers } from './notify';
 import { auditMany } from './history';
@@ -375,16 +375,23 @@ const EXECUTE: Record<ApprovalKind, Executor> = {
     const id = crypto.randomUUID();
     // "Owner paid this bill" (a utility bill only; chew, 5 Nov 2026): the full bill goes back to the owner as an O2 credit.
     const ownerPaid = p.ownerPaid === true && isUtility(p.category);
-    const ownerId = ownerPaid ? (await one<{ owner_id: string | null }>(tx, 'SELECT owner_id FROM units WHERE id = ?', p.unitId))?.owner_id ?? null : null;
+    /* The part the owner bears alone (chew, 19 Nov 2026), checked when the bill was entered. */
+    const ownerPart = Number.isInteger(p.ownerPartSen) && p.ownerPartSen > 0 && p.ownerPartSen <= Number(p.amount) && !ownerPaid ? Number(p.ownerPartSen) : 0;
+    const ownerId = ownerPaid || ownerPart ? (await one<{ owner_id: string | null }>(tx, 'SELECT owner_id FROM units WHERE id = ?', p.unitId))?.owner_id ?? null : null;
     if (ownerPaid && !ownerId) throw new ApprovalRefused('VALIDATION', 'This unit has no owner to give the bill back to.');
+    if (ownerPart && !ownerId) throw new ApprovalRefused('VALIDATION', "This unit has no owner to charge the owner's own part to.");
     const now = nowIso();
     await run(tx, `
       INSERT INTO expenses (id, unit_id, maintenance_id, task_id, parent_expense_id, category, description, amount, currency, incurred_on, deduct_month, rolled, reference, charge_to, receipt_document_id, created_by, created_at, owner_paid)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MYR', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id, p.unitId, p.maintenanceId ?? null, p.taskId ?? null, p.parentExpenseId ?? null, p.category, p.description ?? '', Number(p.amount),
+      id, p.unitId, p.maintenanceId ?? null, p.taskId ?? null, p.parentExpenseId ?? null, p.category, p.description ?? '', Number(p.amount) - ownerPart,
       p.incurredOn, deduction?.deductMonth ?? null, deduction?.rolled ?? false, p.reference ?? null, p.chargeTo ?? 'owner', p.receiptDocumentId ?? null, c.requestedBy, now, ownerPaid);
     if (ownerPaid && Number(p.amount) > 0) {
       await ownerPaidCredit(tx, { expenseId: id, unitId: p.unitId, ownerId: ownerId!, kind: p.category, label: p.description || p.category, amountSen: Number(p.amount),
+        deductMonth: deduction?.deductMonth ?? String(p.incurredOn).slice(0, 7), accountNo: p.reference ?? null }, c.requestedBy, now);
+    }
+    if (ownerPart) {
+      await ownerOwnPart(tx, { expenseId: id, unitId: p.unitId, ownerId: ownerId!, label: p.description || p.category, amountSen: ownerPart,
         deductMonth: deduction?.deductMonth ?? String(p.incurredOn).slice(0, 7), accountNo: p.reference ?? null }, c.requestedBy, now);
     }
     await audit(tx, { ...actor(c), action: 'expense.create', entityTable: 'expenses', entityId: id,
