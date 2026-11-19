@@ -16,6 +16,8 @@ export interface GridBill {
   amount: number; chargeTo: string; recordOnly: boolean;
   /** The whole printed bill: `amount` plus the owner's own part. Older answers lack it. */
   whole?: number;
+  /** The bill's note, its printed period and whether it came from Scan bills. Older answers lack them. */
+  description?: string | null; periodFrom?: string | null; periodTo?: string | null; scanned?: boolean;
   /** The deduction month's owner statement is final (finalised, sent or paid). */
   final: boolean;
   receiptId: string | null; reference: string | null; rolled: boolean;
