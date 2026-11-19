@@ -465,23 +465,27 @@ app.post("/snags/:defectId/close", requirePermission("projects.write"), async (c
 app.get("/:id", requirePageAccess("projects.list"), failClosed(async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
-  const one = await loadOne(c, id);
+  /* The service cases, receipts and attendees need only the id, so they are read alongside the project's facts
+     instead of one after another once those are in. */
+  const [one, cases, grns, attending] = await Promise.all([
+    loadOne(c, id),
+    db(c).prepare(
+      `SELECT id, assr_no, status, complaint_issue, created_at FROM assr_cases WHERE project_id = ?${coSql(c)} ORDER BY id DESC`,
+    ).bind(id).all(),
+    db(c).prepare(
+      `SELECT g.id::text AS id, g.grn_number, g.status::text AS status, g.site_received_at, g.received_at_site,
+              po.po_number, sup.name AS supplier_name
+         FROM scm.grns g LEFT JOIN scm.purchase_orders po ON po.id = g.purchase_order_id LEFT JOIN scm.suppliers sup ON sup.id = g.supplier_id
+        WHERE g.project_id = ? ORDER BY g.created_at DESC`,
+    ).bind(id).all(),
+    db(c).prepare(
+      `SELECT pp.id::int AS id, pp.name, pp.active, pp.phone, to_json(pp.roles) AS roles FROM project_attendees a JOIN project_people pp ON pp.id = a.person_id
+        WHERE a.project_id = ? ORDER BY lower(pp.name)`,
+    ).bind(id).all<{ id: number; name: string; active: boolean; phone: string | null; roles: string[] }>(),
+  ]);
   if (!one) return c.json({ error: "not_found" }, 404);
   const { facts: f, view: v } = one;
   const hideMoney = stripFinance(c);
-  const cases = await db(c).prepare(
-    `SELECT id, assr_no, status, complaint_issue, created_at FROM assr_cases WHERE project_id = ?${coSql(c)} ORDER BY id DESC`,
-  ).bind(id).all();
-  const grns = await db(c).prepare(
-    `SELECT g.id::text AS id, g.grn_number, g.status::text AS status, g.site_received_at, g.received_at_site,
-            po.po_number, sup.name AS supplier_name
-       FROM scm.grns g LEFT JOIN scm.purchase_orders po ON po.id = g.purchase_order_id LEFT JOIN scm.suppliers sup ON sup.id = g.supplier_id
-      WHERE g.project_id = ? ORDER BY g.created_at DESC`,
-  ).bind(id).all();
-  const attending = await db(c).prepare(
-    `SELECT pp.id::int AS id, pp.name, pp.active, pp.phone, to_json(pp.roles) AS roles FROM project_attendees a JOIN project_people pp ON pp.id = a.person_id
-      WHERE a.project_id = ? ORDER BY lower(pp.name)`,
-  ).bind(id).all<{ id: number; name: string; active: boolean; phone: string | null; roles: string[] }>();
   const pos = new Map<string, { id: string; po_number: string; supplier_name: string | null; status: string; lines: number; received: boolean }>();
   for (const pl of f.poLines) {
     const cur = pos.get(pl.purchase_order_id) ?? { id: pl.purchase_order_id, po_number: pl.po_number, supplier_name: pl.supplier_name, status: pl.po_status, lines: 0, received: true };

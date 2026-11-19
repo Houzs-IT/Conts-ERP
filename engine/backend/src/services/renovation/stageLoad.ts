@@ -4,6 +4,7 @@
    empty; any other error is thrown. */
 
 import { findIncompleteVariantLines } from "../../scm/lib/so-variant-check";
+import type { BillingView } from "../../scm/lib/renovation-billing";
 import { isMissingRelation, type Db, type ProjectRow } from "./load";
 import { PROJECT_SO_SQL, projectPayments, type ProjectSoRow } from "./projectPayments";
 import type { StageAppointment, StageFile, StageInputs, StageLine, StageNote, StageReview, StageWork } from "./stageRules";
@@ -93,11 +94,13 @@ const VO_SQL = `
    WHERE so.project_id IN ${IN_PROJECTS} AND so.status::text <> 'CANCELLED'
    GROUP BY so.project_id`;
 
-async function companyPayments(db: Db, companyId: number, pids: readonly number[]): Promise<{ sos: ProjectSoRow[]; pay: Map<number, StageInputs["payment"]> }> {
+async function companyPayments(db: Db, companyId: number, pids: readonly number[], billing?: Promise<Map<string, BillingView> | null>): Promise<{ sos: ProjectSoRow[]; pay: Map<number, StageInputs["payment"]> }> {
   const pay = new Map<number, StageInputs["payment"]>();
   try {
-    const sos = await rows<ProjectSoRow>(db, PROJECT_SO_SQL(`p.id IN ${IN_PROJECTS}`), ids(pids), companyId);
-    for (const [id, p] of await projectPayments(db, companyId, sos)) {
+    const [sos, pre] = await Promise.all([rows<ProjectSoRow>(db, PROJECT_SO_SQL(`p.id IN ${IN_PROJECTS}`), ids(pids), companyId), billing]);
+    // The shared billing read found phase 2's tables missing: the same answer as reading them here.
+    if (pre === null && sos.some((s) => s.kind === "RENOVATION")) return { sos: [], pay };
+    for (const [id, p] of await projectPayments(db, companyId, sos, pre ?? undefined)) {
       if (p.state !== "ok") continue;
       pay.set(id, { contractSen: p.contractSen, receivedSen: p.receivedSen, paidInstalments: p.instalments.filter((x) => x.status === "paid" && x.amountSen > 0).length });
     }
@@ -108,7 +111,22 @@ async function companyPayments(db: Db, companyId: number, pids: readonly number[
   }
 }
 
-export async function loadStageInputs(db: Db, projects: readonly ProjectRow[]): Promise<Map<number, StageInputs>> {
+/* The catalog's category groups change only in catalog maintenance; one read a minute per isolate is plenty. */
+const GROUPS_TTL_MS = 60_000;
+let groupsCache: { at: number; rows: Array<{ code: string; label: string }> } | null = null;
+async function categoryGroups(db: Db): Promise<Array<{ code: string; label: string }>> {
+  if (groupsCache && Date.now() - groupsCache.at < GROUPS_TTL_MS) return groupsCache.rows;
+  const list = await orEmpty(rows<{ code: string; label: string }>(db, `SELECT code, label FROM scm.product_category_groups ORDER BY sort_order, code`));
+  groupsCache = { at: Date.now(), rows: list };
+  return list;
+}
+
+export interface StagePreloaded {
+  /** the renovation contracts' billing views, already being read by the caller (load.ts); null when phase 2's tables are missing */
+  billing?: Promise<Map<string, BillingView> | null>;
+}
+
+export async function loadStageInputs(db: Db, projects: readonly ProjectRow[], pre: StagePreloaded = {}): Promise<Map<number, StageInputs>> {
   const out = new Map<number, StageInputs>();
   if (projects.length === 0) return out;
   const pids = projects.map((p) => p.id);
@@ -120,9 +138,9 @@ export async function loadStageInputs(db: Db, projects: readonly ProjectRow[]): 
     orEmpty(rows<DesignRow>(db, DESIGN_SQL, ids(pids))),
     orEmpty(rows<LineRow>(db, LINES_SQL, ids(pids))),
     orEmpty(rows<{ project_id: number; n: number }>(db, VO_SQL, ids(pids))),
-    orEmpty(rows<{ code: string; label: string }>(db, `SELECT code, label FROM scm.product_category_groups ORDER BY sort_order, code`)),
+    categoryGroups(db),
     Promise.all(companies.map(async (co) => [co, await listWorkTypes(db, co)] as const)),
-    Promise.all(companies.map((co) => companyPayments(db, co, byCompany.get(co)!))),
+    Promise.all(companies.map((co) => companyPayments(db, co, byCompany.get(co)!, pre.billing))),
   ]);
   const workTypesBy = new Map<number, WorkType[]>(workTypes);
   const designBy = new Map(design.map((d) => [Number(d.project_id), d]));

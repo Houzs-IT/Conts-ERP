@@ -4,7 +4,7 @@
    Design progress card and the stages read the same money. */
 
 import { goLiveOf } from "../../acc/go-live";
-import { billingViews } from "../../scm/lib/renovation-billing";
+import { billingViews, type BillingView } from "../../scm/lib/renovation-billing";
 import { paymentsOf, type BetaPayments, type BetaReceipt } from "./beta";
 import { renoDbFromD1 } from "./dbBridge";
 import type { Db } from "./load";
@@ -40,14 +40,25 @@ async function receiptsOf(db: Db, docNos: readonly string[]): Promise<Map<string
 
 interface CarriedRow { doc_no: string; golive_sen: number; open_sen: number; ahead_sen: number; sole: boolean }
 
+/* The go-live date is set once when the ledger starts; every payments read asked for it again. Kept a minute per isolate. */
+const GO_LIVE_TTL_MS = 60_000;
+const goLiveCache = new Map<number, { at: number; goLive: string | null }>();
+async function goLiveCached(db: Db, companyId: number): Promise<string | null> {
+  const hit = goLiveCache.get(companyId);
+  if (hit && Date.now() - hit.at < GO_LIVE_TTL_MS) return hit.goLive;
+  const set = await db.prepare(`SELECT ledger_start_date::text AS ledger_start_date, documents_cutover_date::text AS documents_cutover_date
+     FROM scm.acc_company_settings WHERE company_id = ?`).bind(companyId).first<{ ledger_start_date: string | null; documents_cutover_date: string | null }>();
+  const goLive = goLiveOf(set ?? null);
+  goLiveCache.set(companyId, { at: Date.now(), goLive });
+  return goLive;
+}
+
 /** What AutoCount collected on the contracts it carried (seeded at go-live; acc/reno-opening): the go-live amount
     less what its customer still had open, plus what they had paid ahead (acc/reno-projects reads it the same way). It
     is one payment on the eve of go-live; the order's own payments before go-live are AutoCount's already. */
 async function autocountCollected(db: Db, companyId: number, docNos: readonly string[]): Promise<{ goLive: string | null; bySo: Map<string, number> }> {
   const bySo = new Map<string, number>();
-  const set = await db.prepare(`SELECT ledger_start_date::text AS ledger_start_date, documents_cutover_date::text AS documents_cutover_date
-     FROM scm.acc_company_settings WHERE company_id = ?`).bind(companyId).first<{ ledger_start_date: string | null; documents_cutover_date: string | null }>();
-  const goLive = goLiveOf(set ?? null);
+  const goLive = await goLiveCached(db, companyId);
   if (!goLive || docNos.length === 0) return { goLive, bySo };
   const rows = (await db.prepare(
     `WITH k AS (
@@ -73,14 +84,18 @@ async function autocountCollected(db: Db, companyId: number, docNos: readonly st
 const dayBefore = (d: string): string => new Date(Date.parse(`${d}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
 /** Payments per project from its live sales order: the renovation contract's instalments, or four plain payments. */
-export async function projectPayments(db: Db, companyId: number, sos: readonly ProjectSoRow[]): Promise<Map<number, BetaPayments>> {
+export async function projectPayments(db: Db, companyId: number, sos: readonly ProjectSoRow[], pre?: ReadonlyMap<string, BillingView>): Promise<Map<number, BetaPayments>> {
   const out = new Map<number, BetaPayments>();
   const reno = sos.filter((s) => s.kind === "RENOVATION").map((s) => s.doc_no);
-  const [views, receipts, carried] = await Promise.all([
-    reno.length > 0 ? billingViews(renoDbFromD1(db), reno, companyId) : Promise.resolve(new Map()),
+  /* `pre`: views the caller already read for these contracts (load.ts). Every order here is of `companyId`
+     (PROJECT_SO_SQL), so a view read without the company filter is the same view. Only the missing ones are read. */
+  const toRead = pre ? reno.filter((d) => !pre.has(d)) : reno;
+  const [read, receipts, carried] = await Promise.all([
+    toRead.length > 0 ? billingViews(renoDbFromD1(db), toRead, companyId) : Promise.resolve(new Map<string, BillingView>()),
     receiptsOf(db, sos.map((s) => s.doc_no)),
     autocountCollected(db, companyId, reno),
   ]);
+  const views = new Map<string, BillingView>([...(pre ?? []), ...read]);
   for (const so of sos) {
     const view = so.kind === "RENOVATION" ? views.get(so.doc_no) ?? null : null;
     let mine = receipts.get(so.doc_no) ?? [];

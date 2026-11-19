@@ -676,3 +676,7 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Stage rules of 19 Nov 2026 are server-side (engine services/renovation/flow.ts, stageRules.ts, stageLoad.ts); the project detail sends flow.stages. The screens still draw the old stepper (renovationBetaModel.ts stepperItems) and the Project List still orders Design before Signed: frontend to switch to flow.stages.
 - Handover by hand and Close have an API (POST /api/renovation/:id/flow-stage/:key/complete|reopen) but no button yet.
 - Renovation category done = every line of the category delivered (DO). A Client PO line that never gets a DO would hold Renovation open: owner to confirm.
+
+## Project page speed (perf/project-page-speed, 19 Nov 2026)
+- Site tab: linkedFilesFor still reads each on-site GR/DO twin one after another (onsiteTwinFiles, about 3 reads each); batch it if the Site tab stays slow.
+- The page asks the same project's design facts twice (GET /api/renovation/:id stage reads and GET /api/beta/board?projectId): one shared endpoint would halve them; needs a frontend change.
