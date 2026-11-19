@@ -48,7 +48,7 @@
 // domain-idempotent (payment-vouchers.ts:407 /post, :528 /cancel both detect
 // their own replay and echo back) gains nothing from a key.
 // ---------------------------------------------------------------------------
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 /** Mint a key for ONE payment intent. Opaque to the server, which binds it to
  *  the authenticated principal, company, route and exact request payload. */
@@ -119,4 +119,89 @@ export function idempotentInit(key: string | undefined, init: RequestInit): Requ
 export function useIdempotencyKey(): string {
   const [key] = useState(newIdempotencyKey);
   return key;
+}
+
+/* ---------------------------------------------------------------------------
+ * A key per FORM CONTENT, for a create form the operator may correct and save again.
+ *
+ * WHY (owner, New Purchase Order, production 19 Nov 2026 18:07 MYT): the first Save was refused (a renovation PO
+ * mixing two categories), the operator moved the line and pressed Save, and the reused mount key answered "An
+ * earlier submission with different details already finished under this request key". The server half of the fix
+ * releases a claim whenever the route can prove it wrote nothing; this is the client half, for the refusal no route
+ * could prove.
+ *
+ * THE RULES, which keep both properties the docblock above insists on:
+ *   - SAME content -> SAME key, always. A double press, or a retry after a stall, replays the first answer and never
+ *     books a second document.
+ *   - CHANGED content after the server REFUSED the last try with a 4xx (an answer, not a stall) -> a NEW key: the
+ *     route said no to that content, so the corrected one is a new request, not a retry.
+ *   - CHANGED content after a try whose outcome is UNKNOWN (no answer: a timeout, a dropped connection, a 5xx, a
+ *     gateway error, "still going through") -> the caller must ASK first, because that try may have created the
+ *     document; only a yes mints the new key.
+ *   - `idempotency_key_reused` is never read as "nothing was saved" (it can follow a committed 201), so it counts
+ *     as unknown, not as a refusal.
+ * ------------------------------------------------------------------------- */
+
+export type SubmitOutcome = "succeeded" | "refused" | "unknown";
+
+/** What the last try's error says about whether it may have written. Only a plain 4xx from the route is a refusal. */
+export function outcomeOfError(err: unknown): SubmitOutcome {
+  const e = err as { status?: unknown; body?: unknown } | null;
+  const status = typeof e?.status === "number" ? e.status : null;
+  if (status == null || status < 400 || status >= 500) return "unknown";
+  const body = typeof e?.body === "string" ? e.body : "";
+  if (/"idempotency_(in_flight|key_reused|outcome_unknown|key_conflict)"/.test(body)) return "unknown";
+  return "refused";
+}
+
+export type ContentKeyDecision = { key: string; needsConfirm: false } | { key: null; needsConfirm: true };
+
+export type ContentBoundKey = {
+  /** The key for this content, or `needsConfirm` when the content changed after a try with an unknown outcome. */
+  keyFor(content: unknown): ContentKeyDecision;
+  /** The operator confirmed saving the changed content although the last try may have written: mint its key. */
+  confirmNewKey(content: unknown): string;
+  /** Record how the try that used the current key ended. */
+  settle(outcome: SubmitOutcome): void;
+};
+
+/** Plain-object core of useContentBoundIdempotencyKey, so it can be tested without React. */
+export function createContentBoundKey(mint: () => string = newIdempotencyKey): ContentBoundKey {
+  let current: { key: string; sig: string; outcome: SubmitOutcome | "pending" } | null = null;
+  const sigOf = (content: unknown) => JSON.stringify(content);
+  return {
+    keyFor(content) {
+      const sig = sigOf(content);
+      if (!current) {
+        current = { key: mint(), sig, outcome: "pending" };
+        return { key: current.key, needsConfirm: false };
+      }
+      if (current.sig === sig) {
+        current.outcome = "pending";
+        return { key: current.key, needsConfirm: false };
+      }
+      if (current.outcome === "refused") {
+        current = { key: mint(), sig, outcome: "pending" };
+        return { key: current.key, needsConfirm: false };
+      }
+      if (current.outcome === "unknown") return { key: null, needsConfirm: true };
+      /* Still running, or it succeeded (the page is about to leave): keep the key, so the server answers in_flight
+         or replays instead of starting a second document. */
+      return { key: current.key, needsConfirm: false };
+    },
+    confirmNewKey(content) {
+      current = { key: mint(), sig: sigOf(content), outcome: "pending" };
+      return current.key;
+    },
+    settle(outcome) {
+      if (current) current.outcome = outcome;
+    },
+  };
+}
+
+/** One create form's content-bound key, living as long as the form's mount (see createContentBoundKey). */
+export function useContentBoundIdempotencyKey(): ContentBoundKey {
+  const ref = useRef<ContentBoundKey | null>(null);
+  if (!ref.current) ref.current = createContentBoundKey();
+  return ref.current;
 }

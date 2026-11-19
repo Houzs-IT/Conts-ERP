@@ -27,7 +27,7 @@
  * nothing asserted it before. */
 import { describe, it, expect } from 'vitest';
 import { Hono } from 'hono';
-import { idempotency } from '../src/middleware/idempotency';
+import { idempotency, STALE_CLAIM_MS } from '../src/middleware/idempotency';
 import { refuseWithoutWriting } from '../src/scm/lib/no-write-refusal';
 import { refuseZeroCostReceipt } from '../src/scm/lib/zero-cost-receipt-guard';
 import type { Env } from '../src/types';
@@ -40,6 +40,7 @@ type ClaimRow = {
   request_hash: string;
   status_code: number | null;
   response_body: string | null;
+  created_at: number;
 };
 
 /* Faithful to the five statements middleware/idempotency.ts actually issues,
@@ -89,6 +90,7 @@ function claimStore() {
                   request_hash: hash,
                   status_code: null,
                   response_body: null,
+                  created_at: Date.now(),
                 });
                 return { success: true };
               }
@@ -98,7 +100,17 @@ function claimStore() {
                 if (row && row.request_hash === hash) rows.splice(rows.indexOf(row), 1);
                 return { success: true };
               }
-              if (norm.startsWith('UPDATE idempotency_keys')) {
+              if (norm.startsWith('UPDATE idempotency_keys SET request_hash = ?, created_at = CURRENT_TIMESTAMP')) {
+                const [hash, userId, tenant, key, scope, cutoff] = args as [string, number, string, string, string, string];
+                const row = owner(userId, tenant, key, scope);
+                const stale = row && row.status_code == null && row.created_at < Date.parse(cutoff.replace(' ', 'T'));
+                if (stale) {
+                  row.request_hash = hash;
+                  row.created_at = Date.now();
+                }
+                return { success: true, meta: { changes: stale ? 1 : 0 } };
+              }
+              if (norm.startsWith('UPDATE idempotency_keys SET status_code')) {
                 const [status, body, userId, tenant, key, scope, hash] = args as
                   [number, string, number, string, string, string, string];
                 const row = owner(userId, tenant, key, scope);
@@ -264,5 +276,51 @@ describe('a refusal that proves it wrote nothing', () => {
     const refused = await send(app, store.env, { qty: 3 });
     expect(refused.headers.get('Idempotency-Outcome')).toBe('no-write');
     expect(store.rows).toEqual([]);
+  });
+});
+
+/* A reservation whose Worker died never gets a status. Production, 19 Nov 2026: an SO amendment save left one at
+   17:59 and every retry answered "already going through" until the daily sweep. */
+describe('a claim that never finished', () => {
+  it('still answers in_flight while it is young', async () => {
+    const store = claimStore();
+    store.rows.push({ key: KEY, scope: 'POST /write', user_id: 7, tenant_scope: 'company:1', request_hash: 'dead', status_code: null, response_body: null, created_at: Date.now() - 30_000 });
+    let documents = 0;
+    const app = appWith((c) => c.json({ grn: ++documents }, 201));
+
+    const res = await send(app, store.env, { qty: 3 });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'idempotency_in_flight' });
+    expect(documents).toBe(0);
+  });
+
+  it('is taken over once it is older than the stale window, and the new request then owns the key', async () => {
+    const store = claimStore();
+    store.rows.push({ key: KEY, scope: 'POST /write', user_id: 7, tenant_scope: 'company:1', request_hash: 'dead', status_code: null, response_body: null, created_at: Date.now() - STALE_CLAIM_MS - 60_000 });
+    let documents = 0;
+    const app = appWith((c) => c.json({ grn: ++documents }, 201));
+
+    const res = await send(app, store.env, { qty: 3 });
+    expect(res.status).toBe(201);
+    expect(documents).toBe(1);
+    expect(store.rows).toHaveLength(1);
+    expect(store.rows[0]!.status_code).toBe(201);
+
+    // ...and a double press after that replays instead of writing again.
+    const again = await send(app, store.env, { qty: 3 });
+    expect(again.headers.get('Idempotent-Replay')).toBe('true');
+    expect(documents).toBe(1);
+  });
+
+  it('never takes over a FINISHED claim, however old', async () => {
+    const store = claimStore();
+    store.rows.push({ key: KEY, scope: 'POST /write', user_id: 7, tenant_scope: 'company:1', request_hash: 'other', status_code: 201, response_body: '{}', created_at: Date.now() - STALE_CLAIM_MS * 10 });
+    let documents = 0;
+    const app = appWith((c) => c.json({ grn: ++documents }, 201));
+
+    const res = await send(app, store.env, { qty: 3 });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'idempotency_key_reused', completed_status: 201 });
+    expect(documents).toBe(0);
   });
 });

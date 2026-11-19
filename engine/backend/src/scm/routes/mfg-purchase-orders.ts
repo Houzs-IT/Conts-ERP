@@ -94,7 +94,7 @@ import { getSupabaseService } from '../../db/supabase';
 import { signSoItemPhotoUrl, soItemPhotoBindings } from '../lib/r2';
 import { baseKeyOf, thumbKeyFor } from '../../services/photoThumbs';
 import { proxyFallbackPayload, type PhotoUrlPayload } from '../lib/photoProxyFallback';
-import { markIdempotencyNoWrite } from '../../middleware/idempotency';
+import { refuseWithoutWriting } from '../lib/no-write-refusal';
 import { unknownProductCodeRefusal } from '../lib/validate-item-codes';
 import { supabaseAuth } from '../middleware/auth';
 import { recordEntityAudit, diffFields, compactChanges, fieldChange, statusChange } from '../lib/entity-audit';
@@ -535,6 +535,12 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
      all three of the filters that decide the answer running after it in JS, so
      the picker offered at most 500 of the company's 15,050 live SO lines
      (measured 2026-09-08, docs/bugs/0677) chosen by document number. */
+  /* The pooled MRP compute below needs nothing from these lines, and it is most of this request's time (measured on
+     production 19 Nov 2026: ~3 s quiet, ~24 s under load, against the browser's 30 s wait). Started here so it runs
+     while the lines, bindings and projects are read instead of after them. Settled into a value so an early return
+     cannot leave a rejected promise behind. */
+  const mrpRun = (async () => computeMrp(supabase, { catFilter: null, whFilter: null, includeUndated: true, companyId: activeCompanyId(c), leadBuffers: await loadLeadBuffers(c.env.DB) }))()
+    .then((res) => ({ ok: true as const, res }), (err: unknown) => ({ ok: false as const, err }));
   const { data: items, error } = await loadOutstandingSoLines(
     supabase,
     (q) => scopeToCompany(q, c),
@@ -557,21 +563,18 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
   };
 
   /* Client, 19 Nov 2026: the picker names each line's project (scm.mfg_sales_orders.project_id -> public.projects),
-     not only its customer, so the buyer knows which project a PO is for. */
+     not only its customer, so the buyer knows which project a PO is for. The name is a label: a failed read leaves
+     the column blank rather than failing the whole picker. Read alongside the main-supplier bindings, not after. */
   const projectIds = [...new Set(((items ?? []) as unknown as Row[]).map((r) => r.so.project_id).filter((id): id is number => id != null))];
   const projectById = new Map<number, { code: string | null; name: string | null }>();
-  if (projectIds.length > 0) {
-    const companyId = activeCompanyId(c);
-    const { data: projects, error: projectError } = await chunkIn<{ id: number; code: string | null; name: string | null }, number>(
-      projectIds,
-      (batch, from, to) => {
-        const query = supabase.schema('public').from('projects').select('id, code, name').in('id', batch);
-        return (companyId == null ? query : query.eq('company_id', companyId)).order('id').range(from, to);
-      },
-    );
-    if (projectError) return c.json({ error: 'load_failed', reason: projectError.message }, 500);
-    for (const project of projects) projectById.set(Number(project.id), { code: project.code, name: project.name });
-  }
+  const companyId = activeCompanyId(c);
+  const projectsRead = projectIds.length === 0 ? Promise.resolve(null) : chunkIn<{ id: number; code: string | null; name: string | null }, number>(
+    projectIds,
+    (batch, from, to) => {
+      const query = supabase.schema('public').from('projects').select('id, code, name').in('id', batch);
+      return (companyId == null ? query : query.eq('company_id', companyId)).order('id').range(from, to);
+    },
+  );
 
   /* Commander 2026-05-28 — resolve each SKU's MAIN supplier so the PO-from-SO
      grid can show it (and the user sees which lines are even convertible — an
@@ -579,19 +582,23 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
      prefer is_main_supplier, else first binding. */
   const skuCodes = [...new Set(((items ?? []) as unknown as Row[]).map((r) => r.item_code).filter(Boolean))] as string[];
   const mainSupplierByCode = new Map<string, { code: string; name: string }>();
-  if (skuCodes.length > 0) {
-    /* CHUNKED + PAGED — lib/supplier-bindings.ts. Un-chunked over every code in the
-       picker, a binding past the 1,000-row cap showed "— none —" for a bound SKU. */
-    type PickerBind = { item_code: string; supplier: { code: string; name: string } | Array<{ code: string; name: string }> | null };
-    const { data: binds } = await readMfgProductBindings<PickerBind>(supabase, {
-      codes: skuCodes, companyId: activeCompanyId(c),
-      select: 'item_code, is_main_supplier, supplier:suppliers(code, name)',
-    });
-    for (const b of binds) {
-      if (mainSupplierByCode.has(b.item_code)) continue;
-      const s = Array.isArray(b.supplier) ? b.supplier[0] : b.supplier;
-      if (s) mainSupplierByCode.set(b.item_code, { code: s.code, name: s.name });
-    }
+  /* CHUNKED + PAGED — lib/supplier-bindings.ts. Un-chunked over every code in the
+     picker, a binding past the 1,000-row cap showed "— none —" for a bound SKU. */
+  type PickerBind = { item_code: string; supplier: { code: string; name: string } | Array<{ code: string; name: string }> | null };
+  const bindsRead = skuCodes.length === 0 ? Promise.resolve(null) : readMfgProductBindings<PickerBind>(supabase, {
+    codes: skuCodes, companyId,
+    select: 'item_code, is_main_supplier, supplier:suppliers(code, name)',
+  });
+  const [projectsRes, bindsRes] = await Promise.all([projectsRead, bindsRead]);
+  if (projectsRes?.error) {
+    // eslint-disable-next-line no-console
+    console.error('[outstanding-so-items] project names not read; the Project column stays blank', projectsRes.error.message);
+  }
+  for (const project of projectsRes?.data ?? []) projectById.set(Number(project.id), { code: project.code, name: project.name });
+  for (const b of bindsRes?.data ?? []) {
+    if (mainSupplierByCode.has(b.item_code)) continue;
+    const s = Array.isArray(b.supplier) ? b.supplier[0] : b.supplier;
+    if (s) mainSupplierByCode.set(b.item_code, { code: s.code, name: s.name });
   }
 
   /* Commander 2026-05-31 — the picker is now a STOCK-AWARE shortage view, the
@@ -607,16 +614,16 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
      back to the per-line picked cap so the picker still works (degraded). */
   const shortageBySoItem = new Map<string, number>();
   let pooledOk = true;
-  try {
-    const mrpRes = await computeMrp(supabase, { catFilter: null, whFilter: null, includeUndated: true, companyId: activeCompanyId(c), leadBuffers: await loadLeadBuffers(c.env.DB) });
-    for (const sku of mrpRes.skus) {
+  const mrpOutcome = await mrpRun;
+  if (mrpOutcome.ok) {
+    for (const sku of mrpOutcome.res.skus) {
       for (const l of sku.lines) shortageBySoItem.set(l.soItemId, l.shortageQty);
     }
-    for (const s of mrpRes.sofaSets) shortageBySoItem.set(s.soItemId, s.shortageQty);
-  } catch (e) {
+    for (const s of mrpOutcome.res.sofaSets) shortageBySoItem.set(s.soItemId, s.shortageQty);
+  } else {
     pooledOk = false;
     // eslint-disable-next-line no-console
-    console.error('[outstanding-so-items] pooled shortage compute failed; falling back to picked cap', e);
+    console.error('[outstanding-so-items] pooled shortage compute failed; falling back to picked cap', mrpOutcome.err);
   }
 
   /* A line the plan does not list is judged by what is really on a PO. po_qty_picked is not kept by every way a PO is
@@ -1092,11 +1099,11 @@ mfgPurchaseOrders.get('/:id/revisions', async (c) => {
 export const createMfgPurchaseOrderHandler = async (c: any) => {
   let body: Record<string, unknown>;
   try { body = (await c.req.json()) as Record<string, unknown>; } catch {
-    return c.json({ error: 'invalid_json' }, 400);
+    return refuseWithoutWriting(c, { error: 'invalid_json' }, 400);
   }
 
   const supplierId = body.supplierId as string | undefined;
-  if (!supplierId) return c.json({ error: 'supplier_id_required' }, 400);
+  if (!supplierId) return refuseWithoutWriting(c, { error: 'supplier_id_required' }, 400);
 
   // Owner 2026-08-20 ("越松越好"): Expected Delivery must NOT block opening a PO —
   // a blank defaults to today (like po_date) instead of a 400; it still fans out
@@ -1104,7 +1111,7 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
   // per-line warehouse = stock location, an integrity field).
   const expectedAt = dateOrNull(body.expectedAt) ?? todayMyt();
   const purchaseLocationId = body.purchaseLocationId as string | undefined;
-  if (!purchaseLocationId) return c.json({ error: 'purchase_location_id_required' }, 400);
+  if (!purchaseLocationId) return refuseWithoutWriting(c, { error: 'purchase_location_id_required' }, 400);
 
   /* Migration 0180 — supplier-revised header dates (all optional, default NULL).
      These fan out to each line below the same way expected_at fans to
@@ -1128,7 +1135,7 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
   const confirmOverConvert = body.confirmOverConvert === true;
 
   const currency = ((body.currency as string) ?? 'MYR').toUpperCase();
-  if (!VALID_CURRENCIES.has(currency)) return c.json({ error: 'invalid_currency' }, 400);
+  if (!VALID_CURRENCIES.has(currency)) return refuseWithoutWriting(c, { error: 'invalid_currency' }, 400);
 
   // Generate human-readable PO number. Format: PO-YYMM-NNN (counts within month).
   const supabase = c.get('supabase');
@@ -1141,7 +1148,7 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
      manual lines (no soItemId) skip this — a PO can be raised with no SO link,
      unchanged. Mirror of the DO create-gate. */
   const groupOf = await skuCategoryResolver(supabase, items, activeCompanyId(c) ?? null); // SKU wins — lib/sku-category.ts
-  { const inactive = await poInactivePickRefusal(supabase, activeCompanyId(c) ?? null, items); if (inactive) return c.json(inactive, 409); }
+  { const inactive = await poInactivePickRefusal(supabase, activeCompanyId(c) ?? null, items); if (inactive) return refuseWithoutWriting(c, inactive, 409); }
   {
     const lineSoItemIds = items
       .map((it) => it.soItemId as string | undefined)
@@ -1154,17 +1161,17 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
       const boundOrdered = await loadBoundOrderedQty(supabase, activeCompanyId(c) ?? null, lineSoSources, unitBound);
       const soRows = ((lineSoRows ?? []) as Array<SoSourceLine & { item_group: string | null }>).map((r) => ({ ...r, po_qty_picked: boundAwarePicked(r, boundOrdered) }));
       const foreignSoItemId = lineSoItemIds.find((id) => !new Set(soRows.map((r) => r.id)).has(id));
-      if (foreignSoItemId) return c.json({ error: 'so_line_not_found', reason: 'That Sales Order line does not exist on this company.', soItemId: foreignSoItemId }, 404);
+      if (foreignSoItemId) return refuseWithoutWriting(c, { error: 'so_line_not_found', reason: 'That Sales Order line does not exist on this company.', soItemId: foreignSoItemId }, 404);
       // ... and the IDENTITY half of soLinkTargetRefusal, which this path was missing (lib/so-link-item-identity.ts, docs/bugs/0672).
       const badSoLink = soLinkItemMismatch(items, soRows);
-      if (badSoLink) return c.json(badSoLink, 409);
+      if (badSoLink) return refuseWithoutWriting(c, badSoLink, 409);
       const badCategory = firstSoLinkCategoryMismatch(items, soRows, groupOf);
-      if (badCategory) return c.json(badCategory, 409);
+      if (badCategory) return refuseWithoutWriting(c, badCategory, 409);
       const offender = await firstUnorderableSo(
         supabase,
         soRows.map((r) => r.doc_no),
       );
-      if (offender) return c.json(soNotOrderableResponse(offender), 409);
+      if (offender) return refuseWithoutWriting(c, soNotOrderableResponse(offender), 409);
 
       /* Remaining-qty cap — parity with the /from-sos guard (convertSosToPosCore,
          the `if (!fromMrp && p.qty > remaining)` check). The desktop "create new
@@ -1181,8 +1188,7 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
       if (!confirmOverConvert) {
         const offender = findOverConvertOffender(items, soRows);
         if (offender) {
-          markIdempotencyNoWrite(c);
-          return c.json({ error: 'qty_exceeds_remaining', ...offender }, 409);
+          return refuseWithoutWriting(c, { error: 'qty_exceeds_remaining', ...offender }, 409);
         }
       }
     }
@@ -1195,13 +1201,7 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
 
   // Conts C6: every product line's code must be in Products.
   const unknownCodes = await unknownProductCodeRefusal(supabase, items.map((it) => ({ code: it.itemCode, kind: it.materialKind })), activeCompanyId(c));
-  if (unknownCodes) { markIdempotencyNoWrite(c); return c.json(unknownCodes, 409); }
-
-  // PO# generation: max(suffix)+1 over the month's POs (see lib/doc-no.ts).
-  // NOT count+1 — count+1 is non-self-healing (a mid-month delete leaves a gap
-  // and re-mints a surviving number, jamming the NOT NULL UNIQUE po_number).
-  const p = companyDocPrefix(c);
-  let poNumber = await mintMonthlyDocNo(supabase, 'purchase_orders', 'po_number', `${p}PO-${yymm}`);
+  if (unknownCodes) return refuseWithoutWriting(c, unknownCodes, 409);
 
   // Compute totals
   let subtotal = 0;
@@ -1225,9 +1225,17 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
     });
     if (!parsed.ok) {
       const b = invalidLineNumberBody(parsed.invalid);
-      return c.json({ ...b, reason: `Line ${i + 1}: ${b.reason}` }, 400);
+      return refuseWithoutWriting(c, { ...b, reason: `Line ${i + 1}: ${b.reason}` }, 400);
     }
   }
+  /* Minted after every refusal above: claiming a number is this handler's first write, and a refusal before it
+     releases the request key (refuseWithoutWriting) so the corrected form can be saved again. */
+  // PO# generation: max(suffix)+1 over the month's POs (see lib/doc-no.ts).
+  // NOT count+1 — count+1 is non-self-healing (a mid-month delete leaves a gap
+  // and re-mints a surviving number, jamming the NOT NULL UNIQUE po_number).
+  const p = companyDocPrefix(c);
+  let poNumber = await mintMonthlyDocNo(supabase, 'purchase_orders', 'po_number', `${p}PO-${yymm}`);
+
   const itemRows = items.map((it) => {
     const kind = it.materialKind as string;
     if (!VALID_KINDS.has(kind)) throw new Error(`invalid material_kind: ${kind}`);
@@ -1339,8 +1347,9 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
        SERVICE-ROLE client, which bypasses RLS. No scm function RAISEs 42501
        either. Do NOT read this as a permission check or as scoping: the only
        boundary is this route's own predicate. */
-    if (hErr.code === '42501') return c.json({ error: 'forbidden', reason: hErr.message }, 403);
-    return c.json({ error: 'insert_failed', reason: hErr.message }, 500);
+    if (hErr.code === '42501') return refuseWithoutWriting(c, { error: 'forbidden', reason: hErr.message }, 403);
+    // The header insert that errored wrote no row; earlier attempts only claimed doc numbers. Nothing to replay.
+    return refuseWithoutWriting(c, { error: 'insert_failed', reason: hErr.message }, 500);
   }
 
   // Cast through `unknown` — Supabase JS without generated types returns
@@ -1373,9 +1382,19 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
     })), 1);
     const { error: iErr } = await supabase.from('purchase_order_items').insert(stampCompany(itemsToInsert, c));
     if (iErr) {
-      // Best-effort rollback of header so we don't leak a no-items PO.
-      await supabase.from('purchase_orders').delete().eq('id', header.id);
-      return c.json({ error: 'items_insert_failed', reason: iErr.message }, 500);
+      /* Roll the header back so no empty PO is left. An in-house PO made its production order when the header landed,
+         and that order holds the PO in place, so it goes first (same as /from-sos). */
+      await supabase.from('production_orders').delete().eq('source_po_id', header.id);
+      const { data: undone, error: undoErr } = await supabase.from('purchase_orders').delete().eq('id', header.id).select('id');
+      const rolledBack = !undoErr && Array.isArray(undone) && undone.length === 1;
+      /* A refused line (a renovation PO mixing categories is a database check) is the operator's to fix. When the header
+         is proven gone, nothing of this request is left, so the request key is released and the corrected form saves
+         (owner, 19 Nov 2026: a refused save followed by an edit answered "an earlier submission ... already finished"). */
+      const body = { error: 'items_insert_failed', reason: iErr.message };
+      const refusedByCheck = iErr.code === '23514' || iErr.code === 'P0001';
+      if (rolledBack && refusedByCheck) return refuseWithoutWriting(c, body, 409);
+      if (rolledBack) return refuseWithoutWriting(c, body, 500);
+      return c.json(body, 500);
     }
   }
 
