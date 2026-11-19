@@ -63,7 +63,7 @@ function UnitsTable({ rows, month }: { rows: YgrrRow[]; month: string }): ReactE
             return (
               <tr key={row.unitId} className="[border-top:1px_solid_var(--color-line)]">
                 <td className="sticky left-0 bg-card px-3 py-1.5">
-                  <span className="block whitespace-nowrap font-semibold leading-tight" title={unitName(row)}>{row.number}</span>
+                  <span className="block whitespace-nowrap font-semibold leading-tight" title={unitName(row)}>{row.code}</span>
                   <span className="block text-meta text-muted-ink truncate max-w-[200px] leading-tight" title={row.owner}>{buildingName(row.building)} · {personName(row.owner)}</span>
                 </td>
                 <td className={cx('px-3 py-1.5 whitespace-nowrap', GRID)}>
@@ -122,7 +122,7 @@ function MonthGrid({ rows, months }: { rows: YgrrRow[]; months: string[] }): Rea
             return (
               <tr key={row.unitId} className="[border-top:1px_solid_var(--color-line)]">
                 <td className="sticky left-0 bg-card px-3 py-1.5 whitespace-nowrap" title={unitName(row)}>
-                  <span className="block font-semibold leading-tight">{row.number}</span>
+                  <span className="block font-semibold leading-tight">{row.code}</span>
                   <span className="block text-meta text-muted-ink leading-tight">{buildingName(row.building)}</span>
                 </td>
                 <td className={cx(CELL, GRID)}><Money sen={standing.guaranteedPerMonth} /></td>
@@ -151,7 +151,7 @@ export default function YgrrReportPage(): ReactElement {
   const { data, loading, error, reload } = useApi<YgrrPayload>(`/finance/ygrr-report?month=${month}`);
 
   const rows = useMemo(() => (data?.rows ?? []).filter(row => (!building || row.building === building)
-    && (!search || `${row.building} ${row.number} ${row.owner}`.toLowerCase().includes(search))), [data, building, search]);
+    && (!search || `${row.code} ${row.building} ${row.number} ${row.owner}`.toLowerCase().includes(search))), [data, building, search]);
   const buildings = useMemo(() => [...new Set((data?.rows ?? []).map(row => row.building))].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
     .map(name => ({ value: name, label: buildingName(name) })), [data]);
   const behindCount = rows.filter(row => standingOf(row).aheadBy < 0).length;
@@ -164,7 +164,7 @@ export default function YgrrReportPage(): ReactElement {
     ];
     const cells = rows.map(row => {
       const standing = standingOf(row);
-      return [row.building, row.number, row.owner, `${row.ownerPct}%`, row.yearFrom, row.yearTo, row.due, standing.sharesSoFar,
+      return [row.building, row.code, row.owner, `${row.ownerPct}%`, row.yearFrom, row.yearTo, row.due, standing.sharesSoFar,
         standing.paceDue, standing.aheadBy, standing.shortOfYear, row.topUp];
     });
     downloadTable('xlsx', `ygrr-report-${month}`, `YGRR ${month}`, columns, cells);
@@ -172,7 +172,7 @@ export default function YgrrReportPage(): ReactElement {
 
   return (
     <>
-      <PageHeader title="Unit report" sub="YGRR: Package D (PS YGRR)"
+      <PageHeader title="Unit report" sub="Package D (PS YGRR): profit sharing with a yearly guarantee. Each unit's shares so far against its guarantee for the contract year."
         right={<Button size="sm" variant="secondary" icon={<Icon name="Download" size="sm" />} onClick={exportExcel} disabled={!rows.length}>Export</Button>} />
       <div className="flex flex-col gap-4">
         <ListToolbar
