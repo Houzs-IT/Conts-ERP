@@ -3,17 +3,30 @@
 
 import { fetchPrintBundle } from "../../lib/printDocumentPdf";
 import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
+import type { SoPdfBrand, SoPdfContract } from "../../vendor/scm/lib/sales-order-pdf";
 import type { SoPrintRooms } from "../../vendor/scm/lib/so-print-rooms";
 import { renoGet, type BrandProfile, type ContractView } from "../../lib/renovation/api";
 import { soInfoApi } from "../projects/renovation/customerPropertyApi";
 import { projectDatesText } from "../projects/renovation/customerPropertyModel";
 
+function soPdfBrand(brand: BrandProfile): SoPdfBrand {
+  return { brandName: brand.name, logoKey: brand.logoR2Key, letterhead: [...brand.companyLines, brand.contactLine].filter(Boolean) };
+}
+
 /** A renovation contract's brand block and instalments, as the SO PDF prints them. */
-export function soPdfContract(contract: ContractView | undefined, brand: BrandProfile | undefined) {
+export function soPdfContract(contract: ContractView | undefined, brand: BrandProfile | undefined): SoPdfContract | undefined {
   return contract && brand ? {
-    brandName: brand.name, logoKey: brand.logoR2Key, letterhead: [...brand.companyLines, brand.contactLine].filter(Boolean), bankLine: brand.bankLine, termsLines: brand.termsLines,
+    ...soPdfBrand(brand), bankLine: brand.bankLine, termsLines: brand.termsLines,
     instalments: contract.instalments.map((i) => ({ label: i.label, percent: `${i.pctBp / 100}%`, description: i.description })),
   } : undefined;
+}
+
+/** The brand picked on the order, saved as its branding (owner, 19 Nov 2026: a Dream Crafter SO printed The Conts).
+    Only a brand with a letterhead profile changes the letterhead. */
+export function pickedSoBrand(brands: readonly BrandProfile[] | undefined, branding: string | null | undefined): SoPdfBrand | undefined {
+  const name = branding?.trim().toLowerCase();
+  const brand = name ? brands?.find((b) => b.hasProfile && b.name.trim().toLowerCase() === name) : undefined;
+  return brand ? soPdfBrand(brand) : undefined;
 }
 
 /* The PDF's standard font has no em dash. */
@@ -31,18 +44,16 @@ export interface SoPdfLayout {
 }
 
 export async function downloadSoPdf(docNo: string, renovation: boolean | null, action: PdfAction = "save", layout?: SoPdfLayout): Promise<void> {
-  const [bundle, info, { generateSalesOrderPdf }] = await Promise.all([
+  const [bundle, info, { brands }, { generateSalesOrderPdf }] = await Promise.all([
     fetchPrintBundle({ doc: "so", docNo, key: docNo }),
     soInfoApi.so(docNo),
+    renoGet<{ brands: BrandProfile[] }>("/brands"),
     import("../../vendor/scm/lib/sales-order-pdf"),
   ]);
   const dates = projectDatesText(info.project, "so");
-  let contract: ReturnType<typeof soPdfContract>;
+  let contract: SoPdfContract | undefined;
   if (renovation ?? (bundle.header as { so_kind?: string | null }).so_kind === "RENOVATION") {
-    const [view, { brands }] = await Promise.all([
-      renoGet<ContractView>(`/sales-orders/${encodeURIComponent(docNo)}`),
-      renoGet<{ brands: BrandProfile[] }>("/brands"),
-    ]);
+    const view = await renoGet<ContractView>(`/sales-orders/${encodeURIComponent(docNo)}`);
     contract = soPdfContract(view, brands.find((b) => b.brandId === view.header.brandId));
   }
   const rank = new Map((layout?.itemOrder ?? []).map((id, i) => [id, i]));
@@ -55,6 +66,7 @@ export async function downloadSoPdf(docNo: string, renovation: boolean | null, a
     ...(layout?.timetable ? { docTitle: "TIMETABLE" } : {}),
     projectDates: { start: pdfText(dates.start), end: pdfText(dates.end) },
     contract,
+    brand: pickedSoBrand(brands, (bundle.header as { branding?: string | null }).branding),
   });
 }
 
