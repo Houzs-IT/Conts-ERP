@@ -147,6 +147,12 @@ export interface LinkableSo { doc_no: string; so_date: string | null; debtor_nam
 
 const R = "/api/renovation";
 
+/** A work of the list in Project Maintenance (backend services/renovation/workTypes.ts). */
+export interface WorkTypeRow {
+  id: number; code: string; label: string; rule: "booking" | "measure" | "approve_3d" | "approve_2d" | "payment_2";
+  bookable: boolean; inDesign: boolean; sortOrder: number; active: boolean; system: boolean;
+}
+
 export const simpleApi = {
   boardRows: (archived = false) => api.get<{ data: BoardRowV2[] }>(`${R}/board-rows${archived ? "?archived=1" : ""}`),
   detail: (id: number) => api.get<ProjectDetailV2>(`${R}/${id}`),
@@ -173,6 +179,10 @@ export const simpleApi = {
   /** Only while nothing is made on the project; otherwise the answer says what is there (chew, 10 Nov 2026). */
   /** The works start date; the answer says how many sales order lines it dated from the package template SLA. */
   startProject: (id: number, date: string) => api.post<{ ok: true; startedOn: string; dated: number }>(`${R}/${id}/start`, { date }),
+  workTypes: () => api.get<{ data: WorkTypeRow[] }>(`${R}/work-types`),
+  createWorkType: (b: { label: string; bookable: boolean; inDesign: boolean }) => api.post<{ ok: true; id: number | null; code: string }>(`${R}/work-types`, b),
+  patchWorkType: (code: string, b: Partial<Pick<WorkTypeRow, "label" | "bookable" | "inDesign" | "sortOrder" | "active">>) => api.patch<{ ok: true }>(`${R}/work-types/${encodeURIComponent(code)}`, b),
+  deleteWorkType: (code: string) => api.del<{ ok: true; archived: boolean; entries?: number }>(`${R}/work-types/${encodeURIComponent(code)}`),
   deleteProject: (id: number) => api.del<{ ok: true; code: string | null; name: string }>(`${R}/${id}`),
   crewAssignments: () => api.get<{ data: CrewAssignment[] }>(`${R}/crew-assignments`),
   patchFlowStep: (key: FlowStepKey, b: Partial<{ label: string; sortOrder: number; active: boolean }>) => api.patch<{ ok: true }>(`${R}/flow-steps/${key}`, b),

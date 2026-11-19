@@ -5,12 +5,13 @@
 
 import { fmtDayMonth } from "../../vendor/shared/format";
 import type {
-  BetaBoard, BetaBoardAppointment, BetaBoardProject, BetaBoardRef, BoardRange, DesignKind,
+  BetaBoard, BetaBoardAppointment, BetaBoardProject, BetaBoardRef, BoardRange, DesignKind, BetaWorkType,
 } from "./renovationBetaBoardApi";
 
 export type Kind = "3" | "2";
 export type ApptKey = "msr" | "cm" | "sb";
-export type StepKey = "msr" | Kind | "cm" | "sb" | "po";
+/** A Design step: the code of a work of the list in Project Maintenance, or "variants" (checked by the system). */
+export type StepKey = string;
 export type Letter = "A" | "B" | "C" | "D" | "E";
 /** The person whose work is shown: one person's id, or the whole team. */
 export type Viewing = number | "All";
@@ -64,6 +65,12 @@ export interface DesignProject {
   appts: Partial<Record<ApptKey, Appt>>;
   /** Null when the person may not see money (the Payment column is then left out). */
   payment: string | null;
+  /** Instalments fully received; null when finance is hidden or there is no contract. */
+  paid: number | null;
+  /** The newest booking of each work of the list, by its code. */
+  works: Record<string, { d: string; t: string; done: boolean }>;
+  /** Sales order lines and how many still miss a required variant. */
+  variants: { lines: number; missing: number };
   /** Money still owed on the sales order; null when there is none or money is hidden. */
   outstandingSen: number | null;
 }
@@ -96,6 +103,8 @@ export interface BoardModel {
   projects: DesignProject[];
   byId: ReadonlyMap<number, DesignProject>;
   events: CalEvent[];
+  /** The works of the list in Project Maintenance, in order (the old fixed list on an older server). */
+  workTypes: BetaWorkType[];
 }
 
 const MON = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] as const;
@@ -162,8 +171,22 @@ export const EVENT_TYPES = [
   ["meeting", "Internal meeting"], ["w3d", "3D"], ["w2d", "2D"], ["amend", "Amendment"], ["po", "PO / C.PO"],
 ] as const;
 export type EventTypeKey = (typeof EVENT_TYPES)[number][0];
-const TYPE_LABEL: Readonly<Record<string, string>> = Object.fromEntries(EVENT_TYPES);
+const TYPE_LABEL: Record<string, string> = Object.fromEntries(EVENT_TYPES);
 export const typeLabel = (type: string): string => TYPE_LABEL[type] ?? type;
+/** The old fixed list, for a server without migration 0342. */
+export const LEGACY_WORK_TYPES: BetaWorkType[] = [
+  ["measure", "Site measure", "measure", true, 10, true], ["w3d", "3D", "approve_3d", true, 20, true], ["w2d", "2D", "approve_2d", true, 30, true],
+  ["payment_2", "Second payment", "payment_2", true, 40, true], ["carpentry", "Carpentry measure", "booking", true, 50, true], ["briefing", "Site briefing", "booking", true, 60, true],
+  ["update", "Drawing update", "booking", false, 110, false], ["client", "Client meeting", "booking", false, 120, false], ["meeting", "Internal meeting", "booking", false, 130, false],
+  ["amend", "Amendment", "booking", false, 140, false], ["po", "PO / C.PO", "booking", false, 150, false],
+].map(([code, label, rule, inDesign, sortOrder, system], i) => ({
+  id: -(i + 1), code, label, rule, bookable: code !== "payment_2", inDesign, sortOrder, active: true, system,
+}) as BetaWorkType);
+/** The list's names become the calendar's names for each type. */
+function rememberWorkTypes(list: BetaWorkType[]): BetaWorkType[] {
+  for (const w of list) TYPE_LABEL[w.code] = w.label;
+  return list;
+}
 const GROUP: Readonly<Record<string, EventGroup>> = {
   update: "upd", client: "meet", measure: "meet", briefing: "meet", meeting: "meet", w3d: "work", w2d: "work", amend: "work", po: "work",
 };
@@ -265,6 +288,9 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
       po: p.poDoneOn,
       appts,
       payment: paymentText(p),
+      paid: p.payment.state === "ok" ? p.payment.paid ?? null : null,
+      works: Object.fromEntries((p.works ?? []).map((w) => [w.type, { d: w.onDate, t: w.atTime?.slice(0, 5) ?? "", done: !!w.done }])),
+      variants: p.variants ?? { lines: 0, missing: 0 },
       outstandingSen: p.payment.state === "ok" ? p.payment.outstandingSen ?? null : null,
     };
   });
@@ -292,6 +318,7 @@ export function buildModel(board: BetaBoard): BoardModel {
     projects,
     byId,
     events,
+    workTypes: rememberWorkTypes(board.workTypes?.length ? board.workTypes : LEGACY_WORK_TYPES),
   };
 }
 
@@ -346,15 +373,31 @@ export function apptWithDefault(p: DesignProject, key: ApptKey): string {
   return key === "msr" ? "Client" : key === "cm" ? "Carpenter" : p.site?.name ?? "Site PIC";
 }
 
-export const STEPS: ReadonlyArray<readonly [StepKey, string]> = [
-  ["msr", "Measure"], ["3", "3D"], ["2", "2D"], ["cm", "Carpentry"], ["sb", "Site PIC"], ["po", "PO"],
-];
+/** The Design steps (owner, 19 Nov 2026): the works marked in Design in Project Maintenance, in order, then Variants,
+    which the system checks. Short labels for the step row. */
+const SHORT: Readonly<Record<string, string>> = { measure: "Measure", carpentry: "Carpentry", briefing: "Site PIC", payment_2: "2nd payment" };
+export function designSteps(m: Pick<BoardModel, "workTypes">): Array<readonly [StepKey, string]> {
+  const works = m.workTypes.filter((w) => w.inDesign && w.active).sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+  return [...works.map((w) => [w.code, SHORT[w.code] ?? w.label] as const), ["variants", "Variants"] as const];
+}
 
+/** Whether a Design step is done (owner, 19 Nov 2026): Site measure, Carpentry measure, Site briefing and every
+    booked work once their booked day has passed (a recorded measure counts too); 3D and 2D on Record approval; Second
+    payment once the second instalment is received; Variants when every sales order line has its variants. */
 export function stepDone(m: BoardModel, p: DesignProject, k: StepKey): boolean {
-  if (k === "msr") return measured(m, p);
-  if (k === "3" || k === "2") return p.design[k].ok;
-  if (k === "po") return !!p.po;
-  return adone(m, p.appts[k]);
+  switch (k) {
+    case "measure": return measured(m, p) || adone(m, p.appts.msr);
+    case "w3d": return p.design["3"].ok;
+    case "w2d": return p.design["2"].ok;
+    case "payment_2": return (p.paid ?? 0) >= 2;
+    case "carpentry": return adone(m, p.appts.cm);
+    case "briefing": return adone(m, p.appts.sb);
+    case "variants": return p.variants.lines > 0 && p.variants.missing === 0;
+    default: {
+      const w = p.works[k];
+      return !!w && (w.done || w.d < m.today);
+    }
+  }
 }
 
 export function status(m: BoardModel, p: DesignProject): readonly [Letter, string] {
@@ -364,9 +407,15 @@ export function status(m: BoardModel, p: DesignProject): readonly [Letter, strin
   if (g3.st !== "ok") return ["B", g3.st === "none" ? "Pending 3D design" : g3.st === "wait" ? "3D sent · waiting client" : g3.r.n ? "3D amendment" : "3D in progress"];
   const g2 = stage(m, p, "2");
   if (g2.st !== "ok") return ["C", g2.st === "none" ? "Pending 2D" : g2.st === "wait" ? "2D sent · waiting client" : g2.r.n ? "2D amendment" : "2D in progress"];
-  if (!adone(m, p.appts.cm)) return ["D", p.appts.cm?.d ? "Carpentry measure booked" : "Pending carpentry measure"];
-  if (!adone(m, p.appts.sb)) return ["D", p.appts.sb?.d ? "Site briefing booked" : "Pending site briefing"];
-  if (!p.po) return ["D", "Pending PO"];
+  // After 2D, the first Design step of the list still open (owner, 19 Nov 2026: Design work in Project Maintenance).
+  const rest = designSteps(m).filter(([k]) => k !== "measure" && k !== "w3d" && k !== "w2d");
+  const open = rest.find(([k]) => !stepDone(m, p, k));
+  if (open) {
+    const [k, label] = open;
+    const booked = k === "carpentry" ? p.appts.cm?.d : k === "briefing" ? p.appts.sb?.d : p.works[k]?.d;
+    const name = m.workTypes.find((w) => w.code === k)?.label ?? label;
+    return ["D", booked ? `${name} booked` : `Pending ${name.toLowerCase()}`];
+  }
   return ["E", "Done all design"];
 }
 
@@ -608,7 +657,7 @@ export function progressByPerson(m: BoardModel): Array<{ person: PersonRef | nul
 
 /** The index of the step the project is on now, or 99 when every step is done. */
 export function currentStep(m: BoardModel, p: DesignProject): number {
-  const i = STEPS.findIndex(([k]) => !stepDone(m, p, k));
+  const i = designSteps(m).findIndex(([k]) => !stepDone(m, p, k));
   return i < 0 ? 99 : i;
 }
 

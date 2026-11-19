@@ -5,17 +5,15 @@
 import { useState, type ReactElement } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PlayCircle } from "lucide-react";
-import { useToast } from "../../hooks/useToast";
 import { errorText } from "../projects/renovation/renovationModel";
 import { simpleApi } from "../projects/renovation/simpleApi";
 import { btnStyle, WS } from "./BetaWsUi";
 import { invalidateBeta } from "./renovationBetaBoardApi";
 import { dayMonthYear } from "./renovationBetaModel";
 
-export function StartProjectButton({ projectId, startedOn, today, onError }: {
-  projectId: number; startedOn: string | null; today: string; onError: (text: string) => void;
+export function StartProjectButton({ projectId, startedOn, today, onDone, onError }: {
+  projectId: number; startedOn: string | null; today: string; onDone: (text: string) => void; onError: (text: string) => void;
 }): ReactElement {
-  const toast = useToast();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState(startedOn ?? today);
@@ -25,7 +23,7 @@ export function StartProjectButton({ projectId, startedOn, today, onError }: {
     setBusy(true);
     try {
       const r = await simpleApi.startProject(projectId, date);
-      toast.success(r.dated
+      onDone(r.dated
         ? `Works start ${dayMonthYear(date)}. ${r.dated} sales order line${r.dated === 1 ? "" : "s"} dated from the template SLA.`
         : `Works start ${dayMonthYear(date)}. No sales order line has template SLA days yet.`);
       setOpen(false);
