@@ -161,13 +161,13 @@ export function personInfo(p: Pick<BoardPerson, "position" | "department"> | und
 export const SOP_LABEL = (m: Pick<BoardModel, "sop">): string => `Deadlines follow the ID SOP: 3D in ${m.sop["3"]} days, 2D in ${m.sop["2"]} days`;
 
 export const APPT_KEYS: readonly ApptKey[] = ["msr", "cm", "sb"];
-export const APPT_LABEL: Readonly<Record<ApptKey, string>> = { msr: "Site measurement", cm: "Carpentry measure", sb: "Site briefing" };
+export const APPT_LABEL: Readonly<Record<ApptKey, string>> = { msr: "Site measure", cm: "Carpentry measure", sb: "Site briefing" };
 export const APPT_TYPE: Readonly<Record<ApptKey, string>> = { msr: "measure", cm: "measure", sb: "briefing" };
 const APPT_KIND: Readonly<Record<ApptKey, BetaBoardAppointment["kind"]>> = { msr: "site_measure", cm: "carpentry_measure", sb: "site_briefing" };
 export const apptKindOf = (key: ApptKey): BetaBoardAppointment["kind"] => APPT_KIND[key];
 
 export const EVENT_TYPES = [
-  ["update", "Drawing update"], ["client", "Client meeting"], ["measure", "Site measurement"], ["briefing", "Site briefing"],
+  ["update", "Drawing update"], ["client", "Client meeting"], ["measure", "Site measure"], ["briefing", "Site briefing"],
   ["meeting", "Internal meeting"], ["w3d", "3D"], ["w2d", "2D"], ["amend", "Amendment"], ["po", "PO / C.PO"],
 ] as const;
 export type EventTypeKey = (typeof EVENT_TYPES)[number][0];
