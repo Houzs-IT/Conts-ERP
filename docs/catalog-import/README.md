@@ -147,3 +147,26 @@ height, so it takes the flat cost (sofa: P2 at the smallest quoted seat height);
 offers a bedframe / sofa / mattress cost as a selling price. HOOKKA's surcharges are HOOKKA's supplier price book
 (maintenance scope `supplier:<HOOKKA id>`); the master maintenance is unchanged. A renovation contract raises no PO for a
 Customer item (`renovation-po-split.ts` isCustomerSupplied).
+
+## Hin Lim SKUs from the Houzs Century CRM product list, 19 Nov 2026 (migration 0346)
+
+The owner's "Houz Century CRM Product List.xlsx" (sheet RptSKUEnquiry, 1,155 rows; not in the repo): only SKU Type = SALES,
+581 SKUs, all Furniture, Active, main supplier HIN LIM FURNITURE MANUFACTURER SDN BHD (400-H004). Built by
+`crm-hinlim/build.py` (-> `migrations-pg/0346_crm_hinlim_skus.sql` and `crm-hinlim/review.xlsx`); edit the script, not the migration.
+
+- Our code `<TYPE>-HLM-<Hin Lim code>` (SOF sofa, BED bedframe, MAT mattress, FUR dining / tables / loose storage, ACC
+  accessory; owner confirmed 19 Nov 2026). The list's "SKU Code" is Hin Lim's own code: it is the link's `supplier_sku`.
+  The format lives in one function (`our_code`). A "/" in Hin Lim's code (one row: 1409498/1409496) becomes "-".
+- Sub-category from keywords in the description, first match wins (`RULES` in the script, "Rules" sheet). The review's
+  "Also matched" column names rows that matched a second sub-category (beds with storage, side tables with drawers, the
+  dressing table with stool); "Model name already in existing products" compares the first word of the name with
+  `crm-hinlim/existing-products-2026-11-19.json` (code + name of every production SKU, read-only snapshot).
+- Name = description; branding = the list's brand; description = size, colour, material, assembly, pack, carton,
+  weights, cubic and Hin Lim code; `unit_m3_milli` = Cubic x 1000 (the engine reads it as m3 x 1000 for CBM landed cost);
+  unit SET for a "1SET/..." pack, else PCS; `cost_price_sen` = Houzs Century Cost Price x 100; no selling price.
+- Supplier link and price history exactly as sku-batch2 (`batch2/build.py`): main unless the SKU already has a main
+  supplier, not a cost anchor, valid from 2026-11-19. Hin Lim is created only where missing (fresh CI / local databases).
+
+Check: `node docs/catalog-import/crm-hinlim/check-local.mjs` (PGlite, every migration, 0346 twice, with and without Hin
+Lim present). 19 Nov 2026: both databases 676 -> 1,257 SKUs: 581 SKUs, 581 models, 581 main Hin Lim links with Hin Lim's
+code, 581 price rows; the second run added nothing.
