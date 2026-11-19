@@ -251,7 +251,7 @@ function SecondLayer({ label, layer }: { label: string; layer: StageLayer }): Re
         <span style={{ fontSize: 12.5, color: BETA.muted }}>{layer.rule}</span>
       </div>
       {steps && (
-        <div className="no-bar" style={{ overflowX: "auto" }}>
+        <div className="no-bar" style={{ overflowX: "auto", overflowY: "visible", paddingTop: 8, marginTop: -8 }}>
           <ol aria-label={`${label} steps`} style={{ listStyle: "none", margin: "0 auto", padding: 0, display: "grid", gridTemplateColumns: `repeat(${steps.length}, minmax(84px, 1fr))`, maxWidth: Math.max(360, steps.length * 150) }}>
             {steps.map((t, i) => {
               const now = t.state === "current";
@@ -263,7 +263,7 @@ function SecondLayer({ label, layer }: { label: string; layer: StageLayer }): Re
                 : { background: BETA.stepNext, border: `1.5px solid ${BETA.stepNextEdge}`, color: BETA.muted };
               return (
                 <li key={t.key} style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-                  {i > 0 && <span aria-hidden="true" style={{ position: "absolute", top: 10, right: "50%", width: "100%", height: 3, borderRadius: 2, background: t.state === "done" || now ? SUB_TRACK : BETA.stepTrack }} />}
+                  {i > 0 && <span aria-hidden="true" style={{ position: "absolute", top: 10, right: "50%", width: "100%", height: 3, borderRadius: 2, background: steps[i - 1]!.state === "done" && t.state !== "off" ? SUB_TRACK : BETA.stepTrack }} />}
                   <button type="button" onClick={() => setFocus(t.key)} aria-label={`${t.label}: ${t.state === "done" ? "done" : now ? "current" : t.state === "off" ? "not on this project" : "not yet"}. ${t.sub}`}
                     style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 0, padding: 0, border: 0, background: "transparent", cursor: "pointer", font: "inherit" }}>
                     <span style={{ boxSizing: "border-box", width: size, height: size, marginTop: now ? 0 : 2, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 700, transform: shown?.key === t.key ? "scale(1.12)" : undefined, ...dot }}>
@@ -283,6 +283,57 @@ function SecondLayer({ label, layer }: { label: string; layer: StageLayer }): Re
           <span style={{ fontSize: 14, fontWeight: 600, color: BETA.ink }}>{shown.label}</span>
           <span style={{ marginLeft: 8, fontWeight: 600, color: shown.state === "done" ? WS.blue : shown.state === "current" ? BETA.stepNow : BETA.muted }}>{shown.sub}</span>
           <div style={{ marginTop: 2 }}>{shown.rule}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- The project list's stage filter (owner, 19 Nov 2026) ---------- */
+
+export interface FilterStep { key: string; label: string; count: number }
+
+/** The project page's stage row as a filter: nothing lit until a stage is pressed; the pressed stage lights and the list
+    shows the projects on it; pressing it again shows every project. A stage with steps (Design) opens its second layer,
+    whose steps filter the same way. */
+export function BetaStageFilter({ stages, selected, onSelect, layer }: {
+  stages: FilterStep[]; selected: string | null; onSelect: (key: string | null) => void;
+  layer?: { label: string; rule: string; steps: FilterStep[]; selected: string | null; onSelect: (key: string | null) => void } | null;
+}): ReactElement {
+  const row = (list: FilterStep[], pick: string | null, onPick: (k: string | null) => void, small: boolean): ReactElement => (
+    <ol style={{ listStyle: "none", margin: "0 auto", padding: 0, display: "grid", gridTemplateColumns: `repeat(${list.length}, minmax(${small ? 84 : 96}px, 1fr))`, maxWidth: small ? Math.max(360, list.length * 150) : undefined }}>
+      {list.map((t, i) => {
+        const on = t.key === pick;
+        const size = small ? (on ? 24 : 20) : on ? 34 : 28;
+        const dot = on
+          ? { background: DOT_NOW, boxShadow: "0 0 0 5px rgba(238,92,120,.13),0 6px 14px -4px rgba(238,92,120,.6)" }
+          : { background: BETA.stepNext, border: `1.5px solid ${BETA.stepNextEdge}`, boxShadow: BETA.stepNextShadow };
+        return (
+          <li key={t.key} style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+            {i > 0 && <span aria-hidden="true" style={{ position: "absolute", top: small ? 10 : 13, right: "50%", width: "100%", height: small ? 3 : 6, borderRadius: 6, background: BETA.stepTrack }} />}
+            <button type="button" aria-pressed={on} onClick={() => onPick(on ? null : t.key)} aria-label={`${t.label}: ${t.count} ${t.count === 1 ? "project" : "projects"}`}
+              style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: 0, border: 0, background: "transparent", cursor: "pointer", font: "inherit" }}>
+              <span style={{ boxSizing: "border-box", width: size, height: size, marginTop: on ? 0 : small ? 2 : 3, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: small ? 10.5 : 12, fontWeight: 700, color: on ? "transparent" : BETA.muted, ...dot }}>
+                {on ? <span style={{ width: small ? 8 : 12, height: small ? 8 : 12, borderRadius: "50%", background: "radial-gradient(circle at 35% 30%,#FFFFFF,#FFE3EA)" }} /> : i + 1}
+              </span>
+              <span style={{ marginTop: small ? 8 : 10, fontSize: small ? 12.5 : 13, fontWeight: on ? 700 : 600, color: on ? BETA.ink : BETA.muted, whiteSpace: "nowrap" }}>{t.label}</span>
+              <span style={{ marginTop: 2, fontSize: small ? 11.5 : 12, fontWeight: on ? 600 : 400, color: on ? BETA.stepNow : BETA.faint }}>{t.count} {t.count === 1 ? "project" : "projects"}</span>
+            </button>
+          </li>
+        );
+      })}
+    </ol>
+  );
+  return (
+    <div role="group" aria-label="Project stages" className="no-bar" style={{ ...GLASS, borderRadius: 26, padding: "20px 8px 16px", overflowX: "auto" }}>
+      <div style={{ minWidth: 560, paddingTop: 4 }}>{row(stages, selected, onSelect, false)}</div>
+      {layer && (
+        <div style={{ margin: "14px 8px 0", padding: "16px 8px 12px", borderRadius: 20, background: "linear-gradient(180deg,rgba(244,246,252,.85),rgba(255,255,255,.4))", border: "1px solid rgba(120,130,170,.12)" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "baseline", gap: "4px 12px", padding: "0 8px", marginBottom: 14 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: BETA.ink }}>{layer.label}<span style={{ fontWeight: 400, color: BETA.muted }}> · press a step to see the projects waiting on it</span></span>
+            <span style={{ fontSize: 12.5, color: BETA.muted }}>{layer.rule}</span>
+          </div>
+          <div style={{ paddingTop: 4 }}>{row(layer.steps, layer.selected, layer.onSelect, true)}</div>
         </div>
       )}
     </div>
