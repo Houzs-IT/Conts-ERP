@@ -21,10 +21,10 @@ function renderPreview(isUnitPriceHidden: boolean, setIsUnitPriceHidden = vi.fn(
   return setIsUnitPriceHidden;
 }
 
-describe("SO print preview: unit price choice", () => {
+describe("SO print preview: per unit price choice", () => {
   test("offers Show and Hide even when the order has no rooms", () => {
     renderPreview(false);
-    const group = screen.getByRole("group", { name: "Unit price" });
+    const group = screen.getByRole("group", { name: "Per unit price" });
     expect(group).toBeTruthy();
     expect(screen.getByRole("button", { name: "Show" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByRole("group", { name: "Show lines" })).toBeNull();

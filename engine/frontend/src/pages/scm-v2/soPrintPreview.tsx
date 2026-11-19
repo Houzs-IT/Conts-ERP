@@ -65,9 +65,9 @@ function PrintLayoutOptions({ layout }: { layout: PrintLayoutChoices }): ReactEl
         </div>
       )}
       <div className={optionRow}>
-        <span className="text-[12px] font-semibold text-ink-secondary">Unit price</span>
+        <span className="text-[12px] font-semibold text-ink-secondary">Per unit price</span>
         <ToggleGroup
-          label="Unit price"
+          label="Per unit price"
           options={UNIT_PRICE_OPTIONS}
           value={layout.isUnitPriceHidden ? "hide" : "show"}
           onChange={(choice) => layout.setIsUnitPriceHidden(choice === "hide")}
