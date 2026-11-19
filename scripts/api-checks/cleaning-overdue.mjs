@@ -71,6 +71,14 @@ check('cancel is charged nothing in the answer', cc.json?.charged === 0 && cc.js
 const after = (await call('GET', `/api/housekeeping/board?date=${today}`)).json;
 check('the board no longer shows the closed jobs', ![doneA, doneB, cancelC, cancelD].some(id => after?.rows?.some(r => r.id === id)));
 
+// Delete: any open cleaning job, not only overdue ones; a reason, the same guards, Full Operations only.
+const tomorrows = await job(unitIds[1], day(1));
+check('a cleaner may not delete a cleaning job', (await call('POST', '/api/housekeeping/cancel', { taskIds: [tomorrows], reason: 'x' }, 'housekeeper')).status === 403);
+check('delete needs a reason', (await call('POST', '/api/housekeeping/cancel', { taskIds: [tomorrows] })).status === 422);
+const del = await call('POST', '/api/housekeeping/cancel', { taskIds: [tomorrows, started], reason: 'Guest extended' }, 'operations_manager');
+check('tomorrow\'s job is deleted, the started one kept with why', del.status === 200 && del.json?.deleted === 1 && del.json?.skipped?.some(s => s.id === started && /started/.test(s.reason)), del.text);
+check('the deleted job is gone', (await call('GET', `/api/housekeeping/tasks/${tomorrows}`)).status === 404);
+
 // Tidy up the two left open, so a rerun starts clean.
 await call('POST', '/api/housekeeping/overdue', { action: 'done', taskIds: [started] });
 await call('POST', `/api/tasks/${todays}/complete`, { photoIds: [] });

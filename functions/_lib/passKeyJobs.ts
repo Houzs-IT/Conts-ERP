@@ -1,4 +1,4 @@
-import { type Env, all, one, run, nowIso, mytToday } from './db';
+import { type Env, all, one, run, audit, transaction, nowIso, mytToday } from './db';
 import { hasColumn } from './auth';
 import { LIVE_STAY_SQL } from './cleaning';
 import { rentalOnly } from './unitPurpose';
@@ -145,4 +145,32 @@ export async function passKeyFor(env: Env, reservationId: string): Promise<PassK
   if (!row) return null;
   const { needs_pass_key: buildingNeedsKey, self_check_in: selfCheckIn, job_id: jobId, job_state: jobState, vendor_name: technician } = row;
   return { buildingNeedsKey: buildingNeedsKey === true, selfCheckIn: selfCheckIn === true, jobId, jobState, technician: technician?.trim() || null };
+}
+
+export interface PassKeyJobActor { userId: string; fullName: string }
+
+export interface DeletedPassKeyJob { reservationId: string | null; storageKeys: string[] }
+
+interface DeletedPassKeyRow { reservation_id: string | null; title: string; unit_id: string | null; state: string; vendor_name: string | null }
+
+export async function deletePassKeyJob(env: Env, issueId: string, actor: PassKeyJobActor): Promise<DeletedPassKeyJob | null> {
+  return transaction(env, async tx => {
+    const files = await all<{ storage_key: string }>(tx, 'SELECT storage_key FROM documents WHERE maintenance_id = ?', issueId);
+    const deleted = await one<DeletedPassKeyRow>(tx, `
+      DELETE FROM maintenance_issues WHERE id = ? AND job_type = 'pass_key' AND state != 'resolved'
+      RETURNING reservation_id, title, unit_id, state, vendor_name`, issueId);
+    if (!deleted) return null;
+    const { reservation_id: reservationId, title, unit_id: unitId, state, vendor_name: technician } = deleted;
+    const actorFields = { actorId: actor.userId, actorLabel: actor.fullName };
+    await audit(tx, { ...actorFields, action: 'maintenance.delete', entityTable: 'maintenance_issues', entityId: issueId,
+      before: { title, unitId, state, technician, reservationId } });
+    const markedReservation = reservationId
+      ? await one<{ id: string }>(tx, 'UPDATE reservations SET self_check_in = true, updated_at = ? WHERE id = ? AND self_check_in IS NOT TRUE RETURNING id', nowIso(), reservationId)
+      : null;
+    if (markedReservation) {
+      await audit(tx, { ...actorFields, action: 'reservation.details', entityTable: 'reservations', entityId: markedReservation.id,
+        before: { selfCheckIn: false }, after: { selfCheckIn: true } });
+    }
+    return { reservationId, storageKeys: files.map(file => file.storage_key) };
+  });
 }

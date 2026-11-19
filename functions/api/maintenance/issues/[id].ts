@@ -4,7 +4,7 @@ import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { CATEGORIES, URGENCIES, CHARGE_TO, DAY, JOB_TYPES, SEVERITIES, pickAssignee, hasBilling, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../../_lib/maintenance';
 import { isPeriodLocked } from '../../../_lib/expenses';
 import { repairNotice } from '../../../_lib/notices';
-import { applyPassKeyUrgency, hasUrgentByHand } from '../../../_lib/passKeyJobs';
+import { applyPassKeyUrgency, deletePassKeyJob, hasUrgentByHand } from '../../../_lib/passKeyJobs';
 import { hasServicePrices, serviceBook } from '../../../_lib/servicePrices';
 import { layoutKey } from '../../../_lib/cleaningPrices';
 
@@ -193,4 +193,23 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: name !== undefined ? 'maintenance.assign' : 'maintenance.edit', entityTable: 'maintenance_issues', entityId: id, before, after });
   if (name !== undefined && after.assignee !== before.assignee) await repairNotice(env, id, 'assigned', session.userId);
   return json({ ok: true, state, expenseMovedTo: moved?.to ?? null });
+};
+
+export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
+  const { session, response } = await requireSession(request, env);
+  if (!session) return response!;
+  if (isFieldRole(session.role) || session.role === 'owner') return fail('FORBIDDEN', 'Only the office can delete a Pass key job.', 403);
+
+  const id = String(params.id);
+  const job = await one<{ job_type: string | null; state: string }>(env, 'SELECT job_type, state FROM maintenance_issues WHERE id = ?', id);
+  if (!job) return fail('NOT_FOUND', 'That job no longer exists. Refresh the list.', 404);
+  if (job.job_type !== 'pass_key') return fail('CONFLICT', 'Only a Pass key job can be deleted.', 409);
+  if (job.state === 'resolved') return fail('CONFLICT', 'That Pass key job is done. A finished job stays in History.', 409);
+
+  const deleted = await deletePassKeyJob(env, id, session);
+  if (!deleted) return fail('CONFLICT', 'That job changed while you looked at it. Refresh the job.', 409);
+  for (const key of deleted.storageKeys) {
+    try { await env.MEDIA?.delete(key); } catch (e) { console.error('pass key job storage delete failed', key, e); }
+  }
+  return json({ ok: true, bookingMarkedSelfCheckIn: deleted.reservationId !== null });
 };
