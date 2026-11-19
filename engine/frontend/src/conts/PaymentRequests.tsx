@@ -10,7 +10,8 @@
 //   Make AP invoice  (requests only) opens the New AP invoice form filled in, one per request (a deposit's is its
 //                    quotation), where finance chooses the supplier and the accounts; paid on the Payment voucher page.
 // Finance also checks a claim (its accounts), rejects with a reason, or closes a request paid short.
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { X } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/Layout";
 import { Button } from "../components/Button";
@@ -325,7 +326,7 @@ export function PaymentRequests() {
         error={q.isError ? "The requests did not load." : claimsQ.isError ? "The claims did not load." : null}
         emptyLabel="No requests."
         getRowKey={(r) => r.id}
-        onRowClick={(r: Row) => setOpened(r)}
+        onRowClick={(r: Row) => setOpened((o) => (o && no(o) === no(r) ? null : r))}
         selection={{
           selectedIds: ticked,
           onToggle: (id: string) => setTicked((t) => { const n = new Set(t); if (n.has(id)) n.delete(id); else n.add(id); return n; }),
@@ -334,14 +335,20 @@ export function PaymentRequests() {
         }}
       />
       <ResizableDetailDrawer open={opened != null} onClose={() => setOpened(null)} ariaLabel={opened ? `Request ${no(opened)}` : "Request"}>
-        {opened && <RowDetail r={opened} lineText={(l) => [deptLabel(l), l.accountCode, l.description].filter(Boolean).join(" · ")} />}
+        {opened && <RowDetail r={opened} onClose={() => setOpened(null)} lineText={(l) => [deptLabel(l), l.accountCode, l.description].filter(Boolean).join(" · ")} />}
       </ResizableDetailDrawer>
     </div>
   );
 }
 
 /** One request or claim in full: who, what for, each line, its files and vouchers. */
-function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
+function RowDetail({ r, lineText, onClose }: { r: Row; lineText: (l: Line) => string; onClose: () => void }) {
+  /* It closes (chew, 19 Nov 2026: the pop-out could not be closed): its X, Esc, or the same row clicked again. */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   const field = (label: string, value: ReactNode) => (
     <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 8, fontSize: 13 }}>
       <span className="text-ink-muted">{label}</span><span>{value ?? "—"}</span>
@@ -350,7 +357,13 @@ function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
   const lines = r.kind === "request" ? r.q.lines : r.c.lines;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
-      <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{no(r)}</h2>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{no(r)}</h2>
+        <button type="button" onClick={onClose} aria-label="Close details" title="Close (Esc)"
+          style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "inline-flex", color: "var(--fg-muted)" }}>
+          <X size={18} />
+        </button>
+      </div>
       {r.kind === "request" ? (
         <>
           {field("Status", <>{REQUEST_STATUS[r.q.status]}{requestStatusNote(r.q) && <span className="block text-xs text-ink-muted">{requestStatusNote(r.q)}</span>}</>)}
