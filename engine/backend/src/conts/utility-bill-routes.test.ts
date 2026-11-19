@@ -181,3 +181,31 @@ describe('the request is wanted by its earliest due date (chew, 18 Nov 2026)', (
     expect(earliestDue([line(null)])).toBeNull();
   });
 });
+
+describe('a waiting utility request takes its changed bills until it is paid (chew, 19 Nov 2026)', () => {
+  const change = (a: Hono<any>, id: string, bills: unknown) => post(a, `/utility-bills/payment-request/${id}/bills`, { bills });
+  const sent = async (sb: ReturnType<typeof world>) => (await (await ask(appFor(sb, FIN))).json()) as { id: string; requestNo: string };
+
+  test('same number, still waiting, the new lines and total', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    const r = await change(appFor(sb, FIN), first.id, [BILLS[0], { ...BILLS[1], amountSen: 45_100 }]);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ id: first.id, requestNo: first.requestNo, amountSen: 13_118 + 45_100 });
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: 58_218 });
+    expect(sb.tables.payment_request_lines.map((l: any) => [l.unit_id, l.amount_sen])).toEqual([['U1', 13_118], ['U2', 45_100]]);
+  });
+  test('refused once a voucher is on it, once it is no longer waiting, and for field staff', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    expect((await change(appFor(sb, TECH), first.id, BILLS)).status).toBe(403);
+    sb.tables.payment_vouchers = [{ id: 'PV1', company_id: 1, pv_number: 'PV-2611-001', status: 'DRAFT', submitted_at: null, payment_request_id: first.id }];
+    sb.tables.payment_voucher_lines ??= [];
+    const pv = await change(appFor(sb, FIN), first.id, BILLS);
+    expect(pv.status).toBe(409);
+    expect(((await pv.json()) as { error: string }).error).toBe('has_voucher');
+    sb.tables.payment_vouchers[0].status = 'CANCELLED';
+    sb.tables.payment_requests[0].status = 'PAID';
+    expect((await change(appFor(sb, FIN), first.id, BILLS)).status).toBe(409);
+  });
+});
