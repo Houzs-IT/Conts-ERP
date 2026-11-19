@@ -180,6 +180,8 @@ function HomeScreen(): ReactElement {
   // The stage pressed in the stage row (owner, 19 Nov 2026), and within Design the step pressed in its second layer.
   const [stage, setStage] = useState<string | null>(null);
   const [filter, setFilter] = useState<HomeFilter>("all");
+  // Within Renovation, the catalog category pressed in its second layer: projects with that category still open.
+  const [cat, setCat] = useState<string | null>(null);
   const { can } = useAuth();
   const [creating, setCreating] = useState(false);
   const [params, setParams] = useSearchParams();
@@ -204,19 +206,22 @@ function HomeScreen(): ReactElement {
 
   const counts = homeCounts(m);
   const stageOf = (id: number): string | null => slaById.get(id)?.step.key ?? null;
-  const inFilter = homeList(m, filter).filter((p) => stage == null || stageOf(p.id) === stage);
+  const openCats = (id: number): string[] => (slaById.get(id)?.renovationCategories ?? []).filter((k) => !k.done).map((k) => k.code);
+  const inFilter = homeList(m, filter).filter((p) => (stage == null || stageOf(p.id) === stage) && (cat == null || openCats(p.id).includes(cat)));
   const found = sortHome(inFilter, sort).filter((p) => matchesSearch(p, query));
-  const viewKey = `${filter}|${sort}|${query.trim().toLowerCase()}`;
+  const viewKey = `${filter}|${cat ?? ""}|${sort}|${query.trim().toLowerCase()}`;
   if (!kept.current || kept.current.key !== viewKey) kept.current = { key: viewKey, order: orderOf(found) };
   const list = keepOrder(found, kept.current.order);
   const rows = list.map((p) => homeRow(m, p));
   const searched = m.projects.filter((p) => matchesSearch(p, query));
   const stageCount = (key: string): number => searched.filter((p) => stageOf(p.id) === key).length;
   const stepCounts = filterCounts(m, searched.filter((p) => stageOf(p.id) === "design"));
+  const inRenovation = searched.filter((p) => stageOf(p.id) === "renovation");
+  const catCount = (code: string): number => inRenovation.filter((p) => openCats(p.id).includes(code)).length;
   const stageLabels = new Map((steps.data?.data ?? []).map((r) => [r.step.key, r.step.label] as const));
   // The first stage reads "Sales order" as on the project page's stage row, whatever the old step label says.
   const stages = STAGE_ORDER.filter((k) => stageLabels.has(k) || DEFAULT_STAGE_LABEL[k]).map((k) => ({ key: k, label: k === "signed" ? "Sales order" : stageLabels.get(k) ?? DEFAULT_STAGE_LABEL[k]!, count: stageCount(k) }));
-  const tableKey = stage == null ? "projects-home" : filter !== "all" && filter !== "done" ? `projects-home-${filter.replace(":", "-")}` : `projects-home-stage-${stage}`;
+  const tableKey = stage == null ? "projects-home" : cat != null ? `projects-home-cat-${cat}` : filter !== "all" && filter !== "done" ? `projects-home-${filter.replace(":", "-")}` : `projects-home-stage-${stage}`;
   const showPay = m.projects.some((p) => p.payment != null);
 
   function open(id: number): void {
@@ -290,12 +295,17 @@ function HomeScreen(): ReactElement {
         {query.trim() && <span role="status" style={{ fontSize: 13, fontWeight: 600, color: INK_SOFT }}>{list.length} of {inFilter.length}</span>}
       </div>
 
-      <BetaStageFilter stages={stages} selected={stage} onSelect={(k) => { setStage(k); setFilter("all"); }}
+      <BetaStageFilter stages={stages} selected={stage} onSelect={(k) => { setStage(k); setFilter("all"); setCat(null); }}
         layer={stage === "design" ? {
           label: "Design", rule: "The steps are set in Project Maintenance > Design work.",
           steps: designSteps(m).map(([code, label]) => ({ key: code, label, count: stepCounts.steps[code] ?? 0 })),
           selected: filter.startsWith("step:") ? filter.slice(5) : null,
           onSelect: (k) => setFilter(k ? `step:${k}` : "all"),
+        } : stage === "renovation" ? {
+          label: "Renovation", rule: "Press a category to see the projects where it is not complete yet.",
+          steps: (steps.data?.categories ?? []).map((k) => ({ key: k.code, label: k.label, count: catCount(k.code) })),
+          selected: cat,
+          onSelect: setCat,
         } : null} />
 
       {phone ? (
