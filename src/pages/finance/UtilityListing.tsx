@@ -7,6 +7,7 @@ import { StaleBanner, TableSkeleton } from '../../components/DataState';
 import { EmptyState } from '../../components/States';
 import { LockBars } from '../../components/LockBar';
 import { Modal } from '../../components/Modal';
+import { MoneyInput } from '../../components/inputs';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Segmented as Tabs } from '../../components/ops/OpsUi';
 import { useApi } from '../../lib/useApi';
@@ -94,7 +95,7 @@ export default function UtilityListing() {
             : <AddUtilityBill month={to} onClose={() => setEntry(null)} onSaved={reload} />}
         </Suspense>
       )}
-      {open && <BillPanel {...open} mode={mode} onClose={() => setOpen(null)} />}
+      {open && <BillPanel {...open} mode={mode} onClose={() => setOpen(null)} onSaved={() => { setOpen(null); reload(); }} />}
     </>
   );
   const filters = (
@@ -339,7 +340,52 @@ function Unusual({ units, months, cells, nights, loading, error, onRetry, kind, 
   );
 }
 
-function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose }: { unit: Unit; month: string; kind: UtilityKind | 'total'; cell: Cell; mode?: Mode; onClose: () => void }) {
+/** Whether a bill's amount can still be changed from its cell (chew, 19 Nov 2026: until the payment is processed): its
+ *  statement not final, not the owner's whole bill, and no request or one still waiting or sent back. The server has the
+ *  last word (a voucher or AP invoice on the request refuses it). */
+const editable = (b: GridBill) => !b.final && !b.recordOnly
+  && (!b.request || ['SUBMITTED', 'WITHDRAWN', 'REJECTED'].includes(b.request.status));
+
+/** The whole printed bill changed in place; the owner's own part stays, the shared part takes the rest. */
+function EditAmount({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) {
+  const whole = bill.whole ?? bill.request?.amount ?? bill.amount;
+  const ownerPart = whole - bill.amount;
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState<number | null>(whole);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  if (!open) return <div><Button size="sm" variant="secondary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setOpen(true)}>Edit amount</Button></div>;
+  const tooSmall = value != null && value <= ownerPart;
+  const save = async () => {
+    if (value == null || tooSmall) return;
+    setBusy(true);
+    try {
+      const r = await api.patch<{ request: string | null; notice: string | null }>(`/expenses/utilities/bills/${encodeURIComponent(bill.id)}`, { amount: value });
+      toast({ tone: 'success', title: 'Bill saved.', body: [r.request ? `${r.request} now asks for the new amount.` : '', r.notice ?? ''].filter(Boolean).join(' ') || undefined });
+      onSaved();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'The bill was not changed.', body: errorMessage(e, 'Try again in a moment.') });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 p-2 rounded-control border border-dashed border-line">
+      <MoneyInput label="Whole bill (RM)" minSen={1} valueSen={value} onChangeSen={setValue}
+        error={tooSmall ? `More than the owner's own part, ${rm(ownerPart)}.` : undefined} />
+      {ownerPart > 0 && value != null && !tooSmall && (
+        <span className="text-meta text-muted-ink">{rm(value - ownerPart)} shared; {rm(ownerPart)} the owner's own part stays as it is.</span>
+      )}
+      {bill.request?.status === 'SUBMITTED' && <span className="text-meta text-muted-ink">{bill.request.no ?? 'Its payment request'} is updated to the new amount, as long as no voucher is made yet.</span>}
+      <div className="flex gap-2">
+        <Button size="sm" variant="primary" loading={busy} disabled={value == null || tooSmall || value === whole} onClick={() => void save()}>Save</Button>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setOpen(false); setValue(whole); }}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
+function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose, onSaved }: { unit: Unit; month: string; kind: UtilityKind | 'total'; cell: Cell; mode?: Mode; onClose: () => void; onSaved: () => void }) {
   const title = `${unitName(unit)} · ${kind === 'total' ? 'All bills' : KIND_LABEL[kind]} · ${monthLabel(month)}`;
   return (
     <Modal title={title} sub={`${cell.bills.length === 1 ? '1 bill' : `${cell.bills.length} bills`}, ${rm(cell.amount)}`} onClose={onClose}
@@ -364,6 +410,7 @@ function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose }: { unit: 
               ? <div><Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />}
                   onClick={() => downloadFile(`/documents/${encodeURIComponent(b.receiptId!)}/download`).catch(notifyFailure)}>View bill</Button></div>
               : <span className="text-meta text-muted-ink">No bill file attached.</span>}
+            {editable(b) && <EditAmount bill={b} onSaved={onSaved} />}
           </div>
         ))}
       </div>

@@ -6,6 +6,7 @@
 //   POST /utility-bills/payment-request   { provider, scanBatchId, note?, bills: [{ unitId, kind, billMonth, billDate?, dueDate?, accountNo, amountSen }], files? }
 //                                          -> { id, requestNo, amountSen }; 201 new, 200 when this scan's request exists
 //   POST /utility-bills/payment-request/:id/resubmit   { bills }  a withdrawn or rejected one, sent again: same number
+//   POST /utility-bills/payment-request/:id/bills      { bills }  one still waiting, its bills changed before any payment
 // The bills a scan records for the company to pay go to finance as one request per provider (chew, 2 Nov 2026: A): a
 // Rental line per bill with its unit and no account (finance sets it on the voucher), made out to the provider's
 // supplier when one is on the list, else to the provider's name for finance to link.
@@ -19,6 +20,7 @@ import { requestAiTag } from '../services/aiUsage';
 import { decodeFiles, removeFiles, storeFiles } from './claims-files';
 import { claimRequest, RETURNED, takeReturned } from './payment-request-routes';
 import { billRefusal, liveBillOf } from './request-ap-invoice';
+import { requestPayments } from './request-vouchers';
 import type { Staff } from './staff-identity';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
@@ -179,6 +181,41 @@ export const resubmitUtilityRequestHandler = async (c: Ctx): Promise<Response> =
   return c.json({ id: r.id, requestNo: r.request_no, amountSen }, 200);
 };
 
+/** A bill changed on Property OS's Utility bills screen while its request still waits (chew, 19 Nov 2026: edit it there
+ *  until the payment is processed). Only a utility request still SUBMITTED, with no voucher (other than cancelled) and no
+ *  AP invoice on it, takes the new bills: the same number and status, a line per bill, the new total and due date. */
+export const updateUtilityRequestBillsHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const refused = officeOnly(c);
+  if (refused) return refused;
+  const sb = c.get('supabase');
+  const { data: r } = await sb.from('payment_requests').select('id, request_no, status, source_key, updated_at').eq('company_id', co.companyId).eq('id', c.req.param('id')).maybeSingle();
+  if (!r || !String(r.source_key ?? '').startsWith('utility:')) return c.json({ error: 'not_found' }, 404);
+  if (r.status !== 'SUBMITTED') return c.json({ error: 'not_waiting', message: `${r.request_no} is no longer waiting for payment, so its bills cannot be changed here.` }, 409);
+  const bill = await liveBillOf(sb, r.id);
+  if (bill) return billRefusal(c, bill);
+  const pvs = ((await requestPayments(sb, [r.id])).vouchers.get(r.id) ?? []).filter(p => p.status !== 'CANCELLED');
+  if (pvs.length) return c.json({ error: 'has_voucher', message: `${r.request_no} already has voucher ${pvs.map(p => p.pv_number).join(', ')}. Cancel the voucher first, then change the bill.` }, 409);
+  const b = await bodyOf(c);
+  if (!b) return c.json({ error: 'invalid_json' }, 400);
+  const lines = billLines(c, b.bills);
+  if (lines instanceof Response) return lines;
+  const badUnit = await unknownUnit(c, sb, lines);
+  if (badUnit) return badUnit;
+  const amountSen = lines.reduce((n, l) => n + l.amountSen, 0);
+  const changedElsewhere = () => c.json({ error: 'changed', message: 'This request was changed somewhere else. Open it again.' }, 409);
+  /* Taken first, on its last change, so a voucher made at the same moment or a second edit finds it changed. */
+  if (!(await claimRequest(sb, r.id, 'SUBMITTED', {}, r.updated_at))) return changedElsewhere();
+  const gone = await sb.from('payment_request_lines').delete().eq('request_id', r.id);
+  if (gone.error) return c.json({ error: 'save_failed', reason: gone.error.message }, 500);
+  const ins = await sb.from('payment_request_lines').insert(lineRows(r.id, lines, await accrualAccounts(sb, co.companyId)));
+  if (ins.error) return c.json({ error: 'save_failed', reason: ins.error.message }, 500);
+  const { error } = await sb.from('payment_requests').update({ amount_sen: amountSen, wanted_on: earliestDue(lines) }).eq('id', r.id).eq('status', 'SUBMITTED');
+  if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  return c.json({ id: r.id, requestNo: r.request_no, amountSen }, 200);
+};
+
 type BillLine = { unitId: string; amountSen: number; sort: number; description: string; kind: string; billDate: string | null; dueDate: string | null };
 
 /** The day the request has to be paid by: the earliest due date its bills print (chew, 18 Nov 2026), shown to finance as
@@ -231,4 +268,5 @@ export function utilityBillRoutes(r: { post: (p: string, h: (c: Ctx) => Promise<
   r.post('/utility-bills/read', readPageHandler);
   r.post('/utility-bills/payment-request', utilityRequestHandler);
   r.post('/utility-bills/payment-request/:id/resubmit', resubmitUtilityRequestHandler);
+  r.post('/utility-bills/payment-request/:id/bills', updateUtilityRequestBillsHandler);
 }
