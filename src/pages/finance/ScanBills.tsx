@@ -306,7 +306,10 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
                             <MoneyInput aria-label="Owner's own part" help="Owner alone" valueSen={r.ownerPartSen ?? null}
                               placeholder={autoPart(r) != null ? (autoPart(r)! / 100).toFixed(2) : '0.00'}
                               onChangeSen={v => patch(r.key, { ownerPartSen: v })} disabled={!editable}
-                              error={r.ownerPartSen != null && r.amountSen != null && r.ownerPartSen > r.amountSen ? 'More than the bill' : undefined} />
+                              error={r.ownerPartSen != null && r.amountSen != null && r.ownerPartSen > r.amountSen
+                                // The read amount can leave out a previous balance (chew, 19 Nov 2026): say what to put in Amount.
+                                ? `More than the bill. If it has a previous balance, put the whole bill in Amount (${rm(r.amountSen + r.ownerPartSen)} with both).`
+                                : undefined} />
                           )}
                           <DateField aria-label="Due date" help="Due" value={r.dueDate} onChange={v => patch(r.key, { dueDate: v })} />
                         </div>
