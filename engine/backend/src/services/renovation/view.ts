@@ -10,7 +10,9 @@ import { redFlags, type RedFlag } from "./redFlags";
 import { currentStage, deriveStageViews, type StageView } from "./stages";
 import { tradeTaskStatus, type TaskStatus } from "./tradeTasks";
 import { isFlowStepKey, type HoldFlag, type StageKey } from "../../scm/shared/renovation-stages";
-import { derivedFlowStep, effectiveFlowStep, type FlowFacts, type FlowView } from "./flow";
+import { derivedFlowStep, effectiveFlowStep, flowStages, type FlowFacts, type ProjectFlow } from "./flow";
+import { designSteps, renovationCategories, type DesignStepStatus, type RenovationCategoryStatus, type StageInputs } from "./stageRules";
+import { LEGACY_WORK_TYPES } from "./workTypes";
 import type { KeyHolder, VoSummary } from "./load";
 
 export interface TaskView extends TaskRow {
@@ -30,8 +32,8 @@ export interface ProjectView {
   tasks: TaskView[];
   redFlags: RedFlag[];
   openSnags: number;
-  /** the simplified 6-step flow (owner decisions 11 Oct 2026) */
-  flow: FlowView;
+  /** the six-stage flow with each stage's status (owner rules 19 Nov 2026, flow.ts) */
+  flow: ProjectFlow;
   hold: { flag: HoldFlag; note: string | null; at: string | null } | null;
   /** contract total (SO incl. VOs) and received so far, from the SO's billing; never stored on the project */
   money: { contractSen: number | null; receivedSen: number | null; receivedPct: number | null };
@@ -39,17 +41,52 @@ export interface ProjectView {
   vo: VoSummary | null;
 }
 
-/** What the six flow steps read from the modules. */
-export function flowFactsOf(f: ProjectFacts, tasks: ReadonlyArray<Pick<TaskView, "state" | "actual_start" | "status">>): FlowFacts {
+/** The stage inputs of a project; fixtures and callers that skip the stage reads get them from the SO facts. */
+export function stageInputsOf(f: ProjectFacts): StageInputs {
+  if (f.stage) return f.stage;
+  const received = f.billing.receivedTotalSen ?? 0;
   return {
-    hasSo: !!f.so,
-    hasPoLine: f.poLines.length > 0,
-    taskStarted: tasks.some((t) => t.status !== "skipped" && (t.state === "in_progress" || t.state === "done" || !!t.actual_start || t.status === "done")),
-    handedOver: !!f.handover || !!f.project.handed_over_at,
-    contractSen: f.billing.available ? f.billing.contractSen : (f.so?.local_total_sen ?? null),
-    receivedSen: f.billing.receivedTotalSen ?? 0,
-    closedAt: f.project.closed_at,
+    hasSo: !!f.so || !!f.signedSo,
+    payment: f.so && f.billing.available
+      ? { contractSen: f.billing.contractSen ?? 0, receivedSen: received, paidInstalments: f.billing.instalments.filter((i) => i.billed && (i.dueSen ?? 0) > 0 && (i.receivedSen ?? 0) >= (i.dueSen ?? 0)).length }
+      : null,
+    workTypes: LEGACY_WORK_TYPES, measuredOn: null, appointments: [], works: [], files: [], notes: [], reviews: [],
+    variants: { lines: 0, missing: 0 },
+    voCount: f.vo?.count ?? 0,
+    categories: [],
+    lines: [],
   };
+}
+
+export interface FlowDetail { facts: FlowFacts; designSteps: DesignStepStatus[]; categories: RenovationCategoryStatus[] }
+
+/** What the six stages read from the modules (owner rules 19 Nov 2026). */
+export function flowDetailOf(f: ProjectFacts, today: string): FlowDetail {
+  const s = stageInputsOf(f);
+  const design = designSteps(s, today);
+  const categories = renovationCategories(s);
+  const on = categories.filter((c) => c.onProject);
+  const billingContract = f.billing.available ? f.billing.contractSen : (f.so?.local_total_sen ?? null);
+  return {
+    designSteps: design,
+    categories,
+    facts: {
+      hasSo: s.hasSo,
+      firstPaymentReceived: (s.payment?.receivedSen ?? f.billing.receivedTotalSen ?? 0) > 0,
+      designDone: design.length > 0 && design.every((d) => d.done),
+      hasVo: s.voCount > 0,
+      renovationDone: on.length > 0 && on.every((c) => c.done),
+      handedOver: !!f.handover || !!f.project.handed_over_at,
+      contractSen: s.payment ? s.payment.contractSen : billingContract,
+      receivedSen: s.payment ? s.payment.receivedSen : (f.billing.receivedTotalSen ?? 0),
+      closedAt: f.project.closed_at,
+    },
+  };
+}
+
+/** The stage facts alone. */
+export function flowFactsOf(f: ProjectFacts, today: string): FlowFacts {
+  return flowDetailOf(f, today).facts;
 }
 
 export function moneyOf(f: ProjectFacts): ProjectView["money"] {
@@ -102,11 +139,15 @@ export function computeProjectView(f: ProjectFacts, today: string): ProjectView 
   const openSnags = f.defects.filter((d) => d.phase === "snag" && !d.closed_at);
   const handedOver = !!f.handover || !!f.project.handed_over_at;
   const flowSteps = f.flowSteps ?? [];
-  const derived = derivedFlowStep(flowSteps, flowFactsOf(f, tasks));
+  const detail = flowDetailOf(f, today);
+  const derived = derivedFlowStep(flowSteps, detail.facts);
   const manualStep = isFlowStepKey(f.project.flow_manual_step) ? f.project.flow_manual_step : null;
-  const flow = effectiveFlowStep(flowSteps, derived, manualStep
-    ? { step: manualStep, base: isFlowStepKey(f.project.flow_manual_base_step) ? f.project.flow_manual_base_step : null }
-    : null);
+  const flow: ProjectFlow = {
+    ...effectiveFlowStep(flowSteps, derived, manualStep
+      ? { step: manualStep, base: isFlowStepKey(f.project.flow_manual_base_step) ? f.project.flow_manual_base_step : null }
+      : null),
+    stages: flowStages(flowSteps, detail.facts, detail.designSteps, detail.categories),
+  };
   const holdFlag = f.project.hold_flag === "in_defect" || f.project.hold_flag === "on_hold" ? f.project.hold_flag : null;
   return {
     flow,

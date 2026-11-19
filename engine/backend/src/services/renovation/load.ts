@@ -23,6 +23,8 @@ import { billingViews, type BillingView } from "../../scm/lib/renovation-billing
 import { renoDbFromD1 } from "./dbBridge";
 import type { FlowStepRow } from "./flow";
 import type { StepSlaView } from "./stepSla";
+import { loadStageInputs } from "./stageLoad";
+import type { StageInputs } from "./stageRules";
 
 export interface DbStmt {
   bind(...args: unknown[]): DbStmt;
@@ -232,11 +234,15 @@ export interface ProjectFacts {
   vo?: VoSummary | null;
   /** the current step against its SLA (stepSla.ts); filled by syncStepSla, absent before migration 0121 */
   stepSla?: StepSlaView | null;
+  /** what the stage rules read (stageLoad.ts, owner 19 Nov 2026); absent on fixtures, which then fall back to the SO facts above */
+  stage?: StageInputs | null;
 }
 
 export interface LoadOptions {
   /** Only the checklist rows the board needs (by item_key) instead of all. */
   checklistKeys?: readonly string[];
+  /** false skips the stage reads (stageLoad.ts); the stages then fall back to the facts loaded here. */
+  stage?: boolean;
 }
 
 const BOARD_CHECKLIST_KEYS = ["keys_collected", "keys_returned", "renovation_permit", "shop_drawings_signed", "handover_signed"];
@@ -334,7 +340,7 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
   for (const so of sos) if (so.so_kind === "RENOVATION") soByProject.set(Number(so.project_id), so);
   const docNos = [...soByProject.values()].map((s) => s.doc_no);
 
-  const [lineRes, poLines, doRows, siteRows, billingByDoc, voRows] = await Promise.all([
+  const [lineRes, poLines, doRows, siteRows, billingByDoc, voRows, stageBy] = await Promise.all([
     loadContractLines(db, docNos),
     docNos.length
       ? rows<PoLineRow>(db,
@@ -365,6 +371,7 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
         GROUP BY poi.so_item_id`, ids(pids)),
     loadBilling(db, [...soByProject.values()]),
     loadVoCounts(db, docNos),
+    opts.stage === false ? Promise.resolve(new Map<number, StageInputs>()) : loadStageInputs(db, projects),
   ]);
 
   const supply = new Map<string, LineSupply>();
@@ -424,6 +431,7 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
         return k ? { personId: k.person_id == null ? null : Number(k.person_id), name: k.name, movedOn: k.moved_on } : null;
       })(),
       vo: so && voRows ? (voRows.get(so.doc_no) ?? { count: 0, approved: 0 }) : null,
+      stage: stageBy.get(project.id) ?? null,
     });
   }
   return out;

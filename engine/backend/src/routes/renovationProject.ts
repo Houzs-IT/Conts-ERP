@@ -9,6 +9,7 @@
      GET /design-records?projectId=  site measures, design files and design notes
      GET /:id/procurement            PO / delivery dates per catalog category and sub-category
      GET /:id/step                   current step, derived step, manual step, hold, steps, history
+     POST /:id/flow-stage/:key/complete  Handover completed by hand / Close pressed (key handover | closed); /reopen undoes it
    Writes: people, flow steps, task categories (Project Maintenance); manual step,
    hold flag, people on a project, key moves, site measures, design files, SO
    link / unlink / project from SO, site tasks by category, crew and fulfilment.
@@ -516,6 +517,48 @@ app.post("/:id/step/follow-data", requirePermission("projects.write"), failClose
   ]);
   await resyncDates(c, id);
   return c.json({ ok: true });
+}));
+
+/* Stages completed by hand (owner, 19 Nov 2026): Handover is completed by hand (the customer's signed handover also
+   completes it), and Close is pressed on Closed. Close alone does not complete Closed: the contract must also be
+   fully settled (flow.ts). Reopen clears the press; a handover the customer signed cannot be reopened here. Audited. */
+const HAND_STAGES = { handover: "handed_over_at", closed: "closed_at" } as const;
+type HandStage = keyof typeof HAND_STAGES;
+const isHandStage = (x: string | undefined): x is HandStage => x === "handover" || x === "closed";
+
+app.post("/:id/flow-stage/:key/:action", requirePermission("projects.write"), failClosed(async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const key = c.req.param("key");
+  const action = c.req.param("action");
+  if (!isHandStage(key)) return c.json({ error: "stage_not_manual", message: "Only Handover and Closed are completed by hand." }, 400);
+  if (action !== "complete" && action !== "reopen") return c.json({ error: "invalid_action" }, 400);
+  const [one] = await loadViews(c, { projectId: id, includeArchived: true });
+  if (!one) return c.json({ error: "not_found" }, 404);
+  const col = HAND_STAGES[key];
+  const cur = key === "handover" ? one.f.project.handed_over_at : one.f.project.closed_at;
+  if (action === "complete" && cur) return c.json({ ok: true, unchanged: true });
+  if (action === "reopen" && !cur) return c.json({ ok: true, unchanged: true });
+  if (action === "reopen" && key === "handover" && one.f.handover) {
+    return c.json({ error: "handover_signed", message: "The customer signed the handover; it cannot be reopened." }, 409);
+  }
+  const co = Number(one.f.project.company_id);
+  await db(c).batch!([
+    db(c).prepare(
+      `UPDATE projects SET ${col} = ${action === "complete" ? "now()" : "NULL"},
+              updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`,
+    ).bind(id),
+    db(c).prepare(`INSERT INTO project_flow_log (project_id, company_id, kind, from_value, to_value, user_id) VALUES (?, ?, ?, ?, ?, ?)`)
+      .bind(id, co, action === "complete" ? "stage_complete" : "stage_reopen", one.v.flow.current, key, userId(c)),
+  ]);
+  await audit(c, {
+    action: `project.stage_${action}`, entityType: "project", entityId: String(id),
+    summary: `${key === "handover" ? "Handover" : "Closed"} ${action === "complete" ? (key === "closed" ? "pressed Close" : "completed by hand") : "reopened"}`,
+    meta: { stage: key, before: cur ?? null },
+  });
+  await resyncDates(c, id);
+  const [after] = await loadViews(c, { projectId: id, includeArchived: true });
+  return c.json({ ok: true, flow: after?.v.flow ?? null });
 }));
 
 app.post("/:id/hold", requirePermission("projects.write"), async (c) => {
