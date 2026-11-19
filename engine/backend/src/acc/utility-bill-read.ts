@@ -51,7 +51,7 @@ export const UTILITY_READ_SCHEMA = { type: 'object', properties: FIELDS, require
 
 const PROMPT = `You are reading ONE page of a Malaysian utility bill for a property manager's finance clerk. Copy what is printed; never guess.
 - kind: electricity (TNB), water (Air Selangor, SYABAS, or a building management water bill), sewerage (Indah Water), internet (TIME, Maxis, Unifi, U Mobile…), other.
-- billMonth: YYYY-MM of the bill. When a period is printed, the month the period ends in (06.08.2026 - 05.09.2026 is 2026-09). periodFrom / periodTo: YYYY-MM-DD as printed ("Tempoh Bil", "Billing period").
+- billMonth: YYYY-MM of the bill. When a period is printed, the month the period ends in (06.08.2026 - 05.09.2026 is 2026-09). periodFrom / periodTo: YYYY-MM-DD as printed ("Tempoh Bil", "Billing period"). An internet bill often prints it only beside the plan or subscription line on a later page ("Unifi 100Mbps 07/11/2026 - 06/12/2026"); read it from there too.
 - dueDate: YYYY-MM-DD of the day the bill must be paid by, as printed ("Tarikh Akhir Bayaran", "Bayar Sebelum", "Due date", "Payment due", "Pay before"). It is never the bill date or the period. "" when not printed.
 - currentCharges: THIS period's charges ("Caj Semasa", "Current charges"), as printed, e.g. "377.50". This is the figure finance records. It is never the previous balance ("Baki Terdahulu"), a payment or an adjustment ("Pelarasan"), and never the amount due when that includes arrears.
 - rounding: the rounding adjustment of THIS bill as printed ("Pelarasan Penggenapan", "Rounding Amount", "Rounding Adj."), signed, e.g. "0.01" or "-0.02". It is what turns the current charges into the round sum paid (TNB 314.24 + 0.01 = 314.25). "" when not printed.

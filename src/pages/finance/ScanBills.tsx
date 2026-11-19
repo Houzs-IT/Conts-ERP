@@ -118,16 +118,33 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
     await readOne(row, true);
   }
 
+  /* One page uploaded and read. `peek` keeps nothing: only what the reader saw comes back. */
+  async function readPage(row: Row, peek = false) {
+    const fd = new FormData();
+    /* Sent as the type it really is: a PNG labelled JPEG is refused by the reader. */
+    const page = await (await fetch(row.thumb)).blob();
+    const type = page.type || 'image/jpeg';
+    fd.append('file', new File([page], pageFileName(row.fileName, row.pageNo, type), { type }));
+    fd.append('kind', 'receipt');
+    const doc = await api.post<{ id: string }>('/documents', fd);
+    return api.post<ScanAnswer>('/expenses/utilities/scan', { documentId: doc.id, batchId, ...(peek ? { peek: true } : {}) });
+  }
+
+  /* Page 1 of a bill of several that prints no period (a Unifi bill prints it beside the plan on page 2; chew, 19 Nov
+     2026: 31 internet bills went unsplit at a contract's start): the next page is read for the period alone. */
+  async function periodFromNextPage(row: Row, s: ScanAnswer) {
+    if (s.read.pageNo !== 1 || !(Number(s.read.pageCount) > 1) || (s.read.periodFrom && s.read.periodTo)) return;
+    const next = rowsRef.current.find(r => r.file === row.file && r.pageNo === row.pageNo + 1);
+    if (!next) return;
+    try {
+      const more = await readPage(next, true);
+      if (more.read.periodFrom && more.read.periodTo) patch(row.key, { periodFrom: more.read.periodFrom, periodTo: more.read.periodTo });
+    } catch { /* The period stays blank, to be typed from the page. */ }
+  }
+
   async function readOne(row: Row, own = false) {
     try {
-      const fd = new FormData();
-      /* Sent as the type it really is: a PNG labelled JPEG is refused by the reader. */
-      const page = await (await fetch(row.thumb)).blob();
-      const type = page.type || 'image/jpeg';
-      fd.append('file', new File([page], pageFileName(row.fileName, row.pageNo, type), { type }));
-      fd.append('kind', 'receipt');
-      const doc = await api.post<{ id: string }>('/documents', fd);
-      const s = await api.post<ScanAnswer>('/expenses/utilities/scan', { documentId: doc.id, batchId });
+      const s = await readPage(row);
       /* A later page of a bill, or page 1 of a bill of several: those other pages are not read nor recorded. */
       const skip = new Set(own ? [] : pagesToSkip(row, s.read, rowsRef.current));
       if (skip.has(row.key)) {
@@ -139,6 +156,7 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
           ? { ...r, state: 'skipped', tick: false, problem: `Page ${r.pageNo - row.pageNo + 1} of the bill on page ${row.pageNo}: not read` } : r)));
       }
       patch(row.key, fromScan(s));
+      await periodFromNextPage(row, s);
     } catch (e) {
       patch(row.key, { state: 'failed', problem: errorMessage(e) });
     }
