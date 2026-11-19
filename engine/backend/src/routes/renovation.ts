@@ -514,6 +514,7 @@ app.get("/:id", requirePageAccess("projects.list"), failClosed(async (c) => {
     receipts: grns.results ?? [],
     financeHidden: hideMoney,
     flow: v.flow,
+    stageLayers: v.stageLayers,
     stepSla: f.stepSla ?? null,
     hold: v.hold,
     money: hideMoney ? { contractSen: null, receivedSen: null, receivedPct: null } : v.money,

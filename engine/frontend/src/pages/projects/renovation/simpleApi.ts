@@ -20,6 +20,56 @@ export interface FlowView {
   steps: Array<{ key: FlowStepKey; label: string }>;
 }
 
+/** One Design step (engine services/renovation/stageRules.ts): a work In Design in Project Maintenance, or "variants". */
+export interface DesignStepStatus {
+  code: string;
+  label: string;
+  done: boolean;
+  /** The day it was done or is booked for (YYYY-MM-DD); null when there is none. */
+  date: string | null;
+  /** Short state text: "Done", "Measured", "Booked", "Not booked", "Approved", "Waiting approval", "Amendment open", ... */
+  state: string;
+}
+
+/** One catalog category on the Renovation stage: every category is listed; onProject says the SO has lines in it. */
+export interface RenovationCategoryStatus {
+  code: string;
+  label: string;
+  onProject: boolean;
+  /** Every line of the category delivered; always false when not on the project. */
+  done: boolean;
+  linesDone: number;
+  linesTotal: number;
+}
+
+/** One stage with its status (owner rules 19 Nov 2026, engine services/renovation/flow.ts). */
+export interface FlowStageStatus {
+  key: FlowStepKey;
+  label: string;
+  /** The stage's own rule is met. */
+  complete: boolean;
+  /** Complete, yet the project waits here: Sales order linked, first payment not received. */
+  waiting: boolean;
+  state: string;
+  /** Design only. */
+  designSteps?: DesignStepStatus[];
+  /** Renovation only. */
+  categories?: RenovationCategoryStatus[];
+}
+
+/** The stages' second layer (GET /api/renovation/:id `stageLayers`; engine flow.ts stageLayersOf): every active stage's
+    status in order, every catalog category in catalog order (sort_order) for Renovation, and the Design steps. */
+export interface StageLayers {
+  stages: Array<{ key: FlowStepKey; label: string; complete: boolean; waiting: boolean; state: string }>;
+  renovation: { categories: RenovationCategoryStatus[] };
+  design?: { steps: DesignStepStatus[] };
+}
+
+/** The flow as the project detail sends it: the six stages with their status, in order. Optional for an older engine. */
+export interface ProjectFlow extends FlowView {
+  stages?: FlowStageStatus[];
+}
+
 export interface Hold { flag: HoldFlag; note: string | null; at: string | null }
 export interface Money { contractSen: number | null; receivedSen: number | null; receivedPct: number | null }
 export interface KeyHolder { personId: number | null; name: string | null; movedOn: string }
@@ -39,7 +89,9 @@ export interface StepSlaView {
 export type FinanceKind = "RENOVATION" | "INHOUSE_RENOVATION";
 
 export interface ProjectDetailV2 extends Omit<ProjectDetail, "tasks"> {
-  flow: FlowView;
+  flow: ProjectFlow;
+  /** The stages' second layer (owner rules 19 Nov 2026). */
+  stageLayers: StageLayers;
   /** null before migration 0121 (or from an older engine) */
   stepSla?: StepSlaView | null;
   hold: Hold | null;
@@ -191,6 +243,9 @@ export const simpleApi = {
   step: (id: number) => api.get<StepInfo>(`${R}/${id}/step`),
   setStep: (id: number, step: FlowStepKey, reason: string | null) => api.post<{ ok: true }>(`${R}/${id}/step`, { step, reason }),
   followData: (id: number) => api.post<{ ok: true }>(`${R}/${id}/step/follow-data`, {}),
+  /** Handover completed by hand, or Close pressed; reopen undoes it. Closed counts only once the contract is fully settled. */
+  flowStage: (id: number, key: "handover" | "closed", action: "complete" | "reopen") =>
+    api.post<{ ok: true; unchanged?: true; flow?: ProjectFlow | null }>(`${R}/${id}/flow-stage/${key}/${action}`, {}),
   setHold: (id: number, flag: HoldFlag, note: string | null) => api.post<{ ok: true }>(`${R}/${id}/hold`, { flag, note }),
   clearHold: (id: number) => api.post<{ ok: true }>(`${R}/${id}/hold/clear`, {}),
   setPeople: (id: number, b: Partial<{ salesPersonId: number | null; designerPersonId: number | null; renoPicPersonId: number | null; picPersonId: number | null; attendingPersonIds: number[] }>) =>

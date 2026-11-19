@@ -671,3 +671,8 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Payments on the project Overview read Not confirmed until Finance confirms the receipt; tied to the accounting mapping above.
 - Cleaning price list starts 1 Nov 2026, so 4,898 cleans finished Jan to Oct 2026 have no cleaner pay on Yearly. Owner: fix later (19 Nov 2026).
 - 13 rental units have no contract (Star Residences 1-45-10, Trofi 2 B35-05, Anggun 2010 and Star Residences 113A10 have stays); they show under No contract on the Unit report until staff add one.
+
+## Project stages (feat/stage-rules, no migration, 19 Nov 2026)
+- Stage rules of 19 Nov 2026 are server-side (engine services/renovation/flow.ts, stageRules.ts, stageLoad.ts); the project detail sends flow.stages. The screens still draw the old stepper (renovationBetaModel.ts stepperItems) and the Project List still orders Design before Signed: frontend to switch to flow.stages.
+- Handover by hand and Close have an API (POST /api/renovation/:id/flow-stage/:key/complete|reopen) but no button yet.
+- Renovation category done = every line of the category delivered (DO). A Client PO line that never gets a DO would hold Renovation open: owner to confirm.
