@@ -34,6 +34,7 @@ export function QuotationSoPrint({ open, onClose, docNo, status, header, section
   const { nameOf } = useStaffLookup();
   const { rows, rooms } = useMemo(() => quotationLines(sections), [sections]);
   const [printLayout, setPrintLayout] = useState<SoLinesView>('area');
+  const [isUnitPriceHidden, setIsUnitPriceHidden] = useState(false);
   const catalogQ = useMfgProducts({ enabled: open });
   const catalogNames = useRenovationCatalog();
   const categoryView = useMemo(() => {
@@ -79,7 +80,7 @@ export function QuotationSoPrint({ open, onClose, docNo, status, header, section
     const { generateSalesOrderPdf } = await import('../../vendor/scm/lib/sales-order-pdf');
     await generateSalesOrderPdf(soHeader, items, [], action, [], {
       docTitle: kind === 'VARIATION_ORDER' ? 'VARIATION ORDER' : 'QUOTATION', docNoun: kind === 'VARIATION_ORDER' ? 'variation order' : 'quotation',
-      rooms: pdfRooms, contract, quotation: true,
+      rooms: pdfRooms, contract, quotation: true, isUnitPriceHidden,
     });
   };
 
@@ -96,7 +97,7 @@ export function QuotationSoPrint({ open, onClose, docNo, status, header, section
         { label: 'Items', value: `${rows.length} line${rows.length === 1 ? '' : 's'}` },
         { label: kind === 'VARIATION_ORDER' ? 'Contract changes by' : 'Quotation total', value: fmtMoney(totalSen, 'MYR') },
       ]}
-      layout={{ printRooms, printLayout, setPrintLayout }}
+      layout={{ printRooms, printLayout, setPrintLayout, isUnitPriceHidden, setIsUnitPriceHidden }}
       onViewPdf={() => run('preview')}
       onPrint={() => run('print')}
       onDownload={() => run('save')}
