@@ -248,11 +248,13 @@ export interface TrendBar {
   current?: boolean;
   /** Third line under the label in gold, e.g. that month's occupancy. */
   lineDisplay?: string;
+  /** Fourth line under the label, e.g. that month's income per active unit. */
+  line2Display?: string;
 }
 
 /** Bar chart in HTML rather than a scaled SVG, so its text stays at real pixel sizes on a phone.
  *  The current period is Conts green, the rest soft tan (--color-chart-now / --color-chart-bar, both themes). */
-export function BarTrend({ bars, height = 200, lineLabel }: { bars: TrendBar[]; height?: number; lineLabel?: string }) {
+export function BarTrend({ bars, height = 200, lineLabel, line2Label }: { bars: TrendBar[]; height?: number; lineLabel?: string; line2Label?: string }) {
   const max = Math.max(1, ...bars.map(b => b.value));
   const many = bars.length > 6;
 
@@ -301,6 +303,7 @@ export function BarTrend({ bars, height = 200, lineLabel }: { bars: TrendBar[]; 
             <span className={cx('text-caption whitespace-nowrap', b.current ? 'font-semibold text-ink' : 'text-muted-ink')}>{b.label}</span>
             <span className="text-caption text-faint whitespace-nowrap h-4">{b.sub ?? ''}</span>
             {b.lineDisplay && <span className="hidden sm:block text-caption text-gold-ink whitespace-nowrap tabular-nums">{b.lineDisplay}</span>}
+            {b.line2Display && <span className="hidden sm:block text-caption text-ink-2 whitespace-nowrap tabular-nums">{b.line2Display}</span>}
           </div>
         ))}
       </div>
@@ -308,6 +311,7 @@ export function BarTrend({ bars, height = 200, lineLabel }: { bars: TrendBar[]; 
       {lineLabel && (
         <div className="hidden sm:flex items-center justify-end gap-1.5 text-caption text-muted-ink">
           <span className="w-2 h-2 rounded-full bg-gold-ink" />{lineLabel}
+          {line2Label && <><span className="ml-3 w-2 h-2 rounded-full bg-ink-2" />{line2Label}</>}
         </div>
       )}
     </div>
