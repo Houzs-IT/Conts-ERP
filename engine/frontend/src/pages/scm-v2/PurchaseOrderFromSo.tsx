@@ -86,8 +86,6 @@ type Pick = { picked: boolean; qty: number };
 
 const projectTitleOf = (r: OutstandingSoItem): string => r.projectName?.trim() || r.projectCode?.trim() || '';
 
-const projectTitleOf = (r: OutstandingSoItem): string => r.projectName?.trim() || r.projectCode?.trim() || '';
-
 export const PurchaseOrderFromSo = () => {
   const navigate = useNavigate();
   const itemsQ   = useOutstandingSoItems();
