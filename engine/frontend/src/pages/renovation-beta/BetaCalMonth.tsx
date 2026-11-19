@@ -41,10 +41,11 @@ function DeadlineChip({ x, who }: { x: DueItem; who: Viewing }): ReactElement {
    side list said which unit each was for. */
 function EventChip({ e, who, project }: { e: CalEvent; who: Viewing; project: string }): ReactElement {
   const [ink, bg] = e.done ? BETA_CHIP.meet : BETA_CHIP[groupOf(e.type)];
+  const text = `${e.t ? `${e.t} ` : ""}${e.note || typeLabel(e.type)}${project ? ` · ${project}` : ""}`;
   return (
-    <div style={{ ...CHIP, borderLeft: `3px solid ${ink}`, background: bg, color: ink, fontWeight: 600 }}>
+    <div title={e.who ? `${text} · ${e.who.name}` : text} style={{ ...CHIP, borderLeft: `3px solid ${ink}`, background: bg, color: ink, fontWeight: 600 }}>
       {who === "All" && e.who && <Badge name={e.who.name} />}
-      <span style={{ ...CLAMP, textDecoration: e.done ? "line-through" : undefined }}>{e.t ? `${e.t} ` : ""}{e.note || typeLabel(e.type)}{project ? ` · ${project}` : ""}</span>
+      <span style={{ ...CLAMP, textDecoration: e.done ? "line-through" : undefined }}>{text}</span>
     </div>
   );
 }
