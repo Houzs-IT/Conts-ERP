@@ -36,6 +36,8 @@ export interface DocLine {
   /** Package template SLA (owner, 19 Nov 2026): days after the project starts; null = no SLA. */
   processingAfterDays?: number | null;
   deliveryAfterDays?: number | null;
+  /** Packages module (owner, 20 Nov 2026): the package the line was added from; screen only, never printed. */
+  fromPackageId?: string | null;
   pageBreakBefore: boolean;
   voChange?: 'ADD' | 'OMIT' | null;
   omitTargetLineId?: string | null;
@@ -357,6 +359,7 @@ export function sectionsForSave(sections: DocSection[]): unknown[] {
       isFoc: l.isFoc, supplyByOwner: l.supplyByOwner, highlight: l.highlight, supplierId: l.supplierId, unitCostSen: l.unitCostSen,
       stageCode: l.stageCode, pageBreakBefore: l.pageBreakBefore,
       processingAfterDays: l.processingAfterDays ?? null, deliveryAfterDays: l.deliveryAfterDays ?? null,
+      ...(l.fromPackageId ? { fromPackageId: l.fromPackageId } : {}),
       ...(l.voChange ? { voChange: l.voChange, omitTargetLineId: l.omitTargetLineId ?? null, omitQty: l.omitQty ?? null } : {}),
     })),
   }));

@@ -215,7 +215,10 @@ const ScmDocumentFilesImport = lazy(() => import("./pages/scm-v2/DocumentFilesIm
 // Renovation sales documents (Conts, 2026-10-09): quotations, package templates, the contract, VOs, terms.
 const RenoQuotationsList = lazy(() => import("./pages/renovation/QuotationsList").then((m) => ({ default: m.QuotationsList })));
 const RenoQuotationTemplates = lazy(() => import("./pages/renovation/QuotationTemplates").then((m) => ({ default: m.QuotationTemplates })));
-const RenoQuotationTemplateEditor = lazy(() => import("./pages/renovation/QuotationTemplates").then((m) => ({ default: m.QuotationTemplateEditor })));
+const RenoOldTemplateAddress = lazy(() => import("./pages/renovation/QuotationTemplates").then((m) => ({ default: m.OldTemplateAddress })));
+const RenoPackages = lazy(() => import("./pages/renovation/RenovationPackages").then((m) => ({ default: m.RenovationPackages })));
+const RenoPackageSetup = lazy(() => import("./pages/renovation/RenovationPackageSetup").then((m) => ({ default: m.RenovationPackageSetup })));
+const RenoPackageEditor = lazy(() => import("./pages/renovation/RenovationPackageEditor").then((m) => ({ default: m.RenovationPackageEditor })));
 const RenoVariationOrderEditor = lazy(() => import("./pages/renovation/VariationOrderEditor").then((m) => ({ default: m.VariationOrderEditor })));
 const RenoSettings = lazy(() => import("./pages/renovation/RenovationSettings").then((m) => ({ default: m.RenovationSettings })));
 const ScmAmendmentsV2 = lazy(() => import("./pages/scm-v2/Amendments").then((m) => ({ default: m.Amendments })));
@@ -940,7 +943,11 @@ export default function App() {
         <Route path="/scm/renovation/quotations/new" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><ScmSalesOrderNewV2 asQuotation /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/quotations/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationDetail /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/templates" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationTemplates /></Scm2990Shell></ScmGuard>} />
-        <Route path="/scm/renovation/templates/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationTemplateEditor /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/renovation/templates/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoOldTemplateAddress /></Scm2990Shell></ScmGuard>} />
+        {/* The Packages module (owner, 20 Nov 2026): Sales order > Packages. */}
+        <Route path="/scm/renovation/packages" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoPackages /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/renovation/packages/new" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoPackageSetup /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/renovation/packages/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoPackageEditor /></Scm2990Shell></ScmGuard>} />
         {/* One sales order, one page (owner, 3 Nov 2026): the contract's sections are on the order's page. */}
         <Route path="/scm/renovation/contracts/:docNo" element={<ContractMoved />} />
         <Route path="/scm/renovation/variation-orders/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoVariationOrderEditor /></Scm2990Shell></ScmGuard>} />

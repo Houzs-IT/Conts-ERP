@@ -97,7 +97,8 @@ describe("executable route contract", () => {
     // 184 since 2026-11-04 (Conts): the four /scm/production-orders routes.
     // 196 since 2026-11-11: +2 /scm/stock-adjustments/:id and /:id/edit (Houzs BUG-66), +2 /beta/defects and /beta/handover-checklists (TODO item 17), +1 AI usage page (TODO item 19).
     // 199 since 2026-11-19 (Conts): +1 /scm/staff-banks (staff bank details, 18 Nov), +1 /beta/site-tasks (the renovation board), +1 /scm/payment-requests/:kind/:id (a request or claim on its own page).
-    expect(STAFF_ROUTE_PATTERNS).toHaveLength(199);
+    // 202 since 2026-11-20 (Conts): +3 /scm/renovation/packages, /new and /:id (the Packages module).
+    expect(STAFF_ROUTE_PATTERNS).toHaveLength(202);
     expect(new Set(STAFF_ROUTE_PATTERNS).size).toBe(STAFF_ROUTE_PATTERNS.length);
     expect([...STAFF_ROUTE_PATTERNS].sort()).toEqual([...appPages].sort());
   });
@@ -150,7 +151,8 @@ describe("executable route contract", () => {
     // 193 since 2026-11-04 — the four /scm/production-orders routes (Conts).
     // 205 since 2026-11-11: +2 stock adjustment document pages, +2 /beta/defects and /beta/handover-checklists, +1 AI usage page.
     // 208 since 2026-11-19: +1 /scm/staff-banks, +1 /beta/site-tasks, +1 /scm/payment-requests/:kind/:id.
-    expect(ROUTE_CONTRACT).toHaveLength(208);
+    // 211 since 2026-11-20: +3 Packages module pages.
+    expect(ROUTE_CONTRACT).toHaveLength(211);
   });
 
   it("keeps every desktop nav destination on a live staff route", () => {
@@ -190,15 +192,16 @@ describe("mobile route drift gate", () => {
     // (「电脑版本有的，手机版本都要有」); the phone could CREATE a rack and never
     // read one back.
     // 39 since 2026-11-07: Production Orders and Draft delivery, the phone screens the production workers use.
-    expect(MOBILE_MENU_GROUPS.flatMap((group) => group.items)).toHaveLength(39);
+    // 40 since 2026-11-20: Packages, under Sales Orders (the Packages module).
+    expect(MOBILE_MENU_GROUPS.flatMap((group) => group.items)).toHaveLength(40);
     // 6 since 2026-09-10: /roles, the rebuilt Roles & Permissions screen, reached
     // from a Profile row (gated via the Team hub tab).
     // 7 since 2026-09-17: /titles, the phone Titles editor (position_policy),
     // the last desktop-only Roles & Permissions surface to reach the phone.
     expect(PROFILE_ORG_ITEMS).toHaveLength(7);
-    expect(allMobile).toHaveLength(46);
-    expect(new Set(allMobile.map((item) => item.to)).size).toBe(46);
-    expect(new Set(allMobile.map((item) => item.to.split("?")[0])).size).toBe(45);
+    expect(allMobile).toHaveLength(47);
+    expect(new Set(allMobile.map((item) => item.to)).size).toBe(47);
+    expect(new Set(allMobile.map((item) => item.to.split("?")[0])).size).toBe(46);
   });
 
   it("maps every declared mobile row to a real screen, never a placeholder stub", () => {

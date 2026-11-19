@@ -64,6 +64,7 @@ export const ENGINE_PATH: Record<string, string> = {
   '/projects/maintenance': '/projects?view=maintenance',
   '/sales/quotations': '/scm/renovation/quotations',
   '/sales/orders': '/scm/sales-orders',
+  '/sales/packages': '/scm/renovation/packages',
   '/sales/amendments': '/scm/amendments',
   '/sales/delivery-orders': '/scm/delivery-orders',
   '/sales/invoices': '/scm/sales-invoices',

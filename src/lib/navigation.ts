@@ -244,6 +244,8 @@ export const NAV: NavGroup[] = [
       // Renovation quotations (revisions, package templates, convert to the contract SO): engine only.
       { key: 'renoQuotations', label: 'Quotations', icon: 'file-text', path: '/sales/quotations' },
       { key: 'salesOrders', label: 'Sales orders', icon: 'shopping-cart', path: '/sales/orders' },
+      // The Packages module (owner, 20 Nov 2026): packages and kits for the renovation sales order: engine only.
+      { key: 'renoPackages', label: 'Packages', icon: 'package', path: '/sales/packages' },
       { key: 'salesOrderAmendment', label: 'VO', icon: 'file-pen-line', path: '/sales/amendments' },
       { key: 'deliveryOrders', label: 'Delivery orders', icon: 'truck', path: '/sales/delivery-orders' },
       { key: 'salesInvoices', label: 'Sales invoices', icon: 'receipt', path: '/sales/invoices', area: 'scInvoices' },
@@ -335,7 +337,7 @@ export function switchedOff(path: string): boolean {
 }
 
 /** Menu areas (and single menu keys) whose screens exist only in the supply chain engine: hidden where it is not set up. */
-const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'ledger', 'mail'];
+const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'renoPackages', 'ledger', 'mail'];
 const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'renovator', 'owner'];
 
 /** Areas (and menu keys) closed to a role: from its permission levels where the session carries them, else the built-in list. */

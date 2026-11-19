@@ -1,57 +1,58 @@
-/* Start project (owner, 19 Nov 2026): the works start date. Sales order lines from a package template carry SLA days
-   (processing and delivery, days after the start); setting or moving this date dates every such line still on its SLA.
-   A date typed by hand on the SO tab is kept. Backend: routes/renovationProject.ts POST /:id/start. */
+/* Project start date (owner, 20 Nov 2026; replaces the 19 Nov Start project button). Sales order lines from a package
+   carry SLA days (processing and delivery, days after the start). Setting or changing this date dates every such line
+   still on its SLA; a date typed by hand on the SO tab is kept. Lines a VO adds later are dated when it is approved.
+   Backend: routes/renovationProject.ts POST /:id/start (works_started_on = the date). */
 
-import { useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { PlayCircle } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import { errorText } from "../projects/renovation/renovationModel";
 import { simpleApi } from "../projects/renovation/simpleApi";
-import { btnStyle, WS } from "./BetaWsUi";
+import { WS } from "./BetaWsUi";
 import { invalidateBeta } from "./renovationBetaBoardApi";
 import { dayMonthYear } from "./renovationBetaModel";
 
-export function StartProjectButton({ projectId, startedOn, today, onDone, onError }: {
-  projectId: number; startedOn: string | null; today: string; onDone: (text: string) => void; onError: (text: string) => void;
+/** A whole date the picker or typing has finished (a year still being typed, e.g. 0002, is not one). */
+export function isWholeDate(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const y = Number(v.slice(0, 4));
+  return y >= 2000 && y <= 2100 && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
+}
+
+export function ProjectStartDate({ projectId, startedOn, canWrite, onDone, onError }: {
+  projectId: number; startedOn: string | null; canWrite: boolean; onDone: (text: string) => void; onError: (text: string) => void;
 }): ReactElement {
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [date, setDate] = useState(startedOn ?? today);
+  const [date, setDate] = useState(startedOn ?? "");
   const [busy, setBusy] = useState(false);
+  const saved = useRef(startedOn ?? "");
+  useEffect(() => { setDate(startedOn ?? ""); saved.current = startedOn ?? ""; }, [startedOn]);
 
-  async function save(): Promise<void> {
-    setBusy(true);
-    try {
-      const r = await simpleApi.startProject(projectId, date);
-      onDone(r.dated
-        ? `Works start ${dayMonthYear(date)}. ${r.dated} sales order line${r.dated === 1 ? "" : "s"} dated from the template SLA.`
-        : `Works start ${dayMonthYear(date)}. No sales order line has template SLA days yet.`);
-      setOpen(false);
-      void invalidateBeta(queryClient);
-    } catch (e) {
-      onError(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  }
+  useEffect(() => {
+    if (!canWrite || date === saved.current || !isWholeDate(date)) return;
+    const t = setTimeout(() => {
+      setBusy(true);
+      const before = saved.current;
+      saved.current = date;
+      simpleApi.startProject(projectId, date).then((r) => {
+        onDone(r.dated
+          ? `Project start ${dayMonthYear(date)}. ${r.dated} sales order line${r.dated === 1 ? "" : "s"} dated from their SLA days.`
+          : `Project start ${dayMonthYear(date)}. No sales order line has SLA days yet.`);
+        void invalidateBeta(queryClient);
+      }).catch((e) => { saved.current = before; onError(errorText(e)); }).finally(() => setBusy(false));
+    }, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the date is the trigger
+  }, [date]);
 
-  if (!open) {
-    return (
-      <button type="button" onClick={() => { setDate(startedOn ?? today); setOpen(true); }} style={btnStyle(startedOn ? "outline" : "teal")}
-        title="The works start date: sales order lines from a package template are dated from it">
-        <PlayCircle size={16} aria-hidden="true" />
-        {startedOn ? `Started ${dayMonthYear(startedOn)}` : "Start project"}
-      </button>
-    );
-  }
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "6px 10px", borderRadius: 12, background: WS.chip }}>
-      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
-        Works start
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ font: "inherit", padding: "6px 8px", borderRadius: 8, border: `1px solid ${WS.rowLine}` }} />
-      </label>
-      <button type="button" disabled={busy || !date} onClick={() => void save()} style={btnStyle("teal", "sm")}>{busy ? "Saving..." : startedOn ? "Move start" : "Start"}</button>
-      <button type="button" disabled={busy} onClick={() => setOpen(false)} style={btnStyle("outline", "sm")}>Cancel</button>
-    </span>
+    <label title="Lines with SLA days get their processing and delivery dates from this date"
+      style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 12, background: WS.chip, fontSize: 13, fontWeight: 600 }}>
+      <CalendarDays size={16} aria-hidden="true" />
+      Project start date
+      <input type="date" aria-label="Project start date" value={date} disabled={!canWrite || busy} onChange={(e) => setDate(e.target.value)}
+        style={{ font: "inherit", fontWeight: 500, padding: "5px 8px", borderRadius: 8, border: `1px solid ${WS.rowLine}`, background: WS.panel, color: "inherit" }} />
+      {busy && <span style={{ fontWeight: 500, color: WS.text2 }}>Saving...</span>}
+    </label>
   );
 }

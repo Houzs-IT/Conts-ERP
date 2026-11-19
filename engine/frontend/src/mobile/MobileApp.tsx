@@ -341,6 +341,7 @@ export const MOBILE_MENU_GROUPS: { group: string; items: MobileMenuItem[] }[] = 
   { group: "Sales & Finance", items: [
     { to: "/scm/renovation/quotations", label: "Quotations" },
     { to: "/scm/sales-orders", label: "Sales Orders" },
+    { to: "/scm/renovation/packages", label: "Packages" },
     { to: "/scm/amendments", label: "VO" },
     /* SO Maintenance — gated on the BACKEND's own answer, `scm.maintenance.open`.
        This row said `directorOnly` (auth/salesAccess.isDirectorUser = {`*`,

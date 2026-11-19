@@ -7,12 +7,12 @@
 // (SalesOrderDetail), and /scm/renovation/contracts/:docNo redirects there. The stand-alone page stays for the
 // phone's renovation documents (mobile/MobileRenovationDocs.tsx).
 
-import { FromTemplateButton } from './fromTemplate';
+import { FromPackageButton, SaveAsPackageDialog } from './renovationPackagePick';
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { FilePlus2, Printer, ReceiptText } from 'lucide-react';
+import { FileDown, FilePlus2, Printer, ReceiptText } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
 import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapModal';
@@ -216,6 +216,15 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
   const [error, setError] = useState<string | null>(null);
   const [billing, setBilling] = useState<BillingInstalment | null>(null);
   const [crediting, setCrediting] = useState(false);
+  /* Save as package (owner, 20 Nov 2026); Packages > Save from a sales order opens this page with ?savePackage=1. */
+  const [params, setParams] = useSearchParams();
+  const [savingPackage, setSavingPackage] = useState(false);
+  const toast = useToast();
+  useEffect(() => {
+    if (params.get('savePackage') !== '1') return;
+    setSavingPackage(true);
+    setParams((p) => { const n = new URLSearchParams(p); n.delete('savePackage'); return n; }, { replace: true });
+  }, [params, setParams]);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
   /* An old contract link lands here with where it was going (#po-flags). */
   const { hash } = useLocation();
@@ -268,9 +277,12 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
           </div>
         );
 
-  const contractActions = can('scm.renovation.quote') && (CONTRACT_NEXT_STATUS[k.status] ?? []).map((n) => (
-    <Button key={n.to} variant={n.danger ? 'danger' : 'secondary'} onClick={() => setStatus(n.to, n.label, n.danger)}>{n.label}</Button>
-  ));
+  const contractActions = can('scm.renovation.quote') && [
+    <Button key="save-package" variant="secondary" icon={<FileDown size={15} />} onClick={() => setSavingPackage(true)}>Save as package</Button>,
+    ...(CONTRACT_NEXT_STATUS[k.status] ?? []).map((n) => (
+      <Button key={n.to} variant={n.danger ? 'danger' : 'secondary'} onClick={() => setStatus(n.to, n.label, n.danger)}>{n.label}</Button>
+    )),
+  ];
 
   return (
     <div id="contract" className="space-y-4">
@@ -369,7 +381,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
         </ul>
         {creditList}
       </Card>}
-      <Card title="Variation orders" actions={live && can('scm.renovation.quote') ? <span className="flex flex-wrap items-center gap-2"><FromTemplateButton docNo={k.docNo} onError={setError} className="h-9 rounded-lg border border-border-default px-3 text-[13px] font-semibold text-ink" /><Button variant="secondary" icon={<FilePlus2 size={15} />} onClick={newVo}>New VO</Button></span> : null}>
+      <Card title="Variation orders" actions={live && can('scm.renovation.quote') ? <span className="flex flex-wrap items-center gap-2"><FromPackageButton docNo={k.docNo} onError={setError} className="h-9 rounded-lg border border-border-default px-3 text-[13px] font-semibold text-ink" /><Button variant="secondary" icon={<FilePlus2 size={15} />} onClick={newVo}>New VO</Button></span> : null}>
         {k.variationOrders.length === 0 && <p className="text-[13px] text-ink-secondary">No variation orders.</p>}
         <ul className="divide-y divide-border-subtle">
           {k.variationOrders.map((v) => (
@@ -396,6 +408,8 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
       {!embedded && <DocAttachments docType="sales_order" docId={k.docNo} canEdit={k.status !== 'CANCELLED'} />}
       <BillDialog c={k} inst={billing} onClose={() => setBilling(null)} />
       <CreditDialog c={k} open={crediting} onClose={() => setCrediting(false)} />
+      {can('scm.renovation.quote') && <SaveAsPackageDialog contract={k} open={savingPackage} onClose={() => setSavingPackage(false)}
+        onSaved={(id, code, openIt) => { setSavingPackage(false); toast.success(`${code} saved as a draft package.`); if (openIt) navigate(`/scm/renovation/packages/${id}`); }} />}
     </div>
   );
 }

@@ -2,6 +2,12 @@
 
 Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw, schema `pos`, via Hyperdrive e0781ccd...). Staging preview: https://staging-preview.theconts-os.pages.dev (Supabase ecgyrmblqfxvbfjlqkdq).
 
+## Packages module (owner, 20 Nov 2026; migration 0347)
+- Sales order > Packages: packages (PKG-, areas) and kits (KIT-), products + qty + SLA days only, no prices; SO/VO product search and From package add them to a VO; Project start date dates SLA lines. Code: engine/backend/src/scm/lib/renovation-packages.ts, engine/frontend/src/pages/renovation/RenovationPackage*.tsx, renovationPackagePick.tsx.
+- Old package templates are packages now (PKG-001...); their stored prices, letterhead, print format and payment terms stay in the table but no screen edits them any more (New quotation from template still reads them).
+- Open: VO / quotation Print preview did not open on the local system (20 Nov, any VO, not only package ones); check on erp.theconts.com and fix separately if it reproduces.
+- Open: package lines on the phone scroll sideways (one table); a card layout if staff edit packages on phones.
+
 ## Ports from Houzs / Hookka (owner picks 8-9 Nov 2026) - all merged 11 Nov 2026
 - How to work: one item = one branch = one PR; port by `git format-patch -1 <sha>` from the Houzs repo (C:/Users/User/Desktop/houzs-erp-local, read only) and `git apply --directory=engine --reject`, then fit by hand; Houzs frontend/ = engine/frontend, backend/ = engine/backend. Hookka (C:/Users/User/hookka-erp-testing, use origin/main, read only) is reference only.
 - Checks per item: engine/frontend `npx tsc -b`; engine/backend `npx tsc --noEmit -p .`; backend tests with `npx vitest run --config vitest.light.config.mts <name>`; frontend `npx vitest run <file>`; then real clicks from the menu on the local system (Conts-ERP-worktrees/conts-local: `node start.mjs`, login management@theconts.com / LocalTest1; set CONTS_CODE to the worktree to run its engine or screens); merge; wait for "Deploy engine to production"; check erp.theconts.com.
