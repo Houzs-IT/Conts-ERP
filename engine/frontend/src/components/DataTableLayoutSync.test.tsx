@@ -191,70 +191,57 @@ describe("DataTable with server layouts", () => {
     vi.useRealTimers();
   });
 
-  it("lets an admin publish a default on a list that ships NO seed layout", async () => {
-    // Every list except Sales Orders is this case. Gating the Layout section on
-    // seeds was a chicken-and-egg — no section, so no way to save the first
-    // default, so the section could never appear (owner 2026-08-01: cover every
-    // list). The section now follows the RIGHT to publish, not the seeds.
+  it("saves 'Save as default' as the signed-in user's OWN default, never the company's", async () => {
+    // Owner 2026-11-19: a default set by one user must never reach another, even
+    // when that user is an admin who may manage company defaults.
     respond({ canManageDefaults: true });
     await hydrateTableLayouts();
-
-    render(
-      <DataTable
-        tableId="seedless"
-        rows={rows}
-        columns={columns}
-        getRowKey={(row) => row.id}
-      />,
-    );
+    renderTable("personal");
     fireEvent.click(screen.getByTitle(/^Columns —/));
 
-    // The overflow menu names the company the save publishes to — the admin
-    // sets 2990's default from a 2990 window and Houzs's from a Houzs one.
     fireEvent.click(screen.getByRole("button", { name: "More column actions" }));
-    expect(screen.getByRole("button", { name: /Save as 2990's Home default/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Save as my default/ })).toBeTruthy();
     fireEvent.keyDown(window, { key: "Escape" });
 
     fireEvent.click(screen.getByRole("button", { name: "Save as default" }));
-
     await waitFor(() =>
       expect(mockApi.put).toHaveBeenCalledWith(
-        "/api/table-layouts/seedless/default",
-        expect.anything(),
+        "/api/table-layouts/personal%3Amy-default",
+        expect.objectContaining({ layout: expect.objectContaining({ order: ["b", "c", "a", "d"] }) }),
       ),
     );
-    // Saved → the company now HAS a layout to offer, so the picker appears.
-    fireEvent.click(await screen.findByRole("button", { name: /^Layout/ }));
-    expect(screen.getByRole("option", { name: /2990's Home Layout/ })).toBeTruthy();
+    expect(mockApi.put.mock.calls.some(([path]) => String(path).endsWith("/default"))).toBe(false);
+    expect(JSON.parse(localStorage.getItem("dt:mydefault:personal")!).order).toEqual(["b", "c", "a", "d"]);
   });
 
-  it("shows the publish control only to an admin, and saves what is on screen", async () => {
+  it("offers 'Save as default' to every user, not only admins", async () => {
     respond({ canManageDefaults: false });
     await hydrateTableLayouts();
-    renderTable("publish");
+    renderTable("anyone");
     fireEvent.click(screen.getByTitle(/^Columns —/));
-    expect(screen.queryByRole("button", { name: "Save as default" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Save as default" })).toBeTruthy();
+  });
 
-    cleanup();
-    __resetTableLayoutsForTest();
-    mockApi.get.mockReset();
-    respond({ canManageDefaults: true });
+  it("opens on the user's own default, and Reset returns to it rather than the company's", async () => {
+    const mineDefault = { order: ["d", "a"], ...emptyish, hidden: ["b", "c"] };
+    respond({
+      defaults: { "2": { reset: { order: ["c"], ...emptyish, hidden: ["a", "b", "d"] } } },
+      mine: { "reset:my-default": { layout: mineDefault, updatedAt: null } },
+    });
     await hydrateTableLayouts();
+    // The stored default is not a live arrangement: hydration keeps it apart.
+    expect(localStorage.getItem("dt:order:reset:my-default")).toBeNull();
 
-    renderTable("publish");
+    const { container } = renderTable("reset");
+    expect(headerLabels(container)).toEqual(["Delta", "Alpha"]);
+
     fireEvent.click(screen.getByTitle(/^Columns —/));
-    fireEvent.click(screen.getByRole("button", { name: "Save as default" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Hide column" })[0]!);
+    expect(headerLabels(container)).toEqual(["Alpha"]);
 
-    await waitFor(() =>
-      expect(mockApi.put).toHaveBeenCalledWith(
-        "/api/table-layouts/publish/default",
-        expect.anything(),
-      ),
-    );
-    /* The redesign demoted the confirmation from a card of body copy to a
-       toast (handoff 2026-08-01), so what is asserted here is the WRITE, not
-       the wording — the toast host does not exist in a bare test render. */
-    expect(mockApi.put.mock.calls[0]![0]).toContain("/default");
+    fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
+    expect(headerLabels(container)).toEqual(["Delta", "Alpha"]);
+    expect(mockApi.put.mock.calls.some(([path]) => String(path).endsWith("/default"))).toBe(false);
   });
 });
 

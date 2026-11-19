@@ -46,6 +46,8 @@ export interface LayoutPresetOption {
 export interface LayoutDefaultManager {
   /** Company the save publishes to, e.g. "2990's Home". */
   companyLabel: string;
+  /** The save is the signed-in user's own default, not the company's. */
+  personal?: boolean;
   /** A default already exists (enables Clear). */
   hasSaved: boolean;
   state: "idle" | "saving" | "saved" | "error";

@@ -304,7 +304,12 @@ function HomeScreen(): ReactElement {
       ) : (
         <div style={{ ...CARD, overflow: "hidden" }}>
           <DataTable<TableRow>
-            tableId="projects-home"
+            key={tab}
+            /* Each tab keeps its own columns (owner 2026-11-19). "All projects"
+               stays on the original key so nobody's arrangement moves; the stage
+               tabs start from it until they are arranged on their own. */
+            tableId={tab === "all" ? "projects-home" : `projects-home-${tab}`}
+            layoutSeedId="projects-home"
             onDisplayKeys={(keys) => setSoColumnsShown(keys.some((k) => k.startsWith("so_")))}
             documentLabel="Projects"
             rows={tableRows}
