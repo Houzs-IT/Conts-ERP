@@ -43,6 +43,9 @@ type Row = {
   /** The account the page matched, kept while its unit is the one proposed (a unit can have two meters of a kind). */
   accountId: string | null;
   ownerPaid: boolean; tick: boolean;
+  /** The owner's own part typed by hand (chew, 19 Nov 2026: scanned bills must still take a hand edit); left blank, the days outside the
+   *  contract as worked out. */
+  ownerPartSen?: number | null;
 };
 type Group = { provider: string; count: number; amountSen: number; scanIds: string[] };
 type Sent = Group & { part: number; requestNo?: string; failed?: string };
@@ -184,6 +187,7 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
           batchId, rows: recordable.map(r => ({
             scanId: r.scan!.scanId, unitId: r.unitId, accountId: r.accountId, kind: r.kind, billMonth: r.billMonth, amountSen: r.amountSen,
             periodFrom: r.periodFrom || null, periodTo: r.periodTo || null, dueDate: r.dueDate || null, ownerPaid: r.ownerPaid,
+            ...(r.ownerPartSen != null && !r.ownerPaid ? { ownerPartSen: r.ownerPartSen } : {}),
           })),
         });
       const done = new Set(recordable.map(r => r.key));
@@ -227,7 +231,14 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
     for (const f of failed) await sendToFinance([f], f.part);
   }
 
+  /* The owner's own part as worked out: the days outside the contract (null when the bill is not split). */
+  const autoPart = (r: Row): number | null => {
+    if (!r.unitId || !r.periodFrom || !r.periodTo || !r.amountSen) return null;
+    const s = contractSplit({ from: r.periodFrom, to: r.periodTo }, r.amountSen, contractsOf.get(r.unitId) ?? []);
+    return s.kind === 'split' ? s.outsideSen : null;
+  };
   const splitText = (r: Row) => {
+    if (r.ownerPartSen != null && r.amountSen && !r.ownerPaid) return `Owner alone ${rm(r.ownerPartSen)} · shared ${rm(Math.max(0, r.amountSen - r.ownerPartSen))} (set by hand)`;
     if (!r.unitId || !r.periodFrom || !r.periodTo || !r.amountSen) return null;
     const s = contractSplit({ from: r.periodFrom, to: r.periodTo }, r.amountSen, contractsOf.get(r.unitId) ?? []);
     if (s.kind === 'two-contracts') return 'Two contracts in this period: split by hand';
@@ -291,6 +302,12 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
                       <td className={`${cell} min-w-[9rem]`}>
                         <div className="flex flex-col gap-1">
                           <MoneyInput aria-label="Amount" valueSen={r.amountSen} onChangeSen={v => patch(r.key, { amountSen: v })} disabled={!editable} />
+                          {!r.ownerPaid && (
+                            <MoneyInput aria-label="Owner's own part" help="Owner alone" valueSen={r.ownerPartSen ?? null}
+                              placeholder={autoPart(r) != null ? (autoPart(r)! / 100).toFixed(2) : '0.00'}
+                              onChangeSen={v => patch(r.key, { ownerPartSen: v })} disabled={!editable}
+                              error={r.ownerPartSen != null && r.amountSen != null && r.ownerPartSen > r.amountSen ? 'More than the bill' : undefined} />
+                          )}
                           <DateField aria-label="Due date" help="Due" value={r.dueDate} onChange={v => patch(r.key, { dueDate: v })} />
                         </div>
                       </td>

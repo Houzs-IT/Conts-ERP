@@ -106,6 +106,8 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
   const [description, setDescription] = useState('');
   const [receipt, setReceipt] = useState<File | null>(null);
   const [ownerPaid, setOwnerPaid] = useState(false);
+  /* The part the owner bears alone, after the share (chew, 19 Nov 2026): a shared utility bill only. */
+  const [ownerPart, setOwnerPart] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const validDay = ISO_DAY.test(incurredOn);
@@ -116,10 +118,13 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
   const picked = UTILITY.has(category) && account !== '' ? accounts.find(a => a.accountId === account) ?? accounts[0] : undefined;
   const fee = category === 'building_fee';
   const needsReceipt = !fee && receiptRequired(category, chargeTo);
-  const ok = !!unitId && amount != null && amount > 0 && validDay && (!needsReceipt || !!receipt);
+  const ok = !!unitId && amount != null && amount > 0 && validDay && (!needsReceipt || !!receipt) && !(ownerPart != null && ownerPart > 0 && amount != null && ownerPart > amount);
   const kinds = canAdjust ? BILL_KINDS : BILL_KINDS.filter(k => k.value !== 'building_fee');
   const kind = shortKind(BILL_KINDS.find(k => k.value === category)?.label ?? category);
   const payer = PAYERS.find(p => p.value === chargeTo);
+  const takesOwnPart = UTILITY.has(category) && chargeTo === 'owner' && !ownerPaid;
+  const ownPart = takesOwnPart && ownerPart ? ownerPart : 0;
+  const partTooBig = ownPart > 0 && amount != null && ownPart > amount;
 
   async function save() {
     if (!ok || busy) return;
@@ -146,6 +151,7 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
       const res = await api.post<unknown>('/expenses', {
         unitId, category, amount, incurredOn, chargeTo, reference: picked?.accountNo || reference.trim() || null, description: text, receiptDocumentId,
         ...(UTILITY.has(category) ? { ownerPaid } : {}),
+        ...(ownPart ? { ownerPartSen: ownPart } : {}),
       });
       if (isStaged(res)) { toast(stagedToast(res)); void refreshNavCounts(); onSaved(); onClose(); return; }
       // A utility bill the company pays goes to finance as a payment request (chew, 5 Nov 2026; SOP 3.10).
@@ -183,6 +189,13 @@ export function BillModal({ units, defaultUnitId, ownerId, canAdjust, month, onC
           </div>
           {!fee && payer && <p className="m-0 -mt-1 text-meta text-muted-ink">{payer.help}</p>}
           {UTILITY.has(category) && <OwnerPaidTick label={`${kind} ${monthLabel(billMonth)}`} checked={ownerPaid} onChange={setOwnerPaid} />}
+          {takesOwnPart && (
+            <MoneyInput label="Owner's own part (RM, optional)" placeholder="0.00" valueSen={ownerPart} onChangeSen={setOwnerPart}
+              error={fields.ownerPartSen ?? (partTooBig ? "More than the bill." : undefined)}
+              help={ownPart > 0 && amount != null && !partTooBig
+                ? `${rm(amount - ownPart)} shared before the split; ${rm(ownPart)} charged to the owner alone after it. The provider is paid the whole ${rm(amount)}.`
+                : 'Part of this bill the owner bears alone (deducted after the share).'} />
+          )}
           {UTILITY.has(category) && accounts.length > 0 && (
             <Select showLabel size="md" label="Account" value={picked?.accountId ?? ''} onChange={v => setAccount(v)}
               options={[...accounts.map(a => ({ value: a.accountId, label: `${a.accountNo}${a.provider ? ` · ${a.provider}` : ''}` })), { value: '', label: 'Another account (type the reference)' }]} />
