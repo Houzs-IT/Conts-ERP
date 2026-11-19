@@ -174,14 +174,29 @@ export const PurchaseOrderFromSo = () => {
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const pageCount = itemsQ.data?.pages.length ?? 0;
   const nextPageFailed = itemsQ.isFetchNextPageError;
+  /* The grid's frozen header makes the table scroll inside its own box (useFrozenTableHeader), so the line under it is
+     always in view on a tall screen; on production that read every page one after another (5,121 lines). The line only
+     counts once the table's own box is scrolled near its end, or when the box does not scroll at all. */
   useEffect(() => {
     const el = loadMoreRef.current;
-    if (!el || !hasNextPage || isFetchingNextPage || nextPageFailed || typeof IntersectionObserver === 'undefined') return;
-    const io = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) void fetchNextPage();
+    if (!el || !hasNextPage || isFetchingNextPage || nextPageFailed) return;
+    const box = el.previousElementSibling?.querySelector<HTMLElement>('.dt-table .thin-scroll') ?? null;
+    const boxAtEnd = (): boolean => !box || box.scrollHeight <= box.clientHeight + 1
+      || box.scrollTop + box.clientHeight >= box.scrollHeight - 400;
+    let lineInView = typeof IntersectionObserver === 'undefined';
+    let asked = false;
+    const maybeLoad = (): void => {
+      if (asked || !lineInView || !boxAtEnd()) return;
+      asked = true;
+      void fetchNextPage();
+    };
+    const io = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((entries) => {
+      lineInView = entries.some((e) => e.isIntersecting);
+      maybeLoad();
     }, { rootMargin: '400px 0px' });
-    io.observe(el);
-    return () => io.disconnect();
+    io?.observe(el);
+    box?.addEventListener('scroll', maybeLoad, { passive: true });
+    return () => { io?.disconnect(); box?.removeEventListener('scroll', maybeLoad); };
   }, [pageCount, hasNextPage, isFetchingNextPage, nextPageFailed, fetchNextPage]);
 
   /* Commander 2026-05-30 — the New PO form stashes its current draft
