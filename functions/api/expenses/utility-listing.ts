@@ -40,10 +40,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const row = await one<{ units: any[] | null; bills: any[] | null; nights: any[] | null }>(env, `
     WITH b AS (
       SELECT e.id, e.unit_id, e.category, e.incurred_on, e.deduct_month, e.amount, e.charge_to, e.record_only, e.rolled,
+             e.description, left(e.period_from::text, 10) AS period_from, left(e.period_to::text, 10) AS period_to, sc.id IS NOT NULL AS scanned,
              e.receipt_document_id, e.reference, ${LOCKED_SQL} AS final,
              e.payment_request_id, e.payment_request_no, r.status AS request_status, r.reason AS request_reason, r.decided_by AS request_decided_by,
              to_char(r.created_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM') AS request_month,
-             coalesce(sc.bill_sen, e.amount) AS request_sen
+             coalesce(sc.bill_sen, e.amount) AS request_sen,
+             coalesce(sc.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) AS whole_sen
       FROM expenses e JOIN units u ON u.id = e.unit_id
       LEFT JOIN utility_payment_requests() r ON r.id = e.payment_request_id -- migration 0220: pos_app cannot read scm.payment_requests directly (RLS)
       LEFT JOIN utility_bill_scans sc ON sc.expense_id = e.id
@@ -75,6 +77,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     bills: (row?.bills ?? []).map(b => ({
       id: b.id, unitId: b.unit_id, kind: b.category, billMonth: String(b.incurred_on).slice(0, 7), deductMonth: b.deduct_month,
       amount: Number(b.amount), chargeTo: b.charge_to, recordOnly: !!b.record_only, final: !!b.final,
+      // The whole printed bill: the shared part plus the owner's own part (typed, or the days outside the contract).
+      whole: Number(b.whole_sen),
+      // The printed period and the bill's note ("22 of 30 days in the contract"), to check a scanned bill's split.
+      description: b.description ?? null, periodFrom: b.period_from ?? null, periodTo: b.period_to ?? null, scanned: !!b.scanned,
       receiptId: b.receipt_document_id ?? null, reference: b.reference ?? null, rolled: !!b.rolled,
       request: b.payment_request_id && b.request_status
         ? { id: b.payment_request_id, no: b.payment_request_no ?? null, status: b.request_status, month: b.request_month, amount: Number(b.request_sen),

@@ -127,10 +127,10 @@ describe("what the project reads from the SO", () => {
       .toEqual({ contractSen: 900, receivedSen: null, receivedPct: null });
   });
 
-  test("flow facts: a skipped task never counts as started; a received PO task does", () => {
-    expect(flowFactsOf(base, [{ state: "skipped", actual_start: "2026-10-01", status: "skipped" }]).taskStarted).toBe(false);
-    expect(flowFactsOf(base, [{ state: "open", actual_start: null, status: "done" }]).taskStarted).toBe(true);
-    expect(flowFactsOf(base, [{ state: "open", actual_start: null, status: "planned" }]).taskStarted).toBe(false);
-    expect(flowFactsOf(base, []).hasSo).toBe(true);
+  test("flow facts without the stage reads fall back to the SO facts", () => {
+    const f = flowFactsOf(base, "2026-11-19");
+    expect(f).toMatchObject({ hasSo: true, firstPaymentReceived: true, designDone: false, hasVo: false, renovationDone: false, handedOver: false });
+    expect(flowFactsOf({ ...base, billing: { ...base.billing, receivedTotalSen: 0 } } as ProjectFacts, "2026-11-19").firstPaymentReceived).toBe(false);
+    expect(flowFactsOf({ ...base, vo: { count: 1, approved: 0 } } as ProjectFacts, "2026-11-19").hasVo).toBe(true);
   });
 });

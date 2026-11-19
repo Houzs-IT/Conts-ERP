@@ -385,8 +385,24 @@ export async function carriedFiles(db: Db, doc: DocRef, lines: DocLine[]): Promi
 export async function podFiles(db: Db, doId: string): Promise<Array<DocFile & { key: string }>> {
   const r = await db.prepare(
     `SELECT pod_r2_key, pod_photo_keys, coalesce(delivered_at, updated_at) AS at FROM scm.delivery_orders WHERE id = ?::uuid`,
-  ).bind(doId).first<{ pod_r2_key: string | null; pod_photo_keys: unknown; at: string | null }>();
-  if (!r) return [];
+  ).bind(doId).first<PodRow>();
+  return r ? podFilesOf(r) : [];
+}
+
+/** podFiles for many delivery orders in one read, by delivery order id (an id that is not there is absent). */
+export async function podFilesFor(db: Db, doIds: readonly string[]): Promise<Map<string, Array<DocFile & { key: string }>>> {
+  const out = new Map<string, Array<DocFile & { key: string }>>();
+  if (doIds.length === 0) return out;
+  const res = await db.prepare(
+    `SELECT id::text AS id, pod_r2_key, pod_photo_keys, coalesce(delivered_at, updated_at) AS at FROM scm.delivery_orders WHERE id = ANY(?::uuid[])`,
+  ).bind(textArray([...doIds])).all<PodRow & { id: string }>();
+  for (const r of res.results ?? []) out.set(String(r.id), podFilesOf(r));
+  return out;
+}
+
+interface PodRow { pod_r2_key: string | null; pod_photo_keys: unknown; at: string | null }
+
+function podFilesOf(r: PodRow): Array<DocFile & { key: string }> {
   const listed = Array.isArray(r.pod_photo_keys) ? r.pod_photo_keys.filter((k): k is string => typeof k === "string" && !!k) : [];
   const keys = listed.length ? listed : r.pod_r2_key ? [r.pod_r2_key] : [];
   const at = r.at ? new Date(r.at).toISOString() : "";
@@ -422,21 +438,22 @@ async function orderFilesBehind(db: Db, docs: ReadonlyArray<{ type: DocType; id:
   const ids = (t: DocType) => textArray(docs.filter((d) => d.type === t).map((d) => d.id));
   if (docs.length === 0) return out;
   const add = (k: string, f: Linked) => { if (!(out.get(k) ?? []).some((x) => x.id === f.id)) out.set(k, [...(out.get(k) ?? []), f]); };
-  const files = await db.prepare(
+  // The two reads are independent: sent together. The files are added first, as before, so the order on screen is the same.
+  const [files, lines] = await Promise.all([db.prepare(
     `SELECT b.for_type, b.for_id, b.order_no, a.id::text AS id, a.file_name, a.mime, a.size_bytes, a.caption, a.source, a.uploaded_by_name, a.created_at,
             a.doc_type, a.doc_id, a.line_id, a.r2_key
        FROM (${ORDERS_BEHIND}) b
        JOIN scm.doc_attachments a ON a.doc_type = 'production_order' AND a.doc_id = b.order_id::text AND a.deleted_at IS NULL AND a.company_id = ?
       ORDER BY a.created_at, a.id`,
-  ).bind(ids("goods_received"), ids("delivery_order"), companyId).all<Row & { r2_key: string; for_type: string; for_id: string; order_no: string }>();
-  for (const r of files.results ?? []) {
-    add(`${r.for_type}:${r.for_id}`, { ...toFile(r), key: r.r2_key, source: "pod", lineId: null, readOnly: true, from: `Production order ${r.order_no}` });
-  }
-  const lines = await db.prepare(
+  ).bind(ids("goods_received"), ids("delivery_order"), companyId).all<Row & { r2_key: string; for_type: string; for_id: string; order_no: string }>(),
+  db.prepare(
     `SELECT b.for_type, b.for_id, b.order_no, pi.id::text AS item_id, pi.photo_urls, pi.created_at
        FROM (${ORDERS_BEHIND}) b JOIN scm.production_order_items pi ON pi.production_order_id = b.order_id
       WHERE coalesce(cardinality(pi.photo_urls), 0) > 0 ORDER BY pi.line_no, pi.id`,
-  ).bind(ids("goods_received"), ids("delivery_order")).all<{ for_type: string; for_id: string; order_no: string; item_id: string; photo_urls: string[]; created_at: string }>();
+  ).bind(ids("goods_received"), ids("delivery_order")).all<{ for_type: string; for_id: string; order_no: string; item_id: string; photo_urls: string[]; created_at: string }>()]);
+  for (const r of files.results ?? []) {
+    add(`${r.for_type}:${r.for_id}`, { ...toFile(r), key: r.r2_key, source: "pod", lineId: null, readOnly: true, from: `Production order ${r.order_no}` });
+  }
   for (const r of lines.results ?? []) {
     lineKeys(r.photo_urls).forEach((key, n) => add(`${r.for_type}:${r.for_id}`, {
       id: `${LINE_PHOTO_ID}${r.item_id}-${n}`, key, name: "Line photo", mime: "image/jpeg", kind: "image", size: 0, caption: "", source: "pod", by: null,

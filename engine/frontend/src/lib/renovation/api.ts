@@ -33,6 +33,9 @@ export interface DocLine {
   supplierId: string | null;
   unitCostSen: number;
   stageCode: string | null;
+  /** Package template SLA (owner, 19 Nov 2026): days after the project starts; null = no SLA. */
+  processingAfterDays?: number | null;
+  deliveryAfterDays?: number | null;
   pageBreakBefore: boolean;
   voChange?: 'ADD' | 'OMIT' | null;
   omitTargetLineId?: string | null;
@@ -353,6 +356,7 @@ export function sectionsForSave(sections: DocSection[]): unknown[] {
       uom: l.uom, unitPriceSen: l.unitPriceSen, listPriceSen: l.listPriceSen, discountBp: l.discountBp, amountOverrideSen: l.amountOverrideSen,
       isFoc: l.isFoc, supplyByOwner: l.supplyByOwner, highlight: l.highlight, supplierId: l.supplierId, unitCostSen: l.unitCostSen,
       stageCode: l.stageCode, pageBreakBefore: l.pageBreakBefore,
+      processingAfterDays: l.processingAfterDays ?? null, deliveryAfterDays: l.deliveryAfterDays ?? null,
       ...(l.voChange ? { voChange: l.voChange, omitTargetLineId: l.omitTargetLineId ?? null, omitQty: l.omitQty ?? null } : {}),
     })),
   }));

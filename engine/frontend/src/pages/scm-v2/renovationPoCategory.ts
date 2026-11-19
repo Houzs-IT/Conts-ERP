@@ -1,7 +1,7 @@
-/* Renovation mode (Conts, owner 14 Oct 2026, mig 0116): a renovation purchase order holds one category. The
-   database refuses a line of another category (scm.reno_flow_po_item, check_violation). This lets the existing PO
-   screen say so next to the line before Save, and turn the server's refusal into the same plain sentence instead of
-   a generic failed save. Pure. */
+/* Renovation mode (Conts): from 14 Oct 2026 (mig 0116) a renovation purchase order held one category and the
+   database refused a line of another. The owner lifted that on 19 Nov 2026 (migration 0345): a PO may mix categories.
+   The refusal parser stays so a database that has not yet taken 0345 still answers in plain words naming the item
+   and both categories, never a generic failed save. Pure. */
 
 import { mfgCategoryLabel } from "../../vendor/shared/product-categories";
 import type { RenoDocInfo } from "../../vendor/scm/lib/renovation-doc-print";
@@ -39,26 +39,13 @@ export function renoPoCategoryRefusal(e: unknown): string | null {
 
 export interface RenoPoDraftLine { rid: string; itemId?: string; itemCode: string }
 
-/** For each NEW line (the trigger checks inserts only) whose product is of another category than the PO, the
-    sentence the database would answer with. Empty outside renovation mode, or for a PO with no project. The PO's
-    category is its own, else that of a line already on it, else the first new line's. */
+/** Nothing clashes any more: a purchase order may mix categories (owner, 19 Nov 2026; migration 0345 lifted the
+    database's refusal), so no line is held back before Save. Kept so the PO and production-order screens keep one
+    call site if a rule ever returns. The parameters stay for that reason. */
 export function renoPoCategoryClashes(
-  info: RenoDocInfo | null,
-  lines: readonly RenoPoDraftLine[],
-  groupOfCode: (code: string) => string | null | undefined,
+  _info: RenoDocInfo | null,
+  _lines: readonly RenoPoDraftLine[],
+  _groupOfCode: (code: string) => string | null | undefined,
 ): Map<string, string> {
-  const out = new Map<string, string>();
-  if (!info?.info?.projectId) return out;
-  let po: string | null = info.info.categoryGroup || null;
-  if (!po) po = Object.values(info.lines).map((l) => l.categoryGroup).find(Boolean) ?? null;
-  // Lines saved since the page read the PO's information.
-  if (!po) po = lines.filter((l) => l.itemId).map((l) => groupOfCode(l.itemCode)).find(Boolean) ?? null;
-  for (const l of lines) {
-    if (l.itemId || !l.itemCode.trim()) continue;
-    const g = groupOfCode(l.itemCode);
-    if (!g) continue;
-    if (!po) { po = g; continue; }
-    if (g !== po) out.set(l.rid, sentence(po, l.itemCode, g));
-  }
-  return out;
+  return new Map<string, string>();
 }

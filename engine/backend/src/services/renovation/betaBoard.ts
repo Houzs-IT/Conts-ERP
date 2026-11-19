@@ -10,7 +10,7 @@ type Json = Record<string, unknown>;
 export const BETA_APPOINTMENT_KINDS = ["site_measure", "carpentry_measure", "site_briefing"] as const;
 export type BetaAppointmentKind = (typeof BETA_APPOINTMENT_KINDS)[number];
 export const BETA_EVENT_TYPES = ["client", "measure", "briefing", "meeting", "w3d", "w2d", "amend", "po", "update"] as const;
-export type BetaEventType = (typeof BETA_EVENT_TYPES)[number];
+export type BetaEventType = string;
 
 export const BETA_AMENDMENT_DAYS = 3;
 export const BETA_NOTE_DAYS_MAX = 60;
@@ -20,7 +20,8 @@ export const BETA_BOARD_DAYS_AFTER = 180;
 
 export const isAppointmentKind = (x: unknown): x is BetaAppointmentKind =>
   typeof x === "string" && (BETA_APPOINTMENT_KINDS as readonly string[]).includes(x);
-const isEventType = (x: unknown): x is BetaEventType => typeof x === "string" && (BETA_EVENT_TYPES as readonly string[]).includes(x);
+/* Any work of the list in Project Maintenance (migration 0342); the route checks the code against the list. */
+const isEventType = (x: unknown): x is BetaEventType => typeof x === "string" && /^[a-z0-9_]{1,40}$/.test(x);
 
 /** HH:MM on the 24 hour clock. */
 export const isClockTime = (x: unknown): x is string => typeof x === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(x);
@@ -213,7 +214,8 @@ export function ordinal(n: number): string {
 }
 
 /** outstandingSen = the sales order total less the money received on it, never below zero. */
-export type BoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string; outstandingSen: number };
+/** paid: instalments fully received (the Second payment design work reads it). */
+export type BoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string; outstandingSen: number; paid: number };
 
 /** "2 of 4 paid", "Fully paid", or "Pending 2nd payment" while a bill waits for money. A contract without
     instalments has nothing to pay, so it reads as none. */
@@ -222,10 +224,10 @@ export function paymentLabel(p: BetaPayments): BoardPayment {
   if (p.instalments.length === 0) return { state: "none" };
   const outstandingSen = Math.max(0, p.contractSen - p.receivedSen);
   const paid = p.instalments.filter((i) => i.status === "paid").length;
-  if (paid === p.instalments.length) return { state: "ok", label: "Fully paid", outstandingSen };
+  if (paid === p.instalments.length) return { state: "ok", label: "Fully paid", outstandingSen, paid };
   const next = p.instalments.find((i) => i.status !== "paid");
-  if (next?.status === "billed") return { state: "ok", label: `Pending ${ordinal(next.seq)} payment`, outstandingSen };
-  return { state: "ok", label: `${paid} of ${p.instalments.length} paid`, outstandingSen };
+  if (next?.status === "billed") return { state: "ok", label: `Pending ${ordinal(next.seq)} payment`, outstandingSen, paid };
+  return { state: "ok", label: `${paid} of ${p.instalments.length} paid`, outstandingSen, paid };
 }
 
 /** Rows grouped by their project_id, each group in the order the rows came. */

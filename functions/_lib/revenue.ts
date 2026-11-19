@@ -89,3 +89,47 @@ export function groupBy<T>(rows: T[], key: (r: T) => string): Map<string, T[]> {
   for (const r of rows) { const k = key(r); const list = m.get(k); if (list) list.push(r); else m.set(k, [r]); }
   return m;
 }
+
+/** The units the dashboard counts (owner, 19 Nov 2026): rental units, without rent to rent (its income is the tenant's
+ *  rent, not stays). Null on a database without the purpose or contract columns: every unit counts. */
+export async function dashboardUnits(env: Env): Promise<Set<string> | null> {
+  try {
+    const rows = await all<{ id: string }>(env, `SELECT u.id FROM units u LEFT JOIN owner_contracts c ON c.id = u.contract_id
+      WHERE COALESCE(u.purpose, 'rental') = 'rental' AND COALESCE(c.revenue_model, '') <> 'master_lease'`);
+    return new Set(rows.map(r => r.id));
+  } catch { return null; }
+}
+
+/** When each unit is live (owner, 19 Nov 2026): from its first reservation's check-in to its last reservation's
+ *  checkout; a unit still trading (a stay ending in the last 30 days, or one to come) stays live past today. */
+export type LiveWindows = Map<string, { from: string; toExclusive: string }>;
+export async function liveWindows(env: Env, today: string, farFuture = '2100-01-01'): Promise<LiveWindows> {
+  const rows = await all<{ unit_id: string; first_in: string; last_out: string }>(env, `
+    SELECT r.unit_id, MIN(r.check_in)::date::text AS first_in, MAX(r.check_out)::date::text AS last_out
+    FROM reservations r WHERE ${COUNTED_STAY} GROUP BY r.unit_id`);
+  const recent = new Date(t(today) - 30 * DAY).toISOString().slice(0, 10);
+  return new Map(rows.map(r => [r.unit_id, { from: r.first_in.slice(0, 10), toExclusive: r.last_out.slice(0, 10) >= recent ? farFuture : r.last_out.slice(0, 10) }]));
+}
+
+/** A month's figures over the units live in it (owner, 19 Nov 2026): a unit live from the 1st to the 14th counts as one
+ *  unit, one that goes live on the 15th or later as half a unit; likewise one whose last checkout falls on or before the
+ *  15th is half. Occupancy = booked nights / (units x days); income per unit = the month's income / units. */
+export interface ActiveMetrics { activeUnits: number; liveDays: number; nights: number; gross: number; occupancy: number; perUnit: number }
+export function activeMetrics(rows: Pick<StayMonthRow, 'unit_id' | 'nights' | 'gross'>[], from: string, toExclusive: string, live: LiveWindows, units: Set<string> | null): ActiveMetrics {
+  const periodDays = nightsBetween(from, toExclusive);
+  const mid = `${from.slice(0, 7)}-15`;
+  let count = 0;
+  for (const [id, w] of live) {
+    if (units && !units.has(id)) continue;
+    if (!nightsInWindow(w.from, w.toExclusive, from, toExclusive)) continue;
+    count += w.from >= mid || w.toExclusive <= mid ? 0.5 : 1;
+  }
+  const nights = rows.reduce((n, r) => n + r.nights, 0);
+  const grossExact = rows.reduce((n, r) => n + r.gross, 0);
+  const liveDays = count * periodDays;
+  return {
+    activeUnits: count, liveDays, nights, gross: Math.round(grossExact),
+    occupancy: liveDays ? Math.min(100, Number(((nights / liveDays) * 100).toFixed(1))) : 0,
+    perUnit: count ? Math.round(grossExact / count) : 0,
+  };
+}

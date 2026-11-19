@@ -11,12 +11,11 @@
 //                    quotation), where finance chooses the supplier and the accounts; paid on the Payment voucher page.
 // Finance also checks a claim (its accounts), rejects with a reason, or closes a request paid short.
 import { useMemo, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "../components/Layout";
 import { Button } from "../components/Button";
 import { DataTable, type Column } from "../components/DataTable";
 import { TabStrip } from "../components/TabStrip";
-import { ResizableDetailDrawer } from "../components/ResizableDetailDrawer";
 import { usePrompt } from "../vendor/scm/components/PromptDialog";
 import { useChoice } from "../vendor/scm/components/ChoiceDialog";
 import { useAuth } from "../auth/AuthContext";
@@ -121,8 +120,6 @@ export function PaymentRequests() {
   const edit = can("scm.payment_voucher.write");
   const [note, setNote] = useState<string | null>(null);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
-  /* The row opened on the side (chew, 18 Nov 2026: "我点不进去这个 request"). */
-  const [opened, setOpened] = useState<Row | null>(null);
 
   const rows = useMemo<Row[] | null>(() => {
     if (!q.data) return null;
@@ -325,7 +322,7 @@ export function PaymentRequests() {
         error={q.isError ? "The requests did not load." : claimsQ.isError ? "The claims did not load." : null}
         emptyLabel="No requests."
         getRowKey={(r) => r.id}
-        onRowClick={(r: Row) => setOpened(r)}
+        onRowDoubleClick={(r: Row) => navigate(r.kind === "request" ? `/scm/payment-requests/r/${r.q.id}` : `/scm/payment-requests/c/${r.c.id}`)}
         selection={{
           selectedIds: ticked,
           onToggle: (id: string) => setTicked((t) => { const n = new Set(t); if (n.has(id)) n.delete(id); else n.add(id); return n; }),
@@ -333,9 +330,6 @@ export function PaymentRequests() {
           rowLabel: (r: Row) => `Tick ${no(r)}`,
         }}
       />
-      <ResizableDetailDrawer open={opened != null} onClose={() => setOpened(null)} ariaLabel={opened ? `Request ${no(opened)}` : "Request"}>
-        {opened && <RowDetail r={opened} lineText={(l) => [deptLabel(l), l.accountCode, l.description].filter(Boolean).join(" · ")} />}
-      </ResizableDetailDrawer>
     </div>
   );
 }
@@ -349,8 +343,7 @@ function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
   );
   const lines = r.kind === "request" ? r.q.lines : r.c.lines;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
-      <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{no(r)}</h2>
+    <section className="rounded-lg border border-line bg-surface" style={{ display: "flex", flexDirection: "column", gap: 12, padding: 20, maxWidth: 820 }}>
       {r.kind === "request" ? (
         <>
           {field("Status", <>{REQUEST_STATUS[r.q.status]}{requestStatusNote(r.q) && <span className="block text-xs text-ink-muted">{requestStatusNote(r.q)}</span>}</>)}
@@ -395,6 +388,25 @@ function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
           ? <FileButtons files={r.q.files} open={(f, mime) => requestFileUrl(r.q.id, f, mime)} />
           : <FileButtons files={r.c.files} open={(f, mime) => financeReceiptFileUrl(r.c.id, f, mime)} />}
       </div>
+    </section>
+  );
+}
+
+/** A request or claim on its own page (chew, 19 Nov 2026: double-click a row to see what was handed in; no pop-out). */
+export function PaymentRequestDetail() {
+  const { kind, id } = useParams<{ kind: string; id: string }>();
+  const q = usePaymentRequests("");
+  const claimsQ = useFinanceReceipts("");
+  const deptLabel = useLineDepartmentLabel();
+  const r: Row | null = kind === "c"
+    ? (() => { const c = claimsQ.data?.receipts.find((x) => x.id === id); return c ? { kind: "claim" as const, id: `claim:${c.id}`, c } : null; })()
+    : (() => { const x = q.data?.requests.find((y) => y.id === id); return x ? { kind: "request" as const, id: x.id, q: x } : null; })();
+  const loading = kind === "c" ? claimsQ.isLoading : q.isLoading;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <PageHeader back="/scm/payment-requests" eyebrow="Finance" title={r ? no(r) : kind === "c" ? "Claim" : "Payment request"} />
+      {r ? <RowDetail r={r} lineText={(l) => [deptLabel(l), l.accountCode, l.description].filter(Boolean).join(" · ")} />
+        : <div className="text-ink-muted">{loading ? "Loading…" : "This request was not found."}</div>}
     </div>
   );
 }

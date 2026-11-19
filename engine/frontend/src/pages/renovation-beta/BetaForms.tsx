@@ -8,7 +8,7 @@ import { errorText } from "../projects/renovation/renovationModel";
 import { peopleOptions, personLabel, usePeople } from "../projects/renovation/PersonSelect";
 import type { Person } from "../projects/renovation/simpleApi";
 import {
-  add, amendDue, APPT_LABEL, apptKindOf, apptWho, apptWithDefault, bookIssue, dateHints, designKind, ds, EVENT_TYPES, initials, isEventType, ord,
+  add, amendDue, APPT_LABEL, apptKindOf, apptWho, apptWithDefault, bookIssue, dateHints, designKind, ds, initials, ord,
   personInfo, type ApptKey, type BoardModel, type CalEvent, type DesignProject, type Kind, type Viewing,
 } from "./renovationBetaBoard";
 import {
@@ -21,7 +21,7 @@ import { simpleApi } from "../projects/renovation/simpleApi";
 import { AnimatePresence } from "motion/react";
 
 export type BetaDialog =
-  | { t: "work"; ev: CalEvent | null; day: string }
+  | { t: "work"; ev: CalEvent | null; day: string; preset?: { projectId: number; type: string } }
   | { t: "assign"; projectId: number; role?: AssignRole }
   | { t: "measured"; projectId: number }
   | { t: "book"; projectId: number; key: ApptKey }
@@ -341,22 +341,23 @@ const num = (v: string): number | null => (v === "" ? null : Number(v));
 
 /* ---------- Add work / Edit work ---------- */
 
-function WorkForm({ env, ev, day }: { env: FormEnv; ev: CalEvent | null; day: string }): ReactElement {
+function WorkForm({ env, ev, day, preset }: { env: FormEnv; ev: CalEvent | null; day: string; preset?: { projectId: number; type: string } }): ReactElement {
   const { m, who } = env;
   const all = useFormPeople(m);
   const isNew = !ev;
-  const [type, setType] = useState<string>(ev?.type ?? "client");
+  const types = m.workTypes.filter((w) => w.active || w.code === ev?.type).sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+  const [type, setType] = useState<string>(ev?.type ?? preset?.type ?? types.find((w) => w.code === "client")?.code ?? types[0]?.code ?? "client");
   const [note, setNote] = useState(ev?.note ?? "");
   const [d, setD] = useState(ev?.d ?? day);
   const [t, setT] = useState(ev?.t ?? "");
   const [person, setPerson] = useState<string>(String(ev ? ev.who?.id ?? "" : who === "All" ? m.mePersonId ?? "" : who));
-  const [project, setProject] = useState<string>(ev?.projectId != null ? String(ev.projectId) : "");
+  const [project, setProject] = useState<string>(ev?.projectId != null ? String(ev.projectId) : preset ? String(preset.projectId) : "");
   const [done, setDone] = useState(ev?.done ?? false);
   const save = useSave(env);
 
   async function submit(): Promise<void> {
     await save.run(async () => {
-      if (!isEventType(type)) throw new Error("Pick a type.");
+      if (!types.some((w) => w.code === type)) throw new Error("Pick a type.");
       const body: EventBody = { projectId: num(project), onDate: d, atTime: t || null, type, note: note.trim() || null, personId: num(person) };
       if (ev?.eventId != null) await boardApi.saveEvent(ev.eventId, { ...body, done });
       else await boardApi.addEvent(body);
@@ -377,7 +378,7 @@ function WorkForm({ env, ev, day }: { env: FormEnv; ev: CalEvent | null; day: st
     <BetaModal title={isNew ? "Add work" : "Edit work"} onClose={env.onClose} onSubmit={submit} error={save.error} busy={save.busy} danger={isNew ? undefined : { label: "Delete", onClick: () => void remove() }}>
       <Field label="Type">
         <select name="type" value={type} onChange={(e) => setType(e.target.value)} style={IN}>
-          {EVENT_TYPES.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+          {types.map((w) => <option key={w.code} value={w.code}>{w.label}</option>)}
         </select>
       </Field>
       <Field label="Note">
@@ -659,7 +660,7 @@ export function BetaDialogs({ dialog, env }: { dialog: BetaDialog | null; env: F
 }
 
 function dialogOf(dialog: BetaDialog, env: FormEnv): ReactElement | null {
-  if (dialog.t === "work") return <WorkForm key={dialog.ev?.id ?? "new"} env={env} ev={dialog.ev} day={dialog.day} />;
+  if (dialog.t === "work") return <WorkForm key={dialog.ev?.id ?? "new"} env={env} ev={dialog.ev} day={dialog.day} preset={dialog.preset} />;
   const p = env.m.byId.get(dialog.projectId);
   if (!p) return null;
   if (dialog.t === "assign") return <AssignForm env={env} p={p} role={dialog.role} />;

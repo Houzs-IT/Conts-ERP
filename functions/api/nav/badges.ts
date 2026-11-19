@@ -7,6 +7,16 @@ import { waitingCount, approvalsEnabled } from '../../_lib/approvals';
 import { levelsFor } from '../../_lib/access';
 import { STAY_SQL } from '../../_lib/reviewStays';
 import { GUEST_REVIEW_WINDOW_DAYS } from '../../../src/lib/reviewRules';
+import { forwardClaims } from '../../_lib/claimsForward';
+
+/** Payment requests and claims waiting for finance to pay, from the engine (chew, 19 Nov 2026). 0 when the engine is
+ *  slow, unreachable or refuses: a menu count is never worth holding the menu up for. */
+async function paymentRequestsWaiting(env: Env, session: Parameters<typeof forwardClaims>[1]): Promise<number> {
+  const ask = forwardClaims(env, session, 'GET', '/finance-waiting')
+    .then(async r => (r.ok ? Number((await r.json<{ count?: number }>()).count ?? 0) : 0)).catch(() => 0);
+  const n = await Promise.race([ask, new Promise<number>(done => setTimeout(() => done(0), 3000))]);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-MY')} ${n === 1 ? one : many}`;
 
@@ -55,6 +65,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // records they cannot open or an alert whose link answers "no access".
   const sees = (area: string) => session.role === 'management' || lv[area] !== 'none';
   const money = sees('finance');
+  // Only those who open the company ledger see its Payment requests entry, so only they are asked for its count.
+  const paymentRequests = sees('ledger') ? await paymentRequestsWaiting(env, session) : 0;
   const ops = sees('operations'), cleans = sees('cleaning'), repairs = sees('maintenance');
   const inbox = sees('comms') ? n.inbox : 0, sync = sees('integrations');
   // Reviews: reviews waiting for a reply plus Airbnb guests still to be reviewed inside the window.
@@ -80,6 +92,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     channels, today: ops ? n.today : 0, reviews, cleaning: cleans ? n.cleaning : 0, maintenance: repairs ? n.maintenance : 0, inbox,
     // What the maintenance count is made of, for the menu's tooltip: the same split as the Maintenance header.
     maintenanceAwaiting: repairs ? n.maintenance_awaiting : 0,
-    statements: money ? n.statements : 0, approvals, approvalsOn, alerts,
+    statements: money ? n.statements : 0, approvals, approvalsOn, alerts, paymentRequests,
   });
 };

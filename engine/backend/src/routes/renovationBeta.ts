@@ -4,13 +4,13 @@
    every write adds a project_activity row (action beta_*) that the existing timeline reads. Section 10 of the plan
    (Home, Projects and Calendar) adds the board read and the design, appointment and calendar entry writes at the end. */
 
+import { findIncompleteVariantLines } from "../scm/lib/so-variant-check";
+import { eventTypeKnown, listWorkTypes } from "../services/renovation/workTypes";
 import { Hono, type Context } from "hono";
 import { TRANSIENT_CONN_RE } from "../db/d1-compat";
 import type { Env } from "../types";
 import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
-import { goLiveOf } from "../acc/go-live";
-import { billingViews } from "../scm/lib/renovation-billing";
 import { todayMyt } from "../scm/lib/my-time";
 import { builtinPosOf, poDrawings, projectDrawings, recordDrawingAmendments } from "../services/renovation/betaBuiltinPo";
 import { financeHiddenForUser } from "../services/pmsAccess";
@@ -21,11 +21,11 @@ import { syncPeopleFromUsers } from "../services/renovation/peopleSync";
 import { teamPersonIds, teamProjectSql } from "../services/renovation/teamScope";
 import { hasPermission } from "../services/permissions";
 import { isMissingRelation, loadProjectRows, loadRenovationFacts, type Db, type DbStmt } from "../services/renovation/load";
-import { renoDbFromD1 } from "../services/renovation/dbBridge";
+import { PROJECT_SO_SQL, projectPayments, type ProjectSoRow } from "../services/renovation/projectPayments";
 import { writeCachedStage } from "../services/renovation/contractSync";
 import {
   BETA_DEFAULT_2D_DAYS, BETA_DEFAULT_3D_DAYS, cleanBetaReminder, cleanBetaSettings, cleanDefectFixed, cleanDefectRedo, cleanDefectReport,
-  cleanDesignApproval, cleanDesignSent, defectMoveRefusal, designLabel, paymentsOf, type BetaPayments, type BetaReceipt, type DefectMove,
+  cleanDesignApproval, cleanDesignSent, defectMoveRefusal, designLabel, type BetaPayments, type DefectMove,
 } from "../services/renovation/beta";
 import {
   BETA_AMENDMENT_DAYS, buildBoardProject, cleanBetaAppointment, cleanBetaDesign, cleanBetaEvent, cleanBetaEventPatch, cleanBoardRange, cleanNoteDays,
@@ -54,7 +54,7 @@ import { HANDOVER_NOT_READY, itemFailRefusal } from "../services/renovation/hand
 import { chainTimeline, statusWords } from "../services/renovation/betaTimelineChain";
 import { datedAt, plainEntry, readProjectTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineDoc, type TimelineEntry } from "../services/renovation/timeline";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
-import { attachmentsReady, linkedFilesFor, listFilesFor, orderLineFiles, podFiles, textArray, type DocFile } from "../scm/lib/doc-attachments";
+import { attachmentsReady, linkedFilesFor, listFilesFor, orderLineFiles, podFilesFor, textArray, type DocFile } from "../scm/lib/doc-attachments";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -111,97 +111,12 @@ async function designFileOf(c: Ctx, fileId: number): Promise<DesignFileRow | nul
 
 const TS = (col: string): string => `to_char(${col} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`;
 
-interface ProjectSoRow { project_id: number; doc_no: string; kind: string | null; total_sen: number | null }
-interface ReceiptRow { so_doc_no: string; paid_on: string; amount_sen: number; method: string | null }
-
-/* The live sales order of each project: a renovation contract first, else the newest ordinary sales order linked to
-   the project (owner, 24 Oct 2026: "once I receive money, the project knows"). */
-const PROJECT_SO_SQL = (where: string): string =>
-  `SELECT DISTINCT ON (so.project_id) so.project_id::int AS project_id, so.doc_no, to_jsonb(so)->>'so_kind' AS kind, so.local_total_sen::bigint AS total_sen
-     FROM scm.mfg_sales_orders so JOIN projects p ON p.id = so.project_id
-    WHERE ${where} AND so.company_id = ? AND so.status::text <> 'CANCELLED'
-    ORDER BY so.project_id, (to_jsonb(so)->>'so_kind' = 'RENOVATION') DESC, so.so_date DESC NULLS LAST, so.doc_no DESC`;
-
-/** Payments recorded on these orders, oldest first, grouped by order. */
-async function receiptsOf(c: Ctx, docNos: readonly string[]): Promise<Map<string, BetaReceipt[]>> {
-  const out = new Map<string, BetaReceipt[]>();
-  if (docNos.length === 0) return out;
-  const rows = (await db(c).prepare(
-    `SELECT so_doc_no, to_char(paid_at, 'YYYY-MM-DD') AS paid_on, amount_sen::bigint AS amount_sen, method::text AS method
-       FROM scm.mfg_sales_order_payments
-      WHERE so_doc_no IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND paid_at IS NOT NULL
-      ORDER BY paid_at, id`,
-  ).bind(JSON.stringify(docNos)).all<ReceiptRow>()).results ?? [];
-  for (const r of rows) {
-    const list = out.get(r.so_doc_no) ?? [];
-    list.push({ paidOn: r.paid_on, amountSen: Number(r.amount_sen), method: r.method });
-    out.set(r.so_doc_no, list);
-  }
-  return out;
-}
-
-interface CarriedRow { doc_no: string; golive_sen: number; open_sen: number; ahead_sen: number; sole: boolean }
-
-/** What AutoCount collected on the contracts it carried (seeded at go-live; acc/reno-opening): the go-live amount
-    less what its customer still had open, plus what they had paid ahead (acc/reno-projects reads it the same way). It
-    is one payment on the eve of go-live; the order's own payments before go-live are AutoCount's already. */
-async function autocountCollected(c: Ctx, companyId: number, docNos: readonly string[]): Promise<{ goLive: string | null; bySo: Map<string, number> }> {
-  const bySo = new Map<string, number>();
-  const set = await db(c).prepare(`SELECT ledger_start_date::text AS ledger_start_date, documents_cutover_date::text AS documents_cutover_date
-     FROM scm.acc_company_settings WHERE company_id = ?`).bind(companyId).first<{ ledger_start_date: string | null; documents_cutover_date: string | null }>();
-  const goLive = goLiveOf(set ?? null);
-  if (!goLive || docNos.length === 0) return { goLive, bySo };
-  const rows = (await db(c).prepare(
-    `WITH k AS (
-       SELECT so.doc_no, so.debtor_code, rc.golive_contract_sen
-         FROM scm.mfg_sales_orders so JOIN scm.reno_so_contracts rc ON rc.so_doc_no = so.doc_no
-        WHERE so.company_id = ? AND rc.golive_contract_sen IS NOT NULL AND so.doc_no IN (SELECT jsonb_array_elements_text(?::text::jsonb)))
-     SELECT k.doc_no, k.golive_contract_sen::bigint AS golive_sen,
-            COALESCE((SELECT sum(i.total_sen) FROM scm.sales_invoices i WHERE i.company_id = ? AND i.opening_balance AND i.debtor_code = k.debtor_code
-                       AND upper(i.status::text) NOT IN ('DRAFT', 'CANCELLED', 'VOID')), 0)::bigint AS open_sen,
-            COALESCE((SELECT sum(cc.amount_sen) FROM scm.customer_credits cc WHERE cc.company_id = ? AND cc.source_type = 'OPENING'
-                       AND cc.debtor_code = k.debtor_code), 0)::bigint AS ahead_sen,
-            (SELECT count(*) FROM scm.mfg_sales_orders o WHERE o.company_id = ? AND o.debtor_code = k.debtor_code AND o.status::text <> 'CANCELLED') = 1 AS sole
-       FROM k`,
-  ).bind(companyId, JSON.stringify(docNos), companyId, companyId, companyId).all<CarriedRow>()).results ?? [];
-  for (const r of rows) {
-    if (!r.sole) continue;
-    const sen = Number(r.golive_sen) + Number(r.ahead_sen) - Number(r.open_sen);
-    if (sen > 0) bySo.set(r.doc_no, sen);
-  }
-  return { goLive, bySo };
-}
-
-const dayBefore = (d: string): string => new Date(Date.parse(`${d}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
-
-/** Payments per project from its live sales order: the renovation contract's instalments, or four plain payments. */
-async function projectPayments(c: Ctx, companyId: number, sos: readonly ProjectSoRow[]): Promise<Map<number, BetaPayments>> {
-  const out = new Map<number, BetaPayments>();
-  const reno = sos.filter((s) => s.kind === "RENOVATION").map((s) => s.doc_no);
-  const [views, receipts, carried] = await Promise.all([
-    reno.length > 0 ? billingViews(renoDbFromD1(db(c)), reno, companyId) : Promise.resolve(new Map()),
-    receiptsOf(c, sos.map((s) => s.doc_no)),
-    autocountCollected(c, companyId, reno),
-  ]);
-  for (const so of sos) {
-    const view = so.kind === "RENOVATION" ? views.get(so.doc_no) ?? null : null;
-    let mine = receipts.get(so.doc_no) ?? [];
-    const before = carried.bySo.get(so.doc_no);
-    if (before != null && carried.goLive) {
-      const goLive = carried.goLive;
-      mine = [{ paidOn: dayBefore(goLive), amountSen: before, method: "autocount" }, ...mine.filter((r) => r.paidOn >= goLive)];
-    }
-    out.set(Number(so.project_id), paymentsOf(view, { docNo: so.doc_no, totalSen: Number(so.total_sen ?? 0), receipts: mine }));
-  }
-  return out;
-}
-
 async function paymentsFor(c: Ctx, projectId: number, companyId: number): Promise<BetaPayments> {
   if (financeHiddenForUser(c.get("user"))) return { state: "hidden" };
   try {
     const so = await db(c).prepare(PROJECT_SO_SQL("so.project_id = ?")).bind(projectId, companyId).first<ProjectSoRow>();
     if (!so) return { state: "none" };
-    return (await projectPayments(c, companyId, [so])).get(projectId) ?? { state: "none" };
+    return (await projectPayments(db(c), companyId, [so])).get(projectId) ?? { state: "none" };
   } catch (e) {
     // Only an environment whose billing tables are not there yet reads as "no payments"; any other failure surfaces.
     if (isMissingRelation(e)) return { state: "none" };
@@ -215,22 +130,25 @@ app.get("/projects/:id/workspace", requirePageAccess("projects.list"), async (c)
   const co = await projectCompany(c, id);
   if (co == null) return c.json({ error: "not_found" }, 404);
   try {
-    const settings = await db(c).prepare(`SELECT design_3d_days::int AS d3, design_2d_days::int AS d2 FROM project_beta_settings WHERE company_id = ?`)
-      .bind(co).first<{ d3: number; d2: number }>();
-    const reviews = await db(c).prepare(
-      `SELECT file_id::int AS file_id, sent_on::text AS sent_on, due_on::text AS due_on, approved_on::text AS approved_on, approved_by_name, approval_note
-         FROM project_design_file_reviews WHERE project_id = ? ORDER BY file_id`,
-    ).bind(id).all<{ file_id: number; sent_on: string | null; due_on: string | null; approved_on: string | null; approved_by_name: string | null; approval_note: string | null }>();
-    const defects = await db(c).prepare(
-      `SELECT d.id::int AS id, d.phase, d.location, d.item_description, d.trade, d.due_date::text AS due_date, d.reported_at, u.name AS reported_by_name,
-              d.photo_r2_key, d.after_photo_r2_key, ${TS("d.fixed_at")} AS fixed_at, ${TS("d.closed_at")} AS closed_at, d.redo_count::int AS redo_count
-         FROM project_defects d LEFT JOIN users u ON u.id = d.reported_by
-        WHERE d.project_id = ? AND d.archived_at IS NULL ORDER BY d.id`,
-    ).bind(id).all<{
-      id: number; phase: string; location: string | null; item_description: string | null; trade: string | null; due_date: string | null; reported_at: string | null;
-      reported_by_name: string | null; photo_r2_key: string | null; after_photo_r2_key: string | null; fixed_at: string | null; closed_at: string | null; redo_count: number;
-    }>();
-    const payments = await paymentsFor(c, id, co);
+    // Four independent reads, sent together.
+    const [settings, reviews, defects, payments] = await Promise.all([
+      db(c).prepare(`SELECT design_3d_days::int AS d3, design_2d_days::int AS d2 FROM project_beta_settings WHERE company_id = ?`)
+        .bind(co).first<{ d3: number; d2: number }>(),
+      db(c).prepare(
+        `SELECT file_id::int AS file_id, sent_on::text AS sent_on, due_on::text AS due_on, approved_on::text AS approved_on, approved_by_name, approval_note
+           FROM project_design_file_reviews WHERE project_id = ? ORDER BY file_id`,
+      ).bind(id).all<{ file_id: number; sent_on: string | null; due_on: string | null; approved_on: string | null; approved_by_name: string | null; approval_note: string | null }>(),
+      db(c).prepare(
+        `SELECT d.id::int AS id, d.phase, d.location, d.item_description, d.trade, d.due_date::text AS due_date, d.reported_at, u.name AS reported_by_name,
+                d.photo_r2_key, d.after_photo_r2_key, ${TS("d.fixed_at")} AS fixed_at, ${TS("d.closed_at")} AS closed_at, d.redo_count::int AS redo_count
+           FROM project_defects d LEFT JOIN users u ON u.id = d.reported_by
+          WHERE d.project_id = ? AND d.archived_at IS NULL ORDER BY d.id`,
+      ).bind(id).all<{
+        id: number; phase: string; location: string | null; item_description: string | null; trade: string | null; due_date: string | null; reported_at: string | null;
+        reported_by_name: string | null; photo_r2_key: string | null; after_photo_r2_key: string | null; fixed_at: string | null; closed_at: string | null; redo_count: number;
+      }>(),
+      paymentsFor(c, id, co),
+    ]);
     return c.json({
       settings: { design3dDays: settings?.d3 ?? BETA_DEFAULT_3D_DAYS, design2dDays: settings?.d2 ?? BETA_DEFAULT_2D_DAYS },
       reviews: (reviews.results ?? []).map((r) => ({
@@ -574,7 +492,7 @@ async function boardPayments(c: Ctx, companyId: number, scope: string): Promise<
   const out = new Map<number, BoardPayment>();
   try {
     const sos = (await db(c).prepare(PROJECT_SO_SQL(scope)).bind(companyId).all<ProjectSoRow>()).results ?? [];
-    for (const [id, p] of await projectPayments(c, companyId, sos)) out.set(id, paymentLabel(p));
+    for (const [id, p] of await projectPayments(db(c), companyId, sos)) out.set(id, paymentLabel(p));
   } catch (e) {
     // Same rule as the workspace: only billing tables that are not there yet read as "no payment"; anything else surfaces.
     if (!isMissingRelation(e)) throw e;
@@ -608,7 +526,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
   const hidden = financeHiddenForUser(user);
   try {
     // One query per data set over the whole scoped project list, grouped in code below.
-    const [settings, people, projects, files, notes, reviews, appointments, events, payments, meIds] = await Promise.all([
+    const [settings, people, projects, files, notes, reviews, appointments, events, payments, meIds, workTypes, designEvents, soLines] = await Promise.all([
       db(c).prepare(`SELECT design_3d_days::int AS d3, design_2d_days::int AS d2 FROM project_beta_settings WHERE company_id = ?`)
         .bind(companyId).first<{ d3: number; d2: number }>(),
       boardPeople(c, companyId),
@@ -662,6 +580,21 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       ).bind(companyId, range.value.from, range.value.to).all<EventRow>(),
       hidden ? Promise.resolve(new Map<number, BoardPayment>()) : boardPayments(c, companyId, scope),
       calendarMePersonIds(db(c), user?.id, user?.email),
+      listWorkTypes(db(c), companyId),
+      // Design works of the list (migration 0342) booked on the calendar, any date: the newest booking of each work per
+      // project says when it is or was done.
+      db(c).prepare(
+        `SELECT DISTINCT ON (e.project_id, e.type) e.project_id::int AS project_id, e.type, e.on_date::text AS on_date, to_char(e.at_time, 'HH24:MI') AS at_time, e.done
+           FROM project_beta_events e JOIN projects p ON p.id = e.project_id
+          WHERE e.company_id = ? AND ${scope}
+          ORDER BY e.project_id, e.type, e.on_date DESC, e.id DESC`,
+      ).bind(companyId).all<{ project_id: number; type: string; on_date: string; at_time: string | null; done: boolean }>(),
+      // Sales order lines for the Variants step: every line's category-required variants picked.
+      db(c).prepare(
+        `SELECT so.project_id::int AS project_id, i.id::text AS id, i.item_code, i.item_group, i.variants
+           FROM scm.mfg_sales_order_items i JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no JOIN projects p ON p.id = so.project_id
+          WHERE ${scope} AND so.company_id = ? AND so.status::text <> 'CANCELLED' AND NOT coalesce(i.cancelled, false)`,
+      ).bind(companyId).all<{ project_id: number; id: string; item_code: string | null; item_group: string | null; variants: Record<string, unknown> | null }>(),
     ]);
     if (projectId != null && (projects.results ?? []).length === 0) return c.json({ error: "not_found" }, 404);
     const sets = {
@@ -678,7 +611,17 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       mePersonId: peopleList.find((p) => p.offered && mine.has(p.id))?.id ?? peopleList.find((p) => mine.has(p.id))?.id ?? null,
       settings: { design3dDays: settings?.d3 ?? BETA_DEFAULT_3D_DAYS, design2dDays: settings?.d2 ?? BETA_DEFAULT_2D_DAYS, amendmentDays: BETA_AMENDMENT_DAYS },
       people: peopleList,
-      projects: (projects.results ?? []).map((p) => buildBoardProject(p, sets, paymentOf(Number(p.id)))),
+      workTypes,
+      projects: (projects.results ?? []).map((p) => {
+        const id = Number(p.id);
+        const lines = (soLines.results ?? []).filter((l) => Number(l.project_id) === id);
+        const missing = findIncompleteVariantLines(lines.map((l) => ({ id: l.id, itemCode: l.item_code ?? "", group: l.item_group, variants: l.variants }))).length;
+        return {
+          ...buildBoardProject(p, sets, paymentOf(id)),
+          works: (designEvents.results ?? []).filter((e) => Number(e.project_id) === id).map((e) => ({ type: e.type, onDate: e.on_date, atTime: e.at_time, done: !!e.done })),
+          variants: { lines: lines.length, missing },
+        };
+      }),
       events: (events.results ?? []).map((e) => ({
         id: e.id, projectId: e.project_id, onDate: e.on_date, atTime: e.at_time, type: e.type, note: e.note, personId: e.person_id, done: e.done,
       })),
@@ -827,6 +770,7 @@ app.post("/events", requirePermission("projects.write"), async (c) => {
   const v = cleanBetaEvent(await body(c));
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
   const { projectId, onDate, atTime, type, note, personId } = v.value;
+  if (!(await eventTypeKnown(db(c), co.companyId, type))) return c.json({ error: "type_invalid", message: "Pick the kind of entry from the list." }, 400);
   if (projectId != null && (await projectCompany(c, projectId)) == null) return c.json({ error: "not_found" }, 404);
   if (!(await companyPeople(c, co.companyId, personId == null ? [] : [personId]))) return c.json(PERSON_REFUSAL, 400);
   const row = await db(c).prepare(
@@ -853,6 +797,7 @@ app.patch("/events/:id", requirePermission("projects.write"), async (c) => {
   const v = cleanBetaEventPatch(await body(c));
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
   const { projectId, personId } = v.value;
+  if (v.value.type !== undefined && !(await eventTypeKnown(db(c), co.companyId, v.value.type))) return c.json({ error: "type_invalid", message: "Pick the kind of entry from the list." }, 400);
   if (projectId != null && (await projectCompany(c, projectId)) == null) return c.json({ error: "not_found" }, 404);
   if (!(await companyPeople(c, co.companyId, personId == null ? [] : [personId]))) return c.json(PERSON_REFUSAL, 400);
   const sent = (Object.keys(EVENT_COLUMNS) as Array<keyof BetaEventPatch>).filter((k) => k in v.value);
@@ -1181,8 +1126,12 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
     ...dos.map((d) => ({ type: "delivery_order" as const, id: String(d.id) })),
     ...grs.map((g) => ({ type: "goods_received" as const, id: String(g.id) })),
   ];
-  const attached = ready ? await listFilesFor(db(c), docRefs, companyId) : new Map<string, DocFile[]>();
-  const linked = ready ? await linkedFilesFor(db(c), docRefs, companyId) : new Map<string, Array<DocFile & { key: string }>>();
+  // The uploads, the linked files and every delivery order's proof of delivery: three reads sent together, not one per order.
+  const [attached, linked, podsByDo] = await Promise.all([
+    ready ? listFilesFor(db(c), docRefs, companyId) : Promise.resolve(new Map<string, DocFile[]>()),
+    ready ? linkedFilesFor(db(c), docRefs, companyId) : Promise.resolve(new Map<string, Array<DocFile & { key: string }>>()),
+    podFilesFor(db(c), dos.map((d) => String(d.id))).catch(() => new Map<string, Array<DocFile & { key: string }>>()),
+  ]);
   const areasOf = (rows: Row[], id: string) => uniqueAreas(rows.filter((r) => r.doc_id === id).map((r) => str(r.area)));
   const linesOf = (rows: Row[], id: string): DeliveryLine[] => rows.filter((r) => r.doc_id === id)
     .map((r) => ({ soItemId: str(r.so_item_id), poLineId: str(r.po_line_id), qty: Number(r.qty ?? 0) }));
@@ -1204,7 +1153,7 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
   for (const d of dos) {
     const id = String(d.id);
     const photos: SitePhoto[] = [];
-    const pods = await podFiles(db(c), id).catch(() => []);
+    const pods = podsByDo.get(id) ?? [];
     for (const pod of pods) {
       photos.push({ id: `${pod.id}-${id}`, path: docPath("delivery_order", id, pod.id), name: "Proof of delivery", image: true, kind: "image", area: null, at: pod.at || null, source: "pod" });
     }

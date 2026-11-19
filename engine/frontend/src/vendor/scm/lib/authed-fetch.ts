@@ -76,11 +76,16 @@ export const API_URL =
    "That took too long"). They get the scan wait, and since they WRITE NOTHING a
    timeout says so instead of warning of a duplicate save. */
 export const BILL_READER_PATH = /\/payment-vouchers\/extract$|\/payment-vouchers\/split-pdf$/;
+/* Reads that compute rather than fetch: the From-SO picker runs the whole pooled MRP plan (production, 19 Nov 2026:
+   ~10 s quiet, past 30 s under load). At 30 s the browser gave up and re-sent it up to four times, and every re-send
+   started the same work again on the server, which only made the next one slower; the operator waited minutes and
+   then saw nothing. They get a longer wait and are not re-sent after a timeout. */
+export const SLOW_READ_PATH = /^\/mfg-purchase-orders\/outstanding-so-items(\?|$)/;
 function timeoutSignal(path: string): AbortSignal | undefined {
   // A scan job's /work request is held open for the whole OCR run (scan-job-driver.ts): give it longer than the
   // server's 3-minute stale window so the browser never gives up on a job that is still alive.
   // Reading a counted stock take sheet or a scanned bill holds the request open while the photo is read.
-  const ms = /\/scan-[a-z]+\/jobs\/[^/]+\/work$/.test(path) ? 240_000 : /\/scan-|\/stock-takes\/[^/]+\/read-sheet$/.test(path) || BILL_READER_PATH.test(path) ? 120_000 : 30_000;
+  const ms = /\/scan-[a-z]+\/jobs\/[^/]+\/work$/.test(path) ? 240_000 : /\/scan-|\/stock-takes\/[^/]+\/read-sheet$/.test(path) || BILL_READER_PATH.test(path) ? 120_000 : SLOW_READ_PATH.test(path) ? 90_000 : 30_000;
   try { return AbortSignal.timeout(ms); } catch { return undefined; } // pre-2022 browsers
 }
 
@@ -318,7 +323,7 @@ export async function authedFetch<T>(path: string, init?: RequestInit): Promise<
       res = await fetchWithTimeout(`${API_URL}${path}`, { ...init, headers }, path);
     } catch (e) {
       if (init?.signal?.aborted) throw e;
-      if (isGet && attempt < 4) { await abortableDelay(600 + attempt * 1200, init?.signal); continue; }
+      if (isGet && attempt < 4 && !SLOW_READ_PATH.test(path)) { await abortableDelay(600 + attempt * 1200, init?.signal); continue; }
       /* A timed-out / dropped IDEMPOTENT mutation is safe to replay (the key
          dedupes), so ride out a transient stall instead of failing the save. */
       const transientThrow = typeof e === 'object' && e !== null && (e as { transient?: unknown }).transient === true;

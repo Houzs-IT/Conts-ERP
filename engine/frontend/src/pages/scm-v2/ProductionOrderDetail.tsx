@@ -352,8 +352,9 @@ export const ProductionOrderDetail = () => {
   const [headerDraft, setHeaderDraft] = useState<HeaderDraft | null>(null);
   const [editLines, setEditLines] = useState<EditLine[]>([]);
   const [savingDraft, setSavingDraft] = useState(false);
-  /* Conts, renovation mode: one category per renovation Production Order (mig 0116). A line of another category is named next
-     to its card before Save, and the database's refusal shows here instead of a generic failed save. */
+  /* Conts, renovation mode: a PO may mix categories since 19 Nov 2026 (migration 0345 lifted mig 0116's one-category
+     rule), so renoPoCategoryClashes holds nothing back; a database still on the old rule has its refusal shown here in
+     plain words instead of a generic failed save. */
   const reno = useRenoDocInfo('pro', id);
   const [categoryRefusal, setCategoryRefusal] = useState<string | null>(null);
 

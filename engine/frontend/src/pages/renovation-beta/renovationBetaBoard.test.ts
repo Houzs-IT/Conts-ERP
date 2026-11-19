@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BetaBoard, BetaBoardProject } from "./renovationBetaBoardApi";
 import {
-  add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, diff, ds, homeCounts, homeList, homeRow, initials, items,
+  add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, designSteps, diff, ds, homeCounts, homeList, homeRow, initials, items,
   listFor, monthCells, nextFor, progressByPerson, progressList, rangeFor, shiftMonth, stage, status, type BoardModel, type DesignProject,
 } from "./renovationBetaBoard";
 
@@ -102,6 +102,7 @@ describe("dates", () => {
 describe("status words", () => {
   it("follows the mockup for each condition", () => {
     expect(conditionText(m, get(4))).toBe("B - 3D amendment");
+    // After 2D the first open work of Design work comes next (owner, 19 Nov 2026; Second payment is no longer a work).
     expect(conditionText(m, get(5))).toBe("D - Carpentry measure booked");
     expect(conditionText(m, get(11))).toBe("D - Site briefing booked");
     expect(conditionText(m, get(13))).toBe("A - New · team not assigned");
@@ -109,8 +110,14 @@ describe("status words", () => {
     expect(conditionText(m, get(1))).toBe("C - 2D in progress");
   });
   it("says Done all design when every step is done", () => {
-    const done = buildModel(board([{ ...lakeville, appointments: lakeville.appointments.map((a) => ({ ...a, doneAt: "2026-10-26T01:00:00Z" })) }]));
+    const done = buildModel(board([{
+      ...lakeville, appointments: lakeville.appointments.map((a) => ({ ...a, doneAt: "2026-10-26T01:00:00Z" })),
+      payment: { state: "ok" as const, label: "2 of 4 paid", outstandingSen: 0, paid: 2 }, variants: { lines: 3, missing: 0 },
+    }]));
     expect(status(done, done.projects[0])[0]).toBe("E");
+    const variantsOpen = buildModel(board([{ ...lakeville, appointments: lakeville.appointments.map((a) => ({ ...a, doneAt: "2026-10-26T01:00:00Z" })),
+      payment: { state: "ok" as const, label: "2 of 4 paid", outstandingSen: 0, paid: 2 }, variants: { lines: 3, missing: 1 } }]));
+    expect(status(variantsOpen, variantsOpen.projects[0])[1]).toBe("Pending variants");
   });
   it("re-opens the stage when an amendment is open after approval", () => {
     expect(stage(m, get(4), "3").st).toBe("work");
@@ -143,9 +150,13 @@ describe("next step and Home", () => {
     expect(nextFor(m, get(6))).toMatchObject({ t: "3D waiting for client", d: null });
     expect(nextFor(m, get(1))).toMatchObject({ t: "2D due", d: "2026-10-24" });
   });
-  it("counts the tabs and sorts unassigned first, soonest next", () => {
+  it("counts each Design step filter and sorts unassigned first, soonest next", () => {
     const c = homeCounts(m);
-    expect(c.tabs).toEqual({ all: 7, A: 1, B: 2, C: 2, D: 2, E: 0 });
+    expect(c.all).toBe(7);
+    expect(c.done + Object.values(c.steps).reduce((a, b) => a + b, 0)).toBe(7);
+    expect(Object.keys(c.steps)).toEqual(designSteps(m).map(([k]) => k));
+    for (const [k] of designSteps(m)) expect(homeList(m, `step:${k}`).length).toBe(c.steps[k]);
+    expect(homeList(m, "done").length).toBe(c.done);
     expect(c.late).toBe(0);
     expect(c.week).toBe(4);
     expect(homeList(m, "all").map((p) => p.id)).toEqual([13, 4, 5, 1, 11, 6, 10]);

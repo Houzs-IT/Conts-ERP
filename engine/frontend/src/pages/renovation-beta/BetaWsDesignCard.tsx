@@ -11,7 +11,7 @@ import type { BetaDialog } from "./BetaForms";
 import { WS, WsCard } from "./BetaWsUi";
 import type { BoardView } from "./betaShared";
 import {
-  add, adone, apptKindOf, apptWithDefault, conditionText, designKind, diff, ds, measured, ord, stage, status, type ApptKey, type Kind,
+  add, adone, apptKindOf, apptWithDefault, conditionText, designKind, designSteps, diff, ds, measured, ord, stage, status, stepDone, type ApptKey, type Kind,
 } from "./renovationBetaBoard";
 import { approveNewest, boardApi } from "./renovationBetaBoardApi";
 import { BETA, betaDueTone } from "./renovationBetaTheme";
@@ -97,17 +97,15 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
 
   const appt = (key: ApptKey, gate: boolean, gateText: string): { body: ReactNode; buttons: ReactNode } => {
     const a = p.appts[key];
-    // A site measure is done only once it is recorded (date, who measured): its Done asks for those.
-    if (a && key !== "msr" && adone(m, a)) return { body: ok(`Done ${ds(a.d)}`), buttons: null };
+    // Done once its booked day has passed (owner, 19 Nov 2026), the site measure too; that day is the one shown.
+    if (a && adone(m, a)) return { body: ok(`Done ${ds(a.d)}`), buttons: null };
     if (a?.d) {
       return {
         body: <span style={{ color: WS.blue, fontWeight: 600 }}>{ds(a.d)}{a.t ? ` ${a.t}` : ""} · with {a.with || apptWithDefault(p, key)}</span>,
         buttons: canWrite ? (
           <>
             {btn("Edit", () => openDialog({ t: "book", projectId: p.id, key }))}
-            {key === "msr"
-              ? btn("Done", () => openDialog({ t: "measured", projectId: p.id }), BTN_MAIN)
-              : btn("Done", () => void act(() => boardApi.appointmentDone(p.id, apptKindOf(key)), "Marked done"), BTN_MAIN)}
+            {btn("Done", () => void act(() => boardApi.appointmentDone(p.id, apptKindOf(key)), "Marked done"), BTN_MAIN)}
           </>
         ) : null,
       };
@@ -118,30 +116,53 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
       buttons: canWrite ? (
         <>
           {btn("Book time", () => openDialog({ t: "book", projectId: p.id, key }), BTN_MAIN)}
-          {key === "msr" && btn("Record measure", () => openDialog({ t: "measured", projectId: p.id }))}
         </>
       ) : null,
     };
   };
 
-  const d3 = design("3");
-  const d2 = design("2");
-  const cm = appt("cm", p.design["2"].ok, "After 2D approved");
-  const sb = appt("sb", !!p.appts.cm?.d, "After carpentry measure");
   const siteName = p.site?.name ?? "Site PIC";
-  const lines: Line[] = [
-    { key: "msr", label: "Site measure", ...(measured(m, p) ? { body: ok(`Done${p.measuredOn ? ` ${ds(p.measuredOn)}` : ""}`), buttons: null } : appt("msr", true, "")) },
-    { key: "3", label: `3D · by ${p.by["3"]?.name ?? "not set"}`, ...d3 },
-    { key: "2", label: `2D · by ${p.by["2"]?.name ?? "not set"}`, ...d2 },
-    { key: "cm", label: "Carpentry measure", ...cm },
-    { key: "sb", label: `Site briefing · ${siteName}`, ...sb },
-    {
-      key: "po", label: "PO",
-      ...(p.po ? { body: ok("Done"), buttons: null }
-        : p.design["2"].ok ? { body: mut("Done by itself when Client PO is sent"), buttons: canWrite ? <PoDoneButton projectId={p.id} today={m.today} onDone={onDone} onError={onError} /> : null }
-        : { body: mut("After 2D approved"), buttons: null }),
-    },
-  ];
+  /* The rows follow Design work in Project Maintenance (owner, 19 Nov 2026), then Variants. */
+  const workOf = new Map(m.workTypes.map((w) => [w.code, w] as const));
+  const custom = (code: string): { body: ReactNode; buttons: ReactNode } => {
+    const w = p.works[code];
+    const wt = workOf.get(code);
+    if (stepDone(m, p, code)) return { body: ok(`Done ${w ? ds(w.d) : ""}`), buttons: null };
+    if (w) return { body: <span style={{ color: WS.blue, fontWeight: 600 }}>{ds(w.d)}{w.t ? ` ${w.t}` : ""}</span>, buttons: null };
+    if (!canWrite) return { body: mut(wt?.bookable === false ? "Not done" : "Not booked"), buttons: null };
+    if (wt?.bookable === false) {
+      return {
+        body: mut("Not done"),
+        buttons: btn("Done", () => void act(async () => {
+          const r = await boardApi.addEvent({ projectId: p.id, onDate: m.today, atTime: null, type: code, note: null, personId: null });
+          await boardApi.saveEvent(r.id, { done: true });
+        }, `${wt.label} done`), BTN_MAIN),
+      };
+    }
+    return { body: mut("Not booked"), buttons: btn("Book time", () => openDialog({ t: "work", ev: null, day: m.today, preset: { projectId: p.id, type: code } }), BTN_MAIN) };
+  };
+  const row = (code: string, label: string): Line => {
+    switch (code) {
+      case "measure": return { key: code, label: workOf.get(code)?.label ?? label, ...(measured(m, p) ? { body: ok(`Done${p.measuredOn ? ` ${ds(p.measuredOn)}` : ""}`), buttons: null } : appt("msr", true, "")) };
+      case "w3d": return { key: code, label: `${workOf.get(code)?.label ?? "3D"} · by ${p.by["3"]?.name ?? "not set"}`, ...design("3") };
+      case "w2d": return { key: code, label: `${workOf.get(code)?.label ?? "2D"} · by ${p.by["2"]?.name ?? "not set"}`, ...design("2") };
+      case "payment_2": return {
+        key: code, label: workOf.get(code)?.label ?? "Second payment",
+        body: p.paid == null ? mut(p.payment ?? "No SO yet") : (p.paid >= 2 ? ok("Received") : mut(p.payment ?? "Not received")), buttons: null,
+      };
+      case "carpentry": return { key: code, label: workOf.get(code)?.label ?? "Carpentry measure", ...appt("cm", p.design["2"].ok, "After 2D approved") };
+      case "briefing": return { key: code, label: `${workOf.get(code)?.label ?? "Site briefing"} · ${siteName}`, ...appt("sb", !!p.appts.cm?.d, "After carpentry measure") };
+      case "variants": return {
+        key: code, label: "Variants",
+        body: p.variants.lines === 0 ? mut("No sales order lines yet")
+          : p.variants.missing === 0 ? ok(`All ${p.variants.lines} lines picked`)
+          : mut(`${p.variants.lines - p.variants.missing} of ${p.variants.lines} lines picked · pick the rest on the SO tab`),
+        buttons: null,
+      };
+      default: return { key: code, label: workOf.get(code)?.label ?? label, ...custom(code) };
+    }
+  };
+  const lines: Line[] = designSteps(m).map(([code, label]) => row(code, label));
   if (p.handover) {
     const hl = diff(p.handover, m.today);
     lines.push({ key: "handover", label: `Handover · ${siteName}`, body: mut(`${ds(p.handover)} · ${hl < 0 ? `${-hl} days ago` : `${hl} days left`}`), buttons: null });

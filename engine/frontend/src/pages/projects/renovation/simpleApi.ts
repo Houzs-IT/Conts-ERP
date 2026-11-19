@@ -20,6 +20,56 @@ export interface FlowView {
   steps: Array<{ key: FlowStepKey; label: string }>;
 }
 
+/** One Design step (engine services/renovation/stageRules.ts): a work In Design in Project Maintenance, or "variants". */
+export interface DesignStepStatus {
+  code: string;
+  label: string;
+  done: boolean;
+  /** The day it was done or is booked for (YYYY-MM-DD); null when there is none. */
+  date: string | null;
+  /** Short state text: "Done", "Measured", "Booked", "Not booked", "Approved", "Waiting approval", "Amendment open", ... */
+  state: string;
+}
+
+/** One catalog category on the Renovation stage: every category is listed; onProject says the SO has lines in it. */
+export interface RenovationCategoryStatus {
+  code: string;
+  label: string;
+  onProject: boolean;
+  /** Every line of the category delivered; always false when not on the project. */
+  done: boolean;
+  linesDone: number;
+  linesTotal: number;
+}
+
+/** One stage with its status (owner rules 19 Nov 2026, engine services/renovation/flow.ts). */
+export interface FlowStageStatus {
+  key: FlowStepKey;
+  label: string;
+  /** The stage's own rule is met. */
+  complete: boolean;
+  /** Complete, yet the project waits here: Sales order linked, first payment not received. */
+  waiting: boolean;
+  state: string;
+  /** Design only. */
+  designSteps?: DesignStepStatus[];
+  /** Renovation only. */
+  categories?: RenovationCategoryStatus[];
+}
+
+/** The stages' second layer (GET /api/renovation/:id `stageLayers`; engine flow.ts stageLayersOf): every active stage's
+    status in order, every catalog category in catalog order (sort_order) for Renovation, and the Design steps. */
+export interface StageLayers {
+  stages: Array<{ key: FlowStepKey; label: string; complete: boolean; waiting: boolean; state: string }>;
+  renovation: { categories: RenovationCategoryStatus[] };
+  design?: { steps: DesignStepStatus[] };
+}
+
+/** The flow as the project detail sends it: the six stages with their status, in order. Optional for an older engine. */
+export interface ProjectFlow extends FlowView {
+  stages?: FlowStageStatus[];
+}
+
 export interface Hold { flag: HoldFlag; note: string | null; at: string | null }
 export interface Money { contractSen: number | null; receivedSen: number | null; receivedPct: number | null }
 export interface KeyHolder { personId: number | null; name: string | null; movedOn: string }
@@ -39,7 +89,9 @@ export interface StepSlaView {
 export type FinanceKind = "RENOVATION" | "INHOUSE_RENOVATION";
 
 export interface ProjectDetailV2 extends Omit<ProjectDetail, "tasks"> {
-  flow: FlowView;
+  flow: ProjectFlow;
+  /** The stages' second layer (owner rules 19 Nov 2026). */
+  stageLayers: StageLayers;
   /** null before migration 0121 (or from an older engine) */
   stepSla?: StepSlaView | null;
   hold: Hold | null;
@@ -147,6 +199,12 @@ export interface LinkableSo { doc_no: string; so_date: string | null; debtor_nam
 
 const R = "/api/renovation";
 
+/** A work of the list in Project Maintenance (backend services/renovation/workTypes.ts). */
+export interface WorkTypeRow {
+  id: number; code: string; label: string; rule: "booking" | "measure" | "approve_3d" | "approve_2d" | "payment_2";
+  bookable: boolean; inDesign: boolean; sortOrder: number; active: boolean; system: boolean;
+}
+
 export const simpleApi = {
   boardRows: (archived = false) => api.get<{ data: BoardRowV2[] }>(`${R}/board-rows${archived ? "?archived=1" : ""}`),
   detail: (id: number) => api.get<ProjectDetailV2>(`${R}/${id}`),
@@ -171,6 +229,12 @@ export const simpleApi = {
   /** The project's brand; its open sales order and the contract letterhead follow. */
   setBrand: (id: number, brandId: number) => api.patch<{ ok: true }>(`${R}/${id}`, { brandId }),
   /** Only while nothing is made on the project; otherwise the answer says what is there (chew, 10 Nov 2026). */
+  /** The works start date; the answer says how many sales order lines it dated from the package template SLA. */
+  startProject: (id: number, date: string) => api.post<{ ok: true; startedOn: string; dated: number }>(`${R}/${id}/start`, { date }),
+  workTypes: () => api.get<{ data: WorkTypeRow[] }>(`${R}/work-types`),
+  createWorkType: (b: { label: string; bookable: boolean; inDesign: boolean }) => api.post<{ ok: true; id: number | null; code: string }>(`${R}/work-types`, b),
+  patchWorkType: (code: string, b: Partial<Pick<WorkTypeRow, "label" | "bookable" | "inDesign" | "sortOrder" | "active">>) => api.patch<{ ok: true }>(`${R}/work-types/${encodeURIComponent(code)}`, b),
+  deleteWorkType: (code: string) => api.del<{ ok: true; archived: boolean; entries?: number }>(`${R}/work-types/${encodeURIComponent(code)}`),
   deleteProject: (id: number) => api.del<{ ok: true; code: string | null; name: string }>(`${R}/${id}`),
   crewAssignments: () => api.get<{ data: CrewAssignment[] }>(`${R}/crew-assignments`),
   patchFlowStep: (key: FlowStepKey, b: Partial<{ label: string; sortOrder: number; active: boolean }>) => api.patch<{ ok: true }>(`${R}/flow-steps/${key}`, b),
@@ -179,6 +243,9 @@ export const simpleApi = {
   step: (id: number) => api.get<StepInfo>(`${R}/${id}/step`),
   setStep: (id: number, step: FlowStepKey, reason: string | null) => api.post<{ ok: true }>(`${R}/${id}/step`, { step, reason }),
   followData: (id: number) => api.post<{ ok: true }>(`${R}/${id}/step/follow-data`, {}),
+  /** Handover completed by hand, or Close pressed; reopen undoes it. Closed counts only once the contract is fully settled. */
+  flowStage: (id: number, key: "handover" | "closed", action: "complete" | "reopen") =>
+    api.post<{ ok: true; unchanged?: true; flow?: ProjectFlow | null }>(`${R}/${id}/flow-stage/${key}/${action}`, {}),
   setHold: (id: number, flag: HoldFlag, note: string | null) => api.post<{ ok: true }>(`${R}/${id}/hold`, { flag, note }),
   clearHold: (id: number) => api.post<{ ok: true }>(`${R}/${id}/hold/clear`, {}),
   setPeople: (id: number, b: Partial<{ salesPersonId: number | null; designerPersonId: number | null; renoPicPersonId: number | null; picPersonId: number | null; attendingPersonIds: number[] }>) =>

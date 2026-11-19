@@ -35,6 +35,9 @@ export interface Env {
    *  there, not here. With either unset the IT Support screen says it is not connected. */
   IT_HUB_URL?: string;
   IT_HUB_API_KEY?: string;
+  /** Houzs Connect (the company chat) sends this as a Bearer token to POST /api/connect/verify-login when Conts staff
+   *  sign in there; the same value is CONTS_LOGIN_KEY on the houzs-connect Worker. Unset: no Conts account can sign in to Connect. */
+  CONNECT_LOGIN_KEY?: string;
   /** The site's own built files (Pages binds this itself); read for /version.json by the IT Hub health report. */
   ASSETS?: Fetcher;
   /** The website's address, for the cron worker (it has no request to read it from): it asks the website there

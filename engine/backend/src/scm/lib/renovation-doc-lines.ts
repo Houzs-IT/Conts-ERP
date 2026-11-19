@@ -96,6 +96,8 @@ export async function insertSections(
     supplier_id: l.supplierId,
     unit_cost_sen: l.unitCostSen,
     stage_code: l.stageCode,
+    processing_after_days: l.processingAfterDays ?? null,
+    delivery_after_days: l.deliveryAfterDays ?? null,
     page_break_before: l.pageBreakBefore,
     so_item_id: l.soItemId ?? null,
     vo_id: owner.kind === 'vo' ? owner.id : (opts.voId ?? null),
@@ -109,14 +111,14 @@ export async function insertSections(
   await db.q(
     `insert into scm.reno_doc_lines (id, company_id, section_id, parent_line_id, kind, sort_order, room, item_code, description, qty,
         measure, measure_uom, uom, unit_price_sen, list_price_sen, discount_bp, amount_override_sen, is_foc, supply_by_owner, highlight,
-        supplier_id, unit_cost_sen, stage_code, page_break_before, so_item_id, vo_id, vo_change, omit_target_line_id, omit_qty)
+        supplier_id, unit_cost_sen, stage_code, processing_after_days, delivery_after_days, page_break_before, so_item_id, vo_id, vo_change, omit_target_line_id, omit_qty)
      select x.id, $2, x.section_id, x.parent_line_id, x.kind, x.sort_order, x.room, x.item_code, x.description, x.qty,
         x.measure, x.measure_uom, x.uom, x.unit_price_sen, x.list_price_sen, x.discount_bp, x.amount_override_sen, x.is_foc, x.supply_by_owner, x.highlight,
-        x.supplier_id, x.unit_cost_sen, x.stage_code, x.page_break_before, x.so_item_id, x.vo_id, x.vo_change, x.omit_target_line_id, x.omit_qty
+        x.supplier_id, x.unit_cost_sen, x.stage_code, x.processing_after_days, x.delivery_after_days, x.page_break_before, x.so_item_id, x.vo_id, x.vo_change, x.omit_target_line_id, x.omit_qty
        from jsonb_to_recordset($1::text::jsonb) as x(id uuid, section_id uuid, parent_line_id uuid, kind text, sort_order int, room text, item_code text,
         description text, qty int, measure numeric, measure_uom text, uom text, unit_price_sen int, list_price_sen int, discount_bp int,
         amount_override_sen int, is_foc boolean, supply_by_owner boolean, highlight text, supplier_id uuid, unit_cost_sen int, stage_code text,
-        page_break_before boolean, so_item_id uuid, vo_id uuid, vo_change text, omit_target_line_id uuid, omit_qty int)`,
+        processing_after_days int, delivery_after_days int, page_break_before boolean, so_item_id uuid, vo_id uuid, vo_change text, omit_target_line_id uuid, omit_qty int)`,
     [JSON.stringify(ordered), companyId],
   );
 }
@@ -137,6 +139,7 @@ interface LineRow {
   item_code: string | null; description: string; qty: number; measure: string | null; measure_uom: string | null; uom: string | null;
   unit_price_sen: number; list_price_sen: number | null; discount_bp: number; amount_override_sen: number | null; is_foc: boolean;
   supply_by_owner: boolean; highlight: NormLine['highlight']; supplier_id: string | null; unit_cost_sen: number; stage_code: string | null;
+  processing_after_days: number | null; delivery_after_days: number | null;
   page_break_before: boolean; so_item_id: string | null; vo_id: string | null; vo_change: 'ADD' | 'OMIT' | null;
   omit_target_line_id: string | null; omit_qty: number | null; omitted_by_vo_id: string | null; so_item_cancelled: boolean | null;
 }
@@ -166,6 +169,8 @@ export function lineOut(r: LineRow): DocLineOut {
     supplierId: r.supplier_id,
     unitCostSen: Number(r.unit_cost_sen),
     stageCode: r.stage_code,
+    processingAfterDays: r.processing_after_days == null ? null : Number(r.processing_after_days),
+    deliveryAfterDays: r.delivery_after_days == null ? null : Number(r.delivery_after_days),
     pageBreakBefore: r.page_break_before,
     voChange: r.vo_change,
     omitTargetLineId: r.omit_target_line_id,
@@ -214,7 +219,7 @@ export async function readSectionsMany(db: RenoDb, kind: DocOwner['kind'], ids: 
   const lines = await db.q<LineRow>(
     `select l.id, l.section_id, l.parent_line_id, l.kind, l.sort_order, l.room, l.item_code, l.description, l.qty, l.measure::text as measure,
             l.measure_uom, l.uom, l.unit_price_sen, l.list_price_sen, l.discount_bp, l.amount_override_sen, l.is_foc, l.supply_by_owner,
-            l.highlight, l.supplier_id, l.unit_cost_sen, l.stage_code, l.page_break_before, l.so_item_id, l.vo_id, l.vo_change,
+            l.highlight, l.supplier_id, l.unit_cost_sen, l.stage_code, l.processing_after_days, l.delivery_after_days, l.page_break_before, l.so_item_id, l.vo_id, l.vo_change,
             l.omit_target_line_id, l.omit_qty, l.omitted_by_vo_id, i.cancelled as so_item_cancelled
        from scm.reno_doc_lines l
        join scm.reno_doc_sections s on s.id = l.section_id

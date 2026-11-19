@@ -21,12 +21,12 @@ export interface RequestBill { expenseId: string; unitId: string; kind: string; 
 export async function billsToRequest(env: Env, expenseIds: string[], provider?: string): Promise<{ provider: string; bills: RequestBill[] }[]> {
   if (!expenseIds.length) return [];
   const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; due_date: string | null; reference: string | null; amount: number; provider: string | null }>(env, `
-    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, coalesce(s.bill_sen, e.amount) AS amount,
+    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, coalesce(s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) AS amount,
            coalesce(nullif(s.provider, ''), (SELECT a.provider FROM unit_utility_accounts a WHERE a.unit_id = e.unit_id AND a.kind = e.category AND a.account_no = e.reference
              AND coalesce(a.provider, '') <> '' ORDER BY a.created_at LIMIT 1)) AS provider
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
     WHERE e.id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND e.category IN ('electricity','water','internet','sewerage')
-      AND NOT e.owner_paid AND coalesce(s.bill_sen, e.amount) > 0 AND e.payment_request_id IS NULL
+      AND NOT e.owner_paid AND coalesce(s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) > 0 AND e.payment_request_id IS NULL
     ORDER BY e.incurred_on, e.unit_id, e.category`, JSON.stringify(expenseIds));
   const out = new Map<string, RequestBill[]>();
   for (const r of rows) {
@@ -63,7 +63,7 @@ export async function requestState(env: Env, requestId: string): Promise<{ id: s
  *  go of the request once it has gone out again. */
 export async function billsOnRequest(env: Env, requestId: string): Promise<{ bills: RequestBill[]; off: string[] }> {
   const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; due_date: string | null; reference: string | null; amount: number; owner_paid: boolean }>(env, `
-    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, coalesce(s.bill_sen, e.amount) AS amount, e.owner_paid
+    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, coalesce(s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) AS amount, e.owner_paid
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
     WHERE e.payment_request_id = ? ORDER BY e.incurred_on, e.unit_id, e.category`, requestId);
   const bills: RequestBill[] = [], off: string[] = [];
@@ -93,6 +93,16 @@ export async function linkRequest(env: Env, expenseIds: string[], request: { id:
 
 /** "Owner paid this bill" on a manual entry, as on Scan bills: the bill is shared as usual and the full amount goes back
  *  to the owner as an open O2 credit on the deduction month, on the unit's owner. `run` is the transaction's. */
+/** The part of a shared bill the owner bears alone (chew, 19 Nov 2026): an O2 charge after the share, tied to the bill
+ *  (expense_id), so replacing or removing the bill takes it along; the bill's expense is the rest, and the provider is
+ *  still paid the whole bill (billsToRequest adds the charge back for a bill with no scan). */
+export async function ownerOwnPart(tx: Env, b: { expenseId: string; unitId: string; ownerId: string; label: string; amountSen: number; deductMonth: string; accountNo: string | null },
+  userId: string, now: string): Promise<void> {
+  await run(tx, `INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, expense_id, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, 'charge', ?, ?, ?, ?, 'open', 'manual', ?, ?, ?, ?)`,
+    crypto.randomUUID(), b.ownerId, b.unitId, -b.amountSen, `${b.label}: the owner's own part`, (await o2Date(tx, b.ownerId, b.unitId, `${b.deductMonth}-01`)).occurredOn, b.accountNo, b.expenseId, userId, now, now);
+}
+
 export async function ownerPaidCredit(tx: Env, b: { expenseId: string; unitId: string; ownerId: string; kind: string; label: string; amountSen: number; deductMonth: string; accountNo: string | null },
   userId: string, now: string): Promise<void> {
   await run(tx, `INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, expense_id, created_by, created_at, updated_at)

@@ -27,7 +27,12 @@ export interface PropertyType { id: number; label: string; sort_order: number; a
 export interface Layout { id: number; label: string; bedrooms: number; bathrooms: number; sort_order: number; active: boolean }
 
 /** True once migration 0112 is in this database (both lists and the SO copy columns). */
+/* Columns and tables never disappear once their migration is in, so a true answer is kept for the isolate's life
+   (pg_stat_statements, 19 Nov 2026: the information_schema count below had run 31,510 times at 5.4 ms each). */
+const schemaKnown = { property: false, structured: false };
+
 export async function propertyColumnsReady(db: Db): Promise<boolean> {
+  if (schemaKnown.property) return true;
   const r = await db.prepare(
     `SELECT (to_regclass('public.project_layouts') IS NOT NULL
              AND to_regclass('public.project_property_types') IS NOT NULL
@@ -38,7 +43,8 @@ export async function propertyColumnsReady(db: Db): Promise<boolean> {
              AND EXISTS (SELECT 1 FROM information_schema.columns
                           WHERE table_schema = 'public' AND table_name = 'projects' AND column_name = 'built_up_sqft')) AS ready`,
   ).bind().first<{ ready: boolean }>();
-  return r?.ready === true;
+  schemaKnown.property = r?.ready === true;
+  return schemaKnown.property;
 }
 
 /** True when this install runs the renovation Projects screens (app_settings projects_mode, migration 0082). */
@@ -74,11 +80,13 @@ const n = (v: unknown): number | null => (v == null || v === "" ? null : Number(
 
 /** True once migration 0115 is in this database (the project's structured address and salesperson). */
 export async function structuredProjectColumnsReady(db: Db): Promise<boolean> {
+  if (schemaKnown.structured) return true;
   const r = await db.prepare(
     `SELECT count(*)::int AS n FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = 'projects' AND column_name IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
   ).bind(JSON.stringify(STRUCTURED_PROJECT_COLUMNS)).first<{ n: number }>();
-  return Number(r?.n ?? 0) === STRUCTURED_PROJECT_COLUMNS.length;
+  schemaKnown.structured = Number(r?.n ?? 0) === STRUCTURED_PROJECT_COLUMNS.length;
+  return schemaKnown.structured;
 }
 
 /** The SQL for one shared field's bound value; '' binds as NULL. */

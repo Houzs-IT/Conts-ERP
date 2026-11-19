@@ -3,6 +3,7 @@ import { requireSession } from '../../_lib/auth';
 import { todayMyt } from '../../_lib/ops';
 import { loadInputs, computeMonthsWithYearToDate, statementSettings, unitForMonth, type Query } from '../../_lib/ownerStatement';
 import { monthEndExclusive } from '../../_lib/revenue';
+import { unitCode } from '../../_lib/ownerReport';
 import type { YgrrPayload, YgrrRow } from '../../../src/lib/ygrrReport';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -41,7 +42,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       .filter(m => m >= yearly.yearFrom && m <= month && unitForMonth(unit, m).contract_id === contractId)
       .map(m => ({ month: m, ownerShare: shareOf.get(`${unit.id}|${m}`) ?? 0 }));
     rows.push({
-      unitId: unit.id, building: unit.property_name, number: unit.unit_number, owner: unit.owner_name,
+      unitId: unit.id, code: unitCode(unit.property_name, unit.unit_number), building: unit.property_name, number: unit.unit_number, owner: unit.owner_name,
       ownerPct: unitMonth.terms.ownerPct ?? 0, annual: yearly.annual, due: yearly.due,
       yearFrom: yearly.yearFrom, yearTo: yearly.yearTo, shares, topUp: yearly.trueUp ? unitMonth.topUp : 0,
     });

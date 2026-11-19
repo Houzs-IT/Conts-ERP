@@ -7,6 +7,7 @@
 // (SalesOrderDetail), and /scm/renovation/contracts/:docNo redirects there. The stand-alone page stays for the
 // phone's renovation documents (mobile/MobileRenovationDocs.tsx).
 
+import { FromTemplateButton } from './fromTemplate';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -368,7 +369,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
         </ul>
         {creditList}
       </Card>}
-      <Card title="Variation orders" actions={live && can('scm.renovation.quote') ? <Button variant="secondary" icon={<FilePlus2 size={15} />} onClick={newVo}>New VO</Button> : null}>
+      <Card title="Variation orders" actions={live && can('scm.renovation.quote') ? <span className="flex flex-wrap items-center gap-2"><FromTemplateButton docNo={k.docNo} onError={setError} className="h-9 rounded-lg border border-border-default px-3 text-[13px] font-semibold text-ink" /><Button variant="secondary" icon={<FilePlus2 size={15} />} onClick={newVo}>New VO</Button></span> : null}>
         {k.variationOrders.length === 0 && <p className="text-[13px] text-ink-secondary">No variation orders.</p>}
         <ul className="divide-y divide-border-subtle">
           {k.variationOrders.map((v) => (
