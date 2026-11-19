@@ -292,10 +292,10 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
 
   async function bulkDeletePassKeys(picked: Issue[], clear: () => void) {
     const deletable = picked.filter(isOpenPassKey);
-    const fromBookings = deletable.filter(i => i.reservationId).length;
+    const fromReservations = deletable.filter(i => i.reservationId).length;
     const ok = await ask({ title: `Delete ${plural(deletable.length, 'Pass key job')}?`, confirmLabel: `Delete ${plural(deletable.length, 'job')}`, danger: true,
-      body: fromBookings
-        ? `They are removed for everyone. ${plural(fromBookings, 'booking')} ${fromBookings === 1 ? 'is' : 'are'} marked "Guest checks in by themselves", so no new Pass key job is made. Untick that on a booking to bring its job back.`
+      body: fromReservations
+        ? `They are removed for everyone. ${plural(fromReservations, 'reservation')} ${fromReservations === 1 ? 'is' : 'are'} marked "Guest checks in by themselves", so no new Pass key job is made. Untick that on a reservation to bring its job back.`
         : 'They are removed for everyone, with their photos. This cannot be undone.',
       meta: picked.length > deletable.length ? <>{plural(picked.length - deletable.length, 'other ticked job')} {picked.length - deletable.length === 1 ? 'is' : 'are'} kept: only open Pass key jobs are deleted.</> : undefined });
     if (ok === null) return;
@@ -536,7 +536,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   async function deletePassKeyJob() {
     const ok = await ask({ title: 'Delete this Pass key job?', confirmLabel: 'Delete job', danger: true,
       body: i.reservationId
-        ? 'It is removed for everyone. The booking is marked "Guest checks in by themselves", so no new Pass key job is made. Untick that on the booking to bring the job back.'
+        ? 'It is removed for everyone. The reservation is marked "Guest checks in by themselves", so no new Pass key job is made. Untick that on the reservation to bring the job back.'
         : 'It is removed for everyone, with its photos. This cannot be undone.',
       meta: <>{jobLabel(i)} · {i.title}</> });
     if (ok === null) return;
