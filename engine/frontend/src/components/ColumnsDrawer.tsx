@@ -113,6 +113,11 @@ interface Props {
   onExport?: () => void;
 }
 
+/** Whose default a save writes: the signed-in user's, or a company's. */
+const defaultOwner = (m: LayoutDefaultManager) => (m.personal ? "my" : m.companyLabel);
+const defaultSavedMessage = (m: LayoutDefaultManager) =>
+  m.personal ? "Saved as your default" : `Saved as the ${m.companyLabel} default`;
+
 /** Case-insensitive match split into <mark>ed parts. */
 function highlight(label: string, query: string) {
   if (!query) return label;
@@ -587,7 +592,7 @@ export function ColumnsDrawer({
       <button
         type="button"
         onClick={onReset}
-        title="Drop your own changes: back to the company default columns, order, widths and sort"
+        title="Back to your own default columns, order and widths (the company default if you have not saved one), and the default sort"
         className="h-[30px] shrink-0 rounded-lg px-2.5 text-[11.5px] font-semibold text-ink-secondary hover:bg-surface-2 hover:text-ink"
       >
         Reset to default
@@ -608,7 +613,7 @@ export function ColumnsDrawer({
           disabled={defaultManager.state === "saving"}
           onClick={() => {
             defaultManager.onSave();
-            toast?.success(`Saved as the ${defaultManager.companyLabel} default`);
+            toast?.success(defaultSavedMessage(defaultManager));
           }}
         >
           {defaultManager.state === "saving" ? "Saving…" : "Save as default"}
@@ -827,14 +832,14 @@ export function ColumnsDrawer({
             onClick={() => {
               setPopover(null);
               defaultManager.onSave();
-              toast?.success(`Saved as the ${defaultManager.companyLabel} default`);
+              toast?.success(defaultSavedMessage(defaultManager));
             }}
             className="flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left text-[12px] font-semibold text-ink-secondary hover:bg-surface-2"
           >
             <Star size={14} />
-            Save current as {defaultManager.companyLabel} default
+            Save current as {defaultOwner(defaultManager)} default
             <span className="text-[11px] font-normal text-ink-muted">
-              applies to everyone unset
+              {defaultManager.personal ? "only for you" : "applies to everyone unset"}
             </span>
           </button>
         </>
@@ -858,12 +863,12 @@ export function ColumnsDrawer({
           onClick={() => {
             setPopover(null);
             defaultManager.onSave();
-            toast?.success(`Saved as the ${defaultManager.companyLabel} default`);
+            toast?.success(defaultSavedMessage(defaultManager));
           }}
           className="flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left text-[12px] font-semibold text-ink-secondary hover:bg-surface-2"
         >
           <Star size={14} />
-          Save as {defaultManager.companyLabel} default
+          Save as {defaultOwner(defaultManager)} default
         </button>
       )}
       <div className="mx-2 my-1.5 h-px bg-border-subtle" />
@@ -959,7 +964,7 @@ export function ColumnsDrawer({
                 className="h-11 flex-1 justify-center rounded-xl text-[13px]"
                 onClick={() => {
                   defaultManager.onSave();
-                  toast?.success(`Saved as the ${defaultManager.companyLabel} default`);
+                  toast?.success(defaultSavedMessage(defaultManager));
                 }}
               >
                 Save as default

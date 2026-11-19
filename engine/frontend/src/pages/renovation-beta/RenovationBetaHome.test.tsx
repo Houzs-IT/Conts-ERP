@@ -153,6 +153,22 @@ describe("Beta Home", () => {
     expect(window.localStorage.getItem("beta:lastProject")).toBe("4");
   });
 
+  it("keeps a column set per tab: hiding a column on 3D leaves All projects alone", async () => {
+    window.localStorage.clear();
+    window.localStorage.setItem("dt:hidden:projects-home-B", JSON.stringify(["created"]));
+    renderAt("/beta/projects?brand=Dream%20Crafter");
+    await screen.findByRole("heading", { name: "All projects" });
+    const heads = (): string[] => within(screen.getByRole("table")).getAllByRole("columnheader").map((c) => c.textContent ?? "");
+    expect(heads().some((t) => t.includes("Created"))).toBe(true);
+    fireEvent.click(screen.getByRole("tab", { name: /^3D/ }));
+    expect(heads().some((t) => t.includes("Created"))).toBe(false);
+    fireEvent.click(screen.getByRole("tab", { name: /^All projects/ }));
+    expect(heads().some((t) => t.includes("Created"))).toBe(true);
+    // The other stage tabs start from the All projects columns, untouched by 3D.
+    fireEvent.click(screen.getByRole("tab", { name: /^Site Measure/ }));
+    expect(heads().some((t) => t.includes("Created"))).toBe(true);
+  });
+
   it("shows cards instead of the table on a phone", async () => {
     phone = true;
     renderAt("/beta/projects");

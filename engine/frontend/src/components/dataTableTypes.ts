@@ -158,6 +158,12 @@ export interface DataTableProps<T, L = never> {
    */
   layoutFamily?: string;
   /**
+   * Another table id whose saved columns this table starts from while it has
+   * none of its own in this browser. Lets a list split one shared layout into
+   * one per tab without anyone losing the columns they had arranged.
+   */
+  layoutSeedId?: string;
+  /**
    * `false` keeps the column funnels for this visit only: the table opens with
    * no filter every time, and any funnel an earlier version saved for it is
    * erased. Absent = the saved-view behaviour every other table has had since
