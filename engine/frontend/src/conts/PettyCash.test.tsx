@@ -132,21 +132,6 @@ describe("Payment requests", () => {
     expect(await screen.findByText("opened 420-0010")).toBeTruthy();
     requests = null;
   });
-  it("a request opens in a pop-out that closes by its X, by Esc, or by clicking the row again (chew, 19 Nov 2026)", () => {
-    render(<MemoryRouter><PaymentRequests /></MemoryRouter>);
-    const no = screen.getAllByText(/^PRQ-/)[0]!.textContent!;
-    const open = () => fireEvent.click(screen.getAllByText(no)[0]!);
-    open();
-    expect(screen.getByRole("button", { name: "Close details" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Close details" }));
-    expect(screen.queryByRole("button", { name: "Close details" })).toBeNull();
-    open();
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByRole("button", { name: "Close details" })).toBeNull();
-    open();
-    open();
-    expect(screen.queryByRole("button", { name: "Close details" })).toBeNull();
-  });
   it("without Ledger full there is no Make voucher", () => {
     full = false;
     render(<MemoryRouter><PaymentRequests /></MemoryRouter>);

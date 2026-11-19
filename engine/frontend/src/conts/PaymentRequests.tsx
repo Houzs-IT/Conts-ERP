@@ -10,14 +10,12 @@
 //   Make AP invoice  (requests only) opens the New AP invoice form filled in, one per request (a deposit's is its
 //                    quotation), where finance chooses the supplier and the accounts; paid on the Payment voucher page.
 // Finance also checks a claim (its accounts), rejects with a reason, or closes a request paid short.
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "../components/Layout";
 import { Button } from "../components/Button";
 import { DataTable, type Column } from "../components/DataTable";
 import { TabStrip } from "../components/TabStrip";
-import { ResizableDetailDrawer } from "../components/ResizableDetailDrawer";
 import { usePrompt } from "../vendor/scm/components/PromptDialog";
 import { useChoice } from "../vendor/scm/components/ChoiceDialog";
 import { useAuth } from "../auth/AuthContext";
@@ -122,8 +120,6 @@ export function PaymentRequests() {
   const edit = can("scm.payment_voucher.write");
   const [note, setNote] = useState<string | null>(null);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
-  /* The row opened on the side (chew, 18 Nov 2026: "我点不进去这个 request"). */
-  const [opened, setOpened] = useState<Row | null>(null);
 
   const rows = useMemo<Row[] | null>(() => {
     if (!q.data) return null;
@@ -326,7 +322,6 @@ export function PaymentRequests() {
         error={q.isError ? "The requests did not load." : claimsQ.isError ? "The claims did not load." : null}
         emptyLabel="No requests."
         getRowKey={(r) => r.id}
-        onRowClick={(r: Row) => setOpened((o) => (o && no(o) === no(r) ? null : r))}
         selection={{
           selectedIds: ticked,
           onToggle: (id: string) => setTicked((t) => { const n = new Set(t); if (n.has(id)) n.delete(id); else n.add(id); return n; }),
@@ -334,80 +329,7 @@ export function PaymentRequests() {
           rowLabel: (r: Row) => `Tick ${no(r)}`,
         }}
       />
-      <ResizableDetailDrawer open={opened != null} onClose={() => setOpened(null)} ariaLabel={opened ? `Request ${no(opened)}` : "Request"}>
-        {opened && <RowDetail r={opened} onClose={() => setOpened(null)} lineText={(l) => [deptLabel(l), l.accountCode, l.description].filter(Boolean).join(" · ")} />}
-      </ResizableDetailDrawer>
     </div>
   );
 }
 
-/** One request or claim in full: who, what for, each line, its files and vouchers. */
-function RowDetail({ r, lineText, onClose }: { r: Row; lineText: (l: Line) => string; onClose: () => void }) {
-  /* It closes (chew, 19 Nov 2026: the pop-out could not be closed): its X, Esc, or the same row clicked again. */
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  const field = (label: string, value: ReactNode) => (
-    <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 8, fontSize: 13 }}>
-      <span className="text-ink-muted">{label}</span><span>{value ?? "—"}</span>
-    </div>
-  );
-  const lines = r.kind === "request" ? r.q.lines : r.c.lines;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{no(r)}</h2>
-        <button type="button" onClick={onClose} aria-label="Close details" title="Close (Esc)"
-          style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "inline-flex", color: "var(--fg-muted)" }}>
-          <X size={18} />
-        </button>
-      </div>
-      {r.kind === "request" ? (
-        <>
-          {field("Status", <>{REQUEST_STATUS[r.q.status]}{requestStatusNote(r.q) && <span className="block text-xs text-ink-muted">{requestStatusNote(r.q)}</span>}</>)}
-          {field("Asked on", askedOn(r))}
-          {field("By", r.q.requesterName)}
-          {field("Pay", <>{r.q.payeeName}{r.q.type === "DEPOSIT" ? " (deposit)" : ""}{r.q.payeeToCheck ? <span className="ml-1 text-xs text-err">to be checked</span> : null}</>)}
-          {field(r.q.fromBills ? "Due" : "Wanted by", r.q.wantedOn)}
-          {field("Amount", <Money sen={r.q.amountSen} />)}
-          {field("Note", r.q.note)}
-          {r.q.apInvoice && field("AP invoice", r.q.apInvoice.invoiceNumber)}
-          {r.q.vouchers.length > 0 && field("Vouchers", r.q.vouchers.map((v) => (
-            <Link key={v.id} className="block underline" to={`/scm/payment-vouchers/${v.id}`}>{v.pvNumber} ({v.status.toLowerCase()})</Link>
-          )))}
-        </>
-      ) : (
-        <>
-          {field("Status", RECEIPT_STATUS[r.c.status])}
-          {field("Spent on", r.c.spendDate)}
-          {field("By", r.c.submitterName)}
-          {field("Shop", r.c.vendorName)}
-          {field("Bank", r.c.bank ? `${r.c.bank.bankName} ${r.c.bank.accountNo}` : <span className="text-err">No bank details</span>)}
-          {field("Amount", <Money sen={r.c.amountSen} />)}
-          {field("Note", r.c.note)}
-        </>
-      )}
-      <div>
-        <div style={{ fontWeight: 600, marginBottom: 6 }}>Lines ({lines.length})</div>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-          <tbody>
-            {lines.map((l, i) => (
-              <tr key={l.id ?? i} style={{ borderTop: "1px solid var(--line)" }}>
-                <td style={{ padding: "6px 4px" }}>{lineText(l)}</td>
-                <td style={{ padding: "6px 4px", textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}><Money sen={l.amountSen} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div>
-        <div style={{ fontWeight: 600, marginBottom: 6 }}>Documents</div>
-        {r.kind === "request"
-          ? <FileButtons files={r.q.files} open={(f, mime) => requestFileUrl(r.q.id, f, mime)} />
-          : <FileButtons files={r.c.files} open={(f, mime) => financeReceiptFileUrl(r.c.id, f, mime)} />}
-      </div>
-    </div>
-  );
-}
