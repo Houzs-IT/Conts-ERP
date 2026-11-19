@@ -26,7 +26,7 @@ export async function billsToRequest(env: Env, expenseIds: string[], provider?: 
              AND coalesce(a.provider, '') <> '' ORDER BY a.created_at LIMIT 1)) AS provider
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
     WHERE e.id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND e.category IN ('electricity','water','internet','sewerage')
-      AND NOT e.owner_paid AND coalesce(s.bill_sen, e.amount) > 0 AND e.payment_request_id IS NULL
+      AND NOT e.owner_paid AND coalesce(s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) > 0 AND e.payment_request_id IS NULL
     ORDER BY e.incurred_on, e.unit_id, e.category`, JSON.stringify(expenseIds));
   const out = new Map<string, RequestBill[]>();
   for (const r of rows) {
