@@ -73,7 +73,7 @@ export type RecordRow = {
   periodFrom?: string | null; periodTo?: string | null; amountSen: number; chargeTo?: string; ownerPaid?: boolean;
   /** The day the bill must be paid by, as printed (chew, 18 Nov 2026). */
   dueDate?: string | null;
-  /** The part the owner bears alone, after the share, set by hand (chew, 19 Nov 2026: "扫描单还是要支持手改"); left out,
+  /** The part the owner bears alone, after the share, set by hand (chew, 19 Nov 2026: scanned bills must still take a hand edit); left out,
    *  it is the days outside the contract as worked out. */
   ownerPartSen?: number | null;
 };

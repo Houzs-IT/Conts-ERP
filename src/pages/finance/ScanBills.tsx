@@ -43,7 +43,7 @@ type Row = {
   /** The account the page matched, kept while its unit is the one proposed (a unit can have two meters of a kind). */
   accountId: string | null;
   ownerPaid: boolean; tick: boolean;
-  /** The owner's own part typed by hand (chew, 19 Nov 2026: "扫描单还是要支持手改"); left blank, the days outside the
+  /** The owner's own part typed by hand (chew, 19 Nov 2026: scanned bills must still take a hand edit); left blank, the days outside the
    *  contract as worked out. */
   ownerPartSen?: number | null;
 };
