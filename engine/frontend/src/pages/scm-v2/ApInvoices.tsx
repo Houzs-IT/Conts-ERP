@@ -436,6 +436,8 @@ export const ApInvoices = () => {
               ? 'No supplier invoices match this filter — pick another supplier or kind.'
               : 'No supplier invoices here yet — purchase invoices show once posted on the Procurement side; raise an AP invoice for a non-stock bill.'}
             getRowKey={(r) => `${r.kind}-${r.id}`}
+            /* Double-click opens it (chew, 19 Nov 2026): a purchase invoice on its own page, an AP invoice in its pop-out. */
+            onRowDoubleClick={(r) => (r.kind === 'PI' ? navigate(`/scm/purchase-invoices/${r.id}`) : setDetailId(r.id))}
             getRowClassName={(r) => cancelledRowClass(r.status)}
             getRowStyle={(r) => (r.status === 'CANCELLED' ? { opacity: 0.55 } : undefined)}
             onFilteredRowsChange={setShownRows}

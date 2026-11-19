@@ -54,7 +54,7 @@ vi.mock("../vendor/scm/components/ChoiceDialog", () => ({ useChoice: () => choos
 vi.mock("../vendor/scm/components/ConfirmDialog", () => ({ useConfirm: () => async () => true }));
 
 import { PettyCash } from "./PettyCash";
-import { PaymentRequests } from "./PaymentRequests";
+import { PaymentRequestDetail, PaymentRequests } from "./PaymentRequests";
 
 describe("Petty cash overview", () => {
   it("shows the totals, the floats running low, and a balance below zero in the danger colour", () => {
@@ -131,6 +131,12 @@ describe("Payment requests", () => {
     fireEvent.click(screen.getByText("Make voucher"));
     expect(await screen.findByText("opened 420-0010")).toBeTruthy();
     requests = null;
+  });
+  it("double-clicking a request opens it on its own page (chew, 19 Nov 2026)", async () => {
+    render(<MemoryRouter initialEntries={["/r"]}><Routes><Route path="/r" element={<PaymentRequests />} /><Route path="/scm/payment-requests/:kind/:id" element={<PaymentRequestDetail />} /></Routes></MemoryRouter>);
+    fireEvent.doubleClick(screen.getByText("PRQ-2610-001"));
+    expect(await screen.findByRole("heading", { name: "PRQ-2610-001" })).toBeTruthy();
+    expect(screen.getByText("Lines (1)")).toBeTruthy();
   });
   it("without Ledger full there is no Make voucher", () => {
     full = false;

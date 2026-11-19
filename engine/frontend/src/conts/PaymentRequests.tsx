@@ -11,7 +11,7 @@
 //                    quotation), where finance chooses the supplier and the accounts; paid on the Payment voucher page.
 // Finance also checks a claim (its accounts), rejects with a reason, or closes a request paid short.
 import { useMemo, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "../components/Layout";
 import { Button } from "../components/Button";
 import { DataTable, type Column } from "../components/DataTable";
@@ -322,6 +322,7 @@ export function PaymentRequests() {
         error={q.isError ? "The requests did not load." : claimsQ.isError ? "The claims did not load." : null}
         emptyLabel="No requests."
         getRowKey={(r) => r.id}
+        onRowDoubleClick={(r: Row) => navigate(r.kind === "request" ? `/scm/payment-requests/r/${r.q.id}` : `/scm/payment-requests/c/${r.c.id}`)}
         selection={{
           selectedIds: ticked,
           onToggle: (id: string) => setTicked((t) => { const n = new Set(t); if (n.has(id)) n.delete(id); else n.add(id); return n; }),
@@ -333,3 +334,79 @@ export function PaymentRequests() {
   );
 }
 
+/** One request or claim in full: who, what for, each line, its files and vouchers. */
+function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
+  const field = (label: string, value: ReactNode) => (
+    <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 8, fontSize: 13 }}>
+      <span className="text-ink-muted">{label}</span><span>{value ?? "—"}</span>
+    </div>
+  );
+  const lines = r.kind === "request" ? r.q.lines : r.c.lines;
+  return (
+    <section className="rounded-lg border border-line bg-surface" style={{ display: "flex", flexDirection: "column", gap: 12, padding: 20, maxWidth: 820 }}>
+      {r.kind === "request" ? (
+        <>
+          {field("Status", <>{REQUEST_STATUS[r.q.status]}{requestStatusNote(r.q) && <span className="block text-xs text-ink-muted">{requestStatusNote(r.q)}</span>}</>)}
+          {field("Asked on", askedOn(r))}
+          {field("By", r.q.requesterName)}
+          {field("Pay", <>{r.q.payeeName}{r.q.type === "DEPOSIT" ? " (deposit)" : ""}{r.q.payeeToCheck ? <span className="ml-1 text-xs text-err">to be checked</span> : null}</>)}
+          {field(r.q.fromBills ? "Due" : "Wanted by", r.q.wantedOn)}
+          {field("Amount", <Money sen={r.q.amountSen} />)}
+          {field("Note", r.q.note)}
+          {r.q.apInvoice && field("AP invoice", r.q.apInvoice.invoiceNumber)}
+          {r.q.vouchers.length > 0 && field("Vouchers", r.q.vouchers.map((v) => (
+            <Link key={v.id} className="block underline" to={`/scm/payment-vouchers/${v.id}`}>{v.pvNumber} ({v.status.toLowerCase()})</Link>
+          )))}
+        </>
+      ) : (
+        <>
+          {field("Status", RECEIPT_STATUS[r.c.status])}
+          {field("Spent on", r.c.spendDate)}
+          {field("By", r.c.submitterName)}
+          {field("Shop", r.c.vendorName)}
+          {field("Bank", r.c.bank ? `${r.c.bank.bankName} ${r.c.bank.accountNo}` : <span className="text-err">No bank details</span>)}
+          {field("Amount", <Money sen={r.c.amountSen} />)}
+          {field("Note", r.c.note)}
+        </>
+      )}
+      <div>
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>Lines ({lines.length})</div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <tbody>
+            {lines.map((l, i) => (
+              <tr key={l.id ?? i} style={{ borderTop: "1px solid var(--line)" }}>
+                <td style={{ padding: "6px 4px" }}>{lineText(l)}</td>
+                <td style={{ padding: "6px 4px", textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}><Money sen={l.amountSen} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>Documents</div>
+        {r.kind === "request"
+          ? <FileButtons files={r.q.files} open={(f, mime) => requestFileUrl(r.q.id, f, mime)} />
+          : <FileButtons files={r.c.files} open={(f, mime) => financeReceiptFileUrl(r.c.id, f, mime)} />}
+      </div>
+    </section>
+  );
+}
+
+/** A request or claim on its own page (chew, 19 Nov 2026: double-click a row to see what was handed in; no pop-out). */
+export function PaymentRequestDetail() {
+  const { kind, id } = useParams<{ kind: string; id: string }>();
+  const q = usePaymentRequests("");
+  const claimsQ = useFinanceReceipts("");
+  const deptLabel = useLineDepartmentLabel();
+  const r: Row | null = kind === "c"
+    ? (() => { const c = claimsQ.data?.receipts.find((x) => x.id === id); return c ? { kind: "claim" as const, id: `claim:${c.id}`, c } : null; })()
+    : (() => { const x = q.data?.requests.find((y) => y.id === id); return x ? { kind: "request" as const, id: x.id, q: x } : null; })();
+  const loading = kind === "c" ? claimsQ.isLoading : q.isLoading;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <PageHeader back="/scm/payment-requests" eyebrow="Finance" title={r ? no(r) : kind === "c" ? "Claim" : "Payment request"} />
+      {r ? <RowDetail r={r} lineText={(l) => [deptLabel(l), l.accountCode, l.description].filter(Boolean).join(" · ")} />
+        : <div className="text-ink-muted">{loading ? "Loading…" : "This request was not found."}</div>}
+    </div>
+  );
+}

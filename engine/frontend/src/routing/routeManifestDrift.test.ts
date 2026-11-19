@@ -96,7 +96,8 @@ describe("executable route contract", () => {
     // 180 since 2026-11-02 (Conts): /scm/rental-unit-costs, Rental costs by unit (finance only).
     // 184 since 2026-11-04 (Conts): the four /scm/production-orders routes.
     // 196 since 2026-11-11: +2 /scm/stock-adjustments/:id and /:id/edit (Houzs BUG-66), +2 /beta/defects and /beta/handover-checklists (TODO item 17), +1 AI usage page (TODO item 19).
-    expect(STAFF_ROUTE_PATTERNS).toHaveLength(196);
+    // 199 since 2026-11-19 (Conts): +1 /scm/staff-banks (staff bank details, 18 Nov), +1 /beta/site-tasks (the renovation board), +1 /scm/payment-requests/:kind/:id (a request or claim on its own page).
+    expect(STAFF_ROUTE_PATTERNS).toHaveLength(199);
     expect(new Set(STAFF_ROUTE_PATTERNS).size).toBe(STAFF_ROUTE_PATTERNS.length);
     expect([...STAFF_ROUTE_PATTERNS].sort()).toEqual([...appPages].sort());
   });
@@ -148,7 +149,8 @@ describe("executable route contract", () => {
     // 189 since 2026-11-02 — /scm/rental-unit-costs (Conts).
     // 193 since 2026-11-04 — the four /scm/production-orders routes (Conts).
     // 205 since 2026-11-11: +2 stock adjustment document pages, +2 /beta/defects and /beta/handover-checklists, +1 AI usage page.
-    expect(ROUTE_CONTRACT).toHaveLength(205);
+    // 208 since 2026-11-19: +1 /scm/staff-banks, +1 /beta/site-tasks, +1 /scm/payment-requests/:kind/:id.
+    expect(ROUTE_CONTRACT).toHaveLength(208);
   });
 
   it("keeps every desktop nav destination on a live staff route", () => {
