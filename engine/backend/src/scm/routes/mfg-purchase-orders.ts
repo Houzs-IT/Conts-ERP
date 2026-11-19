@@ -552,8 +552,26 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
       so_date: string; customer_delivery_date: string | null;
       processing_date: string | null; sales_location: string | null;
       ref: string | null; customer_so_no: string | null;
+      project_id: number | null;
     };
   };
+
+  /* Client, 19 Nov 2026: the picker names each line's project (scm.mfg_sales_orders.project_id -> public.projects),
+     not only its customer, so the buyer knows which project a PO is for. */
+  const projectIds = [...new Set(((items ?? []) as unknown as Row[]).map((r) => r.so.project_id).filter((id): id is number => id != null))];
+  const projectById = new Map<number, { code: string | null; name: string | null }>();
+  if (projectIds.length > 0) {
+    const companyId = activeCompanyId(c);
+    const { data: projects, error: projectError } = await chunkIn<{ id: number; code: string | null; name: string | null }, number>(
+      projectIds,
+      (batch, from, to) => {
+        const query = supabase.schema('public').from('projects').select('id, code, name').in('id', batch);
+        return (companyId == null ? query : query.eq('company_id', companyId)).order('id').range(from, to);
+      },
+    );
+    if (projectError) return c.json({ error: 'load_failed', reason: projectError.message }, 500);
+    for (const project of projects) projectById.set(Number(project.id), { code: project.code, name: project.name });
+  }
 
   /* Commander 2026-05-28 — resolve each SKU's MAIN supplier so the PO-from-SO
      grid can show it (and the user sees which lines are even convertible — an
@@ -634,6 +652,8 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
     .map((r) => {
       /* A line the plan does not list, such as one with no delivery date, is still open work. */
       const remaining = pooledOk && shortageBySoItem.has(r.id) ? (shortageBySoItem.get(r.id) ?? 0) : unplannedLeft(r);
+      const projectId = r.so.project_id == null ? null : Number(r.so.project_id);
+      const project = projectId == null ? undefined : projectById.get(projectId);
       return {
         soItemId:        r.id,
         soDocNo:         r.doc_no,
@@ -659,6 +679,9 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
         mainSupplierName: mainSupplierByCode.get(r.item_code)?.name ?? null,
         soRef:            r.so.ref ?? null,
         soCustomerSoNo:   r.so.customer_so_no ?? null,
+        projectId,
+        projectCode:      project?.code ?? null,
+        projectName:      project?.name ?? null,
       };
     });
 

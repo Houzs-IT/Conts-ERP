@@ -925,6 +925,10 @@ export type OutstandingSoItem = {
   /** The order's raw reference pair (resolve with soRefOfCamelStamp). */
   soRef?: string | null;
   soCustomerSoNo?: string | null;
+  /** The SO's project (scm.mfg_sales_orders.project_id -> public.projects); null when the SO has none. */
+  projectId?:   number | null;
+  projectCode?: string | null;
+  projectName?: string | null;
 };
 
 export function useOutstandingSoItems() {
