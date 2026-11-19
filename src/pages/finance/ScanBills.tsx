@@ -130,16 +130,30 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
     return api.post<ScanAnswer>('/expenses/utilities/scan', { documentId: doc.id, batchId, ...(peek ? { peek: true } : {}) });
   }
 
-  /* Page 1 of a bill of several that prints no period (a Unifi bill prints it beside the plan on page 2; chew, 19 Nov
-     2026: 31 internet bills went unsplit at a contract's start): the next page is read for the period alone. */
-  async function periodFromNextPage(row: Row, s: ScanAnswer) {
-    if (s.read.pageNo !== 1 || !(Number(s.read.pageCount) > 1) || (s.read.periodFrom && s.read.periodTo)) return;
-    const next = rowsRef.current.find(r => r.file === row.file && r.pageNo === row.pageNo + 1);
-    if (!next) return;
-    try {
-      const more = await readPage(next, true);
-      if (more.read.periodFrom && more.read.periodTo) patch(row.key, { periodFrom: more.read.periodFrom, periodTo: more.read.periodTo });
-    } catch { /* The period stays blank, to be typed from the page. */ }
+  /* The pages taken for page 1's later pages are not taken on trust (chew, 19 Nov 2026: one unit's PDF often holds
+     several bills; a page count read wrong would hide the next bill). Each is read for a look, nothing kept: the first
+     gives page 1 its period when page 1 prints none (a Unifi bill prints it beside the plan on page 2); a page that is
+     the first page of a bill, or prints no page number but a bill's amount and account, starts the next bill, and it
+     and the pages after it are read as usual. */
+  async function checkFollowing(row: Row, s: ScanAnswer, keys: string[]) {
+    const later = keys.map(k => rowsRef.current.find(r => r.key === k)).filter((r): r is Row => !!r).sort((x, y) => x.pageNo - y.pageNo);
+    for (const [i, r] of later.entries()) {
+      if (stopped.current) return;
+      let look: ScanAnswer;
+      try { look = await readPage(r, true); } catch { return; }
+      const p = look.read;
+      if (i === 0 && !(s.read.periodFrom && s.read.periodTo) && p.periodFrom && p.periodTo && p.pageNo !== 1) {
+        patch(row.key, { periodFrom: p.periodFrom, periodTo: p.periodTo });
+      }
+      const newBill = p.pageNo === 1 || (p.pageNo == null && p.currentChargesSen != null && !!(p.accountNoVisible || p.accountNoFull));
+      if (newBill) {
+        const back = new Set(later.slice(i).map(x => x.key));
+        commit(rowsRef.current.map(x => (back.has(x.key) && x.state === 'skipped' ? { ...x, state: 'waiting', problem: undefined } : x)));
+        pump();
+        return;
+      }
+      patch(r.key, { problem: `Page ${r.pageNo - row.pageNo + 1} of the bill on page ${row.pageNo}: checked, not recorded on its own` });
+    }
   }
 
   async function readOne(row: Row, own = false) {
@@ -151,12 +165,18 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
         patch(row.key, { state: 'skipped', scan: s, tick: false, problem: `Page ${s.read.pageNo} of the bill: not recorded on its own` });
         return;
       }
-      if (skip.size) {
-        commit(rowsRef.current.map(r => (skip.has(r.key) && (r.state === 'waiting' || r.state === 'failed' || r.state === 'done')
-          ? { ...r, state: 'skipped', tick: false, problem: `Page ${r.pageNo - row.pageNo + 1} of the bill on page ${row.pageNo}: not read` } : r)));
+      const taken = rowsRef.current.filter(r => skip.has(r.key) && (r.state === 'waiting' || r.state === 'failed' || r.state === 'done')).map(r => r.key);
+      if (taken.length) {
+        commit(rowsRef.current.map(r => (taken.includes(r.key)
+          ? { ...r, state: 'skipped', tick: false, problem: `Page ${r.pageNo - row.pageNo + 1} of the bill on page ${row.pageNo}: checking` } : r)));
+      }
+      /* A page with no amount read is no bill's first page (a detail page of a bill that prints no page number). */
+      if (!own && s.read.currentChargesSen == null && s.read.amountDueSen == null) {
+        patch(row.key, { state: 'skipped', scan: s, tick: false, problem: 'No bill amount on this page: not recorded on its own' });
+        return;
       }
       patch(row.key, fromScan(s));
-      await periodFromNextPage(row, s);
+      if (taken.length) await checkFollowing(row, s, taken);
     } catch (e) {
       patch(row.key, { state: 'failed', problem: errorMessage(e) });
     }
