@@ -21,6 +21,7 @@
 // the diff data, status pill and variant summary are all shared.
 // ----------------------------------------------------------------------------
 
+import { takeBack } from '../../lib/backTrail';
 import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -746,7 +747,7 @@ export function AmendmentDetailV2() {
     );
   };
 
-  const goBack = () => navigate("/scm/amendments");
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? "/scm/amendments");
   const openSalesOrder = () =>
     soDocNo && navigate(`/scm/sales-orders/${soDocNo}?edit=1`);
   /* Smart jump (owner 2026-07-27) — the two-lane flow materialises the PO leg

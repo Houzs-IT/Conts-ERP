@@ -3,6 +3,7 @@
 // BACK to the supplier and expects a credit (money-in framing). Aside hero =
 // Credit expected (synced/green because it's money coming back).
 
+import { takeBack } from '../../lib/backTrail';
 import { lazy, useMemo, type ReactNode } from "react";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -304,7 +305,7 @@ function PurchaseReturnDetailV2ReadOnly() {
   // details page's back button goes to its relevant list, not wherever
   // browser history happens to point). The list restores its own sticky
   // filters, so the prior filtered view comes back — no context lost.
-  const goBack = () => navigate(scmListReturnTo("/scm/purchase-returns"));
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? scmListReturnTo("/scm/purchase-returns"));
   // Only a POSTED ("Confirmed") return is editable — the legacy editor locks
   // COMPLETED / CANCELLED, so don't offer a button that opens a locked page.
   const canEdit = eff === "posted";

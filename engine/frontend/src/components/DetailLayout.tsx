@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import { takeBack } from "../lib/backTrail";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -74,6 +75,9 @@ export function DetailLayout({
   useSetBreadcrumbs(breadcrumbs);
 
   function goBack() {
+    /* Where the page was opened from, past any form on the way (lib/backTrail; chew, 19 Nov 2026). */
+    const from = takeBack(`${location.pathname}${location.search}`);
+    if (from) return navigate(from);
     if (backTo) return navigate(backTo);
     // No explicit target: return to THIS detail's list by dropping the
     // trailing id segment (/scm/foo/ID → /scm/foo). Deliberately NOT

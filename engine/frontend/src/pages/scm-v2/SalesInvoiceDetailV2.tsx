@@ -31,6 +31,7 @@
 // vendored sales-invoice-queries slice (useSalesInvoiceDetail /
 // useUpdateSalesInvoiceStatus).
 
+import { takeBack } from '../../lib/backTrail';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { scmListReturnTo } from "../../lib/scmListReturn";
@@ -732,7 +733,7 @@ export function SalesInvoiceDetailV2() {
   // details page's back button goes to its relevant list, not wherever
   // browser history happens to point). The list restores its own sticky
   // filters, so the prior filtered view comes back — no context lost.
-  const goBack = () => navigate(scmListReturnTo("/scm/sales-invoices"));
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? scmListReturnTo("/scm/sales-invoices"));
   // Header-only edit — seed the drafts from the invoice and reveal the inline
   // editor (no navigation; ?edit=1 was dead). invoice_date is only editable
   // while DRAFT; the backend rejects it once issued.

@@ -2,6 +2,7 @@
 // page. Procurement-side twin of SalesInvoiceDetailV2: money-forward,
 // Outstanding-as-hero, but flipped — this is what WE owe to the supplier.
 
+import { takeBack } from '../../lib/backTrail';
 import { lazy, useMemo, useState, type ReactNode } from "react";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -450,7 +451,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
   // details page's back button goes to its relevant list, not wherever
   // browser history happens to point). The list restores its own sticky
   // filters, so the prior filtered view comes back — no context lost.
-  const goBack = () => navigate(scmListReturnTo("/scm/purchase-invoices"));
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? scmListReturnTo("/scm/purchase-invoices"));
   const goEdit = () => id && navigate(`/scm/purchase-invoices/${id}?edit=1`);
   /* "Add line" from the page you START on — the affordance lived only
      inside the editor, under a different name per document, so it read as

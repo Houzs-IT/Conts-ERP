@@ -2,6 +2,7 @@
 // doc: goods land at a warehouse, PO's received_qty rolls up. Aside hero =
 // Received value + qty landed, tinted green once posted.
 
+import { takeBack } from '../../lib/backTrail';
 import { lazy, useCallback, useMemo, useState, type ReactNode } from "react";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { formatPhone } from "@2990s/shared/phone";
@@ -383,7 +384,7 @@ function GoodsReceivedDetailV2ReadOnly() {
   // details page's back button goes to its relevant list, not wherever
   // browser history happens to point). The list restores its own sticky
   // filters, so the prior filtered view comes back — no context lost.
-  const goBack = () => navigate(scmListReturnTo("/scm/grns"));
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? scmListReturnTo("/scm/grns"));
   const goEdit = () => id && navigate(`/scm/grns/${id}?edit=1`);
   /* "Add line" from the page you START on. The affordance existed only
      inside the editor, under a different name on each document, so the owner

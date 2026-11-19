@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import { BackTrailRecorder } from "./lib/backTrail";
 import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
 import { CONTS_HOME, CONTS_EXTRAS, isContsHiddenPath } from "./conts/navOnly";
 import { Layout } from "./components/Layout";
@@ -499,6 +500,7 @@ export default function App() {
       {/* Conts: the quick-add button and the assistant serve Houzs areas that are not used here. */}
       {CONTS_EXTRAS && <QuickActionsFAB />}
       <BackToTopFAB />
+      <BackTrailRecorder />
       <AssistantPanelProvider>
         {CONTS_EXTRAS && <AssistantLauncher />}
         <AssistantPanel />
