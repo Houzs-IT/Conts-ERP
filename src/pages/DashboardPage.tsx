@@ -121,7 +121,7 @@ function kpiValue(k: Kpi) {
 
 type Range = '3m' | '12m' | 'ytd' | 'next';
 
-/** activeUnits: the units live that month, each by the share of the month it was live; perUnit: the month's income over them (owner, 19 Nov 2026). */
+/** activeUnits: the units live that month (half for one that went live on the 15th or later); perUnit: the month's income over them (owner, 19 Nov 2026). */
 interface TrendPoint { period: string; revenue: number; occupancy: number; isCurrent?: boolean; isFuture?: boolean; activeUnits?: number; perUnit?: number }
 interface TrendTotals { grossBookingValue: number; collectedRevenue: number; managementFees: number; netOwnerPayout: number; statementIncome?: number; ownerCosts?: number; estimate?: boolean }
 interface TrendPayload {
@@ -524,7 +524,7 @@ export default function DashboardPage() {
                 </div>
                 <span className="text-meta text-muted-ink">
                   {range === 'next' ? 'Reservation Income already booked for the coming months, split by night' : 'Reservation Income for the range, split by night'}.
-                  {' '}Occupancy and the average are over the units live each month, a unit that went live mid-month counting as part of one; rent to rent is left out.
+                  {' '}Occupancy and the average are over the units live each month, a unit that went live on the 15th or later counting as half; rent to rent is left out.
                 </span>
               </div>
 
