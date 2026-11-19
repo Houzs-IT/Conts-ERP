@@ -55,7 +55,7 @@ import {
   displayStatusFor, fmtMoney, refOf, soLineColumns,
 } from './soDetailParts';
 import { SoPrintPreview, useSoPrintLayout } from './soPrintPreview';
-import { soPdfContract } from './soPdfDownload';
+import { pickedSoBrand, soPdfContract } from './soPdfDownload';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { useSetBreadcrumbs } from '../../hooks/useBreadcrumbs';
 import { canonicalizeVariants, fmtDate, fmtMoneySen, fmtSen, missingVariantAxes } from '@2990s/shared'; // Commander 2026-05-28
@@ -2118,9 +2118,10 @@ export const SalesOrderDetail = () => {
     const contract = contractQ.data;
     const brand = brandsQ.data?.brands.find((b) => b.brandId === contract?.header.brandId);
     const pdfContract = soPdfContract(contract, brand);
+    const pdfBrand = pickedSoBrand(brandsQ.data?.brands, header.branding);
     /* Loaded here, not at the top: the PDF library has no business on a page that may never print. */
     return import('../../vendor/scm/lib/sales-order-pdf')
-      .then(({ generateSalesOrderPdf }) => generateSalesOrderPdf(header, lineRows, payments, action, pwpCodes, { ...printLayoutState.pdfOpts, contract: pdfContract }))
+      .then(({ generateSalesOrderPdf }) => generateSalesOrderPdf(header, lineRows, payments, action, pwpCodes, { ...printLayoutState.pdfOpts, contract: pdfContract, brand: pdfBrand }))
       .catch((e) => {
         // eslint-disable-next-line no-console
         console.error('PDF generation failed:', e);
@@ -2796,7 +2797,7 @@ export const SalesOrderDetail = () => {
         open={print.open}
         onClose={print.close}
         docNo={header.doc_no}
-        companyName={brandsQ.data?.brands.find((b) => b.brandId === contractQ.data?.header.brandId)?.name}
+        companyName={brandsQ.data?.brands.find((b) => b.brandId === contractQ.data?.header.brandId)?.name ?? pickedSoBrand(brandsQ.data?.brands, header.branding)?.brandName}
         layout={printLayoutState}
         rows={[
           { label: 'Customer', value: header.debtor_name || '—' },

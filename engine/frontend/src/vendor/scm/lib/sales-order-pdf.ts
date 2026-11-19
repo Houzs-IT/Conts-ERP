@@ -211,8 +211,10 @@ type SoPayment = {
    "sales order" wording (Commander 2026-06-19 — same fix Hookka shipped). */
 /** A renovation contract prints its brand's letterhead and terms, the same as its Contract PDF (owner run, 4 Nov 2026: the
     furniture receipt terms and the company address were on a Dream Crafter contract). */
-export type SoPdfContract = {
-  brandName: string; logoKey?: string | null; letterhead: string[]; bankLine: string; termsLines: string[];
+export type SoPdfBrand = { brandName: string; logoKey?: string | null; letterhead: string[] };
+
+export type SoPdfContract = SoPdfBrand & {
+  bankLine: string; termsLines: string[];
   instalments: Array<{ label: string; percent: string; description: string }>;
 };
 
@@ -340,6 +342,8 @@ export interface SoPdfOptions {
   /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
   projectDates?: { start: string; end: string };
   contract?: SoPdfContract;
+  /* The brand picked on an order that is not a contract: its letterhead, with the order's own terms. */
+  brand?: SoPdfBrand;
   /* A quotation prints on this same layout (owner, 17 Nov 2026: one PDF for the whole system): nothing is paid yet. */
   quotation?: boolean;
   /* The timetable (owner, 17 Nov 2026): each line's processing and delivery dates in place of its unit price and discount; no payments. */
@@ -506,7 +510,8 @@ export async function renderSalesOrderInto(
   const brandLogoKey =
     (header.resolvedBrandLogoKey ?? header.resolved_brand_logo_key ?? null) || null;
   /* A contract prints under its own brand, whose logo is the one uploaded under Brands. */
-  const letterheadLogoKey = opts?.contract ? opts.contract.logoKey ?? null : brandLogoKey;
+  const brandLetterhead = opts?.contract ?? opts?.brand;
+  const letterheadLogoKey = brandLetterhead ? brandLetterhead.logoKey ?? null : brandLogoKey;
   if (letterheadLogoKey) await ensureBrandLogoLoaded(letterheadLogoKey);
 
   // ── Header (shared pdf-common letterhead) ─────────────────────────
@@ -517,7 +522,7 @@ export async function renderSalesOrderInto(
       { label: 'Date', value: fmtDocDate(header.so_date) },
     ],
     logo: getBrandLogoCache(letterheadLogoKey),
-    ...(opts?.contract ? { name: opts.contract.brandName, lines: opts.contract.letterhead } : {}),
+    ...(brandLetterhead ? { name: brandLetterhead.brandName, lines: brandLetterhead.letterhead } : {}),
   });
 
   // ── Resolve processing + delivery dates (folded into ORDER DETAILS below).
