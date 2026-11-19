@@ -346,21 +346,26 @@ function Unusual({ units, months, cells, nights, loading, error, onRetry, kind, 
 const editable = (b: GridBill) => !b.final && !b.recordOnly
   && (!b.request || ['SUBMITTED', 'WITHDRAWN', 'REJECTED'].includes(b.request.status));
 
-/** The whole printed bill changed in place; the owner's own part stays, the shared part takes the rest. */
+/** The whole printed bill and the owner's own part changed in place (chew, 19 Nov 2026); the shared part is the rest. */
 function EditAmount({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) {
   const whole = bill.whole ?? bill.request?.amount ?? bill.amount;
-  const ownerPart = whole - bill.amount;
+  const wasPart = whole - bill.amount;
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState<number | null>(whole);
+  const [part, setPart] = useState<number | null>(wasPart);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   if (!open) return <div><Button size="sm" variant="secondary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setOpen(true)}>Edit amount</Button></div>;
-  const tooSmall = value != null && value <= ownerPart;
+  const ownerPart = part ?? 0;
+  const tooSmall = value != null && ownerPart > 0 && value <= ownerPart;
+  const owner = bill.chargeTo === 'owner' && !bill.recordOnly;
+  const same = value === whole && ownerPart === wasPart;
   const save = async () => {
     if (value == null || tooSmall) return;
     setBusy(true);
     try {
-      const r = await api.patch<{ request: string | null; notice: string | null }>(`/expenses/utilities/bills/${encodeURIComponent(bill.id)}`, { amount: value });
+      const r = await api.patch<{ request: string | null; notice: string | null }>(`/expenses/utilities/bills/${encodeURIComponent(bill.id)}`,
+        { amount: value, ...(ownerPart !== wasPart ? { ownerPart } : {}) });
       toast({ tone: 'success', title: 'Bill saved.', body: [r.request ? `${r.request} now asks for the new amount.` : '', r.notice ?? ''].filter(Boolean).join(' ') || undefined });
       onSaved();
     } catch (e) {
@@ -373,13 +378,15 @@ function EditAmount({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) 
     <div className="flex flex-col gap-2 p-2 rounded-control border border-dashed border-line">
       <MoneyInput label="Whole bill (RM)" minSen={1} valueSen={value} onChangeSen={setValue}
         error={tooSmall ? `More than the owner's own part, ${rm(ownerPart)}.` : undefined} />
-      {ownerPart > 0 && value != null && !tooSmall && (
-        <span className="text-meta text-muted-ink">{rm(value - ownerPart)} shared; {rm(ownerPart)} the owner's own part stays as it is.</span>
+      {owner && <MoneyInput label="Owner's own part (RM)" valueSen={part} onChangeSen={setPart}
+        help={wasPart > 0 ? 'Replaces the part set by hand and the days outside the contract, as one owner line.' : 'Charged to the owner alone, after the share.'} />}
+      {value != null && !tooSmall && (
+        <span className="text-meta text-muted-ink">{rm(value - ownerPart)} shared{ownerPart > 0 ? `; ${rm(ownerPart)} the owner's alone` : ''}; the provider is paid {rm(value)}.</span>
       )}
-      {bill.request?.status === 'SUBMITTED' && <span className="text-meta text-muted-ink">{bill.request.no ?? 'Its payment request'} is updated to the new amount, as long as no voucher is made yet.</span>}
+      {bill.request?.status === 'SUBMITTED' && value !== whole && <span className="text-meta text-muted-ink">{bill.request.no ?? 'Its payment request'} is updated to the new amount, as long as no voucher is made yet.</span>}
       <div className="flex gap-2">
-        <Button size="sm" variant="primary" loading={busy} disabled={value == null || tooSmall || value === whole} onClick={() => void save()}>Save</Button>
-        <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setOpen(false); setValue(whole); }}>Cancel</Button>
+        <Button size="sm" variant="primary" loading={busy} disabled={value == null || tooSmall || same} onClick={() => void save()}>Save</Button>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setOpen(false); setValue(whole); setPart(wasPart); }}>Cancel</Button>
       </div>
     </div>
   );
