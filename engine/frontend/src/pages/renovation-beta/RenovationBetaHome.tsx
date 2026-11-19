@@ -37,10 +37,12 @@ function DuePill({ left, small = false }: { left: number; small?: boolean }): Re
   );
 }
 
-/* Payment colours: green = fully paid, amber = a bill waits for money, grey = some received or nothing yet. [text, background, dot] */
-function payTone(text: string): readonly [string, string, string] {
+/* Payment colours (chew, 19 Nov 2026: each its own colour): green = fully paid, amber = a bill waits for money,
+   blue = some instalments paid ("2 of 4 paid"), grey = none paid yet. [text, background, dot] */
+export function payTone(text: string): readonly [string, string, string] {
   if (/Fully paid/.test(text)) return [TONES.accent.ink, TONES.accent.soft, TONES.accent.dot];
   if (/Pending/.test(text)) return [TONES.amber.ink, TONES.amber.soft, TONES.amber.dot];
+  if (/^[1-9]\d* of \d+ paid/.test(text)) return [TONES.blue.ink, TONES.blue.soft, TONES.blue.dot];
   return [TONES.grey.ink, TONES.grey.soft, TONES.grey.dot];
 }
 
