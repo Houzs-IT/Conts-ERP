@@ -1,6 +1,5 @@
-import { type Env, all, json, fail, mytToday } from '../../_lib/db';
-import { rentalOnly } from '../../_lib/unitPurpose';
-import { stayMonths, metrics, monthEndExclusive, toDate } from '../../_lib/revenue';
+import { type Env, json, fail, mytToday } from '../../_lib/db';
+import { stayMonths, metrics, activeMetrics, dashboardUnits, liveWindows, monthEndExclusive, toDate } from '../../_lib/revenue';
 import { requireSession } from '../../_lib/auth';
 import { can } from '../../_lib/access';
 import { ownerMonths } from '../../_lib/ownerEstimate';
@@ -25,17 +24,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
 
 async function kpis(env: Env, period: string, money: boolean) {
 
-  // functions/_lib/revenue.ts: gross value and nights split by night into the month, to date like Portfolio (the
-  // month in progress stops at today). Occupancy, ADR and RevPAR are over listed units (the nights that could be
-  // sold); revenue counts every unit.
-  const { toExclusive, days } = toDate(`${period}-01`, monthEndExclusive(period), mytToday());
-  const [rows, listedUnits, ownerByMonth] = await Promise.all([
+  // functions/_lib/revenue.ts: income and nights split by night into the month, to date like Portfolio (the month in
+  // progress stops at today), over rental units without rent to rent. Occupancy and income per available night are over
+  // the units live in it, each by the days it was live (owner, 19 Nov 2026).
+  const { toExclusive } = toDate(`${period}-01`, monthEndExclusive(period), mytToday());
+  const [allRows, counted, live, ownerByMonth] = await Promise.all([
     stayMonths(env, `${period}-01`, toExclusive),
-    rentalOnly(env, 'units').then(r => all<{ id: string }>(env, `SELECT id FROM units WHERE is_listed = 1${r}`)),
+    dashboardUnits(env), liveWindows(env, mytToday()),
     money ? ownerMonths(env, [period]) : Promise.resolve(undefined),
   ]);
-  const listedIds = new Set(listedUnits.map(u => u.id));
-  const listed = metrics(rows.filter(r => listedIds.has(r.unit_id)), listedIds.size * days);
+  const rows = counted ? allRows.filter(r => counted.has(r.unit_id)) : allRows;
+  const active = activeMetrics(rows, `${period}-01`, toExclusive, live, counted);
+  const listed = metrics(rows, active.liveDays);
   const everything = metrics(rows, 0);
   // The owners' payout for the whole month by the statement engine, the same estimate as the Owners page's "To pay
   // owners" (stored statements only exist once a month is generated, so they read RM 0 for the month in progress).
@@ -45,6 +45,7 @@ async function kpis(env: Env, period: string, money: boolean) {
     { key: 'occupancy', value: listed.occupancy.toFixed(1), unit: 'percent' },
     ...(money ? [
       { key: 'accommodation_revenue', value: everything.gross, currency: 'MYR' },
+      { key: 'income_per_unit', value: active.perUnit, currency: 'MYR', units: active.activeUnits },
       { key: 'adr', value: listed.adr, currency: 'MYR' },
       { key: 'revpar', value: listed.revpar, currency: 'MYR' },
       { key: 'net_owner_payout', value: owners?.netPayout ?? 0, currency: 'MYR', estimate: true },
