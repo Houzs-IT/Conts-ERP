@@ -177,6 +177,31 @@ data = [dict(id=sid(k['code']), code=k['code'], name=k['name'], sub_category=k['
 Q = '$hlm$'
 payload = json.dumps(data, ensure_ascii=False, indent=0)
 assert Q not in payload
+# Old generic SKUs that are the same item as Hin Lim rows (owner, 19 Nov 2026): made INACTIVE, the status the SKU Master's
+# Deactivate writes (PATCH /api/scm/mfg-products/:id {status}), so the SO / VO pickers (ACTIVE only) offer the Hin Lim
+# codes instead. Not deleted or renamed: 36 document lines name them. Value: what in the Hin Lim names replaces it.
+RETIRE = {
+    'FUR-GEN-COF-HIACE': r'^HIACE COFFEE TABLE\b',
+    'FUR-GEN-COF-SANDRA2': r'^SANDRA SET OF 2 COFFEE TABLE\b',
+    'FUR-GEN-SIDE-HIRADO': r'^HIRADO (1 DRAWER )?SIDE TABLE\b',
+    'FUR-GEN-DIN-AIMON': r'^AIMON \S+ DINING TABLE\b',
+    'SOF-GEN-NEXON-3S': r'^NEXON 3 SEATER SOFA\b',
+    'FUR-GEN-CHAIR-CARTER': r'^CARTER DINING CHAIR\b',
+    'FUR-GEN-CHAIR-ZOLA': r'^ZOLA DINING CHAIR\b',
+    'FUR-GEN-CHAIR-MACY': r'^MACY DINING CHAIR\b',
+    'FUR-MUJ-TVCAB': r'^MALMO 1\.8M TV CABINET\b',
+}
+existing_name = dict((c, n) for c, n in existing)
+retire = []
+for old, pat in RETIRE.items():
+    assert old in existing_name, old
+    repl = [k for k in skus if re.search(pat, k['name'])]
+    assert repl, old
+    retire.append(dict(code=old, name=existing_name[old], replaced_by=repl))
+for k in skus:
+    k['retires'] = [r['code'] for r in retire if k in r['replaced_by']]
+retire_codes = 'array[' + ','.join(lit(r['code']) for r in retire) + ']::text[]'
+
 per_sub = collections.Counter(k['sub_category'] for k in skus)
 per_brand = collections.Counter(k['brand'] for k in skus)
 priced = sum(1 for k in skus if k['cost_sen'])
@@ -185,7 +210,9 @@ sql = f"""-- REVERSAL: delete from scm.supplier_binding_price_history where note
 --   delete from scm.supplier_material_bindings where notes like '{TAG}%';
 --   delete from scm.mfg_products where id in (the ids in this file) and nothing (SO / PO / DO / stock line) names its code;
 --   delete from scm.product_models m where m.model_code in (the codes in this file) and no SKU points at it;
---   delete from scm.app_config where key = 'note:{TAG.replace(' ', '-')}'.
+--   delete from scm.app_config where key = 'note:{TAG.replace(' ', '-')}';
+--   update scm.mfg_products set status = 'ACTIVE' where company_id = {COMPANY_ID} and code in (the codes in the scm.entity_audit_log
+--   rows noted '{TAG}: retired%', action 'deactivate'), then delete those audit rows.
 -- Hin Lim's furniture from Houzs Century's CRM product list ("Houz Century CRM Product List.xlsx", sheet RptSKUEnquiry,
 -- SKU Type = SALES: {len(skus)} of 1,155 rows), owner 19 Nov 2026. Review: docs/catalog-import/crm-hinlim/review.xlsx.
 --  * Our code = <TYPE>-{SUPPLIER_SHORT}-<Hin Lim code> (SOF / BED / MAT / FUR / ACC by sub-category); the list's
@@ -200,6 +227,10 @@ sql = f"""-- REVERSAL: delete from scm.supplier_binding_price_history where note
 --    mfg_product, supplier_sku = Hin Lim code, unit_price_sen = cost, valid from {TODAY}, main unless the SKU already has a
 --    main supplier, not a cost anchor) and one scm.supplier_binding_price_history row per priced link ({priced}).
 --    The supplier is created only where it is missing (a fresh local / CI database); production has it.
+--  * {len(retire)} old generic SKUs that are the same item ({', '.join(r['code'] for r in retire)})
+--    become INACTIVE (the SKU Master's Deactivate), only where still ACTIVE, each written to scm.entity_audit_log. They are
+--    not deleted or renamed: existing documents name them and keep showing their code. The SO / VO pickers offer ACTIVE
+--    SKUs only, so they now find the Hin Lim codes. Replacements: review.xlsx "Retired old codes".
 -- Built by docs/catalog-import/crm-hinlim/build.py; edit that script, not this file. Safe to run again: everything is keyed on
 -- SKU code / supplier + SKU, an existing code is left as it is.
 -- APPLY: production through the GitHub workflow "Apply migrations to production" with only=0346, dry run first.
@@ -266,6 +297,22 @@ do $$ begin
         join scm.mfg_products p on p.company_id = {COMPANY_ID} and p.code = r.code) <> {len(skus)}
   then raise exception 'expected {len(skus)} Hin Lim SKUs, each with its Hin Lim link'; end if;
 end $$;
+
+-- Old generic SKUs replaced by the Hin Lim codes: audit first, then the same status change the SKU Master's Deactivate makes.
+create temp table hlm_retire on commit drop as
+select x.code, x.replaced_by
+  from jsonb_to_recordset({Q}{json.dumps([dict(code=r['code'], replaced_by=', '.join(k['code'] for k in r['replaced_by'])) for r in retire])}{Q}::jsonb)
+  as x(code text, replaced_by text);
+
+insert into scm.entity_audit_log (company_id, entity_type, entity_id, action, actor_name_snapshot, field_changes, source, note)
+select {COMPANY_ID}, 'mfg_product', p.code, 'deactivate', 'migration 0346', '[]'::jsonb, 'migration',
+       {lit(TAG + ': retired, owner 19 Nov 2026: the same item is now on Hin Lim codes ')} || r.replaced_by || '; status ACTIVE -> INACTIVE, kept for the documents that name it'
+  from scm.mfg_products p join hlm_retire r on r.code = p.code
+ where p.company_id = {COMPANY_ID} and p.status = 'ACTIVE';
+
+update scm.mfg_products p set status = 'INACTIVE', updated_at = now()
+  from hlm_retire r
+ where p.company_id = {COMPANY_ID} and p.code = r.code and p.status = 'ACTIVE';
 """
 open(os.path.join(root, MIGRATION), 'w', encoding='utf-8', newline='\n').write(sql)
 
@@ -310,7 +357,8 @@ for line in [
     'Our code = <type>-HLM-<Hin Lim code>: SOF sofa, BED bedframe, MAT mattress, FUR dining / tables / storage, ACC accessory.',
     "The list's SKU Code is Hin Lim's own code: it is kept on the supplier link (the supplier's item code).",
     '',
-    'Sheets: SKUs (one row per SKU), Summary (counts), Rules (how the sub-category was picked), Questions.',
+    'Sheets: SKUs (one row per SKU), Summary (counts), Rules (how the sub-category was picked), Retired old codes, Questions.',
+    f'Retired old codes: {len(retire)} old generic SKUs that are the same item become Inactive (not deleted: old documents keep them).',
     'Yellow rows on SKUs: worth a look (description also matched another sub-category, or the model name is already in an existing product).',
     '',
     f'Migration: {MIGRATION} (not applied anywhere yet).',
@@ -322,19 +370,20 @@ readme.column_dimensions['A'].width = 130
 sheet('SKUs',
       ['Our code', 'Hin Lim code', 'Name', 'Brand', 'Sub-category', 'Keyword that picked it', 'Also matched',
        'Cost (RM)', 'Unit', 'Size', 'Colour', 'Material', 'Assembly', 'Pack', 'Cubic (m3)', 'unit_m3_milli',
-       'Model word', 'Model name already in existing products', 'Check'],
+       'Model word', 'Model name already in existing products', 'Replaces old code (made Inactive)', 'Check'],
       [[k['code'], k['supplier_code'], k['name'], k['brand'], SUB_LABEL[k['sub_category']], k['keyword'], k['also_matched'],
         k['cost_rm'], k['uom'], k['size'], k['colour'], k['material'], k['assembly'], k['pack'], k['cubic'], k['m3_milli'],
         k['model'], ', '.join(k['existing_hits'][:6]) + (f" (+{len(k['existing_hits']) - 6} more)" if len(k['existing_hits']) > 6 else ''),
+        ', '.join(k['retires']),
         '; '.join(x for x in [
             'also matched ' + k['also_matched'] if k['also_matched'] else '',
-            'model name in existing products' if k['existing_hits'] else '',
+            'model name in existing products' + (' (old code retired)' if k['retires'] else '') if k['existing_hits'] else '',
             'same name as ' + ', '.join(c for c in name_dups.get(k['name'], []) if c != k['code']) if k['name'] in name_dups else '',
             "Hin Lim code has '/'" if '/' in k['supplier_code'] else '',
             'no cost' if not k['cost_sen'] else '',
         ] if x)]
        for k in skus],
-      [18, 16, 46, 15, 13, 18, 14, 10, 6, 26, 34, 34, 18, 12, 10, 10, 12, 40, 40], flag_col=18)
+      [18, 16, 46, 15, 13, 18, 14, 10, 6, 26, 34, 34, 18, 12, 10, 10, 12, 40, 22, 40], flag_col=19)
 
 summ = [['By sub-category', 'SKUs', 'Code prefix']]
 for s in SUB_LABEL:
@@ -385,6 +434,10 @@ if slash:
                ', '.join(f"{k['supplier_code']} -> {k['code']}" for k in slash)])
 if no_cost:
     qs.append(['Rows with no cost price (imported at RM 0):', ', '.join(no_cost)])
+sheet('Retired old codes', ['Old code', 'Old name', 'Becomes', 'Replaced by (Hin Lim codes)', 'Hin Lim names'],
+      [[r['code'], r['name'], 'INACTIVE (kept; old documents still show it)', ', '.join(k['code'] for k in r['replaced_by']),
+        '; '.join(k['name'] for k in r['replaced_by'])] for r in retire], [24, 30, 30, 50, 90])
+
 sheet('Questions', ['Question / note', 'Rows'], qs, [80, 120])
 
 out.save(os.path.join(root, 'docs/catalog-import/crm-hinlim/review.xlsx'))
@@ -396,4 +449,5 @@ print('rules used', {f'{SUB_LABEL[a]}<-{b}': n for (a, b), n in used.most_common
 print('also matched', [(k['code'], k['name'], k['also_matched']) for k in skus if k['also_matched']])
 print('existing hits', sum(1 for k in skus if k['existing_hits']))
 print('name dups', name_dups)
+for r in retire: print('retire', r['code'], '->', [k['code'] + ' ' + k['name'] for k in r['replaced_by']])
 print('accessory', [k['name'] for k in skus if k['sub_category'] == 'ACCESSORY'])

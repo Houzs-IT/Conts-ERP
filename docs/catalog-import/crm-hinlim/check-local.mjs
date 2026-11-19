@@ -1,6 +1,8 @@
 // Applies every migration up to 0345 on a throwaway in-memory PGlite, then 0346 (Hin Lim SKUs) twice, and prints the
 // counts: the second run must add nothing. Two databases: one with Hin Lim already there under production's id (as
-// production is), one without (as a fresh CI database is, where 0346 creates the supplier).
+// production is), one without (as a fresh CI database is, where 0346 creates the supplier). The 9 old generic SKUs 0346
+// retires are planted ACTIVE on the first database (as production has them, 19 Nov 2026); on the second one of them is
+// planted INACTIVE already, to show 0346 touches only those still ACTIVE.
 //   node docs/catalog-import/crm-hinlim/check-local.mjs
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -10,6 +12,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '../../..');
 const MIG = '0346_crm_hinlim_skus.sql';
 const HINLIM = 'f98aa7d5-2bf3-4543-b0ff-cbbc4c5f9360';
+const OLD = ['FUR-GEN-COF-HIACE', 'FUR-GEN-COF-SANDRA2', 'FUR-GEN-SIDE-HIRADO', 'FUR-GEN-DIN-AIMON', 'SOF-GEN-NEXON-3S',
+  'FUR-GEN-CHAIR-CARTER', 'FUR-GEN-CHAIR-ZOLA', 'FUR-GEN-CHAIR-MACY', 'FUR-MUJ-TVCAB'];
+const OLD_LIST = OLD.map((c) => `'${c}'`).join(',');
 const { PGlite } = await import('@electric-sql/pglite');
 const { pg_trgm } = await import('@electric-sql/pglite/contrib/pg_trgm');
 
@@ -36,7 +41,11 @@ const counts = async (pg) => (await pg.query(`
             and is_main_supplier and material_kind = 'mfg_product' and supplier_sku <> '') main_links,
          (select count(*)::int from scm.supplier_binding_price_history where item_code like '%-HLM-%') price_rows,
          (select count(*)::int from scm.suppliers where code = '400-H004') hinlim_suppliers,
-         (select count(*)::int from scm.app_config where key = 'note:crm-hinlim-2026-11-19') notes`)).rows[0];
+         (select count(*)::int from scm.app_config where key = 'note:crm-hinlim-2026-11-19') notes,
+         (select count(*)::int from scm.mfg_products where code in (${OLD_LIST})) old_kept,
+         (select count(*)::int from scm.mfg_products where code in (${OLD_LIST}) and status = 'INACTIVE') old_inactive,
+         (select count(*)::int from scm.entity_audit_log where entity_id in (${OLD_LIST}) and action = 'deactivate') old_audit,
+         (select count(*)::int from scm.mfg_products where status = 'ACTIVE' and (code like '%HIACE%' or name ilike '%hiace%')) hiace_pickable`)).rows[0];
 
 const body = readFileSync(join(root, 'migrations-pg', MIG), 'utf8');
 for (const withSupplier of [true, false]) {
@@ -44,6 +53,11 @@ for (const withSupplier of [true, false]) {
   if (withSupplier) {
     await pg.exec(`insert into scm.suppliers (id, company_id, code, name, status)
                    values ('${HINLIM}', 1, '400-H004', 'HIN LIM FURNITURE MANUFACTURER SDN BHD', 'ACTIVE')`);
+  }
+  for (const [i, code] of OLD.entries()) {
+    const status = !withSupplier && i === 0 ? 'INACTIVE' : 'ACTIVE';
+    await pg.exec(`insert into scm.mfg_products (id, company_id, code, name, category, category_group, sub_category, uom, status)
+                   values ('old-${i}', 1, '${code}', '${code} (planted)', 'FURNITURE', 'FURNITURE', 'TABLES', 'PCS', '${status}')`);
   }
   const before = (await pg.query(`select count(*)::int n from scm.mfg_products`)).rows[0].n;
   console.log(`\n== database ${withSupplier ? 'with Hin Lim (as production)' : 'without Hin Lim (fresh)'}; SKUs before: ${before}`);

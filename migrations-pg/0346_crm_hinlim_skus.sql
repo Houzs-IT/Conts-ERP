@@ -2,7 +2,9 @@
 --   delete from scm.supplier_material_bindings where notes like 'crm-hinlim 2026-11-19%';
 --   delete from scm.mfg_products where id in (the ids in this file) and nothing (SO / PO / DO / stock line) names its code;
 --   delete from scm.product_models m where m.model_code in (the codes in this file) and no SKU points at it;
---   delete from scm.app_config where key = 'note:crm-hinlim-2026-11-19'.
+--   delete from scm.app_config where key = 'note:crm-hinlim-2026-11-19';
+--   update scm.mfg_products set status = 'ACTIVE' where company_id = 1 and code in (the codes in the scm.entity_audit_log
+--   rows noted 'crm-hinlim 2026-11-19: retired%', action 'deactivate'), then delete those audit rows.
 -- Hin Lim's furniture from Houzs Century's CRM product list ("Houz Century CRM Product List.xlsx", sheet RptSKUEnquiry,
 -- SKU Type = SALES: 581 of 1,155 rows), owner 19 Nov 2026. Review: docs/catalog-import/crm-hinlim/review.xlsx.
 --  * Our code = <TYPE>-HLM-<Hin Lim code> (SOF / BED / MAT / FUR / ACC by sub-category); the list's
@@ -17,6 +19,10 @@
 --    mfg_product, supplier_sku = Hin Lim code, unit_price_sen = cost, valid from 2026-11-19, main unless the SKU already has a
 --    main supplier, not a cost anchor) and one scm.supplier_binding_price_history row per priced link (581).
 --    The supplier is created only where it is missing (a fresh local / CI database); production has it.
+--  * 9 old generic SKUs that are the same item (FUR-GEN-COF-HIACE, FUR-GEN-COF-SANDRA2, FUR-GEN-SIDE-HIRADO, FUR-GEN-DIN-AIMON, SOF-GEN-NEXON-3S, FUR-GEN-CHAIR-CARTER, FUR-GEN-CHAIR-ZOLA, FUR-GEN-CHAIR-MACY, FUR-MUJ-TVCAB)
+--    become INACTIVE (the SKU Master's Deactivate), only where still ACTIVE, each written to scm.entity_audit_log. They are
+--    not deleted or renamed: existing documents name them and keep showing their code. The SO / VO pickers offer ACTIVE
+--    SKUs only, so they now find the Hin Lim codes. Replacements: review.xlsx "Retired old codes".
 -- Built by docs/catalog-import/crm-hinlim/build.py; edit that script, not this file. Safe to run again: everything is keyed on
 -- SKU code / supplier + SKU, an existing code is left as it is.
 -- APPLY: production through the GitHub workflow "Apply migrations to production" with only=0346, dry run first.
@@ -7056,3 +7062,19 @@ do $$ begin
         join scm.mfg_products p on p.company_id = 1 and p.code = r.code) <> 581
   then raise exception 'expected 581 Hin Lim SKUs, each with its Hin Lim link'; end if;
 end $$;
+
+-- Old generic SKUs replaced by the Hin Lim codes: audit first, then the same status change the SKU Master's Deactivate makes.
+create temp table hlm_retire on commit drop as
+select x.code, x.replaced_by
+  from jsonb_to_recordset($hlm$[{"code": "FUR-GEN-COF-HIACE", "replaced_by": "FUR-HLM-133060, FUR-HLM-133061"}, {"code": "FUR-GEN-COF-SANDRA2", "replaced_by": "FUR-HLM-132053, FUR-HLM-132055"}, {"code": "FUR-GEN-SIDE-HIRADO", "replaced_by": "FUR-HLM-131196, FUR-HLM-151043, FUR-HLM-151044"}, {"code": "FUR-GEN-DIN-AIMON", "replaced_by": "FUR-HLM-144020, FUR-HLM-145071"}, {"code": "SOF-GEN-NEXON-3S", "replaced_by": "SOF-HLM-233315, SOF-HLM-233321"}, {"code": "FUR-GEN-CHAIR-CARTER", "replaced_by": "FUR-HLM-241317, FUR-HLM-241318"}, {"code": "FUR-GEN-CHAIR-ZOLA", "replaced_by": "FUR-HLM-241428, FUR-HLM-241534, FUR-HLM-241561"}, {"code": "FUR-GEN-CHAIR-MACY", "replaced_by": "FUR-HLM-241506, FUR-HLM-241507, FUR-HLM-241663"}, {"code": "FUR-MUJ-TVCAB", "replaced_by": "FUR-HLM-336103"}]$hlm$::jsonb)
+  as x(code text, replaced_by text);
+
+insert into scm.entity_audit_log (company_id, entity_type, entity_id, action, actor_name_snapshot, field_changes, source, note)
+select 1, 'mfg_product', p.code, 'deactivate', 'migration 0346', '[]'::jsonb, 'migration',
+       'crm-hinlim 2026-11-19: retired, owner 19 Nov 2026: the same item is now on Hin Lim codes ' || r.replaced_by || '; status ACTIVE -> INACTIVE, kept for the documents that name it'
+  from scm.mfg_products p join hlm_retire r on r.code = p.code
+ where p.company_id = 1 and p.status = 'ACTIVE';
+
+update scm.mfg_products p set status = 'INACTIVE', updated_at = now()
+  from hlm_retire r
+ where p.company_id = 1 and p.code = r.code and p.status = 'ACTIVE';

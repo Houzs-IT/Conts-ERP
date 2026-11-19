@@ -166,7 +166,15 @@ The owner's "Houz Century CRM Product List.xlsx" (sheet RptSKUEnquiry, 1,155 row
   unit SET for a "1SET/..." pack, else PCS; `cost_price_sen` = Houzs Century Cost Price x 100; no selling price.
 - Supplier link and price history exactly as sku-batch2 (`batch2/build.py`): main unless the SKU already has a main
   supplier, not a cost anchor, valid from 2026-11-19. Hin Lim is created only where missing (fresh CI / local databases).
+- Owner, 19 Nov 2026: every Hin Lim colour / size keeps its own code, and the 9 old generic SKUs that are the same item
+  (FUR-GEN-COF-HIACE, FUR-GEN-COF-SANDRA2, FUR-GEN-SIDE-HIRADO, FUR-GEN-DIN-AIMON, SOF-GEN-NEXON-3S, FUR-GEN-CHAIR-CARTER,
+  FUR-GEN-CHAIR-ZOLA, FUR-GEN-CHAIR-MACY, FUR-MUJ-TVCAB) become INACTIVE, the status the SKU Master's Deactivate writes;
+  only where still ACTIVE, each with a `scm.entity_audit_log` 'deactivate' row. Not deleted or renamed: document lines
+  name them. The SO / VO pickers offer ACTIVE SKUs only (`GET /mfg-products` without status=all; the renovation picker's
+  `offered()`), and a new pick of an INACTIVE code is refused, while a line that already carries one stays readable and
+  editable (`validate-item-codes.ts` requireActive, `mfg-sales-orders.ts`). Replacements: review.xlsx "Retired old codes".
 
 Check: `node docs/catalog-import/crm-hinlim/check-local.mjs` (PGlite, every migration, 0346 twice, with and without Hin
-Lim present). 19 Nov 2026: both databases 676 -> 1,257 SKUs: 581 SKUs, 581 models, 581 main Hin Lim links with Hin Lim's
-code, 581 price rows; the second run added nothing.
+Lim present, the 9 old codes planted). 19 Nov 2026: on both, 581 SKUs, 581 models, 581 main Hin Lim links with Hin Lim's
+code, 581 price rows; the 9 old codes kept and INACTIVE, one audit row each that was still ACTIVE (9, and 8 where one was
+planted INACTIVE); the second run changed nothing.
