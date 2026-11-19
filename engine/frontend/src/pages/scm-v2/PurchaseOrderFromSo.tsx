@@ -45,6 +45,7 @@ import { DateField } from "../../vendor/scm/components/DateField";
 import { useCategoryOptions, withRowCategories } from '../../vendor/scm/lib/renovation-catalog-queries';
 import { categoryMatches } from '../../vendor/shared/renovation-catalog';
 import { SoLineStatusCell, soLineStatusText, useSoLineStatus } from './SoLineStatus';
+import { mrpProjectLabel } from './mrp-model-pipeline';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -82,6 +83,8 @@ const rowDateFor = (r: OutstandingSoItem, field: DateField): string | null => {
 };
 
 type Pick = { picked: boolean; qty: number };
+
+const projectTitleOf = (r: OutstandingSoItem): string => r.projectName?.trim() || r.projectCode?.trim() || '';
 
 export const PurchaseOrderFromSo = () => {
   const navigate = useNavigate();
@@ -309,6 +312,13 @@ export const PurchaseOrderFromSo = () => {
       accessor: (r) => soRefOfCamelStamp(r) || '—',
       searchValue: (r) => soRefOfCamelStamp(r),
       sortFn: (a, b) => soRefOfCamelStamp(a).localeCompare(soRefOfCamelStamp(b)),
+    },
+    {
+      key: 'project', label: 'Project', width: 200, sortable: true, groupable: true,
+      accessor: (r) => projectTitleOf(r) || '—',
+      searchValue: (r) => mrpProjectLabel(r),
+      groupValue: (r) => projectTitleOf(r) || '(none)',
+      sortFn: (a, b) => projectTitleOf(a).localeCompare(projectTitleOf(b)),
     },
     {
       key: 'debtorName', label: 'Customer', width: 180, sortable: true, groupable: true,
@@ -585,7 +595,7 @@ export const PurchaseOrderFromSo = () => {
         columns={columns}
         storageKey={STORAGE_KEY}
         rowKey={(r) => r.soItemId}
-        searchPlaceholder="Search SO, customer, item…"
+        searchPlaceholder="Search SO, project, customer, item…"
         /* Commander 2026-05-28 — click anywhere on a row to toggle its pick
            (the checkbox is just a visual). */
         onRowClick={(r) => togglePick(r.soItemId, r.remainingQty)}
