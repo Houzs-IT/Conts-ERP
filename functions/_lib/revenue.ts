@@ -111,23 +111,25 @@ export async function liveWindows(env: Env, today: string, farFuture = '2100-01-
   return new Map(rows.map(r => [r.unit_id, { from: r.first_in.slice(0, 10), toExclusive: r.last_out.slice(0, 10) >= recent ? farFuture : r.last_out.slice(0, 10) }]));
 }
 
-/** A period's figures over the units live in it, each counted by the share of the period it was live (owner, 19 Nov
- *  2026: a unit that went live on the 25th of a 30-day month is 6/30 of a unit). Occupancy = booked nights / live days;
- *  income per unit = the period's income / live unit-equivalents. */
+/** A month's figures over the units live in it (owner, 19 Nov 2026): a unit live from the 1st to the 14th counts as one
+ *  unit, one that goes live on the 15th or later as half a unit; likewise one whose last checkout falls on or before the
+ *  15th is half. Occupancy = booked nights / (units x days); income per unit = the month's income / units. */
 export interface ActiveMetrics { activeUnits: number; liveDays: number; nights: number; gross: number; occupancy: number; perUnit: number }
 export function activeMetrics(rows: Pick<StayMonthRow, 'unit_id' | 'nights' | 'gross'>[], from: string, toExclusive: string, live: LiveWindows, units: Set<string> | null): ActiveMetrics {
   const periodDays = nightsBetween(from, toExclusive);
-  let liveDays = 0;
+  const mid = `${from.slice(0, 7)}-15`;
+  let count = 0;
   for (const [id, w] of live) {
     if (units && !units.has(id)) continue;
-    liveDays += nightsInWindow(w.from, w.toExclusive, from, toExclusive);
+    if (!nightsInWindow(w.from, w.toExclusive, from, toExclusive)) continue;
+    count += w.from >= mid || w.toExclusive <= mid ? 0.5 : 1;
   }
   const nights = rows.reduce((n, r) => n + r.nights, 0);
   const grossExact = rows.reduce((n, r) => n + r.gross, 0);
-  const equivalents = periodDays ? liveDays / periodDays : 0;
+  const liveDays = count * periodDays;
   return {
-    activeUnits: Math.round(equivalents * 10) / 10, liveDays, nights, gross: Math.round(grossExact),
+    activeUnits: count, liveDays, nights, gross: Math.round(grossExact),
     occupancy: liveDays ? Math.min(100, Number(((nights / liveDays) * 100).toFixed(1))) : 0,
-    perUnit: equivalents ? Math.round(grossExact / equivalents) : 0,
-  }
+    perUnit: count ? Math.round(grossExact / count) : 0,
+  };
 }
