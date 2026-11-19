@@ -128,7 +128,14 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
     const w = p.works[code];
     const wt = workOf.get(code);
     if (stepDone(m, p, code)) return { body: ok(`Done ${w ? ds(w.d) : ""}`), buttons: null };
-    if (w) return { body: <span style={{ color: WS.blue, fontWeight: 600 }}>{ds(w.d)}{w.t ? ` ${w.t}` : ""}</span>, buttons: null };
+    if (w) {
+      // The booking itself, so it can be moved from here as the appointment rows can (before, only the calendar could).
+      const ev = canWrite ? m.events.find((e) => e.projectId === p.id && e.type === code && e.d === w.d) : undefined;
+      return {
+        body: <span style={{ color: WS.blue, fontWeight: 600 }}>{ds(w.d)}{w.t ? ` ${w.t}` : ""}</span>,
+        buttons: ev ? btn("Edit", () => openDialog({ t: "work", ev, day: ev.d })) : null,
+      };
+    }
     if (!canWrite) return { body: mut(wt?.bookable === false ? "Not done" : "Not booked"), buttons: null };
     if (wt?.bookable === false) {
       return {
