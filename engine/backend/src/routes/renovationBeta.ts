@@ -4,6 +4,8 @@
    every write adds a project_activity row (action beta_*) that the existing timeline reads. Section 10 of the plan
    (Home, Projects and Calendar) adds the board read and the design, appointment and calendar entry writes at the end. */
 
+import { findIncompleteVariantLines } from "../scm/lib/so-variant-check";
+import { eventTypeKnown, listWorkTypes } from "../services/renovation/workTypes";
 import { Hono, type Context } from "hono";
 import { TRANSIENT_CONN_RE } from "../db/d1-compat";
 import type { Env } from "../types";
@@ -608,7 +610,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
   const hidden = financeHiddenForUser(user);
   try {
     // One query per data set over the whole scoped project list, grouped in code below.
-    const [settings, people, projects, files, notes, reviews, appointments, events, payments, meIds] = await Promise.all([
+    const [settings, people, projects, files, notes, reviews, appointments, events, payments, meIds, workTypes, designEvents, soLines] = await Promise.all([
       db(c).prepare(`SELECT design_3d_days::int AS d3, design_2d_days::int AS d2 FROM project_beta_settings WHERE company_id = ?`)
         .bind(companyId).first<{ d3: number; d2: number }>(),
       boardPeople(c, companyId),
@@ -662,6 +664,21 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       ).bind(companyId, range.value.from, range.value.to).all<EventRow>(),
       hidden ? Promise.resolve(new Map<number, BoardPayment>()) : boardPayments(c, companyId, scope),
       calendarMePersonIds(db(c), user?.id, user?.email),
+      listWorkTypes(db(c), companyId),
+      // Design works of the list (migration 0342) booked on the calendar, any date: the newest booking of each work per
+      // project says when it is or was done.
+      db(c).prepare(
+        `SELECT DISTINCT ON (e.project_id, e.type) e.project_id::int AS project_id, e.type, e.on_date::text AS on_date, to_char(e.at_time, 'HH24:MI') AS at_time, e.done
+           FROM project_beta_events e JOIN projects p ON p.id = e.project_id
+          WHERE e.company_id = ? AND ${scope}
+          ORDER BY e.project_id, e.type, e.on_date DESC, e.id DESC`,
+      ).bind(companyId).all<{ project_id: number; type: string; on_date: string; at_time: string | null; done: boolean }>(),
+      // Sales order lines for the Variants step: every line's category-required variants picked.
+      db(c).prepare(
+        `SELECT so.project_id::int AS project_id, i.id::text AS id, i.item_code, i.item_group, i.variants
+           FROM scm.mfg_sales_order_items i JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no JOIN projects p ON p.id = so.project_id
+          WHERE ${scope} AND so.company_id = ? AND so.status::text <> 'CANCELLED' AND NOT coalesce(i.cancelled, false)`,
+      ).bind(companyId).all<{ project_id: number; id: string; item_code: string | null; item_group: string | null; variants: Record<string, unknown> | null }>(),
     ]);
     if (projectId != null && (projects.results ?? []).length === 0) return c.json({ error: "not_found" }, 404);
     const sets = {
@@ -678,7 +695,17 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       mePersonId: peopleList.find((p) => p.offered && mine.has(p.id))?.id ?? peopleList.find((p) => mine.has(p.id))?.id ?? null,
       settings: { design3dDays: settings?.d3 ?? BETA_DEFAULT_3D_DAYS, design2dDays: settings?.d2 ?? BETA_DEFAULT_2D_DAYS, amendmentDays: BETA_AMENDMENT_DAYS },
       people: peopleList,
-      projects: (projects.results ?? []).map((p) => buildBoardProject(p, sets, paymentOf(Number(p.id)))),
+      workTypes,
+      projects: (projects.results ?? []).map((p) => {
+        const id = Number(p.id);
+        const lines = (soLines.results ?? []).filter((l) => Number(l.project_id) === id);
+        const missing = findIncompleteVariantLines(lines.map((l) => ({ id: l.id, itemCode: l.item_code ?? "", group: l.item_group, variants: l.variants }))).length;
+        return {
+          ...buildBoardProject(p, sets, paymentOf(id)),
+          works: (designEvents.results ?? []).filter((e) => Number(e.project_id) === id).map((e) => ({ type: e.type, onDate: e.on_date, atTime: e.at_time, done: !!e.done })),
+          variants: { lines: lines.length, missing },
+        };
+      }),
       events: (events.results ?? []).map((e) => ({
         id: e.id, projectId: e.project_id, onDate: e.on_date, atTime: e.at_time, type: e.type, note: e.note, personId: e.person_id, done: e.done,
       })),
@@ -827,6 +854,7 @@ app.post("/events", requirePermission("projects.write"), async (c) => {
   const v = cleanBetaEvent(await body(c));
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
   const { projectId, onDate, atTime, type, note, personId } = v.value;
+  if (!(await eventTypeKnown(db(c), co.companyId, type))) return c.json({ error: "type_invalid", message: "Pick the kind of entry from the list." }, 400);
   if (projectId != null && (await projectCompany(c, projectId)) == null) return c.json({ error: "not_found" }, 404);
   if (!(await companyPeople(c, co.companyId, personId == null ? [] : [personId]))) return c.json(PERSON_REFUSAL, 400);
   const row = await db(c).prepare(
@@ -853,6 +881,7 @@ app.patch("/events/:id", requirePermission("projects.write"), async (c) => {
   const v = cleanBetaEventPatch(await body(c));
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
   const { projectId, personId } = v.value;
+  if (v.value.type !== undefined && !(await eventTypeKnown(db(c), co.companyId, v.value.type))) return c.json({ error: "type_invalid", message: "Pick the kind of entry from the list." }, 400);
   if (projectId != null && (await projectCompany(c, projectId)) == null) return c.json({ error: "not_found" }, 404);
   if (!(await companyPeople(c, co.companyId, personId == null ? [] : [personId]))) return c.json(PERSON_REFUSAL, 400);
   const sent = (Object.keys(EVENT_COLUMNS) as Array<keyof BetaEventPatch>).filter((k) => k in v.value);

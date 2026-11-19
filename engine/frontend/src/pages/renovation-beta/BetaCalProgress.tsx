@@ -5,7 +5,7 @@
 import { useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { BETA, GLASS, TONES } from "./renovationBetaTheme";
-import { currentStep, progressByPerson, progressList, status, STEPS, stepDone, type BoardModel, type DesignProject, type PersonRef, type Viewing } from "./renovationBetaBoard";
+import { currentStep, progressByPerson, progressList, status, designSteps, stepDone, type BoardModel, type DesignProject, type PersonRef, type Viewing } from "./renovationBetaBoard";
 import { rememberLastProject } from "./renovationBetaBoardApi";
 import { BTN, CondPill, INK_SOFT, MUTED } from "./BetaCalParts";
 
@@ -83,7 +83,7 @@ function ProgressRow({ m, p, hl }: { m: BoardModel; p: DesignProject; hl: Viewin
         </div>
       </div>
       <div style={{ flex: "2 1 380px", minWidth: 0, display: "flex" }}>
-        {STEPS.map(([key, label], i) => {
+        {designSteps(m).map(([key, label], i) => {
           const done = stepDone(m, p, key);
           const on = i === cur;
           return (

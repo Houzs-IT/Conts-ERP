@@ -13,7 +13,8 @@ import { betaApi } from "./renovationBetaApi";
 
 export type DesignKind = "3d" | "2d";
 export type AppointmentKind = "site_measure" | "carpentry_measure" | "site_briefing";
-export type EventType = "client" | "measure" | "briefing" | "meeting" | "w3d" | "w2d" | "amend" | "po" | "update";
+/** A work of the list in Project Maintenance (migration 0342); the old fixed codes stay valid. */
+export type EventType = string;
 
 /** Every person of the company. `offered` (the project page's rule, routes/renovationProject.ts GET /people) is true
     only for people linked to an active user account; position and department come from that account. Older servers
@@ -30,7 +31,14 @@ export interface BetaBoardAppointment {
   doneAt: string | null;
 }
 
-export type BetaBoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string; outstandingSen?: number };
+/** paid: instalments fully received; absent from an older server. */
+export type BetaBoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string; outstandingSen?: number; paid?: number };
+
+/** A work of the list in Project Maintenance (migration 0342): an Add work type, and a Design step when inDesign. */
+export interface BetaWorkType {
+  id: number; code: string; label: string; rule: "booking" | "measure" | "approve_3d" | "approve_2d" | "payment_2";
+  bookable: boolean; inDesign: boolean; sortOrder: number; active: boolean; system: boolean;
+}
 
 export interface BetaBoardProject {
   id: number;
@@ -65,6 +73,10 @@ export interface BetaBoardProject {
   reviews: Array<{ fileId: number; sentOn: string | null; approvedOn: string | null }>;
   appointments: BetaBoardAppointment[];
   payment: BetaBoardPayment;
+  /** The newest calendar booking of each work of the list; absent from an older server. */
+  works?: Array<{ type: string; onDate: string; atTime: string | null; done?: boolean }>;
+  /** Sales order lines, and how many still miss a required variant; absent from an older server. */
+  variants?: { lines: number; missing: number };
 }
 
 export interface BetaBoardEvent {
@@ -85,6 +97,8 @@ export interface BetaBoard {
   people: BetaBoardPerson[];
   projects: BetaBoardProject[];
   events: BetaBoardEvent[];
+  /** The works of the list; absent from an older server (the old fixed list is used). */
+  workTypes?: BetaWorkType[];
 }
 
 export interface BoardRange { from: string; to: string }

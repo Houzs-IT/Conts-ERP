@@ -1,5 +1,6 @@
 import { PropertyListsManager } from "./projects/renovation/PropertyListsManager";
 import { CrewManager } from "./projects/renovation/RenovationMaintenance";
+import { DesignWorkManager } from "./projects/renovation/DesignWorkManager";
 import { SlaDefaultsManager } from "./projects/renovation/StepSlaParts";
 import { useProjectsMode } from "./projects/renovation/RenovationRoutes";
 import { SectionStageSelect } from "./projects/renovation/SectionStageSelect";
@@ -127,6 +128,7 @@ export function ProjectMaintenanceView() {
         <div className="space-y-6">
           <PropertyListsManager />
           <SlaDefaultsManager />
+          <DesignWorkManager />
           <CrewManager />
           <BrandManager />
         </div>

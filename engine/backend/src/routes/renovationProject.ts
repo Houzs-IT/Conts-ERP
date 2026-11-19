@@ -36,6 +36,7 @@ import { writeCachedStage } from "../services/renovation/contractSync";
 import { syncProjectDates } from "../services/renovation/projectDates";
 import { stepSlaReady, syncStepSla } from "../services/renovation/stepSla";
 import { audit } from "../services/audit";
+import { cleanNewWorkType, cleanWorkTypePatch, listWorkTypes } from "../services/renovation/workTypes";
 import { FILL_SLA_DATES_SQL } from "../scm/lib/renovation-sla";
 import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
 import { staffViewReady, syncPeopleFromUsers } from "../services/renovation/peopleSync";
@@ -229,6 +230,65 @@ app.put("/flow-steps/:key/sla", requirePageAccess("projects.maintenance", "full"
     meta: { before: before.sla_days ?? null, after: days },
   });
   return c.json({ ok: true, days });
+});
+
+/* Design work (owner, 19 Nov 2026; services/renovation/workTypes.ts): the works of a project, in order. Read by every
+   project screen; changed in Project Maintenance. */
+app.get("/work-types", requireAnyAccess(["projects.list", "projects.maintenance"]), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  return c.json({ data: await listWorkTypes(db(c), co.companyId) });
+});
+
+app.post("/work-types", requirePageAccess("projects.maintenance", "full"), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const list = await listWorkTypes(db(c), co.companyId);
+  const v = cleanNewWorkType(await body(c), list.map((w) => w.code));
+  if (!v.ok) return c.json(v, 400);
+  const next = v.value.sortOrder === 1000 ? Math.max(0, ...list.map((w) => w.sortOrder)) + 10 : v.value.sortOrder;
+  const row = await db(c).prepare(
+    `INSERT INTO project_work_types (company_id, code, label, rule, bookable, in_design, sort_order) VALUES (?, ?, ?, 'booking', ?, ?, ?) RETURNING id::int AS id`,
+  ).bind(co.companyId, v.value.code, v.value.label, v.value.bookable, v.value.inDesign, next).first<{ id: number }>();
+  await audit(c, { action: "project_work_type.create", entityType: "project_work_type", entityId: v.value.code, summary: `Work added: ${v.value.label}`, meta: v.value });
+  return c.json({ ok: true, id: row?.id ?? null, code: v.value.code }, 201);
+});
+
+app.patch("/work-types/:code", requirePageAccess("projects.maintenance", "full"), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const code = c.req.param("code");
+  const cur = (await listWorkTypes(db(c), co.companyId)).find((w) => w.code === code && w.id > 0);
+  if (!cur) return c.json({ error: "not_found" }, 404);
+  const v = cleanWorkTypePatch(await body(c), cur);
+  if (!v.ok) return c.json(v, 400);
+  const cols = { label: "label", bookable: "bookable", inDesign: "in_design", sortOrder: "sort_order", active: "active" } as const;
+  const sent = (Object.keys(cols) as Array<keyof typeof cols>).filter((k) => v.value[k] !== undefined);
+  if (!sent.length) return c.json({ ok: true });
+  await db(c).prepare(`UPDATE project_work_types SET ${sent.map((k) => `${cols[k]} = ?`).join(", ")}, updated_at = now() WHERE company_id = ? AND code = ?`)
+    .bind(...sent.map((k) => v.value[k] ?? null), co.companyId, code).run();
+  await audit(c, { action: "project_work_type.update", entityType: "project_work_type", entityId: code, summary: `Work ${cur.label} changed`, meta: v.value });
+  return c.json({ ok: true });
+});
+
+/* Removing a work: a built-in one cannot go; one still on a calendar entry is switched off instead, so the entries keep
+   their name. */
+app.delete("/work-types/:code", requirePageAccess("projects.maintenance", "full"), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const code = c.req.param("code");
+  const cur = (await listWorkTypes(db(c), co.companyId)).find((w) => w.code === code && w.id > 0);
+  if (!cur) return c.json({ error: "not_found" }, 404);
+  if (cur.system) return c.json({ error: "fixed_rule", message: `${cur.label} is built in and cannot be removed.` }, 409);
+  const used = await db(c).prepare(`SELECT count(*)::int AS n FROM project_beta_events WHERE company_id = ? AND type = ?`).bind(co.companyId, code).first<{ n: number }>();
+  if (Number(used?.n ?? 0) > 0) {
+    await db(c).prepare(`UPDATE project_work_types SET active = false, updated_at = now() WHERE company_id = ? AND code = ?`).bind(co.companyId, code).run();
+    await audit(c, { action: "project_work_type.archive", entityType: "project_work_type", entityId: code, summary: `Work ${cur.label} switched off (${used!.n} calendar entries keep it)` });
+    return c.json({ ok: true, archived: true, entries: Number(used!.n) });
+  }
+  await db(c).prepare(`DELETE FROM project_work_types WHERE company_id = ? AND code = ?`).bind(co.companyId, code).run();
+  await audit(c, { action: "project_work_type.delete", entityType: "project_work_type", entityId: code, summary: `Work ${cur.label} removed` });
+  return c.json({ ok: true, archived: false });
 });
 
 app.patch("/flow-steps/:key", requirePageAccess("projects.maintenance", "full"), async (c) => {

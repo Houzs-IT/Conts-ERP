@@ -22,8 +22,8 @@ describe("Beta board: payment label", () => {
     expect(paymentLabel(ok(inst(1, "paid"), inst(2, "paid"), inst(3, "paid"), inst(4, "not_billed")))).toMatchObject({ state: "ok", label: "3 of 4 paid" });
   });
   test("outstanding is the order total less what was received, never below zero", () => {
-    expect(paymentLabel({ state: "ok", contractSen: 10000, receivedSen: 2500, instalments: [inst(1, "paid"), inst(2, "not_billed")] })).toEqual({ state: "ok", label: "1 of 2 paid", outstandingSen: 7500 });
-    expect(paymentLabel({ state: "ok", contractSen: 10000, receivedSen: 12000, instalments: [inst(1, "paid")] })).toEqual({ state: "ok", label: "Fully paid", outstandingSen: 0 });
+    expect(paymentLabel({ state: "ok", contractSen: 10000, receivedSen: 2500, instalments: [inst(1, "paid"), inst(2, "not_billed")] })).toEqual({ state: "ok", label: "1 of 2 paid", outstandingSen: 7500, paid: 1 });
+    expect(paymentLabel({ state: "ok", contractSen: 10000, receivedSen: 12000, instalments: [inst(1, "paid")] })).toEqual({ state: "ok", label: "Fully paid", outstandingSen: 0, paid: 1 });
   });
   test("all paid reads Fully paid", () => {
     expect(paymentLabel(ok(inst(1, "paid"), inst(2, "paid")))).toMatchObject({ state: "ok", label: "Fully paid" });
@@ -109,7 +109,7 @@ describe("Beta board: other bodies", () => {
     for (const type of ["client", "measure", "briefing", "meeting", "w3d", "w2d", "amend", "po", "update"]) {
       expect(cleanBetaEvent({ onDate: "2026-11-03", type }).ok).toBe(true);
     }
-    expect(cleanBetaEvent({ onDate: "2026-11-03", type: "party" })).toMatchObject({ ok: false, error: "type_invalid" });
+    expect(cleanBetaEvent({ onDate: "2026-11-03", type: "Party!" })).toMatchObject({ ok: false, error: "type_invalid" });
     expect(cleanBetaEvent({ onDate: "2026-11-03", type: "po", projectId: "9" })).toMatchObject({ ok: false, error: "project_invalid" });
     expect(cleanBetaEvent({ onDate: "2026-11-03", type: "po", note: "x".repeat(501) })).toMatchObject({ ok: false, error: "note_invalid" });
   });
@@ -117,7 +117,7 @@ describe("Beta board: other bodies", () => {
     expect(cleanBetaEventPatch({ done: true })).toEqual({ ok: true, value: { done: true } });
     expect(cleanBetaEventPatch({ atTime: "", note: null })).toEqual({ ok: true, value: { atTime: null, note: null } });
     expect(cleanBetaEventPatch({ done: "yes" })).toMatchObject({ ok: false, error: "done_invalid" });
-    expect(cleanBetaEventPatch({ type: "nope" })).toMatchObject({ ok: false, error: "type_invalid" });
+    expect(cleanBetaEventPatch({ type: "Not a code!" })).toMatchObject({ ok: false, error: "type_invalid" });
     expect(cleanBetaEventPatch({})).toMatchObject({ ok: false, error: "nothing_to_change" });
   });
 });

@@ -102,15 +102,24 @@ describe("dates", () => {
 describe("status words", () => {
   it("follows the mockup for each condition", () => {
     expect(conditionText(m, get(4))).toBe("B - 3D amendment");
-    expect(conditionText(m, get(5))).toBe("D - Carpentry measure booked");
-    expect(conditionText(m, get(11))).toBe("D - Site briefing booked");
+    // After 2D the first open work of Design work comes next: here the second payment (owner, 19 Nov 2026).
+    expect(conditionText(m, get(5))).toBe("D - Pending second payment");
+    const paid = (p: DesignProject): DesignProject => ({ ...p, paid: 2 });
+    expect(conditionText(m, paid(get(5)))).toBe("D - Carpentry measure booked");
+    expect(conditionText(m, paid(get(11)))).toBe("D - Site briefing booked");
     expect(conditionText(m, get(13))).toBe("A - New · team not assigned");
     expect(conditionText(m, get(6))).toBe("B - 3D sent · waiting client");
     expect(conditionText(m, get(1))).toBe("C - 2D in progress");
   });
   it("says Done all design when every step is done", () => {
-    const done = buildModel(board([{ ...lakeville, appointments: lakeville.appointments.map((a) => ({ ...a, doneAt: "2026-10-26T01:00:00Z" })) }]));
+    const done = buildModel(board([{
+      ...lakeville, appointments: lakeville.appointments.map((a) => ({ ...a, doneAt: "2026-10-26T01:00:00Z" })),
+      payment: { state: "ok" as const, label: "2 of 4 paid", outstandingSen: 0, paid: 2 }, variants: { lines: 3, missing: 0 },
+    }]));
     expect(status(done, done.projects[0])[0]).toBe("E");
+    const variantsOpen = buildModel(board([{ ...lakeville, appointments: lakeville.appointments.map((a) => ({ ...a, doneAt: "2026-10-26T01:00:00Z" })),
+      payment: { state: "ok" as const, label: "2 of 4 paid", outstandingSen: 0, paid: 2 }, variants: { lines: 3, missing: 1 } }]));
+    expect(status(variantsOpen, variantsOpen.projects[0])[1]).toBe("Pending variants");
   });
   it("re-opens the stage when an amendment is open after approval", () => {
     expect(stage(m, get(4), "3").st).toBe("work");
