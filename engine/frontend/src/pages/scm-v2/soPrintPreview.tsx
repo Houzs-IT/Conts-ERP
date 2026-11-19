@@ -3,7 +3,8 @@
    order with rooms, the same "PDF layout" picker (By item / By area / By category). Owner, 3 Nov 2026: some screens
    showed the picker and others did not, and the card changed size from one screen to the next. */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactElement } from "react";
+import { ToggleGroup } from "../../components/scm-v2/ToggleGroup";
 import { PrintPreviewModal, type PrintPreviewRow } from "../../components/scm-v2/PrintPreviewModal";
 import { useSoInfoLists, useSoRooms } from "../projects/renovation/customerPropertyApi";
 import { projectDatesText } from "../projects/renovation/customerPropertyModel";
@@ -22,6 +23,7 @@ export function useSoPrintLayout(docNo: string | null | undefined, items: readon
   const renoRooms = useSoRooms(docNo ?? undefined, renoMode).data ?? null;
   /* The PDF's own layout (owner, 31 Oct 2026: "export PDF 应该都是 by default by area"). */
   const [printLayout, setPrintLayout] = useState<SoLinesView>("area");
+  const [isUnitPriceHidden, setIsUnitPriceHidden] = useState(false);
   const printRooms: SoPrintRooms | undefined = renoMode && renoRooms && renoRooms.roomSections.length > 0
     ? { order: renoRooms.roomSections, byItem: renoRooms.itemRooms } : undefined;
   /* The printed Start / End date are the linked project's (owner, 15 Oct 2026). The PDF's standard font has no em
@@ -39,10 +41,40 @@ export function useSoPrintLayout(docNo: string | null | undefined, items: readon
   /* "By item" prints the plain line list; until the catalog has loaded, "By category" prints by area. */
   const pdfRooms = printLayout === "item" ? undefined : printLayout === "category" ? categoryView ?? printRooms : printRooms;
   return {
-    renoMode, renoRooms, renoDates, printRooms, categoryView, printLayout, setPrintLayout,
+    renoMode, renoRooms, renoDates, printRooms, categoryView, printLayout, setPrintLayout, isUnitPriceHidden, setIsUnitPriceHidden,
     /** The generator's last argument (generateSalesOrderPdf opts). */
-    pdfOpts: printRooms || printProjectDates ? { rooms: pdfRooms, projectDates: printProjectDates } : undefined,
+    pdfOpts: { rooms: pdfRooms, projectDates: printProjectDates, isUnitPriceHidden },
   };
+}
+
+const UNIT_PRICE_OPTIONS = [
+  { value: "show", label: "Show" },
+  { value: "hide", label: "Hide" },
+] as const;
+
+type PrintLayoutChoices = Pick<ReturnType<typeof useSoPrintLayout>, "printRooms" | "printLayout" | "setPrintLayout" | "isUnitPriceHidden" | "setIsUnitPriceHidden">;
+
+function PrintLayoutOptions({ layout }: { layout: PrintLayoutChoices }): ReactElement {
+  const optionRow = "flex flex-wrap items-center justify-between gap-x-3 gap-y-2";
+  return (
+    <div className="space-y-3">
+      {layout.printRooms && (
+        <div className={optionRow}>
+          <span className="text-[12px] font-semibold text-ink-secondary">PDF layout</span>
+          <SoLinesViewToggle view={layout.printLayout} onChange={layout.setPrintLayout} />
+        </div>
+      )}
+      <div className={optionRow}>
+        <span className="text-[12px] font-semibold text-ink-secondary">Per unit price</span>
+        <ToggleGroup
+          label="Per unit price"
+          options={UNIT_PRICE_OPTIONS}
+          value={layout.isUnitPriceHidden ? "hide" : "show"}
+          onChange={(choice) => layout.setIsUnitPriceHidden(choice === "hide")}
+        />
+      </div>
+    </div>
+  );
 }
 
 /** The category heading of a contract line for its PDF, as the SO's own By category reads it. */
@@ -67,7 +99,7 @@ export function SoPrintPreview({ open, onClose, docNo, companyName, rows, layout
   onClose: () => void;
   docNo: string;
   rows: PrintPreviewRow[];
-  layout: Pick<ReturnType<typeof useSoPrintLayout>, "printRooms" | "printLayout" | "setPrintLayout">;
+  layout: PrintLayoutChoices;
   onViewPdf: () => void | Promise<void>;
   onPrint: () => void | Promise<void>;
   onDownload: () => void | Promise<void>;
@@ -80,12 +112,7 @@ export function SoPrintPreview({ open, onClose, docNo, companyName, rows, layout
       docNo={docNo}
       companyName={companyName}
       rows={rows}
-      options={layout.printRooms ? (
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-[12px] font-semibold text-ink-secondary">PDF layout</span>
-          <SoLinesViewToggle view={layout.printLayout} onChange={layout.setPrintLayout} />
-        </div>
-      ) : undefined}
+      options={<PrintLayoutOptions layout={layout} />}
       onViewPdf={onViewPdf}
       onPrint={onPrint}
       onDownload={onDownload}

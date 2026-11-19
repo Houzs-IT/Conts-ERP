@@ -1,6 +1,6 @@
 import { formatPhone } from '@2990s/shared/phone';
 import { buildVariantSummary } from '@2990s/shared';
-import type { RowInput } from 'jspdf-autotable';
+import type { RowInput, Styles } from 'jspdf-autotable';
 import {
   allocatePwpTriggerNotes,
   orderSofaModuleRowsWithinBuilds,
@@ -54,7 +54,6 @@ import { CONTS_LINES_BY_NAME } from '../../../conts/flowRules';
 /* Conts prints a line by its description, no Item Code column (owner, 16 Nov 2026: one PDF for the whole system,
    the SO's, without the code). */
 const SHOW_CODE = !CONTS_LINES_BY_NAME;
-const LINE_COLS = SHOW_CODE ? 7 : 6;
 
 // ----------------------------------------------------------------------------
 // Sales Order PDF generator — dynamic jspdf import so it doesn't bloat the
@@ -333,6 +332,56 @@ export type { SoPrintRooms };
 type JsPdf = import('jspdf').jsPDF;
 type AutoTableFn = (typeof import('jspdf-autotable'))['default'];
 
+export interface SoPdfOptions {
+  docTitle?: string;
+  docNoLabel?: string;
+  docNoun?: string;
+  rooms?: SoPrintRooms;
+  /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
+  projectDates?: { start: string; end: string };
+  contract?: SoPdfContract;
+  /* A quotation prints on this same layout (owner, 17 Nov 2026: one PDF for the whole system): nothing is paid yet. */
+  quotation?: boolean;
+  /* The timetable (owner, 17 Nov 2026): each line's processing and delivery dates in place of its unit price and discount; no payments. */
+  timetable?: Record<string, { orderOn: string | null; deliverOn: string | null }>;
+  isUnitPriceHidden?: boolean;
+}
+
+interface PrintedLine { item: SoItem; rowNumber: number; description: string }
+interface LineColumn { label: string; style: Partial<Styles>; cell: (line: PrintedLine) => string }
+
+const NUMBER_CELL = { halign: 'right', fontSize: 7.5 } as const;
+
+function dateColumns(timetable: NonNullable<SoPdfOptions['timetable']>): LineColumn[] {
+  const printDate = (date: string | null | undefined): string => (date ? fmtDocDate(date) : '—');
+  return [
+    { label: 'Processing', style: { cellWidth: 28, ...NUMBER_CELL }, cell: (line) => printDate(timetable[line.item.id]?.orderOn) },
+    { label: 'Delivery', style: { cellWidth: 28, ...NUMBER_CELL }, cell: (line) => printDate(timetable[line.item.id]?.deliverOn) },
+  ];
+}
+
+function moneyColumns(currency: string, isUnitPriceHidden: boolean): LineColumn[] {
+  const moneyWidth = SHOW_CODE ? 24 : 26;
+  const unitPrice: LineColumn = { label: 'Unit Price', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.unit_price_sen, currency) };
+  return [
+    ...(isUnitPriceHidden ? [] : [unitPrice]),
+    { label: 'Discount', style: { cellWidth: SHOW_CODE ? 16 : 20, ...NUMBER_CELL }, cell: (line) => (line.item.discount_sen > 0 ? fmtRm(line.item.discount_sen, currency) : '—') },
+    { label: 'Amount (RM)', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.total_sen, currency) },
+  ];
+}
+
+/* Money cells must stay on ONE line ("MYR 2,990.00", never wrapped): numeric columns are 7.5 pt, right-aligned, at a
+   fixed width. Description ('auto') is the only column allowed to wrap and takes whatever width the others leave. */
+function lineColumns(currency: string, opts: SoPdfOptions): LineColumn[] {
+  const leading: LineColumn[] = [
+    { label: '#', style: { cellWidth: 8, ...NUMBER_CELL }, cell: (line) => String(line.rowNumber) },
+    ...(SHOW_CODE ? [{ label: 'Item Code', style: { cellWidth: 28 }, cell: (line: PrintedLine) => line.item.item_code }] : []),
+    { label: 'Description', style: { cellWidth: 'auto' }, cell: (line) => line.description },
+    { label: 'Qty', style: { cellWidth: SHOW_CODE ? 14 : opts.timetable ? 20 : 16, ...NUMBER_CELL }, cell: (line) => `${line.item.qty} ${line.item.uom}` },
+  ];
+  return [...leading, ...(opts.timetable ? dateColumns(opts.timetable) : moneyColumns(currency, !!opts.isUnitPriceHidden))];
+}
+
 /* Draw ONE sales order's content into `doc` (letterhead → meta → items →
    payments → totals → signatures → terms → footer). Does NOT create the doc,
    save / output / preview — the caller finalizes ONCE, so several SOs can share
@@ -351,13 +400,7 @@ export async function renderSalesOrderInto(
   /* PWP vouchers this SO's trigger items issued (GET /:docNo `pwpCodes`) —
      used to mark trigger lines. Optional so older callers stay valid. */
   pwpCodes: SoPwpCodeRow[] = [],
-  opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms;
-    /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
-    projectDates?: { start: string; end: string }; contract?: SoPdfContract;
-    /* A quotation prints on this same layout (owner, 17 Nov 2026: one PDF for the whole system): nothing is paid yet. */
-    quotation?: boolean;
-    /* The timetable (owner, 17 Nov 2026): each line's processing and delivery dates in place of its unit price and discount; no payments. */
-    timetable?: Record<string, { orderOn: string | null; deliverOn: string | null }> },
+  opts?: SoPdfOptions,
 ): Promise<void> {
   /* A cancelled line must never reach a CUSTOMER document — not as a printed
      row and not inside a total. The gate lives HERE, in the one function both
@@ -609,6 +652,7 @@ export async function renderSalesOrderInto(
     orderedItems.map((it) => [it.item_code]),
     pwpCodes,
   );
+  const columns = lineColumns(header.currency, opts ?? {});
   const tableRows = orderedItems.map((it, itIdx) => {
     const notes = [
       pwpRewardNote(it.variants),
@@ -634,16 +678,8 @@ export async function renderSalesOrderInto(
     const lines = keysOf(it).length > 0
       ? appendPhotoMarker(composed)
       : composed;
-    return [
-      String(itIdx + 1),
-      ...(SHOW_CODE ? [it.item_code] : []),
-      lines.join('\n'),
-      `${it.qty} ${it.uom}`,
-      ...(opts?.timetable
-        ? [opts.timetable[it.id]?.orderOn ? fmtDocDate(opts.timetable[it.id]!.orderOn!) : '—', opts.timetable[it.id]?.deliverOn ? fmtDocDate(opts.timetable[it.id]!.deliverOn!) : '—']
-        : [fmtRm(it.unit_price_sen, header.currency), it.discount_sen > 0 ? fmtRm(it.discount_sen, header.currency) : '—']),
-      ...(opts?.timetable ? [] : [fmtRm(it.total_sen, header.currency)]),
-    ];
+    const printedLine: PrintedLine = { item: it, rowNumber: itIdx + 1, description: lines.join('\n') };
+    return columns.map((column) => column.cell(printedLine));
   });
 
   /* Interleave category section header rows (SOFA / BEDFRAME / …) above each
@@ -655,7 +691,7 @@ export async function renderSalesOrderInto(
   const sectionRowStyles = { fontStyle: 'bold', textColor: 40, halign: 'left', lineWidth: { top: 0.4 } as never } as const;
   const bodyRows: RowInput[] = [];
   /* The timetable carries no money at all (owner, 18 Nov 2026): no amount column, no subtotals, totals or terms. */
-  const cols = opts?.timetable ? LINE_COLS - 1 : LINE_COLS;
+  const cols = columns.length;
   let lastGroup: string | null = null;
   /* Renovation mode: each room closes with its subtotal (owner, 24 Oct 2026, "By area"). */
   let roomSubtotal = 0;
@@ -696,41 +732,13 @@ export async function renderSalesOrderInto(
 
   autoTable(doc, {
     startY: y,
-    head: [(() => {
-      const tail = opts?.timetable ? ['Processing', 'Delivery'] : ['Unit Price', 'Discount', 'Amount (RM)'];
-      return SHOW_CODE ? ['#', 'Item Code', 'Description', 'Qty', ...tail] : ['#', 'Description', 'Qty', ...tail];
-    })()],
+    head: [columns.map((column) => column.label)],
     body: bodyRows,
     theme: 'plain',
     rowPageBreak: 'avoid',
     styles: { ...DOC_TABLE_STYLES, fontSize: 8 },
     headStyles: DOC_TABLE_HEAD_STYLES,
-    /* Money cells must stay on ONE line ("MYR 2,990.00", never wrapped):
-       numeric columns are 7.5 pt, right-aligned. Fixed widths sum to ~114 mm of
-       182 usable (A4 − 2×14 margins), leaving ~68 mm for Description ('auto',
-       the only column allowed to wrap). */
-    columnStyles: opts?.timetable && !SHOW_CODE ? {
-      0: { cellWidth: 8, halign: 'right', fontSize: 7.5 },
-      1: { cellWidth: 'auto' },
-      2: { cellWidth: 20, halign: 'right', fontSize: 7.5 },
-      3: { cellWidth: 28, halign: 'right', fontSize: 7.5 },
-      4: { cellWidth: 28, halign: 'right', fontSize: 7.5 },
-    } : SHOW_CODE ? {
-      0: { cellWidth: 8, halign: 'right', fontSize: 7.5 },
-      1: { cellWidth: 28 },
-      2: { cellWidth: 'auto' },
-      3: { cellWidth: 14, halign: 'right', fontSize: 7.5 },
-      4: { cellWidth: 24, halign: 'right', fontSize: 7.5 },
-      5: { cellWidth: 16, halign: 'right', fontSize: 7.5 },
-      6: { cellWidth: 24, halign: 'right', fontSize: 7.5 },
-    } : {
-      0: { cellWidth: 8, halign: 'right', fontSize: 7.5 },
-      1: { cellWidth: 'auto' },
-      2: { cellWidth: 16, halign: 'right', fontSize: 7.5 },
-      3: { cellWidth: 26, halign: 'right', fontSize: 7.5 },
-      4: { cellWidth: 20, halign: 'right', fontSize: 7.5 },
-      5: { cellWidth: 26, halign: 'right', fontSize: 7.5 },
-    },
+    columnStyles: Object.fromEntries(columns.map((column, index) => [index, column.style])),
     margin: { left: margin, right: margin },
   });
   // jspdf-autotable mutates doc by assigning the finished Table to
@@ -967,13 +975,7 @@ export async function generateSalesOrderPdf(
   /* PWP vouchers this SO's trigger items issued (GET /:docNo `pwpCodes`) —
      used to mark trigger lines. Optional so older callers stay valid. */
   pwpCodes: SoPwpCodeRow[] = [],
-  opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms;
-    /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
-    projectDates?: { start: string; end: string }; contract?: SoPdfContract;
-    /* A quotation prints on this same layout (owner, 17 Nov 2026: one PDF for the whole system): nothing is paid yet. */
-    quotation?: boolean;
-    /* The timetable (owner, 17 Nov 2026): each line's processing and delivery dates in place of its unit price and discount; no payments. */
-    timetable?: Record<string, { orderOn: string | null; deliverOn: string | null }> },
+  opts?: SoPdfOptions,
 ): Promise<void> {
   // Dynamic import — code-split into a vendor chunk.
   const { jsPDF } = await import('jspdf');
