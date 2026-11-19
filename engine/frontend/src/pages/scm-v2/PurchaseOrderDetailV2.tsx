@@ -9,6 +9,7 @@
 //       useConfirmPurchaseOrder / useReopenPurchaseOrder
 //       (vendored suppliers-queries slice).
 
+import { takeBack } from '../../lib/backTrail';
 import { lazy, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { RenovationDocTrail } from "./RenovationDocTrail";
@@ -568,7 +569,7 @@ function PurchaseOrderDetailV2ReadOnly() {
   // details page's back button goes to its relevant list, not wherever
   // browser history happens to point). The list restores its own sticky
   // filters, so the prior filtered view comes back — no context lost.
-  const goBack = () => navigate(scmListReturnTo("/scm/purchase-orders"));
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? scmListReturnTo("/scm/purchase-orders"));
   const goEdit = () => id && navigate(`/scm/purchase-orders/${id}?edit=1`);
   /* "Add line" from the page you START on — the affordance lived only
      inside the editor, under a different name per document, so it read as

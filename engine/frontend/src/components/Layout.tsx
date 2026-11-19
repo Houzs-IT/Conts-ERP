@@ -1,4 +1,5 @@
 import { CONTS_EMBEDDED } from "../conts/embed";
+import { takeBack } from "../lib/backTrail";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ShieldAlert } from "lucide-react";
@@ -236,7 +237,10 @@ export function PageHeader({
   async function goBack() {
     // The gate runs FIRST and can cancel — see the `beforeBack` prop doc.
     if (beforeBack && !(await beforeBack())) return;
-    if (typeof back === "string") navigate(back);
+    /* Where the page was opened from, past any form on the way (lib/backTrail; chew, 19 Nov 2026). */
+    const from = takeBack(`${window.location.pathname}${window.location.search}`);
+    if (from) navigate(from);
+    else if (typeof back === "string") navigate(back);
     else if (window.history.length > 1) navigate(-1);
     else navigate("/");
   }

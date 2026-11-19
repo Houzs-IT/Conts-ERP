@@ -22,6 +22,7 @@
 // Route: /scm/delivery-orders/:id. Data: useMfgDeliveryOrderDetail /
 // useUpdateMfgDeliveryOrderStatus (unchanged from prior V2).
 
+import { takeBack } from '../../lib/backTrail';
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { OnsiteTwinCard } from "./OnsiteTwinCard";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -709,7 +710,7 @@ export function DeliveryOrderDetailV2() {
   // details page's back button goes to its relevant list, not wherever
   // browser history happens to point). The list restores its own sticky
   // filters, so the prior filtered view comes back — no context lost.
-  const goBack = () => navigate(scmListReturnTo("/scm/delivery-orders"));
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? scmListReturnTo("/scm/delivery-orders"));
   const goEdit = () => id && navigate(`/scm/delivery-orders/new?edit=${id}`);
   /* Asks WHY before it cancels (owner 2026-09-14) — the prompt is the
      confirmation, and the server refuses a cancel without the reason. */

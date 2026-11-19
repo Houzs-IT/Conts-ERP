@@ -33,6 +33,7 @@
 // ScmDeliveryReturnDetailV2 is the whole switch. Data + mutations use
 // the vendored delivery-return-queries slice.
 
+import { takeBack } from '../../lib/backTrail';
 import { lazy, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { LazySlot } from "../../components/LazySlot";
@@ -547,7 +548,7 @@ function DeliveryReturnDetailV2ReadOnly() {
   // details page's back button goes to its relevant list, not wherever
   // browser history happens to point). The list restores its own sticky
   // filters, so the prior filtered view comes back — no context lost.
-  const goBack = () => navigate(scmListReturnTo("/scm/delivery-returns"));
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? scmListReturnTo("/scm/delivery-returns"));
   const goEdit = () => id && navigate(`/scm/delivery-returns/${id}?edit=1`);
   const doCancel = async () => {
     if (!deliveryReturn) return;
