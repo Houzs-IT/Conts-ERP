@@ -214,7 +214,8 @@ function HomeScreen(): ReactElement {
   const stageCount = (key: string): number => searched.filter((p) => stageOf(p.id) === key).length;
   const stepCounts = filterCounts(m, searched.filter((p) => stageOf(p.id) === "design"));
   const stageLabels = new Map((steps.data?.data ?? []).map((r) => [r.step.key, r.step.label] as const));
-  const stages = STAGE_ORDER.filter((k) => stageLabels.has(k) || DEFAULT_STAGE_LABEL[k]).map((k) => ({ key: k, label: stageLabels.get(k) ?? DEFAULT_STAGE_LABEL[k]!, count: stageCount(k) }));
+  // The first stage reads "Sales order" as on the project page's stage row, whatever the old step label says.
+  const stages = STAGE_ORDER.filter((k) => stageLabels.has(k) || DEFAULT_STAGE_LABEL[k]).map((k) => ({ key: k, label: k === "signed" ? "Sales order" : stageLabels.get(k) ?? DEFAULT_STAGE_LABEL[k]!, count: stageCount(k) }));
   const tableKey = stage == null ? "projects-home" : filter !== "all" && filter !== "done" ? `projects-home-${filter.replace(":", "-")}` : `projects-home-stage-${stage}`;
   const showPay = m.projects.some((p) => p.payment != null);
 
