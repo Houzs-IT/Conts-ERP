@@ -572,16 +572,19 @@ export function nextFor(m: BoardModel, p: DesignProject): Next | null {
   return best;
 }
 
-export type HomeTab = "all" | "A" | "B" | "C" | "D" | "E";
-export const HOME_TABS: ReadonlyArray<readonly [HomeTab, string]> = [
-  ["all", "All projects"], ["A", "Site Measure"], ["B", "3D"], ["C", "2D"], ["D", "Carpentry · Site · PO"], ["E", "Done Design"],
-];
+/** The list's filter (owner, 19 Nov 2026): every project, the projects whose current Design step is one step
+    (`step:<code>`, the code from designSteps), or the ones with every Design step done. */
+export type HomeFilter = "all" | "done" | `step:${string}`;
 
-export function inTab(m: BoardModel, p: DesignProject, t: HomeTab): boolean {
-  return t === "all" || t === status(m, p)[0];
+export function inFilter(m: BoardModel, p: DesignProject, f: HomeFilter): boolean {
+  if (f === "all") return true;
+  const cur = currentStep(m, p);
+  if (f === "done") return cur === 99;
+  return designSteps(m)[cur]?.[0] === f.slice(5);
 }
 
-export function homeCounts(m: BoardModel): { late: number; week: number; tabs: Record<HomeTab, number> } {
+/** How many projects each filter shows; `steps` is keyed by step code. */
+export function homeCounts(m: BoardModel): { late: number; week: number; all: number; done: number; steps: Record<string, number> } {
   let late = 0;
   let week = 0;
   for (const p of m.projects) {
@@ -591,14 +594,25 @@ export function homeCounts(m: BoardModel): { late: number; week: number; tabs: R
     if (l < 0) late++;
     else if (l <= 7) week++;
   }
-  const tabs: Record<HomeTab, number> = { all: 0, A: 0, B: 0, C: 0, D: 0, E: 0 };
-  for (const [t] of HOME_TABS) tabs[t] = m.projects.filter((p) => inTab(m, p, t)).length;
-  return { late, week, tabs };
+  return { late, week, ...filterCounts(m, m.projects) };
 }
 
-/** The tab's projects: projects with no team first, then the soonest next deadline, none last. */
-export function homeList(m: BoardModel, t: HomeTab): DesignProject[] {
-  return m.projects.filter((p) => inTab(m, p, t)).sort((a, b) => {
+/** The filter counts over a list of projects (the search narrows it). */
+export function filterCounts(m: BoardModel, list: readonly DesignProject[]): { all: number; done: number; steps: Record<string, number> } {
+  const ds = designSteps(m);
+  const steps: Record<string, number> = Object.fromEntries(ds.map(([k]) => [k, 0]));
+  let done = 0;
+  for (const p of list) {
+    const k = ds[currentStep(m, p)]?.[0];
+    if (k === undefined) done++;
+    else steps[k]++;
+  }
+  return { all: list.length, done, steps };
+}
+
+/** The filter's projects: projects with no team first, then the soonest next deadline, none last. */
+export function homeList(m: BoardModel, f: HomeFilter): DesignProject[] {
+  return m.projects.filter((p) => inFilter(m, p, f)).sort((a, b) => {
     if (a.unassigned !== b.unassigned) return a.unassigned ? -1 : 1;
     return (nextFor(m, a)?.d ?? "9999").localeCompare(nextFor(m, b)?.d ?? "9999");
   });
