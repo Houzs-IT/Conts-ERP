@@ -220,6 +220,9 @@ describe('payment voucher allocations (settle a purchase invoice at post time)',
   const accts = (): Row[] => [
     { account_code: '1000', account_name: 'Bank', account_type: 'ASSET', acc_money: true, is_active: true, company_id: CO_A },
     { account_code: '1000', account_name: 'Bank', account_type: 'ASSET', acc_money: true, is_active: true, company_id: CO_B },
+    /* The line's own account, in each company's chart (a line must name an account the chart holds). */
+    { account_code: '2000', account_name: 'Payables', account_type: 'LIABILITY', is_active: true, company_id: CO_A },
+    { account_code: '2000', account_name: 'Payables', account_type: 'LIABILITY', is_active: true, company_id: CO_B },
   ];
   const body = (piId: string) => ({
     payeeName: 'Freight Co',

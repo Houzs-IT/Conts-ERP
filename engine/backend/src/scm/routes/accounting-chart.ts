@@ -390,6 +390,11 @@ export const requireLeafAccount = async (
     .limit(1)
     .maybeSingle();
   if (selfRes.error) return c.json({ error: 'load_failed', reason: selfRes.error.message }, 500);
+  /* And it must be in the chart at all (chew, 19 Nov 2026): a code typed, scanned or imported that the chart does not
+     hold would book money nowhere. */
+  if (!selfRes.data) {
+    return c.json({ error: 'unknown_account', message: `${code} is not an account in this company's chart — pick one from the list.` }, 400);
+  }
   const special = (selfRes.data as { special_type?: string | null } | null)?.special_type ?? null;
   if (special && CONTROL_SPECIALS.has(special)) {
     return c.json({

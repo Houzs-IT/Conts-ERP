@@ -106,6 +106,10 @@ describe('raising an AP invoice', () => {
     const control = await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [{ debitAccountCode: '400-0000', amountSen: 100 }] });
     expect(control.status).toBeGreaterThanOrEqual(400);
     expect((await control.json() as { error: string }).error).toBe('control_account_locked');
+    /* An account the chart does not hold at all (chew, 19 Nov 2026). */
+    const unknown = await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [{ debitAccountCode: '900-ZZZZ', amountSen: 100 }] });
+    expect(unknown.status).toBe(400);
+    expect((await unknown.json() as { error: string }).error).toBe('unknown_account');
     const fx = await json(app, '/ap-invoices', 'POST', { ...BILL, currency: 'USD' });
     expect(fx.status).toBe(400);
     expect((await fx.json() as { error: string }).error).toBe('currency_unsupported');
