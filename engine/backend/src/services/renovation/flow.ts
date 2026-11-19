@@ -191,3 +191,21 @@ export function flowStages(
     ...(s.step_key === "renovation" ? { categories: [...cats] } : {}),
   }));
 }
+
+/** The stages' second layer as the project detail sends it (GET /api/renovation/:id `stageLayers`): every active stage's
+    complete flag and state, every catalog category (catalog order) for Renovation, and the Design steps. */
+export interface StageLayers {
+  stages: Array<{ key: FlowStepKey; label: string; complete: boolean; waiting: boolean; state: string }>;
+  renovation: { categories: RenovationCategoryStatus[] };
+  design?: { steps: DesignStepStatus[] };
+}
+
+export function stageLayersOf(
+  stages: readonly FlowStageStatus[], design: readonly DesignStepStatus[], cats: readonly RenovationCategoryStatus[],
+): StageLayers {
+  return {
+    stages: stages.map((s) => ({ key: s.key, label: s.label, complete: s.complete, waiting: s.waiting, state: s.state })),
+    renovation: { categories: [...cats] },
+    design: { steps: [...design] },
+  };
+}

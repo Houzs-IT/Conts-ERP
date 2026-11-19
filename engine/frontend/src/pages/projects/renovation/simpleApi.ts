@@ -57,6 +57,14 @@ export interface FlowStageStatus {
   categories?: RenovationCategoryStatus[];
 }
 
+/** The stages' second layer (GET /api/renovation/:id `stageLayers`; engine flow.ts stageLayersOf): every active stage's
+    status in order, every catalog category in catalog order (sort_order) for Renovation, and the Design steps. */
+export interface StageLayers {
+  stages: Array<{ key: FlowStepKey; label: string; complete: boolean; waiting: boolean; state: string }>;
+  renovation: { categories: RenovationCategoryStatus[] };
+  design?: { steps: DesignStepStatus[] };
+}
+
 /** The flow as the project detail sends it: the six stages with their status, in order. Optional for an older engine. */
 export interface ProjectFlow extends FlowView {
   stages?: FlowStageStatus[];
@@ -82,6 +90,8 @@ export type FinanceKind = "RENOVATION" | "INHOUSE_RENOVATION";
 
 export interface ProjectDetailV2 extends Omit<ProjectDetail, "tasks"> {
   flow: ProjectFlow;
+  /** The stages' second layer (owner rules 19 Nov 2026). */
+  stageLayers: StageLayers;
   /** null before migration 0121 (or from an older engine) */
   stepSla?: StepSlaView | null;
   hold: Hold | null;

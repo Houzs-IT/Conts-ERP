@@ -10,7 +10,7 @@ import { redFlags, type RedFlag } from "./redFlags";
 import { currentStage, deriveStageViews, type StageView } from "./stages";
 import { tradeTaskStatus, type TaskStatus } from "./tradeTasks";
 import { isFlowStepKey, type HoldFlag, type StageKey } from "../../scm/shared/renovation-stages";
-import { derivedFlowStep, effectiveFlowStep, flowStages, type FlowFacts, type ProjectFlow } from "./flow";
+import { derivedFlowStep, effectiveFlowStep, flowStages, stageLayersOf, type FlowFacts, type ProjectFlow, type StageLayers } from "./flow";
 import { designSteps, renovationCategories, type DesignStepStatus, type RenovationCategoryStatus, type StageInputs } from "./stageRules";
 import { LEGACY_WORK_TYPES } from "./workTypes";
 import type { KeyHolder, VoSummary } from "./load";
@@ -34,6 +34,8 @@ export interface ProjectView {
   openSnags: number;
   /** the six-stage flow with each stage's status (owner rules 19 Nov 2026, flow.ts) */
   flow: ProjectFlow;
+  /** the same stage statuses in the shape the project page's second layer reads */
+  stageLayers: StageLayers;
   hold: { flag: HoldFlag; note: string | null; at: string | null } | null;
   /** contract total (SO incl. VOs) and received so far, from the SO's billing; never stored on the project */
   money: { contractSen: number | null; receivedSen: number | null; receivedPct: number | null };
@@ -151,6 +153,7 @@ export function computeProjectView(f: ProjectFacts, today: string): ProjectView 
   const holdFlag = f.project.hold_flag === "in_defect" || f.project.hold_flag === "on_hold" ? f.project.hold_flag : null;
   return {
     flow,
+    stageLayers: stageLayersOf(flow.stages, detail.designSteps, detail.categories),
     hold: holdFlag ? { flag: holdFlag, note: f.project.hold_note ?? null, at: f.project.hold_at ?? null } : null,
     money: moneyOf(f),
     keyHolder: f.keyHolder ?? null,

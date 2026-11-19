@@ -6,6 +6,7 @@ import {
   flowStages,
   isFullyPaid,
   stageComplete,
+  stageLayersOf,
   type FlowFacts,
   type FlowStepRow,
 } from "../src/services/renovation/flow";
@@ -98,6 +99,18 @@ describe("stage statuses", () => {
     expect(st[3]).toMatchObject({ complete: false, state: "0 of 1 categories complete", categories: cats });
     expect(st[1].categories).toBeUndefined();
     expect(st[3].designSteps).toBeUndefined();
+  });
+});
+
+describe("stage layers (the project detail's stageLayers)", () => {
+  test("every stage's status, the categories and the Design steps", () => {
+    const design = [{ code: "variants", label: "Variants", done: false, date: null, state: "No sales order lines" }];
+    const cats = [{ code: "PAINT", label: "Paint", onProject: false, done: false, linesDone: 0, linesTotal: 0 }];
+    const layers = stageLayersOf(flowStages(STEPS, { ...none, hasSo: true }, design, cats), design, cats);
+    expect(layers.stages[0]).toEqual({ key: "signed", label: "Sales order", complete: true, waiting: true, state: "Waiting first payment" });
+    expect(layers.stages.map((s) => s.key)).toEqual(["signed", "design", "ordering", "renovation", "handover", "closed"]);
+    expect(layers.renovation.categories).toEqual(cats);
+    expect(layers.design?.steps).toEqual(design);
   });
 });
 
