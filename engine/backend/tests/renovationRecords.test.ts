@@ -68,6 +68,12 @@ describe("board row", () => {
     keyHolder: { personId: 2, name: "Alex", movedOn: "2026-10-01" },
     vo: { count: 2, approved: 1 },
     redFlags: [{ code: "billing_due", text: "" }, { code: "task_overdue", text: "" }],
+    /* Board rows carry the on-project Renovation categories since 18876505 (owner, 19 Nov 2026). */
+    stageLayers: { stages: [], renovation: { categories: [
+      { code: "CAB", label: "Cabinet", onProject: true, done: false, linesDone: 1, linesTotal: 3 },
+      { code: "PNT", label: "Painting", onProject: false, done: false, linesDone: 0, linesTotal: 0 },
+      { code: "ELC", label: "Electrical", onProject: true, done: true, linesDone: 2, linesTotal: 2 },
+    ] } },
   } as unknown as ProjectView;
 
   test("carries every board column, the hold flag first in the status", () => {
@@ -78,6 +84,7 @@ describe("board row", () => {
       furnitureArrival: "pending_arrived", renoItemArrival: null, keyHolder: { name: "Alex" },
       vo: { has: true, count: 2, approved: 1 }, handoverDate: "2026-10-05", source: "import", sourceRef: "notion-page-1", redFlagCount: 2,
     });
+    expect(r.renovationCategories).toEqual([{ code: "CAB", done: false }, { code: "ELC", done: true }]);
   });
 
   test("a handover timestamp handed over as a Date object is still its Malaysian day (not 2001)", () => {

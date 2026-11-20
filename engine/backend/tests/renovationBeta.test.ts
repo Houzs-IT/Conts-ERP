@@ -54,6 +54,7 @@ describe("Beta routes: the switch", () => {
       "PUT /projects/:id/lines/:itemId/materials",
       "PUT /projects/:id/lines/:itemId/plan",
       "PUT /projects/:id/lines/:itemId/supplier",
+      "PUT /projects/:id/lines/:itemId/warehouse",
       "PUT /settings",
     ]);
   });

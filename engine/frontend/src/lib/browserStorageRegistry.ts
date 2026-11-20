@@ -65,6 +65,7 @@ export const BROWSER_STORAGE_KEY_REGISTRY: readonly StorageKeyRegistration[] = [
   { id: "form-drafts", classification: "DRAFT_UI", storage: ["localStorage"], keyFamily: "conts:form-draft:u<user>:c<company>:<form>:<id|new>", matches: prefix("conts:form-draft:") },
   { id: "payment-retry-handoffs", classification: "DRAFT_UI", storage: ["localStorage"], keyFamily: "houzs:scm-handoff:v<version>:(so|si)PaymentRetry:u<user>:c<company>:<document>", matches: (key) => /^houzs:scm-handoff:v\d+:(?:so|si)PaymentRetry:u\d+:c\d+:.+$/.test(key) },
   { id: "scm-handoffs", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "houzs:scm-handoff:v<version>:<registered non-payment handoff>", matches: (key) => SCM_TRANSIENT_KEYS.has(key) },
+  { id: "projects-board-cache", classification: "CACHE", storage: ["localStorage"], keyFamily: "board-cache:v1:<name>:u<user>:c<company>", matches: (key) => /^board-cache:v1:.+:u\d+:c\d+$/.test(key) },
   { id: "query-snapshots", classification: "CACHE", storage: ["localStorage"], keyFamily: "houzs-rq-snapshot:<build>:<session>:<company>", matches: prefix("houzs-rq-snapshot:") },
   { id: "chunk-recovery", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "chunk-recovered-at", matches: exact("chunk-recovered-at") },
   { id: "chunk-action-reload", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "chunk-action-reload (cooldown for the print-action stale-chunk reload)", matches: exact("chunk-action-reload") },
@@ -225,6 +226,10 @@ export const PRODUCTION_STORAGE_CALLERS = [
   // next. Reviewed with the announcements redesign.
   "pages/announcements/ComposerModal.tsx",
   "pages/renovation/QuotationsList.tsx",
+  // Projects list last answer (11 Nov 2026, addf83fa): board-cache:v1:<name>:u<user>:c<company>,
+  // a CACHE of the server's board rows so the list shows at once; keyed by
+  // user and company through storageIdentity, replaced by the server's answer.
+  "pages/renovation-beta/boardCache.ts",
   "pages/renovation-beta/renovationBetaBoardApi.ts",
   "pages/renovation-beta/renovationPoColumns.ts",
   "pages/scm-v2/ProductModels.tsx",

@@ -58,6 +58,13 @@ export default defineConfig(async () => {
       environment: "node",
       include: testProjects.light,
       exclude: [...HOUZS_ONLY, "**/node_modules/**"],
+      // Default is 5000ms. The whole-tree scans (specialsRecordedNeverPriced,
+      // moneyTextShape, catalogCodeGuard, ...) and the first test of a file that
+      // boots an in-memory database (journal, opening) take 3-7s ALONE on a
+      // Windows checkout and went over 5s whenever the machine was busy, while
+      // every assertion held. 15s, as frontend/vitest.config.ts uses, gives
+      // headroom without hiding a hung test.
+      testTimeout: 15000,
       // ISTANBUL even though this project runs on plain node and v8 would be
       // cheaper here. The two backend projects' reports are MERGED, and a merge
       // is only meaningful when both sides describe the same statements — v8 and

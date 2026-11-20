@@ -9,6 +9,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { filterOutstandingGrnLines } from "../../vendor/scm/lib/outstanding-grn-search";
+import { convertToLink } from "../../lib/convertScope";
 
 const { outstandingGrnItems, pagedCalls, fetchNext, pageState } = vi.hoisted(() => ({
   outstandingGrnItems: vi.fn(),
@@ -98,7 +99,7 @@ describe("Bill a Goods-Received Note: search", () => {
      ceiling, and flags the answer when it stops there. A short list that looks
      whole is exactly what the old newest-500 read produced in silence. */
   it("says the list is not complete when the server stopped reading at its ceiling", () => {
-    open("/scm/purchase-invoices/from-grn?grnId=grn-66", true);
+    open(convertToLink("grnToPi", "grn-66"), true);
     expect(screen.getByRole("alert").textContent).toMatch(/This list is not complete/);
     expect(screen.getByText("3 lines across 1 GRN")).toBeTruthy();
   });
