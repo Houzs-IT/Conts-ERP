@@ -12,6 +12,7 @@
 //
 // Mounted at '/delivery-returns' in apps/api/src/index.ts.
 
+import { DR_SEARCH_COLS, pageRange, parseReturnListPage, returnSearchOr } from '../lib/return-list-page';
 import { Hono, type Context } from 'hono';
 import { normalizePhone } from '../shared/phone';
 import { buildVariantSummary } from '../shared';
@@ -785,9 +786,15 @@ export async function deliveryReturnListHandler(c: Context<{ Bindings: Env; Vari
   /* The screen read — the list's filter + order, shared with GET /export/rows
      (lib/delivery-return-list-read.ts), capped at 500. */
   const filters = readDeliveryReturnListFilters((k) => c.req.query(k));
-  const { data, error } = await orderDeliveryReturnList(
-    filterDeliveryReturnList(sb.from('delivery_returns').select(HEADER), filters, c, scopeIds),
-  ).limit(500);
+  /* ?page= asks for one page with its total, searched on the server (lib/return-list-page.ts); the phone list reads it. */
+  const paged = parseReturnListPage((k) => c.req.query(k));
+  let q = filterDeliveryReturnList(sb.from('delivery_returns').select(HEADER, paged ? { count: 'exact' } : undefined), filters, c, scopeIds);
+  if (paged) {
+    const or = returnSearchOr(DR_SEARCH_COLS, paged.q);
+    if (or) q = q.or(or);
+  }
+  const ordered = orderDeliveryReturnList(q);
+  const { data, error, count } = await (paged ? ordered.range(...pageRange(paged)) : ordered.limit(500));
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   const rows = (data ?? []) as unknown as Array<DrLineHeader & Record<string, unknown>>;
   /* The SO number and the book's Agent spelling are ancillary: a failed read
@@ -797,6 +804,7 @@ export async function deliveryReturnListHandler(c: Context<{ Bindings: Env; Vari
   gateDrListFinance(rows, canViewScmFinance(c));
   const attached = await attachDeliveryReturnLines(sb, c, rows);
   if (attached.error !== null) return c.json({ error: 'load_failed', reason: attached.error }, 500);
+  if (paged) return c.json({ deliveryReturns: attached.rows, total: count ?? attached.rows.length, page: paged.page, pageSize: paged.pageSize });
   return c.json({ deliveryReturns: attached.rows });
 }
 deliveryReturns.get('/', deliveryReturnListHandler);

@@ -49,8 +49,21 @@ vi.mock("../../vendor/scm/lib/delivery-order-queries", () => ({
     };
   },
 }));
+/* The scoped read and the paged read both stand in for the server: the scoped one answers only the notes it was asked
+   for (?grnIds=), the paged one every note. */
 vi.mock("../../vendor/scm/lib/suppliers-queries", () => ({
-  useOutstandingGrnItems: outstandingGrnItems,
+  useOutstandingGrnItems: (opts: { grnIds?: string[]; enabled?: boolean } = {}) => {
+    const r = outstandingGrnItems() as { data: { items: Array<{ grnId: string }>; truncated: boolean } };
+    const ids = opts.grnIds ?? [];
+    return { ...r, isFetching: false, data: { ...r.data, items: r.data.items.filter((l) => ids.includes(l.grnId)) } };
+  },
+  useOutstandingGrnItemsPaged: () => {
+    const r = outstandingGrnItems() as { data: { items: unknown[] } };
+    return {
+      ...r, isFetching: false, data: { pages: [{ items: r.data.items, nextCursor: null, pageSize: 100 }] },
+      fetchNextPage: vi.fn(), hasNextPage: false, isFetchingNextPage: false, isFetchNextPageError: false,
+    };
+  },
 }));
 vi.mock("../../vendor/scm/components/NotifyDialog", () => ({
   useNotify: () => vi.fn(),

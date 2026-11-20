@@ -74,6 +74,8 @@ import { parseLineNumbers, invalidLineNumberBody } from '../shared/line-numbers'
 import { mintMonthlyDocNo, insertWithDocNoRetry } from '../lib/doc-no';
 import { todayMyt } from '../lib/my-time';
 import { paginateAll } from '../lib/paginate-all';
+import { parseDocPageQuery, readDocPage } from '../lib/doc-batch-page';
+import { makeDocBatchReader, poSearchMatches, receivablePoBase } from '../lib/purchase-picker-docs';
 import { readStatusCounts } from '../lib/status-counts';
 import { recordEntityAudit, assertAuditWritable, auditUnavailableBody, diffFields, compactChanges, fieldChange, statusChange } from '../lib/entity-audit';
 import { GRN_LINE_AUDIT_FIELDS, GRN_LINE_AUDIT_SELECT } from '../lib/entity-audit-fields';
@@ -1176,6 +1178,32 @@ grns.get('/outstanding-po-items', async (c) => {
      so scoping could only narrow the window and never recover a PO that fell
      outside it. That is the owner's 2026-08-17 zero-row screen. */
   const requestedPoIds = parsePoIdScope(c.req.query('poId'));
+
+  /* ?limit= asks for ONE PAGE (lib/doc-batch-page.ts, audit 20 Nov 2026): a few receivable POs at a time, newest
+     first, searched on the server, each batch's lines worked out by the same loader as the whole list. Without it,
+     the whole list as before. ?supplierId= narrows to one supplier (appending to a posted GRN). */
+  const paged = requestedPoIds.length > 0 ? null : parseDocPageQuery(c.req.query());
+  if (paged) {
+    const scopeQuery = <Q,>(q: Q): Q => scopeToCompany(q, c);
+    const matches = paged.q ? await poSearchMatches(sb, scopeQuery, paged.q) : null;
+    if (matches?.error) return c.json({ error: 'load_failed', reason: matches.error }, 500);
+    const supplierId = (c.req.query('supplierId') ?? '').trim() || null;
+    const reader = makeDocBatchReader({ base: receivablePoBase(sb, scopeQuery, supplierId), numberCol: 'po_number', q: paged.q, matches });
+    const page = await readDocPage({
+      limit: paged.limit,
+      cursor: paged.cursor,
+      readBatch: reader.read,
+      linesFor: async (docs) => {
+        const ids = docs.map((d) => reader.idOf.get(d)).filter((x): x is string => !!x);
+        const got = await loadOutstandingPoLines({ sb, scopeQuery, requestedPoIds: ids, isReceivable: isReceivablePo });
+        if (got.error !== null) return { lines: [], error: got.error };
+        return { lines: await toOutstandingPoItems(sb, got.rows, effectiveDelivery), error: null };
+      },
+      docOf: (l) => l.poDocNo,
+    });
+    if (page.error !== null) return c.json({ error: 'load_failed', reason: page.error }, 500);
+    return c.json({ items: page.lines, nextCursor: page.nextCursor, pageSize: paged.limit });
+  }
   /* The read lives in lib/outstanding-po-lines.ts: paged rather than capped,
      scoped in SQL, and it reports WHY an empty answer is empty. Both predicates
      are handed IN — `scopeToCompany` because items carry company_id since mig

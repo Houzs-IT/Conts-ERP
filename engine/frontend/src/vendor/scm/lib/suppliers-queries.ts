@@ -1045,7 +1045,7 @@ export type OutstandingPoItem = {
  * empty `items` and dropping it is how "your PO is a draft" became "every line
  * has been received" — see `lib/outstandingEmptyReason.ts`.
  */
-export function useOutstandingPoItems(poIds: string[]) {
+export function useOutstandingPoItems(poIds: string[], opts: { enabled?: boolean } = {}) {
   const scopeParam = [...poIds].sort().join(',');
   return useQuery({
     // The scope is part of the identity of this read now that the SERVER applies
@@ -1057,7 +1057,37 @@ export function useOutstandingPoItems(poIds: string[]) {
         ? `/grns/outstanding-po-items?poId=${encodeURIComponent(scopeParam)}`
         : `/grns/outstanding-po-items`,
     ),
+    enabled: opts.enabled ?? true,
     staleTime: 30_000,
+  });
+}
+
+/** One page of the GRN-from-PO picker (backend lib/doc-batch-page.ts): whole POs, newest number first, only lines
+    with something left to receive, searched on the server (audit 20 Nov 2026). */
+export type OutstandingPoPage = { items: OutstandingPoItem[]; nextCursor: string | null; pageSize: number };
+
+export const OUTSTANDING_PO_PAGE_SIZE = 100;
+
+export function outstandingPoPageUrl(q: string, cursor: string | null, supplierId: string | null, limit = OUTSTANDING_PO_PAGE_SIZE): string {
+  const p = new URLSearchParams({ limit: String(limit) });
+  if (cursor) p.set('cursor', cursor);
+  if (q.trim()) p.set('q', q.trim());
+  if (supplierId) p.set('supplierId', supplierId);
+  return `/grns/outstanding-po-items?${p.toString()}`;
+}
+
+export function useOutstandingPoItemsPaged(q: string, opts: { supplierId?: string | null; enabled?: boolean } = {}) {
+  const supplierId = opts.supplierId ?? null;
+  return useInfiniteQuery({
+    queryKey: ['grns', 'outstanding-po-items', 'paged', q, supplierId],
+    enabled: opts.enabled ?? true,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => authedFetch<OutstandingPoPage>(outstandingPoPageUrl(q, pageParam, supplierId), { signal }),
+    getNextPageParam: (last) => last.nextCursor,
+    placeholderData: (prev) => prev,
+    staleTime: 30_000,
+    /* A failed page is shown with a Try again button, not silently re-sent. */
+    retry: false,
   });
 }
 
@@ -1121,13 +1151,42 @@ export type OutstandingGrnItem = {
     response without the field (a Worker older than the field) reads as false. */
 export type OutstandingGrnItems = { items: OutstandingGrnItem[]; truncated: boolean };
 
-export function useOutstandingGrnItems() {
+export function useOutstandingGrnItems(opts: { grnIds?: readonly string[]; enabled?: boolean } = {}) {
+  const ids = [...(opts.grnIds ?? [])].sort().join(',');
   return useQuery({
-    queryKey: ['purchase-invoices', 'outstanding-grn-items'],
+    /* The note scope is part of the read's identity: the server applies it (?grnIds=). */
+    queryKey: ['purchase-invoices', 'outstanding-grn-items', ids],
     queryFn: () => authedFetch<{ items: OutstandingGrnItem[]; truncated?: boolean }>(
-      `/purchase-invoices/outstanding-grn-items`,
+      ids ? `/purchase-invoices/outstanding-grn-items?grnIds=${encodeURIComponent(ids)}` : `/purchase-invoices/outstanding-grn-items`,
     ).then((r): OutstandingGrnItems => ({ items: r.items, truncated: r.truncated === true })),
+    enabled: opts.enabled ?? true,
     staleTime: 30_000,
+  });
+}
+
+/** One page of the PI-from-GRN picker (backend lib/doc-batch-page.ts): whole notes, newest number first, only lines
+    with something left to bill, searched on the server (audit 20 Nov 2026). */
+export type OutstandingGrnPage = { items: OutstandingGrnItem[]; nextCursor: string | null; pageSize: number };
+
+export const OUTSTANDING_GRN_PAGE_SIZE = 100;
+
+export function outstandingGrnPageUrl(q: string, cursor: string | null, limit = OUTSTANDING_GRN_PAGE_SIZE): string {
+  const p = new URLSearchParams({ limit: String(limit) });
+  if (cursor) p.set('cursor', cursor);
+  if (q.trim()) p.set('q', q.trim());
+  return `/purchase-invoices/outstanding-grn-items?${p.toString()}`;
+}
+
+export function useOutstandingGrnItemsPaged(q: string, opts: { enabled?: boolean } = {}) {
+  return useInfiniteQuery({
+    queryKey: ['purchase-invoices', 'outstanding-grn-items', 'paged', q],
+    enabled: opts.enabled ?? true,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => authedFetch<OutstandingGrnPage>(outstandingGrnPageUrl(q, pageParam), { signal }),
+    getNextPageParam: (last) => last.nextCursor,
+    placeholderData: (prev) => prev,
+    staleTime: 30_000,
+    retry: false,
   });
 }
 
