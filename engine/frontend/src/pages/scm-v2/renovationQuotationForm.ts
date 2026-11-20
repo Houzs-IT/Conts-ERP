@@ -7,6 +7,7 @@ import { EMPTY_CUSTOMER_PROPERTY, type CustomerPropertyValue } from '../projects
 import type { QuoteParty } from '../renovation/QuotationCustomerCard';
 import { placeRows } from '../renovation/roomSections';
 import type { SoPrintRooms } from '../../vendor/scm/lib/so-print-rooms';
+import { roundDiv } from '../../vendor/shared/renovation-money';
 import type { SoDisplayLine } from './soDetailParts';
 
 export type QuotationLine = SoDisplayLine;
@@ -34,8 +35,20 @@ export interface QuoteSources {
 
 const DEFAULT_ROOM = 'Common area';
 
+/** qty x unit price in whole sen, rounded the way the PDF rounds a measured line (CONTS-0060: qty can be 5.5 FT). */
+export const grossSen = (qty: number, unitPriceSen: number): number => roundDiv(Math.round(qty * 1000) * unitPriceSen, 1000);
+
+/** The form's Qty for a saved line: a measured line shows its measure. */
+export const formQty = (l: Pick<DocLine, 'qty' | 'measure'>): number => (l.measure ? Number(l.measure) : l.qty);
+
+/** A decimal qty is stored as the line's measure (the qty column is whole numbers); a whole one stays the count. */
+export function qtyFields(qty: number, uom: string, keepMeasure = false): Pick<DocLine, 'qty' | 'measure' | 'measureUom'> {
+  if (Number.isInteger(qty) && !keepMeasure) return { qty, measure: null, measureUom: null };
+  return { qty: 1, measure: String(qty), measureUom: uom.trim().toUpperCase() || 'FT' };
+}
+
 const openingDiscount = (l: DocLine): number => {
-  const gross = l.qty * l.unitPriceSen;
+  const gross = grossSen(formQty(l), l.unitPriceSen);
   return l.amountOverrideSen != null ? gross - l.amountOverrideSen : Math.round((gross * l.discountBp) / 10000);
 };
 
@@ -56,7 +69,7 @@ export function seedQuoteForm(sections: readonly DocSection[], newRid: () => str
       const rid = newRid();
       const discountSen = openingDiscount(l);
       lines.push({
-        rid, itemCode: l.itemCode ?? '', description: l.description, uom: l.uom ?? 'UNIT', qty: l.qty,
+        rid, itemCode: l.itemCode ?? '', description: l.description, uom: (l.measure ? l.measureUom : null) ?? l.uom ?? 'UNIT', qty: formQty(l),
         unitPriceSen: l.unitPriceSen, discountSen, unitCostSen: l.unitCostSen, remark: '',
       });
       lineRoom[rid] = room;
@@ -89,11 +102,12 @@ export function sectionsFromForm(
       lines: lines.filter((l) => placed.roomOf[l.rid] === room && (l.itemCode.trim() !== '' || sources.lines[l.rid])).map((l): DocLine => {
         const o = sources.lines[l.rid] as DocLine | undefined;
         if (o?.kind === 'TEXT') return { ...o, room: heading, description: l.description };
-        const gross = l.qty * l.unitPriceSen;
-        const unchanged = o != null && o.qty === l.qty && o.unitPriceSen === l.unitPriceSen && sources.openedDiscountSen[l.rid] === l.discountSen;
+        const gross = grossSen(l.qty, l.unitPriceSen);
+        const unchanged = o != null && formQty(o) === l.qty && o.unitPriceSen === l.unitPriceSen && sources.openedDiscountSen[l.rid] === l.discountSen;
         return {
           ...(o ?? emptyDocLine(heading)),
-          room: heading, itemCode: l.itemCode.trim() || (o?.itemCode ?? null), uom: l.uom || null, qty: l.qty, unitPriceSen: l.unitPriceSen, unitCostSen: l.unitCostSen,
+          room: heading, itemCode: l.itemCode.trim() || (o?.itemCode ?? null), uom: l.uom || null, ...(unchanged ? { qty: o.qty, measure: o.measure, measureUom: o.measureUom } : qtyFields(l.qty, l.uom, Boolean(o?.measure))),
+          unitPriceSen: l.unitPriceSen, unitCostSen: l.unitCostSen,
           description: [l.description, l.remark].filter((t) => t.trim()).join(' - '),
           discountBp: unchanged ? o.discountBp : gross > 0 ? Math.min(10000, Math.round((l.discountSen / gross) * 10000)) : 0,
           amountOverrideSen: unchanged ? o.amountOverrideSen : null,
@@ -140,10 +154,10 @@ export function quotationLines(sections: readonly DocSection[]): { rows: Quotati
     }
     s.lines.forEach((l, li) => {
       const id = l.id ?? `line-${si}-${li}`;
-      const gross = l.qty * l.unitPriceSen;
+      const gross = grossSen(formQty(l), l.unitPriceSen);
       const total = s.lumpSumSen != null ? 0 : l.netSen ?? gross;
       rows.push({
-        id, item_code: l.itemCode ?? '', description: l.description, description2: null, uom: l.uom ?? '', qty: l.qty, unit_price_sen: l.unitPriceSen,
+        id, item_code: l.itemCode ?? '', description: l.description, description2: null, uom: (l.measure ? l.measureUom : null) ?? l.uom ?? '', qty: formQty(l), unit_price_sen: l.unitPriceSen,
         discount_sen: s.lumpSumSen != null ? 0 : Math.max(0, gross - total), total_sen: total,
       });
       byItem[id] = room;

@@ -203,6 +203,7 @@ const SoLineCardInner = ({
   searchHint,
   compact = false,
   actions,
+  decimalQty = false,
 }: {
   index:     number;
   draft:     SoLineDraft;
@@ -285,6 +286,8 @@ const SoLineCardInner = ({
   compact?: boolean;
   /** Compact only: extra per-line buttons, shown before the remove button. */
   actions?: ReactNode;
+  /** Quotation only: Qty takes up to 3 decimals (5.5 FT), saved as the line's measure. SO lines stay whole numbers. */
+  decimalQty?: boolean;
 }) => {
   const notify = useNotify();
   const maintQ   = useMaintenanceConfig('master');
@@ -755,7 +758,7 @@ const SoLineCardInner = ({
 
   const lineTotal = useMemo(
     /* A credit row is negative on purpose; only a discount larger than the line stops at 0. */
-    () => (draft.unitPriceSen < 0 ? draft.qty * draft.unitPriceSen : Math.max(0, draft.qty * draft.unitPriceSen - draft.discountSen)),
+    () => (draft.unitPriceSen < 0 ? draft.qty * draft.unitPriceSen : Math.max(0, Math.round(draft.qty * draft.unitPriceSen) - draft.discountSen)),
     [draft.qty, draft.unitPriceSen, draft.discountSen],
   );
 
@@ -1106,13 +1109,13 @@ const SoLineCardInner = ({
              beside it is typed (Houzs DEV-62). */}
         <NumberInput
           sign="unsigned"
-          decimal={false}
+          decimal={decimalQty}
           step={1}
           min={1}
           className={styles.numericInput}
           value={draft.qty === 0 ? null : draft.qty}
           disabled={!isEditing}
-          onValueChange={(n) => onChange({ qty: n ?? 0 })}
+          onValueChange={(n) => onChange({ qty: n == null ? 0 : Math.round(n * 1000) / 1000 })}
           onBlur={() => { if (draft.qty <= 0) onChange({ qty: 1 }); }}
         />
 
@@ -1180,7 +1183,7 @@ const SoLineCardInner = ({
             align="right"
             inputClassName={styles.priceInput}
             valueSen={draft.discountSen}
-            baseSen={draft.qty * draft.unitPriceSen}
+            baseSen={Math.round(draft.qty * draft.unitPriceSen)}
             disabled={!isEditing}
             onCommit={(sen) => onChange({ discountSen: sen ?? 0 })}
           />
