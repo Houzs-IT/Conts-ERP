@@ -1,6 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
-import { isFieldKind, isKind, isSide, roleForKind, forgetRules } from '../../_lib/access';
+import { isFieldKind, isKind, isSide, roleForKind, forgetRules, userRolesReady } from '../../_lib/access';
 import { type Department, type Position, IN_DEPARTMENT, cleanName, isRecord, isSort, isUniqueViolation, loadDepartment, managersIn, otherManagers, parseDepartmentMove } from '../../_lib/accessRules';
 
 /** PATCH /api/departments/:id { name?, kind?, side?, sort? } -> { department }. Management only. A new name, kind or
@@ -38,11 +38,18 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     return fail('LAST_ADMIN', 'There must always be at least one active management account.', 409);
   }
 
+  const rolesReady = await userRolesReady(env);
   try {
     await transaction(env, async tx => {
       await run(tx, `UPDATE departments SET name = COALESCE(?, name), kind = COALESCE(?, kind), side = COALESCE(?, side), sort = COALESCE(?, sort), updated_at = ? WHERE id = ?`,
         name ?? null, kind ?? null, side ?? null, sort ?? null, nowIso(), id);
       if (name && name !== cur.name) await run(tx, 'UPDATE users SET department = ? WHERE department_id = ?', name, id);
+      // Extra roles (migration 0349) are desk roles held by desk staff: a department turned into Management drops the
+      // extra roles in its positions, and its own people (now management, Full everywhere) drop theirs.
+      if (kind !== undefined && kind !== cur.kind && cur.kind === 'staff' && rolesReady) {
+        await run(tx, `DELETE FROM user_roles WHERE position_id IN (SELECT id FROM positions WHERE department_id = ?)
+                          OR user_id IN (SELECT id FROM users WHERE department_id = ?)`, id, id);
+      }
       // Every save brings the members' hidden role back in line with the kind, so an old account cannot drift from it.
       // Owners have no department and are never touched.
       await run(tx, `UPDATE users SET role = ? WHERE department_id = ? AND role <> 'owner' AND role <> ?`, roleForKind(kind ?? cur.kind), id, roleForKind(kind ?? cur.kind));

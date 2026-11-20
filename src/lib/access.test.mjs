@@ -199,3 +199,35 @@ test('every permission category is a section of the menu, so the chart reads lik
   assert.deepEqual(categoriesWithoutSection, []);
   assert.deepEqual(['portfolio', 'performance', 'reports'].map(key => area(key).group), ['Home', 'Home', 'Units']);
 });
+
+// Extra roles (migration 0349): the highest level any role gives, the person's own setting first.
+const role = ({ position = {}, department = {} } = {}) => ({
+  position: { rules: new Map(Object.entries(position)) },
+  department: { rules: new Map(Object.entries(department)) },
+});
+
+test('extra roles: each area takes the highest level any role gives', () => {
+  const r = { ...rules({ department: { 'group:Finance': 'edit', scSales: 'none' } }), extra: [role({ position: { scSales: 'edit' }, department: { 'group:Finance': 'view' } })] };
+  assert.deepEqual(at(r, 'scSales'), { level: 'edit', origin: 'position' });
+  assert.deepEqual(at(r, 'finance'), { level: 'edit', origin: 'department' });
+  assert.deepEqual(at(r, 'dashboard'), { level: 'none', origin: 'none' });
+});
+
+test('extra roles: the person\'s own setting still decides, even when lower', () => {
+  const r = { ...rules({ user: { scSales: 'view' } }), extra: [role({ position: { scSales: 'full' } })] };
+  assert.deepEqual(at(r, 'scSales'), { level: 'view', origin: 'user' });
+});
+
+test('extra roles: a power given one by one is not opened by another role\'s category baseline', () => {
+  const r = { ...rules(), extra: [role({ department: { 'group:Units': 'full' } })] };
+  assert.deepEqual(at(r, 'lockIncome'), { level: 'none', origin: 'none' });
+  assert.deepEqual(at(r, 'owners'), { level: 'full', origin: 'department' });
+});
+
+test('extra roles: management and field accounts are unchanged', () => {
+  const r = { ...rules(), extra: [role({ department: { 'group:Home': 'full' } })] };
+  for (const a of AREAS) {
+    assert.deepEqual(resolveFor(r, { kind: 'management' }, a), { level: 'full', origin: 'fixed' });
+    assert.deepEqual(resolveFor(r, { kind: 'cleaning' }, a), { level: 'none', origin: 'none' });
+  }
+});

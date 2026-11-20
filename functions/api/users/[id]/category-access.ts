@@ -3,8 +3,11 @@ import { requireSession } from '../../../_lib/auth';
 import { choiceOfRows, describeChoice, parseCategoryAccess, rowsOfChoice, type CategoryCatalog, type CategoryChoice } from '../../../_lib/categoryCatalog';
 import { loadCategoryCatalog } from '../../../_lib/categoryCatalogDb';
 import { categoryAccessReady, notMigrated } from '../../../_lib/categoryAccessReady';
+import { userRolesReady } from '../../../_lib/access';
 
-/** The person's department and what it limits everyone in it to; null when they have no department. Their own rows win over it. */
+/** The person's department and what it limits everyone in it to; null when they have no department. Their own rows win over it.
+ *  With extra roles (migration 0349) it covers every department they hold a role in, as public.conts_category_access does:
+ *  no limit if any of them has none, otherwise what any of them allows. `name` then lists them all. */
 interface FromDepartment extends CategoryChoice { id: string; name: string; restricted: boolean }
 interface PersonCategoryAccess extends CategoryChoice { userId: string; restricted: boolean; department: FromDepartment | null }
 
@@ -13,12 +16,23 @@ const loadRows = (env: Env, id: string) =>
     'SELECT group_code, sub_code FROM person_category_access WHERE user_id = ? ORDER BY group_code, sub_code', id);
 
 const loadDepartment = async (env: Env, id: string, catalog: CategoryCatalog): Promise<FromDepartment | null> => {
-  const dept = await one<{ id: string; name: string }>(env,
-    'SELECT d.id, d.name FROM users u JOIN departments d ON d.id = u.department_id WHERE u.id = ?', id);
-  if (!dept) return null;
-  const rows = await all<{ group_code: string; sub_code: string | null }>(env,
-    'SELECT group_code, sub_code FROM department_category_access WHERE department_id = ? ORDER BY group_code, sub_code', dept.id);
-  return { ...dept, restricted: rows.length > 0, ...choiceOfRows(rows, catalog) };
+  const extra = (await userRolesReady(env))
+    ? ' UNION SELECT d.id, d.name, 1 FROM user_roles r JOIN positions p ON p.id = r.position_id JOIN departments d ON d.id = p.department_id WHERE r.user_id = ?'
+    : '';
+  const rows0 = await all<{ id: string; name: string }>(env,
+    `SELECT id, name FROM (SELECT d.id, d.name, 0 AS extra FROM users u JOIN departments d ON d.id = u.department_id WHERE u.id = ?${extra}) h ORDER BY extra, name`,
+    ...(extra ? [id, id] : [id]));
+  // A second role in the main department lists it twice.
+  const held = rows0.filter((d, i) => rows0.findIndex(x => x.id === d.id) === i);
+  const [main] = held;
+  if (!main) return null;
+  const rows = await all<{ department_id: string; group_code: string; sub_code: string | null }>(env,
+    `SELECT department_id, group_code, sub_code FROM department_category_access WHERE department_id IN (${held.map(() => '?').join(', ')}) ORDER BY group_code, sub_code`,
+    ...held.map(d => d.id));
+  const restricted = held.every(d => rows.some(r => r.department_id === d.id));
+  const seen = new Set<string>();
+  const union = restricted ? rows.filter(r => { const k = `${r.group_code}/${r.sub_code ?? ''}`; return seen.has(k) ? false : (seen.add(k), true); }) : [];
+  return { id: main.id, name: held.map(d => d.name).join(', '), restricted, ...choiceOfRows(union, catalog) };
 };
 
 /** GET /api/users/:id/category-access -> which product categories this person is limited to. `restricted` false means

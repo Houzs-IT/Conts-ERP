@@ -1,6 +1,6 @@
 import { type Env, all, one } from './db';
 import {
-  AREAS, GROUPS, closedBySide, LEVELS, groupKey, isKind, isLevel, isSetting, isSide, resolveFor, rulesFor, sideSql,
+  AREAS, GROUPS, closedBySide, LEVELS, groupKey, isKind, isLevel, isSetting, isSide, resolveFor, rulesFor, sideSql, sideWithRolesSql, userRolesReady,
   type DepartmentKind, type Level, type Origin, type Rules, type Setting, type Side,
 } from './access';
 
@@ -61,6 +61,15 @@ export function parsePositionMove(body: unknown): Parsed<MoveToPosition | null> 
   if (!isRecord(m)) return bad('Pick the position to move people to.');
   if (m.positionId !== undefined && m.positionId !== null && typeof m.positionId !== 'string') return bad('Pick the position to move people to.');
   return { ok: true, value: { positionId: typeof m.positionId === 'string' && m.positionId ? m.positionId : null } };
+}
+
+/** Extra roles a person holds besides their own department and position (migration 0349), as position ids. */
+export const MAX_EXTRA_ROLES = 10;
+export function parseExtraPositions(v: unknown): Parsed<string[]> {
+  if (!Array.isArray(v) || !v.every((id): id is string => typeof id === 'string' && id.length > 0)) return { ok: false, message: 'Choose extra roles from the list.' };
+  const ids = [...new Set(v)];
+  if (ids.length > MAX_EXTRA_ROLES) return { ok: false, message: `A person can hold at most ${MAX_EXTRA_ROLES} extra roles.` };
+  return { ok: true, value: ids };
 }
 
 export interface RuleChange { scope: 'department' | 'position'; scopeId: string; key: string; level: Setting | null }
@@ -212,7 +221,7 @@ interface PermissionPersonRow {
 
 async function loadPermissionPeople(env: Env): Promise<PermissionPerson[]> {
   const rows = await all<PermissionPersonRow>(env,
-    `SELECT u.id, u.full_name, u.department_id, u.position_id, ${sideSql('u', 'd')} AS side, u.is_active,
+    `SELECT u.id, u.full_name, u.department_id, u.position_id, ${(await userRolesReady(env)) ? sideWithRolesSql('u', 'd') : sideSql('u', 'd')} AS side, u.is_active,
             (SELECT count(*)::int FROM access_rules r WHERE r.scope = 'user' AND r.scope_id = u.id) AS custom_count
        FROM users u JOIN departments d ON d.id = u.department_id ORDER BY lower(u.full_name)`);
   return rows.map(row => {
@@ -253,7 +262,7 @@ interface PersonRow {
 /** The person's grid: effective level and origin per area, their own override, and what they would get without it. */
 export async function personAccess(env: Env, userId: string, canEdit: boolean): Promise<PersonResult> {
   const row = await one<PersonRow>(env,
-    `SELECT u.id, u.full_name, u.department_id, u.position_id, d.name AS dept_name, d.kind, ${sideSql('u', 'd')} AS dept_side, p.name AS pos_name
+    `SELECT u.id, u.full_name, u.department_id, u.position_id, d.name AS dept_name, d.kind, ${(await userRolesReady(env)) ? sideWithRolesSql('u', 'd') : sideSql('u', 'd')} AS dept_side, p.name AS pos_name
        FROM users u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN positions p ON p.id = u.position_id WHERE u.id = ?`, userId);
   if (!row) return { found: 'no-user' };
   if (!row.department_id || !row.dept_name || !isKind(row.kind) || !isSide(row.dept_side)) return { found: 'no-department' };
