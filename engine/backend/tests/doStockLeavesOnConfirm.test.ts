@@ -50,10 +50,12 @@ import {
   doCountsAsDelivered,
 } from '../src/scm/shared/do-shipped-states';
 
+// CRLF folded to LF: a Windows checkout (core.autocrlf) must match the same
+// multi-line anchors a Linux checkout does.
 const ROUTE = readFileSync(
   resolve(__dirname, '../src/scm/routes/delivery-orders-mfg.ts'),
   'utf8',
-);
+).replace(/\r\n/g, '\n');
 
 /* ── The simulation ─────────────────────────────────────────────────────────
    A delivery order walked up a ladder of statuses, against a fake

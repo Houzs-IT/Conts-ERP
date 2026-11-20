@@ -26,6 +26,20 @@ const NO_BRIDGE_BY_DESIGN: Record<string, string> = {
 
 const BRIDGE_LINE = /\.use\(\s*(['"])(?:\*|\/\*)\1\s*,\s*supabaseAuth\s*\)/;
 
+/* A router that shares its mount prefix with another (renovation-packages.ts is
+   mounted at /renovation) scopes the bridge to its own paths instead:
+   `.use('/packages', supabaseAuth)` + `.use('/packages/*', supabaseAuth)`. That
+   counts only when EVERY route the router declares falls under a bridged path,
+   so a new route outside the scope still fails here. */
+function scopedBridgeCoversEveryRoute(src: string, name: string): boolean {
+  const scoped = [...src.matchAll(new RegExp(`${name}\\.use\\(\\s*(['"])([^'"]+)\\1\\s*,\\s*supabaseAuth\\s*\\)`, 'g'))].map((m) => m[2]!);
+  if (scoped.length === 0) return false;
+  const routes = [...src.matchAll(new RegExp(`${name}\\.(?:get|post|put|patch|delete|all|on)\\(\\s*(['"])([^'"]+)\\1`, 'g'))].map((m) => m[2]!);
+  if (routes.length === 0) return false;
+  const covered = (path: string) => scoped.some((b) => (b.endsWith('/*') ? path.startsWith(b.slice(0, -1)) : path === b));
+  return routes.every(covered);
+}
+
 function importedRouters(): Map<string, string> {
   const out = new Map<string, string>();
   for (const m of INDEX.matchAll(/import\s+\{([^}]+)\}\s+from\s+"\.\/routes\/([^"]+)"/g)) {
@@ -52,7 +66,7 @@ describe('every SCM sub-router mounts the supabaseAuth bridge', () => {
       const file = files.get(name);
       if (!file) { missing.push(`${prefix} (${name}: not imported from ./routes)`); continue; }
       const src = readFileSync(file, 'utf8');
-      if (!BRIDGE_LINE.test(src)) missing.push(`${prefix} (${name} in ${file.slice(SCM_DIR.length + 1)})`);
+      if (!BRIDGE_LINE.test(src) && !scopedBridgeCoversEveryRoute(src, name)) missing.push(`${prefix} (${name} in ${file.slice(SCM_DIR.length + 1)})`);
     }
     expect(missing, `routers mounted without the bridge — their reads 500/403 in production:\n${missing.join('\n')}`).toEqual([]);
   });
