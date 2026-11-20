@@ -258,6 +258,7 @@ const month = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7);
 r = await call('GET', `/api/housekeeping/pay?month=${month}`);
 const pay = r.json.rows?.filter(x => crew.slice(0, 2).some(c => c.id === x.cleanerId)) ?? [];
 check('pay: each of the two cleaners gets half the external job', r.status === 200 && pay.length === 2 && pay.every(x => x.externalJobs >= 1 && x.externalPay >= 7500), r.text.slice(0, 400));
+check('pay by unit: an external job is on no unit row', Array.isArray(r.json.units) && r.json.units.every(u => u.unitId && u.total === u.basic.amount + u.deep.amount), r.text.slice(0, 400));
 check('photo required stays: with a photo the unit clean completes', (await photo(row.id)) === 201 && (await call('POST', `/api/tasks/${row.id}/complete`, { photoIds: [] })).status === 200);
 
 done();
