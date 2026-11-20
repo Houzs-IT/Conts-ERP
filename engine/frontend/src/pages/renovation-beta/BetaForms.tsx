@@ -392,9 +392,9 @@ function WorkForm({ env, ev, day, preset }: { env: FormEnv; ev: CalEvent | null;
   const apptKey = WORK_APPT[type];
   const apptProject = apptKey && project ? m.byId.get(Number(project)) : undefined;
   const replaces = apptKey && apptProject ? apptProject.appts[apptKey] : undefined;
-  const [another, setAnother] = useState(true);
-  // An extra visit already stored as a calendar entry stays one when edited, so the first booking is not overwritten.
-  const asAppt = !!(apptKey && apptProject) && !(replaces?.d && (isNew ? another : ev?.eventId != null));
+  /* Booking it again is always one more visit (owner, 20 Nov 2026: "这次去多一趟"); moving the first booking is done
+     with its own Edit. An extra visit already stored as a calendar entry stays one when edited. */
+  const asAppt = !!(apptKey && apptProject) && !(replaces?.d && (isNew || ev?.eventId != null));
 
   async function submit(): Promise<void> {
     await save.run(async () => {
@@ -449,10 +449,9 @@ function WorkForm({ env, ev, day, preset }: { env: FormEnv; ev: CalEvent | null;
         </Field>
       </div>
       {apptProject && apptKey && isNew && replaces?.d && (
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
-          <input type="checkbox" name="another" checked={another} onChange={(e) => setAnother(e.target.checked)} style={{ width: 18, height: 18, accentColor: BETA.accent }} />
-          Another visit (keep the one booked for {ds(replaces.d)})
-        </label>
+        <div style={NOTE}>
+          One more visit: the one booked for {ds(replaces.d)} stays. To move that one instead, use its Edit.
+        </div>
       )}
       {apptProject && apptKey && asAppt && (
         <div style={NOTE}>
