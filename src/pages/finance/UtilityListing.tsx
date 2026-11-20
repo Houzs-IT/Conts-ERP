@@ -26,6 +26,7 @@ import {
 import { api, errorMessage } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 import { billEdit, partNow } from '../../lib/utilityBillEdit';
+import { OwnerPaidTick } from '../owners/ExpenseEntry';
 
 const UtilitiesModal = lazy(() => import('../owners/ExpenseEntry').then(m => ({ default: m.UtilitiesModal })));
 const AddUtilityBill = lazy(() => import('../../components/AddUtilityBill').then(m => ({ default: m.AddUtilityBill })));
@@ -356,6 +357,7 @@ function EditAmount({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) 
   const [value, setValue] = useState<number | null>(whole);
   const [part, setPart] = useState<number | null>(wasPart);
   const [busy, setBusy] = useState(false);
+  const [paid, setPaid] = useState(false);
   const toast = useToast();
   if (!open) return <div><Button size="sm" variant="secondary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setOpen(true)}>Edit amount</Button></div>;
   /* A record-only bill whose part is left as it was follows the whole, so it stays the owner's. */
@@ -364,14 +366,18 @@ function EditAmount({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) 
   const ownerPart = next?.ownerPart ?? part ?? 0;
   const tooSmall = next != null && next.share < 0;
   const owner = bill.chargeTo === 'owner';
-  const same = value === whole && !partTyped;
+  /* "Owner paid this bill" (chew, 20 Nov 2026: the owner changed after the bill went for payment): only off a request
+     that is not waiting, so finance never pays it; a waiting one is withdrawn on My claims first. */
+  const canMarkPaid = !bill.ownerPaid && (!bill.request || bill.request.status !== 'SUBMITTED');
+  const same = value === whole && !partTyped && !paid;
   const save = async () => {
     if (value == null || tooSmall) return;
     setBusy(true);
     try {
       const r = await api.patch<{ request: string | null; notice: string | null }>(`/expenses/utilities/bills/${encodeURIComponent(bill.id)}`,
-        { amount: value, ...(partTyped ? { ownerPart } : {}) });
-      toast({ tone: 'success', title: 'Bill saved.', body: [r.request ? `${r.request} now asks for the new amount.` : '', r.notice ?? ''].filter(Boolean).join(' ') || undefined });
+        { amount: value, ...(partTyped ? { ownerPart } : {}), ...(paid ? { ownerPaid: true } : {}) });
+      toast({ tone: 'success', title: 'Bill saved.', body: [r.request ? `${r.request} now asks for the new amount.` : '',
+        paid ? `${bill.request?.no ? `Taken off ${bill.request.no}; ` : ''}the whole bill goes back to the owner as O2.` : '', r.notice ?? ''].filter(Boolean).join(' ') || undefined });
       onSaved();
     } catch (e) {
       toast({ tone: 'critical', title: 'The bill was not changed.', body: errorMessage(e, 'Try again in a moment.') });
@@ -389,10 +395,12 @@ function EditAmount({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) 
       {next && !tooSmall && (
         <span className="text-meta text-muted-ink">{next.recordOnly ? `The whole bill, ${rm(value!)}, is the owner's (record only)` : `${rm(next.share)} shared${ownerPart > 0 ? `; ${rm(ownerPart)} the owner's alone` : ''}`}; the provider is paid {rm(value!)}.</span>
       )}
+      {canMarkPaid && <OwnerPaidTick label={`${KIND_LABEL[bill.kind]} ${monthLabel(bill.billMonth)}`} checked={paid} onChange={setPaid} />}
+      {!bill.ownerPaid && bill.request?.status === 'SUBMITTED' && <span className="text-meta text-muted-ink">The owner paid it? Withdraw {bill.request.no ?? 'its payment request'} on My claims first, then tick Owner paid this bill here.</span>}
       {bill.request?.status === 'SUBMITTED' && value !== whole && <span className="text-meta text-muted-ink">{bill.request.no ?? 'Its payment request'} is updated to the new amount, as long as no voucher is made yet.</span>}
       <div className="flex gap-2">
         <Button size="sm" variant="primary" loading={busy} disabled={value == null || tooSmall || same} onClick={() => void save()}>Save</Button>
-        <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setOpen(false); setValue(whole); setPart(wasPart); }}>Cancel</Button>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setOpen(false); setValue(whole); setPart(wasPart); setPaid(false); }}>Cancel</Button>
       </div>
     </div>
   );
@@ -418,6 +426,7 @@ function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose, onSaved }:
             <Row label="Bill month">{monthLabel(b.billMonth)}</Row>
             <Row label="Deducted on">{monthLabel(b.deductMonth)} statement{b.rolled ? ' (late bill)' : ''}</Row>
             <Row label="Who pays">{PAYER_LABEL[b.chargeTo] ?? b.chargeTo}</Row>
+            {b.ownerPaid && <Row label="Provider paid by">The owner (the whole bill given back as O2)</Row>}
             {b.reference && <Row label="Account or reference">{b.reference}</Row>}
             {b.receiptId
               ? <div><Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />}
