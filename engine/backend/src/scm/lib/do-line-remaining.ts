@@ -145,7 +145,10 @@ export type DoRemainingResult =
 
 /** Remaining-to-invoice qty per DO line id, or the reason it is unknown. */
 export type DoRemainingQtyResult =
-  | { ok: true; remaining: Map<string, number> }
+  /* `lines` carries the full ledger row per DO item (delivered / invoiced /
+     returned), for a refusal that has to say more than "over". Optional so a
+     caller or test double that only knows `remaining` still fits. */
+  | { ok: true; remaining: Map<string, number>; lines?: Map<string, DoRemainingLine> }
   | { ok: false; reason: string };
 
 /** The picker's candidate DO ids, or the reason they could not be listed. */
@@ -404,7 +407,7 @@ export async function doRemainingByItemId(
   const remaining = await doLineRemaining(sb, doIds, basis);
   if (!remaining.ok) return remaining;
   for (const id of ids) out.set(id, remaining.lines.get(id)?.remaining ?? 0);
-  return { ok: true, remaining: out };
+  return { ok: true, remaining: out, lines: remaining.lines };
 }
 
 /**
@@ -497,7 +500,7 @@ export const custKeyOf = (l: { debtorCode: string | null; debtorName: string | n
  * waves through an over-invoice. A blip must not be able to decide either.
  */
 export type SiOverRemainingRefusal =
-  | { status: 409; body: { error: string; lines: Array<{ doItemId: string; requested: number; remaining: number }> } }
+  | { status: 409; body: { error: string; message: string; problems?: Array<{ code: string; message: string; line?: string }>; lines: SiOverRemainingOffender[] } }
   | { status: 503; body: { error: string; message: string } }
   /* The identity refusal — docs/bugs/0672 site 15. It carries `reason` rather
      than `lines`, the shape soLinkTargetRefusal already answers with. */
@@ -533,17 +536,66 @@ async function siLinkedItemCodes(
   return bad ? { status: 409, body: bad } : null;
 }
 
+/** One Sales Invoice line that asks for more than its Delivery Order line has left. */
+export type SiOverRemainingOffender = {
+  doItemId: string;
+  requested: number;
+  remaining: number;
+  /** 1-based position on the invoice being saved; absent when the caller saves one line of an existing invoice. */
+  lineNo?: number;
+  itemCode?: string;
+  doNumber?: string;
+  delivered?: number;
+  returned?: number;
+  /** Already invoiced on OTHER invoice lines (the line being edited is left out). */
+  invoiced?: number;
+};
+
+/* "Line 2, SOFA-01 on HC-DO-2611-004: delivered 5, already invoiced 3, this invoice
+   asks for 4. Only 2 left to invoice." Until 20 Nov 2026 this refusal carried no
+   sentence at all, so the browser fell to "That clashes with something already
+   in the system". */
+export function siOverRemainingSentence(o: SiOverRemainingOffender): string {
+  const where = [o.lineNo ? `Line ${o.lineNo}` : null, o.itemCode
+    ? `${o.itemCode}${o.doNumber ? ` on ${o.doNumber}` : ''}`
+    : (o.doNumber ?? 'a Delivery Order line')].filter(Boolean).join(', ');
+  const facts = [
+    o.delivered !== undefined ? `delivered ${o.delivered}` : null,
+    o.returned ? `returned ${o.returned}` : null,
+    o.invoiced !== undefined ? `already invoiced ${o.invoiced}` : null,
+    `this invoice asks for ${o.requested}`,
+  ].filter(Boolean).join(', ');
+  const left = o.remaining <= 0 ? 'Nothing is left to invoice.' : `Only ${o.remaining} left to invoice.`;
+  return `${where}: ${facts}. ${left}`;
+}
+
+export function siOverRemainingBody(offenders: SiOverRemainingOffender[]) {
+  const sentences = offenders.map(siOverRemainingSentence);
+  return offenders.length === 1
+    ? { error: 'over_remaining', message: sentences[0]!, lines: offenders }
+    : {
+      error: 'over_remaining',
+      message: `${offenders.length} lines ask for more than was delivered and not yet invoiced.`,
+      problems: offenders.map((o, i) => ({ code: 'over_remaining', message: sentences[i]!, line: o.itemCode })),
+      lines: offenders,
+    };
+}
+
 export async function checkSiOverRemaining(
   sb: any,
   lines: Array<Record<string, unknown>>,
   excludeByDoItem?: Map<string, number>,
+  /** True when `lines` is the whole invoice being saved, so "Line N" means the operator's row N. */
+  numberLines = false,
 ): Promise<SiOverRemainingRefusal | null> {
   const wanted = new Map<string, number>();
-  for (const it of lines) {
+  const lineNoByDoItem = new Map<string, number>();
+  lines.forEach((it, i) => {
     const doItemId = (it.doItemId as string | undefined) ?? null;
-    if (!doItemId) continue;
+    if (!doItemId) return;
     wanted.set(doItemId, (wanted.get(doItemId) ?? 0) + Number(it.qty ?? 0));
-  }
+    if (numberLines && !lineNoByDoItem.has(doItemId)) lineNoByDoItem.set(doItemId, i + 1);
+  });
   if (wanted.size === 0) return null;
   /* 'invoiceable' is not a choice this function makes — its NAME is the choice.
      checkSiOverRemaining is the Sales-Invoice write-path cap, so it must measure
@@ -576,12 +628,24 @@ export async function checkSiOverRemaining(
     const codes = await siLinkedItemCodes(sb, lines);
     if (codes) return codes;
   }
-  const offenders: Array<{ doItemId: string; requested: number; remaining: number }> = [];
+  const offenders: SiOverRemainingOffender[] = [];
   for (const [doItemId, requested] of wanted) {
-    const cap = (remaining.remaining.get(doItemId) ?? 0) + (excludeByDoItem?.get(doItemId) ?? 0);
-    if (requested > cap) offenders.push({ doItemId, requested, remaining: cap });
+    const own = excludeByDoItem?.get(doItemId) ?? 0;
+    const cap = (remaining.remaining.get(doItemId) ?? 0) + own;
+    if (requested > cap) {
+      const row = remaining.lines?.get(doItemId);
+      offenders.push({
+        doItemId, requested, remaining: cap,
+        lineNo: lineNoByDoItem.get(doItemId),
+        itemCode: row?.itemCode,
+        doNumber: row?.doNumber,
+        delivered: row?.delivered,
+        returned: row?.returned,
+        invoiced: row ? Math.max(0, row.invoiced - own) : undefined,
+      });
+    }
   }
-  return offenders.length > 0 ? { status: 409, body: { error: 'over_remaining', lines: offenders } } : null;
+  return offenders.length > 0 ? { status: 409, body: siOverRemainingBody(offenders) } : null;
 }
 
 /* REOPEN's ceiling, whole — the READ and the cap together.

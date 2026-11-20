@@ -16,7 +16,7 @@
 // the next transfer gets its own idempotency key (staff request 2026-09-14).
 // ----------------------------------------------------------------------------
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Save, X, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { Button } from '@2990s/design-system';
@@ -79,7 +79,7 @@ const UNPICKED = '__UNPICKED__';
 // its SKU's real variant buckets (with on-hand qty) at the From warehouse — the
 // operator moves the exact bucket, keeping stock + MRP accurate (owner 2026-07-20).
 function TransferLineRow({
-  line, fromWarehouseId, skus, onPickCode, setLine, removeLine, canRemove,
+  line, fromWarehouseId, skus, onPickCode, setLine, removeLine, canRemove, onAvail,
 }: {
   line: LineDraft;
   fromWarehouseId: string;
@@ -88,6 +88,8 @@ function TransferLineRow({
   setLine: (key: string, patch: Partial<LineDraft>) => void;
   removeLine: (key: string) => void;
   canRemove: boolean;
+  /** Reports this line's on-hand qty at the From warehouse (undefined = not known yet) so the form can warn before saving. */
+  onAvail: (key: string, avail: number | undefined) => void;
 }) {
   const bucketsQ = useInventoryBuckets(line.itemCode || null, fromWarehouseId || null);
   // The line stores only variant_key (the backend picks the batch FIFO), so sum
@@ -106,6 +108,8 @@ function TransferLineRow({
     ? undefined
     : variantBuckets.find((v) => v.variantKey === line.variantKey)?.qty;
   const isOverdrawn = avail != null && line.qty > avail;
+  const knownAvail = bucketsQ.isLoading || !line.itemCode || !fromWarehouseId ? undefined : (avail ?? (line.variantKey === undefined ? undefined : 0));
+  useEffect(() => { onAvail(line._key, knownAvail); }, [line._key, knownAvail, onAvail]);
   const ready = Boolean(line.itemCode && fromWarehouseId);
 
   return (
@@ -255,6 +259,32 @@ const StockTransferForm = ({ onStartNew }: { onStartNew: () => void }) => {
   const removeLine = (key: string) =>
     setLines((cur) => (cur.length <= 1 ? cur : cur.filter((l) => l._key !== key)));
 
+  // On-hand per line at the From warehouse, reported by each row's own bucket query.
+  const [availByKey, setAvailByKey] = useState<Record<string, number | undefined>>({});
+  const onAvail = useCallback((key: string, avail: number | undefined) => {
+    setAvailByKey((cur) => (cur[key] === avail ? cur : { ...cur, [key]: avail }));
+  }, []);
+  const fromCode = (warehouses.data ?? []).find((w) => w.id === fromWarehouseId)?.code ?? 'the source warehouse';
+  /* The same rule the server enforces (lib/stock-transfer-availability.ts): a
+     bucket's lines together may not ask for more than the From warehouse holds. */
+  const overdrawn = useMemo(() => {
+    const byBucket = new Map<string, { itemCode: string; variantKey: string; qty: number; avail: number }>();
+    for (const l of lines) {
+      const avail = availByKey[l._key];
+      if (!l.itemCode.trim() || l.variantKey === undefined || avail === undefined) continue;
+      const k = `${l.itemCode}::${l.variantKey}`;
+      const cur = byBucket.get(k);
+      if (cur) cur.qty += l.qty;
+      else byBucket.set(k, { itemCode: l.itemCode, variantKey: l.variantKey, qty: l.qty, avail });
+    }
+    return [...byBucket.values()].filter((b) => b.qty > b.avail).map((b) => {
+      const what = b.variantKey ? `${b.itemCode} (${humanizeVariantKey(b.variantKey)})` : b.itemCode;
+      return b.avail <= 0
+        ? `No ${what} is left in ${fromCode}; this transfer asks for ${b.qty}.`
+        : `Only ${b.avail} of ${what} in ${fromCode}; this transfer asks for ${b.qty}.`;
+    });
+  }, [lines, availByKey, fromCode]);
+
   // ── Validation ───────────────────────────────────────────────────────
   const sameWarehouse = Boolean(
     fromWarehouseId && toWarehouseId && fromWarehouseId === toWarehouseId,
@@ -283,9 +313,12 @@ const StockTransferForm = ({ onStartNew }: { onStartNew: () => void }) => {
       });
       return;
     }
-    // Over-quantity is enforced server-side per (product, variant_key) bucket —
-    // the OUT movement rejects taking more than that bucket holds — so the client
-    // no longer pre-checks an aggregate balance it no longer fetches.
+    // Over-quantity is refused server-side per (item, variant) bucket at the From
+    // warehouse; this is the same check made early so the operator is not sent there.
+    if (overdrawn.length > 0) {
+      void notify({ title: 'Not enough stock to transfer', body: overdrawn.join(' '), tone: 'error' });
+      return;
+    }
 
     void (async () => {
     const payload = {
@@ -448,6 +481,7 @@ const StockTransferForm = ({ onStartNew }: { onStartNew: () => void }) => {
                   setLine={setLine}
                   removeLine={removeLine}
                   canRemove={lines.length > 1}
+                  onAvail={onAvail}
                 />
               ))}
             </tbody>
@@ -456,6 +490,26 @@ const StockTransferForm = ({ onStartNew }: { onStartNew: () => void }) => {
           <div className={styles.addLineRow}>
             <AddLineButton variant="ghost" onClick={addLine} />
           </div>
+
+          {/* Not once posted: the refetched balance then already excludes this transfer's own units. */}
+          {overdrawn.length > 0 && created == null && (
+            <div role="alert" style={{
+              marginTop: 'var(--space-3)',
+              padding: 'var(--space-3) var(--space-4)',
+              background: 'rgba(184, 51, 31, 0.08)',
+              border: '1px solid var(--c-festive-b, #B8331F)',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 'var(--fs-13)',
+              color: 'var(--c-festive-b, #B8331F)',
+              display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)',
+            }}>
+              <AlertTriangle size={16} strokeWidth={1.75} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>
+                <strong>Not enough stock.</strong>
+                {overdrawn.map((m) => <span key={m} style={{ display: 'block' }}>{m}</span>)}
+              </span>
+            </div>
+          )}
 
           {needsBucket && (
             <div style={{

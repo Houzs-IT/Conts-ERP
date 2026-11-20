@@ -30,7 +30,7 @@ import { todayMyt } from './my-time';
 import { dateOrNull } from './date-coerce';
 import {
   doLineRemaining, doRemainingByItemId, findOverInvoicedDoItems, custKeyOf, remainingUnavailableResponse, siTransferRefusal,
-  isDoLineOverInvoiced,
+  isDoLineOverInvoiced, siOverRemainingSentence,
 } from './do-line-remaining';
 import { deliveryMustMirrorAutoCount, refuseMigratedSources } from './migrated-chain';
 import { MIGRATED_DELIVERIES_NOT_INVOICED_IN_AUTOCOUNT } from './migrated-deliveries-not-invoiced.generated';
@@ -428,7 +428,12 @@ export async function createSalesInvoiceFromDoLines(sb: Db, input: SiFromDoInput
     if (qty < 1 || qty > line.remaining) {
       return refuse(409, {
         error: 'over_remaining',
-        message: `${line.itemCode} on ${line.doNumber}: pick qty ${qty} exceeds remaining ${line.remaining}.`,
+        message: qty < 1
+          ? `${line.itemCode} on ${line.doNumber}: the quantity must be at least 1.`
+          : siOverRemainingSentence({
+            doItemId: id, requested: qty, remaining: line.remaining, itemCode: line.itemCode,
+            doNumber: line.doNumber, delivered: line.delivered, returned: line.returned, invoiced: line.invoiced,
+          }),
         doItemId: id,
         doNumber: line.doNumber,
         itemCode: line.itemCode,
