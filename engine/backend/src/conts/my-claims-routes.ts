@@ -281,9 +281,10 @@ export const myJobsHandler = async (c: Ctx): Promise<Response> => {
 };
 
 export const unitsHandler = async (c: Ctx): Promise<Response> => {
-  const { data, error } = await c.get('supabase').schema('public').from('conts_units').select('id, building, unit_number');
+  const { data, error } = await c.get('supabase').schema('public').from('conts_units').select('id, building, unit_number, unit_code');
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-  const units = ((data ?? []) as Array<{ id: string; building: string; unit_number: string }>).map(u => ({ id: u.id, building: u.building, unitNumber: u.unit_number }))
+  /* The code Property OS shows the unit by (A-12-01), else the number it was imported with (0350). */
+  const units = ((data ?? []) as Array<{ id: string; building: string; unit_number: string; unit_code?: string | null }>).map(u => ({ id: u.id, building: u.building, unitNumber: u.unit_code || u.unit_number }))
     .sort((a, b) => a.building.localeCompare(b.building) || a.unitNumber.localeCompare(b.unitNumber, 'en', { numeric: true }));
   return c.json({ units });
 };
