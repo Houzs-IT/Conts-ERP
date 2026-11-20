@@ -152,6 +152,6 @@ html.conts-embedded[data-beta-skin="night"] [data-testid="cancel-request-panel"]
   --c-ink: #EEF1F8; --fg-muted: #9AA2B4; --c-festive-b: #FF9B90;
   --c-paper: #1C2030; --line-strong: rgba(150,175,255,.24);
 }
-/* The pending tone writes #8a5a00 as a literal, so its heading is matched as React writes it. */
-html.conts-embedded[data-beta-skin="night"] [data-testid="cancel-request-panel"] strong[style*="color: rgb(138, 90, 0)"] { color: #F7CD73 !important; }
+/* The pending heading's tone ink is inline, hence !important (the approved red follows --c-festive-b). */
+html.conts-embedded[data-beta-skin="night"] [data-testid="cancel-request-panel"] .cancel-request-pending-title { color: #F7CD73 !important; }
 html.conts-embedded[data-beta-skin="night"] .so-tab-strip { --c-burnt: #EEF1F8; --fg-muted: #9AA2B4; --line: rgba(150,175,255,.18); }
