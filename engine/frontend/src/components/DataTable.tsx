@@ -2390,7 +2390,7 @@ function DataTableInner<T, L>({
       )}
       {showTable && (
         <div
-          className="dt-table rounded-lg border border-border bg-surface shadow-stone sm:block sm:overflow-hidden"
+          className="dt-table isolate rounded-lg border border-border bg-surface shadow-stone sm:block sm:overflow-hidden"
           style={freezeBoxStyle}
         >
           <div
@@ -2581,8 +2581,8 @@ function DataTableInner<T, L>({
                         dragCol === c.key && "opacity-40",
                         // Delineate the frozen region: a right border on the
                         // last sticky column reads as the freeze line.
-                        isLastSticky && "border-r border-border",
-                        isFirstStickyRight && "border-l border-border"
+                        isLastSticky && "border-r border-border shadow-freeze-r",
+                        isFirstStickyRight && "border-l border-border shadow-freeze-l"
                       )}
                     >
                       <span className="inline-flex items-center gap-1" title={c.description ?? columnDescription(tableId, c.key)}>
@@ -2980,8 +2980,8 @@ function DataTableInner<T, L>({
                                 i === 0 && !expandable && !selection && "pl-5",
                                 i === displayColumns.length - 1 && "pr-5",
                                 // Freeze line on the last sticky column.
-                                isLastSticky && "border-r border-border",
-                                isFirstStickyRight && "border-l border-border",
+                                isLastSticky && "border-r border-border shadow-freeze-r",
+                                isFirstStickyRight && "border-l border-border shadow-freeze-l",
                                 c.className
                               )}
                             >
@@ -3400,7 +3400,7 @@ function DataTableInner<T, L>({
                   value={filterQuery}
                   onChange={(e) => setFilterQuery(e.target.value)}
                   placeholder="Search values…"
-                  className="w-full rounded border border-border bg-bg px-2 py-1 text-[12px] outline-none focus:border-primary"
+                  className="w-full rounded border border-border bg-bg px-2 py-1 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/25 focus-visible:outline-none"
                 />
               </div>
 
@@ -3410,7 +3410,7 @@ function DataTableInner<T, L>({
                   type="button"
                   onClick={selectAll}
                   disabled={shownValues.length === 0}
-                  className="rounded px-1.5 py-0.5 text-accent hover:bg-surface-dim disabled:text-ink-muted/50 disabled:hover:bg-transparent"
+                  className="rounded px-1.5 py-0.5 text-primary hover:bg-surface-dim disabled:text-ink-muted/50 disabled:hover:bg-transparent"
                 >
                   Select all
                 </button>
@@ -3419,7 +3419,7 @@ function DataTableInner<T, L>({
                   type="button"
                   onClick={invert}
                   disabled={shownValues.length === 0}
-                  className="rounded px-1.5 py-0.5 text-accent hover:bg-surface-dim disabled:text-ink-muted/50 disabled:hover:bg-transparent"
+                  className="rounded px-1.5 py-0.5 text-primary hover:bg-surface-dim disabled:text-ink-muted/50 disabled:hover:bg-transparent"
                 >
                   Invert
                 </button>
@@ -3428,7 +3428,7 @@ function DataTableInner<T, L>({
                   type="button"
                   onClick={() => setColumnFilter(col.key, [])}
                   disabled={allTokens.length === 0}
-                  className="rounded px-1.5 py-0.5 text-accent hover:bg-surface-dim disabled:text-ink-muted/50 disabled:hover:bg-transparent"
+                  className="rounded px-1.5 py-0.5 text-primary hover:bg-surface-dim disabled:text-ink-muted/50 disabled:hover:bg-transparent"
                 >
                   Clear
                 </button>
@@ -3438,7 +3438,7 @@ function DataTableInner<T, L>({
                   wheel that hits the top/bottom of the list doesn't chain into
                   a page scroll (which closes the popover); `min-h-0` lets it
                   shrink when the viewport-capped flex column runs short. */}
-              <div className="max-h-[240px] min-h-0 overflow-y-auto overscroll-contain py-1">
+              <div className="thin-scroll max-h-[240px] min-h-0 overflow-y-auto overscroll-contain py-1">
                 {shown.length === 0 && (
                   <div className="px-3 py-2 text-[12px] text-ink-muted">No values</div>
                 )}
@@ -3451,7 +3451,7 @@ function DataTableInner<T, L>({
                       type="checkbox"
                       checked={selected.has(v)}
                       onChange={() => toggleFilterValue(col.key, v)}
-                      className="accent-accent"
+                      className="accent-primary"
                     />
                     <span className="min-w-0 flex-1 truncate" title={v}>{col.filterLabel?.(v) ?? v}</span>
                     <span className="shrink-0 font-mono text-[10px] text-ink-muted">{n}</span>

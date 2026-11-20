@@ -167,6 +167,9 @@ const config = {
         stone: "0 1px 0 rgba(17, 24, 16, 0.04), 0 4px 18px -8px rgba(17, 24, 16, 0.12)",
         slab: "0 1px 0 rgba(17, 24, 16, 0.06), 0 12px 32px -16px rgba(17, 24, 16, 0.25)",
         brass: "0 0 0 1px rgba(161, 106, 46, 0.3), 0 1px 4px rgba(161, 106, 46, 0.18)",
+        // The freeze line of a table: rows scrolling sideways pass under the frozen columns.
+        "freeze-r": "2px 0 5px -2px rgba(17, 24, 16, 0.08)",
+        "freeze-l": "-2px 0 5px -2px rgba(17, 24, 16, 0.08)",
       },
       keyframes: {
         // Page-load reveal: a slow lift from below with fade.
