@@ -2,9 +2,10 @@
 // /api/scm/renovation-catalog — the renovation catalog's sub-categories, edited
 // from Products > SKU Master > Sub-categories (Conts, 2026-10-15).
 //
-// Reads the two tables of migration 0061. Groups are not edited here: a new one is
-// born under Accounting > Item Groups (accounting-item-groups.ts), which extends the
-// category enum and adds it to this list. Sub-categories can be added, renamed, reordered
+// Reads the two tables of migration 0061. Groups are renamed, reordered and hidden
+// here (migration 0348), but a new one is born under Accounting > Item Groups
+// (accounting-item-groups.ts), which extends the category enum and adds it to this
+// list. Sub-categories can be added, renamed, reordered
 // and hidden, never deleted: SKUs, PO/GRN lines and procurement dates store the
 // code. A WORKS sub-category is a site trade; one added here gets its task laid
 // out after the built-in trade order. The site-trade services under SERVICE stay
@@ -109,16 +110,61 @@ const cleanLabel = (v: unknown): string | null => {
   return s && s.length <= 60 ? s : null;
 };
 
+interface GroupRow { code: string; label: string; sort_order: number; active?: boolean }
+
+/* select('*'): `active` arrives with migration 0348; before it every group reads as shown. */
+async function loadGroupRows(sb: Sb): Promise<Array<Required<GroupRow>>> {
+  const { data, error } = await sb.from('product_category_groups').select('*').order('sort_order');
+  if (error) throw new Error(`categories could not be read: ${error.message}`);
+  return ((data ?? []) as GroupRow[]).map(({ code, label, sort_order, active }) => ({ code, label, sort_order, active: active !== false }));
+}
+
 renovationCatalogSettings.get('/', async (c) => {
   const sb = c.get('supabase');
-  const { data: groups, error } = await sb.from('product_category_groups').select('code, label, sort_order').order('sort_order');
-  if (error) return c.json({ error: 'load_failed', message: error.message }, 500);
   try {
-    const [subCategories, uoms] = await Promise.all([loadSubCategories(sb), loadUoms(sb)]);
-    return c.json({ groups: groups ?? [], subCategories, uoms, canEdit: canWriteScmConfig(c) });
+    const [groups, subCategories, uoms] = await Promise.all([loadGroupRows(sb), loadSubCategories(sb), loadUoms(sb)]);
+    return c.json({ groups, subCategories, uoms, canEdit: canWriteScmConfig(c) });
   } catch (e) {
     return c.json({ error: 'load_failed', message: (e as Error).message }, 500);
   }
+});
+
+/* Groups are renamed, reordered and hidden here, never added or deleted: a new group needs its accounts, so it is
+   born under Accounting > Item Groups, and SKUs, documents and accounting keep the code of a hidden one. */
+renovationCatalogSettings.patch('/groups/:code', async (c) => {
+  if (!canWriteScmConfig(c)) return refuse(c, 403, 'forbidden', 'You cannot change the catalog.');
+  const b = await body(c);
+  if (!b) return refuse(c, 400, 'invalid_json', 'The request body is not valid JSON.');
+  const code = String(c.req.param('code') ?? '').toUpperCase();
+  const sb = c.get('supabase');
+  let all: Array<Required<GroupRow>>;
+  try { all = await loadGroupRows(sb); } catch (e) { return c.json({ error: 'load_failed', message: (e as Error).message }, 500); }
+  const cur = all.find((g) => g.code === code);
+  if (!cur) return refuse(c, 404, 'not_found', 'That group does not exist.');
+
+  const patch: Record<string, unknown> = {};
+  if (b.label !== undefined) {
+    const label = cleanLabel(b.label);
+    if (!label) return refuse(c, 400, 'invalid_label', 'Type a name of up to 60 characters.');
+    const lower = label.toLowerCase();
+    if (all.some((g) => g.code !== code && g.label.toLowerCase() === lower)) return refuse(c, 409, 'label_taken', `"${label}" is already a group.`);
+    patch.label = label;
+  }
+  if (b.sortOrder !== undefined) {
+    const n = Number(b.sortOrder);
+    if (!Number.isInteger(n) || n < 0 || n > 100000) return refuse(c, 400, 'invalid_sort', 'The order must be a whole number.');
+    patch.sort_order = n;
+  }
+  if (b.active !== undefined) {
+    if (typeof b.active !== 'boolean') return refuse(c, 400, 'invalid_active', 'active must be true or false.');
+    if (!b.active && all.filter((g) => g.active && g.code !== code).length === 0) return refuse(c, 400, 'last_one', 'At least one group must stay shown.');
+    patch.active = b.active;
+  }
+  if (Object.keys(patch).length === 0) return refuse(c, 400, 'nothing_to_change', 'Nothing to change.');
+  const { data: saved, error } = await sb.from('product_category_groups').update(patch).eq('code', code).select('code').maybeSingle();
+  if (error) return c.json({ error: 'save_failed', message: error.message }, 500);
+  if (!saved) return c.json({ error: 'save_failed', message: 'The group was not saved: no row was changed.' }, 500);
+  return c.json({ ok: true });
 });
 
 renovationCatalogSettings.post('/sub-categories', async (c) => {
