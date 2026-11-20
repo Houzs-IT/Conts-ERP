@@ -39,7 +39,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Units: every whole unit, and any other unit (a room of a split flat) that has a utility bill in the range.
   const row = await one<{ units: any[] | null; bills: any[] | null; nights: any[] | null }>(env, `
     WITH b AS (
-      SELECT e.id, e.unit_id, e.category, e.incurred_on, e.deduct_month, e.amount, e.charge_to, e.record_only, e.rolled,
+      SELECT e.id, e.unit_id, e.category, e.incurred_on, e.deduct_month, e.amount, e.charge_to, e.record_only, e.rolled, coalesce(e.owner_paid, false) AS owner_paid,
              e.description, left(e.period_from::text, 10) AS period_from, left(e.period_to::text, 10) AS period_to, sc.id IS NOT NULL AS scanned,
              e.receipt_document_id, e.reference, ${LOCKED_SQL} AS final,
              e.payment_request_id, e.payment_request_no, r.status AS request_status, r.reason AS request_reason, r.decided_by AS request_decided_by,
@@ -76,7 +76,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     units: (row?.units ?? []).map(u => ({ id: u.id, buildingId: u.property_id, building: u.property, number: u.unit_number, owner: u.owner ?? null, purpose: u.purpose })),
     bills: (row?.bills ?? []).map(b => ({
       id: b.id, unitId: b.unit_id, kind: b.category, billMonth: String(b.incurred_on).slice(0, 7), deductMonth: b.deduct_month,
-      amount: Number(b.amount), chargeTo: b.charge_to, recordOnly: !!b.record_only, final: !!b.final,
+      amount: Number(b.amount), chargeTo: b.charge_to, recordOnly: !!b.record_only, final: !!b.final, ownerPaid: !!b.owner_paid,
       // The whole printed bill: the shared part plus the owner's own part (typed, or the days outside the contract).
       whole: Number(b.whole_sen),
       // The printed period and the bill's note ("22 of 30 days in the contract"), to check a scanned bill's split.
