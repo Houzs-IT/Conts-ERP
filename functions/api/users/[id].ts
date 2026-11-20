@@ -70,6 +70,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   // Extra roles: only a desk (staff) account holds them, and only desk positions; Management is Full already.
   let extraRoles: { before: string[]; after: string[] } | null = null;
+  // Made management, a person needs no extra roles (Full everywhere): they go whether or not the body lists them.
+  const becomesManagement = job?.role === 'management' && before.role !== 'management';
+  if (becomesManagement && !extras && await userRolesReady(env)) {
+    const current = await all<{ position_id: string }>(env, 'SELECT position_id FROM user_roles WHERE user_id = ? ORDER BY position_id', id);
+    if (current.length) extraRoles = { before: current.map(r => r.position_id), after: [] };
+  }
   if (extras?.ok) {
     if (!(await userRolesReady(env))) return fail('NOT_READY', 'Extra roles need database migration 0349 first.', 409);
     const role = job?.role ?? before.role;

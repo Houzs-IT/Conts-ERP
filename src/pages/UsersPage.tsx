@@ -181,7 +181,7 @@ export default function UsersPage() {
   const positionById = useMemo(() => new Map(departments.flatMap(d => d.positions.map(p => [p.id, { position: p, department: d }] as const))), [departments]);
   const extraPlacesOf = useMemo(() => (u: Row) => (u.extraRoles ?? []).flatMap(r => {
     const hit = positionById.get(r.positionId);
-    return hit && hit.position.id !== u.positionId ? [hit] : [];
+    return hit && hit.position.id !== u.positionId && hit.department.kind === 'staff' ? [hit] : [];
   }), [positionById]);
   /** The main role's side: what Works on edits. */
   const mainSideOf = useMemo(() => (u: Row): UserSide => placeSide(u, departmentOfRow(u)), [departmentOfRow]);
@@ -196,6 +196,7 @@ export default function UsersPage() {
     : [{ position: roleName(u), department: u.department ?? null }, ...extraPlacesOf(u).map(x => ({ position: x.position.name, department: x.department.name }))]), [extraPlacesOf]);
   const roleFilterOptions = useMemo(() => [
     { value: 'owner', label: 'Owner' },
+    { value: 'none', label: 'No position' },
     ...departments.flatMap(d => d.positions.map(p => ({ value: p.id, label: p.name, group: d.name }))),
   ], [departments]);
   const companiesOfRow = useMemo(() => (u: Row): readonly Company[] => (u.role === 'owner' ? [] : companiesOf(sideValueOf(u))), [sideValueOf]);
@@ -224,7 +225,8 @@ export default function UsersPage() {
     // Filtering by a role finds everyone who holds it, as their main role or an extra one.
     { key: 'role', label: 'Role', value: u => roleName(u), text: u => roleText(rolesOf(u), ', '), width: 250,
       filter: { kind: 'select', multi: true, display: 'menu', options: roleFilterOptions },
-      filterMatch: (u, picked) => (u.role === 'owner' ? picked.has('owner') : [u.positionId, ...extraPlacesOf(u).map(x => x.position.id)].some(id => !!id && picked.has(id))),
+      filterMatch: (u, picked) => (u.role === 'owner' ? picked.has('owner')
+        : (!u.positionId && picked.has('none')) || [u.positionId, ...extraPlacesOf(u).map(x => x.position.id)].some(id => !!id && picked.has(id))),
       render: u => (
         <span className="flex flex-col gap-1 min-w-0">
           <RoleBadges roles={rolesOf(u)} />

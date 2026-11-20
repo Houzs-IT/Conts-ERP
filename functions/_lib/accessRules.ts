@@ -221,7 +221,7 @@ interface PermissionPersonRow {
 
 async function loadPermissionPeople(env: Env): Promise<PermissionPerson[]> {
   const rows = await all<PermissionPersonRow>(env,
-    `SELECT u.id, u.full_name, u.department_id, u.position_id, ${sideSql('u', 'd')} AS side, u.is_active,
+    `SELECT u.id, u.full_name, u.department_id, u.position_id, ${(await userRolesReady(env)) ? sideWithRolesSql('u', 'd') : sideSql('u', 'd')} AS side, u.is_active,
             (SELECT count(*)::int FROM access_rules r WHERE r.scope = 'user' AND r.scope_id = u.id) AS custom_count
        FROM users u JOIN departments d ON d.id = u.department_id ORDER BY lower(u.full_name)`);
   return rows.map(row => {
