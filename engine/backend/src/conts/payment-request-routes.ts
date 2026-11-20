@@ -28,6 +28,7 @@ import { docMonthTag, insertWithDocNoRetry, mintMonthlyDocNo } from '../scm/lib/
 import { todayMyt } from '../scm/lib/my-time';
 import { apControlOf, resolveRoles } from '../acc/rules';
 import { buildLines, defaultLineSubs, withTargetLabels, type LineRow } from './claims-lines';
+import { readRecoveries, recoveriesOf, saveRecoveries } from './owner-recovery';
 import { decodeFiles, fileResponse, MAX_FILES, removeFiles, storeFiles, type Decoded } from './claims-files';
 import { overLimitBody, projectLimit } from './project-limit';
 import { allRows, inChunks, staffNames } from './petty-cash-store';
@@ -65,7 +66,7 @@ async function views(sb: any, companyId: number, rows: ReqRow[]) {
   if (ids.length === 0) return [];
   const billIds = [...new Set(rows.map(r => r.ap_invoice_id).filter((x): x is string => !!x))];
   const parentIds = [...new Set(rows.map(r => r.parent_request_id).filter((x): x is string => !!x))];
-  const [lines, files, pvs, names, bills, kids, parents] = await Promise.all([
+  const [lines, files, pvs, names, bills, kids, parents, recovers] = await Promise.all([
     inChunks<ReqLine>(ids, (part, f, t) => sb.from('payment_request_lines').select('*').in('request_id', part).order('id').range(f, t)),
     inChunks<{ id: string; request_id: string; file_name: string; mime: string }>(ids, (part, f, t) => sb.from('payment_request_files').select('id, request_id, file_name, mime').in('request_id', part).order('id').range(f, t)),
     /* Its vouchers: one for it alone, or one paying several that names it on a line (0330). */
@@ -75,6 +76,8 @@ async function views(sb: any, companyId: number, rows: ReqRow[]) {
     inChunks<{ id: string; invoice_number: string; status: string; provisional: boolean; total_sen: number; paid_sen: number | null }>(billIds, (part, f, t) => sb.from('ap_invoices').select('id, invoice_number, status, provisional, total_sen, paid_sen').in('id', part).order('id').range(f, t)),
     inChunks<{ id: string; request_no: string; status: string; parent_request_id: string }>(ids, (part, f, t) => sb.from('payment_requests').select('id, request_no, status, parent_request_id').in('parent_request_id', part).order('id').range(f, t)),
     inChunks<{ id: string; request_no: string }>(parentIds, (part, f, t) => sb.from('payment_requests').select('id, request_no').in('id', part).order('id').range(f, t)),
+    /* What each unit's owner pays back (0352). */
+    recoveriesOf(sb, ids),
   ]);
   const billOf = new Map(bills.map(b => [b.id, b]));
   const parentNo = new Map(parents.map(p => [p.id, p.request_no]));
@@ -103,6 +106,7 @@ async function views(sb: any, companyId: number, rows: ReqRow[]) {
       amountSen: Number(l.amount_sen), description: l.description })),
     files: files.filter(f => f.request_id === r.id).map(f => ({ id: f.id, fileName: f.file_name, mime: f.mime })),
     vouchers: (pvs.get(r.id) ?? []).map(p => ({ id: p.id, pvNumber: p.pv_number, status: p.status })),
+    recoveries: recovers.get(r.id) ?? [],
   }));
 }
 
@@ -151,7 +155,7 @@ async function overLimit(sb: any, companyId: number, lines: Array<{ project_id: 
 }
 
 /** A request as the person filled it in, checked as finance will pay it. */
-type RequestForm = { type: string; supplierId: string | null; payeeName: string; purchaseOrderId: string | null; wantedOn: string | null; amountSen: number; lines: LineRow[] };
+type RequestForm = { type: string; supplierId: string | null; payeeName: string; purchaseOrderId: string | null; wantedOn: string | null; amountSen: number; lines: LineRow[]; recover: Map<string, number> };
 
 /** Who is paid, how much, by when and on which lines, checked alike for a new request and for one changed and sent again
  *  after a withdraw or a rejection; or the refusal to send back. Files are each caller's own. */
@@ -204,7 +208,10 @@ async function readRequestForm(c: Ctx, sb: any, companyId: number, staff: Staff,
       ? { error: 'over_project_limit', message: 'This project has no limit left for this amount. Ask the office to raise it, then send again.' }
       : overLimitBody(lim.over), 409);
   }
-  return { type, supplierId, payeeName, purchaseOrderId, wantedOn, amountSen, lines: built.lines };
+  /* What the unit's owner pays back (0352): only on a line for a unit, no more than the line. */
+  const recover = readRecoveries(rawLines, built.lines);
+  if (!recover.ok) return c.json({ error: 'validation', message: recover.message }, 422);
+  return { type, supplierId, payeeName, purchaseOrderId, wantedOn, amountSen, lines: built.lines, recover: recover.byUnit };
 }
 
 /** The header fields a request is saved with, from what the person filled in. */
@@ -261,6 +268,8 @@ export const submitRequestHandler = async (c: Ctx): Promise<Response> => {
   if (ins.error) return fail(ins.error.message);
   const fr = await sb.from('payment_request_files').insert(stored.map(s => ({ ...s, request_id: id })));
   if (fr.error) return fail(fr.error.message);
+  const rv = await saveRecoveries(sb, id, form.recover, staff.userId);
+  if (rv) return fail(rv);
   return c.json({ id, requestNo: row.request_no }, 201);
 };
 
@@ -317,6 +326,8 @@ export const resubmitRequestHandler = async (c: Ctx): Promise<Response> => {
   if (gone.error) return fail(gone.error.message);
   const ins = await sb.from('payment_request_lines').insert(form.lines.map(l => ({ ...l, request_id: r.id })));
   if (ins.error) return fail(ins.error.message);
+  const rv = await saveRecoveries(sb, r.id, form.recover, staff.userId);
+  if (rv) return fail(rv);
   if (stored.length) {
     const fr = await sb.from('payment_request_files').insert(stored.map(s => ({ ...s, request_id: r.id })));
     if (fr.error) return fail(fr.error.message);
@@ -412,6 +423,37 @@ export const requestVoucherHandler = async (c: Ctx): Promise<Response> => {
     requestIds: [String(c.req.param('id'))], receiptIds: [], bankAccountCode: String(b.bankAccountCode ?? ''), accounts,
     fallbackAccount: b.debitAccountCode ? String(b.debitAccountCode) : undefined,
   });
+};
+
+/** PUT /accounting/payment-requests/:id/recoveries { unitId, amountSen | null } — finance sets or clears what a unit's
+ *  owner pays back on a request (chew, 20 Nov 2026), until it is paid: once PAID the owner is charged (0352), and a
+ *  charge made is changed on the owner's statement instead. The unit is one of the request's lines'. */
+export const setRecoveryHandler = async (c: Ctx): Promise<Response> => {
+  if (!hasHouzsPerm(c, EDIT_KEY)) return forbid(c);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const b = await bodyOf(c);
+  const unitId = typeof b?.unitId === 'string' ? b.unitId : '';
+  const amount = b?.amountSen == null ? null : Number(b.amountSen);
+  if (!unitId) return c.json({ error: 'validation', message: 'Pick the unit.' }, 422);
+  if (amount != null && !(Number.isInteger(amount) && amount > 0)) return c.json({ error: 'validation', message: 'Enter what the owner pays back, more than RM 0.00.' }, 422);
+  const { data: r } = await sb.from('payment_requests').select('id, request_no, status').eq('company_id', co.companyId).eq('id', c.req.param('id')).maybeSingle();
+  if (!r) return c.json({ error: 'not_found' }, 404);
+  if (!['SUBMITTED', 'PART_PAID', 'WITHDRAWN', 'REJECTED'].includes(String(r.status))) {
+    return c.json({ error: 'not_open', message: `${r.request_no} is ${String(r.status).toLowerCase()}: what the owner pays back is changed on the owner's statement now.` }, 409);
+  }
+  const { data: ls } = await sb.from('payment_request_lines').select('unit_id, amount_sen').eq('request_id', r.id);
+  const onUnit = ((ls ?? []) as Array<{ unit_id: string | null; amount_sen: number }>).filter(l => l.unit_id === unitId).reduce((n, l) => n + Number(l.amount_sen), 0);
+  if (!onUnit) return c.json({ error: 'validation', message: 'That unit is not on this request.' }, 422);
+  if (amount != null && amount > onUnit) return c.json({ error: 'validation', message: 'The owner pays back no more than the request pays for the unit.' }, 422);
+  const { data: had } = await sb.from('payment_request_recoveries').select('adjustment_id').eq('request_id', r.id).eq('unit_id', unitId).maybeSingle();
+  if ((had as { adjustment_id?: string | null } | null)?.adjustment_id) return c.json({ error: 'charged', message: 'The owner is already charged for this. Change it on the owner\'s statement.' }, 409);
+  const res = amount == null
+    ? await sb.from('payment_request_recoveries').delete().eq('request_id', r.id).eq('unit_id', unitId)
+    : await sb.from('payment_request_recoveries').upsert({ request_id: r.id, unit_id: unitId, amount_sen: amount, set_by: (c.get('staff') as Staff | undefined)?.userId ?? null, set_at: new Date().toISOString() }, { onConflict: 'request_id,unit_id' });
+  if (res.error) return c.json({ error: 'save_failed', reason: res.error.message }, 500);
+  return c.json({ ok: true, unitId, amountSen: amount });
 };
 
 export const rejectRequestHandler = async (c: Ctx): Promise<Response> => {

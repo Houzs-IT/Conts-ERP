@@ -199,7 +199,15 @@ export function PaymentRequests() {
         </span>
       )),
     },
-    { key: "unit", label: "Unit", render: (r) => unitsOf(r) || <span className="text-ink-muted">—</span>, getValue: unitsOf },
+    { key: "unit", label: "Unit", getValue: unitsOf, render: (r) => {
+      const back = r.kind === "request" ? (r.q.recoveries ?? []).reduce((n, x) => n + x.amountSen, 0) : 0;
+      return (
+        <span>
+          {unitsOf(r) || <span className="text-ink-muted">—</span>}
+          {back > 0 && <span className="block text-xs text-ink-muted">Owner pays back <Money sen={back} /></span>}
+        </span>
+      );
+    } },
     {
       key: "what", label: "For",
       render: (r) => (r.kind === "request" ? lineSummary(r.q.lines) : [r.c.vendorName, lineSummary(r.c.lines)].filter(Boolean).join(" — ")),
@@ -371,6 +379,7 @@ function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
           {r.q.vouchers.length > 0 && field("Vouchers", r.q.vouchers.map((v) => (
             <Link key={v.id} className="block underline" to={`/scm/payment-vouchers/${v.id}`}>{v.pvNumber} ({v.status.toLowerCase()})</Link>
           )))}
+          {r.q.lines.some((l) => l.unitId) && field("Owner pays back", <OwnerRecovery q={r.q} />)}
         </>
       ) : (
         <>
@@ -403,6 +412,45 @@ function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
           : <FileButtons files={r.c.files} open={(f, mime) => financeReceiptFileUrl(r.c.id, f, mime)} />}
       </div>
     </section>
+  );
+}
+
+/** What each unit's owner pays back on a request (chew, 20 Nov 2026), set by the person asking or here by finance until it
+ *  is paid; once PAID the owner is charged as O2 on their statement (migration 0352), and a charge made is changed there. */
+function OwnerRecovery({ q }: { q: PaymentRequest }) {
+  const { can } = useAuth();
+  const act = useFinanceAction();
+  const prompt = usePrompt();
+  const [note, setNote] = useState<string | null>(null);
+  const units = [...new Map(q.lines.filter((l) => l.unitId).map((l) => [l.unitId!, { label: l.targetLabel ?? l.unitId!, sen: 0 }])).entries()];
+  for (const l of q.lines) { const u = units.find(([id]) => id === l.unitId); if (u) u[1].sen += l.amountSen; }
+  const open = ["SUBMITTED", "PART_PAID", "WITHDRAWN", "REJECTED"].includes(q.status) && can("scm.payment_voucher.write");
+  const set = async (unitId: string, label: string, max: number, now: number | null) => {
+    const typed = await prompt({ title: `What does the owner of ${label} pay back?`, body: `Up to ${(max / 100).toFixed(2)}. Leave it empty for nothing.`,
+      placeholder: "RM", defaultValue: now != null ? (now / 100).toFixed(2) : (max / 100).toFixed(2), confirmLabel: "Save",
+      validate: (v) => { const t = v.trim(); if (!t) return null; const n = Math.round(Number(t.replace(/,/g, "")) * 100); return Number.isFinite(n) && n > 0 && n <= max ? null : `More than 0.00 and no more than ${(max / 100).toFixed(2)}.`; } });
+    if (typed == null) return;
+    const t = typed.trim();
+    setNote(null);
+    try { await act.mutateAsync({ path: `${requestsPath}/${q.id}/recoveries`, method: "PUT", body: { unitId, amountSen: t ? Math.round(Number(t.replace(/,/g, "")) * 100) : null } }); }
+    catch (e) { setNote(e instanceof Error ? e.message : "Not saved."); }
+  };
+  return (
+    <span style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {units.map(([unitId, u]) => {
+        const rec = (q.recoveries ?? []).find((x) => x.unitId === unitId);
+        return (
+          <span key={unitId} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span>{u.label}:</span>
+            {rec ? <strong><Money sen={rec.amountSen} /></strong> : <span className="text-ink-muted">nothing</span>}
+            {rec?.charged && <span className="text-xs text-ink-muted">charged to the owner (O2)</span>}
+            {rec && !rec.charged && <span className="text-xs text-ink-muted">charged to the owner once paid</span>}
+            {open && !rec?.charged && <Button variant="secondary" className="h-7" disabled={act.isPending} onClick={() => void set(unitId, u.label, u.sen, rec?.amountSen ?? null)}>{rec ? "Change" : "Owner pays back"}</Button>}
+          </span>
+        );
+      })}
+      {note && <span className="text-xs text-err">{note}</span>}
+    </span>
   );
 }
 
