@@ -951,6 +951,10 @@ export type OutstandingSoPageFilters = {
   dateField: 'soDate' | 'processing' | 'delivery';
   dateFrom: string;
   dateTo: string;
+  /** Ticked funnel values of the columns the server filters (lib/outstanding-so-page.ts PICKER_FACET_COLS). */
+  cols?: Record<string, string[]>;
+  /** A sort the server applies over every matching line (PICKER_SORT_COLS); null for the list order. */
+  sort?: { key: string; dir: 'asc' | 'desc' } | null;
 };
 
 export type OutstandingSoPage = {
@@ -958,6 +962,8 @@ export type OutstandingSoPage = {
   nextCursor: string | null;
   /** Open SO lines matching the search before the stock check: an upper bound. Sent with the first page only. */
   total: number | null;
+  /** Funnel counts per server column, over every matching line before the stock check. First page only. */
+  facets?: Record<string, Array<[string, number]>> | null;
   pageSize: number;
 };
 
@@ -972,6 +978,9 @@ export function outstandingSoPageUrl(f: Partial<OutstandingSoPageFilters> & { do
   if (f.dateFrom) p.set('dateFrom', f.dateFrom);
   if (f.dateTo) p.set('dateTo', f.dateTo);
   if (f.docNo) p.set('docNo', f.docNo);
+  const cols = Object.fromEntries(Object.entries(f.cols ?? {}).filter(([, v]) => v.length > 0));
+  if (Object.keys(cols).length > 0) p.set('cols', JSON.stringify(cols));
+  if (f.sort) p.set('sort', `${f.sort.key}:${f.sort.dir}`);
   return `/mfg-purchase-orders/outstanding-so-items?${p.toString()}`;
 }
 

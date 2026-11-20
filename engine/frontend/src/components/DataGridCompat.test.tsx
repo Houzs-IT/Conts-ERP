@@ -49,6 +49,17 @@ describe("gridColumnToTableColumn keeps DataGrid's value rules", () => {
     const t = gridColumnToTableColumn<Row>({ key: "x", label: "X", accessor: () => "x", sortable: false });
     expect(t.sortCompare).toBeUndefined();
     expect(t.disableSort).toBe(true);
+    expect(t.neverSort).toBe(true);
+  });
+
+  it("a server-sorted column hands its order to the server only on a serverSort grid, and carries server counts", () => {
+    const c: GridColumn<Row> = { key: "code", label: "Doc", accessor: (r) => r.code, serverSortable: true, filterCounts: [["PO-2", 4]] };
+    const server = gridColumnToTableColumn(c, true);
+    expect(server.sortCompare).toBeUndefined();
+    expect(server.disableSort).toBeUndefined();
+    expect(server.filterCounts).toEqual([["PO-2", 4]]);
+    expect(gridColumnToTableColumn(c).sortCompare).toBeDefined();
+    expect(gridColumnToTableColumn({ ...c, serverSortable: false }, true).sortCompare).toBeDefined();
   });
 
   it("falls back to a numeric-aware compare of the cell text", () => {

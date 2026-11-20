@@ -1,145 +1,149 @@
-// One page of the PO-from-SO picker (lib/outstanding-so-page.ts). The fake below honours the keyset cursor, the row
-// window and the search terms it is sent, so walking every page must give back every line exactly once, in the order
-// of the whole list.
+// One page of the PO-from-SO picker (lib/outstanding-so-page.ts): the light list, the column funnels, the sort and
+// the funnel counts. Walking every page must give back every matching line exactly once, in the chosen order.
 import { describe, expect, test } from 'vitest';
 
 import {
-  compareKeys, cleanSearch, decodeCursor, encodeCursor, parseOutstandingSoPageQuery, passesPageFilters,
-  readOutstandingSoCandidates, type OutstandingSoPageQuery,
+  buildPickerPage, cleanSearch, compareKeys, decodeCursor, encodeCursor, facetValue, parseOutstandingSoPageQuery,
+  passesTopBar, readPickerLines, type OutstandingSoPageQuery, type PickerLine, type PickerSort,
 } from './outstanding-so-page';
 import poRouterSrc from '../routes/mfg-purchase-orders.ts?raw';
 
-type Line = {
-  id: string; doc_no: string; item_code: string; description: string | null; item_group: string | null;
-  line_delivery_date: string | null;
-  so: { status: string; on_hold: boolean | null; so_date: string | null; processing_date: string | null; customer_delivery_date: string | null; debtor_name: string | null };
-};
-
-const unq = (v: string) => v.replace(/^"|"$/g, '').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-
-function fakeSb(lines: Line[], heads: Array<{ doc_no: string; debtor_name: string }>, log: string[]) {
-  class Q {
-    private table: string;
-    private rows: Array<Record<string, unknown>>;
-    private orFilter: string | null = null;
-    private win: [number, number] = [0, 999];
-    private counting = false;
-    private eqs: Array<[string, unknown]> = [];
-    constructor(table: string, rows: Array<Record<string, unknown>>) { this.table = table; this.rows = rows; }
-    schema() { return this; }
-    from(t: string) { return new Q(t, t === 'mfg_sales_orders' ? heads : t === 'projects' ? [] : (lines as never)); }
-    select(_c: string, o?: { count?: string }) { this.counting = o?.count === 'exact'; return this; }
-    eq(col: string, v: unknown) { this.eqs.push([col, v]); log.push(`${this.table}.eq ${col}`); return this; }
-    not(col: string, op: string, v: unknown) { log.push(`${this.table}.not ${col} ${op} ${String(v)}`); return this; }
-    gte(col: string) { log.push(`${this.table}.gte ${col}`); return this; }
-    lte(col: string) { log.push(`${this.table}.lte ${col}`); return this; }
-    or(f: string) { this.orFilter = f; log.push(`${this.table}.or ${f}`); return this; }
-    order() { return this; }
-    range(a: number, b: number) { this.win = [a, b]; return this; }
-    private matches(r: Record<string, unknown>): boolean {
-      for (const [col, v] of this.eqs) if (col === 'doc_no' && r[col] !== v) return false;
-      const f = this.orFilter;
-      if (!f) return true;
-      const ks = /doc_no\.lt\.("(?:[^"\\]|\\.)*"),and\(doc_no\.eq\.("(?:[^"\\]|\\.)*"),id\.gt\.("(?:[^"\\]|\\.)*")\)/.exec(f);
-      if (ks) {
-        const d = unq(ks[1]); const i = unq(ks[3]);
-        if (!(String(r.doc_no) < d || (r.doc_no === d && String(r.id) > i))) return false;
-      }
-      const like = /ilike\."\*([^*]*)\*"/.exec(f);
-      if (like) {
-        const t = like[1].toLowerCase();
-        const docs = /doc_no\.in\.\(([^)]*)\)/.exec(f)?.[1].split(',').map(unq) ?? [];
-        const cols = this.table === 'mfg_sales_orders' ? ['debtor_name'] : ['doc_no', 'item_code', 'description'];
-        const hit = cols.some((c) => String(r[c] ?? '').toLowerCase().includes(t)) || docs.includes(String(r.doc_no));
-        if (!hit) return false;
-      }
-      return true;
-    }
-    then<R>(ok: (v: { data: unknown[]; error: null; count: number | null }) => R) {
-      const all = this.rows.filter((r) => this.matches(r))
-        .sort((a, b) => compareKeys({ d: String(a.doc_no), i: String(a.id ?? '') }, { d: String(b.doc_no), i: String(b.id ?? '') }));
-      return Promise.resolve(ok({ data: all.slice(this.win[0], this.win[1] + 1), error: null, count: this.counting ? all.length : null }));
-    }
-  }
-  return new Q('root', []);
-}
-
-const so = (over: Partial<Line['so']> = {}): Line['so'] => ({
-  status: 'CONFIRMED', on_hold: false, so_date: '2026-11-01', processing_date: null, customer_delivery_date: null, debtor_name: null, ...over,
+const line = (i: number, over: Partial<PickerLine> = {}): PickerLine => ({
+  id: `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`,
+  docNo: `SO-${String(Math.floor(i / 3)).padStart(4, '0')}`,      // three lines per document: ties on doc_no
+  itemCode: `CODE-${i}`, description: i === 7 ? 'Oak table' : null, itemGroup: i % 2 === 0 ? 'FURNITURE' : 'CURTAIN',
+  qty: (i % 4) + 1, poQtyPicked: 0,
+  soDate: '2026-11-01', processingDate: null, deliveryDate: i % 4 === 0 ? '2026-12-01' : '2026-11-20',
+  debtorName: `Customer ${i % 3}`, ref: null, customerSoNo: null,
+  projectCode: `P${i % 6}`, projectName: i % 6 === 5 ? null : `Project ${i % 6}`,
+  mainSupplierCode: i % 2 === 0 ? 'SUP-A' : null, mainSupplierName: i % 2 === 0 ? 'Supplier A' : null,
+  ...over,
 });
-
-function lines(n: number): Line[] {
-  const out: Line[] = [];
-  for (let i = 0; i < n; i++) {
-    out.push({
-      id: `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`,
-      doc_no: `SO-${String(Math.floor(i / 3)).padStart(4, '0')}`,      // three lines per document: ties on doc_no
-      item_code: i % 5 === 0 ? 'CHAIR' : `CODE-${i}`,
-      description: i === 7 ? 'Oak table' : null,
-      item_group: i % 2 === 0 ? 'FURNITURE' : 'WORKS',
-      line_delivery_date: i % 4 === 0 ? '2026-12-01' : null,
-      so: so({ customer_delivery_date: '2026-11-20' }),
-    });
-  }
-  return out;
-}
+const lines = (n: number): PickerLine[] => Array.from({ length: n }, (_, i) => line(i));
 
 const pageOf = (over: Partial<OutstandingSoPageQuery> = {}): OutstandingSoPageQuery => ({
   limit: 10, cursor: null, q: '', category: null, dateField: 'soDate', dateFrom: null, dateTo: null,
-  supplier: null, location: null, docNo: null, ...over,
+  supplier: null, location: null, docNo: null, colFilters: {}, sort: null, ...over,
 });
 
-async function walk(all: Line[], over: Partial<OutstandingSoPageQuery>, heads: Array<{ doc_no: string; debtor_name: string }> = []) {
+function walk(all: PickerLine[], over: Partial<OutstandingSoPageQuery>) {
   const seen: string[] = [];
   let cursor: OutstandingSoPageQuery['cursor'] = null;
-  let total: number | null = null;
+  let first: ReturnType<typeof buildPickerPage> | null = null;
   for (let n = 0; n < 100; n++) {
-    const res: Awaited<ReturnType<typeof readOutstandingSoCandidates<Line>>> = await readOutstandingSoCandidates<Line>(fakeSb(all, heads, []), (q) => q, 1, pageOf({ ...over, cursor }));
-    expect(res.error).toBeNull();
-    if (n === 0) total = res.total;
-    seen.push(...res.rows.map((r) => r.id));
-    if (!res.nextCursor) return { seen, total, pages: n + 1 };
+    // Through the wire format, as the screen sends it back.
+    const res = buildPickerPage(all, pageOf({ ...over, cursor: cursor ? decodeCursor(encodeCursor(cursor)) : null }));
+    first ??= res;
+    if (n > 0) expect(res.facets).toBeNull();
+    seen.push(...res.ids);
+    if (!res.nextCursor) return { seen, first, pages: n + 1 };
     cursor = res.nextCursor;
   }
   throw new Error('did not finish');
 }
 
+const byId = (all: PickerLine[]) => new Map(all.map((l) => [l.id, l]));
+
 describe('paging', () => {
-  test('every line comes back exactly once, in the whole list order, with the first page counting them', async () => {
+  test('every line comes back once, in the whole list order, and the first page counts them all', () => {
     const all = lines(47);
-    const { seen, total, pages } = await walk(all, {});
-    const expected = [...all].sort((a, b) => compareKeys({ d: a.doc_no, i: a.id }, { d: b.doc_no, i: b.id })).map((r) => r.id);
+    const { seen, first, pages } = walk(all, {});
+    const expected = [...all].sort((a, b) => compareKeys({ d: a.docNo, i: a.id }, { d: b.docNo, i: b.id })).map((l) => l.id);
     expect(seen).toEqual(expected);
-    expect(total).toBe(47);
+    expect(first?.total).toBe(47);
     expect(pages).toBe(5);
   });
 
-  test('a JavaScript-only filter (category, delivery date) still walks every matching line', async () => {
+  test.each<PickerSort>([
+    { key: 'project', dir: 'asc' }, { key: 'project', dir: 'desc' }, { key: 'qty', dir: 'desc' }, { key: 'mainSupplier', dir: 'asc' },
+  ])('sorted by $key $dir, every line still comes back once, in that order', (sort) => {
     const all = lines(47);
-    const { seen } = await walk(all, { category: 'FURNITURE', dateField: 'delivery', dateFrom: '2026-11-25' });
-    const expected = all.filter((r) => r.item_group === 'FURNITURE' && (r.line_delivery_date ?? r.so.customer_delivery_date)! >= '2026-11-25')
-      .sort((a, b) => compareKeys({ d: a.doc_no, i: a.id }, { d: b.doc_no, i: b.id })).map((r) => r.id);
-    expect(expected.length).toBeGreaterThan(0);
-    expect(seen).toEqual(expected);
+    const { seen } = walk(all, { sort });
+    expect(seen).toHaveLength(47);
+    expect(new Set(seen).size).toBe(47);
+    const m = byId(all);
+    const val = (id: string): string | number => {
+      const l = m.get(id)!;
+      if (sort.key === 'qty') return l.qty;
+      if (sort.key === 'project') return l.projectName ?? l.projectCode ?? '';
+      return l.mainSupplierName ?? '';
+    };
+    for (let k = 1; k < seen.length; k++) {
+      const a = val(seen[k - 1]); const b = val(seen[k]);
+      const c = typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b));
+      expect(sort.dir === 'asc' ? c <= 0 : c >= 0).toBe(true);
+    }
   });
 
-  test('search matches line columns and the customer on the SO header', async () => {
+  test('a line converted between two scrolls does not shift the next page', () => {
     const all = lines(30);
-    const heads = [{ doc_no: 'SO-0002', debtor_name: 'Oakley Sdn Bhd' }];
-    const { seen } = await walk(all, { q: 'oak' }, heads);
-    const expected = all.filter((r) => r.description === 'Oak table' || r.doc_no === 'SO-0002')
-      .sort((a, b) => compareKeys({ d: a.doc_no, i: a.id }, { d: b.doc_no, i: b.id })).map((r) => r.id);
-    expect(seen).toEqual(expected);
-    expect(seen.length).toBe(3);   // line 7 is on SO-0002 too, so one document's three lines
+    const p1 = buildPickerPage(all, pageOf());
+    const gone = new Set(p1.ids.slice(-2));
+    const p2 = buildPickerPage(all.filter((l) => !gone.has(l.id)), pageOf({ cursor: p1.nextCursor }));
+    const full = walk(all, {}).seen;
+    expect(p2.ids).toEqual(full.slice(10, 20));
+  });
+});
+
+describe('column funnels run over every line, not the loaded page', () => {
+  test('a project that sits on the last page is offered and filtered from the first request', () => {
+    const all = lines(300);
+    const last = { ...line(999), docNo: 'SO-0000', projectName: 'Far Away' };   // sorts last
+    const res = buildPickerPage([...all, last], pageOf({ colFilters: { project: ['Far Away'] } }));
+    expect(res.ids).toEqual([last.id]);
+    expect(res.total).toBe(1);
+    const open = buildPickerPage([...all, last], pageOf());
+    expect(open.facets?.project).toContainEqual(['Far Away', 1]);
   });
 
-  test('the status and hold gates go to the database, not after a cap', async () => {
-    const log: string[] = [];
-    await readOutstandingSoCandidates<Line>(fakeSb(lines(5), [], log), (q) => q, 1, pageOf({ dateFrom: '2026-01-01' }));
-    expect(log).toContain('mfg_sales_order_items.eq cancelled');
-    expect(log).toContain('mfg_sales_order_items.not so.status in (CANCELLED,DRAFT,ON_HOLD)');
-    expect(log).toContain('mfg_sales_order_items.not so.on_hold is true');
-    expect(log).toContain('mfg_sales_order_items.gte so.so_date');
+  test("each funnel counts under the others' filters, never its own", () => {
+    const all = lines(60);
+    const res = buildPickerPage(all, pageOf({ colFilters: { project: ['Project 0'] } }));
+    // Project's own funnel still lists every project, so a second one can be ticked.
+    expect(res.facets?.project.map(([v]) => v)).toEqual(['P5', 'Project 0', 'Project 1', 'Project 2', 'Project 3', 'Project 4']);
+    // Supplier's funnel only counts Project 0's lines (i % 6 === 0: all even, all Supplier A).
+    expect(res.facets?.mainSupplier).toEqual([['Supplier A', 10]]);
+    expect(res.total).toBe(10);
+  });
+
+  test('counts respect the search and the top-bar filters', () => {
+    const res = buildPickerPage(lines(60), pageOf({ category: 'FURNITURE' }));
+    expect(res.facets?.itemGroup).toEqual([['FURNITURE', 30]]);
+    expect(res.total).toBe(30);
+  });
+
+  test('a funnel value is the text the grid filters on, blanks included', () => {
+    const blank = line(1, {
+      projectName: null, projectCode: null, debtorName: null, itemGroup: null, description: '',
+      mainSupplierCode: null, mainSupplierName: null, ref: null, customerSoNo: '  C-9 ',
+    });
+    expect(facetValue(blank, 'project')).toBe('(none)');
+    expect(facetValue(blank, 'debtorName')).toBe('(none)');
+    expect(facetValue({ ...blank, debtorName: '' }, 'debtorName')).toBe('—');
+    expect(facetValue(blank, 'itemGroup')).toBe('(NONE)');
+    expect(facetValue({ ...blank, itemGroup: 'sofa' }, 'itemGroup')).toBe('SOFA');
+    expect(facetValue(blank, 'mainSupplier')).toBe('(none)');
+    expect(facetValue({ ...blank, mainSupplierCode: 'S1' }, 'mainSupplier')).toBe('S1');
+    expect(facetValue(blank, 'description')).toBe('—');
+    expect(facetValue(blank, 'soRef')).toBe('C-9');
+    expect(facetValue({ ...blank, customerSoNo: null }, 'soRef')).toBe('—');
+    expect(facetValue({ ...blank, projectCode: ' P9 ' }, 'project')).toBe('P9');
+  });
+});
+
+describe('top bar', () => {
+  test('search reads the line, the customer, the ref and the project', () => {
+    const l = line(4, { ref: 'REF-77', projectName: 'Aster Hill' });
+    expect(passesTopBar(l, pageOf({ q: 'aster' }))).toBe(true);
+    expect(passesTopBar(l, pageOf({ q: 'ref-77' }))).toBe(true);
+    expect(passesTopBar(l, pageOf({ q: 'customer 1' }))).toBe(true);
+    expect(passesTopBar(l, pageOf({ q: 'nothing' }))).toBe(false);
+  });
+  test('the date filter reads the field the screen picked', () => {
+    const l = line(0);
+    expect(passesTopBar(l, pageOf({ dateField: 'delivery', dateTo: '2026-11-30' }))).toBe(false);   // line date 12-01
+    expect(passesTopBar(l, pageOf({ dateField: 'processing', dateFrom: '2026-01-01' }))).toBe(false); // no processing date
+    expect(passesTopBar(l, pageOf({ dateField: 'soDate', dateFrom: '2026-11-01', dateTo: '2026-11-01' }))).toBe(true);
   });
 });
 
@@ -148,28 +152,80 @@ describe('parameters', () => {
     expect(parseOutstandingSoPageQuery({})).toEqual({ ok: true, page: null });
   });
   test('limit is capped, a forged cursor is refused, a good one round-trips', () => {
-    const r = parseOutstandingSoPageQuery({ limit: '5000', cursor: encodeCursor({ d: 'SO-"1"', i: 'x' }), category: 'all', dateFrom: 'nope' });
+    const r = parseOutstandingSoPageQuery({ limit: '5000', cursor: encodeCursor({ d: 'SO-"1"', i: 'x', s: 'Aster' }), category: 'all', dateFrom: 'nope' });
     expect(r.ok && r.page?.limit).toBe(200);
-    expect(r.ok && r.page?.cursor).toEqual({ d: 'SO-"1"', i: 'x' });
+    expect(r.ok && r.page?.cursor).toEqual({ d: 'SO-"1"', i: 'x', s: 'Aster' });
     expect(r.ok && r.page?.category).toBeNull();
     expect(r.ok && r.page?.dateFrom).toBeNull();
     expect(parseOutstandingSoPageQuery({ limit: '10', cursor: '%%%' }).ok).toBe(false);
     expect(decodeCursor(encodeCursor({ d: 'ü', i: '1' }))).toEqual({ d: 'ü', i: '1' });
   });
+  test('column funnels and sort are read; unknown columns and condition tokens are left to the grid', () => {
+    const r = parseOutstandingSoPageQuery({
+      limit: '10', sort: 'project:desc',
+      cols: JSON.stringify({ project: ['A', '\u0001gt:3'], lineStatus: ['x'], debtorName: [] }),
+    });
+    expect(r.ok && r.page?.colFilters).toEqual({ project: ['A'] });
+    expect(r.ok && r.page?.sort).toEqual({ key: 'project', dir: 'desc' });
+    const bad = parseOutstandingSoPageQuery({ limit: '10', sort: 'lineValue:asc' });
+    expect(bad.ok && bad.page?.sort).toBeNull();
+    expect(parseOutstandingSoPageQuery({ limit: '10', cols: '[1]' }).ok).toBe(false);
+    expect(parseOutstandingSoPageQuery({ limit: '10', cols: '{' }).ok).toBe(false);
+  });
   test('search text cannot inject PostgREST syntax', () => {
     expect(cleanSearch(' a*b%"c\\d  ')).toBe('a b c d');
   });
-  test('the date filter reads the field the screen picked', () => {
-    const r = lines(1)[0];
-    expect(passesPageFilters(r, pageOf({ dateField: 'delivery', dateTo: '2026-11-30' }))).toBe(false);   // line date 12-01 wins
-    expect(passesPageFilters(r, pageOf({ dateField: 'processing', dateFrom: '2026-01-01' }))).toBe(false); // no processing date
+});
+
+describe('readPickerLines', () => {
+  type Row = Record<string, unknown>;
+  function fakeSb(tables: Record<string, Row[]>, log: string[]) {
+    class Q {
+      constructor(private table: string) {}
+      schema() { return this; }
+      from(t: string) { return new Q(t); }
+      select() { return this; }
+      eq(col: string) { log.push(`${this.table}.eq ${col}`); return this; }
+      not(col: string, op: string, v: unknown) { log.push(`${this.table}.not ${col} ${op} ${String(v)}`); return this; }
+      gte(col: string) { log.push(`${this.table}.gte ${col}`); return this; }
+      lte(col: string) { log.push(`${this.table}.lte ${col}`); return this; }
+      in() { return this; }
+      filter() { return this; }
+      order() { return this; }
+      range() { return this; }
+      then<R>(ok: (v: { data: Row[]; error: null }) => R) { return Promise.resolve(ok({ data: tables[this.table] ?? [], error: null })); }
+    }
+    return new Q('root');
+  }
+  const head = { debtor_name: 'Ann', so_date: '2026-11-01', customer_delivery_date: '2026-11-20', processing_date: null, ref: null, customer_so_no: null };
+
+  test('joins the project and the main supplier, and drops lines the picker never offers', async () => {
+    const log: string[] = [];
+    const sb = fakeSb({
+      mfg_sales_order_items: [
+        { id: 'a', doc_no: 'SO-1', item_code: 'TV', description: null, item_group: 'APPLIANCE', qty: '2', po_qty_picked: null, line_delivery_date: null, so: { ...head, project_id: 9 } },
+        { id: 'b', doc_no: 'SO-1', item_code: 'RENO-PAINT', description: null, item_group: 'WORKS', qty: 1, po_qty_picked: 0, line_delivery_date: null, so: { ...head, project_id: null } },
+      ],
+      projects: [{ id: 9, code: 'KL48', name: 'KL 48 B-2' }],
+      supplier_material_bindings: [{ item_code: 'TV', supplier: { code: 'S1', name: 'Hisense' } }],
+    }, log);
+    const res = await readPickerLines(sb, (q) => q, 1, { ...pageOf(), dateFrom: '2026-11-01' });
+    expect(res.error).toBeNull();
+    expect(res.lines).toEqual([expect.objectContaining({
+      id: 'a', qty: 2, poQtyPicked: 0, projectName: 'KL 48 B-2', mainSupplierCode: 'S1', mainSupplierName: 'Hisense', deliveryDate: '2026-11-20',
+    })]);
+    expect(log).toContain('mfg_sales_order_items.not so.status in (CANCELLED,DRAFT,ON_HOLD)');
+    expect(log).toContain('mfg_sales_order_items.not so.on_hold is true');
+    expect(log).toContain('mfg_sales_order_items.gte so.so_date');
   });
 });
 
 describe('wiring', () => {
-  test('the route offers the paged mode and limits the stock check to the page codes', () => {
-    expect(poRouterSrc).toContain('readOutstandingSoCandidates');
-    expect(poRouterSrc).toContain('startPickerMrp(c, codes, cand.rows.map((r) => r.id))');
+  test('the route builds the page from the light list and limits the stock check to the page', () => {
+    expect(poRouterSrc).toContain('readPickerLines');
+    expect(poRouterSrc).toContain('buildPickerPage(index.lines, page)');
+    expect(poRouterSrc).toContain('startPickerMrp(c, codes, picked.ids)');
     expect(poRouterSrc).toContain('startPickerMrp(c, null)');
+    expect(poRouterSrc).toContain('facets: picked.facets');
   });
 });

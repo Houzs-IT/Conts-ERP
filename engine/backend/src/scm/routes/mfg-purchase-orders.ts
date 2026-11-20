@@ -46,8 +46,8 @@ import { poVariantGaps, poVariantCheckFailedBody, poVariantConfirmRefusal, poWar
 import { VALID_CURRENCIES, VALID_KINDS } from '../lib/purchase-doc-vocab';
 import { resolveMaintenanceConfigForSupplier, poVariantPricingInput } from '../lib/po-pricing';
 import { readMfgProductBindings } from '../lib/supplier-bindings';
-import { loadOutstandingSoLines } from '../lib/outstanding-so-lines';
-import { parseOutstandingSoPageQuery, readOutstandingSoCandidates, encodeCursor, type CandidateRow } from '../lib/outstanding-so-page';
+import { loadOutstandingSoLines, OUTSTANDING_SO_SELECT } from '../lib/outstanding-so-lines';
+import { parseOutstandingSoPageQuery, readPickerLines, buildPickerPage, encodeCursor } from '../lib/outstanding-so-page';
 import { poHasDownstream } from '../lib/downstream-lock';
 import { cascadePoSupplierDate, recordedSupplierDate, supplierDatePatchGate, SUPPLIER_DATE_SLOT_COL, type SupplierDateSlot } from '../lib/po-supplier-date-cascade';
 import { description2InputsChanged } from '../lib/po-line-description2';
@@ -692,18 +692,33 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
   const supabase = c.get('supabase');
   const parsed = parseOutstandingSoPageQuery(c.req.query());
   if (!parsed.ok) return c.json({ error: 'bad_cursor', reason: parsed.reason }, 400);
-  /* PAGED MODE (owner, 19 Nov 2026) — `?limit=` asks for one page: lib/outstanding-so-page.ts reads the page's lines with
-     the search and filters, and the stock check runs on that page's item codes only. */
+  /* PAGED MODE (owner, 19 Nov 2026) — `?limit=` asks for one page. lib/outstanding-so-page.ts reads the light list of
+     every open line, and applies the search, the filters, the column funnels and the sort to it; the funnel counts come
+     from the same list (20 Nov 2026). Only the page's lines get the full row and the stock check. */
   if (parsed.page) {
     const page = parsed.page;
-    const cand = await readOutstandingSoCandidates<{ item_code: string } & CandidateRow>(
-      supabase, (q) => scopeToCompany(q, c), activeCompanyId(c), page,
-    );
-    if (cand.error) return c.json({ error: 'load_failed', reason: cand.error }, 500);
-    const codes = [...new Set(cand.rows.map((r) => r.item_code).filter(Boolean))];
-    const rows = cand.rows.length === 0 ? [] : await outstandingSoRows(c, cand.rows, startPickerMrp(c, codes, cand.rows.map((r) => r.id)));
-    const items = page.supplier ? rows.filter((r) => r.mainSupplierCode === page.supplier) : rows;
-    return c.json({ items, nextCursor: cand.nextCursor ? encodeCursor(cand.nextCursor) : null, total: cand.total, pageSize: page.limit });
+    const index = await readPickerLines(supabase, (q) => scopeToCompany(q, c), activeCompanyId(c), page);
+    if (index.error) return c.json({ error: 'load_failed', reason: index.error }, 500);
+    const picked = buildPickerPage(index.lines, page);
+    const pageIds = new Set(picked.ids);
+    const pageLines = index.lines.filter((l) => pageIds.has(l.id));
+    const codes = [...new Set(pageLines.map((l) => l.itemCode).filter(Boolean))];
+    let rows: Awaited<ReturnType<typeof outstandingSoRows>> = [];
+    if (picked.ids.length > 0) {
+      const mrpRun = startPickerMrp(c, codes, picked.ids);
+      const full = await chunkIn<{ id: string }>(picked.ids, (batch, from, to) =>
+        scopeToCompany(supabase.from('mfg_sales_order_items').select(OUTSTANDING_SO_SELECT), c).in('id', batch).order('id').range(from, to));
+      if (full.error) return c.json({ error: 'load_failed', reason: full.error.message }, 500);
+      const byId = new Map(full.data.map((r) => [r.id, r]));
+      rows = await outstandingSoRows(c, picked.ids.map((id) => byId.get(id)).filter((r) => r != null), mrpRun);
+    }
+    return c.json({
+      items: rows,
+      nextCursor: picked.nextCursor ? encodeCursor(picked.nextCursor) : null,
+      total: picked.total,
+      facets: picked.facets,
+      pageSize: page.limit,
+    });
   }
   /* The WHOLE LIST (no `limit`): the mobile convert wizard and the PO detail page.
      PAGED READ — lib/outstanding-so-lines.ts. This read carried a `.limit(500)` with
