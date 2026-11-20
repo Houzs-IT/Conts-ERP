@@ -7,6 +7,7 @@ import { DEMO_NOTHING_SENT, forwardClaims } from '../../../../_lib/claimsForward
 import { billsOnRequest, ownerOwnPart, requestState, RETURNED } from '../../../../_lib/utilityRequests';
 import { editNotices } from '../../../../_lib/lockGuards';
 import { costStageOf } from '../../../../_lib/stageLocks';
+import { billEdit, billEditProblem, partNow, shareNow } from '../../../../../src/lib/utilityBillEdit';
 
 /** PATCH /api/expenses/utilities/bills/:id { amount, ownerPart? }
  *  One utility bill's amount changed from its cell on Utility bills (chew, 19 Nov 2026: click it and edit it there, as
@@ -18,8 +19,10 @@ import { costStageOf } from '../../../../_lib/stageLocks';
  *  - On a request still waiting for payment the engine takes the new amount on the same request first (refused once a
  *    voucher or an AP invoice is on it); on a request that came back the bill changes here and goes with Send again;
  *    on one being paid or paid it is refused.
- *  Refused once the bill's statement is final, and when the whole bill is the owner's (record only). Finance and
- *  management only. */
+ *  - A scanned record-only bill (the whole bill the owner's) can be changed too (chew, 20 Nov 2026: anything whose
+ *    voucher is not processed): it stays the owner's unless a smaller owner part is given, which puts the rest back on
+ *    the shared costs; an owner part equal to the whole makes any bill record only (see src/lib/utilityBillEdit.ts).
+ *  Refused once the bill's statement is final. Finance and management only. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -29,7 +32,6 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const total = Number(b?.amount);
   if (!Number.isInteger(total) || total <= 0) return fail('VALIDATION', 'Enter the whole bill, more than RM 0.00.', 422, { amount: 'Enter the whole bill.' });
   const newPart = b?.ownerPart == null ? null : Number(b.ownerPart);
-  if (newPart != null && (!Number.isInteger(newPart) || newPart < 0)) return fail('VALIDATION', 'The owner’s own part is RM 0.00 or more.', 422, { ownerPart: 'Check the amount.' });
 
   const cur = await one<{ id: string; unit_id: string; owner_id: string | null; reference: string | null; category: string; amount: number; incurred_on: string; deduct_month: string; rolled: boolean; description: string | null;
     charge_to: string; owner_paid: boolean; record_only: boolean; payment_request_id: string | null; scan_id: string | null; bill_sen: number | null; part: number | null }>(env, `
@@ -38,13 +40,17 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
            (SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge') AS part
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id WHERE e.id = ?`, id);
   if (!cur || !isUtility(cur.category)) return fail('NOT_FOUND', 'That utility bill no longer exists.', 404);
-  if (cur.record_only) return fail('RECORD_ONLY', 'The whole bill is the owner’s (outside the contract), so it is changed by removing it in the unit’s Costs and scanning it again.', 409);
+  // A record-only bill kept from AutoCount has no owner lines to follow it, so it stays as it is.
+  if (cur.record_only && !cur.scan_id) return fail('RECORD_ONLY', 'This bill is kept for the records only, so it is changed in the unit’s Costs.', 409);
   if (await isExpenseLocked(env, cur)) return fail('PERIOD_LOCKED', 'The owner statement for that month is final, so this bill is locked.', 409);
   const was = cur.bill_sen != null ? Number(cur.bill_sen) : Number(cur.amount) + Number(cur.part ?? 0);
-  const wasPart = was - Number(cur.amount);
-  const ownerPart = newPart ?? wasPart;
-  const share = total - ownerPart;
-  if (share <= 0) return fail('VALIDATION', `The owner's own part is ${rmText(ownerPart)}; the whole bill must be more than that.`, 422, { amount: 'More than the owner’s own part.' });
+  const now = { whole: was, amount: Number(cur.amount), recordOnly: cur.record_only };
+  const wasPart = partNow(now);
+  const next = billEdit(now, total, newPart);
+  const problem = billEditProblem(next);
+  if (problem) return fail('VALIDATION', next.share < 0 ? `The owner's own part is ${rmText(next.ownerPart)}; the whole bill must be at least that.` : problem, 422,
+    next.share < 0 ? { amount: 'At least the owner’s own part.' } : { ownerPart: 'Check the amount.' });
+  const { ownerPart, share, recordOnly } = next;
   if (total === was && ownerPart === wasPart) return json({ ok: true, unchanged: true });
   // A new owner part replaces the bill's owner lines (the typed part, the days outside the contract) as one line.
   const partLines = ownerPart !== wasPart ? await one<{ n: number; kept: number }>(env, `
@@ -54,7 +60,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (partLines?.kept) return fail('LOCKED', 'The owner’s part of this bill is on a closed owner statement. Change it from the owner statement instead.', 409);
   if (partLines && ownerPart > 0 && !cur.owner_id) return fail('VALIDATION', 'This unit has no owner to charge the owner’s part to.', 422);
   const { expenseThreshold } = await approvalSettings(env);
-  if (share > expenseThreshold && share > Number(cur.amount) && await approvalsEnabled(env)) {
+  if (share > expenseThreshold && share > shareNow(now) && await approvalsEnabled(env)) {
     return fail('NEEDS_APPROVAL', 'A bill raised above the approval limit needs a second person: change it from the unit’s Costs, where it goes for approval.', 409);
   }
   // A bill the owner paid gives the owner its credit back; an O2 lock that keeps the credit keeps the bill too.
@@ -78,22 +84,23 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     resentTo = state.requestNo ?? state.id;
   }
 
-  const now = nowIso();
+  const at = nowIso();
   await transaction(env, async tx => {
-    await run(tx, 'UPDATE expenses SET amount = ? WHERE id = ?', share, id);
+    // A record-only bill carries the whole bill as its amount and stays off the shared costs.
+    await run(tx, 'UPDATE expenses SET amount = ?, record_only = ? WHERE id = ?', recordOnly ? total : share, recordOnly, id);
     if (cur.scan_id) await run(tx, 'UPDATE utility_bill_scans SET bill_sen = ? WHERE id = ?', total, cur.scan_id);
-    if (credit) await run(tx, 'UPDATE owner_adjustments SET amount = ?, updated_at = ? WHERE id = ?', total, now, credit.id);
+    if (credit) await run(tx, 'UPDATE owner_adjustments SET amount = ?, updated_at = ? WHERE id = ?', total, at, credit.id);
     if (partLines) {
       // The days split no longer stands once the part is set by hand, so the bill drops its "N of M days" note.
       const label = (cur.description ?? 'Utility bill').replace(/, \d+ of \d+ days in the contract$/, '');
       await run(tx, 'UPDATE expenses SET description = ? WHERE id = ?', label, id);
       await run(tx, "DELETE FROM owner_adjustments WHERE expense_id = ? AND kind = 'charge'", id);
       if (ownerPart > 0) await ownerOwnPart(tx, { expenseId: id, unitId: cur.unit_id, ownerId: cur.owner_id!, label,
-        amountSen: ownerPart, deductMonth: cur.deduct_month, accountNo: cur.reference }, session.userId, now);
+        amountSen: ownerPart, deductMonth: cur.deduct_month, accountNo: cur.reference }, session.userId, at);
     }
   });
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.utility_bill_changed', entityTable: 'expenses', entityId: id,
-    before: { bill: was, share: Number(cur.amount), ownerPart: wasPart }, after: { bill: total, share, ownerPart, request: resentTo } });
+    before: { bill: was, share: shareNow(now), ownerPart: wasPart, recordOnly: cur.record_only }, after: { bill: total, share, ownerPart, recordOnly, request: resentTo } });
   // A month whose deductions are locked keeps its figures; the difference goes to the next open month (as PATCH /expenses/:id).
   const notice = cur.charge_to === 'owner'
     ? await editNotices(env, { unitId: cur.unit_id, deductMonth: cur.deduct_month, stage: costStageOf(cur.category, cur.description) },
