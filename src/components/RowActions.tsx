@@ -2,7 +2,8 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 import { cx } from '../lib/design-tokens';
 
-export interface RowAction { key: string; label: string; icon: string; danger?: boolean; run: () => void }
+/** `group`: a heading over this item and the ones after it with the same group ("Account", "Security"). */
+export interface RowAction { key: string; label: string; icon: string; danger?: boolean; group?: string; run: () => void }
 
 /** The "..." button at the end of a row. The menu uses fixed positioning so the table's horizontal
  *  scroll box cannot clip it on the last rows; clicks stop here so they do not also open Edit. */
@@ -26,7 +27,8 @@ export function RowActions({ name, items }: { name: string; items: RowAction[] }
       <button type="button" aria-label={`Actions for ${name}`} aria-haspopup="menu" aria-expanded={!!at}
         onClick={e => {
           const r = e.currentTarget.getBoundingClientRect();
-          setAt(at ? null : { top: Math.min(r.bottom + 4, window.innerHeight - 40 * items.length - 16), right: window.innerWidth - r.right });
+          const headings = new Set(items.map(a => a.group).filter(Boolean)).size;
+          setAt(at ? null : { top: Math.max(8, Math.min(r.bottom + 4, window.innerHeight - 40 * items.length - 32 * headings - 16)), right: window.innerWidth - r.right });
         }}
         className="w-8 h-8 max-md:w-11 max-md:h-11 grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted hover:text-ink">
         <Icon name="MoreHorizontal" size="sm" />
@@ -36,10 +38,15 @@ export function RowActions({ name, items }: { name: string; items: RowAction[] }
           className="fixed z-[55] w-[240px] p-1 bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)]">
           {items.map((a, i) => (
             <Fragment key={a.key}>
-              {a.danger && i > 0 && !items[i - 1].danger && <div role="separator" className="my-1 mx-1 h-px bg-line-soft" />}
+              {a.group && a.group !== items[i - 1]?.group ? (
+                <>
+                  {i > 0 && <div role="separator" className="my-1 mx-1 h-px bg-line-soft" />}
+                  <div role="presentation" className="px-2.5 pt-1.5 pb-1 text-left text-caption font-bold uppercase tracking-[0.09em] text-muted-ink">{a.group}</div>
+                </>
+              ) : a.danger && i > 0 && !items[i - 1].danger && <div role="separator" className="my-1 mx-1 h-px bg-line-soft" />}
               <button type="button" role="menuitem" onClick={() => { setAt(null); a.run(); }}
-                className={cx('w-full text-left flex gap-2.5 items-center px-2.5 py-2 max-md:min-h-11 rounded-[8px] border-none bg-transparent [font-family:inherit] text-copy cursor-pointer hover:bg-muted',
-                  a.danger ? 'text-danger' : 'text-ink')}>
+                className={cx('w-full text-left flex gap-2.5 items-center px-2.5 py-2 max-md:min-h-11 rounded-[8px] border-none bg-transparent [font-family:inherit] text-copy cursor-pointer',
+                  a.danger ? 'text-danger hover:bg-danger-bg' : 'text-ink hover:bg-muted')}>
                 <Icon name={a.icon} size="sm" />{a.label}
               </button>
             </Fragment>

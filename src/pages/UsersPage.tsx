@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { SystemStats } from '../components/SystemStats';
@@ -11,6 +11,8 @@ import { Field } from '../components/Field';
 import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Select } from '../components/Select';
 import { Modal } from '../components/Modal';
+import { Drawer } from '../components/Dialog';
+import { CloseButton } from '../components/CloseButton';
 import { COMPANIES, KIND_NOTE, SIDE_OPTIONS, companiesOf, isFieldKind, sideLabel, useDepartments, type Company } from '../components/permissions/shared';
 import { CompanyBadges } from '../components/permissions/CompanyBadges';
 import { RoleBadges, type RoleLabel } from '../components/permissions/RoleBadges';
@@ -22,7 +24,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { api, ApiFailure, errorMessage } from '../lib/api';
-import { count, date, plural, personName } from '../lib/format';
+import { count, date, dateTime, plural, personName, initials } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Department, Tone, UserRole, UserSide } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
@@ -116,11 +118,20 @@ function accountsBreakdown(rows: Row[]) {
 const NO_MAIL_INVITE = 'To get them in now, use Reset password in their row menu and pass the temporary password on yourself.';
 
 /** When the newest invitation went out, and a Resend button for management. */
+const ACCOUNT_KEYS = new Set(['edit', 'invite', 'on']);
+/** The email, or for a PIN-only login its employee ID. */
+const contactOf = (u: Pick<Row, 'email' | 'employeeId'>): string => (hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email');
+
 function InviteCell({ u, onResend }: { u: Row; onResend?: () => void }) {
   return (
     <span className="flex items-center gap-2 min-w-0 flex-wrap" onClick={e => e.stopPropagation()}>
-      <span className="text-meta text-muted-ink whitespace-nowrap">{u.lastInvitedAt ? `Invited ${date(u.lastInvitedAt)}` : 'Invited, date unknown'}</span>
-      {onResend && <Button size="sm" variant="secondary" icon={<Icon name="Send" size="sm" />} onClick={onResend} aria-label={`Resend invitation to ${personName(u.fullName)}`}>Resend</Button>}
+      <span className="text-caption text-muted-ink whitespace-nowrap">{u.lastInvitedAt ? `Sent ${date(u.lastInvitedAt)}` : 'Date unknown'}</span>
+      {onResend && (
+        <button type="button" onClick={onResend} aria-label={`Resend invitation to ${personName(u.fullName)}`}
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 max-md:min-h-11 rounded-control border-none bg-transparent text-caption font-semibold text-ink-2 cursor-pointer hover:bg-muted hover:text-ink [font-family:inherit]">
+          <Icon name="Send" size="sm" />Resend
+        </button>
+      )}
     </span>
   );
 }
@@ -138,7 +149,6 @@ function managerOptions(staff: Row[], exclude?: string, keep?: string | null) {
   }));
 }
 
-const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('');
 
 /* ------------------------------- styles ------------------------------- */
 // Left accent on org cards — the -line tone shade, as a box-shadow inset (kept off
@@ -208,7 +218,8 @@ export default function UsersPage() {
   ];
 
   const columns = useMemo<Column<Row>[]>(() => [
-    { key: 'name', label: 'Name', value: u => personName(u.fullName), hideable: false, width: 220,
+    // Name and email in one cell; the phone and the full details are in the quick view a row click opens.
+    { key: 'name', label: 'User', value: u => personName(u.fullName), text: u => `${personName(u.fullName)} ${contactOf(u)}`, hideable: false, width: 220,
       render: u => (
         <span className="flex items-center gap-2.5 min-w-0">
           <span className={cx('w-[30px] h-[30px] flex-none rounded-full grid place-items-center text-caption font-semibold', 'bg-muted text-muted-ink')}>
@@ -216,35 +227,38 @@ export default function UsersPage() {
           </span>
           <span className="flex flex-col gap-px min-w-0">
             <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={personName(u.fullName)}>{personName(u.fullName)}</span>
-            <span className="text-caption text-muted-ink whitespace-nowrap">{u.phone || '—'}</span>
+            <span className="text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={contactOf(u)}>{contactOf(u)}</span>
           </span>
         </span>
       ) },
-    { key: 'company', label: 'Company', value: u => companyText(companiesOfRow(u)), width: 230,
+    { key: 'company', label: 'Company', value: u => companyText(companiesOfRow(u)), width: 180,
       render: u => (u.role === 'owner' ? <span className="text-copy text-muted-ink">Owner portal</span> : <CompanyBadges side={sideValueOf(u)} />) },
     // Filtering by a role finds everyone who holds it, as their main role or an extra one.
-    { key: 'role', label: 'Role', value: u => roleName(u), text: u => roleText(rolesOf(u), ', '), width: 250,
+    { key: 'role', label: 'Position & dept.', value: u => roleName(u), text: u => roleText(rolesOf(u), ', '), width: 220,
       filter: { kind: 'select', multi: true, display: 'menu', options: roleFilterOptions },
       filterMatch: (u, picked) => (u.role === 'owner' ? picked.has('owner')
         : (!u.positionId && picked.has('none')) || [u.positionId, ...extraPlacesOf(u).map(x => x.position.id)].some(id => !!id && picked.has(id))),
       render: u => (
-        <span className="flex flex-col gap-1 min-w-0">
-          <RoleBadges roles={rolesOf(u)} />
-          {u.department && u.role !== 'owner' && <span className="text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.department}</span>}
-        </span>
+        <RoleBadges roles={rolesOf(u)} />
       ) },
     { key: 'department', label: 'Department', value: u => u.department || null, hidden: true, width: 160 },
-    { key: 'email', label: 'Email or employee ID', value: u => (hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'), width: 210 },
+    { key: 'email', label: 'Email or employee ID', value: contactOf, hidden: true, width: 210 },
     { key: 'phone', label: 'Phone', type: 'phone', value: u => u.phone || null, hidden: true, width: 140 },
-    { key: 'manager', label: 'Reports to', type: 'person', value: u => (u.managerId ? nameById[u.managerId] ?? null : null), width: 150 },
-    // An invited person has no sign-in yet, so this cell says when the newest invitation went out, with Resend beside it.
-    { key: 'lastLogin', label: 'Last sign-in', type: 'date', value: u => u.lastLoginAt, width: 230,
-      render: u => isInvited(u) ? <InviteCell u={u} onResend={canManageRef.current ? () => resendRef.current(u) : undefined} />
-        : <span className="text-copy text-muted-ink whitespace-nowrap">{u.lastLoginAt ? date(u.lastLoginAt) : 'Never'}</span> },
-    { key: 'status', label: 'Status', type: 'status', value: u => status(u).label, status: u => status(u), width: 110 },
+    { key: 'manager', label: 'Reports to', type: 'person', value: u => (u.managerId ? nameById[u.managerId] ?? null : null), width: 140 },
+    { key: 'lastLogin', label: 'Last sign-in', type: 'date', value: u => u.lastLoginAt, hidden: true, width: 130 },
+    // Status over its date: the last sign-in, or for an invited person when the invitation went out, with a small Resend.
+    { key: 'status', label: 'Status', type: 'status', value: u => status(u).label, status: u => status(u), width: 150,
+      render: u => (
+        <span className="flex flex-col items-start gap-1 min-w-0">
+          <StatusBadge tone={status(u).tone} label={status(u).label} size="sm" strong />
+          {isInvited(u)
+            ? <InviteCell u={u} onResend={canManageRef.current ? () => resendRef.current(u) : undefined} />
+            : <span className="text-caption text-muted-ink whitespace-nowrap">{u.lastLoginAt ? `Signed in ${date(u.lastLoginAt)}` : 'Never signed in'}</span>}
+        </span>
+      ) },
     { key: 'invited', label: 'Invitation sent', type: 'date', value: u => (isInvited(u) ? u.lastInvitedAt ?? null : null), hidden: true, width: 140 },
     // The menu is read through a ref: its actions depend on state the memoised columns would otherwise hold stale.
-    { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
+    { key: 'actions', label: '', width: 40, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
       render: u => <RowActions name={personName(u.fullName)} items={actionsRef.current(u)} /> },
   ], [nameById, companiesOfRow, sideValueOf, rolesOf, roleFilterOptions, extraPlacesOf]);
   const invitedRows = rows.filter(isInvited);
@@ -409,6 +423,14 @@ export default function UsersPage() {
       setBusy(false);
     }
   }
+  /* ---------------------------- quick view ---------------------------- */
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  const viewing = viewingId ? rows.find(r => r.id === viewingId) ?? null : null;
+  async function copyEmail(email: string) {
+    try { await navigator.clipboard.writeText(email); toast({ tone: 'success', title: 'Email copied.' }); }
+    catch { toast({ tone: 'warning', title: 'Copy did not work.', body: 'Select the email and copy it by hand.' }); }
+  }
+
   async function copyResetLink() {
     if (!resetLink) return;
     try { await navigator.clipboard.writeText(resetLink.link); toast({ tone: 'success', title: 'Reset link copied.', body: 'Send it to the person directly. It works once and expires in 60 minutes.' }); }
@@ -426,7 +448,7 @@ export default function UsersPage() {
     const invited = status(u).label === 'Invited';
     // Only management may change an account (functions/api/users/[id].ts); others read the list.
     if (!canManage) return [];
-    const items: RowAction[] = [{ key: 'edit', label: 'Edit details', icon: 'Pencil', run: () => openEdit(u) }];
+    const items: RowAction[] = [{ key: 'edit', label: 'Edit user info', icon: 'Pencil', run: () => openEdit(u) }];
     if (u.isActive && invited) items.push({ key: 'invite', label: 'Resend invitation', icon: 'Send', run: () => confirmResend(u) });
     if (u.isActive && !invited) items.push({ key: 'reset', label: 'Email a password reset link', icon: 'Mail', run: () => setConfirm({
       title: `Send ${personName(u.fullName)} a password reset link?`,
@@ -474,7 +496,10 @@ export default function UsersPage() {
       confirmLabel: 'Switch on', busyLabel: 'Saving…',
       onConfirm: () => act(u, setActive(u, true), `${personName(u.fullName)}'s account is switched back on.`),
     }) });
-    return items;
+    // Grouped like the menu reads: account first, then sign-in security, then what locks the person out.
+    const groupOf = (a: RowAction): string => (a.key === 'off' ? 'Danger zone' : ACCOUNT_KEYS.has(a.key) ? 'Account' : 'Security');
+    const order = ['Account', 'Security', 'Danger zone'];
+    return items.map(a => ({ ...a, group: groupOf(a) })).sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
   }
 
   const editPlaceChanged = !!editing && (editDepartmentId !== (departmentOfRow(editing)?.id ?? '') || editPositionId !== (editing.positionId ?? '') || editSide !== mainSideOf(editing));
@@ -626,12 +651,14 @@ export default function UsersPage() {
       {error && tab !== 'users' && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       {/* ------------------------------ Users tab ------------------------------ */}
+      {/* This table only: a darker header band with a firm bottom edge, and a hover on every row so a wide row reads across. */}
       {tab === 'users' && (
+        <div className="[&_thead_th]:!bg-[color-mix(in_srgb,var(--color-ink)_8%,var(--color-card))] [&_thead_th]:![box-shadow:inset_0_-2px_0_var(--color-ink-2)] [&_thead_th]:!text-ink-2 [&_tbody_tr:hover]:bg-gold-tint">
         <DataTable<Row>
           id="users" columns={columns} rows={data ? shownRows : null} rowKey={u => u.id}
           toolbar={<Segmented label="Company" options={companyFilterOptions} value={companyFilter} onChange={setCompanyFilter} />}
           filtered={companyFilter !== 'all'} onClearFilters={() => setCompanyFilter('all')}
-          loading={loading} error={error} onRetry={reload} onRowClick={canManage ? openEdit : undefined}
+          loading={loading} error={error} onRetry={reload} onRowClick={u => setViewingId(u.id)}
           pageSize={0} noun={['account', 'accounts']} exportName="users"
           header={
             <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)] text-meta text-muted-ink">
@@ -653,7 +680,7 @@ export default function UsersPage() {
                     {extraPlacesOf(u).length > 0 && <span className="flex-none text-muted-ink">+{plural(extraPlacesOf(u).length, 'role')}</span>}
                   </span>
                   <span className="text-meta text-muted-ink truncate" title={u.email}>{hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'}</span>
-                  <span className="flex items-center gap-1.5 flex-wrap">{u.role !== 'owner' && <CompanyBadges side={sideValueOf(u)} />}<StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
+                  <span className="flex items-center gap-1.5 flex-wrap">{u.role !== 'owner' && <CompanyBadges side={sideValueOf(u)} />}<StatusBadge tone={s.tone} label={s.label} size="sm" strong /></span>
                   {isInvited(u) && <InviteCell u={u} onResend={canManage ? () => confirmResend(u) : undefined} />}
                 </span>
                 <RowActions name={personName(u.fullName)} items={actionsFor(u)} />
@@ -661,6 +688,7 @@ export default function UsersPage() {
             );
           }}
         />
+        </div>
       )}
 
       {/* ----------------------------- Sign-ins tab ----------------------------- */}
@@ -762,6 +790,16 @@ export default function UsersPage() {
           </div>
         </Modal>
       )}
+
+      {/* ------------------------------- Quick view ------------------------------- */}
+      <Drawer open={!!viewing} onClose={() => setViewingId(null)} width={448}>
+        {viewing && (
+          <UserQuickView u={viewing} roles={rolesOf(viewing)} side={viewing.role === 'owner' ? null : sideValueOf(viewing)}
+            manager={viewing.managerId ? nameById[viewing.managerId] ?? null : null}
+            actions={actionsFor(viewing).filter(a => QUICK_KEYS.has(a.key))}
+            onCopy={copyEmail} onClose={() => setViewingId(null)} />
+        )}
+      </Drawer>
 
       <ConfirmDialog spec={confirm} busy={busy} onClose={() => setConfirm(null)} />
 
@@ -894,6 +932,70 @@ function PlaceFields({ departments, side, onSide, departmentId, positionId, onDe
       )}
       {offered.length === 0 && <span className="text-meta text-muted-ink">No office department yet. Add one under Permissions, Setup.</span>}
     </div>
+  );
+}
+
+/* ------------------------------ quick view ------------------------------ */
+const QUICK_KEYS = new Set(['edit', 'invite', 'off', 'on']);
+
+function QuickRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-3 py-2.5 [border-bottom:1px_solid_var(--color-line-soft)] max-md:grid-cols-1 max-md:gap-1">
+      <dt className="text-meta text-muted-ink">{label}</dt>
+      <dd className="m-0 text-copy text-ink min-w-0">{children}</dd>
+    </div>
+  );
+}
+
+/** What a row click opens: the person's details in one place, and the everyday actions. The rest stay in the row's "..." menu. */
+function UserQuickView({ u, roles, side, manager, actions, onCopy, onClose }: {
+  u: Row; roles: readonly RoleLabel[]; side: UserSide | null; manager: string | null;
+  actions: RowAction[]; onCopy: (email: string) => void; onClose: () => void;
+}) {
+  const s = status(u);
+  const email = hasRealEmail(u.email) ? u.email : null;
+  return (
+    <>
+      <div className="flex items-start gap-3 px-6 pt-[18px] pb-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+        <span className="w-10 h-10 flex-none rounded-full grid place-items-center text-copy font-semibold bg-muted text-ink-2">{initials(u.fullName)}</span>
+        <div className="flex flex-col items-start gap-1.5 min-w-0 flex-1">
+          <h2 className="m-0 text-title font-semibold truncate">{personName(u.fullName)}</h2>
+          <StatusBadge tone={s.tone} label={s.label} size="sm" strong />
+        </div>
+        <CloseButton onClick={onClose} />
+      </div>
+      <dl className="m-0 px-6 py-2 grow">
+        <QuickRow label="Email">
+          {email ? (
+            <span className="flex items-center gap-2 min-w-0">
+              <span className="break-all">{email}</span>
+              <button type="button" onClick={() => onCopy(email)} aria-label="Copy email"
+                className="flex-none w-8 h-8 max-md:w-11 max-md:h-11 grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted hover:text-ink">
+                <Icon name="Copy" size="sm" />
+              </button>
+            </span>
+          ) : <span className="text-muted-ink">No email (signs in with a PIN)</span>}
+        </QuickRow>
+        <QuickRow label="Phone">{u.phone || <span className="text-muted-ink">Not set</span>}</QuickRow>
+        <QuickRow label="Employee ID">{u.employeeId || <span className="text-muted-ink">Not set</span>}</QuickRow>
+        <QuickRow label="Company">{side ? <CompanyBadges side={side} /> : <span className="text-muted-ink">Owner portal</span>}</QuickRow>
+        <QuickRow label={roles.length > 1 ? 'Roles' : 'Role'}><RoleBadges roles={roles} shown={roles.length} /></QuickRow>
+        <QuickRow label="Reports to">{manager ?? <span className="text-muted-ink">No manager</span>}</QuickRow>
+        <QuickRow label="Last sign-in">
+          {u.lastLoginAt ? dateTime(u.lastLoginAt) : <span className="text-muted-ink">{isInvited(u) && u.lastInvitedAt ? `Never. Invited ${date(u.lastInvitedAt)}` : 'Never'}</span>}
+        </QuickRow>
+      </dl>
+      {actions.length > 0 && (
+        <div className="flex flex-wrap gap-2 px-6 py-4 [border-top:1px_solid_var(--color-line-soft)]">
+          {actions.map(a => (
+            <Button key={a.key} size="sm" variant={a.danger ? 'danger' : a.key === 'edit' ? 'primary' : 'secondary'}
+              icon={<Icon name={a.icon} size="sm" />} onClick={() => { onClose(); a.run(); }}>
+              {a.key === 'edit' ? 'Edit roles' : a.label}
+            </Button>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
