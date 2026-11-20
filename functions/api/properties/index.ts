@@ -56,7 +56,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     units: units.map(u => ({
       id: u.id, buildingId: u.property_id, parentUnitId: u.parent_unit_id ?? null,
       listingName: u.listing_name ?? '', unitCode: u.unit_code ?? u.unit_number, state: u.state,
-      address: u.address ?? `${u.unit_number}, ${u.address_line}`,
+      address: u.address ?? `${u.unit_code || u.unit_number}, ${u.address_line}`,
       ownerId: u.owner_id, ownerName: u.owner_name,
       // Last four only, as on the owner profile; the full numbers are revealed there (audited), not here.
       ic: banking ? masked(u.ic_number) : '', bankName: banking ? (u.bank_name ?? '') : '',

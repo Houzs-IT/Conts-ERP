@@ -21,7 +21,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const t = await one<any>(env, `
     SELECT ${priced ? 't.amount, t.cleaner_pay, t.external_address, t.external_client, t.external_phone,' : ''} t.id, t.kind, t.state, t.unit_id, t.assignee_id, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, t.instructions, t.started_at, t.completed_at, t.guest_left_at,
            t.created_at, t.reservation_id, cb.full_name AS completed_by_name,
-           COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at, u.unit_number, p.name AS property_name
+           COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name
     FROM tasks t LEFT JOIN units u ON u.id = t.unit_id LEFT JOIN properties p ON p.id = u.property_id
     LEFT JOIN users cb ON cb.id = t.completed_by WHERE t.id = ?`, id);
   if (!t) return fail('NOT_FOUND', 'That cleaning job no longer exists. Refresh the list.', 404);

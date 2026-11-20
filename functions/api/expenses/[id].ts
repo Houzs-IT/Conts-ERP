@@ -14,7 +14,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!session.manage) return fail('FORBIDDEN', 'Expenses are visible to finance and management roles.', 403);
-  const row = await one<any>(env, `SELECT e.*, u.unit_number, p.name AS property_name, ${LOCKED_SQL} AS locked ${EXPENSE_FROM} WHERE e.id = ?`, String(params.id));
+  const row = await one<any>(env, `SELECT e.*, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, ${LOCKED_SQL} AS locked ${EXPENSE_FROM} WHERE e.id = ?`, String(params.id));
   if (!row) return fail('NOT_FOUND', 'That expense no longer exists.', 404);
   return json(expenseOut(row));
 };

@@ -36,7 +36,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
              AND a.action IN ('reservation.status', 'reservation.cancel') AND a.source <> 'system' AND a.after_state LIKE '%"state":"${state}"%')`;
   const mine = await all<any>(env, `
     SELECT r.id, r.channel, r.state, r.check_in, r.check_out, r.check_in_time, r.check_out_time, r.guests_count, r.external_ref,
-           r.gross_booking_value, u.unit_number, u.readiness, p.name AS property_name,
+           r.gross_booking_value, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.readiness, p.name AS property_name,
            (SELECT MIN(t.created_at) FROM tasks t WHERE t.reservation_id = r.id) AS prepared_at,
            (SELECT MAX(n.sent_at) FROM notification_log n WHERE n.template = 'access_details' AND n.entity_id = r.id) AS access_sent_at,
            (SELECT AVG(v.rating) FROM reviews v WHERE v.reservation_id = r.id) AS rating,

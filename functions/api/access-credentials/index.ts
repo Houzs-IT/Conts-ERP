@@ -16,7 +16,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const unitId = new URL(request.url).searchParams.get('unitId');
   const rows = await all<any>(env, `
-    SELECT a.*, u.unit_number, p.name AS property_name,
+    SELECT a.*, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name,
            (SELECT l.actor_label FROM audit_log l WHERE l.entity_table = 'access_credentials' AND l.entity_id = a.id AND l.action = 'access.reveal' ORDER BY l.occurred_at DESC LIMIT 1) AS revealed_by,
            (SELECT l.occurred_at FROM audit_log l WHERE l.entity_table = 'access_credentials' AND l.entity_id = a.id AND l.action = 'access.reveal' ORDER BY l.occurred_at DESC LIMIT 1) AS revealed_at
     FROM access_credentials a

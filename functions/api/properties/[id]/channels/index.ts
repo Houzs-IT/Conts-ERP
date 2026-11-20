@@ -17,7 +17,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const b = await one<ChannexBuilding>(env, 'SELECT id, name, channex_property_id FROM properties WHERE id = ?', String(params.id));
   if (!b) return fail('NOT_FOUND', 'That building does not exist.', 404);
   // A showroom or warehouse unit is never on the channels (migration 0125), so it is not offered for a room.
-  const units = await all<BuildingUnit>(env, `SELECT id, unit_number, listing_name, max_guests, channex_property_id FROM units u WHERE property_id = ?${await rentalOnly(env)} ORDER BY unit_number`, b.id);
+  const units = await all<BuildingUnit>(env, `SELECT id, COALESCE(NULLIF(unit_code, ''), unit_number) AS unit_number, listing_name, max_guests, channex_property_id FROM units u WHERE property_id = ?${await rentalOnly(env)} ORDER BY unit_number`, b.id);
   const conns = await all<{ unit_id: string; ota: string; external_id: string; external_room: string | null; external_rate: string | null }>(env, `
     SELECT c.unit_id, c.ota, c.external_id, c.external_room, c.external_rate FROM channex_channels c JOIN units u ON u.id = c.unit_id
     WHERE u.property_id = ? AND c.ota IN ('booking_com','agoda')`, b.id);
@@ -61,12 +61,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   // vocab-ok: Booking.com and Agoda call what a unit is sold as a room; these name both sides of the pairing
   if (new Set(picks.map(p => p.roomId)).size !== picks.length) return fail('VALIDATION', 'Each room can be one unit only.', 422);
 
-  const units = await all<BuildingUnit>(env, `SELECT id, unit_number, listing_name, max_guests, channex_property_id FROM units u WHERE property_id = ?${await rentalOnly(env)} AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
+  const units = await all<BuildingUnit>(env, `SELECT id, COALESCE(NULLIF(unit_code, ''), unit_number) AS unit_number, listing_name, max_guests, channex_property_id FROM units u WHERE property_id = ?${await rentalOnly(env)} AND id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
     building.id, JSON.stringify(picks.map(p => p.unitId)));
   if (units.length !== picks.length) return fail('VALIDATION', 'One of the units is not a rental unit of this building.', 422);
   const notReady = units.filter(u => u.channex_property_id !== building.channex_property_id);
   if (notReady.length) return fail('NOT_LINKED', `Set ${notReady.map(u => u.unit_number).join(', ')} up in Channex first (each unit's Channels card). A unit set up before building listings has a listing of its own and cannot share a hotel yet.`, 409);
-  const already = await all<{ unit_number: string }>(env, `SELECT u.unit_number FROM channex_channels c JOIN units u ON u.id = c.unit_id
+  const already = await all<{ unit_number: string }>(env, `SELECT COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number FROM channex_channels c JOIN units u ON u.id = c.unit_id
     WHERE c.ota = ? AND c.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, ota, JSON.stringify(picks.map(p => p.unitId)));
   // vocab-ok: OTA_LABEL is a code name; the text shows the channel name
   if (already.length) return fail('CONFLICT', `${already.map(u => u.unit_number).join(', ')} already connected to ${OTA_LABEL[ota]}.`, 409);

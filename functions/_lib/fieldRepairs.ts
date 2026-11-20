@@ -21,7 +21,7 @@ export async function fieldRepairs(env: Env, where: string, args: unknown[], lim
   const rows = await all<any>(env, `
     SELECT m.id, m.unit_id, m.title, m.detail, m.state, m.category, m.urgency, m.source, m.reported_at, m.vendor_name,
            m.started_at, m.ended_at, m.resolved_at, m.blocks_unit, m.owner_approval_required, m.owner_approved_at, m.charge_to,${cols ? ' m.job_type, m.due_on,' : ''}${support ? ' m.support_requested_at, m.support_note,' : ''}
-           u.unit_number, p.id AS property_id, p.name AS property_name, p.address_line, COALESCE(r.full_name, '') AS reporter,
+           COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.id AS property_id, p.name AS property_name, p.address_line, COALESCE(r.full_name, '') AS reporter,
            (SELECT COUNT(*)::int FROM documents d WHERE d.maintenance_id = m.id AND d.kind IN ('photo','video') AND d.file_name NOT LIKE 'after-%') AS before_count,
            (SELECT COUNT(*)::int FROM documents d WHERE d.maintenance_id = m.id AND d.kind IN ('photo','video') AND d.file_name LIKE 'after-%') AS after_count,
            (SELECT COUNT(*)::int FROM documents d WHERE d.maintenance_id = m.id AND d.kind NOT IN ('photo','video')) AS document_count

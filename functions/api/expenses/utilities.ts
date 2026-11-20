@@ -30,7 +30,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const ownerId = url.searchParams.get('ownerId'), unitId = url.searchParams.get('unitId');
 
   const rows = await all<any>(env, `
-    SELECT a.id, a.unit_id, a.kind, a.account_no, a.provider, u.unit_number, p.name AS property_name, e.id AS expense_id, e.amount, e.charge_to, e.reference AS e_ref, e.receipt_document_id, e.deduct_month, e.rolled, e.record_only,
+    SELECT a.id, a.unit_id, a.kind, a.account_no, a.provider, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, e.id AS expense_id, e.amount, e.charge_to, e.reference AS e_ref, e.receipt_document_id, e.deduct_month, e.rolled, e.record_only,
            e.owner_paid, e.payment_request_no, r.status AS request_status, r.reason AS request_reason,
            EXISTS (SELECT 1 FROM utility_bill_scans s WHERE s.expense_id = e.id AND (coalesce(e.record_only, false) OR s.bill_sen <> e.amount)) AS split_scan
     FROM unit_utility_accounts a JOIN units u ON u.id = a.unit_id JOIN properties p ON p.id = u.property_id
@@ -43,7 +43,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     `${month}-01`, `${nextMonth(month)}-01`,
     ...(ownerId ? [ownerId] : []), ...(unitId ? [unitId] : []));
   const bare = await all<any>(env, `
-    SELECT u.id, u.unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id
     WHERE u.parent_unit_id IS NULL ${ownerId ? 'AND u.owner_id = ?' : ''} ${unitId ? 'AND u.id = ?' : ''}
       AND NOT EXISTS (SELECT 1 FROM unit_utility_accounts a WHERE a.unit_id = u.id AND a.kind IN ('electricity','water','internet','sewerage'))
     ORDER BY p.name, u.unit_number`,

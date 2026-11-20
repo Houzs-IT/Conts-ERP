@@ -20,7 +20,7 @@ export async function sampleOwnerFor(env: Env, url: URL): Promise<{ owner: Sampl
   const owner = await one<SampleOwner>(env, 'SELECT id, display_name, default_management_fee_pct FROM demo.owners WHERE id = ? AND shadow_of IS NULL', id);
   if (!owner) return fail('NOT_FOUND', 'That sample owner no longer exists.', 404);
   const units = await all<{ id: string; unit_number: string; property_name: string }>(env, `
-    SELECT u.id, u.unit_number, p.name AS property_name FROM demo.v_units u JOIN properties p ON p.id = u.property_id
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name FROM demo.v_units u JOIN properties p ON p.id = u.property_id
     WHERE u.owner_id = ? ORDER BY p.name, u.unit_number`, id);
   return { owner, units: units.map(u => ({ id: u.id, label: `${u.property_name} ${u.unit_number}` })) };
 }

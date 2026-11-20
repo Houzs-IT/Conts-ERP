@@ -19,7 +19,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const ready = await taskCleanersReady(env);
   const layout = (await hasColumn(env, 'units', 'layout_type')) ? 'u.layout_type' : 'NULL::text';
   const jobs = await all<any>(env, `
-    SELECT t.id, t.kind, t.unit_id, u.unit_number, p.name AS property_name, t.cleaner_pay, t.amount, t.cleaner_id, COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at, u.bedrooms, ${layout} AS layout_type,
+    SELECT t.id, t.kind, t.unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, t.cleaner_pay, t.amount, t.cleaner_id, COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at, u.bedrooms, ${layout} AS layout_type,
            ${ready ? '(SELECT json_agg(tc.cleaner_id)::text FROM task_cleaners tc WHERE tc.task_id = t.id AND tc.cleaner_id IS NOT NULL)' : 'NULL::text'} AS team
     FROM tasks t LEFT JOIN units u ON u.id = t.unit_id LEFT JOIN properties p ON p.id = u.property_id
     WHERE t.kind IN ${CLEAN_KINDS_SQL} AND t.state = 'resolved' AND t.completed_at IS NOT NULL AND substr(${MYT_DATE('t.completed_at')}, 1, 7) = ?`, month);

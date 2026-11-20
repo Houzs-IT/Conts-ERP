@@ -29,7 +29,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const dryRun = b.dryRun === true;
 
   const units = await all<{ id: string; unit_number: string; property_name: string }>(env, `
-    SELECT u.id, u.unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id
     WHERE u.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))${await rentalOnly(env, 'u')} ORDER BY p.name, u.unit_number`, JSON.stringify(unitIds));
   if (units.length !== unitIds.length) return fail('NOT_FOUND', 'One of those units does not exist, or is a showroom or warehouse (not priced).', 404);
   const ready = await pricingReady(env);

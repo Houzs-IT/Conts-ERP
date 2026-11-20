@@ -28,7 +28,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const passKeyJoin = hasPassKey ? `LEFT JOIN maintenance_issues pk ON pk.reservation_id = r.id AND pk.job_type = 'pass_key'` : '';
   const [arrivals, departures, cleans, urgent, repairs, maintenance, available] = await Promise.all([
     all<any>(env, `
-    SELECT r.id, r.state, r.channel, r.check_in_time, r.check_out, r.guests_count, u.id AS unit_id, u.unit_number, u.readiness,
+    SELECT r.id, r.state, r.channel, r.check_in_time, r.check_out, r.guests_count, u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.readiness,
            p.id AS property_id, p.name AS property_name, COALESCE(NULLIF(g.full_name, ''), CASE WHEN r.channel = 'owner_stay' THEN 'Owner stay' ELSE 'Guest' END) AS guest_name,
            (SELECT t.state FROM tasks t WHERE t.unit_id = r.unit_id AND t.kind IN ${CLEAN_KINDS_SQL} AND ${when} = r.check_in ORDER BY t.created_at DESC LIMIT 1) AS clean_state,
            ${MOVED_AT('checked_in')} AS arrived_at, ${passKeyColumns}
@@ -38,7 +38,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     ORDER BY r.check_in_time, p.name, u.unit_number`, date),
 
     all<any>(env, `
-    SELECT r.id, r.state, r.channel, r.check_out_time, u.id AS unit_id, u.unit_number, p.id AS property_id, p.name AS property_name,
+    SELECT r.id, r.state, r.channel, r.check_out_time, u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.id AS property_id, p.name AS property_name,
            COALESCE(NULLIF(g.full_name, ''), CASE WHEN r.channel = 'owner_stay' THEN 'Owner stay' ELSE 'Guest' END) AS guest_name,
            c.id AS task_id, c.state AS task_state, COALESCE(c.guest_left_at, ${MOVED_AT('checked_out')}) AS left_at
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
@@ -58,7 +58,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     GROUP BY 1, 2, 3`, date, date, today, date),
 
     all<any>(env, `
-    SELECT m.id, m.title, m.state, m.category, m.vendor_name, m.blocks_unit, u.unit_number, p.name AS property_name
+    SELECT m.id, m.title, m.state, m.category, m.vendor_name, m.blocks_unit, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name
     FROM maintenance_issues m ${placeJoin}
     WHERE m.state != 'resolved' AND (m.urgency = 'urgent' OR m.blocks_unit = 1) ORDER BY m.reported_at`),
 
@@ -115,7 +115,7 @@ async function maintenanceOnDay(env: Env, date: string, today: string) {
   const rows = await all<any>(env, `
     SELECT m.id, m.title, m.state, m.urgency, m.category, m.vendor_name, ${assignee}, m.blocks_unit, m.blocked_to,
            m.owner_approval_required, m.owner_approved_at, m.charge_to, m.started_at, m.ended_at, m.resolved_at, m.reported_at,
-           u.id AS unit_id, u.unit_number, p.id AS property_id, p.name AS property_name,
+           u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.id AS property_id, p.name AS property_name,
            w.starts_at AS window_start, w.ends_at AS window_end,
            EXISTS (SELECT 1 FROM maintenance_windows x WHERE x.issue_id = m.id AND x.ends_at::timestamptz < ?::timestamptz) AS visit_missed
     FROM maintenance_issues m ${placeJoin}
@@ -150,7 +150,7 @@ async function maintenanceOnDay(env: Env, date: string, today: string) {
 async function availableOnNight(env: Env, date: string, today: string) {
   const when = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const rows = await all<any>(env, `
-    SELECT u.id, u.unit_number, u.readiness, u.bedrooms, u.max_guests, p.id AS property_id, p.name AS property_name,
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.readiness, u.bedrooms, u.max_guests, p.id AS property_id, p.name AS property_name,
            k.title AS block_title, k.id IS NOT NULL AS blocked,
            (SELECT m.title FROM maintenance_issues m WHERE m.unit_id = u.id AND m.state != 'resolved' AND m.blocks_unit = 1 ORDER BY m.reported_at DESC LIMIT 1) AS repair_title,
            l.check_out_time AS leaves_at, l.out AS guest_out, l.id IS NOT NULL AS leaving,

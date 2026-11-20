@@ -56,7 +56,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const q = (url.searchParams.get('q') ?? '').trim().slice(0, 100);
   if (q) {
     const like = `%${q.replace(/[\\%_]/g, m => `\\${m}`)}%`;
-    where.push(`(COALESCE(g.full_name, v.guest_name, '') ILIKE ? OR COALESCE(v.comment, '') ILIKE ? OR COALESCE(v.reply, '') ILIKE ? OR COALESCE(u.unit_number, '') ILIKE ? OR COALESCE(p.name, '') ILIKE ? OR COALESCE(r.external_ref, '') ILIKE ?)`);
+    where.push(`(COALESCE(g.full_name, v.guest_name, '') ILIKE ? OR COALESCE(v.comment, '') ILIKE ? OR COALESCE(v.reply, '') ILIKE ? OR concat_ws(' ', u.unit_number, u.unit_code) ILIKE ? OR COALESCE(p.name, '') ILIKE ? OR COALESCE(r.external_ref, '') ILIKE ?)`);
     args.push(like, like, like, like, like, like);
   }
   // Demo mode reads the sample reviews with the real ones (functions/_lib/demo.ts).
@@ -81,7 +81,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       FROM ${t.reviews} v`, BAD_REVIEW_MAX),
     all<{ star: number; n: number }>(env, `SELECT round(v.rating)::int AS star, count(*)::int AS n FROM ${t.reviews} v GROUP BY 1`),
     all<{ id: string; label: string; property_id: string | null; property_name: string | null }>(env, `
-      SELECT DISTINCT u.id, trim(COALESCE(p.name, '') || ' ' || u.unit_number) AS label, p.id AS property_id, p.name AS property_name
+      SELECT DISTINCT u.id, trim(COALESCE(p.name, '') || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number)) AS label, p.id AS property_id, p.name AS property_name
       ${REVIEW_FROM} WHERE u.id IS NOT NULL ORDER BY label`),
   ]);
   const avg = sum?.a;

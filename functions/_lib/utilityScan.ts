@@ -34,7 +34,7 @@ export type ScanUnit = { id: string; label: string; ownerId: string | null; cont
 export async function scanContext(env: Env): Promise<{ units: ScanUnit[]; accounts: AccountMark[] }> {
   const [units, contracts, accounts] = await Promise.all([
     all<{ id: string; label: string; owner_id: string | null }>(env, `
-      SELECT u.id, p.name || ' ' || u.unit_number AS label, u.owner_id FROM units u JOIN properties p ON p.id = u.property_id
+      SELECT u.id, p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS label, u.owner_id FROM units u JOIN properties p ON p.id = u.property_id
       WHERE u.parent_unit_id IS NULL ORDER BY p.name, u.unit_number`),
     all<{ unit_id: string; owner_id: string; starts_on: string | null; ends_on: string | null }>(env, `
       SELECT unit_id, owner_id, starts_on, ends_on FROM owner_contracts WHERE unit_id IS NOT NULL AND starts_on IS NOT NULL`),

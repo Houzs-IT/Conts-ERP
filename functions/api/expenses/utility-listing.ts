@@ -53,7 +53,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         ? `AND r.created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur') AND r.created_at < ($2::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')`
         : 'AND e.incurred_on >= $1 AND e.incurred_on < $2'} ${scope}),
     su AS (
-      SELECT u.id, u.property_id, p.name AS property, u.unit_number, o.display_name AS owner, coalesce(u.purpose, 'rental') AS purpose
+      SELECT u.id, u.property_id, p.name AS property, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, o.display_name AS owner, coalesce(u.purpose, 'rental') AS purpose
       FROM units u JOIN properties p ON p.id = u.property_id LEFT JOIN owners o ON o.id = u.owner_id
       WHERE (u.parent_unit_id IS NULL OR u.id IN (SELECT unit_id FROM b)) ${scope}),
     m AS (SELECT x AS month, (x || '-01')::date AS s, ((x || '-01')::date + interval '1 month')::date AS e FROM jsonb_array_elements_text($3::text::jsonb) x),

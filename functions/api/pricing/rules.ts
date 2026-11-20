@@ -18,7 +18,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Every unit, listed or not: a new unit starts unlisted with no base rate, and it needs one set here
   // before it can be sold anywhere (Channex setup refuses a unit without a base price).
   const units = await all<any>(env, `
-    SELECT u.id, u.unit_number, u.base_rate, u.cost_floor, u.channex_rate_plan_airbnb, u.channex_rate_plan_booking_com, u.channex_rate_plan_agoda, p.name AS property_name, p.state
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.base_rate, u.cost_floor, u.channex_rate_plan_airbnb, u.channex_rate_plan_booking_com, u.channex_rate_plan_agoda, p.name AS property_name, p.state
     FROM units u JOIN properties p ON p.id = u.property_id WHERE 1 = 1${await rentalOnly(env)} ORDER BY p.name, u.unit_number`);
   const today = mytToday(), yearOn = addDays(today, 365);
   const [pricing, ready, holidays] = await Promise.all([

@@ -19,7 +19,7 @@ interface Booking { id: string; channel: string; check_in: string; check_out: st
 async function booking(env: Env, id: string): Promise<Booking | null> {
   try {
     return await one<Booking>(env, `
-      SELECT r.id, r.channel, r.check_in, r.check_out, g.full_name AS guest, trim(coalesce(p.name, '') || ' ' || u.unit_number) AS unit
+      SELECT r.id, r.channel, r.check_in, r.check_out, g.full_name AS guest, trim(coalesce(p.name, '') || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number)) AS unit
       FROM reservations r JOIN units u ON u.id = r.unit_id LEFT JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
       WHERE r.id = ?`, id);
   } catch { return null; }
@@ -67,7 +67,7 @@ interface Task { id: string; title: string; kind: string; unit: string; schedule
 async function task(env: Env, id: string): Promise<Task | null> {
   try {
     return await one<Task>(env, `
-      SELECT t.id, t.title, t.kind, t.scheduled_for, t.due_at, COALESCE(trim(coalesce(p.name, '') || ' ' || u.unit_number), 'External job') AS unit
+      SELECT t.id, t.title, t.kind, t.scheduled_for, t.due_at, COALESCE(trim(coalesce(p.name, '') || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number)), 'External job') AS unit
       FROM tasks t LEFT JOIN units u ON u.id = t.unit_id LEFT JOIN properties p ON p.id = u.property_id WHERE t.id = ?`, id);
   } catch { return null; }
 }
@@ -99,7 +99,7 @@ async function issue(env: Env, id: string): Promise<Issue | null> {
     const placeJoin = await jobPlaceJoin(env);
     return await one<Issue>(env, `
       SELECT m.id, m.title, m.urgency, m.vendor_name, m.assignee_user_id, m.reported_by, m.quoted_amount, o.user_id AS owner_user,
-             trim(coalesce(p.name, '') || ' ' || COALESCE(u.unit_number, '${BUILDING_JOB_LABEL}')) AS unit
+             trim(coalesce(p.name, '') || ' ' || COALESCE(COALESCE(NULLIF(u.unit_code, ''), u.unit_number), '${BUILDING_JOB_LABEL}')) AS unit
       FROM maintenance_issues m ${placeJoin}
       LEFT JOIN owners o ON o.id = u.owner_id WHERE m.id = ?`, id);
   } catch { return null; }

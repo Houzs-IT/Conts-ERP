@@ -71,7 +71,7 @@ export const columnsSql = (s: Schema, demo = false) => {
   ${s.payoutCols ? 'r.guest_nationality' : 'NULL::text'} AS guest_nationality,
   ${['room_revenue', 'guest_cleaning_fee', 'extra_fees', 'sst_amount', 'tourism_tax', 'ota_tax', 'deposit_collected']
     .map(c => `${s.payoutCols ? `r.${c}` : 'NULL::bigint'} AS ${c}`).join(', ')},
-  u.unit_number, p.name AS property_name, gc.iso AS country_iso, gc.src AS country_src,
+  COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, gc.iso AS country_iso, gc.src AS country_src,
   ${m.expected} AS expected_payout, ${m.received} AS received, ${m.outstanding} AS outstanding`;
 };
 
@@ -143,13 +143,13 @@ export function quickSearch(v: string, country = true): { sql: string; args: unk
     return [{ sql: `(r.external_ref ILIKE ? OR ${REF_DIGITS} LIKE ? OR ${PHONE_CORE} LIKE ?)`, args: [like(v), like(d), like(core)] }];
   }
   if (DIGITS_ONLY.test(v) && d.length >= 4) {
-    return [{ sql: `(${REF_DIGITS} LIKE ? OR u.unit_number ILIKE ? OR ${PHONE_DIGITS} LIKE ?)`, args: [like(d), like(v.trim()), like(d)] }];
+    return [{ sql: `(${REF_DIGITS} LIKE ? OR concat_ws(' ', u.unit_number, u.unit_code) ILIKE ? OR ${PHONE_DIGITS} LIKE ?)`, args: [like(d), like(v.trim()), like(d)] }];
   }
   return v.split(/\s+/).filter(Boolean).slice(0, 6).map(w => {
     const wp = like(w);
     const named = country ? countriesNamed(w) : [];
     return {
-      sql: `(r.external_ref ILIKE ? OR g.full_name ILIKE ? OR g.phone ILIKE ? OR g.email ILIKE ? OR u.unit_number ILIKE ? OR p.name ILIKE ?${named.length ? ` OR gc.iso IN (${named.map(() => '?').join(', ')})` : ''})`,
+      sql: `(r.external_ref ILIKE ? OR g.full_name ILIKE ? OR g.phone ILIKE ? OR g.email ILIKE ? OR concat_ws(' ', u.unit_number, u.unit_code) ILIKE ? OR p.name ILIKE ?${named.length ? ` OR gc.iso IN (${named.map(() => '?').join(', ')})` : ''})`,
       args: [wp, wp, wp, wp, wp, wp, ...named],
     };
   });
@@ -210,7 +210,7 @@ export function parseListQuery(url: URL, opts: { cancelledAt?: boolean } = {}): 
         const core = phoneCore(v);
         add('guest', `(g.full_name ILIKE ? OR g.phone ILIKE ?${core ? ` OR ${PHONE_CORE} LIKE ?` : ''})`, [p, p, ...(core ? [like(core)] : [])]); break;
       }
-      case 'unit': add('unit', '(u.unit_number ILIKE ? OR p.name ILIKE ?)', [p, p]); break;
+      case 'unit': add('unit', `(concat_ws(' ', u.unit_number, u.unit_code) ILIKE ? OR p.name ILIKE ?)`, [p, p]); break;
       case 'channel': add('channel', `(${CHANNEL_LABEL}) ILIKE ?`, [p]); break;
       case 'status': add('status', `(${phaseLabelSql(today)}) ILIKE ?`, [p]); break;
       // Matches what the Stay column shows ("12 Oct") as well as ISO dates ("2026-10").

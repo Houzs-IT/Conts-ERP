@@ -48,7 +48,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
   const rowsSql = `
     SELECT ${money} t.id, t.kind, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.started_at, t.completed_at, t.guest_left_at, t.next_guest_at,
            t.assignee_id, t.cleaner_id, t.unit_id, t.reservation_id, ${when} AS day,
-           u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name,
+           COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name,
            COALESCE(cl.full_name, a.full_name) AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner, ${cleanerListSql(ready)} AS cleaner_list, ${rosterIdSql()} AS roster_id,
            prev.id AS prev_id, prev.state AS prev_state, ${prevOut.time} AS prev_time, ${prevOut.requested} AS prev_late_requested, prev.channel AS prev_channel,
            COALESCE(NULLIF(pg.full_name, ''), CASE WHEN prev.id IS NOT NULL THEN 'Guest' END) AS prev_guest,
@@ -98,7 +98,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
   // Guests leaving that day with no clean on the unit: the gap the board must not hide. A checkout whose turnover job
   // is not made yet shows here too (it is planned after the answer, below), since this list comes from the bookings.
   const departuresSql = `
-    SELECT r.id, r.state, ${depOut.time} AS check_out_time, ${depOut.requested} AS late_requested, r.channel, u.id AS unit_id, u.unit_number, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name,
+    SELECT r.id, r.state, ${depOut.time} AS check_out_time, ${depOut.requested} AS late_requested, r.channel, u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name,
            COALESCE(NULLIF(g.full_name, ''), 'Guest') AS guest_name,
            (SELECT n.check_in_time FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_time,
            (SELECT n.id FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id AND ${LIVE_STAY_SQL('n')} LIMIT 1) AS next_id,

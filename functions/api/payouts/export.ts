@@ -83,10 +83,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         AND NOT EXISTS (SELECT 1 FROM lines x WHERE x.payout_id = y.id AND x.unit_id IS NULL)
         AND NOT EXISTS (SELECT 1 FROM buckets b WHERE b.payout_id = y.id AND b.amount <= 0)
     ), pieces AS (
-      SELECT y.id, y.owner_id, ${bucket} AS bucket, ${acct} AS acct, p.name || ' ' || u.unit_number AS unit, x.amount, false AS by_hand, false AS by_unit
+      SELECT y.id, y.owner_id, ${bucket} AS bucket, ${acct} AS acct, p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit, x.amount, false AS by_hand, false AS by_unit
       FROM y JOIN split USING (id) JOIN lines x ON x.payout_id = y.id JOIN units u ON u.id = x.unit_id JOIN properties p ON p.id = u.property_id
       UNION ALL
-      SELECT y.id, y.owner_id, 'whole:' || y.id, '', (SELECT string_agg(p.name || ' ' || u.unit_number, ', ' ORDER BY p.name, u.unit_number)
+      SELECT y.id, y.owner_id, 'whole:' || y.id, '', (SELECT string_agg(p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number), ', ' ORDER BY p.name, u.unit_number)
         FROM units u JOIN properties p ON p.id = u.property_id WHERE u.owner_id = y.owner_id), y.amount, ${byHand}, ${unitHand}
       FROM y WHERE y.id NOT IN (SELECT id FROM split)
     ), paid AS (

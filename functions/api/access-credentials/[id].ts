@@ -11,7 +11,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 
   const id = String(params.id);
   const row = await one<any>(env, `
-    SELECT a.id, a.secret, u.unit_number FROM access_credentials a JOIN units u ON u.id = a.unit_id WHERE a.id = ?`, id);
+    SELECT a.id, a.secret, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number FROM access_credentials a JOIN units u ON u.id = a.unit_id WHERE a.id = ?`, id);
   if (!row) return fail('NOT_FOUND', 'That credential no longer exists.', 404);
 
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'access.reveal', entityTable: 'access_credentials', entityId: id, after: { unitNumber: row.unit_number } });
@@ -66,7 +66,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
 
   const id = String(params.id);
   const cur = await one<any>(env, `
-    SELECT a.id, a.unit_id, a.kind, a.label, u.unit_number FROM access_credentials a JOIN units u ON u.id = a.unit_id WHERE a.id = ?`, id);
+    SELECT a.id, a.unit_id, a.kind, a.label, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number FROM access_credentials a JOIN units u ON u.id = a.unit_id WHERE a.id = ?`, id);
   if (!cur) return fail('NOT_FOUND', 'That credential no longer exists.', 404);
 
   await run(env, 'DELETE FROM access_credentials WHERE id = ?', id);

@@ -89,7 +89,7 @@ export async function agreementValues(env: Env, unitId: string, body: string): P
     owner_name: (u.legal_name || u.display_name || '').trim(), owner_ic: (u.ic_number ?? '').trim(), owner_address: ownerAddress,
     owner_phone: u.phone ?? '', owner_email: u.email ?? '',
     unit_code: (u.unit_code || u.unit_number || '').trim(), building: u.building ?? '',
-    unit_address: (u.address || [u.unit_number, u.address_line, u.postcode, u.city, u.state].filter(Boolean).join(', ')).trim(),
+    unit_address: (u.address || [u.unit_code || u.unit_number, u.address_line, u.postcode, u.city, u.state].filter(Boolean).join(', ')).trim(),
     unit_layout: [layout.size, layout.layout].filter(Boolean).join(', '),
     model_code: v ? v.contractCode : '', model_name: v ? types.find(t => t.code === v.contractCode)?.label ?? MODEL_LABEL[v.revenueModel] : '', terms: v ? v.termsLabel : '',
     owner_pct: v ? (share ? pct(v.ownerPct) : NOT_APPLICABLE) : '',

@@ -36,11 +36,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // Units with their own figures for either clean, in force today.
   const own = await all<{ unit_id: string; unit_number: string; property_name: string; beds: string | null }>(env, `
-    SELECT DISTINCT u.id AS unit_id, u.unit_number, p.name AS property_name, u.beds::text AS beds
+    SELECT DISTINCT u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, u.beds::text AS beds
     FROM unit_service_prices o JOIN units u ON u.id = o.unit_id JOIN properties p ON p.id = u.property_id
     WHERE o.item_id IN (?, ?) AND o.effective_from <= ?
       AND (o.owner_price IS NOT NULL OR o.internal_cost IS NOT NULL${guestPrices ? ' OR o.guest_price IS NOT NULL' : ''})
-    ORDER BY p.name, u.unit_number`, basic.id, deep.id, today);
+    ORDER BY p.name, unit_number`, basic.id, deep.id, today);
   const book = own.length ? await serviceBook(env, own.map(o => o.unit_id)) : null;
   const charged = (itemId: string, unitId: string): CleanFigures => {
     const a = book!.amounts(itemId, unitId, 'other', today);

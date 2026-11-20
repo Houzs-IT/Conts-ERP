@@ -40,7 +40,7 @@ async function loadCandidates(env: Env, taskIds: string[], invoicedSql: string):
   const day = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const candidates = await all<CancelCandidate>(env, `
     SELECT t.id, t.state, t.kind, t.title, t.unit_id, t.reservation_id, t.started_at, ${day} AS day,
-           COALESCE(u.unit_number, t.external_address) AS unit_number,
+           COALESCE(COALESCE(NULLIF(u.unit_code, ''), u.unit_number), t.external_address) AS unit_number,
            (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id) AS files,
            (SELECT COUNT(*)::int FROM maintenance_issues m WHERE m.source_task_id = t.id) AS damage,
            (SELECT COUNT(*)::int FROM expenses e WHERE e.task_id = t.id${invoicedSql}) AS money,

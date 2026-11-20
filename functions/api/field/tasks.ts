@@ -42,7 +42,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const rows = await all<any>(env, `
     SELECT t.id, t.unit_id, t.assignee_id, t.cleaner_id, t.kind, t.title, t.instructions, t.state, t.due_at, t.scheduled_for, t.next_guest_at, t.requires_photo, t.sync, t.updated_at,
            t.started_at, t.completed_at, t.guest_left_at, ${ext}, ${when} AS day, ${cleanerListSql(ready)} AS cleaner_list,
-           u.unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name, p.address_line,
+           COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.readiness, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, p.id AS property_id, p.name AS property_name, p.address_line,
            (SELECT c.instruction FROM access_credentials c WHERE c.unit_id = u.id${usedBy} ORDER BY c.updated_at DESC LIMIT 1) AS access_instruction,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video')) AS photo_count,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video') AND ${AFTER_FILE_SQL('d')}) AS after_count,

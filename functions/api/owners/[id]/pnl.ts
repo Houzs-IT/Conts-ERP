@@ -39,7 +39,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const ownerDefault = owner.default_management_fee_pct != null ? Number(owner.default_management_fee_pct) : null;
 
   const units = await all<any>(env, `
-    SELECT u.id, u.unit_number, p.name AS property_name,
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name,
            c.model, c.management_fee_pct, c.grr_amount
     FROM units u JOIN properties p ON p.id = u.property_id
     LEFT JOIN owner_contracts c ON c.id = u.contract_id

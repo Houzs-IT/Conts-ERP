@@ -38,7 +38,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const rows = await all<any>(env, `
     SELECT t.id, t.kind, t.state, t.title, t.instructions, t.scheduled_for, t.due_at, t.next_guest_at, t.requires_photo, t.assignee_id, t.cleaner_id,
            t.started_at, t.completed_at, ${when} AS day,
-           u.unit_number, u.readiness, u.bedrooms, p.id AS property_id, p.name AS property_name,
+           COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.readiness, u.bedrooms, p.id AS property_id, p.name AS property_name,
            COALESCE(cl.full_name, a.full_name, '') AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner,
            cl.employment_type AS employment_type, ${cleanerListSql(ready)} AS cleaner_list, ${rosterIdSql()} AS roster_id,
            COALESCE(r.external_ref, 'Manual') AS source_ref,
@@ -65,7 +65,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       SELECT t.unit_id, ${when} AS day FROM tasks t
       WHERE t.kind IN ('turnover','deep_clean','light_clean') AND COALESCE(t.scheduled_for, t.due_at, t.created_at) >= ? AND COALESCE(t.scheduled_for, t.due_at, t.created_at) < ?
     )
-    SELECT r.id, r.external_ref, r.channel, r.check_out, r.check_out_time, u.id AS unit_id, u.unit_number, u.bedrooms,
+    SELECT r.id, r.external_ref, r.channel, r.check_out, r.check_out_time, u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.bedrooms,
            p.id AS property_id, p.name AS property_name, COALESCE(NULLIF(g.full_name, ''), 'Guest') AS guest_name,
            (SELECT n.check_in_time FROM reservations n WHERE n.unit_id = r.unit_id AND n.check_in = r.check_out AND n.id != r.id
               AND n.state NOT IN ('cancelled','no_show','inquiry') AND n.channel != 'maintenance_block' LIMIT 1) AS next_in

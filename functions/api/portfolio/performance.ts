@@ -35,7 +35,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const rows = await all<any>(env, `
-    SELECT u.id, u.unit_number, u.readiness, p.id AS property_id, p.name AS property_name, o.display_name AS owner_name,
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.readiness, p.id AS property_id, p.name AS property_name, o.display_name AS owner_name,
            (SELECT ROUND(AVG(v.rating)::numeric, 2) FROM reviews v WHERE v.unit_id = u.id) AS rating,
            (SELECT COUNT(*) FROM maintenance_issues mi WHERE mi.unit_id = u.id AND mi.state != 'resolved') AS open_issues
     FROM units u

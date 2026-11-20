@@ -52,7 +52,7 @@ export function readGuestReview(b: any): { ok: true; value: GuestReviewInput } |
 
 /** The Airbnb stays whose review window is open or recently closed, with their guest review. `GS_COLUMNS` is read by
  *  stayOut. A stay counts once its checkout day has come. */
-const GS_COLUMNS = `r.id AS reservation_id, r.check_in, r.check_out, r.check_out_time, r.external_ref, r.unit_id, u.unit_number, p.name AS property_name,
+const GS_COLUMNS = `r.id AS reservation_id, r.check_in, r.check_out, r.check_out_time, r.external_ref, r.unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name,
   COALESCE(g.full_name, 'Guest') AS guest_name, (COALESCE(g.tags, '') ~ '(^|,)blacklist(,|$)') AS blacklisted,
   rv.id AS review_id, rv.channex_review_id, rv.is_hidden AS their_hidden, rv.rating AS their_rating,
   gr.id, gr.bad_guest, gr.bad_guest_note, gr.state, gr.source, gr.rule_id, gr.cleanliness, gr.communication, gr.respect_house_rules,
@@ -214,7 +214,7 @@ export async function runGuestReviews(env: Env, o: { now?: Date; dryRun?: boolea
   const rules = await all<any>(env, `SELECT * FROM guest_review_rules WHERE is_active = 1 ORDER BY position, created_at, id`);
   if (rules.length) {
     const stays = await all<any>(env, `
-      SELECT r.id, r.check_out, r.check_out_time, COALESCE(g.full_name, 'Guest') AS guest_name, trim(COALESCE(p.name, '') || ' ' || u.unit_number) AS unit_label,
+      SELECT r.id, r.check_out, r.check_out_time, COALESCE(g.full_name, 'Guest') AS guest_name, trim(COALESCE(p.name, '') || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number)) AS unit_label,
         ${NO_ISSUES_SQL} AS no_issues
       FROM reservations r JOIN units u ON u.id = r.unit_id LEFT JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
       LEFT JOIN guest_reviews gr ON gr.reservation_id = r.id

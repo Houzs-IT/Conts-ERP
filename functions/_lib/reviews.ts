@@ -7,7 +7,7 @@ import {
  *  booking behind it has no stay dates; one with no unit either came from a listing shared by several units. */
 export const REVIEW_COLUMNS = `v.id, v.channel, v.rating, v.comment, v.reviewed_at, v.reply, v.replied_at, v.channel_reply, v.scores,
   v.reply_push_state, v.reply_push_error, v.channex_review_id, v.reservation_id, v.is_hidden, v.tags,
-  u.id AS unit_id, u.unit_number, p.id AS property_id, p.name AS property_name,
+  u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.id AS property_id, p.name AS property_name,
   COALESCE(g.full_name, v.guest_name) AS guest_name, r.check_in, r.check_out, r.external_ref`;
 
 /** The day a clean job is for, in Malaysia: its planned time, else its deadline, else when it was made. */
