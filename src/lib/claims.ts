@@ -25,6 +25,8 @@ export interface Receipt {
 export interface PaymentRequest {
   id: string; requestNo: string; type: 'PAYMENT' | 'DEPOSIT'; payeeName: string; amountSen: number; status: RequestStatus; reason: string | null;
   createdAt: string; wantedOn: string | null; note: string | null; lines: ClaimLine[]; files: ClaimFile[]; vouchers: { id: string; pvNumber: string; status: string }[];
+  /** What each unit's owner pays back (0352): charged to the owner as O2 once the request is paid (`charged`). */
+  recoveries?: { unitId: string; amountSen: number; charged: boolean }[];
   /** As asked: the supplier on the list, or the PO, and who decided last (a rejection). */
   supplierId?: string | null; purchaseOrderId?: string | null; decidedBy?: string | null;
   /** Made from utility bills: fixed and sent again on Utility bills (lib/requestResubmit.ts). */
@@ -40,7 +42,9 @@ export interface PaymentRequest {
 export interface Me { userId: string; name: string; field: boolean; lineDepartment: LineDepartment; route: 'float' | 'finance'; keepsFloat: boolean }
 export interface MyFloat { float: { id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested: boolean }; receipts: Receipt[] }
 /** A line as staff send it: the engine sets the department from the person and finance sets the account (2 Nov 2026). */
-export interface NewLine { unitId?: string; maintenanceIssueId?: string; projectId?: number; amountSen: number; description?: string; subDepartmentId?: string }
+export interface NewLine { unitId?: string; maintenanceIssueId?: string; projectId?: number; amountSen: number; description?: string; subDepartmentId?: string;
+  /** On a payment request line for a unit: what its owner pays back (chew, 20 Nov 2026). */
+  recoverSen?: number }
 /** A sub-department a line can be put on (SOP 1.1: the department starts as the person's, and may be changed): GET /claims/sub-departments. */
 export interface LineSubDepartment { id: string; department: LineDepartment; name: string;
   /** A Renovation sub-department's brand (its projects'); a Rental one whose lines may name a maintenance job. */

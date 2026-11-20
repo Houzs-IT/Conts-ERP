@@ -289,6 +289,7 @@ accounting.get('/petty-cash/receipts/:id/files/:fileId', pettyCash.financeReceip
 accounting.get('/payment-requests', paymentRequests.listRequestsHandler);
 accounting.post('/payment-requests/:id/voucher', paymentRequests.requestVoucherHandler);
 accounting.post('/payment-requests/:id/reject', paymentRequests.rejectRequestHandler);
+accounting.put('/payment-requests/:id/recoveries', paymentRequests.setRecoveryHandler);
 accounting.post('/payment-requests/:id/close', paymentRequests.closeRequestHandler);
 accounting.patch('/payment-requests/:id/supplier', paymentRequests.linkSupplierHandler);
 accounting.get('/payment-requests/:id/files/:fileId', paymentRequests.requestFileHandler);

@@ -32,6 +32,8 @@ export type PaymentRequest = {
   payeeName: string; payeeToCheck: boolean; purchaseOrderId: string | null; wantedOn: string | null; owesFormalInvoice: boolean;
   note: string | null; amountSen: number; status: RequestStatus; reason: string | null; decidedBy: string | null; createdAt: string;
   lines: ClaimLine[]; files: { id: string; fileName: string; mime: string }[]; vouchers: { id: string; pvNumber: string; status: string }[];
+  /** What each unit's owner pays back (0352): charged to the owner as O2 once the request is paid (`charged`). */
+  recoveries?: { unitId: string; amountSen: number; charged: boolean }[];
   /** Conts (chew, 15 Nov 2026): the AP invoice it is paid through (then paid on the Payment voucher page, against the
    *  bill); a balance's deposit, a deposit's balance requests; what was first asked, once the bill changed it. */
   /** Made from utility bills (Utility bills): paid by voucher against the accrual, never through an AP invoice. */

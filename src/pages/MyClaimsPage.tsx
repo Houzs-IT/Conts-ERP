@@ -41,7 +41,9 @@ type Tab = 'handin' | 'mine' | 'float';
 type Kind = 'claim' | 'direct';
 /* subDepartmentId: '' starts the line on the person's own department (the engine fills it); else the one chosen (SOP 1.1, the department
    starts as the person's and may be changed; chew 16 Nov 2026). */
-type LineDraft = { where: 'none' | 'unit' | 'job' | 'project'; unitId: string; jobId: string; projectId: string; amountSen: number | null; description: string; subDepartmentId: string };
+type LineDraft = { where: 'none' | 'unit' | 'job' | 'project'; unitId: string; jobId: string; projectId: string; amountSen: number | null; description: string; subDepartmentId: string;
+  /** A payment request line for a unit whose owner pays it back (chew, 20 Nov 2026): the whole line unless an amount is typed. */
+  recover?: boolean; recoverSen?: number | null };
 type Supplier = { id: string; code: string; name: string };
 
 const blankLine = (): LineDraft => ({ where: 'none', unitId: '', jobId: '', projectId: '', amountSen: null, description: '', subDepartmentId: '' });
@@ -146,7 +148,9 @@ function LineTargetFields({ line: l, sub, targets, onPick }: { line: LineDraft; 
   );
 }
 
-function LinesEditor({ lines, setLines, totalSen, department }: { lines: LineDraft[]; setLines: (l: LineDraft[]) => void; totalSen: number | null; department: LineDepartment }) {
+function LinesEditor({ lines, setLines, totalSen, department, canRecover = false }: { lines: LineDraft[]; setLines: (l: LineDraft[]) => void; totalSen: number | null; department: LineDepartment;
+  /** A payment request: a line for a unit can be paid back by the unit's owner. */
+  canRecover?: boolean }) {
   const targets = useLineTargets();
   const { subOptions, mineSub, subs } = targets;
   const subOf = (l: LineDraft) => subs.find(x => x.id === (l.subDepartmentId || mineSub?.id)) ?? null;
@@ -179,6 +183,20 @@ function LinesEditor({ lines, setLines, totalSen, department }: { lines: LineDra
             <Field label="Description" value={l.description} onChange={e => set(i, { description: e.target.value })} placeholder="e.g. tap for the kitchen" maxLength={300} />
             {split && <MoneyInput label="Amount" required valueSen={l.amountSen} onChangeSen={v => set(i, { amountSen: v })} />}
           </div>
+          {canRecover && l.where === 'unit' && l.unitId && (
+            <div className="flex flex-col gap-2">
+              <label className="inline-flex items-center gap-2 text-meta text-ink cursor-pointer select-none">
+                <input type="checkbox" checked={!!l.recover} onChange={e => set(i, { recover: e.target.checked, recoverSen: null })} />
+                The owner pays this back <span className="text-muted-ink">(charged on the owner statement once finance pays)</span>
+              </label>
+              {l.recover && (
+                <div className="sm:max-w-[240px]">
+                  <MoneyInput label="Owner pays back" valueSen={l.recoverSen ?? (split ? l.amountSen : totalSen)} onChangeSen={v => set(i, { recoverSen: v })}
+                    help="The whole line, or type part of it." />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ))}
       <div className="flex flex-wrap items-center gap-3">
@@ -207,7 +225,10 @@ function toLines(lines: LineDraft[], totalSen: number): { ok: true; lines: NewLi
       ...(l.where === 'unit' ? { unitId: l.unitId } : {}), ...(l.where === 'job' ? { maintenanceIssueId: l.jobId } : {}),
       ...(l.where === 'project' ? { projectId: Number(l.projectId) } : {}),
       ...(l.where !== 'job' && l.subDepartmentId ? { subDepartmentId: l.subDepartmentId } : {}),
+      ...(l.where === 'unit' && l.recover ? { recoverSen: l.recoverSen ?? amountSen } : {}),
     });
+    const back = out.at(-1)!.recoverSen;
+    if (back != null && (back <= 0 || back > amountSen)) return { ok: false, message: 'What the owner pays back is more than RM 0.00 and no more than the line.' };
   }
   if (out.reduce((n, l) => n + l.amountSen, 0) !== totalSen) return { ok: false, message: 'The lines must add up to the amount.' };
   return { ok: true, lines: out };
@@ -268,7 +289,18 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
   const [kind, setKind] = useState<Kind>(initialKind);
   const [amountSen, setAmountSen] = useState<number | null>(editing?.amountSen ?? null);
   const [note, setNote] = useState(editing?.note ?? '');
-  const [lines, setLines] = useState<LineDraft[]>(editing?.lines.length ? editing.lines.map(lineDraftOf) : [blankLine()]);
+  const [lines, setLines] = useState<LineDraft[]>(() => {
+    if (!editing?.lines.length) return [blankLine()];
+    /* What the owners pay back goes onto the unit's lines again, the first of them first. */
+    const left = new Map((editing.recoveries ?? []).map(r => [r.unitId, r.amountSen]));
+    return editing.lines.map(l => {
+      const d = lineDraftOf(l);
+      const back = l.unitId ? Math.min(left.get(l.unitId) ?? 0, l.amountSen) : 0;
+      if (!back) return d;
+      left.set(l.unitId!, (left.get(l.unitId!) ?? 0) - back);
+      return { ...d, recover: true, recoverSen: back };
+    });
+  });
   const [files, setFiles] = useState<File[]>([]);
   const [kept, setKept] = useState<ClaimFile[]>(editing?.files ?? []);
   const [busy, setBusy] = useState(false);
@@ -374,7 +406,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
     try {
       if (kind === 'claim') {
         const made = await postWithFiles<{ receiptNo: string; route: 'float' | 'finance' }>('/claims/receipts',
-          { spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: built.lines }, files);
+          { spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: built.lines.map(({ recoverSen: _, ...l }) => l) }, files);
         toast({ tone: 'success', title: `Receipt ${made.receiptNo} handed in`, body: made.route === 'float' ? 'Your department\'s petty cash pays you back.' : 'Finance pays you back by transfer.' });
       } else {
         const body = {
@@ -490,7 +522,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
         )}
         <section className="ds-fs">
           <div className="ds-fs-h"><b>What it was for</b><span>{lines.length > 1 ? 'The lines must add up to the amount' : 'Finance chooses the account while checking'}</span></div>
-          <LinesEditor lines={lines} setLines={setLines} totalSen={amountSen} department={me.lineDepartment} />
+          <LinesEditor lines={lines} setLines={setLines} totalSen={amountSen} department={me.lineDepartment} canRecover={kind === 'direct'} />
         </section>
         <section className="ds-fs">
           <div className="ds-fs-h"><b>Note</b></div>
