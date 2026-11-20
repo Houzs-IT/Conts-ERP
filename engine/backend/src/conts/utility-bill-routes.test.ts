@@ -219,3 +219,31 @@ describe('a waiting utility request takes its changed bills until it is paid (ch
     expect((await change(appFor(sb, FIN), first.id, BILLS)).status).toBe(409);
   });
 });
+
+describe('a waiting utility request taken back by the office when the owner paid the bill (chew, 20 Nov 2026)', () => {
+  const sent = async (sb: ReturnType<typeof world>) => (await (await ask(appFor(sb, FIN))).json()) as { id: string; requestNo: string };
+  const OTHER: Staff = { ...FIN, userId: 'u-fin-2', name: 'Lim' };
+  test('anyone in the office takes it back, not only the person who sent it; again changes nothing', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    const r = await post(appFor(sb, OTHER), `/utility-bills/payment-request/${first.id}/withdraw`, {});
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ id: first.id, requestNo: first.requestNo, status: 'WITHDRAWN' });
+    expect(sb.tables.payment_requests[0].status).toBe('WITHDRAWN');
+    expect((await post(appFor(sb, OTHER), `/utility-bills/payment-request/${first.id}/withdraw`, {})).status).toBe(200);
+  });
+  test('refused for field staff, once a voucher is on it, and once it is being paid', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    expect((await post(appFor(sb, TECH), `/utility-bills/payment-request/${first.id}/withdraw`, {})).status).toBe(403);
+    sb.tables.payment_vouchers = [{ id: 'PV1', company_id: 1, pv_number: 'PV-2611-001', status: 'DRAFT', submitted_at: null, payment_request_id: first.id }];
+    sb.tables.payment_voucher_lines ??= [];
+    const pv = await post(appFor(sb, FIN), `/utility-bills/payment-request/${first.id}/withdraw`, {});
+    expect(pv.status).toBe(409);
+    expect(((await pv.json()) as { error: string }).error).toBe('has_voucher');
+    sb.tables.payment_vouchers[0].status = 'CANCELLED';
+    sb.tables.payment_requests[0].status = 'PART_PAID';
+    expect((await post(appFor(sb, FIN), `/utility-bills/payment-request/${first.id}/withdraw`, {})).status).toBe(409);
+    expect(sb.tables.payment_requests[0].status).toBe('PART_PAID');
+  });
+});

@@ -25,7 +25,8 @@ import { billEdit, billEditProblem, partNow, shareNow } from '../../../../../src
  *  - `ownerPaid: true` marks a bill the owner paid the provider himself (chew, 20 Nov 2026: a unit changed owner after
  *    its bill was sent for payment): the company no longer pays it, so it lets go of its request, and the whole bill
  *    goes back to the unit's owner as an open O2 credit, as "Owner paid this bill" does on entry. Only on a bill with no
- *    request or one that came back: a request still waiting is withdrawn first (My claims), so finance never pays it.
+ *    request or one that came back: a request still waiting is taken back here first (withdrawn, or sent on without
+ *    this bill), so finance never pays it; refused once a voucher is on it.
  *  Refused once the bill's statement is final. Finance and management only. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
@@ -78,8 +79,19 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   // The request first: the engine refuses once a voucher or an AP invoice is on it, and then nothing here changes.
   const state = cur.payment_request_id ? await requestState(env, cur.payment_request_id) : null;
+  // A request still waiting is taken back first (chew, 20 Nov 2026: tick it straight away), whoever sent it: withdrawn when
+  // this is its only bill, else sent on without it. The engine refuses once a voucher or an AP invoice is on it.
+  let withdrawn: string | null = null;
   if (markPaid && state && !RETURNED.has(state.status)) {
-    return fail('ON_REQUEST', `${state.requestNo ?? 'Its payment request'} still asks finance to pay this bill. Withdraw it on My claims first (finance cancels any voucher on it), then mark the bill.`, 409);
+    if (state.status !== 'SUBMITTED') return fail('BEING_PAID', `${state.requestNo ?? 'Its payment request'} is already being paid, so this bill can no longer be marked.`, 409);
+    if (inDemo()) return fail('DEMO_MODE', DEMO_NOTHING_SENT, 409);
+    const others = (await billsOnRequest(env, state.id)).bills.filter(x => x.expenseId !== id);
+    const res = others.length
+      ? await forwardClaims(env, session, 'POST', `/utility-bills/payment-request/${encodeURIComponent(state.id)}/bills`, {
+          bills: others.map(({ unitId, kind, billMonth, billDate, dueDate, accountNo, amountSen }) => ({ unitId, kind, billMonth, billDate, dueDate, accountNo, amountSen })) })
+      : await forwardClaims(env, session, 'POST', `/utility-bills/payment-request/${encodeURIComponent(state.id)}/withdraw`, {});
+    if (!res.ok) return res;
+    withdrawn = others.length ? null : state.requestNo ?? state.id;
   }
   let resentTo: string | null = null;
   if (!markPaid && state && !RETURNED.has(state.status) && total !== was) {
@@ -116,11 +128,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     }
   });
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.utility_bill_changed', entityTable: 'expenses', entityId: id,
-    before: { bill: was, share: shareNow(now), ownerPart: wasPart, recordOnly: cur.record_only }, after: { bill: total, share, ownerPart, recordOnly, request: resentTo, ...(markPaid ? { ownerPaid: true, offRequest: state?.requestNo ?? null } : {}) } });
+    before: { bill: was, share: shareNow(now), ownerPart: wasPart, recordOnly: cur.record_only }, after: { bill: total, share, ownerPart, recordOnly, request: resentTo, ...(markPaid ? { ownerPaid: true, offRequest: state?.requestNo ?? null, withdrawn } : {}) } });
   // A month whose deductions are locked keeps its figures; the difference goes to the next open month (as PATCH /expenses/:id).
   const notice = cur.charge_to === 'owner'
     ? await editNotices(env, { unitId: cur.unit_id, deductMonth: cur.deduct_month, stage: costStageOf(cur.category, cur.description) },
         { unitId: cur.unit_id, deductMonth: cur.deduct_month, stage: costStageOf(cur.category, cur.description) })
     : null;
-  return json({ ok: true, bill: total, share, ownerPart, request: resentTo, ownerPaid: markPaid || cur.owner_paid, notice });
+  return json({ ok: true, bill: total, share, ownerPart, request: resentTo, withdrawn, ownerPaid: markPaid || cur.owner_paid, notice });
 };
