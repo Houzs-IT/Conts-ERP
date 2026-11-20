@@ -26,7 +26,7 @@ import { MIGRATED_NO_GL_MESSAGE } from '../lib/migrated-chain';
 
 /* Conts, migration 0136: an opening invoice or bill posts nothing itself. */
 const OPENING_NO_GL_MESSAGE = 'An opening balance: its amount is in the opening journal already, so no journal entry was written. Payments against it post as usual.';
-import { paginateAll } from '../lib/paginate-all';
+import { chunkIn, paginateAll } from '../lib/paginate-all';
 import { safeRate, toMyrSen } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { hasHouzsPerm } from '../lib/houzs-perms';
@@ -734,12 +734,16 @@ export const journalEntriesList = async (c: any): Promise<Response> => {
   const codesByJe = new Map<unknown, string[]>();
   const linesByJe = new Map<unknown, LineOut[]>();
   if (jeIds.length > 0) {
-    const { data: lineRows, error: lnErr } = await sb
+    /* Batched and paged (chunkIn): 500 entry ids in one `in` list made a ~19KB URL, and 500 entries carry several
+       thousand lines while one read stops at 1,000 — entries past it lost their lines and their journal label. */
+    const { data: lineRows, error: lnErr } = await chunkIn(jeIds as string[], (batch, from, to) => sb
       .from('journal_entry_lines')
-      .select(withLines ? 'journal_entry_id, line_no, account_code, debit_sen, credit_sen, party_name, notes' : 'journal_entry_id, account_code')
-      .in('journal_entry_id', jeIds);
+      .select(withLines ? 'id, journal_entry_id, line_no, account_code, debit_sen, credit_sen, party_name, notes' : 'id, journal_entry_id, account_code')
+      .in('journal_entry_id', batch)
+      .order('id')
+      .range(from, to));
     if (lnErr) return c.json({ error: 'load_failed', reason: lnErr.message }, 500);
-    for (const l of (lineRows ?? []) as Array<{ journal_entry_id: unknown; account_code: string } & Partial<LineOut>>) {
+    for (const l of (lineRows ?? []) as unknown as Array<{ journal_entry_id: unknown; account_code: string } & Partial<LineOut>>) {
       const list = codesByJe.get(l.journal_entry_id) ?? [];
       list.push(l.account_code);
       codesByJe.set(l.journal_entry_id, list);

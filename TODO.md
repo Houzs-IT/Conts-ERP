@@ -690,3 +690,9 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 ## Project page speed (perf/project-page-speed, 19 Nov 2026)
 - Site tab: linkedFilesFor still reads each on-site GR/DO twin one after another (onsiteTwinFiles, about 3 reads each); batch it if the Site tab stays slow.
 - The page asks the same project's design facts twice (GET /api/renovation/:id stage reads and GET /api/beta/board?projectId): one shared endpoint would halve them; needs a frontend change.
+
+## Row caps and paging (21 Nov 2026)
+- Inventory list paging: deferred by the owner until the page is actually slow (production has no stock lots yet). Its summary cards, "Dead stock only" filter and Age sort cover every SKU, so paging needs those computed on the server first.
+- Reads still capped by `.limit(2000/3000/5000)` on small tables (payments, projects, PO items, suppliers, units...) stop quietly at 1,000 rows; none is close today (see PR #1119).
+- `computeSoLifecycle` / `soCurrentDocNo` put every SO on the list into one URL: fine at 148 orders, likely breaks past ~250-400.
+- Chart of accounts (571 rows) read unpaged in several places; `accounting-chart.ts` reads every company's chart.

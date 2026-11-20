@@ -76,7 +76,10 @@ describe('GET /fabric-tracking/lite — never exposes cost/stock', () => {
   });
 
   it('stays company-scoped, exactly like the full read', () => {
-    expect(liteHandlerBody()).toContain('scopeToCompany');
+    /* Both handlers read through the one paged helper, which carries the company scope (row-cap sweep, 21 Nov 2026). */
+    expect(liteHandlerBody()).toContain('readFabricTrackings(');
+    const helper = routeSrc.slice(routeSrc.indexOf('export function readFabricTrackings('), routeSrc.indexOf("fabricTracking.get('/'"));
+    expect(helper).toContain("scopeToCompany(supabase.from('fabric_trackings')");
   });
 });
 

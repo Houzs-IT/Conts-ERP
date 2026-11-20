@@ -32,6 +32,8 @@
 // it has to say why.
 // ----------------------------------------------------------------------------
 
+import { chunkIn } from './paginate-all';
+
 /** PostgREST `.in()` caps out on URL length, and the un-paginated SO list can
  *  hand us 500 docs → well over a thousand line ids. Chunk every `.in()` set so
  *  a wide list can't blow the query-string limit. */
@@ -171,31 +173,29 @@ export async function soConvertedPos(
     // 1. SO line id → its SO doc_no. (Not filtered on `cancelled`: a PO raised
     //    against a line that was later cancelled still exists and still counts
     //    as a conversion of that SO.)
+    /* Paged per batch (chunkIn): the SO list hands over up to 500 orders, and 200 orders already carry several
+       thousand lines while one read stops at 1,000, so orders past that showed no PO number at all. */
     const docByItemId = new Map<string, string>();
-    for (const part of chunk(docs, IN_CHUNK)) {
-      const { data, error } = await scoped(sb
-        .from('mfg_sales_order_items')
-        .select('id, doc_no'))
-        .in('doc_no', part);
+    {
+      const { data, error } = await chunkIn<{ id: string | null; doc_no: string | null }>(docs, (part, from, to) =>
+        scoped(sb.from('mfg_sales_order_items').select('id, doc_no')).in('doc_no', part).order('id').range(from, to));
       if (error) return out;
-      for (const r of (data ?? []) as Array<{ id: string | null; doc_no: string | null }>) {
+      for (const r of data) {
         if (r.id && r.doc_no) docByItemId.set(r.id, r.doc_no);
       }
     }
     const itemIds = [...docByItemId.keys()];
     if (itemIds.length === 0) return out;
 
-    // 2. PO lines raised from those SO lines → (SO line id, PO id).
+    // 2. PO lines raised from those SO lines → (SO line id, PO id). chunkIn sizes the line-id batches by URL bytes.
     const links: Array<{ so_item_id: string; purchase_order_id: string }> = [];
     const poIds = new Set<string>();
-    for (const part of chunk(itemIds, IN_CHUNK)) {
-      const { data, error } = await scoped(sb
-        .from('purchase_order_items')
-        .select('so_item_id, purchase_order_id'))
-        .in('so_item_id', part)
-        .not('purchase_order_id', 'is', null);
+    {
+      const { data, error } = await chunkIn<{ so_item_id: string | null; purchase_order_id: string | null }>(itemIds, (part, from, to) =>
+        scoped(sb.from('purchase_order_items').select('so_item_id, purchase_order_id'))
+          .in('so_item_id', part).not('purchase_order_id', 'is', null).order('id').range(from, to));
       if (error) return out;
-      for (const r of (data ?? []) as Array<{ so_item_id: string | null; purchase_order_id: string | null }>) {
+      for (const r of data) {
         if (r.so_item_id && r.purchase_order_id) {
           links.push({ so_item_id: r.so_item_id, purchase_order_id: r.purchase_order_id });
           poIds.add(r.purchase_order_id);
