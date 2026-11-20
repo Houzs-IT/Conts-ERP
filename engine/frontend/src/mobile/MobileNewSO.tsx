@@ -33,7 +33,8 @@ import { deriveProcessingDate } from "../lib/processingDate";
 import { paymentMethodCodeForValue } from "../vendor/scm/lib/payment-methods";
 import { companyRequiresStockLocation } from "../vendor/scm/lib/so-form-validate";
 import { useBranding } from "../hooks/useBranding";
-import { newIdempotencyKey, idempotentInit, useIdempotencyKey } from "../lib/idempotency";
+import { newIdempotencyKey, idempotentInit, useIdempotencyKey, useContentBoundIdempotencyKey, sendWithContentKey } from "../lib/idempotency";
+import { useRenovationDraft } from "../lib/renovation/renovationFormDraft";
 import {
   buildAmendmentHeaderChanges,
   hasAmendmentHeaderChanges,
@@ -637,13 +638,11 @@ export function MobileNewSO({
      minutes apart never collide. Unused by the isEdit PATCH branch, which
      addresses one existing docNo and cannot duplicate. */
   const soIdemKey = useIdempotencyKey();
-  /* The isEdit branch's amendment submit gets its OWN per-mount key. Same rule
-     as soIdemKey: this mount is one amendment intent (it navigates away on
-     success), so a retry after a timeout replays the first response instead of
-     filing a second amendment — the amendment number is minted `count + 1`, so
-     a duplicate is a real one. A separate constant from soIdemKey purely for
-     legibility; the two never run on the same mount. */
-  const amendIdemKey = useIdempotencyKey();
+  /* The isEdit branch's amendment (VO) submit: a key per CONTENT (lib/idempotency.ts createContentBoundKey, as the
+     desktop SalesOrderDetail uses). The same VO re-sent after a timeout replays the first answer instead of filing a
+     second amendment (the number is minted `count + 1`, so a duplicate is a real one); a VO the server REFUSED and
+     the rep then corrected gets a new key. One key for the whole mount kept a refused VO stuck until reload. */
+  const amendKeys = useContentBoundIdempotencyKey();
   /* The payment "Collected By" dropdown + the Salesperson selection both draw
      from the company-scoped, ACTIVE-only pickable set (Team-grant rule), mirroring
      the desktop PaymentsTable/SoLineCard — a resigned or other-company staff must
@@ -898,6 +897,7 @@ export function MobileNewSO({
      the whole edit session — a concurrent editor's Save 409s instead of being
      silently overwritten. */
   const loadedVersionRef = useRef<number | undefined>(undefined);
+  const [loadedVersion, setLoadedVersion] = useState<number | null>(null);
   const activeLineLeaseRef = useRef<string | null>(null);
   const [prefillVenueId, setPrefillVenueId] = useState<string | null>(null);
   const [prefillVenueName, setPrefillVenueName] = useState<string>("");
@@ -1059,6 +1059,7 @@ export function MobileNewSO({
         setExistingPays(payResp.payments ?? []);
         // Pin the version this SO was loaded with (WO-8 optimistic locking).
         loadedVersionRef.current = detail.salesOrder.version;
+        setLoadedVersion(detail.salesOrder.version ?? null);
         const st = (detail.salesOrder.status ?? "").toUpperCase();
         setSoStatus(st);
         setLineLocked(LOCKED_STATUSES.includes(st) || soDownstreamHardLocked(detail.salesOrder));
@@ -1274,6 +1275,36 @@ export function MobileNewSO({
      older responses keep the old block-everything behaviour. */
   const migratedLocked = soMigratedReadonly(migHeader); // no override and no amendment route out of this one
   const amendmentMode = !migratedLocked && amendEligible && !lineLocked && !hasOpenAmend;
+  /* The edited lines are kept on this phone while editing (lib/renovation/renovationFormDraft.ts), so a refused VO
+     followed by a reload or a dropped connection does not lose them: the form offers them back. Lines only (the
+     customer and address fields reload from the order); photos picked but not yet saved cannot be kept and are
+     picked again. Cleared when the edit saves. */
+  const lineDraftValue = useMemo(
+    () => lines.filter((l) => l.itemId || l.itemCode.trim()).map(({ photoFiles: _files, ...rest }) => rest),
+    [lines],
+  );
+  const lineDraftDirty = useMemo(() => {
+    if (!isEdit || loading) return false;
+    const sig = (ls: Array<Omit<LineItem, "photoFiles">>) =>
+      JSON.stringify(ls.map(({ key: _k, addIdempotencyKey: _a, ...rest }) => rest));
+    const base = origItems.map(lineFromItem).map(({ photoFiles: _files, ...rest }) => rest);
+    return sig(lineDraftValue) !== sig(base);
+  }, [isEdit, loading, lineDraftValue, origItems]);
+  const lineDraft = useRenovationDraft(
+    isEdit && docNo && !loading ? `mobile-so-edit-lines:${docNo}` : null,
+    lineDraftValue,
+    lineDraftDirty,
+    loadedVersion,
+  );
+  const restoreLineDraft = (restore: boolean) => {
+    const offered = lineDraft.offered;
+    if (restore && offered && offered.v.length > 0) {
+      const restored: LineItem[] = offered.v.map((l) => ({ ...l, photoFiles: [] }));
+      setLines(restored);
+      setDdateOverrides(new Set(restored.filter((l) => l.ddate).map((l) => l.key)));
+    }
+    lineDraft.answer(restore);
+  };
   /* Line editing is blocked when the SO is shipped / has downstream docs
      (lineLocked), OR when the processing date has passed (procLocked) UNLESS the
      order is in amendment mode (then the editor stays open and Save raises an
@@ -2037,6 +2068,7 @@ export function MobileNewSO({
             setSubmitting(false);
             if (!voOrder) { setError(AMENDMENT_NOTHING_TO_SUBMIT); return; }
             void notify({ title: NO_VO_NEEDED_TITLE, body: NO_VO_NEEDED_BODY });
+            lineDraft.clear();
             if (onSaved) onSaved(docNo);
             else onBack();
             return;
@@ -2063,10 +2095,18 @@ export function MobileNewSO({
             const answer = await submitDialog.ask({ docNo, lines: amLines, headerChanges });
             if (answer == null) { setSubmitting(false); return; } // cancelled
             try {
-              amendCreatedRes = await createAmendment.mutateAsync({
-                docNo, reason: answer.reason, lines: amLines, headerChanges,
-                idempotencyKey: amendIdemKey,
-              });
+              const sent = await sendWithContentKey(
+                amendKeys,
+                { reason: answer.reason, lines: amLines, headerChanges },
+                () => confirm({
+                  title: "Your last save did not get an answer",
+                  body: "It may already have recorded the earlier change. Open the order history to check first.\n\nSave this changed version anyway?",
+                  confirmLabel: "Save changed version",
+                }),
+                (key) => createAmendment.mutateAsync({ docNo, reason: answer.reason, lines: amLines, headerChanges, idempotencyKey: key }),
+              );
+              if (!sent.sent) { setSubmitting(false); return; }
+              amendCreatedRes = sent.value;
             } catch (e) {
               setSubmitting(false);
               // authed-fetch already humanises the API error to one plain sentence.
@@ -2100,6 +2140,7 @@ export function MobileNewSO({
           /* Two-lane rework — the server classifies (and may split) the request:
              product changes wait on Purchasing, delivery changes on Logistics. */
           void notify(amendmentSubmittedNotice(plan, amendCreatedRes));
+          lineDraft.clear();
           if (onSaved) onSaved(docNo);
           else onBack();
           return;
@@ -2165,6 +2206,7 @@ export function MobileNewSO({
         invalidateSoShared(qc);
         await qc.invalidateQueries({ queryKey: ["mfg-sales-order-detail", docNo] });
         await qc.invalidateQueries({ queryKey: ["mobile-so-list-paged"] });
+        lineDraft.clear();
         if (onSaved) onSaved(docNo);
         else onBack();
         return;
@@ -2325,6 +2367,17 @@ export function MobileNewSO({
                 editable (they ride an amendment), so this banner would contradict
                 the form. The amendment banner on the Items card says it instead. */}
             <MigratedReadonlyBanner header={migHeader} rounded={12} />
+            {lineDraft.offered && (
+              <div role="status" style={{ marginBottom: 11, padding: "10px 12px", background: "#fbf3e6", border: "1px solid #ecd9b6", borderRadius: 12, fontSize: 11.5, color: "#8a5a22", lineHeight: 1.5 }}>
+                <b>Unsaved line changes from {new Date(lineDraft.offered.ts).toLocaleString()}.</b>{" "}
+                {lineDraft.stale ? "The order was saved again after them, so check each line before saving. " : ""}
+                Restore them?
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <button type="button" className="btn" style={{ flex: 1 }} onClick={() => restoreLineDraft(true)}>Restore</button>
+                  <button type="button" className="btn-ghost" style={{ flex: 1 }} onClick={() => restoreLineDraft(false)}>Discard</button>
+                </div>
+              </div>
+            )}
             {!migratedLocked && procLocked && !amendmentMode && (
               <div style={{ display: "flex", alignItems: "flex-start", gap: 9, marginBottom: 11, padding: "10px 12px", background: "#fbf3e6", border: "1px solid #ecd9b6", borderRadius: 12 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a16a2e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none", marginTop: 1 }}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>

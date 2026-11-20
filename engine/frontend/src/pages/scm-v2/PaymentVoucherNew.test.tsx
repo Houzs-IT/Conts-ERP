@@ -87,12 +87,14 @@ vi.mock('../../vendor/scm/lib/accounting-queries', async (importOriginal) => ({
   useAccountRoles: () => ({ data: { roles: { BANK_DEFAULT: '310-0010', ...(payFromRole ? { BANK_PAY_DEFAULT: payFromRole } : {}), AP: '400-0000', AP_OTHER: '405-0000', AR: '300-0000' }, overridden: {} }, isLoading: false }),
   useSaveBankDefault: () => ({ mutate: vi.fn(), isPending: false }),
 }));
-vi.mock('../../vendor/scm/lib/purchase-invoice-queries', () => ({
-  usePurchaseInvoices: () => ({ data: { purchaseInvoices: [
+const { PI_ROWS } = vi.hoisted(() => ({ PI_ROWS: () => ({ data: { purchaseInvoices: [
     { id: 'pi-1', invoice_number: '2990-PI-2609-001', supplier_invoice_ref: 'INV-77', supplier_id: 'sup-1', status: 'POSTED', total_sen: 255000, paid_sen: 0, invoice_date: '2026-09-01' },
     { id: 'pi-2', invoice_number: '2990-PI-2609-002', supplier_invoice_ref: null, supplier_id: 'sup-1', status: 'POSTED', total_sen: 100000, paid_sen: 40000, invoice_date: '2026-08-15' },
     { id: 'pi-9', invoice_number: '2990-PI-2608-018', supplier_invoice_ref: null, supplier_id: 'sup-405', status: 'POSTED', total_sen: 1644000, paid_sen: 0, invoice_date: '2026-08-20' },
-  ] }, isLoading: false }),
+  ] }, isLoading: false }) }));
+vi.mock('../../vendor/scm/lib/purchase-invoice-queries', () => ({
+  usePurchaseInvoices: PI_ROWS,
+  useSupplierPayablePis: PI_ROWS,
 }));
 vi.mock('../../vendor/scm/lib/suppliers-queries', () => ({
   useSuppliers: () => ({ data: [

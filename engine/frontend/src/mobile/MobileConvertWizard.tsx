@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invalidateConvertShared } from "./sharedInvalidate";
 import { authedFetch } from "../vendor/scm/lib/authed-fetch";
+import { outstandingSoPageUrl } from "../vendor/scm/lib/suppliers-queries";
 import { buildVariantSummary } from "../vendor/shared/variant-summary";
 import { idempotentInit, useIdempotencyKey } from "../lib/idempotency";
 import { useNotify } from "../vendor/scm/components/NotifyDialog";
@@ -167,8 +168,7 @@ type DoInvoiceableLine = {
 // SO→PO — the OUTSTANDING axis (qty − po_qty_picked + sofa MRP rollup), from
 // /mfg-purchase-orders/outstanding-so-items (the SAME stock-aware shortage view
 // the desktop PurchaseOrderFromSo picker uses). `remainingQty` is the pooled
-// shortage; the endpoint returns EVERY outstanding SO line, so we scope to the
-// picked SO's doc_no client-side.
+// shortage; the request asks the server for the picked SO's doc_no only.
 type OutstandingSoLine = {
   soItemId: string; soDocNo: string; itemCode: string; description: string | null;
   itemGroup: string | null; variants: unknown;
@@ -370,12 +370,19 @@ export function MobileConvertWizard({
         // axis is wrong for a PO: a fully-PO'd-but-undelivered line would 409
         // dead on submit, a delivered-but-unpurchased restock PO could never be
         // raised, and sofa qty (MRP-pooled) would be off. Mirrors the desktop
-        // PurchaseOrderFromSo picker (useOutstandingSoItems). The endpoint
-        // returns EVERY outstanding SO line, so scope to the picked SO's doc_no.
-        const res = await authedFetch<{ items?: OutstandingSoLine[] }>(
-          `/mfg-purchase-orders/outstanding-so-items`,
-        );
-        return (res.items ?? [])
+        // PurchaseOrderFromSo picker. The server keeps only the picked SO's
+        // lines (docNo); every page is read so none of that SO's lines is lost.
+        const soLines: OutstandingSoLine[] = [];
+        let cursor: string | null = null;
+        for (let n = 0; n < 50; n++) {
+          const res: { items?: OutstandingSoLine[]; nextCursor?: string | null } = await authedFetch(
+            outstandingSoPageUrl({ docNo: str(selectedSourceId) }, cursor, 200),
+          );
+          soLines.push(...(res.items ?? []));
+          cursor = res.nextCursor ?? null;
+          if (!cursor) break;
+        }
+        return soLines
           .filter((l) => str(l.soDocNo) === str(selectedSourceId))
           .map<PickLine>((l) => ({
             lineId: l.soItemId,
