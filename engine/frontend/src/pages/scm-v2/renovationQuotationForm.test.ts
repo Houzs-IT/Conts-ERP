@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { DocLine, DocSection } from '../../lib/renovation/api';
-import { blockFromQuote, partyFromBlock, quotationLines, sectionsFromForm, seedQuoteForm } from './renovationQuotationForm';
+import { blockFromQuote, grossSen, partyFromBlock, qtyFields, quotationLines, sectionsFromForm, seedQuoteForm } from './renovationQuotationForm';
 
 const line = (p: Partial<DocLine> = {}): DocLine => ({
   kind: 'ITEM', room: '', itemCode: 'RN-DESIGN', description: 'Design fee', qty: 2, measure: null, measureUom: null, uom: 'UNIT', unitPriceSen: 10000, listPriceSen: 12000,
@@ -32,6 +32,19 @@ describe('a saved quotation on the sales order form', () => {
     expect(s.rooms).toEqual(['ADD ON :', 'ADD ON : (2)']);
     const out = saved(s);
     expect(out.map((x) => [x.heading, x.lumpSumSen, x.lines[0].itemCode])).toEqual([['ADD ON :', 100, 'RN-DESIGN'], ['ADD ON :', 200, 'RN-X']]);
+  });
+
+  test('a decimal qty saves as the measure and opens as the same qty (CONTS-0060)', () => {
+    const s = seedOf([section('A', [line({ discountBp: 0, uom: 'FT' })])]);
+    const first = sectionsFromForm(s.rooms, [{ ...s.lines[0], qty: 5.5 }], s.lineRoom, s.sources)[0].lines[0];
+    expect([first.qty, first.measure, first.measureUom]).toEqual([1, '5.5', 'FT']);
+    const back = seedOf([section('A', [first])]);
+    expect(back.lines[0].qty).toBe(5.5);
+    expect(sectionsFromForm(back.rooms, back.lines, back.lineRoom, back.sources)[0].lines[0]).toEqual(first);
+    const whole = sectionsFromForm(back.rooms, [{ ...back.lines[0], qty: 6 }], back.lineRoom, back.sources)[0].lines[0];
+    expect([whole.qty, whole.measure]).toEqual([1, '6']);
+    expect(qtyFields(6, 'FT')).toEqual({ qty: 6, measure: null, measureUom: null });
+    expect(grossSen(7.25, 10001)).toBe(72507);
   });
 
   test('changed money drops the old override and works the discount out again', () => {

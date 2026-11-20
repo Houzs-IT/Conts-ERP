@@ -137,7 +137,7 @@ import {
 } from '../../lib/renovation/api';
 import { headerFromParty } from '../renovation/QuotationCustomerCard';
 import { QuotationCards, QuotationNotices } from './renovationQuotationChrome';
-import { blockFromQuote, partyFromBlock, sectionsFromForm, seedQuoteForm, soFieldsFromBlock, type QuoteSources } from './renovationQuotationForm';
+import { blockFromQuote, grossSen, partyFromBlock, qtyFields, sectionsFromForm, seedQuoteForm, soFieldsFromBlock, type QuoteSources } from './renovationQuotationForm';
 import { SoInstalments } from './renovationSoInstalments';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import {
@@ -906,7 +906,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
 
   const subtotalSen = useMemo(
     () => lines.reduce(
-      (s, l) => s + Math.max(0, l.qty * l.unitPriceSen - l.discountSen),
+      (s, l) => s + Math.max(0, grossSen(l.qty, l.unitPriceSen) - l.discountSen),
       0,
     ),
     [lines],
@@ -1625,10 +1625,10 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
       const sections = quoteTemplateId && filled.length === 0 ? undefined : placed.rooms.map((heading) => ({
         heading, bandColor: null, lumpSumSen: null, pageBreakBefore: false,
         lines: filled.filter((l) => placed.roomOf[l.rid] === heading).map((l): DocLine => {
-          const gross = l.qty * l.unitPriceSen;
+          const gross = grossSen(l.qty, l.unitPriceSen);
           return {
             kind: 'ITEM', room: heading, itemCode: l.itemCode, description: [l.description, l.remark].filter((t) => t?.trim()).join(' - '),
-            qty: l.qty, measure: null, measureUom: null, uom: l.uom || null, unitPriceSen: l.unitPriceSen, listPriceSen: null,
+            ...qtyFields(l.qty, l.uom), uom: l.uom || null, unitPriceSen: l.unitPriceSen, listPriceSen: null,
             discountBp: gross > 0 ? Math.min(10000, Math.round((l.discountSen / gross) * 10000)) : 0, amountOverrideSen: null,
             isFoc: false, supplyByOwner: false, highlight: 'NONE', supplierId: null, unitCostSen: l.unitCostSen, stageCode: null, pageBreakBefore: false,
           };
@@ -2024,6 +2024,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
               <div key={line.rid} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                 <SoLineCard
                   compact={reno}
+                  decimalQty={asQuotation}
                   actions={reno ? move : undefined}
                   index={idx}
                   draft={line}
