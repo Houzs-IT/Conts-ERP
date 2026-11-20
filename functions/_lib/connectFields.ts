@@ -55,11 +55,11 @@ export function singleLine(v: unknown): string {
 }
 
 /** Dates are stored as ISO text (YYYY-MM-DD…). Connect does NO date formatting, so the ERP sends
- *  the exact string the message should show. YYYY/MM/DD per the integration spec's examples; the
- *  one function to change if the template copy wants a different style. */
+ *  the exact string the message should show: dd/mm/yyyy (Nico's choice — zero-padded day and month,
+ *  four-digit year, e.g. 15/11/2026, 05/01/2026). The one function to change if the copy wants another style. */
 export function formatConnectDate(iso: unknown): string {
-  const d = String(iso ?? '').slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d.replace(/-/g, '/') : singleLine(iso);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? '').slice(0, 10));
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : singleLine(iso);
 }
 
 /** A sensitive value, masked for the preview surface: bullets only, no tail, so the operator can

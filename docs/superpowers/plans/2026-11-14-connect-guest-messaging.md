@@ -49,12 +49,12 @@ Assembled per reservation by joining `reservations → guests / units / properti
 `connectFields.ts` (`CREDENTIAL_FIELD_MAP`). Credentials are filtered to the reservation's unit and
 guest-visible rows (`usedBySql(env,'c','guest')`); the `secret` column is read server-side (the same
 clear value the audited reveal path returns). Only keys with a real value are sent (an empty value
-renders as `-`). Values are flattened to a single line; dates are formatted `YYYY/MM/DD`.
+renders as `-`). Values are flattened to a single line; dates are formatted `dd/mm/yyyy` (Nico's choice).
 
 | Connect key | Source | ⚑ needs CS/ops confirmation |
 |---|---|---|
 | `unit_no` | `properties.name + ' ' + units.unit_number` | |
-| `checkin_date` / `checkout_date` | `reservations.check_in` / `check_out` (→ `YYYY/MM/DD`) | |
+| `checkin_date` / `checkout_date` | `reservations.check_in` / `check_out` (→ `dd/mm/yyyy`) | |
 | `wifi` | `wifi`.secret | |
 | `wifi_username` | `wifi`.label | |
 | `mailbox_passcode` | `mailbox_pin`.secret | |

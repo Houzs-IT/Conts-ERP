@@ -31,8 +31,8 @@ test('assembles every field from a full reservation + credentials', () => {
   assert.equal(phone, '60123456789');
   assert.deepEqual(attributes, {
     unit_no: 'The Conts A-12-03',
-    checkin_date: '2026/11/20',
-    checkout_date: '2026/11/23',
+    checkin_date: '20/11/2026',
+    checkout_date: '23/11/2026',
     wifi: 'theconts2024',
     wifi_username: 'TheConts-A12',
     mailbox_passcode: '4821',
@@ -54,7 +54,7 @@ test('mask hides only the secret-sourced fields', () => {
   assert.equal(attributes.wifi_username, 'TheConts-A12');
   assert.equal(attributes.mailbox_no, '17');
   assert.equal(attributes.unit_no, 'The Conts A-12-03');
-  assert.equal(attributes.checkin_date, '2026/11/20');
+  assert.equal(attributes.checkin_date, '20/11/2026');
 });
 
 test('collapses whitespace to a single line', () => {
@@ -84,9 +84,10 @@ test('first matching credential wins per key', () => {
   assert.equal(buildConnectAttributes(RES, creds).attributes.maindoor, 'FIRST');
 });
 
-test('formatConnectDate: ISO date → YYYY/MM/DD, otherwise single-lined', () => {
-  assert.equal(formatConnectDate('2026-11-20'), '2026/11/20');
-  assert.equal(formatConnectDate('2026-11-20T15:00:00Z'), '2026/11/20');
+test('formatConnectDate: ISO date → dd/mm/yyyy (zero-padded), otherwise single-lined', () => {
+  assert.equal(formatConnectDate('2026-11-20'), '20/11/2026');
+  assert.equal(formatConnectDate('2026-11-20T15:00:00Z'), '20/11/2026');
+  assert.equal(formatConnectDate('2026-01-05'), '05/01/2026');
   assert.equal(formatConnectDate(''), '');
   assert.equal(formatConnectDate('tomorrow  '), 'tomorrow');
 });
