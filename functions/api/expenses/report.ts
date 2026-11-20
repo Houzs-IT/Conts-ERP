@@ -23,7 +23,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const where = expenseWhere(f);
   // Rollup headers carry no money of their own; their line items are listed instead.
   const rows = await all<any>(env, `
-    SELECT e.id, e.category, e.description, e.amount, e.incurred_on, e.reference, e.charge_to, u.unit_number, p.name AS property_name
+    SELECT e.id, e.category, e.description, e.amount, e.incurred_on, e.reference, e.charge_to, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name
     FROM expenses e JOIN units u ON u.id = e.unit_id JOIN properties p ON p.id = u.property_id
     WHERE NOT ${IS_PARENT_SQL} ${where.sql}
     ORDER BY e.incurred_on, p.name, u.unit_number`, ...where.args);
@@ -32,7 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const scope = [
     `Month: ${f.month ? monthName(f.month) : 'all'}`, `Category: ${f.category ? label(f.category) : 'all'}`,
     `Building: ${await name('SELECT name AS n FROM properties WHERE id = ?', f.building)}`,
-    `Unit: ${await name("SELECT p.name || ' ' || u.unit_number AS n FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?", f.unit)}`,
+    `Unit: ${await name("SELECT p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS n FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?", f.unit)}`,
     `Owner: ${await name('SELECT display_name AS n FROM owners WHERE id = ?', f.owner)}`,
     ...(f.q ? [`Search: ${f.q}`] : []),
   ].join('; ');

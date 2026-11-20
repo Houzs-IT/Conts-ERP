@@ -37,7 +37,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const t = tablesFor(demo);
   const [allUnits, onChannel, connected, onHostPlatform] = await Promise.all([
     all<any>(env, `
-      SELECT u.id, u.unit_number, u.base_rate, u.weekend_rate, u.property_id, u.channex_property_id, p.name AS property_name
+      SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.base_rate, u.weekend_rate, u.property_id, u.channex_property_id, p.name AS property_name
       FROM ${t.units} u JOIN properties p ON p.id = u.property_id
       WHERE 1 = 1${rental}
       ORDER BY p.name, u.unit_number`),

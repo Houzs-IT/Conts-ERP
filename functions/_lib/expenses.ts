@@ -101,7 +101,7 @@ export function expenseWhere(f: ExpenseFilter, skip?: keyof ExpenseFilter): { sq
   if (f.unit && skip !== 'unit') { parts.push('e.unit_id = ?'); args.push(f.unit); }
   if (f.owner && skip !== 'owner') { parts.push('u.owner_id = ?'); args.push(f.owner); }
   if (f.q && skip !== 'q') {
-    parts.push(`(e.description ILIKE ? OR e.reference ILIKE ? OR u.unit_number ILIKE ? OR p.name ILIKE ?)`);
+    parts.push(`(e.description ILIKE ? OR e.reference ILIKE ? OR concat_ws(' ', u.unit_number, u.unit_code) ILIKE ? OR p.name ILIKE ?)`);
     const like = `%${f.q.replace(/[%_\\]/g, m => '\\' + m)}%`;
     args.push(like, like, like, like);
   }

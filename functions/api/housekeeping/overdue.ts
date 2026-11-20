@@ -35,7 +35,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const day = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const tasks = await all<any>(env, `
     SELECT t.id, t.state, t.kind, t.title, t.unit_id, t.reservation_id, t.started_at, t.assignee_id, t.cleaner_id, ${day} AS day,
-           COALESCE(u.unit_number, t.external_address) AS unit_number,
+           COALESCE(COALESCE(NULLIF(u.unit_code, ''), u.unit_number), t.external_address) AS unit_number,
            (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id) AS files
     FROM tasks t LEFT JOIN units u ON u.id = t.unit_id
     WHERE t.id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND t.kind IN ${CLEAN_KINDS_SQL}`, JSON.stringify(ids));

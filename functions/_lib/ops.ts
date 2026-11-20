@@ -77,7 +77,7 @@ export async function assignTask(env: Env, session: Session, taskId: string, ass
     before: { assigneeId: task.assignee_id, state: task.state }, after: { assigneeId, state: 'assigned' },
   });
   const unit = await one<{ unit_number: string; property_name: string }>(env, `
-    SELECT u.unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, task.unit_id);
+    SELECT COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, task.unit_id);
   const delivery = await notify(env, {
     template: 'field.task_assigned', recipient: assignee.phone ?? assignee.full_name, channel: 'push',
     body: `New job: ${unit ? `${unit.property_name} ${unit.unit_number}` : 'external address'}${task.due_at ? `, due ${hhmm(task.due_at)}` : ''}.`,
@@ -161,7 +161,7 @@ export async function assignCleaners(env: Env, session: Session, taskId: string,
   });
   if (added.length) {
     const unit = await one<{ unit_number: string; property_name: string }>(env, `
-      SELECT u.unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, task.unit_id);
+      SELECT COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, task.unit_id);
     // At most ten cleaners on a job (pickedCleanerIds), so at most ten pushes.
     await Promise.all(added.filter(c => c.employment_type === 'internal' && c.phone).map(cleaner => notify(env, {
       template: 'field.task_assigned', recipient: cleaner.phone!, channel: 'push',
@@ -182,7 +182,7 @@ export async function resolveUnit(env: Env, ref: unknown, propertyName?: unknown
   const prop = String(propertyName ?? '').trim().replace(/[%_]/g, m => '\\' + m);
   const rows = await all<{ id: string }>(env, `
     SELECT u.id FROM units u JOIN properties p ON p.id = u.property_id
-    WHERE lower(u.unit_number) = lower(?) AND (? = '' OR lower(p.name) LIKE lower(?))`, r, prop, `${prop}%`);
+    WHERE (lower(u.unit_number) = lower(?) OR lower(btrim(u.unit_code)) = lower(?)) AND (? = '' OR lower(p.name) LIKE lower(?))`, r, r, prop, `${prop}%`);
   return rows.length === 1 ? rows[0] : rows.length > 1 ? 'ambiguous' : null;
 }
 

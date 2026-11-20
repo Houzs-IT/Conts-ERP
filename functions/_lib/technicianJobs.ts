@@ -32,7 +32,7 @@ export async function technicianJobs(env: Env, from: string, to: string): Promis
   if (!(await hasTechnicianList(env))) return { ready: false, cards: [], people: [], jobs: [] };
   const [rows, minutes] = await Promise.all([all<TechnicianJobRow>(env, `
     SELECT tech.id AS technician_id, tech.full_name, m.id AS job_id, ${MYT_DATE('m.resolved_at')} AS day,
-           u.unit_number AS unit, m.title, m.category, m.started_at, m.ended_at
+           COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit, m.title, m.category, m.started_at, m.ended_at
     FROM technicians tech
     LEFT JOIN maintenance_issues m ON m.technician_id = tech.id AND m.state = 'resolved' AND m.resolved_at IS NOT NULL
       AND ${MYT_DATE('m.resolved_at')} BETWEEN ? AND ?

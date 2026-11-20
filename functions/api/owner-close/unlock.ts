@@ -30,7 +30,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const r = await unlockStages(env, { userId: session.userId, fullName: session.fullName }, month, stage, which, reason || null);
   // Each unit left locked, named as owner statements name it, so Unlock all can say which (chew, 13 Nov 2026). Only a
   // list of units with nothing unlocked answers 409 (one cell clicked on the Unit report shows that reason).
-  const labels = new Map(r.refused.length ? (await all<{ id: string; label: string }>(env, `SELECT u.id, p.name || ' ' || u.unit_number AS label
+  const labels = new Map(r.refused.length ? (await all<{ id: string; label: string }>(env, `SELECT u.id, p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS label
     FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
     JSON.stringify(r.refused.map(x => x.unitId)))).map(x => [x.id, x.label] as const) : []);
   const refused = r.refused.map(x => ({ ...x, label: labels.get(x.unitId) ?? x.unitId }));

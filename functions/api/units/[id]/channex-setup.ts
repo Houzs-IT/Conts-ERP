@@ -18,7 +18,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
   const id = String(params.id);
   const u = await one<{ id: string; unit_number: string; listing_name: string | null; max_guests: number; base_rate: number; channex_property_id: string | null; building_id: string; building_channex_id: string | null; property_name: string; city: string; state: string; address_line: string; address: string | null }>(env, `
-    SELECT u.id, u.unit_number, u.listing_name, u.max_guests, u.base_rate, u.channex_property_id, u.address,
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.listing_name, u.max_guests, u.base_rate, u.channex_property_id, u.address,
            p.id AS building_id, p.channex_property_id AS building_channex_id, p.name AS property_name, p.city, p.state, p.address_line
     FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, id);
   if (!u) return fail('NOT_FOUND', 'That unit does not exist.', 404);

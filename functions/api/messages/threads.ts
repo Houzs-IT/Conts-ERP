@@ -22,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const q = (url.searchParams.get('q') ?? '').trim().slice(0, 100);
   if (q) {
     const like = `%${q.replace(/[\\%_]/g, m => `\\${m}`)}%`;
-    where.push(`(COALESCE(g.full_name, t.guest_name, '') ILIKE ? OR COALESCE(t.subject, '') ILIKE ? OR COALESCE(u.unit_number, '') ILIKE ? OR COALESCE(p.name, '') ILIKE ?
+    where.push(`(COALESCE(g.full_name, t.guest_name, '') ILIKE ? OR COALESCE(t.subject, '') ILIKE ? OR concat_ws(' ', u.unit_number, u.unit_code) ILIKE ? OR COALESCE(p.name, '') ILIKE ?
       OR EXISTS (SELECT 1 FROM messages mq WHERE mq.thread_id = t.id AND mq.body ILIKE ?))`);
     args.push(like, like, like, like, like);
   }
@@ -50,7 +50,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     one<{ n: number; unread: number; inquiries: number }>(env, `
       SELECT count(*)::int AS n, count(*) FILTER (WHERE is_read = 0)::int AS unread, count(*) FILTER (WHERE reservation_id IS NULL)::int AS inquiries FROM message_threads`),
     all<{ id: string; label: string }>(env, `
-      SELECT DISTINCT u.id, trim(COALESCE(p.name, '') || ' ' || u.unit_number) AS label
+      SELECT DISTINCT u.id, trim(COALESCE(p.name, '') || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number)) AS label
       FROM message_threads t LEFT JOIN reservations r ON r.id = t.reservation_id
       JOIN units u ON u.id = COALESCE(r.unit_id, t.unit_id) LEFT JOIN properties p ON p.id = u.property_id
       ORDER BY label`),

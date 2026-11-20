@@ -34,7 +34,7 @@ function optionsForDraft(types: readonly ContractTypeRow[], draft: ContractDraft
 async function unitOf(env: Env, id: string) {
   const ready = await purposeReady(env);
   return one<any>(env, `
-    SELECT ${ready ? 'u.purpose,' : "'rental' AS purpose,"} u.id, u.owner_id, u.contract_id, u.unit_number, u.package, u.split_kind, u.split_value, u.misc_charges, p.name AS property_name, o.display_name AS owner_name
+    SELECT ${ready ? 'u.purpose,' : "'rental' AS purpose,"} u.id, u.owner_id, u.contract_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.package, u.split_kind, u.split_value, u.misc_charges, p.name AS property_name, o.display_name AS owner_name
     FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id WHERE u.id = ?`, id);
 }
 

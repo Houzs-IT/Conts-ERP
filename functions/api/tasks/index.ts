@@ -51,7 +51,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (isDate(to)) { where.push(`${day} <= ?`); args.push(to); }
   if (q) {
     const like = `%${q.replace(/[%_\\]/g, m => '\\' + m)}%`;
-    where.push('(u.unit_number ILIKE ? OR p.name ILIKE ? OR t.title ILIKE ?)'); args.push(like, like, like);
+    where.push(`(concat_ws(' ', u.unit_number, u.unit_code) ILIKE ? OR p.name ILIKE ? OR t.title ILIKE ?)`); args.push(like, like, like);
   }
   const base = `FROM tasks t JOIN units u ON u.id = t.unit_id JOIN properties p ON p.id = u.property_id`;
   const cond = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -73,7 +73,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const counts = await all<{ state: string; n: number }>(env, `SELECT t.state, COUNT(*)::int AS n ${base} ${cond} GROUP BY t.state`, ...args);
   const rows = await all<any>(env, `
     SELECT t.id, t.unit_id, t.kind, t.state, t.title, t.instructions, t.assignee_id, t.cleaner_id, t.scheduled_for, t.due_at, t.next_guest_at,
-           t.requires_photo, t.sync, t.started_at, t.completed_at, u.unit_number, p.id AS property_id, p.name AS property_name, ${day} AS day,
+           t.requires_photo, t.sync, t.started_at, t.completed_at, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.id AS property_id, p.name AS property_name, ${day} AS day,
            COALESCE(${cleanerNamesSql(ready)}, cl.full_name, a.full_name) AS assignee_name, ${SHEET_CLEANER('t')} AS sheet_cleaner,
            (SELECT COUNT(*) FROM documents d WHERE d.task_id = t.id AND d.kind IN ('photo','video')) AS photo_count
     ${base}

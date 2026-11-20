@@ -10,7 +10,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const [buildings, units, owners] = await Promise.all([
     all<any>(env, 'SELECT p.id, p.name, (SELECT COUNT(*) FROM units u WHERE u.property_id = p.id) AS n FROM properties p ORDER BY p.name'),
-    all<any>(env, 'SELECT u.id, u.unit_number, u.property_id, u.owner_id FROM units u JOIN properties p ON p.id = u.property_id ORDER BY p.name, u.unit_number'),
+    all<any>(env, `SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.property_id, u.owner_id FROM units u JOIN properties p ON p.id = u.property_id ORDER BY p.name, u.unit_number`),
     all<any>(env, 'SELECT o.id, o.display_name FROM owners o ORDER BY o.display_name'),
   ]);
   return json({

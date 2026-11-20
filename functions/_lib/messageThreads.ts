@@ -3,7 +3,7 @@
  *  guest's name from the channel (message_threads.guest_name). */
 export const THREAD_COLUMNS = `t.id, t.channel, t.subject, t.is_read, t.last_message_at, t.reservation_id, t.channex_thread_id,
   COALESCE(g.full_name, t.guest_name) AS guest_name, g.phone AS guest_phone,
-  u.id AS unit_id, u.unit_number, p.name AS property_name,
+  u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name,
   r.check_in, r.check_out, r.state AS reservation_state, r.external_ref, r.guests_count`;
 
 export const THREAD_FROM = `FROM message_threads t

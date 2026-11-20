@@ -83,11 +83,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     && (!only || (ENGINE_KINDS as readonly string[]).includes(only));
   const engineRead: Promise<EngineSearch | null> = engineAsked ? searchEngine(env, session, lv, q, { only, limit: n }) : Promise.resolve(null);
 
-  const unitWords = words.map(() => `lower(p.name || ' ' || u.unit_number || ' ' || COALESCE(u.listing_name, '')) LIKE ?`).join(' AND ');
+  const unitWords = words.map(() => `lower(p.name || ' ' || concat_ws(' ', u.unit_number, u.unit_code) || ' ' || COALESCE(u.listing_name, '')) LIKE ?`).join(' AND ');
   const unitsRead = !sees('properties') || !want('unit') ? [] : all<any>(env, `
-    SELECT u.id, u.unit_number, u.bedrooms, u.readiness, p.name AS property_name
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.bedrooms, u.readiness, p.name AS property_name
     FROM units u JOIN properties p ON p.id = u.property_id
-    WHERE ? = '' OR (${unitWords || 'FALSE'})${key ? ` OR regexp_replace(lower(u.unit_number), '[^a-z0-9]+', '', 'g') LIKE ?` : ''}
+    WHERE ? = '' OR (${unitWords || 'FALSE'})${key ? ` OR regexp_replace(lower(concat_ws(' ', u.unit_number, u.unit_code)), '[^a-z0-9]+', '', 'g') LIKE ?` : ''}
     ORDER BY p.name, u.unit_number LIMIT ${q ? n : 6}`, q, ...words, ...(key ? [key] : []));
 
   const buildingsRead = !q || !sees('properties') || !want('building') ? [] : all<any>(env, `
@@ -100,7 +100,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // the way the Reservations search box reads them: a name in any order, any reference, a phone in any format.
   const rq = quickSearch(q, false);
   const bookingsRead = !q || !sees('reservations') || !want('reservation') ? [] : all<any>(env, `
-    SELECT r.id, r.external_ref, r.channel, r.check_in, r.check_out, r.state, u.unit_number, p.name AS property_name, g.full_name
+    SELECT r.id, r.external_ref, r.channel, r.check_in, r.check_out, r.state, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, g.full_name
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id
     WHERE r.channel NOT IN ('maintenance_block', 'owner_stay') AND ${rq.map(c => c.sql).join(' AND ') || 'FALSE'}
     ORDER BY (lower(COALESCE(r.external_ref, '')) = ?) DESC, (r.state IN ('cancelled', 'no_show')) ASC, r.check_in DESC LIMIT ${n}`,
@@ -119,32 +119,32 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const jobPlace = await jobPlaceJoin(env);
   const jobsRead = !q || !sees('maintenance') || !want('maintenance') ? [] : all<any>(env, `
-    SELECT m.id, m.title, m.state, m.reported_at, u.unit_number, p.name AS property_name
+    SELECT m.id, m.title, m.state, m.reported_at, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name
     FROM maintenance_issues m ${jobPlace}
-    WHERE ${words.map(() => `lower(m.title || ' ' || COALESCE(m.vendor_name, '') || ' ' || p.name || ' ' || COALESCE(u.unit_number, '${BUILDING_JOB_LABEL}')) LIKE ?`).join(' AND ') || 'FALSE'}
+    WHERE ${words.map(() => `lower(m.title || ' ' || COALESCE(m.vendor_name, '') || ' ' || p.name || ' ' || COALESCE(NULLIF(concat_ws(' ', u.unit_number, u.unit_code), ''), '${BUILDING_JOB_LABEL}')) LIKE ?`).join(' AND ') || 'FALSE'}
     ORDER BY (m.state = 'resolved') ASC, m.reported_at DESC LIMIT ${n}`, ...words);
 
   const cleansAsked = !!q && sees('cleaning') && want('cleaning');
   const ready = cleansAsked ? await taskCleanersReady(env) : false;
   const cleanDay = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
-  const cleanText = `lower(p.name || ' ' || u.unit_number || ' ' || COALESCE(g.full_name, '') || ' ' || COALESCE(t.external_client, '')
+  const cleanText = `lower(p.name || ' ' || concat_ws(' ', u.unit_number, u.unit_code) || ' ' || COALESCE(g.full_name, '') || ' ' || COALESCE(t.external_client, '')
     || ' ' || COALESCE(${SHEET_CLEANER('t')}, '') || ' ' || COALESCE(cl.full_name, '') || ' ' || COALESCE(a.full_name, '') || ' ' || COALESCE(${cleanerNamesSql(ready)}, ''))`;
   const cleansRead = !cleansAsked ? [] : all<any>(env, `
-    SELECT t.id, t.kind, t.state, ${cleanDay} AS day, u.unit_number, p.name AS property_name, g.full_name AS guest_name, t.external_client,
+    SELECT t.id, t.kind, t.state, ${cleanDay} AS day, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, g.full_name AS guest_name, t.external_client,
            COALESCE(${cleanerNamesSql(ready)}, cl.full_name, a.full_name, ${SHEET_CLEANER('t')}) AS cleaners
     FROM tasks t
     JOIN units u ON u.id = t.unit_id JOIN properties p ON p.id = u.property_id
     LEFT JOIN users a ON a.id = t.assignee_id LEFT JOIN cleaners cl ON cl.id = t.cleaner_id
     LEFT JOIN reservations r ON r.id = t.reservation_id LEFT JOIN guests g ON g.id = r.guest_id
     WHERE t.kind IN ('turnover', 'deep_clean', 'light_clean')
-      AND ((${words.map(() => `${cleanText} LIKE ?`).join(' AND ') || 'FALSE'})${keys.map(() => ` OR ${keyOf('u.unit_number')} LIKE ? OR ${keyOf('g.phone')} LIKE ?`).join('')})
+      AND ((${words.map(() => `${cleanText} LIKE ?`).join(' AND ') || 'FALSE'})${keys.map(() => ` OR ${keyOf("concat_ws(' ', u.unit_number, u.unit_code)")} LIKE ? OR ${keyOf('g.phone')} LIKE ?`).join('')})
     ORDER BY (t.state = 'resolved') ASC, day DESC LIMIT ${n}`, ...words, ...keys.flatMap(k => [k, k]));
 
   // A utility bill is an expense of one of the utility categories; the Finance screens list both, so Finance opens both.
-  const expenseText = `lower(p.name || ' ' || u.unit_number || ' ' || e.description || ' ' || COALESCE(e.reference, '') || ' ' || COALESCE(e.supplier_name, '')
+  const expenseText = `lower(p.name || ' ' || concat_ws(' ', u.unit_number, u.unit_code) || ' ' || e.description || ' ' || COALESCE(e.reference, '') || ' ' || COALESCE(e.supplier_name, '')
     || ' ' || replace(e.category, '_', ' ') || CASE WHEN e.category = 'sewerage' THEN ' indah water' ELSE '' END)`;
   const expensesOf = (bills: boolean) => all<any>(env, `
-    SELECT e.id, e.category, e.description, e.incurred_on, e.reference, u.unit_number, p.name AS property_name
+    SELECT e.id, e.category, e.description, e.incurred_on, e.reference, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name
     FROM expenses e JOIN units u ON u.id = e.unit_id JOIN properties p ON p.id = u.property_id
     WHERE NOT ${IS_PARENT_SQL} AND e.category ${bills ? '' : 'NOT '}IN (${SQL_LIST(UTILITY_KINDS)})
       AND ((${words.map(() => `${expenseText} LIKE ?`).join(' AND ') || 'FALSE'})${keys.map(() => ` OR ${keyOf('e.reference')} LIKE ?${bills

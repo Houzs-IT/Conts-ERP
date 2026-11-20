@@ -22,7 +22,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Every unit named in the file, in one query rather than one per row.
   const numbers = [...new Set(b.rows.map((r: any) => String(r.unitNumber ?? '')))];
   const unitOf = new Map((await all<{ id: string; unit_number: string }>(env,
-    'SELECT DISTINCT ON (unit_number) id, unit_number FROM units WHERE unit_number IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY unit_number, id',
+    `SELECT DISTINCT ON (k) id, k AS unit_number FROM (SELECT id, unit_number AS k, 0 AS pref FROM units UNION ALL SELECT id, btrim(unit_code), 1 FROM units WHERE coalesce(btrim(unit_code), '') <> '') x
+     WHERE k IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY k, pref, id`,
     JSON.stringify(numbers))).map(u => [u.unit_number, { id: u.id }]));
   const madeIds: string[] = [];
   for (const [i, r] of b.rows.entries()) {

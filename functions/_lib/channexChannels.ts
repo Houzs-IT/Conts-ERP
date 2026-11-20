@@ -18,7 +18,7 @@ export async function linkedUnitFor(request: Request, env: Env, unitId: string):
   if (!can(session, 'properties', 'full')) return { response: fail('FORBIDDEN', 'Only people with Full Units access can change channel connections.', 403) };
   if (!channexConfigured(env)) return { response: fail('NOT_CONFIGURED', 'Channex is not connected on this environment yet.', 501) };
   const u = await one<{ id: string; unit_number: string; listing_name: string | null; property_name: string; max_guests: number; channex_property_id: string | null; channex_rate_plan_id: string | null }>(env, `
-    SELECT u.id, u.unit_number, u.listing_name, u.max_guests, u.channex_property_id, u.channex_rate_plan_id, p.name AS property_name
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.listing_name, u.max_guests, u.channex_property_id, u.channex_rate_plan_id, p.name AS property_name
     FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, unitId);
   if (!u) return { response: fail('NOT_FOUND', 'That unit does not exist.', 404) };
   if ((await purposeOf(env, unitId)) !== 'rental') return { response: fail('NOT_RENTAL', NOT_ON_CHANNELS, 409) };

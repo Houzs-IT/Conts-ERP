@@ -47,7 +47,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   ]);
   // The owner shares an O2 lock keeps (owner statement close): undoing would delete what a locked month prints.
   const kept = adjustments.length ? await all<{ id: string; label: string; month: string }>(env, `
-    SELECT a.id, p.name || ' ' || u.unit_number AS label, k.month FROM owner_adjustments a
+    SELECT a.id, p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS label, k.month FROM owner_adjustments a
       JOIN owner_report_locks k ON k.stage = 'o2' AND k.frozen->'adjustments' @> jsonb_build_array(jsonb_build_object('id', a.id))
       JOIN units u ON u.id = k.unit_id JOIN properties p ON p.id = u.property_id
     WHERE a.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(adjustments.map(a => a.id))) : [];

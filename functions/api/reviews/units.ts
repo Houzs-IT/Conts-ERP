@@ -37,7 +37,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       ? `p.id, NULL AS unit_number, p.id AS property_id, p.name AS property_name, count(*)::int AS units,
          sum(x.n)::int AS n, sum(x.rating_sum) AS rating_sum, max(x.last_at) AS last_at, sum(x.bad)::int AS bad,
          sum(x.needs_reply)::int AS needs_reply, sum(x.hidden)::int AS hidden, sum(x.stays)::int AS stays, sum(x.reviewed)::int AS reviewed`
-      : `u.id, u.unit_number, p.id AS property_id, p.name AS property_name, 1 AS units,
+      : `u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.id AS property_id, p.name AS property_name, 1 AS units,
          x.n, x.rating_sum, x.last_at, x.bad, x.needs_reply, x.hidden, x.stays, x.reviewed`}
     FROM per_unit x JOIN units u ON u.id = x.unit_id LEFT JOIN properties p ON p.id = u.property_id
     WHERE x.n > 0 OR x.stays > 0

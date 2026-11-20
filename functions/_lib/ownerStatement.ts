@@ -531,7 +531,7 @@ export async function hasCompanyLateTable(q: Query): Promise<boolean> {
 }
 
 export const UNIT_SQL = `
-  SELECT u.id, u.owner_id, o.display_name AS owner_name, u.unit_number, u.unit_code, p.name AS property_name, u.address,
+  SELECT u.id, u.owner_id, o.display_name AS owner_name, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.unit_code, p.name AS property_name, u.address,
          u.package, u.term, u.split_kind, u.split_value, u.misc_charges AS unit_misc,
          c.id AS contract_id, c.model, c.management_fee_pct, c.grr_amount, c.starts_on, c.ends_on,
          c.minimum_guarantee, c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges AS contract_misc,

@@ -217,7 +217,7 @@ export async function measureHealth(env: Env, origin: string) {
     SELECT occurred_at, action, entity_table, entity_id, after_state FROM audit_log
     WHERE action LIKE '%fail%' AND occurred_at >= ? ORDER BY occurred_at DESC LIMIT 20`, ago(7 * DAY)).catch(() => []);
   const unitName = new Map((await all<{ id: string; label: string }>(env, `
-    SELECT u.id, p.name || ' ' || u.unit_number AS label FROM units u JOIN properties p ON p.id = u.property_id`).catch(() => [])).map(u => [u.id, u.label]));
+    SELECT u.id, p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS label FROM units u JOIN properties p ON p.id = u.property_id`).catch(() => [])).map(u => [u.id, u.label]));
   const problems = recent.map(r => {
     let error = '';
     try { error = String(JSON.parse(r.after_state ?? '{}')?.error ?? ''); } catch { /* not JSON */ }

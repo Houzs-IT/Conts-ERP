@@ -70,7 +70,7 @@ export async function buildReport(q: Query, statementId: string, onlyUnit: strin
   const period = String(s.period_start).slice(0, 7), year = period.slice(0, 4);
   const [settings, units, lines] = await Promise.all([
     reportSettings(q),
-    q<any>(`SELECT su.*, u.unit_number, u.address, p.name AS property_name FROM statement_units su JOIN units u ON u.id = su.unit_id JOIN properties p ON p.id = u.property_id
+    q<any>(`SELECT su.*, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.address, p.name AS property_name FROM statement_units su JOIN units u ON u.id = su.unit_id JOIN properties p ON p.id = u.property_id
             WHERE su.statement_id = ? ${onlyUnit ? 'AND su.unit_id = ?' : ''} ORDER BY p.name, u.unit_number`, ...(onlyUnit ? [statementId, onlyUnit] : [statementId])),
     q<any>(`SELECT * FROM statement_lines WHERE statement_id = ? ORDER BY sort_order`, statementId),
   ]);

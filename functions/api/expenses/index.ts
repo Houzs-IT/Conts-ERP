@@ -54,7 +54,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { expenseThreshold } = await approvalSettings(env);
   if (b.amount > expenseThreshold && await approvalsEnabled(env)) {
     // With approvals on, above Settings > Approvals' threshold the expense waits for a second person (functions/_lib/approvals.ts).
-    const label = await one<{ name: string }>(env, `SELECT p.name || ' ' || u.unit_number AS name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, unit.id);
+    const label = await one<{ name: string }>(env, `SELECT p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, unit.id);
     const staged = await stage(env, session, {
       kind: 'expense', entity: 'units', entityId: unit.id, amount: b.amount,
       reason: String(b.reason ?? '').trim() || String(b.description ?? '').trim() || `${expenseCategoryLabel(b.category)} expense`,

@@ -47,11 +47,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const rowsQuery = pageSize === 0 ? Promise.resolve([] as any[]) : view === 'list'
     ? all<any>(env, `
-        SELECT e.*, u.unit_number, p.name AS property_name, ${LOCKED_SQL} AS locked
+        SELECT e.*, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, ${LOCKED_SQL} AS locked
         ${FROM} WHERE NOT ${IS_PARENT_SQL} ${where.sql}
         ORDER BY ${SORTS[sort]} LIMIT ? OFFSET ?`, ...where.args, pageSize, (page - 1) * pageSize)
     : all<any>(env, `
-        SELECT e.*, u.unit_number, p.name AS property_name, ${LOCKED_SQL} AS locked,
+        SELECT e.*, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, ${LOCKED_SQL} AS locked,
                (SELECT COUNT(*) FROM expenses k WHERE k.parent_expense_id = e.id) AS child_count,
                COALESCE((SELECT SUM(k.amount) FROM expenses k WHERE k.parent_expense_id = e.id), e.amount) AS rolled
         ${FROM} WHERE e.parent_expense_id IS NULL ${where.sql}
@@ -76,7 +76,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (view === 'tree' && rows.some(r => Number(r.child_count) > 0)) {
     const ids = rows.filter(r => Number(r.child_count) > 0).map(r => r.id);
     children = await all<any>(env, `
-      SELECT e.*, u.unit_number, p.name AS property_name, ${LOCKED_SQL} AS locked
+      SELECT e.*, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, ${LOCKED_SQL} AS locked
       ${FROM} WHERE e.parent_expense_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) ORDER BY e.incurred_on, e.id`, JSON.stringify(ids));
   }
 

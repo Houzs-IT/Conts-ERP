@@ -181,7 +181,7 @@ export async function windowsOnDay(env: Env, day: string) {
   const placeJoin = await jobPlaceJoin(env);
   const rows = await all<any>(env, `
     SELECT w.id, w.issue_id, w.starts_at, w.ends_at, w.note, m.title, m.state, m.urgency, m.category, m.vendor_name, m.unit_id, m.source,
-           u.unit_number, p.id AS property_id, p.name AS property_name
+           COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.id AS property_id, p.name AS property_name
     FROM maintenance_windows w JOIN maintenance_issues m ON m.id = w.issue_id
     ${placeJoin}
     WHERE m.state != 'resolved' AND w.starts_at::timestamptz <= ?::timestamptz AND w.ends_at::timestamptz >= ?::timestamptz

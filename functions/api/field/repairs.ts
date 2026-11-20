@@ -6,7 +6,7 @@ import { fieldRepairs } from '../../_lib/fieldRepairs';
 const POOL_PAGE = 200;
 const POOL_MAX = 1000;
 const UNIT_SEARCH_MAX = 40;
-const UNIT_KEY_SQL = "regexp_replace(u.unit_number, '[^[:alnum:]]', '', 'g')";
+const UNIT_KEY_SQL = "regexp_replace(concat_ws(' ', u.unit_number, u.unit_code), '[^[:alnum:]]', '', 'g')";
 
 interface PoolBuilding { id: string; name: string; open: number }
 

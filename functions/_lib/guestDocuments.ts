@@ -64,7 +64,7 @@ interface Booking {
 async function loadBooking(env: Env, id: string): Promise<{ b: Booking; payments: PaymentRow[] }> {
   const b = await one<Booking>(env, `
     SELECT r.id, r.channel, r.state, r.external_ref, r.check_in, r.check_out, r.guests_count, r.gross_booking_value, r.channel_fee, r.collected_revenue,
-           u.unit_number, p.name AS property_name, p.address_line, g.full_name AS guest_name, g.email AS guest_email, g.phone AS guest_phone,
+           COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, p.address_line, g.full_name AS guest_name, g.email AS guest_email, g.phone AS guest_phone,
            r.room_revenue, r.guest_cleaning_fee, r.extra_fees, r.sst_amount, r.tourism_tax, r.ota_tax, r.payment_processing_fee,
            r.payout_amount, r.payout_date, r.payment_method, r.notes
     FROM reservations r JOIN units u ON u.id = r.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id

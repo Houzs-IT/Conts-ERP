@@ -33,7 +33,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const beds = (await hasColumn(env, 'units', 'beds')) ? 'u.beds::text' : 'NULL::text';
   const only = new URL(request.url).searchParams.get('unitId');
   const units = await all<any>(env, `
-    SELECT u.id, u.unit_number, u.bedrooms, ${layout} AS layout_type, ${beds} AS beds, p.id AS property_id, p.name AS property_name
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.bedrooms, ${layout} AS layout_type, ${beds} AS beds, p.id AS property_id, p.name AS property_name
     FROM units u JOIN properties p ON p.id = u.property_id ${only ? 'WHERE u.id = ?' : ''} ORDER BY p.name, u.unit_number`, ...(only ? [only] : []));
   // Since Service prices (0127) a unit's own figures are per item: the cleaning item of each clean type.
   const dated = await hasDatedUnitPrices(env);

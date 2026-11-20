@@ -23,7 +23,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 
   const rows = await all<any>(env, `
     SELECT a.id, a.kind, a.amount, a.description, a.occurred_on, a.reference, a.state, a.settled_note, a.source, a.created_at,
-           a.unit_id, u.unit_number, p.name AS property_name,
+           a.unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name,
            s.id AS statement_id, s.period_start, s.state AS statement_state
     FROM owner_adjustments a
     LEFT JOIN units u ON u.id = a.unit_id LEFT JOIN properties p ON p.id = u.property_id

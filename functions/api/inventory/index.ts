@@ -16,7 +16,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const unitId = new URL(request.url).searchParams.get('unitId');
   const rows = await all<any>(env, `
-    SELECT i.*, u.unit_number, p.name AS property_name
+    SELECT i.*, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name
     FROM inventory_items i
     JOIN units u ON u.id = i.unit_id
     JOIN properties p ON p.id = u.property_id
