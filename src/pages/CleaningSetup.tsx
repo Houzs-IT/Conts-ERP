@@ -268,7 +268,7 @@ const PAY_HEAD = 'text-right pb-1.5 px-2 text-caption font-bold uppercase tracki
 const PAY_KINDS = [['basic', 'Basic clean'], ['deep', 'Deep clean']] as const;
 
 function UnitPayTable({ rows }: { rows: UnitPayRow[] }) {
-  if (rows.length === 0) return <EmptyState icon="Sparkles" title="No Basic or Deep cleans on our units this month." />;
+  if (rows.length === 0) return <EmptyState icon="Sparkles" title="No Basic or Deep cleaning jobs on our units this month." />;
   const unit = (r: UnitPayRow) => <><b className="font-mono">{r.unitNumber}</b> <span className="text-muted-ink">{buildingName(r.propertyName)}</span></>;
   const count = (k: KindCharge) => <span className={k.unpriced ? 'text-warning' : undefined} title={k.unpriced ? `${k.unpriced} not priced` : undefined}>{k.jobs}</span>;
   return (
@@ -279,10 +279,10 @@ function UnitPayTable({ rows }: { rows: UnitPayRow[] }) {
           <tr>
             <th rowSpan={2} scope="col" className="text-left align-bottom pb-1.5 pr-2 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink">Unit</th>
             {PAY_KINDS.map(([k, title]) => <th key={k} colSpan={3} scope="colgroup" className={cx('text-center pb-1 text-copy font-semibold', PAY_GROUP)}>{title}</th>)}
-            <th rowSpan={2} scope="col" className={cx(PAY_HEAD, 'align-bottom', PAY_GROUP)} title="What the owner is charged: the owner price of the Basic and Deep cleans finished on the unit.">Total</th>
+            <th rowSpan={2} scope="col" className={cx(PAY_HEAD, 'align-bottom', PAY_GROUP)} title="What the owner is charged: the owner price of the Basic and Deep cleaning jobs finished on the unit.">Total</th>
           </tr>
           <tr>
-            {PAY_KINDS.map(([k]) => <th key={k} scope="col" className={cx(PAY_HEAD, PAY_GROUP)}>Cleans</th>).flatMap((cleans, i) => [cleans,
+            {PAY_KINDS.map(([k]) => <th key={k} scope="col" className={cx(PAY_HEAD, PAY_GROUP)}>Jobs</th>).flatMap((cleans, i) => [cleans,
               <th key={`r${i}`} scope="col" className={PAY_HEAD}>Rate</th>, <th key={`s${i}`} scope="col" className={PAY_HEAD}>Subtotal</th>])}
           </tr>
         </thead>
