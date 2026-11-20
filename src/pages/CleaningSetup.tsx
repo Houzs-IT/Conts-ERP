@@ -27,6 +27,8 @@ interface UnitPrice {
 }
 interface UnitRow { unitId: string; unitNumber: string; propertyName: string; buildingId: string; layout: string; beds?: string | null; bedCount?: number; prices: Record<string, UnitPrice> }
 interface PayRow { cleanerId: string; name: string; unitJobs: number; externalJobs: number; unitPay: number; externalPay: number; unpriced: number; total: number }
+interface KindCharge { jobs: number; rate: number | null; amount: number; unpriced: number }
+interface UnitPayRow { unitId: string; unitNumber: string; propertyName: string; basic: KindCharge; deep: KindCharge; total: number }
 
 const KIND: Record<string, string> = { turnover: 'Basic', deep_clean: 'Deep', light_clean: 'Light' };
 const LAYOUT: Record<string, string> = {
@@ -220,7 +222,8 @@ function UnitPriceEdit({ row, kind, guest, onClose, onSaved }: { row: UnitRow; k
  *  clean, on external jobs the job's amount; a team's clean is split equally. */
 export function PayView({ tabs }: { tabs: ReactNode }) {
   const [month, setMonth] = useState(mytDay(0).slice(0, 7));
-  const { data, loading, error, reload } = useApi<{ month: string; ready: boolean; rows: PayRow[] }>(`/housekeeping/pay?month=${month}`);
+  const [by, setBy] = useState<'staff' | 'unit'>('staff');
+  const { data, loading, error, reload } = useApi<{ month: string; ready: boolean; rows: PayRow[]; units?: UnitPayRow[] }>(`/housekeeping/pay?month=${month}`);
   const rows = data?.rows ?? [];
   const total = rows.reduce((s, r) => s + r.total, 0);
   const unpriced = rows.reduce((s, r) => s + r.unpriced, 0);
@@ -233,12 +236,13 @@ export function PayView({ tabs }: { tabs: ReactNode }) {
             {lastMonths(12).map(m => <option key={m} value={m}>{monthLabel(`${m}-01`)}</option>)}
           </select>
         </label>
+        <Segmented<'staff' | 'unit'> label="Show by" value={by} onChange={setBy} options={[{ key: 'staff', label: 'Staff' }, { key: 'unit', label: 'Unit' }]} />
         {unpriced > 0 && <span className="text-meta text-warning">{unpriced} {unpriced === 1 ? 'cleaning job has' : 'cleaning jobs have'} no internal cost set, so the cleaner's pay is not known: set it in Prices.</span>}
       </div>
       {error && <StaleBanner message={error} onRetry={reload} />}
       {loading && !data ? <Skeleton height={160} /> : data && !data.ready ? (
         <EmptyState icon="Sparkles" title="Cleaner pay is not switched on yet." body="It needs a database update (migration 0126)." />
-      ) : rows.length === 0 ? <EmptyState icon="Sparkles" title={`No finished cleaning jobs in ${monthLabel(`${month}-01`)}.`} /> : (
+      ) : rows.length === 0 ? <EmptyState icon="Sparkles" title={`No finished cleaning jobs in ${monthLabel(`${month}-01`)}.`} /> : by === 'unit' ? <UnitPayTable rows={data?.units ?? []} /> : (
         <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] p-4 flex flex-col">
           <div className="hidden md:grid grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] gap-3 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink pb-2">
             <span>Cleaner</span><span>Our units</span><span>External jobs</span><span>Not priced</span><span className="text-right" title="What each cleaner is paid: the internal cost of the cleaning jobs they finished.">Pay (internal cost)</span>
@@ -255,5 +259,31 @@ export function PayView({ tabs }: { tabs: ReactNode }) {
         </section>
       )}
     </div>
+  );
+}
+
+const UNIT_PAY_COLS = 'md:grid-cols-[minmax(0,1.6fr)_repeat(7,minmax(0,1fr))]';
+
+function UnitPayTable({ rows }: { rows: UnitPayRow[] }) {
+  if (rows.length === 0) return <EmptyState icon="Sparkles" title="No Basic or Deep cleans on our units this month." />;
+  const kind = (k: KindCharge, label: string, order: string) => <>
+    <span className={cx(order, 'tabular-nums', k.unpriced ? 'text-warning' : '')} title={k.unpriced ? `${k.unpriced} not priced` : undefined}><span className="md:hidden text-muted-ink">{label} cleans </span>{k.jobs}</span>
+    <span className={cx(order, 'tabular-nums')}><span className="md:hidden text-muted-ink">Rate </span>{money(k.rate)}</span>
+    <span className={cx(order, 'tabular-nums')}><span className="md:hidden text-muted-ink">Subtotal </span>{rm(k.amount)}</span>
+  </>;
+  return (
+    <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] p-4 flex flex-col">
+      <div className={cx('hidden md:grid gap-3 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink pb-2', UNIT_PAY_COLS)}>
+        <span>Unit</span><span>Basic cleans</span><span>Basic rate</span><span>Basic subtotal</span><span>Deep cleans</span><span>Deep rate</span><span>Deep subtotal</span><span className="text-right" title="What the owner is charged: the owner price of the Basic and Deep cleans finished on the unit.">Total (owner price)</span>
+      </div>
+      {rows.map(r => (
+        <div key={r.unitId} className={cx('grid grid-cols-3 gap-x-3 gap-y-1 py-2.5 [border-top:1px_solid_var(--color-line-soft)] text-copy items-baseline', UNIT_PAY_COLS)}>
+          <span className="max-md:col-span-2 max-md:order-1"><b className="font-mono">{r.unitNumber}</b> <span className="text-muted-ink">{buildingName(r.propertyName)}</span></span>
+          {kind(r.basic, 'Basic', 'max-md:order-3')}
+          {kind(r.deep, 'Deep', 'max-md:order-4')}
+          <b className="max-md:order-2 text-right tabular-nums">{rm(r.total)}</b>
+        </div>
+      ))}
+    </section>
   );
 }
