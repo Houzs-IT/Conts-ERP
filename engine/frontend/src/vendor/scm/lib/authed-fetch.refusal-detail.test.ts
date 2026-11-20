@@ -154,24 +154,25 @@ describe("variant_not_allowed — fields that are NOT on the line at all", () =>
 });
 
 describe("the generic sentence still covers genuinely unknown shapes", () => {
-  test("a body with no allowed set is untouched", () => {
-    expect(humanApiError(400, body({ error: "item_code_required" }))).toBe(GENERIC_400);
+  test("a body with no allowed set reads as the code's words", () => {
+    // Since 20 Nov 2026 an uncurated code reads as its own words rather than the generic line.
+    expect(humanApiError(400, body({ error: "item_code_required" }))).toBe("Item code required");
   });
 
-  test("a body carrying `allowed` but no field/value pair stays generic", () => {
+  test("a body carrying `allowed` but no field/value pair never prints the wire keys", () => {
     // invalid_variant_key is {error, key, allowed} where `allowed` is a list of
     // WIRE KEYS. Rendering it would print camelCase internals to a salesperson.
     expect(humanApiError(400, body({
       error: "invalid_variant_key",
       key: "divanHeightt",
       allowed: ["divanHeight", "legHeight"],
-    }))).toBe(GENERIC_400);
+    }))).toBe("Invalid variant key");
   });
 
-  test("an empty allowed pool stays generic rather than promising an empty list", () => {
+  test("an empty allowed pool reads as the code's words rather than promising an empty list", () => {
     expect(humanApiError(400, body({
       error: "variant_not_allowed", field: "gap", value: '9"', allowed: [],
-    }))).toBe(GENERIC_400);
+    }))).toBe("Variant not allowed");
   });
 
   test("a curated code still wins — the detail renderer never overrides one", () => {

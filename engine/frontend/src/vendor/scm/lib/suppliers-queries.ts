@@ -985,9 +985,10 @@ export function outstandingSoPageUrl(f: Partial<OutstandingSoPageFilters> & { do
 }
 
 /** One page at a time of the outstanding SO lines; the next page loads when the screen asks for it. */
-export function useOutstandingSoItemsPaged(filters: OutstandingSoPageFilters) {
+export function useOutstandingSoItemsPaged(filters: OutstandingSoPageFilters, opts: { enabled?: boolean } = {}) {
   return useInfiniteQuery({
     queryKey: ['mfg-purchase-orders', 'outstanding-so-items', 'paged', filters],
+    enabled: opts.enabled ?? true,
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) => authedFetch<OutstandingSoPage>(outstandingSoPageUrl(filters, pageParam), { signal }),
     getNextPageParam: (last) => last.nextCursor,

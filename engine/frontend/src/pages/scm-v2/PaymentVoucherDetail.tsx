@@ -44,7 +44,7 @@ import { PrintPreviewModal, useOpenPrintPreviewFromUrl, usePrintPreview } from '
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { useAccounts, useAccountRoles, postableAccounts, type Account } from '../../vendor/scm/lib/accounting-queries';
 import { useSaveHotkey, SAVE_HOTKEY_HINT } from '../../vendor/scm/lib/use-save-hotkey';
-import { usePurchaseInvoices } from '../../vendor/scm/lib/purchase-invoice-queries';
+import { useSupplierPayablePis } from '../../vendor/scm/lib/purchase-invoice-queries';
 import { useApInvoices } from '../../vendor/scm/lib/ap-invoice-queries';
 import { useSuppliers, useSupplierDetail } from '../../vendor/scm/lib/suppliers-queries';
 import { sortByText } from '../../vendor/scm/lib/sort-options';
@@ -353,7 +353,7 @@ export const PaymentVoucherDetail = () => {
      operator can add/adjust settlements. The already-allocated rows stay
      listed (their outstanding excludes what this PV applies, so add it back). */
   const editApplyToPi = isEditing && purpose === 'SUPPLIER_PAYMENT' && !!supplierId;
-  const piListQ = usePurchaseInvoices();
+  const piListQ = useSupplierPayablePis(editApplyToPi ? supplierId : null);
   const apListQ = useApInvoices('API');
   /* Other UNPOSTED vouchers' reservations (docs/bugs/0653) — this voucher's own
      rows are excluded by id, so what it already applies stays visible. */
@@ -1145,7 +1145,7 @@ export const PaymentVoucherDetail = () => {
 const AdvanceCard = ({ pvId, supplierId }: { pvId: string; supplierId: string }) => {
   const advancesQ = useSupplierAdvances(supplierId);
   const applyM = useApplyAdvance();
-  const piListQ = usePurchaseInvoices();
+  const piListQ = useSupplierPayablePis(supplierId);
   /* The other creditor's bills (2026-09-06): an advance to a 405-x supplier
      lands on its AP INVOICES, which the purchase-invoice list never carries. */
   const apListQ = useApInvoices('API');

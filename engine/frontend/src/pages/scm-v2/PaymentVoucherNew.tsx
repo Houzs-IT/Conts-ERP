@@ -31,7 +31,7 @@ import { useIdempotencyKey } from '../../lib/idempotency';
 import { useAccounts, useAccountRoles, postableAccounts, type Account } from '../../vendor/scm/lib/accounting-queries';
 import { useSaveHotkey, SAVE_HOTKEY_HINT } from '../../vendor/scm/lib/use-save-hotkey';
 import { upperFill } from '../../vendor/scm/lib/ocr-fill';
-import { usePurchaseInvoices } from '../../vendor/scm/lib/purchase-invoice-queries';
+import { useSupplierPayablePis } from '../../vendor/scm/lib/purchase-invoice-queries';
 import { useApInvoices } from '../../vendor/scm/lib/ap-invoice-queries';
 import { useSuppliers, useSupplierDetail } from '../../vendor/scm/lib/suppliers-queries';
 import { useActiveCurrencies, rateFor } from '../../vendor/scm/lib/currencies-queries';
@@ -452,11 +452,11 @@ export const PaymentVoucherNew = () => {
 
   /* ── Apply to PI (migration 0202) ─────────────────────────────────────────
      Only for a SUPPLIER_PAYMENT voucher with a supplier chosen: list that
-     supplier's outstanding PIs (derived client-side from the PI list — POSTED /
+     supplier's outstanding PIs (read for that supplier on the server — POSTED /
      PARTIALLY_PAID with total − paid > 0) and let the operator apply an amount
      per PI. The allocations settle AP at face value (MYR). */
   const applyToPi = isAp && !!supplierId;
-  const piListQ = usePurchaseInvoices();
+  const piListQ = useSupplierPayablePis(applyToPi ? supplierId : null);
   /* What other UNPOSTED vouchers already applied (docs/bugs/0653): an invoice
      with nothing left is not offered; a partly reserved one offers only what
      remains. paid_sen alone moves at Approve and would offer the same bill twice. */

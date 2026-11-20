@@ -199,6 +199,9 @@ export function useOutstandingSoItems() {
       `/mfg-purchase-orders/outstanding-so-items`,
     ).then((r) => r.items),
     staleTime: 30_000,
+    /* Each try re-runs the whole MRP plan on the server; a failed one is shown, not silently re-sent (same as the PO
+       hook in suppliers-queries.ts). */
+    retry: false,
   });
 }
 

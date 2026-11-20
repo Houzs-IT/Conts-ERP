@@ -720,7 +720,7 @@ mfgPurchaseOrders.get('/outstanding-so-items', async (c) => {
       pageSize: page.limit,
     });
   }
-  /* The WHOLE LIST (no `limit`): the mobile convert wizard and the PO detail page.
+  /* The WHOLE LIST (no `limit`): the Production Order detail and From-SO pages.
      PAGED READ — lib/outstanding-so-lines.ts. This read carried a `.limit(500)` with
      all three of the filters that decide the answer running after it in JS, so
      the picker offered at most 500 of the company's 15,050 live SO lines

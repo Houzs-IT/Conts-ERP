@@ -702,7 +702,29 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   already_posted: 'This journal entry is already posted.',
   je_reversed:
     'This journal entry was reversed and cannot be posted. Create a new one.',
+  // Bare refusals from the create routes, which send only the code (audit 20 Nov 2026).
+  debtor_name_required: 'Enter the customer name before saving this invoice.',
+  customer_name_required: 'Enter the customer name before saving.',
+  missing_customer_name: 'Enter the customer name before saving this quotation.',
+  missing_cart: 'Add at least one item to the quotation before saving.',
+  invalid_subtotal: 'The quotation subtotal is not a valid amount. Check the item prices and try again.',
+  invalid_total: 'The quotation total is not a valid amount. Check the item prices and discount, then try again.',
+  payee_required: 'Enter who is being paid (the payee) before saving this voucher.',
+  credit_account_required: 'Choose the account this is paid from before saving this voucher.',
+  allocations_exceed_total:
+    'The amounts applied to invoices add up to more than this voucher pays. Lower an applied amount or raise the voucher total.',
+  draft_status_not_supported: 'Stock transfers no longer have a draft stage. Save the transfer without choosing Draft.',
+  from_warehouse_required: 'Choose the warehouse the stock moves from.',
+  to_warehouse_required: 'Choose the warehouse the stock moves to.',
+  same_warehouse: 'The From and To warehouses are the same. Choose two different warehouses.',
+  items_required: 'Add at least one line before saving.',
 };
+
+/** An uncurated code in plain words: `payee_required` -> "Payee required". */
+export function codeToWords(code: string): string {
+  const words = code.trim().replace(/_+/g, ' ').trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : '';
+}
 
 /* Codes whose refusal names ONE DOCUMENT, so the server's sentence beats
    anything that can be written here. Keep this list tiny: a curated sentence is
@@ -834,6 +856,11 @@ export function humanApiError(status: number, body: string): string {
     //    message below.
     const said = sayable(j.message) ?? sayable(j.reason);
     if (said) return said;
+    /* 3. A refused input with only an uncurated code: its words say more than the generic line below. */
+    if ((status === 400 || status === 422) && typeof j.error === 'string' && isErrorCode(j.error)) {
+      const words = codeToWords(j.error);
+      if (words) return words;
+    }
   } catch { /* body wasn't JSON — fall through to the status map */ }
   if (status === 401) return 'Your session has expired — please sign in again.';
   if (status === 403) return "You don't have permission to do that.";

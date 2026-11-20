@@ -205,3 +205,30 @@ export function useContentBoundIdempotencyKey(): ContentBoundKey {
   if (!ref.current) ref.current = createContentBoundKey();
   return ref.current;
 }
+
+/**
+ * One content-keyed submit: takes the key for this content, asks before minting a new key when the last try may have
+ * written (`askNewKey`; a no returns `{ sent: false }`), sends, and records how it ended. A failure is re-thrown after
+ * it is recorded, so a refusal (4xx) lets the corrected content go out under a new key.
+ */
+export async function sendWithContentKey<T>(
+  keys: ContentBoundKey,
+  content: unknown,
+  askNewKey: () => Promise<boolean>,
+  send: (key: string) => Promise<T>,
+): Promise<{ sent: false } | { sent: true; value: T }> {
+  const decision = keys.keyFor(content);
+  let key = decision.key;
+  if (decision.needsConfirm) {
+    if (!(await askNewKey())) return { sent: false };
+    key = keys.confirmNewKey(content);
+  }
+  try {
+    const value = await send(key!);
+    keys.settle("succeeded");
+    return { sent: true, value };
+  } catch (err) {
+    keys.settle(outcomeOfError(err));
+    throw err;
+  }
+}

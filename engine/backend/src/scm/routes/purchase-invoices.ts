@@ -3,7 +3,7 @@
 import { readStatusMoney } from '../lib/status-money';
 import { Hono } from 'hono';
 import { PI_STATUS_BUCKETS } from '../lib/pi-status-buckets';
-import { PI_HEADER_COLS, PI_LIST_SELECT, piListSelect, filterPiList, orderPiList, readPiListFilters } from '../lib/pi-list-read';
+import { PI_HEADER_COLS, PI_LIST_SELECT, piListSelect, filterPiList, orderPiList, readPiListFilters, readSupplierPayablePis } from '../lib/pi-list-read';
 import { attachPiLines } from '../lib/pi-export-rows';
 import { HELD_OR_TERM } from '../lib/document-hold'; import { grnNotBillableRefusal } from '../lib/source-document-gates'; import { mountHoldRoute } from './document-hold-routes';
 import type { Context } from 'hono';
@@ -453,6 +453,17 @@ purchaseInvoices.get('/outstanding-grn-items', async (c) => {
   await enrichLinesWithFabricSupplierCode(sb, c, billable);
 
   return c.json({ items: billable, truncated: loaded.truncated });
+});
+
+/* One supplier's invoices with money still owing (lib/pi-list-read.ts), for payment vouchers' Apply to PI.
+   Static path: registered before `/:id`. */
+purchaseInvoices.get('/payable', async (c) => {
+  const supplierId = (c.req.query('supplierId') ?? '').trim();
+  if (!supplierId) return c.json({ error: 'supplier_required' }, 400);
+  const sb = c.get('supabase');
+  const read = await readSupplierPayablePis(() => sb.from('purchase_invoices').select(PI_LIST_SELECT), c, supplierId);
+  if (read.error !== null) return c.json({ error: 'load_failed', reason: read.error }, 500);
+  return c.json({ purchaseInvoices: read.rows, truncated: read.truncated });
 });
 
 purchaseInvoices.get('/:id', async (c) => {

@@ -118,6 +118,36 @@ describe("MobileConvertWizard — SO → PO", () => {
 
     expect(await screen.findByText(SOFA_SUMMARY)).toBeTruthy();
   });
+
+  /* Audit 20 Nov 2026, item 4: the wizard downloaded every outstanding SO line to keep one SO's. It now asks the
+     server for that SO only, and reads every page of it. */
+  it("asks for the picked SO only and reads every page of its lines", async () => {
+    const line = (id: string, description: string) => ({
+      soItemId: id, soDocNo: "HC-SO-2608-001", itemCode: id, description, itemGroup: "mattress", variants: {},
+      qty: 1, poQtyPicked: 0, remainingQty: 1, unitPriceSen: 0,
+    });
+    authedFetch.mockImplementation(async (url: string) => {
+      if (url.startsWith("/mfg-sales-orders?limit=200")) return { salesOrders: [{ doc_no: "HC-SO-2608-001", status: "OPEN" }] };
+      if (url.startsWith("/mfg-purchase-orders/outstanding-so-items")) {
+        return url.includes("cursor=")
+          ? { items: [line("l-2", "SECOND PAGE LINE")], nextCursor: null }
+          : { items: [line("l-1", "FIRST PAGE LINE")], nextCursor: "c1" };
+      }
+      return {};
+    });
+
+    wrap(<MobileConvertWizard target="po" initialSourceId="HC-SO-2608-001" onBack={() => {}} onCreated={() => {}} />);
+
+    expect(await screen.findByText("SECOND PAGE LINE")).toBeTruthy();
+    expect(screen.getByText("FIRST PAGE LINE")).toBeTruthy();
+    const lineCalls = authedFetch.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/mfg-purchase-orders/outstanding-so-items"));
+    expect(lineCalls).toHaveLength(2);
+    for (const u of lineCalls) {
+      expect(u).toContain("docNo=HC-SO-2608-001");
+      expect(u).toContain("limit=");
+    }
+    expect(lineCalls[1]).toContain("cursor=c1");
+  });
 });
 
 describe("MobileConvertWizard — DO → SI", () => {
