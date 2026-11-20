@@ -36,7 +36,8 @@ import {
   usePostPurchaseReturn,
   useReturnableGrnLines,
 } from '../../vendor/scm/lib/purchase-return-queries';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readConvertScope, UnrecognisedScopeNotice } from '../../lib/convertScope';
 import { useGrnDetail } from '../../vendor/scm/lib/grn-queries';
 import { usePurchaseOrderDetail, useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
@@ -162,12 +163,10 @@ export const PurchaseReturnNew = () => {
     return { bedframe: pick('BEDFRAME'), sofa: pick('SOFA') };
   }, [specialAddonsQ.data]);
 
-  /* One key for the one return this page is open to raise (lib/idempotency.ts).
-     Route-level form, navigates to the return detail on success, so the MOUNT is
-     exactly one return. Load-bearing: the POST creates the return already POSTED
-     and writes the stock OUT inline (see useCreatePurchaseReturn), so a re-press
-     after a stalled submit moves stock twice unless it replays. */
-  const idemKey = useIdempotencyKey();
+  /* One key per purchase return CONTENT (lib/idempotency.ts createContentBoundKey): the same form re-pressed after a stall
+     replays the first answer instead of raising a second document; a save the server refused releases the key, so
+     the corrected form is a new request instead of a replay of the refusal (audit 20 Nov 2026, items 19-24). */
+  const idemKeys = useContentBoundIdempotencyKey();
   const create = useCreatePurchaseReturn();
   const post   = usePostPurchaseReturn();
   const saving = create.isPending || post.isPending;
@@ -294,8 +293,7 @@ export const PurchaseReturnNew = () => {
   const onSave = async () => {
     if (!canSave) { notify({ title: 'Need supplier + at least one line with an item code and qty > 0.', tone: 'error' }); return; }
     try {
-      const createRes = await create.mutateAsync({
-        idempotencyKey: idemKey,
+      const payload = {
         supplierId,
         purchaseOrderId: poId ?? (grn?.purchase_order_id ?? null),
         grnId,
@@ -319,7 +317,10 @@ export const PurchaseReturnNew = () => {
           itemGroup:      l.itemGroup,
           variants:       l.variants,
         })),
-      });
+      };
+      const sent = await sendWithContentKey(idemKeys, payload, () => serviceConfirm(unansweredSaveQuestion('purchase return', 'Procurement > Purchase Returns')), (idempotencyKey) => create.mutateAsync({ ...payload, idempotencyKey }));
+      if (!sent.sent) return;
+      const createRes = sent.value;
       await post.mutateAsync(createRes.id);
       /* "Stock OUT recorded." was printed unconditionally, including when the
          response's own movementErrors said the OUT was refused. The create hook

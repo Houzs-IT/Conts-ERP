@@ -20,7 +20,10 @@
 
 import { transferFromLabel } from '../../lib/convertScope';
 import { todayMyt } from '../../vendor/scm/lib/dates';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { contentKeyFor, outcomeOfError, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { useFormDraft } from '../../lib/formDraft';
+import { FormDraftBar } from '../../components/FormDraftBar';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readScmHandoff, removeScmHandoff } from '../../lib/scmHandoffStorage';
 import { completePaymentRetryDraft, paymentRetryNavigationState, writePaymentRetryHandoff } from '../../lib/paymentRetryHandoff';
 import { useEffect, useMemo, useState } from 'react';
@@ -76,10 +79,9 @@ export const SalesInvoiceNew = () => {
   const fromPicks = searchParams.get('fromPicks') === '1';
 
   const create = useCreateSalesInvoice();
-  /* One key for the one invoice this page is open to raise (lib/idempotency.ts).
-     Route-level form; onSuccess navigates to the SI detail unconditionally, so
-     the MOUNT is exactly one invoice — stable across re-renders (lazy init) and
-     across a re-press after a stalled submit, fresh on the next mount.
+  /* One key per invoice CONTENT (lib/idempotency.ts createContentBoundKey): stable across a re-press of the same
+     form after a stalled submit, released when the server refuses the save, so the corrected invoice is a new
+     request instead of a replay of the refusal (audit 20 Nov 2026, item 19).
 
      Load-bearing beyond the double-tap: onSuccess awaits flushPaymentDrafts and
      up to two notifies BEFORE navigate, so it is the longest window in this set
@@ -87,7 +89,7 @@ export const SalesInvoiceNew = () => {
      re-press in that window replays the first invoiceNumber instead of posting
      revenue twice. The payment drafts carry their own per-draft keys (line 235),
      so they don't double either. */
-  const idemKey = useIdempotencyKey();
+  const siKeys = useContentBoundIdempotencyKey();
   const addPayment = useAddSalesInvoicePayment();
   const loc = useLocalities();
 
@@ -273,6 +275,34 @@ export const SalesInvoiceNew = () => {
 
   const canSave = debtorName.trim().length > 0;
 
+  /* Unsaved fields kept in this browser (lib/formDraft.ts), offered back after a reload. What the form shows only:
+     payment rows (their slips cannot be kept), photos not yet uploaded and the source DO's hidden references stay
+     out. Each line keeps the cost it was picked with, which the save sends. */
+  const draftValue = {
+    debtorCode, debtorName, phone, email, salespersonId, customerType, customerSoNo,
+    buildingType, venue, venueId, invoiceDate, dueDate, customerDeliveryDate, note,
+    address1, address2, state, city, postcode, salesLocation, branding,
+    emergencyName, emergencyRel, emergencyPhone,
+    lines: lines.map(({ pendingPhotoFiles: _f, photoUrls: _p, ...l }) => l),
+  };
+  const draft = useFormDraft('si-new', fromDo ?? 'new', draftValue, {
+    enabled: !createdInvoice && (!fromDo || prefilled),
+    meaningful: debtorName.trim() !== '' || lines.some((l) => l.itemCode.trim() !== ''),
+    keys: siKeys,
+  });
+  const restoreDraft = (v: typeof draftValue) => {
+    setDebtorCode(v.debtorCode); setDebtorName(v.debtorName); setPhone(v.phone); setEmail(v.email);
+    setSalespersonId(v.salespersonId); setCustomerType(v.customerType); setCustomerSoNo(v.customerSoNo);
+    setBuildingType(v.buildingType); setVenue(v.venue); setVenueId(v.venueId); setInvoiceDate(v.invoiceDate);
+    setDueDate(v.dueDate); setCustomerDeliveryDate(v.customerDeliveryDate); setNote(v.note);
+    setAddress1(v.address1); setAddress2(v.address2); setState(v.state); setCity(v.city); setPostcode(v.postcode);
+    setSalesLocation(v.salesLocation); setBranding(v.branding);
+    setEmergencyName(v.emergencyName); setEmergencyRel(v.emergencyRel); setEmergencyPhone(v.emergencyPhone);
+    if (Array.isArray(v.lines) && v.lines.length > 0) {
+      setLines(v.lines.map((l) => ({ ...emptySoLine(), ...l, photoUrls: [], pendingPhotoFiles: [] })));
+    }
+  };
+
   const paymentIntents = () => paymentDrafts.filter((d) => d.amountSen > 0);
 
   const flushPaymentDrafts = async (id: string, drafts: PaymentDraft[]): Promise<{ failedDrafts: PaymentDraft[] }> => {
@@ -344,9 +374,7 @@ export const SalesInvoiceNew = () => {
       return;
     }
 
-    create.mutate(
-      {
-        idempotencyKey: idemKey,
+    const payload = {
         /* DRAFT flow — when saving as draft the server lands the invoice as DRAFT
            and posts NO revenue / credit until it is confirmed on the detail page. */
         asDraft: asDraft || undefined,
@@ -392,9 +420,16 @@ export const SalesInvoiceNew = () => {
           variants: l.variants,
           lineDeliveryDate: l.lineDeliveryDate ?? null,
         })),
-      },
+    };
+    void (async () => {
+    const key = await contentKeyFor(siKeys, payload, () => serviceConfirm(unansweredSaveQuestion('sales invoice', 'Sales > Sales Invoices')));
+    if (!key) return;
+    create.mutate(
+      { ...payload, idempotencyKey: key },
       {
         onSuccess: async (res: { id: string; invoiceNumber: string; priceWarningMessage?: string; revenue?: { reason?: string } }) => {
+          siKeys.settle('succeeded');
+          draft.clear();
           /* A DRAFT invoice cannot take payments yet (the server 409s a draft
              payment). Skip the payment flush — the operator records payments
              after confirming on the detail page. */
@@ -449,9 +484,13 @@ export const SalesInvoiceNew = () => {
             { state: failed > 0 ? paymentRetryNavigationState('si', res.id, failedDrafts) : undefined },
           );
         },
-        onError: (err) => notify({ title: 'Save failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' }),
+        onError: (err) => {
+          siKeys.settle(outcomeOfError(err));
+          void notify({ title: 'Save failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' });
+        },
       },
     );
+    })();
   };
 
   const loadingPrefill = Boolean(fromDo) && !prefilled && doDetail.isLoading;
@@ -500,6 +539,8 @@ export const SalesInvoiceNew = () => {
       )}
 
       {!createdInvoice && (<>
+
+      <FormDraftBar draft={draft} onRestore={restoreDraft} />
 
       {loadingPrefill && (
         <div className={styles.bannerWarn} style={{ background: 'var(--c-cream)', border: '1px solid var(--line)', color: 'var(--fg-muted)' }}>

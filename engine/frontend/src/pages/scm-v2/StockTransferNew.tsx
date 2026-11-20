@@ -25,7 +25,8 @@ import { useAddLineHotkey } from '../../vendor/scm/lib/useAddLineHotkey';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import { useWarehouses } from '../../vendor/scm/lib/inventory-queries';
 import { useInventoryBuckets } from '../../vendor/scm/lib/stock-queries';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { contentKeyFor, settleOutcome, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { useMfgProducts } from '../../vendor/scm/lib/mfg-products-queries';
 import { sortByText } from '../../vendor/scm/lib/sort-options';
 import { variantKeyLabel } from '../../vendor/scm/lib/variant-key-label';
@@ -204,13 +205,10 @@ export const StockTransferNew = () => (
 const StockTransferForm = ({ onStartNew }: { onStartNew: () => void }) => {
   const navigate = useNavigate();
   const create   = useCreateStockTransfer();
-  /* One key for the one transfer this form is open to raise (lib/idempotency.ts),
-     so the MOUNT is exactly one transfer. After a successful post the form
-     LOCKS (no Post button) and the only way to raise another is onStartNew,
-     which remounts this component and mints a fresh key — never a navigate to
-     this same route, which would keep the mount and replay transfer #1. Its
-     mobile twin (MobileStockTransferNew) does the same. */
-  const idemKey  = useIdempotencyKey();
+  /* One key per stock transfer CONTENT (lib/idempotency.ts createContentBoundKey): the same form re-pressed after a stall
+     replays the first answer instead of raising a second document; a save the server refused releases the key, so
+     the corrected form is a new request instead of a replay of the refusal (audit 20 Nov 2026, items 19-24). */
+  const idemKeys  = useContentBoundIdempotencyKey();
 
   const notify = useNotify();
   const [created, setCreated] = useState<{ id: string; transferNo: string } | null>(null);
@@ -289,9 +287,8 @@ const StockTransferForm = ({ onStartNew }: { onStartNew: () => void }) => {
     // the OUT movement rejects taking more than that bucket holds — so the client
     // no longer pre-checks an aggregate balance it no longer fetches.
 
-    create.mutate(
-      {
-        idempotencyKey: idemKey,
+    void (async () => {
+    const payload = {
         fromWarehouseId,
         toWarehouseId,
         transferDate,
@@ -301,12 +298,17 @@ const StockTransferForm = ({ onStartNew }: { onStartNew: () => void }) => {
           productName: rest.productName?.trim() || undefined,
           notes:       rest.notes?.trim()       || undefined,
         })),
-      },
-      {
+    };
+    const key = await contentKeyFor(idemKeys, payload, () => serviceConfirm(unansweredSaveQuestion('stock transfer', 'Warehouse > Stock Transfers')));
+    if (!key) return;
+    create.mutate(
+      { ...payload, idempotencyKey: key },
+      settleOutcome(idemKeys, {
         onSuccess: (res) => { setCreated(res); setResultOpen(true); },
         onError:   (err) => notify({ title: 'Save failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' }),
-      },
+      }),
     );
+    })();
   };
 
   return (

@@ -36,7 +36,8 @@ import { Button } from '@2990s/design-system';
 import { formatPhone } from '@2990s/shared/phone';
 import { activeOptions, buildVariantSummary, fmtDateOrDash, isServiceLine, maintPickerValues, fmtMoneySen } from '@2990s/shared';
 import { useCreateGrn, usePostGrn } from '../../vendor/scm/lib/grn-queries';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readScmHandoff, removeScmHandoff, writeScmHandoff } from '../../lib/scmHandoffStorage';
 import { useActiveCurrencies, rateFor } from '../../vendor/scm/lib/currencies-queries';
 import { CurrencySelect } from '../../vendor/scm/components/CurrencySelect';
@@ -199,9 +200,9 @@ export const GrnNew = () => {
   );
 
   const create = useCreateGrn();
-  /* One key for the one receipt this page is open to raise (lib/idempotency.ts).
-     Minted once by useState's lazy init, so it is stable across re-renders and
-     across a re-press after a stalled submit.
+  /* One key per receipt CONTENT (lib/idempotency.ts createContentBoundKey): stable across a re-press of the same
+     receipt after a stalled submit, and kept after a success; a save the server REFUSED releases it, so the
+     corrected receipt is a new request instead of a replay of the refusal (audit 20 Nov 2026, items 19-24).
 
      This page is the one create surface in the set that does NOT navigate on
      success — it shows ActionResultDialog and stays mounted — so the reasoning
@@ -237,7 +238,7 @@ export const GrnNew = () => {
      written. lastCreatedIdRef below detects the replay (same mount + same key
      can only mint one id) and the dialog says no second GRN was written and
      points at the picker for a genuinely new batch. */
-  const idemKey = useIdempotencyKey();
+  const idemKeys = useContentBoundIdempotencyKey();
   const post   = usePostGrn();
   const saving = create.isPending || post.isPending;
   /* Replay detector for the residual above. authedFetch exposes no response
@@ -681,8 +682,7 @@ export const GrnNew = () => {
       return;
     }
     try {
-      const createRes = await create.mutateAsync({
-        idempotencyKey: idemKey,
+      const payload = {
         purchaseOrderId: headerPoId,
         supplierId,
         // Draft/Confirmed — when true the server lands the GRN at DRAFT and
@@ -729,7 +729,10 @@ export const GrnNew = () => {
           // grns.ts reads it.rackId and writes grn_items.rack_id. Empty = no rack.
           rackId:              l.rackId || undefined,
         })),
-      });
+      };
+      const sent = await sendWithContentKey(idemKeys, payload, () => serviceConfirm(unansweredSaveQuestion('goods receipt', 'Procurement > Goods Receipts')), (idempotencyKey) => create.mutateAsync({ ...payload, idempotencyKey }));
+      if (!sent.sent) return;
+      const createRes = sent.value;
       // Non-draft → confirm immediately (the historical Receive & Post). A draft
       // is left at DRAFT for review; the detail page's Confirm runs the commit.
       /* Same mount, same key, same id back = the middleware replayed the earlier

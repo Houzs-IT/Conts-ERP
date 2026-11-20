@@ -52,7 +52,7 @@ import {
   useSoConversionSource,
   useDeliverableSoLinesForDoc,
 } from "../../vendor/scm/lib/delivery-order-queries";
-import { useIdempotencyKey } from "../../lib/idempotency";
+import { contentKeyFor, settleOutcome, unansweredSaveQuestion, useContentBoundIdempotencyKey } from "../../lib/idempotency";
 import { readScmHandoff, removeScmHandoff } from "../../lib/scmHandoffStorage";
 import { useSoDropdownOptions, optionsOrFallback } from "../../vendor/scm/lib/so-dropdown-options-queries";
 import { cascadeLineDeliveryDate } from "../../vendor/scm/lib/line-delivery-date-cascade";
@@ -64,6 +64,8 @@ import {
 import type { MfgProductRow } from "../../vendor/scm/lib/mfg-products-queries";
 import { useSetBreadcrumbs } from "../../hooks/useBreadcrumbs";
 import { useConfirm } from "../../vendor/scm/components/ConfirmDialog";
+import { useFormDraft } from "../../lib/formDraft";
+import { FormDraftBar } from "../../components/FormDraftBar";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { notifyAcNotSent } from "../../vendor/scm/lib/ac-not-sent";
 import { cn } from "../../lib/utils";
@@ -568,10 +570,11 @@ export function DeliveryOrderNewV2() {
      is not a call site, and protecting only one caller of a shared hook protects
      nobody who uses the other.
 
-     Route-level form, navigates to the DO detail (or the list) on success, so
-     the MOUNT is exactly one DO. Unused by the editId branch below, which
-     PATCHes one existing DO and cannot duplicate. */
-  const idemKey = useIdempotencyKey();
+     One key per DO CONTENT (createContentBoundKey): the same form re-pressed after a stall replays; a save the
+     server refused releases the key, so the corrected DO is a new request instead of a replay of the refusal
+     (audit 20 Nov 2026, items 19-24). Unused by the editId branch below, which PATCHes one existing DO and cannot
+     duplicate. */
+  const doKeys = useContentBoundIdempotencyKey();
   const updateHeader = useUpdateMfgDeliveryOrderHeader();
   const addItem = useAddMfgDeliveryOrderItem();
   const updateItem = useUpdateMfgDeliveryOrderItem();
@@ -846,6 +849,33 @@ export function DeliveryOrderNewV2() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [soLines.data, editId, fromPicks]);
 
+  /* A new DO's unsaved fields stay in this browser (lib/formDraft.ts) and are offered back after a reload; one
+     raised from a sales order is kept per order, once that order has filled the form. Not in edit mode. Photos not
+     yet uploaded stay out; each line keeps the cost it was picked with, which the save sends. */
+  const doDraftValue = {
+    customerName, debtorCode, customerSoRef, phone, email, customerType, salespersonId,
+    addr1, addr2, state, city, postcode, salesLocation, ecName, ecRelationship, ecPhone,
+    doDate, driver, vehicle, buildingType, shipFrom, venue, branding, expectedDate, customerDelDate, note,
+    lines: lines.map(({ pendingPhotoFiles: _f, photoUrls: _p, ...l }) => l),
+  };
+  const doDraft = useFormDraft("do-new", soDocNo || "new", doDraftValue, {
+    enabled: !editId && (!soDocNo || (!!soSource.data && (fromPicks ? stashSeeded : !soLines.isLoading))),
+    meaningful: customerName.trim() !== "" || lines.some((l) => l.itemCode.trim() !== ""),
+    keys: doKeys,
+  });
+  const restoreDoDraft = (v: typeof doDraftValue) => {
+    setCustomerName(v.customerName); setDebtorCode(v.debtorCode); setCustomerSoRef(v.customerSoRef);
+    setPhone(v.phone); setEmail(v.email); setCustomerType(v.customerType); setSalespersonId(v.salespersonId);
+    setAddr1(v.addr1); setAddr2(v.addr2); setState(v.state); setCity(v.city); setPostcode(v.postcode);
+    setSalesLocation(v.salesLocation); setEcName(v.ecName); setEcRelationship(v.ecRelationship); setEcPhone(v.ecPhone);
+    setDoDate(v.doDate); setDriver(v.driver); setVehicle(v.vehicle); setBuildingType(v.buildingType);
+    setShipFrom(v.shipFrom); setVenue(v.venue); setBranding(v.branding); setExpectedDate(v.expectedDate);
+    setCustomerDelDate(v.customerDelDate); setNote(v.note);
+    if (Array.isArray(v.lines) && v.lines.length > 0) {
+      setLines(v.lines.map((l) => ({ ...emptySoLine(), ...l, photoUrls: [], pendingPhotoFiles: [] })));
+    }
+  };
+
   /* Edit mode: append what is still undelivered on the picked SO, beside the
      DO's own lines. A DRAFT DO's lines do not count as delivered yet, so they
      come back in the remainder and are skipped by their SO line. */
@@ -1024,6 +1054,10 @@ export function DeliveryOrderNewV2() {
       return;
     }
     setAsDraft(draft);
+    const payload = { ...buildBody(), asDraft: draft || undefined, status: draft ? "DRAFT" : "LOADED" };
+    void (async () => {
+    const key = await contentKeyFor(doKeys, payload, () => askConfirm(unansweredSaveQuestion("delivery order", "Sales > Delivery Orders")));
+    if (!key) { setAsDraft(false); return; }
     createDo.mutate(
       /* asDraft is the ONLY field the create route reads to park a DO
          (`body.asDraft === true ? 'DRAFT' : 'LOADED'`); the `status` below is
@@ -1032,9 +1066,10 @@ export function DeliveryOrderNewV2() {
          unrouted V1 page had this right (DeliveryOrderNew.tsx:294) and this one
          never got it. The `status` value here has always been inert; since
          2026-08-22 the server independently agrees with what it asks for. */
-      { ...buildBody(), idempotencyKey: idemKey, asDraft: draft || undefined, status: draft ? "DRAFT" : "LOADED" },
-      {
+      { ...payload, idempotencyKey: key },
+      settleOutcome(doKeys, {
         onSuccess: async (res) => {
+          doDraft.clear();
           setFlash(draft ? "Saved as draft" : "Delivery order created");
           /* THE ACCOUNTS MAY HAVE IT WITHOUT ALL OF IT. A DO raised from a
              sales order is TRANSFERRED into AutoCount, and the transfer route
@@ -1063,8 +1098,9 @@ export function DeliveryOrderNewV2() {
           });
           setAsDraft(false);
         },
-      }
+      }),
     );
+    })();
   };
 
   // ── Submit — in-place edit (header PATCH + per-line add/update/delete) ─
@@ -1264,6 +1300,7 @@ export function DeliveryOrderNewV2() {
 
       {/* Body */}
       <div className="flex flex-col gap-5 py-6">
+        <FormDraftBar draft={doDraft} onRestore={restoreDoDraft} />
         {/* Customer info */}
         <SectionCard title="Customer info">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_340px]">

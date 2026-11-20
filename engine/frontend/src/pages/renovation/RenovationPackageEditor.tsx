@@ -18,6 +18,8 @@ import { Card, ErrorBanner, Field, fmtDate, inputCls, StatusPill } from './share
 import { AddAreaBar, emptyArea, PackageAddSearch, PackageLinesTable, withoutBlankLines } from './RenovationPackageLines';
 import { KindPill, PackageStatusPill } from './renovationPackageParts';
 import { cn } from '../../lib/utils';
+import { useFormDraft } from '../../lib/formDraft';
+import { FormDraftBar } from '../../components/FormDraftBar';
 
 type Tab = 'lines' | 'used' | 'history';
 
@@ -46,6 +48,19 @@ export function RenovationPackageEditor(): ReactElement {
     setSections(p.sections); setDirty(false);
   }, [pq.data]);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
+  /* Unsaved changes kept in this browser (lib/formDraft.ts) and offered back after a reload; a draft from before
+     the package was saved again says so. */
+  const draftValue = { kind, code, name, building, unitType, salesNote, sections };
+  const draft = useFormDraft('package-edit', id, draftValue, {
+    enabled: !!pq.data && canEdit,
+    meaningful: dirty,
+    version: pq.data?.updatedAt ? Date.parse(pq.data.updatedAt) || null : null,
+  });
+  const restoreDraft = (v: typeof draftValue) => {
+    setKind(v.kind); setCode(v.code); setName(v.name); setBuilding(v.building); setUnitType(v.unitType); setSalesNote(v.salesNote);
+    if (Array.isArray(v.sections)) setSections(v.sections);
+    setDirty(true);
+  };
   if (pq.isLoading || !pq.data) return <div className="p-8 text-center text-[13px] text-ink-muted">{pq.error ? refusalOf(pq.error).message : 'Loading package…'}</div>;
   const p = pq.data;
   const mark = () => setDirty(true);
@@ -54,7 +69,7 @@ export function RenovationPackageEditor(): ReactElement {
     setError(null);
     try { await run.mutateAsync(fn); if (ok) toast.success(ok); return true; } catch (e) { setError(refusalOf(e).message); return false; }
   };
-  const save = () => act(() => savePackage(p.id, { ...head, sections: withoutBlankLines(sections).filter((s) => s.lines.length > 0 || s.heading.trim()) }), `${code} saved.`).then((ok) => { if (ok) setDirty(false); });
+  const save = () => act(() => savePackage(p.id, { ...head, sections: withoutBlankLines(sections).filter((s) => s.lines.length > 0 || s.heading.trim()) }), `${code} saved.`).then((ok) => { if (ok) { setDirty(false); draft.clear(); } });
   const setStatus = (status: PackageStatus) => {
     if (dirty) { setError('Save your changes first.'); return; }
     void act(() => savePackage(p.id, { status }), status === 'ACTIVE' ? `${p.code} is active.` : status === 'INACTIVE' ? `${p.code} is inactive: it no longer shows in the sales order search.` : undefined);
@@ -84,6 +99,7 @@ export function RenovationPackageEditor(): ReactElement {
           </div>
         )} />
       <ErrorBanner error={error} onClose={() => setError(null)} />
+      <FormDraftBar draft={draft} onRestore={restoreDraft} staleText="This package changed after your draft; restoring will overwrite those changes." />
       <Card>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <Field label="Code"><input className={cn(inputCls, 'font-mono uppercase')} disabled={!canEdit} value={code} onChange={(e) => { setCode(e.target.value.toUpperCase()); mark(); }} /></Field>

@@ -25,7 +25,8 @@ import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
 import { Button } from '@2990s/design-system';
 import { formatPhone } from '@2990s/shared/phone';
 import { useCreatePurchaseConsignmentOrder } from '../../vendor/scm/lib/purchase-consignment-order-queries';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { contentKeyFor, settleOutcome, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import {
   useSuppliers,
   useSupplierDetail,
@@ -92,11 +93,10 @@ const newLine = (): DraftLine => ({
 export const PurchaseConsignmentOrderNew = () => {
   const navigate = useNavigate();
   const create   = useCreatePurchaseConsignmentOrder();
-  /* One key for the one order this page is open to raise (lib/idempotency.ts).
-     Route-level form, navigates to the order detail on success, so the MOUNT is
-     exactly one order: stable across re-renders and across a re-press after a
-     stalled submit, fresh on remount. */
-  const idemKey  = useIdempotencyKey();
+  /* One key per purchase consignment order CONTENT (lib/idempotency.ts createContentBoundKey): the same form re-pressed after a stall
+     replays the first answer instead of raising a second document; a save the server refused releases the key, so
+     the corrected form is a new request instead of a replay of the refusal (audit 20 Nov 2026, items 19-24). */
+  const idemKeys  = useContentBoundIdempotencyKey();
 
   // ── Header state ────────────────────────────────────────────────────
   const [supplierId, setSupplierId]   = useState<string>('');
@@ -318,9 +318,8 @@ export const PurchaseConsignmentOrderNew = () => {
       variants:       Object.keys(l.variants).length ? l.variants : undefined,
     }));
 
-    create.mutate(
-      {
-        idempotencyKey: idemKey,
+    void (async () => {
+    const payload = {
         supplierId,
         currency,
         poDate,
@@ -328,12 +327,17 @@ export const PurchaseConsignmentOrderNew = () => {
         notes: notes || undefined,
         purchaseLocationId,
         items,
-      },
-      {
+    };
+    const key = await contentKeyFor(idemKeys, payload, () => serviceConfirm(unansweredSaveQuestion('purchase consignment order', 'Procurement > Purchase Consignment Orders')));
+    if (!key) return;
+    create.mutate(
+      { ...payload, idempotencyKey: key },
+      settleOutcome(idemKeys, {
         onSuccess: (res) => navigate(`/scm/purchase-consignment-orders/${res.id}`),
         onError:   (err) => setDialog({ title: 'Save failed', body: err instanceof Error ? err.message : 'Something went wrong.' }),
-      },
+      }),
     );
+    })();
   };
 
   return (

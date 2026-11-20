@@ -38,7 +38,7 @@ import {
   type BindingRow,
   type MaterialKind,
 } from '../../vendor/scm/lib/suppliers-queries';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { contentKeyFor, outcomeOfError, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readScmHandoff, removeScmHandoff, writeScmHandoff } from '../../lib/scmHandoffStorage';
 import { useMfgProducts, useMaintenanceConfig, useSpecialAddons, mfgCategoryLabel } from '../../vendor/scm/lib/mfg-products-queries';
@@ -59,6 +59,8 @@ import { SpecialOrders } from '../../vendor/scm/components/SpecialOrders';
 import { specialOrderSurface } from '../../vendor/scm/lib/special-order-surface';
 import { ActionResultDialog } from '../../vendor/scm/components/ActionResultDialog';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
+import { useFormDraft } from '../../lib/formDraft';
+import { FormDraftBar } from '../../components/FormDraftBar';
 import { notifyAcNotSent } from '../../vendor/scm/lib/ac-not-sent';
 import styles from './SalesOrderDetail.module.css';
 import { PageHeader } from '../../components/Layout';
@@ -139,12 +141,11 @@ const newLine = (): DraftLine => ({
 export const ProductionOrderNew = () => {
   const navigate = useNavigate();
   const create   = useCreateProductionOrder();
-  /* One key for the one Production Order this page is open to raise (lib/idempotency.ts).
-     Route-level form, navigates to the Production Order detail on success, so the MOUNT is
-     exactly one Production Order: stable across re-renders (lazy init) and across a re-press
-     after a stalled submit — which is the point, since a duplicate Production Order orders and
-     pays for the same goods twice from a real supplier — and fresh on remount. */
-  const idemKey  = useIdempotencyKey();
+  /* One key per Production Order CONTENT (lib/idempotency.ts createContentBoundKey), as New Purchase Order does:
+     the same form re-pressed after a stall replays (a duplicate orders and pays for the same goods twice), while a
+     save the server refused releases the key, so the corrected order is a new request instead of a replay of the
+     refusal (audit 20 Nov 2026, items 19-24). */
+  const pdKeys   = useContentBoundIdempotencyKey();
   const notify   = useNotify();
 
   // ── Header state ────────────────────────────────────────────────────
@@ -300,6 +301,37 @@ export const ProductionOrderNew = () => {
     if (!expectedAt) return;
     setLines((prev) => prev.map((l) => ({ ...l, deliveryDate: expectedAt })));
   }, [expectedAt]);
+
+  /* Unsaved fields kept in this browser (lib/formDraft.ts), offered back after a reload. Ready once suppliers have
+     loaded, which is when a From-SO return is applied (below). */
+  const draftValue = {
+    supplierId, poDate, expectedAt, supplierDeliveryDate2, supplierDeliveryDate3, supplierDeliveryDate4,
+    purchaseLocationId, notes, planStart, productionTimeHours, lines,
+  };
+  const draft = useFormDraft('production-order-new', 'new', draftValue, {
+    enabled: !suppliers.isLoading,
+    meaningful: !!supplierId || lines.some((l) => l.itemCode.trim() !== ''),
+    keys: pdKeys,
+  });
+  /* The header's location and delivery date are copied down to every line when they change (the effects above),
+     so restored lines are put back after that copy has run, keeping each line's own values. */
+  const restoredLines = useRef<DraftLine[] | null>(null);
+  const [restoreTick, setRestoreTick] = useState(0);
+  useEffect(() => {
+    if (!restoredLines.current) return;
+    setLines(restoredLines.current);
+    restoredLines.current = null;
+  }, [restoreTick]);
+  const restoreDraft = (v: typeof draftValue) => {
+    setSupplierId(v.supplierId); setPoDate(v.poDate); setExpectedAt(v.expectedAt);
+    setSupplierDeliveryDate2(v.supplierDeliveryDate2); setSupplierDeliveryDate3(v.supplierDeliveryDate3); setSupplierDeliveryDate4(v.supplierDeliveryDate4);
+    setPurchaseLocationId(v.purchaseLocationId); setNotes(v.notes); setPlanStart(v.planStart); setProductionTimeHours(v.productionTimeHours);
+    if (Array.isArray(v.lines) && v.lines.length > 0) {
+      setLines(v.lines);
+      restoredLines.current = v.lines;
+      setRestoreTick((n) => n + 1);
+    }
+  };
 
   /* "From SO" → add the picked SO lines into THIS form (Commander 2026-05-29).
      A Production Order is one supplier, so adopt the picks' main supplier; the binding /
@@ -694,7 +726,6 @@ export const ProductionOrderNew = () => {
     }));
 
     const basePayload = {
-      idempotencyKey: idemKey,
       supplierId,
       currency,
       poDate,
@@ -717,11 +748,13 @@ export const ProductionOrderNew = () => {
        qty_exceeds_remaining. On confirm we replay the SAME create with
        confirmOverConvert set — the server marked that 409 no-write, so the
        idempotency key re-runs instead of replaying the rejection. */
-    const runCreate = (confirmOverConvert = false) => {
+    const runCreate = (idempotencyKey: string, confirmOverConvert = false) => {
       create.mutate(
-        confirmOverConvert ? { ...basePayload, confirmOverConvert } : basePayload,
+        confirmOverConvert ? { ...basePayload, idempotencyKey, confirmOverConvert } : { ...basePayload, idempotencyKey },
         {
           onSuccess: async (res) => {
+            pdKeys.settle('succeeded');
+            draft.clear();
             /* THE ACCOUNTS MAY HAVE REFUSED IT, and nothing said so before
                2026-08-19: the reason went into a queue behind a permission key
                buyers do not hold. BEFORE the navigation, so the page change
@@ -732,6 +765,7 @@ export const ProductionOrderNew = () => {
             navigate(`/scm/production-orders/${res.id}`);
           },
           onError: async (err) => {
+            pdKeys.settle(outcomeOfError(err));
             const e = err as { status?: number; body?: string } | null;
             if (
               !confirmOverConvert && e?.status === 409 &&
@@ -751,7 +785,7 @@ export const ProductionOrderNew = () => {
                 confirmLabel: 'Create anyway',
                 danger: true,
               });
-              if (proceed) runCreate(true);
+              if (proceed) runCreate(idempotencyKey, true);
               return;
             }
             notify({ title: 'Save failed', body: `${err instanceof Error ? err.message : 'Something went wrong.'}`, tone: 'error' });
@@ -759,7 +793,10 @@ export const ProductionOrderNew = () => {
         },
       );
     };
-    runCreate();
+    void (async () => {
+      const key = await contentKeyFor(pdKeys, basePayload, () => serviceConfirm(unansweredSaveQuestion('production order', 'Production > Production Orders')));
+      if (key) runCreate(key);
+    })();
   };
 
   return (
@@ -798,6 +835,8 @@ export const ProductionOrderNew = () => {
           </div>
         }
       />
+
+      <FormDraftBar draft={draft} onRestore={restoreDraft} />
 
       {/* Header card — 2-column grid */}
       <section className={styles.card}>

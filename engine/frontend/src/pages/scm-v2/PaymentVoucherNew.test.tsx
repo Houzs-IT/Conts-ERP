@@ -63,7 +63,7 @@ vi.mock('../../vendor/scm/lib/payment-voucher-queries', () => ({
     { id: 1, supplier_id: 'sup-1', pv_id: 'pv-old', pv_number: 'PV-2608-777', amount_sen: 80000, applied_sen: 30000, remaining_sen: 50000, created_at: '2026-08-20' },
   ], totalRemainingSen: 50000 }, isLoading: false }),
 }));
-vi.mock('../../lib/idempotency', () => ({ useIdempotencyKey: () => 'idem-1' }));
+vi.mock('../../lib/idempotency', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../lib/idempotency')>()), useIdempotencyKey: () => 'idem-1' }));
 /* The AP invoices (non-stock bills) the picker lists BESIDE the PIs. */
 vi.mock('../../vendor/scm/lib/ap-invoice-queries', () => ({
   useApInvoices: () => ({ data: { rows: [

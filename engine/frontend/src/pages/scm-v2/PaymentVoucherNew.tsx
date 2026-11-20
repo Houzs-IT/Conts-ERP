@@ -27,7 +27,10 @@ import { Button } from '@2990s/design-system';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
 import { useCreatePaymentVoucher, usePaymentVoucherDetail, useSupplierAdvances, usePvReservations, NO_RESERVATIONS, useExtractBills, useUploadPvFile, useRefundSource, fileToBase64, type BillExtraction, type VendorMemory, type PvFilePayload } from '../../vendor/scm/lib/payment-voucher-queries';
 import { takePvFiles } from '../../vendor/scm/lib/pv-file-handoff';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { useFormDraft } from '../../lib/formDraft';
+import { FormDraftBar } from '../../components/FormDraftBar';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { useAccounts, useAccountRoles, postableAccounts, type Account } from '../../vendor/scm/lib/accounting-queries';
 import { useSaveHotkey, SAVE_HOTKEY_HINT } from '../../vendor/scm/lib/use-save-hotkey';
 import { upperFill } from '../../vendor/scm/lib/ocr-fill';
@@ -127,15 +130,15 @@ export const PaymentVoucherNew = () => {
      the one Dr AR line is the system's. No payee typed, no lines, no PIs. */
   const isRefund = searchParams.get('type') === 'refund';
   const create   = useCreatePaymentVoucher();
-  /* One key for the one voucher this page is open to raise (lib/idempotency.ts).
-     Minted once by useState's lazy init: stable across re-renders and across a
-     re-press after a stalled submit. Like GrnNew (which carries the full
+  /* One key per voucher CONTENT (lib/idempotency.ts createContentBoundKey): stable across a re-press of the same
+     voucher after a stalled submit, released when the server refuses it, so the corrected voucher is a new request
+     instead of a replay of the refusal (audit 20 Nov 2026, item 20). Like GrnNew (which carries the full
      reasoning) this page shows a dialog instead of navigating, so the mount can
      outlive the document; the same trade applies and lands the same way — the
      lines are not reset on success, so a re-press submits the SAME voucher and
      replay is the right answer, and the dialog names the FIRST pvNumber rather
      than failing silently. */
-  const idemKey  = useIdempotencyKey();
+  const pvKeys   = useContentBoundIdempotencyKey();
   const saving   = create.isPending;
 
   const accountsQ = useAccounts();
@@ -549,6 +552,50 @@ export const PaymentVoucherNew = () => {
      AP debit, and on post the server records it as this supplier's advance. */
   const [advanceSen, setAdvanceSen] = useState<number>(0);
   useEffect(() => { setAdvanceSen(0); }, [supplierId]);
+
+  /* Unsaved fields kept in this browser (lib/formDraft.ts), offered back after a reload. Not for a voucher opened
+     from payment requests, a scanned bill or Copy as new: those carry links and files a draft cannot hold, and the
+     source fills the form again anyway. */
+  const [draftAllowed] = useState(() => {
+    const st = location.state as { billPrefill?: unknown; claimsPrefill?: unknown } | null;
+    return !copyFrom && !st?.billPrefill && !st?.claimsPrefill;
+  });
+  const draftValue = {
+    payeeName, supplierId, creditAccountCode, voucherDate, notes, projectId,
+    isTransfer, toAccountCode, transferAmount,
+    exchangeRate, rateSource, myrPaidSen, currencyOverride,
+    lines, allocAmounts, advanceSen,
+    refundType, refundDocInput, refundDocNo, refundAmountSen,
+  };
+  const draft = useFormDraft('pv-new', isRefund ? 'refund' : isAp ? 'ap' : 'pv', draftValue, {
+    enabled: draftAllowed,
+    meaningful: !!payeeName.trim() || !!supplierId || !!refundDocNo || lines.some((l) => l.amountSen > 0 || !!l.description.trim()) || !!transferAmount,
+    keys: pvKeys,
+  });
+  /* Changing the supplier wipes its invoice amounts and prepay (the effects above), so a restored supplier's
+     amounts are put back once that wipe has run. */
+  const restoredAlloc = useRef<{ supplierId: string; allocAmounts: Record<string, number>; advanceSen: number } | null>(null);
+  useEffect(() => {
+    const r = restoredAlloc.current;
+    if (!r || r.supplierId !== supplierId) return;
+    restoredAlloc.current = null;
+    setAllocAmounts(r.allocAmounts);
+    setAdvanceSen(r.advanceSen);
+  }, [supplierId]);
+  const restoreDraft = (v: typeof draftValue) => {
+    setPayeeName(v.payeeName); setCreditAccountCode(v.creditAccountCode); setVoucherDate(v.voucherDate);
+    setNotes(v.notes); setProjectId(v.projectId);
+    setIsTransfer(v.isTransfer); setToAccountCode(v.toAccountCode); setTransferAmount(v.transferAmount);
+    setCurrencyOverride(v.currencyOverride); setRateSource(v.rateSource); setExchangeRate(v.exchangeRate); setMyrPaidSen(v.myrPaidSen);
+    if (Array.isArray(v.lines) && v.lines.length > 0) setLines(v.lines);
+    setRefundType(v.refundType); setRefundDocInput(v.refundDocInput); setRefundDocNo(v.refundDocNo); setRefundAmountSen(v.refundAmountSen);
+    if (v.supplierId === supplierId) {
+      setAllocAmounts(v.allocAmounts); setAdvanceSen(v.advanceSen);
+    } else {
+      restoredAlloc.current = { supplierId: v.supplierId, allocAmounts: v.allocAmounts, advanceSen: v.advanceSen };
+      setSupplierId(v.supplierId);
+    }
+  };
   /* What this supplier is ALREADY owed from earlier prepayments — informational
      here; the knock-off lives on the voucher that holds the advance. */
   const advancesQ = useSupplierAdvances(isAp && supplierId ? supplierId : null);
@@ -643,8 +690,7 @@ export const PaymentVoucherNew = () => {
           : { piId: a.piId, amountSen: a.amountSen }))
       : [];
     try {
-      const res = await create.mutateAsync({
-        idempotencyKey:    idemKey,
+      const payload = {
         payeeName:         isRefund ? (refundSrc?.customer.name ?? refundSrc?.docNo ?? '') : transferMode ? transferPayee : payeeName.trim(),
         supplierId:        transferMode || isRefund ? null : (supplierId || null),
         purpose,
@@ -666,7 +712,15 @@ export const PaymentVoucherNew = () => {
         ...(!isAp && !transferMode && !isRefund && Object.keys(claimLinks).length > 0
           ? { claimLinks: realLines.map((l) => claimLinks[l.rid] ?? { paymentRequestId: null, staffReceiptId: null }) }
           : {}),
-      });
+      };
+      const sent = await sendWithContentKey(
+        pvKeys, payload,
+        () => serviceConfirm(unansweredSaveQuestion('voucher', 'Finance > Payment Vouchers')),
+        (idempotencyKey) => create.mutateAsync({ ...payload, idempotencyKey }),
+      );
+      if (!sent.sent) return;
+      const res = sent.value;
+      draft.clear();
       /* Attach the scanned bill AFTER the voucher exists — sequentially, so
          sort_no (= print order) is the scan order. A failed upload never
          un-saves the voucher: the dialog says which files still need adding
@@ -721,6 +775,8 @@ export const PaymentVoucherNew = () => {
           </div>
         }
       />
+
+      <FormDraftBar draft={draft} onRestore={restoreDraft} />
 
       <section className={styles.card}>
         <div className={styles.cardHeader}><h2 className={styles.cardTitle}>Header</h2></div>

@@ -27,7 +27,8 @@ import {
   useCreatePurchaseConsignmentReturn,
   usePostPurchaseConsignmentReturn,
 } from '../../vendor/scm/lib/purchase-consignment-return-queries';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readScmHandoff, removeScmHandoff } from '../../lib/scmHandoffStorage';
 import { usePurchaseConsignmentReceiveDetail } from '../../vendor/scm/lib/purchase-consignment-receive-queries';
 import { usePurchaseConsignmentOrderDetail } from '../../vendor/scm/lib/purchase-consignment-order-queries';
@@ -124,11 +125,10 @@ export const PurchaseConsignmentReturnNew = () => {
   const maint  = maintQ.data?.data ?? null;
   const fabrics = useFabricTrackings().data ?? [];
 
-  /* One key for the one return this page is open to raise (lib/idempotency.ts).
-     Route-level form, navigates to the return detail on success, so the MOUNT is
-     exactly one return: stable across re-renders and across a re-press after a
-     stalled submit, fresh on remount. */
-  const idemKey = useIdempotencyKey();
+  /* One key per purchase consignment return CONTENT (lib/idempotency.ts createContentBoundKey): the same form re-pressed after a stall
+     replays the first answer instead of raising a second document; a save the server refused releases the key, so
+     the corrected form is a new request instead of a replay of the refusal (audit 20 Nov 2026, items 19-24). */
+  const idemKeys = useContentBoundIdempotencyKey();
   const create = useCreatePurchaseConsignmentReturn();
   const post   = usePostPurchaseConsignmentReturn();
   const saving = create.isPending || post.isPending;
@@ -276,8 +276,7 @@ export const PurchaseConsignmentReturnNew = () => {
   const onSave = async () => {
     if (!canSave) { notify({ title: 'Need supplier + at least one line with an item code and qty > 0.', tone: 'error' }); return; }
     try {
-      const createRes = await create.mutateAsync({
-        idempotencyKey: idemKey,
+      const payload = {
         supplierId,
         purchaseOrderId: orderId ?? (grn?.purchase_order_id ?? null),
         grnId: receiveId,
@@ -298,7 +297,10 @@ export const PurchaseConsignmentReturnNew = () => {
           itemGroup:      l.itemGroup,
           variants:       l.variants,
         })),
-      });
+      };
+      const sent = await sendWithContentKey(idemKeys, payload, () => serviceConfirm(unansweredSaveQuestion('purchase consignment return', 'Procurement > Purchase Consignment Returns')), (idempotencyKey) => create.mutateAsync({ ...payload, idempotencyKey }));
+      if (!sent.sent) return;
+      const createRes = sent.value;
       await post.mutateAsync(createRes.id);
       await notify({ title: `Purchase Consignment Return ${createRes.returnNumber} created + posted.` });
       navigate(`/scm/purchase-consignment-returns/${createRes.id}`);
