@@ -109,7 +109,7 @@ export function PaymentRequests() {
   const claimsQ = useFinanceReceipts("");
   /* Each line's sub-department (SOP 1.1), "No unit" on a team's line without one. */
   const deptLabel = useLineDepartmentLabel();
-  const lineSummary = (ls: Line[]) => ls.map((l) => [deptLabel(l), l.accountCode, l.description].filter(Boolean).join(" · ")).join("; ");
+  const lineSummary = (ls: Line[]) => ls.map((l) => [deptLabel(l), l.targetLabel, l.accountCode, l.description].filter(Boolean).join(" · ")).join("; ");
   const opts = usePettyOptions();
   const act = useFinanceAction();
   const prompt = usePrompt();
@@ -405,7 +405,7 @@ export function PaymentRequestDetail() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <PageHeader back="/scm/payment-requests" eyebrow="Finance" title={r ? no(r) : kind === "c" ? "Claim" : "Payment request"} />
-      {r ? <RowDetail r={r} lineText={(l) => [deptLabel(l), l.accountCode, l.description].filter(Boolean).join(" · ")} />
+      {r ? <RowDetail r={r} lineText={(l) => [deptLabel(l), l.targetLabel, l.accountCode, l.description].filter(Boolean).join(" · ")} />
         : <div className="text-ink-muted">{loading ? "Loading…" : "This request was not found."}</div>}
     </div>
   );

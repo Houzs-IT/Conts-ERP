@@ -130,14 +130,15 @@ const distinctIds = (ids: Array<string | number | null>): string[] => [...new Se
 export async function withTargetLabels<L extends LineTargetIds, T extends { lines: L[] }>(sb: any, companyId: number, items: T[]): Promise<Array<Omit<T, 'lines'> & { lines: Array<LabelledLine<L>> }>> {
   const lines = items.flatMap((item) => item.lines);
   const [units, jobs, projects] = await Promise.all([
-    inChunks<{ id: string; building: string; unit_number: string }>(distinctIds(lines.map((l) => l.unitId)),
-      (part, from, to) => sb.schema('public').from('conts_units').select('id, building, unit_number').in('id', part).order('id').range(from, to)),
+    inChunks<{ id: string; building: string; unit_number: string; unit_code: string | null }>(distinctIds(lines.map((l) => l.unitId)),
+      (part, from, to) => sb.schema('public').from('conts_units').select('id, building, unit_number, unit_code').in('id', part).order('id').range(from, to)),
     inChunks<{ id: string; title: string }>(distinctIds(lines.map((l) => l.maintenanceIssueId)),
       (part, from, to) => sb.schema('public').from('conts_maintenance_jobs').select('id, title').in('id', part).order('id').range(from, to)),
     inChunks<{ id: number; code: string | null; name: string }>(distinctIds(lines.map((l) => l.projectId)),
       (part, from, to) => sb.schema('public').from('projects').select('id, code, name').eq('company_id', companyId).in('id', part).order('id').range(from, to)),
   ]);
-  const unitNames = new Map(units.map((u) => [String(u.id), `${u.building} ${u.unit_number}`]));
+  /* The code the unit is shown by in Property OS ("A-12-01"), else the number it was imported with (0350). */
+  const unitNames = new Map(units.map((u) => [String(u.id), `${u.building} ${u.unit_code || u.unit_number}`]));
   const jobTitles = new Map(jobs.map((j) => [String(j.id), j.title]));
   const projectNames = new Map(projects.map((p) => [String(p.id), [p.code, p.name].filter(Boolean).join(' ')]));
   const labelOf = (line: L): string | null => {
