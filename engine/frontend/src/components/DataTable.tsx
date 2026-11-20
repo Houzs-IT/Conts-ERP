@@ -1728,7 +1728,7 @@ function DataTableInner<T, L>({
   // out entirely; on server tables it only demotes the column to the
   // client-side fallback (see above).
   const canSortColumn = useCallback(
-    (col: Column<T>) => !!col.sortCompare || (!!col.getValue && (!col.disableSort || !!serverSort)),
+    (col: Column<T>) => !col.neverSort && (!!col.sortCompare || (!!col.getValue && (!col.disableSort || !!serverSort))),
     [serverSort]
   );
 

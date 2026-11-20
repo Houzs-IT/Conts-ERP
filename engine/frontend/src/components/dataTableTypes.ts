@@ -65,6 +65,8 @@ export interface Column<T, L = never> {
    *  never reported to the parent, so the backend query is untouched. To make
    *  a server-sorted column truly unsortable, drop its `getValue`. */
   disableSort?: boolean;
+  /** Never sortable, on a `serverSort` grid too (where `disableSort` only demotes the column to a client sort). */
+  neverSort?: boolean;
   /**
    * Hide on first load even though the column exists. The user can still
    * reveal it from the Columns panel (and that override is persisted).

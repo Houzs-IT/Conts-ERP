@@ -38,6 +38,7 @@ import {
 } from '../../vendor/scm/lib/suppliers-queries';
 import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import { DataGridCompat, type GridColumn } from '../../components/DataGridCompat';
+import { useServerColumnFunnels, funnelTicked, type ColFilters } from '../../hooks/useServerColumnFunnels';
 import { useIdempotencyKey } from '../../lib/idempotency';
 import { readScmHandoff, writeScmHandoff } from '../../lib/scmHandoffStorage';
 import { ActionResultDialog } from '../../vendor/scm/components/ActionResultDialog';
@@ -96,6 +97,16 @@ async function fetchDocLines(docNo: string): Promise<OutstandingSoItem[]> {
 
 type Pick = { picked: boolean; qty: number };
 
+/* The columns whose funnels the server applies and counts over every open line (lib/outstanding-so-page.ts
+   PICKER_FACET_COLS). Stock & orders, Pick Qty, Line Value, the quantities and the dates are filtered on the loaded
+   lines only. */
+const SERVER_FUNNEL_COLS = ['soDocNo', 'soRef', 'project', 'debtorName', 'itemGroup', 'mainSupplier', 'itemCode', 'description'] as const;
+const serverFunnelsOf = (cf: ColFilters): Record<string, string[] | undefined> =>
+  Object.fromEntries(SERVER_FUNNEL_COLS.map((k) => [k, funnelTicked(cf, k)]));
+/* Every page of the current filters, read one after another for Select all and Export. 5,121 lines is 52 pages; the
+   stop is a runaway guard, and reaching it is reported, never cut short silently. */
+const MAX_PAGES_TO_LOAD = 200;
+
 const projectTitleOf = (r: OutstandingSoItem): string => r.projectName?.trim() || r.projectCode?.trim() || '';
 
 export const PurchaseOrderFromSo = () => {
@@ -141,14 +152,36 @@ export const PurchaseOrderFromSo = () => {
   }, [searchText]);
 
   // In-app result dialog (validation only now — the grid feeds the form).
-  const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string } | null>(null);
+  const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string; confirmLabel?: string; onConfirm?: () => void } | null>(null);
   // The SO whose sofa set is being read before it is ticked.
   const [setLoadingDoc, setSetLoadingDoc] = useState<string | null>(null);
 
-  const filters = useMemo(() => ({ q, category, dateField, dateFrom, dateTo }), [q, category, dateField, dateFrom, dateTo]);
+  /* Column funnels and header sort run on the server over every open line (20 Nov 2026): a project past the loaded
+     pages is offered and filtered at once. A new funnel or sort is a new query, so the list starts again at page 1. */
+  const { serverFunnels, onColFiltersChange } = useServerColumnFunnels(serverFunnelsOf, () => undefined);
+  const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
+  const cols = useMemo(
+    () => Object.fromEntries(Object.entries(serverFunnels).filter((e): e is [string, string[]] => e[1] != null)),
+    [serverFunnels],
+  );
+  const filters = useMemo(() => ({ q, category, dateField, dateFrom, dateTo, cols, sort }), [q, category, dateField, dateFrom, dateTo, cols, sort]);
   const itemsQ = useOutstandingSoItemsPaged(filters);
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = itemsQ;
   const total = itemsQ.data?.pages[0]?.total ?? null;
+  /* The funnel counts of the last first page that arrived, kept while a new filter loads so the menus do not fall back
+     to counting the loaded lines. */
+  const facetsRef = useRef<Record<string, Array<[string, number]>> | null>(null);
+  const firstFacets = itemsQ.data?.pages[0]?.facets;
+  if (firstFacets) facetsRef.current = firstFacets;
+  const facets = facetsRef.current;
+  // The rows the grid shows after its own funnels: what Select all ticks.
+  const [shownRows, setShownRows] = useState<OutstandingSoItem[] | null>(null);
+  /* The same rows, readable in this component's effects within the commit the grid reported them in: the grid reports
+     from its own effect, which runs before ours, while the state above only lands on the next render. */
+  const shownRowsRef = useRef<OutstandingSoItem[] | null>(null);
+  const onShownRows = (list: OutstandingSoItem[]): void => { shownRowsRef.current = list; setShownRows(list); };
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [selectAllPending, setSelectAllPending] = useState(false);
 
   /* Every row this screen has been shown, kept across pages, searches and filter changes: a picked line stays picked
      (and stays on the PO) when the search moves away from it. */
@@ -179,7 +212,7 @@ export const PurchaseOrderFromSo = () => {
      counts once the table's own box is scrolled near its end, or when the box does not scroll at all. */
   useEffect(() => {
     const el = loadMoreRef.current;
-    if (!el || !hasNextPage || isFetchingNextPage || nextPageFailed) return;
+    if (!el || !hasNextPage || isFetchingNextPage || nextPageFailed || loadingAll) return;
     const box = el.previousElementSibling?.querySelector<HTMLElement>('.dt-table .thin-scroll') ?? null;
     const boxAtEnd = (): boolean => !box || box.scrollHeight <= box.clientHeight + 1
       || box.scrollTop + box.clientHeight >= box.scrollHeight - 400;
@@ -197,7 +230,7 @@ export const PurchaseOrderFromSo = () => {
     io?.observe(el);
     box?.addEventListener('scroll', maybeLoad, { passive: true });
     return () => { io?.disconnect(); box?.removeEventListener('scroll', maybeLoad); };
-  }, [pageCount, hasNextPage, isFetchingNextPage, nextPageFailed, fetchNextPage]);
+  }, [pageCount, hasNextPage, isFetchingNextPage, nextPageFailed, fetchNextPage, loadingAll]);
 
   /* Commander 2026-05-30 — the New PO form stashes its current draft
      (poNewDraft) before sending us here. Build a per-soItemId draft qty map so:
@@ -353,19 +386,64 @@ export const PurchaseOrderFromSo = () => {
   const setQty = (id: string, qty: number) =>
     setPicks((s) => ({ ...s, [id]: { picked: true, qty } }));
 
-  // Select / clear all currently-VISIBLE rows (respects the active filters).
+  /** Read every remaining page of the current filters into the grid: every line once, or why not. */
+  const loadAllPages = async (): Promise<{ rows: OutstandingSoItem[] } | { error: string }> => {
+    setLoadingAll(true);
+    try {
+      let res = await fetchNextPage();
+      for (let n = 0; res.hasNextPage && !res.isError && n < MAX_PAGES_TO_LOAD; n++) res = await fetchNextPage();
+      if (res.isError) return { error: `The lines past the ones on screen could not be read.${res.error instanceof Error ? `\n${res.error.message}` : ''}` };
+      if (res.hasNextPage) return { error: 'This list is longer than one screen can load. Narrow the search or the filters, then try again.' };
+      const byId = new Map<string, OutstandingSoItem>();
+      for (const p of res.data?.pages ?? []) for (const r of p.items) if (!byId.has(r.soItemId)) byId.set(r.soItemId, r);
+      return { rows: [...byId.values()] };
+    } finally {
+      setLoadingAll(false);
+    }
+  };
+
+  // Select every row the grid shows (search, filters and funnels applied).
   // Commander 2026-05-30 — default each row's qty to its EFFECTIVE remaining
   // (remaining − draftQty) so bulk-select honours the draft too.
-  const selectAll = () =>
+  const tickRows = (list: readonly OutstandingSoItem[]): void =>
     setPicks((s) => {
       const next = { ...s };
-      for (const l of rows) {
+      for (const l of list) {
         const cap = effectiveRemaining(l);
         if (cap <= 0) continue;
         next[l.soItemId] = { picked: true, qty: cap };
       }
       return next;
     });
+  /* Lines past the loaded pages are loaded first, once the operator agrees: they are then on screen, and the grid's
+     funnels on the loaded-only columns (stock, quantities, dates) apply to them before they are ticked. */
+  const selectAll = (): void => {
+    if (!hasNextPage) { tickRows(shownRows ?? rows); return; }
+    setDialog({
+      title: 'Tick every matching line?',
+      body: `${rows.length} line(s) are loaded${total != null ? ` and up to ${total} match` : ''}. The rest will be loaded first, which can take a while for a long list.`,
+      confirmLabel: 'Load and tick all',
+      onConfirm: () => {
+        setDialog(null);
+        setSelectAllPending(true);
+        void loadAllPages().then((res) => {
+          if ('error' in res) {
+            setSelectAllPending(false);
+            setDialog({ title: 'Not every line could be loaded', body: `${res.error}
+Nothing was ticked.` });
+          }
+        });
+      },
+    });
+  };
+  /* Ticks once the last page is on screen. Runs again on every page, so it reads the grid's report from the commit the
+     last page landed in (shownRowsRef), never one render behind. */
+  useEffect(() => {
+    if (!selectAllPending || loadingAll || hasNextPage || !shownRowsRef.current) return;
+    setSelectAllPending(false);
+    tickRows(shownRowsRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tickRows reads pick state through setPicks
+  }, [selectAllPending, loadingAll, hasNextPage, pageCount]);
 
   const clearAll = () => setPicks({});
 
@@ -396,31 +474,31 @@ export const PurchaseOrderFromSo = () => {
       },
     },
     {
-      key: 'soDocNo', label: 'SO Doc No', width: 120, sortable: true, groupable: true,
+      key: 'soDocNo', label: 'SO Doc No', width: 120, sortable: true, serverSortable: true, filterCounts: facets?.soDocNo, groupable: true,
       accessor: (r) => <span className={styles.codeCell}>{r.soDocNo}</span>,
       searchValue: (r) => r.soDocNo,
     },
     {
-      key: 'soRef', label: 'Ref No.', width: 150, sortable: true,
+      key: 'soRef', label: 'Ref No.', width: 150, sortable: true, serverSortable: true, filterCounts: facets?.soRef,
       accessor: (r) => soRefOfCamelStamp(r) || '—',
       searchValue: (r) => soRefOfCamelStamp(r),
       sortFn: (a, b) => soRefOfCamelStamp(a).localeCompare(soRefOfCamelStamp(b)),
     },
     {
-      key: 'project', label: 'Project', width: 200, sortable: true, groupable: true,
+      key: 'project', label: 'Project', width: 200, sortable: true, serverSortable: true, filterCounts: facets?.project, groupable: true,
       accessor: (r) => projectTitleOf(r) || '—',
       searchValue: (r) => mrpProjectLabel(r),
       groupValue: (r) => projectTitleOf(r) || '(none)',
       sortFn: (a, b) => projectTitleOf(a).localeCompare(projectTitleOf(b)),
     },
     {
-      key: 'debtorName', label: 'Customer', width: 180, sortable: true, groupable: true,
+      key: 'debtorName', label: 'Customer', width: 180, sortable: true, serverSortable: true, filterCounts: facets?.debtorName, groupable: true,
       accessor: (r) => r.debtorName ?? '—',
       searchValue: (r) => r.debtorName ?? '',
       groupValue: (r) => r.debtorName ?? '(none)',
     },
     {
-      key: 'itemGroup', label: 'Category', width: 110, sortable: true, groupable: true,
+      key: 'itemGroup', label: 'Category', width: 110, sortable: true, serverSortable: true, filterCounts: facets?.itemGroup, groupable: true,
       accessor: (r) => <ItemGroupPill group={r.itemGroup} />,
       searchValue: (r) => r.itemGroup ?? '',
       groupValue: (r) => (r.itemGroup ?? '(none)').toUpperCase(),
@@ -429,7 +507,7 @@ export const PurchaseOrderFromSo = () => {
       /* Commander 2026-05-28 — the SKU's main supplier (where this line's PO
          goes). "— none —" means unbound: it can't be converted until assigned
          a supplier. */
-      key: 'mainSupplier', label: 'Main Supplier', width: 200, sortable: true, groupable: true,
+      key: 'mainSupplier', label: 'Main Supplier', width: 200, sortable: true, serverSortable: true, filterCounts: facets?.mainSupplier, groupable: true,
       accessor: (r) =>
         r.mainSupplierCode
           ? <span>{r.mainSupplierCode}{r.mainSupplierName ? ` · ${r.mainSupplierName}` : ''}</span>
@@ -438,12 +516,12 @@ export const PurchaseOrderFromSo = () => {
       groupValue: (r) => r.mainSupplierName ?? r.mainSupplierCode ?? '(none)',
     },
     {
-      key: 'itemCode', label: 'Item Code', width: 130, sortable: true,
+      key: 'itemCode', label: 'Item Code', width: 130, sortable: true, serverSortable: true, filterCounts: facets?.itemCode,
       accessor: (r) => <span style={{ fontWeight: 600 }}>{r.itemCode}</span>,
       searchValue: (r) => r.itemCode ?? '',
     },
     {
-      key: 'description', label: 'Description', width: 240, sortable: true,
+      key: 'description', label: 'Description', width: 240, sortable: true, serverSortable: true, filterCounts: facets?.description,
       accessor: (r) => {
         const draftQty = draftQtyById.get(r.soItemId) ?? 0;
         return (
@@ -475,12 +553,12 @@ export const PurchaseOrderFromSo = () => {
       exportValue: (r) => soLineStatusText(lineStatus[r.soItemId]),
     },
     {
-      key: 'qty', label: 'SO Qty', width: 70, align: 'right', sortable: true,
+      key: 'qty', label: 'SO Qty', width: 70, align: 'right', sortable: true, serverSortable: true,
       accessor: (r) => fmtQty(r.qty),
       sortFn: (a, b) => a.qty - b.qty,
     },
     {
-      key: 'poQtyPicked', label: 'Done', width: 70, align: 'right', sortable: true,
+      key: 'poQtyPicked', label: 'Done', width: 70, align: 'right', sortable: true, serverSortable: true,
       accessor: (r) => <span className={styles.muted}>{r.poQtyPicked}</span>,
       sortFn: (a, b) => a.poQtyPicked - b.poQtyPicked,
     },
@@ -514,13 +592,13 @@ export const PurchaseOrderFromSo = () => {
     },
     {
       /* Commander 2026-05-29 — add Processing Date column. */
-      key: 'processingDate', label: 'Processing Date', width: 120, sortable: true,
+      key: 'processingDate', label: 'Processing Date', width: 120, sortable: true, serverSortable: true,
       accessor: (r) => fmtDateOrDash(r.processingDate ?? null),
       searchValue: (r) => r.processingDate ?? '',
       sortFn: (a, b) => String(a.processingDate ?? '').localeCompare(String(b.processingDate ?? '')),
     },
     {
-      key: 'deliveryDate', label: 'Delivery Date', width: 120, sortable: true,
+      key: 'deliveryDate', label: 'Delivery Date', width: 120, sortable: true, serverSortable: true,
       accessor: (r) => fmtDateOrDash((r.lineDeliveryDate ?? r.deliveryDate) ?? null),
       searchValue: (r) => r.lineDeliveryDate ?? r.deliveryDate ?? '',
       sortFn: (a, b) =>
@@ -545,7 +623,7 @@ export const PurchaseOrderFromSo = () => {
       sortFn: (a, b) => a.remainingQty * a.unitPriceSen - b.remainingQty * b.unitPriceSen,
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- column accessors derive from the pick/qty state already in deps; listing the helpers would only rebuild the columns for no behavioural change
-  ], [picks, draftQtyById, lineStatus]);
+  ], [picks, draftQtyById, lineStatus, facets]);
 
   // ── Add to PO ────────────────────────────────────────────────────────
   // Commander 2026-05-29 — two modes:
@@ -589,7 +667,7 @@ export const PurchaseOrderFromSo = () => {
   // ── Toolbar (filters + select/clear) rendered inside the DataGrid ──────
   const toolbar = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-      <Button variant="ghost" size="sm" onClick={selectAll} disabled={rows.length === 0}>
+      <Button variant="ghost" size="sm" onClick={selectAll} disabled={rows.length === 0 || loadingAll || selectAllPending}>
         <CheckSquare {...ICON} /> Select all
       </Button>
       <Button variant="ghost" size="sm" onClick={clearAll} disabled={pickedCount === 0}>
@@ -699,6 +777,23 @@ export const PurchaseOrderFromSo = () => {
         rowKey={(r) => r.soItemId}
         /* The search box in the toolbar searches on the server; the grid's own box would only search the loaded page. */
         hideSearch
+        serverSort
+        onSortChange={setSort}
+        onColFiltersChange={onColFiltersChange}
+        onFilteredRowsChange={onShownRows}
+        exportName="po-from-so"
+        exportLines={{
+          /* Every line the search, filters and funnels match, not only the loaded pages. */
+          fetchRows: async () => {
+            const res = hasNextPage ? await loadAllPages() : { rows: items };
+            if ('error' in res) throw new Error(`${res.error}
+Nothing was exported.`);
+            return res.rows.filter((r) => effectiveRemaining(r) > 0);
+          },
+          linesOf: () => [],
+          sheetName: 'SO lines',
+          onError: (e) => setDialog({ title: 'Export failed', body: e.message }),
+        }}
         /* Commander 2026-05-28 — click anywhere on a row to toggle its pick
            (the checkbox is just a visual). */
         onRowClick={(r) => togglePick(r.soItemId, r.remainingQty)}
@@ -732,7 +827,7 @@ export const PurchaseOrderFromSo = () => {
             ? `The ${items.length} outstanding SO line(s) loaded so far are already held by the PO draft you came from.${hasNextPage ? ' More lines are still to load below.' : ''}`
             : hasNextPage || itemsQ.isFetching
               ? 'No matching line in the part of the list read so far. More is still loading below.'
-              : (q || category !== 'all' || dateFrom || dateTo)
+              : (q || category !== 'all' || dateFrom || dateTo || Object.keys(cols).length > 0)
                 ? 'No outstanding SO line matches this search and these filters. That is not the same as there being none left: clear the search and filters to see the full list.'
                 : "This search came back with no outstanding SO lines. That is not the same as everything having been converted — the list only covers the company you are working in, and lines it cannot see look identical to lines that are done. Open the sales order and check its balance before treating this as nothing left to purchase."}
       />
@@ -744,8 +839,9 @@ export const PurchaseOrderFromSo = () => {
       >
         {!itemsQ.isLoading && (
           <span>
-            {`Showing ${rows.length} line${rows.length === 1 ? '' : 's'}`}
-            {total != null && hasNextPage ? ` · up to ${total} match` : ''}
+            {`Showing ${shownRows?.length ?? rows.length} line${(shownRows?.length ?? rows.length) === 1 ? '' : 's'}`}
+            {total != null ? ` of up to ${total} matching` : ''}
+            {loadingAll ? ' · loading every matching line…' : ''}
             {setLoadingDoc ? ` · loading the sofa set on ${setLoadingDoc}…` : ''}
           </span>
         )}
@@ -753,7 +849,7 @@ export const PurchaseOrderFromSo = () => {
           <span style={{ color: 'var(--c-festive-b, #B8331F)' }}>The next lines could not be loaded.</span>
         )}
         {hasNextPage && (
-          <Button variant="ghost" size="sm" onClick={() => { void fetchNextPage(); }} disabled={isFetchingNextPage}>
+          <Button variant="ghost" size="sm" onClick={() => { void fetchNextPage(); }} disabled={isFetchingNextPage || loadingAll}>
             {isFetchingNextPage ? 'Loading…' : itemsQ.isFetchNextPageError ? 'Try again' : 'Load more'}
           </Button>
         )}
@@ -763,8 +859,8 @@ export const PurchaseOrderFromSo = () => {
         <ActionResultDialog
           title={dialog.title}
           body={dialog.body}
-          primaryLabel={dialog.goTo ? 'Open Purchase Orders' : undefined}
-          onPrimary={dialog.goTo ? () => { const g = dialog.goTo!; setDialog(null); navigate(g); } : undefined}
+          primaryLabel={dialog.onConfirm ? dialog.confirmLabel : dialog.goTo ? 'Open Purchase Orders' : undefined}
+          onPrimary={dialog.onConfirm ?? (dialog.goTo ? () => { const g = dialog.goTo!; setDialog(null); navigate(g); } : undefined)}
           onClose={() => setDialog(null)}
         />
       )}

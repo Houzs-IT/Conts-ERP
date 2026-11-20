@@ -3,41 +3,49 @@
 // everything at once").
 //
 // `GET /mfg-purchase-orders/outstanding-so-items` without `limit` still answers the whole list
-// (lib/outstanding-so-lines.ts) for the mobile convert wizard and the PO detail page. With `limit` it answers one page:
-// this file reads the candidate SO lines for that page, in the same order as the whole list (doc_no DESC, id), with
-// the search and the filters applied in the database where PostgREST can express them and in JavaScript where it
-// cannot (category, delivery date). The route then runs the stock check (the MRP shortage) on the page's item codes
-// only, and keeps the lines that still need a PO.
+// (lib/outstanding-so-lines.ts) for the mobile convert wizard and the PO detail page. With `limit` it answers one page.
 //
-// KEYSET, NOT OFFSET. The cursor is the (doc_no, id) of the last line the server LOOKED AT, not a row number: a line
-// that the stock check drops, or that a PO converts between two scrolls, cannot shift the next page and skip a line.
+// HOW A PAGE IS CHOSEN (20 Nov 2026). The column funnels (Project, Customer, Supplier, ...) only ever saw the loaded
+// page, so a project past the first pages could not be picked from its funnel. The server now reads ONE LIGHT LIST of
+// every open SO line in scope (no stock check: that is what made the whole list take 8 to 24 s) and a pure function
+// (`buildPickerPage`) takes it with the search, the top-bar filters, the column funnels and the sort, and returns the
+// funnel counts, the total and the page's ids. Funnels, total and pages come from the same list, so they cannot
+// disagree. Only the page's lines get the full row and the stock check (route).
 //
-// THE TOTAL IS AN UPPER BOUND. `total` counts the open SO lines matching the search and the database filters before
-// the stock check, the category filter and the delivery-date filter. On production (19 Nov 2026) 4,993 of 5,121 live
-// lines passed the stock check, so it is close, but it is never offered as the count of lines still to order.
+// KEYSET, NOT OFFSET. The cursor is the (sort value, doc_no, id) of the last line handed out: a line that a PO
+// converts between two scrolls cannot shift the next page and skip a line.
+//
+// COUNTS AND TOTAL ARE UPPER BOUNDS. They are taken before the stock check. On production (19 Nov 2026) 4,993 of
+// 5,121 live lines passed it, so they are close, but never offered as the count of lines still to order.
+//
+// FUNNEL VALUES ARE THE GRID'S OWN TEXT. The grid re-applies each funnel to the rows it holds, so `facetValue` must
+// give the exact string the page's column hands the grid (PurchaseOrderFromSo.tsx), or a ticked row vanishes.
 // ----------------------------------------------------------------------------
 
-import { OUTSTANDING_SO_SELECT } from './outstanding-so-lines';
-import { paginateAll, chunkSizeForUrl } from './paginate-all';
-import { mapBounded } from './concurrency';
+import { paginateAll, chunkIn } from './paginate-all';
+import { readMfgProductBindings } from './supplier-bindings';
+import { poPickerOffers } from './renovation-po-split';
 import { categoryGroupOf } from '../shared/renovation-catalog';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- the SCM routes carry an untyped supabase-js client */
 
 export const PAGE_LIMIT_MAX = 200;
 const PAGE_LIMIT_DEFAULT = 100;
-/* How many candidate windows one request may read while the JavaScript filters drop lines. Each window is one round
-   trip; past this the page returns short and the cursor carries on from where it stopped. */
-const MAX_WINDOWS = 5;
-/* Header-matched documents per `doc_no.in.(...)` stream; more documents than one stream holds are read as parallel
-   streams and merged, so a broad search is never cut to the first N documents. */
-const SEARCH_STREAM_CONCURRENCY = 4;
+
+export const PICKER_FACET_COLS = ['soDocNo', 'soRef', 'project', 'debtorName', 'itemGroup', 'mainSupplier', 'itemCode', 'description'] as const;
+export type PickerFacetCol = typeof PICKER_FACET_COLS[number];
+export const PICKER_SORT_COLS = [...PICKER_FACET_COLS, 'qty', 'poQtyPicked', 'processingDate', 'deliveryDate'] as const;
+export type PickerSortCol = typeof PICKER_SORT_COLS[number];
 
 export type DateFieldKey = 'soDate' | 'processing' | 'delivery';
+export interface PickerSort { key: PickerSortCol; dir: 'asc' | 'desc' }
+export type PickerFacets = Record<PickerFacetCol, Array<[string, number]>>;
 
-export type OutstandingSoPageQuery = {
+export interface PageCursor { d: string; i: string; s?: string | number }
+
+export interface OutstandingSoPageQuery {
   limit: number;
-  cursor: { d: string; i: string } | null;
+  cursor: PageCursor | null;
   q: string;
   category: string | null;
   dateField: DateFieldKey;
@@ -46,27 +54,37 @@ export type OutstandingSoPageQuery = {
   supplier: string | null;
   location: string | null;
   docNo: string | null;
-};
+  colFilters: Partial<Record<PickerFacetCol, string[]>>;
+  sort: PickerSort | null;
+}
 
-export type CandidateKey = { d: string; i: string };
-
-export type CandidateRow = {
-  id: string; doc_no: string; item_group: string | null; line_delivery_date: string | null;
-  so: { status: string; on_hold: boolean | null; so_date: string | null; processing_date: string | null; customer_delivery_date: string | null };
-};
+/** One open SO line, as much of it as the funnels, the sort and the search read. */
+export interface PickerLine {
+  id: string; docNo: string; itemCode: string; description: string | null; itemGroup: string | null;
+  qty: number; poQtyPicked: number;
+  soDate: string | null; processingDate: string | null; deliveryDate: string | null;
+  debtorName: string | null; ref: string | null; customerSoNo: string | null;
+  projectCode: string | null; projectName: string | null;
+  mainSupplierCode: string | null; mainSupplierName: string | null;
+}
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/* Funnel condition tokens (date / number rules) start with \u0001; the text columns the server filters never hold them. */
+const CONDITION_TOKEN = '\u0001';
 
-export function encodeCursor(k: CandidateKey): string {
+export function encodeCursor(k: PageCursor): string {
   return btoa(unescape(encodeURIComponent(JSON.stringify(k)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export function decodeCursor(raw: string | undefined | null): CandidateKey | null {
+export function decodeCursor(raw: string | undefined | null): PageCursor | null {
   if (!raw) return null;
   try {
     const b64 = raw.replace(/-/g, '+').replace(/_/g, '/');
-    const k = JSON.parse(decodeURIComponent(escape(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))))) as Partial<CandidateKey>;
-    return typeof k.d === 'string' && typeof k.i === 'string' ? { d: k.d, i: k.i } : null;
+    const k: unknown = JSON.parse(decodeURIComponent(escape(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)))));
+    if (!k || typeof k !== 'object') return null;
+    const { d, i, s } = k as Record<string, unknown>;
+    if (typeof d !== 'string' || typeof i !== 'string') return null;
+    return typeof s === 'string' || typeof s === 'number' ? { d, i, s } : { d, i };
   } catch {
     return null;
   }
@@ -77,9 +95,33 @@ export function cleanSearch(raw: string | undefined | null): string {
   return String(raw ?? '').replace(/["\\*%]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
 }
 
+const isFacetCol = (k: string): k is PickerFacetCol => (PICKER_FACET_COLS as readonly string[]).includes(k);
+const isSortCol = (k: string): k is PickerSortCol => (PICKER_SORT_COLS as readonly string[]).includes(k);
+
+/** `cols` is the grid's funnel state as JSON (`{"project":["KL 48"]}`). Columns the server does not know are left to
+    the grid, which still applies them to the rows it holds. */
+function parseColFilters(raw: string | undefined): Partial<Record<PickerFacetCol, string[]>> | null {
+  if (!raw) return {};
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return null; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const out: Partial<Record<PickerFacetCol, string[]>> = {};
+  for (const [k, v] of Object.entries(parsed)) {
+    if (!isFacetCol(k) || !Array.isArray(v)) continue;
+    const vals = v.filter((x): x is string => typeof x === 'string' && !x.startsWith(CONDITION_TOKEN));
+    if (vals.length > 0) out[k] = vals;
+  }
+  return out;
+}
+
+function parseSort(raw: string | undefined): PickerSort | null {
+  const [key, dir] = String(raw ?? '').split(':');
+  return key && isSortCol(key) && (dir === 'asc' || dir === 'desc') ? { key, dir } : null;
+}
+
 /**
  * The paged mode's parameters, or `null` when the caller did not ask for a page (no `limit`): that caller gets the
- * whole list, unchanged. An unreadable cursor is an error, not a silent first page.
+ * whole list, unchanged. An unreadable cursor or funnel state is an error, not a silent first page.
  */
 export function parseOutstandingSoPageQuery(query: Record<string, string | undefined>):
   { ok: true; page: OutstandingSoPageQuery | null } | { ok: false; reason: string } {
@@ -88,9 +130,11 @@ export function parseOutstandingSoPageQuery(query: Record<string, string | undef
   const limit = Number.isFinite(n) && n > 0 ? Math.min(PAGE_LIMIT_MAX, Math.floor(n)) : PAGE_LIMIT_DEFAULT;
   const cursor = decodeCursor(query.cursor);
   if (query.cursor && !cursor) return { ok: false, reason: 'cursor is not one this server issued' };
+  const colFilters = parseColFilters(query.cols);
+  if (!colFilters) return { ok: false, reason: 'cols is not a column filter object' };
   const dateField: DateFieldKey = query.dateField === 'processing' || query.dateField === 'delivery' ? query.dateField : 'soDate';
-  const date = (v: string | undefined) => (v && ISO_DATE.test(v) ? v : null);
-  const text = (v: string | undefined) => (v && v.trim() ? v.trim() : null);
+  const date = (v: string | undefined): string | null => (v && ISO_DATE.test(v) ? v : null);
+  const text = (v: string | undefined): string | null => (v && v.trim() ? v.trim() : null);
   return {
     ok: true,
     page: {
@@ -98,100 +142,164 @@ export function parseOutstandingSoPageQuery(query: Record<string, string | undef
       category: query.category && query.category !== 'all' ? query.category : null,
       dateField, dateFrom: date(query.dateFrom), dateTo: date(query.dateTo),
       supplier: text(query.supplier), location: text(query.location), docNo: text(query.docNo),
+      colFilters, sort: parseSort(query.sort),
     },
   };
 }
 
-const quote = (v: string): string => `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-
-const keyOf = (r: CandidateRow): CandidateKey => ({ d: r.doc_no, i: r.id });
-
-/** doc_no DESC, id ASC — the order of the whole list, so page 1 + page 2 + ... reads as the old screen did. */
-export function compareKeys(a: CandidateKey, b: CandidateKey): number {
+/** doc_no DESC, id ASC — the order of the whole list, and every sort's tie-break. */
+export function compareKeys(a: { d: string; i: string }, b: { d: string; i: string }): number {
   if (a.d !== b.d) return a.d > b.d ? -1 : 1;
   return a.i < b.i ? -1 : a.i > b.i ? 1 : 0;
 }
 
-/** The filters PostgREST cannot express, applied exactly as the screen applied them before (PurchaseOrderFromSo.tsx). */
-export function passesPageFilters(r: CandidateRow, page: OutstandingSoPageQuery): boolean {
+/* The grid's blank key (DataTable filterKeyOf): null and '' both read as an em dash. */
+const keyOf = (v: string | null | undefined): string => (v == null || v === '' ? '—' : v);
+
+/** The SO's own reference, by the one display rule (frontend lib/customer-ref.ts customerRefOf). */
+const refText = (l: PickerLine): string => (l.ref || l.customerSoNo || '').trim();
+const projectTitle = (l: PickerLine): string => l.projectName?.trim() || l.projectCode?.trim() || '';
+
+/** The value a line shows in one column's funnel: the same text the page's column gives the grid. */
+export function facetValue(l: PickerLine, col: PickerFacetCol): string {
+  switch (col) {
+    case 'soDocNo': return keyOf(l.docNo);
+    case 'soRef': return refText(l) || '—';
+    case 'project': return projectTitle(l) || '(none)';
+    case 'debtorName': return keyOf(l.debtorName ?? '(none)');
+    case 'itemGroup': return keyOf((l.itemGroup ?? '(none)').toUpperCase());
+    case 'mainSupplier': return keyOf(l.mainSupplierName ?? l.mainSupplierCode ?? '(none)');
+    case 'itemCode': return keyOf(l.itemCode);
+    case 'description': return keyOf(l.description);
+  }
+}
+
+function sortValue(l: PickerLine, key: PickerSortCol): string | number {
+  switch (key) {
+    case 'soDocNo': return l.docNo;
+    case 'soRef': return refText(l);
+    case 'project': return projectTitle(l);
+    case 'debtorName': return l.debtorName ?? '';
+    case 'itemGroup': return (l.itemGroup ?? '').toUpperCase();
+    case 'mainSupplier': return l.mainSupplierName ?? l.mainSupplierCode ?? '';
+    case 'itemCode': return l.itemCode;
+    case 'description': return l.description ?? '';
+    case 'qty': return l.qty;
+    case 'poQtyPicked': return l.poQtyPicked;
+    case 'processingDate': return l.processingDate ?? '';
+    case 'deliveryDate': return l.deliveryDate ?? '';
+  }
+}
+
+const compareValues = (a: string | number, b: string | number): number =>
+  typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b));
+
+/** The search box, category and date range, applied as the screen applied them before. */
+export function passesTopBar(l: PickerLine, page: OutstandingSoPageQuery): boolean {
   if (page.category) {
-    const s = String(r.item_group ?? '').toUpperCase();
+    const s = String(l.itemGroup ?? '').toUpperCase();
     const f = page.category.toUpperCase();
     if (!(s === f || categoryGroupOf(s) === f)) return false;
   }
   if (page.dateFrom || page.dateTo) {
-    const d = page.dateField === 'soDate' ? r.so?.so_date
-      : page.dateField === 'processing' ? r.so?.processing_date
-      : (r.line_delivery_date ?? r.so?.customer_delivery_date);
+    const d = page.dateField === 'soDate' ? l.soDate : page.dateField === 'processing' ? l.processingDate : l.deliveryDate;
     if (!d) return false;
     const day = String(d).slice(0, 10);
     if (page.dateFrom && day < page.dateFrom) return false;
     if (page.dateTo && day > page.dateTo) return false;
   }
+  if (page.supplier && l.mainSupplierCode !== page.supplier) return false;
+  if (page.q) {
+    const q = page.q.toLowerCase();
+    const hay = [l.docNo, l.itemCode, l.description, l.debtorName, l.ref, l.customerSoNo, l.projectCode, l.projectName];
+    if (!hay.some((v) => v != null && v.toLowerCase().includes(q))) return false;
+  }
   return true;
 }
 
+export interface PickerPage { ids: string[]; nextCursor: PageCursor | null; total: number; facets: PickerFacets | null }
+
 /**
- * The documents whose header matches the search: customer, ref, customer SO no., or the project's code or name.
- * Two reads (projects, then sales-order headers), both paged so nothing past PostgREST's row cap is dropped.
+ * From the light list to one page. Each funnel's counts are taken under every OTHER funnel (the grid's own rule,
+ * dataTableRows facetedFilterValues), so the choices narrow as filters are added. Facets come with the first page only.
  */
-async function headerMatchedDocs(sb: any, scopeQuery: (q: any) => any, companyId: number | null | undefined, term: string):
-  Promise<{ docs: string[]; error: string | null }> {
-  const like = quote(`*${term}*`);
-  const projects = await paginateAll<{ id: number }>((from, to) => {
-    const q = sb.schema('public').from('projects').select('id').or(`code.ilike.${like},name.ilike.${like}`);
-    return (companyId == null ? q : q.eq('company_id', companyId)).order('id').range(from, to);
-  });
-  if (projects.error) return { docs: [], error: projects.error.message };
-  const projectIds = (projects.data ?? []).map((p) => Number(p.id)).filter(Number.isFinite);
-  const terms = [`debtor_name.ilike.${like}`, `ref.ilike.${like}`, `customer_so_no.ilike.${like}`];
-  if (projectIds.length > 0) terms.push(`project_id.in.(${projectIds.join(',')})`);
-  const heads = await paginateAll<{ doc_no: string }>((from, to) => scopeQuery(sb.from('mfg_sales_orders').select('doc_no'))
-    .or(terms.join(','))
-    .not('status', 'in', '(CANCELLED,DRAFT,ON_HOLD)')
-    .order('doc_no')
-    .range(from, to));
-  if (heads.error) return { docs: [], error: heads.error.message };
-  return { docs: [...new Set((heads.data ?? []).map((h) => h.doc_no).filter(Boolean))], error: null };
+export function buildPickerPage(lines: readonly PickerLine[], page: OutstandingSoPageQuery): PickerPage {
+  const active = (Object.entries(page.colFilters) as Array<[PickerFacetCol, string[]]>)
+    .filter(([, v]) => v.length > 0)
+    .map(([col, v]) => [col, new Set(v)] as const);
+  const passes = (l: PickerLine, except: PickerFacetCol | null): boolean =>
+    active.every(([col, set]) => col === except || set.has(facetValue(l, col)));
+
+  const base = lines.filter((l) => passesTopBar(l, page));
+  const matched = base.filter((l) => passes(l, null));
+
+  let facets: PickerFacets | null = null;
+  if (!page.cursor) {
+    const built: Partial<PickerFacets> = {};
+    for (const col of PICKER_FACET_COLS) {
+      const counts = new Map<string, number>();
+      for (const l of base) {
+        if (!passes(l, col)) continue;
+        const v = facetValue(l, col);
+        counts.set(v, (counts.get(v) ?? 0) + 1);
+      }
+      built[col] = [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
+    }
+    facets = built as PickerFacets;
+  }
+
+  const { sort, cursor, limit } = page;
+  const mul = sort?.dir === 'desc' ? -1 : 1;
+  type Key = { s?: string | number; d: string; i: string };
+  const cmp = (a: Key, b: Key): number => {
+    if (sort) {
+      const c = compareValues(a.s ?? '', b.s ?? '') * mul;
+      if (c !== 0) return c;
+    }
+    return compareKeys(a, b);
+  };
+  const keyed = matched.map((l) => ({ id: l.id, d: l.docNo, i: l.id, s: sort ? sortValue(l, sort.key) : undefined }));
+  keyed.sort(cmp);
+  const start = cursor ? keyed.findIndex((k) => cmp(k, cursor) > 0) : 0;
+  const from = start < 0 ? keyed.length : start;
+  const slice = keyed.slice(from, from + limit);
+  const last = slice.at(-1);
+  const nextCursor = last && from + limit < keyed.length
+    ? (last.s === undefined ? { d: last.d, i: last.i } : { d: last.d, i: last.i, s: last.s })
+    : null;
+  return { ids: slice.map((k) => k.id), nextCursor, total: matched.length, facets };
 }
 
-type Window = { rows: CandidateRow[]; more: boolean; total: number | null; error: string | null };
+const INDEX_SELECT = `
+      id, doc_no, item_code, description, item_group, qty, po_qty_picked, line_delivery_date,
+      so:mfg_sales_orders!inner ( debtor_name, status, on_hold, so_date, customer_delivery_date, processing_date, sales_location, ref, customer_so_no, project_id )
+    `;
+
+interface IndexRow {
+  id: string; doc_no: string; item_code: string; description: string | null; item_group: string | null;
+  qty: number | string | null; po_qty_picked: number | string | null; line_delivery_date: string | null;
+  so: {
+    debtor_name: string | null; so_date: string | null; customer_delivery_date: string | null; processing_date: string | null;
+    ref: string | null; customer_so_no: string | null; project_id: number | null;
+  };
+}
+
+interface SupplierRef { code: string; name: string }
+interface Bind { item_code: string; supplier: SupplierRef | SupplierRef[] | null }
 
 /**
- * Read the page's candidate lines: the first `limit` lines after `cursor` that pass every filter, reading at most
- * MAX_WINDOWS windows. `nextCursor` is the key of the last line looked at (null once the list is exhausted).
- * `total` is counted on the first page only.
+ * The light list: every open SO line in scope, with its project and main supplier, filtered by what the database can
+ * filter (status, hold, SO, location, SO / processing date). Lines the picker never offers (works, services, client
+ * supplied) are dropped, as the route drops them.
  */
-export async function readOutstandingSoCandidates<T extends CandidateRow>(
+export async function readPickerLines(
   sb: any,
   scopeQuery: (q: any) => any,
   companyId: number | null | undefined,
   page: OutstandingSoPageQuery,
-): Promise<{ rows: T[]; nextCursor: CandidateKey | null; total: number | null; reads: number; error: string | null }> {
-  let reads = 0;
-  let docChunks: string[][] = [];
-  const lineTerms: string[] = [];
-  if (page.q) {
-    const header = await headerMatchedDocs(sb, scopeQuery, companyId, page.q);
-    reads += 2;
-    if (header.error) return { rows: [], nextCursor: null, total: null, reads, error: header.error };
-    const like = quote(`*${page.q}*`);
-    lineTerms.push(`doc_no.ilike.${like}`, `item_code.ilike.${like}`, `description.ilike.${like}`);
-    const size = Math.max(1, Math.min(150, chunkSizeForUrl(header.docs)));
-    for (let i = 0; i < header.docs.length; i += size) docChunks.push(header.docs.slice(i, i + size));
-  }
-  if (docChunks.length === 0) docChunks = [[]];
-  const windowSize = Math.min(400, page.limit * 2);
-
-  const stream = async (after: CandidateKey | null, docs: string[], withCount: boolean) => {
-    const groups: string[] = [];
-    if (after) groups.push(`or(doc_no.lt.${quote(after.d)},and(doc_no.eq.${quote(after.d)},id.gt.${quote(after.i)}))`);
-    if (page.q) {
-      const terms = [...lineTerms];
-      if (docs.length > 0) terms.push(`doc_no.in.(${docs.map(quote).join(',')})`);
-      groups.push(`or(${terms.join(',')})`);
-    }
-    let q = scopeQuery(sb.from('mfg_sales_order_items').select(OUTSTANDING_SO_SELECT, withCount ? { count: 'exact' } : undefined))
+): Promise<{ lines: PickerLine[]; error: string | null }> {
+  const rows = await paginateAll<IndexRow>((from, to) => {
+    let q = scopeQuery(sb.from('mfg_sales_order_items').select(INDEX_SELECT))
       .eq('cancelled', false)
       .not('so.status', 'in', '(CANCELLED,DRAFT,ON_HOLD)')
       .not('so.on_hold', 'is', true);
@@ -202,56 +310,50 @@ export async function readOutstandingSoCandidates<T extends CandidateRow>(
       if (page.dateFrom) q = q.gte(col, page.dateFrom);
       if (page.dateTo) q = q.lte(col, page.dateTo);
     }
-    if (groups.length === 1) q = q.or(groups[0].replace(/^or\((.*)\)$/, '$1'));
-    else if (groups.length > 1) q = q.or(`and(${groups.join(',')})`);
-    const res = await q.order('doc_no', { ascending: false }).order('id').range(0, windowSize - 1);
-    return res as { data: CandidateRow[] | null; error: { message: string } | null; count: number | null };
-  };
+    return q.order('doc_no', { ascending: false }).order('id').range(from, to);
+  });
+  if (rows.error) return { lines: [], error: rows.error.message };
+  const data = rows.data ?? [];
 
-  const readWindow = async (after: CandidateKey | null, withCount: boolean): Promise<Window> => {
-    const results = await mapBounded(docChunks, SEARCH_STREAM_CONCURRENCY, (docs) => stream(after, docs, withCount && docChunks.length === 1));
-    reads += results.length;
-    const failed = results.find((r) => r.error);
-    if (failed?.error) return { rows: [], more: false, total: null, error: failed.error.message };
-    if (results.length === 1) {
-      const rows = results[0].data ?? [];
-      return { rows, more: rows.length === windowSize, total: results[0].count ?? null, error: null };
-    }
-    /* Several streams: the merge is exact up to the smallest last key among the streams that came back full; past it
-       a full stream may still hold lines that sort earlier. */
-    let cut: CandidateKey | null = null;
-    for (const r of results) {
-      const rows = r.data ?? [];
-      if (rows.length === windowSize) {
-        const last = keyOf(rows[rows.length - 1]);
-        if (!cut || compareKeys(last, cut) < 0) cut = last;
-      }
-    }
-    const byId = new Map<string, CandidateRow>();
-    for (const r of results) for (const row of r.data ?? []) byId.set(row.id, row);
-    const merged = [...byId.values()].sort((a, b) => compareKeys(keyOf(a), keyOf(b)))
-      .filter((row) => !cut || compareKeys(keyOf(row), cut) <= 0);
-    return { rows: merged, more: cut != null, total: null, error: null };
-  };
+  const projectIds = [...new Set(data.map((r) => r.so.project_id).filter((id): id is number => id != null))];
+  const codes = [...new Set(data.map((r) => r.item_code).filter(Boolean))];
+  const [projects, binds] = await Promise.all([
+    chunkIn<{ id: number; code: string | null; name: string | null }, number>(
+      projectIds,
+      (batch, from, to) => {
+        const query = sb.schema('public').from('projects').select('id, code, name').in('id', batch);
+        return (companyId == null ? query : query.eq('company_id', companyId)).order('id').range(from, to);
+      },
+    ),
+    readMfgProductBindings<Bind>(sb, { codes, companyId, select: 'item_code, is_main_supplier, supplier:suppliers(code, name)' }),
+  ]);
+  if (projects.error) return { lines: [], error: `projects: ${projects.error.message}` };
+  if (binds.error) return { lines: [], error: `supplier bindings: ${binds.error.message}` };
 
-  const picked: T[] = [];
-  let after = page.cursor;
-  let lastSeen: CandidateKey | null = page.cursor;
-  let exhausted = false;
-  let total: number | null = null;
-  for (let w = 0; w < MAX_WINDOWS && picked.length < page.limit; w++) {
-    const win = await readWindow(after, w === 0 && page.cursor == null);
-    if (win.error) return { rows: [], nextCursor: null, total: null, reads, error: win.error };
-    if (w === 0) total = win.total;
-    for (const row of win.rows) {
-      lastSeen = keyOf(row);
-      if (!passesPageFilters(row, page)) continue;
-      picked.push(row as T);
-      if (picked.length >= page.limit) break;
-    }
-    if (picked.length >= page.limit) break;
-    if (!win.more) { exhausted = true; break; }
-    after = lastSeen;
+  const projectById = new Map<number, { code: string | null; name: string | null }>();
+  for (const p of projects.data) projectById.set(Number(p.id), { code: p.code, name: p.name });
+  // Bindings arrive main supplier first (readMfgProductBindings order), as the route reads them.
+  const supplierByCode = new Map<string, SupplierRef>();
+  for (const b of binds.data) {
+    if (supplierByCode.has(b.item_code)) continue;
+    const s = Array.isArray(b.supplier) ? b.supplier[0] : b.supplier;
+    if (s) supplierByCode.set(b.item_code, s);
   }
-  return { rows: picked, nextCursor: exhausted ? null : lastSeen, total, reads, error: null };
+
+  const lines: PickerLine[] = [];
+  for (const r of data) {
+    const supplier = supplierByCode.get(r.item_code);
+    if (!poPickerOffers({ itemCode: r.item_code, itemGroup: r.item_group, mainSupplierCode: supplier?.code ?? null })) continue;
+    const project = r.so.project_id == null ? undefined : projectById.get(Number(r.so.project_id));
+    lines.push({
+      id: r.id, docNo: r.doc_no, itemCode: r.item_code, description: r.description, itemGroup: r.item_group,
+      qty: Number(r.qty ?? 0), poQtyPicked: Number(r.po_qty_picked ?? 0),
+      soDate: r.so.so_date, processingDate: r.so.processing_date,
+      deliveryDate: r.line_delivery_date ?? r.so.customer_delivery_date,
+      debtorName: r.so.debtor_name, ref: r.so.ref, customerSoNo: r.so.customer_so_no,
+      projectCode: project?.code ?? null, projectName: project?.name ?? null,
+      mainSupplierCode: supplier?.code ?? null, mainSupplierName: supplier?.name ?? null,
+    });
+  }
+  return { lines, error: null };
 }
