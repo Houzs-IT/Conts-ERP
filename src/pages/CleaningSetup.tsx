@@ -237,7 +237,7 @@ export function PayView({ tabs }: { tabs: ReactNode }) {
           </select>
         </label>
         <Segmented<'staff' | 'unit'> label="Show by" value={by} onChange={setBy} options={[{ key: 'staff', label: 'Staff' }, { key: 'unit', label: 'Unit' }]} />
-        {unpriced > 0 && <span className="text-meta text-warning">{unpriced} {unpriced === 1 ? 'cleaning job has' : 'cleaning jobs have'} no internal cost set, so the cleaner's pay is not known: set it in Prices.</span>}
+        {by === 'staff' && unpriced > 0 && <span className="text-meta text-warning">{unpriced} {unpriced === 1 ? 'cleaning job has' : 'cleaning jobs have'} no internal cost set, so the cleaner's pay is not known: set it in Prices.</span>}
       </div>
       {error && <StaleBanner message={error} onRetry={reload} />}
       {loading && !data ? <Skeleton height={160} /> : data && !data.ready ? (
@@ -262,26 +262,26 @@ export function PayView({ tabs }: { tabs: ReactNode }) {
   );
 }
 
-const UNIT_PAY_COLS = 'md:grid-cols-[minmax(0,1.6fr)_repeat(7,minmax(0,1fr))]';
+const UNIT_PAY_COLS = 'lg:grid-cols-[minmax(0,1.6fr)_repeat(7,minmax(0,1fr))]';
 
 function UnitPayTable({ rows }: { rows: UnitPayRow[] }) {
   if (rows.length === 0) return <EmptyState icon="Sparkles" title="No Basic or Deep cleans on our units this month." />;
   const kind = (k: KindCharge, label: string, order: string) => <>
-    <span className={cx(order, 'tabular-nums', k.unpriced ? 'text-warning' : '')} title={k.unpriced ? `${k.unpriced} not priced` : undefined}><span className="md:hidden text-muted-ink">{label} cleans </span>{k.jobs}</span>
-    <span className={cx(order, 'tabular-nums')}><span className="md:hidden text-muted-ink">Rate </span>{money(k.rate)}</span>
-    <span className={cx(order, 'tabular-nums')}><span className="md:hidden text-muted-ink">Subtotal </span>{rm(k.amount)}</span>
+    <span className={cx(order, 'tabular-nums', k.unpriced ? 'text-warning' : '')} title={k.unpriced ? `${k.unpriced} not priced` : undefined}><span className="lg:hidden text-muted-ink">{label} cleans </span>{k.jobs}</span>
+    <span className={cx(order, 'tabular-nums whitespace-nowrap')}><span className="lg:hidden text-muted-ink">Rate </span>{money(k.rate)}</span>
+    <span className={cx(order, 'tabular-nums whitespace-nowrap')}><span className="lg:hidden text-muted-ink">Subtotal </span>{rm(k.amount)}</span>
   </>;
   return (
     <section className="bg-card rounded-card border border-solid border-line-soft shadow-[var(--shadow-card)] p-4 flex flex-col">
-      <div className={cx('hidden md:grid gap-3 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink pb-2', UNIT_PAY_COLS)}>
+      <div className={cx('hidden lg:grid gap-3 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink pb-2', UNIT_PAY_COLS)}>
         <span>Unit</span><span>Basic cleans</span><span>Basic rate</span><span>Basic subtotal</span><span>Deep cleans</span><span>Deep rate</span><span>Deep subtotal</span><span className="text-right" title="What the owner is charged: the owner price of the Basic and Deep cleans finished on the unit.">Total (owner price)</span>
       </div>
       {rows.map(r => (
         <div key={r.unitId} className={cx('grid grid-cols-3 gap-x-3 gap-y-1 py-2.5 [border-top:1px_solid_var(--color-line-soft)] text-copy items-baseline', UNIT_PAY_COLS)}>
-          <span className="max-md:col-span-2 max-md:order-1"><b className="font-mono">{r.unitNumber}</b> <span className="text-muted-ink">{buildingName(r.propertyName)}</span></span>
-          {kind(r.basic, 'Basic', 'max-md:order-3')}
-          {kind(r.deep, 'Deep', 'max-md:order-4')}
-          <b className="max-md:order-2 text-right tabular-nums">{rm(r.total)}</b>
+          <span className="max-lg:col-span-2 max-lg:order-1"><b className="font-mono">{r.unitNumber}</b> <span className="text-muted-ink">{buildingName(r.propertyName)}</span></span>
+          {kind(r.basic, 'Basic', 'max-lg:order-3')}
+          {kind(r.deep, 'Deep', 'max-lg:order-4')}
+          <b className="max-lg:order-2 text-right tabular-nums whitespace-nowrap">{rm(r.total)}</b>
         </div>
       ))}
     </section>
