@@ -46,7 +46,9 @@ import { enqueueConvert, recordParentlessCreate, enqueueCancel, enqueueEdit, ret
 import { sourceGrnIdsForPi } from '../lib/convert-parent';
 import { refuseMigratedSources, receiptMustMirrorAutoCount } from '../lib/migrated-chain';
 import { MIGRATED_RECEIPTS_NOT_INVOICED_IN_AUTOCOUNT } from '../lib/migrated-receipts-not-invoiced.generated';
-import { attachGrnLineFacts, withPoPriceSnapshot } from '../lib/pi-po-price'; import { loadOutstandingGrnLines } from '../lib/outstanding-grn-lines';
+import { attachGrnLineFacts, withPoPriceSnapshot } from '../lib/pi-po-price';
+import { parseDocPageQuery, readDocPage } from '../lib/doc-batch-page';
+import { billableGrnBase, grnSearchMatches, makeDocBatchReader } from '../lib/purchase-picker-docs'; import { loadOutstandingGrnLines } from '../lib/outstanding-grn-lines';
 import { refuseWithoutWriting } from '../lib/no-write-refusal';
 /* The create's refusal bodies and the two rules its exits follow (2026-08-19). */
 import { insertFailed, loadFailed, rollbackPi, committedAnyway } from '../lib/pi-create-refusals';
@@ -435,7 +437,39 @@ purchaseInvoices.get('/', async (c) => {
    2026-05-28, same class as the PO-from-SO shadowing.) */
 purchaseInvoices.get('/outstanding-grn-items', async (c) => {
   const sb = c.get('supabase');
-  const loaded = await loadOutstandingGrnLines({ sb, scopeQuery: (q) => scopeToCompany(q, c) });
+  const inHouseId = await inHouseSupplierId(sb, c);
+  const isBillable = (i: { supplierId: string; itemCode: string; supplierCode: string }): boolean =>
+    i.supplierId !== inHouseId && !isCustomerGoods(i.itemCode, i.supplierCode);
+
+  /* ?limit= asks for ONE PAGE (lib/doc-batch-page.ts, audit 20 Nov 2026): a few billable notes at a time, newest
+     number first, searched on the server, each batch loaded by the same reader as the whole list. */
+  const paged = c.req.query('grnIds') ? null : parseDocPageQuery(c.req.query());
+  if (paged) {
+    const scopeQuery = <Q,>(q: Q): Q => scopeToCompany(q, c);
+    const matches = paged.q ? await grnSearchMatches(sb, scopeQuery, paged.q) : null;
+    if (matches?.error) return c.json({ error: 'load_failed', reason: matches.error }, 500);
+    const reader = makeDocBatchReader({ base: billableGrnBase(sb, scopeQuery), numberCol: 'grn_number', q: paged.q, matches });
+    const page = await readDocPage({
+      limit: paged.limit,
+      cursor: paged.cursor,
+      readBatch: reader.read,
+      linesFor: async (docs) => {
+        const noteIds = docs.map((d) => reader.idOf.get(d)).filter((x): x is string => !!x);
+        const got = await loadOutstandingGrnLines({ sb, scopeQuery, noteIds });
+        if (got.error !== null) return { lines: [], error: got.error };
+        return { lines: got.items.filter(isBillable), error: null };
+      },
+      docOf: (l) => l.grnDocNo,
+    });
+    if (page.error !== null) return c.json({ error: 'load_failed', reason: page.error }, 500);
+    await enrichLinesWithFabricSupplierCode(sb, c, page.lines);
+    return c.json({ items: page.lines, nextCursor: page.nextCursor, pageSize: paged.limit, truncated: false });
+  }
+
+  /* ?grnIds= (a GRN's "Transfer to Purchase Invoice"): those notes only, still company-scoped and still only the
+     ones with something left to bill. */
+  const grnIds = [...new Set((c.req.query('grnIds') ?? '').split(',').map((s) => s.trim()).filter(Boolean))].slice(0, 200);
+  const loaded = await loadOutstandingGrnLines({ sb, scopeQuery: (q) => scopeToCompany(q, c), noteIds: grnIds.length > 0 ? grnIds : undefined });
   if (loaded.error !== null) return c.json({ error: 'load_failed', reason: loaded.error }, 500);
 
   /* Owner 2026-08-06 — re-resolve each line's SUPPLIER fabric code from the
@@ -448,8 +482,7 @@ purchaseInvoices.get('/outstanding-grn-items', async (c) => {
      fail-soft. */
   /* Nobody bills for the customer's own goods or for the in-house team's work, so their receipts are not waiting for an
      invoice (owner, 6 Nov 2026). */
-  const inHouse = await inHouseSupplierId(sb, c);
-  const billable = loaded.items.filter((i) => i.supplierId !== inHouse && !isCustomerGoods(i.itemCode, i.supplierCode));
+  const billable = loaded.items.filter(isBillable);
   await enrichLinesWithFabricSupplierCode(sb, c, billable);
 
   return c.json({ items: billable, truncated: loaded.truncated });

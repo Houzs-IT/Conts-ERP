@@ -273,6 +273,34 @@ export function useMfgProducts(opts?: {
   });
 }
 
+/** First matches the search-as-you-type pickers show (server cap 200). */
+export const SKU_PICKER_LIMIT = 50;
+
+/* Search-as-you-type picker read (audit 20 Nov 2026): the server searches and answers the first `limit` ACTIVE SKUs in
+   code order, plus whether there are more, instead of the whole catalogue loading into every picker. The same
+   fields as matchesProductQuery (code, name, description, barcode). Disabled until there is something to ask:
+   a search of 2+ characters, or a category. */
+export function useMfgProductSearch(opts: { search: string; category?: string; enabled?: boolean; limit?: number }) {
+  const search = opts.search.trim();
+  const category = opts.category ?? '';
+  const limit = opts.limit ?? SKU_PICKER_LIMIT;
+  const ready = search.length >= 2 || category !== '';
+  return useQuery({
+    queryKey: ['mfg-products', activeCompanyKey(), 'picker', category || 'all', search, limit],
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (search.length >= 2) params.set('search', search);
+      if (category) params.set('category', category);
+      return authedFetch<{ products: MfgProductRow[]; more?: boolean }>(`/mfg-products?${params.toString()}`, { signal });
+    },
+    enabled: (opts.enabled ?? true) && ready,
+    staleTime: 5 * 60_000,
+    placeholderData: keepPreviousData,
+    retry: retryUnlessClientError,
+    retryDelay: 800,
+  });
+}
+
 /* Renovation SKU Master (Conts): every status (a photo-group SKU waits INACTIVE
    for its photo), with the primary photo and the default PO party. Its own
    cache key and never stale, so the SO/PO pickers' lean list is untouched. */

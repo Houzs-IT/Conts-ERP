@@ -29,6 +29,11 @@ const { outstandingPoItems, grnDetail, addGrnItem } = vi.hoisted(() => ({
 
 vi.mock("../../vendor/scm/lib/suppliers-queries", () => ({
   useOutstandingPoItems: outstandingPoItems,
+  /* Every case here is scoped to a PO (?poId=), which never reads the paged picker. */
+  useOutstandingPoItemsPaged: () => ({
+    data: undefined, isLoading: false, isError: false, isFetching: false,
+    fetchNextPage: vi.fn(), hasNextPage: false, isFetchingNextPage: false, isFetchNextPageError: false,
+  }),
 }));
 vi.mock("../../vendor/scm/lib/grn-queries", () => ({
   useGrnDetail: grnDetail,

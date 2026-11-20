@@ -112,12 +112,16 @@ export async function loadOutstandingGrnLines(args: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the untyped supabase-js client this tree passes around
   sb: any;
   scopeQuery: <Q>(q: Q) => Q;
+  /** One page's notes (lib/doc-batch-page.ts): skips the outstanding-note read and loads only these. */
+  noteIds?: string[];
 }): Promise<{ error: string } | { error: null; items: OutstandingGrnItem[]; truncated: boolean }> {
   const { sb, scopeQuery } = args;
 
-  const ids = await pageWithTruncation<{ id: string }>((from, to) =>
-    scopeQuery(sb.from('v_grn_outstanding').select('id').eq('status', 'POSTED').eq('is_outstanding', true))
-      .order('id').range(from, to));
+  const ids = args.noteIds
+    ? { data: args.noteIds.map((id) => ({ id })), error: null, truncated: false }
+    : await pageWithTruncation<{ id: string }>((from, to) =>
+      scopeQuery(sb.from('v_grn_outstanding').select('id').eq('status', 'POSTED').eq('is_outstanding', true))
+        .order('id').range(from, to));
   if (ids.error) return { error: ids.error.message };
   const noteIds = (ids.data ?? []).map((r) => r.id);
   if (noteIds.length === 0) return { error: null, items: [], truncated: ids.truncated };

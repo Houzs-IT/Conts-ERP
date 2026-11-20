@@ -151,6 +151,7 @@ async function syncAnchorBindingFromProduct(
 }
 
 // ── GET / ──────────────────────────────────────────────────────────────
+export const PICKER_LIMIT_MAX = 200;
 export const listMfgProductsHandler = async (c: AppContext) => {
   const category = c.req.query('category');
   const search = c.req.query('search');
@@ -168,6 +169,10 @@ export const listMfgProductsHandler = async (c: AppContext) => {
   const allStatuses = c.req.query('status') === 'all';
   const wantPhotos = c.req.query('withPhotos') === '1';
   const wantMain = c.req.query('withMain') === '1';
+  /* ?limit= (audit 20 Nov 2026): the search-as-you-type pickers ask for the first matches only, in code order, instead
+     of the whole catalogue. Without it, every row as before. */
+  const limitRaw = Number(c.req.query('limit'));
+  const pickLimit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(PICKER_LIMIT_MAX, Math.floor(limitRaw)) : null;
   const supabase = c.get('supabase');
 
   // PR #104 — Commander 2026-05-26: dropped fabric_usage_sen /
@@ -196,7 +201,7 @@ export const listMfgProductsHandler = async (c: AppContext) => {
      records why it cannot be stripped blind (the sofa chain resolves a CHARGED
      price through the same field, so a blind strip reprices a build). That one
      needs the owner's ruling, not a strip. */
-  const { data, error } = await paginateAll((from, to) => {
+  const read = (from: number, to: number) => {
     let q = supabase
       .from('mfg_products')
       .select(
@@ -225,10 +230,14 @@ export const listMfgProductsHandler = async (c: AppContext) => {
     if (s) q = q.or(`code.ilike.%${s}%,name.ilike.%${s}%,description.ilike.%${s}%,barcode.ilike.%${s}%`);
     q = scopeToCompany(q, c); // multi-company: mfg_products are per-company
     return q.range(from, to);
-  });
+  };
+  const { data, error } = pickLimit != null
+    ? await read(0, pickLimit) // one row past the limit tells the picker there are more
+    : await paginateAll(read);
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   // Flatten the joined model → a plain allowed_options field on each product.
-  const products: Array<Record<string, unknown>> = ((data ?? []) as unknown as Array<Record<string, unknown> & { model?: { allowed_options: unknown } | Array<{ allowed_options: unknown }> | null }>)
+  const more = pickLimit != null && (data ?? []).length > pickLimit;
+  const products: Array<Record<string, unknown>> = ((pickLimit != null ? (data ?? []).slice(0, pickLimit) : (data ?? [])) as unknown as Array<Record<string, unknown> & { model?: { allowed_options: unknown } | Array<{ allowed_options: unknown }> | null }>)
     .map(({ model, ...p }) => {
       const m = Array.isArray(model) ? model[0] : model;
       return { ...p, allowed_options: m?.allowed_options ?? null };
@@ -326,7 +335,7 @@ export const listMfgProductsHandler = async (c: AppContext) => {
      stale one. Vary partitions the private cache per active company so a switch
      misses and refetches the correct list. See BUG-HISTORY.md 2026-07-19. */
   c.header('vary', 'X-Company-Id');
-  return c.json({ products });
+  return c.json(pickLimit != null ? { products, more } : { products });
 };
 mfgProducts.get('/', listMfgProductsHandler);
 

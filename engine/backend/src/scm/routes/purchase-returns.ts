@@ -13,6 +13,9 @@
 //   PATCH  /purchase-returns/:id/cancel     — → CANCELLED (if not completed)
 // ----------------------------------------------------------------------------
 
+import { PR_SEARCH_COLS, pageRange, parseReturnListPage, returnSearchOr } from '../lib/return-list-page';
+import { SUPPLIER_MATCH_MAX } from '../lib/doc-batch-page';
+import { escapeForOr } from '../lib/postgrest-search';
 import { Hono, type Context } from 'hono';
 import { supabaseAuth } from '../middleware/auth';
 import type { Env, Variables } from '../env';
@@ -192,12 +195,24 @@ async function adjustGrnReturnedQty(sb: any, grnItemId: string, _delta?: number)
 export async function purchaseReturnListHandler(c: Context<{ Bindings: Env; Variables: Variables }>) {
   const sb = c.get('supabase');
   const filters = readPurchaseReturnListFilters((k) => c.req.query(k));
-  const { data, error } = await orderPurchaseReturnList(
-    filterPurchaseReturnList(sb.from('purchase_returns').select(PR_LIST_SELECT), filters, c),
-  ).limit(300);
+  /* ?page= asks for one page with its total, searched on the server (lib/return-list-page.ts); the phone list reads it.
+     The supplier is matched by name or code through its ids. */
+  const paged = parseReturnListPage((k) => c.req.query(k));
+  let q = filterPurchaseReturnList(sb.from('purchase_returns').select(PR_LIST_SELECT, paged ? { count: 'exact' } : undefined), filters, c);
+  if (paged?.q) {
+    const s = escapeForOr(paged.q);
+    const sup = await scopeToCompany(sb.from('suppliers').select('id'), c)
+      .or(`name.ilike.%${s}%,code.ilike.%${s}%`).order('id').limit(SUPPLIER_MATCH_MAX);
+    if (sup.error) return c.json({ error: 'load_failed', reason: sup.error.message }, 500);
+    const or = returnSearchOr(PR_SEARCH_COLS, paged.q, ((sup.data ?? []) as Array<{ id: string }>).map((r) => r.id));
+    if (or) q = q.or(or);
+  }
+  const ordered = orderPurchaseReturnList(q);
+  const { data, error, count } = await (paged ? ordered.range(...pageRange(paged)) : ordered.limit(300));
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   const attached = await attachPurchaseReturnLines(sb, c, (data ?? []) as unknown as PrLineHeader[]);
   if (attached.error !== null) return c.json({ error: 'load_failed', reason: attached.error }, 500);
+  if (paged) return c.json({ purchaseReturns: attached.rows, total: count ?? attached.rows.length, page: paged.page, pageSize: paged.pageSize });
   return c.json({ purchaseReturns: attached.rows });
 }
 purchaseReturns.get('/', purchaseReturnListHandler);

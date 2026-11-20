@@ -59,8 +59,8 @@ import {
   useSalesInvoicesPaged,
   useSalesInvoiceDetail,
   useUpdateSalesInvoiceStatus,
+  useSiCustomerNames,
 } from "../../vendor/scm/lib/sales-invoice-queries";
-import { useMfgCustomers } from "../../vendor/scm/lib/sales-order-queries";
 import { useServerColumnFunnels, funnelValues } from "../../hooks/useServerColumnFunnels";
 import { conditionDateRange } from "../../components/dataTableConditionFilters";
 import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
@@ -167,6 +167,9 @@ type SiRow = {
 type StatusTab = "all" | "draft" | "sent" | "partial" | "paid" | "cancelled";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+/* A stable empty list while the funnel's names load, so the column set is not rebuilt each render. */
+const EMPTY_NAMES: string[] = [];
 // margin_pct_basis is basis points (margin/total x 10000) → percent string.
 const fmtPctBasis = (basis: number | null | undefined): string =>
   basis == null ? "—" : `${(basis / 100).toFixed(1)}%`;
@@ -864,8 +867,8 @@ export function SalesInvoicesListV2() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [printingDocs, setPrintingDocs] = useState(false);
   // Server-filterable funnels (owner 2026-09-16): Customer Name + Currency → list query (pager over the filtered set); Debtor CODE + line/MRP funnels stay client-side; Customer checklist seeded with every customer.
-  const customersQ = useMfgCustomers();
-  const customerNames = useMemo(() => [...new Set((customersQ.data?.customers ?? []).map((cst) => cst.name).filter((n): n is string => !!n))], [customersQ.data]);
+  const customerNamesQ = useSiCustomerNames();
+  const customerNames = customerNamesQ.data ?? EMPTY_NAMES;
   const { serverFunnels, onColFiltersChange } = useServerColumnFunnels(
     (cf) => ({ ...conditionDateRange(cf["invoice_date"]), debtorNames: funnelValues(cf, "debtor_name"), currencies: funnelValues(cf, "currency") }),
     () => setPageParam(0),

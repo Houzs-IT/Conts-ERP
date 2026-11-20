@@ -1,18 +1,37 @@
 /* Search on the "Bill a Goods-Received Note" picker (owner 2026-09-14:
  * 「需要加上search button」, 494 lines across 197 notes).
  *
- * Mounts the real picker under a real router with only the data hook faked, the
- * same harness as convert-scope-pickers.test.tsx, and asserts what the operator
- * sees and what Continue would carry.
+ * Since audit 20 Nov 2026 the full picker reads one page at a time and the SERVER searches; given notes (?grnId=) are
+ * read whole and searched here. Mounts the real picker under a real router with only the data hooks faked: the paged
+ * hook stands in for the server by filtering with the same matcher, and records what it was asked.
  */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { filterOutstandingGrnLines } from "../../vendor/scm/lib/outstanding-grn-search";
 
-const { outstandingGrnItems } = vi.hoisted(() => ({ outstandingGrnItems: vi.fn() }));
+const { outstandingGrnItems, pagedCalls, fetchNext, pageState } = vi.hoisted(() => ({
+  outstandingGrnItems: vi.fn(),
+  pagedCalls: [] as string[],
+  fetchNext: vi.fn(),
+  pageState: { hasNextPage: false },
+}));
 
 vi.mock("../../vendor/scm/lib/suppliers-queries", () => ({
-  useOutstandingGrnItems: outstandingGrnItems,
+  useOutstandingGrnItems: (opts: { grnIds?: string[] } = {}) => {
+    const r = outstandingGrnItems() as { data: { items: Array<{ grnId: string }>; truncated: boolean } };
+    const ids = opts.grnIds ?? [];
+    return { ...r, isFetching: false, data: { ...r.data, items: r.data.items.filter((l) => ids.includes(l.grnId)) } };
+  },
+  useOutstandingGrnItemsPaged: (q: string) => {
+    pagedCalls.push(q);
+    const r = outstandingGrnItems() as { data: { items: Parameters<typeof filterOutstandingGrnLines>[0] } };
+    return {
+      isLoading: false, isError: false, isFetching: false,
+      data: { pages: [{ items: filterOutstandingGrnLines(r.data.items, q), nextCursor: null, pageSize: 100 }] },
+      fetchNextPage: fetchNext, hasNextPage: pageState.hasNextPage, isFetchingNextPage: false, isFetchNextPageError: false,
+    };
+  },
 }));
 vi.mock("../../vendor/scm/components/NotifyDialog", () => ({
   useNotify: () => vi.fn(),
@@ -20,7 +39,15 @@ vi.mock("../../vendor/scm/components/NotifyDialog", () => ({
 
 import { PurchaseInvoiceFromGrn } from "./PurchaseInvoiceFromGrn";
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.useFakeTimers();
+  pagedCalls.length = 0;
+  pageState.hasNextPage = false;
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 const grnLine = (over: Record<string, unknown>) => ({
   grnItemId: "x", grnId: "grn-65", grnDocNo: "HC-GRN-2609-065",
@@ -47,8 +74,11 @@ const open = (url = "/scm/purchase-invoices/from-grn", truncated = false) => {
   );
 };
 
-const search = (value: string) =>
+/** Type into the box and let the 300 ms pause pass, so the search reaches the (fake) server. */
+const search = (value: string) => {
   fireEvent.change(screen.getByLabelText("Search outstanding GRN lines"), { target: { value } });
+  act(() => { vi.advanceTimersByTime(300); });
+};
 
 const lineCheckbox = (itemCode: string) => {
   const box = screen.getByText(itemCode).parentElement?.querySelector('input[type="checkbox"]');
@@ -68,9 +98,26 @@ describe("Bill a Goods-Received Note: search", () => {
      ceiling, and flags the answer when it stops there. A short list that looks
      whole is exactly what the old newest-500 read produced in silence. */
   it("says the list is not complete when the server stopped reading at its ceiling", () => {
-    open("/scm/purchase-invoices/from-grn", true);
+    open("/scm/purchase-invoices/from-grn?grnId=grn-66", true);
     expect(screen.getByRole("alert").textContent).toMatch(/This list is not complete/);
-    expect(screen.getByText("4 lines across 2 GRNs")).toBeTruthy();
+    expect(screen.getByText("3 lines across 1 GRN")).toBeTruthy();
+  });
+
+  it("the full picker asks the server for the typed text, after a short pause", () => {
+    open();
+    expect(pagedCalls.at(-1)).toBe("");
+    fireEvent.change(screen.getByLabelText("Search outstanding GRN lines"), { target: { value: "immortal" } });
+    expect(pagedCalls.at(-1)).toBe("");
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(pagedCalls.at(-1)).toBe("immortal");
+  });
+
+  it("offers the next notes when the server says there are more", () => {
+    pageState.hasNextPage = true;
+    open();
+    expect(screen.getByText("4 lines across 2 GRNs so far")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Load more notes" }));
+    expect(fetchNext).toHaveBeenCalled();
   });
 
   it("typing narrows the cards to the matching lines and says how many of how many", () => {
@@ -80,7 +127,8 @@ describe("Bill a Goods-Received Note: search", () => {
     expect(screen.getByText("AKEMI IMMORTAL MATT (Q)")).toBeTruthy();
     expect(screen.queryByText("AKEMI MONARCH MATT (Q)")).toBeNull();
     expect(screen.queryByText("HC-GRN-2609-065")).toBeNull();
-    expect(screen.getByText("2 of 4 lines across 1 GRN")).toBeTruthy();
+    /* The server answered the search, so the count is of what it found. */
+    expect(screen.getByText("2 lines across 1 GRN")).toBeTruthy();
   });
 
   it("every word must match, across the note and the line", () => {
@@ -123,6 +171,7 @@ describe("Bill a Goods-Received Note: search", () => {
     expect(screen.getByText(/No outstanding line matches/)).toBeTruthy();
     expect(screen.queryByText(/Once a GRN is posted/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Clear the search" }));
+    act(() => { vi.advanceTimersByTime(300); });
     expect(screen.getByText("4 lines across 2 GRNs")).toBeTruthy();
     expect((screen.getByLabelText("Search outstanding GRN lines") as HTMLInputElement).value).toBe("");
   });

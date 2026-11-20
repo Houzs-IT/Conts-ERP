@@ -79,6 +79,7 @@ import { recordSiAutoCountSource } from '../lib/si-autocount-source';
 import { refuseMigratedSources } from '../lib/migrated-chain';
 import { withSoRefDocNos } from '../lib/so-ref-search';
 import { dbWriteFailure } from '../lib/pg-rule-error';
+import { readDistinctCustomerNames } from '../lib/customer-names';
 
 /* ERP -> AutoCount Sales Invoice edit. AutoCount calls it IV
    (AcSyncService.cs:443). See queueAcDoEdit for the shape. */
@@ -437,6 +438,22 @@ export async function stampSourcePos(sb: any, rows: unknown): Promise<void> {
     r.source_adj = (trace?.adjQty ?? 0) > 0;
   }
 }
+
+/* The Customer Name funnel's choices on the SI list (audit 20 Nov 2026): the invoices' own distinct names, under the
+   list's company and sales scope, one column. It used to borrow the SO customer directory, which reads every SO with
+   its totals. Static path, so registered before /:id. */
+salesInvoices.get('/customer-names', async (c) => {
+  const sb = c.get('supabase');
+  const scopeIds = await resolveSalesScopeIds(sb, c.env, c.get('houzsUser')?.id, canViewAllSales(c));
+  const { names, error } = await readDistinctCustomerNames((from, to) => {
+    let q = sb.from('sales_invoices').select('debtor_name').not('debtor_name', 'is', null);
+    if (scopeIds) q = q.in('salesperson_id', scopeIds);
+    q = scopeToCompany(q, c);
+    return q.order('debtor_name').order('id').range(from, to);
+  });
+  if (error) return c.json({ error: 'load_failed', reason: error }, 500);
+  return c.json({ names });
+});
 
 salesInvoices.get('/', async (c) => {
   const sb = c.get('supabase');
