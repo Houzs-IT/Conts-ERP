@@ -9,6 +9,9 @@
 //   POST /utility-bills/payment-request/:id/bills      { bills, files? }  one still waiting, its bills changed before any
 //                                          payment; files are kept only when the request has none yet (an old grouped
 //                                          request split into one per bill takes its remaining bill's page)
+//   POST /utility-bills/payment-request/:id/withdraw  one still waiting, taken back by the office: its bill was paid by
+//                                          the owner (chew, 20 Nov 2026), whoever sent it; refused once a voucher or
+//                                          an AP invoice is on it
 // The bills a scan records for the company to pay go to finance as one request per provider (chew, 2 Nov 2026: A): a
 // Rental line per bill with its unit and no account (finance sets it on the voucher), made out to the provider's
 // supplier when one is on the list, else to the provider's name for finance to link.
@@ -220,6 +223,29 @@ export const updateUtilityRequestBillsHandler = async (c: Ctx): Promise<Response
   return c.json({ id: r.id, requestNo: r.request_no, amountSen, filesAdded: await addFilesIfNone(c, sb, co.companyId, r.id, files.files) }, 200);
 };
 
+/** A waiting utility request taken back by finance or management, not only by the person who sent it (chew, 20 Nov 2026:
+ *  "改成直接勾": ticking Owner paid this bill on a bill still waiting withdraws its request). As My claims' withdraw: refused
+ *  once a voucher or an AP invoice is on it; a voucher made at the same moment wins and the request goes back. */
+export const withdrawUtilityRequestHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const refused = officeOnly(c);
+  if (refused) return refused;
+  const sb = c.get('supabase');
+  const { data: r } = await sb.from('payment_requests').select('id, request_no, status, source_key').eq('company_id', co.companyId).eq('id', c.req.param('id')).maybeSingle();
+  if (!r || !String(r.source_key ?? '').startsWith('utility:')) return c.json({ error: 'not_found' }, 404);
+  if (RETURNED.has(String(r.status))) return c.json({ id: r.id, requestNo: r.request_no, status: r.status }, 200);
+  const bill = await liveBillOf(sb, r.id);
+  if (bill) return billRefusal(c, bill);
+  const pvsOf = async () => ((await requestPayments(sb, [r.id])).vouchers.get(r.id) ?? []).filter(p => p.status !== 'CANCELLED');
+  const pvs = await pvsOf();
+  if (pvs.length) return c.json({ error: 'has_voucher', message: `${r.request_no} already has voucher ${pvs.map(p => p.pv_number).join(', ')}. Ask finance to cancel the voucher first.` }, 409);
+  const paying = () => c.json({ error: 'not_waiting', message: `Finance has started paying ${r.request_no}, so it is not taken back.` }, 409);
+  if (!(await claimRequest(sb, r.id, 'SUBMITTED', { status: 'WITHDRAWN' }))) return paying();
+  if ((await pvsOf()).length) { await claimRequest(sb, r.id, 'WITHDRAWN', { status: 'SUBMITTED' }); return paying(); }
+  return c.json({ id: r.id, requestNo: r.request_no, status: 'WITHDRAWN' }, 200);
+};
+
 /** A request with no file yet takes these (finance sent requests back for "NO ATTACHMENT"); one that has files keeps
  *  them alone. The bills are already saved, so a file that cannot be stored is reported as not added, not as a failure. */
 async function addFilesIfNone(c: Ctx, sb: any, companyId: number, requestId: string, files: Parameters<typeof storeFiles>[2]): Promise<number> {
@@ -287,4 +313,5 @@ export function utilityBillRoutes(r: { post: (p: string, h: (c: Ctx) => Promise<
   r.post('/utility-bills/payment-request', utilityRequestHandler);
   r.post('/utility-bills/payment-request/:id/resubmit', resubmitUtilityRequestHandler);
   r.post('/utility-bills/payment-request/:id/bills', updateUtilityRequestBillsHandler);
+  r.post('/utility-bills/payment-request/:id/withdraw', withdrawUtilityRequestHandler);
 }
