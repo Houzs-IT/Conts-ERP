@@ -3,6 +3,7 @@ import { useScrollMemory } from '../lib/useScrollMemory';
 import { useDevice } from '../lib/deviceClass';
 import Sidebar, { useDarkTheme } from './Sidebar';
 import TopBar from './TopBar';
+import PageTabs from './PageTabs';
 import { DemoBand } from './DemoMode';
 import { Logo } from './Logo';
 import { RefreshLine } from './Loading';
@@ -95,6 +96,8 @@ export default function AppShell({
           </div>
         )}
         {!isNarrow && <TopBar path={path} navigate={navigate} action={action} />}
+        {/* The pages open in this browser tab, one tab each (chew, 20 Nov 2026). */}
+        {!isNarrow && <PageTabs navigate={navigate} />}
         {/* Phones get the standard 16px side gutter; the desk keeps its wider one. */}
         {/* The phone's bottom padding clears the home indicator / browser bar (safe area). */}
         <main ref={mainRef} data-app-main tabIndex={-1} className="app-main" style={{
