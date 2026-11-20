@@ -86,10 +86,10 @@ check('pass key delete: a technician cannot delete it (403)', r.status === 403, 
 r = await call('DELETE', `/api/maintenance/issues/${deleteKey}`, undefined, 'operations_staff');
 const deletedGone = !(await call('GET', '/api/maintenance/issues')).json.data.some(i => i.id === deleteKey);
 check('pass key delete: the office deletes an open Pass key job', r.status === 200 && deletedGone, r.text);
-r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Normal not deletable ${tag}`, category: 'other', jobType: 'normal' }, 'operations_staff');
-const normalKeep = r.json.id;
-r = await call('DELETE', `/api/maintenance/issues/${normalKeep}`, undefined, 'operations_staff');
-check('pass key delete: only a Pass key job can be deleted (409)', r.status === 409, r.text);
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Normal raised by mistake ${tag}`, category: 'other', jobType: 'normal' }, 'operations_staff');
+const normalDel = r.json.id;
+r = await call('DELETE', `/api/maintenance/issues/${normalDel}`, undefined, 'operations_staff');
+check('job delete: the office deletes an open normal job with no cost', r.status === 200, r.text);
 
 // The rules hold an aircon job (always) until the owner approves AND its parts arrive.
 r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Aircon ${tag}`, category: 'aircon', jobType: 'normal', needsParts: true, dueOn: '2030-01-05', assigneeName: HAFIZ }, 'operations_manager');

@@ -1,4 +1,4 @@
-import { type Env, one, run, json, fail, audit, nowIso, mytToday } from '../../../_lib/db';
+import { type Env, one, all, run, json, fail, audit, nowIso, mytToday } from '../../../_lib/db';
 import { can } from '../../../_lib/access';
 import { requireSession, isFieldRole } from '../../../_lib/auth';
 import { CATEGORIES, URGENCIES, CHARGE_TO, DAY, JOB_TYPES, SEVERITIES, pickAssignee, hasBilling, hasJobType, urgencyOf, approvalRules, ruleNeedsApproval } from '../../../_lib/maintenance';
@@ -7,6 +7,7 @@ import { repairNotice } from '../../../_lib/notices';
 import { applyPassKeyUrgency, deletePassKeyJob, hasUrgentByHand } from '../../../_lib/passKeyJobs';
 import { hasServicePrices, serviceBook } from '../../../_lib/servicePrices';
 import { layoutKey } from '../../../_lib/cleaningPrices';
+import { releaseRepairBlocks } from '../../../_lib/repairBlocks';
 
 /** The money follow-up a finished job still takes (migration 0108): when it is billed, when the payer's money came in,
  *  what the technician or contractor is owed and when accounts paid them. */
@@ -195,21 +196,46 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   return json({ ok: true, state, expenseMovedTo: moved?.to ?? null });
 };
 
+/** DELETE /api/maintenance/issues/:id — remove an open job raised by mistake, with its photos, windows and items.
+ *  A Pass key job from a reservation marks the booking "Guest checks in by themselves" so the sync does not make it again.
+ *  Any other job is refused while it has a cost on the books or stock drawn for it, since deleting would lose that link. */
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role) || session.role === 'owner') return fail('FORBIDDEN', 'Only the office can delete a Pass key job.', 403);
+  if (isFieldRole(session.role) || session.role === 'owner') return fail('FORBIDDEN', 'Only the office can delete a maintenance job.', 403);
 
   const id = String(params.id);
-  const job = await one<{ job_type: string | null; state: string }>(env, 'SELECT job_type, state FROM maintenance_issues WHERE id = ?', id);
+  const job = await one<{ job_type: string | null; state: string; title: string; unit_id: string | null; blocks_unit: number | boolean }>(env,
+    'SELECT job_type, state, title, unit_id, blocks_unit FROM maintenance_issues WHERE id = ?', id);
   if (!job) return fail('NOT_FOUND', 'That job no longer exists. Refresh the list.', 404);
-  if (job.job_type !== 'pass_key') return fail('CONFLICT', 'Only a Pass key job can be deleted.', 409);
-  if (job.state === 'resolved') return fail('CONFLICT', 'That Pass key job is done. A finished job stays in History.', 409);
+  if (job.state === 'resolved') return fail('CONFLICT', 'That job is done. A finished job stays in History.', 409);
 
-  const deleted = await deletePassKeyJob(env, id, session);
-  if (!deleted) return fail('CONFLICT', 'That job changed while you looked at it. Refresh the job.', 409);
-  for (const key of deleted.storageKeys) {
-    try { await env.MEDIA?.delete(key); } catch (e) { console.error('pass key job storage delete failed', key, e); }
+  if (job.job_type === 'pass_key') {
+    const deleted = await deletePassKeyJob(env, id, session);
+    if (!deleted) return fail('CONFLICT', 'That job changed while you looked at it. Refresh the job.', 409);
+    await dropFiles(env, deleted.storageKeys);
+    return json({ ok: true, bookingMarkedSelfCheckIn: deleted.reservationId !== null });
   }
-  return json({ ok: true, bookingMarkedSelfCheckIn: deleted.reservationId !== null });
+
+  if (await one(env, 'SELECT 1 AS x FROM expenses WHERE maintenance_id = ? OR invoice_maintenance_id = ? LIMIT 1', id, id)) return fail('CONFLICT', 'This job has a cost on the books, so it cannot be deleted.', 409);
+  if (await one(env, 'SELECT 1 AS x FROM maintenance_stock_moves WHERE issue_id = ? LIMIT 1', id)) return fail('CONFLICT', 'Parts were taken from stock for this job, so it cannot be deleted.', 409);
+
+  await releaseRepairBlocks(env, [id], { id: session.userId, label: session.fullName });
+  const files = await all<{ storage_key: string }>(env, 'SELECT storage_key FROM documents WHERE maintenance_id = ?', id);
+  await run(env, 'DELETE FROM maintenance_issues WHERE id = ?', id);
+  if (job.blocks_unit && job.unit_id) {
+    const other = await one(env, `SELECT 1 AS x FROM maintenance_issues WHERE unit_id = ? AND blocks_unit = 1 AND state != 'resolved'`, job.unit_id);
+    if (!other) await run(env, `UPDATE units SET readiness = 'ready', updated_at = ? WHERE id = ? AND readiness IN ('maintenance','blocked')`, nowIso(), job.unit_id);
+  }
+  await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.delete', entityTable: 'maintenance_issues', entityId: id,
+    before: { title: job.title, unitId: job.unit_id, state: job.state, jobType: job.job_type, files: files.length } });
+  await dropFiles(env, files.map(f => f.storage_key));
+  return json({ ok: true });
 };
+
+// The rows are gone first, so a failed storage delete leaves an unseen file, never a broken thumbnail.
+async function dropFiles(env: Env, keys: string[]): Promise<void> {
+  for (const key of keys) {
+    try { await env.MEDIA?.delete(key); } catch (e) { console.error('maintenance job storage delete failed', key, e); }
+  }
+}
