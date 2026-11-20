@@ -32,6 +32,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { takeBack } from '../../lib/backTrail';
 import { Camera, Plus, Printer } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { useAccounts, postableAccounts, type Account } from '../../vendor/scm/lib/accounting-queries';
@@ -144,8 +145,18 @@ export const ApInvoices = () => {
   const listQ = useApInvoices(kind);
   const rows = listQ.data?.rows ?? [];
   /* ?open=<id> opens a bill straight away: the link from a payment request (chew, 15 Nov 2026). */
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [detailId, setDetailId] = useState<string | null>(searchParams.get('open'));
+  /* A bill opened from a link elsewhere (a voucher's Linked invoices, a payment request): closing it goes back to that
+     page (chew, 20 Nov 2026), as Back does (lib/backTrail); with nothing behind it, the list stays. */
+  const closeDetail = () => {
+    const opened = searchParams.get('open');
+    setDetailId(null);
+    if (!opened) return;
+    const to = takeBack(`${location.pathname}${location.search}`);
+    if (to) navigate(to);
+    else setSearchParams((p) => { p.delete('open'); return p; }, { replace: true });
+  };
   const detailQ = useApInvoiceDetail(detailId);
   const detail = detailQ.data;
 
@@ -449,7 +460,7 @@ export const ApInvoices = () => {
       {detailId && detail && (
         <Modal
           title={`${detail.invoice.invoice_number} · ${detail.supplier?.name ?? '—'}`}
-          onClose={() => setDetailId(null)}
+          onClose={closeDetail}
           ariaLabel={`AP invoice ${detail.invoice.invoice_number}`}
           actions={(
             <>

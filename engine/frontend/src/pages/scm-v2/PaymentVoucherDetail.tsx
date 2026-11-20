@@ -1035,12 +1035,17 @@ export const PaymentVoucherDetail = () => {
                 <tbody>
                   {allocations.map((a) => {
                     const piId = String(a.piId ?? a.pi_id ?? '');
+                    /* An AP invoice opens over its list, and Back or closing it returns here (chew, 20 Nov 2026). A real
+                       link, so a right click opens it in a new tab too. */
+                    const apId = String(a.apInvoiceId ?? a.ap_invoice_id ?? '');
                     return (
                       <tr key={a.id ?? piId} style={{ borderTop: '1px solid var(--line)' }}>
                         <td style={{ padding: '6px 8px', fontFamily: 'var(--font-mono)' }}>
                           {piId
                             ? <Link to={`/scm/purchase-invoices/${piId}`} style={{ color: 'var(--c-orange)' }}>{a.invoiceNumber ?? a.invoice_number ?? piId}</Link>
-                            : (a.invoiceNumber ?? a.invoice_number ?? '—')}
+                            : apId
+                              ? <Link to={`/scm/ap-invoices?open=${encodeURIComponent(apId)}`} style={{ color: 'var(--c-orange)' }}>{a.invoiceNumber ?? a.invoice_number ?? apId}</Link>
+                              : (a.invoiceNumber ?? a.invoice_number ?? '—')}
                           {String(a.kind ?? '') === 'API' && (
                             <span style={{ marginLeft: 6, fontSize: 'var(--fs-11)', fontFamily: 'inherit', color: 'var(--fg-muted)' }} title="AP invoice — a non-stock supplier bill">AP</span>
                           )}
