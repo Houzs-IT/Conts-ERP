@@ -260,7 +260,8 @@ export function PaymentRequests() {
         /* Paid through its AP invoice: on the Payment voucher page, against the bill. */
         if (x.apInvoice && OPEN(x)) return <span className="text-xs text-ink-muted">Pay {x.apInvoice.invoiceNumber} on Payment vouchers</span>;
         const voucher = full && canVoucher(x), bill = edit && canBill(x);
-        const rejectable = edit && x.status === "SUBMITTED" && x.vouchers.length === 0 && !x.apInvoice;
+        /* A cancelled voucher does not count (the engine's live()): PRQ-2611-025 kept its cancelled draft and could not be rejected. */
+        const rejectable = edit && x.status === "SUBMITTED" && x.vouchers.every((v) => v.status === "CANCELLED") && !x.apInvoice;
         const closable = full && x.status === "PART_PAID";
         if (!voucher && !bill && !rejectable && !closable) return null;
         const third = rejectable
