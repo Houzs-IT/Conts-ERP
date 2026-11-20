@@ -82,7 +82,7 @@ import { shortCompanyName, getBrandingCompanyCode } from "../../lib/branding";
 import { brandingLabel, isPlaceholderBrandText } from "../../vendor/shared/so-branding-label";
 import { soCanRaiseDo } from "../../vendor/shared/so-deliverable-states";
 import { useDebouncedSearchTerm, useSearchResultTransition } from "../../hooks/useServerSearch";
-import { useMfgSalesOrdersPaged, useMfgCustomers, useUpdateMfgSalesOrderStatus, useMfgSalesOrderDetail, useEnrichedSoListRows, useSoLineCoverage } from "../../vendor/scm/lib/sales-order-queries";
+import { useMfgSalesOrdersPaged, useSoCustomerNames, useUpdateMfgSalesOrderStatus, useMfgSalesOrderDetail, useEnrichedSoListRows, useSoLineCoverage } from "../../vendor/scm/lib/sales-order-queries";
 import { useSetDocumentHold } from "../../vendor/scm/lib/document-hold-queries";
 import { holdPrompt } from "./use-hold-action";
 import { useCancelRequestAction } from "./use-cancel-request-action";
@@ -218,6 +218,8 @@ type SoRow = HoldFields & {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+/* A stable empty list while the funnel's names load, so the column set is not rebuilt each render. */
+const EMPTY_NAMES: string[] = [];
 const fmtRm = (centi: number): string => fmtSen(centi);
 
 /* AutoCount's "SALES ORDER DETAILS-SALES" (SO_DEFAULT_COLUMNS) as grid keys, in
@@ -1076,11 +1078,8 @@ export function MfgSalesOrdersListV2() {
   /* Seed the Customer Name funnel with every customer (not only the loaded
      page's) so a customer whose orders are all on a later page is still
      pickable — the point of pushing the filter server-side. */
-  const customersQ = useMfgCustomers();
-  const customerNames = useMemo(
-    () => [...new Set((customersQ.data?.customers ?? []).map((c) => c.name).filter((n): n is string => !!n))],
-    [customersQ.data],
-  );
+  const customerNamesQ = useSoCustomerNames();
+  const customerNames = customerNamesQ.data ?? EMPTY_NAMES;
 
   const { data, isLoading, isFetching, isPlaceholderData, error, refetch } = useMfgSalesOrdersPaged({
     page,

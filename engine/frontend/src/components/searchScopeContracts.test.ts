@@ -64,11 +64,11 @@ describe("list search scope contracts", () => {
     expect(contents).toContain("loadedLimit={loadedSearchLimit}");
   });
 
-  test("reports the mobile conversion source cap", () => {
+  test("the mobile conversion source list searches on the server, page by page", () => {
     const contents = source("mobile/MobileConvertWizard.tsx");
-    expect(contents.match(/limit=200/g)).toHaveLength(3);
-    expect(contents).toContain('scope="loaded"');
-    expect(contents).toContain("loadedLimit={200}");
+    expect(contents).not.toMatch(/limit=200/);
+    expect(contents).toContain("convertSourcePageUrl");
+    expect(contents).toContain('scope="server"');
   });
 
   test("separates complete inventory product search from capped lot-derived batches", () => {

@@ -29,8 +29,25 @@ vi.mock("../../vendor/scm/lib/sales-invoice-queries", () => ({
 vi.mock("../../vendor/scm/lib/delivery-return-queries", () => ({
   useReturnableDoLines: returnableDoLines,
 }));
+/* The picker reads one order through ?docNos= when scoped, and pages otherwise (audit 20 Nov 2026); both mocks serve
+   the lines `deliverableSoLines` returns, the scoped one keeping only the asked orders as the server does. */
+const pagedCalls: Array<{ q: string; enabled: boolean | undefined }> = [];
+const forDocsCalls: string[][] = [];
 vi.mock("../../vendor/scm/lib/delivery-order-queries", () => ({
   useDeliverableSoLines: deliverableSoLines,
+  useDeliverableSoLinesForDocs: (docNos: string[]) => {
+    forDocsCalls.push([...docNos]);
+    const r = deliverableSoLines() as { data: Array<{ docNo: string }> };
+    return { ...r, isFetching: false, data: r.data.filter((l) => docNos.includes(l.docNo)) };
+  },
+  useDeliverableSoLinesPaged: (q: string, opts: { enabled?: boolean }) => {
+    pagedCalls.push({ q, enabled: opts.enabled });
+    const r = deliverableSoLines() as { data: unknown[] };
+    return {
+      ...r, isFetching: false, data: { pages: [{ lines: r.data, nextCursor: null, pageSize: 100 }] },
+      fetchNextPage: vi.fn(), hasNextPage: false, isFetchingNextPage: false, isFetchNextPageError: false,
+    };
+  },
 }));
 vi.mock("../../vendor/scm/lib/suppliers-queries", () => ({
   useOutstandingGrnItems: outstandingGrnItems,
@@ -182,6 +199,22 @@ describe('SO → DO: "Deliver" lands on the order you came from', () => {
     deliverableSoLines.mockReturnValue(loaded(TWO_SOS));
     at("/scm/delivery-orders/from-so", <DeliveryOrderFromSo />);
     expect(screen.getAllByText("HC-SO-0002").length).toBeGreaterThan(0);
+  });
+
+  it("from one order, only that order is asked of the server and the paged list stays off", () => {
+    deliverableSoLines.mockReturnValue(loaded(TWO_SOS));
+    forDocsCalls.length = 0; pagedCalls.length = 0;
+    at(convertToLink("soToDo", "HC-SO-0001"), <DeliveryOrderFromSo />);
+    expect(forDocsCalls.at(-1)).toEqual(["HC-SO-0001"]);
+    expect(pagedCalls.every((c) => c.enabled === false)).toBe(true);
+  });
+
+  it("the full picker reads pages and searches on the server", () => {
+    deliverableSoLines.mockReturnValue(loaded(TWO_SOS));
+    pagedCalls.length = 0;
+    at("/scm/delivery-orders/from-so", <DeliveryOrderFromSo />);
+    expect(pagedCalls.at(-1)).toEqual({ q: "", enabled: true });
+    expect(screen.getByLabelText("Search deliverable SO lines")).toBeTruthy();
   });
 
   it("the OLD spelling is reported, not silently honoured", () => {

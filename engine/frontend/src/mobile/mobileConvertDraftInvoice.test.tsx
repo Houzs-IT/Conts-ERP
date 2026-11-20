@@ -48,7 +48,7 @@ const wrap = (ui: React.ReactNode) => {
 /** Answer the wizard's source list + convertible-lines GETs, then the POST. */
 const serveDoToSi = () => {
   authedFetch.mockImplementation(async (url: string) => {
-    if (url.startsWith("/delivery-orders-mfg?limit=200")) {
+    if (url.startsWith("/delivery-orders-mfg?page=")) {
       return {
         deliveryOrders: [
           { id: "do-1", do_number: "HC-DO-2608-001", status: "DELIVERED", debtor_name: "Walk-in" },

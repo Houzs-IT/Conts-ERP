@@ -242,6 +242,15 @@ export const useMfgCustomers = () =>
     retryDelay: 800,
   });
 
+/** The SO list's Customer Name funnel choices: distinct names only, under the list's scope (audit 20 Nov 2026). */
+export const useSoCustomerNames = () =>
+  useQuery({
+    queryKey: ['mfg-sales-orders', 'customer-names'],
+    queryFn: () => authedFetch<{ names: string[] }>(`/mfg-sales-orders/customer-names`).then((r) => r.names),
+    staleTime: 5 * 60_000,
+    retry: retryUnlessClientError,
+  });
+
 export const useMfgSalesOrderDetail = (docNo: string | null) => useQuery({
   queryKey: ['mfg-sales-order-detail', docNo],
   queryFn: () => authedFetch<{ salesOrder: any; items: any[] }>(`/mfg-sales-orders/${docNo}`),

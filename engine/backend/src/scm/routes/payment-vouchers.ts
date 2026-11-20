@@ -83,6 +83,7 @@ import { recostFromGrn } from '../lib/recost';
 import { fmtSen } from '../shared/format';
 import { billProjectLines, checkVoucherLimit, lineDepartmentOfProject, overLimitBody, resolveVoucherProject, settlementProjects } from '../../conts/project-limit';
 import { loadSubDepartments, projectRenoKind, resolveLineSub, RENO_KIND_OF, type SubDepartment } from '../../conts/sub-departments';
+import { dbWriteFailure } from '../lib/pg-rule-error';
 
 export const paymentVouchers = new Hono<{ Bindings: Env; Variables: Variables }>();
 paymentVouchers.use('*', supabaseAuth);
@@ -1751,7 +1752,7 @@ export const submitPaymentVoucherHandler = async (c: any) => {
   const at = new Date().toISOString();
   const { error } = await scopeToCompanyId(sb.from('payment_vouchers')
     .update({ submitted_at: at, submitted_by: who, updated_at: at }).eq('id', id), companyId);
-  if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  if (error) return dbWriteFailure(c, error, 'save_failed', 'payment voucher');
   await recordEntityAudit(sb, {
     entityType: 'PAYMENT_VOUCHER', entityId: id, entityDocNo: pv.pv_number,
     action: 'SUBMIT_FOR_APPROVAL', actor: c.get('houzsUser'), statusSnapshot: 'DRAFT',
@@ -1776,7 +1777,7 @@ export const withdrawPaymentVoucherHandler = async (c: any) => {
   const { error } = await scopeToCompanyId(sb.from('payment_vouchers')
     .update({ submitted_at: null, submitted_by: null, updated_at: new Date().toISOString() })
     .eq('id', id), companyId);
-  if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  if (error) return dbWriteFailure(c, error, 'save_failed', 'payment voucher');
   await recordEntityAudit(sb, {
     entityType: 'PAYMENT_VOUCHER', entityId: id, entityDocNo: pv.pv_number,
     action: 'WITHDRAW_FROM_APPROVAL', actor: c.get('houzsUser'), statusSnapshot: 'DRAFT',
@@ -1827,14 +1828,14 @@ export const checkPaymentVoucherHandler = async (c: any) => {
         .update({ pv_number: minted.pvNo, updated_at: at }).eq('id', id), companyId);
       if (!numErr) { newPvNo = minted.pvNo; break; }
       const collided = String(numErr.code ?? '') === '23505' || /duplicate key/i.test(String(numErr.message ?? ''));
-      if (!collided) return c.json({ error: 'save_failed', reason: numErr.message }, 500);
+      if (!collided) return dbWriteFailure(c, numErr, 'save_failed', 'payment voucher');
     }
     if (newPvNo == null) return c.json({ error: 'save_failed', reason: 'could not mint a formal voucher number after 8 attempts' }, 500);
   }
 
   const { error } = await scopeToCompanyId(sb.from('payment_vouchers')
     .update({ checked_at: at, checked_by: who, updated_at: at }).eq('id', id), companyId);
-  if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  if (error) return dbWriteFailure(c, error, 'save_failed', 'payment voucher');
   await recordEntityAudit(sb, {
     entityType: 'PAYMENT_VOUCHER', entityId: id, entityDocNo: newPvNo ?? oldPvNo,
     action: 'CHECK', actor: c.get('houzsUser'), statusSnapshot: 'DRAFT',
@@ -1867,7 +1868,7 @@ export const approvePaymentVoucherHandler = async (c: any) => {
     const at = new Date().toISOString();
     const { error } = await scopeToCompanyId(sb.from('payment_vouchers')
       .update({ approved_at: at, approved_by: who, updated_at: at }).eq('id', id), companyId);
-    if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+    if (error) return dbWriteFailure(c, error, 'save_failed', 'payment voucher');
     await recordEntityAudit(sb, {
       entityType: 'PAYMENT_VOUCHER', entityId: id, entityDocNo: pv.pv_number,
       action: 'APPROVE', actor: c.get('houzsUser'), statusSnapshot: 'DRAFT',
@@ -1897,7 +1898,7 @@ export const rejectPaymentVoucherHandler = async (c: any) => {
   const { error } = await scopeToCompanyId(sb.from('payment_vouchers')
     .update({ submitted_at: null, submitted_by: null, checked_at: null, checked_by: null, approved_at: null, approved_by: null, updated_at: new Date().toISOString() })
     .eq('id', id), companyId);
-  if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+  if (error) return dbWriteFailure(c, error, 'save_failed', 'payment voucher');
   /* The reason lives on the audit trail, where the preparer reads it — a
      rejected voucher goes back to editable with the WHY on its history. */
   await recordEntityAudit(sb, {

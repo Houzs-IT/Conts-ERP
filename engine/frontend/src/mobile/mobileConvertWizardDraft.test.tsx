@@ -42,7 +42,7 @@ function fakeDoServer() {
   const state = { created: 0, lastStatus: "", stockOutLines: 0, soSynced: false };
 
   authedFetch.mockImplementation(async (url: string, init?: RequestInit) => {
-    if (url.startsWith("/mfg-sales-orders?limit=200")) {
+    if (url.startsWith("/mfg-sales-orders?page=")) {
       return { salesOrders: [{ doc_no: "HC-SO-2608-001", status: "OPEN", debtor_name: "Walk-in" }] };
     }
     if (url.startsWith("/delivery-orders-mfg/deliverable-so-lines")) {

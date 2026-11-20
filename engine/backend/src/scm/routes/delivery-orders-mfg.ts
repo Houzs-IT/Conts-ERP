@@ -129,6 +129,9 @@ import { recordEntityAudit, diffFields, compactChanges, fieldChange } from '../l
 import { markIdempotencyNoWrite } from '../../middleware/idempotency';
 import { pgrestIn } from '../lib/pgrest-in-list';
 import { withSoRefDocNos } from '../lib/so-ref-search';
+import { dbWriteFailure } from '../lib/pg-rule-error';
+import { readDistinctCustomerNames } from '../lib/customer-names';
+import { DOC_BATCH, MAX_ROUNDS, parseDeliverablePageQuery, readCandidateDocs, takeWholeOrders } from '../lib/deliverable-so-page';
 
 export const deliveryOrdersMfg = new Hono<{ Bindings: Env; Variables: Variables }>();
 deliveryOrdersMfg.use('*', supabaseAuth);
@@ -2859,6 +2862,26 @@ deliveryOrdersMfg.get('/', async (c) => {
   return c.json({ deliveryOrders });
 });
 
+/* The Customer Name funnel's choices on the DO list (audit 20 Nov 2026): the DO's own names, under the list's company
+   and sales scope, one column. It used to borrow the SO customer directory, which reads every SO with its totals.
+   Static path, so registered before /:id. */
+deliveryOrdersMfg.get('/customer-names', async (c) => {
+  const sb = c.get('supabase');
+  const canViewAll = canViewAllSales(c);
+  const houzsUserId = c.get('houzsUser')?.id;
+  if (!canViewAll && houzsUserId == null) {
+    return c.json({ error: 'Your account is not linked to a Houzs user, so delivery orders cannot be shown — please contact IT.' }, 403);
+  }
+  const scopeIds = await resolveSalesScopeIds(sb, c.env, houzsUserId, canViewAll);
+  const { names, error } = await readDistinctCustomerNames((from, to) => {
+    let q = scopeToCompany(sb.from('delivery_orders').select('debtor_name').not('debtor_name', 'is', null), c);
+    if (scopeIds) q = q.in('salesperson_id', scopeIds);
+    return q.order('debtor_name').order('id').range(from, to);
+  });
+  if (error) return c.json({ error: 'load_failed', reason: error }, 500);
+  return c.json({ names });
+});
+
 // ── Deliverable SO lines (line-level partial-delivery picker) ─────────────
 /* Commander 2026-05-30 — feeds the line-level SO→DO picker. Returns each SO
    LINE that can still be delivered (remaining > 0), where remaining is derived
@@ -2870,6 +2893,39 @@ deliveryOrdersMfg.get('/', async (c) => {
    cast "deliverable-so-lines" to a uuid. */
 deliveryOrdersMfg.get('/deliverable-so-lines', async (c) => {
   const sb = c.get('supabase');
+
+  /* ?limit= asks for ONE PAGE (lib/deliverable-so-page.ts, audit 20 Nov 2026): a few orders at a time, newest first,
+     searched on the server, only lines with something left. Without it, the whole list as before. */
+  const paged = c.req.query('docNos') ? null : parseDeliverablePageQuery(c.req.query());
+  if (paged) {
+    const picked: DeliverableLine[] = [];
+    let cursor = paged.cursor;
+    let more = true;
+    for (let round = 0; round < MAX_ROUNDS && picked.length < paged.limit; round++) {
+      const batch = await readCandidateDocs(sb, c, { after: cursor, q: paged.q, n: DOC_BATCH });
+      if (batch.error) return c.json({ error: 'load_failed', reason: batch.error }, 500);
+      if (batch.docs.length === 0) {
+        more = batch.more;
+        cursor = batch.scannedTo ?? cursor;
+        if (!more) break;
+        continue;
+      }
+      const remainingMap = await soDeliverableRemaining(sb, batch.docs);
+      const open = [...remainingMap.values()].filter((l) => l.remaining > 0);
+      const took = takeWholeOrders(batch.docs, open, paged.limit - picked.length);
+      picked.push(...took.lines);
+      cursor = took.more ? took.lastDoc : (batch.scannedTo ?? took.lastDoc);
+      more = took.more || batch.more;
+      if (!more) break;
+    }
+    await stampSoRefsCamel(sb, picked, (l) => l.docNo, (q) => scopeToAllowedCompanies(q, c), 'deliverable-so-lines');
+    const notReadyPage = new Map((await findNotReadySoLines(sb, picked.map((l) => l.soItemId), activeCompanyId(c) ?? null)).map((n) => [n.soItemId, n]));
+    return c.json({
+      lines: picked.map((l) => ({ ...l, notReady: notReadyPage.get(l.soItemId) ?? null })),
+      nextCursor: more ? cursor : null,
+      pageSize: paged.limit,
+    });
+  }
 
   // Resolve the candidate SO doc_nos. Explicit ?docNos=A,B wins; otherwise
   // pull every non-cancelled SO (capped) so the picker can show all of them.
@@ -4737,7 +4793,7 @@ export const addDeliveryOrderItemHandler = async (c: Context<{ Bindings: Env; Va
   const row = buildItemRow(id, it, nextLineNo, addCommitments.get('add') ?? null, addPhotos);
   const { data, error } = await sb.from('delivery_order_items').insert({ ...row, company_id: activeCompanyId(c) }).select(ITEM).single();
   if (isSoLineOverDelivered(error)) return c.json({ error: 'over_remaining', message: 'Add qty exceeds remaining on the linked Sales Order line.', soItemId: it.soItemId ?? null, reason: error?.message }, 409);
-  if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);
+  if (error) return dbWriteFailure(c, error, 'insert_failed', 'line');
   /* Drop-ship (mig 0057) — once a drop-shipped line is added, stamp the DO so
      the "batch not received" badge shows. Best-effort (never blocks the add). */
   if (dropShipped) {

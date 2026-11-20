@@ -109,9 +109,21 @@ export async function poIdsByLineText(sb: Sb, c: CompanyScopeCtx, term: string |
 }
 
 /** The PO list's filters with the SO-reference and line-item matches resolved (see above). */
-export async function withSoRefPoIds<F extends { q: string | null; soRefPoIds: string[] }>(
+export async function withSoRefPoIds<F extends { q: string | null; soRefPoIds: string[]; supplierIds?: string[] }>(
   sb: Sb, c: CompanyScopeCtx, f: F,
 ): Promise<F> {
-  const [byRef, byLine] = await Promise.all([poIdsForSoDocNos(sb, await soDocNosByRef(sb, c, f.q)), poIdsByLineText(sb, c, f.q)]);
-  return { ...f, soRefPoIds: [...new Set([...byRef, ...byLine])] };
+  const [byRef, byLine, supplierIds] = await Promise.all([
+    poIdsForSoDocNos(sb, await soDocNosByRef(sb, c, f.q)), poIdsByLineText(sb, c, f.q), supplierIdsByName(sb, f.q),
+  ]);
+  return { ...f, soRefPoIds: [...new Set([...byRef, ...byLine])], supplierIds };
+}
+
+/** Suppliers whose name or code contains the term, so a PO search finds the supplier's POs (audit 20 Nov 2026: the
+    phone's receive-goods picker searches by supplier). The POs themselves stay company-scoped by the list. */
+export async function supplierIdsByName(sb: Sb, term: string | null): Promise<string[]> {
+  const s = escapeForOr(term ?? '');
+  if (s.length < 2) return [];
+  const { data, error } = await sb.from('suppliers').select('id').or(`name.ilike.%${s}%,code.ilike.%${s}%`).limit(SO_REF_MATCH_CAP);
+  if (error) throw new Error(`Supplier search failed: ${error.message}`);
+  return [...new Set(((data ?? []) as Array<{ id: string | null }>).map((r) => r.id).filter((v): v is string => Boolean(v)))];
 }

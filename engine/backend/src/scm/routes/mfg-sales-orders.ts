@@ -34,6 +34,7 @@ export { deriveCountryFromState, deriveSalesLocationFromState };
 import { specialDeliveryFeesForLines, reconstructDeliveryRuleLines } from '../lib/special-delivery';
 import { soHasDownstream } from '../lib/downstream-lock';
 import { dateOrNull, effectiveDateAfterPatch, isDateColumn } from '../lib/date-coerce';
+import { zodValidationFailedBody } from '../lib/form-problems';
 import { soStatusAfterProcessingDateChange } from '../lib/so-proceed-status-change';
 import { soIsMigrated, withSoMigratedReadonly } from '../lib/migrated-so-readonly';
 import { readSoLineFreeze, soLineWriteRefusal, soBuildLineIds, soLineFrozen, SO_FULLY_FROZEN_REFUSAL, SO_LINE_FROZEN_REFUSAL } from '../lib/downstream-lock'; // own line: autocountWritebackWiring asserts the import above verbatim
@@ -319,6 +320,8 @@ import { registerHistoryRoutes } from './mfg-sales-orders/history';
 import { registerPaymentsListRoutes } from './mfg-sales-orders/payments-list';
 import { registerDebtorSearchRoutes } from './mfg-sales-orders/debtor-search';
 import { ensureDebtor } from '../../conts/parties';
+import { dbWriteFailure } from '../lib/pg-rule-error';
+import { readDistinctCustomerNames } from '../lib/customer-names';
 
 export const mfgSalesOrders = new Hono<{ Bindings: Env; Variables: Variables }>();
 mfgSalesOrders.use('*', supabaseAuth);
@@ -1513,6 +1516,21 @@ mfgSalesOrders.get('/customers', async (c) => {
   customers.sort((a, b) => (a.last_order_at < b.last_order_at ? 1 : -1));
 
   return c.json({ customers });
+});
+
+/* The Customer Name funnel's choices on the SO list (audit 20 Nov 2026): one column, the list's own scope, names only.
+   /customers above reads every order with its totals just to collect these. Static path, so registered before /:docNo. */
+mfgSalesOrders.get('/customer-names', async (c) => {
+  const sb = c.get('supabase');
+  const scopeIds = await resolveSalesScopeIds(sb, c.env, c.get('houzsUser')?.id, canViewAllSales(c));
+  const { names, error } = await readDistinctCustomerNames((from, to) => {
+    let q = sb.from('mfg_sales_orders').select('debtor_name').not('debtor_name', 'is', null).order('debtor_name');
+    q = applySoScope(q, scopeIds);
+    q = scopeToCompany(q, c);
+    return q.order('doc_no').range(from, to);
+  });
+  if (error) return c.json({ error: 'load_failed', reason: error }, 500);
+  return c.json({ names });
 });
 
 /* GET /my-mtd, GET /mine — mfg-sales-orders/mine.ts */
@@ -3965,7 +3983,7 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
     const parsed = soCreatePaymentsSchema.safeParse(body.payments);
     if (!parsed.success) {
       await rollbackPwpClaims();
-      return c.json({ error: 'invalid_payments', issues: parsed.error.issues }, 400);
+      return c.json(zodValidationFailedBody(parsed.error, { rowNoun: 'Payment' }), 400);
     }
     posPayments = parsed.data;
   }
@@ -7588,7 +7606,7 @@ mfgSalesOrders.post('/:docNo/items', async (c) => {
       if (moduleError) {
         /* Don't burn a PWP code on a failed insert — mirror create's rollbackPwpClaims. */
         if (addLinePwpClaimed) await rollbackSinglePwpClaim(sb, addLinePwpClaimed);
-        return c.json({ error: 'insert_failed', reason: moduleError.message }, 500);
+        return dbWriteFailure(c, moduleError, 'insert_failed', 'line');
       }
       const firstRow = (moduleData ?? [])[0] ?? moduleRows[0];
 
@@ -7645,7 +7663,7 @@ mfgSalesOrders.post('/:docNo/items', async (c) => {
   if (error) {
     /* Don't burn a PWP code on a failed insert — mirror create's rollbackPwpClaims. */
     if (addLinePwpClaimed) await rollbackSinglePwpClaim(sb, addLinePwpClaimed);
-    return c.json({ error: 'insert_failed', reason: error.message }, 500);
+    return dbWriteFailure(c, error, 'insert_failed', 'line');
   }
   // Default Free Gift (0170) — adding a trigger line may grant a new accessory
   // gift; reconcile auto-inserts/deletes gift lines, then recomputes totals.
@@ -10218,7 +10236,7 @@ export const postSoPaymentHandler = async (c: any) => {
   let body: unknown;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
   const parsed = paymentCreateSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  if (!parsed.success) return c.json(zodValidationFailedBody(parsed.error), 400);
   const p = parsed.data;
 
   /* A role holding the correction right says why it records money, too
@@ -10459,7 +10477,7 @@ mfgSalesOrders.patch('/:docNo/payments/:id', async (c) => {
   let body: unknown;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
   const parsed = paymentPatchSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  if (!parsed.success) return c.json(zodValidationFailedBody(parsed.error), 400);
   const p = parsed.data;
   const owed = paymentReasonRule(c, { reason: p.reason, viaAmend: editWindow.via === 'amend' }); // docs/bugs/0785, 0888
   if (owed.refusal) return c.json(owed.refusal, 400);
@@ -10813,7 +10831,7 @@ mfgSalesOrders.post('/:docNo/payments/:id/slip', async (c) => {
   let body: unknown;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
   const parsed = paymentSlipAttachSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  if (!parsed.success) return c.json(zodValidationFailedBody(parsed.error), 400);
   const { uploadSessionId, reason } = parsed.data;
   const owed = paymentReasonRule(c, { reason }); // not a window gate — see above; docs/bugs/0888
   if (owed.refusal) return c.json(owed.refusal, 400);
