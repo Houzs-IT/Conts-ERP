@@ -592,7 +592,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       ).bind(companyId).all<{ project_id: number; type: string; on_date: string; at_time: string | null; done: boolean }>(),
       // Sales order lines for the Variants step: every line's category-required variants picked.
       db(c).prepare(
-        `SELECT so.project_id::int AS project_id, i.id::text AS id, i.item_code, i.item_group, i.variants,
+        `SELECT so.project_id::int AS project_id, i.id::text AS id, i.doc_no, i.description, i.item_code, i.item_group, i.variants,
                 prod.category AS prod_category, prod.sub_category AS prod_sub
            FROM scm.mfg_sales_order_items i JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no JOIN projects p ON p.id = so.project_id
            LEFT JOIN LATERAL (SELECT mp.category::text AS category, mp.sub_category FROM scm.mfg_products mp
@@ -600,7 +600,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
           WHERE ${scope} AND so.company_id = ? AND so.status::text <> 'CANCELLED' AND NOT coalesce(i.cancelled, false)`,
       ).bind(companyId).all<{
         project_id: number; id: string; item_code: string | null; item_group: string | null; variants: Record<string, unknown> | null;
-        prod_category: string | null; prod_sub: string | null;
+        prod_category: string | null; prod_sub: string | null; doc_no: string | null; description: string | null;
       }>(),
     ]);
     if (projectId != null && (projects.results ?? []).length === 0) return c.json({ error: "not_found" }, 404);
@@ -623,11 +623,14 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
         const id = Number(p.id);
         const lines = (soLines.results ?? []).filter((l) => Number(l.project_id) === id);
         // The SKUs still waiting for a variant, by the SO tab's own rule, so the list and the project page can name them.
-        const open = pendingVariants(lines.map((l) => ({ itemCode: l.item_code, itemGroup: l.item_group, prodCategory: l.prod_category, prodSub: l.prod_sub, variants: l.variants })));
+        const open = pendingVariants(lines.map((l) => ({
+          id: l.id, docNo: l.doc_no, description: l.description,
+          itemCode: l.item_code, itemGroup: l.item_group, prodCategory: l.prod_category, prodSub: l.prod_sub, variants: l.variants,
+        })));
         return {
           ...buildBoardProject(p, sets, paymentOf(id)),
           works: (designEvents.results ?? []).filter((e) => Number(e.project_id) === id).map((e) => ({ type: e.type, onDate: e.on_date, atTime: e.at_time, done: !!e.done })),
-          variants: { lines: lines.length, missing: open.length, pending: open.slice(0, 40) },
+          variants: { lines: lines.length, missing: open.length, pending: open.slice(0, 200) },
         };
       }),
       events: (events.results ?? []).map((e) => ({

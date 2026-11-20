@@ -11,7 +11,16 @@ import type {
 export type Kind = "3" | "2";
 export type ApptKey = "msr" | "cm" | "sb";
 /** A sales order line still waiting for a required variant: its SKU and the variant fields left to pick. */
-export interface VariantPending { itemCode: string; missing: string[] }
+export interface VariantPending {
+  itemCode: string;
+  missing: string[];
+  /** The SO line and what its picker needs; absent from an older server. */
+  id?: string;
+  docNo?: string | null;
+  description?: string | null;
+  category?: string;
+  variants?: Record<string, unknown>;
+}
 
 /** A Design step: the code of a work of the list in Project Maintenance, or "variants" (checked by the system). */
 export type StepKey = string;
