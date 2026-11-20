@@ -219,7 +219,7 @@ export default function UsersPage() {
 
   const columns = useMemo<Column<Row>[]>(() => [
     // Name and email in one cell; the phone and the full details are in the quick view a row click opens.
-    { key: 'name', label: 'User', value: u => personName(u.fullName), text: u => `${personName(u.fullName)} ${contactOf(u)}`, hideable: false, width: 240,
+    { key: 'name', label: 'User', value: u => personName(u.fullName), text: u => `${personName(u.fullName)} ${contactOf(u)}`, hideable: false, width: 220,
       render: u => (
         <span className="flex items-center gap-2.5 min-w-0">
           <span className={cx('w-[30px] h-[30px] flex-none rounded-full grid place-items-center text-caption font-semibold', 'bg-muted text-muted-ink')}>
@@ -231,10 +231,10 @@ export default function UsersPage() {
           </span>
         </span>
       ) },
-    { key: 'company', label: 'Company', value: u => companyText(companiesOfRow(u)), width: 200,
+    { key: 'company', label: 'Company', value: u => companyText(companiesOfRow(u)), width: 180,
       render: u => (u.role === 'owner' ? <span className="text-copy text-muted-ink">Owner portal</span> : <CompanyBadges side={sideValueOf(u)} />) },
     // Filtering by a role finds everyone who holds it, as their main role or an extra one.
-    { key: 'role', label: 'Position & dept.', value: u => roleName(u), text: u => roleText(rolesOf(u), ', '), width: 240,
+    { key: 'role', label: 'Position & dept.', value: u => roleName(u), text: u => roleText(rolesOf(u), ', '), width: 220,
       filter: { kind: 'select', multi: true, display: 'menu', options: roleFilterOptions },
       filterMatch: (u, picked) => (u.role === 'owner' ? picked.has('owner')
         : (!u.positionId && picked.has('none')) || [u.positionId, ...extraPlacesOf(u).map(x => x.position.id)].some(id => !!id && picked.has(id))),
@@ -244,10 +244,10 @@ export default function UsersPage() {
     { key: 'department', label: 'Department', value: u => u.department || null, hidden: true, width: 160 },
     { key: 'email', label: 'Email or employee ID', value: contactOf, hidden: true, width: 210 },
     { key: 'phone', label: 'Phone', type: 'phone', value: u => u.phone || null, hidden: true, width: 140 },
-    { key: 'manager', label: 'Reports to', type: 'person', value: u => (u.managerId ? nameById[u.managerId] ?? null : null), width: 150 },
+    { key: 'manager', label: 'Reports to', type: 'person', value: u => (u.managerId ? nameById[u.managerId] ?? null : null), width: 140 },
     { key: 'lastLogin', label: 'Last sign-in', type: 'date', value: u => u.lastLoginAt, hidden: true, width: 130 },
     // Status over its date: the last sign-in, or for an invited person when the invitation went out, with a small Resend.
-    { key: 'status', label: 'Status', type: 'status', value: u => status(u).label, status: u => status(u), width: 160,
+    { key: 'status', label: 'Status', type: 'status', value: u => status(u).label, status: u => status(u), width: 150,
       render: u => (
         <span className="flex flex-col items-start gap-1 min-w-0">
           <StatusBadge tone={status(u).tone} label={status(u).label} size="sm" strong />
@@ -958,7 +958,7 @@ function UserQuickView({ u, roles, side, manager, actions, onCopy, onClose }: {
     <>
       <div className="flex items-start gap-3 px-6 pt-[18px] pb-4 [border-bottom:1px_solid_var(--color-line-soft)]">
         <span className="w-10 h-10 flex-none rounded-full grid place-items-center text-copy font-semibold bg-muted text-ink-2">{initials(u.fullName)}</span>
-        <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+        <div className="flex flex-col items-start gap-1.5 min-w-0 flex-1">
           <h2 className="m-0 text-title font-semibold truncate">{personName(u.fullName)}</h2>
           <StatusBadge tone={s.tone} label={s.label} size="sm" strong />
         </div>

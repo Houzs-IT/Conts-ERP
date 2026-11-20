@@ -41,7 +41,7 @@ export function RowActions({ name, items }: { name: string; items: RowAction[] }
               {a.group && a.group !== items[i - 1]?.group ? (
                 <>
                   {i > 0 && <div role="separator" className="my-1 mx-1 h-px bg-line-soft" />}
-                  <div role="presentation" className="px-2.5 pt-1.5 pb-1 text-caption font-bold uppercase tracking-[0.09em] text-muted-ink">{a.group}</div>
+                  <div role="presentation" className="px-2.5 pt-1.5 pb-1 text-left text-caption font-bold uppercase tracking-[0.09em] text-muted-ink">{a.group}</div>
                 </>
               ) : a.danger && i > 0 && !items[i - 1].danger && <div role="separator" className="my-1 mx-1 h-px bg-line-soft" />}
               <button type="button" role="menuitem" onClick={() => { setAt(null); a.run(); }}
