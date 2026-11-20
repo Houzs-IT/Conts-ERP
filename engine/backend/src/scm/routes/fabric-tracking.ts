@@ -30,6 +30,7 @@ import { escapeForOr } from '../lib/postgrest-search';
 import { activeCompanyId, scopeToCompany,
   requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY } from '../lib/companyScope';
 import { readStatusCounts } from '../lib/status-counts';
+import { paginateAll } from '../lib/paginate-all';
 import type { Env, Variables } from '../env';
 
 export const fabricTracking = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -376,34 +377,46 @@ fabricTracking.delete('/:id', async (c) => {
   return c.body(null, 204);
 });
 
+/* The fabric register, paged. One read stops at 1,000 rows and the register held 938 on 21 Nov 2026, so the next
+   few dozen fabrics would have vanished from the end of the list and from every fabric dropdown. fabric_code is not
+   unique (a retired row can sit beside its live twin), so id breaks ties and keeps pages from overlapping. */
+export function readFabricTrackings(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  c: Parameters<typeof scopeToCompany>[1],
+  cols: string,
+  category: string | undefined,
+  search: string | undefined,
+) {
+  return paginateAll((from, to) => {
+    let q = scopeToCompany(supabase.from('fabric_trackings').select(cols), c)
+      .order('fabric_code', { ascending: true })
+      .order('id', { ascending: true });
+    if (category && VALID_CATEGORIES.has(category)) q = q.eq('fabric_category', category);
+    if (search) {
+      const s = escapeForOr(search);
+      if (s) q = q.or(`fabric_code.ilike.%${s}%,fabric_description.ilike.%${s}%`);
+    }
+    return q.range(from, to);
+  });
+}
+
 fabricTracking.get('/', async (c) => {
   const category = c.req.query('category');
   const search = c.req.query('search');
   const supabase = c.get('supabase');
 
-  let q = scopeToCompany(
-    supabase
-      .from('fabric_trackings')
-      .select(
-        'id, fabric_code, fabric_description, fabric_category, price_tier, ' +
-          'sofa_price_tier, bedframe_price_tier, price_sen, soh_sen, ' +
-          'po_outstanding_sen, last_month_usage_sen, one_week_usage_sen, ' +
-          'two_weeks_usage_sen, one_month_usage_sen, shortage_sen, ' +
-          'reorder_point_sen, supplier, supplier_code, lead_time_days, series, is_active',
-      ),
+  const { data, error } = await readFabricTrackings(
+    supabase,
     c,
-  )
-    .order('fabric_code', { ascending: true });
-
-  if (category && VALID_CATEGORIES.has(category)) {
-    q = q.eq('fabric_category', category);
-  }
-  if (search) {
-    const s = escapeForOr(search);
-    if (s) q = q.or(`fabric_code.ilike.%${s}%,fabric_description.ilike.%${s}%`);
-  }
-
-  const { data, error } = await q;
+    'id, fabric_code, fabric_description, fabric_category, price_tier, ' +
+      'sofa_price_tier, bedframe_price_tier, price_sen, soh_sen, ' +
+      'po_outstanding_sen, last_month_usage_sen, one_week_usage_sen, ' +
+      'two_weeks_usage_sen, one_month_usage_sen, shortage_sen, ' +
+      'reorder_point_sen, supplier, supplier_code, lead_time_days, series, is_active',
+    category,
+    search,
+  );
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   return c.json({ fabrics: data ?? [] });
 });
@@ -429,26 +442,14 @@ fabricTracking.get('/lite', async (c) => {
   const search = c.req.query('search');
   const supabase = c.get('supabase');
 
-  let q = scopeToCompany(
-    supabase
-      .from('fabric_trackings')
-      .select(
-        'id, fabric_code, fabric_description, supplier_code, fabric_category, ' +
-          'price_tier, sofa_price_tier, bedframe_price_tier, series, is_active',
-      ),
+  const { data, error } = await readFabricTrackings(
+    supabase,
     c,
-  )
-    .order('fabric_code', { ascending: true });
-
-  if (category && VALID_CATEGORIES.has(category)) {
-    q = q.eq('fabric_category', category);
-  }
-  if (search) {
-    const s = escapeForOr(search);
-    if (s) q = q.or(`fabric_code.ilike.%${s}%,fabric_description.ilike.%${s}%`);
-  }
-
-  const { data, error } = await q;
+    'id, fabric_code, fabric_description, supplier_code, fabric_category, ' +
+      'price_tier, sofa_price_tier, bedframe_price_tier, series, is_active',
+    category,
+    search,
+  );
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   return c.json({ fabrics: data ?? [] });
 });

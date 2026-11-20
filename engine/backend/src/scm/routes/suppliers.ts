@@ -688,14 +688,18 @@ suppliers.patch('/:id', patchSupplierHandler);
 suppliers.get('/:id/bindings', async (c) => {
   const id = c.req.param('id');
   const supabase = c.get('supabase');
-  const { data, error } = await scopeToCompany(
+  /* Paged: the largest supplier already has ~580 items mapped, and one read stops at 1,000. id breaks item_code ties
+     (one code can be bound for two material kinds) so pages never overlap. */
+  const { data, error } = await paginateAll((from, to) => scopeToCompany(
     supabase
       .from('supplier_material_bindings')
       .select(BINDING_COLS)
       .eq('supplier_id', id),
     c,
   )
-    .order('item_code');
+    .order('item_code')
+    .order('id')
+    .range(from, to));
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   return c.json({ bindings: data ?? [] });
 });
@@ -1359,9 +1363,11 @@ async function loadPriceRefreshPlan(c: any, supplierId: string, companyId: numbe
   /* A price change entered on the binding's timeline (POST .../price-changes)
      lands in supplier_binding_price_history and leaves price_valid_from alone:
      the newest effective_from there also makes the list "newer" than an invoice. */
-  const { data: hist, error: hErr } = await supabase.from('supplier_binding_price_history')
+  /* Paged like the bindings above: the largest supplier's history is ~580 rows and one read stops at 1,000. */
+  const { data: hist, error: hErr } = await paginateAll((from, to) => supabase.from('supplier_binding_price_history')
     .select('item_code, effective_from')
-    .eq('company_id', companyId).eq('supplier_id', supplierId).eq('material_kind', 'mfg_product');
+    .eq('company_id', companyId).eq('supplier_id', supplierId).eq('material_kind', 'mfg_product')
+    .order('id').range(from, to));
   if (hErr) return { ok: false as const, reason: hErr.message };
   const newest = new Map<string, string>();
   for (const h of (hist ?? []) as Array<{ item_code: string; effective_from: string | null }>) {

@@ -16,7 +16,8 @@ const code = readFileSync(resolve(HERE, '../src/scm/routes/fabric-colours.ts'), 
 describe('GET /fabric-colours caps after the rules', () => {
   it('the query reads the PostgREST page, never the typeahead limit', () => {
     expect(code).not.toMatch(/q\s*=\s*q\.limit\(limit\)/);
-    expect(code).toMatch(/q\s*=\s*q\.limit\(OFFER_SCAN_ROWS\)/);
+    // The typeahead reads one page of OFFER_SCAN_ROWS rows; the full list is paged (row-cap sweep, 21 Nov 2026).
+    expect(code).toMatch(/rawQ \? await colourRead\(0, OFFER_SCAN_ROWS - 1\) : await paginateAll\(colourRead\)/);
   });
 
   it('the response goes through coloursOnOffer with the limit applied last', () => {
