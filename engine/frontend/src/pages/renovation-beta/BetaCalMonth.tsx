@@ -4,7 +4,7 @@
 import type { CSSProperties, ReactElement } from "react";
 import { BETA, BETA_CHIP, GLASS, PILL_GLASS, PILL_MAIN, TONES } from "./renovationBetaTheme";
 import {
-  dayKey, dueOn, ds, eventsOn, groupOf, initials, listFor, monthCells, MONTHS, typeLabel,
+  dayKey, dueOn, ds, eventsOn, groupOf, initials, listFor, monthCells, MONTHS, typeLabel, whoName,
   type BoardModel, type CalEvent, type DueItem, type Viewing,
 } from "./renovationBetaBoard";
 import { Badge, BTN, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
@@ -43,8 +43,8 @@ function EventChip({ e, who, project }: { e: CalEvent; who: Viewing; project: st
   const [ink, bg] = e.done ? BETA_CHIP.meet : BETA_CHIP[groupOf(e.type)];
   const text = `${e.t ? `${e.t} ` : ""}${e.note || typeLabel(e.type)}${project ? ` · ${project}` : ""}`;
   return (
-    <div title={e.who ? `${text} · ${e.who.name}` : text} style={{ ...CHIP, borderLeft: `3px solid ${ink}`, background: bg, color: ink, fontWeight: 600 }}>
-      {who === "All" && e.who && <Badge name={e.who.name} />}
+    <div title={whoName(e) ? `${text} · ${whoName(e)}` : text} style={{ ...CHIP, borderLeft: `3px solid ${ink}`, background: bg, color: ink, fontWeight: 600 }}>
+      {who === "All" && whoName(e) && <Badge name={whoName(e) ?? ""} />}
       <span style={{ ...CLAMP, textDecoration: e.done ? "line-through" : undefined }}>{text}</span>
     </div>
   );
@@ -156,7 +156,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: "block", fontWeight: 600 }}>{e.note || typeLabel(e.type)}{e.done ? " · done" : ""}</span>
                     <span style={{ display: "block", fontSize: 12, color: MUTED }}>
-                      {who === "All" && e.who && <><b style={{ color: BETA.ink }}>{e.who.name}</b> · </>}{ds(e.d)}{e.t ? ` · ${e.t}` : ""}{proj ? ` · ${proj}` : ""}
+                      {who === "All" && whoName(e) && <><b style={{ color: BETA.ink }}>{whoName(e)}</b> · </>}{ds(e.d)}{e.t ? ` · ${e.t}` : ""}{proj ? ` · ${proj}` : ""}
                     </span>
                   </span>
                   {canWrite && <span style={{ fontSize: 12, color: BETA.accent, fontWeight: 600 }}>Edit</span>}

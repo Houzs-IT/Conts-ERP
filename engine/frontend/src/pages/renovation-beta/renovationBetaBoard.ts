@@ -10,6 +10,9 @@ import type {
 
 export type Kind = "3" | "2";
 export type ApptKey = "msr" | "cm" | "sb";
+/** A sales order line still waiting for a required variant: its SKU and the variant fields left to pick. */
+export interface VariantPending { itemCode: string; missing: string[] }
+
 /** A Design step: the code of a work of the list in Project Maintenance, or "variants" (checked by the system). */
 export type StepKey = string;
 export type Letter = "A" | "B" | "C" | "D" | "E";
@@ -30,7 +33,7 @@ export interface DesignTrack {
   am: Amendment[];
 }
 
-export interface Appt { d: string; t: string; who: PersonRef | null; with: string | null; done: boolean }
+export interface Appt { d: string; t: string; who: PersonRef | null; whoText?: string | null; with: string | null; done: boolean }
 
 export interface DesignProject {
   id: number;
@@ -70,7 +73,7 @@ export interface DesignProject {
   /** The newest booking of each work of the list, by its code. */
   works: Record<string, { d: string; t: string; done: boolean }>;
   /** Sales order lines and how many still miss a required variant. */
-  variants: { lines: number; missing: number };
+  variants: { lines: number; missing: number; pending: VariantPending[] };
   /** Money still owed on the sales order; null when there is none or money is hidden. */
   outstandingSen: number | null;
 }
@@ -85,6 +88,8 @@ export interface CalEvent {
   type: string;
   note: string;
   who: PersonRef | null;
+  /** Who goes, typed in when nobody was picked from the list (owner, 20 Nov 2026). */
+  whoText?: string | null;
   projectId: number | null;
   done: boolean;
   eventId: number | null;
@@ -264,7 +269,7 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
     const appts: Partial<Record<ApptKey, Appt>> = {};
     for (const key of APPT_KEYS) {
       const a = p.appointments.find((x) => x.kind === APPT_KIND[key]);
-      if (a) appts[key] = { d: a.onDate, t: a.atTime?.slice(0, 5) ?? "", who: a.personId == null ? null : people.get(a.personId) ?? null, with: a.withText, done: a.doneAt != null };
+      if (a) appts[key] = { d: a.onDate, t: a.atTime?.slice(0, 5) ?? "", who: a.personId == null ? null : people.get(a.personId) ?? null, whoText: a.whoText ?? null, with: a.withText, done: a.doneAt != null };
     }
     return {
       id: p.id,
@@ -293,7 +298,7 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
       payment: paymentText(p),
       paid: p.payment.state === "ok" ? p.payment.paid ?? null : null,
       works: Object.fromEntries((p.works ?? []).map((w) => [w.type, { d: w.onDate, t: w.atTime?.slice(0, 5) ?? "", done: !!w.done }])),
-      variants: p.variants ?? { lines: 0, missing: 0 },
+      variants: { lines: p.variants?.lines ?? 0, missing: p.variants?.missing ?? 0, pending: p.variants?.pending ?? [] },
       outstandingSen: p.payment.state === "ok" ? p.payment.outstandingSen ?? null : null,
     };
   });
@@ -313,7 +318,7 @@ export function buildModel(board: BetaBoard): BoardModel {
      entry stayed open on the calendar after its day while the Design progress row already said Done. */
   const events: CalEvent[] = board.events.map((e) => ({
     id: `e${e.id}`, d: e.onDate, t: e.atTime?.slice(0, 5) ?? "", type: e.type, note: e.note ?? "",
-    who: e.personId == null ? null : person.get(e.personId) ?? null, projectId: e.projectId,
+    who: e.personId == null ? null : person.get(e.personId) ?? null, whoText: e.whoText ?? null, projectId: e.projectId,
     done: e.done || (bookable.has(e.type) && e.onDate < board.today), eventId: e.id, appt: null,
   }));
   return {
@@ -588,8 +593,15 @@ export function inFilter(m: BoardModel, p: DesignProject, f: HomeFilter): boolea
   if (f === "all") return true;
   const cur = currentStep(m, p);
   if (f === "done") return cur === 99;
+  if (f === VARIANTS_FILTER) return waitingVariants(p);
   return designSteps(m)[cur]?.[0] === f.slice(5);
 }
+
+/** Variants is checked on its own, not as "the step the project is on" (owner, 20 Nov 2026: pressing Variants showed
+    none while lines still waited, because those projects were still on Measure). It lists every project with a sales
+    order line still missing a required variant, whatever step it is on. */
+export const VARIANTS_FILTER = "step:variants" as const;
+export const waitingVariants = (p: Pick<DesignProject, "variants">): boolean => p.variants.missing > 0;
 
 /** How many projects each filter shows; `steps` is keyed by step code. */
 export function homeCounts(m: BoardModel): { late: number; week: number; all: number; done: number; steps: Record<string, number> } {
@@ -613,8 +625,9 @@ export function filterCounts(m: BoardModel, list: readonly DesignProject[]): { a
   for (const p of list) {
     const k = ds[currentStep(m, p)]?.[0];
     if (k === undefined) done++;
-    else steps[k]++;
+    else if (k !== "variants") steps[k]++;
   }
+  if ("variants" in steps) steps.variants = list.filter(waitingVariants).length;
   return { all: list.length, done, steps };
 }
 
@@ -697,11 +710,20 @@ export function apptEvents(m: BoardModel): CalEvent[] {
       if (!a?.d) continue;
       out.push({
         id: `ap|${p.id}|${key}`, d: a.d, t: a.t, type: APPT_TYPE[key], note: `${APPT_LABEL[key]} · ${a.with || apptWithDefault(p, key)}`,
-        who: apptWho(p, a), projectId: p.id, done: adone(m, a), eventId: null, appt: { projectId: p.id, key },
+        who: a.who ?? (a.whoText ? null : p.lead), whoText: a.whoText ?? null, projectId: p.id, done: adone(m, a), eventId: null, appt: { projectId: p.id, key },
       });
     }
   }
   return out;
+}
+
+/** Who goes, as the screens write it: the picked person, else the typed name. */
+export const whoName = (e: Pick<CalEvent, "who" | "whoText">): string | null => e.who?.name ?? (e.whoText?.trim() || null);
+
+/** Every booking of one project, newest day first (owner, 20 Nov 2026: a project's bookings listed on its page). */
+export function projectBookings(m: BoardModel, projectId: number): CalEvent[] {
+  return allEvents(m).filter((e) => e.projectId === projectId)
+    .sort((a, b) => (b.d + timeKey(b.t)).localeCompare(a.d + timeKey(a.t)));
 }
 
 export const allEvents = (m: BoardModel): CalEvent[] => [...m.events, ...apptEvents(m)];

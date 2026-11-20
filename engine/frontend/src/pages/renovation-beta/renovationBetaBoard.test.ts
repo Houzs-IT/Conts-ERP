@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BetaBoard, BetaBoardProject } from "./renovationBetaBoardApi";
 import {
-  add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, designSteps, diff, ds, homeCounts, homeList, homeRow, initials, items,
+  add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, designSteps, diff, ds, filterCounts, homeCounts, inFilter, homeList, homeRow, initials, items,
   listFor, monthCells, nextFor, progressByPerson, progressList, rangeFor, shiftMonth, stage, status, type BoardModel, type DesignProject,
 } from "./renovationBetaBoard";
 
@@ -118,6 +118,16 @@ describe("status words", () => {
     const variantsOpen = buildModel(board([{ ...lakeville, appointments: lakeville.appointments.map((a) => ({ ...a, doneAt: "2026-10-26T01:00:00Z" })),
       payment: { state: "ok" as const, label: "2 of 4 paid", outstandingSen: 0, paid: 2 }, variants: { lines: 3, missing: 1 } }]));
     expect(status(variantsOpen, variantsOpen.projects[0])[1]).toBe("Pending variants");
+  });
+  it("lists every project with lines missing a variant under Variants, whatever step it is on", () => {
+    const early = buildModel(board([{ ...lakeville, variants: { lines: 4, missing: 2, pending: [{ itemCode: "SOF-HLM-6112", missing: ["colour"] }] } }]));
+    const p = early.projects[0];
+    expect(inFilter(early, p, "step:variants")).toBe(true);
+    expect(filterCounts(early, early.projects).steps.variants).toBe(1);
+    expect(p.variants.pending[0].itemCode).toBe("SOF-HLM-6112");
+    const picked = buildModel(board([{ ...lakeville, variants: { lines: 4, missing: 0 } }]));
+    expect(inFilter(picked, picked.projects[0], "step:variants")).toBe(false);
+    expect(picked.projects[0].variants.pending).toEqual([]);
   });
   it("re-opens the stage when an amendment is open after approval", () => {
     expect(stage(m, get(4), "3").st).toBe("work");

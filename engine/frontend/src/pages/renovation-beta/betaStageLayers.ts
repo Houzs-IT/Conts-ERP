@@ -5,7 +5,8 @@
 import { designSteps, ds, measured, stage, stepDone, type BoardModel, type DesignProject } from "./renovationBetaBoard";
 
 export type SubState = "done" | "current" | "later" | "off";
-export interface SubStep { key: string; label: string; state: SubState; sub: string; rule: string }
+/** items: what is still open under the step, listed when the step is pressed (Variants: the SKUs still to pick). */
+export interface SubStep { key: string; label: string; state: SubState; sub: string; rule: string; items?: string[] }
 export interface StageLayer { rule: string; steps: SubStep[] | null }
 
 /** When each stage is complete, in the owner's words. */
@@ -51,7 +52,12 @@ export function designLayer(m: BoardModel, p: DesignProject): SubStep[] {
     const done = stepDone(m, p, code);
     const state: SubState = done ? "done" : seenOpen ? "later" : "current";
     if (!done) seenOpen = true;
-    return { key: code, label, state, sub: detail(m, p, code), rule: RULE[code] ?? (m.workTypes.find((w) => w.code === code)?.bookable === false ? "Marked done by hand." : "Done once its booked day has passed.") };
+    // Pressing Variants names the SKUs still waiting for a variant (owner, 20 Nov 2026), not just the count.
+    const items = code === "variants" && p.variants.missing > 0
+      ? [...p.variants.pending.map((x) => `${x.itemCode} · pick ${x.missing.join(", ")}`),
+         ...(p.variants.missing > p.variants.pending.length ? [`+${p.variants.missing - p.variants.pending.length} more on the SO tab`] : [])]
+      : undefined;
+    return { key: code, label, state, sub: detail(m, p, code), items, rule: RULE[code] ?? (m.workTypes.find((w) => w.code === code)?.bookable === false ? "Marked done by hand." : "Done once its booked day has passed.") };
   });
 }
 
