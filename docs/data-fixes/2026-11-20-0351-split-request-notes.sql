@@ -1,3 +1,7 @@
+-- APPLIED to production on 20 Nov 2026 as migration 0351 (migrate-production.yml, --only=0351). Kept here, not in
+-- migrations-pg: it is a one-off fix of five production rows, and run on an empty database (CI, staging) it finds
+-- none and stops. public.pos_migrations keeps its row; the runner does not look for applied files that are gone.
+
 -- 0351_split_request_notes: the five utility payment requests split into one per bill on 20 Nov 2026 (#1089) still
 -- carry the note they were sent with, "9 Tenaga Nasional Berhad bills from a scan on the Utility bills screen.", while
 -- each now holds one bill (chew, 20 Nov 2026: "帮我改"). Each note now names its one bill and its unit and says the
