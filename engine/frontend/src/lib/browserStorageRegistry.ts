@@ -60,6 +60,9 @@ export const BROWSER_STORAGE_KEY_REGISTRY: readonly StorageKeyRegistration[] = [
   // a successful save. Keyed by record + revision (vo:<id>,
   // quotation:<id>:<rev>, quotation-desk:<id>:<rev>); never applied by itself.
   { id: "renovation-form-drafts", classification: "DRAFT_UI", storage: ["localStorage"], keyFamily: "conts:reno-draft:(vo:<id>|quotation:<id>:<rev>|quotation-desk:<id>:<rev>)", matches: prefix("conts:reno-draft:") },
+  // Unsaved create/edit form drafts (SO / DO / SI / PI / PV / Production Order new, PO edit, Package editor;
+  // lib/formDraft.ts): offered back as "Restore unsaved draft?" after a reload. 7 days, cleared on save or Discard.
+  { id: "form-drafts", classification: "DRAFT_UI", storage: ["localStorage"], keyFamily: "conts:form-draft:u<user>:c<company>:<form>:<id|new>", matches: prefix("conts:form-draft:") },
   { id: "payment-retry-handoffs", classification: "DRAFT_UI", storage: ["localStorage"], keyFamily: "houzs:scm-handoff:v<version>:(so|si)PaymentRetry:u<user>:c<company>:<document>", matches: (key) => /^houzs:scm-handoff:v\d+:(?:so|si)PaymentRetry:u\d+:c\d+:.+$/.test(key) },
   { id: "scm-handoffs", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "houzs:scm-handoff:v<version>:<registered non-payment handoff>", matches: (key) => SCM_TRANSIENT_KEYS.has(key) },
   { id: "query-snapshots", classification: "CACHE", storage: ["localStorage"], keyFamily: "houzs-rq-snapshot:<build>:<session>:<company>", matches: prefix("houzs-rq-snapshot:") },

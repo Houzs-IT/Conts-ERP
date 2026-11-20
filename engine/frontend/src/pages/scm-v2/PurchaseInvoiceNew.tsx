@@ -43,7 +43,10 @@ import {
   usePostPurchaseInvoice,
   usePurchaseInvoiceDetail,
 } from '../../vendor/scm/lib/purchase-invoice-queries';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
+import { useFormDraft } from '../../lib/formDraft';
+import { FormDraftBar } from '../../components/FormDraftBar';
 import { readScmHandoff, removeScmHandoff } from '../../lib/scmHandoffStorage';
 import { useGrnDetail, useGrnDetails } from '../../vendor/scm/lib/grn-queries';
 import { useActiveCurrencies, rateFor } from '../../vendor/scm/lib/currencies-queries';
@@ -160,12 +163,10 @@ export const PurchaseInvoiceNew = () => {
   // Manual mode = no ?grnId= in the URL (Commander 2026-05-29 — blank PI).
   const isManual = !grnId;
 
-  /* One key for the one PI this page is open to raise (lib/idempotency.ts).
-     Same create-then-post-then-dialog shape as GrnNew (which carries the full
-     reasoning): the submit is TWO calls and a POST failure reports "Save failed"
-     while the PI already exists, so the re-press that copy invites must REPLAY
-     rather than book the supplier's bill a second time. */
-  const idemKey = useIdempotencyKey();
+  /* One key per purchase invoice CONTENT (lib/idempotency.ts createContentBoundKey): the same form re-pressed after a stall
+     replays the first answer instead of raising a second document; a save the server refused releases the key, so
+     the corrected form is a new request instead of a replay of the refusal (audit 20 Nov 2026, items 19-24). */
+  const idemKeys = useContentBoundIdempotencyKey();
   const create = useCreatePurchaseInvoice();
   const post   = usePostPurchaseInvoice({ reportNotBooked: false });
   const saving = create.isPending || post.isPending;
@@ -488,6 +489,27 @@ export const PurchaseInvoiceNew = () => {
     setExchangeRate(String(rateFor(currenciesQ.data, currency)));
   }, [isForeign, currency, currenciesQ.data, rateTouched]);
 
+  /* Unsaved fields kept in this browser (lib/formDraft.ts), offered back after a reload; one raised from goods
+     receipts is kept per receipt, once the receipt has filled the lines. Not for Copy as new or a scanned bill:
+     their source fills the form again, and a scanned bill's files cannot be kept. */
+  const [draftAllowed] = useState(() => !copyFrom && !(location.state as { scanBill?: unknown } | null)?.scanBill);
+  const draftValue = {
+    manualSupplierId, supplierInvoiceRef, invoiceDate, dueDate, dueTouched, notes,
+    exchangeRate, rateTouched, currencyOverride, allocationMethod, lines,
+  };
+  const draft = useFormDraft('pi-new', grnId ? `grn-${[grnId, ...extraGrnIds].join(',')}` : 'new', draftValue, {
+    enabled: draftAllowed && (isManual || !!sourceItems),
+    meaningful: !!manualSupplierId || !!supplierInvoiceRef.trim() || lines.some((l) => !!l.itemCode.trim() || l.unitPriceSen > 0),
+    keys: idemKeys,
+  });
+  const restoreDraft = (v: typeof draftValue) => {
+    setManualSupplierId(v.manualSupplierId); setSupplierInvoiceRef(v.supplierInvoiceRef); setInvoiceDate(v.invoiceDate);
+    setDueTouched(v.dueTouched); setDueDate(v.dueDate); setNotes(v.notes);
+    setRateTouched(v.rateTouched); setCurrencyOverride(v.currencyOverride); setExchangeRate(v.exchangeRate);
+    setAllocationMethod(v.allocationMethod);
+    if (Array.isArray(v.lines) && v.lines.length > 0) setLines(v.lines);
+  };
+
   // ── Manual product search (gated by min query length, mirrors GrnNew). ───
   const [productQuery, setProductQuery] = useState<string>('');
   /* Perf — debounce the datalist search so a fast typist fires one
@@ -572,8 +594,7 @@ export const PurchaseInvoiceNew = () => {
     }
     if (!canSave) { setDialog({ title: 'Check the quantities', body: 'Each line needs qty > 0.' }); return; }
     try {
-      const createRes = await create.mutateAsync({
-        idempotencyKey: idemKey,
+      const payload = {
         // Manual: no GRN / PO behind it. GRN-sourced: carry both FKs through.
         supplierId,
         purchaseOrderId:    isManual ? null : (grn?.purchase_order_id ?? null),
@@ -608,7 +629,11 @@ export const PurchaseInvoiceNew = () => {
           variants:       l.variants,
           ...(l.accountCode ? { accountCode: l.accountCode } : {}),
         })),
-      });
+      };
+      const sent = await sendWithContentKey(idemKeys, payload, () => serviceConfirm(unansweredSaveQuestion('purchase invoice', 'Procurement > Purchase Invoices')), (idempotencyKey) => create.mutateAsync({ ...payload, idempotencyKey }));
+      if (!sent.sent) return;
+      const createRes = sent.value;
+      draft.clear();
       /* Attach the scanned bill AFTER the invoice exists, in scan order. A failed
          upload never un-saves the bill: the dialog says what still needs adding
          from the detail page's Files card. */
@@ -683,6 +708,8 @@ export const PurchaseInvoiceNew = () => {
           </div>
         }
       />
+
+      <FormDraftBar draft={draft} onRestore={restoreDraft} />
 
       <section className={styles.card}>
         <div className={styles.cardHeader}><h2 className={styles.cardTitle}>Header</h2></div>

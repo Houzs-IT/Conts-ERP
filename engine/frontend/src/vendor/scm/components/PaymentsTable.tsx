@@ -70,7 +70,8 @@ import {
   useSoDropdownOptions, optionsOrFallback,
 } from '../lib/so-dropdown-options-queries';
 import { formatDate } from '../../../lib/utils';
-import { newIdempotencyKey } from '../../../lib/idempotency';
+import { contentKeyFor, createContentBoundKey, newIdempotencyKey, sendWithContentKey, settleOutcome, unansweredSaveQuestion, type ContentBoundKey } from '../../../lib/idempotency';
+import { serviceConfirm } from '../lib/dialog-service';
 import detailStyles from '../../../pages/scm-v2/SalesOrderDetail.module.css';
 import paymentsStyles from '../../../pages/scm-v2/Payments.module.css';
 import { useUnsavedWork } from '../../../lib/unsavedWork';
@@ -766,6 +767,26 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
     }
   };
 
+  /* Each row's key follows what the row sends (lib/idempotency.ts createContentBoundKey), starting from the key the
+     row was made with, so the retry handoff still recognises it: the same row re-pressed after a stall replays,
+     while a row the server refused (a bad amount, a slip date out of range) goes out under a new key once
+     corrected, instead of the refusal coming back (audit 20 Nov 2026, items 19-24). */
+  const rowKeys = useRef(new Map<string, ContentBoundKey>());
+  const keysForRow = (d: PaymentDraft): ContentBoundKey => {
+    let keys = rowKeys.current.get(d.uid);
+    if (!keys) {
+      let seed = d.idempotencyKey;
+      keys = createContentBoundKey(() => {
+        const k = seed ?? newIdempotencyKey();
+        seed = undefined;
+        return k;
+      });
+      rowKeys.current.set(d.uid, keys);
+    }
+    return keys;
+  };
+  const askUnansweredPayment = () => serviceConfirm(unansweredSaveQuestion('payment', 'the payments already recorded here'));
+
   const removeDraft = (uid: string) => {
     if (isSaved) {
       setSavedDrafts((prev) => prev.filter((d) => d.uid !== uid));
@@ -992,17 +1013,21 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
     const reason = reasonOnEvery ? await askReason(paymentReasonAsk('add', 'holder')) : '';
     if (reason === null) return;
     if (reason) body.reason = reason;
-    addPayment.mutate(body as { docNo: string } & Record<string, unknown>, {
+    const { idempotencyKey: _rowKey, ...content } = body;
+    const keys = keysForRow(d);
+    const key = await contentKeyFor(keys, content, askUnansweredPayment);
+    if (!key) return;
+    addPayment.mutate({ ...content, idempotencyKey: key } as unknown as { docNo: string } & Record<string, unknown>, settleOutcome(keys, {
       onSuccess: () => {
         removeDraft(d.uid);
         (props as SavedModeProps).onDraftCommitted?.(d);
       },
-      onError: (e) => {
+      onError: (e: unknown) => {
         // eslint-disable-next-line no-console
         console.error('[payment] add failed:', e);
         notify({ title: 'Failed to save payment', body: e instanceof Error ? e.message : 'Something went wrong.', tone: 'error' });
       },
-    });
+    }));
   };
 
   /* THE PAGE'S SAVE COMMITS THESE ROWS TOO (owner 2026-08-31).
@@ -1044,7 +1069,7 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
         reason = answer;
       }
       try {
-        await addPayment.mutateAsync({
+        const content = {
           docNo:           (props as SavedModeProps).docNo,
           ...(reason ? { reason } : {}),
           paidAt:          d.paidAt,
@@ -1054,9 +1079,11 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
           approvalCode:    d.approvalCode || null,
           collectedBy:     d.collectedBy || null,
           uploadSessionId: d.slipUploadSessionId,
-          idempotencyKey:  d.idempotencyKey,
           ...draftMethodFields(method, d),
-        } as { docNo: string } & Record<string, unknown>);
+        };
+        const sent = await sendWithContentKey(keysForRow(d), content, askUnansweredPayment,
+          (idempotencyKey) => addPayment.mutateAsync({ ...content, idempotencyKey } as { docNo: string } & Record<string, unknown>));
+        if (!sent.sent) { blocked.push(`${d.methodLabel}: not sent (the last save got no answer)`); continue; }
         removeDraft(d.uid);
         (props as SavedModeProps).onDraftCommitted?.(d);
         committed += 1;

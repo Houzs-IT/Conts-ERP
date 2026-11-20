@@ -104,6 +104,8 @@ import { ADD_LINE_LABEL } from '../../vendor/scm/lib/add-line-handoff';
 import { purchaseOrderLinesLocked } from '../../vendor/scm/lib/line-add-lock';
 import { useAddLineHandoff } from '../../vendor/scm/lib/useAddLineHandoff';
 import { useRenoDocInfo } from './RenovationDocInfo';
+import { useFormDraft } from '../../lib/formDraft';
+import { FormDraftBar } from '../../components/FormDraftBar';
 import { renoPoCategoryClashes, renoPoCategoryRefusal } from './renovationPoCategory';
 
 /** The one-category note: the same red as the SO-drift note on a line. */
@@ -396,6 +398,18 @@ export const PurchaseOrderDetail = () => {
     setEditLines(items.map(draftFromItem));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing, items]);
+
+  /* Unsaved edits kept in this browser per PO (lib/formDraft.ts), offered back the next time it is opened in Edit;
+     a draft from before the PO was saved again says so. */
+  const editDraftValue = { headerDraft, editLines };
+  const editDraft = useFormDraft('po-edit', po?.id ?? null, editDraftValue, {
+    enabled: isEditing && !!po && !hardLocked,
+    version: po?.updated_at ? Date.parse(po.updated_at) || null : null,
+  });
+  const restoreEditDraft = (v: typeof editDraftValue) => {
+    setHeaderDraft(v.headerDraft);
+    if (Array.isArray(v.editLines) && v.editLines.length > 0) setEditLines(v.editLines);
+  };
 
   /* Cost auto-recompute (mirrors Create) — resolve a line's supplier price
      matrix + maintenance surcharges into a unit cost. Defined above the early
@@ -800,6 +814,7 @@ export const PurchaseOrderDetail = () => {
           soItemId:       d.soItemId ?? null,
         });
       }
+      editDraft.clear();
       setIsEditing(false);
       setHeaderDraft(null);
       setEditLines([]);
@@ -901,6 +916,7 @@ export const PurchaseOrderDetail = () => {
     <div className={styles.page}>
       {/* Commander 2026-05-29 — dropped the GRNs/Invoice/Returns smart-button
           row + the "PO date · N lines · Expected" subtitle (not needed). */}
+      {isEditing && <div className="mb-3"><FormDraftBar draft={editDraft} onRestore={restoreEditDraft} staleText="This PO changed after your draft; restoring will overwrite those changes." /></div>}
 
       {/* ── Header — V2-parity chrome (owner 2026-07-27 "这里设计不对"): the
           edit surface opens with the same header language as the V2 detail

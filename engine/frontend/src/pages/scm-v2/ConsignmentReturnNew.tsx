@@ -31,7 +31,8 @@ import { Button } from '@2990s/design-system';
 import { PhoneInput } from '../../vendor/scm/components/PhoneInput';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import { useCreateConsignmentReturn } from '../../vendor/scm/lib/consignment-return-queries';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { contentKeyFor, settleOutcome, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readScmHandoff, removeScmHandoff } from '../../lib/scmHandoffStorage';
 import { useConsignmentNoteDetail } from '../../vendor/scm/lib/consignment-note-queries';
 import { usePickableStaff } from '../../vendor/scm/lib/admin-queries';
@@ -72,11 +73,10 @@ export const ConsignmentReturnNew = () => {
   const fromConsignmentNote = searchParams.get('fromConsignmentNote');
   const fromPicks = searchParams.get('fromPicks') === '1';
 
-  /* One key for the one return this page is open to raise (lib/idempotency.ts).
-     Route-level form, navigates to the return detail on success, so the MOUNT is
-     exactly one return: stable across re-renders and across a re-press after a
-     stalled submit, fresh on remount. */
-  const idemKey = useIdempotencyKey();
+  /* One key per consignment return CONTENT (lib/idempotency.ts createContentBoundKey): the same form re-pressed after a stall
+     replays the first answer instead of raising a second document; a save the server refused releases the key, so
+     the corrected form is a new request instead of a replay of the refusal (audit 20 Nov 2026, items 19-24). */
+  const idemKeys = useContentBoundIdempotencyKey();
   const create = useCreateConsignmentReturn();
   const loc = useLocalities();
   const cnDetail = useConsignmentNoteDetail(fromConsignmentNote);
@@ -259,9 +259,8 @@ export const ConsignmentReturnNew = () => {
       return;
     }
 
-    create.mutate(
-      {
-        idempotencyKey: idemKey,
+    void (async () => {
+    const payload = {
         debtorName,
         debtorCode: debtorCode || undefined,
         phone: phone || undefined,
@@ -299,14 +298,19 @@ export const ConsignmentReturnNew = () => {
           variants: l.variants,
           consignmentDoItemId: l.doItemId,
         })),
-      },
-      {
+    };
+    const key = await contentKeyFor(idemKeys, payload, () => serviceConfirm(unansweredSaveQuestion('consignment return', 'Consignment > Consignment Returns')));
+    if (!key) return;
+    create.mutate(
+      { ...payload, idempotencyKey: key },
+      settleOutcome(idemKeys, {
         onSuccess: (res: { id: string; returnNumber: string }) => {
           navigate(`/scm/consignment-returns/${res.id}`);
         },
         onError: (err) => notify({ title: 'Save failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' }),
-      },
+      }),
     );
+    })();
   };
 
   return (

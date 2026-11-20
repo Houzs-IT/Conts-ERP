@@ -2,7 +2,7 @@
    the way GRN and Purchase Invoice already offer it: open what was saved, or
    start another (staff request 2026-09-14).
 
-   THE TRAP THIS PINS. StockTransferNew mints ONE idempotency key per mount
+   THE TRAP THIS PINS. StockTransferNew keeps one idempotency key per mount once a post lands
    (lib/idempotency.ts). A "New stock transfer" that navigated to
    /scm/stock-transfers/new from /scm/stock-transfers/new is a no-op for the
    router: the page would not remount, the key would not rotate, and the
@@ -13,7 +13,7 @@
    posts twice across a "New" and asserts the two requests carry DIFFERENT
    keys, with the real useIdempotencyKey (not a stub). */
 
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
@@ -100,12 +100,14 @@ describe('StockTransferNew — the next step after Post', () => {
     fireEvent.click(screen.getByRole('button', { name: /Post Transfer/ }));
   };
 
-  test('"New stock transfer" starts a blank form, and the second post carries a NEW idempotency key', () => {
+  /* Post takes its key from the form's content first (lib/idempotency.ts contentKeyFor), so the request goes out a
+     tick after the click. */
+  test('"New stock transfer" starts a blank form, and the second post carries a NEW idempotency key', async () => {
     draw();
     fillAndPost('3');
-    expect(transferCalls).toHaveLength(1);
+    await waitFor(() => expect(transferCalls).toHaveLength(1));
 
-    const dialog = screen.getByRole('dialog');
+    const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/ST-2609-001/)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'New stock transfer' }));
 
@@ -115,24 +117,24 @@ describe('StockTransferNew — the next step after Post', () => {
     expect((screen.getByPlaceholderText('Type code…') as HTMLInputElement).value).toBe('');
 
     fillAndPost('7');
-    expect(transferCalls).toHaveLength(2);
+    await waitFor(() => expect(transferCalls).toHaveLength(2));
     expect(transferCalls[0]!.idempotencyKey).toBeTruthy();
     expect(transferCalls[1]!.idempotencyKey).toBeTruthy();
     expect(transferCalls[1]!.idempotencyKey).not.toBe(transferCalls[0]!.idempotencyKey);
     expect(transferCalls[1]!.items[0]!.qty).toBe(7);
   });
 
-  test('"Open transfer" goes to the saved document', () => {
+  test('"Open transfer" goes to the saved document', async () => {
     draw();
     fillAndPost('3');
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Open transfer' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Open transfer' }));
     expect(screen.getByText('transfer detail page')).toBeTruthy();
   });
 
-  test('closing the dialog cannot post the same transfer again', () => {
+  test('closing the dialog cannot post the same transfer again', async () => {
     draw();
     fillAndPost('3');
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Stay here' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Stay here' }));
     expect(screen.queryByRole('button', { name: /Post Transfer/ })).toBeNull();
     expect(screen.getByRole('button', { name: /New stock transfer/ })).toBeTruthy();
     expect(transferCalls).toHaveLength(1);

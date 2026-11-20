@@ -44,6 +44,19 @@ describe('useRenovationDraft', () => {
     expect(readDraft('vo:2')).toBeNull();
   });
 
+  it('does not write the saved form back as a draft when the save lands inside the half second', () => {
+    const v1 = { title: 'typed' };
+    const { result, rerender } = renderHook(({ v }) => useRenovationDraft('vo:3', v, true, 1), { initialProps: { v: { title: '' } } });
+    rerender({ v: v1 });
+    act(() => { vi.advanceTimersByTime(200); });
+    act(() => { result.current.clear(); });
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(readDraft('vo:3')).toBeNull();
+    rerender({ v: { title: 'typed again' } });
+    act(() => { vi.advanceTimersByTime(600); });
+    expect(readDraft<{ title: string }>('vo:3')?.v.title).toBe('typed again');
+  });
+
   it('says when the record was saved again after the draft', () => {
     writeDraft('quotation:5:1', { title: 'old' }, 2);
     const { result } = renderHook(() => useRenovationDraft('quotation:5:1', { title: '' }, false, 4));
