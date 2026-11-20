@@ -44,8 +44,14 @@ const claimPayable = (c: Receipt) => c.status === "CHECKED" && !c.paybackPvId;
 
 /* The claims shown under each "Show" choice, beside the requests of that status. */
 const CLAIMS_SHOWN: Record<string, Receipt["status"][]> = {
-  SUBMITTED: ["HANDED_IN", "CHECKED"], PART_PAID: [], PAID: ["PAID_BACK"], REJECTED: ["REJECTED"], CLOSED: ["WRITTEN_OFF"], WITHDRAWN: [],
+  SUBMITTED: ["HANDED_IN", "CHECKED"], PROCEEDED: ["CHECKED"], PART_PAID: [], PAID: ["PAID_BACK"], REJECTED: ["REJECTED"], CLOSED: ["WRITTEN_OFF"], WITHDRAWN: [],
 };
+/** Finance has taken it on (chew, 20 Nov 2026): a voucher (not cancelled) or an AP invoice is on the request, or a
+ *  voucher pays the claim back. "Waiting for payment" lists only what nobody has started; these go under "Voucher
+ *  made" until paid. The person who asked still sees it waiting on My claims. */
+const proceeded = (r: Row) => (r.kind === "request" ? !!r.q.apInvoice || r.q.vouchers.some((v) => v.status !== "CANCELLED") : !!r.c.paybackPvId);
+/** The engine's status for a "Show" choice: "Voucher made" is part of what is still waiting. */
+const serverStatus = (s: string) => (s === "PROCEEDED" ? "SUBMITTED" : s);
 
 type UtilKind = "electricity" | "water" | "internet" | "sewerage";
 const UTIL_KINDS: [UtilKind, string][] = [["electricity", "Electricity"], ["water", "Water"], ["internet", "Wifi"], ["sewerage", "Indah Water"]];
@@ -105,7 +111,7 @@ export function PaymentRequests() {
   const [tab, setTab] = useState<"other" | "utilities">("other");
   /* Within utilities, by kind (chew, 18 Nov 2026): electricity, water, wifi, Indah Water. */
   const [utilKind, setUtilKind] = useState<UtilKind | "">("");
-  const q = usePaymentRequests(status);
+  const q = usePaymentRequests(serverStatus(status));
   const claimsQ = useFinanceReceipts("");
   /* Each line's sub-department (SOP 1.1), "No unit" on a team's line without one. */
   const deptLabel = useLineDepartmentLabel();
@@ -127,13 +133,16 @@ export function PaymentRequests() {
     if (!q.data) return null;
     const shown = status ? CLAIMS_SHOWN[status] ?? [] : null;
     const claims = (claimsQ.data?.receipts ?? []).filter((c) => (shown ? shown.includes(c.status) : c.status !== "REPLACED"));
-    const all: Row[] = [...q.data.requests.map((x) => ({ kind: "request" as const, id: x.id, q: x })), ...claims.map((c) => ({ kind: "claim" as const, id: `claim:${c.id}`, c }))];
+    const every: Row[] = [...q.data.requests.map((x) => ({ kind: "request" as const, id: x.id, q: x })), ...claims.map((c) => ({ kind: "claim" as const, id: `claim:${c.id}`, c }))];
+    const all = status === "SUBMITTED" ? every.filter((r) => !proceeded(r)) : status === "PROCEEDED" ? every.filter(proceeded) : every;
     const isUtility = (r: Row) => r.kind === "request" && r.q.fromBills;
     const mine = all.filter((r) => (tab === "utilities" ? isUtility(r) && (!utilKind || (r.kind === "request" && utilKindOf(r.q) === utilKind)) : !isUtility(r)));
     /* Utilities: the soonest due first. Otherwise waiting first, oldest first; the rest newest first. */
     if (tab === "utilities") return mine.sort((a, b) => (a.kind === "request" ? a.q.wantedOn ?? "9999" : "9999").localeCompare(b.kind === "request" ? b.q.wantedOn ?? "9999" : "9999"));
     return mine.sort((a, b) => Number(waiting(b)) - Number(waiting(a)) || (waiting(a) ? askedOn(a).localeCompare(askedOn(b)) : askedOn(b).localeCompare(askedOn(a))));
   }, [q.data, claimsQ.data, status, tab, utilKind]);
+  /* A request counts on the tabs as the list shows it. */
+  const shownNow = (x: PaymentRequest) => (status === "SUBMITTED" ? !proceeded({ kind: "request", id: x.id, q: x }) : status === "PROCEEDED" ? proceeded({ kind: "request", id: x.id, q: x }) : true);
   const tickedRows = (rows ?? []).filter((r) => ticked.has(r.id));
   const tickedRequests = tickedRows.flatMap((r) => (r.kind === "request" ? [r.q] : []));
 
@@ -201,8 +210,8 @@ export function PaymentRequests() {
     {
       key: "files", label: "Documents", getValue: (r) => (r.kind === "request" ? r.q.files.length : r.c.files.length),
       render: (r) => (r.kind === "request"
-        ? <FileButtons files={r.q.files} open={(f, mime) => requestFileUrl(r.q.id, f, mime)} />
-        : <FileButtons files={r.c.files} open={(f, mime) => financeReceiptFileUrl(r.c.id, f, mime)} />),
+        ? <FileButtons compact files={r.q.files} open={(f, mime) => requestFileUrl(r.q.id, f, mime)} />
+        : <FileButtons compact files={r.c.files} open={(f, mime) => financeReceiptFileUrl(r.c.id, f, mime)} />),
     },
     {
       key: "status", label: "Status", getValue: (r) => (r.kind === "request" ? r.q.status : r.c.status),
@@ -276,6 +285,7 @@ export function PaymentRequests() {
         <span className={styles.fieldLabel}>Show</span>
         <select className={styles.fieldInput} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="SUBMITTED">Waiting for payment</option>
+          <option value="PROCEEDED">Voucher made, not paid yet</option>
           <option value="PART_PAID">Part paid</option>
           <option value="PAID">Paid</option>
           <option value="REJECTED">Rejected</option>
@@ -289,7 +299,7 @@ export function PaymentRequests() {
         onChange={(t) => { setTab(t); setTicked(new Set()); }}
         options={[
           { value: "other", label: "Requests & claims" },
-          { value: "utilities", label: "Utility bills", count: (q.data?.requests ?? []).filter((x) => x.fromBills).length || undefined },
+          { value: "utilities", label: "Utility bills", count: (q.data?.requests ?? []).filter((x) => x.fromBills && shownNow(x)).length || undefined },
         ]}
       />
       {tab === "utilities" && (
@@ -297,7 +307,7 @@ export function PaymentRequests() {
           value={utilKind}
           onChange={(k) => { setUtilKind(k); setTicked(new Set()); }}
           options={[{ value: "" as const, label: "All" }, ...UTIL_KINDS.map(([k, label]) => ({
-            value: k, label, count: (q.data?.requests ?? []).filter((x) => x.fromBills && utilKindOf(x) === k).length || undefined,
+            value: k, label, count: (q.data?.requests ?? []).filter((x) => x.fromBills && shownNow(x) && utilKindOf(x) === k).length || undefined,
           }))]}
         />
       )}
