@@ -28,15 +28,24 @@ export function Money({ sen, strong }: { sen: number; strong?: boolean }) {
 }
 
 /** The receipt's photos and PDFs as small buttons; a click opens the file in a new tab. */
-export function FileButtons({ files, open }: { files: { id: string; fileName: string; mime: string }[]; open: (fileId: string, mime: string) => Promise<string> }) {
+/** One button per file. `compact` (a table row): the first file and a "+N" that shows the rest, so a request with many
+ *  pages keeps its row one line high (chew, 20 Nov 2026). */
+export function FileButtons({ files, open, compact = false }: { files: { id: string; fileName: string; mime: string }[]; open: (fileId: string, mime: string) => Promise<string>; compact?: boolean }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
   if (files.length === 0) return <span className="text-ink-muted">—</span>;
+  const shown = compact && !all ? files.slice(0, 1) : files;
   return (
-    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
-      {files.map((f, i) => (
+    <span style={{ display: "inline-flex", gap: 4, flexWrap: compact && !all ? "nowrap" : "wrap", whiteSpace: "nowrap" }}>
+      {compact && !all && files.length > 1 && (
+        <button type="button" title={`Show all ${files.length} files`} onClick={(e) => { e.stopPropagation(); setAll(true); }}
+          className="order-last rounded border border-border bg-surface-2 px-2 py-0.5 text-xs text-ink-secondary hover:border-primary">+{files.length - 1}</button>
+      )}
+      {shown.map((f, i) => (
         <button key={f.id} type="button" title={f.fileName} disabled={busy === f.id}
           className="rounded border border-border bg-surface px-2 py-0.5 text-xs hover:border-primary"
-          onClick={async () => {
+          onClick={async (e) => {
+            e.stopPropagation();
             setBusy(f.id);
             try { window.open(await open(f.id, f.mime), "_blank", "noopener"); } finally { setBusy(null); }
           }}>

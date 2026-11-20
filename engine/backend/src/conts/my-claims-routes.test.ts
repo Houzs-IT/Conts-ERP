@@ -587,5 +587,16 @@ describe('the waiting count on the Payment requests menu', () => {
     );
     expect(await (await get(appFor(sb, OPS), '/finance-waiting')).json()).toEqual({ count: 4, requests: 2, claims: 2 });
     expect(await (await get(appFor(sb, TECH), '/finance-waiting')).json()).toEqual({ count: 0, requests: 0, claims: 0 });
+    /* Finance started on it (chew, 20 Nov 2026): a voucher on R1, an AP invoice on R3, a voucher paying C2 back. A
+       cancelled voucher or AP invoice leaves it pending. */
+    sb.tables.payment_vouchers = [{ id: 'PV1', company_id: CO, pv_number: 'PV-1', status: 'DRAFT', payment_request_id: 'R1' }];
+    sb.tables.payment_voucher_lines ??= [];
+    sb.tables.ap_invoices = [{ id: 'AP1', company_id: CO, invoice_number: 'AP-1', status: 'OPEN' }];
+    sb.tables.payment_requests.find((r: any) => r.id === 'R3')!.ap_invoice_id = 'AP1';
+    sb.tables.staff_receipts.find((r: any) => r.id === 'C2')!.payback_pv_id = 'PV2';
+    expect(await (await get(appFor(sb, OPS), '/finance-waiting')).json()).toEqual({ count: 1, requests: 0, claims: 1 });
+    sb.tables.payment_vouchers[0].status = 'CANCELLED';
+    sb.tables.ap_invoices[0].status = 'CANCELLED';
+    expect(await (await get(appFor(sb, OPS), '/finance-waiting')).json()).toEqual({ count: 3, requests: 2, claims: 1 });
   });
 });

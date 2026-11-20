@@ -28,6 +28,7 @@ import { docMonthTag, insertWithDocNoRetry, mintMonthlyDocNo } from '../scm/lib/
 import { BILL_MODEL, extractOneBill, matchSupplier } from '../acc/bill-extract';
 import { requestAiTag } from '../services/aiUsage';
 import { lineDepartment, resolveFloatId } from './petty-cash';
+import { requestPayments } from './request-vouchers';
 import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, receiptView, staffNames, type FloatRow, type ReceiptRow } from './petty-cash-store';
 import type { Staff } from './staff-identity';
 import { bankDetailsOf } from './petty-cash-routes';
@@ -365,20 +366,34 @@ export const purchaseOrdersHandler = async (c: Ctx): Promise<Response> => {
 
 /** The staff router. `source` marks which mount it is, for the receipt's source. */
 /** The Payment requests screen's "Waiting for payment" view, as one number (chew, 19 Nov 2026: the menu shows how many
- *  are pending): requests still SUBMITTED, and claims finance pays back (no float) handed in or checked. Only a count
- *  leaves here, never a row; field staff get 0. */
+ *  are pending): requests still SUBMITTED with no voucher (not cancelled) and no live AP invoice on them, and claims
+ *  finance pays back (no float) handed in or checked with no voucher yet. What finance has started (a voucher or an AP
+ *  invoice made) is no longer pending for it (chew, 20 Nov 2026); the person who asked still sees it waiting. Only a
+ *  count leaves here, never a row; field staff get 0. */
 export const financeWaitingHandler = async (c: Ctx): Promise<Response> => {
   if (staffOf(c).field) return c.json({ count: 0, requests: 0, claims: 0 });
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
-  const [rq, cl] = await Promise.all([
-    sb.from('payment_requests').select('id', { count: 'exact', head: true }).eq('company_id', co.companyId).eq('status', 'SUBMITTED'),
-    sb.from('staff_receipts').select('id', { count: 'exact', head: true }).eq('company_id', co.companyId).is('float_id', null).in('status', ['HANDED_IN', 'CHECKED']),
-  ]);
-  if (rq.error || cl.error) return c.json({ error: 'count_failed', message: 'The waiting count could not be read.' }, 500);
-  const requests = Number(rq.count ?? 0), claims = Number(cl.count ?? 0);
-  return c.json({ count: requests + claims, requests, claims });
+  try {
+    const [rows, cl] = await Promise.all([
+      allRows<{ id: string; ap_invoice_id: string | null }>((f, t) => sb.from('payment_requests').select('id, ap_invoice_id').eq('company_id', co.companyId).eq('status', 'SUBMITTED').order('id').range(f, t)),
+      sb.from('staff_receipts').select('id', { count: 'exact', head: true }).eq('company_id', co.companyId).is('float_id', null).is('payback_pv_id', null).in('status', ['HANDED_IN', 'CHECKED']),
+    ]);
+    if (cl.error) throw new Error(cl.error.message);
+    const billIds = [...new Set(rows.map(r => r.ap_invoice_id).filter((x): x is string => !!x))];
+    const [pays, bills] = await Promise.all([
+      requestPayments(sb, rows.map(r => r.id)),
+      billIds.length ? sb.from('ap_invoices').select('id, status').in('id', billIds) : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (bills.error) throw new Error(bills.error.message);
+    const liveBill = new Set(((bills.data ?? []) as Array<{ id: string; status: string }>).filter(b => b.status !== 'CANCELLED').map(b => b.id));
+    const requests = rows.filter(r => !(r.ap_invoice_id && liveBill.has(r.ap_invoice_id)) && !(pays.vouchers.get(r.id) ?? []).some(v => v.status !== 'CANCELLED')).length;
+    const claims = Number(cl.count ?? 0);
+    return c.json({ count: requests + claims, requests, claims });
+  } catch {
+    return c.json({ error: 'count_failed', message: 'The waiting count could not be read.' }, 500);
+  }
 };
 
 export function myClaimsRouter(source: 'session' | 'forward') {
