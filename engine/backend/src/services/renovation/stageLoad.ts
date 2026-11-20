@@ -3,7 +3,7 @@
    list, and the payments the Beta workspace reads (projectPayments.ts). A table an older environment lacks reads as
    empty; any other error is thrown. */
 
-import { findIncompleteVariantLines } from "../../scm/lib/so-variant-check";
+import { pendingVariants } from "./variantPending";
 import type { BillingView } from "../../scm/lib/renovation-billing";
 import { isMissingRelation, type Db, type ProjectRow } from "./load";
 import { PROJECT_SO_SQL, projectPayments, type ProjectSoRow } from "./projectPayments";
@@ -41,7 +41,7 @@ interface DesignRow {
 }
 interface LineRow {
   project_id: number; id: string; item_code: string | null; item_group: string | null; variants: Record<string, unknown> | null;
-  qty: number; delivered: number; category: string | null; credit: boolean;
+  qty: number; delivered: number; category: string | null; credit: boolean; prod_category: string | null; prod_sub: string | null;
 }
 
 /** The design facts per project, the same reads as the Beta board (routes/renovationBeta.ts GET /board). */
@@ -67,7 +67,7 @@ const DESIGN_SQL = `
     tab's reading: delivery orders not draft or cancelled, less delivery returns). */
 const LINES_SQL = `
   SELECT so.project_id::int AS project_id, i.id::text AS id, i.item_code, i.item_group, i.variants, i.qty,
-         prod.category_group AS category, (i.item_code IS NOT DISTINCT FROM 'RENO-CREDIT') AS credit,
+         prod.category_group AS category, prod.prod_category, prod.sub_category AS prod_sub, (i.item_code IS NOT DISTINCT FROM 'RENO-CREDIT') AS credit,
          (SELECT coalesce(sum(doi.qty), 0)::int FROM scm.delivery_order_items doi JOIN scm.delivery_orders dd ON dd.id = doi.delivery_order_id
            WHERE doi.so_item_id = i.id AND dd.status::text NOT IN ('CANCELLED', 'DRAFT'))
          - (SELECT coalesce(sum(ri.qty_returned), 0)::int FROM scm.delivery_return_items ri
@@ -78,7 +78,7 @@ const LINES_SQL = `
     FROM scm.mfg_sales_order_items i
     JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no
     JOIN projects p ON p.id = so.project_id AND p.company_id = so.company_id
-    LEFT JOIN LATERAL (SELECT mp.category_group FROM scm.mfg_products mp WHERE mp.code = i.item_code AND mp.company_id = so.company_id
+    LEFT JOIN LATERAL (SELECT mp.category_group, mp.category::text AS prod_category, mp.sub_category FROM scm.mfg_products mp WHERE mp.code = i.item_code AND mp.company_id = so.company_id
                         ORDER BY (mp.status::text = 'ACTIVE') DESC LIMIT 1) prod ON true
    WHERE so.project_id IN ${IN_PROJECTS} AND so.status::text <> 'CANCELLED' AND NOT coalesce(i.cancelled, false)`;
 
@@ -154,7 +154,7 @@ export async function loadStageInputs(db: Db, projects: readonly ProjectRow[], p
   for (const p of projects) {
     const d = designBy.get(p.id);
     const mine = linesBy.get(p.id) ?? [];
-    const missing = findIncompleteVariantLines(mine.map((l) => ({ id: l.id, itemCode: l.item_code ?? "", group: l.item_group, variants: l.variants }))).length;
+    const missing = pendingVariants(mine.map((l) => ({ itemCode: l.item_code, itemGroup: l.item_group, prodCategory: l.prod_category, prodSub: l.prod_sub, variants: l.variants }))).length;
     out.set(p.id, {
       hasSo: soProjects.has(p.id) || mine.length > 0,
       payment: payBy.get(p.id) ?? null,

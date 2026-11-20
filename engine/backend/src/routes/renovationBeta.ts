@@ -4,8 +4,7 @@
    every write adds a project_activity row (action beta_*) that the existing timeline reads. Section 10 of the plan
    (Home, Projects and Calendar) adds the board read and the design, appointment and calendar entry writes at the end. */
 
-import { findIncompleteVariantLines } from "../scm/lib/so-variant-check";
-import { missingVariantAxes } from "../scm/shared/so-variant-rule";
+import { pendingVariants } from "../services/renovation/variantPending";
 import { eventTypeKnown, listWorkTypes } from "../services/renovation/workTypes";
 import { Hono, type Context } from "hono";
 import { TRANSIENT_CONN_RE } from "../db/d1-compat";
@@ -593,10 +592,16 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       ).bind(companyId).all<{ project_id: number; type: string; on_date: string; at_time: string | null; done: boolean }>(),
       // Sales order lines for the Variants step: every line's category-required variants picked.
       db(c).prepare(
-        `SELECT so.project_id::int AS project_id, i.id::text AS id, i.item_code, i.item_group, i.variants
+        `SELECT so.project_id::int AS project_id, i.id::text AS id, i.item_code, i.item_group, i.variants,
+                prod.category AS prod_category, prod.sub_category AS prod_sub
            FROM scm.mfg_sales_order_items i JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no JOIN projects p ON p.id = so.project_id
+           LEFT JOIN LATERAL (SELECT mp.category::text AS category, mp.sub_category FROM scm.mfg_products mp
+                               WHERE mp.code = i.item_code AND mp.company_id = so.company_id ORDER BY (mp.status::text = 'ACTIVE') DESC LIMIT 1) prod ON true
           WHERE ${scope} AND so.company_id = ? AND so.status::text <> 'CANCELLED' AND NOT coalesce(i.cancelled, false)`,
-      ).bind(companyId).all<{ project_id: number; id: string; item_code: string | null; item_group: string | null; variants: Record<string, unknown> | null }>(),
+      ).bind(companyId).all<{
+        project_id: number; id: string; item_code: string | null; item_group: string | null; variants: Record<string, unknown> | null;
+        prod_category: string | null; prod_sub: string | null;
+      }>(),
     ]);
     if (projectId != null && (projects.results ?? []).length === 0) return c.json({ error: "not_found" }, 404);
     const sets = {
@@ -617,15 +622,12 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       projects: (projects.results ?? []).map((p) => {
         const id = Number(p.id);
         const lines = (soLines.results ?? []).filter((l) => Number(l.project_id) === id);
-        const offenders = findIncompleteVariantLines(lines.map((l) => ({ id: l.id, itemCode: l.item_code ?? "", group: l.item_group, variants: l.variants })));
-        // The SKUs still waiting for a variant, so the list and the project page can name them (owner, 20 Nov 2026).
-        const pending = offenders.slice(0, 40).map((o) => ({
-          itemCode: o.itemCode, missing: missingVariantAxes(o.group, lines.find((l) => l.id === o.id)?.variants ?? null, o.itemCode).map((a) => a.label),
-        }));
+        // The SKUs still waiting for a variant, by the SO tab's own rule, so the list and the project page can name them.
+        const open = pendingVariants(lines.map((l) => ({ itemCode: l.item_code, itemGroup: l.item_group, prodCategory: l.prod_category, prodSub: l.prod_sub, variants: l.variants })));
         return {
           ...buildBoardProject(p, sets, paymentOf(id)),
           works: (designEvents.results ?? []).filter((e) => Number(e.project_id) === id).map((e) => ({ type: e.type, onDate: e.on_date, atTime: e.at_time, done: !!e.done })),
-          variants: { lines: lines.length, missing: offenders.length, pending },
+          variants: { lines: lines.length, missing: open.length, pending: open.slice(0, 40) },
         };
       }),
       events: (events.results ?? []).map((e) => ({
