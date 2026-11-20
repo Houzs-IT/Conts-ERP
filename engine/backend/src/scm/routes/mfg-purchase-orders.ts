@@ -114,6 +114,7 @@ import { expireMrpSnapshot } from '../lib/mrp-snapshot';
 import { withSoRefPoIds } from '../lib/so-ref-search';
 import { poPickerOffers } from '../lib/renovation-po-split';
 import { chunkIn } from '../lib/paginate-all';
+import { dbWriteFailure } from '../lib/pg-rule-error';
 
 /* ── Supplier sofa-combo auto-pricing (Commander 2026-05-29) ─────────────────
    The supplier prices a sofa SET (a colour-matched bundle of modules) as a
@@ -3113,7 +3114,7 @@ export const addPoLineHandler = async (c: any) => {
   };
   const lineNo = await nextPoLineNo(sb, poId);   // a hand-added line goes last
   const { data, error } = await sb.from('purchase_order_items').insert({ ...row, line_no: lineNo, company_id: activeCompanyId(c) }).select('*').single();
-  if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);
+  if (error) return dbWriteFailure(c, error, 'insert_failed', 'line');
   await recomputePoTotals(sb, poId);
   await recomputePoExpectedAt(sb, poId);
   /* A newly-bound line consumes SO quota, so the source line must drop out of

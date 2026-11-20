@@ -69,7 +69,7 @@ describe("invalidateConvertShared covers the mobile wizard's own reads", () => {
        offering the consumed line. */
     let remaining = 5;
     authedFetch.mockImplementation(async (url: string) => {
-      if (url.startsWith("/mfg-sales-orders?limit=200")) {
+      if (url.startsWith("/mfg-sales-orders?page=")) {
         return { salesOrders: [{ doc_no: "HC-SO-2608-001", status: "OPEN", debtor_name: "Walk-in" }] };
       }
       if (url.startsWith("/delivery-orders-mfg/deliverable-so-lines")) {

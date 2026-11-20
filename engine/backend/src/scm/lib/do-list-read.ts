@@ -20,6 +20,12 @@ import { inArm } from './so-ref-search';
 /* Indexed by a caller's string, so an unknown key is `undefined` — say so. */
 const BUCKETS: Readonly<Record<string, string[] | undefined>> = DO_STATUS_BUCKETS;
 
+const DO_ENUM: ReadonlySet<string> = new Set(Object.values(DO_STATUS_BUCKETS).flat());
+/** The members of a comma list that are real DO statuses. Empty when none is: `in.()` then matches nothing. */
+export function knownDoStatuses(csv: string): string[] {
+  return [...new Set(csv.split(',').map((v) => v.trim().toUpperCase()).filter((v) => DO_ENUM.has(v)))];
+}
+
 /** The list's filter contract, as the query string carries it. */
 /** The type tabs (owner, 6 Nov 2026); values of the computed field scm.do_list_type (migration 0239). */
 export const DO_LIST_TYPES = ['works_pod', 'furniture', 'loose'] as const;
@@ -121,6 +127,9 @@ export function filterDoList<Q>(q: Q, p: DoListParams, c: CompanyScopeCtx, scope
   if (status && status !== 'all') {
     if (status === 'on_hold') out = out.eq('on_hold', true);
     else if (BUCKETS[status]) out = out.in('status', BUCKETS[status]);
+    /* A comma list of raw statuses (the phone convert picker asks for the transferable ones). Only real enum members
+       are sent: an unknown label would 22P02 the whole read. */
+    else if (status.includes(',')) out = out.in('status', knownDoStatuses(status));
     else out = out.eq('status', status);
   }
   if (p.type) out = out.eq('do_list_type', p.type);

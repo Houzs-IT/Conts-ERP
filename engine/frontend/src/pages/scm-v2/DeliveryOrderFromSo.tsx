@@ -31,7 +31,7 @@ import { readConvertScope, UnrecognisedScopeNotice } from '../../lib/convertScop
 import { ArrowRight, X, CheckSquare, Square } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { VariantDescription } from '../../vendor/scm/components/VariantDescription';
-import { useDeliverableSoLines, type DeliverableSoLine } from '../../vendor/scm/lib/delivery-order-queries';
+import { useDeliverableSoLinesForDocs, useDeliverableSoLinesPaged, type DeliverableSoLine } from '../../vendor/scm/lib/delivery-order-queries';
 import { DataGridCompat, type GridColumn } from '../../components/DataGridCompat';
 import { ActionResultDialog } from '../../vendor/scm/components/ActionResultDialog';
 import { ItemGroupPill } from '../../vendor/scm/lib/category-badges';
@@ -76,7 +76,6 @@ type Pick = { picked: boolean; qty: number };
 
 export const DeliveryOrderFromSo = () => {
   const navigate = useNavigate();
-  const linesQ = useDeliverableSoLines();
 
   /* "Deliver" on a Sales Order row lands here with ?soDocNo=<doc no> so the
      operator sees the order they were just looking at, not every open SO in the
@@ -96,17 +95,43 @@ export const DeliveryOrderFromSo = () => {
   const [picks, setPicks] = useState<Record<string, Pick>>({});
   const [dialog, setDialog] = useState<{ title: string; body: string } | null>(null);
 
-  const allRows = useMemo<DeliverableSoLine[]>(() => linesQ.data ?? [], [linesQ.data]);
-  const rows = useMemo<DeliverableSoLine[]>(
-    () => (scope.keys.size === 0 ? allRows : allRows.filter((r) => scope.keys.has(r.docNo))),
-    [allRows, scope.keys],
-  );
+  /* Audit 20 Nov 2026: this screen read every sales order the company ever had (about 10,000, nearly all delivered)
+     and dropped the finished lines here, even when it came from one order's "Deliver" button. Now:
+       - from one order (?soDocNo=): the server reads only that order (?docNos=);
+       - the full picker: one page at a time (whole orders, newest first, only lines with something left), searched on
+         the server, the next page loaded when the grid is scrolled to its end. */
+  const scopedDocs = useMemo(() => [...scope.keys], [scope.keys]);
+  const scoped = scopedDocs.length > 0;
+  const [searchText, setSearchText] = useState('');
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setQ(searchText.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchText]);
+  const scopedQ = useDeliverableSoLinesForDocs(scopedDocs);
+  const pagedQ = useDeliverableSoLinesPaged(q, { enabled: !scoped });
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = pagedQ;
+  const linesQ = scoped
+    ? { isLoading: scopedQ.isLoading, isError: scopedQ.isError, isFetching: scopedQ.isFetching }
+    : { isLoading: pagedQ.isLoading, isError: pagedQ.isError, isFetching: pagedQ.isFetching };
 
-  const rowById = useMemo(() => {
-    const m = new Map<string, DeliverableSoLine>();
-    for (const r of rows) m.set(r.soItemId, r);
-    return m;
-  }, [rows]);
+  /* Every row this screen has shown, kept across pages and searches: a ticked line stays ticked, and still goes to
+     the new DO, when the search moves away from it. */
+  const rowCache = useRef(new Map<string, DeliverableSoLine>());
+  /* `rowById` looks up any row seen so far, not only the ones on screen now. */
+  const { allRows, rowById } = useMemo(() => {
+    const src = scoped ? (scopedQ.data ?? []) : (pagedQ.data?.pages ?? []).flatMap((p) => p.lines);
+    const seen = new Set<string>();
+    const out: DeliverableSoLine[] = [];
+    for (const r of src) {
+      if (seen.has(r.soItemId)) continue;
+      seen.add(r.soItemId);
+      out.push(r);
+      rowCache.current.set(r.soItemId, r);
+    }
+    return { allRows: out, rowById: new Map(rowCache.current) };
+  }, [scoped, scopedQ.data, pagedQ.data]);
+  const rows = allRows;
 
   /* ONE SALES ORDER IS ONE CUSTOMER — resolve the lock key per DOC, not per line.
      mfg_sales_order_items carries its own debtor_code/debtor_name copy and those
@@ -122,7 +147,7 @@ export const DeliveryOrderFromSo = () => {
      doc agrees, first-non-empty IS that agreed value). */
   const docCustKey = useMemo(() => {
     const m = new Map<string, { key: string; label: string }>();
-    for (const r of rows) {
+    for (const r of rowById.values()) {
       if (m.has(r.docNo)) continue;
       const code = (r.debtorCode ?? '').trim();
       const name = (r.debtorName ?? '').trim();
@@ -130,7 +155,7 @@ export const DeliveryOrderFromSo = () => {
       m.set(r.docNo, { key: custKey(r), label: name || code });
     }
     return m;
-  }, [rows]);
+  }, [rowById]);
 
   /* The line's effective customer: its ORDER's, falling back to its own copy for
      an order whose every line is blank. */
@@ -374,6 +399,35 @@ export const DeliveryOrderFromSo = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- column accessors derive from the pick/qty state already in deps; listing the helpers would only rebuild the columns for no behavioural change
   ], [picks, lockedCustomer, lineStatus]);
 
+  /* Load the next page when the line under the grid is in view AND the grid's own box (its frozen header makes the
+     table scroll inside itself) is scrolled near its end, or does not scroll at all. Same rule as the PO picker
+     (PurchaseOrderFromSo.tsx); re-run after every page, so a short page asks for the next. A failed page waits for
+     the button. */
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const pageCount = pagedQ.data?.pages.length ?? 0;
+  const nextPageFailed = pagedQ.isFetchNextPageError;
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (scoped || !el || !hasNextPage || isFetchingNextPage || nextPageFailed) return;
+    const box = el.previousElementSibling?.querySelector<HTMLElement>('.dt-table .thin-scroll') ?? null;
+    const boxAtEnd = (): boolean => !box || box.scrollHeight <= box.clientHeight + 1
+      || box.scrollTop + box.clientHeight >= box.scrollHeight - 400;
+    let lineInView = typeof IntersectionObserver === 'undefined';
+    let asked = false;
+    const maybeLoad = (): void => {
+      if (asked || !lineInView || !boxAtEnd()) return;
+      asked = true;
+      void fetchNextPage();
+    };
+    const io = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((entries) => {
+      lineInView = entries.some((e) => e.isIntersecting);
+      maybeLoad();
+    }, { rootMargin: '400px 0px' });
+    io?.observe(el);
+    box?.addEventListener('scroll', maybeLoad, { passive: true });
+    return () => { io?.disconnect(); box?.removeEventListener('scroll', maybeLoad); };
+  }, [scoped, pageCount, hasNextPage, isFetchingNextPage, nextPageFailed, fetchNextPage]);
+
   const onContinue = () => {
     if (pickedCount === 0) {
       setDialog({ title: 'Nothing picked', body: 'Tick at least one Sales Order line to deliver first.' });
@@ -425,6 +479,16 @@ export const DeliveryOrderFromSo = () => {
       <Button variant="ghost" size="sm" onClick={clearAll} disabled={pickedCount === 0}>
         <Square {...ICON} /> Clear all
       </Button>
+      {!scoped && (
+        <input
+          type="search"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          placeholder="Search SO, customer, ref, item…"
+          aria-label="Search deliverable SO lines"
+          style={{ ...QTY_INPUT, width: 260 }}
+        />
+      )}
     </div>
   );
 
@@ -485,6 +549,9 @@ export const DeliveryOrderFromSo = () => {
         columns={columns}
         storageKey={STORAGE_KEY}
         rowKey={(r) => r.soItemId}
+        /* The full picker searches on the server (toolbar box); the grid's own box would only search the loaded
+           pages. Scoped to one order, everything is loaded and the grid's box is enough. */
+        hideSearch={!scoped}
         searchPlaceholder="Search SO, customer, item…"
         onRowClick={(r) => togglePick(r)}
         onFilteredRowsChange={setVisibleRows}
@@ -518,10 +585,33 @@ export const DeliveryOrderFromSo = () => {
            now gates it instead of a comment asking nicely. */
         emptyMessage={linesQ.isError
           ? "We couldn't load the outstanding lines, so this list is incomplete. That is not the same as there being none left — please refresh and try again."
-          : allRows.length > 0
-            ? `None of the ${allRows.length} deliverable Sales Order line(s) that loaded belong to the order you came from. Use Show all above to see the rest — this says nothing about whether that order still owes goods.`
-            : "This search came back with no deliverable Sales Order lines. That is not the same as everything having been delivered — the list only covers the company you are working in, and lines it cannot see look identical to lines that are done. Open the sales order and check its balance before treating this as nothing left to deliver."}
+          : !scoped && (hasNextPage || linesQ.isFetching)
+            ? 'No deliverable line in the part of the list read so far. More is still loading below.'
+            : !scoped && q
+              ? 'No deliverable Sales Order line matches this search. That is not the same as there being none left: clear the search to see the full list.'
+              : "This search came back with no deliverable Sales Order lines. That is not the same as everything having been delivered — the list only covers the company you are working in, and lines it cannot see look identical to lines that are done. Open the sales order and check its balance before treating this as nothing left to deliver."}
       />
+
+      {/* Load on scroll (audit 20 Nov 2026): the next page is asked for when the grid's own box is scrolled to its end,
+          or by the button. */}
+      {!scoped && (
+        <div
+          ref={loadMoreRef}
+          style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-2) 0', fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}
+        >
+          {!linesQ.isLoading && (
+            <span>{`Showing ${visibleRows.length} line${visibleRows.length === 1 ? '' : 's'}${hasNextPage ? ' · scroll down for more' : ''}`}</span>
+          )}
+          {pagedQ.isFetchNextPageError && (
+            <span style={{ color: 'var(--c-festive-b, #B8331F)' }}>The next lines could not be loaded.</span>
+          )}
+          {hasNextPage && (
+            <Button variant="ghost" size="sm" onClick={() => { void fetchNextPage(); }} disabled={isFetchingNextPage}>
+              {isFetchingNextPage ? 'Loading…' : pagedQ.isFetchNextPageError ? 'Try again' : 'Load more'}
+            </Button>
+          )}
+        </div>
+      )}
 
       {dialog && (
         <ActionResultDialog

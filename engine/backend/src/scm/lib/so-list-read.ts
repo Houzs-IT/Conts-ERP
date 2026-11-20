@@ -18,7 +18,7 @@
 
 import { HELD_OR_TERM } from './document-hold';
 import { effectiveStatusFilter } from './so-list-filters';
-import { soStatusesForTab } from './so-tab-statuses';
+import { SO_TAB_STATUSES, soStatusesForTab } from './so-tab-statuses';
 import { escapeForOr, phoneSearchOrParts } from './postgrest-search';
 import { normalizePhone } from '../shared/phone';
 import { APPROVAL_CODE_SEARCH_CAP, approvalCodeOrPart } from './so-list-approval-codes';
@@ -75,6 +75,12 @@ export function readSoListParams(
     debtorNames: jsonArrayParam(query('debtorNames')),
     currencies: jsonArrayParam(query('currencies')),
   };
+}
+
+const SO_ENUM: ReadonlySet<string> = new Set([...SO_STATUSES, ...Object.values(SO_TAB_STATUSES).flat()]);
+/** The members of a comma list that are real SO statuses. Empty when none is: `in.()` then matches nothing. */
+export function knownSoStatuses(csv: string): string[] {
+  return [...new Set(csv.split(',').map((v) => v.trim().toUpperCase()).filter((v) => SO_ENUM.has(v)))];
 }
 
 /* The backend sort whitelist — anything else falls back to so_date. */
@@ -165,6 +171,9 @@ export async function prepareSoListRead(
   const header = <T>(q0: T): T => {
     let q = scoped(q0) as unknown as Filterable;
     if (status === 'ON_HOLD') q = q.or(HELD_OR_TERM);
+    /* A comma list of raw statuses (the phone convert picker asks for the deliverable ones). Only real enum members
+       are sent: an unknown label would 22P02 the whole read. */
+    else if (status && status.includes(',')) q = q.in('status', knownSoStatuses(status));
     else if (status) {
       const vals = soStatusesForTab(status);
       q = status === 'OTHER' ? q.or(otherStatusOr) : (vals.length === 1 ? q.eq('status', vals[0]) : q.in('status', vals));

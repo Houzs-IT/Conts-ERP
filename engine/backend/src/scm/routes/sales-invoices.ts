@@ -48,6 +48,7 @@ import { scopeToCompany, activeCompanyId, stampCompany, companyDocPrefix,
 import { stampDoLineSoRefs } from '../lib/so-ref-lookup';
 import { enrichLinesWithFabricSupplierCode } from '../lib/fabric-supplier-code';
 import { dateOrNull, coerceEmptyDates } from '../lib/date-coerce';
+import { zodValidationFailedBody } from '../lib/form-problems';
 import { postUnpostedSiPayments } from '../../acc/payments';
 import { afterSiPaymentRemoved, insertSiPaymentRow } from '../lib/si-payment-row';
 import { recomputeSiPaid as recomputePaid, readOrderDepositForInvoice } from '../lib/si-order-deposit';
@@ -77,6 +78,7 @@ import { enqueueConvert, enqueueCancel, enqueueEdit, retiredLineOf, type AcRetir
 import { recordSiAutoCountSource } from '../lib/si-autocount-source';
 import { refuseMigratedSources } from '../lib/migrated-chain';
 import { withSoRefDocNos } from '../lib/so-ref-search';
+import { dbWriteFailure } from '../lib/pg-rule-error';
 
 /* ERP -> AutoCount Sales Invoice edit. AutoCount calls it IV
    (AcSyncService.cs:443). See queueAcDoEdit for the shape. */
@@ -1254,7 +1256,7 @@ export const appendSalesInvoiceItemHandler = async (c: any) => {
   const row = buildItemRow(id, it, nextLineNo);
   const { data, error } = await sb.from('sales_invoice_items').insert({ ...row, company_id: co.companyId }).select(ITEM).single();
   if (isDoLineOverInvoiced(error)) return c.json({ error: 'over_remaining', message: 'Add qty exceeds what is left to invoice on the linked Delivery Order line.', reason: error?.message }, 409);
-  if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);
+  if (error) return dbWriteFailure(c, error, 'insert_failed', 'line');
   await recomputeTotals(sb, id);
   await recomputePaid(sb, id);
 
@@ -1564,7 +1566,7 @@ export const postSalesInvoicePaymentHandler = async (c: any) => {
   let body: unknown;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
   const parsed = paymentCreateSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'invalid_body', issues: parsed.error.issues }, 400);
+  if (!parsed.success) return c.json(zodValidationFailedBody(parsed.error), 400);
   const p = parsed.data;
 
   const { data, error } = await insertSiPaymentRow(sb, {
