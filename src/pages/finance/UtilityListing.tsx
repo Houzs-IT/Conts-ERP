@@ -25,6 +25,7 @@ import {
 } from '../../lib/utilityGrid';
 import { api, errorMessage } from '../../lib/api';
 import { useToast } from '../../components/Toast';
+import { billEdit, partNow } from '../../lib/utilityBillEdit';
 
 const UtilitiesModal = lazy(() => import('../owners/ExpenseEntry').then(m => ({ default: m.UtilitiesModal })));
 const AddUtilityBill = lazy(() => import('../../components/AddUtilityBill').then(m => ({ default: m.AddUtilityBill })));
@@ -340,32 +341,36 @@ function Unusual({ units, months, cells, nights, loading, error, onRetry, kind, 
   );
 }
 
-/** Whether a bill's amount can still be changed from its cell (chew, 19 Nov 2026: until the payment is processed): its
- *  statement not final, not the owner's whole bill, and no request or one still waiting or sent back. The server has the
- *  last word (a voucher or AP invoice on the request refuses it). */
-const editable = (b: GridBill) => !b.final && !b.recordOnly
+/** Whether a bill's amount can still be changed from its cell (chew, 19 Nov 2026: until the payment is processed; 20 Nov
+ *  2026: record-only bills too): its statement not final, not a record kept from AutoCount, and no request or one still
+ *  waiting or sent back. The server has the last word (a voucher or AP invoice on the request refuses it). */
+const editable = (b: GridBill) => !b.final && (!b.recordOnly || !!b.scanned)
   && (!b.request || ['SUBMITTED', 'WITHDRAWN', 'REJECTED'].includes(b.request.status));
 
 /** The whole printed bill and the owner's own part changed in place (chew, 19 Nov 2026); the shared part is the rest. */
 function EditAmount({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) {
   const whole = bill.whole ?? bill.request?.amount ?? bill.amount;
-  const wasPart = whole - bill.amount;
+  const now = { whole, amount: bill.amount, recordOnly: bill.recordOnly };
+  const wasPart = partNow(now);
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState<number | null>(whole);
   const [part, setPart] = useState<number | null>(wasPart);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   if (!open) return <div><Button size="sm" variant="secondary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setOpen(true)}>Edit amount</Button></div>;
-  const ownerPart = part ?? 0;
-  const tooSmall = value != null && ownerPart > 0 && value <= ownerPart;
-  const owner = bill.chargeTo === 'owner' && !bill.recordOnly;
-  const same = value === whole && ownerPart === wasPart;
+  /* A record-only bill whose part is left as it was follows the whole, so it stays the owner's. */
+  const partTyped = part !== wasPart;
+  const next = value == null ? null : billEdit(now, value, partTyped ? part ?? 0 : null);
+  const ownerPart = next?.ownerPart ?? part ?? 0;
+  const tooSmall = next != null && next.share < 0;
+  const owner = bill.chargeTo === 'owner';
+  const same = value === whole && !partTyped;
   const save = async () => {
     if (value == null || tooSmall) return;
     setBusy(true);
     try {
       const r = await api.patch<{ request: string | null; notice: string | null }>(`/expenses/utilities/bills/${encodeURIComponent(bill.id)}`,
-        { amount: value, ...(ownerPart !== wasPart ? { ownerPart } : {}) });
+        { amount: value, ...(partTyped ? { ownerPart } : {}) });
       toast({ tone: 'success', title: 'Bill saved.', body: [r.request ? `${r.request} now asks for the new amount.` : '', r.notice ?? ''].filter(Boolean).join(' ') || undefined });
       onSaved();
     } catch (e) {
@@ -377,11 +382,12 @@ function EditAmount({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) 
   return (
     <div className="flex flex-col gap-2 p-2 rounded-control border border-dashed border-line">
       <MoneyInput label="Whole bill (RM)" minSen={1} valueSen={value} onChangeSen={setValue}
-        error={tooSmall ? `More than the owner's own part, ${rm(ownerPart)}.` : undefined} />
-      {owner && <MoneyInput label="Owner's own part (RM)" valueSen={part} onChangeSen={setPart}
-        help={wasPart > 0 ? 'Replaces the part set by hand and the days outside the contract, as one owner line.' : 'Charged to the owner alone, after the share.'} />}
-      {value != null && !tooSmall && (
-        <span className="text-meta text-muted-ink">{rm(value - ownerPart)} shared{ownerPart > 0 ? `; ${rm(ownerPart)} the owner's alone` : ''}; the provider is paid {rm(value)}.</span>
+        error={tooSmall ? `At least the owner's own part, ${rm(ownerPart)}.` : undefined} />
+      {owner && <MoneyInput label="Owner's own part (RM)" valueSen={partTyped ? part : ownerPart} onChangeSen={setPart}
+        help={bill.recordOnly ? 'The whole bill is the owner\'s now. Put a smaller part to share the rest.'
+          : wasPart > 0 ? 'Replaces the part set by hand and the days outside the contract, as one owner line.' : 'Charged to the owner alone, after the share.'} />}
+      {next && !tooSmall && (
+        <span className="text-meta text-muted-ink">{next.recordOnly ? `The whole bill, ${rm(value!)}, is the owner's (record only)` : `${rm(next.share)} shared${ownerPart > 0 ? `; ${rm(ownerPart)} the owner's alone` : ''}`}; the provider is paid {rm(value!)}.</span>
       )}
       {bill.request?.status === 'SUBMITTED' && value !== whole && <span className="text-meta text-muted-ink">{bill.request.no ?? 'Its payment request'} is updated to the new amount, as long as no voucher is made yet.</span>}
       <div className="flex gap-2">
