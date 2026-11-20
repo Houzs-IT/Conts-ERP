@@ -276,7 +276,7 @@ function moveSkip(i: Issue, move: Move): string | null {
 }
 const collectedText = (i: Issue) => (i.collectedAt ? `Collected ${dateShort(i.collectedAt)}` : COLLECT_FROM[i.chargeTo] && (i.finalAmount ?? i.quotedAmount) ? 'Not yet' : '');
 const paidText = (i: Issue) => (i.contractorPaidAt ? `Paid ${dateShort(i.contractorPaidAt)}` : i.contractorAmount != null ? 'Not yet' : '');
-const isOpenPassKey = (i: Issue): boolean => typeOf(i) === 'pass_key' && i.state !== 'resolved';
+const isOpenJob = (i: Issue): boolean => i.state !== 'resolved';
 const MOVE_DONE: Record<Move, string> = { start: 'started', end: 'marked repair finished', reopen: 'reopened' };
 const COST_SLIDER_START: RangeBounds = { lowest: 0, highest: 1000 };
 
@@ -290,24 +290,25 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
   const [busy, setBusy] = useState<Move | 'delete' | null>(null);
   const [confirmUi, ask] = useConfirm();
 
-  async function bulkDeletePassKeys(picked: Issue[], clear: () => void) {
-    const deletable = picked.filter(isOpenPassKey);
-    const fromReservations = deletable.filter(i => i.reservationId).length;
-    const ok = await ask({ title: `Delete ${plural(deletable.length, 'Pass key job')}?`, confirmLabel: `Delete ${plural(deletable.length, 'job')}`, danger: true,
+  async function deleteJobs(picked: Issue[], clear?: () => void) {
+    const deletable = picked.filter(isOpenJob);
+    const one = deletable.length === 1 ? deletable[0] : null;
+    const fromReservations = deletable.filter(i => typeOf(i) === 'pass_key' && i.reservationId).length;
+    const ok = await ask({ title: one ? `Delete ${jobLabel(one)}?` : `Delete ${plural(deletable.length, 'job')}?`, confirmLabel: one ? 'Delete job' : `Delete ${plural(deletable.length, 'job')}`, cancelLabel: 'Keep', danger: true,
       body: fromReservations
         ? `They are removed for everyone. ${plural(fromReservations, 'reservation')} ${fromReservations === 1 ? 'is' : 'are'} marked "Guest checks in by themselves", so no new Pass key job is made. Untick that on a reservation to bring its job back.`
-        : 'They are removed for everyone, with their photos. This cannot be undone.',
-      meta: picked.length > deletable.length ? <>{plural(picked.length - deletable.length, 'other ticked job')} {picked.length - deletable.length === 1 ? 'is' : 'are'} kept: only open Pass key jobs are deleted.</> : undefined });
+        : 'They are removed for everyone, with their photos, files and windows. This cannot be undone.',
+      meta: one ? <>{one.title}</> : picked.length > deletable.length ? <>{plural(picked.length - deletable.length, 'finished job')} {picked.length - deletable.length === 1 ? 'is' : 'are'} kept: a finished job stays in History.</> : undefined });
     if (ok === null) return;
     setBusy('delete');
     const res = await runEach(deletable, i => api.del(`/maintenance/issues/${i.id}`), jobLabel);
     setBusy(null);
     toast({
       tone: res.ok === 0 ? 'critical' : res.failed.length ? 'warning' : 'success',
-      title: res.ok ? `${plural(res.ok, 'Pass key job')} deleted.` : 'No job deleted.',
+      title: res.ok ? `${plural(res.ok, 'job')} deleted.` : 'No job deleted.',
       body: skippedNote(res.failed) || undefined,
     });
-    clear(); onChanged();
+    clear?.(); onChanged();
   }
 
   async function bulkMove(picked: Issue[], move: Move, clear: () => void) {
@@ -391,6 +392,16 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     ] : []),
     { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150, filter: false },
     { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150, filter: false },
+    ...(canBulk ? [{ key: 'delete', label: '', width: 56, align: 'right' as const, sortable: false, filter: false as const, noExport: true, hideable: false, phone: 'hide' as const,
+      render: (i: Issue) => (
+        <span className="flex justify-end pr-2">
+          <button type="button" aria-label="Delete row" title={isOpenJob(i) ? 'Delete' : 'A finished job stays in History'} disabled={!isOpenJob(i)}
+            onClick={e => { e.stopPropagation(); void deleteJobs([i]); }}
+            className="p-1.5 rounded-md bg-transparent border-none text-faint transition-colors cursor-pointer hover:text-danger hover:bg-danger-bg disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-faint">
+            <Icon name="Trash2" size="sm" />
+          </button>
+        </span>
+      ) }] : []),
   ], [showsMoney, buildingOptions, unitOptions, assigneeOptions, canBulk, technicians, rows]); // rows: the filter counts
 
   return (
@@ -410,7 +421,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
             {can('start') && <Button size="sm" variant="secondary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} onClick={() => void bulkMove(picked, 'start', clear)}>Start repair</Button>}
             {can('end') && <Button size="sm" variant="secondary" icon={<Icon name="Flag" size="sm" />} loading={busy === 'end'} onClick={() => void bulkMove(picked, 'end', clear)}>Repair finished</Button>}
             {money && can('reopen') && <Button size="sm" variant="secondary" icon={<Icon name="RotateCcw" size="sm" />} loading={busy === 'reopen'} onClick={() => void bulkMove(picked, 'reopen', clear)}>Reopen</Button>}
-            {picked.some(isOpenPassKey) && <Button size="sm" variant="secondary" icon={<Icon name="Trash2" size="sm" />} loading={busy === 'delete'} onClick={() => void bulkDeletePassKeys(picked, clear)}>Delete</Button>}
+            {picked.some(isOpenJob) && <Button size="sm" variant="danger" icon={<Icon name="Trash2" size="sm" />} loading={busy === 'delete'} onClick={() => void deleteJobs(picked, clear)}>Delete</Button>}
           </>;
         }}
       />
