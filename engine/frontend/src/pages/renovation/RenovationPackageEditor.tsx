@@ -15,7 +15,7 @@ import {
   createPackage, KIND_LONG, NO_AREA, nextPackageCode, savePackage, usePackage, type PackageKind, type PackageSection, type PackageStatus,
 } from '../../lib/renovation/renovationPackagesApi';
 import { Card, ErrorBanner, Field, fmtDate, inputCls, StatusPill } from './shared';
-import { AddAreaBar, emptyArea, PackageAddSearch, PackageLinesTable } from './RenovationPackageLines';
+import { AddAreaBar, emptyArea, PackageAddSearch, PackageLinesTable, withoutBlankLines } from './RenovationPackageLines';
 import { KindPill, PackageStatusPill } from './renovationPackageParts';
 import { cn } from '../../lib/utils';
 
@@ -54,7 +54,7 @@ export function RenovationPackageEditor(): ReactElement {
     setError(null);
     try { await run.mutateAsync(fn); if (ok) toast.success(ok); return true; } catch (e) { setError(refusalOf(e).message); return false; }
   };
-  const save = () => act(() => savePackage(p.id, { ...head, sections: sections.filter((s) => s.lines.length > 0 || s.heading.trim()) }), `${code} saved.`).then((ok) => { if (ok) setDirty(false); });
+  const save = () => act(() => savePackage(p.id, { ...head, sections: withoutBlankLines(sections).filter((s) => s.lines.length > 0 || s.heading.trim()) }), `${code} saved.`).then((ok) => { if (ok) setDirty(false); });
   const setStatus = (status: PackageStatus) => {
     if (dirty) { setError('Save your changes first.'); return; }
     void act(() => savePackage(p.id, { status }), status === 'ACTIVE' ? `${p.code} is active.` : status === 'INACTIVE' ? `${p.code} is inactive: it no longer shows in the sales order search.` : undefined);
@@ -63,7 +63,7 @@ export function RenovationPackageEditor(): ReactElement {
     setError(null);
     try {
       const { code: next } = await nextPackageCode(kind);
-      const r = await createPackage({ ...head, code: next, name: `${name.trim()} (copy)`, status: 'DRAFT', sections });
+      const r = await createPackage({ ...head, code: next, name: `${name.trim()} (copy)`, status: 'DRAFT', sections: withoutBlankLines(sections) });
       toast.success(`Copied to ${r.code} (draft).`);
       navigate(`/scm/renovation/packages/${r.id}`);
     } catch (e) { setError(refusalOf(e).message); }
@@ -106,7 +106,7 @@ export function RenovationPackageEditor(): ReactElement {
       {tab === 'lines' && (
         <div className="overflow-hidden rounded-xl border border-border bg-surface">
           <PackageLinesTable sections={sections} disabled={!canEdit} showAreas={kind === 'PACKAGE' || sections.length > 1 || Boolean(sections[0]?.heading)}
-            onChange={(s) => { setSections(s); mark(); }} onAddLine={(a) => setAdding(a)} />
+            onChange={(s) => { setSections(s); mark(); }} />
           {canEdit && (
             <div className="flex flex-wrap items-center gap-2 border-t border-border-subtle px-3 py-2">
               {kind === 'PACKAGE' && <AddAreaBar existing={sections.map((s) => s.heading)} onAdd={addArea} />}
@@ -132,7 +132,7 @@ export function RenovationPackageEditor(): ReactElement {
                     <td className="px-3"><StatusPill status={u.status} /></td>
                   </tr>
                 ))}
-                {p.usedIn.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-ink-muted">No sales order has taken this {kind === 'KIT' ? '组合' : 'package'} yet.</td></tr>}
+                {p.usedIn.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-ink-muted">No sales order has taken this {kind === 'KIT' ? 'kit' : 'package'} yet.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -168,9 +168,10 @@ export function RenovationPackageEditor(): ReactElement {
           )}
           {adding !== null && <PackageAddSearch autoFocus onAdd={(ls, label) => {
             const base = sections.length ? sections : [emptyArea('')];
-            setSections(base.map((s, i) => (i === target ? { ...s, lines: [...s.lines, ...ls] } : s)));
+            // Functional update: several batches can be added while the picker stays open.
+            setSections((cur) => (cur.length ? cur : base).map((s, i) => (i === target ? { ...s, lines: [...s.lines, ...ls] } : s)));
             mark();
-            toast.success(`Added ${label}`);
+            toast.success(`Added ${label} to ${base[target]?.heading || NO_AREA}`);
           }} />}
         </div>
       </ModalOverlay>

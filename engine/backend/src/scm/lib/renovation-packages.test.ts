@@ -71,3 +71,21 @@ describe('describeChange', () => {
     expect(describeChange(before, {})).toBe('Saved, nothing changed');
   });
 });
+
+describe('SLA days are optional (owner, 20 Nov 2026)', () => {
+  const body = (over: Record<string, unknown>) => [{ heading: 'Living room', lines: [{ kind: 'ITEM', itemCode: 'SOF-1', description: 'Sofa', qty: 1, uom: 'UNIT', ...over }] }];
+  it('a package line saves with both days left out', async () => {
+    const { normaliseSections } = await import('./renovation-validate');
+    const r = normaliseSections(body({}), 'doc');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect([r.value[0].lines[0].processingAfterDays, r.value[0].lines[0].deliveryAfterDays]).toEqual([null, null]);
+  });
+  it('a package line saves with both days blank (null) or only one of them', async () => {
+    const { normaliseSections } = await import('./renovation-validate');
+    expect(normaliseSections(body({ processingAfterDays: null, deliveryAfterDays: null }), 'doc').ok).toBe(true);
+    expect(normaliseSections(body({ processingAfterDays: 7, deliveryAfterDays: null }), 'doc').ok).toBe(true);
+  });
+  it('lines without days are simply "not set", never a refusal', () => {
+    expect(slaSet([section('Living room', [line()])])).toBe(false);
+  });
+});

@@ -67,12 +67,17 @@ function move<T>(arr: T[], i: number, d: -1 | 1): T[] {
 
 const KIND_LABEL: Record<RenoLineKind, string> = { ITEM: 'Item', CHILD: 'Add-on', DETAIL: 'Dimension', TEXT: 'Text' };
 
-export function ProductPicker({ value, onPick, disabled, onPickPackage }: { value: string | null; onPick: (p: ProductPick) => void; disabled?: boolean; onPickPackage?: (h: PackageHit) => void }) {
+export function ProductPicker({ value, onPick, disabled, onPickPackage, packageKind }: {
+  value: string | null; onPick: (p: ProductPick) => void; disabled?: boolean; onPickPackage?: (h: PackageHit) => void;
+  /** Offer only packages of this kind (a package's own lines can take a kit, never a whole package). */
+  packageKind?: PackageHit['kind'];
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<ProductPick[]>([]);
   const [busy, setBusy] = useState(false);
-  const packageHits = usePackageSearch(q, open && Boolean(onPickPackage));
+  const allPackageHits = usePackageSearch(q, open && Boolean(onPickPackage));
+  const packageHits = packageKind ? allPackageHits.filter((h) => h.kind === packageKind) : allPackageHits;
   const ref = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   /* The list floats on the page: a room section scrolls sideways, so an absolute list inside it was cut off. */

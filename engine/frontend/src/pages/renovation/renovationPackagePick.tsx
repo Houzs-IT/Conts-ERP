@@ -17,6 +17,7 @@ import {
   createPackage, expandPackage, KIND_LONG, NO_AREA, nextPackageCode, searchPackages, type ExpandedPackage, type PackageHit, type PackageKind,
 } from '../../lib/renovation/renovationPackagesApi';
 import { amountsOf } from './DocEditor';
+import { chosenPackageSections } from './renovationPackageAdd';
 import { ErrorBanner, Field, inputCls, rm } from './shared';
 import { dayCell, KindPill } from './renovationPackageParts';
 import { cn } from '../../lib/utils';
@@ -73,7 +74,7 @@ export function PackagePickerDialog({ open, onClose, onPick }: { open: boolean; 
         </div>
         <div className="max-h-[50vh] overflow-auto">
           <PackageHits hits={hits} onPick={onPick} />
-          {hits.length === 0 && <p className="px-2 py-4 text-center text-[12.5px] text-ink-muted">No active package or 组合 matches.</p>}
+          {hits.length === 0 && <p className="px-2 py-4 text-center text-[12.5px] text-ink-muted">No active package or kit matches.</p>}
         </div>
       </div>
     </ModalOverlay>
@@ -99,7 +100,7 @@ export function FromPackageButton({ docNo, onError, className, style }: { docNo:
   return (
     <>
       <button type="button" className={className} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, ...style }} disabled={busy} onClick={() => setOpen(true)}
-        title="Add a package's or 组合's products to this sales order, through a new VO">
+        title="Add a package's or kit's products to this sales order, through a new VO">
         <Package size={15} aria-hidden="true" />{busy ? 'Opening...' : 'From package'}
       </button>
       <PackagePickerDialog open={open} onClose={() => setOpen(false)} onPick={(h) => void pick(h)} />
@@ -144,18 +145,7 @@ export function PackageConfirmDialog({ packageId, defaultArea, initial, onClose,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per package opened
   }, [packageId]);
   const all = pkg ? pkg.sections.flatMap((s) => s.lines.filter((l) => priced(l))) : [];
-  const chosen = useMemo(() => {
-    if (!pkg) return [] as DocSection[];
-    return pkg.sections.map((s, si) => ({
-      heading: (areaNames[si] ?? s.heading).trim(),
-      bandColor: s.bandColor, lumpSumSen: null, pageBreakBefore: false,
-      lines: s.lines.flatMap((l, li) => {
-        if (!priced(l)) return [{ ...l, voChange: 'ADD' as const, fromPackageId: pkg.id }];
-        const p = picks[`${si}_${li}`];
-        return p?.on ? [{ ...l, qty: p.qty, voChange: 'ADD' as const, fromPackageId: pkg.id }] : [];
-      }),
-    })).filter((s) => s.lines.some((l) => priced(l))) as DocSection[];
-  }, [pkg, picks, areaNames]);
+  const chosen = useMemo(() => (pkg ? chosenPackageSections(pkg, picks, areaNames) : []), [pkg, picks, areaNames]);
   const n = chosen.reduce((t, s) => t + s.lines.filter((l) => priced(l)).length, 0);
   const total = chosen.reduce((t, s) => t + s.lines.reduce((u, l) => u + (priced(l) ? amountsOf(l).netSen : 0), 0), 0);
   const title = pkg ? `Add ${pkg.code} · ${pkg.name}` : 'Add package';
@@ -177,7 +167,7 @@ export function PackageConfirmDialog({ packageId, defaultArea, initial, onClose,
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-[12.5px]">
               <thead className="bg-surface-2 text-[10.5px] uppercase tracking-wide text-ink-muted">
-                <tr><th className="w-8 py-2" /><th>Code</th><th>Description</th><th className="text-right">Qty</th><th className="text-right">Price</th><th className="text-right">Order after</th><th className="pr-2 text-right">Deliver after</th></tr>
+                <tr><th className="w-8 py-2" /><th>Code</th><th>Description</th><th className="text-right">Qty</th><th className="text-right">Price</th><th className="text-right">Order after (days)</th><th className="pr-2 text-right">Deliver after (days)</th></tr>
               </thead>
               <tbody>
                 {pkg.sections.map((s, si) => (

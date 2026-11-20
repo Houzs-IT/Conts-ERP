@@ -8,8 +8,8 @@ import { renoGet, renoSend, sectionsForSave, type DocLine, type DocSection } fro
 export type PackageKind = 'PACKAGE' | 'KIT';
 export type PackageStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE';
 
-export const KIND_LABEL: Record<PackageKind, string> = { PACKAGE: 'Package', KIT: '组合' };
-export const KIND_LONG: Record<PackageKind, string> = { PACKAGE: 'Package (areas, a whole unit)', KIT: '组合 (a few items together)' };
+export const KIND_LABEL: Record<PackageKind, string> = { PACKAGE: 'Package', KIT: 'Kit' };
+export const KIND_LONG: Record<PackageKind, string> = { PACKAGE: 'Package (areas, a whole unit)', KIT: 'Kit (a few items together)' };
 export const STATUS_LABEL: Record<PackageStatus, string> = { DRAFT: 'Draft', ACTIVE: 'Active', INACTIVE: 'Inactive' };
 
 export interface PackageRow {
