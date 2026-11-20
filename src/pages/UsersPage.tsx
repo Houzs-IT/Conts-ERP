@@ -228,10 +228,7 @@ export default function UsersPage() {
       filterMatch: (u, picked) => (u.role === 'owner' ? picked.has('owner')
         : (!u.positionId && picked.has('none')) || [u.positionId, ...extraPlacesOf(u).map(x => x.position.id)].some(id => !!id && picked.has(id))),
       render: u => (
-        <span className="flex flex-col gap-1 min-w-0">
-          <RoleBadges roles={rolesOf(u)} />
-          {u.department && u.role !== 'owner' && <span className="text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.department}</span>}
-        </span>
+        <RoleBadges roles={rolesOf(u)} />
       ) },
     { key: 'department', label: 'Department', value: u => u.department || null, hidden: true, width: 160 },
     { key: 'email', label: 'Email or employee ID', value: u => (hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'), width: 210 },
