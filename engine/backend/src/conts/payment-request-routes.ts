@@ -164,10 +164,9 @@ async function readRequestForm(c: Ctx, sb: any, companyId: number, staff: Staff,
     if (type !== 'PAYMENT') return c.json({ error: 'validation', message: 'A deposit is asked for by the office.' }, 422);
     if (b.supplierId) return c.json({ error: 'validation', message: 'Type the supplier\'s name as it is on the bill.' }, 422);
     if (b.purchaseOrderId) return c.json({ error: 'validation', message: 'A purchase order is paid by the office.' }, 422);
-    /* A project, its limit and what is left of it are the office's: the refusal over a limit names them (final review). */
-    if (Array.isArray(b.lines) && (b.lines as Array<Record<string, unknown> | null>).some(l => l?.projectId != null && l.projectId !== '')) {
-      return c.json({ error: 'validation', message: 'A project is chosen by the office.' }, 422);
-    }
+    /* Renovation staff name the project the bill is for (chew, 18 Nov 2026, #1019; 20 Nov 2026: refused here until now,
+       so the phone's Direct Pay to Supplier could not be sent). Its limit and what is left stay the office's: a refusal
+       over the limit tells them without the figures (below). */
   }
   let supplierId = b.supplierId ? String(b.supplierId) : null;
   const purchaseOrderId = b.purchaseOrderId ? String(b.purchaseOrderId) : null;
@@ -200,7 +199,11 @@ async function readRequestForm(c: Ctx, sb: any, companyId: number, staff: Staff,
   /* SOP 3.2: a request over a project's limit cannot be submitted. */
   const lim = await overLimit(sb, companyId, built.lines);
   if ('error' in lim) return c.json({ error: 'limit_unavailable', message: 'The project limit could not be read. Try again.' }, 503);
-  if (lim.over.length) return c.json(overLimitBody(lim.over), 409);
+  if (lim.over.length) {
+    return c.json(staff.field
+      ? { error: 'over_project_limit', message: 'This project has no limit left for this amount. Ask the office to raise it, then send again.' }
+      : overLimitBody(lim.over), 409);
+  }
   return { type, supplierId, payeeName, purchaseOrderId, wantedOn, amountSen, lines: built.lines };
 }
 
