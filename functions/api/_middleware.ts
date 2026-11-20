@@ -163,7 +163,7 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
 
   // Management requires two-step sign-in for this role and this person has not set it up: until they do,
   // only their own account screen answers.
-  if (!SETUP_ALLOWED.test(route) && await twoStepSetupDue(env, live.settings, session, live.user.twoFactorOn)) {
+  if (!SETUP_ALLOWED.test(route) && await twoStepSetupDue(env, live.settings, { ...session, extraDepartmentIds: live.user.extraDepartmentIds }, live.user.twoFactorOn)) {
     return fail('TWO_STEP_REQUIRED', 'Set up two-step sign-in on My account before using the rest of the system.', 403);
   }
 

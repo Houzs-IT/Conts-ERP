@@ -13,6 +13,8 @@ import { Select } from '../components/Select';
 import { Modal } from '../components/Modal';
 import { COMPANIES, KIND_NOTE, SIDE_OPTIONS, companiesOf, isFieldKind, sideLabel, useDepartments, type Company } from '../components/permissions/shared';
 import { CompanyBadges } from '../components/permissions/CompanyBadges';
+import { RoleBadges, type RoleLabel } from '../components/permissions/RoleBadges';
+import { ExtraRolesField } from '../components/permissions/ExtraRolesField';
 import { Segmented } from '../components/Metric';
 import { StaleBanner } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
@@ -56,12 +58,14 @@ function avatarTone(u: Pick<Row, 'department' | 'role'>): Tone {
 interface Row {
   id: string; fullName: string; email: string; employeeId?: string | null; phone: string | null; role: UserRole;
   department?: string | null; position?: string | null; departmentId?: string | null; positionId?: string | null; side?: UserSide;
+  /** Extra roles (migration 0349): other desk positions the person holds besides their main one. */
+  extraRoles?: { positionId: string; departmentId: string }[];
   managerId: string | null;
   isActive: boolean; mustChangePassword: boolean; isLocked?: boolean; twoStep?: boolean; lastLoginAt: string | null;
   /** When the newest invitation email went out (audit_log user.invite / user.resend_invite). */
   lastInvitedAt?: string | null;
 }
-interface Payload { data: Row[]; generatedAt: string }
+interface Payload { data: Row[]; generatedAt: string; rolesField?: boolean }
 
 /** The departments and positions come from the managed list (Permissions > Departments and positions), so nothing is typed
  *  here. Cleaners and technicians are not offered: they are added on HR > Employees. */
@@ -73,6 +77,9 @@ const roleName = (u: Pick<Row, 'role' | 'position'>): string => (u.role === 'own
 
 /** "Position · Department", skipping what is not set. */
 const jobLine = (u: Pick<Row, 'department' | 'position'>) => [u.position, u.department].map(v => (v ?? '').trim()).filter(Boolean).join(' · ');
+/** The side of one place: the department's, or the person's own in a department on both sides. */
+const placeSide = (u: Pick<Row, 'side'>, d: Department | undefined): UserSide => (d && d.side !== 'both' ? d.side : u.side ?? 'both');
+const roleText = (roles: readonly RoleLabel[], sep: string): string => roles.map(r => [r.position, r.department].filter(Boolean).join(' · ')).join(sep);
 
 const FALLBACK: Payload = {
   generatedAt: '',
@@ -171,10 +178,26 @@ export default function UsersPage() {
   const departmentById = useMemo(() => new Map(departments.map(d => [d.id, d])), [departments]);
   // A row from before the managed list has only the text, so it is matched by name.
   const departmentOfRow = useMemo(() => (u: Row) => (u.departmentId ? departmentById.get(u.departmentId) : undefined) ?? departments.find(x => x.name === u.department), [departmentById, departments]);
+  const positionById = useMemo(() => new Map(departments.flatMap(d => d.positions.map(p => [p.id, { position: p, department: d }] as const))), [departments]);
+  const extraPlacesOf = useMemo(() => (u: Row) => (u.extraRoles ?? []).flatMap(r => {
+    const hit = positionById.get(r.positionId);
+    return hit && hit.position.id !== u.positionId ? [hit] : [];
+  }), [positionById]);
+  /** The main role's side: what Works on edits. */
+  const mainSideOf = useMemo(() => (u: Row): UserSide => placeSide(u, departmentOfRow(u)), [departmentOfRow]);
+  /** Every role's side together: roles on both companies show both. */
   const sideValueOf = useMemo(() => (u: Row): UserSide => {
-    const d = departmentOfRow(u);
-    return d && d.side !== 'both' ? d.side : u.side ?? 'both';
-  }, [departmentOfRow]);
+    const sides = new Set([mainSideOf(u), ...extraPlacesOf(u).map(x => placeSide(u, x.department))]);
+    const [only] = sides;
+    return sides.size === 1 && only ? only : 'both';
+  }, [mainSideOf, extraPlacesOf]);
+  const rolesOf = useMemo(() => (u: Row): RoleLabel[] => (u.role === 'owner'
+    ? [{ position: 'Owner', department: null }]
+    : [{ position: roleName(u), department: u.department ?? null }, ...extraPlacesOf(u).map(x => ({ position: x.position.name, department: x.department.name }))]), [extraPlacesOf]);
+  const roleFilterOptions = useMemo(() => [
+    { value: 'owner', label: 'Owner' },
+    ...departments.flatMap(d => d.positions.map(p => ({ value: p.id, label: p.name, group: d.name }))),
+  ], [departments]);
   const companiesOfRow = useMemo(() => (u: Row): readonly Company[] => (u.role === 'owner' ? [] : companiesOf(sideValueOf(u))), [sideValueOf]);
   const [companyFilter, setCompanyFilter] = useState<CompanyFilter>('all');
   const shownRows = companyFilter === 'all' ? rows : rows.filter(u => companiesOfRow(u).includes(companyFilter));
@@ -198,10 +221,13 @@ export default function UsersPage() {
       ) },
     { key: 'company', label: 'Company', value: u => companyText(companiesOfRow(u)), width: 230,
       render: u => (u.role === 'owner' ? <span className="text-copy text-muted-ink">Owner portal</span> : <CompanyBadges side={sideValueOf(u)} />) },
-    { key: 'role', label: 'Role', value: u => roleName(u), text: u => jobLine(u) || roleName(u), width: 190,
+    // Filtering by a role finds everyone who holds it, as their main role or an extra one.
+    { key: 'role', label: 'Role', value: u => roleName(u), text: u => roleText(rolesOf(u), ', '), width: 250,
+      filter: { kind: 'select', multi: true, display: 'menu', options: roleFilterOptions },
+      filterMatch: (u, picked) => (u.role === 'owner' ? picked.has('owner') : [u.positionId, ...extraPlacesOf(u).map(x => x.position.id)].some(id => !!id && picked.has(id))),
       render: u => (
-        <span className="flex flex-col gap-px min-w-0" title={jobLine(u) || roleName(u)}>
-          <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{roleName(u)}</span>
+        <span className="flex flex-col gap-1 min-w-0">
+          <RoleBadges roles={rolesOf(u)} />
           {u.department && u.role !== 'owner' && <span className="text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.department}</span>}
         </span>
       ) },
@@ -218,7 +244,7 @@ export default function UsersPage() {
     // The menu is read through a ref: its actions depend on state the memoised columns would otherwise hold stale.
     { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
       render: u => <RowActions name={personName(u.fullName)} items={actionsRef.current(u)} /> },
-  ], [nameById, companiesOfRow, sideValueOf]);
+  ], [nameById, companiesOfRow, sideValueOf, rolesOf, roleFilterOptions, extraPlacesOf]);
   const invitedRows = rows.filter(isInvited);
   const invitedCount = invitedRows.length;
   const actionsRef = useRef<(u: Row) => RowAction[]>(() => []);
@@ -281,13 +307,14 @@ export default function UsersPage() {
   const [editDepartmentId, setEditDepartmentId] = useState('');
   const [editPositionId, setEditPositionId] = useState('');
   const [editSide, setEditSide] = useState<UserSide>('both');
-  const [editErrors, setEditErrors] = useState<{ fullName?: string; email?: string; phone?: string; side?: string; departmentId?: string; positionId?: string }>({});
+  const [editExtras, setEditExtras] = useState<string[]>([]);
+  const [editErrors, setEditErrors] = useState<{ fullName?: string; email?: string; phone?: string; side?: string; departmentId?: string; positionId?: string; extraPositionIds?: string }>({});
 
   function openEdit(u: Row) {
     const d = departmentOfRow(u);
     const p = d?.positions.find(x => x.id === u.positionId) ?? d?.positions.find(x => x.name === u.position);
     setEditing(u); setEditManager(u.managerId ?? ''); setEditActive(u.isActive);
-    setEditName(u.fullName); setEditEmail(u.email); setEditPhone(u.phone ?? ''); setEditDepartmentId(d?.id ?? ''); setEditPositionId(p?.id ?? ''); setEditSide(sideValueOf(u)); setEditErrors({});
+    setEditName(u.fullName); setEditEmail(u.email); setEditPhone(u.phone ?? ''); setEditDepartmentId(d?.id ?? ''); setEditPositionId(p?.id ?? ''); setEditSide(mainSideOf(u)); setEditExtras(extraPlacesOf(u).map(x => x.position.id)); setEditErrors({});
   }
   // Re-send the invitation to someone who was invited but never signed in — a fresh
   // temporary password, emailed immediately. See functions/api/users/[id]/resend-invite.ts.
@@ -448,7 +475,10 @@ export default function UsersPage() {
     return items;
   }
 
-  const editPlaceChanged = !!editing && (editDepartmentId !== (departmentOfRow(editing)?.id ?? '') || editPositionId !== (editing.positionId ?? '') || editSide !== sideValueOf(editing));
+  const editPlaceChanged = !!editing && (editDepartmentId !== (departmentOfRow(editing)?.id ?? '') || editPositionId !== (editing.positionId ?? '') || editSide !== mainSideOf(editing));
+  // Extra roles are for desk staff only; a person moved into Management drops them on save.
+  const editTakesExtras = !!data?.rolesField && !!editing && editing.role !== 'owner' && departmentById.get(editDepartmentId)?.kind === 'staff';
+  const editExtrasChanged = !!editing && [...editExtras].sort().join() !== extraPlacesOf(editing).map(x => x.position.id).sort().join();
   async function submitEdit(e: FormEvent) {
     e.preventDefault();
     if (!editing || busy) return;
@@ -468,23 +498,26 @@ export default function UsersPage() {
     setBusy(true); setEditErrors({});
     const editedDept = departmentById.get(editDepartmentId);
     const editedPosition = editedDept?.positions.find(p => p.id === editPositionId);
-    const placeChanged = !isOwner && (editDepartmentId !== (departmentOfRow(editing)?.id ?? '') || editPositionId !== (editing.positionId ?? '') || editSide !== sideValueOf(editing));
+    const placeChanged = !isOwner && (editDepartmentId !== (departmentOfRow(editing)?.id ?? '') || editPositionId !== (editing.positionId ?? '') || editSide !== mainSideOf(editing)) || editExtrasChanged;
+    const extraPositionIds = editTakesExtras ? editExtras.filter(id => id !== editPositionId) : [];
     const patch = {
       managerId: editManager || null, isActive: editActive,
       fullName: editName.trim(), email: editEmail.trim().toLowerCase(),
       ...(isOwner ? { phone: editPhone.trim() || null } : { side: editSide, departmentId: editDepartmentId, positionId: editPositionId || null }),
+      ...(!isOwner && data?.rolesField ? { extraPositionIds } : {}),
     };
     try {
       await api.patch(`/users/${editing.id}`, patch);
       setEdits(m => ({ ...m, [editing.id]: {
         ...m[editing.id], managerId: patch.managerId, isActive: patch.isActive, fullName: patch.fullName, email: patch.email,
         ...(isOwner ? { phone: editPhone.trim() || null } : { side: editSide, departmentId: editDepartmentId, positionId: editPositionId || null, department: editedDept?.name ?? null, position: editedPosition?.name ?? null }),
+        ...(!isOwner && data?.rolesField ? { extraRoles: extraPositionIds.flatMap(id => { const hit = positionById.get(id); return hit ? [{ positionId: id, departmentId: hit.department.id }] : []; }) } : {}),
       } }));
       toast({
         tone: 'success',
         title: `${editName.trim()} updated.`,
         body: placeChanged
-          ? 'Department or position changed. Their access follows it straight away, on their next click.'
+          ? 'Roles changed. Their access follows them straight away, on their next click.'
           : 'Account details saved.',
       });
       reload();
@@ -613,7 +646,10 @@ export default function UsersPage() {
                 </span>
                 <span className="flex flex-col gap-1 min-w-0 flex-1">
                   <span className="text-copy font-medium truncate" title={personName(u.fullName)}>{personName(u.fullName)}</span>
-                  <span className="text-meta text-ink truncate" title={jobLine(u) || roleName(u)}>{jobLine(u) || roleName(u)}</span>
+                  <span className="text-meta text-ink truncate" title={roleText(rolesOf(u), '\n')}>
+                    {jobLine(u) || roleName(u)}
+                    {extraPlacesOf(u).length > 0 && <span className="text-muted-ink"> +{plural(extraPlacesOf(u).length, 'role')}</span>}
+                  </span>
                   <span className="text-meta text-muted-ink truncate" title={u.email}>{hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'}</span>
                   <span className="flex items-center gap-1.5 flex-wrap">{u.role !== 'owner' && <CompanyBadges side={sideValueOf(u)} />}<StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
                   {isInvited(u) && <InviteCell u={u} onResend={canManage ? () => confirmResend(u) : undefined} />}
@@ -685,7 +721,7 @@ export default function UsersPage() {
         <Modal
           width={editing.role === 'owner' ? 460 : 640}
           title={`Edit ${personName(editing.fullName)}`}
-          sub="Change the department, position, reporting line or status."
+          sub="Change the roles, reporting line or status."
           onClose={() => setEditing(null)}
           footer={
             <>
@@ -701,9 +737,12 @@ export default function UsersPage() {
             {editing.role !== 'owner' && <PlaceFields departments={departments} side={editSide} onSide={setEditSide} departmentId={editDepartmentId} positionId={editPositionId}
               onDepartment={v => { setEditDepartmentId(v); setEditPositionId(''); }} onPosition={setEditPositionId}
               errors={{ side: editErrors.side, departmentId: editErrors.departmentId, positionId: editErrors.positionId }} />}
-            {editing.role !== 'owner' && editPlaceChanged && (
+            {editTakesExtras && (
+              <ExtraRolesField departments={departments} mainPositionId={editPositionId} value={editExtras} onChange={setEditExtras} error={editErrors.extraPositionIds} />
+            )}
+            {editing.role !== 'owner' && (editPlaceChanged || editExtrasChanged) && (
               <span className={cx('text-meta', TONE.warning.text)}>
-                Changing the department or position changes this person’s permissions and menu on their next click.
+                Changing the roles changes this person’s permissions and menu on their next click.
               </span>
             )}
             <div className="flex flex-col gap-1.5">
