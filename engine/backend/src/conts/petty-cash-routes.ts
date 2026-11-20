@@ -30,6 +30,7 @@ import { topUpAmount } from './petty-cash';
 import { postReceiptJournal, postWriteOffJournal } from './petty-cash-ledger';
 import { checkProjectsFit, resolveLinesSub } from './sub-departments';
 import { fileResponse } from './claims-files';
+import { withTargetLabels } from './claims-lines';
 import {
   RECEIPT_COLS, allRows, departmentNames, filesOf, floatBalances, floatsOf, linesOf, monthRange, receiptView, staffNames,
   type FloatRow, type ReceiptLineRow, type ReceiptRow,
@@ -339,8 +340,10 @@ export const financeReceiptsHandler = async (c: Ctx): Promise<Response> => {
   /* Reading bank details is Ledger full's, as on GET /accounting/staff-bank (final review): view and edit see the bank,
      the name and the flags, with only the last four digits of the account. */
   const full = hasHouzsPerm(c, FULL_KEY);
+  /* Each line names its unit, job or project, for finance's Unit column (chew, 20 Nov 2026). */
+  const labelled = await withTargetLabels(sb, co.companyId, views);
   return c.json({
-    receipts: views.map((v, i) => {
+    receipts: labelled.map((v, i) => {
       const bank = payBackBank(rows[i], saved.get(rows[i].submitter_user_id) ?? null);
       return { ...v, bank: bank && !full ? { ...bank, accountNo: lastFour(bank.accountNo) } : bank };
     }),

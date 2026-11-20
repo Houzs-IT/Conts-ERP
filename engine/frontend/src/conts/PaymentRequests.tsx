@@ -109,7 +109,9 @@ export function PaymentRequests() {
   const claimsQ = useFinanceReceipts("");
   /* Each line's sub-department (SOP 1.1), "No unit" on a team's line without one. */
   const deptLabel = useLineDepartmentLabel();
-  const lineSummary = (ls: Line[]) => ls.map((l) => [deptLabel(l), l.targetLabel, l.accountCode, l.description].filter(Boolean).join(" · ")).join("; ");
+  const lineSummary = (ls: Line[]) => ls.map((l) => [deptLabel(l), l.accountCode, l.description].filter(Boolean).join(" · ")).join("; ");
+  /* The units (or jobs, projects) the lines are for, each once: a column of its own (chew, 20 Nov 2026). */
+  const unitsOf = (r: Row) => [...new Set((r.kind === "request" ? r.q.lines : r.c.lines).map((l) => l.targetLabel).filter((x): x is string => !!x))].join(", ");
   const opts = usePettyOptions();
   const act = useFinanceAction();
   const prompt = usePrompt();
@@ -188,6 +190,7 @@ export function PaymentRequests() {
         </span>
       )),
     },
+    { key: "unit", label: "Unit", render: (r) => unitsOf(r) || <span className="text-ink-muted">—</span>, getValue: unitsOf },
     {
       key: "what", label: "For",
       render: (r) => (r.kind === "request" ? lineSummary(r.q.lines) : [r.c.vendorName, lineSummary(r.c.lines)].filter(Boolean).join(" — ")),
