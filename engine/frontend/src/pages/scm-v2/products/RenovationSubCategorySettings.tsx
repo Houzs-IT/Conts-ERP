@@ -13,6 +13,9 @@ import { isFixedSub, subCategoriesOf, type CatalogGroup, type SubCategoryDef } f
 import { useAddSubCategory, useRenovationCatalog, useUpdateGroup, useUpdateSubCategory, type CatalogGroupRow } from '../../../vendor/scm/lib/renovation-catalog-queries';
 import styles from '../Products.module.css';
 
+/* 40px: a finger-sized target on a phone (the shared iconBtn is 22px). */
+const rowBtn = `${styles.iconBtn} min-h-[40px] min-w-[40px] items-center justify-center`;
+
 const errText = (e: unknown) => (e instanceof Error ? e.message : 'Could not save.');
 
 export function RenovationSubCategorySettings({ initialGroup, onClose }: { initialGroup: CatalogGroup | null; onClose: () => void }) {
@@ -133,15 +136,15 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
                       {hidden && <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-ink-secondary">Hidden</span>}
                       {editable && (
                         <>
-                          <button type="button" className={styles.iconBtn} aria-label={`Move ${g.label} up`} disabled={busy || i === 0} onClick={() => void moveGroup(i, -1)}>
+                          <button type="button" className={rowBtn} aria-label={`Move ${g.label} up`} disabled={busy || i === 0} onClick={() => void moveGroup(i, -1)}>
                             <ArrowUp size={14} strokeWidth={1.75} />
                           </button>
-                          <button type="button" className={styles.iconBtn} aria-label={`Move ${g.label} down`} disabled={busy || i === groups.length - 1} onClick={() => void moveGroup(i, 1)}>
+                          <button type="button" className={rowBtn} aria-label={`Move ${g.label} down`} disabled={busy || i === groups.length - 1} onClick={() => void moveGroup(i, 1)}>
                             <ArrowDown size={14} strokeWidth={1.75} />
                           </button>
                           <button
                             type="button"
-                            className={styles.iconBtn}
+                            className={rowBtn}
                             aria-label={hidden ? `Show ${g.label}` : `Hide ${g.label}`}
                             title={hidden ? 'Show' : 'Hide'}
                             disabled={busy}
@@ -209,15 +212,15 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
                   {hidden && <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-ink-secondary">Hidden</span>}
                   {rowEditable && (
                     <>
-                      <button type="button" className={styles.iconBtn} aria-label={`Move ${s.label} up`} disabled={busy || i === 0 || isFixedSub(group, subs[i - 1].code)} onClick={() => void move(i, -1)}>
+                      <button type="button" className={rowBtn} aria-label={`Move ${s.label} up`} disabled={busy || i === 0 || isFixedSub(group, subs[i - 1].code)} onClick={() => void move(i, -1)}>
                         <ArrowUp size={14} strokeWidth={1.75} />
                       </button>
-                      <button type="button" className={styles.iconBtn} aria-label={`Move ${s.label} down`} disabled={busy || i === subs.length - 1 || isFixedSub(group, subs[i + 1].code)} onClick={() => void move(i, 1)}>
+                      <button type="button" className={rowBtn} aria-label={`Move ${s.label} down`} disabled={busy || i === subs.length - 1 || isFixedSub(group, subs[i + 1].code)} onClick={() => void move(i, 1)}>
                         <ArrowDown size={14} strokeWidth={1.75} />
                       </button>
                       <button
                         type="button"
-                        className={styles.iconBtn}
+                        className={rowBtn}
                         aria-label={hidden ? `Show ${s.label}` : `Hide ${s.label}`}
                         title={hidden ? 'Show' : 'Hide'}
                         disabled={busy}
