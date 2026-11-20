@@ -27,6 +27,8 @@ import { api, errorMessage } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 import { billEdit, partNow } from '../../lib/utilityBillEdit';
 import { OwnerPaidTick } from '../owners/ExpenseEntry';
+import { UnitPicker } from '../../components/UnitPicker';
+import { useUnitRoster } from '../../lib/useUnitRoster';
 
 const UtilitiesModal = lazy(() => import('../owners/ExpenseEntry').then(m => ({ default: m.UtilitiesModal })));
 const AddUtilityBill = lazy(() => import('../../components/AddUtilityBill').then(m => ({ default: m.AddUtilityBill })));
@@ -406,6 +408,48 @@ function EditAmount({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) 
   );
 }
 
+/** A bill recorded to the wrong unit moved to the right one (chew, 20 Nov 2026), with its owner lines, its page and a
+ *  waiting payment request (POST /expenses/utilities/bills/:id/unit). Same rule as the amount: until the voucher is
+ *  processed and while the statement is not final. */
+function MoveUnit({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) {
+  const roster = useUnitRoster();
+  const [open, setOpen] = useState(false);
+  const [to, setTo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  if (!open) return <div><Button size="sm" variant="secondary" icon={<Icon name="ArrowRightLeft" size="sm" />} onClick={() => setOpen(true)}>Change unit</Button></div>;
+  const units = roster.filter(u => u.id !== bill.unitId);
+  const save = async () => {
+    if (!to) return;
+    setBusy(true);
+    try {
+      const r = await api.post<{ ownerLines: number; accountMoved: boolean; request: string | null; rolled: boolean; deductMonth: string; notice: string | null }>(
+        `/expenses/utilities/bills/${encodeURIComponent(bill.id)}/unit`, { unitId: to });
+      const u = roster.find(x => x.id === to);
+      toast({ tone: 'success', title: `Bill moved to ${u ? u.unitCode || u.unitNumber : 'the other unit'}.`, body: [
+        r.ownerLines ? 'Its owner lines went with it, to that unit\'s owner.' : '',
+        r.request ? `${r.request} now names that unit.` : '',
+        r.rolled ? `Deducted on the ${monthLabel(r.deductMonth)} statement (late bill).` : '',
+        r.notice ?? ''].filter(Boolean).join(' ') || undefined });
+      onSaved();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'The bill was not moved.', body: errorMessage(e, 'Try again in a moment.') });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 p-2 rounded-control border border-dashed border-line">
+      <UnitPicker label="Move to unit" units={units} value={to} onChange={setTo} autoFocus />
+      <span className="text-meta text-muted-ink">The bill, its owner lines and its page move to that unit and its owner{bill.request?.status === 'SUBMITTED' ? `; ${bill.request.no ?? 'its payment request'} is changed too, as long as no voucher is made yet` : ''}. The owner&apos;s own part stays as it is: check it with Edit amount after.</span>
+      <div className="flex gap-2">
+        <Button size="sm" variant="primary" loading={busy} disabled={!to} onClick={() => void save()}>Move bill</Button>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setOpen(false); setTo(''); }}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
 function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose, onSaved }: { unit: Unit; month: string; kind: UtilityKind | 'total'; cell: Cell; mode?: Mode; onClose: () => void; onSaved: () => void }) {
   const title = `${unitName(unit)} · ${kind === 'total' ? 'All bills' : KIND_LABEL[kind]} · ${monthLabel(month)}`;
   return (
@@ -433,6 +477,7 @@ function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose, onSaved }:
                   onClick={() => downloadFile(`/documents/${encodeURIComponent(b.receiptId!)}/download`).catch(notifyFailure)}>View bill</Button></div>
               : <span className="text-meta text-muted-ink">No bill file attached.</span>}
             {editable(b) && <EditAmount bill={b} onSaved={onSaved} />}
+            {editable(b) && <MoveUnit bill={b} onSaved={onSaved} />}
           </div>
         ))}
       </div>
