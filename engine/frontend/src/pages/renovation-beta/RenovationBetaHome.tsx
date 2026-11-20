@@ -26,6 +26,7 @@ import { DataTable } from "../../components/DataTable";
 import type { Column } from "../../components/dataTableTypes";
 import { fetchProjectSos, soColumns, type ProjectSo } from "./renovationBetaSoColumns";
 import { readBoardCache, writeBoardCache } from "./boardCache";
+import { VariantsSkuList } from "./renovationBetaVariantsList";
 
 /** Each filter keeps its own columns (owner 2026-11-19). "All projects" stays on the original key so nobody's
     arrangement moves, Done Design keeps the key its old tab had, and each Design step has one by its code; they all
@@ -325,7 +326,9 @@ function HomeScreen(): ReactElement {
           onSelect: setCat,
         } : null} />
 
-      {phone ? (
+      {!phone && filter === VARIANTS_FILTER ? (
+        <VariantsSkuList projects={list} canWrite={can("projects.write")} cardStyle={{ ...CARD, overflow: "hidden" }} onSaved={() => { q.reload(); steps.reload(); }} />
+      ) : phone ? (
         <ol className="stag" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
           {rows.length === 0 && <li style={{ color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</li>}
           {rows.map((r) => <PhoneCard key={r.p.id} r={r} sla={slaOf(slaById.get(r.p.id), today)} onOpen={() => rememberLastProject(r.p.id)} />)}
@@ -339,7 +342,7 @@ function HomeScreen(): ReactElement {
             onDisplayKeys={(keys) => setSoColumnsShown(keys.some((k) => k.startsWith("so_")))}
             documentLabel="Projects"
             rows={tableRows}
-            columns={homeColumns(showPay, filter === VARIANTS_FILTER)}
+            columns={homeColumns(showPay, false)}
             getRowKey={(x) => x.r.p.id}
             onRowClick={(x) => open(x.r.p.id)}
             emptyLabel={query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}

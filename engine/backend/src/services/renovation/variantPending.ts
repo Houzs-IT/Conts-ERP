@@ -7,6 +7,10 @@ import { variantCategoryOf } from "../../scm/lib/renovation-flow-rules";
 import { missingVariantAxes } from "../../scm/shared/so-variant-rule";
 
 export interface VariantLine {
+  /** The SO line, so a screen can save its variants (absent where only the count is needed). */
+  id?: string;
+  docNo?: string | null;
+  description?: string | null;
   itemCode: string | null;
   itemGroup: string | null;
   /** The catalog product's category and sub-category; null when the code is not in the catalog. */
@@ -15,7 +19,17 @@ export interface VariantLine {
   variants: Record<string, unknown> | null;
 }
 
-export interface VariantPending { itemCode: string; missing: string[] }
+/** One line still to pick (owner, 20 Nov 2026: the Variants list shows each SKU, picked there, gone once filled). */
+export interface VariantPending {
+  itemCode: string;
+  missing: string[];
+  id?: string;
+  docNo?: string | null;
+  description?: string | null;
+  /** The variant group the picker shows (SOFA, BEDFRAME, ...), as the SO tab's variantCategory. */
+  category?: string;
+  variants?: Record<string, unknown>;
+}
 
 /** The variant group a line is checked against: its catalog product's, else the group saved on the line. */
 export function variantGroupOf(l: Pick<VariantLine, "itemGroup" | "prodCategory" | "prodSub">): string {
@@ -27,8 +41,17 @@ export function variantGroupOf(l: Pick<VariantLine, "itemGroup" | "prodCategory"
 export function pendingVariants(lines: readonly VariantLine[]): VariantPending[] {
   const out: VariantPending[] = [];
   for (const l of lines) {
-    const missing = missingVariantAxes(variantGroupOf(l), l.variants, l.itemCode ?? null).map((a) => a.label);
-    if (missing.length > 0) out.push({ itemCode: l.itemCode ?? "", missing });
+    const group = variantGroupOf(l);
+    const missing = missingVariantAxes(group, l.variants, l.itemCode ?? null).map((a) => a.label);
+    if (missing.length === 0) continue;
+    out.push({
+      itemCode: l.itemCode ?? "", missing,
+      ...(l.id !== undefined ? {
+        id: l.id, docNo: l.docNo ?? null, description: l.description ?? null,
+        category: l.prodCategory ? variantCategoryOf(l.prodCategory, l.prodSub) ?? group.toUpperCase() : group.toUpperCase(),
+        variants: l.variants ?? {},
+      } : {}),
+    });
   }
   return out;
 }

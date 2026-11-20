@@ -78,7 +78,9 @@ export interface BetaBoardProject {
   /** The newest calendar booking of each work of the list; absent from an older server. */
   works?: Array<{ type: string; onDate: string; atTime: string | null; done?: boolean }>;
   /** Sales order lines, and how many still miss a required variant; absent from an older server. */
-  variants?: { lines: number; missing: number; pending?: Array<{ itemCode: string; missing: string[] }> };
+  variants?: { lines: number; missing: number; pending?: Array<{
+    itemCode: string; missing: string[]; id?: string; docNo?: string | null; description?: string | null; category?: string; variants?: Record<string, unknown>;
+  }> };
 }
 
 export interface BetaBoardEvent {
