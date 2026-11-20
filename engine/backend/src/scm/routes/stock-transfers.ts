@@ -36,6 +36,9 @@ import { supabaseAuth } from '../middleware/auth';
 import type { Env, Variables } from '../env';
 import { reverseMovements } from '../lib/inventory-movements';
 import { buildTransferPayload } from '../lib/stock-transfer-atomic';
+import { refuseWithoutWriting } from '../lib/no-write-refusal';
+import { findTransferShortages, insufficientStockBody, shortageFromPgError, transferBucketKey,
+  type TransferShortage } from '../lib/stock-transfer-availability';
 import { reconcileUncostedAfterIn } from '../lib/oversell-retrocost';
 import { activeCompanyId, companyDocPrefix, requireActiveCompanyId,
   NOT_THIS_COMPANY, type CompanyScopeCtx } from '../lib/companyScope';
@@ -68,6 +71,34 @@ const nextTransferNo = async (sb: ScmClient, c: CompanyScopeCtx): Promise<string
   const p = companyDocPrefix(c);
   return mintMonthlyDocNo(sb, 'stock_transfers', 'transfer_no', `${p}ST-${yymm}`);
 };
+
+/* Open qty per (item, variant) bucket at ONE warehouse, for the given item codes.
+   The same source the FIFO consumer draws from (inventory_lots, open rows only). */
+async function openQtyByBucket(
+  db: ScopedDb, c: CompanyScopeCtx, warehouseId: string, itemCodes: string[],
+): Promise<{ ok: true; open: Map<string, number> } | { ok: false; reason: string }> {
+  const open = new Map<string, number>();
+  const codes = [...new Set(itemCodes)];
+  if (codes.length === 0) return { ok: true, open };
+  const { data, error } = await db
+    .from('v_inventory_lots_open', companyScope(c))
+    .select('item_code, variant_key, qty_remaining')
+    .eq('warehouse_id', warehouseId)
+    .in('item_code', codes);
+  if (error) return { ok: false, reason: error.message };
+  for (const r of (data ?? []) as Array<{ item_code: string; variant_key: string | null; qty_remaining: number | null }>) {
+    const k = transferBucketKey(r.item_code, r.variant_key);
+    open.set(k, (open.get(k) ?? 0) + Number(r.qty_remaining ?? 0));
+  }
+  return { ok: true, open };
+}
+
+/* How the warehouse is named in a refusal: its code, as the From/To pickers show it. */
+async function warehouseLabel(db: ScopedDb, c: CompanyScopeCtx, warehouseId: string): Promise<string> {
+  const { data } = await db.from('warehouses', companyScope(c)).select('code, name').eq('id', warehouseId).maybeSingle();
+  const w = data as { code: string | null; name: string | null } | null;
+  return w?.code || w?.name || 'the source warehouse';
+}
 
 // ── List ──────────────────────────────────────────────────────────────
 stockTransfers.get('/', async (c) => {
@@ -263,40 +294,18 @@ stockTransfers.patch('/:id', async (c) => {
     if (!sameBuckets) {
       // Sum qty per (item_code, variant_key) bucket, old vs new — reversal
       // restores exactly the old-bucket amount to the source warehouse.
-      const bucketKey = (itemCode: string, variantKey: string | null) => `${itemCode}::${variantKey ?? ''}`;
       const oldByBucket = new Map<string, number>();
       for (const l of oldLineRows) {
-        const k = bucketKey(l.item_code, l.variant_key);
+        const k = transferBucketKey(l.item_code, l.variant_key);
         oldByBucket.set(k, (oldByBucket.get(k) ?? 0) + Number(l.qty));
       }
-      const newByBucket = new Map<string, number>();
-      for (const l of newLineRows) {
-        const k = bucketKey(l.item_code, l.variant_key);
-        newByBucket.set(k, (newByBucket.get(k) ?? 0) + l.qty);
-      }
 
-      const shortages: Array<{ itemCode: string; variantKey: string; requested: number; available: number }> = [];
-      for (const [k, requested] of newByBucket.entries()) {
-        const [itemCode, variantKey] = k.split('::');
-        const { data: lots, error: lotsErr } = await db
-          .from('v_inventory_lots_open', companyScope(c))
-          .select('qty_remaining')
-          .eq('warehouse_id', before.from_warehouse_id)
-          .eq('item_code', itemCode)
-          .eq('variant_key', variantKey);
-        if (lotsErr) return c.json({ error: 'stock_check_failed', reason: lotsErr.message }, 500);
-        const currentOpen = (lots ?? []).reduce((s: number, r: { qty_remaining: number | null }) => s + Number(r.qty_remaining ?? 0), 0);
-        const available = currentOpen + (oldByBucket.get(k) ?? 0);
-        if (requested > available) shortages.push({ itemCode: itemCode!, variantKey: variantKey ?? '', requested, available });
-      }
+      const openRes = await openQtyByBucket(db, c, before.from_warehouse_id, newLineRows.map((l) => l.item_code));
+      if (!openRes.ok) return c.json({ error: 'stock_check_failed', reason: openRes.reason }, 500);
+      const shortages = findTransferShortages(newLineRows, openRes.open, oldByBucket);
       if (shortages.length) {
-        // A per-document, per-SKU sentence — the generic curated 409 fallback
-        // ("refresh and check") gives the operator nothing to act on; this names
-        // exactly which line and by how much (humanApiError prefers `message`).
-        const message = shortages
-          .map((s) => `${s.itemCode}${s.variantKey ? ` (${s.variantKey})` : ''}: requested ${s.requested}, only ${s.available} available at the source warehouse`)
-          .join('; ');
-        return c.json({ error: 'insufficient_stock', message, shortages }, 409);
+        const label = await warehouseLabel(db, c, before.from_warehouse_id);
+        return c.json(insufficientStockBody(shortages, label), 409);
       }
     }
   }
@@ -346,11 +355,11 @@ stockTransfers.patch('/:id', async (c) => {
       .insert(newLineRows.map((l) => ({ ...l, stock_transfer_id: id })));
     if (insErr) return c.json({ error: 'lines_replace_failed', reason: insErr.message }, 500);
 
-    movementErrors = await writeTransferMovements(
+    movementErrors = (await writeTransferMovements(
       db,
       { id, transfer_no: before.transfer_no, from_warehouse_id: before.from_warehouse_id, to_warehouse_id: before.to_warehouse_id },
       user?.id ?? '', before.company_id, c,
-    );
+    )).errors;
   }
 
   await recordEntityAudit(db.unscoped(
@@ -408,8 +417,11 @@ async function writeTransferMovements(
   /* Context for the source open-lots read. REQUIRED for the same reason: absent,
      that read would run with no company predicate at all. */
   c: CompanyScopeCtx,
-): Promise<string[]> {
+): Promise<{ errors: string[]; shortage: TransferShortage | null }> {
   const movementErrors: string[] = [];
+  /* Set when the DB function refused because the source no longer holds the qty
+     (0353, P0414) — a second transfer won the race after the route's own check. */
+  let shortage: TransferShortage | null = null;
   const { data: lines } = await db
     .from('stock_transfer_lines', CENTRALISED(
       'header.id was minted by the company-scoped insert in the caller moments ago, so these lines are that document\'s by construction',
@@ -474,7 +486,10 @@ async function writeTransferMovements(
         p_lines:             payload,
       });
       /* eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- PostgrestError types `message` as a plain string, but an RPC that fails at the edge (transport, 502 from the pooler) surfaces an error object without one, and an operator reading "TRANSFER ST-2608-001: undefined" learns nothing. */
-      if (rpcErr) movementErrors.push(`TRANSFER ${header.transfer_no}: ${rpcErr.message ?? 'movement apply failed'}`);
+      if (rpcErr) {
+        shortage = shortageFromPgError(rpcErr);
+        movementErrors.push(`TRANSFER ${header.transfer_no}: ${rpcErr.message ?? 'movement apply failed'}`);
+      }
       /* Oversell retro-cost (0154) — the transfer just opened lots at the
          DESTINATION. If that warehouse had a prior "ship anyway" DO whose short
          units went out at RM0, retro-cost them from the arriving lots now. Until
@@ -510,7 +525,7 @@ async function writeTransferMovements(
       'library hand-off: the B2C allocation walker is a system-wide recompute across both companies by design',
     ));
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-transfer failed:', e); }
-  return movementErrors;
+  return { errors: movementErrors, shortage };
 }
 
 // ── Create + auto-post ────────────────────────────────────────────────
@@ -561,6 +576,37 @@ stockTransfers.post('/', async (c) => {
   if (whErr) return c.json({ error: 'warehouse_check_failed', reason: whErr.message }, 500);
   if ((ownWhs ?? []).length !== wanted.length) return c.json(NOT_THIS_COMPANY, 404);
 
+  /* Shape the lines BEFORE the header exists (a bad line used to throw after the
+     header insert and leave an orphan), then refuse a line the SOURCE warehouse
+     cannot cover — see lib/stock-transfer-availability.ts. Nothing is written yet,
+     so a refusal leaves no document, number or movement behind. */
+  type LineIn = { item_code: string; product_name: string | null; variant_key: string; qty: number; notes: string | null };
+  let lineIns: LineIn[];
+  try {
+    lineIns = items.map((it) => {
+      const qty = Math.max(0, Math.floor(Number(it.qty ?? 0)));
+      if (qty <= 0) throw new Error('qty must be > 0');
+      if (!it.itemCode) throw new Error('itemCode required per line');
+      return {
+        item_code: String(it.itemCode),
+        product_name: (it.productName as string | undefined) ?? null,
+        // Variant bucket so the OUT@from / IN@to movements consume + re-open the
+        // matching FIFO batch. Omit / '' = unclassified (legacy behaviour).
+        variant_key: (it.variantKey as string | undefined) ?? '',
+        qty,
+        notes: (it.notes as string | undefined) ?? null,
+      };
+    });
+  } catch (e) {
+    return refuseWithoutWriting(c, { error: 'invalid_line', message: e instanceof Error ? e.message : String(e) }, 400);
+  }
+  {
+    const openRes = await openQtyByBucket(db, c, fromWarehouseId, lineIns.map((l) => l.item_code));
+    if (!openRes.ok) return c.json({ error: 'stock_check_failed', reason: openRes.reason }, 500);
+    const shortages = findTransferShortages(lineIns, openRes.open);
+    if (shortages.length) return refuseWithoutWriting(c, insufficientStockBody(shortages, await warehouseLabel(db, c, fromWarehouseId)), 409);
+  }
+
   /* No `company_id` field here any more: the INSERT arm of the scoped builder
      stamps it, through the same stampCompany this line used to inline — so it
      cannot be dropped by a later edit to this object. */
@@ -606,21 +652,7 @@ stockTransfers.post('/', async (c) => {
   }
   const header = headerData as unknown as { id: string; transfer_no: string; from_warehouse_id: string; to_warehouse_id: string };
 
-  const lineRows = items.map((it) => {
-    const qty = Math.max(0, Math.floor(Number(it.qty ?? 0)));
-    if (qty <= 0) throw new Error('qty must be > 0');
-    if (!it.itemCode) throw new Error('itemCode required per line');
-    return {
-      stock_transfer_id: header.id,
-      item_code: String(it.itemCode),
-      product_name: (it.productName as string | undefined) ?? null,
-      // Variant bucket so the OUT@from / IN@to movements consume + re-open the
-      // matching FIFO batch. Omit / '' = unclassified (legacy behaviour).
-      variant_key: (it.variantKey as string | undefined) ?? '',
-      qty,
-      notes: (it.notes as string | undefined) ?? null,
-    };
-  });
+  const lineRows = lineIns.map((l) => ({ stock_transfer_id: header.id, ...l }));
   const { error: lErr } = await db
     .from('stock_transfer_lines', companyScope(c)).insert(lineRows);
   if (lErr) {
@@ -631,7 +663,7 @@ stockTransfers.post('/', async (c) => {
   }
 
   // Write inventory movements (paired OUT/IN) inline.
-  const movementErrors = await writeTransferMovements(db, header, user.id, activeCompanyId(c) ?? null, c);
+  const { errors: movementErrors, shortage: raceShortage } = await writeTransferMovements(db, header, user.id, activeCompanyId(c) ?? null, c);
 
   /* If the movement apply failed, the transfer did NOT complete — and because
      fn_stock_transfer_apply is atomic, NOTHING moved (both warehouses are
@@ -670,6 +702,11 @@ stockTransfers.post('/', async (c) => {
       note: `Auto-cancelled — movements failed: ${movementErrors.join('; ')}`,
       fieldChanges: transferChanges,
     });
+    /* Another transfer emptied the bucket between the check above and the write:
+       the same plain refusal, not a raw movement error. Nothing moved (atomic). */
+    if (raceShortage) {
+      return c.json({ ...insufficientStockBody([raceShortage], await warehouseLabel(db, c, fromWarehouseId)), id: header.id, status: 'CANCELLED' }, 409);
+    }
     return c.json({
       error: 'transfer_movements_failed',
       id: header.id,

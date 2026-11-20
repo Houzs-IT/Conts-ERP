@@ -668,7 +668,7 @@ export const createSalesInvoiceHandler = async (c: Context<{ Bindings: Env; Vari
   }
 
   {
-    const over = await checkSiOverRemaining(sb, items);
+    const over = await checkSiOverRemaining(sb, items, undefined, true);
     if (over) return c.json(over.body, over.status);
   }
 
@@ -1359,7 +1359,9 @@ salesInvoices.patch('/:id/items/:itemId', async (c) => {
 
   if (it.qty !== undefined && prev.do_item_id && qty > Number(prev.qty)) {
     const exclude = new Map<string, number>([[prev.do_item_id as string, Number(prev.qty)]]);
-    const over = await checkSiOverRemaining(sb, [{ doItemId: prev.do_item_id, qty }], exclude);
+    /* itemCode is required: checkSiOverRemaining asserts the line's product matches its DO line before the cap,
+       and a missing code read as "(no item)" and refused every qty increase as a product mismatch. */
+    const over = await checkSiOverRemaining(sb, [{ doItemId: prev.do_item_id, qty, itemCode: (it.itemCode as string | undefined) ?? prev.item_code }], exclude);
     if (over) return c.json(over.body, over.status);
   }
   const unitPrice = it.unitPriceSen !== undefined ? Number(it.unitPriceSen) : Number(prev.unit_price_sen);
