@@ -1,5 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
-import { requireSession, isFieldRole, hasColumn } from '../../_lib/auth';
+import { requireSession, hasColumn } from '../../_lib/auth';
+import { can } from '../../_lib/access';
 import { isConnectConfigured, assembleConnectContact, postConnectContact, connectDeliveryOutcome } from '../../_lib/connect';
 
 /** POST /api/connect/send { reservationId | guestId, automation } — fire a Houzs Connect WhatsApp
@@ -10,7 +11,9 @@ import { isConnectConfigured, assembleConnectContact, postConnectContact, connec
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role) || session.role === 'owner') return fail('FORBIDDEN', 'Only operations and management can message guests.', 403);
+  // Operations and management only (edit on Reservations), not Finance (view only), field accounts or owners —
+  // the same gate as /api/messages and the Connect preview.
+  if (!can(session, 'reservations', 'edit')) return fail('FORBIDDEN', 'Only operations and management can message guests.', 403);
 
   const b = await request.json<any>().catch(() => null);
   if (!b) return fail('VALIDATION', 'Nothing to send.', 422);

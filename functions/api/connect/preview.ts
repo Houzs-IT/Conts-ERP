@@ -1,5 +1,6 @@
 import { type Env, one, json, fail } from '../../_lib/db';
-import { requireSession, isFieldRole } from '../../_lib/auth';
+import { requireSession } from '../../_lib/auth';
+import { can } from '../../_lib/access';
 import { isConnectConfigured, assembleConnectContact, connectAutomations, CONNECT_FIELD_KEYS } from '../../_lib/connect';
 
 /** GET /api/connect/preview?reservationId= | ?guestId= — the Connect template variables for a stay,
@@ -8,7 +9,9 @@ import { isConnectConfigured, assembleConnectContact, connectAutomations, CONNEC
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (isFieldRole(session.role) || session.role === 'owner') return fail('FORBIDDEN', 'Only operations and management can message guests.', 403);
+  // Same gate as sending, so previewing a template needs the reservations write level too: management and
+  // operations (edit on Reservations), not Finance (view only), field accounts or owners — matching /api/messages.
+  if (!can(session, 'reservations', 'edit')) return fail('FORBIDDEN', 'Only operations and management can message guests.', 403);
 
   const url = new URL(request.url);
   let reservationId = url.searchParams.get('reservationId');
