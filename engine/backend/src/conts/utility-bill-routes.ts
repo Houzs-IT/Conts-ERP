@@ -6,7 +6,9 @@
 //   POST /utility-bills/payment-request   { provider, scanBatchId, note?, bills: [{ unitId, kind, billMonth, billDate?, dueDate?, accountNo, amountSen }], files? }
 //                                          -> { id, requestNo, amountSen }; 201 new, 200 when this scan's request exists
 //   POST /utility-bills/payment-request/:id/resubmit   { bills }  a withdrawn or rejected one, sent again: same number
-//   POST /utility-bills/payment-request/:id/bills      { bills }  one still waiting, its bills changed before any payment
+//   POST /utility-bills/payment-request/:id/bills      { bills, files? }  one still waiting, its bills changed before any
+//                                          payment; files are kept only when the request has none yet (an old grouped
+//                                          request split into one per bill takes its remaining bill's page)
 // The bills a scan records for the company to pay go to finance as one request per provider (chew, 2 Nov 2026: A): a
 // Rental line per bill with its unit and no account (finance sets it on the voucher), made out to the provider's
 // supplier when one is on the list, else to the provider's name for finance to link.
@@ -203,6 +205,8 @@ export const updateUtilityRequestBillsHandler = async (c: Ctx): Promise<Response
   if (lines instanceof Response) return lines;
   const badUnit = await unknownUnit(c, sb, lines);
   if (badUnit) return badUnit;
+  const files = Array.isArray(b.files) && b.files.length ? decodeFiles(b.files, 'the bills') : { ok: true as const, files: [] };
+  if (!files.ok) return c.json({ error: files.error, message: files.message }, files.status);
   const amountSen = lines.reduce((n, l) => n + l.amountSen, 0);
   const changedElsewhere = () => c.json({ error: 'changed', message: 'This request was changed somewhere else. Open it again.' }, 409);
   /* Taken first, on its last change, so a voucher made at the same moment or a second edit finds it changed. */
@@ -213,8 +217,22 @@ export const updateUtilityRequestBillsHandler = async (c: Ctx): Promise<Response
   if (ins.error) return c.json({ error: 'save_failed', reason: ins.error.message }, 500);
   const { error } = await sb.from('payment_requests').update({ amount_sen: amountSen, wanted_on: earliestDue(lines) }).eq('id', r.id).eq('status', 'SUBMITTED');
   if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
-  return c.json({ id: r.id, requestNo: r.request_no, amountSen }, 200);
+  return c.json({ id: r.id, requestNo: r.request_no, amountSen, filesAdded: await addFilesIfNone(c, sb, co.companyId, r.id, files.files) }, 200);
 };
+
+/** A request with no file yet takes these (finance sent requests back for "NO ATTACHMENT"); one that has files keeps
+ *  them alone. The bills are already saved, so a file that cannot be stored is reported as not added, not as a failure. */
+async function addFilesIfNone(c: Ctx, sb: any, companyId: number, requestId: string, files: Parameters<typeof storeFiles>[2]): Promise<number> {
+  const bucket = c.env?.SLIPS;
+  if (!files.length || !bucket) return 0;
+  const { count } = await sb.from('payment_request_files').select('id', { count: 'exact', head: true }).eq('request_id', requestId);
+  if (count) return 0;
+  let stored: Awaited<ReturnType<typeof storeFiles>> = [];
+  try { stored = await storeFiles(bucket, `payment-requests/${companyId}/${requestId}`, files); } catch { return 0; }
+  const fr = await sb.from('payment_request_files').insert(stored.map(s => ({ ...s, request_id: requestId })));
+  if (fr.error) { await removeFiles(bucket, stored.map(s => s.r2_key)); return 0; }
+  return stored.length;
+}
 
 type BillLine = { unitId: string; amountSen: number; sort: number; description: string; kind: string; billDate: string | null; dueDate: string | null };
 

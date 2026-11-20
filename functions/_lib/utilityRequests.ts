@@ -65,7 +65,7 @@ export async function billsOnRequest(env: Env, requestId: string): Promise<{ bil
   const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; due_date: string | null; reference: string | null; amount: number; owner_paid: boolean }>(env, `
     SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, coalesce(s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) AS amount, e.owner_paid
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
-    WHERE e.payment_request_id = ? ORDER BY e.incurred_on, e.unit_id, e.category`, requestId);
+    WHERE e.payment_request_id = ? ORDER BY e.incurred_on, e.unit_id, e.category, e.id`, requestId);
   const bills: RequestBill[] = [], off: string[] = [];
   for (const r of rows) {
     if (r.owner_paid || !(Number(r.amount) > 0) || !KINDS.includes(r.category)) { off.push(r.id); continue; }
@@ -80,6 +80,45 @@ export async function unlinkRequest(env: Env, expenseIds: string[]): Promise<num
   const rows = await all<{ id: string }>(env, `UPDATE expenses SET payment_request_id = NULL, payment_request_no = NULL
     WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) RETURNING id`, JSON.stringify(expenseIds));
   return rows.length;
+}
+
+/** Bills moved from one request to another, each to its own (an old grouped request split into one per bill); a bill
+ *  no longer on `fromId` stays where it is. */
+export async function moveRequest(env: Env, fromId: string, moves: { expenseId: string; id: string; requestNo: string | null }[]): Promise<number> {
+  if (!moves.length) return 0;
+  const rows = await all<{ id: string }>(env, `UPDATE expenses e SET payment_request_id = m.id, payment_request_no = m.no
+    FROM jsonb_to_recordset(?::text::jsonb) AS m(expense_id text, id text, no text)
+    WHERE e.id = m.expense_id AND e.payment_request_id = ? RETURNING e.id`,
+    JSON.stringify(moves.map(m => ({ expense_id: m.expenseId, id: m.id, no: m.requestNo }))), fromId);
+  return rows.length;
+}
+
+/** Each bill's provider as billsToRequest names it: the scan's, else its account's, else the kind. */
+export async function providersOf(env: Env, expenseIds: string[]): Promise<Map<string, string>> {
+  if (!expenseIds.length) return new Map();
+  const rows = await all<{ id: string; category: string; provider: string | null }>(env, `
+    SELECT e.id, e.category, coalesce(nullif(s.provider, ''), (SELECT a.provider FROM unit_utility_accounts a WHERE a.unit_id = e.unit_id AND a.kind = e.category
+             AND a.account_no = e.reference AND coalesce(a.provider, '') <> '' ORDER BY a.created_at LIMIT 1)) AS provider
+    FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id WHERE e.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(expenseIds));
+  return new Map(rows.map(r => [r.id, (r.provider ?? '').trim() || KIND_LABEL[r.category] || 'Utility']));
+}
+
+/** Each bill's own page (its receipt document), as a file the engine keeps on the request; a bill with none is left out. */
+export async function billPages(env: Env, expenseIds: string[]): Promise<Map<string, { name: string; mime: string; dataBase64: string }>> {
+  if (!expenseIds.length || !env.MEDIA) return new Map();
+  const docs = await all<{ id: string; storage_key: string; mime_type: string; file_name: string }>(env, `
+    SELECT e.id, d.storage_key, d.mime_type, d.file_name FROM expenses e JOIN documents d ON d.id = e.receipt_document_id
+    WHERE e.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`, JSON.stringify(expenseIds));
+  const out = new Map<string, { name: string; mime: string; dataBase64: string }>();
+  await Promise.all(docs.map(async d => {
+    const obj = await env.MEDIA!.get(d.storage_key);
+    if (!obj) return;
+    const bytes = new Uint8Array(await obj.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    out.set(d.id, { name: d.file_name.slice(0, 200), mime: d.mime_type, dataBase64: btoa(bin) });
+  }));
+  return out;
 }
 
 /** Each bill keeps the request it went out on; a bill already on one keeps that one. */

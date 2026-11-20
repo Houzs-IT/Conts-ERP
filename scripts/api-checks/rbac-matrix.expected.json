@@ -418,6 +418,7 @@
  "POST /api/expenses/utilities": "AFFAFFFU",
  "POST /api/expenses/utilities/payment-requests": "AFFAFFFU",
  "POST /api/expenses/utilities/payment-requests/[id]/resend": "AFFAFFFU",
+ "POST /api/expenses/utilities/payment-requests/[id]/split": "AFFAFFFU",
  "PATCH /api/expenses/utilities/bills/[id]": "AFFAFFFU",
  "POST /api/expenses/utilities/scan": "AFFAFFFU",
  "POST /api/expenses/utilities/scan/payment-requests": "AFFAFFFU",

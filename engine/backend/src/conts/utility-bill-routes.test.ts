@@ -191,9 +191,19 @@ describe('a waiting utility request takes its changed bills until it is paid (ch
     const first = await sent(sb);
     const r = await change(appFor(sb, FIN), first.id, [BILLS[0], { ...BILLS[1], amountSen: 45_100 }]);
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ id: first.id, requestNo: first.requestNo, amountSen: 13_118 + 45_100 });
+    expect(await r.json()).toEqual({ id: first.id, requestNo: first.requestNo, amountSen: 13_118 + 45_100, filesAdded: 0 });
     expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: 58_218 });
     expect(sb.tables.payment_request_lines.map((l: any) => [l.unit_id, l.amount_sen])).toEqual([['U1', 13_118], ['U2', 45_100]]);
+  });
+  test('a request with no file takes the remaining bill page; one with files keeps its own (chew, 20 Nov 2026)', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    const one = await post(appFor(sb, FIN), `/utility-bills/payment-request/${first.id}/bills`, { bills: [BILLS[0]], files: [PNG] });
+    expect(await one.json()).toMatchObject({ amountSen: 13_118, filesAdded: 1 });
+    expect(sb.tables.payment_request_files.filter((f: any) => f.request_id === first.id)).toHaveLength(1);
+    const again = await post(appFor(sb, FIN), `/utility-bills/payment-request/${first.id}/bills`, { bills: [BILLS[0]], files: [PNG] });
+    expect(await again.json()).toMatchObject({ filesAdded: 0 });
+    expect(sb.tables.payment_request_files.filter((f: any) => f.request_id === first.id)).toHaveLength(1);
   });
   test('refused once a voucher is on it, once it is no longer waiting, and for field staff', async () => {
     const sb = world();
