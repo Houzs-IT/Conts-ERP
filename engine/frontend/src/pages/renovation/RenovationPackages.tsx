@@ -1,4 +1,4 @@
-/* Packages module list (owner, 20 Nov 2026): every package (PKG-, a whole unit with areas) and kit (组合, KIT-) of the
+/* Packages module list (owner, 20 Nov 2026): every package (PKG-, a whole unit with areas) and kit (KIT-) of the
    company. Search, kind chips, status filter, the engine table (columns saved per user). New package opens the 5-step
    setup; Save from a sales order opens a sales order to save from. No cost and no margin anywhere in this module. */
 
@@ -35,7 +35,7 @@ const COLUMNS: Column<PackageRow>[] = [
     render: (r) => <span className="whitespace-nowrap text-ink-secondary">{fmtDate(r.updatedAt)}</span> },
 ];
 
-const KIND_FILTERS: Array<{ value: '' | PackageKind; label: string }> = [{ value: '', label: 'All' }, { value: 'PACKAGE', label: 'Package' }, { value: 'KIT', label: '组合' }];
+const KIND_FILTERS: Array<{ value: '' | PackageKind; label: string }> = [{ value: '', label: 'All' }, { value: 'PACKAGE', label: 'Package' }, { value: 'KIT', label: 'Kit' }];
 
 /** "Save from a sales order": the sales order number to open; the Save as package button waits on its page. */
 function SaveFromSoDialog({ open, onClose }: { open: boolean; onClose: () => void }): ReactElement {
@@ -78,13 +78,13 @@ export function RenovationPackages(): ReactElement {
       <PageHeader
         eyebrow="Sales order"
         title="Packages"
-        description="Packages (a whole unit, by area) and 组合 (a few items together). Sales find the active ones in the sales order and VO product search."
+        description="Packages (a whole unit, by area) and kits (a few items together). Sales find the active ones in the sales order and VO product search."
         primaryAction={canEdit ? <Button variant="primary" icon={<Plus size={14} />} onClick={() => navigate('/scm/renovation/packages/new')}>New package</Button> : undefined}
         actions={canEdit ? <Button variant="secondary" icon={<FileDown size={14} />} onClick={() => setFromSo(true)}>Save from a sales order</Button> : undefined}
       />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard pending={pending} {...failed} label="Active packages" value={String(active.filter((r) => r.kind === 'PACKAGE').length)} subtitle="Offered in the SO search" rail="bg-primary" active />
-        <StatCard pending={pending} {...failed} label="Active 组合" value={String(active.filter((r) => r.kind === 'KIT').length)} subtitle="Kits of a few items" rail="bg-accent" />
+        <StatCard pending={pending} {...failed} label="Active kits" value={String(active.filter((r) => r.kind === 'KIT').length)} subtitle="Kits of a few items" rail="bg-accent" />
         <StatCard pending={pending} {...failed} label="Used" value={String(all.reduce((s, r) => s + r.used, 0))} subtitle="Variation orders that took one" rail="bg-synced" />
         <StatCard pending={pending} {...failed} label="No SLA yet" value={String(active.filter((r) => !r.slaSet).length)} subtitle="Active ones without SLA days" tone="error" rail="bg-err" />
       </div>

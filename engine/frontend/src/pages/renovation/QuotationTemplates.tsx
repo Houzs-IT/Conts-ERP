@@ -31,7 +31,7 @@ export function OldTemplateAddress() {
 export function PackageTemplatesSection() {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4 text-[13px]">
-      <span className="text-ink-secondary">Package templates are now the <b>Packages</b> module (Sales order &gt; Packages): packages and 组合, with areas, products and SLA days.</span>
+      <span className="text-ink-secondary">Package templates are now the <b>Packages</b> module (Sales order &gt; Packages): packages and kits, with areas, products and SLA days.</span>
       <Link to="/scm/renovation/packages" className="inline-flex h-9 items-center rounded-lg bg-primary px-3 font-semibold text-white">Open Packages</Link>
     </div>
   );

@@ -7,9 +7,9 @@ import { useEffect, useRef, useState, type ReactElement, type ReactNode } from '
 import { ArrowDown, ArrowUp, GripVertical, Plus, Search, X } from 'lucide-react';
 import { searchProducts, type DocLine, type ProductPick } from '../../lib/renovation/api';
 import { expandPackage, NO_AREA, searchPackages, type PackageHit, type PackageLine, type PackageSection } from '../../lib/renovation/renovationPackagesApi';
-import { blankLine } from './DocEditor';
+import { blankLine, ProductPicker } from './DocEditor';
 import { inputCls, rm } from './shared';
-import { dayCell, KindPill, slaDaysOf } from './renovationPackageParts';
+import { DaysInput, dayCell, KindPill } from './renovationPackageParts';
 import { cn } from '../../lib/utils';
 
 export function emptyArea(heading = ''): PackageSection {
@@ -28,46 +28,80 @@ export async function linesOfKit(id: string): Promise<PackageLine[]> {
 
 const priced = (l: DocLine) => l.kind === 'ITEM' || l.kind === 'CHILD';
 
-/** The SKU / kit search used to add products to a package. */
+/** A product line still waiting for its product ("+ Line" pressed, nothing picked yet). */
+export const isBlankLine = (l: DocLine): boolean => priced(l) && !l.itemCode && !l.description.trim();
+
+/** What is saved: lines added with "+ Line" but never given a product are left out. */
+export const withoutBlankLines = (sections: PackageSection[]): PackageSection[] => sections.map((s) => ({ ...s, lines: s.lines.filter((l) => !isBlankLine(l)) }));
+
+/** One ticked row of the add picker: a SKU, or a kit whose lines are fetched when added. */
+type Tick = { key: string; label: string; sku?: ProductPick; kit?: PackageHit };
+
+/* The SKU / kit search used to add products to a package (owner, 20 Nov 2026: add many lines fast). It works like a
+   shopping list: tick as many SKUs and kits as needed, across several searches, then add them all in one go. The picker
+   stays open afterwards, so the next batch can be ticked straight away. Lines go in the order they were ticked. */
 export function PackageAddSearch({ onAdd, autoFocus }: { onAdd: (lines: PackageLine[], label: string) => void; autoFocus?: boolean }): ReactElement {
   const [q, setQ] = useState('');
   const [skus, setSkus] = useState<ProductPick[]>([]);
   const [kits, setKits] = useState<PackageHit[]>([]);
   const [busy, setBusy] = useState(false);
+  const [ticks, setTicks] = useState<Tick[]>([]);
+  const [adding, setAdding] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     let live = true;
     setBusy(true);
     const t = setTimeout(() => {
       Promise.all([searchProducts(q).catch(() => ({ products: [] })), searchPackages(q).catch(() => ({ packages: [] }))])
-        .then(([p, k]) => { if (!live) return; setSkus(p.products.slice(0, 12)); setKits(k.packages.filter((x) => x.kind === 'KIT').slice(0, 6)); })
+        .then(([p, k]) => { if (!live) return; setSkus(p.products.slice(0, 30)); setKits(k.packages.filter((x) => x.kind === 'KIT').slice(0, 8)); })
         .finally(() => { if (live) setBusy(false); });
     }, 200);
     return () => { live = false; clearTimeout(t); };
   }, [q]);
+  const on = (key: string) => ticks.some((t) => t.key === key);
+  const toggle = (t: Tick) => setTicks((cur) => (cur.some((x) => x.key === t.key) ? cur.filter((x) => x.key !== t.key) : [...cur, t]));
+  const addTicked = async () => {
+    if (ticks.length === 0) return;
+    setAdding(true);
+    try {
+      const parts = await Promise.all(ticks.map((t) => (t.kit ? linesOfKit(t.kit.id) : Promise.resolve([lineFromProduct(t.sku!)]))));
+      const lines = parts.flat();
+      onAdd(lines, `${lines.length} line${lines.length === 1 ? '' : 's'} (${ticks.map((t) => t.label).join(', ')})`);
+      setTicks([]);
+      inputRef.current?.focus();
+    } finally { setAdding(false); }
+  };
+  const row = (t: Tick, title: ReactNode, sub: string, pill?: ReactNode) => (
+    <label key={t.key} className={cn('flex w-full cursor-pointer items-start gap-2 border-b border-border-subtle px-2.5 py-2 text-left hover:bg-primary-soft', on(t.key) && 'bg-primary-soft')}>
+      <input type="checkbox" className="mt-0.5" checked={on(t.key)} onChange={() => toggle(t)} aria-label={`Tick ${t.label}`} />
+      {pill}
+      <span className="min-w-0"><span className="block text-[12.5px] font-semibold text-ink">{title}</span><span className="block text-[11px] text-ink-muted">{sub}</span></span>
+    </label>
+  );
   return (
     <div className="min-w-0">
       <div className="relative">
         <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted" />
-        <input autoFocus={autoFocus} aria-label="Search SKU or kit" className={cn(inputCls, 'w-full pl-8')} placeholder="Search SKU or kit, e.g. hiace, bed, KIT" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input ref={inputRef} autoFocus={autoFocus} aria-label="Search SKU or kit" className={cn(inputCls, 'w-full pl-8')} placeholder="Search SKU or kit, e.g. hiace, bed, KIT" value={q} onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && ticks.length) { e.preventDefault(); void addTicked(); } }} />
       </div>
       <div className="mt-2 max-h-[340px] overflow-auto rounded-lg border border-border">
-        {kits.length > 0 && <div className="bg-surface-2 px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-ink-muted">组合 (kits)</div>}
-        {kits.map((k) => (
-          <button key={k.id} type="button" className="flex w-full items-start gap-2 border-b border-border-subtle px-2.5 py-2 text-left hover:bg-primary-soft"
-            onClick={() => void linesOfKit(k.id).then((ls) => onAdd(ls, `${k.code} (${ls.length} lines)`))}>
-            <KindPill kind="KIT" />
-            <span className="min-w-0"><span className="block text-[12.5px] font-semibold text-ink">{k.code} · {k.name}</span><span className="block text-[11px] text-ink-muted">adds {k.lines} line{k.lines === 1 ? '' : 's'}</span></span>
-          </button>
-        ))}
+        {kits.length > 0 && <div className="bg-surface-2 px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-ink-muted">Kits</div>}
+        {kits.map((k) => row({ key: `kit:${k.id}`, label: k.code, kit: k }, `${k.code} · ${k.name}`, `adds ${k.lines} line${k.lines === 1 ? '' : 's'}`, <KindPill kind="KIT" />))}
         {skus.length > 0 && <div className="bg-surface-2 px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-ink-muted">SKUs</div>}
-        {skus.map((p) => (
-          <button key={p.code} type="button" className="flex w-full flex-col border-b border-border-subtle px-2.5 py-2 text-left hover:bg-primary-soft" onClick={() => onAdd([lineFromProduct(p)], p.code)}>
-            <span className="text-[12.5px] font-semibold text-ink">{p.code}</span>
-            <span className="text-[11px] text-ink-muted">{[p.name, p.subCategory ?? p.group, p.sellPriceSen ? rm(p.sellPriceSen) : null].filter(Boolean).join(' · ')}</span>
-          </button>
-        ))}
+        {skus.map((p) => row({ key: `sku:${p.code}`, label: p.code, sku: p }, p.code, [p.name, p.subCategory ?? p.group, p.sellPriceSen ? rm(p.sellPriceSen) : null].filter(Boolean).join(' · ')))}
         {!busy && skus.length === 0 && kits.length === 0 && <div className="px-3 py-4 text-center text-[12px] text-ink-muted">No match</div>}
         {busy && skus.length === 0 && kits.length === 0 && <div className="px-3 py-4 text-center text-[12px] text-ink-muted">Searching…</div>}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-[12px] text-ink-secondary" title={ticks.map((t) => t.label).join(', ')}>
+          {ticks.length ? `${ticks.length} ticked: ${ticks.map((t) => t.label).join(', ')}` : 'Tick SKUs or kits, then add them together.'}
+        </span>
+        {ticks.length > 0 && <button type="button" onClick={() => setTicks([])} className="text-[12px] font-semibold text-ink-muted hover:text-ink">Clear</button>}
+        <button type="button" disabled={ticks.length === 0 || adding} onClick={() => void addTicked()}
+          className="inline-flex h-8 items-center gap-1 rounded-md bg-primary px-3 text-[12.5px] font-semibold text-white disabled:opacity-40">
+          <Plus size={13} /> {adding ? 'Adding…' : `Add ${ticks.length || ''} ticked`.replace('  ', ' ')}
+        </button>
       </div>
     </div>
   );
@@ -92,14 +126,23 @@ function moveArea(sections: PackageSection[], from: number, to: number): Package
   return out;
 }
 
-export function PackageLinesTable({ sections, onChange, disabled, showAreas, showSla = true, onAddLine }: {
+export function PackageLinesTable({ sections, onChange, disabled, showAreas, showSla = true }: {
   sections: PackageSection[]; onChange: (s: PackageSection[]) => void; disabled?: boolean; showAreas: boolean; showSla?: boolean;
-  /** "+ Line" on an area header: the editor opens its search for that area. */
-  onAddLine?: (areaIndex: number) => void;
 }): ReactElement {
   const [drag, setDrag] = useState<DragRef | null>(null);
   const setLine = (a: number, l: number, p: Partial<PackageLine>) => onChange(sections.map((s, i) => (i !== a ? s : { ...s, lines: s.lines.map((x, j) => (j === l ? { ...x, ...p } : x)) })));
   const removeLine = (a: number, l: number) => onChange(sections.map((s, i) => (i !== a ? s : { ...s, lines: s.lines.filter((_, j) => j !== l) })));
+  /* "+ Line" works like the sales order's: each press adds a blank line at once, nothing opens, so it can be pressed
+     as often as needed; each line then takes its product from its own Pick product search. */
+  const addBlank = (a: number) => {
+    const base = sections.length ? sections : [emptyArea('')];
+    onChange(base.map((s, i) => (i !== a ? s : { ...s, lines: [...s.lines, blankLine('ITEM') as PackageLine] })));
+  };
+  const pickSku = (a: number, l: number, p: ProductPick) => setLine(a, l, { ...lineFromProduct(p, sections[a].lines[l].qty || 1), processingAfterDays: sections[a].lines[l].processingAfterDays, deliveryAfterDays: sections[a].lines[l].deliveryAfterDays });
+  const pickKit = (a: number, l: number, h: PackageHit) => void linesOfKit(h.id).then((ls) => {
+    const { sections: ss, onChange: change } = live.current;
+    change(ss.map((s, i) => (i !== a ? s : { ...s, lines: [...s.lines.slice(0, l), ...ls, ...s.lines.slice(l + 1)] })));
+  });
   const [over, setOver] = useState<string | null>(null);
   /* Pointer events, not HTML drag and drop: the same grip works with a mouse, a pen and a finger. Rows carry data-drop
      ("line:a:l" or "area:a"); letting go over one moves the dragged line (or area) there. */
@@ -137,8 +180,8 @@ export function PackageLinesTable({ sections, onChange, disabled, showAreas, sho
           <tr>
             <th className="w-8" /><th className="py-2">Code</th><th>Description</th><th className="w-[70px] text-right">Qty</th>
             <th className="w-[110px] text-right">SKU price</th><th className="w-[110px] text-right">Amount</th>
-            {showSla && <th className="w-[96px] text-right" title="Days after the project start date, optional">Order after</th>}
-            {showSla && <th className="w-[96px] text-right" title="Days after the project start date, optional">Deliver after</th>}
+            {showSla && <th className="w-[118px] text-right" title="Days after the project start date, optional">Order after (days)</th>}
+            {showSla && <th className="w-[118px] text-right" title="Days after the project start date, optional">Deliver after (days)</th>}
             <th className="w-[96px]" />
           </tr>
         </thead>
@@ -158,7 +201,7 @@ export function PackageLinesTable({ sections, onChange, disabled, showAreas, sho
                   <td className="pr-2 text-right">
                     {!disabled && (
                       <span className="inline-flex gap-0.5">
-                        {onAddLine && <button type="button" onClick={() => onAddLine(a)} className="rounded border border-border px-1.5 py-0.5 text-[11.5px] font-semibold text-ink-secondary hover:border-primary hover:text-primary">+ Line</button>}
+                        <button type="button" onClick={() => addBlank(a)} className="rounded border border-border px-1.5 py-0.5 text-[11.5px] font-semibold text-ink-secondary hover:border-primary hover:text-primary">+ Line</button>
                         <button type="button" aria-label="Remove area" title={s.lines.length ? 'Remove the area and its lines' : 'Remove the area'} onClick={() => onChange(sections.filter((_, i) => i !== a))} className="rounded p-1 text-ink-muted hover:bg-err-bg hover:text-err"><X size={14} /></button>
                       </span>
                     )}
@@ -169,19 +212,19 @@ export function PackageLinesTable({ sections, onChange, disabled, showAreas, sho
                 <tr key={i} data-drop={`line:${a}:${i}`} className={cn('border-t border-border-subtle', drag?.kind === 'line' && drag.a === a && drag.l === i && 'opacity-40',
                   over === `line:${a}:${i}` && 'border-t-2 border-t-primary')}>
                   <td className="pl-2">{grip({ kind: 'line', a, l: i })}</td>
-                  <td className="py-1.5 font-mono text-[12px] font-semibold text-ink">{l.itemCode ?? <span className="font-sans font-normal text-ink-muted">{l.kind === 'TEXT' ? 'Text' : '—'}</span>}</td>
+                  <td className="w-[132px] py-1.5 pr-2 font-mono text-[12px] font-semibold text-ink">{priced(l) && !disabled
+                    ? <ProductPicker value={l.itemCode} onPick={(p) => pickSku(a, i, p)} onPickPackage={(h) => pickKit(a, i, h)} packageKind="KIT" />
+                    : l.itemCode ?? <span className="font-sans font-normal text-ink-muted">{l.kind === 'TEXT' ? 'Text' : '—'}</span>}</td>
                   <td className="min-w-[180px]">
-                    <span className={cn(l.kind === 'CHILD' && 'pl-3')}>{l.description || l.skuName}</span>
+                    <span className={cn(l.kind === 'CHILD' && 'pl-3')}>{l.description || l.skuName || (isBlankLine(l) ? <span className="text-ink-muted">Pick a product or kit</span> : null)}</span>
                     {l.skuActive === false && <span className="ml-1 text-[11px] text-err">not in SKU Master</span>}
                   </td>
                   <td className="text-right">{priced(l) && <input aria-label="Qty" type="number" min={1} inputMode="numeric" disabled={disabled} className={dayCell}
                     value={l.qty} onChange={(e) => setLine(a, i, { qty: Math.max(1, Math.trunc(Number(e.target.value) || 1)) })} />}</td>
                   <td className="text-right tabular-nums text-ink-muted">{priced(l) ? rm(l.skuPriceSen ?? null) : ''}</td>
                   <td className="text-right tabular-nums">{priced(l) ? rm((l.skuPriceSen ?? 0) * l.qty) : ''}</td>
-                  {showSla && <td className="text-right">{priced(l) && <input aria-label="Order after days" type="number" min={0} inputMode="numeric" placeholder="-" disabled={disabled} className={dayCell}
-                    value={l.processingAfterDays ?? ''} onChange={(e) => setLine(a, i, { processingAfterDays: slaDaysOf(e.target.value) })} />}</td>}
-                  {showSla && <td className="text-right">{priced(l) && <input aria-label="Deliver after days" type="number" min={0} inputMode="numeric" placeholder="-" disabled={disabled} className={dayCell}
-                    value={l.deliveryAfterDays ?? ''} onChange={(e) => setLine(a, i, { deliveryAfterDays: slaDaysOf(e.target.value) })} />}</td>}
+                  {showSla && <td className="text-right">{priced(l) && <DaysInput label="Order after days" disabled={disabled} value={l.processingAfterDays} onChange={(v) => setLine(a, i, { processingAfterDays: v })} />}</td>}
+                  {showSla && <td className="text-right">{priced(l) && <DaysInput label="Deliver after days" disabled={disabled} value={l.deliveryAfterDays} onChange={(v) => setLine(a, i, { deliveryAfterDays: v })} />}</td>}
                   <td className="pr-2 text-right">
                     {!disabled && (
                       <span className="inline-flex gap-0.5 text-ink-muted">
@@ -199,8 +242,13 @@ export function PackageLinesTable({ sections, onChange, disabled, showAreas, sho
           {sections.length === 0 && <tr><td colSpan={cols} className="py-6 text-center text-[12.5px] text-ink-muted">No lines yet. Add a product or a kit.</td></tr>}
         </tbody>
       </table>
+      {!disabled && !showAreas && (
+        <div className="border-t border-border-subtle px-3 py-2">
+          <button type="button" onClick={() => addBlank(0)} className="rounded border border-border px-2 py-0.5 text-[12px] font-semibold text-ink-secondary hover:border-primary hover:text-primary">+ Line</button>
+        </div>
+      )}
       <div className="flex flex-wrap justify-end gap-4 border-t border-border-subtle px-3 py-2 text-[12.5px] text-ink-secondary">
-        <span>Lines <b className="text-ink">{sections.reduce((t, s) => t + s.lines.filter(priced).length, 0)}</b></span>
+        <span>Lines <b className="text-ink">{sections.reduce((t, s) => t + s.lines.filter((l) => priced(l) && !isBlankLine(l)).length, 0)}</b></span>
         <span>At today's SKU prices <b className="tabular-nums text-ink">{rm(total)}</b></span>
       </div>
       <p className="px-3 pb-2 text-right text-[12px] text-ink-muted">Prices are not kept in the package: each line takes the SKU Master price when it is added to a sales order, and can be changed there.</p>

@@ -32,3 +32,17 @@ export function slaDaysOf(v: string): number | null {
 }
 
 export const dayCell = 'h-8 w-[72px] rounded border border-border bg-surface px-1.5 text-right text-[12.5px] tabular-nums outline-none focus:border-primary disabled:bg-surface-2';
+
+
+/** A day count cell with its unit beside it, so "7" reads as 7 days. Blank shows "-" and means no automatic date. */
+export function DaysInput({ value, onChange, label, disabled, placeholder = '-' }: {
+  value: number | null | undefined; onChange: (v: number | null) => void; label: string; disabled?: boolean; placeholder?: string;
+}): ReactElement {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input aria-label={label} type="number" min={0} inputMode="numeric" placeholder={placeholder} disabled={disabled} className={cn(dayCell, 'w-[56px]')}
+        value={value ?? ''} onChange={(e) => onChange(slaDaysOf(e.target.value))} />
+      <span className="text-[11.5px] text-ink-muted">days</span>
+    </span>
+  );
+}
