@@ -189,6 +189,10 @@ export const titleCase = (name: string) => (!name || /^[A-Z]{1,3}$/.test(name.tr
 export const buildingName = (name: string | null | undefined) => (name ? titleWords(name.trim(), true) : '');
 
 /** A person as shown: ALEX GOH -> Alex Goh, FONG -> Fong. A one-word initialism such as YH stays as it is. */
+/** Avatar letters: first letter of the first two words, uppercase, ignoring brackets and hyphens ("Laphii (Claude)" LC, "It-Owner" IO). */
+export const initials = (name: string): string =>
+  name.split(/[\s-]+/).map(w => w.replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+
 export const personName = (name: string | null | undefined) => {
   const n = (name ?? '').trim();
   if (!n) return '';

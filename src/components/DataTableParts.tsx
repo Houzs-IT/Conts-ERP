@@ -6,6 +6,7 @@ import ChannelMark from './ChannelMark';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { BookingChannel } from '../lib/types';
 import type { AnyTone } from '../lib/status';
+import { initials } from '../lib/format';
 
 /**
  * Pieces of the shared table (DataTable.tsx): a floating panel that is not clipped by the table's scroll box,
@@ -162,7 +163,6 @@ export function ChannelCell({ channel }: { channel: string }) {
   );
 }
 
-const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('');
 
 export function PersonCell({ name }: { name: string | null | undefined }) {
   if (!name) return <span className="text-muted-ink">—</span>;

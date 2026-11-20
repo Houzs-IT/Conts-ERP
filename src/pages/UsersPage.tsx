@@ -22,7 +22,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { api, ApiFailure, errorMessage } from '../lib/api';
-import { count, date, plural, personName } from '../lib/format';
+import { count, date, plural, personName, initials } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Department, Tone, UserRole, UserSide } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
@@ -138,7 +138,6 @@ function managerOptions(staff: Row[], exclude?: string, keep?: string | null) {
   }));
 }
 
-const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('');
 
 /* ------------------------------- styles ------------------------------- */
 // Left accent on org cards — the -line tone shade, as a box-shadow inset (kept off
@@ -216,14 +215,14 @@ export default function UsersPage() {
           </span>
           <span className="flex flex-col gap-px min-w-0">
             <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={personName(u.fullName)}>{personName(u.fullName)}</span>
-            <span className="text-caption text-muted-ink whitespace-nowrap">{u.phone || '—'}</span>
+            {u.phone && <span className="text-caption text-muted-ink whitespace-nowrap">{u.phone}</span>}
           </span>
         </span>
       ) },
     { key: 'company', label: 'Company', value: u => companyText(companiesOfRow(u)), width: 230,
       render: u => (u.role === 'owner' ? <span className="text-copy text-muted-ink">Owner portal</span> : <CompanyBadges side={sideValueOf(u)} />) },
     // Filtering by a role finds everyone who holds it, as their main role or an extra one.
-    { key: 'role', label: 'Role', value: u => roleName(u), text: u => roleText(rolesOf(u), ', '), width: 250,
+    { key: 'role', label: 'Position & dept.', value: u => roleName(u), text: u => roleText(rolesOf(u), ', '), width: 250,
       filter: { kind: 'select', multi: true, display: 'menu', options: roleFilterOptions },
       filterMatch: (u, picked) => (u.role === 'owner' ? picked.has('owner')
         : (!u.positionId && picked.has('none')) || [u.positionId, ...extraPlacesOf(u).map(x => x.position.id)].some(id => !!id && picked.has(id))),
@@ -238,7 +237,8 @@ export default function UsersPage() {
     { key: 'lastLogin', label: 'Last sign-in', type: 'date', value: u => u.lastLoginAt, width: 230,
       render: u => isInvited(u) ? <InviteCell u={u} onResend={canManageRef.current ? () => resendRef.current(u) : undefined} />
         : <span className="text-copy text-muted-ink whitespace-nowrap">{u.lastLoginAt ? date(u.lastLoginAt) : 'Never'}</span> },
-    { key: 'status', label: 'Status', type: 'status', value: u => status(u).label, status: u => status(u), width: 110 },
+    { key: 'status', label: 'Status', type: 'status', value: u => status(u).label, status: u => status(u), width: 110,
+      render: u => <StatusBadge tone={status(u).tone} label={status(u).label} size="sm" strong /> },
     { key: 'invited', label: 'Invitation sent', type: 'date', value: u => (isInvited(u) ? u.lastInvitedAt ?? null : null), hidden: true, width: 140 },
     // The menu is read through a ref: its actions depend on state the memoised columns would otherwise hold stale.
     { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
@@ -623,7 +623,9 @@ export default function UsersPage() {
       {error && tab !== 'users' && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       {/* ------------------------------ Users tab ------------------------------ */}
+      {/* This table only: a darker header band with a firm bottom edge, and a hover on every row so a wide row reads across. */}
       {tab === 'users' && (
+        <div className="[&_thead_th]:!bg-[color-mix(in_srgb,var(--color-ink)_8%,var(--color-card))] [&_thead_th]:![box-shadow:inset_0_-2px_0_var(--color-ink-2)] [&_thead_th]:!text-ink-2 [&_tbody_tr:hover]:bg-gold-tint">
         <DataTable<Row>
           id="users" columns={columns} rows={data ? shownRows : null} rowKey={u => u.id}
           toolbar={<Segmented label="Company" options={companyFilterOptions} value={companyFilter} onChange={setCompanyFilter} />}
@@ -658,6 +660,7 @@ export default function UsersPage() {
             );
           }}
         />
+        </div>
       )}
 
       {/* ----------------------------- Sign-ins tab ----------------------------- */}
