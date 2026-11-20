@@ -398,7 +398,8 @@ export const listRequestsHandler = async (c: Ctx): Promise<Response> => {
   /* Waiting first, oldest first; the rest newest first. */
   const waiting = (s: string) => (OPEN.has(s) ? 0 : 1);
   const rows = all.sort((a, b) => waiting(a.status) - waiting(b.status) || (waiting(a.status) === 0 ? a.created_at.localeCompare(b.created_at) : b.created_at.localeCompare(a.created_at)));
-  return c.json({ requests: await views(sb, co.companyId, rows) });
+  /* Each line names its unit, job or project, as on My claims (chew, 20 Nov 2026: finance sees which unit a bill is for). */
+  return c.json({ requests: await withTargetLabels(sb, co.companyId, await views(sb, co.companyId, rows)) });
 };
 
 /** POST /accounting/payment-requests/:id/voucher { bankAccountCode, accounts?, debitAccountCode? } — Make voucher on one

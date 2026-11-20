@@ -14,6 +14,8 @@ export type ClaimLine = {
   accountCode: string | null; amountSen: number; description: string | null;
   /** Its sub-department (SOP 1.1; chew 4 Nov 2026): set on hand-in, changed by finance while checking. */
   subDepartmentId?: string | null;
+  /** The unit ("Agile C-13-13A"), job or project the line is for, when the list names it. */
+  targetLabel?: string | null;
 };
 export type Receipt = {
   id: string; receiptNo: string; submitterUserId: string; submitterName: string; floatId: string | null; spendDate: string;

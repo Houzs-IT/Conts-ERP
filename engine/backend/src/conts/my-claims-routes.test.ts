@@ -113,6 +113,9 @@ describe('only your own', () => {
     expect(labelsOf(((await (await get(appFor(sb, TECH), '/receipts?month=2026-10')).json()) as any).receipts)).toEqual(['Tap']);
     expect(labelsOf(((await (await get(appFor(sb, OPS), '/receipts?month=2026-10')).json()) as any).receipts)).toEqual(['Skyline A-01']);
     expect(labelsOf(((await (await get(appFor(sb, OPS), '/requests')).json()) as any).requests)).toEqual(['SHOWROOM', null]);
+    /* The code the unit is shown by in Property OS wins over the number it was imported with (0350). */
+    sb.tables.conts_units[0].unit_code = 'A-0-01';
+    expect(labelsOf(((await (await get(appFor(sb, OPS), '/receipts?month=2026-10')).json()) as any).receipts)).toEqual(['Skyline A-0-01']);
   });
   test('a field worker sees only their own open jobs', async () => {
     const jobs = await (await get(appFor(world(), TECH), '/jobs')).json() as any;
