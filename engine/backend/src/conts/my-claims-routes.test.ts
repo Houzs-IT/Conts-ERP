@@ -212,12 +212,15 @@ describe('payment requests', () => {
     expect((await ask(a, { ...byName, payeeName: ' ' })).status).toBe(422);
     expect(sb.tables.payment_requests).toHaveLength(1);
   });
-  test("a field worker's request names no project: a project's limit stays with the office (final review)", async () => {
+  test("a field worker's request names its project; over the limit it is refused without the figures (chew, 20 Nov 2026)", async () => {
     const sb = world();
-    const res = await ask(appFor(sb, TECH), { supplierId: undefined, payeeName: 'KEDAI PAIP AH SENG', lines: [{ amountSen: 5000, department: 'rental', description: 'Pipe', projectId: 7 }] });
-    expect(res.status).toBe(422);
-    expect(JSON.stringify(await res.json())).not.toMatch(/leftSen|left of its limit/);
+    const over = await ask(appFor(sb, TECH), { supplierId: undefined, payeeName: 'KEDAI PAIP AH SENG', amountSen: 20_000, lines: [{ amountSen: 20_000, department: 'rental', description: 'Pipe', projectId: 7 }] });
+    expect(over.status).toBe(409);
+    expect(JSON.stringify(await over.json())).not.toMatch(/leftSen|overSen|left of its limit/);
     expect(sb.tables.payment_requests).toHaveLength(0);
+    const ok = await ask(appFor(sb, TECH), { supplierId: undefined, payeeName: 'KEDAI PAIP AH SENG', amountSen: 5000, lines: [{ amountSen: 5000, department: 'rental', description: 'Pipe', projectId: 7 }] });
+    expect(ok.status).toBe(201);
+    expect(sb.tables.payment_requests).toHaveLength(1);
   });
   test('a request sent again with the same id is found, not made twice; another person cannot take the id (final review)', async () => {
     const sb = world();
