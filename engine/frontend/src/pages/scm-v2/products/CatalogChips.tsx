@@ -51,7 +51,7 @@ export function CatalogChips({
       {group && (
         <div role="group" aria-label="Sub-category" className={`${rowClass} border-l-2 border-primary/30 pl-2`}>
           <button type="button" className={chipClass(sub === null, true)} aria-pressed={sub === null} onClick={() => onSub(null)}>
-            All {catalog.groups.find((g) => g.code === group)?.label.toLowerCase()}
+            All {catalog.allGroups.find((g) => g.code === group)?.label.toLowerCase()}
           </button>
           {subs.map((s) => (
             <button key={s.code} type="button" className={chipClass(sub === s.code, true)} aria-pressed={sub === s.code} onClick={() => onSub(s.code)}>

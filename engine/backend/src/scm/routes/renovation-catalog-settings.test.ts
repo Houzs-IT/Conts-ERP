@@ -204,3 +204,25 @@ describe('unit settings', () => {
 });
 
 const GET_list = (j: { uoms: { code: string }[] }) => j.uoms.map((u) => u.code);
+
+describe('group settings', () => {
+  it('renames, reorders and hides a group; the list reads it back', async () => {
+    expect((await send('PATCH', '/groups/WORKS', { label: ' Site  works ', sortOrder: 80 })).status).toBe(200);
+    expect((await send('PATCH', '/groups/SERVICE', { active: false })).status).toBe(200);
+    const j = (await (await app().request('/')).json()) as { groups: unknown[] };
+    expect(j.groups).toEqual(expect.arrayContaining([
+      { code: 'WORKS', label: 'Site works', sort_order: 80, active: true },
+      { code: 'SERVICE', label: 'Service', sort_order: 70, active: false },
+    ]));
+  });
+
+  it('keeps one group shown, refuses a taken name, an unknown group and a caller who cannot edit', async () => {
+    const last = await send('PATCH', '/groups/WORKS', { active: false });
+    expect(last.status).toBe(400);
+    expect(await last.json()).toMatchObject({ error: 'last_one' });
+    expect((await send('PATCH', '/groups/SERVICE', { label: 'site works' })).status).toBe(409);
+    expect((await send('PATCH', '/groups/NOPE', { label: 'X' })).status).toBe(404);
+    expect((await send('PATCH', '/groups/SERVICE', { active: true }, [])).status).toBe(403);
+    expect((await send('PATCH', '/groups/SERVICE', { active: true })).status).toBe(200);
+  });
+});
