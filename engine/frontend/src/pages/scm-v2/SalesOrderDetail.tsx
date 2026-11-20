@@ -2602,7 +2602,7 @@ export const SalesOrderDetail = () => {
         {/* ── Tab strip (Phase 1-C) — Order vs Revisions ────────────────
             The Revisions tab lists prior SO snapshots read-only. Default is the
             Order view so nothing changes for never-amended SOs. */}
-        <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--line)' }}>
+        <div className="so-tab-strip" style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--line)' }}>
           {(['order', 'revisions'] as const).map((t) => (
             <button key={t} type="button" onClick={() => setActiveTab(t)}
               style={{

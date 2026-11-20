@@ -144,3 +144,14 @@ html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table)
 /* Class inks in the night table that kept their light values: synced green (Team "Active", 2.4:1), accent gold initials (3.2:1). Pills with a solid light fill keep their dark ink. */
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-synced { color: #7BE8D8; }
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is(.text-accent, .text-accent-ink) { color: #F7CD73; }
+
+/* Night: the cancel-request banner and the SO's Order / Revisions tabs sit on the night page, not in a white card, and
+   their inline inks are light-page tokens (Order tab #2b2b2b 1.3:1, banner text #151515 1.4:1). Re-pointing the
+   tokens inside them only leaves the white cards around them as they are. */
+html.conts-embedded[data-beta-skin="night"] [data-testid="cancel-request-panel"] {
+  --c-ink: #EEF1F8; --fg-muted: #9AA2B4; --c-festive-b: #FF9B90;
+  --c-paper: #1C2030; --line-strong: rgba(150,175,255,.24);
+}
+/* The pending heading's tone ink is inline, hence !important (the approved red follows --c-festive-b). */
+html.conts-embedded[data-beta-skin="night"] [data-testid="cancel-request-panel"] .cancel-request-pending-title { color: #F7CD73 !important; }
+html.conts-embedded[data-beta-skin="night"] .so-tab-strip { --c-burnt: #EEF1F8; --fg-muted: #9AA2B4; --line: rgba(150,175,255,.18); }
