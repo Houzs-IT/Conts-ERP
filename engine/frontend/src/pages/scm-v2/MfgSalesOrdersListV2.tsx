@@ -86,6 +86,8 @@ import { useMfgSalesOrdersPaged, useMfgCustomers, useUpdateMfgSalesOrderStatus, 
 import { useSetDocumentHold } from "../../vendor/scm/lib/document-hold-queries";
 import { holdPrompt } from "./use-hold-action";
 import { useCancelRequestAction } from "./use-cancel-request-action";
+import { CancelRequestedChip, useOpenSoCancelRequests } from "./so-list-cancel-requested";
+import type { CancelRequestRow } from "../../vendor/scm/lib/document-cancel-queries";
 import { makeCloseAction } from "./use-close-action";
 import { StatusWithHold, type HoldFields } from "../../vendor/scm/components/HoldChip";
 import { ScanOrderModal } from "../../vendor/scm/components/ScanOrderModal";
@@ -436,8 +438,10 @@ function DetailDrawer({
   onReopen,
   canDeliver,
   salespersonName,
+  cancelRequest,
 }: {
   row: SoRow | null;
+  cancelRequest: CancelRequestRow | undefined;
   onClose: () => void;
   onOpenFull: () => void;
   onEdit: () => void;
@@ -531,6 +535,7 @@ function DetailDrawer({
               <Badge tone={st.tone} variant="solid" size="xs">
                 {st.label}
               </Badge>
+              <CancelRequestedChip request={cancelRequest} />
             </div>
 
             {/* scroll body */}
@@ -1111,6 +1116,7 @@ export function MfgSalesOrdersListV2() {
   const statsFail = { failed: Boolean(error), onRetry: () => void refetch() };
   const updateStatus = useUpdateMfgSalesOrderStatus();
   const requestCancel = useCancelRequestAction("so");
+  const openCancels = useOpenSoCancelRequests();
   const setHold = useSetDocumentHold("so");
 
   // The server already filtered (status + search) and sorted this page; the
@@ -1408,13 +1414,16 @@ export function MfgSalesOrdersListV2() {
       alwaysVisible: true,
       getValue: (r) => r.ac_doc_no ?? r.doc_no,
       render: (r) => (
-        <span
-          className={cn(
-            "font-docno text-[12.5px] font-semibold text-ink",
-            isCancelledDocStatus(r.status) && "dt-cancel-strike",
-          )}
-        >
-          {r.ac_doc_no ?? r.doc_no}
+        <span className="inline-flex flex-wrap items-center gap-1">
+          <span
+            className={cn(
+              "font-docno text-[12.5px] font-semibold text-ink",
+              isCancelledDocStatus(r.status) && "dt-cancel-strike",
+            )}
+          >
+            {r.ac_doc_no ?? r.doc_no}
+          </span>
+          <CancelRequestedChip request={openCancels.get(r.doc_no)} />
         </span>
       ),
     },
@@ -2242,6 +2251,7 @@ export function MfgSalesOrdersListV2() {
 
       <DetailDrawer
         row={selected}
+        cancelRequest={selected ? openCancels.get(selected.doc_no) : undefined}
         onClose={() => setSelected(null)}
         onOpenFull={() => selected && goFullPage(selected)}
         onEdit={() => selected && goEdit(selected)}
