@@ -648,9 +648,9 @@ export default function UsersPage() {
                 </span>
                 <span className="flex flex-col gap-1 min-w-0 flex-1">
                   <span className="text-copy font-medium truncate" title={personName(u.fullName)}>{personName(u.fullName)}</span>
-                  <span className="text-meta text-ink truncate" title={roleText(rolesOf(u), '\n')}>
-                    {jobLine(u) || roleName(u)}
-                    {extraPlacesOf(u).length > 0 && <span className="text-muted-ink"> +{plural(extraPlacesOf(u).length, 'role')}</span>}
+                  <span className="flex items-baseline gap-1 min-w-0 text-meta" title={roleText(rolesOf(u), '\n')}>
+                    <span className="text-ink truncate">{jobLine(u) || roleName(u)}</span>
+                    {extraPlacesOf(u).length > 0 && <span className="flex-none text-muted-ink">+{plural(extraPlacesOf(u).length, 'role')}</span>}
                   </span>
                   <span className="text-meta text-muted-ink truncate" title={u.email}>{hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'}</span>
                   <span className="flex items-center gap-1.5 flex-wrap">{u.role !== 'owner' && <CompanyBadges side={sideValueOf(u)} />}<StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
