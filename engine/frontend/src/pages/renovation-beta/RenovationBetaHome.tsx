@@ -11,7 +11,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { CreateRenovationPanel } from "../projects/renovation/CreateRenovationPanel";
 import { money } from "../projects/renovation/renovationModel";
 import { BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
-import { buildModel, designSteps, filterCounts, homeCounts, homeList, homeRow, shortLeft, type BoardModel, type ConditionWord, type HomeFilter, type HomeRow } from "./renovationBetaBoard";
+import { buildModel, designSteps, filterCounts, homeCounts, homeList, homeRow, shortLeft, VARIANTS_FILTER, type BoardModel, type ConditionWord, type HomeFilter, type HomeRow } from "./renovationBetaBoard";
 import { HOME_SORTS, keepOrder, onBrandList, matchesSearch, orderOf, sortFromParam, sortHome, voCell, type HomeSort } from "./renovationBetaHomeModel";
 import { boardApi, boardKey, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
@@ -117,9 +117,26 @@ function slaOf(r: BoardRowV2 | undefined, today: string): Sla {
 
 type TableRow = { r: HomeRow; sla: Sla; so: ProjectSo | undefined; board: BoardRowV2 | undefined };
 
+/** "2 of 12 lines" and the SKUs still waiting for a variant; every SKU is in the hover text. */
+export function MissingVariants({ v }: { v: HomeRow["p"]["variants"] }): ReactElement {
+  if (v.lines === 0) return <span style={{ color: MUTED }}>No SO lines</span>;
+  if (v.missing === 0) return <span style={{ color: TONES.accent.ink, fontWeight: 600 }}>All picked</span>;
+  const codes = [...new Set(v.pending.map((x) => x.itemCode))];
+  const all = v.pending.map((x) => `${x.itemCode}: ${x.missing.join(", ")}`).join("\n");
+  return (
+    <span title={all} style={{ display: "flex", flexDirection: "column", lineHeight: 1.3, minWidth: 0 }}>
+      <span style={{ color: TONES.amber.ink, fontWeight: 600 }}>{v.missing} of {v.lines} lines</span>
+      <span style={{ color: MUTED, fontSize: 12, overflowWrap: "anywhere" }}>{codes.slice(0, 4).join(", ")}{codes.length > 4 ? ` +${codes.length - 4} more` : ""}</span>
+    </span>
+  );
+}
+
 /* The list's own columns, then the sales order's: Columns shows, moves and hides them, and each has a filter. */
-function homeColumns(showPay: boolean): Column<TableRow>[] {
+function homeColumns(showPay: boolean, variantsView: boolean): Column<TableRow>[] {
   const own: Column<TableRow>[] = [
+    /* The SKUs still waiting for a variant (owner, 20 Nov 2026); shown first on the Variants step, in Columns elsewhere. */
+    { key: "variants_missing", label: "Missing variants", group: "Project", width: "320px", defaultHidden: !variantsView,
+      getValue: (x) => x.r.p.variants.missing, render: (x) => <MissingVariants v={x.r.p.variants} /> },
     { key: "building", label: "Building", group: "Project", width: "170px", getValue: (x) => x.r.p.tag, render: (x) => {
       const [ink, bg] = betaTagTone(x.r.p.tag);
       return <span title={x.r.p.tag} style={{ display: "inline-block", maxWidth: "100%", padding: "2px 8px", borderRadius: 10, background: bg, color: ink, fontSize: 12, fontWeight: 600, lineHeight: 1.35, overflowWrap: "anywhere" }}>{x.r.p.tag.toUpperCase()}</span>;
@@ -322,7 +339,7 @@ function HomeScreen(): ReactElement {
             onDisplayKeys={(keys) => setSoColumnsShown(keys.some((k) => k.startsWith("so_")))}
             documentLabel="Projects"
             rows={tableRows}
-            columns={homeColumns(showPay)}
+            columns={homeColumns(showPay, filter === VARIANTS_FILTER)}
             getRowKey={(x) => x.r.p.id}
             onRowClick={(x) => open(x.r.p.id)}
             emptyLabel={query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}

@@ -11,7 +11,8 @@ import type { BetaDialog } from "./BetaForms";
 import { WS, WsCard } from "./BetaWsUi";
 import type { BoardView } from "./betaShared";
 import {
-  add, adone, apptKindOf, apptWithDefault, conditionText, designKind, designSteps, diff, ds, measured, ord, stage, status, stepDone, type ApptKey, type Kind,
+  add, adone, APPT_LABEL, apptKindOf, apptWithDefault, conditionText, designKind, designSteps, diff, ds, measured, ord, projectBookings, stage, status, stepDone, whoName,
+  type ApptKey, type CalEvent, type Kind,
 } from "./renovationBetaBoard";
 import { approveNewest, boardApi } from "./renovationBetaBoardApi";
 import { BETA, betaDueTone } from "./renovationBetaTheme";
@@ -163,8 +164,16 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
         key: code, label: "Variants",
         body: p.variants.lines === 0 ? mut("No sales order lines yet")
           : p.variants.missing === 0 ? ok(`All ${p.variants.lines} lines picked`)
-          : mut(`${p.variants.lines - p.variants.missing} of ${p.variants.lines} lines picked · pick the rest on the SO tab`),
-        buttons: null,
+          : (
+            <>
+              <span style={{ color: WS.amber, fontWeight: 700 }}>{p.variants.missing} of {p.variants.lines} lines still need a variant</span>
+              {p.variants.pending.map((x, i) => (
+                <span key={`${x.itemCode}-${i}`} style={{ display: "block", color: BETA.muted }}>{x.itemCode} · {x.missing.join(", ")}</span>
+              ))}
+              {p.variants.missing > p.variants.pending.length && mut(`+${p.variants.missing - p.variants.pending.length} more`)}
+            </>
+          ),
+        buttons: p.variants.missing > 0 ? <Link to={`/beta/projects/${p.id}?tab=po`} className="link" style={{ fontSize: 13, fontWeight: 600 }}>Pick on the SO tab →</Link> : null,
       };
       default: return { key: code, label: workOf.get(code)?.label ?? label, ...custom(code) };
     }
@@ -175,8 +184,20 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
     lines.push({ key: "handover", label: `Handover · ${siteName}`, body: mut(`${ds(p.handover)} · ${hl < 0 ? `${-hl} days ago` : `${hl} days left`}`), buttons: null });
   }
 
+  /* Book appointment (owner, 20 Nov 2026): any bookable work of the list, as often as needed (a second site visit, an
+     internal meeting), with a date, a time and who goes; the person picked sees it on their own calendar. The step
+     buttons above stay as they are. */
+  const firstType = m.workTypes.find((w) => w.active && w.bookable && !w.inDesign)?.code ?? m.workTypes.find((w) => w.active && w.bookable)?.code ?? "client";
+  const bookings = projectBookings(m, p.id);
+  const typeLabel = (e: CalEvent): string => (e.appt ? APPT_LABEL[e.appt.key] : workOf.get(e.type)?.label ?? e.type);
+
   return (
-    <WsCard title="Design progress" gap={10} right={<Link to="/beta/calendar" className="link">Calendar →</Link>}>
+    <WsCard title="Design progress" gap={10} right={
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
+        {canWrite && btn("+ Book appointment", () => openDialog({ t: "work", ev: null, day: m.today, preset: { projectId: p.id, type: firstType } }), BTN_MAIN)}
+        <Link to="/beta/calendar" className="link">Calendar →</Link>
+      </span>
+    }>
       <div><CondPill text={conditionText(m, p)} words={status(m, p)[1]} /></div>
       <div>
         {lines.map((l) => (
@@ -188,6 +209,24 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
             {l.buttons && <div style={stack}>{l.buttons}</div>}
           </div>
         ))}
+      </div>
+      <div style={{ borderTop: `1px solid ${BETA.line}`, paddingTop: 10 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Appointments <span style={{ color: BETA.muted, fontWeight: 600 }}>{bookings.length}</span></div>
+        {bookings.length === 0 && <div style={{ fontSize: 13, color: BETA.muted, padding: "6px 0" }}>Nothing booked yet.</div>}
+        {bookings.map((e) => {
+          const who = whoName(e);
+          const past = e.d < m.today;
+          return (
+            <div key={e.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 10px", padding: "8px 0", borderTop: `1px solid ${BETA.lineSoft}`, opacity: past ? 0.7 : 1 }}>
+              <div style={{ flex: "0 0 92px", fontSize: 13, fontWeight: 700, color: past ? BETA.muted : WS.blue }}>{ds(e.d)}{e.t ? ` ${e.t}` : ""}</div>
+              <div style={{ flex: "1 1 160px", minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{typeLabel(e)}{e.done ? <span style={{ color: WS.green, fontWeight: 700, fontSize: 12 }}> · Done</span> : null}</div>
+                <div style={{ fontSize: 12, color: BETA.muted, overflowWrap: "anywhere" }}>{[who ?? "Nobody", e.appt ? null : e.note || null].filter(Boolean).join(" · ")}</div>
+              </div>
+              {canWrite && btn("Edit", () => openDialog(e.appt ? { t: "book", projectId: p.id, key: e.appt.key } : { t: "work", ev: e, day: e.d }))}
+            </div>
+          );
+        })}
       </div>
     </WsCard>
   );

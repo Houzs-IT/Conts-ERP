@@ -133,7 +133,15 @@ export function cleanNoteDays(b: Json): BetaRefusal<{ days: number }> {
   return { ok: true, value: { days: d } };
 }
 
-export interface BetaAppointmentInput { onDate: string; atTime: string | null; personId: number | null; withText: string | null }
+export interface BetaAppointmentInput { onDate: string; atTime: string | null; personId: number | null; withText: string | null; whoText: string | null }
+
+/** Who goes, typed in when the person is not on the list (owner, 20 Nov 2026). Dropped when a person is picked. */
+const WHO_TEXT_MAX = 120;
+function whoTextOf(v: unknown, personId: number | null): string | null | undefined {
+  if (blank(v)) return null;
+  if (typeof v !== "string" || v.trim().length > WHO_TEXT_MAX) return undefined;
+  return personId == null ? v.trim() : null;
+}
 
 export function cleanBetaAppointment(b: Json): BetaRefusal<BetaAppointmentInput> {
   if (!isIsoDay(b.onDate)) return no("date_invalid", "Give the day as YYYY-MM-DD.");
@@ -142,10 +150,12 @@ export function cleanBetaAppointment(b: Json): BetaRefusal<BetaAppointmentInput>
   if (personId === undefined) return no("person_invalid", "Pick a person from the list, or leave it empty.");
   const withText = noteOf(b.withText);
   if (withText === undefined) return no("text_invalid", `Who it is with can be up to ${BETA_NOTE_MAX} characters.`);
-  return { ok: true, value: { onDate: b.onDate, atTime: blank(b.atTime) ? null : (b.atTime as string), personId, withText } };
+  const whoText = whoTextOf(b.whoText, personId);
+  if (whoText === undefined) return no("who_invalid", `A typed name can be up to ${WHO_TEXT_MAX} characters.`);
+  return { ok: true, value: { onDate: b.onDate, atTime: blank(b.atTime) ? null : (b.atTime as string), personId, withText, whoText } };
 }
 
-export interface BetaEventInput { projectId: number | null; onDate: string; atTime: string | null; type: BetaEventType; note: string | null; personId: number | null }
+export interface BetaEventInput { projectId: number | null; onDate: string; atTime: string | null; type: BetaEventType; note: string | null; personId: number | null; whoText: string | null }
 
 export function cleanBetaEvent(b: Json): BetaRefusal<BetaEventInput> {
   const projectId = idOrNull(b.projectId);
@@ -157,13 +167,15 @@ export function cleanBetaEvent(b: Json): BetaRefusal<BetaEventInput> {
   if (note === undefined) return no("note_invalid", `A note can be up to ${BETA_NOTE_MAX} characters.`);
   const personId = idOrNull(b.personId);
   if (personId === undefined) return no("person_invalid", "Pick a person from the list, or leave it empty.");
-  return { ok: true, value: { projectId, onDate: b.onDate, atTime: blank(b.atTime) ? null : (b.atTime as string), type: b.type, note, personId } };
+  const whoText = whoTextOf(b.whoText, personId);
+  if (whoText === undefined) return no("who_invalid", `A typed name can be up to ${WHO_TEXT_MAX} characters.`);
+  return { ok: true, value: { projectId, onDate: b.onDate, atTime: blank(b.atTime) ? null : (b.atTime as string), type: b.type, note, personId, whoText } };
 }
 
 /** The fields of an event change; only the ones the caller sent are present. */
 export interface BetaEventPatch {
   projectId?: number | null; onDate?: string; atTime?: string | null; type?: BetaEventType; note?: string | null;
-  personId?: number | null; done?: boolean;
+  personId?: number | null; whoText?: string | null; done?: boolean;
 }
 
 export function cleanBetaEventPatch(b: Json): BetaRefusal<BetaEventPatch> {
@@ -194,6 +206,12 @@ export function cleanBetaEventPatch(b: Json): BetaRefusal<BetaEventPatch> {
     const v = idOrNull(b.personId);
     if (v === undefined) return no("person_invalid", "Pick a person from the list, or leave it empty.");
     p.personId = v;
+  }
+  if ("whoText" in b || p.personId != null) {
+    // Picking a person clears a typed name, so the entry never shows both.
+    const v = whoTextOf(b.whoText, p.personId ?? null);
+    if (v === undefined) return no("who_invalid", `A typed name can be up to ${WHO_TEXT_MAX} characters.`);
+    p.whoText = v;
   }
   if ("done" in b) {
     if (typeof b.done !== "boolean") return no("done_invalid", "Done must be true or false.");
@@ -274,7 +292,7 @@ export interface BoardNoteRow { id: number; project_id: number; kind: "3d" | "2d
 export interface BoardReviewRow { file_id: number; project_id: number; sent_on: string | null; approved_on: string | null }
 export interface BoardAppointmentRow {
   project_id: number; kind: BetaAppointmentKind; on_date: string; at_time: string | null; person_id: number | null;
-  with_text: string | null; done_at: string | null;
+  with_text: string | null; who_text?: string | null; done_at: string | null;
 }
 
 export interface BoardSets {
@@ -300,7 +318,7 @@ export interface BoardProject {
   files: Array<{ id: number; kind: "3d" | "2d"; version: number; submittedOn: string }>;
   notes: Array<{ id: number; kind: "3d" | "2d"; notedOn: string; closedOn: string | null; days: number | null }>;
   reviews: Array<{ fileId: number; sentOn: string | null; approvedOn: string | null }>;
-  appointments: Array<{ kind: BetaAppointmentKind; onDate: string; atTime: string | null; personId: number | null; withText: string | null; doneAt: string | null }>;
+  appointments: Array<{ kind: BetaAppointmentKind; onDate: string; atTime: string | null; personId: number | null; withText: string | null; whoText: string | null; doneAt: string | null }>;
   payment: BoardPayment;
 }
 
@@ -332,7 +350,7 @@ export function buildBoardProject(p: BoardProjectRow, sets: BoardSets, payment: 
     notes: (sets.notes.get(p.id) ?? []).map((n) => ({ id: n.id, kind: n.kind, notedOn: n.noted_on, closedOn: n.closed_on, days: n.days })),
     reviews: (sets.reviews.get(p.id) ?? []).map((r) => ({ fileId: r.file_id, sentOn: r.sent_on, approvedOn: r.approved_on })),
     appointments: (sets.appointments.get(p.id) ?? []).map((a) => ({
-      kind: a.kind, onDate: a.on_date, atTime: a.at_time, personId: a.person_id, withText: a.with_text, doneAt: a.done_at,
+      kind: a.kind, onDate: a.on_date, atTime: a.at_time, personId: a.person_id, withText: a.with_text, whoText: a.who_text ?? null, doneAt: a.done_at,
     })),
     payment,
   };

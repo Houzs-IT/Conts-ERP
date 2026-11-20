@@ -339,6 +339,35 @@ const PICK_GRID: CSSProperties = { display: "grid", gridTemplateColumns: "repeat
 
 const num = (v: string): number | null => (v === "" ? null : Number(v));
 
+/** Who goes (owner, 20 Nov 2026): pick one of the company's people, type any name, or leave it empty. A typed text that
+    matches a person's name or label is that person, so their own calendar shows the booking; anything else is kept as
+    typed. */
+export function whoFromText(all: readonly Person[], text: string): { personId: number | null; whoText: string | null } {
+  const t = text.trim();
+  if (!t) return { personId: null, whoText: null };
+  const low = t.toLowerCase();
+  const hit = all.find((x) => personLabel(x).toLowerCase() === low) ?? all.find((x) => x.name.trim().toLowerCase() === low);
+  return hit ? { personId: hit.id, whoText: null } : { personId: null, whoText: t };
+}
+
+function WhoInput({ all, value, onChange }: { all: readonly Person[]; value: string; onChange: (v: string) => void }): ReactElement {
+  const listId = useId();
+  const picked = whoFromText(all, value);
+  return (
+    <Field label="Who (pick, type or leave empty)">
+      <input name="who" list={listId} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Nobody" autoComplete="off" maxLength={120} style={IN} />
+      <datalist id={listId}>
+        {peopleOptions(all, undefined, []).map((x) => <option key={x.id} value={x.name}>{personLabel(x)}</option>)}
+      </datalist>
+      {value.trim() && (
+        <span style={{ display: "block", marginTop: 4, fontSize: 12, color: BETA.muted }}>
+          {picked.personId != null ? "On their own calendar too" : "Typed name: not on anyone's calendar"}
+        </span>
+      )}
+    </Field>
+  );
+}
+
 /* ---------- Add work / Edit work ---------- */
 
 function WorkForm({ env, ev, day, preset }: { env: FormEnv; ev: CalEvent | null; day: string; preset?: { projectId: number; type: string } }): ReactElement {
@@ -350,31 +379,37 @@ function WorkForm({ env, ev, day, preset }: { env: FormEnv; ev: CalEvent | null;
   const [note, setNote] = useState(ev?.note ?? "");
   const [d, setD] = useState(ev?.d ?? day);
   const [t, setT] = useState(ev?.t ?? "");
-  const [person, setPerson] = useState<string>(String(ev ? ev.who?.id ?? "" : who === "All" ? m.mePersonId ?? "" : who));
+  const meName = (id: number | null | undefined): string => (id == null ? "" : all.find((x) => x.id === id)?.name ?? m.everyone.find((x) => x.id === id)?.name ?? "");
+  const [person, setPerson] = useState<string>(ev ? (ev.who?.name ?? ev.whoText ?? "") : meName(who === "All" ? m.mePersonId : who));
   const [project, setProject] = useState<string>(ev?.projectId != null ? String(ev.projectId) : preset ? String(preset.projectId) : "");
   const [done, setDone] = useState(ev?.done ?? false);
   const save = useSave(env);
 
   /* Site measure, Carpentry measure and Site briefing for a project are that project's appointment, the one Book time
      on the Design progress row saves. Saved as a plain calendar entry they showed on the calendar only: the row still said
-     Not booked and the to-do list still asked to book it. */
+     Not booked and the to-do list still asked to book it. Once one is booked, a new booking is another visit (owner, 20
+     Nov 2026: site, carpentry and meetings are booked several times): a calendar entry of that kind, the first kept. */
   const apptKey = WORK_APPT[type];
   const apptProject = apptKey && project ? m.byId.get(Number(project)) : undefined;
   const replaces = apptKey && apptProject ? apptProject.appts[apptKey] : undefined;
+  const [another, setAnother] = useState(true);
+  // An extra visit already stored as a calendar entry stays one when edited, so the first booking is not overwritten.
+  const asAppt = !!(apptKey && apptProject) && !(replaces?.d && (isNew ? another : ev?.eventId != null));
 
   async function submit(): Promise<void> {
     await save.run(async () => {
       if (!types.some((w) => w.code === type)) throw new Error("Pick a type.");
-      if (apptKey && apptProject) {
+      const { personId, whoText } = whoFromText(all, person);
+      if (asAppt && apptKey && apptProject) {
         const issue = bookIssue(apptProject, apptKey, d);
         if (issue) throw new Error(issue);
         await boardApi.saveAppointment(apptProject.id, apptKindOf(apptKey), {
-          onDate: d, atTime: t || null, personId: num(person), withText: note.trim() || replaces?.with || apptWithDefault(apptProject, apptKey),
+          onDate: d, atTime: t || null, personId, whoText, withText: note.trim() || replaces?.with || apptWithDefault(apptProject, apptKey),
         });
         if (ev?.eventId != null) await boardApi.deleteEvent(ev.eventId);
         return { text: `Booked ${ds(d)}${t ? ` ${t}` : ""} · ${APPT_LABEL[apptKey].toLowerCase()} of ${apptProject.title}`, jumpTo: d };
       }
-      const body: EventBody = { projectId: num(project), onDate: d, atTime: t || null, type, note: note.trim() || null, personId: num(person) };
+      const body: EventBody = { projectId: num(project), onDate: d, atTime: t || null, type, note: note.trim() || null, personId, whoText };
       if (ev?.eventId != null) await boardApi.saveEvent(ev.eventId, { ...body, done });
       else await boardApi.addEvent(body);
       return { text: "Saved", jumpTo: isNew ? d : undefined };
@@ -405,9 +440,7 @@ function WorkForm({ env, ev, day, preset }: { env: FormEnv; ev: CalEvent | null;
         <Field label="Time"><input type="time" name="t" value={t} onChange={(e) => setT(e.target.value)} style={IN} /></Field>
       </div>
       <div style={TWO}>
-        <Field label="Who">
-          <select name="who" value={person} onChange={(e) => setPerson(e.target.value)} style={IN}><PersonOptions all={all} current={person ? [Number(person)] : []} blank="Nobody" /></select>
-        </Field>
+        <WhoInput all={all} value={person} onChange={setPerson} />
         <Field label="Project">
           <select name="p" value={project} onChange={(e) => setProject(e.target.value)} style={IN}>
             <option value="">(No project)</option>
@@ -415,12 +448,18 @@ function WorkForm({ env, ev, day, preset }: { env: FormEnv; ev: CalEvent | null;
           </select>
         </Field>
       </div>
-      {apptProject && apptKey && (
+      {apptProject && apptKey && isNew && replaces?.d && (
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+          <input type="checkbox" name="another" checked={another} onChange={(e) => setAnother(e.target.checked)} style={{ width: 18, height: 18, accentColor: BETA.accent }} />
+          Another visit (keep the one booked for {ds(replaces.d)})
+        </label>
+      )}
+      {apptProject && apptKey && asAppt && (
         <div style={NOTE}>
           Saved as the {APPT_LABEL[apptKey].toLowerCase()} of {apptProject.title}{replaces?.d ? `, in place of the one booked for ${ds(replaces.d)}` : ""}. The note is who it is with.
         </div>
       )}
-      {!isNew && !apptProject && (
+      {!isNew && !asAppt && (
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
           <input type="checkbox" name="done" checked={done} onChange={(e) => setDone(e.target.checked)} style={{ width: 18, height: 18, accentColor: BETA.accent }} />
           Done
@@ -481,21 +520,23 @@ function BookForm({ env, p, k }: { env: FormEnv; p: DesignProject; k: ApptKey })
   const [d, setD] = useState(a?.d ?? "");
   const [t, setT] = useState(a?.t ?? "");
   // With no design lead yet, the person booking is the one going, so the booking is on someone's own calendar.
-  const [person, setPerson] = useState<string>(String(a ? apptWho(p, a)?.id ?? "" : p.lead?.id ?? m.mePersonId ?? ""));
+  const nameOf = (id: number | null | undefined): string => (id == null ? "" : all.find((x) => x.id === id)?.name ?? m.everyone.find((x) => x.id === id)?.name ?? "");
+  const [person, setPerson] = useState<string>(a ? (a.who?.name ?? a.whoText ?? apptWho(p, a)?.name ?? "") : nameOf(p.lead?.id ?? m.mePersonId));
   const [withText, setWithText] = useState(a?.with || apptWithDefault(p, k));
   const [done, setDone] = useState(a?.done ?? false);
   const save = useSave(env);
   const cm = p.appts.cm?.d;
   // Ticking Done on a site measure records the measure: who measured is required, notes and photos are asked for.
   const recordsMeasure = k === "msr" && done && !p.measuredOn;
-  const measure = useMeasureFields(all, person ? [Number(person)] : p.lead ? [p.lead.id] : []);
+  const picked = whoFromText(all, person);
+  const measure = useMeasureFields(all, picked.personId != null ? [picked.personId] : p.lead ? [p.lead.id] : []);
 
   async function submit(): Promise<void> {
     await save.run(async () => {
       const issue = bookIssue(p, k, d);
       if (issue) throw new Error(issue);
       if (recordsMeasure) measure.check(d);
-      await boardApi.saveAppointment(p.id, apptKindOf(k), { onDate: d, atTime: t || null, personId: num(person), withText: withText.trim() || null });
+      await boardApi.saveAppointment(p.id, apptKindOf(k), { onDate: d, atTime: t || null, personId: picked.personId, whoText: picked.whoText, withText: withText.trim() || null });
       if (recordsMeasure) {
         const n = await measure.save(p.id, d);
         if (!a?.done) await boardApi.appointmentDone(p.id, apptKindOf(k));
@@ -530,7 +571,7 @@ function BookForm({ env, p, k }: { env: FormEnv; p: DesignProject; k: ApptKey })
         <Field label="Time"><input type="time" name="bt" value={t} onChange={(e) => setT(e.target.value)} style={IN} /></Field>
       </div>
       <div style={TWO}>
-        <Field label="ID going"><select name="who" value={person} onChange={(e) => setPerson(e.target.value)} style={IN}><PersonOptions all={all} current={person ? [Number(person)] : []} blank="Nobody" /></select></Field>
+        <WhoInput all={all} value={person} onChange={setPerson} />
         <Field label="With"><input name="bw" value={withText} onChange={(e) => setWithText(e.target.value)} maxLength={120} style={IN} /></Field>
       </div>
       {isNew ? (

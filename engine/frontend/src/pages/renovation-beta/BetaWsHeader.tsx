@@ -283,6 +283,11 @@ function SecondLayer({ label, layer }: { label: string; layer: StageLayer }): Re
           <span style={{ fontSize: 14, fontWeight: 600, color: BETA.ink }}>{shown.label}</span>
           <span style={{ marginLeft: 8, fontWeight: 600, color: shown.state === "done" ? WS.blue : shown.state === "current" ? BETA.stepNow : BETA.muted }}>{shown.sub}</span>
           <div style={{ marginTop: 2 }}>{shown.rule}</div>
+          {shown.items && shown.items.length > 0 && (
+            <ul aria-label={`${shown.label} still open`} style={{ margin: "8px 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+              {shown.items.map((x, i) => <li key={`${x}-${i}`} style={{ color: BETA.ink, overflowWrap: "anywhere" }}>{x}</li>)}
+            </ul>
+          )}
         </div>
       )}
     </div>

@@ -5,6 +5,7 @@
    (Home, Projects and Calendar) adds the board read and the design, appointment and calendar entry writes at the end. */
 
 import { findIncompleteVariantLines } from "../scm/lib/so-variant-check";
+import { missingVariantAxes } from "../scm/shared/so-variant-rule";
 import { eventTypeKnown, listWorkTypes } from "../services/renovation/workTypes";
 import { Hono, type Context } from "hono";
 import { TRANSIENT_CONN_RE } from "../db/d1-compat";
@@ -501,7 +502,8 @@ async function boardPayments(c: Ctx, companyId: number, scope: string): Promise<
 }
 
 interface EventRow {
-  id: number; project_id: number | null; on_date: string; at_time: string | null; type: string; note: string | null; person_id: number | null; done: boolean;
+  id: number; project_id: number | null; on_date: string; at_time: string | null; type: string; note: string | null; person_id: number | null;
+  who_text: string | null; done: boolean;
 }
 
 app.get("/board", requirePageAccess("projects.list"), async (c) => {
@@ -566,13 +568,13 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       ).bind().all<BoardReviewRow>(),
       db(c).prepare(
         `SELECT a.project_id::int AS project_id, a.kind, a.on_date::text AS on_date, to_char(a.at_time, 'HH24:MI') AS at_time, a.person_id::int AS person_id,
-                a.with_text, ${TS("a.done_at")} AS done_at
+                a.with_text, a.who_text, ${TS("a.done_at")} AS done_at
            FROM project_beta_appointments a JOIN projects p ON p.id = a.project_id
           WHERE ${scope} ORDER BY a.project_id, a.kind`,
       ).bind().all<BoardAppointmentRow>(),
       db(c).prepare(
         `SELECT e.id::int AS id, e.project_id::int AS project_id, e.on_date::text AS on_date, to_char(e.at_time, 'HH24:MI') AS at_time, e.type, e.note,
-                e.person_id::int AS person_id, e.done
+                e.person_id::int AS person_id, e.who_text, e.done
            FROM project_beta_events e LEFT JOIN projects p ON p.id = e.project_id
           WHERE e.company_id = ? AND e.on_date BETWEEN ?::date AND ?::date
             AND (e.project_id IS NULL OR (p.project_kind = 'renovation' AND p.archived_at IS NULL))${eventScope}
@@ -615,15 +617,19 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       projects: (projects.results ?? []).map((p) => {
         const id = Number(p.id);
         const lines = (soLines.results ?? []).filter((l) => Number(l.project_id) === id);
-        const missing = findIncompleteVariantLines(lines.map((l) => ({ id: l.id, itemCode: l.item_code ?? "", group: l.item_group, variants: l.variants }))).length;
+        const offenders = findIncompleteVariantLines(lines.map((l) => ({ id: l.id, itemCode: l.item_code ?? "", group: l.item_group, variants: l.variants })));
+        // The SKUs still waiting for a variant, so the list and the project page can name them (owner, 20 Nov 2026).
+        const pending = offenders.slice(0, 40).map((o) => ({
+          itemCode: o.itemCode, missing: missingVariantAxes(o.group, lines.find((l) => l.id === o.id)?.variants ?? null, o.itemCode).map((a) => a.label),
+        }));
         return {
           ...buildBoardProject(p, sets, paymentOf(id)),
           works: (designEvents.results ?? []).filter((e) => Number(e.project_id) === id).map((e) => ({ type: e.type, onDate: e.on_date, atTime: e.at_time, done: !!e.done })),
-          variants: { lines: lines.length, missing },
+          variants: { lines: lines.length, missing: offenders.length, pending },
         };
       }),
       events: (events.results ?? []).map((e) => ({
-        id: e.id, projectId: e.project_id, onDate: e.on_date, atTime: e.at_time, type: e.type, note: e.note, personId: e.person_id, done: e.done,
+        id: e.id, projectId: e.project_id, onDate: e.on_date, atTime: e.at_time, type: e.type, note: e.note, personId: e.person_id, whoText: e.who_text, done: e.done,
       })),
     });
   } catch (e) {
@@ -704,19 +710,19 @@ app.put("/projects/:id/appointments/:kind", requirePermission("projects.write"),
   if (co == null) return c.json({ error: "not_found" }, 404);
   const v = cleanBetaAppointment(await body(c));
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
-  const { onDate, atTime, personId, withText } = v.value;
+  const { onDate, atTime, personId, withText, whoText } = v.value;
   const people = await companyPeople(c, co, personId == null ? [] : [personId]);
   if (!people) return c.json(PERSON_REFUSAL, 400);
-  const who = personId == null ? null : `by ${people.get(personId) ?? "someone"}`;
+  const who = personId == null ? (whoText ? `by ${whoText}` : null) : `by ${people.get(personId) ?? "someone"}`;
   // Booking again with the same day keeps it done; a moved day is a new appointment, so it is not done any more.
   await db(c).batch!([
     db(c).prepare(
-      `INSERT INTO project_beta_appointments (project_id, company_id, kind, on_date, at_time, person_id, with_text, created_by)
-       VALUES (?, ?, ?, ?::date, ?::time, ?::bigint, ?, ?)
+      `INSERT INTO project_beta_appointments (project_id, company_id, kind, on_date, at_time, person_id, with_text, who_text, created_by)
+       VALUES (?, ?, ?, ?::date, ?::time, ?::bigint, ?, ?, ?)
        ON CONFLICT (project_id, kind) DO UPDATE SET on_date = excluded.on_date, at_time = excluded.at_time, person_id = excluded.person_id,
-                                                    with_text = excluded.with_text,
+                                                    with_text = excluded.with_text, who_text = excluded.who_text,
                                                     done_at = CASE WHEN project_beta_appointments.on_date = excluded.on_date THEN project_beta_appointments.done_at END`,
-    ).bind(id, co, kind, onDate, atTime, personId, withText, userId(c)),
+    ).bind(id, co, kind, onDate, atTime, personId, withText, whoText, userId(c)),
     activityStmt(c, id, co, "beta_appointment_booked", null, kind, [`On ${onDate}`, atTime, who, withText].filter(Boolean).join(" · ")),
   ]);
   return c.json({ ok: true });
@@ -769,24 +775,24 @@ app.post("/events", requirePermission("projects.write"), async (c) => {
   if (!co.ok) return c.json(co.refusal, 409);
   const v = cleanBetaEvent(await body(c));
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
-  const { projectId, onDate, atTime, type, note, personId } = v.value;
+  const { projectId, onDate, atTime, type, note, personId, whoText } = v.value;
   if (!(await eventTypeKnown(db(c), co.companyId, type))) return c.json({ error: "type_invalid", message: "Pick the kind of entry from the list." }, 400);
   if (projectId != null && (await projectCompany(c, projectId)) == null) return c.json({ error: "not_found" }, 404);
   if (!(await companyPeople(c, co.companyId, personId == null ? [] : [personId]))) return c.json(PERSON_REFUSAL, 400);
   const row = await db(c).prepare(
-    `WITH e AS (INSERT INTO project_beta_events (company_id, project_id, on_date, at_time, type, note, person_id, created_by)
-                VALUES (?, ?::bigint, ?::date, ?::time, ?, ?, ?::bigint, ?) RETURNING id, project_id, company_id, type, note, on_date),
+    `WITH e AS (INSERT INTO project_beta_events (company_id, project_id, on_date, at_time, type, note, person_id, who_text, created_by)
+                VALUES (?, ?::bigint, ?::date, ?::time, ?, ?, ?::bigint, ?, ?) RETURNING id, project_id, company_id, type, note, on_date),
           a AS (INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
                 SELECT e.project_id, 'beta_event_added', NULL, e.type, ${eventNote("e")}, ?::bigint, e.company_id FROM e WHERE e.project_id IS NOT NULL)
      SELECT id::int AS id FROM e`,
-  ).bind(co.companyId, projectId, onDate, atTime, type, note, personId, userId(c), userId(c)).first<{ id: number }>();
+  ).bind(co.companyId, projectId, onDate, atTime, type, note, personId, whoText, userId(c), userId(c)).first<{ id: number }>();
   if (!row) return c.json({ error: "event_not_saved", message: "The entry could not be saved. Try again." }, 409);
   return c.json({ id: row.id }, 201);
 });
 
 const EVENT_COLUMNS = {
   projectId: ["project_id", "?::bigint"], onDate: ["on_date", "?::date"], atTime: ["at_time", "?::time"], type: ["type", "?::text"],
-  note: ["note", "?::text"], personId: ["person_id", "?::bigint"], done: ["done", "?::boolean"],
+  note: ["note", "?::text"], personId: ["person_id", "?::bigint"], whoText: ["who_text", "?::text"], done: ["done", "?::boolean"],
 } as const satisfies Record<keyof BetaEventPatch, readonly [string, string]>;
 
 app.patch("/events/:id", requirePermission("projects.write"), async (c) => {

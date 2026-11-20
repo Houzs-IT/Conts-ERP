@@ -93,9 +93,13 @@ describe("Beta board: other bodies", () => {
   });
   test("appointment", () => {
     expect(cleanBetaAppointment({ onDate: "2026-11-03", atTime: "10:00", personId: 4, withText: " Mr Tan " })).toEqual({
-      ok: true, value: { onDate: "2026-11-03", atTime: "10:00", personId: 4, withText: "Mr Tan" },
+      ok: true, value: { onDate: "2026-11-03", atTime: "10:00", personId: 4, withText: "Mr Tan", whoText: null },
     });
-    expect(cleanBetaAppointment({ onDate: "2026-11-03" })).toEqual({ ok: true, value: { onDate: "2026-11-03", atTime: null, personId: null, withText: null } });
+    expect(cleanBetaAppointment({ onDate: "2026-11-03" })).toEqual({ ok: true, value: { onDate: "2026-11-03", atTime: null, personId: null, withText: null, whoText: null } });
+    // Who goes can be typed when nobody is picked; a picked person drops the typed name.
+    expect(cleanBetaAppointment({ onDate: "2026-11-03", whoText: " Ah Seng (carpenter) " })).toMatchObject({ ok: true, value: { personId: null, whoText: "Ah Seng (carpenter)" } });
+    expect(cleanBetaAppointment({ onDate: "2026-11-03", personId: 4, whoText: "Ah Seng" })).toMatchObject({ ok: true, value: { personId: 4, whoText: null } });
+    expect(cleanBetaAppointment({ onDate: "2026-11-03", whoText: "x".repeat(121) })).toMatchObject({ ok: false, error: "who_invalid" });
     expect(cleanBetaAppointment({ onDate: "3/11/2026" })).toMatchObject({ ok: false, error: "date_invalid" });
     expect(cleanBetaAppointment({ onDate: "2026-11-03", atTime: "25:00" })).toMatchObject({ ok: false, error: "time_invalid" });
     expect(cleanBetaAppointment({ onDate: "2026-11-03", withText: "x".repeat(501) })).toMatchObject({ ok: false, error: "text_invalid" });
@@ -103,8 +107,9 @@ describe("Beta board: other bodies", () => {
   });
   test("event create", () => {
     expect(cleanBetaEvent({ projectId: 9, onDate: "2026-11-03", atTime: "14:15", type: "client", note: "Walk through", personId: 2 })).toEqual({
-      ok: true, value: { projectId: 9, onDate: "2026-11-03", atTime: "14:15", type: "client", note: "Walk through", personId: 2 },
+      ok: true, value: { projectId: 9, onDate: "2026-11-03", atTime: "14:15", type: "client", note: "Walk through", personId: 2, whoText: null },
     });
+    expect(cleanBetaEvent({ onDate: "2026-11-03", type: "meeting", whoText: "Mr Lim (contractor)" })).toMatchObject({ ok: true, value: { personId: null, whoText: "Mr Lim (contractor)" } });
     expect(cleanBetaEvent({ onDate: "2026-11-03", type: "meeting" })).toMatchObject({ ok: true, value: { projectId: null, note: null, personId: null } });
     for (const type of ["client", "measure", "briefing", "meeting", "w3d", "w2d", "amend", "po", "update"]) {
       expect(cleanBetaEvent({ onDate: "2026-11-03", type }).ok).toBe(true);
@@ -119,6 +124,8 @@ describe("Beta board: other bodies", () => {
     expect(cleanBetaEventPatch({ done: "yes" })).toMatchObject({ ok: false, error: "done_invalid" });
     expect(cleanBetaEventPatch({ type: "Not a code!" })).toMatchObject({ ok: false, error: "type_invalid" });
     expect(cleanBetaEventPatch({})).toMatchObject({ ok: false, error: "nothing_to_change" });
+    expect(cleanBetaEventPatch({ personId: null, whoText: "Ah Seng" })).toEqual({ ok: true, value: { personId: null, whoText: "Ah Seng" } });
+    expect(cleanBetaEventPatch({ personId: 3 })).toEqual({ ok: true, value: { personId: 3, whoText: null } });
   });
 });
 

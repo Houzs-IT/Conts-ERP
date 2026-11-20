@@ -28,6 +28,8 @@ export interface BetaBoardAppointment {
   atTime: string | null;
   personId: number | null;
   withText: string | null;
+  /** Who goes, typed in when not picked from the list (migration 0349); absent from an older server. */
+  whoText?: string | null;
   doneAt: string | null;
 }
 
@@ -76,7 +78,7 @@ export interface BetaBoardProject {
   /** The newest calendar booking of each work of the list; absent from an older server. */
   works?: Array<{ type: string; onDate: string; atTime: string | null; done?: boolean }>;
   /** Sales order lines, and how many still miss a required variant; absent from an older server. */
-  variants?: { lines: number; missing: number };
+  variants?: { lines: number; missing: number; pending?: Array<{ itemCode: string; missing: string[] }> };
 }
 
 export interface BetaBoardEvent {
@@ -87,6 +89,7 @@ export interface BetaBoardEvent {
   type: string;
   note: string | null;
   personId: number | null;
+  whoText?: string | null;
   done: boolean;
 }
 
@@ -112,7 +115,7 @@ export interface DesignPatch {
   person2dIds?: number[];
 }
 
-export interface AppointmentBody { onDate: string; atTime: string | null; personId: number | null; withText: string | null }
+export interface AppointmentBody { onDate: string; atTime: string | null; personId: number | null; withText: string | null; whoText?: string | null }
 
 export interface EventBody {
   projectId: number | null;
@@ -121,6 +124,7 @@ export interface EventBody {
   type: EventType;
   note: string | null;
   personId: number | null;
+  whoText?: string | null;
 }
 
 /** The one query key of the board. Home, Calendar and the workspace all use it, so one write refreshes them all. */
