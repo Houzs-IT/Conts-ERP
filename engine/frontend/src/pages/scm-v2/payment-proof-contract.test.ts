@@ -134,7 +134,7 @@ describe('unsaved payment rows are legible as unsaved', () => {
 
   test('the commit control carries a word, not just a glyph', () => {
     expect(tableSource).toContain('className={paymentsStyles.saveBtn}');
-    expect(tableSource).toContain("{addPayment.isPending ? 'Saving…' : 'Save'}");
+    expect(tableSource).toContain("{addPayment.isPending || committingUid === d.uid ? 'Saving…' : 'Save'}");
   });
 
   test('the row is marked, and the mark reaches the summary line too', () => {
