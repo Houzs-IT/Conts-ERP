@@ -11,8 +11,8 @@
 //   POST   /post/pi/:invoiceNumber    — auto-post a PI: Dr Inventory, Cr AP
 //   GET    /gl                        — flat GL stream (v_gl_entries)
 //   GET    /balances                  — running account balances (v_account_balances)
-//   GET    /ar-aging                  — v_ar_aging
-//   GET    /ap-aging                  — v_ap_aging
+//   GET    /ar-aging                  — debtor aging from the books (conts/aging-routes.ts)
+//   GET    /ap-aging                  — creditor aging from the books (conts/aging-routes.ts)
 //
 // Note: this is intentionally minimal — single legal entity, single currency.
 // ERPNext-style chart hierarchy + cost centres are deferred.
@@ -86,6 +86,7 @@ import { mergeDebtors } from '../../acc/debtor-merge';
 import { discardDraftJournal } from '../../acc/draft-journal';
 import { AUTOCOUNT_MAX_DOCS, importAutocountJournals, reverseAutocountJournals, type AutocountJournal } from '../../acc/autocount-journals';
 import { partyLedgerHandler } from '../../conts/party-ledger';
+import { apAgingHandler, arAgingHandler } from '../../conts/aging-routes';
 import { createSubDepartmentHandler, listStaffDepartmentsHandler, listSubDepartmentsHandler, updateSubDepartmentHandler } from '../../conts/sub-department-routes';
 import { approveLimitRequestHandler, createLimitRequestHandler, getLimitSettingsHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler, setLimitSettingsHandler } from '../../conts/project-limit-routes';
 import { projectOfPurchaseInvoice } from '../../conts/project-limit';
@@ -1387,45 +1388,12 @@ async function rangeBalances(c: any, sb: any, q: { department: Department | null
   return c.json({ balances });
 }
 
-accounting.get('/ar-aging', async (c) => {
-  const sb = c.get('supabase');
-  /* LEAK GUARD (DRAFT, two-state — 2026-06-25 anchoring diff vs 2990) — v_ar_aging
-     filters CANCELLED/VOID but NOT DRAFT (the view predates the SI two-state). A
-     DRAFT SI has posted no AR yet, so it must never appear in the aging buckets; the
-     view exposes s.status, so filter DRAFT out here at the route (migrations are
-     frozen). */
-  // PostgREST's 1000-row cap silently truncated the aging buckets — page through
-  // so the full AR ledger is bucketed, not just the first 1000 rows. Ordering
-  // stays inside the page factory so every page is consistent.
-  const { data, error } = await paginateAll((from, to) => scopeToCompany(sb
-    .from('v_ar_aging')
-    .select('*')
-    .neq('status', 'DRAFT'), c) // multi-company: isolate AR aging to the active company (view exposes company_id, mig 0106)
-    .order('days_overdue', { ascending: false })
-    .range(from, to));
-  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-  return c.json({ arAging: data ?? [] });
-});
-
-accounting.get('/ap-aging', async (c) => {
-  const sb = c.get('supabase');
-  /* LEAK GUARD (DRAFT, PI two-state — 2026-06-25 anchoring diff vs 2990) — v_ap_aging
-     filters CANCELLED/VOID but NOT DRAFT (the view predates the PI two-state). A
-     DRAFT PI has posted no AP yet, so it must never appear in the aging buckets; the
-     view exposes p.status, so filter DRAFT out here at the route (migrations are
-     frozen). Mirrors the /ar-aging DRAFT fix. */
-  // PostgREST's 1000-row cap silently truncated the aging buckets — page through
-  // so the full AP ledger is bucketed, not just the first 1000 rows. Ordering
-  // stays inside the page factory so every page is consistent.
-  const { data, error } = await paginateAll((from, to) => scopeToCompany(sb
-    .from('v_ap_aging')
-    .select('*')
-    .neq('status', 'DRAFT'), c) // multi-company: isolate AP aging to the active company (view exposes company_id, mig 0106)
-    .order('days_overdue', { ascending: false })
-    .range(from, to));
-  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-  return c.json({ apAging: data ?? [] });
-});
+/* AR aging / AP aging (Conts, ported from Houzs 21 Nov 2026): the formal debtor and creditor aging, built from the
+   control accounts' own lines (conts/aging-routes.ts), so it ties to the general ledger to the sen. It replaced the
+   reads of v_ar_aging / v_ap_aging, which aged the documents' paid_sen and could disagree with the books (an opening
+   balance, a contract posted at signing, a claim on a supplier control were not in them). */
+accounting.get('/ar-aging', arAgingHandler);
+accounting.get('/ap-aging', apAgingHandler);
 
 /* ════════════════════════════════════════════════════════════════════════
    Phase 1 — chart management, manual-JV reversal, control-account self-check
