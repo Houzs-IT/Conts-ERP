@@ -845,8 +845,9 @@ export function DeliveryReturnsListV2() {
     let pendingCount = 0;
     let refundedCount = 0;
     for (const r of filtered) {
-      refundSen += r.local_total_sen ?? 0;
       const b = statusFor(r.status).bucket;
+      /* A cancelled return refunds nothing (click sweep 2, G9). */
+      if (b !== "cancelled") refundSen += r.local_total_sen ?? 0;
       if (b === "open" || b === "inspected") pendingCount += 1;
       if (b === "refunded") refundedCount += 1;
     }

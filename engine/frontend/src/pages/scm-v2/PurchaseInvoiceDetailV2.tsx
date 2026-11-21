@@ -496,7 +496,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
     if (!purchaseInvoice) return;
     if (await askConfirm({
       title: `Cancel invoice ${purchaseInvoice.invoice_number}?`,
-      body: "Any posted revenue will be reversed via a contra JE.",
+      body: "Any posted purchase entry will be reversed via a contra JE.",
       confirmLabel: "Cancel invoice",
       danger: true,
     })) {

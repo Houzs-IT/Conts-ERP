@@ -405,7 +405,7 @@ function RefundHeroCard({
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
-        {isRefunded ? "Refunded" : "Refund pending"}
+        {isRefunded ? "Refunded" : eff === "cancelled" ? (String(header.status).toUpperCase() === "REJECTED" ? "Rejected" : "Cancelled") : "Refund pending"}
       </div>
       <div
         className={cn(
@@ -956,12 +956,12 @@ function DeliveryReturnDetailV2ReadOnly() {
         {/* Mobile-only Refund hero — sits at the top of the scroll body. */}
         <div className="mb-3 rounded-lg border border-border bg-surface p-4 shadow-stone md:hidden">
           <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-            {effectiveOf(deliveryReturn) === "refunded" ? "Refunded" : "Refund pending"}
+            {effectiveOf(deliveryReturn) === "refunded" ? "Refunded" : effectiveOf(deliveryReturn) === "cancelled" ? (String(deliveryReturn.status).toUpperCase() === "REJECTED" ? "Rejected" : "Cancelled") : "Refund pending"}
           </div>
           <div
             className={cn(
               "mt-1 font-money text-[26px] font-bold leading-none tracking-tight",
-              effectiveOf(deliveryReturn) === "refunded" ? "text-synced" : "text-err"
+              effectiveOf(deliveryReturn) === "refunded" ? "text-synced" : effectiveOf(deliveryReturn) === "cancelled" ? "text-ink-muted" : "text-err"
             )}
           >
             {fmtMoney(refund, deliveryReturn.currency)}
