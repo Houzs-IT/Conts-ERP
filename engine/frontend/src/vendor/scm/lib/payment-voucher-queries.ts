@@ -76,6 +76,33 @@ export const usePaymentVouchers = (status?: string) => baseQuery<{ paymentVouche
   ['payment-vouchers', status ?? 'all'], `/payment-vouchers${status ? `?status=${status}` : ''}`,
 );
 
+/* The Payment listing (ported from Houzs): the vouchers to pay, a line each, with what each is for, the departments and
+   projects its lines are for, and the bank it pays into. Server: GET /payment-vouchers/listing (payment-vouchers-listing.ts). */
+export type PaymentListingStage = 'DRAFT' | 'PREPARED' | 'CHECKED' | 'POSTED' | 'CANCELLED';
+export type PaymentListingRow = PaymentVoucherRow & {
+  stage: PaymentListingStage;
+  notes?: string | null;
+  description_text?: string;
+  departments?: string[];
+  projects?: string[];
+  pay_bank: string | null;
+  pay_account_no: string | null;
+  pay_account_name: string | null;
+};
+export type PaymentListing = { from: string | null; to: string; stages: PaymentListingStage[]; vouchers: PaymentListingRow[] };
+export const usePaymentListing = (q: { from: string; to: string; stages: PaymentListingStage[] }) => useQuery({
+  queryKey: ['payment-listing', q.from, q.to, q.stages.join(',')],
+  queryFn: () => {
+    const params = new URLSearchParams({ to: q.to, stages: q.stages.join(',') });
+    if (q.from) params.set('from', q.from);
+    return authedFetch<PaymentListing>(`/payment-vouchers/listing?${params.toString()}`);
+  },
+  enabled: q.stages.length > 0,
+  staleTime: 30_000,
+  retry: retryUnlessClientError,
+  retryDelay: 800,
+});
+
 export const usePaymentVoucherDetail = (id: string | null) => useQuery({
   queryKey: ['payment-voucher-detail', id],
   queryFn: () => authedFetch<{
