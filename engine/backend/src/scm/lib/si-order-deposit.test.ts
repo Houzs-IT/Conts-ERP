@@ -218,7 +218,7 @@ function fakeSb(store: Store) {
     op: 'select' | 'update' = 'select';
     cols = '';
     filters: Record<string, unknown> = {};
-    ins: Record<string, unknown[]> = {};
+    ins: Partial<Record<string, unknown[]>> = {};
     payload: Record<string, unknown> | null = null;
     singleRow = false;
     constructor(table: string) { this.table = table; }

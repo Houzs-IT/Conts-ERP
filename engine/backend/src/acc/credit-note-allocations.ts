@@ -27,6 +27,7 @@
 // deposit invoice at the final invoice, a refund's, a move's) knocks off nothing.
 // ----------------------------------------------------------------------------
 
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { settlePiPaidSen } from '../scm/lib/pi-settlement';
 import { settleApInvoicePaidSen } from '../scm/lib/ap-invoice-settlement';
 import { absorbsOrderDeposit } from '../scm/lib/si-order-deposit';
@@ -195,7 +196,7 @@ export async function partyOpenDocs(sb: Db, companyId: number, party: CreditPart
 /** The supplier's invoices with money still owed — what a credit can come off. */
 export const supplierOpenInvoices = (sb: Db, companyId: number, supplierId: string) => partyOpenDocs(sb, companyId, supplierParty(supplierId));
 
-export type ApplyRefusal = { status: number; error: string; message: string };
+export type ApplyRefusal = { status: ContentfulStatusCode; error: string; message: string };
 
 /** One document's take from a note, moved: what the audit trail records. */
 export type KnockOffMove = { kind: CreditTargetKind; id: string; fromSen: number; toSen: number };
@@ -381,7 +382,7 @@ export async function checkKnockOff(
   sb: Db,
   p: { companyId: number; label: string; party: CreditParty; totalSen: number; posted: boolean; targets: CreditTarget[]; current: Map<string, Take> },
 ): Promise<{ ok: true; numbers: Map<string, string> } | { ok: false; refusal: ApplyRefusal }> {
-  const refuse = (status: number, error: string, message: string) => ({ ok: false as const, refusal: { status, error, message } });
+  const refuse = (status: ContentfulStatusCode, error: string, message: string) => ({ ok: false as const, refusal: { status, error, message } });
   const w = words(p.party);
   const seen = new Set<string>();
   for (const t of p.targets) {

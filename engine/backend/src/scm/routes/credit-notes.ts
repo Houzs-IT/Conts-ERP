@@ -28,7 +28,8 @@
 // (acc/credit-note-allocations.ts).
 // ----------------------------------------------------------------------------
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import type { Env, Variables } from '../env';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { companyDocPrefix, requireActiveCompanyId, scopeToCompany } from '../lib/companyScope';
 import { dateOrNull } from '../lib/date-coerce';
@@ -51,6 +52,7 @@ import { assertAuditWritable, auditUnavailableBody, compactChanges, fieldChange,
 import { fmtSen } from '../shared/format';
 
 type Row = Record<string, any>;
+type Ctx = Context<{ Bindings: Env; Variables: Variables }>;
 const NO_PERM = (what: string) => ({ error: `You don't have permission to ${what}.` });
 /* The document itself — number, header, lines, journal, contra — is
    acc/credit-notes.ts (docs/bugs/0831): the deposit-invoice close-out raises
@@ -75,18 +77,23 @@ function buildLines(raw: unknown): { lines: CleanLine[]; total: number } | { err
   return { lines, total: lines.reduce((s, l) => s + l.amountSen, 0) };
 }
 
-const who = (c: any): string => String(c.get('houzsUser')?.name ?? c.get('user')?.id ?? '');
+/* Read loosely: a caller the bridge did not resolve has neither, and the note records '' rather than throwing. */
+const who = (c: Ctx): string => {
+  const caller = c.get('houzsUser') as { name?: string | null } | undefined;
+  const user = c.get('user') as { id?: string } | undefined;
+  return String(caller?.name ?? user?.id ?? '');
+};
 
 /* A knock-off given back or changed moves what an invoice owes. The pre-flight
    runs before the first write (entity-audit.ts); the row records each
    document's applied amount from -> to, in sen, labelled by its number. */
-const knockOffAuditRefusal = async (c: any, companyId: number, note: any, action: AuditAction): Promise<Response | null> => {
+const knockOffAuditRefusal = async (c: Ctx, companyId: number, note: any, action: AuditAction): Promise<Response | null> => {
   const pf = await assertAuditWritable(c.get('supabase'), { entityType: 'CREDIT_NOTE', entityId: String(note.id), action, companyId });
   return pf.ok ? null : c.json(auditUnavailableBody(), 409);
 };
 
 const recordKnockOffAudit = async (
-  c: any, companyId: number, note: any, action: AuditAction, moves: KnockOffMove[], extra: { status?: { from: string; to: string }; note?: string } = {},
+  c: Ctx, companyId: number, note: any, action: AuditAction, moves: KnockOffMove[], extra: { status?: { from: string; to: string }; note?: string } = {},
 ): Promise<void> => {
   const sb = c.get('supabase');
   const numbers = moves.length > 0 ? await moveNumbers(sb, companyId, moves) : new Map<string, string>();
@@ -102,7 +109,7 @@ const recordKnockOffAudit = async (
   });
 };
 
-async function loadNote(c: any, id: string): Promise<{ note: Row } | { resp: Response }> {
+async function loadNote(c: Ctx, id: string): Promise<{ note: Row } | { resp: Response }> {
   const sb = c.get('supabase');
   const { data, error } = await scopeToCompany(sb.from('acc_credit_notes').select(HEADER).eq('id', id), c).maybeSingle();
   if (error) return { resp: c.json({ error: 'load_failed', reason: error.message }, 500) };
@@ -110,7 +117,7 @@ async function loadNote(c: any, id: string): Promise<{ note: Row } | { resp: Res
   return { note: data as Row };
 }
 
-async function loadSupplier(c: any, supplierId: string): Promise<{ supplier: { id: string; code: string | null; name: string | null } } | { resp: Response }> {
+async function loadSupplier(c: Ctx, supplierId: string): Promise<{ supplier: { id: string; code: string | null; name: string | null } } | { resp: Response }> {
   const sb = c.get('supabase');
   const { data, error } = await scopeToCompany(sb.from('suppliers').select('id, code, name').eq('id', supplierId), c).maybeSingle();
   if (error) return { resp: c.json({ error: 'load_failed', reason: error.message }, 500) };
@@ -121,7 +128,7 @@ async function loadSupplier(c: any, supplierId: string): Promise<{ supplier: { i
 /* WHO THE CUSTOMER IS. The sales order first (2990's every order carries a
    customer_id; the party code is the one a payment on it carries), the sales
    invoice next, the typed name last — a note must name somebody. */
-async function resolveCustomer(c: any, body: any): Promise<
+async function resolveCustomer(c: Ctx, body: any): Promise<
   | { party: NoteParty; soDocNo: string | null; salesInvoiceId: string | null }
   | { resp: Response }
 > {
@@ -151,7 +158,7 @@ async function resolveCustomer(c: any, body: any): Promise<
     the print says which invoice a close-out note follows, and the row carries
     only the id. Read once per list, the way the deposit-invoice page reads
     its note numbers. */
-async function withInvoiceNumbers(c: any, rows: Row[]): Promise<{ rows: Row[] } | { resp: Response }> {
+async function withInvoiceNumbers(c: Ctx, rows: Row[]): Promise<{ rows: Row[] } | { resp: Response }> {
   const ids = [...new Set(rows.map((r) => r.sales_invoice_id).filter((x): x is string => typeof x === 'string' && x !== ''))];
   const numberOf = new Map<string, string>();
   if (ids.length > 0) {
@@ -164,7 +171,7 @@ async function withInvoiceNumbers(c: any, rows: Row[]): Promise<{ rows: Row[] } 
   return { rows: rows.map((r) => ({ ...r, sales_invoice_number: typeof r.sales_invoice_id === 'string' ? numberOf.get(r.sales_invoice_id) ?? null : null })) };
 }
 
-export const listCreditNotesHandler = async (c: any): Promise<Response> => {
+export const listCreditNotesHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const kind = String(c.req.query('kind') ?? '').trim().toUpperCase();
@@ -203,10 +210,10 @@ export const listCreditNotesHandler = async (c: any): Promise<Response> => {
   return c.json({ rows: numbered.rows });
 };
 
-export const creditNoteDetailHandler = async (c: any): Promise<Response> => {
+export const creditNoteDetailHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const found = await loadNote(c, c.req.param('id'));
+  const found = await loadNote(c, (c.req.param('id') ?? ''));
   if ('resp' in found) return found.resp;
   const sb = c.get('supabase');
   const { data: lines, error } = await scopeToCompany(sb.from('acc_credit_note_lines').select(LINE).eq('note_id', found.note.id), c).order('line_no');
@@ -231,7 +238,7 @@ export const creditNoteDetailHandler = async (c: any): Promise<Response> => {
   return c.json({ note: numbered.rows[0], lines: (Array.isArray(lines) ? lines : []) as Row[], ...credit });
 };
 
-export const createCreditNoteHandler = async (c: any): Promise<Response> => {
+export const createCreditNoteHandler = async (c: Ctx): Promise<Response> => {
   if (!hasHouzsPerm(c, 'scm.payment_voucher.create') && !hasHouzsPerm(c, 'scm.payment_voucher.write')) {
     return c.json(NO_PERM('raise a credit or debit note'), 403);
   }
@@ -343,7 +350,7 @@ export const createCreditNoteHandler = async (c: any): Promise<Response> => {
 
 /* A DRAFT changes; a posted note is cancelled and raised again — the ledger
    keeps the trail. */
-export const updateCreditNoteHandler = async (c: any): Promise<Response> => {
+export const updateCreditNoteHandler = async (c: Ctx): Promise<Response> => {
   if (!hasHouzsPerm(c, 'scm.payment_voucher.create') && !hasHouzsPerm(c, 'scm.payment_voucher.write')) {
     return c.json(NO_PERM('edit a credit or debit note'), 403);
   }
@@ -351,7 +358,7 @@ export const updateCreditNoteHandler = async (c: any): Promise<Response> => {
   if (!co.ok) return c.json(co.refusal, 409);
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
-  const found = await loadNote(c, c.req.param('id'));
+  const found = await loadNote(c, (c.req.param('id') ?? ''));
   if ('resp' in found) return found.resp;
   const note = found.note;
   if (note.status !== 'DRAFT') {
@@ -418,11 +425,11 @@ export const updateCreditNoteHandler = async (c: any): Promise<Response> => {
   return c.json({ ok: true, note: saved });
 };
 
-export const postCreditNoteHandler = async (c: any): Promise<Response> => {
+export const postCreditNoteHandler = async (c: Ctx): Promise<Response> => {
   if (!hasHouzsPerm(c, 'scm.payment_voucher.post')) return c.json(NO_PERM('post to the general ledger'), 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const found = await loadNote(c, c.req.param('id'));
+  const found = await loadNote(c, (c.req.param('id') ?? ''));
   if ('resp' in found) return found.resp;
   const note = found.note;
   if (note.status === 'CANCELLED') return c.json({ error: 'cancelled', message: `${note.note_number} is cancelled.` }, 409);
@@ -454,7 +461,7 @@ export const postCreditNoteHandler = async (c: any): Promise<Response> => {
     supplier's invoices still owing, or the customer's sales invoices — the
     customer the note will carry: the sales order's (?so=), else the name typed
     (?customer=). */
-export const partyKnockOffHandler = async (c: any): Promise<Response> => {
+export const partyKnockOffHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const supplierId = String(c.req.query('supplierId') ?? '').trim();
@@ -478,10 +485,10 @@ export const partyKnockOffHandler = async (c: any): Promise<Response> => {
 };
 
 /** GET /:id/knock-off — the note's table: what it takes from each invoice, and the credit left. */
-export const creditNoteKnockOffHandler = async (c: any): Promise<Response> => {
+export const creditNoteKnockOffHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const found = await loadNote(c, c.req.param('id'));
+  const found = await loadNote(c, (c.req.param('id') ?? ''));
   if ('resp' in found) return found.resp;
   const note = found.note;
   const totalSen = Number(note.total_sen ?? 0);
@@ -501,10 +508,10 @@ export const creditNoteKnockOffHandler = async (c: any): Promise<Response> => {
 /** PUT /:id/allocations { targets: [{ kind, id, amountSen }] } — the knock-off
     set whole: a draft's plan (the editor's keys), a posted note's knock-off
     carried out at once (the poster's key) — untick = give it back. */
-export const setCreditNoteAllocationsHandler = async (c: any): Promise<Response> => {
+export const setCreditNoteAllocationsHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const found = await loadNote(c, c.req.param('id'));
+  const found = await loadNote(c, (c.req.param('id') ?? ''));
   if ('resp' in found) return found.resp;
   const note = found.note;
   const may = note.status === 'POSTED'
@@ -524,26 +531,26 @@ export const setCreditNoteAllocationsHandler = async (c: any): Promise<Response>
 };
 
 /** POST /:id/allocations/:allocationId/remove — the credit given back to the note; the invoice owes it again. */
-export const removeCreditNoteAllocationHandler = async (c: any): Promise<Response> => {
+export const removeCreditNoteAllocationHandler = async (c: Ctx): Promise<Response> => {
   if (!hasHouzsPerm(c, 'scm.payment_voucher.post')) return c.json(NO_PERM('give a credit back'), 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const found = await loadNote(c, c.req.param('id'));
+  const found = await loadNote(c, (c.req.param('id') ?? ''));
   if ('resp' in found) return found.resp;
   if (found.note.status !== 'POSTED') return c.json({ error: 'note_not_posted', message: `${found.note.note_number} is ${String(found.note.status).toLowerCase()}.` }, 409);
   const refused = await knockOffAuditRefusal(c, co.companyId, found.note, 'UPDATE');
   if (refused) return refused;
-  const back = await removeAllocation(c.get('supabase'), { companyId: co.companyId, note: found.note, allocationId: c.req.param('allocationId') });
+  const back = await removeAllocation(c.get('supabase'), { companyId: co.companyId, note: found.note, allocationId: (c.req.param('allocationId') ?? '') });
   if (!back.ok) return c.json({ error: back.refusal.error, message: back.refusal.message }, back.refusal.status);
   await recordKnockOffAudit(c, co.companyId, found.note, 'UPDATE', [back.moved]);
   return c.json({ ok: true });
 };
 
-export const cancelCreditNoteHandler = async (c: any): Promise<Response> => {
+export const cancelCreditNoteHandler = async (c: Ctx): Promise<Response> => {
   if (!hasHouzsPerm(c, 'scm.payment_voucher.cancel')) return c.json(NO_PERM('cancel a credit or debit note'), 403);
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const found = await loadNote(c, c.req.param('id'));
+  const found = await loadNote(c, (c.req.param('id') ?? ''));
   if ('resp' in found) return found.resp;
   const note = found.note;
   if (note.status === 'CANCELLED') return c.json({ ok: true, already: true });
