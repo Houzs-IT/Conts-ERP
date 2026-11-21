@@ -11,7 +11,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 
 ## Save-integrity deferred items from #1126 (21 Nov 2026, branch fix/deferred-integrity)
 - Fixed: D1 D2 D3 D4 D5 D7 D12 D14 D17 D19 D20 D24. Needs migrations 0355 (voucher allocation settle-once) and 0356 (GRN line version) on production BEFORE the code merges.
-- Open: D6 - a DO reverted to Draft and shipped again does not take its stock out again (stock too high). The ship now says so (movementErrors) instead of reading clean. Fix needs a fresh correction_seq slot in uq_inv_mov_do_source_v2 for the second ship and a second reversal cycle in fn_reverse_do_out / reverseInventoryForDo; production has 0 reverted DOs.
+- Fixed (fix/do-reship-stock, migration 0360): D6 - a revert to Draft retires the ship-and-return cycle (rows re-tagged DO_REVERTED), so a re-ship deducts again and a second revert returns it; Undo load now also shows for full-access accounts (the server already allowed them). Production: no position holds scm.do.revert, so before this only a full-access account calling the API could revert.
 - Open: D7 compares the version only on the line edit; other grn_items writers do not bump it (the edit also compares qty_accepted).
 
 ## Click sweep save fixes (21 Nov 2026, fix/save-findings)

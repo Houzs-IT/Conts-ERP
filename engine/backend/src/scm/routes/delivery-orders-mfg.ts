@@ -1247,10 +1247,9 @@ export async function deductInventoryForDo(sb: any, deliveryOrderId: string, per
     .eq('source_doc_id', deliveryOrderId)
     .eq('movement_type', 'OUT');
   if ((existing ?? 0) > 0) {
-    /* D6 (#1126), NOT YET FIXED, only said: a DO reverted to DRAFT got its stock back (reversal rows tagged
-       ADJUSTMENT + this DO's id), and shipping it again lands here because its first OUT still exists - so stock
-       stays too high. Re-deducting needs a fresh correction_seq slot in uq_inv_mov_do_source_v2 and a second
-       reversal cycle in fn_reverse_do_out; until then the ship says so instead of reading as clean. */
+    /* D6 (#1126): a revert to Draft retires its ship-and-return cycle (fn_retire_do_stock_cycle, migration 0360),
+       so a re-ship normally finds no OUT here and deducts afresh. Landing here with a reversal on file means that
+       retire failed (the revert reported it): say so instead of reading as clean. */
     const { count: reversed, error: revErr } = await sb
       .from('inventory_movements')
       .select('id', { head: true, count: 'exact' })
@@ -1258,7 +1257,7 @@ export async function deductInventoryForDo(sb: any, deliveryOrderId: string, per
       .eq('source_doc_id', deliveryOrderId);
     if (revErr) return [`Could not check whether this delivery order's stock was returned by an earlier revert: ${revErr.message}`];
     if ((reversed ?? 0) > 0) {
-      return ['Stock was NOT taken out again: this delivery order was reverted to Draft earlier (its stock was returned) and shipping it a second time cannot deduct yet. Tell IT so the stock can be adjusted by hand.'];
+      return ['Stock was NOT taken out again: this delivery order was reverted to Draft earlier (its stock was returned) and its old stock record was not cleared, so this ship did not take the stock out. Tell IT so the stock can be adjusted by hand.'];
     }
     return []; // already deducted — no-op
   }
