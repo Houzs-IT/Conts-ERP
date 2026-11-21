@@ -729,9 +729,14 @@ export const SalesOrderDetail = () => {
   const [renoRowRoom, setRenoRowRoom] = useState<Record<string, string>>({});
   const [renoLayout, setRenoLayout] = useState<RoomLayout | null>(null);
   const renoAddedIds = useRef<Record<string, string>>({});
+  /* The rooms were reordered, renamed, added or a line moved room in this edit. A confirmed order saves through
+     submitAmendment, which only knew lines, header and payments: a room swap alone was "nothing to save" and was
+     dropped without a word (TC-SO-2611-028, 21 Nov 2026). */
+  const renoRoomsDirty = useRef(false);
   const renoDocNo = docNo ?? '';
   useEffect(() => {
     if (!renoLines || !renoDocNo || !isEditing) return;
+    renoRoomsDirty.current = false;
     let live = true;
     /* What the view already holds first, so pressing Edit does not flash the lines out of their rooms. */
     const known = queryClient.getQueryData<Awaited<ReturnType<typeof soInfoApi.so>>>(['reno', 'so-info', 'so', renoDocNo]);
@@ -762,6 +767,7 @@ export const SalesOrderDetail = () => {
       method: 'PUT', body: JSON.stringify({ roomSections: placed.rooms, itemRooms }),
     });
     renoAddedIds.current = {};
+    renoRoomsDirty.current = false;
   };
   /* Print preview — the HOOK must live above the isPending / isError early
      returns (owner 2026-08-07). It arrived at its call site further down
@@ -1493,13 +1499,15 @@ export const SalesOrderDetail = () => {
     const lines = allLines.filter((l) => !saveOnly.includes(l));
     const dates = lineDateChanges();
     const datesMoved = voOrder && Object.keys(dates.processing).length + Object.keys(dates.delivery).length > 0;
+    /* Rooms are layout, not money: they save directly like options and remarks, never as a VO. */
+    const roomsMoved = renoLines && renoRoomsDirty.current;
 
     // Asks about BOTH halves — see vendor/scm/lib/so-amendment-submit.
     const plan = planAmendmentSubmit({
       hasLineChanges: lines.length > 0,
       hasFrozenHeaderChanges: hasAmendmentHeaderChanges(headerChanges),
       hasDirectHeaderChanges: handle.hasDirectHeaderChanges() || headerSaves,
-      hasSaveOnlyLineChanges: saveOnly.length > 0 || datesMoved,
+      hasSaveOnlyLineChanges: saveOnly.length > 0 || datesMoved || roomsMoved,
     });
     if (plan === 'NOTHING') {
       if (header.vo_locked) finishEditWithoutVo();
@@ -1561,6 +1569,8 @@ export const SalesOrderDetail = () => {
           throw err;
         }
       }
+      /* 3. The rooms, last, after any VO has added or removed its lines. */
+      if (roomsMoved) await saveRenoRooms();
       setSavingOrder(false);
       endEditSession();
       /* The VO has already applied (Conts: no approver), so the order total moved: read it back now rather than
@@ -2693,6 +2703,7 @@ export const SalesOrderDetail = () => {
                   <RenovationSoRooms
                     rooms={renoRooms}
                     onRoomsChange={(next, rename) => {
+                      renoRoomsDirty.current = true;
                       setRenoRooms(next);
                       if (rename) setRenoRowRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
                     }}
@@ -2703,7 +2714,7 @@ export const SalesOrderDetail = () => {
                       })),
                       ...addingDrafts.map((staged, i) => ({ key: staged.key, room: renoRowRoom[staged.key] ?? '', render: (n: number, move?: ReactNode) => renderStagedLine(staged, i, n, move) })),
                     ]}
-                    onRowRoom={(key, room) => setRenoRowRoom((m) => ({ ...m, [key]: room }))}
+                    onRowRoom={(key, room) => { renoRoomsDirty.current = true; setRenoRowRoom((m) => ({ ...m, [key]: room })); }}
                     onAddLine={(room) => startAddLine(room)}
                     layout={renoLayout}
                     disabled={linesLocked}
