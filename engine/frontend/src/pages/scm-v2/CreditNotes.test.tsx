@@ -28,6 +28,7 @@ const NOTES: CreditNote[] = [
 const createMutate = vi.fn(async (body: unknown) => ({ ok: true, note: { ...NOTES[0]!, id: 'n3', note_number: '2990-CN-2609-002', ...(body as object) } }));
 const postMutate = vi.fn(async () => ({ ok: true, jeNo: '2990-JE-2609-0008', status: 'posted' }));
 const cancelMutate = vi.fn(async () => ({ ok: true }));
+const updateMutate = vi.fn(async () => ({ ok: true }));
 const lastList = { value: '' };
 const pdfSingle = vi.fn(async (..._args: unknown[]) => {});
 const pdfBatch = vi.fn(async (..._args: unknown[]) => {});
@@ -53,7 +54,7 @@ vi.mock('../../vendor/scm/lib/credit-note-queries', async (importOriginal) => ({
     isLoading: false,
   }),
   useCreateCreditNote: () => ({ mutateAsync: createMutate, isPending: false, isError: false, error: null }),
-  useUpdateCreditNote: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false, error: null }),
+  useUpdateCreditNote: () => ({ mutateAsync: updateMutate, isPending: false, isError: false, error: null }),
   usePostCreditNote: () => ({ mutate: postMutate, mutateAsync: postMutate, isPending: false, isError: false, isSuccess: false, error: null }),
   useCancelCreditNote: () => ({ mutate: cancelMutate, isPending: false, isError: false, error: null }),
 }));
@@ -140,5 +141,25 @@ describe('the Credit & Debit Notes page', () => {
     expect(items.map((i) => i.header.note_number)).toEqual(['2990-CN-2609-001', '2990-SCN-2609-001']);
     expect(items[0]?.lines).toHaveLength(1);
     expect(pdfBatch.mock.calls[0]?.[2]).toEqual({ action: 'print' });
+  });
+
+  /* PR #1126 deferred D19. Fails before the fix: the second Save created a second note. */
+  test('a save whose post fails leaves a draft; Save again updates and posts that draft, never a second note', async () => {
+    createMutate.mockClear(); updateMutate.mockClear(); postMutate.mockClear();
+    postMutate.mockImplementationOnce(async () => { throw new Error('ledger busy'); });
+    render(<MemoryRouter><ConfirmProvider><CreditNotes /></ConfirmProvider></MemoryRouter>);
+    fireEvent.click(screen.getByText('New note'));
+    const dialog = await screen.findByLabelText('Note form');
+    fireEvent.change(within(dialog).getByLabelText('Sales order'), { target: { value: '2990-SO-2607-019' } });
+    fireEvent.change(within(dialog).getByLabelText('Line 1 amount'), { target: { value: '150' } });
+    fireEvent.click(within(dialog).getByLabelText('Post to the ledger after saving'));
+    fireEvent.click(within(dialog).getByText('Save note'));
+    await waitFor(() => expect(postMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(dialog).getByText('Save note'));
+    await waitFor(() => expect(postMutate).toHaveBeenCalledTimes(2));
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    expect(updateMutate).toHaveBeenCalledWith(expect.objectContaining({ id: 'n3' }));
+    expect(postMutate).toHaveBeenLastCalledWith('n3');
   });
 });

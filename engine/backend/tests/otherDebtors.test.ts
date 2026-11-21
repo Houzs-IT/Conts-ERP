@@ -12,7 +12,13 @@
 
 import { Hono } from 'hono';
 import { SCM_SYSTEM_STAFF_ID } from '../src/scm/middleware/auth';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
+import { fakeRunScmPgCommand } from './lib/fake-scm-command';
+
+vi.mock('../src/scm/lib/pg-supabase-transaction', async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  runScmPgCommand: fakeRunScmPgCommand,
+}));
 import { otherDebtors } from '../src/scm/routes/other-debtors';
 
 type Row = Record<string, any>;
@@ -33,6 +39,7 @@ class FakeQuery {
   update(p: Row) { this.op = 'update'; this.patch = p; return this; }
   delete() { this.op = 'delete'; return this; }
   eq(col: string, val: unknown) { this.preds.push((r) => String(r[col]) === String(val)); return this; }
+  neq(col: string, val: unknown) { this.preds.push((r) => String(r[col]) !== String(val)); return this; }
   in(col: string, vals: unknown[]) {
     const s = new Set((vals ?? []).map(String));
     this.preds.push((r) => s.has(String(r[col])));
@@ -74,6 +81,7 @@ function harness(tables: Record<string, Row[]>, perms: string[] = ['*']) {
   const counters = new Map<string, number>();
   app.use('*', async (c, next) => {
     c.set('supabase' as never, {
+      __tables: tables,
       from: (t: string) => new FakeQuery((tables[t] ||= []), t),
       schema(_s: string) { return this; },
       rpc: async (fn: string, args: Row) => {
@@ -611,5 +619,69 @@ describe('sub-departments on a debtor bill', () => {
     const income = tables.journal_entry_lines.find((l) => l.account_code === '700-0000')!;
     expect(income).toMatchObject({ department: 'rental', sub_department_id: 's-mnt' });
     expect((await post(app, '/d1/bills', { lines: [{ creditAccountCode: '700-0000', amountSen: 100, subDepartmentId: 'nope' }] })).status).toBe(400);
+  });
+});
+
+/* PR #1126 deferred D3. Both fail on the code before the fix. */
+describe('D3: a receipt posts whole or not at all; a bill edit re-derives its status', () => {
+  const raise = async (app: Hono, allocations: Array<{ billId: string; amountSen: number }>) => {
+    const res = await post(app, '/d1/receipts', { receiptDate: '2026-09-03', bankAccountCode: '310-0010', allocations });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const id = (await res.json() as { receipt: { id: string } }).receipt.id;
+    await post(app, `/receipts/${id}/submit`);
+    await post(app, `/receipts/${id}/check`);
+    return id;
+  };
+
+  test('an approve that dies on the second bill rolls back the first, and the retry adds the money once', async () => {
+    const tables = baseTables();
+    const app = harness(tables);
+    const a = await makeBill(app, tables);
+    const b = await makeBill(app, tables);
+    const idA = tables.acc_debtor_bills.find((x) => x.bill_number === a.billNumber)!.id;
+    const idB = tables.acc_debtor_bills.find((x) => x.bill_number === b.billNumber)!.id;
+    const receiptId = await raise(app, [{ billId: idA, amountSen: 20000 }, { billId: idB, amountSen: 10000 }]);
+
+    /* The second bill's write fails once. */
+    const at = tables.acc_debtor_bills.findIndex((x) => x.id === idB);
+    let armed = true;
+    tables.acc_debtor_bills[at] = new Proxy(tables.acc_debtor_bills[at]!, {
+      set(target, prop, value) {
+        if (armed && prop === 'received_sen') { armed = false; throw new Error('connection reset'); }
+        return Reflect.set(target, prop, value);
+      },
+    });
+    const first = await post(app, `/receipts/${receiptId}/approve`);
+    expect(first.status).toBe(500);
+    const bill = (id: string) => tables.acc_debtor_bills.find((x) => x.id === id)!;
+    expect(bill(idA).received_sen ?? 0).toBe(0);
+    expect(tables.journal_entries.filter((j) => j.source_type === 'ODR')).toHaveLength(0);
+    expect(tables.acc_debtor_receipts.find((x) => x.id === receiptId)!.status).toBe('DRAFT');
+
+    const again = await post(app, `/receipts/${receiptId}/approve`);
+    expect(again.status, await again.clone().text()).toBe(200);
+    expect(bill(idA).received_sen).toBe(20000);
+    expect(bill(idB).received_sen).toBe(10000);
+    expect(tables.journal_entries.filter((j) => j.source_type === 'ODR')).toHaveLength(1);
+    /* And a third press is refused, never a second knock-off. */
+    expect((await post(app, `/receipts/${receiptId}/approve`)).status).toBe(409);
+    expect(bill(idA).received_sen).toBe(20000);
+  });
+
+  test('a PAID bill edited above what was received owes again', async () => {
+    const tables = baseTables();
+    const app = harness(tables);
+    const made = await makeBill(app, tables, [30000]);
+    const id = tables.acc_debtor_bills.find((x) => x.bill_number === made.billNumber)!.id;
+    const receiptId = await raise(app, [{ billId: id, amountSen: 30000 }]);
+    expect((await post(app, `/receipts/${receiptId}/approve`)).status).toBe(200);
+    expect(tables.acc_debtor_bills.find((x) => x.id === id)!.status).toBe('PAID');
+
+    const res = await app.request(`/bills/${id}`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ lines: [{ description: 'more', creditAccountCode: '700-0000', amountSen: 45000 }] }),
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(tables.acc_debtor_bills.find((x) => x.id === id)!).toMatchObject({ total_sen: 45000, status: 'POSTED' });
   });
 });

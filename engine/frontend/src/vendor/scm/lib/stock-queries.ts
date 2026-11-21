@@ -313,6 +313,8 @@ export type StockTransferLine = {
 export type StockTransferDetail = {
   transfer: StockTransferRow;
   lines: StockTransferLine[];
+  /** A cancelled transfer whose stock did not all come back; Finish cancel re-runs the reversal (PR #1126 D24). */
+  stockNotBack?: boolean;
 };
 
 export type StockTransferListFilters = {

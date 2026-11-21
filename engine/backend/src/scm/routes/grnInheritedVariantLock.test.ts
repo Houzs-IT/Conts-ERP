@@ -84,3 +84,39 @@ describe('PATCH grn line — inherited-variant lock', () => {
     expect((line('li-manual').variants as Record<string, unknown>).seatHeight).toBe('24');
   });
 });
+
+/* PR #1126 deferred D7. Fails on the code before the fix: the second save wrote over the first. */
+describe('PATCH grn line — two editors', () => {
+  it('a save whose line changed after it was read is refused and writes nothing', async () => {
+    const realFrom = sb.from;
+    let fired = false;
+    (sb as { from: unknown }).from = (t: string) => {
+      const q = realFrom(t);
+      if (t === 'grn_items' && !fired) {
+        const sel = q.select;
+        let isPrevRead = false;
+        q.select = (cols?: string, ...rest: unknown[]) => { isPrevRead = String(cols ?? '').includes('purchase_order_item_id, version'); return sel(cols, ...rest); };
+        const read = q.maybeSingle;
+        q.maybeSingle = async () => {
+          const r = await read();
+          if (!isPrevRead) return r;
+          fired = true;
+          /* The other editor's save commits between this read and this write. */
+          /* A copy, as PostgREST hands it (the fake hands back its live row). */
+          const copy = { ...r, data: JSON.parse(JSON.stringify(r.data)) };
+          Object.assign(line('li-manual'), { qty_received: 1, qty_accepted: 1, line_total_sen: 10000 });
+          return copy;
+        };
+      }
+      return q;
+    };
+    try {
+      const res = await patchLine('li-manual', { qty: 3 });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ error: 'line_changed' });
+      expect(line('li-manual')).toMatchObject({ qty_received: 1, qty_accepted: 1 });
+    } finally {
+      (sb as { from: unknown }).from = realFrom;
+    }
+  });
+});
