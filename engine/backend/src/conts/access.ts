@@ -125,6 +125,9 @@ export function contsPermissions(a: ContsAccess): string[] {
   keys.push(...ladder(a.scSales, [], ["scm.amendment.create", "scm.amendment.approve_lines", "scm.amendment.approve_delivery", "scm.amendment.approve_price"], []));
   keys.push(...ladder(a.scProcurement, [], ["scm.renovation.po_split"], []));
   keys.push(...ladder(a.scInvoices, [], ["scm.renovation.bill"], []));
+  // Every salesperson bills the instalments of their own renovation contracts (chew, 21 Nov 2026): Sales at edit, the
+  // bill route holding them to the orders in their sales scope (scm/routes/renovation.ts).
+  keys.push(...ladder(a.scSales, [], ["scm.renovation.bill_own"], []));
   keys.push(...ledgerPermissions(ledgerOf(a)));
   keys.push(...ladder(mailOf(a), ["mail_center.read"], [], ["mail_center.manage", "users.read"]));
   return keys;

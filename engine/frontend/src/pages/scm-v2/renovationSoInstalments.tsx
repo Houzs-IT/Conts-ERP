@@ -2,6 +2,8 @@
    对标到 project 那边"). The contract's instalments (GET /renovation/sales-orders/:docNo/billing) with what has been
    received against each, filled the way the project's payments strip fills them (services/renovation/beta.ts
    paymentsOf): money on a bill counts for that instalment, money recorded on the order fills the rest in order.
+   Only money finance has confirmed is paid (chew, 21 Nov 2026; SOP 4.2): what is recorded but not confirmed yet fills
+   the instalments the same way as "waiting for finance", so the salesperson still sees it.
    Conts only: an order with no instalment schedule shows nothing and Add Payment keeps the balance default. */
 import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
@@ -11,12 +13,27 @@ import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 
 interface BillingInstalment {
   id: string; seq: number; label: string; pctBp: number; amountSen: number; isNext?: boolean;
-  bill: { kind: "INVOICE" | "CREDIT_NOTE" | "ZERO"; amountSen: number; paidSen: number; salesInvoiceId?: string | null; invoiceNumber?: string | null; noteNumber?: string | null } | null;
+  bill: {
+    kind: "INVOICE" | "CREDIT_NOTE" | "ZERO"; amountSen: number;
+    /** Confirmed money taken on the invoice itself; waitingSen: taken on it, not confirmed yet. */
+    paidSen: number; waitingSen?: number;
+    salesInvoiceId?: string | null; invoiceNumber?: string | null; noteNumber?: string | null;
+  } | null;
 }
-interface BillingView { receivedSen: number; revisedContractSen: number; instalments: BillingInstalment[] }
+interface BillingView {
+  /** Confirmed money, on the order and its invoices. */
+  receivedSen: number;
+  /** Confirmed / not yet confirmed money recorded on the order itself. */
+  orderPaidSen?: number; orderWaitingSen?: number;
+  /** Money recorded, order and invoices, finance has not confirmed yet. */
+  waitingSen?: number;
+  revisedContractSen: number; instalments: BillingInstalment[];
+}
 
 export interface SoInstalmentRow {
   seq: number; label: string; pctBp: number; amountSen: number; paidSen: number; slot?: boolean;
+  /** Recorded for this instalment, waiting for finance to confirm it (never in paidSen). */
+  waitingSen?: number;
   id?: string; billable?: boolean; document?: { number: string; invoiceId: string | null };
 }
 
@@ -31,10 +48,12 @@ export function useSoInstalments(docNo: string | null, enabled: boolean) {
   });
 }
 
-/** Each instalment's amount and what is paid against it, given the money recorded on the order. */
-export function instalmentRows(view: BillingView | undefined, recordedSen: number): SoInstalmentRow[] {
+/** Each instalment's amount and what is paid against it: what its invoice holds, then the confirmed money on the order
+    in order. Money not confirmed yet fills them the same way, as waitingSen. */
+export function instalmentRows(view: BillingView | undefined): SoInstalmentRow[] {
   if (!view || view.instalments.length === 0) return [];
-  let pool = Math.max(0, recordedSen - view.receivedSen);
+  let pool = Math.max(0, view.orderPaidSen ?? 0);
+  let waitingPool = Math.max(0, view.orderWaitingSen ?? 0);
   return [...view.instalments].sort((a, b) => a.seq - b.seq).map((i) => {
     const amountSen = i.bill ? i.bill.amountSen : i.amountSen;
     let paidSen = i.bill?.kind === "INVOICE" ? i.bill.paidSen : 0;
@@ -43,9 +62,16 @@ export function instalmentRows(view: BillingView | undefined, recordedSen: numbe
       pool -= take;
       paidSen += take;
     }
+    let waitingSen = i.bill?.kind === "INVOICE" ? Math.min(i.bill.waitingSen ?? 0, Math.max(0, amountSen - paidSen)) : 0;
+    if (paidSen + waitingSen < amountSen && waitingPool > 0) {
+      const take = Math.min(waitingPool, amountSen - paidSen - waitingSen);
+      waitingPool -= take;
+      waitingSen += take;
+    }
     const number = i.bill?.invoiceNumber ?? i.bill?.noteNumber ?? null;
     return {
       seq: i.seq, label: i.label || `Instalment ${i.seq}`, pctBp: i.pctBp, amountSen, paidSen, id: i.id, billable: Boolean(i.isNext && !i.bill),
+      ...(waitingSen > 0 ? { waitingSen } : {}),
       ...(number ? { document: { number, invoiceId: i.bill?.salesInvoiceId ?? null } } : {}),
     };
   });
@@ -77,7 +103,11 @@ export function nextInstalmentSen(rows: readonly SoInstalmentRow[], paidSen: num
 /** What is left to collect on an instalment: money over on an earlier one has already come off (owner, 4 Nov 2026). */
 export const toCollectSen = (r: Pick<SoInstalmentRow, "amountSen" | "paidSen">): number => Math.max(0, r.amountSen - r.paidSen);
 
-export function SoInstalments({ rows, money, onBill }: { rows: readonly SoInstalmentRow[]; money: (sen: number) => string; onBill?: (id: string) => void }): ReactElement | null {
+export function SoInstalments({ rows, money, onBill, onPrintInvoice }: {
+  rows: readonly SoInstalmentRow[]; money: (sen: number) => string; onBill?: (id: string) => void;
+  /** Print the instalment's invoice from here (a salesperson may not open the invoice page). */
+  onPrintInvoice?: (invoiceId: string) => void;
+}): ReactElement | null {
   if (rows.length === 0) return null;
   return (
     <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -95,11 +125,17 @@ export function SoInstalments({ rows, money, onBill }: { rows: readonly SoInstal
             <div className={`text-[12px] font-semibold ${paid ? "text-synced" : part || due ? "text-warning-text" : "text-ink-muted"}`}>
               {paid ? (r.slot ? "Received" : "Paid") : part ? `To collect, ${money(r.paidSen)} of ${money(r.amountSen)} paid` : r.slot ? "Not received" : "Not paid"}
             </div>
+            {(r.waitingSen ?? 0) > 0 && (
+              <div className="text-[11.5px] font-medium text-ink-secondary">{money(r.waitingSen ?? 0)} waiting for finance</div>
+            )}
             {(r.document || (r.billable && r.id && onBill)) && (
               <div className="mt-auto flex items-center justify-between gap-2 pt-1">
                 {r.document ? (r.document.invoiceId
                   ? <Link className="truncate text-[11.5px] font-semibold text-primary" to={`/scm/sales-invoices/${r.document.invoiceId}`}>{r.document.number}</Link>
                   : <span className="truncate text-[11.5px] text-ink-secondary">{r.document.number}</span>) : <span />}
+                {r.document?.invoiceId && onPrintInvoice && (
+                  <Button variant="secondary" className="h-7" onClick={() => onPrintInvoice(r.document!.invoiceId!)}>Print</Button>
+                )}
                 {r.billable && r.id && onBill && <Button variant="secondary" className="h-7" onClick={() => onBill(r.id!)}>Bill</Button>}
               </div>
             )}

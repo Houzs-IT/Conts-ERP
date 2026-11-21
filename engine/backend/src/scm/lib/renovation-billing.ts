@@ -18,7 +18,12 @@
    a RENO-CREDIT row of minus its amount on the SO (later instalments are worked out
    on the lower total) and a scm.reno_contract_credits row; its journal posts after
    commit (Dr revenue / Cr the customer). It never credits more than is invoiced net.
-   billedSen counts contract credits net. */
+   billedSen counts contract credits net.
+
+   Received is money finance has CONFIRMED (chew, 21 Nov 2026; SOP 4.2): a payment counts once its official receipt
+   is FORMAL (or it posted before confirmation existed, or it is not money arriving: moved between orders, imported,
+   a credit applied; acc/receipts awaitsConfirmation). Money recorded but not confirmed yet is waitingSen: shown as
+   waiting for finance, never as paid. */
 
 import { auditSo, mintDocNo, refuse, todayKl, yymmOf, type RenoDb, type UnsafeRunner, renoDbOf } from './renovation-db';
 import { readContractHead, recomputeSoHeader, RENO_LIVE_STATUSES } from './renovation-so';
@@ -31,7 +36,11 @@ import { MAX_DESCRIPTION } from '../../acc/einvoice-build';
 export interface BillRow {
   instalmentId: string; seq: number; kind: 'INVOICE' | 'CREDIT_NOTE' | 'ZERO'; amountSen: number; invoiceDate: string;
   invoiceNumber: string | null; salesInvoiceId: string | null; noteNumber: string | null; creditNoteId: string | null;
-  paidSen: number; invoiceStatus: string | null; noteStatus: string | null;
+  /** Confirmed money taken on the invoice itself. */
+  paidSen: number;
+  /** Money taken on the invoice itself that finance has not confirmed yet. */
+  waitingSen: number;
+  invoiceStatus: string | null; noteStatus: string | null;
 }
 
 export interface BillingInstalment {
@@ -52,8 +61,23 @@ export interface BillingView {
   soDocNo: string; status: string; originalContractSen: number; revisedContractSen: number; voTotalSen: number;
   /** Net of contract credits, what AutoCount invoiced before go-live included. */
   billedSen: number; billedBeforeGoLiveSen: number; creditedSen: number; credits: ContractCredit[];
-  receivedSen: number; nextSeq: number | null; instalments: BillingInstalment[];
+  /** Confirmed money: on the order and on its invoices. */
+  receivedSen: number;
+  /** Confirmed money recorded on the order itself (the part of receivedSen no invoice holds). */
+  orderPaidSen: number;
+  /** Money recorded but not confirmed by finance yet: on the order and on its invoices. */
+  waitingSen: number;
+  /** The part of waitingSen recorded on the order itself. */
+  orderWaitingSen: number;
+  nextSeq: number | null; instalments: BillingInstalment[];
 }
+
+/* Is the payment row `p` (of `source`) money finance has confirmed? acc/receipts confirmedPaymentIds and
+   awaitsConfirmation, as one SQL condition. */
+const confirmedSql = (p: string, source: 'SOPAY' | 'SIPAY'): string =>
+  `(coalesce(${p}.method::text, '') in ('converted', 'imported', 'credit') or ${p}.amount_sen <= 0
+     or exists (select 1 from scm.acc_official_receipts r where r.payment_source = '${source}' and r.payment_id = ${p}.id::text and r.status = 'FORMAL')
+     or exists (select 1 from scm.journal_entries j where j.source_type = '${source}' and j.source_doc_no = ${p}.id::text and j.posted and not j.reversed))`;
 
 export async function billingView(runner: RenoDb | UnsafeRunner, soDocNo: string, companyId?: number): Promise<BillingView> {
   const view = (await billingViews(runner, [soDocNo], companyId)).get(soDocNo);
@@ -86,10 +110,14 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
     ),
     db.q<{
       so_doc_no: string; instalment_id: string; seq: number; kind: BillRow['kind']; amount_sen: number; invoice_date: string; invoice_number: string | null;
-      sales_invoice_id: string | null; note_number: string | null; credit_note_id: string | null; paid_sen: number | null; si_status: string | null; cn_status: string | null;
+      sales_invoice_id: string | null; note_number: string | null; credit_note_id: string | null; paid_sen: number | null; waiting_sen: number | string | null;
+      si_status: string | null; cn_status: string | null;
     }>(
+      /* paid_sen is every payment taken on the invoice; what finance has not confirmed comes off it into waiting_sen. */
       `select b.so_doc_no, b.instalment_id, b.seq, b.kind, b.amount_sen, b.invoice_date::text as invoice_date, b.invoice_number, b.sales_invoice_id,
-              b.note_number, b.credit_note_id, si.paid_sen, si.status::text as si_status, cn.status as cn_status
+              b.note_number, b.credit_note_id, si.paid_sen, si.status::text as si_status, cn.status as cn_status,
+              (select coalesce(sum(sp.amount_sen), 0) from scm.sales_invoice_payments sp
+                where si.id is not null and sp.sales_invoice_id = si.id and not ${confirmedSql('sp', 'SIPAY')})::bigint as waiting_sen
          from scm.reno_instalment_bills b
          left join scm.sales_invoices si on si.id = b.sales_invoice_id
          left join scm.acc_credit_notes cn on cn.id = b.credit_note_id
@@ -104,14 +132,18 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
         order by cc.so_doc_no, cc.created_at`,
       [docsJson],
     ),
-    db.q<{ so_doc_no: string; paid_sen: number | string }>(
-      `select p.so_doc_no, coalesce(sum(p.amount_sen), 0)::bigint as paid_sen from scm.mfg_sales_order_payments p
+    db.q<{ so_doc_no: string; paid_sen: number | string; waiting_sen: number | string }>(
+      `select p.so_doc_no,
+              coalesce(sum(p.amount_sen) filter (where c.confirmed), 0)::bigint as paid_sen,
+              coalesce(sum(p.amount_sen) filter (where not c.confirmed), 0)::bigint as waiting_sen
+         from scm.mfg_sales_order_payments p
+         cross join lateral (select ${confirmedSql('p', 'SOPAY')} as confirmed) c
         where p.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) group by p.so_doc_no`,
       [docsJson],
     ),
   ]);
   if (sos.length === 0) return out;
-  const orderPaidOf = new Map(orderPaid.map((r) => [r.so_doc_no, Number(r.paid_sen)]));
+  const orderPaidOf = new Map(orderPaid.map((r) => [r.so_doc_no, { paidSen: Number(r.paid_sen), waitingSen: Number(r.waiting_sen) }]));
   for (const so of sos) {
     const instalments = instRows
       .filter((r) => r.so_doc_no === so.doc_no)
@@ -121,7 +153,7 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
       creditNoteId: r.credit_note_id, noteNumber: r.note_number, amountSen: Number(r.amount_sen), noteDate: r.note_date, reason: r.reason, noteStatus: r.cn_status,
     }));
     const creditedSen = credits.reduce((s, c) => s + c.amountSen, 0);
-    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits, Number(so.billed_before_golive_sen ?? 0), orderPaidOf.get(so.doc_no) ?? 0));
+    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits, Number(so.billed_before_golive_sen ?? 0), orderPaidOf.get(so.doc_no)?.paidSen ?? 0, orderPaidOf.get(so.doc_no)?.waitingSen ?? 0));
   }
   return out;
 }
@@ -137,12 +169,19 @@ export function assembleView(
   bills: Array<{
     instalment_id: string; seq: number; kind: BillRow['kind']; amount_sen: number; invoice_date: string; invoice_number: string | null;
     sales_invoice_id: string | null; note_number: string | null; credit_note_id: string | null; paid_sen: number | null; si_status: string | null; cn_status: string | null;
+    /** The part of paid_sen finance has not confirmed yet. */
+    waiting_sen?: number | string | null;
   }>,
   creditedSen = 0,
   credits: ContractCredit[] = [],
   billedBeforeGoLiveSen = 0,
+  /** Confirmed money recorded on the order. */
   orderPaidSen = 0,
+  /** Unconfirmed money recorded on the order. */
+  orderWaitingSen = 0,
 ): BillingView {
+  const waitingOf = (b: { waiting_sen?: number | string | null }) => Math.max(0, Number(b.waiting_sen ?? 0));
+  const paidOf = (b: { paid_sen: number | null; waiting_sen?: number | string | null }) => Math.max(0, Number(b.paid_sen ?? 0) - waitingOf(b));
   /* A cancelled invoice or credit note billed nothing: its instalment is due again and its amount does not count. */
   const live = bills.filter((b) => b.si_status !== 'CANCELLED' && b.cn_status !== 'CANCELLED');
   const billByInst = new Map(live.map((b) => [b.instalment_id, b]));
@@ -166,18 +205,31 @@ export function assembleView(
       bill: b ? {
         instalmentId: i.id, seq: Number(b.seq), kind: b.kind, amountSen: Number(b.amount_sen), invoiceDate: b.invoice_date,
         invoiceNumber: b.invoice_number, salesInvoiceId: b.sales_invoice_id, noteNumber: b.note_number, creditNoteId: b.credit_note_id,
-        paidSen: Number(b.paid_sen ?? 0), invoiceStatus: b.si_status, noteStatus: b.cn_status,
+        paidSen: paidOf(b), waitingSen: Math.min(waitingOf(b), Number(b.paid_sen ?? 0)), invoiceStatus: b.si_status, noteStatus: b.cn_status,
       } : null,
     };
   });
   const billedSen = live.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen + billedBeforeGoLiveSen;
-  /* Paid on the invoices, and paid on the order itself: a deposit is taken on the SO. */
-  const receivedSen = orderPaidSen + live.reduce((s, b) => s + (b.kind === 'INVOICE' ? Number(b.paid_sen ?? 0) : 0), 0);
+  /* Paid on the invoices, and paid on the order itself: a deposit is taken on the SO. Confirmed money only. */
+  const receivedSen = orderPaidSen + live.reduce((s, b) => s + (b.kind === 'INVOICE' ? paidOf(b) : 0), 0);
+  const waitingSen = orderWaitingSen + live.reduce((s, b) => s + (b.kind === 'INVOICE' ? Math.min(waitingOf(b), Number(b.paid_sen ?? 0)) : 0), 0);
   const original = originalContractSen === null ? revised : Number(originalContractSen);
   return {
     soDocNo, status, originalContractSen: original, revisedContractSen: revised, voTotalSen: revised - original,
-    billedSen, billedBeforeGoLiveSen, creditedSen, credits, receivedSen, nextSeq, instalments: rows,
+    billedSen, billedBeforeGoLiveSen, creditedSen, credits, receivedSen, orderPaidSen, waitingSen, orderWaitingSen, nextSeq, instalments: rows,
   };
+}
+
+/** An instalment invoice's due date: the invoice date plus the days the order's term names ("30 Days", "Net 14",
+    "C30"); a term naming none (C.O.D., cash, blank) is due on the invoice date, a progress claim being payable on
+    issue. A normal sales invoice takes its due date as keyed and has no default term to follow. */
+export function dueDateOf(invoiceDate: string, term: string | null): string {
+  const m = /(\d{1,3})/.exec(String(term ?? ''));
+  const days = m ? Number(m[1]) : 0;
+  const d = new Date(`${invoiceDate.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return invoiceDate;
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 export interface BillResult {
@@ -228,17 +280,27 @@ export async function billInstalment(
   let result: BillResult;
   if (n.amountSen > 0) {
     const invoiceNumber = await mintDocNo(db, 'sales_invoices', 'invoice_number', `${actor.docPrefix}SI-${yymmOf(invoiceDate)}`);
+    const term = (await db.q<{ display_term: string | null }>('select display_term from scm.mfg_sales_orders where doc_no = $1', [soDocNo]))[0] as { display_term: string | null } | undefined;
     const [si] = await db.q<{ id: string }>(
-      /* Phone, email and the delivery address come from the SO as it holds them (owner, 14 Oct 2026); on a database with migration 0116
-         its trigger also stamps the project, building and unit. */
+      /* The customer header a sales invoice prints (Code, Tel, Email, address, Due; chew, 21 Nov 2026), as the DO -> SI path
+         stamps it (lib/si-from-do.ts): phone, email and the address from the SO as it holds them (owner, 14 Oct 2026), the
+         customer's debtor account where the SO names none, and the due date from the order's term (dueDateOf). On a
+         database with migration 0116 its trigger also stamps the project, building and unit. The order's salesperson too,
+         so they can open and print their own customer's invoice (the invoice reads are scoped to salesperson_id). */
       `insert into scm.sales_invoices (invoice_number, so_doc_no, debtor_code, debtor_name, invoice_date, subtotal_sen, total_sen, others_sen,
           local_total_sen, line_count, status, sent_at, confirmed_at, notes, branding, created_by, company_id, phone, email, address1, address2,
-          city, postcode, state, customer_state, customer_country)
-       select $1, $2, $3, $4, $5::date, $6, $6, $6, $6, 1, 'SENT', now(), now(), $7, $8, $9, $10, o.phone, o.email, o.address1, o.address2,
-              o.city, o.postcode, o.customer_state, o.customer_state, o.customer_country
-         from scm.mfg_sales_orders o where o.doc_no = $2
+          city, postcode, state, customer_state, customer_country, salesperson_id, due_date)
+       select $1, $2, coalesce($3, d.code), $4, $5::date, $6, $6, $6, $6, 1, 'SENT', now(), now(), $7, $8, $9, $10,
+              coalesce(nullif(o.phone, ''), d.phone), coalesce(nullif(o.email, ''), d.email), o.address1, o.address2,
+              o.city, o.postcode, o.customer_state, o.customer_state, o.customer_country, o.salesperson_id, $11::date
+         from scm.mfg_sales_orders o
+         left join lateral (select x.code, x.phone, x.email from scm.debtors x
+                             where x.company_id = o.company_id and (x.code = $3 or ($3::text is null and x.customer_id::text = o.customer_id::text))
+                             order by (x.code = $3) desc nulls last, x.is_active desc, x.created_at limit 1) d on true
+        where o.doc_no = $2
        returning id`,
-      [invoiceNumber, soDocNo, head.debtorCode, head.debtorName, invoiceDate, n.amountSen, label, head.branding, actor.staffId, actor.companyId],
+      [invoiceNumber, soDocNo, head.debtorCode, head.debtorName, invoiceDate, n.amountSen, label, head.branding, actor.staffId, actor.companyId,
+        dueDateOf(invoiceDate, term?.display_term ?? null)],
     );
     await db.q(
       `insert into scm.sales_invoice_items (sales_invoice_id, item_code, item_group, description, qty, unit_price_sen, line_total_sen, uom, line_no, company_id)

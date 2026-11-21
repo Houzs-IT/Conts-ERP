@@ -26,6 +26,7 @@ import { resolveRoles } from './rules';
 import { paymentReconciliation } from './payment-reconciled';
 import { creditConfirmedPaymentOfCancelledSo } from '../scm/lib/customer-credits';
 import { instalmentPreview } from '../scm/shared/renovation-money';
+import { linkReceiptInvoiceBestEffort } from './receipt-invoice';
 
 /* The untyped client the poster takes, borrowed rather than spelled out again
    (a new file's lint ceiling is zero — payout-charge.ts's reason). */
@@ -181,6 +182,8 @@ export async function confirmReceiptsForSettlement(
   for (const o of outcomes) {
     if (o.outcome !== 'formalised' && o.outcome !== 'already_formal') continue;
     const source = payments.find((p) => p.id === o.paymentId)?.source === 'SIPAY' ? 'SIPAY' : 'SOPAY';
+    /* A renovation order payment's receipt names its invoice as at the confirm (acc/receipt-invoice). */
+    if (source === 'SOPAY' && o.outcome === 'formalised') await linkReceiptInvoiceBestEffort(sb, { orderPaymentId: o.paymentId }, { includeFormal: true });
     try {
       const r = await postConfirmedPayment(sb, source, o.paymentId, companyId, { newlyConfirmed: o.outcome === 'formalised' });
       if (!r.ok) log(`settlement: ${source} ${o.paymentId} confirmed but not posted:`, r.status, r.reason);
