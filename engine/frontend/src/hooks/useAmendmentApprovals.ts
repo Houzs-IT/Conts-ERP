@@ -31,13 +31,15 @@ import { COST_ALERTS_BADGE_KEY } from "../conts/renoCostReviewQueries";
 /** Shared keys so every reader hits one fetch, and any writer can invalidate. */
 export const AMENDMENT_APPROVALS_KEY = ["scm", "amendment-approvals"] as const;
 export const PO_AMENDMENT_APPROVALS_KEY = ["scm", "po-amendment-approvals"] as const;
+/** Conts: how many Finance To do jobs wait on the caller (conts/financeTodoQueries.ts invalidates it). */
+export const FINANCE_TODO_COUNT_KEY = ["finance-todo-count"] as const;
 
 interface PendingCountResponse {
   count: number;
 }
 
 /** The badge sources a nav entry can name. Mirrored by NavTab["badge"]. */
-export type ApprovalBadgeSource = "amendment-approvals" | "po-amendment-approvals" | "reno-cost-alerts";
+export type ApprovalBadgeSource = "amendment-approvals" | "po-amendment-approvals" | "reno-cost-alerts" | "finance-todo";
 
 /**
  * One poll per source. Returns 0 while loading and 0 on any failure — a
@@ -90,6 +92,14 @@ export function useApprovalBadgeCounts(): Record<ApprovalBadgeSource, number> {
     "reno-cost-alerts": usePendingCount(
       COST_ALERTS_BADGE_KEY,
       "/api/scm/accounting/reno-cost-alerts/pending-count",
+      enabled && can("scm.ledger.use"),
+      300_000,
+    ),
+    /* Conts: Finance's To do — the jobs waiting on the caller (backend conts/finance-todo-routes.ts). It reads the
+       whole finance backlog, so every 5 minutes; a rule switched on the rules page drops it at once. */
+    "finance-todo": usePendingCount(
+      FINANCE_TODO_COUNT_KEY,
+      "/api/scm/accounting/todo/count",
       enabled && can("scm.ledger.use"),
       300_000,
     ),
