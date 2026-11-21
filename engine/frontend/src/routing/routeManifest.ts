@@ -146,6 +146,8 @@ export const STAFF_ROUTE_PATTERNS = [
   "/scm/transportation",
   "/scm/warehouse",
   "/scm/finance",
+  "/scm/finance/menu",
+  "/scm/finance/rules",
   "/scm/sales-orders",
   "/scm/amendments",
   "/scm/amendments/:id",

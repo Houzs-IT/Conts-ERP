@@ -19,6 +19,7 @@
 // receipt whose payment is gone). "Any month" is the newest 100, as before.
 // ----------------------------------------------------------------------------
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import { fmtSen, fmtDateOrDash } from '../../vendor/shared/format';
@@ -100,9 +101,12 @@ export const OfficialReceipts = () => {
   const chooseBank = useChooseBank();
   const choose = useChoice();
   const notify = useNotify();
-  const [status, setStatus] = useState<'' | 'DRAFT' | 'FORMAL'>('');
+  /* ?status=DRAFT (Finance's To do: payments to confirm) opens on the drafts of any month. */
+  const [searchParams] = useSearchParams();
+  const askedDrafts = searchParams.get('status') === 'DRAFT';
+  const [status, setStatus] = useState<'' | 'DRAFT' | 'FORMAL'>(askedDrafts ? 'DRAFT' : '');
   /* '' = any month: the newest 100 receipts. */
-  const [month, setMonth] = useState<string>(mytMonth());
+  const [month, setMonth] = useState<string>(askedDrafts ? '' : mytMonth());
   const [filesFor, setFilesFor] = useState<ReceiptRow | null>(null);
   /* Print opens the app's one Print preview, as every other document does (owner, 3 Nov 2026). */
   const [printFor, setPrintFor] = useState<ReceiptRow | null>(null);

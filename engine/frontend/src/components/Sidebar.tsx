@@ -695,6 +695,9 @@ export const ALL_NAV_TABS: NavTab[] = [
     anyPerm: ["*", "scm.access"],
     anyAccess: ["scm.finance", "scm.finance.accounting", "scm.finance.outstanding"],
     children: [
+      // ── To do leads (Conts, ported from Houzs's Finance redesign): what waits on finance, each job linking to
+      //    its screen (conts/FinanceTodo.tsx). It is the Finance landing; the menu hub moved to /scm/finance/menu.
+      { to: "/scm/finance", end: true, label: "To do", icon: ListChecks, badge: "finance-todo", anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
       // ── SIX GROUPS, BY THE JOB (owner 2026-09-12: finance 的 function 分到很散,
       //    我希望我要 maintenance 的东西一个子 side bar, report 一个 side bar;
       //    docs/bugs/0824). Fifteen flat entries and the Accounting page's
@@ -809,6 +812,8 @@ export const ALL_NAV_TABS: NavTab[] = [
         icon: SettingsIcon,
         groupId: "scm-finance-setup",
         children: [
+          // What fills To do: its built-in rules, each switched on or off (Conts; Ledger full switches them).
+          { to: "/scm/finance/rules", label: "To do rules", icon: ListChecks, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/chart-of-accounts", label: "Chart of accounts", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/accounting?tab=groups", label: "Item groups", icon: SettingsIcon, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/settlement-setup", label: "Recon setup", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
