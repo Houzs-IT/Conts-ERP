@@ -246,15 +246,14 @@ export async function writeSoRooms(db: Db, docNo: string, sections: readonly str
   const mine = new Set((known.results ?? []).map((r) => r.id));
   const rows = itemRooms.filter((r) => mine.has(r.id));
   const rooms = roomsWithLineRooms(sections, rows.map((r) => r.room));
-  await db.prepare(`UPDATE scm.mfg_sales_orders SET room_sections = ?::text::jsonb, updated_at = now() WHERE doc_no = ?`)
-    .bind(JSON.stringify(rooms), docNo).run();
-  if (rows.length) {
-    await db.prepare(
-      `UPDATE scm.mfg_sales_order_items i SET room = nullif(x.room, '')
-         FROM jsonb_to_recordset(?::text::jsonb) AS x(id uuid, room text)
-        WHERE i.id = x.id AND i.doc_no = ?`,
-    ).bind(JSON.stringify(rows), docNo).run();
-  }
+  /* ONE statement, so the room list and the lines' rooms land together or not at all: two writes let a request cut
+     off between them leave the new room order with the lines still in their old rooms. */
+  await db.prepare(
+    `WITH h AS (UPDATE scm.mfg_sales_orders SET room_sections = ?::text::jsonb, updated_at = now() WHERE doc_no = ? RETURNING doc_no)
+     UPDATE scm.mfg_sales_order_items i SET room = nullif(x.room, '')
+       FROM jsonb_to_recordset(?::text::jsonb) AS x(id uuid, room text), h
+      WHERE i.id = x.id AND i.doc_no = h.doc_no`,
+  ).bind(JSON.stringify(rooms), docNo, JSON.stringify(rows)).run();
 }
 
 /** After a create: the inserted lines in line order take the rooms the form sent for its lines, matched by

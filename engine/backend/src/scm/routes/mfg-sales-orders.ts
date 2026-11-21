@@ -1814,6 +1814,9 @@ mfgSalesOrders.get('/:docNo', async (c) => {
     // Authoritative received-to-date + remaining balance for the detail page
     // and the customer-facing print (so-doc.ts reads paid_sen_total).
     paid_sen_total: paidSenTotal,
+    /* The part of paid_sen_total that is NOT in the payments ledger (a legacy header deposit). A print that lists
+       the ledger rows adds this to their sum, so its "Paid to date" always agrees with the rows it shows. */
+    paid_outside_ledger_sen: paidSenTotal - paidLedgerSen,
     /* SIGNED (owner 2026-08-16) — negative = over-collected, painted red by the
        detail page, the mobile detail and the SO print. The write-back keeps the
        CLAMPED `soOutstandingSen`: a screen can say "you hold RM 250 of his
