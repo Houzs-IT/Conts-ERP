@@ -10,6 +10,7 @@
 //       (vendored suppliers-queries slice).
 
 import { takeBack } from '../../lib/backTrail';
+import { PHONE_MORE_BUTTON, phoneMoreHeaderClass } from "../../components/scm-v2/phoneMoreActions";
 import { lazy, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { RenovationDocTrail } from "./RenovationDocTrail";
@@ -431,6 +432,7 @@ export function PurchaseOrderDetailV2() {
 }
 
 function PurchaseOrderDetailV2ReadOnly() {
+  const [moreOpen, setMoreOpen] = useState(false);
   const { id } = useParams<{ id: string }>();
   /* Renovation mode (mig 0116): the project and each line's room / category copied from the SO. */
   const reno = useRenoDocInfo("po", id);
@@ -1157,11 +1159,7 @@ function PurchaseOrderDetailV2ReadOnly() {
           <span className="font-mono text-[12.5px] font-semibold text-sidebar-ink">
             {purchaseOrder.po_number}
           </span>
-          <button
-            type="button"
-            className="text-sidebar-ink-muted"
-            aria-label="More actions"
-          >
+          <button type="button" className={PHONE_MORE_BUTTON} aria-label="More actions" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>
             <MoreHorizontal size={18} />
           </button>
         </div>
@@ -1183,7 +1181,7 @@ function PurchaseOrderDetailV2ReadOnly() {
       </div>
 
       {/* Desktop sticky header */}
-      <div className="sticky top-0 z-10 -mx-4 hidden border-b border-border bg-bg/95 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6 md:block">
+      <div className={phoneMoreHeaderClass(moreOpen)}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
             <button
