@@ -42,6 +42,9 @@ type ReceiptRow = ReceiptPdfData & {
   payment_id: string;
   channel_account_code: string | null;
   created_at: string;
+  /** The instalment invoice a renovation receipt is for (migration 0358); null = the order alone. */
+  sales_invoice_id?: string | null;
+  invoice_no?: string | null;
 };
 
 /** A renovation payment ahead of its invoice (spec 7.6): the next instalment, at the amount the bill route expects. */
@@ -184,6 +187,7 @@ export const OfficialReceipts = () => {
     },
     { key: 'paid', label: 'Paid', render: (r) => fmtDateOrDash(r.paid_at), getValue: (r) => r.paid_at, exportFormat: 'date' },
     { key: 'document', label: 'Document', render: (r) => r.doc_no ?? '—', getValue: (r) => r.doc_no ?? '' },
+    { key: 'invoice', label: 'Invoice', render: (r) => r.invoice_no ?? '—', getValue: (r) => r.invoice_no ?? '' },
     { key: 'customer', label: 'Customer', render: (r) => r.customer_name ?? '—', getValue: (r) => r.customer_name ?? '' },
     { key: 'method', label: 'Method', render: (r) => methodLabel(r.method), getValue: (r) => r.method ?? '' },
     {
@@ -216,6 +220,7 @@ export const OfficialReceipts = () => {
           rows={[
             { label: 'Customer', value: printFor.customer_name ?? '-' },
             { label: 'Document', value: printFor.doc_no ?? '-' },
+            ...(printFor.invoice_no ? [{ label: 'Invoice', value: printFor.invoice_no }] : []),
             { label: 'Paid', value: fmtDateOrDash(printFor.paid_at) },
             { label: 'Amount', value: fmtSen(printFor.amount_sen) },
           ]}
