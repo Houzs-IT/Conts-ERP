@@ -1,0 +1,52 @@
+# Checks every pull request that changes the engine (engine/backend, engine/frontend) before it can merge: types and the
+# lint ratchet. The ratchet's per-file ceilings may only fall, so new lint debt fails here while the old debt is paid
+# down over time. Ceilings were re-baselined to main on 21 Nov 2026 (owner's choice: block new debt, clear old debt
+# gradually); before this job existed nothing ran the ratchet, and it had drifted ~100 file/rule pairs over.
+name: Engine CI
+on:
+  pull_request:
+    paths:
+      - 'engine/backend/**'
+      - 'engine/frontend/**'
+      - 'engine/scripts/lint-ratchet.mjs'
+      - '.github/workflows/engine-ci.yml'
+concurrency:
+  group: engine-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: engine/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: engine/backend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        run: npx tsc -b
+      - name: Lint ratchet
+        run: npm run lint
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: engine/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: engine/frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        run: npx tsc -b
+      - name: Lint ratchet
+        run: npm run lint
