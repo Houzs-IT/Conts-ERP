@@ -425,7 +425,7 @@ export const invalidateSoLists = (qc: ReturnType<typeof useQueryClient>) => {
    PAYMENTS RECEIVED but printed "Paid to date RM 500.00" (TC-SO-2611-028, 21 Nov 2026). */
 export const invalidateSoPaymentMoved = (qc: ReturnType<typeof useQueryClient>, docNo: string) => {
   invalidateSoLists(qc);
-  qc.invalidateQueries({ queryKey: ['mfg-sales-order-detail', docNo] });
+  void qc.invalidateQueries({ queryKey: ['mfg-sales-order-detail', docNo] });
 };
 
 /* `idempotencyKey` is OPTIONAL and must be destructured OUT of the body — the
