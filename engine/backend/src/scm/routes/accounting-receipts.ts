@@ -11,7 +11,7 @@
 
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { requireActiveCompanyId } from '../lib/companyScope';
-import { confirmBankRefusal, confirmBanks, ensureReceiptForPayment, formaliseReceipt } from '../../acc/receipts';
+import { confirmBankRefusal, confirmBanks, ensureReceiptForPayment, formaliseReceipt, loadReceiptParties, withReceiptParty } from '../../acc/receipts';
 import { bankChangeRefusal, nextInstalmentOffer, postConfirmedPayment, soOfPayment } from '../../acc/receipt-confirm';
 import { resolveRoles } from '../../acc/rules';
 import { linkReceiptInvoiceBestEffort } from '../../acc/receipt-invoice';
@@ -49,6 +49,11 @@ export const receiptsList = async (c: any): Promise<Response> => {
   const COLS = `${BASE_COLS}, sales_invoice_id, invoice_no`;
   const noInvoiceCols = (e: { message?: string } | null | undefined) => /sales_invoice_id|invoice_no/.test(String(e?.message ?? ''));
   const scoped = (q: any) => (status === 'DRAFT' || status === 'FORMAL' ? q.eq('status', status) : q);
+  /* Each row carries its customer's name, phone, address, order and brand for the print (ported from Houzs, 2026-11-09). */
+  const withParties = async (rows: Array<Record<string, unknown>>) => {
+    const parties = await loadReceiptParties(sb, co.companyId, rows);
+    return rows.map((r) => withReceiptParty(r, parties));
+  };
   if (range) {
     const read = (cols: string) => paginateAll<Record<string, unknown>>((from, to) => scoped(sb.from('acc_official_receipts').select(cols)
       .eq('company_id', co.companyId).gte('paid_at', range.from).lte('paid_at', range.to))
@@ -56,7 +61,7 @@ export const receiptsList = async (c: any): Promise<Response> => {
     let all = await read(COLS);
     if (all.error && noInvoiceCols(all.error)) all = await read(BASE_COLS);
     if (all.error) return c.json({ error: 'load_failed', reason: all.error.message }, 500);
-    return c.json({ receipts: all.data ?? [] });
+    return c.json({ receipts: await withParties(all.data ?? []) });
   }
   const read = (cols: string) => scoped(sb.from('acc_official_receipts').select(cols).eq('company_id', co.companyId))
     .order('created_at', { ascending: false })
@@ -64,7 +69,7 @@ export const receiptsList = async (c: any): Promise<Response> => {
   let { data, error } = await read(COLS);
   if (error && noInvoiceCols(error)) ({ data, error } = await read(BASE_COLS));
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-  return c.json({ receipts: data ?? [] });
+  return c.json({ receipts: await withParties((data ?? []) as Array<Record<string, unknown>>) });
 };
 
 /* ── POST /accounting/receipts/ensure — {source, paymentId} ──────────────── */
@@ -89,7 +94,8 @@ export const receiptEnsure = async (c: any): Promise<Response> => {
      amounts, issued-by), not just the number — one round trip, server truth. */
   const { data: row, error: rowErr } = await sb.from('acc_official_receipts').select('*').eq('id', r.id).maybeSingle();
   if (rowErr || !row) return c.json({ error: 'ensure_failed', reason: rowErr?.message ?? 'receipt vanished after ensure' }, 500);
-  return c.json({ receipt: row });
+  /* RECEIVED FROM on the print: the order's phone and address, its name where the receipt has none, its brand. */
+  return c.json({ receipt: withReceiptParty(row as Record<string, unknown>, await loadReceiptParties(sb, co.companyId, [row as Record<string, unknown>])) });
 };
 
 /* ── GET /accounting/receipts/banks ─────────────────────────────────────────
