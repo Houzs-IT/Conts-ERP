@@ -244,6 +244,8 @@ const releaseSoSideQueries = (qc: ReturnType<typeof useQueryClient>) => {
   invalidateSoLists(qc);
   qc.invalidateQueries({ queryKey: ['mfg-sales-order-detail'] });
   qc.invalidateQueries({ queryKey: ['mfg-delivery-orders', 'deliverable-so-lines'], refetchType: 'all' });
+  // A confirmed DO (create or line change on a shipped DO) moves stock too.
+  void qc.invalidateQueries({ queryKey: ['inventory'] });
 };
 
 export const useMfgDeliveryOrders = (status?: string) => useQuery({

@@ -53,6 +53,10 @@ export function retryUnlessClientError(failureCount: number, error: unknown): bo
   return true;
 }
 
+export function isPagedListKey(key: readonly unknown[]): boolean {
+  return typeof key[0] === "string" && key[0].endsWith("-paged");
+}
+
 export const queryClient = new QueryClient({
   // Cross-tab sync: every successful write tells other open tabs to refetch.
   // One central hook in the MutationCache, so no per-mutation wiring is needed.
@@ -63,6 +67,10 @@ export const queryClient = new QueryClient({
          without touching its own query key, so every write refreshes the trails on screen. */
       void queryClient.invalidateQueries({ queryKey: ["renovation-doc-trail"] });
       void queryClient.invalidateQueries({ queryKey: ["so-line-status"] });
+      /* The paged document lists ('grns-paged', 'purchase-invoices-paged', ...) are siblings of their root key, not
+         under it, so a row action that refreshed only ['grns'] left the row on screen showing its old status. Any
+         write marks every paged list stale; only the one on screen refetches. */
+      void queryClient.invalidateQueries({ predicate: (q) => isPagedListKey(q.queryKey) });
     },
   }),
   defaultOptions: {

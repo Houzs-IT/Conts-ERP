@@ -426,6 +426,10 @@ export const invalidateSoLists = (qc: ReturnType<typeof useQueryClient>) => {
 export const invalidateSoPaymentMoved = (qc: ReturnType<typeof useQueryClient>, docNo: string) => {
   invalidateSoLists(qc);
   void qc.invalidateQueries({ queryKey: ['mfg-sales-order-detail', docNo] });
+  // The money panel under the payments table reads its own key; a deposit also moves the order's invoices.
+  void qc.invalidateQueries({ queryKey: ['so-money', docNo] });
+  void qc.invalidateQueries({ queryKey: ['sales-invoices'] });
+  void qc.invalidateQueries({ queryKey: ['sales-invoice-detail'] });
 };
 
 /* `idempotencyKey` is OPTIONAL and must be destructured OUT of the body — the

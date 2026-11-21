@@ -110,7 +110,7 @@ export const useRequestRefunds = () => {
     },
     onSuccess: (out) => {
       for (const o of out) void qc.invalidateQueries({ queryKey: ORDER_MONEY_KEY(o.docNo) });
-      void qc.invalidateQueries({ queryKey: ['refund-source'] });
+      void qc.invalidateQueries({ queryKey: ['pv-refund-source'] });
       void qc.invalidateQueries({ queryKey: ['so-cancelled-with-money'] });
       void qc.invalidateQueries({ queryKey: ['so-with-money'] });
     },
@@ -142,7 +142,7 @@ export const useRequestRefund = (docNo: string) => {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ORDER_MONEY_KEY(docNo) });
-      void qc.invalidateQueries({ queryKey: ['refund-source'] });
+      void qc.invalidateQueries({ queryKey: ['pv-refund-source'] });
       void qc.invalidateQueries({ queryKey: ['so-cancelled-with-money'] });
       void qc.invalidateQueries({ queryKey: ['so-with-money'] });
     },

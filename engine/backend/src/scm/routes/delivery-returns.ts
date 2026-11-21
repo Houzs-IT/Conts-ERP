@@ -1852,9 +1852,12 @@ export const patchDeliveryReturnStatusHandler = async (c: any) => {
     }
     data = updated as { id: string; status: string };
   } else {
+    /* Compare-and-set on the status read above, so a late RECEIVED / INSPECTED cannot bring back a return that a
+       cancel (and its stock reversal) already took out. */
     const { data: updated, error } = await scopeToCompanyId(sb.from('delivery_returns')
-      .update(ts).eq('id', id), co.companyId).select('id, status').single();
+      .update(ts).eq('id', id), co.companyId).eq('status', prevStatus).select('id, status').maybeSingle();
     if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
+    if (!updated) return c.json({ error: 'status_changed', reason: 'This return just changed. Reload it and try again.' }, 409);
     data = updated as { id: string; status: string };
   }
 

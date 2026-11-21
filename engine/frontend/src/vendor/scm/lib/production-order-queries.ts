@@ -703,7 +703,18 @@ const refreshOrder = (qc: ReturnType<typeof useQueryClient>, id: string) => {
   void qc.invalidateQueries({ queryKey: ['production-order-detail', id] });
   void qc.invalidateQueries({ queryKey: ['production-orders'] });
   void qc.invalidateQueries({ queryKey: ['production-orders-paged'] });
+  // Start and Return stock move stock and the order's SO lines; on-hand screens read ['inventory'].
+  void qc.invalidateQueries({ queryKey: ['inventory'] });
 };
+/* Complete raises a GRN and a DO and delivers it through plain requests, outside react-query, so nothing refreshed
+   those documents, stock or the sales order until a reload. Call after Complete, whether it finished or stopped. */
+export function refreshAfterComplete(qc: ReturnType<typeof useQueryClient>, id: string): void {
+  refreshOrder(qc, id);
+  for (const k of ['grns', 'grn-detail', 'mfg-delivery-orders', 'mfg-delivery-order-detail', 'mfg-sales-orders',
+    'mfg-sales-order-detail', 'renovation-doc-trail', 'so-line-status']) {
+    void qc.invalidateQueries({ queryKey: [k] });
+  }
+}
 const orderPost = <T,>(path: string, method = 'POST') => (body: unknown) =>
   authedFetch<T>(`/production-orders/${path}`, { method, body: JSON.stringify(body) });
 
