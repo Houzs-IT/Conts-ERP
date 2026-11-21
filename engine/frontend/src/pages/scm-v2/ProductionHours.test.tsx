@@ -13,7 +13,7 @@ vi.mock("../../vendor/scm/lib/production-order-queries", async (original) => ({
 vi.mock("../../vendor/scm/components/NotifyDialog", () => ({ useNotify: () => vi.fn() }));
 vi.mock("../../vendor/scm/components/ConfirmDialog", () => ({ useConfirm: () => vi.fn(async () => true) }));
 
-import { ProductionHoursPanel, budgetWords, clockPeople, isoFromMyt, timeBoxOf } from "./ProductionHours";
+import { ProductionHoursPanel, budgetWords, clockPeople, isoFromMyt, newEntryTimes, timeBoxOf } from "./ProductionHours";
 
 const base = (over: Partial<ProductionHours> = {}): ProductionHours => ({
   budgetHours: 10,
@@ -39,6 +39,11 @@ describe("helpers", () => {
     expect(budgetWords(base())).toEqual({ text: "2.5 h over budget", over: true });
     expect(budgetWords(base({ summary: { ...base().summary, varianceMinutes: -90, overBudget: false } }))).toEqual({ text: "1.5 h left", over: false });
     expect(budgetWords(base({ budgetHours: null, summary: { ...base().summary, varianceMinutes: null } }))).toEqual({ text: "No production time set", over: false });
+  });
+  test("click sweep F32: a new entry stops now, not at a fixed 5 pm that is in the future before 5 pm", () => {
+    expect(newEntryTimes(new Date("2026-11-21T03:20:00Z"))).toEqual({ start: "08:00", stop: "11:20" });
+    expect(newEntryTimes(new Date("2026-11-20T22:30:00Z"))).toEqual({ start: "05:30", stop: "06:30" });
+    expect(newEntryTimes(new Date("2026-11-20T16:20:00Z"))).toEqual({ start: "00:00", stop: "00:20" });
   });
   test("you first, then each worker once", () => {
     const people = clockPeople(base(), [{ id: "w1", person_key: "tech-1", name: "Ali", trade: null, how: "ASSIGNED" }], "You");
@@ -75,6 +80,29 @@ describe("the panel", () => {
     fireEvent.change(screen.getByLabelText("Stop"), { target: { value: "15:30" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(mutate.mock.calls[0]![0]).toEqual({ kind: "add", personKey: "tech-1", startedAt: "2026-11-09T05:00:00.000Z", stoppedAt: "2026-11-09T07:30:00.000Z", notes: "" });
+  });
+  test("click sweep F32: Add time with the defaults sends a stop that is not in the future", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-21T03:20:00Z"));
+    try {
+      data = base({ canTime: false });
+      render(<ProductionHoursPanel orderId="o1" workers={workers} canAct />);
+      fireEvent.click(screen.getByText("Add time"));
+      expect((screen.getByLabelText("Stop") as HTMLInputElement).value).toBe("11:20");
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      expect(mutate.mock.calls[0]![0]).toMatchObject({ kind: "add", startedAt: "2026-11-21T00:00:00.000Z", stoppedAt: "2026-11-21T03:20:00.000Z" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  test("click sweep F32: a double-click on Save sends one entry", () => {
+    data = base({ canTime: false });
+    render(<ProductionHoursPanel orderId="o1" workers={workers} canAct />);
+    fireEvent.click(screen.getByText("Add time"));
+    const save = screen.getByRole("button", { name: "Save" });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    expect(mutate).toHaveBeenCalledTimes(1);
   });
   test("review fix 4: a worker who is not a supervisor clocks only themselves and cannot change entries", () => {
     data = base({ canSupervise: false });

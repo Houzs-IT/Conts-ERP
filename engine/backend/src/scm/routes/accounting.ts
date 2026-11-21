@@ -107,6 +107,7 @@ import { numberingGet, numberingPut } from './accounting-numbering';
 import { receiptsList, receiptEnsure, receiptFormalise, receiptConfirmBanks } from './accounting-receipts';
 import { receiptsCheck } from './accounting-receipts-check';
 import { receiptsBackfillPlan, receiptsBackfillRun } from './accounting-receipts-backfill';
+import { unmatchedBankLinesHandler, unmatchedPaymentsHandler } from './accounting-unmatched-payments';
 import { ACCOUNT_SECTIONS, defaultSectionFor } from '../lib/account-sections';
 import { dateOrNull } from '../lib/date-coerce';
 
@@ -233,6 +234,10 @@ accounting.get('/receipts/check', receiptsCheck);
 accounting.get('/receipts/banks', receiptConfirmBanks);
 accounting.post('/receipts/backfill', receiptsBackfillRun);
 accounting.post('/receipts/:id/formalise', receiptFormalise);
+/* Unmatched payments (ported from Houzs): customer payments not confirmed or not on the bank yet, and the bank lines
+   nothing is matched to. Handlers in accounting-unmatched-payments.ts. */
+accounting.get('/unmatched-payments', unmatchedPaymentsHandler);
+accounting.get('/unmatched-bank-lines', unmatchedBankLinesHandler);
 accounting.post('/item-groups', itemGroupCreate);
 accounting.put('/item-groups/:code/accounts', itemGroupBind);
 accounting.patch('/item-groups/:code', itemGroupPatch);

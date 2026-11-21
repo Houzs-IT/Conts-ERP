@@ -2,6 +2,10 @@
 
 Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw, schema `pos`, via Hyperdrive e0781ccd...). Staging preview: https://staging-preview.theconts-os.pages.dev (Supabase ecgyrmblqfxvbfjlqkdq).
 
+## Click sweep save fixes (21 Nov 2026, fix/save-findings)
+- Port to Houzs (owner wants it later; same code there): idempotency_in_flight wait (frontend/src/vendor/scm/lib/authed-fetch.ts, frontend/src/api/client.ts), SO edit Save held from the click (frontend/src/pages/scm-v2/SalesOrderDetail.tsx saveEdit / submitAmendment), no Default leg-height seed on existing SO lines (same file, seedSofaLegDefault), PO by number (backend/src/scm/routes/mfg-purchase-orders.ts GET /:id).
+- Decision to confirm with the owner: a renovation contract's SO rooms now save from Edit SO (they were refused and dropped silently); the signed contract's own sections (reno_doc_sections) are untouched.
+
 ## Packages module (owner, 20 Nov 2026; migration 0347)
 - Sales order > Packages: packages (PKG-, areas) and kits (KIT-), products + qty + SLA days only, no prices; SO/VO product search and From package add them to a VO; Project start date dates SLA lines. Code: engine/backend/src/scm/lib/renovation-packages.ts, engine/frontend/src/pages/renovation/RenovationPackage*.tsx, renovationPackagePick.tsx.
 - Old package templates are packages now (PKG-001...); their stored prices, letterhead, print format and payment terms stay in the table but no screen edits them any more (New quotation from template still reads them).

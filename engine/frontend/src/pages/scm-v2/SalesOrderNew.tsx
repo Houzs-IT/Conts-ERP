@@ -1653,13 +1653,30 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
     }
   };
 
+  /* One press at a time. The validate dry-run below is awaited before create.mutate, so create.isPending could not
+     disable the button for that stretch and a double-click sent a second create (click sweep F11, 21 Nov 2026). */
+  const savePressRef = useRef(false);
+  const [savePressed, setSavePressed] = useState(false);
   const onSave = async (asDraft = false) => {
-    if (asQuotation) { await saveQuotation(); return; }
+    if (savePressRef.current || create.isPending) return;
+    savePressRef.current = true;
+    setSavePressed(true);
+    let handedToCreate = false;
+    const releasePress = () => { savePressRef.current = false; setSavePressed(false); };
+    try {
+      handedToCreate = await onSaveOnce(asDraft, releasePress);
+    } finally {
+      if (!handedToCreate) releasePress();
+    }
+  };
+  /* True when create.mutate was called; `releasePress` then runs when it settles. */
+  const onSaveOnce = async (asDraft: boolean, releasePress: () => void): Promise<boolean> => {
+    if (asQuotation) { await saveQuotation(); return false; }
     if (createdDocNo) {
       const intents = paymentIntents();
       if (intents.length === 0) {
         navigate(`/scm/sales-orders/${createdDocNo}`);
-        return;
+        return false;
       }
       if (!writePaymentRetryHandoff('so', createdDocNo, intents)) {
         void notify({
@@ -1667,12 +1684,12 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           body: 'Browser storage is still unavailable. This page is keeping the payment rows; retry Save after storage is available.',
           tone: 'error',
         });
-        return;
+        return false;
       }
       navigate(`/scm/sales-orders/${createdDocNo}?payments=1&retryPayments=1`, {
         state: paymentRetryNavigationState('so', createdDocNo, intents),
       });
-      return;
+      return false;
     }
     const validLines = lines.filter((l) => l.itemCode.trim() && l.qty > 0);
     if (reno) setRenoTried(true);
@@ -1699,7 +1716,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
     const problems = [...serverProblems, ...scannedExtras, ...slipDateExtras];
     if (problems.length > 0) {
       void notify({ title: saveProblemsTitle(problems.length), body: <SaveProblemsList problems={problems} />, tone: 'error' });
-      return;
+      return false;
     }
 
     /* Edit-gate — operator committed to saving, so fold their corrections back
@@ -1746,7 +1763,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
     const pendingDepositSen = paymentIntents()
       .reduce((sum, d) => sum + d.amountSen, 0);
 
-    void (async () => {
+    return await (async (): Promise<boolean> => {
     const payload = {
         ...receiptDepositBody,
         pendingDepositSen: pendingDepositSen > 0 ? pendingDepositSen : undefined,
@@ -1846,7 +1863,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
         } : {}),
     };
     const key = await contentKeyFor(idemKeys, payload, () => serviceConfirm(unansweredSaveQuestion('sales order', 'Sales > Sales Orders')));
-    if (!key) return;
+    if (!key) return false;
     create.mutate(
       { ...payload, idempotencyKey: key },
       settleOutcome(idemKeys, {
@@ -1908,8 +1925,10 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
            2026-07-18); anything else keeps this page's own "Save failed" popup. */
         onError: (err) => { void notifySaveProblems(notify, err,
           (m) => { void notify({ title: 'Save failed', body: m, tone: 'error' }); }); },
+        onSettled: releasePress,
       }),
     );
+    return true;
     })();
   };
 
@@ -2576,10 +2595,10 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
             <Button
               variant={fromScan ? 'secondary' : 'primary'}
               onClick={() => { void onSave(false); }}
-              disabled={create.isPending || quoteBusy}
+              disabled={create.isPending || quoteBusy || savePressed}
             >
               <Save {...ICON} />
-              {create.isPending || quoteBusy
+              {create.isPending || quoteBusy || savePressed
                 ? 'Saving…'
                 : asQuotation ? 'Create Quotation'
                 : createdDocNo
@@ -2590,10 +2609,10 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
               <Button
                 variant={fromScan ? 'primary' : 'secondary'}
                 onClick={() => { void onSave(true); }}
-                disabled={create.isPending || !!createdDocNo}
+                disabled={create.isPending || savePressed || !!createdDocNo}
               >
                 <Save {...ICON} />
-                {create.isPending ? 'Saving…' : 'Save as Draft'}
+                {create.isPending || savePressed ? 'Saving…' : 'Save as Draft'}
               </Button>
             )}
           </>

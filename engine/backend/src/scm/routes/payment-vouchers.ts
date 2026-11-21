@@ -44,7 +44,7 @@
 // source_type='PV' + the pv_number; a cancel reverses that JE (contra) keyed on
 // the original JE's reversed flag — re-cancels / retries no-op.
 
-import { payBackBank, savedBanksOf } from '../../conts/petty-cash-routes';
+import { paymentListingHandler, payeeBanksOf } from './payment-vouchers-listing';
 import { Hono } from 'hono';
 import { supabaseAuth } from '../middleware/auth';
 import type { Env, Variables } from '../env';
@@ -550,38 +550,12 @@ export const listPaymentVouchersHandler = async (c: any): Promise<Response> => {
 };
 paymentVouchers.get('/', listPaymentVouchersHandler);
 
-type PayeeBank = { bankName: string; accountNo: string; accountName: string | null };
-/** The bank each voucher's money goes to (chew, 18 Nov 2026: the voucher list shows the account number): a supplier's
- *  own bank (suppliers.bank_*), or, for a claim paid back, the bank given on the claim, else the person's saved one.
- *  Best effort: a failed read leaves the column empty, never the list. */
-async function payeeBanksOf(sb: any, companyId: number | null, rows: Array<Record<string, unknown> & { id: string }>): Promise<Map<string, PayeeBank>> {
-  const out = new Map<string, PayeeBank>();
-  for (const r of rows) {
-    const s = r.supplier as { bank_name?: string | null; bank_account_no?: string | null; bank_account_name?: string | null } | null;
-    if (s?.bank_account_no) out.set(r.id, { bankName: s.bank_name ?? '', accountNo: s.bank_account_no, accountName: s.bank_account_name ?? null });
-  }
-  const rest = rows.filter((r) => !out.has(r.id)).map((r) => r.id);
-  if (!rest.length || companyId == null) return out;
-  try {
-    const { data } = await sb.from('staff_receipts').select('payback_pv_id, submitter_user_id, payee_bank_name, payee_account_no, payee_account_name')
-      .eq('company_id', companyId).in('payback_pv_id', rest);
-    const claims = (data ?? []) as Array<{ payback_pv_id: string; submitter_user_id: string; payee_bank_name: string | null; payee_account_no: string | null; payee_account_name: string | null }>;
-    const saved = await savedBanksOf(sb, companyId, claims.map((x) => String(x.submitter_user_id)));
-    for (const x of claims) {
-      if (out.has(x.payback_pv_id)) continue;
-      const b = payBackBank(x, saved.get(String(x.submitter_user_id)) ?? null);
-      if (b) out.set(x.payback_pv_id, { bankName: b.bankName, accountNo: b.accountNo, accountName: b.accountName });
-    }
-  } catch (e) {
-    console.error('[payment-vouchers] payee banks not read:', e instanceof Error ? e.message : e);
-  }
-  return out;
-}
-
 /* PV attachments (0352) — the bill lives with its voucher. Registered BEFORE
    GET /:id so /:id/files never falls into the detail matcher. */
 /* print-bundle sits with the other literal paths, BEFORE '/:id'. */
 paymentVouchers.post('/print-bundle', printPvBundleHandler);
+/* The Payment listing (ported from Houzs): the vouchers to pay, a line each, with the bank each pays into. */
+paymentVouchers.get('/listing', paymentListingHandler);
 paymentVouchers.get('/refund-source', refundSourceHandler); // the document a Customer Refund refunds (lib/pv-refund.ts)
 paymentVouchers.post('/:id/files', uploadPvFileHandler);
 paymentVouchers.get('/:id/files', listPvFilesHandler);

@@ -97,7 +97,10 @@ function MoveLine({ rooms, current, onMove, inline }: { rooms: string[]; current
   );
 }
 
-export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAddLine, layout, disabled, card, compact }: {
+/** The part of a layout that decides its rooms. */
+export const roomLayoutKey = (layout: RoomLayout | null): string => (layout ? `${layout.bedrooms}|${layout.bathrooms}` : '');
+
+export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAddLine, layout, savedLayoutKey, disabled, card, compact }: {
   rooms: string[];
   /** `rename` is set when one room was renamed, so the parent moves its lines too. */
   onRoomsChange: (next: string[], rename?: { from: string; to: string }) => void;
@@ -105,6 +108,9 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
   onRowRoom: (key: string, room: string) => void;
   onAddLine: (room: string) => void;
   layout: RoomLayout | null;
+  /** A saved order: roomLayoutKey of the layout it was saved with, null while that is still loading, undefined for a
+      new order. The saved layout arriving is not a choice, so it adds no rooms; only a layout changed here does. */
+  savedLayoutKey?: string | null;
   disabled?: boolean;
   /** Each room as its own card (the page's classes) instead of rows inside one card. */
   card?: RoomCard;
@@ -116,16 +122,20 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
   const placed = placeRows(rooms, rows);
   const shown = placed.rooms;
   /* Choosing or changing the layout adds its rooms straight away (owner, 5 Nov 2026); rooms already here stay. */
-  const layoutKey = layout ? `${layout.bedrooms}|${layout.bathrooms}` : '';
+  const layoutKey = roomLayoutKey(layout);
   const seenLayout = useRef(layoutKey);
   useEffect(() => {
+    /* A cold load of ?edit=1 met the saved layout only after mounting, read it as a new choice and added a room the
+       order does not have (click sweep F10, 21 Nov 2026). Wait for the saved one and never count it as a change. */
+    if (savedLayoutKey === null) return;
     if (seenLayout.current === layoutKey) return;
     seenLayout.current = layoutKey;
     if (!layout || disabled) return;
+    if (savedLayoutKey !== undefined && layoutKey === savedLayoutKey) return;
     const r = generateRooms(shown, layout.bedrooms, layout.bathrooms);
     if (r.added.length > 0) onRoomsChange(r.rooms);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the layout is the trigger
-  }, [layoutKey]);
+  }, [layoutKey, savedLayoutKey]);
   /* Within a room, grouped lines (locked ones) come first, each group together; the rest keep their order. */
   const groups = shown.map((room) => {
     const inRoom = rows.filter((r) => placed.roomOf[r.key] === room);

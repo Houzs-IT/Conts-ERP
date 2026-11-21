@@ -742,6 +742,8 @@ export const ALL_NAV_TABS: NavTab[] = [
         groupId: "scm-finance-out",
         children: [
           { to: "/scm/payment-vouchers", label: "Payment vouchers", icon: Wallet, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write", "scm.payment_voucher.post", "scm.payment_voucher.cancel"], anyAccess: ["scm.finance.accounting"] },
+          // Payment listing (ported from Houzs): each day's vouchers to pay and post, one line each with its bank, printable.
+          { to: "/scm/payment-listing", label: "Payment listing", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write", "scm.payment_voucher.post", "scm.payment_voucher.cancel"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/ap-invoices", label: "AP invoices", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/payment-requests", label: "Payment requests", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/staff-banks", label: "Staff bank details", icon: FileText, anyPerm: ["*", "scm.payment_voucher.approve"], anyAccess: ["scm.finance.accounting"] },
@@ -758,6 +760,8 @@ export const ALL_NAV_TABS: NavTab[] = [
           { to: "/scm/daily-bank", label: "Daily bank", icon: Landmark, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/merchant-recon", label: "Merchant recon", icon: CreditCard, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/bank-recon", label: "Bank recon", icon: Banknote, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
+          // Unmatched payments (ported from Houzs): customer payments not confirmed or not on the bank yet, and bank lines nothing is matched to.
+          { to: "/scm/unmatched-payments", label: "Unmatched payments", icon: AlertCircle, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
         ],
       },
       {
