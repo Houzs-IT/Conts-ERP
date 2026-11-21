@@ -13,6 +13,7 @@ describe('what the owner pays back (chew, 20 Nov 2026)', () => {
   });
   test('refused: no unit, more than the line, nothing or less', () => {
     expect(readRecoveries([{ recoverSen: 100 }], [line(null, 500)])).toMatchObject({ ok: false });
+    expect(readRecoveries([{ recoverSen: 100 }], [{ ...line('U1', 500), maintenance_issue_id: 'M1' }])).toMatchObject({ ok: false });
     expect(readRecoveries([{ recoverSen: 600 }], [line('U1', 500)])).toMatchObject({ ok: false });
     expect(readRecoveries([{ recoverSen: -1 }], [line('U1', 500)])).toMatchObject({ ok: false });
     expect(readRecoveries(undefined, [line('U1', 500)])).toEqual({ ok: true, byUnit: new Map() });

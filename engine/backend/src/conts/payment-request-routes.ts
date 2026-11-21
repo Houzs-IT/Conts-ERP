@@ -443,9 +443,11 @@ export const setRecoveryHandler = async (c: Ctx): Promise<Response> => {
   if (!['SUBMITTED', 'PART_PAID', 'WITHDRAWN', 'REJECTED'].includes(String(r.status))) {
     return c.json({ error: 'not_open', message: `${r.request_no} is ${String(r.status).toLowerCase()}: what the owner pays back is changed on the owner's statement now.` }, 409);
   }
-  const { data: ls } = await sb.from('payment_request_lines').select('unit_id, amount_sen').eq('request_id', r.id);
-  const onUnit = ((ls ?? []) as Array<{ unit_id: string | null; amount_sen: number }>).filter(l => l.unit_id === unitId).reduce((n, l) => n + Number(l.amount_sen), 0);
-  if (!onUnit) return c.json({ error: 'validation', message: 'That unit is not on this request.' }, 422);
+  /* A maintenance job's line is the job's Who pays' (chew, 21 Nov 2026): only the unit's other lines count. */
+  const { data: ls } = await sb.from('payment_request_lines').select('unit_id, amount_sen, maintenance_issue_id').eq('request_id', r.id);
+  const onUnit = ((ls ?? []) as Array<{ unit_id: string | null; amount_sen: number; maintenance_issue_id: string | null }>)
+    .filter(l => l.unit_id === unitId && !l.maintenance_issue_id).reduce((n, l) => n + Number(l.amount_sen), 0);
+  if (!onUnit) return c.json({ error: 'validation', message: 'That unit is not on this request, or only for a maintenance job (its Who pays decides).' }, 422);
   if (amount != null && amount > onUnit) return c.json({ error: 'validation', message: 'The owner pays back no more than the request pays for the unit.' }, 422);
   const { data: had } = await sb.from('payment_request_recoveries').select('adjustment_id').eq('request_id', r.id).eq('unit_id', unitId).maybeSingle();
   if ((had as { adjustment_id?: string | null } | null)?.adjustment_id) return c.json({ error: 'charged', message: 'The owner is already charged for this. Change it on the owner\'s statement.' }, 409);
