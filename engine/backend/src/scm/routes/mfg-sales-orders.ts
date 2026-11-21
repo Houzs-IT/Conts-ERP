@@ -111,6 +111,7 @@ import { splitSofaBuildIntoModuleLines, distributeBuildDiscount } from '../share
 import { orderSofaModuleRowsWithinBuilds, sortSoLinesByGroupRank } from '../shared/so-line-display';
 import { PAYMENT_METHOD_CODES } from '../shared/payment-methods';
 import { soPaidSen, soBalanceSen, soPaidInputsOf } from '../shared/so-outstanding';
+import { readSoInvoiceReceipts } from '../lib/so-invoice-receipts';
 /* Task 5 — mint one-shot SKUs at SO create when a line carries an extra add-on
    charge (gated by so_settings.pos_remark_extra_auto_sku). Pure code-resolution
    + row-build lives in the lib; this route batches the DB collision check. */
@@ -1135,7 +1136,8 @@ export async function soListMoneyKpis(
   let revenueSen = 0, outstandingSen = 0, paidSen = 0;
   for (const m of fb.data ?? []) {
     revenueSen += m.local_total_sen ?? 0;
-    outstandingSen += m.balance_sen_live ?? m.balance_sen ?? 0;
+    /* Never the stored balance_sen (the gross total, docs/SAVE-BUG-CLASSES.md class 4). */
+    outstandingSen += m.balance_sen_live ?? (m.local_total_sen ?? 0) - (m.paid_total_sen ?? 0);
     paidSen += m.paid_total_sen ?? 0;
   }
   return { data: { revenueSen, outstandingSen, paidSen }, error: null };
@@ -1730,7 +1732,12 @@ mfgSalesOrders.get('/:docNo', async (c) => {
   }
   /* ONE rule, shared with the AutoCount write-back's BALANCE UDF so the account
      book and this page cannot disagree. Why not `balance_sen`: so-outstanding.ts. */
-  const paidInputs = soPaidInputsOf(h.data as Record<string, unknown>, paidLedgerSen, depositInLedger);
+  /* Money taken on this order's invoices is paid on the order too (click sweep F31). An unreadable read counts
+     nothing and is logged: the balance then over-states, the direction that sends someone to check. */
+  const invRec = await readSoInvoiceReceipts(sb, [docNo], activeCompanyId(c) ?? null);
+  if (!invRec.ok) console.error('[so-detail] invoice receipts read failed:', docNo, invRec.reason);
+  const paidOnInvoicesSen = invRec.ok ? invRec.sen.get(docNo) ?? 0 : 0;
+  const paidInputs = soPaidInputsOf(h.data as Record<string, unknown>, paidLedgerSen, depositInLedger, paidOnInvoicesSen);
   const paidSenTotal = soPaidSen(paidInputs);
   /* SO amendment gate (port of 2990 110a472 — flags only, no 409 change).
      `amendment_eligible` tells the frontend that direct edits here must instead
@@ -1816,7 +1823,9 @@ mfgSalesOrders.get('/:docNo', async (c) => {
     paid_sen_total: paidSenTotal,
     /* The part of paid_sen_total that is NOT in the payments ledger (a legacy header deposit). A print that lists
        the ledger rows adds this to their sum, so its "Paid to date" always agrees with the rows it shows. */
-    paid_outside_ledger_sen: paidSenTotal - paidLedgerSen,
+    paid_outside_ledger_sen: paidSenTotal - paidLedgerSen - paidOnInvoicesSen,
+    /* Receipts taken on this order's live invoices, inside paid_sen_total; the print lists them as their own rows. */
+    paid_on_invoices_sen: paidOnInvoicesSen,
     /* SIGNED (owner 2026-08-16) — negative = over-collected, painted red by the
        detail page, the mobile detail and the SO print. The write-back keeps the
        CLAMPED `soOutstandingSen`: a screen can say "you hold RM 250 of his

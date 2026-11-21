@@ -204,7 +204,9 @@ export function paymentsOf(view: BillingView | null, so?: { docNo: string; total
   const confirmedReceipts = receipts.filter((r) => r.confirmed !== false);
   const confirmedSen = confirmedReceipts.reduce((s, r) => s + r.amountSen, 0);
   const invoiceHeldSen = Math.max(0, view.receivedSen - view.orderPaidSen);
-  let pool = so ? confirmedSen : view.orderPaidSen;
+  /* A contract credit note lowered the order total, so it fills the instalments too; without it they add up to more
+     than the order (click sweep F6b, 21 Nov 2026). */
+  let pool = (so ? confirmedSen : view.orderPaidSen) + (Number.isFinite(view.creditedSen) ? Math.max(0, view.creditedSen) : 0);
   let waitingPool = so ? receipts.filter((r) => r.confirmed === false).reduce((s, r) => s + r.amountSen, 0) : view.orderWaitingSen;
   const waitingTotalSen = view.waitingSen - view.orderWaitingSen + waitingPool;
   let seen = 0;

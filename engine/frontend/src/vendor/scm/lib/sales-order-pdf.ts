@@ -144,6 +144,8 @@ type SoHeader = {
   paid_sen_total?: number | null;
   /* The part of paid_sen_total outside the payments ledger (a legacy header deposit), stamped by GET /:docNo. */
   paid_outside_ledger_sen?: number | null;
+  /* Receipts taken on this order's live invoices, inside paid_sen_total (GET /:docNo). Printed as one row. */
+  paid_on_invoices_sen?: number | null;
   /* POS handover customer signature (data-URL or bare base64 PNG). */
   signature_b64?: string | null;
   /* Owner 2026-07 — brand letterhead. Stamped by GET /:docNo (SOFA→ZANOTTI,
@@ -786,7 +788,8 @@ export async function renderSalesOrderInto(
   doc.text('PAYMENTS RECEIVED', margin, ty);
   ty += 4;
 
-  if (payments.length === 0) {
+  const onInvoicesSen = Math.max(0, header.paid_on_invoices_sen ?? 0);
+  if (payments.length === 0 && onInvoicesSen === 0) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(110);
@@ -801,6 +804,8 @@ export async function renderSalesOrderInto(
       p.collected_by_name ?? '—',
       fmtRm(p.amount_sen, header.currency),
     ]);
+    /* Money taken on the order's sales invoices is paid on the order too (click sweep F31). */
+    if (onInvoicesSen > 0) payRows.push(['', 'Paid on sales invoices', '—', '—', fmtRm(onInvoicesSen, header.currency)]);
     autoTable(doc, {
       startY: ty,
       head: [['Date', 'Method', 'Approval Code', 'Collected By', 'Amount']],
@@ -978,10 +983,10 @@ export async function renderSalesOrderInto(
     listed RM 500 and RM 7,757 but printed "Paid to date RM 500.00". Without the split (an older server, a consignment
     order) it falls back to the header total, then to the rows. */
 export function soPdfPaidSen(
-  header: Pick<SoHeader, 'paid_sen_total' | 'paid_outside_ledger_sen'>,
+  header: Pick<SoHeader, 'paid_sen_total' | 'paid_outside_ledger_sen' | 'paid_on_invoices_sen'>,
   payments: ReadonlyArray<Pick<SoPayment, 'amount_sen'>>,
 ): number {
-  const rows = payments.reduce((sum, p) => sum + (p.amount_sen || 0), 0);
+  const rows = payments.reduce((sum, p) => sum + (p.amount_sen || 0), 0) + Math.max(0, header.paid_on_invoices_sen ?? 0);
   if (typeof header.paid_outside_ledger_sen === 'number') return header.paid_outside_ledger_sen + rows;
   return typeof header.paid_sen_total === 'number' ? header.paid_sen_total : rows;
 }

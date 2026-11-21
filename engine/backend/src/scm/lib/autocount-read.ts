@@ -138,6 +138,8 @@ export async function readSoOutstandingSen(
     headerDepositSen: Number(h.deposit_sen ?? 0),
     ledgerPaidSen,
     depositInLedger,
+    /* AutoCount knocks its own invoice receipts off; it only needs the order's. */
+    invoiceReceiptsSen: 0,
   });
 }
 

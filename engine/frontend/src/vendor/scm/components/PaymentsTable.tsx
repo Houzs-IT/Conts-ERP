@@ -456,6 +456,9 @@ type SavedModeProps = {
   nextAmountSen?: (paidSen: number) => number;
   /** Rendered at the top of the card body, above the payment rows (the renovation instalment schedule). */
   aboveRows?: ReactNode;
+  /** Receipts taken on the order's sales invoices (GET /:docNo paid_on_invoices_sen). They are paid on the order, so
+   *  they count in Paid and Balance and are shown as their own line (click sweep F31). */
+  paidOnInvoicesSen?: number;
 };
 
 type DraftModeProps = {
@@ -752,7 +755,8 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
        It seeds an INPUT, and the amount a cashier is about to collect is never
        negative — an already-over-collected order defaults the next row to 0,
        not to minus the credit. `amountSen` is `.nonnegative()` server-side. */
-    const outstanding = Math.max(0, grandTotal - paidNow);
+    const onInvoices = isSaved ? Math.max(0, (props as SavedModeProps).paidOnInvoicesSen ?? 0) : 0;
+    const outstanding = Math.max(0, grandTotal - paidNow - onInvoices);
     const next = isSaved ? (props as SavedModeProps).nextAmountSen : undefined;
     const d = { ...newPaymentDraft(defaultStaffId), amountSen: next ? Math.min(outstanding, Math.max(0, next(paidNow))) : outstanding };
     if (isSaved) {
@@ -1129,8 +1133,9 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
   /* Summary maths — identical across modes. In DRAFT mode there are no
      persisted rows yet, so paid is just Σ drafts. In SAVED mode paid is
      Σ persisted (drafts only enter the total once committed via API). */
+  const onInvoicesSen = isSaved ? Math.max(0, (props as SavedModeProps).paidOnInvoicesSen ?? 0) : 0;
   const paidSen = isSaved
-    ? persistedPayments.reduce((sum, p) => sum + (p.amount_sen || 0), 0)
+    ? persistedPayments.reduce((sum, p) => sum + (p.amount_sen || 0), 0) + onInvoicesSen
     : drafts.reduce((sum, d) => sum + (d.amountSen || 0), 0);
   /* SIGNED (owner 2026-08-16) — over-collection is allowed, and a negative
      balance is the whole point: it is what tells the operator he is holding
@@ -1972,10 +1977,15 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
           {/* ── Summary (Deposit Paid + Balance) ────────────────────── */}
           <div className={paymentsStyles.summary}>
             <span className={paymentsStyles.summaryLabel}>
-              Deposit Paid <DollarSign size={12} strokeWidth={1.75} />
+              {onInvoicesSen > 0 ? 'Paid' : 'Deposit Paid'} <DollarSign size={12} strokeWidth={1.75} />
             </span>
             <span className={paymentsStyles.summaryValueAccent}>
               {fmtRm(paidSen, currency)}
+              {onInvoicesSen > 0 && (
+                <span style={{ marginLeft: 8, fontSize: 'var(--fs-11)', fontWeight: 400 }}>
+                  · {fmtRm(onInvoicesSen, currency)} on sales invoices
+                </span>
+              )}
             </span>
             <span className={paymentsStyles.summaryLabel}>
               Balance <DollarSign size={12} strokeWidth={1.75} />

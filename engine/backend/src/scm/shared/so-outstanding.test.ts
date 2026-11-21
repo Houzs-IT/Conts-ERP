@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
-  soPaidSen, soOutstandingSen, soPaidInputsOf, soBalanceSen, soDisplayTotalSen,
+  soPaidSen, soOutstandingSen, soPaidInputsOf, soBalanceSen, soDisplayTotalSen, soOrderPaidSen, soInvoiceReceiptsSen,
 } from './so-outstanding';
 
 /* WHICH COLUMN is the load-bearing half of this module, not the arithmetic.
@@ -12,7 +12,7 @@ describe('the columns the rule reads off a mfg_sales_orders row', () => {
   test('the total comes from total_revenue_sen, and balance_sen is ignored', () => {
     const inputs = soPaidInputsOf(
       { total_revenue_sen: 500_00, balance_sen: 999_00, deposit_sen: 100_00 },
-      0, false,
+      0, false, 0
     );
     expect(inputs.totalRevenueSen).toBe(500_00);
     expect(inputs.headerDepositSen).toBe(100_00);
@@ -20,13 +20,13 @@ describe('the columns the rule reads off a mfg_sales_orders row', () => {
   });
 
   test('an absent or non-numeric column reads as 0 rather than NaN', () => {
-    expect(soPaidInputsOf({}, 0, false)).toEqual({
+    expect(soPaidInputsOf({}, 0, false, 0)).toEqual({
       totalRevenueSen: 0, localTotalSen: 0, headerDepositSen: 0,
-      ledgerPaidSen: 0, depositInLedger: false,
+      ledgerPaidSen: 0, depositInLedger: false, invoiceReceiptsSen: 0,
     });
-    expect(soPaidInputsOf({ total_revenue_sen: null, deposit_sen: '5' }, 0, false).totalRevenueSen)
+    expect(soPaidInputsOf({ total_revenue_sen: null, deposit_sen: '5' }, 0, false, 0).totalRevenueSen)
       .toBe(0);
-    expect(soPaidInputsOf(null, 0, false).headerDepositSen).toBe(0);
+    expect(soPaidInputsOf(null, 0, false, 0).headerDepositSen).toBe(0);
   });
 
   /* The SECOND total column, and the reason this fix exists. The cutover
@@ -36,7 +36,7 @@ describe('the columns the rule reads off a mfg_sales_orders row', () => {
   test('local_total_sen is read too — a migrated order has no other total', () => {
     const inputs = soPaidInputsOf(
       { local_total_sen: 3_200_00, total_revenue_sen: 0, balance_sen: 1_600_00 },
-      1_600_00, true,
+      1_600_00, true, 0
     );
     expect(inputs.localTotalSen).toBe(3_200_00);
     expect(inputs.totalRevenueSen).toBe(0);
@@ -52,7 +52,7 @@ describe('the total a human is shown, when only one column has been filled', () 
     localTotalSen: 3_200_00,      // what the cutover wrote, and what prints
     headerDepositSen: 0,
     ledgerPaidSen: 1_600_00,      // paid = total - UDF_BALANCE, is_deposit row
-    depositInLedger: true,
+    depositInLedger: true, invoiceReceiptsSen: 0,
   };
 
   test('a recomputed order still answers off total_revenue_sen', () => {
@@ -108,7 +108,7 @@ describe('what a sales order still owes', () => {
     totalRevenueSen: 500_00,
     headerDepositSen: 0,
     ledgerPaidSen: 0,
-    depositInLedger: false,
+    depositInLedger: false, invoiceReceiptsSen: 0,
   };
 
   test('nothing paid means the whole total is outstanding', () => {
@@ -131,7 +131,7 @@ describe('what a sales order still owes', () => {
 
   test('the same deposit does NOT count twice once it is in the ledger', () => {
     expect(soPaidSen({
-      ...base, headerDepositSen: 150_00, ledgerPaidSen: 150_00, depositInLedger: true,
+      ...base, headerDepositSen: 150_00, ledgerPaidSen: 150_00, depositInLedger: true, invoiceReceiptsSen: 0,
     })).toBe(150_00);
   });
 
@@ -146,5 +146,27 @@ describe('what a sales order still owes', () => {
 
   test('a zero-total order owes nothing', () => {
     expect(soOutstandingSen({ ...base, totalRevenueSen: 0 })).toBe(0);
+  });
+});
+
+/* Click sweep F31 (21 Nov 2026): RM 100 recorded on an instalment invoice left the order's balance where it was. */
+describe('paid on the order counts what was taken on its invoices', () => {
+  test('order payments + invoice receipts, once each', () => {
+    const inputs = soPaidInputsOf({ local_total_sen: 80_000, total_revenue_sen: 80_000 }, 24_000, false, 10_000);
+    expect(soPaidSen(inputs)).toBe(34_000);
+    expect(soOrderPaidSen(inputs)).toBe(24_000);
+    expect(soBalanceSen(inputs)).toBe(46_000);
+  });
+
+  test('only live invoices count, each capped at its own total', () => {
+    expect(soInvoiceReceiptsSen([
+      { status: 'SENT', total_sen: 24_000, paid_sen: 10_000 },
+      { status: 'PAID', total_sen: 86_400, paid_sen: 86_400 },
+      // its money became customer credit, counted where the credit was applied
+      { status: 'CANCELLED', total_sen: 86_400, paid_sen: 86_400 },
+      { status: 'DRAFT', total_sen: 5_000, paid_sen: 5_000 },
+      // overpaid: the excess is customer credit
+      { status: 'PAID', total_sen: 1_000, paid_sen: 1_500 },
+    ])).toBe(10_000 + 86_400 + 1_000);
   });
 });

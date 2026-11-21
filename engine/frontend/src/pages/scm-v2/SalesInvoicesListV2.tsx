@@ -9,6 +9,8 @@ import {
   siCreditNotesSen,
   siDepositAppliedSen,
   siOutstandingSen,
+  siIsCancelled,
+  siOwesNothing,
 } from "../../vendor/scm/lib/si-outstanding";
 import { brandingToneForLabel } from "../../lib/brandingTone";
 import { transferFromLabel, transferFromColumnLabel } from "../../lib/convertScope";
@@ -232,7 +234,7 @@ const statusFor = (
    Outstanding ledger all have to answer the same number, and until 2026-08-23
    they answered six different ones (vendor/scm/lib/si-outstanding.ts). */
 const outstandingOf = (r: SiRow): number =>
-  siOutstandingSen(r.total_sen || r.local_total_sen || 0, r.paid_sen || 0, siDepositAppliedSen(r), siCreditNotesSen(r));
+  siOwesNothing(r.status) ? 0 : siOutstandingSen(r.total_sen || r.local_total_sen || 0, r.paid_sen || 0, siDepositAppliedSen(r), siCreditNotesSen(r));
 
 // ─── Split-menu dropdown ────────────────────────────────────────────────────
 
@@ -392,7 +394,7 @@ function CardsGrid({ rows, onOpen }: { rows: SiRow[]; onOpen: (r: SiRow) => void
                     outstanding > 0 ? "text-err" : "text-synced"
                   )}
                 >
-                  {outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
+                  {siIsCancelled(r.status) ? "—" : outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
                 </div>
               </div>
               <span className="font-money text-[15px] font-bold text-ink">
@@ -463,7 +465,7 @@ function DetailDrawer({
   const totalSen = row?.total_sen ?? row?.local_total_sen ?? 0;
   const paidSen = row?.paid_sen ?? 0;
   const depositSen = siDepositAppliedSen(row);
-  const outstanding = siOutstandingSen(totalSen, paidSen, depositSen, siCreditNotesSen(row));
+  const outstanding = siOwesNothing(row?.status) ? 0 : siOutstandingSen(totalSen, paidSen, depositSen, siCreditNotesSen(row));
 
   return (
     <ResizableDetailDrawer
@@ -642,7 +644,7 @@ function DetailDrawer({
                 )}
                 <TotalRow
                   k="Outstanding"
-                  v={outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
+                  v={siIsCancelled(row.status) ? "—" : outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
                   tone={outstanding > 0 ? "error" : "success"}
                 />
               </div>
@@ -939,6 +941,8 @@ export function SalesInvoicesListV2() {
     let outstandingSen = 0;
     let paidSen = 0;
     for (const r of visible.rows) {
+      /* A cancelled invoice is worth nothing: not billed, and its receipts became customer credit (F27). */
+      if (siIsCancelled(r.status)) continue;
       const t = r.total_sen ?? r.local_total_sen ?? 0;
       const paid = r.paid_sen ?? 0;
       revenueSen += t;
@@ -946,7 +950,7 @@ export function SalesInvoicesListV2() {
       /* The KPI sums the SAME per-row figure the Outstanding column renders, so
          the card and the table cannot disagree — which is the whole reason this
          block sums the rows on screen rather than asking the server. */
-      outstandingSen += siOutstandingSen(t, paid, siDepositAppliedSen(r), siCreditNotesSen(r));
+      outstandingSen += siOwesNothing(r.status) ? 0 : siOutstandingSen(t, paid, siDepositAppliedSen(r), siCreditNotesSen(r));
     }
     return { revenueSen, outstandingSen, paidSen };
   }, [visible.rows]);
@@ -1319,7 +1323,7 @@ export function SalesInvoicesListV2() {
                 credit > 0 ? `${fmtSen(credit)} was knocked off by credit notes.` : ""].filter(Boolean).join(" ") || undefined
             }
           >
-            {outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
+            {siIsCancelled(r.status) ? "—" : outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
             {[dep > 0 ? "dep" : "", credit > 0 ? "cn" : ""].filter(Boolean).map((m) => (
               <span key={m} className="rounded-sm bg-surface-2 px-1 font-mono text-[9px] font-semibold uppercase tracking-brand text-ink-muted">
                 {m}

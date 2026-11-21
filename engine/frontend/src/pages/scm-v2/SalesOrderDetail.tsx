@@ -308,6 +308,8 @@ const fmtRm = (centi: number, currency = 'MYR'): string => fmtMoneySen(centi, cu
 
 type SoHeader = {
   doc_no: string;
+  /* Receipts taken on this order's live invoices, inside paid_sen_total (GET /:docNo). */
+  paid_on_invoices_sen?: number | null;
   /* Optimistic-lock token (migration 0153) — loaded here and echoed back on the
      header PATCH so a concurrent editor's Save can't silently overwrite this one. */
   version: number;
@@ -2839,6 +2841,7 @@ export const SalesOrderDetail = () => {
               onUnsavedChange={setUnsavedPayments}
               onRegisterCommitAll={(fn) => { commitPaymentsRef.current = fn; }}
               receiptFor={{ source: 'SOPAY' }}
+              paidOnInvoicesSen={header.paid_on_invoices_sen ?? 0}
               nextAmountSen={instalments.length > 0
                 ? (paid) => nextInstalmentSen(instalments, Math.max(paid - waitingRecordedSen, instalmentsQ.data?.receivedSen ?? 0))
                 : undefined}

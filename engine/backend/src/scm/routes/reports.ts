@@ -42,6 +42,7 @@ import { supabaseAuth } from '../middleware/auth';
 import type { Env, Variables } from '../env';
 import { paginateAll, chunkIn } from '../lib/paginate-all';
 import { scopeToCompany, activeCompanyId } from '../lib/companyScope';
+import { readSoInvoiceReceipts } from '../lib/so-invoice-receipts';
 import { stampOrderDeposit } from '../lib/si-list-stamps';
 import { creditNotesOf } from '../lib/si-credit-notes';
 import { stampSoRefs } from '../lib/so-ref-lookup';
@@ -911,6 +912,9 @@ export const fairReportHandler = async (c: FairCtx) => {
   // ── stage=so ──────────────────────────────────────────────────────────────
   if (stage === 'so') {
     const payByDoc = await fetchPaymentsByDoc(c, soRows.map((r) => r.doc_no));
+    /* Paid on the order's invoices counts as paid on the order (so-outstanding soPaidSen). */
+    const invRec = await readSoInvoiceReceipts(c.get('supabase'), soRows.map((r) => r.doc_no), activeCompanyId(c) ?? null);
+    if (!invRec.ok) return c.json({ error: 'load_failed', reason: invRec.reason }, 500);
     const rows = soRows.map((h) => {
       const money = fairSoMoney(h);
       const payments = payByDoc.get(h.doc_no) ?? [];
@@ -920,7 +924,7 @@ export const fairReportHandler = async (c: FairCtx) => {
          the legacy-deposit rule so a modern order does not double-count it. */
       const paidTotal = soPaidSen(soPaidInputsOf(h as unknown as Record<string, unknown>,
         payments.reduce((s, p) => s + Number(p.amount_sen ?? 0), 0),
-        payments.some((p) => p.is_deposit === true)));
+        payments.some((p) => p.is_deposit === true), invRec.sen.get(h.doc_no) ?? 0));
       const balanceSen = fairBalanceSen(money.amount_sen, paidTotal);
       const tender = depositByTender(payments);
       const below = belowDeposit({ balanceSen, depositSen: h.deposit_sen, paidSen: paidTotal });
@@ -1279,9 +1283,11 @@ export const fairReportDetailHandler = async (c: FairCtx) => {
   const payments = (payData ?? []) as Array<{ method: string | null; amount_sen: number | null; merchant_provider: string | null; installment_months: number | null; approval_code: string | null; paid_at: string | null; is_deposit: boolean | null }>;
   /* Same ledger rule as the list — the header's balance_sen/paid_sen columns
      are not maintained (fairBalanceSen, scm/shared/so-outstanding.ts). */
+  const invRec = await readSoInvoiceReceipts(sb, [String(docNo)], activeCompanyId(c) ?? null);
+  if (!invRec.ok) return c.json({ error: 'load_failed', reason: invRec.reason }, 500);
   const paidTotal = soPaidSen(soPaidInputsOf(h as unknown as Record<string, unknown>,
     payments.reduce((s, p) => s + Number(p.amount_sen ?? 0), 0),
-    payments.some((p) => p.is_deposit === true)));
+    payments.some((p) => p.is_deposit === true), invRec.sen.get(String(docNo)) ?? 0));
   const money = fairSoMoney(h);
   const balanceSen = fairBalanceSen(money.amount_sen, paidTotal);
 

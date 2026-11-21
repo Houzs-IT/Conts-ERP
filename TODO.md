@@ -2,6 +2,13 @@
 
 Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw, schema `pos`, via Hyperdrive e0781ccd...). Staging preview: https://staging-preview.theconts-os.pages.dev (Supabase ecgyrmblqfxvbfjlqkdq).
 
+## Money consistency (click sweep F6/F6b/F27/F28/F31, save-bug D9-D11; PR fix/money-consistency, migration 0359)
+- Paid on an SO = order payments + receipts on its live invoices (engine scm/shared/so-outstanding.ts soPaidSen; SO list view in migration 0359). Replaces owner decision C4 (11 Oct: order money counted only past invoice receipts); owner agreed 21 Nov ("based on the payments"). Trade-off: a deposit keyed AGAIN as an invoice receipt by hand would now count twice (no code path does it).
+- Merged onto #1134 (credit notes knocked off by allocation, si-credit-notes.ts) and #1138 (renovation counts confirmed money only): their versions won; this branch kept the paid rule, sibling status re-roll, PAID-by-hand guard and cancelled-invoice exclusions. Dropped, re-port if wanted: renovation schedule "less credit note" line and "Over-invoiced: credit note due" label (renovationSoInstalments.tsx).
+- Stored scm.mfg_sales_orders.paid_sen / balance_sen are not money owed and are no longer read for it (decision: stop reading, no write-back); writers left as they are.
+- Production check 21 Nov: no invoice receipts, no cancelled invoices with receipts; TC-SO-2611-033 and TC-SO-2611-038 showed instalment 1 "Not paid" while TC-SI-2611-007 / -009 were PAID by the deposit (display only, fixed by the code; no data to correct).
+- Houzs: F27 KPI (frontend SalesInvoicesListV2.tsx ~922), PAID-by-hand guard (backend sales-invoices.ts PATCH /:id/status), of-agent paid_sen (backend services/agents/of-agent.ts:67), SO list balance_sen fallbacks (frontend MfgSalesOrdersListV2.tsx ~1199/1784), invoice receipts in the SO paid view, PaymentsTable/SO PDF. Houzs already sums order + invoice money and has its own credit-note allocations (si-credit-notes.ts).
+
 ## Save-integrity deferred items from #1126 (21 Nov 2026, branch fix/deferred-integrity)
 - Fixed: D1 D2 D3 D4 D5 D7 D12 D14 D17 D19 D20 D24. Needs migrations 0355 (voucher allocation settle-once) and 0356 (GRN line version) on production BEFORE the code merges.
 - Open: D6 - a DO reverted to Draft and shipped again does not take its stock out again (stock too high). The ship now says so (movementErrors) instead of reading clean. Fix needs a fresh correction_seq slot in uq_inv_mov_do_source_v2 for the second ship and a second reversal cycle in fn_reverse_do_out / reverseInventoryForDo; production has 0 reverted DOs.
