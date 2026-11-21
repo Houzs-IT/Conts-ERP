@@ -153,6 +153,37 @@ async function fetchWithTimeout(url: string, init: RequestInit, path: string): P
   }
 }
 
+/* A second press of the same save (a double-click, or a retry while the first is still running) reuses the first
+   press's Idempotency-Key, and the server answers 409 idempotency_in_flight until the first finishes. That is not a
+   failure: once the first request has its answer, the same key replays it. So wait and ask again, and hand the caller
+   the first request's real outcome (click sweep F11/F12, 21 Nov 2026: the screen said "Save failed" about an order
+   and a payment that had both saved). A request that never finishes is taken over by the server after 5 minutes;
+   this gives up long before that and lets the in-flight answer through. */
+export const IN_FLIGHT_POLL_MS = 1000;
+export const IN_FLIGHT_MAX_WAIT_MS = 60_000;
+
+export async function isIdempotencyInFlight(res: Response): Promise<boolean> {
+  if (res.status !== 409) return false;
+  const text = await res.clone().text().catch(() => '');
+  return text.includes('"idempotency_in_flight"');
+}
+
+/** fetchWithTimeout, riding out the server's idempotency_in_flight answer for a keyed mutation. */
+export async function fetchRidingInFlight(
+  send: () => Promise<Response>,
+  hasIdemKey: boolean,
+  signal?: AbortSignal | null,
+  sleep: (ms: number, signal?: AbortSignal | null) => Promise<void> = (ms, sig) => abortableDelay(ms, sig ?? undefined),
+): Promise<Response> {
+  let res = await send();
+  if (!hasIdemKey) return res;
+  for (let waited = 0; waited < IN_FLIGHT_MAX_WAIT_MS && (await isIdempotencyInFlight(res)); waited += IN_FLIGHT_POLL_MS) {
+    await sleep(IN_FLIGHT_POLL_MS, signal);
+    res = await send();
+  }
+  return res;
+}
+
 /* Drop-ship confirm (port of 2990 07c45728) — when a sofa ship is blocked
    because no batch is received yet (sofa_no_batch) BUT every affected line is
    bound to a PO (canDropship), the supplier can ship direct. Render the
@@ -320,7 +351,7 @@ export async function authedFetch<T>(path: string, init?: RequestInit): Promise<
   let res: Response;
   for (let attempt = 0; ; attempt++) {
     try {
-      res = await fetchWithTimeout(`${API_URL}${path}`, { ...init, headers }, path);
+      res = await fetchRidingInFlight(() => fetchWithTimeout(`${API_URL}${path}`, { ...init, headers }, path), hasIdemKey, abortSignal);
     } catch (e) {
       if (init?.signal?.aborted) throw e;
       if (isGet && attempt < 4 && !SLOW_READ_PATH.test(path)) { await abortableDelay(600 + attempt * 1200, init?.signal); continue; }

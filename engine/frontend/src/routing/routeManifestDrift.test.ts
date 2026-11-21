@@ -98,7 +98,8 @@ describe("executable route contract", () => {
     // 196 since 2026-11-11: +2 /scm/stock-adjustments/:id and /:id/edit (Houzs BUG-66), +2 /beta/defects and /beta/handover-checklists (TODO item 17), +1 AI usage page (TODO item 19).
     // 199 since 2026-11-19 (Conts): +1 /scm/staff-banks (staff bank details, 18 Nov), +1 /beta/site-tasks (the renovation board), +1 /scm/payment-requests/:kind/:id (a request or claim on its own page).
     // 202 since 2026-11-20 (Conts): +3 /scm/renovation/packages, /new and /:id (the Packages module).
-    expect(STAFF_ROUTE_PATTERNS).toHaveLength(202);
+    // 207 since 2026-11-21: +1 /scm/ap-invoices/duplicates, +2 /scm/finance/menu and /scm/finance/rules, +2 /scm/payment-listing and /scm/unmatched-payments (Houzs ports).
+    expect(STAFF_ROUTE_PATTERNS).toHaveLength(207);
     expect(new Set(STAFF_ROUTE_PATTERNS).size).toBe(STAFF_ROUTE_PATTERNS.length);
     expect([...STAFF_ROUTE_PATTERNS].sort()).toEqual([...appPages].sort());
   });
@@ -152,7 +153,8 @@ describe("executable route contract", () => {
     // 205 since 2026-11-11: +2 stock adjustment document pages, +2 /beta/defects and /beta/handover-checklists, +1 AI usage page.
     // 208 since 2026-11-19: +1 /scm/staff-banks, +1 /beta/site-tasks, +1 /scm/payment-requests/:kind/:id.
     // 211 since 2026-11-20: +3 Packages module pages.
-    expect(ROUTE_CONTRACT).toHaveLength(211);
+    // 216 since 2026-11-21: +1 duplicates, +2 Finance To do, +2 Payment listing and Unmatched payments.
+    expect(ROUTE_CONTRACT).toHaveLength(216);
   });
 
   it("keeps every desktop nav destination on a live staff route", () => {

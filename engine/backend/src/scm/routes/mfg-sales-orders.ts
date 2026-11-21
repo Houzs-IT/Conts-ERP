@@ -10195,7 +10195,7 @@ mfgSalesOrders.delete('/:docNo/items/:itemId/photos/:photoKey', async (c) => {
 });
 
 /* GET /:docNo/payments — mfg-sales-orders/payments-list.ts */
-registerPaymentsListRoutes(mfgSalesOrders);
+registerPaymentsListRoutes(mfgSalesOrders, selfScopedSalesBlocked);
 
 /* Task #122 (cascade) — Method is a 3-step pick now. merchantProvider was
    a fixed 4-bank enum and installmentMonths was 6|12 only; both widened.

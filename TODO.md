@@ -7,6 +7,10 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Open: D6 - a DO reverted to Draft and shipped again does not take its stock out again (stock too high). The ship now says so (movementErrors) instead of reading clean. Fix needs a fresh correction_seq slot in uq_inv_mov_do_source_v2 for the second ship and a second reversal cycle in fn_reverse_do_out / reverseInventoryForDo; production has 0 reverted DOs.
 - Open: D7 compares the version only on the line edit; other grn_items writers do not bump it (the edit also compares qty_accepted).
 
+## Click sweep save fixes (21 Nov 2026, fix/save-findings)
+- Port to Houzs (owner wants it later; same code there): idempotency_in_flight wait (frontend/src/vendor/scm/lib/authed-fetch.ts, frontend/src/api/client.ts), SO edit Save held from the click (frontend/src/pages/scm-v2/SalesOrderDetail.tsx saveEdit / submitAmendment), no Default leg-height seed on existing SO lines (same file, seedSofaLegDefault), PO by number (backend/src/scm/routes/mfg-purchase-orders.ts GET /:id).
+- Decision to confirm with the owner: a renovation contract's SO rooms now save from Edit SO (they were refused and dropped silently); the signed contract's own sections (reno_doc_sections) are untouched.
+
 ## Packages module (owner, 20 Nov 2026; migration 0347)
 - Sales order > Packages: packages (PKG-, areas) and kits (KIT-), products + qty + SLA days only, no prices; SO/VO product search and From package add them to a VO; Project start date dates SLA lines. Code: engine/backend/src/scm/lib/renovation-packages.ts, engine/frontend/src/pages/renovation/RenovationPackage*.tsx, renovationPackagePick.tsx.
 - Old package templates are packages now (PKG-001...); their stored prices, letterhead, print format and payment terms stay in the table but no screen edits them any more (New quotation from template still reads them).

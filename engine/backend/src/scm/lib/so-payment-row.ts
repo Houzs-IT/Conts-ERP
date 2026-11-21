@@ -20,6 +20,7 @@ import { afterConvertedRowBooked, afterConvertedRowRemoved } from './so-money';
 import { mytDateOf, todayMyt } from './my-time';
 import { ledgerFactsOf, repostSoPaymentEdit } from '../../acc/payment-repost';
 import { createReceiptForPayment, dropDraftReceipt, syncDraftReceipt } from '../../acc/receipts';
+import { linkReceiptInvoiceBestEffort } from '../../acc/receipt-invoice';
 import { cancelDepositInvoiceForPaymentBestEffort, reissueDepositInvoiceBestEffort } from '../../acc/deposit-invoices';
 import { companyCodeById } from './doc-no';
 import { recomputeSiPaidForOrder } from './si-order-deposit';
@@ -152,11 +153,13 @@ async function draftReceiptBestEffort(sb: any, row: Record<string, unknown>, whe
     const companyId = r.company_id == null ? null : Number(r.company_id);
     const code = companyId != null && Number.isFinite(companyId) ? await companyCodeById(sb, companyId) : null;
     if (!paymentId || companyId == null || !code) return;
-    await createReceiptForPayment(sb, {
+    const made = await createReceiptForPayment(sb, {
       source: 'SOPAY', paymentId, companyId, companyCode: code,
       docNo: String(r.so_doc_no ?? ''), method: String(r.method ?? ''), amountSen: Number(r.amount_sen ?? 0),
       paidAt: String(r.paid_at ?? '').slice(0, 10) || null, createdBy: r.created_by == null ? null : String(r.created_by),
     });
+    /* A renovation order's receipt names the instalment invoice the money is for (acc/receipt-invoice). */
+    if (made.ok && made.status === 'DRAFT') await linkReceiptInvoiceBestEffort(sb, made.id);
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error(`[receipts] draft OR not created for SO ${where}:`, e);

@@ -114,8 +114,15 @@ export async function saveDepositInvoiceSettings(
 
 /* ── Is one due? ─────────────────────────────────────────────────────────── */
 
-/* not_confirmed: finance has not confirmed the money yet (its official receipt is not FORMAL — SOP 4.2). */
-export type NotDueWhy = 'switched_off' | 'before_start' | 'no_date' | 'no_amount' | 'invoice_exists' | 'order_not_live' | 'not_confirmed';
+/* not_confirmed: finance has not confirmed the money yet (its official receipt is not FORMAL — SOP 4.2).
+   renovation: a renovation contract never takes deposit invoices (chew, 21 Nov 2026). Its money is billed by
+   instalment invoices and held as an advance until revenue is recognised (acc/reno-ledger), so a deposit invoice
+   would count the same money as a sale twice the day a company's switch is turned on. */
+export type NotDueWhy = 'switched_off' | 'before_start' | 'no_date' | 'no_amount' | 'invoice_exists' | 'order_not_live' | 'not_confirmed' | 'renovation';
+
+/** A renovation contract (so_kind RENOVATION): never due a deposit invoice (NotDueWhy 'renovation'). */
+export const isRenovationOrder = (order: { so_kind?: string | null } | null | undefined): boolean =>
+  String(order?.so_kind ?? '').toUpperCase() === 'RENOVATION';
 
 /** Orders that never became orders, or were taken back: their money is a
     refund or a credit, never a sale (docs/bugs/0832) — the sales side's one
@@ -198,13 +205,14 @@ export async function issueDepositInvoice(sb: Db, p: IssueInput): Promise<IssueR
   /* The order carries the company and the customer — the same read the
      payment's own posting makes (acc/payments), the same party code. */
   const { data: so, error: soErr } = await sb.from('mfg_sales_orders')
-    .select('company_id, debtor_name, customer_id, debtor_code, status')
+    .select('company_id, debtor_name, customer_id, debtor_code, status, so_kind')
     .eq('doc_no', soDocNo)
     .maybeSingle();
   if (soErr) return { ok: false, status: 'read_failed', reason: `order: ${soErr.message}` };
-  const order = so as { company_id?: number | null; debtor_name?: string | null; customer_id?: string | null; debtor_code?: string | null; status?: string | null } | null;
+  const order = so as { company_id?: number | null; debtor_name?: string | null; customer_id?: string | null; debtor_code?: string | null; status?: string | null; so_kind?: string | null } | null;
   if (!order) return { ok: false, status: 'so_not_found', reason: soDocNo };
   if (NOT_AN_ORDER.has(String(order.status ?? '').toUpperCase())) return { ok: true, status: 'not_due', why: 'order_not_live' };
+  if (isRenovationOrder(order)) return { ok: true, status: 'not_due', why: 'renovation' };
   const companyId = order.company_id ?? null;
   if (companyId == null) return { ok: false, status: 'no_company', reason: `${soDocNo} carries no company` };
 
@@ -490,12 +498,13 @@ export async function missingDepositInvoices(
   const notLive = new Set<string>();
   for (let i = 0; i < docNos.length; i += 200) {
     const { data: orders, error: soErr } = await sb.from('mfg_sales_orders')
-      .select('doc_no, status')
+      .select('doc_no, status, so_kind')
       .eq('company_id', companyId)
       .in('doc_no', docNos.slice(i, i + 200));
     if (soErr) return { ok: false, reason: `orders: ${soErr.message}` };
-    for (const r of (orders ?? []) as Array<{ doc_no: string; status?: string | null }>) {
-      if (NOT_AN_ORDER.has(String(r.status ?? '').toUpperCase())) notLive.add(String(r.doc_no));
+    for (const r of (orders ?? []) as Array<{ doc_no: string; status?: string | null; so_kind?: string | null }>) {
+      /* A renovation contract is never due one (NotDueWhy 'renovation'): left out of the backlog too. */
+      if (NOT_AN_ORDER.has(String(r.status ?? '').toUpperCase()) || isRenovationOrder(r)) notLive.add(String(r.doc_no));
     }
   }
   for (let i = 0; i < docNos.length; i += 200) {

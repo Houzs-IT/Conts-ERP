@@ -126,6 +126,8 @@ const ScmPurchaseInvoiceNewV2 = lazy(() => import("./pages/scm-v2/PurchaseInvoic
 const ScmPurchaseInvoiceFromGrnV2 = lazy(() => import("./pages/scm-v2/PurchaseInvoiceFromGrn").then((m) => ({ default: m.PurchaseInvoiceFromGrn })));
 const ScmPurchaseInvoiceDetailV2 = lazy(() => import("./pages/scm-v2/PurchaseInvoiceDetailV2").then((m) => ({ default: m.PurchaseInvoiceDetailV2 })));
 const ScmPaymentVouchersV2 = lazy(() => import("./pages/scm-v2/PaymentVouchers").then((m) => ({ default: m.PaymentVouchers })));
+const ScmPaymentListing = lazy(() => import("./pages/scm-v2/PaymentListing").then((m) => ({ default: m.PaymentListing })));
+const ScmUnmatchedPayments = lazy(() => import("./pages/scm-v2/UnmatchedPayments").then((m) => ({ default: m.UnmatchedPayments })));
 const ScmPaymentVoucherNewV2 = lazy(() => import("./pages/scm-v2/PaymentVoucherNew").then((m) => ({ default: m.PaymentVoucherNew })));
 const ScmPaymentVoucherScanV2 = lazy(() => import("./pages/scm-v2/PaymentVoucherScan").then((m) => ({ default: m.PaymentVoucherScan })));
 const ScmChartOfAccountsV2 = lazy(() => import("./pages/scm-v2/ChartOfAccounts").then((m) => ({ default: m.ChartOfAccounts })));
@@ -140,6 +142,9 @@ const ContsPettyCashFloat = lazy(() => import("./conts/PettyCashFloat").then((m)
 const ContsDebtors = lazy(() => import("./conts/Debtors").then((m) => ({ default: m.Debtors })));
 const ContsLedgerSetup = lazy(() => import("./conts/LedgerSetup").then((m) => ({ default: m.LedgerSetup })));
 const ContsEInvoice = lazy(() => import("./conts/EInvoice").then((m) => ({ default: m.EInvoice })));
+const ContsFinanceHome = lazy(() => import("./conts/FinanceTodo").then((m) => ({ default: m.FinanceHome })));
+const ContsFinanceMenu = lazy(() => import("./conts/FinanceTodo").then((m) => ({ default: m.FinanceMenu })));
+const ContsFinanceTodoRules = lazy(() => import("./conts/FinanceTodoRules").then((m) => ({ default: m.FinanceTodoRulesPage })));
 const ContsRenoProjects = lazy(() => import("./conts/RenoProjects").then((m) => ({ default: m.RenoProjects })));
 const ContsRentalUnitCosts = lazy(() => import("./conts/RentalUnitCosts").then((m) => ({ default: m.RentalUnitCosts })));
 const ContsDepartmentSpend = lazy(() => import("./conts/DepartmentSpend").then((m) => ({ default: m.DepartmentSpend })));
@@ -148,6 +153,7 @@ const ScmOtherDebtorsV2 = lazy(() => import("./pages/scm-v2/OtherDebtors").then(
 const ScmReceiptsV2 = lazy(() => import("./pages/scm-v2/Receipts").then((m) => ({ default: m.Receipts })));
 const ScmOfficialReceiptsV2 = lazy(() => import("./pages/scm-v2/OfficialReceipts").then((m) => ({ default: m.OfficialReceipts })));
 const ScmApInvoicesV2 = lazy(() => import("./pages/scm-v2/ApInvoices").then((m) => ({ default: m.ApInvoices })));
+const ScmDuplicateSupplierBills = lazy(() => import("./pages/scm-v2/DuplicateSupplierBills").then((m) => ({ default: m.DuplicateSupplierBills })));
 const ScmCreditNotesV2 = lazy(() => import("./pages/scm-v2/CreditNotes").then((m) => ({ default: m.CreditNotes })));
 const ScmDepositInvoicesV2 = lazy(() => import("./pages/scm-v2/DepositInvoices").then((m) => ({ default: m.DepositInvoices })));
 const ScmForecastPnlV2 = lazy(() => import("./pages/scm-v2/ForecastPnl").then((m) => ({ default: m.ForecastPnl })));
@@ -781,6 +787,7 @@ export default function App() {
         <Route path="/scm/daily-bank" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmDailyBank /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/merchant-recon" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmMerchantRecon /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/bank-recon" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmBankRecon /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
+        <Route path="/scm/unmatched-payments" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmUnmatchedPayments /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/settlement-setup" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmSettlementSetup /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/outstanding" element={<ScmGuard area="scm.finance.outstanding"><Scm2990Shell><ScmOutstandingV2 /></Scm2990Shell></ScmGuard>} />
         {/* Delivered-but-not-billed, aged. Same area key as Outstanding — it is the
@@ -812,6 +819,7 @@ export default function App() {
         {/* Payment Vouchers — standalone AP cash-out doc (port of 2990 0189/0202,
             Phase 1-B MYR). Gated on the finance area; /new precedes /:id. */}
         <Route path="/scm/payment-vouchers" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVouchersV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
+        <Route path="/scm/payment-listing" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentListing /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/payment-vouchers/new" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVoucherNewV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/payment-vouchers/scan" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVoucherScanV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/chart-of-accounts" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmChartOfAccountsV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
@@ -833,6 +841,8 @@ export default function App() {
         <Route path="/scm/receipts" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmReceiptsV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/official-receipts" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmOfficialReceiptsV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/ap-invoices" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmApInvoicesV2 /></Scm2990Shell></ScmGuard>} />
+        {/* Supplier bills booked more than once (ported from Houzs), reached from the AP invoices page. */}
+        <Route path="/scm/ap-invoices/duplicates" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmDuplicateSupplierBills /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/ap-invoices/scan" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVoucherScanV2 target="ap" /></Scm2990Shell></ScmGuard>} />
         {/* Credit and debit notes (owner 2026-09-12; docs/bugs/0827). */}
         <Route path="/scm/credit-notes" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmCreditNotesV2 /></Scm2990Shell></ScmGuard>} />
@@ -915,7 +925,11 @@ export default function App() {
         <Route path="/scm/procurement"    element={<ScmGuard area="scm"><ScmSubgroupHub groupId="scm-procurement"    description="Procurement flow — products, suppliers, MRP, POs, receipts, invoices and returns." /></ScmGuard>} />
         <Route path="/scm/transportation" element={<ScmGuard area="scm"><ScmSubgroupHub groupId="scm-transportation" description="Delivery planning, fleet, lorry capacity, drivers and regions." /></ScmGuard>} />
         <Route path="/scm/warehouse"      element={<ScmGuard area="scm"><ScmSubgroupHub groupId="scm-warehouse"      description="Warehouses, inventory, adjustments, transfers and stock take." /></ScmGuard>} />
-        <Route path="/scm/finance"        element={<ScmGuard area="scm"><ScmSubgroupHub groupId="scm-finance"        description="Accounting and outstanding receivables." /></ScmGuard>} />
+        {/* Conts: /scm/finance is Finance's To do for whoever opens the Ledger (the menu for anyone else); the menu
+            hub it used to be lives on at /scm/finance/menu. */}
+        <Route path="/scm/finance"        element={<ScmGuard area="scm"><ContsFinanceHome /></ScmGuard>} />
+        <Route path="/scm/finance/menu"   element={<ScmGuard area="scm"><ContsFinanceMenu /></ScmGuard>} />
+        <Route path="/scm/finance/rules"  element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><ContsFinanceTodoRules /></ScmGuard></ContsLedgerGate>} />
         {/* Sales Orders READ side (vendored). The literal /maintenance route
             MUST precede /:docNo so 'maintenance' isn't caught as a doc number.
             2990 uses :docNo (not :id) for the SO detail. */}

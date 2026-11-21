@@ -24,12 +24,15 @@ const flatten = (tabs: readonly NavTab[]): NavTab[] =>
 const finance = NAV_TABS.find((t) => t.groupId === 'scm-finance');
 
 describe('the Finance sidebar', () => {
-  it('is seven groups, in the order the money moves', () => {
+  it('is To do, then seven groups, in the order the money moves', () => {
     expect(finance).toBeDefined();
     expect((finance?.children ?? []).map((g) => g.label)).toEqual([
-      'Money in', 'Money out', 'Bank & cards', 'Books', 'Reports', 'Forecasting', 'Setup',
+      'To do', 'Money in', 'Money out', 'Bank & cards', 'Books', 'Reports', 'Forecasting', 'Setup',
     ]);
-    for (const g of finance?.children ?? []) {
+    /* Conts: Finance's To do leads, a link of its own on the Finance landing (conts/FinanceTodo.tsx). */
+    const [todo, ...groups] = finance?.children ?? [];
+    expect(todo).toMatchObject({ to: '/scm/finance', end: true, badge: 'finance-todo' });
+    for (const g of groups) {
       expect(g.children?.length ?? 0, `${g.label} has entries`).toBeGreaterThan(0);
       expect(g.groupId, `${g.label} remembers its open state`).toBeTruthy();
       expect(g.to, `${g.label} is a group header, not a link`).toBeUndefined();

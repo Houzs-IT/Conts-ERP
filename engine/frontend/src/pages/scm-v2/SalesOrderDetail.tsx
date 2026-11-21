@@ -194,7 +194,7 @@ import {
   type CustomerPropertyValue, type ProjectShared,
 } from '../projects/renovation/customerPropertyModel';
 import { soInfoErrorText } from '../projects/renovation/customerPropertyApi';
-import { RenovationSoRooms, roomLayoutOf, type RoomLayout } from './RenovationSoRooms';
+import { RenovationSoRooms, roomLayoutKey, roomLayoutOf, type RoomLayout } from './RenovationSoRooms';
 import { renovationLineStyles } from '../../vendor/scm/components/renovationSoLineCompact';
 import { placeRows } from '../renovation/roomSections';
 import { DateField } from "../../vendor/scm/components/DateField";
@@ -728,6 +728,8 @@ export const SalesOrderDetail = () => {
   /* Room by line key: a saved line's id, or a staged add's key until it is saved. */
   const [renoRowRoom, setRenoRowRoom] = useState<Record<string, string>>({});
   const [renoLayout, setRenoLayout] = useState<RoomLayout | null>(null);
+  /* The layout this order was saved with (roomLayoutKey); null until it is read. */
+  const [renoSavedLayoutKey, setRenoSavedLayoutKey] = useState<string | null>(null);
   const renoAddedIds = useRef<Record<string, string>>({});
   /* The rooms were reordered, renamed, added or a line moved room in this edit. A confirmed order saves through
      submitAmendment, which only knew lines, header and payments: a room swap alone was "nothing to save" and was
@@ -737,6 +739,7 @@ export const SalesOrderDetail = () => {
   useEffect(() => {
     if (!renoLines || !renoDocNo || !isEditing) return;
     renoRoomsDirty.current = false;
+    setRenoSavedLayoutKey(null);
     let live = true;
     /* What the view already holds first, so pressing Edit does not flash the lines out of their rooms. */
     const known = queryClient.getQueryData<Awaited<ReturnType<typeof soInfoApi.so>>>(['reno', 'so-info', 'so', renoDocNo]);
@@ -744,13 +747,15 @@ export const SalesOrderDetail = () => {
       setRenoRooms(known.roomSections);
       setRenoRowRoom(known.itemRooms);
       setRenoLayout(roomLayoutOf(known.info));
+      setRenoSavedLayoutKey(roomLayoutKey(roomLayoutOf(known.info)));
     }
     void soInfoApi.so(renoDocNo).then((r) => {
       if (!live) return;
       setRenoRooms(r.roomSections);
       setRenoRowRoom(r.itemRooms);
       setRenoLayout(roomLayoutOf(r.info));
-    }).catch(() => { /* the rooms stay as typed; saving them reports a failure */ });
+      setRenoSavedLayoutKey(roomLayoutKey(roomLayoutOf(r.info)));
+    }).catch(() => { if (live) setRenoSavedLayoutKey(''); /* the rooms stay as typed; saving them reports a failure */ });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the cache is read once, when Edit opens
   }, [renoLines, renoDocNo, isEditing]);
@@ -800,11 +805,27 @@ export const SalesOrderDetail = () => {
   const contractQ = useContract(header?.so_kind === 'RENOVATION' ? docNo : undefined);
   const brandsQ = useBrands();
   const [billingId, setBillingId] = useState<string | null>(null);
-  const canBill = can('scm.renovation.bill') && ['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'].includes(contractQ.data?.status ?? '');
-  const instalments = useMemo(
-    () => instalmentRows(instalmentsQ.data, (printPaymentsQ.data ?? []).reduce((sum, p) => sum + (p.amount_sen || 0), 0)),
-    [instalmentsQ.data, printPaymentsQ.data],
+  /* Every salesperson bills their own contracts (chew, 21 Nov 2026): scm.renovation.bill_own, which the bill route holds
+     to the orders in their sales scope; this page only opens for an order they may see. */
+  const canBill = (can('scm.renovation.bill') || can('scm.renovation.bill_own')) && ['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'].includes(contractQ.data?.status ?? '');
+  /* Paid = confirmed by finance; what is recorded but not confirmed yet shows as waiting for finance (chew, 21 Nov 2026). */
+  const instalments = useMemo(() => instalmentRows(instalmentsQ.data), [instalmentsQ.data]);
+  /* Saved payments finance has not confirmed: they are not paid, so the next row's default leaves them out. */
+  const waitingRecordedSen = useMemo(
+    () => (printPaymentsQ.data ?? []).filter((p) => p.confirmed === false).reduce((sum, p) => sum + (p.amount_sen || 0), 0),
+    [printPaymentsQ.data],
   );
+  /* The instalment invoice, printed from here: a salesperson reads their own customer's invoice but may not open the
+     invoice pages. The same fetch and generator the print menu uses (lib/printDocumentPdf). */
+  const printInstalmentInvoice = useCallback(async (invoiceId: string) => {
+    try {
+      const { fetchPrintBundle, renderPrintBundle } = await import('../../lib/printDocumentPdf');
+      const target = { doc: 'si' as const, docNo: invoiceId, key: invoiceId };
+      await renderPrintBundle(target, await fetchPrintBundle(target), 'preview');
+    } catch (e) {
+      void notify({ title: 'Invoice not printed', body: e instanceof Error ? e.message : 'Something went wrong.', tone: 'error' });
+    }
+  }, [notify]);
 
   /* Payments edit mode — the money's OWN toggle (owner 2026-08-07). Declared up
      here with the other page state, NOT beside the `canEditPayments` derivation
@@ -1039,6 +1060,9 @@ export const SalesOrderDetail = () => {
      resolve; any failure surfaces inline and keeps the user in edit mode so
      nothing is silently lost. */
   const [savingOrder, setSavingOrder] = useState(false);
+  /* Held from the Save click until that save settles (saveNow). */
+  const savePressRef = useRef(false);
+  const [savePressed, setSavePressed] = useState(false);
   /* Never stops the save: the rest of the order is what the operator came to commit. */
   const saveProcessingDates = async (dates: Record<string, string | null>) => {
     try {
@@ -1150,7 +1174,7 @@ export const SalesOrderDetail = () => {
        ADD carries its OWN Idempotency-Key across retries. runSoLineWrites owns
        the stage order and the settling rules — see so-add-lines.ts for why the
        ADDs go one at a time and why every stage now reports which line. */
-    reserveHeader
+    await reserveHeader
       .then(() => runSoLineWrites({
         deletes: deleteEntries.map((it) => ({
           label: it.item_code || 'A removed line',
@@ -1380,7 +1404,9 @@ export const SalesOrderDetail = () => {
     }
     const contractDates = lineDateChanges();
     const contractDatesMoved = Object.keys(contractDates.processing).length + Object.keys(contractDates.delivery).length > 0;
-    if (lines.length === 0 && !handle.hasDirectHeaderChanges() && !contractDatesMoved) { finishEditWithoutVo(); return; }
+    /* Rooms are layout, not money: a contract's room changes save directly, never as a VO (click sweep F9). */
+    const contractRoomsMoved = renoLines && renoRoomsDirty.current;
+    if (lines.length === 0 && !handle.hasDirectHeaderChanges() && !contractDatesMoved && !contractRoomsMoved) { finishEditWithoutVo(); return; }
     type Edit = { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string };
     const edits: Edit[] = [];
     const adds: Array<{ room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string }> = [];
@@ -1423,6 +1449,8 @@ export const SalesOrderDetail = () => {
           method: 'POST', body: JSON.stringify({ edits, adds, title: 'Changed on the sales order' }),
         })
         : null;
+      /* The rooms, last, after the VO has added or removed its lines. */
+      if (contractRoomsMoved) await saveRenoRooms();
       setSavingOrder(false);
       endEditSession();
       refreshAfterSave();
@@ -1431,7 +1459,7 @@ export const SalesOrderDetail = () => {
         title: 'Saved',
         body: vo
           ? `${vo.voNo} raised and applied: ${edits.length + adds.length} line change${edits.length + adds.length === 1 ? '' : 's'}.${vo.flags ? ` ${vo.flags} PO line${vo.flags === 1 ? '' : 's'} flagged for purchasing to change.` : ''}`
-          : lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.${poFlags ? ` ${poFlags} PO line${poFlags === 1 ? '' : 's'} flagged for purchasing to tell the supplier.` : ''}` : 'Order information saved.',
+          : lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.${poFlags ? ` ${poFlags} PO line${poFlags === 1 ? '' : 's'} flagged for purchasing to tell the supplier.` : ''}` : contractRoomsMoved && !handle.hasDirectHeaderChanges() ? 'Rooms saved.' : 'Order information saved.',
         tone: 'info',
       });
     } catch (e) {
@@ -2262,8 +2290,9 @@ export const SalesOrderDetail = () => {
                     /* Variants are mandatory only once a Processing Date is set
                        (matches this page's Save gate + the backend), so the ` *`
                        marker + red ring stay off on a no-date draft (owner
-                       2026-07-14). */
-                    variantsRequired={requireVariants} seedSofaLegDefault={true}
+                       2026-07-14). An existing line is not seeded with the Default leg height: the seed made
+                       an untouched sofa line dirty, so a header-only save rewrote its options and logged it (F2). */
+                    variantsRequired={requireVariants} seedSofaLegDefault={false}
                   />
                 </div>
               );
@@ -2319,10 +2348,17 @@ export const SalesOrderDetail = () => {
   ];
   const raisesVo = amendmentMode && buildAmendmentLines().some(lineChangesAmount);
   const saveLabel = amendmentMode
-    ? (savingOrder || createAmendment.isPending ? 'Submitting…' : header.so_kind === 'RENOVATION' ? (raisesVo ? 'Save as VO' : 'Save') : header.vo_locked ? (raisesVo ? 'Record VO' : 'Save') : 'Submit VO')
-    : (updateHeader.isPending || savingOrder ? 'Saving…' : 'Save');
-  const saveBusy = amendmentMode ? savingOrder || createAmendment.isPending : updateHeader.isPending || savingOrder;
-  const saveNow = () => { void (amendmentMode ? submitAmendment : saveEdit)(); };
+    ? (savePressed || savingOrder || createAmendment.isPending ? 'Submitting…' : header.so_kind === 'RENOVATION' ? (raisesVo ? 'Save as VO' : 'Save') : header.vo_locked ? (raisesVo ? 'Record VO' : 'Save') : 'Submit VO')
+    : (savePressed || updateHeader.isPending || savingOrder ? 'Saving…' : 'Save');
+  const saveBusy = savePressed || (amendmentMode ? savingOrder || createAmendment.isPending : updateHeader.isPending || savingOrder);
+  const saveNow = () => {
+    /* One press, one save, from the click itself: savingOrder is only set after the validate dry-run, so a
+       double-click sent the whole save twice and the button stayed live while validate ran (click sweep F4/F5). */
+    if (savePressRef.current) return;
+    savePressRef.current = true;
+    setSavePressed(true);
+    void (amendmentMode ? submitAmendment : saveEdit)().finally(() => { savePressRef.current = false; setSavePressed(false); });
+  };
 
   return (
     <div className="pb-24 md:pb-0">
@@ -2717,6 +2753,7 @@ export const SalesOrderDetail = () => {
                     onRowRoom={(key, room) => { renoRoomsDirty.current = true; setRenoRowRoom((m) => ({ ...m, [key]: room })); }}
                     onAddLine={(room) => startAddLine(room)}
                     layout={renoLayout}
+                    savedLayoutKey={renoSavedLayoutKey}
                     disabled={linesLocked}
                     compact
                   />
@@ -2803,12 +2840,13 @@ export const SalesOrderDetail = () => {
               onRegisterCommitAll={(fn) => { commitPaymentsRef.current = fn; }}
               receiptFor={{ source: 'SOPAY' }}
               nextAmountSen={instalments.length > 0
-                ? (paid) => nextInstalmentSen(instalments, Math.max(paid, instalmentsQ.data?.receivedSen ?? 0))
+                ? (paid) => nextInstalmentSen(instalments, Math.max(paid - waitingRecordedSen, instalmentsQ.data?.receivedSen ?? 0))
                 : undefined}
               aboveRows={<SoInstalments
                 rows={instalments.length > 0 ? instalments : instalmentsQ.data ? paymentSlots(printPaymentsQ.data ?? []) : []}
                 money={(sen) => fmtMoney(sen, header.currency)}
-                onBill={canBill ? setBillingId : undefined} />}
+                onBill={canBill ? setBillingId : undefined}
+                onPrintInvoice={instalments.length > 0 ? (id) => { void printInstalmentInvoice(id); } : undefined} />}
               headerAction={canOfferPayEdit ? (
                 <Button variant="secondary" onClick={() => { void togglePayEditing(); }} icon={<Wallet size={14} />}>
                   {payEditing ? 'Done' : 'Collect payment'}

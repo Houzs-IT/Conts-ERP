@@ -3,7 +3,9 @@
    name (a supplier for an SCN) and lines whose account may stay blank; a
    note opens to its lines and posts or cancels; Print in the detail prints
    the one note and ticked rows print as one document in list order
-   (docs/bugs/0834). The server half is backend/tests/creditNotes.test.ts. */
+   (docs/bugs/0834). A CN / SCN's detail carries its knock-off table: ticking
+   an invoice and saving sends the targets. The server half is
+   backend/tests/creditNotes.test.ts and creditNoteKnockOff.test.ts. */
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -33,6 +35,11 @@ const lastList = { value: '' };
 const pdfSingle = vi.fn(async (..._args: unknown[]) => {});
 const pdfBatch = vi.fn(async (..._args: unknown[]) => {});
 const LINES = [{ id: 'l1', line_no: 1, description: 'Scratched leg — goodwill', account_code: '510-0000', amount_sen: 15000 }];
+const setAllocations = vi.fn();
+const KNOCK_OFF = {
+  rows: [{ kind: 'PI', id: 'pi-1', number: '2990-PI-2609-004', invoiceRef: 'HV-881', invoiceDate: '2026-09-02', totalSen: 80000, owedSen: 80000, noteSen: 0, status: 'POSTED' }],
+  totalSen: 50000, takenSen: 0, leftSen: 50000, posted: true,
+};
 
 vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
 vi.mock('../../vendor/scm/lib/credit-note-pdf', () => ({ generateCreditNotePdf: pdfSingle, generateCreditNotesPdf: pdfBatch }));
@@ -57,6 +64,8 @@ vi.mock('../../vendor/scm/lib/credit-note-queries', async (importOriginal) => ({
   useUpdateCreditNote: () => ({ mutateAsync: updateMutate, isPending: false, isError: false, error: null }),
   usePostCreditNote: () => ({ mutate: postMutate, mutateAsync: postMutate, isPending: false, isError: false, isSuccess: false, error: null }),
   useCancelCreditNote: () => ({ mutate: cancelMutate, isPending: false, isError: false, error: null }),
+  useCreditNoteKnockOff: (id: string | null) => ({ data: id === 'n2' ? KNOCK_OFF : { ...KNOCK_OFF, rows: [], totalSen: 15000, leftSen: 15000, posted: false }, isLoading: false, isError: false, error: null }),
+  useSetCreditNoteAllocations: () => ({ mutate: setAllocations, isPending: false, isError: false, error: null, data: undefined }),
 }));
 vi.mock('../../vendor/scm/lib/accounting-queries', async (importOriginal) => ({
   ...(await importOriginal() as object),
@@ -161,5 +170,17 @@ describe('the Credit & Debit Notes page', () => {
     expect(createMutate).toHaveBeenCalledTimes(1);
     expect(updateMutate).toHaveBeenCalledWith(expect.objectContaining({ id: 'n3' }));
     expect(postMutate).toHaveBeenLastCalledWith('n3');
+  });
+
+  test("a posted supplier note's detail knocks off the supplier's invoices: tick, then Save knock-off sends the targets", async () => {
+    render(<MemoryRouter><ConfirmProvider><CreditNotes /></ConfirmProvider></MemoryRouter>);
+    fireEvent.click(screen.getByText('2990-SCN-2609-001'));
+    const dialog = await screen.findByLabelText('Credit or debit note');
+    const table = within(dialog).getByRole('table', { name: "Knock off the supplier's invoices" });
+    expect(within(table).getByText('2990-PI-2609-004')).toBeTruthy();
+    fireEvent.click(within(table).getByLabelText('Knock off 2990-PI-2609-004'));
+    fireEvent.click(within(dialog).getByText('Save knock-off'));
+    /* The credit reaches RM 500 of the RM 800 invoice. */
+    expect(setAllocations.mock.calls[0]?.[0]).toEqual({ noteId: 'n2', targets: [{ kind: 'PI', id: 'pi-1', amountSen: 50000 }] });
   });
 });

@@ -34,6 +34,7 @@ import { refuseMigratedSources, receiptMustMirrorAutoCount } from './migrated-ch
 import { MIGRATED_RECEIPTS_NOT_INVOICED_IN_AUTOCOUNT } from './migrated-receipts-not-invoiced.generated';
 import { normalizeCurrency, normalizeExchangeRate } from './fx';
 import { mintMonthlyDocNo } from './doc-no';
+import { duplicateBillRefusal, findDuplicateSupplierBill } from './duplicate-supplier-bill';
 import { dateOrNull } from './date-coerce';
 import { todayMyt } from './my-time';
 import { withPoPriceSnapshot } from './pi-po-price';
@@ -206,6 +207,17 @@ export async function createDraftPisFromGrnItemsCore(
       .sort((x, y) => x.no.localeCompare(y.no));
     b.grnIds = order.map((o) => o.id);
     b.grnNumbers = order.map((o) => o.no);
+  }
+
+  /* One supplier bill is owed once (ported from Houzs): a bill number a supplier already has live refuses, naming it —
+     the route and the headless scan run alike (Conts has no scan-queue "create anyway"). */
+  const dupCompanyId = activeCompanyId(c);
+  if (dupCompanyId != null) {
+    for (const b of buckets.values()) {
+      const dup = await findDuplicateSupplierBill(sb, 'purchase_invoices', { companyId: dupCompanyId, supplierId: b.supplierId, ref: body.supplierInvoiceNumber, excludeId: null, quotation: null });
+      if (!dup.ok) return { ok: false, status: 500, body: { error: 'load_failed', reason: dup.reason } };
+      if (dup.duplicate) return { ok: false, status: 409, body: duplicateBillRefusal(body.supplierInvoiceNumber, dup.duplicate) };
+    }
   }
 
   // Generate PI numbers sequentially within this batch.

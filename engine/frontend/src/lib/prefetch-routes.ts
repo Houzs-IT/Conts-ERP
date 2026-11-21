@@ -51,7 +51,9 @@ const ROUTE_CHUNKS: Record<string, () => Promise<unknown>> = {
   "/scm/procurement": () => import("../pages/ScmSubgroupHub"),
   "/scm/transportation": () => import("../pages/ScmSubgroupHub"),
   "/scm/warehouse": () => import("../pages/ScmSubgroupHub"),
-  "/scm/finance": () => import("../pages/ScmSubgroupHub"),
+  "/scm/finance": () => import("../conts/FinanceTodo"),
+  "/scm/finance/menu": () => import("../conts/FinanceTodo"),
+  "/scm/finance/rules": () => import("../conts/FinanceTodoRules"),
   // Sales Order flow.
   "/scm/sales-orders": () => import("../pages/scm-v2/MfgSalesOrdersListV2"),
   "/scm/amendments": () => import("../pages/scm-v2/Amendments"),

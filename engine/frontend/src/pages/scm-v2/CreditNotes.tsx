@@ -7,6 +7,11 @@
 // RETURN INWARDS / PURCHASES RETURN unless the line says otherwise, then
 // posted through the one gate, or cancelled (contra). The server refuses
 // what it refuses; this page only shows the reason.
+//
+// A CN or an SCN knocks off the party's open invoices from its detail
+// (CreditNoteKnockOff.tsx, ported from Houzs): a draft's ticks are the plan the
+// post carries out, a posted note's are carried out at once; Used / Left on
+// the list say how much of each note's credit has been taken.
 // ----------------------------------------------------------------------------
 
 import { useMemo, useState } from 'react';
@@ -31,6 +36,7 @@ import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { fmtSen, fmtDateOrDash } from '../../vendor/shared/format';
 import { DocAttachments, LineFilesButton } from '../../components/doc-attachments/DocAttachments';
+import { NoteKnockOff } from './CreditNoteKnockOff';
 
 const KIND_WORD: Record<NoteKind, string> = { CN: 'Credit note', DN: 'Debit note', SCN: 'Supplier credit note' };
 /* The kind filter's tabs, off the one label map — not a second list of kinds. */
@@ -196,6 +202,16 @@ const NOTE_COLUMNS: Column<CreditNote>[] = [
     key: 'total', label: 'Total', align: 'right', render: (n) => fmtSen(n.total_sen),
     getValue: (n) => n.total_sen, exportValue: (n) => n.total_sen / 100, exportFormat: 'money',
   },
+  {
+    key: 'used', label: 'Used', align: 'right',
+    render: (n) => (n.appliedSen === undefined ? '—' : fmtSen(n.appliedSen)),
+    getValue: (n) => n.appliedSen ?? 0, exportValue: (n) => (n.appliedSen ?? 0) / 100, exportFormat: 'money',
+  },
+  {
+    key: 'left', label: 'Left', align: 'right',
+    render: (n) => (n.unusedSen === undefined ? '—' : <span style={n.unusedSen > 0 ? { color: 'var(--c-brass, #7a5a1e)' } : undefined}>{fmtSen(n.unusedSen)}</span>),
+    getValue: (n) => n.unusedSen ?? 0, exportValue: (n) => (n.unusedSen ?? 0) / 100, exportFormat: 'money',
+  },
   { key: 'status', label: 'Status', render: (n) => <StatusPill status={n.status} />, getValue: (n) => n.status },
   { key: 'journal', label: 'Journal', render: (n) => <span style={{ fontFamily: 'var(--font-mono)' }}>{n.je_no ?? '—'}</span>, getValue: (n) => n.je_no ?? '' },
 ];
@@ -238,7 +254,7 @@ const NoteDetail = ({ id, onClose, onEdit }: { id: string; onClose: () => void; 
               onClick={async () => {
                 const yes = await askConfirm({
                   title: `Cancel ${n.note_number}?`,
-                  body: n.status === 'POSTED' ? 'Its journal is reversed by a contra dated today. The note stays on file as cancelled.' : 'The draft stays on file as cancelled.',
+                  body: n.status === 'POSTED' ? 'Its journal is reversed by a contra dated today, and every invoice it knocked off owes that credit again. The note stays on file as cancelled.' : 'The draft stays on file as cancelled.',
                   confirmLabel: 'Cancel note', danger: true,
                 });
                 if (yes) cancel.mutate(n.id);
@@ -267,8 +283,12 @@ const NoteDetail = ({ id, onClose, onEdit }: { id: string; onClose: () => void; 
               <tr><td colSpan={3} style={{ ...td, fontWeight: 700 }}>Total</td><td style={{ ...td, ...num, fontWeight: 700 }}>{fmtSen(n.total_sen)}</td><td style={td} /></tr>
             </tbody>
           </table>
+          {(n.kind === 'CN' || n.kind === 'SCN') && n.status !== 'CANCELLED' && (
+            <NoteKnockOff noteId={n.id} posted={n.status === 'POSTED'} totalSen={n.total_sen} who={n.kind === 'SCN' ? 'supplier' : 'customer'} />
+          )}
           <DocAttachments docType="credit_note" docId={n.id} canEdit={n.status !== 'CANCELLED'} />
-          {post.isSuccess && <div style={{ fontSize: 'var(--fs-13)', color: good }}>Posted as {post.data.jeNo}.</div>}
+          {post.isSuccess && <div style={{ fontSize: 'var(--fs-13)', color: good }}>Posted as {post.data.jeNo}.{(post.data.applied ?? []).length > 0 ? ` Knocked off ${(post.data.applied ?? []).map((a) => `${a.number} ${fmtSen(a.appliedSen)}`).join(', ')}.` : ''}</div>}
+          {post.isSuccess && post.data.notApplied && <div style={{ fontSize: 'var(--fs-13)', color: danger }}>{post.data.notApplied}</div>}
           {printError && <div style={{ fontSize: 'var(--fs-13)', color: danger }}>{printError}</div>}
           {failed != null && <div style={{ fontSize: 'var(--fs-13)', color: danger }}>{errText(failed)}</div>}
         </div>
