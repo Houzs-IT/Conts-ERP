@@ -278,6 +278,8 @@ export function canDriverCompleteDelivery(
  * the inventory reversal — so this only decides whether the Revert controls SHOW.
  */
 export function canRevertDelivery(user: AuthUser | null | undefined): boolean {
+  /* A full-access account may revert too: the server grants it (hasPositionCapability), so the button follows. */
+  if (Array.isArray(user?.permissions) && user.permissions.includes("*")) return true;
   return (user?.position_capabilities ?? []).includes("scm.do.revert");
 }
 

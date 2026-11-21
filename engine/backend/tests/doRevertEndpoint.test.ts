@@ -57,7 +57,9 @@ function revertApp(opts: {
   caps?: string[];
   doStatus?: string;
   hasInvoice?: boolean;
+  retireError?: string;
 }) {
+  const rpcCalls: string[] = [];
   const tables: Record<string, Row[]> = {
     delivery_orders: [
       { id: 'do-1', do_number: 'DO-1', company_id: 1, status: opts.doStatus ?? 'LOADED', so_doc_no: 'SO-1', dispatched_at: '2026-08-26T00:00:00Z' },
@@ -72,7 +74,11 @@ function revertApp(opts: {
   app.use('*', async (c, next) => {
     c.set('supabase' as never, {
       from: (t: string) => new FakeQuery((tables[t] ||= [])),
-      rpc: async () => ({ data: true, error: null }),
+      rpc: async (name: string) => {
+        rpcCalls.push(name);
+        if (name === 'fn_retire_do_stock_cycle' && opts.retireError) return { data: null, error: { message: opts.retireError } };
+        return { data: true, error: null };
+      },
     } as never);
     c.set('companyId' as never, 1 as never);
     c.set('user' as never, { id: 'staff-uuid' } as never);
@@ -86,7 +92,7 @@ function revertApp(opts: {
     await next();
   });
   app.post('/delivery-orders/:id/revert', revertDeliveryOrderHandler as never);
-  return { app, tables };
+  return { app, tables, rpcCalls };
 }
 
 function revert(app: Hono, toStatus: unknown, reason: unknown = 'wrong scan', id = 'do-1') {
@@ -169,6 +175,29 @@ describe('DO revert — stock crosses the boundary only into DRAFT', () => {
     const { app } = revertApp({ doStatus: 'DISPATCHED' });
     const b = await bodyOf(await revert(app, 'DRAFT'));
     expect(b.inventoryReversed).toBe(true);
+  });
+});
+
+describe('DO revert — the reverted ship is retired so the DO can ship again (D6)', () => {
+  test('LOADED -> DRAFT retires the ship-and-return cycle after the stock comes back', async () => {
+    const { app, rpcCalls } = revertApp({ doStatus: 'LOADED' });
+    const b = await bodyOf(await revert(app, 'DRAFT'));
+    expect(b.inventoryReversed).toBe(true);
+    expect(rpcCalls).toContain('fn_retire_do_stock_cycle');
+    expect(rpcCalls.indexOf('fn_retire_do_stock_cycle')).toBeGreaterThan(rpcCalls.indexOf('fn_reverse_do_out'));
+    expect(b.warnings).toBeUndefined();
+  });
+
+  test('DISPATCHED -> LOADED retires nothing: no stock moved', async () => {
+    const { app, rpcCalls } = revertApp({ doStatus: 'DISPATCHED' });
+    await revert(app, 'LOADED');
+    expect(rpcCalls).not.toContain('fn_retire_do_stock_cycle');
+  });
+
+  test('a failed retire is reported, not swallowed', async () => {
+    const { app } = revertApp({ doStatus: 'LOADED', retireError: 'boom' });
+    const b = await bodyOf(await revert(app, 'DRAFT'));
+    expect(b.warnings?.join(' ')).toContain('will not take it out again');
   });
 });
 
