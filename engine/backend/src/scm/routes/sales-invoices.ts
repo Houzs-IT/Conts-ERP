@@ -62,6 +62,7 @@ import { buildItemRow, createSalesInvoiceFromDoLines, migratedRefusalForDeliveri
 import { releaseDepositInvoicesBestEffort } from '../../acc/deposit-invoices';
 import { releaseSalesInvoiceKnockOffs } from '../../acc/credit-note-si';
 import { siCreditNotesSen } from '../lib/si-credit-notes';
+import { invoiceReceipts } from '../lib/si-receipts';
 import { mintMonthlyDocNo, insertWithDocNoRetry } from '../lib/doc-no';
 import { todayMyt } from '../lib/my-time';
 import { resolveSalesScopeIds, salesDocOutOfScope } from '../lib/salesScope';
@@ -648,6 +649,19 @@ salesInvoices.get('/:id', async (c) => {
   /* The customers' credit notes knocked off it, the list rows' own key (si-credit-notes.ts); null = unread. */
   (h.data as unknown as Record<string, unknown>).credit_notes_sen =
     await siCreditNotesSen(sb, (h.data as { company_id?: number | null }).company_id ?? activeCompanyId(c) ?? null, id);
+  /* Every sum received towards this invoice — the order's rows and its own —
+     for the printed "Payments received" list (lib/si-receipts, ported from
+     Houzs: the print called all of it "Deposit"). Stamped on the header so
+     every print path that fetched this detail carries it. A read that fails
+     leaves it null and the print says one line per document. */
+  {
+    const { data: own, error: ownErr } = await scopeToCompany(
+      sb.from('sales_invoice_payments').select('paid_at, method, amount_sen, created_at').eq('sales_invoice_id', id), c,
+    ).order('paid_at', { ascending: true }).order('created_at', { ascending: true });
+    (h.data as unknown as Record<string, unknown>).receipts = ownErr || !dep.ok
+      ? null
+      : invoiceReceipts(dep.deposit, own as Array<{ paid_at: string | null; method: string | null; amount_sen: number }>);
+  }
   return c.json({
     salesInvoice: h.data,
     items,

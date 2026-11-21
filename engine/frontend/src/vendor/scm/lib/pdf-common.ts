@@ -19,7 +19,7 @@ import {
 } from '../../../lib/branding';
 import { canonicalizeSinglePhone, formatPhone } from '../../shared/phone';
 import { drawDocLetterhead, getDocLetterhead } from '../../../lib/renovation/renovation-doc-theme';
-import { pushEscape } from '../../../lib/escapeStack';
+import { pushEscape } from '../../../lib/escapeStack';
 import { stampWatermark } from '../../../lib/renovation/doc-watermark';
 
 /* HOUZS letterhead — name / reg no / address / phone / email now come from the
@@ -591,6 +591,12 @@ export function drawInfoColumns(
   }
   return Math.max(ly, ry) + 4;
 }
+
+/* "Page x of y" counted within ONE document. A batch print renders many
+   documents into one file; counting the file's pages made the second invoice's
+   first page read "Page 3 of 7". */
+export const docPageLabel = (page: number, startPage: number, pageCount: number): string =>
+  `Page ${page - startPage + 1} of ${pageCount - startPage + 1}`;
 
 // Two dashed signature boxes side by side
 export function drawSignatureBoxes(
