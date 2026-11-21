@@ -788,7 +788,7 @@ export function SalesInvoiceDetailV2() {
     if (
       await askConfirm({
         title: `Cancel invoice ${salesInvoice.invoice_number}?`,
-        body: siCancelBody(salesInvoice.paid_sen ?? 0, (sen) => fmtMoney(sen, salesInvoice.currency), salesInvoice.debtor_name),
+        body: siCancelBody(salesInvoice.paid_sen, (sen) => fmtMoney(sen, salesInvoice.currency), salesInvoice.debtor_name),
         confirmLabel: "Cancel invoice",
         danger: true,
       })
