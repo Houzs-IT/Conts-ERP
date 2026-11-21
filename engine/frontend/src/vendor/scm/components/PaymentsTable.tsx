@@ -590,9 +590,15 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
     if (!receiptFor) return;
     setReceiptBusy(paymentId);
     try {
-      const res = await authedFetch<{ receipt: ReceiptPdfData }>('/accounting/receipts/ensure', {
-        method: 'POST', body: JSON.stringify({ source: receiptFor.source, paymentId }),
-      });
+      /* An order's payment prints through the order (chew, 21 Nov 2026): anyone who may see the order, the salesperson
+         included, gets its receipt, a draft stamped DRAFT, a confirmed one with its formal number. The finance area's
+         ensure answers every other book. The renovation invoice it is for rides on the row (invoice_no). */
+      const orderDoc = isSaved ? (props as SavedModeProps).docNo : null;
+      const res = orderDoc && receiptFor.source === 'SOPAY'
+        ? await authedFetch<{ receipt: ReceiptPdfData }>(`/mfg-sales-orders/${encodeURIComponent(orderDoc)}/payments/${encodeURIComponent(paymentId)}/receipt`, { method: 'POST' })
+        : await authedFetch<{ receipt: ReceiptPdfData }>('/accounting/receipts/ensure', {
+          method: 'POST', body: JSON.stringify({ source: receiptFor.source, paymentId }),
+        });
       await generateReceiptPdf(res.receipt, { action: 'print' });
     } catch (e) {
       void notify({
@@ -1484,6 +1490,18 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
                   {p.collected_by_name ?? staffNameById(p.collected_by) ?? <span className={detailStyles.muted}>—</span>}
                 </span>
                 <span className={paymentsStyles.cell}>
+                  {/* The receipt as finance stands on it (chew, 21 Nov 2026): a formal OR's number once the money is
+                      confirmed, else waiting for finance; and the instalment invoice a renovation receipt is for. */}
+                  {receiptFor && p.method !== CONVERTED_METHOD && (p.or_status || p.confirmed === false) && (
+                    <span style={{ display: 'inline-flex', flexDirection: 'column', fontSize: 'var(--fs-11)', lineHeight: 1.3, marginRight: 4 }}>
+                      {p.or_status === 'FORMAL'
+                        ? <span style={{ fontFamily: 'var(--font-mono)' }}>{p.or_number}</span>
+                        : p.confirmed === false
+                          ? <span style={{ color: 'var(--c-warning-text, #8a5a00)', fontWeight: 600 }}>Waiting for finance</span>
+                          : null}
+                      {p.invoice_no && <span style={{ color: 'var(--fg-muted)' }}>for {p.invoice_no}</span>}
+                    </span>
+                  )}
                   {receiptFor && p.method !== CONVERTED_METHOD && (
                     <button
                       type="button"

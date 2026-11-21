@@ -392,6 +392,15 @@ export type SoPayment = {
   created_by: string | null;
   version: number;
   updated_at?: string | null;
+  /* The payment's official receipt (GET /:docNo/payments, payment-receipts.ts): its number and DRAFT / FORMAL, the
+     instalment invoice a renovation receipt is for, and whether finance has confirmed the money. Absent when the
+     receipts could not be read. */
+  receipt_id?: number | null;
+  or_number?: string | null;
+  or_status?: string | null;
+  sales_invoice_id?: string | null;
+  invoice_no?: string | null;
+  confirmed?: boolean;
 };
 
 export const useSalesOrderPayments = (docNo: string | null) => useQuery({

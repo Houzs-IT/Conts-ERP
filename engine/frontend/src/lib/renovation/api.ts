@@ -166,7 +166,9 @@ export interface BillingView {
   soDocNo: string; status: string; originalContractSen: number; revisedContractSen: number; voTotalSen: number;
   /** Net of contract credit notes, what AutoCount invoiced before go-live included. */
   billedSen: number; billedBeforeGoLiveSen?: number; creditedSen: number; credits: ContractCredit[];
-  receivedSen: number; nextSeq: number | null; instalments: BillingInstalment[];
+  /** Confirmed by finance (chew, 21 Nov 2026); waitingSen: recorded, not confirmed yet. */
+  receivedSen: number; waitingSen?: number; orderPaidSen?: number; orderWaitingSen?: number;
+  nextSeq: number | null; instalments: BillingInstalment[];
 }
 
 export type ContractStatus = 'RENO_CONFIRMED' | 'RENO_IN_PROGRESS' | 'RENO_COMPLETED' | 'CLOSED' | 'CANCELLED';

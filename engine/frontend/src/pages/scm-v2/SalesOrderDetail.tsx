@@ -805,11 +805,27 @@ export const SalesOrderDetail = () => {
   const contractQ = useContract(header?.so_kind === 'RENOVATION' ? docNo : undefined);
   const brandsQ = useBrands();
   const [billingId, setBillingId] = useState<string | null>(null);
-  const canBill = can('scm.renovation.bill') && ['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'].includes(contractQ.data?.status ?? '');
-  const instalments = useMemo(
-    () => instalmentRows(instalmentsQ.data, (printPaymentsQ.data ?? []).reduce((sum, p) => sum + (p.amount_sen || 0), 0)),
-    [instalmentsQ.data, printPaymentsQ.data],
+  /* Every salesperson bills their own contracts (chew, 21 Nov 2026): scm.renovation.bill_own, which the bill route holds
+     to the orders in their sales scope; this page only opens for an order they may see. */
+  const canBill = (can('scm.renovation.bill') || can('scm.renovation.bill_own')) && ['RENO_CONFIRMED', 'RENO_IN_PROGRESS', 'RENO_COMPLETED'].includes(contractQ.data?.status ?? '');
+  /* Paid = confirmed by finance; what is recorded but not confirmed yet shows as waiting for finance (chew, 21 Nov 2026). */
+  const instalments = useMemo(() => instalmentRows(instalmentsQ.data), [instalmentsQ.data]);
+  /* Saved payments finance has not confirmed: they are not paid, so the next row's default leaves them out. */
+  const waitingRecordedSen = useMemo(
+    () => (printPaymentsQ.data ?? []).filter((p) => p.confirmed === false).reduce((sum, p) => sum + (p.amount_sen || 0), 0),
+    [printPaymentsQ.data],
   );
+  /* The instalment invoice, printed from here: a salesperson reads their own customer's invoice but may not open the
+     invoice pages. The same fetch and generator the print menu uses (lib/printDocumentPdf). */
+  const printInstalmentInvoice = useCallback(async (invoiceId: string) => {
+    try {
+      const { fetchPrintBundle, renderPrintBundle } = await import('../../lib/printDocumentPdf');
+      const target = { doc: 'si' as const, docNo: invoiceId, key: invoiceId };
+      await renderPrintBundle(target, await fetchPrintBundle(target), 'preview');
+    } catch (e) {
+      void notify({ title: 'Invoice not printed', body: e instanceof Error ? e.message : 'Something went wrong.', tone: 'error' });
+    }
+  }, [notify]);
 
   /* Payments edit mode — the money's OWN toggle (owner 2026-08-07). Declared up
      here with the other page state, NOT beside the `canEditPayments` derivation
@@ -2824,12 +2840,13 @@ export const SalesOrderDetail = () => {
               onRegisterCommitAll={(fn) => { commitPaymentsRef.current = fn; }}
               receiptFor={{ source: 'SOPAY' }}
               nextAmountSen={instalments.length > 0
-                ? (paid) => nextInstalmentSen(instalments, Math.max(paid, instalmentsQ.data?.receivedSen ?? 0))
+                ? (paid) => nextInstalmentSen(instalments, Math.max(paid - waitingRecordedSen, instalmentsQ.data?.receivedSen ?? 0))
                 : undefined}
               aboveRows={<SoInstalments
                 rows={instalments.length > 0 ? instalments : instalmentsQ.data ? paymentSlots(printPaymentsQ.data ?? []) : []}
                 money={(sen) => fmtMoney(sen, header.currency)}
-                onBill={canBill ? setBillingId : undefined} />}
+                onBill={canBill ? setBillingId : undefined}
+                onPrintInvoice={instalments.length > 0 ? (id) => { void printInstalmentInvoice(id); } : undefined} />}
               headerAction={canOfferPayEdit ? (
                 <Button variant="secondary" onClick={() => { void togglePayEditing(); }} icon={<Wallet size={14} />}>
                   {payEditing ? 'Done' : 'Collect payment'}
