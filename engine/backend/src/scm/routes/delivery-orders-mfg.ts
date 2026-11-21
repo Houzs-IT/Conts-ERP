@@ -1077,7 +1077,7 @@ async function checkDoStockAvailability(
   const onSiteLines = active.flatMap((l) => { const wh = lineWh.get(l.lineRef) ?? null; return wh && onSite.has(wh) && unitBound.has(l.itemCode) ? [{ ...l, warehouseId: wh }] : []; });
   if (onSiteLines.length > 0) {
     const { data: bal } = await sb.from('inventory_balances').select('warehouse_id, item_code, qty').in('warehouse_id', [...onSite]).in('item_code', [...new Set(onSiteLines.map((l) => l.itemCode))]);
-    const onHand = addUp((bal ?? []) as Array<{ warehouse_id: string; item_code: string; qty: number }>, (b) => `${b.warehouse_id}::${b.item_code}`, (b) => Number(b.qty ?? 0));
+    const onHand = addUp((bal ?? []) as Array<{ warehouse_id: string; item_code: string; qty: number }>, (b) => `${b.warehouse_id}::${b.item_code}`, (b) => Number(b.qty));
     const ordered = await orderedSoItemIds(sb, onSiteLines.map((l) => l.soItemId).filter((x): x is string => !!x));
     for (const l of onSiteLinesWithNothingComing(onSiteLines, unitBound, ordered, onHand)) {
       const available = Math.max(0, onHand.get(`${l.warehouseId}::${l.itemCode}`) ?? 0);
