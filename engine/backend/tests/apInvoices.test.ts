@@ -15,6 +15,7 @@
 import { Hono } from 'hono';
 import { SCM_SYSTEM_STAFF_ID } from '../src/scm/middleware/auth';
 import { describe, expect, test } from 'vitest';
+import { withPvAllocationRpcs } from './lib/pv-allocation-rpc-fake';
 import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
 import { computePiSettlement } from '../src/scm/lib/pi-settlement';
 import { apInvoices } from '../src/scm/routes/ap-invoices';
@@ -85,6 +86,56 @@ const BILL = {
   ],
 };
 
+describe('one supplier bill is owed once', () => {
+  test('a second live AP invoice with the same supplier + bill number is a 409 naming the first; cancelled and another supplier do not block', async () => {
+    const { app, sb } = harness();
+    expect((await json(app, '/ap-invoices', 'POST', BILL)).status).toBe(201);
+    const again = await json(app, '/ap-invoices', 'POST', { ...BILL, supplierInvoiceRef: ' hvh-0912 ' });
+    expect(again.status).toBe(409);
+    expect(await again.json()).toMatchObject({ error: 'duplicate_supplier_bill', existing: { invoiceNumber: `2990-API-${yymm}-001` } });
+    expect(sb.tables.ap_invoices).toHaveLength(1);
+
+    expect((await json(app, '/ap-invoices', 'POST', { ...BILL, supplierId: 'sup-t' })).status).toBe(201);
+
+    sb.tables.ap_invoices[0]!.status = 'CANCELLED';
+    expect((await json(app, '/ap-invoices', 'POST', BILL)).status).toBe(201);
+  });
+
+  test('a quotation and a formal invoice with the same number never pair; two quotations do', async () => {
+    const { app } = harness();
+    expect((await json(app, '/ap-invoices', 'POST', { ...BILL, provisional: true })).status).toBe(201);
+    expect((await json(app, '/ap-invoices', 'POST', BILL)).status).toBe(201);
+    const twice = await json(app, '/ap-invoices', 'POST', { ...BILL, provisional: true });
+    expect(twice.status).toBe(409);
+  });
+
+  test('a quotation replaced by its formal invoice saves; onto a number the supplier already has, it refuses', async () => {
+    const { app, sb } = harness();
+    await json(app, '/ap-invoices', 'POST', BILL);
+    await json(app, '/ap-invoices', 'POST', { ...BILL, supplierInvoiceRef: 'Q-55', provisional: true });
+    const quote = sb.tables.ap_invoices[1]!;
+    /* Its own quotation number, kept as it turns formal: not a duplicate of itself. */
+    expect((await json(app, `/ap-invoices/${quote.id}`, 'PATCH', { provisional: false })).status).toBe(200);
+    expect((await json(app, `/ap-invoices/${quote.id}`, 'PATCH', { provisional: true })).status).toBe(200);
+    const clash = await json(app, `/ap-invoices/${quote.id}`, 'PATCH', { provisional: false, supplierInvoiceRef: 'HVH-0912' });
+    expect(clash.status).toBe(409);
+    expect(await clash.json()).toMatchObject({ error: 'duplicate_supplier_bill' });
+    expect(sb.tables.ap_invoices[1]!.provisional).toBe(true);
+    expect((await json(app, `/ap-invoices/${quote.id}`, 'PATCH', { provisional: false, supplierInvoiceRef: 'HVH-0913' })).status).toBe(200);
+  });
+
+  test('editing a bill onto a number that bill\'s supplier already has is refused; keeping its own number is not', async () => {
+    const { app, sb } = harness();
+    await json(app, '/ap-invoices', 'POST', BILL);
+    await json(app, '/ap-invoices', 'POST', { ...BILL, supplierInvoiceRef: 'HVH-0913' });
+    const second = sb.tables.ap_invoices[1]!;
+    const clash = await json(app, `/ap-invoices/${second.id}`, 'PATCH', { supplierInvoiceRef: 'HVH-0912' });
+    expect(clash.status).toBe(409);
+    expect(await clash.json()).toMatchObject({ error: 'duplicate_supplier_bill' });
+    expect((await json(app, `/ap-invoices/${second.id}`, 'PATCH', { supplierInvoiceRef: 'HVH-0913', notes: 'x' })).status).toBe(200);
+  });
+});
+
 describe('raising an AP invoice', () => {
   test('mints {co}API-YYMM-NNN, stores the lines, totals them, stays DRAFT', async () => {
     const { app, sb } = harness();
@@ -124,7 +175,7 @@ describe('raising an AP invoice', () => {
     });
     expect(String(sb.tables.acc_vendor_memory[0]!.vendor_key)).not.toBe('');
     /* The habit is last-saved-wins; times_seen only grows. */
-    await json(app, '/ap-invoices', 'POST', { ...BILL, lines: [{ debitAccountCode: '900-A002', amountSen: 5_000 }] });
+    await json(app, '/ap-invoices', 'POST', { ...BILL, supplierInvoiceRef: 'HVH-1012', lines: [{ debitAccountCode: '900-A002', amountSen: 5_000 }] });
     expect(sb.tables.acc_vendor_memory).toHaveLength(1);
     expect(sb.tables.acc_vendor_memory[0]).toMatchObject({ debit_account_code: '900-A002', times_seen: 2 });
   });
@@ -248,7 +299,7 @@ describe('an AP Payment allocation may name an AP invoice', () => {
       c.set('supabase' as never, {
         from: (t: string) => new FakeQuery((tables[t] ||= []), t),
         schema(_s: string) { return this; },
-        rpc: async (fn: string, args: Row) => {
+        rpc: withPvAllocationRpcs(tables, async (fn: string, args: Row) => {
           if (fn === 'entity_audit_writable') return { data: true, error: null };
           if (fn === 'settle_api_paid_sen') {
             const inv = (tables.ap_invoices ?? []).find((p) => p.id === args.p_id);
@@ -264,7 +315,7 @@ describe('an AP Payment allocation may name an AP invoice', () => {
             return { data: n, error: null };
           }
           return { data: null, error: { message: `unexpected rpc ${fn}` } };
-        },
+        }),
       } as never);
       c.set('companyId' as never, 1 as never);
       c.set('user' as never, { id: 'u1' } as never);

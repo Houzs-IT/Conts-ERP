@@ -10,7 +10,7 @@
 //       (vendored suppliers-queries slice).
 
 import { takeBack } from '../../lib/backTrail';
-import { lazy, useMemo, useState, type ReactNode } from "react";
+import { lazy, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { RenovationDocTrail } from "./RenovationDocTrail";
 import { PoPaymentScheduleCard } from "../renovation/PoPaymentScheduleCard";
@@ -514,6 +514,11 @@ function PurchaseOrderDetailV2ReadOnly() {
     (detail.data as { purchaseOrder?: PoHeaderRow } | undefined)?.purchaseOrder ??
     null;
   const productionLinks = useProductionOrderLinks({ poId: purchaseOrder?.id });
+  /* A link by PO number (the server resolves it, F20) moves to the id address, which every action on this page uses. */
+  const resolvedPoId = purchaseOrder?.id;
+  useEffect(() => {
+    if (id && resolvedPoId && id !== resolvedPoId) navigate(`/scm/purchase-orders/${resolvedPoId}${window.location.search}`, { replace: true });
+  }, [id, resolvedPoId, navigate]);
   const items: PoItemRow[] = useMemo(
     () => ((detail.data as { items?: PoItemRow[] } | undefined)?.items ?? []),
     [detail.data]

@@ -82,3 +82,40 @@ describe('stock transfer: a reversal that could not read its movements', () => {
     expect((body.reversalErrors as string[])[0]).toMatch(/movement_type/);
   });
 });
+
+/* PR #1126 deferred D24. Fails on the code before the fix: a second cancel answered 409 and the stock never came back. */
+describe('stock transfer: a cancel whose stock did not come back can be finished', () => {
+  it('Cancel again re-runs the reversal, and the detail says when it is still owed', async () => {
+    const missing: Record<string, string[]> = { inventory_movements: ['movement_type'] };
+    sb = Object.assign(fakeSb({
+      stock_transfers: [{
+        id: 'st-1', transfer_no: 'HC-ST-2609-006', status: 'POSTED', company_id: 1,
+        from_warehouse_id: 'wh-1', to_warehouse_id: 'wh-2', transfer_date: '2026-09-01',
+        notes: null, posted_at: '2026-09-01T00:00:00Z', cancelled_at: null, created_at: '2026-09-01T00:00:00Z', created_by: null,
+      }],
+      stock_transfer_lines: [],
+      inventory_movements: [
+        { id: 'm-out', movement_type: 'OUT', warehouse_id: 'wh-1', item_code: 'SKU-1', variant_key: '', qty: 2, source_doc_type: 'STOCK_TRANSFER', source_doc_id: 'st-1', source_doc_no: 'HC-ST-2609-006', company_id: 1 },
+        { id: 'm-in', movement_type: 'IN', warehouse_id: 'wh-2', item_code: 'SKU-1', variant_key: '', qty: 2, unit_cost_sen: 100, source_doc_type: 'STOCK_TRANSFER', source_doc_id: 'st-1', source_doc_no: 'HC-ST-2609-006', company_id: 1 },
+      ],
+      entity_audit_log: [], app_config: [],
+    }, missing), { rpc: async () => ({ data: true, error: null }) });
+
+    const first = await app().request('/st-1/cancel', { method: 'PATCH' });
+    expect(((await first.json()) as { reversalErrors?: string[] }).reversalErrors?.length).toBe(1);
+    expect(sb.tables.stock_transfers[0]!.status).toBe('CANCELLED');
+
+    /* The read works again. The detail offers the finish, and Cancel again moves the stock back. */
+    delete missing.inventory_movements;
+    const detail = await app().request('/st-1');
+    expect(((await detail.json()) as { stockNotBack?: boolean }).stockNotBack).toBe(true);
+    const again = await app().request('/st-1/cancel', { method: 'PATCH' });
+    expect(again.status).toBe(200);
+    const body = await again.json() as { resumed?: boolean; reversal?: { reversed: number }; reversalErrors?: unknown };
+    expect(body.resumed).toBe(true);
+    expect(body.reversal?.reversed).toBe(2);
+    expect(body.reversalErrors).toBeUndefined();
+    const after = await app().request('/st-1');
+    expect(((await after.json()) as { stockNotBack?: boolean }).stockNotBack).toBe(false);
+  });
+});

@@ -73,6 +73,9 @@ const FOCUSABLE = "input:not([type=hidden]):not([disabled]), select:not([disable
 export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children, danger, wide = false, saveLabel = "Save" }: ModalProps): ReactElement {
   const titleId = useId();
   const box = useRef<HTMLFormElement>(null);
+  /* Something was typed or picked in this dialog. A click outside then keeps it open: closing threw away the note
+     being typed (click sweep F19, 21 Nov 2026). Cancel and Escape still close, on purpose. */
+  const touched = useRef(false);
   useEffect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     // Focus the dialog, not its first field: a field focused on open draws a box the owner read as a fault.
@@ -99,7 +102,7 @@ export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children
   return (
     <div
       onKeyDown={keys}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget && !touched.current) onClose(); }}
       style={{ position: "fixed", inset: 0, zIndex: 60, background: BETA.scrim, overflowY: "auto", padding: "24px 16px" }}
     >
       <form
@@ -109,6 +112,7 @@ export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children
         aria-labelledby={titleId}
         tabIndex={-1}
         onSubmit={submit}
+        onChangeCapture={() => { touched.current = true; }}
         style={{ outline: "none", maxWidth: wide ? 880 : 520, margin: "0 auto", background: BETA.surface, border: `1px solid ${BETA.glassEdge}`, boxShadow: BETA.glassShadow, borderRadius: 22, padding: 20, display: "flex", flexDirection: "column", gap: 12, color: BETA.ink }}
       >
         <h2 id={titleId} style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-.02em" }}>{title}</h2>

@@ -8,6 +8,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from './authed-fetch';
 import { retryUnlessClientError } from '../../../lib/retryPolicy';
+import type { DepositInvoiceOrder } from './deposit-invoice-pdf';
 
 export type DepositInvoiceStatus = 'ISSUED' | 'CANCELLED';
 
@@ -47,6 +48,22 @@ export const useDepositInvoiceDetail = (id: string | null) => useQuery({
   staleTime: 0,
   retry: retryUnlessClientError,
 });
+
+/** What the printed invoice needs beyond its row (GET /deposit-invoices/sheets): the row plus the order behind it —
+    address, phone, e-mail, brand, the order's total and what had been received on it by this deposit. */
+export type DepositInvoiceSheet = DepositInvoice & { order: DepositInvoiceOrder | null };
+
+/** The sheets for these invoices, in the order asked — one, or a ticked batch. */
+export const fetchDepositInvoiceSheets = async (ids: string[]): Promise<DepositInvoiceSheet[]> =>
+  ids.length === 0 ? [] : (await authedFetch<{ sheets: DepositInvoiceSheet[] }>(`/deposit-invoices/sheets?ids=${ids.map(encodeURIComponent).join(',')}`)).sheets;
+
+/** The invoices as they print: each with its sheet's order; a sheet that could not be read prints the row alone. */
+export async function printableDepositInvoices<T extends DepositInvoice>(rows: T[]): Promise<Array<T & { order: DepositInvoiceOrder | null }>> {
+  let sheets: DepositInvoiceSheet[] = [];
+  try { sheets = await fetchDepositInvoiceSheets(rows.map((r) => r.id)); } catch { sheets = []; }
+  const orderOf = new Map(sheets.map((s) => [s.id, s.order]));
+  return rows.map((r) => ({ ...r, order: orderOf.get(r.id) ?? null }));
+}
 
 export const useDepositInvoiceSettings = () => useQuery({
   queryKey: [KEY, 'settings'],

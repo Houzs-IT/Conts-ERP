@@ -33,6 +33,7 @@
 
 import { checkProjectsFit, resolveLinesSub } from '../../conts/sub-departments';
 import { Hono } from 'hono';
+import { deferScmAfterCommit, runScmPgCommand } from '../lib/pg-supabase-transaction';
 import { ledgerEditSide } from '../../acc/ledger-settings';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { activeCompanyId, companyDocPrefix, requireActiveCompanyId, scopeToCompany } from '../lib/companyScope';
@@ -48,6 +49,8 @@ import {
 } from './ap-invoice-files';
 import { supabaseAuth } from '../middleware/auth';
 import { fmtSen } from '../shared/format';
+import { duplicateBillRefusal, findDuplicateSupplierBill } from '../lib/duplicate-supplier-bill';
+import { listDuplicateSupplierBillsHandler } from './ap-duplicate-bills';
 import { afterBillSavedBestEffort, billableRequest, linkBillToRequest, releaseRequestsOfBillBestEffort } from '../../conts/request-ap-invoice';
 
 const isUniqueClash = (e: { code?: string; message?: string } | null | undefined) => !!e && (e.code === '23505' || /duplicate key/i.test(String(e.message ?? '')));
@@ -279,6 +282,13 @@ export async function createApInvoiceCore(c: any, body: any, from: { paymentRequ
   }
 
   const sb = c.get('supabase');
+  /* One supplier bill is owed once (ported from Houzs): a live bill of this supplier with the same bill number refuses,
+     naming it. A quotation and a formal invoice never pair (lib/duplicate-supplier-bill.ts). */
+  {
+    const dup = await findDuplicateSupplierBill(sb, 'ap_invoices', { companyId: co.companyId, supplierId: String(sup.supplier.id), ref: body.supplierInvoiceRef, excludeId: null, quotation: body.provisional === true });
+    if (!dup.ok) return c.json({ error: 'lookup_failed', reason: dup.reason }, 500);
+    if (dup.duplicate) return c.json(duplicateBillRefusal(body.supplierInvoiceRef, dup.duplicate), 409);
+  }
   const invoiceNumber = await mintMonthlyDocNo(sb, 'ap_invoices', 'invoice_number', `${companyDocPrefix(c)}API-${docMonthTag(invoiceDate)}`);
   const { data: inv, error: insErr } = await sb.from('ap_invoices').insert({
     company_id: co.companyId,
@@ -376,6 +386,15 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
   if (body.notes !== undefined) patch.notes = body.notes ? String(body.notes).trim() : null;
   /* Quotation → formal invoice: unticked when the formal invoice replaces it (chew, 15 Nov 2026). */
   if (body.provisional !== undefined) patch.provisional = body.provisional === true;
+  /* The bill as it will read: its supplier, number and kind (a quotation turned into its formal invoice is checked as
+     a formal invoice, never against itself). Checked before the first write. */
+  if (patch.supplier_id !== undefined || patch.supplier_invoice_ref !== undefined || patch.provisional !== undefined) {
+    const ref = patch.supplier_invoice_ref !== undefined ? patch.supplier_invoice_ref : inv.supplier_invoice_ref;
+    const quotation = patch.provisional !== undefined ? patch.provisional === true : inv.provisional === true;
+    const dup = await findDuplicateSupplierBill(sb, 'ap_invoices', { companyId: co.companyId, supplierId: String(patch.supplier_id ?? inv.supplier_id), ref, excludeId: String(inv.id), quotation });
+    if (!dup.ok) return c.json({ error: 'lookup_failed', reason: dup.reason }, 500);
+    if (dup.duplicate) return c.json(duplicateBillRefusal(ref, dup.duplicate), 409);
+  }
   /* A posted bill is not moved across the ledger start; before it, the books
      stay as they were (Conts). Checked before the first write. */
   let side: 'after' | 'before' = 'after';
@@ -401,15 +420,6 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
       const leafErr = await requireLeafAccount(c, co.companyId, code);
       if (leafErr) return leafErr;
     }
-    await sb.from('ap_invoice_lines').delete().eq('company_id', co.companyId).eq('invoice_id', inv.id);
-    const { error: lineErr } = await sb.from('ap_invoice_lines').insert(built.lines.map((l, i) => ({
-      company_id: co.companyId, invoice_id: inv.id, line_no: i + 1,
-      description: l.description, debit_account_code: l.code, amount_sen: l.amountSen, department: l.department, project_id: l.projectId,
-      ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
-      unit_id: l.unitId, source_request_line_id: l.sourceRequestLineId,
-      ...(l.itemGroup ? { item_group: l.itemGroup } : {}),
-    })));
-    if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
     patch.total_sen = built.total;
     rebuilt = built;
   }
@@ -417,43 +427,63 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
     const newTotal = rebuilt ? rebuilt.total : Number(inv.total_sen ?? 0);
     patch.status = newTotal <= paid ? 'PAID' : paid > 0 ? 'PARTIALLY_PAID' : 'POSTED';
   }
-  const { data, error } = await sb.from('ap_invoices').update(patch).eq('company_id', co.companyId).eq('id', inv.id).select(HEADER).maybeSingle();
-  if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
-  /* The request it was made from follows the bill; every request paid through it settles again (a new total may make
-     it paid). Conts, chew 15 Nov 2026. */
-  await afterBillSavedBestEffort(sb, inv.id);
-  if (!posted) return c.json({ ok: true, invoice: data });
-  if (side === 'before') return c.json({ ok: true, invoice: data, reposted: false });
+  /* D4 (#1126): the lines, the header and the ledger re-post commit together or not at all. Before, the old lines
+     were deleted and the new ones inserted, then the header, then contra and re-post, each on its own: a failure
+     part-way left a bill whose lines, total and journal disagreed, and nothing put it right. */
+  return runScmPgCommand(c, async (tx) => {
+    if (rebuilt) {
+      await tx.from('ap_invoice_lines').delete().eq('company_id', co.companyId).eq('invoice_id', inv.id);
+      await tx.from('ap_invoice_lines').insert(rebuilt.lines.map((l, i) => ({
+        company_id: co.companyId, invoice_id: inv.id, line_no: i + 1,
+        description: l.description, debit_account_code: l.code, amount_sen: l.amountSen, department: l.department, project_id: l.projectId,
+        ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
+        unit_id: l.unitId, source_request_line_id: l.sourceRequestLineId,
+        ...(l.itemGroup ? { item_group: l.itemGroup } : {}),
+      })));
+    }
+    /* Compare-and-set on what the checks above read: a voucher settling this bill, or a cancel, since then makes the
+       edit refuse rather than write a status and total computed from a stale paid figure. */
+    const { data, error } = await tx.from('ap_invoices').update(patch)
+      .eq('company_id', co.companyId).eq('id', inv.id).eq('paid_sen', paid).neq('status', 'CANCELLED')
+      .select(HEADER).maybeSingle();
+    if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+    if (!data) return c.json({ error: 'changed', message: `${String(inv.invoice_number)} was paid or cancelled while you were editing it. Reload and try again.` }, 409);
+    /* The request it was made from follows the bill; every request paid through it settles again (a new total may make
+       it paid). Conts, chew 15 Nov 2026. After the commit, so it reads the saved bill. */
+    deferScmAfterCommit(c, () => afterBillSavedBestEffort(sb, inv.id));
+    if (!posted) return c.json({ ok: true, invoice: data });
+    if (side === 'before') return c.json({ ok: true, invoice: data, reposted: false });
 
-  /* The re-post: contra the entry the old bill wrote, then book the bill as
-     it now reads — through the one gate, so numbering and the one-active-
-     entry rule hold exactly as on the first post. */
-  const after = (data ?? inv) as Row;
-  const rev = await reverseJournal(sb, {
-    sourceType: 'API',
-    sourceDocNo: String(inv.invoice_number),
-    companyId: co.companyId,
-    narration: (orig) => `Reversal of ${orig.je_no} — AP invoice ${inv.invoice_number} edited`,
-    entryDate: oldDate,
+    /* The re-post: contra the entry the old bill wrote, then book the bill as
+       it now reads — through the one gate, so numbering and the one-active-
+       entry rule hold exactly as on the first post. */
+    const after = (data ?? inv) as Row;
+    const rev = await reverseJournal(tx, {
+      sourceType: 'API',
+      sourceDocNo: String(inv.invoice_number),
+      companyId: co.companyId,
+      narration: (orig) => `Reversal of ${orig.je_no} — AP invoice ${inv.invoice_number} edited`,
+      entryDate: oldDate,
+    });
+    if (!rev.ok) return c.json({ error: 'reverse_failed', status: rev.status, reason: (rev as { reason?: string }).reason ?? rev.status }, 500);
+    const sup = await loadSupplier(c, String(after.supplier_id));
+    if ('resp' in sup) return sup.resp;
+    const { data: lineRows, error: lErr } = await scopeToCompany(tx.from('ap_invoice_lines').select(LINE).eq('invoice_id', inv.id), c).order('line_no');
+    if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
+    const lines = (lineRows ?? []) as Array<{ description: string | null; debit_account_code: string; amount_sen: number; department?: string | null; project_id?: number | null; sub_department_id?: string | null }>;
+    const roles = await resolveRoles(tx, co.companyId);
+    const je = await postJournal(tx, {
+      companyId: co.companyId,
+      entryDate: String(after.invoice_date),
+      sourceType: 'API',
+      sourceDocNo: String(inv.invoice_number),
+      narration: `AP invoice ${inv.invoice_number} — ${sup.supplier.name ?? sup.supplier.code ?? 'supplier'}${after.supplier_invoice_ref ? ` (${after.supplier_invoice_ref})` : ''} — edited`,
+      lines: apInvoiceLines(roles, { invoice_number: String(inv.invoice_number) }, sup.supplier,
+        lines.map((l) => ({ accountCode: l.debit_account_code, myrSen: Number(l.amount_sen), description: l.description, department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, projectId: l.project_id ?? null, subDepartmentId: l.sub_department_id ?? null }))),
+    });
+    if (!je.ok) return c.json({ error: 'post_failed', status: je.status, reason: (je as { reason?: string }).reason ?? je.status }, 500);
+    return c.json({ ok: true, invoice: after, reposted: true, jeNo: je.jeNo });
   });
-  if (!rev.ok) return c.json({ error: 'reverse_failed', status: rev.status, reason: (rev as { reason?: string }).reason ?? rev.status }, 500);
-  const sup = await loadSupplier(c, String(after.supplier_id));
-  if ('resp' in sup) return sup.resp;
-  const { data: lineRows, error: lErr } = await scopeToCompany(sb.from('ap_invoice_lines').select(LINE).eq('invoice_id', inv.id), c).order('line_no');
-  if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
-  const lines = (lineRows ?? []) as Array<{ description: string | null; debit_account_code: string; amount_sen: number; department?: string | null; project_id?: number | null; sub_department_id?: string | null }>;
-  const roles = await resolveRoles(sb, co.companyId);
-  const je = await postJournal(sb, {
-    companyId: co.companyId,
-    entryDate: String(after.invoice_date),
-    sourceType: 'API',
-    sourceDocNo: String(inv.invoice_number),
-    narration: `AP invoice ${inv.invoice_number} — ${sup.supplier.name ?? sup.supplier.code ?? 'supplier'}${after.supplier_invoice_ref ? ` (${after.supplier_invoice_ref})` : ''} — edited`,
-    lines: apInvoiceLines(roles, { invoice_number: String(inv.invoice_number) }, sup.supplier,
-      lines.map((l) => ({ accountCode: l.debit_account_code, myrSen: Number(l.amount_sen), description: l.description, department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, projectId: l.project_id ?? null, subDepartmentId: l.sub_department_id ?? null }))),
-  });
-  if (!je.ok) return c.json({ error: 'post_failed', status: je.status, reason: (je as { reason?: string }).reason ?? je.status }, 500);
-  return c.json({ ok: true, invoice: after, reposted: true, jeNo: je.jeNo });
 };
 
 /* ── POST /:id/post — into the ledger, once ──────────────────────────────── */
@@ -533,6 +563,8 @@ export const apInvoices = new Hono();
 apInvoices.use('*', supabaseAuth);
 apInvoices.get('/', listApInvoicesHandler);
 apInvoices.post('/', createApInvoiceHandler);
+/* Before /:id, so the detail matcher never takes it. */
+apInvoices.get('/duplicate-bills', listDuplicateSupplierBillsHandler);
 /* Files before /:id, as the PV mounts them — the evidence paths never fall
    into the detail matcher. */
 apInvoices.post('/:id/files', uploadApInvoiceFileHandler);

@@ -1,7 +1,7 @@
 // Vendored SLICE of apps/backend/src/lib/flow-queries.ts — ONLY the Sales-Order
 import { appendSoListFilterParams } from './so-list-filter-state';
 import type { SoListFilter } from '../../shared/so-list-filter-model';
-import { writeFailed } from './mutation-error';
+import { reportInBandFailure, writeFailed, type InBandFailure } from './mutation-error';
 import { resolveCompartmentArtUrl, loadCompartmentArt } from './sofa-compartment-art';
 // read / detail / status / mutation hooks the vendored SO list + detail pages
 // use. The full source module (~2000 lines) carries the entire SO/DO/SI/DR
@@ -392,6 +392,15 @@ export type SoPayment = {
   created_by: string | null;
   version: number;
   updated_at?: string | null;
+  /* The payment's official receipt (GET /:docNo/payments, payment-receipts.ts): its number and DRAFT / FORMAL, the
+     instalment invoice a renovation receipt is for, and whether finance has confirmed the money. Absent when the
+     receipts could not be read. */
+  receipt_id?: number | null;
+  or_number?: string | null;
+  or_status?: string | null;
+  sales_invoice_id?: string | null;
+  invoice_no?: string | null;
+  confirmed?: boolean;
 };
 
 export const useSalesOrderPayments = (docNo: string | null) => useQuery({
@@ -446,10 +455,11 @@ export const useCreateMfgSalesOrder = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ idempotencyKey, ...body }: { idempotencyKey?: string } & Record<string, unknown>) =>
-      authedFetch<{ docNo: string; vpBrand?: VpBrandAsk }>(`/mfg-sales-orders`,
+      authedFetch<{ docNo: string; vpBrand?: VpBrandAsk } & InBandFailure>(`/mfg-sales-orders`,
         idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) })),
     onSuccess: (res) => {
       invalidateSoLists(qc);
+      reportInBandFailure('Order saved, but a payment was not recorded', res);
       /* A live order whose products name no brand: ask which brand it is for,
          for the Venture Portal (owner 2026-09-27). Not awaited -- the save is
          done, and the question is optional. lib/vp-brand-prompt.ts. */

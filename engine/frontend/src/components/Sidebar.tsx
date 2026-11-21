@@ -695,6 +695,9 @@ export const ALL_NAV_TABS: NavTab[] = [
     anyPerm: ["*", "scm.access"],
     anyAccess: ["scm.finance", "scm.finance.accounting", "scm.finance.outstanding"],
     children: [
+      // ── To do leads (Conts, ported from Houzs's Finance redesign): what waits on finance, each job linking to
+      //    its screen (conts/FinanceTodo.tsx). It is the Finance landing; the menu hub moved to /scm/finance/menu.
+      { to: "/scm/finance", end: true, label: "To do", icon: ListChecks, badge: "finance-todo", anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
       // ── SIX GROUPS, BY THE JOB (owner 2026-09-12: finance 的 function 分到很散,
       //    我希望我要 maintenance 的东西一个子 side bar, report 一个 side bar;
       //    docs/bugs/0824). Fifteen flat entries and the Accounting page's
@@ -739,6 +742,8 @@ export const ALL_NAV_TABS: NavTab[] = [
         groupId: "scm-finance-out",
         children: [
           { to: "/scm/payment-vouchers", label: "Payment vouchers", icon: Wallet, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write", "scm.payment_voucher.post", "scm.payment_voucher.cancel"], anyAccess: ["scm.finance.accounting"] },
+          // Payment listing (ported from Houzs): each day's vouchers to pay and post, one line each with its bank, printable.
+          { to: "/scm/payment-listing", label: "Payment listing", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write", "scm.payment_voucher.post", "scm.payment_voucher.cancel"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/ap-invoices", label: "AP invoices", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/payment-requests", label: "Payment requests", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.create", "scm.payment_voucher.write"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/staff-banks", label: "Staff bank details", icon: FileText, anyPerm: ["*", "scm.payment_voucher.approve"], anyAccess: ["scm.finance.accounting"] },
@@ -755,6 +760,8 @@ export const ALL_NAV_TABS: NavTab[] = [
           { to: "/scm/daily-bank", label: "Daily bank", icon: Landmark, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/merchant-recon", label: "Merchant recon", icon: CreditCard, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/bank-recon", label: "Bank recon", icon: Banknote, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
+          // Unmatched payments (ported from Houzs): customer payments not confirmed or not on the bank yet, and bank lines nothing is matched to.
+          { to: "/scm/unmatched-payments", label: "Unmatched payments", icon: AlertCircle, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
         ],
       },
       {
@@ -809,6 +816,8 @@ export const ALL_NAV_TABS: NavTab[] = [
         icon: SettingsIcon,
         groupId: "scm-finance-setup",
         children: [
+          // What fills To do: its built-in rules, each switched on or off (Conts; Ledger full switches them).
+          { to: "/scm/finance/rules", label: "To do rules", icon: ListChecks, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/chart-of-accounts", label: "Chart of accounts", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/accounting?tab=groups", label: "Item groups", icon: SettingsIcon, anyPerm: ["*", "scm.access"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/settlement-setup", label: "Recon setup", icon: SettingsIcon, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },

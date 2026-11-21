@@ -35,7 +35,7 @@ import { takeBack } from '../../lib/backTrail';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { scmListReturnTo } from "../../lib/scmListReturn";
-import { siSettledSen, siOutstandingSen } from "../../vendor/scm/lib/si-outstanding";
+import { siCreditNotesSen, siSettledSen, siOutstandingSen } from "../../vendor/scm/lib/si-outstanding";
 import {
   ArrowLeft,
   History,
@@ -127,8 +127,6 @@ type SiStatus =
   | string;
 
 type SiHeader = {
-  /** Posted credit notes against this invoice (GET /:id). They settle it like a receipt (D11). */
-  credit_note_applied_sen?: number | null;
   id: string;
   invoice_number: string;
   so_doc_no: string | null;
@@ -166,6 +164,7 @@ type SiHeader = {
   local_total_sen: number;
   total_sen: number;
   paid_sen: number;
+  credit_notes_sen?: number | null; // credit notes knocked off it (si-credit-notes); null = unread
   line_count: number;
   currency: string;
   // Finance-gated cost / margin fields (served on the detail payload; shown only
@@ -274,11 +273,12 @@ type OrderDeposit = {
    in one place instead of once per formula. */
 const paidOf = (h: SiHeader): number => h.paid_sen ?? 0;
 
+/* The credit notes knocked off it ride the header (credit_notes_sen) — the same three kinds of money the list nets. */
 const settledOf = (h: SiHeader, depositSen: number): number =>
-  siSettledSen(paidOf(h), depositSen);
+  siSettledSen(paidOf(h), depositSen, siCreditNotesSen(h));
 
 const outstandingOf = (h: SiHeader, items: SiItem[], depositSen: number): number =>
-  siOutstandingSen(totalOf(h, items), paidOf(h), depositSen);
+  siOutstandingSen(totalOf(h, items), paidOf(h), depositSen, siCreditNotesSen(h));
 
 // Payment-lifecycle bucket for tone + blurb.
 type Effective = "draft" | "sent" | "partial" | "paid" | "overdue" | "cancelled";
@@ -476,9 +476,7 @@ function OutstandingHeroCard({
   items: SiItem[];
   orderDeposit: OrderDeposit | null;
 }) {
-  const creditSen = Math.max(0, header.credit_note_applied_sen ?? 0);
-  const orderSen = orderDeposit?.applied_sen ?? 0;
-  const depositSen = orderSen + creditSen;
+  const depositSen = orderDeposit?.applied_sen ?? 0;
   const eff = effectiveOf(header, items, depositSen);
   const t = EFFECTIVE_TONE[eff];
   const total = totalOf(header, items);
@@ -522,15 +520,15 @@ function OutstandingHeroCard({
         />
         {/* Named for the document that actually took the money — the office
             reads this line to know it does not have to chase it. */}
-        {orderSen > 0 && (
+        {depositSen > 0 && (
           <HeroLine
             k={`Deposit on ${orderDeposit!.so_doc_no}`}
-            v={fmtMoney(orderSen, header.currency)}
+            v={fmtMoney(depositSen, header.currency)}
             tone="success"
           />
         )}
-        {creditSen > 0 && (
-          <HeroLine k="Credit notes" v={fmtMoney(creditSen, header.currency)} tone="success" />
+        {siCreditNotesSen(header) > 0 && (
+          <HeroLine k="Credit notes" v={fmtMoney(siCreditNotesSen(header), header.currency)} tone="success" />
         )}
         <HeroLine
           k="Outstanding"
@@ -654,9 +652,7 @@ export function SalesInvoiceDetailV2() {
     (detail.data as { orderDepositUnavailable?: boolean } | undefined)
       ?.orderDepositUnavailable
   );
-  /* The order's deposit applied here plus posted credit notes on the invoice (D11). */
-  const depositSen = (orderDeposit?.applied_sen ?? 0)
-    + Math.max(0, ((detail.data as { salesInvoice?: { credit_note_applied_sen?: number | null } } | undefined)?.salesInvoice?.credit_note_applied_sen) ?? 0);
+  const depositSen = orderDeposit?.applied_sen ?? 0;
 
   // Persisted SI payment row → the shared PaymentsTable draft shape.
   const apiToDraft = useCallback(

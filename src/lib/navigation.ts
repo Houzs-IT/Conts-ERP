@@ -64,20 +64,21 @@ const LEDGER_ICON: Record<string, string> = {
   'supplier-ledger': 'book-user', 'deposit-invoices': 'file-plus', 'other-debtors': 'users', 'credit-debit-notes': 'file-minus',
   'not-yet-billed': 'hourglass', 'e-invoice': 'badge-check', 'official-receipts': 'receipt-text', 'debtors': 'contact',
   'customer-ledger': 'book-user', 'outstanding': 'clock', 'daily-bank': 'calendar-days', 'merchant-recon': 'credit-card',
+  'to-do': 'list-checks', 'branding': 'stamp', 'payment-listing': 'list-ordered', 'unmatched-payments': 'search-x',
   'rental-unit-costs': 'building-2', 'department-spend': 'chart-pie', 'renovation-projects': 'hammer', 'ai-usage': 'sparkles',
 };
 
 /** The Finance groups, in order, each by its screens: finance's own desk screens by key, the ledger's by slug
  *  (chew, 2 Nov 2026). Every ledger screen is in exactly one group. */
 const FINANCE_LAYOUT: Array<[part: string, entries: string[]]> = [
-  ['To approve', ['desk:approvals', 'payment-requests', 'limit-requests', 'petty-cash']],
-  ['Suppliers', ['ap-invoices', 'payment-vouchers', 'supplier-ledger', 'creditor-ageing']],
+  ['To approve', ['to-do', 'desk:approvals', 'payment-requests', 'limit-requests', 'petty-cash']],
+  ['Suppliers', ['ap-invoices', 'payment-vouchers', 'payment-listing', 'supplier-ledger', 'creditor-ageing']],
   ['Rental bills', ['desk:payables', 'desk:utilityBills']],
   ['Billing', ['deposit-invoices', 'other-debtors', 'credit-debit-notes', 'not-yet-billed', 'e-invoice']],
   ['Collections', ['money-received', 'official-receipts', 'debtors', 'customer-ledger', 'outstanding', 'debtor-ageing']],
-  ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon', 'desk:airbnbRecon']],
+  ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon', 'unmatched-payments', 'desk:airbnbRecon']],
   ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'department-spend', 'renovation-projects', 'ai-usage']],
-  ['Setup', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup', 'staff-banks']],
+  ['Setup', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup', 'branding', 'staff-banks']],
 ];
 
 export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix: '' | 'Supply', workspace: Workspace): NavGroup[] {

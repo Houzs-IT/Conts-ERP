@@ -12,7 +12,7 @@ describe('paymentsOf on a renovation contract', () => {
     const view = assembleView('TC-SO-2611-915', 'RENO_CONFIRMED', null, 1_722_000, insts, [{
       instalment_id: 'i1', seq: 1, kind: 'INVOICE', amount_sen: 250_800, invoice_date: '2026-11-07', invoice_number: 'TC-SI-2611-009',
       sales_invoice_id: 'si-9', note_number: null, credit_note_id: null, paid_sen: 0, si_status: 'PAID', cn_status: null,
-    }], 1_000, [], 0, 835_000, [{ id: 'si-9', invoiceNumber: 'TC-SI-2611-009', invoiceDate: '2026-11-07', status: 'PAID', totalSen: 250_800, ownPaidSen: 0, creditedSen: 0 }]);
+    }], 1_000, [], 0, 835_000);
     const p = paymentsOf(view, { docNo: 'TC-SO-2611-915', totalSen: 1_722_000, receipts: [
       { paidOn: '2026-11-07', amountSen: 250_800, method: 'transfer' }, { paidOn: '2026-11-07', amountSen: 584_200, method: 'cash' },
     ] });
@@ -30,7 +30,7 @@ describe('paymentsOf on a renovation contract', () => {
     const view = assembleView('TC-SO-2611-913', 'RENO_CONFIRMED', null, 80_000, insts, [1, 2].map((seq) => ({
       instalment_id: `i${seq}`, seq, kind: 'INVOICE' as const, amount_sen: 24_000, invoice_date: '2026-11-07', invoice_number: `SI-${seq}`,
       sales_invoice_id: `si-${seq}`, note_number: null, credit_note_id: null, paid_sen: seq === 2 ? 10_000 : 0, si_status: 'SENT', cn_status: null,
-    })), 0, [], 0, 24_000, [1, 2].map((seq) => ({ id: `si-${seq}`, invoiceNumber: `SI-${seq}`, invoiceDate: '2026-11-07', status: 'SENT', totalSen: 24_000, ownPaidSen: seq === 2 ? 10_000 : 0, creditedSen: 0 })));
+    })), 0, [], 0, 24_000);
     const p = paymentsOf(view, { docNo: 'TC-SO-2611-913', totalSen: 80_000, receipts: [{ paidOn: '2026-11-07', amountSen: 24_000, method: 'cash' }] });
     if (p.state !== 'ok') throw new Error('expected ok');
     expect(p.instalments.map((i) => i.paidSen)).toEqual([24_000, 10_000, 0, 0]);

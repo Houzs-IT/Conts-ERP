@@ -258,7 +258,9 @@ describe('the route implements the two rules the simulation models', () => {
     expect(fn).toContain(".eq('source_doc_type', 'DO')");
     expect(fn).toContain('.eq(\'source_doc_id\', deliveryOrderId)');
     expect(fn).toContain(".eq('movement_type', 'OUT')");
-    expect(fn).toMatch(/if \(\(existing \?\? 0\) > 0\) return \[\];/);
+    /* Since PR #1126 D6 the guard first says when the DO was reverted to Draft earlier; the no-op stays. */
+    expect(fn).toMatch(/if \(\(existing \?\? 0\) > 0\) \{/);
+    expect(fn).toMatch(/return \[\]; \/\/ already deducted/);
   });
 
   it('there is exactly ONE deduction trigger on the status PATCH', () => {

@@ -69,7 +69,7 @@ vi.mock('../../vendor/scm/lib/payment-voucher-queries', async (importOriginal) =
   usePaymentVoucherDetail: () => ({ data: shown.detail, isLoading: false }),
   useUpdatePaymentVoucher: () => ({ mutateAsync: updateAsync, isPending: false }),
   useCancelPaymentVoucher: idle, useSubmitPaymentVoucher: idle, useWithdrawPaymentVoucher: idle,
-  useCheckPaymentVoucher: idle, useApprovePaymentVoucher: idle, usePostNowPaymentVoucher: idle, useRejectPaymentVoucher: idle,
+  useCheckPaymentVoucher: idle, useApprovePaymentVoucher: idle, usePostNowPaymentVoucher: idle, useRejectPaymentVoucher: idle, usePostPaymentVoucher: idle,
   useApplyAdvance: idle, useUploadPvFile: idle, useDeletePvFile: idle,
   useSupplierAdvances: () => ({ data: { advances: [], totalRemainingSen: 0 }, isLoading: false }),
   usePvFiles: () => ({ data: { files: [] }, isLoading: false, refetch: async () => ({ data: { files: [] } }) }),

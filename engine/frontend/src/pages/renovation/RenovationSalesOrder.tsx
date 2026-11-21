@@ -320,7 +320,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
         <Stat label="Revised contract" value={rm(k.totals.revisedContractSen)} />
         {!embedded && <>
           <Stat label="Billed" value={rm(b.billedSen)} />
-          <Stat label="Received" value={rm(b.receivedSen)} tone="ok" />
+          <Stat label="Received" value={(b.waitingSen ?? 0) > 0 ? `${rm(b.receivedSen)} + ${rm(b.waitingSen ?? 0)} waiting for finance` : rm(b.receivedSen)} tone="ok" />
           <Stat label="To bill" value={rm(b.revisedContractSen - b.billedSen)} />
         </>}
       </div>
@@ -360,7 +360,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
                     {i.bill && <div className="text-[11px] text-ink-muted">{fmtDate(i.bill.invoiceDate)}</div>}
                   </td>
                   <td className="py-2 text-right tabular-nums">{i.bill?.kind === 'INVOICE' ? rm(i.bill.paidSen) : ''}</td>
-                  <td className="px-3 py-2 text-right">{i.isNext && live && can('scm.renovation.bill') && <Button className="h-8" onClick={() => setBilling(i)}>Bill</Button>}</td>
+                  <td className="px-3 py-2 text-right">{i.isNext && live && (can('scm.renovation.bill') || can('scm.renovation.bill_own')) && <Button className="h-8" onClick={() => setBilling(i)}>Bill</Button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -375,7 +375,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
               </div>
               <div className="text-[11.5px] text-ink-muted">{i.stageCode ? STAGE_LABEL[i.stageCode as StageKey] : 'No stage'} · cum. {pctLabel(i.cumBp)}{!i.bill && !i.isNext && !i.billedBeforeGoLive ? ' · projected' : ''}</div>
               {i.bill && <div className="mt-0.5 text-[12px]">{i.bill.invoiceNumber ?? i.bill.noteNumber ?? 'Closed, nothing to bill'} · {fmtDate(i.bill.invoiceDate)}{i.bill.kind === 'INVOICE' ? ` · received ${rm(i.bill.paidSen)}` : ''}</div>}
-              {i.isNext && live && can('scm.renovation.bill') && <Button className="mt-2 h-8 w-full" onClick={() => setBilling(i)}>Bill this instalment</Button>}
+              {i.isNext && live && (can('scm.renovation.bill') || can('scm.renovation.bill_own')) && <Button className="mt-2 h-8 w-full" onClick={() => setBilling(i)}>Bill this instalment</Button>}
             </li>
           ))}
         </ul>

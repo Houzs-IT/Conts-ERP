@@ -60,6 +60,9 @@ import { SI_STATUS_BUCKETS } from '../lib/si-status-buckets';
 import { postSiRevenue, reverseSiRevenue, resyncSiRevenue } from '../lib/post-si-revenue';
 import { buildItemRow, createSalesInvoiceFromDoLines, migratedRefusalForDeliveries, nextSiNumber, recomputeTotals, recordSiCreate } from '../lib/si-from-do';
 import { releaseDepositInvoicesBestEffort } from '../../acc/deposit-invoices';
+import { releaseSalesInvoiceKnockOffs } from '../../acc/credit-note-si';
+import { siCreditNotesSen } from '../lib/si-credit-notes';
+import { invoiceReceipts } from '../lib/si-receipts';
 import { mintMonthlyDocNo, insertWithDocNoRetry } from '../lib/doc-no';
 import { todayMyt } from '../lib/my-time';
 import { resolveSalesScopeIds, salesDocOutOfScope } from '../lib/salesScope';
@@ -641,12 +644,24 @@ salesInvoices.get('/:id', async (c) => {
      screen that just needs the number reads the scalar, so no surface has to
      know two shapes. `null` means "not known" and every reader treats it as no
      deposit, which renders the LARGER outstanding. */
-  /* Posted credit notes against the invoice settle it too (D11): folded into the
-     same scalar so every outstanding figure takes them off; credit_note_applied_sen
-     says how much of it is credit. */
   (h.data as unknown as Record<string, unknown>).so_deposit_applied_sen =
-    dep.ok ? (dep.deposit?.applied_sen ?? 0) + dep.creditSen : null;
-  (h.data as unknown as Record<string, unknown>).credit_note_applied_sen = dep.ok ? dep.creditSen : null;
+    dep.ok ? (dep.deposit?.applied_sen ?? 0) : null;
+  /* The customers' credit notes knocked off it, the list rows' own key (si-credit-notes.ts); null = unread. */
+  (h.data as unknown as Record<string, unknown>).credit_notes_sen =
+    await siCreditNotesSen(sb, (h.data as { company_id?: number | null }).company_id ?? activeCompanyId(c) ?? null, id);
+  /* Every sum received towards this invoice — the order's rows and its own —
+     for the printed "Payments received" list (lib/si-receipts, ported from
+     Houzs: the print called all of it "Deposit"). Stamped on the header so
+     every print path that fetched this detail carries it. A read that fails
+     leaves it null and the print says one line per document. */
+  {
+    const { data: own, error: ownErr } = await scopeToCompany(
+      sb.from('sales_invoice_payments').select('paid_at, method, amount_sen, created_at').eq('sales_invoice_id', id), c,
+    ).order('paid_at', { ascending: true }).order('created_at', { ascending: true });
+    (h.data as unknown as Record<string, unknown>).receipts = ownErr || !dep.ok
+      ? null
+      : invoiceReceipts(dep.deposit, own as Array<{ paid_at: string | null; method: string | null; amount_sen: number }>);
+  }
   return c.json({
     salesInvoice: h.data,
     items,
@@ -1772,13 +1787,15 @@ export const patchSalesInvoiceStatusHandler = async (c: any) => {
   }
 
   /* PAID / PARTIALLY_PAID follow the money, never a click (click sweep F28, 21 Nov 2026: an invoice could read PAID
-     with nothing received). The money is the invoice's receipts + the order's deposit applied to it + posted credit
-     notes (si-order-deposit.ts); "Mark paid" on the screens records a receipt and writes no status. */
+     with nothing received). The money is the invoice's receipts + the order's deposit applied to it + the credit notes
+     knocked off it (si-credit-notes.ts); "Mark paid" on the screens records a receipt and writes no status. */
   if ((status === 'PAID' || status === 'PARTIALLY_PAID') && canonPrev !== status && prevStatus !== 'DRAFT' && prevStatus !== 'CANCELLED') {
     const cur0 = curRow as { total_sen?: number | null; paid_sen?: number | null; so_doc_no?: string | null; company_id?: number | null };
     const dep = await readOrderDepositForInvoice(sb, { id, so_doc_no: cur0.so_doc_no ?? null, company_id: cur0.company_id ?? co.companyId });
     if (!dep.ok) return c.json({ error: 'load_failed', reason: dep.reason }, 503);
-    const settled = Number(cur0.paid_sen ?? 0) + (dep.deposit?.applied_sen ?? 0) + dep.creditSen;
+    const credited = await siCreditNotesSen(sb, cur0.company_id ?? co.companyId, id);
+    if (credited === null) return c.json({ error: 'load_failed', reason: 'credit notes' }, 503);
+    const settled = Number(cur0.paid_sen ?? 0) + (dep.deposit?.applied_sen ?? 0) + credited;
     const derived = siStatusFor(prevStatus, Number(cur0.total_sen ?? 0), settled);
     if (derived !== status) {
       return c.json({
@@ -1951,6 +1968,8 @@ export const patchSalesInvoiceStatusHandler = async (c: any) => {
       companyId: auditCompanyId ?? null, siId: id, siNumber: d.invoice_number,
       actor: String((c.get('houzsUser') as { name?: string } | undefined)?.name ?? '') || null,
     });
+    /* The credit notes knocked off it get their credit back: a cancelled invoice owes nothing. */
+    await releaseSalesInvoiceKnockOffs(sb, { companyId: auditCompanyId ?? null, siId: id });
 
     /* A SEPARATE row from the CANCEL above, not a duplicate of it: that was a
        document-status event, this is the AR/GL contra, and a cancel whose

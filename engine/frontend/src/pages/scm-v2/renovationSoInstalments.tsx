@@ -2,6 +2,8 @@
    对标到 project 那边"). The contract's instalments (GET /renovation/sales-orders/:docNo/billing) with what has been
    received against each, filled the way the project's payments strip fills them (services/renovation/beta.ts
    paymentsOf): money on a bill counts for that instalment, money recorded on the order fills the rest in order.
+   Only money finance has confirmed is paid (chew, 21 Nov 2026; SOP 4.2): what is recorded but not confirmed yet fills
+   the instalments the same way as "waiting for finance", so the salesperson still sees it.
    Conts only: an order with no instalment schedule shows nothing and Add Payment keeps the balance default. */
 import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
@@ -11,17 +13,27 @@ import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 
 interface BillingInstalment {
   id: string; seq: number; label: string; pctBp: number; amountSen: number; isNext?: boolean;
-  bill: { kind: "INVOICE" | "CREDIT_NOTE" | "ZERO"; amountSen: number; paidSen: number; salesInvoiceId?: string | null; invoiceNumber?: string | null; noteNumber?: string | null } | null;
+  bill: {
+    kind: "INVOICE" | "CREDIT_NOTE" | "ZERO"; amountSen: number;
+    /** Confirmed money taken on the invoice itself; waitingSen: taken on it, not confirmed yet. */
+    paidSen: number; waitingSen?: number;
+    salesInvoiceId?: string | null; invoiceNumber?: string | null; noteNumber?: string | null;
+  } | null;
 }
 interface BillingView {
-  receivedSen: number; revisedContractSen: number; instalments: BillingInstalment[];
-  /* Newer servers: what was taken on the order, the part of it no invoice has taken, and contract credit notes. */
-  orderPaidSen?: number; unappliedSen?: number; creditedSen?: number;
-  credits?: { noteNumber: string | null; amountSen: number }[];
+  /** Confirmed money, on the order and its invoices. */
+  receivedSen: number;
+  /** Confirmed / not yet confirmed money recorded on the order itself. */
+  orderPaidSen?: number; orderWaitingSen?: number;
+  /** Money recorded, order and invoices, finance has not confirmed yet. */
+  waitingSen?: number;
+  revisedContractSen: number; instalments: BillingInstalment[];
 }
 
 export interface SoInstalmentRow {
   seq: number; label: string; pctBp: number; amountSen: number; paidSen: number; slot?: boolean;
+  /** Recorded for this instalment, waiting for finance to confirm it (never in paidSen). */
+  waitingSen?: number;
   id?: string; billable?: boolean; document?: { number: string; invoiceId: string | null };
 }
 
@@ -36,15 +48,12 @@ export function useSoInstalments(docNo: string | null, enabled: boolean) {
   });
 }
 
-/** Each instalment's amount and what is paid against it, given the money recorded on the order. A bill's paidSen
-    already carries the order's money applied to its invoice (server, renovation-billing assembleView); what the order
-    holds beyond that, and a contract credit note, fill the unbilled instalments in order, the way the project's
-    payments strip does (services/renovation/beta.ts paymentsOf). Click sweep F6, 21 Nov 2026. */
-export function instalmentRows(view: BillingView | undefined, recordedSen: number): SoInstalmentRow[] {
+/** Each instalment's amount and what is paid against it: what its invoice holds, then the confirmed money on the order
+    in order. Money not confirmed yet fills them the same way, as waitingSen. */
+export function instalmentRows(view: BillingView | undefined): SoInstalmentRow[] {
   if (!view || view.instalments.length === 0) return [];
-  let pool = view.orderPaidSen != null
-    ? Math.max(0, recordedSen - (view.orderPaidSen - (view.unappliedSen ?? 0))) + Math.max(0, view.creditedSen ?? 0)
-    : Math.max(0, recordedSen - view.receivedSen);
+  let pool = Math.max(0, view.orderPaidSen ?? 0);
+  let waitingPool = Math.max(0, view.orderWaitingSen ?? 0);
   return [...view.instalments].sort((a, b) => a.seq - b.seq).map((i) => {
     const amountSen = i.bill ? i.bill.amountSen : i.amountSen;
     let paidSen = i.bill?.kind === "INVOICE" ? i.bill.paidSen : 0;
@@ -53,9 +62,16 @@ export function instalmentRows(view: BillingView | undefined, recordedSen: numbe
       pool -= take;
       paidSen += take;
     }
+    let waitingSen = i.bill?.kind === "INVOICE" ? Math.min(i.bill.waitingSen ?? 0, Math.max(0, amountSen - paidSen)) : 0;
+    if (paidSen + waitingSen < amountSen && waitingPool > 0) {
+      const take = Math.min(waitingPool, amountSen - paidSen - waitingSen);
+      waitingPool -= take;
+      waitingSen += take;
+    }
     const number = i.bill?.invoiceNumber ?? i.bill?.noteNumber ?? null;
     return {
       seq: i.seq, label: i.label || `Instalment ${i.seq}`, pctBp: i.pctBp, amountSen, paidSen, id: i.id, billable: Boolean(i.isNext && !i.bill),
+      ...(waitingSen > 0 ? { waitingSen } : {}),
       ...(number ? { document: { number, invoiceId: i.bill?.salesInvoiceId ?? null } } : {}),
     };
   });
@@ -84,37 +100,18 @@ export function nextInstalmentSen(rows: readonly SoInstalmentRow[], paidSen: num
   return 0;
 }
 
-/** The next payment's default once `extraSen` more than what is saved is in flight: the first instalment still owed. */
-export function nextToCollectSen(rows: readonly SoInstalmentRow[], extraSen: number): number {
-  let left = Math.max(0, extraSen);
-  for (const r of rows) {
-    if (r.amountSen <= 0) continue;
-    const owed = Math.max(0, r.amountSen - r.paidSen);
-    const covered = Math.min(left, owed);
-    left -= covered;
-    if (covered < owed) return owed - covered;
-  }
-  return 0;
-}
-
 /** What is left to collect on an instalment: money over on an earlier one has already come off (owner, 4 Nov 2026). */
 export const toCollectSen = (r: Pick<SoInstalmentRow, "amountSen" | "paidSen">): number => Math.max(0, r.amountSen - r.paidSen);
 
-export function SoInstalments({ rows, money, onBill, credits }: {
+export function SoInstalments({ rows, money, onBill, onPrintInvoice }: {
   rows: readonly SoInstalmentRow[]; money: (sen: number) => string; onBill?: (id: string) => void;
-  /** Contract credit notes: they come off the order total, so the schedule reads "less credit" to add up. */
-  credits?: readonly { noteNumber: string | null; amountSen: number }[];
+  /** Print the instalment's invoice from here (a salesperson may not open the invoice page). */
+  onPrintInvoice?: (invoiceId: string) => void;
 }): ReactElement | null {
   if (rows.length === 0) return null;
-  const creditSen = (credits ?? []).reduce((s, c) => s + (c.amountSen || 0), 0);
-  const scheduleSen = rows.reduce((s, r) => s + r.amountSen, 0);
   return (
-    <>
     <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4">
       {rows.map((r) => {
-        /* Below zero: a variation order lowered the contract after more was invoiced, so this instalment is a credit
-           note to raise, not money to collect (billInstalment asks to confirm it). Click sweep F6b. */
-        const over = !r.slot && r.amountSen < 0;
         const paid = r.amountSen > 0 && r.paidSen >= r.amountSen;
         const part = !paid && r.paidSen > 0;
         const due = !paid && Boolean(r.billable);
@@ -125,27 +122,26 @@ export function SoInstalments({ rows, money, onBill, credits }: {
               {!r.slot && <span className="text-[11px] text-ink-muted">{(r.pctBp / 100).toFixed(r.pctBp % 100 ? 1 : 0)}%</span>}
             </div>
             <div className="text-[17px] font-bold tabular-nums text-ink">{r.slot && r.amountSen === 0 ? "-" : money(part ? toCollectSen(r) : r.amountSen)}</div>
-            <div className={`text-[12px] font-semibold ${paid ? "text-synced" : part || due || over ? "text-warning-text" : "text-ink-muted"}`}>
-              {over ? (r.document ? "Credit note" : "Over-invoiced: credit note due")
-                : paid ? (r.slot ? "Received" : "Paid") : part ? `To collect, ${money(r.paidSen)} of ${money(r.amountSen)} paid` : r.slot ? "Not received" : "Not paid"}
+            <div className={`text-[12px] font-semibold ${paid ? "text-synced" : part || due ? "text-warning-text" : "text-ink-muted"}`}>
+              {paid ? (r.slot ? "Received" : "Paid") : part ? `To collect, ${money(r.paidSen)} of ${money(r.amountSen)} paid` : r.slot ? "Not received" : "Not paid"}
             </div>
+            {(r.waitingSen ?? 0) > 0 && (
+              <div className="text-[11.5px] font-medium text-ink-secondary">{money(r.waitingSen ?? 0)} waiting for finance</div>
+            )}
             {(r.document || (r.billable && r.id && onBill)) && (
               <div className="mt-auto flex items-center justify-between gap-2 pt-1">
                 {r.document ? (r.document.invoiceId
                   ? <Link className="truncate text-[11.5px] font-semibold text-primary" to={`/scm/sales-invoices/${r.document.invoiceId}`}>{r.document.number}</Link>
                   : <span className="truncate text-[11.5px] text-ink-secondary">{r.document.number}</span>) : <span />}
-                {r.billable && r.id && onBill && <Button variant="secondary" className="h-7" onClick={() => onBill(r.id!)}>{over ? "Raise credit note" : "Bill"}</Button>}
+                {r.document?.invoiceId && onPrintInvoice && (
+                  <Button variant="secondary" className="h-7" onClick={() => onPrintInvoice(r.document!.invoiceId!)}>Print</Button>
+                )}
+                {r.billable && r.id && onBill && <Button variant="secondary" className="h-7" onClick={() => onBill(r.id!)}>Bill</Button>}
               </div>
             )}
           </div>
         );
       })}
     </div>
-    {creditSen > 0 && (
-      <div className="-mt-1 mb-3 text-[12px] text-ink-secondary">
-        Schedule {money(scheduleSen)} less credit note{(credits ?? []).length === 1 ? "" : "s"} {(credits ?? []).map((c) => c.noteNumber).filter(Boolean).join(", ")} {money(creditSen)} = {money(scheduleSen - creditSen)}
-      </div>
-    )}
-    </>
   );
 }

@@ -64,6 +64,8 @@ const FIELDS = [
   "cancelErrors",
   "reversalErrors",
   "recountErrors",
+  "settleErrors",
+  "paymentErrors",
 ];
 
 function walk(dir, exts, acc = []) {

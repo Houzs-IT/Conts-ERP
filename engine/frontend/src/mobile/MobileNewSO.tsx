@@ -10,6 +10,7 @@ import {
 } from "../vendor/scm/lib/so-variant-cascade";
 import { useQueryClient } from "@tanstack/react-query";
 import { authedFetch, type SaveProblem } from "../vendor/scm/lib/authed-fetch";
+import { reportInBandFailure, type InBandFailure } from "../vendor/scm/lib/mutation-error";
 import { contractLineEdits } from "./contractLineEdits";
 import { lineWriteFailure, lineWriteSaveMessage, type LineWriteFailure } from "../vendor/scm/lib/line-write-failures";
 import { amendmentVariants, amendmentRequestedUnitPriceSen, amendmentPriceFields } from "../vendor/scm/lib/so-amendment-line-diff";
@@ -522,7 +523,7 @@ export async function createDraftFromPrefill(prefill: MobileScanPrefill, idempot
     items,
   };
 
-  const res = await authedFetch<{ docNo: string }>(`/mfg-sales-orders`,
+  const res = await authedFetch<{ docNo: string } & InBandFailure>(`/mfg-sales-orders`,
     idempotentInit(idempotencyKey, { method: "POST", body: JSON.stringify(body) }));
   /* Was `return res?.docNo ?? ""` — flagged by fix/so-idempotency and taken here
      (reference_houzs_nullish_hides_ignorance). The `?? ""` turned "the server
@@ -534,6 +535,8 @@ export async function createDraftFromPrefill(prefill: MobileScanPrefill, idempot
      one ("Throws on failure so the caller can show a plain-language notify"),
      which the `??` quietly broke. */
   if (!res?.docNo) throw new Error("The order was not saved. Scan it again.");
+  /* D5 (#1126): the order is saved; a deposit it was handed but did not record is said, not dropped. */
+  reportInBandFailure("Order saved, but a payment was not recorded", res);
   return res.docNo;
 }
 

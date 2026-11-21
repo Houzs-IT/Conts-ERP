@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { siPaymentIntentSearch } from "./siPaymentIntent";
 import { salesInvoiceRowMenu } from "./row-menus";
 import {
+  siCreditNotesSen,
   siDepositAppliedSen,
   siOutstandingSen,
   siIsCancelled,
@@ -140,8 +141,7 @@ type SiRow = {
      server could not read the order — read as 0, which shows the LARGER
      outstanding. Kept apart from paid_sen: different money, different document. */
   so_deposit_applied_sen?: number | null;
-  /** The part of so_deposit_applied_sen that is posted credit notes against the invoice (server stamp). */
-  credit_note_applied_sen?: number | null;
+  credit_notes_sen?: number | null; // customers' credit notes knocked off it (si-credit-notes) — apart from paid_sen too
   bills_for?: string | null;
   status: string;
   currency: string;
@@ -234,7 +234,7 @@ const statusFor = (
    Outstanding ledger all have to answer the same number, and until 2026-08-23
    they answered six different ones (vendor/scm/lib/si-outstanding.ts). */
 const outstandingOf = (r: SiRow): number =>
-  siOwesNothing(r.status) ? 0 : siOutstandingSen(r.total_sen || r.local_total_sen || 0, r.paid_sen || 0, siDepositAppliedSen(r));
+  siOwesNothing(r.status) ? 0 : siOutstandingSen(r.total_sen || r.local_total_sen || 0, r.paid_sen || 0, siDepositAppliedSen(r), siCreditNotesSen(r));
 
 // ─── Split-menu dropdown ────────────────────────────────────────────────────
 
@@ -386,7 +386,7 @@ function CardsGrid({ rows, onOpen }: { rows: SiRow[]; onOpen: (r: SiRow) => void
             <div className="mt-3.5 flex items-end justify-between border-t border-border-subtle pt-3">
               <div className="min-w-0">
                 <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-                  Outstanding{siDepositAppliedSen(r) > 0 ? ((r.credit_note_applied_sen ?? 0) > 0 ? " · after credit note" : " · after SO deposit") : ""}
+                  Outstanding{siDepositAppliedSen(r) > 0 ? " · after SO deposit" : ""}{siCreditNotesSen(r) > 0 ? " · after credit notes" : ""}
                 </div>
                 <div
                   className={cn(
@@ -465,7 +465,7 @@ function DetailDrawer({
   const totalSen = row?.total_sen ?? row?.local_total_sen ?? 0;
   const paidSen = row?.paid_sen ?? 0;
   const depositSen = siDepositAppliedSen(row);
-  const outstanding = siOwesNothing(row?.status) ? 0 : siOutstandingSen(totalSen, paidSen, depositSen);
+  const outstanding = siOwesNothing(row?.status) ? 0 : siOutstandingSen(totalSen, paidSen, depositSen, siCreditNotesSen(row));
 
   return (
     <ResizableDetailDrawer
@@ -644,7 +644,7 @@ function DetailDrawer({
                 )}
                 <TotalRow
                   k="Outstanding"
-                  v={outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
+                  v={siIsCancelled(row.status) ? "—" : outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
                   tone={outstanding > 0 ? "error" : "success"}
                 />
               </div>
@@ -950,7 +950,7 @@ export function SalesInvoicesListV2() {
       /* The KPI sums the SAME per-row figure the Outstanding column renders, so
          the card and the table cannot disagree — which is the whole reason this
          block sums the rows on screen rather than asking the server. */
-      outstandingSen += siOwesNothing(r.status) ? 0 : siOutstandingSen(t, paid, siDepositAppliedSen(r));
+      outstandingSen += siOwesNothing(r.status) ? 0 : siOutstandingSen(t, paid, siDepositAppliedSen(r), siCreditNotesSen(r));
     }
     return { revenueSen, outstandingSen, paidSen };
   }, [visible.rows]);
@@ -1306,6 +1306,7 @@ export function SalesInvoicesListV2() {
       render: (r) => {
         const outstanding = outstandingOf(r);
         const dep = siDepositAppliedSen(r);
+        const credit = siCreditNotesSen(r);
         /* A smaller number with no explanation invites "why is this 2,400 when
            the invoice is 4,400" — so when a deposit is in play the cell SAYS
            so. The marker carries the amount and the order it was taken on, the
@@ -1318,17 +1319,16 @@ export function SalesInvoicesListV2() {
               outstanding > 0 ? "text-err" : "text-synced"
             )}
             title={
-              dep > 0
-                ? `${fmtSen(dep)} was collected on ${r.so_doc_no ?? "the sales order"} and settles this invoice.`
-                : undefined
+              [dep > 0 ? `${fmtSen(dep)} was collected on ${r.so_doc_no ?? "the sales order"} and settles this invoice.` : "",
+                credit > 0 ? `${fmtSen(credit)} was knocked off by credit notes.` : ""].filter(Boolean).join(" ") || undefined
             }
           >
             {siIsCancelled(r.status) ? "—" : outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
-            {dep > 0 && (
-              <span className="rounded-sm bg-surface-2 px-1 font-mono text-[9px] font-semibold uppercase tracking-brand text-ink-muted">
-                dep
+            {[dep > 0 ? "dep" : "", credit > 0 ? "cn" : ""].filter(Boolean).map((m) => (
+              <span key={m} className="rounded-sm bg-surface-2 px-1 font-mono text-[9px] font-semibold uppercase tracking-brand text-ink-muted">
+                {m}
               </span>
-            )}
+            ))}
           </span>
         );
       },

@@ -160,13 +160,16 @@ export interface BetaInstalment {
   /** The day the money for this payment was recorded on the sales order; null when not received yet. */
   paidOn?: string | null;
   method?: string | null;
+  /** Renovation: money recorded for this instalment that finance has not confirmed yet (not in paidSen). */
+  waitingSen?: number;
 }
-/** One payment recorded on the sales order (scm.mfg_sales_order_payments), oldest first. */
-export interface BetaReceipt { paidOn: string; amountSen: number; method: string | null }
+/** One payment recorded on the sales order (scm.mfg_sales_order_payments), oldest first. `confirmed` false = finance
+    has not confirmed it yet (its official receipt is a draft); absent = counted as received. */
+export interface BetaReceipt { paidOn: string; amountSen: number; method: string | null; confirmed?: boolean }
 export type BetaPayments =
   | { state: "hidden" }
   | { state: "none" }
-  | { state: "ok"; docNo?: string; contractSen: number; receivedSen: number; instalments: BetaInstalment[] };
+  | { state: "ok"; docNo?: string; contractSen: number; receivedSen: number; waitingSen?: number; instalments: BetaInstalment[] };
 
 /** A sales order is set up with four payments (owner, 24 Oct 2026); more appear when more money is recorded. */
 export const PAYMENT_SLOTS = 4;
@@ -195,17 +198,23 @@ export function paymentsOf(view: BillingView | null, so?: { docNo: string; total
       }),
     };
   }
-  /* A bill's paidSen already carries the order's money applied to its invoice (renovation-billing assembleView).
-     What the order holds beyond that fills the unbilled instalments in order, and so does a contract credit note:
-     it lowered the order total, so without it the instalments would add up to more than the order (click sweep F6).
-     `recordedSen` can differ from the order's own payments only by the AutoCount carried amount (projectPayments). */
-  const onBillsSen = Math.max(0, view.orderPaidSen - view.unappliedSen);
-  let pool = Math.max(0, recordedSen - onBillsSen) + Math.max(0, view.creditedSen);
+  /* A renovation contract counts only money finance has confirmed (chew, 21 Nov 2026; SOP 4.2): the confirmed money on
+     the order fills the instalments in order, after what each invoice holds itself; money not confirmed yet fills
+     them the same way as waitingSen, never as paid. */
+  const confirmedReceipts = receipts.filter((r) => r.confirmed !== false);
+  const confirmedSen = confirmedReceipts.reduce((s, r) => s + r.amountSen, 0);
+  const invoiceHeldSen = Math.max(0, view.receivedSen - view.orderPaidSen);
+  /* A contract credit note lowered the order total, so it fills the instalments too; without it they add up to more
+     than the order (click sweep F6b, 21 Nov 2026). */
+  let pool = (so ? confirmedSen : view.orderPaidSen) + (Number.isFinite(view.creditedSen) ? Math.max(0, view.creditedSen) : 0);
+  let waitingPool = so ? receipts.filter((r) => r.confirmed === false).reduce((s, r) => s + r.amountSen, 0) : view.orderWaitingSen;
+  const waitingTotalSen = view.waitingSen - view.orderWaitingSen + waitingPool;
   let seen = 0;
   return {
     state: "ok", ...docNo,
     contractSen: view.revisedContractSen,
-    receivedSen: view.receivedSen + Math.max(0, recordedSen - view.orderPaidSen),
+    receivedSen: Math.max(view.receivedSen, invoiceHeldSen + confirmedSen),
+    ...(waitingTotalSen > 0 ? { waitingSen: waitingTotalSen } : {}),
     instalments: view.instalments.map((i): BetaInstalment => {
       const bill = i.bill ? { amountSen: i.bill.amountSen, paidSen: i.bill.kind === "INVOICE" ? i.bill.paidSen : 0 } : null;
       const amountSen = bill ? bill.amountSen : i.amountSen;
@@ -217,13 +226,19 @@ export function paymentsOf(view: BillingView | null, so?: { docNo: string; total
         paidSen += take;
         if (paidSen >= amountSen) status = "paid";
       }
+      let waitingSen = i.bill?.kind === "INVOICE" ? Math.min(i.bill.waitingSen, Math.max(0, amountSen - paidSen)) : 0;
+      if (waitingPool > 0 && amountSen - paidSen - waitingSen > 0) {
+        const take = Math.min(waitingPool, amountSen - paidSen - waitingSen);
+        waitingPool -= take;
+        waitingSen += take;
+      }
       // The receipt that completed this instalment gives its date: the first one whose running total covers it.
       let paidOn: string | null = null;
       let method: string | null = null;
       if (status === "paid" && amountSen > 0) {
         seen += amountSen;
         let run = 0;
-        for (const r of receipts) { run += r.amountSen; if (run >= seen) { paidOn = r.paidOn; method = r.method; break; } }
+        for (const r of confirmedReceipts) { run += r.amountSen; if (run >= seen) { paidOn = r.paidOn; method = r.method; break; } }
       }
       return {
         seq: i.seq,
@@ -235,6 +250,7 @@ export function paymentsOf(view: BillingView | null, so?: { docNo: string; total
         trigger: normTrigger(i.trigger),
         paidOn,
         method,
+        ...(waitingSen > 0 ? { waitingSen } : {}),
       };
     }),
   };

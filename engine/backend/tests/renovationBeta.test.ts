@@ -207,11 +207,10 @@ describe("Beta payments: instalment status", () => {
     id: `i${seq}`, seq, label: `Payment ${seq}`, pctBp: 3000, cumBp: seq * 3000, description: "", stageCode: seq === 1 ? "hacking" : null, trigger: "stage_start", bill, isNext: false, amountSen,
   });
   const bill = (seq: number, amountSen: number, paidSen: number, kind: "INVOICE" | "CREDIT_NOTE" | "ZERO" = "INVOICE"): NonNullable<BillingInstalment["bill"]> => ({
-    instalmentId: `i${seq}`, seq, kind, amountSen, invoiceDate: "2026-10-01", invoiceNumber: "INV-1", salesInvoiceId: null, noteNumber: null, creditNoteId: null, paidSen, invoiceStatus: null, noteStatus: null,
+    instalmentId: `i${seq}`, seq, kind, amountSen, invoiceDate: "2026-10-01", invoiceNumber: "INV-1", salesInvoiceId: null, noteNumber: null, creditNoteId: null, paidSen, waitingSen: 0, invoiceStatus: null, noteStatus: null,
   });
   const view: BillingView = {
-    soDocNo: "SO-1", status: "RENO_CONFIRMED", originalContractSen: 1000000, revisedContractSen: 1000000, voTotalSen: 0, billedSen: 600000, receivedSen: 300000, nextSeq: 3,
-    orderPaidSen: 0, unappliedSen: 0, creditedSen: 0,
+    soDocNo: "SO-1", status: "RENO_CONFIRMED", originalContractSen: 1000000, revisedContractSen: 1000000, voTotalSen: 0, billedSen: 600000, receivedSen: 300000, orderPaidSen: 0, waitingSen: 0, orderWaitingSen: 0, nextSeq: 3,
     instalments: [inst(1, bill(1, 300000, 300000), 300000), inst(2, bill(2, 300000, 0), 300000), inst(3, null, 400000)],
   };
 
@@ -253,6 +252,16 @@ describe("Beta payments: instalment status", () => {
   test("a sales order with no money yet still shows four empty payments", () => {
     const p = paymentsOf(null, { docNo: "SO-2", totalSen: 0, receipts: [] });
     expect(p.state === "ok" && p.instalments.map((i) => i.status)).toEqual(["not_billed", "not_billed", "not_billed", "not_billed"]);
+  });
+  test("a contract counts only money finance has confirmed: the rest waits for finance (chew, 21 Nov 2026)", () => {
+    const v: BillingView = { ...view, receivedSen: 0, instalments: [inst(1, null, 300000), inst(2, null, 300000)] };
+    const p = paymentsOf(v, { docNo: "RN-1", totalSen: 600000, receipts: [
+      { paidOn: "2026-10-05", amountSen: 100000, method: "Online" },
+      { paidOn: "2026-10-06", amountSen: 300000, method: "Online", confirmed: false },
+    ] });
+    expect(p.state === "ok" && p.receivedSen).toBe(100000);
+    expect(p.state === "ok" && p.waitingSen).toBe(300000);
+    expect(p.state === "ok" && p.instalments.map((i) => [i.status, i.paidSen, i.waitingSen ?? 0])).toEqual([["not_billed", 100000, 200000], ["not_billed", 0, 100000]]);
   });
   test("money recorded on a contract fills its instalments in order", () => {
     const v: BillingView = { ...view, receivedSen: 0, instalments: [inst(1, null, 300000), inst(2, null, 300000)] };

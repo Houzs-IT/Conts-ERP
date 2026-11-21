@@ -13,7 +13,8 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { supabaseAuth } from '../middleware/auth';
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canViewAllSales, hasHouzsPerm } from '../lib/houzs-perms';
+import { soDocOutOfScope } from '../lib/salesScope';
 import { activeCompanyId, companyDocPrefix } from '../lib/companyScope';
 import type { Env, Variables } from '../env';
 import { inRenoTx, qtyCapRefusalOf, renoDbOf, RenoError, sqlFor, type RenoDb } from '../lib/renovation-db';
@@ -48,6 +49,7 @@ const PERM = {
   quote: 'scm.renovation.quote',
   voApply: 'scm.renovation.vo.apply',
   bill: 'scm.renovation.bill',
+  billOwn: 'scm.renovation.bill_own',
   terms: 'scm.renovation.terms',
   poSplit: 'scm.renovation.po_split',
 } as const;
@@ -435,7 +437,27 @@ renovation.post('/sales-orders/:docNo/instalments/terms', handle(PERM.terms, asy
   return c.json(await tx((db) => applyTermsToContract(db, actor.companyId, param(c, 'docNo'), String(b.templateId ?? ''))));
 }));
 
-renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(PERM.bill, async (c, { tx }) => {
+/** May the caller bill this contract's instalments? scm.renovation.bill bills any; scm.renovation.bill_own (every
+    salesperson, chew 21 Nov 2026) only an order in the caller's sales scope: their own, their downline's, one shared
+    with them or open to all (the rule every sales-order read follows, lib/salesScope). An order out of scope answers
+    as one that does not exist. */
+async function billRefusal(c: C, docNo: string): Promise<Response | null> {
+  if (hasHouzsPerm(c, PERM.bill)) return null;
+  if (!hasHouzsPerm(c, PERM.billOwn)) return c.json({ error: 'forbidden', message: `You need the "${PERM.bill}" permission for this.` }, 403);
+  const sb = c.get('supabase');
+  const { data, error } = await sb.from('mfg_sales_orders').select('salesperson_id, access_staff_ids, open_to_all')
+    .eq('doc_no', docNo).eq('company_id', actorOf(c).companyId).maybeSingle();
+  if (error) return c.json({ error: 'load_failed', message: 'The sales order could not be read; nothing was billed. Please try again.' }, 500);
+  const so = data as { salesperson_id?: string | null; access_staff_ids?: string[] | null; open_to_all?: boolean | null } | null;
+  const out = !so || await soDocOutOfScope(sb, c.env, c.get('houzsUser')?.id, canViewAllSales(c), {
+    salespersonId: so.salesperson_id, accessStaffIds: so.access_staff_ids, openToAll: so.open_to_all,
+  });
+  return out ? c.json({ error: 'so_not_found', message: `Sales order ${docNo} does not exist.` }, 404) : null;
+}
+
+renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(null, async (c, { tx }) => {
+  const refused = await billRefusal(c, param(c, 'docNo'));
+  if (refused) return refused;
   const b = await json(c);
   const actor = actorOf(c);
   const result = await tx((db) => billInstalment(db, actor, param(c, 'docNo'), param(c, 'id'), {
