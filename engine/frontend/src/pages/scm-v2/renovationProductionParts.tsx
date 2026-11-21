@@ -18,7 +18,7 @@ import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { useToast } from "../../hooks/useToast";
 import { useWarehouses } from "../../vendor/scm/lib/inventory-queries";
 import {
-  completeProductionOrder, useAddProductionMaterial, useAssignWorkers, useProductionMaterials, useMaterialStatus, useProductionWorkers, useRawSkus, useRequestMore, useReturnStock, useSetProductionTime, useStartProduction,
+  completeProductionOrder, refreshAfterComplete, useAddProductionMaterial, useAssignWorkers, useProductionMaterials, useMaterialStatus, useProductionWorkers, useRawSkus, useRequestMore, useReturnStock, useSetProductionTime, useStartProduction,
   type MaterialRow, type OrderChange, type ProductionProgress, type ProductionWorker,
 } from "../../vendor/scm/lib/production-order-queries";
 import { RawMaterialAddPanel, type RawPick } from "./RawMaterialAddPanel";
@@ -54,6 +54,7 @@ export function useProductionPress(order: { id: string; po_number: string; title
   const materials = useProductionMaterials(order.id);
   const statuses = useMaterialStatus(order.id);
   const start = useStartProduction(order.id);
+  const qc = useQueryClient();
   const notify = useNotify();
   const toast = useToast();
   const [completing, setCompleting] = useState<string | null>(null);
@@ -64,7 +65,7 @@ export function useProductionPress(order: { id: string; po_number: string; title
   const startNow = () => {
     setReminder(false);
     start.mutate(undefined, {
-      onSuccess: () => toast.success(`${order.po_number} started`),
+      onSuccess: (r) => toast.success(r.shortLines ? `${order.po_number} started. ${r.shortLines} material line${r.shortLines === 1 ? "" : "s"} short of stock.` : `${order.po_number} started`),
       onError: (e) => notify({ title: "Not started", body: message(e), tone: "error" }),
     });
   };
@@ -82,6 +83,7 @@ export function useProductionPress(order: { id: string; po_number: string; title
       notify({ title: "Complete stopped", body: `${message(e)} What was already raised stays; Retry carries on from there.`, tone: "error" });
     } finally {
       setCompleting(null);
+      refreshAfterComplete(qc, order.id);
       refetch();
     }
   };

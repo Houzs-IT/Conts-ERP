@@ -340,12 +340,17 @@ export function searchProjects(q: string) {
   return renoGet<{ projects: Array<{ id: number; code: string | null; name: string; stage: string; status: string; contractDocNo: string | null }> }>(`/lookups/projects?q=${encodeURIComponent(q)}`);
 }
 
-/** A mutation that invalidates every renovation query on success. */
+/* Renovation writes also raise documents read under other keys: a progress bill or credit note makes a sales invoice
+   or credit note and a journal, a PO instalment payment makes a payment voucher, a status move changes the SO lists. */
+const RENO_TOUCHED_KEYS = ['reno', 'mfg-sales-order-detail', 'mfg-sales-orders', 'so-money', 'sales-invoices', 'sales-invoice-detail',
+  'credit-notes', 'journal-entries', 'payment-vouchers', 'purchase-invoices', 'purchase-invoice-detail', 'daily-bank'];
+
+/** A mutation that invalidates every renovation query, and the documents it raises, on success. */
 export function useRenoMutation<TVars, TResult = unknown>(fn: (v: TVars) => Promise<TResult>) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['reno'] }); void qc.invalidateQueries({ queryKey: ['mfg-sales-order-detail'] }); },
+    onSuccess: () => { for (const k of RENO_TOUCHED_KEYS) void qc.invalidateQueries({ queryKey: [k] }); },
   });
 }
 

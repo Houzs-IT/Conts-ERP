@@ -76,6 +76,8 @@ export type InBandFailure = {
   movementErrors?: string[] | null;
   cancelErrors?: string[] | null;
   reversalErrors?: string[] | null;
+  /** The PO's received qty was not recounted after a receipt (GRN create / post). */
+  recountError?: string | null;
 };
 
 export const reportInBandFailure = (
@@ -87,9 +89,15 @@ export const reportInBandFailure = (
     ...(res?.cancelErrors ?? []),
     ...(res?.reversalErrors ?? []),
   ];
-  if (!errs.length) return;
-  writeFailedAs(title)(new Error(
-    `${errs.join('\n')}\n\n` +
-    'The document is saved. Stock was NOT adjusted for this change — tell IT so the ledger can be repaired.',
-  ));
+  if (errs.length) {
+    writeFailedAs(title)(new Error(
+      `${errs.join('\n')}\n\n` +
+      'The document is saved. Stock was NOT adjusted for this change — tell IT so the ledger can be repaired.',
+    ));
+  }
+  if (res?.recountError) {
+    writeFailedAs('Saved, but the purchase order received qty was not updated')(new Error(
+      `${res.recountError}\n\nThe receipt is saved. The PO may still show these goods as outstanding. Tell IT so it can be recounted.`,
+    ));
+  }
 };

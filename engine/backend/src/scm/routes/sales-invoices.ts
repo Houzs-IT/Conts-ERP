@@ -1743,6 +1743,8 @@ export const patchSalesInvoiceStatusHandler = async (c: any) => {
   if (curErr) return c.json({ error: 'load_failed', reason: curErr.message }, 500);
   if (!curRow) return c.json(NOT_THIS_COMPANY, 404);
   const prevStatus = ((curRow as { status: string }).status ?? '').toUpperCase();
+  // As stored, for the compare-and-set on the status write below.
+  const prevStoredStatus = (curRow as { status: string }).status;
   /* Identity for the audit rows below, read here so every exit path has it
      without a second round-trip. */
   const auditDocNo = (curRow as { invoice_number?: string | null }).invoice_number ?? null;
@@ -1879,15 +1881,19 @@ export const patchSalesInvoiceStatusHandler = async (c: any) => {
     }
     data = updated as typeof data;
   } else {
+    /* Compare-and-set on the status this request read: without it a late or second request (a slow SENT landing
+       after a cancel) wrote over CANCELLED and brought back an invoice whose revenue was already reversed. */
     const { data: updated, error } = await scopeToCompanyId(sb.from('sales_invoices')
       .update({ status, ...ts })
       .eq('id', id), co.companyId)
+      .eq('status', prevStoredStatus)
       .select('id, status, invoice_number, paid_sen, debtor_code, debtor_name')
-      .single();
+      .maybeSingle();
     if (isDoLineOverInvoiced(error)) {
       return c.json({ error: 'over_remaining', message: 'Cannot reopen — the delivered quantity has since been invoiced elsewhere. The DO lines no longer have room for this invoice.', reason: error?.message }, 409);
     }
     if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
+    if (!updated) return c.json({ error: 'status_changed', reason: 'This invoice just changed. Reload it and try again.' }, 409);
     data = updated as typeof data;
   }
 

@@ -392,12 +392,16 @@ async function checkGrnZeroCost(
 /* expectedStatus: what the caller saw when it decided to post. A confirm saw DRAFT, so a row that has since become POSTED
    is another confirm's, and reading the status afresh would let this call past the swap and book the stock again. */
 export async function postGrnAndRollup(sb: any, grnId: string, userId: string, companyId: number, expectedStatus?: string): Promise<{ ok: true; movementErrors?: string[]; recountError?: string } | { ok: false; reason: string; status?: number; zeroCost?: ZeroCostRefusal }> {
-  const { data: grnHeader } = await scopeToCompanyId(sb.from('grns')
+  const { data: grnHeader, error: headErr } = await scopeToCompanyId(sb.from('grns')
     .select('grn_number, warehouse_id, company_id, exchange_rate, allocation_method, received_at')
     .eq('id', grnId), companyId).maybeSingle();
-  const { data: items } = await sb.from('grn_items')
+  const { data: items, error: itemsErr } = await sb.from('grn_items')
     .select('id, purchase_order_item_id, qty_accepted, item_code, material_name, unit_price_sen, line_total_sen, item_group, variants, zero_cost_ack')
     .eq('grn_id', grnId);
+  /* A failed read is not "no lines": taken as empty it skipped the zero-cost gate and flipped the receipt to POSTED
+     with no stock in, and a re-post then returned early on POSTED, so the goods were never received. Refuse before
+     anything is written. */
+  if (headErr || itemsErr) return { ok: false, reason: `grn read failed: ${(headErr ?? itemsErr)?.message ?? 'unknown'}`, status: 503 };
 
   /* ZERO-COST GATE — the last honest moment. Runs BEFORE the CAS flip so a
      refusal writes nothing at all: the GRN stays exactly as it was and the
@@ -2759,6 +2763,7 @@ grns.patch('/:id', async (c) => {
 /* ── POST /:id/items — add one grn_item. qty maps to qty_received. ── */
 grns.post('/:id/items', async (c) => {
   const grnId = c.req.param('id');
+  const addMovementErrors: string[] = [];
   let it: Record<string, unknown>;
   try { it = (await c.req.json()) as Record<string, unknown>; } catch { return refuseWithoutWriting(c, { error: 'invalid_json' }, 400); }
   if (!it.itemCode) return refuseWithoutWriting(c, { error: 'item_code_required' }, 400);
@@ -2981,7 +2986,7 @@ grns.post('/:id/items', async (c) => {
         // Migration 0120 — stamp this added line's IN with its source PO batch.
         const addedPoItemId = (it.purchaseOrderItemId as string) ?? null;
         const batchByItem = await resolvePoBatchByItem(sb, [addedPoItemId]);
-        await writeMovements(sb, [{
+        const wrote = await writeMovements(sb, [{
           movement_type: 'IN' as const,
           warehouse_id: warehouseId,
           item_code: String(it.itemCode),
@@ -2996,6 +3001,8 @@ grns.post('/:id/items', async (c) => {
           performed_by: user.id,
           notes: 'GRN line added — receipt',
         }], activeCompanyId(c));
+        /* The line is saved either way; a refused stock IN must be said, not dropped. */
+        if (!wrote.ok) addMovementErrors.push(`IN ${String(it.itemCode)}: ${wrote.reason ?? 'unknown'}`);
         /* Oversell retro-cost (0154) — a line added to a POSTED GRN opens a lot
            outside postGrnAndRollup, so it needs the same reconcile the post does.
            Wired 2026-07-29 (COE §2). Best-effort. */
@@ -3012,16 +3019,17 @@ grns.post('/:id/items', async (c) => {
           await recomputeSoStockAllocation(sb);
         } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-grn-line-add failed:', e); }
       }
-    } catch { /* best-effort */ }
+    } catch (e) { addMovementErrors.push(`stock IN threw: ${e instanceof Error ? e.message : String(e)}`); }
   }
   } // end non-DRAFT line-add rollup/movement guard
   await queueAcGrnEdit(c, sb, grnId, [], ((data as { id?: unknown } | null)?.id ? [String((data as { id?: unknown }).id)] : []));
-  return c.json({ item: data }, 201);
+  return c.json({ item: data, movementErrors: addMovementErrors.length ? addMovementErrors : undefined }, 201);
 });
 
 /* ── PATCH /:id/items/:itemId — partial line update. qty → qty_received. ── */
 grns.patch('/:id/items/:itemId', async (c) => {
   const grnId = c.req.param('id'); const itemId = c.req.param('itemId');
+  const editMovementErrors: string[] = [];
   // company-scope: prove the parent GRN. Editing a line re-costs it and rolls
   // the PO's received_qty back up — both are writes on the other company's data
   // if the parent is not ours.
@@ -3297,7 +3305,9 @@ grns.patch('/:id/items/:itemId', async (c) => {
     }
     if (movements.length > 0) {
       try {
-        await writeMovements(sb, movements, activeCompanyId(c));
+        const wrote = await writeMovements(sb, movements, activeCompanyId(c));
+        /* The qty change is saved either way; a refused stock write must be said, not dropped. */
+        if (!wrote.ok) editMovementErrors.push(`stock ${wrote.reason ?? 'unknown'}`);
         /* Oversell retro-cost (0154) — a line edit that RAISES the accepted qty
            (or moves it to a new variant bucket) opens a lot, so a prior "ship
            anyway" DO that went out at RM0 here can now be costed from it. Wired
@@ -3307,7 +3317,7 @@ grns.patch('/:id/items/:itemId', async (c) => {
           const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
           await recomputeSoStockAllocation(sb);
         } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-grn-line-edit failed:', e); }
-      } catch { /* best-effort */ }
+      } catch (e) { editMovementErrors.push(`stock write threw: ${e instanceof Error ? e.message : String(e)}`); }
     }
   }
 
@@ -3327,7 +3337,7 @@ grns.patch('/:id/items/:itemId', async (c) => {
     if (priceChanged || bucketChanged) await recostFromGrn(sb, grnId);
   }
   await queueAcGrnEdit(c, sb, grnId);
-  return c.json({ ok: true });
+  return c.json({ ok: true, movementErrors: editMovementErrors.length ? editMovementErrors : undefined });
 });
 
 /* ── DELETE /:id/items/:itemId — remove a line + roll back its PO receipt. ──

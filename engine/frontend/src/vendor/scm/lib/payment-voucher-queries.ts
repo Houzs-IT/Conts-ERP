@@ -97,13 +97,28 @@ export const usePaymentVoucherDetail = (id: string | null) => useQuery({
    cites this file — but for /post and /cancel, which "detect their own replay
    and echo back". CREATE has no such guard. The domain-idempotent note was about
    two OTHER endpoints and quietly read as if the file were covered. */
+/* A voucher that posts, approves-and-posts or cancels moves money on the invoices it settles, the supplier's advances
+   and the bank board, not only on itself. Every such write refreshes all of them, so a PI or AP bill never shows
+   unpaid after its voucher posted (or paid after it was cancelled). */
+const invalidatePvSettlement = (qc: ReturnType<typeof useQueryClient>, id: string) => {
+  for (const k of ['payment-vouchers', 'purchase-invoices', 'purchase-invoice-detail', 'ap-invoices', 'ap-invoice',
+    'supplier-advances', 'pv-reservations', 'daily-bank', 'journal-entries']) {
+    void qc.invalidateQueries({ queryKey: [k] });
+  }
+  void qc.invalidateQueries({ queryKey: ['payment-voucher-detail', id] });
+};
+
 export const useCreatePaymentVoucher = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ idempotencyKey, ...body }: { idempotencyKey?: string } & Record<string, unknown>) =>
       authedFetch<{ id: string; pvNumber: string }>(`/payment-vouchers`,
         idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['payment-vouchers'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['payment-vouchers'] });
+      // A new voucher reserves the invoices it names; the next voucher must not offer them again.
+      void qc.invalidateQueries({ queryKey: ['pv-reservations'] });
+    },
   });
 };
 
@@ -123,12 +138,7 @@ export const usePostPaymentVoucher = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => authedFetch<{ ok: true; jeNo?: string }>(`/payment-vouchers/${id}/post`, { method: 'POST' }),
-    onSuccess: (_d, id) => {
-      void qc.invalidateQueries({ queryKey: ['payment-vouchers'] });
-      void qc.invalidateQueries({ queryKey: ['payment-voucher-detail', id] });
-      // A post settles linked PIs — refresh the PI list/detail too.
-      void qc.invalidateQueries({ queryKey: ['purchase-invoices'] });
-    },
+    onSuccess: (_d, id) => invalidatePvSettlement(qc, id),
   });
 };
 
@@ -172,11 +182,7 @@ export const useCancelPaymentVoucher = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => authedFetch(`/payment-vouchers/${id}/cancel`, { method: 'POST' }),
-    onSuccess: (_d, id) => {
-      void qc.invalidateQueries({ queryKey: ['payment-vouchers'] });
-      void qc.invalidateQueries({ queryKey: ['payment-voucher-detail', id] });
-      void qc.invalidateQueries({ queryKey: ['purchase-invoices'] });
-    },
+    onSuccess: (_d, id) => invalidatePvSettlement(qc, id),
   });
 };
 
@@ -188,6 +194,8 @@ const approvalMutation = (path: 'submit' | 'withdraw' | 'check' | 'approve' | 'p
   return useMutation({
     mutationFn: (id: string) => authedFetch(`/payment-vouchers/${id}/${path}`, { method: 'POST' }),
     onSuccess: (_d, id) => {
+      // approve and post-now post the GL and settle invoices in the same request.
+      if (path === 'approve' || path === 'post-now') return invalidatePvSettlement(qc, id);
       void qc.invalidateQueries({ queryKey: ['payment-vouchers'] });
       void qc.invalidateQueries({ queryKey: ['payment-voucher-detail', id] });
       void qc.invalidateQueries({ queryKey: ['daily-bank'] });
