@@ -16,6 +16,8 @@ export const LEDGER_SCREENS: readonly LedgerScreen[] = [
   { slug: 'item-group-accounts', label: 'Item group accounts', enginePath: '/scm/accounting?tab=groups' },
   // The day the books start and the fiscal year end (finance phase 1, PR 6).
   { slug: 'ledger-setup', label: 'Ledger setup', enginePath: '/scm/ledger-setup' },
+  // The letterhead and the customer payment details every invoice prints (chew, 21 Nov 2026: so finance keeps them itself).
+  { slug: 'branding', label: 'Branding & payment details', enginePath: '/settings?tab=branding' },
   // Every other finance screen in the engine (chew, 2 Nov 2026: Payment requests could not be found; the menu lacked them).
   // Ported from Houzs on 21 Nov 2026: Finance's To do (its home), Payment listing and Unmatched payments.
   { slug: 'to-do', label: 'To do', enginePath: '/scm/finance' },
