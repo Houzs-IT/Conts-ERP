@@ -22,7 +22,7 @@
 //      inputs he CAN change — so the client can say which boxes to move.
 // ----------------------------------------------------------------------------
 import { describe, expect, it } from 'vitest';
-import { checkAllowedOptions } from './allowed-options-check';
+import { checkAllowedOptions, loadProductAndModel } from './allowed-options-check';
 
 /** The live prod pool, verbatim, including the mixed inch glyphs. */
 const PROD_TOTAL_HEIGHTS = [
@@ -333,5 +333,32 @@ describe('checkAllowedOptions — sofa compartment of a supplier-prefixed code (
   it('a single-token model code without base_model keeps the first-dash rule', () => {
     expect(checkAllowedOptions(sofa('5530-2S', null), sofaModel, null)).toBeNull();
     expect(checkAllowedOptions(sofa('5530-3S', null), sofaModel, null)).toMatchObject({ value: '3S' });
+  });
+});
+
+/* The single-line loader (SO line spec save, consignment, fabric colours) must read base_model too: without it a
+   supplier-prefixed sofa fell back to the first-dash rule and every save of a package-added SOF-HKA line was refused
+   with compartment "HKA-5547-2A(LHF)" (click sweep, 21 Nov 2026). */
+describe('loadProductAndModel — reads base_model', () => {
+  it('selects base_model so the compartment check sees the supplier-prefixed model', async () => {
+    const selected: string[] = [];
+    const rows: Record<string, unknown> = {
+      mfg_products: { code: 'SOF-HKA-5547-2A(LHF)', category: 'SOFA', model_id: 'm1', size_code: null, base_model: 'SOF-HKA-5547' },
+      product_models: { id: 'm1', allowed_options: { compartments: ['2A(LHF)', '2A(RHF)'] } },
+    };
+    const sb = {
+      from: (table: string) => {
+        const q = {
+          select: (cols: string) => { selected.push(cols); return q; },
+          eq: () => q,
+          maybeSingle: async () => ({ data: rows[table], error: null }),
+        };
+        return q;
+      },
+    };
+    const { product, model: m, lookupError } = await loadProductAndModel(sb, 'SOF-HKA-5547-2A(LHF)', 1);
+    expect(lookupError).toBeNull();
+    expect(selected[0]).toContain('base_model');
+    expect(checkAllowedOptions(product, m, null)).toBeNull();
   });
 });
