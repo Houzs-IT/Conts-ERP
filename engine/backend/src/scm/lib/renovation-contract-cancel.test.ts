@@ -73,7 +73,9 @@ describe('cancelling a contract releases its goods lines from stock allocation (
     const writes = await run('CANCELLED');
     expect(writes).toHaveLength(1);
     expect(writes[0].sql).toMatch(/stock_status = 'PENDING', stock_qty_ready = 0, allocated_batch_no = null/);
-    expect(writes[0].params).toEqual(['TC-SO-1', ['goods-1']]);
+    expect(writes[0].params).toEqual(['TC-SO-1', JSON.stringify(['goods-1'])]);
+    /* sql.unsafe sends a JS array as text and Postgres refuses it as uuid[] (22P02): no array may reach db.q here. */
+    expect(writes[0].params.some((p) => Array.isArray(p))).toBe(false);
   });
   it('a non-cancel transition does not touch the lines', async () => {
     expect(await run('RENO_IN_PROGRESS')).toEqual([]);

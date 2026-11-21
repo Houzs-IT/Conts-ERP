@@ -456,7 +456,8 @@ export async function setContractStatus(db: RenoDb, actor: RenoActor, docNo: str
   if (to === 'CANCELLED') {
     /* The stock allocator walks live orders only, so a cancelled contract's goods lines kept READY, stock_qty_ready
        and any claimed batch for ever, holding stock no one will deliver. Service lines are READY from birth and stay so.
-       Same release as the generic SO cancel (Houzs f238fd2b4). */
+       Same release as the generic SO cancel (Houzs f238fd2b4). The ids go as JSON text: db.q runs sql.unsafe, which
+       sends a JS array as one text value that Postgres cannot read as uuid[]. */
     const lines = await db.q<{ id: string; item_code: string | null; item_group: string | null }>(
       `select id, item_code, item_group from scm.mfg_sales_order_items where doc_no = $1 and cancelled = false`,
       [docNo],
@@ -465,8 +466,8 @@ export async function setContractStatus(db: RenoDb, actor: RenoActor, docNo: str
     if (goodsIds.length > 0) {
       await db.q(
         `update scm.mfg_sales_order_items set stock_status = 'PENDING', stock_qty_ready = 0, allocated_batch_no = null
-          where doc_no = $1 and id = any($2::uuid[])`,
-        [docNo, goodsIds],
+          where doc_no = $1 and id::text in (select jsonb_array_elements_text($2::text::jsonb))`,
+        [docNo, JSON.stringify(goodsIds)],
       );
     }
   }
