@@ -2,7 +2,7 @@
    Each worker presses Start time when they begin and Stop time when they leave; a supervisor adds or corrects an entry
    by hand. Actual hours are set against the Production time budget; the plan dates are not touched. */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fmtDate } from "@2990s/shared";
 import { Button } from "../../components/Button";
 import { ModalOverlay } from "../../components/scm-v2/DocumentRelationshipMapModal";
@@ -24,6 +24,15 @@ export const isoFromMyt = (date: string, time: string): string => new Date(`${da
 /** An instant as the Malaysia HH:MM a time box holds. */
 export const timeBoxOf = (iso: string): string => new Date(new Date(iso).getTime() + 8 * 3600_000).toISOString().slice(11, 16);
 export const fmtHours = (minutes: number): string => `${hoursOf(minutes)} h`;
+
+/** A new entry's Start and Stop: Stop is now (Malaysia time), Start 8 am, or an hour before now in the early
+    morning. The old fixed 5 pm Stop was refused as "in the future" for every save before 5 pm (click sweep F32). */
+export function newEntryTimes(now: Date = new Date()): { start: string; stop: string } {
+  const stop = timeBoxOf(now.toISOString());
+  if (stop > "08:00") return { start: "08:00", stop };
+  const mins = Math.max(0, Number(stop.slice(0, 2)) * 60 + Number(stop.slice(3, 5)) - 60);
+  return { start: `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`, stop };
+}
 
 /** The line under the totals: how far from the budget, in words. */
 export function budgetWords(h: Pick<ProductionHours, "budgetHours" | "summary">): { text: string; over: boolean } {
@@ -160,15 +169,19 @@ function EntryDialog({ open, entry, people, onClose, onSave, saving }: {
 }) {
   const [who, setWho] = useState("");
   const [date, setDate] = useState(todayMyt());
-  const [start, setStart] = useState("08:00");
-  const [stop, setStop] = useState("17:00");
+  const [start, setStart] = useState(() => newEntryTimes().start);
+  const [stop, setStop] = useState(() => newEntryTimes().stop);
   const [notes, setNotes] = useState("");
+  /* One save per opening: `saving` reaches the button only on the next render, so a double-click sent two entries. */
+  const sent = useRef(false);
+  useEffect(() => { if (!saving) sent.current = false; }, [saving]);
   useEffect(() => {
     if (!open) return;
     setWho(entry?.person_key ?? people[0]?.key ?? "");
     setDate(entry ? mytDate(entry.started_at) : todayMyt());
-    setStart(entry ? timeBoxOf(entry.started_at) : "08:00");
-    setStop(entry?.stopped_at ? timeBoxOf(entry.stopped_at) : entry ? "" : "17:00");
+    const fresh = newEntryTimes();
+    setStart(entry ? timeBoxOf(entry.started_at) : fresh.start);
+    setStop(entry?.stopped_at ? timeBoxOf(entry.stopped_at) : entry ? "" : fresh.stop);
     setNotes(entry?.notes ?? "");
     /* Filled once per opening: the hours re-read every minute while a timer runs, and a refill would undo what was
        typed (and save against the first person). */
@@ -178,6 +191,8 @@ function EntryDialog({ open, entry, people, onClose, onSave, saving }: {
   /* A stop earlier than the start is the next morning (a night shift). */
   const stopDate = stop && stop <= start ? new Date(Date.parse(`${date}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10) : date;
   const save = () => {
+    if (sent.current) return;
+    sent.current = true;
     const startedAt = isoFromMyt(date, start);
     if (entry) onSave({ kind: "edit", entryId: entry.id, startedAt, stoppedAt: runningEdit ? undefined : isoFromMyt(stopDate, stop), notes });
     else onSave({ kind: "add", personKey: who, startedAt, stoppedAt: isoFromMyt(stopDate, stop), notes });

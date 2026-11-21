@@ -230,13 +230,15 @@ export async function copySoIntoProject(db: Db, docNo: string, projectId: number
   return true;
 }
 
-/** Stamp the SO's own copy of the shared property fields and its project link. */
+/** Stamp the SO's own copy of the shared property fields and its project link. Every kind of order, a renovation
+    contract included: a contract shares its property with the project both ways (owner, 1 Nov 2026). Writing only
+    STANDARD orders made a contract's property edit say saved, then copy the unchanged SO back over the project. */
 export async function writeSoPropertyColumns(db: Db, docNo: string, projectId: number | null, so: Pick<SoShared, keyof PropertyValue | "building" | "unitNo">): Promise<void> {
   await db.prepare(
     `UPDATE scm.mfg_sales_orders SET project_id = ?, building = nullif(?, ''), unit_no = nullif(?, ''), property_type = nullif(?, ''),
             layout_label = nullif(?, ''), bedrooms = ?::int, bathrooms = ?::int, built_up_sqft = ?::numeric,
             land_area_sqft = coalesce(?::numeric, land_area_sqft), land_size = coalesce(nullif(?, ''), land_size), updated_at = now()
-      WHERE doc_no = ? AND coalesce(so_kind, 'STANDARD') = 'STANDARD'`,
+      WHERE doc_no = ?`,
   ).bind(projectId, so.building, so.unitNo, so.propertyType, so.layoutLabel, so.bedrooms, so.bathrooms, so.builtUpSqft, so.landAreaSqft ?? null, so.landSize ?? '', docNo).run();
 }
 

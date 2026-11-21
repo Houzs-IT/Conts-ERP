@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { readRenovationBlock, renovationSoProblems } from './renovation-so-info';
 import { soRouterSource } from '../../../tests/lib/so-router-source';
 import { roomsForCreatedLines } from '../../services/renovation/customerProperty';
+import renoSoInfoSrc from './renovation-so-info.ts?raw';
 
 describe('the renovation block of a sales order', () => {
   test('reads the project, building, unit and property', () => {
@@ -56,5 +57,16 @@ describe('rooms of a new renovation SO', () => {
     const inserted = [{ id: 'a', item_code: 'RN-PAINT' }, { id: 'b', item_code: 'FREE-GIFT' }, { id: 'c', item_code: 'RN-PAINT' }, { id: 'd', item_code: 'RN-DOOR' }];
     const sent = [{ itemCode: 'RN-PAINT', room: 'Living hall' }, { itemCode: 'RN-PAINT', room: 'Bedroom 1' }, { itemCode: 'RN-DOOR', room: '' }];
     expect(roomsForCreatedLines(inserted, sent)).toEqual([{ id: 'a', room: 'Living hall' }, { id: 'c', room: 'Bedroom 1' }]);
+  });
+});
+
+describe('click sweep F9: rooms on a renovation contract', () => {
+  test('PUT /:docNo/rooms saves a contract too (it used to refuse every non-STANDARD order)', () => {
+    const src = renoSoInfoSrc;
+    const start = src.indexOf("renovationSoInfo.put('/:docNo/rooms'");
+    const handler = src.slice(start, src.indexOf('\nrenovationSoInfo.', start + 10));
+    expect(start).toBeGreaterThan(-1);
+    expect(handler).not.toContain("so.so_kind !== 'STANDARD'");
+    expect(handler).toContain('writeSoRooms(');
   });
 });

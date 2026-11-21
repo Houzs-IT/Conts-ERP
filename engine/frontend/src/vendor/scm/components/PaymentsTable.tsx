@@ -955,17 +955,37 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
 
   /* SAVED mode commit — fire POST /:docNo/payments. DRAFT mode has no
      commit affordance; the parent batches them at SO-create time. */
+  /* One save per row at a time: the steps before the POST (the reason ask, the key check) are awaited, so a
+     double-click got two presses through before addPayment.isPending could disable the button (click sweep F12). */
+  const committingRows = useRef(new Set<string>());
+  const [committingUid, setCommittingUid] = useState<string | null>(null);
   const commitDraft = async (d: PaymentDraft) => {
-    if (!isSaved) return;
+    if (committingRows.current.has(d.uid)) return;
+    committingRows.current.add(d.uid);
+    setCommittingUid(d.uid);
+    const release = () => {
+      committingRows.current.delete(d.uid);
+      setCommittingUid((u) => (u === d.uid ? null : u));
+    };
+    try {
+      if (!(await commitDraftOnce(d, release))) release();
+    } catch (e) {
+      release();
+      throw e;
+    }
+  };
+  /* Returns true when a request went out; `release` then runs when it settles. */
+  const commitDraftOnce = async (d: PaymentDraft, release: () => void): Promise<boolean> => {
+    if (!isSaved) return false;
     /* Owner 2026-07-13 — the slip is OPTIONAL now (a receipt isn't always on
        hand). Gate only on an amount > 0; the SO route accepts a slip-less
        payment. The slip uploader stays available for when one IS attached. */
-    if (d.amountSen <= 0) return;
+    if (d.amountSen <= 0) return false;
     /* Same-day EDIT (owner 2026-07-13) — an edit draft carries the id of the
        persisted row it amends. Route it through PATCH instead of POST. */
     /* commitEdit is async since it may ask for a reason; its failures are
        reported inside it (notify), so nothing is lost by not awaiting here. */
-    if (d.editingPersistedId) { void commitEdit(d); return; }
+    if (d.editingPersistedId) { await commitEdit(d); return false; }
     /* Cascade guard (spec 1) — block the commit when the chosen method is
        missing a required sub-field (Merchant → Bank + Plan; Online → Sub-Type)
        and tell the operator which one. */
@@ -975,7 +995,7 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
         title: `Pick the ${missing} for this ${d.methodLabel} payment.`,
         tone: 'error',
       });
-      return;
+      return false;
     }
     /* Slip-date window (owner 2026-09-23). The field is already bounded, but a
        row seeded from a scanned receipt carries the receipt's own date and a
@@ -983,11 +1003,11 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
     const outOfWindow = slipDateProblem(d, todayMyt(), mayBackdateSlip);
     if (outOfWindow) {
       void notify({ title: 'Check the slip date', body: outOfWindow, tone: 'error' });
-      return;
+      return false;
     }
     let method: PaymentMethod;
     try { ({ method } = labelToApi(d.methodLabel)); }
-    catch (e) { void notify({ title: 'Payment method not recognised', body: e instanceof Error ? e.message : String(e), tone: 'error' }); return; }
+    catch (e) { void notify({ title: 'Payment method not recognised', body: e instanceof Error ? e.message : String(e), tone: 'error' }); return false; }
     /* Cascade payload — populate sub-fields by the L1 method only
        (draftMethodFields). The API mirrors the same guard and will scrub any
        irrelevant sub-fields (e.g. a stale onlineType left over from a
@@ -1011,23 +1031,26 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
     /* A ROLE holding the correction right says why it records money, too
        (docs/bugs/0888) — asked before the write, abandoned when dismissed. */
     const reason = reasonOnEvery ? await askReason(paymentReasonAsk('add', 'holder')) : '';
-    if (reason === null) return;
+    if (reason === null) return false;
     if (reason) body.reason = reason;
     const { idempotencyKey: _rowKey, ...content } = body;
     const keys = keysForRow(d);
     const key = await contentKeyFor(keys, content, askUnansweredPayment);
-    if (!key) return;
+    if (!key) return false;
     addPayment.mutate({ ...content, idempotencyKey: key } as unknown as { docNo: string } & Record<string, unknown>, settleOutcome(keys, {
       onSuccess: () => {
+        release();
         removeDraft(d.uid);
         (props as SavedModeProps).onDraftCommitted?.(d);
       },
       onError: (e: unknown) => {
+        release();
         // eslint-disable-next-line no-console
         console.error('[payment] add failed:', e);
         notify({ title: 'Failed to save payment', body: e instanceof Error ? e.message : 'Something went wrong.', tone: 'error' });
       },
     }));
+    return true;
   };
 
   /* THE PAGE'S SAVE COMMITS THESE ROWS TOO (owner 2026-08-31).
@@ -1886,11 +1909,11 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
                           type="button"
                           className={paymentsStyles.saveBtn}
                           onClick={() => commitDraft(d)}
-                          disabled={locked || addPayment.isPending || blocked}
+                          disabled={locked || addPayment.isPending || committingUid === d.uid || blocked}
                           title={title}
                         >
                           <Save size={13} strokeWidth={1.75} />
-                          {addPayment.isPending ? 'Saving…' : 'Save'}
+                          {addPayment.isPending || committingUid === d.uid ? 'Saving…' : 'Save'}
                         </button>
                       );
                     })()}
