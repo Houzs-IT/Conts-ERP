@@ -157,7 +157,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!found) return fail('NOT_FOUND', 'That unit does not exist.', 404, { unitNumber: 'Pick a unit that exists.' });
     unit = found;
   }
-  const chargeTo = b.chargeTo ?? (propertyId ? 'the_conts' : 'owner');
+  // Who pays is the office's (chew, 21 Nov 2026): a job from the field app or a clean takes the default, whatever is sent.
+  const chargeTo = (field ? null : b.chargeTo) ?? (propertyId ? 'the_conts' : 'owner');
   if (!CHARGE_TO.includes(chargeTo)) return fail('VALIDATION', 'Pick who pays.', 422, { chargeTo: 'Pick who pays.' });
   if (propertyId && chargeTo !== 'the_conts') return fail('VALIDATION', 'A job in the building is paid by The Conts.', 422, { chargeTo: 'A job in the building is paid by The Conts.' });
   const category = b.category ?? 'other';
