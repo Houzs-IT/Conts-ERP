@@ -9,7 +9,7 @@ import type { LineRow } from './claims-lines';
 export type Recovery = { unitId: string; amountSen: number; charged: boolean };
 
 /** The amounts the person asked to recover, from the lines as sent (`recoverSen` on a line) against the lines as built
- *  (same order): only on a line for a unit, no more than the line; two lines of one unit add up. A message when wrong. */
+ *  (same order): only on a line for a unit that is not a maintenance job's, no more than the line; two lines of one unit add up. A message when wrong. */
 export function readRecoveries(raw: unknown, lines: LineRow[]): { ok: true; byUnit: Map<string, number> } | { ok: false; message: string } {
   const list = Array.isArray(raw) ? (raw as Array<Record<string, unknown> | null>) : [];
   const byUnit = new Map<string, number>();
@@ -20,6 +20,8 @@ export function readRecoveries(raw: unknown, lines: LineRow[]): { ok: true; byUn
     if (!line) continue;
     if (!(Number.isInteger(sen) && sen > 0)) return { ok: false, message: 'Enter what the owner pays back, more than RM 0.00.' };
     if (!line.unit_id) return { ok: false, message: 'Only a line for a unit can be paid back by its owner.' };
+    /* A maintenance job's cost reaches the owner through the job's Who pays (chew, 21 Nov 2026): never twice. */
+    if (line.maintenance_issue_id) return { ok: false, message: 'A maintenance job\'s cost goes to the owner through the job\'s Who pays, not here.' };
     if (sen > line.amount_sen) return { ok: false, message: 'The owner pays back no more than the line.' };
     byUnit.set(line.unit_id, (byUnit.get(line.unit_id) ?? 0) + sen);
   }

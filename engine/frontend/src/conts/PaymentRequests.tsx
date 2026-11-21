@@ -379,7 +379,7 @@ function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
           {r.q.vouchers.length > 0 && field("Vouchers", r.q.vouchers.map((v) => (
             <Link key={v.id} className="block underline" to={`/scm/payment-vouchers/${v.id}`}>{v.pvNumber} ({v.status.toLowerCase()})</Link>
           )))}
-          {r.q.lines.some((l) => l.unitId) && field("Owner pays back", <OwnerRecovery q={r.q} />)}
+          {r.q.lines.some((l) => l.unitId && !l.maintenanceIssueId) && field("Owner pays back", <OwnerRecovery q={r.q} />)}
         </>
       ) : (
         <>
@@ -422,8 +422,10 @@ function OwnerRecovery({ q }: { q: PaymentRequest }) {
   const act = useFinanceAction();
   const prompt = usePrompt();
   const [note, setNote] = useState<string | null>(null);
-  const units = [...new Map(q.lines.filter((l) => l.unitId).map((l) => [l.unitId!, { label: l.targetLabel ?? l.unitId!, sen: 0 }])).entries()];
-  for (const l of q.lines) { const u = units.find(([id]) => id === l.unitId); if (u) u[1].sen += l.amountSen; }
+  /* A maintenance job's line goes to the owner through the job's Who pays, never here as well (chew, 21 Nov 2026). */
+  const mine = q.lines.filter((l) => l.unitId && !l.maintenanceIssueId);
+  const units = [...new Map(mine.map((l) => [l.unitId!, { label: l.targetLabel ?? l.unitId!, sen: 0 }])).entries()];
+  for (const l of mine) { const u = units.find(([id]) => id === l.unitId); if (u) u[1].sen += l.amountSen; }
   const open = ["SUBMITTED", "PART_PAID", "WITHDRAWN", "REJECTED"].includes(q.status) && can("scm.payment_voucher.write");
   const set = async (unitId: string, label: string, max: number, now: number | null) => {
     const typed = await prompt({ title: `What does the owner of ${label} pay back?`, body: `Up to ${(max / 100).toFixed(2)}. Leave it empty for nothing.`,
