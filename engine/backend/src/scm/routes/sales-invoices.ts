@@ -60,6 +60,8 @@ import { SI_STATUS_BUCKETS } from '../lib/si-status-buckets';
 import { postSiRevenue, reverseSiRevenue, resyncSiRevenue } from '../lib/post-si-revenue';
 import { buildItemRow, createSalesInvoiceFromDoLines, migratedRefusalForDeliveries, nextSiNumber, recomputeTotals, recordSiCreate } from '../lib/si-from-do';
 import { releaseDepositInvoicesBestEffort } from '../../acc/deposit-invoices';
+import { releaseSalesInvoiceKnockOffs } from '../../acc/credit-note-si';
+import { siCreditNotesSen } from '../lib/si-credit-notes';
 import { mintMonthlyDocNo, insertWithDocNoRetry } from '../lib/doc-no';
 import { todayMyt } from '../lib/my-time';
 import { resolveSalesScopeIds, salesDocOutOfScope } from '../lib/salesScope';
@@ -643,6 +645,9 @@ salesInvoices.get('/:id', async (c) => {
      deposit, which renders the LARGER outstanding. */
   (h.data as unknown as Record<string, unknown>).so_deposit_applied_sen =
     dep.ok ? (dep.deposit?.applied_sen ?? 0) : null;
+  /* The customers' credit notes knocked off it, the list rows' own key (si-credit-notes.ts); null = unread. */
+  (h.data as unknown as Record<string, unknown>).credit_notes_sen =
+    await siCreditNotesSen(sb, (h.data as { company_id?: number | null }).company_id ?? activeCompanyId(c) ?? null, id);
   return c.json({
     salesInvoice: h.data,
     items,
@@ -1927,6 +1932,8 @@ export const patchSalesInvoiceStatusHandler = async (c: any) => {
       companyId: auditCompanyId ?? null, siId: id, siNumber: d.invoice_number,
       actor: String((c.get('houzsUser') as { name?: string } | undefined)?.name ?? '') || null,
     });
+    /* The credit notes knocked off it get their credit back: a cancelled invoice owes nothing. */
+    await releaseSalesInvoiceKnockOffs(sb, { companyId: auditCompanyId ?? null, siId: id });
 
     /* A SEPARATE row from the CANCEL above, not a duplicate of it: that was a
        document-status event, this is the AR/GL contra, and a cancel whose
