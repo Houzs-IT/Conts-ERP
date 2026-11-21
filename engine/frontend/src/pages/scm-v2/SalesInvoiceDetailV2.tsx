@@ -114,6 +114,7 @@ import { ActivityRow } from "./ActivityRow";
 import { DocumentHistoryDrawer } from "./DocumentHistoryDrawer";
 import { isFocLine } from '../../vendor/scm/lib/foc-line';
 import { RenovationDocBlock, renoLineColumns, useRenoDocInfo } from "./RenovationDocInfo";
+import { siCancelBody, siHeroLabel } from "./salesInvoiceCancel";
 // ─── Row shapes (subset — see SalesInvoiceDetail.tsx for the full 40-field
 // header) ───────────────────────────────────────────────────────────────
 
@@ -482,11 +483,12 @@ function OutstandingHeroCard({
   const total = totalOf(header, items);
   const paid = header.paid_sen ?? 0;
   const outstanding = outstandingOf(header, items, depositSen);
-  const isPaid = outstanding === 0;
+  const heroLabel = siHeroLabel(header.status, outstanding);
+  const isPaid = heroLabel !== "Outstanding";
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
-        {isPaid ? "Paid in full" : "Outstanding"}
+        {heroLabel}
       </div>
       <div
         className={cn(
@@ -786,7 +788,7 @@ export function SalesInvoiceDetailV2() {
     if (
       await askConfirm({
         title: `Cancel invoice ${salesInvoice.invoice_number}?`,
-        body: "This reverses any posted revenue via a contra JE. You can reopen it later.",
+        body: siCancelBody(salesInvoice.paid_sen ?? 0, (sen) => fmtMoney(sen, salesInvoice.currency), salesInvoice.debtor_name),
         confirmLabel: "Cancel invoice",
         danger: true,
       })
@@ -1416,16 +1418,16 @@ export function SalesInvoiceDetailV2() {
             On md+ the dark aside hero replaces this. */}
         <div className="mb-3 rounded-lg border border-border bg-surface p-4 shadow-stone md:hidden">
           <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-            {outstanding === 0 ? "Paid in full" : "Outstanding"}
+            {siHeroLabel(salesInvoice.status, outstanding)}
           </div>
           <div
             className={cn(
               "mt-1 font-money text-[26px] font-bold leading-none tracking-tight",
-              outstanding === 0 ? "text-synced" : "text-err"
+              isCancelled ? "text-ink-muted" : outstanding === 0 ? "text-synced" : "text-err"
             )}
           >
             {fmtMoney(
-              outstanding === 0 ? total : outstanding,
+              isCancelled || outstanding === 0 ? total : outstanding,
               salesInvoice.currency
             )}
           </div>
