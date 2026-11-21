@@ -109,11 +109,11 @@ describe('stampOrderDeposit', () => {
 
   /* Three reads for the page, not three per row — the whole reason the stamp is
      batched. Twenty rows on one order must not become sixty round trips. */
-  test('it costs THREE reads for the whole page', async () => {
+  test('it costs FOUR reads for the whole page (orders, payments, invoices, credit notes)', async () => {
     const store = twoInvoiceOrder();
     const rows = Array.from({ length: 20 }, (_, i) => ({ id: `si-${i}`, so_doc_no: 'HC-SO-2608-006' }));
     await stampOrderDeposit(fakeSb(store), rows as Array<Record<string, unknown>>, 1);
-    expect(store.reads).toHaveLength(3);
+    expect(store.reads).toHaveLength(4);
   });
 
   for (const which of ['orders', 'payments', 'invoices'] as const) {

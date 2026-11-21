@@ -48,3 +48,34 @@ describe("an order with no instalment schedule", () => {
     expect(rows.every((r) => r.slot)).toBe(true);
   });
 });
+
+/* Click sweep F6 (21 Nov 2026): every instalment of TC-SO-2611-915 read "Not paid" while instalment 1's invoice was
+   PAID by the deposit; the server now sends what settles each bill and what of the order's money is left over. */
+describe("instalments from a server that splits the order's money", () => {
+  it("shows instalment 1 paid by the deposit and fills the rest with what the order still holds", () => {
+    const v: Parameters<typeof instalmentRows>[0] = {
+      receivedSen: 835_000, orderPaidSen: 835_000, unappliedSen: 584_200, creditedSen: 1_000, revisedContractSen: 1_722_000,
+      instalments: [
+        { id: "a", seq: 1, label: "1ST", pctBp: 3000, amountSen: 250_800, bill: { kind: "INVOICE", amountSen: 250_800, paidSen: 250_800 } },
+        { id: "b", seq: 2, label: "2ND", pctBp: 3000, amountSen: 783_400, bill: null },
+        { id: "c", seq: 3, label: "3RD", pctBp: 3500, amountSen: 602_700, bill: null },
+        { id: "d", seq: 4, label: "4TH", pctBp: 500, amountSen: 86_100, bill: null },
+      ],
+    };
+    const rows = instalmentRows(v, 835_000);
+    expect(rows[0]!.paidSen).toBe(250_800);
+    expect(rows[1]!.paidSen).toBe(584_200 + 1_000);
+    const toCollect = rows.reduce((s, r) => s + toCollectSen(r), 0);
+    expect(toCollect).toBe(1_722_000 - 835_000);
+  });
+  it("offers the first instalment still owed, less what is being typed", async () => {
+    const { nextToCollectSen } = await import("./renovationSoInstalments");
+    const rows = [
+      { seq: 1, label: "1", pctBp: 3000, amountSen: 24_000, paidSen: 24_000 },
+      { seq: 2, label: "2", pctBp: 3000, amountSen: 24_000, paidSen: 10_000 },
+      { seq: 3, label: "3", pctBp: 3500, amountSen: 28_000, paidSen: 0 },
+    ];
+    expect(nextToCollectSen(rows, 0)).toBe(14_000);
+    expect(nextToCollectSen(rows, 14_000)).toBe(28_000);
+  });
+});

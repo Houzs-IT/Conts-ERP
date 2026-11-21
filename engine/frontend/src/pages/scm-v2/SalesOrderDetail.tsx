@@ -46,7 +46,7 @@ import { roomOrdered } from '../../vendor/scm/lib/so-print-rooms';
 import { addLineHref } from '../../vendor/scm/lib/add-line-handoff';
 import { RenovationSoOrderInfo } from './RenovationSoOrderInfo';
 import { SoAreaLines, SoLinesViewToggle, type SoLinesView } from './renovationSoAreaLines';
-import { SoInstalments, instalmentRows, nextInstalmentSen, paymentSlots, useSoInstalments } from './renovationSoInstalments';
+import { SoInstalments, instalmentRows, nextToCollectSen, paymentSlots, useSoInstalments } from './renovationSoInstalments';
 import { ContractQuickLinks, ContractSections, InstalmentBillDialog } from '../renovation/RenovationSalesOrder';
 import { useBrands, useContract } from '../../lib/renovation/api';
 import { SPEC_LOCKED_NOTE } from '../renovation-beta/renovationBetaLines';
@@ -308,6 +308,8 @@ const fmtRm = (centi: number, currency = 'MYR'): string => fmtMoneySen(centi, cu
 
 type SoHeader = {
   doc_no: string;
+  /* Receipts taken on this order's live invoices, inside paid_sen_total (GET /:docNo). */
+  paid_on_invoices_sen?: number | null;
   /* Optimistic-lock token (migration 0153) — loaded here and echoed back on the
      header PATCH so a concurrent editor's Save can't silently overwrite this one. */
   version: number;
@@ -2803,11 +2805,15 @@ export const SalesOrderDetail = () => {
               onRegisterCommitAll={(fn) => { commitPaymentsRef.current = fn; }}
               receiptFor={{ source: 'SOPAY' }}
               nextAmountSen={instalments.length > 0
-                ? (paid) => nextInstalmentSen(instalments, Math.max(paid, instalmentsQ.data?.receivedSen ?? 0))
+                /* The rows already count everything saved (order and invoice money); `paid` here is the order's saved
+                   payments plus rows still being typed, so only the part beyond what is saved comes off. */
+                ? (paid) => nextToCollectSen(instalments, paid - (printPaymentsQ.data ?? []).reduce((sum, p) => sum + (p.amount_sen || 0), 0))
                 : undefined}
+              paidOnInvoicesSen={header.paid_on_invoices_sen ?? 0}
               aboveRows={<SoInstalments
                 rows={instalments.length > 0 ? instalments : instalmentsQ.data ? paymentSlots(printPaymentsQ.data ?? []) : []}
                 money={(sen) => fmtMoney(sen, header.currency)}
+                credits={instalments.length > 0 ? instalmentsQ.data?.credits : undefined}
                 onBill={canBill ? setBillingId : undefined} />}
               headerAction={canOfferPayEdit ? (
                 <Button variant="secondary" onClick={() => { void togglePayEditing(); }} icon={<Wallet size={14} />}>

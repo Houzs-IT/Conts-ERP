@@ -127,6 +127,8 @@ type SiStatus =
   | string;
 
 type SiHeader = {
+  /** Posted credit notes against this invoice (GET /:id). They settle it like a receipt (D11). */
+  credit_note_applied_sen?: number | null;
   id: string;
   invoice_number: string;
   so_doc_no: string | null;
@@ -474,7 +476,9 @@ function OutstandingHeroCard({
   items: SiItem[];
   orderDeposit: OrderDeposit | null;
 }) {
-  const depositSen = orderDeposit?.applied_sen ?? 0;
+  const creditSen = Math.max(0, header.credit_note_applied_sen ?? 0);
+  const orderSen = orderDeposit?.applied_sen ?? 0;
+  const depositSen = orderSen + creditSen;
   const eff = effectiveOf(header, items, depositSen);
   const t = EFFECTIVE_TONE[eff];
   const total = totalOf(header, items);
@@ -518,12 +522,15 @@ function OutstandingHeroCard({
         />
         {/* Named for the document that actually took the money — the office
             reads this line to know it does not have to chase it. */}
-        {depositSen > 0 && (
+        {orderSen > 0 && (
           <HeroLine
             k={`Deposit on ${orderDeposit!.so_doc_no}`}
-            v={fmtMoney(depositSen, header.currency)}
+            v={fmtMoney(orderSen, header.currency)}
             tone="success"
           />
+        )}
+        {creditSen > 0 && (
+          <HeroLine k="Credit notes" v={fmtMoney(creditSen, header.currency)} tone="success" />
         )}
         <HeroLine
           k="Outstanding"
@@ -647,7 +654,9 @@ export function SalesInvoiceDetailV2() {
     (detail.data as { orderDepositUnavailable?: boolean } | undefined)
       ?.orderDepositUnavailable
   );
-  const depositSen = orderDeposit?.applied_sen ?? 0;
+  /* The order's deposit applied here plus posted credit notes on the invoice (D11). */
+  const depositSen = (orderDeposit?.applied_sen ?? 0)
+    + Math.max(0, ((detail.data as { salesInvoice?: { credit_note_applied_sen?: number | null } } | undefined)?.salesInvoice?.credit_note_applied_sen) ?? 0);
 
   // Persisted SI payment row → the shared PaymentsTable draft shape.
   const apiToDraft = useCallback(

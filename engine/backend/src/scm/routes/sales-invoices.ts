@@ -51,7 +51,7 @@ import { dateOrNull, coerceEmptyDates } from '../lib/date-coerce';
 import { zodValidationFailedBody } from '../lib/form-problems';
 import { postUnpostedSiPayments } from '../../acc/payments';
 import { afterSiPaymentRemoved, insertSiPaymentRow } from '../lib/si-payment-row';
-import { recomputeSiPaid as recomputePaid, readOrderDepositForInvoice } from '../lib/si-order-deposit';
+import { recomputeSiPaid as recomputePaid, readOrderDepositForInvoice, siStatusFor } from '../lib/si-order-deposit';
 import { stampSoDates, stampDoNumber, stampOrderDeposit } from '../lib/si-list-stamps';
 import { stampBillsFor } from '../lib/renovation-si-bills-for';
 import { SI_HEADER_COLS, SI_LIST_SELECT, filterSiList, orderSiList, readSiListFilters } from '../lib/si-list-read';
@@ -641,8 +641,12 @@ salesInvoices.get('/:id', async (c) => {
      screen that just needs the number reads the scalar, so no surface has to
      know two shapes. `null` means "not known" and every reader treats it as no
      deposit, which renders the LARGER outstanding. */
+  /* Posted credit notes against the invoice settle it too (D11): folded into the
+     same scalar so every outstanding figure takes them off; credit_note_applied_sen
+     says how much of it is credit. */
   (h.data as unknown as Record<string, unknown>).so_deposit_applied_sen =
-    dep.ok ? (dep.deposit?.applied_sen ?? 0) : null;
+    dep.ok ? (dep.deposit?.applied_sen ?? 0) + dep.creditSen : null;
+  (h.data as unknown as Record<string, unknown>).credit_note_applied_sen = dep.ok ? dep.creditSen : null;
   return c.json({
     salesInvoice: h.data,
     items,
@@ -1739,7 +1743,7 @@ export const patchSalesInvoiceStatusHandler = async (c: any) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const { data: curRow, error: curErr } = await scopeToCompanyId(sb.from('sales_invoices')
-    .select('status, invoice_number, company_id').eq('id', id), co.companyId).maybeSingle();
+    .select('status, invoice_number, company_id, total_sen, paid_sen, so_doc_no').eq('id', id), co.companyId).maybeSingle();
   if (curErr) return c.json({ error: 'load_failed', reason: curErr.message }, 500);
   if (!curRow) return c.json(NOT_THIS_COMPANY, 404);
   const prevStatus = ((curRow as { status: string }).status ?? '').toUpperCase();
@@ -1765,6 +1769,26 @@ export const patchSalesInvoiceStatusHandler = async (c: any) => {
       message: siTransitionReject(canonPrev as string, status),
       from: prevStatus, to: status,
     }, 409);
+  }
+
+  /* PAID / PARTIALLY_PAID follow the money, never a click (click sweep F28, 21 Nov 2026: an invoice could read PAID
+     with nothing received). The money is the invoice's receipts + the order's deposit applied to it + posted credit
+     notes (si-order-deposit.ts); "Mark paid" on the screens records a receipt and writes no status. */
+  if ((status === 'PAID' || status === 'PARTIALLY_PAID') && canonPrev !== status && prevStatus !== 'DRAFT' && prevStatus !== 'CANCELLED') {
+    const cur0 = curRow as { total_sen?: number | null; paid_sen?: number | null; so_doc_no?: string | null; company_id?: number | null };
+    const dep = await readOrderDepositForInvoice(sb, { id, so_doc_no: cur0.so_doc_no ?? null, company_id: cur0.company_id ?? co.companyId });
+    if (!dep.ok) return c.json({ error: 'load_failed', reason: dep.reason }, 503);
+    const settled = Number(cur0.paid_sen ?? 0) + (dep.deposit?.applied_sen ?? 0) + dep.creditSen;
+    const derived = siStatusFor(prevStatus, Number(cur0.total_sen ?? 0), settled);
+    if (derived !== status) {
+      return c.json({
+        error: 'status_follows_money',
+        message: status === 'PAID'
+          ? 'This invoice is not paid in full yet. Record the payment and it turns Paid by itself.'
+          : 'Part paid follows the payments recorded. Record the payment instead.',
+        settledSen: settled, totalSen: Number(cur0.total_sen ?? 0),
+      }, 409);
+    }
   }
 
   /* ── CONFIRM transition (DRAFT → SENT) ─────────────────────────────────

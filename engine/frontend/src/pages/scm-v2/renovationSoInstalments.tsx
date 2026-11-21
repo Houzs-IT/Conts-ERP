@@ -13,7 +13,12 @@ interface BillingInstalment {
   id: string; seq: number; label: string; pctBp: number; amountSen: number; isNext?: boolean;
   bill: { kind: "INVOICE" | "CREDIT_NOTE" | "ZERO"; amountSen: number; paidSen: number; salesInvoiceId?: string | null; invoiceNumber?: string | null; noteNumber?: string | null } | null;
 }
-interface BillingView { receivedSen: number; revisedContractSen: number; instalments: BillingInstalment[] }
+interface BillingView {
+  receivedSen: number; revisedContractSen: number; instalments: BillingInstalment[];
+  /* Newer servers: what was taken on the order, the part of it no invoice has taken, and contract credit notes. */
+  orderPaidSen?: number; unappliedSen?: number; creditedSen?: number;
+  credits?: { noteNumber: string | null; amountSen: number }[];
+}
 
 export interface SoInstalmentRow {
   seq: number; label: string; pctBp: number; amountSen: number; paidSen: number; slot?: boolean;
@@ -31,10 +36,15 @@ export function useSoInstalments(docNo: string | null, enabled: boolean) {
   });
 }
 
-/** Each instalment's amount and what is paid against it, given the money recorded on the order. */
+/** Each instalment's amount and what is paid against it, given the money recorded on the order. A bill's paidSen
+    already carries the order's money applied to its invoice (server, renovation-billing assembleView); what the order
+    holds beyond that, and a contract credit note, fill the unbilled instalments in order, the way the project's
+    payments strip does (services/renovation/beta.ts paymentsOf). Click sweep F6, 21 Nov 2026. */
 export function instalmentRows(view: BillingView | undefined, recordedSen: number): SoInstalmentRow[] {
   if (!view || view.instalments.length === 0) return [];
-  let pool = Math.max(0, recordedSen - view.receivedSen);
+  let pool = view.orderPaidSen != null
+    ? Math.max(0, recordedSen - (view.orderPaidSen - (view.unappliedSen ?? 0))) + Math.max(0, view.creditedSen ?? 0)
+    : Math.max(0, recordedSen - view.receivedSen);
   return [...view.instalments].sort((a, b) => a.seq - b.seq).map((i) => {
     const amountSen = i.bill ? i.bill.amountSen : i.amountSen;
     let paidSen = i.bill?.kind === "INVOICE" ? i.bill.paidSen : 0;
@@ -74,14 +84,37 @@ export function nextInstalmentSen(rows: readonly SoInstalmentRow[], paidSen: num
   return 0;
 }
 
+/** The next payment's default once `extraSen` more than what is saved is in flight: the first instalment still owed. */
+export function nextToCollectSen(rows: readonly SoInstalmentRow[], extraSen: number): number {
+  let left = Math.max(0, extraSen);
+  for (const r of rows) {
+    if (r.amountSen <= 0) continue;
+    const owed = Math.max(0, r.amountSen - r.paidSen);
+    const covered = Math.min(left, owed);
+    left -= covered;
+    if (covered < owed) return owed - covered;
+  }
+  return 0;
+}
+
 /** What is left to collect on an instalment: money over on an earlier one has already come off (owner, 4 Nov 2026). */
 export const toCollectSen = (r: Pick<SoInstalmentRow, "amountSen" | "paidSen">): number => Math.max(0, r.amountSen - r.paidSen);
 
-export function SoInstalments({ rows, money, onBill }: { rows: readonly SoInstalmentRow[]; money: (sen: number) => string; onBill?: (id: string) => void }): ReactElement | null {
+export function SoInstalments({ rows, money, onBill, credits }: {
+  rows: readonly SoInstalmentRow[]; money: (sen: number) => string; onBill?: (id: string) => void;
+  /** Contract credit notes: they come off the order total, so the schedule reads "less credit" to add up. */
+  credits?: readonly { noteNumber: string | null; amountSen: number }[];
+}): ReactElement | null {
   if (rows.length === 0) return null;
+  const creditSen = (credits ?? []).reduce((s, c) => s + (c.amountSen || 0), 0);
+  const scheduleSen = rows.reduce((s, r) => s + r.amountSen, 0);
   return (
+    <>
     <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4">
       {rows.map((r) => {
+        /* Below zero: a variation order lowered the contract after more was invoiced, so this instalment is a credit
+           note to raise, not money to collect (billInstalment asks to confirm it). Click sweep F6b. */
+        const over = !r.slot && r.amountSen < 0;
         const paid = r.amountSen > 0 && r.paidSen >= r.amountSen;
         const part = !paid && r.paidSen > 0;
         const due = !paid && Boolean(r.billable);
@@ -92,20 +125,27 @@ export function SoInstalments({ rows, money, onBill }: { rows: readonly SoInstal
               {!r.slot && <span className="text-[11px] text-ink-muted">{(r.pctBp / 100).toFixed(r.pctBp % 100 ? 1 : 0)}%</span>}
             </div>
             <div className="text-[17px] font-bold tabular-nums text-ink">{r.slot && r.amountSen === 0 ? "-" : money(part ? toCollectSen(r) : r.amountSen)}</div>
-            <div className={`text-[12px] font-semibold ${paid ? "text-synced" : part || due ? "text-warning-text" : "text-ink-muted"}`}>
-              {paid ? (r.slot ? "Received" : "Paid") : part ? `To collect, ${money(r.paidSen)} of ${money(r.amountSen)} paid` : r.slot ? "Not received" : "Not paid"}
+            <div className={`text-[12px] font-semibold ${paid ? "text-synced" : part || due || over ? "text-warning-text" : "text-ink-muted"}`}>
+              {over ? (r.document ? "Credit note" : "Over-invoiced: credit note due")
+                : paid ? (r.slot ? "Received" : "Paid") : part ? `To collect, ${money(r.paidSen)} of ${money(r.amountSen)} paid` : r.slot ? "Not received" : "Not paid"}
             </div>
             {(r.document || (r.billable && r.id && onBill)) && (
               <div className="mt-auto flex items-center justify-between gap-2 pt-1">
                 {r.document ? (r.document.invoiceId
                   ? <Link className="truncate text-[11.5px] font-semibold text-primary" to={`/scm/sales-invoices/${r.document.invoiceId}`}>{r.document.number}</Link>
                   : <span className="truncate text-[11.5px] text-ink-secondary">{r.document.number}</span>) : <span />}
-                {r.billable && r.id && onBill && <Button variant="secondary" className="h-7" onClick={() => onBill(r.id!)}>Bill</Button>}
+                {r.billable && r.id && onBill && <Button variant="secondary" className="h-7" onClick={() => onBill(r.id!)}>{over ? "Raise credit note" : "Bill"}</Button>}
               </div>
             )}
           </div>
         );
       })}
     </div>
+    {creditSen > 0 && (
+      <div className="-mt-1 mb-3 text-[12px] text-ink-secondary">
+        Schedule {money(scheduleSen)} less credit note{(credits ?? []).length === 1 ? "" : "s"} {(credits ?? []).map((c) => c.noteNumber).filter(Boolean).join(", ")} {money(creditSen)} = {money(scheduleSen - creditSen)}
+      </div>
+    )}
+    </>
   );
 }

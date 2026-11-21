@@ -8,6 +8,8 @@ import { salesInvoiceRowMenu } from "./row-menus";
 import {
   siDepositAppliedSen,
   siOutstandingSen,
+  siIsCancelled,
+  siOwesNothing,
 } from "../../vendor/scm/lib/si-outstanding";
 import { brandingToneForLabel } from "../../lib/brandingTone";
 import { transferFromLabel, transferFromColumnLabel } from "../../lib/convertScope";
@@ -138,6 +140,8 @@ type SiRow = {
      server could not read the order — read as 0, which shows the LARGER
      outstanding. Kept apart from paid_sen: different money, different document. */
   so_deposit_applied_sen?: number | null;
+  /** The part of so_deposit_applied_sen that is posted credit notes against the invoice (server stamp). */
+  credit_note_applied_sen?: number | null;
   bills_for?: string | null;
   status: string;
   currency: string;
@@ -230,7 +234,7 @@ const statusFor = (
    Outstanding ledger all have to answer the same number, and until 2026-08-23
    they answered six different ones (vendor/scm/lib/si-outstanding.ts). */
 const outstandingOf = (r: SiRow): number =>
-  siOutstandingSen(r.total_sen || r.local_total_sen || 0, r.paid_sen || 0, siDepositAppliedSen(r));
+  siOwesNothing(r.status) ? 0 : siOutstandingSen(r.total_sen || r.local_total_sen || 0, r.paid_sen || 0, siDepositAppliedSen(r));
 
 // ─── Split-menu dropdown ────────────────────────────────────────────────────
 
@@ -382,7 +386,7 @@ function CardsGrid({ rows, onOpen }: { rows: SiRow[]; onOpen: (r: SiRow) => void
             <div className="mt-3.5 flex items-end justify-between border-t border-border-subtle pt-3">
               <div className="min-w-0">
                 <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-                  Outstanding{siDepositAppliedSen(r) > 0 ? " · after SO deposit" : ""}
+                  Outstanding{siDepositAppliedSen(r) > 0 ? ((r.credit_note_applied_sen ?? 0) > 0 ? " · after credit note" : " · after SO deposit") : ""}
                 </div>
                 <div
                   className={cn(
@@ -390,7 +394,7 @@ function CardsGrid({ rows, onOpen }: { rows: SiRow[]; onOpen: (r: SiRow) => void
                     outstanding > 0 ? "text-err" : "text-synced"
                   )}
                 >
-                  {outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
+                  {siIsCancelled(r.status) ? "—" : outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
                 </div>
               </div>
               <span className="font-money text-[15px] font-bold text-ink">
@@ -461,7 +465,7 @@ function DetailDrawer({
   const totalSen = row?.total_sen ?? row?.local_total_sen ?? 0;
   const paidSen = row?.paid_sen ?? 0;
   const depositSen = siDepositAppliedSen(row);
-  const outstanding = siOutstandingSen(totalSen, paidSen, depositSen);
+  const outstanding = siOwesNothing(row?.status) ? 0 : siOutstandingSen(totalSen, paidSen, depositSen);
 
   return (
     <ResizableDetailDrawer
@@ -937,6 +941,8 @@ export function SalesInvoicesListV2() {
     let outstandingSen = 0;
     let paidSen = 0;
     for (const r of visible.rows) {
+      /* A cancelled invoice is worth nothing: not billed, and its receipts became customer credit (F27). */
+      if (siIsCancelled(r.status)) continue;
       const t = r.total_sen ?? r.local_total_sen ?? 0;
       const paid = r.paid_sen ?? 0;
       revenueSen += t;
@@ -944,7 +950,7 @@ export function SalesInvoicesListV2() {
       /* The KPI sums the SAME per-row figure the Outstanding column renders, so
          the card and the table cannot disagree — which is the whole reason this
          block sums the rows on screen rather than asking the server. */
-      outstandingSen += siOutstandingSen(t, paid, siDepositAppliedSen(r));
+      outstandingSen += outstandingOf(r);
     }
     return { revenueSen, outstandingSen, paidSen };
   }, [visible.rows]);
@@ -1317,7 +1323,7 @@ export function SalesInvoicesListV2() {
                 : undefined
             }
           >
-            {outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
+            {siIsCancelled(r.status) ? "—" : outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
             {dep > 0 && (
               <span className="rounded-sm bg-surface-2 px-1 font-mono text-[9px] font-semibold uppercase tracking-brand text-ink-muted">
                 dep

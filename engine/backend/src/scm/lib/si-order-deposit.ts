@@ -29,7 +29,7 @@
 // that the slices sum to the order's own collected total (or to what the
 // invoices could absorb, whichever is smaller) — never more than either side.
 // ----------------------------------------------------------------------------
-import { soPaidInputsOf, soPaidSen } from '../shared/so-outstanding';
+import { soOrderPaidSen, soPaidInputsOf } from '../shared/so-outstanding';
 
 /** One invoice competing for the order's money. All sen. */
 export interface AllocatableInvoice {
@@ -43,6 +43,8 @@ export interface AllocatableInvoice {
   totalSen: number;
   /** `sales_invoices.paid_sen` — receipts taken on THIS invoice, not the order. */
   ownPaidSen: number;
+  /** Posted credit notes raised against THIS invoice (readInvoiceCredits). */
+  creditedSen: number;
 }
 
 /* An invoice that cannot take money must not absorb any of the order's.
@@ -89,46 +91,35 @@ export function sortForAllocation(rows: AllocatableInvoice[]): AllocatableInvoic
 /**
  * Split `orderCollectedSen` across the order's invoices, earliest first.
  *
- * CONTS RULE (owner decision C4, 11 Oct 2026 — AutoCount-style): the INVOICE
- * RECEIPT is the record of money received. An order payment and an invoice
- * receipt can be the same money keyed twice (the deposit taken on the order,
- * then knocked off on the invoice), so the two ledgers are never added for one
- * order. What the order's invoices have received on their own is taken as
- * already covering that much of the order's collected money; only the part of
- * the order's payments that the invoice receipts do NOT already account for is
- * left to spread:
+ * THE RULE (21 Nov 2026, replacing the order-level max of decision C4): money
+ * taken on the order and money taken on an invoice are different receipts and
+ * both count, once each. The order's money is spread over what each live
+ * invoice still owes AFTER its own receipts and the credit notes raised against
+ * it; nothing is subtracted from the pool first.
  *
- *   pool = max(0, orderCollectedSen − Σ own receipts of the eligible invoices)
+ * Why C4's `pool = max(0, order paid - invoice receipts)` went: the ERP never
+ * keys an order deposit again on the invoice (the invoice already shows the
+ * deposit applied, and no code path copies it), so every invoice receipt is new
+ * money. Subtracting it from the pool made a receipt on instalment 2 take the
+ * deposit off instalment 1 (click sweep F28/F31, 21 Nov 2026): the customer paid
+ * RM 340 and every screen said RM 240.
  *
- * so across the order, money counted = max(order payments, invoice receipts),
- * never their sum. (Houzs's rule added the two; see the header.)
- *
- * Each eligible invoice then absorbs `min(what is left, what it still owes)`,
- * where "what it still owes" is its own total less its own receipts. Money
- * already taken ON the invoice is therefore never displaced by the order's.
+ *   slice_i = min(what is left of the order's money, total_i - own_i - credited_i)
  *
  * Guarantees, pinned by `si-order-deposit.test.ts`:
- *   · every slice is >= 0, and <= that invoice's own outstanding;
- *   · the slices sum to `min(pool, sum of eligible outstanding)`;
- *   · an ineligible invoice always gets 0.
- *
- * Everything is integer sen and every term is a subtraction of integers, so
- * there is no rounding to direct anywhere — the invariant test asserts that
- * rather than trusting it.
+ *   - every slice is >= 0, and <= that invoice's own outstanding;
+ *   - the slices sum to `min(order collected, sum of eligible outstanding)`;
+ *   - an ineligible invoice always gets 0.
  */
 export function allocateOrderDeposit(
   orderCollectedSen: number,
   invoices: AllocatableInvoice[],
 ): Map<string, number> {
   const out = new Map<string, number>();
-  const collected = Math.max(0, Math.trunc(Number.isFinite(orderCollectedSen) ? orderCollectedSen : 0));
-  const invoiceReceipts = invoices
-    .filter((inv) => absorbsOrderDeposit(inv.status))
-    .reduce((sum, inv) => sum + Math.max(0, Math.trunc(Number(inv.ownPaidSen) || 0)), 0);
-  let remaining = Math.max(0, collected - invoiceReceipts);
+  let remaining = Math.max(0, Math.trunc(Number.isFinite(orderCollectedSen) ? orderCollectedSen : 0));
   for (const inv of sortForAllocation(invoices)) {
     if (!absorbsOrderDeposit(inv.status)) { out.set(inv.id, 0); continue; }
-    const outstanding = Math.max(0, Math.trunc(inv.totalSen) - Math.trunc(inv.ownPaidSen));
+    const outstanding = Math.max(0, Math.trunc(inv.totalSen) - Math.trunc(inv.ownPaidSen) - Math.trunc(inv.creditedSen || 0));
     const take = Math.min(remaining, outstanding);
     out.set(inv.id, take);
     remaining -= take;
@@ -157,8 +148,43 @@ export interface OrderDepositForInvoice {
 }
 
 type ReadResult =
-  | { ok: true; deposit: OrderDepositForInvoice | null }
+  /* creditSen: posted credit notes against this invoice (readInvoiceCredits), with or without an order. */
+  | { ok: true; deposit: OrderDepositForInvoice | null; creditSen: number }
   | { ok: false; reason: string };
+
+/**
+ * Posted credit notes raised against each invoice (click sweep D11, 21 Nov 2026:
+ * a credit note on an invoice never came off what it owed). A CN that closes a
+ * DEPOSIT INVOICE at the final invoice (acc/deposit-invoices.ts close-out) is
+ * left out: it carries the order's deposit, which the deposit slice already
+ * counts, so counting it again would settle the deposit twice.
+ */
+export async function readInvoiceCredits(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- PostgREST client, untyped like every reader in this file
+  sb: any,
+  invoiceIds: readonly string[],
+  companyId: number | null,
+): Promise<{ ok: true; sen: Map<string, number> } | { ok: false; reason: string }> {
+  const sen = new Map<string, number>();
+  const ids = [...new Set(invoiceIds.filter(Boolean))];
+  if (ids.length === 0 || companyId == null) return { ok: true, sen };
+  const { data: notes, error } = await sb.from('acc_credit_notes')
+    .select('id, sales_invoice_id, total_sen')
+    .eq('company_id', companyId).eq('kind', 'CN').eq('status', 'POSTED')
+    .in('sales_invoice_id', ids);
+  if (error) return { ok: false, reason: `credit notes: ${error.message}` };
+  const rows = (notes ?? []) as Array<{ id: string; sales_invoice_id: string | null; total_sen: number | string | null }>;
+  if (rows.length === 0) return { ok: true, sen };
+  const { data: dis, error: diErr } = await sb.from('acc_deposit_invoices')
+    .select('credit_note_id').in('credit_note_id', rows.map((r) => r.id));
+  if (diErr) return { ok: false, reason: `deposit invoice notes: ${diErr.message}` };
+  const closeOut = new Set(((dis ?? []) as Array<{ credit_note_id: string | null }>).map((d) => String(d.credit_note_id)));
+  for (const r of rows) {
+    if (!r.sales_invoice_id || closeOut.has(String(r.id))) continue;
+    sen.set(r.sales_invoice_id, (sen.get(r.sales_invoice_id) ?? 0) + Number(r.total_sen ?? 0));
+  }
+  return { ok: true, sen };
+}
 
 /* The columns the allocation needs off a sibling invoice. */
 const SIBLING_COLS = 'id, invoice_number, invoice_date, status, total_sen, paid_sen';
@@ -180,7 +206,7 @@ export async function readOrderDeposit(
   sb: any,
   soDocNo: string,
   companyId: number | null,
-): Promise<{ ok: true; slices: Map<string, number>; collectedSen: number; transactions: OrderDepositTransaction[] } | { ok: false; reason: string }> {
+): Promise<{ ok: true; slices: Map<string, number>; credits: Map<string, number>; collectedSen: number; transactions: OrderDepositTransaction[] } | { ok: false; reason: string }> {
   if (companyId == null) return { ok: false, reason: 'no active company' };
 
   const { data: soRow, error: soErr } = await sb
@@ -190,7 +216,7 @@ export async function readOrderDeposit(
     .eq('company_id', companyId)
     .maybeSingle();
   if (soErr) return { ok: false, reason: `order header: ${soErr.message}` };
-  if (!soRow) return { ok: true, slices: new Map(), collectedSen: 0, transactions: [] };
+  if (!soRow) return { ok: true, slices: new Map(), credits: new Map(), collectedSen: 0, transactions: [] };
 
   const [pays, sibs] = await Promise.all([
     sb.from('mfg_sales_order_payments')
@@ -214,22 +240,27 @@ export async function readOrderDeposit(
      shared/so-outstanding.ts exists. It is also what carries the LEGACY header
      deposit (an order migrated from AutoCount whose deposit never became a
      ledger row), which a bare SUM over the payments table would miss. */
-  const collectedSen = soPaidSen(
-    soPaidInputsOf(soRow as Record<string, unknown>, ledgerPaidSen, depositInLedger),
+  const collectedSen = soOrderPaidSen(
+    soPaidInputsOf(soRow as Record<string, unknown>, ledgerPaidSen, depositInLedger, 0),
   );
 
-  const invoices: AllocatableInvoice[] = ((sibs.data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+  const sibRows = (sibs.data ?? []) as Array<Record<string, unknown>>;
+  const credits = await readInvoiceCredits(sb, sibRows.map((r) => String(r.id)), companyId);
+  if (!credits.ok) return credits;
+  const invoices: AllocatableInvoice[] = sibRows.map((r) => ({
     id: String(r.id),
     invoiceNumber: String(r.invoice_number ?? ''),
     invoiceDate: (r.invoice_date as string | null) ?? null,
     status: String(r.status ?? ''),
     totalSen: Number(r.total_sen ?? 0),
     ownPaidSen: Number(r.paid_sen ?? 0),
+    creditedSen: credits.sen.get(String(r.id)) ?? 0,
   }));
 
   return {
     ok: true,
     slices: allocateOrderDeposit(collectedSen, invoices),
+    credits: credits.sen,
     collectedSen,
     transactions: payRows.map(({ is_deposit: _d, ...t }) => t),
   };
@@ -247,12 +278,18 @@ export async function readOrderDepositForInvoice(
   invoice: { id: string; so_doc_no?: string | null; company_id?: number | null },
 ): Promise<ReadResult> {
   const soDocNo = invoice.so_doc_no ?? null;
-  if (!soDocNo) return { ok: true, deposit: null };
+  if (!soDocNo) {
+    const cr = await readInvoiceCredits(sb, [invoice.id], invoice.company_id ?? null);
+    if (!cr.ok) return cr;
+    return { ok: true, deposit: null, creditSen: cr.sen.get(invoice.id) ?? 0 };
+  }
   const r = await readOrderDeposit(sb, soDocNo, invoice.company_id ?? null);
   if (!r.ok) return r;
-  if (r.collectedSen <= 0) return { ok: true, deposit: null };
+  const creditSen = r.credits.get(invoice.id) ?? 0;
+  if (r.collectedSen <= 0) return { ok: true, deposit: null, creditSen };
   return {
     ok: true,
+    creditSen,
     deposit: {
       so_doc_no: soDocNo,
       order_collected_sen: r.collectedSen,
@@ -291,6 +328,22 @@ export function siStatusFor(current: string, totalSen: number, settledSen: numbe
  * Fails CLOSED and never throws — same contract as `recomputeTotals`.
  */
 export async function recomputeSiPaid(sb: any, salesInvoiceId: string): Promise<void> {
+  const soDocNo = await rollSiPaid(sb, salesInvoiceId);
+  /* A receipt or credit on one invoice moves how the order's deposit spreads over
+     its siblings, so their statuses are re-rolled too. */
+  if (soDocNo) {
+    const { data, error } = await sb.from('sales_invoices').select('id').eq('so_doc_no', soDocNo.doc).eq('company_id', soDocNo.companyId);
+    if (error) {
+      /* eslint-disable-next-line no-console */
+      console.error('[si-recompute-paid] sibling read failed — sibling statuses left stale:', soDocNo.doc, error.message);
+      return;
+    }
+    for (const r of (data ?? []) as Array<{ id: string }>) if (r.id !== salesInvoiceId) await rollSiPaid(sb, r.id);
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- PostgREST client, untyped like every reader in this file
+async function rollSiPaid(sb: any, salesInvoiceId: string): Promise<{ doc: string; companyId: number } | null> {
   const { data: pays, error: paysErr } = await sb.from('sales_invoice_payments')
     .select('amount_sen').eq('sales_invoice_id', salesInvoiceId);
   /* A failed READ is not an unpaid invoice. `?? []` folded a transient blip into
@@ -301,7 +354,7 @@ export async function recomputeSiPaid(sb: any, salesInvoiceId: string): Promise<
   if (paysErr) {
     /* eslint-disable-next-line no-console */
     console.error('[si-recompute-paid] payments read failed — paid/status left unchanged:', salesInvoiceId, paysErr.message);
-    return;
+    return null;
   }
   const paid = (pays ?? []).reduce((s: number, p: { amount_sen: number }) => s + Number(p.amount_sen ?? 0), 0);
   const { data: cur, error: curErr } = await sb.from('sales_invoices')
@@ -312,9 +365,9 @@ export async function recomputeSiPaid(sb: any, salesInvoiceId: string): Promise<
   if (curErr) {
     /* eslint-disable-next-line no-console */
     console.error('[si-recompute-paid] header read failed — paid/status left unchanged:', salesInvoiceId, curErr.message);
-    return;
+    return null;
   }
-  if (!cur) return;
+  if (!cur) return null;
   const c0 = cur as { total_sen: number; status: string; so_doc_no: string | null; company_id: number | null };
 
   /* The order's deposit counts as settled, so the STATUS the office reads
@@ -326,14 +379,12 @@ export async function recomputeSiPaid(sb: any, salesInvoiceId: string): Promise<
      exactly as it was for the next successful roll to fix. */
   let deposit = 0;
   let depositUnknown = false;
-  if (c0.so_doc_no) {
-    const d = await readOrderDeposit(sb, c0.so_doc_no, c0.company_id ?? null);
-    if (d.ok) deposit = d.slices.get(salesInvoiceId) ?? 0;
-    else {
-      depositUnknown = true;
-      /* eslint-disable-next-line no-console */
-      console.error('[si-recompute-paid] order deposit read failed — status left unchanged:', salesInvoiceId, d.reason);
-    }
+  const d = await readOrderDepositForInvoice(sb, { id: salesInvoiceId, so_doc_no: c0.so_doc_no, company_id: c0.company_id });
+  if (d.ok) deposit = (d.deposit?.applied_sen ?? 0) + d.creditSen;
+  else {
+    depositUnknown = true;
+    /* eslint-disable-next-line no-console */
+    console.error('[si-recompute-paid] order deposit / credit read failed — status left unchanged:', salesInvoiceId, d.reason);
   }
 
   const updates: Record<string, unknown> = { paid_sen: paid, updated_at: new Date().toISOString() };
@@ -349,6 +400,7 @@ export async function recomputeSiPaid(sb: any, salesInvoiceId: string): Promise<
     /* eslint-disable-next-line no-console */
     console.error('[si-recompute-paid] paid/status update failed — left STALE:', salesInvoiceId, updErr.message);
   }
+  return c0.so_doc_no && c0.company_id != null ? { doc: c0.so_doc_no, companyId: Number(c0.company_id) } : null;
 }
 
 /**
@@ -372,7 +424,7 @@ export async function recomputeSiPaidForOrder(sb: any, soDocNo: string, companyI
     return;
   }
   for (const r of (data ?? []) as Array<{ id: string }>) {
-    await recomputeSiPaid(sb, r.id);
+    await rollSiPaid(sb, r.id);
   }
 }
 
@@ -410,14 +462,24 @@ export async function stampOrderDeposit(
 ): Promise<void> {
   if (!Array.isArray(rows) || rows.length === 0) return;
   const list = rows as Array<Record<string, unknown>>;
-  for (const r of list) r.so_deposit_applied_sen = null;
+  for (const r of list) { r.so_deposit_applied_sen = null; r.credit_note_applied_sen = null; }
   if (companyId == null) return;
 
+  /* The field carries everything that settles the invoice other than its own
+     receipts: the order's deposit slice PLUS posted credit notes against it
+     (D11). `credit_note_applied_sen` says how much of it is credit. */
   const soDocNos = [...new Set(
     list.map((r) => r.so_doc_no as string | null).filter((d): d is string => !!d),
   )];
+  const pageIds = list.map((r) => String(r.id ?? ''));
   if (soDocNos.length === 0) {
-    for (const r of list) r.so_deposit_applied_sen = 0;
+    const own = await readInvoiceCredits(sb, pageIds, companyId);
+    if (!own.ok) {
+      /* eslint-disable-next-line no-console */
+      console.error('[si-order-deposit] credit note read failed — rows keep the un-adjusted outstanding:', own.reason);
+      return;
+    }
+    for (const r of list) { const cr = own.sen.get(String(r.id)) ?? 0; r.credit_note_applied_sen = cr; r.so_deposit_applied_sen = cr; }
     return;
   }
 
@@ -446,8 +508,16 @@ export async function stampOrderDeposit(
     ledgerByDoc.set(p.so_doc_no, cur);
   }
 
+  const sibRows = (sibs.data ?? []) as Array<Record<string, unknown>>;
+  /* One credit read for the page and every sibling: a manual invoice on the page has no siblings. */
+  const sibCredits = await readInvoiceCredits(sb, [...pageIds, ...sibRows.map((r) => String(r.id))], companyId);
+  if (!sibCredits.ok) {
+    /* eslint-disable-next-line no-console */
+    console.error('[si-order-deposit] sibling credit read failed — rows keep the un-adjusted outstanding:', sibCredits.reason);
+    return;
+  }
   const invoicesByDoc = new Map<string, AllocatableInvoice[]>();
-  for (const r of (sibs.data ?? []) as Array<Record<string, unknown>>) {
+  for (const r of sibRows) {
     const doc = (r.so_doc_no as string | null) ?? '';
     if (!doc) continue;
     const bucket = invoicesByDoc.get(doc) ?? [];
@@ -458,6 +528,7 @@ export async function stampOrderDeposit(
       status: String(r.status ?? ''),
       totalSen: Number(r.total_sen ?? 0),
       ownPaidSen: Number(r.paid_sen ?? 0),
+      creditedSen: sibCredits.sen.get(String(r.id)) ?? 0,
     });
     invoicesByDoc.set(doc, bucket);
   }
@@ -467,7 +538,7 @@ export async function stampOrderDeposit(
     const doc = (so.doc_no as string | null) ?? '';
     if (!doc) continue;
     const led = ledgerByDoc.get(doc) ?? { sum: 0, hasDeposit: false };
-    const collected = soPaidSen(soPaidInputsOf(so, led.sum, led.hasDeposit));
+    const collected = soOrderPaidSen(soPaidInputsOf(so, led.sum, led.hasDeposit, 0));
     for (const [id, take] of allocateOrderDeposit(collected, invoicesByDoc.get(doc) ?? [])) {
       applied.set(id, take);
     }
@@ -478,6 +549,8 @@ export async function stampOrderDeposit(
        cannot see) resolves to 0 — it has no deposit to apply, which is a real
        answer, not a failed read. The failed-read case returned above with the
        field still null. */
-    r.so_deposit_applied_sen = applied.get(String(r.id)) ?? 0;
+    const credit = sibCredits.sen.get(String(r.id)) ?? 0;
+    r.credit_note_applied_sen = credit;
+    r.so_deposit_applied_sen = (applied.get(String(r.id)) ?? 0) + credit;
   }
 }

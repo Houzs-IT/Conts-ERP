@@ -219,6 +219,11 @@ type SoRow = HoldFields & {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /* A stable empty list while the funnel's names load, so the column set is not rebuilt each render. */
+/* The balance from the view (order total - order payments - invoice receipts). The stored balance_sen is the gross
+   total on every order (docs/SAVE-BUG-CLASSES.md class 4) and is never read as money owed. */
+const liveBalance = (r: { balance_sen_live?: number | null; local_total_sen?: number | null; paid_total_sen?: number | null }): number =>
+  r.balance_sen_live ?? (r.local_total_sen ?? 0) - (r.paid_total_sen ?? 0);
+
 const EMPTY_NAMES: string[] = [];
 const fmtRm = (centi: number): string => fmtSen(centi);
 
@@ -494,9 +499,8 @@ function DetailDrawer({
       ? items.reduce((sum, l) => sum + (l.total_sen ?? (l.qty ?? 0) * (l.unit_price_sen ?? 0)), 0)
       : row?.local_total_sen ?? 0;
   const totalSen = subtotalSen;
-  // Ledger-derived paid (Σ payments); the stored paid_sen is a deprecated
-  // column no writer maintains, kept only as the absent-view fallback.
-  const paidSen = row?.paid_total_sen ?? row?.paid_sen ?? 0;
+  // Paid from the view (order payments + invoice receipts). The stored paid_sen is never written: not read.
+  const paidSen = row?.paid_total_sen ?? 0;
   const outstandingSen = totalSen - paidSen;
 
   return (
@@ -1139,8 +1143,8 @@ export function MfgSalesOrdersListV2() {
     // columns the server now sums, so both paths agree.
     for (const r of rows) {
       revenueSen += r.local_total_sen ?? 0;
-      outstandingSen += r.balance_sen_live ?? r.balance_sen ?? 0;
-      paidSen += r.paid_total_sen ?? r.paid_sen ?? 0;
+      outstandingSen += r.balance_sen_live ?? (r.local_total_sen ?? 0) - (r.paid_total_sen ?? 0);
+      paidSen += r.paid_total_sen ?? 0;
     }
     return { revenueSen, outstandingSen, paidSen, fullSet: false };
   }, [aggregates, rows]);
@@ -1690,7 +1694,7 @@ export function MfgSalesOrdersListV2() {
       },
     },
     approvalCodeColumn, // docs/bugs/0909 — its own module: this file may only shrink
-    moneyColumn<SoRow, SoListLine>({ key: "paid", group: "Amounts", label: "Paid", width: "110px", defaultHidden: true, sen: (r) => r.paid_total_sen ?? r.paid_sen ?? 0 }),
+    moneyColumn<SoRow, SoListLine>({ key: "paid", group: "Amounts", label: "Paid", width: "110px", defaultHidden: true, sen: (r) => r.paid_total_sen ?? 0 }),
     {
       key: "balance",
       group: "Amounts",
@@ -1699,18 +1703,18 @@ export function MfgSalesOrdersListV2() {
       align: "right",
       defaultHidden: true,
       disableSort: true,
-      getValue: (r) => r.balance_sen_live ?? r.balance_sen, // `?? 0` was dead: balance_sen is `number`, never nullish
-      exportValue: (r) => senToRinggit(r.balance_sen_live ?? r.balance_sen, 2),
+      getValue: (r) => liveBalance(r),
+      exportValue: (r) => senToRinggit(liveBalance(r), 2),
       exportFormat: "money",
       render: (r) => ( // negative = over-collected → text-err, the app's negative-money convention (owner 2026-08-16)
         <span
           className={cn(
             "font-money text-[13px]",
-            (r.balance_sen_live ?? r.balance_sen) < 0
+            liveBalance(r) < 0
               ? "text-err"
-              : isDeliveredOwing(r.balance_sen_live ?? r.balance_sen, r.delivery_state ?? null) ? OWING_CLASS : "text-ink",
+              : isDeliveredOwing(liveBalance(r), r.delivery_state ?? null) ? OWING_CLASS : "text-ink",
           )}
-          title={isDeliveredOwing(r.balance_sen_live ?? r.balance_sen, r.delivery_state ?? null) ? "Delivered, still owing" : undefined}
+          title={isDeliveredOwing(liveBalance(r), r.delivery_state ?? null) ? "Delivered, still owing" : undefined}
         >
           {fmtRm(r.balance_sen_live ?? r.balance_sen)}
         </span>

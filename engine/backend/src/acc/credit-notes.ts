@@ -25,6 +25,8 @@ import { todayMyt } from '../scm/lib/my-time';
 import { postRenovationCredit, releaseRenovationCredit, renovationCreditKind } from './reno-ledger';
 import { cancelAfterReversal, prepareAfterPosting } from './einvoice-outbox';
 import { projectOfPurchaseInvoice } from '../conts/project-limit';
+import { recomputeSiPaid } from '../scm/lib/si-order-deposit';
+
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
 type Db = any;
@@ -188,8 +190,15 @@ async function markPosted(
       status: 'POSTED', je_no: jeNo, posted_at: new Date().toISOString(), posted_by: p.actor, updated_at: new Date().toISOString(),
     }).eq('company_id', p.companyId).eq('id', p.note.id);
     if (upErr) return { ok: false, status: 'save_failed', reason: upErr.message };
+    await rollInvoiceOf(sb, p.note);
   }
   return { ok: true, jeNo, status };
+}
+
+/* A posted credit note against an invoice settles that much of it (D11, scm/lib/si-order-deposit readInvoiceCredits):
+   its status is rolled again when the note posts or is cancelled. Best effort: recomputeSiPaid never throws. */
+async function rollInvoiceOf(sb: Db, note: Row): Promise<void> {
+  if (String(note.kind) === 'CN' && note.sales_invoice_id) await recomputeSiPaid(sb, String(note.sales_invoice_id));
 }
 
 /** Cancel one note: the contra for a posted one (dated the day of the
@@ -222,5 +231,6 @@ export async function cancelCreditNote(
     status: 'CANCELLED', cancelled_at: new Date().toISOString(), cancelled_by: p.actor, updated_at: new Date().toISOString(),
   }).eq('company_id', p.companyId).eq('id', note.id);
   if (upErr) return { ok: false, status: 'save_failed', reason: upErr.message };
+  if (note.status === 'POSTED') await rollInvoiceOf(sb, note);
   return { ok: true, status: 'cancelled', contraJeNo };
 }

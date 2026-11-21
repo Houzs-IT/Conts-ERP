@@ -27,11 +27,18 @@ import { instalmentPreview, nextInstalmentAmount } from '../shared/renovation-mo
 import { fmtSen } from '../shared/format';
 import { renderRenoDescription } from './reno-invoice-description';
 import { MAX_DESCRIPTION } from '../../acc/einvoice-build';
+import { allocateOrderDeposit, type AllocatableInvoice } from './si-order-deposit';
+import { soInvoiceReceiptsSen } from '../shared/so-outstanding';
 
 export interface BillRow {
   instalmentId: string; seq: number; kind: 'INVOICE' | 'CREDIT_NOTE' | 'ZERO'; amountSen: number; invoiceDate: string;
   invoiceNumber: string | null; salesInvoiceId: string | null; noteNumber: string | null; creditNoteId: string | null;
-  paidSen: number; invoiceStatus: string | null; noteStatus: string | null;
+  /** Everything settling the invoice: its own receipts + the order's money applied to it + posted credit notes on
+      it (si-order-deposit.ts, the same split the invoice screens show). */
+  paidSen: number;
+  /** Receipts taken on the invoice itself. */
+  receiptsSen: number;
+  invoiceStatus: string | null; noteStatus: string | null;
 }
 
 export interface BillingInstalment {
@@ -52,7 +59,13 @@ export interface BillingView {
   soDocNo: string; status: string; originalContractSen: number; revisedContractSen: number; voTotalSen: number;
   /** Net of contract credits, what AutoCount invoiced before go-live included. */
   billedSen: number; billedBeforeGoLiveSen: number; creditedSen: number; credits: ContractCredit[];
-  receivedSen: number; nextSeq: number | null; instalments: BillingInstalment[];
+  /** Paid on this order: order payments + receipts on its live invoices (shared/so-outstanding.ts soPaidSen). */
+  receivedSen: number;
+  /** Taken on the order itself. */
+  orderPaidSen: number;
+  /** The part of orderPaidSen no invoice has taken yet: it fills the unbilled instalments in order. */
+  unappliedSen: number;
+  nextSeq: number | null; instalments: BillingInstalment[];
 }
 
 export async function billingView(runner: RenoDb | UnsafeRunner, soDocNo: string, companyId?: number): Promise<BillingView> {
@@ -70,7 +83,7 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
   if (docs.length === 0) return out;
   const docsJson = JSON.stringify(docs);
   /* The five reads are independent: sent together, one round trip instead of five. */
-  const [sos, instRows, bills, creditRows, orderPaid] = await Promise.all([
+  const [sos, instRows, bills, creditRows, orderPaid, invoiceRows] = await Promise.all([
     db.q<{ doc_no: string; status: string; original_contract_sen: number | null; revised_sen: number; billed_before_golive_sen: number | string | null }>(
       `select o.doc_no, o.status::text as status, c.original_contract_sen, c.billed_before_golive_sen,
               (select coalesce(sum(i.total_sen), 0)::int from scm.mfg_sales_order_items i where i.doc_no = o.doc_no and not i.cancelled) as revised_sen
@@ -109,6 +122,17 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
         where p.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) group by p.so_doc_no`,
       [docsJson],
     ),
+    /* Every invoice of the order, for the deposit split (si-order-deposit.ts) and the invoice receipts. Credit notes
+       that close a deposit invoice carry the deposit, already counted, so they are left out (readInvoiceCredits). */
+    db.q<{ so_doc_no: string; id: string; invoice_number: string; invoice_date: string | null; status: string; total_sen: number | string; paid_sen: number | string; credited_sen: number | string }>(
+      `select si.so_doc_no, si.id, si.invoice_number, si.invoice_date::text as invoice_date, si.status::text as status, si.total_sen, si.paid_sen,
+              coalesce((select sum(cn.total_sen) from scm.acc_credit_notes cn
+                         where cn.sales_invoice_id = si.id and cn.kind = 'CN' and cn.status = 'POSTED'
+                           and not exists (select 1 from scm.acc_deposit_invoices d where d.credit_note_id = cn.id)), 0)::bigint as credited_sen
+         from scm.sales_invoices si
+        where si.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) and ($2::bigint is null or si.company_id = $2)`,
+      [docsJson, companyId ?? null],
+    ),
   ]);
   if (sos.length === 0) return out;
   const orderPaidOf = new Map(orderPaid.map((r) => [r.so_doc_no, Number(r.paid_sen)]));
@@ -121,7 +145,11 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
       creditNoteId: r.credit_note_id, noteNumber: r.note_number, amountSen: Number(r.amount_sen), noteDate: r.note_date, reason: r.reason, noteStatus: r.cn_status,
     }));
     const creditedSen = credits.reduce((s, c) => s + c.amountSen, 0);
-    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits, Number(so.billed_before_golive_sen ?? 0), orderPaidOf.get(so.doc_no) ?? 0));
+    const soInvoices: AllocatableInvoice[] = invoiceRows.filter((r) => r.so_doc_no === so.doc_no).map((r) => ({
+      id: r.id, invoiceNumber: r.invoice_number, invoiceDate: r.invoice_date, status: r.status,
+      totalSen: Number(r.total_sen), ownPaidSen: Number(r.paid_sen), creditedSen: Number(r.credited_sen),
+    }));
+    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits, Number(so.billed_before_golive_sen ?? 0), orderPaidOf.get(so.doc_no) ?? 0, soInvoices));
   }
   return out;
 }
@@ -142,7 +170,18 @@ export function assembleView(
   credits: ContractCredit[] = [],
   billedBeforeGoLiveSen = 0,
   orderPaidSen = 0,
+  invoices: AllocatableInvoice[] = [],
 ): BillingView {
+  /* One rule for what settles each invoice (si-order-deposit.ts): own receipts, then the order's money spread over
+     what is left, earliest invoice first, then credit notes on it. Click sweep F6 (21 Nov 2026): instalment 1 read
+     "Not paid" while its invoice was PAID by the deposit, because the order's money never reached the bill here. */
+  const slices = allocateOrderDeposit(orderPaidSen, invoices);
+  const invById = new Map(invoices.map((i) => [i.id, i]));
+  const appliedSen = [...slices.values()].reduce((s, v) => s + v, 0);
+  const settledOf = (siId: string | null, receipts: number): number => {
+    const inv = siId ? invById.get(siId) : undefined;
+    return inv ? inv.ownPaidSen + (slices.get(inv.id) ?? 0) + inv.creditedSen : receipts;
+  };
   /* A cancelled invoice or credit note billed nothing: its instalment is due again and its amount does not count. */
   const live = bills.filter((b) => b.si_status !== 'CANCELLED' && b.cn_status !== 'CANCELLED');
   const billByInst = new Map(live.map((b) => [b.instalment_id, b]));
@@ -166,17 +205,20 @@ export function assembleView(
       bill: b ? {
         instalmentId: i.id, seq: Number(b.seq), kind: b.kind, amountSen: Number(b.amount_sen), invoiceDate: b.invoice_date,
         invoiceNumber: b.invoice_number, salesInvoiceId: b.sales_invoice_id, noteNumber: b.note_number, creditNoteId: b.credit_note_id,
-        paidSen: Number(b.paid_sen ?? 0), invoiceStatus: b.si_status, noteStatus: b.cn_status,
+        paidSen: settledOf(b.sales_invoice_id, Number(b.paid_sen ?? 0)), receiptsSen: Number(b.paid_sen ?? 0),
+        invoiceStatus: b.si_status, noteStatus: b.cn_status,
       } : null,
     };
   });
   const billedSen = live.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen + billedBeforeGoLiveSen;
-  /* Paid on the invoices, and paid on the order itself: a deposit is taken on the SO. */
-  const receivedSen = orderPaidSen + live.reduce((s, b) => s + (b.kind === 'INVOICE' ? Number(b.paid_sen ?? 0) : 0), 0);
+  /* Paid on the order itself plus receipts on its live invoices: shared/so-outstanding.ts soPaidSen. */
+  const receivedSen = orderPaidSen + (invoices.length > 0
+    ? soInvoiceReceiptsSen(invoices.map((i) => ({ status: i.status, total_sen: i.totalSen, paid_sen: i.ownPaidSen })))
+    : live.reduce((s, b) => s + (b.kind === 'INVOICE' ? Number(b.paid_sen ?? 0) : 0), 0));
   const original = originalContractSen === null ? revised : Number(originalContractSen);
   return {
     soDocNo, status, originalContractSen: original, revisedContractSen: revised, voTotalSen: revised - original,
-    billedSen, billedBeforeGoLiveSen, creditedSen, credits, receivedSen, nextSeq, instalments: rows,
+    billedSen, billedBeforeGoLiveSen, creditedSen, credits, receivedSen, orderPaidSen, unappliedSen: Math.max(0, orderPaidSen - appliedSen), nextSeq, instalments: rows,
   };
 }
 

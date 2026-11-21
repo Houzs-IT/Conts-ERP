@@ -891,7 +891,9 @@ export const deliveryPlanningBoardHandler = async (c: Context<{ Bindings: Env; V
       // money — balance / outstanding (centi). Live balance (= local_total −
       // Σpayments, from mfg_sales_orders_with_payment_totals view) is the SO list
       // source-of-truth; base-table balance_sen is the fallback.
-      balance_sen: Number(r.balance_sen ?? 0),
+      /* The stored balance_sen is the gross total on every order (docs/SAVE-BUG-CLASSES.md class 4): when the
+         live read failed the board shows the whole total as owing, and says so (AMBER below). */
+      balance_sen: liveBalanceByDoc.get(docNo) ?? Number(r.local_total_sen ?? 0),
       balance_sen_live: liveBalanceByDoc.has(docNo) ? liveBalanceByDoc.get(docNo)! : null,
       local_total_sen: Number(r.local_total_sen ?? 0),
       /* AR-005 delivery-release gate (docs/agents/operating-spec.md §7.10 —
@@ -904,7 +906,7 @@ export const deliveryPlanningBoardHandler = async (c: Context<{ Bindings: Env; V
       release_gate: (() => {
         const total = Number(r.local_total_sen ?? 0);
         const live = liveBalanceByDoc.has(docNo) ? liveBalanceByDoc.get(docNo)! : null;
-        const bal = live != null ? live : Number(r.balance_sen ?? 0);
+        const bal = live != null ? live : total;
         const g = computeReleaseGate({
           totalSen: total,
           paidSen: Math.max(0, total - bal),

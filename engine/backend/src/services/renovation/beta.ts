@@ -195,13 +195,17 @@ export function paymentsOf(view: BillingView | null, so?: { docNo: string; total
       }),
     };
   }
-  // Money recorded on the order but not yet put against a bill still counts: it fills the instalments in order.
-  let pool = Math.max(0, recordedSen - view.receivedSen);
+  /* A bill's paidSen already carries the order's money applied to its invoice (renovation-billing assembleView).
+     What the order holds beyond that fills the unbilled instalments in order, and so does a contract credit note:
+     it lowered the order total, so without it the instalments would add up to more than the order (click sweep F6).
+     `recordedSen` can differ from the order's own payments only by the AutoCount carried amount (projectPayments). */
+  const onBillsSen = Math.max(0, view.orderPaidSen - view.unappliedSen);
+  let pool = Math.max(0, recordedSen - onBillsSen) + Math.max(0, view.creditedSen);
   let seen = 0;
   return {
     state: "ok", ...docNo,
     contractSen: view.revisedContractSen,
-    receivedSen: Math.max(view.receivedSen, recordedSen),
+    receivedSen: view.receivedSen + Math.max(0, recordedSen - view.orderPaidSen),
     instalments: view.instalments.map((i): BetaInstalment => {
       const bill = i.bill ? { amountSen: i.bill.amountSen, paidSen: i.bill.kind === "INVOICE" ? i.bill.paidSen : 0 } : null;
       const amountSen = bill ? bill.amountSen : i.amountSen;
