@@ -249,7 +249,9 @@ renovationSoInfo.put('/:docNo/rooms', async (c: C) => {
   const so = await db.prepare(`SELECT coalesce(so_kind, 'STANDARD') AS so_kind, status::text AS status FROM scm.mfg_sales_orders WHERE doc_no = ?${activeCompanySql(c)}`)
     .bind(docNo).first<{ so_kind: string; status: string }>();
   if (!so) return c.json({ error: 'so_not_found', message: `Sales order ${docNo} does not exist.` }, 404);
-  if (so.so_kind !== 'STANDARD') return c.json({ error: 'renovation_contract', message: 'A renovation contract keeps the sections it was signed with.' }, 409);
+  /* A renovation contract's rooms save too (click sweep F9, 21 Nov 2026): rooms are layout, not money, and Edit SO
+     offers to rename, move and delete them on a contract, so refusing here dropped every such change without a word.
+     The money side of a contract still moves only through its VO. */
   if (so.status === 'CANCELLED' || so.status === 'CLOSED') return c.json({ error: 'so_closed', message: `Sales order ${docNo} is ${so.status.toLowerCase()}.` }, 409);
   const input = readRenovationBlock(body);
   await writeSoRooms(db, docNo, input.roomSections ?? [], input.itemRooms);
