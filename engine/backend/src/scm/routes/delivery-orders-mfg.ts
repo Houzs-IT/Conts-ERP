@@ -1246,7 +1246,22 @@ export async function deductInventoryForDo(sb: any, deliveryOrderId: string, per
     .eq('source_doc_type', 'DO')
     .eq('source_doc_id', deliveryOrderId)
     .eq('movement_type', 'OUT');
-  if ((existing ?? 0) > 0) return []; // already deducted — no-op
+  if ((existing ?? 0) > 0) {
+    /* D6 (#1126), NOT YET FIXED, only said: a DO reverted to DRAFT got its stock back (reversal rows tagged
+       ADJUSTMENT + this DO's id), and shipping it again lands here because its first OUT still exists - so stock
+       stays too high. Re-deducting needs a fresh correction_seq slot in uq_inv_mov_do_source_v2 and a second
+       reversal cycle in fn_reverse_do_out; until then the ship says so instead of reading as clean. */
+    const { count: reversed, error: revErr } = await sb
+      .from('inventory_movements')
+      .select('id', { head: true, count: 'exact' })
+      .eq('source_doc_type', 'ADJUSTMENT')
+      .eq('source_doc_id', deliveryOrderId);
+    if (revErr) return [`Could not check whether this delivery order's stock was returned by an earlier revert: ${revErr.message}`];
+    if ((reversed ?? 0) > 0) {
+      return ['Stock was NOT taken out again: this delivery order was reverted to Draft earlier (its stock was returned) and shipping it a second time cannot deduct yet. Tell IT so the stock can be adjusted by hand.'];
+    }
+    return []; // already deducted — no-op
+  }
 
   /* Forward-compat (mig 0057): is_dropship column may not exist yet — retry without it. */
   let doHeaderRes = await sb.from('delivery_orders')

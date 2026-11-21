@@ -18,6 +18,7 @@ import {
 } from '../../../lib/requestCorrelation';
 import { idempotentInit } from '../../../lib/idempotency';
 import { retryUnlessClientError } from '../../../lib/retryPolicy';
+import { reportInBandFailure, type InBandFailure } from './mutation-error';
 
 // baseQuery is a custom-hook factory — only ever called from use* hooks below.
 // eslint-disable-next-line react-hooks/rules-of-hooks
@@ -164,8 +165,8 @@ export const useUpdatePaymentVoucher = () => {
 export const usePostPaymentVoucher = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => authedFetch<{ ok: true; jeNo?: string }>(`/payment-vouchers/${id}/post`, { method: 'POST' }),
-    onSuccess: (_d, id) => invalidatePvSettlement(qc, id),
+    mutationFn: (id: string) => authedFetch<{ ok: true; jeNo?: string } & InBandFailure>(`/payment-vouchers/${id}/post`, { method: 'POST' }),
+    onSuccess: (d, id) => { reportInBandFailure('Voucher posted, but not every step finished', d); invalidatePvSettlement(qc, id); },
   });
 };
 
@@ -208,8 +209,8 @@ export const useApplyAdvance = () => {
 export const useCancelPaymentVoucher = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => authedFetch(`/payment-vouchers/${id}/cancel`, { method: 'POST' }),
-    onSuccess: (_d, id) => invalidatePvSettlement(qc, id),
+    mutationFn: (id: string) => authedFetch<InBandFailure>(`/payment-vouchers/${id}/cancel`, { method: 'POST' }),
+    onSuccess: (d, id) => { reportInBandFailure('Voucher cancelled, but not every step finished', d); invalidatePvSettlement(qc, id); },
   });
 };
 
@@ -219,10 +220,13 @@ export const useCancelPaymentVoucher = () => {
 const approvalMutation = (path: 'submit' | 'withdraw' | 'check' | 'approve' | 'post-now') => () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => authedFetch(`/payment-vouchers/${id}/${path}`, { method: 'POST' }),
-    onSuccess: (_d, id) => {
+    mutationFn: (id: string) => authedFetch<InBandFailure>(`/payment-vouchers/${id}/${path}`, { method: 'POST' }),
+    onSuccess: (d, id) => {
       // approve and post-now post the GL and settle invoices in the same request.
-      if (path === 'approve' || path === 'post-now') return invalidatePvSettlement(qc, id);
+      if (path === 'approve' || path === 'post-now') {
+        reportInBandFailure('Voucher posted, but not every step finished', d);
+        return invalidatePvSettlement(qc, id);
+      }
       void qc.invalidateQueries({ queryKey: ['payment-vouchers'] });
       void qc.invalidateQueries({ queryKey: ['payment-voucher-detail', id] });
       void qc.invalidateQueries({ queryKey: ['daily-bank'] });

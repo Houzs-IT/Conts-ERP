@@ -8,7 +8,13 @@
    cannot run here) — the pvCustomerRefund.test.ts harness. */
 
 import { Hono } from 'hono';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
+import { fakeRunScmPgCommand } from './lib/fake-scm-command';
+
+vi.mock('../src/scm/lib/pg-supabase-transaction', async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  runScmPgCommand: fakeRunScmPgCommand,
+}));
 import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
 import { postPaymentVoucherHandler } from '../src/scm/routes/payment-vouchers';
 import { journalEntryCreateHandler, journalEntryReverseHandler, postJournalEntryHandler, postPiHandler, postSiHandler } from '../src/scm/routes/accounting';

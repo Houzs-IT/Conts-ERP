@@ -27,6 +27,7 @@
 
 import { resolveLinesSub } from '../../conts/sub-departments';
 import { Hono } from 'hono';
+import { runScmPgCommand } from '../lib/pg-supabase-transaction';
 import { ledgerEditSide } from '../../acc/ledger-settings';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { supabaseAuth } from '../middleware/auth';
@@ -382,56 +383,68 @@ export const updateDebtorBillHandler = async (c: any): Promise<Response> => {
   if (!side.ok) return c.json({ error: 'load_failed', reason: side.error }, 500);
   if (side.side === 'across') return c.json({ error: side.message }, 409);
 
-  if (rebuilt) {
-    const { error: delErr } = await sb.from('acc_debtor_bill_lines').delete().eq('company_id', coId).eq('bill_id', bill.id);
-    if (delErr) return c.json({ error: 'save_failed', reason: delErr.message }, 500);
-    const { error: lineErr } = await sb.from('acc_debtor_bill_lines').insert(rebuilt.lines.map((l, i) => ({
-      company_id: coId, bill_id: bill.id, line_no: i + 1,
-      description: l.description, credit_account_code: l.code, amount_sen: l.amountSen, department: l.department,
-      ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
-    })));
-    if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
-  }
-  const totalSen = rebuilt ? rebuilt.total : Number(bill.total_sen ?? 0);
-  const { error: upErr } = await sb.from('acc_debtor_bills')
-    .update({ bill_date: billDate, notes, total_sen: totalSen })
-    .eq('company_id', coId).eq('id', bill.id);
-  if (upErr) return c.json({ error: 'save_failed', reason: upErr.message }, 500);
-  if (side.side === 'before') return c.json({ ok: true, bill: { id: bill.id, billNumber, totalSen }, reposted: false });
+  /* D3/D4 (#1126): the lines, the header and the ledger re-post commit together or not at all. Before, a failure
+     between them left new lines under an old journal (or no journal), and a retry could not tell what had landed. */
+  return runScmPgCommand(c, async (tx) => {
+    if (rebuilt) {
+      const { error: delErr } = await tx.from('acc_debtor_bill_lines').delete().eq('company_id', coId).eq('bill_id', bill.id);
+      if (delErr) return c.json({ error: 'save_failed', reason: delErr.message }, 500);
+      const { error: lineErr } = await tx.from('acc_debtor_bill_lines').insert(rebuilt.lines.map((l, i) => ({
+        company_id: coId, bill_id: bill.id, line_no: i + 1,
+        description: l.description, credit_account_code: l.code, amount_sen: l.amountSen, department: l.department,
+        ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
+      })));
+      if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
+    }
+    const totalSen = rebuilt ? rebuilt.total : Number(bill.total_sen ?? 0);
+    /* The status follows the new total (D3): a bill cut down to what was already received is PAID, one raised above
+       it owes again. Compare-and-set on received_sen and status: a receipt or a cancel that landed since the page
+       loaded makes the edit refuse instead of writing over it. */
+    const nextStatus = received > 0 && received >= totalSen ? 'PAID' : 'POSTED';
+    const { data: upd, error: upErr } = await tx.from('acc_debtor_bills')
+      .update({ bill_date: billDate, notes, total_sen: totalSen, status: nextStatus })
+      .eq('company_id', coId).eq('id', bill.id).eq('received_sen', received).neq('status', 'CANCELLED')
+      .select('id');
+    if (upErr) return c.json({ error: 'save_failed', reason: upErr.message }, 500);
+    if (((upd ?? []) as unknown[]).length === 0) {
+      return c.json({ error: 'changed', message: `${billNumber} changed while you were editing it (money received, or cancelled). Reload and try again.` }, 409);
+    }
+    if (side.side === 'before') return c.json({ ok: true, bill: { id: bill.id, billNumber, totalSen }, reposted: false });
 
-  /* The re-post: contra the entry the old bill wrote, then book the bill as
-     it now reads — through the one gate. */
-  const rev = await reverseJournal(sb, {
-    companyId: coId,
-    sourceType: 'ODB',
-    sourceDocNo: billNumber,
-    narration: (orig) => `Edit debtor bill ${billNumber} — voids ${orig.je_no}`,
-    entryDate: oldDate,
+    /* The re-post: contra the entry the old bill wrote, then book the bill as
+       it now reads — through the one gate. */
+    const rev = await reverseJournal(tx, {
+      companyId: coId,
+      sourceType: 'ODB',
+      sourceDocNo: billNumber,
+      narration: (orig) => `Edit debtor bill ${billNumber} — voids ${orig.je_no}`,
+      entryDate: oldDate,
+    });
+    if (!rev.ok) return c.json({ error: 'reverse_failed', reason: (rev as { reason?: string }).reason ?? rev.status }, 500);
+    let lines: BillLine[];
+    if (rebuilt) lines = rebuilt.lines;
+    else {
+      const { data: rows, error: lErr } = await scopeToCompany(
+        tx.from('acc_debtor_bill_lines').select('line_no, description, credit_account_code, amount_sen, department, sub_department_id').eq('bill_id', bill.id), c,
+      ).order('line_no');
+      if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
+      lines = ((rows ?? []) as Row[]).map((l) => ({
+        description: l.description ?? null, code: l.credit_account_code ? String(l.credit_account_code) : null, amountSen: Number(l.amount_sen),
+        department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, subDepartmentId: l.sub_department_id ?? null,
+      }));
+    }
+    const roles = await resolveRoles(tx, coId);
+    const r = await postJournal(tx, {
+      companyId: coId,
+      entryDate: billDate,
+      sourceType: 'ODB',
+      sourceDocNo: billNumber,
+      narration: `Debtor bill ${billNumber} — ${found.debtor.name} — edited`,
+      lines: debtorBillRuleLines(roles, String(found.debtor.name), billNumber, lines),
+    });
+    if (!r.ok) return c.json({ error: 'post_failed', reason: (r as { reason?: string }).reason ?? r.status }, 500);
+    return c.json({ ok: true, bill: { id: bill.id, billNumber, totalSen }, reposted: true, jeNo: r.jeNo });
   });
-  if (!rev.ok) return c.json({ error: 'reverse_failed', reason: (rev as { reason?: string }).reason ?? rev.status }, 500);
-  let lines: BillLine[];
-  if (rebuilt) lines = rebuilt.lines;
-  else {
-    const { data: rows, error: lErr } = await scopeToCompany(
-      sb.from('acc_debtor_bill_lines').select('line_no, description, credit_account_code, amount_sen, department, sub_department_id').eq('bill_id', bill.id), c,
-    ).order('line_no');
-    if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
-    lines = ((rows ?? []) as Row[]).map((l) => ({
-      description: l.description ?? null, code: l.credit_account_code ? String(l.credit_account_code) : null, amountSen: Number(l.amount_sen),
-      department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, subDepartmentId: l.sub_department_id ?? null,
-    }));
-  }
-  const roles = await resolveRoles(sb, coId);
-  const r = await postJournal(sb, {
-    companyId: coId,
-    entryDate: billDate,
-    sourceType: 'ODB',
-    sourceDocNo: billNumber,
-    narration: `Debtor bill ${billNumber} — ${found.debtor.name} — edited`,
-    lines: debtorBillRuleLines(roles, String(found.debtor.name), billNumber, lines),
-  });
-  if (!r.ok) return c.json({ error: 'post_failed', reason: (r as { reason?: string }).reason ?? r.status }, 500);
-  return c.json({ ok: true, bill: { id: bill.id, billNumber, totalSen }, reposted: true, jeNo: r.jeNo });
 };
 
 export const cancelDebtorBillHandler = async (c: any): Promise<Response> => {
@@ -547,7 +560,7 @@ export const createDebtorReceiptHandler = async (c: any): Promise<Response> => {
   if (freshErr || !fresh) return c.json({ error: 'load_failed', reason: freshErr?.message ?? 'receipt vanished', receipt: made }, 500);
   /* A failure past this point leaves a stamped DRAFT the Other Debtors page
      can re-approve (resume), so the number and the allocations are not lost. */
-  const posted = await postDebtorReceipt(c, sb, coId, fresh as Row);
+  const posted = await postDebtorReceiptAtomic(c, coId, fresh as Row);
   if ('resp' in posted) return posted.resp;
   return c.json({ ok: true, receipt: made, posted: true, jeNo: posted.jeNo }, 201);
 };
@@ -654,7 +667,7 @@ export const approveDebtorReceiptHandler = async (c: any): Promise<Response> => 
       .update({ approved_at: s.at, approved_by: s.by }).eq('company_id', r.company_id).eq('id', r.id);
     if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
   }
-  const posted = await postDebtorReceipt(c, sb, coId, r);
+  const posted = await postDebtorReceiptAtomic(c, coId, r);
   if ('resp' in posted) return posted.resp;
   return c.json({ ok: true, jeNo: posted.jeNo });
 };
@@ -685,6 +698,17 @@ async function receiptDepartments(sb: Parameters<typeof postJournal>[0], coId: n
    bills knocked off — shared by the fourth layer's Approve and by the
    Receipts page's post-now door, so both book the identical entry. */
 const postDebtorReceipt = async (c: any, sb: any, coId: number, r: Row): Promise<{ jeNo: string } | { resp: Response }> => {
+  /* D3 (#1126): claimed FIRST, compare-and-set, inside the caller's transaction (postDebtorReceiptAtomic). A double
+     click or a retry waits on this row and then finds it POSTED, so the bills are never knocked off twice; and a
+     failure further down rolls the claim back with everything else. */
+  const { data: claimed, error: claimErr } = await sb.from('acc_debtor_receipts')
+    .update({ status: 'POSTED', posted_at: now() })
+    .eq('company_id', coId).eq('id', r.id).neq('status', 'POSTED').neq('status', 'CANCELLED')
+    .select('id');
+  if (claimErr) return { resp: c.json({ error: 'save_failed', reason: claimErr.message }, 500) };
+  if (((claimed ?? []) as unknown[]).length === 0) {
+    return { resp: c.json({ error: 'already_posted', message: `${String(r.receipt_number)} was posted or cancelled a moment ago. Reload.` }, 409) };
+  }
   const { data: debtor, error: dErr } = await sb.from('acc_debtors').select('name').eq('company_id', coId).eq('id', r.debtor_id).maybeSingle();
   if (dErr) return { resp: c.json({ error: 'load_failed', reason: dErr.message }, 500) };
   const roles = await resolveRoles(sb, coId);
@@ -733,17 +757,33 @@ const postDebtorReceipt = async (c: any, sb: any, coId: number, r: Row): Promise
     }
     if (applied <= 0) continue;
     const nextReceived = Number(bill.received_sen ?? 0) + applied;
-    const { error: upErr } = await sb.from('acc_debtor_bills').update({
+    /* Compare-and-set on what was read: another receipt landing on the same bill meanwhile refuses this one (and
+       rolls it back) instead of the second write losing the first one's money. */
+    const { data: moved, error: upErr } = await sb.from('acc_debtor_bills').update({
       received_sen: nextReceived,
       status: nextReceived >= Number(bill.total_sen) ? 'PAID' : 'POSTED',
-    }).eq('company_id', coId).eq('id', bill.id);
+    }).eq('company_id', coId).eq('id', bill.id).eq('received_sen', Number(bill.received_sen ?? 0)).select('id');
     if (upErr) return { resp: c.json({ error: 'save_failed', reason: upErr.message }, 500) };
+    if (((moved ?? []) as unknown[]).length === 0) {
+      return { resp: c.json({ error: 'changed', message: 'A bill this receipt settles was paid by another receipt at the same moment. Nothing was posted; try again.' }, 409) };
+    }
   }
 
-  const { error: doneErr } = await sb.from('acc_debtor_receipts')
-    .update({ status: 'POSTED', posted_at: now() }).eq('company_id', coId).eq('id', r.id);
-  if (doneErr) return { resp: c.json({ error: 'save_failed', reason: doneErr.message }, 500) };
   return { jeNo: String((post as Row).jeNo ?? '') };
+};
+
+/** postDebtorReceipt in one transaction: the claim, the journal and every bill knock-off commit together or not at
+    all (D3, #1126). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the Hono context is untyped across this route file, as in every handler above
+const postDebtorReceiptAtomic = async (c: any, coId: number, r: Row): Promise<{ jeNo: string } | { resp: Response }> => {
+  let jeNo = '';
+  const resp = await runScmPgCommand(c, async (tx) => {
+    const posted = await postDebtorReceipt(c, tx, coId, r);
+    if ('resp' in posted) return posted.resp;
+    jeNo = posted.jeNo;
+    return c.json({ ok: true });
+  });
+  return resp.ok ? { jeNo } : { resp };
 };
 
 /* ── Router ───────────────────────────────────────────────────────────────── */

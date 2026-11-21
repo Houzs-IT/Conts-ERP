@@ -300,6 +300,9 @@ const NoteDetail = ({ id, onClose, onEdit }: { id: string; onClose: () => void; 
 const NoteForm = ({ mode, id, initial, onClose, onSaved }: { mode: 'new' | 'edit'; id?: string; initial: FormValues; onClose: () => void; onSaved: (id: string) => void }) => {
   const [v, setV] = useState<FormValues>(initial);
   const [postAfter, setPostAfter] = useState(false);
+  /* D19 (#1126): the note this form already created. When the post after it fails, the form stays open on a saved
+     draft; the next Save must update that draft and post it, never create a second note. */
+  const [createdId, setCreatedId] = useState<string | null>(null);
   const accountsQ = useAccounts();
   const suppliersQ = useSuppliers();
   const create = useCreateCreditNote();
@@ -316,12 +319,13 @@ const NoteForm = ({ mode, id, initial, onClose, onSaved }: { mode: 'new' | 'edit
   const save = async () => {
     try {
       const body = bodyOf(v);
-      let noteId = id ?? '';
-      if (mode === 'new') {
+      let noteId = id ?? createdId ?? '';
+      if (mode === 'new' && !createdId) {
         const r = await create.mutateAsync(body);
         noteId = r.note.id;
-      } else if (id) {
-        await update.mutateAsync({ id, noteDate: body.noteDate, reason: body.reason, sourceDocNo: body.sourceDocNo, lines: body.lines });
+        setCreatedId(noteId);
+      } else if (noteId) {
+        await update.mutateAsync({ id: noteId, noteDate: body.noteDate, reason: body.reason, sourceDocNo: body.sourceDocNo, lines: body.lines });
       }
       if (postAfter && noteId) await post.mutateAsync(noteId);
       onSaved(noteId);
@@ -333,7 +337,7 @@ const NoteForm = ({ mode, id, initial, onClose, onSaved }: { mode: 'new' | 'edit
       <div className="space-y-3">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-3)' }}>
           <Field label="Kind">
-            <select value={v.kind} onChange={(e) => setV({ ...v, kind: e.target.value as NoteKind })} disabled={mode === 'edit'} aria-label="Kind" style={input}>
+            <select value={v.kind} onChange={(e) => setV({ ...v, kind: e.target.value as NoteKind })} disabled={mode === 'edit' || createdId != null} aria-label="Kind" style={input}>
               <option value="CN">CN — credit note to a customer</option>
               <option value="DN">DN — debit note to a customer</option>
               <option value="SCN">SCN — credit note from a supplier</option>
@@ -397,6 +401,7 @@ const NoteForm = ({ mode, id, initial, onClose, onSaved }: { mode: 'new' | 'edit
           <Button size="sm" onClick={() => void save()} disabled={!canSave || busy}>{busy ? 'Saving…' : mode === 'new' ? 'Save note' : 'Save changes'}</Button>
         </div>
         {failed != null && <div style={{ fontSize: 'var(--fs-13)', color: danger }}>{errText(failed)}</div>}
+        {createdId && mode === 'new' && <div style={{ fontSize: 'var(--fs-13)' }}>The note is saved as a draft. Save again to update it{postAfter ? ' and post it' : ''} - no second note is made.</div>}
       </div>
     </Modal>
   );

@@ -9,7 +9,13 @@
    Same fake-PostgREST harness as tests/apInvoices.test.ts. */
 
 import { Hono } from 'hono';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
+import { fakeRunScmPgCommand } from './lib/fake-scm-command';
+
+vi.mock('../src/scm/lib/pg-supabase-transaction', async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  runScmPgCommand: fakeRunScmPgCommand,
+}));
 import { fakeSb, type Row } from '../src/scm/lib/fake-postgrest';
 import { SCM_SYSTEM_STAFF_ID } from '../src/scm/middleware/auth';
 import { apInvoices } from '../src/scm/routes/ap-invoices';
@@ -170,5 +176,33 @@ describe('editing a posted bill around the ledger start (Conts)', () => {
     expect(await res.json()).toMatchObject({ ok: true, reposted: false });
     expect(sb.tables.ap_invoices[0]).toMatchObject({ notes: 'Rent September' });
     expect(sb.tables.journal_entries).toHaveLength(1);
+  });
+});
+
+/* PR #1126 deferred D4. Fails on the code before the fix (the lines and total were kept, the journal reversed). */
+describe('D4: an edit that fails part-way changes nothing', () => {
+  test('the re-post fails: the old lines, total and journal all stand', async () => {
+    const { app, sb } = harness();
+    const id = await raise(app);
+    expect((await json(app, `/ap-invoices/${id}/post`, 'POST')).status).toBe(200);
+    const t = sb.tables as Record<string, Row[]>;
+    let armed = true;
+    t.journal_entry_lines = new Proxy(t.journal_entry_lines!, {
+      get(target, prop, recv) {
+        if (prop === 'push' && armed && target.length > 0) { armed = false; throw new Error('connection reset'); }
+        return Reflect.get(target, prop, recv);
+      },
+    });
+    const res = await json(app, `/ap-invoices/${id}`, 'PATCH', {
+      lines: [
+        { description: 'Rent Sept', debitAccountCode: '900-A001', amountSen: 400_000 },
+        { description: 'Cleaning', debitAccountCode: '900-A002', amountSen: 20_000 },
+      ],
+    });
+    expect(res.ok).toBe(false);
+    expect(t.ap_invoices[0]).toMatchObject({ total_sen: 400_000 });
+    expect(t.ap_invoice_lines.filter((l) => l.invoice_id === id)).toHaveLength(1);
+    expect(t.journal_entries.filter((j) => j.source_type === 'API_REVERSAL')).toHaveLength(0);
+    expect(t.journal_entries.filter((j) => j.source_type === 'API')).toHaveLength(1);
   });
 });
