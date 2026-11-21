@@ -48,6 +48,7 @@ export async function grnReverseWouldGoNegative(
      `number` because a caller's hand-written cast says so is what makes the
      linter call those guards redundant. Same reasoning as GrnCancelLine. */
   lines: Array<{ qty_accepted: number | null; item_code: string; item_group?: string | null; variants?: VariantAttrs | null }>,
+  grnId?: string | null,
 ): Promise<{ error: string; message: string } | null> {
   if (!warehouseId) return null;
   // Sum the qty we'd reverse OUT per (item_code, variant_key) bucket.
@@ -81,9 +82,27 @@ export async function grnReverseWouldGoNegative(
   for (const r of (balRows ?? []) as Array<{ item_code: string; variant_key: string | null; qty: number | null }>) {
     onHand.set(`${r.item_code}::${r.variant_key ?? ''}`, Number(r.qty ?? 0));
   }
+  /* On-hand alone misreads a bucket that was negative before the receipt (click sweep 2, G3): -2 then +4 leaves 2 on
+     hand, so a GRN nobody drew on read as consumed and could never be cancelled. Its own lots say what really
+     happened: FIFO lowers qty_remaining when anything draws on them, so a lot still holding the qty was not touched. */
+  const ownLeft = new Map<string, number>();
+  if (grnId) {
+    const { data: lots, error: lotErr } = await pgrestIn(sb
+      .from('inventory_lots')
+      .select('item_code, variant_key, qty_remaining')
+      .eq('warehouse_id', warehouseId)
+      .eq('source_doc_type', 'GRN')
+      .eq('source_doc_id', grnId), 'item_code', itemCodes);
+    if (!lotErr) {
+      for (const r of (lots ?? []) as Array<{ item_code: string; variant_key: string | null; qty_remaining: number | null }>) {
+        const k = `${r.item_code}::${r.variant_key ?? ''}`;
+        ownLeft.set(k, (ownLeft.get(k) ?? 0) + Number(r.qty_remaining ?? 0));
+      }
+    }
+  }
   for (const [k, b] of needByBucket) {
     const have = onHand.get(k) ?? 0;
-    if (have < b.need) {
+    if (have < b.need && (ownLeft.get(k) ?? 0) < b.need) {
       return {
         error: 'grn_consumed_downstream',
         message: 'Received goods were already consumed downstream (shipped / used in production) — cannot reverse this GRN. Make a Purchase Return instead.',

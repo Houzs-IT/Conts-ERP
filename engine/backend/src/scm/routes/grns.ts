@@ -2403,7 +2403,7 @@ export const cancelGrnCommand = async (
      service lines: with no IN to reverse, "already consumed" names a cause that
      does not exist and would make the document permanently un-cancellable. */
   if (!migratedNoStock) {
-    const consumedLock = await grnReverseWouldGoNegative(sb, head.warehouse_id, lineList);
+    const consumedLock = await grnReverseWouldGoNegative(sb, head.warehouse_id, lineList, id);
     if (consumedLock) return refuseWithoutWriting(c, consumedLock, 409);
   }
 
@@ -2598,7 +2598,7 @@ grns.patch('/:id', async (c) => {
         item_group?: string | null; variants?: VariantAttrs | null;
       }>;
       // Guard: can't relocate stock that's already gone from the old warehouse.
-      const consumedLock = await grnReverseWouldGoNegative(sb, oldWh, lineList);
+      const consumedLock = await grnReverseWouldGoNegative(sb, oldWh, lineList, id);
       if (consumedLock) return refuseWithoutWriting(c, consumedLock, 409);
       const batchByItem = await resolvePoBatchByItem(sb, lineList.map((it) => it.purchase_order_item_id));
 
@@ -3224,7 +3224,7 @@ grns.patch('/:id/items/:itemId', async (c) => {
       } else if (newAccepted < prevAccepted) {
         guardLines.push({ qty_accepted: prevAccepted - newAccepted, item_code: matCode, item_group: effGroup, variants: effVariants });
       }
-      const consumedLock = await grnReverseWouldGoNegative(sb, editWarehouseId, guardLines);
+      const consumedLock = await grnReverseWouldGoNegative(sb, editWarehouseId, guardLines, grnId);
       if (consumedLock) return refuseWithoutWriting(c, consumedLock, 409); // row untouched — safe
     }
   }
@@ -3433,7 +3433,7 @@ grns.delete('/:id/items/:itemId', async (c) => runScmPgCommand(c, async (
       const { data: grnHead } = await sb.from('grns').select('warehouse_id').eq('id', grnId).maybeSingle();
       const warehouseId = (grnHead as { warehouse_id: string | null } | null)?.warehouse_id
         ?? (await defaultWarehouseId(sb, activeCompanyId(c)));
-      const consumedLock = await grnReverseWouldGoNegative(sb, warehouseId, [lg]);
+      const consumedLock = await grnReverseWouldGoNegative(sb, warehouseId, [lg], grnId);
       if (consumedLock) return refuseWithoutWriting(c, consumedLock, 409);
     }
   }
