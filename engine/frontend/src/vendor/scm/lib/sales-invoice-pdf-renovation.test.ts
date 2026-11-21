@@ -1,5 +1,5 @@
 /* A renovation instalment invoice through the ported Sales Invoice print: it keeps Conts' own — the brand letterhead
-   (Dream Crafter), the project / unit rows and the line's room — and the brand's bank line is where the customer
+   (Dream Crafter), the project / unit rows and the line's room — and the company's account (Settings › Branding) is where the customer
    pays; an invoice with no brand keeps the company's payment details. Page numbers count within each invoice of a
    combined print. */
 
@@ -62,7 +62,7 @@ async function render(header: SiHeader, reno: RenoDocInfo | null): Promise<strin
 const joined = (d: string[]) => d.join(' ');
 
 describe('a renovation instalment invoice', () => {
-  test("prints under its brand, with the project, unit and the instalment's description, and the brand's bank line", async () => {
+  test("prints under its brand, with the project, unit and the instalment's description; pays into the company's account (chew, 21 Nov 2026)", async () => {
     const d = await render(SI, RENO);
     const all = joined(d);
     expect(all).toContain('DREAM CRAFTER SDN BHD');
@@ -71,8 +71,8 @@ describe('a renovation instalment invoice', () => {
     expect(all).toContain('2nd Progress Billing');
     expect(all).toContain('35%');
     expect(all).toContain('RM 35,000.00');
-    expect(all).toContain('DREAM CRAFTER SDN BHD MBB 5000 1111 2222');
-    expect(all).not.toContain('COMPANY BANK 0000');
+    expect(all).toContain('COMPANY BANK 0000');
+    expect(all).not.toContain('MBB 5000');
     expect(/houzs|2990/i.test(all)).toBe(false);
   });
 

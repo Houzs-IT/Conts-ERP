@@ -9,10 +9,11 @@ import { renoGet, type BrandProfile } from './api';
 /** bankLine: where the brand's customers pay (SO Maintenance › brand, as its contract prints it); '' when unset. */
 export interface BrandPrint { name: string; logo: BrandingLogo | null; lines: string[]; bankLine?: string }
 
-/** "Where to pay" on a paper that asks a customer for money: the brand's own bank line when the document carries a
- *  brand that has one, else the company's customer payment details (Settings › Branding). Blank prints nothing. */
-export function customerPaymentText(brand: BrandPrint | null | undefined): string {
-  return brand?.bankLine?.trim() || getBrandingCache().customerPaymentDetails;
+/** "Where to pay" on an invoice: the company's customer payment details (Settings › Branding), whatever the brand —
+ *  every brand's customers pay into The Conts' account (chew, 21 Nov 2026). A brand's bank line still prints on its
+ *  own contract papers. Blank prints nothing. */
+export function customerPaymentText(_brand?: BrandPrint | null): string {
+  return getBrandingCache().customerPaymentDetails;
 }
 
 let brandsOnce: Promise<BrandProfile[]> | null = null;
