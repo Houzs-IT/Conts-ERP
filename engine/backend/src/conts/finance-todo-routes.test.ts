@@ -51,21 +51,22 @@ const world = () => publicTablesOnly(fakeSb({
 }), ['conts_staff', 'projects']);
 
 const app = (sb: ReturnType<typeof world>, perms: string[], id = '7') => {
-  const a = new Hono();
+  const a = new Hono<{ Variables: Record<string, unknown> }>();
   a.use('*', async (c, next) => {
-    c.set('supabase' as never, sb as never);
-    c.set('companyId' as never, CO as never);
-    c.set('houzsUser' as never, { id, name: 'Mei Ling', permissions_set: new Set(perms) } as never);
+    c.set('supabase', sb);
+    c.set('companyId', CO);
+    c.set('houzsUser', { id, name: 'Mei Ling', permissions_set: new Set(perms) });
     await next();
   });
-  a.get('/todo', financeTodoHandler as never);
-  a.get('/todo/count', financeTodoCountHandler as never);
-  a.get('/todo/settings', todoSettingsGetHandler as never);
-  a.put('/todo/settings', todoSettingsPutHandler as never);
+  a.get('/todo', financeTodoHandler);
+  a.get('/todo/count', financeTodoCountHandler);
+  a.get('/todo/settings', todoSettingsGetHandler);
+  a.put('/todo/settings', todoSettingsPutHandler);
   return a;
 };
-const page = async (a: Hono): Promise<any> => (await a.request('/todo')).json();
-const put = (a: Hono, body: unknown) => a.request('/todo/settings', { method: 'PUT', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
+type App = ReturnType<typeof app>;
+const page = async (a: App): Promise<any> => (await a.request('/todo')).json();
+const put = (a: App, body: unknown) => a.request('/todo/settings', { method: 'PUT', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
 
 describe("Finance's To do", () => {
   test('each item raises its job, on the rule the Payment requests menu counts by', async () => {
