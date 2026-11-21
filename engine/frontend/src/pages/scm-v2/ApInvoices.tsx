@@ -33,7 +33,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { takeBack } from '../../lib/backTrail';
-import { Camera, Plus, Printer } from 'lucide-react';
+import { Camera, Copy, Plus, Printer } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { useAccounts, postableAccounts, type Account } from '../../vendor/scm/lib/accounting-queries';
 import { useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
@@ -402,6 +402,10 @@ export const ApInvoices = () => {
         title="AP invoices"
         actions={canCreate ? (
           <span style={{ display: 'inline-flex', gap: 'var(--space-4)', alignItems: 'center' }}>
+            {/* The supplier bills booked more than once (ported from Houzs). */}
+            <button type="button" onClick={() => navigate('/scm/ap-invoices/duplicates')} style={linkBtn}>
+              <Copy {...ICON} /> Duplicate bills
+            </button>
             {/* The pile: many supplier bills at once, read and split one AP
                 invoice each (owner 2026-09-08: scan bill 的按钮可以直接做在
                 + new ap invoice 附近吗). */}

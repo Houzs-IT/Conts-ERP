@@ -28,7 +28,7 @@ import { docMonthTag, insertWithDocNoRetry, mintMonthlyDocNo } from '../scm/lib/
 import { BILL_MODEL, extractOneBill, matchSupplier } from '../acc/bill-extract';
 import { requestAiTag } from '../services/aiUsage';
 import { lineDepartment, resolveFloatId } from './petty-cash';
-import { requestPayments } from './request-vouchers';
+import { CLAIM_WAITING_STATUSES, stillWaiting } from './finance-waiting';
 import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, receiptView, staffNames, type FloatRow, type ReceiptRow } from './petty-cash-store';
 import type { Staff } from './staff-identity';
 import { bankDetailsOf } from './petty-cash-routes';
@@ -379,17 +379,10 @@ export const financeWaitingHandler = async (c: Ctx): Promise<Response> => {
   try {
     const [rows, cl] = await Promise.all([
       allRows<{ id: string; ap_invoice_id: string | null }>((f, t) => sb.from('payment_requests').select('id, ap_invoice_id').eq('company_id', co.companyId).eq('status', 'SUBMITTED').order('id').range(f, t)),
-      sb.from('staff_receipts').select('id', { count: 'exact', head: true }).eq('company_id', co.companyId).is('float_id', null).is('payback_pv_id', null).in('status', ['HANDED_IN', 'CHECKED']),
+      sb.from('staff_receipts').select('id', { count: 'exact', head: true }).eq('company_id', co.companyId).is('float_id', null).is('payback_pv_id', null).in('status', [...CLAIM_WAITING_STATUSES]),
     ]);
     if (cl.error) throw new Error(cl.error.message);
-    const billIds = [...new Set(rows.map(r => r.ap_invoice_id).filter((x): x is string => !!x))];
-    const [pays, bills] = await Promise.all([
-      requestPayments(sb, rows.map(r => r.id)),
-      billIds.length ? sb.from('ap_invoices').select('id, status').in('id', billIds) : Promise.resolve({ data: [], error: null }),
-    ]);
-    if (bills.error) throw new Error(bills.error.message);
-    const liveBill = new Set(((bills.data ?? []) as Array<{ id: string; status: string }>).filter(b => b.status !== 'CANCELLED').map(b => b.id));
-    const requests = rows.filter(r => !(r.ap_invoice_id && liveBill.has(r.ap_invoice_id)) && !(pays.vouchers.get(r.id) ?? []).some(v => v.status !== 'CANCELLED')).length;
+    const requests = (await stillWaiting(sb, rows)).length;
     const claims = Number(cl.count ?? 0);
     return c.json({ count: requests + claims, requests, claims });
   } catch {

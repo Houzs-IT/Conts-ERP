@@ -11,7 +11,7 @@
 //                    quotation), where finance chooses the supplier and the accounts; paid on the Payment voucher page.
 // Finance also checks a claim (its accounts), rejects with a reason, or closes a request paid short.
 import { useMemo, useState, type ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../components/Layout";
 import { Button } from "../components/Button";
 import { DataTable, type Column } from "../components/DataTable";
@@ -108,7 +108,9 @@ const slotBtn = "h-8 w-full justify-center";
 export function PaymentRequests() {
   const [status, setStatus] = useState("SUBMITTED");
   /* Utility bills on a tab of their own (chew, 18 Nov 2026): they are paid against their accrual, by due date. */
-  const [tab, setTab] = useState<"other" | "utilities">("other");
+  /* ?tab=utilities (Finance's To do: utility bills due) opens on them. */
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<"other" | "utilities">(searchParams.get("tab") === "utilities" ? "utilities" : "other");
   /* Within utilities, by kind (chew, 18 Nov 2026): electricity, water, wifi, Indah Water. */
   const [utilKind, setUtilKind] = useState<UtilKind | "">("");
   const q = usePaymentRequests(serverStatus(status));

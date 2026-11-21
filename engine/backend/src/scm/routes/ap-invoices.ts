@@ -48,6 +48,8 @@ import {
 } from './ap-invoice-files';
 import { supabaseAuth } from '../middleware/auth';
 import { fmtSen } from '../shared/format';
+import { duplicateBillRefusal, findDuplicateSupplierBill } from '../lib/duplicate-supplier-bill';
+import { listDuplicateSupplierBillsHandler } from './ap-duplicate-bills';
 import { afterBillSavedBestEffort, billableRequest, linkBillToRequest, releaseRequestsOfBillBestEffort } from '../../conts/request-ap-invoice';
 
 const isUniqueClash = (e: { code?: string; message?: string } | null | undefined) => !!e && (e.code === '23505' || /duplicate key/i.test(String(e.message ?? '')));
@@ -279,6 +281,13 @@ export async function createApInvoiceCore(c: any, body: any, from: { paymentRequ
   }
 
   const sb = c.get('supabase');
+  /* One supplier bill is owed once (ported from Houzs): a live bill of this supplier with the same bill number refuses,
+     naming it. A quotation and a formal invoice never pair (lib/duplicate-supplier-bill.ts). */
+  {
+    const dup = await findDuplicateSupplierBill(sb, 'ap_invoices', { companyId: co.companyId, supplierId: String(sup.supplier.id), ref: body.supplierInvoiceRef, excludeId: null, quotation: body.provisional === true });
+    if (!dup.ok) return c.json({ error: 'lookup_failed', reason: dup.reason }, 500);
+    if (dup.duplicate) return c.json(duplicateBillRefusal(body.supplierInvoiceRef, dup.duplicate), 409);
+  }
   const invoiceNumber = await mintMonthlyDocNo(sb, 'ap_invoices', 'invoice_number', `${companyDocPrefix(c)}API-${docMonthTag(invoiceDate)}`);
   const { data: inv, error: insErr } = await sb.from('ap_invoices').insert({
     company_id: co.companyId,
@@ -376,6 +385,15 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
   if (body.notes !== undefined) patch.notes = body.notes ? String(body.notes).trim() : null;
   /* Quotation → formal invoice: unticked when the formal invoice replaces it (chew, 15 Nov 2026). */
   if (body.provisional !== undefined) patch.provisional = body.provisional === true;
+  /* The bill as it will read: its supplier, number and kind (a quotation turned into its formal invoice is checked as
+     a formal invoice, never against itself). Checked before the first write. */
+  if (patch.supplier_id !== undefined || patch.supplier_invoice_ref !== undefined || patch.provisional !== undefined) {
+    const ref = patch.supplier_invoice_ref !== undefined ? patch.supplier_invoice_ref : inv.supplier_invoice_ref;
+    const quotation = patch.provisional !== undefined ? patch.provisional === true : inv.provisional === true;
+    const dup = await findDuplicateSupplierBill(sb, 'ap_invoices', { companyId: co.companyId, supplierId: String(patch.supplier_id ?? inv.supplier_id), ref, excludeId: String(inv.id), quotation });
+    if (!dup.ok) return c.json({ error: 'lookup_failed', reason: dup.reason }, 500);
+    if (dup.duplicate) return c.json(duplicateBillRefusal(ref, dup.duplicate), 409);
+  }
   /* A posted bill is not moved across the ledger start; before it, the books
      stay as they were (Conts). Checked before the first write. */
   let side: 'after' | 'before' = 'after';
@@ -533,6 +551,8 @@ export const apInvoices = new Hono();
 apInvoices.use('*', supabaseAuth);
 apInvoices.get('/', listApInvoicesHandler);
 apInvoices.post('/', createApInvoiceHandler);
+/* Before /:id, so the detail matcher never takes it. */
+apInvoices.get('/duplicate-bills', listDuplicateSupplierBillsHandler);
 /* Files before /:id, as the PV mounts them — the evidence paths never fall
    into the detail matcher. */
 apInvoices.post('/:id/files', uploadApInvoiceFileHandler);
