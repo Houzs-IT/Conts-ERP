@@ -309,7 +309,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
   }
   const label = fromClean ? 'Report damage' : 'Add maintenance job';
   return (
-    <OpsModal title={label} eyebrow="Maintenance" size="md" sub={unit ? `${unit.label}. Opens a Maintenance job on this unit.` : office ? 'The unit, the problem and, if known, who fixes it and when. The quote and who pays are set in the job.' : 'Pick the unit and say what is wrong.'}
+    <OpsModal title={label} eyebrow="Maintenance" size="md" sub={unit ? `${unit.label}. Opens a Maintenance job on this unit.` : office ? 'The unit, the problem and, if known, who fixes it and when. Who pays can be changed in the job later; the quote is set there.' : 'Pick the unit and say what is wrong.'}
       onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void submit()}>{label}</Button></>}>
       {!unit && (
