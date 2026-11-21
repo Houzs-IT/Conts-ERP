@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RequestMoreDialog, ReturnStockDialog } from "./renovationProductionParts";
+import type { MaterialRow } from "../../vendor/scm/lib/production-order-queries";
 
 const h = vi.hoisted(() => ({
   request: vi.fn(),
@@ -46,7 +47,10 @@ describe("Request more (click sweep 2, G2)", () => {
 
 describe("Return stock (click sweep 2, G8)", () => {
   beforeEach(() => { h.back.mockReset(); h.statuses = {}; });
-  const material = { id: "m1", item_code: "DOR-KNK-001", description: "Plywood", uom: "NOS", qty_needed: 0.5, qty_issued: 1, qty_returned: 0 } as never;
+  const material: MaterialRow = {
+    id: "m1", item_code: "DOR-KNK-001", description: "Plywood", uom: "NOS", qty_needed: 0.5, processing_date: null, delivery_date: null, notes: null,
+    qty_issued: 1, qty_returned: 0, qty_issued_short: 0, added_how: "LISTED", from_composition: true,
+  };
 
   it("goes back to the warehouse the material left from, not the first in the list", () => {
     h.statuses = { m1: { warehouse: "CONTS-WH" } };

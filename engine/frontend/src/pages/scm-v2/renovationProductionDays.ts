@@ -94,5 +94,7 @@ export const issuedNote = (issued: number, needed: number, uom: string): string 
   issued > needed ? `Issued ${fmtNeed(issued)} ${uom}, rounded up from ${fmtNeed(needed)}` : `Issued ${fmtNeed(issued)} ${uom}`;
 
 /** Return stock goes back where it left from (the material status names that warehouse); else the first in the list. */
-export const returnWarehouseOf = (places: ReadonlyArray<{ id: string; code: string }>, leftFrom: string | null | undefined): string =>
-  places.find((w) => leftFrom != null && w.code === leftFrom)?.id ?? places[0]?.id ?? "";
+export const returnWarehouseOf = (places: ReadonlyArray<{ id: string; code: string }>, leftFrom: string | null | undefined): string => {
+  const home = leftFrom == null ? undefined : places.find((w) => w.code === leftFrom);
+  return (home ?? places.at(0))?.id ?? "";
+};

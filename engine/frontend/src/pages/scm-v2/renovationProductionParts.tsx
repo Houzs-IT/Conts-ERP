@@ -142,7 +142,7 @@ export function RequestMoreDialog({ orderId, open, onClose }: { orderId: string;
       const sent = await sendWithContentKey(keys.current, body, () => confirm(unansweredSaveQuestion("request", "the raw materials list")), (key) => request.mutateAsync({ ...body, key }));
       if (sent.sent) { toast.success(sent.value.short ? `${code} added: it shows Short until it is bought` : `${code} taken from stock`); onClose(); }
     } catch (e) {
-      notify({ title: "Not requested", body: message(e), tone: "error" });
+      void notify({ title: "Not requested", body: message(e), tone: "error" });
     } finally {
       sending.current = false;
     }
