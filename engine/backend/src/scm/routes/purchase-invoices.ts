@@ -50,6 +50,7 @@ import { attachGrnLineFacts, withPoPriceSnapshot } from '../lib/pi-po-price';
 import { parseDocPageQuery, readDocPage } from '../lib/doc-batch-page';
 import { billableGrnBase, grnSearchMatches, makeDocBatchReader } from '../lib/purchase-picker-docs'; import { loadOutstandingGrnLines } from '../lib/outstanding-grn-lines';
 import { refuseWithoutWriting } from '../lib/no-write-refusal';
+import { duplicateBillRefusal, findDuplicateSupplierBill } from '../lib/duplicate-supplier-bill';
 /* The create's refusal bodies and the two rules its exits follow (2026-08-19). */
 import { insertFailed, loadFailed, rollbackPi, committedAnyway } from '../lib/pi-create-refusals';
 /* Extracted 2026-08-17 to make room for the guards in this file. Mechanical
@@ -842,6 +843,16 @@ purchaseInvoices.post('/', async (c) => {
   {
     const rateGuard = await assertForeignRatePostable(sb, { currency: piCurrency, operatorRate: body.exchangeRate, docLabel: 'purchase invoice' });
     if (!rateGuard.ok) return refuseWithoutWriting(c, rateGuard.body, 422);
+  }
+  /* One supplier bill is owed once (ported from Houzs): a live invoice of this supplier with the same bill number
+     refuses, naming it. */
+  {
+    const companyId = activeCompanyId(c);
+    if (companyId != null) {
+      const dup = await findDuplicateSupplierBill(sb, 'purchase_invoices', { companyId, supplierId: String(body.supplierId), ref: body.supplierInvoiceRef, excludeId: null, quotation: null });
+      if (!dup.ok) return refuseWithoutWriting(c, { error: 'lookup_failed', reason: dup.reason }, 500);
+      if (dup.duplicate) return refuseWithoutWriting(c, duplicateBillRefusal(body.supplierInvoiceRef, dup.duplicate), 409);
+    }
   }
   const { data: header, error: hErr } = await insertWithDocNoRetry<{ id: string; invoice_number: string }>(
     () => nextNum(sb, 'PI', c),
@@ -1671,6 +1682,20 @@ purchaseInvoices.patch('/:id', async (c) => {
   // currency is normalised to upper-case like POST does.
   if (updates.currency !== undefined) updates.currency = normalizeCurrency(updates.currency);
   const sb = c.get('supabase');
+  /* One supplier bill is owed once (ported from Houzs): moving this invoice onto a bill number its supplier already has
+     live refuses. */
+  if (updates.supplier_invoice_ref !== undefined || updates.supplier_id !== undefined) {
+    const { data: cur, error: curErr } = await scopeToCompany(sb.from('purchase_invoices').select('supplier_id, supplier_invoice_ref, company_id').eq('id', id), c).maybeSingle();
+    if (curErr) return c.json({ error: 'lookup_failed', reason: curErr.message }, 500);
+    const row = (cur ?? {}) as { supplier_id?: string | null; supplier_invoice_ref?: string | null; company_id?: number | null };
+    const ref = updates.supplier_invoice_ref !== undefined ? updates.supplier_invoice_ref : row.supplier_invoice_ref;
+    const supplierId = String((updates.supplier_id !== undefined ? updates.supplier_id : row.supplier_id) ?? '');
+    if (row.company_id != null) {
+      const dup = await findDuplicateSupplierBill(sb, 'purchase_invoices', { companyId: Number(row.company_id), supplierId, ref, excludeId: id, quotation: null });
+      if (!dup.ok) return c.json({ error: 'lookup_failed', reason: dup.reason }, 500);
+      if (dup.duplicate) return c.json(duplicateBillRefusal(ref, dup.duplicate), 409);
+    }
+  }
 
   /* The BEFORE half of every from->to pair. Also supplies the invoice number and
      company for the audit row, which the update's RETURNING gives us only after
