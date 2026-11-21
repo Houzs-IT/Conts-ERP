@@ -728,7 +728,8 @@ export function useStartProduction(id: string) {
 export function useRequestMore(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { itemCode: string; qty: number; neededBy: string | null }) => orderPost<{ ok: true; short: boolean }>(`${id}/request-more`)(body),
+    mutationFn: ({ key, ...body }: { itemCode: string; qty: number; neededBy: string | null; key?: string }) =>
+      authedFetch<{ ok: true; short: boolean }>(`/production-orders/${id}/request-more`, idempotentInit(key, { method: 'POST', body: JSON.stringify(body) })),
     onSuccess: () => refreshOrder(qc, id),
   });
 }

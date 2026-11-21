@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayStrip, initialDay, materialCalculation, materialTally, mytDate, mytTime, pageStart, productionNote } from "./renovationProductionDays";
+import { dayStrip, fmtNeed, initialDay, issuedNote, materialCalculation, materialTally, mytDate, mytTime, pageStart, productionNote, returnWarehouseOf } from "./renovationProductionDays";
 import type { MaterialRow, MaterialStatus } from "../../vendor/scm/lib/production-order-queries";
 
 const plan = ["2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07", "2026-11-09", "2026-11-10"];
@@ -71,4 +71,21 @@ describe("an order's note", () => {
     expect(productionNote("Renovation contract TC-SO-2611-901")).toBe("Renovation contract TC-SO-2611-901");
     expect(productionNote("  ")).toBeNull();
   });
+});
+
+describe("a part unit of raw material (click sweep 2, G7)", () => {
+  it("Needed keeps 0.5 after Start", () => {
+    expect(fmtNeed(0.5)).toBe("0.5");
+    expect(fmtNeed(1250)).toBe("1,250");
+  });
+  it("the round-up to a whole unit is said next to what was issued", () => {
+    expect(issuedNote(1, 0.5, "NOS")).toBe("Issued 1 NOS, rounded up from 0.5");
+    expect(issuedNote(2, 2, "NOS")).toBe("Issued 2 NOS");
+  });
+});
+
+describe("returnWarehouseOf (click sweep 2, G8)", () => {
+  const places = [{ id: "w-blk", code: "BLK" }, { id: "w-conts", code: "CONTS-WH" }];
+  it("picks where the material left from", () => expect(returnWarehouseOf(places, "CONTS-WH")).toBe("w-conts"));
+  it("falls back to the first when that is not known", () => expect(returnWarehouseOf(places, null)).toBe("w-blk"));
 });
