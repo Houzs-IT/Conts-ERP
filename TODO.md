@@ -2,6 +2,22 @@
 
 Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw, schema `pos`, via Hyperdrive e0781ccd...). Staging preview: https://staging-preview.theconts-os.pages.dev (Supabase ecgyrmblqfxvbfjlqkdq).
 
+## Click sweep 2 (22 Nov 2026, docs/CLICK-SWEEP-2-2026-11-21.md)
+- Fixed: G1 (chore/click-sweep-2), G3 G4 (fix/stock-guards), G2 G7 G8 (fix/production-sweep2), G6 G9 and part of G17 (fix/cancelled-money-display), G11 (fix/phone-more-actions). No migrations.
+- G5 was the local database, not the code: it lacked migration 0354 (sales_invoice_id on credit note allocations), so the paid roll failed closed and left SENT. Production has the column; with 0354 applied locally the invoice went PAID.
+- G10 is dev only: React StrictMode runs PrintPreviewModal's ClosesOnLeave effect twice on the vite dev server; a production build (vite build + preview, 22 Nov) opens and keeps the print preview.
+- Owner to decide (G4): a Works / Built-in line with no PO or production order now gets the soft "Stock not enough, ship anyway?" question; a hard refusal would be the stricter choice.
+- G7: Start still issues whole units by design (0.5 sheet leaves as 1, the rest comes back by Return stock); the page now says so. A part-unit issue needs a column change (qty_issued integer, migration 0237).
+- G12: double-click Issue invoice sends two POSTs (201 + 409) and the dialog shows the green and the red box together.
+- G13: VO quick view shows a red "Rejected." box on every renovation VO (AmendmentQuickView.tsx:273 reads any non-null resolution).
+- G14: a withdrawn cancellation request is counted under the VO list REJECTED tab.
+- G15: SO header keeps Request cancellation while one is open (the second is refused with a clear 409).
+- G16: production Complete has no confirm by design (owner, 6 Nov); the completed page still offers Start time.
+- G17 rest: cancelled PI still shows "Owed" in red with an Edit button; cancelled voucher still lists "Applied RM 100.00".
+- G18: creating a delivery return from Transfer from Delivery Order lands on the source DO, not the new DR.
+- G19: the New PO item picker (native datalist) matches from the start of the code only.
+- G20: phone PO list header counts cancelled POs in "committed"; production order cards show PO wording ("SUPPLIER INHOUSE", "RM 0.00 committed"); quick-view header wraps the doc no.
+
 ## Money consistency (click sweep F6/F6b/F27/F28/F31, save-bug D9-D11; PR fix/money-consistency, migration 0359)
 - Paid on an SO = order payments + receipts on its live invoices (engine scm/shared/so-outstanding.ts soPaidSen; SO list view in migration 0359). Replaces owner decision C4 (11 Oct: order money counted only past invoice receipts); owner agreed 21 Nov ("based on the payments"). Trade-off: a deposit keyed AGAIN as an invoice receipt by hand would now count twice (no code path does it).
 - Merged onto #1134 (credit notes knocked off by allocation, si-credit-notes.ts) and #1138 (renovation counts confirmed money only): their versions won; this branch kept the paid rule, sibling status re-roll, PAID-by-hand guard and cancelled-invoice exclusions. Dropped, re-port if wanted: renovation schedule "less credit note" line and "Over-invoiced: credit note due" label (renovationSoInstalments.tsx).
