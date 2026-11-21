@@ -16,7 +16,7 @@
 import type { Context, Hono } from 'hono';
 import type { Env, Variables } from '../../env';
 import { activeCompanyId, scopeToCompany } from '../../lib/companyScope';
-import { awaitsConfirmation, confirmedPaymentIds, ensureReceiptForPayment } from '../../../acc/receipts';
+import { awaitsConfirmation, confirmedPaymentIds, ensureReceiptForPayment, loadReceiptParties, withReceiptParty } from '../../../acc/receipts';
 import { linkReceiptInvoiceBestEffort } from '../../../acc/receipt-invoice';
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
@@ -97,6 +97,9 @@ export function registerPaymentReceiptRoutes(
     if (r.status === 'DRAFT') await linkReceiptInvoiceBestEffort(sb, r.id);
     const { data: row, error: rowErr } = await sb.from('acc_official_receipts').select('*').eq('id', r.id).maybeSingle();
     if (rowErr || !row) return c.json({ error: 'ensure_failed', reason: rowErr?.message ?? 'receipt vanished after ensure' }, 500);
-    return c.json({ receipt: row });
+    /* RECEIVED FROM on the print: the order's phone and address, its brand — as finance's print gets them. */
+    const co = companyOf(c);
+    const rec = row as Record<string, unknown>;
+    return c.json({ receipt: co == null ? rec : withReceiptParty(rec, await loadReceiptParties(sb, co, [rec])) });
   });
 }
