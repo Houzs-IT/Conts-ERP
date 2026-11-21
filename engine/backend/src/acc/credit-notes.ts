@@ -25,6 +25,7 @@ import { todayMyt } from '../scm/lib/my-time';
 import { postRenovationCredit, releaseRenovationCredit, renovationCreditKind } from './reno-ledger';
 import { cancelAfterReversal, prepareAfterPosting } from './einvoice-outbox';
 import { projectOfPurchaseInvoice } from '../conts/project-limit';
+import { removeAllAllocations } from './credit-note-allocations';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
 type Db = any;
@@ -200,6 +201,13 @@ export async function cancelCreditNote(
 ): Promise<{ ok: true; status: 'cancelled' | 'already_cancelled'; contraJeNo: string | null } | { ok: false; status: string; reason: string }> {
   const note = p.note;
   if (note.status === 'CANCELLED') return { ok: true, status: 'already_cancelled', contraJeNo: null };
+  /* A credit note's knock-off comes back off the invoices first (ported from
+     Houzs): a supplier's purchase / AP invoices, a customer's sales invoices —
+     each owes it again. A draft's plan goes with it. */
+  if (note.kind === 'SCN' || note.kind === 'CN') {
+    const back = await removeAllAllocations(sb, { companyId: p.companyId, note });
+    if (!back.ok) return { ok: false, status: back.refusal.error, reason: back.refusal.message };
+  }
   let contraJeNo: string | null = null;
   if (note.status === 'POSTED') {
     const kind = String(note.kind) as NoteKind;

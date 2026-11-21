@@ -93,6 +93,17 @@ describe('allocateOrderDeposit — the owner\'s split rule', () => {
     expect(slices.get('a')).toBe(0); // owes RM 3,000, not RM 1,000
   });
 
+  /* A customer's credit note knocked off the first invoice: it owes that much
+     less, so the order's money spills to the next. */
+  test("a credit note knocked off an invoice spills the order's money to the next one", () => {
+    const slices = allocateOrderDeposit(390_000, [
+      inv({ id: 'a', invoiceNumber: 'HC-SI-2608-001', invoiceDate: '2026-08-20', totalSen: 300_000, creditedSen: 50_000 }),
+      inv({ id: 'b', invoiceNumber: 'HC-SI-2608-002', invoiceDate: '2026-08-22', totalSen: 140_000 }),
+    ]);
+    expect(slices.get('a')).toBe(250_000);
+    expect(slices.get('b')).toBe(140_000);
+  });
+
   test('C4: order money beyond what the invoices recorded still applies', () => {
     // Order collected RM 3,000; the invoice has recorded RM 1,000 of it.
     const slices = allocateOrderDeposit(300_000, [
@@ -181,6 +192,10 @@ type Store = {
   invoices: Array<Record<string, unknown>>;
   siPayments: Array<Record<string, unknown>>;
   updates: Array<Record<string, unknown>>;
+  /* The customers' credit notes knocked off the invoices (si-credit-notes.ts). */
+  allocations: Array<Record<string, unknown>>;
+  notes: Array<Record<string, unknown>>;
+  creditErr: string | null;
 };
 
 const emptyStore = (o: Partial<Store> = {}): Store => ({
@@ -190,6 +205,9 @@ const emptyStore = (o: Partial<Store> = {}): Store => ({
   invoices: [],
   siPayments: [],
   updates: [],
+  allocations: [],
+  notes: [],
+  creditErr: null,
   ...o,
 });
 
@@ -200,13 +218,16 @@ function fakeSb(store: Store) {
     op: 'select' | 'update' = 'select';
     cols = '';
     filters: Record<string, unknown> = {};
+    ins: Record<string, unknown[]> = {};
     payload: Record<string, unknown> | null = null;
     singleRow = false;
     constructor(table: string) { this.table = table; }
     select(cols?: string) { if (this.op === 'select') this.cols = cols ?? ''; return this; }
     update(payload: Record<string, unknown>) { this.op = 'update'; this.payload = payload; return this; }
     eq(col: string, val: unknown) { this.filters[col] = val; return this; }
+    in(col: string, vals: unknown[]) { this.ins[col] = vals; return this; }
     order() { return this; }
+    range() { return this; }
     maybeSingle() { this.singleRow = true; return this; }
     private result(): { data: unknown; error: unknown } {
       if (this.op === 'update') {
@@ -222,6 +243,13 @@ function fakeSb(store: Store) {
       }
       if (this.table === 'sales_invoice_payments') {
         return { data: store.siPayments.filter((r) => r.sales_invoice_id === this.filters.sales_invoice_id), error: null };
+      }
+      if (this.table === 'acc_credit_note_allocations') {
+        if (store.creditErr) return { data: null, error: { message: store.creditErr } };
+        return { data: store.allocations.filter((r) => (this.ins.sales_invoice_id ?? []).includes(r.sales_invoice_id)), error: null };
+      }
+      if (this.table === 'acc_credit_notes') {
+        return { data: store.notes.filter((r) => (this.ins.id ?? []).includes(r.id)), error: null };
       }
       if (this.table === 'sales_invoices') {
         const rows = store.invoices.filter((r) =>
@@ -309,6 +337,36 @@ describe('recomputeSiPaid — the number and the status pill agree', () => {
     store.orderPayments = [];
     await recomputeSiPaid(fakeSb(store), 'si-1');
     expect(store.updates.at(-1)!.status).toBe('SENT');
+  });
+
+  /* A customer's credit note knocked off it settles it like the deposit does
+     (ported from Houzs) — and paid_sen keeps meaning receipts alone. */
+  test('a credit note covering what the deposit left moves it to PAID, paid_sen untouched', async () => {
+    const store = reportedChain();
+    store.allocations = [{ id: 'al-1', note_id: 'cn-1', sales_invoice_id: 'si-1', applied_sen: 240_000 }];
+    store.notes = [{ id: 'cn-1', status: 'POSTED' }];
+    await recomputeSiPaid(fakeSb(store), 'si-1');
+    const u = store.updates.at(-1)!;
+    expect(u.paid_sen).toBe(0);
+    expect(u.status).toBe('PAID');
+  });
+
+  test("a cancelled or draft note's rows settle nothing", async () => {
+    const store = reportedChain();
+    store.allocations = [{ id: 'al-1', note_id: 'cn-1', sales_invoice_id: 'si-1', applied_sen: 240_000 }];
+    store.notes = [{ id: 'cn-1', status: 'CANCELLED' }];
+    await recomputeSiPaid(fakeSb(store), 'si-1');
+    expect(store.updates.at(-1)!.status).toBe('PARTIALLY_PAID');
+  });
+
+  test('a failed credit-note read leaves the STATUS alone rather than guessing', async () => {
+    const store = reportedChain();
+    store.invoices[0]!.status = 'PAID';
+    store.creditErr = 'connection reset';
+    await recomputeSiPaid(fakeSb(store), 'si-1');
+    const u = store.updates.at(-1)!;
+    expect(u.paid_sen).toBe(0);
+    expect('status' in u).toBe(false);
   });
 
   test('a failed deposit read leaves the STATUS alone rather than reverting it', async () => {
