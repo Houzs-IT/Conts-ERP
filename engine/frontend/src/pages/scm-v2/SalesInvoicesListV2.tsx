@@ -950,7 +950,7 @@ export function SalesInvoicesListV2() {
       /* The KPI sums the SAME per-row figure the Outstanding column renders, so
          the card and the table cannot disagree — which is the whole reason this
          block sums the rows on screen rather than asking the server. */
-      outstandingSen += outstandingOf(r);
+      outstandingSen += siOwesNothing(r.status) ? 0 : siOutstandingSen(t, paid, siDepositAppliedSen(r));
     }
     return { revenueSen, outstandingSen, paidSen };
   }, [visible.rows]);

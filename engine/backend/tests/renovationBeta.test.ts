@@ -211,6 +211,7 @@ describe("Beta payments: instalment status", () => {
   });
   const view: BillingView = {
     soDocNo: "SO-1", status: "RENO_CONFIRMED", originalContractSen: 1000000, revisedContractSen: 1000000, voTotalSen: 0, billedSen: 600000, receivedSen: 300000, nextSeq: 3,
+    orderPaidSen: 0, unappliedSen: 0, creditedSen: 0,
     instalments: [inst(1, bill(1, 300000, 300000), 300000), inst(2, bill(2, 300000, 0), 300000), inst(3, null, 400000)],
   };
 

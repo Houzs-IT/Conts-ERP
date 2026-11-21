@@ -2,6 +2,13 @@
 
 Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw, schema `pos`, via Hyperdrive e0781ccd...). Staging preview: https://staging-preview.theconts-os.pages.dev (Supabase ecgyrmblqfxvbfjlqkdq).
 
+## Money consistency (click sweep F6/F6b/F27/F28/F31, save-bug D9-D11; PR fix/money-consistency, migration 0354)
+- Paid on an SO = order payments + receipts on its live invoices (engine scm/shared/so-outstanding.ts soPaidSen; SO list view in migration 0354). Replaces owner decision C4 (11 Oct: order money counted only past invoice receipts); owner to confirm. Trade-off: a deposit keyed AGAIN as an invoice receipt by hand would now count twice (no code path does it).
+- Migration 0354 must be applied to production (connector, demo.drop_views / demo.sync, pos_migrations row) before the code merges; until then the SO list ignores invoice receipts while the SO page counts them.
+- Stored scm.mfg_sales_orders.paid_sen / balance_sen are not money owed and are no longer read for it (decision: stop reading, no write-back); writers left as they are.
+- Production check 21 Nov: no invoice receipts, no cancelled invoices with receipts; TC-SO-2611-033 and TC-SO-2611-038 showed instalment 1 "Not paid" while TC-SI-2611-007 / -009 were PAID by the deposit (display only, fixed by the code; no data to correct).
+- Houzs: F27 KPI (frontend SalesInvoicesListV2.tsx ~922), PAID-by-hand guard (backend sales-invoices.ts PATCH /:id/status), of-agent paid_sen (backend services/agents/of-agent.ts:67), SO list balance_sen fallbacks (frontend MfgSalesOrdersListV2.tsx ~1199/1784), invoice receipts in the SO paid view, PaymentsTable/SO PDF. Houzs already sums order + invoice money and has its own credit-note allocations (si-credit-notes.ts).
+
 ## Packages module (owner, 20 Nov 2026; migration 0347)
 - Sales order > Packages: packages (PKG-, areas) and kits (KIT-), products + qty + SLA days only, no prices; SO/VO product search and From package add them to a VO; Project start date dates SLA lines. Code: engine/backend/src/scm/lib/renovation-packages.ts, engine/frontend/src/pages/renovation/RenovationPackage*.tsx, renovationPackagePick.tsx.
 - Old package templates are packages now (PKG-001...); their stored prices, letterhead, print format and payment terms stay in the table but no screen edits them any more (New quotation from template still reads them).

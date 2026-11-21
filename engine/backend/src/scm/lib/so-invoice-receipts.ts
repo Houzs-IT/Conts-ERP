@@ -12,12 +12,17 @@ export async function readSoInvoiceReceipts(
   const sen = new Map<string, number>();
   const docs = [...new Set(docNos.filter(Boolean))];
   if (docs.length === 0) return { ok: true, sen };
-  let q = sb.from('sales_invoices').select('so_doc_no, status, total_sen, paid_sen').in('so_doc_no', docs).gt('paid_sen', 0);
-  if (companyId != null) q = q.eq('company_id', companyId);
-  const { data, error } = await q;
-  if (error) return { ok: false, reason: `invoice receipts: ${error.message}` };
+  const rows: Array<SoInvoiceReceiptRow & { so_doc_no: string }> = [];
+  /* Batches of 200 order numbers keep the IN list well inside a URL. */
+  for (let i = 0; i < docs.length; i += 200) {
+    let q = sb.from('sales_invoices').select('so_doc_no, status, total_sen, paid_sen').in('so_doc_no', docs.slice(i, i + 200));
+    if (companyId != null) q = q.eq('company_id', companyId);
+    const { data, error } = await q;
+    if (error) return { ok: false, reason: `invoice receipts: ${error.message}` };
+    rows.push(...((data ?? []) as Array<SoInvoiceReceiptRow & { so_doc_no: string }>));
+  }
   const byDoc = new Map<string, SoInvoiceReceiptRow[]>();
-  for (const r of (data ?? []) as Array<SoInvoiceReceiptRow & { so_doc_no: string }>) {
+  for (const r of rows) {
     const list = byDoc.get(r.so_doc_no) ?? [];
     list.push(r);
     byDoc.set(r.so_doc_no, list);

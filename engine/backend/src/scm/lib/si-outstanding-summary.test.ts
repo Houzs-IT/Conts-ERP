@@ -189,7 +189,7 @@ describe('cost', () => {
     const st = store({ orders: [], payments: [], invoices: [] });
     const rows = Array.from({ length: 600 }, (_, i) => ({ id: `si-${i}`, so_doc_no: `HC-SO-2608-${i}`, total_sen: 100, outstanding_sen: 100 }));
     await summariseSiOutstanding(fakeSb(st), onePage(rows), 1, AGG);
-    const batches = st.reads.length / 3;
+    const batches = st.reads.length / 4; // orders, payments, invoices, credit notes
     expect(Number.isInteger(batches)).toBe(true);
     expect(batches).toBeGreaterThan(1);
     expect(batches).toBeLessThanOrEqual(600 / 100);

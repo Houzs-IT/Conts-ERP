@@ -123,7 +123,8 @@ describe('a status move that lost the race to a cancel', () => {
     const tables: Record<string, Row[]> = {
       sales_invoices: [{ id: 'si-1', company_id: CO, invoice_number: 'SI-1', status: 'SENT', paid_sen: 0, total_sen: 1000 }],
     };
-    const res = await patch(harness(tables, 'sales_invoices'), '/sales-invoices/si-1/status', { status: 'PAID' });
+    // OVERDUE: PAID by hand is now refused before the write when nothing is paid (status_follows_money).
+    const res = await patch(harness(tables, 'sales_invoices'), '/sales-invoices/si-1/status', { status: 'OVERDUE' });
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ error: 'status_changed' });
     expect(tables.sales_invoices[0]!.status).toBe('CANCELLED');
