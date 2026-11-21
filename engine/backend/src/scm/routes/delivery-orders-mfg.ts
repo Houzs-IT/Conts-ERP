@@ -132,6 +132,8 @@ import { withSoRefDocNos } from '../lib/so-ref-search';
 import { dbWriteFailure } from '../lib/pg-rule-error';
 import { readDistinctCustomerNames } from '../lib/customer-names';
 import { DOC_BATCH, MAX_ROUNDS, parseDeliverablePageQuery, readCandidateDocs, takeWholeOrders } from '../lib/deliverable-so-page';
+import { addUp } from '../lib/onsite-twin-rules';
+import { onSiteLinesWithNothingComing, orderedSoItemIds } from '../lib/renovation-onsite-po-cover';
 
 export const deliveryOrdersMfg = new Hono<{ Bindings: Env; Variables: Variables }>();
 deliveryOrdersMfg.use('*', supabaseAuth);
@@ -1072,6 +1074,16 @@ async function checkDoStockAvailability(
   const unitBound = companyId === HARD_BOUND_COMPANY_ID ? await loadUnitBoundCodes(sb, companyId, active.map((l) => l.itemCode)) : NO_UNIT_BOUND_CODES;
   const shortages: StockShortage[] = [];
   const byWh = new Map<string, Array<{ itemCode: string; productName: string | null; variantKey: string; qty: number }>>();
+  const onSiteLines = active.flatMap((l) => { const wh = lineWh.get(l.lineRef) ?? null; return wh && onSite.has(wh) && unitBound.has(l.itemCode) ? [{ ...l, warehouseId: wh }] : []; });
+  if (onSiteLines.length > 0) {
+    const { data: bal } = await sb.from('inventory_balances').select('warehouse_id, item_code, qty').in('warehouse_id', [...onSite]).in('item_code', [...new Set(onSiteLines.map((l) => l.itemCode))]);
+    const onHand = addUp((bal ?? []) as Array<{ warehouse_id: string; item_code: string; qty: number }>, (b) => `${b.warehouse_id}::${b.item_code}`, (b) => Number(b.qty));
+    const ordered = await orderedSoItemIds(sb, onSiteLines.map((l) => l.soItemId).filter((x): x is string => !!x));
+    for (const l of onSiteLinesWithNothingComing(onSiteLines, unitBound, ordered, onHand)) {
+      const available = Math.max(0, onHand.get(`${l.warehouseId}::${l.itemCode}`) ?? 0);
+      shortages.push({ itemCode: l.itemCode, productName: l.productName, variantKey: l.variantKey, warehouseId: l.warehouseId, warehouseName: null, needed: Number(l.qty), available, short: Number(l.qty) - available, alternatives: [] });
+    }
+  }
   for (const l of active) {
     const wh = lineWh.get(l.lineRef) ?? null;
     if (!wh || onSite.has(wh)) continue;
