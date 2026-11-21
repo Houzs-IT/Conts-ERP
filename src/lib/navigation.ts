@@ -64,7 +64,7 @@ const LEDGER_ICON: Record<string, string> = {
   'supplier-ledger': 'book-user', 'deposit-invoices': 'file-plus', 'other-debtors': 'users', 'credit-debit-notes': 'file-minus',
   'not-yet-billed': 'hourglass', 'e-invoice': 'badge-check', 'official-receipts': 'receipt-text', 'debtors': 'contact',
   'customer-ledger': 'book-user', 'outstanding': 'clock', 'daily-bank': 'calendar-days', 'merchant-recon': 'credit-card',
-  'to-do': 'list-checks', 'payment-listing': 'list-ordered', 'unmatched-payments': 'search-x',
+  'to-do': 'list-checks', 'branding': 'stamp', 'payment-listing': 'list-ordered', 'unmatched-payments': 'search-x',
   'rental-unit-costs': 'building-2', 'department-spend': 'chart-pie', 'renovation-projects': 'hammer', 'ai-usage': 'sparkles',
 };
 
@@ -78,7 +78,7 @@ const FINANCE_LAYOUT: Array<[part: string, entries: string[]]> = [
   ['Collections', ['money-received', 'official-receipts', 'debtors', 'customer-ledger', 'outstanding', 'debtor-ageing']],
   ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon', 'unmatched-payments', 'desk:airbnbRecon']],
   ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'department-spend', 'renovation-projects', 'ai-usage']],
-  ['Setup', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup', 'staff-banks']],
+  ['Setup', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup', 'branding', 'staff-banks']],
 ];
 
 export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix: '' | 'Supply', workspace: Workspace): NavGroup[] {
