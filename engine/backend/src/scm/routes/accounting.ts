@@ -91,6 +91,7 @@ import { createSubDepartmentHandler, listStaffDepartmentsHandler, listSubDepartm
 import { approveLimitRequestHandler, createLimitRequestHandler, getLimitSettingsHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler, setLimitSettingsHandler } from '../../conts/project-limit-routes';
 import { projectOfPurchaseInvoice } from '../../conts/project-limit';
 import * as pettyCash from '../../conts/petty-cash-routes';
+import { financeTodoCountHandler, financeTodoHandler, todoSettingsGetHandler, todoSettingsPutHandler } from '../../conts/finance-todo-routes';
 import * as paymentRequests from '../../conts/payment-request-routes';
 import * as combinedVoucher from '../../conts/combined-voucher';
 import { assertAuditWritable, auditUnavailableBody, compactChanges, fieldChange, recordEntityAudit, type AuditActor } from '../lib/entity-audit';
@@ -266,6 +267,11 @@ accounting.post('/projects/:id/limit-requests', createLimitRequestHandler);
 accounting.get('/limit-requests', listLimitRequestsHandler);
 accounting.post('/limit-requests/:id/approve', approveLimitRequestHandler);
 accounting.post('/limit-requests/:id/reject', rejectLimitRequestHandler);
+/* Conts: Finance's To do (conts/finance-todo-routes.ts) — what waits on finance, and its rule switches. */
+accounting.get('/todo', financeTodoHandler);
+accounting.get('/todo/count', financeTodoCountHandler);
+accounting.get('/todo/settings', todoSettingsGetHandler);
+accounting.put('/todo/settings', todoSettingsPutHandler);
 /* Conts: petty cash floats and staff receipts (conts/petty-cash-routes.ts; SOP 6). */
 accounting.get('/petty-cash/options', pettyCash.optionsHandler);
 accounting.get('/petty-cash/floats', pettyCash.listFloatsHandler);

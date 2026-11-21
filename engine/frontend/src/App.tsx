@@ -140,6 +140,9 @@ const ContsPettyCashFloat = lazy(() => import("./conts/PettyCashFloat").then((m)
 const ContsDebtors = lazy(() => import("./conts/Debtors").then((m) => ({ default: m.Debtors })));
 const ContsLedgerSetup = lazy(() => import("./conts/LedgerSetup").then((m) => ({ default: m.LedgerSetup })));
 const ContsEInvoice = lazy(() => import("./conts/EInvoice").then((m) => ({ default: m.EInvoice })));
+const ContsFinanceHome = lazy(() => import("./conts/FinanceTodo").then((m) => ({ default: m.FinanceHome })));
+const ContsFinanceMenu = lazy(() => import("./conts/FinanceTodo").then((m) => ({ default: m.FinanceMenu })));
+const ContsFinanceTodoRules = lazy(() => import("./conts/FinanceTodoRules").then((m) => ({ default: m.FinanceTodoRulesPage })));
 const ContsRenoProjects = lazy(() => import("./conts/RenoProjects").then((m) => ({ default: m.RenoProjects })));
 const ContsRentalUnitCosts = lazy(() => import("./conts/RentalUnitCosts").then((m) => ({ default: m.RentalUnitCosts })));
 const ContsDepartmentSpend = lazy(() => import("./conts/DepartmentSpend").then((m) => ({ default: m.DepartmentSpend })));
@@ -918,7 +921,11 @@ export default function App() {
         <Route path="/scm/procurement"    element={<ScmGuard area="scm"><ScmSubgroupHub groupId="scm-procurement"    description="Procurement flow — products, suppliers, MRP, POs, receipts, invoices and returns." /></ScmGuard>} />
         <Route path="/scm/transportation" element={<ScmGuard area="scm"><ScmSubgroupHub groupId="scm-transportation" description="Delivery planning, fleet, lorry capacity, drivers and regions." /></ScmGuard>} />
         <Route path="/scm/warehouse"      element={<ScmGuard area="scm"><ScmSubgroupHub groupId="scm-warehouse"      description="Warehouses, inventory, adjustments, transfers and stock take." /></ScmGuard>} />
-        <Route path="/scm/finance"        element={<ScmGuard area="scm"><ScmSubgroupHub groupId="scm-finance"        description="Accounting and outstanding receivables." /></ScmGuard>} />
+        {/* Conts: /scm/finance is Finance's To do for whoever opens the Ledger (the menu for anyone else); the menu
+            hub it used to be lives on at /scm/finance/menu. */}
+        <Route path="/scm/finance"        element={<ScmGuard area="scm"><ContsFinanceHome /></ScmGuard>} />
+        <Route path="/scm/finance/menu"   element={<ScmGuard area="scm"><ContsFinanceMenu /></ScmGuard>} />
+        <Route path="/scm/finance/rules"  element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><ContsFinanceTodoRules /></ScmGuard></ContsLedgerGate>} />
         {/* Sales Orders READ side (vendored). The literal /maintenance route
             MUST precede /:docNo so 'maintenance' isn't caught as a doc number.
             2990 uses :docNo (not :id) for the SO detail. */}
