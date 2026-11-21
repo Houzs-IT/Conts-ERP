@@ -3,6 +3,7 @@
 // Outstanding-as-hero, but flipped — this is what WE owe to the supplier.
 
 import { takeBack } from '../../lib/backTrail';
+import { PHONE_MORE_BUTTON, phoneMoreHeaderClass } from "../../components/scm-v2/phoneMoreActions";
 import { lazy, useMemo, useState, type ReactNode } from "react";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -381,6 +382,7 @@ export function PurchaseInvoiceDetailV2() {
 }
 
 function PurchaseInvoiceDetailV2ReadOnly() {
+  const [moreOpen, setMoreOpen] = useState(false);
   const { id } = useParams<{ id: string }>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -705,7 +707,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
             <ArrowLeft size={16} /> PIs
           </button>
           <span className="font-mono text-[12.5px] font-semibold text-sidebar-ink">{purchaseInvoice.invoice_number}</span>
-          <button type="button" className="text-sidebar-ink-muted" aria-label="More actions">
+          <button type="button" className={PHONE_MORE_BUTTON} aria-label="More actions" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>
             <MoreHorizontal size={18} />
           </button>
         </div>
@@ -726,7 +728,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
         </div>
       </div>
 
-      <div className="sticky top-0 z-10 -mx-4 hidden border-b border-border bg-bg/95 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6 md:block">
+      <div className={phoneMoreHeaderClass(moreOpen)}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
             <button
