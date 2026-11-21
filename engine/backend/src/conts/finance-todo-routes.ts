@@ -31,6 +31,7 @@ type Rows = Array<Record<string, any>>;
 type Read<T> = { ok: true; value: T } | { ok: false; what: string; reason: string };
 
 const fail = (what: string, reason: string) => ({ ok: false as const, what, reason });
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- PostgREST rows are typed wider than they arrive; a missing value must not throw
 const msg = (e: unknown): string => (e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e));
 const day = (v: unknown): string | null => (v == null || v === '' ? null : mytDateOf(String(v)));
 /** HH:MM in Malaysia — the done list's clock. */
@@ -119,6 +120,7 @@ async function readBills(sb: Db, companyId: number, today: string): Promise<Read
   const ids = [...new Set(rows.map((r) => r.supplier_id).filter(Boolean).map(String))];
   const sup = await chunkIn<Record<string, any>>(ids, (batch, lo, hi) => sb.from('suppliers').select('id, name').in('id', batch).order('id').range(lo, hi));
   if (sup.error) return fail('supplier bills', msg(sup.error));
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- PostgREST rows are typed wider than they arrive; a missing value must not throw
   const names = new Map(((sup.data ?? []) as Rows).map((s) => [String(s.id), String(s.name ?? '')]));
   return {
     ok: true,
@@ -230,6 +232,7 @@ async function readReceipts(sb: Db, companyId: number): Promise<Read<TodoFacts['
 async function readDeposits(sb: Db, companyId: number): Promise<Read<TodoFacts['deposits']>> {
   const r = await missingDepositInvoices(sb, companyId);
   if (!r.ok) return fail('deposit invoices', r.reason);
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- PostgREST rows are typed wider than they arrive; a missing value must not throw
   return { ok: true, value: r.payments.map((p) => ({ soDocNo: String(p.so_doc_no), amountSen: Number(p.amount_sen ?? 0), paidOn: p.paid_at ? String(p.paid_at).slice(0, 10) : null })) };
 }
 

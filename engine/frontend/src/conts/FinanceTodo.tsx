@@ -59,6 +59,7 @@ function Tag({ job, today }: { job: TodoJob; today: string }) {
 }
 
 function JobRow({ job, today, others = false }: { job: TodoJob; today: string; others?: boolean }) {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a job from a newer engine may name an icon this build does not have
   const Icon = ICON[job.icon] ?? FileText;
   const button = (
     <Link to={job.action.to} className={`${styles.action} ${!others && job.action.primary ? styles.actionPrimary : styles.actionSecondary}`}>
