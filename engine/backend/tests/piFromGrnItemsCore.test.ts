@@ -197,6 +197,23 @@ describe('createDraftPisFromGrnItemsCore — creates a DRAFT, never books AP', (
     expect(res.created[0]!.lineCount).toBe(1);
   });
 
+  /* One supplier bill is owed once (ported from Houzs): a bill number this supplier already has live refuses, naming it;
+     a cancelled one does not. */
+  test('a supplier bill number already booked for that supplier refuses with 409; cancelled does not block', async () => {
+    const t = tables();
+    t.purchase_invoices = [{ id: 'pi-old', invoice_number: 'HC-PI-2608-009', company_id: CO_A, supplier_id: 's1', supplier_invoice_ref: 'INV 77', status: 'DRAFT' }];
+    const refused = await runCore(t, CO_A, { picks: [{ grnItemId: 'gi-a', qty: 1 }], supplierInvoiceNumber: 'inv77' });
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ error: 'duplicate_supplier_bill', existing: { invoiceNumber: 'HC-PI-2608-009' } });
+    expect(t.purchase_invoices).toHaveLength(1);
+
+    t.purchase_invoices[0]!.status = 'CANCELLED';
+    const allowed = await runCore(t, CO_A, { picks: [{ grnItemId: 'gi-a', qty: 1 }], supplierInvoiceNumber: 'inv77' });
+    expect(allowed.ok).toBe(true);
+  });
+
   test('two GRNs from ONE supplier fold into ONE PI (multi-GRN capability intact)', async () => {
     const t = tables();
     const res = await runCore(t, CO_A, {

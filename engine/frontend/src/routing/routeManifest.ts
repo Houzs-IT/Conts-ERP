@@ -98,6 +98,7 @@ export const STAFF_ROUTE_PATTERNS = [
   "/scm/receipts",
   "/scm/official-receipts",
   "/scm/ap-invoices",
+  "/scm/ap-invoices/duplicates",
   "/scm/ap-invoices/scan",
   "/scm/credit-notes",
   "/scm/department-spend",
