@@ -100,10 +100,13 @@ describe('the official receipt — A5 landscape', () => {
 describe('Conts: the receipt names the invoice the money is for, and prints under the order brand', () => {
   test('an invoice beside the SO (chew, 21 Nov 2026); without one, the SO alone', async () => {
     const both = await render({ invoice_no: 'TC-SI-2611-007', doc_no: 'TC-SO-2611-033' });
-    expect(has(both.draws, ': TC-SO-2611-033 · Invoice TC-SI-2611-007')).toBe(true);
+    // The order and the invoice on lines of their own (chew, 21 Nov 2026).
+    expect(has(both.draws, ': TC-SO-2611-033')).toBe(true);
+    expect(has(both.draws, ': TC-SI-2611-007')).toBe(true);
+    expect(has(both.draws, ': TC-SO-2611-033 · Invoice TC-SI-2611-007')).toBe(false);
     expect(has(both.draws, 'Payment for sales order TC-SO-2611-033 · Invoice TC-SI-2611-007')).toBe(true);
     const camel = await render({ invoiceNo: 'TC-SI-2611-008', doc_no: 'TC-SO-2611-034' });
-    expect(has(camel.draws, ': TC-SO-2611-034 · Invoice TC-SI-2611-008')).toBe(true);
+    expect(has(camel.draws, ': TC-SI-2611-008')).toBe(true);
     const soOnly = await render({ invoice_no: null, doc_no: 'TC-SO-2611-035' });
     expect(has(soOnly.draws, ': TC-SO-2611-035')).toBe(true);
     expect(has(soOnly.draws, 'Invoice')).toBe(false);

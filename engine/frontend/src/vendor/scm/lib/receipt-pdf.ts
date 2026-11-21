@@ -128,7 +128,9 @@ function renderReceiptInto(doc: JsPdf, autoTable: AutoTable, r: ReceiptPdfData, 
       rows: [
         ['Method', methodLabel(r.method)],
         ['Paid on', fmtDocDate(r.paid_at)],
-        ['For', forLine],
+        /* The order and its invoice on lines of their own (chew, 21 Nov 2026); no invoice yet, no Invoice line. */
+        ['Sales order', order || null],
+        ['Invoice', receiptInvoiceNo(r)],
         [MONEY_SEEN, confirmedLine(r)],
         ['Status', status === 'DRAFT' ? 'Draft · money not confirmed'
           : status === 'CANCELLED' ? `Cancelled · ${r.cancel_reason || 'its payment changed'}` : null],
