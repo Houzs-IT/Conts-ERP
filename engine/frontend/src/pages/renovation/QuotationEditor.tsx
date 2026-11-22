@@ -49,6 +49,8 @@ export function QuotationEditor() {
   const [printOpen, setPrintOpen] = useState(false);
   /* What keeps the customer + property block from saving (an invalid sq ft), [] when fine. */
   const [partyProblems, setPartyProblems] = useState<string[]>([]);
+  /* Saved, and the server's copy is on its way: the form stays shut until it lands, or the refetch would replace what was typed meanwhile. */
+  const [settling, setSettling] = useState(false);
 
   useEffect(() => {
     if (!q.data) return;
@@ -58,6 +60,7 @@ export function QuotationEditor() {
     setBrandId(q.data.quotation.brandId);
     setDirty(false);
     setPartyProblems([]);
+    setSettling(false);
   }, [q.data]);
 
   /* Generate rooms from layout (owner, 14 Oct 2026): the quotation's own layout (mig 0116),
@@ -92,6 +95,7 @@ export function QuotationEditor() {
   };
   const totals = useMemo(() => totalsOfSections(sections, header?.docDiscountSen ?? 0), [sections, header?.docDiscountSen]);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
+  const locked = !editable || run.isPending || (settling && q.isFetching);
   const act = async (fn: () => Promise<unknown>) => {
     setError(null);
     try { await run.mutateAsync(fn); } catch (e) { setError(refusalOf(e).message); throw e; }
@@ -105,7 +109,7 @@ export function QuotationEditor() {
 
   const save = () => (partyProblems.length ? Promise.resolve(setError(partyProblems.join(' '))) : act(() => renoSend(`/quotations/${quotation.id}`, 'PUT', {
     version, header: { ...header, brandId }, sections: sectionsForSave(sections), instalments: instalmentsForSave(instalments),
-  })).then(() => { setDirty(false); draft.clear(); }).catch(() => undefined));
+  })).then(() => { setDirty(false); setSettling(true); draft.clear(); }).catch(() => undefined));
   const partyHere = q.data.propertyReady === true;
   const status = async (to: string, confirm?: string) => {
     if (confirm && !(await serviceConfirm({ title: confirm }))) return;
@@ -183,20 +187,20 @@ export function QuotationEditor() {
         <div className="min-w-0 space-y-4">
           {partyHere && (
             <Card title="Customer and property">
-              <QuotationCustomerCard header={header} projectId={quotation.projectId} disabled={!editable}
+              <QuotationCustomerCard header={header} projectId={quotation.projectId} disabled={locked}
                 resetKey={`${revision.id}:${version}`}
                 onChange={(p, problems) => { setHeader((h) => (h ? { ...h, ...p } : h)); setPartyProblems(problems); setDirty(true); }} />
             </Card>
           )}
           <Card title="Header">
-            <HeaderForm header={header} disabled={!editable} brands={brands.data?.brands ?? []} brandId={brandId} partyElsewhere={partyHere}
+            <HeaderForm header={header} disabled={locked} brands={brands.data?.brands ?? []} brandId={brandId} partyElsewhere={partyHere}
               onBrand={(b) => { setBrandId(b); setDirty(true); }} onChange={(p) => { setHeader({ ...header, ...p }); setDirty(true); }} />
           </Card>
-          <DocEditor sections={sections} disabled={!editable} roomLayout={roomLayout} onChange={(s) => { setSections(s); setDirty(true); }}
+          <DocEditor sections={sections} disabled={locked} roomLayout={roomLayout} onChange={(s) => { setSections(s); setDirty(true); }}
             files={{ docType: 'quotation', docId: quotation.id, canEdit: canQuote }} />
           <DocAttachments docType="quotation" docId={quotation.id} canEdit={canQuote} />
           <Card title="Payment terms">
-            <InstalmentEditor rows={instalments} disabled={!editable} terms={(terms.data?.templates ?? []).filter((t) => t.brandId == null || t.brandId === brandId)} totalSen={totals.finalSen}
+            <InstalmentEditor rows={instalments} disabled={locked} terms={(terms.data?.templates ?? []).filter((t) => t.brandId == null || t.brandId === brandId)} totalSen={totals.finalSen}
               onChange={(r) => { setInstalments(r); setDirty(true); }} />
           </Card>
         </div>

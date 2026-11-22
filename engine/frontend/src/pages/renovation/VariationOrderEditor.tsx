@@ -54,6 +54,8 @@ export function VariationOrderEditor() {
   const [adds, setAdds] = useState<DocSection[]>([]);
   const [omits, setOmits] = useState<OmitPick[]>([]);
   const [dirty, setDirty] = useState(false);
+  /* Saved, and the server's copy is on its way: the form stays shut until it lands, or the refetch would replace what was typed meanwhile. */
+  const [settling, setSettling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [approveOpen, setApproveOpen] = useState(false);
   const [signedName, setSignedName] = useState('');
@@ -98,6 +100,7 @@ export function VariationOrderEditor() {
     setOmits(vo.data.sections.flatMap((s) => s.lines.filter((l) => l.voChange === 'OMIT' && l.omitTargetLineId).map((l) => ({ lineId: l.omitTargetLineId!, omitQty: l.omitQty ?? null }))));
     setSignedName(vo.data.signedName ?? '');
     setDirty(false);
+    setSettling(false);
   }, [vo.data]);
   const fromPackage = params.get('package');
   useEffect(() => {
@@ -132,6 +135,7 @@ export function VariationOrderEditor() {
   if (vo.isLoading || !vo.data) return <div className="p-8 text-center text-[13px] text-ink-muted">{vo.error ? refusalOf(vo.error).message : 'Loading variation order…'}</div>;
   const v = vo.data;
   const editable = v.status === 'DRAFT' && can('scm.renovation.quote');
+  const locked = !editable || run.isPending || (settling && vo.isFetching);
   const filesEditable = v.status !== 'CANCELLED' && can('scm.renovation.quote');
   const addSen = adds.reduce((s, sec) => s + sec.lines.reduce((t, l) => t + amountsOf(l).netSen, 0), 0);
   const omitSen = v.status === 'APPROVED' ? v.totals.omitSen : omits.reduce((s, o) => {
@@ -161,7 +165,7 @@ export function VariationOrderEditor() {
     setError(null);
     try { await run.mutateAsync(fn); return true; } catch (e) { setError(refusalOf(e).message); return false; }
   };
-  const save = () => act(() => renoSend(`/variation-orders/${v.id}`, 'PUT', { version: v.version, title, docDate, sections: bodySections() })).then((ok) => { if (ok) { setDirty(false); draft.clear(); } });
+  const save = () => act(() => renoSend(`/variation-orders/${v.id}`, 'PUT', { version: v.version, title, docDate, sections: bodySections() })).then((ok) => { if (ok) { setDirty(false); setSettling(true); draft.clear(); } });
   const setStatus = async (to: string, confirm?: string) => {
     if (confirm && !(await serviceConfirm({ title: confirm, danger: to === 'CANCELLED' }))) return;
     if (dirty) { setError('Save your changes first.'); return; }
@@ -223,8 +227,8 @@ export function VariationOrderEditor() {
         <div className="min-w-0 space-y-4">
           <Card title="Details">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_200px]">
-              <Field label="Title"><input className={inputCls} disabled={!editable} value={title} onChange={(e) => { setTitle(e.target.value); setDirty(true); }} placeholder="e.g. Add wall skim, drop study table" /></Field>
-              <Field label="Date"><input type="date" className={inputCls} disabled={!editable} value={docDate} onChange={(e) => { setDocDate(e.target.value); setDirty(true); }} /></Field>
+              <Field label="Title"><input className={inputCls} disabled={locked} value={title} onChange={(e) => { setTitle(e.target.value); setDirty(true); }} placeholder="e.g. Add wall skim, drop study table" /></Field>
+              <Field label="Date"><input type="date" className={inputCls} disabled={locked} value={docDate} onChange={(e) => { setDocDate(e.target.value); setDirty(true); }} /></Field>
             </div>
           </Card>
           <div>
@@ -241,7 +245,7 @@ export function VariationOrderEditor() {
                 {editable && <Button variant="secondary" className="h-7 px-2 text-[12px]" onClick={() => removePackage(g.id)}>Remove these lines</Button>}
               </div>
             ))}
-            <DocEditor sections={adds} disabled={!editable} allowLumpSum={false} onChange={(s) => { setAdds(s); setDirty(true); }}
+            <DocEditor sections={adds} disabled={locked} allowLumpSum={false} onChange={(s) => { setAdds(s); setDirty(true); }}
               files={{ docType: 'variation_order', docId: v.id, canEdit: filesEditable }} packageCodes={packageCodes}
               onPickPackage={editable ? (h, si, li) => setConfirm({ packageId: h.id, defaultArea: adds[si]?.heading ?? '', sectionIndex: si, lineIndex: li, replace: false }) : undefined} />
             <PackagePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} onPick={(h) => { setPickerOpen(false); setConfirm({ packageId: h.id, defaultArea: lastArea(), sectionIndex: null, lineIndex: null, replace: false }); }} />
@@ -264,12 +268,12 @@ export function VariationOrderEditor() {
                       const pick = omits.find((o) => o.lineId === line.id);
                       return (
                         <tr key={line.id} className={cn('border-t border-border-subtle', pick && 'bg-err-bg/50')}>
-                          <td className="px-3"><input type="checkbox" aria-label="Omit this line" disabled={!editable} checked={Boolean(pick)} onChange={(e) => toggleOmit(line.id!, e.target.checked)} /></td>
+                          <td className="px-3"><input type="checkbox" aria-label="Omit this line" disabled={locked} checked={Boolean(pick)} onChange={(e) => toggleOmit(line.id!, e.target.checked)} /></td>
                           <td className="py-1.5"><span className={line.kind === 'ITEM' ? 'font-semibold' : 'pl-3'}>{line.description}</span> <span className="text-[11px] text-ink-muted">{section}</span></td>
                           <td className="text-center tabular-nums">{qtyLabel({ qty: line.qty, measureMilli: line.measureMilli ?? null, measureUom: line.measureUom, uom: line.uom })}</td>
                           <td className="text-center">
                             {pick && line.qty > 1 && !line.measureMilli && (
-                              <input aria-label="Omit qty" inputMode="numeric" disabled={!editable} className="h-7 w-16 rounded border border-border text-center" value={pick.omitQty ?? line.qty}
+                              <input aria-label="Omit qty" inputMode="numeric" disabled={locked} className="h-7 w-16 rounded border border-border text-center" value={pick.omitQty ?? line.qty}
                                 onChange={(e) => { const n = Math.max(1, Math.min(line.qty, Math.trunc(Number(e.target.value) || 1))); setOmits(omits.map((o) => (o.lineId === line.id ? { ...o, omitQty: n >= line.qty ? null : n } : o))); setDirty(true); }} />
                             )}
                           </td>
