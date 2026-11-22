@@ -17,6 +17,7 @@ export const allow = {
   'src/lib/vocabulary.ts': 'Theme source: booking channel colours (Airbnb, Booking.com, Agoda brand marks).',
   'src/components/ChannelMark.tsx': 'Draws the Airbnb, Booking.com and Agoda logo marks in their own brand colours.',
   'src/components/Logo.tsx': 'The Conts logo artwork.',
+  'src/lib/meetings.ts': 'Meeting-room calendar colours, the same in Houzs ERP and Hookka ERP so a room or company reads the same colour in every ERP.',
   'src/pages/OwnerIncomeReportPage.tsx': 'A printed A4 replica of the owner\'s paper income report (black rules, workbook header blue); print colours, not screen theme.',
 };
 

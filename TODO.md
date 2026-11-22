@@ -2,6 +2,10 @@
 
 Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw, schema `pos`, via Hyperdrive e0781ccd...). Staging preview: https://staging-preview.theconts-os.pages.dev (Supabase ecgyrmblqfxvbfjlqkdq).
 
+## Meeting rooms (feat/meetings, 23 Nov 2026)
+- System > Meetings (also under the supply chain's System) books the meeting rooms shared with Houzs ERP and Hookka ERP, kept in the Houzs IT Hub through IT_HUB_URL / IT_HUB_API_KEY (the IT Support key, system CONTS). Rooms must be added by management (Meetings > Rooms > Add room) before anyone can book; staff get Manage meeting rooms one by one on Users and roles.
+- Waiting on the owner's Google setup: Gmail sending, Google Meet / Zoom links made for you, WhatsApp reminders. Until then reminders are bell notices only and a video link is pasted by hand.
+
 ## Click sweep 2 (22 Nov 2026, docs/CLICK-SWEEP-2-2026-11-21.md)
 - Fixed: G1 (chore/click-sweep-2), G3 G4 (fix/stock-guards), G2 G7 G8 (fix/production-sweep2), G6 G9 and part of G17 (fix/cancelled-money-display), G11 (fix/phone-more-actions). No migrations.
 - G5 was the local database, not the code: it lacked migration 0354 (sales_invoice_id on credit note allocations), so the paid roll failed closed and left SENT. Production has the column; with 0354 applied locally the invoice went PAID.

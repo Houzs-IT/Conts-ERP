@@ -111,6 +111,8 @@ const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
 const HostPlatformImportPage = lazy(() => import('./pages/HostPlatformImportPage'));
 const SystemHealthPage = lazy(() => import('./pages/SystemHealthPage'));
 const ItSupportPage = lazy(() => import('./pages/ItSupportPage'));
+const MeetingsPage = lazy(() => import('./pages/MeetingsPage'));
+const MeetingBookPage = lazy(() => import('./pages/MeetingBookPage'));
 const MyClaimsPage = lazy(() => import('./pages/MyClaimsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
@@ -270,6 +272,8 @@ function Routed() {
     const token = new URLSearchParams(location.search).get('token');
     if (token) return <Suspense fallback={<BootScreen />}><LoginPage resetToken={token} /></Suspense>;
   }
+  // A guest booking a meeting room through a link someone sent them: no sign-in, signed in or not (MeetingBookPage).
+  if (/^\/book\/[^/]+$/.test(location.pathname)) return <div className="meetings-ui"><Suspense fallback={<BootScreen />}><MeetingBookPage /></Suspense></div>;
   if (!user) return <Suspense fallback={<BootScreen />}><LoginPage /></Suspense>;
   // A temporary password (invite, or management's Reset password) must be replaced before anything else. Sign-in
   // sends the browser to /change-password, which has no screen of its own, so this holds on every address.
@@ -462,6 +466,8 @@ function Routed() {
         <Route path="/system/health" element={<SystemHealthPage />} />
         <Route path="/system/it-support" element={<ItSupportPage />} />
         <Route path="/supply/it-support" element={<ItSupportPage />} />
+        <Route path="/system/meetings" element={<MeetingsPage />} />
+        <Route path="/supply/meetings" element={<MeetingsPage />} />
         <Route path="/my-claims" element={<MyClaimsPage />} />
         <Route path="/supply/my-claims" element={<MyClaimsPage />} />
         <Route path="/supply/hr/employees" element={<Moved to="/supply/operations/renovation" />} />
