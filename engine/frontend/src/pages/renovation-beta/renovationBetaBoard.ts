@@ -42,7 +42,8 @@ export interface DesignTrack {
   am: Amendment[];
 }
 
-export interface Appt { d: string; t: string; who: PersonRef | null; whoText?: string | null; with: string | null; done: boolean }
+/** who is the first of people, for screens that show one name. */
+export interface Appt { d: string; t: string; who: PersonRef | null; people: PersonRef[]; whoText?: string | null; with: string | null; done: boolean }
 
 export interface DesignProject {
   id: number;
@@ -96,8 +97,11 @@ export interface CalEvent {
   t: string;
   type: string;
   note: string;
+  /** The first of people. */
   who: PersonRef | null;
-  /** Who goes, typed in when nobody was picked from the list (owner, 20 Nov 2026). */
+  /** Everyone going (owner, 22 Nov 2026): the booking is on each one's own calendar. */
+  people: PersonRef[];
+  /** A typed name for someone not on the list, shown as text and on nobody's calendar (owner, 20 Nov 2026). */
   whoText?: string | null;
   projectId: number | null;
   done: boolean;
@@ -222,6 +226,12 @@ function buildingFromTitle(title: string): string {
   return w.join(" ");
 }
 
+/** The people of a booking: its list, else its one person (an older server); someone not known any more is left out. */
+function bookingPeople(b: { personId: number | null; personIds?: number[] }, byId: ReadonlyMap<number, PersonRef>): PersonRef[] {
+  const ids = b.personIds?.length ? b.personIds : b.personId != null ? [b.personId] : [];
+  return ids.flatMap((id) => { const x = byId.get(id); return x ? [x] : []; });
+}
+
 function ref(r: BetaBoardRef | null): PersonRef | null {
   return r ? { id: r.id, name: r.name } : null;
 }
@@ -278,7 +288,10 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
     const appts: Partial<Record<ApptKey, Appt>> = {};
     for (const key of APPT_KEYS) {
       const a = p.appointments.find((x) => x.kind === APPT_KIND[key]);
-      if (a) appts[key] = { d: a.onDate, t: a.atTime?.slice(0, 5) ?? "", who: a.personId == null ? null : people.get(a.personId) ?? null, whoText: a.whoText ?? null, with: a.withText, done: a.doneAt != null };
+      if (a) {
+        const going = bookingPeople(a, people);
+        appts[key] = { d: a.onDate, t: a.atTime?.slice(0, 5) ?? "", who: going[0] ?? null, people: going, whoText: a.whoText ?? null, with: a.withText, done: a.doneAt != null };
+      }
     }
     return {
       id: p.id,
@@ -325,11 +338,14 @@ export function buildModel(board: BetaBoard): BoardModel {
   const bookable = new Set(workTypes.filter((w) => w.bookable).map((w) => w.code));
   /* A booked work is done once its day has passed (owner, 19 Nov 2026), as an appointment is (adone): before, a stored
      entry stayed open on the calendar after its day while the Design progress row already said Done. */
-  const events: CalEvent[] = board.events.map((e) => ({
-    id: `e${e.id}`, d: e.onDate, t: e.atTime?.slice(0, 5) ?? "", type: e.type, note: e.note ?? "",
-    who: e.personId == null ? null : person.get(e.personId) ?? null, whoText: e.whoText ?? null, projectId: e.projectId,
-    done: e.done || (bookable.has(e.type) && e.onDate < board.today), eventId: e.id, appt: null,
-  }));
+  const events: CalEvent[] = board.events.map((e) => {
+    const going = bookingPeople(e, person);
+    return {
+      id: `e${e.id}`, d: e.onDate, t: e.atTime?.slice(0, 5) ?? "", type: e.type, note: e.note ?? "",
+      who: going[0] ?? null, people: going, whoText: e.whoText ?? null, projectId: e.projectId,
+      done: e.done || (bookable.has(e.type) && e.onDate < board.today), eventId: e.id, appt: null,
+    };
+  });
   return {
     today: board.today,
     mePersonId: board.mePersonId,
@@ -389,6 +405,9 @@ export function pastMeasure(m: BoardModel, p: DesignProject): boolean {
 
 /** Who does an appointment: the person on it, else the design lead. */
 export const apptWho = (p: DesignProject, a: Appt): PersonRef | null => a.who ?? p.lead;
+
+/** Everyone on an appointment's calendar: its people; with nobody picked and no typed name, the design lead. */
+export const apptPeople = (p: DesignProject, a: Appt): PersonRef[] => (a.people.length ? a.people : a.whoText ? [] : p.lead ? [p.lead] : []);
 
 /** The "with" text the mockup fills in for each appointment. */
 export function apptWithDefault(p: DesignProject, key: ApptKey): string {
@@ -486,8 +505,8 @@ export function apptItems(m: BoardModel, who: Viewing): ApptItem[] {
   for (const p of m.projects) {
     for (const ak of APPT_KEYS) {
       const a = p.appts[ak];
-      if (!a || adone(m, a) || !mine(who, apptWho(p, a)?.id)) continue;
-      out.push({ type: "appt", p, ak, a, due: a.d, by: apptWho(p, a) });
+      if (!a || adone(m, a) || !mineAny(who, apptPeople(p, a))) continue;
+      out.push({ type: "appt", p, ak, a, due: a.d, by: joinedRef(apptPeople(p, a)) });
     }
   }
   return out;
@@ -583,7 +602,7 @@ export function nextFor(m: BoardModel, p: DesignProject): Next | null {
     for (const ak of APPT_KEYS) {
       const a = p.appts[ak];
       if (!a?.d || adone(m, a)) continue;
-      const it: Next = { t: APPT_LABEL[ak], d: a.d, by: apptWho(p, a) };
+      const it: Next = { t: APPT_LABEL[ak], d: a.d, by: joinedRef(apptPeople(p, a)) ?? apptWho(p, a) };
       if (!best || (it.d ?? "") < (best.d ?? "")) best = it;
     }
   }
@@ -719,15 +738,16 @@ export function apptEvents(m: BoardModel): CalEvent[] {
       if (!a?.d) continue;
       out.push({
         id: `ap|${p.id}|${key}`, d: a.d, t: a.t, type: APPT_TYPE[key], note: `${APPT_LABEL[key]} · ${a.with || apptWithDefault(p, key)}`,
-        who: a.who ?? (a.whoText ? null : p.lead), whoText: a.whoText ?? null, projectId: p.id, done: adone(m, a), eventId: null, appt: { projectId: p.id, key },
+        who: apptPeople(p, a)[0] ?? null, people: apptPeople(p, a), whoText: a.whoText ?? null, projectId: p.id, done: adone(m, a), eventId: null, appt: { projectId: p.id, key },
       });
     }
   }
   return out;
 }
 
-/** Who goes, as the screens write it: the picked person, else the typed name. */
-export const whoName = (e: Pick<CalEvent, "who" | "whoText">): string | null => e.who?.name ?? (e.whoText?.trim() || null);
+/** Who goes, as the screens write it: the picked people, then the typed name. */
+export const whoName = (e: Pick<CalEvent, "people" | "whoText">): string | null =>
+  [...e.people.map((x) => x.name), e.whoText?.trim() ?? ""].filter(Boolean).join(", ") || null;
 
 /** Every booking of one project, newest day first (owner, 20 Nov 2026: a project's bookings listed on its page). */
 export function projectBookings(m: BoardModel, projectId: number): CalEvent[] {
@@ -740,7 +760,7 @@ export const allEvents = (m: BoardModel): CalEvent[] => [...m.events, ...apptEve
 const timeKey = (t: string): string => t || "99";
 
 export function eventsOn(m: BoardModel, who: Viewing, day: string): CalEvent[] {
-  return allEvents(m).filter((e) => e.d === day && mine(who, e.who?.id)).sort((a, b) => timeKey(a.t).localeCompare(timeKey(b.t)));
+  return allEvents(m).filter((e) => e.d === day && mineAny(who, e.people)).sort((a, b) => timeKey(a.t).localeCompare(timeKey(b.t)));
 }
 
 /** The side list: the picked day's events, or the next eight that are not done. */
@@ -749,11 +769,11 @@ export function listFor(m: BoardModel, who: Viewing, selDay: string | null): { t
     return {
       title: ds(selDay) + (selDay === m.today ? " · today" : ""),
       due: dueOn(m, who, selDay),
-      events: allEvents(m).filter((e) => e.d === selDay && mine(who, e.who?.id)).sort((a, b) => (a.d + timeKey(a.t)).localeCompare(b.d + timeKey(b.t))),
+      events: allEvents(m).filter((e) => e.d === selDay && mineAny(who, e.people)).sort((a, b) => (a.d + timeKey(a.t)).localeCompare(b.d + timeKey(b.t))),
     };
   }
   const events = allEvents(m)
-    .filter((e) => e.d >= m.today && mine(who, e.who?.id) && !e.done)
+    .filter((e) => e.d >= m.today && mineAny(who, e.people) && !e.done)
     .sort((a, b) => (a.d + timeKey(a.t)).localeCompare(b.d + timeKey(b.t)))
     .slice(0, 8);
   return { title: "Coming up", due: [], events };

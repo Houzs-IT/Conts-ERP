@@ -28,7 +28,7 @@ import {
   cleanDesignApproval, cleanDesignSent, defectMoveRefusal, designLabel, type BetaPayments, type DefectMove,
 } from "../services/renovation/beta";
 import {
-  BETA_AMENDMENT_DAYS, buildBoardProject, cleanBetaAppointment, cleanBetaDesign, cleanBetaEvent, cleanBetaEventPatch, cleanBoardRange, cleanNoteDays,
+  BETA_AMENDMENT_DAYS, bookingPeopleOf, buildBoardProject, cleanBetaAppointment, cleanBetaDesign, cleanBetaEvent, cleanBetaEventPatch, cleanBoardRange, cleanNoteDays,
   designChangeNote, designPersonIds, groupByProject, isAppointmentKind, paymentLabel, rolesOf,
   type BetaDesignPatch, type BetaEventPatch, type BoardAppointmentRow, type BoardFileRow, type BoardNoteRow, type BoardPayment, type BoardProjectRow,
   type BoardReviewRow,
@@ -502,8 +502,16 @@ async function boardPayments(c: Ctx, companyId: number, scope: string): Promise<
 
 interface EventRow {
   id: number; project_id: number | null; on_date: string; at_time: string | null; type: string; note: string | null; person_id: number | null;
-  who_text: string | null; done: boolean;
+  person_ids: unknown; who_text: string | null; done: boolean;
 }
+
+/* A booking's people (migration 0362). Code from before that change writes person_id only; when person_id no longer
+   matches the list's first pick the list is stale, and person_id alone is who goes. */
+const bookingPeopleSql = (a: string): string =>
+  `CASE WHEN ${a}.person_id IS NULL THEN '{}'::bigint[] WHEN ${a}.person_ids[1] IS DISTINCT FROM ${a}.person_id THEN ARRAY[${a}.person_id] ELSE ${a}.person_ids END`;
+
+/** A Postgres array literal of ids, for a ?::text::bigint[] placeholder. */
+const pgIds = (ids: readonly number[]): string => `{${ids.join(",")}}`;
 
 app.get("/board", requirePageAccess("projects.list"), async (c) => {
   const co = requireActiveCompanyId(c);
@@ -523,7 +531,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
   const team = seeAll ? null : await teamPersonIds(db(c), user?.id, user?.email);
   const teamSql = team == null ? "" : ` AND ${teamProjectSql(team)}`;
   const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${projectId == null ? "" : ` AND p.id = ${projectId}`}${teamSql}`;
-  const eventScope = `${projectId == null ? "" : ` AND e.project_id = ${projectId}`}${team == null ? "" : ` AND (e.person_id IN (${[0, ...team].join(",")}) OR (e.project_id IS NOT NULL${teamSql}))`}`;
+  const eventScope = `${projectId == null ? "" : ` AND e.project_id = ${projectId}`}${team == null ? "" : ` AND (e.person_id IN (${[0, ...team].join(",")}) OR e.person_ids && ARRAY[${[0, ...team].join(",")}]::bigint[] OR (e.project_id IS NOT NULL${teamSql}))`}`;
   const hidden = financeHiddenForUser(user);
   try {
     // One query per data set over the whole scoped project list, grouped in code below.
@@ -567,13 +575,13 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       ).bind().all<BoardReviewRow>(),
       db(c).prepare(
         `SELECT a.project_id::int AS project_id, a.kind, a.on_date::text AS on_date, to_char(a.at_time, 'HH24:MI') AS at_time, a.person_id::int AS person_id,
-                a.with_text, a.who_text, ${TS("a.done_at")} AS done_at
+                ${bookingPeopleSql("a")} AS person_ids, a.with_text, a.who_text, ${TS("a.done_at")} AS done_at
            FROM project_beta_appointments a JOIN projects p ON p.id = a.project_id
           WHERE ${scope} ORDER BY a.project_id, a.kind`,
       ).bind().all<BoardAppointmentRow>(),
       db(c).prepare(
         `SELECT e.id::int AS id, e.project_id::int AS project_id, e.on_date::text AS on_date, to_char(e.at_time, 'HH24:MI') AS at_time, e.type, e.note,
-                e.person_id::int AS person_id, e.who_text, e.done
+                e.person_id::int AS person_id, ${bookingPeopleSql("e")} AS person_ids, e.who_text, e.done
            FROM project_beta_events e LEFT JOIN projects p ON p.id = e.project_id
           WHERE e.company_id = ? AND e.on_date BETWEEN ?::date AND ?::date
             AND (e.project_id IS NULL OR (p.project_kind = 'renovation' AND p.archived_at IS NULL))${eventScope}
@@ -634,7 +642,8 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
         };
       }),
       events: (events.results ?? []).map((e) => ({
-        id: e.id, projectId: e.project_id, onDate: e.on_date, atTime: e.at_time, type: e.type, note: e.note, personId: e.person_id, whoText: e.who_text, done: e.done,
+        id: e.id, projectId: e.project_id, onDate: e.on_date, atTime: e.at_time, type: e.type, note: e.note, personId: e.person_id,
+        personIds: bookingPeopleOf(e.person_ids, e.person_id), whoText: e.who_text, done: e.done,
       })),
     });
   } catch (e) {
@@ -715,19 +724,21 @@ app.put("/projects/:id/appointments/:kind", requirePermission("projects.write"),
   if (co == null) return c.json({ error: "not_found" }, 404);
   const v = cleanBetaAppointment(await body(c));
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
-  const { onDate, atTime, personId, withText, whoText } = v.value;
-  const people = await companyPeople(c, co, personId == null ? [] : [personId]);
+  const { onDate, atTime, personIds, withText, whoText } = v.value;
+  const people = await companyPeople(c, co, personIds);
   if (!people) return c.json(PERSON_REFUSAL, 400);
-  const who = personId == null ? (whoText ? `by ${whoText}` : null) : `by ${people.get(personId) ?? "someone"}`;
+  const names = [...personIds.map((pid) => people.get(pid) ?? "someone"), ...(whoText ? [whoText] : [])];
+  const who = names.length ? `by ${names.join(", ")}` : null;
   // Booking again with the same day keeps it done; a moved day is a new appointment, so it is not done any more.
   await db(c).batch!([
     db(c).prepare(
-      `INSERT INTO project_beta_appointments (project_id, company_id, kind, on_date, at_time, person_id, with_text, who_text, created_by)
-       VALUES (?, ?, ?, ?::date, ?::time, ?::bigint, ?, ?, ?)
+      `INSERT INTO project_beta_appointments (project_id, company_id, kind, on_date, at_time, person_id, person_ids, with_text, who_text, created_by)
+       VALUES (?, ?, ?, ?::date, ?::time, ?::bigint, ?::text::bigint[], ?, ?, ?)
        ON CONFLICT (project_id, kind) DO UPDATE SET on_date = excluded.on_date, at_time = excluded.at_time, person_id = excluded.person_id,
+                                                    person_ids = excluded.person_ids,
                                                     with_text = excluded.with_text, who_text = excluded.who_text,
                                                     done_at = CASE WHEN project_beta_appointments.on_date = excluded.on_date THEN project_beta_appointments.done_at END`,
-    ).bind(id, co, kind, onDate, atTime, personId, withText, whoText, userId(c)),
+    ).bind(id, co, kind, onDate, atTime, personIds[0] ?? null, pgIds(personIds), withText, whoText, userId(c)),
     activityStmt(c, id, co, "beta_appointment_booked", null, kind, [`On ${onDate}`, atTime, who, withText].filter(Boolean).join(" · ")),
   ]);
   return c.json({ ok: true });
@@ -780,25 +791,25 @@ app.post("/events", requirePermission("projects.write"), async (c) => {
   if (!co.ok) return c.json(co.refusal, 409);
   const v = cleanBetaEvent(await body(c));
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
-  const { projectId, onDate, atTime, type, note, personId, whoText } = v.value;
+  const { projectId, onDate, atTime, type, note, personIds, whoText } = v.value;
   if (!(await eventTypeKnown(db(c), co.companyId, type))) return c.json({ error: "type_invalid", message: "Pick the kind of entry from the list." }, 400);
   if (projectId != null && (await projectCompany(c, projectId)) == null) return c.json({ error: "not_found" }, 404);
-  if (!(await companyPeople(c, co.companyId, personId == null ? [] : [personId]))) return c.json(PERSON_REFUSAL, 400);
+  if (!(await companyPeople(c, co.companyId, personIds))) return c.json(PERSON_REFUSAL, 400);
   const row = await db(c).prepare(
-    `WITH e AS (INSERT INTO project_beta_events (company_id, project_id, on_date, at_time, type, note, person_id, who_text, created_by)
-                VALUES (?, ?::bigint, ?::date, ?::time, ?, ?, ?::bigint, ?, ?) RETURNING id, project_id, company_id, type, note, on_date),
+    `WITH e AS (INSERT INTO project_beta_events (company_id, project_id, on_date, at_time, type, note, person_id, person_ids, who_text, created_by)
+                VALUES (?, ?::bigint, ?::date, ?::time, ?, ?, ?::bigint, ?::text::bigint[], ?, ?) RETURNING id, project_id, company_id, type, note, on_date),
           a AS (INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
                 SELECT e.project_id, 'beta_event_added', NULL, e.type, ${eventNote("e")}, ?::bigint, e.company_id FROM e WHERE e.project_id IS NOT NULL)
      SELECT id::int AS id FROM e`,
-  ).bind(co.companyId, projectId, onDate, atTime, type, note, personId, whoText, userId(c), userId(c)).first<{ id: number }>();
+  ).bind(co.companyId, projectId, onDate, atTime, type, note, personIds[0] ?? null, pgIds(personIds), whoText, userId(c), userId(c)).first<{ id: number }>();
   if (!row) return c.json({ error: "event_not_saved", message: "The entry could not be saved. Try again." }, 409);
   return c.json({ id: row.id }, 201);
 });
 
 const EVENT_COLUMNS = {
   projectId: ["project_id", "?::bigint"], onDate: ["on_date", "?::date"], atTime: ["at_time", "?::time"], type: ["type", "?::text"],
-  note: ["note", "?::text"], personId: ["person_id", "?::bigint"], whoText: ["who_text", "?::text"], done: ["done", "?::boolean"],
-} as const satisfies Record<keyof BetaEventPatch, readonly [string, string]>;
+  note: ["note", "?::text"], whoText: ["who_text", "?::text"], done: ["done", "?::boolean"],
+} as const satisfies Record<Exclude<keyof BetaEventPatch, "personIds">, readonly [string, string]>;
 
 app.patch("/events/:id", requirePermission("projects.write"), async (c) => {
   const id = parseId(c.req.param("id"));
@@ -807,18 +818,23 @@ app.patch("/events/:id", requirePermission("projects.write"), async (c) => {
   if (!co.ok) return c.json(co.refusal, 409);
   const v = cleanBetaEventPatch(await body(c));
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
-  const { projectId, personId } = v.value;
+  const { projectId, personIds } = v.value;
   if (v.value.type !== undefined && !(await eventTypeKnown(db(c), co.companyId, v.value.type))) return c.json({ error: "type_invalid", message: "Pick the kind of entry from the list." }, 400);
   if (projectId != null && (await projectCompany(c, projectId)) == null) return c.json({ error: "not_found" }, 404);
-  if (!(await companyPeople(c, co.companyId, personId == null ? [] : [personId]))) return c.json(PERSON_REFUSAL, 400);
-  const sent = (Object.keys(EVENT_COLUMNS) as Array<keyof BetaEventPatch>).filter((k) => k in v.value);
+  if (!(await companyPeople(c, co.companyId, personIds ?? []))) return c.json(PERSON_REFUSAL, 400);
+  const sent = (Object.keys(EVENT_COLUMNS) as Array<keyof typeof EVENT_COLUMNS>).filter((k) => k in v.value);
+  // A new people list replaces the old one, so whoever was taken off loses it from their own calendar.
+  const cols: Array<readonly [string, unknown]> = [
+    ...sent.map((k) => [`${EVENT_COLUMNS[k][0]} = ${EVENT_COLUMNS[k][1]}`, v.value[k] ?? null] as const),
+    ...(personIds === undefined ? [] : [["person_id = ?::bigint", personIds[0] ?? null] as const, ["person_ids = ?::text::bigint[]", pgIds(personIds)] as const]),
+  ];
   const row = await db(c).prepare(
-    `WITH u AS (UPDATE project_beta_events SET ${sent.map((k) => `${EVENT_COLUMNS[k][0]} = ${EVENT_COLUMNS[k][1]}`).join(", ")}, updated_at = now()
+    `WITH u AS (UPDATE project_beta_events SET ${cols.map(([set]) => set).join(", ")}, updated_at = now()
                  WHERE id = ? AND company_id = ? RETURNING id, project_id, company_id, type, note, on_date),
           a AS (INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
                 SELECT u.project_id, 'beta_event_changed', NULL, u.type, ${eventNote("u")}, ?::bigint, u.company_id FROM u WHERE u.project_id IS NOT NULL)
      SELECT id::int AS id FROM u`,
-  ).bind(...sent.map((k) => v.value[k] ?? null), id, co.companyId, userId(c)).first<{ id: number }>();
+  ).bind(...cols.map(([, value]) => value), id, co.companyId, userId(c)).first<{ id: number }>();
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json({ ok: true });
 });

@@ -142,7 +142,7 @@ export function BetaWsDesignCard({ board, canWrite, openDialog, onDone, onError 
       return {
         body: mut("Not done"),
         buttons: btn("Done", () => void act(async () => {
-          const r = await boardApi.addEvent({ projectId: p.id, onDate: m.today, atTime: null, type: code, note: null, personId: null });
+          const r = await boardApi.addEvent({ projectId: p.id, onDate: m.today, atTime: null, type: code, note: null, personIds: [] });
           await boardApi.saveEvent(r.id, { done: true });
         }, `${wt.label} done`), BTN_MAIN),
       };

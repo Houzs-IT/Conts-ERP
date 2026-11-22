@@ -133,29 +133,40 @@ export function cleanNoteDays(b: Json): BetaRefusal<{ days: number }> {
   return { ok: true, value: { days: d } };
 }
 
-export interface BetaAppointmentInput { onDate: string; atTime: string | null; personId: number | null; withText: string | null; whoText: string | null }
+export interface BetaAppointmentInput { onDate: string; atTime: string | null; personIds: number[]; withText: string | null; whoText: string | null }
 
-/** Who goes, typed in when the person is not on the list (owner, 20 Nov 2026). Dropped when a person is picked. */
+/** Who goes (owner, 22 Nov 2026): several of the company's people, each with it on their own calendar, and a typed name
+    for someone without an account, kept beside them. `personIds` is the list; `personId` is what screens from before
+    this change send. Undefined when it is not a list of ids. */
 const WHO_TEXT_MAX = 120;
-function whoTextOf(v: unknown, personId: number | null): string | null | undefined {
+export const BETA_BOOKING_PEOPLE_MAX = 20;
+function peopleOfBody(b: Json): number[] | undefined {
+  if ("personIds" in b) return blank(b.personIds) ? [] : idList(b.personIds);
+  const id = idOrNull(b.personId);
+  return id === undefined ? undefined : id == null ? [] : [id];
+}
+function whoTextOf(v: unknown): string | null | undefined {
   if (blank(v)) return null;
   if (typeof v !== "string" || v.trim().length > WHO_TEXT_MAX) return undefined;
-  return personId == null ? v.trim() : null;
+  return v.trim();
 }
+const PEOPLE_INVALID = "Pick people from the list, or leave it empty.";
+const PEOPLE_TOO_MANY = `Pick at most ${BETA_BOOKING_PEOPLE_MAX} people.`;
 
 export function cleanBetaAppointment(b: Json): BetaRefusal<BetaAppointmentInput> {
   if (!isIsoDay(b.onDate)) return no("date_invalid", "Give the day as YYYY-MM-DD.");
   if (!blank(b.atTime) && !isClockTime(b.atTime)) return no("time_invalid", "Give the time as HH:MM.");
-  const personId = idOrNull(b.personId);
-  if (personId === undefined) return no("person_invalid", "Pick a person from the list, or leave it empty.");
+  const personIds = peopleOfBody(b);
+  if (personIds === undefined) return no("person_invalid", PEOPLE_INVALID);
+  if (personIds.length > BETA_BOOKING_PEOPLE_MAX) return no("too_many_people", PEOPLE_TOO_MANY);
   const withText = noteOf(b.withText);
   if (withText === undefined) return no("text_invalid", `Who it is with can be up to ${BETA_NOTE_MAX} characters.`);
-  const whoText = whoTextOf(b.whoText, personId);
+  const whoText = whoTextOf(b.whoText);
   if (whoText === undefined) return no("who_invalid", `A typed name can be up to ${WHO_TEXT_MAX} characters.`);
-  return { ok: true, value: { onDate: b.onDate, atTime: blank(b.atTime) ? null : (b.atTime as string), personId, withText, whoText } };
+  return { ok: true, value: { onDate: b.onDate, atTime: blank(b.atTime) ? null : (b.atTime as string), personIds, withText, whoText } };
 }
 
-export interface BetaEventInput { projectId: number | null; onDate: string; atTime: string | null; type: BetaEventType; note: string | null; personId: number | null; whoText: string | null }
+export interface BetaEventInput { projectId: number | null; onDate: string; atTime: string | null; type: BetaEventType; note: string | null; personIds: number[]; whoText: string | null }
 
 export function cleanBetaEvent(b: Json): BetaRefusal<BetaEventInput> {
   const projectId = idOrNull(b.projectId);
@@ -165,17 +176,18 @@ export function cleanBetaEvent(b: Json): BetaRefusal<BetaEventInput> {
   if (!isEventType(b.type)) return no("type_invalid", "Pick the kind of entry from the list.");
   const note = noteOf(b.note);
   if (note === undefined) return no("note_invalid", `A note can be up to ${BETA_NOTE_MAX} characters.`);
-  const personId = idOrNull(b.personId);
-  if (personId === undefined) return no("person_invalid", "Pick a person from the list, or leave it empty.");
-  const whoText = whoTextOf(b.whoText, personId);
+  const personIds = peopleOfBody(b);
+  if (personIds === undefined) return no("person_invalid", PEOPLE_INVALID);
+  if (personIds.length > BETA_BOOKING_PEOPLE_MAX) return no("too_many_people", PEOPLE_TOO_MANY);
+  const whoText = whoTextOf(b.whoText);
   if (whoText === undefined) return no("who_invalid", `A typed name can be up to ${WHO_TEXT_MAX} characters.`);
-  return { ok: true, value: { projectId, onDate: b.onDate, atTime: blank(b.atTime) ? null : (b.atTime as string), type: b.type, note, personId, whoText } };
+  return { ok: true, value: { projectId, onDate: b.onDate, atTime: blank(b.atTime) ? null : (b.atTime as string), type: b.type, note, personIds, whoText } };
 }
 
 /** The fields of an event change; only the ones the caller sent are present. */
 export interface BetaEventPatch {
   projectId?: number | null; onDate?: string; atTime?: string | null; type?: BetaEventType; note?: string | null;
-  personId?: number | null; whoText?: string | null; done?: boolean;
+  personIds?: number[]; whoText?: string | null; done?: boolean;
 }
 
 export function cleanBetaEventPatch(b: Json): BetaRefusal<BetaEventPatch> {
@@ -202,14 +214,14 @@ export function cleanBetaEventPatch(b: Json): BetaRefusal<BetaEventPatch> {
     if (v === undefined) return no("note_invalid", `A note can be up to ${BETA_NOTE_MAX} characters.`);
     p.note = v;
   }
-  if ("personId" in b) {
-    const v = idOrNull(b.personId);
-    if (v === undefined) return no("person_invalid", "Pick a person from the list, or leave it empty.");
-    p.personId = v;
+  if ("personIds" in b || "personId" in b) {
+    const v = peopleOfBody(b);
+    if (v === undefined) return no("person_invalid", PEOPLE_INVALID);
+    if (v.length > BETA_BOOKING_PEOPLE_MAX) return no("too_many_people", PEOPLE_TOO_MANY);
+    p.personIds = v;
   }
-  if ("whoText" in b || p.personId != null) {
-    // Picking a person clears a typed name, so the entry never shows both.
-    const v = whoTextOf(b.whoText, p.personId ?? null);
+  if ("whoText" in b) {
+    const v = whoTextOf(b.whoText);
     if (v === undefined) return no("who_invalid", `A typed name can be up to ${WHO_TEXT_MAX} characters.`);
     p.whoText = v;
   }
@@ -292,6 +304,8 @@ export interface BoardNoteRow { id: number; project_id: number; kind: "3d" | "2d
 export interface BoardReviewRow { file_id: number; project_id: number; sent_on: string | null; approved_on: string | null }
 export interface BoardAppointmentRow {
   project_id: number; kind: BetaAppointmentKind; on_date: string; at_time: string | null; person_id: number | null;
+  /** Everyone going, first pick first; absent on older callers, which then read person_id alone. */
+  person_ids?: unknown;
   with_text: string | null; who_text?: string | null; done_at: string | null;
 }
 
@@ -318,8 +332,15 @@ export interface BoardProject {
   files: Array<{ id: number; kind: "3d" | "2d"; version: number; submittedOn: string }>;
   notes: Array<{ id: number; kind: "3d" | "2d"; notedOn: string; closedOn: string | null; days: number | null }>;
   reviews: Array<{ fileId: number; sentOn: string | null; approvedOn: string | null }>;
-  appointments: Array<{ kind: BetaAppointmentKind; onDate: string; atTime: string | null; personId: number | null; withText: string | null; whoText: string | null; doneAt: string | null }>;
+  appointments: Array<{ kind: BetaAppointmentKind; onDate: string; atTime: string | null; personId: number | null; personIds: number[]; withText: string | null; whoText: string | null; doneAt: string | null }>;
   payment: BoardPayment;
+}
+
+/** The people of a booking from its person_ids (a Postgres array, parsed or as "{1,2}" text), else its one person_id. */
+export function bookingPeopleOf(ids: unknown, personId: number | null | undefined): number[] {
+  const raw = Array.isArray(ids) ? ids : typeof ids === "string" ? ids.replace(/[{}\s]/g, "").split(",").filter(Boolean) : [];
+  const out = [...new Set(raw.map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))];
+  return out.length ? out : personId != null ? [Number(personId)] : [];
 }
 
 /** [{ id, name }] from the board query's JSON (text or already parsed); anything else reads as nobody. */
@@ -350,7 +371,7 @@ export function buildBoardProject(p: BoardProjectRow, sets: BoardSets, payment: 
     notes: (sets.notes.get(p.id) ?? []).map((n) => ({ id: n.id, kind: n.kind, notedOn: n.noted_on, closedOn: n.closed_on, days: n.days })),
     reviews: (sets.reviews.get(p.id) ?? []).map((r) => ({ fileId: r.file_id, sentOn: r.sent_on, approvedOn: r.approved_on })),
     appointments: (sets.appointments.get(p.id) ?? []).map((a) => ({
-      kind: a.kind, onDate: a.on_date, atTime: a.at_time, personId: a.person_id, withText: a.with_text, whoText: a.who_text ?? null, doneAt: a.done_at,
+      kind: a.kind, onDate: a.on_date, atTime: a.at_time, personId: a.person_id, personIds: bookingPeopleOf(a.person_ids, a.person_id), withText: a.with_text, whoText: a.who_text ?? null, doneAt: a.done_at,
     })),
     payment,
   };

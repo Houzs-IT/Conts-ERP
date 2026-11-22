@@ -8,7 +8,7 @@ import { errorText } from "../projects/renovation/renovationModel";
 import { peopleOptions, personLabel, usePeople } from "../projects/renovation/PersonSelect";
 import type { Person } from "../projects/renovation/simpleApi";
 import {
-  add, amendDue, APPT_LABEL, apptKindOf, apptWho, apptWithDefault, bookIssue, dateHints, designKind, ds, initials, ord,
+  add, amendDue, APPT_LABEL, apptKindOf, apptPeople, apptWithDefault, bookIssue, dateHints, designKind, ds, initials, ord,
   personInfo, WORK_APPT, type ApptKey, type BoardModel, type CalEvent, type DesignProject, type Kind, type Viewing,
 } from "./renovationBetaBoard";
 import {
@@ -354,23 +354,29 @@ export function whoFromText(all: readonly Person[], text: string): { personId: n
   return hit ? { personId: hit.id, whoText: null } : { personId: null, whoText: t };
 }
 
-function WhoInput({ all, value, onChange }: { all: readonly Person[]; value: string; onChange: (v: string) => void }): ReactElement {
-  const listId = useId();
-  const picked = whoFromText(all, value);
+/** Who goes as saved: the picked people, and the typed name unless it names one of the company's people, who is then
+    picked too. */
+export function whoParts(all: readonly Person[], ids: readonly number[], text: string): { personIds: number[]; whoText: string | null } {
+  const typed = whoFromText(all, text);
+  const personIds = typed.personId != null && !ids.includes(typed.personId) ? [...ids, typed.personId] : [...ids];
+  return { personIds, whoText: typed.whoText };
+}
+
+/** Who goes (owner, 22 Nov 2026): several of the company's people, each with it on their own calendar, and a typed name
+    for someone without an account, shown as text and on nobody's calendar. Both may stay empty. */
+function WhoPick({ all, known, ids, onIds, text, onText }: {
+  all: readonly Person[]; known: ReadonlyMap<number, string>; ids: number[]; onIds: (ids: number[]) => void; text: string; onText: (v: string) => void;
+}): ReactElement {
   return (
-    <Field label="Who (pick, type or leave empty)">
-      <input name="who" list={listId} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Nobody" autoComplete="off" maxLength={120} style={IN} />
-      <datalist id={listId}>
-        {peopleOptions(all, undefined, []).map((x) => <option key={x.id} value={x.name}>{personLabel(x)}</option>)}
-      </datalist>
-      {value.trim() && (
-        <span style={{ display: "block", marginTop: 4, fontSize: 12, color: BETA.muted }}>
-          {picked.personId != null ? "On their own calendar too" : "Typed name: not on anyone's calendar"}
-        </span>
-      )}
-    </Field>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+      <PeoplePick label="Who (on each one's own calendar)" name="who" all={all} value={ids} onChange={onIds} known={known} />
+      <input name="whoText" aria-label="Someone not on the list" value={text} onChange={(e) => onText(e.target.value)}
+        placeholder="Someone not on the list (typed, on no calendar)" autoComplete="off" maxLength={120} style={IN} />
+    </div>
   );
 }
+
+const idsOf = (people: readonly { id: number }[]): number[] => people.map((x) => x.id);
 
 /* ---------- Add work / Edit work ---------- */
 
@@ -383,8 +389,10 @@ function WorkForm({ env, ev, day, preset }: { env: FormEnv; ev: CalEvent | null;
   const [note, setNote] = useState(ev?.note ?? "");
   const [d, setD] = useState(ev?.d ?? day);
   const [t, setT] = useState(ev?.t ?? "");
-  const meName = (id: number | null | undefined): string => (id == null ? "" : all.find((x) => x.id === id)?.name ?? m.everyone.find((x) => x.id === id)?.name ?? "");
-  const [person, setPerson] = useState<string>(ev ? (ev.who?.name ?? ev.whoText ?? "") : meName(who === "All" ? m.mePersonId : who));
+  const first = who === "All" ? m.mePersonId : who;
+  const [people, setPeople] = useState<number[]>(ev ? idsOf(ev.people) : first != null ? [first] : []);
+  const [whoText, setWhoText] = useState<string>(ev?.whoText ?? "");
+  const known = new Map(m.everyone.map((x) => [x.id, x.name] as const));
   const [project, setProject] = useState<string>(ev?.projectId != null ? String(ev.projectId) : preset ? String(preset.projectId) : "");
   const [done, setDone] = useState(ev?.done ?? false);
   const save = useSave(env);
@@ -403,17 +411,17 @@ function WorkForm({ env, ev, day, preset }: { env: FormEnv; ev: CalEvent | null;
   async function submit(): Promise<void> {
     await save.run(async () => {
       if (!types.some((w) => w.code === type)) throw new Error("Pick a type.");
-      const { personId, whoText } = whoFromText(all, person);
+      const going = whoParts(all, people, whoText);
       if (asAppt && apptKey && apptProject) {
         const issue = bookIssue(apptProject, apptKey, d);
         if (issue) throw new Error(issue);
         await boardApi.saveAppointment(apptProject.id, apptKindOf(apptKey), {
-          onDate: d, atTime: t || null, personId, whoText, withText: note.trim() || replaces?.with || apptWithDefault(apptProject, apptKey),
+          onDate: d, atTime: t || null, ...going, withText: note.trim() || replaces?.with || apptWithDefault(apptProject, apptKey),
         });
         if (ev?.eventId != null) await boardApi.deleteEvent(ev.eventId);
         return { text: `Booked ${ds(d)}${t ? ` ${t}` : ""} · ${APPT_LABEL[apptKey].toLowerCase()} of ${apptProject.title}`, jumpTo: d };
       }
-      const body: EventBody = { projectId: num(project), onDate: d, atTime: t || null, type, note: note.trim() || null, personId, whoText };
+      const body: EventBody = { projectId: num(project), onDate: d, atTime: t || null, type, note: note.trim() || null, ...going };
       if (ev?.eventId != null) await boardApi.saveEvent(ev.eventId, { ...body, done });
       else await boardApi.addEvent(body);
       return { text: "Saved", jumpTo: isNew ? d : undefined };
@@ -443,15 +451,13 @@ function WorkForm({ env, ev, day, preset }: { env: FormEnv; ev: CalEvent | null;
         <Field label="Date"><input type="date" name="d" required value={d} onChange={(e) => setD(e.target.value)} style={IN} /></Field>
         <Field label="Time"><input type="time" name="t" value={t} onChange={(e) => setT(e.target.value)} style={IN} /></Field>
       </div>
-      <div style={TWO}>
-        <WhoInput all={all} value={person} onChange={setPerson} />
-        <Field label="Project">
-          <select name="p" value={project} onChange={(e) => setProject(e.target.value)} style={IN}>
-            <option value="">(No project)</option>
-            {m.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </Field>
-      </div>
+      <WhoPick all={all} known={known} ids={people} onIds={setPeople} text={whoText} onText={setWhoText} />
+      <Field label="Project">
+        <select name="p" value={project} onChange={(e) => setProject(e.target.value)} style={IN}>
+          <option value="">(No project)</option>
+          {m.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </Field>
       {apptProject && apptKey && isNew && replaces?.d && (
         <div style={NOTE}>
           One more visit: the one booked for {ds(replaces.d)} stays. To move that one instead, use its Edit.
@@ -523,23 +529,24 @@ function BookForm({ env, p, k }: { env: FormEnv; p: DesignProject; k: ApptKey })
   const [d, setD] = useState(a?.d ?? "");
   const [t, setT] = useState(a?.t ?? "");
   // With no design lead yet, the person booking is the one going, so the booking is on someone's own calendar.
-  const nameOf = (id: number | null | undefined): string => (id == null ? "" : all.find((x) => x.id === id)?.name ?? m.everyone.find((x) => x.id === id)?.name ?? "");
-  const [person, setPerson] = useState<string>(a ? (a.who?.name ?? a.whoText ?? apptWho(p, a)?.name ?? "") : nameOf(p.lead?.id ?? m.mePersonId));
+  const firstId = p.lead?.id ?? m.mePersonId;
+  const [people, setPeople] = useState<number[]>(a ? idsOf(apptPeople(p, a)) : firstId != null ? [firstId] : []);
+  const [whoText, setWhoText] = useState<string>(a?.whoText ?? "");
+  const known = new Map(m.everyone.map((x) => [x.id, x.name] as const));
   const [withText, setWithText] = useState(a?.with || apptWithDefault(p, k));
   const [done, setDone] = useState(a?.done ?? false);
   const save = useSave(env);
   const cm = p.appts.cm?.d;
   // Ticking Done on a site measure records the measure: who measured is required, notes and photos are asked for.
   const recordsMeasure = k === "msr" && done && !p.measuredOn;
-  const picked = whoFromText(all, person);
-  const measure = useMeasureFields(all, picked.personId != null ? [picked.personId] : p.lead ? [p.lead.id] : []);
+  const measure = useMeasureFields(all, people.length ? people : p.lead ? [p.lead.id] : []);
 
   async function submit(): Promise<void> {
     await save.run(async () => {
       const issue = bookIssue(p, k, d);
       if (issue) throw new Error(issue);
       if (recordsMeasure) measure.check(d);
-      await boardApi.saveAppointment(p.id, apptKindOf(k), { onDate: d, atTime: t || null, personId: picked.personId, whoText: picked.whoText, withText: withText.trim() || null });
+      await boardApi.saveAppointment(p.id, apptKindOf(k), { onDate: d, atTime: t || null, ...whoParts(all, people, whoText), withText: withText.trim() || null });
       if (recordsMeasure) {
         const n = await measure.save(p.id, d);
         if (!a?.done) await boardApi.appointmentDone(p.id, apptKindOf(k));
@@ -573,10 +580,8 @@ function BookForm({ env, p, k }: { env: FormEnv; p: DesignProject; k: ApptKey })
         </Field>
         <Field label="Time"><input type="time" name="bt" value={t} onChange={(e) => setT(e.target.value)} style={IN} /></Field>
       </div>
-      <div style={TWO}>
-        <WhoInput all={all} value={person} onChange={setPerson} />
-        <Field label="With"><input name="bw" value={withText} onChange={(e) => setWithText(e.target.value)} maxLength={120} style={IN} /></Field>
-      </div>
+      <WhoPick all={all} known={known} ids={people} onIds={setPeople} text={whoText} onText={setWhoText} />
+      <Field label="With"><input name="bw" value={withText} onChange={(e) => setWithText(e.target.value)} maxLength={120} style={IN} /></Field>
       {isNew ? (
         <div style={NOTE}>{k === "sb" && cm ? `Must be after the carpentry measure (${ds(cm)}). ` : ""}It will show on the calendar for everyone.</div>
       ) : (
@@ -630,7 +635,7 @@ function MeasureForm({ env, p }: { env: FormEnv; p: DesignProject }): ReactEleme
   const all = useFormPeople(env.m);
   const a = p.appts.msr;
   const [on, setOn] = useState(a?.d && a.d <= env.m.today ? a.d : env.m.today);
-  const measure = useMeasureFields(all, a?.who ? [a.who.id] : p.lead ? [p.lead.id] : []);
+  const measure = useMeasureFields(all, a?.people.length ? idsOf(a.people) : p.lead ? [p.lead.id] : []);
   const save = useSave(env);
   async function submit(): Promise<void> {
     await save.run(async () => {
