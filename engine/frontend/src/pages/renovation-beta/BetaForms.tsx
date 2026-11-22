@@ -369,9 +369,9 @@ function WhoPick({ all, known, ids, onIds, text, onText }: {
 }): ReactElement {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-      <PeoplePick label="Who (on each one's own calendar)" name="who" all={all} value={ids} onChange={onIds} known={known} />
+      <PeoplePick label="Who goes" name="who" all={all} value={ids} onChange={onIds} known={known} />
       <input name="whoText" aria-label="Someone not on the list" value={text} onChange={(e) => onText(e.target.value)}
-        placeholder="Someone not on the list (typed, on no calendar)" autoComplete="off" maxLength={120} style={IN} />
+        placeholder="Someone not listed (no calendar)" autoComplete="off" maxLength={120} style={IN} />
     </div>
   );
 }
