@@ -119,6 +119,7 @@ describe('the Credit & Debit Notes page', () => {
     expect(createMutate.mock.calls[0]?.[0]).toEqual({
       kind: 'CN', noteDate: expect.any(String), reason: 'Scratched leg', sourceDocNo: null, soDocNo: '2990-SO-2607-019',
       lines: [{ description: 'Goodwill', accountCode: null, amountSen: 15000 }],
+      idempotencyKey: expect.any(String),
     });
   });
 

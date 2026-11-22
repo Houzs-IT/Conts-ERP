@@ -53,6 +53,7 @@ import { Modal } from '../../vendor/scm/components/Modal';
 import { SearchCombo } from '../../vendor/scm/components/SearchCombo';
 import { useAuth as useHouzsAuth } from '../../auth/AuthContext';
 import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKeyFor } from '../../lib/idempotency';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import { fmtSen, fmtDateOrDash } from '../../vendor/shared/format';
 import styles from './SalesOrderDetail.module.css';
@@ -192,6 +193,7 @@ export const ApInvoices = () => {
 
   /* The one form — New, Edit, Copy — in its own pop-out over the list. */
   const [form, setForm] = useState<FormState | null>(null);
+  const createKeys = useContentBoundIdempotencyKeyFor(form);
   const openNew = () => setForm({ mode: 'new', initial: emptyApForm() });
 
   /* The pile page's hand-off (/scm/ap-invoices/scan → here): ONE BILL = ONE AP
@@ -279,7 +281,12 @@ export const ApInvoices = () => {
         });
         return;
       }
-      const res = await create.mutateAsync(form.fromRequest ? { ...values, paymentRequestId: form.fromRequest.request.id } : values);
+      const body = form.fromRequest ? { ...values, paymentRequestId: form.fromRequest.request.id } : values;
+      const sent = await sendWithContentKey(createKeys, body,
+        () => askConfirm(unansweredSaveQuestion('AP invoice', 'the AP invoice list')),
+        (idempotencyKey) => create.mutateAsync({ ...body, idempotencyKey }));
+      if (!sent.sent) return;
+      const res = sent.value;
       /* Attach the scanned bill AFTER the invoice exists — sequentially, so
          sort_no (= print order) is the scan order. A failed upload never
          un-saves the bill: the notice says what still needs adding, and the

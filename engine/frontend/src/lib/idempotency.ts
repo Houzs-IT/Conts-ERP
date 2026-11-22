@@ -235,6 +235,15 @@ export function createContentBoundKey(mint: () => string = newIdempotencyKey): C
   return keys;
 }
 
+/** For a create form that opens inside a page that stays mounted (a modal or card on a list page): a fresh key set
+ *  each time `intent` changes identity (the form state object set on open, or its open flag), so the next document
+ *  is a new intent and two genuine identical documents never share a key. */
+export function useContentBoundIdempotencyKeyFor(intent: unknown): ContentBoundKey {
+  const ref = useRef<{ intent: unknown; keys: ContentBoundKey } | null>(null);
+  if (!ref.current || ref.current.intent !== intent) ref.current = { intent, keys: createContentBoundKey() };
+  return ref.current.keys;
+}
+
 /** One create form's content-bound key, living as long as the form's mount (see createContentBoundKey). */
 export function useContentBoundIdempotencyKey(): ContentBoundKey {
   const ref = useRef<ContentBoundKey | null>(null);

@@ -8,6 +8,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Department } from '../../../conts/department';
 import { authedFetch } from './authed-fetch';
+import { idempotentInit } from '../../../lib/idempotency';
 import { writeFailedAs } from './mutation-error';
 import { retryUnlessClientError } from '../../../lib/retryPolicy';
 import type { DebtorPartyColumns, DebtorPartyValues } from './debtor-party';
@@ -457,11 +458,11 @@ export const useUpdateDebtor = () => {
 export const useCreateDebtorBill = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ debtorId, ...body }: {
-      debtorId: string; billDate?: string; notes?: string;
+    mutationFn: ({ debtorId, idempotencyKey, ...body }: {
+      debtorId: string; billDate?: string; notes?: string; idempotencyKey?: string;
       lines: Array<{ description?: string; creditAccountCode?: string; amountSen: number }>;
     }) => authedFetch<{ ok: boolean; bill: { billNumber: string; totalSen: number } }>(
-      `/other-debtors/${debtorId}/bills`, { method: 'POST', body: JSON.stringify(body) },
+      `/other-debtors/${debtorId}/bills`, idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) }),
     ),
     onSuccess: () => invalidateDebtors(qc),
   });
@@ -493,11 +494,11 @@ export const useCancelDebtorBill = () => {
 export const useCreateDebtorReceipt = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ debtorId, ...body }: {
-      debtorId: string; receiptDate?: string; bankAccountCode: string; notes?: string; postNow?: boolean;
+    mutationFn: ({ debtorId, idempotencyKey, ...body }: {
+      debtorId: string; receiptDate?: string; bankAccountCode: string; notes?: string; postNow?: boolean; idempotencyKey?: string;
       allocations: Array<{ billId: string; amountSen: number }>;
     }) => authedFetch<{ ok: boolean; receipt: { id?: string; receiptNumber: string; totalSen?: number }; posted?: boolean; jeNo?: string }>(
-      `/other-debtors/${debtorId}/receipts`, { method: 'POST', body: JSON.stringify(body) },
+      `/other-debtors/${debtorId}/receipts`, idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) }),
     ),
     onSuccess: () => { invalidateDebtors(qc); void qc.invalidateQueries({ queryKey: ['receipts'] }); },
   });
@@ -534,11 +535,11 @@ export const useReceipts = (month?: string) => baseQuery<{ month: string | null;
 export const useCreateReceipt = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: {
-      payerName: string; receiptDate?: string; bankAccountCode: string; notes?: string;
+    mutationFn: ({ idempotencyKey, ...body }: {
+      payerName: string; receiptDate?: string; bankAccountCode: string; notes?: string; idempotencyKey?: string;
       lines: Array<{ description?: string; creditAccountCode: string; amountSen: number }>;
     }) => authedFetch<{ ok: boolean; receipt: { receiptNumber: string; totalSen: number } }>(
-      `/receipts`, { method: 'POST', body: JSON.stringify(body) },
+      `/receipts`, idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) }),
     ),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['receipts'] }); },
   });

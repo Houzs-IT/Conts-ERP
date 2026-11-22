@@ -5,6 +5,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from './authed-fetch';
+import { idempotentInit } from '../../../lib/idempotency';
 import { retryUnlessClientError } from '../../../lib/retryPolicy';
 
 export type NoteKind = 'CN' | 'DN' | 'SCN';
@@ -99,8 +100,8 @@ export const useCreditNoteDetail = (id: string | null) => useQuery({
 export const useCreateCreditNote = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: CreditNoteCreate) =>
-      authedFetch<{ ok: boolean; note: CreditNote }>('/credit-notes', { method: 'POST', body: JSON.stringify(body) }),
+    mutationFn: ({ idempotencyKey, ...body }: CreditNoteCreate & { idempotencyKey?: string }) =>
+      authedFetch<{ ok: boolean; note: CreditNote }>('/credit-notes', idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) })),
     onSuccess: () => invalidate(qc),
   });
 };

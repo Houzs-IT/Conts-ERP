@@ -7,6 +7,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from './authed-fetch';
+import { idempotentInit } from '../../../lib/idempotency';
 import { retryUnlessClientError } from '../../../lib/retryPolicy';
 import { fetchDocFileBlobUrl, type PvFile, type PvFilePayload } from './payment-voucher-queries';
 
@@ -95,10 +96,10 @@ export type ApInvoiceLineInput = { description?: string; debitAccountCode: strin
 export const useCreateApInvoice = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { supplierId: string; supplierInvoiceRef?: string; invoiceDate: string; dueDate?: string | null; notes?: string; provisional?: boolean; lines: ApInvoiceLineInput[];
+    mutationFn: ({ idempotencyKey, ...body }: { supplierId: string; supplierInvoiceRef?: string; invoiceDate: string; dueDate?: string | null; notes?: string; provisional?: boolean; lines: ApInvoiceLineInput[];
       /** Conts: the payment request this bill is made from (it takes the bill on save). */
-      paymentRequestId?: string }) =>
-      authedFetch<{ ok: boolean; invoice: ApInvoiceHeader }>(`/ap-invoices`, { method: 'POST', body: JSON.stringify(body) }),
+      paymentRequestId?: string; idempotencyKey?: string }) =>
+      authedFetch<{ ok: boolean; invoice: ApInvoiceHeader }>(`/ap-invoices`, idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) })),
     onSuccess: () => { invalidate(qc); void qc.invalidateQueries({ queryKey: ['payment-requests'] }); },
   });
 };
