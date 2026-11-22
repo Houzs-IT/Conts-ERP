@@ -48,12 +48,19 @@ async function poHead(db: RenoDb, poId: string, companyId: number, forUpdate = f
   };
 }
 
+/* D13: the payment row is written before its voucher and stays when the voucher is later cancelled. A payment whose
+   voucher is cancelled, void or rejected paid nothing, so it neither counts against the instalment nor shows as paid,
+   and the instalment can be paid again. A payment with no voucher (its voucher could not be made) still counts: the
+   press recorded money finance is told to finish. `p` is the payment row. */
+const PAYMENT_STANDS = `not exists (select 1 from scm.payment_vouchers v where v.id = p.payment_voucher_id and v.status::text in ('CANCELLED', 'VOID', 'REJECTED'))`;
+
 export async function readPoSchedule(db: RenoDb, poId: string, companyId: number) {
   const po = await poHead(db, poId, companyId);
   const handover = await projectHandoverState(db, po.projectId);
   const rows = await db.q(
     `select i.id, i.seq, i.label, i.pct_bp, i.amount_sen, i.payable_on, i.released_at::text as released_at, i.released_by, i.release_note,
-            coalesce((select sum(p.amount_sen) from scm.reno_po_instalment_payments p where p.po_instalment_id = i.id), 0)::int as paid_sen
+            coalesce((select sum(p.amount_sen) from scm.reno_po_instalment_payments p
+                       where p.po_instalment_id = i.id and ${PAYMENT_STANDS}), 0)::int as paid_sen
        from scm.reno_po_instalments i where i.purchase_order_id = $1 order by i.seq`,
     [poId],
   );
@@ -61,7 +68,7 @@ export async function readPoSchedule(db: RenoDb, poId: string, companyId: number
     `select p.id, p.po_instalment_id, p.amount_sen, p.paid_on::text as paid_on, p.note, p.payment_voucher_id, pv.pv_number
        from scm.reno_po_instalment_payments p join scm.reno_po_instalments i on i.id = p.po_instalment_id
        left join scm.payment_vouchers pv on pv.id = p.payment_voucher_id
-      where i.purchase_order_id = $1 order by p.paid_on, p.created_at`,
+      where i.purchase_order_id = $1 and ${PAYMENT_STANDS} order by p.paid_on, p.created_at`,
     [poId],
   );
   /* The PO's total moves with an amendment, so what is due is worked out from it now, not from the raise. */
