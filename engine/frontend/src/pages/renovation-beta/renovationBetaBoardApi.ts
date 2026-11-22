@@ -27,6 +27,8 @@ export interface BetaBoardAppointment {
   onDate: string;
   atTime: string | null;
   personId: number | null;
+  /** Everyone going, first pick first (migration 0362); absent from an older server, which sends personId alone. */
+  personIds?: number[];
   withText: string | null;
   /** Who goes, typed in when not picked from the list (migration 0349); absent from an older server. */
   whoText?: string | null;
@@ -91,6 +93,7 @@ export interface BetaBoardEvent {
   type: string;
   note: string | null;
   personId: number | null;
+  personIds?: number[];
   whoText?: string | null;
   done: boolean;
 }
@@ -117,7 +120,8 @@ export interface DesignPatch {
   person2dIds?: number[];
 }
 
-export interface AppointmentBody { onDate: string; atTime: string | null; personId: number | null; withText: string | null; whoText?: string | null }
+/** personIds: everyone going, each with it on their own calendar; whoText: a typed name for someone not on the list. */
+export interface AppointmentBody { onDate: string; atTime: string | null; personIds: number[]; withText: string | null; whoText?: string | null }
 
 export interface EventBody {
   projectId: number | null;
@@ -125,7 +129,7 @@ export interface EventBody {
   atTime: string | null;
   type: EventType;
   note: string | null;
-  personId: number | null;
+  personIds: number[];
   whoText?: string | null;
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BetaBoard, BetaBoardProject } from "./renovationBetaBoardApi";
 import {
   add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, designSteps, diff, ds, filterCounts, homeCounts, inFilter, homeList, homeRow, initials, items,
-  listFor, monthCells, nextFor, progressByPerson, progressList, rangeFor, shiftMonth, stage, status, type BoardModel, type DesignProject,
+  listFor, monthCells, whoName, nextFor, progressByPerson, progressList, rangeFor, shiftMonth, stage, status, type BoardModel, type DesignProject,
 } from "./renovationBetaBoard";
 
 const TODAY = "2026-10-23";
@@ -319,5 +319,34 @@ describe("calendar entries (audit, 20 Nov 2026)", () => {
   it("keeps the booking's own date and time (no time zone shift)", () => {
     expect(byId(2)).toMatchObject({ d: "2026-10-23", t: "10:00" });
     expect(listFor(withEvents, 2, "2026-10-23").events.map((e) => e.eventId)).toEqual([2]);
+  });
+});
+
+describe("a booking for several people (owner, 22 Nov 2026)", () => {
+  const two = buildModel({
+    ...board([{ ...trinity, appointments: [{ kind: "carpentry_measure", onDate: "2026-10-24", atTime: "10:00:00", personId: 2, personIds: [2, 4], withText: null, whoText: "Ah Seng", doneAt: null }] }]),
+    events: [{ id: 7, projectId: 5, onDate: "2026-10-23", atTime: "09:00", type: "client", note: null, personId: 1, personIds: [1, 3], whoText: "Mr Lim", done: false }],
+  });
+
+  it("shows a work on each picked person's own calendar, and on nobody else's", () => {
+    expect(listFor(two, 1, "2026-10-23").events.map((e) => e.eventId)).toEqual([7]);
+    expect(listFor(two, 3, "2026-10-23").events.map((e) => e.eventId)).toEqual([7]);
+    expect(listFor(two, 2, "2026-10-23").events.map((e) => e.eventId)).toEqual([]);
+  });
+
+  it("shows an appointment on each picked person's own calendar", () => {
+    const on = (who: number) => listFor(two, who, "2026-10-24").events.filter((e) => e.appt).length;
+    expect([on(2), on(4), on(1)]).toEqual([1, 1, 0]);
+    expect(deadlineGroups(two, 4).week.concat(deadlineGroups(two, 4).late, deadlineGroups(two, 4).two, deadlineGroups(two, 4).later).some((x) => x.type === "appt")).toBe(true);
+  });
+
+  it("names everyone going, then the typed name", () => {
+    const ev = two.events.find((e) => e.eventId === 7);
+    expect(ev && whoName(ev)).toBe("Jia Xin, Yi Xuan, Mr Lim");
+  });
+
+  it("reads a booking from an older server by its one person", () => {
+    const old = buildModel({ ...board([trinity]), events: [{ id: 8, projectId: 5, onDate: "2026-10-23", atTime: null, type: "client", note: null, personId: 2, done: false }] });
+    expect(old.events[0].people).toEqual([YT]);
   });
 });
