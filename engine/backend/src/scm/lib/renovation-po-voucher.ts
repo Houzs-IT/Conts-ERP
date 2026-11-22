@@ -1,8 +1,9 @@
 /* Pay on a PO schedule is one press (owner, 7 Nov 2026): it records, and the voucher and journal are made behind it. Nobody
    attaches anything. The voucher pays the supplier's own control from the default bank and goes through every door a voucher
-   does, the same "Post now" finance uses, carrying the three keys for this one purpose only. Money was recorded before this
-   runs, so a refusal here (the ledger not open, the bank's voucher letter not set) never undoes the press: it is answered,
-   and the voucher stays a draft for finance. */
+   does, the same "Post now" finance uses, carrying the three keys for this one purpose only. A voucher that is made but not
+   posted (the ledger not open, the bank's voucher letter not set) stays a draft for finance and the payment stands. A
+   voucher that cannot be made at all, or not tied to the payment, leaves `tied` false: the route takes the payment back
+   (owner, 22 Nov 2026: no paid without a voucher). */
 
 import type { Context } from 'hono';
 import { apControlOf, resolveRoles, type RoleCodes } from '../../acc/rules';
@@ -56,9 +57,9 @@ export const poVoucherDeps = {
   roles: resolveRoles,
 };
 
-export interface PoVoucherAnswer { pvNumber: string | null; posted: boolean; problem: string | null }
+export interface PoVoucherAnswer { pvNumber: string | null; posted: boolean; problem: string | null; tied: boolean }
 
-const words = (j: Record<string, unknown>, fallback: string): string => String(j.message ?? j.error ?? j.reason ?? fallback);
+const words = (j: Record<string, unknown>, fallback: string): string => String(j.message ?? j.reason ?? j.error ?? fallback);
 
 export async function voucherForPoPayment(c: any, paymentId: string, p: PoPaymentFacts): Promise<PoVoucherAnswer> {
   const sb = c.get('supabase');
@@ -66,15 +67,16 @@ export async function voucherForPoPayment(c: any, paymentId: string, p: PoPaymen
     const roles = await poVoucherDeps.roles(sb, activeCompanyId(c) ?? null);
     const made = await poVoucherDeps.create(c, voucherBody(p, roles));
     const pv = (await made.json()) as Record<string, unknown>;
-    if (made.status !== 201) return { pvNumber: null, posted: false, problem: words(pv, 'The voucher could not be made.') };
+    if (made.status !== 201) return { pvNumber: null, posted: false, problem: words(pv, 'The voucher could not be made.'), tied: false };
     const pvId = String(pv.id);
-    await sb.from('reno_po_instalment_payments').update({ payment_voucher_id: pvId }).eq('id', paymentId);
+    const { error: tieErr } = await sb.from('reno_po_instalment_payments').update({ payment_voucher_id: pvId }).eq('id', paymentId);
+    if (tieErr) return { pvNumber: String(pv.pvNumber), posted: false, problem: `${String(pv.pvNumber)} was made but could not be tied to the payment (${tieErr.message}); cancel it before paying again.`, tied: false };
     const posted = await poVoucherDeps.post(withVoucherKeys(c, pvId));
     const out = (await posted.clone().json().catch(() => ({}))) as Record<string, unknown>;
-    if (!posted.ok) return { pvNumber: String(pv.pvNumber), posted: false, problem: words(out, 'The voucher was made but not posted.') };
-    return { pvNumber: String(pv.pvNumber), posted: true, problem: null };
+    if (!posted.ok) return { pvNumber: String(pv.pvNumber), posted: false, problem: words(out, 'The voucher was made but not posted.'), tied: true };
+    return { pvNumber: String(pv.pvNumber), posted: true, problem: null, tied: true };
   } catch (e) {
     console.error('[po-schedule] voucher failed', e);
-    return { pvNumber: null, posted: false, problem: e instanceof Error ? e.message : 'The voucher could not be made.' };
+    return { pvNumber: null, posted: false, problem: e instanceof Error ? e.message : 'The voucher could not be made.', tied: false };
   }
 }

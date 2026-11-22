@@ -60,7 +60,11 @@ await stay('rc-ar2', u2.id, 'HMCHECK0AR2', '2026-10-06', '2026-10-07', 20_000, 0
 await stay('rc-add', u2.id, 'HMCHECK0ADD', '2026-10-08', '2026-10-10', 30_000, 0);
 await stay('rc-kep', u2.id, 'HMCHECK0KEP', '2026-10-12', '2026-10-14', 20_000, 3_000);
 await stay('rc-pik', u2.id, 'HMCHECK0PIK', '2026-10-19', '2026-10-21', 30_000, 0);
-await stay('rc-fut', u2.id, 'HMCHECK0FUT', '2026-11-20', '2026-11-23', 30_000, 0, 'confirmed');
+// The stay to come is always 30 to 33 days ahead (Malaysia time): a fixed date stopped being "to come" on 23 Nov 2026.
+const ahead = (n) => new Date(Date.now() + 8 * 3600e3 + n * 864e5).toISOString().slice(0, 10);
+const usDay = (iso) => `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}`;
+const FUT_IN = ahead(30), FUT_OUT = ahead(33);
+await stay('rc-fut', u2.id, 'HMCHECK0FUT', FUT_IN, FUT_OUT, 30_000, 0, 'confirmed');
 
 // October's statement for u1's owner is final before the files come.
 const statementOf = async (ownerId, month) => (await db(`SELECT id, state FROM owner_statements WHERE owner_id = $1 AND period_start LIKE $2`, ownerId, `${month}%`))[0];
@@ -83,8 +87,8 @@ const rows = [
   line('10/21/2026', 'Resolution Payout', 'HMCHECK0ADD', '50.00', { details: 'Resolution payout for resolution CLA-9' }),
   line('10/22/2026', 'Resolution Payout', 'HMCHECK0PIK', '80.00', { details: 'Resolution payout for airport pickup CLA-7' }),
   line('10/13/2026', 'Reservation', 'HMCHECK0KEP', '190.00', { start: '10/12/2026', end: '10/14/2026', nights: '2' }),
-  line('10/15/2026', 'Reservation', 'HMCHECK0FUT', '300.00', { start: '11/20/2026', end: '11/23/2026', nights: '3' }),
-  line('10/16/2026', 'Adjustment', 'HMCHECK0FUT', '-300.00', { start: '11/20/2026', end: '11/23/2026', nights: '3' }),
+  line('10/15/2026', 'Reservation', 'HMCHECK0FUT', '300.00', { start: usDay(FUT_IN), end: usDay(FUT_OUT), nights: '3' }),
+  line('10/16/2026', 'Adjustment', 'HMCHECK0FUT', '-300.00', { start: usDay(FUT_IN), end: usDay(FUT_OUT), nights: '3' }),
 ];
 r = await call('POST', '/api/airbnb-recon/upload', { month: MONTH, files: [{ name: 'airbnb-check.csv', rows }] });
 check('the Airbnb file uploads', r.status < 300 && r.json?.added === rows.length, r.text);
