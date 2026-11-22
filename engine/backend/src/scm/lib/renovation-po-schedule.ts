@@ -50,8 +50,9 @@ async function poHead(db: RenoDb, poId: string, companyId: number, forUpdate = f
 
 /* D13: the payment row is written before its voucher and stays when the voucher is later cancelled. A payment whose
    voucher is cancelled, void or rejected paid nothing, so it neither counts against the instalment nor shows as paid,
-   and the instalment can be paid again. A payment with no voucher (its voucher could not be made) still counts: the
-   press recorded money finance is told to finish. `p` is the payment row. */
+   and the instalment can be paid again. A payment with no voucher yet still counts, so a second press cannot pay the
+   same instalment while the first one's voucher is being made; when that voucher cannot be made the press is taken
+   back (takeBackPoPayment). `p` is the payment row. */
 const PAYMENT_STANDS = `not exists (select 1 from scm.payment_vouchers v where v.id = p.payment_voucher_id and v.status::text in ('CANCELLED', 'VOID', 'REJECTED'))`;
 
 export async function readPoSchedule(db: RenoDb, poId: string, companyId: number) {
@@ -141,6 +142,20 @@ export async function releasePoInstalment(db: RenoDb, actor: RenoActor, instalme
   if (r.released_at) throw refuse(409, 'already_released', 'This instalment is already released.');
   await db.q(`update scm.reno_po_instalments set released_at = now(), released_by = $2, release_note = $3, updated_at = now() where id = $1`, [instalmentId, actor.name, note.trim()]);
   await auditEntity(db, { companyId: actor.companyId, entityType: 'purchase_order', entityId: r.purchase_order_id, action: 'RELEASE_INSTALMENT', actorName: actor.name, note: `${r.label}: ${note.trim()}` });
+}
+
+/* Pay with no voucher behind it is not paid (owner, 22 Nov 2026): when the voucher cannot be made, the press is taken
+   back and said, so finance can press Pay again once the cause is fixed. Only a row still without a voucher goes. */
+export async function takeBackPoPayment(db: RenoDb, actor: RenoActor, paymentId: string, why: string): Promise<void> {
+  const gone = await db.q<{ amount_sen: number; purchase_order_id: string; label: string }>(
+    `delete from scm.reno_po_instalment_payments p using scm.reno_po_instalments i
+      where p.id = $1 and p.company_id = $2 and p.payment_voucher_id is null and i.id = p.po_instalment_id
+      returning p.amount_sen, i.purchase_order_id, i.label`,
+    [paymentId, actor.companyId],
+  );
+  for (const p of gone) {
+    await auditEntity(db, { companyId: actor.companyId, entityType: 'purchase_order', entityId: p.purchase_order_id, action: 'INSTALMENT_PAYMENT_UNDONE', actorName: actor.name, note: `${p.label}: ${fmtSen(Number(p.amount_sen))} not paid, the voucher could not be made: ${why}` });
+  }
 }
 
 export async function recordPoPayment(
