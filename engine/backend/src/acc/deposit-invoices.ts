@@ -46,6 +46,7 @@ import { refundedByInvoice } from './deposit-refunds';
 import { SO_NOT_AN_ORDER } from '../scm/shared/so-deliverable-states';
 import { fmtSen } from '../scm/shared/format';
 import { isBeforeLedgerStart, loadLedgerSettings } from './ledger-settings';
+import { chunkIn, paginateAll } from '../scm/lib/paginate-all';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
 type Db = any;
@@ -136,23 +137,24 @@ const NOT_AN_ORDER = SO_NOT_AN_ORDER;
 export async function depositInvoiceDue(
   sb: Db,
   p: { companyId: number; soDocNo: string; paidAt: string | null | undefined; amountSen: number },
+  /* The switch, when the caller has already read it (issueDepositInvoice reads it first, as its cheapest gate). */
+  loaded?: DepositInvoiceSettings,
 ): Promise<{ ok: true; due: true; date: string } | { ok: true; due: false; why: NotDueWhy } | { ok: false; reason: string }> {
   const amount = Number(p.amountSen);
   if (!Number.isInteger(amount) || amount <= 0) return { ok: true, due: false, why: 'no_amount' };
   const date = dayOf(p.paidAt);
   if (!date) return { ok: true, due: false, why: 'no_date' };
-  const st = await loadDepositInvoiceSettings(sb, p.companyId);
+  const st = loaded ? { ok: true as const, settings: loaded } : await loadDepositInvoiceSettings(sb, p.companyId);
   if (!st.ok) return st;
   if (!st.settings.enabled) return { ok: true, due: false, why: 'switched_off' };
   if (st.settings.fromDate && date < st.settings.fromDate) return { ok: true, due: false, why: 'before_start' };
+  const [ls, { data, error }] = await Promise.all([
+    loadLedgerSettings(sb, p.companyId),
+    sb.from('sales_invoices').select('id, status').eq('so_doc_no', p.soDocNo).eq('company_id', p.companyId),
+  ]);
   /* Nor before the ledger start (Conts): that payment is in the opening balances. */
-  const ls = await loadLedgerSettings(sb, p.companyId);
   if (!ls.ok) return { ok: false, reason: 'The ledger settings could not be read.' };
   if (isBeforeLedgerStart(date, ls.settings)) return { ok: true, due: false, why: 'before_start' };
-  const { data, error } = await sb.from('sales_invoices')
-    .select('id, status')
-    .eq('so_doc_no', p.soDocNo)
-    .eq('company_id', p.companyId);
   if (error) return { ok: false, reason: `order invoices: ${error.message}` };
   const live = ((data ?? []) as Array<{ status?: string | null }>).some((r) => absorbsOrderDeposit(r.status));
   if (live) return { ok: true, due: false, why: 'invoice_exists' };
@@ -193,21 +195,27 @@ const activeFor = async (sb: Db, paymentId: string): Promise<{ row: DepositInvoi
  * when none is due. Inserts the row, then posts it; a posting refusal leaves
  * the invoice ISSUED with no journal, which the page shows and "Post" heals.
  */
-export async function issueDepositInvoice(sb: Db, p: IssueInput): Promise<IssueResult> {
+export async function issueDepositInvoice(
+  sb: Db,
+  p: IssueInput,
+  /* The caller has just read that no invoice stands for this payment (the edit hook). */
+  knownNone = false,
+): Promise<IssueResult> {
   const paymentId = String(p.paymentId).trim();
   const soDocNo = String(p.soDocNo).trim();
   if (!paymentId || !soDocNo) return { ok: false, status: 'read_failed', reason: 'payment id and order are required' };
 
-  const existing = await activeFor(sb, paymentId);
-  if (existing.error) return { ok: false, status: 'read_failed', reason: existing.error };
-  if (existing.row) return { ok: true, status: 'already_issued', id: existing.row.id, diNumber: existing.row.di_number, jeNo: existing.row.je_no };
-
   /* The order carries the company and the customer — the same read the
      payment's own posting makes (acc/payments), the same party code. */
-  const { data: so, error: soErr } = await sb.from('mfg_sales_orders')
-    .select('company_id, debtor_name, customer_id, debtor_code, status, so_kind')
-    .eq('doc_no', soDocNo)
-    .maybeSingle();
+  const [existing, { data: so, error: soErr }] = await Promise.all([
+    knownNone ? Promise.resolve({ row: null, error: null }) : activeFor(sb, paymentId),
+    sb.from('mfg_sales_orders')
+      .select('company_id, debtor_name, customer_id, debtor_code, status, so_kind')
+      .eq('doc_no', soDocNo)
+      .maybeSingle(),
+  ]);
+  if (existing.error) return { ok: false, status: 'read_failed', reason: existing.error };
+  if (existing.row) return { ok: true, status: 'already_issued', id: existing.row.id, diNumber: existing.row.di_number, jeNo: existing.row.je_no };
   if (soErr) return { ok: false, status: 'read_failed', reason: `order: ${soErr.message}` };
   const order = so as { company_id?: number | null; debtor_name?: string | null; customer_id?: string | null; debtor_code?: string | null; status?: string | null; so_kind?: string | null } | null;
   if (!order) return { ok: false, status: 'so_not_found', reason: soDocNo };
@@ -216,21 +224,26 @@ export async function issueDepositInvoice(sb: Db, p: IssueInput): Promise<IssueR
   const companyId = order.company_id ?? null;
   if (companyId == null) return { ok: false, status: 'no_company', reason: `${soDocNo} carries no company` };
 
+  /* The switch first: it is one row, and a company with it off (Conts today) stops here. */
+  const st = await loadDepositInvoiceSettings(sb, companyId);
+  if (!st.ok) return { ok: false, status: 'read_failed', reason: st.reason };
+  if (!st.settings.enabled) return { ok: true, status: 'not_due', why: 'switched_off' };
+
   /* Money counts as received once finance confirms it (SOP 4.2): the invoice
      waits for the payment's receipt to be FORMAL (or a posting from before
      confirmation existed), and acc/receipt-confirm issues it then. Money moved
-     between orders was confirmed where it came in. */
-  if (awaitsConfirmation(p.method, p.amountSen)) {
-    const conf = await receiptConfirmation(sb, companyId, 'SOPAY', paymentId);
-    if (!conf.ok) return { ok: false, status: 'read_failed', reason: `receipt: ${conf.reason}` };
-    if (!conf.confirmed) return { ok: true, status: 'not_due', why: 'not_confirmed' };
-  }
-
-  const due = await depositInvoiceDue(sb, { companyId, soDocNo, paidAt: p.paidAt, amountSen: p.amountSen });
+     between orders was confirmed where it came in. The reads below are
+     independent, so they go out together. */
+  const [conf, due, code] = await Promise.all([
+    awaitsConfirmation(p.method, p.amountSen) ? receiptConfirmation(sb, companyId, 'SOPAY', paymentId) : Promise.resolve(null),
+    depositInvoiceDue(sb, { companyId, soDocNo, paidAt: p.paidAt, amountSen: p.amountSen }, st.settings),
+    companyCodeById(sb, companyId),
+  ]);
+  if (conf && !conf.ok) return { ok: false, status: 'read_failed', reason: `receipt: ${conf.reason}` };
+  if (conf && !conf.confirmed) return { ok: true, status: 'not_due', why: 'not_confirmed' };
   if (!due.ok) return { ok: false, status: 'read_failed', reason: due.reason };
   if (!due.due) return { ok: true, status: 'not_due', why: due.why };
 
-  const code = await companyCodeById(sb, companyId);
   if (!code) return { ok: false, status: 'no_company', reason: `company ${companyId} has no code to number under` };
   const prefix = docPrefixForCode(code);
   const partyCode = customerPartyCode(order.debtor_code, order.customer_id);
@@ -428,7 +441,7 @@ export async function reissueDepositInvoiceBestEffort(
     }
     const r = await issueDepositInvoice(sb, {
       paymentId: p.paymentId, soDocNo: p.docNo, paidAt: p.paidAt, amountSen: p.amountSen, method: p.method ?? null, createdBy: p.actor ?? null,
-    });
+    }, cur.row == null);
     if (!r.ok) log('edit: deposit invoice not re-issued:', p.paymentId, r.status, r.reason);
     else if (r.status === 'issued' && r.postProblem) log(`edit: ${r.diNumber} re-issued but not posted:`, r.postProblem);
   } catch (e) {
@@ -468,14 +481,15 @@ export async function missingDepositInvoices(
   if (!st.ok) return st;
   if (!st.settings.enabled) return { ok: true, enabled: false, payments: [] };
 
-  let q = sb.from('mfg_sales_order_payments')
-    .select('id, so_doc_no, paid_at, amount_sen, method, created_by')
-    .eq('company_id', companyId)
-    .neq('method', 'imported')
-    .order('paid_at', { ascending: true })
-    .limit(2000);
-  if (st.settings.fromDate) q = q.gte('paid_at', st.settings.fromDate);
-  const { data: pays, error: payErr } = await q;
+  const fromDate = st.settings.fromDate;
+  const { data: pays, error: payErr } = await paginateAll<MissingPayment>((from, to) => {
+    let q = sb.from('mfg_sales_order_payments')
+      .select('id, so_doc_no, paid_at, amount_sen, method, created_by')
+      .eq('company_id', companyId)
+      .neq('method', 'imported');
+    if (fromDate) q = q.gte('paid_at', fromDate);
+    return q.order('paid_at', { ascending: true }).order('id', { ascending: true }).range(from, to);
+  });
   if (payErr) return { ok: false, reason: `payments: ${payErr.message}` };
   const dated = ((pays ?? []) as MissingPayment[]).filter((p) => dayOf(p.paid_at) != null && Number(p.amount_sen) > 0);
   /* Only money finance has confirmed is owed its invoice (SOP 4.2). */
@@ -484,39 +498,33 @@ export async function missingDepositInvoices(
   const candidates = dated.filter((p) => !awaitsConfirmation(p.method, p.amount_sen) || confirmed.ids.has(String(p.id)));
   if (candidates.length === 0) return { ok: true, enabled: true, payments: [] };
 
-  const { data: dis, error: diErr } = await sb.from('acc_deposit_invoices')
+  const { data: dis, error: diErr } = await paginateAll<{ payment_id: string }>((from, to) => sb.from('acc_deposit_invoices')
     .select('payment_id')
     .eq('company_id', companyId)
-    .neq('status', 'CANCELLED');
+    .neq('status', 'CANCELLED')
+    .order('id', { ascending: true })
+    .range(from, to));
   if (diErr) return { ok: false, reason: `deposit invoices: ${diErr.message}` };
   const have = new Set(((dis ?? []) as Array<{ payment_id: string }>).map((d) => String(d.payment_id)));
 
   /* The orders that already carry a live invoice, and the orders that are
-     no orders (draft, cancelled) — one read each per 200 orders. */
+     no orders (draft, cancelled). */
   const docNos = [...new Set(candidates.map((p) => p.so_doc_no))];
   const invoiced = new Set<string>();
   const notLive = new Set<string>();
-  for (let i = 0; i < docNos.length; i += 200) {
-    const { data: orders, error: soErr } = await sb.from('mfg_sales_orders')
-      .select('doc_no, status, so_kind')
-      .eq('company_id', companyId)
-      .in('doc_no', docNos.slice(i, i + 200));
-    if (soErr) return { ok: false, reason: `orders: ${soErr.message}` };
-    for (const r of (orders ?? []) as Array<{ doc_no: string; status?: string | null; so_kind?: string | null }>) {
-      /* A renovation contract is never due one (NotDueWhy 'renovation'): left out of the backlog too. */
-      if (NOT_AN_ORDER.has(String(r.status ?? '').toUpperCase()) || isRenovationOrder(r)) notLive.add(String(r.doc_no));
-    }
+  const [orders, sis] = await Promise.all([
+    chunkIn<{ doc_no: string; status?: string | null; so_kind?: string | null }>(docNos, (batch, from, to) => sb.from('mfg_sales_orders')
+      .select('doc_no, status, so_kind').eq('company_id', companyId).in('doc_no', batch).order('doc_no', { ascending: true }).range(from, to)),
+    chunkIn<{ so_doc_no: string; status?: string | null }>(docNos, (batch, from, to) => sb.from('sales_invoices')
+      .select('so_doc_no, status').eq('company_id', companyId).in('so_doc_no', batch).order('id', { ascending: true }).range(from, to)),
+  ]);
+  if (orders.error) return { ok: false, reason: `orders: ${orders.error.message}` };
+  if (sis.error) return { ok: false, reason: `order invoices: ${sis.error.message}` };
+  for (const r of orders.data) {
+    /* A renovation contract is never due one (NotDueWhy 'renovation'): left out of the backlog too. */
+    if (NOT_AN_ORDER.has(String(r.status ?? '').toUpperCase()) || isRenovationOrder(r)) notLive.add(String(r.doc_no));
   }
-  for (let i = 0; i < docNos.length; i += 200) {
-    const { data: sis, error: siErr } = await sb.from('sales_invoices')
-      .select('so_doc_no, status')
-      .eq('company_id', companyId)
-      .in('so_doc_no', docNos.slice(i, i + 200));
-    if (siErr) return { ok: false, reason: `order invoices: ${siErr.message}` };
-    for (const r of (sis ?? []) as Array<{ so_doc_no: string; status?: string | null }>) {
-      if (absorbsOrderDeposit(r.status)) invoiced.add(String(r.so_doc_no));
-    }
-  }
+  for (const r of sis.data) if (absorbsOrderDeposit(r.status)) invoiced.add(String(r.so_doc_no));
   return {
     ok: true, enabled: true,
     payments: candidates.filter((p) => !have.has(String(p.id)) && !invoiced.has(String(p.so_doc_no)) && !notLive.has(String(p.so_doc_no))),
