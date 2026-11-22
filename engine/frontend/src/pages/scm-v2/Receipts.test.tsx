@@ -167,6 +167,7 @@ describe('the unified money-in list', () => {
       receiptDate: '2026-09-02',
       bankAccountCode: '310-0010',
       lines: [{ description: '车险赔偿', creditAccountCode: '700-0000', amountSen: 88800, department: 'rental', subDepartmentId: 's-gen' }],
+      idempotencyKey: expect.any(String),
     }));
   });
 

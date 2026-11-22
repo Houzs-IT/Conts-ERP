@@ -23,6 +23,8 @@ import { DataTable, type Column } from '../../components/DataTable';
 import { cancelledDocNoClass, cancelledRowClass } from '../../lib/scm';
 import { Modal } from '../../vendor/scm/components/Modal';
 import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { DateField } from '../../vendor/scm/components/DateField';
 import { AccountSelect } from '../../vendor/scm/components/AccountSelect';
 import { SearchCombo } from '../../vendor/scm/components/SearchCombo';
@@ -308,6 +310,7 @@ const NoteForm = ({ mode, id, initial, onClose, onSaved }: { mode: 'new' | 'edit
   const create = useCreateCreditNote();
   const update = useUpdateCreditNote();
   const post = usePostCreditNote();
+  const createKeys = useContentBoundIdempotencyKey();
   const leaves = useMemo(() => leafAccounts(accountsQ.data?.accounts ?? []), [accountsQ.data]);
   const supplierOptions = useMemo(() => (suppliersQ.data ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` })), [suppliersQ.data]);
   const totalSen = v.lines.reduce((s, l) => s + (l.amountRm.trim() ? toSen(l.amountRm) : 0), 0);
@@ -321,8 +324,11 @@ const NoteForm = ({ mode, id, initial, onClose, onSaved }: { mode: 'new' | 'edit
       const body = bodyOf(v);
       let noteId = id ?? createdId ?? '';
       if (mode === 'new' && !createdId) {
-        const r = await create.mutateAsync(body);
-        noteId = r.note.id;
+        const sent = await sendWithContentKey(createKeys, body,
+          () => serviceConfirm(unansweredSaveQuestion('note', 'the credit / debit notes list')),
+          (idempotencyKey) => create.mutateAsync({ ...body, idempotencyKey }));
+        if (!sent.sent) return;
+        noteId = sent.value.note.id;
         setCreatedId(noteId);
       } else if (noteId) {
         await update.mutateAsync({ id: noteId, noteDate: body.noteDate, reason: body.reason, sourceDocNo: body.sourceDocNo, lines: body.lines });

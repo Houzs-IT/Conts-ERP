@@ -49,6 +49,7 @@ import { todayMyt } from '../../vendor/scm/lib/dates';
 import { soRefOfCamelStamp } from '../../lib/so-ref-search';
 import { useAuth as useHouzsAuth } from '../../auth/AuthContext';
 import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKeyFor } from '../../lib/idempotency';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import styles from './SalesOrderDetail.module.css';
 import { PageHeader } from '../../components/Layout';
@@ -198,6 +199,7 @@ export const Receipts = () => {
   const updateReceipt = useUpdateReceipt();
 
   const [adding, setAdding] = useState(false);
+  const createKeys = useContentBoundIdempotencyKeyFor(adding);
   /* Which money this New receipt takes: sundry income (lines pick their own
      credit accounts) or an Other Debtor's (bills ticked, control credited). */
   const [kind, setKind] = useState<'GENERAL' | 'DEBTOR'>('GENERAL');
@@ -256,10 +258,15 @@ export const Receipts = () => {
       .map((l) => ({ ...(l.description.trim() ? { description: l.description.trim() } : {}), creditAccountCode: l.creditAccountCode, amountSen: l.amountSen, department: l.department || undefined, ...(l.subDepartmentId ? { subDepartmentId: l.subDepartmentId } : {}), ...(l.projectId != null ? { projectId: l.projectId } : {}), ...(l.department === 'rental' && l.unitId ? { unitId: l.unitId } : {}) }));
     try {
       if (!editing && kind === 'DEBTOR') {
-        const res = await createDebtorReceipt.mutateAsync({
+        const body = {
           debtorId, receiptDate, bankAccountCode: bank, postNow: true,
           allocations: Object.entries(debtorAllocs).filter(([, v]) => v > 0).map(([billId, amountSen]) => ({ billId, amountSen })),
-        });
+        };
+        const sent = await sendWithContentKey(createKeys, body,
+          () => askConfirm(unansweredSaveQuestion('receipt', 'the receipts list')),
+          (idempotencyKey) => createDebtorReceipt.mutateAsync({ ...body, idempotencyKey }));
+        if (!sent.sent) return;
+        const res = sent.value;
         closeForm();
         void notify({ title: `${res.receipt.receiptNumber} posted`, body: `${fmtRm(res.receipt.totalSen ?? debtorTotal)} booked into the ledger — the ticked bills are knocked off.`, tone: 'info' });
         return;
@@ -270,12 +277,12 @@ export const Receipts = () => {
         void notify({ title: `${res.receipt.receiptNumber} re-posted`, body: `${fmtRm(res.receipt.totalSen)} now booked on ${res.receipt.receiptDate} — the old entry is reversed, the number stays.`, tone: 'info' });
         return;
       }
-      const res = await createReceipt.mutateAsync({
-        payerName: payer.trim(),
-        receiptDate,
-        bankAccountCode: bank,
-        lines: sendLines,
-      });
+      const body = { payerName: payer.trim(), receiptDate, bankAccountCode: bank, lines: sendLines };
+      const sent = await sendWithContentKey(createKeys, body,
+        () => askConfirm(unansweredSaveQuestion('receipt', 'the receipts list')),
+        (idempotencyKey) => createReceipt.mutateAsync({ ...body, idempotencyKey }));
+      if (!sent.sent) return;
+      const res = sent.value;
       closeForm();
       void notify({ title: `${res.receipt.receiptNumber} posted`, body: `${fmtRm(res.receipt.totalSen)} booked into the ledger.`, tone: 'info' });
     } catch (e) {
