@@ -23,7 +23,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Merged onto #1134 (credit notes knocked off by allocation, si-credit-notes.ts) and #1138 (renovation counts confirmed money only): their versions won; this branch kept the paid rule, sibling status re-roll, PAID-by-hand guard and cancelled-invoice exclusions. Dropped, re-port if wanted: renovation schedule "less credit note" line and "Over-invoiced: credit note due" label (renovationSoInstalments.tsx).
 - Stored scm.mfg_sales_orders.paid_sen / balance_sen are not money owed and are no longer read for it (decision: stop reading, no write-back); writers left as they are.
 - Production check 21 Nov: no invoice receipts, no cancelled invoices with receipts; TC-SO-2611-033 and TC-SO-2611-038 showed instalment 1 "Not paid" while TC-SI-2611-007 / -009 were PAID by the deposit (display only, fixed by the code; no data to correct).
-- Houzs: F27 KPI (frontend SalesInvoicesListV2.tsx ~922), PAID-by-hand guard (backend sales-invoices.ts PATCH /:id/status), of-agent paid_sen (backend services/agents/of-agent.ts:67), SO list balance_sen fallbacks (frontend MfgSalesOrdersListV2.tsx ~1199/1784), invoice receipts in the SO paid view, PaymentsTable/SO PDF. Houzs already sums order + invoice money and has its own credit-note allocations (si-credit-notes.ts).
+- Houzs ports done 22 Nov 2026 (owner approved all): Houzs-Century/Houzs-ERP PRs #5892-#5916 merged and deployed, migrations applied there (voucher settle-once, DO revert cycle, GRN line version). Left out on purpose: SO paid counting invoice receipts (M10; Houzs invoice receipts are only auto-applied credit) and the leg-height seed (Houzs keeps it). Records for Houzs finance/warehouse to review: Houzs-records-to-review-2026-11-22.xlsx (owner has it).
 
 ## Save-integrity deferred items from #1126 (21 Nov 2026, branch fix/deferred-integrity)
 - Fixed: D1 D2 D3 D4 D5 D7 D12 D14 D17 D19 D20 D24. Needs migrations 0355 (voucher allocation settle-once) and 0356 (GRN line version) on production BEFORE the code merges.
@@ -31,7 +31,6 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Open: D7 compares the version only on the line edit; other grn_items writers do not bump it (the edit also compares qty_accepted).
 
 ## Click sweep save fixes (21 Nov 2026, fix/save-findings)
-- Port to Houzs (owner wants it later; same code there): idempotency_in_flight wait (frontend/src/vendor/scm/lib/authed-fetch.ts, frontend/src/api/client.ts), SO edit Save held from the click (frontend/src/pages/scm-v2/SalesOrderDetail.tsx saveEdit / submitAmendment), no Default leg-height seed on existing SO lines (same file, seedSofaLegDefault), PO by number (backend/src/scm/routes/mfg-purchase-orders.ts GET /:id).
 - Decision to confirm with the owner: a renovation contract's SO rooms now save from Edit SO (they were refused and dropped silently); the signed contract's own sections (reno_doc_sections) are untouched.
 
 ## Packages module (owner, 20 Nov 2026; migration 0347)
