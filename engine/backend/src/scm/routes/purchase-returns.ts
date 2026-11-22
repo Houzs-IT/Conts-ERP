@@ -550,8 +550,8 @@ async function writePurchaseReturnMovements(sb: any, prId: string, returnNumber:
     /* PR post = stock OUT to supplier → other READY SOs that needed it may
        regress. Re-walk SO allocation. Best-effort. */
     try {
-      const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-      await recomputeSoStockAllocation(sb);
+      const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+      await queueAllocationRecompute(sb, 'post-pr-post');
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-pr-post failed:', e); }
   }
   return movementErrors;
@@ -771,8 +771,8 @@ async function writePrLineDeltaMovement(
        lot to reconcile against when the IN was refused. */
     await reconcileUncostedAfterIn(sb, deltaRows, args.userId);
     try {
-      const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-      await recomputeSoStockAllocation(sb);
+      const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+      await queueAllocationRecompute(sb, 'post-pr-line-delta');
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-pr-line-delta failed:', e); }
     return [];
   } catch (e) {
@@ -1524,8 +1524,8 @@ export const cancelPurchaseReturnHandler = async (c: any) => {
     if (rev.reversed > 0) {
       /* PR cancel reversed stock IN → may unlock PENDING SOs. Re-walk. */
       try {
-        const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-        await recomputeSoStockAllocation(sb);
+        const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+        await queueAllocationRecompute(sb, 'post-pr-cancel');
       } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-pr-cancel failed:', e); }
     }
   } catch { /* best-effort: never un-cancel on a movement failure */ }

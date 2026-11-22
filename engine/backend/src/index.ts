@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
+import { contextStorage } from "hono/context-storage";
 import { etag } from "hono/etag";
 import { secureHeaders } from "hono/secure-headers";
 import type { Env } from "./types";
@@ -196,6 +197,8 @@ export const betaCacheHeaders: MiddlewareHandler<{ Bindings: Env }> = async (c, 
 
 // Outermost: one structured access-log line + X-Request-Id per request.
 app.use("*", requestLog);
+// Lets code that only holds a db client run work after the response (stock-allocation-job.ts deferAllocationRecompute).
+app.use("*", contextStorage());
 
 // Allow-listed CORS origins (audit M3). The SPA calls the API SAME-ORIGIN, so it
 // needs no CORS at all; the only legitimate CROSS-origin BROWSER callers are the
