@@ -105,8 +105,17 @@ export function clearAll(): void {
   invalidate("/api");
 }
 
+/* Who else hears about a write: lib/queryClient.ts registers here to mark the react-query reads stale, so this
+   module stays free of react-query. */
+const writeListeners = new Set<(path: string) => void>();
+export function onApiWrite(fn: (path: string) => void): () => void {
+  writeListeners.add(fn);
+  return () => { writeListeners.delete(fn); };
+}
+
 /** A mutation on `/api/<resource>/...` invalidates that whole resource. */
 export function invalidateForMutation(path: string): void {
   const m = path.match(/^(\/api\/[^/?]+)/);
   if (m) invalidate(m[1]);
+  for (const fn of writeListeners) fn(path);
 }
