@@ -105,7 +105,11 @@ export function MeetingBook() {
     </div>
   );
 
-  if (error) return shell(<div className="rounded-2xl border border-line bg-card p-6"><h1 className="text-[20px] font-bold">This booking link is not active</h1><p className="mt-2 text-muted-ink">{/not active/i.test(error) ? "" : `${error} `}Ask the person who sent it for a new link.</p></div>);
+  // A dead link and a booking service that did not answer are different facts: only the first asks for a new link.
+  if (error) {
+    const dead = /not active|not found/i.test(error);
+    return shell(<div className="rounded-2xl border border-line bg-card p-6"><h1 className="text-[20px] font-bold">{dead ? "This booking link is not active" : "Booking is not available right now"}</h1><p className="mt-2 text-muted-ink">{dead ? "Ask the person who sent it for a new link." : `${error} If it keeps happening, tell the person who sent the link.`}</p></div>);
+  }
 
   if (booking) {
     const room = typeof booking.room === "string" ? { name: booking.room, floor: booking.floor ?? "", location: booking.location ?? "" } : booking.room;
