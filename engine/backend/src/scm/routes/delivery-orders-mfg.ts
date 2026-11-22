@@ -1383,8 +1383,8 @@ export async function deductInventoryForDo(sb: any, deliveryOrderId: string, per
     /* B2C SO auto-allocation — stock just went out; other PENDING/READY SOs
        might lose their claim. Best-effort. */
     try {
-      const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-      await recomputeSoStockAllocation(sb);
+      const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+      await queueAllocationRecompute(sb, 'post-do-ship');
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-do-ship failed:', e); }
   }
   /* REC P4 — physical RACK stock-out. The DO just shipped, so pull the goods off
@@ -1973,8 +1973,8 @@ export async function resyncInventoryForDo(sb: any, deliveryOrderId: string, per
     await restampDoActualCost(sb, deliveryOrderId);
     /* Resync changed stock — re-walk SO allocation. Best-effort. */
     try {
-      const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-      await recomputeSoStockAllocation(sb);
+      const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+      await queueAllocationRecompute(sb, 'post-do-resync');
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-do-resync failed:', e); }
   }
 }
@@ -5639,8 +5639,8 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-sync] post-do-cancel failed:', e); }
     /* DO cancel freed stock — re-walk SO lines so PENDING orders flip back to READY. Best-effort. */
     try {
-      const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-      await recomputeSoStockAllocation(sb);
+      const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+      await queueAllocationRecompute(sb, 'post-do-cancel');
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-do-cancel failed:', e); }
     /* ERP -> AutoCount cancel. Reached only past doHasDownstream (checked above),
        so this can never ask AutoCount to cancel an invoiced delivery. */

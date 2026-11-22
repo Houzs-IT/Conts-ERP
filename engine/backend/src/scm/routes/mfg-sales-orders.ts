@@ -307,7 +307,7 @@ import { deferScmAfterCommit, runScmPgCommand } from '../lib/pg-supabase-transac
 import {
   applySoCancelVouchers, planSoCancelVouchers, soCancelVoucherAuditChanges,
 } from '../lib/so-cancel-vouchers';
-import { deferAllocationRecompute, scheduleStockAllocationAfterCommand } from '../lib/stock-allocation-job';
+import { deferAllocationRecompute, queueAllocationRecompute, scheduleStockAllocationAfterCommand } from '../lib/stock-allocation-job';
 import { pgrestIn } from '../lib/pgrest-in-list';
 import { skuCategoryResolver } from '../lib/sku-category';
 import { fmtSen } from '../shared/format';
@@ -4828,7 +4828,7 @@ async function createSalesOrderCore(c: SoCreateContext): Promise<SoCreateOutcome
      re-walk (not scoped to this doc) so that if this higher-priority order steals
      stock from a lower-priority one, the loser regresses from READY in the SAME
      pass instead of lagging. Best-effort: a failure never sinks the SO create. */
-  try { await recomputeSoStockAllocation(sb); }
+  try { await queueAllocationRecompute(sb, 'post-create'); }
   catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-create failed:', e); }
 
   /* ERP -> AutoCount write-back. Queued, never pushed inline: the AutoCount
@@ -5448,7 +5448,7 @@ export const patchMfgSalesOrderStatusHandler = async (c: any) => {
   /* SO status changed → recompute allocation. CANCELLED removes the SO from
      the queue (its claim releases); terminal statuses (SHIPPED/DELIVERED/…)
      also drop it out. Other PENDING SOs may move into READY. Best-effort. */
-  try { await recomputeSoStockAllocation(sb); }
+  try { await queueAllocationRecompute(sb, 'post-status'); }
   catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-status failed:', e); }
 
   /* ERP -> AutoCount cancel. Reached only for an SO the downstream lock let

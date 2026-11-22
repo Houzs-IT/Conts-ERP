@@ -684,8 +684,8 @@ export async function postGrnAndRollup(sb: any, grnId: string, userId: string, c
   /* B2C SO auto-allocation — stock just came in, re-walk every PENDING SO line
      and flip to READY where the new inventory covers it. Best-effort. */
   if (booksStock) try {
-    const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-    await recomputeSoStockAllocation(sb);
+    const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+    await queueAllocationRecompute(sb, 'post-grn');
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-grn failed:', e); }
   return {
     ok: true,
@@ -2657,8 +2657,8 @@ grns.patch('/:id', async (c) => {
              prior shorts (COE §2). Best-effort. */
           await reconcileUncostedAfterIn(sb, movements, user?.id ?? null);
           try {
-            const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-            await recomputeSoStockAllocation(sb);
+            const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+            await queueAllocationRecompute(sb, 'post-grn-relocate');
           } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-grn-relocate failed:', e); }
         } catch (e) {
           return c.json({ error: 'relocate_failed', reason: e instanceof Error ? e.message : String(e) }, 500);
@@ -3015,8 +3015,8 @@ grns.post('/:id/items', async (c) => {
         }], user.id);
         /* New stock landed → re-walk SO allocation. */
         try {
-          const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-          await recomputeSoStockAllocation(sb);
+          const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+          await queueAllocationRecompute(sb, 'post-grn-line-add');
         } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-grn-line-add failed:', e); }
       }
     } catch (e) { addMovementErrors.push(`stock IN threw: ${e instanceof Error ? e.message : String(e)}`); }
@@ -3325,8 +3325,8 @@ grns.patch('/:id/items/:itemId', async (c) => {
            2026-07-29 (COE §2). Reversing OUTs are filtered out. Best-effort. */
         await reconcileUncostedAfterIn(sb, movements, user.id);
         try {
-          const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-          await recomputeSoStockAllocation(sb);
+          const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+          await queueAllocationRecompute(sb, 'post-grn-line-edit');
         } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-grn-line-edit failed:', e); }
       } catch (e) { editMovementErrors.push(`stock write threw: ${e instanceof Error ? e.message : String(e)}`); }
     }

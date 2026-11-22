@@ -1122,8 +1122,8 @@ stockTakes.patch('/:id/reverse', async (c) => {
   /* Stock changed back — re-walk SO stock allocation (mirrors the post path,
      and like it runs before the placement-only rack work). */
   try {
-    const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-    await recomputeSoStockAllocation(sb);
+    const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+    await queueAllocationRecompute(sb, 'reverse-stock-take');
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] reverse-stock-take failed:', e); }
 
   /* Racks back too: the post moved the counted goods onto the racks the
@@ -1461,8 +1461,8 @@ export const postStockTakeHandler = async (c: any) => {
      the rack moves: it matters to stock, the racks are placement only, and the
      Worker's subrequest budget is spent in order. */
   try {
-    const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-    await recomputeSoStockAllocation(sb);
+    const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+    await queueAllocationRecompute(sb, 'post-stock-take');
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-stock-take failed:', e); }
 
   /* Round 2 (owner 2026-10-06): the goods go on the racks the counter wrote.

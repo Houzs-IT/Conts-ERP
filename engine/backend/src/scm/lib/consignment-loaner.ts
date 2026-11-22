@@ -258,8 +258,8 @@ export async function transferLoaner(
      changes nothing in total and everything to a PJ line that could not see it
      five seconds ago. Best-effort. */
   try {
-    const { recomputeSoStockAllocation } = await import('./so-stock-allocation');
-    await recomputeSoStockAllocation(sb);
+    const { queueAllocationRecompute } = await import('./stock-allocation-job');
+    await queueAllocationRecompute(sb, 'post-transfer');
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[consignment-loaner] post-transfer allocation failed:', e); }
 
   return errors;
@@ -397,8 +397,8 @@ export async function reverseLoaner(
   }
 
   try {
-    const { recomputeSoStockAllocation } = await import('./so-stock-allocation');
-    await recomputeSoStockAllocation(sb);
+    const { queueAllocationRecompute } = await import('./stock-allocation-job');
+    await queueAllocationRecompute(sb, 'post-reverse');
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[consignment-loaner] post-reverse allocation failed:', e); }
 
   return errors;

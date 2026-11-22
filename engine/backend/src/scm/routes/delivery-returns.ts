@@ -569,8 +569,8 @@ async function resyncInventoryForReturn(sb: any, deliveryReturnId: string, perfo
     await reconcileUncostedAfterIn(sb, writes, performedBy);
     /* Returned-stock level changed → re-walk SO allocation. Best-effort. */
     try {
-      const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-      await recomputeSoStockAllocation(sb);
+      const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+      await queueAllocationRecompute(sb, 'post-dr-resync');
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-dr-resync failed:', e); }
   }
   /* DR 3B — the return qty just changed (line edited / deleted / cancelled), so
@@ -1207,8 +1207,8 @@ deliveryReturns.post('/', async (c) => {
   /* B2C SO auto-allocation — returned goods re-enter stock; another customer's
      pending SO might now be fulfillable. Best-effort. */
   try {
-    const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-    await recomputeSoStockAllocation(sb);
+    const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+    await queueAllocationRecompute(sb, 'post-dr');
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-dr failed:', e); }
 
   /* DR 3B (Wei Siang 2026-06-01) — returned goods mean the SO is no longer
@@ -1885,8 +1885,8 @@ export const patchDeliveryReturnStatusHandler = async (c: any) => {
     /* DR cancel pulled stock back out → other READY SOs that relied on it may
        now regress to PENDING. Re-walk allocation. Best-effort. */
     try {
-      const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-      await recomputeSoStockAllocation(sb);
+      const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+      await queueAllocationRecompute(sb, 'post-dr-cancel');
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-dr-cancel failed:', e); }
   }
 

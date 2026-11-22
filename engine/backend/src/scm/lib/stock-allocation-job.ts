@@ -45,6 +45,11 @@
    else; the honest fix for that call site is still to move it onto
    `runScmPgCommand` so it can join the durable six.
 
+   CONTS, 22 Nov 2026 (save-integrity D16): every best-effort trigger now answers
+   the save first, through `queueAllocationRecompute` / `deferAllocationRecompute`;
+   the only inline sweep left is the manual "Re-allocate stock" endpoint. The
+   counts above are Houzs's history.
+
    The exact inventory is pinned by tests/stockAllocationDurabilityScope.test.ts,
    which fails if any count moves. Converting the rest requires first moving
    each route onto the PG command transaction: enqueuing from a route that has
@@ -57,6 +62,7 @@ import type { Env } from '../env';
 import { recomputeSoStockAllocation } from './so-stock-allocation';
 import { enqueueStockAllocationRecompute } from './stock-allocation-queue';
 import { deferScmAfterCommit } from './pg-supabase-transaction';
+import { tryGetContext } from 'hono/context-storage';
 
 const JOB_KEY = 'GLOBAL';
 const LEASE_MS = 4 * 60_000;
@@ -289,7 +295,7 @@ export function deferAllocationRecompute(c: any, sb: any, where: string): void {
      PENDING (its lease lapses after LEASE_MS) and the next allocation trigger's
      drain finishes it, instead of the projection staying stale with no trace. */
   const sweep = enqueueStockAllocationRecompute(sb, `deferred:${where}`)
-    .then(() => drainStockAllocationRecomputeWithClient(sb))
+    .then(() => drainCoalesced(sb))
     .then(
       (result) => {
         if (!result.completed && !result.deferred) {
@@ -306,6 +312,39 @@ export function deferAllocationRecompute(c: any, sb: any, where: string): void {
      just runs — already `.catch`ed, so it cannot break the test run. */
   try { c.executionCtx.waitUntil(sweep); }
   catch { /* non-Workers runtime — let the floating promise run */ }
+}
+
+/* Saves that land while a sweep runs each write a new request_token, so that
+   sweep's drain ends in new_work_arrived and the saves' own drains find the job
+   claimed. Draining again here is what covers them: a burst of saves costs the
+   running sweep plus one more, not one sweep each. Bounded so a constant stream
+   of saves cannot hold one request's waitUntil open; the row stays PENDING for
+   the next save to drain. */
+const MAX_DRAIN_PASSES = 4;
+type QueueDb = Parameters<typeof drainStockAllocationRecomputeWithClient>[0];
+export async function drainCoalesced(
+  sb: QueueDb,
+  drain: (sb: QueueDb) => Promise<AllocationDrainResult> = drainStockAllocationRecomputeWithClient,
+): Promise<AllocationDrainResult> {
+  let result = await drain(sb);
+  for (let pass = 1; pass < MAX_DRAIN_PASSES && result.reason === 'new_work_arrived'; pass += 1) {
+    result = await drain(sb);
+  }
+  return result;
+}
+
+/**
+ * The same deferral for code that holds only a db client (helpers called from
+ * many routes). Inside a request it finds the request through Hono's context
+ * storage (index.ts) and answers at once; outside one (scripts, unit tests) it
+ * runs the sweep inline as before, so nothing there changes.
+ */
+export async function queueAllocationRecompute(sb: QueueDb, where: string): Promise<void> {
+  const c = tryGetContext();
+  let canDefer = false;
+  try { canDefer = typeof c?.executionCtx.waitUntil === 'function'; } catch { canDefer = false; }
+  if (!canDefer) { await recomputeSoStockAllocation(sb); return; }
+  deferAllocationRecompute(c, sb, where);
 }
 
 /** Queue transactionally, then make one after-commit attempt for low latency. */

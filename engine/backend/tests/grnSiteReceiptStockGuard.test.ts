@@ -76,7 +76,7 @@ describe("every stock write for a receipt asks whether it was taken on site", ()
     expect(body).toContain("booksStock ? await checkGrnZeroCost(");
     expect(body).toContain("if (warehouseId && items && booksStock)");
     expect(body).toContain("if (booksStock) try {\n    const { placeGrnLinesOnRacks }");
-    expect(body).toContain("if (booksStock) try {\n    const { recomputeSoStockAllocation }");
+    expect(body).toContain("if (booksStock) try {\n    const { queueAllocationRecompute }");
   });
 
   test("cancel and every line edit refuse when the flag cannot be read", () => {
