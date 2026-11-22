@@ -48,10 +48,10 @@ const OWNER_ALLOWED: [string, RegExp][] = [
  *                system.
  *  DEMO_REFUSED  real-only actions, refused while Demo mode is on and read live: finalising and sending owner
  *                statements, payouts, accounting and the supply chain (the engine), channel and HostPlatform
- *                connections and imports, receipts and claims (the engine), IT support (the IT Hub), system health,
+ *                connections and imports, receipts and claims (the engine), IT support and meeting rooms (the IT Hub), system health,
  *                and user accounts and permissions. */
 const DEMO_LIVE = /^\/api\/(auth|account|owner|table-layouts)(\/|$)|^\/api\/demo$|^\/api\/(reservations|units|payouts|operations\/service-prices)\/export$/;
-const DEMO_REFUSED = /^\/api\/(statements\/(finalise|send|unlock-final)|payouts|integrations|import|claims|supply-chain|it-support|system|users|accounting|units\/[^/]+\/channex-setup)(\/|$)/;
+const DEMO_REFUSED = /^\/api\/(statements\/(finalise|send|unlock-final)|payouts|integrations|import|claims|supply-chain|it-support|meetings|public\/meetings|system|users|accounting|units\/[^/]+\/channex-setup)(\/|$)/;
 
 /** Renovation staff (migration 0316): their own sign-in, account and notices, and their own clock, leave, pay and receipts. */
 const RENOVATION_ALLOWED: [string, RegExp][] = [

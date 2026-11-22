@@ -164,3 +164,12 @@
   .ds-tiles:not(:has(> .dash-hero)) > :last-child:nth-child(odd),
   .ds-tiles:has(> .dash-hero) > :last-child:nth-child(even) { grid-column: 1 / -1; }
 }
+
+/* Meeting rooms (src/pages/meetings, MeetingBookPage): the page is shared with Houzs ERP and Hookka ERP, whose Tailwind
+   keeps its preflight. These are the preflight rules its classes rely on, kept to its own container (.meetings-ui). */
+@layer base {
+  .meetings-ui *, .meetings-ui *::before, .meetings-ui *::after { box-sizing: border-box; border-width: 0; border-style: solid; border-color: var(--color-line); }
+  .meetings-ui :where(h1, h2, h3, h4, p, ul, ol, figure) { margin: 0; }
+  .meetings-ui :where(ul, ol) { padding: 0; list-style: none; }
+  .meetings-ui :where(table) { border-collapse: collapse; }
+}

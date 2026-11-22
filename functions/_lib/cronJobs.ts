@@ -18,6 +18,7 @@ import { dueDepartures, markGuestLeft } from './guestLeft';
 import { runGuestReviews } from './guestReviews';
 import { passKeyUrgencyChanges, applyPassKeyUrgency } from './passKeyJobs';
 import { syncLate } from './ownerLocks';
+import { pushMeetingsDirectory, meetingsConnected } from './meetingsHub';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -407,9 +408,24 @@ export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<Job
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
   [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft, engineMailOutbox],
   [CRON.quarterHour]: [drainOutbox, repairBlockSweep, guestReviewSweep, lateIncomeSweep],
-  [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep, passKeyUrgencySweep],
+  [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep, passKeyUrgencySweep, meetingsDirectory],
   [CRON.daily]: [dailyDigest],
 };
+
+/** Every hour: the Houzs IT Hub's meeting-room staff list gets every active desk person, so colleagues in Houzs ERP and
+ *  Hookka ERP can invite them (functions/_lib/meetingsHub.ts). A failure is only reported; opening the Meetings page
+ *  also sends it, at most once an hour. */
+export async function meetingsDirectory(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  if (!meetingsConnected(env)) return { job: 'meetings-directory', summary: 'Not connected here (IT_HUB_URL or IT_HUB_API_KEY not set): nothing sent.' };
+  if (o.dryRun) return { job: 'meetings-directory', summary: 'Would send the staff list to the IT Hub for meetings.' };
+  try {
+    const r = await pushMeetingsDirectory(env);
+    return { job: 'meetings-directory', summary: 'sent' in r ? `Sent ${plural(r.sent, 'person', 'people')} to the IT Hub.` : 'Not connected: nothing sent.' };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    return { job: 'meetings-directory', summary: 'Staff list not sent.', error };
+  }
+}
 
 /** Every 15 minutes: months whose income is locked (owner report close). A booking changed since, by HostPlatform,
  *  Channex or by hand, reaches the owner as an owner adjustment on the next open month, once (functions/_lib/ownerLocks.ts).

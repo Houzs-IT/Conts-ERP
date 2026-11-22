@@ -175,6 +175,10 @@ const LABEL_ROWS = [
 /** Screens and API folders of the supply chain workspace: rental words do not apply there. */
 const SUPPLY = /(SalesOrder|SalesInvoice|SalesReturn|DeliveryOrder|DeliveryPlanning|DeliveryDate|DeliveryTime|DeliveryZone|DeliveryResidence|Purchase|Goods|Stock|Racks|Warehouse|Supplier|Customer|Fabric|Product|Mrp|DpOrders|LastMile|LoadingList|Driver|Vehicle|Fleet|ThreePL|Consignment|CreditNote|PaymentVoucher|Unbilled|Adjustments|Categories|RateCard|Accounting|SupplyChain|scmEngine|ShortStock)|\/(sales-orders|sales-invoices|sales-returns|delivery-\w+|purchase-\w+|goods-receipts|stock\w*|racks|warehouses|suppliers|customers|fabrics|products|product-models|mrp|loading-list|drivers?|driver-leave|vehicles|fleet-health|coverage-fleet|threepl-companies|consignment-notes|credit-notes|payment-vouchers|unbilled-deliveries|categories|rate-cards|rate-card-compute|accounting|supply-chain|so-amendments|residence-rules|scm-util|stock-ops|transport|fabric|racks)(\/|\.ts|$)/i;
 export const isSupply = rel => SUPPLY.test(rel);
+// Meeting rooms are shared with Houzs and Hookka (functions/_lib/meetingsHub.ts): there a room is a meeting room and a
+// booking a room booking, not a unit or a guest's reservation, so the rental words do not apply.
+const SHARED = /(\/meetings\/|Meeting|meetingsHub)/;
+export const isShared = rel => SHARED.test(rel);
 
 /** Words that must stay as they are, whatever the rules say. */
 const KEEP = [
@@ -374,7 +378,7 @@ export function findBanned(s, rel) {
   let masked = s;
   for (const k of KEEP) masked = masked.replace(new RegExp(k.source, 'g' + (k.flags.includes('i') ? 'i' : '')), m => '\u0000'.repeat(m.length));
   for (const rule of RULES) {
-    if (rule.side === 'rental' && isSupply(rel)) continue;
+    if (rule.side === 'rental' && (isSupply(rel) || isShared(rel))) continue;
     for (const b of rule.bad) {
       const re = new RegExp(b.re.source, 'gi');
       for (const m of masked.matchAll(re)) {
@@ -475,7 +479,7 @@ if (isMain && arg === 'inventory') {
   for (const rule of RULES) {
     const counts = rule.bad.map(b => {
       const re = new RegExp(b.re.source, 'i');
-      return [b.re.source, rows.filter(r => !(rule.side === 'rental' && isSupply(r.rel)) && re.test(r.string)).length];
+      return [b.re.source, rows.filter(r => !(rule.side === 'rental' && (isSupply(r.rel) || isShared(r.rel))) && re.test(r.string)).length];
     });
     console.log(`${rule.term} [${rule.source}]: ${counts.map(([w, n]) => `${w}=${n}`).join('  ')}`);
   }

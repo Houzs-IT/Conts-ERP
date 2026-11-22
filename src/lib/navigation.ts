@@ -214,6 +214,9 @@ export const NAV: NavGroup[] = [
     // Every desk role: report a problem with the system to IT and follow it. No permission area, since a person
     // only ever reads their own requests (functions/_lib/itHub.ts). Its count comes from lib/itSupport.ts.
     { key: 'itSupport', label: 'IT Support', icon: 'life-buoy', path: '/system/it-support', badge: 'itSupport' },
+    // Meeting rooms shared with Houzs and Hookka, kept in the IT Hub (functions/_lib/meetingsHub.ts). Every desk person
+    // books, so no permission area; adding and changing rooms needs Manage meeting rooms (area meetingRooms).
+    { key: 'meetings', label: 'Meetings', icon: 'calendar-clock', path: '/system/meetings' },
   ] },
 
   // Supply chain workspace. Mirrors Houzs's hierarchy: section -> collapsible area -> page.
@@ -306,6 +309,7 @@ export const NAV: NavGroup[] = [
   { label: SUPPLY_SYSTEM, workspace: 'supply', items: [
     { key: 'categoryAccess', label: 'Category access', icon: 'tags', path: '/system/category-access', area: 'users', full: true },
     { key: 'itSupportSupply', label: 'IT Support', icon: 'life-buoy', path: '/supply/it-support', area: 'itSupport', badge: 'itSupport' },
+    { key: 'meetingsSupply', label: 'Meetings', icon: 'calendar-clock', path: '/supply/meetings' },
   ] },
 ];
 

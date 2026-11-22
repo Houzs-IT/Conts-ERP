@@ -146,6 +146,10 @@ export const AREAS: Area[] = [
   { key: 'integrations', label: 'Integrations', group: 'System', api: ['integrations'], managed: true },
   { key: 'settings', label: 'Settings', group: 'System', api: ['settings'], managed: true },
   { key: 'health', label: 'System health', group: 'System', api: ['system', 'audit'], managed: true },
+  // Adding and changing the meeting rooms every company shares (functions/_lib/meetingsHub.ts). Booking needs nothing:
+  // every desk person books. Given one by one, so no System baseline opens it; management always has it.
+  // vocab-ok: meeting rooms shared with Houzs and Hookka, not rental units
+  { key: 'meetingRooms', label: 'Manage meeting rooms', group: 'System', api: [], managed: true, ownGrant: true },
 ];
 
 const BY_KEY = new Map(AREAS.map(a => [a.key, a]));
