@@ -1,6 +1,6 @@
 import postgres, { type Sql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { readPoSchedule } from '../src/scm/lib/renovation-po-schedule';
+import { readPoSchedule, takeBackPoPayment } from '../src/scm/lib/renovation-po-schedule';
 import type { RenoDb } from '../src/scm/lib/renovation-db';
 
 /* D13 (save-integrity, 22 Nov 2026): a PO instalment payment whose voucher was cancelled paid nothing. On the real
@@ -40,6 +40,8 @@ const db: RenoDb = { q: (text: string, params: unknown[] = []) => sql.unsafe(tex
 describePg('PO instalment payments and their vouchers', () => {
   let poId = '';
   let instId = '';
+  let noVoucherPayment = '';
+  let livePayment = '';
   beforeAll(async () => {
     sql = postgres(url, { max: 1, onnotice: () => {} });
     staffId = await insertRow('staff', {});
@@ -51,7 +53,8 @@ describePg('PO instalment payments and their vouchers', () => {
     const deadPv = await insertRow('payment_vouchers', { company_id: 1, pv_number: `PV-C-${run}`, supplier_id: supplierId, status: 'CANCELLED', credit_account_code: `310-${run}` });
     await insertRow('reno_po_instalment_payments', { company_id: 1, po_instalment_id: instId, payment_voucher_id: livePv, amount_sen: 30_000 });
     await insertRow('reno_po_instalment_payments', { company_id: 1, po_instalment_id: instId, payment_voucher_id: deadPv, amount_sen: 50_000 });
-    await insertRow('reno_po_instalment_payments', { company_id: 1, po_instalment_id: instId, payment_voucher_id: null, amount_sen: 5_000 });
+    noVoucherPayment = await insertRow('reno_po_instalment_payments', { company_id: 1, po_instalment_id: instId, payment_voucher_id: null, amount_sen: 5_000 });
+    livePayment = livePv;
   });
   afterAll(async () => { await sql?.end(); });
 
@@ -61,5 +64,20 @@ describePg('PO instalment payments and their vouchers', () => {
     expect(inst.paidSen).toBe(35_000);
     expect(inst.outstandingSen).toBe(65_000);
     expect(inst.payments.map((p) => p.amountSen).sort((a, b) => a - b)).toEqual([5_000, 30_000]);
+  });
+
+  test('a payment whose voucher could not be made is taken back and audited; one with a voucher is never touched', async () => {
+    const actor = { companyId: 1, name: 'Chew' } as never;
+    await takeBackPoPayment(db, actor, noVoucherPayment, 'Ledger not open');
+    const [gone] = await sql<{ n: number }[]>`select count(*)::int as n from scm.reno_po_instalment_payments where id = ${noVoucherPayment}`;
+    expect(gone!.n).toBe(0);
+    const [audit] = await sql<{ note: string }[]>`select note from scm.entity_audit_log where entity_id = ${poId} and action = 'INSTALMENT_PAYMENT_UNDONE'`;
+    expect(audit?.note).toContain('Ledger not open');
+    const [withPv] = await sql<{ id: string }[]>`select id::text from scm.reno_po_instalment_payments where payment_voucher_id = ${livePayment}`;
+    await takeBackPoPayment(db, actor, withPv!.id, 'should not happen');
+    const [kept] = await sql<{ n: number }[]>`select count(*)::int as n from scm.reno_po_instalment_payments where id = ${withPv!.id}`;
+    expect(kept!.n).toBe(1);
+    const v = await readPoSchedule(db, poId, 1);
+    expect(v.instalments.find((i) => i.id === instId)!.paidSen).toBe(30_000);
   });
 });

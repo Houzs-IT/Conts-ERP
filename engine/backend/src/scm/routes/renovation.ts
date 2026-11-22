@@ -29,7 +29,7 @@ import { applyCustomerCreditToSi } from '../lib/customer-credits';
 import { recomputeSiPaid } from '../lib/si-order-deposit';
 import { applyVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
 import { voucherForPoPayment } from '../lib/renovation-po-voucher';
-import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule } from '../lib/renovation-po-schedule';
+import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule, takeBackPoPayment } from '../lib/renovation-po-schedule';
 import { applyTermsToContract, listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS } from '../lib/renovation-validate';
 import { onRenovationSoLinesChanged } from '../lib/renovation-hooks';
@@ -583,5 +583,10 @@ renovation.post('/po-instalments/:id/payments', handle(PERM.bill, async (c, { tx
     amountSen: intParam(b.amountSen, 'amountSen'), paidOn: b.paidOn ?? null, paymentVoucherId: b.paymentVoucherId ?? null, note: typeof b.note === 'string' ? b.note : '',
   }));
   const voucher = paid.voucher ? await voucherForPoPayment(c, paid.id, paid.voucher) : null;
+  if (voucher && !voucher.tied) {
+    const why = voucher.problem ?? 'The voucher could not be made.';
+    await tx((db) => takeBackPoPayment(db, actorOf(c), paid.id, why));
+    return c.json({ error: 'voucher_not_made', message: `Not paid: ${why} Nothing was recorded; press Record again once it is fixed.` }, 409);
+  }
   return c.json({ id: paid.id, voucher }, 201);
 }));

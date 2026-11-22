@@ -31,7 +31,7 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Open: D7 compares the version only on the line edit; other grn_items writers do not bump it (the edit also compares qty_accepted).
 - Fixed 22 Nov (PRs #1150-#1155): D16 saves answer before the allocation re-walk, D18 deposit-invoice reads, D21 quotation/VO save lock, D22 api writes refresh hooks/useQuery, D23 money-create keys, D13 cancelled-voucher PO payments.
 - Fixed D15 (fix/short-out-reversal-lots, migration 0361): a reversed short stock-out that is not a DO puts back into the lots only what it took (reversing INs carry reverses_movement_id; the FIFO trigger opens a lot of the OUT's consumed qty at its consumed cost). Port to Houzs: backend/src/scm/lib/inventory-movements.ts:515 and the trigger (0307_item_code_unify.sql:814 area).
-- Owner to decide (D13): when Pay on a PO schedule cannot make its voucher at all, should the recorded payment still count as paid (today) or be taken back until finance makes the voucher?
+- Decided D13 (owner, 22 Nov; fix/po-pay-voucher-required): when Pay on a PO schedule cannot make or tie its voucher, the payment is taken back and audited, and the dialog says "Not paid" so finance can press Record again; a voucher made but not posted stays a draft and the payment stands.
 
 ## Click sweep save fixes (21 Nov 2026, fix/save-findings)
 - Decision to confirm with the owner: a renovation contract's SO rooms now save from Edit SO (they were refused and dropped silently); the signed contract's own sections (reno_doc_sections) are untouched.
