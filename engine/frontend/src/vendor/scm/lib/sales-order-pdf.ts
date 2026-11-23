@@ -352,8 +352,11 @@ export interface SoPdfOptions {
   quotation?: boolean;
   /* The timetable (owner, 17 Nov 2026): each line's processing and delivery dates in place of its unit price and discount; no payments. */
   timetable?: Record<string, { orderOn: string | null; deliverOn: string | null }>;
-  isUnitPriceHidden?: boolean;
+  /* Show the unit price, hide it, or print only qty and the line subtotal ('total'). */
+  unitPrice?: UnitPriceChoice;
 }
+
+export type UnitPriceChoice = 'show' | 'hide' | 'total';
 
 interface PrintedLine { item: SoItem; rowNumber: number; description: string }
 interface LineColumn { label: string; style: Partial<Styles>; cell: (line: PrintedLine) => string }
@@ -368,11 +371,12 @@ function dateColumns(timetable: NonNullable<SoPdfOptions['timetable']>): LineCol
   ];
 }
 
-function moneyColumns(currency: string, isUnitPriceHidden: boolean): LineColumn[] {
+function moneyColumns(currency: string, unitPrice: UnitPriceChoice): LineColumn[] {
   const moneyWidth = SHOW_CODE ? 24 : 26;
-  const unitPrice: LineColumn = { label: 'Unit Price', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.unit_price_sen, currency) };
+  if (unitPrice === 'total') return [{ label: 'SubTotal (RM)', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.total_sen, currency) }];
+  const unitPriceColumn: LineColumn = { label: 'Unit Price', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.unit_price_sen, currency) };
   return [
-    ...(isUnitPriceHidden ? [] : [unitPrice]),
+    ...(unitPrice === 'hide' ? [] : [unitPriceColumn]),
     { label: 'Discount', style: { cellWidth: SHOW_CODE ? 16 : 20, ...NUMBER_CELL }, cell: (line) => (line.item.discount_sen > 0 ? fmtRm(line.item.discount_sen, currency) : '—') },
     { label: 'Amount (RM)', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.total_sen, currency) },
   ];
@@ -387,7 +391,7 @@ function lineColumns(currency: string, opts: SoPdfOptions): LineColumn[] {
     { label: 'Description', style: { cellWidth: 'auto' }, cell: (line) => line.description },
     { label: 'Qty', style: { cellWidth: SHOW_CODE ? 14 : opts.timetable ? 20 : 16, ...NUMBER_CELL }, cell: (line) => `${line.item.qty} ${line.item.uom}` },
   ];
-  return [...leading, ...(opts.timetable ? dateColumns(opts.timetable) : moneyColumns(currency, !!opts.isUnitPriceHidden))];
+  return [...leading, ...(opts.timetable ? dateColumns(opts.timetable) : moneyColumns(currency, opts.unitPrice ?? 'show'))];
 }
 
 /* Draw ONE sales order's content into `doc` (letterhead → meta → items →

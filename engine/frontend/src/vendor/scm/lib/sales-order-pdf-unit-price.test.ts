@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { DEFAULT_BRANDING, clearBrandingLogoCache, setBrandingCache } from '../../../lib/branding';
+import type { UnitPriceChoice } from './sales-order-pdf';
 
 type JsPdf = import('jspdf').jsPDF;
 
@@ -21,7 +22,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function printedText(isUnitPriceHidden: boolean): Promise<string[]> {
+async function printedText(unitPrice: UnitPriceChoice): Promise<string[]> {
   setBrandingCache({ ...DEFAULT_BRANDING, logoR2Key: '' }, 'HOUZS');
   const [{ jsPDF }, { default: autoTable }, { renderSalesOrderInto }] = await Promise.all([
     import('jspdf'),
@@ -42,14 +43,14 @@ async function printedText(isUnitPriceHidden: boolean): Promise<string[]> {
     qty: 2, unit_price_sen: 150000, discount_sen: 0, total_sen: 300000, variants: null,
   }], [], [], {
     rooms: { order: ['Wiring works'], byItem: { a: 'Wiring works' } },
-    isUnitPriceHidden,
+    unitPrice,
   });
   return drawn;
 }
 
 describe('sales order PDF: hiding the unit price', () => {
   test('drops the Unit Price column and keeps description, qty, discount and amount', async () => {
-    const drawn = await printedText(true);
+    const drawn = await printedText('hide');
     expect(drawn.filter((text) => text.includes('Unit Price'))).toEqual([]);
     expect(drawn.filter((text) => text.includes('RM 1,500.00'))).toEqual([]);
     expect(drawn).toContain('Works - Electrical - Looping new socket');
@@ -58,8 +59,16 @@ describe('sales order PDF: hiding the unit price', () => {
     expect(drawn.some((text) => text.includes('RM 3,000.00'))).toBe(true);
   });
 
+  test('total prints only qty and the line subtotal', async () => {
+    const drawn = await printedText('total');
+    expect(drawn.filter((text) => text.includes('Unit Price') || text === 'Discount' || text.includes('RM 1,500.00'))).toEqual([]);
+    expect(drawn).toContain('2 POINT');
+    expect(drawn).toContain('SubTotal (RM)');
+    expect(drawn.some((text) => text.includes('RM 3,000.00'))).toBe(true);
+  });
+
   test('prints the unit price by default', async () => {
-    const drawn = await printedText(false);
+    const drawn = await printedText('show');
     expect(drawn).toContain('Unit Price');
     expect(drawn.some((text) => text.includes('RM 1,500.00'))).toBe(true);
   });
