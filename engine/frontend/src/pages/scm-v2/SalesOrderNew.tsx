@@ -132,7 +132,7 @@ import { useOrdersWithMoney } from '../../vendor/scm/lib/so-money-queries';
 import { useBranding } from '../../hooks/useBranding';
 import styles from './SalesOrderNew.module.css';
 import { CustomerBlock } from '../projects/renovation/CustomerBlock';
-import { RenovationSoRooms, roomLayoutOf } from './RenovationSoRooms';
+import { RenovationSoRooms, roomLayoutKey, roomLayoutOf } from './RenovationSoRooms';
 import { autoRoomsPlan, placeRows } from '../renovation/roomSections';
 import {
   instalmentsForSave, refusalOf, renoSend, sectionsForSave, useBrands, useQuotation, useRenoMutation, useTemplates, useTerms,
@@ -168,9 +168,6 @@ const newLine = (deliveryDate: string | null = null): DraftLine => ({
 });
 
 const fmtRm = (centi: number, currency = 'MYR'): string => fmtMoneySen(centi, currency);
-
-/* A saved quotation stays on the project it was made for: the save has no way to move it. */
-const QUOTE_PROJECT_LOCKED: ReadonlySet<keyof CustomerPropertyValue> = new Set(['projectId']);
 
 const subtotalStyle = {
   display: 'flex',
@@ -1602,7 +1599,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
     if (problems.length) { void notify({ title: 'The quotation did not save', body: problems.join(' '), tone: 'error' }); return null; }
     try {
       const r = await quoteSave.mutateAsync({ version: quoteView.quotation.version, payload: {
-        header: { ...header, brandId: quoteBrandId }, sections: sectionsForSave(quoteSections), instalments: instalmentsForSave(quoteInstalments),
+        projectId: blockRef.current.projectId, header: { ...header, brandId: quoteBrandId }, sections: sectionsForSave(quoteSections), instalments: instalmentsForSave(quoteInstalments),
       } });
       quoteDraft.clear();
       return r.version;
@@ -2019,6 +2016,9 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
         setLines(d.lines); setRenoRooms(d.renoRooms); setRenoLineRoom(d.renoLineRoom);
         setQuoteHeader(d.quoteHeader); setQuoteInstalments(d.quoteInstalments); setQuoteBrandId(d.quoteBrandId);
         applyBlock(d.block);
+        /* The project is editable on a draft now, so the restored one may differ from the saved one. */
+        if (d.block.projectId == null) setRenoProject(null);
+        else soInfoApi.project(d.block.projectId).then((r) => setRenoProject(r.project)).catch(() => undefined);
       }
     } catch { /* a draft that no longer reads is dropped */ }
     quoteDraft.answer(true);
@@ -2049,7 +2049,8 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
      first room. Otherwise the "Generate rooms from layout" button does it. */
   const renoLayoutKey = `${renoInfo.bedrooms}|${renoInfo.bathrooms}`;
   useEffect(() => {
-    if (!reno) return;
+    /* A saved quotation opens with its own rooms; resetting them here brought deleted rooms back on every Edit. */
+    if (!reno || quoteId) return;
     const plan = autoRoomsPlan(renoRooms, lines.map((l) => ({ key: l.rid, filled: l.itemCode.trim() !== '' })), roomLayoutOf(renoInfo));
     if (!plan) return;
     setRenoRooms(plan.rooms);
@@ -2666,7 +2667,6 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           onPickProject={pickRenoProject}
           missing={renoMissing}
           canChangeSalesperson={canChangeSalesperson}
-          lockedKeys={quoteId ? QUOTE_PROJECT_LOCKED : undefined}
           orderInfoFooter={asQuotation ? (
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className={styles.field}>
@@ -2712,7 +2712,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
               setRenoRooms(next);
               if (rename) setRenoLineRoom((m) => Object.fromEntries(Object.entries(m).map(([k, r]) => [k, r === rename.from ? rename.to : r])));
             }}
-            rows={lines.map((line) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', render: (n: number, move?: ReactNode) => renderNewLine(line, n, move) }))}
+            rows={lines.map((line) => ({ key: line.rid, room: renoLineRoom[line.rid] ?? '', amountSen: Math.max(0, grossSen(line.qty, line.unitPriceSen) - line.discountSen), render: (n: number, move?: ReactNode) => renderNewLine(line, n, move) }))}
             onRowRoom={(rid, room) => setRenoLineRoom((m) => ({ ...m, [rid]: room }))}
             onAddLine={(room) => {
               const l = newLine(deliveryDate || null);
@@ -2725,6 +2725,8 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
               if (room) setRenoLineRoom((m) => ({ ...m, [l.rid]: room }));
             }}
             layout={roomLayoutOf(renoInfo)}
+            savedLayoutKey={quoteView ? roomLayoutKey(roomLayoutOf(blockFromQuote(quoteView.revision.header, quoteView.quotation.projectId))) : undefined}
+            money={(sen) => fmtRm(sen)}
             compact
           />
           {!quoteView && (

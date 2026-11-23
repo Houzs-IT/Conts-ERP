@@ -136,6 +136,7 @@ renovation.put('/quotations/:id', handle(PERM.quote, async (c, { tx, sqlRead }) 
   const b = await json(c);
   const body = {
     version: intParam(b.version, 'version'),
+    projectId: b.projectId === undefined ? undefined : b.projectId == null || b.projectId === '' ? null : intParam(b.projectId, 'projectId'),
     header: b.header !== undefined ? need(normaliseHeader(b.header)) : undefined,
     sections: b.sections !== undefined ? need(normaliseSections(b.sections, 'doc', await loadUomsSql(sqlRead))) : undefined,
     instalments: b.instalments !== undefined ? need(normaliseInstalments(b.instalments)) : undefined,
