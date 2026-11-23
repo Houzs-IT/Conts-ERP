@@ -606,6 +606,7 @@ export const PurchaseOrderNew = () => {
 
   const [isItemPickerOpen, setItemPickerOpen] = useState(false);
   const isSupplierScoped = Boolean(supplierId) && pickable.length > 0;
+  const skusWithMainCost = useMfgProducts({ withMain: true, enabled: isItemPickerOpen && !isSupplierScoped });
   const itemPickerRows = useMemo<ItemPickerRow[]>(() => {
     const skus = allSkus.data ?? [];
     if (isSupplierScoped) {
@@ -619,10 +620,15 @@ export const PurchaseOrderNew = () => {
         };
       });
     }
-    return sortByText(skus).map((p) => ({
-      key: p.id, code: p.code, name: p.name, categoryLabel: mfgCategoryLabel(p.category), uom: p.uom ?? undefined,
-    }));
-  }, [isSupplierScoped, pickable, allSkus.data]);
+    const mainCostByCode = new Map((skusWithMainCost.data ?? []).map((p) => [p.code, p.mainCostSen]));
+    return sortByText(skus).map((p) => {
+      const mainCostSen = mainCostByCode.get(p.code);
+      return {
+        key: p.id, code: p.code, name: p.name, categoryLabel: mfgCategoryLabel(p.category), uom: p.uom ?? undefined,
+        priceLabel: mainCostSen == null ? undefined : fmtRm(mainCostSen, 'MYR'),
+      };
+    });
+  }, [isSupplierScoped, pickable, allSkus.data, skusWithMainCost.data]);
 
   const addPickedItem = ({ key, code }: ItemPickerRow) => {
     const binding = isSupplierScoped ? pickable.find((b) => b.id === key) : undefined;
