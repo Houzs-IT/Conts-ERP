@@ -1,3 +1,6 @@
+-- APPLIED to production on 23 Nov 2026 as migration 0366 (migrate-production.yml, --only=0366). Kept here, not in
+-- migrations-pg: it is a one-off fix of one production contract; public.pos_migrations keeps its row.
+
 -- 0366_henge_terms_and_golive: one-off data fix of one production contract, THE HENGE E18-01 (TC-SO-2505-001),
 -- chew 23 Nov 2026. On an empty database (CI, staging) the row is not there and nothing changes.
 --
