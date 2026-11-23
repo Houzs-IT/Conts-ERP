@@ -138,7 +138,7 @@ export function BetaCalDeadlines({ m, who, canAssign, viewingName, ...act }: Pro
               <ol className="stag" style={LIST}>{g.todo.map((x) => <TodoRow key={`${x.p.id}-${x.k}`} m={m} who={who} x={x} canAssign={canAssign} act={act} />)}</ol>
             </aside>
           ) : (
-            <aside style={{ flex: "999 1 460px", minWidth: 0, background: TONES.accent.soft, border: `1px solid ${TONES.accent.line}`, borderRadius: 26, padding: "14px 16px", fontSize: 13, color: TONES.accent.ink, fontWeight: 600 }}>
+            <aside style={{ flex: "1 1 100%", minWidth: 0, background: TONES.accent.soft, border: `1px solid ${TONES.accent.line}`, borderRadius: 26, padding: "14px 16px", fontSize: 13, color: TONES.accent.ink, fontWeight: 600 }}>
               Nothing to book or do right now.
             </aside>
           )}

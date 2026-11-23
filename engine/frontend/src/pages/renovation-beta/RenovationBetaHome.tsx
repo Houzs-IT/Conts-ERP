@@ -350,7 +350,7 @@ function HomeScreen(): ReactElement {
         </div>
       )}
 
-      <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · {(HOME_SORTS.find(([k]) => k === sort)?.[1] ?? "").toLowerCase()} · tap a project to open it</div>
+      <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · tap a project to open it</div>
     </div>
     </BetaMotion>
   );
