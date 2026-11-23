@@ -39,12 +39,13 @@ const field: CSSProperties = {
   border: '1px solid var(--line-strong)', background: 'var(--c-paper)', color: 'var(--c-ink)',
 };
 const list: CSSProperties = { display: 'flex', flexDirection: 'column', border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', background: 'var(--c-paper)' };
-const rowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-4)', borderTop: '1px solid var(--line)' };
-const textCol: CSSProperties = { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 };
+const rowStyle: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-4)', borderTop: '1px solid var(--line)' };
+const textCol: CSSProperties = { flex: '1 1 220px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 };
 const codeStyle: CSSProperties = { fontWeight: 700, fontSize: 'var(--fs-14)', color: 'var(--c-ink)', overflowWrap: 'anywhere' };
 const muted: CSSProperties = { fontSize: 'var(--fs-12)', color: 'var(--fg-muted)', overflowWrap: 'anywhere' };
 const skuStyle: CSSProperties = { fontSize: 'var(--fs-12)', color: 'var(--c-burnt)', fontFamily: 'var(--font-mono)', overflowWrap: 'anywhere' };
 const priceCol: CSSProperties = { textAlign: 'right', flex: 'none', display: 'flex', flexDirection: 'column', gap: 2 };
+const actionCol: CSSProperties = { display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginLeft: 'auto' };
 const footer: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' };
 const countPill: CSSProperties = { fontSize: 'var(--fs-12)', padding: 'var(--space-1) var(--space-3)', borderRadius: 'var(--radius-pill)', border: '1px solid var(--line-strong)', color: 'var(--fg-muted)' };
 
@@ -127,6 +128,7 @@ export function ItemPickerDialog({ title, subtitle, rows, mode = 'add', currentC
                 <span style={muted}>{row.categoryLabel} · {row.name}</span>
                 {row.supplierSku && <span style={skuStyle}>{row.supplierSku}</span>}
               </div>
+              <div style={actionCol}>
               {row.priceLabel && (
                 <div style={priceCol}>
                   <span style={{ fontSize: 'var(--fs-14)', fontWeight: 600 }}>{row.priceLabel}</span>
@@ -142,6 +144,7 @@ export function ItemPickerDialog({ title, subtitle, rows, mode = 'add', currentC
                   {addedCount ? <><Check size={14} /> Added{addedCount > 1 ? ` ×${addedCount}` : ''}</> : <><Plus size={14} /> Add</>}
                 </Button>
               )}
+              </div>
             </div>
           );
         })}

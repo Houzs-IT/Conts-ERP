@@ -1246,7 +1246,7 @@ export const PurchaseOrderNew = () => {
                       onClick={() => setItemPicker({ mode: 'replace', rid: l.rid })}
                       disabled={allSkus.isLoading}
                       aria-label={`Line ${idx + 1} item code: ${l.itemCode || 'none'}. Change item`}
-                      className={styles.fieldInput}
+                      className={`${styles.fieldInput} field-trigger`}
                       style={{
                         fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center',
                         justifyContent: 'space-between', gap: 'var(--space-2)', cursor: 'pointer', textAlign: 'left',
