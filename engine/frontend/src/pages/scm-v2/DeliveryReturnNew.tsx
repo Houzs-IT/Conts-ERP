@@ -30,7 +30,8 @@ import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import {
   useCreateDeliveryReturn, useMfgDeliveryOrderDetail,
 } from '../../vendor/scm/lib/delivery-return-queries';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { contentKeyFor, settleOutcome, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readScmHandoff, removeScmHandoff } from '../../lib/scmHandoffStorage';
 import { usePickableStaff } from '../../vendor/scm/lib/admin-queries';
 import { sortByText, sortByNumeric } from '../../vendor/scm/lib/sort-options';
@@ -63,12 +64,10 @@ export const DeliveryReturnNew = () => {
   const fromPicks = searchParams.get('fromPicks') === '1';
 
   const create = useCreateDeliveryReturn();
-  /* One key for the one return this page is open to raise (lib/idempotency.ts).
-     Route-level form, navigates to the return detail on success, so the MOUNT is
-     exactly one return. Load-bearing: the create increases stock inline (see
-     useCreateDeliveryReturn), so a re-press after a stalled submit books the
-     goods back IN twice unless it replays. */
-  const idemKey = useIdempotencyKey();
+  /* One key per delivery return CONTENT (lib/idempotency.ts createContentBoundKey): the same form re-pressed after a stall
+     replays the first answer instead of raising a second document; a save the server refused releases the key, so
+     the corrected form is a new request instead of a replay of the refusal (audit 20 Nov 2026, items 19-24). */
+  const idemKeys = useContentBoundIdempotencyKey();
   const loc = useLocalities();
 
   // Prefill source — the DO this return is being issued from (if any).
@@ -259,9 +258,8 @@ export const DeliveryReturnNew = () => {
       return;
     }
 
-    create.mutate(
-      {
-        idempotencyKey: idemKey,
+    void (async () => {
+    const payload = {
         doDocNo: doDocNo || undefined,
         deliveryOrderId: fromDo || undefined,
         debtorName,
@@ -301,14 +299,19 @@ export const DeliveryReturnNew = () => {
           variants: l.variants,
           doItemId: l.doItemId,
         })),
-      },
-      {
+    };
+    const key = await contentKeyFor(idemKeys, payload, () => serviceConfirm(unansweredSaveQuestion('delivery return', 'Sales > Delivery Returns')));
+    if (!key) return;
+    create.mutate(
+      { ...payload, idempotencyKey: key },
+      settleOutcome(idemKeys, {
         onSuccess: (res: { id: string; returnNumber: string }) => {
           navigate(afterCreatePath(`/scm/delivery-returns/${res.id}`, sourceDocPath.deliveryOrder(fromDo)));
         },
         onError: (err) => notify({ title: 'Save failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' }),
-      },
+      }),
     );
+    })();
   };
 
   const loadingPrefill = Boolean(fromDo) && !prefilled && doDetail.isLoading;
@@ -395,7 +398,7 @@ export const DeliveryReturnNew = () => {
 
       {/* ── RETURN INFO ── */}
       <section className={styles.card}>
-        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Return Info</h2></header>
+        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Return info</h2></header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
             <label className={styles.field}>
@@ -434,7 +437,7 @@ export const DeliveryReturnNew = () => {
       {/* ── EMERGENCY CONTACT ── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Emergency Contact</h2>
+          <h2 className={styles.cardTitle}>Emergency contact</h2>
           <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
             Used only if we cannot reach the customer on collection day
           </span>
@@ -466,7 +469,7 @@ export const DeliveryReturnNew = () => {
 
       {/* ── DELIVERY ADDRESS ── */}
       <section className={styles.card}>
-        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Delivery Address</h2></header>
+        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Delivery address</h2></header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
             <label className={styles.field} style={{ gridColumn: 'span 4' }}>
@@ -513,7 +516,7 @@ export const DeliveryReturnNew = () => {
 
       {/* ── RETURNED ITEMS ── */}
       <section className={styles.card}>
-        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Returned Items ({lines.length})</h2></header>
+        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Returned items ({lines.length})</h2></header>
         <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {lines.map((line, idx) => (
             <SoLineCard

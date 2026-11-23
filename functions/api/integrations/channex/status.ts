@@ -21,7 +21,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     FROM channex_outbox`);
   const calls = await all<{ kind: string; called_at: string; status: number; task_id: string | null; row_count: number; full_sync: boolean; property_id: string | null; unit: string | null }>(env, `
     SELECT c.kind, c.called_at, c.status, c.task_id, c.row_count, c.full_sync, c.property_id,
-           (SELECT u.unit_number FROM units u WHERE u.channex_property_id = c.property_id LIMIT 1) AS unit
+           (SELECT COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number FROM units u WHERE u.channex_property_id = c.property_id LIMIT 1) AS unit
     FROM channex_calls c ORDER BY c.called_at DESC, c.id DESC LIMIT ? OFFSET ?`, pageSize, (page - 1) * pageSize);
   const callCount = await one<{ n: number }>(env, 'SELECT count(*)::int AS n FROM channex_calls');
   // Whether Channex is set to notify this site about bookings (management only: it is theirs to switch on).

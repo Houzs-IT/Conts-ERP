@@ -11,7 +11,7 @@ export interface SignInUser { id: string; email: string; full_name: string; role
 /** True when management requires two-step sign-in for this person's department, they have not set it up yet, and it
  *  can be set up here (the server has its key and the database has migration 0098). Without the key nobody is
  *  held at the set-up screen, because they could never get past it. */
-export async function twoStepSetupDue(env: Env, settings: SecuritySettings, who: { role: string; departmentId?: string | null }, enabled: boolean) {
+export async function twoStepSetupDue(env: Env, settings: SecuritySettings, who: { role: string; departmentId?: string | null; extraDepartmentIds?: readonly string[] }, enabled: boolean) {
   return !enabled && twoStepRequired(settings, who) && twoFactorAvailable(env) && await twoFactorTables(env);
 }
 
@@ -32,7 +32,7 @@ export async function completeSignIn(env: Env, request: Request, user: SignInUse
     user: {
       id: user.id, fullName: user.full_name, email: user.email, role: user.role, side,
       mustChangePassword: !!user.must_change_password, locale: 'en-MY', employeeId: await employeeIdOfUser(env, user.id),
-      twoStepSetupRequired: await twoStepSetupDue(env, settings, { role: user.role, departmentId }, !!user.totp_enabled_at),
+      twoStepSetupRequired: await twoStepSetupDue(env, settings, { role: user.role, departmentId, extraDepartmentIds: place.extraDepartmentIds }, !!user.totp_enabled_at),
       access: await levelsFor(env, { userId: user.id, role: user.role, side, departmentId, positionId, kind }),
     },
     home: user.must_change_password ? '/change-password' : homeFor({ role: user.role, kind, side, department: place.department }),

@@ -515,7 +515,7 @@ export const PurchaseInvoiceDetail = () => {
         if (!d.itemId) {
           // New line — free-entry (grnItemId undefined) or GRN-transferred
           // (set by addGrnLines above); the server caps/consumes either way.
-          await addItem.mutateAsync({
+          const added = await addItem.mutateAsync({
             id: pi.id,
             grnItemId:      d.grnItemId,
             materialKind:   d.materialKind,
@@ -528,6 +528,10 @@ export const PurchaseInvoiceDetail = () => {
             itemGroup:      d.category,
             variants:       Object.keys(d.variants).length ? d.variants : undefined,
           });
+          /* D20 (#1126): the draft now names the saved line, so a Save pressed again after a later line failed
+             updates it instead of adding it a second time. */
+          const addedId = (added.item as { id?: string } | undefined)?.id;
+          if (addedId) patchLine(d.rid, { itemId: addedId });
           continue;
         }
         const it = byId.get(d.itemId);
@@ -707,7 +711,7 @@ export const PurchaseInvoiceDetail = () => {
       {/* ── Line items ──────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Line Items ({isEditing ? editLines.length : visibleItems.length})</h2>
+          <h2 className={styles.cardTitle}>Line items ({isEditing ? editLines.length : visibleItems.length})</h2>
           {/* T12 — Edit mode restores the Create UI: a "+ Add item" that appends a
               blank PoLineCard (PI is free-entry). Hidden while the PI is locked.
               "Transfer from GRN" sits in the top header toolbar beside Save,
@@ -890,7 +894,7 @@ const SupplierCard = ({
   return (
     <section className={styles.card}>
       <header className={styles.cardHeader}>
-        <h2 className={styles.cardTitle}>Supplier · Dates · Notes</h2>
+        <h2 className={styles.cardTitle}>Supplier · dates · notes</h2>
       </header>
       <div className={styles.cardBody}>
         {!isEditing ? (

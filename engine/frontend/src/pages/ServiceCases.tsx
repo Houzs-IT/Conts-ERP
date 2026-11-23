@@ -1414,7 +1414,7 @@ function StageStatStrip({
                   <span
                     className={cn(
                       "font-mono text-[13px] font-bold leading-none",
-                      isActive ? "text-primary" : empty ? "text-ink-muted/60" : "text-ink",
+                      isActive ? "text-primary" : empty ? "text-ink-muted" : "text-ink",
                     )}
                   >
                     {ready ? s.total : "—"}
@@ -1564,7 +1564,7 @@ function CasesBoardView({
               </div>
               <div className="flex-1 space-y-2 p-2">
                 {items.length === 0 ? (
-                  <p className="px-1 py-4 text-center text-[11px] text-ink-muted/70">
+                  <p className="px-1 py-4 text-center text-[11px] text-ink-muted">
                     Nothing here
                   </p>
                 ) : (
@@ -2832,7 +2832,7 @@ function CreatePanel({
   }
 
   return (
-    <Panel open onClose={onClose} title="New Service Case" width={560} centered>
+    <Panel open onClose={onClose} title="New service case" width={560} centered>
       {renoCtx === null ? (
         <PanelSection title="Project">
           <div className="text-[12px] text-ink-muted">Loading...</div>
@@ -2848,7 +2848,7 @@ function CreatePanel({
           />
         </PanelSection>
       ) : (
-      <PanelSection title="Sales Order">
+      <PanelSection title="Sales order">
         <div className="relative flex gap-2">
           <input
             ref={soInputRef}
@@ -3075,7 +3075,7 @@ function CreatePanel({
         </PanelSection>
       )}
 
-      <PanelSection title="Issue Description">
+      <PanelSection title="Issue description">
         <textarea
           value={issue}
           onChange={(e) => setIssue(e.target.value)}
@@ -3121,7 +3121,7 @@ function CreatePanel({
           complete instead of being backfilled after the fact. Ref No
           seeds from the picked SO's own customer reference. */}
       {reno ? (
-        <PanelSection title="Customer & Item">
+        <PanelSection title="Customer & item">
           <div className="space-y-3">
             <div>
               <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-brand text-ink-muted">
@@ -3149,7 +3149,7 @@ function CreatePanel({
           </div>
         </PanelSection>
       ) : (
-      <PanelSection title="Customer & Assignment">
+      <PanelSection title="Customer & assignment">
         <div className="space-y-3">
           <div>
             <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-brand text-ink-muted">
@@ -3862,7 +3862,7 @@ function DetailContent({
                 .sort((x, y) => x.order - y.order)
                 .map((g) => (
                   <div key={g.label} className="mb-2">
-                    <div className="mb-1 text-[9.5px] font-semibold uppercase tracking-wide text-ink-muted/80">
+                    <div className="mb-1 text-[9.5px] font-semibold uppercase tracking-wide text-ink-muted">
                       {g.label} ({g.items.length})
                     </div>
                     <div className="grid grid-cols-3 gap-2">
@@ -3924,7 +3924,7 @@ function DetailContent({
           </PanelSection>
 
           {/* Product Info — product attributes + procurement (PO). */}
-          <PanelSection title="Product Info" icon={<Package size={13} />}>
+          <PanelSection title="Product info" icon={<Package size={13} />}>
             {items.length === 0 ? (
               <div className="text-[12px] text-ink-muted">No items</div>
             ) : (
@@ -4372,7 +4372,7 @@ function DetailContent({
               c={c}
               priorityMap={priorityMap}
               stageId="pending_supplier_pickup"
-              title="Pickup / Return"
+              title="Pickup / return"
               summary={
                 c.supplier_pickup_at
                   ? `Supplier collected ${formatDate(c.supplier_pickup_at)}`
@@ -4470,7 +4470,7 @@ function DetailContent({
               c={c}
               priorityMap={priorityMap}
               stageId="pending_item_ready"
-              title="Pending Item Ready"
+              title="Pending item ready"
               summary={
                 c.inspection_result
                   ? `QC: ${c.inspection_result}${c.items_ready_at ? ` · ready ${formatDate(c.items_ready_at)}` : ""}`
@@ -4512,7 +4512,7 @@ function DetailContent({
             >
               {/* Delivery-by own-team gate -> ServiceCaseDeliveryBy.tsx (owner 2026-09-17). */}
               <DeliveryByCard c={c} patch={patch} />
-              <CollapsibleBlock title="Reference & Logistics">
+              <CollapsibleBlock title="Reference & logistics">
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
               {([
                 ["SO", c.doc_no, true],
@@ -5403,7 +5403,7 @@ function DetailContent({
               mostly at sign-off / close. */}
           {/* Satisfaction (shown when completed) */}
           {c.stage === "completed" && (
-            <PanelSection title="Customer Satisfaction">
+            <PanelSection title="Customer satisfaction">
               {c.satisfaction_rating ? (
                 <>
                   <div className="flex items-center gap-1">
@@ -5948,7 +5948,7 @@ function WorkflowCard({
                 >
                   {s.short}
                 </span>
-                <span className="mt-0.5 px-0.5 text-center text-[7.5px] leading-tight text-ink-muted/80">
+                <span className="mt-0.5 px-0.5 text-center text-[7.5px] leading-tight text-ink-muted">
                   {s.desc}
                 </span>
                 {current && subStatus && (
@@ -6297,7 +6297,7 @@ function InspectionCard({
       title={
         <>
           QC Inspection{" "}
-          <span className="font-normal normal-case tracking-normal text-ink-muted/70">— after supplier return</span>
+          <span className="font-normal normal-case tracking-normal text-ink-muted">— after supplier return</span>
         </>
       }
     >
@@ -6581,7 +6581,7 @@ function VerificationCard({
       title={
         <>
           QC Issue Inspection{" "}
-          <span className="font-normal normal-case tracking-normal text-ink-muted/70">— on receipt</span>
+          <span className="font-normal normal-case tracking-normal text-ink-muted">— on receipt</span>
         </>
       }
     >
@@ -7630,7 +7630,7 @@ function CustomerHistory({ id }: { id: number }) {
 
   if (q.loading) {
     return (
-      <PanelSection title="Customer History" muted>
+      <PanelSection title="Customer history" muted>
         <div className="text-[11px] text-ink-muted">Loading…</div>
       </PanelSection>
     );
@@ -7638,7 +7638,7 @@ function CustomerHistory({ id }: { id: number }) {
   if (q.error) return null;
   if (cases.length === 0) {
     return (
-      <PanelSection title="Customer History" muted>
+      <PanelSection title="Customer history" muted>
         <div className="text-[11px] text-ink-muted">No prior cases for this customer.</div>
       </PanelSection>
     );

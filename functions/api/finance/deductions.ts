@@ -48,14 +48,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const [expenses, adjustments] = await Promise.all([
     all<ExpenseRow>(env, `
       SELECT e.id, e.unit_id, e.category, e.description, e.amount, e.incurred_on, e.reference, e.receipt_document_id,
-             p.name AS property_name, u.unit_number, u.owner_id, o.display_name AS owner_name, ${LOCKED_SQL} AS locked
+             p.name AS property_name, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.owner_id, o.display_name AS owner_name, ${LOCKED_SQL} AS locked
       FROM expenses e JOIN units u ON u.id = e.unit_id JOIN properties p ON p.id = u.property_id LEFT JOIN owners o ON o.id = u.owner_id
       WHERE e.charge_to = 'owner' AND NOT e.record_only AND e.deduct_month = ?
         AND e.category NOT IN ('cleaning', 'housekeeping', 'electricity', 'water', 'internet', 'sewerage')
       ORDER BY e.incurred_on DESC, e.created_at DESC`, month),
     all<AdjustmentRow>(env, `
       SELECT a.id, a.owner_id, a.unit_id, a.amount, a.description, a.occurred_on, a.reference, a.state,
-             p.name AS property_name, u.unit_number, o.display_name AS owner_name, s.state AS statement_state
+             p.name AS property_name, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, o.display_name AS owner_name, s.state AS statement_state
       FROM owner_adjustments a JOIN owners o ON o.id = a.owner_id
       LEFT JOIN units u ON u.id = a.unit_id LEFT JOIN properties p ON p.id = u.property_id
       LEFT JOIN owner_statements s ON s.id = a.statement_id

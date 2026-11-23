@@ -13,7 +13,8 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { supabaseAuth } from '../middleware/auth';
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canViewAllSales, hasHouzsPerm } from '../lib/houzs-perms';
+import { soDocOutOfScope } from '../lib/salesScope';
 import { activeCompanyId, companyDocPrefix } from '../lib/companyScope';
 import type { Env, Variables } from '../env';
 import { inRenoTx, qtyCapRefusalOf, renoDbOf, RenoError, sqlFor, type RenoDb } from '../lib/renovation-db';
@@ -28,8 +29,8 @@ import { applyCustomerCreditToSi } from '../lib/customer-credits';
 import { recomputeSiPaid } from '../lib/si-order-deposit';
 import { applyVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
 import { voucherForPoPayment } from '../lib/renovation-po-voucher';
-import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule } from '../lib/renovation-po-schedule';
-import { listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
+import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule, takeBackPoPayment } from '../lib/renovation-po-schedule';
+import { applyTermsToContract, listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS } from '../lib/renovation-validate';
 import { onRenovationSoLinesChanged } from '../lib/renovation-hooks';
 import { postSiRevenue } from '../lib/post-si-revenue';
@@ -48,11 +49,12 @@ const PERM = {
   quote: 'scm.renovation.quote',
   voApply: 'scm.renovation.vo.apply',
   bill: 'scm.renovation.bill',
+  billOwn: 'scm.renovation.bill_own',
   terms: 'scm.renovation.terms',
   poSplit: 'scm.renovation.po_split',
 } as const;
 
-function actorOf(c: C): RenoActor {
+export function actorOf(c: C): RenoActor {
   const hu = c.get('houzsUser');
   return {
     name: hu?.name ?? hu?.email ?? null,
@@ -63,17 +65,17 @@ function actorOf(c: C): RenoActor {
   };
 }
 
-const param = (c: C, name: string): string => {
+export const param = (c: C, name: string): string => {
   const v = c.req.param(name);
   if (!v) throw new RenoError(400, 'missing_param', `Missing ${name}.`);
   return v;
 };
 
-const json = async (c: C): Promise<Record<string, any>> => {
+export const json = async (c: C): Promise<Record<string, any>> => {
   try { return (await c.req.json()) ?? {}; } catch { throw new RenoError(400, 'invalid_json', 'The request body is not valid JSON.'); }
 };
 
-function need<T>(r: { ok: true; value: T } | { ok: false; problems: string[] }): T {
+export function need<T>(r: { ok: true; value: T } | { ok: false; problems: string[] }): T {
   if (!r.ok) throw new RenoError(422, 'invalid_document', r.problems.slice(0, 8).join(' '), { problems: r.problems });
   return r.value;
 }
@@ -85,7 +87,7 @@ const intParam = (v: unknown, name: string): number => {
 };
 
 /** Runs a handler with a DB connection; turns RenoError into JSON. */
-function handle(perm: string | null, fn: (c: C, ctx: { sqlRead: RenoDb; tx: <T>(f: (db: RenoDb) => Promise<T>) => Promise<T> }) => Promise<Response>) {
+export function handle(perm: string | null, fn: (c: C, ctx: { sqlRead: RenoDb; tx: <T>(f: (db: RenoDb) => Promise<T>) => Promise<T> }) => Promise<Response>) {
   return async (c: C) => {
     if (perm && !hasHouzsPerm(c, perm)) return c.json({ error: 'forbidden', message: `You need the "${perm}" permission for this.` }, 403);
     const sql = sqlFor(c.env);
@@ -428,7 +430,34 @@ async function spendCustomerCredit(c: Context<{ Bindings: Env; Variables: Variab
   }
 }
 
-renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(PERM.bill, async (c, { tx }) => {
+/* A contract's payment terms set again from a template, while nothing is billed (lib/renovation-terms). */
+renovation.post('/sales-orders/:docNo/instalments/terms', handle(PERM.terms, async (c, { tx }) => {
+  const b = await json(c);
+  const actor = actorOf(c);
+  return c.json(await tx((db) => applyTermsToContract(db, actor.companyId, param(c, 'docNo'), String(b.templateId ?? ''))));
+}));
+
+/** May the caller bill this contract's instalments? scm.renovation.bill bills any; scm.renovation.bill_own (every
+    salesperson, chew 21 Nov 2026) only an order in the caller's sales scope: their own, their downline's, one shared
+    with them or open to all (the rule every sales-order read follows, lib/salesScope). An order out of scope answers
+    as one that does not exist. */
+async function billRefusal(c: C, docNo: string): Promise<Response | null> {
+  if (hasHouzsPerm(c, PERM.bill)) return null;
+  if (!hasHouzsPerm(c, PERM.billOwn)) return c.json({ error: 'forbidden', message: `You need the "${PERM.bill}" permission for this.` }, 403);
+  const sb = c.get('supabase');
+  const { data, error } = await sb.from('mfg_sales_orders').select('salesperson_id, access_staff_ids, open_to_all')
+    .eq('doc_no', docNo).eq('company_id', actorOf(c).companyId).maybeSingle();
+  if (error) return c.json({ error: 'load_failed', message: 'The sales order could not be read; nothing was billed. Please try again.' }, 500);
+  const so = data as { salesperson_id?: string | null; access_staff_ids?: string[] | null; open_to_all?: boolean | null } | null;
+  const out = !so || await soDocOutOfScope(sb, c.env, c.get('houzsUser')?.id, canViewAllSales(c), {
+    salespersonId: so.salesperson_id, accessStaffIds: so.access_staff_ids, openToAll: so.open_to_all,
+  });
+  return out ? c.json({ error: 'so_not_found', message: `Sales order ${docNo} does not exist.` }, 404) : null;
+}
+
+renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(null, async (c, { tx }) => {
+  const refused = await billRefusal(c, param(c, 'docNo'));
+  if (refused) return refused;
   const b = await json(c);
   const actor = actorOf(c);
   const result = await tx((db) => billInstalment(db, actor, param(c, 'docNo'), param(c, 'id'), {
@@ -554,5 +583,10 @@ renovation.post('/po-instalments/:id/payments', handle(PERM.bill, async (c, { tx
     amountSen: intParam(b.amountSen, 'amountSen'), paidOn: b.paidOn ?? null, paymentVoucherId: b.paymentVoucherId ?? null, note: typeof b.note === 'string' ? b.note : '',
   }));
   const voucher = paid.voucher ? await voucherForPoPayment(c, paid.id, paid.voucher) : null;
+  if (voucher && !voucher.tied) {
+    const why = voucher.problem ?? 'The voucher could not be made.';
+    await tx((db) => takeBackPoPayment(db, actorOf(c), paid.id, why));
+    return c.json({ error: 'voucher_not_made', message: `Not paid: ${why} Nothing was recorded; press Record again once it is fixed.` }, 409);
+  }
   return c.json({ id: paid.id, voucher }, 201);
 }));

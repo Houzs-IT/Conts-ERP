@@ -33,6 +33,20 @@ export const usePurchaseInvoices = (status?: string) =>
     retryDelay: 800,
   });
 
+/* One supplier's invoices with money still owing, oldest first (GET /purchase-invoices/payable). Payment vouchers'
+   Apply to PI reads this: the plain list above holds only the newest 500 invoices of every supplier. */
+export const useSupplierPayablePis = (supplierId: string | null | undefined) =>
+  useQuery({
+    queryKey: ['purchase-invoices', 'payable', supplierId ?? ''],
+    queryFn: () => authedFetch<{ purchaseInvoices: any[]; truncated?: boolean }>(
+      `/purchase-invoices/payable?supplierId=${encodeURIComponent(supplierId!)}`,
+    ),
+    enabled: !!supplierId,
+    staleTime: 30_000,
+    retry: retryUnlessClientError,
+    retryDelay: 800,
+  });
+
 // Opt-in server-side pagination + search + sort + status-counts (mirrors
 // useMfgSalesOrdersPaged). Sending `page` switches /purchase-invoices into its
 // paginated contract ({ purchaseInvoices, total, page, pageSize, statusCounts });

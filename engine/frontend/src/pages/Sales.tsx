@@ -23,6 +23,8 @@ import { EmptyState } from "../components/EmptyState";
 import { Pagination } from "../components/Pagination";
 import { useDebouncedSearchTerm, useSearchResultTransition } from "../hooks/useServerSearch";
 import { DateField } from "../vendor/scm/components/DateField";
+import { SearchableSelect } from "../vendor/scm/components/SearchableSelect";
+import { useProjectSearch } from "../lib/projectSearch";
 
 const SALES_FILTER_KEYS = ["status", "search", "date_from", "date_to", "view"] as const;
 
@@ -877,9 +879,26 @@ export function EntryPanel({
   // The list payload also carries organizer / venue / event_type_name — read
   // here so a solo roadshow's organizer is masked in the option text for
   // everyone outside BD / Owner / weisiang (owner 2026-09-18).
-  const projectsQ = useQuery<{ data: Array<SoloMaskProject & { id: number; code: string }> }>("/api/projects?per_page=200",
-    () => api.get("/api/projects?per_page=200")
-  );
+  /* Searched on the server as the rep types (audit 20 Nov 2026): the newest 200 used to be the whole list, so an older
+     project could not be picked. Read only when the picker is editable. */
+  const [projectTerm, setProjectTerm] = useState("");
+  const projectsQ = useProjectSearch<SoloMaskProject & { id: number; code: string }>(projectTerm, !lockedProjectId);
+  const canSeeOrganizer = canSeeSoloOrganizer(auth.user);
+  const projectOptions = useMemo(() => {
+    const opts = projectsQ.rows.map((p) => ({ value: String(p.id), label: salesOrderProjectName(p, canSeeOrganizer) }));
+    /* The chosen project stays an option so its name shows: from the rows seen, else the entry's own code and name. */
+    if (projectId && !opts.some((o) => o.value === projectId)) {
+      const seen = projectsQ.byId(projectId);
+      const label = seen
+        ? salesOrderProjectName(seen, canSeeOrganizer)
+        : String(entry?.project_id ?? "") === projectId && (entry?.project_name || entry?.project_code)
+          ? [entry?.project_code, entry?.project_name].filter(Boolean).join(" · ")
+          : `Project #${projectId}`;
+      opts.unshift({ value: projectId, label });
+    }
+    return [{ value: "", label: "— none —" }, ...opts];
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- byId reads the hook's cache of the rows listed
+  }, [projectsQ.rows, projectId, canSeeOrganizer, entry?.project_id, entry?.project_name, entry?.project_code]);
 
   async function submit(thenSubmit: boolean) {
     if (!customerName.trim() && !isQuickLog) {
@@ -1284,14 +1303,16 @@ export function EntryPanel({
                 {lockedProjectLabel || `Project #${lockedProjectId}`}
               </div>
             ) : (
-              <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className={selectCls}>
-                <option value="">— none —</option>
-                {(projectsQ.data?.data ?? []).map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {salesOrderProjectName(p, canSeeSoloOrganizer(auth.user))}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                value={projectId}
+                onChange={setProjectId}
+                options={projectOptions}
+                onSearchChange={setProjectTerm}
+                searching={projectsQ.searching}
+                placeholder={projectsQ.isLoading ? "Loading projects…" : "Search project by name, code or venue…"}
+                className={inputCls}
+                ariaLabel="Project"
+              />
             )}
           </Field>
           <Field label="Currency">
@@ -1778,7 +1799,7 @@ function FieldConfigPanel({
     <Panel
       open
       onClose={onClose}
-      title="Sales Fields"
+      title="Sales fields"
       subtitle="Control what extra information reps are asked for"
       width={440}
     >

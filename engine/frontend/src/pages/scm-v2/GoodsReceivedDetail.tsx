@@ -717,7 +717,7 @@ export const GoodsReceivedDetail = () => {
       {/* ── Line items ──────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Line Items ({visibleItems.length})</h2>
+          <h2 className={styles.cardTitle}>Line items ({visibleItems.length})</h2>
           {/* The primary path stays convert-from-PO — the TOP-LEVEL "From
               Purchase Order" header button (see actions row above), mirroring
               Create GR. The "Add line" affordance BELOW covers a
@@ -1225,7 +1225,7 @@ export const GoodsReceivedDetail = () => {
           unsaved draft edits). GRN has no tax. ─────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Line Summary</h2>
+          <h2 className={styles.cardTitle}>Line summary</h2>
         </header>
         <div className={styles.cardBody} style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-13)' }}>
@@ -1309,7 +1309,7 @@ const SupplierCard = ({
   return (
     <section className={styles.card}>
       <header className={styles.cardHeader}>
-        <h2 className={styles.cardTitle}>Supplier · Dates · Notes</h2>
+        <h2 className={styles.cardTitle}>Supplier · dates · notes</h2>
       </header>
       <div className={styles.cardBody}>
         {!isEditing ? (

@@ -27,11 +27,14 @@ import { Button } from '@2990s/design-system';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
 import { useCreatePaymentVoucher, usePaymentVoucherDetail, useSupplierAdvances, usePvReservations, NO_RESERVATIONS, useExtractBills, useUploadPvFile, useRefundSource, fileToBase64, type BillExtraction, type VendorMemory, type PvFilePayload } from '../../vendor/scm/lib/payment-voucher-queries';
 import { takePvFiles } from '../../vendor/scm/lib/pv-file-handoff';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { useFormDraft } from '../../lib/formDraft';
+import { FormDraftBar } from '../../components/FormDraftBar';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { useAccounts, useAccountRoles, postableAccounts, type Account } from '../../vendor/scm/lib/accounting-queries';
 import { useSaveHotkey, SAVE_HOTKEY_HINT } from '../../vendor/scm/lib/use-save-hotkey';
 import { upperFill } from '../../vendor/scm/lib/ocr-fill';
-import { usePurchaseInvoices } from '../../vendor/scm/lib/purchase-invoice-queries';
+import { useSupplierPayablePis } from '../../vendor/scm/lib/purchase-invoice-queries';
 import { useApInvoices } from '../../vendor/scm/lib/ap-invoice-queries';
 import { useSuppliers, useSupplierDetail } from '../../vendor/scm/lib/suppliers-queries';
 import { useActiveCurrencies, rateFor } from '../../vendor/scm/lib/currencies-queries';
@@ -77,6 +80,15 @@ type DraftLine = PurposeDraft & {
   amountSen:      number;
 };
 
+/** Conts (chew, 16 Nov 2026): Make voucher on payment requests opens this form filled in (location.state). */
+export type ClaimsPrefill = {
+  payeeName: string; notes: string; sources: string[];
+  lines: Array<{ description: string; amountSen: number; department: string; unitId: string | null; projectId: number | null; subDepartmentId: string | null;
+    /** Its account when it has one already (a staff claim, set when checked). */
+    accountCode?: string | null;
+    paymentRequestId?: string | null; staffReceiptId?: string | null }>;
+};
+
 const newLine = (purpose: PurposeDraft = purposeOfNew([])): DraftLine => ({
   rid:              `l${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   description:      '',
@@ -118,15 +130,15 @@ export const PaymentVoucherNew = () => {
      the one Dr AR line is the system's. No payee typed, no lines, no PIs. */
   const isRefund = searchParams.get('type') === 'refund';
   const create   = useCreatePaymentVoucher();
-  /* One key for the one voucher this page is open to raise (lib/idempotency.ts).
-     Minted once by useState's lazy init: stable across re-renders and across a
-     re-press after a stalled submit. Like GrnNew (which carries the full
+  /* One key per voucher CONTENT (lib/idempotency.ts createContentBoundKey): stable across a re-press of the same
+     voucher after a stalled submit, released when the server refuses it, so the corrected voucher is a new request
+     instead of a replay of the refusal (audit 20 Nov 2026, item 20). Like GrnNew (which carries the full
      reasoning) this page shows a dialog instead of navigating, so the mount can
      outlive the document; the same trade applies and lands the same way — the
      lines are not reset on success, so a re-press submits the SAME voucher and
      replay is the right answer, and the dialog names the FIRST pvNumber rather
      than failing silently. */
-  const idemKey  = useIdempotencyKey();
+  const pvKeys   = useContentBoundIdempotencyKey();
   const saving   = create.isPending;
 
   const accountsQ = useAccounts();
@@ -235,7 +247,21 @@ export const PaymentVoucherNew = () => {
      pv-file-handoff.ts); take() clears, so only set when something was
      actually taken (a double-run effect must not wipe the first take). */
   useEffect(() => {
-    const st = location.state as { billPrefill?: { extraction: BillExtraction; lines?: Array<{ description: string | null; amountSen: number | null }>; memory?: VendorMemory | null } } | null;
+    const st = location.state as { billPrefill?: { extraction: BillExtraction; lines?: Array<{ description: string | null; amountSen: number | null }>; memory?: VendorMemory | null }; claimsPrefill?: ClaimsPrefill } | null;
+    /* Conts (chew, 16 Nov 2026): opened from payment requests (Make voucher): the payee, notes and each line filled in, the
+       accounts left for finance to choose here; each line remembers the request it pays. */
+    if (st?.claimsPrefill) {
+      const pre = st.claimsPrefill;
+      const drafted = pre.lines.map((l) => ({
+        ...newLine(purposeOfSaved({ department: departmentOf(l.department), unitId: l.unitId, projectId: l.projectId, subDepartmentId: l.subDepartmentId })),
+        description: l.description, amountSen: l.amountSen, debitAccountCode: l.accountCode ?? '',
+      }));
+      setPayeeName(pre.payeeName);
+      setNotes(pre.notes);
+      setLines(drafted);
+      setClaimLinks(Object.fromEntries(drafted.map((d, i) => [d.rid, { paymentRequestId: pre.lines[i]!.paymentRequestId ?? null, staffReceiptId: pre.lines[i]!.staffReceiptId ?? null }])));
+      setScanNote(`From ${pre.sources.join(', ')} — choose each line's account, then save.`);
+    }
     if (st?.billPrefill) {
       applyExtraction(st.billPrefill.extraction, { lines: st.billPrefill.lines, memory: st.billPrefill.memory });
       const carried = takePvFiles();
@@ -290,6 +316,8 @@ export const PaymentVoucherNew = () => {
      supplier's currency (below). */
   const [currencyOverride, setCurrencyOverride]   = useState<string | null>(null);
   const [lines, setLines]                         = useState<DraftLine[]>([newLine()]);
+  /* Conts: each line opened from a payment request or claim, by line, what it pays (conts/combined-voucher.ts). */
+  const [claimLinks, setClaimLinks]               = useState<Record<string, { paymentRequestId: string | null; staffReceiptId: string | null }>>({});
   /* Each Project line's project: its funding and side set the line's tag before the save. */
   const sideOf = useProjectSides();
   /* Each line's sub-department (SOP 1.1; chew 4 Nov 2026). */
@@ -427,11 +455,11 @@ export const PaymentVoucherNew = () => {
 
   /* ── Apply to PI (migration 0202) ─────────────────────────────────────────
      Only for a SUPPLIER_PAYMENT voucher with a supplier chosen: list that
-     supplier's outstanding PIs (derived client-side from the PI list — POSTED /
+     supplier's outstanding PIs (read for that supplier on the server — POSTED /
      PARTIALLY_PAID with total − paid > 0) and let the operator apply an amount
      per PI. The allocations settle AP at face value (MYR). */
   const applyToPi = isAp && !!supplierId;
-  const piListQ = usePurchaseInvoices();
+  const piListQ = useSupplierPayablePis(applyToPi ? supplierId : null);
   /* What other UNPOSTED vouchers already applied (docs/bugs/0653): an invoice
      with nothing left is not offered; a partly reserved one offers only what
      remains. paid_sen alone moves at Approve and would offer the same bill twice. */
@@ -524,6 +552,50 @@ export const PaymentVoucherNew = () => {
      AP debit, and on post the server records it as this supplier's advance. */
   const [advanceSen, setAdvanceSen] = useState<number>(0);
   useEffect(() => { setAdvanceSen(0); }, [supplierId]);
+
+  /* Unsaved fields kept in this browser (lib/formDraft.ts), offered back after a reload. Not for a voucher opened
+     from payment requests, a scanned bill or Copy as new: those carry links and files a draft cannot hold, and the
+     source fills the form again anyway. */
+  const [draftAllowed] = useState(() => {
+    const st = location.state as { billPrefill?: unknown; claimsPrefill?: unknown } | null;
+    return !copyFrom && !st?.billPrefill && !st?.claimsPrefill;
+  });
+  const draftValue = {
+    payeeName, supplierId, creditAccountCode, voucherDate, notes, projectId,
+    isTransfer, toAccountCode, transferAmount,
+    exchangeRate, rateSource, myrPaidSen, currencyOverride,
+    lines, allocAmounts, advanceSen,
+    refundType, refundDocInput, refundDocNo, refundAmountSen,
+  };
+  const draft = useFormDraft('pv-new', isRefund ? 'refund' : isAp ? 'ap' : 'pv', draftValue, {
+    enabled: draftAllowed,
+    meaningful: !!payeeName.trim() || !!supplierId || !!refundDocNo || lines.some((l) => l.amountSen > 0 || !!l.description.trim()) || !!transferAmount,
+    keys: pvKeys,
+  });
+  /* Changing the supplier wipes its invoice amounts and prepay (the effects above), so a restored supplier's
+     amounts are put back once that wipe has run. */
+  const restoredAlloc = useRef<{ supplierId: string; allocAmounts: Record<string, number>; advanceSen: number } | null>(null);
+  useEffect(() => {
+    const r = restoredAlloc.current;
+    if (!r || r.supplierId !== supplierId) return;
+    restoredAlloc.current = null;
+    setAllocAmounts(r.allocAmounts);
+    setAdvanceSen(r.advanceSen);
+  }, [supplierId]);
+  const restoreDraft = (v: typeof draftValue) => {
+    setPayeeName(v.payeeName); setCreditAccountCode(v.creditAccountCode); setVoucherDate(v.voucherDate);
+    setNotes(v.notes); setProjectId(v.projectId);
+    setIsTransfer(v.isTransfer); setToAccountCode(v.toAccountCode); setTransferAmount(v.transferAmount);
+    setCurrencyOverride(v.currencyOverride); setRateSource(v.rateSource); setExchangeRate(v.exchangeRate); setMyrPaidSen(v.myrPaidSen);
+    if (Array.isArray(v.lines) && v.lines.length > 0) setLines(v.lines);
+    setRefundType(v.refundType); setRefundDocInput(v.refundDocInput); setRefundDocNo(v.refundDocNo); setRefundAmountSen(v.refundAmountSen);
+    if (v.supplierId === supplierId) {
+      setAllocAmounts(v.allocAmounts); setAdvanceSen(v.advanceSen);
+    } else {
+      restoredAlloc.current = { supplierId: v.supplierId, allocAmounts: v.allocAmounts, advanceSen: v.advanceSen };
+      setSupplierId(v.supplierId);
+    }
+  };
   /* What this supplier is ALREADY owed from earlier prepayments — informational
      here; the knock-off lives on the voucher that holds the advance. */
   const advancesQ = useSupplierAdvances(isAp && supplierId ? supplierId : null);
@@ -581,6 +653,8 @@ export const PaymentVoucherNew = () => {
     if (isAp && !supplierId) { setDialog({ title: 'Pick a supplier', body: 'An AP Payment settles a supplier — choose whose invoices this pays.' }); return; }
     if (isAp && totalSen === 0) { setDialog({ title: 'Nothing to pay yet', body: 'Tick an invoice, type a partial amount, or enter a prepay figure.' }); return; }
     if (!isAp && realLines.length === 0) { setDialog({ title: 'Add at least one line', body: 'Each line needs a debit account and an amount > 0.' }); return; }
+    /* A line from a payment request is paid only with its account: none is left out by mistake. */
+    if (!isAp && lines.some((l) => claimLinks[l.rid] && l.amountSen > 0 && !l.debitAccountCode)) { setDialog({ title: 'Choose each line\'s account', body: 'Every line from the payment requests needs its account.' }); return; }
     if (!isAp) {
       /* A Unit line names its unit, a Project line its project. */
       const missing = missingTarget(lines.map((l, i) => ({ ...l, n: i + 1 })).filter((l) => l.debitAccountCode && l.amountSen > 0));
@@ -616,8 +690,7 @@ export const PaymentVoucherNew = () => {
           : { piId: a.piId, amountSen: a.amountSen }))
       : [];
     try {
-      const res = await create.mutateAsync({
-        idempotencyKey:    idemKey,
+      const payload = {
         payeeName:         isRefund ? (refundSrc?.customer.name ?? refundSrc?.docNo ?? '') : transferMode ? transferPayee : payeeName.trim(),
         supplierId:        transferMode || isRefund ? null : (supplierId || null),
         purpose,
@@ -635,7 +708,19 @@ export const PaymentVoucherNew = () => {
           : 1,
         lines: sendLines,
         ...(sendAllocations.length > 0 ? { allocations: sendAllocations } : {}),
-      });
+        /* What each line pays, when opened from payment requests or claims. */
+        ...(!isAp && !transferMode && !isRefund && Object.keys(claimLinks).length > 0
+          ? { claimLinks: realLines.map((l) => claimLinks[l.rid] ?? { paymentRequestId: null, staffReceiptId: null }) }
+          : {}),
+      };
+      const sent = await sendWithContentKey(
+        pvKeys, payload,
+        () => serviceConfirm(unansweredSaveQuestion('voucher', 'Finance > Payment Vouchers')),
+        (idempotencyKey) => create.mutateAsync({ ...payload, idempotencyKey }),
+      );
+      if (!sent.sent) return;
+      const res = sent.value;
+      draft.clear();
       /* Attach the scanned bill AFTER the voucher exists — sequentially, so
          sort_no (= print order) is the scan order. A failed upload never
          un-saves the voucher: the dialog says which files still need adding
@@ -676,7 +761,7 @@ export const PaymentVoucherNew = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Finance"
-        title={isRefund ? 'New Customer Refund' : isAp ? 'New AP Payment' : 'New Payment Voucher'}
+        title={isRefund ? 'New customer refund' : isAp ? 'New AP payment' : 'New payment voucher'}
         actions={
           <div className={styles.actions}>
             <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>{SAVE_HOTKEY_HINT}</span>
@@ -690,6 +775,8 @@ export const PaymentVoucherNew = () => {
           </div>
         }
       />
+
+      <FormDraftBar draft={draft} onRestore={restoreDraft} />
 
       <section className={styles.card}>
         <div className={styles.cardHeader}><h2 className={styles.cardTitle}>Header</h2></div>

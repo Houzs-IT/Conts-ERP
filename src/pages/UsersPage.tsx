@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Card } from '../components/Card';
 import PageHeader from '../components/PageHeader';
 import { SystemStats } from '../components/SystemStats';
@@ -11,8 +11,12 @@ import { Field } from '../components/Field';
 import { PhoneInput, phoneProblem } from '../components/inputs';
 import { Select } from '../components/Select';
 import { Modal } from '../components/Modal';
+import { Drawer } from '../components/Dialog';
+import { CloseButton } from '../components/CloseButton';
 import { COMPANIES, KIND_NOTE, SIDE_OPTIONS, companiesOf, isFieldKind, sideLabel, useDepartments, type Company } from '../components/permissions/shared';
 import { CompanyBadges } from '../components/permissions/CompanyBadges';
+import { RoleBadges, type RoleLabel } from '../components/permissions/RoleBadges';
+import { ExtraRolesField } from '../components/permissions/ExtraRolesField';
 import { Segmented } from '../components/Metric';
 import { StaleBanner } from '../components/DataState';
 import { DataTable, type Column } from '../components/DataTable';
@@ -20,7 +24,7 @@ import { useToast } from '../components/Toast';
 import { useApi } from '../lib/useApi';
 import { useSession } from '../lib/session';
 import { api, ApiFailure, errorMessage } from '../lib/api';
-import { count, date, plural, personName } from '../lib/format';
+import { count, date, dateTime, plural, personName, initials } from '../lib/format';
 import { TONE, cx } from '../lib/design-tokens';
 import type { Department, Tone, UserRole, UserSide } from '../lib/types';
 import { HistoryDisclosure } from '../components/RecordHistory';
@@ -56,19 +60,18 @@ function avatarTone(u: Pick<Row, 'department' | 'role'>): Tone {
 interface Row {
   id: string; fullName: string; email: string; employeeId?: string | null; phone: string | null; role: UserRole;
   department?: string | null; position?: string | null; departmentId?: string | null; positionId?: string | null; side?: UserSide;
+  /** Extra roles (migration 0349): other desk positions the person holds besides their main one. */
+  extraRoles?: { positionId: string; departmentId: string }[];
   managerId: string | null;
   isActive: boolean; mustChangePassword: boolean; isLocked?: boolean; twoStep?: boolean; lastLoginAt: string | null;
   /** When the newest invitation email went out (audit_log user.invite / user.resend_invite). */
   lastInvitedAt?: string | null;
 }
-interface Payload { data: Row[]; generatedAt: string }
+interface Payload { data: Row[]; generatedAt: string; rolesField?: boolean }
 
 /** The departments and positions come from the managed list (Permissions > Departments and positions), so nothing is typed
  *  here. Cleaners and technicians are not offered: they are added on HR > Employees. */
 const departmentNote = (d: Department | undefined): string | null => (d ? KIND_NOTE[d.kind] ?? null : null);
-/** A department on one side puts everyone in it there; in one on both sides the person's own choice stands
- *  (sideSql in functions/_lib/access.ts). */
-const sideFits = (d: Department, side: UserSide) => d.side === 'both' || d.side === side;
 
 type CompanyFilter = 'all' | Company;
 const companyText = (companies: readonly Company[]): string => (companies.length === 0 ? 'Owner portal' : companies.map(sideLabel).join(', '));
@@ -76,6 +79,9 @@ const roleName = (u: Pick<Row, 'role' | 'position'>): string => (u.role === 'own
 
 /** "Position · Department", skipping what is not set. */
 const jobLine = (u: Pick<Row, 'department' | 'position'>) => [u.position, u.department].map(v => (v ?? '').trim()).filter(Boolean).join(' · ');
+/** The side of one place: the department's, or the person's own in a department on both sides. */
+const placeSide = (u: Pick<Row, 'side'>, d: Department | undefined): UserSide => (d && d.side !== 'both' ? d.side : u.side ?? 'both');
+const roleText = (roles: readonly RoleLabel[], sep: string): string => roles.map(r => [r.position, r.department].filter(Boolean).join(' · ')).join(sep);
 
 const FALLBACK: Payload = {
   generatedAt: '',
@@ -112,11 +118,20 @@ function accountsBreakdown(rows: Row[]) {
 const NO_MAIL_INVITE = 'To get them in now, use Reset password in their row menu and pass the temporary password on yourself.';
 
 /** When the newest invitation went out, and a Resend button for management. */
+const ACCOUNT_KEYS = new Set(['edit', 'invite', 'on']);
+/** The email, or for a PIN-only login its employee ID. */
+const contactOf = (u: Pick<Row, 'email' | 'employeeId'>): string => (hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email');
+
 function InviteCell({ u, onResend }: { u: Row; onResend?: () => void }) {
   return (
     <span className="flex items-center gap-2 min-w-0 flex-wrap" onClick={e => e.stopPropagation()}>
-      <span className="text-meta text-muted-ink whitespace-nowrap">{u.lastInvitedAt ? `Invited ${date(u.lastInvitedAt)}` : 'Invited, date unknown'}</span>
-      {onResend && <Button size="sm" variant="secondary" icon={<Icon name="Send" size="sm" />} onClick={onResend} aria-label={`Resend invitation to ${personName(u.fullName)}`}>Resend</Button>}
+      <span className="text-caption text-muted-ink whitespace-nowrap">{u.lastInvitedAt ? `Sent ${date(u.lastInvitedAt)}` : 'Date unknown'}</span>
+      {onResend && (
+        <button type="button" onClick={onResend} aria-label={`Resend invitation to ${personName(u.fullName)}`}
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 max-md:min-h-11 rounded-control border-none bg-transparent text-caption font-semibold text-ink-2 cursor-pointer hover:bg-muted hover:text-ink [font-family:inherit]">
+          <Icon name="Send" size="sm" />Resend
+        </button>
+      )}
     </span>
   );
 }
@@ -134,7 +149,6 @@ function managerOptions(staff: Row[], exclude?: string, keep?: string | null) {
   }));
 }
 
-const initials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('');
 
 /* ------------------------------- styles ------------------------------- */
 // Left accent on org cards — the -line tone shade, as a box-shadow inset (kept off
@@ -174,10 +188,27 @@ export default function UsersPage() {
   const departmentById = useMemo(() => new Map(departments.map(d => [d.id, d])), [departments]);
   // A row from before the managed list has only the text, so it is matched by name.
   const departmentOfRow = useMemo(() => (u: Row) => (u.departmentId ? departmentById.get(u.departmentId) : undefined) ?? departments.find(x => x.name === u.department), [departmentById, departments]);
+  const positionById = useMemo(() => new Map(departments.flatMap(d => d.positions.map(p => [p.id, { position: p, department: d }] as const))), [departments]);
+  const extraPlacesOf = useMemo(() => (u: Row) => (u.extraRoles ?? []).flatMap(r => {
+    const hit = positionById.get(r.positionId);
+    return hit && hit.position.id !== u.positionId && hit.department.kind === 'staff' ? [hit] : [];
+  }), [positionById]);
+  /** The main role's side: what Works on edits. */
+  const mainSideOf = useMemo(() => (u: Row): UserSide => placeSide(u, departmentOfRow(u)), [departmentOfRow]);
+  /** Every role's side together: roles on both companies show both. */
   const sideValueOf = useMemo(() => (u: Row): UserSide => {
-    const d = departmentOfRow(u);
-    return d && d.side !== 'both' ? d.side : u.side ?? 'both';
-  }, [departmentOfRow]);
+    const sides = new Set([mainSideOf(u), ...extraPlacesOf(u).map(x => placeSide(u, x.department))]);
+    const [only] = sides;
+    return sides.size === 1 && only ? only : 'both';
+  }, [mainSideOf, extraPlacesOf]);
+  const rolesOf = useMemo(() => (u: Row): RoleLabel[] => (u.role === 'owner'
+    ? [{ position: 'Owner', department: null }]
+    : [{ position: roleName(u), department: u.department ?? null }, ...extraPlacesOf(u).map(x => ({ position: x.position.name, department: x.department.name }))]), [extraPlacesOf]);
+  const roleFilterOptions = useMemo(() => [
+    { value: 'owner', label: 'Owner' },
+    { value: 'none', label: 'No position' },
+    ...departments.flatMap(d => d.positions.map(p => ({ value: p.id, label: p.name, group: d.name }))),
+  ], [departments]);
   const companiesOfRow = useMemo(() => (u: Row): readonly Company[] => (u.role === 'owner' ? [] : companiesOf(sideValueOf(u))), [sideValueOf]);
   const [companyFilter, setCompanyFilter] = useState<CompanyFilter>('all');
   const shownRows = companyFilter === 'all' ? rows : rows.filter(u => companiesOfRow(u).includes(companyFilter));
@@ -187,7 +218,8 @@ export default function UsersPage() {
   ];
 
   const columns = useMemo<Column<Row>[]>(() => [
-    { key: 'name', label: 'Name', value: u => personName(u.fullName), hideable: false, width: 220,
+    // Name and email in one cell; the phone and the full details are in the quick view a row click opens.
+    { key: 'name', label: 'User', value: u => personName(u.fullName), text: u => `${personName(u.fullName)} ${contactOf(u)}`, hideable: false, width: 220,
       render: u => (
         <span className="flex items-center gap-2.5 min-w-0">
           <span className={cx('w-[30px] h-[30px] flex-none rounded-full grid place-items-center text-caption font-semibold', 'bg-muted text-muted-ink')}>
@@ -195,33 +227,40 @@ export default function UsersPage() {
           </span>
           <span className="flex flex-col gap-px min-w-0">
             <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis" title={personName(u.fullName)}>{personName(u.fullName)}</span>
-            <span className="text-caption text-muted-ink whitespace-nowrap">{u.phone || '—'}</span>
+            <span className="text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis" title={contactOf(u)}>{contactOf(u)}</span>
           </span>
         </span>
       ) },
-    { key: 'company', label: 'Company', value: u => companyText(companiesOfRow(u)), width: 230,
+    { key: 'company', label: 'Company', value: u => companyText(companiesOfRow(u)), width: 180,
       render: u => (u.role === 'owner' ? <span className="text-copy text-muted-ink">Owner portal</span> : <CompanyBadges side={sideValueOf(u)} />) },
-    { key: 'role', label: 'Role', value: u => roleName(u), text: u => jobLine(u) || roleName(u), width: 190,
+    // Filtering by a role finds everyone who holds it, as their main role or an extra one.
+    { key: 'role', label: 'Position & dept.', value: u => roleName(u), text: u => roleText(rolesOf(u), ', '), width: 220,
+      filter: { kind: 'select', multi: true, display: 'menu', options: roleFilterOptions },
+      filterMatch: (u, picked) => (u.role === 'owner' ? picked.has('owner')
+        : (!u.positionId && picked.has('none')) || [u.positionId, ...extraPlacesOf(u).map(x => x.position.id)].some(id => !!id && picked.has(id))),
       render: u => (
-        <span className="flex flex-col gap-px min-w-0" title={jobLine(u) || roleName(u)}>
-          <span className="text-copy font-medium whitespace-nowrap overflow-hidden text-ellipsis">{roleName(u)}</span>
-          {u.department && u.role !== 'owner' && <span className="text-caption text-muted-ink whitespace-nowrap overflow-hidden text-ellipsis">{u.department}</span>}
-        </span>
+        <RoleBadges roles={rolesOf(u)} />
       ) },
     { key: 'department', label: 'Department', value: u => u.department || null, hidden: true, width: 160 },
-    { key: 'email', label: 'Email or employee ID', value: u => (hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'), width: 210 },
+    { key: 'email', label: 'Email or employee ID', value: contactOf, hidden: true, width: 210 },
     { key: 'phone', label: 'Phone', type: 'phone', value: u => u.phone || null, hidden: true, width: 140 },
-    { key: 'manager', label: 'Reports to', type: 'person', value: u => (u.managerId ? nameById[u.managerId] ?? null : null), width: 150 },
-    // An invited person has no sign-in yet, so this cell says when the newest invitation went out, with Resend beside it.
-    { key: 'lastLogin', label: 'Last sign-in', type: 'date', value: u => u.lastLoginAt, width: 230,
-      render: u => isInvited(u) ? <InviteCell u={u} onResend={canManageRef.current ? () => resendRef.current(u) : undefined} />
-        : <span className="text-copy text-muted-ink whitespace-nowrap">{u.lastLoginAt ? date(u.lastLoginAt) : 'Never'}</span> },
-    { key: 'status', label: 'Status', type: 'status', value: u => status(u).label, status: u => status(u), width: 110 },
+    { key: 'manager', label: 'Reports to', type: 'person', value: u => (u.managerId ? nameById[u.managerId] ?? null : null), width: 140 },
+    { key: 'lastLogin', label: 'Last sign-in', type: 'date', value: u => u.lastLoginAt, hidden: true, width: 130 },
+    // Status over its date: the last sign-in, or for an invited person when the invitation went out, with a small Resend.
+    { key: 'status', label: 'Status', type: 'status', value: u => status(u).label, status: u => status(u), width: 150,
+      render: u => (
+        <span className="flex flex-col items-start gap-1 min-w-0">
+          <StatusBadge tone={status(u).tone} label={status(u).label} size="sm" strong />
+          {isInvited(u)
+            ? <InviteCell u={u} onResend={canManageRef.current ? () => resendRef.current(u) : undefined} />
+            : <span className="text-caption text-muted-ink whitespace-nowrap">{u.lastLoginAt ? `Signed in ${date(u.lastLoginAt)}` : 'Never signed in'}</span>}
+        </span>
+      ) },
     { key: 'invited', label: 'Invitation sent', type: 'date', value: u => (isInvited(u) ? u.lastInvitedAt ?? null : null), hidden: true, width: 140 },
     // The menu is read through a ref: its actions depend on state the memoised columns would otherwise hold stale.
-    { key: 'actions', label: '', width: 52, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
+    { key: 'actions', label: '', width: 40, align: 'right', noExport: true, sortable: false, filter: false, hideable: false,
       render: u => <RowActions name={personName(u.fullName)} items={actionsRef.current(u)} /> },
-  ], [nameById, companiesOfRow, sideValueOf]);
+  ], [nameById, companiesOfRow, sideValueOf, rolesOf, roleFilterOptions, extraPlacesOf]);
   const invitedRows = rows.filter(isInvited);
   const invitedCount = invitedRows.length;
   const actionsRef = useRef<(u: Row) => RowAction[]>(() => []);
@@ -284,13 +323,14 @@ export default function UsersPage() {
   const [editDepartmentId, setEditDepartmentId] = useState('');
   const [editPositionId, setEditPositionId] = useState('');
   const [editSide, setEditSide] = useState<UserSide>('both');
-  const [editErrors, setEditErrors] = useState<{ fullName?: string; email?: string; phone?: string; side?: string; departmentId?: string; positionId?: string }>({});
+  const [editExtras, setEditExtras] = useState<string[]>([]);
+  const [editErrors, setEditErrors] = useState<{ fullName?: string; email?: string; phone?: string; side?: string; departmentId?: string; positionId?: string; extraPositionIds?: string }>({});
 
   function openEdit(u: Row) {
     const d = departmentOfRow(u);
     const p = d?.positions.find(x => x.id === u.positionId) ?? d?.positions.find(x => x.name === u.position);
     setEditing(u); setEditManager(u.managerId ?? ''); setEditActive(u.isActive);
-    setEditName(u.fullName); setEditEmail(u.email); setEditPhone(u.phone ?? ''); setEditDepartmentId(d?.id ?? ''); setEditPositionId(p?.id ?? ''); setEditSide(sideValueOf(u)); setEditErrors({});
+    setEditName(u.fullName); setEditEmail(u.email); setEditPhone(u.phone ?? ''); setEditDepartmentId(d?.id ?? ''); setEditPositionId(p?.id ?? ''); setEditSide(mainSideOf(u)); setEditExtras(extraPlacesOf(u).map(x => x.position.id)); setEditErrors({});
   }
   // Re-send the invitation to someone who was invited but never signed in — a fresh
   // temporary password, emailed immediately. See functions/api/users/[id]/resend-invite.ts.
@@ -383,6 +423,14 @@ export default function UsersPage() {
       setBusy(false);
     }
   }
+  /* ---------------------------- quick view ---------------------------- */
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  const viewing = viewingId ? rows.find(r => r.id === viewingId) ?? null : null;
+  async function copyEmail(email: string) {
+    try { await navigator.clipboard.writeText(email); toast({ tone: 'success', title: 'Email copied.' }); }
+    catch { toast({ tone: 'warning', title: 'Copy did not work.', body: 'Select the email and copy it by hand.' }); }
+  }
+
   async function copyResetLink() {
     if (!resetLink) return;
     try { await navigator.clipboard.writeText(resetLink.link); toast({ tone: 'success', title: 'Reset link copied.', body: 'Send it to the person directly. It works once and expires in 60 minutes.' }); }
@@ -400,7 +448,7 @@ export default function UsersPage() {
     const invited = status(u).label === 'Invited';
     // Only management may change an account (functions/api/users/[id].ts); others read the list.
     if (!canManage) return [];
-    const items: RowAction[] = [{ key: 'edit', label: 'Edit details', icon: 'Pencil', run: () => openEdit(u) }];
+    const items: RowAction[] = [{ key: 'edit', label: 'Edit user info', icon: 'Pencil', run: () => openEdit(u) }];
     if (u.isActive && invited) items.push({ key: 'invite', label: 'Resend invitation', icon: 'Send', run: () => confirmResend(u) });
     if (u.isActive && !invited) items.push({ key: 'reset', label: 'Email a password reset link', icon: 'Mail', run: () => setConfirm({
       title: `Send ${personName(u.fullName)} a password reset link?`,
@@ -448,10 +496,16 @@ export default function UsersPage() {
       confirmLabel: 'Switch on', busyLabel: 'Saving…',
       onConfirm: () => act(u, setActive(u, true), `${personName(u.fullName)}'s account is switched back on.`),
     }) });
-    return items;
+    // Grouped like the menu reads: account first, then sign-in security, then what locks the person out.
+    const groupOf = (a: RowAction): string => (a.key === 'off' ? 'Danger zone' : ACCOUNT_KEYS.has(a.key) ? 'Account' : 'Security');
+    const order = ['Account', 'Security', 'Danger zone'];
+    return items.map(a => ({ ...a, group: groupOf(a) })).sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
   }
 
-  const editPlaceChanged = !!editing && (editDepartmentId !== (departmentOfRow(editing)?.id ?? '') || editPositionId !== (editing.positionId ?? '') || editSide !== sideValueOf(editing));
+  const editPlaceChanged = !!editing && (editDepartmentId !== (departmentOfRow(editing)?.id ?? '') || editPositionId !== (editing.positionId ?? '') || editSide !== mainSideOf(editing));
+  // Extra roles are for desk staff only; a person moved into Management drops them on save.
+  const editTakesExtras = !!data?.rolesField && !!editing && editing.role !== 'owner' && departmentById.get(editDepartmentId)?.kind === 'staff';
+  const editExtrasChanged = !!editing && [...editExtras].sort().join() !== extraPlacesOf(editing).map(x => x.position.id).sort().join();
   async function submitEdit(e: FormEvent) {
     e.preventDefault();
     if (!editing || busy) return;
@@ -471,23 +525,26 @@ export default function UsersPage() {
     setBusy(true); setEditErrors({});
     const editedDept = departmentById.get(editDepartmentId);
     const editedPosition = editedDept?.positions.find(p => p.id === editPositionId);
-    const placeChanged = !isOwner && (editDepartmentId !== (departmentOfRow(editing)?.id ?? '') || editPositionId !== (editing.positionId ?? '') || editSide !== sideValueOf(editing));
+    const placeChanged = !isOwner && (editDepartmentId !== (departmentOfRow(editing)?.id ?? '') || editPositionId !== (editing.positionId ?? '') || editSide !== mainSideOf(editing)) || editExtrasChanged;
+    const extraPositionIds = editTakesExtras ? editExtras.filter(id => id !== editPositionId) : [];
     const patch = {
       managerId: editManager || null, isActive: editActive,
       fullName: editName.trim(), email: editEmail.trim().toLowerCase(),
       ...(isOwner ? { phone: editPhone.trim() || null } : { side: editSide, departmentId: editDepartmentId, positionId: editPositionId || null }),
+      ...(!isOwner && data?.rolesField ? { extraPositionIds } : {}),
     };
     try {
       await api.patch(`/users/${editing.id}`, patch);
       setEdits(m => ({ ...m, [editing.id]: {
         ...m[editing.id], managerId: patch.managerId, isActive: patch.isActive, fullName: patch.fullName, email: patch.email,
         ...(isOwner ? { phone: editPhone.trim() || null } : { side: editSide, departmentId: editDepartmentId, positionId: editPositionId || null, department: editedDept?.name ?? null, position: editedPosition?.name ?? null }),
+        ...(!isOwner && data?.rolesField ? { extraRoles: extraPositionIds.flatMap(id => { const hit = positionById.get(id); return hit ? [{ positionId: id, departmentId: hit.department.id }] : []; }) } : {}),
       } }));
       toast({
         tone: 'success',
         title: `${editName.trim()} updated.`,
         body: placeChanged
-          ? 'Department or position changed. Their access follows it straight away, on their next click.'
+          ? 'Roles changed. Their access follows them straight away, on their next click.'
           : 'Account details saved.',
       });
       reload();
@@ -594,12 +651,14 @@ export default function UsersPage() {
       {error && tab !== 'users' && <StaleBanner message={`Showing the last list we have. ${error}`} onRetry={reload} />}
 
       {/* ------------------------------ Users tab ------------------------------ */}
+      {/* This table only: a darker header band with a firm bottom edge, and a hover on every row so a wide row reads across. */}
       {tab === 'users' && (
+        <div className="[&_thead_th]:!bg-[color-mix(in_srgb,var(--color-ink)_8%,var(--color-card))] [&_thead_th]:![box-shadow:inset_0_-2px_0_var(--color-ink-2)] [&_thead_th]:!text-ink-2 [&_tbody_tr:hover]:bg-gold-tint">
         <DataTable<Row>
           id="users" columns={columns} rows={data ? shownRows : null} rowKey={u => u.id}
           toolbar={<Segmented label="Company" options={companyFilterOptions} value={companyFilter} onChange={setCompanyFilter} />}
           filtered={companyFilter !== 'all'} onClearFilters={() => setCompanyFilter('all')}
-          loading={loading} error={error} onRetry={reload} onRowClick={canManage ? openEdit : undefined}
+          loading={loading} error={error} onRetry={reload} onRowClick={u => setViewingId(u.id)}
           pageSize={0} noun={['account', 'accounts']} exportName="users"
           header={
             <div className="py-3 px-[22px] max-md:px-4 [border-bottom:1px_solid_var(--color-line)] text-meta text-muted-ink">
@@ -616,9 +675,12 @@ export default function UsersPage() {
                 </span>
                 <span className="flex flex-col gap-1 min-w-0 flex-1">
                   <span className="text-copy font-medium truncate" title={personName(u.fullName)}>{personName(u.fullName)}</span>
-                  <span className="text-meta text-ink truncate" title={jobLine(u) || roleName(u)}>{jobLine(u) || roleName(u)}</span>
+                  <span className="flex items-baseline gap-1 min-w-0 text-meta" title={roleText(rolesOf(u), '\n')}>
+                    <span className="text-ink truncate">{jobLine(u) || roleName(u)}</span>
+                    {extraPlacesOf(u).length > 0 && <span className="flex-none text-muted-ink">+{plural(extraPlacesOf(u).length, 'role')}</span>}
+                  </span>
                   <span className="text-meta text-muted-ink truncate" title={u.email}>{hasRealEmail(u.email) ? u.email : u.employeeId ?? 'No email'}</span>
-                  <span className="flex items-center gap-1.5 flex-wrap">{u.role !== 'owner' && <CompanyBadges side={sideValueOf(u)} />}<StatusBadge tone={s.tone} label={s.label} size="sm" /></span>
+                  <span className="flex items-center gap-1.5 flex-wrap">{u.role !== 'owner' && <CompanyBadges side={sideValueOf(u)} />}<StatusBadge tone={s.tone} label={s.label} size="sm" strong /></span>
                   {isInvited(u) && <InviteCell u={u} onResend={canManage ? () => confirmResend(u) : undefined} />}
                 </span>
                 <RowActions name={personName(u.fullName)} items={actionsFor(u)} />
@@ -626,6 +688,7 @@ export default function UsersPage() {
             );
           }}
         />
+        </div>
       )}
 
       {/* ----------------------------- Sign-ins tab ----------------------------- */}
@@ -688,7 +751,7 @@ export default function UsersPage() {
         <Modal
           width={editing.role === 'owner' ? 460 : 640}
           title={`Edit ${personName(editing.fullName)}`}
-          sub="Change the department, position, reporting line or status."
+          sub="Change the roles, reporting line or status."
           onClose={() => setEditing(null)}
           footer={
             <>
@@ -704,9 +767,12 @@ export default function UsersPage() {
             {editing.role !== 'owner' && <PlaceFields departments={departments} side={editSide} onSide={setEditSide} departmentId={editDepartmentId} positionId={editPositionId}
               onDepartment={v => { setEditDepartmentId(v); setEditPositionId(''); }} onPosition={setEditPositionId}
               errors={{ side: editErrors.side, departmentId: editErrors.departmentId, positionId: editErrors.positionId }} />}
-            {editing.role !== 'owner' && editPlaceChanged && (
+            {editTakesExtras && (
+              <ExtraRolesField departments={departments} mainPositionId={editPositionId} value={editExtras} onChange={setEditExtras} error={editErrors.extraPositionIds} />
+            )}
+            {editing.role !== 'owner' && (editPlaceChanged || editExtrasChanged) && (
               <span className={cx('text-meta', TONE.warning.text)}>
-                Changing the department or position changes this person’s permissions and menu on their next click.
+                Changing the roles changes this person’s permissions and menu on their next click.
               </span>
             )}
             <div className="flex flex-col gap-1.5">
@@ -724,6 +790,16 @@ export default function UsersPage() {
           </div>
         </Modal>
       )}
+
+      {/* ------------------------------- Quick view ------------------------------- */}
+      <Drawer open={!!viewing} onClose={() => setViewingId(null)} width={448}>
+        {viewing && (
+          <UserQuickView u={viewing} roles={rolesOf(viewing)} side={viewing.role === 'owner' ? null : sideValueOf(viewing)}
+            manager={viewing.managerId ? nameById[viewing.managerId] ?? null : null}
+            actions={actionsFor(viewing).filter(a => QUICK_KEYS.has(a.key))}
+            onCopy={copyEmail} onClose={() => setViewingId(null)} />
+        )}
+      </Drawer>
 
       <ConfirmDialog spec={confirm} busy={busy} onClose={() => setConfirm(null)} />
 
@@ -811,32 +887,24 @@ function positionProblemOf(department: Department | undefined, positionId: strin
   return department.positions.length === 0 ? `${department.name} has no positions yet. Add one under Permissions > Setup first.` : 'Pick a position.';
 }
 
-/** Works on, then department (required), then position (required), from the managed list. Only the departments on the
- *  chosen side (or on both) are offered, so a department picked earlier is cleared when the side no longer fits it.
- *  A position belongs to one department, so changing the department clears the position. */
 function PlaceFields({ departments, side, onSide, departmentId, positionId, onDepartment, onPosition, errors }: {
   departments: Department[]; side: UserSide; onSide: (s: UserSide) => void; departmentId: string; positionId: string;
   onDepartment: (id: string) => void; onPosition: (id: string) => void;
   errors: { side?: string; departmentId?: string; positionId?: string };
 }) {
-  const offered = departments.filter(d => !isFieldKind(d.kind) && sideFits(d, side));
+  const offered = departments.filter(d => !isFieldKind(d.kind));
   const dept = offered.find(d => d.id === departmentId);
   const hasNoPositions = !!dept && dept.positions.length === 0;
-  const pickSide = (s: UserSide) => {
-    onSide(s);
-    const current = departments.find(d => d.id === departmentId);
-    if (current && !sideFits(current, s)) onDepartment('');
+  const pickDepartment = (id: string) => {
+    onDepartment(id);
+    const picked = offered.find(d => d.id === id);
+    if (picked && picked.side !== 'both') onSide(picked.side);
   };
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-meta font-medium text-ink">Works on</span>
-        <Segmented label="Works on" value={side} onChange={pickSide} options={SIDE_OPTIONS.map(o => ({ key: o.value, label: o.label }))} />
-        {errors.side && <span className={cx('text-meta', TONE.critical.text)}>{errors.side}</span>}
-      </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
         <div className="flex flex-col gap-1">
-          <Select label="Department" showLabel size="md" value={departmentId} onChange={onDepartment} placeholder="Pick a department"
+          <Select label="Department" showLabel size="md" value={departmentId} onChange={pickDepartment} placeholder="Pick a department"
             options={offered.map(d => ({ value: d.id, label: d.name }))} />
           {errors.departmentId && <span className={cx('text-meta', TONE.critical.text)}>{errors.departmentId}</span>}
         </div>
@@ -847,14 +915,87 @@ function PlaceFields({ departments, side, onSide, departmentId, positionId, onDe
         </div>
       </div>
       {dept && <span className="text-meta text-muted-ink">{departmentNote(dept)}</span>}
+      {dept?.side === 'both' && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-meta font-medium text-ink">Works on</span>
+          <Segmented label="Works on" value={side} onChange={onSide} options={SIDE_OPTIONS.map(o => ({ key: o.value, label: o.label }))} />
+          <span className="text-meta text-muted-ink">{dept.name} covers both companies, so pick which one this person works on.</span>
+        </div>
+      )}
+      {dept && dept.side !== 'both' && <span className="text-meta text-muted-ink">Works on {sideLabel(dept.side)}, like everyone in {dept.name}.</span>}
+      {errors.side && <span className={cx('text-meta', TONE.critical.text)}>{errors.side}</span>}
       {hasNoPositions && (
         <div role="alert" className={cx('flex items-start gap-2 py-2.5 px-3 rounded-control border border-solid text-meta', TONE.warning.bg, TONE.warning.border, TONE.warning.text)}>
           <Icon name="AlertTriangle" size="sm" />
           <span>{dept.name} has no positions yet. Add one under Permissions &gt; Setup first, then pick it here.</span>
         </div>
       )}
-      {offered.length === 0 && <span className="text-meta text-muted-ink">No department works on this side yet. Add one under Permissions, Setup.</span>}
+      {offered.length === 0 && <span className="text-meta text-muted-ink">No office department yet. Add one under Permissions, Setup.</span>}
     </div>
+  );
+}
+
+/* ------------------------------ quick view ------------------------------ */
+const QUICK_KEYS = new Set(['edit', 'invite', 'off', 'on']);
+
+function QuickRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-3 py-2.5 [border-bottom:1px_solid_var(--color-line-soft)] max-md:grid-cols-1 max-md:gap-1">
+      <dt className="text-meta text-muted-ink">{label}</dt>
+      <dd className="m-0 text-copy text-ink min-w-0">{children}</dd>
+    </div>
+  );
+}
+
+/** What a row click opens: the person's details in one place, and the everyday actions. The rest stay in the row's "..." menu. */
+function UserQuickView({ u, roles, side, manager, actions, onCopy, onClose }: {
+  u: Row; roles: readonly RoleLabel[]; side: UserSide | null; manager: string | null;
+  actions: RowAction[]; onCopy: (email: string) => void; onClose: () => void;
+}) {
+  const s = status(u);
+  const email = hasRealEmail(u.email) ? u.email : null;
+  return (
+    <>
+      <div className="flex items-start gap-3 px-6 pt-[18px] pb-4 [border-bottom:1px_solid_var(--color-line-soft)]">
+        <span className="w-10 h-10 flex-none rounded-full grid place-items-center text-copy font-semibold bg-muted text-ink-2">{initials(u.fullName)}</span>
+        <div className="flex flex-col items-start gap-1.5 min-w-0 flex-1">
+          <h2 className="m-0 text-title font-semibold truncate">{personName(u.fullName)}</h2>
+          <StatusBadge tone={s.tone} label={s.label} size="sm" strong />
+        </div>
+        <CloseButton onClick={onClose} />
+      </div>
+      <dl className="m-0 px-6 py-2 grow">
+        <QuickRow label="Email">
+          {email ? (
+            <span className="flex items-center gap-2 min-w-0">
+              <span className="break-all">{email}</span>
+              <button type="button" onClick={() => onCopy(email)} aria-label="Copy email"
+                className="flex-none w-8 h-8 max-md:w-11 max-md:h-11 grid place-items-center rounded-control border-none bg-transparent text-muted-ink cursor-pointer hover:bg-muted hover:text-ink">
+                <Icon name="Copy" size="sm" />
+              </button>
+            </span>
+          ) : <span className="text-muted-ink">No email (signs in with a PIN)</span>}
+        </QuickRow>
+        <QuickRow label="Phone">{u.phone || <span className="text-muted-ink">Not set</span>}</QuickRow>
+        <QuickRow label="Employee ID">{u.employeeId || <span className="text-muted-ink">Not set</span>}</QuickRow>
+        <QuickRow label="Company">{side ? <CompanyBadges side={side} /> : <span className="text-muted-ink">Owner portal</span>}</QuickRow>
+        <QuickRow label={roles.length > 1 ? 'Roles' : 'Role'}><RoleBadges roles={roles} shown={roles.length} /></QuickRow>
+        <QuickRow label="Reports to">{manager ?? <span className="text-muted-ink">No manager</span>}</QuickRow>
+        <QuickRow label="Last sign-in">
+          {u.lastLoginAt ? dateTime(u.lastLoginAt) : <span className="text-muted-ink">{isInvited(u) && u.lastInvitedAt ? `Never. Invited ${date(u.lastInvitedAt)}` : 'Never'}</span>}
+        </QuickRow>
+      </dl>
+      {actions.length > 0 && (
+        <div className="flex flex-wrap gap-2 px-6 py-4 [border-top:1px_solid_var(--color-line-soft)]">
+          {actions.map(a => (
+            <Button key={a.key} size="sm" variant={a.danger ? 'danger' : a.key === 'edit' ? 'primary' : 'secondary'}
+              icon={<Icon name={a.icon} size="sm" />} onClick={() => { onClose(); a.run(); }}>
+              {a.key === 'edit' ? 'Edit roles' : a.label}
+            </Button>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 

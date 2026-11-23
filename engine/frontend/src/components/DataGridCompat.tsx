@@ -11,7 +11,7 @@
  */
 import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { DataTable, type Column } from "./DataTable";
-import type { ExportCell } from "./dataTableLineExport";
+import type { DataTableLineExport, ExportCell } from "./dataTableLineExport";
 import { gridLayoutToTableLayout } from "./dataTableLegacyGridLayout";
 import type { LayoutSeed } from "../lib/tableLayouts";
 import { isoForExport } from "../vendor/shared/format";
@@ -40,6 +40,10 @@ export type GridColumn<T> = {
   dateValue?: (row: T) => string | null | undefined;
   numberValue?: (row: T) => number | null | undefined;
   defaultHidden?: boolean;
+  /** On a `serverSort` grid: the server orders this column, so the grid leaves the rows in the order they came. */
+  serverSortable?: boolean;
+  /** Server counts for this column's funnel, over every matching row (DataTable `filterCounts`). */
+  filterCounts?: readonly (readonly [string, number])[];
 };
 
 export type GridContextMenuItem = {
@@ -98,6 +102,13 @@ export type DataGridCompatProps<T> = {
   overlayHidden?: readonly string[];
   onUserAdjustColumns?: () => void;
   scrollToRow?: { key: string; nonce: number } | null;
+  /** Server-paged grid: `serverSortable` columns are sorted by the server, reported through `onSortChange`. */
+  serverSort?: boolean;
+  onSortChange?: (sort: { key: string; dir: "asc" | "desc" } | null) => void;
+  /** The grid's funnel state, for a server-paged page to send to its query. */
+  onColFiltersChange?: (colFilters: Record<string, string[]>) => void;
+  /** Export every row the server filter matches (DataTable `exportLines`). */
+  exportLines?: DataTableLineExport<T, never>;
 };
 
 /** A ReactNode cell as text: strings and numbers only, as DataGrid read it. */
@@ -143,8 +154,11 @@ function exportCell<T>(c: GridColumn<T>, row: T): ExportCell {
   return "";
 }
 
-export function gridColumnToTableColumn<T>(c: GridColumn<T>): Column<T> {
+export function gridColumnToTableColumn<T>(c: GridColumn<T>, serverSort = false): Column<T> {
   const sortable = c.sortable !== false;
+  const sortSpec = !sortable
+    ? { disableSort: true, neverSort: true }
+    : serverSort && c.serverSortable ? {} : { sortCompare: c.sortFn ?? defaultCompare(c) };
   return {
     key: c.key,
     label: c.label,
@@ -153,7 +167,8 @@ export function gridColumnToTableColumn<T>(c: GridColumn<T>): Column<T> {
     width: c.width != null ? `${c.width}px` : undefined,
     render: c.accessor,
     getValue: (r) => filterText(c, r),
-    ...(sortable ? { sortCompare: c.sortFn ?? defaultCompare(c) } : { disableSort: true }),
+    ...sortSpec,
+    filterCounts: c.filterCounts,
     searchValue: c.searchValue ?? ((r) => cellText(c.accessor(r))),
     exportValue: (r) => exportCell(c, r),
     exportFormat: c.exportFormat,
@@ -195,8 +210,12 @@ export function DataGridCompat<T>({
   scrollToRow,
   initialRowLimit,
   onRowReorder,
+  serverSort = false,
+  onSortChange,
+  onColFiltersChange,
+  exportLines,
 }: DataGridCompatProps<T>) {
-  const tableColumns = useMemo(() => columns.map(gridColumnToTableColumn), [columns]);
+  const tableColumns = useMemo(() => columns.map((c) => gridColumnToTableColumn(c, serverSort)), [columns, serverSort]);
   const layoutSeeds = useMemo(
     () => layoutPresets?.map((s) => ({ ...s, layout: gridLayoutToTableLayout(s.layout, columns) })),
     [layoutPresets, columns],
@@ -224,6 +243,10 @@ export function DataGridCompat<T>({
       focusSearchNonce={focusSearchNonce}
       exportName={exportName ?? storageKey}
       exportXlsx
+      exportLines={exportLines}
+      serverSort={serverSort}
+      onSortChange={onSortChange}
+      onColFiltersChange={onColFiltersChange}
       groupBanner={groupBanner && !embedded}
       embedded={embedded}
       defaultSort={defaultSort}

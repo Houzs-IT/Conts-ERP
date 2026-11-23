@@ -8,6 +8,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Department } from '../../../conts/department';
 import { authedFetch } from './authed-fetch';
+import { idempotentInit } from '../../../lib/idempotency';
 import { writeFailedAs } from './mutation-error';
 import { retryUnlessClientError } from '../../../lib/retryPolicy';
 import type { DebtorPartyColumns, DebtorPartyValues } from './debtor-party';
@@ -257,45 +258,8 @@ export const useAccountBalances = (q: BalancesQuery = {}) => baseQuery<{ balance
   ['account-balances', q.department ?? '', q.from ?? '', q.to ?? ''], balancesPath(q),
 );
 
-export type ArAgingRow = {
-  invoice_id: string;
-  invoice_number: string;
-  debtor_code: string | null;
-  debtor_name: string;
-  invoice_date: string;
-  due_date: string | null;
-  total_sen: number;
-  paid_sen: number;
-  outstanding_sen: number;
-  days_overdue: number;
-  aging_bucket: 'CURRENT' | '1-30' | '31-60' | '61-90' | '90+';
-  status: string;
-};
-export const useArAging = () => baseQuery<{ arAging: ArAgingRow[] }>(
-  ['ar-aging'], `/accounting/ar-aging`,
-);
-
-export type ApAgingRow = {
-  invoice_id: string;
-  /** 'PI' (purchase invoice) or 'API' (AP invoice) — v_ap_aging lists both since 2026-09-06. */
-  kind?: 'PI' | 'API';
-  invoice_number: string;
-  supplier_invoice_ref: string | null;
-  supplier_id: string;
-  supplier_code: string | null;
-  supplier_name: string | null;
-  invoice_date: string;
-  due_date: string | null;
-  total_sen: number;
-  paid_sen: number;
-  outstanding_sen: number;
-  days_overdue: number;
-  aging_bucket: 'CURRENT' | '1-30' | '31-60' | '61-90' | '90+';
-  status: string;
-};
-export const useApAging = () => baseQuery<{ apAging: ApAgingRow[] }>(
-  ['ap-aging'], `/accounting/ap-aging`,
-);
+/* AR aging / AP aging: from the books since 21 Nov 2026 — aging-queries.ts (useAging), same 'ar-aging' / 'ap-aging'
+   query keys, so the screens that refresh the aging after a change still do. */
 
 /* ── The Chart of Accounts maintenance surface (roadmap A, 2026-09-03) ──────
    The owner's selective sharing: one union across the granted companies, a
@@ -494,11 +458,11 @@ export const useUpdateDebtor = () => {
 export const useCreateDebtorBill = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ debtorId, ...body }: {
-      debtorId: string; billDate?: string; notes?: string;
+    mutationFn: ({ debtorId, idempotencyKey, ...body }: {
+      debtorId: string; billDate?: string; notes?: string; idempotencyKey?: string;
       lines: Array<{ description?: string; creditAccountCode?: string; amountSen: number }>;
     }) => authedFetch<{ ok: boolean; bill: { billNumber: string; totalSen: number } }>(
-      `/other-debtors/${debtorId}/bills`, { method: 'POST', body: JSON.stringify(body) },
+      `/other-debtors/${debtorId}/bills`, idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) }),
     ),
     onSuccess: () => invalidateDebtors(qc),
   });
@@ -530,11 +494,11 @@ export const useCancelDebtorBill = () => {
 export const useCreateDebtorReceipt = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ debtorId, ...body }: {
-      debtorId: string; receiptDate?: string; bankAccountCode: string; notes?: string; postNow?: boolean;
+    mutationFn: ({ debtorId, idempotencyKey, ...body }: {
+      debtorId: string; receiptDate?: string; bankAccountCode: string; notes?: string; postNow?: boolean; idempotencyKey?: string;
       allocations: Array<{ billId: string; amountSen: number }>;
     }) => authedFetch<{ ok: boolean; receipt: { id?: string; receiptNumber: string; totalSen?: number }; posted?: boolean; jeNo?: string }>(
-      `/other-debtors/${debtorId}/receipts`, { method: 'POST', body: JSON.stringify(body) },
+      `/other-debtors/${debtorId}/receipts`, idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) }),
     ),
     onSuccess: () => { invalidateDebtors(qc); void qc.invalidateQueries({ queryKey: ['receipts'] }); },
   });
@@ -571,11 +535,11 @@ export const useReceipts = (month?: string) => baseQuery<{ month: string | null;
 export const useCreateReceipt = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: {
-      payerName: string; receiptDate?: string; bankAccountCode: string; notes?: string;
+    mutationFn: ({ idempotencyKey, ...body }: {
+      payerName: string; receiptDate?: string; bankAccountCode: string; notes?: string; idempotencyKey?: string;
       lines: Array<{ description?: string; creditAccountCode: string; amountSen: number }>;
     }) => authedFetch<{ ok: boolean; receipt: { receiptNumber: string; totalSen: number } }>(
-      `/receipts`, { method: 'POST', body: JSON.stringify(body) },
+      `/receipts`, idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) }),
     ),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['receipts'] }); },
   });

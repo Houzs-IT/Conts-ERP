@@ -93,7 +93,7 @@ function PriorityTargetsSection({
     <section className="rounded-lg border border-border bg-surface">
       <header className="border-b border-border px-4 py-3">
         <h2 className="font-display text-[15px] font-bold leading-tight tracking-tight text-ink">
-          Lead Time — By Priority
+          Lead time — by priority
         </h2>
         <p className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
           Per-priority stage targets in days. The priority a case is created with

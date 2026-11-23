@@ -139,7 +139,7 @@ export function SurveyPublic() {
                 <Star
                   key={n}
                   size={20}
-                  className={n <= rating ? "fill-amber-400 text-amber-400" : "text-ink-muted/40"}
+                  className={n <= rating ? "fill-amber-400 text-amber-400" : "text-ink-muted"}
                 />
               ))}
             </div>
@@ -178,7 +178,7 @@ export function SurveyPublic() {
                 size={36}
                 className={cn(
                   "transition-colors",
-                  n <= rating ? "fill-amber-400 text-amber-400" : "text-ink-muted/40"
+                  n <= rating ? "fill-amber-400 text-amber-400" : "text-ink-muted"
                 )}
               />
             </button>

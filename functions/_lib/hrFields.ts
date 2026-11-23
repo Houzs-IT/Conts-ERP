@@ -82,6 +82,9 @@ export interface Employee extends EmployeeInput {
   cleanerId: string | null;
   technicianId: string | null;
   renovatorId: string | null;
+  /** The project brand a Renovation person works under (migration 0324); null for everyone else or not yet picked. */
+  brandId: number | null;
+  brandName: string | null;
   name: string;
   phone: string | null;
   /** EMP-001, from the login "Give app access" made; null without app access. */
@@ -116,29 +119,7 @@ export const departmentOf = (person: Pick<Employee, 'cleanerId' | 'renovatorId'>
 export const renovationPersonInput = z.object({
   name: z.string().trim().min(1, 'Enter their name.').max(120),
   phone: text(40),
+  brandId: z.int({ error: 'Pick The Conts or Dream Crafter.' }).positive('Pick The Conts or Dream Crafter.'),
 });
 export type RenovationPersonInput = z.infer<typeof renovationPersonInput>;
-
-/**
- * A Dream Crafter employee (migration 0185): an entry on Dream Crafter's own roster with its HR record. Kept apart from
- * Employee, which is built from The Conts' two rosters. Only the details for now; pay comes with Dream Crafter payroll.
- */
-export interface DcEmployee {
-  /** The dc_staff id. */
-  id: string;
-  name: string;
-  phone: string | null;
-  jobTitle: string | null;
-  joinDate: string | null;
-  status: Exclude<EmployeeStatus, 'test'>;
-  resignedAt: string | null;
-}
-export const dcEmployeeInput = z.object({
-  name: z.string().trim().min(1, 'Enter their name.').max(120),
-  phone: text(40),
-  jobTitle: text(60),
-  joinDate: day.nullable(),
-  status: z.enum(['active', 'resigned']),
-  resignedAt: day.nullable(),
-}).refine(e => e.status === 'active' || !!e.resignedAt, { path: ['resignedAt'], message: 'Give the last working day.' });
-export type DcEmployeeInput = z.infer<typeof dcEmployeeInput>;
+export interface RenovationBrand { id: number; name: string }

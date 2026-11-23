@@ -268,6 +268,15 @@ const buildColumns = (canFinance: boolean): GridColumn<SoDetailListingRow>[] => 
       searchValue: (r) => rowMoney(r.unit_price_sen, r.currency),
       sortFn: (a, b) => (a.unit_price_sen ?? 0) - (b.unit_price_sen ?? 0),
     },
+    /* Discount: Qty x Unit Price less the discount is the Total; without it the export did not tally (owner, 16 Nov 2026). */
+    {
+      key: 'discount', label: 'Discount', width: 100, align: 'right', sortable: true,
+      accessor: (r) => rowMoney(r.discount_sen ?? 0, r.currency),
+      exportValue: (r) => (r.discount_sen ?? 0) / 100,
+      exportFormat: 'money',
+      searchValue: (r) => rowMoney(r.discount_sen ?? 0, r.currency),
+      sortFn: (a, b) => (a.discount_sen ?? 0) - (b.discount_sen ?? 0),
+    },
     /* 11 */ {
       key: 'total', label: 'Total', width: 120, align: 'right', sortable: true,
       accessor: (r) => <span style={{ fontWeight: 600 }}>{rowMoney(r.total_sen, r.currency)}</span>,
@@ -700,7 +709,7 @@ export const SalesOrderDetailListing = () => {
       {/* ── Header — shared PageHeader (full-bleed, design-system) ─── */}
       <PageHeader back
         eyebrow="Reports"
-        title="Sales Order Details"
+        title="Sales order details"
         description="Line-item view — one row per sales-order line, with the order header repeated on every line."
         secondaryActions={[{ label: 'Back', icon: ArrowLeft, onClick: () => navigate(-1) }]}
         primaryAction={

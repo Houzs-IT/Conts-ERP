@@ -36,7 +36,7 @@ export function teamProjectSql(ids: readonly number[]): string {
     OR EXISTS (SELECT 1 FROM project_beta_design tsd WHERE tsd.project_id = p.id
       AND (tsd.person_3d_ids && ARRAY[${list}]::bigint[] OR tsd.person_2d_ids && ARRAY[${list}]::bigint[]
            OR tsd.person_3d_id IN (${list}) OR tsd.person_2d_id IN (${list})))
-    OR EXISTS (SELECT 1 FROM project_beta_appointments tsa WHERE tsa.project_id = p.id AND tsa.person_id IN (${list}))
+    OR EXISTS (SELECT 1 FROM project_beta_appointments tsa WHERE tsa.project_id = p.id AND (tsa.person_id IN (${list}) OR tsa.person_ids && ARRAY[${list}]::bigint[]))
     OR EXISTS (SELECT 1 FROM project_design_records tsr WHERE tsr.project_id = p.id AND tsr.kind = 'site_measure'
       AND (tsr.person_id IN (${list}) OR EXISTS (SELECT 1 FROM project_design_record_people tsp WHERE tsp.record_id = tsr.id AND tsp.person_id IN (${list})))))`;
 }

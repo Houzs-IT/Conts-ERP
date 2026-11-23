@@ -146,7 +146,7 @@ export function CancelRequestPanel({ docType, docKey, docNumber, onExecute, exec
       }}
     >
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 8 }}>
-        <strong style={{ color: tone.fg, fontSize: 'var(--fs-13, 13px)' }}>
+        <strong className={approved ? undefined : "cancel-request-pending-title"} style={{ color: tone.fg, fontSize: 'var(--fs-13, 13px)' }}>
           Cancellation requested
         </strong>
         <span style={{ fontSize: 'var(--fs-12, 12px)', color: 'var(--c-ink)' }}>{cancelRequestLine(open)}</span>

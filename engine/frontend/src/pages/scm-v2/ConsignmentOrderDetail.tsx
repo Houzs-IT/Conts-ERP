@@ -598,7 +598,7 @@ export const ConsignmentOrderDetail = () => {
       {/* ── Line items ──────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Line Items ({items.length})</h2>
+          <h2 className={styles.cardTitle}>Line items ({items.length})</h2>
           {isEditing && !addingDraft && (
             <Button variant="primary" size="sm" onClick={startAddLine}>
               <Plus {...ICON} />
@@ -1043,7 +1043,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       {/* ── ORDER INFO ────────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Order Info</h2>
+          <h2 className={styles.cardTitle}>Order info</h2>
         </header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
@@ -1120,7 +1120,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       {/* ── EMERGENCY CONTACT ─────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Emergency Contact</h2>
+          <h2 className={styles.cardTitle}>Emergency contact</h2>
           <span style={EMERGENCY_HEADER_NOTE_STYLE}>
             Used only if we cannot reach the customer on delivery day
           </span>
@@ -1170,7 +1170,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       {/* ── DELIVERY ADDRESS ──────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Delivery Address</h2>
+          <h2 className={styles.cardTitle}>Delivery address</h2>
         </header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>

@@ -16,6 +16,12 @@ import { cellBaseCls, cellInputCls, inputCls, MoneyInput, PercentInput, rm, sele
 import { insertRoomSections } from './roomSections';
 import { LineFilesButton } from '../../components/doc-attachments/DocAttachments';
 import type { DocType } from '../../components/doc-attachments/docAttachmentsApi';
+import type { PackageHit } from '../../lib/renovation/renovationPackagesApi';
+import { PackageHits, usePackageSearch } from './renovationPackagePick';
+import { PkgMark } from './renovationPackageParts';
+
+/** Packages in the product search (owner, 20 Nov 2026): given, the search also offers active packages and kits. */
+export type PickPackage = (h: PackageHit, sectionIndex: number, lineIndex: number) => void;
 
 /** Where a line's files live; omitted (templates) means no file buttons. */
 export interface LineFilesTarget { docType: DocType; docId: string; canEdit: boolean }
@@ -35,7 +41,7 @@ export function blankLine(kind: RenoLineKind): DocLine {
   return {
     kind, room: '', itemCode: null, description: '', qty: 1, measure: null, measureUom: null, uom: kind === 'ITEM' || kind === 'CHILD' ? 'UNIT' : null,
     unitPriceSen: 0, listPriceSen: null, discountBp: 0, amountOverrideSen: null, isFoc: false, supplyByOwner: false, highlight: 'NONE',
-    supplierId: null, unitCostSen: 0, stageCode: null, pageBreakBefore: false,
+    supplierId: null, unitCostSen: 0, stageCode: null, processingAfterDays: null, deliveryAfterDays: null, pageBreakBefore: false,
   };
 }
 
@@ -61,11 +67,17 @@ function move<T>(arr: T[], i: number, d: -1 | 1): T[] {
 
 const KIND_LABEL: Record<RenoLineKind, string> = { ITEM: 'Item', CHILD: 'Add-on', DETAIL: 'Dimension', TEXT: 'Text' };
 
-export function ProductPicker({ value, onPick, disabled }: { value: string | null; onPick: (p: ProductPick) => void; disabled?: boolean }) {
+export function ProductPicker({ value, onPick, disabled, onPickPackage, packageKind }: {
+  value: string | null; onPick: (p: ProductPick) => void; disabled?: boolean; onPickPackage?: (h: PackageHit) => void;
+  /** Offer only packages of this kind (a package's own lines can take a kit, never a whole package). */
+  packageKind?: PackageHit['kind'];
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<ProductPick[]>([]);
   const [busy, setBusy] = useState(false);
+  const allPackageHits = usePackageSearch(q, open && Boolean(onPickPackage));
+  const packageHits = packageKind ? allPackageHits.filter((h) => h.kind === packageKind) : allPackageHits;
   const ref = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   /* The list floats on the page: a room section scrolls sideways, so an absolute list inside it was cut off. */
@@ -115,7 +127,9 @@ export function ProductPicker({ value, onPick, disabled }: { value: string | nul
         <div ref={panelRef} style={{ position: 'fixed', left: pos.left, top: pos.top, transform: pos.up ? 'translateY(-100%)' : undefined }}
           className="z-[1000] w-[340px] max-w-[85vw] rounded-lg border border-border bg-surface p-2 shadow-lg">
           <input autoFocus className={`${inputCls} w-full`} placeholder="Search code or name (RN- for generic works)" value={q} onChange={(e) => setQ(e.target.value)} />
-          <div className="mt-2 max-h-64 overflow-auto">
+          <div className={cn('mt-2 overflow-auto', onPickPackage ? 'max-h-80' : 'max-h-64')}>
+            {onPickPackage && <PackageHits hits={packageHits} onPick={(h) => { setOpen(false); onPickPackage(h); }} />}
+            {onPickPackage && packageHits.length > 0 && rows.length > 0 && <div className="px-2 pt-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-ink-muted">SKUs</div>}
             {busy && rows.length === 0 && <div className="px-2 py-3 text-[12px] text-ink-muted">Searching…</div>}
             {!busy && rows.length === 0 && <div className="px-2 py-3 text-[12px] text-ink-muted">No active product matches.</div>}
             {rows.map((p) => (
@@ -166,6 +180,15 @@ interface LineProps {
   onDelete: () => void;
   suppliers: Array<{ id: string; code: string; name: string }>;
   files?: LineFilesTarget;
+  onPickPackage?: (h: PackageHit) => void;
+  packageCodes?: Record<string, string>;
+}
+
+/** A typed SLA day count: blank is no SLA; anything else a whole number from 0 to 3650. */
+function slaDays(v: string): number | null {
+  if (v.trim() === '') return null;
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.min(3650, Math.max(0, n)) : null;
 }
 
 function LineExtras({ line, disabled, showCost, onChange, suppliers }: Pick<LineProps, 'line' | 'disabled' | 'showCost' | 'onChange' | 'suppliers'>) {
@@ -204,6 +227,18 @@ function LineExtras({ line, disabled, showCost, onChange, suppliers }: Pick<Line
             <option value="">From product</option>
             {RENO_STAGES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
           </select>
+        </label>
+      )}
+      {priced && (
+        <label className="flex flex-col gap-0.5 text-[11px] text-ink-muted" title="Days after the project's Start project date">Processing (days after start)
+          <input className={inputCls} type="number" min={0} max={3650} inputMode="numeric" disabled={disabled} value={line.processingAfterDays ?? ''} placeholder="No SLA"
+            onChange={(e) => onChange({ processingAfterDays: slaDays(e.target.value) })} />
+        </label>
+      )}
+      {priced && (
+        <label className="flex flex-col gap-0.5 text-[11px] text-ink-muted" title="Days after the project's Start project date">Delivery (days after start)
+          <input className={inputCls} type="number" min={0} max={3650} inputMode="numeric" disabled={disabled} value={line.deliveryAfterDays ?? ''} placeholder="No SLA"
+            onChange={(e) => onChange({ deliveryAfterDays: slaDays(e.target.value) })} />
         </label>
       )}
       {priced && showCost && (
@@ -254,10 +289,11 @@ function LineRow(p: LineProps) {
             <input aria-label="Description" className={cn(cellInputCls, line.kind === 'ITEM' && 'font-semibold')} disabled={disabled} value={line.description}
               placeholder={line.kind === 'DETAIL' ? 'W : 8.2 FT X D : 2 FT X H : 9.5 FT' : line.kind === 'TEXT' ? 'Text line' : 'Description'}
               onChange={(e) => p.onChange({ description: e.target.value })} />
+            {line.fromPackageId && <PkgMark code={p.packageCodes?.[line.fromPackageId] ?? null} />}
             {priced && p.files && line.id && <LineFilesButton docType={p.files.docType} docId={p.files.docId} lineId={line.id} canEdit={p.files.canEdit} />}
           </div>
         </td>
-        <td className="w-[112px] py-1">{priced && <ProductPicker value={line.itemCode} onPick={pick} disabled={disabled} />}</td>
+        <td className="w-[112px] py-1">{priced && <ProductPicker value={line.itemCode} onPick={pick} disabled={disabled} onPickPackage={p.onPickPackage} />}</td>
         <td className="w-[52px] py-1">{priced && <input aria-label="Qty" inputMode="numeric" className={cn(cellInputCls, 'text-center tabular-nums')} disabled={disabled || Boolean(line.measure)} value={line.qty} onFocus={selectAllOnFocus}
           onKeyDown={(e) => {
             if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
@@ -303,7 +339,7 @@ function LineCard(p: LineProps) {
   return (
     <div className={cn('rounded-lg border border-border-subtle p-2.5', line.kind !== 'ITEM' && line.kind !== 'TEXT' && 'ml-4', line.highlight === 'PINK' && 'bg-[#fbe1d6]/60')}>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-semibold uppercase text-ink-muted">{p.no ? `${p.no} · ` : ''}{KIND_LABEL[line.kind]}</span>
+        <span className="flex items-center gap-1 text-[11px] font-semibold uppercase text-ink-muted">{p.no ? `${p.no} · ` : ''}{KIND_LABEL[line.kind]}{line.fromPackageId && <PkgMark code={p.packageCodes?.[line.fromPackageId] ?? null} />}</span>
         <div className="flex items-center gap-0.5 text-ink-muted">
           {priced && p.files && line.id && <LineFilesButton docType={p.files.docType} docId={p.files.docId} lineId={line.id} canEdit={p.files.canEdit} />}
           {!disabled && <button type="button" aria-label="Move up" onClick={() => p.onMove(-1)} className="rounded p-1"><ArrowUp size={14} /></button>}
@@ -314,7 +350,7 @@ function LineCard(p: LineProps) {
       <input aria-label="Description" className={cn(inputCls, 'mt-1 w-full', line.kind === 'ITEM' && 'font-semibold')} disabled={disabled} value={line.description} placeholder="Description" onChange={(e) => p.onChange({ description: e.target.value })} />
       {priced && (
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <div className="col-span-2"><ProductPicker value={line.itemCode} onPick={pick} disabled={disabled} /></div>
+          <div className="col-span-2"><ProductPicker value={line.itemCode} onPick={pick} disabled={disabled} onPickPackage={p.onPickPackage} /></div>
           <label className="flex flex-col gap-0.5 text-[11px] text-ink-muted">Qty
             <span className="flex items-stretch gap-1">
               <button type="button" aria-label="Decrease qty" className="w-8 flex-none rounded border border-border text-base font-bold disabled:opacity-40"
@@ -356,8 +392,9 @@ export function numberLines(section: DocSection): string[] {
   return section.lines.map((l) => (l.kind === 'ITEM' || (lump && l.kind === 'DETAIL' && !l.parentId) ? String(++n) : ''));
 }
 
-export function SectionCard({ section, index, count, disabled, showCost, onChange, onMove, onDelete, suppliers, allowLumpSum = true, files }: {
+export function SectionCard({ section, index, count, disabled, showCost, onChange, onMove, onDelete, suppliers, allowLumpSum = true, files, onPickPackage, packageCodes }: {
   section: DocSection; index: number; count: number; disabled?: boolean; showCost: boolean; allowLumpSum?: boolean; files?: LineFilesTarget;
+  onPickPackage?: PickPackage; packageCodes?: Record<string, string>;
   onChange: (s: DocSection) => void; onMove: (d: -1 | 1) => void; onDelete: () => void; suppliers: Array<{ id: string; code: string; name: string }>;
 }) {
   const nos = useMemo(() => numberLines(section), [section]);
@@ -365,10 +402,12 @@ export function SectionCard({ section, index, count, disabled, showCost, onChang
   const subtotal = section.lines.reduce((s, l) => s + (lump ? 0 : amountsOf(l).netSen), 0) + (section.lumpSumSen ?? 0);
   const setLine = (i: number, p: Partial<DocLine>) => onChange({ ...section, lines: section.lines.map((l, j) => (j === i ? { ...l, ...p } : l)) });
   const add = (kind: RenoLineKind) => onChange({ ...section, lines: [...section.lines, blankLine(kind)] });
+  const fromPackages = [...new Set(section.lines.map((l) => l.fromPackageId).filter((x): x is string => Boolean(x)))];
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-surface">
       <div className="flex flex-wrap items-center gap-2 border-b border-border-subtle px-3 py-2" style={section.bandColor ? { background: `${section.bandColor}40` } : undefined}>
         <span className="text-[11px] font-semibold uppercase text-ink-muted">Section {index + 1}</span>
+        {fromPackages.map((id) => <span key={id} className="rounded-full border border-[#e7b7d3] bg-[#fbe7f2] px-2 py-0.5 text-[11px] font-semibold text-[#9b2c6b]">from {packageCodes?.[id] ?? 'package'}</span>)}
         <input aria-label="Section heading" className={cn(inputCls, 'h-8 min-w-[200px] flex-1 basis-[240px] font-semibold uppercase')} disabled={disabled} value={section.heading}
           placeholder="e.g. CARPENTRY WORK @ KITCHEN AREA" onChange={(e) => onChange({ ...section, heading: e.target.value })} />
         <select aria-label="Band colour" className={cn(inputCls, 'h-8 w-[120px]')} disabled={disabled} value={section.bandColor ?? ''} onChange={(e) => onChange({ ...section, bandColor: e.target.value || null })}>
@@ -404,6 +443,7 @@ export function SectionCard({ section, index, count, disabled, showCost, onChang
           <tbody>
             {section.lines.map((l, i) => (
               <LineRow key={i} line={l} no={nos[i]} disabled={disabled} showCost={showCost} inLumpSum={lump} suppliers={suppliers} files={files}
+                packageCodes={packageCodes} onPickPackage={onPickPackage ? (h) => onPickPackage(h, index, i) : undefined}
                 onChange={(p) => setLine(i, p)} onMove={(d) => onChange({ ...section, lines: move(section.lines, i, d) })}
                 onDelete={() => onChange({ ...section, lines: section.lines.filter((_, j) => j !== i) })} />
             ))}
@@ -413,6 +453,7 @@ export function SectionCard({ section, index, count, disabled, showCost, onChang
       <div className="space-y-2 p-2 md:hidden">
         {section.lines.map((l, i) => (
           <LineCard key={i} line={l} no={nos[i]} disabled={disabled} showCost={showCost} inLumpSum={lump} suppliers={suppliers} files={files}
+            packageCodes={packageCodes} onPickPackage={onPickPackage ? (h) => onPickPackage(h, index, i) : undefined}
             onChange={(p) => setLine(i, p)} onMove={(d) => onChange({ ...section, lines: move(section.lines, i, d) })}
             onDelete={() => onChange({ ...section, lines: section.lines.filter((_, j) => j !== i) })} />
         ))}
@@ -433,8 +474,12 @@ export function SectionCard({ section, index, count, disabled, showCost, onChang
 /** "Generate rooms from layout": the document's layout, or why there is none. */
 export type RoomLayout = { label: string; bedrooms: number; bathrooms: number } | { missing: string };
 
-export function DocEditor({ sections, onChange, disabled, showCost = true, allowLumpSum = true, roomLayout, files }: {
+export function DocEditor({ sections, onChange, disabled, showCost = true, allowLumpSum = true, roomLayout, files, onPickPackage, packageCodes }: {
   sections: DocSection[]; onChange: (s: DocSection[]) => void; disabled?: boolean; showCost?: boolean; allowLumpSum?: boolean;
+  /** Given (the VO's Add part): the product search also offers packages and kits; the picked one opens its confirm dialog. */
+  onPickPackage?: PickPackage;
+  /** Package id -> code, for the "from PKG-..." tag on an area and the PKG mark on a line. Screen only. */
+  packageCodes?: Record<string, string>;
   /** Paperclip on each saved ITEM / add-on line. */
   files?: LineFilesTarget;
   /** Omitted: no button (templates, VOs). Given: the button, disabled with the hint when there is no layout. */
@@ -477,6 +522,7 @@ export function DocEditor({ sections, onChange, disabled, showCost = true, allow
       {sections.length === 0 && <div className="rounded-xl border border-dashed border-border p-6 text-center text-[13px] text-ink-muted">No sections yet.</div>}
       {sections.map((s, i) => (
         <SectionCard key={i} section={s} index={i} count={sections.length} disabled={disabled} showCost={showCost} suppliers={suppliers} allowLumpSum={allowLumpSum} files={files}
+          onPickPackage={onPickPackage} packageCodes={packageCodes}
           onChange={(ns) => onChange(sections.map((x, j) => (j === i ? ns : x)))}
           onMove={(d) => onChange(move(sections, i, d))}
           onDelete={() => onChange(sections.filter((_, j) => j !== i))} />

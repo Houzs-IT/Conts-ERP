@@ -232,7 +232,7 @@ export const DeliveryZones = ({ embedded = false }: { embedded?: boolean } = {})
       {!embedded && (
         <PageHeader
           eyebrow="Delivery"
-          title="Delivery Zones"
+          title="Delivery zones"
           description="Map Malaysian postcode ranges to the 14 area zones the auto-scheduler clusters deliveries by. A rule maps the first two digits of a postcode (e.g. 43 = Kajang, 10–14 = Penang). The most specific matching range wins, so you can carve a finer zone (e.g. Puchong out of the 46–47 PJ block) without deleting the broad rule."
           actions={
             <Button variant="primary" size="md" onClick={() => setCreating(true)}>
@@ -297,7 +297,7 @@ const CreateZoneDrawer = ({ knownZones, onClose }: { knownZones: string[]; onClo
       <div className={styles.backdrop} onClick={onClose} />
       <aside className={styles.drawer}>
         <header className={styles.drawerHeader}>
-          <h2 className={styles.drawerTitle}>New Zone Rule</h2>
+          <h2 className={styles.drawerTitle}>New zone rule</h2>
           <button type="button" className={styles.iconBtn} onClick={onClose}><X {...ICON} /></button>
         </header>
         <div className={styles.drawerBody}>

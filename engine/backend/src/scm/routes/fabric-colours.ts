@@ -22,6 +22,7 @@ import { Hono } from "hono";
 import { supabaseAuth } from "../middleware/auth";
 import { activeCompanyId, scopeToCompany } from "../lib/companyScope";
 import { escapeForOr } from "../lib/postgrest-search";
+import { paginateAll } from "../lib/paginate-all";
 import { loadProductAndModel } from "../lib/allowed-options-check";
 import { fabricAllowedByPool } from "../shared/fabric-pool";
 import type { Env, Variables } from "../env";
@@ -128,21 +129,27 @@ fabricColours.get("/", async (c) => {
   /* ?itemCode= — the SKU a line is being picked for. Its Model's fabric pool is
      applied here, before the cap, so the 50 answered are 50 the save accepts. */
   const itemCode = (c.req.query("itemCode") ?? "").trim();
-  let q = supabase
-    .from("fabric_colours")
-    .select("fabric_id, colour_id, label, swatch_hex, active, sort_order")
-    .eq("active", true)
-    .order("sort_order", { ascending: true });
-  q = scopeToCompany(q, c); // multi-company: isolate to the active company
-  // Typeahead mode — ilike over the code (colour_id) + label. The `limit` cap is
-  // applied AFTER the on-offer rules below (coloursOnOffer), never in the query.
-  // The no-`q` branch stays the old full-list behaviour.
-  if (rawQ) {
-    const s = escapeForOr(rawQ);
-    if (s) q = q.or(`colour_id.ilike.%${s}%,label.ilike.%${s}%`);
-    q = q.limit(OFFER_SCAN_ROWS);
-  }
-  const { data, error } = await q;
+  const colourRead = (from: number, to: number) => {
+    let q = supabase
+      .from("fabric_colours")
+      .select("fabric_id, colour_id, label, swatch_hex, active, sort_order")
+      .eq("active", true)
+      .order("sort_order", { ascending: true })
+      .order("fabric_id", { ascending: true })
+      .order("colour_id", { ascending: true });
+    q = scopeToCompany(q, c); // multi-company: isolate to the active company
+    // Typeahead mode — ilike over the code (colour_id) + label. The `limit` cap is
+    // applied AFTER the on-offer rules below (coloursOnOffer), never in the query.
+    if (rawQ) {
+      const s = escapeForOr(rawQ);
+      if (s) q = q.or(`colour_id.ilike.%${s}%,label.ilike.%${s}%`);
+    }
+    return q.range(from, to);
+  };
+  /* The no-`q` branch is the full list, now paged: 877 active colours on 21 Nov 2026 against a 1,000-row read, so
+     the next hundred or so would have dropped off the end. The typeahead keeps its single OFFER_SCAN_ROWS read.
+     (fabric_id, colour_id) is the key, so it breaks sort_order ties and pages never overlap. */
+  const { data, error } = rawQ ? await colourRead(0, OFFER_SCAN_ROWS - 1) : await paginateAll(colourRead);
   if (error) {
     if (/relation .* does not exist/i.test(error.message)) return c.json({ colours: [] });
     return c.json({ error: "load_failed", reason: error.message }, 500);
@@ -195,9 +202,9 @@ fabricColours.get("/", async (c) => {
      「它只要有启用，就有打开」. docs/bugs/0818. */
   let retiredCodes = new Set<string>();
   {
-    let trk = supabase.from("fabric_trackings").select("fabric_code, is_active");
-    trk = scopeToCompany(trk, c);
-    const { data: trkRows, error: trkErr } = await trk;
+    /* Paged: the register held 938 rows on 21 Nov 2026; a code past the 1,000th would lose its retired flag. */
+    const { data: trkRows, error: trkErr } = await paginateAll((from, to) =>
+      scopeToCompany(supabase.from("fabric_trackings").select("id, fabric_code, is_active"), c).order("id").range(from, to));
     /* Same degradation rule as the series read below: an unreadable stock
        register must not empty the picker. */
     if (!trkErr) retiredCodes = retiredByCode(trkRows ?? [], "fabric_code", "is_active");

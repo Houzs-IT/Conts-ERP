@@ -1325,7 +1325,7 @@ export function ProductionOrdersListV2() {
         <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
           <div className="min-w-0">
             <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-              Production Orders
+              Production orders
             </h1>
             <div className="mt-0.5 text-[12.5px] text-ink-muted">
               {total} Production Order{total === 1 ? "" : "s"} · {fmtRm(money.committed)} committed
@@ -1337,7 +1337,7 @@ export function ProductionOrdersListV2() {
         <div className="hidden md:block">
           <PageHeader
             eyebrow="Production"
-            title="Production Orders"
+            title="Production orders"
             description="Works done by our own team. Click any row for the quick view; open the full page to edit."
             primaryAction={
               <div className="flex items-stretch gap-2">

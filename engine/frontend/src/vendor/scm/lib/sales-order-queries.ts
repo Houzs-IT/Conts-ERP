@@ -1,7 +1,7 @@
 // Vendored SLICE of apps/backend/src/lib/flow-queries.ts — ONLY the Sales-Order
 import { appendSoListFilterParams } from './so-list-filter-state';
 import type { SoListFilter } from '../../shared/so-list-filter-model';
-import { writeFailed } from './mutation-error';
+import { reportInBandFailure, writeFailed, type InBandFailure } from './mutation-error';
 import { resolveCompartmentArtUrl, loadCompartmentArt } from './sofa-compartment-art';
 // read / detail / status / mutation hooks the vendored SO list + detail pages
 // use. The full source module (~2000 lines) carries the entire SO/DO/SI/DR
@@ -242,6 +242,15 @@ export const useMfgCustomers = () =>
     retryDelay: 800,
   });
 
+/** The SO list's Customer Name funnel choices: distinct names only, under the list's scope (audit 20 Nov 2026). */
+export const useSoCustomerNames = () =>
+  useQuery({
+    queryKey: ['mfg-sales-orders', 'customer-names'],
+    queryFn: () => authedFetch<{ names: string[] }>(`/mfg-sales-orders/customer-names`).then((r) => r.names),
+    staleTime: 5 * 60_000,
+    retry: retryUnlessClientError,
+  });
+
 export const useMfgSalesOrderDetail = (docNo: string | null) => useQuery({
   queryKey: ['mfg-sales-order-detail', docNo],
   queryFn: () => authedFetch<{ salesOrder: any; items: any[] }>(`/mfg-sales-orders/${docNo}`),
@@ -383,6 +392,15 @@ export type SoPayment = {
   created_by: string | null;
   version: number;
   updated_at?: string | null;
+  /* The payment's official receipt (GET /:docNo/payments, payment-receipts.ts): its number and DRAFT / FORMAL, the
+     instalment invoice a renovation receipt is for, and whether finance has confirmed the money. Absent when the
+     receipts could not be read. */
+  receipt_id?: number | null;
+  or_number?: string | null;
+  or_status?: string | null;
+  sales_invoice_id?: string | null;
+  invoice_no?: string | null;
+  confirmed?: boolean;
 };
 
 export const useSalesOrderPayments = (docNo: string | null) => useQuery({
@@ -410,6 +428,19 @@ export const invalidateSoLists = (qc: ReturnType<typeof useQueryClient>) => {
   qc.invalidateQueries({ queryKey: ['mfg-sales-orders-paged'] });
 };
 
+/* A payment moved: the lists and the payments ledger above, AND the order's own detail. The detail key
+   ['mfg-sales-order-detail', docNo] is a sibling of ['mfg-sales-orders'], not under it, and it carries the
+   server's paid_sen_total; left alone it kept the old figure, so the SO PDF listed both payments under
+   PAYMENTS RECEIVED but printed "Paid to date RM 500.00" (TC-SO-2611-028, 21 Nov 2026). */
+export const invalidateSoPaymentMoved = (qc: ReturnType<typeof useQueryClient>, docNo: string) => {
+  invalidateSoLists(qc);
+  void qc.invalidateQueries({ queryKey: ['mfg-sales-order-detail', docNo] });
+  // The money panel under the payments table reads its own key; a deposit also moves the order's invoices.
+  void qc.invalidateQueries({ queryKey: ['so-money', docNo] });
+  void qc.invalidateQueries({ queryKey: ['sales-invoices'] });
+  void qc.invalidateQueries({ queryKey: ['sales-invoice-detail'] });
+};
+
 /* `idempotencyKey` is OPTIONAL and must be destructured OUT of the body — the
    rest-spread would otherwise post it as an SO field. Pass one per ORDER intent
    (see lib/idempotency.ts): the middleware then replays the first response —
@@ -424,10 +455,11 @@ export const useCreateMfgSalesOrder = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ idempotencyKey, ...body }: { idempotencyKey?: string } & Record<string, unknown>) =>
-      authedFetch<{ docNo: string; vpBrand?: VpBrandAsk }>(`/mfg-sales-orders`,
+      authedFetch<{ docNo: string; vpBrand?: VpBrandAsk } & InBandFailure>(`/mfg-sales-orders`,
         idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) })),
     onSuccess: (res) => {
       invalidateSoLists(qc);
+      reportInBandFailure('Order saved, but a payment was not recorded', res);
       /* A live order whose products name no brand: ask which brand it is for,
          for the Venture Portal (owner 2026-09-27). Not awaited -- the save is
          done, and the question is optional. lib/vp-brand-prompt.ts. */
@@ -754,8 +786,8 @@ export const useAddSalesOrderPayment = () => {
     // The ['mfg-sales-orders'] root prefix-covers this SO's payments ledger and
     // header sub-queries; the paged list carries the paid / outstanding
     // aggregates a payment moves.
-    onSuccess: () => {
-      invalidateSoLists(qc);
+    onSuccess: (_data, vars) => {
+      invalidateSoPaymentMoved(qc, vars.docNo);
     },
   });
 };
@@ -774,8 +806,8 @@ export const useEditSalesOrderPayment = () => {
     // The ['mfg-sales-orders'] root prefix-covers this SO's payments ledger and
     // header sub-queries; the paged list carries the paid / outstanding
     // aggregates a payment moves.
-    onSuccess: () => {
-      invalidateSoLists(qc);
+    onSuccess: (_data, vars) => {
+      invalidateSoPaymentMoved(qc, vars.docNo);
     },
   });
 };
@@ -800,7 +832,7 @@ export const useAttachSalesOrderPaymentSlip = () => {
          this the ledger refetches but the cell keeps showing the old (or no)
          image until that key's staleTime elapses. */
       qc.invalidateQueries({ queryKey: ['payment-slip', vars.id] });
-      invalidateSoLists(qc);
+      invalidateSoPaymentMoved(qc, vars.docNo);
     },
   });
 };
@@ -819,8 +851,8 @@ export const useDeleteSalesOrderPayment = () => {
     // The ['mfg-sales-orders'] root prefix-covers this SO's payments ledger and
     // header sub-queries; the paged list carries the paid / outstanding
     // aggregates a payment moves.
-    onSuccess: () => {
-      invalidateSoLists(qc);
+    onSuccess: (_data, vars) => {
+      invalidateSoPaymentMoved(qc, vars.docNo);
     },
   });
 };

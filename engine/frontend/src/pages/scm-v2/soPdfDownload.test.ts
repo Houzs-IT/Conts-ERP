@@ -26,6 +26,13 @@ describe("downloadSoPdfs", () => {
     expect(action).toBe("save");
     expect(opts).toMatchObject({ rooms: { order: ["Kitchen"], byItem: { i1: "Kitchen" } }, contract: { brandName: "Dream", instalments: [{ label: "Deposit", percent: "50%" }] } });
   });
+  it("prints the brand picked on an order that is not a contract", async () => {
+    const { pickedSoBrand } = await import("./soPdfDownload");
+    const brand = { brandId: 2, name: "Dream Crafter", logoR2Key: "dc", companyLines: ["DC Sdn Bhd"], contactLine: "tel", hasProfile: true } as never;
+    expect(pickedSoBrand([brand], " dream crafter ")).toEqual({ brandName: "Dream Crafter", logoKey: "dc", letterhead: ["DC Sdn Bhd", "tel"] });
+    expect(pickedSoBrand([{ ...(brand as object), hasProfile: false } as never], "Dream Crafter")).toBeUndefined();
+    expect(pickedSoBrand([brand], null)).toBeUndefined();
+  });
   it("gives each order its own file, one at a time", async () => {
     await downloadSoPdfs([{ docNo: "A" }, { docNo: "B" }]);
     expect(h.order).toEqual(["A", "B"]);

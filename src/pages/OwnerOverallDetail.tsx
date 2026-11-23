@@ -6,7 +6,7 @@ import { Segmented } from '../components/Metric';
 import { CloseButton } from '../components/CloseButton';
 import { Button } from '../components/Button';
 import Icon from '../components/Icon';
-import { overallTotals, occupancyLabel, GROUP_NAME, OWNER_BASE_NAME, type OverallFigures, type ReportGroup } from '../lib/ownerOverall';
+import { overallTotals, occupancyLabel, reportWords, GROUP_NAME, OWNER_BASE_NAME, type OverallFigures, type ReportGroup } from '../lib/ownerOverall';
 import type { Stage } from '../lib/lockStages';
 
 /** The overall owner report's unit drawer: L1 breakdown, L2 full detail. Every figure comes from
@@ -80,7 +80,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
   row: ReportRow; all: ReportRow[]; level: Level; onLevel: (l: Level) => void; onClose: () => void;
   onStep: (by: -1 | 1) => void; position: number; total: number;
 }) {
-  const r = row, lt = r.contract === 'LT', st = unitStatus(r);
+  const r = row, lt = r.contract === 'LT', st = unitStatus(r), w = reportWords(r.group);
   // Full detail splits utilities into its bills.
   const utilityItems: [string, number][] = level === 2
     ? [['Electricity', r.electricity], ['Water', r.water], ['Internet', r.internet], ['Indah Water', r.sewerage]]
@@ -118,7 +118,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
         <div className="px-5 py-4">
           <div className="flex items-end justify-between gap-3">
             <div>
-              <div className="text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink">Gain / Loss</div>
+              <div className="text-caption font-semibold uppercase tracking-[0.09em] text-muted-ink">{w.result}</div>
               <div className="mt-1"><GainLoss sen={r.gainLoss} size="md" /></div>
             </div>
             <div className="text-right text-meta text-muted-ink">
@@ -149,8 +149,8 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
         </div>
 
         <Section title="Revenue and profitability" level={1}>
-          <Line label="Total revenue" value={r.revenue ? money(r.revenue) : '—'} tone={r.revenue ? undefined : 'text-faint'} />
-          <Line label="Gross profit (GP)" value={money(r.gp)} tone={r.gp < 0 ? 'text-danger' : undefined} />
+          <Line label={w.income} value={r.revenue ? money(r.revenue) : '—'} tone={r.revenue ? undefined : 'text-faint'} />
+          <Line label={w.net} value={money(r.gp)} tone={r.gp < 0 ? 'text-danger' : undefined} />
           {r.late !== 0 && (
             <div className="py-1.5">
               <div className="flex items-baseline justify-between gap-3">
@@ -164,10 +164,10 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
               ))}
             </div>
           )}
-          <Line label="Gain / Loss" value={signed(r.gainLoss)} tone={r.gainLoss < 0 ? 'text-danger' : 'text-success'} />
+          <Line label={w.result} value={signed(r.gainLoss)} tone={r.gainLoss < 0 ? 'text-danger' : 'text-success'} />
           {/* Gain / Loss split (part 3): the agent's part of the operator's share, and what the company keeps. */}
           {r.agent !== 0 && <Line label="Agent" value={money(r.agent)} note={`GP × ${r.agentPct ?? 0}%`} />}
-          <Line label="Company" value={signed(r.company)} tone={r.company < 0 ? 'text-danger' : 'text-success'} note={r.agent !== 0 ? 'Gain / Loss less the agent' : undefined} />
+          <Line label={w.company} value={signed(r.company)} tone={r.company < 0 ? 'text-danger' : 'text-success'} note={r.agent !== 0 ? `${w.result} less the agent` : undefined} />
         </Section>
         <Section title="Itemized deductions" level={1}>
           {deductionItems.map(([label, v]) => (
@@ -180,7 +180,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
             </div>
           ))}
           <div className="mt-2 flex items-baseline justify-between pt-2 font-semibold [border-top:1px_dashed_var(--color-line)]">
-            <span>Total deduction</span><span className="tabular-nums">{money(r.deductions)}</span>
+            <span>{w.deduction}</span><span className="tabular-nums">{money(r.deductions)}</span>
           </div>
         </Section>
         <Section title="Owner payout split" level={1}>
@@ -196,18 +196,18 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
         {level === 2 && <>
           <Section title="How the numbers are worked out" level={2}>
             <Ledger rows={[
-              ['', 'Total revenue', money(r.revenue)],
+              ['', w.income, money(r.revenue)],
               ...deductionItems.map(([label, v]): LedgerRow => ['−', label, money(v)]),
-              ['=', 'Gross profit (GP)', money(r.gp), true],
+              ['=', w.net, money(r.gp), true],
               ...(lt ? [] : [['×', `Owner share ${r.ownerPct}% gives O1`, money(r.o1)] as LedgerRow]),
               ['−', lt ? `Owner base = ${OWNER_BASE_NAME[r.group].toLowerCase()}` : r.o1 >= r.ltGrr ? `Owner base = O1 (GRR is ${money(r.ltGrr)})` : `Owner base = GRR (O1 is ${money(r.o1)})`, money(r.ownerBase)],
               ...(r.late ? [['+', 'Late changes from locked months', signed(r.late)] as LedgerRow] : []),
-              ['=', 'Gain / Loss', signed(r.gainLoss), true],
-              ...(r.agent ? [['−', `Agent: GP × ${r.agentPct ?? 0}%`, money(r.agent)] as LedgerRow, ['=', 'Company', signed(r.company), true] as LedgerRow] : []),
+              ['=', w.result, signed(r.gainLoss), true],
+              ...(r.agent ? [['−', `Agent: GP × ${r.agentPct ?? 0}%`, money(r.agent)] as LedgerRow, ['=', w.company, signed(r.company), true] as LedgerRow] : []),
             ]} />
             <p className="mt-3 rounded-control px-3 py-2 text-meta text-muted-ink [border:1px_dashed_var(--color-line)]">
               Owner payout = owner base {money(r.ownerBase)} {r.o2 < 0 ? '−' : '+'} O2 {money(Math.abs(r.o2))} = <span className="font-semibold text-ink">{money(r.payout)}</span>.
-              O2 is passed to the owner and does not change gain / loss.
+              O2 is passed to the owner and does not change {w.result.toLowerCase()}.
             </p>
           </Section>
           {r.days > 0 && <Section title="Nights and unit economics" level={2}>
@@ -219,7 +219,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
           </Section>}
           <Section title="Compared with other units" level={2}>
             <p className="mb-1 text-meta text-muted-ink">Against the {plural(peers.length, `${GROUP_NAME[r.group].toLowerCase()} unit`)}</p>
-            <Line label="Gain / Loss rank" value={`#${rank} of ${peers.length}`} />
+            <Line label={`${w.result} rank`} value={`#${rank} of ${peers.length}`} />
             {r.days > 0 && <div className="flex items-baseline justify-between gap-3 py-1.5">
               <span className="text-muted-ink">Occupancy vs average<span className="ml-1.5 text-meta text-faint">{occupancyLabel(peerTotals.occupancy)}</span></span>
               {delta(r.occupancy, peerTotals.occupancy, `${r.occupancy - peerTotals.occupancy < 0 ? '−' : '+'}${Math.abs(r.occupancy - peerTotals.occupancy).toFixed(2)} pts`)}
@@ -229,7 +229,7 @@ export function OwnerOverallDetail({ row, all, level, onLevel, onClose, onStep, 
               {delta(r.revenue, avg(peers, x => x.revenue), signed(Math.round(r.revenue - avg(peers, x => x.revenue))))}
             </div>
             <div className="flex items-baseline justify-between gap-3 py-1.5">
-              <span className="text-muted-ink">Gain / Loss vs average<span className="ml-1.5 text-meta text-faint">{signed(Math.round(avg(peers, x => x.gainLoss)))}</span></span>
+              <span className="text-muted-ink">{w.result} vs average<span className="ml-1.5 text-meta text-faint">{signed(Math.round(avg(peers, x => x.gainLoss)))}</span></span>
               {delta(r.gainLoss, avg(peers, x => x.gainLoss), signed(Math.round(r.gainLoss - avg(peers, x => x.gainLoss))))}
             </div>
             <Line label="Same building average" note={`${buildingName(r.building)} · ${plural(building.length, 'unit')}`}

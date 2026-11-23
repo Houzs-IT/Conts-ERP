@@ -69,7 +69,7 @@ vi.mock('../../vendor/scm/lib/payment-voucher-queries', async (importOriginal) =
   usePaymentVoucherDetail: () => ({ data: shown.detail, isLoading: false }),
   useUpdatePaymentVoucher: () => ({ mutateAsync: updateAsync, isPending: false }),
   useCancelPaymentVoucher: idle, useSubmitPaymentVoucher: idle, useWithdrawPaymentVoucher: idle,
-  useCheckPaymentVoucher: idle, useApprovePaymentVoucher: idle, usePostNowPaymentVoucher: idle, useRejectPaymentVoucher: idle,
+  useCheckPaymentVoucher: idle, useApprovePaymentVoucher: idle, usePostNowPaymentVoucher: idle, useRejectPaymentVoucher: idle, usePostPaymentVoucher: idle,
   useApplyAdvance: idle, useUploadPvFile: idle, useDeletePvFile: idle,
   useSupplierAdvances: () => ({ data: { advances: [], totalRemainingSen: 0 }, isLoading: false }),
   usePvFiles: () => ({ data: { files: [] }, isLoading: false, refetch: async () => ({ data: { files: [] } }) }),
@@ -87,6 +87,7 @@ vi.mock('../../vendor/scm/lib/ap-invoice-queries', () => ({
 }));
 vi.mock('../../vendor/scm/lib/purchase-invoice-queries', () => ({
   usePurchaseInvoices: () => ({ data: { purchaseInvoices: [] }, isLoading: false }),
+  useSupplierPayablePis: () => ({ data: { purchaseInvoices: [] }, isLoading: false }),
 }));
 vi.mock('../../vendor/scm/lib/suppliers-queries', () => ({
   useSuppliers: () => ({ data: [{ id: 'sup-meta', code: '405-M001', name: 'META PLATFORM IRELAND LIMITED', currency: 'MYR' }], isLoading: false }),

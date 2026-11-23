@@ -129,6 +129,11 @@ import { recordEntityAudit, diffFields, compactChanges, fieldChange } from '../l
 import { markIdempotencyNoWrite } from '../../middleware/idempotency';
 import { pgrestIn } from '../lib/pgrest-in-list';
 import { withSoRefDocNos } from '../lib/so-ref-search';
+import { dbWriteFailure } from '../lib/pg-rule-error';
+import { readDistinctCustomerNames } from '../lib/customer-names';
+import { DOC_BATCH, MAX_ROUNDS, parseDeliverablePageQuery, readCandidateDocs, takeWholeOrders } from '../lib/deliverable-so-page';
+import { addUp } from '../lib/onsite-twin-rules';
+import { onSiteLinesWithNothingComing, orderedSoItemIds } from '../lib/renovation-onsite-po-cover';
 
 export const deliveryOrdersMfg = new Hono<{ Bindings: Env; Variables: Variables }>();
 deliveryOrdersMfg.use('*', supabaseAuth);
@@ -1069,6 +1074,16 @@ async function checkDoStockAvailability(
   const unitBound = companyId === HARD_BOUND_COMPANY_ID ? await loadUnitBoundCodes(sb, companyId, active.map((l) => l.itemCode)) : NO_UNIT_BOUND_CODES;
   const shortages: StockShortage[] = [];
   const byWh = new Map<string, Array<{ itemCode: string; productName: string | null; variantKey: string; qty: number }>>();
+  const onSiteLines = active.flatMap((l) => { const wh = lineWh.get(l.lineRef) ?? null; return wh && onSite.has(wh) && unitBound.has(l.itemCode) ? [{ ...l, warehouseId: wh }] : []; });
+  if (onSiteLines.length > 0) {
+    const { data: bal } = await sb.from('inventory_balances').select('warehouse_id, item_code, qty').in('warehouse_id', [...onSite]).in('item_code', [...new Set(onSiteLines.map((l) => l.itemCode))]);
+    const onHand = addUp((bal ?? []) as Array<{ warehouse_id: string; item_code: string; qty: number }>, (b) => `${b.warehouse_id}::${b.item_code}`, (b) => Number(b.qty));
+    const ordered = await orderedSoItemIds(sb, onSiteLines.map((l) => l.soItemId).filter((x): x is string => !!x));
+    for (const l of onSiteLinesWithNothingComing(onSiteLines, unitBound, ordered, onHand)) {
+      const available = Math.max(0, onHand.get(`${l.warehouseId}::${l.itemCode}`) ?? 0);
+      shortages.push({ itemCode: l.itemCode, productName: l.productName, variantKey: l.variantKey, warehouseId: l.warehouseId, warehouseName: null, needed: Number(l.qty), available, short: Number(l.qty) - available, alternatives: [] });
+    }
+  }
   for (const l of active) {
     const wh = lineWh.get(l.lineRef) ?? null;
     if (!wh || onSite.has(wh)) continue;
@@ -1243,7 +1258,21 @@ export async function deductInventoryForDo(sb: any, deliveryOrderId: string, per
     .eq('source_doc_type', 'DO')
     .eq('source_doc_id', deliveryOrderId)
     .eq('movement_type', 'OUT');
-  if ((existing ?? 0) > 0) return []; // already deducted — no-op
+  if ((existing ?? 0) > 0) {
+    /* D6 (#1126): a revert to Draft retires its ship-and-return cycle (fn_retire_do_stock_cycle, migration 0360),
+       so a re-ship normally finds no OUT here and deducts afresh. Landing here with a reversal on file means that
+       retire failed (the revert reported it): say so instead of reading as clean. */
+    const { count: reversed, error: revErr } = await sb
+      .from('inventory_movements')
+      .select('id', { head: true, count: 'exact' })
+      .eq('source_doc_type', 'ADJUSTMENT')
+      .eq('source_doc_id', deliveryOrderId);
+    if (revErr) return [`Could not check whether this delivery order's stock was returned by an earlier revert: ${revErr.message}`];
+    if ((reversed ?? 0) > 0) {
+      return ['Stock was NOT taken out again: this delivery order was reverted to Draft earlier (its stock was returned) and its old stock record was not cleared, so this ship did not take the stock out. Tell IT so the stock can be adjusted by hand.'];
+    }
+    return []; // already deducted — no-op
+  }
 
   /* Forward-compat (mig 0057): is_dropship column may not exist yet — retry without it. */
   let doHeaderRes = await sb.from('delivery_orders')
@@ -1354,8 +1383,8 @@ export async function deductInventoryForDo(sb: any, deliveryOrderId: string, per
     /* B2C SO auto-allocation — stock just went out; other PENDING/READY SOs
        might lose their claim. Best-effort. */
     try {
-      const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-      await recomputeSoStockAllocation(sb);
+      const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+      await queueAllocationRecompute(sb, 'post-do-ship');
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-do-ship failed:', e); }
   }
   /* REC P4 — physical RACK stock-out. The DO just shipped, so pull the goods off
@@ -1944,8 +1973,8 @@ export async function resyncInventoryForDo(sb: any, deliveryOrderId: string, per
     await restampDoActualCost(sb, deliveryOrderId);
     /* Resync changed stock — re-walk SO allocation. Best-effort. */
     try {
-      const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-      await recomputeSoStockAllocation(sb);
+      const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+      await queueAllocationRecompute(sb, 'post-do-resync');
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-do-resync failed:', e); }
   }
 }
@@ -2859,6 +2888,26 @@ deliveryOrdersMfg.get('/', async (c) => {
   return c.json({ deliveryOrders });
 });
 
+/* The Customer Name funnel's choices on the DO list (audit 20 Nov 2026): the DO's own names, under the list's company
+   and sales scope, one column. It used to borrow the SO customer directory, which reads every SO with its totals.
+   Static path, so registered before /:id. */
+deliveryOrdersMfg.get('/customer-names', async (c) => {
+  const sb = c.get('supabase');
+  const canViewAll = canViewAllSales(c);
+  const houzsUserId = c.get('houzsUser')?.id;
+  if (!canViewAll && houzsUserId == null) {
+    return c.json({ error: 'Your account is not linked to a Houzs user, so delivery orders cannot be shown — please contact IT.' }, 403);
+  }
+  const scopeIds = await resolveSalesScopeIds(sb, c.env, houzsUserId, canViewAll);
+  const { names, error } = await readDistinctCustomerNames((from, to) => {
+    let q = scopeToCompany(sb.from('delivery_orders').select('debtor_name').not('debtor_name', 'is', null), c);
+    if (scopeIds) q = q.in('salesperson_id', scopeIds);
+    return q.order('debtor_name').order('id').range(from, to);
+  });
+  if (error) return c.json({ error: 'load_failed', reason: error }, 500);
+  return c.json({ names });
+});
+
 // ── Deliverable SO lines (line-level partial-delivery picker) ─────────────
 /* Commander 2026-05-30 — feeds the line-level SO→DO picker. Returns each SO
    LINE that can still be delivered (remaining > 0), where remaining is derived
@@ -2870,6 +2919,39 @@ deliveryOrdersMfg.get('/', async (c) => {
    cast "deliverable-so-lines" to a uuid. */
 deliveryOrdersMfg.get('/deliverable-so-lines', async (c) => {
   const sb = c.get('supabase');
+
+  /* ?limit= asks for ONE PAGE (lib/deliverable-so-page.ts, audit 20 Nov 2026): a few orders at a time, newest first,
+     searched on the server, only lines with something left. Without it, the whole list as before. */
+  const paged = c.req.query('docNos') ? null : parseDeliverablePageQuery(c.req.query());
+  if (paged) {
+    const picked: DeliverableLine[] = [];
+    let cursor = paged.cursor;
+    let more = true;
+    for (let round = 0; round < MAX_ROUNDS && picked.length < paged.limit; round++) {
+      const batch = await readCandidateDocs(sb, c, { after: cursor, q: paged.q, n: DOC_BATCH });
+      if (batch.error) return c.json({ error: 'load_failed', reason: batch.error }, 500);
+      if (batch.docs.length === 0) {
+        more = batch.more;
+        cursor = batch.scannedTo ?? cursor;
+        if (!more) break;
+        continue;
+      }
+      const remainingMap = await soDeliverableRemaining(sb, batch.docs);
+      const open = [...remainingMap.values()].filter((l) => l.remaining > 0);
+      const took = takeWholeOrders(batch.docs, open, paged.limit - picked.length);
+      picked.push(...took.lines);
+      cursor = took.more ? took.lastDoc : (batch.scannedTo ?? took.lastDoc);
+      more = took.more || batch.more;
+      if (!more) break;
+    }
+    await stampSoRefsCamel(sb, picked, (l) => l.docNo, (q) => scopeToAllowedCompanies(q, c), 'deliverable-so-lines');
+    const notReadyPage = new Map((await findNotReadySoLines(sb, picked.map((l) => l.soItemId), activeCompanyId(c) ?? null)).map((n) => [n.soItemId, n]));
+    return c.json({
+      lines: picked.map((l) => ({ ...l, notReady: notReadyPage.get(l.soItemId) ?? null })),
+      nextCursor: more ? cursor : null,
+      pageSize: paged.limit,
+    });
+  }
 
   // Resolve the candidate SO doc_nos. Explicit ?docNos=A,B wins; otherwise
   // pull every non-cancelled SO (capped) so the picker can show all of them.
@@ -4737,7 +4819,7 @@ export const addDeliveryOrderItemHandler = async (c: Context<{ Bindings: Env; Va
   const row = buildItemRow(id, it, nextLineNo, addCommitments.get('add') ?? null, addPhotos);
   const { data, error } = await sb.from('delivery_order_items').insert({ ...row, company_id: activeCompanyId(c) }).select(ITEM).single();
   if (isSoLineOverDelivered(error)) return c.json({ error: 'over_remaining', message: 'Add qty exceeds remaining on the linked Sales Order line.', soItemId: it.soItemId ?? null, reason: error?.message }, 409);
-  if (error) return c.json({ error: 'insert_failed', reason: error.message }, 500);
+  if (error) return dbWriteFailure(c, error, 'insert_failed', 'line');
   /* Drop-ship (mig 0057) — once a drop-shipped line is added, stamp the DO so
      the "batch not received" badge shows. Best-effort (never blocks the add). */
   if (dropShipped) {
@@ -5557,8 +5639,8 @@ export const patchDeliveryOrderStatusHandler = async (c: any) => {
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-sync] post-do-cancel failed:', e); }
     /* DO cancel freed stock — re-walk SO lines so PENDING orders flip back to READY. Best-effort. */
     try {
-      const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-      await recomputeSoStockAllocation(sb);
+      const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+      await queueAllocationRecompute(sb, 'post-do-cancel');
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-do-cancel failed:', e); }
     /* ERP -> AutoCount cancel. Reached only past doHasDownstream (checked above),
        so this can never ask AutoCount to cancel an invoiced delivery. */

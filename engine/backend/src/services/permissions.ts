@@ -99,6 +99,10 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: "scm.renovation.quote",    resource: "Supply Chain", verb: "write",  label: "Edit renovation quotations",   description: "Create, revise, send and accept renovation quotations and package templates, convert an accepted quotation to the contract, edit the contract's print header, raise variation orders" },
   { key: "scm.renovation.vo.apply", resource: "Supply Chain", verb: "approve", label: "Approve variation orders",    description: "Approve a signed variation order: its lines change the renovation contract and flag the purchase-order lines it omits" },
   { key: "scm.renovation.bill",     resource: "Supply Chain", verb: "manage", label: "Bill renovation instalments",  description: "Issue the progress invoice (or credit note) for a renovation contract instalment, release and record payments on a renovation PO's payment schedule" },
+  // Conts (chew, 21 Nov 2026): every salesperson bills the instalments of their OWN renovation contracts. The bill route
+  // takes this in place of scm.renovation.bill only for an order in the caller's sales scope (scm/lib/salesScope.ts);
+  // it opens nothing else scm.renovation.bill covers (contract credits, PO payment schedules).
+  { key: "scm.renovation.bill_own", resource: "Supply Chain", verb: "write",  label: "Bill own renovation instalments", description: "Issue the progress invoice (or credit note) for an instalment of a renovation contract the caller may see as theirs (own or downline sales orders)" },
   { key: "scm.renovation.terms",    resource: "Supply Chain", verb: "write",  label: "Edit payment terms and letterheads", description: "Edit customer and PO payment-term templates and the brand letterheads printed on renovation documents" },
   { key: "scm.renovation.po_split", resource: "Supply Chain", verb: "manage", label: "Raise renovation POs",         description: "Raise the purchase orders of a renovation contract (one per supplier) and edit a PO's payment schedule" },
   // Owner 2026-09-23 — a keyed-in payment's transaction-slip date must fall in

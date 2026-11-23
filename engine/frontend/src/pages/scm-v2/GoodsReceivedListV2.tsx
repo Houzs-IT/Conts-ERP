@@ -674,7 +674,10 @@ export function GoodsReceivedListV2() {
   const filtersActive = status !== "all" || view !== "table" || search.trim().length > 0;
 
   const onPullToRefresh = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["grns"] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["grns"] }),
+      queryClient.invalidateQueries({ queryKey: ["grns-paged"] }),
+    ]);
   };
 
   /* The ONE Export (owner 2026-09-15): every receipt the list's tab + search +
@@ -1004,7 +1007,7 @@ export function GoodsReceivedListV2() {
       <div className={cn("transition-[padding] duration-200", selected ? "md:pr-[540px]" : "")}>
         <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
           <div className="min-w-0">
-            <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Goods Receipts</h1>
+            <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Goods receipts</h1>
             <div className="mt-0.5 text-[12.5px] text-ink-muted">
               {total} GRN{total === 1 ? "" : "s"} · {fmtRm(money.received)}
             </div>
@@ -1014,7 +1017,7 @@ export function GoodsReceivedListV2() {
         <div className="hidden md:block">
           <PageHeader
             eyebrow="Procurement"
-            title="Goods Receipts"
+            title="Goods receipts"
             description="Every GRN raised on incoming supplier shipments — Draft to Submitted. Click any row for the quick view; open the full page to edit."
             primaryAction={
               <div className="flex items-stretch gap-2">

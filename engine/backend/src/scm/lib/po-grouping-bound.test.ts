@@ -14,9 +14,13 @@ describe('Combined never puts two customers on a Works or Built-in PO', () => {
     const a = groupKeyFor(line({ categoryGroup: 'WORKS', unitBound: true }), 'combined');
     expect(groupKeyFor(line({ categoryGroup: 'WORKS', unitBound: true }), 'combined')).toBe(a);
   });
-  it('Works and Built-in of one SO never share a PO', () => {
+  it('Works and Built-in of one SO share a PO: a PO may mix categories (owner, 19 Nov 2026)', () => {
     const a = groupKeyFor(line({ categoryGroup: 'WORKS', unitBound: true }), 'combined');
-    expect(groupKeyFor(line({ categoryGroup: 'BUILTIN', unitBound: true }), 'combined')).not.toBe(a);
+    expect(groupKeyFor(line({ categoryGroup: 'BUILTIN', unitBound: true }), 'combined')).toBe(a);
+  });
+  it('a project line of another category joins the same supplier PO', () => {
+    const a = groupKeyFor(line({ supplierId: 'S', categoryGroup: 'SOFT' }), 'combined');
+    expect(groupKeyFor(line({ supplierId: 'S', categoryGroup: 'BUILTIN' }), 'combined')).toBe(a);
   });
   it('other goods keep bulk purchase across SOs', () => {
     const a = groupKeyFor(line({ soDocNo: 'SO-1', categoryGroup: 'FURNITURE' }), 'combined');

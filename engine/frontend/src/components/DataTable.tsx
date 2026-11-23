@@ -71,6 +71,10 @@ import {
   updateNamedLayout,
   saveCompanyDefault,
   saveMyLayout,
+  saveMyDefaultLayout,
+  myDefaultStorageKey,
+  normalizeStoredLayout,
+  isEmptyLayout,
   saveSharedLayout,
   deleteSharedLayout,
   serializeLayout,
@@ -147,6 +151,7 @@ function DataTableInner<T, L>({
   tableId,
   onDisplayKeys,
   layoutFamily,
+  layoutSeedId,
   persistFilters = true,
   persistSort = true,
   layoutPresets,
@@ -255,10 +260,49 @@ function DataTableInner<T, L>({
      existing columns carry over on first load instead of resetting to defaults
      (both tenants start from the shared value, then diverge as each writes its
      own bucket — nothing writes back to the shared key, so the bleed stops). */
-  const legacyIdKey = activeCompany != null
+  const legacyIdKey = layoutSeedId && layoutSeedId !== baseIdKey
+    ? (activeCompany != null ? `c${activeCompany}:${layoutSeedId}` : layoutSeedId)
+    : activeCompany != null
     ? baseIdKey
     : (layoutFamily && tableId && layoutFamily !== tableId ? tableId : undefined);
   const legacyStorageKey = (part: string) => legacyIdKey ? `dt:${part}:${legacyIdKey}` : undefined;
+  /* This user's OWN default for this table (owner 2026-11-19): what "Save as
+     default" writes and "Reset to default" returns to. The account copy wins;
+     the browser copy covers the moment before the boot fetch and offline. */
+  /* Read by hand rather than through useLocalStorage, which writes its value
+     back on mount: that would leave a `null` entry for every table ever opened. */
+  const myDefaultKey = myDefaultStorageKey(idKey);
+  const readLocalMyDefault = useCallback((key: string): StoredLayout | null => {
+    try {
+      const raw = localStorage.getItem(key);
+      const parsed: unknown = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed === "object" ? normalizeStoredLayout(parsed) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+  const [localMyDefaultState, setLocalMyDefaultState] = useState(() => ({
+    key: myDefaultKey,
+    value: readLocalMyDefault(myDefaultKey),
+  }));
+  const localMyDefault =
+    localMyDefaultState.key === myDefaultKey ? localMyDefaultState.value : readLocalMyDefault(myDefaultKey);
+  const setLocalMyDefault = useCallback(
+    (value: StoredLayout | null) => {
+      try {
+        if (value) localStorage.setItem(myDefaultKey, JSON.stringify(value));
+        else localStorage.removeItem(myDefaultKey);
+      } catch {
+        // storage unavailable: the account copy still holds it
+      }
+      setLocalMyDefaultState({ key: myDefaultKey, value });
+    },
+    [myDefaultKey],
+  );
+  const myDefaultCandidate =
+    (layoutStore.myDefaults[baseIdKey] as StoredLayout | undefined) ?? localMyDefault;
+  const myDefault =
+    myDefaultCandidate && !isEmptyLayout(myDefaultCandidate) ? myDefaultCandidate : null;
   const [hiddenList, setHiddenList] = useLocalStorage<string[]>(
     `dt:hidden:${idKey}`,
     [],
@@ -796,11 +840,16 @@ function DataTableInner<T, L>({
     const untouched =
       order.length === 0 && hiddenList.length === 0 && shownList.length === 0;
     if (!untouched) return null;
+    // The user's own default beats the company one: the company default is
+    // only the starting point for someone who has not set theirs.
+    if (myDefault) {
+      return { order: myDefault.order, hidden: new Set(myDefault.hidden), shown: new Set(myDefault.shown) };
+    }
     const preset = resolvedPresets.find((p) => p.isDefault);
     if (!preset) return null;
     const layout = presetLayout(preset);
     return { order: layout.order, hidden: new Set(layout.hidden), shown: new Set(layout.shown) };
-  }, [resolvedPresets, presetLayout, order, hiddenList, shownList]);
+  }, [resolvedPresets, presetLayout, order, hiddenList, shownList, myDefault]);
 
   // Apply persisted order. alwaysVisible columns are pinned at the front
   // in their definition order (not reorderable); everything else follows
@@ -1096,7 +1145,13 @@ function DataTableInner<T, L>({
     onUserAdjustColumns?.();
     const preset = resolvedPresets.find((p) => p.id === id);
     if (!preset) return;
-    const layout = presetLayout(preset);
+    applyLayout(presetLayout(preset), false);
+  }
+
+  /** Write a whole layout into this table's prefs. `exactWidths` also clears
+   *  widths the layout does not carry (Reset to my default); a picked preset
+   *  without widths leaves the current ones alone. */
+  function applyLayout(layout: StoredLayout, exactWidths: boolean) {
     const known = new Set(allColumns.filter((c) => !c.alwaysVisible).map((c) => c.key));
     const keep = (keys: string[]) => keys.filter((k) => known.has(k));
     const ordered = keep(layout.order);
@@ -1114,7 +1169,7 @@ function DataTableInner<T, L>({
     const hiddenSet = new Set(keep(layout.hidden));
     setPinned(keep(layout.pinned).filter((k) => !hiddenSet.has(k)));
     setPinnedRight(keep(layout.pinnedRight).filter((k) => !hiddenSet.has(k)));
-    if (Object.keys(layout.widths).length > 0) updateWidths(layout.widths, true);
+    if (exactWidths || Object.keys(layout.widths).length > 0) updateWidths(layout.widths, true);
     if (groupBanner) setUserGroups(keep(layout.groupBy));
   }
 
@@ -1184,27 +1239,25 @@ function DataTableInner<T, L>({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per table key; state read is the mount snapshot
   }, [idKey, legacyGridKey]);
 
-  /* Admin-only: publish the arrangement on screen as this company's default
-     view — the thing that used to be a code constant and a deploy. Reaches
-     only users who have never arranged this table themselves. */
+  /* "Save as default" stores the arrangement on screen as THIS USER's own
+     default for this table (owner 2026-11-19: it must never reach another
+     user). Company defaults stay as the starting point for anyone who has not
+     saved one; a layout manager still edits those from the layout picker. */
   const [defaultSaveState, setDefaultSaveState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
-  const activeCompanyName = useMemo(() => {
-    const co = layoutStore.companies.find((x) => x.id === layoutStore.activeCompanyId);
-    return co ? shortCompanyName(co.name) : "";
-  }, [layoutStore]);
-  const writeCompanyDefault = useCallback(
+  const writeMyDefault = useCallback(
     async (layout: StoredLayout) => {
       setDefaultSaveState("saving");
+      setLocalMyDefault(isEmptyLayout(layout) ? null : layout);
       try {
-        await saveCompanyDefault(baseIdKey, layout);
+        await saveMyDefaultLayout(baseIdKey, layout);
         setDefaultSaveState("saved");
       } catch {
         setDefaultSaveState("error");
       }
     },
-    [baseIdKey],
+    [baseIdKey, setLocalMyDefault],
   );
   /* What is ON SCREEN, materialised — which is what "save these columns as the
      default" has to publish. The user's own prefs are the wrong source: an
@@ -1225,27 +1278,17 @@ function DataTableInner<T, L>({
     };
   }, [allColumns, effectiveHidden, storedWidths, pinned, pinnedRight, userGroups]);
 
-  const defaultManager = useMemo(() => {
-    if (!layoutStore.ready || !layoutStore.canManageDefaults) return undefined;
-    if (layoutStore.activeCompanyId == null || !activeCompanyName) return undefined;
-    return {
-      companyLabel: activeCompanyName,
-      hasSaved: Boolean(
-        layoutStore.defaults[String(layoutStore.activeCompanyId)]?.[baseIdKey],
-      ),
+  const defaultManager = useMemo(
+    () => ({
+      companyLabel: "",
+      personal: true,
+      hasSaved: myDefault != null,
       state: defaultSaveState,
-      onSave: () => writeCompanyDefault(renderedLayout),
-      onClear: () =>
-        writeCompanyDefault(EMPTY_LAYOUT),
-    };
-  }, [
-    layoutStore,
-    activeCompanyName,
-    baseIdKey,
-    defaultSaveState,
-    renderedLayout,
-    writeCompanyDefault,
-  ]);
+      onSave: () => void writeMyDefault(renderedLayout),
+      onClear: () => void writeMyDefault(EMPTY_LAYOUT),
+    }),
+    [myDefault, defaultSaveState, renderedLayout, writeMyDefault],
+  );
 
   function resetOrder() {
     // Resetting order also clears widths + pinned so the table returns to a
@@ -1292,8 +1335,13 @@ function DataTableInner<T, L>({
   /** Back to the active layout: its columns, its order, its widths. */
   function resetLayout() {
     onUserAdjustColumns?.();
-    resetVisibility();
-    resetOrder();
+    if (myDefault) {
+      // Back to the user's own saved default, widths and frozen columns included.
+      applyLayout(myDefault, true);
+    } else {
+      resetVisibility();
+      resetOrder();
+    }
     /* Sort is persisted per table in `dt:sort:<id>` and replayed on every mount,
        so a column clicked once months ago becomes the permanent default. Owner,
        2026-08-04, on the Delivery Orders list opening oldest-first every time:
@@ -1680,7 +1728,7 @@ function DataTableInner<T, L>({
   // out entirely; on server tables it only demotes the column to the
   // client-side fallback (see above).
   const canSortColumn = useCallback(
-    (col: Column<T>) => !!col.sortCompare || (!!col.getValue && (!col.disableSort || !!serverSort)),
+    (col: Column<T>) => !col.neverSort && (!!col.sortCompare || (!!col.getValue && (!col.disableSort || !!serverSort))),
     [serverSort]
   );
 
@@ -2062,8 +2110,12 @@ function DataTableInner<T, L>({
     const idx = renderList.findIndex((it) => it.kind === "row" && String(getRowKey(it.row)) === key);
     if (idx < 0) return;
     const find = () => tbodyRef.current?.querySelector<HTMLElement>(`tr[data-rowkey="${CSS.escape(key)}"]`);
-    const settle = () => find()?.scrollIntoView({ block: "center" });
-    if (find()) return settle();
+    // Block body on purpose: Chrome 156's scrollIntoView returns a Promise, and an effect must not return it.
+    const settle = () => { find()?.scrollIntoView({ block: "center" }); };
+    if (find()) {
+      settle();
+      return;
+    }
     const offset = idx * (rowHeightRef.current || ROW_HEIGHT_ESTIMATE);
     const wrap = scrollWrapRef.current;
     // A programmatic scroll does not always emit `scroll` (a background tab never
@@ -2338,7 +2390,7 @@ function DataTableInner<T, L>({
       )}
       {showTable && (
         <div
-          className="dt-table rounded-lg border border-border bg-surface shadow-stone sm:block sm:overflow-hidden"
+          className="dt-table isolate rounded-lg border border-border bg-surface shadow-stone sm:block sm:overflow-hidden"
           style={freezeBoxStyle}
         >
           <div
@@ -2529,8 +2581,8 @@ function DataTableInner<T, L>({
                         dragCol === c.key && "opacity-40",
                         // Delineate the frozen region: a right border on the
                         // last sticky column reads as the freeze line.
-                        isLastSticky && "border-r border-border",
-                        isFirstStickyRight && "border-l border-border"
+                        isLastSticky && "border-r border-border shadow-freeze-r",
+                        isFirstStickyRight && "border-l border-border shadow-freeze-l"
                       )}
                     >
                       <span className="inline-flex items-center gap-1" title={c.description ?? columnDescription(tableId, c.key)}>
@@ -2928,8 +2980,8 @@ function DataTableInner<T, L>({
                                 i === 0 && !expandable && !selection && "pl-5",
                                 i === displayColumns.length - 1 && "pr-5",
                                 // Freeze line on the last sticky column.
-                                isLastSticky && "border-r border-border",
-                                isFirstStickyRight && "border-l border-border",
+                                isLastSticky && "border-r border-border shadow-freeze-r",
+                                isFirstStickyRight && "border-l border-border shadow-freeze-l",
                                 c.className
                               )}
                             >
@@ -3348,7 +3400,7 @@ function DataTableInner<T, L>({
                   value={filterQuery}
                   onChange={(e) => setFilterQuery(e.target.value)}
                   placeholder="Search values…"
-                  className="w-full rounded border border-border bg-bg px-2 py-1 text-[12px] outline-none focus:border-primary"
+                  className="w-full rounded border border-border bg-bg px-2 py-1 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/25 focus-visible:outline-none"
                 />
               </div>
 
@@ -3358,7 +3410,7 @@ function DataTableInner<T, L>({
                   type="button"
                   onClick={selectAll}
                   disabled={shownValues.length === 0}
-                  className="rounded px-1.5 py-0.5 text-accent hover:bg-surface-dim disabled:text-ink-muted/50 disabled:hover:bg-transparent"
+                  className="rounded px-1.5 py-0.5 text-primary hover:bg-surface-dim disabled:text-ink-muted/50 disabled:hover:bg-transparent"
                 >
                   Select all
                 </button>
@@ -3367,7 +3419,7 @@ function DataTableInner<T, L>({
                   type="button"
                   onClick={invert}
                   disabled={shownValues.length === 0}
-                  className="rounded px-1.5 py-0.5 text-accent hover:bg-surface-dim disabled:text-ink-muted/50 disabled:hover:bg-transparent"
+                  className="rounded px-1.5 py-0.5 text-primary hover:bg-surface-dim disabled:text-ink-muted/50 disabled:hover:bg-transparent"
                 >
                   Invert
                 </button>
@@ -3376,7 +3428,7 @@ function DataTableInner<T, L>({
                   type="button"
                   onClick={() => setColumnFilter(col.key, [])}
                   disabled={allTokens.length === 0}
-                  className="rounded px-1.5 py-0.5 text-accent hover:bg-surface-dim disabled:text-ink-muted/50 disabled:hover:bg-transparent"
+                  className="rounded px-1.5 py-0.5 text-primary hover:bg-surface-dim disabled:text-ink-muted/50 disabled:hover:bg-transparent"
                 >
                   Clear
                 </button>
@@ -3386,7 +3438,7 @@ function DataTableInner<T, L>({
                   wheel that hits the top/bottom of the list doesn't chain into
                   a page scroll (which closes the popover); `min-h-0` lets it
                   shrink when the viewport-capped flex column runs short. */}
-              <div className="max-h-[240px] min-h-0 overflow-y-auto overscroll-contain py-1">
+              <div className="thin-scroll max-h-[240px] min-h-0 overflow-y-auto overscroll-contain py-1">
                 {shown.length === 0 && (
                   <div className="px-3 py-2 text-[12px] text-ink-muted">No values</div>
                 )}
@@ -3399,7 +3451,7 @@ function DataTableInner<T, L>({
                       type="checkbox"
                       checked={selected.has(v)}
                       onChange={() => toggleFilterValue(col.key, v)}
-                      className="accent-accent"
+                      className="accent-primary"
                     />
                     <span className="min-w-0 flex-1 truncate" title={v}>{col.filterLabel?.(v) ?? v}</span>
                     <span className="shrink-0 font-mono text-[10px] text-ink-muted">{n}</span>

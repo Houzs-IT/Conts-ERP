@@ -210,13 +210,25 @@ export const useGrnDetails = (ids: string[]) => useQueries({
    2026-07-17 (fix/doc-idempotency). A duplicate GRN books stock IN twice and
    rolls the PO's received qty up twice — the on-hand lie the owner would only
    meet at a stock count. */
+/* A receipt moves the PO's received qty and status, read under the PO's own keys. */
+const invalidateGrnPoSide = (qc: ReturnType<typeof useQueryClient>) => {
+  void qc.invalidateQueries({ queryKey: ['mfg-purchase-orders'] });
+  void qc.invalidateQueries({ queryKey: ['mfg-purchase-order-detail'] });
+  void qc.invalidateQueries({ queryKey: ['inventory'] });
+};
 export const useCreateGrn = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ idempotencyKey, ...body }: { idempotencyKey?: string } & Record<string, unknown>) =>
-      authedFetch<{ id: string; grnNumber: string }>(`/grns`,
+      authedFetch<{ id: string; grnNumber: string; movementErrors?: string[]; recountError?: string }>(`/grns`,
         idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['grns'] }),
+    onSuccess: (data) => {
+      /* A non-draft create posts inside this request and reports a refused stock IN or PO recount in the body; the
+         follow-up post finds the receipt already POSTED and reports nothing, so this is the only place to say it. */
+      reportInBandFailure('GRN saved, but the stock was not received', data);
+      invalidateGrnPoSide(qc);
+      return qc.invalidateQueries({ queryKey: ['grns'] });
+    },
   });
 };
 /* Confirm a DRAFT GRN → POSTED (PATCH /grns/:id/post). This is the commit
@@ -228,7 +240,7 @@ export const usePostGrn = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      authedFetch<{ grn?: unknown; movementErrors?: string[] }>(`/grns/${id}/post`, { method: 'PATCH' }),
+      authedFetch<{ grn?: unknown; movementErrors?: string[]; recountError?: string }>(`/grns/${id}/post`, { method: 'PATCH' }),
     onSuccess: (data, id) => {
       /* IN-BAND FAILURE. `PATCH /grns/:id/post` answers 200 with
          `{ grn, movementErrors }` (grns.ts:2077): the DOCUMENT posts and the
@@ -238,6 +250,7 @@ export const usePostGrn = () => {
          warehouse". `useCancelGrn` below has read its `cancelErrors` since
          2026-08-13 for exactly this reason. */
       reportInBandFailure('GRN posted, but the stock was not received', data);
+      invalidateGrnPoSide(qc);
       qc.invalidateQueries({ queryKey: ['grn-detail', id] });
       qc.invalidateQueries({ queryKey: ['grns'] });
       qc.invalidateQueries({ queryKey: ['inventory'] });
@@ -282,10 +295,12 @@ export const useAddGrnItem = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ grnId, ...body }: { grnId: string } & Record<string, unknown>) =>
-      authedFetch<{ item: any }>(`/grns/${grnId}/items`, {
+      authedFetch<{ item: any; movementErrors?: string[] }>(`/grns/${grnId}/items`, {
         method: 'POST', body: JSON.stringify(body),
       }),
-    onSuccess: (_, vars) => {
+    onSuccess: (data, vars) => {
+      reportInBandFailure('Line added, but the stock was not received', data);
+      invalidateGrnPoSide(qc);
       qc.invalidateQueries({ queryKey: ['grn-detail', vars.grnId] });
       qc.invalidateQueries({ queryKey: ['grns'] });
       void qc.invalidateQueries({ queryKey: ['inventory'] });
@@ -297,10 +312,12 @@ export const useUpdateGrnItem = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ grnId, itemId, ...body }: { grnId: string; itemId: string } & Record<string, unknown>) =>
-      authedFetch<{ ok: true }>(`/grns/${grnId}/items/${itemId}`, {
+      authedFetch<{ ok: true; movementErrors?: string[] }>(`/grns/${grnId}/items/${itemId}`, {
         method: 'PATCH', body: JSON.stringify(body),
       }),
-    onSuccess: (_, vars) => {
+    onSuccess: (data, vars) => {
+      reportInBandFailure('Line saved, but the stock was not adjusted', data);
+      invalidateGrnPoSide(qc);
       qc.invalidateQueries({ queryKey: ['grn-detail', vars.grnId] });
       qc.invalidateQueries({ queryKey: ['grns'] });
       void qc.invalidateQueries({ queryKey: ['inventory'] });
@@ -340,6 +357,7 @@ export const useCancelGrn = () => {
          D3) and NOTHING read it until check-inband-failures.mjs counted the
          producers against the readers and found zero. */
       reportInBandFailure('GRN cancelled, but the stock was not reversed', data);
+      invalidateGrnPoSide(qc);
       qc.invalidateQueries({ queryKey: ['grn-detail', id] });
       qc.invalidateQueries({ queryKey: ['grns'] });
       qc.invalidateQueries({ queryKey: ['inventory'] });

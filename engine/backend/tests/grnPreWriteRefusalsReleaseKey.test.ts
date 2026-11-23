@@ -92,6 +92,8 @@ const RELEASES_PAST_A_WRITE: Record<string, string> = {
     'PATCH /:id/cancel: only the DRAFT short-circuit above writes, and it RETURNS. Reaching this line means the GRN was not DRAFT and the status flip is still below.',
   'if (consumedLock) return refuseWithoutWriting(c, consumedLock, 409);':
     'PATCH /:id/cancel: same reason as the child lock directly above it.',
+  "return refuseWithoutWriting(c, { error: 'line_changed', message: 'Someone else changed this line while you were editing it. Reload to see their change, then edit again.' }, 409);":
+    'PATCH /:id/items/:itemId: the line UPDATE above is a compare-and-set that matched no row (D7, PR #1126), so it wrote nothing, and no stock moves before it.',
 };
 
 describe('grns.ts refusals that precede any write release the idempotency claim', () => {

@@ -33,7 +33,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (unitId) { where.push('m.unit_id = ?'); args.push(unitId); }
   const placeJoin = await jobPlaceJoin(env);
   const rows = await all<any>(env, `
-    SELECT m.*, u.unit_number, p.id AS building_id, p.name AS property_name, COALESCE(r.full_name, '') AS reporter,
+    SELECT m.*, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.id AS building_id, p.name AS property_name, COALESCE(r.full_name, '') AS reporter,
            s.code AS sku_code, s.name AS sku_name,
            COALESCE(dc.photo_count, 0) AS photo_count, COALESCE(dc.document_count, 0) AS document_count,
            COALESCE(ex.expensed, 0) AS expensed, ex.expensed_on,
@@ -157,7 +157,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!found) return fail('NOT_FOUND', 'That unit does not exist.', 404, { unitNumber: 'Pick a unit that exists.' });
     unit = found;
   }
-  const chargeTo = b.chargeTo ?? (propertyId ? 'the_conts' : 'owner');
+  // Who pays is the office's (chew, 21 Nov 2026): a job from the field app or a clean takes the default, whatever is sent.
+  const chargeTo = (field ? null : b.chargeTo) ?? (propertyId ? 'the_conts' : 'owner');
   if (!CHARGE_TO.includes(chargeTo)) return fail('VALIDATION', 'Pick who pays.', 422, { chargeTo: 'Pick who pays.' });
   if (propertyId && chargeTo !== 'the_conts') return fail('VALIDATION', 'A job in the building is paid by The Conts.', 422, { chargeTo: 'A job in the building is paid by The Conts.' });
   const category = b.category ?? 'other';

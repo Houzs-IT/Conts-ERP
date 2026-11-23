@@ -2,6 +2,8 @@
 // page. Procurement-side twin of SalesInvoiceDetailV2: money-forward,
 // Outstanding-as-hero, but flipped — this is what WE owe to the supplier.
 
+import { takeBack } from '../../lib/backTrail';
+import { PHONE_MORE_BUTTON, phoneMoreHeaderClass } from "../../components/scm-v2/phoneMoreActions";
 import { lazy, useMemo, useState, type ReactNode } from "react";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -380,6 +382,7 @@ export function PurchaseInvoiceDetailV2() {
 }
 
 function PurchaseInvoiceDetailV2ReadOnly() {
+  const [moreOpen, setMoreOpen] = useState(false);
   const { id } = useParams<{ id: string }>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -450,7 +453,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
   // details page's back button goes to its relevant list, not wherever
   // browser history happens to point). The list restores its own sticky
   // filters, so the prior filtered view comes back — no context lost.
-  const goBack = () => navigate(scmListReturnTo("/scm/purchase-invoices"));
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? scmListReturnTo("/scm/purchase-invoices"));
   const goEdit = () => id && navigate(`/scm/purchase-invoices/${id}?edit=1`);
   /* "Add line" from the page you START on — the affordance lived only
      inside the editor, under a different name per document, so it read as
@@ -495,7 +498,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
     if (!purchaseInvoice) return;
     if (await askConfirm({
       title: `Cancel invoice ${purchaseInvoice.invoice_number}?`,
-      body: "Any posted revenue will be reversed via a contra JE.",
+      body: "Any posted purchase entry will be reversed via a contra JE.",
       confirmLabel: "Cancel invoice",
       danger: true,
     })) {
@@ -704,7 +707,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
             <ArrowLeft size={16} /> PIs
           </button>
           <span className="font-mono text-[12.5px] font-semibold text-sidebar-ink">{purchaseInvoice.invoice_number}</span>
-          <button type="button" className="text-sidebar-ink-muted" aria-label="More actions">
+          <button type="button" className={PHONE_MORE_BUTTON} aria-label="More actions" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>
             <MoreHorizontal size={18} />
           </button>
         </div>
@@ -725,7 +728,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
         </div>
       </div>
 
-      <div className="sticky top-0 z-10 -mx-4 hidden border-b border-border bg-bg/95 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6 md:block">
+      <div className={phoneMoreHeaderClass(moreOpen)}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
             <button

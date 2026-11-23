@@ -10,7 +10,7 @@ import { BUILDING_JOB_LABEL } from './maintenance';
  * for the payroll month it lands on.
  */
 
-export const hasPenalties = (env: Env): Promise<boolean> => hasColumn(env, 'worker_penalties', 'id').catch(() => false);
+export const hasPenalties = (env: Env): Promise<boolean> => hasColumn(env, 'worker_penalties', 'id');
 export const NOT_MIGRATED = 'Worker Penalty needs a database update (migration 0173) that has not been applied yet.';
 export const PENALTY_STATUSES = ['draft', 'pending', 'approved', 'posted'] as const;
 export type PenaltyStatus = (typeof PENALTY_STATUSES)[number];
@@ -70,8 +70,8 @@ export async function listPenalties(env: Env, id?: string): Promise<Penalty[]> {
 /** The job's unit and title, kept on the penalty as written. Null when the job does not exist. */
 async function jobRef(env: Env, kind: JobKind, id: string): Promise<string | null> {
   const r = kind === 'cleaning'
-    ? await one<{ unit: string | null; title: string }>(env, `SELECT COALESCE(u.unit_number, t.external_address) AS unit, t.title FROM tasks t LEFT JOIN units u ON u.id = t.unit_id WHERE t.id = ?`, id)
-    : await one<{ unit: string | null; title: string }>(env, `SELECT COALESCE(u.unit_number, '${BUILDING_JOB_LABEL}') AS unit, m.title FROM maintenance_issues m LEFT JOIN units u ON u.id = m.unit_id WHERE m.id = ?`, id);
+    ? await one<{ unit: string | null; title: string }>(env, `SELECT COALESCE(COALESCE(NULLIF(u.unit_code, ''), u.unit_number), t.external_address) AS unit, t.title FROM tasks t LEFT JOIN units u ON u.id = t.unit_id WHERE t.id = ?`, id)
+    : await one<{ unit: string | null; title: string }>(env, `SELECT COALESCE(COALESCE(NULLIF(u.unit_code, ''), u.unit_number), '${BUILDING_JOB_LABEL}') AS unit, m.title FROM maintenance_issues m LEFT JOIN units u ON u.id = m.unit_id WHERE m.id = ?`, id);
   return r ? [r.unit, r.title].filter(Boolean).join(' · ') : null;
 }
 
@@ -147,17 +147,17 @@ export async function findJobs(env: Env, q: string): Promise<JobOption[]> {
   const since = new Date(Date.parse(`${mytToday()}T00:00:00Z`) - 120 * 86_400_000).toISOString();
   const [cleans, repairs] = await Promise.all([
     all<{ id: string; unit: string | null; title: string; day: string | null; people: string | null }>(env, `
-      SELECT t.id, COALESCE(u.unit_number, t.external_address) AS unit, t.title, substr(COALESCE(t.completed_at, t.scheduled_for, t.created_at), 1, 10) AS day,
+      SELECT t.id, COALESCE(COALESCE(NULLIF(u.unit_code, ''), u.unit_number), t.external_address) AS unit, t.title, substr(COALESCE(t.completed_at, t.scheduled_for, t.created_at), 1, 10) AS day,
              (SELECT json_agg(json_build_object('id', c.id, 'name', c.full_name))::text FROM cleaners c
                WHERE c.employment_type = 'internal' AND (c.id = t.cleaner_id OR c.id IN (SELECT tc.cleaner_id FROM task_cleaners tc WHERE tc.task_id = t.id))) AS people
       FROM tasks t LEFT JOIN units u ON u.id = t.unit_id
-      WHERE COALESCE(t.completed_at, t.scheduled_for, t.created_at) >= ? AND (lower(COALESCE(u.unit_number, t.external_address, '')) LIKE ? OR lower(t.title) LIKE ?)
+      WHERE COALESCE(t.completed_at, t.scheduled_for, t.created_at) >= ? AND (lower(COALESCE(NULLIF(concat_ws(' ', u.unit_number, u.unit_code), ''), t.external_address, '')) LIKE ? OR lower(t.title) LIKE ?)
       ORDER BY COALESCE(t.completed_at, t.scheduled_for, t.created_at) DESC LIMIT 20`, since, like, like),
     all<{ id: string; unit: string; title: string; day: string | null; people: string | null }>(env, `
-      SELECT m.id, COALESCE(u.unit_number, '${BUILDING_JOB_LABEL}') AS unit, m.title, substr(COALESCE(m.resolved_at, m.created_at), 1, 10) AS day,
+      SELECT m.id, COALESCE(COALESCE(NULLIF(u.unit_code, ''), u.unit_number), '${BUILDING_JOB_LABEL}') AS unit, m.title, substr(COALESCE(m.resolved_at, m.created_at), 1, 10) AS day,
              (SELECT json_agg(json_build_object('id', t.id, 'name', t.full_name))::text FROM technicians t WHERE t.employment_type = 'internal' AND t.id = m.technician_id) AS people
       FROM maintenance_issues m LEFT JOIN units u ON u.id = m.unit_id
-      WHERE COALESCE(m.resolved_at, m.created_at) >= ? AND (lower(COALESCE(u.unit_number, '')) LIKE ? OR lower(m.title) LIKE ?)
+      WHERE COALESCE(m.resolved_at, m.created_at) >= ? AND (lower(concat_ws(' ', u.unit_number, u.unit_code)) LIKE ? OR lower(m.title) LIKE ?)
       ORDER BY COALESCE(m.resolved_at, m.created_at) DESC LIMIT 20`, since, like, like),
   ]);
   const people = (raw: string | null): { id: string; name: string }[] => (raw ? PEOPLE_JSON.parse(JSON.parse(raw)) : []);

@@ -136,3 +136,42 @@ export function filterPiList<Q>(q: Q, f: PiListFilters, c: CompanyScopeCtx): Q {
   if (f.currencies && f.currencies.length > 0) out = out.in('currency', f.currencies);
   return out as unknown as Q;
 }
+
+/** The statuses a payment can still be applied to. */
+export const PI_PAYABLE_STATUSES = ['POSTED', 'PARTIALLY_PAID'];
+const PAYABLE_PAGE = 1000;
+const PAYABLE_MAX_PAGES = 20;
+
+type PayableRow = { id: string; total_sen?: number | null; paid_sen?: number | null } & Record<string, unknown>;
+type RangeQuery = {
+  eq(col: string, val: unknown): RangeQuery;
+  in(col: string, vals: string[]): RangeQuery;
+  order(col: string, opts: { ascending: boolean }): RangeQuery;
+  range(from: number, to: number): PromiseLike<{ data: PayableRow[] | null; error: { message: string } | null }>;
+};
+
+/**
+ * Every invoice of ONE supplier that still has money owing (POSTED / PARTIALLY_PAID, total - paid > 0), oldest first,
+ * in the active company. Payment vouchers' Apply-to-PI reads this: the plain list returns only the newest 500
+ * invoices of all suppliers, so a supplier's older unpaid invoices were missing from it.
+ */
+export async function readSupplierPayablePis(
+  from: () => unknown,
+  c: CompanyScopeCtx,
+  supplierId: string,
+): Promise<{ rows: PayableRow[]; truncated: boolean; error: string | null }> {
+  const rows: PayableRow[] = [];
+  for (let p = 0; p < PAYABLE_MAX_PAGES; p++) {
+    let q = (from() as RangeQuery).eq('supplier_id', supplierId).in('status', PI_PAYABLE_STATUSES);
+    q = scopeToCompany(q, c);
+    const { data, error } = await q
+      .order('invoice_date', { ascending: true })
+      .order('invoice_number', { ascending: true })
+      .range(p * PAYABLE_PAGE, p * PAYABLE_PAGE + PAYABLE_PAGE - 1);
+    if (error) return { rows: [], truncated: false, error: error.message };
+    const page = data ?? [];
+    for (const r of page) if (Number(r.total_sen ?? 0) - Number(r.paid_sen ?? 0) > 0) rows.push(r);
+    if (page.length < PAYABLE_PAGE) return { rows, truncated: false, error: null };
+  }
+  return { rows, truncated: true, error: null };
+}

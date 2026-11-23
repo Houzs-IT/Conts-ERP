@@ -482,7 +482,7 @@ export function soLineColumns<T extends SoDisplayLine>({ docNo, docId, currency,
       getValue: (l) => l.qty,
       render: (l) => (
         <span className="font-money text-[13px] text-ink-secondary">
-          {fmtQty(l.qty)} <span className="text-[10.5px] text-ink-muted">{l.uom}</span>
+          {Number.isInteger(l.qty) ? fmtQty(l.qty) : l.qty.toLocaleString("en-MY", { maximumFractionDigits: 3 })} <span className="text-[10.5px] text-ink-muted">{l.uom}</span>
         </span>
       ),
     },

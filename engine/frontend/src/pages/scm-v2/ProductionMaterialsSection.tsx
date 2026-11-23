@@ -17,7 +17,7 @@ import {
   type MaterialRow, type MaterialStatus,
 } from "../../vendor/scm/lib/production-order-queries";
 import { RawMaterialAddPanel, type RawPick } from "./RawMaterialAddPanel";
-import { materialCalculation } from "./renovationProductionDays";
+import { fmtNeed, issuedNote, materialCalculation } from "./renovationProductionDays";
 import { RequestMoreDialog, ReturnStockDialog } from "./renovationProductionParts";
 
 /* Stock status in the words of the board: Ready, the arrival date, or No PO yet, with the PO and the quantity under it. */
@@ -33,7 +33,7 @@ export function StockCell({ status, needed, uom }: { status: MaterialStatus | un
     return (
       <>
         <Badge tone="success" size="xs">Ready</Badge>
-        {under(po, status.issued > 0 ? `Issued ${fmtQty(status.issued)} ${uom}` : status.state === "received" ? `Received ${fmtQty(status.received)} ${uom}` : "In stock")}
+        {under(po, status.issued > 0 ? issuedNote(status.issued, needed, uom) : status.state === "received" ? `Received ${fmtQty(status.received)} ${uom}` : "In stock")}
       </>
     );
   }
@@ -41,14 +41,14 @@ export function StockCell({ status, needed, uom }: { status: MaterialStatus | un
     return (
       <>
         <Badge tone="warning" size="xs">{status.eta ? `ETA ${fmtDate(status.eta)}` : "On order"}</Badge>
-        {under(po, `On order ${fmtQty(status.onOrder || needed)} ${uom}`)}
+        {under(po, `On order ${fmtNeed(status.onOrder || needed)} ${uom}`)}
       </>
     );
   }
   return (
     <>
       <span className="inline-block whitespace-nowrap"><Badge tone="error" size="xs">{status.issued > 0 ? "Short" : "No PO yet"}</Badge></span>
-      {under(`Short ${fmtQty(status.shortQty ?? needed)} ${uom}`, <Link to="/scm/mrp" className="font-semibold text-primary hover:underline">Order in MRP</Link>)}
+      {under(`Short ${fmtNeed(status.shortQty ?? needed)} ${uom}`, <Link to="/scm/mrp" className="font-semibold text-primary hover:underline">Order in MRP</Link>)}
     </>
   );
 }
@@ -164,7 +164,7 @@ export function ProductionMaterialsSection({ orderId, canEdit, started = false, 
                         className="h-8 w-20 rounded-md border border-border bg-surface px-2 text-right text-[13px]"
                         onBlur={(e) => { const n = Number(e.target.value); if (n > 0 && n !== Number(m.qty_needed)) save(m, { qtyNeeded: n }); }}
                       />
-                    ) : fmtQty(Number(m.qty_needed))}
+                    ) : fmtNeed(Number(m.qty_needed))}
                     <span className="ml-1 text-[12px]">{m.uom ?? ""}</span>
                     {m.qty_returned > 0 && <div className="text-[12px] font-normal text-ink-muted">Returned {fmtQty(m.qty_returned)}</div>}
                   </td>

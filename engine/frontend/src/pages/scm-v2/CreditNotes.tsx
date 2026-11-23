@@ -7,6 +7,11 @@
 // RETURN INWARDS / PURCHASES RETURN unless the line says otherwise, then
 // posted through the one gate, or cancelled (contra). The server refuses
 // what it refuses; this page only shows the reason.
+//
+// A CN or an SCN knocks off the party's open invoices from its detail
+// (CreditNoteKnockOff.tsx, ported from Houzs): a draft's ticks are the plan the
+// post carries out, a posted note's are carried out at once; Used / Left on
+// the list say how much of each note's credit has been taken.
 // ----------------------------------------------------------------------------
 
 import { useMemo, useState } from 'react';
@@ -18,6 +23,8 @@ import { DataTable, type Column } from '../../components/DataTable';
 import { cancelledDocNoClass, cancelledRowClass } from '../../lib/scm';
 import { Modal } from '../../vendor/scm/components/Modal';
 import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { DateField } from '../../vendor/scm/components/DateField';
 import { AccountSelect } from '../../vendor/scm/components/AccountSelect';
 import { SearchCombo } from '../../vendor/scm/components/SearchCombo';
@@ -31,6 +38,7 @@ import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { fmtSen, fmtDateOrDash } from '../../vendor/shared/format';
 import { DocAttachments, LineFilesButton } from '../../components/doc-attachments/DocAttachments';
+import { NoteKnockOff } from './CreditNoteKnockOff';
 
 const KIND_WORD: Record<NoteKind, string> = { CN: 'Credit note', DN: 'Debit note', SCN: 'Supplier credit note' };
 /* The kind filter's tabs, off the one label map — not a second list of kinds. */
@@ -113,7 +121,7 @@ export const CreditNotes = () => {
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow="Finance" title="Credit & Debit Notes"
+      <PageHeader eyebrow="Finance" title="Credit & debit notes"
         description="A credit note to a customer, a debit note to a customer, a credit note from a supplier. Raised as a draft, posted to the ledger, cancelled by contra."
         primaryAction={<Button size="sm" onClick={() => setForm({ mode: 'new', values: emptyForm() })}><Plus size={16} strokeWidth={1.75} /> New note</Button>} />
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -196,6 +204,16 @@ const NOTE_COLUMNS: Column<CreditNote>[] = [
     key: 'total', label: 'Total', align: 'right', render: (n) => fmtSen(n.total_sen),
     getValue: (n) => n.total_sen, exportValue: (n) => n.total_sen / 100, exportFormat: 'money',
   },
+  {
+    key: 'used', label: 'Used', align: 'right',
+    render: (n) => (n.appliedSen === undefined ? '—' : fmtSen(n.appliedSen)),
+    getValue: (n) => n.appliedSen ?? 0, exportValue: (n) => (n.appliedSen ?? 0) / 100, exportFormat: 'money',
+  },
+  {
+    key: 'left', label: 'Left', align: 'right',
+    render: (n) => (n.unusedSen === undefined ? '—' : <span style={n.unusedSen > 0 ? { color: 'var(--c-brass, #7a5a1e)' } : undefined}>{fmtSen(n.unusedSen)}</span>),
+    getValue: (n) => n.unusedSen ?? 0, exportValue: (n) => (n.unusedSen ?? 0) / 100, exportFormat: 'money',
+  },
   { key: 'status', label: 'Status', render: (n) => <StatusPill status={n.status} />, getValue: (n) => n.status },
   { key: 'journal', label: 'Journal', render: (n) => <span style={{ fontFamily: 'var(--font-mono)' }}>{n.je_no ?? '—'}</span>, getValue: (n) => n.je_no ?? '' },
 ];
@@ -238,7 +256,7 @@ const NoteDetail = ({ id, onClose, onEdit }: { id: string; onClose: () => void; 
               onClick={async () => {
                 const yes = await askConfirm({
                   title: `Cancel ${n.note_number}?`,
-                  body: n.status === 'POSTED' ? 'Its journal is reversed by a contra dated today. The note stays on file as cancelled.' : 'The draft stays on file as cancelled.',
+                  body: n.status === 'POSTED' ? 'Its journal is reversed by a contra dated today, and every invoice it knocked off owes that credit again. The note stays on file as cancelled.' : 'The draft stays on file as cancelled.',
                   confirmLabel: 'Cancel note', danger: true,
                 });
                 if (yes) cancel.mutate(n.id);
@@ -267,8 +285,12 @@ const NoteDetail = ({ id, onClose, onEdit }: { id: string; onClose: () => void; 
               <tr><td colSpan={3} style={{ ...td, fontWeight: 700 }}>Total</td><td style={{ ...td, ...num, fontWeight: 700 }}>{fmtSen(n.total_sen)}</td><td style={td} /></tr>
             </tbody>
           </table>
+          {(n.kind === 'CN' || n.kind === 'SCN') && n.status !== 'CANCELLED' && (
+            <NoteKnockOff noteId={n.id} posted={n.status === 'POSTED'} totalSen={n.total_sen} who={n.kind === 'SCN' ? 'supplier' : 'customer'} />
+          )}
           <DocAttachments docType="credit_note" docId={n.id} canEdit={n.status !== 'CANCELLED'} />
-          {post.isSuccess && <div style={{ fontSize: 'var(--fs-13)', color: good }}>Posted as {post.data.jeNo}.</div>}
+          {post.isSuccess && <div style={{ fontSize: 'var(--fs-13)', color: good }}>Posted as {post.data.jeNo}.{(post.data.applied ?? []).length > 0 ? ` Knocked off ${(post.data.applied ?? []).map((a) => `${a.number} ${fmtSen(a.appliedSen)}`).join(', ')}.` : ''}</div>}
+          {post.isSuccess && post.data.notApplied && <div style={{ fontSize: 'var(--fs-13)', color: danger }}>{post.data.notApplied}</div>}
           {printError && <div style={{ fontSize: 'var(--fs-13)', color: danger }}>{printError}</div>}
           {failed != null && <div style={{ fontSize: 'var(--fs-13)', color: danger }}>{errText(failed)}</div>}
         </div>
@@ -280,11 +302,15 @@ const NoteDetail = ({ id, onClose, onEdit }: { id: string; onClose: () => void; 
 const NoteForm = ({ mode, id, initial, onClose, onSaved }: { mode: 'new' | 'edit'; id?: string; initial: FormValues; onClose: () => void; onSaved: (id: string) => void }) => {
   const [v, setV] = useState<FormValues>(initial);
   const [postAfter, setPostAfter] = useState(false);
+  /* D19 (#1126): the note this form already created. When the post after it fails, the form stays open on a saved
+     draft; the next Save must update that draft and post it, never create a second note. */
+  const [createdId, setCreatedId] = useState<string | null>(null);
   const accountsQ = useAccounts();
   const suppliersQ = useSuppliers();
   const create = useCreateCreditNote();
   const update = useUpdateCreditNote();
   const post = usePostCreditNote();
+  const createKeys = useContentBoundIdempotencyKey();
   const leaves = useMemo(() => leafAccounts(accountsQ.data?.accounts ?? []), [accountsQ.data]);
   const supplierOptions = useMemo(() => (suppliersQ.data ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` })), [suppliersQ.data]);
   const totalSen = v.lines.reduce((s, l) => s + (l.amountRm.trim() ? toSen(l.amountRm) : 0), 0);
@@ -296,12 +322,16 @@ const NoteForm = ({ mode, id, initial, onClose, onSaved }: { mode: 'new' | 'edit
   const save = async () => {
     try {
       const body = bodyOf(v);
-      let noteId = id ?? '';
-      if (mode === 'new') {
-        const r = await create.mutateAsync(body);
-        noteId = r.note.id;
-      } else if (id) {
-        await update.mutateAsync({ id, noteDate: body.noteDate, reason: body.reason, sourceDocNo: body.sourceDocNo, lines: body.lines });
+      let noteId = id ?? createdId ?? '';
+      if (mode === 'new' && !createdId) {
+        const sent = await sendWithContentKey(createKeys, body,
+          () => serviceConfirm(unansweredSaveQuestion('note', 'the credit / debit notes list')),
+          (idempotencyKey) => create.mutateAsync({ ...body, idempotencyKey }));
+        if (!sent.sent) return;
+        noteId = sent.value.note.id;
+        setCreatedId(noteId);
+      } else if (noteId) {
+        await update.mutateAsync({ id: noteId, noteDate: body.noteDate, reason: body.reason, sourceDocNo: body.sourceDocNo, lines: body.lines });
       }
       if (postAfter && noteId) await post.mutateAsync(noteId);
       onSaved(noteId);
@@ -313,7 +343,7 @@ const NoteForm = ({ mode, id, initial, onClose, onSaved }: { mode: 'new' | 'edit
       <div className="space-y-3">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-3)' }}>
           <Field label="Kind">
-            <select value={v.kind} onChange={(e) => setV({ ...v, kind: e.target.value as NoteKind })} disabled={mode === 'edit'} aria-label="Kind" style={input}>
+            <select value={v.kind} onChange={(e) => setV({ ...v, kind: e.target.value as NoteKind })} disabled={mode === 'edit' || createdId != null} aria-label="Kind" style={input}>
               <option value="CN">CN — credit note to a customer</option>
               <option value="DN">DN — debit note to a customer</option>
               <option value="SCN">SCN — credit note from a supplier</option>
@@ -377,6 +407,7 @@ const NoteForm = ({ mode, id, initial, onClose, onSaved }: { mode: 'new' | 'edit
           <Button size="sm" onClick={() => void save()} disabled={!canSave || busy}>{busy ? 'Saving…' : mode === 'new' ? 'Save note' : 'Save changes'}</Button>
         </div>
         {failed != null && <div style={{ fontSize: 'var(--fs-13)', color: danger }}>{errText(failed)}</div>}
+        {createdId && mode === 'new' && <div style={{ fontSize: 'var(--fs-13)' }}>The note is saved as a draft. Save again to update it{postAfter ? ' and post it' : ''} - no second note is made.</div>}
       </div>
     </Modal>
   );

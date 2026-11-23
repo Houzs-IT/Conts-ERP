@@ -34,6 +34,7 @@ import { todayMyt } from '../lib/my-time';
 import { baseKeyOf, deleteThumbFor, putOptionalThumb } from '../../services/photoThumbs';
 import type { Env, Variables } from '../env';
 import { pgrestIn } from '../lib/pgrest-in-list';
+import { paginateAll } from '../lib/paginate-all';
 import { variantCategoryOf } from '../lib/renovation-flow-rules';
 import { categorySwapAllowed } from '../shared/category-swap';
 import { moveModelCategory } from '../lib/model-category-move';
@@ -193,11 +194,14 @@ export const listProductModelsHandler = async (c: Context<{ Bindings: Env; Varia
   const supabase = c.get('supabase');
   const category = c.req.query('category');
 
-  let q = scopeToCompany(supabase.from('product_models').select(COLS), c).order('category').order('model_code');
-  if (category && (await knownCategory(c, category))) {
-    q = q.in('category', categoriesInGroup(category));
-  }
-  const { data, error } = await q;
+  /* Paged: the catalogue passed 1,000 Models (1,927 on 21 Nov 2026), and one PostgREST read stops at 1,000, so "All"
+     in the supplier mapping picker silently lost every Model sorting after that (all of RAW, part of WORKS). */
+  const inGroup = category && (await knownCategory(c, category)) ? categoriesInGroup(category) : null;
+  const { data, error } = await paginateAll((from, to) => {
+    let q = scopeToCompany(supabase.from('product_models').select(COLS), c).order('category').order('model_code').order('id');
+    if (inGroup) q = q.in('category', inGroup);
+    return q.range(from, to);
+  });
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   const rows = (data ?? []) as Array<Record<string, unknown> & { id: string }>;
 
@@ -210,13 +214,16 @@ export const listProductModelsHandler = async (c: Context<{ Bindings: Env; Varia
   // a single id column is cheaper than a per-model count roundtrip.
   const counts = new Map<string, number>();
   if (rows.length > 0) {
-    let cq = supabase.from('mfg_products').select('model_id').not('model_id', 'is', null);
-    // Scope to the models we're returning so a category filter doesn't pull
-    // the whole table (and so the count query stays bounded).
-    cq = cq.in('model_id', rows.map((m) => m.id));
-    const { data: skuRows } = await cq;
+    /* The company's SKUs' model ids, paged, tallied for the returned Models. Listing every returned Model id in an
+       `in` filter stopped working once there were ~2,000 of them (the URL grew past what the gateway takes), and the
+       error was swallowed into "0 SKUs" on every row. */
+    const wanted = new Set(rows.map((m) => m.id));
+    const { data: skuRows } = await paginateAll((from, to) =>
+      scopeToCompany(supabase.from('mfg_products').select('id, model_id').not('model_id', 'is', null), c)
+        .order('id').range(from, to),
+    );
     for (const r of (skuRows ?? []) as Array<{ model_id: string | null }>) {
-      if (r.model_id) counts.set(r.model_id, (counts.get(r.model_id) ?? 0) + 1);
+      if (r.model_id && wanted.has(r.model_id)) counts.set(r.model_id, (counts.get(r.model_id) ?? 0) + 1);
     }
   }
   const models = rows.map((m) => ({ ...m, sku_count: counts.get(m.id) ?? 0 }));

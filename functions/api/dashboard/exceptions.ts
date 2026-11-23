@@ -16,7 +16,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // 1. Turnovers that will not be ready before the next guest.
   const risky = await all<any>(env, `
-    SELECT t.id, t.state, t.assignee_id, t.next_guest_at, t.due_at, u.id AS unit_id, u.unit_number, p.name AS property_name, u.readiness,
+    SELECT t.id, t.state, t.assignee_id, t.next_guest_at, t.due_at, u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, u.readiness,
            EXTRACT(EPOCH FROM (t.next_guest_at::timestamptz - now())) / 60 AS minutes_left
     FROM tasks t JOIN units u ON u.id = t.unit_id JOIN properties p ON p.id = u.property_id
     WHERE t.state != 'resolved' AND t.kind IN ('turnover','deep_clean','light_clean')
@@ -39,7 +39,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // 2. Units taken off sale for maintenance where the owner has not been told.
   const blocked = await all<any>(env, `
-    SELECT m.id, m.title, m.blocked_from, m.blocked_to, u.id AS unit_id, u.unit_number, u.base_rate, p.name AS property_name,
+    SELECT m.id, m.title, m.blocked_from, m.blocked_to, u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.base_rate, p.name AS property_name,
            o.id AS owner_id, o.display_name AS owner_name
     FROM maintenance_issues m JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
     WHERE m.state != 'resolved' AND m.blocks_unit = 1
@@ -76,7 +76,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // 4. Listed units with nothing booked over the next two weeks.
   const empty = await all<any>(env, `
     WITH d AS (SELECT ${KL_TODAY} AS today)
-    SELECT u.id, u.unit_number, p.name AS property_name
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name
     FROM units u JOIN properties p ON p.id = u.property_id, d
     WHERE u.is_listed = 1 AND u.readiness NOT IN ('maintenance','blocked')
       AND NOT EXISTS (

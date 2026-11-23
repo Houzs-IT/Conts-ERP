@@ -47,7 +47,7 @@ interface RepairWin { id: string; startsAt: string; endsAt: string; note: string
 type ChargeTo = 'owner' | 'the_conts' | 'guest_deposit' | 'warranty';
 interface Issue {
   id: string; unitId: string | null; unitNumber: string | null; propertyName: string; buildingId: string; title: string; detail: string | null; state: string;
-  category: string; urgency: 'normal' | 'urgent'; source: string; sourceTaskId: string | null;
+  category: string; urgency: 'normal' | 'urgent'; source: string; sourceTaskId: string | null; reservationId?: string | null;
   vendorName: string | null; assigneeKind: 'in_house' | 'contractor' | null; reportedAt: string; resolvedAt: string | null;
   blocksUnit: boolean; ownerApprovalRequired: boolean; ownerApprovedAt: string | null; chargeTo: ChargeTo; reporter: string | null;
   startedAt: string | null; endedAt: string | null; photoCount: number; documentCount: number; windows: RepairWin[];
@@ -78,7 +78,7 @@ interface FileItem extends MediaItem { stage: 'before' | 'after' | null; uploade
 
 type Tab = 'open' | 'pass_key' | 'support' | 'approval' | 'done' | 'history' | 'catalog' | 'rules' | 'profit';
 type JobTab = Exclude<Tab, 'catalog' | 'rules' | 'profit'>;
-const PAYER: Record<ChargeTo, string> = { owner: 'Owner (on the statement)', the_conts: 'Company', guest_deposit: 'Guest (from the deposit)', warranty: 'Warranty' };
+const PAYER: Record<ChargeTo, string> = { owner: 'Owner (sharing)', the_conts: 'Company', guest_deposit: 'Guest (from the deposit)', warranty: 'Warranty' };
 const PAYER_SHORT: Record<ChargeTo, string> = { owner: 'owner pays', the_conts: 'company pays', guest_deposit: 'guest pays', warranty: 'warranty' };
 const SOURCE: Record<string, string> = { guest: 'Guest', cleaner: 'Cleaner', inspection: 'Inspection', staff: 'Office', booking: 'Reservation' };
 const checkInAt = (i: Issue): string => i.windows[0]?.startsAt ?? i.dueOn ?? i.reportedAt;
@@ -276,6 +276,7 @@ function moveSkip(i: Issue, move: Move): string | null {
 }
 const collectedText = (i: Issue) => (i.collectedAt ? `Collected ${dateShort(i.collectedAt)}` : COLLECT_FROM[i.chargeTo] && (i.finalAmount ?? i.quotedAmount) ? 'Not yet' : '');
 const paidText = (i: Issue) => (i.contractorPaidAt ? `Paid ${dateShort(i.contractorPaidAt)}` : i.contractorAmount != null ? 'Not yet' : '');
+const isOpenJob = (i: Issue): boolean => i.state !== 'resolved';
 const MOVE_DONE: Record<Move, string> = { start: 'started', end: 'marked repair finished', reopen: 'reopened' };
 const COST_SLIDER_START: RangeBounds = { lowest: 0, highest: 1000 };
 
@@ -286,7 +287,29 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
 }) {
   const toast = useToast();
   const [assigning, setAssigning] = useState<{ rows: Issue[]; clear: () => void } | null>(null);
-  const [busy, setBusy] = useState<Move | null>(null);
+  const [busy, setBusy] = useState<Move | 'delete' | null>(null);
+  const [confirmUi, ask] = useConfirm();
+
+  async function deleteJobs(picked: Issue[], clear?: () => void) {
+    const deletable = picked.filter(isOpenJob);
+    const one = deletable.length === 1 ? deletable[0] : null;
+    const fromReservations = deletable.filter(i => typeOf(i) === 'pass_key' && i.reservationId).length;
+    const ok = await ask({ title: one ? `Delete ${jobLabel(one)}?` : `Delete ${plural(deletable.length, 'job')}?`, confirmLabel: one ? 'Delete job' : `Delete ${plural(deletable.length, 'job')}`, cancelLabel: 'Keep', danger: true,
+      body: fromReservations
+        ? `They are removed for everyone. ${plural(fromReservations, 'reservation')} ${fromReservations === 1 ? 'is' : 'are'} marked "Guest checks in by themselves", so no new Pass key job is made. Untick that on a reservation to bring its job back.`
+        : 'They are removed for everyone, with their photos, files and windows. This cannot be undone.',
+      meta: one ? <>{one.title}</> : picked.length > deletable.length ? <>{plural(picked.length - deletable.length, 'finished job')} {picked.length - deletable.length === 1 ? 'is' : 'are'} kept: a finished job stays in History.</> : undefined });
+    if (ok === null) return;
+    setBusy('delete');
+    const res = await runEach(deletable, i => api.del(`/maintenance/issues/${i.id}`), jobLabel);
+    setBusy(null);
+    toast({
+      tone: res.ok === 0 ? 'critical' : res.failed.length ? 'warning' : 'success',
+      title: res.ok ? `${plural(res.ok, 'job')} deleted.` : 'No job deleted.',
+      body: skippedNote(res.failed) || undefined,
+    });
+    clear?.(); onChanged();
+  }
 
   async function bulkMove(picked: Issue[], move: Move, clear: () => void) {
     const todo = picked.filter(i => !moveSkip(i, move));
@@ -369,6 +392,16 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
     ] : []),
     { key: 'reported', label: 'Reported', type: 'datetime', value: i => i.reportedAt, hidden: true, width: 150, filter: false },
     { key: 'resolved', label: 'Finished', type: 'datetime', value: i => i.resolvedAt, hidden: true, width: 150, filter: false },
+    ...(canBulk ? [{ key: 'delete', label: '', width: 56, align: 'right' as const, sortable: false, filter: false as const, noExport: true, hideable: false, phone: 'hide' as const,
+      render: (i: Issue) => (
+        <span className="flex justify-end pr-2">
+          <button type="button" aria-label="Delete row" title={isOpenJob(i) ? 'Delete' : 'A finished job stays in History'} disabled={!isOpenJob(i)}
+            onClick={e => { e.stopPropagation(); void deleteJobs([i]); }}
+            className="p-1.5 rounded-md bg-transparent border-none text-faint transition-colors cursor-pointer hover:text-danger hover:bg-danger-bg disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-faint">
+            <Icon name="Trash2" size="sm" />
+          </button>
+        </span>
+      ) }] : []),
   ], [showsMoney, buildingOptions, unitOptions, assigneeOptions, canBulk, technicians, rows]); // rows: the filter counts
 
   return (
@@ -388,9 +421,11 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
             {can('start') && <Button size="sm" variant="secondary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} onClick={() => void bulkMove(picked, 'start', clear)}>Start repair</Button>}
             {can('end') && <Button size="sm" variant="secondary" icon={<Icon name="Flag" size="sm" />} loading={busy === 'end'} onClick={() => void bulkMove(picked, 'end', clear)}>Repair finished</Button>}
             {money && can('reopen') && <Button size="sm" variant="secondary" icon={<Icon name="RotateCcw" size="sm" />} loading={busy === 'reopen'} onClick={() => void bulkMove(picked, 'reopen', clear)}>Reopen</Button>}
+            {picked.some(isOpenJob) && <Button size="sm" variant="danger" icon={<Icon name="Trash2" size="sm" />} loading={busy === 'delete'} onClick={() => void deleteJobs(picked, clear)}>Delete</Button>}
           </>;
         }}
       />
+      {confirmUi}
       {assigning && <BulkAssignModal rows={assigning.rows} onClose={() => setAssigning(null)}
         onDone={() => { assigning.clear(); setAssigning(null); onChanged(); }} />}
     </>
@@ -478,6 +513,8 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
   const charge = i.finalAmount ?? i.quotedAmount;
   const collectFrom = COLLECT_FROM[i.chargeTo];
   const isPassKey = typeOf(i) === 'pass_key';
+  const { user } = useSession();
+  const canDeletePassKey = isPassKey && !done && !!user && !FIELD_ROLES.includes(user.role) && user.role !== 'owner';
   const doneWhy = awaitingOwner(i) ? "Waiting for the owner's approval." : counts.after === 0 ? 'Add a photo of the fixed job first (Photos, Fixed).' : null;
 
   const refresh = useCallback(() => { files.reload(); onChanged(); }, [files, onChanged]);
@@ -506,6 +543,17 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
     const ok = await ask({ title: `Remove this ${m.kind === 'video' ? 'video' : 'photo'}?`, body: 'It is deleted from the job for everyone.', confirmLabel: 'Remove', danger: true });
     if (ok === null) return;
     void act('remove', () => api.del(`/maintenance/issues/${i.id}/photos/${m.id}`), m.kind === 'video' ? 'Video removed.' : 'Photo removed.');
+  }
+  async function deletePassKeyJob() {
+    const ok = await ask({ title: 'Delete this Pass key job?', confirmLabel: 'Delete job', danger: true,
+      body: i.reservationId
+        ? 'It is removed for everyone. The reservation is marked "Guest checks in by themselves", so no new Pass key job is made. Untick that on the reservation to bring the job back.'
+        : 'It is removed for everyone, with its photos. This cannot be undone.',
+      meta: <>{jobLabel(i)} · {i.title}</> });
+    if (ok === null) return;
+    setBusy('delete');
+    try { await api.del(`/maintenance/issues/${i.id}`); toast({ tone: 'success', title: 'Pass key job deleted.' }); onClose(); onChanged(); }
+    catch (e) { toast({ tone: 'critical', title: 'Not deleted.', body: errorMessage(e, 'Try again in a moment.') }); setBusy(null); }
   }
   // Approval and collection are money decisions, so each asks once with the unit, job and amount in view.
   async function recordApproval() {
@@ -804,6 +852,7 @@ function IssueDetail({ issue: i, billing, money, skus, onClose, onChanged }: { i
               )}
             </section>
           )}
+          {canDeletePassKey && <Button variant="secondary" icon={<Icon name="Trash2" size="sm" />} loading={busy === 'delete'} onClick={() => void deletePassKeyJob()}>Delete job</Button>}
           {/* Phones have no hover, so the reason a button is off is written out. The bar sticks to the bottom of a long sheet on phones. */}
           {isPassKey ? <section className="flex flex-col gap-2 pt-4 [border-top:1px_solid_var(--color-line-soft)] max-sm:order-last max-sm:sticky max-sm:bottom-0 max-sm:z-[2] max-sm:-mx-5 max-sm:-mb-5 max-sm:px-5! max-sm:pb-4! max-sm:rounded-none! max-sm:border-x-0! max-sm:border-b-0! max-sm:bg-card max-sm:shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.25)]">
             <Button variant="primary" icon={<Icon name="KeyRound" size="sm" />} loading={busy === 'passKeyDone'} disabled={media.length === 0} disabledReason="Add a photo first."

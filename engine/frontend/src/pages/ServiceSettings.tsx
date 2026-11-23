@@ -58,7 +58,7 @@ export function ServiceSettingsView() {
     <div>
       <PageHeader
         eyebrow="Operations · Service"
-        title="Service Maintenance"
+        title="Service maintenance"
         description="Module defaults, picker lists that drive the case form, and the Lead Time Portal — manager-editable per-stage SLA targets."
       />
 
@@ -87,12 +87,12 @@ function GeneralTab() {
       <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
         <LookupManager
           apiPath="/api/assr/lookups/issue-categories"
-          title="Issue Categories"
+          title="Issue categories"
           description="Free-form list of complaint types (e.g. fabric tear, frame defect). Used in the case form's Issue Category dropdown."
         />
         <LookupManager
           apiPath="/api/assr/lookups/resolution-methods"
-          title="Resolution Methods"
+          title="Resolution methods"
           description="How the case was resolved — replace, repair, on-site service, etc. Stored on each case as the slug; renaming is safe."
         />
         <LookupManager
@@ -103,12 +103,12 @@ function GeneralTab() {
         />
         <LookupManager
           apiPath="/api/assr/lookups/product-categories"
-          title="Product Categories"
+          title="Product categories"
           description="Mirrors AutoCount's item groups — the create-case form's Product Category dropdown. Maintained here until the AutoCount reconnect back-fills the authoritative list."
         />
         <LookupManager
           apiPath="/api/assr/lookups/ncr-categories"
-          title="Root-Cause Classifications"
+          title="Root-cause classifications"
           description="Quality root-cause tags used on closed cases for Pareto reporting (material defect, transit damage, installation, etc.)."
         />
       </div>
@@ -181,7 +181,7 @@ function DefaultAssigneeSection() {
   return (
     <section className="relative overflow-visible rounded-md border border-border bg-surface p-6 shadow-stone">
       <h2 className="mb-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-brand text-accent">
-        <Wrench size={12} /> Default Case Assignees
+        <Wrench size={12} /> Default case assignees
       </h2>
       <p className="mb-4 max-w-xl text-[12.5px] leading-relaxed text-ink-secondary">
         New service cases are automatically assigned to these people on

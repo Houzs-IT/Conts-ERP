@@ -1,5 +1,6 @@
 import { PropertyListsManager } from "./projects/renovation/PropertyListsManager";
 import { CrewManager } from "./projects/renovation/RenovationMaintenance";
+import { DesignWorkManager } from "./projects/renovation/DesignWorkManager";
 import { SlaDefaultsManager } from "./projects/renovation/StepSlaParts";
 import { useProjectsMode } from "./projects/renovation/RenovationRoutes";
 import { SectionStageSelect } from "./projects/renovation/SectionStageSelect";
@@ -114,10 +115,10 @@ export function ProjectMaintenanceView() {
   const mode = useProjectsMode();
   if (mode === "renovation") {
     return (
-      <div className="max-w-5xl">
+      <div className="w-full">
         <PageHeader
           eyebrow="Operations · Projects"
-          title="Project Maintenance"
+          title="Project maintenance"
           description="The defaults every project and sales order picks from: property types and layouts, the SLA per step, site crew without a login, and the brands (letterheads)."
         />
         {/* Owner, 14 Oct 2026: property lists and brands, plus site crew without a login (everyone else is a user
@@ -127,6 +128,7 @@ export function ProjectMaintenanceView() {
         <div className="space-y-6">
           <PropertyListsManager />
           <SlaDefaultsManager />
+          <DesignWorkManager />
           <CrewManager />
           <BrandManager />
         </div>
@@ -137,7 +139,7 @@ export function ProjectMaintenanceView() {
     <div>
       <PageHeader
         eyebrow="Operations · Projects"
-        title="Project Maintenance"
+        title="Project maintenance"
         description="All the picker lists that drive the new-project form: brands, event types, organizers, venues, plus the default checklist that clones into every new project."
       />
       {/* Picker lists are short — pack them two-up on wide screens to
@@ -303,7 +305,7 @@ function OrganizerManager() {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Add organizer name…"
-          className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
           Add
@@ -414,7 +416,7 @@ function ContractorManager() {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Add contractor name…"
-          className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
           Add
@@ -582,7 +584,7 @@ function VenueManager() {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Venue name…"
-          className="h-9 min-w-0 sm:col-span-3 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 min-w-0 sm:col-span-3 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <StatePicker
           value={stateField}
@@ -597,7 +599,7 @@ function VenueManager() {
           onChange={(e) => setCountryField(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           disabled={knownCountries.length === 0}
-          className="h-9 min-w-0 rounded-md border border-border bg-surface px-2 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 min-w-0 rounded-md border border-border bg-surface px-2 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         >
           <option value="">
             {knownCountries.length === 0 ? "no countries" : "— country —"}
@@ -611,7 +613,7 @@ function VenueManager() {
           onChange={(e) => setCityField(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           disabled={!stateField || cityOptions.length === 0}
-          className="h-9 min-w-0 rounded-md border border-border bg-surface px-2 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 min-w-0 rounded-md border border-border bg-surface px-2 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         >
           <option value="">
             {!stateField ? "pick state first" : cityOptions.length === 0 ? "no cities" : "— city —"}
@@ -626,14 +628,14 @@ function VenueManager() {
           onKeyDown={(e) => e.key === "Enter" && add()}
           inputMode="numeric"
           placeholder="postcode"
-          className="h-9 min-w-0 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 min-w-0 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <input
           value={sizeField}
           onChange={(e) => setSizeField(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="size"
-          className="h-9 min-w-0 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 min-w-0 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
           Add
@@ -694,7 +696,7 @@ function VenueManager() {
                 if (next !== (v.size ?? "")) patch(v.id, { size: next || null });
               }}
               placeholder="size"
-              className="h-8 w-28 min-w-0 rounded-md border border-border bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              className="h-8 w-28 min-w-0 rounded-md border border-border bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
             />
             <RowActionsMenu
               items={[
@@ -749,7 +751,7 @@ function ChecklistManager() {
 
   return (
     <CollapsibleSection
-      title="Default Checklist"
+      title="Default checklist"
       count={templates.length}
       description="Items in the chosen template are cloned into every new project of that event type. Editing here does not affect projects already created."
     >
@@ -1145,7 +1147,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
           <span className="text-[10px] font-semibold uppercase tracking-brand text-ink-muted">
             Sections (stages)
           </span>
-          <span className="font-mono text-[9.5px] text-ink-muted/70">
+          <span className="font-mono text-[9.5px] text-ink-muted">
             {sections.length} defined
           </span>
         </div>
@@ -1409,7 +1411,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
                               >
                                 <ChevronDown size={14} />
                               </button>
-                              <span className="ml-1 font-mono text-[10px] text-ink-muted/70">
+                              <span className="ml-1 font-mono text-[10px] text-ink-muted">
                                 {blockIdx + 1}
                               </span>
                             </div>
@@ -1420,7 +1422,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
                                 if (e.target.value !== item.title)
                                   patchItem(item.id, { title: e.target.value });
                               }}
-                              className="h-7 rounded-md border border-border bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                              className="h-7 rounded-md border border-border bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
                             />
                             <input
                               defaultValue={item.role_label ?? ""}
@@ -1432,7 +1434,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
                               }}
                               placeholder="Role"
                               title="Display-only owner tag (e.g. DRIVER, SALES PIC, BD, PURCHASER)"
-                              className="h-7 w-full rounded-md border border-border bg-surface px-2 text-[11px] uppercase tracking-wider outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                              className="h-7 w-full rounded-md border border-border bg-surface px-2 text-[11px] uppercase tracking-wider outline-none focus:border-primary focus:ring-2 focus:ring-primary"
                             />
                             <input
                               defaultValue={item.due_offset_days ?? ""}
@@ -1447,7 +1449,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
                               type="number"
                               placeholder="±d"
                               title="Days from project start_date (negative = before)"
-                              className="h-7 w-full rounded-md border border-border bg-surface px-2 text-[11px] tabular-nums outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                              className="h-7 w-full rounded-md border border-border bg-surface px-2 text-[11px] tabular-nums outline-none focus:border-primary focus:ring-2 focus:ring-primary"
                             />
                             {/* State strip — visible chips for the
                                 review-required and crew-visible flags
@@ -1524,7 +1526,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
                             }}
                             placeholder="New task title…"
                             autoFocus
-                            className="h-8 rounded-md border border-accent/40 bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                            className="h-8 rounded-md border border-accent/40 bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
                           />
                           <input
                             value={newOffset}
@@ -1535,7 +1537,7 @@ function ChecklistItemsEditor({ templateId }: { templateId: number }) {
                             placeholder="Days from start"
                             title="Days from project start_date (negative = before)"
                             type="number"
-                            className="h-8 rounded-md border border-border bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+                            className="h-8 rounded-md border border-border bg-surface px-2 text-[12px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
                           />
                           <Button
                             variant="primary"
@@ -1951,7 +1953,7 @@ function BrandManager() {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="New brand name…"
-          className="h-9 min-w-[200px] flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 min-w-[200px] flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
           Add
@@ -2033,7 +2035,7 @@ function EventTypeManager() {
 
   return (
     <CollapsibleSection
-      title="Event Types"
+      title="Event types"
       count={q.data?.data?.length}
       description={'Shown in the "Event Type" dropdown when creating a project. Setting a default checklist template on a type auto-seeds the checklist for every new project of that type.'}
     >
@@ -2043,7 +2045,7 @@ function EventTypeManager() {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="New event type name…"
-          className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+          className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-primary focus:ring-2 focus:ring-primary"
         />
         <Button variant="primary" onClick={add} disabled={adding || !name.trim()}>
           Add
@@ -2197,7 +2199,7 @@ function CostRateManager({ enabled = true }: { enabled?: boolean }) {
 
   return (
     <CollapsibleSection
-      title="Cost Rates"
+      title="Cost rates"
       count={q.data?.data?.length}
       description="Per-brand transport, merchandise, and commission. Saving a row recomputes auto cost lines for every active project on that brand."
     >
@@ -2360,7 +2362,7 @@ function RateField({
     <label className="flex flex-col gap-1">
       <span className="text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
         {label}
-        {optional && <span className="ml-1 normal-case text-ink-muted/70">(optional)</span>}
+        {optional && <span className="ml-1 normal-case text-ink-muted">(optional)</span>}
       </span>
       <input
         type="number"

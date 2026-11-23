@@ -36,7 +36,7 @@
  *  exact night split, miscellaneous charges from the exact occupancy); net income = income - deductions; the owner's
  *  share = net x OWNER%, rounded; the operator's share is the rest. Every line on the page can be checked by hand
  *  and the statement adds up to the sen. */
-import { prorate, nightsInWindow, daysInMonth, monthEndExclusive } from './revenue';
+import { prorate, nightsInWindow, daysInMonth, monthEndExclusive, NET_INCOME_FROM } from './revenue';
 import { modelOf, isTenancy, type RevenueModel } from './revenueModel';
 import { DEDUCTION_TERMS } from '../../src/lib/statementTerms';
 import { COST_STAGES, costStageOf, type CostStage, type Stage } from './stageLocks';
@@ -187,9 +187,13 @@ export function unitForMonth(u: UnitRow, month: string): UnitRow {
   };
 }
 
-/** A long-term let's rent for `month`: the days of the month the tenancy covers and that share of the monthly rent. */
+/** A long-term let's rent for `month`: the days of the month the tenancy covers and that share of the monthly rent.
+ *  A contract that ended before the month and was never replaced keeps paying (owner, 19 Nov 2026: the workbook pays
+ *  CONTINEW-A2005 and B17-03A their rent though their contracts ran out in 2025): a month inside or after the end
+ *  month of a later contract would have read that one instead (unitForMonth), so this only runs on a lapsed contract. */
+export const rentRunsOn = (month: string, terms: Pick<Terms, 'activeTo'>): boolean => !!terms.activeTo && terms.activeTo.slice(0, 10) < `${month}-01`;
 export function tenancyRentFor(month: string, terms: Terms): { tenancyDays: number; rentExact: number } {
-  const tenancyDays = daysCovered(month, terms.activeFrom, terms.activeTo);
+  const tenancyDays = daysCovered(month, terms.activeFrom, rentRunsOn(month, terms) ? null : terms.activeTo);
   return { tenancyDays, rentExact: (terms.fixedRent * tenancyDays) / daysInMonth(month) };
 }
 
@@ -272,10 +276,7 @@ const ymd = (d: string) => d.slice(0, 10);
 
 const partsOf = (s: StayRow): StayPart[] => s.parts ?? [{ check_in: s.check_in, check_out: s.check_out, amount: Number(s.collected_revenue) }];
 
-/** From this month on, a stay's income is its host payout as the calendar shows it (owner, 3 Nov 2026: "overall unit report
- *  的income 要和calender 的income 一样 ... 拿net amount"), not the payout recorded later. Earlier months keep the recorded
- *  payout, so they still agree with the owner workbook. */
-export const NET_INCOME_FROM = '2026-10';
+export { NET_INCOME_FROM } from './revenue';
 
 /** The pieces a stay's income in `month` is worked out from. A stay with no host payout (no booking value, e.g. a direct
  *  booking paid by hand) keeps the money recorded against it, as the calendar has nothing to show for it either. */
@@ -340,13 +341,15 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   if (left < 0) floors[floors.length - 1] += left;
 
   // Deductions, by the workbook's rows.
-  // A master lease deducts nothing from the owner: every cost of the unit is the company's. A cost category whose lock is
+  // A master lease and a long-term let deduct nothing from the owner: every cost of the unit is the company's, and the
+  // owner gets the whole rent (owner, 19 Nov 2026: "long term 是我们自己出的", as the workbook's LT rows). A cost category whose lock is
   // on takes the costs that lock kept, as they were; an open one takes today's costs of the category, less any cost a
   // lock of this month keeps (a cost re-categorised after a lock still counts once, where it was kept). The misc charge
   // likewise, when misc is locked.
   const thisMonth = (c: CostRow) => c.unit_id === unit.id && deductMonthOf(c) === month;
   const keptIds = new Set(COST_STAGES.flatMap(s => kept?.[s]?.costs.map(c => c.id) ?? []));
-  const stageCosts = Object.fromEntries(COST_STAGES.map(s => [s, terms.basis === 'none' ? []
+  const companyCosts = terms.basis === 'none' || isTenancy(terms.model);
+  const stageCosts = Object.fromEntries(COST_STAGES.map(s => [s, companyCosts ? []
     : kept?.[s] ? kept[s]!.costs.filter(thisMonth)
     : costs.filter(c => thisMonth(c) && !keptIds.has(c.id) && costStageOf(c.category, c.description) === s)])) as Record<CostStage, CostRow[]>;
   const myCosts = COST_STAGES.flatMap(s => stageCosts[s]).sort((a, b) => a.incurred_on.localeCompare(b.incurred_on));
@@ -465,6 +468,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
   const unpaid = mine.filter(x => !(x.paid > 0));
   if (unpaid.length) warnings.push(`${unpaid.length} ${unpaid.length === 1 ? 'reservation has' : 'reservations have'} no host payout recorded (${unpaid.reduce((n, x) => n + x.n, 0)} nights counted at RM 0): ${unpaid.map(x => `${x.s.check_in} to ${x.s.check_out}`).join(', ')}.`);
   if (isTenancy(terms.model) && !gross) warnings.push('Long-term let with no rent this month: check the tenancy dates on the contract.');
+  if (isTenancy(terms.model) && rentRunsOn(month, terms)) warnings.push(`Long-term let: the contract ended on ${terms.activeTo!.slice(0, 10)} and has not been renewed, so the rent runs on as before. Renew the contract on the unit.`);
   if (yearly?.trueUp && yearly.yearShares === null) warnings.push(`Yearly guarantee: this is the last month of the contract year (${yearly.yearFrom} to ${yearly.yearTo}), but the earlier months were not worked out here, so no top-up is shown.`);
   if (terms.source === 'default') warnings.push(`No contract or split on this unit: the default ${fmtPct(100 - (terms.ownerPct ?? 0))} operator share was used.`);
 
@@ -527,7 +531,7 @@ export async function hasCompanyLateTable(q: Query): Promise<boolean> {
 }
 
 export const UNIT_SQL = `
-  SELECT u.id, u.owner_id, o.display_name AS owner_name, u.unit_number, u.unit_code, p.name AS property_name, u.address,
+  SELECT u.id, u.owner_id, o.display_name AS owner_name, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.unit_code, p.name AS property_name, u.address,
          u.package, u.term, u.split_kind, u.split_value, u.misc_charges AS unit_misc,
          c.id AS contract_id, c.model, c.management_fee_pct, c.grr_amount, c.starts_on, c.ends_on,
          c.minimum_guarantee, c.guarantee_starts_on, c.guarantee_ends_on, c.misc_charges AS contract_misc,

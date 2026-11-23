@@ -30,6 +30,8 @@ type MovementInput = {
    *  create the FIFO lot. OUT rows leave this unset; the trigger computes
    *  the consumed cost from the lots it pulls from. */
   unit_cost_sen?: number;
+  /** Migration 0361 — on a reversing IN, the OUT it undoes: the FIFO trigger re-opens only what that OUT took. */
+  reverses_movement_id?: string;
   /** PR — Inv PR5 (2026-05-27) — added STOCK_TAKE. ADJUSTMENT remains
    *  for the manual one-off adjustment route. */
   source_doc_type:
@@ -525,13 +527,13 @@ export async function reverseMovements(
        without it and every reversing row stays un-batched (old behaviour). */
     let movsRes = await sb
       .from('inventory_movements')
-      .select('movement_type, warehouse_id, item_code, variant_key, batch_no, product_name, qty, unit_cost_sen, source_doc_no, company_id')
+      .select('id, movement_type, warehouse_id, item_code, variant_key, batch_no, product_name, qty, unit_cost_sen, source_doc_no, company_id')
       .eq('source_doc_type', sourceDocType)
       .eq('source_doc_id', sourceDocId);
     if (movsRes.error && (movsRes.error.message ?? '').includes('batch_no')) {
       movsRes = await sb
         .from('inventory_movements')
-        .select('movement_type, warehouse_id, item_code, variant_key, product_name, qty, unit_cost_sen, source_doc_no, company_id')
+        .select('id, movement_type, warehouse_id, item_code, variant_key, product_name, qty, unit_cost_sen, source_doc_no, company_id')
         .eq('source_doc_type', sourceDocType)
         .eq('source_doc_id', sourceDocId);
     }
@@ -539,6 +541,7 @@ export async function reverseMovements(
     if (error) return { ok: false, reversed: 0, skipped: 0, failed: 0, reason: error.message };
 
     type Row = {
+      id?: string;
       movement_type: 'IN' | 'OUT' | 'ADJUSTMENT' | string;
       warehouse_id: string;
       item_code: string;
@@ -589,6 +592,7 @@ export async function reverseMovements(
         // A reversing IN must carry the lot cost so stock re-enters at its
         // original basis; a reversing OUT lets the FIFO trigger compute COGS.
         ...(opposite === 'IN' ? { unit_cost_sen: Number(r.unit_cost_sen ?? 0) } : {}),
+        ...(opposite === 'IN' && r.id ? { reverses_movement_id: r.id } : {}),
         // Carry the original row's batch (only when set) so the FIFO trigger
         // reverses the EXACT dye-lot, not any plain-FIFO lot. Non-batched stays NULL.
         ...(r.batch_no ? { batch_no: r.batch_no } : {}),

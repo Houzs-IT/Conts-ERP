@@ -62,8 +62,13 @@ body { margin: 0; }
   }
 }
 
-@media (max-width: 639.98px) {
-  input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea { font-size: 16px; }
+/* Phones: iOS Safari zooms in on focus of any field under 16px. An !important in the base layer outranks every
+   later layer's !important (text-copy! in utilities), unlayered rules (textarea.field-input) and inline styles.
+   No field is set above 16px today; one that is would be capped to 16 here on phones. */
+@layer base {
+  @media (max-width: 639.98px) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea { font-size: 16px !important; }
+  }
 }
 
 /* Design tokens -> Tailwind theme. Utilities such as text-ink, bg-page, bg-gold,
@@ -80,7 +85,7 @@ body { margin: 0; }
   --color-ink: #11140F;
   --color-ink-2: #3B4035;
   --color-muted-ink: #5C6155;
-  --color-faint: #7D8378;
+  --color-faint: #686E63; /* 4.58:1 on the page, 5.25:1 on cards; #7D8378 was 3.4-3.9:1 */
 
   --color-page: #EEF0EC;
   --color-card: #FFFFFF;
@@ -117,6 +122,8 @@ body { margin: 0; }
   --color-primary-soft: #E1EFEC;
   --color-primary-ink: #0C3F37;
   --color-on-primary: #FFFFFF;
+  /* Text on the solid red (danger button): white in both themes, 5.9:1; dark's text-inverse is near-black (3.1:1). */
+  --color-on-danger-solid: #FFFFFF;
 
   /* text-on-dark: the quiet line on a black panel or photo tile. Pages used the class before it existed, so the
      Portfolio tiles drew it in page ink, unreadable on the photo. */

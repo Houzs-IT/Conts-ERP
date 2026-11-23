@@ -27,7 +27,12 @@ export interface PropertyType { id: number; label: string; sort_order: number; a
 export interface Layout { id: number; label: string; bedrooms: number; bathrooms: number; sort_order: number; active: boolean }
 
 /** True once migration 0112 is in this database (both lists and the SO copy columns). */
+/* Columns and tables never disappear once their migration is in, so a true answer is kept for the isolate's life
+   (pg_stat_statements, 19 Nov 2026: the information_schema count below had run 31,510 times at 5.4 ms each). */
+const schemaKnown = { property: false, structured: false };
+
 export async function propertyColumnsReady(db: Db): Promise<boolean> {
+  if (schemaKnown.property) return true;
   const r = await db.prepare(
     `SELECT (to_regclass('public.project_layouts') IS NOT NULL
              AND to_regclass('public.project_property_types') IS NOT NULL
@@ -38,7 +43,8 @@ export async function propertyColumnsReady(db: Db): Promise<boolean> {
              AND EXISTS (SELECT 1 FROM information_schema.columns
                           WHERE table_schema = 'public' AND table_name = 'projects' AND column_name = 'built_up_sqft')) AS ready`,
   ).bind().first<{ ready: boolean }>();
-  return r?.ready === true;
+  schemaKnown.property = r?.ready === true;
+  return schemaKnown.property;
 }
 
 /** True when this install runs the renovation Projects screens (app_settings projects_mode, migration 0082). */
@@ -74,11 +80,13 @@ const n = (v: unknown): number | null => (v == null || v === "" ? null : Number(
 
 /** True once migration 0115 is in this database (the project's structured address and salesperson). */
 export async function structuredProjectColumnsReady(db: Db): Promise<boolean> {
+  if (schemaKnown.structured) return true;
   const r = await db.prepare(
     `SELECT count(*)::int AS n FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = 'projects' AND column_name IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
   ).bind(JSON.stringify(STRUCTURED_PROJECT_COLUMNS)).first<{ n: number }>();
-  return Number(r?.n ?? 0) === STRUCTURED_PROJECT_COLUMNS.length;
+  schemaKnown.structured = Number(r?.n ?? 0) === STRUCTURED_PROJECT_COLUMNS.length;
+  return schemaKnown.structured;
 }
 
 /** The SQL for one shared field's bound value; '' binds as NULL. */
@@ -222,13 +230,15 @@ export async function copySoIntoProject(db: Db, docNo: string, projectId: number
   return true;
 }
 
-/** Stamp the SO's own copy of the shared property fields and its project link. */
+/** Stamp the SO's own copy of the shared property fields and its project link. Every kind of order, a renovation
+    contract included: a contract shares its property with the project both ways (owner, 1 Nov 2026). Writing only
+    STANDARD orders made a contract's property edit say saved, then copy the unchanged SO back over the project. */
 export async function writeSoPropertyColumns(db: Db, docNo: string, projectId: number | null, so: Pick<SoShared, keyof PropertyValue | "building" | "unitNo">): Promise<void> {
   await db.prepare(
     `UPDATE scm.mfg_sales_orders SET project_id = ?, building = nullif(?, ''), unit_no = nullif(?, ''), property_type = nullif(?, ''),
             layout_label = nullif(?, ''), bedrooms = ?::int, bathrooms = ?::int, built_up_sqft = ?::numeric,
             land_area_sqft = coalesce(?::numeric, land_area_sqft), land_size = coalesce(nullif(?, ''), land_size), updated_at = now()
-      WHERE doc_no = ? AND coalesce(so_kind, 'STANDARD') = 'STANDARD'`,
+      WHERE doc_no = ?`,
   ).bind(projectId, so.building, so.unitNo, so.propertyType, so.layoutLabel, so.bedrooms, so.bathrooms, so.builtUpSqft, so.landAreaSqft ?? null, so.landSize ?? '', docNo).run();
 }
 
@@ -238,15 +248,14 @@ export async function writeSoRooms(db: Db, docNo: string, sections: readonly str
   const mine = new Set((known.results ?? []).map((r) => r.id));
   const rows = itemRooms.filter((r) => mine.has(r.id));
   const rooms = roomsWithLineRooms(sections, rows.map((r) => r.room));
-  await db.prepare(`UPDATE scm.mfg_sales_orders SET room_sections = ?::text::jsonb, updated_at = now() WHERE doc_no = ?`)
-    .bind(JSON.stringify(rooms), docNo).run();
-  if (rows.length) {
-    await db.prepare(
-      `UPDATE scm.mfg_sales_order_items i SET room = nullif(x.room, '')
-         FROM jsonb_to_recordset(?::text::jsonb) AS x(id uuid, room text)
-        WHERE i.id = x.id AND i.doc_no = ?`,
-    ).bind(JSON.stringify(rows), docNo).run();
-  }
+  /* ONE statement, so the room list and the lines' rooms land together or not at all: two writes let a request cut
+     off between them leave the new room order with the lines still in their old rooms. */
+  await db.prepare(
+    `WITH h AS (UPDATE scm.mfg_sales_orders SET room_sections = ?::text::jsonb, updated_at = now() WHERE doc_no = ? RETURNING doc_no)
+     UPDATE scm.mfg_sales_order_items i SET room = nullif(x.room, '')
+       FROM jsonb_to_recordset(?::text::jsonb) AS x(id uuid, room text), h
+      WHERE i.id = x.id AND i.doc_no = h.doc_no`,
+  ).bind(JSON.stringify(rooms), docNo, JSON.stringify(rows)).run();
 }
 
 /** After a create: the inserted lines in line order take the rooms the form sent for its lines, matched by

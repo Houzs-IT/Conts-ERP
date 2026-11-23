@@ -208,9 +208,13 @@ async function all(db: Db, sql: string, ...args: unknown[]): Promise<Row[]> {
   return (await db.prepare(sql).bind(...args).all<Row>()).results ?? [];
 }
 
+let notesTableKnown = false;
+/** The timeline notes table is in this database. A table never disappears once in, so a true answer is kept for the isolate's life. */
 export async function timelineNotesReady(db: Db): Promise<boolean> {
+  if (notesTableKnown) return true;
   const r = await db.prepare(`SELECT to_regclass('public.project_timeline_notes') IS NOT NULL AS ready`).bind().first<{ ready: boolean }>();
-  return r?.ready === true;
+  notesTableKnown = r?.ready === true;
+  return notesTableKnown;
 }
 
 /** Every entry of one project. `docsReady`: migration 0116 is applied (the project's POs / DOs carry project_id). */

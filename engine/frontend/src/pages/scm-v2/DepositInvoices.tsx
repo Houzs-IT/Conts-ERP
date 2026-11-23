@@ -17,7 +17,7 @@ import { DateField } from '../../vendor/scm/components/DateField';
 import {
   useDepositInvoices, useDepositInvoiceDetail, useDepositInvoiceSettings, useSaveDepositInvoiceSettings,
   useIssueMissingDepositInvoices, useInvoiceDeliveredOrders, useCancelDepositInvoice, usePostDepositInvoice,
-  type DepositInvoice, type DepositInvoiceStatus,
+  printableDepositInvoices, type DepositInvoice, type DepositInvoiceStatus,
 } from '../../vendor/scm/lib/deposit-invoice-queries';
 import { DataTable, type Column } from '../../components/DataTable';
 import { cancelledDocNoClass, cancelledRowClass } from '../../lib/scm';
@@ -83,20 +83,22 @@ export const DepositInvoices = () => {
   const toggle = (id: string) => setTicked((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   /* The ticked invoices as ONE document in LIST order, a page each (owner
-     2026-09-12: 要批量打印; docs/bugs/0834). The row carries all the sheet needs. */
+     2026-09-12: 要批量打印; docs/bugs/0834). Each row with its order's sheet (address, brand, standing). */
   const printTicked = async (action: PdfAction) => {
     const targets = rows.filter((d) => ticked.has(d.id));
     if (targets.length === 0 || printing) return;
     setPrinting(true); setPrintError(null);
     try {
-      const { generateDepositInvoicesPdf } = await import('../../vendor/scm/lib/deposit-invoice-pdf');
-      await generateDepositInvoicesPdf(targets, { action });
+      const [{ generateDepositInvoicesPdf }, sheets] = await Promise.all([
+        import('../../vendor/scm/lib/deposit-invoice-pdf'), printableDepositInvoices(targets),
+      ]);
+      await generateDepositInvoicesPdf(sheets, { action });
     } catch (e) { setPrintError(errText(e)); } finally { setPrinting(false); }
   };
 
   return (
     <div className="space-y-4">
-      <PageHeader eyebrow="Finance" title="Deposit Invoices"
+      <PageHeader eyebrow="Finance" title="Deposit invoices"
         description="One invoice per customer payment received before the order's final invoice — issued by itself when the switch is on, booked Dr the customer / Cr Deposit pay by customer. An edited payment cancels its invoice and takes the next number; a deleted one cancels it. At the final invoice each one is closed by a credit note of its own." />
 
       <SwitchCard />
@@ -240,8 +242,11 @@ const InvoiceDetail = ({ id, onClose }: { id: string; onClose: () => void }) => 
     if (!inv || printing) return;
     setPrinting(true); setPrintError(null);
     try {
-      const { generateDepositInvoicePdf } = await import('../../vendor/scm/lib/deposit-invoice-pdf');
-      await generateDepositInvoicePdf(inv, { action: 'print' });
+      const [{ generateDepositInvoicePdf }, sheets] = await Promise.all([
+        import('../../vendor/scm/lib/deposit-invoice-pdf'), printableDepositInvoices([inv]),
+      ]);
+      /* One row in, one sheet out (printableDepositInvoices maps the rows it is given). */
+      await generateDepositInvoicePdf(sheets[0]!, { action: 'print' });
     } catch (e) { setPrintError(errText(e)); } finally { setPrinting(false); }
   };
   return (

@@ -88,7 +88,7 @@ export function BetaTimelineTab({ projectId, today, onDone, onError }: BetaTabPr
             <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 40, padding: "0 12px", border: `1px solid ${BETA.border}`, borderRadius: 8, background: BETA.surface, minWidth: 0 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={BETA.muted} strokeWidth="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>
               <span className="sr">Search timeline</span>
-              <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search, e.g. sink" style={{ border: 0, outline: "none", font: "inherit", width: 160, maxWidth: "100%", background: "transparent", color: BETA.ink }} />
+              <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search, e.g. sink" style={{ border: 0, font: "inherit", width: 160, maxWidth: "100%", background: "transparent", color: BETA.ink }} />
             </label>
             <button type="button" disabled={shown.length === 0} onClick={exportCsv} title="Download what is on screen as a CSV file" style={btnStyle("outline", "md")}>Export record</button>
           </div>

@@ -28,7 +28,9 @@ import {
   type PdfPhotoImage,
 } from './pdf-item-photos';
 import { loadDocPdfPhotos } from './pdf-doc-photos';
-import { warehouseLine } from './warehouse-print';
+import { warehouseLine } from './warehouse-print';
+/* Conts prints no "The Conts ERP · date" footer (owner, 17 Nov 2026). */
+import { CONTS_LINES_BY_NAME } from '../../../conts/flowRules';
 
 type GrnHeader = {
   /* Row id: the photos are read by it. A consignment receive has none and prints no photos. */
@@ -231,7 +233,7 @@ export async function renderGrnInto(
     doc.setPage(p);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(110);
     doc.text(header.grn_number, margin, 290);
-    doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(header.received_at)}`, pageW / 2, 290, { align: 'center' });
+    if (!CONTS_LINES_BY_NAME) doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(header.received_at)}`, pageW / 2, 290, { align: 'center' });
     doc.text(`Page ${p} of ${pageCount}`, pageW - margin, 290, { align: 'right' });
     doc.setTextColor(0);
   }

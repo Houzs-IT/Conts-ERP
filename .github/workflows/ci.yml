@@ -155,6 +155,11 @@ jobs:
         env:
           API_BASE: http://localhost:8788
           DB_URL: postgres://postgres@127.0.0.1:5432/ci
+      - name: Column order kept with each person's account (table-columns)
+        run: node scripts/api-checks/table-columns.mjs
+        env:
+          API_BASE: http://localhost:8788
+          DB_URL: postgres://postgres@127.0.0.1:5432/ci
       - name: Demo mode guards (demo-mode)
         run: node scripts/api-checks/demo-mode.mjs
         env:

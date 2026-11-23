@@ -33,6 +33,8 @@
 // ScmDeliveryReturnDetailV2 is the whole switch. Data + mutations use
 // the vendored delivery-return-queries slice.
 
+import { takeBack } from '../../lib/backTrail';
+import { PHONE_MORE_BUTTON, phoneMoreHeaderClass } from "../../components/scm-v2/phoneMoreActions";
 import { lazy, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { LazySlot } from "../../components/LazySlot";
@@ -404,7 +406,7 @@ function RefundHeroCard({
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
-        {isRefunded ? "Refunded" : "Refund pending"}
+        {isRefunded ? "Refunded" : eff === "cancelled" ? (String(header.status).toUpperCase() === "REJECTED" ? "Rejected" : "Cancelled") : "Refund pending"}
       </div>
       <div
         className={cn(
@@ -503,6 +505,7 @@ export function DeliveryReturnDetailV2() {
 // ─── Main page ─────────────────────────────────────────────────────────────
 
 function DeliveryReturnDetailV2ReadOnly() {
+  const [moreOpen, setMoreOpen] = useState(false);
   const { id } = useParams<{ id: string }>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -547,7 +550,7 @@ function DeliveryReturnDetailV2ReadOnly() {
   // details page's back button goes to its relevant list, not wherever
   // browser history happens to point). The list restores its own sticky
   // filters, so the prior filtered view comes back — no context lost.
-  const goBack = () => navigate(scmListReturnTo("/scm/delivery-returns"));
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? scmListReturnTo("/scm/delivery-returns"));
   const goEdit = () => id && navigate(`/scm/delivery-returns/${id}?edit=1`);
   const doCancel = async () => {
     if (!deliveryReturn) return;
@@ -814,11 +817,7 @@ function DeliveryReturnDetailV2ReadOnly() {
           <span className="font-mono text-[12.5px] font-semibold text-sidebar-ink">
             {deliveryReturn.return_number}
           </span>
-          <button
-            type="button"
-            className="text-sidebar-ink-muted"
-            aria-label="More actions"
-          >
+          <button type="button" className={PHONE_MORE_BUTTON} aria-label="More actions" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>
             <MoreHorizontal size={18} />
           </button>
         </div>
@@ -835,7 +834,7 @@ function DeliveryReturnDetailV2ReadOnly() {
       </div>
 
       {/* ─── Desktop sticky header ─────────────────────────────────── */}
-      <div className="sticky top-0 z-10 -mx-4 hidden border-b border-border bg-bg/95 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6 md:block">
+      <div className={phoneMoreHeaderClass(moreOpen)}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
             <button
@@ -955,12 +954,12 @@ function DeliveryReturnDetailV2ReadOnly() {
         {/* Mobile-only Refund hero — sits at the top of the scroll body. */}
         <div className="mb-3 rounded-lg border border-border bg-surface p-4 shadow-stone md:hidden">
           <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-            {effectiveOf(deliveryReturn) === "refunded" ? "Refunded" : "Refund pending"}
+            {effectiveOf(deliveryReturn) === "refunded" ? "Refunded" : effectiveOf(deliveryReturn) === "cancelled" ? (String(deliveryReturn.status).toUpperCase() === "REJECTED" ? "Rejected" : "Cancelled") : "Refund pending"}
           </div>
           <div
             className={cn(
               "mt-1 font-money text-[26px] font-bold leading-none tracking-tight",
-              effectiveOf(deliveryReturn) === "refunded" ? "text-synced" : "text-err"
+              effectiveOf(deliveryReturn) === "refunded" ? "text-synced" : effectiveOf(deliveryReturn) === "cancelled" ? "text-ink-muted" : "text-err"
             )}
           >
             {fmtMoney(refund, deliveryReturn.currency)}
@@ -1079,7 +1078,7 @@ function DeliveryReturnDetailV2ReadOnly() {
             {/* Delivery address + Emergency contact — same layout as DO/SI
                 V2. The return may involve a driver going back out to
                 collect goods, so the address is genuinely useful. */}
-            <Section title="Pickup / Return address">
+            <Section title="Pickup / return address">
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-[1.4fr_1fr] sm:divide-x sm:divide-border-subtle">
                 <div className="sm:pr-6">
                   <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">

@@ -76,6 +76,14 @@ export type InBandFailure = {
   movementErrors?: string[] | null;
   cancelErrors?: string[] | null;
   reversalErrors?: string[] | null;
+  /** Money steps that did not finish (an invoice not settled or unwound, a journal not reversed). Each is
+   *  resumable: pressing the same button again finishes it (PR #1126 D1/D2/D14). */
+  settleErrors?: string[] | null;
+  /** Payments a create was handed but did not record (SO create deposit rows, PR #1126 D5). The document is saved;
+   *  the payment is added on its Payments tab. */
+  paymentErrors?: string[] | null;
+  /** The PO's received qty was not recounted after a receipt (GRN create / post). */
+  recountError?: string | null;
 };
 
 export const reportInBandFailure = (
@@ -87,9 +95,25 @@ export const reportInBandFailure = (
     ...(res?.cancelErrors ?? []),
     ...(res?.reversalErrors ?? []),
   ];
-  if (!errs.length) return;
-  writeFailedAs(title)(new Error(
-    `${errs.join('\n')}\n\n` +
-    'The document is saved. Stock was NOT adjusted for this change — tell IT so the ledger can be repaired.',
-  ));
+  if (errs.length) {
+    writeFailedAs(title)(new Error(
+      `${errs.join('\n')}\n\n` +
+      'The document is saved. Stock was NOT adjusted for this change — tell IT so the ledger can be repaired.',
+    ));
+  }
+  if (res?.paymentErrors?.length) {
+    writeFailedAs('Order saved, but a payment was not recorded')(new Error(
+      `${res.paymentErrors.join('\n')}\n\nThe order itself is saved. Do not create it again.`,
+    ));
+  }
+  if (res?.settleErrors?.length) {
+    writeFailedAs('Saved, but some money steps did not finish')(new Error(
+      `${res.settleErrors.join('\n')}\n\nNothing was lost: press the same button again and it finishes these steps without repeating the rest.`,
+    ));
+  }
+  if (res?.recountError) {
+    writeFailedAs('Saved, but the purchase order received qty was not updated')(new Error(
+      `${res.recountError}\n\nThe receipt is saved. The PO may still show these goods as outstanding. Tell IT so it can be recounted.`,
+    ));
+  }
 };

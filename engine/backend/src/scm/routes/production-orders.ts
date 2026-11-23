@@ -49,6 +49,7 @@ import { scmAreaAllows } from '../middleware/area-guard';
 import { checkReturn, filterProductionTab, holidaySet, materialPoWarehouse, materialVerdict, progressOf, stockStatusOf, validHours, wholeNeed, type MaterialState, type PoLink, type ReturnLine } from '../lib/renovation-production';
 import { filterProductionList } from '../lib/production-list-read';
 import { PRODUCTION_DOC, issueMaterials, returnMaterial, reverseIssues } from '../lib/renovation-production-stock';
+import { deferAllocationRecompute } from '../lib/stock-allocation-job';
 import { voChangeWaiting } from '../lib/renovation-po-change-guard';
 import { refuseWithoutWriting } from '../lib/no-write-refusal';
 import { heldSoBehindLines, soOnHoldResponse } from '../lib/source-document-gates';
@@ -1351,6 +1352,7 @@ const START_CLEARED = { actual_start_at: null, actual_start_by: null, actual_sta
 export async function undoStart(c: any, sb: any, orderId: string): Promise<string | null> {
   const back = await reverseIssues(sb, orderId, c.get('user')?.id ?? null);
   if (!back.ok) return back.reason;
+  deferAllocationRecompute(c, sb, 'production-undo-start');
   /* No longer started: nobody stays on the clock, or the timer would run on hidden and block the next Start's time. */
   await stopRunningTimers(sb, orderId, actorName(c));
   const { error } = await sb.from('production_order_workers').delete().eq('production_order_id', orderId).eq('how', 'STARTED');
@@ -1719,6 +1721,8 @@ productionOrders.post('/:id/start', async (c) => {
   const now = new Date().toISOString();
   const { error: startErr } = await sb.from('production_orders').update({ actual_start_at: now, actual_start_by: staffId, actual_start_by_name: name, start_lock_at: null, updated_at: now }).eq('id', id);
   if (startErr) return c.json({ error: 'update_failed', reason: startErr.message }, 500);
+  /* Start takes stock out like a DO does, so the SO lines that counted on it are walked again (after the answer). */
+  if (issued.issuedLines > 0) deferAllocationRecompute(c, sb, 'production-start');
   const { data: named } = await sb.from('production_order_workers').select('name').eq('production_order_id', id);
   if (!((named ?? []) as Array<{ name: string }>).some((w) => w.name.toLowerCase() === name.toLowerCase())) {
     await sb.from('production_order_workers').insert({ production_order_id: id, company_id: co.companyId, person_key: `user:${String(c.get('houzsUser')?.id ?? name)}`, name, how: 'STARTED', created_by: staffId });
@@ -1758,6 +1762,7 @@ productionOrders.post('/:id/request-more', async (c) => {
     await sb.from('production_order_materials').delete().eq('id', materialId);
     return c.json({ error: 'stock_failed', message: issued.reason }, 409);
   }
+  if (issued.issuedLines > 0) deferAllocationRecompute(c, sb, 'production-request-more');
   await recordEntityAudit(sb, {
     entityType: 'PRODUCTION_ORDER', entityId: order.id, entityDocNo: order.po_number, action: 'UPDATE', actor: c.get('houzsUser'), companyId: co.companyId, statusSnapshot: order.status,
     note: `Requested more: ${wholeNeed(qty)} ${code}`, fieldChanges: [],
@@ -1788,7 +1793,10 @@ productionOrders.post('/:id/return-stock', async (c) => {
   for (const l of lines) {
     const m = byId.get(l.materialId)!;
     const problem = await returnMaterial(sb, { m, qty: l.qty, warehouseId: l.warehouseId, poNumber: order.po_number, companyId: co.companyId, performedBy: c.get('user')?.id ?? null });
-    if (problem) return c.json({ error: 'stock_failed', message: moved > 0 ? `${moved} line(s) went back. ${problem}` : problem, moved }, 409);
+    if (problem) {
+      if (moved > 0) deferAllocationRecompute(c, sb, 'production-return');
+      return c.json({ error: 'stock_failed', message: moved > 0 ? `${moved} line(s) went back. ${problem}` : problem, moved }, 409);
+    }
     m.qty_returned += l.qty;
     moved += 1;
   }
@@ -1796,6 +1804,7 @@ productionOrders.post('/:id/return-stock', async (c) => {
     entityType: 'PRODUCTION_ORDER', entityId: order.id, entityDocNo: order.po_number, action: 'UPDATE', actor: c.get('houzsUser'), companyId: co.companyId, statusSnapshot: order.status,
     note: `Returned stock: ${lines.map((l) => `${l.qty} ${byId.get(l.materialId)!.item_code}`).join(', ')}`, fieldChanges: [],
   });
+  deferAllocationRecompute(c, sb, 'production-return');
   return c.json({ ok: true, moved });
 });
 

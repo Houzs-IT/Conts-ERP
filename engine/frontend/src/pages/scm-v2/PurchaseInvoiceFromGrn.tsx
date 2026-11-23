@@ -30,6 +30,7 @@ import { Button } from '@2990s/design-system';
 import { fmtDateOrDash, fmtQty } from '../../vendor/shared/format';
 import {
   useOutstandingGrnItems,
+  useOutstandingGrnItemsPaged,
   type OutstandingGrnItem,
 } from '../../vendor/scm/lib/suppliers-queries';
 import { filterOutstandingGrnLines } from '../../vendor/scm/lib/outstanding-grn-search';
@@ -48,7 +49,6 @@ const fmtRm = (centi: number, currency = 'MYR'): string =>
 
 export const PurchaseInvoiceFromGrn = () => {
   const navigate = useNavigate();
-  const itemsQ   = useOutstandingGrnItems();
   const notify   = useNotify();
 
   const [picks, setPicks] = useState<Record<string, { picked: boolean; qty: number }>>({});
@@ -64,11 +64,6 @@ export const PurchaseInvoiceFromGrn = () => {
     [searchParams],
   );
 
-  const allItems = useMemo(() => itemsQ.data?.items ?? [], [itemsQ.data]);
-  const items = useMemo(
-    () => (scope.keys.size === 0 ? allItems : allItems.filter((it) => scope.keys.has(it.grnId))),
-    [allItems, scope.keys],
-  );
 
   /* Search (owner 2026-09-14) narrows what is SHOWN, nothing else. The supplier
      and currency locks, the primary note and the Continue count still read
@@ -81,7 +76,43 @@ export const PurchaseInvoiceFromGrn = () => {
     if (q.trim()) next.set('q', q); else next.delete('q');
     setSearchParams(next, { replace: true });
   };
-  const visibleItems = useMemo(() => filterOutstandingGrnLines(items, query), [items, query]);
+
+  /* Audit 20 Nov 2026: this screen read every outstanding line of every billable note, even when it came from one
+     note's "Transfer to Purchase Invoice". Now:
+       - from given notes (?grnId=): the server reads only those notes (?grnIds=);
+       - the full picker: one page at a time (whole notes, newest number first), searched on the server, the next page
+         loaded when the list is scrolled to its end. */
+  const scopedIds = useMemo(() => [...scope.keys], [scope.keys]);
+  const scoped = scopedIds.length > 0;
+  const [debouncedQuery, setDebouncedQuery] = useState(query.trim());
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+  const scopedQ = useOutstandingGrnItems({ grnIds: scopedIds, enabled: scoped });
+  const pagedQ = useOutstandingGrnItemsPaged(debouncedQuery, { enabled: !scoped });
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = pagedQ;
+  const itemsQ = scoped
+    ? { isLoading: scopedQ.isLoading, isError: scopedQ.isError, isFetching: scopedQ.isFetching, truncated: scopedQ.data?.truncated === true }
+    : { isLoading: pagedQ.isLoading, isError: pagedQ.isError, isFetching: pagedQ.isFetching, truncated: false };
+
+  /* Every line this screen has shown, kept across pages and searches, so the supplier and currency locks and the
+     Continue still see a ticked line the search has moved away from. */
+  const rowCache = useRef(new Map<string, OutstandingGrnItem>());
+  const { items, known } = useMemo(() => {
+    const src = scoped ? (scopedQ.data?.items ?? []) : (pagedQ.data?.pages ?? []).flatMap((p) => p.items);
+    const seen = new Set<string>();
+    const out: OutstandingGrnItem[] = [];
+    for (const it of src) {
+      if (seen.has(it.grnItemId)) continue;
+      seen.add(it.grnItemId);
+      out.push(it);
+      rowCache.current.set(it.grnItemId, it);
+    }
+    return { items: out, known: [...rowCache.current.values()] };
+  }, [scoped, scopedQ.data, pagedQ.data]);
+  /* Scoped, everything is loaded and searched here; the full picker was searched by the server. */
+  const visibleItems = useMemo(() => (scoped ? filterOutstandingGrnLines(items, query) : items), [scoped, items, query]);
 
   // Group by GRN doc no so the UI renders one card per GRN.
   const grouped = useMemo(() => {
@@ -100,42 +131,42 @@ export const PurchaseInvoiceFromGrn = () => {
      DIFFERENT supplier are locked out, because a PI is one supplier's bill.
      activeGrnId stays as the PRIMARY note ref carried to the review screen. */
   const activeSupplierId = useMemo(() => {
-    for (const it of items) {
+    for (const it of known) {
       const p = picks[it.grnItemId];
       if (p?.picked && p.qty > 0) return it.supplierId;
     }
     return null;
-  }, [picks, items]);
+  }, [picks, known]);
 
   /* The PI header carries ONE currency + FX rate, so notes that landed under a
      different pair can't share the document even for the same supplier. */
   const fxKeyOf = (it: OutstandingGrnItem) => `${it.currency ?? 'MYR'}|${it.exchangeRate ?? 1}`;
   const activeFxKey = useMemo(() => {
-    for (const it of items) {
+    for (const it of known) {
       const p = picks[it.grnItemId];
       if (p?.picked && p.qty > 0) return fxKeyOf(it);
     }
     return null;
-  }, [picks, items]);
+  }, [picks, known]);
 
   const activeGrnId = useMemo(() => {
-    for (const it of items) {
+    for (const it of known) {
       const p = picks[it.grnItemId];
       if (p?.picked && p.qty > 0) return it.grnId;
     }
     return null;
-  }, [picks, items]);
+  }, [picks, known]);
 
   /* Notes this selection spans — drives the "billing N notes" hint + the
      handoff so the review screen knows to load every one of them. */
   const pickedGrnIds = useMemo(() => {
     const set = new Set<string>();
-    for (const it of items) {
+    for (const it of known) {
       const p = picks[it.grnItemId];
       if (p?.picked && p.qty > 0) set.add(it.grnId);
     }
     return [...set];
-  }, [picks, items]);
+  }, [picks, known]);
 
   const togglePick = (it: OutstandingGrnItem) => {
     if (activeSupplierId && activeSupplierId !== it.supplierId) return; // one supplier per invoice
@@ -189,6 +220,23 @@ export const PurchaseInvoiceFromGrn = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fxKeyOf is a pure formatter over the row already in `items`
   }, [items, itemsQ.isLoading, scope.keys]);
 
+  /* Load the next page when the line under the list comes into view. A failed page waits for the button. */
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const pageCount = pagedQ.data?.pages.length ?? 0;
+  const nextPageFailed = pagedQ.isFetchNextPageError;
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (scoped || !el || !hasNextPage || isFetchingNextPage || nextPageFailed || typeof IntersectionObserver === 'undefined') return;
+    let asked = false;
+    const io = new IntersectionObserver((entries) => {
+      if (asked || !entries.some((e) => e.isIntersecting)) return;
+      asked = true;
+      void fetchNextPage();
+    }, { rootMargin: '400px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [scoped, pageCount, hasNextPage, isFetchingNextPage, nextPageFailed, fetchNextPage]);
+
   const picked = Object.entries(picks).filter(([, v]) => v.picked && v.qty > 0);
   const pickedCount = picked.length;
   const visibleIds = new Set(visibleItems.map((it) => it.grnItemId));
@@ -212,7 +260,7 @@ export const PurchaseInvoiceFromGrn = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Procurement"
-        title="Bill a Goods-Received Note"
+        title="Bill a goods-received note"
         actions={
           <div className={styles.actions}>
             <Button variant="ghost" size="md" onClick={() => navigate('/scm/purchase-invoices')}>
@@ -234,7 +282,7 @@ export const PurchaseInvoiceFromGrn = () => {
 
       <section className={styles.card}>
         <div className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Outstanding GRN Lines</h2>
+          <h2 className={styles.cardTitle}>Outstanding GRN lines</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
             <Button variant="ghost" size="sm" onClick={clearAll} disabled={Object.keys(picks).length === 0}>
               <X {...ICON} /> Clear picks
@@ -258,10 +306,12 @@ export const PurchaseInvoiceFromGrn = () => {
                   what is true. */}
               {itemsQ.isLoading ? 'Loading…'
                 : itemsQ.isError ? "We couldn't load the outstanding lines — please refresh and try again."
-                : items.length === 0 ? (allItems.length > 0
-                    ? `None of the ${allItems.length} outstanding line(s) that loaded belong to the note you came from — use “Show all outstanding notes” to see the rest.`
-                    : 'This search came back with no outstanding GRN lines. That is not the same as every posted note having been billed — the list only covers the company you are working in, and notes it cannot see look identical to notes that are done. Open the goods-received note and check its invoiced balance before treating this as nothing left to bill.')
-                : `${visibleItems.length === items.length ? '' : `${visibleItems.length} of `}${items.length} line${items.length === 1 ? '' : 's'} across ${grouped.length} GRN${grouped.length === 1 ? '' : 's'}`}
+                : items.length === 0 ? (!scoped && (hasNextPage || itemsQ.isFetching)
+                    ? 'No outstanding line in the part of the list read so far. More is still loading below.'
+                    : !scoped && debouncedQuery
+                      ? 'No outstanding GRN line matches this search. That is not the same as there being none left: clear the search to see the full list.'
+                      : 'This search came back with no outstanding GRN lines. That is not the same as every posted note having been billed — the list only covers the company you are working in, and notes it cannot see look identical to notes that are done. Open the goods-received note and check its invoiced balance before treating this as nothing left to bill.')
+                : `${visibleItems.length === items.length ? '' : `${visibleItems.length} of `}${items.length} line${items.length === 1 ? '' : 's'} across ${grouped.length} GRN${grouped.length === 1 ? '' : 's'}${!scoped && hasNextPage ? ' so far' : ''}`}
             </span>
           </div>
         </div>
@@ -271,7 +321,7 @@ export const PurchaseInvoiceFromGrn = () => {
         {/* The server reads every note that still has something to bill, up to a
             runaway ceiling. When it stops there it says so, and so must the page:
             a short list that looks whole is the silence this read used to have. */}
-        {itemsQ.data?.truncated && (
+        {itemsQ.truncated && (
           <p role="alert" style={{ color: 'var(--c-burnt)', fontSize: 'var(--fs-12)', padding: '0 var(--space-4) var(--space-2)' }}>
             This list is not complete: the server stopped reading goods-received notes at its limit, so some notes with lines still to bill are missing here and from the search.
           </p>
@@ -306,7 +356,11 @@ export const PurchaseInvoiceFromGrn = () => {
             leadingIcon={<Search size={14} strokeWidth={1.75} />}
             inputClassName="!pl-8"
           />
-          <SearchScopeHint scope="loaded" className="mt-1 px-1" />
+          <SearchScopeHint
+            scope={scoped ? 'loaded' : 'server'}
+            searching={!scoped && (query.trim() !== debouncedQuery || pagedQ.isFetching)}
+            className="mt-1 px-1"
+          />
           {hiddenPickCount > 0 && (
             <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--fs-12)', color: 'var(--c-burnt)' }}>
               {`${hiddenPickCount} ticked line${hiddenPickCount === 1 ? '' : 's'} hidden by this search will still go forward when you Continue.`}
@@ -314,7 +368,7 @@ export const PurchaseInvoiceFromGrn = () => {
           )}
         </div>
         <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-          {grouped.length === 0 && !itemsQ.isLoading && (items.length > 0 ? (
+          {grouped.length === 0 && !itemsQ.isLoading && (items.length > 0 || (!scoped && debouncedQuery) ? (
             <p style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-13)' }}>
               No outstanding line matches &ldquo;{query.trim()}&rdquo;.{' '}
               <button
@@ -446,6 +500,16 @@ export const PurchaseInvoiceFromGrn = () => {
               </div>
             );
           })}
+          {!scoped && (hasNextPage || pagedQ.isFetchNextPageError) && (
+            <div ref={loadMoreRef} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
+              {pagedQ.isFetchNextPageError && (
+                <span style={{ color: 'var(--c-festive-b, #B8331F)' }}>The next notes could not be loaded.</span>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => { void fetchNextPage(); }} disabled={isFetchingNextPage}>
+                {isFetchingNextPage ? 'Loading…' : pagedQ.isFetchNextPageError ? 'Try again' : 'Load more notes'}
+              </Button>
+            </div>
+          )}
         </div>
       </section>
     </div>

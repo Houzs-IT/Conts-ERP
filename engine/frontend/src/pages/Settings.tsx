@@ -272,7 +272,7 @@ function SyncTab({
       </section>
 
       <section className="relative overflow-hidden rounded-md border border-border bg-surface p-6 shadow-stone">
-        <h2 className="mb-1 font-display text-[15px] font-bold leading-tight tracking-tight text-ink">Full Refresh</h2>
+        <h2 className="mb-1 font-display text-[15px] font-bold leading-tight tracking-tight text-ink">Full refresh</h2>
         <p className="mb-4 text-xs text-ink-muted">
           Calls <span className="font-mono">/SalesOrder/getAll</span> and upserts
           everything — ignores server-side Remark2/Attention/Remark4/
@@ -385,7 +385,7 @@ function EmailTab() {
   return (
     <section className="relative overflow-hidden rounded-md border border-border bg-surface p-6 shadow-stone">
       <h2 className="mb-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-brand text-accent">
-        <Mail size={12} /> Email Notifications
+        <Mail size={12} /> Email notifications
       </h2>
 
       {q.loading && <ListSkeleton rows={4} />}
@@ -514,11 +514,11 @@ const BRANDING_FIELDS: {
     hint: "Woven into the printed letterhead address.",
   },
   { key: "phone", label: "Phone", placeholder: "011-1110 8883" },
-  { key: "email", label: "Email", placeholder: "hello@houzscentury.com" },
+  { key: "email", label: "Email", placeholder: "hello@theconts.com" },
   {
     key: "website",
     label: "Website",
-    placeholder: "houzscentury.com",
+    placeholder: "theconts.com",
     optional: true,
   },
   {
@@ -531,14 +531,14 @@ const BRANDING_FIELDS: {
   {
     key: "csEmail",
     label: "Customer service email",
-    placeholder: "operation@houzscentury.com",
+    placeholder: "help@theconts.com",
     hint: "Printed beside the customer service phone. Leave blank to omit it.",
     optional: true,
   },
   {
     key: "customerPaymentDetails",
     label: "Customer payment details",
-    placeholder: "Maybank 5644 1875 9397\nHOUZS CENTURY SDN BHD",
+    placeholder: "Public Bank 3xxx xxxx xx\nTHE CONTS SDN BHD",
     hint: "Where a customer pays: bank, account name, account number — one item per line. Printed as PAYMENT DETAILS on the Deposit Invoice and the Sales Invoice. Leave blank to omit the block.",
     optional: true,
     rows: 3,
@@ -546,7 +546,7 @@ const BRANDING_FIELDS: {
   {
     key: "debtorPaymentDetails",
     label: "Other Debtor payment details",
-    placeholder: "CIMB 8000 1234 5678\nHOUZS CENTURY SDN BHD",
+    placeholder: "Public Bank 3xxx xxxx xx\nTHE CONTS SDN BHD",
     hint: "Where an Other Debtor pays — this may be a different account from the customers'. Printed on the Other Debtor invoice. Leave blank to omit the block.",
     optional: true,
     rows: 3,
@@ -554,7 +554,7 @@ const BRANDING_FIELDS: {
   {
     key: "debtorInvoiceTerms",
     label: "Other Debtor invoice terms & conditions",
-    placeholder: "Payment within 14 days of the invoice date.\nCheques payable to HOUZS CENTURY SDN BHD.",
+    placeholder: "Payment within 14 days of the invoice date.\nCheques payable to THE CONTS SDN BHD.",
     hint: "One term per line; printed numbered under the payment details on the Other Debtor invoice. Leave blank to omit the block.",
     optional: true,
     rows: 4,
@@ -836,7 +836,7 @@ function BrandingTab() {
   return (
     <section className="relative overflow-hidden rounded-md border border-border bg-surface p-6 shadow-stone">
       <h2 className="mb-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-brand text-accent">
-        <Building2 size={12} /> Company Identity
+        <Building2 size={12} /> Company identity
         {/* Which company's row this tab edits — switch companies in the top
             bar to edit the other one. */}
         <span className="rounded border border-border px-1.5 py-0.5 text-[9px] font-semibold text-ink-muted">

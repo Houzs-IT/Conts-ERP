@@ -593,7 +593,7 @@ function buildImport(text: string, UNITS: RosterUnit[]): ParsedRow[] {
     const unitNumber = get(iUnit), guest = get(iGuest), channelRaw = get(iChannel).toLowerCase();
     const checkIn = get(iIn), checkOut = get(iOut), guestsRaw = get(iGuests), rateRaw = get(iRate), phone = get(iPhone), ref = get(iRef);
     const label = `${guest || '(no name)'} · ${unitNumber || '(no unit)'}`;
-    const unit = UNITS.find(u => u.unitNumber.toLowerCase() === unitNumber.toLowerCase());
+    const unit = UNITS.find(u => [u.unitNumber, u.storedNumber].some(n => n?.toLowerCase() === unitNumber.toLowerCase()));
     if (!unit) return { line, label, error: `Unknown unit "${unitNumber}".` };
     if (!guest) return { line, label, error: 'Guest name is required.' };
     if (!['airbnb', 'booking_com', 'agoda', 'direct'].includes(channelRaw)) return { line, label, error: `Unknown channel "${channelRaw}". Use airbnb, booking_com, agoda or direct.` };

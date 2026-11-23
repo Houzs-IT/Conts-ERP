@@ -28,6 +28,9 @@ const CREATOR = {
     'service_cases.write',
     'service_cases.manage',
   ]),
+  // Since f772fedf (12 Nov 2026) the lookup writes ask for Full on the Case
+  // settings page, not service_cases.manage.
+  page_access: { 'service_cases.settings': 'full' },
 } as any;
 
 function mount() {

@@ -29,6 +29,11 @@ const { outstandingPoItems, grnDetail, addGrnItem } = vi.hoisted(() => ({
 
 vi.mock("../../vendor/scm/lib/suppliers-queries", () => ({
   useOutstandingPoItems: outstandingPoItems,
+  /* Every case here is scoped to a PO (?poId=), which never reads the paged picker. */
+  useOutstandingPoItemsPaged: () => ({
+    data: undefined, isLoading: false, isError: false, isFetching: false,
+    fetchNextPage: vi.fn(), hasNextPage: false, isFetchingNextPage: false, isFetchNextPageError: false,
+  }),
 }));
 vi.mock("../../vendor/scm/lib/grn-queries", () => ({
   useGrnDetail: grnDetail,
@@ -192,5 +197,32 @@ describe("GRN-from-PO picker: the server's scope block names the cause", () => {
 
     expect(screen.getByText(/cut short/i)).toBeTruthy();
     expect(screen.getByText(/does NOT mean there is nothing left to receive/)).toBeTruthy();
+  });
+});
+
+/* PR #1126 deferred D20. Fails before the fix: pressing again re-added the line that had already landed. */
+describe("GRN-from-PO append: a partial failure is not added twice", () => {
+  it("unticks the lines that landed, so pressing again appends only the rest", async () => {
+    const { fireEvent, waitFor } = await import("@testing-library/react");
+    const mutateAsync = vi.fn()
+      .mockResolvedValueOnce({ item: { id: "gi-1" } })
+      .mockRejectedValueOnce(new Error("connection reset"))
+      .mockResolvedValue({ item: { id: "gi-2" } });
+    grnDetail.mockReturnValue({ data: { grn: { id: "grn-9", grn_number: "GRN-9", supplier_id: "sup-1", warehouse_id: "wh-1" } }, isLoading: false, isError: false });
+    addGrnItem.mockReturnValue({ mutateAsync, isPending: false });
+    outstandingPoItems.mockReturnValue(loaded([
+      poLine({ poItemId: "poi-1", itemCode: "SOFA-A", unitPriceSen: 100 }),
+      poLine({ poItemId: "poi-2", itemCode: "SOFA-B", unitPriceSen: 100 }),
+    ]));
+    at(`${convertToLink("poToGrn", "po-1")}&appendToGrn=grn-9`);
+
+    /* Scoped to one PO, the picker ticks every outstanding line itself. */
+    fireEvent.click(screen.getByRole("button", { name: /Add 2 lines to Goods Receipt/ }));
+    await waitFor(() => expect(screen.getByText(/1 of 2 lines were added/)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: /Add 1 line to Goods Receipt/ }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(3));
+    expect(mutateAsync.mock.calls.map((c) => (c[0] as { purchaseOrderItemId: string }).purchaseOrderItemId))
+      .toEqual(["poi-1", "poi-2", "poi-2"]);
   });
 });

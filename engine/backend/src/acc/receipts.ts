@@ -30,6 +30,7 @@
 
 import { docMonthTag, mintMonthlyDocNo } from '../scm/lib/doc-no';
 import { docPrefixForCode } from '../scm/lib/companyScope';
+import { chunkIn } from '../scm/lib/paginate-all';
 import { resolveRoles } from './rules';
 
 export const CASH_SERIES_LETTER = 'C';
@@ -72,6 +73,106 @@ export async function channelLetterFor(
     .select('letter').eq('company_id', companyId).eq('account_code', accountCode).maybeSingle();
   if (error) return { ok: false, reason: error.message };
   return { ok: true, letter: (data as { letter?: string } | null)?.letter ?? null };
+}
+
+/** Who a receipt is from — RECEIVED FROM on its print (ported from Houzs, owner 2026-11-09: 为甚没有name 这些): the
+    order's customer name, phone and address, and its brand (the letterhead the paper prints under); an invoice
+    payment's, its invoice's name and brand with its order's phone and address, and the order's number. Keyed
+    `${payment_source}:${doc_no}`. A Conts invoice payment's doc_no is its invoice number (receiptPaper); an older one
+    may still hold the invoice's id, so both are looked up. Best-effort: a read that fails leaves the map short — a
+    receipt prints without them rather than not at all. */
+export type ReceiptParty = { name: string | null; phone: string | null; addressLines: string[]; salesOrder: string | null; branding: string | null };
+
+const textOf = (v: unknown): string | null => {
+  const s = String(v ?? '').trim();
+  return s === '' ? null : s;
+};
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function loadReceiptParties(
+  sb: Parameters<typeof receiptPaper>[0],
+  companyId: number,
+  receipts: ReadonlyArray<{ payment_source?: unknown; doc_no?: unknown }>,
+): Promise<Map<string, ReceiptParty>> {
+  const out = new Map<string, ReceiptParty>();
+  const soDocs = new Set<string>();
+  const siIds = new Set<string>();
+  const siNos = new Set<string>();
+  for (const r of receipts) {
+    const doc = textOf(r.doc_no);
+    if (!doc) continue;
+    if (String(r.payment_source ?? '') === 'SIPAY') (UUID_RE.test(doc) ? siIds : siNos).add(doc); else soDocs.add(doc);
+  }
+  try {
+    type Inv = { name: string | null; soDocNo: string | null; branding: string | null };
+    const invoices = new Map<string, Inv>();
+    const readInvoices = async (keys: Set<string>, col: 'id' | 'invoice_number') => {
+      if (keys.size === 0) return;
+      const si = await chunkIn<Record<string, unknown>>([...keys], (batch, lo, hi) => sb.from('sales_invoices')
+        .select('id, invoice_number, debtor_name, so_doc_no, branding').eq('company_id', companyId).in(col, batch).order('id').range(lo, hi));
+      if (si.error) throw new Error(`invoices: ${si.error.message}`);
+      for (const r of si.data) {
+        const soDocNo = textOf(r.so_doc_no);
+        invoices.set(String(r[col]), { name: textOf(r.debtor_name), soDocNo, branding: textOf(r.branding) });
+        if (soDocNo) soDocs.add(soDocNo);
+      }
+    };
+    await readInvoices(siIds, 'id');
+    await readInvoices(siNos, 'invoice_number');
+    const orders = new Map<string, ReceiptParty>();
+    if (soDocs.size > 0) {
+      const so = await chunkIn<Record<string, unknown>>([...soDocs], (batch, lo, hi) => sb.from('mfg_sales_orders')
+        .select('doc_no, debtor_name, phone, address1, address2, city, postcode, customer_state, branding')
+        .eq('company_id', companyId).in('doc_no', batch).order('doc_no').range(lo, hi));
+      if (so.error) throw new Error(`orders: ${so.error.message}`);
+      for (const r of so.data) {
+        const town = [textOf(r.postcode), textOf(r.city)].filter(Boolean).join(' ');
+        orders.set(String(r.doc_no), {
+          name: textOf(r.debtor_name),
+          phone: textOf(r.phone),
+          addressLines: [textOf(r.address1), textOf(r.address2), textOf(town), textOf(r.customer_state)].filter((x): x is string => x !== null),
+          salesOrder: String(r.doc_no),
+          branding: textOf(r.branding),
+        });
+      }
+    }
+    for (const r of receipts) {
+      const doc = textOf(r.doc_no);
+      if (!doc) continue;
+      if (String(r.payment_source ?? '') === 'SIPAY') {
+        const inv = invoices.get(doc);
+        if (!inv) continue;
+        const o = inv.soDocNo ? orders.get(inv.soDocNo) : undefined;
+        out.set(`SIPAY:${doc}`, {
+          name: inv.name ?? o?.name ?? null, phone: o?.phone ?? null, addressLines: o?.addressLines ?? [],
+          salesOrder: inv.soDocNo, branding: inv.branding ?? o?.branding ?? null,
+        });
+      } else {
+        const o = orders.get(doc);
+        if (o) out.set(`SOPAY:${doc}`, o);
+      }
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[receipts] customer details not read:', e);
+  }
+  return out;
+}
+
+/** A receipt as its print reads it: its own name, else its party's; the party's phone, address lines, order and brand. */
+export function withReceiptParty<T extends { payment_source?: unknown; doc_no?: unknown; customer_name?: unknown }>(
+  r: T,
+  parties: Map<string, ReceiptParty>,
+): T & { customer_name: string | null; phone: string | null; address_lines: string[]; sales_order: string | null; branding: string | null } {
+  const p = parties.get(`${String(r.payment_source ?? '')}:${String(r.doc_no ?? '')}`);
+  return {
+    ...r,
+    customer_name: textOf(r.customer_name) ?? p?.name ?? null,
+    phone: p?.phone ?? null,
+    address_lines: p?.addressLines ?? [],
+    sales_order: p?.salesOrder ?? null,
+    branding: p?.branding ?? null,
+  };
 }
 
 /**

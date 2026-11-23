@@ -30,7 +30,8 @@ import { useAddLineHotkey } from '../../vendor/scm/lib/useAddLineHotkey';
 import { Button } from '@2990s/design-system';
 import { PhoneInput } from '../../vendor/scm/components/PhoneInput';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { contentKeyFor, settleOutcome, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readScmHandoff, removeScmHandoff } from '../../lib/scmHandoffStorage';
 import {
   useCreateConsignmentNote, useAddConsignmentNotePayment,
@@ -78,11 +79,10 @@ export const ConsignmentNoteNew = () => {
   const fromConsignmentOrder = searchParams.get('fromConsignmentOrder');
   const fromPicks = searchParams.get('fromPicks') === '1';
 
-  /* One key for the one note this page is open to raise (lib/idempotency.ts).
-     Route-level form, navigates to the note detail on success, so the MOUNT is
-     exactly one note: stable across re-renders and across a re-press after a
-     stalled submit, fresh on remount. */
-  const idemKey = useIdempotencyKey();
+  /* One key per consignment note CONTENT (lib/idempotency.ts createContentBoundKey): the same form re-pressed after a stall
+     replays the first answer instead of raising a second document; a save the server refused releases the key, so
+     the corrected form is a new request instead of a replay of the refusal (audit 20 Nov 2026, items 19-24). */
+  const idemKeys = useContentBoundIdempotencyKey();
   const create = useCreateConsignmentNote();
   const addPayment = useAddConsignmentNotePayment();
   const driversQ = useDrivers();
@@ -298,9 +298,8 @@ export const ConsignmentNoteNew = () => {
       return;
     }
 
-    create.mutate(
-      {
-        idempotencyKey: idemKey,
+    void (async () => {
+    const payload = {
         doDate: doDate || undefined,
         debtorName,
         debtorCode: debtorCode || undefined,
@@ -341,8 +340,12 @@ export const ConsignmentNoteNew = () => {
           variants: l.variants,
           consignmentSoItemId: l.soItemId,
         })),
-      },
-      {
+    };
+    const key = await contentKeyFor(idemKeys, payload, () => serviceConfirm(unansweredSaveQuestion('consignment note', 'Consignment > Consignment Notes')));
+    if (!key) return;
+    create.mutate(
+      { ...payload, idempotencyKey: key },
+      settleOutcome(idemKeys, {
         onSuccess: async (res: { id: string; doNumber: string }) => {
           const { failed } = await flushPaymentDrafts(res.id);
           if (failed > 0) {
@@ -358,8 +361,9 @@ export const ConsignmentNoteNew = () => {
           navigate(`/scm/consignment-notes/${res.id}`);
         },
         onError: (err) => notify({ title: 'Save failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' }),
-      },
+      }),
     );
+    })();
   };
 
   return (
@@ -449,7 +453,7 @@ export const ConsignmentNoteNew = () => {
 
       {/* ── DELIVERY INFO ── */}
       <section className={styles.card}>
-        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Delivery Info</h2></header>
+        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Delivery info</h2></header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
             <label className={styles.field}>
@@ -511,7 +515,7 @@ export const ConsignmentNoteNew = () => {
       {/* ── EMERGENCY CONTACT ── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Emergency Contact</h2>
+          <h2 className={styles.cardTitle}>Emergency contact</h2>
           <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
             Used only if we cannot reach the customer on delivery day
           </span>
@@ -543,7 +547,7 @@ export const ConsignmentNoteNew = () => {
 
       {/* ── DELIVERY ADDRESS ── */}
       <section className={styles.card}>
-        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Delivery Address</h2></header>
+        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Delivery address</h2></header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
             <label className={styles.field} style={{ gridColumn: 'span 4' }}>
@@ -603,7 +607,7 @@ export const ConsignmentNoteNew = () => {
 
       {/* ── LINE ITEMS ── */}
       <section className={styles.card}>
-        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Line Items ({lines.length})</h2></header>
+        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Line items ({lines.length})</h2></header>
         <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {lines.map((line, idx) => (
             <SoLineCard

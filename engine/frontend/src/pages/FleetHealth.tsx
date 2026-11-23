@@ -555,7 +555,7 @@ export function FleetHealth() {
     <div className="space-y-5">
       <PageHeader
         eyebrow="Operations · Fleet"
-        title="Fleet Health"
+        title="Fleet health"
         description="Lorry compliance, expiry reminders and dispatch readiness. Status is derived from compliance, service mileage and the out-of-service flag — not set by hand."
         actions={
           <Button

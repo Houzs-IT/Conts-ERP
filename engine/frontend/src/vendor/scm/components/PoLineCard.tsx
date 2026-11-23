@@ -48,6 +48,7 @@ import { MoneyInput } from './MoneyInput';
 import { NumberInput } from './NumberInput';
 import { DiscountInput } from './DiscountInput';
 import { SearchableSelect } from './SearchableSelect';
+import { SoLineBinderSelect } from './SoLineBinderSelect';
 import styles from '../../../pages/scm-v2/SalesOrderDetail.module.css';
 import { DateField } from "./DateField";
 import { showsVariantEditor } from '../lib/variant-editor-groups';
@@ -145,6 +146,7 @@ export const PoLineCard = ({
   hidePoFields = false,
   identityReadOnly = false,
   soLinkOptions,
+  soLinkBinder,
   showRemarks = false,
   photos = null,
 }: {
@@ -209,6 +211,9 @@ export const PoLineCard = ({
       the SAME /outstanding-so-items shortage view the From-SO picker and the
       mobile convert wizard use, rather than inventing a second query. */
   soLinkOptions?: Array<{ value: string; label: string }>;
+  /** The same picker, but it loads the candidate SO lines itself, only when opened, one page at a time
+      (SoLineBinderSelect). `linkedLabel` names the line already bound when the editor opened. */
+  soLinkBinder?: { linkedLabel: string | null };
   /** Render the per-line Remarks box (writes `notes`). OPT-IN, and default OFF
       on purpose: this card is reused by the Purchase Invoice and the
       Purchase-Consignment Order details, and each of those parents enumerates
@@ -454,6 +459,19 @@ export const PoLineCard = ({
           first and is the default. Only lines still short of supply for THIS
           SKU are offered (the parent filters); the server re-checks company,
           cancellation and SKU match and refuses a mismatch. */}
+      {soLinkBinder && !soLinkOptions && !hidePoFields && (
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Source Sales Order line (optional)</span>
+          <SoLineBinderSelect
+            className={styles.fieldSelect}
+            itemCode={l.itemCode}
+            value={l.soItemId ?? null}
+            linkedLabel={soLinkBinder.linkedLabel}
+            disabled={disabled}
+            onChange={(v) => onChange({ soItemId: v })}
+          />
+        </label>
+      )}
       {soLinkOptions && !hidePoFields && (
         <label className={styles.field}>
           <span className={styles.fieldLabel}>Source Sales Order line (optional)</span>

@@ -7,6 +7,7 @@ import { StaleBanner, TableSkeleton } from '../../components/DataState';
 import { EmptyState } from '../../components/States';
 import { LockBars } from '../../components/LockBar';
 import { Modal } from '../../components/Modal';
+import { MoneyInput } from '../../components/inputs';
 import { DataTable, type Column } from '../../components/DataTable';
 import { Segmented as Tabs } from '../../components/ops/OpsUi';
 import { useApi } from '../../lib/useApi';
@@ -19,9 +20,15 @@ import { PAYER_LABEL } from '../../lib/revenueModel';
 import { useUrlState, shiftMonth } from './listKit';
 import { ListToolbar } from '../../components/ListToolbar';
 import {
-  KINDS, KIND_LABEL, billState, buildCells, buildRequestCells, months as monthsOf, requestState, unitAverages, unusual,
-  type Cell, type GridBill, type UtilityKind, type UnusualRow,
+  KINDS, KIND_LABEL, billState, buildCells, buildRequestCells, months as monthsOf, requestState, sentBack, unitAverages, unusual,
+  type Cell, type GridBill, type SentBackRequest, type UtilityKind, type UnusualRow,
 } from '../../lib/utilityGrid';
+import { api, errorMessage } from '../../lib/api';
+import { useToast } from '../../components/Toast';
+import { billEdit, partNow } from '../../lib/utilityBillEdit';
+import { OwnerPaidTick } from '../owners/ExpenseEntry';
+import { UnitPicker } from '../../components/UnitPicker';
+import { useUnitRoster } from '../../lib/useUnitRoster';
 
 const UtilitiesModal = lazy(() => import('../owners/ExpenseEntry').then(m => ({ default: m.UtilitiesModal })));
 const AddUtilityBill = lazy(() => import('../../components/AddUtilityBill').then(m => ({ default: m.AddUtilityBill })));
@@ -92,7 +99,7 @@ export default function UtilityListing() {
             : <AddUtilityBill month={to} onClose={() => setEntry(null)} onSaved={reload} />}
         </Suspense>
       )}
-      {open && <BillPanel {...open} mode={mode} onClose={() => setOpen(null)} />}
+      {open && <BillPanel {...open} mode={mode} onClose={() => setOpen(null)} onSaved={() => { setOpen(null); reload(); }} />}
     </>
   );
   const filters = (
@@ -131,6 +138,7 @@ export default function UtilityListing() {
             last month to begin with. */}
         <LockBars stages={['utilities']} onChange={reload} />
         {error && <StaleBanner message={data ? `Showing the last figures we have. ${error}` : error} onRetry={reload} />}
+        {mode === 'request' && <SentBack requests={sentBack(data?.bills ?? [])} units={data?.units ?? []} onSent={reload} />}
         {view !== 'unusual'
           ? <AllBills units={units} months={monthList} kinds={shownKinds} cells={cells} nights={data?.nights ?? {}} loading={loading && !data} mode={mode}
               filtered={!!(building || q || purpose)} onUnit={u => url.set({ unit: u.id })} onOpen={(unit, month, k, cell) => setOpen({ unit, month, kind: k, cell })} />
@@ -336,7 +344,113 @@ function Unusual({ units, months, cells, nights, loading, error, onRetry, kind, 
   );
 }
 
-function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose }: { unit: Unit; month: string; kind: UtilityKind | 'total'; cell: Cell; mode?: Mode; onClose: () => void }) {
+/** Whether a bill's amount can still be changed from its cell (chew, 19 Nov 2026: until the payment is processed; 20 Nov
+ *  2026: record-only bills too): its statement not final, not a record kept from AutoCount, and no request or one still
+ *  waiting or sent back. The server has the last word (a voucher or AP invoice on the request refuses it). */
+const editable = (b: GridBill) => !b.final && (!b.recordOnly || !!b.scanned)
+  && (!b.request || ['SUBMITTED', 'WITHDRAWN', 'REJECTED'].includes(b.request.status));
+
+/** The whole printed bill and the owner's own part changed in place (chew, 19 Nov 2026); the shared part is the rest. */
+function EditAmount({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) {
+  const whole = bill.whole ?? bill.request?.amount ?? bill.amount;
+  const now = { whole, amount: bill.amount, recordOnly: bill.recordOnly };
+  const wasPart = partNow(now);
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState<number | null>(whole);
+  const [part, setPart] = useState<number | null>(wasPart);
+  const [busy, setBusy] = useState(false);
+  const [paid, setPaid] = useState(false);
+  const toast = useToast();
+  if (!open) return <div><Button size="sm" variant="secondary" icon={<Icon name="Pencil" size="sm" />} onClick={() => setOpen(true)}>Edit amount</Button></div>;
+  /* A record-only bill whose part is left as it was follows the whole, so it stays the owner's. */
+  const partTyped = part !== wasPart;
+  const next = value == null ? null : billEdit(now, value, partTyped ? part ?? 0 : null);
+  const ownerPart = next?.ownerPart ?? part ?? 0;
+  const tooSmall = next != null && next.share < 0;
+  const owner = bill.chargeTo === 'owner';
+  /* "Owner paid this bill" (chew, 20 Nov 2026: the owner changed after the bill went for payment): only off a request
+     that is not waiting, so finance never pays it; a waiting one is withdrawn by the save, whoever sent it. */
+  const canMarkPaid = !bill.ownerPaid;
+  const same = value === whole && !partTyped && !paid;
+  const save = async () => {
+    if (value == null || tooSmall) return;
+    setBusy(true);
+    try {
+      const r = await api.patch<{ request: string | null; withdrawn?: string | null; notice: string | null }>(`/expenses/utilities/bills/${encodeURIComponent(bill.id)}`,
+        { amount: value, ...(partTyped ? { ownerPart } : {}), ...(paid ? { ownerPaid: true } : {}) });
+      toast({ tone: 'success', title: 'Bill saved.', body: [r.request ? `${r.request} now asks for the new amount.` : '',
+        paid ? `${r.withdrawn ? `${r.withdrawn} withdrawn; ` : bill.request?.no ? `Taken off ${bill.request.no}; ` : ''}the whole bill goes back to the owner as O2.` : '', r.notice ?? ''].filter(Boolean).join(' ') || undefined });
+      onSaved();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'The bill was not changed.', body: errorMessage(e, 'Try again in a moment.') });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 p-2 rounded-control border border-dashed border-line">
+      <MoneyInput label="Whole bill (RM)" minSen={1} valueSen={value} onChangeSen={setValue}
+        error={tooSmall ? `At least the owner's own part, ${rm(ownerPart)}.` : undefined} />
+      {owner && <MoneyInput label="Owner's own part (RM)" valueSen={partTyped ? part : ownerPart} onChangeSen={setPart}
+        help={bill.recordOnly ? 'The whole bill is the owner\'s now. Put a smaller part to share the rest.'
+          : wasPart > 0 ? 'Replaces the part set by hand and the days outside the contract, as one owner line.' : 'Charged to the owner alone, after the share.'} />}
+      {next && !tooSmall && (
+        <span className="text-meta text-muted-ink">{next.recordOnly ? `The whole bill, ${rm(value!)}, is the owner's (record only)` : `${rm(next.share)} shared${ownerPart > 0 ? `; ${rm(ownerPart)} the owner's alone` : ''}`}; the provider is paid {rm(value!)}.</span>
+      )}
+      {canMarkPaid && <OwnerPaidTick label={`${KIND_LABEL[bill.kind]} ${monthLabel(bill.billMonth)}`} checked={paid} onChange={setPaid} />}
+      {paid && bill.request?.status === 'SUBMITTED' && <span className="text-meta text-muted-ink">{bill.request.no ?? 'Its payment request'} is withdrawn when you save, so finance does not pay it. Not if a voucher is already made: finance cancels that first.</span>}
+      {bill.request?.status === 'SUBMITTED' && value !== whole && <span className="text-meta text-muted-ink">{bill.request.no ?? 'Its payment request'} is updated to the new amount, as long as no voucher is made yet.</span>}
+      <div className="flex gap-2">
+        <Button size="sm" variant="primary" loading={busy} disabled={value == null || tooSmall || same} onClick={() => void save()}>Save</Button>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setOpen(false); setValue(whole); setPart(wasPart); setPaid(false); }}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
+/** A bill recorded to the wrong unit moved to the right one (chew, 20 Nov 2026), with its owner lines, its page and a
+ *  waiting payment request (POST /expenses/utilities/bills/:id/unit). Same rule as the amount: until the voucher is
+ *  processed and while the statement is not final. */
+function MoveUnit({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) {
+  const roster = useUnitRoster();
+  const [open, setOpen] = useState(false);
+  const [to, setTo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  if (!open) return <div><Button size="sm" variant="secondary" icon={<Icon name="ArrowRightLeft" size="sm" />} onClick={() => setOpen(true)}>Change unit</Button></div>;
+  const units = roster.filter(u => u.id !== bill.unitId);
+  const save = async () => {
+    if (!to) return;
+    setBusy(true);
+    try {
+      const r = await api.post<{ ownerLines: number; accountMoved: boolean; request: string | null; rolled: boolean; deductMonth: string; notice: string | null }>(
+        `/expenses/utilities/bills/${encodeURIComponent(bill.id)}/unit`, { unitId: to });
+      const u = roster.find(x => x.id === to);
+      toast({ tone: 'success', title: `Bill moved to ${u ? u.unitCode || u.unitNumber : 'the other unit'}.`, body: [
+        r.ownerLines ? 'Its owner lines went with it, to that unit\'s owner.' : '',
+        r.request ? `${r.request} now names that unit.` : '',
+        r.rolled ? `Deducted on the ${monthLabel(r.deductMonth)} statement (late bill).` : '',
+        r.notice ?? ''].filter(Boolean).join(' ') || undefined });
+      onSaved();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'The bill was not moved.', body: errorMessage(e, 'Try again in a moment.') });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 p-2 rounded-control border border-dashed border-line">
+      <UnitPicker label="Move to unit" units={units} value={to} onChange={setTo} autoFocus />
+      <span className="text-meta text-muted-ink">The bill, its owner lines and its page move to that unit and its owner{bill.request?.status === 'SUBMITTED' ? `; ${bill.request.no ?? 'its payment request'} is changed too, as long as no voucher is made yet` : ''}. The owner&apos;s own part stays as it is: check it with Edit amount after.</span>
+      <div className="flex gap-2">
+        <Button size="sm" variant="primary" loading={busy} disabled={!to} onClick={() => void save()}>Move bill</Button>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setOpen(false); setTo(''); }}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
+function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose, onSaved }: { unit: Unit; month: string; kind: UtilityKind | 'total'; cell: Cell; mode?: Mode; onClose: () => void; onSaved: () => void }) {
   const title = `${unitName(unit)} · ${kind === 'total' ? 'All bills' : KIND_LABEL[kind]} · ${monthLabel(month)}`;
   return (
     <Modal title={title} sub={`${cell.bills.length === 1 ? '1 bill' : `${cell.bills.length} bills`}, ${rm(cell.amount)}`} onClose={onClose}
@@ -350,20 +464,70 @@ function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose }: { unit: 
                 ? <StatusBadge entity="utility_request" value={requestState(b.request.status)!} size="sm" />
                 : <StatusBadge entity="utility_bill" value={billState(b)} size="sm" />}
             </div>
-            {b.request && <Row label="Payment request">{b.request.no ?? 'Sent'} · {monthLabel(b.request.month)}</Row>}
+            {b.request && <Row label="Payment request">{b.request.no ?? 'Sent'} · {monthLabel(b.request.month)}{returnedLabel(b.request) ? ` · ${returnedLabel(b.request)}` : ''}</Row>}
+            {b.request?.reason && returnedLabel(b.request) && <Row label="Why">{b.request.reason}</Row>}
             {mode === 'request' && b.request?.amount != null && b.request.amount !== b.amount && <Row label="On the owner statement">{rm(b.amount)} (days inside the contract)</Row>}
             <Row label="Bill month">{monthLabel(b.billMonth)}</Row>
             <Row label="Deducted on">{monthLabel(b.deductMonth)} statement{b.rolled ? ' (late bill)' : ''}</Row>
             <Row label="Who pays">{PAYER_LABEL[b.chargeTo] ?? b.chargeTo}</Row>
+            {b.ownerPaid && <Row label="Provider paid by">The owner (the whole bill given back as O2)</Row>}
             {b.reference && <Row label="Account or reference">{b.reference}</Row>}
             {b.receiptId
               ? <div><Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />}
                   onClick={() => downloadFile(`/documents/${encodeURIComponent(b.receiptId!)}/download`).catch(notifyFailure)}>View bill</Button></div>
               : <span className="text-meta text-muted-ink">No bill file attached.</span>}
+            {editable(b) && <EditAmount bill={b} onSaved={onSaved} />}
+            {editable(b) && <MoveUnit bill={b} onSaved={onSaved} />}
           </div>
         ))}
       </div>
     </Modal>
+  );
+}
+
+/** "Rejected by Chew" or "Withdrawn" for a request that came back, else null. */
+function returnedLabel(r: { status: string; decidedBy?: string | null }): string | null {
+  if (r.status === 'REJECTED') return `Rejected${r.decidedBy ? ` by ${r.decidedBy}` : ''}`;
+  return r.status === 'WITHDRAWN' ? 'Withdrawn' : null;
+}
+
+/** Payment requests finance sent back, or that were withdrawn (chew, 13 Nov 2026; SOP 3.10): why, their bills, and Send
+ *  again, which sends the same request and number with its bills as they are now. A bill is fixed first on "Enter this
+ *  month's bills", where a bill on a request that came back can be changed and keeps the request. */
+function SentBack({ requests, units, onSent }: { requests: SentBackRequest[]; units: Unit[]; onSent: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+  if (!requests.length) return null;
+  const unitOf = new Map(units.map(u => [u.id, u]));
+  const send = async (r: SentBackRequest) => {
+    setBusy(r.id);
+    try {
+      await api.post(`/expenses/utilities/payment-requests/${encodeURIComponent(r.id)}/resend`, {});
+      toast({ tone: 'success', title: `${r.no ?? 'The payment request'} is with finance again.` });
+      onSent();
+    } catch (e) {
+      toast({ tone: 'critical', title: `${r.no ?? 'The payment request'} was not sent.`, body: errorMessage(e, 'Try again in a moment.') });
+    } finally { setBusy(null); }
+  };
+  return (
+    <section aria-label="Payment requests sent back" className="flex flex-col gap-2 p-3 rounded-card border border-solid border-warning-line bg-warning-bg">
+      <div className="flex flex-col gap-0.5">
+        <h2 className="text-copy font-semibold">Sent back to fix</h2>
+        <p className="text-meta text-muted-ink">Fix a bill on "Enter this month's bills" first. Send again sends the same request with its bills as they are now.</p>
+      </div>
+      {requests.map(r => (
+        <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-2 [border-top:1px_solid_var(--color-line)]">
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-copy font-semibold">{r.no ?? 'Payment request'} · <span className="text-warning">{returnedLabel(r)}</span> · <span className="tabular-nums">{rm(r.amount)}</span></span>
+            {r.reason && <span className="text-meta">{r.reason}</span>}
+            <span className="text-meta text-muted-ink">
+              {r.bills.length === 1 ? '1 bill' : `${r.bills.length} bills`}: {r.bills.map(b => `${unitOf.get(b.unitId) ? unitName(unitOf.get(b.unitId)!) : 'Unit'} ${KIND_LABEL[b.kind]} ${monthLabel(b.billMonth)}`).join(', ')}
+            </span>
+          </div>
+          <Button size="sm" variant="primary" loading={busy === r.id} disabled={!!busy && busy !== r.id} onClick={() => void send(r)}>Send again</Button>
+        </div>
+      ))}
+    </section>
   );
 }
 

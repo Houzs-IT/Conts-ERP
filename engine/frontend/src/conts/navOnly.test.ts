@@ -27,16 +27,16 @@ describe("Conts switched-off modules", () => {
         { label: "Money in", children: [{ label: "Credit Notes", to: "/scm/credit-notes" }] },
         { label: "Plans", children: [{ label: "Forecast", to: "/scm/forecast" }] },
       ] },
-      { label: "Supply Chain", to: "/scm", children: [
+      { label: "Supply chain", to: "/scm", children: [
         { label: "Consignment", to: "/scm/consignment", children: [{ label: "Consignment Note", to: "/scm/consignment-notes" }] },
-        { label: "Sales Orders", to: "/scm/sales-orders" },
+        { label: "Sales orders", to: "/scm/sales-orders" },
       ] },
       { label: "HR", to: "/scm/hr/commission" },
     ];
     const out = contsNavOnly(tabs);
-    expect(out.map((t) => t.label)).toEqual(["Finance", "Supply Chain"]);
+    expect(out.map((t) => t.label)).toEqual(["Finance", "Supply chain"]);
     expect(out[0].children?.map((c) => c.label)).toEqual(["Money in"]);
-    expect(out[1].children?.map((c) => c.label)).toEqual(["Sales Orders"]);
+    expect(out[1].children?.map((c) => c.label)).toEqual(["Sales orders"]);
   });
 
   it("the real menu carries no switched-off link", async () => {
@@ -52,6 +52,6 @@ describe("Conts switched-off modules", () => {
 
   it("keeps Mail Center (CONTS-0004)", async () => {
     const { NAV_TABS } = await import("../components/Sidebar");
-    expect(NAV_TABS.find((t) => t.label === "Mail Center")?.to).toBe("/mail-center");
+    expect(NAV_TABS.find((t) => t.label === "Mail center")?.to).toBe("/mail-center");
   });
 });

@@ -13,7 +13,8 @@ import { betaApi } from "./renovationBetaApi";
 
 export type DesignKind = "3d" | "2d";
 export type AppointmentKind = "site_measure" | "carpentry_measure" | "site_briefing";
-export type EventType = "client" | "measure" | "briefing" | "meeting" | "w3d" | "w2d" | "amend" | "po" | "update";
+/** A work of the list in Project Maintenance (migration 0342); the old fixed codes stay valid. */
+export type EventType = string;
 
 /** Every person of the company. `offered` (the project page's rule, routes/renovationProject.ts GET /people) is true
     only for people linked to an active user account; position and department come from that account. Older servers
@@ -26,11 +27,22 @@ export interface BetaBoardAppointment {
   onDate: string;
   atTime: string | null;
   personId: number | null;
+  /** Everyone going, first pick first (migration 0362); absent from an older server, which sends personId alone. */
+  personIds?: number[];
   withText: string | null;
+  /** Who goes, typed in when not picked from the list (migration 0349); absent from an older server. */
+  whoText?: string | null;
   doneAt: string | null;
 }
 
-export type BetaBoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string; outstandingSen?: number };
+/** paid: instalments fully received; absent from an older server. */
+export type BetaBoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string; outstandingSen?: number; paid?: number };
+
+/** A work of the list in Project Maintenance (migration 0342): an Add work type, and a Design step when inDesign. */
+export interface BetaWorkType {
+  id: number; code: string; label: string; rule: "booking" | "measure" | "approve_3d" | "approve_2d" | "payment_2";
+  bookable: boolean; inDesign: boolean; sortOrder: number; active: boolean; system: boolean;
+}
 
 export interface BetaBoardProject {
   id: number;
@@ -65,6 +77,12 @@ export interface BetaBoardProject {
   reviews: Array<{ fileId: number; sentOn: string | null; approvedOn: string | null }>;
   appointments: BetaBoardAppointment[];
   payment: BetaBoardPayment;
+  /** The newest calendar booking of each work of the list; absent from an older server. */
+  works?: Array<{ type: string; onDate: string; atTime: string | null; done?: boolean }>;
+  /** Sales order lines, and how many still miss a required variant; absent from an older server. */
+  variants?: { lines: number; missing: number; pending?: Array<{
+    itemCode: string; missing: string[]; id?: string; docNo?: string | null; description?: string | null; category?: string; variants?: Record<string, unknown>;
+  }> };
 }
 
 export interface BetaBoardEvent {
@@ -75,6 +93,8 @@ export interface BetaBoardEvent {
   type: string;
   note: string | null;
   personId: number | null;
+  personIds?: number[];
+  whoText?: string | null;
   done: boolean;
 }
 
@@ -85,6 +105,8 @@ export interface BetaBoard {
   people: BetaBoardPerson[];
   projects: BetaBoardProject[];
   events: BetaBoardEvent[];
+  /** The works of the list; absent from an older server (the old fixed list is used). */
+  workTypes?: BetaWorkType[];
 }
 
 export interface BoardRange { from: string; to: string }
@@ -98,7 +120,8 @@ export interface DesignPatch {
   person2dIds?: number[];
 }
 
-export interface AppointmentBody { onDate: string; atTime: string | null; personId: number | null; withText: string | null }
+/** personIds: everyone going, each with it on their own calendar; whoText: a typed name for someone not on the list. */
+export interface AppointmentBody { onDate: string; atTime: string | null; personIds: number[]; withText: string | null; whoText?: string | null }
 
 export interface EventBody {
   projectId: number | null;
@@ -106,7 +129,8 @@ export interface EventBody {
   atTime: string | null;
   type: EventType;
   note: string | null;
-  personId: number | null;
+  personIds: number[];
+  whoText?: string | null;
 }
 
 /** The one query key of the board. Home, Calendar and the workspace all use it, so one write refreshes them all. */

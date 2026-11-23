@@ -9,8 +9,8 @@ import { mayEditCredentials, usedBySql } from '../../../_lib/credentials';
 import { cleanStage } from '../../../_lib/media';
 
 /** GET /api/housekeeping/tasks/:id — what the clean's detail panel needs in one answer: the proof
- *  photos and videos, the unit's access (masked; the code itself is a separate audited reveal, for the roles that
- *  may see it), what the clean costs the unit and whether it has been charged, and the damage reported from it. */
+ *  photos and videos, the unit's access (the code in the clear for the cleaner on the job; masked for the office, whose
+ *  reveal is a separate audited call), what the clean costs the unit and whether it has been charged, and the damage reported from it. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -21,7 +21,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const t = await one<any>(env, `
     SELECT ${priced ? 't.amount, t.cleaner_pay, t.external_address, t.external_client, t.external_phone,' : ''} t.id, t.kind, t.state, t.unit_id, t.assignee_id, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, t.instructions, t.started_at, t.completed_at, t.guest_left_at,
            t.created_at, t.reservation_id, cb.full_name AS completed_by_name,
-           COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at, u.unit_number, p.name AS property_name
+           COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name
     FROM tasks t LEFT JOIN units u ON u.id = t.unit_id LEFT JOIN properties p ON p.id = u.property_id
     LEFT JOIN users cb ON cb.id = t.completed_by WHERE t.id = ?`, id);
   if (!t) return fail('NOT_FOUND', 'That cleaning job no longer exists. Refresh the list.', 404);
@@ -47,8 +47,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     instructions: t.instructions ?? null, startedAt: t.started_at ?? null, completedAt: t.completed_at ?? null, guestLeftAt: t.guest_left_at ?? null,
     completedBy: t.completed_by_name ?? null, createdAt: t.created_at ?? null, reservationId: t.reservation_id ?? null,
     media: media.map(m => ({ id: m.id, kind: m.kind, url: `/api/documents/${m.id}/download`, fileName: m.file_name, mimeType: m.mime_type, byteSize: Number(m.byte_size), uploadedAt: m.created_at, uploader: m.uploader ?? null, stage: cleanStage(m.file_name) })),
-    // Field staff get the instruction only, not even the masked tail (same rule as /api/access-credentials).
-    access: creds.map(c => ({ id: c.id, kind: c.kind, label: c.label, instruction: c.instruction, masked: field ? '' : mask(c.secret), hasCode: !!c.secret })),
+    // The cleaner on the job gets the code itself (only items marked for Cleaner); the office sees it masked and reveals it through the audited route.
+    access: creds.map(c => ({ id: c.id, kind: c.kind, label: c.label, instruction: c.instruction, masked: field ? '' : mask(c.secret), hasCode: !!c.secret, code: field ? c.secret || null : null })),
     mayReveal: mayEditCredentials(session),
     // The unit's car park bays (staff sheet UNIT, 17 Oct 2026), with the access details.
     parking: await parkingFor(env, t.unit_id),

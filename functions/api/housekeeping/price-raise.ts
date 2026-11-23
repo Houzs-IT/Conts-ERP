@@ -100,7 +100,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const window = { effectiveFrom, effectiveTo, backOn };
 
   if (unitId) {
-    const layoutColumn = (await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'layout_type' : 'NULL::text AS layout_type';
+    const layoutColumn = (await hasColumn(env, 'units', 'layout_type')) ? 'layout_type' : 'NULL::text AS layout_type';
     const unit = await one<{ bedrooms: number | null; layout_type: string | null }>(env, `SELECT bedrooms, ${layoutColumn} FROM units WHERE id = ?`, unitId);
     if (!unit) return fail('NOT_FOUND', 'That unit does not exist.', 404);
     const ownDates = backOn ? await ownDatesInside(env, item.id, unitId, effectiveFrom, backOn) : [];

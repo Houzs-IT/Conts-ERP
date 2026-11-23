@@ -4,7 +4,7 @@
 import type { CSSProperties, ReactElement } from "react";
 import { BETA, BETA_CHIP, GLASS, PILL_GLASS, PILL_MAIN, TONES } from "./renovationBetaTheme";
 import {
-  dayKey, dueOn, ds, eventsOn, groupOf, initials, listFor, monthCells, MONTHS, typeLabel,
+  dayKey, dueOn, ds, eventsOn, groupOf, initials, listFor, monthCells, MONTHS, typeLabel, whoName,
   type BoardModel, type CalEvent, type DueItem, type Viewing,
 } from "./renovationBetaBoard";
 import { Badge, BTN, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
@@ -37,12 +37,15 @@ function DeadlineChip({ x, who }: { x: DueItem; who: Viewing }): ReactElement {
   );
 }
 
-function EventChip({ e, who }: { e: CalEvent; who: Viewing }): ReactElement {
-  const [ink, bg] = BETA_CHIP[groupOf(e.type)];
+/* The project is named on the chip, as on a deadline chip: before, two bookings on one day read the same and only the
+   side list said which unit each was for. */
+function EventChip({ e, who, project }: { e: CalEvent; who: Viewing; project: string }): ReactElement {
+  const [ink, bg] = e.done ? BETA_CHIP.meet : BETA_CHIP[groupOf(e.type)];
+  const text = `${e.t ? `${e.t} ` : ""}${e.note || typeLabel(e.type)}${project ? ` · ${project}` : ""}`;
   return (
-    <div style={{ ...CHIP, borderLeft: `3px solid ${ink}`, background: bg, color: ink, fontWeight: 600, opacity: e.done ? 0.5 : 1 }}>
-      {who === "All" && e.who && <Badge name={e.who.name} />}
-      <span style={{ ...CLAMP, textDecoration: e.done ? "line-through" : undefined }}>{e.t ? `${e.t} ` : ""}{e.note || typeLabel(e.type)}</span>
+    <div title={whoName(e) ? `${text} · ${whoName(e)}` : text} style={{ ...CHIP, borderLeft: `3px solid ${ink}`, background: bg, color: ink, fontWeight: 600 }}>
+      {who === "All" && whoName(e) && <Badge name={whoName(e) ?? ""} />}
+      <span style={{ ...CLAMP, textDecoration: e.done ? "line-through" : undefined }}>{text}</span>
     </div>
   );
 }
@@ -93,7 +96,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
               const evs = eventsOn(m, who, day);
               const chips = [
                 ...dues.map((x) => <DeadlineChip key={`d${x.p.id}${x.k}`} x={x} who={who} />),
-                ...evs.map((e) => <EventChip key={e.id} e={e} who={who} />),
+                ...evs.map((e) => <EventChip key={e.id} e={e} who={who} project={projectTitle(m, e.projectId)} />),
               ];
               const dots = [...dues.map(() => TONES.red.dot), ...evs.map((e) => BETA_CHIP[groupOf(e.type)][0])];
               const isToday = day === m.today;
@@ -107,7 +110,7 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
                   onClick={() => onPick(day)}
                   style={{
                     minHeight: cellH, textAlign: "left", display: "flex", flexDirection: "column", alignItems: phone ? "center" : undefined, gap: 3, padding: phone ? "4px 2px" : 6, border: 0, borderTop: `1px solid ${BETA.lineSoft}`,
-                    background: isSel ? BETA.pick : BETA.row, outline: isSel ? `2px solid ${BETA.selInk}` : "none", outlineOffset: -2, font: "inherit", cursor: "pointer", minWidth: 0, color: BETA.ink,
+                    background: isSel ? BETA.pick : BETA.row, boxShadow: isSel ? `inset 0 0 0 2px ${BETA.selInk}` : undefined, font: "inherit", cursor: "pointer", minWidth: 0, color: BETA.ink,
                   }}
                 >
                   <span style={{ alignSelf: phone ? "center" : "flex-start", minWidth: 24, height: 24, borderRadius: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: isToday ? 700 : 500, background: isToday ? BETA.accentFill : "transparent", color: isToday ? "#FFFFFF" : BETA.ink }}>{d}</span>
@@ -153,13 +156,13 @@ export function BetaCalMonth({ m, who, view, selDay, onPrev, onNext, onToday, on
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: "block", fontWeight: 600 }}>{e.note || typeLabel(e.type)}{e.done ? " · done" : ""}</span>
                     <span style={{ display: "block", fontSize: 12, color: MUTED }}>
-                      {who === "All" && e.who && <><b style={{ color: BETA.ink }}>{e.who.name}</b> · </>}{ds(e.d)}{e.t ? ` · ${e.t}` : ""}{proj ? ` · ${proj}` : ""}
+                      {who === "All" && whoName(e) && <><b style={{ color: BETA.ink }}>{whoName(e)}</b> · </>}{ds(e.d)}{e.t ? ` · ${e.t}` : ""}{proj ? ` · ${proj}` : ""}
                     </span>
                   </span>
                   {canWrite && <span style={{ fontSize: 12, color: BETA.accent, fontWeight: 600 }}>Edit</span>}
                 </>
               );
-              const row: CSSProperties = { width: "100%", display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 0", border: 0, background: "transparent", textAlign: "left", font: "inherit", opacity: e.done ? 0.55 : 1, color: BETA.ink };
+              const row: CSSProperties = { width: "100%", display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 0", border: 0, background: "transparent", textAlign: "left", font: "inherit", color: BETA.ink };
               return (
                 <li key={e.id} style={{ borderTop: `1px solid ${BETA.lineSoft}` }}>
                   {canWrite ? <button type="button" onClick={() => onEditEvent(e)} style={{ ...row, cursor: "pointer" }}>{body}</button> : <div style={row}>{body}</div>}

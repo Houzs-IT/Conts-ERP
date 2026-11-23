@@ -85,3 +85,16 @@ export function materialCalculation(m: Pick<MaterialRow, "qty_needed" | "from_co
   const per = Math.round((Number(m.qty_needed) / Number(work.qty)) * 1000) / 1000;
   return `${Number(work.qty)}${work.uom ? ` ${work.uom}` : ""} × ${per}`;
 }
+
+/** A material's need as listed, to the gram: fmtQty shows whole numbers only, so a 0.5 sheet read "1" once the order started. */
+export const fmtNeed = (n: number): string => n.toLocaleString("en-MY", { maximumFractionDigits: 3 });
+
+/** Stock leaves in whole units: Start rounds a part unit up, and the screen says so next to what was issued. */
+export const issuedNote = (issued: number, needed: number, uom: string): string =>
+  issued > needed ? `Issued ${fmtNeed(issued)} ${uom}, rounded up from ${fmtNeed(needed)}` : `Issued ${fmtNeed(issued)} ${uom}`;
+
+/** Return stock goes back where it left from (the material status names that warehouse); else the first in the list. */
+export const returnWarehouseOf = (places: ReadonlyArray<{ id: string; code: string }>, leftFrom: string | null | undefined): string => {
+  const home = leftFrom == null ? undefined : places.find((w) => w.code === leftFrom);
+  return (home ?? places.at(0))?.id ?? "";
+};

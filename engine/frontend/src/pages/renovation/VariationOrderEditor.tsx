@@ -4,24 +4,34 @@
 // up the difference, and PO lines that bought omitted work are flagged.
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { CheckCircle2, Printer, Save, Send } from 'lucide-react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { CheckCircle2, Package, Printer, Save, Send } from 'lucide-react';
+import { QuotationSoPrint } from '../scm-v2/renovationQuotationPrint';
 import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
 import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapModal';
 import { useAuth } from '../../auth/AuthContext';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { lineAmounts, qtyLabel } from '../../vendor/shared/renovation-money';
-import { contractPostingWarning, refusalOf, renoSend, sectionsForSave, useBrands, useContract, useRenoMutation, useVo, type ContractPosting, type DocLine, type DocSection } from '../../lib/renovation/api';
+import { contractPostingWarning, refusalOf, renoSend, sectionsForSave, useBrands, useContract, useRenoMutation, useVo, type ContractPosting, type DocHeader, type DocLine, type DocSection } from '../../lib/renovation/api';
 import { useToast } from '../../hooks/useToast';
-import { buildPrintDoc } from '../../lib/renovation/print-doc';
 import { amountsOf, blankSection, DocEditor } from './DocEditor';
-import { PrintDialog } from './PrintDialog';
 import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
 import { Card, ErrorBanner, Field, inputCls, rm, StatusPill, todayIso } from './shared';
 import { cn } from '../../lib/utils';
 import { useRenovationDraft } from '../../lib/renovation/renovationFormDraft';
 import { RenovationDraftBanner } from './renovationDraftBanner';
+import { loadTemplateSections } from './fromTemplate';
+import { usePackages } from '../../lib/renovation/renovationPackagesApi';
+import { PackageConfirmDialog, PackagePickerDialog, type PackageAdd } from './renovationPackagePick';
+import { PkgMark } from './renovationPackageParts';
+import { withPackageAdd } from './renovationPackageAdd';
+
+/* Packages (owner, 20 Nov 2026): a package or kit picked in the product search or with From package opens its confirm
+   dialog; the ticked lines join the Add part as additions, each remembering the package. A kit with no area goes into
+   the area the user is in. The banner says what came from each package; Change picks reopens the dialog, Remove these
+   lines takes them all out. None of it is printed. */
+interface ConfirmOpen { packageId: string; defaultArea: string; sectionIndex: number | null; lineIndex: number | null; replace: boolean }
 
 interface OmitPick { lineId: string; omitQty: number | null }
 
@@ -44,11 +54,40 @@ export function VariationOrderEditor() {
   const [adds, setAdds] = useState<DocSection[]>([]);
   const [omits, setOmits] = useState<OmitPick[]>([]);
   const [dirty, setDirty] = useState(false);
+  /* Saved, and the server's copy is on its way: the form stays shut until it lands, or the refetch would replace what was typed meanwhile. */
+  const [settling, setSettling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [approveOpen, setApproveOpen] = useState(false);
   const [signedName, setSignedName] = useState('');
   const [printOpen, setPrintOpen] = useState(false);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
+  const [params, setParams] = useSearchParams();
+  const packages = usePackages();
+  const pkgById = useMemo(() => new Map((packages.data?.packages ?? []).map((x) => [x.id, x])), [packages.data]);
+  const packageCodes = useMemo(() => Object.fromEntries([...pkgById.values()].map((x) => [x.id, x.code])), [pkgById]);
+  const [confirm, setConfirm] = useState<ConfirmOpen | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const addPackage = (a: PackageAdd) => {
+    if (!confirm) return;
+    const kind = pkgById.get(a.packageId)?.kind ?? 'PACKAGE';
+    setAdds((cur) => withPackageAdd(cur, a, kind, confirm, confirm.replace));
+    setTitle((cur) => (cur.trim() ? cur : `From package ${a.code}`));
+    setDirty(true);
+    setConfirm(null);
+    toast.success(`${a.code} added. Check the lines, then save.`);
+  };
+  const lastArea = (): string => [...adds].reverse().find((s) => s.heading.trim())?.heading ?? '';
+  /* An old From template link (?template=) still works: the template's sections go into the Add part. */
+  const addTemplate = async (templateId: string): Promise<void> => {
+    if (!templateId) return;
+    try {
+      const t = await loadTemplateSections(templateId);
+      setAdds((cur) => [...cur.filter((s) => s.lines.some((l) => l.itemCode || l.description.trim())), ...t.sections]);
+      setTitle((cur) => cur.trim() ? cur : `From package template ${t.name}`);
+      setDirty(true);
+      toast.success(`${t.name} added. Check the lines, then save.`);
+    } catch (e) { setError(refusalOf(e).message); }
+  };
 
   useEffect(() => {
     if (!vo.data) return;
@@ -61,7 +100,22 @@ export function VariationOrderEditor() {
     setOmits(vo.data.sections.flatMap((s) => s.lines.filter((l) => l.voChange === 'OMIT' && l.omitTargetLineId).map((l) => ({ lineId: l.omitTargetLineId!, omitQty: l.omitQty ?? null }))));
     setSignedName(vo.data.signedName ?? '');
     setDirty(false);
+    setSettling(false);
   }, [vo.data]);
+  const fromPackage = params.get('package');
+  useEffect(() => {
+    if (!fromPackage || !vo.data || vo.data.status !== 'DRAFT') return;
+    setParams((p) => { const n = new URLSearchParams(p); n.delete('package'); return n; }, { replace: true });
+    setConfirm({ packageId: fromPackage, defaultArea: '', sectionIndex: null, lineIndex: null, replace: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the VO has loaded
+  }, [fromPackage, vo.data?.id]);
+  const fromTemplate = params.get('template');
+  useEffect(() => {
+    if (!fromTemplate || !vo.data || vo.data.status !== 'DRAFT') return;
+    setParams((p) => { const n = new URLSearchParams(p); n.delete('template'); return n; }, { replace: true });
+    void addTemplate(fromTemplate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the VO has loaded
+  }, [fromTemplate, vo.data?.id]);
 
   const draftValue = useMemo(() => ({ title, docDate, adds, omits }), [title, docDate, adds, omits]);
   const draft = useRenovationDraft(
@@ -81,6 +135,7 @@ export function VariationOrderEditor() {
   if (vo.isLoading || !vo.data) return <div className="p-8 text-center text-[13px] text-ink-muted">{vo.error ? refusalOf(vo.error).message : 'Loading variation order…'}</div>;
   const v = vo.data;
   const editable = v.status === 'DRAFT' && can('scm.renovation.quote');
+  const locked = !editable || run.isPending || (settling && vo.isFetching);
   const filesEditable = v.status !== 'CANCELLED' && can('scm.renovation.quote');
   const addSen = adds.reduce((s, sec) => s + sec.lines.reduce((t, l) => t + amountsOf(l).netSen, 0), 0);
   const omitSen = v.status === 'APPROVED' ? v.totals.omitSen : omits.reduce((s, o) => {
@@ -89,6 +144,16 @@ export function VariationOrderEditor() {
   }, 0);
   const netSen = v.status === 'APPROVED' ? v.totals.netSen : addSen + omitSen;
 
+  const packageGroups = [...new Set(adds.flatMap((s) => s.lines.map((l) => l.fromPackageId).filter((x): x is string => Boolean(x))))].map((pid) => {
+    const ls = adds.flatMap((s) => s.lines.filter((l) => l.fromPackageId === pid && (l.kind === 'ITEM' || l.kind === 'CHILD')));
+    const row = pkgById.get(pid);
+    return { id: pid, code: row?.code ?? null, name: row?.name ?? '', n: ls.length, m: row?.lines ?? 0, sen: ls.reduce((t, l) => t + amountsOf(l).netSen, 0),
+      area: adds.find((s) => s.lines.some((l) => l.fromPackageId === pid))?.heading ?? '' };
+  });
+  const removePackage = (pid: string) => {
+    setAdds(adds.map((s) => ({ ...s, lines: s.lines.filter((l) => l.fromPackageId !== pid) })).filter((s) => s.lines.length > 0));
+    setDirty(true);
+  };
   const bodySections = (): unknown[] => {
     /* The form opens with an empty line to type in: a VO that only omits must not be refused for it. */
     const typed = adds.map((s) => ({ ...s, lines: s.lines.filter((l) => l.kind !== 'ITEM' || l.itemCode || l.description.trim() || amountsOf(l).netSen !== 0) })).filter((s) => s.lines.length > 0);
@@ -100,7 +165,7 @@ export function VariationOrderEditor() {
     setError(null);
     try { await run.mutateAsync(fn); return true; } catch (e) { setError(refusalOf(e).message); return false; }
   };
-  const save = () => act(() => renoSend(`/variation-orders/${v.id}`, 'PUT', { version: v.version, title, docDate, sections: bodySections() })).then((ok) => { if (ok) { setDirty(false); draft.clear(); } });
+  const save = () => act(() => renoSend(`/variation-orders/${v.id}`, 'PUT', { version: v.version, title, docDate, sections: bodySections() })).then((ok) => { if (ok) { setDirty(false); setSettling(true); draft.clear(); } });
   const setStatus = async (to: string, confirm?: string) => {
     if (confirm && !(await serviceConfirm({ title: confirm, danger: to === 'CANCELLED' }))) return;
     if (dirty) { setError('Save your changes first.'); return; }
@@ -162,14 +227,30 @@ export function VariationOrderEditor() {
         <div className="min-w-0 space-y-4">
           <Card title="Details">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_200px]">
-              <Field label="Title"><input className={inputCls} disabled={!editable} value={title} onChange={(e) => { setTitle(e.target.value); setDirty(true); }} placeholder="e.g. Add wall skim, drop study table" /></Field>
-              <Field label="Date"><input type="date" className={inputCls} disabled={!editable} value={docDate} onChange={(e) => { setDocDate(e.target.value); setDirty(true); }} /></Field>
+              <Field label="Title"><input className={inputCls} disabled={locked} value={title} onChange={(e) => { setTitle(e.target.value); setDirty(true); }} placeholder="e.g. Add wall skim, drop study table" /></Field>
+              <Field label="Date"><input type="date" className={inputCls} disabled={locked} value={docDate} onChange={(e) => { setDocDate(e.target.value); setDirty(true); }} /></Field>
             </div>
           </Card>
           <div>
-            <h2 className="mb-2 text-[13.5px] font-semibold text-ink">Add</h2>
-            <DocEditor sections={adds} disabled={!editable} allowLumpSum={false} onChange={(s) => { setAdds(s); setDirty(true); }}
-              files={{ docType: 'variation_order', docId: v.id, canEdit: filesEditable }} />
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-[13.5px] font-semibold text-ink">Add</h2>
+              {editable && <Button variant="secondary" className="h-8" icon={<Package size={14} />} onClick={() => setPickerOpen(true)}>From package</Button>}
+            </div>
+            {packageGroups.map((g) => (
+              <div key={g.id} className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-[#e7b7d3] bg-[#fbe7f2]/60 px-3 py-2 text-[13px] text-ink">
+                <PkgMark code={g.code} />
+                <span><b>{g.code ?? 'Package'}</b>{g.name ? ` ${g.name}` : ''} added: {g.n}{g.m ? ` of ${g.m}` : ''} line{g.n === 1 ? '' : 's'}, {rm(g.sen)}</span>
+                <span className="flex-1" />
+                {editable && <Button variant="secondary" className="h-7 px-2 text-[12px]" onClick={() => setConfirm({ packageId: g.id, defaultArea: g.area, sectionIndex: null, lineIndex: null, replace: true })}>Change picks</Button>}
+                {editable && <Button variant="secondary" className="h-7 px-2 text-[12px]" onClick={() => removePackage(g.id)}>Remove these lines</Button>}
+              </div>
+            ))}
+            <DocEditor sections={adds} disabled={locked} allowLumpSum={false} onChange={(s) => { setAdds(s); setDirty(true); }}
+              files={{ docType: 'variation_order', docId: v.id, canEdit: filesEditable }} packageCodes={packageCodes}
+              onPickPackage={editable ? (h, si, li) => setConfirm({ packageId: h.id, defaultArea: adds[si]?.heading ?? '', sectionIndex: si, lineIndex: li, replace: false }) : undefined} />
+            <PackagePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} onPick={(h) => { setPickerOpen(false); setConfirm({ packageId: h.id, defaultArea: lastArea(), sectionIndex: null, lineIndex: null, replace: false }); }} />
+            <PackageConfirmDialog packageId={confirm?.packageId ?? null} defaultArea={confirm?.defaultArea ?? ''} onClose={() => setConfirm(null)} onAdd={addPackage}
+              initial={confirm?.replace ? adds.map((s) => ({ ...s, lines: s.lines.filter((l) => l.fromPackageId === confirm.packageId) })).filter((s) => s.lines.length > 0) : undefined} />
           </div>
           <Card title="Omit from the contract" dense>
             {v.status === 'APPROVED' ? (
@@ -187,12 +268,12 @@ export function VariationOrderEditor() {
                       const pick = omits.find((o) => o.lineId === line.id);
                       return (
                         <tr key={line.id} className={cn('border-t border-border-subtle', pick && 'bg-err-bg/50')}>
-                          <td className="px-3"><input type="checkbox" aria-label="Omit this line" disabled={!editable} checked={Boolean(pick)} onChange={(e) => toggleOmit(line.id!, e.target.checked)} /></td>
+                          <td className="px-3"><input type="checkbox" aria-label="Omit this line" disabled={locked} checked={Boolean(pick)} onChange={(e) => toggleOmit(line.id!, e.target.checked)} /></td>
                           <td className="py-1.5"><span className={line.kind === 'ITEM' ? 'font-semibold' : 'pl-3'}>{line.description}</span> <span className="text-[11px] text-ink-muted">{section}</span></td>
                           <td className="text-center tabular-nums">{qtyLabel({ qty: line.qty, measureMilli: line.measureMilli ?? null, measureUom: line.measureUom, uom: line.uom })}</td>
                           <td className="text-center">
                             {pick && line.qty > 1 && !line.measureMilli && (
-                              <input aria-label="Omit qty" inputMode="numeric" disabled={!editable} className="h-7 w-16 rounded border border-border text-center" value={pick.omitQty ?? line.qty}
+                              <input aria-label="Omit qty" inputMode="numeric" disabled={locked} className="h-7 w-16 rounded border border-border text-center" value={pick.omitQty ?? line.qty}
                                 onChange={(e) => { const n = Math.max(1, Math.min(line.qty, Math.trunc(Number(e.target.value) || 1))); setOmits(omits.map((o) => (o.lineId === line.id ? { ...o, omitQty: n >= line.qty ? null : n } : o))); setDirty(true); }} />
                             )}
                           </td>
@@ -228,12 +309,9 @@ export function VariationOrderEditor() {
           <ErrorBanner error={error} />
         </div>
       </ModalOverlay>
-      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="variation order" docNo={v.voNo} brandName={brand?.name} defaultFormat={contract.data?.header.printFormat ?? 'AMOUNT'}
-        build={(format) => buildPrintDoc({
-          kind: 'VARIATION_ORDER', docNo: v.voNo, format, brand, reference: `Contract ${v.soDocNo}`,
-          header: { ...(contract.data?.header ?? {}), customerName: contract.data?.header.customerName || contract.data?.debtorName || '', docDate: docDate, lastAmended: null, docDiscountSen: 0, promoLines: [] },
-          sections: printSections,
-        })} />
+      <QuotationSoPrint kind="VARIATION_ORDER" open={printOpen} onClose={() => setPrintOpen(false)} docNo={v.voNo} status={v.status} reference={v.soDocNo}
+        header={{ ...(contract.data?.header ?? ({} as DocHeader)), customerName: contract.data?.header.customerName || contract.data?.debtorName || '', docDate, lastAmended: null, docDiscountSen: 0, promoLines: [] }}
+        sections={printSections} instalments={[]} brand={brand} />
     </div>
   );
 }

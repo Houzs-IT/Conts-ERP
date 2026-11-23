@@ -97,7 +97,7 @@ export function SupplierLeadTimes({ supplierId }: { supplierId: string }) {
   return (
     <section className="rounded-md border border-border bg-surface p-4 shadow-stone">
       <h2 className="mb-1 text-[13px] font-semibold uppercase tracking-wider text-ink-secondary">
-        Lead Times
+        Lead times
       </h2>
       <p className="mb-3 max-w-2xl text-[13px] text-ink-muted">
         How many days <strong>before</strong> the customer&rsquo;s delivery date a PO to this supplier

@@ -39,11 +39,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Units: every whole unit, and any other unit (a room of a split flat) that has a utility bill in the range.
   const row = await one<{ units: any[] | null; bills: any[] | null; nights: any[] | null }>(env, `
     WITH b AS (
-      SELECT e.id, e.unit_id, e.category, e.incurred_on, e.deduct_month, e.amount, e.charge_to, e.record_only, e.rolled,
+      SELECT e.id, e.unit_id, e.category, e.incurred_on, e.deduct_month, e.amount, e.charge_to, e.record_only, e.rolled, coalesce(e.owner_paid, false) AS owner_paid,
+             e.description, left(e.period_from::text, 10) AS period_from, left(e.period_to::text, 10) AS period_to, sc.id IS NOT NULL AS scanned,
              e.receipt_document_id, e.reference, ${LOCKED_SQL} AS final,
-             e.payment_request_id, e.payment_request_no, r.status AS request_status,
+             e.payment_request_id, e.payment_request_no, r.status AS request_status, r.reason AS request_reason, r.decided_by AS request_decided_by,
              to_char(r.created_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM') AS request_month,
-             coalesce(sc.bill_sen, e.amount) AS request_sen
+             coalesce(sc.bill_sen, e.amount) AS request_sen,
+             coalesce(sc.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) AS whole_sen
       FROM expenses e JOIN units u ON u.id = e.unit_id
       LEFT JOIN utility_payment_requests() r ON r.id = e.payment_request_id -- migration 0220: pos_app cannot read scm.payment_requests directly (RLS)
       LEFT JOIN utility_bill_scans sc ON sc.expense_id = e.id
@@ -51,7 +53,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         ? `AND r.created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur') AND r.created_at < ($2::date::timestamp AT TIME ZONE 'Asia/Kuala_Lumpur')`
         : 'AND e.incurred_on >= $1 AND e.incurred_on < $2'} ${scope}),
     su AS (
-      SELECT u.id, u.property_id, p.name AS property, u.unit_number, o.display_name AS owner, coalesce(u.purpose, 'rental') AS purpose
+      SELECT u.id, u.property_id, p.name AS property, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, o.display_name AS owner, coalesce(u.purpose, 'rental') AS purpose
       FROM units u JOIN properties p ON p.id = u.property_id LEFT JOIN owners o ON o.id = u.owner_id
       WHERE (u.parent_unit_id IS NULL OR u.id IN (SELECT unit_id FROM b)) ${scope}),
     m AS (SELECT x AS month, (x || '-01')::date AS s, ((x || '-01')::date + interval '1 month')::date AS e FROM jsonb_array_elements_text($3::text::jsonb) x),
@@ -74,10 +76,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     units: (row?.units ?? []).map(u => ({ id: u.id, buildingId: u.property_id, building: u.property, number: u.unit_number, owner: u.owner ?? null, purpose: u.purpose })),
     bills: (row?.bills ?? []).map(b => ({
       id: b.id, unitId: b.unit_id, kind: b.category, billMonth: String(b.incurred_on).slice(0, 7), deductMonth: b.deduct_month,
-      amount: Number(b.amount), chargeTo: b.charge_to, recordOnly: !!b.record_only, final: !!b.final,
+      amount: Number(b.amount), chargeTo: b.charge_to, recordOnly: !!b.record_only, final: !!b.final, ownerPaid: !!b.owner_paid,
+      // The whole printed bill: the shared part plus the owner's own part (typed, or the days outside the contract).
+      whole: Number(b.whole_sen),
+      // The printed period and the bill's note ("22 of 30 days in the contract"), to check a scanned bill's split.
+      description: b.description ?? null, periodFrom: b.period_from ?? null, periodTo: b.period_to ?? null, scanned: !!b.scanned,
       receiptId: b.receipt_document_id ?? null, reference: b.reference ?? null, rolled: !!b.rolled,
       request: b.payment_request_id && b.request_status
-        ? { id: b.payment_request_id, no: b.payment_request_no ?? null, status: b.request_status, month: b.request_month, amount: Number(b.request_sen) }
+        ? { id: b.payment_request_id, no: b.payment_request_no ?? null, status: b.request_status, month: b.request_month, amount: Number(b.request_sen),
+            // Why finance sent it back, and who (migration 0327), so its bills can be fixed and the request sent again.
+            reason: b.request_reason ?? null, decidedBy: b.request_decided_by ?? null }
         : null,
     })),
     nights,

@@ -21,16 +21,35 @@ export const occupancyLabel = (pct: number): string => `${pct.toFixed(2)}%`;
 
 export type Contract = 'LT' | 'PS';
 
-/** PS: Package A, B and D. LT: Package C. */
-export type ReportGroup = 'PS' | 'LT' | 'RTR' | 'MANAGE';
-export const REPORT_GROUPS: readonly ReportGroup[] = ['PS', 'LT', 'RTR', 'MANAGE'];
+/** PS: Package A, B and D. LT: Package C. NONE: a unit with no contract for the month, listed so its income is not
+ *  lost while the contract is still to be added (owner, 19 Nov 2026); its owner payout is not worked out. */
+export type ReportGroup = 'PS' | 'LT' | 'RTR' | 'MANAGE' | 'NONE';
+export const REPORT_GROUPS: readonly ReportGroup[] = ['PS', 'LT', 'MANAGE', 'RTR', 'NONE'];
 export const GROUP_NAME: Record<ReportGroup, string> = {
-  PS: 'Profit sharing', LT: 'Long term', RTR: 'Rent to rent', MANAGE: 'Listing management',
+  PS: 'Profit sharing', LT: 'Long term', RTR: 'Rent to rent', MANAGE: 'Listing management', NONE: 'No contract',
 };
 /** What the LT / GRR column holds for the group. */
 export const OWNER_BASE_NAME: Record<ReportGroup, string> = {
   PS: 'GRR (guaranteed minimum)', LT: "Owner's part of the rent", RTR: 'Rent to owner', MANAGE: 'GRR (guaranteed minimum)',
+  NONE: 'No contract yet (all shown as the owner part)',
 };
+
+/** The words for income, deductions, what is left and the company's part, by kind (owner, 19 Nov 2026): stays are
+ *  Reservation income; a tenant's rent (listing management, rent to rent) is Rental income. What is left is Net ... Income. */
+export type ReportView = ReportGroup | 'all';
+export interface ReportWords { income: string; deduction: string; net: string; result: string; company: string }
+export function reportWords(view: ReportView): ReportWords {
+  const kind = view === 'MANAGE' || view === 'RTR' ? 'Rental' : view === 'all' ? '' : 'Reservation';
+  // The company's part (owner, 19 Nov 2026): on a share it is Management Income (its Operator share before the agent); on a
+  // unit the company trades and pays the owner a fixed rent it is the rent income it makes: LT / RTR Rent Income.
+  const fee = view === 'PS' || view === 'MANAGE';
+  const rent = view === 'LT' ? 'LT Rent Income' : view === 'RTR' ? 'RTR Rent Income' : view === 'NONE' ? 'Company Income' : null;
+  const result = fee ? 'Operator share' : rent ?? 'Operator share / Rent Income';
+  const company = fee ? 'Management Income' : rent ?? 'Management Income / Rent Income';
+  return kind
+    ? { income: `${kind} Income`, deduction: `${kind} Deduction`, net: `Net ${kind} Income`, result, company }
+    : { income: 'Income', deduction: 'Deduction', net: 'Net Income', result, company };
+}
 
 export interface OverallInput {
   contract: Contract;

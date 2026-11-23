@@ -13,7 +13,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const r = await channexAirbnbListings(env, channelId);
   if (!r.ok) return channexRefused('read the Airbnb listings', r.status, r.body);
   const taken = await all<{ external_id: string; unit_number: string }>(env, `
-    SELECT c.external_id, u.unit_number FROM channex_channels c JOIN units u ON u.id = c.unit_id WHERE c.ota = 'airbnb' AND c.channex_channel_id = ?`, channelId);
+    SELECT c.external_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number FROM channex_channels c JOIN units u ON u.id = c.unit_id WHERE c.ota = 'airbnb' AND c.channex_channel_id = ?`, channelId);
   const takenBy = new Map(taken.map(t => [t.external_id, t.unit_number]));
   return json({
     channelId,

@@ -33,6 +33,7 @@ import { Button } from '@2990s/design-system';
 import { VariantDescription } from '../../vendor/scm/components/VariantDescription';
 import {
   useOutstandingPoItems,
+  useOutstandingPoItemsPaged,
   type OutstandingPoItem,
 } from '../../vendor/scm/lib/suppliers-queries';
 import { useGrnDetail, useAddGrnItem } from '../../vendor/scm/lib/grn-queries';
@@ -114,7 +115,8 @@ export const GrnFromPo = () => {
      browser, over a list the server had already capped at 500 raw PO lines —
      so scoping could only narrow that window and never recover a PO which fell
      outside it. That is the owner's 2026-08-17 zero-row screen. */
-  const itemsQ = useOutstandingPoItems(useMemo(() => [...poIdSet], [poIdSet]));
+  const scoped = poIdSet.size > 0;
+  const scopedQ = useOutstandingPoItems(useMemo(() => [...poIdSet], [poIdSet]), { enabled: scoped });
 
   /* Commander 2026-05-31 — APPEND mode. When a POSTED GRN's edit page sends the
      operator here with ?appendToGrn=<grnId>, this picker no longer feeds the
@@ -130,6 +132,24 @@ export const GrnFromPo = () => {
     | undefined;
   const [appending, setAppending] = useState(false);
 
+  /* Audit 20 Nov 2026: the open picker (no ?poId=) read every outstanding line of every open PO at once. Now it reads
+     one page at a time (whole POs, newest first, only lines with something left), searched on the server, the next
+     page loaded when the grid is scrolled to its end. Appending to a posted GRN asks for that GRN's supplier only. */
+  const [searchText, setSearchText] = useState('');
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setQ(searchText.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchText]);
+  const pagedQ = useOutstandingPoItemsPaged(q, {
+    supplierId: appendGrn?.supplier_id ?? null,
+    enabled: !scoped && (!appendToGrn || grnDetailQ.isSuccess),
+  });
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = pagedQ;
+  const itemsQ = scoped
+    ? { isLoading: scopedQ.isLoading, isError: scopedQ.isError, isFetching: scopedQ.isFetching }
+    : { isLoading: pagedQ.isLoading || (!!appendToGrn && grnDetailQ.isLoading), isError: pagedQ.isError, isFetching: pagedQ.isFetching };
+
   // Map<poItemId, { picked, qty }>. qty defaults to remainingQty when ticked.
   const [picks, setPicks] = useState<Record<string, Pick>>({});
 
@@ -143,11 +163,25 @@ export const GrnFromPo = () => {
   // In-app result dialog (validation only now — the grid feeds the form).
   const [dialog, setDialog] = useState<{ title: string; body: string; goTo?: string } | null>(null);
 
-  const items = useMemo(() => itemsQ.data?.items ?? [], [itemsQ.data]);
+  /* Every row this screen has shown, kept across pages and searches: a ticked line stays ticked, and still goes to the
+     GRN, when the search moves away from it. `rowById` looks up any row seen so far, not only the ones on screen. */
+  const rowCache = useRef(new Map<string, OutstandingPoItem>());
+  const { items, rowById } = useMemo(() => {
+    const src = scoped ? (scopedQ.data?.items ?? []) : (pagedQ.data?.pages ?? []).flatMap((p) => p.items);
+    const seen = new Set<string>();
+    const out: OutstandingPoItem[] = [];
+    for (const r of src) {
+      if (seen.has(r.poItemId)) continue;
+      seen.add(r.poItemId);
+      out.push(r);
+      rowCache.current.set(r.poItemId, r);
+    }
+    return { items: out, rowById: new Map(rowCache.current) };
+  }, [scoped, scopedQ.data, pagedQ.data]);
   /* The WHY behind an empty grid. Older cached payloads have no `scope`, so it
      is nullable and `outstandingEmptyReason` treats null as "I cannot name a
      scoped reason" rather than as "nothing is scoped". */
-  const serverScope = itemsQ.data?.scope ?? null;
+  const serverScope = scoped ? (scopedQ.data?.scope ?? null) : null;
 
   /* The New GRN form stashes its current draft (grnNewDraft) before sending us
      here. Build a per-poItemId drafted-qty map so the same PO line can't be
@@ -243,18 +277,18 @@ export const GrnFromPo = () => {
   const lockedWarehouse = useMemo(() => {
     for (const [id, v] of Object.entries(picks)) {
       if (!v.picked) continue;
-      const row = items.find((r) => r.poItemId === id);
+      const row = rowById.get(id);
       if (row?.warehouseLocationId) return row.warehouseLocationId;
     }
     return null;
-  }, [picks, items]);
+  }, [picks, rowById]);
 
   // Human-readable label for the locked warehouse (for the header note).
   const lockedWarehouseLabel = useMemo(() => {
     if (!lockedWarehouse) return null;
-    const row = items.find((r) => r.warehouseLocationId === lockedWarehouse);
+    const row = [...rowById.values()].find((r) => r.warehouseLocationId === lockedWarehouse);
     return whLabel(row) ?? lockedWarehouse;
-  }, [lockedWarehouse, items]);
+  }, [lockedWarehouse, rowById]);
 
   // A row is LOCKED when a different warehouse is already picked. Grey these out
   // + disable their checkbox / qty input.
@@ -264,7 +298,7 @@ export const GrnFromPo = () => {
 
   // ── Pick helpers ─────────────────────────────────────────────────────
   const togglePick = (id: string, remaining: number) => {
-    const row = items.find((r) => r.poItemId === id);
+    const row = rowById.get(id);
     // Block ticking a different warehouse than the one already locked.
     if (row && lockedWarehouse && row.warehouseLocationId !== lockedWarehouse
         && !picks[id]?.picked) return;
@@ -462,7 +496,7 @@ export const GrnFromPo = () => {
     if (pickedCount === 0) { setDialog({ title: 'Nothing picked', body: 'Tick at least one PO line first.' }); return; }
     const out: GrnFromPoPick[] = picked
       .map(([poItemId, v]) => {
-        const row = items.find((r) => r.poItemId === poItemId);
+        const row = rowById.get(poItemId);
         return row ? { ...row, _pickQty: v.qty } : null;
       })
       .filter((x): x is GrnFromPoPick => x !== null);
@@ -472,6 +506,9 @@ export const GrnFromPo = () => {
     // the GRN's edit page where the new lines now appear.
     if (appendToGrn) {
       setAppending(true);
+      /* D20 (#1126): the lines that landed are unticked when a later one fails, so pressing again appends only the
+         rest - before, a retry added every line again on top of the ones already in the receipt. */
+      const landed: string[] = [];
       try {
         for (const r of out) {
           await addGrnItem.mutateAsync({
@@ -486,13 +523,24 @@ export const GrnFromPo = () => {
             unitPriceSen:      r.unitPriceSen,
             deliveryDate:        r.deliveryDate ?? undefined,
           });
+          landed.push(r.poItemId);
         }
         navigate(`/scm/grns/${appendToGrn}?edit=1`);
       } catch (e) {
         setAppending(false);
+        if (landed.length > 0) {
+          setPicks((prev) => {
+            const next = { ...prev };
+            for (const poItemId of landed) delete next[poItemId];
+            return next;
+          });
+        }
+        const why = e instanceof Error ? e.message : "Couldn't append the picked lines to this GRN.";
         setDialog({
           title: 'Add failed',
-          body: e instanceof Error ? e.message : "Couldn't append the picked lines to this GRN.",
+          body: landed.length > 0
+            ? `${landed.length} of ${out.length} lines were added to the receipt and are no longer ticked. The rest were not: ${why} Press again to add only those.`
+            : why,
         });
       }
       return;
@@ -558,8 +606,46 @@ export const GrnFromPo = () => {
           Reset
         </button>
       )}
+      {!scoped && (
+        <input
+          type="search"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          placeholder="Search PO, supplier, item…"
+          aria-label="Search outstanding PO lines"
+          style={{ ...FILTER_INPUT, width: 240 }}
+        />
+      )}
     </div>
   );
+
+  /* Load the next page when the line under the grid is in view AND the grid's own box is scrolled near its end, or
+     does not scroll at all. Same rule as the DO-from-SO picker; re-run after every page, so a short page asks for
+     the next. A failed page waits for the button. */
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const pageCount = pagedQ.data?.pages.length ?? 0;
+  const nextPageFailed = pagedQ.isFetchNextPageError;
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (scoped || !el || !hasNextPage || isFetchingNextPage || nextPageFailed) return;
+    const box = el.previousElementSibling?.querySelector<HTMLElement>('.dt-table .thin-scroll') ?? null;
+    const boxAtEnd = (): boolean => !box || box.scrollHeight <= box.clientHeight + 1
+      || box.scrollTop + box.clientHeight >= box.scrollHeight - 400;
+    let lineInView = typeof IntersectionObserver === 'undefined';
+    let asked = false;
+    const maybeLoad = (): void => {
+      if (asked || !lineInView || !boxAtEnd()) return;
+      asked = true;
+      void fetchNextPage();
+    };
+    const io = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((entries) => {
+      lineInView = entries.some((e) => e.isIntersecting);
+      maybeLoad();
+    }, { rootMargin: '400px 0px' });
+    io?.observe(el);
+    box?.addEventListener('scroll', maybeLoad, { passive: true });
+    return () => { io?.disconnect(); box?.removeEventListener('scroll', maybeLoad); };
+  }, [scoped, pageCount, hasNextPage, isFetchingNextPage, nextPageFailed, fetchNextPage]);
 
   return (
     <div className="space-y-4">
@@ -645,6 +731,9 @@ export const GrnFromPo = () => {
         columns={columns}
         storageKey={STORAGE_KEY}
         rowKey={(r) => r.poItemId}
+        /* The open picker searches on the server (toolbar box); the grid's own box would only search the loaded pages.
+           Scoped to given POs, everything is loaded and the grid's box is enough. */
+        hideSearch={!scoped}
         searchPlaceholder="Search PO, supplier, item…"
         onRowClick={(r) => togglePick(r.poItemId, effRemaining(r))}
         /* Grey out rows whose supplier conflicts with the locked one. */
@@ -665,7 +754,11 @@ export const GrnFromPo = () => {
            closed when that company cannot be resolved. The reasons now live in
            one shared module (which keeps #2367's wording for the unscoped case)
            so the mobile wizard cannot disagree with this screen. */
-        emptyMessage={outstandingEmptyReason({
+        emptyMessage={!scoped && !itemsQ.isError && (hasNextPage || itemsQ.isFetching)
+          ? 'No outstanding line in the part of the list read so far. More is still loading below.'
+          : !scoped && !itemsQ.isError && q
+            ? 'No outstanding PO line matches this search. That is not the same as there being none left: clear the search to see the full list.'
+            : outstandingEmptyReason({
           isError: itemsQ.isError,
           isLoading: itemsQ.isLoading,
           scope: serverScope,
@@ -676,6 +769,25 @@ export const GrnFromPo = () => {
           poScopeActive: poIdSet.size > 0,
         }) ?? ''}
       />
+
+      {!scoped && (
+        <div
+          ref={loadMoreRef}
+          style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-2) 0', fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}
+        >
+          {!itemsQ.isLoading && (
+            <span>{`Showing ${rows.length} line${rows.length === 1 ? '' : 's'}${hasNextPage ? ' · scroll down for more' : ''}`}</span>
+          )}
+          {pagedQ.isFetchNextPageError && (
+            <span style={{ color: 'var(--c-festive-b, #B8331F)' }}>The next lines could not be loaded.</span>
+          )}
+          {hasNextPage && (
+            <Button variant="ghost" size="sm" onClick={() => { void fetchNextPage(); }} disabled={isFetchingNextPage}>
+              {isFetchingNextPage ? 'Loading…' : pagedQ.isFetchNextPageError ? 'Try again' : 'Load more'}
+            </Button>
+          )}
+        </div>
+      )}
 
       {dialog && (
         <ActionResultDialog

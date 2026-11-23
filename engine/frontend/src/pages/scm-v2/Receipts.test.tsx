@@ -110,7 +110,7 @@ describe('the unified money-in list', () => {
     draw();
     fireEvent.click(screen.getByText('New receipt'));
     fireEvent.click(screen.getByRole('radio', { name: 'Other Debtor' }));
-    expect(screen.getByText('New receipt — Other Debtor — posts when saved')).toBeTruthy();
+    expect(screen.getByText('New receipt — other debtor — posts when saved')).toBeTruthy();
     expect(screen.getByText('Pick the debtor to list what they still owe.')).toBeTruthy();
     /* The registry: active debtors only, what each still owes beside the name. */
     const debtor = screen.getByLabelText('Debtor') as HTMLSelectElement;
@@ -167,6 +167,7 @@ describe('the unified money-in list', () => {
       receiptDate: '2026-09-02',
       bankAccountCode: '310-0010',
       lines: [{ description: '车险赔偿', creditAccountCode: '700-0000', amountSen: 88800, department: 'rental', subDepartmentId: 's-gen' }],
+      idempotencyKey: expect.any(String),
     }));
   });
 

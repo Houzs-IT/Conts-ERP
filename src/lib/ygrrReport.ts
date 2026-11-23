@@ -1,7 +1,8 @@
 export interface YgrrMonthShare { month: string; ownerShare: number }
 
 export interface YgrrRow {
-  unitId: string; building: string; number: string; owner: string; ownerPct: number;
+  /** The unit code staff see on Monthly and Yearly (SKYLINE-A1303). */
+  unitId: string; code: string; building: string; number: string; owner: string; ownerPct: number;
   annual: number; due: number; yearFrom: string; yearTo: string;
   shares: YgrrMonthShare[];
   topUp: number;

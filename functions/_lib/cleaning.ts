@@ -9,6 +9,9 @@ import { syncPassKeyJobs } from './passKeyJobs';
 
 export const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'] as const;
 export const CLEAN_KINDS_SQL = `('turnover','deep_clean','light_clean')`;
+export const CLEANING_CANCELLED = 'cleaning.cancel';
+export const cleaningNotCancelledSql = (reservationIdSql: string): string =>
+  `NOT EXISTS (SELECT 1 FROM audit_log l WHERE l.entity_table = 'reservations' AND l.entity_id = ${reservationIdSql} AND l.action = '${CLEANING_CANCELLED}')`;
 /** Real guest stays, past or present: not cancelled, no-show or an enquiry, and not a repair block (a block holds no guest and leaves no mess). */
 export const LIVE_STAY_SQL = (r: string) => `${r}.state NOT IN ('cancelled','no_show','inquiry') AND ${r}.channel != 'maintenance_block'`;
 
@@ -178,7 +181,7 @@ export async function windowsOnDay(env: Env, day: string) {
   const placeJoin = await jobPlaceJoin(env);
   const rows = await all<any>(env, `
     SELECT w.id, w.issue_id, w.starts_at, w.ends_at, w.note, m.title, m.state, m.urgency, m.category, m.vendor_name, m.unit_id, m.source,
-           u.unit_number, p.id AS property_id, p.name AS property_name
+           COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.id AS property_id, p.name AS property_name
     FROM maintenance_windows w JOIN maintenance_issues m ON m.id = w.issue_id
     ${placeJoin}
     WHERE m.state != 'resolved' AND w.starts_at::timestamptz <= ?::timestamptz AND w.ends_at::timestamptz >= ?::timestamptz
@@ -237,6 +240,7 @@ export async function ensureTurnovers(env: Env, scope: { from: string; to: strin
         AND ${LIVE_STAY_SQL('r')} AND r.channel != 'owner_stay'${rental}
         AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.reservation_id = r.id AND t.kind IN ${CLEAN_KINDS_SQL})
         AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.unit_id = r.unit_id AND t.kind IN ${CLEAN_KINDS_SQL} AND ${day} = r.check_out)
+        AND ${cleaningNotCancelledSql('r.id')}
       ORDER BY r.check_out, r.id
       LIMIT ${Math.max(1, Math.min(500, Math.floor(limit)))}
       RETURNING id, reservation_id`, now, now, from, to, ...(ids ? [JSON.stringify(ids)] : []));

@@ -982,7 +982,10 @@ export function PurchaseOrdersListV2() {
     status !== "all" || view !== "table" || search.trim().length > 0;
 
   const onPullToRefresh = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["mfg-purchase-orders"] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["mfg-purchase-orders"] }),
+      queryClient.invalidateQueries({ queryKey: ["mfg-purchase-orders-paged"] }),
+    ]);
   };
 
   /* The ONE Export (owner 2026-09-15): every order the list's tab + search +
@@ -1472,7 +1475,7 @@ export function PurchaseOrdersListV2() {
         <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
           <div className="min-w-0">
             <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-              Purchase Orders
+              Purchase orders
             </h1>
             <div className="mt-0.5 text-[12.5px] text-ink-muted">
               {total} PO{total === 1 ? "" : "s"} · {fmtRm(money.committed)} committed
@@ -1484,7 +1487,7 @@ export function PurchaseOrdersListV2() {
         <div className="hidden md:block">
           <PageHeader
             eyebrow="Procurement"
-            title="Purchase Orders"
+            title="Purchase orders"
             description="Every PO raised to a supplier — Draft to Received. Click any row for the quick view; open the full page to edit or receive."
             primaryAction={
               <div className="flex items-stretch gap-2">

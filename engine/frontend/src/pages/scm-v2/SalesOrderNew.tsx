@@ -42,6 +42,8 @@ import {
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRenovationDraft } from '../../lib/renovation/renovationFormDraft';
+import { useFormDraft } from '../../lib/formDraft';
+import { FormDraftBar } from '../../components/FormDraftBar';
 import { RenovationDraftBanner } from '../renovation/renovationDraftBanner';
 import { useQuery as useTanstackQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -73,7 +75,8 @@ import { notifySaveProblems, SaveProblemsList, saveProblemsTitle } from '../../v
 import { SaveBlockedIndicator } from '../../vendor/scm/components/SaveBlockedIndicator';
 import { useSoValidate } from '../../vendor/scm/lib/use-so-validate';
 import { notifyAcNotSent } from '../../vendor/scm/lib/ac-not-sent';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { contentKeyFor, settleOutcome, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { DebtorSuggestList } from '../../vendor/scm/components/DebtorSuggestList';
 import { readScmHandoff, removeScmHandoff } from '../../lib/scmHandoffStorage';
 import { completePaymentRetryDraft, paymentRetryNavigationState, writePaymentRetryHandoff } from '../../lib/paymentRetryHandoff';
@@ -137,7 +140,7 @@ import {
 } from '../../lib/renovation/api';
 import { headerFromParty } from '../renovation/QuotationCustomerCard';
 import { QuotationCards, QuotationNotices } from './renovationQuotationChrome';
-import { blockFromQuote, partyFromBlock, sectionsFromForm, seedQuoteForm, soFieldsFromBlock, type QuoteSources } from './renovationQuotationForm';
+import { blockFromQuote, grossSen, partyFromBlock, qtyFields, sectionsFromForm, seedQuoteForm, soFieldsFromBlock, type QuoteSources } from './renovationQuotationForm';
 import { SoInstalments } from './renovationSoInstalments';
 import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
 import {
@@ -189,15 +192,12 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
   const copyFromDocNo = searchParams.get('copyFrom');
   const copySource = useMfgSalesOrderDetail(copyFromDocNo);
   const create   = useCreateMfgSalesOrder();
-  /* One key for the one order this page is open to raise (lib/idempotency.ts).
-     Route-level form; onSuccess navigates to the SO detail, so the MOUNT is
-     exactly one order — the same rule mobile MobileNewSO applies, one logic
-     layer. Load-bearing here beyond the double-tap: onSuccess below deliberately
-     does NOT gate navigation on flushPaymentDrafts / flushPendingPhotos, so a
-     re-press after one of those warns re-fires the create — with a stable key
-     that REPLAYS the first docNo instead of raising a second order, and the
-     payment drafts carry their own per-draft keys so they don't double either. */
-  const idemKey  = useIdempotencyKey();
+  /* One key per sales order CONTENT (lib/idempotency.ts createContentBoundKey): the same form re-pressed after a stall
+     replays the first answer instead of raising a second document; a save the server refused releases the key, so
+     the corrected form is a new request instead of a replay of the refusal (audit 20 Nov 2026, items 19-24).
+     Kept after a success: onSuccess does not gate navigation on flushPaymentDrafts / flushPendingPhotos, so a
+     re-press after one of those warns replays the first docNo instead of raising a second order. */
+  const idemKeys  = useContentBoundIdempotencyKey();
   const addPayment = useAddSalesOrderPayment();
   const uploadPhoto = useUploadSoItemPhoto();
   // onlySales=true — owner 2026-07-22: the salesperson dropdown was showing
@@ -906,7 +906,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
 
   const subtotalSen = useMemo(
     () => lines.reduce(
-      (s, l) => s + Math.max(0, l.qty * l.unitPriceSen - l.discountSen),
+      (s, l) => s + Math.max(0, grossSen(l.qty, l.unitPriceSen) - l.discountSen),
       0,
     ),
     [lines],
@@ -1625,10 +1625,10 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
       const sections = quoteTemplateId && filled.length === 0 ? undefined : placed.rooms.map((heading) => ({
         heading, bandColor: null, lumpSumSen: null, pageBreakBefore: false,
         lines: filled.filter((l) => placed.roomOf[l.rid] === heading).map((l): DocLine => {
-          const gross = l.qty * l.unitPriceSen;
+          const gross = grossSen(l.qty, l.unitPriceSen);
           return {
             kind: 'ITEM', room: heading, itemCode: l.itemCode, description: [l.description, l.remark].filter((t) => t?.trim()).join(' - '),
-            qty: l.qty, measure: null, measureUom: null, uom: l.uom || null, unitPriceSen: l.unitPriceSen, listPriceSen: null,
+            ...qtyFields(l.qty, l.uom), uom: l.uom || null, unitPriceSen: l.unitPriceSen, listPriceSen: null,
             discountBp: gross > 0 ? Math.min(10000, Math.round((l.discountSen / gross) * 10000)) : 0, amountOverrideSen: null,
             isFoc: false, supplyByOwner: false, highlight: 'NONE', supplierId: null, unitCostSen: l.unitCostSen, stageCode: null, pageBreakBefore: false,
           };
@@ -1653,13 +1653,30 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
     }
   };
 
+  /* One press at a time. The validate dry-run below is awaited before create.mutate, so create.isPending could not
+     disable the button for that stretch and a double-click sent a second create (click sweep F11, 21 Nov 2026). */
+  const savePressRef = useRef(false);
+  const [savePressed, setSavePressed] = useState(false);
   const onSave = async (asDraft = false) => {
-    if (asQuotation) { await saveQuotation(); return; }
+    if (savePressRef.current || create.isPending) return;
+    savePressRef.current = true;
+    setSavePressed(true);
+    let handedToCreate = false;
+    const releasePress = () => { savePressRef.current = false; setSavePressed(false); };
+    try {
+      handedToCreate = await onSaveOnce(asDraft, releasePress);
+    } finally {
+      if (!handedToCreate) releasePress();
+    }
+  };
+  /* True when create.mutate was called; `releasePress` then runs when it settles. */
+  const onSaveOnce = async (asDraft: boolean, releasePress: () => void): Promise<boolean> => {
+    if (asQuotation) { await saveQuotation(); return false; }
     if (createdDocNo) {
       const intents = paymentIntents();
       if (intents.length === 0) {
         navigate(`/scm/sales-orders/${createdDocNo}`);
-        return;
+        return false;
       }
       if (!writePaymentRetryHandoff('so', createdDocNo, intents)) {
         void notify({
@@ -1667,12 +1684,12 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           body: 'Browser storage is still unavailable. This page is keeping the payment rows; retry Save after storage is available.',
           tone: 'error',
         });
-        return;
+        return false;
       }
       navigate(`/scm/sales-orders/${createdDocNo}?payments=1&retryPayments=1`, {
         state: paymentRetryNavigationState('so', createdDocNo, intents),
       });
-      return;
+      return false;
     }
     const validLines = lines.filter((l) => l.itemCode.trim() && l.qty > 0);
     if (reno) setRenoTried(true);
@@ -1699,7 +1716,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
     const problems = [...serverProblems, ...scannedExtras, ...slipDateExtras];
     if (problems.length > 0) {
       void notify({ title: saveProblemsTitle(problems.length), body: <SaveProblemsList problems={problems} />, tone: 'error' });
-      return;
+      return false;
     }
 
     /* Edit-gate — operator committed to saving, so fold their corrections back
@@ -1746,9 +1763,8 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
     const pendingDepositSen = paymentIntents()
       .reduce((sum, d) => sum + d.amountSen, 0);
 
-    create.mutate(
-      {
-        idempotencyKey: idemKey,
+    return await (async (): Promise<boolean> => {
+    const payload = {
         ...receiptDepositBody,
         pendingDepositSen: pendingDepositSen > 0 ? pendingDepositSen : undefined,
         /* DRAFT flow — backend reads `asDraft: true` to create the SO as 'DRAFT'
@@ -1845,9 +1861,14 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           fairOrganizer: undefined, fairStart: undefined, fairEnd: undefined, fairDate: undefined,
           buildingType: undefined, customerType: undefined, customerSoNo: undefined, emergencyContactName: undefined, emergencyContactRelationship: undefined, emergencyContactPhone: undefined,
         } : {}),
-      },
-      {
+    };
+    const key = await contentKeyFor(idemKeys, payload, () => serviceConfirm(unansweredSaveQuestion('sales order', 'Sales > Sales Orders')));
+    if (!key) return false;
+    create.mutate(
+      { ...payload, idempotencyKey: key },
+      settleOutcome(idemKeys, {
         onSuccess: async (res: { docNo: string; renovationInfoSaved?: boolean }) => {
+          soDraft.clear();
           if (res.renovationInfoSaved === false) {
             void notify({ title: `Sales order ${res.docNo} is saved`, body: 'Its order information did not save. Open the order, press Edit and save the Order information again.', tone: 'error' });
           }
@@ -1904,8 +1925,11 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
            2026-07-18); anything else keeps this page's own "Save failed" popup. */
         onError: (err) => { void notifySaveProblems(notify, err,
           (m) => { void notify({ title: 'Save failed', body: m, tone: 'error' }); }); },
-      },
+        onSettled: releasePress,
+      }),
     );
+    return true;
+    })();
   };
 
   /* One block for Customer, Delivery address and Order information, the same one the
@@ -1930,6 +1954,37 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
     setPostcode(n.postcode);
     setSalesLocation(n.salesLocation);
   }, []);
+  /* A new sales order's unsaved fields stay in this browser (lib/formDraft.ts) and are offered back after a reload.
+     Not for a quotation (its own draft is below), a copy or a scanned order (their source fills the form again).
+     Payment rows (their slips cannot be kept) and photos not yet uploaded stay out; each line keeps the cost it
+     was picked with, which the save sends. */
+  const soDraftValue = {
+    debtorCode, debtorName, phone, email, salespersonId, customerType, customerSoNo,
+    buildingType, processingDate, deliveryDate, note,
+    fillAddressLater, address1, address2, state, city, postcode, salesLocation,
+    emergencyName, emergencyRel, emergencyPhone,
+    pickedVenueId, fairPick, noFair,
+    renoInfo, renoProject, renoRooms, renoLineRoom,
+    lines: lines.map(({ pendingPhotoFiles: _f, photoUrls: _p, ...l }) => l),
+  };
+  const soDraft = useFormDraft('so-new', 'new', soDraftValue, {
+    enabled: !asQuotation && !copyFromDocNo && !fromScan && !createdDocNo && !renoPending,
+    meaningful: debtorName.trim() !== '' || phone.trim() !== '' || lines.some((l) => l.itemCode.trim() !== ''),
+    keys: idemKeys,
+  });
+  const restoreSoDraft = (v: typeof soDraftValue) => {
+    setDebtorCode(v.debtorCode); setDebtorName(v.debtorName); setPhone(v.phone); setEmail(v.email);
+    setSalespersonId(v.salespersonId); setCustomerType(v.customerType); setCustomerSoNo(v.customerSoNo);
+    setBuildingType(v.buildingType); setProcessingDate(v.processingDate); setDeliveryDate(v.deliveryDate); setNote(v.note);
+    setFillAddressLater(v.fillAddressLater); setAddress1(v.address1); setAddress2(v.address2);
+    setState(v.state); setCity(v.city); setPostcode(v.postcode); setSalesLocation(v.salesLocation);
+    setEmergencyName(v.emergencyName); setEmergencyRel(v.emergencyRel); setEmergencyPhone(v.emergencyPhone);
+    setPickedVenueId(v.pickedVenueId); setFairPick(v.fairPick); setNoFair(v.noFair);
+    setRenoInfo(v.renoInfo); setRenoProject(v.renoProject); setRenoRooms(v.renoRooms); setRenoLineRoom(v.renoLineRoom);
+    if (Array.isArray(v.lines) && v.lines.length > 0) {
+      setLines(v.lines.map((l) => ({ ...emptySoLine(), ...l, photoUrls: [], pendingPhotoFiles: [] })));
+    }
+  };
   /* A saved quotation's unsaved edits stay in this browser and are offered back
      ("Restore your draft?") after a closed tab or a reload. Lists and defaults keep
      filling the form after it loads, so only the person's own typing, picking or
@@ -2024,6 +2079,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
               <div key={line.rid} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
                 <SoLineCard
                   compact={reno}
+                  decimalQty={asQuotation}
                   actions={reno ? move : undefined}
                   index={idx}
                   draft={line}
@@ -2176,7 +2232,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           Same card + same field layout as Detail's Order Info. */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Order Info</h2>
+          <h2 className={styles.cardTitle}>Order info</h2>
         </header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
@@ -2294,7 +2350,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           Mirrors Detail's Emergency Contact card field-for-field. */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Emergency Contact</h2>
+          <h2 className={styles.cardTitle}>Emergency contact</h2>
           <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
             Used only if we cannot reach the customer on delivery day
           </span>
@@ -2349,7 +2405,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           the top of the card so commander can defer the address. */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Delivery Address</h2>
+          <h2 className={styles.cardTitle}>Delivery address</h2>
         </header>
         <div className={styles.cardBody}>
           {!reno && (
@@ -2501,7 +2557,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
           validates and tells the operator EXACTLY what's missing. */}
       <PageHeader back
         eyebrow={asQuotation ? `Quotation${quoteView?.quotation.projectName ? ` · ${quoteView.quotation.projectName}` : ''}` : 'Sales order'}
-        title={quoteView ? quoteView.revision.docNo : asQuotation ? 'New Quotation' : createdDocNo ? `Complete Sales Order ${createdDocNo}` : 'New Sales Order'}
+        title={quoteView ? quoteView.revision.docNo : asQuotation ? 'New quotation' : createdDocNo ? `Complete Sales Order ${createdDocNo}` : 'New sales order'}
         description={quoteView
           ? `${debtorName || 'No customer yet'}${renoInfo.building ? ` · ${renoInfo.building} ${renoInfo.unitNo}` : ''}`
           : asQuotation
@@ -2539,10 +2595,10 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
             <Button
               variant={fromScan ? 'secondary' : 'primary'}
               onClick={() => { void onSave(false); }}
-              disabled={create.isPending || quoteBusy}
+              disabled={create.isPending || quoteBusy || savePressed}
             >
               <Save {...ICON} />
-              {create.isPending || quoteBusy
+              {create.isPending || quoteBusy || savePressed
                 ? 'Saving…'
                 : asQuotation ? 'Create Quotation'
                 : createdDocNo
@@ -2553,10 +2609,10 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
               <Button
                 variant={fromScan ? 'primary' : 'secondary'}
                 onClick={() => { void onSave(true); }}
-                disabled={create.isPending || !!createdDocNo}
+                disabled={create.isPending || savePressed || !!createdDocNo}
               >
                 <Save {...ICON} />
-                {create.isPending ? 'Saving…' : 'Save as Draft'}
+                {create.isPending || savePressed ? 'Saving…' : 'Save as Draft'}
               </Button>
             )}
           </>
@@ -2569,6 +2625,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
       <fieldset disabled={Boolean(quoteId) && !quoteEditable} className="m-0 min-w-0 border-0 p-0" onInputCapture={touchQuote} onChangeCapture={touchQuote} onClickCapture={touchQuote}>
       <div className="space-y-3">
       {quoteView && <QuotationNotices view={quoteView} editable={quoteEditable} />}
+      <FormDraftBar draft={soDraft} onRestore={restoreSoDraft} />
       {quoteDraft.offered && <RenovationDraftBanner savedAt={quoteDraft.offered.ts} stale={quoteDraft.stale} onRestore={restoreQuoteDraft} onDiscard={() => quoteDraft.answer(false)} />}
       {createdDocNo && (
         <div role="status" className="rounded-lg border border-warning-text/30 bg-warning-bg px-3 py-2 text-sm text-warning-text">
@@ -2679,7 +2736,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
       ) : (
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Line Items ({lines.length})</h2>
+          <h2 className={styles.cardTitle}>Line items ({lines.length})</h2>
         </header>
         <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {lines.map((line, idx) => renderNewLine(line, idx))}

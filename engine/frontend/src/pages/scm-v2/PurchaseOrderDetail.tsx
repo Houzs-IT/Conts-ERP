@@ -61,7 +61,6 @@ import {
   useReopenPurchaseOrder,
   useSuppliers,
   useSupplierDetail,
-  useOutstandingSoItems,
   type BindingRow,
   type PoItemRow,
   type SupplierRow,
@@ -105,6 +104,8 @@ import { ADD_LINE_LABEL } from '../../vendor/scm/lib/add-line-handoff';
 import { purchaseOrderLinesLocked } from '../../vendor/scm/lib/line-add-lock';
 import { useAddLineHandoff } from '../../vendor/scm/lib/useAddLineHandoff';
 import { useRenoDocInfo } from './RenovationDocInfo';
+import { useFormDraft } from '../../lib/formDraft';
+import { FormDraftBar } from '../../components/FormDraftBar';
 import { renoPoCategoryClashes, renoPoCategoryRefusal } from './renovationPoCategory';
 
 /** The one-category note: the same red as the SO-drift note on a line. */
@@ -249,13 +250,11 @@ export const PurchaseOrderDetail = () => {
   // human-readable name; the header only carries the warehouse id. Load
   // warehouses once at the top so the print handler can resolve it.
   const warehousesQTop = useWarehouses();
-  /* Candidate source SO lines for the per-line binder (2026-07-31). REUSES the
-     stock-aware shortage view the From-SO picker and MobileConvertWizard read
-     (GET /mfg-purchase-orders/outstanding-so-items) rather than a second query:
-     it is already company-scoped, already drops cancelled / draft / on-hold SOs
-     and already hides lines with no remaining shortage, which is exactly the
-     "still short" rule this picker needs. */
-  const outstandingSoQ = useOutstandingSoItems();
+  /* Candidate source SO lines for the per-line binder (2026-07-31) come from the
+     stock-aware shortage view (GET /mfg-purchase-orders/outstanding-so-items).
+     The binder loads them itself, only when it is opened, one page at a time for
+     the line's item code (SoLineBinderSelect): loading the whole list on every
+     PO open re-ran the MRP plan for a box most visits never touch. */
 
   /* Phase 1-C — SO-amendment workflow (approve-po / send gates + revisions
      list). The green "Revision ready" banner hosts Approve PO (at SO_APPROVED)
@@ -350,8 +349,9 @@ export const PurchaseOrderDetail = () => {
   const categoryForCode = (code: string): string | undefined =>
     allSkus.find((p) => p.code === code)?.category.toLowerCase();
 
-  /* Conts, renovation mode: one category per renovation PO (mig 0116). A line of another category is named next
-     to its card before Save, and the database's refusal shows here instead of a generic failed save. */
+  /* Conts, renovation mode: a PO may mix categories since 19 Nov 2026 (migration 0345 lifted mig 0116's one-category
+     rule), so renoPoCategoryClashes holds nothing back; a database still on the old rule has its refusal shown here in
+     plain words instead of a generic failed save. */
   const reno = useRenoDocInfo('po', id);
   const [categoryRefusal, setCategoryRefusal] = useState<string | null>(null);
 
@@ -398,6 +398,18 @@ export const PurchaseOrderDetail = () => {
     setEditLines(items.map(draftFromItem));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing, items]);
+
+  /* Unsaved edits kept in this browser per PO (lib/formDraft.ts), offered back the next time it is opened in Edit;
+     a draft from before the PO was saved again says so. */
+  const editDraftValue = { headerDraft, editLines };
+  const editDraft = useFormDraft('po-edit', po?.id ?? null, editDraftValue, {
+    enabled: isEditing && !!po && !hardLocked,
+    version: po?.updated_at ? Date.parse(po.updated_at) || null : null,
+  });
+  const restoreEditDraft = (v: typeof editDraftValue) => {
+    setHeaderDraft(v.headerDraft);
+    if (Array.isArray(v.editLines) && v.editLines.length > 0) setEditLines(v.editLines);
+  };
 
   /* Cost auto-recompute (mirrors Create) — resolve a line's supplier price
      matrix + maintenance surcharges into a unit cost. Defined above the early
@@ -529,30 +541,12 @@ export const PurchaseOrderDetail = () => {
      until the single top Save. */
   const visibleItems = items;
 
-  /* Source-SO-line options for one draft line. Only lines for the SAME SKU are
-     offered (the server refuses a mismatch anyway, and offering one would just
-     be a trap), and only lines the shortage view still reports as short. A line
-     that is ALREADY bound keeps its own option even when it has dropped off the
-     shortage view — otherwise a controlled select would fall back to the
-     placeholder and the operator would read a real binding as "none". */
-  const soLinkOptionsFor = (l: EditLine): Array<{ value: string; label: string }> => {
-    const code = l.itemCode.trim().toUpperCase();
-    const opts: Array<{ value: string; label: string }> = [];
-    if (code) {
-      for (const s of outstandingSoQ.data ?? []) {
-        if ((s.itemCode ?? '').trim().toUpperCase() !== code) continue;
-        const who = s.debtorName ? ` · ${s.debtorName}` : '';
-        opts.push({ value: s.soItemId, label: `${s.soDocNo}${who} · ${s.remainingQty} short` });
-      }
-    }
-    if (l.soItemId && !opts.some((o) => o.value === l.soItemId)) {
-      const stored = items.find((it) => it.id === l.itemId);
-      opts.unshift({
-        value: l.soItemId,
-        label: `${stored?.so_doc_no ?? 'Linked Sales Order'} · currently linked`,
-      });
-    }
-    return opts;
+  /* The binder's label for a line that was already bound when the editor opened:
+     it may no longer be short, so the shortage view would not list it. */
+  const soLinkBinderFor = (l: EditLine): { linkedLabel: string | null } => {
+    if (!l.soItemId) return { linkedLabel: null };
+    const stored = items.find((it) => it.id === l.itemId);
+    return { linkedLabel: `${stored?.so_doc_no ?? 'Linked Sales Order'} · currently linked` };
   };
 
   /* SO→PO drift (Commander 2026-06-16) — lines whose source SO was edited AFTER
@@ -820,6 +814,7 @@ export const PurchaseOrderDetail = () => {
           soItemId:       d.soItemId ?? null,
         });
       }
+      editDraft.clear();
       setIsEditing(false);
       setHeaderDraft(null);
       setEditLines([]);
@@ -921,6 +916,7 @@ export const PurchaseOrderDetail = () => {
     <div className={styles.page}>
       {/* Commander 2026-05-29 — dropped the GRNs/Invoice/Returns smart-button
           row + the "PO date · N lines · Expected" subtitle (not needed). */}
+      {isEditing && <div className="mb-3"><FormDraftBar draft={editDraft} onRestore={restoreEditDraft} staleText="This PO changed after your draft; restoring will overwrite those changes." /></div>}
 
       {/* ── Header — V2-parity chrome (owner 2026-07-27 "这里设计不对"): the
           edit surface opens with the same header language as the V2 detail
@@ -1289,7 +1285,7 @@ export const PurchaseOrderDetail = () => {
       {/* ── Line items ──────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Line Items ({isEditing ? editLines.length : visibleItems.length})</h2>
+          <h2 className={styles.cardTitle}>Line items ({isEditing ? editLines.length : visibleItems.length})</h2>
           {/* Owner 2026-06-19 — Edit mode restores the Create UI: a "+ Add item"
               that appends a blank PoLineCard (committed by the page-level Save).
               Hidden while the PO is locked. */}
@@ -1392,7 +1388,7 @@ export const PurchaseOrderDetail = () => {
                     onPendingItemPick={() => {}}
                     onRemove={() => removeLine(l.rid)}
                     disabled={isLocked}
-                    soLinkOptions={soLinkOptionsFor(l)}
+                    soLinkBinder={soLinkBinderFor(l)}
                     photos={
                       /* A LINE THAT IS NOT SAVED YET HAS NOWHERE TO PUT A
                          PHOTO. The keys are `po-items/<po>/<item id>/…`, so
@@ -1596,7 +1592,7 @@ const SupplierCard = ({
   return (
     <section className={styles.card}>
       <header className={styles.cardHeader}>
-        <h2 className={styles.cardTitle}>Supplier · Dates · Notes</h2>
+        <h2 className={styles.cardTitle}>Supplier · dates · notes</h2>
         {/* Commander 2026-05-29 — the card's own Save is gone; the single top
             "Save" commits the whole PO draft (header + line edits). */}
       </header>

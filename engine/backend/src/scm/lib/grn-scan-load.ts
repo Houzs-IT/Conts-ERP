@@ -11,6 +11,7 @@
 
 import type { SupabaseClient as SupabaseClientGeneric } from '@supabase/supabase-js';
 import { isDocumentHeld } from './document-hold';
+import { paginateAll } from './paginate-all';
 import { RECEIVABLE_PO_STATUSES } from './source-document-gates';
 import type { OpenPoLine, SupplierSkuBinding } from './grn-scan-match';
 
@@ -65,11 +66,15 @@ export async function loadSupplierBindings(
   svc: SupabaseClient,
   companyId: number | null,
 ): Promise<SupplierSkuBinding[]> {
-  let q = svc
-    .from('supplier_material_bindings')
-    .select('supplier_sku, ac_item_code, item_code');
-  if (companyId != null) q = q.eq('company_id', companyId);
-  const { data, error } = await q.limit(20000);
+  /* Paged: `.limit(20000)` never lifted the 1,000-row cap, and the company passed 2,200 bindings, so a scanned
+     delivery note could not match any supplier code past the 1,000th binding. */
+  const { data, error } = await paginateAll((from, to) => {
+    let q = svc
+      .from('supplier_material_bindings')
+      .select('supplier_sku, ac_item_code, item_code');
+    if (companyId != null) q = q.eq('company_id', companyId);
+    return q.order('id').range(from, to);
+  });
   if (error) throw new Error(`load supplier bindings failed: ${error.message}`);
   type Row = { supplier_sku: string | null; ac_item_code: string | null; item_code: string | null };
   const out: SupplierSkuBinding[] = [];

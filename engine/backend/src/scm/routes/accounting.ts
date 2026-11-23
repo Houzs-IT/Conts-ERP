@@ -11,8 +11,8 @@
 //   POST   /post/pi/:invoiceNumber    — auto-post a PI: Dr Inventory, Cr AP
 //   GET    /gl                        — flat GL stream (v_gl_entries)
 //   GET    /balances                  — running account balances (v_account_balances)
-//   GET    /ar-aging                  — v_ar_aging
-//   GET    /ap-aging                  — v_ap_aging
+//   GET    /ar-aging                  — debtor aging from the books (conts/aging-routes.ts)
+//   GET    /ap-aging                  — creditor aging from the books (conts/aging-routes.ts)
 //
 // Note: this is intentionally minimal — single legal entity, single currency.
 // ERPNext-style chart hierarchy + cost centres are deferred.
@@ -26,7 +26,7 @@ import { MIGRATED_NO_GL_MESSAGE } from '../lib/migrated-chain';
 
 /* Conts, migration 0136: an opening invoice or bill posts nothing itself. */
 const OPENING_NO_GL_MESSAGE = 'An opening balance: its amount is in the opening journal already, so no journal entry was written. Payments against it post as usual.';
-import { paginateAll } from '../lib/paginate-all';
+import { chunkIn, paginateAll } from '../lib/paginate-all';
 import { safeRate, toMyrSen } from '../lib/fx';
 import { todayMyt } from '../lib/my-time';
 import { hasHouzsPerm } from '../lib/houzs-perms';
@@ -79,15 +79,21 @@ import { piPeriodicBackfill } from './accounting-pi-backfill';
 import { renoOpeningApply, renoOpeningPreview } from './accounting-reno-opening';
 import { stockCloseStatus, stockCloseRun } from './accounting-stock-close';
 import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './accounting-reports';
-import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal } from '../../acc/opening';
+import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal, cutoverDocuments } from '../../acc/opening';
 import { importOpeningDeposits, reverseOpeningDeposits } from '../../acc/opening-deposits';
 import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../../conts/debtors-routes';
+import { mergeDebtors } from '../../acc/debtor-merge';
+import { discardDraftJournal } from '../../acc/draft-journal';
+import { AUTOCOUNT_MAX_DOCS, importAutocountJournals, reverseAutocountJournals, type AutocountJournal } from '../../acc/autocount-journals';
 import { partyLedgerHandler } from '../../conts/party-ledger';
+import { apAgingHandler, arAgingHandler } from '../../conts/aging-routes';
 import { createSubDepartmentHandler, listStaffDepartmentsHandler, listSubDepartmentsHandler, updateSubDepartmentHandler } from '../../conts/sub-department-routes';
 import { approveLimitRequestHandler, createLimitRequestHandler, getLimitSettingsHandler, listEverydayExpenseHandler, listLimitRequestsHandler, listProjectsHandler, projectLimitHandler, rejectLimitRequestHandler, setEverydayExpenseHandler, setLimitSettingsHandler } from '../../conts/project-limit-routes';
 import { projectOfPurchaseInvoice } from '../../conts/project-limit';
 import * as pettyCash from '../../conts/petty-cash-routes';
+import { financeTodoCountHandler, financeTodoHandler, todoSettingsGetHandler, todoSettingsPutHandler } from '../../conts/finance-todo-routes';
 import * as paymentRequests from '../../conts/payment-request-routes';
+import * as combinedVoucher from '../../conts/combined-voucher';
 import { assertAuditWritable, auditUnavailableBody, compactChanges, fieldChange, recordEntityAudit, type AuditActor } from '../lib/entity-audit';
 import { journalEntryEdit } from './accounting-journal-edit';
 import { reportLayoutGet, reportLayoutPut, reportLayoutReset } from './accounting-report-layouts';
@@ -101,6 +107,7 @@ import { numberingGet, numberingPut } from './accounting-numbering';
 import { receiptsList, receiptEnsure, receiptFormalise, receiptConfirmBanks } from './accounting-receipts';
 import { receiptsCheck } from './accounting-receipts-check';
 import { receiptsBackfillPlan, receiptsBackfillRun } from './accounting-receipts-backfill';
+import { unmatchedBankLinesHandler, unmatchedPaymentsHandler } from './accounting-unmatched-payments';
 import { ACCOUNT_SECTIONS, defaultSectionFor } from '../lib/account-sections';
 import { dateOrNull } from '../lib/date-coerce';
 
@@ -227,6 +234,10 @@ accounting.get('/receipts/check', receiptsCheck);
 accounting.get('/receipts/banks', receiptConfirmBanks);
 accounting.post('/receipts/backfill', receiptsBackfillRun);
 accounting.post('/receipts/:id/formalise', receiptFormalise);
+/* Unmatched payments (ported from Houzs): customer payments not confirmed or not on the bank yet, and the bank lines
+   nothing is matched to. Handlers in accounting-unmatched-payments.ts. */
+accounting.get('/unmatched-payments', unmatchedPaymentsHandler);
+accounting.get('/unmatched-bank-lines', unmatchedBankLinesHandler);
 accounting.post('/item-groups', itemGroupCreate);
 accounting.put('/item-groups/:code/accounts', itemGroupBind);
 accounting.patch('/item-groups/:code', itemGroupPatch);
@@ -261,6 +272,11 @@ accounting.post('/projects/:id/limit-requests', createLimitRequestHandler);
 accounting.get('/limit-requests', listLimitRequestsHandler);
 accounting.post('/limit-requests/:id/approve', approveLimitRequestHandler);
 accounting.post('/limit-requests/:id/reject', rejectLimitRequestHandler);
+/* Conts: Finance's To do (conts/finance-todo-routes.ts) — what waits on finance, and its rule switches. */
+accounting.get('/todo', financeTodoHandler);
+accounting.get('/todo/count', financeTodoCountHandler);
+accounting.get('/todo/settings', todoSettingsGetHandler);
+accounting.put('/todo/settings', todoSettingsPutHandler);
 /* Conts: petty cash floats and staff receipts (conts/petty-cash-routes.ts; SOP 6). */
 accounting.get('/petty-cash/options', pettyCash.optionsHandler);
 accounting.get('/petty-cash/floats', pettyCash.listFloatsHandler);
@@ -275,8 +291,10 @@ accounting.post('/petty-cash/receipts/:id/reject', pettyCash.rejectReceiptHandle
 accounting.post('/petty-cash/receipts/:id/repaid', pettyCash.repaidReceiptHandler);
 accounting.post('/petty-cash/receipts/:id/write-off', pettyCash.writeOffReceiptHandler);
 accounting.post('/petty-cash/receipts/:id/voucher', pettyCash.receiptVoucherHandler);
+accounting.put('/petty-cash/receipts/:id/recoveries', pettyCash.setReceiptRecoveryHandler);
 accounting.get('/petty-cash/overrides', pettyCash.listOverridesHandler);
 accounting.put('/petty-cash/overrides', pettyCash.putOverridesHandler);
+accounting.get('/staff-banks', pettyCash.listStaffBanksHandler);
 accounting.get('/staff-bank/:userId', pettyCash.getStaffBankHandler);
 accounting.put('/staff-bank/:userId', pettyCash.putStaffBankHandler);
 accounting.get('/petty-cash/receipts/:id/files/:fileId', pettyCash.financeReceiptFileHandler);
@@ -284,11 +302,29 @@ accounting.get('/petty-cash/receipts/:id/files/:fileId', pettyCash.financeReceip
 accounting.get('/payment-requests', paymentRequests.listRequestsHandler);
 accounting.post('/payment-requests/:id/voucher', paymentRequests.requestVoucherHandler);
 accounting.post('/payment-requests/:id/reject', paymentRequests.rejectRequestHandler);
+accounting.put('/payment-requests/:id/recoveries', paymentRequests.setRecoveryHandler);
 accounting.post('/payment-requests/:id/close', paymentRequests.closeRequestHandler);
 accounting.patch('/payment-requests/:id/supplier', paymentRequests.linkSupplierHandler);
 accounting.get('/payment-requests/:id/files/:fileId', paymentRequests.requestFileHandler);
+accounting.post('/payment-requests/:id/ap-invoice', paymentRequests.makeRequestApInvoiceHandler);
+/* Conts: one voucher for several ticked requests and staff claims (conts/combined-voucher.ts; chew 16 Nov 2026). */
+accounting.post('/vouchers/from-claims', combinedVoucher.combinedVoucherHandler);
 accounting.post('/debtors', createDebtorHandler);
 accounting.patch('/debtors/:id', patchDebtorHandler);
+
+/* One customer under two codes, merged into the one kept (acc/debtor-merge.ts; chew, 17 Nov 2026). */
+export const debtorMergeHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const r = await mergeDebtors(c.get('supabase'), co.companyId, String(body?.from ?? ''), String(body?.to ?? ''),
+    String(body?.date ?? todayMyt()), body?.dryRun !== false);
+  if (!r.ok) return c.json({ error: r.error }, r.status as 400);
+  return c.json(r.merge);
+};
+accounting.post('/debtors/merge', debtorMergeHandler);
 accounting.put('/chart/rename', chartRenameHandler);
 accounting.put('/chart/update', chartUpdateHandler);
 accounting.post('/chart/account', chartCreateHandler);
@@ -592,6 +628,51 @@ export const openingPayablesHandler = async (c: AccCtx): Promise<Response> => {
 };
 accounting.post('/opening/payables', openingPayablesHandler);
 
+/* The books kept in AutoCount after the ledger start, as journals (acc/autocount-journals.ts; chew, 17 Nov 2026). */
+export const autocountJournalsHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const docs = body?.docs;
+  if (!Array.isArray(docs) || docs.length === 0) return c.json({ error: 'Send the documents.' }, 400);
+  if (docs.length > AUTOCOUNT_MAX_DOCS) return c.json({ error: `At most ${AUTOCOUNT_MAX_DOCS} documents at a time.` }, 400);
+  return c.json(await importAutocountJournals(c.get('supabase'), co.companyId, docs as AutocountJournal[]));
+};
+accounting.post('/opening/autocount-journals', autocountJournalsHandler);
+
+/* An AutoCount document that turns out to be paper the ERP had booked already: its journal is taken back, on its own day. */
+export const autocountReverseHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const docNos = body?.docNos;
+  const why = typeof body?.why === 'string' && body.why.trim() ? body.why.trim() : 'booked in the ERP already';
+  if (!Array.isArray(docNos) || docNos.length === 0) return c.json({ error: 'Send the document numbers.' }, 400);
+  if (docNos.length > AUTOCOUNT_MAX_DOCS) return c.json({ error: `At most ${AUTOCOUNT_MAX_DOCS} documents at a time.` }, 400);
+  return c.json(await reverseAutocountJournals(c.get('supabase'), co.companyId, docNos.map(String), why));
+};
+accounting.post('/opening/autocount-journals/reverse', autocountReverseHandler);
+
+/* The open documents brought to AutoCount's as at the day it stopped (acc/opening.ts cutoverDocuments; chew, 17 Nov
+   2026). { asOf, receivables, payables, dryRun }: a dry run says what it would remove, keep and add. */
+export const cutoverHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const ar = Array.isArray(body?.receivables) ? body!.receivables as never[] : [];
+  const ap = Array.isArray(body?.payables) ? body!.payables as never[] : [];
+  if (ar.length + ap.length > OPENING_MAX_ROWS) return c.json({ error: `At most ${OPENING_MAX_ROWS} rows at a time.` }, 400);
+  const r = await cutoverDocuments(c.get('supabase'), co.companyId, String(body?.asOf ?? ''), ar, ap, actorId(c), body?.dryRun !== false);
+  return 'ok' in r && r.ok === false ? c.json({ error: r.error }, 409) : c.json(r);
+};
+accounting.post('/opening/cutover', cutoverHandler);
+
 export const openingCheckHandler = async (c: AccCtx): Promise<Response> => {
   if (!requireGlPost(c)) return c.json({ error: "You don't have permission to read the opening balances." }, 403);
   const co = requireActiveCompanyId(c);
@@ -666,12 +747,16 @@ export const journalEntriesList = async (c: any): Promise<Response> => {
   const codesByJe = new Map<unknown, string[]>();
   const linesByJe = new Map<unknown, LineOut[]>();
   if (jeIds.length > 0) {
-    const { data: lineRows, error: lnErr } = await sb
+    /* Batched and paged (chunkIn): 500 entry ids in one `in` list made a ~19KB URL, and 500 entries carry several
+       thousand lines while one read stops at 1,000 — entries past it lost their lines and their journal label. */
+    const { data: lineRows, error: lnErr } = await chunkIn(jeIds as string[], (batch, from, to) => sb
       .from('journal_entry_lines')
-      .select(withLines ? 'journal_entry_id, line_no, account_code, debit_sen, credit_sen, party_name, notes' : 'journal_entry_id, account_code')
-      .in('journal_entry_id', jeIds);
+      .select(withLines ? 'id, journal_entry_id, line_no, account_code, debit_sen, credit_sen, party_name, notes' : 'id, journal_entry_id, account_code')
+      .in('journal_entry_id', batch)
+      .order('id')
+      .range(from, to));
     if (lnErr) return c.json({ error: 'load_failed', reason: lnErr.message }, 500);
-    for (const l of (lineRows ?? []) as Array<{ journal_entry_id: unknown; account_code: string } & Partial<LineOut>>) {
+    for (const l of (lineRows ?? []) as unknown as Array<{ journal_entry_id: unknown; account_code: string } & Partial<LineOut>>) {
       const list = codesByJe.get(l.journal_entry_id) ?? [];
       list.push(l.account_code);
       codesByJe.set(l.journal_entry_id, list);
@@ -1039,13 +1124,13 @@ export async function postPiAccounting(sb: any, invoiceNumber: string): Promise<
      shares. */
   const { data: itemsRaw, error: itemsErr } = await sb
     .from('purchase_invoice_items')
-    .select('item_code, item_group, line_total_sen')
+    .select('item_code, item_group, account_code, line_total_sen')
     .eq('purchase_invoice_id', pi.id);
   if (itemsErr) return { ok: false, status: 'post_failed', reason: `PI lines: ${itemsErr.message}` };
   const split = await splitByItemGroup(sb, {
     companyId,
     docNo: pi.invoice_number,
-    items: (itemsRaw ?? []) as Array<{ item_code: string | null; item_group: string | null; line_total_sen: number | null }>,
+    items: (itemsRaw ?? []) as Array<{ item_code: string | null; item_group: string | null; account_code: string | null; line_total_sen: number | null }>,
     account: 'purchase_account',
     myrSen: (sen) => toMyrSen(sen, pi.exchange_rate),
     totalSen,
@@ -1315,45 +1400,12 @@ async function rangeBalances(c: any, sb: any, q: { department: Department | null
   return c.json({ balances });
 }
 
-accounting.get('/ar-aging', async (c) => {
-  const sb = c.get('supabase');
-  /* LEAK GUARD (DRAFT, two-state — 2026-06-25 anchoring diff vs 2990) — v_ar_aging
-     filters CANCELLED/VOID but NOT DRAFT (the view predates the SI two-state). A
-     DRAFT SI has posted no AR yet, so it must never appear in the aging buckets; the
-     view exposes s.status, so filter DRAFT out here at the route (migrations are
-     frozen). */
-  // PostgREST's 1000-row cap silently truncated the aging buckets — page through
-  // so the full AR ledger is bucketed, not just the first 1000 rows. Ordering
-  // stays inside the page factory so every page is consistent.
-  const { data, error } = await paginateAll((from, to) => scopeToCompany(sb
-    .from('v_ar_aging')
-    .select('*')
-    .neq('status', 'DRAFT'), c) // multi-company: isolate AR aging to the active company (view exposes company_id, mig 0106)
-    .order('days_overdue', { ascending: false })
-    .range(from, to));
-  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-  return c.json({ arAging: data ?? [] });
-});
-
-accounting.get('/ap-aging', async (c) => {
-  const sb = c.get('supabase');
-  /* LEAK GUARD (DRAFT, PI two-state — 2026-06-25 anchoring diff vs 2990) — v_ap_aging
-     filters CANCELLED/VOID but NOT DRAFT (the view predates the PI two-state). A
-     DRAFT PI has posted no AP yet, so it must never appear in the aging buckets; the
-     view exposes p.status, so filter DRAFT out here at the route (migrations are
-     frozen). Mirrors the /ar-aging DRAFT fix. */
-  // PostgREST's 1000-row cap silently truncated the aging buckets — page through
-  // so the full AP ledger is bucketed, not just the first 1000 rows. Ordering
-  // stays inside the page factory so every page is consistent.
-  const { data, error } = await paginateAll((from, to) => scopeToCompany(sb
-    .from('v_ap_aging')
-    .select('*')
-    .neq('status', 'DRAFT'), c) // multi-company: isolate AP aging to the active company (view exposes company_id, mig 0106)
-    .order('days_overdue', { ascending: false })
-    .range(from, to));
-  if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-  return c.json({ apAging: data ?? [] });
-});
+/* AR aging / AP aging (Conts, ported from Houzs 21 Nov 2026): the formal debtor and creditor aging, built from the
+   control accounts' own lines (conts/aging-routes.ts), so it ties to the general ledger to the sen. It replaced the
+   reads of v_ar_aging / v_ap_aging, which aged the documents' paid_sen and could disagree with the books (an opening
+   balance, a contract posted at signing, a claim on a supplier control were not in them). */
+accounting.get('/ar-aging', arAgingHandler);
+accounting.get('/ap-aging', apAgingHandler);
 
 /* ════════════════════════════════════════════════════════════════════════
    Phase 1 — chart management, manual-JV reversal, control-account self-check
@@ -1507,6 +1559,17 @@ export const journalEntryReverseHandler = async (c: AccCtx): Promise<Response> =
   return c.json({ ok: true, ...('jeNo' in r ? { jeNo: r.jeNo, jeId: r.jeId } : {}), status: r.status });
 };
 accounting.post('/journal-entries/:id/reverse', journalEntryReverseHandler);
+
+/* A manual draft thrown away (acc/draft-journal.ts): it booked nothing, so there is nothing to reverse. */
+export const journalEntryDiscardHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const r = await discardDraftJournal(c.get('supabase'), co.companyId, String(c.req.param('id') ?? ''));
+  if (!r.ok) return c.json({ error: r.error }, r.status);
+  return c.json(r);
+};
+accounting.delete('/journal-entries/:id', journalEntryDiscardHandler);
 
 /* GET /control-check — reconciliation layer 1 (brief 3.5): control account
    vs the documents that are supposed to explain it, named to the doc.

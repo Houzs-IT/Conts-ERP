@@ -52,7 +52,7 @@ export const BUILT_IN_CONTRACT_TYPES: readonly ContractTypeRow[] = [
   builtIn(6, 'MANAGE', 'Listing management', null, 'management', 'We manage the listing for a fee, no guarantee', false),
 ];
 
-export const contractTypesReady = (env: Env): Promise<boolean> => hasColumn(env, 'contract_types', 'code').catch(() => false);
+export const contractTypesReady = (env: Env): Promise<boolean> => hasColumn(env, 'contract_types', 'code');
 
 export const contractTypeOptionsReady = (env: Env): Promise<boolean> => hasColumn(env, 'contract_types', 'has_agent_share');
 

@@ -75,7 +75,8 @@ import {
 import { isAttachmentKey, loadDocPdfPhotos } from './pdf-doc-photos';
 import { fetchPoItemPhotoBlob } from './sales-order-queries';
 import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
-import { deliverToAddress } from './warehouse-print';
+import { deliverToAddress } from './warehouse-print';
+import { stampWatermark } from '../../../lib/renovation/doc-watermark';
 
 type PoHeader = {
   po_number:     string;
@@ -930,6 +931,7 @@ export async function purchaseOrderPdfBase64(
   await renderPurchaseOrderInto(doc, autoTable, header, items, { ...opts, emailCopy: true });
   finalizePoPdf(doc);
   // 'datauristring' → "data:application/pdf;base64,XXXX"; keep the base64 tail.
+  stampWatermark(doc);
   const uri = doc.output('datauristring');
   return uri.slice(uri.indexOf(',') + 1);
 }

@@ -7,11 +7,12 @@
 // (SalesOrderDetail), and /scm/renovation/contracts/:docNo redirects there. The stand-alone page stays for the
 // phone's renovation documents (mobile/MobileRenovationDocs.tsx).
 
+import { FromPackageButton, SaveAsPackageDialog } from './renovationPackagePick';
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { FilePlus2, Printer, ReceiptText } from 'lucide-react';
+import { FileDown, FilePlus2, Printer, ReceiptText } from 'lucide-react';
 import { PageHeader } from '../../components/Layout';
 import { Button } from '../../components/Button';
 import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapModal';
@@ -25,9 +26,6 @@ import {
   CONTRACT_NEXT_STATUS, contractPostingWarning, refusalOf, renoSend, useBrands, useContract, useContractPosting, usePoFlags, useRenoMutation,
   type BillingInstalment, type ContractPosting, type ContractView, type DocLine,
 } from '../../lib/renovation/api';
-import { buildPrintDoc } from '../../lib/renovation/print-doc';
-import { PrintDialog } from './PrintDialog';
-import { useLineCategory } from '../scm-v2/soPrintPreview';
 import { ContractProjectCard } from './ContractProjectCard';
 import { DocAttachments, LineFilesButton } from '../../components/doc-attachments/DocAttachments';
 import { Card, ErrorBanner, Field, fmtDate, inputCls, MoneyInput, pctLabel, rm, Stat, StatusPill, todayIso } from './shared';
@@ -218,8 +216,15 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
   const [error, setError] = useState<string | null>(null);
   const [billing, setBilling] = useState<BillingInstalment | null>(null);
   const [crediting, setCrediting] = useState(false);
-  const [printOpen, setPrintOpen] = useState(false);
-  const groupOf = useLineCategory(printOpen);
+  /* Save as package (owner, 20 Nov 2026); Packages > Save from a sales order opens this page with ?savePackage=1. */
+  const [params, setParams] = useSearchParams();
+  const [savingPackage, setSavingPackage] = useState(false);
+  const toast = useToast();
+  useEffect(() => {
+    if (params.get('savePackage') !== '1') return;
+    setSavingPackage(true);
+    setParams((p) => { const n = new URLSearchParams(p); n.delete('savePackage'); return n; }, { replace: true });
+  }, [params, setParams]);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
   /* An old contract link lands here with where it was going (#po-flags). */
   const { hash } = useLocation();
@@ -272,9 +277,12 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
           </div>
         );
 
-  const contractActions = can('scm.renovation.quote') && (CONTRACT_NEXT_STATUS[k.status] ?? []).map((n) => (
-    <Button key={n.to} variant={n.danger ? 'danger' : 'secondary'} onClick={() => setStatus(n.to, n.label, n.danger)}>{n.label}</Button>
-  ));
+  const contractActions = can('scm.renovation.quote') && [
+    <Button key="save-package" variant="secondary" icon={<FileDown size={15} />} onClick={() => setSavingPackage(true)}>Save as package</Button>,
+    ...(CONTRACT_NEXT_STATUS[k.status] ?? []).map((n) => (
+      <Button key={n.to} variant={n.danger ? 'danger' : 'secondary'} onClick={() => setStatus(n.to, n.label, n.danger)}>{n.label}</Button>
+    )),
+  ];
 
   return (
     <div id="contract" className="space-y-4">
@@ -286,7 +294,6 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill status={k.status} />
-            <Button variant="secondary" icon={<Printer size={15} />} onClick={() => setPrintOpen(true)}>Contract PDF</Button>
             {contractActions}
           </div>
         </div>
@@ -299,7 +306,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
           actions={(
             <div className="flex flex-wrap items-center gap-2">
               <StatusPill status={k.status} />
-              <Button variant="secondary" icon={<Printer size={15} />} onClick={() => setPrintOpen(true)}>Print</Button>
+              <Button variant="secondary" icon={<Printer size={15} />} onClick={() => navigate(`/scm/sales-orders/${k.docNo}?print=1`)}>Print</Button>
               {contractActions}
             </div>
           )}
@@ -313,7 +320,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
         <Stat label="Revised contract" value={rm(k.totals.revisedContractSen)} />
         {!embedded && <>
           <Stat label="Billed" value={rm(b.billedSen)} />
-          <Stat label="Received" value={rm(b.receivedSen)} tone="ok" />
+          <Stat label="Received" value={(b.waitingSen ?? 0) > 0 ? `${rm(b.receivedSen)} + ${rm(b.waitingSen ?? 0)} waiting for finance` : rm(b.receivedSen)} tone="ok" />
           <Stat label="To bill" value={rm(b.revisedContractSen - b.billedSen)} />
         </>}
       </div>
@@ -352,8 +359,8 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
                     {i.bill?.kind === 'ZERO' && <span className="text-ink-muted">closed, nothing to bill</span>}
                     {i.bill && <div className="text-[11px] text-ink-muted">{fmtDate(i.bill.invoiceDate)}</div>}
                   </td>
-                  <td className="py-2 text-right tabular-nums">{i.bill?.kind === 'INVOICE' ? rm(i.bill.paidSen) : ''}</td>
-                  <td className="px-3 py-2 text-right">{i.isNext && live && can('scm.renovation.bill') && <Button className="h-8" onClick={() => setBilling(i)}>Bill</Button>}</td>
+                  <td className="py-2 text-right tabular-nums">{i.bill?.kind === 'INVOICE' ? rm(i.bill.paidSen) : i.billedBeforeGoLive ? <>{rm(i.paidBeforeGoLiveSen ?? 0)}<div className="text-[10.5px] text-ink-muted">{i.paidBeforeGoLive ? 'paid before go-live' : 'before go-live'}</div></> : ''}</td>
+                  <td className="px-3 py-2 text-right">{i.isNext && live && (can('scm.renovation.bill') || can('scm.renovation.bill_own')) && <Button className="h-8" onClick={() => setBilling(i)}>Bill</Button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -368,13 +375,13 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
               </div>
               <div className="text-[11.5px] text-ink-muted">{i.stageCode ? STAGE_LABEL[i.stageCode as StageKey] : 'No stage'} · cum. {pctLabel(i.cumBp)}{!i.bill && !i.isNext && !i.billedBeforeGoLive ? ' · projected' : ''}</div>
               {i.bill && <div className="mt-0.5 text-[12px]">{i.bill.invoiceNumber ?? i.bill.noteNumber ?? 'Closed, nothing to bill'} · {fmtDate(i.bill.invoiceDate)}{i.bill.kind === 'INVOICE' ? ` · received ${rm(i.bill.paidSen)}` : ''}</div>}
-              {i.isNext && live && can('scm.renovation.bill') && <Button className="mt-2 h-8 w-full" onClick={() => setBilling(i)}>Bill this instalment</Button>}
+              {i.isNext && live && (can('scm.renovation.bill') || can('scm.renovation.bill_own')) && <Button className="mt-2 h-8 w-full" onClick={() => setBilling(i)}>Bill this instalment</Button>}
             </li>
           ))}
         </ul>
         {creditList}
       </Card>}
-      <Card title="Variation orders" actions={live && can('scm.renovation.quote') ? <Button variant="secondary" icon={<FilePlus2 size={15} />} onClick={newVo}>New VO</Button> : null}>
+      <Card title="Variation orders" actions={live && can('scm.renovation.quote') ? <span className="flex flex-wrap items-center gap-2"><FromPackageButton docNo={k.docNo} onError={setError} className="h-9 rounded-lg border border-border-default px-3 text-[13px] font-semibold text-ink" /><Button variant="secondary" icon={<FilePlus2 size={15} />} onClick={newVo}>New VO</Button></span> : null}>
         {k.variationOrders.length === 0 && <p className="text-[13px] text-ink-secondary">No variation orders.</p>}
         <ul className="divide-y divide-border-subtle">
           {k.variationOrders.map((v) => (
@@ -401,9 +408,8 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
       {!embedded && <DocAttachments docType="sales_order" docId={k.docNo} canEdit={k.status !== 'CANCELLED'} />}
       <BillDialog c={k} inst={billing} onClose={() => setBilling(null)} />
       <CreditDialog c={k} open={crediting} onClose={() => setCrediting(false)} />
-      <PrintDialog open={printOpen} onClose={() => setPrintOpen(false)} title="sales order" docNo={k.docNo} brandName={brand?.name} defaultFormat={k.header.printFormat} groupOf={groupOf}
-        rows={[{ label: "Customer", value: k.header.customerName || k.debtorName || "-" }]}
-        build={(format) => buildPrintDoc({ kind: 'SALES_ORDER', docNo: k.docNo, format, brand, header: { ...k.header, customerName: k.header.customerName || k.debtorName, docDate: k.header.docDate ?? k.soDate /* eslint-disable-line @typescript-eslint/no-unnecessary-condition -- doc_date may be null on older SOs; fall back to the SO date */ }, sections: k.sections, instalments: k.instalments })} />
+      {can('scm.renovation.quote') && <SaveAsPackageDialog contract={k} open={savingPackage} onClose={() => setSavingPackage(false)}
+        onSaved={(id, code, openIt) => { setSavingPackage(false); toast.success(`${code} saved as a draft package.`); if (openIt) navigate(`/scm/renovation/packages/${id}`); }} />}
     </div>
   );
 }

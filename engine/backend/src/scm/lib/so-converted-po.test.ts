@@ -25,8 +25,17 @@ function fakeSb(tables: Record<string, Row[]>) {
       if (op === 'is' && val === null) this.rows = this.rows.filter((r) => r[col] != null);
       return this;
     }
+    order(col: string) {
+      this.rows.sort((a, b) => String(a[col]).localeCompare(String(b[col])));
+      return this;
+    }
+    window: [number, number] | null = null;
+    range(from: number, to: number) { this.window = [from, to]; return this; }
     then<T>(onFulfilled: (v: { data: Row[]; error: null }) => T, onRejected?: (e: unknown) => T) {
-      return Promise.resolve({ data: this.rows, error: null }).then(onFulfilled, onRejected);
+      /* Like PostgREST: one response carries at most 1,000 rows, ranged or not. */
+      const [from, to] = this.window ?? [0, 999];
+      const data = this.rows.slice(from, Math.min(to, from + 999) + 1);
+      return Promise.resolve({ data, error: null }).then(onFulfilled, onRejected);
     }
   }
   return { from: (table: string) => new Q(tables[table] ?? []) };
@@ -195,5 +204,21 @@ describe('soConvertedPoNumbers', () => {
     });
     const out = await soConvertedPoNumbers(sb, ['SO-1'], 2);
     expect(out.get('SO-1')).toEqual(['PO-2-B']);
+  });
+});
+
+describe('soConvertedPos past the 1,000-row response cap', () => {
+  test('an order whose lines sort after the 1,000th line still gets its PO', async () => {
+    /* 150 orders x 10 lines = 1,500 lines in ONE batch of doc numbers: an unpaged read returned only the first 1,000. */
+    const lines: Row[] = [];
+    for (let d = 0; d < 150; d++) for (let l = 0; l < 10; l++) lines.push(soItem(`si-${String(d).padStart(3, '0')}-${l}`, `SO-${d}`));
+    const sb = fakeSb({
+      mfg_sales_order_items: lines,
+      purchase_order_items: [poItem('si-000-0', 'po-first'), poItem('si-149-9', 'po-last')],
+      purchase_orders: [po('po-first', 'PO-2611-001', 'SUBMITTED'), po('po-last', 'PO-2611-002', 'SUBMITTED')],
+    });
+    const out = await soConvertedPoNumbers(sb, Array.from({ length: 150 }, (_, d) => `SO-${d}`), null);
+    expect(out.get('SO-0')).toEqual(['PO-2611-001']);
+    expect(out.get('SO-149')).toEqual(['PO-2611-002']);
   });
 });

@@ -134,7 +134,7 @@ async function stampIssued(sb: any, orderId: string, rows: Array<{ id: string; i
 }
 
 type LedgerRow = {
-  source_doc_id: string; movement_type: string; warehouse_id: string; item_code: string; variant_key: string | null; batch_no?: string | null;
+  id?: string; source_doc_id: string; movement_type: string; warehouse_id: string; item_code: string; variant_key: string | null; batch_no?: string | null;
   product_name: string | null; qty: number; unit_cost_sen: number | null; source_doc_no: string | null; company_id: number | null;
 };
 
@@ -150,7 +150,7 @@ export async function reverseIssues(sb: any, orderId: string, performedBy: strin
   const ledger: LedgerRow[] = [];
   for (const part of chunks(ids, IDS_PER_CALL)) {
     const { data: rows, error: readErr } = await sb.from('inventory_movements')
-      .select('source_doc_id, movement_type, warehouse_id, item_code, variant_key, batch_no, product_name, qty, unit_cost_sen, source_doc_no, company_id')
+      .select('id, source_doc_id, movement_type, warehouse_id, item_code, variant_key, batch_no, product_name, qty, unit_cost_sen, source_doc_no, company_id')
       .eq('source_doc_type', PRODUCTION_DOC).in('source_doc_id', part);
     if (readErr) return { ok: false, reason: readErr.message };
     ledger.push(...((rows ?? []) as LedgerRow[]));
@@ -171,7 +171,7 @@ export async function reverseIssues(sb: any, orderId: string, performedBy: strin
     const opposite = r.movement_type === 'IN' ? 'OUT' : 'IN';
     reversal.push({
       movement_type: opposite, warehouse_id: r.warehouse_id, item_code: r.item_code, variant_key: r.variant_key ?? '', product_name: r.product_name,
-      qty: Number(r.qty), ...(opposite === 'IN' ? { unit_cost_sen: Number(r.unit_cost_sen ?? 0) } : {}), ...(r.batch_no ? { batch_no: r.batch_no } : {}),
+      qty: Number(r.qty), ...(opposite === 'IN' ? { unit_cost_sen: Number(r.unit_cost_sen ?? 0) } : {}), ...(opposite === 'IN' && r.id ? { reverses_movement_id: r.id } : {}), ...(r.batch_no ? { batch_no: r.batch_no } : {}),
       source_doc_type: PRODUCTION_DOC, source_doc_id: r.source_doc_id, source_doc_no: r.source_doc_no ?? undefined, company_id: r.company_id,
       performed_by: performedBy, notes: `Reversal of ${PRODUCTION_DOC} ${r.source_doc_no ?? r.source_doc_id} (cancel/line-delete)`,
     } as never);

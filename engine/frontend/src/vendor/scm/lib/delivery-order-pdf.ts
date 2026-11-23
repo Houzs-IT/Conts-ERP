@@ -56,7 +56,9 @@ import {
 } from './pdf-item-photos';
 import { isAttachmentKey, loadDocPdfPhotos } from './pdf-doc-photos';
 import { fetchDoItemPhotoBlob } from './sales-order-queries';
-import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
+import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
+/* Conts prints no "The Conts ERP · date" footer (owner, 17 Nov 2026). */
+import { CONTS_LINES_BY_NAME } from '../../../conts/flowRules';
 
 type DoHeader = {
   /* Row id — the photo proxy route is keyed by it. Optional so the
@@ -448,7 +450,7 @@ function drawFooterOnly(doc: Doc, header: DoHeader, pageOf: { page: number; tota
   const footBaseline = baselineOf(FOOTER_RULE_Y + 3, S.footer);
   font(doc, S.footer);
   setInk(doc, T.ink);
-  doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(header.do_date)}`, M, footBaseline);
+  if (!CONTS_LINES_BY_NAME) doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(header.do_date)}`, M, footBaseline);
   doc.text(`${header.do_number} · Page : ${pageOf.page} of ${pageOf.total}`, PAGE_W - M, footBaseline, { align: 'right' });
 }
 
@@ -592,7 +594,20 @@ export async function renderDeliveryOrderInto(
   const headRow = showPicking
     ? ['#', 'Item Code', 'Description', 'Source PO', 'Rack', 'Qty', 'm³']
     : ['#', 'Item Code', 'Description', 'Qty', 'm³'];
-  const rightAlignedHead = new Set(showPicking ? [5, 6] : [3, 4]);
+  const rightAlignedHeadAll = showPicking ? [5, 6] : [3, 4];
+  /* Conts prints a line by its description, no Item Code column (owner, 17 Nov 2026: every document the same
+     format as the sales order). Column 1 is the code; everything right of it moves one place left. */
+  const dropCode = CONTS_LINES_BY_NAME;
+  const shiftKey = (i: number): number => (dropCode && i > 1 ? i - 1 : i);
+  if (dropCode) {
+    headRow.splice(1, 1);
+    for (const r of rows) r.splice(1, 1);
+    (foot[0]![0] as { colSpan: number }).colSpan -= 1;
+  }
+  const columnStylesShown = Object.fromEntries(Object.entries(columnStyles)
+    .filter(([k]) => !(dropCode && Number(k) === 1))
+    .map(([k, v]) => [shiftKey(Number(k)), v]));
+  const rightAlignedHead = new Set(rightAlignedHeadAll.map(shiftKey));
 
   autoTable(doc, {
     startY: panelBottom + 4,
@@ -622,7 +637,7 @@ export async function renderDeliveryOrderInto(
       fontSize: S.tableFoot,
       fontStyle: 'bold',
     },
-    columnStyles,
+    columnStyles: columnStylesShown,
     margin: { left: M, right: M, bottom: PAGE_H - FOOTER_RULE_Y + 6 },
     /* The header row: bold upper-cased labels over a heavy rule. autoTable
        cannot upper-case a cell, so each head cell paints its own text and

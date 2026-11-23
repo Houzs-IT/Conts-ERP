@@ -48,7 +48,7 @@
 // domain-idempotent (payment-vouchers.ts:407 /post, :528 /cancel both detect
 // their own replay and echo back) gains nothing from a key.
 // ---------------------------------------------------------------------------
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 /** Mint a key for ONE payment intent. Opaque to the server, which binds it to
  *  the authenticated principal, company, route and exact request payload. */
@@ -119,4 +119,207 @@ export function idempotentInit(key: string | undefined, init: RequestInit): Requ
 export function useIdempotencyKey(): string {
   const [key] = useState(newIdempotencyKey);
   return key;
+}
+
+/* ---------------------------------------------------------------------------
+ * A key per FORM CONTENT, for a create form the operator may correct and save again.
+ *
+ * WHY (owner, New Purchase Order, production 19 Nov 2026 18:07 MYT): the first Save was refused (a renovation PO
+ * mixing two categories), the operator moved the line and pressed Save, and the reused mount key answered "An
+ * earlier submission with different details already finished under this request key". The server half of the fix
+ * releases a claim whenever the route can prove it wrote nothing; this is the client half, for the refusal no route
+ * could prove.
+ *
+ * THE RULES, which keep both properties the docblock above insists on:
+ *   - SAME content -> SAME key, always. A double press, or a retry after a stall, replays the first answer and never
+ *     books a second document.
+ *   - ANY save after the server REFUSED the last try with a 4xx (an answer, not a stall) -> a NEW key: the route said
+ *     no, so the next press is a new request, not a retry. That holds for unchanged content too (audit 20 Nov 2026,
+ *     items 19-24): the refusal may hang on something fixed elsewhere (stock received, a supplier set up), and the
+ *     old key would only replay the stored refusal.
+ *   - CHANGED content after a try whose outcome is UNKNOWN (no answer: a timeout, a dropped connection, a 5xx, a
+ *     gateway error, "still going through") -> the caller must ASK first, because that try may have created the
+ *     document; only a yes mints the new key.
+ *   - `idempotency_key_reused` is never read as "nothing was saved" (it can follow a committed 201), so it counts
+ *     as unknown, not as a refusal.
+ * ------------------------------------------------------------------------- */
+
+export type SubmitOutcome = "succeeded" | "refused" | "unknown";
+
+/** What the last try's error says about whether it may have written. Only a plain 4xx from the route is a refusal. */
+export function outcomeOfError(err: unknown): SubmitOutcome {
+  const e = err as { status?: unknown; body?: unknown } | null;
+  const status = typeof e?.status === "number" ? e.status : null;
+  if (status == null || status < 400 || status >= 500) return "unknown";
+  const body = typeof e?.body === "string" ? e.body : "";
+  if (/"idempotency_(in_flight|key_reused|outcome_unknown|key_conflict)"/.test(body)) return "unknown";
+  return "refused";
+}
+
+export type ContentKeyDecision = { key: string; needsConfirm: false } | { key: null; needsConfirm: true };
+
+export type ContentBoundKey = {
+  /** The key for this content, or `needsConfirm` when the content changed after a try with an unknown outcome. */
+  keyFor(content: unknown): ContentKeyDecision;
+  /** The operator confirmed saving the changed content although the last try may have written: mint its key. */
+  confirmNewKey(content: unknown): string;
+  /** Record how the try that used the current key ended. */
+  settle(outcome: SubmitOutcome): void;
+  /** The current key and the content it was minted for, kept with a form's local draft (lib/formDraft.ts). */
+  snapshot(): ContentKeySnapshot | null;
+  /** Take back a key kept with a restored draft. Its outcome is unknown (the page went away before or during the
+      answer), so the same content replays under it and changed content asks first. */
+  adopt(snap: unknown): void;
+  /** Called whenever the key or its content changes (not on settle). */
+  subscribe(fn: () => void): () => void;
+};
+
+export type ContentKeySnapshot = { key: string; sig: string };
+
+/** Plain-object core of useContentBoundIdempotencyKey, so it can be tested without React. */
+export function createContentBoundKey(mint: () => string = newIdempotencyKey): ContentBoundKey {
+  let current: { key: string; sig: string; outcome: SubmitOutcome | "pending" } | null = null;
+  const sigOf = (content: unknown) => JSON.stringify(content);
+  const listeners = new Set<() => void>();
+  let lastSeen = "";
+  const changed = () => {
+    const now = current ? `${current.key}|${current.sig}` : "";
+    if (now === lastSeen) return;
+    lastSeen = now;
+    for (const fn of listeners) fn();
+  };
+  const keys: ContentBoundKey = {
+    keyFor(content) {
+      const sig = sigOf(content);
+      if (!current) {
+        current = { key: mint(), sig, outcome: "pending" };
+        changed();
+        return { key: current.key, needsConfirm: false };
+      }
+      if (current.outcome === "refused") {
+        current = { key: mint(), sig, outcome: "pending" };
+        changed();
+        return { key: current.key, needsConfirm: false };
+      }
+      if (current.sig === sig) {
+        current.outcome = "pending";
+        return { key: current.key, needsConfirm: false };
+      }
+      if (current.outcome === "unknown") return { key: null, needsConfirm: true };
+      /* Still running, or it succeeded (the page is about to leave): keep the key, so the server answers in_flight
+         or replays instead of starting a second document. */
+      return { key: current.key, needsConfirm: false };
+    },
+    confirmNewKey(content) {
+      current = { key: mint(), sig: sigOf(content), outcome: "pending" };
+      changed();
+      return current.key;
+    },
+    settle(outcome) {
+      if (current) current.outcome = outcome;
+    },
+    snapshot() {
+      return current ? { key: current.key, sig: current.sig } : null;
+    },
+    adopt(snap) {
+      const s = snap as Partial<ContentKeySnapshot> | null;
+      if (typeof s?.key !== "string" || typeof s.sig !== "string") return;
+      current = { key: s.key, sig: s.sig, outcome: "unknown" };
+      changed();
+    },
+    subscribe(fn) {
+      listeners.add(fn);
+      return () => { listeners.delete(fn); };
+    },
+  };
+  return keys;
+}
+
+/** For a create form that opens inside a page that stays mounted (a modal or card on a list page): a fresh key set
+ *  each time `intent` changes identity (the form state object set on open, or its open flag), so the next document
+ *  is a new intent and two genuine identical documents never share a key. */
+export function useContentBoundIdempotencyKeyFor(intent: unknown): ContentBoundKey {
+  const ref = useRef<{ intent: unknown; keys: ContentBoundKey } | null>(null);
+  if (!ref.current || ref.current.intent !== intent) ref.current = { intent, keys: createContentBoundKey() };
+  return ref.current.keys;
+}
+
+/** One create form's content-bound key, living as long as the form's mount (see createContentBoundKey). */
+export function useContentBoundIdempotencyKey(): ContentBoundKey {
+  const ref = useRef<ContentBoundKey | null>(null);
+  if (!ref.current) ref.current = createContentBoundKey();
+  return ref.current;
+}
+
+/**
+ * One content-keyed submit: takes the key for this content, asks before minting a new key when the last try may have
+ * written (`askNewKey`; a no returns `{ sent: false }`), sends, and records how it ended. A failure is re-thrown after
+ * it is recorded, so a refusal (4xx) lets the corrected content go out under a new key.
+ */
+export async function sendWithContentKey<T>(
+  keys: ContentBoundKey,
+  content: unknown,
+  askNewKey: () => Promise<boolean>,
+  send: (key: string) => Promise<T>,
+): Promise<{ sent: false } | { sent: true; value: T }> {
+  const decision = keys.keyFor(content);
+  let key = decision.key;
+  if (decision.needsConfirm) {
+    if (!(await askNewKey())) return { sent: false };
+    key = keys.confirmNewKey(content);
+  }
+  try {
+    const value = await send(key!);
+    keys.settle("succeeded");
+    return { sent: true, value };
+  } catch (err) {
+    keys.settle(outcomeOfError(err));
+    throw err;
+  }
+}
+
+/** The usual question before a changed form goes out after a save that got no answer. */
+export function unansweredSaveQuestion(docLabel: string, whereToCheck: string) {
+  return {
+    title: "Your last save did not get an answer",
+    body: `It may already have created this ${docLabel}. Check ${whereToCheck} first.
+
+Save this changed version anyway?`,
+    confirmLabel: "Save changed version",
+    danger: true,
+  };
+}
+
+/**
+ * The key for one press of Save on a content-keyed form, for call sites that settle the outcome themselves
+ * (mutate with onSuccess / onError: call keys.settle("succeeded") and keys.settle(outcomeOfError(err))).
+ * Returns null when the operator declined the "last save got no answer" question.
+ */
+export async function contentKeyFor(
+  keys: ContentBoundKey,
+  content: unknown,
+  askNewKey: () => Promise<boolean>,
+): Promise<string | null> {
+  const decision = keys.keyFor(content);
+  if (!decision.needsConfirm) return decision.key;
+  if (!(await askNewKey())) return null;
+  return keys.confirmNewKey(content);
+}
+
+/**
+ * Wraps a mutate() call's callbacks so the try's outcome is recorded on the content key before the form's own
+ * onSuccess / onError run. The callbacks keep their types from the mutate() call they are passed to.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function settleOutcome<C extends { onSuccess?: (...args: any[]) => unknown; onError?: (err: any, ...rest: any[]) => unknown }>(
+  keys: ContentBoundKey,
+  callbacks: C,
+): C {
+  return {
+    ...callbacks,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    onSuccess: (...args: any[]) => { keys.settle("succeeded"); return callbacks.onSuccess?.(...args); },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    onError: (err: any, ...rest: any[]) => { keys.settle(outcomeOfError(err)); return callbacks.onError?.(err, ...rest); },
+  };
 }

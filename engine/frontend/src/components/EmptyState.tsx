@@ -31,10 +31,10 @@ export function EmptyState({
         className
       )}
     >
-      {icon && <div className="mb-1 text-ink-muted/70">{icon}</div>}
+      {icon && <div className="mb-1 text-ink-muted">{icon}</div>}
       <div>{message}</div>
       {description && (
-        <div className={cn("text-ink-muted/80", compact ? "text-[10.5px]" : "text-[11px]")}>
+        <div className={cn("text-ink-muted", compact ? "text-[10.5px]" : "text-[11px]")}>
           {description}
         </div>
       )}

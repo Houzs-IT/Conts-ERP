@@ -8,7 +8,7 @@ import { coord, workedMinutes, openTooLong, isForgottenOut, ON_SITE_METRES, FORG
  * Soft like Hookka: GPS and the selfie are recorded when the phone gives them, and never stop a punch.
  */
 
-export const hasAttendance = (env: Env): Promise<boolean> => hasColumn(env, 'attendance', 'id').catch(() => false);
+export const hasAttendance = (env: Env): Promise<boolean> => hasColumn(env, 'attendance', 'id');
 export const NOT_MIGRATED = 'Attendance needs a database update (migration 0166) that has not been applied yet.';
 
 export interface AttendanceRow {
@@ -43,7 +43,7 @@ export async function readPunch(request: Request): Promise<{ action: 'in' | 'out
   };
 }
 
-export const hasPunchRadius = (env: Env): Promise<boolean> => hasColumn(env, 'properties', 'punch_radius_m').catch(() => false);
+export const hasPunchRadius = (env: Env): Promise<boolean> => hasColumn(env, 'properties', 'punch_radius_m');
 
 /** Every building with a map location, each with its own punch radius (migration 0183) or ON_SITE_METRES. */
 export async function punchSites(env: Env): Promise<Site[]> {

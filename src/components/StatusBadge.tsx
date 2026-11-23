@@ -6,15 +6,15 @@ import { statusOf, statusOptions, normTone, TONE_STYLE, type AnyTone, type Statu
 
 type Size = 'sm' | 'md';
 type BadgeProps =
-  | { entity: StatusEntity; value: string | null | undefined; size?: Size; dot?: boolean; className?: string; title?: string }
-  | { tone: AnyTone; label?: ReactNode; children?: ReactNode; size?: Size; dot?: boolean; outline?: boolean; className?: string; title?: string };
+  | { entity: StatusEntity; value: string | null | undefined; size?: Size; dot?: boolean; strong?: boolean; className?: string; title?: string }
+  | { tone: AnyTone; label?: ReactNode; children?: ReactNode; size?: Size; dot?: boolean; outline?: boolean; strong?: boolean; className?: string; title?: string };
 
 /**
  * The only status pill. Either a stored status (`entity` + `value`, words and colour from lib/status.ts)
  * or a one-off flag (`tone` + `label`, e.g. "Missing ID"). Colour is never the only signal: the words are always shown.
  */
 export function StatusBadge(props: BadgeProps) {
-  const { size = 'md', className, title } = props;
+  const { size = 'md', className, title, strong = false } = props;
   let tone, label: ReactNode, outline = false, dot: boolean;
   if ('entity' in props) {
     const s = statusOf(props.entity, props.value);
@@ -25,10 +25,10 @@ export function StatusBadge(props: BadgeProps) {
   const t = TONE_STYLE[tone];
   return (
     <span title={title}
-      className={cx('inline-flex items-center gap-[6px] rounded-pill font-medium border border-solid leading-[1.35] max-w-full',
+      className={cx('inline-flex items-center gap-[6px] rounded-pill border border-solid leading-[1.35] max-w-full', strong ? 'font-semibold' : 'font-medium',
         className?.includes('whitespace-normal') ? 'text-left' : 'whitespace-nowrap',
         size === 'sm' ? 'px-[9px] py-[2px] text-caption' : 'px-[10px] py-[3px] text-meta', className)}
-      style={{ background: outline ? 'transparent' : t.bg, color: t.fg, borderColor: outline ? t.line : 'transparent' }}>
+      style={{ background: outline ? 'transparent' : t.bg, color: t.fg, borderColor: strong ? `color-mix(in srgb, ${t.fg} 45%, transparent)` : outline ? t.line : 'transparent' }}>
       {dot && <span aria-hidden className="w-[6px] h-[6px] rounded-full flex-none" style={{ background: t.line }} />}
       <span className={cx("min-w-0", !className?.includes("whitespace-normal") && "overflow-hidden text-ellipsis")}>{label}</span>
     </span>

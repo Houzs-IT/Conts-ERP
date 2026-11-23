@@ -35,6 +35,7 @@ import { MoneyInput } from '../../vendor/scm/components/MoneyInput';
 import { Modal } from '../../vendor/scm/components/Modal';
 import { useAuth as useHouzsAuth } from '../../auth/AuthContext';
 import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKeyFor } from '../../lib/idempotency';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import styles from './SalesOrderDetail.module.css';
 import { PageHeader } from '../../components/Layout';
@@ -142,6 +143,7 @@ export const OtherDebtors = () => {
   /* The bill form — New, Edit, Copy — in its own pop-out (owner: 开 bill 时决定
      account 就行了; and, 2026-09-06, everything editable, copyable). */
   const [billForm, setBillForm] = useState<BillFormState | null>(null);
+  const billKeys = useContentBoundIdempotencyKeyFor(billForm);
   const openNewBill = () => setBillForm({ mode: 'new', initial: emptyBillForm() });
   const openEditBill = (b: DebtorBill) => setBillForm({ mode: 'edit', initial: fromBill(b, false), billId: b.id, billNumber: b.bill_number, receivedSen: Number(b.received_sen) });
   const openCopyBill = (b: DebtorBill) => setBillForm({ mode: 'copy', initial: fromBill(b, true), billNumber: b.bill_number });
@@ -154,7 +156,12 @@ export const OtherDebtors = () => {
         void notify({ title: `${res.bill.billNumber} saved`, body: `Re-posted — the old journal got its contra and ${res.jeNo ?? 'a fresh entry'} books it as saved; ${fmtRm(res.bill.totalSen)} now on 305-0000.`, tone: 'info' });
         return;
       }
-      const res = await createBill.mutateAsync({ debtorId: selectedId, ...values });
+      const body = { debtorId: selectedId, ...values };
+      const sent = await sendWithContentKey(billKeys, body,
+        () => askConfirm(unansweredSaveQuestion('bill', "this debtor's bills")),
+        (idempotencyKey) => createBill.mutateAsync({ ...body, idempotencyKey }));
+      if (!sent.sent) return;
+      const res = sent.value;
       setBillForm(null);
       void notify({
         title: `${res.bill.billNumber} posted`,
@@ -168,6 +175,7 @@ export const OtherDebtors = () => {
 
   /* New-receipt card — AP-Payment shape: tick = full, type = partial. */
   const [receipting, setReceipting] = useState(false);
+  const receiptKeys = useContentBoundIdempotencyKeyFor(receipting);
   const [receiptBank, setReceiptBank] = useState('');
   const [allocs, setAllocs] = useState<Record<string, number>>({});
   const openBills = (detailQ.data?.bills ?? []).filter((b) => b.status === 'POSTED');
@@ -175,11 +183,16 @@ export const OtherDebtors = () => {
   const saveReceipt = async () => {
     if (!selectedId) return;
     try {
-      const res = await createReceipt.mutateAsync({
+      const body = {
         debtorId: selectedId,
         bankAccountCode: receiptBank,
         allocations: Object.entries(allocs).filter(([, v]) => v > 0).map(([billId, amountSen]) => ({ billId, amountSen })),
-      });
+      };
+      const sent = await sendWithContentKey(receiptKeys, body,
+        () => askConfirm(unansweredSaveQuestion('receipt', "this debtor's receipts")),
+        (idempotencyKey) => createReceipt.mutateAsync({ ...body, idempotencyKey }));
+      if (!sent.sent) return;
+      const res = sent.value;
       setReceipting(false); setAllocs({}); setReceiptBank('');
       void notify({ title: `${res.receipt.receiptNumber} raised`, body: 'It starts at Draft — prepare, check and approve to post the money in.', tone: 'info' });
     } catch (e) {
@@ -223,7 +236,7 @@ export const OtherDebtors = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Finance"
-        title="Other Debtors"
+        title="Other debtors"
         actions={canCreate ? (
           <button type="button" onClick={() => setPartyForm('new')}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--c-orange)', fontWeight: 600, cursor: 'pointer', fontSize: 'var(--fs-13)', background: 'none', border: 'none', padding: 0 }}>

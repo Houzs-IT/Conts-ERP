@@ -26,6 +26,8 @@ import { resolveRoles } from './rules';
 import { paymentReconciliation } from './payment-reconciled';
 import { creditConfirmedPaymentOfCancelledSo } from '../scm/lib/customer-credits';
 import { instalmentPreview } from '../scm/shared/renovation-money';
+import { paidBeforeGoLiveOf } from './reno-paid-before-golive';
+import { linkReceiptInvoiceBestEffort } from './receipt-invoice';
 
 /* The untyped client the poster takes, borrowed rather than spelled out again
    (a new file's lint ceiling is zero — payout-charge.ts's reason). */
@@ -181,6 +183,8 @@ export async function confirmReceiptsForSettlement(
   for (const o of outcomes) {
     if (o.outcome !== 'formalised' && o.outcome !== 'already_formal') continue;
     const source = payments.find((p) => p.id === o.paymentId)?.source === 'SIPAY' ? 'SIPAY' : 'SOPAY';
+    /* A renovation order payment's receipt names its invoice as at the confirm (acc/receipt-invoice). */
+    if (source === 'SOPAY' && o.outcome === 'formalised') await linkReceiptInvoiceBestEffort(sb, { orderPaymentId: o.paymentId }, { includeFormal: true });
     try {
       const r = await postConfirmedPayment(sb, source, o.paymentId, companyId, { newlyConfirmed: o.outcome === 'formalised' });
       if (!r.ok) log(`settlement: ${source} ${o.paymentId} confirmed but not posted:`, r.status, r.reason);
@@ -276,6 +280,9 @@ export async function nextInstalmentOffer(sb: Db, companyId: number, soDocNo: st
       if (error) return null;
       receivedSen += ((recs ?? []) as Array<{ amount_sen: number }>).reduce((s, r) => s + Number(r.amount_sen), 0);
     }
+    /* What AutoCount invoiced before go-live counts as billed above, so what it was paid there counts as received
+       (acc/reno-paid-before-golive; chew, 23 Nov 2026). */
+    if (billedBeforeSen > 0) receivedSen += (await paidBeforeGoLiveOf(sb, companyId, [soDocNo])).get(soDocNo) ?? 0;
     if (receivedSen <= netBilledSen) return null;
 
     /* The next instalment at billInstalment's amount: the schedule as billingView reads it. */

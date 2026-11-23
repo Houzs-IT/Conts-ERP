@@ -184,7 +184,7 @@ export function MultiSelectFilter({
               className={cn(
                 "text-[10.5px] font-semibold",
                 selected.length === 0
-                  ? "cursor-default text-ink-muted/50"
+                  ? "cursor-default text-ink-muted"
                   : "text-ink-secondary hover:text-err",
               )}
             >
@@ -355,7 +355,7 @@ export function ImportCsvPanel({
     <Panel
       open
       onClose={onClose}
-      title="Import Projects from CSV"
+      title="Import projects from CSV"
       subtitle="Paste rows from the Google Sheet — header row recognised"
       width={560}
       footer={

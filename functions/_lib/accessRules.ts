@@ -1,6 +1,6 @@
 import { type Env, all, one } from './db';
 import {
-  AREAS, GROUPS, closedBySide, LEVELS, groupKey, isKind, isLevel, isSetting, isSide, resolveFor, rulesFor, sideSql,
+  AREAS, GROUPS, closedBySide, LEVELS, groupKey, isKind, isLevel, isSetting, isSide, resolveFor, rulesFor, sideSql, sideWithRolesSql, userRolesReady,
   type DepartmentKind, type Level, type Origin, type Rules, type Setting, type Side,
 } from './access';
 
@@ -61,6 +61,15 @@ export function parsePositionMove(body: unknown): Parsed<MoveToPosition | null> 
   if (!isRecord(m)) return bad('Pick the position to move people to.');
   if (m.positionId !== undefined && m.positionId !== null && typeof m.positionId !== 'string') return bad('Pick the position to move people to.');
   return { ok: true, value: { positionId: typeof m.positionId === 'string' && m.positionId ? m.positionId : null } };
+}
+
+/** Extra roles a person holds besides their own department and position (migration 0349), as position ids. */
+export const MAX_EXTRA_ROLES = 10;
+export function parseExtraPositions(v: unknown): Parsed<string[]> {
+  if (!Array.isArray(v) || !v.every((id): id is string => typeof id === 'string' && id.length > 0)) return { ok: false, message: 'Choose extra roles from the list.' };
+  const ids = [...new Set(v)];
+  if (ids.length > MAX_EXTRA_ROLES) return { ok: false, message: `A person can hold at most ${MAX_EXTRA_ROLES} extra roles.` };
+  return { ok: true, value: ids };
 }
 
 export interface RuleChange { scope: 'department' | 'position'; scopeId: string; key: string; level: Setting | null }
@@ -203,22 +212,25 @@ export const categoryList = (): CategoryList[] =>
 
 /** The body of GET and PUT /api/users/access. */
 export interface PermissionPerson {
-  id: string; fullName: string; departmentId: string; positionId: string | null; isActive: boolean; customCount: number;
+  id: string; fullName: string; departmentId: string; positionId: string | null; side: Side; isActive: boolean; customCount: number;
 }
 
 interface PermissionPersonRow {
-  id: string; full_name: string; department_id: string; position_id: string | null; is_active: unknown; custom_count: number;
+  id: string; full_name: string; department_id: string; position_id: string | null; side: unknown; is_active: unknown; custom_count: number;
 }
 
 async function loadPermissionPeople(env: Env): Promise<PermissionPerson[]> {
   const rows = await all<PermissionPersonRow>(env,
-    `SELECT u.id, u.full_name, u.department_id, u.position_id, u.is_active,
+    `SELECT u.id, u.full_name, u.department_id, u.position_id, ${(await userRolesReady(env)) ? sideWithRolesSql('u', 'd') : sideSql('u', 'd')} AS side, u.is_active,
             (SELECT count(*)::int FROM access_rules r WHERE r.scope = 'user' AND r.scope_id = u.id) AS custom_count
-       FROM users u WHERE u.department_id IS NOT NULL ORDER BY lower(u.full_name)`);
-  return rows.map(row => ({
-    id: row.id, fullName: row.full_name, departmentId: row.department_id, positionId: row.position_id,
-    isActive: !!row.is_active, customCount: row.custom_count,
-  }));
+       FROM users u JOIN departments d ON d.id = u.department_id ORDER BY lower(u.full_name)`);
+  return rows.map(row => {
+    if (!isSide(row.side)) throw new Error(`Person ${row.id} has an unknown side: ${String(row.side)}`);
+    return {
+      id: row.id, fullName: row.full_name, departmentId: row.department_id, positionId: row.position_id,
+      side: row.side, isActive: !!row.is_active, customCount: row.custom_count,
+    };
+  });
 }
 
 export async function permissionBody(env: Env, canEdit: boolean) {
@@ -250,7 +262,7 @@ interface PersonRow {
 /** The person's grid: effective level and origin per area, their own override, and what they would get without it. */
 export async function personAccess(env: Env, userId: string, canEdit: boolean): Promise<PersonResult> {
   const row = await one<PersonRow>(env,
-    `SELECT u.id, u.full_name, u.department_id, u.position_id, d.name AS dept_name, d.kind, ${sideSql('u', 'd')} AS dept_side, p.name AS pos_name
+    `SELECT u.id, u.full_name, u.department_id, u.position_id, d.name AS dept_name, d.kind, ${(await userRolesReady(env)) ? sideWithRolesSql('u', 'd') : sideSql('u', 'd')} AS dept_side, p.name AS pos_name
        FROM users u LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN positions p ON p.id = u.position_id WHERE u.id = ?`, userId);
   if (!row) return { found: 'no-user' };
   if (!row.department_id || !row.dept_name || !isKind(row.kind) || !isSide(row.dept_side)) return { found: 'no-department' };

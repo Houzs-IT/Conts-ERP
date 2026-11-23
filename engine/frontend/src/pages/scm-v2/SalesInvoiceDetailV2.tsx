@@ -31,10 +31,12 @@
 // vendored sales-invoice-queries slice (useSalesInvoiceDetail /
 // useUpdateSalesInvoiceStatus).
 
+import { takeBack } from '../../lib/backTrail';
+import { PHONE_MORE_BUTTON, phoneMoreHeaderClass } from "../../components/scm-v2/phoneMoreActions";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { scmListReturnTo } from "../../lib/scmListReturn";
-import { siSettledSen, siOutstandingSen } from "../../vendor/scm/lib/si-outstanding";
+import { siCreditNotesSen, siSettledSen, siOutstandingSen } from "../../vendor/scm/lib/si-outstanding";
 import {
   ArrowLeft,
   History,
@@ -113,6 +115,7 @@ import { ActivityRow } from "./ActivityRow";
 import { DocumentHistoryDrawer } from "./DocumentHistoryDrawer";
 import { isFocLine } from '../../vendor/scm/lib/foc-line';
 import { RenovationDocBlock, renoLineColumns, useRenoDocInfo } from "./RenovationDocInfo";
+import { siCancelBody, siHeroLabel } from "./salesInvoiceCancel";
 // ─── Row shapes (subset — see SalesInvoiceDetail.tsx for the full 40-field
 // header) ───────────────────────────────────────────────────────────────
 
@@ -163,6 +166,7 @@ type SiHeader = {
   local_total_sen: number;
   total_sen: number;
   paid_sen: number;
+  credit_notes_sen?: number | null; // credit notes knocked off it (si-credit-notes); null = unread
   line_count: number;
   currency: string;
   // Finance-gated cost / margin fields (served on the detail payload; shown only
@@ -271,11 +275,12 @@ type OrderDeposit = {
    in one place instead of once per formula. */
 const paidOf = (h: SiHeader): number => h.paid_sen ?? 0;
 
+/* The credit notes knocked off it ride the header (credit_notes_sen) — the same three kinds of money the list nets. */
 const settledOf = (h: SiHeader, depositSen: number): number =>
-  siSettledSen(paidOf(h), depositSen);
+  siSettledSen(paidOf(h), depositSen, siCreditNotesSen(h));
 
 const outstandingOf = (h: SiHeader, items: SiItem[], depositSen: number): number =>
-  siOutstandingSen(totalOf(h, items), paidOf(h), depositSen);
+  siOutstandingSen(totalOf(h, items), paidOf(h), depositSen, siCreditNotesSen(h));
 
 // Payment-lifecycle bucket for tone + blurb.
 type Effective = "draft" | "sent" | "partial" | "paid" | "overdue" | "cancelled";
@@ -479,11 +484,12 @@ function OutstandingHeroCard({
   const total = totalOf(header, items);
   const paid = header.paid_sen ?? 0;
   const outstanding = outstandingOf(header, items, depositSen);
-  const isPaid = outstanding === 0;
+  const heroLabel = siHeroLabel(header.status, outstanding);
+  const isPaid = heroLabel !== "Outstanding";
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
-        {isPaid ? "Paid in full" : "Outstanding"}
+        {heroLabel}
       </div>
       <div
         className={cn(
@@ -523,6 +529,9 @@ function OutstandingHeroCard({
             v={fmtMoney(depositSen, header.currency)}
             tone="success"
           />
+        )}
+        {siCreditNotesSen(header) > 0 && (
+          <HeroLine k="Credit notes" v={fmtMoney(siCreditNotesSen(header), header.currency)} tone="success" />
         )}
         <HeroLine
           k="Outstanding"
@@ -576,6 +585,7 @@ function HeroLine({
 // ─── Main page ─────────────────────────────────────────────────────────────
 
 export function SalesInvoiceDetailV2() {
+  const [moreOpen, setMoreOpen] = useState(false);
   const { id } = useParams<{ id: string }>();
   /* Renovation mode (mig 0116): project, building, unit and line rooms copied from the SO / DO. */
   const reno = useRenoDocInfo("si", id);
@@ -732,7 +742,7 @@ export function SalesInvoiceDetailV2() {
   // details page's back button goes to its relevant list, not wherever
   // browser history happens to point). The list restores its own sticky
   // filters, so the prior filtered view comes back — no context lost.
-  const goBack = () => navigate(scmListReturnTo("/scm/sales-invoices"));
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? scmListReturnTo("/scm/sales-invoices"));
   // Header-only edit — seed the drafts from the invoice and reveal the inline
   // editor (no navigation; ?edit=1 was dead). invoice_date is only editable
   // while DRAFT; the backend rejects it once issued.
@@ -780,7 +790,7 @@ export function SalesInvoiceDetailV2() {
     if (
       await askConfirm({
         title: `Cancel invoice ${salesInvoice.invoice_number}?`,
-        body: "This reverses any posted revenue via a contra JE. You can reopen it later.",
+        body: siCancelBody(salesInvoice.paid_sen, (sen) => fmtMoney(sen, salesInvoice.currency), salesInvoice.debtor_name),
         confirmLabel: "Cancel invoice",
         danger: true,
       })
@@ -1186,11 +1196,7 @@ export function SalesInvoiceDetailV2() {
           <span className="font-mono text-[12.5px] font-semibold text-sidebar-ink">
             {salesInvoice.invoice_number}
           </span>
-          <button
-            type="button"
-            className="text-sidebar-ink-muted"
-            aria-label="More actions"
-          >
+          <button type="button" className={PHONE_MORE_BUTTON} aria-label="More actions" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>
             <MoreHorizontal size={18} />
           </button>
         </div>
@@ -1212,7 +1218,7 @@ export function SalesInvoiceDetailV2() {
       </div>
 
       {/* ─── Desktop sticky header ─────────────────────────────────── */}
-      <div className="sticky top-0 z-10 -mx-4 hidden border-b border-border bg-bg/95 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6 md:block">
+      <div className={phoneMoreHeaderClass(moreOpen)}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
             <button
@@ -1410,16 +1416,16 @@ export function SalesInvoiceDetailV2() {
             On md+ the dark aside hero replaces this. */}
         <div className="mb-3 rounded-lg border border-border bg-surface p-4 shadow-stone md:hidden">
           <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-            {outstanding === 0 ? "Paid in full" : "Outstanding"}
+            {siHeroLabel(salesInvoice.status, outstanding)}
           </div>
           <div
             className={cn(
               "mt-1 font-money text-[26px] font-bold leading-none tracking-tight",
-              outstanding === 0 ? "text-synced" : "text-err"
+              isCancelled ? "text-ink-muted" : outstanding === 0 ? "text-synced" : "text-err"
             )}
           >
             {fmtMoney(
-              outstanding === 0 ? total : outstanding,
+              isCancelled || outstanding === 0 ? total : outstanding,
               salesInvoice.currency
             )}
           </div>

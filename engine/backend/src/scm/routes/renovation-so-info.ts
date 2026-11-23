@@ -20,6 +20,7 @@ import { activeCompanyId, activeCompanySql } from '../lib/companyScope';
 import type { Env, Variables } from '../env';
 import type { Db } from '../../services/renovation/load';
 import { refreshProjectDates } from '../../services/renovation/projectDates';
+import { shareBrandWithProject } from '../../services/renovation/projectBrand';
 import {
   propertyColumnsReady,
   readProjectShared,
@@ -107,7 +108,7 @@ export async function stampCreatedProcessingDates(db: Db, docNo: string, company
     if (!/^\d{4}-\d{2}-\d{2}$/.test(s.date)) continue;
     await db.prepare(
       `INSERT INTO scm.reno_beta_line_plans (so_item_id, company_id, order_on) VALUES (?::uuid, ?, ?::date)
-       ON CONFLICT (so_item_id) DO UPDATE SET order_on = excluded.order_on, updated_at = now()`,
+       ON CONFLICT (so_item_id) DO UPDATE SET order_on = excluded.order_on, updated_at = now(), from_sla = false`,
     ).bind(row!.id, companyId, s.date).run();
   }
 }
@@ -170,6 +171,7 @@ export async function applyRenovationSoInfo(
     const shared: SoShared | null = await readSoShared(db, docNo);
     if (!shared) return { ok: false, status: 404, body: { error: 'so_not_found' } };
     await writeSoToProject(db, input.projectId, shared, ctx.actorId, ctx.companyId, docNo);
+    await shareBrandWithProject(db, docNo, input.projectId);
   }
   return { ok: true, projectId: input.projectId };
 }
@@ -247,7 +249,9 @@ renovationSoInfo.put('/:docNo/rooms', async (c: C) => {
   const so = await db.prepare(`SELECT coalesce(so_kind, 'STANDARD') AS so_kind, status::text AS status FROM scm.mfg_sales_orders WHERE doc_no = ?${activeCompanySql(c)}`)
     .bind(docNo).first<{ so_kind: string; status: string }>();
   if (!so) return c.json({ error: 'so_not_found', message: `Sales order ${docNo} does not exist.` }, 404);
-  if (so.so_kind !== 'STANDARD') return c.json({ error: 'renovation_contract', message: 'A renovation contract keeps the sections it was signed with.' }, 409);
+  /* A renovation contract's rooms save too (click sweep F9, 21 Nov 2026): rooms are layout, not money, and Edit SO
+     offers to rename, move and delete them on a contract, so refusing here dropped every such change without a word.
+     The money side of a contract still moves only through its VO. */
   if (so.status === 'CANCELLED' || so.status === 'CLOSED') return c.json({ error: 'so_closed', message: `Sales order ${docNo} is ${so.status.toLowerCase()}.` }, 409);
   const input = readRenovationBlock(body);
   await writeSoRooms(db, docNo, input.roomSections ?? [], input.itemRooms);

@@ -55,7 +55,7 @@ export function Forbidden({
         </p>
         {page && (
           <div className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1 font-mono text-[10.5px] text-ink-muted">
-            <span className="text-ink-muted/70">page:</span>
+            <span className="text-ink-muted">page:</span>
             <span className="text-ink">{page}</span>
           </div>
         )}
@@ -77,7 +77,7 @@ export function Forbidden({
             </Button>
           </Link>
         </div>
-        <p className="mt-8 font-mono text-[10px] text-ink-muted/70">
+        <p className="mt-8 font-mono text-[10px] text-ink-muted">
           {location.pathname}
         </p>
       </div>

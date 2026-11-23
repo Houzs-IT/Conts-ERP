@@ -104,7 +104,7 @@ async function mountDesktop(body: ChangeLogResponse | Error, path = "/change-log
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  return screen.findByText("Change Log");
+  return screen.findByText("Change log");
 }
 
 async function mountMobile(body: ChangeLogResponse | Error) {

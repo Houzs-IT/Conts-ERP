@@ -42,7 +42,9 @@ import { supabaseAuth } from '../middleware/auth';
 import type { Env, Variables } from '../env';
 import { paginateAll, chunkIn } from '../lib/paginate-all';
 import { scopeToCompany, activeCompanyId } from '../lib/companyScope';
+import { readSoInvoiceReceipts } from '../lib/so-invoice-receipts';
 import { stampOrderDeposit } from '../lib/si-list-stamps';
+import { creditNotesOf } from '../lib/si-credit-notes';
 import { stampSoRefs } from '../lib/so-ref-lookup';
 import { enrichLinesWithFabricSupplierCode } from '../lib/fabric-supplier-code';
 import { deriveDisplayBrandingByDoc } from '../lib/so-display-branding';
@@ -141,6 +143,9 @@ reports.get('/sales-order-detail-listing', async (c) => {
        mechanism the DO/SI listings below already use for docNo/debtorCode). */
     if (scopeIds) q = q.in('mfg_sales_orders.salesperson_id', scopeIds);
     q = scopeToCompany(q, c); // multi-company: isolate to the active company
+    /* A cancelled line is no longer part of the order: listing it made the export's lines add up to more than the
+       order total (owner, 16 Nov 2026: 517 cancelled lines on 17 orders). */
+    q = q.not('cancelled', 'is', true);
     // Sort: line-level for item_code, header-level (joined) for date/doc_no.
     if (sortBy === 'item_code') {
       q = q.order('item_code', { ascending: true });
@@ -485,6 +490,8 @@ reports.get('/sales-invoice-detail-listing', async (c) => {
      A failed stamp leaves the slice at 0 and the balance UN-adjusted, which is
      the only direction a report of what is owed may be wrong in. */
   const depositByInvoice = new Map<string, number>();
+  /* The credit notes knocked off the invoice (si-credit-notes.ts) come off like the deposit. */
+  const creditByInvoice = new Map<string, number>();
   {
     const stubs: Array<Record<string, unknown>> = [];
     const seen = new Set<string>();
@@ -497,7 +504,10 @@ reports.get('/sales-invoice-detail-listing', async (c) => {
       stubs.push({ id, so_doc_no: (h.so_doc_no as string | null) ?? null });
     }
     await stampOrderDeposit(sb, stubs, activeCompanyId(c) ?? null);
-    for (const st of stubs) depositByInvoice.set(String(st.id), Number(st.so_deposit_applied_sen ?? 0));
+    for (const st of stubs) {
+      depositByInvoice.set(String(st.id), Number(st.so_deposit_applied_sen ?? 0));
+      creditByInvoice.set(String(st.id), creditNotesOf(st));
+    }
   }
 
   const rows = ((data ?? []) as unknown as AnyRow[])
@@ -526,7 +536,9 @@ reports.get('/sales-invoice-detail-listing', async (c) => {
       flat.header_tax_sen      = headerTax;
       const headerDeposit = depositByInvoice.get(String(headerObj.id ?? '')) ?? 0;
       flat.so_deposit_applied_sen = headerDeposit;
-      flat.balance_sen = Math.max(headerTotal - headerPaid - headerDeposit, 0);
+      const headerCredit = creditByInvoice.get(String(headerObj.id ?? '')) ?? 0;
+      flat.credit_notes_sen = headerCredit;
+      flat.balance_sen = Math.max(headerTotal - headerPaid - headerDeposit - headerCredit, 0);
       return flat;
     })
     .filter((r) => {
@@ -900,6 +912,9 @@ export const fairReportHandler = async (c: FairCtx) => {
   // ── stage=so ──────────────────────────────────────────────────────────────
   if (stage === 'so') {
     const payByDoc = await fetchPaymentsByDoc(c, soRows.map((r) => r.doc_no));
+    /* Paid on the order's invoices counts as paid on the order (so-outstanding soPaidSen). */
+    const invRec = await readSoInvoiceReceipts(c.get('supabase'), soRows.map((r) => r.doc_no), activeCompanyId(c) ?? null);
+    if (!invRec.ok) return c.json({ error: 'load_failed', reason: invRec.reason }, 500);
     const rows = soRows.map((h) => {
       const money = fairSoMoney(h);
       const payments = payByDoc.get(h.doc_no) ?? [];
@@ -909,7 +924,7 @@ export const fairReportHandler = async (c: FairCtx) => {
          the legacy-deposit rule so a modern order does not double-count it. */
       const paidTotal = soPaidSen(soPaidInputsOf(h as unknown as Record<string, unknown>,
         payments.reduce((s, p) => s + Number(p.amount_sen ?? 0), 0),
-        payments.some((p) => p.is_deposit === true)));
+        payments.some((p) => p.is_deposit === true), invRec.sen.get(h.doc_no) ?? 0));
       const balanceSen = fairBalanceSen(money.amount_sen, paidTotal);
       const tender = depositByTender(payments);
       const below = belowDeposit({ balanceSen, depositSen: h.deposit_sen, paidSen: paidTotal });
@@ -1268,9 +1283,11 @@ export const fairReportDetailHandler = async (c: FairCtx) => {
   const payments = (payData ?? []) as Array<{ method: string | null; amount_sen: number | null; merchant_provider: string | null; installment_months: number | null; approval_code: string | null; paid_at: string | null; is_deposit: boolean | null }>;
   /* Same ledger rule as the list — the header's balance_sen/paid_sen columns
      are not maintained (fairBalanceSen, scm/shared/so-outstanding.ts). */
+  const invRec = await readSoInvoiceReceipts(sb, [String(docNo)], activeCompanyId(c) ?? null);
+  if (!invRec.ok) return c.json({ error: 'load_failed', reason: invRec.reason }, 500);
   const paidTotal = soPaidSen(soPaidInputsOf(h as unknown as Record<string, unknown>,
     payments.reduce((s, p) => s + Number(p.amount_sen ?? 0), 0),
-    payments.some((p) => p.is_deposit === true)));
+    payments.some((p) => p.is_deposit === true), invRec.sen.get(String(docNo)) ?? 0));
   const money = fairSoMoney(h);
   const balanceSen = fairBalanceSen(money.amount_sen, paidTotal);
 

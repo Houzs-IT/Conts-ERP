@@ -151,10 +151,20 @@ export const revertDeliveryOrderHandler = async (
   const warnings: string[] = [];
   const reversesStock = toStatus === 'DRAFT';
   if (reversesStock) {
+    let reversed = false;
     try {
-      warnings.push(...(await reverseInventoryForDo(sb, id, performedBy)));
+      const w = await reverseInventoryForDo(sb, id, performedBy);
+      warnings.push(...w);
+      reversed = w.length === 0;
     } catch (e) {
       warnings.push(`DO reversal threw: ${e instanceof Error ? e.message : 'unknown'}`);
+    }
+    /* D6: retire the ship-and-return cycle (migration 0360) so this DO reads as never shipped: shipping it again
+       takes the stock out again and a later revert returns only that ship. Only after a clean reversal; the SQL
+       refuses if stock is still out. */
+    if (reversed) {
+      const { error: retireErr } = await sb.rpc('fn_retire_do_stock_cycle', { p_do_id: id });
+      if (retireErr) warnings.push(`Stock was returned, but shipping this delivery order again will not take it out again: ${retireErr.message}`);
     }
     // Physical rack stock back (best-effort — never blocks the revert).
     try {
@@ -172,8 +182,8 @@ export const revertDeliveryOrderHandler = async (
     }
     // Freed stock — re-walk SO lines so PENDING orders flip back to READY.
     try {
-      const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-      await recomputeSoStockAllocation(sb);
+      const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+      await queueAllocationRecompute(sb, 'do-revert');
     } catch (e) {
       /* eslint-disable-next-line no-console */
       console.error('[do-revert] so-allocation failed:', e);

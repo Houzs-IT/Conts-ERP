@@ -29,6 +29,13 @@ r = await call('GET', '/api/finance/expenses'); check('expense raised', JSON.str
 r = await call('PATCH', `/api/maintenance/issues/${id}`, { state: 'reopened' }); check('reopen', r.status === 200, r.text);
 r = await call('POST', `/api/maintenance/issues/${id}/photos`, {}); check('photo upload with no file refused (422)', r.status === 422, r.text);
 r = await call('POST', '/api/maintenance/issues', { unitId: '#2207', title: 'Field damage', blocksUnit: true, source: 'field_app' }, 'housekeeper'); check('field damage report', r.status === 201, r.text);
+// delete
+r = await call('POST', '/api/maintenance/issues', { unitId: '#2207', title: 'Raised by mistake', blocksUnit: true }); const did = r.json?.id;
+r = await call('DELETE', `/api/maintenance/issues/${did}`, undefined, 'housekeeper'); check('field role cannot delete a job 403', r.status === 403, r.text);
+r = await call('DELETE', `/api/maintenance/issues/${id}`); check('job with a cost cannot be deleted 409', r.status === 409, r.text);
+r = await call('DELETE', `/api/maintenance/issues/${did}`); check('delete job', r.status === 200, r.text);
+r = await call('GET', '/api/maintenance/issues'); check('deleted job gone from list', !r.json.data.some(x => x.id === did), '');
+r = await call('DELETE', `/api/maintenance/issues/${did}`); check('delete again 404', r.status === 404, r.text);
 // field
 r = await call('GET', '/api/field/tasks?date=today', undefined, 'housekeeper'); check('field tasks', r.status === 200 && Array.isArray(r.json.rows) && r.json.rows.every(x => x.unit && 'addressLine' in x && !JSON.stringify(x).match(/revenue|fee|payout/i)), r.text.slice(0, 300));
 console.log('   field rows:', r.json.rows.length);

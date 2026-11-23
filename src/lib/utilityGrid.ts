@@ -14,12 +14,37 @@ export interface GridBill {
   /** The month the bill is for (its incurred_on), and the month of the owner statement that deducts it. */
   billMonth: string; deductMonth: string;
   amount: number; chargeTo: string; recordOnly: boolean;
+  /** The whole printed bill: `amount` plus the owner's own part. Older answers lack it. */
+  whole?: number;
+  /** The bill's note, its printed period and whether it came from Scan bills. Older answers lack them. */
+  description?: string | null; periodFrom?: string | null; periodTo?: string | null; scanned?: boolean;
+  /** The owner paid the provider: the company does not pay it and the whole bill goes back to the owner as a credit. */
+  ownerPaid?: boolean;
   /** The deduction month's owner statement is final (finalised, sent or paid). */
   final: boolean;
   receiptId: string | null; reference: string | null; rolled: boolean;
   /** The payment request the bill went out on: its number, engine status, the month (MYT) it was made, and what it asks
    *  for the bill (the whole printed bill, also when the expense keeps only the days inside the contract). */
-  request?: { id: string; no: string | null; status: string; month: string; amount?: number } | null;
+  request?: { id: string; no: string | null; status: string; month: string; amount?: number; reason?: string | null; decidedBy?: string | null } | null;
+}
+
+/** A payment request finance sent back, or that was withdrawn: why, who, its bills and what it asks for now. */
+export interface SentBackRequest { id: string; no: string | null; status: string; reason: string | null; decidedBy: string | null; bills: GridBill[]; amount: number }
+
+/** The requests sent back among the bills (chew, 13 Nov 2026; SOP 3.10), each once, newest number first: their bills are
+ *  fixed on the month screen and the request goes to finance again with Send again. Requests still with finance are not
+ *  here; they are in the grid. */
+export function sentBack(bills: GridBill[]): SentBackRequest[] {
+  const out = new Map<string, SentBackRequest>();
+  for (const b of bills) {
+    const r = b.request;
+    if (!r || (r.status !== 'WITHDRAWN' && r.status !== 'REJECTED')) continue;
+    const g = out.get(r.id) ?? { id: r.id, no: r.no, status: r.status, reason: r.reason ?? null, decidedBy: r.decidedBy ?? null, bills: [], amount: 0 };
+    g.bills.push(b);
+    g.amount += r.amount ?? b.amount;
+    out.set(r.id, g);
+  }
+  return [...out.values()].sort((x, y) => (y.no ?? '').localeCompare(x.no ?? '', 'en', { numeric: true }));
 }
 
 /** The "By payment request" view (chew, 5 Nov 2026; SOP 3.10): waiting for payment, part paid, paid. A rejected or

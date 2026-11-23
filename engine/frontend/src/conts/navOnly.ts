@@ -6,7 +6,7 @@
 
 /** Top-level menu entries kept, by their label in the registry. Team and Settings stay so an
  *  administrator can add people and set the company details; each is still gated by its own permission. */
-const KEEP = new Set(["Sales Orders", "Service Cases", "Projects", "Beta", "Supply Chain", "Finance", "Mail Center", "Team", "Settings"]);
+const KEEP = new Set(["Sales orders", "Service cases", "Projects", "Beta", "Supply chain", "Finance", "Mail center", "Team", "Settings"]);
 
 /** Houzs modules Conts does not use (owner decision C7, 11 Oct 2026): forecasting, the finance
  *  dashboard, consignment, HR commission and the AutoCount sync page. Switched off, not deleted: their

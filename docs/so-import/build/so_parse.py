@@ -19,19 +19,26 @@ def header_fields(ws):
 
 def parse(path):
     pdf = pdfplumber.open(path); doc = {'pages': len(pdf.pages), 'items': [], 'stated': {}, 'head': {}, 'summary': []}
-    sec = None; fmt = None; sec_page = -1
+    sec = None; fmt = None; sec_page = -1; prevX = None
     for pi, pg in enumerate(pdf.pages):
         cl = clusters(pg.extract_words())
         hi = next((i for i, c in enumerate(cl) if any(w['text'] in ('Description', 'DESCRIPTION') for w in c)), None)
-        if hi is None: continue
-        hdr = cl[hi] + (cl[hi + 1] if hi + 1 < len(cl) else []) + cl[hi - 1]
-        X = {}
+        if hi is None:
+            # a page printed without the column header row: the previous page's columns, the table after the intro line
+            hi = next((i for i, c in enumerate(cl) if ' '.join(w['text'] for w in c).startswith('We refer')), None)
+            if hi is None or not prevX: continue
+            hdr = []
+        else:
+            hdr = cl[hi] + (cl[hi + 1] if hi + 1 < len(cl) else []) + cl[hi - 1]
+        X = dict(prevX) if not hdr else {}
         for w in hdr:
             t = w['text']
             if t.startswith('Qty'): X['qty'] = w['x0']
             if t in ('Amount', 'AMOUNT'): X['amt'] = w['x0']
             if t in ('Unit', 'UNIT', 'DISC', 'COST') or t.endswith('DISC'): X['price'] = w['x0'] + (15 if t.endswith('DISC') and t != 'DISC' else 0); fmt = fmt or t.replace('Qty', '')
+        if 'qty' not in X and prevX and 'amt' in X: X['qty'] = prevX['qty']  # header printed without its Qty word
         if 'qty' not in X or 'amt' not in X: continue
+        prevX = X
         # header block above the table
         for c in cl[:hi]:
             line = ' '.join(w['text'] for w in c)
@@ -51,9 +58,11 @@ def parse(path):
                 m = re.search(r'(FINAL TOTAL|GRAND TOTAL)\s*\(RM\)\s*([\d,]+\.?\d*)', line)
                 if m: doc['stated'].setdefault(m.group(1), []).append(num(m.group(2)))
                 continue
-            if re.match(r'(Payment shall|Customer shall|Goods sold|The company reserves|PAGE OF)', line.strip(), re.I):
+            if re.match(r'(Payment shall|Customer shall|Goods sold|The company reserves|PAGE (\d+ )?OF)', line.strip(), re.I):
                 m = re.search(r'(FINAL TOTAL|GRAND TOTAL|TOTAL)\s*\(RM\)\s*([\d,]+\.?\d*)', line)
                 if m: doc['stated'].setdefault(m.group(1), []).append(num(m.group(2))); strays.append(num(m.group(2)))
+                m = re.search(r'\bFINAL\s+([\d,]{3,}(?:\.\d+)?)\s*$', line)  # "FINAL 31,293.30"
+                if m: doc['stated'].setdefault('FINAL TOTAL', []).append(num(m.group(1)))
                 m = re.search(r'\bRM\s*([\d,]{4,}(\.\d+)?)\s*$', line)
                 if m: doc['stated'].setdefault('RM', []).append(num(m.group(1)))
                 continue
@@ -77,6 +86,9 @@ def parse(path):
                 if abs(w['x0'] - X['qty']) < 12 and (NUM.match(t) or t in ('LS', 'L/S', 'LOT')): qty = t; continue
                 if X.get('price') and w['x0'] >= X['qty'] + 8 and NUM.match(t): price = num(t); continue
                 extra.append(t)
+            nums = [num(w['text']) for w in rest if NUM.match(w['text'])]
+            if qty is None and len(nums) == 3 and nums[2] == int(nums[2]) and abs(nums[0] - nums[1] * nums[2]) < 0.02:
+                amt, price, qty = nums[0], nums[1], str(int(nums[2]))  # a table printed Amount | Unit price | Qty
             dtext = ' '.join(w['text'] for w in desc + [w for w in rest if w['text'] in extra]).strip()
             no = None
             if desc and re.match(r'^\d{1,2}$', desc[0]['text']) and desc[0]['x0'] < 158:
@@ -93,7 +105,9 @@ def parse(path):
                     if qty is not None and last.get('qty') is None: last['qty'] = qty
                     if disc and not last.get('disc'): last['disc'] = disc
                 continue
-            if dtext and re.search(r'\bTOTAL\b', dtext, re.I) and (has_num or re.search(r'[\d,]+\.?\d*', dtext)):
+            if dtext and re.search(r'\bTOTAL\b(?!\s*:\s*[WHLD]\b)', dtext, re.I) and (has_num or re.search(r'[\d,]+\.?\d*', dtext)):
+                if re.search(r'(?<!FINAL )(?<!GRAND )TOTAL \(RM\)$', dtext) and amt is not None:
+                    doc['stated'].setdefault('TOTAL', []).append(amt); strays.append(amt)  # page total printed beside a note
                 doc['summary'].append({'desc': dtext, 'price': price, 'amt': amt}); continue
             if dtext and re.search(r'SPECIAL PROMO|DISCOUNTED\s*:|ROUND\s*(OFF|UP)|PACKAGE PRICE|NETT? PRICE', dtext, re.I):
                 doc['summary'].append({'desc': dtext, 'price': price, 'amt': amt}); continue
@@ -113,6 +127,10 @@ def parse(path):
             # "- BEDROOM 2   1   760" under a numbered item: a priced part of that item
             if no is None and has_num and dtext.startswith('-') and parent is not None:
                 dtext = parent['desc'] + ' - ' + dtext.lstrip('-* ').strip()
+                if amt is None and parent.get('amt') is not None:
+                    # a part listed under an item that carries the amount: the figure printed is its rate
+                    last = {'page': pi + 1, 'sec': sec, 'no': None, 'desc': dtext, 'qty': qty, 'price': price, 'disc': disc, 'amt': None, 'detail': [], 'rate': True}
+                    doc['items'].append(last); continue
             if not has_num and no is None and last is not None:
                 last['detail'].append(dtext); continue
             if not has_num and no is None and last is None and sec and sec_page == pi and dtext[0] in '-(':
@@ -125,10 +143,16 @@ def parse(path):
             last = {'page': pi + 1, 'sec': sec, 'no': no, 'desc': dtext, 'qty': qty, 'price': price, 'disc': disc, 'amt': amt, 'detail': []}
             if no is not None: parent = last
             doc['items'].append(last)
+        # a line with a price but an empty amount, on a page whose printed total is exactly its amounts: not charged
+        pg_all = [i for i in doc['items'][page_start:] if not i.get('lump') and not i.get('rate')]
+        amts = sum(i['amt'] or 0 for i in pg_all)
+        if any(abs(s - amts) < 0.5 for s in strays):
+            for i in pg_all:
+                if i['amt'] is None and i['price'] is not None: i['rate'] = True
         # a page subtotal printed in the amount column beside a body line
         pg_items = [i for i in doc['items'][page_start:] if i['amt'] is not None]
         # ...unless a stray row already printed the page's sum (then the last line is a real one that happens to match)
-        if len(pg_items) > 1 and not any(abs(s - sum(i['amt'] for i in pg_items)) < 1 for s in strays):
+        if len(pg_items) > 2 and not any(abs(s - sum(i['amt'] for i in pg_items)) < 1 for s in strays):
             lastamt = pg_items[-1]
             if abs(sum(i['amt'] for i in pg_items[:-1]) - lastamt['amt']) < 1: lastamt['amt'] = None; lastamt['subtotal_dropped'] = True
     doc['fmt'] = fmt
@@ -138,7 +162,7 @@ def parse(path):
         a = it['amt']
         if a is not None and run > 0 and abs(a - run) < 1.5 and len(keep) > 3:
             doc['summary'].append({'desc': it['desc'], 'price': it['price'], 'amt': a, 'grand_row': True})
-            if it['price'] is not None and it['price'] < a: doc['stated'].setdefault('FINAL TOTAL', []).append(it['price'])
+            if it['price'] is not None and it['price'] < a: doc['stated'].setdefault('GRANDROW', []).append(it['price'])
             continue
         keep.append(it); run += a or 0
     doc['items'] = keep

@@ -14,7 +14,7 @@
 //   MATTRESS / ACCESSORY / OTHERS → no variants section
 //
 // Wired to:
-//   - useMfgProducts (SKU picker, search-as-you-type)
+//   - useMfgProductSearch (SKU picker, search-as-you-type on the server)
 //   - useMaintenanceConfig (variant option lists + per-option surcharges)
 //   - useFabricTrackings (fabric dropdown)
 //   - useUploadSoItemPhoto / useDeleteSoItemPhoto (per-line photos, PR-F)
@@ -39,8 +39,7 @@ import { restrictPricedToPool, restrictStringsToPool } from '../../shared/mainte
 import { fabricAllowedByPool } from '../../shared/fabric-pool';
 import { activeOptions, isColourKiv, isDeliveryFeeServiceCode, lineIdentity, maintPickerValues, fmtMoneySen } from '@2990s/shared';
 import {
-  useMfgProducts,
-  matchesProductQuery,
+  useMfgProductSearch,
   useMaintenanceConfig,
   useSpecialAddons,
   useModelAllowedOptionsByCode,
@@ -203,6 +202,7 @@ const SoLineCardInner = ({
   searchHint,
   compact = false,
   actions,
+  decimalQty = false,
 }: {
   index:     number;
   draft:     SoLineDraft;
@@ -285,6 +285,8 @@ const SoLineCardInner = ({
   compact?: boolean;
   /** Compact only: extra per-line buttons, shown before the remove button. */
   actions?: ReactNode;
+  /** Quotation only: Qty takes up to 3 decimals (5.5 FT), saved as the line's measure. SO lines stay whole numbers. */
+  decimalQty?: boolean;
 }) => {
   const notify = useNotify();
   const maintQ   = useMaintenanceConfig('master');
@@ -379,21 +381,16 @@ const SoLineCardInner = ({
      product pick resets it to 0. */
   const [priceText, setPriceText] = useState((amountCellSen / 100).toFixed(2));
   const [priceTyping, setPriceTyping] = useState(false);
-  /* Load the full catalog ONCE (cached 5 min) and filter it LOCALLY — the picker
-     no longer fires a `/mfg-products?search=` request per keystroke, so typing
-     stays instant even while the Worker is slow or dropping connections (owner
-     2026-09-23: "product code search slow"). The catalog is small (~2.7k rows)
-     and the single list load is retried on a transient 504 by authedFetch. The
-     >=2-char gate keeps the dropdown quiet until the query is real; enabled only
-     while the picker is open so a saved line's render never fetches. */
+  /* The server searches (audit 20 Nov 2026): the dropdown asks for the first 50 active SKUs matching the typed text,
+     after a short pause, instead of loading the whole catalogue (2,291 SKUs) into every line card. The >=2-char gate
+     keeps it quiet until the query is real; enabled only while the picker is open. */
   const trimmedSearch = search.trim();
-  const productsQuery = useMfgProducts({ enabled: showPicker });
-  const allProducts = productsQuery.data ?? [];
+  const debouncedSearch = useDebouncedValue(trimmedSearch, 250);
+  const productsQuery = useMfgProductSearch({ search: debouncedSearch, enabled: showPicker && trimmedSearch.length >= 2 });
+  const settled = debouncedSearch === trimmedSearch && !productsQuery.isPlaceholderData;
   const candidates = useMemo(
-    () => (trimmedSearch.length >= 2
-      ? allProducts.filter((p) => matchesProductQuery(p, trimmedSearch))
-      : []),
-    [allProducts, trimmedSearch],
+    () => (trimmedSearch.length >= 2 && settled ? (productsQuery.data?.products ?? []) : []),
+    [productsQuery.data, trimmedSearch, settled],
   );
   /* Owner 2026-08-08 ("square pillow", HC-SO-2607-013) — typed text the
      catalog does not match must read as an ERROR, not sit quietly in the box:
@@ -402,7 +399,7 @@ const SoLineCardInner = ({
      loaded catalog produced zero matches. */
   const unmatchedFreeText =
     !draft.itemCode && trimmedSearch.length >= 2 &&
-    productsQuery.isSuccess && !productsQuery.isFetching && candidates.length === 0;
+    productsQuery.isSuccess && !productsQuery.isFetching && settled && candidates.length === 0;
 
   /* Effective category (owner 2026-07-13) — draft/backdoor lines (scan-OCR,
      hatch) can persist a sofa/bedframe SKU under a GENERIC itemGroup ('others'),
@@ -755,7 +752,7 @@ const SoLineCardInner = ({
 
   const lineTotal = useMemo(
     /* A credit row is negative on purpose; only a discount larger than the line stops at 0. */
-    () => (draft.unitPriceSen < 0 ? draft.qty * draft.unitPriceSen : Math.max(0, draft.qty * draft.unitPriceSen - draft.discountSen)),
+    () => (draft.unitPriceSen < 0 ? draft.qty * draft.unitPriceSen : Math.max(0, Math.round(draft.qty * draft.unitPriceSen) - draft.discountSen)),
     [draft.qty, draft.unitPriceSen, draft.discountSen],
   );
 
@@ -1074,7 +1071,7 @@ const SoLineCardInner = ({
                       from "no matches" (server returned []). */}
                   {trimmedSearch.length < 2
                     ? 'Type at least 2 characters to search…'
-                    : productsQuery.isFetching
+                    : productsQuery.isFetching || !settled
                       ? 'Searching…'
                       : `No products match "${trimmedSearch}".`}
                 </li>
@@ -1106,13 +1103,13 @@ const SoLineCardInner = ({
              beside it is typed (Houzs DEV-62). */}
         <NumberInput
           sign="unsigned"
-          decimal={false}
+          decimal={decimalQty}
           step={1}
           min={1}
           className={styles.numericInput}
           value={draft.qty === 0 ? null : draft.qty}
           disabled={!isEditing}
-          onValueChange={(n) => onChange({ qty: n ?? 0 })}
+          onValueChange={(n) => onChange({ qty: n == null ? 0 : Math.round(n * 1000) / 1000 })}
           onBlur={() => { if (draft.qty <= 0) onChange({ qty: 1 }); }}
         />
 
@@ -1180,7 +1177,7 @@ const SoLineCardInner = ({
             align="right"
             inputClassName={styles.priceInput}
             valueSen={draft.discountSen}
-            baseSen={draft.qty * draft.unitPriceSen}
+            baseSen={Math.round(draft.qty * draft.unitPriceSen)}
             disabled={!isEditing}
             onCommit={(sen) => onChange({ discountSen: sen ?? 0 })}
           />

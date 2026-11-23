@@ -134,6 +134,7 @@ export default function FieldMePage() {
 function ApplyForm({ today, onClose, onDone }: { today: string; onClose: () => void; onDone: () => void }) {
   const toast = useToast();
   const t = usePortalText();
+  const { day } = usePortalDates();
   const [type, setType] = useState<LeaveType>('annual');
   const [startDate, setStart] = useState(today);
   const [endDate, setEnd] = useState(today);
@@ -160,8 +161,8 @@ function ApplyForm({ today, onClose, onDone }: { today: string; onClose: () => v
       <h2 className="m-0 text-[16px] font-semibold tracking-[-0.01em]">{t.me.apply}</h2>
       <Select label={t.me.type} showLabel size="md" value={type} onChange={v => isType(v) && setType(v)}
         options={LEAVE_TYPES.map(lt => ({ value: lt, label: t.leaveType[lt] }))} />
-      <DateField label={t.me.firstDay} value={startDate} onChange={v => { setStart(v); if (v > endDate) setEnd(v); }} required error={errors.startDate} />
-      <DateField label={t.me.lastDay} value={endDate} min={startDate} onChange={setEnd} required error={errors.endDate} />
+      <DateField label={t.me.firstDay} value={startDate} display={day} onChange={v => { setStart(v); if (v > endDate) setEnd(v); }} required error={errors.startDate} />
+      <DateField label={t.me.lastDay} value={endDate} display={day} min={startDate} onChange={setEnd} required error={errors.endDate} />
       <Field label={t.me.reason} value={reason} onChange={e => setReason(e.target.value)} placeholder={type === 'medical' ? t.me.reasonMedical : t.me.reasonOther} error={errors.reason} />
       {n > 0 && <span className="text-meta text-muted-ink">{t.me.daysNote(t.common.days(n))}</span>}
       <div className="grid grid-cols-2 gap-2">

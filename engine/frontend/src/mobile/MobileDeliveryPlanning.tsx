@@ -831,7 +831,7 @@ function StopCard({
   const st = trackState(o, isToday);
   const [chipBg, chipFg] = STATE_COLORS[st];
   const seqBg = seqBgFor(st);
-  const bal = o.balance_sen_live ?? o.balance_sen ?? 0;
+  const bal = o.balance_sen_live ?? (o.local_total_sen ?? 0);
   const fullyPaid = bal <= 0;
   const cust = o.debtor_name || o.so_doc_no || EM;
   const subId = latestDo(o)?.do_number || jobLabelOf(o) || o.so_doc_no || EM;
@@ -1283,7 +1283,7 @@ function StopDetail({
   const [chipBg, chipFg] = STATE_COLORS[st];
   const doRef = latestDo(order);
   const doId = doRef?.id || null;
-  const bal = order.balance_sen_live ?? order.balance_sen ?? 0;
+  const bal = order.balance_sen_live ?? (order.local_total_sen ?? 0);
   const fullyPaid = bal <= 0;
   const eff = dm(effDateOf(order));
   const timeWindow = (order.time_range && order.time_range.trim()) || "";

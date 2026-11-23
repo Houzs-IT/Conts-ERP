@@ -15,7 +15,7 @@ import { canOperateProductionOrders } from "../auth/salesAccess";
 import { useConfirm } from "../vendor/scm/components/ConfirmDialog";
 import { useNotify } from "../vendor/scm/components/NotifyDialog";
 import { useConfirmProductionOrder, useProductionOrderDetail, useReopenProductionOrder, type MaterialStatus, type ProductionDetail } from "../vendor/scm/lib/production-order-queries";
-import { materialCalculation } from "../pages/scm-v2/renovationProductionDays";
+import { fmtNeed, issuedNote, materialCalculation } from "../pages/scm-v2/renovationProductionDays";
 import { AddMaterialDialog, AssignDialog, ChangeNotice, ProductionTimeDialog, ProgressPhotos, ProgressSummary, RequestMoreDialog, ReturnStockDialog, useAddPhotos, useProductionPress } from "../pages/scm-v2/renovationProductionParts";
 import { usePoCancelAction } from "../pages/scm-v2/use-production-cancel-action";
 import { useHoldAction } from "../pages/scm-v2/use-hold-action";
@@ -34,8 +34,8 @@ function StockLine({ status, needed, uom }: { status: MaterialStatus | undefined
   const ready = status.state === "received" || status.state === "stock";
   const word = ready ? "Ready" : status.state === "po" ? (status.eta ? `ETA ${fmtDate(status.eta)}` : "On order") : status.issued > 0 ? "Short" : "No PO yet";
   const tone = ready ? "bg-synced/10 text-synced" : status.state === "po" ? "bg-warning-bg text-warning-text" : "bg-err/10 text-err";
-  const why = ready ? (status.issued > 0 ? `Issued ${fmtQty(status.issued)} ${uom}` : status.state === "received" ? `Received ${fmtQty(status.received)} ${uom}` : "In stock")
-    : status.state === "po" ? `On order ${fmtQty(status.onOrder || needed)} ${uom}` : `Short ${fmtQty(status.shortQty ?? needed)} ${uom}`;
+  const why = ready ? (status.issued > 0 ? issuedNote(status.issued, needed, uom) : status.state === "received" ? `Received ${fmtQty(status.received)} ${uom}` : "In stock")
+    : status.state === "po" ? `On order ${fmtNeed(status.onOrder || needed)} ${uom}` : `Short ${fmtNeed(status.shortQty ?? needed)} ${uom}`;
   return (
     <>
       <span className={cn("inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold", tone)}>{word}</span>
@@ -158,7 +158,7 @@ export function MobileProductionOrder({ id, onBack }: { id: string; onBack: () =
               <div key={m.id} className="border-t border-border-subtle p-3 first:border-t-0">
                 <div className="flex justify-between gap-2.5">
                   <b className="text-[14px] font-semibold">{m.description || m.item_code}</b>
-                  <b className="whitespace-nowrap text-[13px] font-semibold">{fmtQty(Number(m.qty_needed))} {m.uom ?? ""}</b>
+                  <b className="whitespace-nowrap text-[13px] font-semibold">{fmtNeed(Number(m.qty_needed))} {m.uom ?? ""}</b>
                 </div>
                 <div className="mb-1.5 mt-0.5 text-[12px] text-ink-muted">{materialCalculation(m, works)} · Warehouse <b className="font-semibold text-ink">{press.statuses?.[m.id]?.warehouse ?? "None"}</b></div>
                 <StockLine status={press.statuses?.[m.id]} needed={Number(m.qty_needed)} uom={m.uom ?? ""} />

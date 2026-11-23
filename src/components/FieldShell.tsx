@@ -16,8 +16,8 @@ const TABS: { to: string; label: keyof PortalStrings['nav']; icon: string; match
   { to: '/portal/pay', label: 'pay', icon: 'Wallet', match: p => p.startsWith('/portal/pay') },
   { to: '/portal/me', label: 'me', icon: 'CircleUser', match: p => p.startsWith('/portal/me') },
 ];
-/** Renovation staff have no jobs or receipts in the portal: their own clock, pay and leave. */
-const RENOVATION_TABS = TABS.filter(tab => tab.label === 'clock' || tab.label === 'pay' || tab.label === 'me');
+/** Renovation staff have no jobs in the portal: their own receipts, clock, pay and leave. */
+const RENOVATION_TABS = TABS.filter(tab => tab.label === 'receipts' || tab.label === 'clock' || tab.label === 'pay' || tab.label === 'me');
 
 /** Housekeepers and technicians work on a phone, in a car park, one-handed.
  *  One column, 44px targets, and the whole page scrolls normally. */

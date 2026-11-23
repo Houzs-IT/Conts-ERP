@@ -57,7 +57,7 @@ export interface SubCategoryDef {
   active?: boolean;
 }
 
-/* WORKS sort order is the site trade order (see renovation-stages.ts TRADE_ORDER).
+/* WORKS seed order follows the suggested site trade order (renovation-stages.ts TRADE_ORDER).
    PARTITION, DOOR and FEATURE_WALL came with the Notion task categories (migration 0085).
    AIRCON_INSTALL, CLEANING and PROJECT_MGMT were WORKS until the owner filed them
    under Service (22 Oct 2026, migration 0141); they still act as site trades
@@ -189,15 +189,14 @@ export function categoryMatches(stored: string | null | undefined, filter: strin
 
 /* SUB_CATEGORIES above is the built-in seed. Sub-categories are edited at run time in
    scm.product_sub_categories, so a caller holding the database list passes it as
-   `list`; without one the seed is used. WORKS stays fixed: its sub-categories are
-   the site trades (renovation-stages.ts TRADE_ORDER, generic RN-* SKUs). */
-export const FIXED_SUB_GROUPS: readonly CatalogGroup[] = ['WORKS'];
+   `list`; without one the seed is used. A WORKS sub-category added there is a
+   new site trade: its task gets laid out after the TRADE_ORDER ones. */
 
 /* SERVICE sub-categories that are still site trades (owner, 22 Oct 2026: filed
    under Service, worked like Works). Everything that decides site work - trade
    tasks, the hardware stage and its auto-skip, a line's home stage, the reno-item
    condition, owner-supplied lines still getting a PO, the site-receipt photo rule -
-   treats them as WORKS through siteGroupOf. Like WORKS they are fixed in settings. */
+   treats them as WORKS through siteGroupOf. They stay fixed in settings. */
 export const SITE_TRADE_SERVICES: readonly string[] = ['AIRCON_INSTALL', 'CLEANING', 'PROJECT_MGMT'];
 
 /** The group a line WORKS AS on site: WORKS for a site-trade service, else its own group. */
@@ -208,7 +207,7 @@ export function siteGroupOf(group: CatalogGroup | null, sub: string | null | und
 
 /** Whether a sub-category cannot be renamed, reordered or hidden in settings. */
 export function isFixedSub(group: CatalogGroup, code: string): boolean {
-  return FIXED_SUB_GROUPS.includes(group) || (group === 'SERVICE' && SITE_TRADE_SERVICES.includes(code.toUpperCase()));
+  return group === 'SERVICE' && SITE_TRADE_SERVICES.includes(code.toUpperCase());
 }
 
 /* The saved sub-categories as last read by this browser tab, for a pure print helper with no hook. Frontend only, like rememberCategories. */

@@ -46,6 +46,9 @@ export interface BetaInstalment {
   /** The day the money was recorded on the sales order; null when not received yet. */
   paidOn?: string | null;
   method?: string | null;
+  /** Renovation: invoiced by AutoCount before go-live; paidBeforeGoLive = paid in full there (chew, 23 Nov 2026). */
+  billedBeforeGoLive?: boolean;
+  paidBeforeGoLive?: boolean;
 }
 
 export type BetaPayments =

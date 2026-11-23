@@ -12,6 +12,36 @@ export function requestStatus(amountSen: number, postedVoucherSen: number, curre
   return postedVoucherSen >= amountSen ? 'PAID' : 'PART_PAID';
 }
 
+/** A request paid through an AP invoice (chew, 15 Nov 2026; spec 2026-11-15-request-to-ap-invoice-design.md): what is
+ *  owed is the bill's, which may be more or less than asked. What the bill paid beyond `apPaidBeforeSen` (its paid when
+ *  the request was linked) is this request's. A deposit is still paid by its own amount; any other request is paid when
+ *  the bill is. A cancelled bill (`ap` null) leaves the request to its own vouchers, as before. */
+export function linkedRequestStatus(q: {
+  type: string; amountSen: number; current: string; ownPaidSen: number;
+  ap: { status: string; paidSen: number } | null; apPaidBeforeSen: number;
+}): string {
+  if (FINAL.has(q.current)) return q.current;
+  if (!q.ap || q.ap.status === 'CANCELLED') return requestStatus(q.amountSen, q.ownPaidSen, q.current);
+  const viaBill = Math.max(0, q.ap.paidSen - q.apPaidBeforeSen);
+  if (q.type === 'DEPOSIT') return requestStatus(q.amountSen, q.ownPaidSen + viaBill, q.current);
+  if (q.ap.status === 'PAID') return 'PAID';
+  return viaBill > 0 || q.ownPaidSen > 0 ? 'PART_PAID' : 'SUBMITTED';
+}
+
+/** `totalSen` spread over lines in proportion to their amounts, in whole sen, adding up exactly (the last line takes
+ *  the rounding); lines that come to nothing are dropped. A balance request's lines from its bill's. */
+export function spreadSen<L extends { amountSen: number }>(lines: L[], totalSen: number): Array<L & { amountSen: number }> {
+  const base = lines.reduce((n, l) => n + Math.max(0, l.amountSen), 0);
+  if (base <= 0 || totalSen <= 0) return [];
+  let given = 0;
+  const out = lines.map((l, i) => {
+    const sen = i === lines.length - 1 ? totalSen - given : Math.floor((Math.max(0, l.amountSen) * totalSen) / base);
+    given += sen;
+    return { ...l, amountSen: sen };
+  });
+  return out.filter(l => l.amountSen > 0);
+}
+
 /** What a submitted request still reserves on each project: its own lines, less the lines of its vouchers that are not
  *  cancelled (they reserve or use the limit themselves), never below zero (design §4.6). */
 export function requestReservation(requestLines: { projectId: number | null; amountSen: number }[],

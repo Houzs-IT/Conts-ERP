@@ -82,7 +82,7 @@ import { shortCompanyName, getBrandingCompanyCode } from "../../lib/branding";
 import { brandingLabel, isPlaceholderBrandText } from "../../vendor/shared/so-branding-label";
 import { soCanRaiseDo } from "../../vendor/shared/so-deliverable-states";
 import { useDebouncedSearchTerm, useSearchResultTransition } from "../../hooks/useServerSearch";
-import { useMfgSalesOrdersPaged, useMfgCustomers, useUpdateMfgSalesOrderStatus, useMfgSalesOrderDetail, useEnrichedSoListRows, useSoLineCoverage } from "../../vendor/scm/lib/sales-order-queries";
+import { useMfgSalesOrdersPaged, useSoCustomerNames, useUpdateMfgSalesOrderStatus, useMfgSalesOrderDetail, useEnrichedSoListRows, useSoLineCoverage } from "../../vendor/scm/lib/sales-order-queries";
 import { useSetDocumentHold } from "../../vendor/scm/lib/document-hold-queries";
 import { holdPrompt } from "./use-hold-action";
 import { useCancelRequestAction } from "./use-cancel-request-action";
@@ -218,6 +218,13 @@ type SoRow = HoldFields & {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+/* A stable empty list while the funnel's names load, so the column set is not rebuilt each render. */
+/* The balance from the view (order total - order payments - invoice receipts). The stored balance_sen is the gross
+   total on every order (docs/SAVE-BUG-CLASSES.md class 4) and is never read as money owed. */
+const liveBalance = (r: { balance_sen_live?: number | null; local_total_sen?: number | null; paid_total_sen?: number | null }): number =>
+  r.balance_sen_live ?? (r.local_total_sen ?? 0) - (r.paid_total_sen ?? 0);
+
+const EMPTY_NAMES: string[] = [];
 const fmtRm = (centi: number): string => fmtSen(centi);
 
 /* AutoCount's "SALES ORDER DETAILS-SALES" (SO_DEFAULT_COLUMNS) as grid keys, in
@@ -262,14 +269,12 @@ const brandTone = (r: SoRow): BrandTone => (/dream crafter|the conts/i.test(r.br
 function SplitDropdown({
   onFromQuotation,
   onImport,
-  onDuplicate,
   canMaintain,
 }: {
   onFromQuotation: () => void;
   onImport: () => void;
-  onDuplicate: () => void;
-  /* SO Maintenance is director-only (owner 2026-07-15). Import-from-file and
-     Duplicate-last-SO both land on /scm/sales-orders/maintenance, so they are
+  /* SO Maintenance is director-only (owner 2026-07-15). Import-from-file
+     lands on /scm/sales-orders/maintenance, so it is
      hidden from a non-director (OFF, not hide — no menu entry, and the route
      itself Forbids). "New from quotation" stays for everyone. */
   canMaintain: boolean;
@@ -318,16 +323,6 @@ function SplitDropdown({
                   }}
                 >
                   Import from file
-                </button>
-                <button
-                  type="button"
-                  className="block w-full px-3.5 py-2 text-left text-[12.5px] text-ink hover:bg-primary-soft"
-                  onClick={() => {
-                    setOpen(false);
-                    onDuplicate();
-                  }}
-                >
-                  Duplicate last SO
                 </button>
               </>
             )}
@@ -504,9 +499,8 @@ function DetailDrawer({
       ? items.reduce((sum, l) => sum + (l.total_sen ?? (l.qty ?? 0) * (l.unit_price_sen ?? 0)), 0)
       : row?.local_total_sen ?? 0;
   const totalSen = subtotalSen;
-  // Ledger-derived paid (Σ payments); the stored paid_sen is a deprecated
-  // column no writer maintains, kept only as the absent-view fallback.
-  const paidSen = row?.paid_total_sen ?? row?.paid_sen ?? 0;
+  // Paid from the view (order payments + invoice receipts). The stored paid_sen is never written: not read.
+  const paidSen = row?.paid_total_sen ?? 0;
   const outstandingSen = totalSen - paidSen;
 
   return (
@@ -1088,11 +1082,8 @@ export function MfgSalesOrdersListV2() {
   /* Seed the Customer Name funnel with every customer (not only the loaded
      page's) so a customer whose orders are all on a later page is still
      pickable — the point of pushing the filter server-side. */
-  const customersQ = useMfgCustomers();
-  const customerNames = useMemo(
-    () => [...new Set((customersQ.data?.customers ?? []).map((c) => c.name).filter((n): n is string => !!n))],
-    [customersQ.data],
-  );
+  const customerNamesQ = useSoCustomerNames();
+  const customerNames = customerNamesQ.data ?? EMPTY_NAMES;
 
   const { data, isLoading, isFetching, isPlaceholderData, error, refetch } = useMfgSalesOrdersPaged({
     page,
@@ -1152,8 +1143,8 @@ export function MfgSalesOrdersListV2() {
     // columns the server now sums, so both paths agree.
     for (const r of rows) {
       revenueSen += r.local_total_sen ?? 0;
-      outstandingSen += r.balance_sen_live ?? r.balance_sen ?? 0;
-      paidSen += r.paid_total_sen ?? r.paid_sen ?? 0;
+      outstandingSen += r.balance_sen_live ?? (r.local_total_sen ?? 0) - (r.paid_total_sen ?? 0);
+      paidSen += r.paid_total_sen ?? 0;
     }
     return { revenueSen, outstandingSen, paidSen, fullSet: false };
   }, [aggregates, rows]);
@@ -1235,8 +1226,8 @@ export function MfgSalesOrdersListV2() {
   const goSoMaintenance = () => navigate("/scm/sales-orders/maintenance");
   const goFromQuotation = () => navigate("/scm/sales-orders/new/guided");
   const goImport = () => navigate("/scm/sales-orders/maintenance?tab=import");
-  const goDuplicate = () => navigate("/scm/sales-orders/maintenance?tab=duplicate");
   const goEdit = (r: SoRow) => navigate(`/scm/sales-orders/${r.doc_no}?edit=1`);
+  const goCopyAsNew = (r: SoRow) => navigate(`/scm/sales-orders/new?copyFrom=${encodeURIComponent(r.doc_no)}`);
   const printDocument = usePrintDocument();
   const goFullPage = (r: SoRow) => navigate(`/scm/sales-orders/${r.doc_no}`);
   const doConfirm = (r: SoRow) =>
@@ -1295,7 +1286,7 @@ export function MfgSalesOrdersListV2() {
     setHold.mutate({ key: r.doc_no, onHold });
   };
   const soContextMenu = salesOrderRowMenu<SoRow>({
-    open: goFullPage, edit: goEdit, print: printDocument,
+    open: goFullPage, edit: goEdit, copyAsNew: goCopyAsNew, print: printDocument,
     confirm: doConfirm, transferToDo: doDeliver, reopen: doReopen,
     setStatus: setSoStatus, close: doCloseSo, setHold: setSoHold, cancel: doCancelSo, canDeliver,
   });
@@ -1703,7 +1694,7 @@ export function MfgSalesOrdersListV2() {
       },
     },
     approvalCodeColumn, // docs/bugs/0909 — its own module: this file may only shrink
-    moneyColumn<SoRow, SoListLine>({ key: "paid", group: "Amounts", label: "Paid", width: "110px", defaultHidden: true, sen: (r) => r.paid_total_sen ?? r.paid_sen ?? 0 }),
+    moneyColumn<SoRow, SoListLine>({ key: "paid", group: "Amounts", label: "Paid", width: "110px", defaultHidden: true, sen: (r) => r.paid_total_sen ?? 0 }),
     {
       key: "balance",
       group: "Amounts",
@@ -1712,18 +1703,18 @@ export function MfgSalesOrdersListV2() {
       align: "right",
       defaultHidden: true,
       disableSort: true,
-      getValue: (r) => r.balance_sen_live ?? r.balance_sen, // `?? 0` was dead: balance_sen is `number`, never nullish
-      exportValue: (r) => senToRinggit(r.balance_sen_live ?? r.balance_sen, 2),
+      getValue: (r) => liveBalance(r),
+      exportValue: (r) => senToRinggit(liveBalance(r), 2),
       exportFormat: "money",
       render: (r) => ( // negative = over-collected → text-err, the app's negative-money convention (owner 2026-08-16)
         <span
           className={cn(
             "font-money text-[13px]",
-            (r.balance_sen_live ?? r.balance_sen) < 0
+            liveBalance(r) < 0
               ? "text-err"
-              : isDeliveredOwing(r.balance_sen_live ?? r.balance_sen, r.delivery_state ?? null) ? OWING_CLASS : "text-ink",
+              : isDeliveredOwing(liveBalance(r), r.delivery_state ?? null) ? OWING_CLASS : "text-ink",
           )}
-          title={isDeliveredOwing(r.balance_sen_live ?? r.balance_sen, r.delivery_state ?? null) ? "Delivered, still owing" : undefined}
+          title={isDeliveredOwing(liveBalance(r), r.delivery_state ?? null) ? "Delivered, still owing" : undefined}
         >
           {fmtRm(r.balance_sen_live ?? r.balance_sen)}
         </span>
@@ -1957,7 +1948,7 @@ export function MfgSalesOrdersListV2() {
       <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
         <div className="min-w-0">
           <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-            Sales Orders
+            Sales orders
           </h1>
           <div className="mt-0.5 text-[12.5px] text-ink-muted">
             {total} order{total === 1 ? "" : "s"} ·{" "}
@@ -1979,7 +1970,7 @@ export function MfgSalesOrdersListV2() {
         <div className="px-4 sm:px-6">
           <PageHeader
             eyebrow="Sales"
-            title="Sales Orders"
+            title="Sales orders"
             description={`Every ${shortCompanyName(branding.companyName)} sales order — Draft to Delivered. Click any row for the quick view; open the full page to edit.`}
             primaryAction={
               <div className="flex items-stretch">
@@ -1994,7 +1985,6 @@ export function MfgSalesOrdersListV2() {
                 <SplitDropdown
                   onFromQuotation={goFromQuotation}
                   onImport={goImport}
-                  onDuplicate={goDuplicate}
                   canMaintain={canMaintain}
                 />
               </div>

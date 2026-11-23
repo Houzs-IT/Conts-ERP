@@ -18,6 +18,7 @@ import {
 } from '../../../lib/requestCorrelation';
 import { idempotentInit } from '../../../lib/idempotency';
 import { retryUnlessClientError } from '../../../lib/retryPolicy';
+import { reportInBandFailure, type InBandFailure } from './mutation-error';
 
 // baseQuery is a custom-hook factory — only ever called from use* hooks below.
 // eslint-disable-next-line react-hooks/rules-of-hooks
@@ -55,6 +56,9 @@ export type PaymentVoucherRow = Record<string, unknown> & {
       yet knocked off) — the list paints such rows and offers a chip. 0 when
       none. Server: listPaymentVouchersHandler. */
   advance_remaining_sen?: number | null;
+  /** Conts (chew, 18 Nov 2026): where the money goes: the supplier's bank, or for a claim paid back the claim's or the
+   *  person's saved bank (list only). */
+  payee_bank?: { bankName: string; accountNo: string; accountName: string | null } | null;
 };
 
 export type PaymentVoucherAllocation = {
@@ -72,6 +76,33 @@ export type PaymentVoucherAllocation = {
 export const usePaymentVouchers = (status?: string) => baseQuery<{ paymentVouchers: PaymentVoucherRow[] }>(
   ['payment-vouchers', status ?? 'all'], `/payment-vouchers${status ? `?status=${status}` : ''}`,
 );
+
+/* The Payment listing (ported from Houzs): the vouchers to pay, a line each, with what each is for, the departments and
+   projects its lines are for, and the bank it pays into. Server: GET /payment-vouchers/listing (payment-vouchers-listing.ts). */
+export type PaymentListingStage = 'DRAFT' | 'PREPARED' | 'CHECKED' | 'POSTED' | 'CANCELLED';
+export type PaymentListingRow = PaymentVoucherRow & {
+  stage: PaymentListingStage;
+  notes?: string | null;
+  description_text?: string;
+  departments?: string[];
+  projects?: string[];
+  pay_bank: string | null;
+  pay_account_no: string | null;
+  pay_account_name: string | null;
+};
+export type PaymentListing = { from: string | null; to: string; stages: PaymentListingStage[]; vouchers: PaymentListingRow[] };
+export const usePaymentListing = (q: { from: string; to: string; stages: PaymentListingStage[] }) => useQuery({
+  queryKey: ['payment-listing', q.from, q.to, q.stages.join(',')],
+  queryFn: () => {
+    const params = new URLSearchParams({ to: q.to, stages: q.stages.join(',') });
+    if (q.from) params.set('from', q.from);
+    return authedFetch<PaymentListing>(`/payment-vouchers/listing?${params.toString()}`);
+  },
+  enabled: q.stages.length > 0,
+  staleTime: 30_000,
+  retry: retryUnlessClientError,
+  retryDelay: 800,
+});
 
 export const usePaymentVoucherDetail = (id: string | null) => useQuery({
   queryKey: ['payment-voucher-detail', id],
@@ -94,13 +125,28 @@ export const usePaymentVoucherDetail = (id: string | null) => useQuery({
    cites this file — but for /post and /cancel, which "detect their own replay
    and echo back". CREATE has no such guard. The domain-idempotent note was about
    two OTHER endpoints and quietly read as if the file were covered. */
+/* A voucher that posts, approves-and-posts or cancels moves money on the invoices it settles, the supplier's advances
+   and the bank board, not only on itself. Every such write refreshes all of them, so a PI or AP bill never shows
+   unpaid after its voucher posted (or paid after it was cancelled). */
+const invalidatePvSettlement = (qc: ReturnType<typeof useQueryClient>, id: string) => {
+  for (const k of ['payment-vouchers', 'purchase-invoices', 'purchase-invoice-detail', 'ap-invoices', 'ap-invoice',
+    'supplier-advances', 'pv-reservations', 'daily-bank', 'journal-entries']) {
+    void qc.invalidateQueries({ queryKey: [k] });
+  }
+  void qc.invalidateQueries({ queryKey: ['payment-voucher-detail', id] });
+};
+
 export const useCreatePaymentVoucher = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ idempotencyKey, ...body }: { idempotencyKey?: string } & Record<string, unknown>) =>
       authedFetch<{ id: string; pvNumber: string }>(`/payment-vouchers`,
         idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['payment-vouchers'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['payment-vouchers'] });
+      // A new voucher reserves the invoices it names; the next voucher must not offer them again.
+      void qc.invalidateQueries({ queryKey: ['pv-reservations'] });
+    },
   });
 };
 
@@ -119,13 +165,8 @@ export const useUpdatePaymentVoucher = () => {
 export const usePostPaymentVoucher = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => authedFetch<{ ok: true; jeNo?: string }>(`/payment-vouchers/${id}/post`, { method: 'POST' }),
-    onSuccess: (_d, id) => {
-      void qc.invalidateQueries({ queryKey: ['payment-vouchers'] });
-      void qc.invalidateQueries({ queryKey: ['payment-voucher-detail', id] });
-      // A post settles linked PIs — refresh the PI list/detail too.
-      void qc.invalidateQueries({ queryKey: ['purchase-invoices'] });
-    },
+    mutationFn: (id: string) => authedFetch<{ ok: true; jeNo?: string } & InBandFailure>(`/payment-vouchers/${id}/post`, { method: 'POST' }),
+    onSuccess: (d, id) => { reportInBandFailure('Voucher posted, but not every step finished', d); invalidatePvSettlement(qc, id); },
   });
 };
 
@@ -168,12 +209,8 @@ export const useApplyAdvance = () => {
 export const useCancelPaymentVoucher = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => authedFetch(`/payment-vouchers/${id}/cancel`, { method: 'POST' }),
-    onSuccess: (_d, id) => {
-      void qc.invalidateQueries({ queryKey: ['payment-vouchers'] });
-      void qc.invalidateQueries({ queryKey: ['payment-voucher-detail', id] });
-      void qc.invalidateQueries({ queryKey: ['purchase-invoices'] });
-    },
+    mutationFn: (id: string) => authedFetch<InBandFailure>(`/payment-vouchers/${id}/cancel`, { method: 'POST' }),
+    onSuccess: (d, id) => { reportInBandFailure('Voucher cancelled, but not every step finished', d); invalidatePvSettlement(qc, id); },
   });
 };
 
@@ -183,8 +220,13 @@ export const useCancelPaymentVoucher = () => {
 const approvalMutation = (path: 'submit' | 'withdraw' | 'check' | 'approve' | 'post-now') => () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => authedFetch(`/payment-vouchers/${id}/${path}`, { method: 'POST' }),
-    onSuccess: (_d, id) => {
+    mutationFn: (id: string) => authedFetch<InBandFailure>(`/payment-vouchers/${id}/${path}`, { method: 'POST' }),
+    onSuccess: (d, id) => {
+      // approve and post-now post the GL and settle invoices in the same request.
+      if (path === 'approve' || path === 'post-now') {
+        reportInBandFailure('Voucher posted, but not every step finished', d);
+        return invalidatePvSettlement(qc, id);
+      }
       void qc.invalidateQueries({ queryKey: ['payment-vouchers'] });
       void qc.invalidateQueries({ queryKey: ['payment-voucher-detail', id] });
       void qc.invalidateQueries({ queryKey: ['daily-bank'] });

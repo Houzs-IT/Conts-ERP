@@ -54,7 +54,6 @@ import {
   StockAdjChip,
   type DocumentDrillLine,
 } from "../../components/DocumentLinesExpansion";
-import { useMfgCustomers } from "../../vendor/scm/lib/sales-order-queries";
 import { ListPager } from "../../components/ListPager";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useVisibleRows } from "../../hooks/useVisibleRows";
@@ -77,6 +76,7 @@ import {
   useMfgDeliveryOrdersPaged,
   useMfgDeliveryOrderDetail,
   useUpdateMfgDeliveryOrderStatus,
+  useDoCustomerNames,
 } from "../../vendor/scm/lib/delivery-order-queries";
 import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
@@ -179,6 +179,8 @@ type DoRow = HoldFields & {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+/* A stable empty list while the funnel's names load, so the column set is not rebuilt each render. */
+const EMPTY_NAMES: string[] = [];
 const fmtRm = (centi: number): string => fmtSen(centi);
 
 
@@ -851,11 +853,8 @@ export function MfgDeliveryOrdersListV2() {
      Debtor CODE (grid value prefers ac_debtor_code) and line-level / MRP funnels
      stay client-side on the loaded page. */
   const [serverFunnels, setServerFunnels] = useState<{ debtorNames?: string[]; currencies?: string[]; from?: string; to?: string }>({});
-  const customersQ = useMfgCustomers();
-  const customerNames = useMemo(
-    () => [...new Set((customersQ.data?.customers ?? []).map((cst) => cst.name).filter((n): n is string => !!n))],
-    [customersQ.data],
-  );
+  const customerNamesQ = useDoCustomerNames();
+  const customerNames = customerNamesQ.data ?? EMPTY_NAMES;
   const [sort, setSort] = useState<string | undefined>(undefined);
   const { requestTerm: debouncedSearch } = useDebouncedSearchTerm(search);
 
@@ -1004,7 +1003,10 @@ export function MfgDeliveryOrdersListV2() {
     status !== "all" || doType !== "all" || view !== "table" || search.trim().length > 0;
 
   const onPullToRefresh = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["mfg-delivery-orders"] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["mfg-delivery-orders"] }),
+      queryClient.invalidateQueries({ queryKey: ["mfg-delivery-orders-paged"] }),
+    ]);
   };
 
   // Wired actions
@@ -1606,7 +1608,7 @@ export function MfgDeliveryOrdersListV2() {
       <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
         <div className="min-w-0">
           <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-            Delivery Orders
+            Delivery orders
           </h1>
           <div className="mt-0.5 text-[12.5px] text-ink-muted">
             {total} order{total === 1 ? "" : "s"} ·{" "}
@@ -1621,7 +1623,7 @@ export function MfgDeliveryOrdersListV2() {
         <div className="px-4 sm:px-6">
           <PageHeader
             eyebrow="Sales"
-            title="Delivery Orders"
+            title="Delivery orders"
             description={`Every ${shortCompanyName(branding.companyName)} delivery order — Loaded to Delivered. Click any row for the quick view; open the full page to edit.`}
             primaryAction={
               canWriteDo ? (

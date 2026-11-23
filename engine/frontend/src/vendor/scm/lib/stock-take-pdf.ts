@@ -34,7 +34,9 @@ import { variantKeyLabel } from './variant-key-label';
 /* The status WORD comes from the one home for it, never from a caser here:
    what this document prints and what the screen shows must be the same word.
    docs/modules/document-status-vocabulary.md §1. */
-import { statusLabel } from './status-pill';
+import { statusLabel } from './status-pill';
+/* Conts prints no "The Conts ERP · date" footer (owner, 17 Nov 2026). */
+import { CONTS_LINES_BY_NAME } from '../../../conts/flowRules';
 
 type StkWarehouse = WarehouseLabelSource & { name?: string | null };
 
@@ -299,7 +301,7 @@ export async function renderStockTakeInto(
     doc.setPage(p);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(110);
     doc.text(header.take_no, margin, 290);
-    doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(header.take_date)}`, pageW / 2, 290, { align: 'center' });
+    if (!CONTS_LINES_BY_NAME) doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(header.take_date)}`, pageW / 2, 290, { align: 'center' });
     doc.text(`Page ${p} of ${pageCount}`, pageW - margin, 290, { align: 'right' });
     doc.setTextColor(0);
   }

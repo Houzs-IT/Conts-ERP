@@ -46,7 +46,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const [rows, totals, filteredN, perUnit] = await Promise.all([
     all<any>(env, `
       SELECT r.id, r.channel, r.check_in, r.check_out, r.external_ref, r.guests_count, COALESCE(g.full_name, 'Guest') AS guest_name,
-        u.id AS unit_id, u.unit_number, p.id AS property_id, p.name AS property_name,
+        u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.id AS property_id, p.name AS property_name,
         (SELECT t.id FROM message_threads t WHERE t.reservation_id = r.id ORDER BY t.last_message_at DESC LIMIT 1) AS thread_id
       ${base} AND ${noReview}${winCond}
       ORDER BY r.check_out DESC, r.id LIMIT ? OFFSET ?`, ...args, ...winArgs, pageSize, (page - 1) * pageSize),
@@ -57,7 +57,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     one<{ n: number }>(env, `SELECT count(*)::int AS n ${base} AND ${noReview}${winCond}`, ...args, ...winArgs),
     // Stays without a review per unit, in the same range and filters, for the grouping on the screen.
     all<any>(env, `
-      SELECT u.id AS unit_id, u.unit_number, p.id AS property_id, p.name AS property_name, count(*)::int AS n,
+      SELECT u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.id AS property_id, p.name AS property_name, count(*)::int AS n,
         count(*) FILTER (WHERE NOT ${closedSql})::int AS open
       ${base} AND ${noReview}${winCond}
       GROUP BY u.id, u.unit_number, p.id, p.name ORDER BY n DESC, p.name, u.unit_number`, today, ...args, ...winArgs),

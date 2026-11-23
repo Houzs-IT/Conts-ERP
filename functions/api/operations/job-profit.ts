@@ -21,12 +21,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const placeJoin = kind === 'maintenance' ? await jobPlaceJoin(env) : '';
   const jobs = kind === 'maintenance'
     ? await all<any>(env, `
-      SELECT m.id, m.title, m.category, m.charge_to, m.vendor_name AS who, ${MYT_DATE('m.resolved_at')} AS day, u.id AS unit_id, u.unit_number, p.id AS building_id, p.name AS building
+      SELECT m.id, m.title, m.category, m.charge_to, m.vendor_name AS who, ${MYT_DATE('m.resolved_at')} AS day, u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.id AS building_id, p.name AS building
       FROM maintenance_issues m ${placeJoin}
       WHERE m.state = 'resolved' AND m.resolved_at IS NOT NULL AND substr(${MYT_DATE('m.resolved_at')}, 1, 7) = ? ORDER BY m.resolved_at`, month)
     : await all<any>(env, `
       SELECT t.id, t.title, t.kind AS category, 'owner' AS charge_to, COALESCE(cl.full_name, a.full_name, ${SHEET_CLEANER('t')}) AS who, ${MYT_DATE('t.completed_at')} AS day,
-             u.id AS unit_id, COALESCE(u.unit_number, t.external_address) AS unit_number, COALESCE(p.id, 'external') AS building_id, COALESCE(p.name, 'External') AS building
+             u.id AS unit_id, COALESCE(COALESCE(NULLIF(u.unit_code, ''), u.unit_number), t.external_address) AS unit_number, COALESCE(p.id, 'external') AS building_id, COALESCE(p.name, 'External') AS building
       FROM tasks t LEFT JOIN units u ON u.id = t.unit_id LEFT JOIN properties p ON p.id = u.property_id
       LEFT JOIN cleaners cl ON cl.id = t.cleaner_id LEFT JOIN users a ON a.id = t.assignee_id
       WHERE t.kind IN ('turnover','deep_clean','light_clean') AND t.state = 'resolved' AND t.completed_at IS NOT NULL

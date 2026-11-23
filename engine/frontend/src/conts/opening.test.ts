@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseJournalGrid, parsePayablesGrid, parseReceivablesGrid, toDay, toSen } from "./opening";
+import { parseAutocountGrid, parseJournalGrid, parsePayablesGrid, parseReceivablesGrid, toDay, toSen, toSignedSen } from "./opening";
 
 // Reading AutoCount's three opening lists (finance phase 1, spec 3.8).
 describe("opening balance sheets", () => {
@@ -46,5 +46,48 @@ describe("opening balance sheets", () => {
     expect(ar.rows[1].error).toMatch(/outstanding/);
     const ap = parsePayablesGrid([["Bill no", "Supplier code", "Bill date", "Due date", "Outstanding"], ["PI-1", "400-T001", "2026-10-01", "2026-10-31", 300]]);
     expect(ap.rows[0]).toMatchObject({ value: { supplierCode: "400-T001", outstandingSen: 30000 }, error: null });
+  });
+});
+
+describe("a minus on the ageing lists (money paid ahead)", () => {
+  it("reads a minus, brackets and a negative number; still refuses text and zero", () => {
+    expect(toSignedSen("-1,234.56")).toBe(-123456);
+    expect(toSignedSen("(1,234.56)")).toBe(-123456);
+    expect(toSignedSen(-582)).toBe(-58200);
+    expect(toSignedSen("230")).toBe(23000);
+    expect(toSignedSen("abc")).toBeNull();
+    const g = parsePayablesGrid([
+      ["Bill no", "Supplier code", "Bill date", "Due date", "Outstanding"],
+      ["HPV-2507-149", "400-0002", "2025-07-29", "2025-07-29", -4136],
+      ["Z", "400-0002", "2025-07-29", "2025-07-29", 0],
+    ]);
+    expect(g.rows.map((r) => [r.value.outstandingSen, r.error])).toEqual([[-413600, null], [0, expect.stringContaining("not zero")]]);
+  });
+});
+
+describe("AutoCount's ledger after the start", () => {
+  const H = ["Doc no", "Date", "Kind", "Account", "Debit", "Credit", "Description", "Department", "Unit", "Project"];
+  it("groups rows into documents by Doc no, with each line's department, unit and project", () => {
+    const s = parseAutocountGrid([H,
+      ["OR-004352", "2026-10-06", "BANK", "310-0010", 15000, 0, "MR WAYNE", "", "", ""],
+      ["OR-004352", "2026-10-06", "BANK", "301-M144", 0, 15000, "HONG LEONG BANK", "supply", "", 86],
+      ["PI-002800", "2026-11-02", "PURCHASE", "601-0010", 616, 0, "BEDFRAME", "rental", "U1", ""],
+      ["PI-002800", "2026-11-02", "PURCHASE", "400-H006", 0, 616, "", "", "", ""],
+    ]);
+    expect(s.problems).toEqual([]);
+    expect(s.docs.map((d) => [d.docNo, d.date, d.lines.length, d.narration])).toEqual([["OR-004352", "2026-10-06", 2, "MR WAYNE"], ["PI-002800", "2026-11-02", 2, "BEDFRAME"]]);
+    expect(s.docs[0]!.lines[1]).toMatchObject({ accountCode: "301-M144", creditSen: 1500000, department: "supply", projectId: 86 });
+    expect(s.docs[1]!.lines[0]).toMatchObject({ unitId: "U1", department: "rental" });
+    expect([s.debitSen, s.creditSen]).toEqual([1561600, 1561600]);
+  });
+  it("names an unbalanced document, a bad department and a document with two dates", () => {
+    const s = parseAutocountGrid([H,
+      ["X1", "2026-10-01", "", "601-0010", 100, 0, "", "", "", ""], ["X1", "2026-10-01", "", "310-0010", 0, 90, "", "", "", ""],
+      ["X2", "2026-10-01", "", "601-0010", 100, 0, "", "office", "", ""],
+      ["X3", "2026-10-01", "", "601-0010", 100, 0, "", "", "", ""], ["X3", "2026-10-02", "", "310-0010", 0, 100, "", "", "", ""],
+    ]);
+    expect(s.problems.join(" | ")).toMatch(/office is not rental/);
+    expect(s.problems.join(" | ")).toMatch(/X3 has two dates/);
+    expect(s.problems.join(" | ")).toMatch(/X1: debit and credit differ by 10.00/);
   });
 });

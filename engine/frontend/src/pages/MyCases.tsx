@@ -130,7 +130,7 @@ export function MyCases() {
     <div className="w-full py-6 sm:py-8">
       <PageHeader
         eyebrow="Service Cases"
-        title="My Cases"
+        title="My cases"
         description={
           userName
             ? `Service cases where you're the sales agent (matched on "${userName}").`

@@ -21,7 +21,7 @@ const world = () => fakeSb({
   ],
 });
 
-const split = (sb: ReturnType<typeof world>, items: Array<{ item_group: string | null; item_code?: string | null; line_total_sen: number }>) =>
+const split = (sb: ReturnType<typeof world>, items: Array<{ item_group: string | null; item_code?: string | null; account_code?: string | null; line_total_sen: number }>) =>
   splitByItemGroup(sb, {
     companyId: CO, docNo: 'PI-1', items, account: 'purchase_account', myrSen: (s) => s,
     totalSen: items.reduce((s, i) => s + i.line_total_sen, 0),
@@ -68,5 +68,25 @@ describe('purchases by sub-category', () => {
       account: 'sales_account', myrSen: (s) => s, totalSen: 10_000,
     });
     expect(r).toEqual({ ok: true, groups: [{ groupCode: 'BUILTIN', accountCode: '502-0000', myrSen: 10_000 }] });
+  });
+});
+
+describe('a purchase line keyed by account (chew, 18 Nov 2026)', () => {
+  test('books to its own account whatever its group, needs no group, and sits beside the group lines', async () => {
+    const r = await split(world(), [
+      { item_group: null, account_code: '601-0010', line_total_sen: 40_000 },
+      { item_group: 'FURNITURE', account_code: '601-0010', line_total_sen: 10_000 },
+      { item_group: 'WORKS', line_total_sen: 30_000 },
+    ]);
+    expect(r).toEqual({ ok: true, groups: [
+      { groupCode: 'account 601-0010', accountCode: '601-0010', myrSen: 50_000 },
+      { groupCode: 'WORKS', accountCode: '601-0000', myrSen: 30_000 },
+    ] });
+  });
+
+  test('the sales side never reads it', async () => {
+    const r = await splitByItemGroup(world(), { companyId: CO, docNo: 'SI-1', items: [{ item_group: 'WORKS', account_code: '601-0010', line_total_sen: 100 }],
+      account: 'sales_account', myrSen: (s) => s, totalSen: 100 });
+    expect(r).toEqual({ ok: true, groups: [{ groupCode: 'WORKS', accountCode: '501-0000', myrSen: 100 }] });
   });
 });

@@ -1,12 +1,14 @@
 import { type Env, all, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { seedCompanyViews } from '../../_lib/tableLayoutSeeds';
-import { TABLE_KEY, cleanLayout, cleanName, mayShare, mayUseViews, toView, type ViewRow } from '../../_lib/tableLayouts';
+import { TABLE_KEY, WORKING_NAME, cleanLayout, cleanName, isReservedName, mayShare, mayUseViews, toView, type ViewRow } from '../../_lib/tableLayouts';
 
 const COLS = 'id, table_key, user_id, name, is_default, layout, created_by, updated_at';
+const RESERVED = 'A view name cannot start with two underscores.';
 
 /** GET /api/table-layouts?table=bookings — the signed-in person's own views of that table and the company's,
- *  each list default first then by name; `canShare` says whether this person may save company views. */
+ *  each list default first then by name; `canShare` says whether this person may save company views.
+ *  `columns` / `columnsAt`: their own column order for the table and when it was kept (columns.ts), or null. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -17,10 +19,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   await seedCompanyViews(env, table).catch(() => {});
   const rows = await all<ViewRow>(env, `SELECT ${COLS} FROM table_layouts WHERE table_key = ? AND (user_id = ? OR user_id IS NULL)
     ORDER BY is_default DESC, lower(name)`, table, session.userId);
-  const views = rows.map(r => toView(r, session.userId));
+  const own = rows.find(r => r.user_id === session.userId && r.name === WORKING_NAME);
+  const views = rows.filter(r => !isReservedName(r.name)).map(r => toView(r, session.userId));
   return json({
     table, canShare: mayShare(session),
     mine: views.filter(v => v.scope === 'mine'), company: views.filter(v => v.scope === 'company'),
+    columns: own ? toView(own, session.userId).layout?.columns ?? null : null, columnsAt: own?.updated_at ?? null,
   });
 };
 
@@ -35,6 +39,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!TABLE_KEY.test(table)) return fail('VALIDATION', 'Say which table.', 422);
   const name = cleanName(b?.name);
   if (!name || name.length > 80) return fail('VALIDATION', 'Give the view a name of up to 80 characters.', 422, { name: 'Give the view a name of up to 80 characters.' });
+  if (isReservedName(name)) return fail('VALIDATION', RESERVED, 422, { name: RESERVED });
   const layout = cleanLayout(b?.layout);
   if (typeof layout === 'string') return fail('VALIDATION', layout, 422);
   const company = b?.scope === 'company';

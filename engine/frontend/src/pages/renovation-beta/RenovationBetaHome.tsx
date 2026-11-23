@@ -1,7 +1,8 @@
 /* Beta > Home: the mockup's "All projects" screen (app.js renderHome, markup id="homeArea"). The title, the counts,
-   five tabs, the table on a desktop and the cards on a phone, the footer line. A row opens the Beta project.
+   the Design step filter, the table on a desktop and the cards on a phone, the footer line. A row opens the Beta project.
    Plan: docs/superpowers/plans/2026-10-23-beta-project-workspace.md, section 10. */
 
+import { BetaStageFilter } from "./BetaWsHeader";
 import { useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Search, X } from "lucide-react";
@@ -10,7 +11,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { CreateRenovationPanel } from "../projects/renovation/CreateRenovationPanel";
 import { money } from "../projects/renovation/renovationModel";
 import { BETA, GLASS, TONES, betaDueTone, betaTagTone } from "./renovationBetaTheme";
-import { buildModel, HOME_TABS, homeCounts, homeList, homeRow, shortLeft, type ConditionWord, type HomeRow, type HomeTab } from "./renovationBetaBoard";
+import { buildModel, designSteps, filterCounts, homeCounts, homeList, homeRow, shortLeft, VARIANTS_FILTER, type BoardModel, type ConditionWord, type HomeFilter, type HomeRow } from "./renovationBetaBoard";
 import { HOME_SORTS, keepOrder, onBrandList, matchesSearch, orderOf, sortFromParam, sortHome, voCell, type HomeSort } from "./renovationBetaHomeModel";
 import { boardApi, boardKey, readLastProject, rememberLastProject } from "./renovationBetaBoardApi";
 import { CARD, ErrorBanner, INK_SOFT, MUTED, useIsPhone } from "./BetaCalParts";
@@ -25,6 +26,18 @@ import { DataTable } from "../../components/DataTable";
 import type { Column } from "../../components/dataTableTypes";
 import { fetchProjectSos, soColumns, type ProjectSo } from "./renovationBetaSoColumns";
 import { readBoardCache, writeBoardCache } from "./boardCache";
+import { VariantsSkuList } from "./renovationBetaVariantsList";
+
+/** Each filter keeps its own columns (owner 2026-11-19). "All projects" stays on the original key so nobody's
+    arrangement moves, Done Design keeps the key its old tab had, and each Design step has one by its code; they all
+    start from the All projects columns until arranged on their own. */
+/** The stages in the order a project goes through them (Sales order first, services/renovation/flow.ts). */
+const STAGE_ORDER = ["signed", "design", "ordering", "renovation", "handover", "closed"] as const;
+const DEFAULT_STAGE_LABEL: Partial<Record<string, string>> = { signed: "Sales order", design: "Design", ordering: "Ordering", renovation: "Renovation", handover: "Handover", closed: "Closed" };
+
+export function layoutKey(f: HomeFilter): string {
+  return f === "all" ? "projects-home" : f === "done" ? "projects-home-E" : `projects-home-step-${f.slice(5)}`;
+}
 
 const DASH = <span style={{ color: BETA.faint }}>–</span>;
 
@@ -37,10 +50,16 @@ function DuePill({ left, small = false }: { left: number; small?: boolean }): Re
   );
 }
 
-/* Payment colours: green = fully paid, amber = a bill waits for money, grey = some received or nothing yet. [text, background, dot] */
-function payTone(text: string): readonly [string, string, string] {
+/* Payment colours (chew, 19 Nov 2026: each its own colour): green = fully paid, amber = a bill waits for money,
+   blue = some instalments paid ("2 of 4 paid"), grey = none paid yet. [text, background, dot] */
+/* The theme's blue family is near-grey; partly paid needs a blue that reads at a glance, mixed from the board's own
+   blue band so it holds on a light and a dark page. */
+const PART_BLUE = "#1F4E8C";
+export const PART_PAID = [`color-mix(in srgb, ${PART_BLUE} 75%, ${BETA.ink})`, `color-mix(in srgb, ${PART_BLUE} 14%, transparent)`, PART_BLUE] as const;
+export function payTone(text: string): readonly [string, string, string] {
   if (/Fully paid/.test(text)) return [TONES.accent.ink, TONES.accent.soft, TONES.accent.dot];
   if (/Pending/.test(text)) return [TONES.amber.ink, TONES.amber.soft, TONES.amber.dot];
+  if (/^[1-9]\d* of \d+ paid/.test(text)) return PART_PAID;
   return [TONES.grey.ink, TONES.grey.soft, TONES.grey.dot];
 }
 
@@ -99,9 +118,26 @@ function slaOf(r: BoardRowV2 | undefined, today: string): Sla {
 
 type TableRow = { r: HomeRow; sla: Sla; so: ProjectSo | undefined; board: BoardRowV2 | undefined };
 
+/** "2 of 12 lines" and the SKUs still waiting for a variant; every SKU is in the hover text. */
+export function MissingVariants({ v }: { v: HomeRow["p"]["variants"] }): ReactElement {
+  if (v.lines === 0) return <span style={{ color: MUTED }}>No SO lines</span>;
+  if (v.missing === 0) return <span style={{ color: TONES.accent.ink, fontWeight: 600 }}>All picked</span>;
+  const codes = [...new Set(v.pending.map((x) => x.itemCode))];
+  const all = v.pending.map((x) => `${x.itemCode}: ${x.missing.join(", ")}`).join("\n");
+  return (
+    <span title={all} style={{ display: "flex", flexDirection: "column", lineHeight: 1.3, minWidth: 0 }}>
+      <span style={{ color: TONES.amber.ink, fontWeight: 600 }}>{v.missing} of {v.lines} lines</span>
+      <span style={{ color: MUTED, fontSize: 12, overflowWrap: "anywhere" }}>{codes.slice(0, 4).join(", ")}{codes.length > 4 ? ` +${codes.length - 4} more` : ""}</span>
+    </span>
+  );
+}
+
 /* The list's own columns, then the sales order's: Columns shows, moves and hides them, and each has a filter. */
-function homeColumns(showPay: boolean): Column<TableRow>[] {
+function homeColumns(showPay: boolean, variantsView: boolean): Column<TableRow>[] {
   const own: Column<TableRow>[] = [
+    /* The SKUs still waiting for a variant (owner, 20 Nov 2026); shown first on the Variants step, in Columns elsewhere. */
+    { key: "variants_missing", label: "Missing variants", group: "Project", width: "320px", defaultHidden: !variantsView,
+      getValue: (x) => x.r.p.variants.missing, render: (x) => <MissingVariants v={x.r.p.variants} /> },
     { key: "building", label: "Building", group: "Project", width: "170px", getValue: (x) => x.r.p.tag, render: (x) => {
       const [ink, bg] = betaTagTone(x.r.p.tag);
       return <span title={x.r.p.tag} style={{ display: "inline-block", maxWidth: "100%", padding: "2px 8px", borderRadius: 10, background: bg, color: ink, fontSize: 12, fontWeight: 600, lineHeight: 1.35, overflowWrap: "anywhere" }}>{x.r.p.tag.toUpperCase()}</span>;
@@ -114,6 +150,7 @@ function homeColumns(showPay: boolean): Column<TableRow>[] {
     ) },
     { key: "created", label: "Created", group: "Project", width: "120px", getValue: (x) => x.r.p.createdAt, render: (x) => (x.r.p.createdAt ? fmtDate(x.r.p.createdAt) : DASH),
       filterType: "date", dateValue: (x) => x.r.p.createdAt },
+    { key: "brand", label: "Brand", group: "Project", width: "170px", getValue: (x) => x.r.p.brand, render: (x) => x.r.p.brand ?? <span style={{ color: MUTED }}>Not set</span> },
     { key: "condition", label: "ID condition", group: "Project", width: "150px", getValue: (x) => x.r.word, render: (x) => <StatusCell r={x.r} /> },
     { key: "due", label: "Due", group: "Project", width: "120px", getValue: (x) => x.r.left, render: (x) => <DueCell r={x.r} /> },
     ...(showPay ? [{ key: "payment", label: "Payment", group: "Project", width: "220px", getValue: (x: TableRow) => x.r.p.payment,
@@ -127,7 +164,7 @@ function homeColumns(showPay: boolean): Column<TableRow>[] {
     { key: "client", label: "Client", group: "Project", width: "170px", defaultHidden: true, getValue: (x) => x.r.p.customer, render: (x) => x.r.p.customer ?? DASH },
     { key: "lead", label: "Design lead", group: "Project", width: "140px", defaultHidden: true, getValue: (x) => x.r.p.lead?.name, render: (x) => x.r.p.lead?.name ?? DASH },
   ];
-  return [...own, ...soColumns<TableRow>((x) => x.so)];
+  return [...own, ...soColumns<TableRow>((x) => x.so, (x) => x.r.p)];
 }
 
 /** The colours are set before anything else draws, so the loading line and an error already have them. */
@@ -158,13 +195,17 @@ function HomeScreen(): ReactElement {
   const sos = useQuery(["renovation-beta", "project-sos"], () => fetchProjectSos(), [], { enabled: !phone && soColumnsShown });
   const soByDoc = useMemo(() => new Map((sos.data ?? []).map((s) => [s.doc_no, s])), [sos.data]);
   const today = mytDay(new Date().toISOString());
-  const [tab, setTab] = useState<HomeTab>("all");
+  // The stage pressed in the stage row (owner, 19 Nov 2026), and within Design the step pressed in its second layer.
+  const [stage, setStage] = useState<string | null>(null);
+  const [filter, setFilter] = useState<HomeFilter>("all");
+  // Within Renovation, the catalog category pressed in its second layer: projects with that category still open.
+  const [cat, setCat] = useState<string | null>(null);
   const { can } = useAuth();
   const [creating, setCreating] = useState(false);
   const [params, setParams] = useSearchParams();
   const query = params.get("q") ?? "";
   const sort = sortFromParam(params.get("sort"));
-  /* The order rows were first shown in, per tab, sort and search: Assign and other saves reload the board, and a row
+  /* The order rows were first shown in, per filter, sort and search: Assign and other saves reload the board, and a row
      must not jump under the finger (live run, 24 Oct 2026: the wrong project was opened). A reload starts afresh. */
   const kept = useRef<{ key: string; order: Map<number, number> } | null>(null);
   const brand = params.get("brand") ?? "";
@@ -182,13 +223,23 @@ function HomeScreen(): ReactElement {
   if (!m) return <BetaLoading label="Loading projects" size="page" />;
 
   const counts = homeCounts(m);
-  const inTab = homeList(m, tab);
-  const found = sortHome(inTab, sort).filter((p) => matchesSearch(p, query));
-  const viewKey = `${tab}|${sort}|${query.trim().toLowerCase()}`;
+  const stageOf = (id: number): string | null => slaById.get(id)?.step.key ?? null;
+  const openCats = (id: number): string[] => (slaById.get(id)?.renovationCategories ?? []).filter((k) => !k.done).map((k) => k.code);
+  const inFilter = homeList(m, filter).filter((p) => (stage == null || stageOf(p.id) === stage) && (cat == null || openCats(p.id).includes(cat)));
+  const found = sortHome(inFilter, sort).filter((p) => matchesSearch(p, query));
+  const viewKey = `${filter}|${cat ?? ""}|${sort}|${query.trim().toLowerCase()}`;
   if (!kept.current || kept.current.key !== viewKey) kept.current = { key: viewKey, order: orderOf(found) };
   const list = keepOrder(found, kept.current.order);
   const rows = list.map((p) => homeRow(m, p));
-  const tabCount = (key: HomeTab): number => (query.trim() ? homeList(m, key).filter((p) => matchesSearch(p, query)).length : counts.tabs[key]);
+  const searched = m.projects.filter((p) => matchesSearch(p, query));
+  const stageCount = (key: string): number => searched.filter((p) => stageOf(p.id) === key).length;
+  const stepCounts = filterCounts(m, searched.filter((p) => stageOf(p.id) === "design"));
+  const inRenovation = searched.filter((p) => stageOf(p.id) === "renovation");
+  const catCount = (code: string): number => inRenovation.filter((p) => openCats(p.id).includes(code)).length;
+  const stageLabels = new Map((steps.data?.data ?? []).map((r) => [r.step.key, r.step.label] as const));
+  // The first stage reads "Sales order" as on the project page's stage row, whatever the old step label says.
+  const stages = STAGE_ORDER.filter((k) => stageLabels.has(k) || DEFAULT_STAGE_LABEL[k]).map((k) => ({ key: k, label: k === "signed" ? "Sales order" : stageLabels.get(k) ?? DEFAULT_STAGE_LABEL[k]!, count: stageCount(k) }));
+  const tableKey = stage == null ? "projects-home" : cat != null ? `projects-home-cat-${cat}` : filter !== "all" && filter !== "done" ? `projects-home-${filter.replace(":", "-")}` : `projects-home-stage-${stage}`;
   const showPay = m.projects.some((p) => p.payment != null);
 
   function open(id: number): void {
@@ -209,7 +260,7 @@ function HomeScreen(): ReactElement {
         <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: "-.02em" }}>All projects</h1>
         {can("projects.write") && (
           <button type="button" onClick={() => setCreating(true)}
-            style={{ position: "absolute", top: 0, right: 0, minHeight: 40, padding: "0 16px", border: 0, borderRadius: 999, background: BETA.ink, color: "#fff", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
+            style={{ position: "absolute", top: 0, right: 0, minHeight: 40, padding: "0 16px", border: 0, borderRadius: 999, background: BETA.ink, color: BETA.selInkText, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
             + New project
           </button>
         )}
@@ -235,7 +286,7 @@ function HomeScreen(): ReactElement {
             placeholder="Search name, building, unit, client, RN- code, SO no or person"
             value={query}
             onChange={(e) => setParam("q", e.target.value)}
-            style={{ width: "100%", minHeight: 46, padding: "0 40px 0 40px", border: `1px solid ${BETA.glassEdge}`, borderRadius: 999, background: BETA.field, boxShadow: BETA.btnGlassShadow, font: "inherit", fontSize: 15, color: BETA.ink, boxSizing: "border-box" }}
+            style={{ width: "100%", minHeight: 46, padding: "0 40px 0 40px", border: `1px solid ${BETA.border}`, borderRadius: 999, background: BETA.field, boxShadow: BETA.btnGlassShadow, font: "inherit", fontSize: 15, color: BETA.ink, boxSizing: "border-box" }}
           />
           {query && (
             <button type="button" aria-label="Clear the search" onClick={() => setParam("q", "")}
@@ -259,37 +310,25 @@ function HomeScreen(): ReactElement {
             {HOME_SORTS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
           </select>
         </label>
-        {query.trim() && <span role="status" style={{ fontSize: 13, fontWeight: 600, color: INK_SOFT }}>{list.length} of {inTab.length}</span>}
+        {query.trim() && <span role="status" style={{ fontSize: 13, fontWeight: 600, color: INK_SOFT }}>{list.length} of {inFilter.length}</span>}
       </div>
 
-      {/* One row that scrolls sideways when narrow: wrapped, the five groups took three uneven rows on a phone. */}
-      <div role="tablist" aria-label="Project groups" style={{ display: "flex", flexWrap: "nowrap", gap: 4, overflowX: "auto", overflowY: "hidden", scrollbarWidth: "none", borderBottom: `1px solid ${BETA.line}`,
-        // A solid backing: the page's grid lines ran through the tab labels.
-        background: BETA.glassSolid, padding: "4px 8px 0", borderRadius: "12px 12px 0 0" }}>
-        {HOME_TABS.map(([key, label]) => {
-          const on = tab === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={on}
-              onClick={() => setTab(key)}
-              style={{
-                display: "inline-flex", flex: "none", whiteSpace: "nowrap", alignItems: "center", gap: 6, minHeight: 40, padding: "0 12px", border: 0, borderRadius: "8px 8px 0 0",
-                marginBottom: -1, background: on ? BETA.chip : "transparent", borderBottom: "3px solid transparent", position: "relative", font: "inherit", fontSize: 14,
-                fontWeight: on ? 700 : 500, color: on ? BETA.ink : MUTED, cursor: "pointer",
-              }}
-            >
-              {label}
-              <span style={{ fontSize: 12, color: MUTED }}>{tabCount(key)}</span>
-              {on && <motion.span layoutId="home-tab-ink" transition={SPRING} aria-hidden="true" style={{ position: "absolute", left: 6, right: 6, bottom: -3, height: 3, borderRadius: "3px 3px 0 0", background: BETA.selInk }} />}
-            </button>
-          );
-        })}
-      </div>
+      <BetaStageFilter stages={stages} selected={stage} onSelect={(k) => { setStage(k); setFilter("all"); setCat(null); }}
+        layer={stage === "design" ? {
+          label: "Design", rule: "The steps are set in Project Maintenance > Design work.",
+          steps: designSteps(m).map(([code, label]) => ({ key: code, label, count: stepCounts.steps[code] ?? 0 })),
+          selected: filter.startsWith("step:") ? filter.slice(5) : null,
+          onSelect: (k) => setFilter(k ? `step:${k}` : "all"),
+        } : stage === "renovation" ? {
+          label: "Renovation", rule: "Press a category to see the projects where it is not complete yet.",
+          steps: (steps.data?.categories ?? []).map((k) => ({ key: k.code, label: k.label, count: catCount(k.code) })),
+          selected: cat,
+          onSelect: setCat,
+        } : null} />
 
-      {phone ? (
+      {!phone && filter === VARIANTS_FILTER ? (
+        <VariantsSkuList projects={list} canWrite={can("projects.write")} cardStyle={{ ...CARD, overflow: "hidden" }} onSaved={() => { q.reload(); steps.reload(); }} />
+      ) : phone ? (
         <ol className="stag" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
           {rows.length === 0 && <li style={{ color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</li>}
           {rows.map((r) => <PhoneCard key={r.p.id} r={r} sla={slaOf(slaById.get(r.p.id), today)} onOpen={() => rememberLastProject(r.p.id)} />)}
@@ -297,11 +336,13 @@ function HomeScreen(): ReactElement {
       ) : (
         <div style={{ ...CARD, overflow: "hidden" }}>
           <DataTable<TableRow>
-            tableId="projects-home"
+            key={tableKey}
+            tableId={tableKey}
+            layoutSeedId="projects-home"
             onDisplayKeys={(keys) => setSoColumnsShown(keys.some((k) => k.startsWith("so_")))}
             documentLabel="Projects"
             rows={tableRows}
-            columns={homeColumns(showPay)}
+            columns={homeColumns(showPay, false)}
             getRowKey={(x) => x.r.p.id}
             onRowClick={(x) => open(x.r.p.id)}
             emptyLabel={query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}
@@ -330,7 +371,7 @@ function PhoneCard({ r, sla, onOpen }: { r: HomeRow; sla: Sla; onOpen: () => voi
           <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
             <span style={{ alignSelf: "flex-start", padding: "1px 7px", borderRadius: 10, background: tagBg, color: tagInk, fontSize: 11, fontWeight: 600 }}>{p.tag.toUpperCase()}</span>
             <span style={{ fontWeight: 700, fontSize: 15, overflowWrap: "anywhere" }}>{p.title}</span>
-            {p.customer && <span style={{ fontWeight: 500, fontSize: 12, color: MUTED }}>{p.customer}</span>}
+            {(p.customer || p.brand) && <span style={{ fontWeight: 500, fontSize: 12, color: MUTED, overflowWrap: "anywhere" }}>{[p.customer, p.brand].filter(Boolean).join(" · ")}</span>}
           </span>
           <DueCell r={r} small />
         </span>

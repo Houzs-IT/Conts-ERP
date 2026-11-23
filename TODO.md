@@ -2,6 +2,50 @@
 
 Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw, schema `pos`, via Hyperdrive e0781ccd...). Staging preview: https://staging-preview.theconts-os.pages.dev (Supabase ecgyrmblqfxvbfjlqkdq).
 
+## Meeting rooms (feat/meetings, 23 Nov 2026)
+- System > Meetings (also under the supply chain's System) books the meeting rooms shared with Houzs ERP and Hookka ERP, kept in the Houzs IT Hub through IT_HUB_URL / IT_HUB_API_KEY (the IT Support key, system CONTS). Rooms must be added by management (Meetings > Rooms > Add room) before anyone can book; staff get Manage meeting rooms one by one on Users and roles.
+- Waiting on the owner's Google setup: Gmail sending, Google Meet / Zoom links made for you, WhatsApp reminders. Until then reminders are bell notices only and a video link is pasted by hand.
+
+## Click sweep 2 (22 Nov 2026, docs/CLICK-SWEEP-2-2026-11-21.md)
+- Fixed: G1 (chore/click-sweep-2), G3 G4 (fix/stock-guards), G2 G7 G8 (fix/production-sweep2), G6 G9 and part of G17 (fix/cancelled-money-display), G11 (fix/phone-more-actions). No migrations.
+- G5 was the local database, not the code: it lacked migration 0354 (sales_invoice_id on credit note allocations), so the paid roll failed closed and left SENT. Production has the column; with 0354 applied locally the invoice went PAID.
+- G10 is dev only: React StrictMode runs PrintPreviewModal's ClosesOnLeave effect twice on the vite dev server; a production build (vite build + preview, 22 Nov) opens and keeps the print preview.
+- Owner to decide (G4): a Works / Built-in line with no PO or production order now gets the soft "Stock not enough, ship anyway?" question; a hard refusal would be the stricter choice.
+- G7: Start still issues whole units by design (0.5 sheet leaves as 1, the rest comes back by Return stock); the page now says so. A part-unit issue needs a column change (qty_issued integer, migration 0237).
+- G12: double-click Issue invoice sends two POSTs (201 + 409) and the dialog shows the green and the red box together.
+- G13: VO quick view shows a red "Rejected." box on every renovation VO (AmendmentQuickView.tsx:273 reads any non-null resolution).
+- G14: a withdrawn cancellation request is counted under the VO list REJECTED tab.
+- G15: SO header keeps Request cancellation while one is open (the second is refused with a clear 409).
+- G16: production Complete has no confirm by design (owner, 6 Nov); the completed page still offers Start time.
+- G17 rest: cancelled PI still shows "Owed" in red with an Edit button; cancelled voucher still lists "Applied RM 100.00".
+- G18: creating a delivery return from Transfer from Delivery Order lands on the source DO, not the new DR.
+- G19: the New PO item picker (native datalist) matches from the start of the code only.
+- G20: phone PO list header counts cancelled POs in "committed"; production order cards show PO wording ("SUPPLIER INHOUSE", "RM 0.00 committed"); quick-view header wraps the doc no.
+
+## Money consistency (click sweep F6/F6b/F27/F28/F31, save-bug D9-D11; PR fix/money-consistency, migration 0359)
+- Paid on an SO = order payments + receipts on its live invoices (engine scm/shared/so-outstanding.ts soPaidSen; SO list view in migration 0359). Replaces owner decision C4 (11 Oct: order money counted only past invoice receipts); owner agreed 21 Nov ("based on the payments"). Trade-off: a deposit keyed AGAIN as an invoice receipt by hand would now count twice (no code path does it).
+- Merged onto #1134 (credit notes knocked off by allocation, si-credit-notes.ts) and #1138 (renovation counts confirmed money only): their versions won; this branch kept the paid rule, sibling status re-roll, PAID-by-hand guard and cancelled-invoice exclusions. Dropped, re-port if wanted: renovation schedule "less credit note" line and "Over-invoiced: credit note due" label (renovationSoInstalments.tsx).
+- Stored scm.mfg_sales_orders.paid_sen / balance_sen are not money owed and are no longer read for it (decision: stop reading, no write-back); writers left as they are.
+- Production check 21 Nov: no invoice receipts, no cancelled invoices with receipts; TC-SO-2611-033 and TC-SO-2611-038 showed instalment 1 "Not paid" while TC-SI-2611-007 / -009 were PAID by the deposit (display only, fixed by the code; no data to correct).
+- Houzs ports done 22 Nov 2026 (owner approved all): Houzs-Century/Houzs-ERP PRs #5892-#5916 merged and deployed, migrations applied there (voucher settle-once, DO revert cycle, GRN line version). Left out on purpose: SO paid counting invoice receipts (M10; Houzs invoice receipts are only auto-applied credit) and the leg-height seed (Houzs keeps it). Records for Houzs finance/warehouse to review: Houzs-records-to-review-2026-11-22.xlsx (owner has it).
+
+## Save-integrity deferred items from #1126 (21 Nov 2026, branch fix/deferred-integrity)
+- Fixed: D1 D2 D3 D4 D5 D7 D12 D14 D17 D19 D20 D24. Needs migrations 0355 (voucher allocation settle-once) and 0356 (GRN line version) on production BEFORE the code merges.
+- Fixed (fix/do-reship-stock, migration 0360): D6 - a revert to Draft retires the ship-and-return cycle (rows re-tagged DO_REVERTED), so a re-ship deducts again and a second revert returns it; Undo load now also shows for full-access accounts (the server already allowed them). Production: no position holds scm.do.revert, so before this only a full-access account calling the API could revert.
+- Open: D7 compares the version only on the line edit; other grn_items writers do not bump it (the edit also compares qty_accepted).
+- Fixed 22 Nov (PRs #1150-#1155): D16 saves answer before the allocation re-walk, D18 deposit-invoice reads, D21 quotation/VO save lock, D22 api writes refresh hooks/useQuery, D23 money-create keys, D13 cancelled-voucher PO payments.
+- Fixed D15 (fix/short-out-reversal-lots, migration 0361): a reversed short stock-out that is not a DO puts back into the lots only what it took (reversing INs carry reverses_movement_id; the FIFO trigger opens a lot of the OUT's consumed qty at its consumed cost). Port to Houzs: backend/src/scm/lib/inventory-movements.ts:515 and the trigger (0307_item_code_unify.sql:814 area).
+- Decided D13 (owner, 22 Nov; fix/po-pay-voucher-required): when Pay on a PO schedule cannot make or tie its voucher, the payment is taken back and audited, and the dialog says "Not paid" so finance can press Record again; a voucher made but not posted stays a draft and the payment stands.
+
+## Click sweep save fixes (21 Nov 2026, fix/save-findings)
+- Decision to confirm with the owner: a renovation contract's SO rooms now save from Edit SO (they were refused and dropped silently); the signed contract's own sections (reno_doc_sections) are untouched.
+
+## Packages module (owner, 20 Nov 2026; migration 0347)
+- Sales order > Packages: packages (PKG-, areas) and kits (KIT-), products + qty + SLA days only, no prices; SO/VO product search and From package add them to a VO; Project start date dates SLA lines. Code: engine/backend/src/scm/lib/renovation-packages.ts, engine/frontend/src/pages/renovation/RenovationPackage*.tsx, renovationPackagePick.tsx.
+- Old package templates are packages now (PKG-001...); their stored prices, letterhead, print format and payment terms stay in the table but no screen edits them any more (New quotation from template still reads them).
+- Open: VO / quotation Print preview did not open on the local system (20 Nov, any VO, not only package ones); check on erp.theconts.com and fix separately if it reproduces.
+- Open: package lines on the phone scroll sideways (one table); a card layout if staff edit packages on phones.
+
 ## Ports from Houzs / Hookka (owner picks 8-9 Nov 2026) - all merged 11 Nov 2026
 - How to work: one item = one branch = one PR; port by `git format-patch -1 <sha>` from the Houzs repo (C:/Users/User/Desktop/houzs-erp-local, read only) and `git apply --directory=engine --reject`, then fit by hand; Houzs frontend/ = engine/frontend, backend/ = engine/backend. Hookka (C:/Users/User/hookka-erp-testing, use origin/main, read only) is reference only.
 - Checks per item: engine/frontend `npx tsc -b`; engine/backend `npx tsc --noEmit -p .`; backend tests with `npx vitest run --config vitest.light.config.mts <name>`; frontend `npx vitest run <file>`; then real clicks from the menu on the local system (Conts-ERP-worktrees/conts-local: `node start.mjs`, login management@theconts.com / LocalTest1; set CONTS_CODE to the worktree to run its engine or screens); merge; wait for "Deploy engine to production"; check erp.theconts.com.
@@ -179,6 +223,9 @@ Live site: https://theconts-os.pages.dev (Supabase project cweomoenhsjvsxfsmiiw,
 - Turnover jobs are now made automatically (ensureTurnovers): on create, import, duplicate, channel sync and on the Cleaning board for the next 60 days. First board load on production backfills every upcoming checkout; check the count against "checkouts with no cleaning job" after deploy.
 - Dashboard operator share and owner payout now come from the statement engine (whole months, estimate). Not checked against production's 4,152 reservations: no real-size data on this machine.
 - api-checks nav-badges, operations (housekeeper web access refused by the field-app middleware) and owners (owner phone validation) fail on local demo data in code this branch does not touch.
+
+## Hin Lim SKUs from the Houzs Century CRM list (feat/crm-sku-import, migration 0346, 19 Nov 2026)
+- Owner to look over docs/catalog-import/crm-hinlim/review.xlsx (yellow rows, Questions), then apply 0346 to production and merge.
 
 ## Renovation catalog first import (feat/catalog-first-import, no migration, 20 Oct 2026, docs/catalog-import/)
 - Owner to answer the Questions sheet of docs/catalog-import/catalog-review.xlsx (units BOX/BAG/ROLL, Track light, mark-up, stone unit, 2990 sofas, tools left out).
@@ -669,3 +716,21 @@ Suggested order. Items 1-3 together are about 2 days and close the biggest gaps.
 - Project SO tab nets delivery returns (PR #792); a returned line reads PENDING, as on the sales order page.
 - Production photos follow the upload standard (PR #793): sheet after each shot, Record video. A real phone recording a video has not been tried.
 - Payments on the project Overview read Not confirmed until Finance confirms the receipt; tied to the accounting mapping above.
+- Cleaning price list starts 1 Nov 2026, so 4,898 cleans finished Jan to Oct 2026 have no cleaner pay on Yearly. Owner: fix later (19 Nov 2026).
+- 13 rental units have no contract (Star Residences 1-45-10, Trofi 2 B35-05, Anggun 2010 and Star Residences 113A10 have stays); they show under No contract on the Unit report until staff add one.
+
+## Project stages (feat/stage-rules, no migration, 19 Nov 2026)
+- Stage rules of 19 Nov 2026 are server-side (engine services/renovation/flow.ts, stageRules.ts, stageLoad.ts); the project detail sends flow.stages. The screens still draw the old stepper (renovationBetaModel.ts stepperItems) and the Project List still orders Design before Signed: frontend to switch to flow.stages.
+- Handover by hand and Close have an API (POST /api/renovation/:id/flow-stage/:key/complete|reopen) but no button yet.
+- Renovation category done = every line of the category delivered (DO). A Client PO line that never gets a DO would hold Renovation open: owner to confirm.
+- Before merging fix/po-from-so-picker: apply migrations-pg/0345_po_mixed_categories.sql to production (a PO may mix categories, owner 19 Nov 2026); until then the database still refuses a mixed renovation PO, now with the reason shown and the form savable again after a fix.
+
+## Project page speed (perf/project-page-speed, 19 Nov 2026)
+- Site tab: linkedFilesFor still reads each on-site GR/DO twin one after another (onsiteTwinFiles, about 3 reads each); batch it if the Site tab stays slow.
+- The page asks the same project's design facts twice (GET /api/renovation/:id stage reads and GET /api/beta/board?projectId): one shared endpoint would halve them; needs a frontend change.
+
+## Row caps and paging (21 Nov 2026)
+- Inventory list paging: deferred by the owner until the page is actually slow (production has no stock lots yet). Its summary cards, "Dead stock only" filter and Age sort cover every SKU, so paging needs those computed on the server first.
+- Reads still capped by `.limit(2000/3000/5000)` on small tables (payments, projects, PO items, suppliers, units...) stop quietly at 1,000 rows; none is close today (see PR #1119).
+- `computeSoLifecycle` / `soCurrentDocNo` put every SO on the list into one URL: fine at 148 orders, likely breaks past ~250-400.
+- Chart of accounts (571 rows) read unpaged in several places; `accounting-chart.ts` reads every company's chart.

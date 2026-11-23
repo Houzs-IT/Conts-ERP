@@ -110,9 +110,9 @@ describe("PO tab", () => {
     // One line PO cell: number and short date.
     expect(within(region).getByText("TC-PO-2610-006")).toBeTruthy();
     expect(within(region).getAllByText("24/10").length).toBeGreaterThan(0);
-    // One band per category, no sub-category band: processing differs between the lines (their span), delivery is set
-    // on the PO line only.
-    expect(within(region).queryByText("Downlights")).toBeNull();
+    // One band per category with its subcategory under it (owner, 17 Nov 2026): processing differs between the lines
+    // (their span), delivery is set on the PO line only.
+    expect(within(region).getAllByText("Downlights").length).toBeGreaterThan(0);
     expect(within(region).getAllByText("01/11 - 02/11").length).toBe(1);
     expect(within(region).getAllByText("10/11, 1 not set").length).toBe(1);
     // DO: the delivery order that carried line a, a link to it; line b has none yet.
@@ -120,11 +120,12 @@ describe("PO tab", () => {
     expect(within(region).getAllByText("Not yet").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    // SKU, qty and supplier cannot be changed here (owner, 05/11/2026): the remark and dates can.
+    // SKU and qty cannot be changed here (owner, 05/11/2026): the remark and dates can, and (owner, 17/11/2026) the
+    // supplier and receiving warehouse of a line still waiting for its PO; a line on a PO shows its PO's as text.
     expect(within(region).queryByLabelText(/^Qty for/)).toBeNull();
     expect(within(region).queryByRole("button", { name: /^Change SKU/ })).toBeNull();
-    expect(within(region).queryByLabelText(/^Supplier for/)).toBeNull();
-    expect(within(region).queryByRole("columnheader", { name: "Supplier" })).toBeNull();
+    expect(within(region).getByRole("columnheader", { name: /^Supplier/ })).toBeTruthy();
+    expect(within(region).getByRole("columnheader", { name: /^Receive at/ })).toBeTruthy();
     expect(within(region).getAllByRole("button", { name: /Add a remark to/ }).length).toBe(2);
     // The PO's own date is changed in the PO: the number opens its editor.
     expect(within(region).queryByLabelText("PO date of TC-PO-2610-006")).toBeNull();
@@ -190,14 +191,15 @@ describe("PO tab", () => {
     renderTab();
     const region = await screen.findByRole("region", { name: "Sales order lines" });
     const heads = (): (string | null)[] => within(region).getAllByRole("columnheader").map((h) => h.textContent);
-    expect(heads()[0]).toBe("SKU");
-    fireEvent.pointerDown(within(region).getByRole("columnheader", { name: "PO" }));
-    const sku = within(region).getByRole("columnheader", { name: "SKU" });
-    fireEvent.pointerEnter(sku);
-    fireEvent.pointerUp(sku);
+    // No SKU column: the description is enough (owner, 17 Nov 2026).
+    expect(heads()[0]).toBe("Description");
+    fireEvent.pointerDown(within(region).getByRole("columnheader", { name: /^PO/ }));
+    const desc = within(region).getByRole("columnheader", { name: /^Description/ });
+    fireEvent.pointerEnter(desc);
+    fireEvent.pointerUp(desc);
     expect(heads()[0]).toBe("PO");
     fireEvent.click(screen.getByRole("button", { name: "Reset columns" }));
-    expect(heads()[0]).toBe("SKU");
+    expect(heads()[0]).toBe("Description");
   });
 
   it("locks the variants of a line with goods received", async () => {
@@ -214,20 +216,21 @@ describe("PO tab", () => {
 });
 
 describe("PO tab head (owner, 07/11/2026)", () => {
-  it("has Export PDF and no Close all, Export, Quantity helper or Create PO", async () => {
+  it("has Export SO and Export timetable, and no Close all, Export, Quantity helper or Create PO", async () => {
     h.furniture = false;
     renderTab();
-    expect(await screen.findByRole("button", { name: "Export PDF" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Export SO" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Export timetable" })).toBeTruthy();
     for (const name of [/Close all/, /Open all/, /^Export$/, /Quantity helper/, /Create PO/]) {
       expect(screen.queryByRole("button", { name })).toBeNull();
       expect(screen.queryByRole("link", { name })).toBeNull();
     }
   });
-  it("Export PDF downloads each sales order", async () => {
+  it("Export SO downloads each sales order", async () => {
     h.furniture = false;
     h.pdf.length = 0;
     renderTab();
-    fireEvent.click(await screen.findByRole("button", { name: "Export PDF" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Export SO" }));
     await waitFor(() => expect(h.pdf).toEqual([[{ docNo: "TC-SO-1", status: "CONFIRMED", voLocked: true, renovation: true }]]));
   });
 });

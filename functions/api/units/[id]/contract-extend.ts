@@ -24,7 +24,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const b = await request.json<{ documentId?: string; startsOn?: string; endsOn?: string | null; renewsOn?: string | null }>().catch(() => null);
   if (!b) return fail('VALIDATION', 'Nothing to save.', 422);
 
-  const u = await one<any>(env, `SELECT u.id, u.purpose, u.package, u.contract_id, u.owner_id, p.name AS building, u.unit_number, o.display_name AS owner_name
+  const u = await one<any>(env, `SELECT u.id, u.purpose, u.package, u.contract_id, u.owner_id, p.name AS building, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, o.display_name AS owner_name
     FROM units u JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id WHERE u.id = ?`, id);
   if (!u) return fail('NOT_FOUND', 'That unit no longer exists.', 404);
   if (isPlaceholderOwner(u.owner_name)) return fail('VALIDATION', 'Pick the owner on the Details tab first.', 422);

@@ -25,6 +25,7 @@ import { getSupabaseService } from '../../db/supabase';
 import { postPersonalNotice } from '../../services/personalNotice';
 import { createDraftPiFromGrnItems } from './pi-from-grn-core';
 import { remainingToBill } from './outstanding-grn-lines';
+import { paginateAll } from './paginate-all';
 import { callClaudePiExtract, loadPiFewShot, type PiScanExtract } from './pi-scan-extract';
 import {
   matchInvoiceLinesToGrnLines, docRefMatches, normalizeCode,
@@ -327,12 +328,16 @@ async function loadSupplierBindings(
   const supplierIds = [...new Set(anchors.map((a) => a.supplier_id).filter((s): s is string => !!s))];
   const map = new Map<string, string>();
   if (supplierIds.length === 0) return map;
-  let q = svc
-    .from('supplier_material_bindings')
-    .select('item_code, supplier_sku')
-    .in('supplier_id', supplierIds);
-  if (companyId != null) q = q.eq('company_id', companyId);
-  const { data, error } = await q;
+  /* Paged: one supplier already carries ~580 bindings, so the bindings of two suppliers on one invoice passed the
+     1,000-row cap and the codes after it went unmatched. */
+  const { data, error } = await paginateAll((from, to) => {
+    let q = svc
+      .from('supplier_material_bindings')
+      .select('item_code, supplier_sku')
+      .in('supplier_id', supplierIds);
+    if (companyId != null) q = q.eq('company_id', companyId);
+    return q.order('id').range(from, to);
+  });
   if (error) {
     console.warn('[pi-scan-job] supplier binding read failed:', error.message);
     return map;

@@ -1,27 +1,28 @@
-import { type Env, one, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
 import { requireSession, isFieldRole } from '../../_lib/auth';
 import { checkPhone } from '../../_lib/validate';
-import { forgetRules, isFieldKind, isSide, roleForKind, sideFits } from '../../_lib/access';
-import { loadDepartment, otherManagers } from '../../_lib/accessRules';
+import { forgetRules, isFieldKind, isSide, roleForKind, sideFits, userRolesReady } from '../../_lib/access';
+import { loadDepartment, otherManagers, parseExtraPositions } from '../../_lib/accessRules';
 
 interface Before {
   role: string; is_active: number; manager_id: string | null; full_name: string; email: string; phone: string | null;
   department_id: string | null; position_id: string | null; department: string | null; position: string | null; side: string;
 }
 
-/** PATCH /api/users/:id { isActive?, managerId?, fullName?, email?, phone?, side?, departmentId?, positionId? } — management
+/** PATCH /api/users/:id { isActive?, managerId?, fullName?, email?, phone?, side?, departmentId?, positionId?, extraPositionIds? } — management
  *  only. The department decides the hidden role, so `role` in the body is ignored; `side` (Works on) must fit the
  *  department (sideFits), and a department on one side puts the person on that side. Moving a person to another
  *  department clears their position unless a position of the new department is sent with it. Cleaners and technicians
  *  are managed on HR > Employees, so their department cannot be changed here, and nobody is moved into a field department.
- *  Cannot deactivate yourself, and cannot leave the system without an active management account. */
+ *  Cannot deactivate yourself, and cannot leave the system without an active management account.
+ *  `extraPositionIds` replaces the person's extra roles (migration 0349): desk positions only, for a desk account. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (session.role !== 'management') return fail('FORBIDDEN', 'Only management can change user accounts.', 403);
 
   const id = String(params.id);
-  const b = await request.json<{ isActive?: boolean; managerId?: string | null; fullName?: string; email?: string; phone?: string | null; side?: unknown; departmentId?: unknown; positionId?: unknown }>().catch(() => null);
+  const b = await request.json<{ isActive?: boolean; managerId?: string | null; fullName?: string; email?: string; phone?: string | null; side?: unknown; departmentId?: unknown; positionId?: unknown; extraPositionIds?: unknown }>().catch(() => null);
   if (!b) return fail('VALIDATION', 'Nothing to change.', 422);
   if (id === session.userId && b.isActive === false) return fail('SELF_LOCKOUT', 'You cannot deactivate your own account.', 422);
   if (b.managerId && b.managerId === id) return fail('VALIDATION', 'Nobody can report to themselves.', 422, { managerId: 'Pick someone else.' });
@@ -33,6 +34,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b.departmentId !== undefined && (typeof b.departmentId !== 'string' || !b.departmentId)) fields.departmentId = 'Choose a department.';
   if (b.positionId !== undefined && b.positionId !== null && typeof b.positionId !== 'string') fields.positionId = 'Choose a position from the list.';
   if (b.side !== undefined && !isSide(b.side)) fields.side = 'Choose The Conts, Dream Crafter or Both.';
+  const extras = b.extraPositionIds === undefined ? null : parseExtraPositions(b.extraPositionIds);
+  if (extras && !extras.ok) fields.extraPositionIds = extras.message;
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the account details.', 422, fields);
 
   const before = await one<Before>(env, 'SELECT role, is_active, manager_id, full_name, email, phone, department_id, position_id, department, position, side FROM users WHERE id = ?', id);
@@ -65,6 +68,32 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     job = { departmentId: department.id, positionId: position?.id ?? null, department: department.name, position: position?.name ?? null, side, role: roleForKind(department.kind), moved };
   }
 
+  // Extra roles: only a desk (staff) account holds them, and only desk positions; Management is Full already.
+  let extraRoles: { before: string[]; after: string[] } | null = null;
+  // Made management, a person needs no extra roles (Full everywhere): they go whether or not the body lists them.
+  const becomesManagement = job?.role === 'management' && before.role !== 'management';
+  if (becomesManagement && !extras && await userRolesReady(env)) {
+    const current = await all<{ position_id: string }>(env, 'SELECT position_id FROM user_roles WHERE user_id = ? ORDER BY position_id', id);
+    if (current.length) extraRoles = { before: current.map(r => r.position_id), after: [] };
+  }
+  if (extras?.ok) {
+    if (!(await userRolesReady(env))) return fail('NOT_READY', 'Extra roles need database migration 0349 first.', 409);
+    const role = job?.role ?? before.role;
+    if (extras.value.length && (role === 'management' || role === 'owner')) {
+      return fail('VALIDATION', 'Only desk staff can hold extra roles. Management has full access already.', 422, { extraPositionIds: 'Not for this account.' });
+    }
+    const found = extras.value.length
+      ? await all<{ id: string; kind: string }>(env,
+        `SELECT p.id, d.kind FROM positions p JOIN departments d ON d.id = p.department_id WHERE p.id IN (${extras.value.map(() => '?').join(', ')})`, ...extras.value)
+      : [];
+    if (found.length !== extras.value.length || found.some(p => p.kind !== 'staff')) {
+      return fail('VALIDATION', 'Extra roles must be desk positions from the list.', 422, { extraPositionIds: 'Choose desk positions only.' });
+    }
+    const mainPosition = job ? job.positionId : before.position_id;
+    const current = await all<{ position_id: string }>(env, 'SELECT position_id FROM user_roles WHERE user_id = ? ORDER BY position_id', id);
+    extraRoles = { before: current.map(r => r.position_id), after: extras.value.filter(p => p !== mainPosition).sort() };
+  }
+
   const losesAdmin = before.role === 'management' && before.is_active === 1 && ((job !== null && job.role !== 'management') || b.isActive === false);
   // A View as test account is not an administrator, so changing one never needs the check.
   if (losesAdmin && !before.email.toLowerCase().endsWith('@staging.invalid')) {
@@ -82,20 +111,29 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       await run(tx, 'UPDATE users SET department_id = ?, position_id = ?, department = ?, position = ?, side = ?, role = ? WHERE id = ?',
         job.departmentId, job.positionId, job.department, job.position, job.side, job.role, id);
     }
+    if (extraRoles) {
+      await run(tx, 'DELETE FROM user_roles WHERE user_id = ?', id);
+      if (extraRoles.after.length) {
+        await run(tx, `INSERT INTO user_roles (user_id, position_id, assigned_by) VALUES ${extraRoles.after.map(() => '(?, ?, ?)').join(', ')}`,
+          ...extraRoles.after.flatMap(positionId => [id, positionId, session.userId]));
+      }
+    }
     await audit(tx, {
       actorId: session.userId, actorLabel: session.fullName, action: 'user.update', entityTable: 'users', entityId: id,
       before: {
         role: before.role, isActive: !!before.is_active, managerId: before.manager_id, fullName: before.full_name, email: before.email, phone: before.phone,
         departmentId: before.department_id, positionId: before.position_id, department: before.department ?? null, position: before.position ?? null, side: before.side,
+        ...(extraRoles ? { extraPositionIds: extraRoles.before } : {}),
       },
       after: {
         role: job?.role ?? before.role, isActive: b.isActive ?? !!before.is_active, managerId: b.managerId === undefined ? before.manager_id : b.managerId,
         fullName: b.fullName ?? before.full_name, email: b.email !== undefined ? b.email.trim().toLowerCase() : before.email, phone: b.phone === undefined ? before.phone : b.phone,
         departmentId: job?.departmentId ?? before.department_id, positionId: job ? job.positionId : before.position_id,
         department: job?.department ?? before.department ?? null, position: job ? job.position : before.position ?? null, side: job?.side ?? before.side,
+        ...(extraRoles ? { extraPositionIds: extraRoles.after } : {}),
       },
     });
   });
-  if (job) forgetRules();
+  if (job || extraRoles) forgetRules();
   return json({ ok: true });
 };

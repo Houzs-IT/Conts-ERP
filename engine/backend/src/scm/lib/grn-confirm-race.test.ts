@@ -18,3 +18,19 @@ describe('GRN confirm race', () => {
     expect(data).toEqual([]);
   });
 });
+
+/* A failed line read is not "no lines": taken as empty it skipped the zero-cost gate and flipped the draft to POSTED
+   with no stock in, and every re-post then returned early on POSTED. */
+describe('GRN post with an unreadable line list', () => {
+  it('refuses before the flip and writes nothing', async () => {
+    const sb = fakeSb({
+      grns: [{ id: 'g1', grn_number: 'GRN-1', warehouse_id: 'w1', company_id: 1, status: 'DRAFT', posted_at: null }],
+      grn_items: [{ id: 'i1', grn_id: 'g1', purchase_order_item_id: null, qty_accepted: 3, item_code: 'X', unit_price_sen: 100, line_total_sen: 300, zero_cost_ack: false }],
+      inventory_movements: [],
+    }, { grn_items: ['zero_cost_ack'] });
+    const out = await postGrnAndRollup(sb, 'g1', 'u1', 1, 'DRAFT');
+    expect(out).toMatchObject({ ok: false, status: 503 });
+    const { data: grn } = await sb.from('grns').select('status').eq('id', 'g1').maybeSingle();
+    expect((grn as { status: string }).status).toBe('DRAFT');
+  });
+});

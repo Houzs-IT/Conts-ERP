@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { StaleBanner } from './DataState';
+import { RowsSkeleton } from './Loading';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../lib/api';
+import { findNav } from '../lib/navigation';
 import { menuPathFor } from '../lib/scmEngine';
 import { useSession } from '../lib/session';
 import { color } from '../theme';
@@ -67,6 +69,9 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
   const [attempt, setAttempt] = useState(0);
   const [started, setStarted] = useState(false);
   const frame = useRef<HTMLIFrameElement>(null);
+  // Until the engine's page has loaded, the frame holds about:blank: a post to the engine's origin is refused then,
+  // with a console warning. Its load event or its 'conts:ready' says it is there; a new frame (after an error) starts over.
+  const frameLoaded = useRef(false);
   const site = useRef('');
   const location = useLocation();
   // Only for the load it was saved for: any later menu click or link goes where it says.
@@ -119,14 +124,14 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
   // The frame's Dream Crafter screens follow the theme: told when it is ready (below) and whenever data-theme changes.
   const tellTheme = () => {
     const theme = document.documentElement.dataset.theme === 'theconts-dark' ? 'dark' : 'light';
-    if (site.current) frame.current?.contentWindow?.postMessage({ type: 'conts:theme', theme }, site.current);
+    if (site.current && frameLoaded.current) frame.current?.contentWindow?.postMessage({ type: 'conts:theme', theme }, site.current);
   };
   useEffect(() => {
     const mo = new MutationObserver(tellTheme);
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     return () => mo.disconnect();
   }, []);
-  const steer = () => { if (site.current) frame.current?.contentWindow?.postMessage({ type: 'conts:navigate', path: wanted.current }, site.current); };
+  const steer = () => { if (site.current && frameLoaded.current) frame.current?.contentWindow?.postMessage({ type: 'conts:navigate', path: wanted.current }, site.current); };
   // On every menu click, the item already open included (location.key changes), so it leaves a record. The path is
   // watched too: an address typed or changed in the bar twice in a row keeps the same key ("default").
   useEffect(() => {
@@ -139,6 +144,7 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
       if (e.origin !== site.current || e.source !== frame.current?.contentWindow) return;
       // The engine says when it has started, in case a menu click arrived before it was listening.
       if (e.data?.type === 'conts:ready') {
+        frameLoaded.current = true;
         // The frame's own Refresh reloads it alone: it goes back to the record it was on, not to this menu's list.
         const back = readLastEnginePath(here.current);
         if (back) wanted.current = back;
@@ -159,17 +165,32 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
+  useEffect(() => { if (error) frameLoaded.current = false; }, [error]);
+  // Fires after the engine's page has loaded (its 'conts:ready' usually comes first): steer and theme then, as on ready.
+  const onFrameLoad = () => {
+    if (frameLoaded.current) return;
+    frameLoaded.current = true;
+    steer();
+    tellTheme();
+  };
+
   if (error) {
     return (
       <div style={{ padding: '24px 28px' }}><StaleBanner message={error} onRetry={() => setAttempt(n => n + 1)} /></div>
     );
   }
-  const opening = <div style={{ padding: '24px 28px', fontSize: 13.5, color: color.textMuted }}>Opening supply chain…</div>;
+  // Names the menu item that was opened (Mail Center, Sales orders…), not the module behind it.
+  const opening = (
+    <div role="status" style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ fontSize: 13.5, color: color.textMuted }}>Opening {findNav(location.pathname)?.label ?? 'this screen'}…</div>
+      <RowsSkeleton rows={6} cols={4} header={false} />
+    </div>
+  );
   if (!src) return opening;
   // The frame loads underneath; the message stays over it until the engine shows a screen.
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-      <iframe ref={frame} src={src} title="Supply chain"
+      <iframe ref={frame} src={src} title="Supply chain" onLoad={onFrameLoad}
         style={{ flex: 1, width: '100%', minHeight: 0, border: 'none', display: 'block', background: color.page }} />
       {!started && <div style={{ position: 'absolute', inset: 0, background: color.page }}>{opening}</div>}
     </div>

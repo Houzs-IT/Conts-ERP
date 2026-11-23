@@ -76,6 +76,20 @@ check('pass key: the technician adds a photo', uploaded.status === 200 || upload
 r = await call('POST', `/api/maintenance/issues/${doneKey}/pass-key-done`, {}, 'technician');
 const doneJob = (await call('GET', '/api/maintenance/issues')).json.data.find(i => i.id === doneKey);
 check('pass key: Pass key done closes the job at RM 0 with no expense', r.status === 200 && doneJob?.state === 'resolved' && !doneJob?.finalAmount && !doneJob?.expensed, JSON.stringify(doneJob && { state: doneJob.state, finalAmount: doneJob.finalAmount, expensed: doneJob.expensed }));
+r = await call('DELETE', `/api/maintenance/issues/${doneKey}`, undefined, 'operations_staff');
+check('pass key delete: a finished Pass key job stays in History (409)', r.status === 409, r.text);
+
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Pass key to delete ${tag}`, category: 'other', jobType: 'pass_key', dueOn: '2030-03-03', assigneeName: HAFIZ }, 'operations_staff');
+const deleteKey = r.json.id;
+r = await call('DELETE', `/api/maintenance/issues/${deleteKey}`, undefined, 'technician');
+check('pass key delete: a technician cannot delete it (403)', r.status === 403, r.text);
+r = await call('DELETE', `/api/maintenance/issues/${deleteKey}`, undefined, 'operations_staff');
+const deletedGone = !(await call('GET', '/api/maintenance/issues')).json.data.some(i => i.id === deleteKey);
+check('pass key delete: the office deletes an open Pass key job', r.status === 200 && deletedGone, r.text);
+r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Normal raised by mistake ${tag}`, category: 'other', jobType: 'normal' }, 'operations_staff');
+const normalDel = r.json.id;
+r = await call('DELETE', `/api/maintenance/issues/${normalDel}`, undefined, 'operations_staff');
+check('job delete: the office deletes an open normal job with no cost', r.status === 200, r.text);
 
 // The rules hold an aircon job (always) until the owner approves AND its parts arrive.
 r = await call('POST', '/api/maintenance/issues', { unitId: unit.id, title: `Aircon ${tag}`, category: 'aircon', jobType: 'normal', needsParts: true, dueOn: '2030-01-05', assigneeName: HAFIZ }, 'operations_manager');
@@ -244,6 +258,7 @@ const month = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7);
 r = await call('GET', `/api/housekeeping/pay?month=${month}`);
 const pay = r.json.rows?.filter(x => crew.slice(0, 2).some(c => c.id === x.cleanerId)) ?? [];
 check('pay: each of the two cleaners gets half the external job', r.status === 200 && pay.length === 2 && pay.every(x => x.externalJobs >= 1 && x.externalPay >= 7500), r.text.slice(0, 400));
+check('pay by unit: an external job is on no unit row', Array.isArray(r.json.units) && r.json.units.every(u => u.unitId && u.total === u.basic.amount + u.deep.amount), r.text.slice(0, 400));
 check('photo required stays: with a photo the unit clean completes', (await photo(row.id)) === 201 && (await call('POST', `/api/tasks/${row.id}/complete`, { photoIds: [] })).status === 200);
 
 done();

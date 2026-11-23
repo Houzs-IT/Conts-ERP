@@ -84,6 +84,9 @@
      primary look) becomes brand gold with dark ink (7.80:1). The primary button itself is --color-primary. */
   --color-brand-black: #D4B37C;
   --color-text-inverse: #151515;
+  /* Gold pills (status.ts accent tone, company badges) kept their cream tint on dark pages: 7.59:1 here. */
+  --color-gold-50: #3A3122;
+  --color-gold-700: #E0C48F;
 
   /* The phone's black fills written as color.black (menu button, selected side switch, avatar, portal headers) drew
      #151515 text or marks on #151515 and vanished. These lift them to a warm charcoal with light text and a ring that
@@ -137,6 +140,8 @@
 :root[data-theme="theconts-dark"] .text-warning { color: var(--color-warning-fg); }
 :root[data-theme="theconts-dark"] .text-danger,
 :root[data-theme="theconts-dark"] .text-critical { color: var(--color-critical-fg); }
+/* The same red on a child ("Unassigned" in a picker button, MaintenancePage). */
+:root[data-theme="theconts-dark"] .\[\&\>span\]\:text-danger\! > span { color: var(--color-critical-fg) !important; }
 :root[data-theme="theconts-dark"] .text-info { color: var(--color-info-fg); }
 :root[data-theme="theconts-dark"] .text-neutral { color: var(--color-neutral-fg); }
 :root[data-theme="theconts-dark"] .text-accent { color: var(--color-accent-fg); }

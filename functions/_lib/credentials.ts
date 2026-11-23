@@ -14,7 +14,7 @@ export const CREDENTIAL_KINDS = [
 export const CREDENTIAL_USERS = ['maintenance', 'cleaner', 'guest', 'sales', 'management'] as const;
 export type CredentialUser = typeof CREDENTIAL_USERS[number];
 
-export const usedByReady = (env: Env): Promise<boolean> => hasColumn(env, 'access_credentials', 'used_by').catch(() => false);
+export const usedByReady = (env: Env): Promise<boolean> => hasColumn(env, 'access_credentials', 'used_by');
 
 /** ` AND <alias>.used_by @> '["who"]'::jsonb` once migration 0161 is in, else ''. No `?` here: the db helpers turn every `?` into a parameter. */
 export async function usedBySql(env: Env, alias: string, who: CredentialUser): Promise<string> {

@@ -120,7 +120,7 @@ describe('the go-live preview', () => {
       { ...good, soDocNo: OLD2, debtorCode: '301-NONE', advanceAccountCode: '500-0000', billedBeforeGoLiveSen: 2_000_001 },
     ]);
     expect(p[0]).toEqual([expect.stringContaining('2990-SO-NOPE is not a renovation contract')]);
-    expect(p[1]).toEqual([expect.stringContaining('signed on or after the ledger start')]);
+    expect(p[1]).toEqual([expect.stringContaining('signed on or after go-live')]);
     expect(p[2]).toEqual([expect.stringContaining('listed more than once'), expect.stringContaining('300-C001 is under 300-0000, not 301, 302 or 303')]);
     /* Listed twice, and every other fault of the row named. */
     expect(p[3]).toEqual(expect.arrayContaining([
@@ -129,6 +129,10 @@ describe('the go-live preview', () => {
       expect.stringContaining('500-0000 is not a sub-account of 480-0000 or 481-0000'),
       expect.stringContaining('more than the contract'),
     ]));
+  });
+
+  test("a project's account filed under AutoCount's month is accepted", async () => {
+    expect((await problemsOf(world(), [{ ...good, advanceAccountCode: '480-H001-1' }]))[0]).toEqual([]);
   });
 
   test('a header (an account with children) cannot be the advance account', async () => {
@@ -278,6 +282,18 @@ describe('Apply', () => {
     expect((sb.tables.journal_entries as Row[]).map((j) => [j.source_type, j.source_doc_no, j.entry_date])).toEqual([['RVO', `${OLD}-1`, '2026-11-05']]);
   });
 
+  test('an omission VO after go-live: invoiced in full before go-live is still accepted', async () => {
+    const sb = world({
+      reno_variation_orders: [
+        { id: 'vo-9', company_id: CO, so_doc_no: OLD, vo_no: 'VO-9', seq: 1, status: 'APPROVED', doc_date: '2026-11-18', approved_at: '2026-11-18T02:00:00Z', net_sen: -500_000 },
+      ],
+    });
+    (sb.tables.mfg_sales_order_items as Row[]).push(item('a9', OLD, -500_000));
+    const pv = await previewRenoOpening(sb, CO, [{ ...good, billedBeforeGoLiveSen: 10_000_000 }]);
+    expect(pv).toMatchObject({ ok: true, rows: [{ problems: [], contractSen: 9_500_000, goLiveContractSen: 10_000_000 }] });
+    expect((await problemsOf(sb, [{ ...good, billedBeforeGoLiveSen: 10_000_001 }]))[0]).toEqual([expect.stringContaining('more than the contract at go-live')]);
+  });
+
   test('a second Apply keeps the first baseline (a VO posted since stays counted)', async () => {
     const sb = world();
     await applyRenoOpening(sb, CO, [good], fakeTx(sb));
@@ -347,5 +363,11 @@ describe('the routes', () => {
     /* A clean file needs the database transaction: none is configured here. */
     const ok = await call(fin, '/accounting/renovation-opening/apply', { rows: [good] });
     expect(ok.status).toBe(503);
+  });
+
+  test('the cost before go-live reaches the check: a figure is kept, blank stays blank', async () => {
+    const fin = app(world(), ['scm.payment_voucher.post']);
+    const pv = await call(fin, '/accounting/renovation-opening/preview', { rows: [{ ...good, costBeforeGoLiveSen: 2_000_000 }, { ...good, soDocNo: OLD, costBeforeGoLiveSen: '' }] });
+    expect(pv.body.rows.map((r: { costBeforeGoLiveSen: number | null }) => r.costBeforeGoLiveSen)).toEqual([2_000_000, null]);
   });
 });

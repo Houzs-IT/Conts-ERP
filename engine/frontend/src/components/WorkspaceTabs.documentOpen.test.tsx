@@ -39,7 +39,7 @@ describe("a document opened from a map gets its own strip tab", () => {
     expect(screen.getByText("DO page")).toBeTruthy();
     const after = tabLabels();
     expect(after.length).toBe(before + 1);
-    expect(after.some((t) => /Sales Orders/.test(t))).toBe(true);
-    expect(after.some((t) => /Delivery Orders/.test(t))).toBe(true);
+    expect(after.some((t) => /Sales orders/.test(t))).toBe(true);
+    expect(after.some((t) => /Delivery orders/.test(t))).toBe(true);
   });
 });

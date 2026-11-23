@@ -8,8 +8,8 @@ import { errorText } from "../projects/renovation/renovationModel";
 import { peopleOptions, personLabel, usePeople } from "../projects/renovation/PersonSelect";
 import type { Person } from "../projects/renovation/simpleApi";
 import {
-  add, amendDue, APPT_LABEL, apptKindOf, apptWho, apptWithDefault, bookIssue, dateHints, designKind, ds, EVENT_TYPES, initials, isEventType, ord,
-  personInfo, type ApptKey, type BoardModel, type CalEvent, type DesignProject, type Kind, type Viewing,
+  add, amendDue, APPT_LABEL, apptKindOf, apptPeople, apptWithDefault, bookIssue, dateHints, designKind, ds, initials, ord,
+  personInfo, WORK_APPT, type ApptKey, type BoardModel, type CalEvent, type DesignProject, type Kind, type Viewing,
 } from "./renovationBetaBoard";
 import {
   addAmendment, assignPeople, boardApi, type EventBody,
@@ -21,7 +21,7 @@ import { simpleApi } from "../projects/renovation/simpleApi";
 import { AnimatePresence } from "motion/react";
 
 export type BetaDialog =
-  | { t: "work"; ev: CalEvent | null; day: string }
+  | { t: "work"; ev: CalEvent | null; day: string; preset?: { projectId: number; type: string } }
   | { t: "assign"; projectId: number; role?: AssignRole }
   | { t: "measured"; projectId: number }
   | { t: "book"; projectId: number; key: ApptKey }
@@ -73,6 +73,9 @@ const FOCUSABLE = "input:not([type=hidden]):not([disabled]), select:not([disable
 export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children, danger, wide = false, saveLabel = "Save" }: ModalProps): ReactElement {
   const titleId = useId();
   const box = useRef<HTMLFormElement>(null);
+  /* Something was typed or picked in this dialog. A click outside then keeps it open: closing threw away the note
+     being typed (click sweep F19, 21 Nov 2026). Cancel and Escape still close, on purpose. */
+  const touched = useRef(false);
   useEffect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     // Focus the dialog, not its first field: a field focused on open draws a box the owner read as a fault.
@@ -99,7 +102,7 @@ export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children
   return (
     <div
       onKeyDown={keys}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget && !touched.current) onClose(); }}
       style={{ position: "fixed", inset: 0, zIndex: 60, background: BETA.scrim, overflowY: "auto", padding: "24px 16px" }}
     >
       <form
@@ -109,6 +112,7 @@ export function BetaModal({ title, sub, onClose, onSubmit, error, busy, children
         aria-labelledby={titleId}
         tabIndex={-1}
         onSubmit={submit}
+        onChangeCapture={() => { touched.current = true; }}
         style={{ outline: "none", maxWidth: wide ? 880 : 520, margin: "0 auto", background: BETA.surface, border: `1px solid ${BETA.glassEdge}`, boxShadow: BETA.glassShadow, borderRadius: 22, padding: 20, display: "flex", flexDirection: "column", gap: 12, color: BETA.ink }}
       >
         <h2 id={titleId} style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-.02em" }}>{title}</h2>
@@ -339,25 +343,85 @@ const PICK_GRID: CSSProperties = { display: "grid", gridTemplateColumns: "repeat
 
 const num = (v: string): number | null => (v === "" ? null : Number(v));
 
+/** Who goes (owner, 20 Nov 2026): pick one of the company's people, type any name, or leave it empty. A typed text that
+    matches a person's name or label is that person, so their own calendar shows the booking; anything else is kept as
+    typed. */
+export function whoFromText(all: readonly Person[], text: string): { personId: number | null; whoText: string | null } {
+  const t = text.trim();
+  if (!t) return { personId: null, whoText: null };
+  const low = t.toLowerCase();
+  const hit = all.find((x) => personLabel(x).toLowerCase() === low) ?? all.find((x) => x.name.trim().toLowerCase() === low);
+  return hit ? { personId: hit.id, whoText: null } : { personId: null, whoText: t };
+}
+
+/** Who goes as saved: the picked people, and the typed name unless it names one of the company's people, who is then
+    picked too. */
+export function whoParts(all: readonly Person[], ids: readonly number[], text: string): { personIds: number[]; whoText: string | null } {
+  const typed = whoFromText(all, text);
+  const personIds = typed.personId != null && !ids.includes(typed.personId) ? [...ids, typed.personId] : [...ids];
+  return { personIds, whoText: typed.whoText };
+}
+
+/** Who goes (owner, 22 Nov 2026): several of the company's people, each with it on their own calendar, and a typed name
+    for someone without an account, shown as text and on nobody's calendar. Both may stay empty. */
+function WhoPick({ all, known, ids, onIds, text, onText }: {
+  all: readonly Person[]; known: ReadonlyMap<number, string>; ids: number[]; onIds: (ids: number[]) => void; text: string; onText: (v: string) => void;
+}): ReactElement {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+      <PeoplePick label="Who goes" name="who" all={all} value={ids} onChange={onIds} known={known} />
+      <input name="whoText" aria-label="Someone not on the list" value={text} onChange={(e) => onText(e.target.value)}
+        placeholder="Someone not listed (no calendar)" autoComplete="off" maxLength={120} style={IN} />
+    </div>
+  );
+}
+
+const idsOf = (people: readonly { id: number }[]): number[] => people.map((x) => x.id);
+
 /* ---------- Add work / Edit work ---------- */
 
-function WorkForm({ env, ev, day }: { env: FormEnv; ev: CalEvent | null; day: string }): ReactElement {
+function WorkForm({ env, ev, day, preset }: { env: FormEnv; ev: CalEvent | null; day: string; preset?: { projectId: number; type: string } }): ReactElement {
   const { m, who } = env;
   const all = useFormPeople(m);
   const isNew = !ev;
-  const [type, setType] = useState<string>(ev?.type ?? "client");
+  const types = m.workTypes.filter((w) => w.active || w.code === ev?.type).sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+  const [type, setType] = useState<string>(ev?.type ?? preset?.type ?? types.find((w) => w.code === "client")?.code ?? types[0]?.code ?? "client");
   const [note, setNote] = useState(ev?.note ?? "");
   const [d, setD] = useState(ev?.d ?? day);
   const [t, setT] = useState(ev?.t ?? "");
-  const [person, setPerson] = useState<string>(String(ev ? ev.who?.id ?? "" : who === "All" ? m.mePersonId ?? "" : who));
-  const [project, setProject] = useState<string>(ev?.projectId != null ? String(ev.projectId) : "");
+  const first = who === "All" ? m.mePersonId : who;
+  const [people, setPeople] = useState<number[]>(ev ? idsOf(ev.people) : first != null ? [first] : []);
+  const [whoText, setWhoText] = useState<string>(ev?.whoText ?? "");
+  const known = new Map(m.everyone.map((x) => [x.id, x.name] as const));
+  const [project, setProject] = useState<string>(ev?.projectId != null ? String(ev.projectId) : preset ? String(preset.projectId) : "");
   const [done, setDone] = useState(ev?.done ?? false);
   const save = useSave(env);
 
+  /* Site measure, Carpentry measure and Site briefing for a project are that project's appointment, the one Book time
+     on the Design progress row saves. Saved as a plain calendar entry they showed on the calendar only: the row still said
+     Not booked and the to-do list still asked to book it. Once one is booked, a new booking is another visit (owner, 20
+     Nov 2026: site, carpentry and meetings are booked several times): a calendar entry of that kind, the first kept. */
+  const apptKey = WORK_APPT[type];
+  const apptProject = apptKey && project ? m.byId.get(Number(project)) : undefined;
+  const replaces = apptKey && apptProject ? apptProject.appts[apptKey] : undefined;
+  /* Booking it again is always one more visit (owner, 20 Nov 2026: "这次去多一趟"); moving the first booking is done
+     with its own Edit. An extra visit already stored as a calendar entry stays one when edited. */
+  const asAppt = !!(apptKey && apptProject) && !(replaces?.d && (isNew || ev?.eventId != null));
+
   async function submit(): Promise<void> {
     await save.run(async () => {
-      if (!isEventType(type)) throw new Error("Pick a type.");
-      const body: EventBody = { projectId: num(project), onDate: d, atTime: t || null, type, note: note.trim() || null, personId: num(person) };
+      if (!types.some((w) => w.code === type)) throw new Error("Pick a type.");
+      const going = whoParts(all, people, whoText);
+      if (asAppt && apptKey && apptProject) {
+        const issue = bookIssue(apptProject, apptKey, d);
+        if (issue) throw new Error(issue);
+        await boardApi.saveAppointment(apptProject.id, apptKindOf(apptKey), {
+          onDate: d, atTime: t || null, ...going, withText: note.trim() || replaces?.with || apptWithDefault(apptProject, apptKey),
+        });
+        if (ev?.eventId != null) await boardApi.deleteEvent(ev.eventId);
+        return { text: `Booked ${ds(d)}${t ? ` ${t}` : ""} · ${APPT_LABEL[apptKey].toLowerCase()} of ${apptProject.title}`, jumpTo: d };
+      }
+      const body: EventBody = { projectId: num(project), onDate: d, atTime: t || null, type, note: note.trim() || null, ...going };
       if (ev?.eventId != null) await boardApi.saveEvent(ev.eventId, { ...body, done });
       else await boardApi.addEvent(body);
       return { text: "Saved", jumpTo: isNew ? d : undefined };
@@ -377,7 +441,7 @@ function WorkForm({ env, ev, day }: { env: FormEnv; ev: CalEvent | null; day: st
     <BetaModal title={isNew ? "Add work" : "Edit work"} onClose={env.onClose} onSubmit={submit} error={save.error} busy={save.busy} danger={isNew ? undefined : { label: "Delete", onClick: () => void remove() }}>
       <Field label="Type">
         <select name="type" value={type} onChange={(e) => setType(e.target.value)} style={IN}>
-          {EVENT_TYPES.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+          {types.map((w) => <option key={w.code} value={w.code}>{w.label}</option>)}
         </select>
       </Field>
       <Field label="Note">
@@ -387,18 +451,24 @@ function WorkForm({ env, ev, day }: { env: FormEnv; ev: CalEvent | null; day: st
         <Field label="Date"><input type="date" name="d" required value={d} onChange={(e) => setD(e.target.value)} style={IN} /></Field>
         <Field label="Time"><input type="time" name="t" value={t} onChange={(e) => setT(e.target.value)} style={IN} /></Field>
       </div>
-      <div style={TWO}>
-        <Field label="Who">
-          <select name="who" value={person} onChange={(e) => setPerson(e.target.value)} style={IN}><PersonOptions all={all} current={person ? [Number(person)] : []} blank="Nobody" /></select>
-        </Field>
-        <Field label="Project">
-          <select name="p" value={project} onChange={(e) => setProject(e.target.value)} style={IN}>
-            <option value="">(No project)</option>
-            {m.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </Field>
-      </div>
-      {!isNew && (
+      <WhoPick all={all} known={known} ids={people} onIds={setPeople} text={whoText} onText={setWhoText} />
+      <Field label="Project">
+        <select name="p" value={project} onChange={(e) => setProject(e.target.value)} style={IN}>
+          <option value="">(No project)</option>
+          {m.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </Field>
+      {apptProject && apptKey && isNew && replaces?.d && (
+        <div style={NOTE}>
+          One more visit: the one booked for {ds(replaces.d)} stays. To move that one instead, use its Edit.
+        </div>
+      )}
+      {apptProject && apptKey && asAppt && (
+        <div style={NOTE}>
+          Saved as the {APPT_LABEL[apptKey].toLowerCase()} of {apptProject.title}{replaces?.d ? `, in place of the one booked for ${ds(replaces.d)}` : ""}. The note is who it is with.
+        </div>
+      )}
+      {!isNew && !asAppt && (
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
           <input type="checkbox" name="done" checked={done} onChange={(e) => setDone(e.target.checked)} style={{ width: 18, height: 18, accentColor: BETA.accent }} />
           Done
@@ -458,21 +528,25 @@ function BookForm({ env, p, k }: { env: FormEnv; p: DesignProject; k: ApptKey })
   const isNew = !a?.d;
   const [d, setD] = useState(a?.d ?? "");
   const [t, setT] = useState(a?.t ?? "");
-  const [person, setPerson] = useState<string>(String(a ? apptWho(p, a)?.id ?? "" : p.lead?.id ?? ""));
+  // With no design lead yet, the person booking is the one going, so the booking is on someone's own calendar.
+  const firstId = p.lead?.id ?? m.mePersonId;
+  const [people, setPeople] = useState<number[]>(a ? idsOf(apptPeople(p, a)) : firstId != null ? [firstId] : []);
+  const [whoText, setWhoText] = useState<string>(a?.whoText ?? "");
+  const known = new Map(m.everyone.map((x) => [x.id, x.name] as const));
   const [withText, setWithText] = useState(a?.with || apptWithDefault(p, k));
   const [done, setDone] = useState(a?.done ?? false);
   const save = useSave(env);
   const cm = p.appts.cm?.d;
   // Ticking Done on a site measure records the measure: who measured is required, notes and photos are asked for.
   const recordsMeasure = k === "msr" && done && !p.measuredOn;
-  const measure = useMeasureFields(all, person ? [Number(person)] : p.lead ? [p.lead.id] : []);
+  const measure = useMeasureFields(all, people.length ? people : p.lead ? [p.lead.id] : []);
 
   async function submit(): Promise<void> {
     await save.run(async () => {
       const issue = bookIssue(p, k, d);
       if (issue) throw new Error(issue);
       if (recordsMeasure) measure.check(d);
-      await boardApi.saveAppointment(p.id, apptKindOf(k), { onDate: d, atTime: t || null, personId: num(person), withText: withText.trim() || null });
+      await boardApi.saveAppointment(p.id, apptKindOf(k), { onDate: d, atTime: t || null, ...whoParts(all, people, whoText), withText: withText.trim() || null });
       if (recordsMeasure) {
         const n = await measure.save(p.id, d);
         if (!a?.done) await boardApi.appointmentDone(p.id, apptKindOf(k));
@@ -506,10 +580,8 @@ function BookForm({ env, p, k }: { env: FormEnv; p: DesignProject; k: ApptKey })
         </Field>
         <Field label="Time"><input type="time" name="bt" value={t} onChange={(e) => setT(e.target.value)} style={IN} /></Field>
       </div>
-      <div style={TWO}>
-        <Field label="ID going"><select name="who" value={person} onChange={(e) => setPerson(e.target.value)} style={IN}><PersonOptions all={all} current={person ? [Number(person)] : []} blank="Nobody" /></select></Field>
-        <Field label="With"><input name="bw" value={withText} onChange={(e) => setWithText(e.target.value)} maxLength={120} style={IN} /></Field>
-      </div>
+      <WhoPick all={all} known={known} ids={people} onIds={setPeople} text={whoText} onText={setWhoText} />
+      <Field label="With"><input name="bw" value={withText} onChange={(e) => setWithText(e.target.value)} maxLength={120} style={IN} /></Field>
       {isNew ? (
         <div style={NOTE}>{k === "sb" && cm ? `Must be after the carpentry measure (${ds(cm)}). ` : ""}It will show on the calendar for everyone.</div>
       ) : (
@@ -563,7 +635,7 @@ function MeasureForm({ env, p }: { env: FormEnv; p: DesignProject }): ReactEleme
   const all = useFormPeople(env.m);
   const a = p.appts.msr;
   const [on, setOn] = useState(a?.d && a.d <= env.m.today ? a.d : env.m.today);
-  const measure = useMeasureFields(all, a?.who ? [a.who.id] : p.lead ? [p.lead.id] : []);
+  const measure = useMeasureFields(all, a?.people.length ? idsOf(a.people) : p.lead ? [p.lead.id] : []);
   const save = useSave(env);
   async function submit(): Promise<void> {
     await save.run(async () => {
@@ -659,7 +731,7 @@ export function BetaDialogs({ dialog, env }: { dialog: BetaDialog | null; env: F
 }
 
 function dialogOf(dialog: BetaDialog, env: FormEnv): ReactElement | null {
-  if (dialog.t === "work") return <WorkForm key={dialog.ev?.id ?? "new"} env={env} ev={dialog.ev} day={dialog.day} />;
+  if (dialog.t === "work") return <WorkForm key={dialog.ev?.id ?? "new"} env={env} ev={dialog.ev} day={dialog.day} preset={dialog.preset} />;
   const p = env.m.byId.get(dialog.projectId);
   if (!p) return null;
   if (dialog.t === "assign") return <AssignForm env={env} p={p} role={dialog.role} />;

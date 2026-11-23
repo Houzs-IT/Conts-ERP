@@ -3,6 +3,7 @@ import { useScrollMemory } from '../lib/useScrollMemory';
 import { useDevice } from '../lib/deviceClass';
 import Sidebar, { useDarkTheme } from './Sidebar';
 import TopBar from './TopBar';
+import PageTabs from './PageTabs';
 import { DemoBand } from './DemoMode';
 import { Logo } from './Logo';
 import { RefreshLine } from './Loading';
@@ -86,11 +87,17 @@ export default function AppShell({
           <div data-print-hide style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: 'calc(8px + env(safe-area-inset-top)) 16px 8px', background: color.card, borderBottom: `1px solid ${color.border}` }}>
             {/* Phones navigate from the bottom tab bar. */}
             <Logo variant="mark" size="sm" brand={dc ? 'dreamCrafter' : 'theConts'} />
-            <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600, letterSpacing: dc ? '0.08em' : '0.18em', color: color.ink }}>{dc ? 'DREAM CRAFTER' : 'THE CONTS'}</span>
+            {/* The name shows whole or not at all (never "THE C…"): when it does not fit beside the controls it wraps,
+                after the empty first item, onto a second line that the fixed height clips. */}
+            <span aria-hidden style={{ flex: '1 1 auto', minWidth: 0, height: 18, lineHeight: '18px', overflow: 'hidden', display: 'flex', flexWrap: 'wrap', fontSize: 12, fontWeight: 600, letterSpacing: dc ? '0.08em' : '0.18em', color: color.ink }}>
+              <span /><span style={{ whiteSpace: 'nowrap' }}>{dc ? 'DREAM CRAFTER' : 'THE CONTS'}</span>
+            </span>
             <TopBar path={path} navigate={navigate} action={action} compact />
           </div>
         )}
         {!isNarrow && <TopBar path={path} navigate={navigate} action={action} />}
+        {/* The pages open in this browser tab, one tab each (chew, 20 Nov 2026). */}
+        {!isNarrow && <PageTabs navigate={navigate} />}
         {/* Phones get the standard 16px side gutter; the desk keeps its wider one. */}
         {/* The phone's bottom padding clears the home indicator / browser bar (safe area). */}
         <main ref={mainRef} data-app-main tabIndex={-1} className="app-main" style={{

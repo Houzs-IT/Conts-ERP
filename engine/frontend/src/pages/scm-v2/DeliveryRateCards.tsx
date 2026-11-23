@@ -98,7 +98,7 @@ export const DeliveryRateCards = ({ embedded = false }: {
       {!embedded && (
         <PageHeader
           eyebrow="Delivery"
-          title="Delivery Rate Cards"
+          title="Delivery rate cards"
           description="Configure a rate card per carrier (own-fleet + each 3PL), verify a 3PL's billed charge against the computed expected cost, and roll the precise delivery cost toward COGS. Cost verification, not customer billing — and it does not touch the FIFO costing path."
           actions={tab === 'cards' ? (
             <div className="flex items-center gap-2">
@@ -182,7 +182,7 @@ const ThreePLDrawer = ({ onClose }: { onClose: () => void }) => (
     <div className={styles.backdrop} onClick={onClose} />
     <aside className={styles.drawer}>
       <header className={styles.drawerHeader}>
-        <h2 className={styles.drawerTitle}>3PL Companies</h2>
+        <h2 className={styles.drawerTitle}>3PL companies</h2>
         <button type="button" className={styles.iconBtn} onClick={onClose}><X {...ICON} /></button>
       </header>
       <div className={styles.drawerBody}>
@@ -703,7 +703,7 @@ const CreateCardDrawer = ({ initialCarrierCompanyId, onClose, onCreated }: {
       <div className={styles.backdrop} onClick={onClose} />
       <aside className={styles.drawer}>
         <header className={styles.drawerHeader}>
-          <h2 className={styles.drawerTitle}>New Rate Card</h2>
+          <h2 className={styles.drawerTitle}>New rate card</h2>
           <button type="button" className={styles.iconBtn} onClick={onClose}><X {...ICON} /></button>
         </header>
         <div className={styles.drawerBody}>

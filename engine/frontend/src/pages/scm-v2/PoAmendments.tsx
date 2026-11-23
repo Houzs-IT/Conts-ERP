@@ -179,7 +179,7 @@ export const PoAmendments = () => {
     <div className={quick ? 'md:pr-[540px]' : undefined}>
       <PageHeader
         eyebrow="Procurement"
-        title="PO Amendments"
+        title="PO amendments"
         description={
           isLoading
             ? 'Loading amendments…'

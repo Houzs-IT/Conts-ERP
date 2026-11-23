@@ -25,6 +25,7 @@
 import { paginateAll } from '../scm/lib/paginate-all';
 import { postJournal, reverseJournal } from './engine';
 import { isBeforeLedgerStart, loadLedgerSettings } from './ledger-settings';
+import { renoGoLiveDay } from './go-live';
 import { noCustomerAccountReason } from '../conts/parties';
 import { todayMyt } from '../scm/lib/my-time';
 import { allocationDelta, waterfallTarget } from './reno-waterfall';
@@ -121,10 +122,19 @@ async function loadContractCtx(sb: Sb, companyId: number, soDocNo: string): Prom
   if (cErr) return { ok: false, status: 'load_failed', reason: cErr.message };
   /* Signed before the ledger start: posts nothing until finance seeds it at go-live (acc/reno-opening); then the
      contract amount it was seeded at counts as posted, and a later VO posts its difference (RVO, never RCON). */
-  const golive = isBeforeLedgerStart(signed, ls.settings);
+  /* Signed before go-live (the day after AutoCount's cut-over; acc/go-live) and never signed in the ledger: AutoCount
+     booked it, so the ERP posts nothing until it is seeded. A contract the ledger already signed (RCON) stays the
+     ledger's whatever its date. */
+  const gl = await renoGoLiveDay(sb, companyId);
+  if (!gl.ok) return { ok: false, status: 'ledger_settings_failed', reason: gl.error };
+  const jes = await contractJournals(sb, companyId, soDocNo);
+  if (!jes.ok) return { ok: false, status: 'load_failed', reason: jes.error };
+  const signedInLedger = jes.rows.some((r) => !r.reversed && r.source_type === CONTRACT_SIGNED);
+  const golive = !signedInLedger && (gl.day ? signed < gl.day : isBeforeLedgerStart(signed, ls.settings));
+  const goLiveDay = gl.day ?? ls.settings.ledgerStartDate ?? null;
   const baseline = contract?.golive_contract_sen == null ? null : Number(contract.golive_contract_sen);
   if (golive && baseline == null) {
-    return { ok: true, beforeStart: true, status: String(so.status ?? ''), reason: `Contract ${soDocNo} was signed before the ledger start (${ls.settings.ledgerStartDate}); the opening balances carry it.` };
+    return { ok: true, beforeStart: true, status: String(so.status ?? ''), reason: `Contract ${soDocNo} was signed before go-live (${goLiveDay}); AutoCount's figures carry it until it is seeded.` };
   }
   const advance = String(contract?.advance_account_code ?? '').trim();
   if (!advance) return { ok: false, status: 'no_advance_account', reason: `Contract ${soDocNo} has no advance account. Set it, then post again.` };
@@ -141,8 +151,6 @@ async function loadContractCtx(sb: Sb, companyId: number, soDocNo: string): Prom
     return { ok: false, status: 'load_failed', reason: err instanceof Error ? err.message : String(err) };
   }
 
-  const jes = await contractJournals(sb, companyId, soDocNo);
-  if (!jes.ok) return { ok: false, status: 'load_failed', reason: jes.error };
   const active = jes.rows.filter((r) => !r.reversed);
   let postedSen = golive ? (baseline ?? 0) : 0;
   if (active.length > 0) {
@@ -152,7 +160,7 @@ async function loadContractCtx(sb: Sb, companyId: number, soDocNo: string): Prom
     postedSen += ((lines ?? []) as Array<{ debit_sen: number | null; credit_sen: number | null }>)
       .reduce((s, l) => s + Number(l.credit_sen ?? 0) - Number(l.debit_sen ?? 0), 0);
   }
-  return { ok: true, beforeStart: false, golive, ledgerStart: ls.settings.ledgerStartDate ?? null, advance, control, debtorCode, partyName, soDate: signed, status: String(so.status ?? ''), contractSen, postedSen, jes: jes.rows, active };
+  return { ok: true, beforeStart: false, golive, ledgerStart: goLiveDay, advance, control, debtorCode, partyName, soDate: signed, status: String(so.status ?? ''), contractSen, postedSen, jes: jes.rows, active };
 }
 
 export type ContractPostingState =

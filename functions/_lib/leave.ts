@@ -6,7 +6,7 @@ import { ALLOWANCE_TYPES, balance, chargeableDays, parseHolidays, type Balance, 
 
 /** Leave on the database (migration 0167, PLAN-hr-employees.md phase 3). The rules themselves are in leaveRules.ts. */
 
-export const hasLeaves = (env: Env): Promise<boolean> => hasColumn(env, 'leaves', 'id').catch(() => false);
+export const hasLeaves = (env: Env): Promise<boolean> => hasColumn(env, 'leaves', 'id');
 export const NOT_MIGRATED = 'Leave needs a database update (migration 0167) that has not been applied yet.';
 export const HOLIDAYS_KEY = 'hr.public_holidays';
 

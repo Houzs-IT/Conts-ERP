@@ -94,6 +94,20 @@ describe('change the expected cost', () => {
     expect(await r.json()).toMatchObject({ error: 'closed' });
     expect(sb.tables.reno_expected_cost_changes).toEqual([]);
   });
+
+  test('a handed-over project with no expected cost may get its first one, once', async () => {
+    const sb = world({
+      mfg_sales_orders: [{ doc_no: SO, company_id: CO, status: 'RENO_COMPLETED', project_id: 7 }],
+      mfg_sales_order_items: [{ id: 'k', doc_no: SO, company_id: CO, qty: 1, total_sen: 10_000_000, line_cost_sen: 0, cancelled: false,
+        description: 'Kitchen cabinet', created_at: '2026-10-03T03:00:00Z' }],
+    });
+    const a = app(sb, FIN);
+    const first = await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 7_000_000, expectedOldSen: 0, reason: '70% of the contract' });
+    expect(first.status).toBe(201);
+    const again = await send(a, 'POST', `/reno-projects/${SO}/expected-cost`, { newExpectedSen: 8_000_000, expectedOldSen: 7_000_000, reason: 'x' });
+    expect(again.status).toBe(409);
+    expect(await again.json()).toMatchObject({ error: 'closed' });
+  });
 });
 
 describe('two saves at once (review 4)', () => {

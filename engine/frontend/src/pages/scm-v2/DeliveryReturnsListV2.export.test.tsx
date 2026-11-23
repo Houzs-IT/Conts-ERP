@@ -220,3 +220,12 @@ describe("Delivery Returns list: the ONE Export", () => {
     expect(h.written).toHaveLength(0);
   });
 });
+
+describe("Refund value (click sweep 2, G9)", () => {
+  it("leaves cancelled returns out", () => {
+    h.rows = [dr("d-1", "HC-DR-2608-0001", { local_total_sen: 250000 }), dr("d-2", "HC-DR-2608-0002", { status: "CANCELLED", local_total_sen: 8000 })];
+    mount("/scm/delivery-returns");
+    expect(screen.getAllByText("RM 2,500.00").length).toBeGreaterThan(0);
+    expect(screen.queryByText("RM 2,580.00")).toBeNull();
+  });
+});

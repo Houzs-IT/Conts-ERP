@@ -43,6 +43,7 @@ import { useNotify } from './NotifyDialog';
 // /api/scm mount that the vendored authed-fetch targets). Same app-import
 // precedent as DataGrid's activeCompany subscription.
 import { api } from '../../../api/client';
+import { useProjectSearch } from '../../../lib/projectSearch';
 import styles from '../../../pages/scm-v2/Suppliers.module.css';
 import { DateField } from "./DateField";
 
@@ -177,24 +178,23 @@ export const NewDpOrderDrawer = ({ onClose }: { onClose: () => void }) => {
      free-text fallback below. */
   const suppliersQ = useSuppliers(undefined);
   const suppliersEnabled = src.kind === 'supplier';
-  const projectsQ = useQuery<{ data: ProjectPickRow[] }>({
-    queryKey: ['dp-project-pick'],
-    queryFn: () => api.get<{ data: ProjectPickRow[] }>('/api/projects?per_page=200'),
-    enabled: src.kind === 'project',
-    staleTime: 60_000,
-  });
+  /* Searched on the server, not the newest 200 filtered here: an older project could not be picked (audit 20 Nov 2026). */
+  const [projectTerm, setProjectTerm] = useState('');
+  const projectsQ = useProjectSearch<ProjectPickRow>(projectTerm, src.kind === 'project');
 
   const supplierOptions = useMemo(
     () => (suppliersQ.data ?? []).map((s) => ({ value: s.id, label: `${s.name} (${s.code})` })),
     [suppliersQ.data],
   );
-  const projectOptions = useMemo(
-    () => (projectsQ.data?.data ?? []).map((p) => ({
-      value: String(p.id),
-      label: `${p.code ?? p.id} — ${p.name ?? ''}${p.venue ? ` · ${p.venue}` : ''}`,
-    })),
-    [projectsQ.data],
-  );
+  const projectOptions = useMemo(() => {
+    const label = (p: ProjectPickRow) => `${p.code ?? p.id} — ${p.name ?? ''}${p.venue ? ` · ${p.venue}` : ''}`;
+    const opts = projectsQ.rows.map((p) => ({ value: String(p.id), label: label(p) }));
+    // The chosen project stays an option (so its label shows) after the search moves away from it.
+    const chosen = src.kind === 'project' ? projectsQ.byId(form.source) : undefined;
+    if (chosen && !opts.some((o) => o.value === String(chosen.id))) opts.unshift({ value: String(chosen.id), label: label(chosen) });
+    return opts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- byId reads the hook's cache of the rows listed
+  }, [projectsQ.rows, form.source, src.kind]);
 
   /* Workshops + lorries — LORRY_SERVICE only. The workshop master lives outside
      the /api/scm mount (same app-import precedent as the project list above) and
@@ -277,7 +277,7 @@ export const NewDpOrderDrawer = ({ onClose }: { onClose: () => void }) => {
      address only lives on the full project row — the hint says so). */
   const pickProject = (id: string) => {
     set('source', id);
-    const p = (projectsQ.data?.data ?? []).find((r) => String(r.id) === id);
+    const p = projectsQ.byId(id);
     if (!p) return;
     setForm((s) => ({
       ...s,
@@ -549,6 +549,8 @@ export const NewDpOrderDrawer = ({ onClose }: { onClose: () => void }) => {
                 value={form.source}
                 onChange={pickProject}
                 options={projectOptions}
+                onSearchChange={setProjectTerm}
+                searching={projectsQ.searching}
                 placeholder={projectsQ.isLoading ? 'Loading projects…' : 'Search project by code, name or venue…'}
                 className={styles.searchInput}
                 ariaLabel="Project / venue"

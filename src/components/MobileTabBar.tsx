@@ -113,7 +113,7 @@ function MoreSheet({ path, navigate, onClose }: { path: string; navigate: (p: st
     .filter(g => g.items.length > 0)
     // The Settings hub (/settings) holds the account and every system page on a phone (MobileSettingsHub); it is a row
     // here, since the tab bar has room only for the four main screens and Menu (owner, 12 Nov 2026).
-    .map(g => g.workspace === 'rental' && g.label === 'SYSTEM' ? { ...g, label: 'SETTINGS AND SUPPORT', items: [SETTINGS_ROW, ...g.items.filter(it => it.key === 'itSupport')] } : g),
+    .map(g => g.workspace === 'rental' && g.label === 'SYSTEM' ? { ...g, label: 'SETTINGS AND SUPPORT', items: [SETTINGS_ROW, ...g.items.filter(it => it.key === 'itSupport' || it.key === 'meetings')] } : g),
   [user, engine.data?.enabled, counts?.approvalsOn]);
   // Highlights the row a record or sub-page belongs to, the same rule as the desk sidebar.
   const current = useMemo(() => activeKey(all, path), [all, path]);

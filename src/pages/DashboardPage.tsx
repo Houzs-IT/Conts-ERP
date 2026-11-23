@@ -29,11 +29,11 @@ import { go } from '../lib/go';
 /* ------------------------------------------------------------------ KPIs -- */
 /* Kept as the existing read-only KPI row — see the brief: keep KPI row + chart. */
 
-interface Kpi { key: string; value: number | string; currency?: string; unit?: string; estimate?: boolean }
+interface Kpi { key: string; value: number | string; currency?: string; unit?: string; estimate?: boolean; units?: number }
 interface KpiPayload { kpis: Kpi[]; period: string; generatedAt: string }
 
 const KPI_LABEL: Record<string, string> = {
-  accommodation_revenue: 'Earnings', occupancy: 'Occupancy', adr: 'Avg nightly price',
+  accommodation_revenue: 'Reservation Income', income_per_unit: 'Avg per live unit', occupancy: 'Occupancy', adr: 'Avg nightly price',
   revpar: 'Earnings per night (all nights)', net_owner_payout: 'Net Payout to Owner',
 };
 
@@ -119,9 +119,10 @@ function kpiValue(k: Kpi) {
  * /api/dashboard/trend?range=. `delta.tone` is decided by the backend — the sign
  * of the number never picks the colour (an expected seasonal dip is not red). */
 
-type Range = '3m' | '12m' | 'ytd';
+type Range = '3m' | '12m' | 'ytd' | 'next';
 
-interface TrendPoint { period: string; revenue: number; occupancy: number; isCurrent?: boolean }
+/** activeUnits: the units live that month (half for one that went live on the 15th or later); perUnit: the month's income over them (owner, 19 Nov 2026). */
+interface TrendPoint { period: string; revenue: number; occupancy: number; isCurrent?: boolean; isFuture?: boolean; activeUnits?: number; perUnit?: number }
 interface TrendTotals { grossBookingValue: number; collectedRevenue: number; managementFees: number; netOwnerPayout: number; statementIncome?: number; ownerCosts?: number; estimate?: boolean }
 interface TrendPayload {
   generatedAt: string; currency: string;
@@ -135,6 +136,7 @@ const RANGES: { key: Range; label: string }[] = [
   { key: '3m', label: '3 months' },
   { key: '12m', label: '12 months' },
   { key: 'ytd', label: 'Year to date' },
+  { key: 'next', label: 'Next 6 months' },
 ];
 
 const p = (period: string, revenue: number, occupancy: number, isCurrent?: boolean): TrendPoint =>
@@ -179,6 +181,12 @@ const TREND: Record<Range, TrendPayload> = {
     ],
     totals: { grossBookingValue: 123800000, collectedRevenue: 106100000, managementFees: 26525000, netOwnerPayout: 79575000 },
     delta: { value: 12.6, direction: 'up', tone: 'success' },
+  },
+  'next': {
+    generatedAt: '2026-09-16T06:06:00Z', currency: 'MYR',
+    points: [p('2026-09', 12200000, 86.2, true), p('2026-10', 9100000, 61.0), p('2026-11', 5200000, 34.5), p('2026-12', 2100000, 14.0), p('2027-01', 600000, 4.2), p('2027-02', 100000, 0.8)],
+    totals: { grossBookingValue: 29300000, collectedRevenue: 0, managementFees: 0, netOwnerPayout: 0 },
+    delta: { value: 0, direction: 'flat', tone: 'neutral' },
   },
 };
 
@@ -327,7 +335,7 @@ const occTone = (o: number) => o >= 90 ? 'var(--color-gold)' : o < 80 ? 'var(--c
 // Five figures. Wide screens: one row, revenue a little wider. Narrower: revenue
 // takes its own row and the other four go two per row. Phones keep two per row.
 // A grid, not flex-wrap: flex-wrap left "Net payout to owner" alone on a row.
-const KPI_ROW = 'grid grid-cols-2 xl:grid-cols-[minmax(0,1.5fr)_repeat(4,minmax(0,1fr))] gap-3 sm:gap-4';
+const KPI_ROW = 'grid grid-cols-2 xl:grid-cols-[minmax(0,1.5fr)_repeat(5,minmax(0,1fr))] gap-3 sm:gap-4';
 const KPI_HERO_FLEX = 'col-span-2 xl:col-span-1 min-w-0';
 const KPI_FLEX = 'min-w-0';
 
@@ -478,7 +486,7 @@ export default function DashboardPage() {
       <div className={cx(KPI_ROW, 'max-md:order-1')}>
         {kpi.loading && kpis.length === 0
           // The five tiles that arrive, revenue first as the dark one, so the row does not reflow when they land.
-          ? Array.from({ length: 5 }, (_, i) => <TileSkeleton key={i} hero={i === 0} hint={i === 0} className={i === 0 ? KPI_HERO_FLEX : KPI_FLEX} />)
+          ? Array.from({ length: 6 }, (_, i) => <TileSkeleton key={i} hero={i === 0} hint={i === 0} className={i === 0 ? KPI_HERO_FLEX : KPI_FLEX} />)
           : kpis.map(k => {
               // Money is never shown from a saved snapshot (owner, 12 Nov 2026, rule 3): just that tile waits for the
               // fresh figure; occupancy shows at once.
@@ -490,9 +498,9 @@ export default function DashboardPage() {
               const to = KPI_LINK[k.key];
               const occ = k.key === 'occupancy' ? Number(k.value) : null;
               return (
-                <StatTile key={k.key} label={`${KPI_LABEL[k.key] ?? humanize(k.key)}${k.estimate ? ' (estimate)' : ''}`} value={kpiValue(k)} className={KPI_FLEX}
+                <StatTile key={k.key} label={`${KPI_LABEL[k.key] ?? humanize(k.key)}${k.estimate ? (period ? ` · ${shortMonth(period)} estimate` : ' (estimate)') : ''}`} value={kpiValue(k)} className={KPI_FLEX}
                   onClick={to ? () => go(to) : undefined}
-                  hint={occ != null && Number.isFinite(occ) ? <OccupancyRing pct={occ} /> : undefined} />
+                  hint={occ != null && Number.isFinite(occ) ? <OccupancyRing pct={occ} /> : k.key === 'income_per_unit' && k.units != null ? `${k.units} live units so far this month` : undefined} />
               );
             })}
       </div>
@@ -514,14 +522,17 @@ export default function DashboardPage() {
                     </span>
                   )}
                 </div>
-                <span className="text-meta text-muted-ink">Guest totals for the range, reservations split by night</span>
+                <span className="text-meta text-muted-ink">
+                  {range === 'next' ? 'Reservation Income already booked for the coming months, split by night' : 'Reservation Income for the range, split by night'}.
+                  {' '}Occupancy and the average are over the units live each month, a unit that went live on the 15th or later counting as half; rent to rent is left out.
+                </span>
               </div>
 
               {/* 3M / 12M / YTD — re-reads the chart from /dashboard/trend?range= */}
               <Segmented label="Trend range" options={RANGES} value={range} onChange={setRange} />
             </div>
 
-            <BarTrend height={190} lineLabel="Occupancy under each month"
+            <BarTrend height={190} lineLabel="Occupancy under each month" line2Label={tp.points.some(x => x.perUnit) ? 'Avg per live unit' : undefined}
               bars={tp.points.map((s, i) => ({
                 key: s.period,
                 label: shortMonth(s.period),
@@ -530,23 +541,24 @@ export default function DashboardPage() {
                 value: s.revenue,
                 display: s.revenue > 0 ? rmCompact(s.revenue).replace('RM ', '') : '',
                 // vocab-ok: s.revenue is a field name, the visible text has no such word
-                title: `${monthLabel(s.period)} · ${rm(s.revenue)} · ${percent(s.occupancy)} occupancy`,
+                title: `${monthLabel(s.period)} · ${rm(s.revenue)} · ${percent(s.occupancy)} occupancy${s.activeUnits != null ? ` · ${s.activeUnits} live units${s.perUnit ? `, ${rm(s.perUnit)} each on average` : ''}` : ''}`,
                 current: s.isCurrent,
                 lineDisplay: `${s.occupancy.toFixed(0)}%`,
+                line2Display: s.perUnit ? rmCompact(s.perUnit).replace('RM ', '') : undefined,
               }))} />
 
             {/* The four totals are distinct definitions and are never merged. */}
-            <TotalsRow items={[
-              { label: 'Guest total', value: money(tp.totals.grossBookingValue) },
-              { label: 'Earnings', value: money(tp.totals.collectedRevenue) },
+            {range !== 'next' && <TotalsRow items={[
+              { label: 'Reservation Income', value: money(tp.totals.grossBookingValue) },
+              { label: 'Recorded as paid', value: money(tp.totals.collectedRevenue) },
               { label: tp.totals.estimate ? 'Operator share (estimate)' : 'Operator share', value: money(tp.totals.managementFees) },
               { label: tp.totals.estimate ? 'Net Payout to Owner (estimate)' : 'Net Payout to Owner', value: money(tp.totals.netOwnerPayout) },
-            ]} />
-            {tp.totals.statementIncome != null && tp.totals.statementIncome > 0 && (
+            ]} />}
+            {range !== 'next' && tp.totals.statementIncome != null && tp.totals.statementIncome > 0 && (
               <p className="m-0 mt-3 text-meta text-muted-ink text-pretty">
                 Worked out like the owner statements and the Owners page: gross income {money(tp.totals.statementIncome)} less owner costs {money(tp.totals.ownerCosts ?? 0)} is
-                the operator share plus the owners' share; the net payout also adds minimum top-ups, fixed rents and Owner Adjustments. Guest total and Earnings
-                count every reservation as the guest paid it. Estimates until each month's statement is final.
+                the operator share plus the owners' share; the net payout also adds minimum top-ups, fixed rents and Owner Adjustments. Reservation Income is each
+                reservation's host payout (from October 2026; earlier months, the payout recorded); Recorded as paid is what has been recorded as received so far. Estimates until each month's statement is final.
               </p>
             )}
           </div>

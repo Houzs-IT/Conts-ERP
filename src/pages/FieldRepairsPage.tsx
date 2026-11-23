@@ -18,7 +18,7 @@ import { useFieldRefresh, useFreshIds } from '../lib/fieldLive';
 import type { Me } from '../lib/claims';
 import { JobClaimBox } from '../components/ops/JobClaimBox';
 import { todayMyt, buildingName } from '../lib/format';
-import { passKeyStatus, passKeyDay, type PassKeyDay } from '../lib/passKeyStatus';
+import { passKeyStatus, fieldPassKeyDay, type PassKeyDay } from '../lib/passKeyStatus';
 
 /* GET /api/field/repairs and /api/field/repairs/:id (functions/api/field/repairs*.ts). No amounts: the server never sends any. */
 interface Repair {
@@ -69,7 +69,7 @@ function groupByTechnician(repairs: Repair[]): TechnicianGroup[] {
 interface FileDoc { id: string; kind: string; url: string; fileName: string; byteSize: number; uploadedAt: string; uploader: string | null }
 interface Detail {
   job: Repair; mine: boolean; mayPick: boolean; mayDrop?: boolean; media: (MediaItem & { stage: 'before' | 'after' })[]; files: FileDoc[];
-  access: { id: string; label: string; instruction: string }[]; parking?: string | null; notes: { note: string; by: string; at: string; done: boolean }[];
+  access: { id: string; label: string; instruction: string; code?: string | null }[]; parking?: string | null; notes: { note: string; by: string; at: string; done: boolean }[];
 }
 
 /** The repair's step in the words of the Maintenance screen (status vocabulary "maintenance"). */
@@ -123,7 +123,9 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
   const team = (data?.team ?? []).filter(isShown);
   const passKeyTodo = todo.filter(r => r.jobType === 'pass_key');
   const passKeyPool = pool.filter(r => r.jobType === 'pass_key');
-  const isOnDay = (day: PassKeyDay) => (repair: Repair): boolean => passKeyDay(repair.dueOn ?? null, todayMyt(1)) === day;
+  const isOnDay = (day: PassKeyDay) => (repair: Repair): boolean => fieldPassKeyDay({
+    state: repair.state, assigneeName: repair.assigneeName, dueOn: repair.dueOn ?? null, supportRequestedAt: repair.supportRequestedAt ?? null,
+  }, todayMyt(), todayMyt(1)) === day;
   const passKeyCountOn = (day: PassKeyDay): number => passKeyTodo.filter(isOnDay(day)).length + passKeyPool.filter(isOnDay(day)).length;
   const myJobsShown = tab === 'pass_key' ? passKeyTodo.filter(isOnDay(passKeyDayShown)) : tab === 'ongoing' || tab === 'all' ? todo : [];
   const poolShown = tab === 'pass_key' ? passKeyPool.filter(isOnDay(passKeyDayShown)) : tab === 'all' ? pool : [];
@@ -168,7 +170,7 @@ export default function FieldRepairsPage({ above, linkRepair, onLinked }: { abov
           <Segmented label={tr.which} value={tab} onChange={setTab}
             className="w-full grid grid-flow-col auto-cols-fr [&>button]:h-auto [&>button]:self-stretch [&>button]:min-h-11 [&>button]:px-1 [&>button]:py-1 [&>button]:whitespace-normal [&>button]:leading-tight"
             options={[
-              { value: 'pass_key', label: tabLabel(tr.passKey, passKeyTodo.length + passKeyPool.length) },
+              { value: 'pass_key', label: tabLabel(tr.passKey, passKeyCountOn('today') + passKeyCountOn('tomorrow')) },
               { value: 'ongoing', label: tabLabel(tr.ongoing, todo.length) },
               { value: 'all', label: tabLabel(tr.all, todo.length + openTotal) },
               { value: 'done', label: tabLabel(tr.done, finished.length) },
@@ -550,7 +552,7 @@ function RepairSheet({ id, onClose, onChanged, onPicked, onDropped }: { id: stri
               </InfoRow>
               {mine ? (
                 d.data!.access.length ? d.data!.access.map(a => (
-                  <InfoRow key={a.id} icon="KeyRound" label={a.label}><span className="whitespace-pre-wrap">{a.instruction}</span></InfoRow>
+                  <InfoRow key={a.id} icon="KeyRound" label={a.label}>{a.code && <span className="block font-mono font-semibold text-heading select-all [overflow-wrap:anywhere]">{a.code}</span>}<span className="whitespace-pre-wrap">{a.instruction}</span></InfoRow>
                 )) : <InfoRow icon="KeyRound" label={tr.gettingIn}><span className="text-muted-ink">{tr.noAccess}</span></InfoRow>
               ) : d.data!.mayPick && <InfoRow icon="KeyRound" label={tr.gettingIn}><span className="text-muted-ink">{tr.shownOnPick}</span></InfoRow>}
               {mine && d.data!.parking && <InfoRow icon="Car" label={t.jobs.carPark}>{d.data!.parking}</InfoRow>}

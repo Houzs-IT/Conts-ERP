@@ -50,6 +50,8 @@ export function SearchableSelect({
   invalid = false,
   ariaLabel,
   title,
+  onSearchChange,
+  searching = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -62,6 +64,11 @@ export function SearchableSelect({
   ariaLabel?: string;
   /** Hover tooltip (e.g. why a field is locked). Falls back to the selected label. */
   title?: string;
+  /** SERVER SEARCH: the caller searches with the typed term and passes back the matches as `options`, which are then
+      shown as they are (no second filter here: the server matches fields the label does not show). */
+  onSearchChange?: (term: string) => void;
+  /** Server search in flight: the menu says so instead of "No match". */
+  searching?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -83,11 +90,11 @@ export function SearchableSelect({
   // FILTERING stays over the full list; only what reaches the DOM is capped.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return options;
+    if (!q || onSearchChange) return options;
     return options.filter(
       (o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q),
     );
-  }, [options, search]);
+  }, [options, search, onSearchChange]);
 
   // How many of `filtered` are rendered. Rewound whenever the term or the open
   // state changes — DURING RENDER, not in an effect, so no frame ever shows the
@@ -109,7 +116,7 @@ export function SearchableSelect({
         aria-label={ariaLabel}
         // Closed → the selected label; open → the live search term.
         value={open ? search : selectedLabel}
-        placeholder={selectedLabel ? undefined : placeholder}
+        placeholder={open && onSearchChange && selectedLabel ? selectedLabel : selectedLabel ? undefined : placeholder}
         disabled={disabled}
         /* House rule (owner 2026-08-09): opening a picker must KEEP the
            current value in view — seed the search with it, select-all so
@@ -117,12 +124,15 @@ export function SearchableSelect({
            binding. Same non-lossy pattern as Divan/Gap native selects. */
         onFocus={(e) => {
           setOpen(true);
-          setSearch(selectedLabel ?? "");
+          /* A server search starts from the newest rows: the selected label as a search term would match only itself. */
+          setSearch(onSearchChange ? "" : (selectedLabel ?? ""));
+          onSearchChange?.("");
           e.currentTarget.select();
         }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onChange={(e) => {
           setSearch(e.target.value);
+          onSearchChange?.(e.target.value);
           setOpen(true);
         }}
         title={title ?? (selectedLabel || undefined)}
@@ -192,7 +202,7 @@ export function SearchableSelect({
               })
             ) : (
               <li style={{ padding: "6px 10px", color: "var(--fg-muted, #888)", fontSize: "var(--fs-13, 13px)" }}>
-                No match{search.trim() ? ` for "${search.trim()}"` : ""}.
+                {searching ? "Searching…" : <>No match{search.trim() ? ` for "${search.trim()}"` : ""}.</>}
               </li>
             )}
             {hiddenCount > 0 && (

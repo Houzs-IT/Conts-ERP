@@ -33,6 +33,7 @@ import {
   useApprovePaymentVoucher,
   usePostNowPaymentVoucher,
   useRejectPaymentVoucher,
+  usePostPaymentVoucher,
   useSupplierAdvances, useApplyAdvance,
   usePvFiles, useUploadPvFile, useDeletePvFile, fetchPvFileBlobUrl,
   usePvReservations, NO_RESERVATIONS,
@@ -44,7 +45,7 @@ import { PrintPreviewModal, useOpenPrintPreviewFromUrl, usePrintPreview } from '
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
 import { useAccounts, useAccountRoles, postableAccounts, type Account } from '../../vendor/scm/lib/accounting-queries';
 import { useSaveHotkey, SAVE_HOTKEY_HINT } from '../../vendor/scm/lib/use-save-hotkey';
-import { usePurchaseInvoices } from '../../vendor/scm/lib/purchase-invoice-queries';
+import { useSupplierPayablePis } from '../../vendor/scm/lib/purchase-invoice-queries';
 import { useApInvoices } from '../../vendor/scm/lib/ap-invoice-queries';
 import { useSuppliers, useSupplierDetail } from '../../vendor/scm/lib/suppliers-queries';
 import { sortByText } from '../../vendor/scm/lib/sort-options';
@@ -152,7 +153,10 @@ export const PaymentVoucherDetail = () => {
   const approve  = useApprovePaymentVoucher();
   const postNow  = usePostNowPaymentVoucher();
   const reject   = useRejectPaymentVoucher();
-  const busy   = update.isPending || cancel.isPending
+  const finishPost = usePostPaymentVoucher();
+  /* A post or cancel that did not finish (D1/D2, #1126) - the server says which; the button below finishes it. */
+  const unfinished = (detailQ.data as { unfinished?: 'post' | 'cancel' | null } | undefined)?.unfinished ?? null;
+  const busy   = update.isPending || cancel.isPending || finishPost.isPending
     || submit.isPending || withdraw.isPending || check.isPending || approve.isPending || postNow.isPending || reject.isPending;
 
   const canWrite   = can('scm.payment_voucher.write');
@@ -353,7 +357,7 @@ export const PaymentVoucherDetail = () => {
      operator can add/adjust settlements. The already-allocated rows stay
      listed (their outstanding excludes what this PV applies, so add it back). */
   const editApplyToPi = isEditing && purpose === 'SUPPLIER_PAYMENT' && !!supplierId;
-  const piListQ = usePurchaseInvoices();
+  const piListQ = useSupplierPayablePis(editApplyToPi ? supplierId : null);
   const apListQ = useApInvoices('API');
   /* Other UNPOSTED vouchers' reservations (docs/bugs/0653) — this voucher's own
      rows are excluded by id, so what it already applies stays visible. */
@@ -668,6 +672,18 @@ export const PaymentVoucherDetail = () => {
                 {pv.status !== 'CANCELLED' && canCancel && rejectNote === null && (
                   <Button variant="ghost" size="md" onClick={onCancel} disabled={busy}>
                     <Ban {...ICON} /> Cancel
+                  </Button>
+                )}
+                {unfinished === 'post' && (canApprove || can('scm.payment_voucher.post')) && (
+                  <Button variant="primary" size="md" disabled={busy} title="An invoice this voucher pays was not settled when it posted"
+                    onClick={() => finishPost.mutate(id, { onError: (err) => notify({ title: 'Finish posting failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' }) })}>
+                    <CheckCircle2 {...ICON} /> Finish posting
+                  </Button>
+                )}
+                {unfinished === 'cancel' && canCancel && (
+                  <Button variant="primary" size="md" disabled={busy} title="The cancel did not reverse everything this voucher moved"
+                    onClick={() => cancel.mutate(id, { onError: (err) => notify({ title: 'Finish cancel failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' }) })}>
+                    <Ban {...ICON} /> Finish cancel
                   </Button>
                 )}
               </>
@@ -1035,12 +1051,17 @@ export const PaymentVoucherDetail = () => {
                 <tbody>
                   {allocations.map((a) => {
                     const piId = String(a.piId ?? a.pi_id ?? '');
+                    /* An AP invoice opens over its list, and Back or closing it returns here (chew, 20 Nov 2026). A real
+                       link, so a right click opens it in a new tab too. */
+                    const apId = String(a.apInvoiceId ?? a.ap_invoice_id ?? '');
                     return (
                       <tr key={a.id ?? piId} style={{ borderTop: '1px solid var(--line)' }}>
                         <td style={{ padding: '6px 8px', fontFamily: 'var(--font-mono)' }}>
                           {piId
                             ? <Link to={`/scm/purchase-invoices/${piId}`} style={{ color: 'var(--c-orange)' }}>{a.invoiceNumber ?? a.invoice_number ?? piId}</Link>
-                            : (a.invoiceNumber ?? a.invoice_number ?? '—')}
+                            : apId
+                              ? <Link to={`/scm/ap-invoices?open=${encodeURIComponent(apId)}`} style={{ color: 'var(--c-orange)' }}>{a.invoiceNumber ?? a.invoice_number ?? apId}</Link>
+                              : (a.invoiceNumber ?? a.invoice_number ?? '—')}
                           {String(a.kind ?? '') === 'API' && (
                             <span style={{ marginLeft: 6, fontSize: 'var(--fs-11)', fontFamily: 'inherit', color: 'var(--fg-muted)' }} title="AP invoice — a non-stock supplier bill">AP</span>
                           )}
@@ -1049,7 +1070,8 @@ export const PaymentVoucherDetail = () => {
                         <td style={{ padding: '6px 8px' }}>
                           {a.status ? <StatusPill docType="pi" status={String(a.status)} /> : '—'}
                         </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmtRm(Number(a.amountSen ?? a.amount_sen ?? 0))}</td>
+                        {/* Applied = what the invoice took (D12, #1126): the clamp may refuse part of the ask, and the refused part sits in the advance. Before posting it is the ask. */}
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)' }} title={a.appliedSen != null && Number(a.appliedSen) !== Number(a.amountSen ?? 0) ? `Asked ${fmtRm(Number(a.amountSen ?? 0))}; the invoice took ${fmtRm(Number(a.appliedSen))}` : undefined}>{fmtRm(Number(a.appliedSen ?? a.amountSen ?? a.amount_sen ?? 0))}</td>
                       </tr>
                     );
                   })}
@@ -1145,7 +1167,7 @@ export const PaymentVoucherDetail = () => {
 const AdvanceCard = ({ pvId, supplierId }: { pvId: string; supplierId: string }) => {
   const advancesQ = useSupplierAdvances(supplierId);
   const applyM = useApplyAdvance();
-  const piListQ = usePurchaseInvoices();
+  const piListQ = useSupplierPayablePis(supplierId);
   /* The other creditor's bills (2026-09-06): an advance to a 405-x supplier
      lands on its AP INVOICES, which the purchase-invoice list never carries. */
   const apListQ = useApInvoices('API');

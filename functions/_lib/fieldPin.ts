@@ -22,7 +22,7 @@ export function employeeIdOf(raw: unknown): string | null {
 
 export const isPin = (v: unknown): v is string => typeof v === 'string' && /^\d{6}$/.test(v);
 
-export const hasEmployeeIds = (env: Env): Promise<boolean> => hasColumn(env, 'users', 'employee_id').catch(() => false);
+export const hasEmployeeIds = (env: Env): Promise<boolean> => hasColumn(env, 'users', 'employee_id');
 
 /** The account's employee ID when it signs in with one (and a PIN), so a new secret for it must be a PIN. */
 export async function employeeIdOfUser(env: Env, userId: string): Promise<string | null> {

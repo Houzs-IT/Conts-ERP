@@ -68,6 +68,17 @@ export async function giveFieldAccess(env: Env, session: Session, list: WorkerLi
     await run(env, `UPDATE users SET department_id = (SELECT id FROM departments WHERE kind = ? ORDER BY sort, name LIMIT 1), updated_at = ?
       WHERE id = ? AND department_id IS NULL`, kind, now, userId);
   }
+  /* A Renovation employee takes the renovation department of their brand (chew, 18 Nov 2026: CK 1 had none, so his
+     claims fell to Company): The Conts' In-house Renovation, Dream Crafter's Renovation. Petty cash and a claim's
+     default sub-department follow it. A department already set stays. */
+  if (list === 'renovators') {
+    await run(env, `UPDATE users SET department_id = (
+        SELECT d.id FROM departments d
+         WHERE d.name = CASE WHEN (SELECT b.name FROM renovation_brands b JOIN renovators r ON r.brand_id = b.id WHERE r.id = ?) ILIKE '%dream%'
+                             THEN 'Renovation' ELSE 'In-house Renovation' END
+         LIMIT 1), updated_at = ?
+      WHERE id = ? AND department_id IS NULL`, id, now, userId);
+  }
 
   await audit(env, {
     actorId: session.userId, actorLabel: session.fullName, action: w.user_id ? `${action}_new_pin` : `${action}_app_access`,
@@ -92,6 +103,15 @@ export async function followWorker(env: Env, userId: string | null, active: bool
   await run(env, 'UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?', active ? 1 : 0, nowIso(), userId);
   if (!active) await revokeSessions(env, userId);
   return true;
+}
+
+export async function moveLoginToRenovation(env: Env, userId: string): Promise<boolean> {
+  const moved = await one(env, `
+    UPDATE users SET role = 'renovator', department_id = NULL, department = NULL, position_id = NULL, position = NULL, is_active = 1, updated_at = ?
+    WHERE id = ? AND role IN (${PIN_ROLES.map(() => '?').join(', ')})
+    RETURNING id`, nowIso(), userId, ...PIN_ROLES);
+  if (moved) await revokeSessions(env, userId);
+  return !!moved;
 }
 
 export async function followDepartment(env: Env, userId: string | null): Promise<FieldKind | null> {

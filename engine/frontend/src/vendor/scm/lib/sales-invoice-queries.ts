@@ -26,6 +26,14 @@ import { retryUnlessClientError } from '../../../lib/retryPolicy';
 // the source (it lives in the vendored DO slice — single source of truth).
 export { useMfgDeliveryOrderDetail } from './delivery-order-queries';
 
+/** The SI list's Customer Name funnel choices: the invoices' own distinct names, under the list's scope (audit 20 Nov 2026). */
+export const useSiCustomerNames = () => useQuery({
+  queryKey: ['sales-invoices', 'customer-names'],
+  queryFn: () => authedFetch<{ names: string[] }>(`/sales-invoices/customer-names`).then((r) => r.names),
+  staleTime: 5 * 60_000,
+  retry: retryUnlessClientError,
+});
+
 /* ── Sales Invoice ───────────────────────────────────────────────────── */
 export const useSalesInvoices = (status?: string) =>
   useQuery({

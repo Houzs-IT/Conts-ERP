@@ -3,7 +3,7 @@
 import { readStatusMoney } from '../lib/status-money';
 import { Hono } from 'hono';
 import { PI_STATUS_BUCKETS } from '../lib/pi-status-buckets';
-import { PI_HEADER_COLS, PI_LIST_SELECT, piListSelect, filterPiList, orderPiList, readPiListFilters } from '../lib/pi-list-read';
+import { PI_HEADER_COLS, PI_LIST_SELECT, piListSelect, filterPiList, orderPiList, readPiListFilters, readSupplierPayablePis } from '../lib/pi-list-read';
 import { attachPiLines } from '../lib/pi-export-rows';
 import { HELD_OR_TERM } from '../lib/document-hold'; import { grnNotBillableRefusal } from '../lib/source-document-gates'; import { mountHoldRoute } from './document-hold-routes';
 import type { Context } from 'hono';
@@ -19,6 +19,7 @@ import {
   sortSoLinesByGroupRank,
 } from '../shared/so-line-display';
 import { postPiAccounting, reversePiAccounting, resyncPiAccounting } from './accounting';
+import { requireLeafAccount } from './accounting-chart';
 import { inHouseSupplierId } from '../lib/grn-from-po-core';
 import { isCustomerGoods } from '../lib/renovation-flow-rules';
 import { recostForPi, recostFromGrn } from '../lib/recost';
@@ -45,8 +46,11 @@ import { enqueueConvert, recordParentlessCreate, enqueueCancel, enqueueEdit, ret
 import { sourceGrnIdsForPi } from '../lib/convert-parent';
 import { refuseMigratedSources, receiptMustMirrorAutoCount } from '../lib/migrated-chain';
 import { MIGRATED_RECEIPTS_NOT_INVOICED_IN_AUTOCOUNT } from '../lib/migrated-receipts-not-invoiced.generated';
-import { attachGrnLineFacts, withPoPriceSnapshot } from '../lib/pi-po-price'; import { loadOutstandingGrnLines } from '../lib/outstanding-grn-lines';
+import { attachGrnLineFacts, withPoPriceSnapshot } from '../lib/pi-po-price';
+import { parseDocPageQuery, readDocPage } from '../lib/doc-batch-page';
+import { billableGrnBase, grnSearchMatches, makeDocBatchReader } from '../lib/purchase-picker-docs'; import { loadOutstandingGrnLines } from '../lib/outstanding-grn-lines';
 import { refuseWithoutWriting } from '../lib/no-write-refusal';
+import { duplicateBillRefusal, findDuplicateSupplierBill } from '../lib/duplicate-supplier-bill';
 /* The create's refusal bodies and the two rules its exits follow (2026-08-19). */
 import { insertFailed, loadFailed, rollbackPi, committedAnyway } from '../lib/pi-create-refusals';
 /* Extracted 2026-08-17 to make room for the guards in this file. Mechanical
@@ -80,7 +84,7 @@ const HEADER = PI_HEADER_COLS;
 const ITEM =
   'id, purchase_invoice_id, grn_item_id, material_kind, item_code, material_name, qty, unit_price_sen, line_total_sen, notes, ' +
   /* PR #42 — variant fields (migration 0057) */
-  'item_group, description, description2, uom, discount_sen, variants, ' +
+  'item_group, account_code, description, description2, uom, discount_sen, variants, ' +
   'gap_inches, divan_height_inches, divan_price_sen, leg_height_inches, leg_price_sen, ' +
   'custom_specials, line_suffix, special_order_price_sen, unit_cost_sen, po_unit_price_sen, created_at';
 
@@ -434,7 +438,39 @@ purchaseInvoices.get('/', async (c) => {
    2026-05-28, same class as the PO-from-SO shadowing.) */
 purchaseInvoices.get('/outstanding-grn-items', async (c) => {
   const sb = c.get('supabase');
-  const loaded = await loadOutstandingGrnLines({ sb, scopeQuery: (q) => scopeToCompany(q, c) });
+  const inHouseId = await inHouseSupplierId(sb, c);
+  const isBillable = (i: { supplierId: string; itemCode: string; supplierCode: string }): boolean =>
+    i.supplierId !== inHouseId && !isCustomerGoods(i.itemCode, i.supplierCode);
+
+  /* ?limit= asks for ONE PAGE (lib/doc-batch-page.ts, audit 20 Nov 2026): a few billable notes at a time, newest
+     number first, searched on the server, each batch loaded by the same reader as the whole list. */
+  const paged = c.req.query('grnIds') ? null : parseDocPageQuery(c.req.query());
+  if (paged) {
+    const scopeQuery = <Q,>(q: Q): Q => scopeToCompany(q, c);
+    const matches = paged.q ? await grnSearchMatches(sb, scopeQuery, paged.q) : null;
+    if (matches?.error) return c.json({ error: 'load_failed', reason: matches.error }, 500);
+    const reader = makeDocBatchReader({ base: billableGrnBase(sb, scopeQuery), numberCol: 'grn_number', q: paged.q, matches });
+    const page = await readDocPage({
+      limit: paged.limit,
+      cursor: paged.cursor,
+      readBatch: reader.read,
+      linesFor: async (docs) => {
+        const noteIds = docs.map((d) => reader.idOf.get(d)).filter((x): x is string => !!x);
+        const got = await loadOutstandingGrnLines({ sb, scopeQuery, noteIds });
+        if (got.error !== null) return { lines: [], error: got.error };
+        return { lines: got.items.filter(isBillable), error: null };
+      },
+      docOf: (l) => l.grnDocNo,
+    });
+    if (page.error !== null) return c.json({ error: 'load_failed', reason: page.error }, 500);
+    await enrichLinesWithFabricSupplierCode(sb, c, page.lines);
+    return c.json({ items: page.lines, nextCursor: page.nextCursor, pageSize: paged.limit, truncated: false });
+  }
+
+  /* ?grnIds= (a GRN's "Transfer to Purchase Invoice"): those notes only, still company-scoped and still only the
+     ones with something left to bill. */
+  const grnIds = [...new Set((c.req.query('grnIds') ?? '').split(',').map((s) => s.trim()).filter(Boolean))].slice(0, 200);
+  const loaded = await loadOutstandingGrnLines({ sb, scopeQuery: (q) => scopeToCompany(q, c), noteIds: grnIds.length > 0 ? grnIds : undefined });
   if (loaded.error !== null) return c.json({ error: 'load_failed', reason: loaded.error }, 500);
 
   /* Owner 2026-08-06 — re-resolve each line's SUPPLIER fabric code from the
@@ -447,11 +483,21 @@ purchaseInvoices.get('/outstanding-grn-items', async (c) => {
      fail-soft. */
   /* Nobody bills for the customer's own goods or for the in-house team's work, so their receipts are not waiting for an
      invoice (owner, 6 Nov 2026). */
-  const inHouse = await inHouseSupplierId(sb, c);
-  const billable = loaded.items.filter((i) => i.supplierId !== inHouse && !isCustomerGoods(i.itemCode, i.supplierCode));
+  const billable = loaded.items.filter(isBillable);
   await enrichLinesWithFabricSupplierCode(sb, c, billable);
 
   return c.json({ items: billable, truncated: loaded.truncated });
+});
+
+/* One supplier's invoices with money still owing (lib/pi-list-read.ts), for payment vouchers' Apply to PI.
+   Static path: registered before `/:id`. */
+purchaseInvoices.get('/payable', async (c) => {
+  const supplierId = (c.req.query('supplierId') ?? '').trim();
+  if (!supplierId) return c.json({ error: 'supplier_required' }, 400);
+  const sb = c.get('supabase');
+  const read = await readSupplierPayablePis(() => sb.from('purchase_invoices').select(PI_LIST_SELECT), c, supplierId);
+  if (read.error !== null) return c.json({ error: 'load_failed', reason: read.error }, 500);
+  return c.json({ purchaseInvoices: read.rows, truncated: read.truncated });
 });
 
 purchaseInvoices.get('/:id', async (c) => {
@@ -714,6 +760,27 @@ purchaseInvoices.post('/', async (c) => {
     }
   }
 
+  /* A line keyed by account (chew, 18 Nov 2026: stock codes are not complete yet): no item, the purchase account it
+     books to instead. Only ordinary LEAVES, the door every hand-chosen debit walks (headers and controls refuse). */
+  for (const [i, it] of items.entries()) {
+    const code = String(it.accountCode ?? '').trim();
+    if (!code && !String(it.itemCode ?? '').trim()) {
+      return refuseWithoutWriting(c, { error: 'line_needs_item_or_account', reason: `Line ${i + 1}: choose an item or an account.` }, 400);
+    }
+  }
+  for (const code of [...new Set(items.map((it) => String(it.accountCode ?? '').trim()).filter(Boolean))]) {
+    const coId = activeCompanyId(c);
+    if (coId == null) return refuseWithoutWriting(c, { error: 'company_required', reason: 'Choose the company first.' }, 409);
+    const { data: known, error: knownErr } = await c.get('supabase').from('accounts').select('account_code, is_active')
+      .eq('company_id', coId).eq('account_code', code).maybeSingle();
+    if (knownErr) return refuseWithoutWriting(c, { error: 'load_failed', reason: knownErr.message }, 500);
+    if (!known || (known as { is_active?: boolean | null }).is_active === false) {
+      return refuseWithoutWriting(c, { error: 'unknown_account', reason: `${code} is not an active account in the chart.` }, 400);
+    }
+    const leafErr = await requireLeafAccount(c, coId, code);
+    if (leafErr) return refuseWithoutWriting(c, await leafErr.json() as Record<string, unknown>, leafErr.status as 400);
+  }
+
   let subtotal = 0;
   /* Reject non-finite line numbers BEFORE the map — the Math.max(0, ...) clamp
      below stops a negative total but NOT a NaN (Math.max(0, NaN) is NaN), so a
@@ -751,6 +818,7 @@ purchaseInvoices.post('/', async (c) => {
       // path). Columns exist on purchase_invoice_items (migration 0057).
       item_group: (it.itemGroup as string | null | undefined) ?? null,
       variants: (it.variants as Record<string, unknown> | null | undefined) ?? null,
+      ...(String(it.accountCode ?? '').trim() ? { account_code: String(it.accountCode).trim() } : {}),
     };
   });
 
@@ -775,6 +843,16 @@ purchaseInvoices.post('/', async (c) => {
   {
     const rateGuard = await assertForeignRatePostable(sb, { currency: piCurrency, operatorRate: body.exchangeRate, docLabel: 'purchase invoice' });
     if (!rateGuard.ok) return refuseWithoutWriting(c, rateGuard.body, 422);
+  }
+  /* One supplier bill is owed once (ported from Houzs): a live invoice of this supplier with the same bill number
+     refuses, naming it. */
+  {
+    const companyId = activeCompanyId(c);
+    if (companyId != null) {
+      const dup = await findDuplicateSupplierBill(sb, 'purchase_invoices', { companyId, supplierId: String(body.supplierId), ref: body.supplierInvoiceRef, excludeId: null, quotation: null });
+      if (!dup.ok) return refuseWithoutWriting(c, { error: 'lookup_failed', reason: dup.reason }, 500);
+      if (dup.duplicate) return refuseWithoutWriting(c, duplicateBillRefusal(body.supplierInvoiceRef, dup.duplicate), 409);
+    }
   }
   const { data: header, error: hErr } = await insertWithDocNoRetry<{ id: string; invoice_number: string }>(
     () => nextNum(sb, 'PI', c),
@@ -1604,6 +1682,20 @@ purchaseInvoices.patch('/:id', async (c) => {
   // currency is normalised to upper-case like POST does.
   if (updates.currency !== undefined) updates.currency = normalizeCurrency(updates.currency);
   const sb = c.get('supabase');
+  /* One supplier bill is owed once (ported from Houzs): moving this invoice onto a bill number its supplier already has
+     live refuses. */
+  if (updates.supplier_invoice_ref !== undefined || updates.supplier_id !== undefined) {
+    const { data: cur, error: curErr } = await scopeToCompany(sb.from('purchase_invoices').select('supplier_id, supplier_invoice_ref, company_id').eq('id', id), c).maybeSingle();
+    if (curErr) return c.json({ error: 'lookup_failed', reason: curErr.message }, 500);
+    const row = (cur ?? {}) as { supplier_id?: string | null; supplier_invoice_ref?: string | null; company_id?: number | null };
+    const ref = updates.supplier_invoice_ref !== undefined ? updates.supplier_invoice_ref : row.supplier_invoice_ref;
+    const supplierId = String((updates.supplier_id !== undefined ? updates.supplier_id : row.supplier_id) ?? '');
+    if (row.company_id != null) {
+      const dup = await findDuplicateSupplierBill(sb, 'purchase_invoices', { companyId: Number(row.company_id), supplierId, ref, excludeId: id, quotation: null });
+      if (!dup.ok) return c.json({ error: 'lookup_failed', reason: dup.reason }, 500);
+      if (dup.duplicate) return c.json(duplicateBillRefusal(ref, dup.duplicate), 409);
+    }
+  }
 
   /* The BEFORE half of every from->to pair. Also supplies the invoice number and
      company for the audit row, which the update's RETURNING gives us only after

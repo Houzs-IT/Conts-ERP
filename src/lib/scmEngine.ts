@@ -16,8 +16,15 @@ export const LEDGER_SCREENS: readonly LedgerScreen[] = [
   { slug: 'item-group-accounts', label: 'Item group accounts', enginePath: '/scm/accounting?tab=groups' },
   // The day the books start and the fiscal year end (finance phase 1, PR 6).
   { slug: 'ledger-setup', label: 'Ledger setup', enginePath: '/scm/ledger-setup' },
+  // The letterhead and the customer payment details every invoice prints (chew, 21 Nov 2026: so finance keeps them itself).
+  { slug: 'branding', label: 'Branding & payment details', enginePath: '/settings?tab=branding' },
   // Every other finance screen in the engine (chew, 2 Nov 2026: Payment requests could not be found; the menu lacked them).
+  // Ported from Houzs on 21 Nov 2026: Finance's To do (its home), Payment listing and Unmatched payments.
+  { slug: 'to-do', label: 'To do', enginePath: '/scm/finance' },
+  { slug: 'payment-listing', label: 'Payment listing', enginePath: '/scm/payment-listing' },
+  { slug: 'unmatched-payments', label: 'Unmatched payments', enginePath: '/scm/unmatched-payments' },
   { slug: 'payment-requests', label: 'Payment requests', enginePath: '/scm/payment-requests' },
+  { slug: 'staff-banks', label: 'Staff bank details', enginePath: '/scm/staff-banks' },
   { slug: 'limit-requests', label: 'Limit requests', enginePath: '/scm/limit-requests' },
   { slug: 'petty-cash', label: 'Petty cash', enginePath: '/scm/petty-cash' },
   { slug: 'ap-invoices', label: 'AP invoices', enginePath: '/scm/ap-invoices' },
@@ -57,11 +64,13 @@ export const ENGINE_PATH: Record<string, string> = {
   '/projects/list': '/beta/projects',
   '/projects/calendar': '/beta/calendar',
   '/projects/defects': '/beta/defects',
+  '/supply/operations/renovation': '/beta/site-tasks',
   '/projects/handover-checklists': '/beta/handover-checklists',
   '/projects/finances': '/projects?view=finances',
   '/projects/maintenance': '/projects?view=maintenance',
   '/sales/quotations': '/scm/renovation/quotations',
   '/sales/orders': '/scm/sales-orders',
+  '/sales/packages': '/scm/renovation/packages',
   '/sales/amendments': '/scm/amendments',
   '/sales/delivery-orders': '/scm/delivery-orders',
   '/sales/invoices': '/scm/sales-invoices',
@@ -122,5 +131,8 @@ export function menuPathFor(enginePath: string, current?: string | null): string
   if (tied.length === 0) return null;
   if (current && tied.includes(current)) return current;
   const sameSide = current ? tied.filter(m => inRental(m) === inRental(current)) : [];
+  /* A screen only the other side's sidebar holds (a purchase invoice opened from Finance → AP invoices) opens under
+     the menu it was opened from: the sidebar stays where the user is (chew, 19 Nov 2026). */
+  if (current && sameSide.length === 0) return current;
   return (sameSide.length ? sameSide : tied)[(sameSide.length ? sameSide : tied).length - 1];
 }

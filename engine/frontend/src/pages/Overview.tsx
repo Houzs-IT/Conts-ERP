@@ -221,7 +221,7 @@ export function Overview() {
         {/* Pipeline + P&L (data sources pending — shown honestly) */}
         <div className="space-y-4">
           <div className="rounded-xl border border-border bg-surface p-4 shadow-stone sm:p-5">
-            <h2 className="mb-3 text-[15px] font-bold text-ink">Sales Pipeline</h2>
+            <h2 className="mb-3 text-[15px] font-bold text-ink">Sales pipeline</h2>
             <div className="rounded-lg border border-dashed border-border bg-surface-2 px-4 py-6 text-center text-[12px] text-ink-muted">
               No data yet — shows once the pipeline API is wired.
             </div>

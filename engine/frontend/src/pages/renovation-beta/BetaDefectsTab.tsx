@@ -90,7 +90,7 @@ export function BetaDefectsTab(p: BetaTabProps): ReactElement {
               <section key={c.key} aria-label={`${c.title}, ${cols[c.key].length}`} style={{ background: WS.panel, border: `1px solid ${BETA.line}`, borderRadius: 14, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: c.bg, borderTop: `4px solid ${c.bar}` }}>
                   <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: c.ink }}>{c.title}</h3>
-                  <span style={{ minWidth: 26, padding: "1px 8px", borderRadius: 12, background: c.bar, color: "#FFFFFF", fontSize: 13, fontWeight: 700, textAlign: "center" }}>{cols[c.key].length}</span>
+                  <span style={{ minWidth: 26, padding: "1px 8px", borderRadius: 12, background: BETA.surface, color: c.ink, fontSize: 13, fontWeight: 700, textAlign: "center" }}>{cols[c.key].length}</span>
                   <span style={{ marginLeft: "auto", fontSize: 12, color: c.ink, textAlign: "right" }}>{c.caption}</span>
                 </div>
                 {cols[c.key].length === 0 ? <p style={{ padding: 16, fontSize: 13, color: BETA.muted }}>{c.empty}</p> : (

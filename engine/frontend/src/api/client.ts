@@ -440,6 +440,10 @@ async function handleResponse<T>(
 // how this whole perf campaign started). Pure observability, no behaviour change.
 const SLOW_FETCH_MS = 800;
 
+/** Wait on a keyed save's idempotency_in_flight answer (same values as vendor/scm/lib/authed-fetch.ts). */
+const IN_FLIGHT_POLL_MS = 1000;
+const IN_FLIGHT_MAX_WAIT_MS = 60_000;
+
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   const token = tokenStore.get();
   const method = (opts?.method || "GET").toUpperCase();
@@ -448,6 +452,8 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   // Whether THIS request carried an idempotency key decides what we may honestly
   // tell the operator when it times out — see the two messages below.
   const hasIdemKey = new Headers(opts?.headers).has("Idempotency-Key");
+  /* How long this keyed save has waited on the server's idempotency_in_flight answer (see IN_FLIGHT_MAX_WAIT_MS). */
+  let inFlightWaited = 0;
 
   for (let attempt = 0; ; attempt++) {
     const ctrl = new AbortController();
@@ -496,6 +502,14 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
       // HTTP answer (500, 4xx) is a real result — surfaced as-is so genuine
       // errors fail fast and are never masked.
       if (e instanceof HttpError) {
+        /* The same save pressed twice: the first is still running under this key. Its answer replays once it has
+           one, so wait for it instead of reporting a failure (click sweep F11/F12). */
+        if (e.status === 409 && hasIdemKey && inFlightWaited < IN_FLIGHT_MAX_WAIT_MS && e.rawBody.includes('"idempotency_in_flight"')) {
+          await abortableDelay(IN_FLIGHT_POLL_MS, opts?.signal);
+          inFlightWaited += IN_FLIGHT_POLL_MS;
+          attempt--;
+          continue;
+        }
         if (e.status === 503 && method === "GET" && attempt < retries) {
           await abortableDelay(600 + attempt * 1200, opts?.signal);
           continue;
@@ -569,6 +583,8 @@ function cachedGet<T>(path: string): Promise<T> {
   return p;
 }
 
+// Uploads below call invalidateForMutation too: a just-uploaded photo or file
+// was otherwise hidden by the cached read for up to its TTL.
 function mutate<T>(path: string, opts: RequestInit): Promise<T> {
   return request<T>(path, opts).then((r) => {
     invalidateForMutation(path);
@@ -630,6 +646,7 @@ export const api = {
       } catch {}
       throw new HttpError(res.status, txt || res.statusText, requestIdFromResponse(res));
     }
+    invalidateForMutation(path);
     return consumeCorrelated(res, () => res.json() as Promise<T>);
   },
 
@@ -683,6 +700,7 @@ export const api = {
       } catch {}
       throw new HttpError(res.status, txt || res.statusText, requestIdFromResponse(res));
     }
+    invalidateForMutation(path);
     if (res.status === 204) return undefined as T;
     return consumeCorrelated(res, () => res.json() as Promise<T>);
   },
@@ -710,6 +728,7 @@ export const api = {
       } catch {}
       throw new HttpError(res.status, txt || res.statusText, requestIdFromResponse(res));
     }
+    invalidateForMutation(path);
     if (res.status === 204) return undefined as T;
     return consumeCorrelated(res, () => res.json() as Promise<T>);
   },

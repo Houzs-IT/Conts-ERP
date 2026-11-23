@@ -29,7 +29,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (paid === 'no') where.push('m.contractor_paid_at IS NULL');
   if (paid === 'yes') where.push('m.contractor_paid_at IS NOT NULL');
   if (q) {
-    where.push(`(m.vendor_name ILIKE ? OR m.title ILIKE ? OR (p.name || ' ' || COALESCE(u.unit_number, '${BUILDING_JOB_LABEL}')) ILIKE ?)`);
+    where.push(`(m.vendor_name ILIKE ? OR m.title ILIKE ? OR (p.name || ' ' || COALESCE(NULLIF(concat_ws(' ', u.unit_number, u.unit_code), ''), '${BUILDING_JOB_LABEL}')) ILIKE ?)`);
     const like = `%${q.replace(/[%_\\]/g, c => '\\' + c)}%`;
     args.push(like, like, like);
   }
@@ -38,7 +38,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const [rows, totals] = await Promise.all([
     all<any>(env, `
       SELECT m.id, m.title, m.state, m.vendor_name, m.assignee_kind, m.charge_to, m.billing_date, m.resolved_at,
-             m.contractor_amount, m.contractor_paid_at, u.id AS unit_id, u.unit_number, p.name AS property_name
+             m.contractor_amount, m.contractor_paid_at, u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name
       ${FROM}${extra}
       ORDER BY (m.contractor_paid_at IS NULL) DESC,
                CASE WHEN m.contractor_paid_at IS NULL THEN COALESCE(m.billing_date, substr(m.resolved_at, 1, 10)) END ASC NULLS LAST,

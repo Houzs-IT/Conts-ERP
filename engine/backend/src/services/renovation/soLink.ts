@@ -16,7 +16,7 @@ import type { Db } from "./load";
 import { loadProjectRows, loadRenovationFacts } from "./load";
 import { onContractLinesChanged, writeCachedStage } from "./contractSync";
 import { createRenovationProject, type CreateRenovationInput } from "./create";
-import { brandOfSo } from "./projectBrand";
+import { brandOfSo, shareBrandWithProject } from "./projectBrand";
 import { copySoIntoProject } from "./customerProperty";
 
 export type LinkRefusal =
@@ -101,6 +101,7 @@ export async function linkSoToProject(db: Db, projectId: number, docNo: string, 
   if (db.batch) await db.batch(stmts);
   else for (const s of stmts) await s.run();
   await onContractLinesChanged(db, docNo);
+  await shareBrandWithProject(db, docNo, projectId);
   /* The link is made; copying the SO's customer and property into the project must not undo or fail it. */
   try {
     await copySoIntoProject(db, docNo, projectId, actorId, p.company_id);

@@ -5,12 +5,25 @@
 
 import { fmtDayMonth } from "../../vendor/shared/format";
 import type {
-  BetaBoard, BetaBoardAppointment, BetaBoardProject, BetaBoardRef, BoardRange, DesignKind,
+  BetaBoard, BetaBoardAppointment, BetaBoardProject, BetaBoardRef, BoardRange, DesignKind, BetaWorkType,
 } from "./renovationBetaBoardApi";
 
 export type Kind = "3" | "2";
 export type ApptKey = "msr" | "cm" | "sb";
-export type StepKey = "msr" | Kind | "cm" | "sb" | "po";
+/** A sales order line still waiting for a required variant: its SKU and the variant fields left to pick. */
+export interface VariantPending {
+  itemCode: string;
+  missing: string[];
+  /** The SO line and what its picker needs; absent from an older server. */
+  id?: string;
+  docNo?: string | null;
+  description?: string | null;
+  category?: string;
+  variants?: Record<string, unknown>;
+}
+
+/** A Design step: the code of a work of the list in Project Maintenance, or "variants" (checked by the system). */
+export type StepKey = string;
 export type Letter = "A" | "B" | "C" | "D" | "E";
 /** The person whose work is shown: one person's id, or the whole team. */
 export type Viewing = number | "All";
@@ -29,7 +42,8 @@ export interface DesignTrack {
   am: Amendment[];
 }
 
-export interface Appt { d: string; t: string; who: PersonRef | null; with: string | null; done: boolean }
+/** who is the first of people, for screens that show one name. */
+export interface Appt { d: string; t: string; who: PersonRef | null; people: PersonRef[]; whoText?: string | null; with: string | null; done: boolean }
 
 export interface DesignProject {
   id: number;
@@ -37,6 +51,8 @@ export interface DesignProject {
   /** Building and unit, as the mockup's first name part. */
   title: string;
   customer: string | null;
+  /** The brand it is sold under, as picked on Client & team; null when none is picked yet. */
+  brand: string | null;
   salesName: string | null;
   createdOn: string | null;
   /** When it was made (ISO), for "newest first"; falls back to the day. */
@@ -62,6 +78,12 @@ export interface DesignProject {
   appts: Partial<Record<ApptKey, Appt>>;
   /** Null when the person may not see money (the Payment column is then left out). */
   payment: string | null;
+  /** Instalments fully received; null when finance is hidden or there is no contract. */
+  paid: number | null;
+  /** The newest booking of each work of the list, by its code. */
+  works: Record<string, { d: string; t: string; done: boolean }>;
+  /** Sales order lines and how many still miss a required variant. */
+  variants: { lines: number; missing: number; pending: VariantPending[] };
   /** Money still owed on the sales order; null when there is none or money is hidden. */
   outstandingSen: number | null;
 }
@@ -75,7 +97,12 @@ export interface CalEvent {
   t: string;
   type: string;
   note: string;
+  /** The first of people. */
   who: PersonRef | null;
+  /** Everyone going (owner, 22 Nov 2026): the booking is on each one's own calendar. */
+  people: PersonRef[];
+  /** A typed name for someone not on the list, shown as text and on nobody's calendar (owner, 20 Nov 2026). */
+  whoText?: string | null;
   projectId: number | null;
   done: boolean;
   eventId: number | null;
@@ -94,6 +121,8 @@ export interface BoardModel {
   projects: DesignProject[];
   byId: ReadonlyMap<number, DesignProject>;
   events: CalEvent[];
+  /** The works of the list in Project Maintenance, in order (the old fixed list on an older server). */
+  workTypes: BetaWorkType[];
 }
 
 const MON = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] as const;
@@ -150,21 +179,38 @@ export function personInfo(p: Pick<BoardPerson, "position" | "department"> | und
 export const SOP_LABEL = (m: Pick<BoardModel, "sop">): string => `Deadlines follow the ID SOP: 3D in ${m.sop["3"]} days, 2D in ${m.sop["2"]} days`;
 
 export const APPT_KEYS: readonly ApptKey[] = ["msr", "cm", "sb"];
-export const APPT_LABEL: Readonly<Record<ApptKey, string>> = { msr: "Site measurement", cm: "Carpentry measure", sb: "Site briefing" };
+export const APPT_LABEL: Readonly<Record<ApptKey, string>> = { msr: "Site measure", cm: "Carpentry measure", sb: "Site briefing" };
 export const APPT_TYPE: Readonly<Record<ApptKey, string>> = { msr: "measure", cm: "measure", sb: "briefing" };
 const APPT_KIND: Readonly<Record<ApptKey, BetaBoardAppointment["kind"]>> = { msr: "site_measure", cm: "carpentry_measure", sb: "site_briefing" };
 export const apptKindOf = (key: ApptKey): BetaBoardAppointment["kind"] => APPT_KIND[key];
 
 export const EVENT_TYPES = [
-  ["update", "Drawing update"], ["client", "Client meeting"], ["measure", "Site measurement"], ["briefing", "Site briefing"],
+  ["update", "Drawing update"], ["client", "Client meeting"], ["measure", "Site measure"], ["briefing", "Site briefing"],
   ["meeting", "Internal meeting"], ["w3d", "3D"], ["w2d", "2D"], ["amend", "Amendment"], ["po", "PO / C.PO"],
 ] as const;
 export type EventTypeKey = (typeof EVENT_TYPES)[number][0];
-const TYPE_LABEL: Readonly<Record<string, string>> = Object.fromEntries(EVENT_TYPES);
+const TYPE_LABEL: Record<string, string> = Object.fromEntries(EVENT_TYPES);
 export const typeLabel = (type: string): string => TYPE_LABEL[type] ?? type;
+/** The old fixed list, for a server without migration 0342. */
+export const LEGACY_WORK_TYPES: BetaWorkType[] = [
+  ["measure", "Site measure", "measure", true, 10, true], ["w3d", "3D", "approve_3d", true, 20, true], ["w2d", "2D", "approve_2d", true, 30, true],
+  ["carpentry", "Carpentry measure", "booking", true, 50, true], ["briefing", "Site briefing", "booking", true, 60, true],
+  ["update", "Drawing update", "booking", false, 110, false], ["client", "Client meeting", "booking", false, 120, false], ["meeting", "Internal meeting", "booking", false, 130, false],
+  ["amend", "Amendment", "booking", false, 140, false], ["po", "PO / C.PO", "booking", false, 150, false],
+].map(([code, label, rule, inDesign, sortOrder, system], i) => ({
+  id: -(i + 1), code, label, rule, bookable: code !== "payment_2", inDesign, sortOrder, active: true, system,
+}) as BetaWorkType);
+/** The list's names become the calendar's names for each type. */
+function rememberWorkTypes(list: BetaWorkType[]): BetaWorkType[] {
+  for (const w of list) TYPE_LABEL[w.code] = w.label;
+  return list;
+}
 const GROUP: Readonly<Record<string, EventGroup>> = {
-  update: "upd", client: "meet", measure: "meet", briefing: "meet", meeting: "meet", w3d: "work", w2d: "work", amend: "work", po: "work",
+  update: "upd", client: "meet", measure: "meet", carpentry: "meet", briefing: "meet", meeting: "meet", w3d: "work", w2d: "work", amend: "work", po: "work",
 };
+/** The works of the list that are a project's appointment (Book time on the Design progress row): booked on the calendar
+    with a project, they are saved as that appointment, so the row, the to-do list and the step read the same booking. */
+export const WORK_APPT: Readonly<Record<string, ApptKey>> = { measure: "msr", carpentry: "cm", briefing: "sb" };
 export const groupOf = (type: string): EventGroup => GROUP[type] ?? "work";
 
 export function isEventType(v: string): v is EventTypeKey {
@@ -178,6 +224,12 @@ function buildingFromTitle(title: string): string {
   const w = title.split(" ");
   while (w.length > 1 && /\d/.test(w[w.length - 1])) w.pop();
   return w.join(" ");
+}
+
+/** The people of a booking: its list, else its one person (an older server); someone not known any more is left out. */
+function bookingPeople(b: { personId: number | null; personIds?: number[] }, byId: ReadonlyMap<number, PersonRef>): PersonRef[] {
+  const ids = b.personIds?.length ? b.personIds : b.personId != null ? [b.personId] : [];
+  return ids.flatMap((id) => { const x = byId.get(id); return x ? [x] : []; });
 }
 
 function ref(r: BetaBoardRef | null): PersonRef | null {
@@ -236,13 +288,17 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
     const appts: Partial<Record<ApptKey, Appt>> = {};
     for (const key of APPT_KEYS) {
       const a = p.appointments.find((x) => x.kind === APPT_KIND[key]);
-      if (a) appts[key] = { d: a.onDate, t: a.atTime?.slice(0, 5) ?? "", who: a.personId == null ? null : people.get(a.personId) ?? null, with: a.withText, done: a.doneAt != null };
+      if (a) {
+        const going = bookingPeople(a, people);
+        appts[key] = { d: a.onDate, t: a.atTime?.slice(0, 5) ?? "", who: going[0] ?? null, people: going, whoText: a.whoText ?? null, with: a.withText, done: a.doneAt != null };
+      }
     }
     return {
       id: p.id,
       code: p.code,
       title,
       customer,
+      brand: p.brand?.trim() || null,
       salesName: p.salesName,
       createdOn: p.createdOn,
       createdAt: p.createdAt ?? (p.createdOn ? `${p.createdOn}T00:00:00Z` : null),
@@ -262,6 +318,9 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
       po: p.poDoneOn,
       appts,
       payment: paymentText(p),
+      paid: p.payment.state === "ok" ? p.payment.paid ?? null : null,
+      works: Object.fromEntries((p.works ?? []).map((w) => [w.type, { d: w.onDate, t: w.atTime?.slice(0, 5) ?? "", done: !!w.done }])),
+      variants: { lines: p.variants?.lines ?? 0, missing: p.variants?.missing ?? 0, pending: p.variants?.pending ?? [] },
       outstandingSen: p.payment.state === "ok" ? p.payment.outstandingSen ?? null : null,
     };
   });
@@ -275,10 +334,18 @@ export function buildModel(board: BetaBoard): BoardModel {
   }));
   const people = everyone.filter((x) => x.offered).map((x) => ({ id: x.id, name: x.name }));
   const person = new Map(everyone.map((x) => [x.id, { id: x.id, name: x.name }] as const));
-  const events: CalEvent[] = board.events.map((e) => ({
-    id: `e${e.id}`, d: e.onDate, t: e.atTime?.slice(0, 5) ?? "", type: e.type, note: e.note ?? "",
-    who: e.personId == null ? null : person.get(e.personId) ?? null, projectId: e.projectId, done: e.done, eventId: e.id, appt: null,
-  }));
+  const workTypes = rememberWorkTypes(board.workTypes?.length ? board.workTypes : LEGACY_WORK_TYPES);
+  const bookable = new Set(workTypes.filter((w) => w.bookable).map((w) => w.code));
+  /* A booked work is done once its day has passed (owner, 19 Nov 2026), as an appointment is (adone): before, a stored
+     entry stayed open on the calendar after its day while the Design progress row already said Done. */
+  const events: CalEvent[] = board.events.map((e) => {
+    const going = bookingPeople(e, person);
+    return {
+      id: `e${e.id}`, d: e.onDate, t: e.atTime?.slice(0, 5) ?? "", type: e.type, note: e.note ?? "",
+      who: going[0] ?? null, people: going, whoText: e.whoText ?? null, projectId: e.projectId,
+      done: e.done || (bookable.has(e.type) && e.onDate < board.today), eventId: e.id, appt: null,
+    };
+  });
   return {
     today: board.today,
     mePersonId: board.mePersonId,
@@ -289,6 +356,7 @@ export function buildModel(board: BetaBoard): BoardModel {
     projects,
     byId,
     events,
+    workTypes,
   };
 }
 
@@ -338,20 +406,39 @@ export function pastMeasure(m: BoardModel, p: DesignProject): boolean {
 /** Who does an appointment: the person on it, else the design lead. */
 export const apptWho = (p: DesignProject, a: Appt): PersonRef | null => a.who ?? p.lead;
 
+/** Everyone on an appointment's calendar: its people; with nobody picked and no typed name, the design lead. */
+export const apptPeople = (p: DesignProject, a: Appt): PersonRef[] => (a.people.length ? a.people : a.whoText ? [] : p.lead ? [p.lead] : []);
+
 /** The "with" text the mockup fills in for each appointment. */
 export function apptWithDefault(p: DesignProject, key: ApptKey): string {
   return key === "msr" ? "Client" : key === "cm" ? "Carpenter" : p.site?.name ?? "Site PIC";
 }
 
-export const STEPS: ReadonlyArray<readonly [StepKey, string]> = [
-  ["msr", "Measure"], ["3", "3D"], ["2", "2D"], ["cm", "Carpentry"], ["sb", "Site PIC"], ["po", "PO"],
-];
+/** The Design steps (owner, 19 Nov 2026): the works marked in Design in Project Maintenance, in order, then Variants,
+    which the system checks. Short labels for the step row. */
+const SHORT: Readonly<Record<string, string>> = { measure: "Measure", carpentry: "Carpentry", briefing: "Site PIC", payment_2: "2nd payment" };
+export function designSteps(m: Pick<BoardModel, "workTypes">): Array<readonly [StepKey, string]> {
+  const works = m.workTypes.filter((w) => w.inDesign && w.active).sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+  return [...works.map((w) => [w.code, SHORT[w.code] ?? w.label] as const), ["variants", "Variants"] as const];
+}
 
+/** Whether a Design step is done (owner, 19 Nov 2026): Site measure, Carpentry measure, Site briefing and every
+    booked work once their booked day has passed (a recorded measure counts too); 3D and 2D on Record approval; Second
+    payment once the second instalment is received; Variants when every sales order line has its variants. */
 export function stepDone(m: BoardModel, p: DesignProject, k: StepKey): boolean {
-  if (k === "msr") return measured(m, p);
-  if (k === "3" || k === "2") return p.design[k].ok;
-  if (k === "po") return !!p.po;
-  return adone(m, p.appts[k]);
+  switch (k) {
+    case "measure": return measured(m, p) || adone(m, p.appts.msr);
+    case "w3d": return p.design["3"].ok;
+    case "w2d": return p.design["2"].ok;
+    case "payment_2": return (p.paid ?? 0) >= 2;
+    case "carpentry": return adone(m, p.appts.cm);
+    case "briefing": return adone(m, p.appts.sb);
+    case "variants": return p.variants.lines > 0 && p.variants.missing === 0;
+    default: {
+      const w = p.works[k];
+      return !!w && (w.done || w.d < m.today);
+    }
+  }
 }
 
 export function status(m: BoardModel, p: DesignProject): readonly [Letter, string] {
@@ -361,9 +448,15 @@ export function status(m: BoardModel, p: DesignProject): readonly [Letter, strin
   if (g3.st !== "ok") return ["B", g3.st === "none" ? "Pending 3D design" : g3.st === "wait" ? "3D sent · waiting client" : g3.r.n ? "3D amendment" : "3D in progress"];
   const g2 = stage(m, p, "2");
   if (g2.st !== "ok") return ["C", g2.st === "none" ? "Pending 2D" : g2.st === "wait" ? "2D sent · waiting client" : g2.r.n ? "2D amendment" : "2D in progress"];
-  if (!adone(m, p.appts.cm)) return ["D", p.appts.cm?.d ? "Carpentry measure booked" : "Pending carpentry measure"];
-  if (!adone(m, p.appts.sb)) return ["D", p.appts.sb?.d ? "Site briefing booked" : "Pending site briefing"];
-  if (!p.po) return ["D", "Pending PO"];
+  // After 2D, the first Design step of the list still open (owner, 19 Nov 2026: Design work in Project Maintenance).
+  const rest = designSteps(m).filter(([k]) => k !== "measure" && k !== "w3d" && k !== "w2d");
+  const open = rest.find(([k]) => !stepDone(m, p, k));
+  if (open) {
+    const [k, label] = open;
+    const booked = k === "carpentry" ? p.appts.cm?.d : k === "briefing" ? p.appts.sb?.d : p.works[k]?.d;
+    const name = m.workTypes.find((w) => w.code === k)?.label ?? label;
+    return ["D", booked ? `${name} booked` : `Pending ${name.toLowerCase()}`];
+  }
   return ["E", "Done all design"];
 }
 
@@ -412,8 +505,8 @@ export function apptItems(m: BoardModel, who: Viewing): ApptItem[] {
   for (const p of m.projects) {
     for (const ak of APPT_KEYS) {
       const a = p.appts[ak];
-      if (!a || adone(m, a) || !mine(who, apptWho(p, a)?.id)) continue;
-      out.push({ type: "appt", p, ak, a, due: a.d, by: apptWho(p, a) });
+      if (!a || adone(m, a) || !mineAny(who, apptPeople(p, a))) continue;
+      out.push({ type: "appt", p, ak, a, due: a.d, by: joinedRef(apptPeople(p, a)) });
     }
   }
   return out;
@@ -509,7 +602,7 @@ export function nextFor(m: BoardModel, p: DesignProject): Next | null {
     for (const ak of APPT_KEYS) {
       const a = p.appts[ak];
       if (!a?.d || adone(m, a)) continue;
-      const it: Next = { t: APPT_LABEL[ak], d: a.d, by: apptWho(p, a) };
+      const it: Next = { t: APPT_LABEL[ak], d: a.d, by: joinedRef(apptPeople(p, a)) ?? apptWho(p, a) };
       if (!best || (it.d ?? "") < (best.d ?? "")) best = it;
     }
   }
@@ -520,16 +613,26 @@ export function nextFor(m: BoardModel, p: DesignProject): Next | null {
   return best;
 }
 
-export type HomeTab = "all" | "A" | "B" | "C" | "D" | "E";
-export const HOME_TABS: ReadonlyArray<readonly [HomeTab, string]> = [
-  ["all", "All projects"], ["A", "Site Measure"], ["B", "3D"], ["C", "2D"], ["D", "Carpentry · Site · PO"], ["E", "Done Design"],
-];
+/** The list's filter (owner, 19 Nov 2026): every project, the projects whose current Design step is one step
+    (`step:<code>`, the code from designSteps), or the ones with every Design step done. */
+export type HomeFilter = "all" | "done" | `step:${string}`;
 
-export function inTab(m: BoardModel, p: DesignProject, t: HomeTab): boolean {
-  return t === "all" || t === status(m, p)[0];
+export function inFilter(m: BoardModel, p: DesignProject, f: HomeFilter): boolean {
+  if (f === "all") return true;
+  const cur = currentStep(m, p);
+  if (f === "done") return cur === 99;
+  if (f === VARIANTS_FILTER) return waitingVariants(p);
+  return designSteps(m)[cur]?.[0] === f.slice(5);
 }
 
-export function homeCounts(m: BoardModel): { late: number; week: number; tabs: Record<HomeTab, number> } {
+/** Variants is checked on its own, not as "the step the project is on" (owner, 20 Nov 2026: pressing Variants showed
+    none while lines still waited, because those projects were still on Measure). It lists every project with a sales
+    order line still missing a required variant, whatever step it is on. */
+export const VARIANTS_FILTER = "step:variants" as const;
+export const waitingVariants = (p: Pick<DesignProject, "variants">): boolean => p.variants.missing > 0;
+
+/** How many projects each filter shows; `steps` is keyed by step code. */
+export function homeCounts(m: BoardModel): { late: number; week: number; all: number; done: number; steps: Record<string, number> } {
   let late = 0;
   let week = 0;
   for (const p of m.projects) {
@@ -539,14 +642,26 @@ export function homeCounts(m: BoardModel): { late: number; week: number; tabs: R
     if (l < 0) late++;
     else if (l <= 7) week++;
   }
-  const tabs: Record<HomeTab, number> = { all: 0, A: 0, B: 0, C: 0, D: 0, E: 0 };
-  for (const [t] of HOME_TABS) tabs[t] = m.projects.filter((p) => inTab(m, p, t)).length;
-  return { late, week, tabs };
+  return { late, week, ...filterCounts(m, m.projects) };
 }
 
-/** The tab's projects: projects with no team first, then the soonest next deadline, none last. */
-export function homeList(m: BoardModel, t: HomeTab): DesignProject[] {
-  return m.projects.filter((p) => inTab(m, p, t)).sort((a, b) => {
+/** The filter counts over a list of projects (the search narrows it). */
+export function filterCounts(m: BoardModel, list: readonly DesignProject[]): { all: number; done: number; steps: Record<string, number> } {
+  const ds = designSteps(m);
+  const steps: Record<string, number> = Object.fromEntries(ds.map(([k]) => [k, 0]));
+  let done = 0;
+  for (const p of list) {
+    const k = ds[currentStep(m, p)]?.[0];
+    if (k === undefined) done++;
+    else if (k !== "variants") steps[k]++;
+  }
+  if ("variants" in steps) steps.variants = list.filter(waitingVariants).length;
+  return { all: list.length, done, steps };
+}
+
+/** The filter's projects: projects with no team first, then the soonest next deadline, none last. */
+export function homeList(m: BoardModel, f: HomeFilter): DesignProject[] {
+  return m.projects.filter((p) => inFilter(m, p, f)).sort((a, b) => {
     if (a.unassigned !== b.unassigned) return a.unassigned ? -1 : 1;
     return (nextFor(m, a)?.d ?? "9999").localeCompare(nextFor(m, b)?.d ?? "9999");
   });
@@ -605,7 +720,7 @@ export function progressByPerson(m: BoardModel): Array<{ person: PersonRef | nul
 
 /** The index of the step the project is on now, or 99 when every step is done. */
 export function currentStep(m: BoardModel, p: DesignProject): number {
-  const i = STEPS.findIndex(([k]) => !stepDone(m, p, k));
+  const i = designSteps(m).findIndex(([k]) => !stepDone(m, p, k));
   return i < 0 ? 99 : i;
 }
 
@@ -623,11 +738,21 @@ export function apptEvents(m: BoardModel): CalEvent[] {
       if (!a?.d) continue;
       out.push({
         id: `ap|${p.id}|${key}`, d: a.d, t: a.t, type: APPT_TYPE[key], note: `${APPT_LABEL[key]} · ${a.with || apptWithDefault(p, key)}`,
-        who: apptWho(p, a), projectId: p.id, done: adone(m, a), eventId: null, appt: { projectId: p.id, key },
+        who: apptPeople(p, a)[0] ?? null, people: apptPeople(p, a), whoText: a.whoText ?? null, projectId: p.id, done: adone(m, a), eventId: null, appt: { projectId: p.id, key },
       });
     }
   }
   return out;
+}
+
+/** Who goes, as the screens write it: the picked people, then the typed name. */
+export const whoName = (e: Pick<CalEvent, "people" | "whoText">): string | null =>
+  [...e.people.map((x) => x.name), e.whoText?.trim() ?? ""].filter(Boolean).join(", ") || null;
+
+/** Every booking of one project, newest day first (owner, 20 Nov 2026: a project's bookings listed on its page). */
+export function projectBookings(m: BoardModel, projectId: number): CalEvent[] {
+  return allEvents(m).filter((e) => e.projectId === projectId)
+    .sort((a, b) => (b.d + timeKey(b.t)).localeCompare(a.d + timeKey(a.t)));
 }
 
 export const allEvents = (m: BoardModel): CalEvent[] => [...m.events, ...apptEvents(m)];
@@ -635,7 +760,7 @@ export const allEvents = (m: BoardModel): CalEvent[] => [...m.events, ...apptEve
 const timeKey = (t: string): string => t || "99";
 
 export function eventsOn(m: BoardModel, who: Viewing, day: string): CalEvent[] {
-  return allEvents(m).filter((e) => e.d === day && mine(who, e.who?.id)).sort((a, b) => timeKey(a.t).localeCompare(timeKey(b.t)));
+  return allEvents(m).filter((e) => e.d === day && mineAny(who, e.people)).sort((a, b) => timeKey(a.t).localeCompare(timeKey(b.t)));
 }
 
 /** The side list: the picked day's events, or the next eight that are not done. */
@@ -644,11 +769,11 @@ export function listFor(m: BoardModel, who: Viewing, selDay: string | null): { t
     return {
       title: ds(selDay) + (selDay === m.today ? " · today" : ""),
       due: dueOn(m, who, selDay),
-      events: allEvents(m).filter((e) => e.d === selDay && mine(who, e.who?.id)).sort((a, b) => (a.d + timeKey(a.t)).localeCompare(b.d + timeKey(b.t))),
+      events: allEvents(m).filter((e) => e.d === selDay && mineAny(who, e.people)).sort((a, b) => (a.d + timeKey(a.t)).localeCompare(b.d + timeKey(b.t))),
     };
   }
   const events = allEvents(m)
-    .filter((e) => e.d >= m.today && mine(who, e.who?.id) && !e.done)
+    .filter((e) => e.d >= m.today && mineAny(who, e.people) && !e.done)
     .sort((a, b) => (a.d + timeKey(a.t)).localeCompare(b.d + timeKey(b.t)))
     .slice(0, 8);
   return { title: "Coming up", due: [], events };

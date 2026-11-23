@@ -25,7 +25,7 @@ export const companiesOf = (side: UserSide): readonly Company[] => (side === 'bo
 /** The area groups each side closes. Same table as CLOSED_BY_SIDE and closedBySide in functions/_lib/access.ts: keep them
  *  in step. Management always sees both sides; Finance and System are on neither list, so they follow the rules. */
 const CLOSED_BY_SIDE: Record<UserSide, string[]> = {
-  conts: ['Service cases', 'Projects', 'Supply chain', 'Dream Crafter HR'],
+  conts: ['Service cases', 'Projects', 'Supply chain'],
   dream_crafter: ['Home', 'Reservations', 'Operations', 'HR', 'Units', 'Growth'],
   both: [],
 };

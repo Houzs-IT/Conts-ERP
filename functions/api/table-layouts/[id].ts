@@ -1,6 +1,6 @@
 import { type Env, one, run, json, fail, audit, nowIso } from '../../_lib/db';
 import { requireSession, type Session } from '../../_lib/auth';
-import { cleanLayout, cleanName, mayShare, mayUseViews, toView, type ViewRow } from '../../_lib/tableLayouts';
+import { cleanLayout, cleanName, isReservedName, mayShare, mayUseViews, toView, type ViewRow } from '../../_lib/tableLayouts';
 
 const COLS = 'id, table_key, user_id, name, is_default, layout, created_by, updated_at';
 
@@ -28,6 +28,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b.name !== undefined) {
     const name = cleanName(b.name);
     if (!name || name.length > 80) return fail('VALIDATION', 'Give the view a name of up to 80 characters.', 422, { name: 'Give the view a name of up to 80 characters.' });
+    // Kept for rows like a person's own column order (tableLayouts.ts WORKING_NAME).
+    if (isReservedName(name)) return fail('VALIDATION', 'A view name cannot start with two underscores.', 422, { name: 'A view name cannot start with two underscores.' });
     const clash = await one(env, `SELECT 1 AS x FROM table_layouts WHERE table_key = ? AND user_id IS NOT DISTINCT FROM ? AND lower(btrim(name)) = lower(?) AND id <> ?`,
       row.table_key, row.user_id, name, row.id);
     if (clash) return fail('CONFLICT', 'Another view here already has that name.', 409, { name: 'Another view here already has that name.' });

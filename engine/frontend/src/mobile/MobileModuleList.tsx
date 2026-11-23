@@ -1,6 +1,6 @@
 import { CONTS_EMBEDDED } from "../conts/embed";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { siDepositAppliedSen, siOutstandingSen } from "../vendor/scm/lib/si-outstanding";
+import { siCreditNotesSen, siDepositAppliedSen, siOutstandingSen } from "../vendor/scm/lib/si-outstanding";
 import { lineIdentity } from "@2990s/shared";
 import { formatPhone } from "@2990s/shared/phone";
 import { useAuth } from "../auth/AuthContext";
@@ -298,7 +298,8 @@ const mrpState = (r: any): string => {
 const balanceSen = (r: any): number => siOutstandingSen(
   Number(pick(r, "totalSen", "total_sen", "localTotalSen", "local_total_sen") ?? 0),
   Number(pick(r, "paidSen", "paid_sen") ?? 0),
-  siDepositAppliedSen({ so_deposit_applied_sen: pick(r, "soDepositAppliedSen", "so_deposit_applied_sen") as number | null }));
+  siDepositAppliedSen({ so_deposit_applied_sen: pick(r, "soDepositAppliedSen", "so_deposit_applied_sen") as number | null }),
+  siCreditNotesSen({ credit_notes_sen: pick(r, "creditNotesSen", "credit_notes_sen") as number | null }));
 
 /** Numeric-aware locale compare, mirroring the prototype's localeCompare with
  *  { numeric: true }. Used to keep sort keys terse in the configs. */
@@ -345,13 +346,14 @@ const SERVER_PAGINATED = new Set<string>([
   "/purchase-invoices",
   // Backends return { <key>, total, page, pageSize } (page-param opt-in) — same
   // as the five above, so mobile can drop the limit=500 fetch-then-slice and
-  // truly server-window. delivery-returns / purchase-returns are intentionally
-  // absent: their list handlers are NOT paginated (no `total`), and opting them
-  // in would collapse each to a single 30-row page.
+  // truly server-window.
   "/consignment-orders",
   "/consignment-notes",
   "/consignment-returns",
   "/suppliers",
+  // Their list handlers answer ?page= with a total since audit batch 3 (20 Nov 2026), searched on the server.
+  "/delivery-returns",
+  "/purchase-returns",
 ]);
 
 /** Split an endpoint string into its base path + parsed query params. */
