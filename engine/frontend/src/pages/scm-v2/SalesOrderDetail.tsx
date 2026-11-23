@@ -2842,6 +2842,7 @@ export const SalesOrderDetail = () => {
               onRegisterCommitAll={(fn) => { commitPaymentsRef.current = fn; }}
               receiptFor={{ source: 'SOPAY' }}
               paidOnInvoicesSen={header.paid_on_invoices_sen ?? 0}
+              paidBeforeGoLiveSen={Math.max(0, (instalmentsQ.data?.paidBeforeGoLiveSen ?? 0) - (instalmentsQ.data?.orderPaidBeforeGoLiveSen ?? 0))}
               nextAmountSen={instalments.length > 0
                 ? (paid) => nextInstalmentSen(instalments, Math.max(paid - waitingRecordedSen, instalmentsQ.data?.receivedSen ?? 0))
                 : undefined}

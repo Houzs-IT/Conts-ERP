@@ -359,7 +359,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
                     {i.bill?.kind === 'ZERO' && <span className="text-ink-muted">closed, nothing to bill</span>}
                     {i.bill && <div className="text-[11px] text-ink-muted">{fmtDate(i.bill.invoiceDate)}</div>}
                   </td>
-                  <td className="py-2 text-right tabular-nums">{i.bill?.kind === 'INVOICE' ? rm(i.bill.paidSen) : ''}</td>
+                  <td className="py-2 text-right tabular-nums">{i.bill?.kind === 'INVOICE' ? rm(i.bill.paidSen) : i.billedBeforeGoLive ? <>{rm(i.paidBeforeGoLiveSen ?? 0)}<div className="text-[10.5px] text-ink-muted">{i.paidBeforeGoLive ? 'paid before go-live' : 'before go-live'}</div></> : ''}</td>
                   <td className="px-3 py-2 text-right">{i.isNext && live && (can('scm.renovation.bill') || can('scm.renovation.bill_own')) && <Button className="h-8" onClick={() => setBilling(i)}>Bill</Button>}</td>
                 </tr>
               ))}

@@ -61,3 +61,28 @@ describe("an order with no instalment schedule", () => {
     expect(rows.every((r) => r.slot)).toBe(true);
   });
 });
+
+/* Paid before go-live (chew, 23 Nov 2026): TC-SO-2603-004 read "Not paid" on all four instalments though AutoCount was
+   paid in full; the instalments AutoCount invoiced carry their share and what was paid on them there. */
+describe("an instalment AutoCount invoiced before go-live", () => {
+  const before = (paid: [number, number]) => ({
+    receivedSen: paid[0] + paid[1], orderPaidSen: 0, orderPoolSen: 0, paidBeforeGoLiveSen: paid[0] + paid[1], revisedContractSen: 100_000,
+    instalments: [
+      { id: "a", seq: 1, label: "1ST", pctBp: 3000, amountSen: 0, bill: null, billedBeforeGoLive: true, beforeGoLiveSen: 30_000, paidBeforeGoLiveSen: paid[0] },
+      { id: "b", seq: 2, label: "2ND", pctBp: 2000, amountSen: 0, bill: null, billedBeforeGoLive: true, beforeGoLiveSen: 20_000, paidBeforeGoLiveSen: paid[1] },
+      { id: "c", seq: 3, label: "3RD", pctBp: 5000, amountSen: 50_000, bill: null, isNext: true },
+    ],
+  });
+  it("reads paid before go-live, at its share, and is never billable", () => {
+    const rows = instalmentRows(before([30_000, 20_000]));
+    expect(rows.map((r) => [r.amountSen, r.paidSen, r.paidBeforeGoLive ?? false, r.billable])).toEqual([
+      [30_000, 30_000, true, false], [20_000, 20_000, true, false], [50_000, 0, false, true],
+    ]);
+    expect(nextInstalmentSen(rows, 50_000)).toBe(50_000);
+  });
+  it("part paid there: what is left of it is to collect, before the next instalment", () => {
+    const rows = instalmentRows(before([30_000, 5_000]));
+    expect(rows.map((r) => [r.paidSen, r.paidBeforeGoLive ?? false])).toEqual([[30_000, true], [5_000, false], [0, false]]);
+    expect(toCollectSen(rows[1]!)).toBe(15_000);
+  });
+});

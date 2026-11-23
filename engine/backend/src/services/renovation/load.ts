@@ -600,10 +600,12 @@ export function billingFactsOf(v: BillingView): BillingFacts {
       description: i.description || null,
       stageCode: i.stageCode,
       trigger: normTrigger(i.trigger),
-      billedSen: i.bill ? i.bill.amountSen : 0,
-      receivedSen: i.bill && i.bill.kind === "INVOICE" ? i.bill.paidSen : 0,
-      dueSen: i.bill ? i.bill.amountSen : i.amountSen,
-      billed: i.bill !== null,
+      /* An instalment AutoCount invoiced before go-live is billed (there), its share of that invoicing due, and what was
+         paid on it there received (renovation-billing paidBeforeGoLiveSen, chew 23 Nov 2026): never prompted to bill. */
+      billedSen: i.bill ? i.bill.amountSen : i.billedBeforeGoLive ? Number(i.beforeGoLiveSen) || 0 : 0,
+      receivedSen: i.bill ? (i.bill.kind === "INVOICE" ? i.bill.paidSen : 0) : i.billedBeforeGoLive ? Number(i.paidBeforeGoLiveSen) || 0 : 0,
+      dueSen: i.bill ? i.bill.amountSen : i.billedBeforeGoLive ? Number(i.beforeGoLiveSen) || 0 : i.amountSen,
+      billed: i.bill !== null || i.billedBeforeGoLive === true,
     })),
   };
 }

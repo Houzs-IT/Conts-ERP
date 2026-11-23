@@ -13,6 +13,8 @@ import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
 
 interface BillingInstalment {
   id: string; seq: number; label: string; pctBp: number; amountSen: number; isNext?: boolean;
+  /** Invoiced by AutoCount before go-live: its share of that invoicing, and what was paid on it there (chew, 23 Nov 2026). */
+  billedBeforeGoLive?: boolean; beforeGoLiveSen?: number; paidBeforeGoLiveSen?: number;
   bill: {
     kind: "INVOICE" | "CREDIT_NOTE" | "ZERO"; amountSen: number;
     /** Confirmed money taken on the invoice itself; waitingSen: taken on it, not confirmed yet. */
@@ -25,6 +27,9 @@ interface BillingView {
   receivedSen: number;
   /** Confirmed / not yet confirmed money recorded on the order itself. */
   orderPaidSen?: number; orderWaitingSen?: number;
+  /** Paid in AutoCount before go-live (inside receivedSen); the order payments before go-live it already holds; and
+      the order money left to fill the instalments (orderPaidSen less those). */
+  paidBeforeGoLiveSen?: number; orderPaidBeforeGoLiveSen?: number; orderPoolSen?: number;
   /** Money recorded, order and invoices, finance has not confirmed yet. */
   waitingSen?: number;
   revisedContractSen: number; instalments: BillingInstalment[];
@@ -34,6 +39,8 @@ export interface SoInstalmentRow {
   seq: number; label: string; pctBp: number; amountSen: number; paidSen: number; slot?: boolean;
   /** Recorded for this instalment, waiting for finance to confirm it (never in paidSen). */
   waitingSen?: number;
+  /** Invoiced by AutoCount before go-live (never billed here); paidBeforeGoLive: paid in full there. */
+  beforeGoLive?: boolean; paidBeforeGoLive?: boolean;
   id?: string; billable?: boolean; document?: { number: string; invoiceId: string | null };
 }
 
@@ -48,15 +55,18 @@ export function useSoInstalments(docNo: string | null, enabled: boolean) {
   });
 }
 
-/** Each instalment's amount and what is paid against it: what its invoice holds, then the confirmed money on the order
-    in order. Money not confirmed yet fills them the same way, as waitingSen. */
+/** Each instalment's amount and what is paid against it: what its invoice holds (or, on one AutoCount invoiced before
+    go-live, what was paid on it there), then the confirmed money on the order in order. Money not confirmed yet fills
+    them the same way, as waitingSen. */
 export function instalmentRows(view: BillingView | undefined): SoInstalmentRow[] {
   if (!view || view.instalments.length === 0) return [];
-  let pool = Math.max(0, view.orderPaidSen ?? 0);
+  let pool = Math.max(0, view.orderPoolSen ?? view.orderPaidSen ?? 0);
   let waitingPool = Math.max(0, view.orderWaitingSen ?? 0);
   return [...view.instalments].sort((a, b) => a.seq - b.seq).map((i) => {
-    const amountSen = i.bill ? i.bill.amountSen : i.amountSen;
-    let paidSen = i.bill?.kind === "INVOICE" ? i.bill.paidSen : 0;
+    const beforeGoLive = !i.bill && i.billedBeforeGoLive === true;
+    const amountSen = i.bill ? i.bill.amountSen : beforeGoLive ? i.beforeGoLiveSen ?? 0 : i.amountSen;
+    const paidBefore = beforeGoLive ? Math.min(Math.max(0, i.paidBeforeGoLiveSen ?? 0), amountSen) : 0;
+    let paidSen = i.bill?.kind === "INVOICE" ? i.bill.paidSen : paidBefore;
     if (paidSen < amountSen && pool > 0) {
       const take = Math.min(pool, amountSen - paidSen);
       pool -= take;
@@ -72,6 +82,7 @@ export function instalmentRows(view: BillingView | undefined): SoInstalmentRow[]
     return {
       seq: i.seq, label: i.label || `Instalment ${i.seq}`, pctBp: i.pctBp, amountSen, paidSen, id: i.id, billable: Boolean(i.isNext && !i.bill),
       ...(waitingSen > 0 ? { waitingSen } : {}),
+      ...(beforeGoLive ? { beforeGoLive: true, ...(amountSen > 0 && paidBefore >= amountSen ? { paidBeforeGoLive: true } : {}) } : {}),
       ...(number ? { document: { number, invoiceId: i.bill?.salesInvoiceId ?? null } } : {}),
     };
   });
@@ -123,7 +134,7 @@ export function SoInstalments({ rows, money, onBill, onPrintInvoice }: {
             </div>
             <div className="text-[17px] font-bold tabular-nums text-ink">{r.slot && r.amountSen === 0 ? "-" : money(part ? toCollectSen(r) : r.amountSen)}</div>
             <div className={`text-[12px] font-semibold ${paid ? "text-synced" : part || due ? "text-warning-text" : "text-ink-muted"}`}>
-              {paid ? (r.slot ? "Received" : "Paid") : part ? `To collect, ${money(r.paidSen)} of ${money(r.amountSen)} paid` : r.slot ? "Not received" : "Not paid"}
+              {paid ? (r.slot ? "Received" : r.paidBeforeGoLive ? "Paid before go-live" : "Paid") : part ? `To collect, ${money(r.paidSen)} of ${money(r.amountSen)} paid` : r.slot ? "Not received" : r.beforeGoLive ? "Billed before go-live, not paid" : "Not paid"}
             </div>
             {(r.waitingSen ?? 0) > 0 && (
               <div className="text-[11.5px] font-medium text-ink-secondary">{money(r.waitingSen ?? 0)} waiting for finance</div>
