@@ -48,6 +48,7 @@ import { klToday, materialDates } from '../lib/production-material-dates';
 import { scmAreaAllows } from '../middleware/area-guard';
 import { checkReturn, filterProductionTab, holidaySet, materialPoWarehouse, materialVerdict, progressOf, stockStatusOf, validHours, wholeNeed, type MaterialState, type PoLink, type ReturnLine } from '../lib/renovation-production';
 import { filterProductionList } from '../lib/production-list-read';
+import { materialsToOrder, type PickerMaterial, type PickerOrder, type PickerPoLine, type PickerSupplier } from '../lib/renovation-material-picker';
 import { PRODUCTION_DOC, issueMaterials, returnMaterial, reverseIssues } from '../lib/renovation-production-stock';
 import { deferAllocationRecompute } from '../lib/stock-allocation-job';
 import { voChangeWaiting } from '../lib/renovation-po-change-guard';
@@ -530,6 +531,72 @@ productionOrders.delete('/sku-composition/:rowId', async (c) => {
   if (error) return c.json({ error: 'delete_failed', reason: error.message }, 500);
   if (!data) return c.json(NOT_THIS_COMPANY, 404);
   return c.json({ ok: true });
+});
+
+/* Purchase Orders > Transfer from Production Order (owner, 23 Nov 2026): every raw material of an open order still to be
+   bought. Only orders /material-pos accepts are listed (submitted, not held), so a ticked line can always be ordered. */
+productionOrders.get('/materials-to-order', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const { data: orderRows, error: orderErr } = await paginateAll<PickerOrder>((from, to) =>
+    scopeToCompanyId(sb.from('production_orders').select('id, po_number, project_id').eq('status', 'SUBMITTED').eq('on_hold', false), co.companyId)
+      .order('id').range(from, to));
+  if (orderErr) return c.json({ error: 'load_failed', reason: orderErr.message }, 500);
+  const orders = new Map((orderRows ?? []).map((o) => [o.id, o]));
+  if (orders.size === 0) return c.json({ rows: [] });
+  const orderIds = [...orders.keys()];
+  const { data: materials, error: matErr } = await chunkIn<PickerMaterial>(orderIds, (batch, from, to) =>
+    scopeToCompanyId(sb.from('production_order_materials')
+      .select('id, production_order_id, item_code, description, uom, qty_needed, processing_date, delivery_date')
+      .in('production_order_id', batch), co.companyId).order('id').range(from, to));
+  if (matErr) return c.json({ error: 'load_failed', reason: matErr.message }, 500);
+  if (materials.length === 0) return c.json({ rows: [] });
+  const { data: poLines, error: lineErr } = await chunkIn<PickerPoLine>(materials.map((m) => m.id), async (batch, from, to) => {
+    const r = await sb.from('purchase_order_items').select('production_material_id, qty, po:purchase_orders!inner (status)')
+      .in('production_material_id', batch).order('id').range(from, to);
+    /* A to-one embed: PostgREST answers an object, the generated type says an array. */
+    return { data: r.data as unknown as PickerPoLine[] | null, error: r.error };
+  });
+  if (lineErr) return c.json({ error: 'load_failed', reason: lineErr.message }, 500);
+
+  const codes = [...new Set(materials.map((m) => m.item_code))];
+  const { data: binds, error: bindErr } = await readMfgProductBindings<{ item_code: string; supplier_id: string }>(sb, {
+    codes, companyId: co.companyId, select: 'item_code, supplier_id',
+  });
+  if (bindErr) return c.json({ error: 'load_failed', reason: bindErr.message }, 500);
+  /* Bindings arrive main supplier first: the first per code is the one /material-pos orders from. */
+  const supplierIdOf = new Map<string, string>();
+  for (const b of binds) if (!supplierIdOf.has(b.item_code)) supplierIdOf.set(b.item_code, b.supplier_id);
+  const { data: sups, error: supErr } = await chunkIn<PickerSupplier>([...new Set(supplierIdOf.values())], (batch, from, to) =>
+    scopeToCompanyId(sb.from('suppliers').select('id, code, name').in('id', batch), co.companyId).order('id').range(from, to));
+  if (supErr) return c.json({ error: 'load_failed', reason: supErr.message }, 500);
+  const supById = new Map(sups.map((s) => [s.id, s]));
+  const mainSupplierOf = new Map<string, PickerSupplier>();
+  for (const [code, id] of supplierIdOf) { const s = supById.get(id); if (s) mainSupplierOf.set(code, s); }
+
+  const projectIds = [...new Set([...orders.values()].map((o) => o.project_id).filter((p): p is number => p != null))];
+  const projectOf = new Map<number, { code: string | null; name: string | null }>();
+  if (projectIds.length > 0) {
+    const { data: projects } = await chunkIn<{ id: number; code: string | null; name: string | null }, number>(projectIds, (batch, from, to) =>
+      sb.schema('public').from('projects').select('id, code, name').in('id', batch).order('id').range(from, to));
+    for (const p of projects) projectOf.set(Number(p.id), { code: p.code, name: p.name });
+  }
+  const { data: items } = await chunkIn<{ production_order_id: string; so_item_id: string | null }>(orderIds, (batch, from, to) =>
+    sb.from('production_order_items').select('production_order_id, so_item_id').in('production_order_id', batch).not('so_item_id', 'is', null).order('id').range(from, to));
+  const soItemIds = [...new Set(items.map((i) => i.so_item_id).filter((x): x is string => Boolean(x)))];
+  const { data: soLines } = await chunkIn<{ id: string; doc_no: string }>(soItemIds, (batch, from, to) =>
+    scopeToCompanyId(sb.from('mfg_sales_order_items').select('id, doc_no').in('id', batch), co.companyId).order('id').range(from, to));
+  const docOfItem = new Map(soLines.map((l) => [l.id, l.doc_no]));
+  const soDocsOf = new Map<string, string[]>();
+  for (const i of items) {
+    const doc = i.so_item_id ? docOfItem.get(i.so_item_id) : undefined;
+    if (!doc) continue;
+    const list = soDocsOf.get(i.production_order_id) ?? [];
+    if (!list.includes(doc)) list.push(doc);
+    soDocsOf.set(i.production_order_id, list);
+  }
+  return c.json({ rows: materialsToOrder({ materials, orders, poLines, mainSupplierOf, projectOf, soDocsOf }) });
 });
 
 /* ── MRP shortages -> raw-material POs ──
