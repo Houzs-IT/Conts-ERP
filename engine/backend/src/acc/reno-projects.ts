@@ -194,13 +194,12 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
     paidBy.set(doc, at);
   };
   /* Every payment recorded on the contract counts from the day it is recorded, confirmed or not: finance reconciles
-     the bank later (chew, 17 Nov 2026). A contract AutoCount carried (seeded with its go-live amount) takes only the
-     payments from go-live on: AutoCount's figures already hold the earlier ones. */
+     the bank later (chew, 17 Nov 2026). On a contract AutoCount carried it counts on top of what AutoCount collected,
+     whatever its date: the ERP's books start on the ledger start, and a payment AutoCount also recorded has AutoCount's
+     copy taken back (chew, 23 Nov 2026; scm/lib/renovation-billing's header). */
   const goLive = goLiveOf(settings.data as Row | null);
-  const seeded = new Set(contracts.filter((k) => k.golive_contract_sen != null).map((k) => String(k.so_doc_no)));
-  const counts = (doc: string | undefined, p: Row) => !doc || !seeded.has(doc) || !goLive || day(p.paid_at) >= goLive;
-  for (const p of soPays) if (counts(String(p.so_doc_no), p)) addPay(String(p.so_doc_no), p);
-  for (const p of siPays) { const doc = siDoc.get(String(p.sales_invoice_id)); if (counts(doc, p)) addPay(doc, p); }
+  for (const p of soPays) addPay(String(p.so_doc_no), p);
+  for (const p of siPays) addPay(siDoc.get(String(p.sales_invoice_id)), p);
   /* What AutoCount collected before go-live, on the day before it. A contract seeded with its go-live amount was
      invoiced whole by AutoCount ("TOTAL SALES ORDER"): collected is that amount less what was still open, plus what was
      paid ahead. One seeded with only what AutoCount invoiced takes that less what was open. */
