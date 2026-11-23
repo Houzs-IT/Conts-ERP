@@ -27,7 +27,7 @@ import { previewPoSplit, raisePos } from '../lib/renovation-po-split';
 import { billingView, billInstalment, creditContract } from '../lib/renovation-billing';
 import { applyCustomerCreditToSi } from '../lib/customer-credits';
 import { recomputeSiPaid } from '../lib/si-order-deposit';
-import { applyVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
+import { approveVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, saveVoEdits, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
 import { voucherForPoPayment } from '../lib/renovation-po-voucher';
 import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule, takeBackPoPayment } from '../lib/renovation-po-schedule';
 import { applyTermsToContract, listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
@@ -502,6 +502,28 @@ renovation.put('/variation-orders/:id', handle(PERM.quote, async (c, { tx, sqlRe
   })));
 }));
 
+const lineEditSchema = z.object({
+  soItemId: z.string().uuid(), qty: z.number().int().min(1).optional(), itemCode: z.string().max(80).optional(), unitPriceSen: z.number().int().min(0).optional(),
+  remove: z.boolean().optional(), variants: z.record(z.string(), z.unknown()).optional(), remark: z.string().max(500).optional(),
+  label: z.string().max(300).optional(),
+});
+const lineAddSchema = z.object({
+  room: z.string().max(120), itemCode: z.string().min(1).max(80), qty: z.number().int().min(1), unitPriceSen: z.number().int().min(0),
+  variants: z.record(z.string(), z.unknown()).optional(), remark: z.string().max(500).optional(), fromPackageId: z.string().uuid().nullable().optional(),
+  label: z.string().max(300).optional(),
+});
+
+/* The VO room editor (owner, 23 Nov 2026): contract lines changed in place, kept as edits on the draft. */
+renovation.put('/variation-orders/:id/edits', handle(PERM.quote, async (c, { tx }) => {
+  const s = z.object({
+    version: z.number().int(), title: z.string().max(200).optional(), docDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    edits: z.object({ lines: z.array(lineEditSchema).max(200), adds: z.array(lineAddSchema).max(200) }),
+  }).safeParse(await json(c));
+  if (!s.success) throw new RenoError(400, 'invalid_edits', 'Send the lines to change.');
+  const { version, title, docDate, edits } = s.data;
+  return c.json(await tx((db) => saveVoEdits(db, actorOf(c), param(c, 'id'), { version, title, docDate, edits })));
+}));
+
 renovation.post('/variation-orders/:id/status', handle(PERM.quote, async (c, { tx }) => {
   const b = await json(c);
   const s = z.enum(['DRAFT', 'SENT', 'CANCELLED']).safeParse(b.status);
@@ -512,7 +534,7 @@ renovation.post('/variation-orders/:id/status', handle(PERM.quote, async (c, { t
 renovation.post('/variation-orders/:id/approve', handle(PERM.voApply, async (c, { tx, sqlRead }) => {
   const b = await json(c);
   const actor = actorOf(c);
-  const out = await tx((db) => applyVo(db, actor, param(c, 'id'), {
+  const out = await tx((db) => approveVo(db, actor, param(c, 'id'), {
     version: intParam(b.version, 'version'), signedName: typeof b.signedName === 'string' ? b.signedName : null, signedAt: b.signedAt ?? null,
   }));
   await onRenovationSoLinesChanged(out.soDocNo, sqlRead);
@@ -525,14 +547,8 @@ renovation.post('/sales-orders/:docNo/line-edits', handle(PERM.voApply, async (c
   const b = await json(c);
   const s = z.object({
     title: z.string().max(200).optional(),
-    edits: z.array(z.object({
-      soItemId: z.string().uuid(), qty: z.number().int().min(1).optional(), itemCode: z.string().max(80).optional(), unitPriceSen: z.number().int().min(0).optional(),
-      remove: z.boolean().optional(), variants: z.record(z.string(), z.unknown()).optional(), remark: z.string().max(500).optional(),
-    })).max(200).default([]),
-    adds: z.array(z.object({
-      room: z.string().max(120), itemCode: z.string().min(1).max(80), qty: z.number().int().min(1), unitPriceSen: z.number().int().min(0),
-      variants: z.record(z.string(), z.unknown()).optional(), remark: z.string().max(500).optional(),
-    })).max(200).default([]),
+    edits: z.array(lineEditSchema).max(200).default([]),
+    adds: z.array(lineAddSchema).max(200).default([]),
   }).safeParse(b);
   if (!s.success) throw new RenoError(400, 'invalid_edits', 'Send the lines to change.');
   return c.json(await runQuickVo(c, { tx, sqlRead }, param(c, 'docNo'), s.data.edits, s.data.adds, s.data.title ?? 'Changed on the order'));

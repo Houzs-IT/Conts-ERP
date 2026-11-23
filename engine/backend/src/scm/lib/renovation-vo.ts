@@ -122,12 +122,20 @@ export function voNoFor(soDocNo: string, seq: number): string {
 async function lockVo(db: RenoDb, id: string, companyId: number) {
   const [v] = await db.q(
     `select id, vo_no, so_doc_no, seq, status, title, doc_date::text as doc_date, net_sen, version, signed_name, signed_at::text as signed_at,
-            approved_at::text as approved_at, amendment_id
+            approved_at::text as approved_at, amendment_id, edits
        from scm.reno_variation_orders where id = $1 and company_id = $2 for update`,
     [id, companyId],
   );
   if (!v) throw refuse(404, 'vo_not_found', 'That variation order does not exist.');
-  return v as { id: string; vo_no: string; so_doc_no: string; seq: number; status: VoStatus; title: string; doc_date: string; net_sen: number; version: number; signed_name: string | null; signed_at: string | null; approved_at: string | null; amendment_id: string | null };
+  return { ...v, edits: voEditsOf(v.edits) } as { id: string; vo_no: string; so_doc_no: string; seq: number; status: VoStatus; title: string; doc_date: string; net_sen: number; version: number; signed_name: string | null; signed_at: string | null; approved_at: string | null; amendment_id: string | null; edits: VoEdits | null };
+}
+
+/** The stored room-editor edits; null for a VO built line by line. */
+export function voEditsOf(raw: unknown): VoEdits | null {
+  const v: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  if (!v || typeof v !== 'object') return null;
+  const { lines, adds } = v as { lines?: unknown; adds?: unknown };
+  return Array.isArray(lines) && Array.isArray(adds) ? { lines: lines as QuickLineEdit[], adds: adds as QuickLineAdd[] } : null;
 }
 
 export async function createVo(db: RenoDb, actor: RenoActor, soDocNo: string, body: { title?: string }): Promise<{ id: string; voNo: string }> {
@@ -170,7 +178,7 @@ export function omitAmountSen(target: Pick<DocLineOut, 'kind' | 'qty' | 'measure
 export async function readVo(db: RenoDb, id: string, companyId: number) {
   const [v] = await db.q(
     `select id, vo_no, so_doc_no, seq, status, title, doc_date::text as doc_date, net_sen, version, signed_name, signed_at::text as signed_at,
-            approved_at::text as approved_at, approved_by, amendment_id
+            approved_at::text as approved_at, approved_by, amendment_id, edits
        from scm.reno_variation_orders where id = $1 and company_id = $2`,
     [id, companyId],
   );
@@ -195,14 +203,16 @@ export async function readVo(db: RenoDb, id: string, companyId: number) {
     id: v.id, voNo: v.vo_no, soDocNo: v.so_doc_no, seq: Number(v.seq), status: v.status as VoStatus, title: v.title, docDate: v.doc_date,
     version: Number(v.version), signedName: v.signed_name, signedAt: v.signed_at, approvedAt: v.approved_at, approvedBy: v.approved_by,
     amendmentId: v.amendment_id, sections, totals: { addSen, omitSen, netSen: v.status === 'APPROVED' ? Number(v.net_sen) : addSen + omitSen },
+    edits: voEditsOf(v.edits),
   };
 }
 
-/** Replace a draft VO's lines. OMIT lines are filled from the contract line they name. */
-export async function saveVo(db: RenoDb, actor: RenoActor, id: string, body: { version: number; title?: string; docDate?: string; sections?: NormSection[] }): Promise<{ version: number; netSen: number }> {
+/** Replace a draft VO's lines. OMIT lines are filled from the contract line they name. Lines saved by hand drop any
+    room-editor edits; `rebuild` is approval rebuilding them, which a sent VO also allows. */
+export async function saveVo(db: RenoDb, actor: RenoActor, id: string, body: { version: number; title?: string; docDate?: string; sections?: NormSection[] }, opts: { rebuild?: boolean } = {}): Promise<{ version: number; netSen: number }> {
   const v = await lockVo(db, id, actor.companyId);
   if (v.version !== body.version) throw refuse(409, 'stale_version', 'Someone else saved this variation order first. Reload to see their changes.', { version: v.version });
-  if (v.status !== 'DRAFT') throw refuse(409, 'not_editable', 'Only a draft variation order can be edited.');
+  if (v.status !== 'DRAFT' && !(opts.rebuild && v.status === 'SENT')) throw refuse(409, 'not_editable', 'Only a draft variation order can be edited.');
   let net = 0;
   if (body.sections) {
     const targets = await contractTargets(db, v.so_doc_no);
@@ -232,8 +242,8 @@ export async function saveVo(db: RenoDb, actor: RenoActor, id: string, body: { v
   }
   const [r] = await db.q<{ version: number }>(
     `update scm.reno_variation_orders set title = coalesce($2, title), doc_date = coalesce($3::date, doc_date), net_sen = $4,
-        version = version + 1, updated_at = now() where id = $1 returning version`,
-    [id, body.title ?? null, body.docDate ?? null, net],
+        edits = case when $5 then null else edits end, version = version + 1, updated_at = now() where id = $1 returning version`,
+    [id, body.title ?? null, body.docDate ?? null, net, body.sections !== undefined && !opts.rebuild],
   );
   return { version: Number(r.version), netSen: net };
 }
@@ -419,9 +429,9 @@ export async function applyVo(
     re-specification (owner, 2 Nov 2026: a line a PO already buys changes its options by VO): the line is omitted and
     added again, in the same room, carrying the new options, so its PO line is flagged CANCEL and the new one is
     ordered as it now is. */
-export interface QuickLineEdit { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string }
+export interface QuickLineEdit { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string; label?: string }
 /** A line added on the SO page, in a room. */
-export interface QuickLineAdd { room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string }
+export interface QuickLineAdd { room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string; fromPackageId?: string | null; label?: string }
 
 type QuickProduct = { name: string; costSen: number; supplierId: string | null; uom: string | null; group?: string };
 
@@ -454,9 +464,19 @@ export function quickVoLines(t: DocLineOut, e: QuickLineEdit, onPo: boolean, pro
   return { omit: omit(null), add: add(qty), sameSku };
 }
 
-/** Edit contract lines in place: raise one VO for every change, approve it, and carry each replaced line's options,
-    remark and dates onto the line that replaces it. */
-export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edits: QuickLineEdit[], newLines: QuickLineAdd[], title: string): Promise<Awaited<ReturnType<typeof applyVo>>> {
+/** What a VO's room editor keeps on a draft: the edits as staff made them, rebuilt into add and omit lines on every
+    save and again at approval, so the PO split follows the POs of the day it applies. */
+export interface VoEdits { lines: QuickLineEdit[]; adds: QuickLineAdd[] }
+
+export interface EditBuild { sections: NormSection[]; carries: QuickAdd[]; groups: Map<string, string> }
+
+/** The add and omit sections a set of in-place edits becomes (quickVoLines per edited line, new lines by room). */
+export async function buildEditSections(db: RenoDb, actor: RenoActor, soDocNo: string, edits: QuickLineEdit[], newLines: QuickLineAdd[]): Promise<EditBuild> {
+  const seenEdit = new Set<string>();
+  for (const e of edits) {
+    if (seenEdit.has(e.soItemId)) throw refuse(422, 'edit_twice', 'A contract line is changed twice in this variation order.');
+    seenEdit.add(e.soItemId);
+  }
   const targets = await contractTargets(db, soDocNo);
   const bySoItem = new Map([...targets.values()].filter((t) => t.soItemId).map((t) => [t.soItemId!, t]));
   /* A same-SKU re-specification needs its own product's group, to canonicalize and print the new options. */
@@ -514,19 +534,52 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
       id: crypto.randomUUID(), parentId: null, kind: 'ITEM', sortOrder: 0, room, itemCode: a.itemCode.trim(), description: prod.name, qty: a.qty,
       measureMilli: null, measureUom: null, uom: prod.uom, unitPriceSen: a.unitPriceSen, listPriceSen: null, discountBp: 0, amountOverrideSen: null,
       isFoc: false, supplyByOwner: false, highlight: 'NONE', supplierId: prod.supplierId, unitCostSen: prod.costSen, stageCode: null, processingAfterDays: null, deliveryAfterDays: null,
-      pageBreakBefore: false, voChange: 'ADD', omitTargetLineId: null, omitQty: null,
+      pageBreakBefore: false, voChange: 'ADD', omitTargetLineId: null, omitQty: null, fromPackageId: a.fromPackageId ?? null,
     };
     put(room || 'Additional works', line);
     adds.push({ lineId: line.id, fromSoItemId: null, sameSku: false, respec: false, itemCode: line.itemCode!, variants: a.variants, remark: a.remark, room });
   }
-  if (sections.size === 0) throw refuse(422, 'nothing_changed', 'Nothing on the contract changed.');
-  const vo = await createVo(db, actor, soDocNo, { title });
-  const saved = await saveVo(db, actor, vo.id, { version: 1, sections: [...sections.values()] });
-  const out = await applyVo(db, actor, vo.id, { version: saved.version });
-  for (const a of adds) {
+  return { sections: [...sections.values()], carries: adds, groups: new Map([...products].map(([code, p]) => [code, p.group ?? ''])) };
+}
+
+async function carryAll(db: RenoDb, out: Awaited<ReturnType<typeof applyVo>>, b: EditBuild): Promise<void> {
+  for (const a of b.carries) {
     const to = out.added.find((x) => x.voLineId === a.lineId)?.soItemId;
-    if (to) await carryToAddedLine(db, a, to, products.get(a.itemCode)?.group ?? '');
+    if (to) await carryToAddedLine(db, a, to, b.groups.get(a.itemCode) ?? '');
   }
+}
+
+/** Edit contract lines in place: raise one VO for every change, approve it, and carry each replaced line's options,
+    remark and dates onto the line that replaces it. */
+export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edits: QuickLineEdit[], newLines: QuickLineAdd[], title: string): Promise<Awaited<ReturnType<typeof applyVo>>> {
+  const b = await buildEditSections(db, actor, soDocNo, edits, newLines);
+  if (b.sections.length === 0) throw refuse(422, 'nothing_changed', 'Nothing on the contract changed.');
+  const vo = await createVo(db, actor, soDocNo, { title });
+  const saved = await saveVo(db, actor, vo.id, { version: 1, sections: b.sections });
+  const out = await applyVo(db, actor, vo.id, { version: saved.version });
+  await carryAll(db, out, b);
+  return out;
+}
+
+/** Save a draft VO from the room editor: keep the edits and rebuild its add and omit lines from them. */
+export async function saveVoEdits(db: RenoDb, actor: RenoActor, id: string, body: { version: number; title?: string; docDate?: string; edits: VoEdits }): Promise<{ version: number; netSen: number }> {
+  const v = await lockVo(db, id, actor.companyId);
+  const b = await buildEditSections(db, actor, v.so_doc_no, body.edits.lines, body.edits.adds);
+  const saved = await saveVo(db, actor, id, { version: body.version, title: body.title, docDate: body.docDate, sections: b.sections });
+  await db.q(`update scm.reno_variation_orders set edits = $2::text::jsonb where id = $1`, [id, JSON.stringify(body.edits)]);
+  return saved;
+}
+
+/** Approve a VO. One kept as room-editor edits is rebuilt first, from the POs as they stand now, and each line that
+    replaces a contract line takes on its options, remark, room and dates. */
+export async function approveVo(db: RenoDb, actor: RenoActor, id: string, body: { version: number; signedName?: string | null; signedAt?: string | null }): Promise<Awaited<ReturnType<typeof applyVo>>> {
+  const v = await lockVo(db, id, actor.companyId);
+  if (!v.edits) return applyVo(db, actor, id, body);
+  if (v.version !== body.version) throw refuse(409, 'stale_version', 'Someone else saved this variation order first. Reload to see their changes.', { version: v.version });
+  const b = await buildEditSections(db, actor, v.so_doc_no, v.edits.lines, v.edits.adds);
+  const saved = await saveVo(db, actor, id, { version: v.version, sections: b.sections }, { rebuild: true });
+  const out = await applyVo(db, actor, id, { ...body, version: saved.version });
+  await carryAll(db, out, b);
   return out;
 }
 

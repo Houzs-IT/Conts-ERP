@@ -1,0 +1,168 @@
+/* The VO room editor (owner, 23 Nov 2026): the contract by room, each line changed in place (qty, price, swap the SKU,
+   remove) and new lines added inside a room. The VO keeps these edits; the server rebuilds its add and omit lines from
+   them on save and again at approval (renovation-vo.ts). Model: voRoomModel.ts. */
+
+import { useMemo, useState, type ReactElement } from 'react';
+import { Minus, Plus, Trash2, Undo2 } from 'lucide-react';
+import { qtyLabel } from '../../vendor/shared/renovation-money';
+import type { DocSection, VoEdits } from '../../lib/renovation/api';
+import { cn } from '../../lib/utils';
+import { ProductPicker } from './DocEditor';
+import { inputCls, MoneyInput, rm } from './shared';
+import {
+  addLine, dropAdd, removeLine, roomsOf, setAddPrice, setAddQty, setLinePrice, setLineQty, swapLine, totalsOf, undoLine,
+  type Room, type RoomRow,
+} from './voRoomModel';
+
+const ROW_TINT: Record<RoomRow['kind'], string> = { same: '', changed: 'bg-warning-bg/60', added: 'bg-synced-bg/60', removed: 'bg-err-bg/60' };
+const BADGE: Record<RoomRow['kind'], { text: string; cls: string } | null> = {
+  same: null,
+  changed: { text: 'Changed', cls: 'bg-warning-bg text-warning-text' },
+  added: { text: 'New', cls: 'bg-synced-bg text-synced' },
+  removed: { text: 'Removed', cls: 'bg-err-bg text-err' },
+};
+const GRID = 'md:grid md:grid-cols-[130px_minmax(0,1fr)_150px_110px_120px_100px] md:items-center md:gap-3';
+const stepBtn = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink hover:bg-surface-2 disabled:opacity-50 md:h-8 md:w-8';
+const actBtn = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[13px] font-medium text-ink hover:bg-surface-2 disabled:opacity-50 md:h-8 md:px-2 md:text-[12px]';
+
+const signed = (sen: number): string => (sen > 0 ? `+${rm(sen)}` : rm(sen));
+
+export function VoRoomEditor({ sections, edits, onChange, disabled, loading }: {
+  sections: DocSection[]; edits: VoEdits; onChange: (e: VoEdits) => void; disabled: boolean; loading?: boolean;
+}): ReactElement {
+  const [only, setOnly] = useState(false);
+  const [newRoom, setNewRoom] = useState('');
+  const rooms = useMemo(() => roomsOf(sections, edits), [sections, edits]);
+  const t = totalsOf(rooms);
+  const summary = [t.changed && `${t.changed} changed`, t.added && `${t.added} added`, t.removed && `${t.removed} removed`].filter(Boolean).join(' · ') || 'No changes yet';
+  const shown = only ? rooms.map((r) => ({ ...r, rows: r.rows.filter((x) => x.kind !== 'same') })).filter((r) => r.rows.length > 0) : rooms;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="flex-1 text-[13.5px] font-semibold text-ink">Contract by room</h2>
+        <span className="text-[12.5px] text-ink-secondary">{summary}</span>
+        <button type="button" aria-pressed={only} onClick={() => setOnly((o) => !o)}
+          className={cn(actBtn, only && 'border-primary bg-primary-soft text-primary-ink')}>
+          {only ? 'Showing changes only' : 'Show changes only'}
+        </button>
+      </div>
+
+      {shown.length === 0 && (
+        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-[13px] text-ink-muted">
+          {loading ? 'Loading contract lines…' : only ? 'Nothing changed yet.' : 'No contract line can be changed. Add a line in a new room below.'}
+        </div>
+      )}
+
+      {shown.map((room) => <RoomCard key={room.name} room={room} edits={edits} onChange={onChange} disabled={disabled} />)}
+
+      {!disabled && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2">
+          <label className="flex min-w-0 flex-1 items-center gap-2 text-[12.5px] text-ink-secondary">
+            New room
+            <input className={cn(inputCls, 'h-11 min-w-0 flex-1 text-[16px] md:h-9 md:text-[13px]')} value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder="Kitchen" />
+          </label>
+          <div className="w-full sm:w-56" aria-label="Pick the first product for the new room">
+            <ProductPicker value={null} disabled={!newRoom.trim()} onPick={(p) => { onChange(addLine(edits, newRoom, p)); setNewRoom(''); }} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RoomCard({ room, edits, onChange, disabled }: { room: Room; edits: VoEdits; onChange: (e: VoEdits) => void; disabled: boolean }): ReactElement {
+  return (
+    <section className="overflow-hidden rounded-xl border border-border bg-surface" aria-label={room.name}>
+      <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-3 py-2">
+        <h3 className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink">{room.name}</h3>
+        {room.deltaSen !== 0 && <span className={cn('text-[12.5px] font-semibold tabular-nums', room.deltaSen < 0 ? 'text-err' : 'text-synced')}>{signed(room.deltaSen)}</span>}
+      </div>
+      <div className={cn('hidden border-b border-border-subtle px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-ink-muted', GRID)}>
+        <span>SKU</span><span>Item</span><span>Qty</span><span className="text-right">Unit price</span><span className="text-right">Amount</span><span />
+      </div>
+      <ul>
+        {room.rows.map((r) => <RowView key={r.key} r={r} edits={edits} onChange={onChange} disabled={disabled} />)}
+      </ul>
+      {!disabled && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-border-subtle px-3 py-2">
+          <span className="text-[12.5px] text-ink-secondary">Add line in {room.name}</span>
+          <div className="w-full sm:w-56"><ProductPicker value={null} onPick={(p) => onChange(addLine(edits, room.name, p))} /></div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits; onChange: (e: VoEdits) => void; disabled: boolean }): ReactElement {
+  const badge = BADGE[r.kind];
+  const gone = r.kind === 'removed';
+  const line = r.line;
+  const setQty = (q: number) => onChange(line ? setLineQty(edits, line, q) : setAddQty(edits, r.addIndex!, q));
+  const setPrice = (sen: number) => onChange(line ? setLinePrice(edits, line, sen) : setAddPrice(edits, r.addIndex!, sen));
+  return (
+    <li className={cn('flex flex-col gap-2 border-b border-border-subtle px-3 py-2.5 last:border-b-0', GRID, ROW_TINT[r.kind])}>
+      <div className="order-2 min-w-0 md:order-none">
+        {line && !gone && !disabled ? (
+          <ProductPicker value={r.sku} onPick={(p) => onChange(swapLine(edits, line, p))} />
+        ) : (
+          <span className={cn('block truncate font-mono text-[11.5px]', gone && 'text-err line-through')}>{r.sku ?? '-'}</span>
+        )}
+        {r.oldSku && <span className="mt-0.5 block truncate font-mono text-[11px] text-ink-muted line-through">{r.oldSku}</span>}
+      </div>
+
+      <div className="order-1 flex min-w-0 items-start gap-2 md:order-none">
+        <div className="min-w-0 flex-1">
+          {r.oldName && <span className="block text-[12px] text-ink-muted line-through">{r.oldName}</span>}
+          <span className={cn('block text-[14px] font-medium text-ink md:text-[13px]', gone && 'text-err line-through')}>{r.name}</span>
+        </div>
+        {badge && <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', badge.cls)}>{badge.text}</span>}
+      </div>
+
+      <div className="order-3 flex items-center gap-2 md:order-none">
+        {gone ? (
+          <span className="text-[12.5px] font-semibold text-err">Removed ({r.qty})</span>
+        ) : r.measured ? (
+          <span className="text-[12.5px] tabular-nums">{line ? qtyLabel({ qty: line.qty, measureMilli: line.measureMilli ?? null, measureUom: line.measureUom, uom: line.uom }) : r.qty}</span>
+        ) : (
+          <>
+            <button type="button" className={stepBtn} disabled={disabled} aria-label={`One less ${r.name}`} onClick={() => setQty(r.qty - 1)}><Minus size={15} /></button>
+            <span className="min-w-[56px] text-center text-[15px] font-semibold tabular-nums md:text-[13px]">
+              {r.oldQty !== null && <span className="font-normal text-ink-muted">{r.oldQty} → </span>}{r.qty}
+            </span>
+            <button type="button" className={stepBtn} disabled={disabled} aria-label={`One more ${r.name}`} onClick={() => setQty(r.qty + 1)}><Plus size={15} /></button>
+          </>
+        )}
+      </div>
+
+      <div className="order-4 flex items-center justify-between gap-2 md:order-none md:block">
+        <span className="text-[12px] text-ink-secondary md:hidden">Unit price</span>
+        <div className="w-32 md:w-full">
+          <MoneyInput value={r.unitPriceSen} onChange={(sen) => setPrice(sen ?? 0)} disabled={disabled || gone || r.measured}
+            ariaLabel={`Unit price of ${r.name}`} className={cn(inputCls, 'h-11 w-full text-[16px] md:h-8 md:text-[12.5px]')} />
+          {r.oldPriceSen !== null && <span className="mt-0.5 block text-right text-[11px] text-ink-muted line-through">{rm(r.oldPriceSen)}</span>}
+        </div>
+      </div>
+
+      <div className="order-5 flex items-baseline justify-between gap-2 md:order-none md:block md:text-right">
+        <span className="text-[12px] text-ink-secondary md:hidden">Amount</span>
+        <span className="tabular-nums">
+          <span className={cn('block text-[13px]', gone && 'text-ink-muted line-through')}>{rm(r.amountSen)}</span>
+          {r.deltaSen !== 0 && <span className={cn('block text-[12px] font-semibold', r.deltaSen < 0 ? 'text-err' : 'text-synced')}>{signed(r.deltaSen)}</span>}
+        </span>
+      </div>
+
+      <div className="order-6 flex justify-end gap-1.5 md:order-none">
+        {!disabled && r.kind === 'same' && line && (
+          <button type="button" className={cn(actBtn, 'text-err')} aria-label={`Remove ${r.name}`} title="Remove" onClick={() => onChange(removeLine(edits, line))}><Trash2 size={15} /><span className="md:sr-only">Remove</span></button>
+        )}
+        {!disabled && (r.kind === 'changed' || r.kind === 'removed') && r.soItemId && (
+          <button type="button" className={actBtn} onClick={() => onChange(undoLine(edits, r.soItemId!))}><Undo2 size={15} />Undo</button>
+        )}
+        {!disabled && r.kind === 'added' && (
+          <button type="button" className={cn(actBtn, 'text-err')} aria-label={`Take out ${r.name}`} title="Take out" onClick={() => onChange(dropAdd(edits, r.addIndex!))}><Trash2 size={15} /><span className="md:sr-only">Take out</span></button>
+        )}
+      </div>
+    </li>
+  );
+}

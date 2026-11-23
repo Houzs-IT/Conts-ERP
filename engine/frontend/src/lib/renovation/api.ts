@@ -194,7 +194,15 @@ export interface VoView {
   id: string; voNo: string; soDocNo: string; seq: number; status: VoStatus; title: string; docDate: string; version: number;
   signedName: string | null; signedAt: string | null; approvedAt: string | null; approvedBy: string | null; amendmentId: string | null;
   sections: DocSection[]; totals: { addSen: number; omitSen: number; netSen: number };
+  /** Room editor edits (owner, 23 Nov 2026); null on a VO built in the Add and Omit layout (absent from an older server). */
+  edits?: VoEdits | null;
 }
+
+/** A contract line changed in place in the VO room editor. Absent fields are unchanged; `label` is the swapped SKU's name. */
+export interface VoLineEdit { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; label?: string }
+/** A line added in a room of the VO room editor. */
+export interface VoLineAdd { room: string; itemCode: string; qty: number; unitPriceSen: number; label?: string; fromPackageId?: string | null }
+export interface VoEdits { lines: VoLineEdit[]; adds: VoLineAdd[] }
 
 export interface PoFlag {
   id: string; action: 'AMEND' | 'CANCEL'; newQty: number | null; status: 'OPEN' | 'RESOLVED'; note: string; createdAt: string;
