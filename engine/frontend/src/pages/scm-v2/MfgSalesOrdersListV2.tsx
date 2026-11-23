@@ -209,6 +209,8 @@ type SoRow = HoldFields & {
   margin_pct_basis?: number;
   deposit_sen?: number;
   currency?: string | null;
+  /** The linked project's code (so-list-rows.ts); null when the order has no project. */
+  project_code?: string | null;
   sales_exemption_expiry?: string | null;
   /** The order's lines, and its AutoCount spellings (so-list-lines.ts). */
   lines?: SoListLine[];
@@ -234,6 +236,8 @@ const SO_AUTOCOUNT_KEYS = [
   "balance", "processing_date", "sales_exemption_expiry", "item_group", "item_code", "detail_description",
   "detail_description_2", "uom", "unit_price", "qty", "venue",
 ];
+/* Owner 23 Nov 2026: the default view drops Curr. Code (always MYR) and shows the linked project beside Doc No. */
+const SO_STANDARD_KEYS = ["project_code", ...SO_AUTOCOUNT_KEYS.filter((k) => k !== "currency")];
 
 // Customer's PO / Ref number — spec: "Every list must show the customer SO
 // Ref number". Resolution order is the ONE rule in lib/customer-ref.ts.
@@ -1422,6 +1426,11 @@ export function MfgSalesOrdersListV2() {
       ),
     },
     {
+      key: "project_code", group: "Basic", label: "Project Code", width: "132px", defaultHidden: true, disableSort: true,
+      getValue: (r) => r.project_code ?? "",
+      render: (r) => <span className="font-docno text-[12.5px] text-ink-secondary">{r.project_code || "—"}</span>,
+    },
+    {
       key: "erp_doc_no", group: "Basic", label: SO_LABELS.erpDocNo, width: "156px", defaultHidden: true, disableSort: true,
       getValue: (r) => r.doc_no,
       render: (r) => <span className="font-docno text-[12.5px] text-ink-secondary">{r.doc_no}</span>,
@@ -1902,7 +1911,7 @@ export function MfgSalesOrdersListV2() {
         hint: "One row per order line",
         companyCode: "HOUZS",
         isDefault: !is2990,
-        columns: SO_AUTOCOUNT_KEYS,
+        columns: SO_STANDARD_KEYS,
       },
       { id: "so-autocount", label: "AutoCount: SALES ORDER DETAILS-SALES", hint: "One row per line in the Export", columns: SO_AUTOCOUNT_KEYS },
     ];
