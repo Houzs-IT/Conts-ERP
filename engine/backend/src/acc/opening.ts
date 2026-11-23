@@ -337,6 +337,35 @@ const CONTRACT_SOURCES = ['RCON', 'RVO', 'RCAN'];
 /** A payment taken on an order, and money moved between orders (acc/payments). */
 const ORDER_MONEY_SOURCES = ['SOPAY', 'SOCONV'];
 
+/** What payment vouchers settled on each bill (purchase invoice or AP invoice, by id) after the day: a voucher by its
+    date, a supplier advance applied to a bill by the day it was applied (Kuala Lumpur). Cancelled and draft vouchers
+    have settled nothing. */
+async function paidAfter(sb: Db, companyId: number, day: string): Promise<{ ok: true; bySen: Map<string, number> } | { ok: false; error: string }> {
+  const allocs = await paginateAll((from, to) => sb.from('pv_allocations').select('id, pv_id, pi_id, ap_invoice_id, applied_sen, from_advance, created_at')
+    .eq('company_id', companyId).order('id').range(from, to));
+  if (allocs.error) return { ok: false, error: (allocs.error as { message?: string }).message ?? String(allocs.error) };
+  const rows = ((allocs.data ?? []) as Array<{ pv_id: string; pi_id: string | null; ap_invoice_id: string | null; applied_sen: number; from_advance: boolean | null; created_at: string | null }>)
+    .filter((a) => Number(a.applied_sen) > 0 && (a.pi_id || a.ap_invoice_id));
+  const pvIds = [...new Set(rows.map((a) => String(a.pv_id)))];
+  const pvs = new Map<string, { voucher_date: string; status: string }>();
+  for (let i = 0; i < pvIds.length; i += 200) {
+    const { data, error } = await sb.from('payment_vouchers').select('id, voucher_date, status').in('id', pvIds.slice(i, i + 200));
+    if (error) return { ok: false, error: (error as { message?: string }).message ?? String(error) };
+    for (const v of (data ?? []) as Array<{ id: string; voucher_date: string; status: string }>) pvs.set(String(v.id), v);
+  }
+  const klDay = (ts: string) => new Date(new Date(ts).getTime() + 8 * 3600_000).toISOString().slice(0, 10);
+  const bySen = new Map<string, number>();
+  for (const a of rows) {
+    const v = pvs.get(String(a.pv_id));
+    if (!v || ['CANCELLED', 'DRAFT'].includes(String(v.status).toUpperCase())) continue;
+    const paidOn = a.from_advance === true && a.created_at ? klDay(a.created_at) : String(v.voucher_date).slice(0, 10);
+    if (paidOn <= day) continue;
+    const bill = String(a.ap_invoice_id ?? a.pi_id);
+    bySen.set(bill, (bySen.get(bill) ?? 0) + Number(a.applied_sen));
+  }
+  return { ok: true, bySen };
+}
+
 /** The figures on the opening day, side by side with what explains them. The documents side is the ageing as it
     stands for that day: the opening documents at their imported amount, plus anything raised in the ERP and dated
     before the books started (not posted, so the opening journal carries it too). */
@@ -351,14 +380,14 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
     activeOpening(sb, companyId),
     paginateAll((from, to) => sb.from('accounts').select('account_code, account_name, acc_money, special_type').eq('company_id', companyId).order('account_code').range(from, to)),
     allDocs<CheckDoc>(sb, 'sales_invoices', companyId, `${DOC_COLS}, id, debtor_code, so_doc_no`),
-    allDocs<CheckDoc>(sb, 'purchase_invoices', companyId, `${DOC_COLS}, supplier_id`),
+    allDocs<CheckDoc>(sb, 'purchase_invoices', companyId, `${DOC_COLS}, id, supplier_id`),
     paginateAll((from, to) => sb.from('suppliers').select('id, code, control_account').eq('company_id', companyId).order('id').range(from, to)),
     paginateAll((from, to) => sb.from('debtors').select('code, control_account').eq('company_id', companyId).order('code').range(from, to)),
     /* What was paid ahead before the books started: it nets each control down (chew, 17 Nov 2026). */
     paginateAll((from, to) => sb.from('customer_credits').select('debtor_code, amount_sen').eq('company_id', companyId).eq('source_type', OPENING_CREDIT).order('id').range(from, to)),
     paginateAll((from, to) => sb.from('payment_vouchers').select('id, supplier_id, total_sen, status').eq('company_id', companyId).eq('opening_balance', true).order('id').range(from, to)),
     /* The ERP's own supplier bills (the AP invoices page), beside the procurement ones. */
-    allDocs<CheckDoc>(sb, 'ap_invoices', companyId, 'total_sen, paid_sen, status, invoice_date, supplier_id'),
+    allDocs<CheckDoc>(sb, 'ap_invoices', companyId, 'id, total_sen, paid_sen, status, invoice_date, supplier_id'),
     paginateAll((from, to) => sb.from('v_gl_entries').select('source_type, source_doc_no, account_code, debit_sen, credit_sen, reversed')
       .eq('company_id', companyId).in('source_type', CONTRACT_SOURCES).lte('entry_date', day.day).order('line_id').range(from, to)),
   ]);
@@ -377,6 +406,9 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
   if (credits.error) return { ok: false, error: `The customer credits could not be read: ${(credits.error as { message?: string }).message ?? ''}` };
   if (advances.error) return { ok: false, error: `The payment vouchers could not be read: ${(advances.error as { message?: string }).message ?? ''}` };
   if (!apis.ok) return { ok: false, error: `The AP invoices could not be read: ${apis.error}` };
+  /* A bill's paid_sen is what is paid today; on the day it owed what had not been paid by then (chew, 23 Nov 2026). */
+  const paidLater = await paidAfter(sb, companyId, day.day);
+  if (!paidLater.ok) return { ok: false, error: `The supplier payments could not be read: ${paidLater.error}` };
   /* The deposit an ERP invoice was settled from is not on the invoice; it is worked out from its order the way the
      invoice list does (scm/lib/si-order-deposit.ts). A failed read leaves it unknown, so the invoice counts in full. */
   await stampOrderDeposit(sb, sis.rows.filter((d) => d.opening_balance !== true && d.so_doc_no), companyId);
@@ -395,7 +427,8 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
     if (st === 'CANCELLED' || st === 'DRAFT' || d.migrated_no_stock === true) return null;
     if (d.opening_balance === true) return { sen: Number(d.total_sen ?? 0), erp: false };
     if (!d.invoice_date || d.invoice_date > day.day) return null;
-    return { sen: Number(d.total_sen ?? 0) - Number(d.paid_sen ?? 0) - Number(d.so_deposit_applied_sen ?? 0), erp: true };
+    const later = d.id ? paidLater.bySen.get(String(d.id)) ?? 0 : 0;
+    return { sen: Number(d.total_sen ?? 0) - Number(d.paid_sen ?? 0) + later - Number(d.so_deposit_applied_sen ?? 0), erp: true };
   };
   /* Each contract's net on its customer's control (a change or cancel is numbered <SO>-n), less what the ERP has
      invoiced on that order by the day: what the customer is down for that no invoice shows yet. */
