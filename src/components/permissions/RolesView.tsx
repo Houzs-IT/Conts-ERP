@@ -3,6 +3,7 @@ import { cx } from '../../lib/design-tokens';
 import { plural } from '../../lib/format';
 import { areaKeysOf, countGrants, resolveRoleLevels } from '../../lib/roleGrid';
 import type { AccessChart, Department, Position } from '../../lib/types';
+import { CompanyBadges } from './CompanyBadges';
 import { GroupToggle } from './GroupToggle';
 import {
   DEPARTMENT_HEADING, DEPARTMENT_LABEL, LIST_ROW, NO_POSITION_LABEL, SELECTED_ROW, TAG, deskDepartmentsOf, hasPeopleWithoutPosition, headCountWithoutPosition, isSameRole, useToggleSet, visibleCategoriesOf, type RoleTarget,
@@ -31,6 +32,8 @@ interface DepartmentRolesProps {
   onToggle: () => void;
   onOpen: (target: RoleTarget) => void;
 }
+
+const byName = (a: string, b: string): number => a.localeCompare(b, 'en', { sensitivity: 'base' });
 
 function summaryFor(chart: AccessChart, department: Department, position: Position | null): string {
   const categories = visibleCategoriesOf(chart.categories, department);
@@ -73,11 +76,13 @@ function DepartmentRoles({ chart, department, selectedRole, isOpen, onToggle, on
         summary={summaryFor(chart, department, position)} onOpen={() => onOpen(target)} />
     );
   };
-  const positionsShown: (Position | null)[] = hasPeopleWithoutPosition(department) ? [null, ...department.positions] : department.positions;
+  const positions = [...department.positions].sort((a, b) => byName(a.name, b.name));
+  const positionsShown: (Position | null)[] = hasPeopleWithoutPosition(department) ? [null, ...positions] : positions;
   return (
     <div>
       <GroupToggle label={department.name} note={plural(isManagement ? 1 : positionsShown.length, 'role')}
-        isOpen={isOpen} onToggle={onToggle} className={DEPARTMENT_HEADING} labelClassName={DEPARTMENT_LABEL} />
+        isOpen={isOpen} onToggle={onToggle} className={DEPARTMENT_HEADING} labelClassName={DEPARTMENT_LABEL}
+        trailing={<CompanyBadges side={department.side} />} />
       {isOpen && (isManagement
         ? <RoleRow name="Management" isLocked isSelected={false} people={department.headCount} summary="Full on everything. Cannot be changed." onOpen={() => undefined} />
         : positionsShown.length > 0 ? positionsShown.map(rowFor) : <NoPositionsYet />)}
@@ -86,7 +91,7 @@ function DepartmentRoles({ chart, department, selectedRole, isOpen, onToggle, on
 }
 
 export default function RolesView({ chart, selectedRole, onOpen }: RolesViewProps) {
-  const departments = deskDepartmentsOf(chart.departments);
+  const departments = deskDepartmentsOf(chart.departments).sort((a, b) => byName(a.name, b.name));
   const openDepartments = useToggleSet([departments[0]?.id, selectedRole?.departmentId].flatMap(id => (id ? [id] : [])));
 
   if (departments.length === 0) {
