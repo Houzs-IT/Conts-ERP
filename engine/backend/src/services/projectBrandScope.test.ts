@@ -7,7 +7,7 @@ const dbAnswering = (side: string | null, seen: unknown[][] = []): Db => ({
   prepare: () => ({
     bind: (...args: unknown[]) => {
       seen.push(args);
-      return { first: async () => (side === undefined ? null : { side }), all: async () => ({ results: [] }), run: async () => ({}) };
+      return { first: async () => ({ side }), all: async () => ({ results: [] }), run: async () => ({}) };
     },
   }),
 }) as unknown as Db;
