@@ -288,6 +288,27 @@ describe("several 3D and 2D people", () => {
     expect(g.find((x) => x.person?.id === 2)?.projects.map((x) => x.id)).toEqual(progressList(m, 2).map((x) => x.id));
   });
 
+  it("reads an old unoffered row as the account of the same name, so Viewing that person finds its projects", () => {
+    const oldAlex = { id: 40, name: "ALEX  GOH", roles: [], offered: false };
+    const oldJx = { id: 41, name: "JIA XIN", roles: [], offered: false };
+    const b = board([
+      project({ id: 30, building: "Old", unitNo: "1", customerName: "A", lead: { id: 40, name: "ALEX  GOH" }, sitePic: { id: 41, name: "JIA XIN" } }),
+      project({ id: 31, building: "Old", unitNo: "2", customerName: "B", lead: { id: 40, name: "ALEX  GOH" }, people3d: [{ id: 40, name: "ALEX  GOH" }] }),
+    ]);
+    b.people = [{ id: 4, name: "alex goh", roles: [], offered: true }, { id: 1, name: "JIAXIN", roles: [], offered: true }, oldAlex, oldJx];
+    const x = buildModel(b);
+    expect(progressList(x, 4).map((p) => p.id).sort()).toEqual([30, 31]);
+    expect(progressList(x, 1).map((p) => p.id)).toEqual([30]);
+    expect(progressList(x, 40)).toEqual([]);
+    expect(progressByPerson(x).map((g) => [g.person?.id, g.projects.length])).toEqual([[4, 2], [1, 1]]);
+  });
+
+  it("keeps an old row as itself when two offered people share its name", () => {
+    const b = board([project({ id: 32, building: "Old", unitNo: "3", customerName: "C", lead: { id: 40, name: "Ali" }, sitePic: null })]);
+    b.people = [{ id: 4, name: "Ali", roles: [], offered: true }, { id: 5, name: "ALI", roles: [], offered: true }, { id: 40, name: "Ali", roles: [], offered: false }];
+    expect(progressList(buildModel(b), 40).map((p) => p.id)).toEqual([32]);
+  });
+
   it("offers only people linked to an active account, but still names everyone", () => {
     expect(mm.people.map((x) => x.id)).toEqual([1, 2, 3, 4, 5]);
     expect(mm.everyone.find((x) => x.id === 9)?.offered).toBe(false);

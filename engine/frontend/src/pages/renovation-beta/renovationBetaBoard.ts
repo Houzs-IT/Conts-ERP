@@ -5,7 +5,7 @@
 
 import { fmtDayMonth } from "../../vendor/shared/format";
 import type {
-  BetaBoard, BetaBoardAppointment, BetaBoardProject, BetaBoardRef, BoardRange, DesignKind, BetaWorkType,
+  BetaBoard, BetaBoardAppointment, BetaBoardPerson, BetaBoardProject, BetaBoardRef, BoardRange, DesignKind, BetaWorkType,
 } from "./renovationBetaBoardApi";
 
 export type Kind = "3" | "2";
@@ -232,8 +232,23 @@ function bookingPeople(b: { personId: number | null; personIds?: number[] }, byI
   return ids.flatMap((id) => { const x = byId.get(id); return x ? [x] : []; });
 }
 
-function ref(r: BetaBoardRef | null): PersonRef | null {
-  return r ? { id: r.id, name: r.name } : null;
+/** Each person by id. An old row not offered (imported before user accounts, peopleSync.ts) reads as the one offered
+    person of the same name, ignoring case and spaces: projects still point at the old row, and Viewing that person
+    found none of them (YH, 23 Nov 2026: ALEX GOH 94 in the team card, none on his own).
+    shortcut: an inactive account also reads as not offered; send pos_user_id on the board if two accounts share a name. */
+export function personRefs(list: readonly BetaBoardPerson[]): Map<number, PersonRef> {
+  const k = (s: string): string => s.replace(/\s+/g, "").toLowerCase();
+  const offered = new Map<string, PersonRef[]>();
+  for (const x of list) if (x.offered ?? true) offered.set(k(x.name), [...(offered.get(k(x.name)) ?? []), { id: x.id, name: x.name }]);
+  return new Map(list.map((x) => {
+    const same = offered.get(k(x.name));
+    return [x.id, !(x.offered ?? true) && same?.length === 1 ? same[0] : { id: x.id, name: x.name }] as const;
+  }));
+}
+
+/** A board reference as its person (personRefs), or as sent for someone not on the people list. */
+function refOf(people: ReadonlyMap<number, PersonRef>, r: BetaBoardRef | null): PersonRef | null {
+  return r ? people.get(r.id) ?? { id: r.id, name: r.name } : null;
 }
 
 function track(p: BetaBoardProject, k: DesignKind, defaultDays: number, approval3d: string | null): DesignTrack {
@@ -267,7 +282,8 @@ function paymentText(p: BetaBoardProject): string | null {
 
 /** The mockup's shape for every project, with real people ids. `site` can be null: it is then shown as "Site PIC" with no name. */
 export function toBoardProjects(board: BetaBoard): DesignProject[] {
-  const people = new Map(board.people.map((x) => [x.id, { id: x.id, name: x.name }] as const));
+  const people = personRefs(board.people);
+  const ref = (r: BetaBoardRef | null): PersonRef | null => refOf(people, r);
   const amd = board.settings.amendmentDays;
   return board.projects.map((p) => {
     const title = [p.building, p.unitNo].filter((x): x is string => !!x && x.trim() !== "").join(" ") || p.name;
@@ -275,7 +291,7 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
     const lead = ref(p.lead);
     const team = (list: BetaBoardRef[] | undefined, one: BetaBoardRef | null): PersonRef[] => {
       const picked = list ?? (one ? [one] : []);
-      return picked.length ? picked.map((x) => ({ id: x.id, name: x.name })) : lead ? [lead] : [];
+      return picked.length ? picked.map((x) => ref(x)!) : lead ? [lead] : [];
     };
     const t3 = team(p.people3d, p.person3d);
     const t2 = team(p.people2d, p.person2d);
@@ -333,7 +349,7 @@ export function buildModel(board: BetaBoard): BoardModel {
     id: x.id, name: x.name, position: x.position ?? null, department: x.department ?? null, offered: x.offered ?? true,
   }));
   const people = everyone.filter((x) => x.offered).map((x) => ({ id: x.id, name: x.name }));
-  const person = new Map(everyone.map((x) => [x.id, { id: x.id, name: x.name }] as const));
+  const person = personRefs(board.people);
   const workTypes = rememberWorkTypes(board.workTypes?.length ? board.workTypes : LEGACY_WORK_TYPES);
   const bookable = new Set(workTypes.filter((w) => w.bookable).map((w) => w.code));
   /* A booked work is done once its day has passed (owner, 19 Nov 2026), as an appointment is (adone): before, a stored
