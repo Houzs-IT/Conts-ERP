@@ -27,7 +27,6 @@ import {
   Printer,
   CheckCircle2,
   Package,
-  ArrowRightLeft,
   CalendarClock,
 } from "lucide-react";
 import { fetchPoExportRows } from "../../vendor/scm/lib/po-list-export";
@@ -293,7 +292,7 @@ function SplitDropdown({
               className="block w-full px-3.5 py-2 text-left text-[12.5px] text-ink hover:bg-primary-soft"
               onClick={() => { setOpen(false); onFromSo(); }}
             >
-              New from Sales Order
+              {transferFromLabel('so')}
             </button>
             {onFromProduction && (
               <button
@@ -1505,13 +1504,6 @@ export function PurchaseOrdersListV2() {
             description="Every PO raised to a supplier — Draft to Received. Click any row for the quick view; open the full page to edit or receive."
             primaryAction={
               <div className="flex items-stretch gap-2">
-                <Button
-                  variant="secondary"
-                  icon={<ArrowRightLeft size={14} />}
-                  onClick={goFromSo}
-                >
-                  {transferFromLabel('so')}
-                </Button>
                 <div className="flex items-stretch">
                   <Button
                     variant="primary"
