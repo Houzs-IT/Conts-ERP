@@ -1,19 +1,14 @@
-/* The VO room editor's model (owner, 23 Nov 2026): the contract's live lines by room, with the VO's in-place edits laid
-   over them. The server turns the same edits into the VO's add and omit lines (renovation-vo.ts buildEditSections). */
-
 import { lineAmounts } from '../../vendor/shared/renovation-money';
 import type { DocLine, DocSection, LineSpec, VoEdits, VoLineAdd, VoLineEdit } from '../../lib/renovation/api';
 
-/** `gone`: an edit to a contract line that is no longer live (another VO took it out); it can only be undone. */
+// `gone`: an edit to a contract line another VO already took out; it can only be undone.
 export type RowKind = 'same' | 'changed' | 'removed' | 'added' | 'gone';
 
 export interface RoomRow {
   key: string;
   kind: RowKind;
-  /** The contract line, or null for a line this VO adds. */
   line: DocLine | null;
   soItemId: string | null;
-  /** Index into `edits.adds` for a line this VO adds. */
   addIndex: number | null;
   sku: string | null;
   oldSku: string | null;
@@ -26,9 +21,7 @@ export interface RoomRow {
   measured: boolean;
   amountSen: number;
   deltaSen: number;
-  /** The SO line's options, remark and picker group (null for an added line, or an older server). */
   spec: LineSpec | null;
-  /** The options as they will be after this VO (the edit's, else the line's own). */
   variants: Record<string, unknown>;
   optionsChanged: boolean;
   remark: string | null;
@@ -45,7 +38,6 @@ export const GONE_ROOM = 'No longer on the contract';
 const netOf = (l: Pick<DocLine, 'kind' | 'qty' | 'measureMilli' | 'measureUom' | 'uom' | 'unitPriceSen' | 'discountBp' | 'amountOverrideSen' | 'isFoc'>): number =>
   lineAmounts({ kind: l.kind, qty: l.qty, measureMilli: l.measureMilli ?? null, measureUom: l.measureUom, uom: l.uom, unitPriceSen: l.unitPriceSen, discountBp: l.discountBp, amountOverrideSen: l.amountOverrideSen, isFoc: l.isFoc }).netSen;
 
-/** A contract line the VO can change: priced, live, with an SO line behind it, outside a lump-sum section. */
 export function editableLines(sections: DocSection[]): Array<{ room: string; line: DocLine; soItemId: string }> {
   return sections.flatMap((section) => (section.lumpSumSen !== null ? [] : section.lines.flatMap((line) => (
     (line.kind === 'ITEM' || line.kind === 'CHILD') && line.soItemId && !line.omittedByVoId && !line.soItemCancelled
@@ -53,11 +45,11 @@ export function editableLines(sections: DocSection[]): Array<{ room: string; lin
       : []))));
 }
 
-/** Lines reach the editor only through editableLines, so each has its SO line. */
+// Lines reach the editor only through editableLines, so each has its SO line.
 const soItemOf = (line: DocLine): string => line.soItemId ?? '';
 
-/** Options compared by their filled-in values, so a cleared pick and a missing key read the same. */
 export function sameOptions(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  // Only filled-in values count, so a cleared pick and a missing key read the same.
   const filled = (o: Record<string, unknown>): string => JSON.stringify(Object.entries(o)
     .filter(([key, value]) => key !== 'remark' && value !== null && value !== undefined && value !== '')
     .sort(([x], [y]) => x.localeCompare(y)));
@@ -108,8 +100,6 @@ function addRow(a: VoLineAdd, i: number): RoomRow {
   };
 }
 
-/** The contract by room in contract order, edits applied; rooms only this VO adds come last. `specs`: each SO line's
-    options and remark, by SO line id. */
 export function roomsOf(sections: DocSection[], edits: VoEdits, specs: Record<string, LineSpec> = {}): Room[] {
   const byItem = new Map(edits.lines.map((e) => [e.soItemId, e]));
   const rooms = new Map<string, RoomRow[]>();
@@ -140,8 +130,6 @@ export function totalsOf(rooms: Room[]): RoomTotals {
   };
 }
 
-/** Drop what equals the contract line; an edit with nothing left goes. Without the line's spec, options and remark
-    already on the edit are kept as they are. */
 function settle(edits: VoEdits, line: DocLine, e: VoLineEdit, spec?: LineSpec | null): VoEdits {
   const rest = edits.lines.filter((x) => x.soItemId !== e.soItemId);
   if (e.remove) return { ...edits, lines: [...rest, { soItemId: e.soItemId, remove: true }] };
@@ -149,15 +137,16 @@ function settle(edits: VoEdits, line: DocLine, e: VoLineEdit, spec?: LineSpec | 
   if (e.itemCode !== undefined && e.itemCode !== line.itemCode) { out.itemCode = e.itemCode; if (e.label) out.label = e.label; }
   if (e.qty !== undefined && e.qty !== line.qty) out.qty = e.qty;
   if (e.unitPriceSen !== undefined && e.unitPriceSen !== line.unitPriceSen) out.unitPriceSen = e.unitPriceSen;
+  // Without the line's spec, options and remark already on the edit are kept as they are.
   if (e.variants !== undefined && !(spec && sameOptions(e.variants, spec.variants))) out.variants = e.variants;
   if (e.remark !== undefined && !(spec && e.remark.trim() === (spec.remark ?? '').trim())) out.remark = e.remark;
   return { ...edits, lines: Object.keys(out).length > 1 ? [...rest, out] : rest };
 }
 
-/** Pick options on a contract line: the picks go over the line's current options (the remark key never travels). */
 export function setLineOptions(edits: VoEdits, line: DocLine, spec: LineSpec, patch: Record<string, unknown>): VoEdits {
   const e = editOf(edits, line);
   const next: Record<string, unknown> = { ...(e.variants ?? spec.variants), ...patch };
+  // The remark is its own field, never one of the options.
   delete next.remark;
   return settle(edits, line, { ...e, variants: next }, spec);
 }
@@ -176,7 +165,6 @@ const editOf = (edits: VoEdits, line: DocLine): VoLineEdit => {
   return e && !e.remove ? { ...e } : { soItemId: soItemOf(line) };
 };
 
-/** Change a contract line's qty; 0 or less removes it. */
 export function setLineQty(edits: VoEdits, line: DocLine, qty: number): VoEdits {
   if (qty < 1) return removeLine(edits, line);
   return settle(edits, line, { ...editOf(edits, line), qty: Math.trunc(qty) });
@@ -186,7 +174,6 @@ export function setLinePrice(edits: VoEdits, line: DocLine, unitPriceSen: number
   return settle(edits, line, { ...editOf(edits, line), unitPriceSen: Math.max(0, Math.round(unitPriceSen)) });
 }
 
-/** Another SKU in the line's place, at the new SKU's selling price when it has one. */
 export function swapLine(edits: VoEdits, line: DocLine, p: { code: string; name: string; sellPriceSen: number }): VoEdits {
   const e = editOf(edits, line);
   if (p.code === line.itemCode) return settle(edits, line, { ...e, itemCode: undefined, label: undefined, unitPriceSen: undefined });
@@ -205,8 +192,8 @@ export function addLine(edits: VoEdits, room: string, p: { code: string; name: s
   return { ...edits, adds: [...edits.adds, { room: room.trim() || NEW_ROOM_FALLBACK, itemCode: p.code, label: p.name, qty: 1, unitPriceSen: Math.max(0, p.sellPriceSen), fromPackageId }] };
 }
 
-/** Change an added line's qty; it stops at 1 (taking it out is dropAdd). */
 export function setAddQty(edits: VoEdits, i: number, qty: number): VoEdits {
+  // Stops at 1: taking an added line out is dropAdd, never a minus tap.
   return { ...edits, adds: edits.adds.map((a, j) => (j === i ? { ...a, qty: Math.max(1, Math.trunc(qty)) } : a)) };
 }
 
@@ -218,8 +205,6 @@ export function dropAdd(edits: VoEdits, i: number): VoEdits {
   return { ...edits, adds: edits.adds.filter((_, j) => j !== i) };
 }
 
-/** A package's ticked lines (from its confirm dialog) as added lines. Lines with no SKU, measured, free or discounted
-    lines cannot be added this way (the room editor adds a SKU at a unit price), so they are counted as skipped. */
 export function packageAdds(edits: VoEdits, sections: DocSection[], packageId: string | null, fallbackRoom: string, replace: boolean): { edits: VoEdits; skipped: number } {
   const kept = replace && packageId ? edits.adds.filter((a) => a.fromPackageId !== packageId) : edits.adds;
   let skipped = 0;
@@ -227,6 +212,7 @@ export function packageAdds(edits: VoEdits, sections: DocSection[], packageId: s
   for (const s of sections) {
     for (const l of s.lines) {
       if (l.kind !== 'ITEM' && l.kind !== 'CHILD') continue;
+      // The room editor adds a SKU at a unit price, so measured, free or discounted package lines are skipped.
       if (!l.itemCode || l.qty < 1 || l.measureMilli != null || l.isFoc || l.discountBp || l.amountOverrideSen != null) { skipped += 1; continue; }
       added.push({ room: s.heading.trim() || fallbackRoom.trim() || NEW_ROOM_FALLBACK, itemCode: l.itemCode, label: l.description, qty: l.qty, unitPriceSen: l.unitPriceSen, fromPackageId: packageId });
     }
@@ -236,7 +222,6 @@ export function packageAdds(edits: VoEdits, sections: DocSection[], packageId: s
 
 export const EMPTY_EDITS: VoEdits = { lines: [], adds: [] };
 
-/** A browser draft kept before the room editor: no `edits`, but Add or Omit lines the room layout cannot show. */
 export function isPreRoomDraft(draft: { edits?: VoEdits; omits: readonly unknown[]; adds: DocSection[] }): boolean {
   return !draft.edits && (draft.omits.length > 0
     || draft.adds.some((section) => section.lines.some((docLine) => Boolean(docLine.itemCode) || docLine.description.trim() !== '')));

@@ -513,7 +513,6 @@ const lineAddSchema = z.object({
   label: z.string().max(300).optional(),
 });
 
-/* The VO room editor (owner, 23 Nov 2026): contract lines changed in place, kept as edits on the draft. */
 renovation.put('/variation-orders/:id/edits', handle(PERM.quote, async (c, { tx }) => {
   const s = z.object({
     version: z.number().int(), title: z.string().max(200).optional(), docDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),

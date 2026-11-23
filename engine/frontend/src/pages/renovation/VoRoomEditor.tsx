@@ -1,7 +1,3 @@
-/* The VO room editor (owner, 23 Nov 2026): the contract by room, each line changed in place (qty, price, swap the SKU,
-   remove) and new lines added inside a room. The VO keeps these edits; the server rebuilds its add and omit lines from
-   them on save and again at approval (renovation-vo.ts). Model: voRoomModel.ts. */
-
 import { useMemo, useState, type ReactElement } from 'react';
 import { MessageSquare, Minus, Plus, SlidersHorizontal, Trash2, Undo2 } from 'lucide-react';
 import { qtyLabel } from '../../vendor/shared/renovation-money';
@@ -36,10 +32,9 @@ const REMARK_FIELD = 'w-full min-w-0 min-h-[88px] rounded-md border border-borde
 const signed = (sen: number): string => (sen > 0 ? `+${rm(sen)}` : rm(sen));
 
 export function VoRoomEditor({ sections, edits, onChange, disabled, contractError, onRetry, specs }: {
-  /** null while the contract loads: no row is drawn until it is here, or every saved edit would read as gone. */
+  // null while the contract loads: no row is drawn until it is here, or every saved edit would read as gone.
   sections: DocSection[] | null; edits: VoEdits; onChange: (next: VoEdits) => void; disabled: boolean;
   contractError: string | null; onRetry: () => void;
-  /** Each SO line's options and remark, by SO line id. */
   specs: Record<string, LineSpec>;
 }): ReactElement {
   const [isChangesOnly, setIsChangesOnly] = useState(false);

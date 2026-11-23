@@ -194,21 +194,17 @@ export interface VoView {
   id: string; voNo: string; soDocNo: string; seq: number; status: VoStatus; title: string; docDate: string; version: number;
   signedName: string | null; signedAt: string | null; approvedAt: string | null; approvedBy: string | null; amendmentId: string | null;
   sections: DocSection[]; totals: { addSen: number; omitSen: number; netSen: number };
-  /** Room editor edits (owner, 23 Nov 2026); null on a VO built in the Add and Omit layout (absent from an older server). */
   edits?: VoEdits | null;
-  /** Each live SO line's options, remark and picker group, by SO line id (draft or sent VOs; absent from an older server). */
   lineSpecs?: Record<string, LineSpec>;
 }
 
 export interface LineSpec { variants: Record<string, unknown>; remark: string | null; optionsText: string | null; group: string }
 
-/** A contract line changed in place in the VO room editor. Absent fields are unchanged; `label` is the swapped SKU's name;
-    `variants` is the whole option set after the change. */
+// `variants` is the whole option set after the change, not a patch.
 export interface VoLineEdit {
   soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; label?: string;
   variants?: Record<string, unknown>; remark?: string;
 }
-/** A line added in a room of the VO room editor. */
 export interface VoLineAdd { room: string; itemCode: string; qty: number; unitPriceSen: number; label?: string; fromPackageId?: string | null; remark?: string }
 export interface VoEdits { lines: VoLineEdit[]; adds: VoLineAdd[] }
 

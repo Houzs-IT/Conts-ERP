@@ -59,9 +59,8 @@ export function VariationOrderEditor() {
   const [docDate, setDocDate] = useState(todayIso());
   const [adds, setAdds] = useState<DocSection[]>([]);
   const [omits, setOmits] = useState<OmitPick[]>([]);
-  /* Room editor (owner, 23 Nov 2026): a new draft, or one saved from it, changes contract lines in place. A VO built in
-     the Add and Omit layout, and any approved or cancelled VO, keeps that layout. */
   const [edits, setEdits] = useState<VoEdits>(EMPTY_EDITS);
+  /* A VO built in the Add and Omit layout, and any approved or cancelled VO, keeps that layout. */
   const roomMode = Boolean(vo.data && vo.data.status !== 'APPROVED' && vo.data.status !== 'CANCELLED'
     && (vo.data.edits || (vo.data.status === 'DRAFT' && vo.data.sections.length === 0)));
   const [dirty, setDirty] = useState(false);
@@ -148,7 +147,6 @@ export function VariationOrderEditor() {
   const restoreDraft = () => {
     /* Drafts kept in the browser before the room editor have no `edits`. */
     const offeredDraft: (Omit<typeof draftValue, 'edits'> & { edits?: VoEdits }) | undefined = draft.offered?.v;
-    /* Never restore an old Add and Omit draft into the room layout. */
     if (offeredDraft && roomMode && isPreRoomDraft(offeredDraft)) {
       setError('That unsaved draft was made in the old Add and Omit layout and cannot be opened here. Make the changes again below.');
     } else if (offeredDraft) {

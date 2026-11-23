@@ -69,7 +69,6 @@ const KIND_LABEL: Record<RenoLineKind, string> = { ITEM: 'Item', CHILD: 'Add-on'
 
 export function ProductPicker({ value, onPick, disabled, onPickPackage, packageKind, tall }: {
   value: string | null; onPick: (p: ProductPick) => void; disabled?: boolean; onPickPackage?: (h: PackageHit) => void;
-  /** A 44px trigger below the lg breakpoint, for touch (the VO room editor). */
   tall?: boolean;
   /** Offer only packages of this kind (a package's own lines can take a kit, never a whole package). */
   packageKind?: PackageHit['kind'];
