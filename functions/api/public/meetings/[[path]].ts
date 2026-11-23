@@ -4,11 +4,12 @@ import { guestHub, meetingsFetch, type MeetingsHub } from '../../../_lib/meeting
 /**
  * /api/public/meetings/* — the guest side of a meeting-room booking link (/book/:code, src/pages/MeetingBookPage.tsx).
  * NO SIGN-IN: the link code is all a guest has. Proxied to the Houzs IT Hub as X-Reporter-Id: guest, which the hub
- * lets reach only its /public routes: free times of the link's rooms and hosts, never other meetings or who booked.
- * Only the five booking fields reach the hub; a guest cannot pick a room or a host. The hub limits one person to two
+ * lets reach only its /public routes: the link's rooms and each day's taken times, never what the meetings are or who
+ * booked. The guest picks the room and the time range; only the booking fields below reach the hub, never a host or
+ * attendees. The hub limits one person to two
  * bookings a day; a booking page's private token (64 hex) is the only way to see or cancel that booking.
  *
- *   GET  links/:code | links/:code/slots?day=YYYY-MM-DD | bookings/:token
+ *   GET  links/:code | links/:code/day?day=YYYY-MM-DD | links/:code/slots?day=YYYY-MM-DD | bookings/:token
  *   POST links/:code/book | bookings/:token/cancel
  *
  * Errors answer { error: "<sentence>" }, the shape the guest page reads.
@@ -37,6 +38,11 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params }) =>
   if (kind === 'links') {
     if (!LINK_CODE.test(id ?? '')) return said(DEAD, 404);
     if (request.method === 'GET' && parts.length === 2) return send(`/public/links/${id}`);
+    if (request.method === 'GET' && act === 'day') {
+      const day = new URL(request.url).searchParams.get('day') ?? '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return said('Pick a day.', 400);
+      return send(`/public/links/${id}/day?day=${day}`);
+    }
     if (request.method === 'GET' && act === 'slots') {
       const day = new URL(request.url).searchParams.get('day') ?? '';
       if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return said('Pick a day.', 400);
@@ -45,10 +51,10 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params }) =>
     if (request.method === 'POST' && act === 'book') {
       let b: Record<string, unknown>;
       try { b = await request.json() as Record<string, unknown>; } catch { return said('That could not be read. Try again.', 400); }
-      const body = { start: b.start, name: b.name, phone: b.phone, email: b.email, company: b.company };
+      const body = { start: b.start, end: b.end, roomId: b.roomId, name: b.name, phone: b.phone, email: b.email, company: b.company, department: b.department, title: b.title, people: b.people };
       const res = await send(`/public/links/${id}/book`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (res.ok) {
-        try { await audit(env, { actorId: null, actorLabel: `Guest ${String(b.name ?? '').slice(0, 80)}`, action: 'meetings.guest_book', entityTable: 'meeting_links', entityId: id, after: { start: b.start, company: b.company } }); }
+        try { await audit(env, { actorId: null, actorLabel: `Guest ${String(b.name ?? '').slice(0, 80)}`, action: 'meetings.guest_book', entityTable: 'meeting_links', entityId: id, after: { start: b.start, end: b.end, roomId: b.roomId, company: b.company } }); }
         catch (e) { console.error('Guest booking audit failed', e); }
       }
       return res;
