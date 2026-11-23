@@ -153,6 +153,31 @@ describe('AR aging', () => {
     expect(may.differenceSen).toBe(0);
   });
 
+  test('AutoCount journals up to the documents cut-over stand with the OPENING line, not aged beside the opening invoices (chew, 23 Nov 2026)', async () => {
+    const t = AR();
+    t.acc_company_settings = [{ company_id: CO, documents_cutover_date: '2026-08-31' }];
+    t.v_gl_entries!.push(
+      gl('300-0000', 'OPENING', 'OPENING', '2026-05-31', 7_000, 0, null),
+      /* AutoCount's invoice of June and its receipt of July, brought in as journals with the customer on them. */
+      gl('300-0000', 'ACJ', 'I-2606-001', '2026-06-10', 3_000, 0, 'C-1'),
+      gl('300-0000', 'ACJ', 'OR-0701', '2026-07-01', 0, 1_000, 'C-1'),
+    );
+    /* AutoCount's open invoices as at the cut-over already carry them: I-2606-001 owes 2,000. */
+    t.sales_invoices!.push({ id: 'si-ob2', company_id: CO, invoice_number: 'I-2606-001', so_doc_no: null, invoice_date: '2026-06-10', due_date: '2026-06-10',
+      debtor_code: 'C-1', debtor_name: 'ALI', status: 'SENT', total_sen: 2_000, paid_sen: 0, opening_balance: true });
+    const b = await (await app(t).request('/ar-aging?asOf=2026-09-30')).json() as Body;
+    /* I-2606-001 once, at what is still owed; the journals are not aged a second time. */
+    expect(items(rowOf(b, 'ALI'))).toEqual([['I-2606-001', 2_000], ['SI-A1', 400]]);
+    expect((rowOf(b, 'ALI').unapplied as Row[]).some((u) => u.docNo === 'OR-0701')).toBe(false);
+    /* 7,000 + 3,000 - 1,000 on the opening side, 2,000 of it explained. */
+    expect(b.opening).toEqual({ splitSen: 2_000, unsplitSen: 7_000 });
+    expect(b.differenceSen).toBe(0);
+    /* Before the cut-over the journals are aged as they come: the documents do not stand for that day yet. */
+    const jul = await (await app(t).request('/ar-aging?asOf=2026-07-31')).json() as Body;
+    expect((rowOf(jul, 'ALI').unapplied as Row[] | undefined ?? []).some((u) => u.docNo === 'OR-0701') || items(rowOf(jul, 'ALI')).some(([d]) => d === 'I-2606-001')).toBe(true);
+    expect(jul.differenceSen).toBe(0);
+  });
+
   test('a renovation contract and its change belong to the contract order, with its payments', async () => {
     const t = AR();
     t.v_gl_entries!.push(
