@@ -457,7 +457,7 @@ app.use("/api/*", idempotency);
 // user staleness (items assigned to others) is likewise intentionally on TTL.
 app.use("/api/assr/*", inboxBustAfterWrite);
 app.use("/api/projects/*", inboxBustAfterWrite);
-// A project of the other company's brand is not found for this person (migration 0363).
+// A project of the other company's brand is not found for this person (migration 0364).
 for (const path of ["/api/projects/*", "/api/projects-print/*", "/api/renovation/*", "/api/beta/*"]) app.use(path, projectBrandGuard);
 
 // Mount the Lead Time Portal first so /api/assr/portal/* doesn't

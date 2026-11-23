@@ -1,6 +1,6 @@
 // Projects by company (owner, 23 Nov 2026): a person sees the projects whose brand is their company's. The Conts people
 // see The Conts brand, Dream Crafter people Dream Crafter's, people on both companies (and management) every brand.
-// A project with no brand, or a brand on no company, stays open to all. PLAN-project-brand-access.md, migration 0363.
+// A project with no brand, or a brand on no company, stays open to all. PLAN-project-brand-access.md, migration 0364.
 import type { MiddlewareHandler } from "hono";
 import type { Env } from "../types";
 import type { AuthUser } from "./auth";
@@ -11,7 +11,7 @@ export type BrandSide = "conts" | "dream_crafter";
 const isBrandSide = (v: unknown): v is BrandSide => v === "conts" || v === "dream_crafter";
 
 /** The company whose brands limit this person, or null when they see every brand. `to_jsonb(...)->>'side'` reads null
- *  instead of failing before migration 0363, so the limit simply starts once it is applied. */
+ *  instead of failing before migration 0364, so the limit simply starts once it is applied. */
 export async function loadBrandSide(db: Db, user: Partial<Pick<AuthUser, "email" | "permissions" | "permissions_set">> | undefined): Promise<BrandSide | null> {
   if (!user?.email || hasPermission(user.permissions_set ?? user.permissions ?? [], "*")) return null;
   const row = await guarded(() => db.prepare(`SELECT to_jsonb(s)->>'side' AS side FROM conts_staff s WHERE lower(s.email) = lower(?) LIMIT 1`)
@@ -19,7 +19,7 @@ export async function loadBrandSide(db: Db, user: Partial<Pick<AuthUser, "email"
   return isBrandSide(row?.side) ? row.side : null;
 }
 
-/** No conts_staff view (a Houzs-only database, the SQLite test database): nobody is limited, as before 0363. Any other
+/** No conts_staff view (a Houzs-only database, the SQLite test database): nobody is limited, as before 0364. Any other
  *  failure is thrown. */
 async function guarded<T>(read: () => Promise<T | null>): Promise<T | null> {
   try {

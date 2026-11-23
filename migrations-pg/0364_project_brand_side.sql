@@ -7,7 +7,7 @@
 --                                department on both companies (functions/_lib/access.ts sideSql). Management is 'both'.
 --                                Appended last; the view's other columns and grants are unchanged.
 --
--- APPLY: production through the GitHub workflow "Apply migrations to production" with only=0363, dry run first.
+-- APPLY: production through the GitHub workflow "Apply migrations to production" with only=0364, dry run first.
 -- REVERSAL:
 --   create or replace view public.conts_staff as <0299's definition>;  (drops the side column: recreate, not replace)
 --   ALTER TABLE public.project_brands DROP COLUMN side;

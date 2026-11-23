@@ -1297,7 +1297,7 @@ export interface ListProjectsFilters {
    *  director's My Pending shows just their own queue. Empty/absent = every
    *  brand, which keeps the existing unrestricted approvers unchanged. */
   approver_brands?: string[];
-  /** The caller's company: projects of the other company's brand are left out (migration 0363). */
+  /** The caller's company: projects of the other company's brand are left out (migration 0364). */
   brand_side?: BrandSide | null;
   /** Sales-attending "pending" = the project has no sales attendees assigned
    *  yet (Sales PIC + directors). Standalone predicate (not a checklist item). */

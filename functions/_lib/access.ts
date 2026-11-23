@@ -56,7 +56,7 @@ export async function userRolesReady(env: Env): Promise<boolean> {
 export const sideFits = (departmentSide: Side, side: Side) => departmentSide === 'both' || departmentSide === side;
 
 /** The area groups each side closes. Finance and System are on neither list, so they follow the role. Projects is on
- *  neither since 23 Nov 2026: The Conts people see The Conts brand's projects (migration 0363). Each side's
+ *  neither since 23 Nov 2026: The Conts people see The Conts brand's projects (migration 0364). Each side's
  *  groups match its sidebar sections: Dream Crafter's since 26 Oct 2026 (migration 0172), The Conts' since 30 Oct 2026
  *  (migration 0182 moved the stored rules). */
 const CLOSED_BY_SIDE: Record<Side, string[]> = {

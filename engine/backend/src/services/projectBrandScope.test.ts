@@ -20,7 +20,7 @@ describe("loadBrandSide", () => {
     expect(await loadBrandSide(dbAnswering("dream_crafter"), staff("b@x.com"))).toBe("dream_crafter");
   });
 
-  it("leaves both companies, unknown people and the view before migration 0363 unlimited", async () => {
+  it("leaves both companies, unknown people and the view before migration 0364 unlimited", async () => {
     expect(await loadBrandSide(dbAnswering("both"), staff("c@x.com"))).toBeNull();
     expect(await loadBrandSide(dbAnswering(null), staff("d@x.com"))).toBeNull();
   });
