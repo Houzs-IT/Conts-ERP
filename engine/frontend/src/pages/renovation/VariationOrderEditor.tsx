@@ -268,7 +268,7 @@ export function VariationOrderEditor() {
                 </div>
               )}
               <VoRoomEditor sections={contract.data?.sections ?? null} edits={edits} disabled={locked}
-                contractError={contract.error ? refusalOf(contract.error).message : null} onRetry={() => void contract.refetch()}
+                contractError={contract.error ? refusalOf(contract.error).message : null} onRetry={() => void contract.refetch()} specs={v.lineSpecs ?? {}}
                 onChange={(next) => { setEdits(next); setDirty(true); }} />
               <PackagePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} onPick={(h) => { setPickerOpen(false); setConfirm({ packageId: h.id, defaultArea: lastArea(), sectionIndex: null, lineIndex: null, replace: false }); }} />
               <PackageConfirmDialog packageId={confirm?.packageId ?? null} defaultArea={confirm?.defaultArea ?? ''} onClose={() => setConfirm(null)} onAdd={addPackage} />

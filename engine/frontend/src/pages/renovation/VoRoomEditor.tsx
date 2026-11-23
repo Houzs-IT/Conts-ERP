@@ -3,15 +3,16 @@
    them on save and again at approval (renovation-vo.ts). Model: voRoomModel.ts. */
 
 import { useMemo, useState, type ReactElement } from 'react';
-import { Minus, Plus, Trash2, Undo2 } from 'lucide-react';
+import { MessageSquare, Minus, Plus, SlidersHorizontal, Trash2, Undo2 } from 'lucide-react';
 import { qtyLabel } from '../../vendor/shared/renovation-money';
-import type { DocSection, VoEdits } from '../../lib/renovation/api';
+import type { DocSection, LineSpec, VoEdits } from '../../lib/renovation/api';
 import { cn } from '../../lib/utils';
+import { RenovationVariantPicker, hasVariantPickers } from '../../vendor/scm/components/renovationVariantPicker';
 import { ProductPicker } from './DocEditor';
 import { MoneyInput, rm } from './shared';
 import {
-  addLine, dropAdd, removeLine, roomsOf, setAddPrice, setAddQty, setLinePrice, setLineQty, swapLine, totalsOf, undoLine,
-  type Room, type RoomRow,
+  addLine, dropAdd, removeLine, roomsOf, setAddPrice, setAddQty, setAddRemark, setLineOptions, setLinePrice, setLineQty, setLineRemark,
+  swapLine, totalsOf, undoLine, type Room, type RoomRow,
 } from './voRoomModel';
 
 const ROW_TINT: Record<RoomRow['kind'], string> = { same: '', changed: 'bg-warning-bg/60', added: 'bg-synced-bg/60', removed: 'bg-err-bg/60', gone: 'bg-surface-2' };
@@ -30,16 +31,20 @@ const WRAP = 'min-w-0 [overflow-wrap:anywhere]';
 /* Not inputCls: cn only joins classes, so its h-9 would beat a 44px phone height. */
 const FIELD = 'w-full min-w-0 rounded-md border border-border bg-surface px-2.5 text-ink focus:border-primary disabled:bg-surface-2 disabled:text-ink-muted h-11 text-[16px] lg:h-8 lg:text-[12.5px]';
 
+const REMARK_FIELD = 'w-full min-w-0 min-h-[88px] rounded-md border border-border bg-surface px-2.5 py-2 text-ink focus:border-primary text-[16px] lg:text-[12.5px]';
+
 const signed = (sen: number): string => (sen > 0 ? `+${rm(sen)}` : rm(sen));
 
-export function VoRoomEditor({ sections, edits, onChange, disabled, contractError, onRetry }: {
+export function VoRoomEditor({ sections, edits, onChange, disabled, contractError, onRetry, specs }: {
   /** null while the contract loads: no row is drawn until it is here, or every saved edit would read as gone. */
   sections: DocSection[] | null; edits: VoEdits; onChange: (next: VoEdits) => void; disabled: boolean;
   contractError: string | null; onRetry: () => void;
+  /** Each SO line's options and remark, by SO line id. */
+  specs: Record<string, LineSpec>;
 }): ReactElement {
   const [isChangesOnly, setIsChangesOnly] = useState(false);
   const [newRoom, setNewRoom] = useState('');
-  const rooms = useMemo(() => (sections ? roomsOf(sections, edits) : []), [sections, edits]);
+  const rooms = useMemo(() => (sections ? roomsOf(sections, edits, specs) : []), [sections, edits, specs]);
   const totals = totalsOf(rooms);
   const summary = [totals.changed && `${totals.changed} changed`, totals.added && `${totals.added} added`, totals.removed && `${totals.removed} removed`].filter(Boolean).join(' · ') || 'No changes yet';
   const shown = isChangesOnly ? rooms.map((room) => ({ ...room, rows: room.rows.filter((row) => row.kind !== 'same') })).filter((room) => room.rows.length > 0) : rooms;
@@ -115,6 +120,7 @@ function RoomCard({ room, edits, onChange, disabled }: { room: Room; edits: VoEd
 }
 
 function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits; onChange: (e: VoEdits) => void; disabled: boolean }): ReactElement {
+  const [panel, setPanel] = useState<'options' | 'remark' | null>(null);
   const badge = BADGE[r.kind];
   if (r.kind === 'gone') {
     return (
@@ -135,6 +141,14 @@ function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits;
     if (line) onChange(setLinePrice(edits, line, sen));
     else if (addIndex !== null) onChange(setAddPrice(edits, addIndex, sen));
   };
+  const setRemark = (text: string): void => {
+    if (line) onChange(setLineRemark(edits, line, r.spec, text));
+    else if (addIndex !== null) onChange(setAddRemark(edits, addIndex, text));
+  };
+  const { spec } = r;
+  const canPickOptions = Boolean(line && spec && hasVariantPickers(spec.group) && r.sku && !isRemoved && !disabled);
+  const canRemark = !isRemoved && !disabled;
+  const togglePanel = (which: 'options' | 'remark'): void => setPanel((open) => (open === which ? null : which));
   /* Phone: name, SKU, then qty with the amount, then price with the action. Wide screens: the wrappers dissolve
      (lg:contents) and lg:order puts each cell in its grid column. */
   return (
@@ -143,6 +157,13 @@ function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits;
         <div className={cn('flex-1', WRAP)}>
           {r.oldName && <span className="block text-[12px] text-ink-muted line-through">{r.oldName}</span>}
           <span className={cn('block text-[14px] font-medium text-ink lg:text-[13px]', isRemoved && 'text-err line-through')}>{r.name}</span>
+          {r.optionsChanged ? (
+            <span className="block text-[12px] font-semibold text-warning-text">Options changed</span>
+          ) : spec?.optionsText ? (
+            <span className="block text-[12px] text-ink-secondary">{spec.optionsText}</span>
+          ) : null}
+          {r.oldRemark !== null && <span className="block text-[12px] text-ink-muted line-through">Remark: {r.oldRemark}</span>}
+          {r.remark && <span className="block text-[12px] text-ink-secondary">Remark: {r.remark}</span>}
         </div>
         {badge && <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', badge.cls)}>{badge.text}</span>}
       </div>
@@ -189,7 +210,15 @@ function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits;
             {r.oldPriceSen !== null && <span className="mt-0.5 block text-right text-[11px] text-ink-muted line-through">{rm(r.oldPriceSen)}</span>}
           </span>
         </label>
-        <div className="flex justify-end gap-1.5 lg:order-6">
+        <div className="flex flex-wrap justify-end gap-1.5 lg:order-6">
+          {canPickOptions && (
+            <button type="button" className={cn(ACTION_BUTTON, panel === 'options' && 'border-primary bg-primary-soft')} aria-expanded={panel === 'options'}
+              aria-label={`Options of ${r.name}`} title="Options" onClick={() => togglePanel('options')}><SlidersHorizontal size={15} /><span className="lg:sr-only">Options</span></button>
+          )}
+          {canRemark && (
+            <button type="button" className={cn(ACTION_BUTTON, panel === 'remark' && 'border-primary bg-primary-soft')} aria-expanded={panel === 'remark'}
+              aria-label={`Remark on ${r.name}`} title="Remark" onClick={() => togglePanel('remark')}><MessageSquare size={15} /><span className="lg:sr-only">Remark</span></button>
+          )}
           {!disabled && r.kind === 'same' && line && (
             <button type="button" className={cn(ACTION_BUTTON, 'text-err')} aria-label={`Remove ${r.name}`} title="Remove" onClick={() => onChange(removeLine(edits, line))}><Trash2 size={15} /><span className="lg:sr-only">Remove</span></button>
           )}
@@ -201,6 +230,20 @@ function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits;
           )}
         </div>
       </div>
+
+      {panel === 'options' && canPickOptions && line && spec && r.sku && (
+        <div className="rounded-lg border border-border bg-surface p-3 lg:order-7 lg:col-span-6">
+          <RenovationVariantPicker category={spec.group} itemCode={r.sku} variants={r.variants}
+            onPatch={(patch) => onChange(setLineOptions(edits, line, spec, patch))} />
+        </div>
+      )}
+      {panel === 'remark' && canRemark && (
+        <label className="flex flex-col gap-1 lg:order-7 lg:col-span-6">
+          <span className="text-[12px] text-ink-secondary">Remark (shows on the SO line once approved)</span>
+          <textarea className={REMARK_FIELD} maxLength={500} value={r.remark ?? ''}
+            onChange={(event) => setRemark(event.target.value)} placeholder="Grey handles, deliver after 6pm" />
+        </label>
+      )}
     </li>
   );
 }

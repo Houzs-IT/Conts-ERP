@@ -204,6 +204,7 @@ export async function readVo(db: RenoDb, id: string, companyId: number) {
     version: Number(v.version), signedName: v.signed_name, signedAt: v.signed_at, approvedAt: v.approved_at, approvedBy: v.approved_by,
     amendmentId: v.amendment_id, sections, totals: { addSen, omitSen, netSen: v.status === 'APPROVED' ? Number(v.net_sen) : addSen + omitSen },
     edits: voEditsOf(v.edits),
+    lineSpecs: v.status === 'DRAFT' || v.status === 'SENT' ? await lineSpecsOf(db, v.so_doc_no, companyId) : {},
   };
 }
 
@@ -583,9 +584,49 @@ export async function approveVo(db: RenoDb, actor: RenoActor, id: string, body: 
   if (v.status === 'SENT' && saved.netSen !== Number(v.net_sen)) {
     throw refuse(409, 'vo_changed_since_sent', `This VO now comes to ${fmtSen(saved.netSen)}, not the ${fmtSen(Number(v.net_sen))} that was sent. Press Back to draft, save, and print it again.`);
   }
+  if (b.sections.length === 0) {
+    throw refuse(422, 'remarks_only', 'This VO only changes remarks. A VO needs a qty, price, product or option change; a remark alone is changed on the SO tab.');
+  }
   const out = await applyVo(db, actor, id, { ...body, version: saved.version });
   await carryAll(db, out, b);
+  await applyRemarks(db, out, b, v.edits.lines);
   return out;
+}
+
+/** A remark typed in the room editor lands on the SO line that stands after approval: the replacing line when the
+    contract line was omitted and added again, else the line itself (a qty drop keeps it). */
+async function applyRemarks(db: RenoDb, out: Awaited<ReturnType<typeof applyVo>>, b: EditBuild, edits: QuickLineEdit[]): Promise<void> {
+  for (const edit of edits) {
+    if (edit.remark === undefined || edit.remove) continue;
+    const carry = b.carries.find((c) => c.fromSoItemId === edit.soItemId);
+    const replacedBy = carry ? out.added.find((x) => x.voLineId === carry.lineId)?.soItemId : undefined;
+    await db.q(
+      `update scm.mfg_sales_order_items set remark = nullif($2, '') where id = $1 and not coalesce(cancelled, false)`,
+      [replacedBy ?? edit.soItemId, edit.remark.trim().slice(0, 500)],
+    );
+  }
+}
+
+/** What the room editor shows of each live SO line beside its contract line: options, remark, and the option picker's group. */
+export interface LineSpec { variants: Record<string, unknown>; remark: string | null; optionsText: string | null; group: string }
+
+async function lineSpecsOf(db: RenoDb, soDocNo: string, companyId: number): Promise<Record<string, LineSpec>> {
+  const rows = await db.q<{ id: string; variants: unknown; remark: string | null; description2: string | null; category: string | null; sub_category: string | null }>(
+    `select i.id::text as id, i.variants, i.remark, i.description2, p.category, p.sub_category
+       from scm.mfg_sales_order_items i
+       left join lateral (select pr.category::text as category, to_jsonb(pr) ->> 'sub_category' as sub_category from scm.mfg_products pr
+                           where pr.code = i.item_code and pr.company_id = $2 order by (pr.status::text = 'ACTIVE') desc limit 1) p on true
+      where i.doc_no = $1 and not coalesce(i.cancelled, false)`,
+    [soDocNo, companyId],
+  );
+  const parsed = (raw: unknown): Record<string, unknown> => {
+    const value: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return value && typeof value === 'object' && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
+  };
+  return Object.fromEntries(rows.map((r) => [r.id, {
+    variants: parsed(r.variants), remark: r.remark, optionsText: r.description2,
+    group: (variantCategoryOf(r.category, r.sub_category) ?? '').toLowerCase(),
+  }]));
 }
 
 /** What a VO-added line of quickVo takes on: a line added for a re-specification (same SKU, new options) gets the

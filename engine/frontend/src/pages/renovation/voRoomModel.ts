@@ -2,7 +2,7 @@
    over them. The server turns the same edits into the VO's add and omit lines (renovation-vo.ts buildEditSections). */
 
 import { lineAmounts } from '../../vendor/shared/renovation-money';
-import type { DocLine, DocSection, VoEdits, VoLineAdd, VoLineEdit } from '../../lib/renovation/api';
+import type { DocLine, DocSection, LineSpec, VoEdits, VoLineAdd, VoLineEdit } from '../../lib/renovation/api';
 
 /** `gone`: an edit to a contract line that is no longer live (another VO took it out); it can only be undone. */
 export type RowKind = 'same' | 'changed' | 'removed' | 'added' | 'gone';
@@ -26,6 +26,13 @@ export interface RoomRow {
   measured: boolean;
   amountSen: number;
   deltaSen: number;
+  /** The SO line's options, remark and picker group (null for an added line, or an older server). */
+  spec: LineSpec | null;
+  /** The options as they will be after this VO (the edit's, else the line's own). */
+  variants: Record<string, unknown>;
+  optionsChanged: boolean;
+  remark: string | null;
+  oldRemark: string | null;
 }
 
 export interface Room { name: string; rows: RoomRow[]; deltaSen: number }
@@ -49,13 +56,25 @@ export function editableLines(sections: DocSection[]): Array<{ room: string; lin
 /** Lines reach the editor only through editableLines, so each has its SO line. */
 const soItemOf = (line: DocLine): string => line.soItemId ?? '';
 
-function rowOf(line: DocLine, soItemId: string, edit: VoLineEdit | undefined): RoomRow {
+/** Options compared by their filled-in values, so a cleared pick and a missing key read the same. */
+export function sameOptions(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const filled = (o: Record<string, unknown>): string => JSON.stringify(Object.entries(o)
+    .filter(([key, value]) => key !== 'remark' && value !== null && value !== undefined && value !== '')
+    .sort(([x], [y]) => x.localeCompare(y)));
+  return filled(a) === filled(b);
+}
+
+function rowOf(line: DocLine, soItemId: string, edit: VoLineEdit | undefined, spec: LineSpec | null): RoomRow {
   const oldNet = netOf(line);
+  const e = edit;
+  const variants = e?.variants ?? spec?.variants ?? {};
+  const remark = e?.remark !== undefined ? e.remark : spec?.remark ?? null;
+  const optionsChanged = e?.variants !== undefined && !sameOptions(e.variants, spec?.variants ?? {});
+  const remarkChanged = e?.remark !== undefined && e.remark.trim() !== (spec?.remark ?? '').trim();
   const base = {
     key: soItemId, line, soItemId, addIndex: null, oldSku: null, oldName: null, oldQty: null, oldPriceSen: null,
-    measured: line.measureMilli != null,
+    measured: line.measureMilli != null, spec, variants, optionsChanged, remark, oldRemark: remarkChanged ? spec?.remark ?? null : null,
   };
-  const e = edit;
   if (e?.remove) {
     return { ...base, kind: 'removed', sku: line.itemCode, name: line.description, qty: line.qty, unitPriceSen: line.unitPriceSen, amountSen: oldNet, deltaSen: -oldNet };
   }
@@ -64,6 +83,9 @@ function rowOf(line: DocLine, soItemId: string, edit: VoLineEdit | undefined): R
   const qty = e?.qty ?? line.qty;
   const price = e?.unitPriceSen ?? line.unitPriceSen;
   const moved = swapped || qty !== line.qty || price !== line.unitPriceSen;
+  if (!moved && (optionsChanged || remarkChanged)) {
+    return { ...base, kind: 'changed', sku: line.itemCode, name: line.description, qty, unitPriceSen: price, amountSen: oldNet, deltaSen: 0 };
+  }
   if (!moved) {
     return { ...base, kind: 'same', sku: line.itemCode, name: line.description, qty, unitPriceSen: price, amountSen: oldNet, deltaSen: 0 };
   }
@@ -82,23 +104,25 @@ function addRow(a: VoLineAdd, i: number): RoomRow {
   return {
     key: `add-${i}`, kind: 'added', line: null, soItemId: null, addIndex: i, sku: a.itemCode, oldSku: null, name: a.label || a.itemCode, oldName: null,
     qty: a.qty, oldQty: null, unitPriceSen: a.unitPriceSen, oldPriceSen: null, measured: false, amountSen: amt, deltaSen: amt,
+    spec: null, variants: {}, optionsChanged: false, remark: a.remark ?? null, oldRemark: null,
   };
 }
 
-/** The contract by room in contract order, edits applied; rooms only this VO adds come last. */
-export function roomsOf(sections: DocSection[], edits: VoEdits): Room[] {
+/** The contract by room in contract order, edits applied; rooms only this VO adds come last. `specs`: each SO line's
+    options and remark, by SO line id. */
+export function roomsOf(sections: DocSection[], edits: VoEdits, specs: Record<string, LineSpec> = {}): Room[] {
   const byItem = new Map(edits.lines.map((e) => [e.soItemId, e]));
   const rooms = new Map<string, RoomRow[]>();
   const put = (room: string, r: RoomRow) => rooms.set(room, [...(rooms.get(room) ?? []), r]);
   const live = editableLines(sections);
-  for (const { room, line, soItemId } of live) put(room, rowOf(line, soItemId, byItem.get(soItemId)));
+  for (const { room, line, soItemId } of live) put(room, rowOf(line, soItemId, byItem.get(soItemId), specs[soItemId] ?? null));
   edits.adds.forEach((a, i) => put(a.room.trim() || NEW_ROOM_FALLBACK, addRow(a, i)));
   const liveIds = new Set(live.map((x) => x.soItemId));
   for (const e of edits.lines.filter((x) => !liveIds.has(x.soItemId))) {
     put(GONE_ROOM, {
       key: `gone-${e.soItemId}`, kind: 'gone', line: null, soItemId: e.soItemId, addIndex: null, sku: e.itemCode ?? null, oldSku: null,
       name: e.label || 'A line another VO has changed or removed', oldName: null, qty: e.qty ?? 0, oldQty: null, unitPriceSen: e.unitPriceSen ?? 0,
-      oldPriceSen: null, measured: false, amountSen: 0, deltaSen: 0,
+      oldPriceSen: null, measured: false, amountSen: 0, deltaSen: 0, spec: null, variants: {}, optionsChanged: false, remark: null, oldRemark: null,
     });
   }
   return [...rooms].map(([name, rows]) => ({ name, rows, deltaSen: rows.reduce((t, r) => t + r.deltaSen, 0) }));
@@ -116,15 +140,35 @@ export function totalsOf(rooms: Room[]): RoomTotals {
   };
 }
 
-/** Drop what equals the contract line; an edit with nothing left goes. */
-function settle(edits: VoEdits, line: DocLine, e: VoLineEdit): VoEdits {
+/** Drop what equals the contract line; an edit with nothing left goes. Without the line's spec, options and remark
+    already on the edit are kept as they are. */
+function settle(edits: VoEdits, line: DocLine, e: VoLineEdit, spec?: LineSpec | null): VoEdits {
   const rest = edits.lines.filter((x) => x.soItemId !== e.soItemId);
   if (e.remove) return { ...edits, lines: [...rest, { soItemId: e.soItemId, remove: true }] };
   const out: VoLineEdit = { soItemId: e.soItemId };
   if (e.itemCode !== undefined && e.itemCode !== line.itemCode) { out.itemCode = e.itemCode; if (e.label) out.label = e.label; }
   if (e.qty !== undefined && e.qty !== line.qty) out.qty = e.qty;
   if (e.unitPriceSen !== undefined && e.unitPriceSen !== line.unitPriceSen) out.unitPriceSen = e.unitPriceSen;
+  if (e.variants !== undefined && !(spec && sameOptions(e.variants, spec.variants))) out.variants = e.variants;
+  if (e.remark !== undefined && !(spec && e.remark.trim() === (spec.remark ?? '').trim())) out.remark = e.remark;
   return { ...edits, lines: Object.keys(out).length > 1 ? [...rest, out] : rest };
+}
+
+/** Pick options on a contract line: the picks go over the line's current options (the remark key never travels). */
+export function setLineOptions(edits: VoEdits, line: DocLine, spec: LineSpec, patch: Record<string, unknown>): VoEdits {
+  const e = editOf(edits, line);
+  const next: Record<string, unknown> = { ...(e.variants ?? spec.variants), ...patch };
+  delete next.remark;
+  return settle(edits, line, { ...e, variants: next }, spec);
+}
+
+export function setLineRemark(edits: VoEdits, line: DocLine, spec: LineSpec | null, remark: string): VoEdits {
+  return settle(edits, line, { ...editOf(edits, line), remark: remark.slice(0, 500) }, spec);
+}
+
+export function setAddRemark(edits: VoEdits, i: number, remark: string): VoEdits {
+  const text = remark.slice(0, 500);
+  return { ...edits, adds: edits.adds.map((a, j) => (j === i ? { ...a, remark: text || undefined } : a)) };
 }
 
 const editOf = (edits: VoEdits, line: DocLine): VoLineEdit => {

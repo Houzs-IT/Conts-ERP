@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DocLine, DocSection } from '../../lib/renovation/api';
+import { setLineOptions, setLineRemark } from './voRoomModel';
 import { addLine, dropAdd, EMPTY_EDITS, packageAdds, removeLine, roomsOf, setAddQty, setLinePrice, setLineQty, swapLine, totalsOf, undoLine } from './voRoomModel';
 
 const line = (id: string, room: string, qty: number, priceSen: number, extra: Partial<DocLine> = {}): DocLine => ({
@@ -77,6 +78,27 @@ describe('VO room model', () => {
     const rooms = roomsOf(sections, e);
     expect(rooms[rooms.length - 1]).toMatchObject({ name: 'No longer on the contract', rows: [{ kind: 'gone', name: 'Old cabinet', deltaSen: 0 }] });
     expect(undoLine(e, 'so-gone').lines).toEqual([]);
+  });
+
+  it('options and remark changes mark the line changed with no money moved, and picking the old options back clears it', () => {
+    const spec = { variants: { colorCode: 'WHITE', size: 'Q' }, remark: 'Old note', optionsText: 'White, Queen', group: 'bedframe' };
+    const specs = { 'so-ward': spec };
+    let e = setLineOptions(EMPTY_EDITS, L('ward'), spec, { colorCode: 'GREY' });
+    let row = roomsOf(sections, e, specs)[1].rows[0];
+    expect(row).toMatchObject({ kind: 'changed', optionsChanged: true, deltaSen: 0, variants: { colorCode: 'GREY', size: 'Q' } });
+    e = setLineRemark(e, L('ward'), spec, 'Grey handles');
+    row = roomsOf(sections, e, specs)[1].rows[0];
+    expect(row).toMatchObject({ remark: 'Grey handles', oldRemark: 'Old note' });
+    e = setLineOptions(e, L('ward'), spec, { colorCode: 'WHITE' });
+    e = setLineRemark(e, L('ward'), spec, 'Old note');
+    expect(e.lines).toEqual([]);
+  });
+
+  it('a qty change keeps options already picked on the line', () => {
+    const spec = { variants: { colorCode: 'WHITE' }, remark: null, optionsText: null, group: 'sofa' };
+    let e = setLineOptions(EMPTY_EDITS, L('fan'), spec, { colorCode: 'GREY' });
+    e = setLineQty(e, L('fan'), 5);
+    expect(e.lines).toEqual([{ soItemId: 'so-fan', variants: { colorCode: 'GREY' }, qty: 5 }]);
   });
 
   it('a package skips free and discounted lines', () => {

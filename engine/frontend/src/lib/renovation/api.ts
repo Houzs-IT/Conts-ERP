@@ -196,12 +196,20 @@ export interface VoView {
   sections: DocSection[]; totals: { addSen: number; omitSen: number; netSen: number };
   /** Room editor edits (owner, 23 Nov 2026); null on a VO built in the Add and Omit layout (absent from an older server). */
   edits?: VoEdits | null;
+  /** Each live SO line's options, remark and picker group, by SO line id (draft or sent VOs; absent from an older server). */
+  lineSpecs?: Record<string, LineSpec>;
 }
 
-/** A contract line changed in place in the VO room editor. Absent fields are unchanged; `label` is the swapped SKU's name. */
-export interface VoLineEdit { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; label?: string }
+export interface LineSpec { variants: Record<string, unknown>; remark: string | null; optionsText: string | null; group: string }
+
+/** A contract line changed in place in the VO room editor. Absent fields are unchanged; `label` is the swapped SKU's name;
+    `variants` is the whole option set after the change. */
+export interface VoLineEdit {
+  soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; label?: string;
+  variants?: Record<string, unknown>; remark?: string;
+}
 /** A line added in a room of the VO room editor. */
-export interface VoLineAdd { room: string; itemCode: string; qty: number; unitPriceSen: number; label?: string; fromPackageId?: string | null }
+export interface VoLineAdd { room: string; itemCode: string; qty: number; unitPriceSen: number; label?: string; fromPackageId?: string | null; remark?: string }
 export interface VoEdits { lines: VoLineEdit[]; adds: VoLineAdd[] }
 
 export interface PoFlag {
