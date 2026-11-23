@@ -561,8 +561,11 @@ export function emptyPaymentRows(): PaymentRow[] {
   }));
 }
 
-export function paymentCard(r: Pick<PaymentRow, "status" | "stageCode" | "unlocks"> & Partial<Pick<PaymentRow, "trigger" | "paidOn" | "method">>, currentStage: string, handoverOn: string | null): PaymentCardView {
+export function paymentCard(r: Pick<PaymentRow, "status" | "stageCode" | "unlocks"> & Partial<Pick<PaymentRow, "trigger" | "paidOn" | "method" | "billedBeforeGoLive" | "paidBeforeGoLive">>, currentStage: string, handoverOn: string | null): PaymentCardView {
   const { unlocks } = r;
+  // A renovation instalment AutoCount invoiced, and was paid, before go-live (chew, 23 Nov 2026).
+  if (r.status === "paid" && r.paidBeforeGoLive) return { look: "paid", badge: "Paid", note: "Paid before go-live" };
+  if (r.billedBeforeGoLive && r.status !== "paid") return { look: "alert", badge: "Not confirmed", note: "Billed before go-live, waiting for payment" };
   // A plain sales order payment (no contract schedule): received or not, with the day and method it came in.
   if (r.trigger === "manual" && !r.stageCode) {
     if (r.status === "paid") return { look: "paid", badge: "Received", note: [r.paidOn ? `Received ${dayMonth(r.paidOn)}` : "Received", r.method].filter(Boolean).join(" · ") };

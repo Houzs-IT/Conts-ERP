@@ -23,7 +23,13 @@
    Received is money finance has CONFIRMED (chew, 21 Nov 2026; SOP 4.2): a payment counts once its official receipt
    is FORMAL (or it posted before confirmation existed, or it is not money arriving: moved between orders, imported,
    a credit applied; acc/receipts awaitsConfirmation). Money recorded but not confirmed yet is waitingSen: shown as
-   waiting for finance, never as paid. */
+   waiting for finance, never as paid.
+
+   Paid before go-live (chew, 23 Nov 2026): a contract AutoCount carried was invoiced, and partly or wholly paid, in
+   AutoCount. What it was paid there is what it was invoiced less what its customer still owed at go-live on the
+   opening invoices (acc/reno-paid-before-golive). It counts in receivedSen and fills the instalments that invoicing
+   covers, oldest first, as "paid before go-live". Confirmed order payments dated before go-live are AutoCount's money
+   too: inside that figure, never counted on top of it. Nothing posts: the opening balances carry it. */
 
 import { auditSo, mintDocNo, refuse, todayKl, yymmOf, type RenoDb, type UnsafeRunner, renoDbOf } from './renovation-db';
 import { readContractHead, recomputeSoHeader, RENO_LIVE_STATUSES } from './renovation-so';
@@ -32,6 +38,7 @@ import { instalmentPreview, nextInstalmentAmount } from '../shared/renovation-mo
 import { fmtSen } from '../shared/format';
 import { renderRenoDescription } from './reno-invoice-description';
 import { MAX_DESCRIPTION } from '../../acc/einvoice-build';
+import { allocatePaidBeforeGoLive } from '../../acc/reno-paid-before-golive';
 
 export interface BillRow {
   instalmentId: string; seq: number; kind: 'INVOICE' | 'CREDIT_NOTE' | 'ZERO'; amountSen: number; invoiceDate: string;
@@ -48,6 +55,12 @@ export interface BillingInstalment {
   trigger: string; bill: BillRow | null; isNext: boolean;
   /** Covered by what AutoCount invoiced before go-live: shown as billed before go-live, never billed here. */
   billedBeforeGoLive: boolean;
+  /** A covered instalment's share of what AutoCount invoiced (its cumulative target less the one before); 0 otherwise. */
+  beforeGoLiveSen: number;
+  /** What was paid on it in AutoCount before go-live, filled oldest first (at most beforeGoLiveSen); 0 otherwise. */
+  paidBeforeGoLiveSen: number;
+  /** Paid in full before go-live: shown as "Paid before go-live", never as to collect. */
+  paidBeforeGoLive: boolean;
   /** Amount if billed now (next instalment) or projected from today's contract sum (later ones). */
   amountSen: number;
 }
@@ -61,8 +74,17 @@ export interface BillingView {
   soDocNo: string; status: string; originalContractSen: number; revisedContractSen: number; voTotalSen: number;
   /** Net of contract credits, what AutoCount invoiced before go-live included. */
   billedSen: number; billedBeforeGoLiveSen: number; creditedSen: number; credits: ContractCredit[];
-  /** Confirmed money: on the order and on its invoices. */
+  /** Confirmed money: on the order and on its invoices, and what AutoCount was paid before go-live. */
   receivedSen: number;
+  /** What the contract was paid in AutoCount before go-live (invoiced before go-live less what its customer still
+      owed at go-live; acc/reno-paid-before-golive). Inside receivedSen. */
+  paidBeforeGoLiveSen: number;
+  /** The confirmed order payments dated before go-live on a contract AutoCount invoiced, up to paidBeforeGoLiveSen:
+      AutoCount's money, so they are that figure, not money on top of it. */
+  orderPaidBeforeGoLiveSen: number;
+  /** The confirmed order money that fills the instalments after what each invoice holds and what was paid before
+      go-live: orderPaidSen less orderPaidBeforeGoLiveSen. */
+  orderPoolSen: number;
   /** Confirmed money recorded on the order itself (the part of receivedSen no invoice holds). */
   orderPaidSen: number;
   /** Money recorded but not confirmed by finance yet: on the order and on its invoices. */
@@ -94,7 +116,7 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
   if (docs.length === 0) return out;
   const docsJson = JSON.stringify(docs);
   /* The five reads are independent: sent together, one round trip instead of five. */
-  const [sos, instRows, bills, creditRows, orderPaid] = await Promise.all([
+  const [sos, instRows, bills, creditRows, orderPaid, preGoLive] = await Promise.all([
     db.q<{ doc_no: string; status: string; original_contract_sen: number | null; revised_sen: number; billed_before_golive_sen: number | string | null }>(
       `select o.doc_no, o.status::text as status, c.original_contract_sen, c.billed_before_golive_sen,
               (select coalesce(sum(i.total_sen), 0)::int from scm.mfg_sales_order_items i where i.doc_no = o.doc_no and not i.cancelled) as revised_sen
@@ -132,18 +154,47 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
         order by cc.so_doc_no, cc.created_at`,
       [docsJson],
     ),
-    db.q<{ so_doc_no: string; paid_sen: number | string; waiting_sen: number | string }>(
+    db.q<{ so_doc_no: string; paid_sen: number | string; waiting_sen: number | string; before_golive_sen?: number | string | null }>(
+      /* before_golive_sen: confirmed and dated before go-live (acc/go-live goLiveOf: the day after the documents'
+         cut-over when later than the ledger start) on a contract AutoCount invoiced. */
       `select p.so_doc_no,
               coalesce(sum(p.amount_sen) filter (where c.confirmed), 0)::bigint as paid_sen,
-              coalesce(sum(p.amount_sen) filter (where not c.confirmed), 0)::bigint as waiting_sen
+              coalesce(sum(p.amount_sen) filter (where not c.confirmed), 0)::bigint as waiting_sen,
+              coalesce(sum(p.amount_sen) filter (where c.confirmed and g.go_live is not null and p.paid_at < g.go_live
+                and exists (select 1 from scm.reno_so_contracts k where k.so_doc_no = p.so_doc_no and k.billed_before_golive_sen > 0)), 0)::bigint as before_golive_sen
          from scm.mfg_sales_order_payments p
          cross join lateral (select ${confirmedSql('p', 'SOPAY')} as confirmed) c
+         left join lateral (select greatest(s.ledger_start_date, s.documents_cutover_date + 1) as go_live
+                              from scm.acc_company_settings s where s.company_id = p.company_id) g on true
         where p.so_doc_no in (select jsonb_array_elements_text($1::text::jsonb)) group by p.so_doc_no`,
       [docsJson],
     ),
+    db.q<PreGoLiveRow>(
+      /* Paid before go-live (acc/reno-paid-before-golive): these orders' customers, every contract AutoCount invoiced of
+         those customers (C), and what each customer still owed at go-live, opening invoices less opening credits (O). */
+      `with mine as (
+         select distinct o.company_id, o.debtor_code from scm.mfg_sales_orders o
+          where o.doc_no in (select jsonb_array_elements_text($1::text::jsonb)) and ($2::bigint is null or o.company_id = $2)
+            and nullif(trim(o.debtor_code), '') is not null)
+       select 'C' as kind, o.company_id, o.debtor_code, o.doc_no, o.so_date::text as so_date, k.billed_before_golive_sen::bigint as sen
+         from scm.mfg_sales_orders o
+         join mine m on m.company_id = o.company_id and m.debtor_code = o.debtor_code
+         join scm.reno_so_contracts k on k.so_doc_no = o.doc_no
+        where k.billed_before_golive_sen > 0 and o.status::text <> 'CANCELLED'
+       union all
+       select 'O' as kind, m.company_id, m.debtor_code, null as doc_no, null as so_date,
+              (coalesce((select sum(si.total_sen) from scm.sales_invoices si
+                          where si.company_id = m.company_id and si.debtor_code = m.debtor_code and si.opening_balance
+                            and upper(coalesce(si.status::text, '')) not in ('DRAFT', 'CANCELLED', 'VOID')), 0)
+             - coalesce((select sum(cc.amount_sen) from scm.customer_credits cc
+                          where cc.company_id = m.company_id and cc.debtor_code = m.debtor_code and cc.source_type = 'OPENING'), 0))::bigint as sen
+         from mine m`,
+      [docsJson, companyId ?? null],
+    ),
   ]);
   if (sos.length === 0) return out;
-  const orderPaidOf = new Map(orderPaid.map((r) => [r.so_doc_no, { paidSen: Number(r.paid_sen), waitingSen: Number(r.waiting_sen) }]));
+  const orderPaidOf = new Map(orderPaid.map((r) => [r.so_doc_no, { paidSen: Number(r.paid_sen), waitingSen: Number(r.waiting_sen), beforeSen: Number(r.before_golive_sen ?? 0) }]));
+  const paidBeforeOf = paidBeforeGoLiveOfRows(preGoLive);
   for (const so of sos) {
     const instalments = instRows
       .filter((r) => r.so_doc_no === so.doc_no)
@@ -153,9 +204,24 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
       creditNoteId: r.credit_note_id, noteNumber: r.note_number, amountSen: Number(r.amount_sen), noteDate: r.note_date, reason: r.reason, noteStatus: r.cn_status,
     }));
     const creditedSen = credits.reduce((s, c) => s + c.amountSen, 0);
-    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits, Number(so.billed_before_golive_sen ?? 0), orderPaidOf.get(so.doc_no)?.paidSen ?? 0, orderPaidOf.get(so.doc_no)?.waitingSen ?? 0));
+    const paid = orderPaidOf.get(so.doc_no);
+    out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits,
+      Number(so.billed_before_golive_sen ?? 0), paid?.paidSen ?? 0, paid?.waitingSen ?? 0, paidBeforeOf.get(so.doc_no) ?? 0, paid?.beforeSen ?? 0));
   }
   return out;
+}
+
+/** One row of billingViews' pre-go-live read: a contract AutoCount invoiced (C) or what a customer still owed at go-live (O). */
+export interface PreGoLiveRow { kind: 'C' | 'O'; company_id: number | string; debtor_code: string; doc_no: string | null; so_date: string | null; sen: number | string | null }
+
+/** That read as paid before go-live per contract (acc/reno-paid-before-golive allocatePaidBeforeGoLive). A customer is
+    its company and its code, so two companies' same code never mix. Exported for tests. */
+export function paidBeforeGoLiveOfRows(rows: readonly PreGoLiveRow[]): Map<string, number> {
+  const key = (r: PreGoLiveRow): string => `${String(r.company_id)}|${String(r.debtor_code).trim()}`;
+  const owed = new Map(rows.filter((r) => r.kind === 'O').map((r) => [key(r), Number(r.sen ?? 0)]));
+  return allocatePaidBeforeGoLive(rows.filter((r) => r.kind === 'C' && r.doc_no).map((r) => ({
+    soDocNo: String(r.doc_no), debtorCode: key(r), soDate: r.so_date ? String(r.so_date).slice(0, 10) : null, billedBeforeGoLiveSen: Number(r.sen ?? 0),
+  })), owed);
 }
 
 /** Exported for tests. `creditedSen` (contract credit notes) comes off what is billed; `billedBeforeGoLiveSen` (what
@@ -179,6 +245,10 @@ export function assembleView(
   orderPaidSen = 0,
   /** Unconfirmed money recorded on the order. */
   orderWaitingSen = 0,
+  /** What the contract was paid in AutoCount before go-live (acc/reno-paid-before-golive); held to [0, billedBeforeGoLiveSen]. */
+  paidBeforeGoLiveSen = 0,
+  /** The confirmed order payments dated before go-live (inside orderPaidSen). */
+  orderPaidBeforeGoLiveSen = 0,
 ): BillingView {
   const waitingOf = (b: { waiting_sen?: number | string | null }) => Math.max(0, Number(b.waiting_sen ?? 0));
   const paidOf = (b: { paid_sen: number | null; waiting_sen?: number | string | null }) => Math.max(0, Number(b.paid_sen ?? 0) - waitingOf(b));
@@ -193,14 +263,41 @@ export function assembleView(
   const preview = instalmentPreview(instalments.map((i) => ({ seq: i.seq, pctBp: i.pctBp })), revised, billedMap, creditedSen, billedBeforeGoLiveSen);
   const covered = new Set(preview.filter((p) => p.beforeGoLive).map((p) => p.seq));
   const nextSeq = [...instalments].sort((a, b) => a.seq - b.seq).find((i) => !billByInst.has(i.id) && !covered.has(i.seq))?.seq ?? null;
+  /* A covered instalment's share of what AutoCount invoiced: its cumulative target (the one instalmentPreview tested
+     against it) less the previous instalment's; what was paid before go-live fills those shares oldest first. */
+  const paidBefore = Math.min(Math.max(0, Math.trunc(Number(paidBeforeGoLiveSen) || 0)), Math.max(0, billedBeforeGoLiveSen));
+  const shareOf = new Map<number, number>();
+  const paidOfSeq = new Map<number, number>();
+  if (covered.size > 0) {
+    const sched = [...instalments].sort((a, b) => a.seq - b.seq).map((i) => ({ seq: i.seq, pctBp: i.pctBp }));
+    let prevTarget = 0;
+    let left = paidBefore;
+    for (const r of sched) {
+      const target = nextInstalmentAmount({ instalments: sched, seq: r.seq, revisedContractSen: revised, billedSen: 0 }).targetSen;
+      if (covered.has(r.seq)) {
+        const share = Math.max(0, target - prevTarget);
+        const take = Math.min(left, share);
+        left -= take;
+        shareOf.set(r.seq, share);
+        paidOfSeq.set(r.seq, take);
+      }
+      prevTarget = target;
+    }
+  }
   let cum = 0;
   const rows: BillingInstalment[] = instalments.map((i) => {
     cum += i.pctBp;
     const b = billByInst.get(i.id);
+    const before = !b && covered.has(i.seq);
+    const share = before ? shareOf.get(i.seq) ?? 0 : 0;
+    const paidHere = before ? paidOfSeq.get(i.seq) ?? 0 : 0;
     return {
       id: i.id, seq: i.seq, label: i.label, pctBp: i.pctBp, cumBp: cum, description: i.description, stageCode: i.stageCode, trigger: i.trigger,
       isNext: i.seq === nextSeq,
-      billedBeforeGoLive: !b && covered.has(i.seq),
+      billedBeforeGoLive: before,
+      beforeGoLiveSen: share,
+      paidBeforeGoLiveSen: paidHere,
+      paidBeforeGoLive: before && share > 0 && paidHere >= share,
       amountSen: preview.find((p) => p.seq === i.seq)?.amountSen ?? 0,
       bill: b ? {
         instalmentId: i.id, seq: Number(b.seq), kind: b.kind, amountSen: Number(b.amount_sen), invoiceDate: b.invoice_date,
@@ -210,13 +307,16 @@ export function assembleView(
     };
   });
   const billedSen = live.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen + billedBeforeGoLiveSen;
-  /* Paid on the invoices, and paid on the order itself: a deposit is taken on the SO. Confirmed money only. */
-  const receivedSen = orderPaidSen + live.reduce((s, b) => s + (b.kind === 'INVOICE' ? paidOf(b) : 0), 0);
+  /* Paid on the invoices, and paid on the order itself: a deposit is taken on the SO. Confirmed money only. What
+     AutoCount was paid before go-live counts too, less the order payments before go-live it already holds. */
+  const onOrderBefore = Math.min(Math.max(0, Number(orderPaidBeforeGoLiveSen) || 0), paidBefore, Math.max(0, orderPaidSen));
+  const receivedSen = orderPaidSen + (paidBefore - onOrderBefore) + live.reduce((s, b) => s + (b.kind === 'INVOICE' ? paidOf(b) : 0), 0);
   const waitingSen = orderWaitingSen + live.reduce((s, b) => s + (b.kind === 'INVOICE' ? Math.min(waitingOf(b), Number(b.paid_sen ?? 0)) : 0), 0);
   const original = originalContractSen === null ? revised : Number(originalContractSen);
   return {
     soDocNo, status, originalContractSen: original, revisedContractSen: revised, voTotalSen: revised - original,
-    billedSen, billedBeforeGoLiveSen, creditedSen, credits, receivedSen, orderPaidSen, waitingSen, orderWaitingSen, nextSeq, instalments: rows,
+    billedSen, billedBeforeGoLiveSen, creditedSen, credits, receivedSen, paidBeforeGoLiveSen: paidBefore, orderPaidBeforeGoLiveSen: onOrderBefore,
+    orderPaidSen, orderPoolSen: Math.max(0, orderPaidSen - onOrderBefore), waitingSen, orderWaitingSen, nextSeq, instalments: rows,
   };
 }
 

@@ -155,6 +155,8 @@ export interface BillingInstalment extends Instalment {
   id: string; cumBp: number; bill: BillRow | null; isNext: boolean; amountSen: number;
   /** Covered by what AutoCount invoiced before go-live: never billed here. */
   billedBeforeGoLive?: boolean;
+  /** Its share of that invoicing, what was paid on it in AutoCount, and whether that paid it in full (chew, 23 Nov 2026). */
+  beforeGoLiveSen?: number; paidBeforeGoLiveSen?: number; paidBeforeGoLive?: boolean;
 }
 
 /** A credit note that lowered the contract. */
@@ -168,6 +170,8 @@ export interface BillingView {
   billedSen: number; billedBeforeGoLiveSen?: number; creditedSen: number; credits: ContractCredit[];
   /** Confirmed by finance (chew, 21 Nov 2026); waitingSen: recorded, not confirmed yet. */
   receivedSen: number; waitingSen?: number; orderPaidSen?: number; orderWaitingSen?: number;
+  /** Paid in AutoCount before go-live, inside receivedSen. */
+  paidBeforeGoLiveSen?: number;
   nextSeq: number | null; instalments: BillingInstalment[];
 }
 

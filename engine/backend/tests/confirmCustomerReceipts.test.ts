@@ -506,12 +506,23 @@ describe('a renovation payment ahead of its invoice offers the next instalment',
   });
 
   test('an old contract: the AutoCount go-live amount counts as billed, and the offer is the instalment after it', async () => {
+    /* The customer still owed AutoCount's invoice at go-live (its opening invoice): nothing was paid before go-live. */
+    const sb = reno(400_000, {
+      reno_so_contracts: [{ so_doc_no: RSO, company_id: CO, advance_account_code: '480-S012', billed_before_golive_sen: 300_000 }],
+      reno_instalment_bills: [],
+      sales_invoices: [{ id: 'si-ob', company_id: CO, invoice_number: 'IV-OB-1', opening_balance: true, status: 'SENT', total_sen: 300_000, debtor_code: 'cust-1', debtor_name: 'MS LEE' }],
+    });
+    const r = await recordAndConfirm(sb);
+    expect(r.body.billNext).toEqual({ soDocNo: RSO, instalmentId: 'inst-2', seq: 2, label: 'Carpentry', amountSen: 400_000, receivedSen: 400_000, billedSen: 300_000 });
+  });
+
+  test('an old contract paid in AutoCount before go-live: that money counts as received too (chew, 23 Nov 2026)', async () => {
     const sb = reno(400_000, {
       reno_so_contracts: [{ so_doc_no: RSO, company_id: CO, advance_account_code: '480-S012', billed_before_golive_sen: 300_000 }],
       reno_instalment_bills: [], sales_invoices: [],
     });
     const r = await recordAndConfirm(sb);
-    expect(r.body.billNext).toEqual({ soDocNo: RSO, instalmentId: 'inst-2', seq: 2, label: 'Carpentry', amountSen: 400_000, receivedSen: 400_000, billedSen: 300_000 });
+    expect(r.body.billNext).toEqual({ soDocNo: RSO, instalmentId: 'inst-2', seq: 2, label: 'Carpentry', amountSen: 400_000, receivedSen: 700_000, billedSen: 300_000 });
   });
 
   test('a confirm within what is billed offers nothing', async () => {
