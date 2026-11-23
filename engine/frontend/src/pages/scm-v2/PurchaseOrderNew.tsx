@@ -606,6 +606,23 @@ export const PurchaseOrderNew = () => {
     prev.filter((l) => l.rid !== rid),
   );
 
+  // Lines carry the old creditor's supplier SKU and price, so a different creditor starts the items over.
+  const changeCreditor = async (nextSupplierId: string) => {
+    if (nextSupplierId === supplierId) return;
+    if (lines.length > 0) {
+      const proceed = await serviceConfirm({
+        title: nextSupplierId ? 'Change creditor?' : 'Remove creditor?',
+        body: `The ${lines.length} item line${lines.length === 1 ? '' : 's'} below will be removed, because their supplier SKU and price belong to the current creditor.`,
+        confirmLabel: 'Remove lines',
+        danger: true,
+      });
+      if (!proceed) return;
+      setLines([]);
+      setPendingItemPick(null);
+    }
+    setSupplierId(nextSupplierId);
+  };
+
   const [itemPicker, setItemPicker] = useState<ItemPickerTarget | null>(null);
   const isItemPickerOpen = itemPicker !== null;
   const isSupplierScoped = Boolean(supplierId) && pickable.length > 0;
@@ -928,7 +945,8 @@ export const PurchaseOrderNew = () => {
               {/* Type-to-search: a plain select over every supplier was a long scroll (Hookka #HK supplier picker, owner 8 Nov). */}
               <SearchableSelect
                 value={supplierId}
-                onChange={setSupplierId}
+                onChange={changeCreditor}
+                clearable
                 options={sortByText(suppliers.data ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))}
                 placeholder="Type a supplier code or name"
                 ariaLabel="Creditor"

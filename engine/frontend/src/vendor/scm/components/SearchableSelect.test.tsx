@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { SearchableSelect, nextOptionWindow } from "./SearchableSelect";
 
 // Unmount is handled by the global afterEach(cleanup) in src/test-setup.ts.
@@ -115,5 +115,24 @@ describe("SearchableSelect windowing", () => {
     openMenu();
     fireEvent.mouseDown(renderedOptions()[3]);
     expect(picked).toEqual(["P3"]);
+  });
+});
+
+describe("clearable", () => {
+  test("emptying the box and leaving it clears the value only when clearable", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<SearchableSelect value="P1" onChange={onChange} options={many} clearable />);
+    const box = screen.getByRole("textbox");
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: "" } });
+    fireEvent.blur(box);
+    expect(onChange).toHaveBeenCalledWith("");
+
+    onChange.mockClear();
+    rerender(<SearchableSelect value="P1" onChange={onChange} options={many} />);
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: "" } });
+    fireEvent.blur(box);
+    expect(onChange).not.toHaveBeenCalled();
   });
 });
