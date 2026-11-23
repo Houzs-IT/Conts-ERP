@@ -1,6 +1,6 @@
 // Conts only (not part of Houzs's code): what a renovation contract signed before go-live was PAID in AutoCount
 // (chew, 23 Nov 2026). Finance seeds what AutoCount invoiced on it (acc/reno-opening: billed_before_golive_sen, or the
-// whole contract AutoCount booked at its cut-over, golive_contract_sen — the greater; chew 23 Nov 2026); the
+// whole contract AutoCount booked at its cut-over, golive_contract_sen, when no figure was uploaded; chew 23 Nov 2026); the
 // customer's opening invoices (Ledger setup > "2. Invoices customers still owe", acc/opening importOpeningReceivables:
 // scm.sales_invoices with opening_balance, by debtor code) say what was still owed at go-live, and a minus on that
 // list is a customer credit paid ahead (scm.customer_credits, source OPENING). So:
@@ -42,6 +42,16 @@ export function allocatePaidBeforeGoLive(contracts: readonly PreGoLiveContract[]
   return out;
 }
 
+/** What AutoCount invoiced on a contract: the figure finance uploaded (billed_before_golive_sen), or, when none was, the
+    whole contract AutoCount booked at its cut-over (golive_contract_sen; 16 Nov 2026 it booked every contract whole).
+    The uploaded figure wins even when smaller: golive_contract_sen leaves out a price cut approved in the ERP after
+    go-live though agreed before it (THE HENGE E18-01: RM 105,280.50 before its RM -3,000 VO, AutoCount's sale RM
+    102,280.50; chew, 23 Nov 2026), and the greater read that cut as money received. Never below 0. */
+export function billedBeforeGoLiveOf(c: { billed_before_golive_sen?: number | string | null; golive_contract_sen?: number | string | null }): number {
+  const uploaded = Math.max(0, Math.trunc(Number(c.billed_before_golive_sen ?? 0) || 0));
+  return uploaded > 0 ? uploaded : Math.max(0, Math.trunc(Number(c.golive_contract_sen ?? 0) || 0));
+}
+
 const LIVE_INVOICE = (status: unknown): boolean => !['DRAFT', 'CANCELLED', 'VOID'].includes(String(status ?? '').toUpperCase());
 
 /** allocatePaidBeforeGoLive for `soDocNos`, read through PostgREST: their customers, every contract AutoCount invoiced
@@ -66,9 +76,8 @@ export async function paidBeforeGoLiveOf(sb: Db, companyId: number, soDocNos: re
   const liveOrders = orders.filter((o) => String(o.status ?? '') !== 'CANCELLED');
   const contracts = liveOrders.length === 0 ? [] : await read(sb.from('reno_so_contracts').select('so_doc_no, billed_before_golive_sen, golive_contract_sen')
     .in('so_doc_no', liveOrders.map((o) => String(o.doc_no))), 'contracts');
-  /* What AutoCount invoiced: the seeded figure, or the whole contract AutoCount booked at its cut-over (golive_contract_sen,
-     acc/reno-opening; 16 Nov 2026 it booked every contract whole), whichever is more. */
-  const billedOf = new Map(contracts.map((c) => [String(c.so_doc_no), Math.max(Number(c.billed_before_golive_sen ?? 0), Number(c.golive_contract_sen ?? 0))]));
+  /* What AutoCount invoiced (billedBeforeGoLiveOf). */
+  const billedOf = new Map(contracts.map((c) => [String(c.so_doc_no), billedBeforeGoLiveOf(c)]));
   const owed = new Map<string, number>();
   for (const i of sis) if (LIVE_INVOICE(i.status)) owed.set(String(i.debtor_code), (owed.get(String(i.debtor_code)) ?? 0) + Number(i.total_sen ?? 0));
   for (const c of credits) owed.set(String(c.debtor_code), (owed.get(String(c.debtor_code)) ?? 0) - Number(c.amount_sen ?? 0));
