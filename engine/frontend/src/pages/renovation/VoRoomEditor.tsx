@@ -64,7 +64,8 @@ export function VoRoomEditor({ sections, edits, onChange, disabled, contractErro
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
+      {/* White card on purpose: in the dark theme the engine keeps cards white and only re-colours text inside them, so text straight on the page background vanishes. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2">
         <h2 className="flex-1 text-[13.5px] font-semibold text-ink">Contract by room</h2>
         <span className="text-[12.5px] text-ink-secondary">{summary}</span>
         <button type="button" aria-pressed={isChangesOnly} onClick={() => setIsChangesOnly((on) => !on)}
@@ -74,7 +75,7 @@ export function VoRoomEditor({ sections, edits, onChange, disabled, contractErro
       </div>
 
       {shown.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-[13px] text-ink-muted">
+        <div className="rounded-lg border border-dashed border-border bg-surface px-4 py-6 text-center text-[13px] text-ink-muted">
           {isChangesOnly ? 'Nothing changed yet.' : 'No contract line can be changed. Add a line in a new room below.'}
         </div>
       )}
@@ -82,7 +83,7 @@ export function VoRoomEditor({ sections, edits, onChange, disabled, contractErro
       {shown.map((room) => <RoomCard key={room.name} room={room} edits={edits} onChange={onChange} disabled={disabled} />)}
 
       {!disabled && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border bg-surface px-3 py-2">
           <label className="flex min-w-0 flex-1 items-center gap-2 text-[12.5px] text-ink-secondary">
             New room
             <input className={cn(FIELD, 'flex-1')} value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder="Kitchen" />
