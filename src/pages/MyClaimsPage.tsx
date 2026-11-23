@@ -22,12 +22,14 @@ import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
 import { date, monthLabel, rm, todayMyt, buildingName } from '../lib/format';
 import {
-  DEPARTMENT, RECEIPT_STATUS, RECEIPT_TONE, REQUEST_STATUS, REQUEST_TONE, describeClaimLine, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, requestFileHref, thisMonthMyt,
-  type ClaimFile, type ClaimLine, type LineDepartment, type LineSubDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt
+  DEPARTMENT, bankProblem, RECEIPT_STATUS, RECEIPT_TONE, REQUEST_STATUS, REQUEST_TONE, describeClaimLine, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, requestFileHref, thisMonthMyt,
+  type ClaimBank, type ClaimFile, type ClaimLine, type LineDepartment, type LineSubDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt
 } from '../lib/claims';
 import { canResubmit, fixOnUtilityBills, lineDraftOf, reasonNote, wantedOnAgain } from '../lib/requestResubmit';
 import { balanceSen, billLabel, canAskBalance, onBill, updatedFromBill } from '../lib/requestApInvoice';
 import { depositSen, percentOf } from '../lib/deposit';
+import { ClaimBankFields, useSavedBank } from '../components/ops/ClaimBankFields';
+import { usePortalText } from '../lib/portalI18n';
 
 /**
  * My claims (finance, 28-29 Oct 2026; SOP 3.2, 6): a member of staff hands something in and follows it, and, if they
@@ -306,6 +308,12 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
   const [kept, setKept] = useState<ClaimFile[]>(editing?.files ?? []);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /* Paid back by transfer: the person confirms or changes the account on the claim, as the phone's Direct Claim to Me
+     does (chew, 23 Nov 2026); it starts from their saved details and a change stays on this claim. */
+  const t = usePortalText();
+  const transfer = kind === 'claim' && me.route !== 'float';
+  const [bank, setBank] = useSavedBank(transfer);
+  const [wrongBank, setWrongBank] = useState<keyof ClaimBank | null>(null);
   /* Claim to me */
   const [reading, setReading] = useState(false);
   const [spendDate, setSpendDate] = useState(todayMyt());
@@ -403,11 +411,14 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
     }
     const built = toLines(lines, amountSen);
     if (!built.ok) return setProblem(built.message);
+    const badBank = transfer ? bankProblem(bank) : null;
+    if (badBank) { setWrongBank(badBank); return setProblem('Check the bank account you are paid back to.'); }
     setBusy(true);
     try {
       if (kind === 'claim') {
         const made = await postWithFiles<{ receiptNo: string; route: 'float' | 'finance' }>('/claims/receipts',
-          { spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: built.lines }, files);
+          { spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: built.lines,
+            ...(transfer ? { payBack: 'finance', bank } : {}) }, files);
         toast({ tone: 'success', title: `Receipt ${made.receiptNo} handed in`, body: made.route === 'float' ? 'Your department\'s petty cash pays you back.' : 'Finance pays you back by transfer.' });
       } else {
         const body = {
@@ -525,6 +536,15 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
           <div className="ds-fs-h"><b>What it was for</b><span>{lines.length > 1 ? 'The lines must add up to the amount' : 'Finance chooses the account while checking'}</span></div>
           <LinesEditor lines={lines} setLines={setLines} totalSen={amountSen} department={me.lineDepartment} recoverOn={kind === 'direct' ? 'paid' : 'checked'} />
         </section>
+        {transfer && (
+          <section className="ds-fs">
+            <div className="ds-fs-h"><b>Paid back to</b><span>Your saved account; change it for this claim if needed</span></div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <ClaimBankFields bank={bank} wrong={wrongBank} t={t}
+                onChange={(k, v) => { setBank(b => ({ ...b, [k]: v })); if (wrongBank === k) setWrongBank(null); }} />
+            </div>
+          </section>
+        )}
         <section className="ds-fs">
           <div className="ds-fs-h"><b>Note</b></div>
           <Field label="Anything finance should know (optional)" value={note} onChange={e => setNote(e.target.value)} maxLength={500} />
