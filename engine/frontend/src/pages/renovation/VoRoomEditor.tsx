@@ -14,9 +14,10 @@ import {
   type Room, type RoomRow,
 } from './voRoomModel';
 
-const ROW_TINT: Record<RoomRow['kind'], string> = { same: '', changed: 'bg-warning-bg/60', added: 'bg-synced-bg/60', removed: 'bg-err-bg/60' };
+const ROW_TINT: Record<RoomRow['kind'], string> = { same: '', changed: 'bg-warning-bg/60', added: 'bg-synced-bg/60', removed: 'bg-err-bg/60', gone: 'bg-surface-2' };
 const BADGE: Record<RoomRow['kind'], { text: string; cls: string } | null> = {
   same: null,
+  gone: { text: 'Undo to save', cls: 'bg-err-bg text-err' },
   changed: { text: 'Changed', cls: 'bg-warning-bg text-warning-text' },
   added: { text: 'New', cls: 'bg-synced-bg text-synced' },
   removed: { text: 'Removed', cls: 'bg-err-bg text-err' },
@@ -96,6 +97,15 @@ function RoomCard({ room, edits, onChange, disabled }: { room: Room; edits: VoEd
 
 function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits; onChange: (e: VoEdits) => void; disabled: boolean }): ReactElement {
   const badge = BADGE[r.kind];
+  if (r.kind === 'gone') {
+    return (
+      <li className={cn('flex flex-wrap items-center gap-2 border-b border-border-subtle px-3 py-2.5 last:border-b-0', ROW_TINT.gone)}>
+        <span className="min-w-0 flex-1 text-[13px] text-ink-secondary">{r.name}{r.sku ? ` (${r.sku})` : ''}: another VO changed this line, so this edit cannot be saved.</span>
+        {badge && <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', badge.cls)}>{badge.text}</span>}
+        {!disabled && <button type="button" className={actBtn} onClick={() => onChange(undoLine(edits, r.soItemId!))}><Undo2 size={15} />Undo</button>}
+      </li>
+    );
+  }
   const gone = r.kind === 'removed';
   const line = r.line;
   const setQty = (q: number) => onChange(line ? setLineQty(edits, line, q) : setAddQty(edits, r.addIndex!, q));

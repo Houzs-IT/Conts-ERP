@@ -574,10 +574,15 @@ export async function saveVoEdits(db: RenoDb, actor: RenoActor, id: string, body
     replaces a contract line takes on its options, remark, room and dates. */
 export async function approveVo(db: RenoDb, actor: RenoActor, id: string, body: { version: number; signedName?: string | null; signedAt?: string | null }): Promise<Awaited<ReturnType<typeof applyVo>>> {
   const v = await lockVo(db, id, actor.companyId);
-  if (!v.edits) return applyVo(db, actor, id, body);
+  if (!v.edits || (v.status !== 'DRAFT' && v.status !== 'SENT')) return applyVo(db, actor, id, body);
   if (v.version !== body.version) throw refuse(409, 'stale_version', 'Someone else saved this variation order first. Reload to see their changes.', { version: v.version });
   const b = await buildEditSections(db, actor, v.so_doc_no, v.edits.lines, v.edits.adds);
   const saved = await saveVo(db, actor, id, { version: v.version, sections: b.sections }, { rebuild: true });
+  /* What the customer signed must be what applies: a sent VO whose total moved since (POs raised or cancelled, catalog
+     changes) goes back to the draft to be saved and printed again. */
+  if (v.status === 'SENT' && saved.netSen !== Number(v.net_sen)) {
+    throw refuse(409, 'vo_changed_since_sent', `This VO now comes to ${fmtSen(saved.netSen)}, not the ${fmtSen(Number(v.net_sen))} that was sent. Press Back to draft, save, and print it again.`);
+  }
   const out = await applyVo(db, actor, id, { ...body, version: saved.version });
   await carryAll(db, out, b);
   return out;

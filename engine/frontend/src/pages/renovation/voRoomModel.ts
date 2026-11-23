@@ -4,7 +4,8 @@
 import { lineAmounts } from '../../vendor/shared/renovation-money';
 import type { DocLine, DocSection, VoEdits, VoLineAdd, VoLineEdit } from '../../lib/renovation/api';
 
-export type RowKind = 'same' | 'changed' | 'removed' | 'added';
+/** `gone`: an edit to a contract line that is no longer live (another VO took it out); it can only be undone. */
+export type RowKind = 'same' | 'changed' | 'removed' | 'added' | 'gone';
 
 export interface RoomRow {
   key: string;
@@ -32,6 +33,7 @@ export interface Room { name: string; rows: RoomRow[]; deltaSen: number }
 export interface RoomTotals { addSen: number; omitSen: number; netSen: number; changed: number; added: number; removed: number }
 
 export const NEW_ROOM_FALLBACK = 'Additional works';
+export const GONE_ROOM = 'No longer on the contract';
 
 const netOf = (l: Pick<DocLine, 'kind' | 'qty' | 'measureMilli' | 'measureUom' | 'uom' | 'unitPriceSen' | 'discountBp' | 'amountOverrideSen' | 'isFoc'>): number =>
   lineAmounts({ kind: l.kind, qty: l.qty, measureMilli: l.measureMilli ?? null, measureUom: l.measureUom, uom: l.uom, unitPriceSen: l.unitPriceSen, discountBp: l.discountBp, amountOverrideSen: l.amountOverrideSen, isFoc: l.isFoc }).netSen;
@@ -82,8 +84,17 @@ export function roomsOf(sections: DocSection[], edits: VoEdits): Room[] {
   const byItem = new Map(edits.lines.map((e) => [e.soItemId, e]));
   const rooms = new Map<string, RoomRow[]>();
   const put = (room: string, r: RoomRow) => rooms.set(room, [...(rooms.get(room) ?? []), r]);
-  for (const { room, line } of editableLines(sections)) put(room, rowOf(line, byItem.get(line.soItemId!)));
+  const live = editableLines(sections);
+  for (const { room, line } of live) put(room, rowOf(line, byItem.get(line.soItemId!)));
   edits.adds.forEach((a, i) => put(a.room.trim() || NEW_ROOM_FALLBACK, addRow(a, i)));
+  const liveIds = new Set(live.map((x) => x.line.soItemId));
+  for (const e of edits.lines.filter((x) => !liveIds.has(x.soItemId))) {
+    put(GONE_ROOM, {
+      key: `gone-${e.soItemId}`, kind: 'gone', line: null, soItemId: e.soItemId, addIndex: null, sku: e.itemCode ?? null, oldSku: null,
+      name: e.label || 'A line another VO has changed or removed', oldName: null, qty: e.qty ?? 0, oldQty: null, unitPriceSen: e.unitPriceSen ?? 0,
+      oldPriceSen: null, measured: false, amountSen: 0, deltaSen: 0,
+    });
+  }
   return [...rooms].map(([name, rows]) => ({ name, rows, deltaSen: rows.reduce((t, r) => t + r.deltaSen, 0) }));
 }
 
@@ -98,6 +109,8 @@ export function totalsOf(rooms: Room[]): RoomTotals {
     removed: rows.filter((r) => r.kind === 'removed').length,
   };
 }
+
+export const goneCount = (rooms: Room[]): number => rooms.flatMap((r) => r.rows).filter((r) => r.kind === 'gone').length;
 
 /* ---------- edits ---------- */
 
@@ -160,7 +173,8 @@ export function dropAdd(edits: VoEdits, i: number): VoEdits {
   return { ...edits, adds: edits.adds.filter((_, j) => j !== i) };
 }
 
-/** A package's ticked lines (from its confirm dialog) as added lines; lines with no SKU cannot be added by a VO. */
+/** A package's ticked lines (from its confirm dialog) as added lines. Lines with no SKU, measured, free or discounted
+    lines cannot be added this way (the room editor adds a SKU at a unit price), so they are counted as skipped. */
 export function packageAdds(edits: VoEdits, sections: DocSection[], packageId: string | null, fallbackRoom: string, replace: boolean): { edits: VoEdits; skipped: number } {
   const kept = replace && packageId ? edits.adds.filter((a) => a.fromPackageId !== packageId) : edits.adds;
   let skipped = 0;
@@ -168,7 +182,7 @@ export function packageAdds(edits: VoEdits, sections: DocSection[], packageId: s
   for (const s of sections) {
     for (const l of s.lines) {
       if (l.kind !== 'ITEM' && l.kind !== 'CHILD') continue;
-      if (!l.itemCode || l.qty < 1 || l.measureMilli != null) { skipped += 1; continue; }
+      if (!l.itemCode || l.qty < 1 || l.measureMilli != null || l.isFoc || l.discountBp || l.amountOverrideSen != null) { skipped += 1; continue; }
       added.push({ room: s.heading.trim() || fallbackRoom.trim() || NEW_ROOM_FALLBACK, itemCode: l.itemCode, label: l.description, qty: l.qty, unitPriceSen: l.unitPriceSen, fromPackageId: packageId });
     }
   }

@@ -81,7 +81,7 @@ export function VariationOrderEditor() {
     if (roomMode) {
       const r = packageAdds(edits, a.sections, a.packageId, confirm.defaultArea, confirm.replace);
       setEdits(r.edits);
-      if (r.skipped) toast.warning(`${r.skipped} line(s) of ${a.code} have no product or are measured, so they were left out.`);
+      if (r.skipped) toast.warning(`${r.skipped} line(s) of ${a.code} have no product, or are measured, free or discounted, so they were left out.`);
     } else {
       setAdds((cur) => withPackageAdd(cur, a, kind, confirm, confirm.replace));
     }
@@ -96,7 +96,11 @@ export function VariationOrderEditor() {
     if (!templateId) return;
     try {
       const t = await loadTemplateSections(templateId);
-      if (roomMode) setEdits((cur) => packageAdds(cur, t.sections, null, '', false).edits);
+      if (roomMode) {
+        const r = packageAdds(edits, t.sections, null, '', false);
+        setEdits(r.edits);
+        if (r.skipped) toast.warning(`${r.skipped} line(s) of ${t.name} have no product, or are measured, free or discounted, so they were left out.`);
+      }
       else setAdds((cur) => [...cur.filter((s) => s.lines.some((l) => l.itemCode || l.description.trim())), ...t.sections]);
       setTitle((cur) => cur.trim() ? cur : `From package template ${t.name}`);
       setDirty(true);
@@ -140,7 +144,10 @@ export function VariationOrderEditor() {
   );
   const restoreDraft = () => {
     const d = draft.offered?.v;
-    if (d) { setTitle(d.title); setDocDate(d.docDate); setAdds(d.adds); setOmits(d.omits); setEdits(d.edits ?? EMPTY_EDITS); setDirty(true); }
+    /* A draft kept before the room editor holds Add and Omit lines this layout cannot show: never restore it into here. */
+    if (d && roomMode && !d.edits && (d.omits.length > 0 || d.adds.some((s) => s.lines.some((l) => l.itemCode || l.description.trim())))) {
+      setError('That unsaved draft was made in the old Add and Omit layout and cannot be opened here. Make the changes again below.');
+    } else if (d) { setTitle(d.title); setDocDate(d.docDate); setAdds(d.adds); setOmits(d.omits); setEdits(d.edits ?? EMPTY_EDITS); setDirty(true); }
     draft.answer(true);
   };
 
@@ -153,7 +160,8 @@ export function VariationOrderEditor() {
   const editable = v.status === 'DRAFT' && can('scm.renovation.quote');
   const locked = !editable || run.isPending || (settling && vo.isFetching);
   const filesEditable = v.status !== 'CANCELLED' && can('scm.renovation.quote');
-  const roomTotals = roomMode ? totalsOf(roomsOf(contract.data?.sections ?? [], edits)) : null;
+  /* Saved: the server's own add and omit lines (a changed line can be an omit plus an add). Unsaved: the editor's estimate. */
+  const roomTotals = !roomMode ? null : dirty ? totalsOf(roomsOf(contract.data?.sections ?? [], edits)) : { addSen: v.totals.addSen, omitSen: v.totals.omitSen };
   const addSen = roomTotals ? roomTotals.addSen : adds.reduce((s, sec) => s + sec.lines.reduce((t, l) => t + amountsOf(l).netSen, 0), 0);
   const omitSen = roomTotals ? roomTotals.omitSen : v.status === 'APPROVED' ? v.totals.omitSen : omits.reduce((s, o) => {
     const t = targets.find((x) => x.line.id === o.lineId);

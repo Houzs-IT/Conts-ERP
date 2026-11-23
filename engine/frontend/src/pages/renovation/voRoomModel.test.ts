@@ -71,6 +71,18 @@ describe('VO room model', () => {
     expect(setAddQty(e, 1, 0).adds.map((a) => a.itemCode)).toEqual(['LED']);
   });
 
+  it('an edit to a line another VO took out shows as a gone row that undo clears', () => {
+    const e = { lines: [{ soItemId: 'so-gone', qty: 3, label: 'Old cabinet' }], adds: [] };
+    const rooms = roomsOf(sections, e);
+    expect(rooms[rooms.length - 1]).toMatchObject({ name: 'No longer on the contract', rows: [{ kind: 'gone', name: 'Old cabinet', deltaSen: 0 }] });
+    expect(undoLine(e, 'so-gone').lines).toEqual([]);
+  });
+
+  it('a package skips free and discounted lines', () => {
+    const pkg: DocSection[] = [{ heading: 'Kitchen', bandColor: null, lumpSumSen: null, pageBreakBefore: false, lines: [line('foc', '', 1, 100, { isFoc: true }), line('disc', '', 1, 100, { discountBp: 1000 })] }];
+    expect(packageAdds(EMPTY_EDITS, pkg, 'p2', '', false)).toMatchObject({ skipped: 2, edits: { adds: [] } });
+  });
+
   it('a package adds its SKU lines by area; lines with no SKU are counted as skipped; replace swaps them', () => {
     const pkg: DocSection[] = [{ heading: 'Kitchen', bandColor: null, lumpSumSen: null, pageBreakBefore: false, lines: [line('cab', '', 2, 10000), line('note', '', 1, 0, { itemCode: null })] }];
     let r = packageAdds(EMPTY_EDITS, pkg, 'p1', 'Common area', false);
