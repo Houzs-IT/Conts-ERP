@@ -451,8 +451,11 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
   /* Money on orders, as minus documents on its control: what the ERP took on an order (its SOPAY line) less what of it
      settled an ERP invoice (that invoice already counts net of it, so_deposit_applied_sen). */
   const onOrdersOf = new Map<string, number>();
+  /* Only the customer side of the payment: the money side (a bank, a clearing account) is no control. */
+  const arControls = new Set([...debtorControlOf.values(), roles.AR,
+    ...((chart.data ?? []) as Array<{ account_code: string; special_type?: string | null }>).filter((a) => a.special_type === 'SDC').map((a) => a.account_code)]);
   for (const l of ((orderMoney.data ?? []) as Array<{ account_code: string; debit_sen: number; credit_sen: number; reversed: boolean | null }>)) {
-    if (l.reversed === true) continue;
+    if (l.reversed === true || !arControls.has(l.account_code)) continue;
     onOrdersOf.set(l.account_code, (onOrdersOf.get(l.account_code) ?? 0) + Number(l.debit_sen) - Number(l.credit_sen));
   }
   for (const d of sis.rows) {
