@@ -352,7 +352,7 @@ export interface SoPdfOptions {
   quotation?: boolean;
   /* The timetable (owner, 17 Nov 2026): each line's processing and delivery dates in place of its unit price and discount; no payments. */
   timetable?: Record<string, { orderOn: string | null; deliverOn: string | null }>;
-  /* Show the unit price, hide it, or print only qty and the line subtotal ('total'). */
+  /* Show the unit price, hide it, or print only qty per line with money on the subtotal rows ('total'). */
   unitPrice?: UnitPriceChoice;
 }
 
@@ -373,7 +373,8 @@ function dateColumns(timetable: NonNullable<SoPdfOptions['timetable']>): LineCol
 
 function moneyColumns(currency: string, unitPrice: UnitPriceChoice): LineColumn[] {
   const moneyWidth = SHOW_CODE ? 24 : 26;
-  if (unitPrice === 'total') return [{ label: 'SubTotal (RM)', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.total_sen, currency) }];
+  /* Total: a line prints its qty only; money shows on the group subtotal rows and the totals. */
+  if (unitPrice === 'total') return [{ label: 'SubTotal (RM)', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: () => '' }];
   const unitPriceColumn: LineColumn = { label: 'Unit Price', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.unit_price_sen, currency) };
   return [
     ...(unitPrice === 'hide' ? [] : [unitPriceColumn]),

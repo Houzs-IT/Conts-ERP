@@ -59,12 +59,15 @@ describe('sales order PDF: hiding the unit price', () => {
     expect(drawn.some((text) => text.includes('RM 3,000.00'))).toBe(true);
   });
 
-  test('total prints only qty and the line subtotal', async () => {
+  test('total prints qty on the line and money only on the subtotal rows and totals', async () => {
+    const amounts = (drawn: string[]) => drawn.filter((text) => text.includes('RM 3,000.00')).length;
+    const shown = await printedText('show');
     const drawn = await printedText('total');
     expect(drawn.filter((text) => text.includes('Unit Price') || text === 'Discount' || text.includes('RM 1,500.00'))).toEqual([]);
     expect(drawn).toContain('2 POINT');
     expect(drawn).toContain('SubTotal (RM)');
-    expect(drawn.some((text) => text.includes('RM 3,000.00'))).toBe(true);
+    expect(amounts(drawn)).toBe(amounts(shown) - 1);
+    expect(amounts(drawn)).toBeGreaterThan(0);
   });
 
   test('prints the unit price by default', async () => {
