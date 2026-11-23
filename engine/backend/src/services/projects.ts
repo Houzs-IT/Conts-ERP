@@ -6,6 +6,7 @@ import { canonicalizeMyState } from "../scm/lib/canonical-state";
 import { canonicalizeVenue } from "../scm/lib/canonical-venue";
 import { deriveProjectCode, deriveProjectName, syncedNameForOrganizerChange } from "./project-naming";
 import { checklistRowDone } from "./checklistProgress";
+import { brandVisibleCond, type BrandSide } from "./projectBrandScope";
 
 /** LIKE patterns for a word typed as a name's initials: SCCC reads Setia City
  *  Convention Centre. Letters only, 3 to 6 of them. */
@@ -1296,6 +1297,8 @@ export interface ListProjectsFilters {
    *  director's My Pending shows just their own queue. Empty/absent = every
    *  brand, which keeps the existing unrestricted approvers unchanged. */
   approver_brands?: string[];
+  /** The caller's company: projects of the other company's brand are left out (migration 0363). */
+  brand_side?: BrandSide | null;
   /** Sales-attending "pending" = the project has no sales attendees assigned
    *  yet (Sales PIC + directors). Standalone predicate (not a checklist item). */
   pending_sales_attending?: boolean;
@@ -1376,6 +1379,7 @@ export async function listProjects(env: Env, f: ListProjectsFilters) {
   const where: string[] = [];
   const binds: any[] = [];
   if (!f.include_archived) where.push("p.archived_at IS NULL");
+  if (f.brand_side) where.push(brandVisibleCond(f.brand_side));
   // Multi-company: PER-COMPANY isolation on the active company.
   if (f.company_id != null) {
     where.push("p.company_id = ?");

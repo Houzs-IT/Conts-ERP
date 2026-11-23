@@ -12,6 +12,7 @@ import { companyContext } from "../middleware/companyContext";
 import { activeCompanySql, allowedCompaniesSql } from "../scm/lib/companyScope";
 import { parseContsAccess, type ContsAccess } from "../conts/access";
 import type { Db } from "../services/renovation/load";
+import { brandVisibleSql, loadBrandSide } from "../services/projectBrandScope";
 import { RENO_SEARCH_KINDS, renovationSearch, type RenoSearchKind } from "../services/renovation/renovationSearch";
 
 type ContsEnv = Env & { CONTS_SSO_SECRET?: string };
@@ -68,6 +69,7 @@ app.post("/", searchCaller, companyContext as unknown as MiddlewareHandler<{ Bin
   const result = await renovationSearch(c.env.DB as unknown as Db, q, c.get("contsSearchAccess"), {
     active: (col) => activeCompanySql(c, col),
     allowed: (col) => allowedCompaniesSql(c, col),
+    projectBrand: brandVisibleSql(await loadBrandSide(c.env.DB as unknown as Db, c.get("user"))),
   }, { only, limit });
   c.header("Cache-Control", "no-store");
   return c.json(result);

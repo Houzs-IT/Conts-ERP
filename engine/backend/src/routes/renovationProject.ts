@@ -41,6 +41,7 @@ import { cleanNewWorkType, cleanWorkTypePatch, listWorkTypes } from "../services
 import { FILL_SLA_DATES_SQL } from "../scm/lib/renovation-sla";
 import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
 import { staffViewReady, syncPeopleFromUsers } from "../services/renovation/peopleSync";
+import { brandVisibleSql, loadBrandSide } from "../services/projectBrandScope";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -83,7 +84,7 @@ async function peopleRefusal(c: Ctx, companyId: number, ids: Array<number | null
 }
 
 async function loadViews(c: Ctx, opts: { projectId?: number; includeArchived?: boolean }) {
-  const rows = await loadProjectRows(db(c), coSql(c, "p.company_id"), opts);
+  const rows = await loadProjectRows(db(c), coSql(c, "p.company_id") + (opts.projectId == null ? brandVisibleSql(await loadBrandSide(db(c), c.get("user"))) : ""), opts);
   const facts = await loadRenovationFacts(db(c), rows, { checklistKeys: BOARD_CHECKLIST_KEYS });
   const today = todayMyt();
   const list = rows.map((p) => {
@@ -340,6 +341,7 @@ app.patch("/task-categories/:code", requirePageAccess("projects.maintenance", "f
 app.get("/key-log", requirePageAccess("projects.list"), async (c) => {
   const pid = c.req.query("projectId") ? parseId(c.req.query("projectId")) : null;
   if (c.req.query("projectId") && !pid) return c.json({ error: "invalid_id" }, 400);
+  const scopeSql = coSql(c, "p.company_id") + brandVisibleSql(await loadBrandSide(db(c), c.get("user")));
   const res = await db(c).prepare(
     `SELECT km.id::int AS id, km.project_id::int AS project_id, p.code AS project_code, p.name AS project_name, km.moved_on::text AS moved_on,
             km.from_person_id::int AS from_person_id, fp.name AS from_person_name, km.to_person_id::int AS to_person_id, tp.name AS to_person_name,
@@ -349,7 +351,7 @@ app.get("/key-log", requirePageAccess("projects.list"), async (c) => {
        LEFT JOIN project_people fp ON fp.id = km.from_person_id
        LEFT JOIN project_people tp ON tp.id = km.to_person_id
        LEFT JOIN users u ON u.id = km.recorded_by
-      WHERE (?::bigint IS NULL OR km.project_id = ?::bigint)${coSql(c, "p.company_id")}
+      WHERE (?::bigint IS NULL OR km.project_id = ?::bigint)${scopeSql}
       ORDER BY km.moved_on DESC, km.id DESC LIMIT 2000`,
   ).bind(pid, pid).all();
   return c.json({ data: res.results ?? [] });
@@ -358,6 +360,7 @@ app.get("/key-log", requirePageAccess("projects.list"), async (c) => {
 app.get("/design-records", requirePageAccess("projects.list"), async (c) => {
   const pid = c.req.query("projectId") ? parseId(c.req.query("projectId")) : null;
   if (c.req.query("projectId") && !pid) return c.json({ error: "invalid_id" }, 400);
+  const scopeSql = coSql(c, "p.company_id") + brandVisibleSql(await loadBrandSide(db(c), c.get("user")));
   // Three independent reads, sent together.
   const [measures, files, notes] = await Promise.all([
     db(c).prepare(
@@ -368,7 +371,7 @@ app.get("/design-records", requirePageAccess("projects.list"), async (c) => {
               coalesce((SELECT json_agg(json_build_object('id', rf.id::int, 'file_name', rf.file_name, 'r2_key', rf.r2_key, 'content_type', rf.content_type) ORDER BY rf.id)
                           FROM project_design_record_files rf WHERE rf.record_id = r.id), '[]'::json) AS files
          FROM project_design_records r JOIN projects p ON p.id = r.project_id LEFT JOIN project_people pp ON pp.id = r.person_id
-        WHERE (?::bigint IS NULL OR r.project_id = ?::bigint)${coSql(c, "p.company_id")}
+        WHERE (?::bigint IS NULL OR r.project_id = ?::bigint)${scopeSql}
         ORDER BY r.done_on DESC NULLS LAST, r.id DESC LIMIT 2000`,
     ).bind(pid, pid).all(),
     db(c).prepare(
@@ -380,7 +383,7 @@ app.get("/design-records", requirePageAccess("projects.list"), async (c) => {
          FROM project_design_files f JOIN projects p ON p.id = f.project_id
          LEFT JOIN project_people pp ON pp.id = f.person_id LEFT JOIN project_people np ON np.id = f.next_person_id
          LEFT JOIN users u ON u.id = f.uploaded_by
-        WHERE (?::bigint IS NULL OR f.project_id = ?::bigint)${coSql(c, "p.company_id")}
+        WHERE (?::bigint IS NULL OR f.project_id = ?::bigint)${scopeSql}
         ORDER BY f.project_id, f.kind, f.version DESC LIMIT 5000`,
     ).bind(pid, pid).all(),
     db(c).prepare(
@@ -389,7 +392,7 @@ app.get("/design-records", requirePageAccess("projects.list"), async (c) => {
               n.closed_by_file_id::int AS closed_by_file_id, n.closed_at
          FROM project_design_notes n JOIN projects p ON p.id = n.project_id
          LEFT JOIN project_people pp ON pp.id = n.requested_by_person_id LEFT JOIN users u ON u.id = n.created_by
-        WHERE (?::bigint IS NULL OR n.project_id = ?::bigint)${coSql(c, "p.company_id")}
+        WHERE (?::bigint IS NULL OR n.project_id = ?::bigint)${scopeSql}
         ORDER BY n.project_id, n.noted_on DESC, n.id DESC LIMIT 5000`,
     ).bind(pid, pid).all(),
   ]);

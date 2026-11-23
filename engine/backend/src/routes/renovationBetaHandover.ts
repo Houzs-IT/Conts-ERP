@@ -23,6 +23,7 @@ import { isMissingRelation, type Db } from "../services/renovation/load";
 import {
   HANDOVER_NOT_READY as NOT_READY, checkProgress, cleanItemMark, cleanTemplate, finishRefusal, itemMarkRefusal, templateItemsJson,
 } from "../services/renovation/handoverChecks";
+import { brandVisibleSql, loadBrandSide } from "../services/projectBrandScope";
 
 type Ctx = Context<{ Bindings: Env }>;
 type Row = Record<string, unknown>;
@@ -326,7 +327,7 @@ app.post("/handover-checks/:id/remove", requirePermission("projects.write"), gua
 // ── The queue across projects ────────────────────────────────────────────
 
 app.get("/defect-queue", requirePageAccess("projects.defects"), async (c) => {
-  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}`;
+  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${brandVisibleSql(await loadBrandSide(db(c), c.get("user")))}`;
   try {
     const defects = await db(c).prepare(
       `SELECT d.id::int AS id, d.project_id::int AS project_id, p.code AS project_code, p.name AS project_name, p.customer_name,
