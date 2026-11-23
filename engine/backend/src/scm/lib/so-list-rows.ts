@@ -80,7 +80,7 @@ export async function buildSoListRows(
       (await chunkIn(docNos, (batch, from, to) => sb.from('mfg_sales_orders')
         .select('doc_no, delivery_state, amended_delivery_date, linked_ac_docno, project_id').in('doc_no', batch).order('doc_no').range(from, to))).data)();
     const projectCodeProm = (async (): Promise<Map<string, string>> => {
-      const links = ((await baseRowsProm) ?? []) as Array<{ doc_no: string; project_id: number | null }>;
+      const links = (await baseRowsProm) as Array<{ doc_no: string; project_id: number | null }>;
       const ids = [...new Set(links.map((b) => b.project_id).filter((id): id is number => id != null))];
       const res = await chunkIn<{ id: number; code: string | null }, number>(ids, (batch, from, to) =>
         sb.schema('public').from('projects').select('id, code').in('id', batch).order('id').range(from, to));
