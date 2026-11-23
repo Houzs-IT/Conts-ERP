@@ -5,6 +5,7 @@
 import { useMemo, useState } from 'react';
 import type { BrandProfile, DocHeader, DocSection, Instalment } from '../../lib/renovation/api';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
+import type { UnitPriceChoice } from '../../vendor/scm/lib/sales-order-pdf';
 import { categoryRooms, type SoPrintRooms } from '../../vendor/scm/lib/so-print-rooms';
 import { useMfgProducts } from '../../vendor/scm/lib/mfg-products-queries';
 import { useRenovationCatalog } from '../../vendor/scm/lib/renovation-catalog-queries';
@@ -34,7 +35,7 @@ export function QuotationSoPrint({ open, onClose, docNo, status, header, section
   const { nameOf } = useStaffLookup();
   const { rows, rooms } = useMemo(() => quotationLines(sections), [sections]);
   const [printLayout, setPrintLayout] = useState<SoLinesView>('area');
-  const [isUnitPriceHidden, setIsUnitPriceHidden] = useState(false);
+  const [unitPrice, setUnitPrice] = useState<UnitPriceChoice>('show');
   const catalogQ = useMfgProducts({ enabled: open });
   const catalogNames = useRenovationCatalog();
   const categoryView = useMemo(() => {
@@ -80,7 +81,7 @@ export function QuotationSoPrint({ open, onClose, docNo, status, header, section
     const { generateSalesOrderPdf } = await import('../../vendor/scm/lib/sales-order-pdf');
     await generateSalesOrderPdf(soHeader, items, [], action, [], {
       docTitle: kind === 'VARIATION_ORDER' ? 'VARIATION ORDER' : 'QUOTATION', docNoun: kind === 'VARIATION_ORDER' ? 'variation order' : 'quotation',
-      rooms: pdfRooms, contract, quotation: true, isUnitPriceHidden,
+      rooms: pdfRooms, contract, quotation: true, unitPrice,
     });
   };
 
@@ -97,7 +98,7 @@ export function QuotationSoPrint({ open, onClose, docNo, status, header, section
         { label: 'Items', value: `${rows.length} line${rows.length === 1 ? '' : 's'}` },
         { label: kind === 'VARIATION_ORDER' ? 'Contract changes by' : 'Quotation total', value: fmtMoney(totalSen, 'MYR') },
       ]}
-      layout={{ printRooms, printLayout, setPrintLayout, isUnitPriceHidden, setIsUnitPriceHidden }}
+      layout={{ printRooms, printLayout, setPrintLayout, unitPrice, setUnitPrice }}
       onViewPdf={() => run('preview')}
       onPrint={() => run('print')}
       onDownload={() => run('save')}

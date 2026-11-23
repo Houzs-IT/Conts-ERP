@@ -96,6 +96,7 @@ import { signSoItemPhotoUrl, soItemPhotoBindings } from '../lib/r2';
 import { baseKeyOf, thumbKeyFor } from '../../services/photoThumbs';
 import { proxyFallbackPayload, type PhotoUrlPayload } from '../lib/photoProxyFallback';
 import { refuseWithoutWriting } from '../lib/no-write-refusal';
+import { loadMaterialsForLines, materialIdOf, materialLineFields, materialLineRefusal, singleMaterialProject } from '../lib/renovation-po-material-lines';
 import { unknownProductCodeRefusal } from '../lib/validate-item-codes';
 import { supabaseAuth } from '../middleware/auth';
 import { recordEntityAudit, diffFields, compactChanges, fieldChange, statusChange } from '../lib/entity-audit';
@@ -1216,6 +1217,11 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
   const groupOf = await skuCategoryResolver(supabase, items, activeCompanyId(c) ?? null); // SKU wins — lib/sku-category.ts
   const uomOf = await skuUomResolver(supabase, items, activeCompanyId(c) ?? null);
   { const inactive = await poInactivePickRefusal(supabase, activeCompanyId(c) ?? null, items); if (inactive) return refuseWithoutWriting(c, inactive, 409); }
+  /* Conts: lines from Transfer from Production Order (lib/renovation-po-material-lines.ts). */
+  const matLoad = await loadMaterialsForLines(supabase, activeCompanyId(c) ?? null, items);
+  if (matLoad.error) return refuseWithoutWriting(c, { error: 'load_failed', reason: matLoad.error }, 500);
+  { const bad = materialLineRefusal(items, matLoad.materials, matLoad.poLines); if (bad) return refuseWithoutWriting(c, bad, 409); }
+  const materialUom = new Map(matLoad.materials.map((m) => [m.id, m.uom]));
   {
     const lineSoItemIds = items
       .map((it) => it.soItemId as string | undefined)
@@ -1349,6 +1355,7 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
          0098) so deleting this PO line can release po_qty_picked back to the
          From-SO picker. NULL for manually-added lines. */
       so_item_id:   soItemId,
+      ...materialLineFields(materialIdOf(it), materialUom),
     };
   });
 
@@ -1388,6 +1395,8 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
   // Optional poDate — if absent, the column default (now()) wins.
   /* The column's default is the database's UTC date, a day behind in Malaysia until 8am. */
   headerInsert.po_date = body.poDate || todayMyt();
+  const materialProject = singleMaterialProject(items, matLoad.materials);
+  if (materialProject != null) headerInsert.project_id = materialProject;
 
   /* Doc-no collision retry (2026-07-14): two buyers cutting a PO in the same
      company + YYMM both read the same max and mint the same po_number; without a

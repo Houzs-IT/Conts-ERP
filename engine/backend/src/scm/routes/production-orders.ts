@@ -540,7 +540,7 @@ productionOrders.get('/materials-to-order', async (c) => {
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
   const { data: orderRows, error: orderErr } = await paginateAll<PickerOrder>((from, to) =>
-    scopeToCompanyId(sb.from('production_orders').select('id, po_number, project_id').eq('status', 'SUBMITTED').eq('on_hold', false), co.companyId)
+    scopeToCompanyId(sb.from('production_orders').select('id, po_number, project_id, purchase_location_id').eq('status', 'SUBMITTED').eq('on_hold', false), co.companyId)
       .order('id').range(from, to));
   if (orderErr) return c.json({ error: 'load_failed', reason: orderErr.message }, 500);
   const orders = new Map((orderRows ?? []).map((o) => [o.id, o]));
@@ -548,7 +548,7 @@ productionOrders.get('/materials-to-order', async (c) => {
   const orderIds = [...orders.keys()];
   const { data: materials, error: matErr } = await chunkIn<PickerMaterial>(orderIds, (batch, from, to) =>
     scopeToCompanyId(sb.from('production_order_materials')
-      .select('id, production_order_id, item_code, description, uom, qty_needed, processing_date, delivery_date')
+      .select('id, production_order_id, item_code, description, uom, qty_needed, processing_date, delivery_date, warehouse_id')
       .in('production_order_id', batch), co.companyId).order('id').range(from, to));
   if (matErr) return c.json({ error: 'load_failed', reason: matErr.message }, 500);
   if (materials.length === 0) return c.json({ rows: [] });
@@ -596,7 +596,15 @@ productionOrders.get('/materials-to-order', async (c) => {
     if (!list.includes(doc)) list.push(doc);
     soDocsOf.set(i.production_order_id, list);
   }
-  return c.json({ rows: materialsToOrder({ materials, orders, poLines, mainSupplierOf, projectOf, soDocsOf }) });
+  /* Where /material-pos would deliver it, so the New PO form opens on that Purchase Location. */
+  const { data: wh } = await scopeToCompanyId(sb.from('warehouses').select('id, code, is_default').eq('is_active', true), co.companyId).order('code');
+  const warehouses = (wh ?? []) as Array<{ id: string; code: string; is_default: boolean | null }>;
+  const codeOfWh = new Map(warehouses.map((w) => [w.id, w.code]));
+  const warehouseOf = (m: PickerMaterial): string | null => {
+    const id = materialPoWarehouse([m.warehouse_id, orders.get(m.production_order_id)?.purchase_location_id], warehouses);
+    return id ? codeOfWh.get(id) ?? null : null;
+  };
+  return c.json({ rows: materialsToOrder({ materials, orders, poLines, mainSupplierOf, projectOf, soDocsOf, warehouseOf }) });
 });
 
 /* ── MRP shortages -> raw-material POs ──
