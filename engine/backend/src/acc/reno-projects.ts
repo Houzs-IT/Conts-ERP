@@ -20,6 +20,7 @@ import { goLiveOf } from './go-live';
 import { countsInTheBooks } from './reversal-pairs';
 import { closeOutOf, RENOVATION_DEPOSIT_ACCOUNT, type CloseOut } from './reno-close-out';
 import { OPENING_DEPOSITS } from './opening-deposits';
+import { billedBeforeGoLiveOf } from './reno-paid-before-golive';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped throughout the acc layer */
 type Db = any;
@@ -202,12 +203,14 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
   for (const p of siPays) { const doc = siDoc.get(String(p.sales_invoice_id)); if (counts(doc, p)) addPay(doc, p); }
   /* What AutoCount collected before go-live, on the day before it. A contract seeded with its go-live amount was
      invoiced whole by AutoCount ("TOTAL SALES ORDER"): collected is that amount less what was still open, plus what was
-     paid ahead. One seeded with only what AutoCount invoiced takes that less what was open. */
+     paid ahead. One seeded with only what AutoCount invoiced takes that less what was open. What AutoCount invoiced is the
+     uploaded figure when one was given (acc/reno-paid-before-golive billedBeforeGoLiveOf: a price cut approved after
+     go-live is left out of the go-live amount; THE HENGE E18-01, chew 23 Nov 2026). */
   if (goLive) {
     const eve = new Date(Date.parse(`${goLive}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
     for (const k of contracts) {
       const doc = String(k.so_doc_no);
-      const base = k.golive_contract_sen != null ? Number(k.golive_contract_sen) + (paidAhead.get(doc) ?? 0) : Number(k.billed_before_golive_sen ?? 0);
+      const base = billedBeforeGoLiveOf(k) + (k.golive_contract_sen != null ? paidAhead.get(doc) ?? 0 : 0);
       const before = base - (openingOutstanding.get(doc) ?? 0);
       if (before > 0) addPay(doc, { paid_at: eve, amount_sen: before });
     }

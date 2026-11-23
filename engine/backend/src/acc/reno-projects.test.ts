@@ -207,6 +207,16 @@ describe('close-out of a contract signed before go-live', () => {
     expect(r.receivedSen).toBe(5_500_000);
   });
 
+  it('a price cut approved after go-live is not read as collected: the uploaded invoiced figure wins (THE HENGE E18-01, chew 23 Nov 2026)', async () => {
+    const w = old();
+    w.tables.acc_company_settings[0]!.documents_cutover_date = '2026-11-20';
+    /* AutoCount sold RM 50,000 (uploaded); the go-live amount kept RM 53,000, from before a RM -3,000 VO approved later. */
+    w.tables.reno_so_contracts[0]!.golive_contract_sen = 5_300_000;
+    const r = (await renoProjectRows(w, CO, '2026-11-30'))[0]!;
+    /* RM 50,000 less RM 10,000 open = RM 40,000 by go-live, not RM 43,000; then RM 15,000 recorded after it. */
+    expect(r.receivedSen).toBe(5_500_000);
+  });
+
   it('counts AutoCount collection and the opening invoice paid since', async () => {
     const r = (await renoProjectRows(old(), CO, '2026-11-30'))[0]!;
     /* RM 40,000 before go-live + RM 10,000 on the opening invoice + RM 25,000 recorded since on the new invoices. */
