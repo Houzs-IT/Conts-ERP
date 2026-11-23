@@ -78,7 +78,21 @@ export async function buildSoListRows(
       (await sb.from('warehouses').select('id, code, name')).data ?? [])();
     const baseRowsProm = (async () =>
       (await chunkIn(docNos, (batch, from, to) => sb.from('mfg_sales_orders')
-        .select('doc_no, delivery_state, amended_delivery_date, linked_ac_docno').in('doc_no', batch).order('doc_no').range(from, to))).data)();
+        .select('doc_no, delivery_state, amended_delivery_date, linked_ac_docno, project_id').in('doc_no', batch).order('doc_no').range(from, to))).data)();
+    const projectCodeProm = (async (): Promise<Map<string, string>> => {
+      const links = ((await baseRowsProm) ?? []) as Array<{ doc_no: string; project_id: number | null }>;
+      const ids = [...new Set(links.map((b) => b.project_id).filter((id): id is number => id != null))];
+      const res = await chunkIn<{ id: number; code: string | null }, number>(ids, (batch, from, to) =>
+        sb.schema('public').from('projects').select('id, code').in('id', batch).order('id').range(from, to));
+      if (res.error) throw new Error(`project codes read failed: ${res.error.message}`);
+      const codeById = new Map(res.data.map(({ id, code }) => [Number(id), code ?? '']));
+      const byDoc = new Map<string, string>();
+      for (const { doc_no, project_id } of links) {
+        const code = project_id == null ? '' : codeById.get(Number(project_id)) ?? '';
+        if (code) byDoc.set(doc_no, code);
+      }
+      return byDoc;
+    })();
     /* PO No. column (owner 2026-07-24): the system Purchase Order numbers this
        SO was converted into. Its own SO-line→PO-item→PO chain, independent of
        every other enrichment above, so it rides the same concurrent wave.
@@ -363,9 +377,11 @@ export async function buildSoListRows(
         return new Map<string, { pos: string[]; adj: boolean }>();
       }
     })();
+    const projectCodeByDoc = await projectCodeProm;
 
     for (const r of rows) {
       const docNo = r.doc_no ?? '';
+      (r as Record<string, unknown>).project_code = projectCodeByDoc.get(docNo) ?? null;
       const perGroup = agg.get(docNo);
       (r as Record<string, unknown>).item_categories = [...(cats.get(docNo) ?? [])].sort();
       /* The PO numbers this SO produced (LEGACY convert-time raise-link; empty
