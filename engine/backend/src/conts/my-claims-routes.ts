@@ -33,6 +33,7 @@ import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, rec
 import type { Staff } from './staff-identity';
 import { bankDetailsOf } from './petty-cash-routes';
 import { buildLines, defaultLineSubs, withTargetLabels } from './claims-lines';
+import { readRecoveries, recoveriesOf, saveRecoveries } from './owner-recovery';
 import { RENO_KIND_OF, loadSubDepartments, projectRenoKind, projectSide, subForStaffDepartment } from './sub-departments';
 import { myRequestRoutes } from './payment-request-routes';
 import { utilityBillRoutes } from './utility-bill-routes';
@@ -154,6 +155,9 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
   if (!decoded.ok) return c.json({ error: decoded.error, message: decoded.message }, decoded.status);
   const built = await buildLines(sb, staff, b.lines, amountSen, co.companyId);
   if (!built.ok) return c.json({ error: 'validation', message: built.message }, 422);
+  /* What a unit's owner pays back (chew, 23 Nov 2026: claims as payment requests): charged once finance checks it (0363). */
+  const recover = readRecoveries(b.lines, built.lines);
+  if (!recover.ok) return c.json({ error: 'validation', message: recover.message }, 422);
 
   /* A proper receipt for one finance rejected replaces it and keeps its float. The old one is claimed first, so two
      replacements at once cannot both be made; it goes back to Rejected if this one is not saved. */
@@ -200,6 +204,8 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
   if (ins.error) return fail(ins.error.message);
   const fr = await sb.from('staff_receipt_files').insert(stored.map(s => ({ ...s, receipt_id: id })));
   if (fr.error) return fail(fr.error.message);
+  const rv = await saveRecoveries(sb, id, recover.byUnit, staff.userId, 'receipt');
+  if (rv) return fail(rv);
   return c.json({ id, receiptNo: row.receipt_no, route: floatId ? 'float' : 'finance' }, 201);
 };
 
@@ -216,8 +222,8 @@ export const myReceiptsHandler = async (c: Ctx): Promise<Response> => {
   });
   const rows = all.sort((a, b) => String(b.spend_date).localeCompare(String(a.spend_date)) || b.receipt_no.localeCompare(a.receipt_no));
   const ids = rows.map(r => r.id);
-  const [lines, files, names] = await Promise.all([linesOf(sb, ids), filesOf(sb, ids), staffNames(sb)]);
-  const views = rows.map(r => receiptView(r, lines.get(r.id) ?? [], files.get(r.id) ?? [], names));
+  const [lines, files, names, recovers] = await Promise.all([linesOf(sb, ids), filesOf(sb, ids), staffNames(sb), recoveriesOf(sb, ids, 'receipt')]);
+  const views = rows.map(r => ({ ...receiptView(r, lines.get(r.id) ?? [], files.get(r.id) ?? [], names), recoveries: recovers.get(r.id) ?? [] }));
   return c.json({ receipts: await withTargetLabels(sb, co.companyId, views) });
 };
 

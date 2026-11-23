@@ -10,7 +10,7 @@ import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
 import {
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they sit beside */
   checkReceiptsHandler, claimsDeps, createFloatHandler, financeReceiptsHandler, listFloatsHandler, optionsHandler, receiptVoucherHandler, rejectReceiptHandler,
-  repaidReceiptHandler, topUpHandler, updateFloatHandler, writeOffReceiptHandler, EDIT_KEY, FULL_KEY,
+  repaidReceiptHandler, setReceiptRecoveryHandler, topUpHandler, updateFloatHandler, writeOffReceiptHandler, EDIT_KEY, FULL_KEY,
 } from './petty-cash-routes';
 
 const CO = 1;
@@ -61,6 +61,7 @@ const app = (sb: ReturnType<typeof world>, perms: string[]) => {
   a.post('/receipts/:id/write-off', writeOffReceiptHandler);
   a.post('/receipts/:id/voucher', receiptVoucherHandler);
   a.get('/receipts', financeReceiptsHandler);
+  a.put('/receipts/:id/recoveries', setReceiptRecoveryHandler);
   return a;
 };
 const post = (a: Hono<{ Variables: Record<string, unknown> }>, path: string, body: unknown = {}) => a.request(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
@@ -352,5 +353,54 @@ describe('twice', () => {
     await post(app(sb, [EDIT_KEY]), '/receipts/check', { items: [{ id: 'R1' }] });
     await post(app(sb, [FULL_KEY]), '/floats/F1/top-up', { bankAccountCode: '310-0010' });
     expect(sb.tables.staff_receipts[0].topup_pv_id).toBe('PV1');
+  });
+});
+
+describe('what the owner pays back on a claim (chew, 23 Nov 2026; 0363)', () => {
+  const put = (a: ReturnType<typeof app>, id: string, body: unknown) => a.request(`/receipts/${id}/recoveries`, { method: 'PUT', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
+  const withUnit = () => {
+    const sb = world();
+    sb.tables.staff_receipt_lines.push({ id: 'L3', receipt_id: 'R2', department: 'rental', unit_id: 'U1', maintenance_issue_id: null, project_id: null, account_code: '905-0000', amount_sen: 2000, description: 'Bulbs', sort: 1 });
+    sb.tables.staff_receipt_lines.find((l: any) => l.id === 'L2')!.amount_sen = 1000;
+    return sb;
+  };
+  test('finance sets, changes and clears it before the check, up to the unit\'s lines; the list shows it', async () => {
+    const sb = withUnit();
+    const a = app(sb, [EDIT_KEY]);
+    expect((await put(app(sb, []), 'R2', { unitId: 'U1', amountSen: 500 })).status).toBe(403);
+    expect((await put(a, 'R2', { unitId: 'U1', amountSen: 2500 })).status).toBe(422);
+    expect((await put(a, 'R2', { unitId: 'U9', amountSen: 500 })).status).toBe(422);
+    expect((await put(a, 'R1', { unitId: 'UNIT-A01', amountSen: 500 })).status).toBe(422);   // R1's only line is a job's
+    expect((await put(a, 'R2', { unitId: 'U1', amountSen: 1500 })).status).toBe(200);
+    expect((await put(a, 'R2', { unitId: 'U1', amountSen: 2000 })).status).toBe(200);
+    expect(sb.tables.staff_receipt_recoveries).toEqual([expect.objectContaining({ receipt_id: 'R2', unit_id: 'U1', amount_sen: 2000 })]);
+    const list = await (await a.request('/receipts')).json() as any;
+    expect(list.receipts.find((r: any) => r.id === 'R2').recoveries).toEqual([{ unitId: 'U1', amountSen: 2000, charged: false }]);
+    expect((await put(a, 'R2', { unitId: 'U1', amountSen: null })).status).toBe(200);
+    expect(sb.tables.staff_receipt_recoveries).toHaveLength(0);
+  });
+  test('refused once checked, or once the owner is charged', async () => {
+    const sb = withUnit();
+    const a = app(sb, [EDIT_KEY]);
+    sb.tables.staff_receipt_recoveries = [{ receipt_id: 'R2', unit_id: 'U1', amount_sen: 1000, adjustment_id: 'ADJ1' }];
+    expect((await put(a, 'R2', { unitId: 'U1', amountSen: 500 })).status).toBe(409);
+    sb.tables.staff_receipt_recoveries = [];
+    sb.tables.staff_receipts.find((r: any) => r.id === 'R2')!.status = 'CHECKED';
+    const res = await put(a, 'R2', { unitId: 'U1', amountSen: 500 });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as any).message).toMatch(/owner's statement/);
+  });
+  test('a check that rewrites the lines brings the recovery within them first', async () => {
+    const sb = withUnit();
+    sb.tables.staff_receipt_recoveries = [{ receipt_id: 'R2', unit_id: 'U1', amount_sen: 2000, adjustment_id: null }];
+    const res = await post(app(sb, [EDIT_KEY]), '/receipts/check', { items: [{ id: 'R2', lines: [
+      { department: 'shared', accountCode: '905-0000', amountSen: 1800 }, { department: 'rental', unitId: 'U1', accountCode: '905-0000', amountSen: 1200 },
+    ] }] });
+    expect(res.status).toBe(200);
+    expect(sb.tables.staff_receipt_recoveries).toEqual([expect.objectContaining({ unit_id: 'U1', amount_sen: 1200 })]);
+    const sb2 = withUnit();
+    sb2.tables.staff_receipt_recoveries = [{ receipt_id: 'R2', unit_id: 'U1', amount_sen: 2000, adjustment_id: null }];
+    await post(app(sb2, [EDIT_KEY]), '/receipts/check', { items: [{ id: 'R2', lines: [{ department: 'shared', accountCode: '905-0000', amountSen: 3000 }] }] });
+    expect(sb2.tables.staff_receipt_recoveries).toHaveLength(0);
   });
 });

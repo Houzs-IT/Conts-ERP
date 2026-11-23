@@ -25,6 +25,8 @@ export type Receipt = {
   /** Finance's pay-back list only: where the money goes. The bank given on the claim (Direct Claim to Me) when there is
    *  one, else the saved details; differsFromSaved when the claim's account is not the saved one or nothing is saved. */
   bank?: { bankName: string; accountNo: string; accountName: string | null; fromClaim: boolean; differsFromSaved: boolean } | null;
+  /** What each unit's owner pays back (0363): charged to the owner as O2 once finance checks the claim (`charged`). */
+  recoveries?: { unitId: string; amountSen: number; charged: boolean }[];
 };
 export type RequestStatus = "SUBMITTED" | "PART_PAID" | "PAID" | "REJECTED" | "CLOSED" | "WITHDRAWN";
 export type PaymentRequest = {
