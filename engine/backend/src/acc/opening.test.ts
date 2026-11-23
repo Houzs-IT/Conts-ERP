@@ -238,9 +238,12 @@ describe('money the ERP took on orders before the cut-over (chew, 23 Nov 2026)',
     sb.tables.v_gl_entries = sb.tables.journal_entry_lines.map((l) => gl(l));
     /* AutoCount's open invoice of 50,000, and 15,000 the ERP took on order SO-2 with no invoice yet. */
     sb.tables.v_gl_entries.push(gl({ account_code: '300-0000', debit_sen: 0, credit_sen: 15_000 }, 'SOPAY', 'pay-2'));
+    /* Its money side, on a bank: no control, so no line of its own. */
+    sb.tables.v_gl_entries.push(gl({ account_code: '310-0010', debit_sen: 15_000, credit_sen: 0 }, 'SOPAY', 'pay-2'));
     await importOpeningReceivables(sb, CO, [{ docNo: 'IV-1', debtorName: 'A', debtorCode: '300-A001', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 50_000 }], ACTOR);
     const r = await openingCheck(sb, CO);
     expect(r.ok && r.controls[0]).toMatchObject({ accountCode: '300-0000', controlSen: 35_000, documentsSen: 35_000 });
+    expect(r.ok && r.controls.some((c) => c.accountCode === '310-0010')).toBe(false);
   });
 });
 
