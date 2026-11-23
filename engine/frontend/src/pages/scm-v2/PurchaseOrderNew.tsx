@@ -1104,7 +1104,7 @@ export const PurchaseOrderNew = () => {
               The item list couldn't be loaded — refresh the page to try again.
             </span>
           ) : (
-            <Button variant="ghost" size="md" onClick={() => setItemPickerOpen(true)} disabled={allSkus.isLoading} style={{ minHeight: 44 }}>
+            <Button variant="secondary" size="md" onClick={() => setItemPickerOpen(true)} disabled={allSkus.isLoading} style={{ minHeight: 44 }}>
               <Plus {...ICON} /> {allSkus.isLoading ? 'Loading items…' : isSupplierScoped ? 'Add items from supplier' : 'Add items'}
             </Button>
           )}

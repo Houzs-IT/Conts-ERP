@@ -113,7 +113,7 @@ export function ItemPickerDialog({ title, subtitle, rows, onAdd, onClose }: Item
                   {row.uom && <span style={muted}>{row.uom}</span>}
                 </div>
               )}
-              <Button variant={addedCount ? 'primary' : 'ghost'} size="sm" onClick={() => add(row)} style={{ minHeight: TOUCH_PX, flex: 'none' }}>
+              <Button variant={addedCount ? 'primary' : 'secondary'} size="sm" onClick={() => add(row)} style={{ minHeight: TOUCH_PX, flex: 'none' }}>
                 {addedCount ? <><Check size={14} /> Added{addedCount > 1 ? ` ×${addedCount}` : ''}</> : <><Plus size={14} /> Add</>}
               </Button>
             </div>
