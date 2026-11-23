@@ -21,8 +21,8 @@ export function GroupToggle({ label, note, isOpen, onToggle, className, labelCla
         <Icon name="ChevronDown" size="sm" />
       </span>
       <span className={labelClassName}>{label}</span>
-      <span className="text-caption text-muted-ink">{note}</span>
-      {trailing && <span className="ml-auto flex justify-end min-w-0">{trailing}</span>}
+      <span className="text-caption text-muted-ink whitespace-nowrap">{note}</span>
+      {trailing && <span className="ml-auto flex-none">{trailing}</span>}
     </button>
   );
 }

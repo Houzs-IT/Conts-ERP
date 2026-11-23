@@ -3,7 +3,7 @@ import { cx } from '../../lib/design-tokens';
 import { plural } from '../../lib/format';
 import { areaKeysOf, countGrants, resolveRoleLevels } from '../../lib/roleGrid';
 import type { AccessChart, Department, Position } from '../../lib/types';
-import { CompanyBadges } from './CompanyBadges';
+import { SideBadge } from './CompanyBadges';
 import { GroupToggle } from './GroupToggle';
 import {
   DEPARTMENT_HEADING, DEPARTMENT_LABEL, LIST_ROW, NO_POSITION_LABEL, SELECTED_ROW, TAG, deskDepartmentsOf, hasPeopleWithoutPosition, headCountWithoutPosition, isSameRole, useToggleSet, visibleCategoriesOf, type RoleTarget,
@@ -82,7 +82,7 @@ function DepartmentRoles({ chart, department, selectedRole, isOpen, onToggle, on
     <div>
       <GroupToggle label={department.name} note={plural(isManagement ? 1 : positionsShown.length, 'role')}
         isOpen={isOpen} onToggle={onToggle} className={DEPARTMENT_HEADING} labelClassName={DEPARTMENT_LABEL}
-        trailing={<CompanyBadges side={department.side} />} />
+        trailing={<SideBadge side={department.side} />} />
       {isOpen && (isManagement
         ? <RoleRow name="Management" isLocked isSelected={false} people={department.headCount} summary="Full on everything. Cannot be changed." onOpen={() => undefined} />
         : positionsShown.length > 0 ? positionsShown.map(rowFor) : <NoPositionsYet />)}
