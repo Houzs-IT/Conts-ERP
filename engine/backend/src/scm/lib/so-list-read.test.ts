@@ -48,6 +48,25 @@ describe('the Sales Order list predicate set', () => {
     expect(await docNos(rows, params({ q: '012-345 6789' }))).toEqual(['A']);
   });
 
+  it('finds an order by its project code, which lives on the project, not the order', async () => {
+    const rows = [so({ doc_no: 'A' }), so({ doc_no: 'B' }), so({ doc_no: 'C', company_id: 2 })];
+    const sb = fakeSb({
+      mfg_sales_orders_with_payment_totals: rows,
+      mfg_sales_order_payments: [],
+      projects: [{ id: 7, code: 'TC-2611-ZEN' }, { id: 8, code: 'TC-2611-OAK' }],
+      mfg_sales_orders: [
+        { doc_no: 'A', company_id: 1, project_id: 7 },
+        { doc_no: 'B', company_id: 1, project_id: 8 },
+        { doc_no: 'C', company_id: 2, project_id: 7 },
+      ],
+    });
+    const c = { get: (k: string) => (k === 'companyId' ? 1 : undefined) };
+    const read = await prepareSoListRead(sb, c, params({ q: '2611-zen' }), null, null, new Date());
+    if (!read.ok) throw new Error(JSON.stringify(read.body));
+    const { data } = (await read.header(sb.from('mfg_sales_orders_with_payment_totals').select('doc_no'))) as { data: Row[] };
+    expect(data.map((r) => String(r.doc_no))).toEqual(['A']);
+  });
+
   it('applies a second-level filter row and the company', async () => {
     const rows = [
       so({ doc_no: 'A', so_date: '2026-08-10' }),

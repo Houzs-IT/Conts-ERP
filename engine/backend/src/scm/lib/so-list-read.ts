@@ -181,7 +181,7 @@ export async function prepareSoListRead(
     /* free-text search over the reference the list DISPLAYS: customerRefOf is
        `ref || customer_so_no`, so BOTH are searched (bug 0755). Plus doc_no /
        debtor / agent / location / branding, the customer's phone (#816), and
-       the approval-code orders read above. */
+       the approval-code and project-code orders read above. */
     if (search) {
       const s = escapeForOr(search);
       if (s) q = q.or([
@@ -221,13 +221,36 @@ async function readApprovalCodePart(
   c: CompanyScopeCtx,
   q: string | null,
 ): Promise<{ ok: true; part: string | null } | { ok: false; status: 500; body: { error: string; reason: string } }> {
-  let codePart: string | null = null;
   const code = String(q ?? '').trim();
-  if (code) {
-    const { data, error } = await scopeToCompany(sb.from('mfg_sales_order_payments')
-      .select('so_doc_no').eq('approval_code', code).limit(APPROVAL_CODE_SEARCH_CAP), c);
-    if (error) return { ok: false, status: 500, body: { error: 'load_failed', reason: `approval codes: ${error.message}` } };
-    codePart = approvalCodeOrPart(((data ?? []) as Array<{ so_doc_no: string }>).map((r) => r.so_doc_no));
-  }
-  return { ok: true, part: codePart };
+  if (!code) return { ok: true, part: null };
+  const [byCode, byProject] = await Promise.all([
+    scopeToCompany(sb.from('mfg_sales_order_payments')
+      .select('so_doc_no').eq('approval_code', code).limit(APPROVAL_CODE_SEARCH_CAP), c),
+    readProjectCodeDocNos(sb, c, code),
+  ]);
+  if (byCode.error) return { ok: false, status: 500, body: { error: 'load_failed', reason: `approval codes: ${byCode.error.message}` } };
+  if (!byProject.ok) return byProject;
+  const codeDocs = ((byCode.data ?? []) as Array<{ so_doc_no: string }>).map(({ so_doc_no }) => so_doc_no);
+  return { ok: true, part: approvalCodeOrPart([...codeDocs, ...byProject.docNos]) };
+}
+
+/* The Project Code column reads public.projects through the SO's project_id,
+   which the list view does not carry, so a project-code search is resolved
+   to doc numbers first, like the approval code above. */
+async function readProjectCodeDocNos(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the SCM PostgREST client is untyped throughout (see salesScope.ts)
+  sb: any,
+  c: CompanyScopeCtx,
+  term: string,
+): Promise<{ ok: true; docNos: string[] } | { ok: false; status: 500; body: { error: string; reason: string } }> {
+  const esc = term.replace(/[\\%_]/g, (m) => `\\${m}`);
+  const projects = await sb.schema('public').from('projects')
+    .select('id').ilike('code', `%${esc}%`).limit(APPROVAL_CODE_SEARCH_CAP);
+  if (projects.error) return { ok: false, status: 500, body: { error: 'load_failed', reason: `project codes: ${projects.error.message}` } };
+  const ids = ((projects.data ?? []) as Array<{ id: number }>).map(({ id }) => id);
+  if (ids.length === 0) return { ok: true, docNos: [] };
+  const orders = await scopeToCompany(sb.from('mfg_sales_orders')
+    .select('doc_no').in('project_id', ids).limit(APPROVAL_CODE_SEARCH_CAP), c);
+  if (orders.error) return { ok: false, status: 500, body: { error: 'load_failed', reason: `project orders: ${orders.error.message}` } };
+  return { ok: true, docNos: ((orders.data ?? []) as Array<{ doc_no: string }>).map(({ doc_no }) => doc_no) };
 }

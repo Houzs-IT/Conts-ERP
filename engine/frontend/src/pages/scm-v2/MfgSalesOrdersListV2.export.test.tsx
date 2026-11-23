@@ -135,7 +135,7 @@ describe("Sales Orders list: the ONE Export", () => {
   it("writes AutoCount's SALES ORDER DETAILS-SALES columns, one row per line of every order the server holds", async () => {
     const { header, body, cell } = await exportNow("/scm/sales-orders");
     /* Doc. No. is pinned first, Project Code beside it; the rest in AutoCount's order, less Curr. Code. */
-    expect(header).toEqual(["Doc. No.", "Project Code", ...SO_DEFAULT_COLUMNS.filter((c) => c !== "Doc. No." && c !== "Curr. Code")]);
+    expect(header).toEqual(["Doc. No.", "Project Name", "Project Code", ...SO_DEFAULT_COLUMNS.filter((c) => c !== "Doc. No." && c !== "Curr. Code")]);
     expect(body).toHaveLength(6);
     expect(cell(body[0]!, "Doc. No.")).toBe("SO-013001");
     expect(cell(body[0]!, "Agent")).toBe("NICO TAN");
