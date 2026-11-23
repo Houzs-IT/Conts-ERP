@@ -36,6 +36,9 @@ import { EMPTY_EDITS, packageAdds, roomsOf, totalsOf } from './voRoomModel';
    lines takes them all out. None of it is printed. */
 interface ConfirmOpen { packageId: string; defaultArea: string; sectionIndex: number | null; lineIndex: number | null; replace: boolean }
 
+/* 16px on phones so iOS does not zoom into the field; cn only joins classes, so the size is swapped, not added. */
+const PHONE_INPUT = inputCls.replace('text-[13px]', 'text-[16px] lg:text-[13px]');
+
 interface OmitPick { lineId: string; omitQty: number | null }
 
 function omitAmount(l: DocLine, omitQty: number | null): number {
@@ -256,8 +259,8 @@ export function VariationOrderEditor() {
         <div className="min-w-0 space-y-4">
           <Card title="Details">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_200px]">
-              <Field label="Title"><input className={inputCls} disabled={locked} value={title} onChange={(e) => { setTitle(e.target.value); setDirty(true); }} placeholder="e.g. Add wall skim, drop study table" /></Field>
-              <Field label="Date"><input type="date" className={inputCls} disabled={locked} value={docDate} onChange={(e) => { setDocDate(e.target.value); setDirty(true); }} /></Field>
+              <Field label="Title"><input className={PHONE_INPUT} disabled={locked} value={title} onChange={(e) => { setTitle(e.target.value); setDirty(true); }} placeholder="e.g. Add wall skim, drop study table" /></Field>
+              <Field label="Date"><input type="date" className={PHONE_INPUT} disabled={locked} value={docDate} onChange={(e) => { setDocDate(e.target.value); setDirty(true); }} /></Field>
             </div>
           </Card>
           {roomMode && (
@@ -350,7 +353,7 @@ export function VariationOrderEditor() {
         footer={<div className="flex w-full justify-end gap-2"><Button variant="secondary" onClick={() => setApproveOpen(false)}>Cancel</Button><Button disabled={run.isPending} onClick={approve}>{run.isPending ? 'Applying…' : 'Approve and apply'}</Button></div>}>
         <div className="space-y-3 text-[13px]">
           <p>The contract changes by <span className="font-semibold">{rm(netSen)}</span>. Added lines join the contract; omitted lines are cancelled or reduced, and their PO lines are flagged for procurement.</p>
-          <Field label="Signed by (customer)"><input className={inputCls} value={signedName} onChange={(e) => setSignedName(e.target.value)} placeholder="Name on the signed VO" /></Field>
+          <Field label="Signed by (customer)"><input className={PHONE_INPUT} value={signedName} onChange={(e) => setSignedName(e.target.value)} placeholder="Name on the signed VO" /></Field>
           <ErrorBanner error={error} />
         </div>
       </ModalOverlay>
