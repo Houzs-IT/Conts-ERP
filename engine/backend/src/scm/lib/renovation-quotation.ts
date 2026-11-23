@@ -267,7 +267,7 @@ export async function saveRevision(
   db: RenoDb,
   actor: RenoActor,
   id: string,
-  body: { version: number; header?: DocHeaderInput; sections?: NormSection[]; instalments?: NormInstalment[] },
+  body: { version: number; projectId?: number | null; header?: DocHeaderInput; sections?: NormSection[]; instalments?: NormInstalment[] },
 ): Promise<{ version: number }> {
   const q = await lockQuotation(db, id, actor.companyId);
   if (q.version !== body.version) throw refuse(409, 'stale_version', 'Someone else saved this quotation first. Reload to see their changes.', { version: q.version });
@@ -279,6 +279,11 @@ export async function saveRevision(
   const header = mergeHeader(current.header, body.header);
   await writeRevisionHeader(db, revId, header);
   if (body.header?.brandId !== undefined) await db.q(`update scm.reno_quotations set brand_id = $2 where id = $1`, [id, body.header.brandId]);
+  /* A draft can still move to another project, or link one for the first time (owner, 23 Nov 2026). */
+  if (body.projectId !== undefined && body.projectId !== q.projectId) {
+    if (body.projectId != null && !(await projectExists(db, body.projectId, actor.companyId))) throw refuse(404, 'project_not_found', `Project ${body.projectId} does not exist.`);
+    await db.q(`update scm.reno_quotations set project_id = $2 where id = $1`, [id, body.projectId]);
+  }
   if (body.sections) {
     await deleteStructure(db, { kind: 'revision', id: revId }, { instalments: false });
     await insertSections(db, { kind: 'revision', id: revId }, body.sections, actor.companyId);
