@@ -890,7 +890,8 @@ export type NewPoItem = {
   /* Commander 2026-05-29 (BUG 1) — source SO line id for lines added via the
      "From SO" picker. The generic create handler increments this SO line's
      po_qty_picked so it drops from the picker. NULL for manual PO lines. */
-  soItemId?: string | null;
+  soItemId?: string | null;  /* Conts — production order raw material this line buys (Transfer from Production Order). */
+  productionMaterialId?: string | null;
 };
 
 /** PR — Phase 1: outstanding SO items for the "From SO" picker.

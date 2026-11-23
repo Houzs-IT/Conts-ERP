@@ -3,9 +3,9 @@
 
 export type PickerMaterial = {
   id: string; production_order_id: string; item_code: string; description: string | null; uom: string | null;
-  qty_needed: number | string; processing_date: string | null; delivery_date: string | null;
+  qty_needed: number | string; processing_date: string | null; delivery_date: string | null; warehouse_id?: string | null;
 };
-export type PickerOrder = { id: string; po_number: string; project_id: number | null };
+export type PickerOrder = { id: string; po_number: string; project_id: number | null; purchase_location_id?: string | null };
 export type PickerPoLine = { production_material_id: string; qty: number | string | null; po: { status: string } | null };
 export type PickerSupplier = { id: string; code: string; name: string | null };
 
@@ -16,6 +16,8 @@ export type MaterialToOrder = {
   qtyNeeded: number; qtyOrdered: number; qtyToOrder: number;
   processingDate: string | null; deliveryDate: string | null;
   mainSupplierId: string | null; mainSupplierCode: string | null; mainSupplierName: string | null;
+  /** The warehouse code the PO would deliver to. */
+  warehouseCode: string | null;
 };
 
 /** Qty already on a PO that still stands, per material. A cancelled PO buys nothing, so its lines free the qty again. */
@@ -35,6 +37,7 @@ export function materialsToOrder(input: {
   mainSupplierOf: ReadonlyMap<string, PickerSupplier>;
   projectOf?: ReadonlyMap<number, { code: string | null; name: string | null }>;
   soDocsOf?: ReadonlyMap<string, string[]>;
+  warehouseOf?: (m: PickerMaterial) => string | null;
 }): MaterialToOrder[] {
   const ordered = orderedByMaterial(input.poLines);
   const out: MaterialToOrder[] = [];
@@ -55,6 +58,7 @@ export function materialsToOrder(input: {
       qtyNeeded: needed, qtyOrdered: onPo, qtyToOrder: toOrder,
       processingDate: m.processing_date, deliveryDate: m.delivery_date,
       mainSupplierId: sup?.id ?? null, mainSupplierCode: sup?.code ?? null, mainSupplierName: sup?.name ?? null,
+      warehouseCode: input.warehouseOf?.(m) ?? null,
     });
   }
   return out.sort((a, b) => (a.deliveryDate ?? '9999').localeCompare(b.deliveryDate ?? '9999')
