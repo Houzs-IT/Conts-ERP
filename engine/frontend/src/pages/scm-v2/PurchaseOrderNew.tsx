@@ -21,8 +21,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 // HOUZS VENDOR — Link lives on 'react-router-dom' in react-router v6 (the
 // version Houzs ships). Only the import specifier changed.
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Save, Trash2, X, ArrowRightLeft } from 'lucide-react';
+import { Save, Trash2, X, ArrowRightLeft, Plus } from 'lucide-react';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
+import { ItemPickerDialog, type ItemPickerRow } from '../../vendor/scm/components/ItemPickerDialog';
 import { Button } from '@2990s/design-system';
 import { formatPhone } from '@2990s/shared/phone';
 import {
@@ -162,7 +163,7 @@ export const PurchaseOrderNew = () => {
   const [notes, setNotes]             = useState<string>('');
 
   // ── Items state ─────────────────────────────────────────────────────
-  const [lines, setLines] = useState<DraftLine[]>([newLine()]);
+  const [lines, setLines] = useState<DraftLine[]>([]);
 
   /* Commander 2026-05-29 (BUG 2) — in-app result dialog. Used to surface the
      "一张 PO 只能一个 supplier" guard when From-SO picks belong to a different
@@ -600,8 +601,51 @@ export const PurchaseOrderNew = () => {
     setLines((prev) => prev.map((l) => (l.rid === rid ? { ...l, ...patch } : l)));
   const addLine  = () => setLines((prev) => [...prev, { ...newLine(), warehouseId: purchaseLocationId || undefined, deliveryDate: expectedAt || undefined }]);
   const dropLine = (rid: string) => setLines((prev) =>
-    prev.length === 1 ? [newLine()] : prev.filter((l) => l.rid !== rid),
+    prev.filter((l) => l.rid !== rid),
   );
+
+  const [isItemPickerOpen, setItemPickerOpen] = useState(false);
+  const isSupplierScoped = Boolean(supplierId) && pickable.length > 0;
+  const itemPickerRows = useMemo<ItemPickerRow[]>(() => {
+    const skus = allSkus.data ?? [];
+    if (isSupplierScoped) {
+      const skuByCode = new Map(skus.map((p) => [p.code, p]));
+      return sortByText(pickable).map((b) => {
+        const sku = skuByCode.get(b.item_code);
+        return {
+          key: b.id, code: b.item_code, name: b.material_name, supplierSku: b.supplier_sku,
+          categoryLabel: sku ? mfgCategoryLabel(sku.category) : 'Other',
+          priceLabel: fmtRm(b.unit_price_sen, b.currency), uom: sku?.uom ?? undefined,
+        };
+      });
+    }
+    return sortByText(skus).map((p) => ({
+      key: p.id, code: p.code, name: p.name, categoryLabel: mfgCategoryLabel(p.category), uom: p.uom ?? undefined,
+    }));
+  }, [isSupplierScoped, pickable, allSkus.data]);
+
+  const addPickedItem = ({ key, code }: ItemPickerRow) => {
+    const binding = isSupplierScoped ? pickable.find((b) => b.id === key) : undefined;
+    const sku = (allSkus.data ?? []).find((p) => p.code === code);
+    const line: DraftLine = {
+      ...newLine(),
+      warehouseId: purchaseLocationId || undefined,
+      deliveryDate: expectedAt || undefined,
+      itemCode: code,
+      materialName: binding?.material_name ?? sku?.name ?? '',
+      category: sku?.category.toLowerCase(),
+      ...(binding && {
+        bindingId: binding.id,
+        materialKind: binding.material_kind,
+        supplierSku: binding.supplier_sku,
+        unitPriceSen: binding.unit_price_sen,
+        priceTouched: false,
+      }),
+    };
+    setLines((prev) => (prev.length === 1 && !prev[0].itemCode && !prev[0].materialName ? [line] : [...prev, line]));
+    // No supplier yet: the reverse lookup adopts the item's supplier, then the backfill effect fills the other lines.
+    if (!supplierId) setPendingItemPick({ rid: line.rid, code });
+  };
 
   const pickBinding = (rid: string, b: BindingRow) => {
     setLine(rid, {
@@ -1052,23 +1096,18 @@ export const PurchaseOrderNew = () => {
       {/* Items card */}
       <section className={styles.card}>
         <div className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Items</h2>
-          <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
-            {/* "Pick any item from 0 SKUs" was printed while the catalogue was still loading or had failed (owner,
-                19 Nov 2026), which reads as an empty catalogue. */}
-            {allSkus.isLoading
-              ? 'Loading items…'
-              : allSkus.isError
-              ? "The item list couldn't be loaded — refresh the page to try again."
-              : supplierId
-              ? (pickable.length > 0
-                  ? `${pickable.length} item(s) bound to this supplier — picker filters to these`
-                  // PR — Commander 2026-05-28: a supplier with no SKU bindings used
-                  // to leave the Item Code picker empty (dead field). Fall back to
-                  // the full catalogue so a one-off purchase is still pickable.
-                  : `No SKUs bound to this supplier yet — picker shows all ${(allSkus.data ?? []).length} SKUs (one-off purchase)`)
-              : `Pick any item from ${(allSkus.data ?? []).length} SKUs — supplier auto-narrows`}
-          </span>
+          <h2 className={styles.cardTitle}>Items ({lines.length})</h2>
+          {/* "Pick any item from 0 SKUs" was printed while the catalogue was still loading or had failed (owner,
+              19 Nov 2026), which reads as an empty catalogue. */}
+          {allSkus.isError ? (
+            <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
+              The item list couldn't be loaded — refresh the page to try again.
+            </span>
+          ) : (
+            <Button variant="ghost" size="md" onClick={() => setItemPickerOpen(true)} disabled={allSkus.isLoading} style={{ minHeight: 44 }}>
+              <Plus {...ICON} /> {allSkus.isLoading ? 'Loading items…' : isSupplierScoped ? 'Add items from supplier' : 'Add items'}
+            </Button>
+          )}
         </div>
         <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {/* PR #129 — Card-per-line layout. Commander 2026-05-26: "其实有很
@@ -1077,6 +1116,19 @@ export const PurchaseOrderNew = () => {
               (same shape as SoLineCard from PR #125). Each card has 4
               sections: identity (item + supplier code), description,
               variants (per category), pricing. */}
+          {lines.length === 0 && (
+            <div style={{
+              border: '1px dashed var(--line-strong)',
+              borderRadius: 'var(--radius-lg)',
+              background: 'var(--c-cream)',
+              padding: 'var(--space-6) var(--space-4)',
+              textAlign: 'center',
+              color: 'var(--fg-muted)',
+              fontSize: 'var(--fs-14)',
+            }}>
+              No items yet. Use {isSupplierScoped ? 'Add items from supplier' : 'Add items'} to pick them, or Add line to type one in.
+            </div>
+          )}
           {lines.map((l, idx) => {
             const lineTotalSen = Math.max(0, l.qty * l.unitPriceSen - (l.discountSen ?? 0));
             const categoryLabel = l.category?.toUpperCase() ?? 'UNSET';
@@ -1540,6 +1592,17 @@ export const PurchaseOrderNew = () => {
           <AddLineButton variant="block" onClick={addLine} />
         </div>
       </section>
+      {isItemPickerOpen && (
+        <ItemPickerDialog
+          title="Select items"
+          subtitle={isSupplierScoped
+            ? `${supplier?.code ?? ''} · ${supplier?.name ?? ''} · ${pickable.length} items offered`
+            : `All ${itemPickerRows.length} SKUs · pick a creditor first to see only theirs with prices`}
+          rows={itemPickerRows}
+          onAdd={addPickedItem}
+          onClose={() => setItemPickerOpen(false)}
+        />
+      )}
 
       {/* Totals card aligned right — lg:pr-32 clears the fixed FAB cluster. */}
       <div className="lg:pr-32" style={{ display: 'flex', justifyContent: 'flex-end' }}>
