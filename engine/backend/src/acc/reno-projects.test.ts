@@ -95,6 +95,24 @@ describe('renovation project status rows', () => {
     });
   });
 
+  it('a cancelled instalment invoice billed nothing: the next instalment is that one again at its own amount', async () => {
+    /* RM 100,000 on 15/50/30/5; instalment 1 invoiced at RM 15,000, then cancelled. */
+    const w = world({
+      mfg_sales_order_items: [{ id: 'a', doc_no: SO, company_id: CO, item_code: 'RN-X', total_sen: 10_000_000, line_cost_sen: 6_500_000, cancelled: false, created_at: '2026-11-03T03:00:00Z' }],
+      reno_doc_instalments: [
+        { so_doc_no: SO, seq: 1, label: 'Deposit', pct_bp: 1500, trigger: 'manual' },
+        { so_doc_no: SO, seq: 2, label: 'Carpentry', pct_bp: 5000, trigger: 'manual' },
+        { so_doc_no: SO, seq: 3, label: 'Fitting', pct_bp: 3000, trigger: 'manual' },
+        { so_doc_no: SO, seq: 4, label: 'Handover', pct_bp: 500, trigger: 'manual' },
+      ],
+      reno_instalment_bills: [{ so_doc_no: SO, seq: 1, kind: 'INVOICE', amount_sen: 1_500_000, invoice_date: '2026-11-03', sales_invoice_id: 'si1' }],
+      sales_invoices: [{ id: 'si1', company_id: CO, so_doc_no: SO, invoice_date: '2026-11-03', total_sen: 1_500_000, status: 'CANCELLED' }],
+      sales_invoice_payments: [],
+    });
+    const [r] = await renoProjectRows(w, CO, '2026-11-30');
+    expect(r).toMatchObject({ invoicedSen: 0, nextInstalment: { seq: 1, label: 'Deposit', amountSen: 1_500_000, trigger: 'manual' }, gapsByInvoiceDays: [null, null, null] });
+  });
+
   it('work ahead of money is flagged at 20 points', async () => {
     const [r] = await renoProjectRows(world(), CO, '2026-11-30');
     expect(r!.workAheadOfMoney).toBe(true); // 78.2% done, 18.2% collected
