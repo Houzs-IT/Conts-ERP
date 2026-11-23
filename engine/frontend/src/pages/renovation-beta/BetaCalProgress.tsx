@@ -86,9 +86,11 @@ function ProgressRow({ m, p, hl }: { m: BoardModel; p: DesignProject; hl: Viewin
         {designSteps(m).map(([key, label], i) => {
           const done = stepDone(m, p, key);
           const on = i === cur;
+          // The line into a step is lit only when every step before it is done, or both ends are done (a step can finish out of order).
+          const lit = i <= cur || (done && stepDone(m, p, designSteps(m)[i - 1]![0]));
           return (
             <div key={key} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, position: "relative" }}>
-              {i > 0 && <span aria-hidden="true" style={{ position: "absolute", top: 10, right: "50%", width: "100%", height: 2, background: done || on ? TONES.accent.dot : BETA.line }} />}
+              {i > 0 && <span aria-hidden="true" style={{ position: "absolute", top: 10, right: "50%", width: "100%", height: 2, background: lit ? TONES.accent.dot : BETA.line }} />}
               <span
                 role="img"
                 aria-label={`${label}: ${done ? "done" : on ? "now" : "not yet"}`}

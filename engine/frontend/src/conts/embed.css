@@ -141,6 +141,9 @@ html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table)
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is([style*="color: var(--c-green"], [style*="color: var(--c-secondary-a"]) { color: #7FD1A8 !important; }
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) [style*="color: var(--c-festive-b"] { color: #FF9B90 !important; }
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) [style*="color: var(--fg-muted"] { color: #9AA2B4 !important; }
+html.conts-embedded[data-beta-skin="night"] .page-head [style*="color: var(--c-orange"] { color: #7FD6C8 !important; }
+html.conts-embedded[data-beta-skin="night"] .page-head [style*="color: var(--c-festive-b"] { color: #FF9B90 !important; }
+html.conts-embedded[data-beta-skin="night"] .page-head [style*="color: var(--fg-muted"] { color: #9AA2B4 !important; }
 /* Class inks in the night table that kept their light values: synced green (Team "Active", 2.4:1), accent gold initials (3.2:1). Pills with a solid light fill keep their dark ink. */
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) .text-synced { color: #7BE8D8; }
 html.conts-embedded[data-beta-skin="night"] .dt-table:not(.bg-surface .dt-table) :is(.text-accent, .text-accent-ink) { color: #F7CD73; }
