@@ -76,7 +76,7 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
     inChunks(projectIds, (b, f, t) => sb.schema('public').from('projects').select('id, code, name, reno_stage, planned_handover_date, salesperson_name')
       .eq('company_id', companyId).in('id', b).order('id').range(f, t), 'projects'),
     inChunks(docs, (b, f, t) => sb.from('reno_doc_instalments').select('so_doc_no, seq, label, pct_bp, trigger').in('so_doc_no', b).order('so_doc_no').order('seq').range(f, t), 'instalments'),
-    inChunks(docs, (b, f, t) => sb.from('reno_instalment_bills').select('so_doc_no, seq, kind, amount_sen, invoice_date').in('so_doc_no', b).order('so_doc_no').order('seq').range(f, t), 'bills'),
+    inChunks(docs, (b, f, t) => sb.from('reno_instalment_bills').select('so_doc_no, seq, kind, amount_sen, invoice_date, sales_invoice_id').in('so_doc_no', b).order('so_doc_no').order('seq').range(f, t), 'bills'),
     inChunks(docs, (b, f, t) => sb.from('mfg_sales_order_payments').select('id, so_doc_no, paid_at, amount_sen').eq('company_id', companyId).in('so_doc_no', b).order('id').range(f, t), 'order payments'),
     inChunks(docs, (b, f, t) => sb.from('sales_invoices').select('id, so_doc_no, status').eq('company_id', companyId).in('so_doc_no', b).order('id').range(f, t), 'invoices'),
     inChunks(projectIds, (b, f, t) => sb.from('purchase_orders').select('id, project_id, status, total_sen, po_date, supplier:suppliers (code)').eq('company_id', companyId).in('project_id', b).order('id').range(f, t), 'purchase orders'),
@@ -108,6 +108,7 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
   const liveSi = [...invoices, ...openingSis.filter((i) => !invoices.some((x) => String(x.id) === String(i.id)))]
     .filter((i) => !['DRAFT', 'CANCELLED', 'VOID'].includes(String(i.status).toUpperCase()));
   const siDoc = new Map(liveSi.map((i) => [String(i.id), String(i.so_doc_no)]));
+  const cancelledSi = new Set(invoices.filter((i) => String(i.status).toUpperCase() === 'CANCELLED').map((i) => String(i.id)));
   /* As at the date: a PO raised by then, not drafted or cancelled. */
   const livePos = pos.filter((p) => !['CANCELLED', 'DRAFT'].includes(String(p.status).toUpperCase()) && (!p.po_date || day(p.po_date) <= asOf));
   const poIds = livePos.map((p) => String(p.id));
@@ -251,7 +252,9 @@ export async function renoProjectRows(sb: Db, companyId: number, asOf: string): 
     const pays = (paidBy.get(c.soDocNo) ?? []).sort((a, b) => a.date.localeCompare(b.date));
     const receivedSen = pays.reduce((s, x) => s + x.sen, 0);
     const myInst = instalments.filter((i) => String(i.so_doc_no) === c.soDocNo).sort((a, b) => Number(a.seq) - Number(b.seq));
-    const myBills = bills.filter((b) => String(b.so_doc_no) === c.soDocNo && day(b.invoice_date) <= asOf).sort((a, b) => Number(a.seq) - Number(b.seq));
+    /* A cancelled invoice billed nothing: its instalment is due again (renovation-billing billingView's rule). */
+    const myBills = bills.filter((b) => String(b.so_doc_no) === c.soDocNo && day(b.invoice_date) <= asOf && !(b.sales_invoice_id && cancelledSi.has(String(b.sales_invoice_id))))
+      .sort((a, b) => Number(a.seq) - Number(b.seq));
     const billedSeqs = new Set(myBills.map((b) => Number(b.seq)));
     const next = myInst.find((i) => !billedSeqs.has(Number(i.seq)));
     let nextInstalment: RenoProjectRow['nextInstalment'] = null;

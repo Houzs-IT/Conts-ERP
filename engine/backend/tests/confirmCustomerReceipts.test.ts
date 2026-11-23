@@ -525,6 +525,23 @@ describe('a renovation payment ahead of its invoice offers the next instalment',
     expect(r.body.billNext).toEqual({ soDocNo: RSO, instalmentId: 'inst-2', seq: 2, label: 'Carpentry', amountSen: 400_000, receivedSen: 700_000, billedSen: 300_000 });
   });
 
+  test('a cancelled instalment invoice billed nothing: its instalment is offered again at its own amount', async () => {
+    /* RM 100,000 on 15/50/30/5; instalment 1 invoiced at RM 15,000, then cancelled; RM 20,000 confirmed. */
+    const sb = reno(2_000_000, {
+      mfg_sales_order_items: [{ id: 'i1', doc_no: RSO, company_id: CO, item_code: 'RN-WORKS', total_sen: 10_000_000, cancelled: false }],
+      reno_doc_instalments: [
+        { id: 'inst-1', so_doc_no: RSO, seq: 1, label: 'Deposit', pct_bp: 1500 },
+        { id: 'inst-2', so_doc_no: RSO, seq: 2, label: 'Carpentry', pct_bp: 5000 },
+        { id: 'inst-3', so_doc_no: RSO, seq: 3, label: 'Fitting', pct_bp: 3000 },
+        { id: 'inst-4', so_doc_no: RSO, seq: 4, label: 'Handover', pct_bp: 500 },
+      ],
+      reno_instalment_bills: [{ id: 'b-1', company_id: CO, so_doc_no: RSO, instalment_id: 'inst-1', seq: 1, kind: 'INVOICE', amount_sen: 1_500_000, sales_invoice_id: 'si-r1', credit_note_id: null }],
+      sales_invoices: [{ id: 'si-r1', company_id: CO, invoice_number: '2990-SI-2611-001', so_doc_no: RSO, status: 'CANCELLED', total_sen: 1_500_000, debtor_code: 'cust-1', debtor_name: 'MS LEE' }],
+    });
+    const r = await recordAndConfirm(sb);
+    expect(r.body.billNext).toEqual({ soDocNo: RSO, instalmentId: 'inst-1', seq: 1, label: 'Deposit', amountSen: 1_500_000, receivedSen: 2_000_000, billedSen: 0 });
+  });
+
   test('a confirm within what is billed offers nothing', async () => {
     const sb = reno(300_000);
     const r = await recordAndConfirm(sb);
