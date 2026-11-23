@@ -28,8 +28,10 @@
    Paid before go-live (chew, 23 Nov 2026): a contract AutoCount carried was invoiced, and partly or wholly paid, in
    AutoCount. What it was paid there is what it was invoiced less what its customer still owed at go-live on the
    opening invoices (acc/reno-paid-before-golive). It counts in receivedSen and fills the instalments that invoicing
-   covers, oldest first, as "paid before go-live". Confirmed order payments dated before go-live are AutoCount's money
-   too: inside that figure, never counted on top of it. Nothing posts: the opening balances carry it. */
+   covers, oldest first, as "paid before go-live". Money recorded on the order in the ERP counts on top of it, whatever
+   its date: the ERP's books start on the ledger start, and a payment AutoCount also recorded has AutoCount's copy taken
+   back (acc/autocount-journals reverseAutocountJournals) and its opening documents raised by it (chew, 23 Nov 2026:
+   "我保留mk这笔然后当做autocount没有这笔"). Nothing posts: the opening balances carry it. */
 
 import { auditSo, mintDocNo, refuse, todayKl, yymmOf, type RenoDb, type UnsafeRunner, renoDbOf } from './renovation-db';
 import { readContractHead, recomputeSoHeader, RENO_LIVE_STATUSES } from './renovation-so';
@@ -309,7 +311,9 @@ export function assembleView(
   const billedSen = live.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen + billedBeforeGoLiveSen;
   /* Paid on the invoices, and paid on the order itself: a deposit is taken on the SO. Confirmed money only. What
      AutoCount was paid before go-live counts too, less the order payments before go-live it already holds. */
-  const onOrderBefore = Math.min(Math.max(0, Number(orderPaidBeforeGoLiveSen) || 0), paidBefore, Math.max(0, orderPaidSen));
+  /* No longer taken out of what was paid before go-live (see the header); kept on the view, as 0. */
+  void orderPaidBeforeGoLiveSen;
+  const onOrderBefore = 0;
   const receivedSen = orderPaidSen + (paidBefore - onOrderBefore) + live.reduce((s, b) => s + (b.kind === 'INVOICE' ? paidOf(b) : 0), 0);
   const waitingSen = orderWaitingSen + live.reduce((s, b) => s + (b.kind === 'INVOICE' ? Math.min(waitingOf(b), Number(b.paid_sen ?? 0)) : 0), 0);
   const original = originalContractSen === null ? revised : Number(originalContractSen);
