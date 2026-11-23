@@ -50,6 +50,7 @@ export function SearchableSelect({
   invalid = false,
   ariaLabel,
   title,
+  clearable = false,
   onSearchChange,
   searching = false,
 }: {
@@ -64,6 +65,8 @@ export function SearchableSelect({
   ariaLabel?: string;
   /** Hover tooltip (e.g. why a field is locked). Falls back to the selected label. */
   title?: string;
+  /** Emptying the box and leaving it clears the value (onChange("")) instead of restoring it. Not with server search. */
+  clearable?: boolean;
   /** SERVER SEARCH: the caller searches with the typed term and passes back the matches as `options`, which are then
       shown as they are (no second filter here: the server matches fields the label does not show). */
   onSearchChange?: (term: string) => void;
@@ -129,7 +132,10 @@ export function SearchableSelect({
           onSearchChange?.("");
           e.currentTarget.select();
         }}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onBlur={() => {
+          if (clearable && open && !onSearchChange && value && !search.trim()) onChange("");
+          setTimeout(() => setOpen(false), 150);
+        }}
         onChange={(e) => {
           setSearch(e.target.value);
           onSearchChange?.(e.target.value);
