@@ -22,9 +22,9 @@ const BADGE: Record<RoomRow['kind'], { text: string; cls: string } | null> = {
   added: { text: 'New', cls: 'bg-synced-bg text-synced' },
   removed: { text: 'Removed', cls: 'bg-err-bg text-err' },
 };
-const GRID = 'md:grid md:grid-cols-[130px_minmax(0,1fr)_150px_110px_120px_100px] md:items-center md:gap-3';
-const stepBtn = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink hover:bg-surface-2 disabled:opacity-50 md:h-8 md:w-8';
-const actBtn = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[13px] font-medium text-ink hover:bg-surface-2 disabled:opacity-50 md:h-8 md:px-2 md:text-[12px]';
+const GRID = 'xl:grid xl:grid-cols-[130px_minmax(0,1fr)_150px_110px_120px_100px] xl:items-center xl:gap-3';
+const stepBtn = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink hover:bg-surface-2 disabled:opacity-50 xl:h-8 xl:w-8';
+const actBtn = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[13px] font-medium text-ink hover:bg-surface-2 disabled:opacity-50 xl:h-8 xl:px-2 xl:text-[12px]';
 
 const signed = (sen: number): string => (sen > 0 ? `+${rm(sen)}` : rm(sen));
 
@@ -61,7 +61,7 @@ export function VoRoomEditor({ sections, edits, onChange, disabled, loading }: {
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2">
           <label className="flex min-w-0 flex-1 items-center gap-2 text-[12.5px] text-ink-secondary">
             New room
-            <input className={cn(inputCls, 'h-11 min-w-0 flex-1 text-[16px] md:h-9 md:text-[13px]')} value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder="Kitchen" />
+            <input className={cn(inputCls, 'h-11 min-w-0 flex-1 text-[16px] xl:h-9 xl:text-[13px]')} value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder="Kitchen" />
           </label>
           <div className="w-full sm:w-56" aria-label="Pick the first product for the new room">
             <ProductPicker value={null} disabled={!newRoom.trim()} onPick={(p) => { onChange(addLine(edits, newRoom, p)); setNewRoom(''); }} />
@@ -112,7 +112,7 @@ function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits;
   const setPrice = (sen: number) => onChange(line ? setLinePrice(edits, line, sen) : setAddPrice(edits, r.addIndex!, sen));
   return (
     <li className={cn('flex flex-col gap-2 border-b border-border-subtle px-3 py-2.5 last:border-b-0', GRID, ROW_TINT[r.kind])}>
-      <div className="order-2 min-w-0 md:order-none">
+      <div className="order-2 min-w-0 xl:order-none">
         {line && !gone && !disabled ? (
           <ProductPicker value={r.sku} onPick={(p) => onChange(swapLine(edits, line, p))} />
         ) : (
@@ -121,15 +121,15 @@ function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits;
         {r.oldSku && <span className="mt-0.5 block truncate font-mono text-[11px] text-ink-muted line-through">{r.oldSku}</span>}
       </div>
 
-      <div className="order-1 flex min-w-0 items-start gap-2 md:order-none">
+      <div className="order-1 flex min-w-0 items-start gap-2 xl:order-none">
         <div className="min-w-0 flex-1">
           {r.oldName && <span className="block text-[12px] text-ink-muted line-through">{r.oldName}</span>}
-          <span className={cn('block text-[14px] font-medium text-ink md:text-[13px]', gone && 'text-err line-through')}>{r.name}</span>
+          <span className={cn('block text-[14px] font-medium text-ink xl:text-[13px]', gone && 'text-err line-through')}>{r.name}</span>
         </div>
         {badge && <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', badge.cls)}>{badge.text}</span>}
       </div>
 
-      <div className="order-3 flex items-center gap-2 md:order-none">
+      <div className="order-3 flex items-center gap-2 xl:order-none">
         {gone ? (
           <span className="text-[12.5px] font-semibold text-err">Removed ({r.qty})</span>
         ) : r.measured ? (
@@ -137,7 +137,7 @@ function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits;
         ) : (
           <>
             <button type="button" className={stepBtn} disabled={disabled} aria-label={`One less ${r.name}`} onClick={() => setQty(r.qty - 1)}><Minus size={15} /></button>
-            <span className="min-w-[56px] text-center text-[15px] font-semibold tabular-nums md:text-[13px]">
+            <span className="min-w-[56px] text-center text-[15px] font-semibold tabular-nums xl:text-[13px]">
               {r.oldQty !== null && <span className="font-normal text-ink-muted">{r.oldQty} → </span>}{r.qty}
             </span>
             <button type="button" className={stepBtn} disabled={disabled} aria-label={`One more ${r.name}`} onClick={() => setQty(r.qty + 1)}><Plus size={15} /></button>
@@ -145,32 +145,32 @@ function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits;
         )}
       </div>
 
-      <div className="order-4 flex items-center justify-between gap-2 md:order-none md:block">
-        <span className="text-[12px] text-ink-secondary md:hidden">Unit price</span>
-        <div className="w-32 md:w-full">
+      <div className="order-4 flex items-center justify-between gap-2 xl:order-none xl:block">
+        <span className="text-[12px] text-ink-secondary xl:hidden">Unit price</span>
+        <div className="w-32 xl:w-full">
           <MoneyInput value={r.unitPriceSen} onChange={(sen) => setPrice(sen ?? 0)} disabled={disabled || gone || r.measured}
-            ariaLabel={`Unit price of ${r.name}`} className={cn(inputCls, 'h-11 w-full text-[16px] md:h-8 md:text-[12.5px]')} />
+            ariaLabel={`Unit price of ${r.name}`} className={cn(inputCls, 'h-11 w-full text-[16px] xl:h-8 xl:text-[12.5px]')} />
           {r.oldPriceSen !== null && <span className="mt-0.5 block text-right text-[11px] text-ink-muted line-through">{rm(r.oldPriceSen)}</span>}
         </div>
       </div>
 
-      <div className="order-5 flex items-baseline justify-between gap-2 md:order-none md:block md:text-right">
-        <span className="text-[12px] text-ink-secondary md:hidden">Amount</span>
+      <div className="order-5 flex items-baseline justify-between gap-2 xl:order-none xl:block xl:text-right">
+        <span className="text-[12px] text-ink-secondary xl:hidden">Amount</span>
         <span className="tabular-nums">
           <span className={cn('block text-[13px]', gone && 'text-ink-muted line-through')}>{rm(r.amountSen)}</span>
           {r.deltaSen !== 0 && <span className={cn('block text-[12px] font-semibold', r.deltaSen < 0 ? 'text-err' : 'text-synced')}>{signed(r.deltaSen)}</span>}
         </span>
       </div>
 
-      <div className="order-6 flex justify-end gap-1.5 md:order-none">
+      <div className="order-6 flex justify-end gap-1.5 xl:order-none">
         {!disabled && r.kind === 'same' && line && (
-          <button type="button" className={cn(actBtn, 'text-err')} aria-label={`Remove ${r.name}`} title="Remove" onClick={() => onChange(removeLine(edits, line))}><Trash2 size={15} /><span className="md:sr-only">Remove</span></button>
+          <button type="button" className={cn(actBtn, 'text-err')} aria-label={`Remove ${r.name}`} title="Remove" onClick={() => onChange(removeLine(edits, line))}><Trash2 size={15} /><span className="xl:sr-only">Remove</span></button>
         )}
         {!disabled && (r.kind === 'changed' || r.kind === 'removed') && r.soItemId && (
           <button type="button" className={actBtn} onClick={() => onChange(undoLine(edits, r.soItemId!))}><Undo2 size={15} />Undo</button>
         )}
         {!disabled && r.kind === 'added' && (
-          <button type="button" className={cn(actBtn, 'text-err')} aria-label={`Take out ${r.name}`} title="Take out" onClick={() => onChange(dropAdd(edits, r.addIndex!))}><Trash2 size={15} /><span className="md:sr-only">Take out</span></button>
+          <button type="button" className={cn(actBtn, 'text-err')} aria-label={`Take out ${r.name}`} title="Take out" onClick={() => onChange(dropAdd(edits, r.addIndex!))}><Trash2 size={15} /><span className="xl:sr-only">Take out</span></button>
         )}
       </div>
     </li>

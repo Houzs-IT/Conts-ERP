@@ -264,7 +264,7 @@ export function VariationOrderEditor() {
             <div>
               {editable && (
                 <div className="mb-2 flex justify-end">
-                  <Button variant="secondary" className="h-11 md:h-8" icon={<Package size={14} />} onClick={() => setPickerOpen(true)}>From package</Button>
+                  <Button variant="secondary" className="h-11 xl:h-8" icon={<Package size={14} />} onClick={() => setPickerOpen(true)}>From package</Button>
                 </div>
               )}
               <VoRoomEditor sections={contract.data?.sections ?? []} edits={edits} disabled={locked} loading={contract.isLoading}
