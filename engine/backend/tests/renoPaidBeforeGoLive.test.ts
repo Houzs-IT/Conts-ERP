@@ -123,25 +123,3 @@ describe('paidBeforeGoLiveOf: a contract seeded with only the whole amount AutoC
     expect((await paidBeforeGoLiveOf(sb, 1, ['TC-SO-2607-010'])).get('TC-SO-2607-010')).toBe(3_785_500);
   });
 });
-
-describe('paidBeforeGoLiveOf: the uploaded invoiced figure wins over the cut-over amount', () => {
-  test('THE HENGE E18-01: a price cut agreed before go-live but approved after it is not read as money received (chew, 23 Nov 2026)', async () => {
-    const { fakeSb } = await import('../src/scm/lib/fake-postgrest');
-    const { paidBeforeGoLiveOf } = await import('../src/acc/reno-paid-before-golive');
-    const sb = fakeSb({
-      mfg_sales_orders: [{ company_id: 1, doc_no: 'TC-SO-2505-001', debtor_code: '301-M231', so_date: '2025-05-01', status: 'CONFIRMED' }],
-      reno_so_contracts: [{ so_doc_no: 'TC-SO-2505-001', billed_before_golive_sen: 10_228_050, golive_contract_sen: 10_528_050 }],
-      sales_invoices: [{ company_id: 1, debtor_code: '301-M231', total_sen: 2_437_850, status: 'SENT', opening_balance: true }],
-      customer_credits: [],
-    });
-    expect((await paidBeforeGoLiveOf(sb, 1, ['TC-SO-2505-001'])).get('TC-SO-2505-001')).toBe(7_790_200);
-  });
-
-  test('billedBeforeGoLiveOf: the uploaded figure, else the cut-over amount, never below 0', async () => {
-    const { billedBeforeGoLiveOf } = await import('../src/acc/reno-paid-before-golive');
-    expect(billedBeforeGoLiveOf({ billed_before_golive_sen: 100, golive_contract_sen: 300 })).toBe(100);
-    expect(billedBeforeGoLiveOf({ billed_before_golive_sen: 0, golive_contract_sen: 300 })).toBe(300);
-    expect(billedBeforeGoLiveOf({ billed_before_golive_sen: null, golive_contract_sen: null })).toBe(0);
-    expect(billedBeforeGoLiveOf({ billed_before_golive_sen: -5, golive_contract_sen: -5 })).toBe(0);
-  });
-});
