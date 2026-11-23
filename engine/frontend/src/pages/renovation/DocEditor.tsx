@@ -67,8 +67,10 @@ function move<T>(arr: T[], i: number, d: -1 | 1): T[] {
 
 const KIND_LABEL: Record<RenoLineKind, string> = { ITEM: 'Item', CHILD: 'Add-on', DETAIL: 'Dimension', TEXT: 'Text' };
 
-export function ProductPicker({ value, onPick, disabled, onPickPackage, packageKind }: {
+export function ProductPicker({ value, onPick, disabled, onPickPackage, packageKind, tall }: {
   value: string | null; onPick: (p: ProductPick) => void; disabled?: boolean; onPickPackage?: (h: PackageHit) => void;
+  /** A 44px trigger below the xl breakpoint, for touch (the VO room editor). */
+  tall?: boolean;
   /** Offer only packages of this kind (a package's own lines can take a kit, never a whole package). */
   packageKind?: PackageHit['kind'];
 }) {
@@ -117,7 +119,7 @@ export function ProductPicker({ value, onPick, disabled, onPickPackage, packageK
     <div ref={ref} className="relative">
       <button
         type="button" disabled={disabled} onClick={() => setOpen((o) => !o)}
-        className={cn('flex h-8 w-full items-center gap-1 rounded border px-1.5 text-left text-[11.5px] font-semibold', value ? 'border-border bg-surface-2 text-primary-ink' : 'border-dashed border-err/50 text-err', disabled && 'opacity-70')}
+        className={cn('flex w-full items-center gap-1 rounded border px-1.5 text-left font-semibold', tall ? 'h-11 text-[13px] xl:h-8 xl:text-[11.5px]' : 'h-8 text-[11.5px]', value ? 'border-border bg-surface-2 text-primary-ink' : 'border-dashed border-err/50 text-err', disabled && 'opacity-70')}
         title={value ? `Product ${value}` : 'Pick the product for this line'}
       >
         <Search size={12} className="shrink-0" />

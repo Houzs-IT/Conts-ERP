@@ -8,7 +8,7 @@ import { qtyLabel } from '../../vendor/shared/renovation-money';
 import type { DocSection, VoEdits } from '../../lib/renovation/api';
 import { cn } from '../../lib/utils';
 import { ProductPicker } from './DocEditor';
-import { inputCls, MoneyInput, rm } from './shared';
+import { MoneyInput, rm } from './shared';
 import {
   addLine, dropAdd, removeLine, roomsOf, setAddPrice, setAddQty, setLinePrice, setLineQty, swapLine, totalsOf, undoLine,
   type Room, type RoomRow,
@@ -25,6 +25,10 @@ const BADGE: Record<RoomRow['kind'], { text: string; cls: string } | null> = {
 const GRID = 'xl:grid xl:grid-cols-[130px_minmax(0,1fr)_150px_110px_120px_100px] xl:items-center xl:gap-3';
 const stepBtn = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink hover:bg-surface-2 disabled:opacity-50 xl:h-8 xl:w-8';
 const actBtn = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[13px] font-medium text-ink hover:bg-surface-2 disabled:opacity-50 xl:h-8 xl:px-2 xl:text-[12px]';
+
+/* Not inputCls: cn only joins classes, so its h-9 would beat a 44px phone height. */
+const FIELD = 'w-full min-w-0 rounded-md border border-border bg-surface px-2.5 text-ink outline-none focus:border-primary disabled:bg-surface-2 disabled:text-ink-muted h-11 text-[16px] xl:h-8 xl:text-[12.5px]';
+const PRICE_INPUT = FIELD;
 
 const signed = (sen: number): string => (sen > 0 ? `+${rm(sen)}` : rm(sen));
 
@@ -61,10 +65,10 @@ export function VoRoomEditor({ sections, edits, onChange, disabled, loading }: {
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2">
           <label className="flex min-w-0 flex-1 items-center gap-2 text-[12.5px] text-ink-secondary">
             New room
-            <input className={cn(inputCls, 'h-11 min-w-0 flex-1 text-[16px] xl:h-9 xl:text-[13px]')} value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder="Kitchen" />
+            <input className={cn(FIELD, 'flex-1')} value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder="Kitchen" />
           </label>
           <div className="w-full sm:w-56" aria-label="Pick the first product for the new room">
-            <ProductPicker value={null} disabled={!newRoom.trim()} onPick={(p) => { onChange(addLine(edits, newRoom, p)); setNewRoom(''); }} />
+            <ProductPicker value={null} tall disabled={!newRoom.trim()} onPick={(p) => { onChange(addLine(edits, newRoom, p)); setNewRoom(''); }} />
           </div>
         </div>
       )}
@@ -88,7 +92,7 @@ function RoomCard({ room, edits, onChange, disabled }: { room: Room; edits: VoEd
       {!disabled && (
         <div className="flex flex-wrap items-center gap-2 border-t border-border-subtle px-3 py-2">
           <span className="text-[12.5px] text-ink-secondary">Add line in {room.name}</span>
-          <div className="w-full sm:w-56"><ProductPicker value={null} onPick={(p) => onChange(addLine(edits, room.name, p))} /></div>
+          <div className="w-full sm:w-56"><ProductPicker value={null} tall onPick={(p) => onChange(addLine(edits, room.name, p))} /></div>
         </div>
       )}
     </section>
@@ -102,76 +106,83 @@ function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits;
       <li className={cn('flex flex-wrap items-center gap-2 border-b border-border-subtle px-3 py-2.5 last:border-b-0', ROW_TINT.gone)}>
         <span className="min-w-0 flex-1 text-[13px] text-ink-secondary">{r.name}{r.sku ? ` (${r.sku})` : ''}: another VO changed this line, so this edit cannot be saved.</span>
         {badge && <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', badge.cls)}>{badge.text}</span>}
-        {!disabled && <button type="button" className={actBtn} onClick={() => onChange(undoLine(edits, r.soItemId!))}><Undo2 size={15} />Undo</button>}
+        {!disabled && r.soItemId && <button type="button" className={actBtn} onClick={() => onChange(undoLine(edits, r.soItemId ?? ''))}><Undo2 size={15} />Undo</button>}
       </li>
     );
   }
-  const gone = r.kind === 'removed';
-  const line = r.line;
-  const setQty = (q: number) => onChange(line ? setLineQty(edits, line, q) : setAddQty(edits, r.addIndex!, q));
-  const setPrice = (sen: number) => onChange(line ? setLinePrice(edits, line, sen) : setAddPrice(edits, r.addIndex!, sen));
+  const isRemoved = r.kind === 'removed';
+  const { line, addIndex, soItemId } = r;
+  const setQty = (qty: number): void => {
+    if (line) onChange(setLineQty(edits, line, qty));
+    else if (addIndex !== null) onChange(setAddQty(edits, addIndex, qty));
+  };
+  const setPrice = (sen: number): void => {
+    if (line) onChange(setLinePrice(edits, line, sen));
+    else if (addIndex !== null) onChange(setAddPrice(edits, addIndex, sen));
+  };
+  /* Phone: name, SKU, then qty with the amount, then price with the action. Wide screens: the wrappers dissolve
+     (xl:contents) and xl:order puts each cell in its grid column. */
   return (
     <li className={cn('flex flex-col gap-2 border-b border-border-subtle px-3 py-2.5 last:border-b-0', GRID, ROW_TINT[r.kind])}>
-      <div className="order-2 min-w-0 xl:order-none">
-        {line && !gone && !disabled ? (
-          <ProductPicker value={r.sku} onPick={(p) => onChange(swapLine(edits, line, p))} />
-        ) : (
-          <span className={cn('block truncate font-mono text-[11.5px]', gone && 'text-err line-through')}>{r.sku ?? '-'}</span>
-        )}
-        {r.oldSku && <span className="mt-0.5 block truncate font-mono text-[11px] text-ink-muted line-through">{r.oldSku}</span>}
-      </div>
-
-      <div className="order-1 flex min-w-0 items-start gap-2 xl:order-none">
+      <div className="flex min-w-0 items-start gap-2 xl:order-2">
         <div className="min-w-0 flex-1">
           {r.oldName && <span className="block text-[12px] text-ink-muted line-through">{r.oldName}</span>}
-          <span className={cn('block text-[14px] font-medium text-ink xl:text-[13px]', gone && 'text-err line-through')}>{r.name}</span>
+          <span className={cn('block text-[14px] font-medium text-ink xl:text-[13px]', isRemoved && 'text-err line-through')}>{r.name}</span>
         </div>
         {badge && <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', badge.cls)}>{badge.text}</span>}
       </div>
 
-      <div className="order-3 flex items-center gap-2 xl:order-none">
-        {gone ? (
-          <span className="text-[12.5px] font-semibold text-err">Removed ({r.qty})</span>
-        ) : r.measured ? (
-          <span className="text-[12.5px] tabular-nums">{line ? qtyLabel({ qty: line.qty, measureMilli: line.measureMilli ?? null, measureUom: line.measureUom, uom: line.uom }) : r.qty}</span>
+      <div className="min-w-0 xl:order-1">
+        {line && !isRemoved && !disabled ? (
+          <ProductPicker value={r.sku} tall onPick={(p) => onChange(swapLine(edits, line, p))} />
         ) : (
-          <>
-            <button type="button" className={stepBtn} disabled={disabled} aria-label={`One less ${r.name}`} onClick={() => setQty(r.qty - 1)}><Minus size={15} /></button>
-            <span className="min-w-[56px] text-center text-[15px] font-semibold tabular-nums xl:text-[13px]">
-              {r.oldQty !== null && <span className="font-normal text-ink-muted">{r.oldQty} → </span>}{r.qty}
-            </span>
-            <button type="button" className={stepBtn} disabled={disabled} aria-label={`One more ${r.name}`} onClick={() => setQty(r.qty + 1)}><Plus size={15} /></button>
-          </>
+          <span className={cn('block truncate font-mono text-[11.5px]', isRemoved && 'text-err line-through')}>{r.sku ?? '-'}</span>
         )}
+        {r.oldSku && <span className="mt-0.5 block truncate font-mono text-[11px] text-ink-muted line-through">{r.oldSku}</span>}
       </div>
 
-      <div className="order-4 flex items-center justify-between gap-2 xl:order-none xl:block">
-        <span className="text-[12px] text-ink-secondary xl:hidden">Unit price</span>
-        <div className="w-32 xl:w-full">
-          <MoneyInput value={r.unitPriceSen} onChange={(sen) => setPrice(sen ?? 0)} disabled={disabled || gone || r.measured}
-            ariaLabel={`Unit price of ${r.name}`} className={cn(inputCls, 'h-11 w-full text-[16px] xl:h-8 xl:text-[12.5px]')} />
-          {r.oldPriceSen !== null && <span className="mt-0.5 block text-right text-[11px] text-ink-muted line-through">{rm(r.oldPriceSen)}</span>}
+      <div className="flex items-center justify-between gap-2 xl:contents">
+        <div className="flex items-center gap-2 xl:order-3">
+          {isRemoved ? (
+            <span className="text-[12.5px] font-semibold text-err">Removed ({r.qty})</span>
+          ) : r.measured ? (
+            <span className="text-[12.5px] tabular-nums">{line ? qtyLabel({ qty: line.qty, measureMilli: line.measureMilli ?? null, measureUom: line.measureUom, uom: line.uom }) : r.qty}</span>
+          ) : (
+            <>
+              <button type="button" className={stepBtn} disabled={disabled} aria-label={`One less ${r.name}`} onClick={() => setQty(r.qty - 1)}><Minus size={15} /></button>
+              <span className="min-w-[52px] text-center text-[15px] font-semibold tabular-nums xl:text-[13px]">
+                {r.oldQty !== null && <span className="font-normal text-ink-muted">{r.oldQty} → </span>}{r.qty}
+              </span>
+              <button type="button" className={stepBtn} disabled={disabled} aria-label={`One more ${r.name}`} onClick={() => setQty(r.qty + 1)}><Plus size={15} /></button>
+            </>
+          )}
+        </div>
+        <div className="text-right tabular-nums xl:order-5">
+          <span className={cn('block text-[14px] font-semibold xl:text-[13px] xl:font-normal', isRemoved && 'text-ink-muted line-through')}>{rm(r.amountSen)}</span>
+          {r.deltaSen !== 0 && <span className={cn('block text-[12px] font-semibold', r.deltaSen < 0 ? 'text-err' : 'text-synced')}>{signed(r.deltaSen)}</span>}
         </div>
       </div>
 
-      <div className="order-5 flex items-baseline justify-between gap-2 xl:order-none xl:block xl:text-right">
-        <span className="text-[12px] text-ink-secondary xl:hidden">Amount</span>
-        <span className="tabular-nums">
-          <span className={cn('block text-[13px]', gone && 'text-ink-muted line-through')}>{rm(r.amountSen)}</span>
-          {r.deltaSen !== 0 && <span className={cn('block text-[12px] font-semibold', r.deltaSen < 0 ? 'text-err' : 'text-synced')}>{signed(r.deltaSen)}</span>}
-        </span>
-      </div>
-
-      <div className="order-6 flex justify-end gap-1.5 xl:order-none">
-        {!disabled && r.kind === 'same' && line && (
-          <button type="button" className={cn(actBtn, 'text-err')} aria-label={`Remove ${r.name}`} title="Remove" onClick={() => onChange(removeLine(edits, line))}><Trash2 size={15} /><span className="xl:sr-only">Remove</span></button>
-        )}
-        {!disabled && (r.kind === 'changed' || r.kind === 'removed') && r.soItemId && (
-          <button type="button" className={actBtn} onClick={() => onChange(undoLine(edits, r.soItemId!))}><Undo2 size={15} />Undo</button>
-        )}
-        {!disabled && r.kind === 'added' && (
-          <button type="button" className={cn(actBtn, 'text-err')} aria-label={`Take out ${r.name}`} title="Take out" onClick={() => onChange(dropAdd(edits, r.addIndex!))}><Trash2 size={15} /><span className="xl:sr-only">Take out</span></button>
-        )}
+      <div className="flex items-center justify-between gap-2 xl:contents">
+        <label className="flex items-center gap-2 xl:order-4 xl:block">
+          <span className="text-[12px] text-ink-secondary xl:sr-only">Unit price</span>
+          <span className="block w-28 xl:w-full">
+            <MoneyInput value={r.unitPriceSen} onChange={(sen) => setPrice(sen ?? 0)} disabled={disabled || isRemoved || r.measured}
+              ariaLabel={`Unit price of ${r.name}`} className={PRICE_INPUT} />
+            {r.oldPriceSen !== null && <span className="mt-0.5 block text-right text-[11px] text-ink-muted line-through">{rm(r.oldPriceSen)}</span>}
+          </span>
+        </label>
+        <div className="flex justify-end gap-1.5 xl:order-6">
+          {!disabled && r.kind === 'same' && line && (
+            <button type="button" className={cn(actBtn, 'text-err')} aria-label={`Remove ${r.name}`} title="Remove" onClick={() => onChange(removeLine(edits, line))}><Trash2 size={15} /><span className="xl:sr-only">Remove</span></button>
+          )}
+          {!disabled && (r.kind === 'changed' || isRemoved) && soItemId && (
+            <button type="button" className={actBtn} onClick={() => onChange(undoLine(edits, soItemId))}><Undo2 size={15} />Undo</button>
+          )}
+          {!disabled && r.kind === 'added' && addIndex !== null && (
+            <button type="button" className={cn(actBtn, 'text-err')} aria-label={`Take out ${r.name}`} title="Take out" onClick={() => onChange(dropAdd(edits, addIndex))}><Trash2 size={15} /><span className="xl:sr-only">Take out</span></button>
+          )}
+        </div>
       </div>
     </li>
   );
