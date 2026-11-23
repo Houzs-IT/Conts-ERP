@@ -19,7 +19,7 @@ export const allow = {
   'functions/api/settings/public.ts': 'The sign-in page shows the support phone before anyone is signed in; it returns that one value only.',
   'functions/api/integrations/channex-webhook.ts': 'Called by Channex, not a person; authenticated by the shared webhook secret instead of a cookie.',
   'functions/api/integrations/hostplatform-webhook.ts': 'Called by HostPlatform, not a person; authenticated by the shared webhook secret header instead of a cookie.',
-  'functions/api/public/meetings/[[path]].ts': 'A guest booking a meeting room through a link someone sent them; the link code (or the private booking token) is the only credential, and the IT Hub shows a guest free times only.',
+  'functions/api/public/meetings/[[path]].ts': 'A guest booking a meeting room through a link someone sent them; the link code (or the private booking token) is the only credential, and the IT Hub shows a guest only when rooms are taken, never what or by whom.',
   'functions/api/system/health/hub-report.ts': 'Called by the cron worker, not a person; authenticated by Conts\'s IT Hub key (compared in constant time) instead of a cookie.',
 };
 
