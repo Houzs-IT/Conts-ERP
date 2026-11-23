@@ -232,23 +232,17 @@ function bookingPeople(b: { personId: number | null; personIds?: number[] }, byI
   return ids.flatMap((id) => { const x = byId.get(id); return x ? [x] : []; });
 }
 
-/** Each person by id. An old row not offered (imported before user accounts, peopleSync.ts) reads as the one offered
-    person of the same name, ignoring case and spaces: projects still point at the old row, and Viewing that person
-    found none of them (YH, 23 Nov 2026: ALEX GOH 94 in the team card, none on his own).
-    shortcut: an inactive account also reads as not offered; send pos_user_id on the board if two accounts share a name. */
-export function personRefs(list: readonly BetaBoardPerson[]): Map<number, PersonRef> {
+/** Each person by id. An old row not offered (imported before user accounts) reads as the one offered person of the same
+    name, ignoring case and spaces, so Viewing that person finds the projects on the old row (YH, 23 Nov 2026).
+    shortcut: an inactive account also counts as not offered; send pos_user_id on the board if two people share a name. */
+function personRefs(list: readonly BetaBoardPerson[]): Map<number, PersonRef> {
   const k = (s: string): string => s.replace(/\s+/g, "").toLowerCase();
-  const offered = new Map<string, PersonRef[]>();
-  for (const x of list) if (x.offered ?? true) offered.set(k(x.name), [...(offered.get(k(x.name)) ?? []), { id: x.id, name: x.name }]);
+  const offered = list.filter((x) => x.offered ?? true);
   return new Map(list.map((x) => {
-    const same = offered.get(k(x.name));
-    return [x.id, !(x.offered ?? true) && same?.length === 1 ? same[0] : { id: x.id, name: x.name }] as const;
+    const same = x.offered ?? true ? [] : offered.filter((o) => k(o.name) === k(x.name));
+    const to = same.length === 1 ? same[0] : x;
+    return [x.id, { id: to.id, name: to.name }] as const;
   }));
-}
-
-/** A board reference as its person (personRefs), or as sent for someone not on the people list. */
-function refOf(people: ReadonlyMap<number, PersonRef>, r: BetaBoardRef | null): PersonRef | null {
-  return r ? people.get(r.id) ?? { id: r.id, name: r.name } : null;
 }
 
 function track(p: BetaBoardProject, k: DesignKind, defaultDays: number, approval3d: string | null): DesignTrack {
@@ -283,7 +277,7 @@ function paymentText(p: BetaBoardProject): string | null {
 /** The mockup's shape for every project, with real people ids. `site` can be null: it is then shown as "Site PIC" with no name. */
 export function toBoardProjects(board: BetaBoard): DesignProject[] {
   const people = personRefs(board.people);
-  const ref = (r: BetaBoardRef | null): PersonRef | null => refOf(people, r);
+  const ref = (r: BetaBoardRef | null): PersonRef | null => (r ? people.get(r.id) ?? { id: r.id, name: r.name } : null);
   const amd = board.settings.amendmentDays;
   return board.projects.map((p) => {
     const title = [p.building, p.unitNo].filter((x): x is string => !!x && x.trim() !== "").join(" ") || p.name;
@@ -291,7 +285,8 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
     const lead = ref(p.lead);
     const team = (list: BetaBoardRef[] | undefined, one: BetaBoardRef | null): PersonRef[] => {
       const picked = list ?? (one ? [one] : []);
-      return picked.length ? picked.map((x) => ref(x)!) : lead ? [lead] : [];
+      /* An old row and its account both picked read as one person, once. */
+      return picked.length ? [...new Map(picked.map((x) => [ref(x)!.id, ref(x)!] as const)).values()] : lead ? [lead] : [];
     };
     const t3 = team(p.people3d, p.person3d);
     const t2 = team(p.people2d, p.person2d);
@@ -364,7 +359,7 @@ export function buildModel(board: BetaBoard): BoardModel {
   });
   return {
     today: board.today,
-    mePersonId: board.mePersonId,
+    mePersonId: board.mePersonId == null ? null : person.get(board.mePersonId)?.id ?? board.mePersonId,
     sop: { "3": board.settings.design3dDays, "2": board.settings.design2dDays },
     amd: board.settings.amendmentDays,
     people,

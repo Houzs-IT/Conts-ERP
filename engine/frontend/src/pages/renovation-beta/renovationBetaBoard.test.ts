@@ -293,7 +293,7 @@ describe("several 3D and 2D people", () => {
     const oldJx = { id: 41, name: "JIA XIN", roles: [], offered: false };
     const b = board([
       project({ id: 30, building: "Old", unitNo: "1", customerName: "A", lead: { id: 40, name: "ALEX  GOH" }, sitePic: { id: 41, name: "JIA XIN" } }),
-      project({ id: 31, building: "Old", unitNo: "2", customerName: "B", lead: { id: 40, name: "ALEX  GOH" }, people3d: [{ id: 40, name: "ALEX  GOH" }] }),
+      project({ id: 31, building: "Old", unitNo: "2", customerName: "B", lead: { id: 40, name: "ALEX  GOH" }, people3d: [{ id: 40, name: "ALEX  GOH" }, { id: 4, name: "alex goh" }] }),
     ]);
     b.people = [{ id: 4, name: "alex goh", roles: [], offered: true }, { id: 1, name: "JIAXIN", roles: [], offered: true }, oldAlex, oldJx];
     const x = buildModel(b);
@@ -301,6 +301,8 @@ describe("several 3D and 2D people", () => {
     expect(progressList(x, 1).map((p) => p.id)).toEqual([30]);
     expect(progressList(x, 40)).toEqual([]);
     expect(progressByPerson(x).map((g) => [g.person?.id, g.projects.length])).toEqual([[4, 2], [1, 1]]);
+    expect(x.byId.get(31)?.team["3"]).toEqual([{ id: 4, name: "alex goh" }]);
+    expect(buildModel({ ...b, mePersonId: 40 }).mePersonId).toBe(4);
   });
 
   it("keeps an old row as itself when two offered people share its name", () => {
