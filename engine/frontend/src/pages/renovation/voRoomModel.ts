@@ -39,22 +39,28 @@ const netOf = (l: Pick<DocLine, 'kind' | 'qty' | 'measureMilli' | 'measureUom' |
   lineAmounts({ kind: l.kind, qty: l.qty, measureMilli: l.measureMilli ?? null, measureUom: l.measureUom, uom: l.uom, unitPriceSen: l.unitPriceSen, discountBp: l.discountBp, amountOverrideSen: l.amountOverrideSen, isFoc: l.isFoc }).netSen;
 
 /** A contract line the VO can change: priced, live, with an SO line behind it, outside a lump-sum section. */
-export function editableLines(sections: DocSection[]): Array<{ room: string; line: DocLine }> {
-  return sections.flatMap((s) => (s.lumpSumSen !== null ? [] : s.lines
-    .filter((l) => (l.kind === 'ITEM' || l.kind === 'CHILD') && l.soItemId && !l.omittedByVoId && !l.soItemCancelled)
-    .map((line) => ({ room: line.room?.trim() || s.heading.trim() || NEW_ROOM_FALLBACK, line }))));
+export function editableLines(sections: DocSection[]): Array<{ room: string; line: DocLine; soItemId: string }> {
+  return sections.flatMap((section) => (section.lumpSumSen !== null ? [] : section.lines.flatMap((line) => (
+    (line.kind === 'ITEM' || line.kind === 'CHILD') && line.soItemId && !line.omittedByVoId && !line.soItemCancelled
+      ? [{ room: line.room?.trim() || section.heading.trim() || NEW_ROOM_FALLBACK, line, soItemId: line.soItemId }]
+      : []))));
 }
 
-function rowOf(line: DocLine, e: VoLineEdit | undefined): RoomRow {
+/** Lines reach the editor only through editableLines, so each has its SO line. */
+const soItemOf = (line: DocLine): string => line.soItemId ?? '';
+
+function rowOf(line: DocLine, soItemId: string, edit: VoLineEdit | undefined): RoomRow {
   const oldNet = netOf(line);
   const base = {
-    key: line.soItemId!, line, soItemId: line.soItemId!, addIndex: null, oldSku: null, oldName: null, oldQty: null, oldPriceSen: null,
+    key: soItemId, line, soItemId, addIndex: null, oldSku: null, oldName: null, oldQty: null, oldPriceSen: null,
     measured: line.measureMilli != null,
   };
+  const e = edit;
   if (e?.remove) {
     return { ...base, kind: 'removed', sku: line.itemCode, name: line.description, qty: line.qty, unitPriceSen: line.unitPriceSen, amountSen: oldNet, deltaSen: -oldNet };
   }
-  const swapped = e?.itemCode !== undefined && e.itemCode !== line.itemCode;
+  const newCode = e?.itemCode !== undefined && e.itemCode !== line.itemCode ? e.itemCode : null;
+  const swapped = newCode !== null;
   const qty = e?.qty ?? line.qty;
   const price = e?.unitPriceSen ?? line.unitPriceSen;
   const moved = swapped || qty !== line.qty || price !== line.unitPriceSen;
@@ -64,8 +70,8 @@ function rowOf(line: DocLine, e: VoLineEdit | undefined): RoomRow {
   const newNet = netOf({ ...line, qty, unitPriceSen: price, amountOverrideSen: null });
   return {
     ...base, kind: 'changed',
-    sku: swapped ? e!.itemCode! : line.itemCode, oldSku: swapped ? line.itemCode : null,
-    name: swapped ? e!.label || e!.itemCode! : line.description, oldName: swapped ? line.description : null,
+    sku: newCode ?? line.itemCode, oldSku: swapped ? line.itemCode : null,
+    name: newCode !== null ? e?.label || newCode : line.description, oldName: swapped ? line.description : null,
     qty, oldQty: qty !== line.qty ? line.qty : null, unitPriceSen: price, oldPriceSen: price !== line.unitPriceSen ? line.unitPriceSen : null,
     amountSen: newNet, deltaSen: newNet - oldNet,
   };
@@ -85,9 +91,9 @@ export function roomsOf(sections: DocSection[], edits: VoEdits): Room[] {
   const rooms = new Map<string, RoomRow[]>();
   const put = (room: string, r: RoomRow) => rooms.set(room, [...(rooms.get(room) ?? []), r]);
   const live = editableLines(sections);
-  for (const { room, line } of live) put(room, rowOf(line, byItem.get(line.soItemId!)));
+  for (const { room, line, soItemId } of live) put(room, rowOf(line, soItemId, byItem.get(soItemId)));
   edits.adds.forEach((a, i) => put(a.room.trim() || NEW_ROOM_FALLBACK, addRow(a, i)));
-  const liveIds = new Set(live.map((x) => x.line.soItemId));
+  const liveIds = new Set(live.map((x) => x.soItemId));
   for (const e of edits.lines.filter((x) => !liveIds.has(x.soItemId))) {
     put(GONE_ROOM, {
       key: `gone-${e.soItemId}`, kind: 'gone', line: null, soItemId: e.soItemId, addIndex: null, sku: e.itemCode ?? null, oldSku: null,
@@ -110,10 +116,6 @@ export function totalsOf(rooms: Room[]): RoomTotals {
   };
 }
 
-export const goneCount = (rooms: Room[]): number => rooms.flatMap((r) => r.rows).filter((r) => r.kind === 'gone').length;
-
-/* ---------- edits ---------- */
-
 /** Drop what equals the contract line; an edit with nothing left goes. */
 function settle(edits: VoEdits, line: DocLine, e: VoLineEdit): VoEdits {
   const rest = edits.lines.filter((x) => x.soItemId !== e.soItemId);
@@ -127,7 +129,7 @@ function settle(edits: VoEdits, line: DocLine, e: VoLineEdit): VoEdits {
 
 const editOf = (edits: VoEdits, line: DocLine): VoLineEdit => {
   const e = edits.lines.find((x) => x.soItemId === line.soItemId);
-  return e && !e.remove ? { ...e } : { soItemId: line.soItemId! };
+  return e && !e.remove ? { ...e } : { soItemId: soItemOf(line) };
 };
 
 /** Change a contract line's qty; 0 or less removes it. */
@@ -148,7 +150,7 @@ export function swapLine(edits: VoEdits, line: DocLine, p: { code: string; name:
 }
 
 export function removeLine(edits: VoEdits, line: DocLine): VoEdits {
-  return settle(edits, line, { soItemId: line.soItemId!, remove: true });
+  return settle(edits, line, { soItemId: soItemOf(line), remove: true });
 }
 
 export function undoLine(edits: VoEdits, soItemId: string): VoEdits {
@@ -159,10 +161,9 @@ export function addLine(edits: VoEdits, room: string, p: { code: string; name: s
   return { ...edits, adds: [...edits.adds, { room: room.trim() || NEW_ROOM_FALLBACK, itemCode: p.code, label: p.name, qty: 1, unitPriceSen: Math.max(0, p.sellPriceSen), fromPackageId }] };
 }
 
-/** Change an added line's qty; 0 or less takes it out. */
+/** Change an added line's qty; it stops at 1 (taking it out is dropAdd). */
 export function setAddQty(edits: VoEdits, i: number, qty: number): VoEdits {
-  if (qty < 1) return dropAdd(edits, i);
-  return { ...edits, adds: edits.adds.map((a, j) => (j === i ? { ...a, qty: Math.trunc(qty) } : a)) };
+  return { ...edits, adds: edits.adds.map((a, j) => (j === i ? { ...a, qty: Math.max(1, Math.trunc(qty)) } : a)) };
 }
 
 export function setAddPrice(edits: VoEdits, i: number, unitPriceSen: number): VoEdits {
@@ -190,5 +191,3 @@ export function packageAdds(edits: VoEdits, sections: DocSection[], packageId: s
 }
 
 export const EMPTY_EDITS: VoEdits = { lines: [], adds: [] };
-
-export const hasEdits = (e: VoEdits): boolean => e.lines.length > 0 || e.adds.length > 0;

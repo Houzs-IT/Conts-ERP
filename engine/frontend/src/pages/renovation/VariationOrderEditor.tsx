@@ -27,7 +27,7 @@ import { PackageConfirmDialog, PackagePickerDialog, type PackageAdd } from './re
 import { PkgMark } from './renovationPackageParts';
 import { withPackageAdd } from './renovationPackageAdd';
 import type { VoEdits } from '../../lib/renovation/api';
-import { VoRoomEditor } from './VoRoomEditor';
+import { ACTION_BUTTON, VoRoomEditor } from './VoRoomEditor';
 import { EMPTY_EDITS, packageAdds, roomsOf, totalsOf } from './voRoomModel';
 
 /* Packages (owner, 20 Nov 2026): a package or kit picked in the product search or with From package opens its confirm
@@ -161,7 +161,7 @@ export function VariationOrderEditor() {
   const locked = !editable || run.isPending || (settling && vo.isFetching);
   const filesEditable = v.status !== 'CANCELLED' && can('scm.renovation.quote');
   /* Saved: the server's own add and omit lines (a changed line can be an omit plus an add). Unsaved: the editor's estimate. */
-  const roomTotals = !roomMode ? null : dirty ? totalsOf(roomsOf(contract.data?.sections ?? [], edits)) : { addSen: v.totals.addSen, omitSen: v.totals.omitSen };
+  const roomTotals = !roomMode ? null : dirty && contract.data ? totalsOf(roomsOf(contract.data.sections, edits)) : { addSen: v.totals.addSen, omitSen: v.totals.omitSen };
   const addSen = roomTotals ? roomTotals.addSen : adds.reduce((s, sec) => s + sec.lines.reduce((t, l) => t + amountsOf(l).netSen, 0), 0);
   const omitSen = roomTotals ? roomTotals.omitSen : v.status === 'APPROVED' ? v.totals.omitSen : omits.reduce((s, o) => {
     const t = targets.find((x) => x.line.id === o.lineId);
@@ -264,11 +264,12 @@ export function VariationOrderEditor() {
             <div>
               {editable && (
                 <div className="mb-2 flex justify-end">
-                  <Button variant="secondary" className="h-11 xl:h-8" icon={<Package size={14} />} onClick={() => setPickerOpen(true)}>From package</Button>
+                  <button type="button" className={ACTION_BUTTON} onClick={() => setPickerOpen(true)}><Package size={14} />From package</button>
                 </div>
               )}
-              <VoRoomEditor sections={contract.data?.sections ?? []} edits={edits} disabled={locked} loading={contract.isLoading}
-                onChange={(e) => { setEdits(e); setDirty(true); }} />
+              <VoRoomEditor sections={contract.data?.sections ?? null} edits={edits} disabled={locked}
+                contractError={contract.error ? refusalOf(contract.error).message : null} onRetry={() => void contract.refetch()}
+                onChange={(next) => { setEdits(next); setDirty(true); }} />
               <PackagePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} onPick={(h) => { setPickerOpen(false); setConfirm({ packageId: h.id, defaultArea: lastArea(), sectionIndex: null, lineIndex: null, replace: false }); }} />
               <PackageConfirmDialog packageId={confirm?.packageId ?? null} defaultArea={confirm?.defaultArea ?? ''} onClose={() => setConfirm(null)} onAdd={addPackage} />
             </div>

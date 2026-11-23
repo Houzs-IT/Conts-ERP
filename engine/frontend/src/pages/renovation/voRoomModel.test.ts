@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DocLine, DocSection } from '../../lib/renovation/api';
-import { addLine, EMPTY_EDITS, packageAdds, removeLine, roomsOf, setAddQty, setLinePrice, setLineQty, swapLine, totalsOf, undoLine } from './voRoomModel';
+import { addLine, dropAdd, EMPTY_EDITS, packageAdds, removeLine, roomsOf, setAddQty, setLinePrice, setLineQty, swapLine, totalsOf, undoLine } from './voRoomModel';
 
 const line = (id: string, room: string, qty: number, priceSen: number, extra: Partial<DocLine> = {}): DocLine => ({
   id: `l-${id}`, soItemId: `so-${id}`, kind: 'ITEM', room, itemCode: id.toUpperCase(), description: `Item ${id}`, qty, measure: null, measureMilli: null,
@@ -60,7 +60,7 @@ describe('VO room model', () => {
     expect(e.lines).toEqual([{ soItemId: 'so-fan', remove: true }]);
   });
 
-  it('adds a line in a room, a new room goes last, and qty 0 takes it out', () => {
+  it('adds a line in a room, a new room goes last, its qty stops at 1, and take out drops it', () => {
     let e = addLine(EMPTY_EDITS, 'BEDROOM 1', { code: 'LED', name: 'LED strip', sellPriceSen: 12000 });
     e = addLine(e, 'Kitchen', { code: 'TAP', name: 'Tap', sellPriceSen: 5000 });
     e = setAddQty(e, 0, 2);
@@ -68,7 +68,8 @@ describe('VO room model', () => {
     expect(rooms.map((r) => r.name)).toEqual(['Common area', 'BEDROOM 1', 'Kitchen']);
     expect(rooms[1].rows[1]).toMatchObject({ kind: 'added', qty: 2, deltaSen: 24000 });
     expect(totalsOf(rooms)).toMatchObject({ addSen: 29000, added: 2 });
-    expect(setAddQty(e, 1, 0).adds.map((a) => a.itemCode)).toEqual(['LED']);
+    expect(setAddQty(e, 1, 0).adds[1].qty).toBe(1);
+    expect(dropAdd(e, 1).adds.map((a) => a.itemCode)).toEqual(['LED']);
   });
 
   it('an edit to a line another VO took out shows as a gone row that undo clears', () => {
