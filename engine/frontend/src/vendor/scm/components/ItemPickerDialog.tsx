@@ -2,8 +2,7 @@ import { useMemo, useState, type CSSProperties, type ReactElement } from 'react'
 import { Check, Plus, Search } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { Modal } from './Modal';
-import styles from './ItemPickerDialog.module.css';
-import { SearchableSelect, type SearchableSelectOption } from './SearchableSelect';
+import { CategoryDropdown, type CategoryOption } from './CategoryDropdown';
 
 export interface ItemPickerRow {
   key: string;
@@ -51,7 +50,7 @@ export function ItemPickerDialog({ title, subtitle, rows, onAdd, onClose }: Item
   const [category, setCategory] = useState('');
   const [addedByKey, setAddedByKey] = useState<Record<string, number>>({});
 
-  const categoryOptions = useMemo<SearchableSelectOption[]>(() => {
+  const categoryOptions = useMemo<CategoryOption[]>(() => {
     const counts = new Map<string, number>();
     for (const { categoryLabel } of rows) counts.set(categoryLabel, (counts.get(categoryLabel) ?? 0) + 1);
     const sorted = [...counts].sort(([a], [b]) => a.localeCompare(b));
@@ -82,7 +81,7 @@ export function ItemPickerDialog({ title, subtitle, rows, onAdd, onClose }: Item
     >
       <div style={toolbar}>
         <div style={{ flex: '1 1 180px' }}>
-          <SearchableSelect value={category} onChange={setCategory} options={categoryOptions} ariaLabel="Category" className={styles.categoryInput} />
+          <CategoryDropdown value={category} onChange={setCategory} options={categoryOptions} />
         </div>
         <label style={{ ...field, flex: '3 1 240px', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
           <Search size={16} strokeWidth={1.75} aria-hidden />
