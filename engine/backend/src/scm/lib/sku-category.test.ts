@@ -4,7 +4,7 @@
 // ----------------------------------------------------------------------------
 
 import { describe, expect, test } from 'vitest';
-import { lineItemGroup, attributesTheGroupWillIgnore, resolveItemGroups } from './sku-category';
+import { lineItemGroup, attributesTheGroupWillIgnore, resolveItemGroups, skuUomResolver } from './sku-category';
 import { parsePgrestInList } from './pgrest-in-list';
 
 const SOFA = { fabricCode: 'PC151-12', seatHeight: '30', legHeight: 'Default' };
@@ -176,5 +176,29 @@ describe('skuCategoryMap — an inch-mark code, and every code after it, still r
     // What the raw library emits, read back the way PostgREST parses it: one
     // garbled value, and 9058-1NA gone entirely.
     expect(wireIn([INCH, '9058-1NA'])).toEqual(['DUNLOPILLO GENERASI 5 MATT (SS']);
+  });
+});
+
+describe('skuUomResolver — a PO line takes the SKU unit when the screen sends none', () => {
+  const uomSb = (rows: Array<{ code: string; uom: string | null }>) => ({
+    from: () => ({ select: () => ({ in: () => ({ eq: () => Promise.resolve({ data: rows, error: null }) }) }) }),
+  });
+  const products = [{ code: 'FUR-GEN-DINSET2', uom: 'SET' }, { code: 'RN-KITCHEN_CABINET', uom: 'FT' }, { code: 'NO-UOM', uom: null }];
+
+  test('a line with no unit gets the SKU unit (TC-PO-2611-056 stored UNIT for a SET)', async () => {
+    const uomOf = await skuUomResolver(uomSb(products), [{ materialKind: 'mfg_product', itemCode: 'FUR-GEN-DINSET2' }], 1);
+    expect(uomOf({ materialKind: 'mfg_product', itemCode: 'FUR-GEN-DINSET2' })).toBe('SET');
+    expect(uomOf({ materialKind: 'mfg_product', itemCode: 'RN-KITCHEN_CABINET', uom: '  ' })).toBe('FT');
+  });
+
+  test('a unit the caller sent is kept', async () => {
+    const uomOf = await skuUomResolver(uomSb(products), [{ materialKind: 'mfg_product', itemCode: 'RN-KITCHEN_CABINET' }], 1);
+    expect(uomOf({ materialKind: 'mfg_product', itemCode: 'RN-KITCHEN_CABINET', uom: 'PCS' })).toBe('PCS');
+  });
+
+  test('no unit anywhere is null, so the column default applies', async () => {
+    const uomOf = await skuUomResolver(uomSb(products), [{ materialKind: 'mfg_product', itemCode: 'NO-UOM' }, { materialKind: 'raw', itemCode: 'FOAM' }], 1);
+    expect(uomOf({ materialKind: 'mfg_product', itemCode: 'NO-UOM' })).toBeNull();
+    expect(uomOf({ materialKind: 'raw', itemCode: 'FOAM' })).toBeNull();
   });
 });

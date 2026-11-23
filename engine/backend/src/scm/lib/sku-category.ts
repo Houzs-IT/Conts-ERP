@@ -128,6 +128,32 @@ export async function skuCategoryResolver(
   return (it) => lineItemGroup(bySkuCode, it);
 }
 
+/** A line's unit: the one the caller sent, else the SKU's (the New PO screen sends none, so lines stored UNIT). */
+export async function skuUomResolver(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see skuCategoryMap
+  sb: any,
+  items: readonly CategoryResolvableLine[],
+  companyId: number | null,
+): Promise<(it: CategoryResolvableLine & { uom?: unknown }) => string | null> {
+  const bySkuCode = new Map<string, string>();
+  const codes = [...new Set(items.filter((it) => String(it.materialKind ?? '') === PRODUCT_KIND).map(codeOf).filter((code) => code !== ''))];
+  if (codes.length > 0) {
+    let q = pgrestIn(sb.from('mfg_products').select('code, uom'), 'code', codes);
+    if (companyId != null) q = q.eq('company_id', companyId);
+    const { data, error } = await q;
+    /* eslint-disable-next-line no-console */
+    if (error) console.error('[sku-uom] product read failed, lines keep the caller\'s unit:', error.message);
+    for (const r of (data ?? []) as Array<{ code: string; uom: string | null }>) {
+      const uom = (r.uom ?? '').trim();
+      if (uom) bySkuCode.set(r.code, uom);
+    }
+  }
+  return (it) => {
+    const sent = typeof it.uom === 'string' ? it.uom.trim() : '';
+    return sent || bySkuCode.get(codeOf(it)) || null;
+  };
+}
+
 /**
  * Rewrite each REQUEST line's `itemGroup` to the SKU's, once, before anything
  * reads it. Returns copies; the input is untouched.
