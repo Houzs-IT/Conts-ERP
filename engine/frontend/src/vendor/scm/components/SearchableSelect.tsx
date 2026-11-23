@@ -133,7 +133,7 @@ export function SearchableSelect({
           e.currentTarget.select();
         }}
         onBlur={() => {
-          if (clearable && !onSearchChange && value && !search.trim()) onChange("");
+          if (clearable && open && !onSearchChange && value && !search.trim()) onChange("");
           setTimeout(() => setOpen(false), 150);
         }}
         onChange={(e) => {

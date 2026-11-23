@@ -135,4 +135,17 @@ describe("clearable", () => {
     fireEvent.blur(box);
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  test("leaving the box right after a pick keeps the pick", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<SearchableSelect value="" onChange={onChange} options={many} clearable />);
+    const box = screen.getByRole("textbox");
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: "Product 7" } });
+    fireEvent.mouseDown(screen.getByText("Product 7"));
+    rerender(<SearchableSelect value="P7" onChange={onChange} options={many} clearable />);
+    fireEvent.blur(box);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith("P7");
+  });
 });
