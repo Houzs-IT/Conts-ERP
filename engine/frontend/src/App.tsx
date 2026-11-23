@@ -100,6 +100,7 @@ const ScmProductionOrderDetail = lazy(() => import("./pages/scm-v2/ProductionOrd
 const ScmPurchaseOrdersV2 = lazy(() => import("./pages/scm-v2/PurchaseOrdersListV2").then((m) => ({ default: m.PurchaseOrdersListV2 })));
 const ScmPurchaseOrderNewV2 = lazy(() => import("./pages/scm-v2/PurchaseOrderNew").then((m) => ({ default: m.PurchaseOrderNew })));
 const ScmPurchaseOrderFromSoV2 = lazy(() => import("./pages/scm-v2/PurchaseOrderFromSo").then((m) => ({ default: m.PurchaseOrderFromSo })));
+const ScmPurchaseOrderFromProduction = lazy(() => import("./pages/scm-v2/PurchaseOrderFromProduction").then((m) => ({ default: m.PurchaseOrderFromProduction })));
 const ScmPurchaseOrderDetailV2 = lazy(() => import("./pages/scm-v2/PurchaseOrderDetailV2").then((m) => ({ default: m.PurchaseOrderDetailV2 })));
 // TEMP — vendored 2990's MRP + read/list pages (wave 2), parallel to native.
 const ScmMrpV2 = lazy(() => import("./pages/scm-v2/Mrp").then((m) => ({ default: m.Mrp })));
@@ -765,6 +766,7 @@ export default function App() {
         <Route path="/scm/purchase-orders" element={<ScmGuard area="scm.procurement.po"><Scm2990Shell><ScmPurchaseOrdersV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/purchase-orders/new" element={<ScmGuard area="scm.procurement.po"><Scm2990Shell><ScmPurchaseOrderNewV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/purchase-orders/from-so" element={<ScmGuard area="scm.procurement.po"><Scm2990Shell><ScmPurchaseOrderFromSoV2 /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/purchase-orders/from-production" element={<ScmGuard area="scm.procurement.production"><Scm2990Shell><ScmPurchaseOrderFromProduction /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/purchase-orders/:id" element={<ScmGuard area="scm.procurement.po"><Scm2990Shell><ScmPurchaseOrderDetailV2 /></Scm2990Shell></ScmGuard>} />
         {/* PO amendment / revision queue + job card (Houzs, mig 0192). Same
             Procurement-PO area guard as the Purchase Orders list; the finer
