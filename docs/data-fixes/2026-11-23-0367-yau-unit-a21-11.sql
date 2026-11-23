@@ -1,3 +1,6 @@
+-- APPLIED to production on 23 Nov 2026 as migration 0367 (migrate-production.yml, --only=0367). Kept here, not in
+-- migrations-pg: it is a one-off fix of one production contract; public.pos_migrations keeps its row.
+
 -- 0367_yau_unit_a21_11: one-off data fix of one production contract, MR YAU at AVA (TC-SO-2512-003), chew 23 Nov 2026:
 -- the unit is A21-11 (AutoCount 301-M027 "MR YAU (AVA A21-11)", project A-2111(R)), not D21-11 as imported. The SO's
 -- order information cannot be saved from its page without the customer's phone, which is not on record yet ("可以先挂
