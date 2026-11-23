@@ -22,13 +22,13 @@ const BADGE: Record<RoomRow['kind'], { text: string; cls: string } | null> = {
   added: { text: 'New', cls: 'bg-synced-bg text-synced' },
   removed: { text: 'Removed', cls: 'bg-err-bg text-err' },
 };
-const GRID = 'xl:grid xl:grid-cols-[160px_minmax(0,1fr)_150px_110px_120px_100px] xl:items-center xl:gap-3';
-const STEP_BUTTON = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink hover:bg-surface-2 disabled:opacity-50 xl:h-8 xl:w-8';
-export const ACTION_BUTTON = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[13px] font-medium text-ink hover:bg-surface-2 disabled:opacity-50 xl:h-8 xl:px-2 xl:text-[12px]';
+const GRID = 'lg:grid lg:grid-cols-[160px_minmax(0,1fr)_150px_110px_120px_100px] lg:items-center lg:gap-3';
+const STEP_BUTTON = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink hover:bg-surface-2 disabled:opacity-50 lg:h-8 lg:w-8';
+export const ACTION_BUTTON = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[13px] font-medium text-ink hover:bg-surface-2 disabled:opacity-50 lg:h-8 lg:px-2 lg:text-[12px]';
 const WRAP = 'min-w-0 [overflow-wrap:anywhere]';
 
 /* Not inputCls: cn only joins classes, so its h-9 would beat a 44px phone height. */
-const FIELD = 'w-full min-w-0 rounded-md border border-border bg-surface px-2.5 text-ink focus:border-primary disabled:bg-surface-2 disabled:text-ink-muted h-11 text-[16px] xl:h-8 xl:text-[12.5px]';
+const FIELD = 'w-full min-w-0 rounded-md border border-border bg-surface px-2.5 text-ink focus:border-primary disabled:bg-surface-2 disabled:text-ink-muted h-11 text-[16px] lg:h-8 lg:text-[12.5px]';
 
 const signed = (sen: number): string => (sen > 0 ? `+${rm(sen)}` : rm(sen));
 
@@ -136,18 +136,18 @@ function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits;
     else if (addIndex !== null) onChange(setAddPrice(edits, addIndex, sen));
   };
   /* Phone: name, SKU, then qty with the amount, then price with the action. Wide screens: the wrappers dissolve
-     (xl:contents) and xl:order puts each cell in its grid column. */
+     (lg:contents) and lg:order puts each cell in its grid column. */
   return (
     <li className={cn('flex flex-col gap-2 border-b border-border-subtle px-3 py-2.5 last:border-b-0', GRID, ROW_TINT[r.kind])}>
-      <div className="flex min-w-0 items-start gap-2 xl:order-2">
+      <div className="flex min-w-0 items-start gap-2 lg:order-2">
         <div className={cn('flex-1', WRAP)}>
           {r.oldName && <span className="block text-[12px] text-ink-muted line-through">{r.oldName}</span>}
-          <span className={cn('block text-[14px] font-medium text-ink xl:text-[13px]', isRemoved && 'text-err line-through')}>{r.name}</span>
+          <span className={cn('block text-[14px] font-medium text-ink lg:text-[13px]', isRemoved && 'text-err line-through')}>{r.name}</span>
         </div>
         {badge && <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', badge.cls)}>{badge.text}</span>}
       </div>
 
-      <div className="min-w-0 xl:order-1">
+      <div className="min-w-0 lg:order-1">
         {line && !isRemoved && !disabled ? (
           <ProductPicker value={r.sku} tall onPick={(p) => onChange(swapLine(edits, line, p))} />
         ) : (
@@ -156,8 +156,8 @@ function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits;
         {r.oldSku && <span className="mt-0.5 block truncate font-mono text-[11px] text-ink-muted line-through">{r.oldSku}</span>}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 xl:contents">
-        <div className="flex items-center gap-2 xl:order-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 lg:contents">
+        <div className="flex items-center gap-2 lg:order-3">
           {isRemoved ? (
             <span className="text-[12.5px] font-semibold text-err">Removed ({r.qty})</span>
           ) : r.measured ? (
@@ -167,37 +167,37 @@ function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits;
               {/* An added line stops at 1: taking it out is the Take out button, never a mis-tap on minus. */}
               <button type="button" className={STEP_BUTTON} disabled={disabled || (r.kind === 'added' && r.qty <= 1)} aria-label={`One less ${r.name}`} onClick={() => setQty(r.qty - 1)}><Minus size={15} /></button>
               <span className="min-w-[44px] text-center tabular-nums">
-                <span className="block text-[15px] font-semibold xl:text-[13px]">{r.qty}</span>
+                <span className="block text-[15px] font-semibold lg:text-[13px]">{r.qty}</span>
                 {r.oldQty !== null && <span className="block text-[11px] text-ink-muted">was {r.oldQty}</span>}
               </span>
               <button type="button" className={STEP_BUTTON} disabled={disabled} aria-label={`One more ${r.name}`} onClick={() => setQty(r.qty + 1)}><Plus size={15} /></button>
             </>
           )}
         </div>
-        <div className="min-w-0 text-right tabular-nums xl:order-5">
-          <span className={cn('block text-[14px] font-semibold xl:text-[13px] xl:font-normal', isRemoved && 'text-ink-muted line-through')}>{rm(r.amountSen)}</span>
+        <div className="min-w-0 text-right tabular-nums lg:order-5">
+          <span className={cn('block text-[14px] font-semibold lg:text-[13px] lg:font-normal', isRemoved && 'text-ink-muted line-through')}>{rm(r.amountSen)}</span>
           {r.deltaSen !== 0 && <span className={cn('block text-[12px] font-semibold', r.deltaSen < 0 ? 'text-err' : 'text-synced')}>{signed(r.deltaSen)}</span>}
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 xl:contents">
-        <label className="flex items-center gap-2 xl:order-4 xl:block">
-          <span className="text-[12px] text-ink-secondary xl:sr-only">Unit price</span>
-          <span className="block w-28 xl:w-full">
+      <div className="flex flex-wrap items-center justify-between gap-2 lg:contents">
+        <label className="flex items-center gap-2 lg:order-4 lg:block">
+          <span className="text-[12px] text-ink-secondary lg:sr-only">Unit price</span>
+          <span className="block w-28 lg:w-full">
             <MoneyInput value={r.unitPriceSen} onChange={(sen) => setPrice(sen ?? 0)} disabled={disabled || isRemoved || r.measured}
               ariaLabel={`Unit price of ${r.name}`} className={FIELD} />
             {r.oldPriceSen !== null && <span className="mt-0.5 block text-right text-[11px] text-ink-muted line-through">{rm(r.oldPriceSen)}</span>}
           </span>
         </label>
-        <div className="flex justify-end gap-1.5 xl:order-6">
+        <div className="flex justify-end gap-1.5 lg:order-6">
           {!disabled && r.kind === 'same' && line && (
-            <button type="button" className={cn(ACTION_BUTTON, 'text-err')} aria-label={`Remove ${r.name}`} title="Remove" onClick={() => onChange(removeLine(edits, line))}><Trash2 size={15} /><span className="xl:sr-only">Remove</span></button>
+            <button type="button" className={cn(ACTION_BUTTON, 'text-err')} aria-label={`Remove ${r.name}`} title="Remove" onClick={() => onChange(removeLine(edits, line))}><Trash2 size={15} /><span className="lg:sr-only">Remove</span></button>
           )}
           {!disabled && (r.kind === 'changed' || isRemoved) && soItemId && (
             <button type="button" className={ACTION_BUTTON} aria-label={`Undo the changes to ${r.name}`} onClick={() => onChange(undoLine(edits, soItemId))}><Undo2 size={15} />Undo</button>
           )}
           {!disabled && r.kind === 'added' && addIndex !== null && (
-            <button type="button" className={cn(ACTION_BUTTON, 'text-err')} aria-label={`Take out ${r.name}`} title="Take out" onClick={() => onChange(dropAdd(edits, addIndex))}><Trash2 size={15} /><span className="xl:sr-only">Take out</span></button>
+            <button type="button" className={cn(ACTION_BUTTON, 'text-err')} aria-label={`Take out ${r.name}`} title="Take out" onClick={() => onChange(dropAdd(edits, addIndex))}><Trash2 size={15} /><span className="lg:sr-only">Take out</span></button>
           )}
         </div>
       </div>
