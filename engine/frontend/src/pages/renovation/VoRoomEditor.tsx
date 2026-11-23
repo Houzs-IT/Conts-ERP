@@ -22,7 +22,7 @@ const BADGE: Record<RoomRow['kind'], { text: string; cls: string } | null> = {
   added: { text: 'New', cls: 'bg-synced-bg text-synced' },
   removed: { text: 'Removed', cls: 'bg-err-bg text-err' },
 };
-const GRID = 'xl:grid xl:grid-cols-[130px_minmax(0,1fr)_150px_110px_120px_100px] xl:items-center xl:gap-3';
+const GRID = 'xl:grid xl:grid-cols-[160px_minmax(0,1fr)_150px_110px_120px_100px] xl:items-center xl:gap-3';
 const STEP_BUTTON = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink hover:bg-surface-2 disabled:opacity-50 xl:h-8 xl:w-8';
 export const ACTION_BUTTON = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-md border border-border bg-surface px-3 text-[13px] font-medium text-ink hover:bg-surface-2 disabled:opacity-50 xl:h-8 xl:px-2 xl:text-[12px]';
 const WRAP = 'min-w-0 [overflow-wrap:anywhere]';
