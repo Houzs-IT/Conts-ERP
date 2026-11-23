@@ -27,6 +27,7 @@ import { ItemPickerDialog, type ItemPickerRow } from '../../vendor/scm/component
 import { Button } from '@2990s/design-system';
 import { formatPhone } from '@2990s/shared/phone';
 import {
+  useCreateBinding,
   useCreatePurchaseOrder,
   usePurchaseOrderDetail,
   useSuppliers,
@@ -40,6 +41,7 @@ import {
 import { outcomeOfError, useContentBoundIdempotencyKey } from '../../lib/idempotency';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readScmHandoff, removeScmHandoff, writeScmHandoff } from '../../lib/scmHandoffStorage';
+import { bindMaterialsTo, formPickOfProduction, type ProductionPick } from './renovation-po-from-production';
 import { useMfgProducts, useMaintenanceConfig, useSpecialAddons, mfgCategoryLabel } from '../../vendor/scm/lib/mfg-products-queries';
 import { activeOptions, maintPickerValues, fmtMoneySen } from '@2990s/shared';
 import { useFabricTrackings, fabricOptionLabel } from '../../vendor/scm/lib/fabric-queries';
@@ -123,6 +125,16 @@ type DraftLine = {
   soItemId?: string | null;
   /** Conts — the options the source SO line carried, so the confirm gate asks for no more (conts/flowRules.ts). */
   soVariants?: Record<string, unknown>;
+  /** Conts — the production order raw material this line buys (Transfer from Production Order). Saved on the PO line. */
+  productionMaterialId?: string | null;
+};
+
+/* One picked line handed over by a From-SO or From-Production picker (renovation-po-from-production.ts). */
+type FormPick = Pick<OutstandingSoItem, 'itemCode' | 'description' | 'remainingQty' | 'qty' | 'variants' | 'lineDeliveryDate' | 'deliveryDate' | 'salesLocation' | 'mainSupplierCode'> & {
+  itemGroup: string | null;
+  soItemId: string | null;
+  _pickQty?: number;
+  productionMaterialId?: string;
 };
 
 const newLine = (): DraftLine => ({
@@ -150,6 +162,7 @@ export const PurchaseOrderNew = () => {
      a form corrected after a refusal is a new request (owner, 19 Nov 2026: a refused save followed by an edit answered
      "an earlier submission with different details already finished"). */
   const poKeys   = useContentBoundIdempotencyKey();
+  const bindSupplier = useCreateBinding();
   const notify   = useNotify();
 
   // ── Header state ────────────────────────────────────────────────────
@@ -316,7 +329,7 @@ export const PurchaseOrderNew = () => {
      resolve the form's current supplier, and only append picks that match it.
      If the form has no supplier yet, adopt the picks' supplier (old behaviour).
      Mismatched picks are dropped and surfaced via the result dialog. */
-  const applyFromSo = (picks: Array<OutstandingSoItem & { _pickQty?: number }>) => {
+  const applyFromSo = (picks: FormPick[]) => {
     if (picks.length === 0) return;
 
     // The supplier CODE the form is already bound to (if any): explicit creditor
@@ -412,6 +425,7 @@ export const PurchaseOrderNew = () => {
       // create call can increment its po_qty_picked (drops it from the picker).
       soItemId: p.soItemId,
       soVariants: p.soItemId ? ((p.variants ?? {}) as Record<string, unknown>) : undefined,
+      productionMaterialId: p.productionMaterialId ?? null,
     }));
     // Replace the initial blank line if the form is still empty; else append.
     setLines((prev) => (prev.some((l) => l.itemCode.trim()) ? [...prev, ...mapped] : mapped));
@@ -483,6 +497,11 @@ export const PurchaseOrderNew = () => {
       if (pickedRows) {
         removeScmHandoff('poFromSoPicks');
         if (Array.isArray(pickedRows) && pickedRows.length) applyFromSo(pickedRows);
+      }
+      const productionRows = readScmHandoff<ProductionPick[]>('poFromProductionPicks');
+      if (productionRows) {
+        removeScmHandoff('poFromProductionPicks');
+        if (Array.isArray(productionRows) && productionRows.length) applyFromSo(productionRows.map(formPickOfProduction));
       }
     } catch { /* malformed — ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -609,6 +628,28 @@ export const PurchaseOrderNew = () => {
   // Lines carry the old creditor's supplier SKU and price, so a different creditor starts the items over.
   const changeCreditor = async (nextSupplierId: string) => {
     if (nextSupplierId === supplierId) return;
+    /* Lines from Transfer from Production Order stay: they are raw materials still to buy, so moving them to another
+       creditor binds each one to it (as MRP's supplier pick does) and starts their price over. */
+    const filled = lines.filter((l) => l.itemCode.trim());
+    if (nextSupplierId && filled.length > 0 && filled.every((l) => l.productionMaterialId)) {
+      const name = (suppliers.data ?? []).find((s) => s.id === nextSupplierId)?.name ?? 'this creditor';
+      const proceed = await serviceConfirm({
+        title: 'Change creditor?',
+        body: `The ${filled.length} raw material line${filled.length === 1 ? '' : 's'} move to ${name}. Each material is bound to ${name} and its price starts over from that supplier.`,
+        confirmLabel: 'Change creditor',
+      });
+      if (!proceed) return;
+      try {
+        await bindMaterialsTo(nextSupplierId, filled, (b) => bindSupplier.mutateAsync(b));
+      } catch (e) {
+        void notify({ title: 'Could not bind the materials', body: e instanceof Error ? e.message : 'Something went wrong.', tone: 'error' });
+        return;
+      }
+      setLines((prev) => prev.map((l) => (l.productionMaterialId ? { ...l, bindingId: undefined, supplierSku: undefined, unitPriceSen: 0, priceTouched: false } : l)));
+      setPendingItemPick(null);
+      setSupplierId(nextSupplierId);
+      return;
+    }
     if (lines.length > 0) {
       const proceed = await serviceConfirm({
         title: nextSupplierId ? 'Change creditor?' : 'Remove creditor?',
@@ -811,6 +852,7 @@ export const PurchaseOrderNew = () => {
       // line came from "From SO") so the API rolls po_qty_picked forward and
       // the line disappears from the From-SO picker.
       soItemId:       l.soItemId ?? null,
+      productionMaterialId: l.productionMaterialId ?? null,
     }));
 
     const basePayload = {

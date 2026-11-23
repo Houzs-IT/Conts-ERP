@@ -1,14 +1,13 @@
 // ----------------------------------------------------------------------------
 // PurchaseOrderFromProduction: Purchase Orders > Transfer from Production Order (owner, 23 Nov 2026: "订原材料").
 // The raw materials of open production orders still to be bought, laid out like PurchaseOrderFromSo: tick lines,
-// optionally edit the pick qty (capped at what is still to order), create. The server (/production-orders/material-pos,
-// the same convert MRP uses) makes one PO per supplier and warehouse and links every PO line to its material.
+// optionally edit the pick qty (capped at what is still to order), then review them in the New Purchase Order form and
+// Save there (owner, 23 Nov 2026). One supplier per PO, as on Pick Sales Orders; the saved lines keep their material.
 //
 // Routing: /scm/purchase-orders/from-production.
 // ----------------------------------------------------------------------------
 
 import { useMemo, useState, type CSSProperties } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Save, X, CheckSquare, Square, Filter } from 'lucide-react';
 import { Button } from '@2990s/design-system';
@@ -16,13 +15,9 @@ import { fmtDateOrDash, fmtQty } from '@2990s/shared';
 import { DataGridCompat, type GridColumn } from '../../components/DataGridCompat';
 import { ActionResultDialog } from '../../vendor/scm/components/ActionResultDialog';
 import { PageHeader } from '../../components/Layout';
-import {
-  createMaterialPos,
-  useMaterialsToOrder,
-  MATERIALS_TO_ORDER_KEY,
-  type MaterialToOrder,
-} from '../../vendor/scm/lib/production-order-queries';
-import { createContentBoundKey, sendWithContentKey, unansweredSaveQuestion, type ContentBoundKey } from '../../lib/idempotency';
+import { useMaterialsToOrder, type MaterialToOrder } from '../../vendor/scm/lib/production-order-queries';
+import { writeScmHandoff } from '../../lib/scmHandoffStorage';
+import { isLockedOut, lockedSupplierOf, type ProductionPick } from './renovation-po-from-production';
 import styles from './SalesOrderDetail.module.css';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
@@ -43,11 +38,10 @@ const projectOf = (r: MaterialToOrder): string => [r.projectCode, r.projectName]
 const supplierOf = (r: MaterialToOrder): string => r.mainSupplierCode ? `${r.mainSupplierCode}${r.mainSupplierName ? ` · ${r.mainSupplierName}` : ''}` : '';
 
 type Pick = { picked: boolean; qty: number };
-type Dialog = { title: string; body: string; primaryLabel?: string; onPrimary?: () => void; onCancel?: () => void };
+type Dialog = { title: string; body: string };
 
 export const PurchaseOrderFromProduction = () => {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const q = useMaterialsToOrder();
   const items = useMemo(() => q.data ?? [], [q.data]);
 
@@ -55,10 +49,6 @@ export const PurchaseOrderFromProduction = () => {
   const [supplier, setSupplier] = useState('all');
   const [order, setOrder] = useState('all');
   const [dialog, setDialog] = useState<Dialog | null>(null);
-  const [saving, setSaving] = useState(false);
-  /* One key per picked content: a double click or a retry of the same picks replays instead of raising a second PO.
-     A new key set after each success, so the same picks made again later (after a PO was cancelled) are a new intent. */
-  const [keys, setKeys] = useState<ContentBoundKey>(() => createContentBoundKey());
 
   const supplierOptions = useMemo(() => [...new Map(items.map((r) => [r.mainSupplierCode ?? '', supplierOf(r) || '— none —'])).entries()]
     .sort((a, b) => a[1].localeCompare(b[1])), [items]);
@@ -70,13 +60,28 @@ export const PurchaseOrderFromProduction = () => {
   const rowById = useMemo(() => new Map(items.map((r) => [r.materialId, r])), [items]);
   const picked = Object.entries(picks).flatMap(([id, v]) => (v ? [[id, v] as const] : [])).filter(([id, v]) => v.picked && v.qty > 0 && rowById.has(id));
   const pickedCount = picked.length;
+  const pickedIds = useMemo(() => new Set(picked.map(([id]) => id)), [picked]);
+  const lockedSupplier = lockedSupplierOf(items, pickedIds);
+  const isRowLocked = (r: MaterialToOrder): boolean => isLockedOut(r, lockedSupplier, pickedIds);
 
-  const togglePick = (r: MaterialToOrder) =>
+  const togglePick = (r: MaterialToOrder) => {
+    if (isRowLocked(r)) return;
     setPicks((s) => ({ ...s, [r.materialId]: s[r.materialId]?.picked ? { picked: false, qty: 0 } : { picked: true, qty: capOf(r) } }));
-  const setQty = (id: string, qty: number) => setPicks((s) => ({ ...s, [id]: { picked: qty > 0, qty } }));
+  };
+  const setQty = (r: MaterialToOrder, qty: number) => {
+    if (isRowLocked(r)) return;
+    setPicks((s) => ({ ...s, [r.materialId]: { picked: qty > 0, qty } }));
+  };
+  /* Ticks what the grid shows, on one supplier: the first bound supplier met, or the one already locked. */
   const selectAll = () => setPicks((s) => {
     const next = { ...s };
-    for (const r of shownRows ?? rows) next[r.materialId] = { picked: true, qty: capOf(r) };
+    const ids = new Set(Object.entries(next).flatMap(([id, v]) => (v?.picked ? [id] : [])));
+    let lock = lockedSupplierOf(items, ids);
+    for (const r of shownRows ?? rows) {
+      if (r.mainSupplierCode && lock && r.mainSupplierCode !== lock) continue;
+      if (r.mainSupplierCode) lock = r.mainSupplierCode;
+      next[r.materialId] = { picked: true, qty: capOf(r) };
+    }
     return next;
   });
 
@@ -87,6 +92,7 @@ export const PurchaseOrderFromProduction = () => {
         <input
           type="checkbox"
           checked={Boolean(picks[r.materialId]?.picked)}
+          disabled={isRowLocked(r)}
           onChange={() => togglePick(r)}
           onClick={(e) => e.stopPropagation()}
           aria-label={`Pick ${r.itemCode}`}
@@ -154,7 +160,8 @@ export const PurchaseOrderFromProduction = () => {
             value={p?.picked ? p.qty : ''}
             placeholder={String(cap)}
             onClick={(e) => e.stopPropagation()}
-            onChange={(e) => setQty(r.materialId, Math.min(cap, Math.max(0, Math.floor(Number(e.target.value) || 0))))}
+            disabled={isRowLocked(r)}
+            onChange={(e) => setQty(r, Math.min(cap, Math.max(0, Math.floor(Number(e.target.value) || 0))))}
             aria-label={`Pick qty ${r.itemCode}`}
             style={{ ...FILTER_INPUT, width: 64, textAlign: 'right' }}
           />
@@ -172,50 +179,18 @@ export const PurchaseOrderFromProduction = () => {
       sortFn: (a, b) => String(a.deliveryDate ?? '').localeCompare(String(b.deliveryDate ?? '')),
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- accessors read only the pick state already in deps
-  ], [picks]);
+  ], [picks, lockedSupplier]);
 
-  const onSave = async () => {
+  /* Review first (owner, 23 Nov 2026): the picks go to the New Purchase Order form, where supplier, price and dates can
+     change before Save, the same hand-over Pick Sales Orders makes. */
+  const onSave = () => {
     if (pickedCount === 0) { setDialog({ title: 'Nothing picked', body: 'Tick at least one material first.' }); return; }
-    const unbound = [...new Set(picked.map(([id]) => rowById.get(id)!).filter((r) => !r.mainSupplierId).map((r) => r.itemCode))];
-    if (unbound.length > 0) {
-      setDialog({ title: 'No supplier for these materials', body: `Give these raw materials a main supplier first, then try again:\n${unbound.map((c) => `• ${c}`).join('\n')}` });
+    const out: ProductionPick[] = picked.map(([id, v]) => ({ ...rowById.get(id)!, _pickQty: v.qty }));
+    if (!writeScmHandoff('poFromProductionPicks', out)) {
+      setDialog({ title: 'Unable to continue', body: 'This browser could not safely store your picked lines. Your selection is still here; free some browser storage and try again.' });
       return;
     }
-    const content = picked.map(([materialId, v]) => ({ materialId, qty: v.qty, supplierId: null })).sort((a, b) => a.materialId.localeCompare(b.materialId));
-    setSaving(true);
-    try {
-      const res = await sendWithContentKey(keys, content,
-        () => new Promise<boolean>((resolve) => {
-          const qn = unansweredSaveQuestion('purchase order', 'Purchase Orders');
-          setDialog({ title: qn.title, body: qn.body, primaryLabel: qn.confirmLabel, onPrimary: () => { setDialog(null); resolve(true); }, onCancel: () => resolve(false) });
-        }),
-        (key) => createMaterialPos({ idempotencyKey: key, mode: 'combined', picks: content }));
-      if (!res.sent) return;
-      setKeys(createContentBoundKey());
-      setPicks({});
-      await queryClient.invalidateQueries({ queryKey: MATERIALS_TO_ORDER_KEY });
-      void queryClient.invalidateQueries({ queryKey: ['mfg-purchase-orders'] });
-      const created = res.value.created;
-      if (created.length === 0) {
-        setDialog({ title: 'Already ordered', body: 'These materials are already on a PO. The list has been refreshed.' });
-        return;
-      }
-      const only = created.length === 1 ? created[0]! : null;
-      setDialog({
-        title: `Created ${created.length} PO${created.length === 1 ? '' : 's'}`,
-        body: created.map((p) => p.poNumber).join(', '),
-        primaryLabel: only ? `Open ${only.poNumber}` : 'Open Purchase Orders',
-        onPrimary: () => { setDialog(null); navigate(only ? `/scm/purchase-orders/${only.id}` : '/scm/purchase-orders'); },
-      });
-    } catch (e) {
-      const raw = e instanceof Error ? e.message : 'Something went wrong.';
-      void queryClient.invalidateQueries({ queryKey: MATERIALS_TO_ORDER_KEY });
-      setDialog(raw.includes('missing_bindings')
-        ? { title: 'No supplier for these materials', body: 'Give these raw materials a main supplier first, then try again.' }
-        : { title: 'Could not create the PO', body: raw });
-    } finally {
-      setSaving(false);
-    }
+    navigate('/scm/purchase-orders/new');
   };
 
   const toolbar = (
@@ -252,19 +227,25 @@ export const PurchaseOrderFromProduction = () => {
             </Button>
             <Button
               variant="primary" size="md"
-              onClick={() => { void onSave(); }}
-              disabled={pickedCount === 0 || saving}
-              title="Create one PO per supplier for the picked materials"
+              onClick={onSave}
+              disabled={pickedCount === 0}
+              title="Add the picked materials into the New PO form"
             >
               <Save {...ICON} />
-              {saving ? 'Creating…' : pickedCount === 0 ? 'Pick at least 1 line' : `Create PO for ${pickedCount} line${pickedCount === 1 ? '' : 's'}`}
+              {pickedCount === 0 ? 'Pick at least 1 line' : `Add ${pickedCount} line${pickedCount === 1 ? '' : 's'} to PO`}
             </Button>
           </div>
         }
       />
       <p style={{ margin: '0 0 var(--space-2)', fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
-        Raw materials of submitted production orders not yet on a PO. One PO is made per supplier.
+        Raw materials of submitted production orders not yet on a PO.
       </p>
+      {lockedSupplier && (
+        <p style={{ margin: '0 0 var(--space-2)', fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
+          One supplier per PO — locked to <strong>{lockedSupplier}</strong>. Other suppliers' lines
+          are greyed out; clear picks to switch.
+        </p>
+      )}
 
       <DataGridCompat<MaterialToOrder>
         rows={rows}
@@ -275,6 +256,7 @@ export const PurchaseOrderFromProduction = () => {
         onFilteredRowsChange={setShownRows}
         exportName="po-from-production"
         onRowClick={togglePick}
+        rowStyle={(r) => isRowLocked(r) ? { opacity: 0.45, background: 'var(--c-cream)', cursor: 'not-allowed' } : undefined}
         toolbar={toolbar}
         groupBanner={false}
         isLoading={q.isLoading}
@@ -289,9 +271,7 @@ export const PurchaseOrderFromProduction = () => {
         <ActionResultDialog
           title={dialog.title}
           body={dialog.body}
-          primaryLabel={dialog.primaryLabel}
-          onPrimary={dialog.onPrimary}
-          onClose={() => { dialog.onCancel?.(); setDialog(null); }}
+          onClose={() => setDialog(null)}
         />
       )}
     </div>

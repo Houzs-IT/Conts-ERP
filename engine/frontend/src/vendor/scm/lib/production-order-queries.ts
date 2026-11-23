@@ -925,6 +925,7 @@ export type MaterialToOrder = {
   qtyNeeded: number; qtyOrdered: number; qtyToOrder: number;
   processingDate: string | null; deliveryDate: string | null;
   mainSupplierId: string | null; mainSupplierCode: string | null; mainSupplierName: string | null;
+  warehouseCode: string | null;
 };
 export const MATERIALS_TO_ORDER_KEY = ['production-orders', 'materials-to-order'] as const;
 export function useMaterialsToOrder() {
