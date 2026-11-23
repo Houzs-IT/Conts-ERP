@@ -28,7 +28,7 @@ import { PkgMark } from './renovationPackageParts';
 import { withPackageAdd } from './renovationPackageAdd';
 import type { VoEdits } from '../../lib/renovation/api';
 import { ACTION_BUTTON, VoRoomEditor } from './VoRoomEditor';
-import { EMPTY_EDITS, packageAdds, roomsOf, totalsOf } from './voRoomModel';
+import { EMPTY_EDITS, isPreRoomDraft, packageAdds, roomsOf, totalsOf } from './voRoomModel';
 
 /* Packages (owner, 20 Nov 2026): a package or kit picked in the product search or with From package opens its confirm
    dialog; the ticked lines join the Add part as additions, each remembering the package. A kit with no area goes into
@@ -147,11 +147,14 @@ export function VariationOrderEditor() {
   );
   const restoreDraft = () => {
     /* Drafts kept in the browser before the room editor have no `edits`. */
-    const d: (Omit<typeof draftValue, 'edits'> & { edits?: VoEdits }) | undefined = draft.offered?.v;
-    /* A draft kept before the room editor holds Add and Omit lines this layout cannot show: never restore it into here. */
-    if (d && roomMode && !d.edits && (d.omits.length > 0 || d.adds.some((s) => s.lines.some((l) => l.itemCode || l.description.trim())))) {
+    const offeredDraft: (Omit<typeof draftValue, 'edits'> & { edits?: VoEdits }) | undefined = draft.offered?.v;
+    /* Never restore an old Add and Omit draft into the room layout. */
+    if (offeredDraft && roomMode && isPreRoomDraft(offeredDraft)) {
       setError('That unsaved draft was made in the old Add and Omit layout and cannot be opened here. Make the changes again below.');
-    } else if (d) { setTitle(d.title); setDocDate(d.docDate); setAdds(d.adds); setOmits(d.omits); setEdits(d.edits ?? EMPTY_EDITS); setDirty(true); }
+    } else if (offeredDraft) {
+      setTitle(offeredDraft.title); setDocDate(offeredDraft.docDate); setAdds(offeredDraft.adds); setOmits(offeredDraft.omits);
+      setEdits(offeredDraft.edits ?? EMPTY_EDITS); setDirty(true);
+    }
     draft.answer(true);
   };
 

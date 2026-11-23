@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DocLine, DocSection } from '../../lib/renovation/api';
-import { setLineOptions, setLineRemark } from './voRoomModel';
+import { isPreRoomDraft, setLineOptions, setLineRemark } from './voRoomModel';
 import { addLine, dropAdd, EMPTY_EDITS, packageAdds, removeLine, roomsOf, setAddQty, setLinePrice, setLineQty, swapLine, totalsOf, undoLine } from './voRoomModel';
 
 const line = (id: string, room: string, qty: number, priceSen: number, extra: Partial<DocLine> = {}): DocLine => ({
@@ -113,5 +113,26 @@ describe('VO room model', () => {
     expect(r.edits.adds).toEqual([{ room: 'Kitchen', itemCode: 'CAB', label: 'Item cab', qty: 2, unitPriceSen: 10000, fromPackageId: 'p1' }]);
     r = packageAdds(r.edits, [{ ...pkg[0], lines: [line('cab', '', 5, 10000)] }], 'p1', '', true);
     expect(r.edits.adds.map((a) => a.qty)).toEqual([5]);
+  });
+});
+
+describe('isPreRoomDraft', () => {
+  const blankAdd: DocSection = { heading: 'ADD ON :', bandColor: null, lumpSumSen: null, pageBreakBefore: false, lines: [line('x', '', 1, 0, { itemCode: null, description: '  ' })] };
+  const filledAdd: DocSection = { ...blankAdd, lines: [line('fan', '', 1, 14500)] };
+
+  it('flags an old draft with omit lines', () => {
+    expect(isPreRoomDraft({ omits: [{ lineId: 'l-fan', omitQty: 1 }], adds: [] })).toBe(true);
+  });
+
+  it('flags an old draft with a filled add line', () => {
+    expect(isPreRoomDraft({ omits: [], adds: [filledAdd] })).toBe(true);
+  });
+
+  it('lets an old draft through when its add section is only a blank line', () => {
+    expect(isPreRoomDraft({ omits: [], adds: [blankAdd] })).toBe(false);
+  });
+
+  it('lets a room-editor draft through even with old add and omit lines', () => {
+    expect(isPreRoomDraft({ edits: EMPTY_EDITS, omits: [{ lineId: 'l-fan', omitQty: 1 }], adds: [filledAdd] })).toBe(false);
   });
 });

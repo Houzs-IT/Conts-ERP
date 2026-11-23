@@ -235,3 +235,9 @@ export function packageAdds(edits: VoEdits, sections: DocSection[], packageId: s
 }
 
 export const EMPTY_EDITS: VoEdits = { lines: [], adds: [] };
+
+/** A browser draft kept before the room editor: no `edits`, but Add or Omit lines the room layout cannot show. */
+export function isPreRoomDraft(draft: { edits?: VoEdits; omits: readonly unknown[]; adds: DocSection[] }): boolean {
+  return !draft.edits && (draft.omits.length > 0
+    || draft.adds.some((section) => section.lines.some((docLine) => Boolean(docLine.itemCode) || docLine.description.trim() !== '')));
+}
