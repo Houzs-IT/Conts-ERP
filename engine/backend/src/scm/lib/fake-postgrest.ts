@@ -330,12 +330,17 @@ export function fakeSb(
       },
       /* PostgREST `or=(a.op.v,b.op.v)`: the row passes when ANY term does. Only
          the term shapes the list readers send are understood — `ilike` (the
-         search box), `eq` and `is.true|false|null` (the hold marker); anything
+         search box), `eq`, `in.(…)` (approval / project code docs) and
+         `is.true|false|null` (the hold marker); anything
          else THROWS, for the reason `not()` above gives. */
       or(expr: string) {
-        const terms = String(expr).split(',').map((t) => {
+        const terms = String(expr).split(/,(?![^()]*\))/).map((t) => {
           const [col, op, ...rest] = t.split('.');
           const val = rest.join('.');
+          if (op === 'in') {
+            const vals = val.replace(/^\(|\)$/g, '').split(',').map((v) => v.replace(/^"|"$/g, ''));
+            return (r: Row) => vals.includes(String(r[col!]));
+          }
           if (op === 'ilike') {
             const rx = new RegExp(`^${val.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*')}$`, 'i');
             return (r: Row) => rx.test(String(r[col!] ?? ''));
