@@ -161,7 +161,7 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
                 })}
               </ul>
               {catalog.canCreateGroup && (
-                <Button type="button" variant="secondary" className="self-start" onClick={() => { setError(null); setNewGroupOpen(true); }}>
+                <Button type="button" variant="secondary" className="min-h-[44px] self-start" onClick={() => { setError(null); setNewGroupOpen(true); }}>
                   <Plus size={14} strokeWidth={1.75} /> New group
                 </Button>
               )}
