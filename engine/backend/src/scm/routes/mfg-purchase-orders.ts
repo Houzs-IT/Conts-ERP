@@ -104,7 +104,7 @@ import { computeMrp } from './mrp';
 import { eager } from '../lib/concurrency';
 import { provenanceNote } from '../shared/transfer-vocabulary';
 import type { Env, Variables } from '../env';
-import { skuCategoryResolver, lineIdentityFields } from '../lib/sku-category';
+import { skuCategoryResolver, skuUomResolver, lineIdentityFields } from '../lib/sku-category';
 import { loadUnitBoundCodes, NO_UNIT_BOUND_CODES } from '../lib/unit-bound-sku';
 import { inHouseSupplierId } from '../lib/grn-from-po-core';
 import { ON_SITE_WAREHOUSE_CODE } from '../lib/non-selling-warehouse';
@@ -1214,6 +1214,7 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
      manual lines (no soItemId) skip this — a PO can be raised with no SO link,
      unchanged. Mirror of the DO create-gate. */
   const groupOf = await skuCategoryResolver(supabase, items, activeCompanyId(c) ?? null); // SKU wins — lib/sku-category.ts
+  const uomOf = await skuUomResolver(supabase, items, activeCompanyId(c) ?? null);
   { const inactive = await poInactivePickRefusal(supabase, activeCompanyId(c) ?? null, items); if (inactive) return refuseWithoutWriting(c, inactive, 409); }
   {
     const lineSoItemIds = items
@@ -1343,7 +1344,7 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
       variants:     (it.variants as unknown) ?? null,
       description:  (it.description as string | undefined) ?? null,
       ...lineIdentityFields(groupOf, it, buildVariantSummary), // item_group + description2, from ONE group
-      ...(it.uom ? { uom: String(it.uom) } : {}),
+      ...(uomOf(it) ? { uom: uomOf(it) } : {}),
       /* Commander 2026-05-29 (BUG 1) — persist the source SO line (migration
          0098) so deleting this PO line can release po_qty_picked back to the
          From-SO picker. NULL for manually-added lines. */
@@ -3069,6 +3070,7 @@ export const addPoLineHandler = async (c: any) => {
   const unknownAdd = await unknownProductCodeRefusal(sb, [{ code: it.itemCode, kind: it.materialKind }], co.companyId);
   if (unknownAdd) return c.json(unknownAdd, 409);
   const addGroupOf = await skuCategoryResolver(sb, [it], co.companyId ?? null); // SKU wins — lib/sku-category.ts
+  const addUomOf = await skuUomResolver(sb, [it], co.companyId ?? null);
   /* Non-finite guard — the clamp below cannot catch NaN (Math.max(0, NaN) is
      NaN), so a junk qty/price reached line_total_sen and the PO total. */
   const parsedLine = parseLineNumbers({
@@ -3125,7 +3127,7 @@ export const addPoLineHandler = async (c: any) => {
     variants: (it.variants as unknown) ?? null,
     description: (it.description as string) ?? null,
     ...lineIdentityFields(addGroupOf, it, buildVariantSummary), // same rule as create — docs/bugs/0514
-    uom: (it.uom as string) ?? 'UNIT',
+    uom: addUomOf(it) ?? 'UNIT',
     discount_sen: discountSen,
     unit_cost_sen: Number(it.unitCostSen ?? 0),
     // PR #77 — per-line ship-to. Both nullable; empty = inherit from header.
