@@ -14,11 +14,17 @@ export interface ItemPickerRow {
   uom?: string;
 }
 
+export type ItemPickerMode = 'add' | 'replace';
+
 export interface ItemPickerDialogProps {
   title: string;
   subtitle: string;
   rows: readonly ItemPickerRow[];
-  onAdd: (row: ItemPickerRow) => void;
+  /** 'add' keeps the window open for more picks; 'replace' picks one item and closes. */
+  mode?: ItemPickerMode;
+  /** The code already on the line being replaced, marked as Current. */
+  currentCode?: string;
+  onPick: (row: ItemPickerRow) => void;
   onClose: () => void;
 }
 
@@ -42,10 +48,15 @@ const priceCol: CSSProperties = { textAlign: 'right', flex: 'none', display: 'fl
 const footer: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' };
 const countPill: CSSProperties = { fontSize: 'var(--fs-12)', padding: 'var(--space-1) var(--space-3)', borderRadius: 'var(--radius-pill)', border: '1px solid var(--line-strong)', color: 'var(--fg-muted)' };
 
+const currentBadge: CSSProperties = {
+  marginLeft: 'var(--space-2)', fontSize: 'var(--fs-11)', fontWeight: 700, letterSpacing: '0.06em', verticalAlign: 'middle',
+  padding: '1px var(--space-2)', borderRadius: 'var(--radius-pill)', border: '1px solid var(--line-strong)', color: 'var(--fg-muted)',
+};
+
 const matches = (row: ItemPickerRow, query: string): boolean =>
   [row.code, row.name, row.supplierSku ?? ''].some((text) => text.toLowerCase().includes(query));
 
-export function ItemPickerDialog({ title, subtitle, rows, onAdd, onClose }: ItemPickerDialogProps): ReactElement {
+export function ItemPickerDialog({ title, subtitle, rows, mode = 'add', currentCode, onPick, onClose }: ItemPickerDialogProps): ReactElement {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
   const [addedByKey, setAddedByKey] = useState<Record<string, number>>({});
@@ -67,8 +78,10 @@ export function ItemPickerDialog({ title, subtitle, rows, onAdd, onClose }: Item
   const shown = filtered.slice(0, RENDER_CAP);
   const addedTotal = Object.values(addedByKey).reduce((sum, n) => sum + n, 0);
 
+  const isReplace = mode === 'replace';
   const add = (row: ItemPickerRow): void => {
-    onAdd(row);
+    onPick(row);
+    if (isReplace) { onClose(); return; }
     setAddedByKey((prev) => ({ ...prev, [row.key]: (prev[row.key] ?? 0) + 1 }));
   };
 
@@ -100,10 +113,17 @@ export function ItemPickerDialog({ title, subtitle, rows, onAdd, onClose }: Item
         {shown.length === 0 && <p style={{ ...muted, padding: 'var(--space-5)', textAlign: 'center', margin: 0 }}>No items match.</p>}
         {shown.map((row, index) => {
           const addedCount = addedByKey[row.key] ?? 0;
+          const isCurrent = isReplace && row.code === currentCode;
           return (
-            <div key={row.key} style={index === 0 ? { ...rowStyle, borderTop: 'none' } : rowStyle}>
+            <div
+              key={row.key}
+              style={{ ...rowStyle, ...(index === 0 && { borderTop: 'none' }), ...(isCurrent && { background: 'var(--c-cream)' }) }}
+            >
               <div style={textCol}>
-                <span style={codeStyle}>{row.code}</span>
+                <span style={codeStyle}>
+                  {row.code}
+                  {isCurrent && <span style={currentBadge}>Current</span>}
+                </span>
                 <span style={muted}>{row.categoryLabel} · {row.name}</span>
                 {row.supplierSku && <span style={skuStyle}>{row.supplierSku}</span>}
               </div>
@@ -113,9 +133,15 @@ export function ItemPickerDialog({ title, subtitle, rows, onAdd, onClose }: Item
                   {row.uom && <span style={muted}>{row.uom}</span>}
                 </div>
               )}
-              <Button variant={addedCount ? 'primary' : 'secondary'} size="sm" onClick={() => add(row)} style={{ minHeight: TOUCH_PX, flex: 'none' }}>
-                {addedCount ? <><Check size={14} /> Added{addedCount > 1 ? ` ×${addedCount}` : ''}</> : <><Plus size={14} /> Add</>}
-              </Button>
+              {isReplace ? (
+                <Button variant="secondary" size="sm" onClick={() => add(row)} style={{ minHeight: TOUCH_PX, flex: 'none' }}>
+                  Select
+                </Button>
+              ) : (
+                <Button variant={addedCount ? 'primary' : 'secondary'} size="sm" onClick={() => add(row)} style={{ minHeight: TOUCH_PX, flex: 'none' }}>
+                  {addedCount ? <><Check size={14} /> Added{addedCount > 1 ? ` ×${addedCount}` : ''}</> : <><Plus size={14} /> Add</>}
+                </Button>
+              )}
             </div>
           );
         })}
@@ -124,10 +150,16 @@ export function ItemPickerDialog({ title, subtitle, rows, onAdd, onClose }: Item
         <p style={{ ...muted, margin: 0 }}>Showing {shown.length} of {filtered.length}. Search or pick a category to narrow.</p>
       )}
 
-      <div style={footer}>
-        <span style={countPill}>{addedTotal} {addedTotal === 1 ? 'item' : 'items'} added</span>
-        <Button variant="primary" size="md" onClick={onClose} style={{ minHeight: TOUCH_PX }}>Done</Button>
-      </div>
+      {isReplace ? (
+        <div style={{ ...footer, justifyContent: 'flex-end' }}>
+          <Button variant="ghost" size="md" onClick={onClose} style={{ minHeight: TOUCH_PX }}>Cancel</Button>
+        </div>
+      ) : (
+        <div style={footer}>
+          <span style={countPill}>{addedTotal} {addedTotal === 1 ? 'item' : 'items'} added</span>
+          <Button variant="primary" size="md" onClick={onClose} style={{ minHeight: TOUCH_PX }}>Done</Button>
+        </div>
+      )}
     </Modal>
   );
 }

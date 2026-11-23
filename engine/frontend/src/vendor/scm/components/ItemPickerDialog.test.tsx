@@ -12,7 +12,7 @@ const rows: ItemPickerRow[] = [
 describe("ItemPickerDialog", () => {
   it("searches supplier SKU too and counts every add", () => {
     const onAdd = vi.fn();
-    render(<ItemPickerDialog title="Select items" subtitle="" rows={rows} onAdd={onAdd} onClose={() => {}} />);
+    render(<ItemPickerDialog title="Select items" subtitle="" rows={rows} onPick={onAdd} onClose={() => {}} />);
 
     fireEvent.change(screen.getByPlaceholderText(/Search by item code/), { target: { value: "ak-apx" } });
     expect(screen.queryByText("AVANI 10")).toBeNull();
@@ -24,5 +24,17 @@ describe("ItemPickerDialog", () => {
     expect(onAdd).toHaveBeenCalledTimes(2);
     expect(onAdd).toHaveBeenLastCalledWith(rows[0]);
     expect(screen.getByText("2 items added")).toBeTruthy();
+  });
+
+  it("in replace mode marks the current item, picks one and closes", () => {
+    const onPick = vi.fn();
+    const onClose = vi.fn();
+    render(<ItemPickerDialog title="Change item · Line 1" subtitle="" rows={rows} mode="replace" currentCode="AVANI 10" onPick={onPick} onClose={onClose} />);
+
+    expect(screen.getByText("Current")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Select" })[0]);
+
+    expect(onPick).toHaveBeenCalledWith(rows[0]);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

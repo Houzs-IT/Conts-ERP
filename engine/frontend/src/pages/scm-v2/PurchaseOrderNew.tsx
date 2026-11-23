@@ -136,6 +136,8 @@ const newLine = (): DraftLine => ({
   variants: {},
 });
 
+type ItemPickerTarget = { mode: 'add' } | { mode: 'replace'; rid: string };
+
 export const PurchaseOrderNew = () => {
   const navigate = useNavigate();
   const create   = useCreatePurchaseOrder();
@@ -604,7 +606,8 @@ export const PurchaseOrderNew = () => {
     prev.filter((l) => l.rid !== rid),
   );
 
-  const [isItemPickerOpen, setItemPickerOpen] = useState(false);
+  const [itemPicker, setItemPicker] = useState<ItemPickerTarget | null>(null);
+  const isItemPickerOpen = itemPicker !== null;
   const isSupplierScoped = Boolean(supplierId) && pickable.length > 0;
   const skusWithMainCost = useMfgProducts({ withMain: true, enabled: isItemPickerOpen && !isSupplierScoped });
   const itemPickerRows = useMemo<ItemPickerRow[]>(() => {
@@ -630,28 +633,39 @@ export const PurchaseOrderNew = () => {
     });
   }, [isSupplierScoped, pickable, allSkus.data, skusWithMainCost.data]);
 
-  const addPickedItem = ({ key, code }: ItemPickerRow) => {
+  const pickedItemFields = ({ key, code }: ItemPickerRow): Partial<DraftLine> => {
     const binding = isSupplierScoped ? pickable.find((b) => b.id === key) : undefined;
     const sku = (allSkus.data ?? []).find((p) => p.code === code);
+    return {
+      itemCode: code,
+      materialName: binding?.material_name ?? sku?.name ?? '',
+      category: sku?.category.toLowerCase(),
+      bindingId: binding?.id,
+      materialKind: binding?.material_kind ?? 'mfg_product',
+      supplierSku: binding?.supplier_sku,
+      unitPriceSen: binding?.unit_price_sen ?? 0,
+      priceTouched: false,
+    };
+  };
+
+  const addPickedItem = (row: ItemPickerRow) => {
     const line: DraftLine = {
       ...newLine(),
       warehouseId: purchaseLocationId || undefined,
       deliveryDate: expectedAt || undefined,
-      itemCode: code,
-      materialName: binding?.material_name ?? sku?.name ?? '',
-      category: sku?.category.toLowerCase(),
-      ...(binding && {
-        bindingId: binding.id,
-        materialKind: binding.material_kind,
-        supplierSku: binding.supplier_sku,
-        unitPriceSen: binding.unit_price_sen,
-        priceTouched: false,
-      }),
+      ...pickedItemFields(row),
     };
     setLines((prev) => (prev.length === 1 && !prev[0].itemCode && !prev[0].materialName ? [line] : [...prev, line]));
     // No supplier yet: the reverse lookup adopts the item's supplier, then the backfill effect fills the other lines.
-    if (!supplierId) setPendingItemPick({ rid: line.rid, code });
+    if (!supplierId) setPendingItemPick({ rid: line.rid, code: row.code });
   };
+
+  // Qty, discount, delivery date and remarks stay; the old item's options belong to the old item.
+  const replacePickedItem = (rid: string, row: ItemPickerRow) => {
+    setLine(rid, { ...pickedItemFields(row), variants: {} });
+    if (!supplierId) setPendingItemPick({ rid, code: row.code });
+  };
+  const replacingLineIndex = itemPicker?.mode === 'replace' ? lines.findIndex((l) => l.rid === itemPicker.rid) : -1;
 
   const pickBinding = (rid: string, b: BindingRow) => {
     setLine(rid, {
@@ -1110,7 +1124,7 @@ export const PurchaseOrderNew = () => {
               The item list couldn't be loaded — refresh the page to try again.
             </span>
           ) : (
-            <Button variant="secondary" size="md" onClick={() => setItemPickerOpen(true)} disabled={allSkus.isLoading} style={{ minHeight: 44 }}>
+            <Button variant="secondary" size="md" onClick={() => setItemPicker({ mode: 'add' })} disabled={allSkus.isLoading} style={{ minHeight: 44 }}>
               <Plus {...ICON} /> {allSkus.isLoading ? 'Loading items…' : isSupplierScoped ? 'Add items from supplier' : 'Add items'}
             </Button>
           )}
@@ -1225,55 +1239,25 @@ export const PurchaseOrderNew = () => {
 
                 {/* Identity row — Internal code + Supplier SKU side by side */}
                 <div className={styles.formGrid2}>
-                  <label className={styles.field}>
+                  <div className={styles.field}>
                     <span className={styles.fieldLabel}>Item Code (Internal)</span>
-                    <input
-                      type="text"
-                      list={`bindings-${l.rid}`}
-                      value={l.itemCode}
-                      onChange={(e) => {
-                        const code = e.target.value;
-                        // Bound match wins (autofills supplier SKU + price).
-                        const match = supplierId
-                          ? pickable.find((b) => b.item_code === code)
-                          : undefined;
-                        if (match) { pickBinding(l.rid, match); return; }
-                        // No binding (no supplier yet, OR supplier has no binding
-                        // for this code) → one-off line: pull name + category
-                        // from the master SKU list so the row isn't left blank.
-                        const sku = (allSkus.data ?? []).find((p) => p.code === code);
-                        setLine(l.rid, {
-                          itemCode: code,
-                          materialName: sku?.name ?? l.materialName,
-                          bindingId: undefined,
-                          category: sku?.category.toLowerCase() ?? categoryForCode(code),
-                        });
-                        // Reverse supplier lookup only matters before a supplier
-                        // is chosen; once one is picked we don't re-narrow.
-                        if (!supplierId) setPendingItemPick(code ? { rid: l.rid, code } : null);
-                      }}
-                      placeholder="Type or pick our internal SKU…"
+                    <button
+                      type="button"
+                      onClick={() => setItemPicker({ mode: 'replace', rid: l.rid })}
+                      disabled={allSkus.isLoading}
+                      aria-label={`Line ${idx + 1} item code: ${l.itemCode || 'none'}. Change item`}
                       className={styles.fieldInput}
-                      style={{ fontFamily: 'var(--font-mono)' }}
-                    />
-                    <datalist id={`bindings-${l.rid}`}>
-                      {/* PR — Commander 2026-05-28: only show bound SKUs when the
-                          supplier actually HAS bindings; otherwise fall back to
-                          the full catalogue so the picker is never dead. */}
-                      {supplierId && pickable.length > 0
-                        ? sortByText(pickable).map((b) => (
-                            <option key={b.id} value={b.item_code}>
-                              {b.material_name} · {b.supplier_sku} · {fmtRm(b.unit_price_sen, b.currency)}
-                            </option>
-                          ))
-                        : sortByText(allSkus.data ?? []).map((p) => (
-                            <option key={p.id} value={p.code}>
-                              {p.name} · {mfgCategoryLabel(p.category)}
-                            </option>
-                          ))
-                      }
-                    </datalist>
-                  </label>
+                      style={{
+                        fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center',
+                        justifyContent: 'space-between', gap: 'var(--space-2)', cursor: 'pointer', textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: l.itemCode ? undefined : 'var(--fg-muted)' }}>
+                        {l.itemCode || 'Pick an item…'}
+                      </span>
+                      <ArrowRightLeft {...ICON} aria-hidden />
+                    </button>
+                  </div>
                   <label className={styles.field}>
                     <span className={styles.fieldLabel}>Supplier SKU</span>
                     {/* PR #134 — Bi-directional picker: typing/picking a
@@ -1598,15 +1582,17 @@ export const PurchaseOrderNew = () => {
           <AddLineButton variant="block" onClick={addLine} />
         </div>
       </section>
-      {isItemPickerOpen && (
+      {itemPicker && (
         <ItemPickerDialog
-          title="Select items"
+          mode={itemPicker.mode}
+          title={replacingLineIndex >= 0 ? `Change item · Line ${replacingLineIndex + 1}` : 'Select items'}
+          currentCode={lines[replacingLineIndex]?.itemCode}
           subtitle={isSupplierScoped
             ? `${supplier?.code ?? ''} · ${supplier?.name ?? ''} · ${pickable.length} items offered`
             : `All ${itemPickerRows.length} SKUs · pick a creditor first to see only theirs with prices`}
           rows={itemPickerRows}
-          onAdd={addPickedItem}
-          onClose={() => setItemPickerOpen(false)}
+          onPick={(row) => (itemPicker.mode === 'replace' ? replacePickedItem(itemPicker.rid, row) : addPickedItem(row))}
+          onClose={() => setItemPicker(null)}
         />
       )}
 
