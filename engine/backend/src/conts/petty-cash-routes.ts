@@ -15,6 +15,7 @@
 //   POST  /accounting/petty-cash/receipts/:id/repaid       { date? }
 //   POST  /accounting/petty-cash/receipts/:id/write-off    { accountCode, date? }
 //   POST  /accounting/petty-cash/receipts/:id/voucher      { bankAccountCode }  -> a draft voucher to the person
+//   PUT   /accounting/petty-cash/receipts/:id/recoveries   { unitId, amountSen | null }  what the unit's owner pays back (0363)
 //   GET|PUT /accounting/petty-cash/overrides               [{ userId, floatId }]
 //   GET|PUT /accounting/staff-bank/:userId                 { bankName, accountNo, accountName }  (Ledger full)
 // Each float books to its own cash-in-hand account (e.g. Maintenance -> 315-0101 PETTY CASH - AMIN; chew 29 Oct 2026):
@@ -31,6 +32,8 @@ import { postReceiptJournal, postWriteOffJournal } from './petty-cash-ledger';
 import { checkProjectsFit, resolveLinesSub } from './sub-departments';
 import { fileResponse } from './claims-files';
 import { withTargetLabels } from './claims-lines';
+import { RECEIPT_CHARGED_STATUSES, fitRecoveries, recoveriesOf, unitCaps } from './owner-recovery';
+import type { Staff } from './staff-identity';
 import {
   RECEIPT_COLS, allRows, departmentNames, filesOf, floatBalances, floatsOf, linesOf, monthRange, receiptView, staffNames,
   type FloatRow, type ReceiptLineRow, type ReceiptRow,
@@ -175,7 +178,7 @@ async function loadReceipt(c: Ctx, companyId: number, id: string): Promise<Recei
 /** Receipts with their lines, files, names, and an over-limit flag on any project already past its limit. */
 async function receiptViews(sb: any, companyId: number, rows: ReceiptRow[]) {
   const ids = rows.map(r => r.id);
-  const [lines, files, names] = await Promise.all([linesOf(sb, ids), filesOf(sb, ids), staffNames(sb)]);
+  const [lines, files, names, recovers] = await Promise.all([linesOf(sb, ids), filesOf(sb, ids), staffNames(sb), recoveriesOf(sb, ids, 'receipt')]);
   const projects = [...new Set([...lines.values()].flat().map(l => l.project_id).filter((p): p is number => p != null))];
   const over = new Set<number>();
   for (const p of projects) {
@@ -184,7 +187,8 @@ async function receiptViews(sb: any, companyId: number, rows: ReceiptRow[]) {
   }
   return rows.map(r => {
     const ls = lines.get(r.id) ?? [];
-    return { ...receiptView(r, ls, files.get(r.id) ?? [], names), overLimit: ls.some(l => l.project_id != null && over.has(Number(l.project_id))) };
+    return { ...receiptView(r, ls, files.get(r.id) ?? [], names), overLimit: ls.some(l => l.project_id != null && over.has(Number(l.project_id))),
+      recoveries: recovers.get(r.id) ?? [] };
   });
 }
 
@@ -415,6 +419,14 @@ async function checkOne(c: Ctx, companyId: number, it: Record<string, unknown>):
   const bad = await receiptAccountProblem(sb, companyId, lines.map(l => String(l.account_code)));
   if (bad) return { id, ok: false, error: 'account_not_allowed', message: `${r.receipt_no}: ${bad}` };
 
+  /* What the owners pay back fits the lines finance ends with, before the check charges them (0363): a unit taken off
+     the lines loses its recovery, one cut below it comes down to its lines. */
+  if (it.lines !== undefined || it.amountSen !== undefined) {
+    const fit = fitRecoveries((await recoveriesOf(sb, [r.id], 'receipt')).get(r.id) ?? [], lines);
+    for (const unitId of fit.drop) await sb.from('staff_receipt_recoveries').delete().eq('receipt_id', r.id).eq('unit_id', unitId);
+    for (const x of fit.lower) await sb.from('staff_receipt_recoveries').update({ amount_sen: x.amountSen }).eq('receipt_id', r.id).eq('unit_id', x.unitId);
+  }
+
   /* Claim it first, so a reject landing at the same moment cannot leave a rejected receipt with a journal. */
   if (!(await claim(sb, r.id, 'HANDED_IN', { status: 'CHECKED', amount_sen: amount, checked_at: now(), checked_by: who(c) }))) {
     return { id, ok: false, error: 'not_waiting', message: `${r.receipt_no} is not waiting for a check.` };
@@ -453,6 +465,39 @@ export const checkReceiptsHandler = async (c: Ctx): Promise<Response> => {
   const results: CheckResult[] = [];
   for (const it of items) results.push(await checkOne(c, co.companyId, it));
   return c.json({ results }, results.every(x => x.ok) ? 200 : 207);
+};
+
+/** PUT /accounting/petty-cash/receipts/:id/recoveries { unitId, amountSen | null } — finance sets or clears what a unit's
+ *  owner pays back on a claim (chew, 23 Nov 2026, as on a payment request), until it is checked: from CHECKED the owner
+ *  is charged (0363), and a charge made is changed on the owner's statement instead. The unit is one of the claim's
+ *  lines' that is not a maintenance job's. */
+export const setReceiptRecoveryHandler = async (c: Ctx): Promise<Response> => {
+  if (!hasHouzsPerm(c, EDIT_KEY)) return forbid(c);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const b = await bodyOf(c);
+  const unitId = typeof b?.unitId === 'string' ? b.unitId : '';
+  const amount = b?.amountSen == null ? null : Number(b.amountSen);
+  if (!unitId) return c.json({ error: 'validation', message: 'Pick the unit.' }, 422);
+  if (amount != null && !(Number.isInteger(amount) && amount > 0)) return c.json({ error: 'validation', message: 'Enter what the owner pays back, more than RM 0.00.' }, 422);
+  const r = await loadReceipt(c, co.companyId, c.req.param('id'));
+  if (!r) return c.json({ error: 'not_found' }, 404);
+  if (r.status !== 'HANDED_IN' && r.status !== 'REJECTED') {
+    return c.json({ error: 'not_open', message: RECEIPT_CHARGED_STATUSES.has(r.status)
+      ? `${r.receipt_no} is checked: what the owner pays back is changed on the owner's statement now.`
+      : `${r.receipt_no} is ${r.status.toLowerCase().replace('_', ' ')}: nothing is paid back on it.` }, 409);
+  }
+  const onUnit = unitCaps((await linesOf(sb, [r.id])).get(r.id) ?? []).get(unitId) ?? 0;
+  if (!onUnit) return c.json({ error: 'validation', message: 'That unit is not on this claim, or only for a maintenance job (its Who pays decides).' }, 422);
+  if (amount != null && amount > onUnit) return c.json({ error: 'validation', message: 'The owner pays back no more than the claim spent on the unit.' }, 422);
+  const { data: had } = await sb.from('staff_receipt_recoveries').select('adjustment_id').eq('receipt_id', r.id).eq('unit_id', unitId).maybeSingle();
+  if ((had as { adjustment_id?: string | null } | null)?.adjustment_id) return c.json({ error: 'charged', message: 'The owner is already charged for this. Change it on the owner\'s statement.' }, 409);
+  const res = amount == null
+    ? await sb.from('staff_receipt_recoveries').delete().eq('receipt_id', r.id).eq('unit_id', unitId)
+    : await sb.from('staff_receipt_recoveries').upsert({ receipt_id: r.id, unit_id: unitId, amount_sen: amount, set_by: (c.get('staff') as Staff | undefined)?.userId ?? null, set_at: now() }, { onConflict: 'receipt_id,unit_id' });
+  if (res.error) return c.json({ error: 'save_failed', reason: res.error.message }, 500);
+  return c.json({ ok: true, unitId, amountSen: amount });
 };
 
 export const rejectReceiptHandler = async (c: Ctx): Promise<Response> => {

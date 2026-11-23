@@ -600,3 +600,20 @@ describe('the waiting count on the Payment requests menu', () => {
     expect(await (await get(appFor(sb, OPS), '/finance-waiting')).json()).toEqual({ count: 3, requests: 2, claims: 1 });
   });
 });
+
+describe('what the owner pays back on a claim (chew, 23 Nov 2026; 0363)', () => {
+  test('a unit line kept with the receipt and shown on My receipts; a job line refused; nothing ticked, nothing kept', async () => {
+    const sb = world();
+    const a = appFor(sb, OPS, 'session');
+    const res = await handIn(a, { lines: [{ unitId: 'UNIT-A01', amountSen: 3000, recoverSen: 2000 }, { amountSen: 1500 }] });
+    expect(res.status).toBe(201);
+    const { id } = await res.json() as any;
+    expect(sb.tables.staff_receipt_recoveries).toEqual([expect.objectContaining({ receipt_id: id, unit_id: 'UNIT-A01', amount_sen: 2000, set_by: 'u-ops' })]);
+    const mine = await (await get(a, '/receipts')).json() as any;
+    expect(mine.receipts[0].recoveries).toEqual([{ unitId: 'UNIT-A01', amountSen: 2000, charged: false }]);
+    expect((await handIn(a, { lines: [{ unitId: 'UNIT-A01', amountSen: 4500, recoverSen: 5000 }] })).status).toBe(422);
+    expect((await handIn(appFor(sb, TECH), { lines: [{ maintenanceIssueId: 'M1', amountSen: 4500, recoverSen: 4500 }] })).status).toBe(422);
+    expect((await handIn(a, { lines: [{ unitId: 'UNIT-A01', amountSen: 4500 }] })).status).toBe(201);
+    expect(sb.tables.staff_receipt_recoveries).toHaveLength(1);
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { readRecoveries } from './owner-recovery';
+import { fitRecoveries, readRecoveries } from './owner-recovery';
 import type { LineRow } from './claims-lines';
 
 const line = (unit_id: string | null, amount_sen: number): LineRow =>
@@ -17,5 +17,15 @@ describe('what the owner pays back (chew, 20 Nov 2026)', () => {
     expect(readRecoveries([{ recoverSen: 600 }], [line('U1', 500)])).toMatchObject({ ok: false });
     expect(readRecoveries([{ recoverSen: -1 }], [line('U1', 500)])).toMatchObject({ ok: false });
     expect(readRecoveries(undefined, [line('U1', 500)])).toEqual({ ok: true, byUnit: new Map() });
+  });
+});
+
+describe('a claim\'s recoveries after finance rewrites its lines (0363)', () => {
+  test('a unit gone loses it, one cut comes down, a charged one is left alone', () => {
+    const lines = [line('U1', 1200), line('U2', 5000), { ...line('U3', 900), maintenance_issue_id: 'M1' }];
+    expect(fitRecoveries([
+      { unitId: 'U1', amountSen: 2000, charged: false }, { unitId: 'U2', amountSen: 3000, charged: false },
+      { unitId: 'U3', amountSen: 900, charged: false }, { unitId: 'U4', amountSen: 100, charged: false }, { unitId: 'U5', amountSen: 100, charged: true },
+    ], lines)).toEqual({ drop: ['U3', 'U4'], lower: [{ unitId: 'U1', amountSen: 1200 }] });
   });
 });

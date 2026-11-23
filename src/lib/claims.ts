@@ -21,6 +21,8 @@ export interface ClaimFile { id: string; fileName: string; mime: string }
 export interface Receipt {
   id: string; receiptNo: string; submitterName: string; floatId: string | null; spendDate: string; amountSen: number; vendorName: string | null;
   note: string | null; status: ReceiptStatus; rejectReason: string | null; lines: ClaimLine[]; files: ClaimFile[];
+  /** What each unit's owner pays back (0363): charged to the owner as O2 once finance checks the claim (`charged`). */
+  recoveries?: { unitId: string; amountSen: number; charged: boolean }[];
 }
 export interface PaymentRequest {
   id: string; requestNo: string; type: 'PAYMENT' | 'DEPOSIT'; payeeName: string; amountSen: number; status: RequestStatus; reason: string | null;
@@ -43,7 +45,7 @@ export interface Me { userId: string; name: string; field: boolean; lineDepartme
 export interface MyFloat { float: { id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested: boolean }; receipts: Receipt[] }
 /** A line as staff send it: the engine sets the department from the person and finance sets the account (2 Nov 2026). */
 export interface NewLine { unitId?: string; maintenanceIssueId?: string; projectId?: number; amountSen: number; description?: string; subDepartmentId?: string;
-  /** On a payment request line for a unit: what its owner pays back (chew, 20 Nov 2026). */
+  /** On a line for a unit (a payment request, or a claim): what its owner pays back (chew, 20 and 23 Nov 2026). */
   recoverSen?: number }
 /** A sub-department a line can be put on (SOP 1.1: the department starts as the person's, and may be changed): GET /claims/sub-departments. */
 export interface LineSubDepartment { id: string; department: LineDepartment; name: string;

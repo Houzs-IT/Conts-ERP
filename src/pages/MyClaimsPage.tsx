@@ -42,7 +42,7 @@ type Kind = 'claim' | 'direct';
 /* subDepartmentId: '' starts the line on the person's own department (the engine fills it); else the one chosen (SOP 1.1, the department
    starts as the person's and may be changed; chew 16 Nov 2026). */
 type LineDraft = { where: 'none' | 'unit' | 'job' | 'project'; unitId: string; jobId: string; projectId: string; amountSen: number | null; description: string; subDepartmentId: string;
-  /** A payment request line for a unit whose owner pays it back (chew, 20 Nov 2026): the whole line unless an amount is typed. */
+  /** A line for a unit whose owner pays it back (a payment request, chew 20 Nov 2026; a claim, 23 Nov): the whole line unless an amount is typed. */
   recover?: boolean; recoverSen?: number | null };
 type Supplier = { id: string; code: string; name: string };
 
@@ -148,9 +148,10 @@ function LineTargetFields({ line: l, sub, targets, onPick }: { line: LineDraft; 
   );
 }
 
-function LinesEditor({ lines, setLines, totalSen, department, canRecover = false }: { lines: LineDraft[]; setLines: (l: LineDraft[]) => void; totalSen: number | null; department: LineDepartment;
-  /** A payment request: a line for a unit can be paid back by the unit's owner. */
-  canRecover?: boolean }) {
+function LinesEditor({ lines, setLines, totalSen, department, recoverOn = null }: { lines: LineDraft[]; setLines: (l: LineDraft[]) => void; totalSen: number | null; department: LineDepartment;
+  /** A line for a unit can be paid back by the unit's owner, charged once finance pays the request ('paid') or checks the
+   *  claim ('checked'; chew, 23 Nov 2026). None: no tick. */
+  recoverOn?: 'paid' | 'checked' | null }) {
   const targets = useLineTargets();
   const { subOptions, mineSub, subs } = targets;
   const subOf = (l: LineDraft) => subs.find(x => x.id === (l.subDepartmentId || mineSub?.id)) ?? null;
@@ -183,11 +184,11 @@ function LinesEditor({ lines, setLines, totalSen, department, canRecover = false
             <Field label="Description" value={l.description} onChange={e => set(i, { description: e.target.value })} placeholder="e.g. tap for the kitchen" maxLength={300} />
             {split && <MoneyInput label="Amount" required valueSen={l.amountSen} onChangeSen={v => set(i, { amountSen: v })} />}
           </div>
-          {canRecover && l.where === 'unit' && l.unitId && (
+          {recoverOn && l.where === 'unit' && l.unitId && (
             <div className="flex flex-col gap-2">
               <label className="inline-flex items-center gap-2 text-meta text-ink cursor-pointer select-none">
                 <input type="checkbox" checked={!!l.recover} onChange={e => set(i, { recover: e.target.checked, recoverSen: null })} />
-                The owner pays this back <span className="text-muted-ink">(charged on the owner statement once finance pays)</span>
+                The owner pays this back <span className="text-muted-ink">({recoverOn === 'checked' ? 'charged on the owner statement once finance checks it' : 'charged on the owner statement once finance pays'})</span>
               </label>
               {l.recover && (
                 <div className="sm:max-w-[240px]">
@@ -406,7 +407,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
     try {
       if (kind === 'claim') {
         const made = await postWithFiles<{ receiptNo: string; route: 'float' | 'finance' }>('/claims/receipts',
-          { spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: built.lines.map(({ recoverSen: _, ...l }) => l) }, files);
+          { spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: built.lines }, files);
         toast({ tone: 'success', title: `Receipt ${made.receiptNo} handed in`, body: made.route === 'float' ? 'Your department\'s petty cash pays you back.' : 'Finance pays you back by transfer.' });
       } else {
         const body = {
@@ -522,7 +523,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
         )}
         <section className="ds-fs">
           <div className="ds-fs-h"><b>What it was for</b><span>{lines.length > 1 ? 'The lines must add up to the amount' : 'Finance chooses the account while checking'}</span></div>
-          <LinesEditor lines={lines} setLines={setLines} totalSen={amountSen} department={me.lineDepartment} canRecover={kind === 'direct'} />
+          <LinesEditor lines={lines} setLines={setLines} totalSen={amountSen} department={me.lineDepartment} recoverOn={kind === 'direct' ? 'paid' : 'checked'} />
         </section>
         <section className="ds-fs">
           <div className="ds-fs-h"><b>Note</b></div>

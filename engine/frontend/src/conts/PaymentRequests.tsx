@@ -24,6 +24,7 @@ import {
   usePaymentRequests, type PaymentRequest, type Receipt,
 } from "./claimsQueries";
 import { FileButtons, Money, usePettyOptions } from "./ClaimsParts";
+import { recoveryOpen, recoveryUnits } from "./ownerRecovery";
 import { useLineDepartmentLabel } from "./SubDepartmentSelect";
 import type { ClaimsPrefill } from "../pages/scm-v2/PaymentVoucherNew";
 import type { RequestForBill } from "../pages/scm-v2/ApInvoices";
@@ -202,7 +203,7 @@ export function PaymentRequests() {
       )),
     },
     { key: "unit", label: "Unit", getValue: unitsOf, render: (r) => {
-      const back = r.kind === "request" ? (r.q.recoveries ?? []).reduce((n, x) => n + x.amountSen, 0) : 0;
+      const back = ((r.kind === "request" ? r.q.recoveries : r.c.recoveries) ?? []).reduce((n, x) => n + x.amountSen, 0);
       return (
         <span>
           {unitsOf(r) || <span className="text-ink-muted">—</span>}
@@ -381,7 +382,7 @@ function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
           {r.q.vouchers.length > 0 && field("Vouchers", r.q.vouchers.map((v) => (
             <Link key={v.id} className="block underline" to={`/scm/payment-vouchers/${v.id}`}>{v.pvNumber} ({v.status.toLowerCase()})</Link>
           )))}
-          {r.q.lines.some((l) => l.unitId && !l.maintenanceIssueId) && field("Owner pays back", <OwnerRecovery q={r.q} />)}
+          {r.q.lines.some((l) => l.unitId && !l.maintenanceIssueId) && field("Owner pays back", <OwnerRecovery r={r} />)}
         </>
       ) : (
         <>
@@ -392,6 +393,7 @@ function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
           {field("Bank", r.c.bank ? `${r.c.bank.bankName} ${r.c.bank.accountNo}` : <span className="text-err">No bank details</span>)}
           {field("Amount", <Money sen={r.c.amountSen} />)}
           {field("Note", r.c.note)}
+          {r.c.lines.some((l) => l.unitId && !l.maintenanceIssueId) && field("Owner pays back", <OwnerRecovery r={r} />)}
         </>
       )}
       <div>
@@ -417,18 +419,18 @@ function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
   );
 }
 
-/** What each unit's owner pays back on a request (chew, 20 Nov 2026), set by the person asking or here by finance until it
- *  is paid; once PAID the owner is charged as O2 on their statement (migration 0352), and a charge made is changed there. */
-function OwnerRecovery({ q }: { q: PaymentRequest }) {
+/** What each unit's owner pays back on a request (chew, 20 Nov 2026) or a claim (23 Nov 2026), set by the person asking
+ *  or here by finance: once a request is PAID (0352), or a claim CHECKED (0363), the owner is charged as O2 on their
+ *  statement, and a charge made is changed there. */
+function OwnerRecovery({ r }: { r: Row }) {
   const { can } = useAuth();
   const act = useFinanceAction();
   const prompt = usePrompt();
   const [note, setNote] = useState<string | null>(null);
-  /* A maintenance job's line goes to the owner through the job's Who pays, never here as well (chew, 21 Nov 2026). */
-  const mine = q.lines.filter((l) => l.unitId && !l.maintenanceIssueId);
-  const units = [...new Map(mine.map((l) => [l.unitId!, { label: l.targetLabel ?? l.unitId!, sen: 0 }])).entries()];
-  for (const l of mine) { const u = units.find(([id]) => id === l.unitId); if (u) u[1].sen += l.amountSen; }
-  const open = ["SUBMITTED", "PART_PAID", "WITHDRAWN", "REJECTED"].includes(q.status) && can("scm.payment_voucher.write");
+  const units = recoveryUnits(r.kind === "request" ? r.q.lines : r.c.lines);
+  const recoveries = (r.kind === "request" ? r.q.recoveries : r.c.recoveries) ?? [];
+  const path = r.kind === "request" ? `${requestsPath}/${r.q.id}/recoveries` : `${pettyPath}/receipts/${r.c.id}/recoveries`;
+  const open = recoveryOpen(r.kind, r.kind === "request" ? r.q.status : r.c.status) && can("scm.payment_voucher.write");
   const set = async (unitId: string, label: string, max: number, now: number | null) => {
     const typed = await prompt({ title: `What does the owner of ${label} pay back?`, body: `Up to ${(max / 100).toFixed(2)}. Leave it empty for nothing.`,
       placeholder: "RM", defaultValue: now != null ? (now / 100).toFixed(2) : (max / 100).toFixed(2), confirmLabel: "Save",
@@ -436,19 +438,19 @@ function OwnerRecovery({ q }: { q: PaymentRequest }) {
     if (typed == null) return;
     const t = typed.trim();
     setNote(null);
-    try { await act.mutateAsync({ path: `${requestsPath}/${q.id}/recoveries`, method: "PUT", body: { unitId, amountSen: t ? Math.round(Number(t.replace(/,/g, "")) * 100) : null } }); }
+    try { await act.mutateAsync({ path, method: "PUT", body: { unitId, amountSen: t ? Math.round(Number(t.replace(/,/g, "")) * 100) : null } }); }
     catch (e) { setNote(e instanceof Error ? e.message : "Not saved."); }
   };
   return (
     <span style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       {units.map(([unitId, u]) => {
-        const rec = (q.recoveries ?? []).find((x) => x.unitId === unitId);
+        const rec = recoveries.find((x) => x.unitId === unitId);
         return (
           <span key={unitId} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span>{u.label}:</span>
             {rec ? <strong><Money sen={rec.amountSen} /></strong> : <span className="text-ink-muted">nothing</span>}
             {rec?.charged && <span className="text-xs text-ink-muted">charged to the owner (O2)</span>}
-            {rec && !rec.charged && <span className="text-xs text-ink-muted">charged to the owner once paid</span>}
+            {rec && !rec.charged && <span className="text-xs text-ink-muted">charged to the owner once {r.kind === "request" ? "paid" : "checked"}</span>}
             {open && !rec?.charged && <Button variant="secondary" className="h-7" disabled={act.isPending} onClick={() => void set(unitId, u.label, u.sen, rec?.amountSen ?? null)}>{rec ? "Change" : "Owner pays back"}</Button>}
           </span>
         );

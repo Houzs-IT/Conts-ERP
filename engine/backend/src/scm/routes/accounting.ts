@@ -291,6 +291,7 @@ accounting.post('/petty-cash/receipts/:id/reject', pettyCash.rejectReceiptHandle
 accounting.post('/petty-cash/receipts/:id/repaid', pettyCash.repaidReceiptHandler);
 accounting.post('/petty-cash/receipts/:id/write-off', pettyCash.writeOffReceiptHandler);
 accounting.post('/petty-cash/receipts/:id/voucher', pettyCash.receiptVoucherHandler);
+accounting.put('/petty-cash/receipts/:id/recoveries', pettyCash.setReceiptRecoveryHandler);
 accounting.get('/petty-cash/overrides', pettyCash.listOverridesHandler);
 accounting.put('/petty-cash/overrides', pettyCash.putOverridesHandler);
 accounting.get('/staff-banks', pettyCash.listStaffBanksHandler);
