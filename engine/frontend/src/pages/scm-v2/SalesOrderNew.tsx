@@ -2600,7 +2600,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
               <Save {...ICON} />
               {create.isPending || quoteBusy || savePressed
                 ? 'Saving…'
-                : asQuotation ? 'Create Quotation'
+                : asQuotation ? 'Save as Draft'
                 : createdDocNo
                   ? (paymentIntents().length > 0 ? 'Continue payment retry' : 'Open created order')
                   : 'Create Sales Order'}
