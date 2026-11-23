@@ -118,7 +118,8 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
   /* The five reads are independent: sent together, one round trip instead of five. */
   const [sos, instRows, bills, creditRows, orderPaid, preGoLive] = await Promise.all([
     db.q<{ doc_no: string; status: string; original_contract_sen: number | null; revised_sen: number; billed_before_golive_sen: number | string | null }>(
-      `select o.doc_no, o.status::text as status, c.original_contract_sen, greatest(coalesce(c.billed_before_golive_sen, 0), coalesce(c.golive_contract_sen, 0)) as billed_before_golive_sen,
+      /* What AutoCount invoiced: the uploaded figure, else the whole contract it booked at the cut-over (acc/reno-paid-before-golive billedBeforeGoLiveOf). */
+      `select o.doc_no, o.status::text as status, c.original_contract_sen, coalesce(nullif(c.billed_before_golive_sen, 0), c.golive_contract_sen, 0) as billed_before_golive_sen,
               (select coalesce(sum(i.total_sen), 0)::int from scm.mfg_sales_order_items i where i.doc_no = o.doc_no and not i.cancelled) as revised_sen
          from scm.mfg_sales_orders o
          left join scm.reno_so_contracts c on c.so_doc_no = o.doc_no
@@ -176,7 +177,7 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
          select distinct o.company_id, o.debtor_code from scm.mfg_sales_orders o
           where o.doc_no in (select jsonb_array_elements_text($1::text::jsonb)) and ($2::bigint is null or o.company_id = $2)
             and nullif(trim(o.debtor_code), '') is not null)
-       select 'C' as kind, o.company_id, o.debtor_code, o.doc_no, o.so_date::text as so_date, greatest(coalesce(k.billed_before_golive_sen, 0), coalesce(k.golive_contract_sen, 0))::bigint as sen
+       select 'C' as kind, o.company_id, o.debtor_code, o.doc_no, o.so_date::text as so_date, coalesce(nullif(k.billed_before_golive_sen, 0), k.golive_contract_sen, 0)::bigint as sen
          from scm.mfg_sales_orders o
          join mine m on m.company_id = o.company_id and m.debtor_code = o.debtor_code
          join scm.reno_so_contracts k on k.so_doc_no = o.doc_no
@@ -461,7 +462,7 @@ export async function netBilledSql(db: RenoDb, soDocNo: string): Promise<number>
     `select (
         coalesce((select sum(si.total_sen) from scm.sales_invoices si
                    where si.so_doc_no = $1 and si.status::text not in ('DRAFT', 'CANCELLED')), 0)
-      + coalesce((select greatest(coalesce(c.billed_before_golive_sen, 0), coalesce(c.golive_contract_sen, 0)) from scm.reno_so_contracts c where c.so_doc_no = $1), 0)
+      + coalesce((select coalesce(nullif(c.billed_before_golive_sen, 0), c.golive_contract_sen, 0) from scm.reno_so_contracts c where c.so_doc_no = $1), 0)
       - coalesce((select sum(cc.amount_sen) from scm.reno_contract_credits cc
                     left join scm.acc_credit_notes cn on cn.id = cc.credit_note_id
                    where cc.so_doc_no = $1 and coalesce(cn.status, '') <> 'CANCELLED'), 0)
