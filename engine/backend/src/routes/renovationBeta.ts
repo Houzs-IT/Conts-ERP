@@ -55,6 +55,7 @@ import { chainTimeline, statusWords } from "../services/renovation/betaTimelineC
 import { datedAt, plainEntry, readProjectTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineDoc, type TimelineEntry } from "../services/renovation/timeline";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
 import { attachmentsReady, linkedFilesFor, listFilesFor, orderLineFiles, podFilesFor, textArray, type DocFile } from "../scm/lib/doc-attachments";
+import { brandVisibleSql, loadBrandSide } from "../services/projectBrandScope";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -530,8 +531,9 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
   const seeAll = hasPermission(user?.permissions_set ?? user?.permissions ?? [], "projects.manage");
   const team = seeAll ? null : await teamPersonIds(db(c), user?.id, user?.email);
   const teamSql = team == null ? "" : ` AND ${teamProjectSql(team)}`;
-  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${projectId == null ? "" : ` AND p.id = ${projectId}`}${teamSql}`;
-  const eventScope = `${projectId == null ? "" : ` AND e.project_id = ${projectId}`}${team == null ? "" : ` AND (e.person_id IN (${[0, ...team].join(",")}) OR e.person_ids && ARRAY[${[0, ...team].join(",")}]::bigint[] OR (e.project_id IS NOT NULL${teamSql}))`}`;
+  const brandSql = brandVisibleSql(await loadBrandSide(db(c), user));
+  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${projectId == null ? "" : ` AND p.id = ${projectId}`}${teamSql}${brandSql}`;
+  const eventScope = `${projectId == null ? "" : ` AND e.project_id = ${projectId}`}${team == null ? "" : ` AND (e.person_id IN (${[0, ...team].join(",")}) OR e.person_ids && ARRAY[${[0, ...team].join(",")}]::bigint[] OR (e.project_id IS NOT NULL${teamSql}))`}${brandSql ? ` AND (e.project_id IS NULL OR (TRUE${brandSql}))` : ""}`;
   const hidden = financeHiddenForUser(user);
   try {
     // One query per data set over the whole scoped project list, grouped in code below.

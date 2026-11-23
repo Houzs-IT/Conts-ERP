@@ -5,7 +5,7 @@ import { areaKeysOf, countGrants, resolveRoleLevels } from '../../lib/roleGrid';
 import type { AccessChart, Department, Position } from '../../lib/types';
 import { GroupToggle } from './GroupToggle';
 import {
-  COMPANY_HEADING, COMPANY_LABEL, DEPARTMENT_HEADING, DEPARTMENT_LABEL, LIST_ROW, NO_POSITION_LABEL, SELECTED_ROW, TAG, deskCompaniesOf, hasPeopleWithoutPosition, headCountWithoutPosition, isSameRole, useToggleSet, visibleCategoriesOf, type DeskCompany, type RoleTarget,
+  DEPARTMENT_HEADING, DEPARTMENT_LABEL, LIST_ROW, NO_POSITION_LABEL, SELECTED_ROW, TAG, deskDepartmentsOf, hasPeopleWithoutPosition, headCountWithoutPosition, isSameRole, useToggleSet, visibleCategoriesOf, type RoleTarget,
 } from './shared';
 
 export interface RolesViewProps {
@@ -85,36 +85,18 @@ function DepartmentRoles({ chart, department, selectedRole, isOpen, onToggle, on
   );
 }
 
-function initiallyOpen(companies: DeskCompany[], selectedRole: RoleTarget | null): { companySides: string[]; departmentIds: string[] } {
-  const [firstCompany] = companies;
-  const companyOfSelected = companies.find(({ departments }) => departments.some(({ id }) => id === selectedRole?.departmentId));
-  return {
-    companySides: [firstCompany, companyOfSelected].flatMap(company => (company ? [company.side] : [])),
-    departmentIds: [firstCompany?.departments[0]?.id, selectedRole?.departmentId].flatMap(id => (id ? [id] : [])),
-  };
-}
-
 export default function RolesView({ chart, selectedRole, onOpen }: RolesViewProps) {
-  const companies = deskCompaniesOf(chart.departments);
-  const { companySides, departmentIds } = initiallyOpen(companies, selectedRole);
-  const openCompanies = useToggleSet(companySides);
-  const openDepartments = useToggleSet(departmentIds);
+  const departments = deskDepartmentsOf(chart.departments);
+  const openDepartments = useToggleSet([departments[0]?.id, selectedRole?.departmentId].flatMap(id => (id ? [id] : [])));
 
-  if (companies.length === 0) {
+  if (departments.length === 0) {
     return <div className="p-5 text-copy text-muted-ink">No departments yet. Add one under Setup.</div>;
   }
   return (
     <>
-      {companies.map(({ side, label, departments }) => (
-        <div key={side}>
-          <GroupToggle label={label} note={plural(departments.length, 'department')}
-            isOpen={openCompanies.has(side)} onToggle={() => openCompanies.toggle(side)}
-            className={COMPANY_HEADING} labelClassName={COMPANY_LABEL} />
-          {openCompanies.has(side) && departments.map(department => (
-            <DepartmentRoles key={department.id} chart={chart} department={department} selectedRole={selectedRole}
-              isOpen={openDepartments.has(department.id)} onToggle={() => openDepartments.toggle(department.id)} onOpen={onOpen} />
-          ))}
-        </div>
+      {departments.map(department => (
+        <DepartmentRoles key={department.id} chart={chart} department={department} selectedRole={selectedRole}
+          isOpen={openDepartments.has(department.id)} onToggle={() => openDepartments.toggle(department.id)} onOpen={onOpen} />
       ))}
     </>
   );

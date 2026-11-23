@@ -136,6 +136,7 @@ import { brandShare } from "./routes/brandShare";
 import renovation from "./routes/renovation";
 // Beta project workspace.
 import renovationBeta from "./routes/renovationBeta";
+import { projectBrandGuard } from "./services/projectBrandScope";
 import renovationBetaSheets from "./routes/renovationBetaSheets";
 import renovationBetaHandover from "./routes/renovationBetaHandover";
 import renovationBetaSiteTasks from "./routes/renovationBetaSiteTasks";
@@ -456,6 +457,8 @@ app.use("/api/*", idempotency);
 // user staleness (items assigned to others) is likewise intentionally on TTL.
 app.use("/api/assr/*", inboxBustAfterWrite);
 app.use("/api/projects/*", inboxBustAfterWrite);
+// A project of the other company's brand is not found for this person (migration 0364).
+for (const path of ["/api/projects/*", "/api/projects-print/*", "/api/renovation/*", "/api/beta/*"]) app.use(path, projectBrandGuard);
 
 // Mount the Lead Time Portal first so /api/assr/portal/* doesn't
 // fall through into the catch-all /:id handler on the main module.

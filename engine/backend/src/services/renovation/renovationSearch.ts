@@ -134,6 +134,8 @@ export interface CompanyFragments {
   active: (col: string) => string;
   /** The service cases' scope: the caller's allowed companies (routes/assr.ts assrCompanySql). */
   allowed: (col: string) => string;
+  /** ` AND ...` on `projects p`: the projects of the other company's brand left out (services/projectBrandScope.ts). */
+  projectBrand?: string;
 }
 
 const s = (v: unknown): string => (v == null ? "" : String(v).trim());
@@ -166,7 +168,7 @@ const SOURCES: Source[] = [
         ["p.code", "p.customer_phone"]);
       const r = await rows(db, `SELECT p.id, p.code, p.name, p.customer_name, p.customer_phone, p.building, p.unit_no, p.reno_stage
           FROM projects p
-         WHERE p.project_kind = 'renovation' AND p.archived_at IS NULL${co.active("p.company_id")} AND ${m.sql}
+         WHERE p.project_kind = 'renovation' AND p.archived_at IS NULL${co.active("p.company_id")}${co.projectBrand ?? ""} AND ${m.sql}
          ORDER BY p.id DESC LIMIT ${limit}`, m.args);
       return r.map((x) => ({
         kind: "project" as const, id: s(x.id),
