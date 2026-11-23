@@ -7,6 +7,7 @@ import { useSession } from '../lib/session';
 import { confirmLeaving } from '../lib/useLeaveGuard';
 import { useNavCounts } from '../lib/navBadges';
 import { rememberPage, useItUnread } from '../lib/itSupport';
+import { useMeetingsUnread } from '../lib/meetingsUnread';
 import { jobTitle } from '../lib/vocabulary';
 import Icon, { toPascal } from './Icon';
 import { Logo } from './Logo';
@@ -223,7 +224,8 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
   useEffect(() => () => window.clearTimeout(scrollTimer.current), []);
 
   const itUnread = useItUnread();
-  const countOf = (k?: BadgeKey) => (k === 'itSupport' ? itUnread : (k && counts?.[k]) || 0);
+  const meetingsUnread = useMeetingsUnread();
+  const countOf = (k?: BadgeKey) => (k === 'itSupport' ? itUnread : k === 'meetings' ? meetingsUnread : (k && counts?.[k]) || 0);
   /** What a count means, for the tooltip and screen readers ("2 awaiting owner approval"). */
   const countWords = (k: BadgeKey | undefined, n: number): string => {
     if (!n) return '';
@@ -237,6 +239,7 @@ export default function Sidebar({ path, navigate, open, onToggle }: Props) {
     if (k === 'statements') return `${n} final, not sent`;
     if (k === 'approvals') return `${n} waiting for approval`;
     if (k === 'paymentRequests') return `${n} waiting for payment`;
+    if (k === 'meetings') return `${n} new meeting updates`;
     return `${n} new`;
   };
 

@@ -2,7 +2,7 @@ import type { UserRole, AccessLevel, SessionUser } from './types';
 import { LEDGER_SCREENS } from './scmEngine';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
-export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'reviews' | 'statements' | 'approvals' | 'itSupport' | 'paymentRequests';
+export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'reviews' | 'statements' | 'approvals' | 'itSupport' | 'paymentRequests' | 'meetings';
 /** The sidebar shows one workspace at a time. Rental (The Conts) is the daily work; supply chain (Dream Crafter) sits behind the switch. */
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
@@ -215,8 +215,9 @@ export const NAV: NavGroup[] = [
     // only ever reads their own requests (functions/_lib/itHub.ts). Its count comes from lib/itSupport.ts.
     { key: 'itSupport', label: 'IT Support', icon: 'life-buoy', path: '/system/it-support', badge: 'itSupport' },
     // Meeting rooms shared with Houzs and Hookka, kept in the IT Hub (functions/_lib/meetingsHub.ts). Every desk person
-    // books, so no permission area; adding and changing rooms needs Manage meeting rooms (area meetingRooms).
-    { key: 'meetings', label: 'Meetings', icon: 'calendar-clock', path: '/system/meetings' },
+    // books, so no permission area; adding and changing rooms needs Manage meeting rooms (area meetingRooms). Its count comes
+    // from lib/meetingsUnread.ts.
+    { key: 'meetings', label: 'Meetings', icon: 'calendar-clock', path: '/system/meetings', badge: 'meetings' },
   ] },
 
   // Supply chain workspace. Mirrors Houzs's hierarchy: section -> collapsible area -> page.

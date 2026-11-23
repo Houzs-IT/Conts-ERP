@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "r
 import { useSearchParams } from "react-router-dom";
 import { Bell, ChevronLeft, ChevronRight, Link2, Search } from "lucide-react";
 import { api, openLoadedTab } from "./kit-api";
+import { refreshMeetingsUnread } from "../../lib/meetingsUnread";
 import { TabStrip } from "./kit";
 import { cx as cn } from "../../lib/design-tokens";
 import {
@@ -110,7 +111,7 @@ export function Meetings({ erpName = "Houzs ERP", embedded = false }: { erpName?
     if (tab !== "mine") return;
     let live = true;
     fresh<{ meetings: Meeting[]; notifications: Notice[] }>("/api/meetings/mine")
-      .then((r) => { if (!live) return; setMine(r); setMineError(null); if (r.notifications.some((n) => !n.read)) api.post("/api/meetings/notifications/read").catch((e) => console.warn("[meetings] could not mark notifications read", e)); })
+      .then((r) => { if (!live) return; setMine(r); setMineError(null); if (r.notifications.some((n) => !n.read)) api.post("/api/meetings/notifications/read").then(refreshMeetingsUnread).catch((e) => console.warn("[meetings] could not mark notifications read", e)); })
       .catch((e) => live && setMineError(message(e)));
     return () => { live = false; };
   }, [tab, tick]);
