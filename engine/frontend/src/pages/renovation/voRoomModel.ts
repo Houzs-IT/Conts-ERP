@@ -49,7 +49,7 @@ const netOf = (l: Pick<DocLine, 'kind' | 'qty' | 'measureMilli' | 'measureUom' |
 export function editableLines(sections: DocSection[]): Array<{ room: string; line: DocLine; soItemId: string }> {
   return sections.flatMap((section) => (section.lumpSumSen !== null ? [] : section.lines.flatMap((line) => (
     (line.kind === 'ITEM' || line.kind === 'CHILD') && line.soItemId && !line.omittedByVoId && !line.soItemCancelled
-      ? [{ room: line.room?.trim() || section.heading.trim() || NEW_ROOM_FALLBACK, line, soItemId: line.soItemId }]
+      ? [{ room: line.room.trim() || section.heading.trim() || NEW_ROOM_FALLBACK, line, soItemId: line.soItemId }]
       : []))));
 }
 

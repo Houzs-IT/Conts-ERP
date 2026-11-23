@@ -146,7 +146,8 @@ export function VariationOrderEditor() {
     draftValue, dirty, vo.data?.version ?? null,
   );
   const restoreDraft = () => {
-    const d = draft.offered?.v;
+    /* Drafts kept in the browser before the room editor have no `edits`. */
+    const d: (Omit<typeof draftValue, 'edits'> & { edits?: VoEdits }) | undefined = draft.offered?.v;
     /* A draft kept before the room editor holds Add and Omit lines this layout cannot show: never restore it into here. */
     if (d && roomMode && !d.edits && (d.omits.length > 0 || d.adds.some((s) => s.lines.some((l) => l.itemCode || l.description.trim())))) {
       setError('That unsaved draft was made in the old Add and Omit layout and cannot be opened here. Make the changes again below.');
