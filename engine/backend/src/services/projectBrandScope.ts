@@ -97,7 +97,7 @@ const HIDDEN_PROJECT_SQL = `SELECT 1 AS hit FROM projects p
 export const projectBrandGuard: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
   const ref = projectRefOf(c.req.path, (name) => c.req.query(name));
   const user = c.get("user");
-  if (ref == null || !user?.email || hasPermission(user.permissions_set ?? user.permissions ?? [], "*")) return next();
+  if (ref == null || !user.email || hasPermission(user.permissions, "*")) return next();
   const sql = HIDDEN_PROJECT_SQL.replace("__PROJECT__", ref.sql);
   const hidden = await guarded(() => (c.env.DB as unknown as Db).prepare(sql).bind(user.email, ref.id).first<{ hit: number }>());
   if (hidden) return c.json({ error: "not_found", message: "Project not found." }, 404);
