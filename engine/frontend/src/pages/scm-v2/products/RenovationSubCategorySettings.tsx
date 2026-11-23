@@ -1,6 +1,6 @@
-/* Catalog settings for the renovation SKU Master. Groups tab: rename, reorder and
-   hide the groups (a new one needs its accounts, so it is added under Accounting >
-   Item Groups). Sub-categories tab: add, rename, reorder and hide the
+/* Catalog settings for the renovation SKU Master. Groups tab: add, rename, reorder and
+   hide the groups (a new one is born with its four accounts, the Item Groups form, so
+   only accounting users can add one). Sub-categories tab: add, rename, reorder and hide the
    sub-categories of a group. The site-trade services filed under Service (aircon
    install, cleaning, project management) stay fixed. A Works sub-category is a site trade.
    Hide, not delete: SKUs and documents keep the code, and a hidden one still
@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, Eye, EyeOff, Plus, X } from 'lucide-react';
 import { Button } from '../../../components/Button';
+import { NewItemGroupDialog } from '../ItemGroups';
 import { isFixedSub, subCategoriesOf, type CatalogGroup, type SubCategoryDef } from '../../../vendor/shared/renovation-catalog';
 import { useAddSubCategory, useRenovationCatalog, useUpdateGroup, useUpdateSubCategory, type CatalogGroupRow } from '../../../vendor/scm/lib/renovation-catalog-queries';
 import styles from '../Products.module.css';
@@ -27,6 +28,7 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
   const [group, setGroup] = useState<CatalogGroup>(initialGroup ?? 'WORKS');
   const [newLabel, setNewLabel] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [newGroupOpen, setNewGroupOpen] = useState(false);
 
   const editable = catalog.canEdit;
   const subs = subCategoriesOf(group, catalog.all);
@@ -112,7 +114,7 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
             <>
               <p className="text-[12px] text-ink-secondary">
                 {catalog.canEdit
-                  ? 'Rename, reorder or hide the groups on the SKU Master. A hidden group stays on the SKUs and documents that have it, but cannot be picked for new ones. A new group is added under Accounting > Item Groups, because it needs its accounts.'
+                  ? `Rename, reorder or hide the groups on the SKU Master. A hidden group stays on the SKUs and documents that have it, but cannot be picked for new ones. ${catalog.canCreateGroup ? 'A new group needs its four accounts before it can be saved.' : 'Adding a group needs accounting permission, because it needs its accounts.'}`
                   : 'You can view this list. Changing it needs permission to edit products.'}
               </p>
               <ul className="divide-y divide-border rounded-md border border-border" aria-label="Groups">
@@ -158,6 +160,11 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
                   );
                 })}
               </ul>
+              {catalog.canCreateGroup && (
+                <Button type="button" variant="secondary" className="self-start" onClick={() => { setError(null); setNewGroupOpen(true); }}>
+                  <Plus size={14} strokeWidth={1.75} /> New group
+                </Button>
+              )}
             </>
           )}
 
@@ -176,7 +183,7 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
 
           <p className="text-[12px] text-ink-secondary">
             {catalog.canEdit
-              ? 'Hidden sub-categories stay on the SKUs that already have them, but cannot be picked for new ones. A new group is added under Accounting > Item Groups.'
+              ? 'Hidden sub-categories stay on the SKUs that already have them, but cannot be picked for new ones.'
               : 'You can view this list. Changing it needs permission to edit products.'}
           </p>
           {group === 'WORKS' && catalog.canEdit && (
@@ -253,6 +260,7 @@ export function RenovationSubCategorySettings({ initialGroup, onClose }: { initi
           </>)}
           {error && <p role="alert" className="text-[12px] text-red-700">{error}</p>}
         </div>
+        {newGroupOpen && <NewItemGroupDialog onClose={() => setNewGroupOpen(false)} />}
       </aside>
     </div>
   );

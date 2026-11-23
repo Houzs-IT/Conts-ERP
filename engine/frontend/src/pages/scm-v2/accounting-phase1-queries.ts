@@ -316,7 +316,8 @@ export const useCreateItemGroup = () => {
   return useMutation({
     mutationFn: (body: { code: string; name: string; companyId: number; accounts: ItemGroupBinding }) =>
       authedFetch<{ ok: boolean; code: string }>(`/accounting/item-groups`, { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['item-groups'] }); },
+    /* The group also joins the SKU Master's group list. */
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['item-groups'] }); void qc.invalidateQueries({ queryKey: ['renovation-catalog'] }); },
     onError: writeFailedAs('Group not created'),
   });
 };

@@ -115,18 +115,9 @@ const errorText = (e: unknown): string => String((e as { message?: string } | nu
 type GroupStatus = 'bound' | 'unbound' | 'off';
 type Mutation<V> = { mutate: (v: V, opts?: { onSuccess?: () => void }) => void; isPending: boolean; isError: boolean; error: unknown };
 
-export const ItemGroupsTab = () => {
-  const groupsQ = useItemGroups();
+/** The accounts each binding slot may pick, one list per ledger side. */
+function useBindingOptions() {
   const accountsQ = useAccounts();
-  const create = useCreateItemGroup();
-  const bind = useBindItemGroup();
-  const patchGroup = usePatchItemGroup();
-  const bindSub = useBindSubCategory();
-
-  const companies = groupsQ.data?.companies ?? [];
-  const activeCo = getActiveCompanyId() ?? companies.at(0)?.id ?? null;
-  const coKey = activeCo == null ? '' : String(activeCo);
-
   /* One option list per ledger side, sectioned the AutoCount way: a purchase
      slot sees only EXPENSE accounts (Cost of goods sold first, then
      Expenses), a sales slot only INCOME (Sales / Sales adjustments / Other
@@ -161,6 +152,20 @@ export const ItemGroupsTab = () => {
       RENOVATION_SALES: build('RENOVATION', 'sales_account'),
     };
   }, [accountsQ.data, controls]);
+  return { accountsQ, optionsByWants };
+}
+
+export const ItemGroupsTab = () => {
+  const groupsQ = useItemGroups();
+  const { accountsQ, optionsByWants } = useBindingOptions();
+  const bind = useBindItemGroup();
+  const patchGroup = usePatchItemGroup();
+  const bindSub = useBindSubCategory();
+
+  const companies = groupsQ.data?.companies ?? [];
+  const activeCo = getActiveCompanyId() ?? companies.at(0)?.id ?? null;
+  const coKey = activeCo == null ? '' : String(activeCo);
+
   const optionsFor = (group: string, slot: (typeof SLOTS)[number]): ComboOption[] =>
     (offersAdvance(group, COLUMN_OF[slot.key]) ? optionsByWants.RENOVATION_SALES : optionsByWants[slot.wants]);
   const accountName = useMemo(() => new Map((accountsQ.data?.accounts ?? []).map((a) => [a.account_code, a.account_name] as const)), [accountsQ.data]);
@@ -275,18 +280,7 @@ export const ItemGroupsTab = () => {
         />
       )}
 
-      {showNew && (
-        <NewGroupDialog
-          optionsByWants={optionsByWants}
-          pending={create.isPending}
-          error={create.isError ? errorText(create.error) : null}
-          onClose={() => setShowNew(false)}
-          onCreate={(body) => create.mutate(
-            { ...body, companyId: activeCo },
-            { onSuccess: () => setShowNew(false) },
-          )}
-        />
-      )}
+      {showNew && <NewItemGroupDialog onClose={() => setShowNew(false)} />}
 
       {/* Bindings feed the backfill — the historical PIs repost right where
           the groups were just signed off (item 3's door, owner-pressed). */}
@@ -398,6 +392,26 @@ const GroupDialog = ({
 };
 
 /* ── New group — born bound ──────────────────────────────────────────────── */
+/** The New group form on its own, for the active company. Also opened from SKU Master > Groups. */
+export const NewItemGroupDialog = ({ onClose }: { onClose: () => void }) => {
+  const groupsQ = useItemGroups();
+  const { optionsByWants } = useBindingOptions();
+  const create = useCreateItemGroup();
+  const activeCo = getActiveCompanyId() ?? (groupsQ.data?.companies ?? []).at(0)?.id ?? null;
+  const error = create.isError ? errorText(create.error)
+    : groupsQ.isError ? errorText(groupsQ.error)
+    : groupsQ.data && activeCo == null ? 'No company grants resolve for this session.' : null;
+  return (
+    <NewGroupDialog
+      optionsByWants={optionsByWants}
+      pending={create.isPending || activeCo == null}
+      error={error}
+      onClose={onClose}
+      onCreate={(body) => { if (activeCo != null) create.mutate({ ...body, companyId: activeCo }, { onSuccess: onClose }); }}
+    />
+  );
+};
+
 const NewGroupDialog = ({
   optionsByWants, pending, error, onClose, onCreate,
 }: {
@@ -417,7 +431,7 @@ const NewGroupDialog = ({
   return (
     <Modal title="New group" onClose={onClose} width="min(760px, 100%)" ariaLabel="New item group">
       <p className={hint} style={{ margin: 0 }}>All four accounts must be bound before you can create it — a group without them cannot post.</p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span className={fieldLabel}>Code</span>
           <input className={input} placeholder="e.g. CURTAIN" value={code} aria-label="Group code" onChange={(e) => setCode(e.target.value)} />

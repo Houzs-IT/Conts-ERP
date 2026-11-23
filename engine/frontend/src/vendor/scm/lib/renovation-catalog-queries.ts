@@ -13,7 +13,7 @@ import { CONTS_RENOVATION_CATALOG } from '../../../conts/catalog';
 
 export interface CatalogGroupRow { code: string; label: string; sort_order?: number; active?: boolean }
 
-type CatalogResponse = { groups?: CatalogGroupRow[]; subCategories: SubCategoryDef[]; uoms?: UomDef[]; canEdit: boolean };
+type CatalogResponse = { groups?: CatalogGroupRow[]; subCategories: SubCategoryDef[]; uoms?: UomDef[]; canEdit: boolean; canCreateGroup?: boolean };
 
 const KEY = ['renovation-catalog'] as const;
 
@@ -50,7 +50,7 @@ export function useRenovationCatalog() {
     pickableUoms: (keep?: string | null) => uoms.filter((u) => u.active !== false || u.code === keep),
     uomPrint: (code: string | null | undefined): string => uomPrintLabel(code, uoms),
   }), [all, uoms]);
-  return { query: q, all, uoms, groups, allGroups, canEdit: q.data?.canEdit ?? false, ...read };
+  return { query: q, all, uoms, groups, allGroups, canEdit: q.data?.canEdit ?? false, canCreateGroup: q.data?.canCreateGroup ?? false, ...read };
 }
 
 /** The categories a filter or picker offers: the master list, or on a Houzs build the enum list.

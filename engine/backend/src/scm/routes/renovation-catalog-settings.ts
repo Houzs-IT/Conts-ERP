@@ -21,7 +21,7 @@
 // ----------------------------------------------------------------------------
 import { Hono, type Context } from 'hono';
 import { supabaseAuth } from '../middleware/auth';
-import { canWriteScmConfig } from '../lib/houzs-perms';
+import { canWriteScmConfig, hasHouzsPerm } from '../lib/houzs-perms';
 import type { Env, Variables } from '../env';
 import {
   CATALOG_GROUPS,
@@ -123,7 +123,8 @@ renovationCatalogSettings.get('/', async (c) => {
   const sb = c.get('supabase');
   try {
     const [groups, subCategories, uoms] = await Promise.all([loadGroupRows(sb), loadSubCategories(sb), loadUoms(sb)]);
-    return c.json({ groups, subCategories, uoms, canEdit: canWriteScmConfig(c) });
+    /* Same permission as POST /accounting/item-groups: a new group is born with its accounts. */
+    return c.json({ groups, subCategories, uoms, canEdit: canWriteScmConfig(c), canCreateGroup: hasHouzsPerm(c, 'scm.payment_voucher.post') });
   } catch (e) {
     return c.json({ error: 'load_failed', message: (e as Error).message }, 500);
   }

@@ -139,6 +139,22 @@ describe('RenovationSubCategorySettings', () => {
     expect(screen.getByLabelText('New sub-category')).toBeTruthy();
   });
 
+  test('New group shows only to users who may create one, and opens the bound-at-birth form', async () => {
+    h.catalog = { canEdit: true, canCreateGroup: false, subCategories: SUB_CATEGORIES.map((x) => ({ ...x, active: true })) };
+    const { unmount } = wrap(<RenovationSubCategorySettings initialGroup={null} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Groups' }));
+    expect(await screen.findByText(/Adding a group needs accounting permission/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'New group' })).toBeNull();
+    unmount();
+
+    h.catalog = { canEdit: true, canCreateGroup: true, subCategories: SUB_CATEGORIES.map((x) => ({ ...x, active: true })) };
+    wrap(<RenovationSubCategorySettings initialGroup={null} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Groups' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'New group' }));
+    expect(screen.getByRole('dialog', { name: 'New item group' })).toBeTruthy();
+    expect(screen.getByLabelText('New group Purchase account')).toBeTruthy();
+  });
+
   test('opens on Works when no group is picked', async () => {
     h.catalog = { canEdit: true, subCategories: SUB_CATEGORIES.map((x) => ({ ...x, active: true })) };
     wrap(<RenovationSubCategorySettings initialGroup={null} onClose={() => {}} />);
