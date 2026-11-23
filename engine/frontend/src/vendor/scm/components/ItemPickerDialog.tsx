@@ -2,6 +2,7 @@ import { useMemo, useState, type CSSProperties, type ReactElement } from 'react'
 import { Check, Plus, Search } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { Modal } from './Modal';
+import styles from './ItemPickerDialog.module.css';
 import { SearchableSelect, type SearchableSelectOption } from './SearchableSelect';
 
 export interface ItemPickerRow {
@@ -81,7 +82,7 @@ export function ItemPickerDialog({ title, subtitle, rows, onAdd, onClose }: Item
     >
       <div style={toolbar}>
         <div style={{ flex: '1 1 180px' }}>
-          <SearchableSelect value={category} onChange={setCategory} options={categoryOptions} ariaLabel="Category" />
+          <SearchableSelect value={category} onChange={setCategory} options={categoryOptions} ariaLabel="Category" className={styles.categoryInput} />
         </div>
         <label style={{ ...field, flex: '3 1 240px', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
           <Search size={16} strokeWidth={1.75} aria-hidden />
