@@ -29,7 +29,7 @@ export function CategoryDropdown({ value, options, onChange }: CategoryDropdownP
     return () => document.removeEventListener('mousedown', closeOnOutside);
   }, [isOpen]);
 
-  const selected = options.find((option) => option.value === value) ?? options[0];
+  const selected = options.find((option) => option.value === value) ?? options.at(0);
 
   return (
     <div ref={wrapRef} className={styles.dropdown}>
