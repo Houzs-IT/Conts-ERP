@@ -1,5 +1,6 @@
 // Conts only (not part of Houzs's code): what a renovation contract signed before go-live was PAID in AutoCount
-// (chew, 23 Nov 2026). Finance seeds what AutoCount invoiced on it (acc/reno-opening, billed_before_golive_sen); the
+// (chew, 23 Nov 2026). Finance seeds what AutoCount invoiced on it (acc/reno-opening: billed_before_golive_sen, or the
+// whole contract AutoCount booked at its cut-over, golive_contract_sen — the greater; chew 23 Nov 2026); the
 // customer's opening invoices (Ledger setup > "2. Invoices customers still owe", acc/opening importOpeningReceivables:
 // scm.sales_invoices with opening_balance, by debtor code) say what was still owed at go-live, and a minus on that
 // list is a customer credit paid ahead (scm.customer_credits, source OPENING). So:
@@ -63,9 +64,11 @@ export async function paidBeforeGoLiveOf(sb: Db, companyId: number, soDocNos: re
     read(sb.from('customer_credits').select('debtor_code, amount_sen').eq('company_id', companyId).eq('source_type', 'OPENING').in('debtor_code', codes), 'opening credits'),
   ]);
   const liveOrders = orders.filter((o) => String(o.status ?? '') !== 'CANCELLED');
-  const contracts = liveOrders.length === 0 ? [] : await read(sb.from('reno_so_contracts').select('so_doc_no, billed_before_golive_sen')
+  const contracts = liveOrders.length === 0 ? [] : await read(sb.from('reno_so_contracts').select('so_doc_no, billed_before_golive_sen, golive_contract_sen')
     .in('so_doc_no', liveOrders.map((o) => String(o.doc_no))), 'contracts');
-  const billedOf = new Map(contracts.map((c) => [String(c.so_doc_no), Number(c.billed_before_golive_sen ?? 0)]));
+  /* What AutoCount invoiced: the seeded figure, or the whole contract AutoCount booked at its cut-over (golive_contract_sen,
+     acc/reno-opening; 16 Nov 2026 it booked every contract whole), whichever is more. */
+  const billedOf = new Map(contracts.map((c) => [String(c.so_doc_no), Math.max(Number(c.billed_before_golive_sen ?? 0), Number(c.golive_contract_sen ?? 0))]));
   const owed = new Map<string, number>();
   for (const i of sis) if (LIVE_INVOICE(i.status)) owed.set(String(i.debtor_code), (owed.get(String(i.debtor_code)) ?? 0) + Number(i.total_sen ?? 0));
   for (const c of credits) owed.set(String(c.debtor_code), (owed.get(String(c.debtor_code)) ?? 0) - Number(c.amount_sen ?? 0));
