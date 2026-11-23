@@ -229,6 +229,21 @@ describe('the opening check', () => {
   });
 });
 
+describe('money the ERP took on orders before the cut-over (chew, 23 Nov 2026)', () => {
+  test('a payment recorded on an order in the ERP counts against the documents; one that settled an ERP invoice does not twice', async () => {
+    const sb = world();
+    await importOpeningJournal(sb, CO, BALANCED, ACTOR);
+    const je = sb.tables.journal_entries[0];
+    const gl = (l: Row, type = 'OPENING', doc: string | null = null) => ({ ...l, company_id: CO, entry_date: je.entry_date, posted: true, reversed: false, reversed_by_je: null, source_type: type, source_doc_no: doc });
+    sb.tables.v_gl_entries = sb.tables.journal_entry_lines.map((l) => gl(l));
+    /* AutoCount's open invoice of 50,000, and 15,000 the ERP took on order SO-2 with no invoice yet. */
+    sb.tables.v_gl_entries.push(gl({ account_code: '300-0000', debit_sen: 0, credit_sen: 15_000 }, 'SOPAY', 'pay-2'));
+    await importOpeningReceivables(sb, CO, [{ docNo: 'IV-1', debtorName: 'A', debtorCode: '300-A001', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 50_000 }], ACTOR);
+    const r = await openingCheck(sb, CO);
+    expect(r.ok && r.controls[0]).toMatchObject({ accountCode: '300-0000', controlSen: 35_000, documentsSen: 35_000 });
+  });
+});
+
 describe('the opening routes', () => {
   async function call(perms: string[], path: string, body?: unknown) {
     const { Hono } = await import('hono');
