@@ -4,6 +4,7 @@
 import type { ReactNode } from "react";
 import { ArrowLeft, CircleDot, Warehouse } from "lucide-react";
 import { Badge } from "../../components/Badge";
+import { usePageHeaderOffset } from "../../components/usePageHeaderOffset";
 import { isSystemServiceCode, SoSourceChips, SoStockPill } from "../../components/SoSourceChips";
 import { useUpdateSoItemStockStatus } from "../../vendor/scm/lib/sales-order-queries";
 import type { Column } from "../../components/DataTable";
@@ -963,6 +964,7 @@ export function SoDetailHeader({ title, docNo, status, meta, onBack, actions, ch
   /** Beside the status, e.g. the On hold marker. */
   chips?: ReactNode;
 }) {
+  const desktopHeaderRef = usePageHeaderOffset();
   return (
     <>
       <div className="sticky top-0 z-20 -mx-4 -mt-4 bg-sidebar text-sidebar-ink shadow-slab md:hidden">
@@ -990,7 +992,7 @@ export function SoDetailHeader({ title, docNo, status, meta, onBack, actions, ch
       {/* Nick 2026-07-09 — pinned. TopNavbar sits sticky top-0 z-30 h-12 inside the SAME scrolling <main>, so a naive
           top-0 here parks the title BEHIND it; z-20 stacks above the section cards and below the nav. At lg the chrome
           is the single 52px bar. */}
-      <div className="sticky top-12 lg:top-[52px] z-20 -mx-4 hidden border-b border-border bg-bg/95 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6 md:block">
+      <div ref={desktopHeaderRef} className="sticky top-12 lg:top-[52px] z-20 -mx-4 hidden border-b border-border bg-bg/95 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6 md:block">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
             <button
