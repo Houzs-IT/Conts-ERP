@@ -210,6 +210,10 @@ export interface DataTableProps<T, L = never> {
    *  once. `undefined` renders everything (the default). The full filtered count
    *  is unchanged — search, filters and `onFilteredRowsChange` still see them all. */
   initialRowLimit?: number;
+  /** Real pages of N rows (after search / filter / sort) with the house
+   *  <Pagination> under the table. Resets to page 1 when the row count or sort
+   *  changes. `undefined` = no paging. Wins over `initialRowLimit`. */
+  pageSize?: number;
   /** The order rows open in while no header sort is active (client-side). */
   defaultSort?: (a: T, b: T) => number;
   /** Enable drag-to-reorder of rows. Called with the new full order of the

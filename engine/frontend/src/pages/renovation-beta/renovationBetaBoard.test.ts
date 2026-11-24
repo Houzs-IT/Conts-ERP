@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BetaBoard, BetaBoardProject } from "./renovationBetaBoardApi";
 import {
   add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, designSteps, diff, ds, filterCounts, homeCounts, inFilter, homeList, homeRow, initials, items,
-  listFor, monthCells, whoName, nextFor, progressByPerson, progressList, rangeFor, shiftMonth, stage, status, type BoardModel, type DesignProject,
+  listFor, monthCells, whoName, nextFor, progressByPerson, progressList, rangeFor, reportsOf, shiftMonth, stage, status, type BoardModel, type DesignProject,
 } from "./renovationBetaBoard";
 
 const TODAY = "2026-10-23";
@@ -309,6 +309,21 @@ describe("several 3D and 2D people", () => {
     const b = board([project({ id: 32, building: "Old", unitNo: "3", customerName: "C", lead: { id: 40, name: "Ali" }, sitePic: null })]);
     b.people = [{ id: 4, name: "Ali", roles: [], offered: true }, { id: 5, name: "ALI", roles: [], offered: true }, { id: 40, name: "Ali", roles: [], offered: false }];
     expect(progressList(buildModel(b), 40).map((p) => p.id)).toEqual([32]);
+  });
+
+  it("lists the offered people who report straight to a person, by name (YH, 23 Nov 2026)", () => {
+    const b = board([]);
+    b.people = [
+      { id: 1, name: "JIAXIN", roles: [], offered: true }, { id: 41, name: "Jia Xin", roles: [], offered: false },
+      { id: 3, name: "Yi Xuan", roles: [], offered: true, managerPersonId: 1 }, { id: 2, name: "Ying Tzy", roles: [], offered: true, managerPersonId: 41 },
+      { id: 6, name: "Under Yi Xuan", roles: [], offered: true, managerPersonId: 3 }, { id: 7, name: "Gone", roles: [], offered: false, managerPersonId: 1 },
+      { id: 8, name: "Self", roles: [], offered: true, managerPersonId: 8 },
+    ];
+    const x = buildModel(b);
+    expect(reportsOf(x, 1)).toEqual([{ id: 3, name: "Yi Xuan" }, { id: 2, name: "Ying Tzy" }]);
+    expect(reportsOf(x, 3)).toEqual([{ id: 6, name: "Under Yi Xuan" }]);
+    expect(reportsOf(x, 8)).toEqual([]);
+    expect(reportsOf(m, 1)).toEqual([]);
   });
 
   it("offers only people linked to an active account, but still names everyone", () => {

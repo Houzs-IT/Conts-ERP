@@ -5,9 +5,9 @@
 import { useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { BETA, GLASS, TONES } from "./renovationBetaTheme";
-import { currentStep, progressByPerson, progressList, status, designSteps, stepDone, type BoardModel, type DesignProject, type PersonRef, type Viewing } from "./renovationBetaBoard";
+import { currentStep, progressByPerson, progressList, reportsOf, status, designSteps, stepDone, type BoardModel, type DesignProject, type PersonRef, type Viewing } from "./renovationBetaBoard";
 import { rememberLastProject } from "./renovationBetaBoardApi";
-import { BTN, CondPill, INK_SOFT, MUTED } from "./BetaCalParts";
+import { BTN, CondPill, INK_SOFT, MUTED, TOGGLE, TOGGLE_HEAD } from "./BetaCalParts";
 
 const LIST = { listStyle: "none", margin: 0, padding: 0 } as const;
 const PAGE = 10;
@@ -29,6 +29,8 @@ export function BetaCalProgress({ m, who, viewingName }: { m: BoardModel; who: V
           {list.map((p) => <ProgressRow key={p.id} m={m} p={p} hl={who} />)}
         </ol>
       )}
+      {/* The people who report to the person viewed, one closed card each (YH, 23 Nov 2026). */}
+      {who !== "All" && reportsOf(m, who).map((x) => <PersonCard key={x.id} m={m} person={x} projects={progressList(m, x.id)} />)}
     </section>
   );
 }
@@ -39,8 +41,8 @@ function PersonCard({ m, person, projects }: { m: BoardModel; person: PersonRef 
   const pages = Math.ceil(projects.length / PAGE);
   const at = Math.min(page, pages - 1);
   return (
-    <details style={{ borderTop: `1px solid ${BETA.lineSoft}` }}>
-      <summary style={{ padding: "12px 0", cursor: "pointer", fontWeight: 600, color: BETA.ink }}>
+    <details style={TOGGLE}>
+      <summary style={TOGGLE_HEAD}>
         {person?.name ?? "Not assigned"} <span style={{ color: MUTED, fontWeight: 500 }}>· {projects.length}</span>
       </summary>
       <ol style={LIST}>{projects.slice(at * PAGE, at * PAGE + PAGE).map((p) => <ProgressRow key={p.id} m={m} p={p} hl={person?.id ?? "All"} />)}</ol>

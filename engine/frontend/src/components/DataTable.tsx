@@ -104,6 +104,7 @@ import { buildSearchBlob, conditionToken, isConditionToken, looksLikeDateColumn,
 import { MobileVirtualList } from "../mobile/MobileVirtualList";
 import { reorderKeys } from "../lib/reorder";
 import { useDragAutoScroll } from "./useDragAutoScroll";
+import { Pagination } from "./Pagination";
 
 import type { Column, DataTableProps, SortDir, SortState } from "./dataTableTypes";
 import {
@@ -167,6 +168,7 @@ function DataTableInner<T, L>({
   onRowDoubleClick,
   getRowStyle,
   initialRowLimit,
+  pageSize,
   onRowReorder,
   defaultSort,
   embedded = false,
@@ -1881,11 +1883,16 @@ function DataTableInner<T, L>({
      the reported count below still run over the WHOLE set — only the render is
      capped. State, so it resets to the first page each time the table remounts. */
   const [rowLimit, setRowLimit] = useState<number | null>(initialRowLimit ?? null);
+  const [page, setPage] = useState(1);
+  const pageCount = pageSize && sortedRows ? Math.max(1, Math.ceil(sortedRows.length / pageSize)) : 1;
+  const pageNo = Math.min(page, pageCount);
+  useEffect(() => { setPage(1); }, [sortedRows?.length, sort, clientQuery, colFilters]);
   const limitedRows = useMemo(
-    () => (sortedRows && rowLimit != null && sortedRows.length > rowLimit ? sortedRows.slice(0, rowLimit) : sortedRows),
-    [sortedRows, rowLimit],
+    () => (pageSize && sortedRows ? sortedRows.slice((pageNo - 1) * pageSize, pageNo * pageSize)
+      : sortedRows && rowLimit != null && sortedRows.length > rowLimit ? sortedRows.slice(0, rowLimit) : sortedRows),
+    [sortedRows, rowLimit, pageSize, pageNo],
   );
-  const hiddenByLimit = (sortedRows?.length ?? 0) - (limitedRows?.length ?? 0);
+  const hiddenByLimit = pageSize ? 0 : (sortedRows?.length ?? 0) - (limitedRows?.length ?? 0);
   // Ticked rows while any are, else all shown: the footer, Export and Ctrl+C share it.
   const actionRows = useMemo(() => (sortedRows ? tickedOrAll(sortedRows, selection?.selectedIds, getRowKey) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- getRowKey is an inline prop; keys are stable per row
@@ -3643,6 +3650,9 @@ function DataTableInner<T, L>({
           </div>,
           document.body
         )}
+      {showTable && pageSize && sortedRows && sortedRows.length > pageSize && (
+        <Pagination page={pageNo} perPage={pageSize} total={sortedRows.length} onPageChange={setPage} />
+      )}
       {/* Runway spacer — see the frozen-header block above: restores exactly
           the page-scroll distance the height cap removed, so scrolling always
           carries the table box up to the pinned page header before the page

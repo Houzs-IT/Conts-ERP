@@ -38,4 +38,10 @@ describe("Theme hand-off", () => {
       expect(night).toContain(`--beta-${token}:${ink};`);
     }
   });
+
+  it("the night Chart of accounts cards (embed.css) are dark and re-point the type colours", () => {
+    const css = readFileSync(resolve(__dirname, "embed.css"), "utf8");
+    expect(css).toMatch(/\[data-beta-skin="night"\] \.coa-card \{\s*background: #1C2030;[^}]*--c-paper: #1C2030;[^}]*--coa-asset: #7FD1A8;/);
+    expect(css).toContain('[data-beta-skin="night"] .coa-card h2 { color: #EEF1F8; }');
+  });
 });

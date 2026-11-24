@@ -278,6 +278,19 @@ export function rolesOf(x: unknown): string[] {
   return [];
 }
 
+export interface BoardPersonRow {
+  id: number; name: string; roles: unknown; position: string | null; department: string | null; offered: boolean; manager_person_id: number | null;
+}
+
+/** A board person as sent: `managerPersonId` is the person of the account this one reports to (System > Users >
+    Reports to), so the Calendar can show a manager the people under them; null when no one or before migration 0299. */
+export function boardPersonOf(p: BoardPersonRow) {
+  return {
+    id: Number(p.id), name: p.name, roles: rolesOf(p.roles), position: p.position ?? null, department: p.department ?? null, offered: !!p.offered,
+    managerPersonId: p.manager_person_id == null ? null : Number(p.manager_person_id),
+  };
+}
+
 /** The Malaysian day a UTC timestamp text (projects.created_at) falls on; null when it is empty or not a time. */
 export function createdOnOf(x: string | null): string | null {
   if (!x) return null;

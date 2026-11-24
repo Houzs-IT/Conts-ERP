@@ -29,6 +29,10 @@ export const CARD: CSSProperties = { ...GLASS, borderRadius: 26 };
 export const MUTED = BETA.muted;
 export const INK_SOFT = BETA.text2;
 
+/** A person's toggle card on Deadlines and Progress: a line above, the name as the heading that opens it. */
+export const TOGGLE: CSSProperties = { borderTop: `1px solid ${BETA.lineSoft}` };
+export const TOGGLE_HEAD: CSSProperties = { padding: "12px 0", cursor: "pointer", fontWeight: 600, color: BETA.ink };
+
 /** Below 720px the mockup swaps tables for cards and stacks the calendar. */
 export function useIsPhone(): boolean {
   const query = "(max-width: 719px)";

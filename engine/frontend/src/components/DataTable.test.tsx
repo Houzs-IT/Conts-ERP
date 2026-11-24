@@ -1723,6 +1723,37 @@ describe("DataTable initialRowLimit — first page + Load more (owner 2026-09-26
   });
 });
 
+describe("DataTable pageSize — real pages with the house pager", () => {
+  const many: Row[] = Array.from({ length: 120 }, (_, i) => ({ id: i + 1, name: `Order ${i + 1}`, status: "Open" }));
+
+  it("draws one page, pages forward, and sorts across ALL rows", () => {
+    setViewport(1280);
+    render(<DataTable tableId="orders-paged" rows={many} columns={columns} getRowKey={(row) => row.id} pageSize={50} />);
+    expect(screen.getByText("Order 1")).toBeTruthy();
+    expect(screen.queryByText("Order 51")).toBeNull();
+    expect(screen.queryByRole("button", { name: /load more/i })).toBeNull();
+    expect(screen.getByText("1–50")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText("Order 51")).toBeTruthy();
+    expect(screen.queryByText("Order 50")).toBeNull();
+    expect(screen.queryByText("Order 101")).toBeNull();
+    expect(screen.getByText("51–100")).toBeTruthy();
+
+    // Sorting resets to page 1 and orders the whole set: text-descending puts Order 99 first, though it sat on page 2.
+    fireEvent.click(screen.getByText("Order"));
+    if (!screen.queryByText("Order 99")) fireEvent.click(screen.getByText("Order"));
+    expect(screen.getByText("Order 99")).toBeTruthy();
+    expect(screen.getByText("1–50")).toBeTruthy();
+  });
+
+  it("shows no pager when the rows fit one page", () => {
+    setViewport(1280);
+    render(<DataTable tableId="orders-paged-small" rows={many.slice(0, 10)} columns={columns} getRowKey={(row) => row.id} pageSize={50} />);
+    expect(screen.queryByText("1–10")).toBeNull();
+  });
+});
+
 describe("DataTable onRowReorder — drag to reorder (owner 2026-09-26)", () => {
   const fewRows: Row[] = Array.from({ length: 3 }, (_, i) => ({ id: i + 1, name: `Order ${i + 1}`, status: "Open" }));
 
