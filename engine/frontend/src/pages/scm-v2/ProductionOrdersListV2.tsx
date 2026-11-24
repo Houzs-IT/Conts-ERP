@@ -114,11 +114,6 @@ type StatusTab =
 
 const fmtRm = (centi: number): string => fmtSen(centi);
 
-const supplierNameOf = (r: PoHeaderRow): string =>
-  r.supplier?.name || r.supplier_id || "—";
-
-const supplierCodeOf = (r: PoHeaderRow): string => r.supplier?.code || "—";
-
 /* Items summary for the list column + Excel export (owner 2026-08-05) — the
    list embed already carries (item_code, qty) per line; render the same
    compact "CODE×qty · CODE×qty" the expansion details. */
@@ -356,7 +351,9 @@ function CardsGrid({ rows, onOpen }: { rows: PoHeaderRow[]; onOpen: (r: PoHeader
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
       {rows.map((r) => {
         const st = statusFor(r.status);
-        const supplier = supplierNameOf(r);
+        /* Click sweep G20: the card read like a PO (SUPPLIER INHOUSE, RM 0.00); a production order is about the project and the work. */
+        const project = (r as { project_label?: string | null }).project_label || "No project";
+        const progress = extraOf(r).progress;
         return (
           <button
             key={r.id}
@@ -371,7 +368,7 @@ function CardsGrid({ rows, onOpen }: { rows: PoHeaderRow[]; onOpen: (r: PoHeader
               <StatusWithHold tone={st.tone} label={st.label} row={r} />
             </div>
             <div className="mt-2 truncate text-[15px] font-semibold text-ink">
-              {supplier}
+              {project}
             </div>
             <div className="mt-1 flex items-center gap-2">
               <span className="text-[11.5px] text-ink-muted">{fmtDate(r.po_date)}</span>
@@ -382,17 +379,16 @@ function CardsGrid({ rows, onOpen }: { rows: PoHeaderRow[]; onOpen: (r: PoHeader
               )}
             </div>
             <div className="mt-3.5 flex items-end justify-between border-t border-border-subtle pt-3">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-                  Supplier
+                  Progress
                 </div>
-                <div className="mt-0.5 truncate font-mono text-[12px] font-semibold text-ink-secondary">
-                  {supplierCodeOf(r)}
-                </div>
+                {progress?.label ? (
+                  <div className="mt-1"><div className="mb-1 truncate text-[12px] font-semibold text-ink-secondary">{progress.label}</div><ProgressBar pct={progress.pct} overdue={progress.overdue} /></div>
+                ) : (
+                  <div className="mt-0.5 text-[12px] text-ink-muted">—</div>
+                )}
               </div>
-              <span className="font-money text-[15px] font-bold text-ink">
-                {fmtRm(totalOf(r))}
-              </span>
             </div>
           </button>
         );
@@ -449,7 +445,7 @@ function DetailDrawer({
                 <XIcon size={18} />
               </button>
               <div className="min-w-0 flex-1">
-                <div className="font-mono text-[14px] font-bold tracking-wide">
+                <div className="truncate whitespace-nowrap font-mono text-[14px] font-bold tracking-wide">
                   {row.po_number}
                 </div>
                 <div className="mt-0.5 text-[11px] text-sidebar-ink-muted">Production Order</div>
@@ -459,7 +455,7 @@ function DetailDrawer({
                 onClick={onOpenFull}
                 className="inline-flex items-center gap-1.5 rounded-md border border-accent-bright/40 px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-bright hover:bg-accent-bright/10"
               >
-                Open full page <ExternalLink size={12} />
+                <span className="hidden sm:inline">Open full page</span> <ExternalLink size={12} aria-label="Open full page" />
               </button>
               <Badge tone={PROGRESS_TONE[word] ?? "neutral"} variant="solid" size="xs">
                 {word}
@@ -1328,7 +1324,7 @@ export function ProductionOrdersListV2() {
               Production orders
             </h1>
             <div className="mt-0.5 text-[12.5px] text-ink-muted">
-              {total} Production Order{total === 1 ? "" : "s"} · {fmtRm(money.committed)} committed
+              {total} Production Order{total === 1 ? "" : "s"}
             </div>
           </div>
         </div>

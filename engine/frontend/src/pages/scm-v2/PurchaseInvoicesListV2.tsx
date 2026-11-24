@@ -151,7 +151,8 @@ const supplierCodeOf = (r: PiRow): string => r.supplier?.code || "—";
 
 const totalOf = (r: PiRow): number => r.total_sen ?? 0;
 const paidOf = (r: PiRow): number => r.paid_sen ?? 0;
-const outstandingOf = (r: PiRow): number => Math.max(0, totalOf(r) - paidOf(r));
+const outstandingOf = (r: PiRow): number =>
+  r.status.toUpperCase() === "CANCELLED" ? 0 : Math.max(0, totalOf(r) - paidOf(r));
 
 const sourceOf = (r: PiRow): string =>
   r.grn?.grn_number || r.purchase_order?.po_number || "—";
@@ -382,11 +383,11 @@ function DetailDrawer({
                 <XIcon size={18} />
               </button>
               <div className="min-w-0 flex-1">
-                <div className="font-mono text-[14px] font-bold tracking-wide">{row.invoice_number}</div>
+                <div className="truncate whitespace-nowrap font-mono text-[14px] font-bold tracking-wide">{row.invoice_number}</div>
                 <div className="mt-0.5 text-[11px] text-sidebar-ink-muted">Purchase Invoice</div>
               </div>
               <button type="button" onClick={onOpenFull} className="inline-flex items-center gap-1.5 rounded-md border border-accent-bright/40 px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-bright hover:bg-accent-bright/10">
-                Open full page <ExternalLink size={12} />
+                <span className="hidden sm:inline">Open full page</span> <ExternalLink size={12} aria-label="Open full page" />
               </button>
               <Badge tone={st.tone} variant="solid" size="xs">{st.label}</Badge>
             </div>
@@ -720,6 +721,8 @@ export function PurchaseInvoicesListV2() {
     let owed = 0;
     let paid = 0;
     for (const r of visible.rows) {
+      /* Click sweep G17: a cancelled invoice bills and owes nothing (the tiles read RM 1,400 above an ALL chip of RM 700). */
+      if (r.status.toUpperCase() === "CANCELLED") continue;
       billed += totalOf(r);
       owed += outstandingOf(r);
       paid += paidOf(r);

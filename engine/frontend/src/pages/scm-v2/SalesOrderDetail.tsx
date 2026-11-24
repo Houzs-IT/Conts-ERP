@@ -199,7 +199,7 @@ import { renovationLineStyles } from '../../vendor/scm/components/renovationSoLi
 import { placeRows } from '../renovation/roomSections';
 import { DateField } from "../../vendor/scm/components/DateField";
 import { HoldChip } from "../../vendor/scm/components/HoldChip";
-import { CancelRequestPanel } from "../../vendor/scm/components/CancelRequestPanel"; import { useCancelRequestAction } from "./use-cancel-request-action";
+import { CancelRequestPanel } from "../../vendor/scm/components/CancelRequestPanel"; import { useCancelRequest } from "../../vendor/scm/lib/document-cancel-queries"; import { useCancelRequestAction } from "./use-cancel-request-action";
 
 import { ADD_LINE_LABEL } from '../../vendor/scm/lib/add-line-handoff';
 import { useAddLineHandoff } from '../../vendor/scm/lib/useAddLineHandoff';
@@ -576,6 +576,8 @@ export const SalesOrderDetail = () => {
   const updateHeader = useUpdateMfgSalesOrderHeader();
   const updateStatus = useUpdateMfgSalesOrderStatus();
   const requestCancel = useCancelRequestAction('so');
+  /* G15: while a request is open the panel below carries it; a second one is only refused (409). */
+  const openCancelReq = useCancelRequest('so', docNo ?? null);
   const deleteDraft = useDeleteMfgSalesOrder();
   const askConfirm = useConfirm();
   const askPrompt = usePrompt();
@@ -2401,7 +2403,7 @@ export const SalesOrderDetail = () => {
                 )}
                 {/* Cancel is a WRITE, refused on a migrated order, so it is disabled-with-a-reason rather than hidden:
                     a salesperson looking for it must find out WHY it cannot be used. */}
-                {!isCancelled && (
+                {!isCancelled && !openCancelReq.data?.open && (
                   <Button variant="danger" icon={<XCircle size={14} />} onClick={handleCancelSo}
                     disabled={migratedLocked || updateStatus.isPending} title={migratedLocked ? lockedEditHint : undefined}>
                     Request cancellation

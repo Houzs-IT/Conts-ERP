@@ -52,8 +52,10 @@ export function clockPeople(h: Pick<ProductionHours, "me" | "summary" | "entries
   return [...out.values()];
 }
 
-export function ProductionHoursPanel({ orderId, workers, canAct, phone, myName = "You" }: {
+export function ProductionHoursPanel({ orderId, workers, canAct, phone, myName = "You", finished = false }: {
   orderId: string; workers: readonly ProductionWorker[]; canAct: boolean; phone?: boolean; myName?: string;
+  /** A completed order: corrections still allowed, but nobody starts the clock on it. */
+  finished?: boolean;
 }) {
   const q = useProductionHours(orderId);
   const act = useProductionHoursAction(orderId);
@@ -107,7 +109,7 @@ export function ProductionHoursPanel({ orderId, workers, canAct, phone, myName =
             </div>
             {/* Stop goes with the running timer, also after the order closed or the worker left it. */}
             {live && mayClock(p.you) && <Button variant="secondary" disabled={act.isPending} onClick={() => run({ kind: "stop", personKey: p.key }, "Not stopped")}>Stop time</Button>}
-            {!live && mayTime && mayClock(p.you) && <Button disabled={act.isPending} onClick={() => run({ kind: "start", personKey: p.key }, "Not started")}>Start time</Button>}
+            {!live && !finished && mayTime && mayClock(p.you) && <Button disabled={act.isPending} onClick={() => run({ kind: "start", personKey: p.key }, "Not started")}>Start time</Button>}
           </div>
         );
       })}
