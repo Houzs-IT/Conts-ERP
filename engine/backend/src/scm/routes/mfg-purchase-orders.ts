@@ -1725,10 +1725,11 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
     /* Owner 2026-08-10 (migration 0274) — the SO line's photos ride along to the
        PO line. R2 keys, not bytes: the PO points at the SAME objects. */
     photo_urls: string[] | null;
+    remark: string | null;
     so: { sales_location: string | null; customer_state: string | null; customer_delivery_date: string | null } | null;
   };
   const SO_ITEM_SELECT =
-    'id, doc_no, line_no, item_code, description, item_group, variants, qty, po_qty_picked, unit_price_sen, line_delivery_date, warehouse_id, photo_urls, cancelled, ' +
+    'id, doc_no, line_no, item_code, description, item_group, variants, qty, po_qty_picked, unit_price_sen, line_delivery_date, warehouse_id, photo_urls, remark, cancelled, ' +
     /* No company_id on this embed: both source reads below are SCOPED, so a
        cross-company line is never returned and there is nothing to compare. */
     'so:mfg_sales_orders!inner ( sales_location, customer_state, customer_delivery_date )';
@@ -1828,7 +1829,7 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
           line_delivery_date: null, item_group: null, variants: null,
           // No SO line warehouse on the legacy fabricated row → falls back to
           // the SO header sales_location resolution below.
-          warehouse_id: null, photo_urls: null, so: null,
+          warehouse_id: null, photo_urls: null, remark: null, so: null,
         },
         qty: it.qty,
         // Legacy path has no per-pick supplier → effectiveSupplierId falls back
@@ -1903,6 +1904,7 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
       soLineNo:  row.line_no ?? null,   // decides its place on the PO
       // Owner 2026-08-10 — the SO line's photo keys, carried to the PO line.
       photoUrls: row.photo_urls ?? [],
+      remark: row.remark,
       // Commander 2026-05-31 — per-pick supplier override (MRP), the highest
       // precedence input to effectiveSupplierId below.
       pickSupplierId,
@@ -2230,7 +2232,7 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
     warehouseId: string | null; deliveryDate: string | null;
     itemGroup: string | null; variants: Record<string, unknown> | null;
     soItemId: string | null; soDocNo: string | null; soLineNo: number | null;
-    photoUrls: string[];
+    photoUrls: string[]; remark: string | null;
   };
   type Bucket = {
     supplierId: string; warehouseId: string | null; currency: string;
@@ -2299,6 +2301,7 @@ export async function convertSosToPosCore(c: PoConvertContext): Promise<PoConver
       soItemId: it.soItemId,
       soDocNo: it.soDocNo, soLineNo: it.soLineNo,
       photoUrls: it.photoUrls,
+      remark: it.remark,
     });
     bucket.soDocNos.add(it.soDocNo);
     byGroup.set(groupKey, bucket);
