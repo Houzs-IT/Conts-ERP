@@ -463,6 +463,7 @@ renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(null, async 
   const actor = actorOf(c);
   const result = await tx((db) => billInstalment(db, actor, param(c, 'docNo'), param(c, 'id'), {
     invoiceDate: b.invoiceDate ?? null, expectedAmountSen: intParam(b.expectedAmountSen, 'expectedAmountSen'), confirmCreditNote: b.confirmCreditNote === true,
+    amountSen: b.amountSen === undefined || b.amountSen === null ? null : intParam(b.amountSen, 'amountSen'),
   }));
   // After commit: book the journal. A failure leaves the document unposted (the engine's own
   // confirm / resync paths post it later) and is reported, never thrown.

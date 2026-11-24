@@ -90,6 +90,12 @@ describe('buildAmendmentQueueRows', () => {
     expect(rows.map((r) => r.key)).toEqual(['cancel:so']);
   });
 
+  it("carries the order's project for the search, blank when the server sends none", () => {
+    const [withProject, withoutProject] = build([amendment({ id: 'p', so_project: 'RN-2611-058 QUAVER RESIDENCE' }), amendment({ id: 'n' })], []);
+    expect(withProject.project).toBe('RN-2611-058 QUAVER RESIDENCE');
+    expect(withoutProject.project).toBe('');
+  });
+
   it('keys the two kinds apart, so an id collision cannot merge two rows', () => {
     const rows = build([amendment({ id: 'x' })], [cancel({ id: 'x' })]);
     expect(new Set(rows.map((r) => r.key)).size).toBe(2);

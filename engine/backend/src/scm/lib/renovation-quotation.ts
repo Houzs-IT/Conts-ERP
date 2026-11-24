@@ -346,7 +346,8 @@ export async function listQuotations(db: RenoDb, companyId: number, f: { project
       where q.company_id = $1
         and ($2::bigint is null or q.project_id = $2)
         and ($3::text is null or q.status = $3)
-        and ($4::text is null or q.quote_no ilike '%' || $4 || '%' or r.customer_name ilike '%' || $4 || '%' or r.building ilike '%' || $4 || '%')
+        and ($4::text is null or q.quote_no ilike '%' || $4 || '%' or r.customer_name ilike '%' || $4 || '%' or r.building ilike '%' || $4 || '%'
+             or p.name ilike '%' || $4 || '%' or p.code ilike '%' || $4 || '%')
       order by q.created_at desc
       limit $5`,
     [companyId, f.projectId ?? null, f.status ?? null, f.q ?? null, Math.min(f.limit ?? 200, 500)],

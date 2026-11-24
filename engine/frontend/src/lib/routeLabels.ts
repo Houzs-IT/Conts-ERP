@@ -50,6 +50,8 @@ const ROUTE_LABELS: Array<[RegExp, string]> = [
 const SCM_SEGMENT_LABELS: Record<string, [string, string]> = {
   // Sales chain
   "sales-orders": ["Sales orders", "Sales order"],
+  // Conts: sales commission on renovation contracts (owner, 25 Nov 2026).
+  "commission": ["Commission", "Commission"],
   "delivery-orders": ["Delivery orders", "Delivery order"],
   "sales-invoices": ["Sales invoices", "Sales invoice"],
   "delivery-returns": ["Delivery returns", "Delivery return"],

@@ -77,12 +77,17 @@ describe('the official receipt — A5 landscape', () => {
     expect(Math.max(...draws.map((d) => d.y))).toBeLessThan(148);
   });
 
-  test('cash is received at the counter; a draft says the money is not confirmed and prints DRAFT', async () => {
+  test('cash is received at the counter; a draft prints with no status and no watermark (chew, 24 Nov 2026)', async () => {
     const cash = await render({ method: 'cash', issued_by: null });
     expect(has(cash.draws, 'Cash received at the counter · 14/10/2026')).toBe(true);
     const draft = await render({ status: 'DRAFT', issued_at: null, issued_by: null });
-    expect(has(draft.draws, 'Draft · money not confirmed')).toBe(true);
-    expect(draft.draws.some((d) => d.text === 'DRAFT')).toBe(true);
+    expect(has(draft.draws, 'Draft')).toBe(false);
+    expect(has(draft.draws, 'Status')).toBe(false);
+    expect(draft.draws.some((d) => d.text === 'DRAFT')).toBe(false);
+    // No number until the money is confirmed.
+    expect(has(draft.draws, 'OR No')).toBe(false);
+    const formal = await render({});
+    expect(has(formal.draws, 'OR No')).toBe(true);
   });
 
   test('a cancelled receipt prints CANCELLED with its reason; a sales invoice payment prints its order, never the invoice id', async () => {

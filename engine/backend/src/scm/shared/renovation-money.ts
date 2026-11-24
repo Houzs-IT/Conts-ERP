@@ -231,7 +231,18 @@ export function nextInstalmentAmount(p: NextInstalmentInput): NextInstalmentResu
   const cumBp = rows.slice(0, idx + 1).reduce((s, r) => s + r.pctBp, 0);
   const isLast = idx === rows.length - 1;
   const targetSen = isLast ? p.revisedContractSen : roundDiv(p.revisedContractSen * cumBp, BP_SCALE);
-  return { cumBp, targetSen, amountSen: targetSen - p.billedSen, isLast };
+  const raw = targetSen - p.billedSen;
+  /* Billed ahead of the schedule (chew, 24 Nov 2026: 20% on the first, 45% on the second, so long as the running total
+     never falls below the schedule's): an instalment the earlier bills already reach has nothing to bill. Only billing
+     past the whole contract is a credit note. */
+  const amountSen = raw < 0 && p.billedSen <= p.revisedContractSen ? 0 : raw;
+  return { cumBp, targetSen, amountSen, isLast };
+}
+
+/** What an instalment may bill: at least what keeps the running total at the schedule's (`amountSen` of
+    nextInstalmentAmount), at most the rest of the contract. */
+export function instalmentBillRange(n: NextInstalmentResult, revisedContractSen: number, billedSen: number): { minSen: number; maxSen: number } {
+  return { minSen: n.amountSen, maxSen: Math.max(n.amountSen, revisedContractSen - billedSen) };
 }
 
 /** Amounts for every instalment as if nothing changes from here on. `creditedSen`: what contract credit notes took

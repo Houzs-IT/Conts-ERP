@@ -54,6 +54,13 @@ describe('the Delivery Returns search — one predicate for desktop and phone', 
     expect(deliveryReturnMatchesSearch(row, 'nothing-like-this')).toBe(false);
   });
 
+  it("finds a return by its order's project name or code", () => {
+    const withProject = { ...row, so_project: 'RN-2611-058 QUAVER RESIDENCE' };
+    expect(deliveryReturnMatchesSearch(withProject, 'quaver')).toBe(true);
+    expect(deliveryReturnMatchesSearch(withProject, 'rn-2611-058')).toBe(true);
+    expect(deliveryReturnMatchesSearch(row, 'quaver')).toBe(false);
+  });
+
   it('the phone reads the same text the desktop matches', () => {
     expect(deliveryReturnSearchText(row)).toContain('cust-po-7');
     expect(deliveryReturnSearchText(row).includes('tan ah kow')).toBe(true);

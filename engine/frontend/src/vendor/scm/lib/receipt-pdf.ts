@@ -10,7 +10,8 @@
 // cash was received at the counter); one line `Payment for sales order <SO>`
 // with its amount; AMOUNT RECEIVED over a double rule; the amount in words
 // (the same amountInWordsMyr every money print here uses); Received by and
-// the company chop. A DRAFT receipt prints with a big diagonal DRAFT watermark
+// the company chop. A CANCELLED receipt prints with a big diagonal watermark; a DRAFT one
+// prints without, and without a status line (chew, 24 Nov 2026)
 // — the salesperson can hand something over the moment the payment is keyed,
 // and nobody can mistake it for the confirmed paper (draft 的可以打印,带 DRAFT
 // 水印 — the owner's own design). A CANCELLED one prints CANCELLED, its reason
@@ -106,8 +107,10 @@ function renderReceiptInto(doc: JsPdf, autoTable: AutoTable, r: ReceiptPdfData, 
 
   let y = drawHeader(doc, {
     docTitle: 'OFFICIAL RECEIPT',
+    /* No number until finance confirms the money (chew, 24 Nov 2026): the draft's number is not the one the customer
+       will keep, so a receipt of unconfirmed money carries none. */
     rightMeta: [
-      { label: 'OR No', value: r.or_number },
+      ...(status === 'DRAFT' ? [] : [{ label: 'OR No', value: r.or_number }]),
       { label: 'Date', value: fmtDocDate(r.paid_at) },
     ],
     ...(brand ? { name: brand.name, logo: brand.logo, ...(brand.lines.length ? { lines: brand.lines } : {}) } : {}),
@@ -132,8 +135,9 @@ function renderReceiptInto(doc: JsPdf, autoTable: AutoTable, r: ReceiptPdfData, 
         ['Sales order', order || null],
         ['Invoice', receiptInvoiceNo(r)],
         [MONEY_SEEN, confirmedLine(r)],
-        ['Status', status === 'DRAFT' ? 'Draft · money not confirmed'
-          : status === 'CANCELLED' ? `Cancelled · ${r.cancel_reason || 'its payment changed'}` : null],
+        /* No status for the customer (chew, 24 Nov 2026): a receipt of money not confirmed yet reads as any other.
+           Only a cancelled one says so, with why. */
+        ['Status', status === 'CANCELLED' ? `Cancelled · ${r.cancel_reason || 'its payment changed'}` : null],
       ],
     },
   );
@@ -179,16 +183,15 @@ function renderReceiptInto(doc: JsPdf, autoTable: AutoTable, r: ReceiptPdfData, 
   doc.rect(pageW / 2 + 5, ty + 2, boxW, boxH);
   doc.setLineDashPattern([], 0);
 
-  /* The watermark LAST, over everything: a draft must read as a draft from
-     across the counter, and a cancelled receipt as cancelled. */
-  if (status !== 'FORMAL') {
-    const cancelled = status === 'CANCELLED';
+  /* The watermark LAST, over everything: a cancelled receipt must read as cancelled from across the counter. A draft
+     prints without one and without a status (chew, 24 Nov 2026). */
+  if (status === 'CANCELLED') {
     doc.saveGraphicsState();
     doc.setGState(doc.GState({ opacity: 0.14 }));
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(cancelled ? 48 : 64);
+    doc.setFontSize(48);
     doc.setTextColor(180, 30, 30);
-    doc.text(cancelled ? 'CANCELLED' : 'DRAFT', pageW / 2, pageH / 2, { align: 'center', angle: 25 });
+    doc.text('CANCELLED', pageW / 2, pageH / 2, { align: 'center', angle: 25 });
     doc.restoreGraphicsState();
     doc.setTextColor(0, 0, 0);
   }
@@ -204,7 +207,9 @@ export async function generateReceiptPdf(r: ReceiptPdfData, opts?: { action?: Pd
   /* A Chinese name or address needs the font up front, or helvetica paints mojibake. */
   await ensurePdfCjkFont(doc, r);
   renderReceiptInto(doc, autoTable, r, brand);
-  deliverPdf(doc, `${r.or_number}-${safeName(r.customer_name ?? r.doc_no ?? 'receipt')}.pdf`, opts?.action);
+  /* The file is named as the paper: a draft by its order (or 'receipt'), not its draft number. */
+  const fileNo = r.status.toUpperCase() === 'DRAFT' ? `Receipt-${r.sales_order ?? (r.payment_source === 'SIPAY' ? '' : r.doc_no ?? '')}`.replace(/-$/, '') : r.or_number;
+  deliverPdf(doc, `${fileNo}-${safeName(r.customer_name ?? r.doc_no ?? 'receipt')}.pdf`, opts?.action);
 }
 
 /** For tests and samples: draw one receipt onto a given document. */

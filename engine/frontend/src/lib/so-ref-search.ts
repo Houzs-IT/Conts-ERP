@@ -57,6 +57,8 @@ export type DeliveryReturnSearchRow = {
   sales_location?: string | null;
   reason?: string | null;
   venue?: string | null;
+  /** The order's project code and name, as the list endpoint stamps it. */
+  so_project?: string | null;
 };
 
 /** The fields the Delivery Returns list search matches — ONE list for the
@@ -73,6 +75,7 @@ export const deliveryReturnSearchParts = (r: DeliveryReturnSearchRow): SearchPar
   r.sales_location,
   r.reason,
   r.venue,
+  r.so_project,
 ];
 
 export const deliveryReturnSearchText = (r: DeliveryReturnSearchRow): string =>

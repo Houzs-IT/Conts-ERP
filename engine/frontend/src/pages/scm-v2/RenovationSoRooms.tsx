@@ -98,6 +98,14 @@ function MoveLine({ rooms, current, onMove, inline }: { rooms: string[]; current
 }
 
 /** The part of a layout that decides its rooms. */
+/* A new room goes below every other room, often far down a long order (owner, 24 Nov 2026: TC-SO-2604-001 has 73 lines),
+   so the page moves to it once it is drawn: its Add line button, the first thing in it. */
+function scrollToRoom(name: string, tries = 20): void {
+  const target = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === `Add line to ${name}`);
+  if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+  if (tries > 0) requestAnimationFrame(() => scrollToRoom(name, tries - 1));
+}
+
 export const roomLayoutKey = (layout: RoomLayout | null): string => (layout ? `${layout.bedrooms}|${layout.bathrooms}` : '');
 
 export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAddLine, layout, savedLayoutKey, disabled, card, compact, money }: {
@@ -167,7 +175,7 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
       {note && <span role="status" className="text-[12px] text-ink-secondary">{note}</span>}
       {!layout && <span className="text-[12px] text-ink-muted">Choose the layout under Order information to make the rooms.</span>}
       {!disabled && (
-        <button type="button" className={btn} onClick={() => onRoomsChange([...shown, nextRoomName(shown)])}>
+        <button type="button" className={btn} onClick={() => { const name = nextRoomName(shown); onRoomsChange([...shown, name]); scrollToRoom(name); }}>
           <Plus size={14} /> Add room
         </button>
       )}
