@@ -190,6 +190,9 @@ export type OutstandingSoItem = {
   /** The order's raw reference pair (resolve with soRefOfCamelStamp). */
   soRef?: string | null;
   soCustomerSoNo?: string | null;
+  /** The order's project (scm.mfg_sales_orders.project_id -> public.projects), as the PO picker reads it. */
+  projectCode?: string | null;
+  projectName?: string | null;
 };
 
 export function useOutstandingSoItems() {
@@ -916,3 +919,23 @@ export const createMaterialPos = ({ idempotencyKey, ...body }: {
   idempotencyKey?: string; picks: Array<{ materialId: string; qty: number; supplierId: string | null }>; mode: 'combined' | 'per-so'; expectedAt?: string;
 }) => authedFetch<{ total: number; created: Array<{ id: string; poNumber: string }>; alreadyOrdered?: boolean }>(
   `/production-orders/material-pos`, idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) }));
+
+/** Purchase Orders > Transfer from Production Order: raw materials of open orders still to be bought. */
+export type MaterialToOrder = {
+  materialId: string; productionOrderId: string; productionOrderNo: string;
+  projectId: number | null; projectCode: string | null; projectName: string | null; soDocNos: string[];
+  itemCode: string; description: string | null; uom: string | null;
+  qtyNeeded: number; qtyOrdered: number; qtyToOrder: number;
+  processingDate: string | null; deliveryDate: string | null;
+  mainSupplierId: string | null; mainSupplierCode: string | null; mainSupplierName: string | null;
+  warehouseCode: string | null;
+};
+export const MATERIALS_TO_ORDER_KEY = ['production-orders', 'materials-to-order'] as const;
+export function useMaterialsToOrder() {
+  return useQuery({
+    queryKey: MATERIALS_TO_ORDER_KEY,
+    queryFn: () => authedFetch<{ rows: MaterialToOrder[] }>('/production-orders/materials-to-order').then((r) => r.rows),
+    staleTime: 0,
+    retry: retryUnlessClientError,
+  });
+}

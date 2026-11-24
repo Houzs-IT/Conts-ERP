@@ -23,6 +23,7 @@ import { fmtDate } from "@2990s/shared";
 import { BetaLoading } from "./BetaLoading";
 import { BetaMotion, SPRING } from "./betaMotion";
 import { DataTable } from "../../components/DataTable";
+import { Pagination } from "../../components/Pagination";
 import type { Column } from "../../components/dataTableTypes";
 import { fetchProjectSos, soColumns, type ProjectSo } from "./renovationBetaSoColumns";
 import { readBoardCache, writeBoardCache } from "./boardCache";
@@ -34,6 +35,8 @@ import { VariantsSkuList } from "./renovationBetaVariantsList";
 /** The stages in the order a project goes through them (Sales order first, services/renovation/flow.ts). */
 const STAGE_ORDER = ["signed", "design", "ordering", "renovation", "handover", "closed"] as const;
 const DEFAULT_STAGE_LABEL: Partial<Record<string, string>> = { signed: "Sales order", design: "Design", ordering: "Ordering", renovation: "Renovation", handover: "Handover", closed: "Closed" };
+
+const PAGE = 50;
 
 export function layoutKey(f: HomeFilter): string {
   return f === "all" ? "projects-home" : f === "done" ? "projects-home-E" : `projects-home-step-${f.slice(5)}`;
@@ -192,6 +195,8 @@ function HomeScreen(): ReactElement {
   const phone = useIsPhone();
   /* Every order in the company, for columns that start hidden: read only once one of them is showing. */
   const [soColumnsShown, setSoColumnsShown] = useState(false);
+  // The phone page, tied to the view it was picked in: a new filter, sort or search starts again at page 1.
+  const [phonePage, setPhonePage] = useState({ view: "", n: 1 });
   const sos = useQuery(["renovation-beta", "project-sos"], () => fetchProjectSos(), [], { enabled: !phone && soColumnsShown });
   const soByDoc = useMemo(() => new Map((sos.data ?? []).map((s) => [s.doc_no, s])), [sos.data]);
   const today = mytDay(new Date().toISOString());
@@ -231,6 +236,7 @@ function HomeScreen(): ReactElement {
   if (!kept.current || kept.current.key !== viewKey) kept.current = { key: viewKey, order: orderOf(found) };
   const list = keepOrder(found, kept.current.order);
   const rows = list.map((p) => homeRow(m, p));
+  const phoneNo = Math.min(phonePage.view === viewKey ? phonePage.n : 1, Math.max(1, Math.ceil(rows.length / PAGE)));
   const searched = m.projects.filter((p) => matchesSearch(p, query));
   const stageCount = (key: string): number => searched.filter((p) => stageOf(p.id) === key).length;
   const stepCounts = filterCounts(m, searched.filter((p) => stageOf(p.id) === "design"));
@@ -331,12 +337,14 @@ function HomeScreen(): ReactElement {
       ) : phone ? (
         <ol className="stag" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
           {rows.length === 0 && <li style={{ color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</li>}
-          {rows.map((r) => <PhoneCard key={r.p.id} r={r} sla={slaOf(slaById.get(r.p.id), today)} onOpen={() => rememberLastProject(r.p.id)} />)}
+          {rows.slice((phoneNo - 1) * PAGE, phoneNo * PAGE).map((r) => <PhoneCard key={r.p.id} r={r} sla={slaOf(slaById.get(r.p.id), today)} onOpen={() => rememberLastProject(r.p.id)} />)}
+          {/* dc-glass: the embed night rules give the pager light inks on the dark page. */}
+          {rows.length > PAGE && <li className="dc-glass rounded-md border border-border bg-surface px-3 pb-3"><Pagination page={phoneNo} perPage={PAGE} total={rows.length} onPageChange={(n) => setPhonePage({ view: viewKey, n })} /></li>}
         </ol>
       ) : (
         <div style={{ ...CARD, overflow: "hidden" }}>
           <DataTable<TableRow>
-            key={tableKey}
+            key={`${tableKey}|${sort}`}
             tableId={tableKey}
             layoutSeedId="projects-home"
             onDisplayKeys={(keys) => setSoColumnsShown(keys.some((k) => k.startsWith("so_")))}
@@ -345,12 +353,13 @@ function HomeScreen(): ReactElement {
             columns={homeColumns(showPay, false)}
             getRowKey={(x) => x.r.p.id}
             onRowClick={(x) => open(x.r.p.id)}
+            pageSize={PAGE}
             emptyLabel={query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}
           />
         </div>
       )}
 
-      <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · {(HOME_SORTS.find(([k]) => k === sort)?.[1] ?? "").toLowerCase()} · tap a project to open it</div>
+      <div style={{ fontSize: 12, color: MUTED }}>{list.length} project{list.length === 1 ? "" : "s"} · tap a project to open it</div>
     </div>
     </BetaMotion>
   );

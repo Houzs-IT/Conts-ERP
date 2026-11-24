@@ -28,8 +28,10 @@
    Paid before go-live (chew, 23 Nov 2026): a contract AutoCount carried was invoiced, and partly or wholly paid, in
    AutoCount. What it was paid there is what it was invoiced less what its customer still owed at go-live on the
    opening invoices (acc/reno-paid-before-golive). It counts in receivedSen and fills the instalments that invoicing
-   covers, oldest first, as "paid before go-live". Confirmed order payments dated before go-live are AutoCount's money
-   too: inside that figure, never counted on top of it. Nothing posts: the opening balances carry it. */
+   covers, oldest first, as "paid before go-live". Money recorded on the order in the ERP counts on top of it, whatever
+   its date: the ERP's books start on the ledger start, and a payment AutoCount also recorded has AutoCount's copy taken
+   back (acc/autocount-journals reverseAutocountJournals) and its opening documents raised by it (chew, 23 Nov 2026:
+   "我保留mk这笔然后当做autocount没有这笔"). Nothing posts: the opening balances carry it. */
 
 import { auditSo, mintDocNo, refuse, todayKl, yymmOf, type RenoDb, type UnsafeRunner, renoDbOf } from './renovation-db';
 import { readContractHead, recomputeSoHeader, RENO_LIVE_STATUSES } from './renovation-so';
@@ -118,7 +120,7 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
   /* The five reads are independent: sent together, one round trip instead of five. */
   const [sos, instRows, bills, creditRows, orderPaid, preGoLive] = await Promise.all([
     db.q<{ doc_no: string; status: string; original_contract_sen: number | null; revised_sen: number; billed_before_golive_sen: number | string | null }>(
-      `select o.doc_no, o.status::text as status, c.original_contract_sen, c.billed_before_golive_sen,
+      `select o.doc_no, o.status::text as status, c.original_contract_sen, greatest(coalesce(c.billed_before_golive_sen, 0), coalesce(c.golive_contract_sen, 0)) as billed_before_golive_sen,
               (select coalesce(sum(i.total_sen), 0)::int from scm.mfg_sales_order_items i where i.doc_no = o.doc_no and not i.cancelled) as revised_sen
          from scm.mfg_sales_orders o
          left join scm.reno_so_contracts c on c.so_doc_no = o.doc_no
@@ -161,7 +163,7 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
               coalesce(sum(p.amount_sen) filter (where c.confirmed), 0)::bigint as paid_sen,
               coalesce(sum(p.amount_sen) filter (where not c.confirmed), 0)::bigint as waiting_sen,
               coalesce(sum(p.amount_sen) filter (where c.confirmed and g.go_live is not null and p.paid_at < g.go_live
-                and exists (select 1 from scm.reno_so_contracts k where k.so_doc_no = p.so_doc_no and k.billed_before_golive_sen > 0)), 0)::bigint as before_golive_sen
+                and exists (select 1 from scm.reno_so_contracts k where k.so_doc_no = p.so_doc_no and greatest(coalesce(k.billed_before_golive_sen, 0), coalesce(k.golive_contract_sen, 0)) > 0)), 0)::bigint as before_golive_sen
          from scm.mfg_sales_order_payments p
          cross join lateral (select ${confirmedSql('p', 'SOPAY')} as confirmed) c
          left join lateral (select greatest(s.ledger_start_date, s.documents_cutover_date + 1) as go_live
@@ -176,11 +178,11 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
          select distinct o.company_id, o.debtor_code from scm.mfg_sales_orders o
           where o.doc_no in (select jsonb_array_elements_text($1::text::jsonb)) and ($2::bigint is null or o.company_id = $2)
             and nullif(trim(o.debtor_code), '') is not null)
-       select 'C' as kind, o.company_id, o.debtor_code, o.doc_no, o.so_date::text as so_date, k.billed_before_golive_sen::bigint as sen
+       select 'C' as kind, o.company_id, o.debtor_code, o.doc_no, o.so_date::text as so_date, greatest(coalesce(k.billed_before_golive_sen, 0), coalesce(k.golive_contract_sen, 0))::bigint as sen
          from scm.mfg_sales_orders o
          join mine m on m.company_id = o.company_id and m.debtor_code = o.debtor_code
          join scm.reno_so_contracts k on k.so_doc_no = o.doc_no
-        where k.billed_before_golive_sen > 0 and o.status::text <> 'CANCELLED'
+        where greatest(coalesce(k.billed_before_golive_sen, 0), coalesce(k.golive_contract_sen, 0)) > 0 and o.status::text <> 'CANCELLED'
        union all
        select 'O' as kind, m.company_id, m.debtor_code, null as doc_no, null as so_date,
               (coalesce((select sum(si.total_sen) from scm.sales_invoices si
@@ -309,7 +311,9 @@ export function assembleView(
   const billedSen = live.reduce((s, b) => s + Number(b.amount_sen), 0) - creditedSen + billedBeforeGoLiveSen;
   /* Paid on the invoices, and paid on the order itself: a deposit is taken on the SO. Confirmed money only. What
      AutoCount was paid before go-live counts too, less the order payments before go-live it already holds. */
-  const onOrderBefore = Math.min(Math.max(0, Number(orderPaidBeforeGoLiveSen) || 0), paidBefore, Math.max(0, orderPaidSen));
+  /* No longer taken out of what was paid before go-live (see the header); kept on the view, as 0. */
+  void orderPaidBeforeGoLiveSen;
+  const onOrderBefore = 0;
   const receivedSen = orderPaidSen + (paidBefore - onOrderBefore) + live.reduce((s, b) => s + (b.kind === 'INVOICE' ? paidOf(b) : 0), 0);
   const waitingSen = orderWaitingSen + live.reduce((s, b) => s + (b.kind === 'INVOICE' ? Math.min(waitingOf(b), Number(b.paid_sen ?? 0)) : 0), 0);
   const original = originalContractSen === null ? revised : Number(originalContractSen);
@@ -461,7 +465,7 @@ export async function netBilledSql(db: RenoDb, soDocNo: string): Promise<number>
     `select (
         coalesce((select sum(si.total_sen) from scm.sales_invoices si
                    where si.so_doc_no = $1 and si.status::text not in ('DRAFT', 'CANCELLED')), 0)
-      + coalesce((select c.billed_before_golive_sen from scm.reno_so_contracts c where c.so_doc_no = $1), 0)
+      + coalesce((select greatest(coalesce(c.billed_before_golive_sen, 0), coalesce(c.golive_contract_sen, 0)) from scm.reno_so_contracts c where c.so_doc_no = $1), 0)
       - coalesce((select sum(cc.amount_sen) from scm.reno_contract_credits cc
                     left join scm.acc_credit_notes cn on cn.id = cc.credit_note_id
                    where cc.so_doc_no = $1 and coalesce(cn.status, '') <> 'CANCELLED'), 0)

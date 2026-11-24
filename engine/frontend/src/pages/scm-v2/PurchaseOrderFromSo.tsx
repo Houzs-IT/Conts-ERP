@@ -50,6 +50,7 @@ import { DateField } from "../../vendor/scm/components/DateField";
 import { useCategoryOptions, withRowCategories } from '../../vendor/scm/lib/renovation-catalog-queries';
 import { SoLineStatusCell, soLineStatusText, useSoLineStatus } from './SoLineStatus';
 import { mrpProjectLabel } from './mrp-model-pipeline';
+import { PROJECT_GROUP, PROJECT_GROUP_KEY, projectCustomerHeading } from '../../lib/projectCustomerHeading';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -492,6 +493,12 @@ Nothing was ticked.` });
       sortFn: (a, b) => projectTitleOf(a).localeCompare(projectTitleOf(b)),
     },
     {
+      /* Hidden: the grid groups on it (owner, 24 Nov 2026). */
+      key: PROJECT_GROUP_KEY, label: 'Project - customer', defaultHidden: true, sortable: false,
+      accessor: (r) => projectCustomerHeading(projectTitleOf(r), r.debtorName),
+      groupValue: (r) => projectCustomerHeading(projectTitleOf(r), r.debtorName),
+    },
+    {
       key: 'debtorName', label: 'Customer', width: 180, sortable: true, serverSortable: true, filterCounts: facets?.debtorName, groupable: true,
       accessor: (r) => r.debtorName ?? '—',
       searchValue: (r) => r.debtorName ?? '',
@@ -775,6 +782,7 @@ Nothing was ticked.` });
         columns={columns}
         storageKey={STORAGE_KEY}
         rowKey={(r) => r.soItemId}
+        groupBy={PROJECT_GROUP}
         /* The search box in the toolbar searches on the server; the grid's own box would only search the loaded page. */
         hideSearch
         serverSort

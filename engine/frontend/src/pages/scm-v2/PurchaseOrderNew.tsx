@@ -21,11 +21,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 // HOUZS VENDOR — Link lives on 'react-router-dom' in react-router v6 (the
 // version Houzs ships). Only the import specifier changed.
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Save, Trash2, X, ArrowRightLeft } from 'lucide-react';
+import { Save, Trash2, X, ArrowRightLeft, Plus } from 'lucide-react';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
+import { ItemPickerDialog, type ItemPickerRow } from '../../vendor/scm/components/ItemPickerDialog';
 import { Button } from '@2990s/design-system';
 import { formatPhone } from '@2990s/shared/phone';
 import {
+  useCreateBinding,
   useCreatePurchaseOrder,
   usePurchaseOrderDetail,
   useSuppliers,
@@ -39,6 +41,7 @@ import {
 import { outcomeOfError, useContentBoundIdempotencyKey } from '../../lib/idempotency';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readScmHandoff, removeScmHandoff, writeScmHandoff } from '../../lib/scmHandoffStorage';
+import { bindMaterialsTo, formPickOfProduction, type ProductionPick } from './renovation-po-from-production';
 import { useMfgProducts, useMaintenanceConfig, useSpecialAddons, mfgCategoryLabel } from '../../vendor/scm/lib/mfg-products-queries';
 import { activeOptions, maintPickerValues, fmtMoneySen } from '@2990s/shared';
 import { useFabricTrackings, fabricOptionLabel } from '../../vendor/scm/lib/fabric-queries';
@@ -122,6 +125,16 @@ type DraftLine = {
   soItemId?: string | null;
   /** Conts — the options the source SO line carried, so the confirm gate asks for no more (conts/flowRules.ts). */
   soVariants?: Record<string, unknown>;
+  /** Conts — the production order raw material this line buys (Transfer from Production Order). Saved on the PO line. */
+  productionMaterialId?: string | null;
+};
+
+/* One picked line handed over by a From-SO or From-Production picker (renovation-po-from-production.ts). */
+type FormPick = Pick<OutstandingSoItem, 'itemCode' | 'description' | 'remainingQty' | 'qty' | 'variants' | 'lineDeliveryDate' | 'deliveryDate' | 'salesLocation' | 'mainSupplierCode'> & {
+  itemGroup: string | null;
+  soItemId: string | null;
+  _pickQty?: number;
+  productionMaterialId?: string;
 };
 
 const newLine = (): DraftLine => ({
@@ -135,6 +148,8 @@ const newLine = (): DraftLine => ({
   variants: {},
 });
 
+type ItemPickerTarget = { mode: 'add' } | { mode: 'replace'; rid: string };
+
 export const PurchaseOrderNew = () => {
   const navigate = useNavigate();
   const create   = useCreatePurchaseOrder();
@@ -147,6 +162,7 @@ export const PurchaseOrderNew = () => {
      a form corrected after a refusal is a new request (owner, 19 Nov 2026: a refused save followed by an edit answered
      "an earlier submission with different details already finished"). */
   const poKeys   = useContentBoundIdempotencyKey();
+  const bindSupplier = useCreateBinding();
   const notify   = useNotify();
 
   // ── Header state ────────────────────────────────────────────────────
@@ -162,7 +178,7 @@ export const PurchaseOrderNew = () => {
   const [notes, setNotes]             = useState<string>('');
 
   // ── Items state ─────────────────────────────────────────────────────
-  const [lines, setLines] = useState<DraftLine[]>([newLine()]);
+  const [lines, setLines] = useState<DraftLine[]>([]);
 
   /* Commander 2026-05-29 (BUG 2) — in-app result dialog. Used to surface the
      "一张 PO 只能一个 supplier" guard when From-SO picks belong to a different
@@ -313,7 +329,7 @@ export const PurchaseOrderNew = () => {
      resolve the form's current supplier, and only append picks that match it.
      If the form has no supplier yet, adopt the picks' supplier (old behaviour).
      Mismatched picks are dropped and surfaced via the result dialog. */
-  const applyFromSo = (picks: Array<OutstandingSoItem & { _pickQty?: number }>) => {
+  const applyFromSo = (picks: FormPick[]) => {
     if (picks.length === 0) return;
 
     // The supplier CODE the form is already bound to (if any): explicit creditor
@@ -409,6 +425,7 @@ export const PurchaseOrderNew = () => {
       // create call can increment its po_qty_picked (drops it from the picker).
       soItemId: p.soItemId,
       soVariants: p.soItemId ? ((p.variants ?? {}) as Record<string, unknown>) : undefined,
+      productionMaterialId: p.productionMaterialId ?? null,
     }));
     // Replace the initial blank line if the form is still empty; else append.
     setLines((prev) => (prev.some((l) => l.itemCode.trim()) ? [...prev, ...mapped] : mapped));
@@ -480,6 +497,11 @@ export const PurchaseOrderNew = () => {
       if (pickedRows) {
         removeScmHandoff('poFromSoPicks');
         if (Array.isArray(pickedRows) && pickedRows.length) applyFromSo(pickedRows);
+      }
+      const productionRows = readScmHandoff<ProductionPick[]>('poFromProductionPicks');
+      if (productionRows) {
+        removeScmHandoff('poFromProductionPicks');
+        if (Array.isArray(productionRows) && productionRows.length) applyFromSo(productionRows.map(formPickOfProduction));
       }
     } catch { /* malformed — ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -600,8 +622,108 @@ export const PurchaseOrderNew = () => {
     setLines((prev) => prev.map((l) => (l.rid === rid ? { ...l, ...patch } : l)));
   const addLine  = () => setLines((prev) => [...prev, { ...newLine(), warehouseId: purchaseLocationId || undefined, deliveryDate: expectedAt || undefined }]);
   const dropLine = (rid: string) => setLines((prev) =>
-    prev.length === 1 ? [newLine()] : prev.filter((l) => l.rid !== rid),
+    prev.filter((l) => l.rid !== rid),
   );
+
+  // Lines carry the old creditor's supplier SKU and price, so a different creditor starts the items over.
+  const changeCreditor = async (nextSupplierId: string) => {
+    if (nextSupplierId === supplierId) return;
+    /* Lines from Transfer from Production Order stay: they are raw materials still to buy, so moving them to another
+       creditor binds each one to it (as MRP's supplier pick does) and starts their price over. */
+    const filled = lines.filter((l) => l.itemCode.trim());
+    if (nextSupplierId && filled.length > 0 && filled.every((l) => l.productionMaterialId)) {
+      const name = (suppliers.data ?? []).find((s) => s.id === nextSupplierId)?.name ?? 'this creditor';
+      const proceed = await serviceConfirm({
+        title: 'Change creditor?',
+        body: `The ${filled.length} raw material line${filled.length === 1 ? '' : 's'} move to ${name}. Each material is bound to ${name} and its price starts over from that supplier.`,
+        confirmLabel: 'Change creditor',
+      });
+      if (!proceed) return;
+      try {
+        await bindMaterialsTo(nextSupplierId, filled, (b) => bindSupplier.mutateAsync(b));
+      } catch (e) {
+        void notify({ title: 'Could not bind the materials', body: e instanceof Error ? e.message : 'Something went wrong.', tone: 'error' });
+        return;
+      }
+      setLines((prev) => prev.map((l) => (l.productionMaterialId ? { ...l, bindingId: undefined, supplierSku: undefined, unitPriceSen: 0, priceTouched: false } : l)));
+      setPendingItemPick(null);
+      setSupplierId(nextSupplierId);
+      return;
+    }
+    if (lines.length > 0) {
+      const proceed = await serviceConfirm({
+        title: nextSupplierId ? 'Change creditor?' : 'Remove creditor?',
+        body: `The ${lines.length} item line${lines.length === 1 ? '' : 's'} below will be removed, because their supplier SKU and price belong to the current creditor.`,
+        confirmLabel: 'Remove lines',
+        danger: true,
+      });
+      if (!proceed) return;
+      setLines([]);
+      setPendingItemPick(null);
+    }
+    setSupplierId(nextSupplierId);
+  };
+
+  const [itemPicker, setItemPicker] = useState<ItemPickerTarget | null>(null);
+  const isItemPickerOpen = itemPicker !== null;
+  const isSupplierScoped = Boolean(supplierId) && pickable.length > 0;
+  const skusWithMainCost = useMfgProducts({ withMain: true, enabled: isItemPickerOpen && !isSupplierScoped });
+  const itemPickerRows = useMemo<ItemPickerRow[]>(() => {
+    const skus = allSkus.data ?? [];
+    if (isSupplierScoped) {
+      const skuByCode = new Map(skus.map((p) => [p.code, p]));
+      return sortByText(pickable).map((b) => {
+        const sku = skuByCode.get(b.item_code);
+        return {
+          key: b.id, code: b.item_code, name: b.material_name, supplierSku: b.supplier_sku,
+          categoryLabel: sku ? mfgCategoryLabel(sku.category) : 'Other',
+          priceLabel: fmtRm(b.unit_price_sen, b.currency), uom: sku?.uom ?? undefined,
+        };
+      });
+    }
+    const mainCostByCode = new Map((skusWithMainCost.data ?? []).map((p) => [p.code, p.mainCostSen]));
+    return sortByText(skus).map((p) => {
+      const mainCostSen = mainCostByCode.get(p.code);
+      return {
+        key: p.id, code: p.code, name: p.name, categoryLabel: mfgCategoryLabel(p.category), uom: p.uom ?? undefined,
+        priceLabel: mainCostSen == null ? undefined : fmtRm(mainCostSen, 'MYR'),
+      };
+    });
+  }, [isSupplierScoped, pickable, allSkus.data, skusWithMainCost.data]);
+
+  const pickedItemFields = ({ key, code }: ItemPickerRow): Partial<DraftLine> => {
+    const binding = isSupplierScoped ? pickable.find((b) => b.id === key) : undefined;
+    const sku = (allSkus.data ?? []).find((p) => p.code === code);
+    return {
+      itemCode: code,
+      materialName: binding?.material_name ?? sku?.name ?? '',
+      category: sku?.category.toLowerCase(),
+      bindingId: binding?.id,
+      materialKind: binding?.material_kind ?? 'mfg_product',
+      supplierSku: binding?.supplier_sku,
+      unitPriceSen: binding?.unit_price_sen ?? 0,
+      priceTouched: false,
+    };
+  };
+
+  const addPickedItem = (row: ItemPickerRow) => {
+    const line: DraftLine = {
+      ...newLine(),
+      warehouseId: purchaseLocationId || undefined,
+      deliveryDate: expectedAt || undefined,
+      ...pickedItemFields(row),
+    };
+    setLines((prev) => (prev.length === 1 && !prev[0].itemCode && !prev[0].materialName ? [line] : [...prev, line]));
+    // No supplier yet: the reverse lookup adopts the item's supplier, then the backfill effect fills the other lines.
+    if (!supplierId) setPendingItemPick({ rid: line.rid, code: row.code });
+  };
+
+  // Qty, discount, delivery date and remarks stay; the old item's options belong to the old item.
+  const replacePickedItem = (rid: string, row: ItemPickerRow) => {
+    setLine(rid, { ...pickedItemFields(row), variants: {} });
+    if (!supplierId) setPendingItemPick({ rid, code: row.code });
+  };
+  const replacingLineIndex = itemPicker?.mode === 'replace' ? lines.findIndex((l) => l.rid === itemPicker.rid) : -1;
 
   const pickBinding = (rid: string, b: BindingRow) => {
     setLine(rid, {
@@ -730,6 +852,7 @@ export const PurchaseOrderNew = () => {
       // line came from "From SO") so the API rolls po_qty_picked forward and
       // the line disappears from the From-SO picker.
       soItemId:       l.soItemId ?? null,
+      productionMaterialId: l.productionMaterialId ?? null,
     }));
 
     const basePayload = {
@@ -864,7 +987,8 @@ export const PurchaseOrderNew = () => {
               {/* Type-to-search: a plain select over every supplier was a long scroll (Hookka #HK supplier picker, owner 8 Nov). */}
               <SearchableSelect
                 value={supplierId}
-                onChange={setSupplierId}
+                onChange={changeCreditor}
+                clearable
                 options={sortByText(suppliers.data ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))}
                 placeholder="Type a supplier code or name"
                 ariaLabel="Creditor"
@@ -1052,23 +1176,18 @@ export const PurchaseOrderNew = () => {
       {/* Items card */}
       <section className={styles.card}>
         <div className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Items</h2>
-          <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
-            {/* "Pick any item from 0 SKUs" was printed while the catalogue was still loading or had failed (owner,
-                19 Nov 2026), which reads as an empty catalogue. */}
-            {allSkus.isLoading
-              ? 'Loading items…'
-              : allSkus.isError
-              ? "The item list couldn't be loaded — refresh the page to try again."
-              : supplierId
-              ? (pickable.length > 0
-                  ? `${pickable.length} item(s) bound to this supplier — picker filters to these`
-                  // PR — Commander 2026-05-28: a supplier with no SKU bindings used
-                  // to leave the Item Code picker empty (dead field). Fall back to
-                  // the full catalogue so a one-off purchase is still pickable.
-                  : `No SKUs bound to this supplier yet — picker shows all ${(allSkus.data ?? []).length} SKUs (one-off purchase)`)
-              : `Pick any item from ${(allSkus.data ?? []).length} SKUs — supplier auto-narrows`}
-          </span>
+          <h2 className={styles.cardTitle}>Items ({lines.length})</h2>
+          {/* "Pick any item from 0 SKUs" was printed while the catalogue was still loading or had failed (owner,
+              19 Nov 2026), which reads as an empty catalogue. */}
+          {allSkus.isError ? (
+            <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
+              The item list couldn't be loaded — refresh the page to try again.
+            </span>
+          ) : (
+            <Button variant="secondary" size="md" onClick={() => setItemPicker({ mode: 'add' })} disabled={allSkus.isLoading} style={{ minHeight: 44 }}>
+              <Plus {...ICON} /> {allSkus.isLoading ? 'Loading items…' : isSupplierScoped ? 'Add items from supplier' : 'Add items'}
+            </Button>
+          )}
         </div>
         <div className={styles.cardBody} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {/* PR #129 — Card-per-line layout. Commander 2026-05-26: "其实有很
@@ -1077,6 +1196,19 @@ export const PurchaseOrderNew = () => {
               (same shape as SoLineCard from PR #125). Each card has 4
               sections: identity (item + supplier code), description,
               variants (per category), pricing. */}
+          {lines.length === 0 && (
+            <div style={{
+              border: '1px dashed var(--line-strong)',
+              borderRadius: 'var(--radius-lg)',
+              background: 'var(--c-cream)',
+              padding: 'var(--space-6) var(--space-4)',
+              textAlign: 'center',
+              color: 'var(--fg-muted)',
+              fontSize: 'var(--fs-14)',
+            }}>
+              No items yet. Use {isSupplierScoped ? 'Add items from supplier' : 'Add items'} to pick them, or Add line to type one in.
+            </div>
+          )}
           {lines.map((l, idx) => {
             const lineTotalSen = Math.max(0, l.qty * l.unitPriceSen - (l.discountSen ?? 0));
             const categoryLabel = l.category?.toUpperCase() ?? 'UNSET';
@@ -1167,55 +1299,25 @@ export const PurchaseOrderNew = () => {
 
                 {/* Identity row — Internal code + Supplier SKU side by side */}
                 <div className={styles.formGrid2}>
-                  <label className={styles.field}>
+                  <div className={styles.field}>
                     <span className={styles.fieldLabel}>Item Code (Internal)</span>
-                    <input
-                      type="text"
-                      list={`bindings-${l.rid}`}
-                      value={l.itemCode}
-                      onChange={(e) => {
-                        const code = e.target.value;
-                        // Bound match wins (autofills supplier SKU + price).
-                        const match = supplierId
-                          ? pickable.find((b) => b.item_code === code)
-                          : undefined;
-                        if (match) { pickBinding(l.rid, match); return; }
-                        // No binding (no supplier yet, OR supplier has no binding
-                        // for this code) → one-off line: pull name + category
-                        // from the master SKU list so the row isn't left blank.
-                        const sku = (allSkus.data ?? []).find((p) => p.code === code);
-                        setLine(l.rid, {
-                          itemCode: code,
-                          materialName: sku?.name ?? l.materialName,
-                          bindingId: undefined,
-                          category: sku?.category.toLowerCase() ?? categoryForCode(code),
-                        });
-                        // Reverse supplier lookup only matters before a supplier
-                        // is chosen; once one is picked we don't re-narrow.
-                        if (!supplierId) setPendingItemPick(code ? { rid: l.rid, code } : null);
+                    <button
+                      type="button"
+                      onClick={() => setItemPicker({ mode: 'replace', rid: l.rid })}
+                      disabled={allSkus.isLoading}
+                      aria-label={`Line ${idx + 1} item code: ${l.itemCode || 'none'}. Change item`}
+                      className={`${styles.fieldInput} field-trigger`}
+                      style={{
+                        fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center',
+                        justifyContent: 'space-between', gap: 'var(--space-2)', cursor: 'pointer', textAlign: 'left',
                       }}
-                      placeholder="Type or pick our internal SKU…"
-                      className={styles.fieldInput}
-                      style={{ fontFamily: 'var(--font-mono)' }}
-                    />
-                    <datalist id={`bindings-${l.rid}`}>
-                      {/* PR — Commander 2026-05-28: only show bound SKUs when the
-                          supplier actually HAS bindings; otherwise fall back to
-                          the full catalogue so the picker is never dead. */}
-                      {supplierId && pickable.length > 0
-                        ? sortByText(pickable).map((b) => (
-                            <option key={b.id} value={b.item_code}>
-                              {b.material_name} · {b.supplier_sku} · {fmtRm(b.unit_price_sen, b.currency)}
-                            </option>
-                          ))
-                        : sortByText(allSkus.data ?? []).map((p) => (
-                            <option key={p.id} value={p.code}>
-                              {p.name} · {mfgCategoryLabel(p.category)}
-                            </option>
-                          ))
-                      }
-                    </datalist>
-                  </label>
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: l.itemCode ? undefined : 'var(--fg-muted)' }}>
+                        {l.itemCode || 'Pick an item…'}
+                      </span>
+                      <ArrowRightLeft {...ICON} aria-hidden />
+                    </button>
+                  </div>
                   <label className={styles.field}>
                     <span className={styles.fieldLabel}>Supplier SKU</span>
                     {/* PR #134 — Bi-directional picker: typing/picking a
@@ -1540,6 +1642,19 @@ export const PurchaseOrderNew = () => {
           <AddLineButton variant="block" onClick={addLine} />
         </div>
       </section>
+      {itemPicker && (
+        <ItemPickerDialog
+          mode={itemPicker.mode}
+          title={replacingLineIndex >= 0 ? `Change item · Line ${replacingLineIndex + 1}` : 'Select items'}
+          currentCode={lines[replacingLineIndex]?.itemCode}
+          subtitle={isSupplierScoped
+            ? `${supplier?.code ?? ''} · ${supplier?.name ?? ''} · ${pickable.length} items offered`
+            : `All ${itemPickerRows.length} SKUs · pick a creditor first to see only theirs with prices`}
+          rows={itemPickerRows}
+          onPick={(row) => (itemPicker.mode === 'replace' ? replacePickedItem(itemPicker.rid, row) : addPickedItem(row))}
+          onClose={() => setItemPicker(null)}
+        />
+      )}
 
       {/* Totals card aligned right — lg:pr-32 clears the fixed FAB cluster. */}
       <div className="lg:pr-32" style={{ display: 'flex', justifyContent: 'flex-end' }}>

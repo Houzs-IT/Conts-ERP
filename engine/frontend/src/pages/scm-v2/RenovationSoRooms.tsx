@@ -23,7 +23,7 @@ import { generateRooms, moveRoom, nextRoomName, placeRows, renameRoom } from '..
 
 /** One line: its key, its saved room, and how to draw it given its number in the order shown (0-based).
  *  In compact mode `move` is the line's move button, for the row to place among its own buttons. */
-export interface RoomRow { key: string; room: string; group?: string; render: (displayIndex: number, move?: ReactNode) => ReactNode }
+export interface RoomRow { key: string; room: string; group?: string; amountSen?: number; render: (displayIndex: number, move?: ReactNode) => ReactNode }
 export interface RoomLayout { label: string; bedrooms: number; bathrooms: number }
 /** The page's own card classes, so a room looks like the page's other sections. */
 export interface RoomCard { section: string; header: string; title: string; body: string }
@@ -100,7 +100,7 @@ function MoveLine({ rooms, current, onMove, inline }: { rooms: string[]; current
 /** The part of a layout that decides its rooms. */
 export const roomLayoutKey = (layout: RoomLayout | null): string => (layout ? `${layout.bedrooms}|${layout.bathrooms}` : '');
 
-export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAddLine, layout, savedLayoutKey, disabled, card, compact }: {
+export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAddLine, layout, savedLayoutKey, disabled, card, compact, money }: {
   rooms: string[];
   /** `rename` is set when one room was renamed, so the parent moves its lines too. */
   onRoomsChange: (next: string[], rename?: { from: string; to: string }) => void;
@@ -116,6 +116,8 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
   card?: RoomCard;
   /** One compact row per line under a column header (Edit SO). */
   compact?: boolean;
+  /** Shows each room's total (the sum of its rows' amountSen) in its header. */
+  money?: (sen: number) => string;
 }) {
   const [note, setNote] = useState<string | null>(null);
   const confirm = useConfirm();
@@ -190,6 +192,7 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
     controls: (
       <>
         <span className="whitespace-nowrap px-1 text-[11px] text-ink-secondary">{g.rows.length} line{g.rows.length === 1 ? '' : 's'}</span>
+        {money && <span aria-label={`${g.room} total`} className="whitespace-nowrap px-1 font-money text-[12px] font-bold text-ink">{money(g.rows.reduce((t, r) => t + (r.amountSen ?? 0), 0))}</span>}
         {!disabled && (
           <>
             <button type="button" aria-label={`Move ${g.room} up`} className={iconBtn} disabled={i === 0} onClick={() => onRoomsChange(moveRoom(shown, i, -1))}><ArrowUp size={15} /></button>

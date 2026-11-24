@@ -96,6 +96,7 @@ import { signSoItemPhotoUrl, soItemPhotoBindings } from '../lib/r2';
 import { baseKeyOf, thumbKeyFor } from '../../services/photoThumbs';
 import { proxyFallbackPayload, type PhotoUrlPayload } from '../lib/photoProxyFallback';
 import { refuseWithoutWriting } from '../lib/no-write-refusal';
+import { loadMaterialsForLines, materialIdOf, materialLineFields, materialLineRefusal, singleMaterialProject } from '../lib/renovation-po-material-lines';
 import { unknownProductCodeRefusal } from '../lib/validate-item-codes';
 import { supabaseAuth } from '../middleware/auth';
 import { recordEntityAudit, diffFields, compactChanges, fieldChange, statusChange } from '../lib/entity-audit';
@@ -104,7 +105,7 @@ import { computeMrp } from './mrp';
 import { eager } from '../lib/concurrency';
 import { provenanceNote } from '../shared/transfer-vocabulary';
 import type { Env, Variables } from '../env';
-import { skuCategoryResolver, lineIdentityFields } from '../lib/sku-category';
+import { skuCategoryResolver, skuUomResolver, lineIdentityFields } from '../lib/sku-category';
 import { loadUnitBoundCodes, NO_UNIT_BOUND_CODES } from '../lib/unit-bound-sku';
 import { inHouseSupplierId } from '../lib/grn-from-po-core';
 import { ON_SITE_WAREHOUSE_CODE } from '../lib/non-selling-warehouse';
@@ -1214,7 +1215,13 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
      manual lines (no soItemId) skip this — a PO can be raised with no SO link,
      unchanged. Mirror of the DO create-gate. */
   const groupOf = await skuCategoryResolver(supabase, items, activeCompanyId(c) ?? null); // SKU wins — lib/sku-category.ts
+  const uomOf = await skuUomResolver(supabase, items, activeCompanyId(c) ?? null);
   { const inactive = await poInactivePickRefusal(supabase, activeCompanyId(c) ?? null, items); if (inactive) return refuseWithoutWriting(c, inactive, 409); }
+  /* Conts: lines from Transfer from Production Order (lib/renovation-po-material-lines.ts). */
+  const matLoad = await loadMaterialsForLines(supabase, activeCompanyId(c) ?? null, items);
+  if (matLoad.error) return refuseWithoutWriting(c, { error: 'load_failed', reason: matLoad.error }, 500);
+  { const bad = materialLineRefusal(items, matLoad.materials, matLoad.poLines); if (bad) return refuseWithoutWriting(c, bad, 409); }
+  const materialUom = new Map(matLoad.materials.map((m) => [m.id, m.uom]));
   {
     const lineSoItemIds = items
       .map((it) => it.soItemId as string | undefined)
@@ -1343,11 +1350,12 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
       variants:     (it.variants as unknown) ?? null,
       description:  (it.description as string | undefined) ?? null,
       ...lineIdentityFields(groupOf, it, buildVariantSummary), // item_group + description2, from ONE group
-      ...(it.uom ? { uom: String(it.uom) } : {}),
+      ...(uomOf(it) ? { uom: uomOf(it) } : {}),
       /* Commander 2026-05-29 (BUG 1) — persist the source SO line (migration
          0098) so deleting this PO line can release po_qty_picked back to the
          From-SO picker. NULL for manually-added lines. */
       so_item_id:   soItemId,
+      ...materialLineFields(materialIdOf(it), materialUom),
     };
   });
 
@@ -1387,6 +1395,8 @@ export const createMfgPurchaseOrderHandler = async (c: any) => {
   // Optional poDate — if absent, the column default (now()) wins.
   /* The column's default is the database's UTC date, a day behind in Malaysia until 8am. */
   headerInsert.po_date = body.poDate || todayMyt();
+  const materialProject = singleMaterialProject(items, matLoad.materials);
+  if (materialProject != null) headerInsert.project_id = materialProject;
 
   /* Doc-no collision retry (2026-07-14): two buyers cutting a PO in the same
      company + YYMM both read the same max and mint the same po_number; without a
@@ -3069,6 +3079,7 @@ export const addPoLineHandler = async (c: any) => {
   const unknownAdd = await unknownProductCodeRefusal(sb, [{ code: it.itemCode, kind: it.materialKind }], co.companyId);
   if (unknownAdd) return c.json(unknownAdd, 409);
   const addGroupOf = await skuCategoryResolver(sb, [it], co.companyId ?? null); // SKU wins — lib/sku-category.ts
+  const addUomOf = await skuUomResolver(sb, [it], co.companyId ?? null);
   /* Non-finite guard — the clamp below cannot catch NaN (Math.max(0, NaN) is
      NaN), so a junk qty/price reached line_total_sen and the PO total. */
   const parsedLine = parseLineNumbers({
@@ -3125,7 +3136,7 @@ export const addPoLineHandler = async (c: any) => {
     variants: (it.variants as unknown) ?? null,
     description: (it.description as string) ?? null,
     ...lineIdentityFields(addGroupOf, it, buildVariantSummary), // same rule as create — docs/bugs/0514
-    uom: (it.uom as string) ?? 'UNIT',
+    uom: addUomOf(it) ?? 'UNIT',
     discount_sen: discountSen,
     unit_cost_sen: Number(it.unitCostSen ?? 0),
     // PR #77 — per-line ship-to. Both nullable; empty = inherit from header.

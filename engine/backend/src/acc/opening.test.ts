@@ -229,6 +229,52 @@ describe('the opening check', () => {
   });
 });
 
+describe('money the ERP took on orders before the cut-over (chew, 23 Nov 2026)', () => {
+  test('a payment recorded on an order in the ERP counts against the documents; one that settled an ERP invoice does not twice', async () => {
+    const sb = world();
+    await importOpeningJournal(sb, CO, BALANCED, ACTOR);
+    const je = sb.tables.journal_entries[0];
+    const gl = (l: Row, type = 'OPENING', doc: string | null = null) => ({ ...l, company_id: CO, entry_date: je.entry_date, posted: true, reversed: false, reversed_by_je: null, source_type: type, source_doc_no: doc });
+    sb.tables.v_gl_entries = sb.tables.journal_entry_lines.map((l) => gl(l));
+    /* AutoCount's open invoice of 50,000, and 15,000 the ERP took on order SO-2 with no invoice yet. */
+    sb.tables.v_gl_entries.push(gl({ account_code: '300-0000', debit_sen: 0, credit_sen: 15_000 }, 'SOPAY', 'pay-2'));
+    /* Its money side, on a bank: no control, so no line of its own. */
+    sb.tables.v_gl_entries.push(gl({ account_code: '310-0010', debit_sen: 15_000, credit_sen: 0 }, 'SOPAY', 'pay-2'));
+    await importOpeningReceivables(sb, CO, [{ docNo: 'IV-1', debtorName: 'A', debtorCode: '300-A001', invoiceDate: '2026-10-05', dueDate: '2026-11-04', outstandingSen: 50_000 }], ACTOR);
+    const r = await openingCheck(sb, CO);
+    expect(r.ok && r.controls[0]).toMatchObject({ accountCode: '300-0000', controlSen: 35_000, documentsSen: 35_000 });
+    expect(r.ok && r.controls.some((c) => c.accountCode === '310-0010')).toBe(false);
+  });
+});
+
+describe('a bill paid after the cut-over (chew, 23 Nov 2026)', () => {
+  test('counts at what it owed on the day: payments dated later are added back, earlier ones and cancelled vouchers are not', async () => {
+    const sb = world({ pv_allocations: [] });
+    await importOpeningJournal(sb, CO, BALANCED, ACTOR);
+    const je = sb.tables.journal_entries[0];
+    sb.tables.v_gl_entries = sb.tables.journal_entry_lines.map((l) => ({ ...l, company_id: CO, entry_date: je.entry_date, posted: true, reversed: false, reversed_by_je: null, source_type: 'OPENING', source_doc_no: null }));
+    /* A bill of 30,000 raised before the day, now paid in full: 10,000 before the day, 15,000 after, 5,000 from an
+       advance applied after; and a cancelled voucher's allocation that settled nothing that counts. */
+    sb.tables.ap_invoices.push({ id: 'ap-1', company_id: CO, supplier_id: 'sup-1', invoice_date: '2026-11-20', total_sen: 30_000, paid_sen: 30_000, status: 'PAID' });
+    sb.tables.payment_vouchers.push(
+      { id: 'pv-1', company_id: CO, voucher_date: '2026-11-25', status: 'POSTED' },
+      { id: 'pv-2', company_id: CO, voucher_date: '2026-12-05', status: 'POSTED' },
+      { id: 'pv-3', company_id: CO, voucher_date: '2026-09-01', status: 'POSTED' },
+      { id: 'pv-4', company_id: CO, voucher_date: '2026-12-06', status: 'CANCELLED' },
+    );
+    sb.tables.pv_allocations.push(
+      { id: 'a1', company_id: CO, pv_id: 'pv-1', ap_invoice_id: 'ap-1', pi_id: null, applied_sen: 10_000, from_advance: false, created_at: '2026-11-25T02:00:00Z' },
+      { id: 'a2', company_id: CO, pv_id: 'pv-2', ap_invoice_id: 'ap-1', pi_id: null, applied_sen: 15_000, from_advance: false, created_at: '2026-12-05T02:00:00Z' },
+      { id: 'a3', company_id: CO, pv_id: 'pv-3', ap_invoice_id: 'ap-1', pi_id: null, applied_sen: 5_000, from_advance: true, created_at: '2026-12-01T17:00:00Z' },
+      { id: 'a4', company_id: CO, pv_id: 'pv-4', ap_invoice_id: 'ap-1', pi_id: null, applied_sen: 7_000, from_advance: false, created_at: '2026-12-06T02:00:00Z' },
+    );
+    const r = await openingCheck(sb, CO);
+    /* The day is the eve of the ledger start (30 Nov, no cut-over): 15,000 paid on 5 Dec and 5,000 applied on 2 Dec in Kuala
+       Lumpur (17:00 UTC on 1 Dec) are added back; the 25 Nov voucher is not. */
+    expect(r.ok && r.controls.find((c) => c.accountCode === '400-0000')).toMatchObject({ documentsSen: 20_000, erpDocuments: 1 });
+  });
+});
+
 describe('the opening routes', () => {
   async function call(perms: string[], path: string, body?: unknown) {
     const { Hono } = await import('hono');

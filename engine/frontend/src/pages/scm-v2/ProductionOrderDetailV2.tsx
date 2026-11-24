@@ -985,7 +985,7 @@ function ProductionOrderDetailV2ReadOnly() {
               works={items.map((l) => ({ qty: Number(l.qty), uom: l.uom }))} />
             {(started || rawStatus === "RECEIVED") && (
               <Section dense title="Worker hours">
-                <ProductionHoursPanel orderId={purchaseOrder.id} workers={page?.workers ?? []} canAct={canAct} />
+                <ProductionHoursPanel orderId={purchaseOrder.id} workers={page?.workers ?? []} canAct={canAct} finished={rawStatus === "RECEIVED"} />
               </Section>
             )}
             {progress && (

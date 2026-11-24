@@ -11,6 +11,7 @@
  */
 import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { DataTable, type Column } from "./DataTable";
+import type { DataTableProps } from "./dataTableTypes";
 import type { DataTableLineExport, ExportCell } from "./dataTableLineExport";
 import { gridLayoutToTableLayout } from "./dataTableLegacyGridLayout";
 import type { LayoutSeed } from "../lib/tableLayouts";
@@ -80,6 +81,8 @@ export type DataGridCompatProps<T> = {
   toolbar?: ReactNode;
   focusSearchNonce?: number;
   groupBanner?: boolean;
+  /** Rows grouped under a heading by this column (DataTable `groupBy`). */
+  groupBy?: DataTableProps<T>["groupBy"];
   emptyMessage?: string;
   isLoading?: boolean;
   contextMenu?: (row: T) => GridContextMenuItem[];
@@ -196,6 +199,7 @@ export function DataGridCompat<T>({
   toolbar,
   focusSearchNonce,
   groupBanner = true,
+  groupBy,
   emptyMessage = "No data.",
   isLoading = false,
   contextMenu,
@@ -248,6 +252,7 @@ export function DataGridCompat<T>({
       onSortChange={onSortChange}
       onColFiltersChange={onColFiltersChange}
       groupBanner={groupBanner && !embedded}
+      groupBy={groupBy}
       embedded={embedded}
       defaultSort={defaultSort}
       persistSort={!sortForSessionOnly}

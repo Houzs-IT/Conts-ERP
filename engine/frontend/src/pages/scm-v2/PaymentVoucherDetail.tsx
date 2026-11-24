@@ -1039,13 +1039,18 @@ export const PaymentVoucherDetail = () => {
             ) : allocations.length === 0 ? (
               <p style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-13)' }}>No invoices settled by this voucher.</p>
             ) : (
+              <>
+              {/* Click sweep G17: a cancelled voucher took these back; the amounts read as still applied. */}
+              {pv.status === 'CANCELLED' && (
+                <p style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-12)', margin: '0 0 var(--space-2)' }}>Cancelled: these amounts were taken back off the invoices.</p>
+              )}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-13)' }}>
                 <thead>
                   <tr style={{ textAlign: 'left', color: 'var(--fg-muted)', fontSize: 'var(--fs-11)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     <th style={{ padding: '6px 8px' }}>Invoice</th>
                     <th style={{ padding: '6px 8px' }}>Supplier Ref</th>
                     <th style={{ padding: '6px 8px' }}>Status</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Applied</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>{pv.status === 'CANCELLED' ? 'Was applied' : 'Applied'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1071,12 +1076,13 @@ export const PaymentVoucherDetail = () => {
                           {a.status ? <StatusPill docType="pi" status={String(a.status)} /> : '—'}
                         </td>
                         {/* Applied = what the invoice took (D12, #1126): the clamp may refuse part of the ask, and the refused part sits in the advance. Before posting it is the ask. */}
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)' }} title={a.appliedSen != null && Number(a.appliedSen) !== Number(a.amountSen ?? 0) ? `Asked ${fmtRm(Number(a.amountSen ?? 0))}; the invoice took ${fmtRm(Number(a.appliedSen))}` : undefined}>{fmtRm(Number(a.appliedSen ?? a.amountSen ?? a.amount_sen ?? 0))}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)', ...(pv.status === 'CANCELLED' ? { textDecoration: 'line-through', color: 'var(--fg-muted)' } : {}) }} title={a.appliedSen != null && Number(a.appliedSen) !== Number(a.amountSen ?? 0) ? `Asked ${fmtRm(Number(a.amountSen ?? 0))}; the invoice took ${fmtRm(Number(a.appliedSen))}` : undefined}>{fmtRm(Number(a.appliedSen ?? a.amountSen ?? a.amount_sen ?? 0))}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+              </>
             )}
           </div>
         </section>

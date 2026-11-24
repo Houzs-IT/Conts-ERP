@@ -62,6 +62,7 @@ export const DeliveryReturnNew = () => {
   const [searchParams] = useSearchParams();
   const fromDo = searchParams.get('fromDo');
   const fromPicks = searchParams.get('fromPicks') === '1';
+  const fromList = searchParams.get('fromList') === '1';
 
   const create = useCreateDeliveryReturn();
   /* One key per delivery return CONTENT (lib/idempotency.ts createContentBoundKey): the same form re-pressed after a stall
@@ -306,7 +307,8 @@ export const DeliveryReturnNew = () => {
       { ...payload, idempotencyKey: key },
       settleOutcome(idemKeys, {
         onSuccess: (res: { id: string; returnNumber: string }) => {
-          navigate(afterCreatePath(`/scm/delivery-returns/${res.id}`, sourceDocPath.deliveryOrder(fromDo)));
+          /* Click sweep G18: Transfer from Delivery Order on the returns list opens the new return, not the DO. */
+          navigate(afterCreatePath(`/scm/delivery-returns/${res.id}`, fromList ? null : sourceDocPath.deliveryOrder(fromDo)));
         },
         onError: (err) => notify({ title: 'Save failed', body: err instanceof Error ? err.message : 'Something went wrong.', tone: 'error' }),
       }),

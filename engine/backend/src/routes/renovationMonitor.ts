@@ -25,6 +25,7 @@ import {
   FLAG_LABEL, NO_SO_FLAG_DAYS, PAYMENT_NORM_PCT, QUEUES, involvesPerson, monitorFlags, monitorQueues,
   type FlagKey, type MonitorFacts, type QueueKey,
 } from "../services/renovation/monitor";
+import { brandVisibleSql, loadBrandSide } from "../services/projectBrandScope";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -69,7 +70,7 @@ app.get("/monitor", requirePageAccess("projects.list"), async (c) => {
   try {
     const hideMoney = financeHiddenForUser(c.get("user"));
     const today = todayMyt();
-    const projects = await loadProjectRows(db(c), activeCompanySql(c, "p.company_id"), {});
+    const projects = await loadProjectRows(db(c), activeCompanySql(c, "p.company_id") + brandVisibleSql(await loadBrandSide(db(c), c.get("user"))), {});
     const facts = await loadRenovationFacts(db(c), projects, { checklistKeys: BOARD_CHECKLIST_KEYS });
     const pids = projects.map((p) => p.id);
     const docNos = [...facts.values()].map((f) => f.so?.doc_no).filter((x): x is string => !!x);

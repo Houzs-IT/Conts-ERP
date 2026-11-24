@@ -245,7 +245,7 @@ function SecondLayer({ label, layer }: { label: string; layer: StageLayer }): Re
   const [focus, setFocus] = useState<string | null>(null);
   const shown = steps?.find((t) => t.key === focus) ?? steps?.find((t) => t.state === "current") ?? null;
   return (
-    <div style={{ margin: "14px 8px 0", padding: "16px 8px 10px", borderRadius: 20, background: "linear-gradient(180deg,rgba(244,246,252,.85),rgba(255,255,255,.4))", border: "1px solid rgba(120,130,170,.12)" }}>
+    <div style={{ margin: "14px 8px 0", padding: "16px 8px 10px", borderRadius: 20, background: BETA.panel, border: `1px solid ${BETA.lineSoft}` }}>
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "baseline", gap: "4px 12px", padding: "0 8px", marginBottom: steps ? 14 : 0 }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: BETA.ink }}>{label}{steps && <span style={{ fontWeight: 400, color: BETA.muted }}> · {done} of {live.length} done{live.length < steps.length ? ` · ${steps.length - live.length} not on this project` : ""}</span>}</span>
         <span style={{ fontSize: 12.5, color: BETA.muted }}>{layer.rule}</span>
@@ -259,7 +259,7 @@ function SecondLayer({ label, layer }: { label: string; layer: StageLayer }): Re
               const dot = t.state === "done"
                 ? { background: DOT_DONE, boxShadow: "inset 0 1px 2px rgba(255,255,255,.6),0 3px 9px -3px rgba(47,107,255,.6)", color: "#FFFFFF" }
                 : now ? { background: DOT_NOW, boxShadow: "0 0 0 5px rgba(238,92,120,.13),0 4px 12px -3px rgba(238,92,120,.6)", color: "transparent" }
-                : t.state === "off" ? { background: "#EEF0F4", border: "1.5px dashed #CDD1D9", color: "transparent" }
+                : t.state === "off" ? { background: BETA.chip, border: `1.5px dashed ${BETA.dash}`, color: "transparent" }
                 : { background: BETA.stepNext, border: `1.5px solid ${BETA.stepNextEdge}`, color: BETA.muted };
               return (
                 <li key={t.key} style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
@@ -279,7 +279,7 @@ function SecondLayer({ label, layer }: { label: string; layer: StageLayer }): Re
         </div>
       )}
       {shown && (
-        <div style={{ margin: "14px 8px 2px", padding: "10px 14px", borderRadius: 14, background: "rgba(255,255,255,.85)", border: "1px solid rgba(120,130,170,.14)", fontSize: 12.5, color: BETA.muted }}>
+        <div style={{ margin: "14px 8px 2px", padding: "10px 14px", borderRadius: 14, background: BETA.row, border: `1px solid ${BETA.line}`, fontSize: 12.5, color: BETA.muted }}>
           <span style={{ fontSize: 14, fontWeight: 600, color: BETA.ink }}>{shown.label}</span>
           <span style={{ marginLeft: 8, fontWeight: 600, color: shown.state === "done" ? WS.blue : shown.state === "current" ? BETA.stepNow : BETA.muted }}>{shown.sub}</span>
           <div style={{ marginTop: 2 }}>{shown.rule}</div>
@@ -333,7 +333,7 @@ export function BetaStageFilter({ stages, selected, onSelect, layer }: {
     <div role="group" aria-label="Project stages" className="no-bar" style={{ ...GLASS, borderRadius: 26, padding: "20px 8px 16px", overflowX: "auto" }}>
       <div style={{ minWidth: 560, paddingTop: 4 }}>{row(stages, selected, onSelect, false)}</div>
       {layer && (
-        <div style={{ margin: "14px 8px 0", padding: "16px 8px 12px", borderRadius: 20, background: "linear-gradient(180deg,rgba(244,246,252,.85),rgba(255,255,255,.4))", border: "1px solid rgba(120,130,170,.12)" }}>
+        <div style={{ margin: "14px 8px 0", padding: "16px 8px 12px", borderRadius: 20, background: BETA.panel, border: `1px solid ${BETA.lineSoft}` }}>
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "baseline", gap: "4px 12px", padding: "0 8px", marginBottom: 14 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: BETA.ink }}>{layer.label}<span style={{ fontWeight: 400, color: BETA.muted }}> · press a step to see the projects waiting on it</span></span>
             <span style={{ fontSize: 12.5, color: BETA.muted }}>{layer.rule}</span>

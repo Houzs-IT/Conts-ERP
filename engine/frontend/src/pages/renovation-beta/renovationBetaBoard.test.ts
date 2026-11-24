@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BetaBoard, BetaBoardProject } from "./renovationBetaBoardApi";
 import {
   add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, designSteps, diff, ds, filterCounts, homeCounts, inFilter, homeList, homeRow, initials, items,
-  listFor, monthCells, whoName, nextFor, progressByPerson, progressList, rangeFor, shiftMonth, stage, status, type BoardModel, type DesignProject,
+  listFor, monthCells, whoName, nextFor, progressByPerson, progressList, rangeFor, reportsOf, shiftMonth, stage, status, type BoardModel, type DesignProject,
 } from "./renovationBetaBoard";
 
 const TODAY = "2026-10-23";
@@ -286,6 +286,44 @@ describe("several 3D and 2D people", () => {
     const g = progressByPerson(m);
     expect(g[g.length - 1]).toMatchObject({ person: null, projects: [{ id: 13 }] });
     expect(g.find((x) => x.person?.id === 2)?.projects.map((x) => x.id)).toEqual(progressList(m, 2).map((x) => x.id));
+  });
+
+  it("reads an old unoffered row as the account of the same name, so Viewing that person finds its projects", () => {
+    const oldAlex = { id: 40, name: "ALEX  GOH", roles: [], offered: false };
+    const oldJx = { id: 41, name: "JIA XIN", roles: [], offered: false };
+    const b = board([
+      project({ id: 30, building: "Old", unitNo: "1", customerName: "A", lead: { id: 40, name: "ALEX  GOH" }, sitePic: { id: 41, name: "JIA XIN" } }),
+      project({ id: 31, building: "Old", unitNo: "2", customerName: "B", lead: { id: 40, name: "ALEX  GOH" }, people3d: [{ id: 40, name: "ALEX  GOH" }, { id: 4, name: "alex goh" }] }),
+    ]);
+    b.people = [{ id: 4, name: "alex goh", roles: [], offered: true }, { id: 1, name: "JIAXIN", roles: [], offered: true }, oldAlex, oldJx];
+    const x = buildModel(b);
+    expect(progressList(x, 4).map((p) => p.id).sort()).toEqual([30, 31]);
+    expect(progressList(x, 1).map((p) => p.id)).toEqual([30]);
+    expect(progressList(x, 40)).toEqual([]);
+    expect(progressByPerson(x).map((g) => [g.person?.id, g.projects.length])).toEqual([[4, 2], [1, 1]]);
+    expect(x.byId.get(31)?.team["3"]).toEqual([{ id: 4, name: "alex goh" }]);
+    expect(buildModel({ ...b, mePersonId: 40 }).mePersonId).toBe(4);
+  });
+
+  it("keeps an old row as itself when two offered people share its name", () => {
+    const b = board([project({ id: 32, building: "Old", unitNo: "3", customerName: "C", lead: { id: 40, name: "Ali" }, sitePic: null })]);
+    b.people = [{ id: 4, name: "Ali", roles: [], offered: true }, { id: 5, name: "ALI", roles: [], offered: true }, { id: 40, name: "Ali", roles: [], offered: false }];
+    expect(progressList(buildModel(b), 40).map((p) => p.id)).toEqual([32]);
+  });
+
+  it("lists the offered people who report straight to a person, by name (YH, 23 Nov 2026)", () => {
+    const b = board([]);
+    b.people = [
+      { id: 1, name: "JIAXIN", roles: [], offered: true }, { id: 41, name: "Jia Xin", roles: [], offered: false },
+      { id: 3, name: "Yi Xuan", roles: [], offered: true, managerPersonId: 1 }, { id: 2, name: "Ying Tzy", roles: [], offered: true, managerPersonId: 41 },
+      { id: 6, name: "Under Yi Xuan", roles: [], offered: true, managerPersonId: 3 }, { id: 7, name: "Gone", roles: [], offered: false, managerPersonId: 1 },
+      { id: 8, name: "Self", roles: [], offered: true, managerPersonId: 8 },
+    ];
+    const x = buildModel(b);
+    expect(reportsOf(x, 1)).toEqual([{ id: 3, name: "Yi Xuan" }, { id: 2, name: "Ying Tzy" }]);
+    expect(reportsOf(x, 3)).toEqual([{ id: 6, name: "Under Yi Xuan" }]);
+    expect(reportsOf(x, 8)).toEqual([]);
+    expect(reportsOf(m, 1)).toEqual([]);
   });
 
   it("offers only people linked to an active account, but still names everyone", () => {

@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../lib/api';
 import { findNav } from '../lib/navigation';
 import { menuPathFor } from '../lib/scmEngine';
+import { isResume, lastEnginePath, rememberEnginePath } from '../lib/enginePlaces';
 import { useSession } from '../lib/session';
 import { color } from '../theme';
 
@@ -12,15 +13,6 @@ const b64url = (s: string) => btoa(unescape(encodeURIComponent(s))).replace(/\+/
 // Well inside the engine's 7-day session (engine/backend/src/services/auth.ts), so a tab left open never shows its sign-in.
 const ENGINE_SIGN_IN_MAX_AGE_MS = 24 * 3600e3;
 const USED_SUPPLY_CHAIN_KEY = 'conts.usedSupplyChain';
-// The record open in the frame: the address only names its menu, so a refresh would otherwise fall back to the list.
-const LAST_ENGINE_PATH_KEY = 'conts.lastEnginePath';
-const readLastEnginePath = (menu: string): string | null => {
-  try {
-    const last = JSON.parse(sessionStorage.getItem(LAST_ENGINE_PATH_KEY) ?? 'null') as { menu?: string; path?: string } | null;
-    return last?.menu === menu && last.path ? last.path : null;
-  } catch { return null; }
-};
-
 type EngineSession = { site: string; token: string; sessionPass: string | null };
 const requestEngineSession = () => api.post<EngineSession>('/supply-chain/engine-session');
 // Kept with the person it was made for, so someone signing in next on the same tab never receives it.
@@ -75,9 +67,13 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
   const site = useRef('');
   const location = useLocation();
   // Only for the load it was saved for: any later menu click or link goes where it says.
-  const restored = useRef(readLastEnginePath(location.pathname));
-  const firstKey = useRef(location.key);
-  if (location.key !== firstKey.current) restored.current = null;
+  const restored = useRef(lastEnginePath(location.pathname));
+  const restoredFor = useRef(location.key);
+  // A page tab goes back to the record its menu was left on; a menu click or a link opens what it names.
+  if (location.key !== restoredFor.current) {
+    restoredFor.current = location.key;
+    restored.current = isResume(location.state) ? lastEnginePath(location.pathname) : null;
+  }
   const wanted = useRef(enginePath);
   wanted.current = restored.current ?? enginePath;
   const navigate = useNavigate();
@@ -146,7 +142,7 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
       if (e.data?.type === 'conts:ready') {
         frameLoaded.current = true;
         // The frame's own Refresh reloads it alone: it goes back to the record it was on, not to this menu's list.
-        const back = readLastEnginePath(here.current);
+        const back = lastEnginePath(here.current);
         if (back) wanted.current = back;
         steer();
         tellTheme();
@@ -156,7 +152,7 @@ export default function SupplyChainEngine({ enginePath, active = true }: { engin
       if (e.data?.type === 'conts:location' && typeof e.data.path === 'string' && isActive.current) {
         // A screen in both sidebars (Finance) resolves to the one open now, so the sidebar does not jump.
         const to = menuPathFor(e.data.path, here.current);
-        try { sessionStorage.setItem(LAST_ENGINE_PATH_KEY, JSON.stringify({ menu: to ?? here.current, path: e.data.path })); } catch { /* storage blocked */ }
+        rememberEnginePath(to ?? here.current, e.data.path);
         // The frame can say so twice before the address changes: a second navigate would steer it back to the list.
         if (to && to !== here.current && to !== followed.current) { followed.current = to; navigate(to, { replace: true }); }
       }

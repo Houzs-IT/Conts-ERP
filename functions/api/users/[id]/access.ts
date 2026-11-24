@@ -9,12 +9,13 @@ const refusal = (found: 'no-user' | 'no-department'): Response =>
     : fail('NO_DEPARTMENT', 'This account has no department, so it has no desk access to set.', 422);
 
 /** GET /api/users/:id/access -> the person's grid: each area's level and where it comes from, their own override and
- *  what they would get without it. Management, and the person themself (read only). */
+ *  what they would get without it. Anyone who may open the permissions chart (the list beside it loads on the same
+ *  rule), and the person themself; read only for everyone but management. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response;
   const id = String(params.id);
-  if (session.role !== 'management' && session.userId !== id) return fail('FORBIDDEN', 'You can only see your own access.', 403);
+  if (!session.manage && session.userId !== id) return fail('FORBIDDEN', 'You can only see your own access.', 403);
 
   const result = await personAccess(env, id, session.role === 'management');
   if (result.found !== 'ok') return refusal(result.found);

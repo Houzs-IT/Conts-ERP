@@ -70,7 +70,9 @@ const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'];
  *  Reschedule: { scheduledFor, dueAt } (HH:MM, Malaysia, on the task's own day).
  *  Edit:       { title, instructions, kind, amount } — any subset (amount in sen, the office's own figure for this clean,
  *              until it is charged); blanks the instructions
- *              when an empty string is sent. The two shapes may be combined. */
+ *              when an empty string is sent. The two shapes may be combined.
+ *  History:    { day: YYYY-MM-DD, completedAt: ISO } corrects a job after the fact; day keeps each time's clock time,
+ *              completedAt is for finished jobs only and decides the month the clean counts in Pay. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -80,8 +82,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const b = await request.json<any>().catch(() => null);
   const ok = (v: unknown) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
-  const t = await one<{ day: string; scheduled_for: string | null; due_at: string | null; state: string; title: string; instructions: string | null; kind: string }>(env, `
-    SELECT to_char((COALESCE(scheduled_for, due_at, created_at))::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS day, scheduled_for, due_at, state, title, instructions, kind
+  const t = await one<{ day: string; scheduled_for: string | null; due_at: string | null; created_at: string; completed_at: string | null; state: string; title: string; instructions: string | null; kind: string }>(env, `
+    SELECT to_char((COALESCE(scheduled_for, due_at, created_at))::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS day, scheduled_for, due_at, created_at, completed_at, state, title, instructions, kind
     FROM tasks WHERE id = ?`, id);
   if (!t) return fail('NOT_FOUND', 'That cleaning job no longer exists. Refresh the list.', 404);
 
@@ -91,16 +93,40 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const before: Record<string, unknown> = {};
   const after: Record<string, unknown> = {};
 
+  const wantsDay = b?.day != null && b.day !== t.day;
+  if (b?.day != null && !(typeof b.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.day) && !Number.isNaN(Date.parse(b.day)))) {
+    return fail('VALIDATION', 'Pick a day.', 422, { day: 'Pick a day.' });
+  }
+  const day: string = wantsDay ? b.day : t.day;
   const wantsReschedule = b?.scheduledFor != null || b?.dueAt != null;
   if (wantsReschedule) {
     if (t.state === 'resolved') return fail('CONFLICT', 'A finished cleaning job cannot be moved.', 409);
     if (!ok(b?.scheduledFor) || !ok(b?.dueAt)) return fail('VALIDATION', 'Enter times as HH:MM.', 422);
     if (b.dueAt <= b.scheduledFor) return fail('VALIDATION', 'The end must be after the start.', 422, { dueAt: 'Pick a later end time.' });
-    const at = (hm: string) => `${t.day}T${hm}:00+08:00`;
+    const at = (hm: string) => `${day}T${hm}:00+08:00`;
     sets.push('scheduled_for = ?', 'due_at = ?');
     args.push(at(b.scheduledFor), at(b.dueAt));
     before.scheduledFor = t.scheduled_for; before.dueAt = t.due_at;
     after.scheduledFor = at(b.scheduledFor); after.dueAt = at(b.dueAt);
+  } else if (wantsDay) {
+    // Same clock time on the new Malaysian day; a job with no times keeps the time it was created at.
+    const onDay = (v: string) => `${day}T${new Date(Date.parse(v) + 8 * 3600e3).toISOString().slice(11, 19)}+08:00`;
+    const scheduledFor = t.scheduled_for ? onDay(t.scheduled_for) : t.due_at ? null : onDay(t.created_at);
+    const dueAt = t.due_at ? onDay(t.due_at) : null;
+    sets.push('scheduled_for = ?', 'due_at = ?');
+    args.push(scheduledFor, dueAt);
+    before.scheduledFor = t.scheduled_for; before.dueAt = t.due_at;
+    after.scheduledFor = scheduledFor; after.dueAt = dueAt;
+  }
+
+  if (b?.completedAt != null) {
+    if (t.state !== 'resolved') return fail('CONFLICT', 'Only a finished cleaning job has a finish time. Mark it done first.', 409);
+    const at = typeof b.completedAt === 'string' ? Date.parse(b.completedAt) : NaN;
+    if (Number.isNaN(at)) return fail('VALIDATION', 'Pick when it was finished.', 422, { completedAt: 'Pick a day and time.' });
+    if (at > Date.now() + 5 * 60e3) return fail('VALIDATION', 'The finish time cannot be in the future.', 422, { completedAt: 'Pick a time that has passed.' });
+    const completedAt = new Date(at).toISOString();
+    sets.push('completed_at = ?'); args.push(completedAt);
+    before.completedAt = t.completed_at; after.completedAt = completedAt;
   }
 
   if (typeof b?.title === 'string') {

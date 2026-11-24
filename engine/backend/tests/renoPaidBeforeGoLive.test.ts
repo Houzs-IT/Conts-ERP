@@ -83,14 +83,11 @@ describe('the billing view of a contract paid before go-live', () => {
     expect(paymentLabel(p)).toMatchObject({ label: 'Pending 2nd payment', outstandingSen: 6_000_000, paid: 1 });
   });
 
-  test('a payment recorded on the order before go-live is inside what AutoCount was paid, never counted twice', () => {
+  test('a payment recorded on the order before go-live counts on top of what AutoCount was paid (chew, 23 Nov 2026: the ERP keeps its own; AutoCount\'s copy is taken back)', () => {
     const v = assembleView('SO', 'RENO_IN_PROGRESS', 10_000_000, 10_000_000, split, [], 0, [], 5_000_000, 1_000_000, 0, 3_000_000, 1_000_000);
-    expect(v.receivedSen).toBe(3_000_000);
-    expect(v.orderPoolSen).toBe(0);
-    const p = paymentsOf(v, { docNo: 'SO', totalSen: 10_000_000, receipts: [{ paidOn: '2026-05-01', amountSen: 1_000_000, method: 'imported' }] });
-    if (p.state !== 'ok') throw new Error('expected ok');
-    expect(p.receivedSen).toBe(3_000_000);
-    expect(p.instalments.map((i) => i.paidSen)).toEqual([3_000_000, 0, 0, 0]);
+    expect(v.receivedSen).toBe(4_000_000);
+    expect(v.orderPoolSen).toBe(1_000_000);
+    expect(v.orderPaidBeforeGoLiveSen).toBe(0);
   });
 
   test('money recorded after go-live fills after what was paid before it', () => {
@@ -108,5 +105,18 @@ describe('the billing view of a contract paid before go-live', () => {
     expect(v.receivedSen).toBe(250_000);
     expect(v.paidBeforeGoLiveSen).toBe(0);
     expect(v.instalments.every((i) => !i.billedBeforeGoLive && i.paidBeforeGoLiveSen === 0)).toBe(true);
+  });
+});
+
+describe('paidBeforeGoLiveOf: a contract seeded with only the whole amount AutoCount booked (golive_contract_sen)', () => {
+  test('HILLPARK E13A-01: seeded at the cut-over with no invoiced-before figure still reads as paid (chew, 23 Nov 2026)', async () => {
+    const { fakeSb } = await import('../src/scm/lib/fake-postgrest');
+    const { paidBeforeGoLiveOf } = await import('../src/acc/reno-paid-before-golive');
+    const sb = fakeSb({
+      mfg_sales_orders: [{ company_id: 1, doc_no: 'TC-SO-2607-010', debtor_code: '301-M232', so_date: '2026-07-01', status: 'CONFIRMED' }],
+      reno_so_contracts: [{ so_doc_no: 'TC-SO-2607-010', billed_before_golive_sen: 0, golive_contract_sen: 3_785_500 }],
+      sales_invoices: [], customer_credits: [],
+    });
+    expect((await paidBeforeGoLiveOf(sb, 1, ['TC-SO-2607-010'])).get('TC-SO-2607-010')).toBe(3_785_500);
   });
 });

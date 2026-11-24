@@ -13,6 +13,10 @@
 //     documents it stands for (acc/opening.ts) — opening invoices and bills as bills of their own date, opening
 //     customer credits and supplier opening vouchers as money against — and what the documents do not explain stays
 //     one line, "Opening balance not split", so the total is still the books';
+//   · AutoCount's own books between the start and the documents' cut-over (ACJ journals, acc/autocount-journals) are
+//     what the opening documents already stand at: once the date reaches the cut-over they join the OPENING line and
+//     are replaced by the same documents, never aged a second time beside them (chew, 23 Nov 2026: a customer read its
+//     opening invoice and AutoCount's invoice for it both, SAFFIRE RM 136,000 owed of RM 68,000);
 //   · a renovation contract posted whole to the customer at signing (RCON) and its changes (RVO, RCAN) belong to the
 //     contract's order, with the order's payments and credit notes;
 //   · there are no knock-off tables for notes in Conts: a credit / debit note joins the order or invoice its header
@@ -66,6 +70,23 @@ export type AgingLoad =
 export const OPENING_SOURCE = 'OPENING';
 /** The party of what the opening documents do not explain. */
 export const UNSPLIT_KEY = 'OPENING:UNSPLIT';
+/** The source type of AutoCount's books brought in after the start (acc/autocount-journals AUTOCOUNT_SOURCE). */
+export const AUTOCOUNT_SOURCE = 'ACJ';
+
+/** The documents' cut-over (acc_company_settings.documents_cutover_date), or null when none is set. */
+export async function documentsCutover(sb: Db, companyId: number): Promise<{ ok: true; day: string | null } | Fail> {
+  const { data, error } = await sb.from('acc_company_settings').select('documents_cutover_date').eq('company_id', companyId).maybeSingle();
+  if (error) return { ok: false, reason: `acc_company_settings: ${errText(error)}` };
+  const cut = day((data as Row | null)?.documents_cutover_date);
+  return { ok: true, day: /^\d{4}-\d{2}-\d{2}$/.test(cut) ? cut : null };
+}
+
+/** Whether a control line stands with the OPENING line: the opening journal itself, and, once the report reaches the
+    documents' cut-over, AutoCount's journals up to it (the opening documents are as at that day). */
+export function standsAsOpening(l: Pick<ControlLine, 'source_type' | 'entry_date'>, asOf: string, cutover: string | null): boolean {
+  if (l.source_type === OPENING_SOURCE) return true;
+  return cutover != null && asOf >= cutover && l.source_type === AUTOCOUNT_SOURCE && l.entry_date <= cutover;
+}
 
 const mytDate = (iso: unknown): string => new Date(Date.parse(String(iso)) + 8 * 3_600_000).toISOString().slice(0, 10);
 const uniq = (xs: Array<string | null | undefined>): string[] => [...new Set(xs.filter((x): x is string => !!x))];
@@ -297,12 +318,14 @@ export async function loadArAging(sb: Db, companyId: number, codes: readonly str
     return orderByNo.has(base) ? base : null;
   };
 
+  const cut = await documentsCutover(sb, companyId);
+  if (!cut.ok) return cut;
   const entries: AgingEntry[] = [];
   const openingLines: Array<{ line: ControlLine; amountSen: number }> = [];
   for (const l of lines) {
     const amountSen = l.debit_sen - l.credit_sen;
     if (amountSen === 0) continue;
-    if (l.source_type === OPENING_SOURCE) { openingLines.push({ line: l, amountSen }); continue; }
+    if (standsAsOpening(l, asOf, cut.day)) { openingLines.push({ line: l, amountSen }); continue; }
     const base = { docNo: l.source_doc_no ?? l.je_no, kind: l.source_type, date: l.entry_date, dueDate: null as string | null, amountSen };
     const doc = l.source_doc_no ?? '';
     let at: { group: string; party: AgingParty } | null = null;
@@ -514,12 +537,14 @@ export async function loadApAging(sb: Db, companyId: number, codes: readonly str
 
   const pvByNo = new Map(pvs.rows.map((v) => [String(v.pv_number), v]));
   const scnByNo = new Map(scns.rows.map((n) => [String(n.note_number), n]));
+  const cut = await documentsCutover(sb, companyId);
+  if (!cut.ok) return cut;
   const entries: AgingEntry[] = [];
   const openingLines: Array<{ line: ControlLine; amountSen: number }> = [];
   for (const l of lines) {
     const amountSen = l.credit_sen - l.debit_sen;
     if (amountSen === 0) continue;
-    if (l.source_type === OPENING_SOURCE) { openingLines.push({ line: l, amountSen }); continue; }
+    if (standsAsOpening(l, asOf, cut.day)) { openingLines.push({ line: l, amountSen }); continue; }
     const party = lineSupplier(l);
     const doc = l.source_doc_no ?? '';
     const base = { party, docNo: doc || l.je_no, date: l.entry_date, dueDate: null as string | null, amountSen };

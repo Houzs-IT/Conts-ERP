@@ -27,7 +27,6 @@ import {
   Printer,
   CheckCircle2,
   Package,
-  ArrowRightLeft,
   CalendarClock,
 } from "lucide-react";
 import { fetchPoExportRows } from "../../vendor/scm/lib/po-list-export";
@@ -39,7 +38,7 @@ import {
 } from "../../components/scm-v2/PoBulkSupplierDateModal";
 import { PoLineImportModal } from "../../components/scm-v2/PoLineImportModal";
 import { useAuth as useHouzsAuth } from "../../auth/AuthContext";
-import { canOperatePurchaseOrders } from "../../auth/salesAccess";
+import { canOperatePurchaseOrders, canOperateProductionOrders } from "../../auth/salesAccess";
 import { PageHeader } from "../../components/Layout";
 import { StatCard } from "../../components/StatCard";
 import { FilterPills } from "../../components/FilterPills";
@@ -254,10 +253,13 @@ function GrnDateCell({ grns }: { grns: PoHeaderRow["transfer_to_grns"] }) {
 
 function SplitDropdown({
   onFromSo,
+  onFromProduction,
   onImport,
   onDuplicate,
 }: {
   onFromSo: () => void;
+  /** Absent when the user may not run production orders: /material-pos is gated on that area. */
+  onFromProduction: (() => void) | null;
   /** Absent when the user may not edit purchase orders — the item is not offered. */
   onImport: (() => void) | null;
   onDuplicate: () => void;
@@ -290,8 +292,17 @@ function SplitDropdown({
               className="block w-full px-3.5 py-2 text-left text-[12.5px] text-ink hover:bg-primary-soft"
               onClick={() => { setOpen(false); onFromSo(); }}
             >
-              New from Sales Order
+              {transferFromLabel('so')}
             </button>
+            {onFromProduction && (
+              <button
+                type="button"
+                className="block w-full px-3.5 py-2 text-left text-[12.5px] text-ink hover:bg-primary-soft"
+                onClick={() => { setOpen(false); onFromProduction(); }}
+              >
+                Transfer from Production Order
+              </button>
+            )}
             {onImport && (
               <button
                 type="button"
@@ -462,7 +473,7 @@ function DetailDrawer({
                 <XIcon size={18} />
               </button>
               <div className="min-w-0 flex-1">
-                <div className="font-mono text-[14px] font-bold tracking-wide">
+                <div className="truncate whitespace-nowrap font-mono text-[14px] font-bold tracking-wide">
                   {row.po_number}
                 </div>
                 <div className="mt-0.5 text-[11px] text-sidebar-ink-muted">Purchase Order</div>
@@ -472,7 +483,7 @@ function DetailDrawer({
                 onClick={onOpenFull}
                 className="inline-flex items-center gap-1.5 rounded-md border border-accent-bright/40 px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-bright hover:bg-accent-bright/10"
               >
-                Open full page <ExternalLink size={12} />
+                <span className="hidden sm:inline">Open full page</span> <ExternalLink size={12} aria-label="Open full page" />
               </button>
               <Badge tone={st.tone} variant="solid" size="xs">
                 {st.label}
@@ -906,8 +917,10 @@ export function PurchaseOrdersListV2() {
     let received = 0;
     for (const r of visible.rows) {
       const t = totalOf(r);
-      committed += t;
       const b = statusFor(r.status).bucket;
+      /* Click sweep G20: a cancelled PO commits nothing (the header read RM 200 above the ALL chip). */
+      if (b === "cancelled") continue;
+      committed += t;
       if (b === "open" || b === "partial") outstanding += t;
       if (b === "received") received += t;
     }
@@ -1004,11 +1017,13 @@ export function PurchaseOrdersListV2() {
 
   const goNewPo = () => navigate("/scm/purchase-orders/new");
   const goFromSo = () => navigate("/scm/purchase-orders/from-so");
+  const goFromProduction = () => navigate("/scm/purchase-orders/from-production");
   /* `?import=1` opens the PO line import (owner 2026-09-15). The menu item used to
      navigate here with nothing reading the param
      (docs/bugs/0921-the-purchase-order-list-s-import-from-file-opened-nothing.md). URL is state, so a reload keeps the dialog open. */
   const { can, pageAccess } = useHouzsAuth();
   const mayImportLines = canOperatePurchaseOrders(can, pageAccess);
+  const mayRunProduction = canOperateProductionOrders(can, pageAccess);
   const importOpen = mayImportLines && params.get("import") === "1";
   const goImport = () => {
     const next = new URLSearchParams(params);
@@ -1491,13 +1506,6 @@ export function PurchaseOrdersListV2() {
             description="Every PO raised to a supplier — Draft to Received. Click any row for the quick view; open the full page to edit or receive."
             primaryAction={
               <div className="flex items-stretch gap-2">
-                <Button
-                  variant="secondary"
-                  icon={<ArrowRightLeft size={14} />}
-                  onClick={goFromSo}
-                >
-                  {transferFromLabel('so')}
-                </Button>
                 <div className="flex items-stretch">
                   <Button
                     variant="primary"
@@ -1507,7 +1515,7 @@ export function PurchaseOrdersListV2() {
                   >
                     New Purchase Order
                   </Button>
-                  <SplitDropdown onFromSo={goFromSo} onImport={mayImportLines ? goImport : null} onDuplicate={goDuplicate} />
+                  <SplitDropdown onFromSo={goFromSo} onFromProduction={mayRunProduction ? goFromProduction : null} onImport={mayImportLines ? goImport : null} onDuplicate={goDuplicate} />
                 </div>
               </div>
             }

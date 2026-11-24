@@ -293,7 +293,7 @@
  "GET /api/units/scheduled-changes": "AAAAFFFU",
  "GET /api/units/stays": "AAAAFFFU",
  "GET /api/users": "AAFFFFFU",
- "GET /api/users/[id]/access": "AFFFFFFU",
+ "GET /api/users/[id]/access": "AAFFFFFU",
  "GET /api/users/[id]/category-access": "AFFFFFFU",
  "GET /api/users/access": "AAFFFFFU",
  "GET /api/users/category-access": "AFFFFFFU",

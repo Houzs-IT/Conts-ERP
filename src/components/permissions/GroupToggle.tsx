@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import Icon from '../Icon';
 import { cx } from '../../lib/design-tokens';
 
@@ -8,9 +9,10 @@ export interface GroupToggleProps {
   onToggle: () => void;
   className: string;
   labelClassName: string;
+  trailing?: ReactNode;
 }
 
-export function GroupToggle({ label, note, isOpen, onToggle, className, labelClassName }: GroupToggleProps) {
+export function GroupToggle({ label, note, isOpen, onToggle, className, labelClassName, trailing }: GroupToggleProps) {
   return (
     <button type="button" onClick={onToggle} aria-expanded={isOpen}
       className={cx('flex w-full items-center gap-2 text-left border-0 [font-family:inherit] cursor-pointer min-h-10 max-md:min-h-11',
@@ -19,7 +21,8 @@ export function GroupToggle({ label, note, isOpen, onToggle, className, labelCla
         <Icon name="ChevronDown" size="sm" />
       </span>
       <span className={labelClassName}>{label}</span>
-      <span className="text-caption text-muted-ink">{note}</span>
+      <span className="text-caption text-muted-ink whitespace-nowrap">{note}</span>
+      {trailing && <span className="ml-auto flex-none">{trailing}</span>}
     </button>
   );
 }

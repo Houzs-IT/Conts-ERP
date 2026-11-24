@@ -334,6 +334,37 @@ type CheckDoc = {
 type ContractLine = { source_type: string; source_doc_no: string | null; account_code: string; debit_sen: number; credit_sen: number; reversed: boolean | null };
 /** The contract journals of acc/reno-ledger.ts: signing, change, cancel. */
 const CONTRACT_SOURCES = ['RCON', 'RVO', 'RCAN'];
+/** A payment taken on an order, and money moved between orders (acc/payments). */
+const ORDER_MONEY_SOURCES = ['SOPAY', 'SOCONV'];
+
+/** What payment vouchers settled on each bill (purchase invoice or AP invoice, by id) after the day: a voucher by its
+    date, a supplier advance applied to a bill by the day it was applied (Kuala Lumpur). Cancelled and draft vouchers
+    have settled nothing. */
+async function paidAfter(sb: Db, companyId: number, day: string): Promise<{ ok: true; bySen: Map<string, number> } | { ok: false; error: string }> {
+  const allocs = await paginateAll((from, to) => sb.from('pv_allocations').select('id, pv_id, pi_id, ap_invoice_id, applied_sen, from_advance, created_at')
+    .eq('company_id', companyId).order('id').range(from, to));
+  if (allocs.error) return { ok: false, error: (allocs.error as { message?: string }).message ?? String(allocs.error) };
+  const rows = ((allocs.data ?? []) as Array<{ pv_id: string; pi_id: string | null; ap_invoice_id: string | null; applied_sen: number; from_advance: boolean | null; created_at: string | null }>)
+    .filter((a) => Number(a.applied_sen) > 0 && (a.pi_id || a.ap_invoice_id));
+  const pvIds = [...new Set(rows.map((a) => String(a.pv_id)))];
+  const pvs = new Map<string, { voucher_date: string; status: string }>();
+  for (let i = 0; i < pvIds.length; i += 200) {
+    const { data, error } = await sb.from('payment_vouchers').select('id, voucher_date, status').in('id', pvIds.slice(i, i + 200));
+    if (error) return { ok: false, error: (error as { message?: string }).message ?? String(error) };
+    for (const v of (data ?? []) as Array<{ id: string; voucher_date: string; status: string }>) pvs.set(String(v.id), v);
+  }
+  const klDay = (ts: string) => new Date(new Date(ts).getTime() + 8 * 3600_000).toISOString().slice(0, 10);
+  const bySen = new Map<string, number>();
+  for (const a of rows) {
+    const v = pvs.get(String(a.pv_id));
+    if (!v || ['CANCELLED', 'DRAFT'].includes(String(v.status).toUpperCase())) continue;
+    const paidOn = a.from_advance === true && a.created_at ? klDay(a.created_at) : String(v.voucher_date).slice(0, 10);
+    if (paidOn <= day) continue;
+    const bill = String(a.ap_invoice_id ?? a.pi_id);
+    bySen.set(bill, (bySen.get(bill) ?? 0) + Number(a.applied_sen));
+  }
+  return { ok: true, bySen };
+}
 
 /** The figures on the opening day, side by side with what explains them. The documents side is the ageing as it
     stands for that day: the opening documents at their imported amount, plus anything raised in the ERP and dated
@@ -349,17 +380,22 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
     activeOpening(sb, companyId),
     paginateAll((from, to) => sb.from('accounts').select('account_code, account_name, acc_money, special_type').eq('company_id', companyId).order('account_code').range(from, to)),
     allDocs<CheckDoc>(sb, 'sales_invoices', companyId, `${DOC_COLS}, id, debtor_code, so_doc_no`),
-    allDocs<CheckDoc>(sb, 'purchase_invoices', companyId, `${DOC_COLS}, supplier_id`),
+    allDocs<CheckDoc>(sb, 'purchase_invoices', companyId, `${DOC_COLS}, id, supplier_id`),
     paginateAll((from, to) => sb.from('suppliers').select('id, code, control_account').eq('company_id', companyId).order('id').range(from, to)),
     paginateAll((from, to) => sb.from('debtors').select('code, control_account').eq('company_id', companyId).order('code').range(from, to)),
     /* What was paid ahead before the books started: it nets each control down (chew, 17 Nov 2026). */
     paginateAll((from, to) => sb.from('customer_credits').select('debtor_code, amount_sen').eq('company_id', companyId).eq('source_type', OPENING_CREDIT).order('id').range(from, to)),
     paginateAll((from, to) => sb.from('payment_vouchers').select('id, supplier_id, total_sen, status').eq('company_id', companyId).eq('opening_balance', true).order('id').range(from, to)),
     /* The ERP's own supplier bills (the AP invoices page), beside the procurement ones. */
-    allDocs<CheckDoc>(sb, 'ap_invoices', companyId, 'total_sen, paid_sen, status, invoice_date, supplier_id'),
+    allDocs<CheckDoc>(sb, 'ap_invoices', companyId, 'id, total_sen, paid_sen, status, invoice_date, supplier_id'),
     paginateAll((from, to) => sb.from('v_gl_entries').select('source_type, source_doc_no, account_code, debit_sen, credit_sen, reversed')
       .eq('company_id', companyId).in('source_type', CONTRACT_SOURCES).lte('entry_date', day.day).order('line_id').range(from, to)),
   ]);
+  /* Money the ERP took on orders by the day (chew, 23 Nov 2026: the ERP's books start on the ledger start, so a payment
+     recorded in the ERP before the cut-over is not in AutoCount's open documents). */
+  const orderMoney = await paginateAll((from, to) => sb.from('v_gl_entries').select('source_type, account_code, debit_sen, credit_sen, reversed')
+    .eq('company_id', companyId).in('source_type', ORDER_MONEY_SOURCES).lte('entry_date', day.day).order('line_id').range(from, to));
+  if (orderMoney.error) return { ok: false, error: `The order payments could not be read: ${(orderMoney.error as { message?: string }).message ?? ''}` };
   if (!sums.ok) return { ok: false, error: `The ledger could not be read: ${sums.reason}` };
   if (!opening.ok) return { ok: false, error: `The journal could not be read: ${opening.error}` };
   if (chart.error) return { ok: false, error: `The chart could not be read: ${(chart.error as { message?: string }).message ?? ''}` };
@@ -370,6 +406,9 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
   if (credits.error) return { ok: false, error: `The customer credits could not be read: ${(credits.error as { message?: string }).message ?? ''}` };
   if (advances.error) return { ok: false, error: `The payment vouchers could not be read: ${(advances.error as { message?: string }).message ?? ''}` };
   if (!apis.ok) return { ok: false, error: `The AP invoices could not be read: ${apis.error}` };
+  /* A bill's paid_sen is what is paid today; on the day it owed what had not been paid by then (chew, 23 Nov 2026). */
+  const paidLater = await paidAfter(sb, companyId, day.day);
+  if (!paidLater.ok) return { ok: false, error: `The supplier payments could not be read: ${paidLater.error}` };
   /* The deposit an ERP invoice was settled from is not on the invoice; it is worked out from its order the way the
      invoice list does (scm/lib/si-order-deposit.ts). A failed read leaves it unknown, so the invoice counts in full. */
   await stampOrderDeposit(sb, sis.rows.filter((d) => d.opening_balance !== true && d.so_doc_no), companyId);
@@ -388,7 +427,8 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
     if (st === 'CANCELLED' || st === 'DRAFT' || d.migrated_no_stock === true) return null;
     if (d.opening_balance === true) return { sen: Number(d.total_sen ?? 0), erp: false };
     if (!d.invoice_date || d.invoice_date > day.day) return null;
-    return { sen: Number(d.total_sen ?? 0) - Number(d.paid_sen ?? 0) - Number(d.so_deposit_applied_sen ?? 0), erp: true };
+    const later = d.id ? paidLater.bySen.get(String(d.id)) ?? 0 : 0;
+    return { sen: Number(d.total_sen ?? 0) - Number(d.paid_sen ?? 0) + later - Number(d.so_deposit_applied_sen ?? 0), erp: true };
   };
   /* Each contract's net on its customer's control (a change or cancel is numbered <SO>-n), less what the ERP has
      invoiced on that order by the day: what the customer is down for that no invoice shows yet. */
@@ -429,7 +469,7 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
      (its control_account, else the 405- rule) — where every posting puts them. Every customer and supplier control
      of the chart gets a line, with documents or not (an opening balance there has to be explained too); the other
      debtors control (AR_OTHER) belongs to the Other Debtors bills, not to invoices, and stays out. */
-  const arOf = (d: CheckDoc) => debtorControlOf.get(String(d.debtor_code ?? '')) ?? roles.AR;
+  const arOf = (d: CheckDoc & { control?: string }) => d.control ?? debtorControlOf.get(String(d.debtor_code ?? '')) ?? roles.AR;
   const apOf = (d: CheckDoc) => {
     const sup = supplierOf.get(String(d.supplier_id));
     return apControlOf(roles, { code: sup?.code ?? null, control_account: sup?.control_account ?? null });
@@ -441,7 +481,26 @@ export async function openingCheck(sb: Db, companyId: number): Promise<OpeningCh
     .map((x): CheckDoc => ({ total_sen: -Number(x.amount_sen), paid_sen: 0, status: 'SENT', invoice_date: null, opening_balance: true, migrated_no_stock: false, debtor_code: x.debtor_code }));
   const aheadAp = ((advances.data ?? []) as Array<{ supplier_id: string; total_sen: number; status: string }>)
     .map((x): CheckDoc => ({ total_sen: -Number(x.total_sen), paid_sen: 0, status: x.status, invoice_date: null, opening_balance: true, migrated_no_stock: false, supplier_id: x.supplier_id }));
-  const arDocs = [...sis.rows, ...aheadAr];
+  /* Money on orders, as minus documents on its control: what the ERP took on an order (its SOPAY line) less what of it
+     settled an ERP invoice (that invoice already counts net of it, so_deposit_applied_sen). */
+  const onOrdersOf = new Map<string, number>();
+  /* Only the customer side of the payment: the money side (a bank, a clearing account) is no control. */
+  const arControls = new Set([...debtorControlOf.values(), roles.AR,
+    ...((chart.data ?? []) as Array<{ account_code: string; special_type?: string | null }>).filter((a) => a.special_type === 'SDC').map((a) => a.account_code)]);
+  for (const l of ((orderMoney.data ?? []) as Array<{ account_code: string; debit_sen: number; credit_sen: number; reversed: boolean | null }>)) {
+    if (l.reversed === true || !arControls.has(l.account_code)) continue;
+    onOrdersOf.set(l.account_code, (onOrdersOf.get(l.account_code) ?? 0) + Number(l.debit_sen) - Number(l.credit_sen));
+  }
+  for (const d of sis.rows) {
+    const o = d.opening_balance === true ? null : owed(d);
+    const applied = Number(d.so_deposit_applied_sen ?? 0);
+    if (!o || applied === 0) continue;
+    const code = debtorControlOf.get(String(d.debtor_code ?? '')) ?? roles.AR;
+    onOrdersOf.set(code, (onOrdersOf.get(code) ?? 0) + applied);
+  }
+  const onOrders = [...onOrdersOf].filter(([, sen]) => sen !== 0)
+    .map(([code, sen]): CheckDoc & { control: string } => ({ total_sen: sen, paid_sen: 0, status: 'SENT', invoice_date: null, opening_balance: true, migrated_no_stock: false, control: code }));
+  const arDocs = [...sis.rows, ...aheadAr, ...onOrders];
   const apDocs = [...pis.rows, ...aheadAp, ...apis.rows.map((d): CheckDoc => ({ ...d, opening_balance: false, migrated_no_stock: false }))];
   const arCodes = ordered([roles.AR], [...arDocs.map(arOf), ...chartRows.filter((a) => a.special_type === 'SDC' && a.account_code !== roles.AR_OTHER).map((a) => a.account_code)]);
   const apCodes = ordered([roles.AP, roles.AP_OTHER], [...apDocs.map(apOf), ...chartRows.filter((a) => a.special_type === 'SCC').map((a) => a.account_code)]);

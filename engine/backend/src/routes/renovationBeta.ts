@@ -28,9 +28,9 @@ import {
   cleanDesignApproval, cleanDesignSent, defectMoveRefusal, designLabel, type BetaPayments, type DefectMove,
 } from "../services/renovation/beta";
 import {
-  BETA_AMENDMENT_DAYS, bookingPeopleOf, buildBoardProject, cleanBetaAppointment, cleanBetaDesign, cleanBetaEvent, cleanBetaEventPatch, cleanBoardRange, cleanNoteDays,
-  designChangeNote, designPersonIds, groupByProject, isAppointmentKind, paymentLabel, rolesOf,
-  type BetaDesignPatch, type BetaEventPatch, type BoardAppointmentRow, type BoardFileRow, type BoardNoteRow, type BoardPayment, type BoardProjectRow,
+  BETA_AMENDMENT_DAYS, boardPersonOf, bookingPeopleOf, buildBoardProject, cleanBetaAppointment, cleanBetaDesign, cleanBetaEvent, cleanBetaEventPatch, cleanBoardRange, cleanNoteDays,
+  designChangeNote, designPersonIds, groupByProject, isAppointmentKind, paymentLabel,
+  type BetaDesignPatch, type BetaEventPatch, type BoardAppointmentRow, type BoardFileRow, type BoardNoteRow, type BoardPayment, type BoardPersonRow, type BoardProjectRow,
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
@@ -55,6 +55,7 @@ import { chainTimeline, statusWords } from "../services/renovation/betaTimelineC
 import { datedAt, plainEntry, readProjectTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineDoc, type TimelineEntry } from "../services/renovation/timeline";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
 import { attachmentsReady, linkedFilesFor, listFilesFor, orderLineFiles, podFilesFor, textArray, type DocFile } from "../scm/lib/doc-attachments";
+import { brandVisibleSql, loadBrandSide } from "../services/projectBrandScope";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -451,8 +452,6 @@ async function companyPeople(c: Ctx, companyId: number, ids: readonly number[]):
 
 const PERSON_REFUSAL = { error: "person_invalid", message: "That person is not on this company's list." } as const;
 
-interface BoardPersonRow { id: number; name: string; roles: unknown; position: string | null; department: string | null; offered: boolean }
-
 /* The board's people follow the project page's people list (routes/renovationProject.ts GET /people; owner,
    14 Oct 2026): the list is brought in line with the user accounts first, and `offered` is true only for people
    linked to an active account, labelled with the account's position and department. Every person of the company
@@ -467,10 +466,13 @@ async function boardPeople(c: Ctx, companyId: number): Promise<BoardPersonRow[]>
   }
   const res = await db(c).prepare(
     fromUsers
-      ? `SELECT pp.id::int AS id, pp.name, to_json(pp.roles) AS roles, s.position, s.department, (pp.pos_user_id IS NOT NULL AND pp.active) AS offered
+      ? `SELECT pp.id::int AS id, pp.name, to_json(pp.roles) AS roles, s.position, s.department, (pp.pos_user_id IS NOT NULL AND pp.active) AS offered,
+                (SELECT m.id::int FROM project_people m
+                  WHERE m.company_id = pp.company_id AND m.pos_user_id::text = to_jsonb(s)->>'manager_id'
+                  ORDER BY (m.pos_user_id IS NOT NULL AND m.active) DESC, m.id LIMIT 1) AS manager_person_id
            FROM project_people pp LEFT JOIN conts_staff s ON s.id = pp.pos_user_id
           WHERE pp.company_id = ? ORDER BY lower(pp.name), pp.id`
-      : `SELECT id::int AS id, name, to_json(roles) AS roles, NULL AS position, NULL AS department, active AS offered
+      : `SELECT id::int AS id, name, to_json(roles) AS roles, NULL AS position, NULL AS department, active AS offered, NULL AS manager_person_id
            FROM project_people WHERE company_id = ? ORDER BY lower(name), id`,
   ).bind(companyId).all<BoardPersonRow>();
   return res.results ?? [];
@@ -530,8 +532,9 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
   const seeAll = hasPermission(user?.permissions_set ?? user?.permissions ?? [], "projects.manage");
   const team = seeAll ? null : await teamPersonIds(db(c), user?.id, user?.email);
   const teamSql = team == null ? "" : ` AND ${teamProjectSql(team)}`;
-  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${projectId == null ? "" : ` AND p.id = ${projectId}`}${teamSql}`;
-  const eventScope = `${projectId == null ? "" : ` AND e.project_id = ${projectId}`}${team == null ? "" : ` AND (e.person_id IN (${[0, ...team].join(",")}) OR e.person_ids && ARRAY[${[0, ...team].join(",")}]::bigint[] OR (e.project_id IS NOT NULL${teamSql}))`}`;
+  const brandSql = brandVisibleSql(await loadBrandSide(db(c), user));
+  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${projectId == null ? "" : ` AND p.id = ${projectId}`}${teamSql}${brandSql}`;
+  const eventScope = `${projectId == null ? "" : ` AND e.project_id = ${projectId}`}${team == null ? "" : ` AND (e.person_id IN (${[0, ...team].join(",")}) OR e.person_ids && ARRAY[${[0, ...team].join(",")}]::bigint[] OR (e.project_id IS NOT NULL${teamSql}))`}${brandSql ? ` AND (e.project_id IS NULL OR (TRUE${brandSql}))` : ""}`;
   const hidden = financeHiddenForUser(user);
   try {
     // One query per data set over the whole scoped project list, grouped in code below.
@@ -616,9 +619,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       files: groupByProject(files.results ?? []), notes: groupByProject(notes.results ?? []),
       reviews: groupByProject(reviews.results ?? []), appointments: groupByProject(appointments.results ?? []),
     };
-    const peopleList = people.map((p) => ({
-      id: Number(p.id), name: p.name, roles: rolesOf(p.roles), position: p.position ?? null, department: p.department ?? null, offered: !!p.offered,
-    }));
+    const peopleList = people.map(boardPersonOf);
     const mine = new Set(meIds);
     const paymentOf = (projectId: number): BoardPayment => (hidden ? { state: "hidden" } : payments.get(projectId) ?? { state: "none" });
     return c.json({

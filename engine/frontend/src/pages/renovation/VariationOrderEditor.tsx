@@ -4,7 +4,7 @@
 // up the difference, and PO lines that bought omitted work are flagged.
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Package, Printer, Save, Send } from 'lucide-react';
 import { QuotationSoPrint } from '../scm-v2/renovationQuotationPrint';
 import { PageHeader } from '../../components/Layout';
@@ -13,7 +13,7 @@ import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapMod
 import { useAuth } from '../../auth/AuthContext';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { lineAmounts, qtyLabel } from '../../vendor/shared/renovation-money';
-import { contractPostingWarning, refusalOf, renoSend, sectionsForSave, useBrands, useContract, useRenoMutation, useVo, type ContractPosting, type DocHeader, type DocLine, type DocSection } from '../../lib/renovation/api';
+import { contractPostingWarning, refusalOf, renoSend, sectionsForSave, useBrands, useContract, useRenoMutation, useVo, type ContractPosting, type DocHeader, type DocLine, type DocSection, type VoView } from '../../lib/renovation/api';
 import { useToast } from '../../hooks/useToast';
 import { amountsOf, blankSection, DocEditor } from './DocEditor';
 import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
@@ -26,12 +26,18 @@ import { usePackages } from '../../lib/renovation/renovationPackagesApi';
 import { PackageConfirmDialog, PackagePickerDialog, type PackageAdd } from './renovationPackagePick';
 import { PkgMark } from './renovationPackageParts';
 import { withPackageAdd } from './renovationPackageAdd';
+import type { VoEdits } from '../../lib/renovation/api';
+import { ACTION_BUTTON, VoRoomEditor } from './VoRoomEditor';
+import { EMPTY_EDITS, isPreRoomDraft, packageAdds, roomsOf, totalsOf } from './voRoomModel';
 
 /* Packages (owner, 20 Nov 2026): a package or kit picked in the product search or with From package opens its confirm
    dialog; the ticked lines join the Add part as additions, each remembering the package. A kit with no area goes into
    the area the user is in. The banner says what came from each package; Change picks reopens the dialog, Remove these
    lines takes them all out. None of it is printed. */
 interface ConfirmOpen { packageId: string; defaultArea: string; sectionIndex: number | null; lineIndex: number | null; replace: boolean }
+
+/* 16px on phones so iOS does not zoom into the field; cn only joins classes, so the size is swapped, not added. */
+const PHONE_INPUT = inputCls.replace('text-[13px]', 'text-[16px] lg:text-[13px]');
 
 interface OmitPick { lineId: string; omitQty: number | null }
 
@@ -44,8 +50,12 @@ function omitAmount(l: DocLine, omitQty: number | null): number {
 
 export function VariationOrderEditor() {
   const { id } = useParams();
-  const vo = useVo(id);
-  const contract = useContract(vo.data?.soDocNo);
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  /* New VO opens /variation-orders/new?so=<docNo>: nothing is created until the first save with a change. */
+  const newSo = id === 'new' ? params.get('so') : null;
+  const vo = useVo(newSo ? undefined : id);
+  const contract = useContract(vo.data?.soDocNo ?? newSo ?? undefined);
   const brands = useBrands();
   const { can } = useAuth();
   const toast = useToast();
@@ -53,6 +63,10 @@ export function VariationOrderEditor() {
   const [docDate, setDocDate] = useState(todayIso());
   const [adds, setAdds] = useState<DocSection[]>([]);
   const [omits, setOmits] = useState<OmitPick[]>([]);
+  const [edits, setEdits] = useState<VoEdits>(EMPTY_EDITS);
+  /* A VO built in the Add and Omit layout, and any approved or cancelled VO, keeps that layout. */
+  const roomMode = Boolean(newSo) || Boolean(vo.data && vo.data.status !== 'APPROVED' && vo.data.status !== 'CANCELLED'
+    && (vo.data.edits || (vo.data.status === 'DRAFT' && vo.data.sections.length === 0)));
   const [dirty, setDirty] = useState(false);
   /* Saved, and the server's copy is on its way: the form stays shut until it lands, or the refetch would replace what was typed meanwhile. */
   const [settling, setSettling] = useState(false);
@@ -61,7 +75,6 @@ export function VariationOrderEditor() {
   const [signedName, setSignedName] = useState('');
   const [printOpen, setPrintOpen] = useState(false);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
-  const [params, setParams] = useSearchParams();
   const packages = usePackages();
   const pkgById = useMemo(() => new Map((packages.data?.packages ?? []).map((x) => [x.id, x])), [packages.data]);
   const packageCodes = useMemo(() => Object.fromEntries([...pkgById.values()].map((x) => [x.id, x.code])), [pkgById]);
@@ -70,19 +83,30 @@ export function VariationOrderEditor() {
   const addPackage = (a: PackageAdd) => {
     if (!confirm) return;
     const kind = pkgById.get(a.packageId)?.kind ?? 'PACKAGE';
-    setAdds((cur) => withPackageAdd(cur, a, kind, confirm, confirm.replace));
+    if (roomMode) {
+      const r = packageAdds(edits, a.sections, a.packageId, confirm.defaultArea, confirm.replace);
+      setEdits(r.edits);
+      if (r.skipped) toast.warning(`${r.skipped} line(s) of ${a.code} have no product, or are measured, free or discounted, so they were left out.`);
+    } else {
+      setAdds((cur) => withPackageAdd(cur, a, kind, confirm, confirm.replace));
+    }
     setTitle((cur) => (cur.trim() ? cur : `From package ${a.code}`));
     setDirty(true);
     setConfirm(null);
     toast.success(`${a.code} added. Check the lines, then save.`);
   };
-  const lastArea = (): string => [...adds].reverse().find((s) => s.heading.trim())?.heading ?? '';
+  const lastArea = (): string => (roomMode ? edits.adds[edits.adds.length - 1]?.room ?? '' : [...adds].reverse().find((s) => s.heading.trim())?.heading ?? '');
   /* An old From template link (?template=) still works: the template's sections go into the Add part. */
   const addTemplate = async (templateId: string): Promise<void> => {
     if (!templateId) return;
     try {
       const t = await loadTemplateSections(templateId);
-      setAdds((cur) => [...cur.filter((s) => s.lines.some((l) => l.itemCode || l.description.trim())), ...t.sections]);
+      if (roomMode) {
+        const r = packageAdds(edits, t.sections, null, '', false);
+        setEdits(r.edits);
+        if (r.skipped) toast.warning(`${r.skipped} line(s) of ${t.name} have no product, or are measured, free or discounted, so they were left out.`);
+      }
+      else setAdds((cur) => [...cur.filter((s) => s.lines.some((l) => l.itemCode || l.description.trim())), ...t.sections]);
       setTitle((cur) => cur.trim() ? cur : `From package template ${t.name}`);
       setDirty(true);
       toast.success(`${t.name} added. Check the lines, then save.`);
@@ -98,33 +122,40 @@ export function VariationOrderEditor() {
       .filter((s) => s.lines.length > 0);
     setAdds(addSections.length ? addSections : vo.data.status === 'DRAFT' ? [blankSection('ADD ON :')] : []);
     setOmits(vo.data.sections.flatMap((s) => s.lines.filter((l) => l.voChange === 'OMIT' && l.omitTargetLineId).map((l) => ({ lineId: l.omitTargetLineId!, omitQty: l.omitQty ?? null }))));
+    setEdits(vo.data.edits ?? EMPTY_EDITS);
     setSignedName(vo.data.signedName ?? '');
     setDirty(false);
     setSettling(false);
   }, [vo.data]);
   const fromPackage = params.get('package');
   useEffect(() => {
-    if (!fromPackage || !vo.data || vo.data.status !== 'DRAFT') return;
+    if (!fromPackage || (!newSo && vo.data?.status !== 'DRAFT')) return;
     setParams((p) => { const n = new URLSearchParams(p); n.delete('package'); return n; }, { replace: true });
     setConfirm({ packageId: fromPackage, defaultArea: '', sectionIndex: null, lineIndex: null, replace: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the VO has loaded
   }, [fromPackage, vo.data?.id]);
   const fromTemplate = params.get('template');
   useEffect(() => {
-    if (!fromTemplate || !vo.data || vo.data.status !== 'DRAFT') return;
+    if (!fromTemplate || (!newSo && vo.data?.status !== 'DRAFT')) return;
     setParams((p) => { const n = new URLSearchParams(p); n.delete('template'); return n; }, { replace: true });
     void addTemplate(fromTemplate);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the VO has loaded
   }, [fromTemplate, vo.data?.id]);
 
-  const draftValue = useMemo(() => ({ title, docDate, adds, omits }), [title, docDate, adds, omits]);
+  const draftValue = useMemo(() => ({ title, docDate, adds, omits, edits }), [title, docDate, adds, omits, edits]);
   const draft = useRenovationDraft(
     vo.data?.status === 'DRAFT' && can('scm.renovation.quote') ? `vo:${vo.data.id}` : null,
     draftValue, dirty, vo.data?.version ?? null,
   );
   const restoreDraft = () => {
-    const d = draft.offered?.v;
-    if (d) { setTitle(d.title); setDocDate(d.docDate); setAdds(d.adds); setOmits(d.omits); setDirty(true); }
+    /* Drafts kept in the browser before the room editor have no `edits`. */
+    const offeredDraft: (Omit<typeof draftValue, 'edits'> & { edits?: VoEdits }) | undefined = draft.offered?.v;
+    if (offeredDraft && roomMode && isPreRoomDraft(offeredDraft)) {
+      setError('That unsaved draft was made in the old Add and Omit layout and cannot be opened here. Make the changes again below.');
+    } else if (offeredDraft) {
+      setTitle(offeredDraft.title); setDocDate(offeredDraft.docDate); setAdds(offeredDraft.adds); setOmits(offeredDraft.omits);
+      setEdits(offeredDraft.edits ?? EMPTY_EDITS); setDirty(true);
+    }
     draft.answer(true);
   };
 
@@ -132,13 +163,19 @@ export function VariationOrderEditor() {
     .filter((l) => (l.kind === 'ITEM' || l.kind === 'CHILD') && !l.omittedByVoId && !l.soItemCancelled)
     .map((l) => ({ section: s.heading, line: l })))), [contract.data]);
 
-  if (vo.isLoading || !vo.data) return <div className="p-8 text-center text-[13px] text-ink-muted">{vo.error ? refusalOf(vo.error).message : 'Loading variation order…'}</div>;
-  const v = vo.data;
+  const unsaved: VoView | null = newSo ? {
+    id: '', voNo: 'New variation order', soDocNo: newSo, seq: 0, status: 'DRAFT', title: '', docDate: todayIso(), version: 0, signedName: null,
+    signedAt: null, approvedAt: null, approvedBy: null, amendmentId: null, sections: [], totals: { addSen: 0, omitSen: 0, netSen: 0 },
+  } : null;
+  const v = unsaved ?? vo.data;
+  if (!v) return <div className="p-8 text-center text-[13px] text-ink-muted">{vo.error ? refusalOf(vo.error).message : 'Loading variation order…'}</div>;
   const editable = v.status === 'DRAFT' && can('scm.renovation.quote');
   const locked = !editable || run.isPending || (settling && vo.isFetching);
   const filesEditable = v.status !== 'CANCELLED' && can('scm.renovation.quote');
-  const addSen = adds.reduce((s, sec) => s + sec.lines.reduce((t, l) => t + amountsOf(l).netSen, 0), 0);
-  const omitSen = v.status === 'APPROVED' ? v.totals.omitSen : omits.reduce((s, o) => {
+  /* Saved: the server's own add and omit lines (a changed line can be an omit plus an add). Unsaved: the editor's estimate. */
+  const roomTotals = !roomMode ? null : dirty && contract.data ? totalsOf(roomsOf(contract.data.sections, edits)) : { addSen: v.totals.addSen, omitSen: v.totals.omitSen };
+  const addSen = roomTotals ? roomTotals.addSen : adds.reduce((s, sec) => s + sec.lines.reduce((t, l) => t + amountsOf(l).netSen, 0), 0);
+  const omitSen = roomTotals ? roomTotals.omitSen : v.status === 'APPROVED' ? v.totals.omitSen : omits.reduce((s, o) => {
     const t = targets.find((x) => x.line.id === o.lineId);
     return s + (t ? omitAmount(t.line, o.omitQty) : 0);
   }, 0);
@@ -165,7 +202,16 @@ export function VariationOrderEditor() {
     setError(null);
     try { await run.mutateAsync(fn); return true; } catch (e) { setError(refusalOf(e).message); return false; }
   };
-  const save = () => act(() => renoSend(`/variation-orders/${v.id}`, 'PUT', { version: v.version, title, docDate, sections: bodySections() })).then((ok) => { if (ok) { setDirty(false); setSettling(true); draft.clear(); } });
+  const create = async (): Promise<void> => {
+    if (!edits.lines.length && !edits.adds.length && !title.trim()) { setError('Change, add or remove a line first.'); return; }
+    let made: { id: string } | undefined;
+    const ok = await act(async () => { made = await renoSend<{ id: string }>(`/sales-orders/${encodeURIComponent(v.soDocNo)}/variation-orders`, 'POST', { title, docDate, edits }); });
+    if (ok && made) { setDirty(false); navigate(`/scm/renovation/variation-orders/${made.id}`, { replace: true }); }
+  };
+  const save = () => (unsaved ? create() : act(() => (roomMode
+    ? renoSend(`/variation-orders/${v.id}/edits`, 'PUT', { version: v.version, title, docDate, edits })
+    : renoSend(`/variation-orders/${v.id}`, 'PUT', { version: v.version, title, docDate, sections: bodySections() }))).then((ok) => { if (ok) { setDirty(false); setSettling(true); draft.clear(); } }));
+  const openPrint = () => (roomMode && dirty ? setError('Save your changes first, then print.') : setPrintOpen(true));
   const setStatus = async (to: string, confirm?: string) => {
     if (confirm && !(await serviceConfirm({ title: confirm, danger: to === 'CANCELLED' }))) return;
     if (dirty) { setError('Save your changes first.'); return; }
@@ -184,7 +230,8 @@ export function VariationOrderEditor() {
   };
   const toggleOmit = (lineId: string, on: boolean) => { setOmits(on ? [...omits, { lineId, omitQty: null }] : omits.filter((o) => o.lineId !== lineId)); setDirty(true); };
   const brand = brands.data?.brands.find((b) => b.brandId === contract.data?.header.brandId);
-  const printSections: DocSection[] = [
+  /* Room mode prints the add and omit lines the server rebuilt from the saved edits. */
+  const printSections: DocSection[] = roomMode ? v.sections : [
     ...adds,
     ...(omits.length ? [{
       heading: 'OMIT', bandColor: '#f5c6e6', lumpSumSen: null, pageBreakBefore: false,
@@ -207,14 +254,14 @@ export function VariationOrderEditor() {
         actions={(
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill status={v.status} />
-            <Button variant="secondary" icon={<Printer size={15} />} onClick={() => setPrintOpen(true)}>Print</Button>
+            {!unsaved && <Button variant="secondary" icon={<Printer size={15} />} onClick={openPrint}>Print</Button>}
             {editable && <Button icon={<Save size={15} />} disabled={!dirty || run.isPending} onClick={save}>Save</Button>}
           </div>
         )}
       />
       <ErrorBanner error={error} onClose={() => setError(null)} />
       {draft.offered && <RenovationDraftBanner savedAt={draft.offered.ts} stale={draft.stale} onRestore={restoreDraft} onDiscard={() => draft.answer(false)} />}
-      {v.status !== 'APPROVED' && v.status !== 'CANCELLED' && can('scm.renovation.quote') && (
+      {!unsaved && v.status !== 'APPROVED' && v.status !== 'CANCELLED' && can('scm.renovation.quote') && (
         <div className="flex flex-wrap gap-2">
           {v.status === 'DRAFT' && <Button variant="secondary" icon={<Send size={15} />} onClick={() => setStatus('SENT')}>Mark sent for signature</Button>}
           {v.status === 'SENT' && <Button variant="ghost" onClick={() => setStatus('DRAFT')}>Back to draft</Button>}
@@ -227,10 +274,25 @@ export function VariationOrderEditor() {
         <div className="min-w-0 space-y-4">
           <Card title="Details">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_200px]">
-              <Field label="Title"><input className={inputCls} disabled={locked} value={title} onChange={(e) => { setTitle(e.target.value); setDirty(true); }} placeholder="e.g. Add wall skim, drop study table" /></Field>
-              <Field label="Date"><input type="date" className={inputCls} disabled={locked} value={docDate} onChange={(e) => { setDocDate(e.target.value); setDirty(true); }} /></Field>
+              <Field label="Title"><input className={PHONE_INPUT} disabled={locked} value={title} onChange={(e) => { setTitle(e.target.value); setDirty(true); }} placeholder="e.g. Add wall skim, drop study table" /></Field>
+              <Field label="Date"><input type="date" className={PHONE_INPUT} disabled={locked} value={docDate} onChange={(e) => { setDocDate(e.target.value); setDirty(true); }} /></Field>
             </div>
           </Card>
+          {roomMode && (
+            <div>
+              {editable && (
+                <div className="mb-2 flex justify-end">
+                  <button type="button" className={ACTION_BUTTON} onClick={() => setPickerOpen(true)}><Package size={14} />From package</button>
+                </div>
+              )}
+              <VoRoomEditor sections={contract.data?.sections ?? null} edits={edits} disabled={locked}
+                contractError={contract.error ? refusalOf(contract.error).message : null} onRetry={() => void contract.refetch()} specs={v.lineSpecs ?? {}}
+                onChange={(next) => { setEdits(next); setDirty(true); }} />
+              <PackagePickerDialog open={pickerOpen} onClose={() => setPickerOpen(false)} onPick={(h) => { setPickerOpen(false); setConfirm({ packageId: h.id, defaultArea: lastArea(), sectionIndex: null, lineIndex: null, replace: false }); }} />
+              <PackageConfirmDialog packageId={confirm?.packageId ?? null} defaultArea={confirm?.defaultArea ?? ''} onClose={() => setConfirm(null)} onAdd={addPackage} />
+            </div>
+          )}
+          {!roomMode && <>
           <div>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-[13.5px] font-semibold text-ink">Add</h2>
@@ -287,7 +349,8 @@ export function VariationOrderEditor() {
               </div>
             )}
           </Card>
-          <DocAttachments docType="variation_order" docId={v.id} canEdit={filesEditable} />
+          </>}
+          {!unsaved && <DocAttachments docType="variation_order" docId={v.id} canEdit={filesEditable} />}
         </div>
         <div className="2xl:sticky 2xl:top-4 2xl:self-start">
           <Card title="Variation">
@@ -305,7 +368,7 @@ export function VariationOrderEditor() {
         footer={<div className="flex w-full justify-end gap-2"><Button variant="secondary" onClick={() => setApproveOpen(false)}>Cancel</Button><Button disabled={run.isPending} onClick={approve}>{run.isPending ? 'Applying…' : 'Approve and apply'}</Button></div>}>
         <div className="space-y-3 text-[13px]">
           <p>The contract changes by <span className="font-semibold">{rm(netSen)}</span>. Added lines join the contract; omitted lines are cancelled or reduced, and their PO lines are flagged for procurement.</p>
-          <Field label="Signed by (customer)"><input className={inputCls} value={signedName} onChange={(e) => setSignedName(e.target.value)} placeholder="Name on the signed VO" /></Field>
+          <Field label="Signed by (customer)"><input className={PHONE_INPUT} value={signedName} onChange={(e) => setSignedName(e.target.value)} placeholder="Name on the signed VO" /></Field>
           <ErrorBanner error={error} />
         </div>
       </ModalOverlay>

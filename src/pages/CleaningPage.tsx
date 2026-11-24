@@ -1371,7 +1371,7 @@ function AssignBuildingModal({ building, date, onClose, onDone }: { building: { 
 /* ============================== history ============================== */
 
 interface HistoryRow {
-  id: string; unitNumber: string; propertyName: string; propertyId: string; kind: string; state: string; date: string;
+  id: string; unitNumber: string; propertyName: string; propertyId: string; kind: string; state: string; date: string; title: string;
   assigneeName: string | null; sheetCleaner: string | null; completedAt: string | null; photoCount: number;
 }
 interface HistoryPayload { total: number; page: number; pageSize: number; data: HistoryRow[] }
@@ -1423,6 +1423,7 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
   const [bulkAssign, setBulkAssign] = useState<{ ids: string[]; clear: () => void } | null>(null);
   const [confirmDone, setConfirmDone] = useState<{ rows: HistoryRow[]; clear: () => void } | null>(null);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
+  const [editing, setEditing] = useState<HistoryRow | null>(null);
 
   async function fetchAll(onProgress: (got: number, of: number) => void) {
     const r = await fetchAllPages<HistoryRow>(async (page, size) => {
@@ -1487,7 +1488,7 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
         viewParams={['state', 'cleaner', 'q']} filtered={filtered} onClearFilters={clearAll}
         noun={['cleaning job', 'cleaning jobs']} exportName="cleaning-history" selectionKey={`${show}|${from}|${to}`}
         empty={{ title: show === 'active' ? 'No unfinished cleaning jobs in these dates.' : 'No cleaning jobs in these dates.', icon: 'Sparkles' }}
-        selectable={canBulk}
+        selectable={canBulk} onRowClick={canBulk ? setEditing : undefined}
         bulkActions={(picked, clear) => <>
           <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setBulkAssign({ ids: picked.map(r => r.id), clear })}>Assign cleaner</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="Play" size="sm" />} loading={bulkBusy === 'start'} onClick={() => void bulkMove(picked, 'start', clear)}>Start</Button>
@@ -1504,6 +1505,7 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
             badge={show ? <StatusBadge tone={TASK_STATE[r.state]?.tone ?? 'neutral'} size="sm">{TASK_STATE[r.state]?.label ?? r.state}</StatusBadge> : undefined} />
         )}
       />
+      {editing && <HistoryEditModal row={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />}
       {bulkAssign && <BulkAssignCleaner taskIds={bulkAssign.ids} onClose={() => setBulkAssign(null)}
         onDone={() => { bulkAssign.clear(); setBulkAssign(null); reload(); }} />}
       {confirmDone && (
@@ -1517,6 +1519,91 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
         </OpsModal>
       )}
     </div>
+  );
+}
+
+interface HistoryForm { team: string[]; kind: string; day: string; doneDay: string; doneTime: string }
+
+/** Malaysian day and HH:MM of a stored time. */
+const mytParts = (iso: string | null) => {
+  if (!iso) return { day: '', time: '' };
+  const d = new Date(Date.parse(iso) + 8 * 3600e3).toISOString();
+  return { day: d.slice(0, 10), time: d.slice(11, 16) };
+};
+
+/** History: corrects a cleaning job after the fact (who cleaned it, the type, the day, when it was finished). */
+function HistoryEditModal({ row, onClose, onSaved }: { row: HistoryRow; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const { data, error, reload } = useApi<Detail>(`/housekeeping/tasks/${row.id}`);
+  const { cleaners } = useCleaners(true);
+  const start = useMemo<HistoryForm | null>(() => {
+    if (!data) return null;
+    const done = mytParts(data.completedAt);
+    return { team: (data.cleaners ?? []).map(c => c.cleanerId).filter((x): x is string => !!x), kind: data.kind, day: data.day ?? row.date, doneDay: done.day, doneTime: done.time };
+  }, [data, row.date]);
+  const [form, setForm] = useState<HistoryForm | null>(null);
+  useEffect(() => { if (start) setForm(start); }, [start]);
+  const [busy, setBusy] = useState(false);
+  const set = (patch: Partial<HistoryForm>) => setForm(f => (f ? { ...f, ...patch } : f));
+
+  const finished = row.state === 'resolved';
+  const names: Record<string, string> = Object.fromEntries((data?.cleaners ?? []).filter(c => c.cleanerId).map(c => [c.cleanerId!, c.name]));
+  const charged = data?.cost?.charged ? data.cost.amount : null;
+  const unitLabel = historyLabel(row);
+
+  async function save() {
+    if (!form || !start) return;
+    const patch: Record<string, unknown> = {};
+    if (form.kind !== start.kind) { patch.kind = form.kind; patch.title = cleanTitle(form.kind, row.title); }
+    if (form.day !== start.day) patch.day = form.day;
+    if (finished && (form.doneDay !== start.doneDay || form.doneTime !== start.doneTime)) {
+      if (!form.doneDay || !form.doneTime) { toast({ tone: 'critical', title: 'Pick the day and time it was finished.' }); return; }
+      patch.completedAt = `${form.doneDay}T${form.doneTime}:00+08:00`;
+    }
+    const teamChanged = form.team.join('|') !== start.team.join('|');
+    if (!teamChanged && !Object.keys(patch).length) { onClose(); return; }
+    setBusy(true);
+    try {
+      if (Object.keys(patch).length) await api.patch(`/housekeeping/tasks/${row.id}`, patch);
+      if (teamChanged) await api.post(`/housekeeping/tasks/${row.id}/assign`, { cleanerIds: form.team, force: true });
+      toast({ tone: 'success', title: 'Cleaning job updated.', body: unitLabel });
+      onSaved();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') });
+      setBusy(false);
+    }
+  }
+
+  return (
+    <OpsModal title={`Edit ${unitLabel}`} eyebrow="Cleaning history" size="sm" onClose={onClose} busy={busy}
+      sub={finished ? 'Fix this finished cleaning job. Cleaners are not notified.' : 'Fix this cleaning job.'}
+      footer={<>
+        <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button size="sm" variant="primary" loading={busy} disabled={!form} onClick={() => void save()}>Save</Button>
+      </>}>
+      {error && <StaleBanner message={error} onRetry={reload} />}
+      {!form ? <Skeleton height={220} /> : (
+        <div className="flex flex-col gap-3.5">
+          <FormRow label={form.team.length > 1 ? 'Cleaners' : 'Cleaner'} hint={finished ? 'Pay follows the cleaners on the job.' : undefined}>
+            <CleanerChips cleaners={cleaners} value={form.team} names={names} onChange={team => set({ team })} disabled={busy} />
+          </FormRow>
+          <ChoiceChips<string> label="Type" value={form.kind} disabled={busy} onChange={kind => set({ kind })}
+            options={[{ value: 'turnover', label: 'Basic clean (BC)' }, { value: 'deep_clean', label: 'Deep clean (DC)' }, ...(start?.kind === 'light_clean' ? [{ value: 'light_clean', label: 'Light clean' }] : [])]} />
+          <FormRow label="Day"><DateField aria-label="Day" className={INPUT} value={form.day} onChange={v => v && set({ day: v })} /></FormRow>
+          {finished && (
+            <FormRow label="Finished" hint="Pay counts the clean in the month it was finished.">
+              <div className="grid grid-cols-2 gap-2">
+                <DateField aria-label="Finished on" className={INPUT} value={form.doneDay} onChange={v => set({ doneDay: v })} />
+                <TimeField aria-label="Finished at" className={INPUT} value={form.doneTime} onChange={v => set({ doneTime: v })} />
+              </div>
+            </FormRow>
+          )}
+          {charged != null && (
+            <p className="m-0 text-meta text-warning">Already charged to the unit at {rm(charged)}. Changing the type or day here does not change that charge: change the cost on the unit.</p>
+          )}
+        </div>
+      )}
+    </OpsModal>
   );
 }
 

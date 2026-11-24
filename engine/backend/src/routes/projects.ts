@@ -75,6 +75,7 @@ import { isStageKey } from "../scm/shared/renovation-stages";
 import { renovationCalendarRows } from "../services/renovation/calendarSpan";
 import { calendarMePersonIds, renovationCalendarItems } from "../services/renovation/calendarItems";
 import type { Db as RenoDb } from "../services/renovation/load";
+import { brandVisibleSql, loadBrandSide } from "../services/projectBrandScope";
 import { listScopeQuery, loadListScopeRows, renovationListScope } from "../services/renovation/listScope";
 
 /* The context the extracted handlers below receive. They are exported so the
@@ -987,7 +988,8 @@ app.post("/:id/finance/recompute-auto", requirePermission("projects.write"), asy
 
 app.get("/summary", requirePageAccess("projects.list"), async (c) => {
   // Multi-company: active-company predicate ("" when unresolved).
-  const coSql = activeCompanySql(c);
+  const brandSide = await loadBrandSide(c.env.DB as unknown as RenoDb, c.get("user"));
+  const coSql = activeCompanySql(c) + brandVisibleSql(brandSide, "projects");
   const byStage = await c.env.DB.prepare(
     `SELECT stage, COUNT(*) as count
        FROM projects WHERE archived_at IS NULL${coSql}
@@ -1019,7 +1021,7 @@ app.get("/summary", requirePageAccess("projects.list"), async (c) => {
     `SELECT COUNT(*) as count
        FROM project_checklist c
        JOIN projects p ON p.id = c.project_id
-      WHERE p.archived_at IS NULL${activeCompanySql(c, "p.company_id")}
+      WHERE p.archived_at IS NULL${activeCompanySql(c, "p.company_id")}${brandVisibleSql(brandSide)}
         AND c.status = 'pending'
         AND c.due_date IS NOT NULL
         AND substr(c.due_date, 1, 10) < ?`
@@ -1189,6 +1191,7 @@ app.get("/", requirePageAccess("projects.list"), async (c) => {
     pending_approve: pendingApprove,
     pending_director: pendingDirector,
     approver_brands: approverBrands,
+    brand_side: await loadBrandSide(c.env.DB as unknown as RenoDb, user),
     pending_sales_attending: pendingSalesAttending || undefined,
     pending_agreement: pendingAgreement || undefined,
     pending_defect_review: pendingDefectReview || undefined,
@@ -4988,7 +4991,7 @@ app.get("/calendar/events", requirePageAccess("projects.calendar"), async (c) =>
   // Multi-company: the calendar follows the active company ("" when the
   // context is unresolved). Inlined fragment so the positional binds above
   // stay untouched.
-  const coSql = activeCompanySql(c, "p.company_id");
+  const coSql = activeCompanySql(c, "p.company_id") + brandVisibleSql(await loadBrandSide(c.env.DB as unknown as RenoDb, user));
 
   // Projects whose [start_date, end_date] overlaps [from, to]. The
   // active_section_name subquery returns the project's current

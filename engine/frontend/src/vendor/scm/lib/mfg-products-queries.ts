@@ -246,14 +246,17 @@ export function useMfgProducts(opts?: {
      marker). Opt-in and separately cache-keyed so the SO/PO pickers keep their
      lean, un-annotated list. */
   anchorState?: boolean;
+  /** Adds each row's main supplier and its cost (cost viewers only). */
+  withMain?: boolean;
 }) {
   return useQuery({
-    queryKey: ['mfg-products', activeCompanyKey(), opts?.category ?? 'all', opts?.search ?? '', opts?.anchorState ? 'anchor' : ''],
+    queryKey: ['mfg-products', activeCompanyKey(), opts?.category ?? 'all', opts?.search ?? '', opts?.anchorState ? 'anchor' : '', opts?.withMain ? 'main' : ''],
     queryFn: async ({ signal }) => {
       const params = new URLSearchParams();
       if (opts?.category) params.set('category', opts.category);
       if (opts?.search) params.set('search', opts.search);
       if (opts?.anchorState) params.set('anchorState', '1');
+      if (opts?.withMain) params.set('withMain', '1');
       const res = await authedFetch<{ products: MfgProductRow[] }>(
         `/mfg-products${params.toString() ? `?${params.toString()}` : ''}`,
         { signal },
