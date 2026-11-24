@@ -6156,8 +6156,13 @@ export const patchMfgSalesOrderHeaderHandler = async (c: any) => {
   /* A picked EVENT is recorded exactly (owner 2026-09-24). Resolved BEFORE the
      unchanged fields drop out: another event at the same venue changes no mapped
      column, and the save would otherwise answer "nothing to do". */
+  /* Conts: project_id on an order linked to a renovation project is that project, not a fair. A fair pick or a venue
+     change must never unlink it (owner, 24 Nov 2026: TC-SO-2604-001 would have lost RN-2604-002). */
+  const renoProjectLinked = beforeRecord.project_id != null && Boolean(await (c.env?.DB as unknown as RenoInfoDb | undefined)
+    ?.prepare("SELECT 1 AS one FROM projects WHERE id = ? AND project_kind = 'renovation'").bind(Number(beforeRecord.project_id)).first<{ one: number }>()
+    .catch(() => null));
   const fairLink = await fairLinkForEdit({ db: c.env?.DB as unknown as FairDb, companySql: activeCompanySql(c, 'p.company_id'), body, stored: beforeRecord });
-  if (fairLink && (fairLink.project_id !== (beforeRecord.project_id == null ? null : Number(beforeRecord.project_id)) || fairLink.fair_match !== beforeRecord.fair_match)) {
+  if (fairLink && !renoProjectLinked && (fairLink.project_id !== (beforeRecord.project_id == null ? null : Number(beforeRecord.project_id)) || fairLink.fair_match !== beforeRecord.fair_match)) {
     updates['project_id'] = fairLink.project_id;
     updates['fair_match'] = fairLink.fair_match;
   }
@@ -6265,7 +6270,7 @@ export const patchMfgSalesOrderHeaderHandler = async (c: any) => {
        order was linked to is now a claim about a place it was not written at.
        A picked EVENT was linked above; a place alone (Others) drops the link to
        PENDING for the nightly reconcile and, failing that, the pending screen. */
-    if (!fairLink) {
+    if (!fairLink && !renoProjectLinked) {
       updates['project_id'] = null;
       updates['fair_match'] = 'PENDING';
       updates['fair_date'] = null;
