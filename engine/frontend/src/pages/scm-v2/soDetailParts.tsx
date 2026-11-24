@@ -430,6 +430,10 @@ export function soLineColumns<T extends SoDisplayLine>({ docNo, docId, currency,
       label: "Item",
       alwaysVisible: true,
       getValue: (l) => l.item_code,
+      /* Conts filters by the name the row shows (Built-in - Wardrobe), not the code. */
+      getFilterValues: CONTS_LINES_BY_NAME
+        ? (l) => [contsLineIdentity({ code: l.item_code, description: l.description, variant: "" }).primary]
+        : undefined,
       render: (l) => {
         /* Item CODE first, then the variant subtitle; description dropped (owner 2026-07-24) — the shared order-line rule
            (vendor/shared/line-identity.ts, which carries the four-report history
