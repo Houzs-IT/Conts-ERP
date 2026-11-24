@@ -125,6 +125,7 @@ export async function salesDocOutOfScope(
  */
 export function applySoScope<T>(q: T, scopeIds: string[] | null): T {
   if (!scopeIds) return q;
+  // Conts (owner, 25 Nov 2026): an order with no salesperson is open to everyone (soDocOutOfScope, same rule).
   /* "in my scope OR open to all". A single PostgREST or= of one array-overlap
      (access_staff_ids && scope) plus one scalar (open_to_all is true) — NOT the
      two-array `in.(…) , ov.{…}` nesting 20260909T1000 deliberately avoided; the
@@ -135,7 +136,7 @@ export function applySoScope<T>(q: T, scopeIds: string[] | null): T {
      uuid); such a caller now additionally sees open orders, which is the point. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the SCM PostgREST client is untyped throughout this module.
   return (q as any).or(
-    `access_staff_ids.ov.{${scopeIds.join(",")}},open_to_all.is.true`,
+    `access_staff_ids.ov.{${scopeIds.join(",")}},open_to_all.is.true,salesperson_id.is.null`,
   ) as T;
 }
 
@@ -165,6 +166,9 @@ export async function soDocOutOfScope(
   },
 ): Promise<boolean> {
   if (doc.openToAll) return false; // open to all — in scope for everyone
+  /* Conts (owner, 25 Nov 2026): an order with no salesperson is open to everyone, so anyone can pick it up and edit
+     it. Strictly null: a gate whose read did not select the column passes undefined and keeps the old rule. */
+  if (doc.salespersonId === null) return false;
   const ids = await resolveSalesScopeIds(sb, env, houzsUserId, canViewAll);
   if (ids === null) return false; // unrestricted
   const access = (doc.accessStaffIds ?? []).filter((x): x is string => !!x);
