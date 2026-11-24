@@ -4,7 +4,7 @@ import { MYT_DATE } from '../../_lib/ops';
 import { CLEAN_KINDS_SQL, chargeClean } from '../../_lib/cleaning';
 import { overdueCleans } from '../../_lib/cleanOverdue';
 import { noOpenBlockerSql } from '../../_lib/maintenance';
-import { hasJobInvoices } from '../../_lib/jobProfit';
+import { cancelCleaningJobs } from '../../_lib/cleanCancel';
 
 const NOTE = 'closed in bulk';
 
@@ -32,16 +32,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   // Overdue by the one rule (src/lib/cleanOverdue.ts): past the next guest's check-in, or past the end of its day.
   const overdueIds = new Set((await overdueCleans(env, Date.now(), { ids })).map(t => t.id));
-  const invoiced = (await hasJobInvoices(env)) ? ' OR e.invoice_task_id = t.id' : '';
   const day = MYT_DATE('COALESCE(t.scheduled_for, t.due_at, t.created_at)');
   const tasks = await all<any>(env, `
     SELECT t.id, t.state, t.kind, t.title, t.unit_id, t.reservation_id, t.started_at, t.assignee_id, t.cleaner_id, ${day} AS day,
-           COALESCE(u.unit_number, t.external_address) AS unit_number,
-           (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id) AS files,
-           (SELECT COUNT(*)::int FROM maintenance_issues m WHERE m.source_task_id = t.id) AS damage,
-           (SELECT COUNT(*)::int FROM expenses e WHERE e.task_id = t.id${invoiced}) AS money,
-           (SELECT string_agg(COALESCE(c.full_name, x.full_name), ', ') FROM task_cleaners tc LEFT JOIN cleaners c ON c.id = tc.cleaner_id
-              LEFT JOIN users x ON x.id = tc.user_id WHERE tc.task_id = t.id) AS cleaners
+           COALESCE(COALESCE(NULLIF(u.unit_code, ''), u.unit_number), t.external_address) AS unit_number,
+           (SELECT COUNT(*)::int FROM documents d WHERE d.task_id = t.id) AS files
     FROM tasks t LEFT JOIN units u ON u.id = t.unit_id
     WHERE t.id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND t.kind IN ${CLEAN_KINDS_SQL}`, JSON.stringify(ids));
   const byId = new Map(tasks.map(t => [t.id, t]));
@@ -52,12 +47,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const eligible: any[] = [];
   for (const id of ids) {
     const t = byId.get(id);
-    const why = !t ? 'not a cleaning job any more' : t.state === 'resolved' ? 'already done' : !overdueIds.has(t.id) ? 'not overdue'
-      : action === 'done' ? null
-      : t.started_at || t.state === 'in_progress' ? 'a cleaner started it; mark it done instead'
-      : Number(t.files) > 0 ? 'it has photos or videos; mark it done instead'
-      : Number(t.damage) > 0 ? 'damage was reported from it'
-      : Number(t.money) > 0 ? 'money is already recorded on it' : null;
+    const why = !t ? 'not a cleaning job any more' : t.state === 'resolved' ? 'already done' : !overdueIds.has(t.id) ? 'not overdue' : null;
     if (why) skipped.push({ id, unitNumber: t?.unit_number ?? null, reason: why }); else eligible.push(t);
   }
   const now = nowIso();
@@ -99,27 +89,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return json({ ok: true, action, closed: closed.length, skipped, charged, chargedAmount, notCharged });
     }
 
-    // Cancel: the delete and its audit rows are one statement, so a job never disappears without its reason on record.
-    // task_cleaners and checklist ticks exist only for the job and go with it; the guards are checked again in the delete.
-    const log: Entry[] = eligible.flatMap(t => [
-      { action: 'task.cancel', table: 'tasks', id: t.id, after: { reason, bulk: true },
-        before: { unitId: t.unit_id, unitNumber: t.unit_number, reservationId: t.reservation_id, kind: t.kind, title: t.title, day: t.day, state: t.state, cleaners: t.cleaners ?? null } },
-      // On the stay too: the board reads this so a past checkout whose job was cancelled is not shown as "no cleaning job".
-      ...(t.reservation_id ? [{ action: 'cleaning.cancel', table: 'reservations', id: t.reservation_id, after: { taskId: t.id, reason, day: t.day } }] : []),
-    ].map(e => ({ ...e, task: t.id })));
-    const invoiced = (await hasJobInvoices(env)) ? ' OR e.invoice_task_id = t.id' : '';
-    const done = await all<{ action: string; entity_id: string }>(env, `
-      WITH gone AS (
-        DELETE FROM tasks t WHERE t.id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND t.state != 'resolved' AND t.started_at IS NULL
-          AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.task_id = t.id)
-          AND NOT EXISTS (SELECT 1 FROM maintenance_issues m WHERE m.source_task_id = t.id)
-          AND NOT EXISTS (SELECT 1 FROM expenses e WHERE e.task_id = t.id${invoiced})
-        RETURNING t.id)
-      ${AUDIT_COLS} SELECT ${AUDIT_ROW} FROM jsonb_array_elements(?::text::jsonb) x JOIN gone ON gone.id = x->>'task'
-      RETURNING action, entity_id`, JSON.stringify(eligible.map(t => t.id)), actor.actorId, actor.actorLabel, now, entries(log as Entry[]));
-    const goneIds = new Set(done.filter(r => r.action === 'task.cancel').map(r => r.entity_id));
-    for (const t of eligible) if (!goneIds.has(t.id)) skipped.push({ id: t.id, unitNumber: t.unit_number, reason: 'it changed meanwhile; refresh and try again' });
-    return json({ ok: true, action, closed: goneIds.size, skipped, charged: 0, chargedAmount: 0, notCharged });
+    const cancelled = await cancelCleaningJobs(env, session, eligible.map(t => t.id), reason);
+    return json({ ok: true, action, closed: cancelled.cancelled, skipped: [...skipped, ...cancelled.skipped], charged: 0, chargedAmount: 0, notCharged });
   } catch (e) {
     await audit(env, { ...actor, action: 'task.bulk_close_failed', entityTable: 'tasks', entityId: eligible[0].id, after: { action, taskIds: eligible.map(t => t.id), error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
     return fail('INTERNAL', 'Not every cleaning job could be closed. Refresh the board to see which are left, then try again.', 500);

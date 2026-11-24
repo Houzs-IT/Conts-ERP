@@ -7,6 +7,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from './authed-fetch';
+import { idempotentInit } from '../../../lib/idempotency';
 import { retryUnlessClientError } from '../../../lib/retryPolicy';
 import { fetchDocFileBlobUrl, type PvFile, type PvFilePayload } from './payment-voucher-queries';
 
@@ -31,14 +32,24 @@ export type ApListRow = {
   paidSen: number;
   outstandingSen: number;
   status: string;
+  /** Conts (chew, 15 Nov 2026): a quotation booked before its formal invoice (SOP 3.8). */
+  provisional?: boolean;
 };
 
 export type ApInvoiceHeader = {
   id: string; invoice_number: string; supplier_id: string; supplier_invoice_ref: string | null;
   invoice_date: string; due_date: string | null; currency: string; total_sen: number; paid_sen: number;
   status: string; notes: string | null; posted_at: string | null; posted_by: string | null;
+  /** Conts (chew, 15 Nov 2026): the payment request it was made from, and a quotation not yet replaced by its formal invoice. */
+  payment_request_id?: string | null; provisional?: boolean;
 };
-export type ApInvoiceLine = { id: string; line_no: number; description: string | null; debit_account_code: string; amount_sen: number };
+export type ApInvoiceLine = {
+  id: string; line_no: number; description: string | null; debit_account_code: string; amount_sen: number;
+  /** Conts: the unit, and the payment request line it came from (kept through every edit). */
+  unit_id?: string | null; source_request_line_id?: string | null;
+};
+/** Conts: the payment requests paid through a bill — the one it was made from, a deposit's balance. */
+export type ApInvoiceRequest = { id: string; requestNo: string; type: 'PAYMENT' | 'DEPOSIT'; status: string; amountSen: number; balance: boolean };
 
 export const useApInvoices = (kind: ApListKind = 'ALL') => useQuery({
   queryKey: ['ap-invoices', kind],
@@ -46,9 +57,31 @@ export const useApInvoices = (kind: ApListKind = 'ALL') => useQuery({
   staleTime: 15_000,
 });
 
+/** A supplier bill number booked on more than one live invoice of the same
+    supplier (server: routes/ap-duplicate-bills.ts, ported from Houzs).
+    Read-only; Finance cancels the wrong copy on its own page. `quotation`: the
+    copies are quotations booked before the formal invoice (Conts) — a quotation
+    never pairs with a formal invoice. */
+export type DuplicateBillSettlement = { kind: 'PV' | 'CN'; id: string; number: string; status: string; amountSen: number };
+export type DuplicateBillCopy = {
+  id: string; invoiceNumber: string; supplierInvoiceRef: string | null; invoiceDate: string | null;
+  currency: string; totalSen: number; paidSen: number; status: string; settlements: DuplicateBillSettlement[];
+};
+export type DuplicateBillGroup = {
+  kind: 'API' | 'PI'; quotation: boolean; supplierId: string; supplierCode: string | null; supplierName: string | null;
+  billKey: string; paidMoreThanOnce: boolean; copies: DuplicateBillCopy[];
+};
+
+export const useDuplicateSupplierBills = () => useQuery({
+  queryKey: ['ap-invoices', 'duplicate-bills'],
+  queryFn: () => authedFetch<{ groups: DuplicateBillGroup[] }>('/ap-invoices/duplicate-bills'),
+  staleTime: 15_000,
+  retry: retryUnlessClientError,
+});
+
 export const useApInvoiceDetail = (id: string | null) => useQuery({
   queryKey: ['ap-invoice', id],
-  queryFn: () => authedFetch<{ invoice: ApInvoiceHeader; lines: ApInvoiceLine[]; supplier: { id: string; code: string; name: string } | null }>(`/ap-invoices/${id}`),
+  queryFn: () => authedFetch<{ invoice: ApInvoiceHeader; lines: ApInvoiceLine[]; supplier: { id: string; code: string; name: string } | null; requests?: ApInvoiceRequest[] }>(`/ap-invoices/${id}`),
   enabled: !!id,
 });
 
@@ -58,14 +91,16 @@ const invalidate = (qc: ReturnType<typeof useQueryClient>) => {
   void qc.invalidateQueries({ queryKey: ['ap-aging'] });
 };
 
-export type ApInvoiceLineInput = { description?: string; debitAccountCode: string; amountSen: number };
+export type ApInvoiceLineInput = { description?: string; debitAccountCode: string; amountSen: number; unitId?: string | null; sourceRequestLineId?: string | null };
 
 export const useCreateApInvoice = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { supplierId: string; supplierInvoiceRef?: string; invoiceDate: string; dueDate?: string | null; notes?: string; lines: ApInvoiceLineInput[] }) =>
-      authedFetch<{ ok: boolean; invoice: ApInvoiceHeader }>(`/ap-invoices`, { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: () => invalidate(qc),
+    mutationFn: ({ idempotencyKey, ...body }: { supplierId: string; supplierInvoiceRef?: string; invoiceDate: string; dueDate?: string | null; notes?: string; provisional?: boolean; lines: ApInvoiceLineInput[];
+      /** Conts: the payment request this bill is made from (it takes the bill on save). */
+      paymentRequestId?: string; idempotencyKey?: string }) =>
+      authedFetch<{ ok: boolean; invoice: ApInvoiceHeader }>(`/ap-invoices`, idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) })),
+    onSuccess: () => { invalidate(qc); void qc.invalidateQueries({ queryKey: ['payment-requests'] }); },
   });
 };
 
@@ -74,7 +109,7 @@ export const useCreateApInvoice = () => {
 export const useUpdateApInvoice = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Partial<{ supplierId: string; supplierInvoiceRef: string | null; invoiceDate: string; dueDate: string | null; notes: string | null; lines: ApInvoiceLineInput[] }> }) =>
+    mutationFn: ({ id, body }: { id: string; body: Partial<{ supplierId: string; supplierInvoiceRef: string | null; invoiceDate: string; dueDate: string | null; notes: string | null; provisional: boolean; lines: ApInvoiceLineInput[] }> }) =>
       authedFetch<{ ok: boolean; invoice: ApInvoiceHeader; reposted?: boolean; jeNo?: string }>(`/ap-invoices/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     onSuccess: () => invalidate(qc),
   });

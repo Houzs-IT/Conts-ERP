@@ -12,7 +12,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const rows = await all<any>(env, `
     SELECT m.id, m.title, m.detail, m.state, m.vendor_name, m.quoted_amount, m.final_amount, m.charge_to, m.reported_at, m.resolved_at,
-           u.unit_number, p.name AS property_name
+           COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name
     FROM maintenance_issues m JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id
     WHERE u.owner_id = ? AND (m.state != 'resolved' OR m.resolved_at::timestamptz > now() - interval '90 days')
     ORDER BY (m.state = 'waiting' AND m.owner_approval_required = 1 AND m.owner_approved_at IS NULL) DESC, m.reported_at DESC LIMIT 30`, owner.id);

@@ -9,6 +9,7 @@
      GET /design-records?projectId=  site measures, design files and design notes
      GET /:id/procurement            PO / delivery dates per catalog category and sub-category
      GET /:id/step                   current step, derived step, manual step, hold, steps, history
+     POST /:id/flow-stage/:key/complete  Handover completed by hand / Close pressed (key handover | closed); /reopen undoes it
    Writes: people, flow steps, task categories (Project Maintenance); manual step,
    hold flag, people on a project, key moves, site measures, design files, SO
    link / unlink / project from SO, site tasks by category, crew and fulfilment.
@@ -36,8 +37,11 @@ import { writeCachedStage } from "../services/renovation/contractSync";
 import { syncProjectDates } from "../services/renovation/projectDates";
 import { stepSlaReady, syncStepSla } from "../services/renovation/stepSla";
 import { audit } from "../services/audit";
+import { cleanNewWorkType, cleanWorkTypePatch, listWorkTypes } from "../services/renovation/workTypes";
+import { FILL_SLA_DATES_SQL } from "../scm/lib/renovation-sla";
 import { SUPPLY_CONDITION_LABEL } from "../services/renovation/conditions";
 import { staffViewReady, syncPeopleFromUsers } from "../services/renovation/peopleSync";
+import { brandVisibleSql, loadBrandSide } from "../services/projectBrandScope";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -80,7 +84,7 @@ async function peopleRefusal(c: Ctx, companyId: number, ids: Array<number | null
 }
 
 async function loadViews(c: Ctx, opts: { projectId?: number; includeArchived?: boolean }) {
-  const rows = await loadProjectRows(db(c), coSql(c, "p.company_id"), opts);
+  const rows = await loadProjectRows(db(c), coSql(c, "p.company_id") + (opts.projectId == null ? brandVisibleSql(await loadBrandSide(db(c), c.get("user"))) : ""), opts);
   const facts = await loadRenovationFacts(db(c), rows, { checklistKeys: BOARD_CHECKLIST_KEYS });
   const today = todayMyt();
   const list = rows.map((p) => {
@@ -103,7 +107,9 @@ async function resyncDates(c: Ctx, id: number): Promise<void> {
 app.get("/board-rows", requirePageAccess("projects.list"), failClosed(async (c) => {
   const hideMoney = financeHiddenForUser(c.get("user"));
   const list = await loadViews(c, { includeArchived: c.req.query("archived") === "1" });
-  return c.json({ data: list.map(({ f, v }) => boardRowOf(f, v, { hideMoney })), arrivalLabels: SUPPLY_CONDITION_LABEL });
+  // Every catalog category in catalog order, for the list's Renovation layer; each view carries the full catalog.
+  const categories = (list[0]?.v.stageLayers.renovation.categories ?? []).map((k) => ({ code: k.code, label: k.label }));
+  return c.json({ data: list.map(({ f, v }) => boardRowOf(f, v, { hideMoney })), arrivalLabels: SUPPLY_CONDITION_LABEL, categories });
 }));
 
 // ── People master ────────────────────────────────────────────────────────
@@ -230,6 +236,65 @@ app.put("/flow-steps/:key/sla", requirePageAccess("projects.maintenance", "full"
   return c.json({ ok: true, days });
 });
 
+/* Design work (owner, 19 Nov 2026; services/renovation/workTypes.ts): the works of a project, in order. Read by every
+   project screen; changed in Project Maintenance. */
+app.get("/work-types", requireAnyAccess(["projects.list", "projects.maintenance"]), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  return c.json({ data: await listWorkTypes(db(c), co.companyId) });
+});
+
+app.post("/work-types", requirePageAccess("projects.maintenance", "full"), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const list = await listWorkTypes(db(c), co.companyId);
+  const v = cleanNewWorkType(await body(c), list.map((w) => w.code));
+  if (!v.ok) return c.json(v, 400);
+  const next = v.value.sortOrder === 1000 ? Math.max(0, ...list.map((w) => w.sortOrder)) + 10 : v.value.sortOrder;
+  const row = await db(c).prepare(
+    `INSERT INTO project_work_types (company_id, code, label, rule, bookable, in_design, sort_order) VALUES (?, ?, ?, 'booking', ?, ?, ?) RETURNING id::int AS id`,
+  ).bind(co.companyId, v.value.code, v.value.label, v.value.bookable, v.value.inDesign, next).first<{ id: number }>();
+  await audit(c, { action: "project_work_type.create", entityType: "project_work_type", entityId: v.value.code, summary: `Work added: ${v.value.label}`, meta: v.value });
+  return c.json({ ok: true, id: row?.id ?? null, code: v.value.code }, 201);
+});
+
+app.patch("/work-types/:code", requirePageAccess("projects.maintenance", "full"), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const code = c.req.param("code");
+  const cur = (await listWorkTypes(db(c), co.companyId)).find((w) => w.code === code && w.id > 0);
+  if (!cur) return c.json({ error: "not_found" }, 404);
+  const v = cleanWorkTypePatch(await body(c), cur);
+  if (!v.ok) return c.json(v, 400);
+  const cols = { label: "label", bookable: "bookable", inDesign: "in_design", sortOrder: "sort_order", active: "active" } as const;
+  const sent = (Object.keys(cols) as Array<keyof typeof cols>).filter((k) => v.value[k] !== undefined);
+  if (!sent.length) return c.json({ ok: true });
+  await db(c).prepare(`UPDATE project_work_types SET ${sent.map((k) => `${cols[k]} = ?`).join(", ")}, updated_at = now() WHERE company_id = ? AND code = ?`)
+    .bind(...sent.map((k) => v.value[k] ?? null), co.companyId, code).run();
+  await audit(c, { action: "project_work_type.update", entityType: "project_work_type", entityId: code, summary: `Work ${cur.label} changed`, meta: v.value });
+  return c.json({ ok: true });
+});
+
+/* Removing a work: a built-in one cannot go; one still on a calendar entry is switched off instead, so the entries keep
+   their name. */
+app.delete("/work-types/:code", requirePageAccess("projects.maintenance", "full"), async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const code = c.req.param("code");
+  const cur = (await listWorkTypes(db(c), co.companyId)).find((w) => w.code === code && w.id > 0);
+  if (!cur) return c.json({ error: "not_found" }, 404);
+  if (cur.system) return c.json({ error: "fixed_rule", message: `${cur.label} is built in and cannot be removed.` }, 409);
+  const used = await db(c).prepare(`SELECT count(*)::int AS n FROM project_beta_events WHERE company_id = ? AND type = ?`).bind(co.companyId, code).first<{ n: number }>();
+  if (Number(used?.n ?? 0) > 0) {
+    await db(c).prepare(`UPDATE project_work_types SET active = false, updated_at = now() WHERE company_id = ? AND code = ?`).bind(co.companyId, code).run();
+    await audit(c, { action: "project_work_type.archive", entityType: "project_work_type", entityId: code, summary: `Work ${cur.label} switched off (${used!.n} calendar entries keep it)` });
+    return c.json({ ok: true, archived: true, entries: Number(used!.n) });
+  }
+  await db(c).prepare(`DELETE FROM project_work_types WHERE company_id = ? AND code = ?`).bind(co.companyId, code).run();
+  await audit(c, { action: "project_work_type.delete", entityType: "project_work_type", entityId: code, summary: `Work ${cur.label} removed` });
+  return c.json({ ok: true, archived: false });
+});
+
 app.patch("/flow-steps/:key", requirePageAccess("projects.maintenance", "full"), async (c) => {
   const key = c.req.param("key");
   if (!isFlowStepKey(key)) return c.json({ error: "step_invalid" }, 400);
@@ -276,6 +341,7 @@ app.patch("/task-categories/:code", requirePageAccess("projects.maintenance", "f
 app.get("/key-log", requirePageAccess("projects.list"), async (c) => {
   const pid = c.req.query("projectId") ? parseId(c.req.query("projectId")) : null;
   if (c.req.query("projectId") && !pid) return c.json({ error: "invalid_id" }, 400);
+  const scopeSql = coSql(c, "p.company_id") + brandVisibleSql(await loadBrandSide(db(c), c.get("user")));
   const res = await db(c).prepare(
     `SELECT km.id::int AS id, km.project_id::int AS project_id, p.code AS project_code, p.name AS project_name, km.moved_on::text AS moved_on,
             km.from_person_id::int AS from_person_id, fp.name AS from_person_name, km.to_person_id::int AS to_person_id, tp.name AS to_person_name,
@@ -285,7 +351,7 @@ app.get("/key-log", requirePageAccess("projects.list"), async (c) => {
        LEFT JOIN project_people fp ON fp.id = km.from_person_id
        LEFT JOIN project_people tp ON tp.id = km.to_person_id
        LEFT JOIN users u ON u.id = km.recorded_by
-      WHERE (?::bigint IS NULL OR km.project_id = ?::bigint)${coSql(c, "p.company_id")}
+      WHERE (?::bigint IS NULL OR km.project_id = ?::bigint)${scopeSql}
       ORDER BY km.moved_on DESC, km.id DESC LIMIT 2000`,
   ).bind(pid, pid).all();
   return c.json({ data: res.results ?? [] });
@@ -294,38 +360,42 @@ app.get("/key-log", requirePageAccess("projects.list"), async (c) => {
 app.get("/design-records", requirePageAccess("projects.list"), async (c) => {
   const pid = c.req.query("projectId") ? parseId(c.req.query("projectId")) : null;
   if (c.req.query("projectId") && !pid) return c.json({ error: "invalid_id" }, 400);
-  const measures = await db(c).prepare(
-    `SELECT r.id::int AS id, r.project_id::int AS project_id, r.kind, r.done_on::text AS done_on, r.person_id::int AS person_id, pp.name AS person_name,
-            r.note, r.recorded_by::int AS recorded_by, r.created_at, r.source, r.source_ref,
-            coalesce((SELECT json_agg(json_build_object('id', x.id::int, 'name', x.name) ORDER BY lower(x.name))
-                        FROM project_design_record_people rp JOIN project_people x ON x.id = rp.person_id WHERE rp.record_id = r.id), '[]'::json) AS people,
-            coalesce((SELECT json_agg(json_build_object('id', rf.id::int, 'file_name', rf.file_name, 'r2_key', rf.r2_key, 'content_type', rf.content_type) ORDER BY rf.id)
-                        FROM project_design_record_files rf WHERE rf.record_id = r.id), '[]'::json) AS files
-       FROM project_design_records r JOIN projects p ON p.id = r.project_id LEFT JOIN project_people pp ON pp.id = r.person_id
-      WHERE (?::bigint IS NULL OR r.project_id = ?::bigint)${coSql(c, "p.company_id")}
-      ORDER BY r.done_on DESC NULLS LAST, r.id DESC LIMIT 2000`,
-  ).bind(pid, pid).all();
-  const files = await db(c).prepare(
-    `SELECT f.id::int AS id, f.project_id::int AS project_id, f.kind, f.version, f.file_name, f.content_type, f.size_bytes, f.r2_key, f.external_url,
-            f.person_id::int AS person_id, pp.name AS person_name, f.uploaded_by::int AS uploaded_by, u.name AS uploaded_by_name, f.uploaded_at, f.note,
-            f.submitted_on::text AS submitted_on, f.next_person_id::int AS next_person_id, np.name AS next_person_name, f.source, f.source_ref,
-            coalesce((SELECT json_agg(json_build_object('id', x.id::int, 'name', x.name) ORDER BY lower(x.name))
-                        FROM project_design_file_people fp JOIN project_people x ON x.id = fp.person_id WHERE fp.file_id = f.id), '[]'::json) AS people
-       FROM project_design_files f JOIN projects p ON p.id = f.project_id
-       LEFT JOIN project_people pp ON pp.id = f.person_id LEFT JOIN project_people np ON np.id = f.next_person_id
-       LEFT JOIN users u ON u.id = f.uploaded_by
-      WHERE (?::bigint IS NULL OR f.project_id = ?::bigint)${coSql(c, "p.company_id")}
-      ORDER BY f.project_id, f.kind, f.version DESC LIMIT 5000`,
-  ).bind(pid, pid).all();
-  const notes = await db(c).prepare(
-    `SELECT n.id::int AS id, n.project_id::int AS project_id, n.kind, n.noted_on::text AS noted_on, n.requested_by_person_id::int AS requested_by_person_id,
-            pp.name AS requested_by_person_name, n.requested_by_text, n.note, n.created_at, u.name AS created_by_name,
-            n.closed_by_file_id::int AS closed_by_file_id, n.closed_at
-       FROM project_design_notes n JOIN projects p ON p.id = n.project_id
-       LEFT JOIN project_people pp ON pp.id = n.requested_by_person_id LEFT JOIN users u ON u.id = n.created_by
-      WHERE (?::bigint IS NULL OR n.project_id = ?::bigint)${coSql(c, "p.company_id")}
-      ORDER BY n.project_id, n.noted_on DESC, n.id DESC LIMIT 5000`,
-  ).bind(pid, pid).all();
+  const scopeSql = coSql(c, "p.company_id") + brandVisibleSql(await loadBrandSide(db(c), c.get("user")));
+  // Three independent reads, sent together.
+  const [measures, files, notes] = await Promise.all([
+    db(c).prepare(
+      `SELECT r.id::int AS id, r.project_id::int AS project_id, r.kind, r.done_on::text AS done_on, r.person_id::int AS person_id, pp.name AS person_name,
+              r.note, r.recorded_by::int AS recorded_by, r.created_at, r.source, r.source_ref,
+              coalesce((SELECT json_agg(json_build_object('id', x.id::int, 'name', x.name) ORDER BY lower(x.name))
+                          FROM project_design_record_people rp JOIN project_people x ON x.id = rp.person_id WHERE rp.record_id = r.id), '[]'::json) AS people,
+              coalesce((SELECT json_agg(json_build_object('id', rf.id::int, 'file_name', rf.file_name, 'r2_key', rf.r2_key, 'content_type', rf.content_type) ORDER BY rf.id)
+                          FROM project_design_record_files rf WHERE rf.record_id = r.id), '[]'::json) AS files
+         FROM project_design_records r JOIN projects p ON p.id = r.project_id LEFT JOIN project_people pp ON pp.id = r.person_id
+        WHERE (?::bigint IS NULL OR r.project_id = ?::bigint)${scopeSql}
+        ORDER BY r.done_on DESC NULLS LAST, r.id DESC LIMIT 2000`,
+    ).bind(pid, pid).all(),
+    db(c).prepare(
+      `SELECT f.id::int AS id, f.project_id::int AS project_id, f.kind, f.version, f.file_name, f.content_type, f.size_bytes, f.r2_key, f.external_url,
+              f.person_id::int AS person_id, pp.name AS person_name, f.uploaded_by::int AS uploaded_by, u.name AS uploaded_by_name, f.uploaded_at, f.note,
+              f.submitted_on::text AS submitted_on, f.next_person_id::int AS next_person_id, np.name AS next_person_name, f.source, f.source_ref,
+              coalesce((SELECT json_agg(json_build_object('id', x.id::int, 'name', x.name) ORDER BY lower(x.name))
+                          FROM project_design_file_people fp JOIN project_people x ON x.id = fp.person_id WHERE fp.file_id = f.id), '[]'::json) AS people
+         FROM project_design_files f JOIN projects p ON p.id = f.project_id
+         LEFT JOIN project_people pp ON pp.id = f.person_id LEFT JOIN project_people np ON np.id = f.next_person_id
+         LEFT JOIN users u ON u.id = f.uploaded_by
+        WHERE (?::bigint IS NULL OR f.project_id = ?::bigint)${scopeSql}
+        ORDER BY f.project_id, f.kind, f.version DESC LIMIT 5000`,
+    ).bind(pid, pid).all(),
+    db(c).prepare(
+      `SELECT n.id::int AS id, n.project_id::int AS project_id, n.kind, n.noted_on::text AS noted_on, n.requested_by_person_id::int AS requested_by_person_id,
+              pp.name AS requested_by_person_name, n.requested_by_text, n.note, n.created_at, u.name AS created_by_name,
+              n.closed_by_file_id::int AS closed_by_file_id, n.closed_at
+         FROM project_design_notes n JOIN projects p ON p.id = n.project_id
+         LEFT JOIN project_people pp ON pp.id = n.requested_by_person_id LEFT JOIN users u ON u.id = n.created_by
+        WHERE (?::bigint IS NULL OR n.project_id = ?::bigint)${scopeSql}
+        ORDER BY n.project_id, n.noted_on DESC, n.id DESC LIMIT 5000`,
+    ).bind(pid, pid).all(),
+  ]);
   return c.json({ measures: measures.results ?? [], files: files.results ?? [], notes: notes.results ?? [] });
 });
 
@@ -417,6 +487,28 @@ app.post("/:id/step", requirePermission("projects.write"), failClosed(async (c) 
   return c.json({ ok: true });
 }));
 
+/* Start project (owner, 19 Nov 2026): the works start date. Every sales order line from a package template that carries
+   SLA days gets its processing and delivery date from it (scm/lib/renovation-sla.ts); moving the date again re-dates the
+   lines still on their SLA, never a date typed by hand. */
+app.post("/:id/start", requirePermission("projects.write"), failClosed(async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const date = String((await body(c)).date ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) return c.json({ error: "date_invalid", message: "Pick the date the works start." }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const before = await db(c).prepare(`SELECT works_started_on::text AS d FROM projects WHERE id = ?`).bind(id).first<{ d: string | null }>();
+  await db(c).prepare(`UPDATE projects SET works_started_on = ?::date, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`).bind(date, id).run();
+  const dated = await db(c).prepare(FILL_SLA_DATES_SQL.replace("$1", "?")).bind(id).all<{ so_item_id: string }>();
+  const n = dated.results?.length ?? 0;
+  await audit(c, {
+    action: "project.works_start", entityType: "project", entityId: String(id),
+    summary: `Works start ${before?.d ? `moved from ${before.d} ` : ""}to ${date}; ${n} sales order line${n === 1 ? "" : "s"} dated from the package template SLA`,
+    meta: { before: before?.d ?? null, after: date, dated: n },
+  });
+  return c.json({ ok: true, startedOn: date, dated: n });
+}));
+
 app.post("/:id/step/follow-data", requirePermission("projects.write"), failClosed(async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
@@ -433,6 +525,48 @@ app.post("/:id/step/follow-data", requirePermission("projects.write"), failClose
   ]);
   await resyncDates(c, id);
   return c.json({ ok: true });
+}));
+
+/* Stages completed by hand (owner, 19 Nov 2026): Handover is completed by hand (the customer's signed handover also
+   completes it), and Close is pressed on Closed. Close alone does not complete Closed: the contract must also be
+   fully settled (flow.ts). Reopen clears the press; a handover the customer signed cannot be reopened here. Audited. */
+const HAND_STAGES = { handover: "handed_over_at", closed: "closed_at" } as const;
+type HandStage = keyof typeof HAND_STAGES;
+const isHandStage = (x: string | undefined): x is HandStage => x === "handover" || x === "closed";
+
+app.post("/:id/flow-stage/:key/:action", requirePermission("projects.write"), failClosed(async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const key = c.req.param("key");
+  const action = c.req.param("action");
+  if (!isHandStage(key)) return c.json({ error: "stage_not_manual", message: "Only Handover and Closed are completed by hand." }, 400);
+  if (action !== "complete" && action !== "reopen") return c.json({ error: "invalid_action" }, 400);
+  const [one] = await loadViews(c, { projectId: id, includeArchived: true });
+  if (!one) return c.json({ error: "not_found" }, 404);
+  const col = HAND_STAGES[key];
+  const cur = key === "handover" ? one.f.project.handed_over_at : one.f.project.closed_at;
+  if (action === "complete" && cur) return c.json({ ok: true, unchanged: true });
+  if (action === "reopen" && !cur) return c.json({ ok: true, unchanged: true });
+  if (action === "reopen" && key === "handover" && one.f.handover) {
+    return c.json({ error: "handover_signed", message: "The customer signed the handover; it cannot be reopened." }, 409);
+  }
+  const co = Number(one.f.project.company_id);
+  await db(c).batch!([
+    db(c).prepare(
+      `UPDATE projects SET ${col} = ${action === "complete" ? "now()" : "NULL"},
+              updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') WHERE id = ?`,
+    ).bind(id),
+    db(c).prepare(`INSERT INTO project_flow_log (project_id, company_id, kind, from_value, to_value, user_id) VALUES (?, ?, ?, ?, ?, ?)`)
+      .bind(id, co, action === "complete" ? "stage_complete" : "stage_reopen", one.v.flow.current, key, userId(c)),
+  ]);
+  await audit(c, {
+    action: `project.stage_${action}`, entityType: "project", entityId: String(id),
+    summary: `${key === "handover" ? "Handover" : "Closed"} ${action === "complete" ? (key === "closed" ? "pressed Close" : "completed by hand") : "reopened"}`,
+    meta: { stage: key, before: cur ?? null },
+  });
+  await resyncDates(c, id);
+  const [after] = await loadViews(c, { projectId: id, includeArchived: true });
+  return c.json({ ok: true, flow: after?.v.flow ?? null });
 }));
 
 app.post("/:id/hold", requirePermission("projects.write"), async (c) => {

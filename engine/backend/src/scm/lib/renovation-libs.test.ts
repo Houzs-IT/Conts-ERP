@@ -3,7 +3,7 @@
 // scripts/api-checks/renovation-sales.mjs.
 import { describe, expect, test } from 'vitest';
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections } from './renovation-validate';
-import { renovationFenceApplies } from './renovation-write-fence';
+import { customerOnlyPatch, renovationFenceApplies } from './renovation-write-fence';
 import { groupForPo, needsPurchaseOrder } from './renovation-po-split';
 import { quotationTransitionAllowed, revisionDocNo, mergeHeader } from './renovation-quotation';
 import { contractTransitionAllowed, mirrorRowsFor } from './renovation-so';
@@ -91,6 +91,14 @@ describe('write fence on /mfg-sales-orders', () => {
     ['GET', 'items', false],
   ])('%s /:docNo/%s refused for a renovation SO: %s', (method, rest, refused) => {
     expect(renovationFenceApplies(method, rest)).toBe(refused);
+  });  test('a contract takes a header change that only names its customer', () => {
+    expect(customerOnlyPatch({ debtorCode: '301-M144', debtorName: 'MR WAYNE' })).toBe(true);
+    expect(customerOnlyPatch({ debtorCode: '301-M144' })).toBe(true);
+    expect(customerOnlyPatch({ debtorCode: '301-M144', soDate: '2026-08-10' })).toBe(false);
+    expect(customerOnlyPatch({})).toBe(false);
+    expect(customerOnlyPatch({ debtorCode: '301-M144', version: 2 })).toBe(true);
+    expect(customerOnlyPatch({ version: 2 })).toBe(false);
+    expect(customerOnlyPatch(null)).toBe(false);
   });
 });
 
@@ -201,13 +209,18 @@ describe('PO split grouping', () => {
     expect(r.blocked).toEqual([]);
   });
 
-  test('one supplier, two category groups: two POs, never one mixed PO (owner, 14 Oct 2026)', () => {
+  test('one supplier, two category groups: one PO holding both (owner, 19 Nov 2026: a PO may mix categories)', () => {
     const r = groupForPo([
       row({ description: 'switch', category: 'WORKS' }),
       row({ description: 'wardrobe', category: 'BUILTIN' }),
       row({ description: 'socket', category: 'WORKS' }),
     ]);
-    expect(r.groups.map((g) => [g.categoryGroup, g.lines.map((l) => l.description)])).toEqual([['BUILTIN', ['wardrobe']], ['WORKS', ['switch', 'socket']]]);
+    expect(r.groups.map((g) => [g.categoryGroup, g.lines.map((l) => l.description)])).toEqual([['', ['switch', 'wardrobe', 'socket']]]);
+  });
+
+  test('one supplier, one category group: the PO names that category', () => {
+    const r = groupForPo([row({ description: 'switch', category: 'WORKS' }), row({ description: 'socket', category: 'WORKS' })]);
+    expect(r.groups.map((g) => g.categoryGroup)).toEqual(['WORKS']);
   });
 
   test('measured lines order one unit at measure x cost; partly ordered lines order the rest', () => {

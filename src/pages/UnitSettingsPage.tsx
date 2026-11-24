@@ -20,7 +20,7 @@ import { useContractTypesPayload } from '../lib/useContractTypes';
 import { plural, buildingName } from '../lib/format';
 import { BuildingModal } from './units/UnitForms';
 import { PROPERTIES_FALLBACK } from './units/fallback';
-import { useLayoutTypes, useBedSizes, Labeled, Select as FormSelect, CentreModal, type Building, type PropertiesPayload } from './units/shared';
+import { useLayoutTypes, useBedSizes, Labeled, Select as FormSelect, CentreModal, buildingArea, type Building, type PropertiesPayload } from './units/shared';
 
 /** Units > Unit settings: the lists the unit screens pick from, kept by staff instead of in code (owner, 4 Nov 2026; PLAN-unit-settings.md). */
 
@@ -116,7 +116,7 @@ function BuildingsTab({ canEdit }: { canEdit: boolean }) {
               <li key={b.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 px-5">
                 <div className="flex flex-col min-w-0 flex-1 basis-[200px]">
                   <span className="text-copy font-medium [overflow-wrap:anywhere]">{buildingName(b.name)}</span>
-                  <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{[b.city, b.state].filter(Boolean).join(' · ')}</span>
+                  <span className="text-meta text-muted-ink [overflow-wrap:anywhere]">{[buildingArea(b), b.state].filter(Boolean).join(' · ')}</span>
                 </div>
                 <span className="text-meta text-muted-ink">{plural(unitCount.get(b.id) ?? 0, 'unit')}</span>
                 {canEdit && <Button size="sm" variant="secondary" className="max-md:min-h-11" onClick={() => setModal({ kind: 'edit', building: b })}>Edit</Button>}

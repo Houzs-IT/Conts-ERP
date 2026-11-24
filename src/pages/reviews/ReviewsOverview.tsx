@@ -91,7 +91,7 @@ export function ReviewsOverview() {
               <span className="flex items-center gap-2 text-headline leading-none font-semibold tabular-nums">
                 <span aria-hidden className="text-title inline-flex"><StarMark /></span>{sum.data?.average != null ? fmtRating(sum.data.average) : '–'}
               </span>
-              <span className="text-copy text-muted-ink">{sum.data ? `${plural(total, 'review')} · ${replyRate}% replied` : 'Loading…'}</span>
+              <span className="text-copy text-muted-ink">{!sum.data ? 'Loading…' : total ? `${plural(total, 'review')} · ${replyRate}% replied` : 'No reviews yet'}</span>
               <span className="text-caption text-muted-ink">Out of 5, Airbnb and Booking.com together</span>
             </div>
             <div className="grid grid-cols-2 sm:flex gap-3 w-full sm:w-auto">
@@ -124,7 +124,7 @@ export function ReviewsOverview() {
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 sm:gap-4">
         <Tile label="Needs reply" value={sum.data ? count(total - (s?.replied ?? 0)) : '–'} tone={total - (s?.replied ?? 0) ? 'warning' : undefined}
-          hint={s?.notPosted ? `${s.notPosted} saved but not posted` : `${replyRate}% replied`} onClick={() => open({ tab: 'all', reply: 'needs_reply' })} />
+          hint={s?.notPosted ? `${s.notPosted} saved but not posted` : total ? `${replyRate}% replied` : undefined} onClick={() => open({ tab: 'all', reply: 'needs_reply' })} />
         <Tile label="Guests to review" value={g ? count(g.due) : '–'} tone={g?.closingSoon ? 'warning' : g?.due ? 'info' : undefined}
           hint={g ? (g.closingSoon ? `${g.closingSoon} close within 2 days` : g.needsApproval ? `${g.needsApproval} need approval` : 'Airbnb, 14 days after checkout') : undefined} onClick={() => open({ tab: 'guests' })} />
         <Tile label="Hidden" value={sum.data ? count(s?.hidden ?? 0) : '–'} tone={s?.hidden ? 'info' : undefined} hint="Until you review the guest" onClick={() => open({ tab: 'all', hidden: '1' })} />

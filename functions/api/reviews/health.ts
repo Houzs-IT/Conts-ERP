@@ -22,7 +22,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const by = unitId ? 'unit' : propertyId ? 'unit' : 'building';
 
   const [label, overall, trend, tags, perPlace, placeTags, places] = await Promise.all([
-    unitId ? one<{ label: string }>(env, `SELECT trim(COALESCE(p.name, '') || ' ' || u.unit_number) AS label FROM units u LEFT JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, unitId)
+    unitId ? one<{ label: string }>(env, `SELECT trim(COALESCE(p.name, '') || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number)) AS label FROM units u LEFT JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, unitId)
       : propertyId ? one<{ label: string }>(env, 'SELECT name AS label FROM properties WHERE id = ?', propertyId) : Promise.resolve({ label: 'All units' }),
     categoryAverages(env, 'all', scope),
     categoryTrend(env, { ...scope, from }),
@@ -31,7 +31,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     unitId ? Promise.resolve(new Map()) : tagCounts(env, by, scope, 3),
     unitId ? Promise.resolve([]) : all<{ id: string; label: string }>(env, by === 'building'
       ? `SELECT id, name AS label FROM properties`
-      : `SELECT u.id, u.unit_number AS label FROM units u WHERE u.property_id = ?`, ...(by === 'building' ? [] : [propertyId])),
+      : `SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS label FROM units u WHERE u.property_id = ?`, ...(by === 'building' ? [] : [propertyId])),
   ]);
   if ((unitId || propertyId) && !label) return fail('NOT_FOUND', 'That unit or building no longer exists.', 404);
   const cats = overall.get('all') ?? {};

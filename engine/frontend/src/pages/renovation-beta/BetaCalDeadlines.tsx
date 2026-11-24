@@ -5,11 +5,11 @@ import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { BETA, GLASS, TONES, betaDueTone } from "./renovationBetaTheme";
 import {
-  APPT_LABEL, apptLeftText, apptWithDefault, dayWord, deadlineGroups, diff, ds, leftText, MONTHS, ord, todoText,
-  type ApptItem, type BoardModel, type DesignProject, type DueItem, type Kind, type ApptKey, type PersonRef, type TodoItem, type Viewing,
+  APPT_LABEL, apptLeftText, apptWithDefault, dayWord, deadlineGroups, diff, ds, leftText, MONTHS, ord, reportsOf, todoText,
+  type ApptItem, type BoardModel, type DeadlineGroups, type DesignProject, type DueItem, type Kind, type ApptKey, type PersonRef, type TodoItem, type Viewing,
 } from "./renovationBetaBoard";
 import { rememberLastProject } from "./renovationBetaBoardApi";
-import { Badge, BTN, BTN_AMEND, BTN_CONFIRM, BTN_FILL, BTN_MAIN, EmptyBox, INK_SOFT, MUTED, PoDoneButton } from "./BetaCalParts";
+import { Badge, BTN, BTN_AMEND, BTN_CONFIRM, BTN_FILL, BTN_MAIN, EmptyBox, INK_SOFT, MUTED, PoDoneButton, TOGGLE, TOGGLE_HEAD } from "./BetaCalParts";
 
 const LI: CSSProperties = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 0", borderTop: `1px solid ${BETA.lineSoft}` };
 const LIST: CSSProperties = { listStyle: "none", margin: 0, padding: 0 };
@@ -119,67 +119,75 @@ function Section({ title, color, children, count }: { title: string; color: stri
 }
 
 export function BetaCalDeadlines({ m, who, canAssign, viewingName, ...act }: Props): ReactElement {
-  const g = deadlineGroups(m, who);
-  const rowsOf = (arr: Array<DueItem | ApptItem>): ReactElement[] => arr.map((x) => (x.type === "appt" ? apptRow(m, who, x) : dueRow(m, who, x)));
-  const hasLeft = g.late.length + g.week.length + g.two.length + g.later.length + g.waiting.length + g.ready.length > 0;
-
+  const body = (w: Viewing, g: DeadlineGroups): ReactElement => <DeadlineBody m={m} who={w} g={g} canAssign={canAssign} act={act} />;
+  const card = (w: number, name: string, open?: boolean): ReactElement => {
+    const g = deadlineGroups(m, w);
+    return <DeadlineCard key={w} g={g} name={name} open={open}>{body(w, g)}</DeadlineCard>;
+  };
   return (
     <section aria-labelledby="betaDlHead" style={{ ...GLASS, borderRadius: 26, padding: 20, display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
         <h2 id="betaDlHead" style={{ margin: 0, fontSize: 17, fontWeight: 600, letterSpacing: "-.02em" }}>{viewingName ? `${viewingName}'s deadlines` : "Team deadlines"}</h2>
         {canAssign && <button type="button" onClick={act.onAddProject} style={{ ...BTN, minHeight: 40, padding: "0 16px", fontSize: 14 }}>+ Add project</button>}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-        {/* The to-book list leads: on a wide screen the wide left column, on a phone above the deadlines (feedback, 11 Nov 2026). */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
-          {g.todo.length > 0 ? (
-            <aside style={{ flex: "999 1 460px", minWidth: 0, background: BETA.tbPanel, border: `1px solid ${BETA.tbEdge}`, borderRadius: 26, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
-              <h3 style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: TONES.amber.ink }}>To book / to do · {g.todo.length}</h3>
-              <ol className="stag" style={LIST}>{g.todo.map((x) => <TodoRow key={`${x.p.id}-${x.k}`} m={m} who={who} x={x} canAssign={canAssign} act={act} />)}</ol>
-            </aside>
-          ) : (
-            <aside style={{ flex: "999 1 460px", minWidth: 0, background: TONES.accent.soft, border: `1px solid ${TONES.accent.line}`, borderRadius: 26, padding: "14px 16px", fontSize: 13, color: TONES.accent.ink, fontWeight: 600 }}>
-              Nothing to book or do right now.
-            </aside>
-          )}
-          <div style={{ flex: "1 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 18 }}>
-            {hasLeft ? (
-              <>
-                <Section title="Late" color={TONES.red.ink} count={g.late.length}>{rowsOf(g.late)}</Section>
-                <Section title="Next 7 days" color={TONES.amber.ink} count={g.week.length}>{rowsOf(g.week)}</Section>
-                <Section title="In 8–14 days" color={TONES.accent.ink} count={g.two.length}>{rowsOf(g.two)}</Section>
-                <Section title="Later" color={MUTED} count={g.later.length}>{rowsOf(g.later)}</Section>
-                <Section title="Waiting for client" color={INK_SOFT} count={g.waiting.length}>
-                  {g.waiting.map((x) => {
-                    const ago = diff(m.today, x.sent);
-                    return (
-                      <li key={`${x.p.id}-${x.k}`} style={LI}>
-                        <div style={MID}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: INK_SOFT }}>
-                            {x.k}D {x.n ? `${ord(x.n)} amendment ` : ""}sent {ds(x.sent)}{ago > 0 ? ` · ${ago} ${dayWord(ago)} ago` : ""}
-                          </div>
-                          <NameLink p={x.p} />
-                          {x.p.by[x.k] && (
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, fontSize: 12, fontWeight: 600, color: BETA.ink }}>
-                              <Badge name={x.p.by[x.k]?.name ?? ""} />{x.k}D by {x.p.by[x.k]?.name}
-                            </div>
-                          )}
-                        </div>
-                        {canAssign && (
-                          <div style={{ flex: "none", display: "flex", gap: 6, flexWrap: "wrap" }}>
-                            <button type="button" disabled={act.busy} onClick={() => act.onAmend(x.p.id, x.k)} style={BTN_AMEND}>+ Amendment</button>
-                            <button type="button" disabled={act.busy} onClick={() => act.onApprove(x.p, x.k)} style={BTN_CONFIRM}>Client approved</button>
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </Section>
-                <Section title="Ready to start" color={MUTED} count={g.ready.length}>
-                  {g.ready.map((x) => (
+      {who === "All" ? body(who, deadlineGroups(m, who)) : (
+        /* One person: their own work as an open card, then a closed card for each person who reports to them (YH, 23 Nov 2026). */
+        <div>
+          {card(who, viewingName ?? "Mine", true)}
+          {reportsOf(m, who).map((x) => card(x.id, x.name))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** A person's deadlines as a toggle card; the heading counts what they have to do, have due, and wait on. */
+function DeadlineCard({ g, name, open, children }: { g: DeadlineGroups; name: string; open?: boolean; children: ReactNode }): ReactElement {
+  const due = g.late.length + g.week.length + g.two.length + g.later.length;
+  const count = [[g.todo.length, "to do"], [due, "due"], [g.waiting.length, "waiting"]].filter(([n]) => n).map(([n, t]) => `${n} ${t}`).join(" · ") || "nothing due";
+  return (
+    <details open={open} style={TOGGLE}>
+      <summary style={TOGGLE_HEAD}>{name} <span style={{ color: MUTED, fontWeight: 500 }}>· {count}</span></summary>
+      <div style={{ paddingBottom: 14 }}>{children}</div>
+    </details>
+  );
+}
+
+/** One person's (or the team's) to-do box and deadline sections. */
+function DeadlineBody({ m, who, g, canAssign, act }: { m: BoardModel; who: Viewing; g: DeadlineGroups; canAssign: boolean; act: DeadlineActions }): ReactElement {
+  const rowsOf = (arr: Array<DueItem | ApptItem>): ReactElement[] => arr.map((x) => (x.type === "appt" ? apptRow(m, who, x) : dueRow(m, who, x)));
+  const hasLeft = g.late.length + g.week.length + g.two.length + g.later.length + g.waiting.length + g.ready.length > 0;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {/* The to-book list leads: on a wide screen the wide left column, on a phone above the deadlines (feedback, 11 Nov 2026). */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
+        {g.todo.length > 0 ? (
+          <aside style={{ flex: "999 1 460px", minWidth: 0, background: BETA.tbPanel, border: `1px solid ${BETA.tbEdge}`, borderRadius: 26, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+            <h3 style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: TONES.amber.ink }}>To book / to do · {g.todo.length}</h3>
+            <ol className="stag" style={LIST}>{g.todo.map((x) => <TodoRow key={`${x.p.id}-${x.k}`} m={m} who={who} x={x} canAssign={canAssign} act={act} />)}</ol>
+          </aside>
+        ) : (
+          <aside style={{ flex: "1 1 100%", minWidth: 0, background: TONES.accent.soft, border: `1px solid ${TONES.accent.line}`, borderRadius: 26, padding: "14px 16px", fontSize: 13, color: TONES.accent.ink, fontWeight: 600 }}>
+            Nothing to book or do right now.
+          </aside>
+        )}
+        <div style={{ flex: "1 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 18 }}>
+          {hasLeft ? (
+            <>
+              <Section title="Late" color={TONES.red.ink} count={g.late.length}>{rowsOf(g.late)}</Section>
+              <Section title="Next 7 days" color={TONES.amber.ink} count={g.week.length}>{rowsOf(g.week)}</Section>
+              <Section title="In 8–14 days" color={TONES.accent.ink} count={g.two.length}>{rowsOf(g.two)}</Section>
+              <Section title="Later" color={MUTED} count={g.later.length}>{rowsOf(g.later)}</Section>
+              <Section title="Waiting for client" color={INK_SOFT} count={g.waiting.length}>
+                {g.waiting.map((x) => {
+                  const ago = diff(m.today, x.sent);
+                  return (
                     <li key={`${x.p.id}-${x.k}`} style={LI}>
                       <div style={MID}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>{x.k === "3" ? "3D not started" : "3D approved · 2D not started"}</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: INK_SOFT }}>
+                          {x.k}D {x.n ? `${ord(x.n)} amendment ` : ""}sent {ds(x.sent)}{ago > 0 ? ` · ${ago} ${dayWord(ago)} ago` : ""}
+                        </div>
                         <NameLink p={x.p} />
                         {x.p.by[x.k] && (
                           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, fontSize: 12, fontWeight: 600, color: BETA.ink }}>
@@ -187,19 +195,40 @@ export function BetaCalDeadlines({ m, who, canAssign, viewingName, ...act }: Pro
                           </div>
                         )}
                       </div>
-                      {canAssign && <button type="button" disabled={act.busy} onClick={() => act.onStart(x.p, x.k)} style={BTN_MAIN}>Start {x.k}D today</button>}
-                      {canAssign && <button type="button" onClick={() => act.onEdit(x.p.id)} style={BTN}>Edit</button>}
+                      {canAssign && (
+                        <div style={{ flex: "none", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button type="button" disabled={act.busy} onClick={() => act.onAmend(x.p.id, x.k)} style={BTN_AMEND}>+ Amendment</button>
+                          <button type="button" disabled={act.busy} onClick={() => act.onApprove(x.p, x.k)} style={BTN_CONFIRM}>Client approved</button>
+                        </div>
+                      )}
                     </li>
-                  ))}
-                </Section>
-              </>
-            ) : (
-              <EmptyBox>No deadlines.</EmptyBox>
-            )}
-          </div>
+                  );
+                })}
+              </Section>
+              <Section title="Ready to start" color={MUTED} count={g.ready.length}>
+                {g.ready.map((x) => (
+                  <li key={`${x.p.id}-${x.k}`} style={LI}>
+                    <div style={MID}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>{x.k === "3" ? "3D not started" : "3D approved · 2D not started"}</div>
+                      <NameLink p={x.p} />
+                      {x.p.by[x.k] && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, fontSize: 12, fontWeight: 600, color: BETA.ink }}>
+                          <Badge name={x.p.by[x.k]?.name ?? ""} />{x.k}D by {x.p.by[x.k]?.name}
+                        </div>
+                      )}
+                    </div>
+                    {canAssign && <button type="button" disabled={act.busy} onClick={() => act.onStart(x.p, x.k)} style={BTN_MAIN}>Start {x.k}D today</button>}
+                    {canAssign && <button type="button" onClick={() => act.onEdit(x.p.id)} style={BTN}>Edit</button>}
+                  </li>
+                ))}
+              </Section>
+            </>
+          ) : (
+            <EmptyBox>No deadlines.</EmptyBox>
+          )}
         </div>
       </div>
-    </section>
+    </div>
   );
 }
 

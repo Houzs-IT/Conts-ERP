@@ -65,6 +65,8 @@ export type PoListFilters = {
   /** POs with a line bought for an SO whose reference matches `q`
       (lib/so-ref-search.ts); a PO carries no ref of its own. */
   soRefPoIds: string[];
+  /** Suppliers whose name or code matches `q` (withSoRefPoIds); their POs match the search too. */
+  supplierIds?: string[];
 };
 
 const param = (v: string | undefined): string | null => (v === undefined || v === '' ? null : v);
@@ -185,7 +187,7 @@ export function filterPoList<Q>(q: Q, f: PoListFilters, c: CompanyScopeCtx, vali
      ilike'd here. */
   if (f.q) {
     const s = escapeForOr(f.q);
-    if (s) out = out.or([`po_number.ilike.%${s}%`, `notes.ilike.%${s}%`, ...inArm('id', f.soRefPoIds)].join(','));
+    if (s) out = out.or([`po_number.ilike.%${s}%`, `notes.ilike.%${s}%`, ...inArm('id', f.soRefPoIds), ...inArm('supplier_id', f.supplierIds ?? [])].join(','));
   }
   if (f.from) out = out.gte('po_date', f.from);
   if (f.to) out = out.lte('po_date', f.to);

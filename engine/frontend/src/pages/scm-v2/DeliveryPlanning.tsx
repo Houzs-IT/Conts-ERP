@@ -292,7 +292,7 @@ export const DeliveryPlanning = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Delivery"
-        title="Delivery Planning"
+        title="Delivery planning"
         description={`Orders that need delivering · grouped by region (customer state) · ${counts.ALL} in ${activeRegionLabel}`}
         primaryAction={
           <span style={{ display: 'inline-flex', flexWrap: 'wrap', minWidth: 0, gap: 'var(--space-2)' }}>

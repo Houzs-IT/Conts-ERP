@@ -326,7 +326,7 @@ export async function importReservations(db: Db, plan: ReservationPlan, now: str
 export async function notOnSource(db: Db, unitIds: string[], from: string, to: string, sentIds: string[]): Promise<RowError[]> {
   if (!unitIds.length) return [];
   const rows = await db.all<{ id: string; unit_number: string; check_in: string; check_out: string; channel: string; state: string }>(`
-    SELECT r.id, u.unit_number, r.check_in, r.check_out, r.channel, r.state FROM reservations r JOIN units u ON u.id = r.unit_id
+    SELECT r.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, r.check_in, r.check_out, r.channel, r.state FROM reservations r JOIN units u ON u.id = r.unit_id
     WHERE r.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND r.check_out > ? AND r.check_in < ?
       AND r.id LIKE 'hp-res-%' AND r.id NOT LIKE 'hp-res-ab-%' AND r.id NOT LIKE 'hp-res-bc-%'
       AND r.channel != 'maintenance_block' AND r.state NOT IN ('cancelled','no_show')

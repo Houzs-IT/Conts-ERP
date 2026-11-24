@@ -4,12 +4,13 @@
    every write adds a project_activity row (action beta_*) that the existing timeline reads. Section 10 of the plan
    (Home, Projects and Calendar) adds the board read and the design, appointment and calendar entry writes at the end. */
 
+import { pendingVariants } from "../services/renovation/variantPending";
+import { eventTypeKnown, listWorkTypes } from "../services/renovation/workTypes";
 import { Hono, type Context } from "hono";
 import { TRANSIENT_CONN_RE } from "../db/d1-compat";
 import type { Env } from "../types";
 import { requirePageAccess, requirePermission } from "../middleware/auth";
 import { activeCompanySql, requireActiveCompanyId } from "../scm/lib/companyScope";
-import { billingViews } from "../scm/lib/renovation-billing";
 import { todayMyt } from "../scm/lib/my-time";
 import { builtinPosOf, poDrawings, projectDrawings, recordDrawingAmendments } from "../services/renovation/betaBuiltinPo";
 import { financeHiddenForUser } from "../services/pmsAccess";
@@ -20,16 +21,16 @@ import { syncPeopleFromUsers } from "../services/renovation/peopleSync";
 import { teamPersonIds, teamProjectSql } from "../services/renovation/teamScope";
 import { hasPermission } from "../services/permissions";
 import { isMissingRelation, loadProjectRows, loadRenovationFacts, type Db, type DbStmt } from "../services/renovation/load";
-import { renoDbFromD1 } from "../services/renovation/dbBridge";
+import { PROJECT_SO_SQL, projectPayments, type ProjectSoRow } from "../services/renovation/projectPayments";
 import { writeCachedStage } from "../services/renovation/contractSync";
 import {
   BETA_DEFAULT_2D_DAYS, BETA_DEFAULT_3D_DAYS, cleanBetaReminder, cleanBetaSettings, cleanDefectFixed, cleanDefectRedo, cleanDefectReport,
-  cleanDesignApproval, cleanDesignSent, defectMoveRefusal, designLabel, paymentsOf, type BetaPayments, type BetaReceipt, type DefectMove,
+  cleanDesignApproval, cleanDesignSent, defectMoveRefusal, designLabel, type BetaPayments, type DefectMove,
 } from "../services/renovation/beta";
 import {
-  BETA_AMENDMENT_DAYS, buildBoardProject, cleanBetaAppointment, cleanBetaDesign, cleanBetaEvent, cleanBetaEventPatch, cleanBoardRange, cleanNoteDays,
-  designChangeNote, designPersonIds, groupByProject, isAppointmentKind, paymentLabel, rolesOf,
-  type BetaDesignPatch, type BetaEventPatch, type BoardAppointmentRow, type BoardFileRow, type BoardNoteRow, type BoardPayment, type BoardProjectRow,
+  BETA_AMENDMENT_DAYS, boardPersonOf, bookingPeopleOf, buildBoardProject, cleanBetaAppointment, cleanBetaDesign, cleanBetaEvent, cleanBetaEventPatch, cleanBoardRange, cleanNoteDays,
+  designChangeNote, designPersonIds, groupByProject, isAppointmentKind, paymentLabel,
+  type BetaDesignPatch, type BetaEventPatch, type BoardAppointmentRow, type BoardFileRow, type BoardNoteRow, type BoardPayment, type BoardPersonRow, type BoardProjectRow,
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
@@ -53,7 +54,8 @@ import { HANDOVER_NOT_READY, itemFailRefusal } from "../services/renovation/hand
 import { chainTimeline, statusWords } from "../services/renovation/betaTimelineChain";
 import { datedAt, plainEntry, readProjectTimeline, taskCodeLabel, timelineNotesReady, type TimelineCategory, type TimelineDoc, type TimelineEntry } from "../services/renovation/timeline";
 import { docFlowColumnsReady } from "../scm/routes/renovation-doc-flow";
-import { attachmentsReady, linkedFilesFor, listFilesFor, orderLineFiles, podFiles, textArray, type DocFile } from "../scm/lib/doc-attachments";
+import { attachmentsReady, linkedFilesFor, listFilesFor, orderLineFiles, podFilesFor, textArray, type DocFile } from "../scm/lib/doc-attachments";
+import { brandVisibleSql, loadBrandSide } from "../services/projectBrandScope";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -110,56 +112,12 @@ async function designFileOf(c: Ctx, fileId: number): Promise<DesignFileRow | nul
 
 const TS = (col: string): string => `to_char(${col} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`;
 
-interface ProjectSoRow { project_id: number; doc_no: string; kind: string | null; total_sen: number | null }
-interface ReceiptRow { so_doc_no: string; paid_on: string; amount_sen: number; method: string | null }
-
-/* The live sales order of each project: a renovation contract first, else the newest ordinary sales order linked to
-   the project (owner, 24 Oct 2026: "once I receive money, the project knows"). */
-const PROJECT_SO_SQL = (where: string): string =>
-  `SELECT DISTINCT ON (so.project_id) so.project_id::int AS project_id, so.doc_no, to_jsonb(so)->>'so_kind' AS kind, so.local_total_sen::bigint AS total_sen
-     FROM scm.mfg_sales_orders so JOIN projects p ON p.id = so.project_id
-    WHERE ${where} AND so.company_id = ? AND so.status::text <> 'CANCELLED'
-    ORDER BY so.project_id, (to_jsonb(so)->>'so_kind' = 'RENOVATION') DESC, so.so_date DESC NULLS LAST, so.doc_no DESC`;
-
-/** Payments recorded on these orders, oldest first, grouped by order. */
-async function receiptsOf(c: Ctx, docNos: readonly string[]): Promise<Map<string, BetaReceipt[]>> {
-  const out = new Map<string, BetaReceipt[]>();
-  if (docNos.length === 0) return out;
-  const rows = (await db(c).prepare(
-    `SELECT so_doc_no, to_char(paid_at, 'YYYY-MM-DD') AS paid_on, amount_sen::bigint AS amount_sen, method::text AS method
-       FROM scm.mfg_sales_order_payments
-      WHERE so_doc_no IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND paid_at IS NOT NULL
-      ORDER BY paid_at, id`,
-  ).bind(JSON.stringify(docNos)).all<ReceiptRow>()).results ?? [];
-  for (const r of rows) {
-    const list = out.get(r.so_doc_no) ?? [];
-    list.push({ paidOn: r.paid_on, amountSen: Number(r.amount_sen), method: r.method });
-    out.set(r.so_doc_no, list);
-  }
-  return out;
-}
-
-/** Payments per project from its live sales order: the renovation contract's instalments, or four plain payments. */
-async function projectPayments(c: Ctx, companyId: number, sos: readonly ProjectSoRow[]): Promise<Map<number, BetaPayments>> {
-  const out = new Map<number, BetaPayments>();
-  const reno = sos.filter((s) => s.kind === "RENOVATION").map((s) => s.doc_no);
-  const [views, receipts] = await Promise.all([
-    reno.length > 0 ? billingViews(renoDbFromD1(db(c)), reno, companyId) : Promise.resolve(new Map()),
-    receiptsOf(c, sos.map((s) => s.doc_no)),
-  ]);
-  for (const so of sos) {
-    const view = so.kind === "RENOVATION" ? views.get(so.doc_no) ?? null : null;
-    out.set(Number(so.project_id), paymentsOf(view, { docNo: so.doc_no, totalSen: Number(so.total_sen ?? 0), receipts: receipts.get(so.doc_no) ?? [] }));
-  }
-  return out;
-}
-
 async function paymentsFor(c: Ctx, projectId: number, companyId: number): Promise<BetaPayments> {
   if (financeHiddenForUser(c.get("user"))) return { state: "hidden" };
   try {
     const so = await db(c).prepare(PROJECT_SO_SQL("so.project_id = ?")).bind(projectId, companyId).first<ProjectSoRow>();
     if (!so) return { state: "none" };
-    return (await projectPayments(c, companyId, [so])).get(projectId) ?? { state: "none" };
+    return (await projectPayments(db(c), companyId, [so])).get(projectId) ?? { state: "none" };
   } catch (e) {
     // Only an environment whose billing tables are not there yet reads as "no payments"; any other failure surfaces.
     if (isMissingRelation(e)) return { state: "none" };
@@ -173,22 +131,25 @@ app.get("/projects/:id/workspace", requirePageAccess("projects.list"), async (c)
   const co = await projectCompany(c, id);
   if (co == null) return c.json({ error: "not_found" }, 404);
   try {
-    const settings = await db(c).prepare(`SELECT design_3d_days::int AS d3, design_2d_days::int AS d2 FROM project_beta_settings WHERE company_id = ?`)
-      .bind(co).first<{ d3: number; d2: number }>();
-    const reviews = await db(c).prepare(
-      `SELECT file_id::int AS file_id, sent_on::text AS sent_on, due_on::text AS due_on, approved_on::text AS approved_on, approved_by_name, approval_note
-         FROM project_design_file_reviews WHERE project_id = ? ORDER BY file_id`,
-    ).bind(id).all<{ file_id: number; sent_on: string | null; due_on: string | null; approved_on: string | null; approved_by_name: string | null; approval_note: string | null }>();
-    const defects = await db(c).prepare(
-      `SELECT d.id::int AS id, d.phase, d.location, d.item_description, d.trade, d.due_date::text AS due_date, d.reported_at, u.name AS reported_by_name,
-              d.photo_r2_key, d.after_photo_r2_key, ${TS("d.fixed_at")} AS fixed_at, ${TS("d.closed_at")} AS closed_at, d.redo_count::int AS redo_count
-         FROM project_defects d LEFT JOIN users u ON u.id = d.reported_by
-        WHERE d.project_id = ? AND d.archived_at IS NULL ORDER BY d.id`,
-    ).bind(id).all<{
-      id: number; phase: string; location: string | null; item_description: string | null; trade: string | null; due_date: string | null; reported_at: string | null;
-      reported_by_name: string | null; photo_r2_key: string | null; after_photo_r2_key: string | null; fixed_at: string | null; closed_at: string | null; redo_count: number;
-    }>();
-    const payments = await paymentsFor(c, id, co);
+    // Four independent reads, sent together.
+    const [settings, reviews, defects, payments] = await Promise.all([
+      db(c).prepare(`SELECT design_3d_days::int AS d3, design_2d_days::int AS d2 FROM project_beta_settings WHERE company_id = ?`)
+        .bind(co).first<{ d3: number; d2: number }>(),
+      db(c).prepare(
+        `SELECT file_id::int AS file_id, sent_on::text AS sent_on, due_on::text AS due_on, approved_on::text AS approved_on, approved_by_name, approval_note
+           FROM project_design_file_reviews WHERE project_id = ? ORDER BY file_id`,
+      ).bind(id).all<{ file_id: number; sent_on: string | null; due_on: string | null; approved_on: string | null; approved_by_name: string | null; approval_note: string | null }>(),
+      db(c).prepare(
+        `SELECT d.id::int AS id, d.phase, d.location, d.item_description, d.trade, d.due_date::text AS due_date, d.reported_at, u.name AS reported_by_name,
+                d.photo_r2_key, d.after_photo_r2_key, ${TS("d.fixed_at")} AS fixed_at, ${TS("d.closed_at")} AS closed_at, d.redo_count::int AS redo_count
+           FROM project_defects d LEFT JOIN users u ON u.id = d.reported_by
+          WHERE d.project_id = ? AND d.archived_at IS NULL ORDER BY d.id`,
+      ).bind(id).all<{
+        id: number; phase: string; location: string | null; item_description: string | null; trade: string | null; due_date: string | null; reported_at: string | null;
+        reported_by_name: string | null; photo_r2_key: string | null; after_photo_r2_key: string | null; fixed_at: string | null; closed_at: string | null; redo_count: number;
+      }>(),
+      paymentsFor(c, id, co),
+    ]);
     return c.json({
       settings: { design3dDays: settings?.d3 ?? BETA_DEFAULT_3D_DAYS, design2dDays: settings?.d2 ?? BETA_DEFAULT_2D_DAYS },
       reviews: (reviews.results ?? []).map((r) => ({
@@ -491,8 +452,6 @@ async function companyPeople(c: Ctx, companyId: number, ids: readonly number[]):
 
 const PERSON_REFUSAL = { error: "person_invalid", message: "That person is not on this company's list." } as const;
 
-interface BoardPersonRow { id: number; name: string; roles: unknown; position: string | null; department: string | null; offered: boolean }
-
 /* The board's people follow the project page's people list (routes/renovationProject.ts GET /people; owner,
    14 Oct 2026): the list is brought in line with the user accounts first, and `offered` is true only for people
    linked to an active account, labelled with the account's position and department. Every person of the company
@@ -507,10 +466,13 @@ async function boardPeople(c: Ctx, companyId: number): Promise<BoardPersonRow[]>
   }
   const res = await db(c).prepare(
     fromUsers
-      ? `SELECT pp.id::int AS id, pp.name, to_json(pp.roles) AS roles, s.position, s.department, (pp.pos_user_id IS NOT NULL AND pp.active) AS offered
+      ? `SELECT pp.id::int AS id, pp.name, to_json(pp.roles) AS roles, s.position, s.department, (pp.pos_user_id IS NOT NULL AND pp.active) AS offered,
+                (SELECT m.id::int FROM project_people m
+                  WHERE m.company_id = pp.company_id AND m.pos_user_id::text = to_jsonb(s)->>'manager_id'
+                  ORDER BY (m.pos_user_id IS NOT NULL AND m.active) DESC, m.id LIMIT 1) AS manager_person_id
            FROM project_people pp LEFT JOIN conts_staff s ON s.id = pp.pos_user_id
           WHERE pp.company_id = ? ORDER BY lower(pp.name), pp.id`
-      : `SELECT id::int AS id, name, to_json(roles) AS roles, NULL AS position, NULL AS department, active AS offered
+      : `SELECT id::int AS id, name, to_json(roles) AS roles, NULL AS position, NULL AS department, active AS offered, NULL AS manager_person_id
            FROM project_people WHERE company_id = ? ORDER BY lower(name), id`,
   ).bind(companyId).all<BoardPersonRow>();
   return res.results ?? [];
@@ -532,7 +494,7 @@ async function boardPayments(c: Ctx, companyId: number, scope: string): Promise<
   const out = new Map<number, BoardPayment>();
   try {
     const sos = (await db(c).prepare(PROJECT_SO_SQL(scope)).bind(companyId).all<ProjectSoRow>()).results ?? [];
-    for (const [id, p] of await projectPayments(c, companyId, sos)) out.set(id, paymentLabel(p));
+    for (const [id, p] of await projectPayments(db(c), companyId, sos)) out.set(id, paymentLabel(p));
   } catch (e) {
     // Same rule as the workspace: only billing tables that are not there yet read as "no payment"; anything else surfaces.
     if (!isMissingRelation(e)) throw e;
@@ -541,8 +503,17 @@ async function boardPayments(c: Ctx, companyId: number, scope: string): Promise<
 }
 
 interface EventRow {
-  id: number; project_id: number | null; on_date: string; at_time: string | null; type: string; note: string | null; person_id: number | null; done: boolean;
+  id: number; project_id: number | null; on_date: string; at_time: string | null; type: string; note: string | null; person_id: number | null;
+  person_ids: unknown; who_text: string | null; done: boolean;
 }
+
+/* A booking's people (migration 0362). Code from before that change writes person_id only; when person_id no longer
+   matches the list's first pick the list is stale, and person_id alone is who goes. */
+const bookingPeopleSql = (a: string): string =>
+  `CASE WHEN ${a}.person_id IS NULL THEN '{}'::bigint[] WHEN ${a}.person_ids[1] IS DISTINCT FROM ${a}.person_id THEN ARRAY[${a}.person_id] ELSE ${a}.person_ids END`;
+
+/** A Postgres array literal of ids, for a ?::text::bigint[] placeholder. */
+const pgIds = (ids: readonly number[]): string => `{${ids.join(",")}}`;
 
 app.get("/board", requirePageAccess("projects.list"), async (c) => {
   const co = requireActiveCompanyId(c);
@@ -561,12 +532,13 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
   const seeAll = hasPermission(user?.permissions_set ?? user?.permissions ?? [], "projects.manage");
   const team = seeAll ? null : await teamPersonIds(db(c), user?.id, user?.email);
   const teamSql = team == null ? "" : ` AND ${teamProjectSql(team)}`;
-  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${projectId == null ? "" : ` AND p.id = ${projectId}`}${teamSql}`;
-  const eventScope = `${projectId == null ? "" : ` AND e.project_id = ${projectId}`}${team == null ? "" : ` AND (e.person_id IN (${[0, ...team].join(",")}) OR (e.project_id IS NOT NULL${teamSql}))`}`;
+  const brandSql = brandVisibleSql(await loadBrandSide(db(c), user));
+  const scope = `p.project_kind = 'renovation' AND p.archived_at IS NULL${coSql(c, "p.company_id")}${projectId == null ? "" : ` AND p.id = ${projectId}`}${teamSql}${brandSql}`;
+  const eventScope = `${projectId == null ? "" : ` AND e.project_id = ${projectId}`}${team == null ? "" : ` AND (e.person_id IN (${[0, ...team].join(",")}) OR e.person_ids && ARRAY[${[0, ...team].join(",")}]::bigint[] OR (e.project_id IS NOT NULL${teamSql}))`}${brandSql ? ` AND (e.project_id IS NULL OR (TRUE${brandSql}))` : ""}`;
   const hidden = financeHiddenForUser(user);
   try {
     // One query per data set over the whole scoped project list, grouped in code below.
-    const [settings, people, projects, files, notes, reviews, appointments, events, payments, meIds] = await Promise.all([
+    const [settings, people, projects, files, notes, reviews, appointments, events, payments, meIds, workTypes, designEvents, soLines] = await Promise.all([
       db(c).prepare(`SELECT design_3d_days::int AS d3, design_2d_days::int AS d2 FROM project_beta_settings WHERE company_id = ?`)
         .bind(companyId).first<{ d3: number; d2: number }>(),
       boardPeople(c, companyId),
@@ -606,13 +578,13 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       ).bind().all<BoardReviewRow>(),
       db(c).prepare(
         `SELECT a.project_id::int AS project_id, a.kind, a.on_date::text AS on_date, to_char(a.at_time, 'HH24:MI') AS at_time, a.person_id::int AS person_id,
-                a.with_text, ${TS("a.done_at")} AS done_at
+                ${bookingPeopleSql("a")} AS person_ids, a.with_text, a.who_text, ${TS("a.done_at")} AS done_at
            FROM project_beta_appointments a JOIN projects p ON p.id = a.project_id
           WHERE ${scope} ORDER BY a.project_id, a.kind`,
       ).bind().all<BoardAppointmentRow>(),
       db(c).prepare(
         `SELECT e.id::int AS id, e.project_id::int AS project_id, e.on_date::text AS on_date, to_char(e.at_time, 'HH24:MI') AS at_time, e.type, e.note,
-                e.person_id::int AS person_id, e.done
+                e.person_id::int AS person_id, ${bookingPeopleSql("e")} AS person_ids, e.who_text, e.done
            FROM project_beta_events e LEFT JOIN projects p ON p.id = e.project_id
           WHERE e.company_id = ? AND e.on_date BETWEEN ?::date AND ?::date
             AND (e.project_id IS NULL OR (p.project_kind = 'renovation' AND p.archived_at IS NULL))${eventScope}
@@ -620,15 +592,34 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       ).bind(companyId, range.value.from, range.value.to).all<EventRow>(),
       hidden ? Promise.resolve(new Map<number, BoardPayment>()) : boardPayments(c, companyId, scope),
       calendarMePersonIds(db(c), user?.id, user?.email),
+      listWorkTypes(db(c), companyId),
+      // Design works of the list (migration 0342) booked on the calendar, any date: the newest booking of each work per
+      // project says when it is or was done.
+      db(c).prepare(
+        `SELECT DISTINCT ON (e.project_id, e.type) e.project_id::int AS project_id, e.type, e.on_date::text AS on_date, to_char(e.at_time, 'HH24:MI') AS at_time, e.done
+           FROM project_beta_events e JOIN projects p ON p.id = e.project_id
+          WHERE e.company_id = ? AND ${scope}
+          ORDER BY e.project_id, e.type, e.on_date DESC, e.id DESC`,
+      ).bind(companyId).all<{ project_id: number; type: string; on_date: string; at_time: string | null; done: boolean }>(),
+      // Sales order lines for the Variants step: every line's category-required variants picked.
+      db(c).prepare(
+        `SELECT so.project_id::int AS project_id, i.id::text AS id, i.doc_no, i.description, i.item_code, i.item_group, i.variants,
+                prod.category AS prod_category, prod.sub_category AS prod_sub
+           FROM scm.mfg_sales_order_items i JOIN scm.mfg_sales_orders so ON so.doc_no = i.doc_no JOIN projects p ON p.id = so.project_id
+           LEFT JOIN LATERAL (SELECT mp.category::text AS category, mp.sub_category FROM scm.mfg_products mp
+                               WHERE mp.code = i.item_code AND mp.company_id = so.company_id ORDER BY (mp.status::text = 'ACTIVE') DESC LIMIT 1) prod ON true
+          WHERE ${scope} AND so.company_id = ? AND so.status::text <> 'CANCELLED' AND NOT coalesce(i.cancelled, false)`,
+      ).bind(companyId).all<{
+        project_id: number; id: string; item_code: string | null; item_group: string | null; variants: Record<string, unknown> | null;
+        prod_category: string | null; prod_sub: string | null; doc_no: string | null; description: string | null;
+      }>(),
     ]);
     if (projectId != null && (projects.results ?? []).length === 0) return c.json({ error: "not_found" }, 404);
     const sets = {
       files: groupByProject(files.results ?? []), notes: groupByProject(notes.results ?? []),
       reviews: groupByProject(reviews.results ?? []), appointments: groupByProject(appointments.results ?? []),
     };
-    const peopleList = people.map((p) => ({
-      id: Number(p.id), name: p.name, roles: rolesOf(p.roles), position: p.position ?? null, department: p.department ?? null, offered: !!p.offered,
-    }));
+    const peopleList = people.map(boardPersonOf);
     const mine = new Set(meIds);
     const paymentOf = (projectId: number): BoardPayment => (hidden ? { state: "hidden" } : payments.get(projectId) ?? { state: "none" });
     return c.json({
@@ -636,9 +627,24 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       mePersonId: peopleList.find((p) => p.offered && mine.has(p.id))?.id ?? peopleList.find((p) => mine.has(p.id))?.id ?? null,
       settings: { design3dDays: settings?.d3 ?? BETA_DEFAULT_3D_DAYS, design2dDays: settings?.d2 ?? BETA_DEFAULT_2D_DAYS, amendmentDays: BETA_AMENDMENT_DAYS },
       people: peopleList,
-      projects: (projects.results ?? []).map((p) => buildBoardProject(p, sets, paymentOf(Number(p.id)))),
+      workTypes,
+      projects: (projects.results ?? []).map((p) => {
+        const id = Number(p.id);
+        const lines = (soLines.results ?? []).filter((l) => Number(l.project_id) === id);
+        // The SKUs still waiting for a variant, by the SO tab's own rule, so the list and the project page can name them.
+        const open = pendingVariants(lines.map((l) => ({
+          id: l.id, docNo: l.doc_no, description: l.description,
+          itemCode: l.item_code, itemGroup: l.item_group, prodCategory: l.prod_category, prodSub: l.prod_sub, variants: l.variants,
+        })));
+        return {
+          ...buildBoardProject(p, sets, paymentOf(id)),
+          works: (designEvents.results ?? []).filter((e) => Number(e.project_id) === id).map((e) => ({ type: e.type, onDate: e.on_date, atTime: e.at_time, done: !!e.done })),
+          variants: { lines: lines.length, missing: open.length, pending: open.slice(0, 200) },
+        };
+      }),
       events: (events.results ?? []).map((e) => ({
-        id: e.id, projectId: e.project_id, onDate: e.on_date, atTime: e.at_time, type: e.type, note: e.note, personId: e.person_id, done: e.done,
+        id: e.id, projectId: e.project_id, onDate: e.on_date, atTime: e.at_time, type: e.type, note: e.note, personId: e.person_id,
+        personIds: bookingPeopleOf(e.person_ids, e.person_id), whoText: e.who_text, done: e.done,
       })),
     });
   } catch (e) {
@@ -719,19 +725,21 @@ app.put("/projects/:id/appointments/:kind", requirePermission("projects.write"),
   if (co == null) return c.json({ error: "not_found" }, 404);
   const v = cleanBetaAppointment(await body(c));
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
-  const { onDate, atTime, personId, withText } = v.value;
-  const people = await companyPeople(c, co, personId == null ? [] : [personId]);
+  const { onDate, atTime, personIds, withText, whoText } = v.value;
+  const people = await companyPeople(c, co, personIds);
   if (!people) return c.json(PERSON_REFUSAL, 400);
-  const who = personId == null ? null : `by ${people.get(personId) ?? "someone"}`;
+  const names = [...personIds.map((pid) => people.get(pid) ?? "someone"), ...(whoText ? [whoText] : [])];
+  const who = names.length ? `by ${names.join(", ")}` : null;
   // Booking again with the same day keeps it done; a moved day is a new appointment, so it is not done any more.
   await db(c).batch!([
     db(c).prepare(
-      `INSERT INTO project_beta_appointments (project_id, company_id, kind, on_date, at_time, person_id, with_text, created_by)
-       VALUES (?, ?, ?, ?::date, ?::time, ?::bigint, ?, ?)
+      `INSERT INTO project_beta_appointments (project_id, company_id, kind, on_date, at_time, person_id, person_ids, with_text, who_text, created_by)
+       VALUES (?, ?, ?, ?::date, ?::time, ?::bigint, ?::text::bigint[], ?, ?, ?)
        ON CONFLICT (project_id, kind) DO UPDATE SET on_date = excluded.on_date, at_time = excluded.at_time, person_id = excluded.person_id,
-                                                    with_text = excluded.with_text,
+                                                    person_ids = excluded.person_ids,
+                                                    with_text = excluded.with_text, who_text = excluded.who_text,
                                                     done_at = CASE WHEN project_beta_appointments.on_date = excluded.on_date THEN project_beta_appointments.done_at END`,
-    ).bind(id, co, kind, onDate, atTime, personId, withText, userId(c)),
+    ).bind(id, co, kind, onDate, atTime, personIds[0] ?? null, pgIds(personIds), withText, whoText, userId(c)),
     activityStmt(c, id, co, "beta_appointment_booked", null, kind, [`On ${onDate}`, atTime, who, withText].filter(Boolean).join(" · ")),
   ]);
   return c.json({ ok: true });
@@ -784,24 +792,25 @@ app.post("/events", requirePermission("projects.write"), async (c) => {
   if (!co.ok) return c.json(co.refusal, 409);
   const v = cleanBetaEvent(await body(c));
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
-  const { projectId, onDate, atTime, type, note, personId } = v.value;
+  const { projectId, onDate, atTime, type, note, personIds, whoText } = v.value;
+  if (!(await eventTypeKnown(db(c), co.companyId, type))) return c.json({ error: "type_invalid", message: "Pick the kind of entry from the list." }, 400);
   if (projectId != null && (await projectCompany(c, projectId)) == null) return c.json({ error: "not_found" }, 404);
-  if (!(await companyPeople(c, co.companyId, personId == null ? [] : [personId]))) return c.json(PERSON_REFUSAL, 400);
+  if (!(await companyPeople(c, co.companyId, personIds))) return c.json(PERSON_REFUSAL, 400);
   const row = await db(c).prepare(
-    `WITH e AS (INSERT INTO project_beta_events (company_id, project_id, on_date, at_time, type, note, person_id, created_by)
-                VALUES (?, ?::bigint, ?::date, ?::time, ?, ?, ?::bigint, ?) RETURNING id, project_id, company_id, type, note, on_date),
+    `WITH e AS (INSERT INTO project_beta_events (company_id, project_id, on_date, at_time, type, note, person_id, person_ids, who_text, created_by)
+                VALUES (?, ?::bigint, ?::date, ?::time, ?, ?, ?::bigint, ?::text::bigint[], ?, ?) RETURNING id, project_id, company_id, type, note, on_date),
           a AS (INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
                 SELECT e.project_id, 'beta_event_added', NULL, e.type, ${eventNote("e")}, ?::bigint, e.company_id FROM e WHERE e.project_id IS NOT NULL)
      SELECT id::int AS id FROM e`,
-  ).bind(co.companyId, projectId, onDate, atTime, type, note, personId, userId(c), userId(c)).first<{ id: number }>();
+  ).bind(co.companyId, projectId, onDate, atTime, type, note, personIds[0] ?? null, pgIds(personIds), whoText, userId(c), userId(c)).first<{ id: number }>();
   if (!row) return c.json({ error: "event_not_saved", message: "The entry could not be saved. Try again." }, 409);
   return c.json({ id: row.id }, 201);
 });
 
 const EVENT_COLUMNS = {
   projectId: ["project_id", "?::bigint"], onDate: ["on_date", "?::date"], atTime: ["at_time", "?::time"], type: ["type", "?::text"],
-  note: ["note", "?::text"], personId: ["person_id", "?::bigint"], done: ["done", "?::boolean"],
-} as const satisfies Record<keyof BetaEventPatch, readonly [string, string]>;
+  note: ["note", "?::text"], whoText: ["who_text", "?::text"], done: ["done", "?::boolean"],
+} as const satisfies Record<Exclude<keyof BetaEventPatch, "personIds">, readonly [string, string]>;
 
 app.patch("/events/:id", requirePermission("projects.write"), async (c) => {
   const id = parseId(c.req.param("id"));
@@ -810,17 +819,23 @@ app.patch("/events/:id", requirePermission("projects.write"), async (c) => {
   if (!co.ok) return c.json(co.refusal, 409);
   const v = cleanBetaEventPatch(await body(c));
   if (!v.ok) return c.json({ error: v.error, message: v.message }, 400);
-  const { projectId, personId } = v.value;
+  const { projectId, personIds } = v.value;
+  if (v.value.type !== undefined && !(await eventTypeKnown(db(c), co.companyId, v.value.type))) return c.json({ error: "type_invalid", message: "Pick the kind of entry from the list." }, 400);
   if (projectId != null && (await projectCompany(c, projectId)) == null) return c.json({ error: "not_found" }, 404);
-  if (!(await companyPeople(c, co.companyId, personId == null ? [] : [personId]))) return c.json(PERSON_REFUSAL, 400);
-  const sent = (Object.keys(EVENT_COLUMNS) as Array<keyof BetaEventPatch>).filter((k) => k in v.value);
+  if (!(await companyPeople(c, co.companyId, personIds ?? []))) return c.json(PERSON_REFUSAL, 400);
+  const sent = (Object.keys(EVENT_COLUMNS) as Array<keyof typeof EVENT_COLUMNS>).filter((k) => k in v.value);
+  // A new people list replaces the old one, so whoever was taken off loses it from their own calendar.
+  const cols: Array<readonly [string, unknown]> = [
+    ...sent.map((k) => [`${EVENT_COLUMNS[k][0]} = ${EVENT_COLUMNS[k][1]}`, v.value[k] ?? null] as const),
+    ...(personIds === undefined ? [] : [["person_id = ?::bigint", personIds[0] ?? null] as const, ["person_ids = ?::text::bigint[]", pgIds(personIds)] as const]),
+  ];
   const row = await db(c).prepare(
-    `WITH u AS (UPDATE project_beta_events SET ${sent.map((k) => `${EVENT_COLUMNS[k][0]} = ${EVENT_COLUMNS[k][1]}`).join(", ")}, updated_at = now()
+    `WITH u AS (UPDATE project_beta_events SET ${cols.map(([set]) => set).join(", ")}, updated_at = now()
                  WHERE id = ? AND company_id = ? RETURNING id, project_id, company_id, type, note, on_date),
           a AS (INSERT INTO project_activity (project_id, action, from_value, to_value, note, user_id, company_id)
                 SELECT u.project_id, 'beta_event_changed', NULL, u.type, ${eventNote("u")}, ?::bigint, u.company_id FROM u WHERE u.project_id IS NOT NULL)
      SELECT id::int AS id FROM u`,
-  ).bind(...sent.map((k) => v.value[k] ?? null), id, co.companyId, userId(c)).first<{ id: number }>();
+  ).bind(...cols.map(([, value]) => value), id, co.companyId, userId(c)).first<{ id: number }>();
   if (!row) return c.json({ error: "not_found" }, 404);
   return c.json({ ok: true });
 });
@@ -1039,6 +1054,34 @@ app.put("/projects/:id/lines/:itemId/supplier", requirePermission("projects.writ
   return c.json({ ok: true, supplierId, supplierName: bound.name });
 });
 
+/* Where a line's goods are received, picked on the SO tab before its PO (owner, 17 Nov 2026): the SO line's warehouse,
+   which MRP groups the line by and the PO it raises is delivered to. Once a PO holds the line, its location is the PO's. */
+app.put("/projects/:id/lines/:itemId/warehouse", requirePermission("projects.write"), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (!id) return c.json({ error: "invalid_id" }, 400);
+  const co = await projectCompany(c, id);
+  if (co == null) return c.json({ error: "not_found" }, 404);
+  const b = await body(c);
+  const warehouseId = typeof b.warehouseId === "string" ? b.warehouseId.trim() : "";
+  if (!warehouseId) return c.json({ error: "invalid_warehouse", message: "Pick a warehouse." }, 400);
+  const line = await projectLine(db(c), id, co, c.req.param("itemId"), await categoryScope(c));
+  if (!line) return c.json({ error: "not_found" }, 404);
+  const state = await lineSupplierState(db(c), line.id);
+  if (state.poNumber) return c.json({ error: "line_on_po", message: `${state.poNumber} already buys ${state.itemCode}: it is received where the PO says.` }, 409);
+  const wh = await db(c).prepare(`SELECT id::text AS id, name FROM scm.warehouses WHERE id::text = ? AND company_id = ? AND is_active`)
+    .bind(warehouseId, co).first<{ id: string; name: string }>();
+  if (!wh) return c.json({ error: "warehouse_not_found", message: "That warehouse could not be found." }, 400);
+  try {
+    await db(c).prepare(`UPDATE scm.mfg_sales_order_items SET warehouse_id = ?::uuid WHERE id::text = ? AND company_id = ?`)
+      .bind(wh.id, line.id, co).run();
+    await activityStmt(c, id, co, "beta_line_warehouse", null, line.doc_no, `${state.itemCode}: received at ${wh.name}`).run();
+  } catch (e) {
+    console.error("[renovation-beta] line warehouse save failed", e);
+    return c.json({ error: "warehouse_save_failed", message: "The warehouse could not be saved. Try again.", detail: readDetail(e) }, 500);
+  }
+  return c.json({ ok: true, warehouseId: wh.id, warehouseName: wh.name });
+});
+
 /** A read-only link for the client to the Client PO list. The token carries the project and company, signed. */
 app.post("/projects/:id/client-link", requirePermission("projects.write"), async (c) => {
   const id = parseId(c.req.param("id"));
@@ -1111,8 +1154,12 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
     ...dos.map((d) => ({ type: "delivery_order" as const, id: String(d.id) })),
     ...grs.map((g) => ({ type: "goods_received" as const, id: String(g.id) })),
   ];
-  const attached = ready ? await listFilesFor(db(c), docRefs, companyId) : new Map<string, DocFile[]>();
-  const linked = ready ? await linkedFilesFor(db(c), docRefs, companyId) : new Map<string, Array<DocFile & { key: string }>>();
+  // The uploads, the linked files and every delivery order's proof of delivery: three reads sent together, not one per order.
+  const [attached, linked, podsByDo] = await Promise.all([
+    ready ? listFilesFor(db(c), docRefs, companyId) : Promise.resolve(new Map<string, DocFile[]>()),
+    ready ? linkedFilesFor(db(c), docRefs, companyId) : Promise.resolve(new Map<string, Array<DocFile & { key: string }>>()),
+    podFilesFor(db(c), dos.map((d) => String(d.id))).catch(() => new Map<string, Array<DocFile & { key: string }>>()),
+  ]);
   const areasOf = (rows: Row[], id: string) => uniqueAreas(rows.filter((r) => r.doc_id === id).map((r) => str(r.area)));
   const linesOf = (rows: Row[], id: string): DeliveryLine[] => rows.filter((r) => r.doc_id === id)
     .map((r) => ({ soItemId: str(r.so_item_id), poLineId: str(r.po_line_id), qty: Number(r.qty ?? 0) }));
@@ -1134,7 +1181,7 @@ async function siteDeliveries(c: Ctx, projectId: number, companyId: number): Pro
   for (const d of dos) {
     const id = String(d.id);
     const photos: SitePhoto[] = [];
-    const pods = await podFiles(db(c), id).catch(() => []);
+    const pods = podsByDo.get(id) ?? [];
     for (const pod of pods) {
       photos.push({ id: `${pod.id}-${id}`, path: docPath("delivery_order", id, pod.id), name: "Proof of delivery", image: true, kind: "image", area: null, at: pod.at || null, source: "pod" });
     }

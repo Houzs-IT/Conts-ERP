@@ -63,7 +63,7 @@ vi.mock('../../vendor/scm/lib/payment-voucher-queries', () => ({
     { id: 1, supplier_id: 'sup-1', pv_id: 'pv-old', pv_number: 'PV-2608-777', amount_sen: 80000, applied_sen: 30000, remaining_sen: 50000, created_at: '2026-08-20' },
   ], totalRemainingSen: 50000 }, isLoading: false }),
 }));
-vi.mock('../../lib/idempotency', () => ({ useIdempotencyKey: () => 'idem-1' }));
+vi.mock('../../lib/idempotency', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../lib/idempotency')>()), useIdempotencyKey: () => 'idem-1' }));
 /* The AP invoices (non-stock bills) the picker lists BESIDE the PIs. */
 vi.mock('../../vendor/scm/lib/ap-invoice-queries', () => ({
   useApInvoices: () => ({ data: { rows: [
@@ -87,12 +87,14 @@ vi.mock('../../vendor/scm/lib/accounting-queries', async (importOriginal) => ({
   useAccountRoles: () => ({ data: { roles: { BANK_DEFAULT: '310-0010', ...(payFromRole ? { BANK_PAY_DEFAULT: payFromRole } : {}), AP: '400-0000', AP_OTHER: '405-0000', AR: '300-0000' }, overridden: {} }, isLoading: false }),
   useSaveBankDefault: () => ({ mutate: vi.fn(), isPending: false }),
 }));
-vi.mock('../../vendor/scm/lib/purchase-invoice-queries', () => ({
-  usePurchaseInvoices: () => ({ data: { purchaseInvoices: [
+const { PI_ROWS } = vi.hoisted(() => ({ PI_ROWS: () => ({ data: { purchaseInvoices: [
     { id: 'pi-1', invoice_number: '2990-PI-2609-001', supplier_invoice_ref: 'INV-77', supplier_id: 'sup-1', status: 'POSTED', total_sen: 255000, paid_sen: 0, invoice_date: '2026-09-01' },
     { id: 'pi-2', invoice_number: '2990-PI-2609-002', supplier_invoice_ref: null, supplier_id: 'sup-1', status: 'POSTED', total_sen: 100000, paid_sen: 40000, invoice_date: '2026-08-15' },
     { id: 'pi-9', invoice_number: '2990-PI-2608-018', supplier_invoice_ref: null, supplier_id: 'sup-405', status: 'POSTED', total_sen: 1644000, paid_sen: 0, invoice_date: '2026-08-20' },
-  ] }, isLoading: false }),
+  ] }, isLoading: false }) }));
+vi.mock('../../vendor/scm/lib/purchase-invoice-queries', () => ({
+  usePurchaseInvoices: PI_ROWS,
+  useSupplierPayablePis: PI_ROWS,
 }));
 vi.mock('../../vendor/scm/lib/suppliers-queries', () => ({
   useSuppliers: () => ({ data: [
@@ -120,7 +122,7 @@ const draw = (url: string) => render(
 describe('the AP Payment (?type=ap)', () => {
   test('supplier required, no hand-written lines, tick pays in full, and the save debits AP', async () => {
     draw('/scm/payment-vouchers/new?type=ap');
-    expect(screen.getByText('New AP Payment')).toBeTruthy();
+    expect(screen.getByText('New AP payment')).toBeTruthy();
     /* No expense-lines card — the GL line is composed, not typed. */
     expect(screen.queryByText('Lines')).toBeNull();
 
@@ -233,7 +235,7 @@ describe('opened from a purchase invoice', () => {
 
   test('a plain Payment Voucher ignores both', () => {
     draw('/scm/payment-vouchers/new?supplier=sup-1&pi=pi-1');
-    expect(screen.getByText('New Payment Voucher')).toBeTruthy();
+    expect(screen.getByText('New payment voucher')).toBeTruthy();
     expect(screen.queryByLabelText('Pay 2990-PI-2609-001 in full')).toBeNull();
   });
 });
@@ -318,7 +320,7 @@ describe('copy as new (?copyFrom=…)', () => {
 describe('the plain Payment Voucher (/new)', () => {
   test('expense lines only — no supplier, no PI section, and Paid From offers only money', () => {
     draw('/scm/payment-vouchers/new');
-    expect(screen.getByText('New Payment Voucher')).toBeTruthy();
+    expect(screen.getByText('New payment voucher')).toBeTruthy();
     expect(screen.getByText('Lines')).toBeTruthy();
     expect(screen.queryByLabelText(/Supplier/)).toBeNull();
     expect(screen.queryByText('Apply to PI')).toBeNull();
@@ -561,7 +563,7 @@ describe('the Customer Refund (?type=refund, §14)', () => {
       deposits: { count: 2, standingSen: 150000 },
     };
     draw('/scm/payment-vouchers/new?type=refund');
-    expect(screen.getByText('New Customer Refund')).toBeTruthy();
+    expect(screen.getByText('New customer refund')).toBeTruthy();
     /* No lines card, no payee box, no transfer toggle — the body is the document. */
     expect(screen.queryByText('Lines')).toBeNull();
     expect(screen.queryByText('内部转账 Transfer')).toBeNull();

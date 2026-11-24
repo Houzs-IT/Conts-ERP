@@ -76,7 +76,9 @@ export function getInflight<T>(path: string): Promise<T> | undefined {
 
 export function setInflight(path: string, p: Promise<unknown>): void {
   inflight.set(path, p);
-  p.finally(() => inflight.delete(path)).catch(() => {});
+  /* Only our own entry: an invalidation may already have replaced it with a newer
+     read, and deleting that one sent every later caller to the network again. */
+  p.finally(() => { if (inflight.get(path) === p) inflight.delete(path); }).catch(() => {});
 }
 
 function invalidateLocal(prefix: string): void {
@@ -103,8 +105,17 @@ export function clearAll(): void {
   invalidate("/api");
 }
 
+/* Who else hears about a write: lib/queryClient.ts registers here to mark the react-query reads stale, so this
+   module stays free of react-query. */
+const writeListeners = new Set<(path: string) => void>();
+export function onApiWrite(fn: (path: string) => void): () => void {
+  writeListeners.add(fn);
+  return () => { writeListeners.delete(fn); };
+}
+
 /** A mutation on `/api/<resource>/...` invalidates that whole resource. */
 export function invalidateForMutation(path: string): void {
   const m = path.match(/^(\/api\/[^/?]+)/);
   if (m) invalidate(m[1]);
+  for (const fn of writeListeners) fn(path);
 }

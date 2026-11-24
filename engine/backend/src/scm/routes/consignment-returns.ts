@@ -386,8 +386,8 @@ async function resyncReturnInventory(sb: any, returnId: string, performedBy: str
      before that only a GRN reconciled (COE §2). Best-effort. */
   if (res.ok) await reconcileUncostedAfterIn(sb, writes, performedBy);
   try {
-    const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-    await recomputeSoStockAllocation(sb);
+    const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+    await queueAllocationRecompute(sb, 'consignment-returns');
   } catch { /* best-effort */ }
   return res.ok ? [] : [res.reason ?? 'consignment return inventory resync failed'];
 }

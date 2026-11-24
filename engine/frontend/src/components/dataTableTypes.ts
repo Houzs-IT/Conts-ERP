@@ -65,6 +65,8 @@ export interface Column<T, L = never> {
    *  never reported to the parent, so the backend query is untouched. To make
    *  a server-sorted column truly unsortable, drop its `getValue`. */
   disableSort?: boolean;
+  /** Never sortable, on a `serverSort` grid too (where `disableSort` only demotes the column to a client sort). */
+  neverSort?: boolean;
   /**
    * Hide on first load even though the column exists. The user can still
    * reveal it from the Columns panel (and that override is persisted).
@@ -158,6 +160,12 @@ export interface DataTableProps<T, L = never> {
    */
   layoutFamily?: string;
   /**
+   * Another table id whose saved columns this table starts from while it has
+   * none of its own in this browser. Lets a list split one shared layout into
+   * one per tab without anyone losing the columns they had arranged.
+   */
+  layoutSeedId?: string;
+  /**
    * `false` keeps the column funnels for this visit only: the table opens with
    * no filter every time, and any funnel an earlier version saved for it is
    * erased. Absent = the saved-view behaviour every other table has had since
@@ -202,6 +210,10 @@ export interface DataTableProps<T, L = never> {
    *  once. `undefined` renders everything (the default). The full filtered count
    *  is unchanged — search, filters and `onFilteredRowsChange` still see them all. */
   initialRowLimit?: number;
+  /** Real pages of N rows (after search / filter / sort) with the house
+   *  <Pagination> under the table. Resets to page 1 when the row count or sort
+   *  changes. `undefined` = no paging. Wins over `initialRowLimit`. */
+  pageSize?: number;
   /** The order rows open in while no header sort is active (client-side). */
   defaultSort?: (a: T, b: T) => number;
   /** Enable drag-to-reorder of rows. Called with the new full order of the

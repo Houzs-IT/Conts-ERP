@@ -228,7 +228,9 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
 }) {
   const { user } = useSession();
   const office = !!user && !FIELD.includes(user.role) && user.role !== 'owner';
-  const [f, setF] = useState({ unitId: unit?.id ?? '', building: '', skuId: '', title: '', category: '', jobType: 'normal' as 'normal' | 'urgent', severity: 'minor' as 'minor' | 'major', dueOn: '', needsParts: false, detail: '', assignee: '', from: '', to: '', windowNote: '' });
+  const [f, setF] = useState({ unitId: unit?.id ?? '', building: '', skuId: '', title: '', category: '', jobType: 'normal' as 'normal' | 'urgent', severity: 'minor' as 'minor' | 'major', dueOn: '', needsParts: false, detail: '', assignee: '', from: '', to: '', windowNote: '',
+    /* Who pays, chosen by the office when the job is added (chew, 21 Nov 2026); the field app never sees it. */
+    chargeTo: 'owner' as 'owner' | 'the_conts' | 'guest_deposit' });
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [cats, setCats] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -279,6 +281,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
           reportSource: fromClean ? 'cleaner' : 'staff', sourceTaskId: taskId, source: 'web',
           ...(office && !inBuilding && lines.some(l => l.itemId) ? { items: linesPayload(lines), ...(lines.find(l => l.itemId && l.itemId !== 'other') ? { skuId: lines.find(l => l.itemId && l.itemId !== 'other')!.itemId } : {}) } : {}),
           ...(office && f.assignee.trim() ? { assigneeName: f.assignee.trim() } : {}),
+          ...(office && !inBuilding ? { chargeTo: f.chargeTo } : {}),
           ...(office && f.from && f.to ? { window: { startsAt: f.from, endsAt: f.to, note: f.windowNote.trim() || undefined } } : {}),
         });
         ids.push(r.id); overlaps = r.overlaps?.length ?? 0;
@@ -306,7 +309,7 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
   }
   const label = fromClean ? 'Report damage' : 'Add maintenance job';
   return (
-    <OpsModal title={label} eyebrow="Maintenance" size="md" sub={unit ? `${unit.label}. Opens a Maintenance job on this unit.` : office ? 'The unit, the problem and, if known, who fixes it and when. The quote and who pays are set in the job.' : 'Pick the unit and say what is wrong.'}
+    <OpsModal title={label} eyebrow="Maintenance" size="md" sub={unit ? `${unit.label}. Opens a Maintenance job on this unit.` : office ? 'The unit, the problem and, if known, who fixes it and when. Who pays can be changed in the job later; the quote is set there.' : 'Pick the unit and say what is wrong.'}
       onClose={onClose} busy={busy}
       footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void submit()}>{label}</Button></>}>
       {!unit && (
@@ -363,6 +366,11 @@ export function MaintenanceJobForm({ unit, units, taskId, onClose, onDone }: {
             help="Management's approval rules can ask the owner first for major jobs." />
         )}
       </div>
+      {office && !inBuilding && (
+        <ChoiceChips<'owner' | 'the_conts' | 'guest_deposit'> label="Who pays" value={f.chargeTo} onChange={v => set({ chargeTo: v })}
+          options={[{ value: 'owner', label: 'Owner (sharing)' }, { value: 'the_conts', label: 'Company' }, { value: 'guest_deposit', label: 'Guest (from the deposit)' }]}
+          help="Can still be changed on the job, and when it is finished." />
+      )}
       {office && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormRow label="Due (optional)" error={error.dueOn} hint="Normal jobs are worked one by one in this order.">

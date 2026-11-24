@@ -25,6 +25,9 @@ export const PALETTE = {
   '11140f': '151515',
   '414539': '4a4844',
   '767b6e': '706d67',
+  // soft grey (meta text, empty values, 195 uses): 2.68:1 on white, under AA. The muted ink is the lightest warm grey
+  // that passes on the page (4.7:1 on #F5F4F0), so soft text shares it.
+  '9aa093': '706d67',
   // dark slab (sidebar, sign-in page): ink-green -> black
   '13201c': '151515',
   'e7eae4': 'dedad3',

@@ -357,7 +357,7 @@ export function StockTransfersListV2() {
     <PullToRefresh onRefresh={onPullToRefresh}>
       <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
         <div className="min-w-0">
-          <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Stock Transfers</h1>
+          <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">Stock transfers</h1>
           <div className="mt-0.5 text-[12.5px] text-ink-muted">
             {stats.total} transfer{stats.total === 1 ? "" : "s"} · {stats.lines} lines
           </div>
@@ -367,7 +367,7 @@ export function StockTransfersListV2() {
       <div className="hidden md:block">
         <PageHeader
           eyebrow="Warehouse"
-          title="Stock Transfers"
+          title="Stock transfers"
           description="Every warehouse-to-warehouse stock movement. Atomic: posted on create, cancel reverses the movement."
           primaryAction={
             <Button variant="primary" icon={<Plus size={14} />} onClick={goNew}>

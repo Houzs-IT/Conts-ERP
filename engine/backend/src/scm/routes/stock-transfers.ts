@@ -36,6 +36,9 @@ import { supabaseAuth } from '../middleware/auth';
 import type { Env, Variables } from '../env';
 import { reverseMovements } from '../lib/inventory-movements';
 import { buildTransferPayload } from '../lib/stock-transfer-atomic';
+import { refuseWithoutWriting } from '../lib/no-write-refusal';
+import { findTransferShortages, insufficientStockBody, shortageFromPgError, transferBucketKey,
+  type TransferShortage } from '../lib/stock-transfer-availability';
 import { reconcileUncostedAfterIn } from '../lib/oversell-retrocost';
 import { activeCompanyId, companyDocPrefix, requireActiveCompanyId,
   NOT_THIS_COMPANY, type CompanyScopeCtx } from '../lib/companyScope';
@@ -68,6 +71,34 @@ const nextTransferNo = async (sb: ScmClient, c: CompanyScopeCtx): Promise<string
   const p = companyDocPrefix(c);
   return mintMonthlyDocNo(sb, 'stock_transfers', 'transfer_no', `${p}ST-${yymm}`);
 };
+
+/* Open qty per (item, variant) bucket at ONE warehouse, for the given item codes.
+   The same source the FIFO consumer draws from (inventory_lots, open rows only). */
+async function openQtyByBucket(
+  db: ScopedDb, c: CompanyScopeCtx, warehouseId: string, itemCodes: string[],
+): Promise<{ ok: true; open: Map<string, number> } | { ok: false; reason: string }> {
+  const open = new Map<string, number>();
+  const codes = [...new Set(itemCodes)];
+  if (codes.length === 0) return { ok: true, open };
+  const { data, error } = await db
+    .from('v_inventory_lots_open', companyScope(c))
+    .select('item_code, variant_key, qty_remaining')
+    .eq('warehouse_id', warehouseId)
+    .in('item_code', codes);
+  if (error) return { ok: false, reason: error.message };
+  for (const r of (data ?? []) as Array<{ item_code: string; variant_key: string | null; qty_remaining: number | null }>) {
+    const k = transferBucketKey(r.item_code, r.variant_key);
+    open.set(k, (open.get(k) ?? 0) + Number(r.qty_remaining ?? 0));
+  }
+  return { ok: true, open };
+}
+
+/* How the warehouse is named in a refusal: its code, as the From/To pickers show it. */
+async function warehouseLabel(db: ScopedDb, c: CompanyScopeCtx, warehouseId: string): Promise<string> {
+  const { data } = await db.from('warehouses', companyScope(c)).select('code, name').eq('id', warehouseId).maybeSingle();
+  const w = data as { code: string | null; name: string | null } | null;
+  return w?.code || w?.name || 'the source warehouse';
+}
 
 // ── List ──────────────────────────────────────────────────────────────
 stockTransfers.get('/', async (c) => {
@@ -156,7 +187,23 @@ stockTransfers.get('/:id', async (c) => {
   if (headerRes.error) return c.json({ error: 'load_failed', reason: headerRes.error.message }, 500);
   if (!headerRes.data) return c.json({ error: 'not_found' }, 404);
 
-  return c.json({ transfer: headerRes.data, lines: linesRes.data ?? [] });
+  /* D24 (#1126): a cancelled transfer whose stock is not back (some bucket of its own movements does not net to zero)
+     offers Finish cancel, which re-runs the reversal. */
+  let stockNotBack = false;
+  if (String((headerRes.data as { status?: string }).status ?? '').toUpperCase() === 'CANCELLED') {
+    const { data: movs } = await db.unscoped(
+      'library hand-off: the movements are read by this document id, which the company-scoped header read above proved is ours',
+    ).from('inventory_movements').select('movement_type, warehouse_id, item_code, variant_key, batch_no, qty')
+      .eq('source_doc_type', 'STOCK_TRANSFER').eq('source_doc_id', id);
+    const net = new Map<string, number>();
+    for (const m of (movs ?? []) as Array<{ movement_type: string; warehouse_id: string; item_code: string; variant_key: string | null; batch_no?: string | null; qty: number }>) {
+      if (m.movement_type !== 'IN' && m.movement_type !== 'OUT') continue;
+      const k = `${m.warehouse_id}::${m.item_code}::${m.variant_key ?? ''}::${m.batch_no ?? ''}`;
+      net.set(k, (net.get(k) ?? 0) + (m.movement_type === 'IN' ? Number(m.qty) : -Number(m.qty)));
+    }
+    stockNotBack = [...net.values()].some((v) => v !== 0);
+  }
+  return c.json({ transfer: headerRes.data, lines: linesRes.data ?? [], stockNotBack });
 });
 
 // ── Edit ──────────────────────────────────────────────────────────────
@@ -263,40 +310,18 @@ stockTransfers.patch('/:id', async (c) => {
     if (!sameBuckets) {
       // Sum qty per (item_code, variant_key) bucket, old vs new — reversal
       // restores exactly the old-bucket amount to the source warehouse.
-      const bucketKey = (itemCode: string, variantKey: string | null) => `${itemCode}::${variantKey ?? ''}`;
       const oldByBucket = new Map<string, number>();
       for (const l of oldLineRows) {
-        const k = bucketKey(l.item_code, l.variant_key);
+        const k = transferBucketKey(l.item_code, l.variant_key);
         oldByBucket.set(k, (oldByBucket.get(k) ?? 0) + Number(l.qty));
       }
-      const newByBucket = new Map<string, number>();
-      for (const l of newLineRows) {
-        const k = bucketKey(l.item_code, l.variant_key);
-        newByBucket.set(k, (newByBucket.get(k) ?? 0) + l.qty);
-      }
 
-      const shortages: Array<{ itemCode: string; variantKey: string; requested: number; available: number }> = [];
-      for (const [k, requested] of newByBucket.entries()) {
-        const [itemCode, variantKey] = k.split('::');
-        const { data: lots, error: lotsErr } = await db
-          .from('v_inventory_lots_open', companyScope(c))
-          .select('qty_remaining')
-          .eq('warehouse_id', before.from_warehouse_id)
-          .eq('item_code', itemCode)
-          .eq('variant_key', variantKey);
-        if (lotsErr) return c.json({ error: 'stock_check_failed', reason: lotsErr.message }, 500);
-        const currentOpen = (lots ?? []).reduce((s: number, r: { qty_remaining: number | null }) => s + Number(r.qty_remaining ?? 0), 0);
-        const available = currentOpen + (oldByBucket.get(k) ?? 0);
-        if (requested > available) shortages.push({ itemCode: itemCode!, variantKey: variantKey ?? '', requested, available });
-      }
+      const openRes = await openQtyByBucket(db, c, before.from_warehouse_id, newLineRows.map((l) => l.item_code));
+      if (!openRes.ok) return c.json({ error: 'stock_check_failed', reason: openRes.reason }, 500);
+      const shortages = findTransferShortages(newLineRows, openRes.open, oldByBucket);
       if (shortages.length) {
-        // A per-document, per-SKU sentence — the generic curated 409 fallback
-        // ("refresh and check") gives the operator nothing to act on; this names
-        // exactly which line and by how much (humanApiError prefers `message`).
-        const message = shortages
-          .map((s) => `${s.itemCode}${s.variantKey ? ` (${s.variantKey})` : ''}: requested ${s.requested}, only ${s.available} available at the source warehouse`)
-          .join('; ');
-        return c.json({ error: 'insufficient_stock', message, shortages }, 409);
+        const label = await warehouseLabel(db, c, before.from_warehouse_id);
+        return c.json(insufficientStockBody(shortages, label), 409);
       }
     }
   }
@@ -330,7 +355,9 @@ stockTransfers.patch('/:id', async (c) => {
     const rev = await reverseMovements(db.unscoped(
       'library hand-off: reverseMovements resolves the rows to reverse from this document id, which the company-scoped read above already proved is ours',
     ), 'STOCK_TRANSFER', id, user?.id ?? null);
-    if (rev.failed > 0) {
+    /* ok:false with failed:0 is a reversal that could not read what to reverse; carrying on would apply the
+       transfer a second time on top of movements that were never taken back. */
+    if (!rev.ok || rev.failed > 0) {
       return c.json({ error: 'reversal_incomplete', reason: rev.reason ?? 'partial reversal', reversal: rev }, 500);
     }
 
@@ -346,11 +373,11 @@ stockTransfers.patch('/:id', async (c) => {
       .insert(newLineRows.map((l) => ({ ...l, stock_transfer_id: id })));
     if (insErr) return c.json({ error: 'lines_replace_failed', reason: insErr.message }, 500);
 
-    movementErrors = await writeTransferMovements(
+    movementErrors = (await writeTransferMovements(
       db,
       { id, transfer_no: before.transfer_no, from_warehouse_id: before.from_warehouse_id, to_warehouse_id: before.to_warehouse_id },
       user?.id ?? '', before.company_id, c,
-    );
+    )).errors;
   }
 
   await recordEntityAudit(db.unscoped(
@@ -408,14 +435,19 @@ async function writeTransferMovements(
   /* Context for the source open-lots read. REQUIRED for the same reason: absent,
      that read would run with no company predicate at all. */
   c: CompanyScopeCtx,
-): Promise<string[]> {
+): Promise<{ errors: string[]; shortage: TransferShortage | null }> {
   const movementErrors: string[] = [];
-  const { data: lines } = await db
+  /* Set when the DB function refused because the source no longer holds the qty
+     (0353, P0414) — a second transfer won the race after the route's own check. */
+  let shortage: TransferShortage | null = null;
+  const { data: lines, error: linesErr } = await db
     .from('stock_transfer_lines', CENTRALISED(
       'header.id was minted by the company-scoped insert in the caller moments ago, so these lines are that document\'s by construction',
     ))
     .select('item_code, product_name, variant_key, qty')
     .eq('stock_transfer_id', header.id);
+  /* A failed read is not "no lines": treated as empty, the transfer answered 201 POSTED having moved nothing. */
+  if (linesErr) return { errors: [`lines read failed: ${linesErr.message}`], shortage: null };
   const lineList = (lines as Array<{ item_code: string; product_name: string | null; variant_key: string | null; qty: number }>) ?? [];
 
   /* Resolve the dye-lot batch each line moves so a batched (sofa) lot keeps its
@@ -474,7 +506,10 @@ async function writeTransferMovements(
         p_lines:             payload,
       });
       /* eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- PostgrestError types `message` as a plain string, but an RPC that fails at the edge (transport, 502 from the pooler) surfaces an error object without one, and an operator reading "TRANSFER ST-2608-001: undefined" learns nothing. */
-      if (rpcErr) movementErrors.push(`TRANSFER ${header.transfer_no}: ${rpcErr.message ?? 'movement apply failed'}`);
+      if (rpcErr) {
+        shortage = shortageFromPgError(rpcErr);
+        movementErrors.push(`TRANSFER ${header.transfer_no}: ${rpcErr.message ?? 'movement apply failed'}`);
+      }
       /* Oversell retro-cost (0154) — the transfer just opened lots at the
          DESTINATION. If that warehouse had a prior "ship anyway" DO whose short
          units went out at RM0, retro-cost them from the arriving lots now. Until
@@ -505,12 +540,12 @@ async function writeTransferMovements(
      warehouses anyway so the totals don't change. Still re-walk in case any
      row failed (partial transfer) and the bucket has actually shifted. */
   try {
-    const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-    await recomputeSoStockAllocation(db.unscoped(
+    const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+    await queueAllocationRecompute(db.unscoped(
       'library hand-off: the B2C allocation walker is a system-wide recompute across both companies by design',
-    ));
+    ), 'post-transfer');
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-transfer failed:', e); }
-  return movementErrors;
+  return { errors: movementErrors, shortage };
 }
 
 // ── Create + auto-post ────────────────────────────────────────────────
@@ -561,6 +596,37 @@ stockTransfers.post('/', async (c) => {
   if (whErr) return c.json({ error: 'warehouse_check_failed', reason: whErr.message }, 500);
   if ((ownWhs ?? []).length !== wanted.length) return c.json(NOT_THIS_COMPANY, 404);
 
+  /* Shape the lines BEFORE the header exists (a bad line used to throw after the
+     header insert and leave an orphan), then refuse a line the SOURCE warehouse
+     cannot cover — see lib/stock-transfer-availability.ts. Nothing is written yet,
+     so a refusal leaves no document, number or movement behind. */
+  type LineIn = { item_code: string; product_name: string | null; variant_key: string; qty: number; notes: string | null };
+  let lineIns: LineIn[];
+  try {
+    lineIns = items.map((it) => {
+      const qty = Math.max(0, Math.floor(Number(it.qty ?? 0)));
+      if (qty <= 0) throw new Error('qty must be > 0');
+      if (!it.itemCode) throw new Error('itemCode required per line');
+      return {
+        item_code: String(it.itemCode),
+        product_name: (it.productName as string | undefined) ?? null,
+        // Variant bucket so the OUT@from / IN@to movements consume + re-open the
+        // matching FIFO batch. Omit / '' = unclassified (legacy behaviour).
+        variant_key: (it.variantKey as string | undefined) ?? '',
+        qty,
+        notes: (it.notes as string | undefined) ?? null,
+      };
+    });
+  } catch (e) {
+    return refuseWithoutWriting(c, { error: 'invalid_line', message: e instanceof Error ? e.message : String(e) }, 400);
+  }
+  {
+    const openRes = await openQtyByBucket(db, c, fromWarehouseId, lineIns.map((l) => l.item_code));
+    if (!openRes.ok) return c.json({ error: 'stock_check_failed', reason: openRes.reason }, 500);
+    const shortages = findTransferShortages(lineIns, openRes.open);
+    if (shortages.length) return refuseWithoutWriting(c, insufficientStockBody(shortages, await warehouseLabel(db, c, fromWarehouseId)), 409);
+  }
+
   /* No `company_id` field here any more: the INSERT arm of the scoped builder
      stamps it, through the same stampCompany this line used to inline — so it
      cannot be dropped by a later edit to this object. */
@@ -606,21 +672,7 @@ stockTransfers.post('/', async (c) => {
   }
   const header = headerData as unknown as { id: string; transfer_no: string; from_warehouse_id: string; to_warehouse_id: string };
 
-  const lineRows = items.map((it) => {
-    const qty = Math.max(0, Math.floor(Number(it.qty ?? 0)));
-    if (qty <= 0) throw new Error('qty must be > 0');
-    if (!it.itemCode) throw new Error('itemCode required per line');
-    return {
-      stock_transfer_id: header.id,
-      item_code: String(it.itemCode),
-      product_name: (it.productName as string | undefined) ?? null,
-      // Variant bucket so the OUT@from / IN@to movements consume + re-open the
-      // matching FIFO batch. Omit / '' = unclassified (legacy behaviour).
-      variant_key: (it.variantKey as string | undefined) ?? '',
-      qty,
-      notes: (it.notes as string | undefined) ?? null,
-    };
-  });
+  const lineRows = lineIns.map((l) => ({ stock_transfer_id: header.id, ...l }));
   const { error: lErr } = await db
     .from('stock_transfer_lines', companyScope(c)).insert(lineRows);
   if (lErr) {
@@ -631,7 +683,7 @@ stockTransfers.post('/', async (c) => {
   }
 
   // Write inventory movements (paired OUT/IN) inline.
-  const movementErrors = await writeTransferMovements(db, header, user.id, activeCompanyId(c) ?? null, c);
+  const { errors: movementErrors, shortage: raceShortage } = await writeTransferMovements(db, header, user.id, activeCompanyId(c) ?? null, c);
 
   /* If the movement apply failed, the transfer did NOT complete — and because
      fn_stock_transfer_apply is atomic, NOTHING moved (both warehouses are
@@ -670,6 +722,11 @@ stockTransfers.post('/', async (c) => {
       note: `Auto-cancelled — movements failed: ${movementErrors.join('; ')}`,
       fieldChanges: transferChanges,
     });
+    /* Another transfer emptied the bucket between the check above and the write:
+       the same plain refusal, not a raw movement error. Nothing moved (atomic). */
+    if (raceShortage) {
+      return c.json({ ...insufficientStockBody([raceShortage], await warehouseLabel(db, c, fromWarehouseId)), id: header.id, status: 'CANCELLED' }, 409);
+    }
     return c.json({
       error: 'transfer_movements_failed',
       id: header.id,
@@ -755,7 +812,34 @@ stockTransfers.patch('/:id/cancel', async (c) => {
     .eq('id', id).neq('status', 'CANCELLED')
     .select('id, status, cancelled_at').maybeSingle();
   if (error) return c.json({ error: 'cancel_failed', reason: error.message }, 500);
-  if (!data)  return c.json({ error: 'already_cancelled' }, 409);
+  if (!data) {
+    /* D24 (#1126): already CANCELLED - finish the stock reversal if an earlier cancel left it short. reverseMovements
+       nets each bucket first and touches only what is not yet square, so on a transfer whose stock did come back
+       this moves nothing. Before, this answered 409 and a failed reversal could never be re-run. */
+    if (String(beforeTransfer?.status ?? '').toUpperCase() !== 'CANCELLED') return c.json({ error: 'already_cancelled' }, 409);
+    const again = await reverseMovements(db.unscoped(
+      'library hand-off: reverseMovements resolves the rows to reverse from this document id, which the company-scoped read above already proved is ours',
+    ), 'STOCK_TRANSFER', id, user.id);
+    const stillShort = !again.ok || again.failed > 0;
+    if (again.reversed > 0 || stillShort) {
+      await recordEntityAudit(db.unscoped(
+        'library hand-off: the audit writer takes the raw client and is told the company explicitly as companyId',
+      ), {
+        entityType: 'STOCK_TRANSFER', entityId: id, entityDocNo: beforeTransfer?.transfer_no ?? null,
+        action: 'CANCEL', actor: c.get('houzsUser'), companyId: beforeTransfer?.company_id ?? null, statusSnapshot: 'CANCELLED',
+        note: stillShort
+          ? `Stock reversal retried, still INCOMPLETE — ${again.failed} failed: ${again.reason ?? 'partial reversal'}`
+          : `Stock reversal finished on retry — ${again.reversed} movement(s) reversed`,
+        fieldChanges: compactChanges([fieldChange('movementsReversed', null, again.reversed), fieldChange('movementsFailed', null, again.failed)]),
+      });
+    }
+    return c.json({
+      transfer: { id, status: 'CANCELLED' },
+      resumed: true,
+      reversal: { reversed: again.reversed, skipped: again.skipped, failed: again.failed },
+      reversalErrors: stillShort ? [again.reason ?? 'partial reversal'] : undefined,
+    });
+  }
 
   // Reverse the paired OUT/IN movements this transfer wrote. Best-effort,
   // mirroring the post path: a failed reversal row is logged + reported, it
@@ -763,6 +847,8 @@ stockTransfers.patch('/:id/cancel', async (c) => {
   const rev = await reverseMovements(db.unscoped(
     'library hand-off: reverseMovements resolves the rows to reverse from this document id, which the company-scoped flip directly above already proved is ours',
   ), 'STOCK_TRANSFER', id, user?.id ?? null);
+  // ok:false with failed:0 means the reversal could not even read its movements: the stock did not come back either.
+  const revIncomplete = !rev.ok || rev.failed > 0;
 
   /* One row covering the cancel AND its stock reversal — unlike the PV cancel,
      which splits them, because here the reversal has no independent identity (no
@@ -779,7 +865,7 @@ stockTransfers.patch('/:id/cancel', async (c) => {
     actor: c.get('houzsUser'),
     companyId: beforeTransfer?.company_id ?? null,
     statusSnapshot: 'CANCELLED',
-    note: rev.failed > 0
+    note: revIncomplete
       ? `Stock reversal INCOMPLETE — ${rev.failed} failed: ${rev.reason ?? 'partial reversal'}`
       : undefined,
     fieldChanges: compactChanges([
@@ -793,16 +879,18 @@ stockTransfers.patch('/:id/cancel', async (c) => {
   // Net-zero across warehouses again — re-walk B2C stock allocation in case a
   // partial reversal actually shifted a bucket.
   try {
-    const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-    await recomputeSoStockAllocation(db.unscoped(
+    const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+    await queueAllocationRecompute(db.unscoped(
       'library hand-off: the B2C allocation walker is a system-wide recompute across both companies by design',
-    ));
+    ), 'post-cancel');
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-cancel failed:', e); }
 
   return c.json({
     transfer: data,
     reversal: { reversed: rev.reversed, skipped: rev.skipped, failed: rev.failed },
-    reversalErrors: rev.failed > 0 ? (rev.reason ?? 'partial reversal') : undefined,
+    /* A list, like every other in-band failure field: the screen spreads it into lines, and a bare string came out
+       one character per line. */
+    reversalErrors: revIncomplete ? [rev.reason ?? 'partial reversal'] : undefined,
   });
 });
 

@@ -12,7 +12,8 @@ const { accessFor, levelsFor, levelAt, mayIn, canManage, refusalFor, roleForKind
 
 /** An env whose database answers every query with these access_rules rows. */
 const envWith = rows => ({ TX: { unsafe: async () => rows } });
-const rule = (scope, area, level) => ({ scope, area, level });
+// scope_id as the real query returns it: the staff() person's own user, department and position.
+const rule = (scope, area, level) => ({ scope, scope_id: { user: 'u1', department: 'd1', position: 'p1' }[scope], area, level });
 const staff = (over = {}) => ({ userId: 'u1', role: 'operations_staff', departmentId: 'd1', positionId: 'p1', kind: 'staff', side: 'both', ...over });
 const SO = '/api/sales-orders';
 

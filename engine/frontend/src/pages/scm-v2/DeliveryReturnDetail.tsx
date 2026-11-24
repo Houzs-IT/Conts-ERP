@@ -277,7 +277,7 @@ export const DeliveryReturnDetail = () => {
 
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Returned Items ({items.length})</h2>
+          <h2 className={styles.cardTitle}>Returned items ({items.length})</h2>
         </header>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-3)' }}>
           {items.map((it, idx) => {
@@ -471,7 +471,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
 
       {/* ── RETURN INFO (date / reason / note) ── */}
       <section className={styles.card}>
-        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Return Info</h2></header>
+        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Return info</h2></header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
             <label className={styles.field}>
@@ -516,7 +516,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       {/* ── EMERGENCY CONTACT ── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Emergency Contact</h2>
+          <h2 className={styles.cardTitle}>Emergency contact</h2>
           <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
             Used only if we cannot reach the customer on collection day
           </span>
@@ -554,7 +554,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
 
       {/* ── DELIVERY ADDRESS ── */}
       <section className={styles.card}>
-        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Delivery Address</h2></header>
+        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Delivery address</h2></header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
             <label className={styles.field} style={{ gridColumn: 'span 4' }}>

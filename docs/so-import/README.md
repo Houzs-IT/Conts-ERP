@@ -86,3 +86,37 @@ the import ran again:
 Rooms stay the contract's sections, as every quotation converts: these SOs are laid out by trade, and only 931 of
 3,752 lines name a room. SO numbers are minted again in SO-date order, so each month starts at 001 (October after
 the two test orders). MS IRIS is linked to project 100, made by the team on 29 Oct.
+
+## Notion update (owner, 18 Nov 2026)
+
+"Notion is the truth": the sales team updated every SO PDF in Notion, and each renovation SO must match its latest
+PDF line by line (SKU, qty, line price, total). The Notion database was exported again (81 projects, 88 PDFs) and
+rebuilt into `so-notion-data-2026-11-18.json` with the parser fixed for what the new PDFs exposed:
+
+- a page printed without the column header row lost all its lines (JERNIH KAJANG B-28-09: 24 wiring lines);
+  such a page now uses the previous page's columns, and a header without its "Qty" word takes the previous one;
+- a final total printed as "FINAL 31,293.30" (no "TOTAL") was missed, so 7 SOs held the total before the printed
+  discount; a page total printed beside a note ("( FOLLOW 3D) TOTAL (RM) 3410") was missed (KAIA HEIGHT);
+- the sum row of a DISC PRICE sheet was taken as the final total ahead of the printed FINAL TOTAL (SKYLINE D-41-12);
+- a part listed under an item that carries the amount, or a price with an empty amount on a page whose printed
+  total is its amounts, is a rate kept in the text, not money (THE FORESTA wiring, D'TERRA 2EP);
+- a DISC PRICE sheet whose totals add the Amount column is charged at the amounts (NESTREE, SKYLINE D-41-12);
+- an item whose size says "TOTAL : W:68FT" is no longer a summary row (EMERALD 9); a table printed
+  Amount | Unit price | Qty is read in that order (SKYLINE PUDU C11-09 / C13A-05 Airbnb set); "PAGE n OF" footers
+  are not items; a page's last line is no longer dropped as a subtotal when only two lines have amounts.
+
+Every page's printed total was then checked against the lines read from it; what is left is package pages, summary
+pages and lump-sum headings, whose totals are exact through the rules above.
+
+`engine/backend/scripts/so-notion-update.mts` (run by the one-off workflow `.github/workflows/so-notion-update.yml`,
+dry-run then apply) brings each SO to its latest PDF with one variation order: lines kept when the wording, qty and
+amount match (or the SKU, qty and amount, so wording fixes alone do not churn lines already on a PO), the rest
+omitted / added, and a "Price adjustment" line for any rest so the revised contract equals the printed final total.
+The two projects with no SO yet (AVA KIARA BAY D21-11 MR YAU, SAFFIRE NEW OFFICE) get their SO created the way the
+first import did. Rooms already set on an SO are kept; only new lines take a room from their wording.
+
+Applied on production 18 Nov 2026 (dry-run three times first): 26 SOs changed by one VO each, 2 SOs created
+(TC-SO-2512-003 AVA KIARA BAY D21-11 MR YAU, TC-SO-2610-068 SAFFIRE NEW OFFICE), 53 already matching, 0 failed.
+Checked afterwards: a fresh dry-run reports all 81 matching; every SO's total equals its PDF's final total; qty, unit
+price and amount of every priced line equal the PDF's (78 SOs exactly; 3 carry one extra line, the lump-sum heading
+their PDF prices as a section). The one-off workflow was then removed.

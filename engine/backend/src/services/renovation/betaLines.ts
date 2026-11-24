@@ -83,6 +83,9 @@ export interface ManagedLine {
   /** The suppliers this SKU can be ordered from (its supplier bindings), main first (owner, 3 Nov 2026: only these).
       LinesAnswer.suppliers has the rest. */
   supplierChoices: SupplierChoice[];
+  /** Where the goods are received (the SO line's warehouse, which MRP and the PO follow; owner, 17 Nov 2026). */
+  warehouseId: string | null;
+  warehouseName: string | null;
   /** Its raw materials: the list saved on the line, else the SKU's composition times the line's qty. */
   materials: LineMaterial[];
   /** The completed production order that closes its raw materials (null: they can still change). */
@@ -114,6 +117,8 @@ export interface LinesAnswer {
   plansReady: boolean;
   sos: Array<{ docNo: string; status: string; voLocked: boolean; renovation: boolean }>;
   suppliers: Array<{ id: string; name: string }>;
+  /** The company's active warehouses, for the line's receiving warehouse. */
+  warehouses: Array<{ id: string; code: string; name: string }>;
   lines: ManagedLine[];
   pendingPoChanges: PendingPoChange[];
   /** True when the caller's role sees only some categories: lines of the others are left out. */
@@ -200,7 +205,7 @@ const PROJECT_SO = `so.project_id = ? AND so.company_id = ? AND so.status::text 
 interface LineRow {
   id: string; doc_no: string; so_status: string; line_no: number | null; item_code: string | null; description: string | null; description2: string | null;
   variants: unknown; item_group: string | null; uom: string | null; qty: number; unit_price_sen: number | null; discount_sen: number | null; total_sen: number | null;
-  area: string | null; remark: string | null; supplier_name: string | null; supplier_code: string | null; cat_label: string | null; cat_sort: number | null;
+  area: string | null; remark: string | null; supplier_name: string | null; supplier_code: string | null; warehouse_id?: string | null; warehouse_name?: string | null; cat_label: string | null; cat_sort: number | null;
   sub_label: string | null; sub_sort: number | null; cat_code: string | null; sub_code: string | null; prod_category: string | null; prod_sub: string | null; pos: unknown; delivered: number | null; photo_urls: unknown; sku_photos: unknown;
   supplier_id: string | null; contract_line_id: string | null; contract_supplier_id: string | null; contract_supplier_name: string | null; supplier_choices: unknown;
 }
@@ -255,6 +260,7 @@ export async function loadProjectLines(
             i.uom, i.qty, i.unit_price_sen, i.discount_sen::bigint AS discount_sen, i.total_sen::bigint AS total_sen, i.remark,
             coalesce(nullif(trim(to_jsonb(i)->>'room'), ''), nullif(trim((SELECT l.room FROM scm.reno_doc_lines l WHERE l.so_item_id = i.id LIMIT 1)), ''), nullif(trim(i.location), '')) AS area,
             sup.name AS supplier_name, sup.code AS supplier_code, sup.id AS supplier_id,
+            i.warehouse_id::text AS warehouse_id, (SELECT w.name FROM scm.warehouses w WHERE w.id = i.warehouse_id) AS warehouse_name,
             cl.id AS contract_line_id, cl.supplier_id AS contract_supplier_id, cl.supplier_name AS contract_supplier_name,
             (SELECT coalesce(json_agg(json_build_object('id', s2.id::text, 'code', s2.code, 'name', s2.name, 'main', coalesce(b2.is_main_supplier, false), 'priceSen', b2.unit_price_sen)
                                       ORDER BY b2.is_main_supplier DESC NULLS LAST, s2.name), '[]'::json)::text
@@ -317,6 +323,7 @@ export async function loadProjectLines(
       area: x.area, remark: x.remark?.trim() || null,
       supplierName: picked?.name ?? (x.contract_line_id ? x.contract_supplier_name : x.supplier_name),
       supplierId: picked?.id ?? (x.contract_line_id ? x.contract_supplier_id : x.supplier_id),
+      warehouseId: x.warehouse_id ?? null, warehouseName: x.warehouse_name ?? null,
       contractLineId: x.contract_line_id, supplierChoices: choicesOf(x.supplier_choices), materials: materials.get(x.id) ?? [], materialsClosedBy: closedBy.get(x.id) ?? null,
       goesTo: voGoesTo({ itemCode: x.item_code, itemGroup: x.item_group, mainSupplierCode: picked?.code ?? x.supplier_code }),
       categoryCode: x.cat_code ?? null, subCode: x.sub_code ?? null,
@@ -336,6 +343,9 @@ export async function loadProjectLines(
   const { results: supplierRows } = await db.prepare(
     `SELECT s.id::text AS id, s.name FROM scm.suppliers s WHERE s.company_id = ? AND s.status::text = 'ACTIVE' ORDER BY s.name`,
   ).bind(companyId).all<{ id: string; name: string }>();
+  const { results: warehouseRows } = await db.prepare(
+    `SELECT w.id::text AS id, w.code, w.name FROM scm.warehouses w WHERE w.company_id = ? AND w.is_active ORDER BY w.is_default DESC, w.name`,
+  ).bind(companyId).all<{ id: string; code: string; name: string }>();
   // A PO change shows only while the caller sees a line of that PO.
   const shownPending = keepVisiblePos(pending, (p) => p.po_id, lines.flatMap((l) => l.pos.map((p) => p.poId)), scope);
   return {
@@ -343,6 +353,7 @@ export async function loadProjectLines(
     sos: sos.map((s) => ({ docNo: s.doc_no, status: s.status, voLocked: String(s.status).toUpperCase() !== "DRAFT", renovation: Boolean(s.renovation) })),
     lines,
     suppliers: supplierRows ?? [],
+    warehouses: warehouseRows ?? [],
     pendingPoChanges: shownPending.map((p) => ({
       id: p.id, amendmentNo: p.amendment_no, poId: p.po_id, poNumber: p.po_number, voLabel: p.source ? voLabels.get(p.source) ?? null : null,
     })),
@@ -378,7 +389,7 @@ export async function saveLinePlan(db: Db, soItemId: string, companyId: number, 
     `INSERT INTO scm.reno_beta_line_plans (so_item_id, company_id, order_on, deliver_on, no_po, updated_by, updated_at)
      VALUES (?::uuid, ?, ?::date, ?::date, ?, ?, now())
      ON CONFLICT (so_item_id) DO UPDATE SET order_on = excluded.order_on, deliver_on = excluded.deliver_on, no_po = excluded.no_po,
-       updated_by = excluded.updated_by, updated_at = now()`,
+       updated_by = excluded.updated_by, updated_at = now(), from_sla = false`,
   ).bind(soItemId, companyId, next.orderOn, next.deliverOn, next.noPo, userId).run();
   return next;
 }
@@ -418,7 +429,7 @@ export async function saveLinePlans(
        SELECT x.id, ?, x.order_on, x.deliver_on, x.no_po, ?, now()
          FROM jsonb_to_recordset(?::text::jsonb) AS x(id uuid, order_on date, deliver_on date, no_po boolean)
        ON CONFLICT (so_item_id) DO UPDATE SET order_on = excluded.order_on, deliver_on = excluded.deliver_on, no_po = excluded.no_po,
-         updated_by = excluded.updated_by, updated_at = now()`,
+         updated_by = excluded.updated_by, updated_at = now(), from_sla = false`,
     ).bind(companyId, userId, JSON.stringify(rows)).run();
   }
   return { saved: rows.map((r) => r.id), refused, docNos: [...docNos] };

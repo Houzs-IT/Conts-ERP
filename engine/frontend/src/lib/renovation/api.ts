@@ -33,6 +33,11 @@ export interface DocLine {
   supplierId: string | null;
   unitCostSen: number;
   stageCode: string | null;
+  /** Package template SLA (owner, 19 Nov 2026): days after the project starts; null = no SLA. */
+  processingAfterDays?: number | null;
+  deliveryAfterDays?: number | null;
+  /** Packages module (owner, 20 Nov 2026): the package the line was added from; screen only, never printed. */
+  fromPackageId?: string | null;
   pageBreakBefore: boolean;
   voChange?: 'ADD' | 'OMIT' | null;
   omitTargetLineId?: string | null;
@@ -150,6 +155,8 @@ export interface BillingInstalment extends Instalment {
   id: string; cumBp: number; bill: BillRow | null; isNext: boolean; amountSen: number;
   /** Covered by what AutoCount invoiced before go-live: never billed here. */
   billedBeforeGoLive?: boolean;
+  /** Its share of that invoicing, what was paid on it in AutoCount, and whether that paid it in full (chew, 23 Nov 2026). */
+  beforeGoLiveSen?: number; paidBeforeGoLiveSen?: number; paidBeforeGoLive?: boolean;
 }
 
 /** A credit note that lowered the contract. */
@@ -161,7 +168,11 @@ export interface BillingView {
   soDocNo: string; status: string; originalContractSen: number; revisedContractSen: number; voTotalSen: number;
   /** Net of contract credit notes, what AutoCount invoiced before go-live included. */
   billedSen: number; billedBeforeGoLiveSen?: number; creditedSen: number; credits: ContractCredit[];
-  receivedSen: number; nextSeq: number | null; instalments: BillingInstalment[];
+  /** Confirmed by finance (chew, 21 Nov 2026); waitingSen: recorded, not confirmed yet. */
+  receivedSen: number; waitingSen?: number; orderPaidSen?: number; orderWaitingSen?: number;
+  /** Paid in AutoCount before go-live, inside receivedSen. */
+  paidBeforeGoLiveSen?: number;
+  nextSeq: number | null; instalments: BillingInstalment[];
 }
 
 export type ContractStatus = 'RENO_CONFIRMED' | 'RENO_IN_PROGRESS' | 'RENO_COMPLETED' | 'CLOSED' | 'CANCELLED';
@@ -183,7 +194,19 @@ export interface VoView {
   id: string; voNo: string; soDocNo: string; seq: number; status: VoStatus; title: string; docDate: string; version: number;
   signedName: string | null; signedAt: string | null; approvedAt: string | null; approvedBy: string | null; amendmentId: string | null;
   sections: DocSection[]; totals: { addSen: number; omitSen: number; netSen: number };
+  edits?: VoEdits | null;
+  lineSpecs?: Record<string, LineSpec>;
 }
+
+export interface LineSpec { variants: Record<string, unknown>; remark: string | null; optionsText: string | null; group: string }
+
+// `variants` is the whole option set after the change, not a patch.
+export interface VoLineEdit {
+  soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; label?: string;
+  variants?: Record<string, unknown>; remark?: string;
+}
+export interface VoLineAdd { room: string; itemCode: string; qty: number; unitPriceSen: number; label?: string; fromPackageId?: string | null; remark?: string }
+export interface VoEdits { lines: VoLineEdit[]; adds: VoLineAdd[] }
 
 export interface PoFlag {
   id: string; action: 'AMEND' | 'CANCEL'; newQty: number | null; status: 'OPEN' | 'RESOLVED'; note: string; createdAt: string;
@@ -335,12 +358,17 @@ export function searchProjects(q: string) {
   return renoGet<{ projects: Array<{ id: number; code: string | null; name: string; stage: string; status: string; contractDocNo: string | null }> }>(`/lookups/projects?q=${encodeURIComponent(q)}`);
 }
 
-/** A mutation that invalidates every renovation query on success. */
+/* Renovation writes also raise documents read under other keys: a progress bill or credit note makes a sales invoice
+   or credit note and a journal, a PO instalment payment makes a payment voucher, a status move changes the SO lists. */
+const RENO_TOUCHED_KEYS = ['reno', 'mfg-sales-order-detail', 'mfg-sales-orders', 'so-money', 'sales-invoices', 'sales-invoice-detail',
+  'credit-notes', 'journal-entries', 'payment-vouchers', 'purchase-invoices', 'purchase-invoice-detail', 'daily-bank'];
+
+/** A mutation that invalidates every renovation query, and the documents it raises, on success. */
 export function useRenoMutation<TVars, TResult = unknown>(fn: (v: TVars) => Promise<TResult>) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['reno'] }); void qc.invalidateQueries({ queryKey: ['mfg-sales-order-detail'] }); },
+    onSuccess: () => { for (const k of RENO_TOUCHED_KEYS) void qc.invalidateQueries({ queryKey: [k] }); },
   });
 }
 
@@ -353,6 +381,8 @@ export function sectionsForSave(sections: DocSection[]): unknown[] {
       uom: l.uom, unitPriceSen: l.unitPriceSen, listPriceSen: l.listPriceSen, discountBp: l.discountBp, amountOverrideSen: l.amountOverrideSen,
       isFoc: l.isFoc, supplyByOwner: l.supplyByOwner, highlight: l.highlight, supplierId: l.supplierId, unitCostSen: l.unitCostSen,
       stageCode: l.stageCode, pageBreakBefore: l.pageBreakBefore,
+      processingAfterDays: l.processingAfterDays ?? null, deliveryAfterDays: l.deliveryAfterDays ?? null,
+      ...(l.fromPackageId ? { fromPackageId: l.fromPackageId } : {}),
       ...(l.voChange ? { voChange: l.voChange, omitTargetLineId: l.omitTargetLineId ?? null, omitQty: l.omitQty ?? null } : {}),
     })),
   }));

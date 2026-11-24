@@ -160,13 +160,19 @@ export interface BetaInstalment {
   /** The day the money for this payment was recorded on the sales order; null when not received yet. */
   paidOn?: string | null;
   method?: string | null;
+  /** Renovation: money recorded for this instalment that finance has not confirmed yet (not in paidSen). */
+  waitingSen?: number;
+  /** Renovation: invoiced by AutoCount before go-live; paidBeforeGoLive = paid in full there (chew, 23 Nov 2026). */
+  billedBeforeGoLive?: boolean;
+  paidBeforeGoLive?: boolean;
 }
-/** One payment recorded on the sales order (scm.mfg_sales_order_payments), oldest first. */
-export interface BetaReceipt { paidOn: string; amountSen: number; method: string | null }
+/** One payment recorded on the sales order (scm.mfg_sales_order_payments), oldest first. `confirmed` false = finance
+    has not confirmed it yet (its official receipt is a draft); absent = counted as received. */
+export interface BetaReceipt { paidOn: string; amountSen: number; method: string | null; confirmed?: boolean }
 export type BetaPayments =
   | { state: "hidden" }
   | { state: "none" }
-  | { state: "ok"; docNo?: string; contractSen: number; receivedSen: number; instalments: BetaInstalment[] };
+  | { state: "ok"; docNo?: string; contractSen: number; receivedSen: number; waitingSen?: number; instalments: BetaInstalment[] };
 
 /** A sales order is set up with four payments (owner, 24 Oct 2026); more appear when more money is recorded. */
 export const PAYMENT_SLOTS = 4;
@@ -195,31 +201,56 @@ export function paymentsOf(view: BillingView | null, so?: { docNo: string; total
       }),
     };
   }
-  // Money recorded on the order but not yet put against a bill still counts: it fills the instalments in order.
-  let pool = Math.max(0, recordedSen - view.receivedSen);
-  let seen = 0;
+  /* A renovation contract counts only money finance has confirmed (chew, 21 Nov 2026; SOP 4.2): the confirmed money on
+     the order fills the instalments in order, after what each invoice holds itself; money not confirmed yet fills
+     them the same way as waitingSen, never as paid. */
+  const confirmedReceipts = receipts.filter((r) => r.confirmed !== false);
+  const confirmedSen = confirmedReceipts.reduce((s, r) => s + r.amountSen, 0);
+  /* What AutoCount was paid before go-live (renovation-billing): the instalments its invoicing covers hold it, and the
+     order payments dated before go-live are inside it (bglOnOrder), so they fill nothing again. */
+  const bgl = Math.max(0, Number(view.paidBeforeGoLiveSen) || 0);
+  const bglOnOrder = Math.min(Math.max(0, Number(view.orderPaidBeforeGoLiveSen) || 0), bgl);
+  const bglExtra = bgl - bglOnOrder;
+  const invoiceHeldSen = Math.max(0, view.receivedSen - view.orderPaidSen - bglExtra);
+  /* A contract credit note lowered the order total, so it fills the instalments too; without it they add up to more
+     than the order (click sweep F6b, 21 Nov 2026). */
+  let pool = Math.max(0, (so ? confirmedSen : view.orderPaidSen) - bglOnOrder) + (Number.isFinite(view.creditedSen) ? Math.max(0, view.creditedSen) : 0);
+  let waitingPool = so ? receipts.filter((r) => r.confirmed === false).reduce((s, r) => s + r.amountSen, 0) : view.orderWaitingSen;
+  const waitingTotalSen = view.waitingSen - view.orderWaitingSen + waitingPool;
+  let seen = bglOnOrder;
   return {
     state: "ok", ...docNo,
     contractSen: view.revisedContractSen,
-    receivedSen: Math.max(view.receivedSen, recordedSen),
+    receivedSen: Math.max(view.receivedSen, invoiceHeldSen + bglExtra + confirmedSen),
+    ...(waitingTotalSen > 0 ? { waitingSen: waitingTotalSen } : {}),
     instalments: view.instalments.map((i): BetaInstalment => {
       const bill = i.bill ? { amountSen: i.bill.amountSen, paidSen: i.bill.kind === "INVOICE" ? i.bill.paidSen : 0 } : null;
-      const amountSen = bill ? bill.amountSen : i.amountSen;
-      let paidSen = bill?.paidSen ?? 0;
-      let status = instalmentStatus(bill);
+      /* Covered by AutoCount's invoicing: its share of it, billed there, paid there as far as paidBeforeGoLiveSen goes. */
+      const before = !bill && i.billedBeforeGoLive === true;
+      const amountSen = bill ? bill.amountSen : before ? Number(i.beforeGoLiveSen) || 0 : i.amountSen;
+      const paidBefore = before ? Math.min(Number(i.paidBeforeGoLiveSen) || 0, amountSen) : 0;
+      let paidSen = bill?.paidSen ?? paidBefore;
+      let status: InstalmentStatus = before ? (amountSen > 0 && paidSen >= amountSen ? "paid" : "billed") : instalmentStatus(bill);
       if (status !== "paid" && pool > 0 && amountSen > 0) {
         const take = Math.min(pool, amountSen - paidSen);
         pool -= take;
         paidSen += take;
         if (paidSen >= amountSen) status = "paid";
       }
+      let waitingSen = i.bill?.kind === "INVOICE" ? Math.min(i.bill.waitingSen, Math.max(0, amountSen - paidSen)) : 0;
+      if (waitingPool > 0 && amountSen - paidSen - waitingSen > 0) {
+        const take = Math.min(waitingPool, amountSen - paidSen - waitingSen);
+        waitingPool -= take;
+        waitingSen += take;
+      }
       // The receipt that completed this instalment gives its date: the first one whose running total covers it.
       let paidOn: string | null = null;
       let method: string | null = null;
-      if (status === "paid" && amountSen > 0) {
-        seen += amountSen;
+      if (before && paidBefore > 0) method = "autocount";
+      if (status === "paid" && amountSen > 0 && amountSen > paidBefore) {
+        seen += amountSen - paidBefore;
         let run = 0;
-        for (const r of receipts) { run += r.amountSen; if (run >= seen) { paidOn = r.paidOn; method = r.method; break; } }
+        for (const r of confirmedReceipts) { run += r.amountSen; if (run >= seen) { paidOn = r.paidOn; method = r.method; break; } }
       }
       return {
         seq: i.seq,
@@ -231,6 +262,8 @@ export function paymentsOf(view: BillingView | null, so?: { docNo: string; total
         trigger: normTrigger(i.trigger),
         paidOn,
         method,
+        ...(waitingSen > 0 ? { waitingSen } : {}),
+        ...(before ? { billedBeforeGoLive: true, ...(paidBefore >= amountSen && amountSen > 0 ? { paidBeforeGoLive: true } : {}) } : {}),
       };
     }),
   };

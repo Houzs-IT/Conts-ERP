@@ -3,8 +3,9 @@
 import { lineDepartment } from './petty-cash';
 import type { Staff } from './staff-identity';
 import { receiptAccountProblem } from './petty-cash-routes';
-import { defaultSubDepartment, loadSubDepartments, projectRenoKind, projectSide, RENO_KIND_OF, subForStaffDepartment } from './sub-departments';
+import { checkProjectsFit, defaultSubDepartment, loadSubDepartments, projectRenoKind, projectSide, RENO_KIND_OF, resolveLineSub, subForStaffDepartment } from './sub-departments';
 import { isDepartment } from '../acc/rules';
+import { inChunks } from './petty-cash-store';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as in the routes it serves */
 export type LineRow = { department: string; unit_id: string | null; maintenance_issue_id: string | null; project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number; sub_department_id?: string | null };
@@ -36,6 +37,8 @@ export async function defaultLineSubs(sb: any, companyId: number, lines: LineRow
   }
   const kinds = projectIds.length ? await projectRenoKind(sb, companyId, projectIds) : new Map();
   for (const l of lines) {
+    /* Chosen by the person on the line (SOP 1.1 "自动带出部门（可以改）"; buildLines checked it): kept. */
+    if (l.sub_department_id) continue;
     const fallback = isDepartment(l.department) ? l.department : 'shared';
     try {
       let s = subForStaffDepartment(loaded.list, l.maintenance_issue_id ? maintenanceDept : floatDept ?? from.staffDepartmentId, l.maintenance_issue_id ? 'rental' : fallback);
@@ -56,8 +59,9 @@ export async function defaultLineSubs(sb: any, companyId: number, lines: LineRow
   }
 }
 
-/** The lines a person sends, made safe: their own department, a maintenance job's unit and Rental, no account, and only
- *  jobs they may name. Returns a message when something is wrong. */
+/** The lines a person sends, made safe: their own department unless they chose another sub-department on the line (SOP
+ *  1.1: 自动带出部门（可以改）; chew 16 Nov 2026), a maintenance job's unit and Rental, no account, and only jobs they may
+ *  name. Returns a message when something is wrong. */
 export async function buildLines(sb: any, staff: Staff, raw: unknown, amountSen: number, companyId: number): Promise<{ ok: true; lines: LineRow[] } | { ok: false; message: string }> {
   const list = Array.isArray(raw) && raw.length ? (raw as Array<Record<string, unknown>>) : [{ amountSen }];
   if (list.length > 20) return { ok: false, message: 'Twenty lines at most.' };
@@ -86,6 +90,22 @@ export async function buildLines(sb: any, staff: Staff, raw: unknown, amountSen:
       account_code: null,
       amount_sen: amount, description: l.description ? String(l.description).slice(0, 300) : null, sort: i,
     });
+    /* The sub-department the person chose (a job's line stays Maintenance, as the job decides it). */
+    if (!job && l.subDepartmentId != null && String(l.subDepartmentId).trim() !== '') out[i]!.sub_department_id = String(l.subDepartmentId).trim();
+  }
+  const chosen = out.filter(l => l.sub_department_id);
+  if (chosen.length) {
+    const loaded = await loadSubDepartments(sb, companyId);
+    if (!loaded.ok) return { ok: false, message: 'The departments could not be read. Try again.' };
+    for (const [i, l] of out.entries()) {
+      if (!l.sub_department_id) continue;
+      const r = resolveLineSub(loaded.list, { subDepartmentId: l.sub_department_id });
+      if (!r.ok) return { ok: false, message: out.length > 1 ? `Line ${i + 1}: ${r.message}` : r.message };
+      l.department = r.department;
+    }
+    /* A project the line names must fit the chosen department: its side and brand (SOP 1.1). */
+    const fit = await checkProjectsFit(sb, companyId, loaded.list, out.map(l => ({ subDepartmentId: l.sub_department_id ?? null, department: l.department, projectId: l.project_id })));
+    if (fit) return { ok: false, message: out.length > 1 ? fit : fit.replace(/^Line 1: /, '') };
   }
   if (out.reduce((n, l) => n + l.amount_sen, 0) !== amountSen) return { ok: false, message: 'The lines must add up to the amount.' };
   /* A project must be one of the company's; an account must be one a cost can go to (never money or a control). */
@@ -101,3 +121,31 @@ export async function buildLines(sb: any, staff: Staff, raw: unknown, amountSen:
   return { ok: true, lines: out };
 }
 
+
+interface LineTargetIds { unitId: string | null; maintenanceIssueId: string | null; projectId: number | null }
+type LabelledLine<L> = L & { targetLabel: string | null };
+
+const distinctIds = (ids: Array<string | number | null>): string[] => [...new Set(ids.filter((id) => id != null).map(String))];
+
+export async function withTargetLabels<L extends LineTargetIds, T extends { lines: L[] }>(sb: any, companyId: number, items: T[]): Promise<Array<Omit<T, 'lines'> & { lines: Array<LabelledLine<L>> }>> {
+  const lines = items.flatMap((item) => item.lines);
+  const [units, jobs, projects] = await Promise.all([
+    inChunks<{ id: string; building: string; unit_number: string; unit_code: string | null }>(distinctIds(lines.map((l) => l.unitId)),
+      (part, from, to) => sb.schema('public').from('conts_units').select('id, building, unit_number, unit_code').in('id', part).order('id').range(from, to)),
+    inChunks<{ id: string; title: string }>(distinctIds(lines.map((l) => l.maintenanceIssueId)),
+      (part, from, to) => sb.schema('public').from('conts_maintenance_jobs').select('id, title').in('id', part).order('id').range(from, to)),
+    inChunks<{ id: number; code: string | null; name: string }>(distinctIds(lines.map((l) => l.projectId)),
+      (part, from, to) => sb.schema('public').from('projects').select('id, code, name').eq('company_id', companyId).in('id', part).order('id').range(from, to)),
+  ]);
+  /* The code the unit is shown by in Property OS ("A-12-01"), else the number it was imported with (0350). */
+  const unitNames = new Map(units.map((u) => [String(u.id), `${u.building} ${u.unit_code || u.unit_number}`]));
+  const jobTitles = new Map(jobs.map((j) => [String(j.id), j.title]));
+  const projectNames = new Map(projects.map((p) => [String(p.id), [p.code, p.name].filter(Boolean).join(' ')]));
+  const labelOf = (line: L): string | null => {
+    if (line.maintenanceIssueId) return jobTitles.get(line.maintenanceIssueId) ?? null;
+    if (line.unitId) return unitNames.get(line.unitId) ?? null;
+    if (line.projectId != null) return projectNames.get(String(line.projectId)) ?? null;
+    return null;
+  };
+  return items.map((item) => ({ ...item, lines: item.lines.map((line) => ({ ...line, targetLabel: labelOf(line) })) }));
+}

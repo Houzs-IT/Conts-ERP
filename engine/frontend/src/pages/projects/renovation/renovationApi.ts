@@ -127,7 +127,7 @@ export interface ProjectDetail {
     finance_kind?: string | null;
     /** The brand it is sold under; its sales order carries the same one. */
     brand?: string | null;
-    building: string | null; unit_no: string | null; site_address: string | null; planned_handover_date: string | null;
+    building: string | null; unit_no: string | null; site_address: string | null; planned_handover_date: string | null; works_started_on?: string | null;
     handed_over_at: string | null; salesperson_name: string | null; notes: string | null;
   };
   type: { id: number; name: string; stage_keys: string[] } | null;

@@ -10,6 +10,7 @@
    - patchContract: cosmetic edits only (prices change through a VO).
    - setContractStatus: Confirmed -> In progress -> Completed -> Closed, or Cancelled. */
 
+import { fillSlaDates } from './renovation-sla';
 import { auditEntity, auditSo, mintDocNo, refuse, todayKl, yymmOf, type RenoDb } from './renovation-db';
 import { contractOrderKind, ensureDebtorSql } from '../../conts/parties';
 import { openAdvanceAccountSql } from '../../acc/reno-advance-account';
@@ -125,6 +126,31 @@ export async function liveContractOfProject(db: RenoDb, projectId: number): Prom
   return r?.doc_no ?? null;
 }
 
+export interface ContractBrand { id: number; name: string }
+
+/** The brand a new contract carries: the quotation's, else the one picked on its project (owner, 13 Nov 2026). */
+export async function contractBrand(db: RenoDb, quotationBrandId: number | null, projectId: number | null): Promise<ContractBrand | null> {
+  const [row] = quotationBrandId
+    ? await db.q<{ id: string; name: string }>(`select id, name from public.project_brands where id = $1`, [quotationBrandId])
+    : projectId
+      ? await db.q<{ id: string; name: string }>(
+        `select b.id, b.name from public.projects p
+           join public.project_brands b on b.company_id = p.company_id and lower(trim(b.name)) = lower(trim(p.brand))
+          where p.id = $1 order by b.active desc, b.id limit 1`, [projectId])
+      : [];
+  return row ? { id: Number(row.id), name: row.name } : null;
+}
+
+/** A project with no brand picked takes its contract's, so Client & team shows what the SO prints. */
+export async function fillProjectBrand(db: RenoDb, projectId: number | null, brandName: string | null): Promise<void> {
+  if (!projectId || !brandName) return;
+  await db.q(
+    `update public.projects set brand = $2, updated_at = to_char(timezone('UTC', now()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+      where id = $1 and nullif(trim(brand), '') is null`,
+    [projectId, brandName],
+  );
+}
+
 export async function convertQuotationToSo(
   db: RenoDb,
   actor: RenoActor,
@@ -168,7 +194,7 @@ export async function convertQuotationToSo(
   const contractSen = rows.reduce((s, r) => s + r.total_sen, 0);
   if (contractSen !== rev.totals.finalSen) throw new Error(`convert ${q.quoteNo}: mirrored rows sum ${contractSen} but the quotation totals ${rev.totals.finalSen}`);
 
-  const [brand] = q.brandId ? await db.q<{ name: string }>(`select name from public.project_brands where id = $1`, [q.brandId]) : [];
+  const brand = await contractBrand(db, q.brandId ?? null, q.projectId ?? null);
   const debtorName = h.customerName || h.attention || 'Customer';
   /* Conts (finance phase 1.5; SOP 2.1): the contract's customer as a debtor under its control — renovation 301-0000
      or inhouse renovation 302-0000, by the project's kind else the brand's (contractOrderKind) — so its invoices and
@@ -209,9 +235,12 @@ export async function convertQuotationToSo(
       h.building || null, h.unitNo || null, `Renovation contract from quotation ${rev.docNo}`, actor.staffId, actor.companyId, debtorCode, customerId,
       wh?.code ?? null, wh?.id ?? null, state],
   );
+  await fillProjectBrand(db, q.projectId ?? null, brand?.name ?? null);
   await insertSoItems(db, docNo, rows, { companyId: actor.companyId, debtorName, lineDate: soDate });
   const revised = await recomputeSoHeader(db, docNo);
   await insertSections(db, { kind: 'so', id: docNo }, sections, actor.companyId);
+  // A project already started dates the template lines at once (package template SLA).
+  await fillSlaDates(db, q.projectId ?? null);
   await stampContractFromQuotation(db, docNo, {
     projectId: q.projectId, companyId: actor.companyId, building: h.building, unitNo: h.unitNo, sections,
     property: { siteAddress: h.siteAddress, propertyType: h.propertyType, layoutLabel: h.layoutLabel, bedrooms: h.bedrooms, bathrooms: h.bathrooms, builtUpSqft: h.builtUpSqft, landAreaSqft: h.landAreaSqft, landSize: h.landSize, salespersonId: h.salespersonId, state: h.state, city: h.city, postcode: h.postcode, country: h.country, salesLocation: h.salesLocation },
@@ -222,7 +251,7 @@ export async function convertQuotationToSo(
         attention, customer_name, building, unit_no, prepared_by, doc_date, last_amended, intro, terms_note, doc_discount_sen, doc_discount_label,
         promo_lines, discount_so_item_id, original_contract_sen, term_template_id, created_by, advance_account_code)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::date, $15::date, $16, $17, $18, $19, $20::text::jsonb, $21, $22, $23, $24, $25)`,
-    [docNo, actor.companyId, q.projectId, quotationId, rev.id, rev.docNo, q.brandId, h.printFormat, h.attention, debtorName, h.building, h.unitNo,
+    [docNo, actor.companyId, q.projectId, quotationId, rev.id, rev.docNo, brand?.id ?? null, h.printFormat, h.attention, debtorName, h.building, h.unitNo,
       h.preparedBy, soDate, h.lastAmended, h.intro, h.termsNote, h.docDiscountSen, h.docDiscountLabel, JSON.stringify(h.promoLines), discountItemId,
       revised, h.termTemplateId, actor.name, advanceAccountCode],
   );
@@ -427,7 +456,8 @@ export async function setContractStatus(db: RenoDb, actor: RenoActor, docNo: str
   if (to === 'CANCELLED') {
     /* The stock allocator walks live orders only, so a cancelled contract's goods lines kept READY, stock_qty_ready
        and any claimed batch for ever, holding stock no one will deliver. Service lines are READY from birth and stay so.
-       Same release as the generic SO cancel (Houzs f238fd2b4). */
+       Same release as the generic SO cancel (Houzs f238fd2b4). The ids go as JSON text: db.q runs sql.unsafe, which
+       sends a JS array as one text value that Postgres cannot read as uuid[]. */
     const lines = await db.q<{ id: string; item_code: string | null; item_group: string | null }>(
       `select id, item_code, item_group from scm.mfg_sales_order_items where doc_no = $1 and cancelled = false`,
       [docNo],
@@ -436,8 +466,8 @@ export async function setContractStatus(db: RenoDb, actor: RenoActor, docNo: str
     if (goodsIds.length > 0) {
       await db.q(
         `update scm.mfg_sales_order_items set stock_status = 'PENDING', stock_qty_ready = 0, allocated_batch_no = null
-          where doc_no = $1 and id = any($2::uuid[])`,
-        [docNo, goodsIds],
+          where doc_no = $1 and id::text in (select jsonb_array_elements_text($2::text::jsonb))`,
+        [docNo, JSON.stringify(goodsIds)],
       );
     }
   }

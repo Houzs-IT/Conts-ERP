@@ -90,6 +90,10 @@ export function parseChartXlsx(wb: XLSX.WorkBook, known: ReadonlyArray<AccountSe
   const unknownSections: string[] = [];
   let section = '';
   const prevByDepth: Record<number, string> = {};
+  /* The level is the indent's rank among the widths the file uses, not its width / 4: AutoCount indents its three
+     levels by 0, 4 and 6 spaces, and width / 4 read the third as the second (chew, 17 Nov 2026: the chart came in two
+     levels deep). */
+  const widths = [...new Set(grid.map((r) => String(r[0] ?? '').match(CODE_RE)?.[1]?.length).filter((w): w is number => w != null))].sort((x, y) => x - y);
   for (const r of grid) {
     const c0 = String(r[0] ?? '');
     const m = c0.match(CODE_RE);
@@ -105,7 +109,7 @@ export function parseChartXlsx(wb: XLSX.WorkBook, known: ReadonlyArray<AccountSe
       }
       continue;
     }
-    const depth = Math.floor(m[1]!.length / 4);
+    const depth = widths.indexOf(m[1]!.length);
     const code = m[2]!;
     const special = r[col.special] != null ? String(r[col.special]).trim().toUpperCase() : '';
     const name = String(r[col.name] ?? '').trim() || code;
@@ -156,7 +160,8 @@ function treeOrder(accounts: ChartRow[]): ChartRow[] {
 }
 
 const TYPE_TONE: Record<string, string> = {
-  ASSET: '#2F5D4F', LIABILITY: '#B06000', EQUITY: '#4A4A8A', INCOME: '#16695f', EXPENSE: '#8A3B3B',
+  ASSET: 'var(--coa-asset, #2F5D4F)', LIABILITY: 'var(--coa-liability, #B06000)', EQUITY: 'var(--coa-equity, #4A4A8A)',
+  INCOME: 'var(--coa-income, #16695f)', EXPENSE: 'var(--coa-expense, #8A3B3B)', // embed.css re-points these on night
 };
 
 /* The shelf for a row the server has not sectioned (predates the migration). */
@@ -556,7 +561,7 @@ export const ChartOfAccounts = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Finance"
-        title="Chart of Accounts"
+        title="Chart of accounts"
         actions={canManage ? (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             <button
@@ -596,7 +601,7 @@ export const ChartOfAccounts = () => {
       </datalist>
 
       {addingNew && (
-        <section className={styles.card}>
+        <section className={`${styles.card} coa-card`}>
           <div className={styles.cardHeader}>
             <h2 className={styles.cardTitle}>New account</h2>
           </div>
@@ -701,7 +706,7 @@ export const ChartOfAccounts = () => {
       )}
 
       {parsed && (
-        <section className={styles.card}>
+        <section className={`${styles.card} coa-card`}>
           <div className={styles.cardHeader}>
             <h2 className={styles.cardTitle}>Ready to import</h2>
           </div>
@@ -771,7 +776,7 @@ export const ChartOfAccounts = () => {
       {editing && (
         <div role="presentation"
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'var(--space-4)' }}>
-        <section role="dialog" aria-label={`Edit ${editing.code}`} className={styles.card}
+        <section role="dialog" aria-label={`Edit ${editing.code}`} className={`${styles.card} coa-card`}
           style={{ width: 'min(560px, 95vw)', boxShadow: 'var(--shadow-3, 0 18px 48px rgba(0,0,0,0.25))' }}>
           <div className={styles.cardHeader}>
             <h2 className={styles.cardTitle}>Edit {editing.code}</h2>
@@ -814,7 +819,7 @@ export const ChartOfAccounts = () => {
         </div>
       )}
 
-      <section className={styles.card}>
+      <section className={`${styles.card} coa-card`}>
         <div className={styles.cardHeader}>
           <h2 className={styles.cardTitle}>Every account, every company</h2>
           <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>

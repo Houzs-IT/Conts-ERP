@@ -23,7 +23,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const tasks = await all<any>(env, `
     SELECT t.id, t.kind, t.state, t.title, t.instructions, t.due_at, t.next_guest_at, t.assignee_id, ${day} AS day, ${NEXT_STAY_TIME_SQL('t')} AS stay_time,
-           u.id AS unit_id, u.unit_number, u.readiness, u.base_rate, p.name AS property_name, COALESCE(${cleanerNamesSql(ready)}, cl.full_name, a.full_name, '') AS assignee_name,
+           u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.readiness, u.base_rate, p.name AS property_name, COALESCE(${cleanerNamesSql(ready)}, cl.full_name, a.full_name, '') AS assignee_name,
            o.id AS owner_id, o.display_name AS owner_name
     FROM tasks t JOIN units u ON u.id = t.unit_id JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
     LEFT JOIN users a ON a.id = t.assignee_id LEFT JOIN cleaners cl ON cl.id = t.cleaner_id
@@ -39,7 +39,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const issues = await all<any>(env, `
     SELECT m.id, m.state, m.title, m.detail, m.vendor_name, m.blocks_unit, m.blocked_from, m.blocked_to,
-           u.id AS unit_id, u.unit_number, u.readiness, u.base_rate, p.name AS property_name,
+           u.id AS unit_id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.readiness, u.base_rate, p.name AS property_name,
            o.id AS owner_id, o.display_name AS owner_name
     FROM maintenance_issues m JOIN units u ON u.id = m.unit_id JOIN properties p ON p.id = u.property_id JOIN owners o ON o.id = u.owner_id
     WHERE m.state != 'resolved'`);

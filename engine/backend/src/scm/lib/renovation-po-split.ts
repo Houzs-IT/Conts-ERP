@@ -1,5 +1,5 @@
-/* SO -> PO for a renovation contract: one click, lines grouped by their bound supplier and category group (one PO
-   never mixes categories; owner, 14 Oct 2026, mig 0116 enforces it), every PO line keeps so_item_id.
+/* SO -> PO for a renovation contract: one click, lines grouped by their bound supplier (and warehouse); a PO may mix
+   categories (owner, 19 Nov 2026, lifting the 14 Oct one-category rule; migration 0345), every PO line keeps so_item_id.
 
    Written directly rather than through convertSosToPosCore: that path prices
    from supplier-material bindings, folds sofa / mattress buckets and requires
@@ -40,7 +40,7 @@ export interface SplitLine {
 }
 
 export interface SplitGroup {
-  /* One PO per supplier AND category group (owner, 14 Oct 2026: a renovation PO never mixes categories). */
+  /* The category the group's lines share; '' when they mix (allowed since 19 Nov 2026). */
   categoryGroup: string;
   warehouseId: string | null;
   supplierId: string;
@@ -139,8 +139,11 @@ export function groupForPo(rows: CandidateRow[]): SplitPreview {
       continue;
     }
     if (line.qty <= 0) continue;
-    const key = `${r.supplier_id}|${group ?? ''}|${r.warehouse_id ?? ''}`;
+    /* By supplier and warehouse only: a PO may mix categories (owner, 19 Nov 2026, same as a sales order). The group's
+       category is the one its lines share, '' when they differ. */
+    const key = `${r.supplier_id}|${r.warehouse_id ?? ''}`;
     const g = groups.get(key) ?? { categoryGroup: group ?? '', warehouseId: r.warehouse_id ?? null, supplierId: r.supplier_id, supplierCode: r.supplier_code ?? '', supplierName: r.supplier_name ?? '', lines: [], totalSen: 0 };
+    if (g.lines.length > 0 && g.categoryGroup !== (group ?? '')) g.categoryGroup = '';
     g.lines.push(line);
     g.totalSen += line.amountSen;
     groups.set(key, g);

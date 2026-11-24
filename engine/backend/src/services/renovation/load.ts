@@ -23,6 +23,8 @@ import { billingViews, type BillingView } from "../../scm/lib/renovation-billing
 import { renoDbFromD1 } from "./dbBridge";
 import type { FlowStepRow } from "./flow";
 import type { StepSlaView } from "./stepSla";
+import { loadStageInputs } from "./stageLoad";
+import type { StageInputs } from "./stageRules";
 
 export interface DbStmt {
   bind(...args: unknown[]): DbStmt;
@@ -96,6 +98,8 @@ export interface ProjectRow {
   /* filled by the app, never typed (migration 0117, projectDates.ts) */
   start_date?: string | null;
   end_date?: string | null;
+  /* The works start, set by Start project (migration 0340): SLA lines are dated from it. */
+  works_started_on?: string | null;
 }
 
 export const PROJECT_COLS =
@@ -106,7 +110,7 @@ export const PROJECT_COLS =
   "p.sales_person_id::int AS sales_person_id, sp.name AS sales_person_name, p.designer_person_id::int AS designer_person_id, " +
   "dp.name AS designer_person_name, p.reno_pic_person_id::int AS reno_pic_person_id, rp.name AS reno_pic_person_name, " +
   "p.flow_manual_step, p.flow_manual_base_step, p.flow_manual_reason, p.flow_manual_by::int AS flow_manual_by, p.flow_manual_at, " +
-  "p.hold_flag, p.hold_note, p.hold_at, p.source, p.source_ref, p.start_date, p.end_date";
+  "p.hold_flag, p.hold_note, p.hold_at, p.source, p.source_ref, p.start_date, p.end_date, p.works_started_on::text AS works_started_on";
 
 export const PROJECT_PEOPLE_JOINS =
   "LEFT JOIN project_people sp ON sp.id = p.sales_person_id " +
@@ -230,11 +234,15 @@ export interface ProjectFacts {
   vo?: VoSummary | null;
   /** the current step against its SLA (stepSla.ts); filled by syncStepSla, absent before migration 0121 */
   stepSla?: StepSlaView | null;
+  /** what the stage rules read (stageLoad.ts, owner 19 Nov 2026); absent on fixtures, which then fall back to the SO facts above */
+  stage?: StageInputs | null;
 }
 
 export interface LoadOptions {
   /** Only the checklist rows the board needs (by item_key) instead of all. */
   checklistKeys?: readonly string[];
+  /** false skips the stage reads (stageLoad.ts); the stages then fall back to the facts loaded here. */
+  stage?: boolean;
 }
 
 const BOARD_CHECKLIST_KEYS = ["keys_collected", "keys_returned", "renovation_permit", "shop_drawings_signed", "handover_signed"];
@@ -250,6 +258,60 @@ export async function loadProjectRows(db: Db, companySql: string, opts: { projec
   return list.map((p) => ({ ...p, id: Number(p.id), company_id: Number(p.company_id), project_type_id: num(p.project_type_id), pic_id: num(p.pic_id) }));
 }
 
+const IN_BIGINTS = "(SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)";
+const jsonList = (sql: string, order = ""): string => `(SELECT coalesce(json_agg(x${order ? ` ORDER BY ${order}` : ""}), '[]'::json) FROM (${sql}) x)`;
+
+function jsonRows<T>(v: unknown): T[] {
+  let x = v;
+  if (typeof x === "string") {
+    try { x = JSON.parse(x); } catch { return []; }
+  }
+  return Array.isArray(x) ? (x as T[]) : [];
+}
+
+interface Lookups {
+  types: TypeRow[];
+  sos: SoRow[];
+  taskLines: TaskLineRow[];
+  flowSteps: Array<FlowStepRow & { company_id: number }>;
+  keyHolders: Array<{ project_id: number; person_id: number | null; name: string | null; moved_on: string }>;
+  assignees: Array<{ task_id: number; id: number; name: string }>;
+}
+
+/** Project types, sales orders, task lines, flow steps, key holders and task assignees, in one statement. Every column
+    is text, a number or a boolean, so the JSON round trip gives the same values the separate reads gave. */
+async function loadLookups(db: Db, pids: readonly number[], typeIds: readonly number[], companyIds: readonly number[]): Promise<Lookups> {
+  const r = await db.prepare(
+    `SELECT ${jsonList(`SELECT id::int AS id, slug, name, to_json(stage_keys) AS stage_keys, checklist_template_id::int AS checklist_template_id
+                          FROM project_types WHERE id IN ${IN_BIGINTS}`)} AS types,
+            ${jsonList(`SELECT so.doc_no, so.project_id::int AS project_id, so.status::text AS status, so.so_date::text AS so_date, so.agent, so.local_total_sen,
+                               to_jsonb(so)->>'so_kind' AS so_kind
+                          FROM scm.mfg_sales_orders so
+                         WHERE so.project_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::int)
+                           AND so.status::text <> 'CANCELLED'`)} AS sos,
+            ${jsonList(`SELECT l.task_id::int AS task_id, l.so_item_id::text AS so_item_id, l.purchase_order_item_id::text AS purchase_order_item_id
+                          FROM project_trade_task_lines l JOIN project_trade_tasks t ON t.id = l.task_id
+                         WHERE t.project_id IN ${IN_BIGINTS}`)} AS task_lines,
+            ${jsonList(`SELECT s.company_id::int AS company_id, s.step_key, s.label, s.sort_order, s.active, (to_jsonb(s)->>'sla_days')::int AS sla_days
+                          FROM project_flow_steps s WHERE s.company_id IN ${IN_BIGINTS}`)} AS flow_steps,
+            ${jsonList(`SELECT DISTINCT ON (km.project_id) km.project_id::int AS project_id, km.to_person_id::int AS person_id, pp.name, km.moved_on::text AS moved_on
+                          FROM project_key_moves km LEFT JOIN project_people pp ON pp.id = km.to_person_id
+                         WHERE km.project_id IN ${IN_BIGINTS}
+                         ORDER BY km.project_id, km.moved_on DESC, km.id DESC`)} AS key_holders,
+            ${jsonList(`SELECT a.task_id::int AS task_id, pp.id::int AS id, pp.name
+                          FROM project_trade_task_assignees a JOIN project_people pp ON pp.id = a.person_id JOIN project_trade_tasks t ON t.id = a.task_id
+                         WHERE t.project_id IN ${IN_BIGINTS}`, "x.task_id, x.name")} AS assignees`,
+  ).bind(ids(typeIds), ids(pids), ids(pids), ids(companyIds), ids(pids), ids(pids)).first<Record<string, unknown>>();
+  return {
+    types: jsonRows<TypeRow>(r?.types),
+    sos: jsonRows<SoRow>(r?.sos),
+    taskLines: jsonRows<TaskLineRow>(r?.task_lines),
+    flowSteps: jsonRows<FlowStepRow & { company_id: number }>(r?.flow_steps),
+    keyHolders: jsonRows<Lookups["keyHolders"][number]>(r?.key_holders),
+    assignees: jsonRows<Lookups["assignees"][number]>(r?.assignees),
+  };
+}
+
 export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[], opts: LoadOptions = {}): Promise<Map<number, ProjectFacts>> {
   const out = new Map<number, ProjectFacts>();
   if (projects.length === 0) return out;
@@ -258,10 +320,10 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
   const keys = opts.checklistKeys ?? null;
 
   const companyIds = [...new Set(projects.map((p) => Number(p.company_id)))];
-  const [types, stages, checklist, sos, tasks, taskLines, handovers, defects, flowSteps, keyHolders, assignees] = await Promise.all([
-    typeIds.length
-      ? rows<TypeRow>(db, `SELECT id::int AS id, slug, name, to_json(stage_keys) AS stage_keys, checklist_template_id::int AS checklist_template_id FROM project_types WHERE id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`, ids(typeIds))
-      : Promise.resolve([] as TypeRow[]),
+  /* The reads whose columns are all text, numbers and booleans come back in one statement as JSON (same values, one
+     round trip instead of six); the ones with timestamps keep their own statement so they still arrive as dates. */
+  const [lookups, stages, checklist, tasks, handovers, defects] = await Promise.all([
+    loadLookups(db, pids, typeIds, companyIds),
     rows<StoredStage & { project_id: number }>(db,
       `SELECT project_id::int AS project_id, stage_key, state, skip_reason, skipped_by::int AS skipped_by, skipped_at, started_at, started_by::int AS started_by, done_at, done_by::int AS done_by,
               planned_start::text AS planned_start, planned_end::text AS planned_end
@@ -275,12 +337,6 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
           ${keys ? "AND ck.item_key IN (SELECT jsonb_array_elements_text(?::text::jsonb))" : ""}
         ORDER BY ck.project_id, s.sort_order NULLS LAST, ck.seq`,
       ...(keys ? [ids(pids), JSON.stringify(keys)] : [ids(pids)])),
-    rows<SoRow>(db,
-      `SELECT so.doc_no, so.project_id::int AS project_id, so.status::text AS status, so.so_date::text AS so_date, so.agent, so.local_total_sen,
-              to_jsonb(so)->>'so_kind' AS so_kind
-         FROM scm.mfg_sales_orders so
-        WHERE so.project_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::int)
-          AND so.status::text <> 'CANCELLED'`, ids(pids)),
     rows<TaskRow>(db,
       `SELECT t.id::int AS id, t.project_id::int AS project_id, t.stage_key, t.trade_code, t.fix_phase, t.label, t.seq, t.fulfilment_kind,
               t.supplier_id::text AS supplier_id, sup.name AS supplier_name, t.purchase_order_id::text AS purchase_order_id, po.po_number,
@@ -292,10 +348,6 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
          LEFT JOIN scm.purchase_orders po ON po.id = t.purchase_order_id
         WHERE t.project_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)
         ORDER BY t.project_id, t.seq, t.id`, ids(pids)),
-    rows<TaskLineRow>(db,
-      `SELECT l.task_id::int AS task_id, l.so_item_id::text AS so_item_id, l.purchase_order_item_id::text AS purchase_order_item_id
-         FROM project_trade_task_lines l JOIN project_trade_tasks t ON t.id = l.task_id
-        WHERE t.project_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`, ids(pids)),
     rows<HandoverRow>(db,
       `SELECT project_id::int AS project_id, customer_signer_name, signed_at, keys_returned, access_cards_returned, deposit_refund_note
          FROM project_handovers WHERE project_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`, ids(pids)),
@@ -304,20 +356,8 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
          FROM project_defects
         WHERE project_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint) AND archived_at IS NULL
         ORDER BY id`, ids(pids)),
-    rows<FlowStepRow & { company_id: number }>(db,
-      `SELECT s.company_id::int AS company_id, s.step_key, s.label, s.sort_order, s.active, (to_jsonb(s)->>'sla_days')::int AS sla_days FROM project_flow_steps s
-        WHERE s.company_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)`, ids(companyIds)),
-    rows<{ project_id: number; person_id: number | null; name: string | null; moved_on: string }>(db,
-      `SELECT DISTINCT ON (km.project_id) km.project_id::int AS project_id, km.to_person_id::int AS person_id, pp.name, km.moved_on::text AS moved_on
-         FROM project_key_moves km LEFT JOIN project_people pp ON pp.id = km.to_person_id
-        WHERE km.project_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)
-        ORDER BY km.project_id, km.moved_on DESC, km.id DESC`, ids(pids)),
-    rows<{ task_id: number; id: number; name: string }>(db,
-      `SELECT a.task_id::int AS task_id, pp.id::int AS id, pp.name
-         FROM project_trade_task_assignees a JOIN project_people pp ON pp.id = a.person_id JOIN project_trade_tasks t ON t.id = a.task_id
-        WHERE t.project_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)
-        ORDER BY a.task_id, pp.name`, ids(pids)),
   ]);
+  const { types, sos, taskLines, flowSteps, keyHolders, assignees } = lookups;
   const assigneesByTask = new Map<number, Array<{ id: number; name: string }>>();
   for (const a of assignees) {
     const list = assigneesByTask.get(Number(a.task_id)) ?? [];
@@ -332,7 +372,11 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
   for (const so of sos) if (so.so_kind === "RENOVATION") soByProject.set(Number(so.project_id), so);
   const docNos = [...soByProject.values()].map((s) => s.doc_no);
 
-  const [lineRes, poLines, doRows, siteRows, billingByDoc, voRows] = await Promise.all([
+  /* The renovation contracts' billing is read once and shared with the stage reads (stageLoad.ts reads the same
+     contracts' payments), instead of once each. */
+  const renoSos = [...soByProject.values()];
+  const views: Promise<Map<string, BillingView> | null> = renoSos.length ? billingViewsOrMissing(db, renoSos.map((s) => s.doc_no)) : Promise.resolve(new Map());
+  const [lineRes, poLines, doRows, siteRows, billingByDoc, voRows, stageBy] = await Promise.all([
     loadContractLines(db, docNos),
     docNos.length
       ? rows<PoLineRow>(db,
@@ -361,8 +405,9 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
         WHERE g.project_id IN (SELECT (jsonb_array_elements_text(?::text::jsonb))::bigint)
           AND g.received_at_site AND g.status::text NOT IN ('CANCELLED', 'DRAFT') AND poi.so_item_id IS NOT NULL
         GROUP BY poi.so_item_id`, ids(pids)),
-    loadBilling(db, [...soByProject.values()]),
+    loadBilling(db, renoSos, views),
     loadVoCounts(db, docNos),
+    opts.stage === false ? Promise.resolve(new Map<number, StageInputs>()) : loadStageInputs(db, projects, { billing: views }),
   ]);
 
   const supply = new Map<string, LineSupply>();
@@ -422,6 +467,7 @@ export async function loadRenovationFacts(db: Db, projects: readonly ProjectRow[
         return k ? { personId: k.person_id == null ? null : Number(k.person_id), name: k.name, movedOn: k.moved_on } : null;
       })(),
       vo: so && voRows ? (voRows.get(so.doc_no) ?? { count: 0, approved: 0 }) : null,
+      stage: stageBy.get(project.id) ?? null,
     });
   }
   return out;
@@ -514,24 +560,29 @@ export async function loadContractLines(db: Db, docNos: readonly string[]): Prom
     own billingViews (scm/lib/renovation-billing.ts): this file never works out an
     amount itself. Missing phase-2 tables (an environment whose migrations lag)
     read as "billing not available", which keeps the hardware gate closed. */
-export async function loadBilling(db: Db, sos: readonly SoRow[]): Promise<Map<string, BillingFacts>> {
+export async function loadBilling(db: Db, sos: readonly SoRow[], pre?: Promise<Map<string, BillingView> | null>): Promise<Map<string, BillingFacts>> {
   const out = new Map<string, BillingFacts>();
   if (sos.length === 0) return out;
-  let views: Map<string, BillingView>;
-  try {
-    views = await billingViews(renoDbFromD1(db), sos.map((s) => s.doc_no));
-  } catch (e) {
-    if (isMissingRelation(e)) {
-      for (const so of sos) out.set(so.doc_no, { available: false, unavailableReason: "table_missing", contractSen: so.local_total_sen ?? null, instalments: [] });
-      return out;
-    }
-    throw e;
+  const views = await (pre ?? billingViewsOrMissing(db, sos.map((s) => s.doc_no)));
+  if (!views) {
+    for (const so of sos) out.set(so.doc_no, { available: false, unavailableReason: "table_missing", contractSen: so.local_total_sen ?? null, instalments: [] });
+    return out;
   }
   for (const so of sos) {
     const v = views.get(so.doc_no);
     out.set(so.doc_no, v ? billingFactsOf(v) : { available: false, unavailableReason: "so_missing", contractSen: null, instalments: [] });
   }
   return out;
+}
+
+/** Phase 2's billing views of these contracts; null when its tables are missing (any other error is thrown). */
+export async function billingViewsOrMissing(db: Db, docNos: readonly string[]): Promise<Map<string, BillingView> | null> {
+  try {
+    return await billingViews(renoDbFromD1(db), docNos);
+  } catch (e) {
+    if (isMissingRelation(e)) return null;
+    throw e;
+  }
 }
 
 /** Phase 2's billing view in the shape the stage prompts, gate and board read. */
@@ -549,10 +600,12 @@ export function billingFactsOf(v: BillingView): BillingFacts {
       description: i.description || null,
       stageCode: i.stageCode,
       trigger: normTrigger(i.trigger),
-      billedSen: i.bill ? i.bill.amountSen : 0,
-      receivedSen: i.bill && i.bill.kind === "INVOICE" ? i.bill.paidSen : 0,
-      dueSen: i.bill ? i.bill.amountSen : i.amountSen,
-      billed: i.bill !== null,
+      /* An instalment AutoCount invoiced before go-live is billed (there), its share of that invoicing due, and what was
+         paid on it there received (renovation-billing paidBeforeGoLiveSen, chew 23 Nov 2026): never prompted to bill. */
+      billedSen: i.bill ? i.bill.amountSen : i.billedBeforeGoLive ? Number(i.beforeGoLiveSen) || 0 : 0,
+      receivedSen: i.bill ? (i.bill.kind === "INVOICE" ? i.bill.paidSen : 0) : i.billedBeforeGoLive ? Number(i.paidBeforeGoLiveSen) || 0 : 0,
+      dueSen: i.bill ? i.bill.amountSen : i.billedBeforeGoLive ? Number(i.beforeGoLiveSen) || 0 : i.amountSen,
+      billed: i.bill !== null || i.billedBeforeGoLive === true,
     })),
   };
 }

@@ -10,6 +10,7 @@ export const SCM_HANDOFF_KEYS = [
   "pcrFromOrderPicks",
   "pcrnFromReceivePicks",
   "piFromGrnPicks",
+  "poFromProductionPicks",
   "poFromSoPicks",
   "poNewDraft",
   "proFromSoPicks",

@@ -43,7 +43,10 @@ import {
   usePostPurchaseInvoice,
   usePurchaseInvoiceDetail,
 } from '../../vendor/scm/lib/purchase-invoice-queries';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
+import { useFormDraft } from '../../lib/formDraft';
+import { FormDraftBar } from '../../components/FormDraftBar';
 import { readScmHandoff, removeScmHandoff } from '../../lib/scmHandoffStorage';
 import { useGrnDetail, useGrnDetails } from '../../vendor/scm/lib/grn-queries';
 import { useActiveCurrencies, rateFor } from '../../vendor/scm/lib/currencies-queries';
@@ -71,6 +74,8 @@ import { DateField } from "../../vendor/scm/components/DateField";
 import { takePvFiles, pvFileToFile } from '../../vendor/scm/lib/pv-file-handoff';
 import type { PvFilePayload } from '../../vendor/scm/lib/payment-voucher-queries';
 import { uploadDocFile } from '../../components/doc-attachments/docAttachmentsApi';
+import { useAccounts, postableAccounts } from '../../vendor/scm/lib/accounting-queries';
+import { AccountSelect } from '../../vendor/scm/components/AccountSelect';
 
 const ICON    = { size: 16, strokeWidth: 1.75 } as const;
 const SM_ICON = { size: 14, strokeWidth: 1.75 } as const;
@@ -117,6 +122,11 @@ type DraftLine = {
      ("PO 有什么内容，Purchase Invoice 也应该随之对应"). GRN-sourced lines carry
      the GRN line's category + variants; manual lines pick them below. */
   itemGroup:      string | null;
+  /* A line keyed by account instead of an item (chew, 18 Nov 2026): it books to this purchase account. */
+  accountCode?:   string;
+  /* The line opened for a stock item (chew, 18 Nov 2026): a manual line shows only account, description, qty and price
+     until "Use a stock item" opens the item code and stock group. A line with an item code is always open. */
+  useItem?:       boolean;
   variants:       Record<string, unknown> | null;
   qty:            number;
   unitPriceSen: number;
@@ -153,12 +163,10 @@ export const PurchaseInvoiceNew = () => {
   // Manual mode = no ?grnId= in the URL (Commander 2026-05-29 — blank PI).
   const isManual = !grnId;
 
-  /* One key for the one PI this page is open to raise (lib/idempotency.ts).
-     Same create-then-post-then-dialog shape as GrnNew (which carries the full
-     reasoning): the submit is TWO calls and a POST failure reports "Save failed"
-     while the PI already exists, so the re-press that copy invites must REPLAY
-     rather than book the supplier's bill a second time. */
-  const idemKey = useIdempotencyKey();
+  /* One key per purchase invoice CONTENT (lib/idempotency.ts createContentBoundKey): the same form re-pressed after a stall
+     replays the first answer instead of raising a second document; a save the server refused releases the key, so
+     the corrected form is a new request instead of a replay of the refusal (audit 20 Nov 2026, items 19-24). */
+  const idemKeys = useContentBoundIdempotencyKey();
   const create = useCreatePurchaseInvoice();
   const post   = usePostPurchaseInvoice({ reportNotBooked: false });
   const saving = create.isPending || post.isPending;
@@ -364,6 +372,9 @@ export const PurchaseInvoiceNew = () => {
   const setLine  = (rid: string, patch: Partial<DraftLine>) =>
     setLines((prev) => prev.map((l) => (l.rid === rid ? { ...l, ...patch } : l)));
   const dropLine = (rid: string) => setLines((prev) => prev.filter((l) => l.rid !== rid));
+  /* The accounts a line keyed by account may name (chew, 18 Nov 2026): ordinary leaves only. */
+  const accountsQ = useAccounts();
+  const lineAccounts = useMemo(() => postableAccounts(accountsQ.data?.accounts ?? []), [accountsQ.data]);
 
   const subtotalSen = useMemo(
     () => lines.reduce((s, l) => s + l.qty * l.unitPriceSen, 0),
@@ -478,6 +489,27 @@ export const PurchaseInvoiceNew = () => {
     setExchangeRate(String(rateFor(currenciesQ.data, currency)));
   }, [isForeign, currency, currenciesQ.data, rateTouched]);
 
+  /* Unsaved fields kept in this browser (lib/formDraft.ts), offered back after a reload; one raised from goods
+     receipts is kept per receipt, once the receipt has filled the lines. Not for Copy as new or a scanned bill:
+     their source fills the form again, and a scanned bill's files cannot be kept. */
+  const [draftAllowed] = useState(() => !copyFrom && !(location.state as { scanBill?: unknown } | null)?.scanBill);
+  const draftValue = {
+    manualSupplierId, supplierInvoiceRef, invoiceDate, dueDate, dueTouched, notes,
+    exchangeRate, rateTouched, currencyOverride, allocationMethod, lines,
+  };
+  const draft = useFormDraft('pi-new', grnId ? `grn-${[grnId, ...extraGrnIds].join(',')}` : 'new', draftValue, {
+    enabled: draftAllowed && (isManual || !!sourceItems),
+    meaningful: !!manualSupplierId || !!supplierInvoiceRef.trim() || lines.some((l) => !!l.itemCode.trim() || l.unitPriceSen > 0),
+    keys: idemKeys,
+  });
+  const restoreDraft = (v: typeof draftValue) => {
+    setManualSupplierId(v.manualSupplierId); setSupplierInvoiceRef(v.supplierInvoiceRef); setInvoiceDate(v.invoiceDate);
+    setDueTouched(v.dueTouched); setDueDate(v.dueDate); setNotes(v.notes);
+    setRateTouched(v.rateTouched); setCurrencyOverride(v.currencyOverride); setExchangeRate(v.exchangeRate);
+    setAllocationMethod(v.allocationMethod);
+    if (Array.isArray(v.lines) && v.lines.length > 0) setLines(v.lines);
+  };
+
   // ── Manual product search (gated by min query length, mirrors GrnNew). ───
   const [productQuery, setProductQuery] = useState<string>('');
   /* Perf — debounce the datalist search so a fast typist fires one
@@ -554,16 +586,15 @@ export const PurchaseInvoiceNew = () => {
         : 'This GRN is missing a supplier — reopen it and try again.' });
       return;
     }
-    // Drop the blank starter line(s) — only real items (with a code) are saved.
-    const realLines = lines.filter((l) => l.itemCode.trim());
+    // Drop the blank starter line(s) — only real lines (an item, or an account) are saved.
+    const realLines = lines.filter((l) => l.itemCode.trim() || l.accountCode);
     if (realLines.length === 0) {
-      setDialog({ title: 'Add at least one item', body: 'Pick at least one SKU to invoice.' });
+      setDialog({ title: 'Add at least one line', body: 'Pick an item, or an account, for at least one line.' });
       return;
     }
     if (!canSave) { setDialog({ title: 'Check the quantities', body: 'Each line needs qty > 0.' }); return; }
     try {
-      const createRes = await create.mutateAsync({
-        idempotencyKey: idemKey,
+      const payload = {
         // Manual: no GRN / PO behind it. GRN-sourced: carry both FKs through.
         supplierId,
         purchaseOrderId:    isManual ? null : (grn?.purchase_order_id ?? null),
@@ -596,8 +627,13 @@ export const PurchaseInvoiceNew = () => {
           // so the PI reflects WHAT was billed, same as the GRN/PO upstream.
           itemGroup:      l.itemGroup,
           variants:       l.variants,
+          ...(l.accountCode ? { accountCode: l.accountCode } : {}),
         })),
-      });
+      };
+      const sent = await sendWithContentKey(idemKeys, payload, () => serviceConfirm(unansweredSaveQuestion('purchase invoice', 'Procurement > Purchase Invoices')), (idempotencyKey) => create.mutateAsync({ ...payload, idempotencyKey }));
+      if (!sent.sent) return;
+      const createRes = sent.value;
+      draft.clear();
       /* Attach the scanned bill AFTER the invoice exists, in scan order. A failed
          upload never un-saves the bill: the dialog says what still needs adding
          from the detail page's Files card. */
@@ -672,6 +708,8 @@ export const PurchaseInvoiceNew = () => {
           </div>
         }
       />
+
+      <FormDraftBar draft={draft} onRestore={restoreDraft} />
 
       <section className={styles.card}>
         <div className={styles.cardHeader}><h2 className={styles.cardTitle}>Header</h2></div>
@@ -907,6 +945,43 @@ export const PurchaseInvoiceNew = () => {
                 return variants;
               })() });
             const isManualLine = l.grnItemId === null;
+            const compact = isManualLine && !l.useItem && !l.itemCode.trim();
+            const linkBtn: React.CSSProperties = { alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+              color: 'var(--c-accent, #8a6d3b)', fontSize: 'var(--fs-12)', fontWeight: 600 };
+            /* The everyday line (chew, 18 Nov 2026): account, description, qty, unit price, total, one row; opening it for a
+               stock item only adds the item code above (its product brings its stock group). */
+            const compactRow = (
+              <div style={{ display: 'grid', gap: 'var(--space-3)', alignItems: 'end',
+                      gridTemplateColumns: 'minmax(180px, 2fr) minmax(200px, 3fr) minmax(70px, 0.7fr) minmax(110px, 1fr) minmax(110px, 1fr)' }}>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Account</span>
+                        <AccountSelect accounts={lineAccounts} value={l.accountCode ?? ''} className={styles.fieldInput}
+                          onChange={(code) => setLine(l.rid, { accountCode: code })} placeholder="— purchase account —" />
+                      </label>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Description</span>
+                        <input type="text" value={l.materialName} onChange={(e) => setLine(l.rid, { materialName: e.target.value })}
+                          aria-label={`line ${idx + 1} description`} placeholder="What was bought" className={styles.fieldInput} />
+                      </label>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Qty</span>
+                        <NumberInput value={l.qty} sign="unsigned" decimal={false}
+                          onValueChange={(n) => setLine(l.rid, { qty: Math.max(0, n ?? 0) })}
+                          className={styles.fieldInput} style={{ textAlign: 'right' }} />
+                      </label>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Unit Price ({currency})</span>
+                        <MoneyInput bare valueSen={l.unitPriceSen}
+                          onCommit={(sen) => setLine(l.rid, { unitPriceSen: sen ?? 0 })}
+                          inputClassName={styles.fieldInput} selectOnFocus />
+                      </label>
+                      <label className={styles.field}>
+                        <span className={styles.fieldLabel}>Line Total</span>
+                        <input type="text" readOnly value={fmtRm(lineTotal, currency)} className={styles.fieldInput}
+                          style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', background: 'var(--c-cream)', color: 'var(--fg-muted)' }} />
+                      </label>
+                    </div>
+            );
             return (
               <div key={l.rid} style={{
                 background: 'var(--c-paper)', border: '1px solid var(--line)',
@@ -942,6 +1017,12 @@ export const PurchaseInvoiceNew = () => {
                   </div>
                 </div>
 
+                {compact ? (
+                  <>
+                    {compactRow}
+                    <button type="button" style={linkBtn} onClick={() => setLine(l.rid, { useItem: true })}>+ Use a stock item code</button>
+                  </>
+                ) : (<>
                 {/* Identity row — Item Code (Internal) + Description */}
                 <div className={styles.formGrid2}>
                   <label className={styles.field}>
@@ -986,14 +1067,13 @@ export const PurchaseInvoiceNew = () => {
                         style={{ fontFamily: 'var(--font-mono)', background: 'var(--c-cream)', color: 'var(--fg-muted)' }} />
                     )}
                   </label>
-                  <label className={styles.field}>
-                    <span className={styles.fieldLabel}>Description</span>
-                    <input type="text" value={l.materialName} onChange={(e) => setLine(l.rid, { materialName: e.target.value })}
-                      readOnly={!isManualLine}
-                      placeholder={isManualLine ? '(auto-filled when an item is picked — editable)' : ''}
-                      className={styles.fieldInput}
-                      style={!isManualLine ? { background: 'var(--c-cream)', color: 'var(--fg-muted)' } : undefined} />
-                  </label>
+                  {!isManualLine && (
+                    <label className={styles.field}>
+                      <span className={styles.fieldLabel}>Description</span>
+                      <input type="text" readOnly value={l.materialName} className={styles.fieldInput}
+                        style={{ background: 'var(--c-cream)', color: 'var(--fg-muted)' }} />
+                    </label>
+                  )}
                 </div>
 
                 {/* PO/GRN-sourced lines: read-only variant summary. */}
@@ -1055,6 +1135,7 @@ export const PurchaseInvoiceNew = () => {
                   </div>
                 )}
 
+                {isManualLine ? compactRow : (<>
                 {/* Fields row — Qty · Unit Price · Line Total */}
                 <div className={styles.formGrid4} style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
                   <label className={styles.field}>
@@ -1068,9 +1149,7 @@ export const PurchaseInvoiceNew = () => {
                     <MoneyInput bare valueSen={l.unitPriceSen}
                       onCommit={(sen) => setLine(l.rid, { unitPriceSen: sen ?? 0 })}
                       inputClassName={styles.fieldInput} selectOnFocus />
-                    {!isManualLine && (
-                      <PoPriceReference poUnitPriceSen={l.poUnitPriceSen} piUnitPriceSen={l.unitPriceSen} fmt={(sen) => fmtRm(sen, currency)} />
-                    )}
+                    <PoPriceReference poUnitPriceSen={l.poUnitPriceSen} piUnitPriceSen={l.unitPriceSen} fmt={(sen) => fmtRm(sen, currency)} />
                   </label>
                   <label className={styles.field}>
                     <span className={styles.fieldLabel}>Line Total</span>
@@ -1078,6 +1157,11 @@ export const PurchaseInvoiceNew = () => {
                       style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', background: 'var(--c-cream)', color: 'var(--fg-muted)' }} />
                   </label>
                 </div>
+                </>)}
+                {isManualLine && !l.itemCode.trim() && (
+                  <button type="button" style={linkBtn} onClick={() => setLine(l.rid, { useItem: false })}>Account only, no stock item</button>
+                )}
+                </>)}
               </div>
             );
           })}

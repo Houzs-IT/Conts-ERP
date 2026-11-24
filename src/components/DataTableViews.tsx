@@ -17,7 +17,9 @@ export interface SavedView {
   id: string; table: string; name: string; scope: 'mine' | 'company'; isDefault: boolean; layout: TableLayout; mine: boolean; updatedAt: string;
 }
 
-interface Payload { table: string; canShare: boolean; mine: SavedView[]; company: SavedView[] }
+/** `columns`: this person's own column order and visibility for the table, kept with their account (null: none yet);
+ *  `columnsAt`: when the account kept it (the server's time). */
+interface Payload { table: string; canShare: boolean; mine: SavedView[]; company: SavedView[]; columns?: TableLayout['columns'] | null; columnsAt?: string | null }
 
 export function useTableViews(table: string | null) {
   const q = useApi<Payload>(table ? `/table-layouts?table=${encodeURIComponent(table)}` : null);
@@ -44,5 +46,13 @@ export function useTableViews(table: string | null) {
     try { await api.del(`/table-layouts/${encodeURIComponent(id)}`); q.reload(); return true; }
     catch (e) { failed('View not deleted.', e); return false; } finally { setBusy(false); }
   }
-  return { data: q.data, loading: q.loading, error: q.error, busy, create, update, remove };
+  /** Keeps this person's column order and visibility with their account (functions/api/table-layouts/columns.ts), so the
+   *  list opens the same way on any computer (chew, 13 Nov 2026). Gives back when the account kept it, or null. A failure
+   *  is quiet: the browser keeps it, and the next change sends it again. */
+  async function saveColumns(columns: TableLayout['columns']): Promise<string | null> {
+    if (!table) return null;
+    try { return (await api.put<{ at?: string }>('/table-layouts/columns', { table, columns })).at ?? null; }
+    catch { return null; /* kept in this browser meanwhile */ }
+  }
+  return { data: q.data, loading: q.loading, error: q.error, busy, create, update, remove, saveColumns };
 }

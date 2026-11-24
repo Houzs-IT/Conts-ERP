@@ -12,6 +12,7 @@
 //
 // Mounted at '/delivery-returns' in apps/api/src/index.ts.
 
+import { DR_SEARCH_COLS, pageRange, parseReturnListPage, returnSearchOr } from '../lib/return-list-page';
 import { Hono, type Context } from 'hono';
 import { normalizePhone } from '../shared/phone';
 import { buildVariantSummary } from '../shared';
@@ -568,8 +569,8 @@ async function resyncInventoryForReturn(sb: any, deliveryReturnId: string, perfo
     await reconcileUncostedAfterIn(sb, writes, performedBy);
     /* Returned-stock level changed → re-walk SO allocation. Best-effort. */
     try {
-      const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-      await recomputeSoStockAllocation(sb);
+      const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+      await queueAllocationRecompute(sb, 'post-dr-resync');
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-dr-resync failed:', e); }
   }
   /* DR 3B — the return qty just changed (line edited / deleted / cancelled), so
@@ -785,9 +786,15 @@ export async function deliveryReturnListHandler(c: Context<{ Bindings: Env; Vari
   /* The screen read — the list's filter + order, shared with GET /export/rows
      (lib/delivery-return-list-read.ts), capped at 500. */
   const filters = readDeliveryReturnListFilters((k) => c.req.query(k));
-  const { data, error } = await orderDeliveryReturnList(
-    filterDeliveryReturnList(sb.from('delivery_returns').select(HEADER), filters, c, scopeIds),
-  ).limit(500);
+  /* ?page= asks for one page with its total, searched on the server (lib/return-list-page.ts); the phone list reads it. */
+  const paged = parseReturnListPage((k) => c.req.query(k));
+  let q = filterDeliveryReturnList(sb.from('delivery_returns').select(HEADER, paged ? { count: 'exact' } : undefined), filters, c, scopeIds);
+  if (paged) {
+    const or = returnSearchOr(DR_SEARCH_COLS, paged.q);
+    if (or) q = q.or(or);
+  }
+  const ordered = orderDeliveryReturnList(q);
+  const { data, error, count } = await (paged ? ordered.range(...pageRange(paged)) : ordered.limit(500));
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   const rows = (data ?? []) as unknown as Array<DrLineHeader & Record<string, unknown>>;
   /* The SO number and the book's Agent spelling are ancillary: a failed read
@@ -797,6 +804,7 @@ export async function deliveryReturnListHandler(c: Context<{ Bindings: Env; Vari
   gateDrListFinance(rows, canViewScmFinance(c));
   const attached = await attachDeliveryReturnLines(sb, c, rows);
   if (attached.error !== null) return c.json({ error: 'load_failed', reason: attached.error }, 500);
+  if (paged) return c.json({ deliveryReturns: attached.rows, total: count ?? attached.rows.length, page: paged.page, pageSize: paged.pageSize });
   return c.json({ deliveryReturns: attached.rows });
 }
 deliveryReturns.get('/', deliveryReturnListHandler);
@@ -1199,8 +1207,8 @@ deliveryReturns.post('/', async (c) => {
   /* B2C SO auto-allocation — returned goods re-enter stock; another customer's
      pending SO might now be fulfillable. Best-effort. */
   try {
-    const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-    await recomputeSoStockAllocation(sb);
+    const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+    await queueAllocationRecompute(sb, 'post-dr');
   } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-dr failed:', e); }
 
   /* DR 3B (Wei Siang 2026-06-01) — returned goods mean the SO is no longer
@@ -1844,9 +1852,12 @@ export const patchDeliveryReturnStatusHandler = async (c: any) => {
     }
     data = updated as { id: string; status: string };
   } else {
+    /* Compare-and-set on the status read above, so a late RECEIVED / INSPECTED cannot bring back a return that a
+       cancel (and its stock reversal) already took out. */
     const { data: updated, error } = await scopeToCompanyId(sb.from('delivery_returns')
-      .update(ts).eq('id', id), co.companyId).select('id, status').single();
+      .update(ts).eq('id', id), co.companyId).eq('status', prevStatus).select('id, status').maybeSingle();
     if (error) return c.json({ error: 'update_failed', reason: error.message }, 500);
+    if (!updated) return c.json({ error: 'status_changed', reason: 'This return just changed. Reload it and try again.' }, 409);
     data = updated as { id: string; status: string };
   }
 
@@ -1874,8 +1885,8 @@ export const patchDeliveryReturnStatusHandler = async (c: any) => {
     /* DR cancel pulled stock back out → other READY SOs that relied on it may
        now regress to PENDING. Re-walk allocation. Best-effort. */
     try {
-      const { recomputeSoStockAllocation } = await import('../lib/so-stock-allocation');
-      await recomputeSoStockAllocation(sb);
+      const { queueAllocationRecompute } = await import('../lib/stock-allocation-job');
+      await queueAllocationRecompute(sb, 'post-dr-cancel');
     } catch (e) { /* eslint-disable-next-line no-console */ console.error('[so-allocation] post-dr-cancel failed:', e); }
   }
 

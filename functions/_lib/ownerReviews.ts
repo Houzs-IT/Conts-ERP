@@ -25,7 +25,7 @@ export async function ownerReviews(env: Env, ownerId: string, o: OwnerReviewsOpt
         ROUND(AVG(v.rating) FILTER (WHERE v.channel = 'airbnb')::numeric, 2) AS air, count(*) FILTER (WHERE v.channel = 'airbnb')::int AS air_n,
         ROUND((AVG(v.rating) FILTER (WHERE v.channel = 'booking_com') * 2)::numeric, 2) AS bdc, count(*) FILTER (WHERE v.channel = 'booking_com')::int AS bdc_n
       ${REVIEW_FROM} ${cond}`, ...args),
-    all<{ id: string; label: string }>(env, `SELECT u.id, trim(COALESCE(p.name, '') || ' ' || u.unit_number) AS label FROM units u LEFT JOIN properties p ON p.id = u.property_id WHERE u.owner_id = ? ORDER BY 2`, ownerId),
+    all<{ id: string; label: string }>(env, `SELECT u.id, trim(COALESCE(p.name, '') || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number)) AS label FROM units u LEFT JOIN properties p ON p.id = u.property_id WHERE u.owner_id = ? ORDER BY 2`, ownerId),
   ]);
   const unitIds = new Set(units.map(u => u.id));
   const cats = o.unitId && unitIds.has(o.unitId) ? await categoryAverages(env, 'all', { unitId: o.unitId }) : null;

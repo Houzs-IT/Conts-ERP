@@ -40,7 +40,7 @@ interface Job {
   /** Nobody arrives on the job's day: the unit's next arrival on a later day. */
   nextLater?: { day: string; checkInTime: string } | null;
 }
-interface Detail { media: MediaItem[]; access: { id: string; label: string; instruction: string }[]; parking?: string | null }
+interface Detail { media: MediaItem[]; access: { id: string; label: string; instruction: string; code?: string | null }[]; parking?: string | null }
 interface ListPayload { rows: Job[]; open?: Job[]; team?: Job[]; mayPick?: boolean; date?: string }
 interface CleanerGroup { name: string; jobs: Job[] }
 type ListTab = 'ongoing' | 'all' | 'done' | 'team';
@@ -376,7 +376,6 @@ function TaskDetail({ job: j, now, offered, onClose, onChanged, onTaken }: { job
     if (ok === null) return;
     void act('remove', () => api.del(`/tasks/${j.id}/photos/${m.id}`), m.kind === 'video' ? t.jobs.videoRemoved : t.jobs.photoRemoved);
   }
-  // Door codes stay with the office (housekeeping/tasks/[id].ts never sends them to field staff): only the instructions show.
   const access = detail.data?.access.length ? detail.data.access : j.accessInstruction ? [{ id: 'a', label: t.jobs.access, instruction: j.accessInstruction }] : [];
   const address = j.external?.address ?? j.addressLine;
   const size = sizeLine(j.unit.size, j.unit.layout);
@@ -473,7 +472,7 @@ function TaskDetail({ job: j, now, offered, onClose, onChanged, onTaken }: { job
             {offered ? <span className="text-muted-ink">{t.jobs.accessOnTake}</span>
               : !detail.data && !access.length ? <Skeleton height={44} />
               : access.length === 0 ? <span className="text-muted-ink">{t.jobs.noAccess}</span>
-              : access.map(a => <div key={a.id} className="rounded-control bg-muted p-2.5 flex flex-col gap-0.5"><b className="font-medium">{a.label}</b><span className="text-meta text-muted-ink">{a.instruction}</span></div>)}
+              : access.map(a => <div key={a.id} className="rounded-control bg-muted p-2.5 flex flex-col gap-0.5"><b className="font-medium">{a.label}</b>{'code' in a && a.code && <span className="font-mono text-heading font-semibold select-all [overflow-wrap:anywhere]">{a.code}</span>}<span className="text-meta text-muted-ink">{a.instruction}</span></div>)}
             {detail.data?.parking && <span className="text-meta"><span className="text-muted-ink">{t.jobs.carPark}:</span> {detail.data.parking}</span>}
           </section>
         )}

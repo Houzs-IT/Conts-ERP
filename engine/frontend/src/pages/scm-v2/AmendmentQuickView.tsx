@@ -183,7 +183,7 @@ function QuickViewFrame({
           onClick={() => navigate(amendmentJobCardPath(target))}
           className="inline-flex items-center gap-1.5 rounded-md border border-accent-bright/40 px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-bright hover:bg-accent-bright/10"
         >
-          Open full page <ExternalLink size={12} />
+          <span className="hidden sm:inline">Open full page</span> <ExternalLink size={12} aria-label="Open full page" />
         </button>
       </div>
       <div className="flex-1 overflow-y-auto px-5 py-5">{children}</div>
@@ -270,7 +270,7 @@ function Summary({
           <div className="mt-1">“{laneFlagNote}”</div>
         </div>
       )}
-      {resolution && (
+      {(resolution === "REJECTED" || resolution === "WITHDRAWN") && (
         <div className="mt-4 rounded-md border border-err/40 bg-err/10 px-3 py-2 text-[12px] text-err">
           <div className="font-semibold">
             {resolution === "WITHDRAWN" ? "Withdrawn by the person who raised it." : "Rejected."}

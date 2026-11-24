@@ -27,6 +27,11 @@ def line_of(i, discfmt=False):
     desc = i['desc']
     if i['detail']: desc = (desc + ' - ' + ' / '.join(i['detail']))
     desc = re.sub(r'^[-*\s]+', '', desc)[:480]
+    if i.get('rate'):
+        # a rate printed under an item that carries the amount: kept in the text, the item holds the money
+        if p is not None: desc = (desc + f" (RM {p:g})")[:480]
+        code = i['sku'] if i['sku'] not in ('SKIP', 'TEXT') else 'RN-PROJECT_MGMT'
+        return {'kind': 'ITEM', 'itemCode': code, 'description': desc, 'qty': qi, 'unitPriceSen': 0, 'netSen': 0}
     if p is None and a is None:
         if i['sku'] in ('SKIP', 'TEXT'): return {'kind': 'TEXT', 'description': desc}
         return {'kind': 'ITEM', 'itemCode': i['sku'], 'description': desc, 'qty': qi, 'unitPriceSen': 0, 'netSen': 0}
@@ -41,7 +46,8 @@ def line_of(i, discfmt=False):
         l['discountBp'] = max(0, min(10000, int(round((1 - netS / listSen) * 10000))))
     return l
 
-def sections_of(d):
+def sections_of(d, discfmt=None):
+    df = ('DISC' in (d['fmt'] or '')) if discfmt is None else discfmt
     secs, cur = [], None
     for i in d['items']:
         h = (i['sec'] or '').strip()[:200]
@@ -51,13 +57,13 @@ def sections_of(d):
             secs.append(cur); continue
         if cur is None or cur['heading'] != h: cur = {'heading': h, 'lines': []}; secs.append(cur)
         if 'lumpSumSen' in cur and i['amt'] is not None: cur['priced'] += sen(i['amt'])
-        cur['lines'].append((i, line_of(i, 'DISC' in (d['fmt'] or ''))))
+        cur['lines'].append((i, line_of(i, df)))
     for s in secs:
         lump = 'lumpSumSen' in s and s['priced'] == 0 and len(s['lines']) > 0
         if 'lumpSumSen' in s and not lump:
             # lines under it have their own amounts: the heading's figure is their subtotal, or it was itself a priced line
             if abs(s['priced'] - s['lumpSumSen']) > 100:
-                it = s['lumpItem']; s['lines'].insert(0, (it, line_of(it, 'DISC' in (d['fmt'] or ''))))
+                it = s['lumpItem']; s['lines'].insert(0, (it, line_of(it, df)))
                 s['heading'] = s['prev']
             del s['lumpSumSen']
         for k in ('priced', 'lumpItem', 'prev'): s.pop(k, None)
@@ -102,6 +108,12 @@ for name, vs in sorted(by_proj.items()):
         disc = d['fmt'] and 'DISC' in (d['fmt'] or '')
         if payable is None or (disc and d.get('payable_how') == 'pagetotals'): payable = linesSen / 100
         paySen = sen(payable)
+        if disc and linesSen != paySen:
+            # a DISC PRICE sheet whose printed totals add the Amount column: the amounts are what is charged
+            s2 = sections_of(d, False)
+            l2 = sum(l.get('netSen', 0) for s in s2 for l in s['lines']) + sum(s.get('lumpSumSen', 0) for s in s2)
+            # ...or whose final total is above the discounted prices but within the amounts (a discount off the amounts)
+            if l2 == paySen or (linesSen < paySen <= l2): secs, linesSen = s2, l2
         sig = json.dumps(secs) + str(paySen)
         if sig == prev_sig: continue
         prev_sig = sig

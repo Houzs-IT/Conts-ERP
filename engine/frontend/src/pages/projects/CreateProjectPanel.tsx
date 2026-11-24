@@ -130,7 +130,7 @@ export function CreateProjectPanel({
     <Panel
       open
       onClose={onClose}
-      title="New Project"
+      title="New project"
       subtitle="Picking an event type pre-loads the default checklist"
       width={480}
       footer={

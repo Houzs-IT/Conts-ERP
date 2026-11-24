@@ -465,7 +465,7 @@ export async function loadProductAndModel(
 
   let pq = sb
     .from('mfg_products')
-    .select('code, category, model_id, size_code')
+    .select('code, category, model_id, size_code, base_model')
     .eq('code', code);
   if (companyId != null) pq = pq.eq('company_id', companyId);
   const { data: productRow, error: pErr } = await pq.maybeSingle();

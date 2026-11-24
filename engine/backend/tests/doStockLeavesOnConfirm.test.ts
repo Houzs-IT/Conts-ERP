@@ -50,10 +50,12 @@ import {
   doCountsAsDelivered,
 } from '../src/scm/shared/do-shipped-states';
 
+// CRLF folded to LF: a Windows checkout (core.autocrlf) must match the same
+// multi-line anchors a Linux checkout does.
 const ROUTE = readFileSync(
   resolve(__dirname, '../src/scm/routes/delivery-orders-mfg.ts'),
   'utf8',
-);
+).replace(/\r\n/g, '\n');
 
 /* ── The simulation ─────────────────────────────────────────────────────────
    A delivery order walked up a ladder of statuses, against a fake
@@ -256,7 +258,9 @@ describe('the route implements the two rules the simulation models', () => {
     expect(fn).toContain(".eq('source_doc_type', 'DO')");
     expect(fn).toContain('.eq(\'source_doc_id\', deliveryOrderId)');
     expect(fn).toContain(".eq('movement_type', 'OUT')");
-    expect(fn).toMatch(/if \(\(existing \?\? 0\) > 0\) return \[\];/);
+    /* Since PR #1126 D6 the guard first says when the DO was reverted to Draft earlier; the no-op stays. */
+    expect(fn).toMatch(/if \(\(existing \?\? 0\) > 0\) \{/);
+    expect(fn).toMatch(/return \[\]; \/\/ already deducted/);
   });
 
   it('there is exactly ONE deduction trigger on the status PATCH', () => {

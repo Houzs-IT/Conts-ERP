@@ -2,6 +2,8 @@
 // doc: goods land at a warehouse, PO's received_qty rolls up. Aside hero =
 // Received value + qty landed, tinted green once posted.
 
+import { takeBack } from '../../lib/backTrail';
+import { PHONE_MORE_BUTTON, phoneMoreHeaderClass } from "../../components/scm-v2/phoneMoreActions";
 import { lazy, useCallback, useMemo, useState, type ReactNode } from "react";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { formatPhone } from "@2990s/shared/phone";
@@ -313,6 +315,7 @@ export function GoodsReceivedDetailV2() {
 }
 
 function GoodsReceivedDetailV2ReadOnly() {
+  const [moreOpen, setMoreOpen] = useState(false);
   const { id } = useParams<{ id: string }>();
   /* Renovation mode (mig 0116): the project and each line's room / category copied from the PO. */
   const reno = useRenoDocInfo("gr", id);
@@ -383,7 +386,7 @@ function GoodsReceivedDetailV2ReadOnly() {
   // details page's back button goes to its relevant list, not wherever
   // browser history happens to point). The list restores its own sticky
   // filters, so the prior filtered view comes back — no context lost.
-  const goBack = () => navigate(scmListReturnTo("/scm/grns"));
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? scmListReturnTo("/scm/grns"));
   const goEdit = () => id && navigate(`/scm/grns/${id}?edit=1`);
   /* "Add line" from the page you START on. The affordance existed only
      inside the editor, under a different name on each document, so the owner
@@ -643,7 +646,7 @@ function GoodsReceivedDetailV2ReadOnly() {
             <ArrowLeft size={16} /> GRNs
           </button>
           <span className="font-mono text-[12.5px] font-semibold text-sidebar-ink">{grn.grn_number}</span>
-          <button type="button" className="text-sidebar-ink-muted" aria-label="More actions">
+          <button type="button" className={PHONE_MORE_BUTTON} aria-label="More actions" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>
             <MoreHorizontal size={18} />
           </button>
         </div>
@@ -659,7 +662,7 @@ function GoodsReceivedDetailV2ReadOnly() {
         </div>
       </div>
 
-      <div className="sticky top-0 z-10 -mx-4 hidden border-b border-border bg-bg/95 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6 md:block">
+      <div className={phoneMoreHeaderClass(moreOpen)}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
             <button type="button" onClick={goBack} aria-label="Back to Goods Receipts" className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-ink-secondary hover:border-primary/50 hover:text-primary">

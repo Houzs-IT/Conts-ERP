@@ -352,8 +352,9 @@ export const ProductionOrderDetail = () => {
   const [headerDraft, setHeaderDraft] = useState<HeaderDraft | null>(null);
   const [editLines, setEditLines] = useState<EditLine[]>([]);
   const [savingDraft, setSavingDraft] = useState(false);
-  /* Conts, renovation mode: one category per renovation Production Order (mig 0116). A line of another category is named next
-     to its card before Save, and the database's refusal shows here instead of a generic failed save. */
+  /* Conts, renovation mode: a PO may mix categories since 19 Nov 2026 (migration 0345 lifted mig 0116's one-category
+     rule), so renoPoCategoryClashes holds nothing back; a database still on the old rule has its refusal shown here in
+     plain words instead of a generic failed save. */
   const reno = useRenoDocInfo('pro', id);
   const [categoryRefusal, setCategoryRefusal] = useState<string | null>(null);
 
@@ -1242,7 +1243,7 @@ export const ProductionOrderDetail = () => {
       {/* ── Line items ──────────────────────────────────────────── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Line Items ({isEditing ? editLines.length : visibleItems.length})</h2>
+          <h2 className={styles.cardTitle}>Line items ({isEditing ? editLines.length : visibleItems.length})</h2>
           {/* Owner 2026-06-19 — Edit mode restores the Create UI: a "+ Add item"
               that appends a blank PoLineCard (committed by the page-level Save).
               Hidden while the Production Order is locked. */}
@@ -1549,7 +1550,7 @@ const SupplierCard = ({
   return (
     <section className={styles.card}>
       <header className={styles.cardHeader}>
-        <h2 className={styles.cardTitle}>Job · Dates · Notes</h2>
+        <h2 className={styles.cardTitle}>Job · dates · notes</h2>
         {/* Commander 2026-05-29 — the card's own Save is gone; the single top
             "Save" commits the whole Production Order draft (header + line edits). */}
       </header>

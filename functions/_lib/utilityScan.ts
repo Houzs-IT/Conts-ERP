@@ -34,7 +34,7 @@ export type ScanUnit = { id: string; label: string; ownerId: string | null; cont
 export async function scanContext(env: Env): Promise<{ units: ScanUnit[]; accounts: AccountMark[] }> {
   const [units, contracts, accounts] = await Promise.all([
     all<{ id: string; label: string; owner_id: string | null }>(env, `
-      SELECT u.id, p.name || ' ' || u.unit_number AS label, u.owner_id FROM units u JOIN properties p ON p.id = u.property_id
+      SELECT u.id, p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS label, u.owner_id FROM units u JOIN properties p ON p.id = u.property_id
       WHERE u.parent_unit_id IS NULL ORDER BY p.name, u.unit_number`),
     all<{ unit_id: string; owner_id: string; starts_on: string | null; ends_on: string | null }>(env, `
       SELECT unit_id, owner_id, starts_on, ends_on FROM owner_contracts WHERE unit_id IS NOT NULL AND starts_on IS NOT NULL`),
@@ -71,6 +71,11 @@ export async function recentBills(env: Env, kind: string, month: string): Promis
 export type RecordRow = {
   scanId: string; unitId: string; accountId?: string | null; kind: string; billMonth: string;
   periodFrom?: string | null; periodTo?: string | null; amountSen: number; chargeTo?: string; ownerPaid?: boolean;
+  /** The day the bill must be paid by, as printed (chew, 18 Nov 2026). */
+  dueDate?: string | null;
+  /** A part the owner bears alone whatever the dates (a previous balance, say), set by hand (chew, 19 Nov 2026: scanned
+   *  bills must still take a hand edit). The rest of the bill is split by days at the contract as when it is left out. */
+  ownerPartSen?: number | null;
 };
 export type RecordResult =
   | { ok: true; recorded: number; alreadyDone: number; rolled: { scanId: string; deductMonth: string }[]; ownerLines: number; notSplit: string[];
@@ -90,7 +95,10 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
     if (!r.unitId) return bad(r.scanId, 'Pick the unit');
     if ((r.periodFrom && !DATE.test(r.periodFrom)) || (r.periodTo && !DATE.test(r.periodTo)) || (!!r.periodFrom !== !!r.periodTo)) return bad(r.scanId, 'Enter both dates of the period, or neither.');
     if (r.periodFrom && r.periodTo && r.periodTo < r.periodFrom) return bad(r.scanId, 'The period ends before it starts.');
+    if (r.dueDate && !DATE.test(r.dueDate)) return bad(r.scanId, 'Enter the due date as a date.');
     if (r.chargeTo !== undefined && !CHARGE_TO.includes(r.chargeTo)) return bad(r.scanId, 'Choose who pays the bill.');
+    if (r.ownerPartSen != null && (!Number.isInteger(r.ownerPartSen) || r.ownerPartSen < 0 || r.ownerPartSen > r.amountSen)) return bad(r.scanId, "The owner's own part is more than the bill. If the bill has a previous balance, put the whole bill, balance included, in Amount.");
+    if (r.ownerPartSen && (r.chargeTo ?? 'owner') !== 'owner') return bad(r.scanId, "Only a bill the owner shares can have an owner's own part.");
   }
   if (new Set(rows.map(r => r.scanId)).size !== rows.length) return { ok: false, status: 422, code: 'VALIDATION', message: 'A page is in the list twice.' };
   /* One bill per account and month; a unit with two meters of a kind has an account for each (pages name theirs). */
@@ -151,9 +159,15 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
         const deductMonth = firstOpenMonth(r.billMonth, finals.get(r.unitId) ?? new Set());
         if (deductMonth !== r.billMonth) rolled.push({ scanId: r.scanId, deductMonth });
         const unit = unitOf.get(r.unitId)!;
-        const split = r.periodFrom && r.periodTo ? contractSplit({ from: r.periodFrom, to: r.periodTo }, r.amountSen, unit.contracts) : { kind: 'none' as const };
+        /* The owner's own part: what is typed (a previous balance, say) is the owner's whole; the rest of the bill is split by
+           days at the contract as ever (chew, 19 Nov 2026: R-16-22's typed arrears had stopped the 29 days before its
+           contract from counting). Nothing typed: only the days outside the contract. */
+        const manualPart = r.ownerPartSen != null;
+        const typed = manualPart ? r.ownerPartSen! : 0;
+        const split = r.periodFrom && r.periodTo ? contractSplit({ from: r.periodFrom, to: r.periodTo }, r.amountSen - typed, unit.contracts) : { kind: 'none' as const };
         if (split.kind === 'two-contracts') notSplit.push(r.scanId);
-        const inside = split.kind === 'split' ? split.insideSen : r.amountSen;
+        const part = typed + (split.kind === 'split' ? split.outsideSen : 0);
+        const inside = r.amountSen - part;
         const label = `${KIND_LABEL[r.kind]} ${monthName(r.billMonth)}${provider ? ` (${provider})` : ''}`;
         const expenseId = crypto.randomUUID();
         await run(tx, `INSERT INTO expenses (id, unit_id, category, description, amount, currency, incurred_on, deduct_month, rolled, record_only, reference, charge_to,
@@ -175,7 +189,8 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
             crypto.randomUUID(), owner, r.unitId, amount > 0 ? 'credit' : 'charge', amount, description, (await o2Date(tx, owner, r.unitId, `${deductMonth}-01`)).occurredOn, account!.account_no, expenseId, session.userId, now, now);
           ownerLines++;
         };
-        if (split.kind === 'split') {
+        if (typed > 0) await adjust(-typed, `${label}: the owner's own part`);
+        if (split.kind === 'split' && split.outsideSen > 0) {
           await adjust(-split.outsideSen, `${KIND_LABEL[r.kind]} ${shortDate(r.periodFrom!)}–${shortDate(r.periodTo!)}: ${split.outsideDays} of ${split.totalDays} days outside the contract`);
         }
         if (r.ownerPaid) await adjust(r.amountSen, `${label}, paid by the owner`);
@@ -194,8 +209,8 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
           account.id, (read.accountNoVisible as string | null) ?? (read.accountNoFull as string | null) ?? null,
           typeof read.depositSen === 'number' ? read.depositSen : null, (read.buildingName as string | null) ?? null, (read.ownerName as string | null) ?? null,
           meter, r.billMonth, now);
-        await run(tx, `UPDATE utility_bill_scans SET expense_id = ?, owner_paid = ?, bill_sen = ?, provider = ?, account_no = ? WHERE id = ?`,
-          expenseId, !!r.ownerPaid, r.amountSen, provider, account.account_no, r.scanId);
+        await run(tx, `UPDATE utility_bill_scans SET expense_id = ?, owner_paid = ?, bill_sen = ?, provider = ?, account_no = ?, due_date = ?::date WHERE id = ?`,
+          expenseId, !!r.ownerPaid, r.amountSen, provider, account.account_no, r.dueDate || null, r.scanId);
         /* The page was uploaded before anyone knew its unit; it is that unit's receipt now. */
         await run(tx, 'UPDATE documents SET unit_id = ? WHERE id = ? AND unit_id IS NULL', r.unitId, scan.document_id);
       }
@@ -206,26 +221,27 @@ export async function recordScannedBills(env: Env, session: { userId: string; fu
     if (e instanceof Refused) return { ok: false, status: 409, code: e.message === 'Already recorded' ? 'ALREADY_RECORDED' : 'REFUSED', message: e.message, fields: { [e.scanId]: e.message } };
     throw e;
   }
+  /* One payment request per bill (chew, 18 Nov 2026), so finance pays and files each on its own, by its due date. */
   const toPay = (await billsToPay(env, batchId, rows.map(r => r.scanId)))
-    .map(g => ({ provider: g.provider, count: g.bills.length, amountSen: g.bills.reduce((n, x) => n + x.amountSen, 0), scanIds: g.scanIds }));
+    .flatMap(g => g.bills.map((x, i) => ({ provider: g.provider, count: 1, amountSen: x.amountSen, scanIds: [g.scanIds[i]!] })));
   return { ok: true, recorded: rows.length - alreadyDone, alreadyDone, rolled, ownerLines, notSplit, toPay };
 }
 
 class Refused extends Error { constructor(public scanId: string, message: string) { super(message); } }
 
 /** The bills of one save (`scanIds`) the company pays (not ticked "Owner paid"), by provider, for the payment requests. */
-export async function billsToPay(env: Env, batchId: string, scanIds: string[], provider?: string): Promise<{ provider: string; scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[] }[]> {
-  const rows = await all<{ id: string; expense_id: string; provider: string; unit_id: string; category: string; incurred_on: string; account_no: string | null; bill_sen: number }>(env, `
-    SELECT s.id, s.expense_id, s.provider, e.unit_id, e.category, e.incurred_on, s.account_no, s.bill_sen FROM utility_bill_scans s JOIN expenses e ON e.id = s.expense_id
+export async function billsToPay(env: Env, batchId: string, scanIds: string[], provider?: string): Promise<{ provider: string; scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; billDate: string | null; dueDate: string | null; accountNo: string | null; amountSen: number }[] }[]> {
+  const rows = await all<{ id: string; expense_id: string; provider: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; due_date: string | null; account_no: string | null; bill_sen: number }>(env, `
+    SELECT s.id, s.expense_id, s.provider, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, s.account_no, s.bill_sen FROM utility_bill_scans s JOIN expenses e ON e.id = s.expense_id
     WHERE s.batch_id = ? AND NOT s.owner_paid AND s.id IN (SELECT jsonb_array_elements_text(?::text::jsonb))
     ORDER BY s.provider, e.incurred_on, e.unit_id`, batchId, JSON.stringify(scanIds));
-  const out = new Map<string, { scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; accountNo: string | null; amountSen: number }[] }>();
+  const out = new Map<string, { scanIds: string[]; expenseIds: string[]; bills: { unitId: string; kind: string; billMonth: string; billDate: string | null; dueDate: string | null; accountNo: string | null; amountSen: number }[] }>();
   for (const r of rows) {
     if (provider && r.provider !== provider) continue;
     const g = out.get(r.provider) ?? { scanIds: [], expenseIds: [], bills: [] };
     g.scanIds.push(r.id);
     g.expenseIds.push(r.expense_id);
-    g.bills.push({ unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), accountNo: r.account_no, amountSen: Number(r.bill_sen) });
+    g.bills.push({ unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), billDate: r.bill_date ?? null, dueDate: r.due_date ?? null, accountNo: r.account_no, amountSen: Number(r.bill_sen) });
     out.set(r.provider, g);
   }
   return [...out].map(([p, g]) => ({ provider: p, ...g }));

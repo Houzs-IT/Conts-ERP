@@ -257,7 +257,7 @@ function DayHeader({ iso, today, dim, showHolidays }: { iso: string; today: stri
       {iso === today ? (
         <span className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-[#d9534f] px-1 text-[12.5px] font-bold text-white" aria-label={`Today, ${dayLabel(iso)}`}>{n}</span>
       ) : (
-        <span className={cn("text-[13px] font-semibold", dim ? "text-ink-muted/70" : "text-ink-secondary")}>{n === 1 ? `${dayLabel(iso).split(" ")[2]} 1` : n}</span>
+        <span className={cn("text-[13px] font-semibold", dim ? "text-ink-muted" : "text-ink-secondary")}>{n === 1 ? `${dayLabel(iso).split(" ")[2]} 1` : n}</span>
       )}
       {holidays.length > 0 && (
         <span className="min-w-0 truncate rounded bg-[#e3e4f3] px-1.5 py-px text-[10px] font-semibold text-[#2b3063]" title={holidays.map((h) => h.name).join(", ")}>

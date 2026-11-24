@@ -23,7 +23,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
 
   const lines = await all<any>(env, `
     SELECT l.line_type, l.category, l.description, l.amount, l.reference, l.occurred_on, l.unit_id,
-           u.unit_number, p.name AS property_name, d.id AS receipt_id, d.file_name AS receipt_name
+           COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, d.id AS receipt_id, d.file_name AS receipt_name
     FROM statement_lines l
     LEFT JOIN units u ON u.id = l.unit_id
     LEFT JOIN properties p ON p.id = u.property_id
@@ -99,7 +99,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   for (const u of units) u.net = u.gross - u.fee - u.expenses + u.adjustments;
 
   const unitsList = await all<any>(env, `
-    SELECT u.id, u.unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id
     WHERE u.owner_id = ? ORDER BY p.name, u.unit_number`, owner.id);
 
   return json({

@@ -185,9 +185,12 @@ export const ledgerReport = async (c: any): Promise<Response> => {
     for (const l of ledger.data ?? []) if (jeNoSet.has(l.je_no)) remember(l);
   } else {
     for (const ns of chunks(jeNos)) {
-      const { data, error } = await sb.from('v_gl_entries').select(SELECT).eq('company_id', co.companyId).in('je_no', ns);
-      if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-      for (const l of (data ?? []) as GlLine[]) remember(l);
+      /* Paged: 150 entries average about 1,050 lines (an imported AutoCount journal runs to 269), and one
+         read stops at 1,000, so entries late in a batch lost their other side. */
+      const { data, error } = await paginateAll<GlLine>((f, t) =>
+        sb.from('v_gl_entries').select(SELECT).eq('company_id', co.companyId).in('je_no', ns).order('line_id').range(f, t));
+      if (error) return c.json({ error: 'load_failed', reason: String((error as { message?: string }).message ?? error) }, 500);
+      for (const l of data ?? []) remember(l);
     }
   }
 

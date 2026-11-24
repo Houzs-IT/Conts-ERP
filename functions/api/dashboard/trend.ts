@@ -1,20 +1,20 @@
-import { type Env, all, json, fail, mytToday } from '../../_lib/db';
-import { rentalOnly } from '../../_lib/unitPurpose';
+import { type Env, json, fail, mytToday } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { can } from '../../_lib/access';
-import { monthsBack, daysIn } from '../../_lib/ops';
-import { stayMonths, metrics, groupBy, monthEndExclusive } from '../../_lib/revenue';
+import { monthsBack } from '../../_lib/ops';
+import { stayMonths, activeMetrics, dashboardUnits, liveWindows, groupBy, monthEndExclusive } from '../../_lib/revenue';
 import { ownerMonths } from '../../_lib/ownerEstimate';
 import { scopeCached } from '../../_lib/scopeCache';
 
-/** GET /api/dashboard/trend?range=3m|12m|ytd — revenue and occupancy per month. Worked out at most once a minute per
+/** GET /api/dashboard/trend?range=3m|12m|ytd|next — reservation income and occupancy per month (next: this month and the
+ *  five after it, from the reservations already taken). Worked out at most once a minute per
  *  scope (functions/_lib/scopeCache.ts), like the tiles: it runs the statement engine over every month of the range. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
 
   const range = new URL(request.url).searchParams.get('range') ?? '12m';
-  if (!['3m', '12m', 'ytd'].includes(range)) return fail('VALIDATION', 'Range must be 3m, 12m or ytd.', 422);
+  if (!['3m', '12m', 'ytd', 'next'].includes(range)) return fail('VALIDATION', 'Range must be 3m, 12m, ytd or next.', 422);
 
   const finance = session.manage || can(session, 'finance', 'view');
   const scope = `dashboard/trend|${range}|${mytToday()}|${finance ? 'money' : 'occupancy'}`;
@@ -25,21 +25,24 @@ async function trend(env: Env, range: string, finance: boolean) {
   const today = mytToday();
   const current = today.slice(0, 7);
   const count = range === '3m' ? 3 : range === '12m' ? 12 : Number(today.slice(5, 7));
-  const periods = monthsBack(today, count);
+  // Upcoming: this month and the five after it (the last of six months back from five months ahead).
+  const ahead = (n: number) => { const [y, m] = today.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return d.toISOString().slice(0, 10); };
+  const periods = range === 'next' ? monthsBack(ahead(5), 6) : monthsBack(today, count);
 
-  // functions/_lib/revenue.ts: each stay's gross value and nights split by night into the months it covers.
-  const [rows, listedUnits, ownerByMonth] = await Promise.all([
+  // functions/_lib/revenue.ts: each stay's income and nights split by night into the months it covers, over rental
+  // units without rent to rent; a month counts the units live in it by the share of the month (owner, 19 Nov 2026).
+  const [allRows, counted, live, ownerByMonth] = await Promise.all([
     stayMonths(env, `${periods[0]}-01`, monthEndExclusive(periods[periods.length - 1])),
-    rentalOnly(env, 'units').then(r => all<{ id: string }>(env, `SELECT id FROM units WHERE is_listed = 1${r}`)),
-    finance ? ownerMonths(env, periods) : Promise.resolve(new Map<string, never>()),
+    dashboardUnits(env), liveWindows(env, today),
+    finance && range !== 'next' ? ownerMonths(env, periods) : Promise.resolve(new Map<string, never>()),
   ]);
-  const listedIds = new Set(listedUnits.map(u => u.id));
+  const rows = counted ? allRows.filter(r => counted.has(r.unit_id)) : allRows;
   const byPeriod = groupBy(rows, r => r.month);
 
   const points = periods.map(p => {
-    const list = byPeriod.get(p) ?? [];
-    const occ = metrics(list.filter(r => listedIds.has(r.unit_id)), listedIds.size * daysIn(p));
-    return { period: p, revenue: finance ? metrics(list, 0).gross : 0, occupancy: occ.occupancy, isCurrent: p === current };
+    const a = activeMetrics(byPeriod.get(p) ?? [], `${p}-01`, monthEndExclusive(p), live, counted);
+    return { period: p, revenue: finance ? a.gross : 0, occupancy: a.occupancy, activeUnits: a.activeUnits, perUnit: finance ? a.perUnit : 0,
+      isCurrent: p === current, isFuture: p > current };
   });
 
   // Operator share and owner payout for every month of the range by the statement engine (the Owners page's figures).
@@ -51,7 +54,7 @@ async function trend(env: Env, range: string, finance: boolean) {
   const sum = (k: 'gross' | 'collected') => Math.round(rows.reduce((n, r) => n + r[k], 0));
   // The month in progress is only part-way, so set against a whole month it always reads as a fall. The
   // change compares the last two complete months instead, and says which.
-  const complete = points.filter(p => !p.isCurrent);
+  const complete = points.filter(p => !p.isCurrent && !p.isFuture);
   const lastP = complete[complete.length - 1], prevP = complete[complete.length - 2];
   const last = lastP?.revenue ?? 0, prev = prevP?.revenue ?? 0;
   const pct = prev > 0 ? Number((((last - prev) / prev) * 100).toFixed(1)) : 0;

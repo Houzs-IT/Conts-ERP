@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { DataTable, type Column } from '../../components/DataTable';
-import { type Building, type Unit } from './shared';
+import { buildingArea, type Building, type Unit } from './shared';
 import type { UnitReadiness } from '../../lib/types';
 import { statusOf } from '../../lib/status';
 import { PURPOSE_LABEL, USED_BY, typeOptions, packageOf } from '../../lib/revenueModel';
@@ -32,7 +32,7 @@ export function UnitList({ units, buildings, readiness, loading, error, onRetry,
     { key: 'usedBy', label: 'Used by', value: u => (u.usedBy ? USED_BY_LABEL[u.usedBy] ?? u.usedBy : null), hidden: true, width: 130,
       filter: { kind: 'select', options: USED_BY.map(x => ({ value: x.label, label: x.label })) } },
     { key: 'state', label: 'State', value: u => byId.get(u.buildingId)?.state ?? u.state, width: 130, filter: { kind: 'select' } },
-    { key: 'city', label: 'City', value: u => byId.get(u.buildingId)?.city ?? '', hidden: true, width: 130 },
+    { key: 'city', label: 'City', value: u => { const b = byId.get(u.buildingId); return b ? buildingArea(b) : ''; }, hidden: true, width: 130 },
     { key: 'owner', label: 'Owner', type: 'person', value: u => personName(u.ownerName), width: 170 },
     // From the contract's code, so it can never disagree with the Contract column (units.package is a stale import field).
     { key: 'package', label: 'Package', value: u => packageOf(types, u.contractCode), width: 110, filter: { kind: 'select' } },

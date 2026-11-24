@@ -76,11 +76,16 @@ export const API_URL =
    "That took too long"). They get the scan wait, and since they WRITE NOTHING a
    timeout says so instead of warning of a duplicate save. */
 export const BILL_READER_PATH = /\/payment-vouchers\/extract$|\/payment-vouchers\/split-pdf$/;
+/* Reads that compute rather than fetch: the From-SO picker runs the whole pooled MRP plan (production, 19 Nov 2026:
+   ~10 s quiet, past 30 s under load). At 30 s the browser gave up and re-sent it up to four times, and every re-send
+   started the same work again on the server, which only made the next one slower; the operator waited minutes and
+   then saw nothing. They get a longer wait and are not re-sent after a timeout. */
+export const SLOW_READ_PATH = /^\/mfg-purchase-orders\/outstanding-so-items(\?|$)/;
 function timeoutSignal(path: string): AbortSignal | undefined {
   // A scan job's /work request is held open for the whole OCR run (scan-job-driver.ts): give it longer than the
   // server's 3-minute stale window so the browser never gives up on a job that is still alive.
   // Reading a counted stock take sheet or a scanned bill holds the request open while the photo is read.
-  const ms = /\/scan-[a-z]+\/jobs\/[^/]+\/work$/.test(path) ? 240_000 : /\/scan-|\/stock-takes\/[^/]+\/read-sheet$/.test(path) || BILL_READER_PATH.test(path) ? 120_000 : 30_000;
+  const ms = /\/scan-[a-z]+\/jobs\/[^/]+\/work$/.test(path) ? 240_000 : /\/scan-|\/stock-takes\/[^/]+\/read-sheet$/.test(path) || BILL_READER_PATH.test(path) ? 120_000 : SLOW_READ_PATH.test(path) ? 90_000 : 30_000;
   try { return AbortSignal.timeout(ms); } catch { return undefined; } // pre-2022 browsers
 }
 
@@ -146,6 +151,37 @@ async function fetchWithTimeout(url: string, init: RequestInit, path: string): P
     }
     throw e;
   }
+}
+
+/* A second press of the same save (a double-click, or a retry while the first is still running) reuses the first
+   press's Idempotency-Key, and the server answers 409 idempotency_in_flight until the first finishes. That is not a
+   failure: once the first request has its answer, the same key replays it. So wait and ask again, and hand the caller
+   the first request's real outcome (click sweep F11/F12, 21 Nov 2026: the screen said "Save failed" about an order
+   and a payment that had both saved). A request that never finishes is taken over by the server after 5 minutes;
+   this gives up long before that and lets the in-flight answer through. */
+export const IN_FLIGHT_POLL_MS = 1000;
+export const IN_FLIGHT_MAX_WAIT_MS = 60_000;
+
+export async function isIdempotencyInFlight(res: Response): Promise<boolean> {
+  if (res.status !== 409) return false;
+  const text = await res.clone().text().catch(() => '');
+  return text.includes('"idempotency_in_flight"');
+}
+
+/** fetchWithTimeout, riding out the server's idempotency_in_flight answer for a keyed mutation. */
+export async function fetchRidingInFlight(
+  send: () => Promise<Response>,
+  hasIdemKey: boolean,
+  signal?: AbortSignal | null,
+  sleep: (ms: number, signal?: AbortSignal | null) => Promise<void> = (ms, sig) => abortableDelay(ms, sig ?? undefined),
+): Promise<Response> {
+  let res = await send();
+  if (!hasIdemKey) return res;
+  for (let waited = 0; waited < IN_FLIGHT_MAX_WAIT_MS && (await isIdempotencyInFlight(res)); waited += IN_FLIGHT_POLL_MS) {
+    await sleep(IN_FLIGHT_POLL_MS, signal);
+    res = await send();
+  }
+  return res;
 }
 
 /* Drop-ship confirm (port of 2990 07c45728) — when a sofa ship is blocked
@@ -315,10 +351,10 @@ export async function authedFetch<T>(path: string, init?: RequestInit): Promise<
   let res: Response;
   for (let attempt = 0; ; attempt++) {
     try {
-      res = await fetchWithTimeout(`${API_URL}${path}`, { ...init, headers }, path);
+      res = await fetchRidingInFlight(() => fetchWithTimeout(`${API_URL}${path}`, { ...init, headers }, path), hasIdemKey, abortSignal);
     } catch (e) {
       if (init?.signal?.aborted) throw e;
-      if (isGet && attempt < 4) { await abortableDelay(600 + attempt * 1200, init?.signal); continue; }
+      if (isGet && attempt < 4 && !SLOW_READ_PATH.test(path)) { await abortableDelay(600 + attempt * 1200, init?.signal); continue; }
       /* A timed-out / dropped IDEMPOTENT mutation is safe to replay (the key
          dedupes), so ride out a transient stall instead of failing the save. */
       const transientThrow = typeof e === 'object' && e !== null && (e as { transient?: unknown }).transient === true;
@@ -697,7 +733,29 @@ const ERROR_CODE_MESSAGES: Record<string, string> = {
   already_posted: 'This journal entry is already posted.',
   je_reversed:
     'This journal entry was reversed and cannot be posted. Create a new one.',
+  // Bare refusals from the create routes, which send only the code (audit 20 Nov 2026).
+  debtor_name_required: 'Enter the customer name before saving this invoice.',
+  customer_name_required: 'Enter the customer name before saving.',
+  missing_customer_name: 'Enter the customer name before saving this quotation.',
+  missing_cart: 'Add at least one item to the quotation before saving.',
+  invalid_subtotal: 'The quotation subtotal is not a valid amount. Check the item prices and try again.',
+  invalid_total: 'The quotation total is not a valid amount. Check the item prices and discount, then try again.',
+  payee_required: 'Enter who is being paid (the payee) before saving this voucher.',
+  credit_account_required: 'Choose the account this is paid from before saving this voucher.',
+  allocations_exceed_total:
+    'The amounts applied to invoices add up to more than this voucher pays. Lower an applied amount or raise the voucher total.',
+  draft_status_not_supported: 'Stock transfers no longer have a draft stage. Save the transfer without choosing Draft.',
+  from_warehouse_required: 'Choose the warehouse the stock moves from.',
+  to_warehouse_required: 'Choose the warehouse the stock moves to.',
+  same_warehouse: 'The From and To warehouses are the same. Choose two different warehouses.',
+  items_required: 'Add at least one line before saving.',
 };
+
+/** An uncurated code in plain words: `payee_required` -> "Payee required". */
+export function codeToWords(code: string): string {
+  const words = code.trim().replace(/_+/g, ' ').trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : '';
+}
 
 /* Codes whose refusal names ONE DOCUMENT, so the server's sentence beats
    anything that can be written here. Keep this list tiny: a curated sentence is
@@ -829,6 +887,11 @@ export function humanApiError(status: number, body: string): string {
     //    message below.
     const said = sayable(j.message) ?? sayable(j.reason);
     if (said) return said;
+    /* 3. A refused input with only an uncurated code: its words say more than the generic line below. */
+    if ((status === 400 || status === 422) && typeof j.error === 'string' && isErrorCode(j.error)) {
+      const words = codeToWords(j.error);
+      if (words) return words;
+    }
   } catch { /* body wasn't JSON — fall through to the status map */ }
   if (status === 401) return 'Your session has expired — please sign in again.';
   if (status === 403) return "You don't have permission to do that.";

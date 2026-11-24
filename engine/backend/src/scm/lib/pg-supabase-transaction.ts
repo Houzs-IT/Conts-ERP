@@ -144,7 +144,7 @@ class PgPostgrestQuery implements PromiseLike<QueryResult<any>> {
   private conflictColumns: string[] = [];
   private ignoreDuplicates = false;
 
-  constructor(private readonly sql: Sql, private readonly table: string) {}
+  constructor(private readonly sql: Sql, private readonly table: string, private readonly schemaName = 'scm') {}
 
   select(columns = '*', options?: { count?: string; head?: boolean }) {
     this.projection = columns;
@@ -251,7 +251,7 @@ class PgPostgrestQuery implements PromiseLike<QueryResult<any>> {
   }
 
   private async execute(): Promise<QueryResult<any>> {
-    const table = `scm.${ident(this.table)}`;
+    const table = `${this.schemaName === 'scm' ? 'scm' : ident(this.schemaName)}.${ident(this.table)}`;
     let text = '';
     let values: unknown[] = [];
     if (this.operation === 'select') {
@@ -342,6 +342,9 @@ class PgPostgrestQuery implements PromiseLike<QueryResult<any>> {
 export const pgTransactionSupabase = (sql: Sql) => ({
   __atomicCommand: true,
   from: (table: string) => new PgPostgrestQuery(sql, table),
+  /* The real client's .schema('public'): the journal gate reads public.companies for the JE prefix
+     (jePrefixForCompany), so a journal posted inside a command needs it (PR #1126 D3/D4). */
+  schema: (name: 'public' | 'scm') => ({ from: (table: string) => new PgPostgrestQuery(sql, table, name) }),
   rpc: async (name: string, args: Record<string, unknown> = {}) => {
     if (name === 'pg_try_advisory_lock') {
       const rows = await sql.unsafe<Array<{ locked: boolean }>>(
@@ -396,6 +399,18 @@ export const pgTransactionSupabase = (sql: Sql) => ({
            wrote", never as "it refused" — a silent no-op is not a refusal. */
         const rebuilt = (rows as Array<{ rebuilt?: boolean }>)[0]?.rebuilt;
         return { data: rebuilt ?? true, error: null };
+      } catch (e) {
+        return { data: null, error: { message: e instanceof Error ? e.message : String(e) } };
+      }
+    }
+    if (name === 'next_doc_no_n') {
+      /* The document-number counter (0316) is a plain function: inside the command it advances with the command and
+         rolls back with it, so a rolled-back post never burns a number. Without it the minter fell back to the live
+         max, which a later deletion of the top number could re-issue. */
+      try {
+        const rows = await sql.unsafe<Array<{ n: number }>>('SELECT scm.next_doc_no_n($1::text, $2::integer) AS n', [args.p_series, args.p_floor ?? 0] as never[]);
+        const first = rows[0] as { n: number } | undefined;
+        return { data: first ? first.n : null, error: null };
       } catch (e) {
         return { data: null, error: { message: e instanceof Error ? e.message : String(e) } };
       }

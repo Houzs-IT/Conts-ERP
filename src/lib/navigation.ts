@@ -2,7 +2,7 @@ import type { UserRole, AccessLevel, SessionUser } from './types';
 import { LEDGER_SCREENS } from './scmEngine';
 
 /** `badge` names a live count from /api/nav/badges; shown only when above zero. */
-export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'reviews' | 'statements' | 'approvals' | 'itSupport';
+export type BadgeKey = 'today' | 'cleaning' | 'maintenance' | 'inbox' | 'reviews' | 'statements' | 'approvals' | 'itSupport' | 'paymentRequests' | 'meetings';
 /** The sidebar shows one workspace at a time. Rental (The Conts) is the daily work; supply chain (Dream Crafter) sits behind the switch. */
 export type Workspace = 'rental' | 'supply';
 /** `area` is the permission area (functions/_lib/access.ts AREAS) the screen belongs to. */
@@ -59,25 +59,26 @@ const LEDGER_ICON: Record<string, string> = {
   'payment-vouchers': 'banknote', 'money-received': 'hand-coins', 'bank-reconciliation': 'landmark',
   'journal-entries': 'notebook-pen', 'general-ledger': 'book-open-text', 'trial-balance': 'scale',
   'profit-and-loss': 'chart-line', 'balance-sheet': 'columns-2', 'debtor-ageing': 'user-round-check',
-  'creditor-ageing': 'truck', 'chart-of-accounts': 'list-tree', 'item-group-accounts': 'boxes', 'ledger-setup': 'settings',
+  'creditor-ageing': 'truck', 'chart-of-accounts': 'list-tree', 'item-group-accounts': 'boxes', 'ledger-setup': 'settings', 'staff-banks': 'landmark',
   'payment-requests': 'file-input', 'limit-requests': 'gauge', 'petty-cash': 'piggy-bank', 'ap-invoices': 'file-text',
   'supplier-ledger': 'book-user', 'deposit-invoices': 'file-plus', 'other-debtors': 'users', 'credit-debit-notes': 'file-minus',
   'not-yet-billed': 'hourglass', 'e-invoice': 'badge-check', 'official-receipts': 'receipt-text', 'debtors': 'contact',
   'customer-ledger': 'book-user', 'outstanding': 'clock', 'daily-bank': 'calendar-days', 'merchant-recon': 'credit-card',
+  'to-do': 'list-checks', 'branding': 'stamp', 'payment-listing': 'list-ordered', 'unmatched-payments': 'search-x',
   'rental-unit-costs': 'building-2', 'department-spend': 'chart-pie', 'renovation-projects': 'hammer', 'ai-usage': 'sparkles',
 };
 
 /** The Finance groups, in order, each by its screens: finance's own desk screens by key, the ledger's by slug
  *  (chew, 2 Nov 2026). Every ledger screen is in exactly one group. */
 const FINANCE_LAYOUT: Array<[part: string, entries: string[]]> = [
-  ['To approve', ['desk:approvals', 'payment-requests', 'limit-requests', 'petty-cash']],
-  ['Suppliers', ['ap-invoices', 'payment-vouchers', 'supplier-ledger', 'creditor-ageing']],
+  ['To approve', ['to-do', 'desk:approvals', 'payment-requests', 'limit-requests', 'petty-cash']],
+  ['Suppliers', ['ap-invoices', 'payment-vouchers', 'payment-listing', 'supplier-ledger', 'creditor-ageing']],
   ['Rental bills', ['desk:payables', 'desk:utilityBills']],
   ['Billing', ['deposit-invoices', 'other-debtors', 'credit-debit-notes', 'not-yet-billed', 'e-invoice']],
   ['Collections', ['money-received', 'official-receipts', 'debtors', 'customer-ledger', 'outstanding', 'debtor-ageing']],
-  ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon', 'desk:airbnbRecon']],
+  ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon', 'unmatched-payments', 'desk:airbnbRecon']],
   ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'department-spend', 'renovation-projects', 'ai-usage']],
-  ['Setup', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup']],
+  ['Setup', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup', 'branding', 'staff-banks']],
 ];
 
 export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix: '' | 'Supply', workspace: Workspace): NavGroup[] {
@@ -93,6 +94,8 @@ export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix:
   };
   const ledger = new Map(LEDGER_SCREENS.map(s => [s.slug, {
     key: `ledger_${s.slug}${keySuffix}`, label: s.label, icon: LEDGER_ICON[s.slug] ?? 'book-open', path: `${prefix}/${s.slug}`, area: 'ledger',
+    // How many wait for finance to pay (chew, 19 Nov 2026), as the screen's "Waiting for payment" view counts them.
+    ...(s.slug === 'payment-requests' ? { badge: 'paymentRequests' as BadgeKey } : {}),
   } as NavItem]));
   /* One FINANCE group (chew, 2 Nov 2026: one Finance category with its parts inside): each part opens to its screens. */
   return [{
@@ -195,7 +198,7 @@ export const NAV: NavGroup[] = [
   // The shared email inbox on theconts.com addresses (CONTS-0004): the engine's Mail Center, as in Houzs and Hookka.
   // Mailboxes (who reads which address) is for Full only, as the engine asks mail_center.manage for it.
   { label: 'MAIL', workspace: 'rental', items: [
-    { key: 'mailCenter', label: 'Mail Center', icon: 'mail', path: '/mail', area: 'mail' },
+    { key: 'mailCenter', label: 'Mail center', icon: 'mail', path: '/mail', area: 'mail' },
     { key: 'mailboxes', label: 'Mailboxes', icon: 'at-sign', path: '/mail/mailboxes', area: 'mail', full: true },
   ] },
   { label: 'SYSTEM', workspace: 'rental', items: [
@@ -211,6 +214,10 @@ export const NAV: NavGroup[] = [
     // Every desk role: report a problem with the system to IT and follow it. No permission area, since a person
     // only ever reads their own requests (functions/_lib/itHub.ts). Its count comes from lib/itSupport.ts.
     { key: 'itSupport', label: 'IT Support', icon: 'life-buoy', path: '/system/it-support', badge: 'itSupport' },
+    // Meeting rooms shared with Houzs and Hookka, kept in the IT Hub (functions/_lib/meetingsHub.ts). Every desk person
+    // books, so no permission area; adding and changing rooms needs Manage meeting rooms (area meetingRooms). Its count comes
+    // from lib/meetingsUnread.ts.
+    { key: 'meetings', label: 'Meetings', icon: 'calendar-clock', path: '/system/meetings', badge: 'meetings' },
   ] },
 
   // Supply chain workspace. Mirrors Houzs's hierarchy: section -> collapsible area -> page.
@@ -242,6 +249,8 @@ export const NAV: NavGroup[] = [
       // Renovation quotations (revisions, package templates, convert to the contract SO): engine only.
       { key: 'renoQuotations', label: 'Quotations', icon: 'file-text', path: '/sales/quotations' },
       { key: 'salesOrders', label: 'Sales orders', icon: 'shopping-cart', path: '/sales/orders' },
+      // The Packages module (owner, 20 Nov 2026): packages and kits for the renovation sales order: engine only.
+      { key: 'renoPackages', label: 'Packages', icon: 'package', path: '/sales/packages' },
       { key: 'salesOrderAmendment', label: 'VO', icon: 'file-pen-line', path: '/sales/amendments' },
       { key: 'deliveryOrders', label: 'Delivery orders', icon: 'truck', path: '/sales/delivery-orders' },
       { key: 'salesInvoices', label: 'Sales invoices', icon: 'receipt', path: '/sales/invoices', area: 'scInvoices' },
@@ -258,7 +267,7 @@ export const NAV: NavGroup[] = [
     { key: 'scProcurement', label: 'Procurement', icon: 'package', area: 'scProcurement', children: [
       { key: 'procurement', label: 'Products', icon: 'package', path: '/procurement/products' },
       { key: 'suppliers', label: 'Suppliers', icon: 'factory', path: '/procurement/suppliers' },
-      { key: 'mrp', label: 'MRP · Stock Status', icon: 'chart-column', path: '/procurement/mrp' },
+      { key: 'mrp', label: 'MRP · stock status', icon: 'chart-column', path: '/procurement/mrp' },
       { key: 'purchaseOrders', label: 'Purchase orders', icon: 'clipboard-list', path: '/procurement/purchase-orders' },
       { key: 'poAmendments', label: 'PO amendments', icon: 'file-diff', path: '/procurement/po-amendments' },
       { key: 'cancellationRequests', label: 'Cancellation requests', icon: 'ban', path: '/procurement/cancellations' },
@@ -268,7 +277,7 @@ export const NAV: NavGroup[] = [
     ] },
     { key: 'scProduction', label: 'Production', icon: 'factory', area: 'scProduction', children: [
       { key: 'productionOrders', label: 'Production orders', icon: 'clipboard-list', path: '/production/production-orders' },
-      { key: 'skuComposition', label: 'SKU Composition', icon: 'clipboard-list', path: '/production/sku-composition' },
+      { key: 'skuComposition', label: 'SKU composition', icon: 'clipboard-list', path: '/production/sku-composition' },
       { key: 'draftDelivery', label: 'Draft delivery', icon: 'truck', path: '/production/draft-delivery', phoneOnly: true },
     ] },
     { key: 'scTransportPlan', label: 'Transportation', icon: 'truck', area: 'scTransportPlan', children: [
@@ -289,9 +298,8 @@ export const NAV: NavGroup[] = [
     ] },
     // Houzs keeps credit / debit notes under Finance > Money in; finance roles only.
   ] },
-  // Dream Crafter's own HR (owner, 30 Oct 2026): one Employees page, laid out as The Conts'. Shares its label with the Rental HR group.
-  { label: 'HR', workspace: 'supply', items: [
-    { key: 'dcEmployees', label: 'Employees', icon: 'users', path: '/supply/hr/employees', area: 'dcHr', fresh: true },
+  { label: 'OPERATIONS', workspace: 'supply', items: [
+    { key: 'dcRenovation', label: 'Renovation', icon: 'hammer', path: '/supply/operations/renovation', area: 'projects' },
   ] },
   // The same Finance as in Rental (finance phase 1): one set of company books for both sides, so the supply chain
   // sidebar stays put while finance works.
@@ -302,6 +310,7 @@ export const NAV: NavGroup[] = [
   { label: SUPPLY_SYSTEM, workspace: 'supply', items: [
     { key: 'categoryAccess', label: 'Category access', icon: 'tags', path: '/system/category-access', area: 'users', full: true },
     { key: 'itSupportSupply', label: 'IT Support', icon: 'life-buoy', path: '/supply/it-support', area: 'itSupport', badge: 'itSupport' },
+    { key: 'meetingsSupply', label: 'Meetings', icon: 'calendar-clock', path: '/supply/meetings' },
   ] },
 ];
 
@@ -334,7 +343,7 @@ export function switchedOff(path: string): boolean {
 }
 
 /** Menu areas (and single menu keys) whose screens exist only in the supply chain engine: hidden where it is not set up. */
-const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'ledger', 'mail'];
+const ENGINE_ONLY_AREAS = ['serviceCases', 'projects', 'renoQuotations', 'renoPackages', 'ledger', 'mail'];
 const FIXED_ROLES: UserRole[] = ['housekeeper', 'technician', 'renovator', 'owner'];
 
 /** Areas (and menu keys) closed to a role: from its permission levels where the session carries them, else the built-in list. */

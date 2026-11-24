@@ -45,3 +45,22 @@ describe("DataTable scroll to a row that is not drawn yet", () => {
     winScroll.mockRestore();
   });
 });
+
+/* Chrome 156 made scrollIntoView return a Promise. The effect returned it as its cleanup, so leaving the
+   Suppliers list after Back crashed with "l is not a function" (prod client_errors, 20 Nov 2026). */
+describe("DataTable scroll to a row that is already drawn", () => {
+  it("leaves the page without crashing when scrollIntoView returns a Promise", () => {
+    const proto = Element.prototype as { scrollIntoView?: unknown };
+    const original = proto.scrollIntoView;
+    proto.scrollIntoView = vi.fn(() => Promise.resolve());
+    try {
+      const { unmount } = render(
+        <DataTable tableId="scroll-to-drawn" columns={columns} rows={rows.slice(0, 5)} getRowKey={(r) => r.id} scrollToRow={{ key: "2", nonce: 1 }} />,
+      );
+      expect(proto.scrollIntoView).toHaveBeenCalled();
+      expect(unmount).not.toThrow();
+    } finally {
+      proto.scrollIntoView = original;
+    }
+  });
+});

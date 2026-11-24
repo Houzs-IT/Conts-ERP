@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { BetaBoard, BetaBoardProject } from "./renovationBetaBoardApi";
 import {
-  add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, diff, ds, homeCounts, homeList, homeRow, initials, items,
-  listFor, monthCells, nextFor, progressByPerson, progressList, rangeFor, shiftMonth, stage, status, type BoardModel, type DesignProject,
+  add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, designSteps, diff, ds, filterCounts, homeCounts, inFilter, homeList, homeRow, initials, items,
+  listFor, monthCells, whoName, nextFor, progressByPerson, progressList, rangeFor, reportsOf, shiftMonth, stage, status, type BoardModel, type DesignProject,
 } from "./renovationBetaBoard";
 
 const TODAY = "2026-10-23";
@@ -102,6 +102,7 @@ describe("dates", () => {
 describe("status words", () => {
   it("follows the mockup for each condition", () => {
     expect(conditionText(m, get(4))).toBe("B - 3D amendment");
+    // After 2D the first open work of Design work comes next (owner, 19 Nov 2026; Second payment is no longer a work).
     expect(conditionText(m, get(5))).toBe("D - Carpentry measure booked");
     expect(conditionText(m, get(11))).toBe("D - Site briefing booked");
     expect(conditionText(m, get(13))).toBe("A - New · team not assigned");
@@ -109,8 +110,24 @@ describe("status words", () => {
     expect(conditionText(m, get(1))).toBe("C - 2D in progress");
   });
   it("says Done all design when every step is done", () => {
-    const done = buildModel(board([{ ...lakeville, appointments: lakeville.appointments.map((a) => ({ ...a, doneAt: "2026-10-26T01:00:00Z" })) }]));
+    const done = buildModel(board([{
+      ...lakeville, appointments: lakeville.appointments.map((a) => ({ ...a, doneAt: "2026-10-26T01:00:00Z" })),
+      payment: { state: "ok" as const, label: "2 of 4 paid", outstandingSen: 0, paid: 2 }, variants: { lines: 3, missing: 0 },
+    }]));
     expect(status(done, done.projects[0])[0]).toBe("E");
+    const variantsOpen = buildModel(board([{ ...lakeville, appointments: lakeville.appointments.map((a) => ({ ...a, doneAt: "2026-10-26T01:00:00Z" })),
+      payment: { state: "ok" as const, label: "2 of 4 paid", outstandingSen: 0, paid: 2 }, variants: { lines: 3, missing: 1 } }]));
+    expect(status(variantsOpen, variantsOpen.projects[0])[1]).toBe("Pending variants");
+  });
+  it("lists every project with lines missing a variant under Variants, whatever step it is on", () => {
+    const early = buildModel(board([{ ...lakeville, variants: { lines: 4, missing: 2, pending: [{ itemCode: "SOF-HLM-6112", missing: ["colour"] }] } }]));
+    const p = early.projects[0];
+    expect(inFilter(early, p, "step:variants")).toBe(true);
+    expect(filterCounts(early, early.projects).steps.variants).toBe(1);
+    expect(p.variants.pending[0].itemCode).toBe("SOF-HLM-6112");
+    const picked = buildModel(board([{ ...lakeville, variants: { lines: 4, missing: 0 } }]));
+    expect(inFilter(picked, picked.projects[0], "step:variants")).toBe(false);
+    expect(picked.projects[0].variants.pending).toEqual([]);
   });
   it("re-opens the stage when an amendment is open after approval", () => {
     expect(stage(m, get(4), "3").st).toBe("work");
@@ -143,9 +160,13 @@ describe("next step and Home", () => {
     expect(nextFor(m, get(6))).toMatchObject({ t: "3D waiting for client", d: null });
     expect(nextFor(m, get(1))).toMatchObject({ t: "2D due", d: "2026-10-24" });
   });
-  it("counts the tabs and sorts unassigned first, soonest next", () => {
+  it("counts each Design step filter and sorts unassigned first, soonest next", () => {
     const c = homeCounts(m);
-    expect(c.tabs).toEqual({ all: 7, A: 1, B: 2, C: 2, D: 2, E: 0 });
+    expect(c.all).toBe(7);
+    expect(c.done + Object.values(c.steps).reduce((a, b) => a + b, 0)).toBe(7);
+    expect(Object.keys(c.steps)).toEqual(designSteps(m).map(([k]) => k));
+    for (const [k] of designSteps(m)) expect(homeList(m, `step:${k}`).length).toBe(c.steps[k]);
+    expect(homeList(m, "done").length).toBe(c.done);
     expect(c.late).toBe(0);
     expect(c.week).toBe(4);
     expect(homeList(m, "all").map((p) => p.id)).toEqual([13, 4, 5, 1, 11, 6, 10]);
@@ -267,6 +288,44 @@ describe("several 3D and 2D people", () => {
     expect(g.find((x) => x.person?.id === 2)?.projects.map((x) => x.id)).toEqual(progressList(m, 2).map((x) => x.id));
   });
 
+  it("reads an old unoffered row as the account of the same name, so Viewing that person finds its projects", () => {
+    const oldAlex = { id: 40, name: "ALEX  GOH", roles: [], offered: false };
+    const oldJx = { id: 41, name: "JIA XIN", roles: [], offered: false };
+    const b = board([
+      project({ id: 30, building: "Old", unitNo: "1", customerName: "A", lead: { id: 40, name: "ALEX  GOH" }, sitePic: { id: 41, name: "JIA XIN" } }),
+      project({ id: 31, building: "Old", unitNo: "2", customerName: "B", lead: { id: 40, name: "ALEX  GOH" }, people3d: [{ id: 40, name: "ALEX  GOH" }, { id: 4, name: "alex goh" }] }),
+    ]);
+    b.people = [{ id: 4, name: "alex goh", roles: [], offered: true }, { id: 1, name: "JIAXIN", roles: [], offered: true }, oldAlex, oldJx];
+    const x = buildModel(b);
+    expect(progressList(x, 4).map((p) => p.id).sort()).toEqual([30, 31]);
+    expect(progressList(x, 1).map((p) => p.id)).toEqual([30]);
+    expect(progressList(x, 40)).toEqual([]);
+    expect(progressByPerson(x).map((g) => [g.person?.id, g.projects.length])).toEqual([[4, 2], [1, 1]]);
+    expect(x.byId.get(31)?.team["3"]).toEqual([{ id: 4, name: "alex goh" }]);
+    expect(buildModel({ ...b, mePersonId: 40 }).mePersonId).toBe(4);
+  });
+
+  it("keeps an old row as itself when two offered people share its name", () => {
+    const b = board([project({ id: 32, building: "Old", unitNo: "3", customerName: "C", lead: { id: 40, name: "Ali" }, sitePic: null })]);
+    b.people = [{ id: 4, name: "Ali", roles: [], offered: true }, { id: 5, name: "ALI", roles: [], offered: true }, { id: 40, name: "Ali", roles: [], offered: false }];
+    expect(progressList(buildModel(b), 40).map((p) => p.id)).toEqual([32]);
+  });
+
+  it("lists the offered people who report straight to a person, by name (YH, 23 Nov 2026)", () => {
+    const b = board([]);
+    b.people = [
+      { id: 1, name: "JIAXIN", roles: [], offered: true }, { id: 41, name: "Jia Xin", roles: [], offered: false },
+      { id: 3, name: "Yi Xuan", roles: [], offered: true, managerPersonId: 1 }, { id: 2, name: "Ying Tzy", roles: [], offered: true, managerPersonId: 41 },
+      { id: 6, name: "Under Yi Xuan", roles: [], offered: true, managerPersonId: 3 }, { id: 7, name: "Gone", roles: [], offered: false, managerPersonId: 1 },
+      { id: 8, name: "Self", roles: [], offered: true, managerPersonId: 8 },
+    ];
+    const x = buildModel(b);
+    expect(reportsOf(x, 1)).toEqual([{ id: 3, name: "Yi Xuan" }, { id: 2, name: "Ying Tzy" }]);
+    expect(reportsOf(x, 3)).toEqual([{ id: 6, name: "Under Yi Xuan" }]);
+    expect(reportsOf(x, 8)).toEqual([]);
+    expect(reportsOf(m, 1)).toEqual([]);
+  });
+
   it("offers only people linked to an active account, but still names everyone", () => {
     expect(mm.people.map((x) => x.id)).toEqual([1, 2, 3, 4, 5]);
     expect(mm.everyone.find((x) => x.id === 9)?.offered).toBe(false);
@@ -277,5 +336,55 @@ describe("several 3D and 2D people", () => {
     const old = buildModel(board([project({ id: 21, building: "X", unitNo: "1", customerName: "Y", person3d: SI })])).byId.get(21)!;
     expect(old.team["3"]).toEqual([SI]);
     expect(old.team["2"]).toEqual([JX]);
+  });
+});
+
+describe("calendar entries (audit, 20 Nov 2026)", () => {
+  const ev = (eid: number, onDate: string, type: string, done = false) => ({ id: eid, projectId: 5, onDate, atTime: "10:00", type, note: null, personId: 2, done });
+  const withEvents = buildModel({ ...board([trinity]), events: [ev(1, "2026-10-20", "client"), ev(2, "2026-10-23", "client"), ev(3, "2026-10-30", "carpentry"), ev(4, "2026-10-21", "unknown_type")] });
+  const byId = (eid: number) => withEvents.events.find((e) => e.eventId === eid);
+
+  it("marks a booked work done once its day has passed, as an appointment is", () => {
+    expect(byId(1)?.done).toBe(true);
+    expect(byId(2)?.done).toBe(false);
+    expect(byId(3)?.done).toBe(false);
+  });
+
+  it("leaves a type that is not a bookable work as it is stored", () => {
+    expect(byId(4)?.done).toBe(false);
+  });
+
+  it("keeps the booking's own date and time (no time zone shift)", () => {
+    expect(byId(2)).toMatchObject({ d: "2026-10-23", t: "10:00" });
+    expect(listFor(withEvents, 2, "2026-10-23").events.map((e) => e.eventId)).toEqual([2]);
+  });
+});
+
+describe("a booking for several people (owner, 22 Nov 2026)", () => {
+  const two = buildModel({
+    ...board([{ ...trinity, appointments: [{ kind: "carpentry_measure", onDate: "2026-10-24", atTime: "10:00:00", personId: 2, personIds: [2, 4], withText: null, whoText: "Ah Seng", doneAt: null }] }]),
+    events: [{ id: 7, projectId: 5, onDate: "2026-10-23", atTime: "09:00", type: "client", note: null, personId: 1, personIds: [1, 3], whoText: "Mr Lim", done: false }],
+  });
+
+  it("shows a work on each picked person's own calendar, and on nobody else's", () => {
+    expect(listFor(two, 1, "2026-10-23").events.map((e) => e.eventId)).toEqual([7]);
+    expect(listFor(two, 3, "2026-10-23").events.map((e) => e.eventId)).toEqual([7]);
+    expect(listFor(two, 2, "2026-10-23").events.map((e) => e.eventId)).toEqual([]);
+  });
+
+  it("shows an appointment on each picked person's own calendar", () => {
+    const on = (who: number) => listFor(two, who, "2026-10-24").events.filter((e) => e.appt).length;
+    expect([on(2), on(4), on(1)]).toEqual([1, 1, 0]);
+    expect(deadlineGroups(two, 4).week.concat(deadlineGroups(two, 4).late, deadlineGroups(two, 4).two, deadlineGroups(two, 4).later).some((x) => x.type === "appt")).toBe(true);
+  });
+
+  it("names everyone going, then the typed name", () => {
+    const ev = two.events.find((e) => e.eventId === 7);
+    expect(ev && whoName(ev)).toBe("Jia Xin, Yi Xuan, Mr Lim");
+  });
+
+  it("reads a booking from an older server by its one person", () => {
+    const old = buildModel({ ...board([trinity]), events: [{ id: 8, projectId: 5, onDate: "2026-10-23", atTime: null, type: "client", note: null, personId: 2, done: false }] });
+    expect(old.events[0].people).toEqual([YT]);
   });
 });

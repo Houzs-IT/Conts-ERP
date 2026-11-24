@@ -12,7 +12,7 @@ import { modelOf } from './revenueModel';
 
 /** The unit as owner statements name it: building and unit number. */
 export async function unitLabel(env: Env, unitId: string): Promise<string> {
-  const r = await one<{ name: string }>(env, `SELECT p.name || ' ' || u.unit_number AS name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, unitId);
+  const r = await one<{ name: string }>(env, `SELECT p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, unitId);
   return r?.name ?? 'this unit';
 }
 

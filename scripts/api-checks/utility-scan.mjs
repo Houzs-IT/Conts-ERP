@@ -114,6 +114,7 @@ check('wholly before the contract: record-only, the whole RM 90 an O2 charge', r
 // The payment request: only the bills the company pays, at the full bill.
 const pay = await M.billsToPay(env, BATCH, [s1, s2, s4]);
 check('to pay: TNB, the split bill at its full RM 310 and the August one; not the one the owner paid', pay.length === 1 && pay[0].provider === 'TNB' && pay[0].bills.map(b => b.amountSen).sort().join() === '31000,9000' && pay[0].bills.every(b => b.unitId === A.id) && pay[0].scanIds.sort().join() === [s1, s4].sort().join(), pay);
+check("to pay: each bill's date is the end of its printed period, the day its expense is booked on", pay[0].bills.map(b => b.billDate).sort().join() === '2027-08-14,2027-09-14', pay[0].bills);
 
 // A unit with two meters of one kind: each page names its account, and both bills of the month go in.
 const [meter1, meter2] = [randomUUID(), randomUUID()];
@@ -156,6 +157,17 @@ const loose = randomUUID();
 await sql`insert into expenses (id, unit_id, category, description, amount, currency, incurred_on, deduct_month, charge_to, created_at) values (${loose}, ${B.id}, 'sewerage', 'IWK', 2400, 'MYR', '2027-09-30', '2027-09', 'owner', ${now})`;
 const iwk = await R.billsToRequest(env, [loose]);
 check('a bill with no account provider goes under its kind: Indah Water', iwk.length === 1 && iwk[0].provider === 'Indah Water' && iwk[0].bills[0].amountSen === 2400, iwk);
+// A request sent back (chew, 13 Nov 2026: change it and send it again): "Send again" sends the bills still on it that the
+// company pays, at their full bills, and lets go of one the owner now pays.
+const on1 = await R.billsOnRequest(env, 'req-1');
+check('the bills on a request, at their full bills', on1.bills.map(b => b.expenseId).sort().join() === [e1.id, e4.id].sort().join() && on1.bills.map(b => b.amountSen).sort().join() === '31000,9000' && on1.off.length === 0, on1);
+await sql`update expenses set owner_paid = true where id = ${e4.id}`;
+const on1b = await R.billsOnRequest(env, 'req-1');
+check('a bill now paid by the owner is no longer sent, and is named to let go', on1b.bills.map(b => b.expenseId).join() === e1.id && on1b.off.join() === e4.id, on1b);
+const let1 = await R.unlinkRequest(env, on1b.off);
+const [l4] = await sql`select payment_request_id, payment_request_no from expenses where id = ${e4.id}`;
+check('let go: the bill keeps no request', let1 === 1 && l4.payment_request_id === null && l4.payment_request_no === null, { let1, l4 });
+check('a request with no bills has nothing to send', (await R.billsOnRequest(env, 'req-none')).bills.length === 0);
 
 await sql.end();
 db.kill();

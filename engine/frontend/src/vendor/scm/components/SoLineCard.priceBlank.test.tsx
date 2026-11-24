@@ -8,6 +8,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 vi.mock('../lib/mfg-products-queries', async (orig) => ({
   ...(await orig<typeof import('../lib/mfg-products-queries')>()),
   useMfgProducts: () => ({ data: [], isSuccess: true, isFetching: false }),
+  useMfgProductSearch: () => ({ data: { products: [], more: false }, isSuccess: true, isFetching: false, isPlaceholderData: false }),
   useMaintenanceConfig: () => ({ data: undefined }),
   useSpecialAddons: () => ({ data: [] }),
   useModelAllowedOptionsByCode: () => ({ data: null }),

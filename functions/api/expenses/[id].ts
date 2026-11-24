@@ -7,13 +7,14 @@ import { approvalSettings, approvalsEnabled, stage } from '../../_lib/approvals'
 import { receiptRequired, RECEIPT_REQUIRED } from '../../../src/lib/receipts';
 import { costNotice, editNotices, keptCostProblem } from '../../_lib/lockGuards';
 import { costStageOf } from '../../_lib/stageLocks';
+import { requestState, RETURNED } from '../../_lib/utilityRequests';
 
 /** GET /api/expenses/:id — one expense as the Accounts payable list shows it, for a link that opens it (the top-bar search). */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!session.manage) return fail('FORBIDDEN', 'Expenses are visible to finance and management roles.', 403);
-  const row = await one<any>(env, `SELECT e.*, u.unit_number, p.name AS property_name, ${LOCKED_SQL} AS locked ${EXPENSE_FROM} WHERE e.id = ?`, String(params.id));
+  const row = await one<any>(env, `SELECT e.*, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name, ${LOCKED_SQL} AS locked ${EXPENSE_FROM} WHERE e.id = ?`, String(params.id));
   if (!row) return fail('NOT_FOUND', 'That expense no longer exists.', 404);
   return json(expenseOut(row));
 };
@@ -104,10 +105,15 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   if (!session.manage) return fail('FORBIDDEN', 'Only finance and management can remove expenses.', 403);
 
   const id = String(params.id);
-  const cur = await one<{ unit_id: string; deduct_month: string; category: string; amount: number; incurred_on: string; description: string | null; charge_to: string }>(env,
-    'SELECT unit_id, deduct_month, category, amount, incurred_on, description, charge_to FROM expenses WHERE id = ?', id);
+  const cur = await one<{ unit_id: string; deduct_month: string; category: string; amount: number; incurred_on: string; description: string | null; charge_to: string; payment_request_id: string | null }>(env,
+    'SELECT unit_id, deduct_month, category, amount, incurred_on, description, charge_to, payment_request_id FROM expenses WHERE id = ?', id);
   if (!cur) return fail('NOT_FOUND', 'That expense no longer exists.', 404);
   if (await isExpenseLocked(env, cur)) return fail('PERIOD_LOCKED', 'The owner statement for that month is final, so this expense is locked.', 409);
+  // A bill on a payment request finance still has would be paid with nothing behind it (19 Nov 2026): it comes back first.
+  const req = cur.payment_request_id ? await requestState(env, cur.payment_request_id) : null;
+  if (req && !RETURNED.has(req.status)) {
+    return fail('ON_REQUEST', `This bill is on ${req.requestNo ?? 'a payment request'}, which finance has. Change the amount on Utility bills, or have the request rejected or withdrawn first.`, 409);
+  }
   // What a Cleaning, Utilities or Add. ded. lock keeps cannot be removed until it is unlocked, whatever its category is now.
   const locked = await keptCostProblem(env, id);
   if (locked) return fail('PERIOD_LOCKED', locked, 409);

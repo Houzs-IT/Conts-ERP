@@ -90,7 +90,7 @@ export interface AccessRules {
 }
 
 export interface PermissionPerson {
-  id: string; fullName: string; departmentId: string; positionId: string | null; isActive: boolean; customCount: number;
+  id: string; fullName: string; departmentId: string; positionId: string | null; side: UserSide; isActive: boolean; customCount: number;
 }
 
 export interface AccessChart {

@@ -12,7 +12,7 @@
  * make this pass: `soCanRaiseDo` (DO gate `firstUndeliverableSo`; the PO gate's
  * set is pinned equal) and `SI_TRANSFERABLE_DO_STATES` (SI gate).
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,7 +20,7 @@ const { authedFetch } = vi.hoisted(() => ({ authedFetch: vi.fn() }));
 vi.mock("../vendor/scm/lib/authed-fetch", () => ({ authedFetch }));
 vi.mock("../vendor/scm/components/NotifyDialog", () => ({ useNotify: () => vi.fn() }));
 
-import { MobileConvertWizard } from "./MobileConvertWizard";
+import { MobileConvertWizard, convertSourcePageUrl } from "./MobileConvertWizard";
 
 afterEach(cleanup);
 beforeEach(() => { authedFetch.mockReset(); });
@@ -56,8 +56,8 @@ const doRow = (doNumber: string, status: string) => ({
 
 function fakeLists() {
   authedFetch.mockImplementation(async (url: string) => {
-    if (url.startsWith("/mfg-sales-orders?limit=200")) return { salesOrders: SALES_ORDERS };
-    if (url.startsWith("/delivery-orders-mfg?limit=200")) {
+    if (url.startsWith("/mfg-sales-orders?page=")) return { salesOrders: SALES_ORDERS };
+    if (url.startsWith("/delivery-orders-mfg?page=")) {
       return {
         deliveryOrders: [
           doRow("DO-LOADED", "LOADED"),
@@ -96,5 +96,35 @@ describe("MobileConvertWizard step 1 — the Delivery Order arm is unchanged", (
     fakeLists();
     wrap(<MobileConvertWizard target="si" onBack={() => {}} onCreated={() => {}} />);
     await expectOffered(["DO-LOADED", "DO-DISPATCHED"], ["DO-DRAFT", "DO-CANCELLED"]);
+  });
+});
+
+describe("MobileConvertWizard step 1 — the source list is paged and searched on the server (audit 20 Nov 2026)", () => {
+  it("asks the list for its paged mode with the convertible statuses only", () => {
+    const so = new URL(convertSourcePageUrl("so", 0, "", null), "http://x");
+    expect(so.pathname).toBe("/mfg-sales-orders");
+    expect(so.searchParams.get("page")).toBe("0");
+    expect(so.searchParams.get("status")?.split(",")).toEqual(expect.arrayContaining(["CONFIRMED", "DELIVERED"]));
+    expect(so.searchParams.get("status")?.split(",")).not.toContain("DRAFT");
+    const d = new URL(convertSourcePageUrl("do", 2, " Tan ", null), "http://x");
+    expect(d.searchParams.get("page")).toBe("2");
+    expect(d.searchParams.get("q")).toBe("Tan");
+    expect(d.searchParams.get("status")).toBe("LOADED,DISPATCHED,IN_TRANSIT,SIGNED,DELIVERED");
+    const po = new URL(convertSourcePageUrl("po", 0, "", "sup-1"), "http://x");
+    expect(po.searchParams.get("status")).toBe("outstanding");
+    expect(po.searchParams.get("supplierId")).toBe("sup-1");
+  });
+
+  it("an older document is a tap away: Show older documents reads the next page", async () => {
+    authedFetch.mockImplementation(async (url: string) => {
+      const page = new URL(url, "http://x").searchParams.get("page");
+      if (page === "0") return { salesOrders: [so("SO-NEW", "CONFIRMED")], total: 51, page: 0, pageSize: 50 };
+      return { salesOrders: [so("SO-OLD", "CONFIRMED")], total: 51, page: 1, pageSize: 50 };
+    });
+    wrap(<MobileConvertWizard target="do" onBack={() => {}} onCreated={() => {}} />);
+    expect(await screen.findByText("SO-NEW")).toBeTruthy();
+    expect(screen.queryByText("SO-OLD")).toBeNull();
+    fireEvent.click(screen.getByText("Show older documents"));
+    expect(await screen.findByText("SO-OLD")).toBeTruthy();
   });
 });

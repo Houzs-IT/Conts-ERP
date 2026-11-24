@@ -11,7 +11,7 @@ export const BUILT_IN_BED_SIZES: readonly BedSizeRow[] = [
   ['single_floor_mattress', 'Single floor mattress'], ['double_decker', 'Double decker'],
 ].map(([key, label], n) => ({ key, label, sortOrder: (n + 1) * 10, isActive: true }));
 
-export const bedSizesReady = (env: Env): Promise<boolean> => hasColumn(env, 'unit_bed_sizes', 'key').catch(() => false);
+export const bedSizesReady = (env: Env): Promise<boolean> => hasColumn(env, 'unit_bed_sizes', 'key');
 
 /** Every size, hidden ones too (a unit may still have one), in the order staff set. */
 export async function bedSizes(env: Env): Promise<BedSizeRow[]> {

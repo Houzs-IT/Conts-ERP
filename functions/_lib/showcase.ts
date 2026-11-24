@@ -45,7 +45,7 @@ export interface ShowcaseUnit {
 /** Listed rental units with what a listing card needs. The cover photo is the unit's newest photo (Units screen). */
 export async function showcaseUnits(env: Env, unitId?: string | null): Promise<ShowcaseUnit[]> {
   const rows = await all<any>(env, `
-    SELECT u.id, ${LISTING_NAME} AS name, p.name || ' ' || u.unit_number AS unit, NULLIF(btrim(p.city), '') AS city, u.bedrooms, u.bathrooms, u.max_guests,
+    SELECT u.id, ${LISTING_NAME} AS name, p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit, NULLIF(btrim(p.city), '') AS city, u.bedrooms, u.bathrooms, u.max_guests,
            (SELECT d.id FROM documents d WHERE d.unit_id = u.id AND d.kind = 'photo' AND d.maintenance_id IS NULL AND d.task_id IS NULL AND d.mime_type LIKE 'image/%' ORDER BY d.created_at DESC LIMIT 1) AS photo_id,
            (SELECT ROUND(AVG(v.rating)::numeric, 2) FROM reviews v WHERE v.unit_id = u.id) AS rating,
            (SELECT count(*)::int FROM reviews v WHERE v.unit_id = u.id) AS reviews,

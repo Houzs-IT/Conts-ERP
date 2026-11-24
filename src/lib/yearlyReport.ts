@@ -3,8 +3,11 @@
  *  they agree, as unitPnl.ts does, so this file stays loadable by node); the only extra is what we pay cleaners.
  *  Amounts are sen. */
 
+import type { ReportGroup } from './ownerOverall';
+
 export interface YearlyRow {
-  unitId: string; month: string; contract: 'LT' | 'PS';
+  /** The unit's kind that month and its staff code (Monthly's grouping, functions/_lib/unitReport.ts). */
+  unitId: string; month: string; group: ReportGroup; contractCode: string | null; contract: 'LT' | 'PS';
   revenue: number; cleaning: number; electricity: number; water: number; internet: number; sewerage: number;
   additional: number; misc: number; ownerPct: number; ltGrr: number; o2: number; nights: number; days: number;
   /** The company's share of late changes to an earlier, locked month that counts this month (part 2b). 0 when absent. */

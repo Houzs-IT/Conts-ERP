@@ -289,6 +289,9 @@ const MODULE_COLUMNS: Record<OutstandingModule, ColSpec[]> = {
        this column is what makes the smaller Outstanding readable instead of
        mysterious. */
     { key: 'so_deposit_applied_sen', label: 'SO deposit', kind: 'money' },
+    /* The customers' credit notes knocked off the invoice (backend si-credit-notes.ts) — netted off the
+       Outstanding by the same handler, shown so the smaller figure reads. */
+    { key: 'credit_notes_sen', label: 'Credit notes', kind: 'money' },
     { key: 'outstanding_sen', label: 'Outstanding', kind: 'money' },
     { key: 'status',         label: 'Status' },
   ],

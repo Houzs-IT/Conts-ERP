@@ -49,7 +49,7 @@ const BEDFRAME_SUMMARY = 'BF-01 Sand / DIVAN 10" + LEG 1" / GAP 2"';
 /** Answer the wizard's two GETs: the source list, then the convertible lines. */
 const serve = (sourceKey: string, sources: unknown[], linesKey: string, lines: unknown) => {
   authedFetch.mockImplementation(async (url: string) => {
-    if (url.startsWith(sourceKey)) return { [sourceKey === "/mfg-sales-orders?limit=200" ? "salesOrders" : "deliveryOrders"]: sources };
+    if (url.startsWith(sourceKey)) return { [sourceKey === "/mfg-sales-orders?page=" ? "salesOrders" : "deliveryOrders"]: sources };
     if (url.startsWith(linesKey)) return lines;
     return {};
   });
@@ -58,7 +58,7 @@ const serve = (sourceKey: string, sources: unknown[], linesKey: string, lines: u
 describe("MobileConvertWizard — SO → DO", () => {
   it("prints each sofa module's variant summary under its name", async () => {
     serve(
-      "/mfg-sales-orders?limit=200",
+      "/mfg-sales-orders?page=",
       [{ doc_no: "HC-SO-2608-001", status: "OPEN", debtor_name: "Walk-in" }],
       "/delivery-orders-mfg/deliverable-so-lines",
       {
@@ -95,7 +95,7 @@ describe("MobileConvertWizard — SO → DO", () => {
 describe("MobileConvertWizard — SO → PO", () => {
   it("prints the variant summary on the line being purchased", async () => {
     serve(
-      "/mfg-sales-orders?limit=200",
+      "/mfg-sales-orders?page=",
       [{ doc_no: "HC-SO-2608-001", status: "OPEN", debtor_name: "Walk-in" }],
       "/mfg-purchase-orders/outstanding-so-items",
       {
@@ -118,12 +118,42 @@ describe("MobileConvertWizard — SO → PO", () => {
 
     expect(await screen.findByText(SOFA_SUMMARY)).toBeTruthy();
   });
+
+  /* Audit 20 Nov 2026, item 4: the wizard downloaded every outstanding SO line to keep one SO's. It now asks the
+     server for that SO only, and reads every page of it. */
+  it("asks for the picked SO only and reads every page of its lines", async () => {
+    const line = (id: string, description: string) => ({
+      soItemId: id, soDocNo: "HC-SO-2608-001", itemCode: id, description, itemGroup: "mattress", variants: {},
+      qty: 1, poQtyPicked: 0, remainingQty: 1, unitPriceSen: 0,
+    });
+    authedFetch.mockImplementation(async (url: string) => {
+      if (url.startsWith("/mfg-sales-orders?page=")) return { salesOrders: [{ doc_no: "HC-SO-2608-001", status: "OPEN" }] };
+      if (url.startsWith("/mfg-purchase-orders/outstanding-so-items")) {
+        return url.includes("cursor=")
+          ? { items: [line("l-2", "SECOND PAGE LINE")], nextCursor: null }
+          : { items: [line("l-1", "FIRST PAGE LINE")], nextCursor: "c1" };
+      }
+      return {};
+    });
+
+    wrap(<MobileConvertWizard target="po" initialSourceId="HC-SO-2608-001" onBack={() => {}} onCreated={() => {}} />);
+
+    expect(await screen.findByText("SECOND PAGE LINE")).toBeTruthy();
+    expect(screen.getByText("FIRST PAGE LINE")).toBeTruthy();
+    const lineCalls = authedFetch.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/mfg-purchase-orders/outstanding-so-items"));
+    expect(lineCalls).toHaveLength(2);
+    for (const u of lineCalls) {
+      expect(u).toContain("docNo=HC-SO-2608-001");
+      expect(u).toContain("limit=");
+    }
+    expect(lineCalls[1]).toContain("cursor=c1");
+  });
 });
 
 describe("MobileConvertWizard — DO → SI", () => {
   it("prints the variant summary on the line being invoiced", async () => {
     serve(
-      "/delivery-orders-mfg?limit=200",
+      "/delivery-orders-mfg?page=",
       [{ id: "do-1", do_number: "HC-DO-2608-001", status: "DELIVERED", debtor_name: "Walk-in" }],
       "/sales-invoices/invoiceable-do-lines",
       {
@@ -155,7 +185,7 @@ describe("MobileConvertWizard — PO → GRN", () => {
      itemGroup + variants (the create needs them); only the render dropped them. */
   it("prints the variant summary on the line being received", async () => {
     authedFetch.mockImplementation(async (url: string) => {
-      if (url.startsWith("/mfg-purchase-orders?limit=200")) {
+      if (url.startsWith("/mfg-purchase-orders?page=")) {
         return {
           purchaseOrders: [{
             id: "po-1", po_number: "HC-PO-2608-001", status: "SUBMITTED",

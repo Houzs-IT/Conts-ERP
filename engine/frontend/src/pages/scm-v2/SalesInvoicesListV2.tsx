@@ -6,8 +6,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { siPaymentIntentSearch } from "./siPaymentIntent";
 import { salesInvoiceRowMenu } from "./row-menus";
 import {
+  siCreditNotesSen,
   siDepositAppliedSen,
   siOutstandingSen,
+  siIsCancelled,
+  siOwesNothing,
 } from "../../vendor/scm/lib/si-outstanding";
 import { brandingToneForLabel } from "../../lib/brandingTone";
 import { transferFromLabel, transferFromColumnLabel } from "../../lib/convertScope";
@@ -59,8 +62,8 @@ import {
   useSalesInvoicesPaged,
   useSalesInvoiceDetail,
   useUpdateSalesInvoiceStatus,
+  useSiCustomerNames,
 } from "../../vendor/scm/lib/sales-invoice-queries";
-import { useMfgCustomers } from "../../vendor/scm/lib/sales-order-queries";
 import { useServerColumnFunnels, funnelValues } from "../../hooks/useServerColumnFunnels";
 import { conditionDateRange } from "../../components/dataTableConditionFilters";
 import { authedFetch } from "../../vendor/scm/lib/authed-fetch";
@@ -138,6 +141,7 @@ type SiRow = {
      server could not read the order — read as 0, which shows the LARGER
      outstanding. Kept apart from paid_sen: different money, different document. */
   so_deposit_applied_sen?: number | null;
+  credit_notes_sen?: number | null; // customers' credit notes knocked off it (si-credit-notes) — apart from paid_sen too
   bills_for?: string | null;
   status: string;
   currency: string;
@@ -167,6 +171,9 @@ type SiRow = {
 type StatusTab = "all" | "draft" | "sent" | "partial" | "paid" | "cancelled";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+/* A stable empty list while the funnel's names load, so the column set is not rebuilt each render. */
+const EMPTY_NAMES: string[] = [];
 // margin_pct_basis is basis points (margin/total x 10000) → percent string.
 const fmtPctBasis = (basis: number | null | undefined): string =>
   basis == null ? "—" : `${(basis / 100).toFixed(1)}%`;
@@ -227,7 +234,7 @@ const statusFor = (
    Outstanding ledger all have to answer the same number, and until 2026-08-23
    they answered six different ones (vendor/scm/lib/si-outstanding.ts). */
 const outstandingOf = (r: SiRow): number =>
-  siOutstandingSen(r.total_sen || r.local_total_sen || 0, r.paid_sen || 0, siDepositAppliedSen(r));
+  siOwesNothing(r.status) ? 0 : siOutstandingSen(r.total_sen || r.local_total_sen || 0, r.paid_sen || 0, siDepositAppliedSen(r), siCreditNotesSen(r));
 
 // ─── Split-menu dropdown ────────────────────────────────────────────────────
 
@@ -379,7 +386,7 @@ function CardsGrid({ rows, onOpen }: { rows: SiRow[]; onOpen: (r: SiRow) => void
             <div className="mt-3.5 flex items-end justify-between border-t border-border-subtle pt-3">
               <div className="min-w-0">
                 <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-                  Outstanding{siDepositAppliedSen(r) > 0 ? " · after SO deposit" : ""}
+                  Outstanding{siDepositAppliedSen(r) > 0 ? " · after SO deposit" : ""}{siCreditNotesSen(r) > 0 ? " · after credit notes" : ""}
                 </div>
                 <div
                   className={cn(
@@ -387,7 +394,7 @@ function CardsGrid({ rows, onOpen }: { rows: SiRow[]; onOpen: (r: SiRow) => void
                     outstanding > 0 ? "text-err" : "text-synced"
                   )}
                 >
-                  {outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
+                  {siIsCancelled(r.status) ? "—" : outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
                 </div>
               </div>
               <span className="font-money text-[15px] font-bold text-ink">
@@ -458,7 +465,7 @@ function DetailDrawer({
   const totalSen = row?.total_sen ?? row?.local_total_sen ?? 0;
   const paidSen = row?.paid_sen ?? 0;
   const depositSen = siDepositAppliedSen(row);
-  const outstanding = siOutstandingSen(totalSen, paidSen, depositSen);
+  const outstanding = siOwesNothing(row?.status) ? 0 : siOutstandingSen(totalSen, paidSen, depositSen, siCreditNotesSen(row));
 
   return (
     <ResizableDetailDrawer
@@ -478,7 +485,7 @@ function DetailDrawer({
                 <XIcon size={18} />
               </button>
               <div className="min-w-0 flex-1">
-                <div className="font-mono text-[14px] font-bold tracking-wide">
+                <div className="truncate whitespace-nowrap font-mono text-[14px] font-bold tracking-wide">
                   {row.invoice_number}
                 </div>
                 <div className="mt-0.5 text-[11px] text-sidebar-ink-muted">Sales Invoice</div>
@@ -488,7 +495,7 @@ function DetailDrawer({
                 onClick={onOpenFull}
                 className="inline-flex items-center gap-1.5 rounded-md border border-accent-bright/40 px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-bright hover:bg-accent-bright/10"
               >
-                Open full page <ExternalLink size={12} />
+                <span className="hidden sm:inline">Open full page</span> <ExternalLink size={12} aria-label="Open full page" />
               </button>
               <Badge tone={st.tone} variant="solid" size="xs">
                 {st.label}
@@ -637,7 +644,7 @@ function DetailDrawer({
                 )}
                 <TotalRow
                   k="Outstanding"
-                  v={outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
+                  v={siIsCancelled(row.status) ? "—" : outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
                   tone={outstanding > 0 ? "error" : "success"}
                 />
               </div>
@@ -864,8 +871,8 @@ export function SalesInvoicesListV2() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [printingDocs, setPrintingDocs] = useState(false);
   // Server-filterable funnels (owner 2026-09-16): Customer Name + Currency → list query (pager over the filtered set); Debtor CODE + line/MRP funnels stay client-side; Customer checklist seeded with every customer.
-  const customersQ = useMfgCustomers();
-  const customerNames = useMemo(() => [...new Set((customersQ.data?.customers ?? []).map((cst) => cst.name).filter((n): n is string => !!n))], [customersQ.data]);
+  const customerNamesQ = useSiCustomerNames();
+  const customerNames = customerNamesQ.data ?? EMPTY_NAMES;
   const { serverFunnels, onColFiltersChange } = useServerColumnFunnels(
     (cf) => ({ ...conditionDateRange(cf["invoice_date"]), debtorNames: funnelValues(cf, "debtor_name"), currencies: funnelValues(cf, "currency") }),
     () => setPageParam(0),
@@ -934,6 +941,8 @@ export function SalesInvoicesListV2() {
     let outstandingSen = 0;
     let paidSen = 0;
     for (const r of visible.rows) {
+      /* A cancelled invoice is worth nothing: not billed, and its receipts became customer credit (F27). */
+      if (siIsCancelled(r.status)) continue;
       const t = r.total_sen ?? r.local_total_sen ?? 0;
       const paid = r.paid_sen ?? 0;
       revenueSen += t;
@@ -941,7 +950,7 @@ export function SalesInvoicesListV2() {
       /* The KPI sums the SAME per-row figure the Outstanding column renders, so
          the card and the table cannot disagree — which is the whole reason this
          block sums the rows on screen rather than asking the server. */
-      outstandingSen += siOutstandingSen(t, paid, siDepositAppliedSen(r));
+      outstandingSen += siOwesNothing(r.status) ? 0 : siOutstandingSen(t, paid, siDepositAppliedSen(r), siCreditNotesSen(r));
     }
     return { revenueSen, outstandingSen, paidSen };
   }, [visible.rows]);
@@ -989,7 +998,10 @@ export function SalesInvoicesListV2() {
     status !== "all" || view !== "table" || search.trim().length > 0;
 
   const onPullToRefresh = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["sales-invoices"] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["sales-invoices"] }),
+      queryClient.invalidateQueries({ queryKey: ["sales-invoices-paged"] }),
+    ]);
   };
 
   /* The ONE Export (owner 2026-09-15): every invoice the list's tab + search +
@@ -1294,6 +1306,7 @@ export function SalesInvoicesListV2() {
       render: (r) => {
         const outstanding = outstandingOf(r);
         const dep = siDepositAppliedSen(r);
+        const credit = siCreditNotesSen(r);
         /* A smaller number with no explanation invites "why is this 2,400 when
            the invoice is 4,400" — so when a deposit is in play the cell SAYS
            so. The marker carries the amount and the order it was taken on, the
@@ -1306,17 +1319,16 @@ export function SalesInvoicesListV2() {
               outstanding > 0 ? "text-err" : "text-synced"
             )}
             title={
-              dep > 0
-                ? `${fmtSen(dep)} was collected on ${r.so_doc_no ?? "the sales order"} and settles this invoice.`
-                : undefined
+              [dep > 0 ? `${fmtSen(dep)} was collected on ${r.so_doc_no ?? "the sales order"} and settles this invoice.` : "",
+                credit > 0 ? `${fmtSen(credit)} was knocked off by credit notes.` : ""].filter(Boolean).join(" ") || undefined
             }
           >
-            {outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
-            {dep > 0 && (
-              <span className="rounded-sm bg-surface-2 px-1 font-mono text-[9px] font-semibold uppercase tracking-brand text-ink-muted">
-                dep
+            {siIsCancelled(r.status) ? "—" : outstanding > 0 ? fmtSen(outstanding) : "Cleared"}
+            {[dep > 0 ? "dep" : "", credit > 0 ? "cn" : ""].filter(Boolean).map((m) => (
+              <span key={m} className="rounded-sm bg-surface-2 px-1 font-mono text-[9px] font-semibold uppercase tracking-brand text-ink-muted">
+                {m}
               </span>
-            )}
+            ))}
           </span>
         );
       },
@@ -1725,7 +1737,7 @@ export function SalesInvoicesListV2() {
       <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
         <div className="min-w-0">
           <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-            Sales Invoices
+            Sales invoices
           </h1>
           <div className="mt-0.5 text-[12.5px] text-ink-muted">
             {total} invoice{total === 1 ? "" : "s"} ·{" "}
@@ -1739,7 +1751,7 @@ export function SalesInvoicesListV2() {
         <div className="px-4 sm:px-6">
           <PageHeader
             eyebrow="Sales"
-            title="Sales Invoices"
+            title="Sales invoices"
             description={`Every ${shortCompanyName(branding.companyName)} sales invoice — Submitted to Paid. Click any row for the quick view; open the full page to edit or record a payment.`}
             primaryAction={
               /* Export lines is a READ under the caller's sales scope, so a

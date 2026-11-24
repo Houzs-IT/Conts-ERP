@@ -216,7 +216,7 @@ function CompanySwitcher() {
         >
           {active?.name ?? "Select company"}
         </span>
-        <ChevronsUpDown size={13} strokeWidth={2} className="shrink-0 text-ink-muted/70" />
+        <ChevronsUpDown size={13} strokeWidth={2} className="shrink-0 text-ink-muted" />
       </button>
 
       {open && (
@@ -262,7 +262,7 @@ function CompanySwitcher() {
                   }}
                   title={`Open ${co.name} in a new window`}
                   aria-label={`Open ${co.name} in a new window`}
-                  className="shrink-0 px-2.5 text-ink-muted/70 transition-colors hover:bg-bg/60 hover:text-accent"
+                  className="shrink-0 px-2.5 text-ink-muted transition-colors hover:bg-bg/60 hover:text-accent"
                 >
                   <ExternalLink size={12.5} strokeWidth={2} />
                 </button>

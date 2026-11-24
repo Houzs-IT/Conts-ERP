@@ -460,7 +460,7 @@ export const ConsignmentReturnDetail = () => {
       {/* ── Line items ── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Returned Items ({items.length})</h2>
+          <h2 className={styles.cardTitle}>Returned items ({items.length})</h2>
           {isEditing && !addingDraft && (
             <Button variant="primary" size="sm" onClick={startAddLine} disabled={isLocked}>
               <Plus {...ICON} /><span>Add Line Item</span>
@@ -769,7 +769,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
 
       {/* ── RETURN INFO (date / reason / note) ── */}
       <section className={styles.card}>
-        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Return Info</h2></header>
+        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Return info</h2></header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
             <label className={styles.field}>
@@ -819,7 +819,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       {/* ── EMERGENCY CONTACT ── */}
       <section className={styles.card}>
         <header className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Emergency Contact</h2>
+          <h2 className={styles.cardTitle}>Emergency contact</h2>
           <span style={{ fontSize: 'var(--fs-12)', color: 'var(--fg-muted)' }}>
             Used only if we cannot reach the customer on collection day
           </span>
@@ -857,7 +857,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
 
       {/* ── DELIVERY ADDRESS ── */}
       <section className={styles.card}>
-        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Delivery Address</h2></header>
+        <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Delivery address</h2></header>
         <div className={styles.cardBody}>
           <div className={styles.formGrid4}>
             <label className={styles.field} style={{ gridColumn: 'span 4' }}>
@@ -958,7 +958,7 @@ const TotalsCard = ({ header }: { header: CrnHeader }) => {
 
   return (
     <section className={styles.card}>
-      <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Totals · Margin</h2></header>
+      <header className={styles.cardHeader}><h2 className={styles.cardTitle}>Totals · margin</h2></header>
       <div className={styles.cardBody}>
         <div style={TOTALS_KPI_GRID_STYLE}>
           <div>

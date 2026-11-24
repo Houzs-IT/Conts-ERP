@@ -2,6 +2,8 @@ import { describe, expect, test } from 'vitest';
 import consignmentLoaner from '../src/scm/lib/consignment-loaner.ts?raw';
 import consignmentNotes from '../src/scm/routes/consignment-notes.ts?raw';
 import consignmentReturns from '../src/scm/routes/consignment-returns.ts?raw';
+import deliveryOrderRevert from '../src/scm/routes/delivery-order-revert.ts?raw';
+import productionOrders from '../src/scm/routes/production-orders.ts?raw';
 import deliveryOrdersMfg from '../src/scm/routes/delivery-orders-mfg.ts?raw';
 import deliveryReturns from '../src/scm/routes/delivery-returns.ts?raw';
 import grns from '../src/scm/routes/grns.ts?raw';
@@ -83,18 +85,20 @@ const mfgSalesOrders = soRouterSource();
 const INLINE = 'await recomputeSoStockAllocation(';
 const DURABLE = 'await scheduleStockAllocationAfterCommand(';
 const DEFERRED = 'deferAllocationRecompute(';
+/* Conts D16 (22 Nov 2026): the same deferral reached from helpers that hold only a db client; inline outside a request. */
+const QUEUED = 'queueAllocationRecompute(';
 
 const count = (source: string, needle: string) => source.split(needle).length - 1;
 
 /** Every module that triggers an allocation recompute, with its exact split. */
 const LEDGER: Array<{
-  module: string; source: string; inline: number; durable: number; deferred: number;
+  module: string; source: string; inline: number; durable: number; deferred: number; queued: number;
 }> = [
-  { module: 'lib/consignment-loaner.ts', source: consignmentLoaner, inline: 2, durable: 0, deferred: 0 },
-  { module: 'routes/consignment-notes.ts', source: consignmentNotes, inline: 1, durable: 0, deferred: 0 },
-  { module: 'routes/consignment-returns.ts', source: consignmentReturns, inline: 1, durable: 0, deferred: 0 },
-  { module: 'routes/delivery-orders-mfg.ts', source: deliveryOrdersMfg, inline: 3, durable: 0, deferred: 0 },
-  { module: 'routes/delivery-returns.ts', source: deliveryReturns, inline: 3, durable: 0, deferred: 0 },
+  { module: 'lib/consignment-loaner.ts', source: consignmentLoaner, inline: 0, durable: 0, deferred: 0, queued: 2 },
+  { module: 'routes/consignment-notes.ts', source: consignmentNotes, inline: 0, durable: 0, deferred: 0, queued: 1 },
+  { module: 'routes/consignment-returns.ts', source: consignmentReturns, inline: 0, durable: 0, deferred: 0, queued: 1 },
+  { module: 'routes/delivery-orders-mfg.ts', source: deliveryOrdersMfg, inline: 0, durable: 0, deferred: 0, queued: 3 },
+  { module: 'routes/delivery-returns.ts', source: deliveryReturns, inline: 0, durable: 0, deferred: 0, queued: 3 },
   /* grns.ts moved 6 -> 5 inline and 0 -> 1 durable on 2026-08-20: the line
      DELETE now runs inside runScmPgCommand, so its queue row commits with the
      stock reversal.
@@ -103,11 +107,11 @@ const LEDGER: Array<{
      commit together. Four GRN routes remain (header PATCH, line add, line edit,
      and the create paths), with postGrnHandler deliberately last.
      docs/ALLOCATION-DURABILITY-PLAN.md. */
-  { module: 'routes/grns.ts', source: grns, inline: 4, durable: 2, deferred: 0 },
+  { module: 'routes/grns.ts', source: grns, inline: 0, durable: 2, deferred: 0, queued: 4 },
   /* inventory-adjustments.ts went 1 -> 2 inline on 2026-10-07 (BUG-66): the
      adjustment became an editable document, and an edit that changes a
      bucket's net moves stock, so it re-walks the allocation like the create. */
-  { module: 'routes/inventory-adjustments.ts', source: inventoryAdjustments, inline: 2, durable: 0, deferred: 0 },
+  { module: 'routes/inventory-adjustments.ts', source: inventoryAdjustments, inline: 0, durable: 0, deferred: 0, queued: 2 },
   /* mfg-sales-orders.ts moved 7 -> 3 inline and 1 -> 5 deferred on 2026-09-11:
      the SO line ADD (sofa + non-sofa branches), EDIT and DELETE routes now defer
      the global sweep under ctx.waitUntil instead of awaiting it. Each had blocked
@@ -116,40 +120,41 @@ const LEDGER: Array<{
      and timed out into repeated retries. Same guarantee (best-effort, no queue
      row), lower latency — the header PATCH was already deferred. The 3 inline
      that remain are status / proceed / cancel. docs/ALLOCATION-DURABILITY-PLAN.md. */
-  { module: 'routes/mfg-sales-orders.ts', source: mfgSalesOrders, inline: 3, durable: 3, deferred: 5 },
-  { module: 'routes/purchase-consignment-receives.ts', source: purchaseConsignmentReceives, inline: 1, durable: 0, deferred: 0 },
-  { module: 'routes/purchase-consignment-returns.ts', source: purchaseConsignmentReturns, inline: 1, durable: 0, deferred: 0 },
-  { module: 'routes/purchase-returns.ts', source: purchaseReturns, inline: 3, durable: 0, deferred: 0 },
-  { module: 'routes/so-amendments.ts', source: soAmendments, inline: 0, durable: 1, deferred: 0 },
-  { module: 'routes/stock-takes.ts', source: stockTakes, inline: 2, durable: 0, deferred: 0 },
-  { module: 'routes/stock-transfers.ts', source: stockTransfers, inline: 2, durable: 0, deferred: 0 },
+  { module: 'routes/mfg-sales-orders.ts', source: mfgSalesOrders, inline: 1, durable: 3, deferred: 5, queued: 2 },
+  { module: 'routes/purchase-consignment-receives.ts', source: purchaseConsignmentReceives, inline: 0, durable: 0, deferred: 0, queued: 1 },
+  { module: 'routes/purchase-consignment-returns.ts', source: purchaseConsignmentReturns, inline: 0, durable: 0, deferred: 0, queued: 1 },
+  { module: 'routes/purchase-returns.ts', source: purchaseReturns, inline: 0, durable: 0, deferred: 0, queued: 3 },
+  /* Conts D16: every best-effort trigger answers the save first (queued / deferred); the one inline call left is the
+     manual "Re-allocate stock" endpoint, which returns the sweep's result. DO revert and production Start / request
+     more / return / undo-start join the ledger here (production never re-walked before). */
+  { module: 'routes/delivery-order-revert.ts', source: deliveryOrderRevert, inline: 0, durable: 0, deferred: 0, queued: 1 },
+  { module: 'routes/production-orders.ts', source: productionOrders, inline: 0, durable: 0, deferred: 5, queued: 0 },
+  { module: 'routes/so-amendments.ts', source: soAmendments, inline: 0, durable: 1, deferred: 0, queued: 0 },
+  { module: 'routes/stock-takes.ts', source: stockTakes, inline: 0, durable: 0, deferred: 0, queued: 2 },
+  { module: 'routes/stock-transfers.ts', source: stockTransfers, inline: 0, durable: 0, deferred: 0, queued: 2 },
 ];
 
 describe('durable allocation coverage is stated honestly', () => {
   for (const entry of LEDGER) {
-    test(`${entry.module}: ${entry.durable} durable / ${entry.inline} inline / ${entry.deferred} deferred`, () => {
+    test(`${entry.module}: ${entry.durable} durable / ${entry.inline} inline / ${entry.deferred} deferred / ${entry.queued} queued`, () => {
       expect(count(entry.source, INLINE), `${entry.module} inline recompute call count changed`)
         .toBe(entry.inline);
       expect(count(entry.source, DURABLE), `${entry.module} durable enqueue count changed`)
         .toBe(entry.durable);
       expect(count(entry.source, DEFERRED), `${entry.module} deferred recompute count changed`)
         .toBe(entry.deferred);
+      expect(count(entry.source, QUEUED), `${entry.module} queued recompute count changed`)
+        .toBe(entry.queued);
     });
   }
 
-  test('the totals match the documented scope: 6 durable of 38 triggers', () => {
-    const durable = LEDGER.reduce((sum, entry) => sum + entry.durable, 0);
-    const inline = LEDGER.reduce((sum, entry) => sum + entry.inline, 0);
-    const deferred = LEDGER.reduce((sum, entry) => sum + entry.deferred, 0);
-    expect(durable).toBe(6);
-    expect(inline).toBe(28);
-    expect(deferred).toBe(5);
-    /* The trigger count is unchanged: deferring the four SO line routes
-       (2026-09-11) moved them between columns, it did not remove them. 32 are
-       still best-effort (27 inline + 5 deferred). The stock-adjustment edit
-       (2026-10-07) added one inline trigger: 33 best-effort, 39 in all. */
-    expect(inline + deferred).toBe(33);
-    expect(durable + inline + deferred).toBe(39);
+  test('the totals match the documented scope: 6 durable of 45 triggers', () => {
+    const sum = (k: 'durable' | 'inline' | 'deferred' | 'queued') => LEDGER.reduce((acc, entry) => acc + entry[k], 0);
+    expect(sum('durable')).toBe(6);
+    expect(sum('inline')).toBe(1);
+    expect(sum('deferred')).toBe(10);
+    expect(sum('queued')).toBe(28);
+    expect(sum('durable') + sum('inline') + sum('deferred') + sum('queued')).toBe(45);
   });
 
   test('the code says out loud that the other triggers are still best-effort', () => {

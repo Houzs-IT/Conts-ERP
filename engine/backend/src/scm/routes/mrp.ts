@@ -637,9 +637,20 @@ export async function computeMrp(
        is the drift this codebase keeps paying for. Making it required means a
        new caller cannot forget; pass NO_BUFFERS explicitly to opt out. */
     leadBuffers: LeadBuffers;
+    /* Plan only these item codes (the PO-from-SO picker's page, 19 Nov 2026). Every allocation in this engine runs per
+       (warehouse, item code, variant) bucket and a bucket holds one item code, so a line's figures are the same as in
+       the whole-company run: the demand, stock and production materials of other codes never meet it. Omitted or null
+       plans every code. When set, the result's category list is left empty (a page does not need it). PO supply is
+       still read whole: a dedicated PO line is keyed by its sales line, not by its code. */
+    itemCodes?: readonly string[] | null;
+    /* With itemCodes: the lines the caller needs figures for. A code with no stock and no live PO line is then planned
+       from these lines alone (see FOCUS below); their figures still equal the whole run's. */
+    focusLineIds?: readonly string[] | null;
   },
 ): Promise<MrpResult> {
   const { catFilter, whFilter, includeUndated, companyId, leadBuffers } = opts;
+  const codeList = opts.itemCodes == null ? null : [...new Set(opts.itemCodes.filter((code) => !!code))];
+  const codeSet = codeList == null ? null : new Set(codeList);
 
   /* Multi-company isolation: every per-company read (demand SO lines, PO supply,
      inventory balances, warehouses, suppliers, bindings, product master) is
@@ -693,12 +704,18 @@ export async function computeMrp(
   /* The category walk (section 2), the two warehouse masters (section 2) and the
      stock + PO-supply reads (sections 3 and 4). Each is byte-identical to the
      query that stood at its own site; only the moment it is ISSUED moved. */
-  const catRowsProm = eager(paginateAll<{ category: string | null }>((from, to) =>
-    scoped(sb.from('mfg_products').select('category')).order('id').range(from, to)));
-  const balancesProm = eager(paginateAll<BalanceRow>((from, to) => {
-    const q = scoped(sb.from('inventory_balances').select('item_code, warehouse_id, variant_key, qty'));
-    return q.order('item_code').order('warehouse_id').order('variant_key').order('company_id').range(from, to);
-  }));
+  const catRowsProm = eager(codeList != null
+    ? Promise.resolve({ data: [] as Array<{ category: string | null }>, error: null })
+    : paginateAll<{ category: string | null }>((from, to) =>
+      scoped(sb.from('mfg_products').select('category')).order('id').range(from, to)));
+  const balancesProm = eager(codeList != null
+    ? chunkIn<BalanceRow>(codeList, (batch, from, to) => scoped(sb.from('inventory_balances').select('item_code, warehouse_id, variant_key, qty'))
+      .filter('item_code', 'in', pgrestInList(batch))
+      .order('item_code').order('warehouse_id').order('variant_key').order('company_id').range(from, to))
+    : paginateAll<BalanceRow>((from, to) => {
+      const q = scoped(sb.from('inventory_balances').select('item_code, warehouse_id, variant_key, qty'));
+      return q.order('item_code').order('warehouse_id').order('variant_key').order('company_id').range(from, to);
+    }));
   const poRawProm = eager(paginateAll<PoLineRow>((from, to) => scoped(sb
     .from('purchase_order_items')
     .select(`
@@ -759,16 +776,52 @@ export async function computeMrp(
   // spend read budget; ORDER BY id so the page boundaries are stable across
   // requests (paginateAll's `.range()` windows are only coherent under a total
   // order); PAGED so the plan sees every open line, not the first 1000.
-  const { data: demandRaw, error: demandErr } = await paginateAll<DemandRow>((from, to) => scoped(sb
-    .from('mfg_sales_order_items')
-    .select(`
+  const DEMAND_SELECT = `
       id, doc_no, item_code, description, item_group, variants, remark, qty, warehouse_id, line_delivery_date, line_delivery_date_overridden, line_no, created_at, cancelled, allocated_batch_no,
       so:mfg_sales_orders!inner ( debtor_name, status, on_hold, so_date, customer_delivery_date, amended_delivery_date, processing_date, customer_state, sales_location, project_id )
-    `)
+    `;
+  /* FOCUS (PO-from-SO paging): a code with no stock row and no live PO line has nothing to allocate, so each of its lines
+     is short by exactly what it still needs, whatever the other lines of that code do (a dedicated PO is keyed by the
+     line itself). Such a code is planned from the focus lines alone; a code with any supply is planned whole. If either
+     supply read failed, every code counts as supplied, and the read's error is raised where it always was. */
+  const unsuppliedCodes = new Set<string>();
+  if (codeList != null && opts.focusLineIds != null) {
+    const bal = (await balancesProm)();
+    const po = (await poRawProm)();
+    if (!bal.error && !po.error) {
+      const supplied = new Set<string>();
+      for (const b of bal.data ?? []) if (Number(b.qty ?? 0) !== 0) supplied.add(b.item_code);
+      for (const r of (po.data ?? []) as unknown as PoLineRow[]) if (r.item_code) supplied.add(r.item_code);
+      for (const code of codeList) if (!supplied.has(code)) unsuppliedCodes.add(code);
+    }
+  }
+  const wholeCodes = codeList == null ? null : codeList.filter((code) => !unsuppliedCodes.has(code));
+  const focusIds = unsuppliedCodes.size === 0 ? [] : [...new Set(opts.focusLineIds ?? [])];
+  const demandOf = (narrow: (q: any) => any) => (batchFrom: number, batchTo: number) => narrow(scoped(sb // eslint-disable-line @typescript-eslint/no-explicit-any
+    .from('mfg_sales_order_items')
+    .select(DEMAND_SELECT)
     .eq('cancelled', false)
-    .not('so.status', 'in', MRP_DEMAND_DONE_SQL))
+    .not('so.status', 'in', MRP_DEMAND_DONE_SQL)))
     .order('id')
-    .range(from, to));
+    .range(batchFrom, batchTo);
+  const { data: demandRaw, error: demandErr } = wholeCodes != null
+    /* Read per batch of codes (and of focus ids), then put back in id order, so same-day lines of one document tie in
+       the date walk below the same way they do in the whole read. */
+    ? await Promise.all([
+      chunkIn<DemandRow>(wholeCodes, (batch, from, to) => demandOf((q) => q.filter('item_code', 'in', pgrestInList(batch)))(from, to)),
+      chunkIn<DemandRow>(focusIds, (batch, from, to) => demandOf((q) => q.in('id', batch))(from, to)),
+    ]).then(([whole, focus]) => ({
+      error: whole.error ?? focus.error,
+      data: [...whole.data, ...focus.data.filter((d) => unsuppliedCodes.has(d.item_code))]
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+    }))
+    : await paginateAll<DemandRow>((from, to) => scoped(sb
+      .from('mfg_sales_order_items')
+      .select(DEMAND_SELECT)
+      .eq('cancelled', false)
+      .not('so.status', 'in', MRP_DEMAND_DONE_SQL))
+      .order('id')
+      .range(from, to));
   if (demandErr) throw new Error(`mrp_load_failed: ${demandErr.message}`);
 
   /* Undated lines (no line delivery date AND no SO delivery date) are not ready
@@ -820,7 +873,9 @@ export async function computeMrp(
     if (ownerSupplied.has(r.id)) return [];
     return projectDemandLine(r, planOf.get(r.id));
   });
-  const materialDemand = await productionMaterialDemand(sb, scoped);
+  // A production material of an unsupplied code competes for nothing, so it is left out with the code's other lines.
+  const materialDemand = (await productionMaterialDemand(sb, scoped))
+    .filter((d) => codeSet == null || (codeSet.has(d.item_code) && !unsuppliedCodes.has(d.item_code)));
   const materialWarehouseOf = await materialWarehouses(sb, scoped, materialDemand.map((d) => d.id));
   const demandActive = [...demandPlanned, ...materialDemand.map((d) => ({ ...d, warehouse_id: materialWarehouseOf.get(d.id) ?? d.warehouse_id }))];
   const isDatedLine = (r: DemandRow): boolean => deliveryOf(r) !== null;

@@ -81,6 +81,15 @@ const buildPvColumns = (): GridColumn<PaymentVoucherRow>[] => [
     sortFn: (a, b) => (a.payee_name ?? '').localeCompare(b.payee_name ?? ''),
   },
   {
+    key: 'payee_bank', label: 'Bank Account', width: 200, sortable: true,
+    accessor: (r) => (r.payee_bank
+      ? <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }} title={[r.payee_bank.bankName, r.payee_bank.accountName].filter(Boolean).join(' · ')}>{r.payee_bank.bankName} {r.payee_bank.accountNo}</span>
+      : <span style={{ color: 'var(--c-error, #b3261e)', fontSize: 12 }}>No bank details</span>),
+    searchValue: (r) => r.payee_bank?.accountNo ?? '',
+    exportValue: (r) => (r.payee_bank ? `${r.payee_bank.bankName} ${r.payee_bank.accountNo}` : ''),
+    sortFn: (a, b) => (a.payee_bank?.accountNo ?? '').localeCompare(b.payee_bank?.accountNo ?? ''),
+  },
+  {
     key: 'credit_account_code', label: 'Paid From', width: 120, sortable: true, groupable: true,
     accessor: (r) => r.credit_account_code ?? '—',
     searchValue: (r) => r.credit_account_code ?? '',
@@ -333,7 +342,7 @@ export const PaymentVouchers = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Finance"
-        title="Payment Vouchers"
+        title="Payment vouchers"
         actions={
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
             {canCreate && (

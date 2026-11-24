@@ -367,7 +367,12 @@
 
 .numCellPos { color: #2f8a5b; }
 .numCellNeg { color: #b23a3a; }
-.numCellZero { color: #9aa093; }
+.numCellZero { color: #6b7166; } /* #9aa093 was 2.68:1 on white */
+/* Inside Property OS on its dark theme the table rows turn night navy (conts/embed.css): these inks follow. */
+:global(html.conts-embedded[data-beta-skin="night"]) .numCell { color: #EEF1F8; }
+:global(html.conts-embedded[data-beta-skin="night"]) .numCellPos { color: #7FD1A8; }
+:global(html.conts-embedded[data-beta-skin="night"]) .numCellNeg { color: #FF9B90; }
+:global(html.conts-embedded[data-beta-skin="night"]) .numCellZero { color: #9AA2B4; }
 
 /* "from PO" trace under a GRN-sourced lot's SOURCE cell (display-only). Compact
    muted secondary line, matching the drawer polish (#1255). */

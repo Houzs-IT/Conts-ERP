@@ -292,6 +292,7 @@ describe('the Receipt — tick pays in full, type for partial, four layers gate'
       debtorId: 'd1',
       bankAccountCode: '310-0010',
       allocations: [{ billId: 'b1', amountSen: 10000 }],
+      idempotencyKey: expect.any(String),
     }));
   });
 

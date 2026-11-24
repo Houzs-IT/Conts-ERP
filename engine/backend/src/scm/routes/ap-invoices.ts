@@ -33,6 +33,7 @@
 
 import { checkProjectsFit, resolveLinesSub } from '../../conts/sub-departments';
 import { Hono } from 'hono';
+import { deferScmAfterCommit, runScmPgCommand } from '../lib/pg-supabase-transaction';
 import { ledgerEditSide } from '../../acc/ledger-settings';
 import { hasHouzsPerm } from '../lib/houzs-perms';
 import { activeCompanyId, companyDocPrefix, requireActiveCompanyId, scopeToCompany } from '../lib/companyScope';
@@ -48,21 +49,33 @@ import {
 } from './ap-invoice-files';
 import { supabaseAuth } from '../middleware/auth';
 import { fmtSen } from '../shared/format';
+import { duplicateBillRefusal, findDuplicateSupplierBill } from '../lib/duplicate-supplier-bill';
+import { listDuplicateSupplierBillsHandler } from './ap-duplicate-bills';
+import { afterBillSavedBestEffort, billableRequest, linkBillToRequest, releaseRequestsOfBillBestEffort } from '../../conts/request-ap-invoice';
+
+const isUniqueClash = (e: { code?: string; message?: string } | null | undefined) => !!e && (e.code === '23505' || /duplicate key/i.test(String(e.message ?? '')));
 
 type Row = Record<string, any>;
 
 const NO_PERM = (what: string) => ({ error: `You don't have permission to ${what}.` });
 
-const HEADER = 'id, company_id, invoice_number, supplier_id, supplier_invoice_ref, invoice_date, due_date, currency, exchange_rate, total_sen, paid_sen, status, notes, created_at, created_by, posted_at, posted_by, cancelled_at, cancelled_by';
-const LINE = 'id, line_no, description, debit_account_code, amount_sen, department, project_id, sub_department_id';
+const HEADER = 'id, company_id, invoice_number, supplier_id, supplier_invoice_ref, invoice_date, due_date, currency, exchange_rate, total_sen, paid_sen, status, notes, created_at, created_by, posted_at, posted_by, cancelled_at, cancelled_by, payment_request_id, provisional';
+const LINE = 'id, line_no, description, debit_account_code, amount_sen, department, project_id, sub_department_id, unit_id, source_request_line_id, item_group';
 
-/* Conts: each line's department (finance phase 1, spec 3.5); none is Supply chain. */
-type CleanLine = { description: string | null; code: string; amountSen: number; department: Department; projectId: number | null; subDepartmentId: string | null };
+/* Conts: each line's department (finance phase 1, spec 3.5); none is Supply chain. The unit, and the payment request line
+   it came from (chew, 15 Nov 2026: a request becomes an AP invoice; spec 2026-11-15-request-to-ap-invoice-design.md). */
+type CleanLine = { description: string | null; code: string; amountSen: number; department: Department; projectId: number | null; subDepartmentId: string | null; unitId: string | null; sourceRequestLineId: string | null; itemGroup: string | null };
 
-/** 1–50 lines, each with a leaf account and a positive integer sen. */
-function buildLines(raw: unknown): { lines: CleanLine[]; total: number } | { error: string; message: string } {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Lines a bill takes: 50, or as many as a utility payment request holds when the bill is made from a request (one line
+    per unit's bill, up to 500). */
+const MAX_LINES = 50;
+const MAX_REQUEST_LINES = 500;
+
+/** 1–50 lines (500 on a bill made from a payment request), each with a leaf account and a positive integer sen. */
+function buildLines(raw: unknown, maxLines = MAX_LINES): { lines: CleanLine[]; total: number } | { error: string; message: string } {
   const arr = Array.isArray(raw) ? raw : [];
-  if (arr.length === 0 || arr.length > 50) return { error: 'lines_required', message: 'An AP invoice takes 1 to 50 lines.' };
+  if (arr.length === 0 || arr.length > maxLines) return { error: 'lines_required', message: `An AP invoice takes 1 to ${maxLines} lines.` };
   const lines: CleanLine[] = [];
   for (const [i, l] of arr.entries()) {
     const code = String(l?.debitAccountCode ?? '').trim();
@@ -77,9 +90,15 @@ function buildLines(raw: unknown): { lines: CleanLine[]; total: number } | { err
     /* The project a cost belongs to (a renovation subcontractor's bill): blank = none. */
     const project = l?.projectId == null || l.projectId === '' ? null : Number(l.projectId);
     if (project != null && !Number.isSafeInteger(project)) return { error: 'bad_line', message: `Line ${i + 1}: choose the project from the list.` };
+    const unitId = l?.unitId == null || String(l.unitId).trim() === '' ? null : String(l.unitId).trim().slice(0, 80);
+    const source = l?.sourceRequestLineId && UUID.test(String(l.sourceRequestLineId)) ? String(l.sourceRequestLineId).toLowerCase() : null;
+    /* The stock group the line buys (chew, 18 Nov 2026), blank for none: a group code, as the item groups page names it. */
+    const group = String(l?.itemGroup ?? '').trim().toUpperCase();
+    if (group && !/^[A-Z0-9_]{1,40}$/.test(group)) return { error: 'bad_line', message: `Line ${i + 1}: choose the stock group from the list.` };
     lines.push({
       description: l?.description ? String(l.description).trim() : null, code, amountSen: amount,
       department: isDepartment(l?.department) ? l.department : DEFAULT_DEPARTMENT, projectId: project, subDepartmentId: null,
+      unitId, sourceRequestLineId: source, itemGroup: group || null,
     });
   }
   return { lines, total: lines.reduce((s, l) => s + l.amountSen, 0) };
@@ -179,6 +198,8 @@ function shape(kind: 'API' | 'PI', r: Row): Row {
     paidSen: paid,
     outstandingSen: Math.max(0, total - paid),
     status: String(r.status ?? ''),
+    /* A quotation booked before its formal invoice (chew, 15 Nov 2026; SOP 3.8). */
+    provisional: r.provisional === true,
   };
 }
 
@@ -193,7 +214,11 @@ export const apInvoiceDetailHandler = async (c: any): Promise<Response> => {
   ]);
   if (lines.error) return c.json({ error: 'load_failed', reason: lines.error.message }, 500);
   if (sup.error) return c.json({ error: 'load_failed', reason: sup.error.message }, 500);
-  return c.json({ invoice: found.inv, lines: lines.data ?? [], supplier: sup.data ?? null });
+  /* The payment requests paid through it: the one it was made from, and a deposit's balance (chew, 15 Nov 2026). */
+  const { data: reqs } = await sb.from('payment_requests').select('id, request_no, type, status, amount_sen, parent_request_id')
+    .eq('company_id', found.inv.company_id).eq('ap_invoice_id', found.inv.id);
+  const requests = ((reqs ?? []) as Row[]).map((r) => ({ id: r.id, requestNo: r.request_no, type: r.type, status: r.status, amountSen: Number(r.amount_sen), balance: !!r.parent_request_id }));
+  return c.json({ invoice: found.inv, lines: lines.data ?? [], supplier: sup.data ?? null, requests });
 };
 
 /* ── POST / — raise a DRAFT ──────────────────────────────────────────────── */
@@ -201,10 +226,36 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
   if (!hasHouzsPerm(c, 'scm.payment_voucher.create') && !hasHouzsPerm(c, 'scm.payment_voucher.write')) {
     return c.json(NO_PERM('raise an AP invoice'), 403);
   }
-  const co = requireActiveCompanyId(c);
-  if (!co.ok) return c.json(co.refusal, 409);
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  /* Conts (chew, 16 Nov 2026): the New AP invoice form opened from a payment request names it; the bill is checked to be
+     one the request may have, made, and the request takes it (conts/request-ap-invoice.ts). */
+  const requestId = typeof body?.paymentRequestId === 'string' ? body.paymentRequestId.trim() : '';
+  if (!requestId) return createApInvoiceCore(c, body);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const got = await billableRequest(c, sb, co.companyId, requestId);
+  if (!got.ok) return got.res;
+  const made = await createApInvoiceCore(c, body, { paymentRequestId: requestId });
+  if (made.status !== 201) return made;
+  const json = (await made.clone().json()) as { invoice: { id: string; supplier_id: string } };
+  const refused = await linkBillToRequest(c, sb, co.companyId, got.r, json.invoice);
+  if (refused) return refused;
+  /* What finance changed on the form (amounts, lines) the request follows, as on any save of the bill. */
+  await afterBillSavedBestEffort(sb, json.invoice.id);
+  return made;
+};
+
+/** Raise a DRAFT bill from `body` (the POST / fields). `from` is set only by the engine itself: a bill made from a
+    payment request (conts/request-ap-invoice.ts) names it, and takes as many lines as the request has. */
+export async function createApInvoiceCore(c: any, body: any, from: { paymentRequestId?: string } = {}): Promise<Response> {
+  if (!hasHouzsPerm(c, 'scm.payment_voucher.create') && !hasHouzsPerm(c, 'scm.payment_voucher.write')) {
+    return c.json(NO_PERM('raise an AP invoice'), 403);
+  }
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  if (!body || typeof body !== 'object') return c.json({ error: 'invalid_json' }, 400);
 
   const supplierId = String(body.supplierId ?? '').trim();
   if (!supplierId) return c.json({ error: 'supplier_required', message: 'Pick the supplier this bill is from.' }, 400);
@@ -212,7 +263,7 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
   if (currency !== 'MYR') {
     return c.json({ error: 'currency_unsupported', message: 'AP invoices are MYR in this first cut — a foreign bill goes through a purchase invoice, which carries the rate.' }, 400);
   }
-  const built = buildLines(body.lines);
+  const built = buildLines(body.lines, from.paymentRequestId ? MAX_REQUEST_LINES : MAX_LINES);
   if ('error' in built) return c.json({ error: built.error, message: built.message }, 400);
   const badSub = await subRefusal(c, co.companyId, built.lines, body.lines);
   if (badSub) return badSub;
@@ -231,6 +282,13 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
   }
 
   const sb = c.get('supabase');
+  /* One supplier bill is owed once (ported from Houzs): a live bill of this supplier with the same bill number refuses,
+     naming it. A quotation and a formal invoice never pair (lib/duplicate-supplier-bill.ts). */
+  {
+    const dup = await findDuplicateSupplierBill(sb, 'ap_invoices', { companyId: co.companyId, supplierId: String(sup.supplier.id), ref: body.supplierInvoiceRef, excludeId: null, quotation: body.provisional === true });
+    if (!dup.ok) return c.json({ error: 'lookup_failed', reason: dup.reason }, 500);
+    if (dup.duplicate) return c.json(duplicateBillRefusal(body.supplierInvoiceRef, dup.duplicate), 409);
+  }
   const invoiceNumber = await mintMonthlyDocNo(sb, 'ap_invoices', 'invoice_number', `${companyDocPrefix(c)}API-${docMonthTag(invoiceDate)}`);
   const { data: inv, error: insErr } = await sb.from('ap_invoices').insert({
     company_id: co.companyId,
@@ -246,7 +304,12 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
     status: 'DRAFT',
     notes: body.notes ? String(body.notes).trim() : null,
     created_by: String(c.get('user')?.id ?? ''),
+    provisional: body.provisional === true,
+    ...(from.paymentRequestId ? { payment_request_id: from.paymentRequestId } : {}),
   }).select(HEADER).single();
+  if (insErr && from.paymentRequestId && isUniqueClash(insErr)) {
+    return c.json({ error: 'bill_exists', message: 'This request already has an AP invoice.' }, 409);
+  }
   if (insErr || !inv) return c.json({ error: 'save_failed', reason: insErr?.message ?? 'insert returned nothing' }, 500);
 
   const { error: lineErr } = await sb.from('ap_invoice_lines').insert(built.lines.map((l, i) => ({
@@ -259,6 +322,9 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
     department: l.department,
     project_id: l.projectId,
     ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
+    unit_id: l.unitId,
+    source_request_line_id: l.sourceRequestLineId,
+    ...(l.itemGroup ? { item_group: l.itemGroup } : {}),
   })));
   if (lineErr) {
     await sb.from('ap_invoices').delete().eq('company_id', co.companyId).eq('id', (inv as Row).id);
@@ -274,7 +340,7 @@ export const createApInvoiceHandler = async (c: any): Promise<Response> => {
     lines: built.lines.map((l, i) => ({ line_no: i + 1, debit_account_code: l.code })),
   });
   return c.json({ ok: true, invoice: inv }, 201);
-};
+}
 
 /* ── PATCH /:id — every field may change (owner 2026-09-06: edit 这个不能全部
    都设成可以改吗). A DRAFT simply changes. A POSTED bill RE-POSTS: the
@@ -318,6 +384,17 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
   if (body.invoiceDate !== undefined) patch.invoice_date = dateOrNull(body.invoiceDate) ?? inv.invoice_date;
   if (body.dueDate !== undefined) patch.due_date = dateOrNull(body.dueDate);
   if (body.notes !== undefined) patch.notes = body.notes ? String(body.notes).trim() : null;
+  /* Quotation → formal invoice: unticked when the formal invoice replaces it (chew, 15 Nov 2026). */
+  if (body.provisional !== undefined) patch.provisional = body.provisional === true;
+  /* The bill as it will read: its supplier, number and kind (a quotation turned into its formal invoice is checked as
+     a formal invoice, never against itself). Checked before the first write. */
+  if (patch.supplier_id !== undefined || patch.supplier_invoice_ref !== undefined || patch.provisional !== undefined) {
+    const ref = patch.supplier_invoice_ref !== undefined ? patch.supplier_invoice_ref : inv.supplier_invoice_ref;
+    const quotation = patch.provisional !== undefined ? patch.provisional === true : inv.provisional === true;
+    const dup = await findDuplicateSupplierBill(sb, 'ap_invoices', { companyId: co.companyId, supplierId: String(patch.supplier_id ?? inv.supplier_id), ref, excludeId: String(inv.id), quotation });
+    if (!dup.ok) return c.json({ error: 'lookup_failed', reason: dup.reason }, 500);
+    if (dup.duplicate) return c.json(duplicateBillRefusal(ref, dup.duplicate), 409);
+  }
   /* A posted bill is not moved across the ledger start; before it, the books
      stay as they were (Conts). Checked before the first write. */
   let side: 'after' | 'before' = 'after';
@@ -329,7 +406,7 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
   }
   let rebuilt: { lines: CleanLine[]; total: number } | null = null;
   if (body.lines !== undefined) {
-    const built = buildLines(body.lines);
+    const built = buildLines(body.lines, inv.payment_request_id ? MAX_REQUEST_LINES : MAX_LINES);
     if ('error' in built) return c.json({ error: built.error, message: built.message }, 400);
     const { data: hadSubs } = await sb.from('ap_invoice_lines').select('line_no, sub_department_id').eq('company_id', co.companyId).eq('invoice_id', inv.id).order('line_no');
     const badSub = await subRefusal(c, co.companyId, built.lines, body.lines, ((hadSubs ?? []) as Array<{ sub_department_id?: string | null }>).map((h) => h.sub_department_id ?? null));
@@ -343,13 +420,6 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
       const leafErr = await requireLeafAccount(c, co.companyId, code);
       if (leafErr) return leafErr;
     }
-    await sb.from('ap_invoice_lines').delete().eq('company_id', co.companyId).eq('invoice_id', inv.id);
-    const { error: lineErr } = await sb.from('ap_invoice_lines').insert(built.lines.map((l, i) => ({
-      company_id: co.companyId, invoice_id: inv.id, line_no: i + 1,
-      description: l.description, debit_account_code: l.code, amount_sen: l.amountSen, department: l.department, project_id: l.projectId,
-      ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
-    })));
-    if (lineErr) return c.json({ error: 'save_failed', reason: lineErr.message }, 500);
     patch.total_sen = built.total;
     rebuilt = built;
   }
@@ -357,40 +427,63 @@ export const updateApInvoiceHandler = async (c: any): Promise<Response> => {
     const newTotal = rebuilt ? rebuilt.total : Number(inv.total_sen ?? 0);
     patch.status = newTotal <= paid ? 'PAID' : paid > 0 ? 'PARTIALLY_PAID' : 'POSTED';
   }
-  const { data, error } = await sb.from('ap_invoices').update(patch).eq('company_id', co.companyId).eq('id', inv.id).select(HEADER).maybeSingle();
-  if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
-  if (!posted) return c.json({ ok: true, invoice: data });
-  if (side === 'before') return c.json({ ok: true, invoice: data, reposted: false });
+  /* D4 (#1126): the lines, the header and the ledger re-post commit together or not at all. Before, the old lines
+     were deleted and the new ones inserted, then the header, then contra and re-post, each on its own: a failure
+     part-way left a bill whose lines, total and journal disagreed, and nothing put it right. */
+  return runScmPgCommand(c, async (tx) => {
+    if (rebuilt) {
+      await tx.from('ap_invoice_lines').delete().eq('company_id', co.companyId).eq('invoice_id', inv.id);
+      await tx.from('ap_invoice_lines').insert(rebuilt.lines.map((l, i) => ({
+        company_id: co.companyId, invoice_id: inv.id, line_no: i + 1,
+        description: l.description, debit_account_code: l.code, amount_sen: l.amountSen, department: l.department, project_id: l.projectId,
+        ...(l.subDepartmentId ? { sub_department_id: l.subDepartmentId } : {}),
+        unit_id: l.unitId, source_request_line_id: l.sourceRequestLineId,
+        ...(l.itemGroup ? { item_group: l.itemGroup } : {}),
+      })));
+    }
+    /* Compare-and-set on what the checks above read: a voucher settling this bill, or a cancel, since then makes the
+       edit refuse rather than write a status and total computed from a stale paid figure. */
+    const { data, error } = await tx.from('ap_invoices').update(patch)
+      .eq('company_id', co.companyId).eq('id', inv.id).eq('paid_sen', paid).neq('status', 'CANCELLED')
+      .select(HEADER).maybeSingle();
+    if (error) return c.json({ error: 'save_failed', reason: error.message }, 500);
+    if (!data) return c.json({ error: 'changed', message: `${String(inv.invoice_number)} was paid or cancelled while you were editing it. Reload and try again.` }, 409);
+    /* The request it was made from follows the bill; every request paid through it settles again (a new total may make
+       it paid). Conts, chew 15 Nov 2026. After the commit, so it reads the saved bill. */
+    deferScmAfterCommit(c, () => afterBillSavedBestEffort(sb, inv.id));
+    if (!posted) return c.json({ ok: true, invoice: data });
+    if (side === 'before') return c.json({ ok: true, invoice: data, reposted: false });
 
-  /* The re-post: contra the entry the old bill wrote, then book the bill as
-     it now reads — through the one gate, so numbering and the one-active-
-     entry rule hold exactly as on the first post. */
-  const after = (data ?? inv) as Row;
-  const rev = await reverseJournal(sb, {
-    sourceType: 'API',
-    sourceDocNo: String(inv.invoice_number),
-    companyId: co.companyId,
-    narration: (orig) => `Reversal of ${orig.je_no} — AP invoice ${inv.invoice_number} edited`,
-    entryDate: oldDate,
+    /* The re-post: contra the entry the old bill wrote, then book the bill as
+       it now reads — through the one gate, so numbering and the one-active-
+       entry rule hold exactly as on the first post. */
+    const after = (data ?? inv) as Row;
+    const rev = await reverseJournal(tx, {
+      sourceType: 'API',
+      sourceDocNo: String(inv.invoice_number),
+      companyId: co.companyId,
+      narration: (orig) => `Reversal of ${orig.je_no} — AP invoice ${inv.invoice_number} edited`,
+      entryDate: oldDate,
+    });
+    if (!rev.ok) return c.json({ error: 'reverse_failed', status: rev.status, reason: (rev as { reason?: string }).reason ?? rev.status }, 500);
+    const sup = await loadSupplier(c, String(after.supplier_id));
+    if ('resp' in sup) return sup.resp;
+    const { data: lineRows, error: lErr } = await scopeToCompany(tx.from('ap_invoice_lines').select(LINE).eq('invoice_id', inv.id), c).order('line_no');
+    if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
+    const lines = (lineRows ?? []) as Array<{ description: string | null; debit_account_code: string; amount_sen: number; department?: string | null; project_id?: number | null; sub_department_id?: string | null }>;
+    const roles = await resolveRoles(tx, co.companyId);
+    const je = await postJournal(tx, {
+      companyId: co.companyId,
+      entryDate: String(after.invoice_date),
+      sourceType: 'API',
+      sourceDocNo: String(inv.invoice_number),
+      narration: `AP invoice ${inv.invoice_number} — ${sup.supplier.name ?? sup.supplier.code ?? 'supplier'}${after.supplier_invoice_ref ? ` (${after.supplier_invoice_ref})` : ''} — edited`,
+      lines: apInvoiceLines(roles, { invoice_number: String(inv.invoice_number) }, sup.supplier,
+        lines.map((l) => ({ accountCode: l.debit_account_code, myrSen: Number(l.amount_sen), description: l.description, department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, projectId: l.project_id ?? null, subDepartmentId: l.sub_department_id ?? null }))),
+    });
+    if (!je.ok) return c.json({ error: 'post_failed', status: je.status, reason: (je as { reason?: string }).reason ?? je.status }, 500);
+    return c.json({ ok: true, invoice: after, reposted: true, jeNo: je.jeNo });
   });
-  if (!rev.ok) return c.json({ error: 'reverse_failed', status: rev.status, reason: (rev as { reason?: string }).reason ?? rev.status }, 500);
-  const sup = await loadSupplier(c, String(after.supplier_id));
-  if ('resp' in sup) return sup.resp;
-  const { data: lineRows, error: lErr } = await scopeToCompany(sb.from('ap_invoice_lines').select(LINE).eq('invoice_id', inv.id), c).order('line_no');
-  if (lErr) return c.json({ error: 'load_failed', reason: lErr.message }, 500);
-  const lines = (lineRows ?? []) as Array<{ description: string | null; debit_account_code: string; amount_sen: number; department?: string | null; project_id?: number | null; sub_department_id?: string | null }>;
-  const roles = await resolveRoles(sb, co.companyId);
-  const je = await postJournal(sb, {
-    companyId: co.companyId,
-    entryDate: String(after.invoice_date),
-    sourceType: 'API',
-    sourceDocNo: String(inv.invoice_number),
-    narration: `AP invoice ${inv.invoice_number} — ${sup.supplier.name ?? sup.supplier.code ?? 'supplier'}${after.supplier_invoice_ref ? ` (${after.supplier_invoice_ref})` : ''} — edited`,
-    lines: apInvoiceLines(roles, { invoice_number: String(inv.invoice_number) }, sup.supplier,
-      lines.map((l) => ({ accountCode: l.debit_account_code, myrSen: Number(l.amount_sen), description: l.description, department: isDepartment(l.department) ? l.department : DEFAULT_DEPARTMENT, projectId: l.project_id ?? null, subDepartmentId: l.sub_department_id ?? null }))),
-  });
-  if (!je.ok) return c.json({ error: 'post_failed', status: je.status, reason: (je as { reason?: string }).reason ?? je.status }, 500);
-  return c.json({ ok: true, invoice: after, reposted: true, jeNo: je.jeNo });
 };
 
 /* ── POST /:id/post — into the ledger, once ──────────────────────────────── */
@@ -458,6 +551,8 @@ export const cancelApInvoiceHandler = async (c: any): Promise<Response> => {
     status: 'CANCELLED', cancelled_at: new Date().toISOString(), cancelled_by: String(c.get('houzsUser')?.name ?? c.get('user')?.id ?? ''), updated_at: new Date().toISOString(),
   }).eq('company_id', co.companyId).eq('id', inv.id);
   if (upErr) return c.json({ error: 'save_failed', reason: upErr.message }, 500);
+  /* The requests paid through it are let go: they are paid by their own vouchers again, or get a new bill. */
+  await releaseRequestsOfBillBestEffort(sb, inv.id);
   return c.json({ ok: true });
 };
 
@@ -468,6 +563,8 @@ export const apInvoices = new Hono();
 apInvoices.use('*', supabaseAuth);
 apInvoices.get('/', listApInvoicesHandler);
 apInvoices.post('/', createApInvoiceHandler);
+/* Before /:id, so the detail matcher never takes it. */
+apInvoices.get('/duplicate-bills', listDuplicateSupplierBillsHandler);
 /* Files before /:id, as the PV mounts them — the evidence paths never fall
    into the detail matcher. */
 apInvoices.post('/:id/files', uploadApInvoiceFileHandler);

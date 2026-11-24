@@ -41,7 +41,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (onePeriod) { where.push('s.period_start = ?'); args.push(`${onePeriod}-01`); }
   if (state) { where.push('s.state = ?'); args.push(state); }
   if (q) {
-    where.push(`(o.display_name ILIKE ? OR EXISTS (SELECT 1 FROM units u JOIN properties p ON p.id = u.property_id WHERE u.owner_id = s.owner_id AND (p.name || ' ' || u.unit_number) ILIKE ?))`);
+    where.push(`(o.display_name ILIKE ? OR EXISTS (SELECT 1 FROM units u JOIN properties p ON p.id = u.property_id WHERE u.owner_id = s.owner_id AND (p.name || ' ' || concat_ws(' ', u.unit_number, u.unit_code)) ILIKE ?))`);
     const like = `%${q.replace(/[%_\\]/g, m => '\\' + m)}%`;
     args.push(like, like);
   }
@@ -51,7 +51,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const [rows, totals] = await Promise.all([
     all<any>(env, `
       SELECT s.*, o.display_name,
-             (SELECT string_agg(p.name || ' ' || u.unit_number, ', ' ORDER BY p.name, u.unit_number)
+             (SELECT string_agg(p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number), ', ' ORDER BY p.name, u.unit_number)
               FROM units u JOIN properties p ON p.id = u.property_id
               WHERE u.owner_id = s.owner_id) AS units_label
       FROM owner_statements s

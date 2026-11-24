@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMfgProducts, matchesProductQuery, type MfgCategory, type MfgProductRow } from "../vendor/scm/lib/mfg-products-queries";
+import { useMfgProductSearch, type MfgCategory, type MfgProductRow } from "../vendor/scm/lib/mfg-products-queries";
 import "./mobile.css";
 import { useCategoryOptions } from "../vendor/scm/lib/renovation-catalog-queries";
-import { categoryMatches } from "../vendor/shared/renovation-catalog";
 
 /* Perf cap (parity with SalesOrderNewFromProducts, PR #342) — never render more
    than this many rows at once. The full active catalog is ~1141 SKUs; painting
@@ -13,7 +12,7 @@ const RENDER_CAP = 60;
 /* ---------------------------------------------------------------------------
  * MobileSkuPicker — searchable bottom-sheet SKU catalog picker for the mobile
  * Sales Order line editor. Queries the REAL catalog through
- * useMfgProducts({ category, search }) (GET /mfg-products), so a tapped row
+ * useMfgProductSearch({ category, search }) (GET /mfg-products?limit=), so a tapped row
  * seeds the line with a genuine item_code + item_group + name (+ the catalog
  * selling price, which still BINDS on tap to default the line's unit price —
  * it is just no longer displayed here; Owner 2026-07-16: "amount 不需要").
@@ -81,31 +80,18 @@ export function MobileSkuPicker({
      SKU) so "Add N products" hands back selections in the order tapped. */
   const [picked, setPicked] = useState<Array<{ id: string; sku: PickedSku }>>([]);
 
-  // Load the full catalog ONCE and filter it LOCALLY. This uses the SAME cache
-  // key as the desktop picker (['mfg-products', company, 'all', '', '']), so the
-  // list is fetched at most once per company and the sheet no longer fires a
-  // `/mfg-products?search=` request per keystroke — typing stays responsive even
-  // while the Worker is slow or dropping connections (owner 2026-09-23: "product
-  // code search slow"). The gate still governs what we SHOW: below >=2 chars and
-  // no category chip we prompt instead of listing arbitrary rows, and RENDER_CAP
-  // still bounds the DOM so a wide match can't freeze the sheet.
+  // The server searches (audit 20 Nov 2026): the sheet asks for the first RENDER_CAP active SKUs matching the search
+  // and the category chip, instead of loading the whole catalogue (2,291 SKUs) to filter here. Below 2 characters
+  // and no category chip it still prompts instead of listing arbitrary rows.
   const trimmedSearch = search.trim();
   const gateOpen = trimmedSearch.length >= 2 || cat !== "";
-  const productsQ = useMfgProducts({ enabled: true });
-
-  const rows = useMemo<MfgProductRow[]>(() => {
-    if (!gateOpen) return [];
-    return (productsQ.data ?? []).filter(
-      (p) =>
-        p.status !== "INACTIVE" &&
-        (!cat || categoryMatches(p.category, cat)) &&
-        (trimmedSearch.length < 2 || matchesProductQuery(p, trimmedSearch)),
-    );
-  }, [productsQ.data, gateOpen, cat, trimmedSearch]);
-  // Cap the DOM to RENDER_CAP rows so an "All / no search" set can't freeze the
-  // sheet; the hint below tells the operator to narrow when rows are hidden.
-  const shown = useMemo(() => rows.slice(0, RENDER_CAP), [rows]);
-  const hiddenCount = rows.length - shown.length;
+  const productsQ = useMfgProductSearch({ search: trimmedSearch, category: cat, limit: RENDER_CAP });
+  const shown = useMemo<MfgProductRow[]>(
+    () => (gateOpen ? (productsQ.data?.products ?? []) : []),
+    [productsQ.data, gateOpen],
+  );
+  const rows = shown;
+  const hasMore = gateOpen && !!productsQ.data?.more;
 
   return (
     <div className="sheet-bd" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -217,9 +203,9 @@ export function MobileSkuPicker({
                 </button>
               );
             })}
-            {hiddenCount > 0 && (
+            {hasMore && (
               <div style={{ textAlign: "center", color: "#9aa093", fontSize: 11, padding: "10px 0 4px" }}>
-                Showing the first {RENDER_CAP} of {rows.length} products — narrow by search or category.
+                Showing the first {RENDER_CAP} products — narrow by search or category.
               </div>
             )}
             </>

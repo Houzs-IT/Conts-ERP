@@ -172,7 +172,25 @@ describe("Projects module — smoke pack", () => {
     expect(created.status).toBe(201);
     const id = created.json.id;
 
-    const archived = await api("POST", `/api/projects/${id}/archive`, adminBearer);
+    /* The live-document guard (67c33f4b, 7 Nov 2026) reads scm.* with
+       Postgres casts (status::text) that this D1 harness cannot parse. The
+       project here has no documents at all, so answer that one read with "no
+       live documents" and let every other statement reach D1 unchanged. */
+    const realPrepare = env.DB.prepare.bind(env.DB);
+    const liveDocsRead = /FROM scm\.mfg_sales_orders WHERE project_id = \?/;
+    let liveDocsAsked = 0;
+    (env.DB as { prepare: unknown }).prepare = (sql: string) => {
+      if (!liveDocsRead.test(sql)) return realPrepare(sql);
+      liveDocsAsked++;
+      return realPrepare("SELECT doc_no AS no FROM (SELECT NULL AS doc_no) WHERE 0 AND ? AND ? AND ?");
+    };
+    let archived: Awaited<ReturnType<typeof api>>;
+    try {
+      archived = await api("POST", `/api/projects/${id}/archive`, adminBearer);
+    } finally {
+      (env.DB as { prepare: unknown }).prepare = realPrepare;
+    }
+    expect(liveDocsAsked).toBe(1);
     expect(archived.status).toBeLessThan(400);
 
     const row = await env.DB.prepare(

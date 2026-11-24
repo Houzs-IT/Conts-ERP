@@ -28,25 +28,9 @@ describe("renoPoCategoryRefusal", () => {
 });
 
 describe("renoPoCategoryClashes", () => {
-  it("names a new line of another category before Save", () => {
-    const out = renoPoCategoryClashes(info(), [{ rid: "a", itemCode: "TILE-1" }, { rid: "b", itemCode: "SOFA-1" }], groupOf);
-    expect([...out.keys()]).toEqual(["b"]);
-    expect(out.get("b")).toContain("this PO is Works, the line SOFA-1 is Furniture");
-  });
-
-  it("takes the category from the first new line when the PO has none yet", () => {
-    const out = renoPoCategoryClashes(info({ categoryGroup: "" }), [{ rid: "a", itemCode: "LAMP-1" }, { rid: "b", itemCode: "TILE-1" }], groupOf);
-    expect(out.get("b")).toContain("this PO is Lighting");
-  });
-
-  it("uses a line saved earlier on the page when the PO's own category was not read yet", () => {
-    const out = renoPoCategoryClashes(info({ categoryGroup: "" }), [{ rid: "a", itemId: "x", itemCode: "SOFA-1" }, { rid: "b", itemCode: "TILE-1" }], groupOf);
-    expect(out.get("b")).toContain("this PO is Furniture");
-  });
-
-  it("never checks a PO without a project, or lines already saved", () => {
-    expect(renoPoCategoryClashes(info({ projectId: null }), [{ rid: "b", itemCode: "SOFA-1" }], groupOf).size).toBe(0);
+  it("holds no line back: a PO may mix categories (owner, 19 Nov 2026)", () => {
+    expect(renoPoCategoryClashes(info(), [{ rid: "a", itemCode: "TILE-1" }, { rid: "b", itemCode: "SOFA-1" }], groupOf).size).toBe(0);
+    expect(renoPoCategoryClashes(info({ categoryGroup: "" }), [{ rid: "a", itemCode: "LAMP-1" }, { rid: "b", itemCode: "TILE-1" }], groupOf).size).toBe(0);
     expect(renoPoCategoryClashes(null, [{ rid: "b", itemCode: "SOFA-1" }], groupOf).size).toBe(0);
-    expect(renoPoCategoryClashes(info(), [{ rid: "b", itemId: "y", itemCode: "SOFA-1" }], groupOf).size).toBe(0);
   });
 });

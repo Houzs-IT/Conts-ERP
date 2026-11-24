@@ -35,7 +35,7 @@ export const mytDay = (at: string | null | undefined) => {
   return Number.isNaN(t) ? mytToday() : new Date(t + 8 * 3600e3).toISOString().slice(0, 10);
 };
 
-export const hasServicePrices = (env: Env) => hasColumn(env, 'service_items', 'domain').catch(() => false);
+export const hasServicePrices = (env: Env) => hasColumn(env, 'service_items', 'domain');
 
 export interface ServiceItem { id: string; code: string; name: string; domain: string; category: string; unit_label: string; clean_kind: string | null; by_layout: number; by_bed?: number; active: number }
 export interface PriceRow { id: string; item_id: string; layout: string; effective_from: string; owner_price: number | null; internal_cost: number | null; guest_price?: number | null }
@@ -44,16 +44,16 @@ export interface Amounts { owner: number | null; internal: number | null; guest:
 const NONE: Amounts = { owner: null, internal: null, guest: null, source: null, itemId: null, effectiveFrom: null };
 
 /** Migration 0257: the guest's cleaning fee, on the price list and on a unit's own prices (chew, 10 Nov 2026). */
-export const hasGuestPrices = (env: Env): Promise<boolean> => hasColumn(env, 'service_item_prices', 'guest_price').catch(() => false);
+export const hasGuestPrices = (env: Env): Promise<boolean> => hasColumn(env, 'service_item_prices', 'guest_price');
 
 /** Migration 0186: a unit's own prices take a date. A row from before it applies "from the start". */
-export const hasDatedUnitPrices = (env: Env) => hasColumn(env, 'unit_service_prices', 'effective_from').catch(() => false);
+export const hasDatedUnitPrices = (env: Env) => hasColumn(env, 'unit_service_prices', 'effective_from');
 export const FROM_THE_START = '2000-01-01';
 
-export const hasPriceByBed = (env: Env): Promise<boolean> => hasColumn(env, 'service_items', 'by_bed').catch(() => false);
+export const hasPriceByBed = (env: Env): Promise<boolean> => hasColumn(env, 'service_items', 'by_bed');
 
 async function loadUnitBeds(env: Env, unitIds: string[]): Promise<Map<string, BedCount[]>> {
-  if (!(await hasColumn(env, 'units', 'beds').catch(() => false))) return new Map();
+  if (!(await hasColumn(env, 'units', 'beds'))) return new Map();
   const rows = await all<{ id: string; beds: string | null }>(env,
     'SELECT id, beds::text AS beds FROM units WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))', JSON.stringify(unitIds));
   return new Map(rows.map(row => [row.id, parseBeds(row.beds)]));

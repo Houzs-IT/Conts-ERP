@@ -458,7 +458,7 @@ function DetailDrawer({
                 <XIcon size={18} />
               </button>
               <div className="min-w-0 flex-1">
-                <div className="font-mono text-[14px] font-bold tracking-wide">
+                <div className="truncate whitespace-nowrap font-mono text-[14px] font-bold tracking-wide">
                   {row.return_number}
                 </div>
                 <div className="mt-0.5 text-[11px] text-sidebar-ink-muted">Delivery Return</div>
@@ -468,7 +468,7 @@ function DetailDrawer({
                 onClick={onOpenFull}
                 className="inline-flex items-center gap-1.5 rounded-md border border-accent-bright/40 px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-bright hover:bg-accent-bright/10"
               >
-                Open full page <ExternalLink size={12} />
+                <span className="hidden sm:inline">Open full page</span> <ExternalLink size={12} aria-label="Open full page" />
               </button>
               <Badge tone={st.tone} variant="solid" size="xs">
                 {st.label}
@@ -845,8 +845,9 @@ export function DeliveryReturnsListV2() {
     let pendingCount = 0;
     let refundedCount = 0;
     for (const r of filtered) {
-      refundSen += r.local_total_sen ?? 0;
       const b = statusFor(r.status).bucket;
+      /* A cancelled return refunds nothing (click sweep 2, G9). */
+      if (b !== "cancelled") refundSen += r.local_total_sen ?? 0;
       if (b === "open" || b === "inspected") pendingCount += 1;
       if (b === "refunded") refundedCount += 1;
     }
@@ -1489,7 +1490,7 @@ export function DeliveryReturnsListV2() {
       <div className="mb-3 flex items-start justify-between gap-3 md:hidden">
         <div className="min-w-0">
           <h1 className="font-display text-[22px] font-extrabold leading-tight tracking-tight text-ink">
-            Delivery Returns
+            Delivery returns
           </h1>
           <div className="mt-0.5 text-[12.5px] text-ink-muted">
             {stats.total} return{stats.total === 1 ? "" : "s"} ·{" "}
@@ -1503,7 +1504,7 @@ export function DeliveryReturnsListV2() {
         <div className="px-4 sm:px-6">
           <PageHeader
             eyebrow="Sales"
-            title="Delivery Returns"
+            title="Delivery returns"
             description="Goods returned by customers — Open to Refunded. Click any row for the quick view; open the full page to edit."
             primaryAction={
               <div className="flex items-stretch gap-2">

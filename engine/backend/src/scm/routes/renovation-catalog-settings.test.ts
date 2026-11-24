@@ -1,5 +1,5 @@
 /* Sub-category settings (Products > SKU Master > Sub-categories): what can be
- * added, renamed and hidden, and what stays fixed (the Works trades and the site-trade services, the rows
+ * added, renamed and hidden, and what stays fixed (the site-trade services, the rows
  * old Houzs categories map through, the last shown one of a group). */
 import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
@@ -85,11 +85,27 @@ describe('sub-category settings', () => {
     sb.tables.product_sub_categories = sb.tables.product_sub_categories.filter((r) => r.code !== 'ROMAN_BLINDS');
   });
 
-  it('refuses a name that already exists, and anything under Works', async () => {
+  it('refuses a name that already exists', async () => {
     expect((await send('POST', '/sub-categories', { group: 'SERVICE', label: 'delivery' })).status).toBe(409);
     expect((await send('POST', '/sub-categories', { group: 'SERVICE', label: 'Sofa' })).status).toBe(409);
-    expect((await send('POST', '/sub-categories', { group: 'WORKS', label: 'Roofing' })).status).toBe(400);
-    expect((await send('PATCH', '/sub-categories/HACKING', { label: 'Demolition' })).status).toBe(400);
+    expect((await send('POST', '/sub-categories', { group: 'WORKS', label: 'hacking' })).status).toBe(409);
+  });
+
+  it('refuses a Works trade named like a site task category', async () => {
+    const carpentry = await send('POST', '/sub-categories', { group: 'WORKS', label: 'Carpentry' });
+    expect(carpentry.status).toBe(409);
+    expect(await carpentry.json()).toMatchObject({ error: 'task_category_taken' });
+    expect(sb.tables.product_sub_categories.some((r) => r.code === 'CARPENTRY')).toBe(false);
+  });
+
+  it('adds and renames Works trades', async () => {
+    const added = await send('POST', '/sub-categories', { group: 'WORKS', label: 'Roofing' });
+    expect(added.status).toBe(201);
+    expect(await added.json()).toMatchObject({ code: 'ROOFING' });
+    expect((await send('PATCH', '/sub-categories/HACKING', { label: 'Demolition' })).status).toBe(200);
+    expect(sb.tables.product_sub_categories.find((r) => r.code === 'ROOFING')).toMatchObject({ group_code: 'WORKS', sort_order: 30 });
+    sb.tables.product_sub_categories = sb.tables.product_sub_categories.filter((r) => r.code !== 'ROOFING');
+    await send('PATCH', '/sub-categories/HACKING', { label: 'Hacking' });
   });
 
   it('the site-trade services filed under Service (cleaning, aircon install, project management) stay fixed', async () => {
@@ -188,3 +204,25 @@ describe('unit settings', () => {
 });
 
 const GET_list = (j: { uoms: { code: string }[] }) => j.uoms.map((u) => u.code);
+
+describe('group settings', () => {
+  it('renames, reorders and hides a group; the list reads it back', async () => {
+    expect((await send('PATCH', '/groups/WORKS', { label: ' Site  works ', sortOrder: 80 })).status).toBe(200);
+    expect((await send('PATCH', '/groups/SERVICE', { active: false })).status).toBe(200);
+    const j = (await (await app().request('/')).json()) as { groups: unknown[] };
+    expect(j.groups).toEqual(expect.arrayContaining([
+      { code: 'WORKS', label: 'Site works', sort_order: 80, active: true },
+      { code: 'SERVICE', label: 'Service', sort_order: 70, active: false },
+    ]));
+  });
+
+  it('keeps one group shown, refuses a taken name, an unknown group and a caller who cannot edit', async () => {
+    const last = await send('PATCH', '/groups/WORKS', { active: false });
+    expect(last.status).toBe(400);
+    expect(await last.json()).toMatchObject({ error: 'last_one' });
+    expect((await send('PATCH', '/groups/SERVICE', { label: 'site works' })).status).toBe(409);
+    expect((await send('PATCH', '/groups/NOPE', { label: 'X' })).status).toBe(404);
+    expect((await send('PATCH', '/groups/SERVICE', { active: true }, [])).status).toBe(403);
+    expect((await send('PATCH', '/groups/SERVICE', { active: true })).status).toBe(200);
+  });
+});

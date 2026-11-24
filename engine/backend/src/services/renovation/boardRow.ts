@@ -37,6 +37,9 @@ export interface BoardRowV2 {
   vo: { has: boolean; count: number; approved: number } | null;
   handoverDate: string | null;
   plannedHandoverDate: string | null;
+  /** The catalog categories on this project's sales orders and whether each is complete: the project list's Renovation
+      layer filters on them (owner, 19 Nov 2026). */
+  renovationCategories: Array<{ code: string; done: boolean }>;
   /** the day the project was created; filled by the app (projectDates.ts) */
   startDate: string | null;
   /** the day it reached Closed; null while it is not Closed */
@@ -82,6 +85,7 @@ export function boardRowOf(f: ProjectFacts, v: ProjectView, opts: { hideMoney: b
        "Mon Jul 14" (the list showed 2001/07/14 for every imported handover). */
     handoverDate: dayOf(f.handover?.signed_at) ?? dayOf(p.handed_over_at),
     plannedHandoverDate: p.planned_handover_date,
+    renovationCategories: v.stageLayers.renovation.categories.filter((c) => c.onProject).map((c) => ({ code: c.code, done: c.done })),
     startDate: dayOf(p.start_date) ?? dayOf(p.created_at),
     endDate: v.flow.current === "closed" ? dayOf(p.end_date) : null,
     sla: f.stepSla && v.flow.current !== "closed" ? { days: f.stepSla.days, daysIn: f.stepSla.daysIn, overdueBy: f.stepSla.overdueBy, enteredOn: f.stepSla.enteredOn } : null,

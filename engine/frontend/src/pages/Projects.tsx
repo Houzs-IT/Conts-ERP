@@ -1268,7 +1268,7 @@ function ProjectsListView({ renovation = false }: { renovation?: boolean }) {
     <div>
       <PageHeader
         eyebrow="Operations · Projects"
-        title="Project List"
+        title="Project list"
         description={renovation ? "Renovation projects — open one for design, site tasks, procurement and handover" : "Exhibitions and solo events — lifecycle, checklist, logistics, finance"}
         secondaryActions={
           can("projects.manage")
@@ -1850,7 +1850,7 @@ function ProjectsFinancesView() {
       {tab === "pnl" && (
         <PnlCalendar
           scope="projects"
-          title="Project Cost — Monthly"
+          title="Project cost — monthly"
           subtitle="Total project cost (COGS + other cost lines) across all projects, grouped by month."
         />
       )}
@@ -2722,7 +2722,7 @@ function ProjectsAnalyticsView() {
               (Layer 3). */}
           <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <BreakdownCard
-              title="By Brand"
+              title="By brand"
               rows={d.by_brand}
               groupBy="brand"
               filters={drillFilters}
@@ -2730,7 +2730,7 @@ function ProjectsAnalyticsView() {
               onOpenProject={(id) => navigate(`/projects/${id}`)}
             />
             <BreakdownCard
-              title="By Event Type"
+              title="By event type"
               rows={d.by_event_type}
               groupBy="event_type"
               filters={drillFilters}
@@ -2738,7 +2738,7 @@ function ProjectsAnalyticsView() {
               onOpenProject={(id) => navigate(`/projects/${id}`)}
             />
             <BreakdownCard
-              title="By Organizer"
+              title="By organizer"
               rows={d.by_organizer}
               groupBy="organizer"
               filters={drillFilters}
@@ -2746,7 +2746,7 @@ function ProjectsAnalyticsView() {
               onOpenProject={(id) => navigate(`/projects/${id}`)}
             />
             <BreakdownCard
-              title="By Venue"
+              title="By venue"
               rows={d.by_venue}
               groupBy="venue"
               filters={drillFilters}
@@ -2754,7 +2754,7 @@ function ProjectsAnalyticsView() {
               onOpenProject={(id) => navigate(`/projects/${id}`)}
             />
             <BreakdownCard
-              title="By Month"
+              title="By month"
               rows={d.by_month}
               groupBy="month"
               filters={drillFilters}
@@ -3940,7 +3940,7 @@ function ProjectTeamSection({
   }
 
   return (
-    <PanelSection title="Project Team">
+    <PanelSection title="Project team">
       {/* PIC row */}
       <div>
         <div className="mb-1 flex items-center gap-1.5 text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
@@ -4219,7 +4219,7 @@ function ProjectSpecStrip({
       <header className="mb-2 flex items-center justify-between border-b border-border-strong pb-2">
         <div className="flex items-baseline gap-3">
           <h2 className="text-[10px] font-semibold uppercase tracking-brand text-ink-muted">
-            Project Detail
+            Project detail
           </h2>
         </div>
         {fullAccess && (

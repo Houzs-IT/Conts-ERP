@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import { BackTrailRecorder } from "./lib/backTrail";
 import { Routes, Route, Navigate, useParams, useLocation } from "react-router-dom";
 import { CONTS_HOME, CONTS_EXTRAS, isContsHiddenPath } from "./conts/navOnly";
 import { Layout } from "./components/Layout";
@@ -58,6 +59,7 @@ const ProjectDetail = lazy(() => import("./pages/Projects").then((m) => ({ defau
 const RenovationBetaHome = lazy(() => import("./pages/renovation-beta/RenovationBetaHome").then((m) => ({ default: m.RenovationBetaHome })));
 const RenovationBetaCalendar = lazy(() => import("./pages/renovation-beta/RenovationBetaCalendar").then((m) => ({ default: m.RenovationBetaCalendar })));
 const RenovationBetaDefectQueue = lazy(() => import("./pages/renovation-beta/RenovationBetaDefectQueue").then((m) => ({ default: m.RenovationBetaDefectQueue })));
+const RenovationBetaSiteTasks = lazy(() => import("./pages/renovation-beta/RenovationBetaSiteTasks").then((m) => ({ default: m.RenovationBetaSiteTasks })));
 const RenovationBetaHandoverTemplates = lazy(() => import("./pages/renovation-beta/RenovationBetaHandoverTemplates").then((m) => ({ default: m.RenovationBetaHandoverTemplates })));
 const RenovationBetaWorkspace = lazy(() => import("./pages/renovation-beta/RenovationBetaWorkspace").then((m) => ({ default: m.RenovationBetaWorkspace })));
 const FairReportFill = lazy(() => import("./pages/FairReportFill").then((m) => ({ default: m.FairReportFill })));
@@ -98,6 +100,7 @@ const ScmProductionOrderDetail = lazy(() => import("./pages/scm-v2/ProductionOrd
 const ScmPurchaseOrdersV2 = lazy(() => import("./pages/scm-v2/PurchaseOrdersListV2").then((m) => ({ default: m.PurchaseOrdersListV2 })));
 const ScmPurchaseOrderNewV2 = lazy(() => import("./pages/scm-v2/PurchaseOrderNew").then((m) => ({ default: m.PurchaseOrderNew })));
 const ScmPurchaseOrderFromSoV2 = lazy(() => import("./pages/scm-v2/PurchaseOrderFromSo").then((m) => ({ default: m.PurchaseOrderFromSo })));
+const ScmPurchaseOrderFromProduction = lazy(() => import("./pages/scm-v2/PurchaseOrderFromProduction").then((m) => ({ default: m.PurchaseOrderFromProduction })));
 const ScmPurchaseOrderDetailV2 = lazy(() => import("./pages/scm-v2/PurchaseOrderDetailV2").then((m) => ({ default: m.PurchaseOrderDetailV2 })));
 // TEMP — vendored 2990's MRP + read/list pages (wave 2), parallel to native.
 const ScmMrpV2 = lazy(() => import("./pages/scm-v2/Mrp").then((m) => ({ default: m.Mrp })));
@@ -124,6 +127,8 @@ const ScmPurchaseInvoiceNewV2 = lazy(() => import("./pages/scm-v2/PurchaseInvoic
 const ScmPurchaseInvoiceFromGrnV2 = lazy(() => import("./pages/scm-v2/PurchaseInvoiceFromGrn").then((m) => ({ default: m.PurchaseInvoiceFromGrn })));
 const ScmPurchaseInvoiceDetailV2 = lazy(() => import("./pages/scm-v2/PurchaseInvoiceDetailV2").then((m) => ({ default: m.PurchaseInvoiceDetailV2 })));
 const ScmPaymentVouchersV2 = lazy(() => import("./pages/scm-v2/PaymentVouchers").then((m) => ({ default: m.PaymentVouchers })));
+const ScmPaymentListing = lazy(() => import("./pages/scm-v2/PaymentListing").then((m) => ({ default: m.PaymentListing })));
+const ScmUnmatchedPayments = lazy(() => import("./pages/scm-v2/UnmatchedPayments").then((m) => ({ default: m.UnmatchedPayments })));
 const ScmPaymentVoucherNewV2 = lazy(() => import("./pages/scm-v2/PaymentVoucherNew").then((m) => ({ default: m.PaymentVoucherNew })));
 const ScmPaymentVoucherScanV2 = lazy(() => import("./pages/scm-v2/PaymentVoucherScan").then((m) => ({ default: m.PaymentVoucherScan })));
 const ScmChartOfAccountsV2 = lazy(() => import("./pages/scm-v2/ChartOfAccounts").then((m) => ({ default: m.ChartOfAccounts })));
@@ -131,11 +136,16 @@ const ScmChartOfAccountsV2 = lazy(() => import("./pages/scm-v2/ChartOfAccounts")
 const ContsPartyLedger = lazy(() => import("./conts/PartyLedger").then((m) => ({ default: m.PartyLedger })));
 const ContsLimitRequests = lazy(() => import("./conts/LimitRequests").then((m) => ({ default: m.LimitRequests })));
 const ContsPaymentRequests = lazy(() => import("./conts/PaymentRequests").then((m) => ({ default: m.PaymentRequests })));
+const ContsPaymentRequestDetail = lazy(() => import("./conts/PaymentRequests").then((m) => ({ default: m.PaymentRequestDetail })));
+const ContsStaffBanks = lazy(() => import("./conts/StaffBanks").then((m) => ({ default: m.StaffBanks })));
 const ContsPettyCash = lazy(() => import("./conts/PettyCash").then((m) => ({ default: m.PettyCash })));
 const ContsPettyCashFloat = lazy(() => import("./conts/PettyCashFloat").then((m) => ({ default: m.PettyCashFloat })));
 const ContsDebtors = lazy(() => import("./conts/Debtors").then((m) => ({ default: m.Debtors })));
 const ContsLedgerSetup = lazy(() => import("./conts/LedgerSetup").then((m) => ({ default: m.LedgerSetup })));
 const ContsEInvoice = lazy(() => import("./conts/EInvoice").then((m) => ({ default: m.EInvoice })));
+const ContsFinanceHome = lazy(() => import("./conts/FinanceTodo").then((m) => ({ default: m.FinanceHome })));
+const ContsFinanceMenu = lazy(() => import("./conts/FinanceTodo").then((m) => ({ default: m.FinanceMenu })));
+const ContsFinanceTodoRules = lazy(() => import("./conts/FinanceTodoRules").then((m) => ({ default: m.FinanceTodoRulesPage })));
 const ContsRenoProjects = lazy(() => import("./conts/RenoProjects").then((m) => ({ default: m.RenoProjects })));
 const ContsRentalUnitCosts = lazy(() => import("./conts/RentalUnitCosts").then((m) => ({ default: m.RentalUnitCosts })));
 const ContsDepartmentSpend = lazy(() => import("./conts/DepartmentSpend").then((m) => ({ default: m.DepartmentSpend })));
@@ -144,6 +154,7 @@ const ScmOtherDebtorsV2 = lazy(() => import("./pages/scm-v2/OtherDebtors").then(
 const ScmReceiptsV2 = lazy(() => import("./pages/scm-v2/Receipts").then((m) => ({ default: m.Receipts })));
 const ScmOfficialReceiptsV2 = lazy(() => import("./pages/scm-v2/OfficialReceipts").then((m) => ({ default: m.OfficialReceipts })));
 const ScmApInvoicesV2 = lazy(() => import("./pages/scm-v2/ApInvoices").then((m) => ({ default: m.ApInvoices })));
+const ScmDuplicateSupplierBills = lazy(() => import("./pages/scm-v2/DuplicateSupplierBills").then((m) => ({ default: m.DuplicateSupplierBills })));
 const ScmCreditNotesV2 = lazy(() => import("./pages/scm-v2/CreditNotes").then((m) => ({ default: m.CreditNotes })));
 const ScmDepositInvoicesV2 = lazy(() => import("./pages/scm-v2/DepositInvoices").then((m) => ({ default: m.DepositInvoices })));
 const ScmForecastPnlV2 = lazy(() => import("./pages/scm-v2/ForecastPnl").then((m) => ({ default: m.ForecastPnl })));
@@ -211,7 +222,10 @@ const ScmDocumentFilesImport = lazy(() => import("./pages/scm-v2/DocumentFilesIm
 // Renovation sales documents (Conts, 2026-10-09): quotations, package templates, the contract, VOs, terms.
 const RenoQuotationsList = lazy(() => import("./pages/renovation/QuotationsList").then((m) => ({ default: m.QuotationsList })));
 const RenoQuotationTemplates = lazy(() => import("./pages/renovation/QuotationTemplates").then((m) => ({ default: m.QuotationTemplates })));
-const RenoQuotationTemplateEditor = lazy(() => import("./pages/renovation/QuotationTemplates").then((m) => ({ default: m.QuotationTemplateEditor })));
+const RenoOldTemplateAddress = lazy(() => import("./pages/renovation/QuotationTemplates").then((m) => ({ default: m.OldTemplateAddress })));
+const RenoPackages = lazy(() => import("./pages/renovation/RenovationPackages").then((m) => ({ default: m.RenovationPackages })));
+const RenoPackageSetup = lazy(() => import("./pages/renovation/RenovationPackageSetup").then((m) => ({ default: m.RenovationPackageSetup })));
+const RenoPackageEditor = lazy(() => import("./pages/renovation/RenovationPackageEditor").then((m) => ({ default: m.RenovationPackageEditor })));
 const RenoVariationOrderEditor = lazy(() => import("./pages/renovation/VariationOrderEditor").then((m) => ({ default: m.VariationOrderEditor })));
 const RenoSettings = lazy(() => import("./pages/renovation/RenovationSettings").then((m) => ({ default: m.RenovationSettings })));
 const ScmAmendmentsV2 = lazy(() => import("./pages/scm-v2/Amendments").then((m) => ({ default: m.Amendments })));
@@ -497,6 +511,7 @@ export default function App() {
       {/* Conts: the quick-add button and the assistant serve Houzs areas that are not used here. */}
       {CONTS_EXTRAS && <QuickActionsFAB />}
       <BackToTopFAB />
+      <BackTrailRecorder />
       <AssistantPanelProvider>
         {CONTS_EXTRAS && <AssistantLauncher />}
         <AssistantPanel />
@@ -589,6 +604,7 @@ export default function App() {
         <Route path="/beta/calendar" element={<PageGuard page="projects.list"><RenovationBetaCalendar /></PageGuard>} />
         {/* Handover snag list (TODO item 17): the open defects of every project, and the company's handover checklists. */}
         <Route path="/beta/defects" element={<PageGuard page="projects.defects"><RenovationBetaDefectQueue /></PageGuard>} />
+        <Route path="/beta/site-tasks" element={<PageGuard page="projects.list"><RenovationBetaSiteTasks /></PageGuard>} />
         <Route path="/beta/handover-checklists" element={<PageGuard page="projects.handover"><RenovationBetaHandoverTemplates /></PageGuard>} />
         <Route path="/beta/projects/:id" element={<PageGuard page="projects.list"><RenovationBetaWorkspace /></PageGuard>} />
         <Route
@@ -750,6 +766,7 @@ export default function App() {
         <Route path="/scm/purchase-orders" element={<ScmGuard area="scm.procurement.po"><Scm2990Shell><ScmPurchaseOrdersV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/purchase-orders/new" element={<ScmGuard area="scm.procurement.po"><Scm2990Shell><ScmPurchaseOrderNewV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/purchase-orders/from-so" element={<ScmGuard area="scm.procurement.po"><Scm2990Shell><ScmPurchaseOrderFromSoV2 /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/purchase-orders/from-production" element={<ScmGuard area="scm.procurement.production"><Scm2990Shell><ScmPurchaseOrderFromProduction /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/purchase-orders/:id" element={<ScmGuard area="scm.procurement.po"><Scm2990Shell><ScmPurchaseOrderDetailV2 /></Scm2990Shell></ScmGuard>} />
         {/* PO amendment / revision queue + job card (Houzs, mig 0192). Same
             Procurement-PO area guard as the Purchase Orders list; the finer
@@ -772,6 +789,7 @@ export default function App() {
         <Route path="/scm/daily-bank" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmDailyBank /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/merchant-recon" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmMerchantRecon /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/bank-recon" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmBankRecon /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
+        <Route path="/scm/unmatched-payments" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmUnmatchedPayments /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/settlement-setup" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmSettlementSetup /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/outstanding" element={<ScmGuard area="scm.finance.outstanding"><Scm2990Shell><ScmOutstandingV2 /></Scm2990Shell></ScmGuard>} />
         {/* Delivered-but-not-billed, aged. Same area key as Outstanding — it is the
@@ -803,6 +821,7 @@ export default function App() {
         {/* Payment Vouchers — standalone AP cash-out doc (port of 2990 0189/0202,
             Phase 1-B MYR). Gated on the finance area; /new precedes /:id. */}
         <Route path="/scm/payment-vouchers" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVouchersV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
+        <Route path="/scm/payment-listing" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentListing /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/payment-vouchers/new" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVoucherNewV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/payment-vouchers/scan" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVoucherScanV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/chart-of-accounts" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmChartOfAccountsV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
@@ -810,6 +829,8 @@ export default function App() {
         <Route path="/scm/party-ledger" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsPartyLedger /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/limit-requests" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsLimitRequests /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/payment-requests" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsPaymentRequests /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
+        <Route path="/scm/payment-requests/:kind/:id" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsPaymentRequestDetail /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
+        <Route path="/scm/staff-banks" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsStaffBanks /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/petty-cash" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsPettyCash /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/petty-cash/:id" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsPettyCashFloat /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/debtors" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsDebtors /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
@@ -822,6 +843,8 @@ export default function App() {
         <Route path="/scm/receipts" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmReceiptsV2 /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/official-receipts" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmOfficialReceiptsV2 /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/ap-invoices" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmApInvoicesV2 /></Scm2990Shell></ScmGuard>} />
+        {/* Supplier bills booked more than once (ported from Houzs), reached from the AP invoices page. */}
+        <Route path="/scm/ap-invoices/duplicates" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmDuplicateSupplierBills /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/ap-invoices/scan" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmPaymentVoucherScanV2 target="ap" /></Scm2990Shell></ScmGuard>} />
         {/* Credit and debit notes (owner 2026-09-12; docs/bugs/0827). */}
         <Route path="/scm/credit-notes" element={<ScmGuard area="scm.finance.accounting"><Scm2990Shell><ScmCreditNotesV2 /></Scm2990Shell></ScmGuard>} />
@@ -904,7 +927,11 @@ export default function App() {
         <Route path="/scm/procurement"    element={<ScmGuard area="scm"><ScmSubgroupHub groupId="scm-procurement"    description="Procurement flow — products, suppliers, MRP, POs, receipts, invoices and returns." /></ScmGuard>} />
         <Route path="/scm/transportation" element={<ScmGuard area="scm"><ScmSubgroupHub groupId="scm-transportation" description="Delivery planning, fleet, lorry capacity, drivers and regions." /></ScmGuard>} />
         <Route path="/scm/warehouse"      element={<ScmGuard area="scm"><ScmSubgroupHub groupId="scm-warehouse"      description="Warehouses, inventory, adjustments, transfers and stock take." /></ScmGuard>} />
-        <Route path="/scm/finance"        element={<ScmGuard area="scm"><ScmSubgroupHub groupId="scm-finance"        description="Accounting and outstanding receivables." /></ScmGuard>} />
+        {/* Conts: /scm/finance is Finance's To do for whoever opens the Ledger (the menu for anyone else); the menu
+            hub it used to be lives on at /scm/finance/menu. */}
+        <Route path="/scm/finance"        element={<ScmGuard area="scm"><ContsFinanceHome /></ScmGuard>} />
+        <Route path="/scm/finance/menu"   element={<ScmGuard area="scm"><ContsFinanceMenu /></ScmGuard>} />
+        <Route path="/scm/finance/rules"  element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><ContsFinanceTodoRules /></ScmGuard></ContsLedgerGate>} />
         {/* Sales Orders READ side (vendored). The literal /maintenance route
             MUST precede /:docNo so 'maintenance' isn't caught as a doc number.
             2990 uses :docNo (not :id) for the SO detail. */}
@@ -932,7 +959,11 @@ export default function App() {
         <Route path="/scm/renovation/quotations/new" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><ScmSalesOrderNewV2 asQuotation /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/quotations/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationDetail /></Scm2990Shell></ScmGuard>} />
         <Route path="/scm/renovation/templates" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationTemplates /></Scm2990Shell></ScmGuard>} />
-        <Route path="/scm/renovation/templates/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoQuotationTemplateEditor /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/renovation/templates/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoOldTemplateAddress /></Scm2990Shell></ScmGuard>} />
+        {/* The Packages module (owner, 20 Nov 2026): Sales order > Packages. */}
+        <Route path="/scm/renovation/packages" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoPackages /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/renovation/packages/new" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoPackageSetup /></Scm2990Shell></ScmGuard>} />
+        <Route path="/scm/renovation/packages/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoPackageEditor /></Scm2990Shell></ScmGuard>} />
         {/* One sales order, one page (owner, 3 Nov 2026): the contract's sections are on the order's page. */}
         <Route path="/scm/renovation/contracts/:docNo" element={<ContractMoved />} />
         <Route path="/scm/renovation/variation-orders/:id" element={<ScmGuard area="scm.sales.orders"><Scm2990Shell><RenoVariationOrderEditor /></Scm2990Shell></ScmGuard>} />

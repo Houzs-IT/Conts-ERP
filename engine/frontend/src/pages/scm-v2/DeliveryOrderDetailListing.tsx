@@ -171,7 +171,7 @@ export const DeliveryOrderDetailListing = () => {
 
   return (
     <DetailListingShell<DoRow>
-      title="Delivery Order Detail Listing"
+      title="Delivery order detail listing"
       storageKey="do-detail-listing-grid"
       docNoPlaceholder="DO-2605-001"
       useDetailQuery={useDeliveryOrderDetailListing}

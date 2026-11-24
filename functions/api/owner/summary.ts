@@ -18,7 +18,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const units = await all<any>(env, `
-    SELECT u.id, u.unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id
     WHERE u.owner_id = ? ORDER BY p.name, u.unit_number`, owner.id);
   const label = (u: any) => `${u.property_name} ${u.unit_number}`;
 

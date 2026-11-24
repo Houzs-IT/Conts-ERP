@@ -31,6 +31,7 @@ import {
 import { assertTripInAllowedCompanies } from '../lib/ref-in-company';
 import { mintNextDpNo, plateForLorry } from '../lib/dp-no-mint';
 import { dateOrNull, coerceEmptyDates } from '../lib/date-coerce';
+import { zodValidationFailedBody } from '../lib/form-problems';
 import { dpLorryBlockReason } from '../lib/dp-lorry-block';
 import { normalizePhone } from '../shared/phone';
 import {
@@ -259,7 +260,7 @@ dpOrders.post('/', async (c) => {
   let body: unknown;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
   const parsed = createSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'invalid_body', reason: parsed.error.message }, 400);
+  if (!parsed.success) return c.json(zodValidationFailedBody(parsed.error), 400);
   const p = parsed.data;
   const jobType = p.jobType as DpJobType;
 
@@ -413,7 +414,7 @@ dpOrders.patch('/:id', async (c) => {
   let body: unknown;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
   const parsed = patchSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'invalid_body', reason: parsed.error.message }, 400);
+  if (!parsed.success) return c.json(zodValidationFailedBody(parsed.error), 400);
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   for (const [k, col] of Object.entries(PATCH_COLS)) {
@@ -523,7 +524,7 @@ dpOrders.post('/:id/schedule', async (c) => {
   let body: unknown;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
   const parsed = scheduleSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'invalid_body', reason: parsed.error.message }, 400);
+  if (!parsed.success) return c.json(zodValidationFailedBody(parsed.error), 400);
   const p = parsed.data;
   const sb = c.get('supabase');
   // Company scope (owner audit 2026-07-22): same class as PATCH + cancel.

@@ -19,3 +19,7 @@ export type PassKeyDay = 'today' | 'tomorrow';
 export function passKeyDay(dueOn: string | null, tomorrow: string): PassKeyDay {
   return dueOn === tomorrow ? 'tomorrow' : 'today';
 }
+
+export function fieldPassKeyDay(facts: PassKeyFacts, today: string, tomorrow: string): PassKeyDay | null {
+  return passKeyStatus(facts, today) === 'missed' ? null : passKeyDay(facts.dueOn, tomorrow);
+}

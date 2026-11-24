@@ -59,6 +59,7 @@ import { resolveDeliveryScope, scopeMatchesAssignment, type CrewAssignment } fro
 import { reconcileStopsToBoard, reconcileFieldsFor, type ReconcileStop } from '../lib/tripReconcile';
 import { validatePing, shouldAcceptPing, latestPerDriver, PING_ACCEPTED_STATUSES } from '../lib/tripLocation';
 import { dateOrNull } from '../lib/date-coerce';
+import { zodValidationFailedBody } from '../lib/form-problems';
 
 export const trips = new Hono<{ Bindings: Env; Variables: Variables }>();
 trips.use('*', supabaseAuth);
@@ -649,7 +650,7 @@ trips.post('/', async (c) => {
   let body: unknown;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
   const parsed = tripCreateSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'invalid_body', reason: parsed.error.message }, 400);
+  if (!parsed.success) return c.json(zodValidationFailedBody(parsed.error), 400);
   const p = parsed.data;
 
   const sb = c.get('supabase');
@@ -717,7 +718,7 @@ export const patchTripHandler = async (c: any) => {
   let body: unknown;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
   const parsed = tripPatchSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'invalid_body', reason: parsed.error.message }, 400);
+  if (!parsed.success) return c.json(zodValidationFailedBody(parsed.error), 400);
   const p = parsed.data;
   const sb = c.get('supabase');
 
@@ -855,7 +856,7 @@ trips.post('/:id/stops', async (c) => {
   let body: unknown;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
   const parsed = stopCreateSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'invalid_body', reason: parsed.error.message }, 400);
+  if (!parsed.success) return c.json(zodValidationFailedBody(parsed.error), 400);
   const p = parsed.data;
   const sb = c.get('supabase');
 

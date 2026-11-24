@@ -16,7 +16,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const pick = new URL(request.url).searchParams.get('pick');
   if (pick) {
     const r = await one<{ guest: string | null; unit: string | null }>(env, `
-      SELECT g.full_name AS guest, trim(COALESCE(p.name, '') || ' ' || u.unit_number) AS unit
+      SELECT g.full_name AS guest, trim(COALESCE(p.name, '') || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number)) AS unit
       FROM reservations r JOIN units u ON u.id = r.unit_id LEFT JOIN properties p ON p.id = u.property_id LEFT JOIN guests g ON g.id = r.guest_id WHERE r.id = ?`, pick);
     if (!r) return fail('NOT_FOUND', 'That reservation no longer exists.', 404);
     const t = await pickTemplate(env, mayWork(session, ['management']));

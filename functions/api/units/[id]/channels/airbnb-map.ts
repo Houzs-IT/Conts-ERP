@@ -17,7 +17,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!/^[0-9a-f-]{36}$/i.test(channelId)) return fail('VALIDATION', 'The Airbnb connection is missing. Start again from the unit.', 422);
   if (!listingId) return fail('VALIDATION', 'Pick the Airbnb listing for this unit.', 422);
   if (await one(env, "SELECT 1 AS x FROM channex_channels WHERE unit_id = ? AND ota = 'airbnb'", unit.id)) return fail('CONFLICT', 'This unit is already connected to Airbnb.', 409);
-  const taken = await one<{ unit_number: string }>(env, `SELECT u.unit_number FROM channex_channels c JOIN units u ON u.id = c.unit_id WHERE c.ota = 'airbnb' AND c.external_id = ?`, listingId);
+  const taken = await one<{ unit_number: string }>(env, `SELECT COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number FROM channex_channels c JOIN units u ON u.id = c.unit_id WHERE c.ota = 'airbnb' AND c.external_id = ?`, listingId);
   if (taken) return fail('CONFLICT', `That listing is already linked to ${taken.unit_number}.`, 409);
 
   // The listing is mapped to the unit's Airbnb rate plan, so it carries the Airbnb price.

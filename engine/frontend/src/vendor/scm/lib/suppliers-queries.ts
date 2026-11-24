@@ -7,7 +7,7 @@
 // is verbatim.
 
 import { useMemo } from 'react';
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from './authed-fetch';
 import { poListParams, type PoListFilterParams } from './po-list-export';
 import type { PoListLine } from './po-line-export-columns';
@@ -56,6 +56,10 @@ export type SupplierRow = {
   supplier_type: string | null;
   category: string | null;
   tin_number: string | null;
+  /** Conts 0336: where the supplier is paid (on the record, not the list). */
+  bank_name?: string | null;
+  bank_account_no?: string | null;
+  bank_account_name?: string | null;
   business_reg_no: string | null;
   postcode: string | null;
   area: string | null;
@@ -886,7 +890,8 @@ export type NewPoItem = {
   /* Commander 2026-05-29 (BUG 1) — source SO line id for lines added via the
      "From SO" picker. The generic create handler increments this SO line's
      po_qty_picked so it drops from the picker. NULL for manual PO lines. */
-  soItemId?: string | null;
+  soItemId?: string | null;  /* Conts — production order raw material this line buys (Transfer from Production Order). */
+  productionMaterialId?: string | null;
 };
 
 /** PR — Phase 1: outstanding SO items for the "From SO" picker.
@@ -921,6 +926,10 @@ export type OutstandingSoItem = {
   /** The order's raw reference pair (resolve with soRefOfCamelStamp). */
   soRef?: string | null;
   soCustomerSoNo?: string | null;
+  /** The SO's project (scm.mfg_sales_orders.project_id -> public.projects); null when the SO has none. */
+  projectId?:   number | null;
+  projectCode?: string | null;
+  projectName?: string | null;
 };
 
 export function useOutstandingSoItems() {
@@ -930,6 +939,63 @@ export function useOutstandingSoItems() {
       `/mfg-purchase-orders/outstanding-so-items`,
     ).then((r) => r.items),
     staleTime: 30_000,
+    /* Each try re-runs the whole MRP plan on the server; a failed one is shown, not silently re-sent (authed-fetch.ts,
+       SLOW_READ_PATH). The error message on the picker says to refresh. */
+    retry: false,
+  });
+}
+
+/** The picker's search and filters, sent to the server (owner, 19 Nov 2026: search on the server, load on scroll). */
+export type OutstandingSoPageFilters = {
+  q: string;
+  category: string;           // 'all' for none
+  dateField: 'soDate' | 'processing' | 'delivery';
+  dateFrom: string;
+  dateTo: string;
+  /** Ticked funnel values of the columns the server filters (lib/outstanding-so-page.ts PICKER_FACET_COLS). */
+  cols?: Record<string, string[]>;
+  /** A sort the server applies over every matching line (PICKER_SORT_COLS); null for the list order. */
+  sort?: { key: string; dir: 'asc' | 'desc' } | null;
+};
+
+export type OutstandingSoPage = {
+  items: OutstandingSoItem[];
+  nextCursor: string | null;
+  /** Open SO lines matching the search before the stock check: an upper bound. Sent with the first page only. */
+  total: number | null;
+  /** Funnel counts per server column, over every matching line before the stock check. First page only. */
+  facets?: Record<string, Array<[string, number]>> | null;
+  pageSize: number;
+};
+
+export const OUTSTANDING_SO_PAGE_SIZE = 100;
+
+export function outstandingSoPageUrl(f: Partial<OutstandingSoPageFilters> & { docNo?: string }, cursor: string | null, limit = OUTSTANDING_SO_PAGE_SIZE): string {
+  const p = new URLSearchParams({ limit: String(limit) });
+  if (cursor) p.set('cursor', cursor);
+  if (f.q?.trim()) p.set('q', f.q.trim());
+  if (f.category && f.category !== 'all') p.set('category', f.category);
+  if (f.dateFrom || f.dateTo) p.set('dateField', f.dateField ?? 'soDate');
+  if (f.dateFrom) p.set('dateFrom', f.dateFrom);
+  if (f.dateTo) p.set('dateTo', f.dateTo);
+  if (f.docNo) p.set('docNo', f.docNo);
+  const cols = Object.fromEntries(Object.entries(f.cols ?? {}).filter(([, v]) => v.length > 0));
+  if (Object.keys(cols).length > 0) p.set('cols', JSON.stringify(cols));
+  if (f.sort) p.set('sort', `${f.sort.key}:${f.sort.dir}`);
+  return `/mfg-purchase-orders/outstanding-so-items?${p.toString()}`;
+}
+
+/** One page at a time of the outstanding SO lines; the next page loads when the screen asks for it. */
+export function useOutstandingSoItemsPaged(filters: OutstandingSoPageFilters, opts: { enabled?: boolean } = {}) {
+  return useInfiniteQuery({
+    queryKey: ['mfg-purchase-orders', 'outstanding-so-items', 'paged', filters],
+    enabled: opts.enabled ?? true,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => authedFetch<OutstandingSoPage>(outstandingSoPageUrl(filters, pageParam), { signal }),
+    getNextPageParam: (last) => last.nextCursor,
+    staleTime: 30_000,
+    /* A failed page is shown, not silently re-sent (authed-fetch.ts, SLOW_READ_PATH). */
+    retry: false,
   });
 }
 
@@ -980,7 +1046,7 @@ export type OutstandingPoItem = {
  * empty `items` and dropping it is how "your PO is a draft" became "every line
  * has been received" — see `lib/outstandingEmptyReason.ts`.
  */
-export function useOutstandingPoItems(poIds: string[]) {
+export function useOutstandingPoItems(poIds: string[], opts: { enabled?: boolean } = {}) {
   const scopeParam = [...poIds].sort().join(',');
   return useQuery({
     // The scope is part of the identity of this read now that the SERVER applies
@@ -992,7 +1058,37 @@ export function useOutstandingPoItems(poIds: string[]) {
         ? `/grns/outstanding-po-items?poId=${encodeURIComponent(scopeParam)}`
         : `/grns/outstanding-po-items`,
     ),
+    enabled: opts.enabled ?? true,
     staleTime: 30_000,
+  });
+}
+
+/** One page of the GRN-from-PO picker (backend lib/doc-batch-page.ts): whole POs, newest number first, only lines
+    with something left to receive, searched on the server (audit 20 Nov 2026). */
+export type OutstandingPoPage = { items: OutstandingPoItem[]; nextCursor: string | null; pageSize: number };
+
+export const OUTSTANDING_PO_PAGE_SIZE = 100;
+
+export function outstandingPoPageUrl(q: string, cursor: string | null, supplierId: string | null, limit = OUTSTANDING_PO_PAGE_SIZE): string {
+  const p = new URLSearchParams({ limit: String(limit) });
+  if (cursor) p.set('cursor', cursor);
+  if (q.trim()) p.set('q', q.trim());
+  if (supplierId) p.set('supplierId', supplierId);
+  return `/grns/outstanding-po-items?${p.toString()}`;
+}
+
+export function useOutstandingPoItemsPaged(q: string, opts: { supplierId?: string | null; enabled?: boolean } = {}) {
+  const supplierId = opts.supplierId ?? null;
+  return useInfiniteQuery({
+    queryKey: ['grns', 'outstanding-po-items', 'paged', q, supplierId],
+    enabled: opts.enabled ?? true,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => authedFetch<OutstandingPoPage>(outstandingPoPageUrl(q, pageParam, supplierId), { signal }),
+    getNextPageParam: (last) => last.nextCursor,
+    placeholderData: (prev) => prev,
+    staleTime: 30_000,
+    /* A failed page is shown with a Try again button, not silently re-sent. */
+    retry: false,
   });
 }
 
@@ -1056,13 +1152,42 @@ export type OutstandingGrnItem = {
     response without the field (a Worker older than the field) reads as false. */
 export type OutstandingGrnItems = { items: OutstandingGrnItem[]; truncated: boolean };
 
-export function useOutstandingGrnItems() {
+export function useOutstandingGrnItems(opts: { grnIds?: readonly string[]; enabled?: boolean } = {}) {
+  const ids = [...(opts.grnIds ?? [])].sort().join(',');
   return useQuery({
-    queryKey: ['purchase-invoices', 'outstanding-grn-items'],
+    /* The note scope is part of the read's identity: the server applies it (?grnIds=). */
+    queryKey: ['purchase-invoices', 'outstanding-grn-items', ids],
     queryFn: () => authedFetch<{ items: OutstandingGrnItem[]; truncated?: boolean }>(
-      `/purchase-invoices/outstanding-grn-items`,
+      ids ? `/purchase-invoices/outstanding-grn-items?grnIds=${encodeURIComponent(ids)}` : `/purchase-invoices/outstanding-grn-items`,
     ).then((r): OutstandingGrnItems => ({ items: r.items, truncated: r.truncated === true })),
+    enabled: opts.enabled ?? true,
     staleTime: 30_000,
+  });
+}
+
+/** One page of the PI-from-GRN picker (backend lib/doc-batch-page.ts): whole notes, newest number first, only lines
+    with something left to bill, searched on the server (audit 20 Nov 2026). */
+export type OutstandingGrnPage = { items: OutstandingGrnItem[]; nextCursor: string | null; pageSize: number };
+
+export const OUTSTANDING_GRN_PAGE_SIZE = 100;
+
+export function outstandingGrnPageUrl(q: string, cursor: string | null, limit = OUTSTANDING_GRN_PAGE_SIZE): string {
+  const p = new URLSearchParams({ limit: String(limit) });
+  if (cursor) p.set('cursor', cursor);
+  if (q.trim()) p.set('q', q.trim());
+  return `/purchase-invoices/outstanding-grn-items?${p.toString()}`;
+}
+
+export function useOutstandingGrnItemsPaged(q: string, opts: { enabled?: boolean } = {}) {
+  return useInfiniteQuery({
+    queryKey: ['purchase-invoices', 'outstanding-grn-items', 'paged', q],
+    enabled: opts.enabled ?? true,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => authedFetch<OutstandingGrnPage>(outstandingGrnPageUrl(q, pageParam), { signal }),
+    getNextPageParam: (last) => last.nextCursor,
+    placeholderData: (prev) => prev,
+    staleTime: 30_000,
+    retry: false,
   });
 }
 

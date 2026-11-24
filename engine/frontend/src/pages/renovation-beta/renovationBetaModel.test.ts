@@ -303,6 +303,12 @@ describe("dates as the mockup prints them", () => {
 
 describe("paymentCard", () => {
   const row = (status: "paid" | "billed" | "not_billed", stageCode: string | null) => ({ status, stageCode, unlocks: stageCode ? "Design" : null });
+  it("an instalment paid in AutoCount before go-live is paid, and says so (chew, 23 Nov 2026)", () => {
+    expect(paymentCard({ status: "paid", stageCode: null, unlocks: null, trigger: "manual", billedBeforeGoLive: true, paidBeforeGoLive: true }, "design", null))
+      .toEqual({ look: "paid", badge: "Paid", note: "Paid before go-live" });
+    expect(paymentCard({ status: "billed", stageCode: null, unlocks: null, trigger: "manual", billedBeforeGoLive: true }, "design", null))
+      .toMatchObject({ look: "alert", note: "Billed before go-live, waiting for payment" });
+  });
   it("paid is green and names what it unlocked", () => {
     expect(paymentCard(row("paid", "design"), "design", null)).toEqual({ look: "paid", badge: "Paid", note: "Paid · unlocked Design" });
   });

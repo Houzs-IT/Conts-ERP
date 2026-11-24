@@ -216,7 +216,7 @@ export function ServiceMetrics() {
           the windowed period aggregates so dispatchers triage first. ── */}
       <SectionHeader
         icon={<Activity size={15} />}
-        title="Live Status"
+        title="Live status"
         hint="Now · all open cases"
       />
       <DashboardGrid cols={4}>
@@ -249,7 +249,7 @@ export function ServiceMetrics() {
         />
       </DashboardGrid>
 
-      <MetricCard icon={<Activity size={13} />} title="Stage Funnel">
+      <MetricCard icon={<Activity size={13} />} title="Stage funnel">
         {s && s.stage_funnel.length > 0 ? (
           <StageFunnel data={s.stage_funnel} />
         ) : (
@@ -260,7 +260,7 @@ export function ServiceMetrics() {
       {/* ── This Period — windowed aggregates over the selected range. ── */}
       <SectionHeader
         icon={<Gauge size={15} />}
-        title="This Period"
+        title="This period"
         hint={`${PERIOD_LABEL[since]} · ${since}d window`}
       />
       <DashboardGrid cols={4}>
@@ -320,7 +320,7 @@ export function ServiceMetrics() {
           Bucketed by age of OPEN cases since complained_date. ── */}
       <SectionHeader
         icon={<Hourglass size={15} />}
-        title="Case Duration"
+        title="Case duration"
         hint="Age of open cases"
       />
       <div className="mb-3">
@@ -384,7 +384,7 @@ export function ServiceMetrics() {
             </div>
           )}
         </MetricCard>
-        <MetricCard icon={<TrendingUp size={13} />} title="Monthly Trend" flat>
+        <MetricCard icon={<TrendingUp size={13} />} title="Monthly trend" flat>
           {m && m.monthly_trend.length > 0 ? (
             <Trend data={m.monthly_trend} />
           ) : (
@@ -397,7 +397,7 @@ export function ServiceMetrics() {
       <SectionHeader icon={<PieChart size={15} />} title="Breakdowns" />
       <DashboardPanels cols={3}>
         <DashboardBreakdown
-          title="Service Issue Categories"
+          title="Service issue categories"
           items={
             m?.issue_categories?.map((r) => ({
               label: r.category || "Other",
@@ -406,11 +406,11 @@ export function ServiceMetrics() {
           }
         />
         <DashboardBreakdown
-          title="Resolution Method Mix"
+          title="Resolution method mix"
           items={m?.resolutions.map((r) => ({ label: resolutionLabel(r.method === "unset" ? null : r.method), count: r.count })) ?? []}
         />
         <DashboardBreakdown
-          title="NCR Categories (root-cause)"
+          title="NCR categories (root-cause)"
           items={m?.ncr.map((r) => ({ label: ncrLabel(r.category), count: r.count })) ?? []}
         />
       </DashboardPanels>
@@ -418,7 +418,7 @@ export function ServiceMetrics() {
       {/* ── Suppliers & Repeat Issues ── */}
       <SectionHeader
         icon={<AlertTriangle size={15} />}
-        title="Suppliers & Repeat Issues"
+        title="Suppliers & repeat issues"
       />
 
       {/* Creditor performance */}
@@ -851,7 +851,7 @@ function StageFunnel({ data }: { data: AssrSummaryV31["stage_funnel"] }) {
                 <span
                   className={cn(
                     "text-[13px] font-bold",
-                    r.total > 0 ? "text-ink" : "text-ink-muted/40"
+                    r.total > 0 ? "text-ink" : "text-ink-muted"
                   )}
                 >
                   {r.total}

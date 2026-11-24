@@ -496,7 +496,7 @@ export const SupplierDetail = () => {
           <header className={styles.cardHeader}>
             <h2 className={styles.cardTitle}>
               <Tag {...ICON} style={{ color: '#0c3f39' }} />
-              Combo Pricing · {supplier.name}
+              Combo pricing · {supplier.name}
             </h2>
           </header>
           <div className={styles.cardBody}>
@@ -607,7 +607,7 @@ const SupplierOverviewPanel = ({
       <header className={styles.cardHeader}>
         <h2 className={styles.cardTitle}>
           <TrendingUp {...ICON} style={{ color: '#0c3f39' }} />
-          Last 10 Purchase Orders
+          Last 10 purchase orders
           <span className={styles.cardTitleCount}>({score?.totalPOs ?? 0} total)</span>
         </h2>
       </header>
@@ -742,7 +742,7 @@ const SupplierSkuPricingPanel = ({
             ? <ChevronDown {...SM_ICON} style={{ color: '#767b6e' }} />
             : <ChevronRight {...SM_ICON} style={{ color: '#767b6e' }} />}
           <Package {...ICON} style={{ color: '#0c3f39' }} />
-          SKU Mappings
+          SKU mappings
           <span className={styles.cardTitleCount}>
             {bindings.length === 0
               ? '(no codes yet)'
@@ -2304,6 +2304,10 @@ const SupplierInfoCard = ({
     category: supplier.category ?? '',                       // 'Bedframe', 'Fabric', ...
     tinNumber: supplier.tin_number ?? '',
     businessRegNo: supplier.business_reg_no ?? '',
+    /* Conts 0336 (chew, 18 Nov 2026): where the supplier is paid. */
+    bankName: supplier.bank_name ?? '',
+    bankAccountNo: supplier.bank_account_no ?? '',
+    bankAccountName: supplier.bank_account_name ?? '',
     /* Mig 0028 — AutoCount creditor-export parity */
     registrationNo: supplier.registration_no ?? '',
     exemptionNo: supplier.exemption_no ?? '',
@@ -2360,7 +2364,7 @@ const SupplierInfoCard = ({
           {bodyVisible
             ? <ChevronDown {...SM_ICON} style={{ color: '#767b6e' }} />
             : <ChevronRight {...SM_ICON} style={{ color: '#767b6e' }} />}
-          Supplier Info
+          Supplier info
         </h2>
         {/* stopPropagation so the Edit / Save / Cancel buttons don't also
             toggle the collapse state. */}
@@ -2396,6 +2400,9 @@ const SupplierInfoCard = ({
             />
             <InfoCell label="TIN Number" value={supplier.tin_number ?? '—'} />
             <InfoCell label="Business Reg No" value={supplier.business_reg_no ?? '—'} />
+            <InfoCell label="Bank" value={supplier.bank_name || '—'} />
+            <InfoCell label="Bank account no." value={supplier.bank_account_no || '—'} />
+            <InfoCell label="Name on account" value={supplier.bank_account_name || '—'} />
             {/* Mig 0028 — AutoCount creditor-export parity. */}
             <InfoCell label="Registration No." value={supplier.registration_no ?? '—'} />
             <InfoCell label="Exemption No." value={supplier.exemption_no ?? '—'} />
@@ -2452,6 +2459,9 @@ const SupplierInfoCard = ({
             />
             <EditField label="TIN Number" value={form.tinNumber} onChange={(v) => setF('tinNumber', v)} />
             <EditField label="Business Reg No" value={form.businessRegNo} onChange={(v) => setF('businessRegNo', v)} />
+            <EditField label="Bank" value={form.bankName} onChange={(v) => setF('bankName', v)} />
+            <EditField label="Bank account no." value={form.bankAccountNo} onChange={(v) => setF('bankAccountNo', v.replace(/[^0-9]/g, ''))} />
+            <EditField label="Name on account" value={form.bankAccountName} onChange={(v) => setF('bankAccountName', v)} />
             {/* Mig 0028 — AutoCount creditor-export parity. */}
             <EditField label="Registration No." value={form.registrationNo} onChange={(v) => setF('registrationNo', v)} />
             <EditField label="Exemption No." value={form.exemptionNo} onChange={(v) => setF('exemptionNo', v)} />

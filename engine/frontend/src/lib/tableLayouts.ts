@@ -124,6 +124,11 @@ export interface TableLayoutsSnapshot {
    *  manager may write them; everyone reads them. Keyed by the preset id in
    *  `name`, so a page's code seeds can adopt an admin's override. */
   sharedLayouts: Record<string, NamedLayout[]>;
+  /** tableKey → this user's OWN default for that table, in the active company
+   *  (owner 2026-11-19: "Save as default" / "Reset to default" reach only the
+   *  signed-in user). Stored as one of the user's own rows under
+   *  `<tableKey>:my-default`, so it needs no new table and no admin right. */
+  myDefaults: Record<string, StoredLayout>;
   /** Bumped whenever hydration changed stored prefs, so a mounted table can
    *  re-read localStorage (it is read once, at mount, by design). */
   epoch: number;
@@ -139,6 +144,7 @@ const EMPTY: TableLayoutsSnapshot = {
   defaultNames: {},
   myLayouts: {},
   sharedLayouts: {},
+  myDefaults: {},
   epoch: 0,
 };
 
@@ -327,6 +333,23 @@ function normalizeNamed(
   return out;
 }
 
+/** Server table key of the user's own default for `tableKey`. */
+export const MY_DEFAULT_SUFFIX = ":my-default";
+const MAX_TABLE_KEY_LEN = 80;
+export function myDefaultTableKey(tableKey: string): string | null {
+  const key = `${tableKey}${MY_DEFAULT_SUFFIX}`;
+  // The server's table-key bound; a longer key keeps its default in this browser only.
+  return key.length <= MAX_TABLE_KEY_LEN ? key : null;
+}
+
+/** localStorage copy of the user's own default: the render source before the
+ *  boot fetch lands, and the only copy when the server is unreachable. */
+export const myDefaultStorageKey = (idKey: string): string => `dt:mydefault:${idKey}`;
+
+export function normalizeStoredLayout(raw: unknown): StoredLayout {
+  return normalize(raw);
+}
+
 function normalize(raw: unknown): StoredLayout {
   const r = (raw ?? {}) as Partial<StoredLayout>;
   const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
@@ -374,8 +397,25 @@ export async function hydrateTableLayouts(): Promise<void> {
     const companyId = getActiveCompanyId();
     let changed = false;
     const repush: Array<[string, StoredLayout]> = [];
+    const myDefaults: Record<string, StoredLayout> = {};
 
     for (const [tableKey, entry] of Object.entries(res.mine ?? {})) {
+      if (tableKey.endsWith(MY_DEFAULT_SUFFIX)) {
+        // The user's own default, not a live arrangement: kept apart so it is
+        // never written over the table's columns.
+        const base = tableKey.slice(0, -MY_DEFAULT_SUFFIX.length);
+        const layout = normalize(entry?.layout);
+        myDefaults[base] = layout;
+        try {
+          localStorage.setItem(
+            myDefaultStorageKey(localTarget(base, companyId).idKey),
+            JSON.stringify(layout),
+          );
+        } catch {
+          /* best effort */
+        }
+        continue;
+      }
       const marker = localTarget(tableKey, companyId).marker;
       const server = normalize(entry?.layout);
       const local = readLocal(tableKey, companyId);
@@ -411,6 +451,7 @@ export async function hydrateTableLayouts(): Promise<void> {
       defaultNames: res.defaultNames ?? {},
       myLayouts: normalizeNamed(res.myLayouts),
       sharedLayouts: normalizeNamed(res.sharedLayouts),
+      myDefaults,
       defaults: Object.fromEntries(
         Object.entries(res.defaults ?? {}).map(([cid, tables]) => [
           cid,
@@ -467,6 +508,27 @@ export function saveMyLayout(tableKey: string, layout: StoredLayout): void {
       request.then(done).catch(() => {});
     }, PUSH_DELAY_MS),
   );
+}
+
+/** Write (or clear, with an empty layout) THIS USER's own default for a table.
+ *  The server row is one of the user's own (PUT /:tableKey is user-scoped), so
+ *  it can never reach another account. Before the boot fetch, or for a key too
+ *  long for the server, the caller's localStorage copy is the only one. */
+export async function saveMyDefaultLayout(
+  baseIdKey: string,
+  layout: StoredLayout,
+): Promise<void> {
+  if (!snapshot.ready) return;
+  const serverKey = myDefaultTableKey(baseIdKey);
+  if (serverKey) {
+    const path = `/api/table-layouts/${encodeURIComponent(serverKey)}`;
+    if (isEmptyLayout(layout)) await api.del(path);
+    else await api.put(path, { layout });
+  }
+  const next = { ...snapshot.myDefaults };
+  if (isEmptyLayout(layout)) delete next[baseIdKey];
+  else next[baseIdKey] = layout;
+  emit({ ...snapshot, myDefaults: next });
 }
 
 /** Write (or clear, with an empty layout) the ACTIVE company's default view.

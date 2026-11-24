@@ -353,7 +353,9 @@ export const DeliveryReturnFromDo = () => {
       setDialog({ title: 'Unable to continue', body: 'This browser could not safely store your picked lines. Your selection is still here; free some browser storage and try again.' });
       return;
     }
-    navigate(`/scm/delivery-returns/new?fromDo=${encodeURIComponent(firstDoId)}&fromPicks=1`);
+    /* Click sweep G18: opened from the returns list (no doId), the save opens the new return instead of the DO. */
+    const fromList = !searchParams.get('doId');
+    navigate(`/scm/delivery-returns/new?fromDo=${encodeURIComponent(firstDoId)}&fromPicks=1${fromList ? '&fromList=1' : ''}`);
   };
 
   const toolbar = (
@@ -371,7 +373,7 @@ export const DeliveryReturnFromDo = () => {
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Supply Chain"
-        title="Pick Delivery Order lines to return"
+        title="Pick delivery order lines to return"
         actions={
           <>
             <div className={styles.actions}>

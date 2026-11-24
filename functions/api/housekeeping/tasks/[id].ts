@@ -9,8 +9,8 @@ import { mayEditCredentials, usedBySql } from '../../../_lib/credentials';
 import { cleanStage } from '../../../_lib/media';
 
 /** GET /api/housekeeping/tasks/:id — what the clean's detail panel needs in one answer: the proof
- *  photos and videos, the unit's access (masked; the code itself is a separate audited reveal, for the roles that
- *  may see it), what the clean costs the unit and whether it has been charged, and the damage reported from it. */
+ *  photos and videos, the unit's access (the code in the clear for the cleaner on the job; masked for the office, whose
+ *  reveal is a separate audited call), what the clean costs the unit and whether it has been charged, and the damage reported from it. */
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -21,7 +21,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const t = await one<any>(env, `
     SELECT ${priced ? 't.amount, t.cleaner_pay, t.external_address, t.external_client, t.external_phone,' : ''} t.id, t.kind, t.state, t.unit_id, t.assignee_id, u.bedrooms, u.bathrooms, ${layoutSql} AS layout_type, ${mattressSql} AS mattresses, t.instructions, t.started_at, t.completed_at, t.guest_left_at,
            t.created_at, t.reservation_id, cb.full_name AS completed_by_name,
-           COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at, u.unit_number, p.name AS property_name
+           COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name
     FROM tasks t LEFT JOIN units u ON u.id = t.unit_id LEFT JOIN properties p ON p.id = u.property_id
     LEFT JOIN users cb ON cb.id = t.completed_by WHERE t.id = ?`, id);
   if (!t) return fail('NOT_FOUND', 'That cleaning job no longer exists. Refresh the list.', 404);
@@ -47,8 +47,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     instructions: t.instructions ?? null, startedAt: t.started_at ?? null, completedAt: t.completed_at ?? null, guestLeftAt: t.guest_left_at ?? null,
     completedBy: t.completed_by_name ?? null, createdAt: t.created_at ?? null, reservationId: t.reservation_id ?? null,
     media: media.map(m => ({ id: m.id, kind: m.kind, url: `/api/documents/${m.id}/download`, fileName: m.file_name, mimeType: m.mime_type, byteSize: Number(m.byte_size), uploadedAt: m.created_at, uploader: m.uploader ?? null, stage: cleanStage(m.file_name) })),
-    // Field staff get the instruction only, not even the masked tail (same rule as /api/access-credentials).
-    access: creds.map(c => ({ id: c.id, kind: c.kind, label: c.label, instruction: c.instruction, masked: field ? '' : mask(c.secret), hasCode: !!c.secret })),
+    // The cleaner on the job gets the code itself (only items marked for Cleaner); the office sees it masked and reveals it through the audited route.
+    access: creds.map(c => ({ id: c.id, kind: c.kind, label: c.label, instruction: c.instruction, masked: field ? '' : mask(c.secret), hasCode: !!c.secret, code: field ? c.secret || null : null })),
     mayReveal: mayEditCredentials(session),
     // The unit's car park bays (staff sheet UNIT, 17 Oct 2026), with the access details.
     parking: await parkingFor(env, t.unit_id),
@@ -70,7 +70,9 @@ const CLEAN_KINDS = ['turnover', 'deep_clean', 'light_clean'];
  *  Reschedule: { scheduledFor, dueAt } (HH:MM, Malaysia, on the task's own day).
  *  Edit:       { title, instructions, kind, amount } — any subset (amount in sen, the office's own figure for this clean,
  *              until it is charged); blanks the instructions
- *              when an empty string is sent. The two shapes may be combined. */
+ *              when an empty string is sent. The two shapes may be combined.
+ *  History:    { day: YYYY-MM-DD, completedAt: ISO } corrects a job after the fact; day keeps each time's clock time,
+ *              completedAt is for finished jobs only and decides the month the clean counts in Pay. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -80,8 +82,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const b = await request.json<any>().catch(() => null);
   const ok = (v: unknown) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
-  const t = await one<{ day: string; scheduled_for: string | null; due_at: string | null; state: string; title: string; instructions: string | null; kind: string }>(env, `
-    SELECT to_char((COALESCE(scheduled_for, due_at, created_at))::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS day, scheduled_for, due_at, state, title, instructions, kind
+  const t = await one<{ day: string; scheduled_for: string | null; due_at: string | null; created_at: string; completed_at: string | null; state: string; title: string; instructions: string | null; kind: string }>(env, `
+    SELECT to_char((COALESCE(scheduled_for, due_at, created_at))::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS day, scheduled_for, due_at, created_at, completed_at, state, title, instructions, kind
     FROM tasks WHERE id = ?`, id);
   if (!t) return fail('NOT_FOUND', 'That cleaning job no longer exists. Refresh the list.', 404);
 
@@ -91,16 +93,40 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const before: Record<string, unknown> = {};
   const after: Record<string, unknown> = {};
 
+  const wantsDay = b?.day != null && b.day !== t.day;
+  if (b?.day != null && !(typeof b.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.day) && !Number.isNaN(Date.parse(b.day)))) {
+    return fail('VALIDATION', 'Pick a day.', 422, { day: 'Pick a day.' });
+  }
+  const day: string = wantsDay ? b.day : t.day;
   const wantsReschedule = b?.scheduledFor != null || b?.dueAt != null;
   if (wantsReschedule) {
     if (t.state === 'resolved') return fail('CONFLICT', 'A finished cleaning job cannot be moved.', 409);
     if (!ok(b?.scheduledFor) || !ok(b?.dueAt)) return fail('VALIDATION', 'Enter times as HH:MM.', 422);
     if (b.dueAt <= b.scheduledFor) return fail('VALIDATION', 'The end must be after the start.', 422, { dueAt: 'Pick a later end time.' });
-    const at = (hm: string) => `${t.day}T${hm}:00+08:00`;
+    const at = (hm: string) => `${day}T${hm}:00+08:00`;
     sets.push('scheduled_for = ?', 'due_at = ?');
     args.push(at(b.scheduledFor), at(b.dueAt));
     before.scheduledFor = t.scheduled_for; before.dueAt = t.due_at;
     after.scheduledFor = at(b.scheduledFor); after.dueAt = at(b.dueAt);
+  } else if (wantsDay) {
+    // Same clock time on the new Malaysian day; a job with no times keeps the time it was created at.
+    const onDay = (v: string) => `${day}T${new Date(Date.parse(v) + 8 * 3600e3).toISOString().slice(11, 19)}+08:00`;
+    const scheduledFor = t.scheduled_for ? onDay(t.scheduled_for) : t.due_at ? null : onDay(t.created_at);
+    const dueAt = t.due_at ? onDay(t.due_at) : null;
+    sets.push('scheduled_for = ?', 'due_at = ?');
+    args.push(scheduledFor, dueAt);
+    before.scheduledFor = t.scheduled_for; before.dueAt = t.due_at;
+    after.scheduledFor = scheduledFor; after.dueAt = dueAt;
+  }
+
+  if (b?.completedAt != null) {
+    if (t.state !== 'resolved') return fail('CONFLICT', 'Only a finished cleaning job has a finish time. Mark it done first.', 409);
+    const at = typeof b.completedAt === 'string' ? Date.parse(b.completedAt) : NaN;
+    if (Number.isNaN(at)) return fail('VALIDATION', 'Pick when it was finished.', 422, { completedAt: 'Pick a day and time.' });
+    if (at > Date.now() + 5 * 60e3) return fail('VALIDATION', 'The finish time cannot be in the future.', 422, { completedAt: 'Pick a time that has passed.' });
+    const completedAt = new Date(at).toISOString();
+    sets.push('completed_at = ?'); args.push(completedAt);
+    before.completedAt = t.completed_at; after.completedAt = completedAt;
   }
 
   if (typeof b?.title === 'string') {

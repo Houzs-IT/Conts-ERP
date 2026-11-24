@@ -44,6 +44,7 @@ import { MEDIA_TYPES, mediaCap } from "../services/renovation/betaMedia";
 import { streamObject } from "../scm/routes/doc-attachments";
 import { financeKindFrom } from "../conts/parties";
 import { fundingFrom } from "../conts/project-limit";
+import { brandVisibleSql, loadBrandSide } from "../services/projectBrandScope";
 
 type Ctx = Context<{ Bindings: Env }>;
 const app = new Hono<{ Bindings: Env }>();
@@ -168,7 +169,7 @@ app.patch("/types/:id", requirePageAccess("projects.maintenance", "full"), async
 // ── Board ────────────────────────────────────────────────────────────────
 
 app.get("/", requirePageAccess("projects.list"), failClosed(async (c) => {
-  const rows = await loadProjectRows(db(c), coSql(c, "p.company_id"), { includeArchived: c.req.query("archived") === "1" });
+  const rows = await loadProjectRows(db(c), coSql(c, "p.company_id") + brandVisibleSql(await loadBrandSide(db(c), c.get("user"))), { includeArchived: c.req.query("archived") === "1" });
   const facts = await loadRenovationFacts(db(c), rows, { checklistKeys: BOARD_CHECKLIST_KEYS });
   const today = todayMyt();
   const hideMoney = stripFinance(c);
@@ -267,6 +268,7 @@ app.get("/calendar", requirePageAccess("projects.list"), async (c) => {
   const supplierId = c.req.query("supplierId") || null;
   const projectId = c.req.query("projectId") ? parseId(c.req.query("projectId")) : null;
   const personId = c.req.query("personId") ? parseId(c.req.query("personId")) : null;
+  const scopeSql = coSql(c, "p.company_id") + brandVisibleSql(await loadBrandSide(db(c), c.get("user")));
   const res = await db(c).prepare(
     `SELECT t.id::int AS id, t.project_id::int AS project_id, p.code AS project_code, p.name AS project_name, p.building, p.unit_no,
             t.stage_key, t.trade_code, t.fix_phase, t.label, t.fulfilment_kind, t.state, t.category_code, t.occurrence::int AS occurrence,
@@ -289,7 +291,7 @@ app.get("/calendar", requirePageAccess("projects.list"), async (c) => {
         AND (?::uuid IS NULL OR t.supplier_id = ?::uuid)
         AND (?::bigint IS NULL OR t.project_id = ?::bigint)
         AND (?::bigint IS NULL OR EXISTS (SELECT 1 FROM project_trade_task_assignees a WHERE a.task_id = t.id AND a.person_id = ?::bigint))
-        ${coSql(c, "p.company_id")}
+        ${scopeSql}
       ORDER BY coalesce(t.planned_start, t.planned_end), p.code, t.seq`,
   ).bind(to, from, supplierId, supplierId, projectId, projectId, personId, personId).all<Record<string, unknown>>();
   const today = todayMyt();
@@ -304,12 +306,12 @@ app.get("/calendar", requirePageAccess("projects.list"), async (c) => {
   }));
   const contractors = await db(c).prepare(
     `SELECT DISTINCT sup.id::text AS id, sup.name FROM project_trade_tasks t JOIN projects p ON p.id = t.project_id
-       JOIN scm.suppliers sup ON sup.id = t.supplier_id WHERE p.archived_at IS NULL${coSql(c, "p.company_id")} ORDER BY sup.name`,
+       JOIN scm.suppliers sup ON sup.id = t.supplier_id WHERE p.archived_at IS NULL${scopeSql} ORDER BY sup.name`,
   ).bind().all();
   const crew = await db(c).prepare(
     `SELECT DISTINCT pp.id::int AS id, pp.name FROM project_trade_task_assignees a JOIN project_people pp ON pp.id = a.person_id
        JOIN project_trade_tasks t ON t.id = a.task_id JOIN projects p ON p.id = t.project_id
-      WHERE p.archived_at IS NULL${coSql(c, "p.company_id")} ORDER BY pp.name`,
+      WHERE p.archived_at IS NULL${scopeSql} ORDER BY pp.name`,
   ).bind().all();
   return c.json({ from, to, data, contractors: contractors.results ?? [], crew: crew.results ?? [] });
 });
@@ -465,23 +467,27 @@ app.post("/snags/:defectId/close", requirePermission("projects.write"), async (c
 app.get("/:id", requirePageAccess("projects.list"), failClosed(async (c) => {
   const id = parseId(c.req.param("id"));
   if (!id) return c.json({ error: "invalid_id" }, 400);
-  const one = await loadOne(c, id);
+  /* The service cases, receipts and attendees need only the id, so they are read alongside the project's facts
+     instead of one after another once those are in. */
+  const [one, cases, grns, attending] = await Promise.all([
+    loadOne(c, id),
+    db(c).prepare(
+      `SELECT id, assr_no, status, complaint_issue, created_at FROM assr_cases WHERE project_id = ?${coSql(c)} ORDER BY id DESC`,
+    ).bind(id).all(),
+    db(c).prepare(
+      `SELECT g.id::text AS id, g.grn_number, g.status::text AS status, g.site_received_at, g.received_at_site,
+              po.po_number, sup.name AS supplier_name
+         FROM scm.grns g LEFT JOIN scm.purchase_orders po ON po.id = g.purchase_order_id LEFT JOIN scm.suppliers sup ON sup.id = g.supplier_id
+        WHERE g.project_id = ? ORDER BY g.created_at DESC`,
+    ).bind(id).all(),
+    db(c).prepare(
+      `SELECT pp.id::int AS id, pp.name, pp.active, pp.phone, to_json(pp.roles) AS roles FROM project_attendees a JOIN project_people pp ON pp.id = a.person_id
+        WHERE a.project_id = ? ORDER BY lower(pp.name)`,
+    ).bind(id).all<{ id: number; name: string; active: boolean; phone: string | null; roles: string[] }>(),
+  ]);
   if (!one) return c.json({ error: "not_found" }, 404);
   const { facts: f, view: v } = one;
   const hideMoney = stripFinance(c);
-  const cases = await db(c).prepare(
-    `SELECT id, assr_no, status, complaint_issue, created_at FROM assr_cases WHERE project_id = ?${coSql(c)} ORDER BY id DESC`,
-  ).bind(id).all();
-  const grns = await db(c).prepare(
-    `SELECT g.id::text AS id, g.grn_number, g.status::text AS status, g.site_received_at, g.received_at_site,
-            po.po_number, sup.name AS supplier_name
-       FROM scm.grns g LEFT JOIN scm.purchase_orders po ON po.id = g.purchase_order_id LEFT JOIN scm.suppliers sup ON sup.id = g.supplier_id
-      WHERE g.project_id = ? ORDER BY g.created_at DESC`,
-  ).bind(id).all();
-  const attending = await db(c).prepare(
-    `SELECT pp.id::int AS id, pp.name, pp.active, pp.phone, to_json(pp.roles) AS roles FROM project_attendees a JOIN project_people pp ON pp.id = a.person_id
-      WHERE a.project_id = ? ORDER BY lower(pp.name)`,
-  ).bind(id).all<{ id: number; name: string; active: boolean; phone: string | null; roles: string[] }>();
   const pos = new Map<string, { id: string; po_number: string; supplier_name: string | null; status: string; lines: number; received: boolean }>();
   for (const pl of f.poLines) {
     const cur = pos.get(pl.purchase_order_id) ?? { id: pl.purchase_order_id, po_number: pl.po_number, supplier_name: pl.supplier_name, status: pl.po_status, lines: 0, received: true };
@@ -514,6 +520,7 @@ app.get("/:id", requirePageAccess("projects.list"), failClosed(async (c) => {
     receipts: grns.results ?? [],
     financeHidden: hideMoney,
     flow: v.flow,
+    stageLayers: v.stageLayers,
     stepSla: f.stepSla ?? null,
     hold: v.hold,
     money: hideMoney ? { contractSen: null, receivedSen: null, receivedPct: null } : v.money,

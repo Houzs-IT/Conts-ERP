@@ -23,7 +23,7 @@ import { generateRooms, moveRoom, nextRoomName, placeRows, renameRoom } from '..
 
 /** One line: its key, its saved room, and how to draw it given its number in the order shown (0-based).
  *  In compact mode `move` is the line's move button, for the row to place among its own buttons. */
-export interface RoomRow { key: string; room: string; group?: string; render: (displayIndex: number, move?: ReactNode) => ReactNode }
+export interface RoomRow { key: string; room: string; group?: string; amountSen?: number; render: (displayIndex: number, move?: ReactNode) => ReactNode }
 export interface RoomLayout { label: string; bedrooms: number; bathrooms: number }
 /** The page's own card classes, so a room looks like the page's other sections. */
 export interface RoomCard { section: string; header: string; title: string; body: string }
@@ -97,7 +97,10 @@ function MoveLine({ rooms, current, onMove, inline }: { rooms: string[]; current
   );
 }
 
-export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAddLine, layout, disabled, card, compact }: {
+/** The part of a layout that decides its rooms. */
+export const roomLayoutKey = (layout: RoomLayout | null): string => (layout ? `${layout.bedrooms}|${layout.bathrooms}` : '');
+
+export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAddLine, layout, savedLayoutKey, disabled, card, compact, money }: {
   rooms: string[];
   /** `rename` is set when one room was renamed, so the parent moves its lines too. */
   onRoomsChange: (next: string[], rename?: { from: string; to: string }) => void;
@@ -105,27 +108,36 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
   onRowRoom: (key: string, room: string) => void;
   onAddLine: (room: string) => void;
   layout: RoomLayout | null;
+  /** A saved order: roomLayoutKey of the layout it was saved with, null while that is still loading, undefined for a
+      new order. The saved layout arriving is not a choice, so it adds no rooms; only a layout changed here does. */
+  savedLayoutKey?: string | null;
   disabled?: boolean;
   /** Each room as its own card (the page's classes) instead of rows inside one card. */
   card?: RoomCard;
   /** One compact row per line under a column header (Edit SO). */
   compact?: boolean;
+  /** Shows each room's total (the sum of its rows' amountSen) in its header. */
+  money?: (sen: number) => string;
 }) {
   const [note, setNote] = useState<string | null>(null);
   const confirm = useConfirm();
   const placed = placeRows(rooms, rows);
   const shown = placed.rooms;
   /* Choosing or changing the layout adds its rooms straight away (owner, 5 Nov 2026); rooms already here stay. */
-  const layoutKey = layout ? `${layout.bedrooms}|${layout.bathrooms}` : '';
+  const layoutKey = roomLayoutKey(layout);
   const seenLayout = useRef(layoutKey);
   useEffect(() => {
+    /* A cold load of ?edit=1 met the saved layout only after mounting, read it as a new choice and added a room the
+       order does not have (click sweep F10, 21 Nov 2026). Wait for the saved one and never count it as a change. */
+    if (savedLayoutKey === null) return;
     if (seenLayout.current === layoutKey) return;
     seenLayout.current = layoutKey;
     if (!layout || disabled) return;
+    if (savedLayoutKey !== undefined && layoutKey === savedLayoutKey) return;
     const r = generateRooms(shown, layout.bedrooms, layout.bathrooms);
     if (r.added.length > 0) onRoomsChange(r.rooms);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the layout is the trigger
-  }, [layoutKey]);
+  }, [layoutKey, savedLayoutKey]);
   /* Within a room, grouped lines (locked ones) come first, each group together; the rest keep their order. */
   const groups = shown.map((room) => {
     const inRoom = rows.filter((r) => placed.roomOf[r.key] === room);
@@ -180,6 +192,7 @@ export function RenovationSoRooms({ rooms, onRoomsChange, rows, onRowRoom, onAdd
     controls: (
       <>
         <span className="whitespace-nowrap px-1 text-[11px] text-ink-secondary">{g.rows.length} line{g.rows.length === 1 ? '' : 's'}</span>
+        {money && <span aria-label={`${g.room} total`} className="whitespace-nowrap px-1 font-money text-[12px] font-bold text-ink">{money(g.rows.reduce((t, r) => t + (r.amountSen ?? 0), 0))}</span>}
         {!disabled && (
           <>
             <button type="button" aria-label={`Move ${g.room} up`} className={iconBtn} disabled={i === 0} onClick={() => onRoomsChange(moveRoom(shown, i, -1))}><ArrowUp size={15} /></button>

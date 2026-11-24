@@ -1,6 +1,6 @@
 import { formatPhone } from '@2990s/shared/phone';
 import { buildVariantSummary } from '@2990s/shared';
-import type { RowInput } from 'jspdf-autotable';
+import type { RowInput, Styles } from 'jspdf-autotable';
 import {
   allocatePwpTriggerNotes,
   orderSofaModuleRowsWithinBuilds,
@@ -49,6 +49,11 @@ import {
    what this document prints and what the screen shows must be the same word.
    docs/modules/document-status-vocabulary.md §1. */
 import { statusLabel } from './status-pill';
+import { CONTS_LINES_BY_NAME } from '../../../conts/flowRules';
+
+/* Conts prints a line by its description, no Item Code column (owner, 16 Nov 2026: one PDF for the whole system,
+   the SO's, without the code). */
+const SHOW_CODE = !CONTS_LINES_BY_NAME;
 
 // ----------------------------------------------------------------------------
 // Sales Order PDF generator — dynamic jspdf import so it doesn't bloat the
@@ -137,6 +142,10 @@ type SoHeader = {
   /* Authoritative received-to-date rollup stamped by GET /:docNo (ledger +
      legacy header deposit). Falls back to summing `payments` when absent. */
   paid_sen_total?: number | null;
+  /* The part of paid_sen_total outside the payments ledger (a legacy header deposit), stamped by GET /:docNo. */
+  paid_outside_ledger_sen?: number | null;
+  /* Receipts taken on this order's live invoices, inside paid_sen_total (GET /:docNo). Printed as one row. */
+  paid_on_invoices_sen?: number | null;
   /* POS handover customer signature (data-URL or bare base64 PNG). */
   signature_b64?: string | null;
   /* Owner 2026-07 — brand letterhead. Stamped by GET /:docNo (SOFA→ZANOTTI,
@@ -206,8 +215,10 @@ type SoPayment = {
    "sales order" wording (Commander 2026-06-19 — same fix Hookka shipped). */
 /** A renovation contract prints its brand's letterhead and terms, the same as its Contract PDF (owner run, 4 Nov 2026: the
     furniture receipt terms and the company address were on a Dream Crafter contract). */
-export type SoPdfContract = {
-  brandName: string; logoKey?: string | null; letterhead: string[]; bankLine: string; termsLines: string[];
+export type SoPdfBrand = { brandName: string; logoKey?: string | null; letterhead: string[] };
+
+export type SoPdfContract = SoPdfBrand & {
+  bankLine: string; termsLines: string[];
   instalments: Array<{ label: string; percent: string; description: string }>;
 };
 
@@ -327,6 +338,63 @@ export type { SoPrintRooms };
 type JsPdf = import('jspdf').jsPDF;
 type AutoTableFn = (typeof import('jspdf-autotable'))['default'];
 
+export interface SoPdfOptions {
+  docTitle?: string;
+  docNoLabel?: string;
+  docNoun?: string;
+  rooms?: SoPrintRooms;
+  /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
+  projectDates?: { start: string; end: string };
+  contract?: SoPdfContract;
+  /* The brand picked on an order that is not a contract: its letterhead, with the order's own terms. */
+  brand?: SoPdfBrand;
+  /* A quotation prints on this same layout (owner, 17 Nov 2026: one PDF for the whole system): nothing is paid yet. */
+  quotation?: boolean;
+  /* The timetable (owner, 17 Nov 2026): each line's processing and delivery dates in place of its unit price and discount; no payments. */
+  timetable?: Record<string, { orderOn: string | null; deliverOn: string | null }>;
+  /* Show the unit price, hide it, or print only qty per line with money on the subtotal rows ('total'). */
+  unitPrice?: UnitPriceChoice;
+}
+
+export type UnitPriceChoice = 'show' | 'hide' | 'total';
+
+interface PrintedLine { item: SoItem; rowNumber: number; description: string }
+interface LineColumn { label: string; style: Partial<Styles>; cell: (line: PrintedLine) => string }
+
+const NUMBER_CELL = { halign: 'right', fontSize: 7.5 } as const;
+
+function dateColumns(timetable: NonNullable<SoPdfOptions['timetable']>): LineColumn[] {
+  const printDate = (date: string | null | undefined): string => (date ? fmtDocDate(date) : '—');
+  return [
+    { label: 'Processing', style: { cellWidth: 28, ...NUMBER_CELL }, cell: (line) => printDate(timetable[line.item.id]?.orderOn) },
+    { label: 'Delivery', style: { cellWidth: 28, ...NUMBER_CELL }, cell: (line) => printDate(timetable[line.item.id]?.deliverOn) },
+  ];
+}
+
+function moneyColumns(currency: string, unitPrice: UnitPriceChoice): LineColumn[] {
+  const moneyWidth = SHOW_CODE ? 24 : 26;
+  /* Total: a line prints its qty only; money shows on the group subtotal rows and the totals. */
+  if (unitPrice === 'total') return [{ label: 'SubTotal (RM)', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: () => '' }];
+  const unitPriceColumn: LineColumn = { label: 'Unit Price', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.unit_price_sen, currency) };
+  return [
+    ...(unitPrice === 'hide' ? [] : [unitPriceColumn]),
+    { label: 'Discount', style: { cellWidth: SHOW_CODE ? 16 : 20, ...NUMBER_CELL }, cell: (line) => (line.item.discount_sen > 0 ? fmtRm(line.item.discount_sen, currency) : '—') },
+    { label: 'Amount (RM)', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.total_sen, currency) },
+  ];
+}
+
+/* Money cells must stay on ONE line ("MYR 2,990.00", never wrapped): numeric columns are 7.5 pt, right-aligned, at a
+   fixed width. Description ('auto') is the only column allowed to wrap and takes whatever width the others leave. */
+function lineColumns(currency: string, opts: SoPdfOptions): LineColumn[] {
+  const leading: LineColumn[] = [
+    { label: '#', style: { cellWidth: 8, ...NUMBER_CELL }, cell: (line) => String(line.rowNumber) },
+    ...(SHOW_CODE ? [{ label: 'Item Code', style: { cellWidth: 28 }, cell: (line: PrintedLine) => line.item.item_code }] : []),
+    { label: 'Description', style: { cellWidth: 'auto' }, cell: (line) => line.description },
+    { label: 'Qty', style: { cellWidth: SHOW_CODE ? 14 : opts.timetable ? 20 : 16, ...NUMBER_CELL }, cell: (line) => `${line.item.qty} ${line.item.uom}` },
+  ];
+  return [...leading, ...(opts.timetable ? dateColumns(opts.timetable) : moneyColumns(currency, opts.unitPrice ?? 'show'))];
+}
+
 /* Draw ONE sales order's content into `doc` (letterhead → meta → items →
    payments → totals → signatures → terms → footer). Does NOT create the doc,
    save / output / preview — the caller finalizes ONCE, so several SOs can share
@@ -345,9 +413,7 @@ export async function renderSalesOrderInto(
   /* PWP vouchers this SO's trigger items issued (GET /:docNo `pwpCodes`) —
      used to mark trigger lines. Optional so older callers stay valid. */
   pwpCodes: SoPwpCodeRow[] = [],
-  opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms;
-    /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
-    projectDates?: { start: string; end: string }; contract?: SoPdfContract },
+  opts?: SoPdfOptions,
 ): Promise<void> {
   /* A cancelled line must never reach a CUSTOMER document — not as a printed
      row and not inside a total. The gate lives HERE, in the one function both
@@ -453,7 +519,8 @@ export async function renderSalesOrderInto(
   const brandLogoKey =
     (header.resolvedBrandLogoKey ?? header.resolved_brand_logo_key ?? null) || null;
   /* A contract prints under its own brand, whose logo is the one uploaded under Brands. */
-  const letterheadLogoKey = opts?.contract ? opts.contract.logoKey ?? null : brandLogoKey;
+  const brandLetterhead = opts?.contract ?? opts?.brand;
+  const letterheadLogoKey = brandLetterhead ? brandLetterhead.logoKey ?? null : brandLogoKey;
   if (letterheadLogoKey) await ensureBrandLogoLoaded(letterheadLogoKey);
 
   // ── Header (shared pdf-common letterhead) ─────────────────────────
@@ -464,7 +531,7 @@ export async function renderSalesOrderInto(
       { label: 'Date', value: fmtDocDate(header.so_date) },
     ],
     logo: getBrandLogoCache(letterheadLogoKey),
-    ...(opts?.contract ? { name: opts.contract.brandName, lines: opts.contract.letterhead } : {}),
+    ...(brandLetterhead ? { name: brandLetterhead.brandName, lines: brandLetterhead.letterhead } : {}),
   });
 
   // ── Resolve processing + delivery dates (folded into ORDER DETAILS below).
@@ -599,6 +666,7 @@ export async function renderSalesOrderInto(
     orderedItems.map((it) => [it.item_code]),
     pwpCodes,
   );
+  const columns = lineColumns(header.currency, opts ?? {});
   const tableRows = orderedItems.map((it, itIdx) => {
     const notes = [
       pwpRewardNote(it.variants),
@@ -624,15 +692,8 @@ export async function renderSalesOrderInto(
     const lines = keysOf(it).length > 0
       ? appendPhotoMarker(composed)
       : composed;
-    return [
-      String(itIdx + 1),
-      it.item_code,
-      lines.join('\n'),
-      `${it.qty} ${it.uom}`,
-      fmtRm(it.unit_price_sen, header.currency),
-      it.discount_sen > 0 ? fmtRm(it.discount_sen, header.currency) : '—',
-      fmtRm(it.total_sen, header.currency),
-    ];
+    const printedLine: PrintedLine = { item: it, rowNumber: itIdx + 1, description: lines.join('\n') };
+    return columns.map((column) => column.cell(printedLine));
   });
 
   /* Interleave category section header rows (SOFA / BEDFRAME / …) above each
@@ -643,13 +704,15 @@ export async function renderSalesOrderInto(
   /* One divider style for category and room header rows. */
   const sectionRowStyles = { fontStyle: 'bold', textColor: 40, halign: 'left', lineWidth: { top: 0.4 } as never } as const;
   const bodyRows: RowInput[] = [];
+  /* The timetable carries no money at all (owner, 18 Nov 2026): no amount column, no subtotals, totals or terms. */
+  const cols = columns.length;
   let lastGroup: string | null = null;
   /* Renovation mode: each room closes with its subtotal (owner, 24 Oct 2026, "By area"). */
   let roomSubtotal = 0;
   const pushRoomSubtotal = () => {
-    if (!rooms || lastGroup == null) return;
+    if (!rooms || lastGroup == null || opts?.timetable) return;
     bodyRows.push([
-      { content: `Subtotal - ${lastGroup}`, colSpan: 6, styles: { fontStyle: 'bold', halign: 'right', textColor: 60 } },
+      { content: `Subtotal - ${lastGroup}`, colSpan: cols - 1, styles: { fontStyle: 'bold', halign: 'right', textColor: 60 } },
       { content: fmtRm(roomSubtotal, header.currency), styles: { fontStyle: 'bold', halign: 'right', fontSize: 7.5 } },
     ]);
   };
@@ -658,7 +721,7 @@ export async function renderSalesOrderInto(
       const room = roomLabel(rooms, it.id);
       if (room !== lastGroup) {
         pushRoomSubtotal();
-        bodyRows.push([{ content: room.toUpperCase(), colSpan: 7, styles: sectionRowStyles }]);
+        bodyRows.push([{ content: room.toUpperCase(), colSpan: cols, styles: sectionRowStyles }]);
         lastGroup = room;
         roomSubtotal = 0;
       }
@@ -672,7 +735,7 @@ export async function renderSalesOrderInto(
         /* The category's NAME, not its code: `fabric_accessory` printed as
            FABRIC_ACCESSORY on HC-SO-2609-071 while every screen says Sofa
            Accessory (owner 2026-09-15). An unknown group still prints as stored. */
-        content: mfgCategoryLabel(grp).toUpperCase(), colSpan: 7,
+        content: mfgCategoryLabel(grp).toUpperCase(), colSpan: cols,
         styles: sectionRowStyles,
       }]);
       lastGroup = grp;
@@ -683,25 +746,13 @@ export async function renderSalesOrderInto(
 
   autoTable(doc, {
     startY: y,
-    head: [['#', 'Item Code', 'Description', 'Qty', 'Unit Price', 'Discount', 'Amount (RM)']],
+    head: [columns.map((column) => column.label)],
     body: bodyRows,
     theme: 'plain',
     rowPageBreak: 'avoid',
     styles: { ...DOC_TABLE_STYLES, fontSize: 8 },
     headStyles: DOC_TABLE_HEAD_STYLES,
-    /* Money cells must stay on ONE line ("MYR 2,990.00", never wrapped):
-       numeric columns are 7.5 pt, right-aligned. Fixed widths sum to ~114 mm of
-       182 usable (A4 − 2×14 margins), leaving ~68 mm for Description ('auto',
-       the only column allowed to wrap). */
-    columnStyles: {
-      0: { cellWidth: 8, halign: 'right', fontSize: 7.5 },
-      1: { cellWidth: 28 },
-      2: { cellWidth: 'auto' },
-      3: { cellWidth: 14, halign: 'right', fontSize: 7.5 },
-      4: { cellWidth: 24, halign: 'right', fontSize: 7.5 },
-      5: { cellWidth: 16, halign: 'right', fontSize: 7.5 },
-      6: { cellWidth: 24, halign: 'right', fontSize: 7.5 },
-    },
+    columnStyles: Object.fromEntries(columns.map((column, index) => [index, column.style])),
     margin: { left: margin, right: margin },
   });
   // jspdf-autotable mutates doc by assigning the finished Table to
@@ -734,13 +785,16 @@ export async function renderSalesOrderInto(
   // ── PAYMENTS RECEIVED ledger ──────────────────────────────────────
   // Sources transactions from the payments ledger (mfg_sales_order_payments)
   // instead of the legacy single-row header columns (deprecated PR-C).
+  /* A quotation has no payments block: nothing is paid on a quotation. */
+  if (!(opts?.quotation || opts?.timetable)) {
   if (ty > 250) { doc.addPage(); ty = margin; }
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
   doc.text('PAYMENTS RECEIVED', margin, ty);
   ty += 4;
 
-  if (payments.length === 0) {
+  const onInvoicesSen = Math.max(0, header.paid_on_invoices_sen ?? 0);
+  if (payments.length === 0 && onInvoicesSen === 0) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(110);
@@ -755,6 +809,8 @@ export async function renderSalesOrderInto(
       p.collected_by_name ?? '—',
       fmtRm(p.amount_sen, header.currency),
     ]);
+    /* Money taken on the order's sales invoices is paid on the order too (click sweep F31). */
+    if (onInvoicesSen > 0) payRows.push(['', 'Paid on sales invoices', '—', '—', fmtRm(onInvoicesSen, header.currency)]);
     autoTable(doc, {
       startY: ty,
       head: [['Date', 'Method', 'Approval Code', 'Collected By', 'Amount']],
@@ -774,16 +830,16 @@ export async function renderSalesOrderInto(
     });
     ty = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? ty) + 6;
   }
+  }
 
+  if (!opts?.timetable) {
   // ── Totals: SUBTOTAL / PAID TO DATE / TOTAL / BALANCE DUE ─────────
   /* POS-printout parity: the SO model has no separate subtotal — the grand
-     total stands in (add-ons ride inside the line totals). Paid-to-date
-     prefers the authoritative paid_sen_total stamped by GET /:docNo
-     (ledger + legacy header deposit), falling back to summing the rows. */
+     total stands in (add-ons ride inside the line totals). Paid-to-date is
+     the payment rows printed plus any legacy deposit outside the ledger
+     (soPdfPaidSen). */
   const subtotalSen = header.local_total_sen;
-  const paidSen = typeof header.paid_sen_total === 'number'
-    ? header.paid_sen_total
-    : payments.reduce((sum, p) => sum + (p.amount_sen || 0), 0);
+  const paidSen = soPdfPaidSen(header, payments);
   /* SIGNED (owner 2026-08-16) — over-collection is allowed, so the print must
      not floor the excess away and quietly tell the customer he is square when
      the business is holding RM 250 of his money. Negative flips the LABEL
@@ -804,6 +860,14 @@ export async function renderSalesOrderInto(
   /* Standard-checklist tax line — the SO model carries no header tax (prices
      are tax-inclusive / exempt), so this prints as a dash, not a number. */
   drawRow('Tax',          '—',                                   ty);     ty += 4;
+  if ((opts?.quotation || opts?.timetable)) {
+    ty += 2;
+    doc.setDrawColor(0);
+    doc.line(totalsX, ty, pageW - margin, ty);
+    doc.setFontSize(11);
+    drawRow('TOTAL', fmtRm(subtotalSen, header.currency), ty + 5, true);
+    ty += 12;
+  } else {
   drawRow('Total',        fmtRm(subtotalSen, header.currency), ty);     ty += 4;
   drawRow('Paid to date', fmtRm(paidSen,     header.currency), ty);     ty += 2;
   doc.setDrawColor(0);
@@ -816,6 +880,7 @@ export async function renderSalesOrderInto(
     true,
   );
   ty += 12;
+  }
 
   // Expected-deposit line — only shown when the commander has set one
   // on the header. Keeps the "target vs. collected" distinction visible.
@@ -834,12 +899,15 @@ export async function renderSalesOrderInto(
   // Amount in words (left, aligned with the totals block).
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(80);
   doc.text(
-    doc.splitTextToSize(`Amount in words: ${amountInWordsMyr(subtotalSen)}`, totalsX - margin - 8) as string[],
+    doc.splitTextToSize(`Amount in words: ${subtotalSen < 0 ? `LESS ${amountInWordsMyr(-subtotalSen)}` : amountInWordsMyr(subtotalSen)}`, totalsX - margin - 8) as string[],
     margin, awTopY + 1,
   );
   doc.setTextColor(0);
+  }
 
   // ── Signature boxes — customer (with stored POS signature) + company ──
+  /* The timetable is a schedule, not a document anyone signs (owner, 18 Nov 2026). */
+  if (!opts?.timetable) {
   if (ty > 225) { doc.addPage(); ty = margin; }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
   doc.text('Customer Signature', margin, ty);
@@ -870,10 +938,11 @@ export async function renderSalesOrderInto(
   );
   doc.setTextColor(0);
   ty += 6;
+  }
 
   // ── Numbered terms (POS RECEIPT_TERMS wording) ────────────────────
   /* A contract printed from the list or the phone has no brand terms to hand: the furniture receipt terms are not its terms. */
-  const noTerms = !opts?.contract && (header as { so_kind?: string | null }).so_kind === 'RENOVATION';
+  const noTerms = !!opts?.timetable || (!opts?.contract && (header as { so_kind?: string | null }).so_kind === 'RENOVATION');
   if (!noTerms) {
   if (ty > 255) { doc.addPage(); ty = margin; }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
@@ -903,7 +972,8 @@ export async function renderSalesOrderInto(
     doc.setPage(p);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(110);
     doc.text(header.doc_no, margin, 290);
-    doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(header.so_date)}`, pageW / 2, 290, { align: 'center' });
+    /* Conts: no "The Conts ERP · date" in the middle (owner, 17 Nov 2026). */
+    if (!CONTS_LINES_BY_NAME) doc.text(`${COMPANY.portalLabel} · ${fmtDocDate(header.so_date)}`, pageW / 2, 290, { align: 'center' });
     doc.text(`Page ${p} of ${pageCount}`, pageW - margin, 290, { align: 'right' });
     doc.setTextColor(0);
   }
@@ -912,6 +982,20 @@ export async function renderSalesOrderInto(
 /* Single SO → its own file (or print / preview). EXACT same signature and
    behaviour as before the renderSalesOrderInto extraction — single-doc output
    is byte-identical to the pre-refactor generator. */
+/** "Paid to date" on the SO print. The rows the print lists under PAYMENTS RECEIVED plus the part of the paid total
+    that is not in the ledger (a legacy header deposit), so the figure always agrees with the rows printed beside it.
+    Taking the header's paid_sen_total whole let a cached header disagree with fresh rows: TC-SO-2611-028 (21 Nov 2026)
+    listed RM 500 and RM 7,757 but printed "Paid to date RM 500.00". Without the split (an older server, a consignment
+    order) it falls back to the header total, then to the rows. */
+export function soPdfPaidSen(
+  header: Pick<SoHeader, 'paid_sen_total' | 'paid_outside_ledger_sen' | 'paid_on_invoices_sen'>,
+  payments: ReadonlyArray<Pick<SoPayment, 'amount_sen'>>,
+): number {
+  const rows = payments.reduce((sum, p) => sum + (p.amount_sen || 0), 0) + Math.max(0, header.paid_on_invoices_sen ?? 0);
+  if (typeof header.paid_outside_ledger_sen === 'number') return header.paid_outside_ledger_sen + rows;
+  return typeof header.paid_sen_total === 'number' ? header.paid_sen_total : rows;
+}
+
 export async function generateSalesOrderPdf(
   header: SoHeader,
   items: SoItem[],
@@ -920,9 +1004,7 @@ export async function generateSalesOrderPdf(
   /* PWP vouchers this SO's trigger items issued (GET /:docNo `pwpCodes`) —
      used to mark trigger lines. Optional so older callers stay valid. */
   pwpCodes: SoPwpCodeRow[] = [],
-  opts?: { docTitle?: string; docNoLabel?: string; docNoun?: string; rooms?: SoPrintRooms;
-    /* Conts renovation (migration 0117): the linked project's Start / End date, already worded ('15 Oct 2026', '—'). */
-    projectDates?: { start: string; end: string }; contract?: SoPdfContract },
+  opts?: SoPdfOptions,
 ): Promise<void> {
   // Dynamic import — code-split into a vendor chunk.
   const { jsPDF } = await import('jspdf');

@@ -60,14 +60,19 @@ export const BROWSER_STORAGE_KEY_REGISTRY: readonly StorageKeyRegistration[] = [
   // a successful save. Keyed by record + revision (vo:<id>,
   // quotation:<id>:<rev>, quotation-desk:<id>:<rev>); never applied by itself.
   { id: "renovation-form-drafts", classification: "DRAFT_UI", storage: ["localStorage"], keyFamily: "conts:reno-draft:(vo:<id>|quotation:<id>:<rev>|quotation-desk:<id>:<rev>)", matches: prefix("conts:reno-draft:") },
+  // Unsaved create/edit form drafts (SO / DO / SI / PI / PV / Production Order new, PO edit, Package editor;
+  // lib/formDraft.ts): offered back as "Restore unsaved draft?" after a reload. 7 days, cleared on save or Discard.
+  { id: "form-drafts", classification: "DRAFT_UI", storage: ["localStorage"], keyFamily: "conts:form-draft:u<user>:c<company>:<form>:<id|new>", matches: prefix("conts:form-draft:") },
   { id: "payment-retry-handoffs", classification: "DRAFT_UI", storage: ["localStorage"], keyFamily: "houzs:scm-handoff:v<version>:(so|si)PaymentRetry:u<user>:c<company>:<document>", matches: (key) => /^houzs:scm-handoff:v\d+:(?:so|si)PaymentRetry:u\d+:c\d+:.+$/.test(key) },
   { id: "scm-handoffs", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "houzs:scm-handoff:v<version>:<registered non-payment handoff>", matches: (key) => SCM_TRANSIENT_KEYS.has(key) },
+  { id: "projects-board-cache", classification: "CACHE", storage: ["localStorage"], keyFamily: "board-cache:v1:<name>:u<user>:c<company>", matches: (key) => /^board-cache:v1:.+:u\d+:c\d+$/.test(key) },
   { id: "query-snapshots", classification: "CACHE", storage: ["localStorage"], keyFamily: "houzs-rq-snapshot:<build>:<session>:<company>", matches: prefix("houzs-rq-snapshot:") },
   { id: "chunk-recovery", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "chunk-recovered-at", matches: exact("chunk-recovered-at") },
   { id: "chunk-action-reload", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "chunk-action-reload (cooldown for the print-action stale-chunk reload)", matches: exact("chunk-action-reload") },
   { id: "chunk-print-resume", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "chunk-print-resume (the print to reopen after that reload)", matches: exact("chunk-print-resume") },
   { id: "workspace-tabs", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "houzs.workspaceTabs.v1 (per-window strip; blob records its {user,company} owner)", matches: exact("houzs.workspaceTabs.v1") },
   { id: "scm-list-return", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "houzs.scmListReturn.v1 (per-section last filtered list URL, for detail Back)", matches: exact("houzs.scmListReturn.v1") },
+  { id: "back-trail", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "conts.backTrail.v1 (the pages this tab opened, in order, for Back to the page a record was opened from)", matches: exact("conts.backTrail.v1") },
   { id: "scm-list-focus", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "conts.scmListFocus.v1 (per-section row last opened from a list, scrolled back to on return)", matches: exact("conts.scmListFocus.v1") },
   { id: "assr-list-filter", classification: "TRANSIENT", storage: ["sessionStorage"], keyFamily: "houzs.assrListFilter.v1 (per-tab Service Cases search + stage, for detail Back)", matches: exact("houzs.assrListFilter.v1") },
   // Owner 2026-08-24: "i want make it my filter didnt close until i manually
@@ -187,6 +192,7 @@ export const PRODUCTION_STORAGE_CALLERS = [
   // remembered ONLY so logout can delete the server row. Same native:<feature>
   // family; not a secret (an APNs token is useless without our provider key).
   "lib/nativePush.ts",
+  "lib/backTrail.ts",
   "lib/query-persist.ts",
   "lib/rememberedEmail.ts",
   // Unsaved renovation form drafts (renovation-form-drafts, DRAFT_UI): the
@@ -220,6 +226,10 @@ export const PRODUCTION_STORAGE_CALLERS = [
   // next. Reviewed with the announcements redesign.
   "pages/announcements/ComposerModal.tsx",
   "pages/renovation/QuotationsList.tsx",
+  // Projects list last answer (11 Nov 2026, addf83fa): board-cache:v1:<name>:u<user>:c<company>,
+  // a CACHE of the server's board rows so the list shows at once; keyed by
+  // user and company through storageIdentity, replaced by the server's answer.
+  "pages/renovation-beta/boardCache.ts",
   "pages/renovation-beta/renovationBetaBoardApi.ts",
   "pages/renovation-beta/renovationPoColumns.ts",
   "pages/scm-v2/ProductModels.tsx",

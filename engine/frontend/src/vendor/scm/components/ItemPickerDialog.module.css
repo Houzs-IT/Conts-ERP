@@ -1,0 +1,89 @@
+.dropdown {
+  position: relative;
+}
+
+.categoryInput {
+  width: 100%;
+  min-height: 44px; /* ds-allow-hardcode: touch-target floor */
+  font-size: 16px; /* ds-allow-hardcode: below 16px iOS zooms into the input */
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line-strong);
+  background: var(--c-paper);
+  color: var(--c-ink);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  cursor: pointer;
+  user-select: none;
+  text-align: left;
+}
+
+.triggerLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron,
+.chevronOpen {
+  flex: none;
+  transition: transform 150ms ease; /* ds-allow-hardcode: chevron flip */
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  z-index: 50;
+  margin: 0;
+  padding: var(--space-1) 0;
+  list-style: none;
+  max-height: min(320px, 50dvh); /* ds-allow-hardcode: menu height cap */
+  overflow-y: auto;
+  background: var(--c-paper);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-3);
+}
+
+.option,
+.optionSelected {
+  width: 100%;
+  min-height: 44px; /* ds-allow-hardcode: touch-target floor */
+  padding: 0 var(--space-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--c-ink);
+  font-size: var(--fs-14);
+  text-align: left;
+  cursor: pointer;
+}
+
+.option:hover,
+.option:focus-visible {
+  background: var(--c-cream);
+}
+
+.optionSelected {
+  background: var(--c-cream);
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron,
+  .chevronOpen {
+    transition: none;
+  }
+}

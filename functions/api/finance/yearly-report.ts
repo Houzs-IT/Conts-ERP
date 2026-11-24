@@ -1,8 +1,11 @@
 import { type Env, all, json, fail, nowIso } from '../../_lib/db';
 import { requireSession, hasColumn } from '../../_lib/auth';
 import { todayMyt, MYT_DATE } from '../../_lib/ops';
-import { loadInputs, computeMonthsWithYearToDate, statementSettings, hasActivity, type Query } from '../../_lib/ownerStatement';
+import { loadInputs, computeMonthsWithYearToDate, computeMonth, statementSettings, hasActivity, type Query } from '../../_lib/ownerStatement';
 import { isTenancy } from '../../_lib/revenueModel';
+import { contractTypes } from '../../_lib/contractTypes';
+import { unitCode } from '../../_lib/ownerReport';
+import { asTrading, isTraded, groupOf, nonRentalUnits, rentOutIncome } from '../../_lib/unitReport';
 import { monthEndExclusive } from '../../_lib/revenue';
 import { companyLateFor } from '../../_lib/ownerLocks';
 import { taskCleanersReady } from '../../_lib/taskCleaners';
@@ -10,8 +13,9 @@ import { hasCleanPrices, priceBook, layoutKey } from '../../_lib/cleaningPrices'
 import { CLEAN_KINDS_SQL } from '../../_lib/cleaning';
 import type { YearlyRow } from '../../../src/lib/yearlyReport';
 
-/** GET /api/finance/yearly-report?year=2026 — the yearly unit report (PLAN-yearly-report.md): for every profit-share and
- *  fixed-rent unit, each month's figures from the statement engine (as GET /api/portfolio/owner-report, so the two agree)
+/** GET /api/finance/yearly-report?year=2026 — the yearly unit report (PLAN-yearly-report.md): every unit the Monthly view
+ *  lists, under the same kind (functions/_lib/unitReport.ts), each month's figures from the statement engine as GET
+ *  /api/portfolio/owner-report works them out, so the two agree
  *  plus what The Conts paid cleaners for the cleans finished on the unit that month (as GET /api/housekeeping/pay).
  *  Only inputs are sent; every block, total and difference is worked out by src/lib/yearlyReport.ts. */
 const YEAR = /^\d{4}$/;
@@ -27,7 +31,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const q: Query = (sql, ...args) => all(env, sql, ...args);
   const settings = await statementSettings(q);
   const inputs = await loadInputs(q, `${year}-01-01`, monthEndExclusive(`${year}-12`));
-  const computed = await computeMonthsWithYearToDate(q, inputs, months, settings);
+  const [computed, types, nonRental, rentOut] = await Promise.all([
+    computeMonthsWithYearToDate(q, inputs, months, settings), contractTypes(env), nonRentalUnits(env), rentOutIncome(env, months),
+  ]);
+  // Long term and rent to rent are read as the company's trading against the owner's fixed rent, as on Monthly.
+  const tradedUnits = inputs.units.filter(u => months.some(month => (computed.get(month) ?? []).some(m => m.unitId === u.id && isTraded(m.terms.model))));
+  const trading = new Map<string, ReturnType<typeof computeMonth>[number]>();
+  if (tradedUnits.length) for (const month of months)
+    for (const t of computeMonth(month, { ...inputs, units: tradedUnits.map(asTrading), adjustments: [] }, settings, 'dated')) trading.set(`${t.unitId}|${month}`, t);
   // The company's share of late changes to an earlier, locked month, by the month it counts in (part 2b, choice A).
   const late = await companyLateFor(env, null, months[0], months[months.length - 1]);
   const unitOf = new Map(inputs.units.map(u => [u.id, u]));
@@ -37,7 +48,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   let unpricedCleans = 0;
   if (await hasCleanPrices(env)) {
     const team = (await taskCleanersReady(env)) ? 'EXISTS (SELECT 1 FROM task_cleaners tc WHERE tc.task_id = t.id AND tc.cleaner_id IS NOT NULL)' : 'FALSE';
-    const layout = (await hasColumn(env, 'units', 'layout_type').catch(() => false)) ? 'u.layout_type' : 'NULL::text';
+    const layout = (await hasColumn(env, 'units', 'layout_type')) ? 'u.layout_type' : 'NULL::text';
     const jobs = await all<{ unit_id: string; kind: string; cleaner_pay: number | null; month: string; day_at: string; bedrooms: number | null; layout_type: string | null }>(env, `
       SELECT t.unit_id, t.kind, t.cleaner_pay, substr(${MYT_DATE('t.completed_at')}, 1, 7) AS month, COALESCE(t.scheduled_for, t.due_at, t.created_at) AS day_at,
              u.bedrooms, ${layout} AS layout_type
@@ -52,28 +63,31 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     }
   }
 
-  const units = new Map<string, { id: string; building: string; number: string; owner: string; contract: 'LT' | 'PS' }>();
+  const units = new Map<string, { id: string; code: string; building: string; number: string; owner: string }>();
   const rows: YearlyRow[] = [];
-  const excludedUnits = new Set<string>();
   const used = new Set<string>();
   for (const month of months) {
     for (const m of computed.get(month) ?? []) {
+      if (nonRental.has(m.unitId)) continue;
       const lateHere = late.get(`${m.unitId}|${month}`)?.amount ?? 0;
-      if (!hasActivity(m) && !lateHere) continue;
-      const lt = m.terms.basis === 'fixed_rent';
-      if (!lt && (m.terms.basis !== 'share' || isTenancy(m.terms.model))) { excludedUnits.add(m.unitId); continue; }
+      const f = isTraded(m.terms.model) ? trading.get(`${m.unitId}|${month}`) ?? m : m;
+      const rentIn = m.terms.model === 'master_lease' ? rentOut.get(`${m.unitId}|${month}`) ?? 0 : 0;
+      if (!hasActivity(f) && !rentIn && !m.adjustmentIds.length && !lateHere) continue;
       const u = unitOf.get(m.unitId)!;
-      const sum = (pick: (category: string) => boolean) => m.deductionGroups.filter(g => pick(g.category)).reduce((n, g) => n + g.amount, 0);
-      const contract = lt ? 'LT' : 'PS';
-      units.set(m.unitId, { id: m.unitId, building: u.property_name, number: u.unit_number, owner: u.owner_name, contract });
+      const { group, code } = groupOf(types, u, m, month);
+      const none = group === 'NONE';
+      const share = f.terms.basis === 'share' && !isTenancy(f.terms.model) && !none;
+      const sum = (pick: (category: string) => boolean) => f.deductionGroups.filter(g => pick(g.category)).reduce((n, g) => n + g.amount, 0);
+      units.set(m.unitId, { id: m.unitId, code: unitCode(u.property_name, u.unit_number), building: u.property_name, number: u.unit_number, owner: u.owner_name });
       used.add(`${m.unitId}|${month}`);
       rows.push({
-        unitId: m.unitId, month, contract, revenue: m.gross, cleaning: sum(c => c.startsWith('cleaning')),
+        unitId: m.unitId, month, group, contractCode: code, contract: share || none ? 'PS' : 'LT', revenue: f.gross + rentIn, cleaning: sum(c => c.startsWith('cleaning')),
         electricity: sum(c => c === 'electricity'), water: sum(c => c === 'water'), internet: sum(c => c === 'internet'), sewerage: sum(c => c === 'sewerage'),
-        additional: sum(c => c === 'additional'), misc: sum(c => c === 'misc'), ownerPct: lt ? 0 : m.terms.ownerPct ?? 0,
-        // A yearly guarantee is checked once a year, not month by month (as the Overall unit report).
-        ltGrr: lt ? m.fixedRent : m.terms.model === 'management_guarantee' ? m.guarantee : 0,
-        o2: m.adjustmentsTotal, nights: m.nights, days: m.days, cleanerCost: cost.get(`${m.unitId}|${month}`) ?? 0, late: lateHere,
+        additional: sum(c => c === 'additional'), misc: sum(c => c === 'misc'), ownerPct: none ? 100 : share ? f.terms.ownerPct ?? 0 : 0,
+        // A yearly guarantee is checked once a year, not month by month (as the Monthly view).
+        // A long-term let's owner base is the rent its statement pays (by the tenancy's days, as locked); a master lease's, the fixed rent.
+        ltGrr: none ? 0 : isTenancy(m.terms.model) ? m.payoutBeforeAdjustments : !share ? f.fixedRent : f.terms.model === 'management_guarantee' ? f.guarantee : 0,
+        o2: m.adjustmentsTotal, nights: f.nights, days: f.days, cleanerCost: cost.get(`${m.unitId}|${month}`) ?? 0, late: lateHere,
       });
     }
   }
@@ -81,7 +95,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   let notInGrid = 0;
   for (const [k, v] of cost) if (!used.has(k)) notInGrid += v;
   return json({
-    generatedAt: nowIso(), year, months, rows, notInGrid, unpricedCleans, excluded: excludedUnits.size,
+    generatedAt: nowIso(), year, months, rows, notInGrid, unpricedCleans,
     toDate: year === thisYear ? todayMyt().slice(0, 7) : null,
     units: [...units.values()].sort((a, b) => a.building.localeCompare(b.building) || a.number.localeCompare(b.number, 'en', { numeric: true })),
   });

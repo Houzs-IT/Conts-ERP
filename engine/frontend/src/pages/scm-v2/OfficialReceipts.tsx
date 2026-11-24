@@ -19,6 +19,7 @@
 // receipt whose payment is gone). "Any month" is the newest 100, as before.
 // ----------------------------------------------------------------------------
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from '../../vendor/scm/lib/authed-fetch';
 import { fmtSen, fmtDateOrDash } from '../../vendor/shared/format';
@@ -41,6 +42,9 @@ type ReceiptRow = ReceiptPdfData & {
   payment_id: string;
   channel_account_code: string | null;
   created_at: string;
+  /** The instalment invoice a renovation receipt is for (migration 0358); null = the order alone. */
+  sales_invoice_id?: string | null;
+  invoice_no?: string | null;
 };
 
 /** A renovation payment ahead of its invoice (spec 7.6): the next instalment, at the amount the bill route expects. */
@@ -100,9 +104,12 @@ export const OfficialReceipts = () => {
   const chooseBank = useChooseBank();
   const choose = useChoice();
   const notify = useNotify();
-  const [status, setStatus] = useState<'' | 'DRAFT' | 'FORMAL'>('');
+  /* ?status=DRAFT (Finance's To do: payments to confirm) opens on the drafts of any month. */
+  const [searchParams] = useSearchParams();
+  const askedDrafts = searchParams.get('status') === 'DRAFT';
+  const [status, setStatus] = useState<'' | 'DRAFT' | 'FORMAL'>(askedDrafts ? 'DRAFT' : '');
   /* '' = any month: the newest 100 receipts. */
-  const [month, setMonth] = useState<string>(mytMonth());
+  const [month, setMonth] = useState<string>(askedDrafts ? '' : mytMonth());
   const [filesFor, setFilesFor] = useState<ReceiptRow | null>(null);
   /* Print opens the app's one Print preview, as every other document does (owner, 3 Nov 2026). */
   const [printFor, setPrintFor] = useState<ReceiptRow | null>(null);
@@ -180,6 +187,7 @@ export const OfficialReceipts = () => {
     },
     { key: 'paid', label: 'Paid', render: (r) => fmtDateOrDash(r.paid_at), getValue: (r) => r.paid_at, exportFormat: 'date' },
     { key: 'document', label: 'Document', render: (r) => r.doc_no ?? '—', getValue: (r) => r.doc_no ?? '' },
+    { key: 'invoice', label: 'Invoice', render: (r) => r.invoice_no ?? '—', getValue: (r) => r.invoice_no ?? '' },
     { key: 'customer', label: 'Customer', render: (r) => r.customer_name ?? '—', getValue: (r) => r.customer_name ?? '' },
     { key: 'method', label: 'Method', render: (r) => methodLabel(r.method), getValue: (r) => r.method ?? '' },
     {
@@ -212,6 +220,7 @@ export const OfficialReceipts = () => {
           rows={[
             { label: 'Customer', value: printFor.customer_name ?? '-' },
             { label: 'Document', value: printFor.doc_no ?? '-' },
+            ...(printFor.invoice_no ? [{ label: 'Invoice', value: printFor.invoice_no }] : []),
             { label: 'Paid', value: fmtDateOrDash(printFor.paid_at) },
             { label: 'Amount', value: fmtSen(printFor.amount_sen) },
           ]}
@@ -219,7 +228,7 @@ export const OfficialReceipts = () => {
           onPrint={async () => { await generateReceiptPdf(printFor, { action: 'print' }); setPrintFor(null); }}
           onDownload={async () => { await generateReceiptPdf(printFor, { action: 'save' }); setPrintFor(null); }} />
       )}
-      <PageHeader eyebrow="Finance" title="Official Receipts" />
+      <PageHeader eyebrow="Finance" title="Official receipts" />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {([['', 'All'], ['DRAFT', 'Waiting for confirmation'], ['FORMAL', 'Confirmed']] as const).map(([v, label]) => (
           <button key={v || 'all'} type="button" style={btn(status === v)} onClick={() => setStatus(v)}>{label}</button>

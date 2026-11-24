@@ -7,6 +7,7 @@ import { signStaffAssertion, verifyStaffAssertion, staffByEmail, staffFromAssert
 const SECRET = 'x'.repeat(40);
 const STAFF = [
   { id: 'u-tech', full_name: 'Ah Keong', email: 'u-tech@no-email.invalid', department_id: 'maint', department_side: 'conts', role: 'technician', active: true },
+  { id: 'u-reno', full_name: 'Ah Seng', email: 'u-reno@no-email.invalid', department_id: null, department_side: null, role: 'renovator', active: true },
   { id: 'u-ops', full_name: 'Wei Wen', email: 'WeiWen@theconts.com', department_id: 'ops', department_side: 'both', role: 'operations_staff', active: true },
   { id: 'u-gone', full_name: 'Gone', email: 'gone@theconts.com', department_id: 'ops', department_side: 'both', role: 'operations_staff', active: false },
 ];
@@ -32,6 +33,7 @@ describe('staffByEmail', () => {
   test('finds a person whatever the case of the email; an inactive one is nobody', async () => {
     expect(await staffByEmail(sbOf(), 'weiwen@theconts.com')).toMatchObject({ userId: 'u-ops', side: 'both', field: false });
     expect(await staffByEmail(sbOf(), 'u-tech@no-email.invalid')).toMatchObject({ userId: 'u-tech', field: true });
+    expect(await staffByEmail(sbOf(), 'u-reno@no-email.invalid')).toMatchObject({ userId: 'u-reno', departmentId: null, field: true });
     expect(await staffByEmail(sbOf(), 'gone@theconts.com')).toBeNull();
     expect(await staffByEmail(sbOf(), 'nobody@x.com')).toBeNull();
   });

@@ -12,7 +12,7 @@ import { companyLateFor } from './ownerLocks';
 export type Item = { label: string; amount: number };
 export type PnlRow = { label: string; amount: number; type: string; items?: Item[] };
 
-const PAYER_LABEL: Record<string, string> = { owner: 'Owner', the_conts: 'The Conts', tenant: 'Tenant', guest_deposit: 'Guest', warranty: 'Warranty' };
+const PAYER_LABEL: Record<string, string> = { owner: 'Owner (sharing)', the_conts: 'The Conts', tenant: 'Tenant', guest_deposit: 'Guest', warranty: 'Warranty' };
 const CATEGORY_LABEL: Record<string, string> = {
   electricity: 'Electricity', water: 'Water', internet: 'Internet', sewerage: 'Indah Water', cleaning: 'Cleaning', housekeeping: 'Cleaning',
   maintenance: 'Maintenance', utilities: 'Utilities', other: 'Misc', consumables: 'Consumables', furniture: 'Furniture',

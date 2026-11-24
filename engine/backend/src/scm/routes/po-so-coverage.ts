@@ -77,7 +77,7 @@ import { parseProvenanceNote } from './document-flow';
 import { computeMrp, mrpReverseCoverage } from './mrp';
 import { loadLeadBuffers } from '../../services/agents/procurement-learning';
 import { tracePoDeliveredLedger } from '../lib/source-po-trace';
-import { chunkIn, UUID_CHUNK } from '../lib/paginate-all';
+import { chunkIn, paginateAll, UUID_CHUNK } from '../lib/paginate-all';
 import { eager } from '../lib/concurrency';
 import type { Env, Variables } from '../env';
 
@@ -568,8 +568,9 @@ poSoCoverage.get('/:type/:id', async (c) => {
           .map((h) => h.doc_no).filter((x): x is string => !!x)),
       ];
       if (validDocs.length > 0) {
-        const { data: soLines } = await sb.from('mfg_sales_order_items')
-          .select('doc_no, item_code').in('doc_no', validDocs);
+        /* Paged: a bulk PO naming a few dozen orders already reaches 1,000 order lines, and one read stops there. */
+        const { data: soLines } = await chunkIn<SoLineRow>(validDocs, (batch, from, to) => sb.from('mfg_sales_order_items')
+          .select('id, doc_no, item_code').in('doc_no', batch).order('id').range(from, to));
         storedOrigin = buildStoredOrigins(
           poSkus,
           (soHeaders ?? []) as SoHeaderRow[],
@@ -813,8 +814,10 @@ export async function resolvePoSoCoveragePerSkuForPos(
   for (let k = 0; k < validDocArr.length; k += UUID_CHUNK) {
     const chunk = validDocArr.slice(k, k + UUID_CHUNK);
     if (chunk.length === 0) continue;
-    const { data: soLines } = await sb.from('mfg_sales_order_items')
-      .select('doc_no, item_code').in('doc_no', chunk);
+    /* Paged: ~76 orders per batch carry ~3,000 lines on average, and one read stops at 1,000, so orders late in a
+       batch read as having no lines and their PO lost its "from SO" link on the list. */
+    const { data: soLines } = await paginateAll<SoLineRow>((from, to) => sb.from('mfg_sales_order_items')
+      .select('id, doc_no, item_code').in('doc_no', chunk).order('id').range(from, to));
     for (const l of (soLines ?? []) as SoLineRow[]) {
       if (!l.doc_no) continue;
       const arr = soLinesByDoc.get(l.doc_no) ?? [];

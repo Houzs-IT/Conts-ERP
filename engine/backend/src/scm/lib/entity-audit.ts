@@ -48,6 +48,9 @@ export const ENTITY_TYPES = [
   'LEDGER_SETTINGS',
   /* Conts (owner, 4 Nov 2026): the production order, a clone of the purchase order. */
   'PRODUCTION_ORDER',
+  /* A credit note's knock-off (ported from Houzs): what each invoice took off the note, from -> to in sen, when the
+     knock-off is changed, given back or cancelled. Write-only so far. */
+  'CREDIT_NOTE',
 ] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
 

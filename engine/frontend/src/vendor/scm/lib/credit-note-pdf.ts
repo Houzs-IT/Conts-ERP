@@ -14,7 +14,8 @@
 import {
   drawHeader, drawTwoColInfo, drawSignatureBoxes, deliverPdf, deliverPdfBlob,
   amountInWordsMyr, fmtRm, fmtDocDate, safeName, DOC_TABLE_STYLES, DOC_TABLE_HEAD_STYLES, type PdfAction,
-} from './pdf-common';
+} from './pdf-common';
+import { stampWatermark } from '../../../lib/renovation/doc-watermark';
 
 export type CreditNotePdfHeader = {
   note_number: string;
@@ -165,5 +166,6 @@ export async function generateCreditNotesPdf(
     if (i > 0) doc.addPage();
     renderCreditNoteInto(doc, autoTable, it.header, it.lines, accountName);
   });
+  stampWatermark(doc);
   deliverPdfBlob(doc.output('blob'), 'credit-notes.pdf', opts?.action ?? 'save');
 }

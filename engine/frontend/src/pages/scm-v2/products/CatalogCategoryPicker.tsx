@@ -2,7 +2,7 @@
    group; changing the group clears a sub-category that does not belong to it.
    A legacy Houzs category (SOFA, ...) is shown as its group with its implied
    sub-category, and is only rewritten if the user picks something else.
-   A hidden sub-category is offered only to the SKU that already has it. */
+   A hidden group or sub-category is offered only to the SKU that already has it. */
 import type { CatalogGroup } from '../../../vendor/shared/renovation-catalog';
 import { useRenovationCatalog } from '../../../vendor/scm/lib/renovation-catalog-queries';
 import styles from '../Products.module.css';
@@ -34,7 +34,7 @@ export function CatalogCategoryPicker({
             onChange({ group: g, sub: keep });
           }}
         >
-          {catalog.groups.map((g) => (
+          {catalog.allGroups.filter((g) => g.active !== false || g.code === group).map((g) => (
             <option key={g.code} value={g.code}>{g.label}</option>
           ))}
         </select>

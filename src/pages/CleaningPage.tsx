@@ -158,7 +158,7 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const [overdueOpen, setOverdueOpen] = useState(() => { try { return localStorage.getItem('cleaning.overdueOpen') === '1'; } catch { return false; } });
   const toggleOverdue = () => setOverdueOpen(v => { try { localStorage.setItem('cleaning.overdueOpen', v ? '0' : '1'); } catch { /* private window */ } return !v; });
   const [picks, setPicks] = useState<Set<string>>(new Set());
-  const [bulk, setBulk] = useState<'done' | 'cancel' | null>(null);
+  const [bulk, setBulk] = useState<'done' | 'delete' | null>(null);
 
   const { data, loading, error, reload: reloadData, poll } = useApi<Board>(`/housekeeping/board?date=${date}`);
   // The side menu's counts (open jobs, today's work) follow what was just done here.
@@ -231,11 +231,14 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   const overdueAll = rows.length - dayRows.length;
   const unassigned = dayRows.filter(r => r.status !== 'done' && !r.cleanerId && !r.assigneeId && !r.assigneeName).length;
   const ready = dayRows.filter(r => r.status === 'ready').length;
-  // A pick only lives while its job is still overdue and on screen.
-  const overdueIds = overdueRows.map(r => r.id).join(',');
-  useEffect(() => { setPicks(p => { const keep = new Set(overdueRows.map(r => r.id)); const n = new Set([...p].filter(id => keep.has(id))); return n.size === p.size ? p : n; }); }, [overdueIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A pick only lives while its job is still open and on screen.
+  const openVisibleIds = visible.filter(r => r.status !== 'done').map(r => r.id).join(',');
+  useEffect(() => { setPicks(p => { const keep = new Set(openVisibleIds.split(',')); const n = new Set([...p].filter(id => keep.has(id))); return n.size === p.size ? p : n; }); }, [openVisibleIds]);
   const togglePicks = (ids: string[], on: boolean) => setPicks(p => { const n = new Set(p); ids.forEach(id => (on ? n.add(id) : n.delete(id))); return n; });
   const allPicked = overdueRows.length > 0 && overdueRows.every(r => picks.has(r.id));
+  const pickedRows = visible.filter(r => picks.has(r.id));
+  const canMarkPickedDone = pickedRows.length > 0 && pickedRows.every(isOverdue);
+  const boardPicks: Picks | undefined = mayBulk ? { has: id => picks.has(id), toggle: togglePicks } : undefined;
   const sel = rows.find(r => r.id === selected) ?? null;
   useEffect(() => { if (selected && data && !rows.some(r => r.id === selected)) setSelected(null); }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -292,6 +295,17 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
           body={building || cleaner ? undefined : 'Cleaning jobs appear when guests check out. Add one by hand for a deep clean or a refresh.'}
           action={building || cleaner ? { label: 'Clear filters', onClick: () => { setBuilding(''); setCleaner(''); } } : { label: 'Add cleaning job', onClick: () => setCreating(true) }} />
       ) : <>
+        {mayBulk && picks.size > 0 && (
+          <div role="toolbar" aria-label="Act on the selected cleaning jobs" className="sticky top-0 z-[2] px-3 py-2 rounded-control bg-card border border-solid border-line flex items-center gap-2 flex-wrap shadow-[var(--shadow-overlay)] max-md:fixed max-md:top-auto max-md:inset-x-3 max-md:bottom-[calc(88px+env(safe-area-inset-bottom))] max-md:z-30 max-md:m-0">
+            <span className="text-copy font-medium">{picks.size} selected</span>
+            <Button size="sm" variant="tertiary" onClick={() => setPicks(new Set())} className="mr-auto">Clear</Button>
+            <span className="flex gap-2 max-md:w-full">
+              <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => setAssignJobs({ ids: [...picks], clear: () => setPicks(new Set()) })} className="max-md:flex-1">Assign</Button>
+              {canMarkPickedDone && <Button size="sm" variant="primary" icon={<Icon name="Check" size="sm" />} onClick={() => setBulk('done')} className="max-md:flex-1">Mark done</Button>}
+              <Button size="sm" variant="secondary" icon={<Icon name="Trash2" size="sm" />} onClick={() => setBulk('delete')} className="max-md:flex-1">Delete</Button>
+            </span>
+          </div>
+        )}
         {overdueGroups.length > 0 && (
           <section aria-label="Overdue cleaning jobs" className="flex-none rounded-card border border-solid border-danger-line bg-danger-bg flex flex-col">
             <header className="flex items-center gap-x-3 gap-y-2 flex-wrap px-4 py-3">
@@ -313,24 +327,13 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
                 </label>
               )}
             </header>
-            {mayBulk && overdueOpen && picks.size > 0 && (
-              <div role="toolbar" aria-label="Close the selected overdue jobs" className="sticky top-0 z-[1] mx-3 mb-3 px-3 py-2 rounded-control bg-card border border-solid border-line flex items-center gap-2 flex-wrap shadow-[var(--shadow-overlay)] max-md:fixed max-md:top-auto max-md:inset-x-3 max-md:bottom-[calc(88px+env(safe-area-inset-bottom))] max-md:z-30 max-md:m-0">
-                <span className="text-copy font-medium">{picks.size} selected</span>
-                <Button size="sm" variant="tertiary" onClick={() => setPicks(new Set())} className="mr-auto">Clear</Button>
-                <span className="flex gap-2 max-md:w-full">
-                  <Button size="sm" variant="secondary" icon={<Icon name="Users" size="sm" />} onClick={() => setAssignJobs({ ids: [...picks], clear: () => setPicks(new Set()) })} className="max-md:flex-1">Assign</Button>
-                  <Button size="sm" variant="primary" icon={<Icon name="Check" size="sm" />} onClick={() => setBulk('done')} className="max-md:flex-1">Mark done</Button>
-                  <Button size="sm" variant="secondary" onClick={() => setBulk('cancel')} className="max-md:flex-1">Cancel job</Button>
-                </span>
-              </div>
-            )}
             {overdueOpen && (
               <div className="px-3 pb-3 flex flex-col gap-3">
                 {overdueGroups.map(g => (
                   <BuildingCard key={g.key} group={g} now={now} future={false} selected={selected} busy={busy}
                     onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan} cleaners={cleaners} onAssignOne={assignOne}
                     onAssign={() => setAssignJobs({ ids: g.rows.filter(r => r.status !== 'done').map(r => r.id) })}
-                    picks={mayBulk ? { has: id => picks.has(id), toggle: togglePicks } : undefined} />
+                    picks={boardPicks} />
                 ))}
               </div>
             )}
@@ -345,10 +348,10 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         {groups.map(g => (
           <BuildingCard key={g.key} group={g} now={now} future={date > mytDay(0)} selected={selected} busy={busy}
             onSelect={id => setSelected(id)} onGuestLeft={guestLeft} onUndoLeft={undoLeft} onCheckIn={setCheckIn} onPlan={plan} cleaners={cleaners} onAssignOne={assignOne}
-            onAssign={() => setAssignFor({ buildingId: g.id, name: g.name })} />
+            onAssign={() => setAssignFor({ buildingId: g.id, name: g.name })} picks={boardPicks} />
         ))}
         {/* Room under the last job for the bar pinned to the bottom of a phone. */}
-        {mayBulk && overdueOpen && picks.size > 0 && <div aria-hidden className="md:hidden h-20 flex-none" />}
+        {mayBulk && picks.size > 0 && <div aria-hidden className="md:hidden h-20 flex-none" />}
       </>}
       <PhoneMoreLinks onTab={onTab} onCleaners={() => navigate('/hr/employees?tab=employee-master')} />
     </>
@@ -393,9 +396,13 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
         detail={sel ? <CleanDetail key={sel.id} row={sel} now={now} onClose={() => setSelected(null)} onChanged={reload} onGuestLeft={() => void guestLeft({ taskId: sel.id }, sel.unitNumber)}
           onCheckIn={t => sel.next?.reservationId && void setCheckIn(sel.next.reservationId, t, sel.unitNumber)} savingIn={!!sel.next?.reservationId && busy === `in-${sel.next.reservationId}`} /> : null} />
 
-      {bulk && (
-        <BulkCloseModal action={bulk} jobs={overdueRows.filter(r => picks.has(r.id))} onClose={() => setBulk(null)}
+      {bulk === 'done' && (
+        <BulkCloseModal jobs={pickedRows} onClose={() => setBulk(null)}
           onDone={(title, body) => { setBulk(null); setPicks(new Set()); toast({ tone: 'success', title, body }); reload(); }} />
+      )}
+      {bulk === 'delete' && (
+        <DeleteCleansModal jobs={pickedRows} onClose={() => setBulk(null)}
+          onDone={(title, body) => { setBulk(null); setPicks(new Set()); toast({ tone: body ? 'warning' : 'success', title, body }); reload(); }} />
       )}
       {creating && <NewCleanModal date={date} onClose={() => setCreating(false)} onDone={() => { setCreating(false); reload(); }} />}
       {assignJobs && <BulkAssignCleaner taskIds={assignJobs.ids} onClose={() => setAssignJobs(null)}
@@ -408,35 +415,73 @@ function BoardView({ onTab }: { onTab: (t: Tab) => void }) {
   );
 }
 
-/* ---------- closing overdue jobs in bulk (management) ---------- */
+/* ---------- closing or deleting cleaning jobs in bulk (management) ---------- */
 
 interface BulkResult { closed: number; skipped: { id: string; unitNumber: string | null; reason: string }[]; charged: number; chargedAmount: number; notCharged?: { unitNumber: string | null; reason: string }[] }
 
-/** Mark done (no photo, note "closed in bulk", charged like a finished clean) or Cancel job (a reason, nothing charged)
- *  for the overdue jobs ticked on the board: functions/api/housekeeping/overdue.ts. */
-function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'cancel'; jobs: Row[]; onClose: () => void; onDone: (title: string, body?: string) => void }) {
-  const [reason, setReason] = useState('');
+/** Mark done (no photo, note "closed in bulk", charged like a finished clean) for the overdue jobs ticked on the board:
+ *  functions/api/housekeeping/overdue.ts. */
+function BulkCloseModal({ jobs, onClose, onDone }: { jobs: Row[]; onClose: () => void; onDone: (title: string, body?: string) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const n = jobs.length;
   const priced = jobs.filter(j => j.unitId && j.amount != null);
   const estimate = priced.reduce((s, j) => s + Number(j.amount), 0);
   async function save() {
-    if (action === 'cancel' && !reason.trim()) { setError('Say why these jobs are cancelled.'); return; }
     setBusy(true);
     try {
       // In parts of 50: each finished clean is charged one by one on the server, so a part stays a short request.
       const r: BulkResult = { closed: 0, skipped: [], charged: 0, chargedAmount: 0 };
       for (let i = 0; i < jobs.length; i += 50) {
-        const part = await api.post<BulkResult>('/housekeeping/overdue', { action, taskIds: jobs.slice(i, i + 50).map(j => j.id), ...(action === 'cancel' ? { reason: reason.trim() } : {}) });
+        const part = await api.post<BulkResult>('/housekeeping/overdue', { action: 'done', taskIds: jobs.slice(i, i + 50).map(j => j.id) });
         r.closed += part.closed; r.skipped.push(...part.skipped); r.charged += part.charged; r.chargedAmount += part.chargedAmount;
       }
       const left = skippedNote(r.skipped.map(x => ({ label: x.unitNumber ?? 'A job', reason: x.reason })));
-      const money = action === 'done' ? (r.charged ? `${plural(r.charged, 'charge')} to units, ${rm(r.chargedAmount)}.` : 'Nothing new charged to units.') : 'Nothing charged.';
-      onDone(action === 'done' ? `${plural(r.closed, 'cleaning job')} marked done.` : `${plural(r.closed, 'cleaning job')} cancelled.`, [money, left].filter(Boolean).join(' '));
+      const money = r.charged ? `${plural(r.charged, 'charge')} to units, ${rm(r.chargedAmount)}.` : 'Nothing new charged to units.';
+      onDone(`${plural(r.closed, 'cleaning job')} marked done.`, [money, left].filter(Boolean).join(' '));
     } catch (e) { setError(errorMessage(e, 'Not saved. Try again in a moment.')); setBusy(false); }
   }
-  const list = (
+  return (
+    <OpsModal title={`Mark ${plural(n, 'overdue cleaning job')} done?`} eyebrow="Cleaning" size="sm" onClose={onClose} busy={busy}
+      sub="Recorded as done by you, now, with the note 'closed in bulk'. No photo is asked for. Each one is charged to its unit like a finished clean, on the job's own day."
+      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Back</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Mark {plural(n, 'job')} done</Button></>}>
+      <CleanJobList jobs={jobs} />
+      {estimate > 0 && <p className="m-0 text-copy text-muted-ink">About {rm(estimate)} to units ({plural(priced.length, 'priced job')}). A unit already charged for a clean that day is not charged twice.</p>}
+      {error && <p role="alert" className="m-0 text-copy text-danger">{error}</p>}
+    </OpsModal>
+  );
+}
+
+interface DeleteCleansResult { deleted: number; skipped: { id: string; unitNumber: string | null; reason: string }[] }
+
+function DeleteCleansModal({ jobs, onClose, onDone }: { jobs: Row[]; onClose: () => void; onDone: (title: string, body?: string) => void }) {
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const jobCount = jobs.length;
+  async function save() {
+    if (!reason.trim()) { setError(jobCount === 1 ? 'Say why the job is deleted.' : 'Say why these jobs are deleted.'); return; }
+    setBusy(true);
+    try {
+      const result = await api.post<DeleteCleansResult>('/housekeeping/cancel', { taskIds: jobs.map(job => job.id), reason: reason.trim() });
+      const keptNote = skippedNote(result.skipped.map(kept => ({ label: kept.unitNumber ?? 'A job', reason: kept.reason })));
+      onDone(`${plural(result.deleted, 'cleaning job')} deleted.`, keptNote || undefined);
+    } catch (e) { setError(errorMessage(e, 'Not deleted. Try again in a moment.')); setBusy(false); }
+  }
+  return (
+    <OpsModal title={jobCount === 1 ? 'Delete this cleaning job?' : `Delete ${plural(jobCount, 'cleaning job')}?`} eyebrow="Cleaning" size="sm" onClose={onClose} busy={busy}
+      sub="Removed for everyone and nothing is charged. The reason is kept in the history, and the checkout is not planned again. A job a cleaner started, or one with photos, is kept: mark it done instead."
+      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Back</Button><Button size="sm" variant="danger" loading={busy} onClick={() => void save()}>{jobCount === 1 ? 'Delete job' : `Delete ${plural(jobCount, 'job')}`}</Button></>}>
+      <CleanJobList jobs={jobs} />
+      <FormRow label="Reason" error={error}>
+        <textarea className={TEXTAREA} value={reason} maxLength={500} onChange={e => { setReason(e.target.value); setError(null); }} placeholder="e.g. Guest extended, the unit is not turned over today" />
+      </FormRow>
+    </OpsModal>
+  );
+}
+
+function CleanJobList({ jobs }: { jobs: Row[] }) {
+  return (
     <ul className="m-0 p-0 list-none max-h-[180px] overflow-y-auto rounded-control border border-solid border-line divide-y divide-[var(--color-line-soft)]">
       {jobs.map(j => (
         <li key={j.id} className="px-3 py-1.5 text-copy flex items-baseline gap-2">
@@ -445,24 +490,6 @@ function BulkCloseModal({ action, jobs, onClose, onDone }: { action: 'done' | 'c
         </li>
       ))}
     </ul>
-  );
-  return action === 'done' ? (
-    <OpsModal title={`Mark ${plural(n, 'overdue cleaning job')} done?`} eyebrow="Cleaning" size="sm" onClose={onClose} busy={busy}
-      sub="Recorded as done by you, now, with the note 'closed in bulk'. No photo is asked for. Each one is charged to its unit like a finished clean, on the job's own day."
-      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Back</Button><Button size="sm" variant="primary" loading={busy} onClick={() => void save()}>Mark {plural(n, 'job')} done</Button></>}>
-      {list}
-      {estimate > 0 && <p className="m-0 text-copy text-muted-ink">About {rm(estimate)} to units ({plural(priced.length, 'priced job')}). A unit already charged for a clean that day is not charged twice.</p>}
-      {error && <p role="alert" className="m-0 text-copy text-danger">{error}</p>}
-    </OpsModal>
-  ) : (
-    <OpsModal title={`Cancel ${plural(n, 'overdue cleaning job')}?`} eyebrow="Cleaning" size="sm" onClose={onClose} busy={busy}
-      sub="The jobs are removed and nothing is charged. The reason is kept in the history. A job a cleaner started, or one with photos, is kept: mark it done instead."
-      footer={<><Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Back</Button><Button size="sm" variant="danger" loading={busy} onClick={() => void save()}>Cancel {plural(n, 'job')}</Button></>}>
-      {list}
-      <FormRow label="Reason" error={error}>
-        <textarea className={TEXTAREA} value={reason} maxLength={500} onChange={e => { setReason(e.target.value); setError(null); }} placeholder="e.g. Imported job, the stay ended days ago and the unit was cleaned" />
-      </FormRow>
-    </OpsModal>
   );
 }
 
@@ -484,7 +511,8 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   const names = [...new Set(group.rows.flatMap(r => (r.cleaners.length ? r.cleaners.map(c => c.name) : [r.assigneeName])).filter(Boolean))];
   // Each building folds shut; it starts open only when something in it still needs a person.
   const [shut, setShut] = useState(() => open.length === 0 && group.departures.length === 0);
-  const ids = group.rows.map(r => r.id);
+  const ids = open.map(r => r.id);
+  const pickOf = (r: Row) => (picks && r.status !== 'done' ? { picked: picks.has(r.id), onPick: (on: boolean) => picks.toggle([r.id], on) } : {});
   const allPicked = !!picks && ids.length > 0 && ids.every(id => picks.has(id));
   const somePicked = !!picks && ids.some(id => picks.has(id));
   // Phones keep the building groups (owner, 2 Nov 2026), each job as the short phone card the cleaners' portal shows.
@@ -493,9 +521,9 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
     return (
       <section className="bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
         <header className="flex items-center gap-2 pl-3 pr-2 py-1.5 min-h-11">
-          {picks && (
+          {picks && ids.length > 0 && (
             <input type="checkbox" checked={allPicked} ref={el => { if (el) el.indeterminate = somePicked && !allPicked; }} onChange={e => picks.toggle(ids, e.target.checked)}
-              aria-label={`Select every overdue job in ${group.name}`} className="flex-none w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
+              aria-label={`Select every open job in ${group.name}`} className="flex-none w-4 h-4 m-0 accent-[var(--color-brand-black)] cursor-pointer" />
           )}
           <button type="button" onClick={() => setShut(v => !v)} aria-expanded={!shut}
             className="min-w-0 flex-1 flex items-center gap-1.5 bg-transparent border-none p-0 min-h-9 cursor-pointer text-left text-ink [font-family:inherit]">
@@ -515,7 +543,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
         {!shut && <>
           <PhoneJobList label={`Cleaning jobs in ${group.name}`} className="rounded-none border-x-0 border-b-0">
             {group.rows.map(r => <PhoneCleanCard key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`}
-              picked={picks ? picks.has(r.id) : undefined} onPick={picks ? on => picks.toggle([r.id], on) : undefined}
+              {...pickOf(r)}
               onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} onUndoLeft={() => onUndoLeft(r.id, r.unitNumber)} />)}
             {group.departures.map(d => <PhoneDepartureCard key={d.reservationId} d={d} now={now} future={future}
               busy={{ left: busy === `left-${d.reservationId}`, plan: busy === `plan-${d.reservationId}` }}
@@ -539,9 +567,9 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
   return (
     <section className="@container bg-card rounded-card border border-solid border-line overflow-hidden flex-none">
       <header className="flex items-center justify-between gap-3 flex-wrap px-4 @4xl:px-5 py-3">
-        {picks && (
+        {picks && ids.length > 0 && (
           <input type="checkbox" checked={allPicked} ref={el => { if (el) el.indeterminate = somePicked && !allPicked; }} onChange={e => picks.toggle(ids, e.target.checked)}
-            aria-label={`Select every overdue job in ${group.name}`} className="flex-none w-4 h-4 m-0 -mr-1 accent-[var(--color-brand-black)] cursor-pointer" />
+            aria-label={`Select every open job in ${group.name}`} className="flex-none w-4 h-4 m-0 -mr-1 accent-[var(--color-brand-black)] cursor-pointer" />
         )}
         <button type="button" onClick={() => setShut(v => !v)} aria-expanded={!shut}
           className="min-w-0 mr-auto flex items-center gap-2 flex-wrap bg-transparent border-none p-0 cursor-pointer text-left text-ink [font-family:inherit]">
@@ -562,7 +590,7 @@ function BuildingCard({ group, now, future, selected, busy, onSelect, onGuestLef
       <div className="grid gap-3 p-3 @4xl:p-4 [border-top:1px_solid_var(--color-line-soft)] [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
         {group.rows.map(r => <CleanCard key={r.id} r={r} now={now} active={r.id === selected} busy={busy === `left-${r.id}`} assigning={busy === `assign-${r.id}`}
           savingIn={!!r.next?.reservationId && busy === `in-${r.next.reservationId}`} cleaners={cleaners} onAssign={(ids, label) => onAssignOne(r.id, r.unitNumber, ids, label)}
-          picked={picks ? picks.has(r.id) : undefined} onPick={picks ? on => picks.toggle([r.id], on) : undefined}
+          {...pickOf(r)}
           onSelect={() => onSelect(r.id)} onGuestLeft={() => onGuestLeft({ taskId: r.id }, r.unitNumber)} onUndoLeft={() => onUndoLeft(r.id, r.unitNumber)}
           onCheckIn={time => r.next?.reservationId && onCheckIn(r.next.reservationId, time, r.unitNumber)} />)}
         {group.departures.map(d => <DepartureCard key={d.reservationId} d={d} now={now} future={future} savingIn={!!d.next?.reservationId && busy === `in-${d.next.reservationId}`}
@@ -941,6 +969,10 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
   const { cleaners } = useCleaners(true);
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [damage, setDamage] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const { user } = useSession();
+  const canDeleteJob = mayRun(user, 'cleaning') && row.status !== 'done';
+  const isCleanStarted = !!row.startedAt || row.state === 'in_progress';
   const openAdd = useRef<(() => void) | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -1116,6 +1148,9 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
         </section>
       )}
       {!row.external && <Button variant="danger" icon={<Icon name="TriangleAlert" size="sm" />} onClick={() => setDamage(true)}>Report damage</Button>}
+      {canDeleteJob && <Button variant="secondary" icon={<Icon name="Trash2" size="sm" />} onClick={() => setIsDeleting(true)}
+        disabled={isCleanStarted} disabledReason="A cleaner started it. Mark it done instead.">Delete job</Button>}
+      {canDeleteJob && isCleanStarted && <span className="text-meta text-muted-ink -mt-2">A cleaner started it. Mark it done instead.</span>}
 
       <PhoneHistory>
         <section className="rounded-card border border-solid border-line overflow-hidden">
@@ -1128,6 +1163,10 @@ function CleanDetail({ row, now, onClose, onChanged, onGuestLeft, onCheckIn, sav
       {damage && row.unitId && (
         <ReportDamageModal unitId={row.unitId} unitLabel={unitLabel} taskId={row.id} onClose={() => setDamage(false)}
           onDone={() => { setDamage(false); toast({ tone: 'success', title: 'Damage reported.', body: 'A Maintenance job is open on this unit.' }); refresh(); }} />
+      )}
+      {isDeleting && (
+        <DeleteCleansModal jobs={[row]} onClose={() => setIsDeleting(false)}
+          onDone={(title, body) => { setIsDeleting(false); toast({ tone: body ? 'warning' : 'success', title, body }); onClose(); onChanged(); }} />
       )}
     </div>
   );
@@ -1332,7 +1371,7 @@ function AssignBuildingModal({ building, date, onClose, onDone }: { building: { 
 /* ============================== history ============================== */
 
 interface HistoryRow {
-  id: string; unitNumber: string; propertyName: string; propertyId: string; kind: string; state: string; date: string;
+  id: string; unitNumber: string; propertyName: string; propertyId: string; kind: string; state: string; date: string; title: string;
   assigneeName: string | null; sheetCleaner: string | null; completedAt: string | null; photoCount: number;
 }
 interface HistoryPayload { total: number; page: number; pageSize: number; data: HistoryRow[] }
@@ -1384,6 +1423,7 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
   const [bulkAssign, setBulkAssign] = useState<{ ids: string[]; clear: () => void } | null>(null);
   const [confirmDone, setConfirmDone] = useState<{ rows: HistoryRow[]; clear: () => void } | null>(null);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
+  const [editing, setEditing] = useState<HistoryRow | null>(null);
 
   async function fetchAll(onProgress: (got: number, of: number) => void) {
     const r = await fetchAllPages<HistoryRow>(async (page, size) => {
@@ -1448,7 +1488,7 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
         viewParams={['state', 'cleaner', 'q']} filtered={filtered} onClearFilters={clearAll}
         noun={['cleaning job', 'cleaning jobs']} exportName="cleaning-history" selectionKey={`${show}|${from}|${to}`}
         empty={{ title: show === 'active' ? 'No unfinished cleaning jobs in these dates.' : 'No cleaning jobs in these dates.', icon: 'Sparkles' }}
-        selectable={canBulk}
+        selectable={canBulk} onRowClick={canBulk ? setEditing : undefined}
         bulkActions={(picked, clear) => <>
           <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setBulkAssign({ ids: picked.map(r => r.id), clear })}>Assign cleaner</Button>
           <Button size="sm" variant="secondary" icon={<Icon name="Play" size="sm" />} loading={bulkBusy === 'start'} onClick={() => void bulkMove(picked, 'start', clear)}>Start</Button>
@@ -1465,6 +1505,7 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
             badge={show ? <StatusBadge tone={TASK_STATE[r.state]?.tone ?? 'neutral'} size="sm">{TASK_STATE[r.state]?.label ?? r.state}</StatusBadge> : undefined} />
         )}
       />
+      {editing && <HistoryEditModal row={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />}
       {bulkAssign && <BulkAssignCleaner taskIds={bulkAssign.ids} onClose={() => setBulkAssign(null)}
         onDone={() => { bulkAssign.clear(); setBulkAssign(null); reload(); }} />}
       {confirmDone && (
@@ -1478,6 +1519,91 @@ function HistoryView({ onTab }: { onTab: (t: Tab) => void }) {
         </OpsModal>
       )}
     </div>
+  );
+}
+
+interface HistoryForm { team: string[]; kind: string; day: string; doneDay: string; doneTime: string }
+
+/** Malaysian day and HH:MM of a stored time. */
+const mytParts = (iso: string | null) => {
+  if (!iso) return { day: '', time: '' };
+  const d = new Date(Date.parse(iso) + 8 * 3600e3).toISOString();
+  return { day: d.slice(0, 10), time: d.slice(11, 16) };
+};
+
+/** History: corrects a cleaning job after the fact (who cleaned it, the type, the day, when it was finished). */
+function HistoryEditModal({ row, onClose, onSaved }: { row: HistoryRow; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const { data, error, reload } = useApi<Detail>(`/housekeeping/tasks/${row.id}`);
+  const { cleaners } = useCleaners(true);
+  const start = useMemo<HistoryForm | null>(() => {
+    if (!data) return null;
+    const done = mytParts(data.completedAt);
+    return { team: (data.cleaners ?? []).map(c => c.cleanerId).filter((x): x is string => !!x), kind: data.kind, day: data.day ?? row.date, doneDay: done.day, doneTime: done.time };
+  }, [data, row.date]);
+  const [form, setForm] = useState<HistoryForm | null>(null);
+  useEffect(() => { if (start) setForm(start); }, [start]);
+  const [busy, setBusy] = useState(false);
+  const set = (patch: Partial<HistoryForm>) => setForm(f => (f ? { ...f, ...patch } : f));
+
+  const finished = row.state === 'resolved';
+  const names: Record<string, string> = Object.fromEntries((data?.cleaners ?? []).filter(c => c.cleanerId).map(c => [c.cleanerId!, c.name]));
+  const charged = data?.cost?.charged ? data.cost.amount : null;
+  const unitLabel = historyLabel(row);
+
+  async function save() {
+    if (!form || !start) return;
+    const patch: Record<string, unknown> = {};
+    if (form.kind !== start.kind) { patch.kind = form.kind; patch.title = cleanTitle(form.kind, row.title); }
+    if (form.day !== start.day) patch.day = form.day;
+    if (finished && (form.doneDay !== start.doneDay || form.doneTime !== start.doneTime)) {
+      if (!form.doneDay || !form.doneTime) { toast({ tone: 'critical', title: 'Pick the day and time it was finished.' }); return; }
+      patch.completedAt = `${form.doneDay}T${form.doneTime}:00+08:00`;
+    }
+    const teamChanged = form.team.join('|') !== start.team.join('|');
+    if (!teamChanged && !Object.keys(patch).length) { onClose(); return; }
+    setBusy(true);
+    try {
+      if (Object.keys(patch).length) await api.patch(`/housekeeping/tasks/${row.id}`, patch);
+      if (teamChanged) await api.post(`/housekeeping/tasks/${row.id}/assign`, { cleanerIds: form.team, force: true });
+      toast({ tone: 'success', title: 'Cleaning job updated.', body: unitLabel });
+      onSaved();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Not saved.', body: errorMessage(e, 'Try again in a moment.') });
+      setBusy(false);
+    }
+  }
+
+  return (
+    <OpsModal title={`Edit ${unitLabel}`} eyebrow="Cleaning history" size="sm" onClose={onClose} busy={busy}
+      sub={finished ? 'Fix this finished cleaning job. Cleaners are not notified.' : 'Fix this cleaning job.'}
+      footer={<>
+        <Button size="sm" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button size="sm" variant="primary" loading={busy} disabled={!form} onClick={() => void save()}>Save</Button>
+      </>}>
+      {error && <StaleBanner message={error} onRetry={reload} />}
+      {!form ? <Skeleton height={220} /> : (
+        <div className="flex flex-col gap-3.5">
+          <FormRow label={form.team.length > 1 ? 'Cleaners' : 'Cleaner'} hint={finished ? 'Pay follows the cleaners on the job.' : undefined}>
+            <CleanerChips cleaners={cleaners} value={form.team} names={names} onChange={team => set({ team })} disabled={busy} />
+          </FormRow>
+          <ChoiceChips<string> label="Type" value={form.kind} disabled={busy} onChange={kind => set({ kind })}
+            options={[{ value: 'turnover', label: 'Basic clean (BC)' }, { value: 'deep_clean', label: 'Deep clean (DC)' }, ...(start?.kind === 'light_clean' ? [{ value: 'light_clean', label: 'Light clean' }] : [])]} />
+          <FormRow label="Day"><DateField aria-label="Day" className={INPUT} value={form.day} onChange={v => v && set({ day: v })} /></FormRow>
+          {finished && (
+            <FormRow label="Finished" hint="Pay counts the clean in the month it was finished.">
+              <div className="grid grid-cols-2 gap-2">
+                <DateField aria-label="Finished on" className={INPUT} value={form.doneDay} onChange={v => set({ doneDay: v })} />
+                <TimeField aria-label="Finished at" className={INPUT} value={form.doneTime} onChange={v => set({ doneTime: v })} />
+              </div>
+            </FormRow>
+          )}
+          {charged != null && (
+            <p className="m-0 text-meta text-warning">Already charged to the unit at {rm(charged)}. Changing the type or day here does not change that charge: change the cost on the unit.</p>
+          )}
+        </div>
+      )}
+    </OpsModal>
   );
 }
 

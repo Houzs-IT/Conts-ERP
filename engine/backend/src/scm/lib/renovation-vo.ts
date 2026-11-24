@@ -20,6 +20,7 @@
    Applying never reprices other lines (applySoAmendment would reprice the whole
    order with furniture pricing, which is why it is not used here). */
 
+import { fillSlaDates } from './renovation-sla';
 import { auditSo, refuse, todayKl, type RenoDb } from './renovation-db';
 import { insertSections, readSections, toMoneyLine, type DocLineOut } from './renovation-doc-lines';
 import { insertSoItems, mirrorRowsFor, readContractHead, recomputeSoHeader, RENO_LIVE_STATUSES } from './renovation-so';
@@ -121,26 +122,33 @@ export function voNoFor(soDocNo: string, seq: number): string {
 async function lockVo(db: RenoDb, id: string, companyId: number) {
   const [v] = await db.q(
     `select id, vo_no, so_doc_no, seq, status, title, doc_date::text as doc_date, net_sen, version, signed_name, signed_at::text as signed_at,
-            approved_at::text as approved_at, amendment_id
+            approved_at::text as approved_at, amendment_id, edits
        from scm.reno_variation_orders where id = $1 and company_id = $2 for update`,
     [id, companyId],
   );
   if (!v) throw refuse(404, 'vo_not_found', 'That variation order does not exist.');
-  return v as { id: string; vo_no: string; so_doc_no: string; seq: number; status: VoStatus; title: string; doc_date: string; net_sen: number; version: number; signed_name: string | null; signed_at: string | null; approved_at: string | null; amendment_id: string | null };
+  return { ...v, edits: voEditsOf(v.edits) } as { id: string; vo_no: string; so_doc_no: string; seq: number; status: VoStatus; title: string; doc_date: string; net_sen: number; version: number; signed_name: string | null; signed_at: string | null; approved_at: string | null; amendment_id: string | null; edits: VoEdits | null };
 }
 
-export async function createVo(db: RenoDb, actor: RenoActor, soDocNo: string, body: { title?: string }): Promise<{ id: string; voNo: string }> {
+export function voEditsOf(raw: unknown): VoEdits | null {
+  const v: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  if (!v || typeof v !== 'object') return null;
+  const { lines, adds } = v as { lines?: unknown; adds?: unknown };
+  return Array.isArray(lines) && Array.isArray(adds) ? { lines: lines as QuickLineEdit[], adds: adds as QuickLineAdd[] } : null;
+}
+
+export async function createVo(db: RenoDb, actor: RenoActor, soDocNo: string, body: { title?: string }): Promise<{ id: string; voNo: string; version: number }> {
   const head = await readContractHead(db, soDocNo, actor.companyId, true);
   if (!(RENO_LIVE_STATUSES as readonly string[]).includes(head.status)) throw refuse(409, 'contract_not_live', `A ${head.status} contract cannot take a variation order.`);
   const [m] = await db.q<{ n: number }>(`select coalesce(max(seq), 0)::int as n from scm.reno_variation_orders where so_doc_no = $1`, [soDocNo]);
   const seq = Number(m.n) + 1;
   const voNo = voNoFor(soDocNo, seq);
-  const [v] = await db.q<{ id: string }>(
-    `insert into scm.reno_variation_orders (company_id, vo_no, so_doc_no, seq, title, created_by, doc_date) values ($1, $2, $3, $4, $5, $6, $7::date) returning id`,
+  const [v] = await db.q<{ id: string; version: number }>(
+    `insert into scm.reno_variation_orders (company_id, vo_no, so_doc_no, seq, title, created_by, doc_date) values ($1, $2, $3, $4, $5, $6, $7::date) returning id, version`,
     [actor.companyId, voNo, soDocNo, seq, body.title ?? '', actor.name, todayKl()],
   );
   await auditSo(db, { companyId: actor.companyId, docNo: soDocNo, action: 'VO_CREATE', actorName: actor.name, note: voNo });
-  return { id: v.id, voNo };
+  return { id: v.id, voNo, version: Number(v.version) };
 }
 
 interface OmitTarget extends DocLineOut { sectionHeading: string }
@@ -169,7 +177,7 @@ export function omitAmountSen(target: Pick<DocLineOut, 'kind' | 'qty' | 'measure
 export async function readVo(db: RenoDb, id: string, companyId: number) {
   const [v] = await db.q(
     `select id, vo_no, so_doc_no, seq, status, title, doc_date::text as doc_date, net_sen, version, signed_name, signed_at::text as signed_at,
-            approved_at::text as approved_at, approved_by, amendment_id
+            approved_at::text as approved_at, approved_by, amendment_id, edits
        from scm.reno_variation_orders where id = $1 and company_id = $2`,
     [id, companyId],
   );
@@ -194,14 +202,16 @@ export async function readVo(db: RenoDb, id: string, companyId: number) {
     id: v.id, voNo: v.vo_no, soDocNo: v.so_doc_no, seq: Number(v.seq), status: v.status as VoStatus, title: v.title, docDate: v.doc_date,
     version: Number(v.version), signedName: v.signed_name, signedAt: v.signed_at, approvedAt: v.approved_at, approvedBy: v.approved_by,
     amendmentId: v.amendment_id, sections, totals: { addSen, omitSen, netSen: v.status === 'APPROVED' ? Number(v.net_sen) : addSen + omitSen },
+    edits: voEditsOf(v.edits),
+    lineSpecs: v.status === 'DRAFT' || v.status === 'SENT' ? await lineSpecsOf(db, v.so_doc_no, companyId) : {},
   };
 }
 
 /** Replace a draft VO's lines. OMIT lines are filled from the contract line they name. */
-export async function saveVo(db: RenoDb, actor: RenoActor, id: string, body: { version: number; title?: string; docDate?: string; sections?: NormSection[] }): Promise<{ version: number; netSen: number }> {
+export async function saveVo(db: RenoDb, actor: RenoActor, id: string, body: { version: number; title?: string; docDate?: string; sections?: NormSection[] }, opts: { rebuild?: boolean } = {}): Promise<{ version: number; netSen: number }> {
   const v = await lockVo(db, id, actor.companyId);
   if (v.version !== body.version) throw refuse(409, 'stale_version', 'Someone else saved this variation order first. Reload to see their changes.', { version: v.version });
-  if (v.status !== 'DRAFT') throw refuse(409, 'not_editable', 'Only a draft variation order can be edited.');
+  if (v.status !== 'DRAFT' && !(opts.rebuild && v.status === 'SENT')) throw refuse(409, 'not_editable', 'Only a draft variation order can be edited.');
   let net = 0;
   if (body.sections) {
     const targets = await contractTargets(db, v.so_doc_no);
@@ -229,10 +239,11 @@ export async function saveVo(db: RenoDb, actor: RenoActor, id: string, body: { v
   } else {
     net = (await readVo(db, id, actor.companyId)).totals.netSen;
   }
+  // Lines saved by hand drop the room-editor edits; approval's rebuild keeps them.
   const [r] = await db.q<{ version: number }>(
     `update scm.reno_variation_orders set title = coalesce($2, title), doc_date = coalesce($3::date, doc_date), net_sen = $4,
-        version = version + 1, updated_at = now() where id = $1 returning version`,
-    [id, body.title ?? null, body.docDate ?? null, net],
+        edits = case when $5 then null else edits end, version = version + 1, updated_at = now() where id = $1 returning version`,
+    [id, body.title ?? null, body.docDate ?? null, net, body.sections !== undefined && !opts.rebuild],
   );
   return { version: Number(r.version), netSen: net };
 }
@@ -330,6 +341,9 @@ export async function applyVo(
   await insertSoItems(db, soDocNo, rows, { companyId: actor.companyId, debtorName: head.debtorName, lineDate: todayKl() });
   const [so] = await db.q<{ n: number }>(`select coalesce(max(sort_order), 0)::int as n from scm.reno_doc_sections where so_doc_no = $1`, [soDocNo]);
   await insertSections(db, { kind: 'so', id: soDocNo }, addSections, actor.companyId, { voId: id, sortOffset: Number(so.n) });
+  // Lines a VO adds from a package template get their SLA dates when the project is already started.
+  const [proj] = await db.q<{ project_id: number | null }>(`select project_id from scm.mfg_sales_orders where doc_no = $1`, [soDocNo]);
+  await fillSlaDates(db, proj?.project_id == null ? null : Number(proj.project_id));
   for (const r of rows) {
     await db.q(
       `insert into scm.so_amendment_lines (amendment_id, sales_order_item_id, change_type, new_item_code, new_qty, new_unit_price_sen, new_discount_sen, company_id)
@@ -415,9 +429,9 @@ export async function applyVo(
     re-specification (owner, 2 Nov 2026: a line a PO already buys changes its options by VO): the line is omitted and
     added again, in the same room, carrying the new options, so its PO line is flagged CANCEL and the new one is
     ordered as it now is. */
-export interface QuickLineEdit { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string }
+export interface QuickLineEdit { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string; label?: string }
 /** A line added on the SO page, in a room. */
-export interface QuickLineAdd { room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string }
+export interface QuickLineAdd { room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string; fromPackageId?: string | null; label?: string }
 
 type QuickProduct = { name: string; costSen: number; supplierId: string | null; uom: string | null; group?: string };
 
@@ -450,9 +464,17 @@ export function quickVoLines(t: DocLineOut, e: QuickLineEdit, onPo: boolean, pro
   return { omit: omit(null), add: add(qty), sameSku };
 }
 
-/** Edit contract lines in place: raise one VO for every change, approve it, and carry each replaced line's options,
-    remark and dates onto the line that replaces it. */
-export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edits: QuickLineEdit[], newLines: QuickLineAdd[], title: string): Promise<Awaited<ReturnType<typeof applyVo>>> {
+// Rebuilt into add and omit lines on every save and again at approval, so the PO split follows that day's POs.
+export interface VoEdits { lines: QuickLineEdit[]; adds: QuickLineAdd[] }
+
+export interface EditBuild { sections: NormSection[]; carries: QuickAdd[]; groups: Map<string, string> }
+
+export async function buildEditSections(db: RenoDb, actor: RenoActor, soDocNo: string, edits: QuickLineEdit[], newLines: QuickLineAdd[]): Promise<EditBuild> {
+  const seenEdit = new Set<string>();
+  for (const e of edits) {
+    if (seenEdit.has(e.soItemId)) throw refuse(422, 'edit_twice', 'A contract line is changed twice in this variation order.');
+    seenEdit.add(e.soItemId);
+  }
   const targets = await contractTargets(db, soDocNo);
   const bySoItem = new Map([...targets.values()].filter((t) => t.soItemId).map((t) => [t.soItemId!, t]));
   /* A same-SKU re-specification needs its own product's group, to canonicalize and print the new options. */
@@ -509,21 +531,102 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
     const line: NormLine = {
       id: crypto.randomUUID(), parentId: null, kind: 'ITEM', sortOrder: 0, room, itemCode: a.itemCode.trim(), description: prod.name, qty: a.qty,
       measureMilli: null, measureUom: null, uom: prod.uom, unitPriceSen: a.unitPriceSen, listPriceSen: null, discountBp: 0, amountOverrideSen: null,
-      isFoc: false, supplyByOwner: false, highlight: 'NONE', supplierId: prod.supplierId, unitCostSen: prod.costSen, stageCode: null,
-      pageBreakBefore: false, voChange: 'ADD', omitTargetLineId: null, omitQty: null,
+      isFoc: false, supplyByOwner: false, highlight: 'NONE', supplierId: prod.supplierId, unitCostSen: prod.costSen, stageCode: null, processingAfterDays: null, deliveryAfterDays: null,
+      pageBreakBefore: false, voChange: 'ADD', omitTargetLineId: null, omitQty: null, fromPackageId: a.fromPackageId ?? null,
     };
     put(room || 'Additional works', line);
     adds.push({ lineId: line.id, fromSoItemId: null, sameSku: false, respec: false, itemCode: line.itemCode!, variants: a.variants, remark: a.remark, room });
   }
-  if (sections.size === 0) throw refuse(422, 'nothing_changed', 'Nothing on the contract changed.');
-  const vo = await createVo(db, actor, soDocNo, { title });
-  const saved = await saveVo(db, actor, vo.id, { version: 1, sections: [...sections.values()] });
-  const out = await applyVo(db, actor, vo.id, { version: saved.version });
-  for (const a of adds) {
+  return { sections: [...sections.values()], carries: adds, groups: new Map([...products].map(([code, p]) => [code, p.group ?? ''])) };
+}
+
+async function carryAll(db: RenoDb, out: Awaited<ReturnType<typeof applyVo>>, b: EditBuild): Promise<void> {
+  for (const a of b.carries) {
     const to = out.added.find((x) => x.voLineId === a.lineId)?.soItemId;
-    if (to) await carryToAddedLine(db, a, to, products.get(a.itemCode)?.group ?? '');
+    if (to) await carryToAddedLine(db, a, to, b.groups.get(a.itemCode) ?? '');
   }
+}
+
+/** Edit contract lines in place: raise one VO for every change, approve it, and carry each replaced line's options,
+    remark and dates onto the line that replaces it. */
+export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edits: QuickLineEdit[], newLines: QuickLineAdd[], title: string): Promise<Awaited<ReturnType<typeof applyVo>>> {
+  const b = await buildEditSections(db, actor, soDocNo, edits, newLines);
+  if (b.sections.length === 0) throw refuse(422, 'nothing_changed', 'Nothing on the contract changed.');
+  const vo = await createVo(db, actor, soDocNo, { title });
+  const saved = await saveVo(db, actor, vo.id, { version: 1, sections: b.sections });
+  const out = await applyVo(db, actor, vo.id, { version: saved.version });
+  await carryAll(db, out, b);
   return out;
+}
+
+/** A new VO saved with its first edits in one go, so a VO opened and left never exists. */
+export async function createVoWithEdits(db: RenoDb, actor: RenoActor, soDocNo: string, body: { title?: string; docDate?: string; edits?: VoEdits }): Promise<{ id: string; voNo: string; version: number }> {
+  const created = await createVo(db, actor, soDocNo, { title: body.title });
+  if (!body.edits) return created;
+  const saved = await saveVoEdits(db, actor, created.id, { version: created.version, title: body.title, docDate: body.docDate, edits: body.edits });
+  return { ...created, version: saved.version };
+}
+
+export async function saveVoEdits(db: RenoDb, actor: RenoActor, id: string, body: { version: number; title?: string; docDate?: string; edits: VoEdits }): Promise<{ version: number; netSen: number }> {
+  const v = await lockVo(db, id, actor.companyId);
+  const b = await buildEditSections(db, actor, v.so_doc_no, body.edits.lines, body.edits.adds);
+  const saved = await saveVo(db, actor, id, { version: body.version, title: body.title, docDate: body.docDate, sections: b.sections });
+  await db.q(`update scm.reno_variation_orders set edits = $2::text::jsonb where id = $1`, [id, JSON.stringify(body.edits)]);
+  return saved;
+}
+
+export async function approveVo(db: RenoDb, actor: RenoActor, id: string, body: { version: number; signedName?: string | null; signedAt?: string | null }): Promise<Awaited<ReturnType<typeof applyVo>>> {
+  const v = await lockVo(db, id, actor.companyId);
+  if (!v.edits || (v.status !== 'DRAFT' && v.status !== 'SENT')) return applyVo(db, actor, id, body);
+  if (v.version !== body.version) throw refuse(409, 'stale_version', 'Someone else saved this variation order first. Reload to see their changes.', { version: v.version });
+  const b = await buildEditSections(db, actor, v.so_doc_no, v.edits.lines, v.edits.adds);
+  const saved = await saveVo(db, actor, id, { version: v.version, sections: b.sections }, { rebuild: true });
+  /* What the customer signed must be what applies: a sent VO whose total moved since (POs raised or cancelled, catalog
+     changes) goes back to the draft to be saved and printed again. */
+  if (v.status === 'SENT' && saved.netSen !== Number(v.net_sen)) {
+    throw refuse(409, 'vo_changed_since_sent', `This VO now comes to ${fmtSen(saved.netSen)}, not the ${fmtSen(Number(v.net_sen))} that was sent. Press Back to draft, save, and print it again.`);
+  }
+  if (b.sections.length === 0) {
+    throw refuse(422, 'remarks_only', 'This VO only changes remarks. A VO needs a qty, price, product or option change; a remark alone is changed on the SO tab.');
+  }
+  const out = await applyVo(db, actor, id, { ...body, version: saved.version });
+  await carryAll(db, out, b);
+  await applyRemarks(db, out, b, v.edits.lines);
+  return out;
+}
+
+async function applyRemarks(db: RenoDb, out: Awaited<ReturnType<typeof applyVo>>, b: EditBuild, edits: QuickLineEdit[]): Promise<void> {
+  for (const edit of edits) {
+    if (edit.remark === undefined || edit.remove) continue;
+    const carry = b.carries.find((c) => c.fromSoItemId === edit.soItemId);
+    // A line omitted and added again takes the remark on its replacement; a qty drop keeps the line itself.
+    const replacedBy = carry ? out.added.find((x) => x.voLineId === carry.lineId)?.soItemId : undefined;
+    await db.q(
+      `update scm.mfg_sales_order_items set remark = nullif($2, '') where id = $1 and not coalesce(cancelled, false)`,
+      [replacedBy ?? edit.soItemId, edit.remark.trim().slice(0, 500)],
+    );
+  }
+}
+
+export interface LineSpec { variants: Record<string, unknown>; remark: string | null; optionsText: string | null; group: string }
+
+async function lineSpecsOf(db: RenoDb, soDocNo: string, companyId: number): Promise<Record<string, LineSpec>> {
+  const rows = await db.q<{ id: string; variants: unknown; remark: string | null; description2: string | null; category: string | null; sub_category: string | null }>(
+    `select i.id::text as id, i.variants, i.remark, i.description2, p.category, p.sub_category
+       from scm.mfg_sales_order_items i
+       left join lateral (select pr.category::text as category, to_jsonb(pr) ->> 'sub_category' as sub_category from scm.mfg_products pr
+                           where pr.code = i.item_code and pr.company_id = $2 order by (pr.status::text = 'ACTIVE') desc limit 1) p on true
+      where i.doc_no = $1 and not coalesce(i.cancelled, false)`,
+    [soDocNo, companyId],
+  );
+  const parsed = (raw: unknown): Record<string, unknown> => {
+    const value: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return value && typeof value === 'object' && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
+  };
+  return Object.fromEntries(rows.map((r) => [r.id, {
+    variants: parsed(r.variants), remark: r.remark, optionsText: r.description2,
+    group: (variantCategoryOf(r.category, r.sub_category) ?? '').toLowerCase(),
+  }]));
 }
 
 /** What a VO-added line of quickVo takes on: a line added for a re-specification (same SKU, new options) gets the
@@ -573,8 +676,8 @@ export async function carryToAddedLine(db: RenoDb, a: QuickAdd, to: string, grou
     );
   }
   await db.q(
-    `insert into scm.reno_beta_line_plans (so_item_id, company_id, order_on, deliver_on, no_po, updated_by, updated_at)
-     select $1, company_id, order_on, deliver_on, no_po and $3, updated_by, now() from scm.reno_beta_line_plans where so_item_id = $2
+    `insert into scm.reno_beta_line_plans (so_item_id, company_id, order_on, deliver_on, no_po, updated_by, updated_at, from_sla)
+     select $1, company_id, order_on, deliver_on, no_po and $3, updated_by, now(), from_sla from scm.reno_beta_line_plans where so_item_id = $2
      on conflict (so_item_id) do nothing`,
     [to, a.fromSoItemId, a.sameSku],
   );

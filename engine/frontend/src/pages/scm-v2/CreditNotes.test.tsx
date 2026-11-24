@@ -3,7 +3,9 @@
    name (a supplier for an SCN) and lines whose account may stay blank; a
    note opens to its lines and posts or cancels; Print in the detail prints
    the one note and ticked rows print as one document in list order
-   (docs/bugs/0834). The server half is backend/tests/creditNotes.test.ts. */
+   (docs/bugs/0834). A CN / SCN's detail carries its knock-off table: ticking
+   an invoice and saving sends the targets. The server half is
+   backend/tests/creditNotes.test.ts and creditNoteKnockOff.test.ts. */
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -28,10 +30,16 @@ const NOTES: CreditNote[] = [
 const createMutate = vi.fn(async (body: unknown) => ({ ok: true, note: { ...NOTES[0]!, id: 'n3', note_number: '2990-CN-2609-002', ...(body as object) } }));
 const postMutate = vi.fn(async () => ({ ok: true, jeNo: '2990-JE-2609-0008', status: 'posted' }));
 const cancelMutate = vi.fn(async () => ({ ok: true }));
+const updateMutate = vi.fn(async () => ({ ok: true }));
 const lastList = { value: '' };
 const pdfSingle = vi.fn(async (..._args: unknown[]) => {});
 const pdfBatch = vi.fn(async (..._args: unknown[]) => {});
 const LINES = [{ id: 'l1', line_no: 1, description: 'Scratched leg — goodwill', account_code: '510-0000', amount_sen: 15000 }];
+const setAllocations = vi.fn();
+const KNOCK_OFF = {
+  rows: [{ kind: 'PI', id: 'pi-1', number: '2990-PI-2609-004', invoiceRef: 'HV-881', invoiceDate: '2026-09-02', totalSen: 80000, owedSen: 80000, noteSen: 0, status: 'POSTED' }],
+  totalSen: 50000, takenSen: 0, leftSen: 50000, posted: true,
+};
 
 vi.mock('../../components/doc-attachments/DocAttachments', () => ({ DocAttachments: () => null, LineFilesButton: () => null })); // has its own tests and API check
 vi.mock('../../vendor/scm/lib/credit-note-pdf', () => ({ generateCreditNotePdf: pdfSingle, generateCreditNotesPdf: pdfBatch }));
@@ -53,9 +61,11 @@ vi.mock('../../vendor/scm/lib/credit-note-queries', async (importOriginal) => ({
     isLoading: false,
   }),
   useCreateCreditNote: () => ({ mutateAsync: createMutate, isPending: false, isError: false, error: null }),
-  useUpdateCreditNote: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false, error: null }),
+  useUpdateCreditNote: () => ({ mutateAsync: updateMutate, isPending: false, isError: false, error: null }),
   usePostCreditNote: () => ({ mutate: postMutate, mutateAsync: postMutate, isPending: false, isError: false, isSuccess: false, error: null }),
   useCancelCreditNote: () => ({ mutate: cancelMutate, isPending: false, isError: false, error: null }),
+  useCreditNoteKnockOff: (id: string | null) => ({ data: id === 'n2' ? KNOCK_OFF : { ...KNOCK_OFF, rows: [], totalSen: 15000, leftSen: 15000, posted: false }, isLoading: false, isError: false, error: null }),
+  useSetCreditNoteAllocations: () => ({ mutate: setAllocations, isPending: false, isError: false, error: null, data: undefined }),
 }));
 vi.mock('../../vendor/scm/lib/accounting-queries', async (importOriginal) => ({
   ...(await importOriginal() as object),
@@ -109,6 +119,7 @@ describe('the Credit & Debit Notes page', () => {
     expect(createMutate.mock.calls[0]?.[0]).toEqual({
       kind: 'CN', noteDate: expect.any(String), reason: 'Scratched leg', sourceDocNo: null, soDocNo: '2990-SO-2607-019',
       lines: [{ description: 'Goodwill', accountCode: null, amountSen: 15000 }],
+      idempotencyKey: expect.any(String),
     });
   });
 
@@ -140,5 +151,37 @@ describe('the Credit & Debit Notes page', () => {
     expect(items.map((i) => i.header.note_number)).toEqual(['2990-CN-2609-001', '2990-SCN-2609-001']);
     expect(items[0]?.lines).toHaveLength(1);
     expect(pdfBatch.mock.calls[0]?.[2]).toEqual({ action: 'print' });
+  });
+
+  /* PR #1126 deferred D19. Fails before the fix: the second Save created a second note. */
+  test('a save whose post fails leaves a draft; Save again updates and posts that draft, never a second note', async () => {
+    createMutate.mockClear(); updateMutate.mockClear(); postMutate.mockClear();
+    postMutate.mockImplementationOnce(async () => { throw new Error('ledger busy'); });
+    render(<MemoryRouter><ConfirmProvider><CreditNotes /></ConfirmProvider></MemoryRouter>);
+    fireEvent.click(screen.getByText('New note'));
+    const dialog = await screen.findByLabelText('Note form');
+    fireEvent.change(within(dialog).getByLabelText('Sales order'), { target: { value: '2990-SO-2607-019' } });
+    fireEvent.change(within(dialog).getByLabelText('Line 1 amount'), { target: { value: '150' } });
+    fireEvent.click(within(dialog).getByLabelText('Post to the ledger after saving'));
+    fireEvent.click(within(dialog).getByText('Save note'));
+    await waitFor(() => expect(postMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(dialog).getByText('Save note'));
+    await waitFor(() => expect(postMutate).toHaveBeenCalledTimes(2));
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    expect(updateMutate).toHaveBeenCalledWith(expect.objectContaining({ id: 'n3' }));
+    expect(postMutate).toHaveBeenLastCalledWith('n3');
+  });
+
+  test("a posted supplier note's detail knocks off the supplier's invoices: tick, then Save knock-off sends the targets", async () => {
+    render(<MemoryRouter><ConfirmProvider><CreditNotes /></ConfirmProvider></MemoryRouter>);
+    fireEvent.click(screen.getByText('2990-SCN-2609-001'));
+    const dialog = await screen.findByLabelText('Credit or debit note');
+    const table = within(dialog).getByRole('table', { name: "Knock off the supplier's invoices" });
+    expect(within(table).getByText('2990-PI-2609-004')).toBeTruthy();
+    fireEvent.click(within(table).getByLabelText('Knock off 2990-PI-2609-004'));
+    fireEvent.click(within(dialog).getByText('Save knock-off'));
+    /* The credit reaches RM 500 of the RM 800 invoice. */
+    expect(setAllocations.mock.calls[0]?.[0]).toEqual({ noteId: 'n2', targets: [{ kind: 'PI', id: 'pi-1', amountSen: 50000 }] });
   });
 });

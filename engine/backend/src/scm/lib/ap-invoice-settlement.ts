@@ -10,8 +10,17 @@
 
 import { isMissingRpc } from './rpc-missing';
 import { computePiSettlement, type PiSettleResult } from './pi-settlement';
+import { settleRequestsOfBillBestEffort } from '../../conts/claims-voucher-hooks';
 
+/* Conts (chew, 15 Nov 2026): every move of a bill's paid_sen — a voucher posting or cancelled, an advance applied —
+   settles again the payment requests paid through it (conts/claims-voucher-hooks.ts). */
 export async function settleApInvoicePaidSen(sb: any, invoiceId: string, delta: number): Promise<PiSettleResult> {
+  const settled = await settleApInvoicePaidSenOnly(sb, invoiceId, delta);
+  if (settled.ok && settled.appliedSen !== 0) await settleRequestsOfBillBestEffort(sb, invoiceId);
+  return settled;
+}
+
+async function settleApInvoicePaidSenOnly(sb: any, invoiceId: string, delta: number): Promise<PiSettleResult> {
   if (!invoiceId || !Number.isFinite(delta) || delta === 0) {
     return { ok: true, appliedSen: 0, clampedSen: 0, reason: 'no_delta' };
   }

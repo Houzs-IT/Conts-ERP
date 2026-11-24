@@ -202,7 +202,7 @@ const CurrencyDrawer = ({
     <div className={styles.backdrop} onClick={onClose}>
       <div className={styles.drawer} onClick={(e) => e.stopPropagation()}>
         <div className={styles.drawerHeader}>
-          <h2 className={styles.drawerTitle}>{editing ? `Edit ${editing.code}` : 'Add Currency'}</h2>
+          <h2 className={styles.drawerTitle}>{editing ? `Edit ${editing.code}` : 'Add currency'}</h2>
           <button type="button" onClick={onClose} className={styles.codeChip}>
             <X {...ICON} />
           </button>

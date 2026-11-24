@@ -71,12 +71,12 @@ async function salaries(env: Env, people: Employee[], to: string, payroll: boole
 async function revenueRows(env: Env, from: string, to: string): Promise<RevenueRow[]> {
   const [cleans, repairs] = await Promise.all([
     all<{ id: string; day: string; ref: string }>(env, `
-      SELECT t.id, ${MYT_DATE('t.completed_at')} AS day, concat_ws(' · ', COALESCE(u.unit_number, t.external_address), t.title) AS ref
+      SELECT t.id, ${MYT_DATE('t.completed_at')} AS day, concat_ws(' · ', COALESCE(COALESCE(NULLIF(u.unit_code, ''), u.unit_number), t.external_address), t.title) AS ref
       FROM tasks t LEFT JOIN units u ON u.id = t.unit_id
       WHERE t.kind IN ('turnover','deep_clean','light_clean') AND t.state = 'resolved' AND t.completed_at IS NOT NULL
         AND ${MYT_DATE('t.completed_at')} BETWEEN ? AND ?`, from, to),
     all<{ id: string; day: string; ref: string }>(env, `
-      SELECT m.id, ${MYT_DATE('m.resolved_at')} AS day, concat_ws(' · ', u.unit_number, m.title) AS ref
+      SELECT m.id, ${MYT_DATE('m.resolved_at')} AS day, concat_ws(' · ', COALESCE(NULLIF(u.unit_code, ''), u.unit_number), m.title) AS ref
       FROM maintenance_issues m JOIN units u ON u.id = m.unit_id
       WHERE m.state = 'resolved' AND m.resolved_at IS NOT NULL AND ${MYT_DATE('m.resolved_at')} BETWEEN ? AND ?`, from, to),
   ]);

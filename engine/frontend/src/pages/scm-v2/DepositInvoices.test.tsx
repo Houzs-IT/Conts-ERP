@@ -46,6 +46,7 @@ vi.mock('../../vendor/scm/lib/deposit-invoice-pdf', () => ({ generateDepositInvo
 
 vi.mock('../../vendor/scm/lib/deposit-invoice-queries', async (importOriginal) => ({
   ...(await importOriginal() as object),
+  printableDepositInvoices: async (rows: DepositInvoice[]) => rows.map((r) => ({ ...r, order: null })),
   useDepositInvoices: (status: string, so: string) => { lastList.value = `${status}|${so}`; return { data: { rows: ROWS }, isLoading: false, isError: false, error: null }; },
   useDepositInvoiceDetail: (id: string | null) => ({
     data: id ? { invoice: ROWS.find((r) => r.id === id)!, payment: { id: 'p-1', paid_at: '2026-09-05', method: 'cash', merchant_provider: null, online_type: null, amount_sen: 100000, is_deposit: true, collected_by: null } } : undefined,

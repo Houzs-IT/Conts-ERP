@@ -35,6 +35,12 @@ export interface SoPaidInputs {
   ledgerPaidSen: number;
   /** Any of those payment rows carries `is_deposit`. */
   depositInLedger: boolean;
+  /**
+   * Receipts taken on this order's live invoices (soInvoiceReceiptsSen). Money
+   * paid on an instalment invoice is paid on the order (click sweep F31, 21 Nov
+   * 2026). Required, not optional: leaving it out silently drops that money.
+   */
+  invoiceReceiptsSen: number;
 }
 
 /**
@@ -102,8 +108,42 @@ export function signedBalanceSen(
  * deprecated, no writer maintains it, and it is 0 on any order paid through the
  * payment drawer.
  */
-export function soPaidSen(a: SoPaidInputs): number {
+export function soOrderPaidSen(a: SoPaidInputs): number {
   return (a.depositInLedger ? 0 : a.headerDepositSen) + a.ledgerPaidSen;
+}
+
+/**
+ * Everything paid on this order: what was taken on the order (soOrderPaidSen)
+ * plus what was taken on its invoices. THE rule for "paid on this SO" — the SO
+ * page, lists, PDF, project pages and the renovation schedule all read it.
+ *
+ * Not double counted: the ERP never copies an order payment onto an invoice
+ * (the invoice shows the order's deposit applied, si-order-deposit.ts), so the
+ * two sets of receipts are different money.
+ */
+export function soPaidSen(a: SoPaidInputs): number {
+  return soOrderPaidSen(a) + Math.max(0, a.invoiceReceiptsSen || 0);
+}
+
+/** One invoice of the order, as soInvoiceReceiptsSen needs it. */
+export interface SoInvoiceReceiptRow { status: string | null; total_sen: number | string | null; paid_sen: number | string | null }
+
+/**
+ * Receipts on the order's invoices that count as paid on the order: live ones
+ * only (a cancelled invoice's receipts became customer credit, which counts when
+ * it is applied to another invoice), each capped at the invoice's total (the
+ * excess of an overpayment is customer credit too, booked once where it lands).
+ */
+export function soInvoiceReceiptsSen(rows: readonly SoInvoiceReceiptRow[]): number {
+  let sen = 0;
+  for (const r of rows) {
+    const st = String(r.status ?? '').toUpperCase();
+    if (st === 'CANCELLED' || st === 'DRAFT') continue;
+    const total = Number(r.total_sen ?? 0);
+    const paid = Number(r.paid_sen ?? 0);
+    if (paid > 0) sen += Math.min(paid, Math.max(0, total));
+  }
+  return sen;
 }
 
 /**
@@ -173,6 +213,7 @@ export function soPaidInputsOf(
   header: Record<string, unknown> | null | undefined,
   ledgerPaidSen: number,
   depositInLedger: boolean,
+  invoiceReceiptsSen: number,
 ): SoBalanceInputs {
   const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
   return {
@@ -181,5 +222,6 @@ export function soPaidInputsOf(
     headerDepositSen: num(header?.deposit_sen),
     ledgerPaidSen,
     depositInLedger,
+    invoiceReceiptsSen,
   };
 }

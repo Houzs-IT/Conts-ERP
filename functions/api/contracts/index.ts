@@ -19,12 +19,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const rows = await all<any>(env, `
     SELECT c.*, o.display_name,
-           (SELECT string_agg(p.name || ' ' || u.unit_number, ', ')
+           (SELECT string_agg(p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number), ', ')
             FROM units u JOIN properties p ON p.id = u.property_id
             WHERE u.contract_id = c.id OR (u.owner_id = c.owner_id AND u.contract_id IS NULL)) AS units_label,
            (SELECT COUNT(*) FROM units u WHERE u.contract_id = c.id OR (u.owner_id = c.owner_id AND u.contract_id IS NULL)) AS unit_count,
            -- The units this record is in force on, for Extend (a renewal is per unit).
-           (SELECT json_agg(json_build_object('id', u.id, 'label', p.name || ' ' || u.unit_number, 'purpose', ${ready ? 'u.purpose' : "'rental'"}) ORDER BY p.name, u.unit_number)
+           (SELECT json_agg(json_build_object('id', u.id, 'label', p.name || ' ' || COALESCE(NULLIF(u.unit_code, ''), u.unit_number), 'purpose', ${ready ? 'u.purpose' : "'rental'"}) ORDER BY p.name, u.unit_number)
             FROM units u JOIN properties p ON p.id = u.property_id WHERE u.contract_id = c.id) AS in_force_units,
            (SELECT MIN(u.package) FROM units u WHERE u.contract_id = c.id) AS package
     FROM owner_contracts c JOIN owners o ON o.id = c.owner_id

@@ -11,7 +11,10 @@ import { MobileCrashBoundary } from "./MobileCrashBoundary";
 const QuotationsList = lazy(() => import("../pages/renovation/QuotationsList").then((m) => ({ default: m.QuotationsList })));
 const QuotationEditor = lazy(() => import("../pages/renovation/QuotationEditor").then((m) => ({ default: m.QuotationEditor })));
 const QuotationTemplates = lazy(() => import("../pages/renovation/QuotationTemplates").then((m) => ({ default: m.QuotationTemplates })));
-const QuotationTemplateEditor = lazy(() => import("../pages/renovation/QuotationTemplates").then((m) => ({ default: m.QuotationTemplateEditor })));
+const OldTemplateAddress = lazy(() => import("../pages/renovation/QuotationTemplates").then((m) => ({ default: m.OldTemplateAddress })));
+const RenovationPackages = lazy(() => import("../pages/renovation/RenovationPackages").then((m) => ({ default: m.RenovationPackages })));
+const RenovationPackageSetup = lazy(() => import("../pages/renovation/RenovationPackageSetup").then((m) => ({ default: m.RenovationPackageSetup })));
+const RenovationPackageEditor = lazy(() => import("../pages/renovation/RenovationPackageEditor").then((m) => ({ default: m.RenovationPackageEditor })));
 const RenovationSalesOrder = lazy(() => import("../pages/renovation/RenovationSalesOrder").then((m) => ({ default: m.RenovationSalesOrder })));
 const VariationOrderEditor = lazy(() => import("../pages/renovation/VariationOrderEditor").then((m) => ({ default: m.VariationOrderEditor })));
 const RenovationSettings = lazy(() => import("../pages/renovation/RenovationSettings").then((m) => ({ default: m.RenovationSettings })));
@@ -36,7 +39,10 @@ export function MobileRenovationDocs({ onBack }: { onBack: () => void }) {
               <Route path="/scm/renovation/quotations" element={<QuotationsList />} />
               <Route path="/scm/renovation/quotations/:id" element={<QuotationEditor />} />
               <Route path="/scm/renovation/templates" element={<QuotationTemplates />} />
-              <Route path="/scm/renovation/templates/:id" element={<QuotationTemplateEditor />} />
+              <Route path="/scm/renovation/templates/:id" element={<OldTemplateAddress />} />
+              <Route path="/scm/renovation/packages" element={<RenovationPackages />} />
+              <Route path="/scm/renovation/packages/new" element={<RenovationPackageSetup />} />
+              <Route path="/scm/renovation/packages/:id" element={<RenovationPackageEditor />} />
               <Route path="/scm/renovation/contracts/:docNo" element={<RenovationSalesOrder />} />
               <Route path="/scm/renovation/variation-orders/:id" element={<VariationOrderEditor />} />
               <Route path="/scm/renovation/settings" element={<RenovationSettings />} />

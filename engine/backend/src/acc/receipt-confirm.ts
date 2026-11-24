@@ -26,6 +26,8 @@ import { resolveRoles } from './rules';
 import { paymentReconciliation } from './payment-reconciled';
 import { creditConfirmedPaymentOfCancelledSo } from '../scm/lib/customer-credits';
 import { instalmentPreview } from '../scm/shared/renovation-money';
+import { paidBeforeGoLiveOf } from './reno-paid-before-golive';
+import { linkReceiptInvoiceBestEffort } from './receipt-invoice';
 
 /* The untyped client the poster takes, borrowed rather than spelled out again
    (a new file's lint ceiling is zero — payout-charge.ts's reason). */
@@ -181,6 +183,8 @@ export async function confirmReceiptsForSettlement(
   for (const o of outcomes) {
     if (o.outcome !== 'formalised' && o.outcome !== 'already_formal') continue;
     const source = payments.find((p) => p.id === o.paymentId)?.source === 'SIPAY' ? 'SIPAY' : 'SOPAY';
+    /* A renovation order payment's receipt names its invoice as at the confirm (acc/receipt-invoice). */
+    if (source === 'SOPAY' && o.outcome === 'formalised') await linkReceiptInvoiceBestEffort(sb, { orderPaymentId: o.paymentId }, { includeFormal: true });
     try {
       const r = await postConfirmedPayment(sb, source, o.paymentId, companyId, { newlyConfirmed: o.outcome === 'formalised' });
       if (!r.ok) log(`settlement: ${source} ${o.paymentId} confirmed but not posted:`, r.status, r.reason);
@@ -229,14 +233,14 @@ export async function nextInstalmentOffer(sb: Db, companyId: number, soDocNo: st
     const [items, insts, bills, sis, contract, credits, soPays] = await Promise.all([
       sb.from('mfg_sales_order_items').select('total_sen, cancelled').eq('company_id', companyId).eq('doc_no', soDocNo),
       sb.from('reno_doc_instalments').select('id, seq, label, pct_bp').eq('so_doc_no', soDocNo),
-      sb.from('reno_instalment_bills').select('instalment_id, kind, amount_sen, credit_note_id').eq('so_doc_no', soDocNo),
+      sb.from('reno_instalment_bills').select('instalment_id, kind, amount_sen, sales_invoice_id, credit_note_id').eq('so_doc_no', soDocNo),
       sb.from('sales_invoices').select('id, status, total_sen').eq('company_id', companyId).eq('so_doc_no', soDocNo),
       sb.from('reno_so_contracts').select('billed_before_golive_sen').eq('so_doc_no', soDocNo).maybeSingle(),
       sb.from('reno_contract_credits').select('credit_note_id, amount_sen').eq('so_doc_no', soDocNo),
       sb.from('mfg_sales_order_payments').select('id').eq('company_id', companyId).eq('so_doc_no', soDocNo),
     ]);
     for (const r of [items, insts, bills, sis, contract, credits, soPays]) if (r.error) return null;
-    type Bill = { instalment_id: string; kind: string; amount_sen: number; credit_note_id: string | null };
+    type Bill = { instalment_id: string; kind: string; amount_sen: number; sales_invoice_id: string | null; credit_note_id: string | null };
     type Si = { id: string; status: string; total_sen: number };
     const billRows = (bills.data ?? []) as Bill[];
     const creditRows = (credits.data ?? []) as Array<{ credit_note_id: string | null; amount_sen: number }>;
@@ -276,13 +280,18 @@ export async function nextInstalmentOffer(sb: Db, companyId: number, soDocNo: st
       if (error) return null;
       receivedSen += ((recs ?? []) as Array<{ amount_sen: number }>).reduce((s, r) => s + Number(r.amount_sen), 0);
     }
+    /* What AutoCount invoiced before go-live counts as billed above, so what it was paid there counts as received
+       (acc/reno-paid-before-golive; chew, 23 Nov 2026). */
+    if (billedBeforeSen > 0) receivedSen += (await paidBeforeGoLiveOf(sb, companyId, [soDocNo])).get(soDocNo) ?? 0;
     if (receivedSen <= netBilledSen) return null;
 
     /* The next instalment at billInstalment's amount: the schedule as billingView reads it. */
     const schedule = ((insts.data ?? []) as Array<{ id: string; seq: number; label: string | null; pct_bp: number }>)
       .map((i) => ({ ...i, seq: Number(i.seq), pct_bp: Number(i.pct_bp) })).sort((a, b) => a.seq - b.seq);
+    /* A cancelled invoice or credit note billed nothing: its instalment is due again (billingView's rule). */
+    const cancelledSis = new Set(siRows.filter((s) => String(s.status).toUpperCase() === 'CANCELLED').map((s) => String(s.id)));
     const billedBySeq = new Map<number, number>();
-    for (const b of billRows) {
+    for (const b of billRows.filter((x) => !(x.sales_invoice_id && cancelledSis.has(String(x.sales_invoice_id))) && live(x.credit_note_id))) {
       const i = schedule.find((x) => x.id === b.instalment_id);
       if (i) billedBySeq.set(i.seq, Number(b.amount_sen));
     }

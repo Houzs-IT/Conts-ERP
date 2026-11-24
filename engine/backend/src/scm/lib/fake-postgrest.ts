@@ -330,12 +330,17 @@ export function fakeSb(
       },
       /* PostgREST `or=(a.op.v,b.op.v)`: the row passes when ANY term does. Only
          the term shapes the list readers send are understood — `ilike` (the
-         search box), `eq` and `is.true|false|null` (the hold marker); anything
+         search box), `eq`, `in.(…)` (approval / project code docs) and
+         `is.true|false|null` (the hold marker); anything
          else THROWS, for the reason `not()` above gives. */
       or(expr: string) {
-        const terms = String(expr).split(',').map((t) => {
+        const terms = String(expr).split(/,(?![^()]*\))/).map((t) => {
           const [col, op, ...rest] = t.split('.');
           const val = rest.join('.');
+          if (op === 'in') {
+            const vals = val.replace(/^\(|\)$/g, '').split(',').map((v) => v.replace(/^"|"$/g, ''));
+            return (r: Row) => vals.includes(String(r[col!]));
+          }
           if (op === 'ilike') {
             const rx = new RegExp(`^${val.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*')}$`, 'i');
             return (r: Row) => rx.test(String(r[col!] ?? ''));
@@ -375,7 +380,11 @@ export function fakeSb(
         }
         return { data: row, error: null };
       },
-      then(resolve: (v: unknown) => unknown) { return Promise.resolve(settle()).then(resolve); },
+      /* An awaited update(...).select() is UPDATE ... RETURNING: the rows it touched, as PostgREST answers - a
+         compare-and-set reads an empty list as "lost". Every other chain is unchanged. */
+      then(resolve: (v: unknown) => unknown) {
+        return Promise.resolve(settle()).then((v) => resolve(updated && selectCalled && !(v as { error?: unknown }).error ? { data: updated, error: null } : v));
+      },
     };
     return builder;
   };
@@ -446,4 +455,30 @@ export function publicTablesOnly<T extends { from: (t: string) => unknown; schem
     },
     schema: (s: string) => (s === 'public' ? sb : sb.schema(s)),
   } as T;
+}
+
+/** The fake answering as PostgREST does: every row it hands back is a copy (it otherwise hands back its live rows, which
+ *  change under a handler when another request updates them). For tests of two requests at the same moment: a row read
+ *  before the other request's write keeps what it said (review of the payment request resubmit, 13 Nov 2026). */
+export function asCopies<T extends object>(sb: T): T {
+  const clone = (v: unknown) => (v == null ? v : JSON.parse(JSON.stringify(v)));
+  /* eslint-disable @typescript-eslint/no-explicit-any -- a proxy over the untyped query builder */
+  const wrap = (b: any): any => new Proxy(b, {
+    get(t, p) {
+      const v = t[p];
+      if (typeof v !== 'function') return v;
+      if (p === 'maybeSingle' || p === 'single') return async (...a: unknown[]) => { const r = await v.apply(t, a); return { ...r, data: clone(r.data) }; };
+      if (p === 'then') return (res: any, rej: any) => v.call(t, (r: any) => res({ ...r, data: clone(r?.data) }), rej);
+      return (...a: unknown[]) => { const out = v.apply(t, a); return out === t ? wrap(t) : out; };
+    },
+  });
+  return new Proxy(sb, {
+    get(t: any, p) {
+      if (p === 'from') return (tbl: string) => wrap(t.from(tbl));
+      if (p === 'schema') return (s: string) => asCopies(t.schema(s));
+      const v = t[p];
+      return typeof v === 'function' ? v.bind(t) : v;
+    },
+  }) as T;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 }

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invalidateConvertShared } from "./sharedInvalidate";
 import { authedFetch } from "../vendor/scm/lib/authed-fetch";
+import { outstandingSoPageUrl } from "../vendor/scm/lib/suppliers-queries";
 import { buildVariantSummary } from "../vendor/shared/variant-summary";
 import { idempotentInit, useIdempotencyKey } from "../lib/idempotency";
 import { useNotify } from "../vendor/scm/components/NotifyDialog";
@@ -13,8 +14,6 @@ import { outstandingEmptyReason, type OutstandingScope } from "../lib/outstandin
 import "./mobile.css";
 import { SI_TRANSFERABLE_DO_STATES } from '../vendor/shared/do-shipped-states';
 import { soCanRaiseDo } from '../vendor/shared/so-deliverable-states';
-import { customerRefOf } from '../lib/customer-ref';
-import { matchesSearch } from '../lib/so-ref-search';
 /* The word, from the desktop picker's own component, so the phone and the desk
    cannot drift into two names for one field. Mobile spells its field labels
    "Label: value" (see "Supplier SKU:" below), not uppercase — the WORD is
@@ -145,6 +144,32 @@ type PoListRow = {
   total_sen: number | null; supplier?: { id?: string; code?: string; name?: string } | null;
 };
 
+/** One page of a source list, as the list's own paged read answers it. */
+type ConvertSourcePage = {
+  salesOrders?: SoListRow[]; deliveryOrders?: DoListRow[]; purchaseOrders?: PoListRow[];
+  total?: number | null; page?: number; pageSize?: number;
+};
+
+export const CONVERT_SOURCE_PAGE_SIZE = 50;
+/* The statuses each source may convert from, asked of the server so a page holds only those. SO: every status but
+   the four soCanRaiseDo refuses (DRAFT, CANCELLED, ON_HOLD, CLOSED); the hold marker is still checked per row. */
+const SO_CONVERTIBLE_STATUSES = [
+  "CONFIRMED", "RENO_CONFIRMED", "RENO_IN_PROGRESS", "RENO_COMPLETED",
+  "IN_PRODUCTION", "READY_TO_SHIP", "SHIPPED", "DELIVERED", "INVOICED",
+];
+
+/** The list read for one page of convertible sources: the list's paged mode, the status filter and the search. */
+export function convertSourcePageUrl(source: SourceKind, page: number, q: string, supplierId: string | null): string {
+  const p = new URLSearchParams({ page: String(page), pageSize: String(CONVERT_SOURCE_PAGE_SIZE) });
+  if (source === "so") p.set("status", SO_CONVERTIBLE_STATUSES.join(","));
+  else if (source === "do") p.set("status", SI_TRANSFERABLE_DO_STATES.join(","));
+  else p.set("status", "outstanding");
+  if (q.trim()) p.set("q", q.trim());
+  if (source === "po" && supplierId) p.set("supplierId", supplierId);
+  const path = source === "so" ? "/mfg-sales-orders" : source === "do" ? "/delivery-orders-mfg" : "/mfg-purchase-orders";
+  return `${path}?${p.toString()}`;
+}
+
 // ── Convertible-line shapes (from the remaining GETs) ────────────────────────
 /* itemGroup + variants ride on ALL FOUR of these reads already — they are not a
    new request. Verified against the handlers, not against a payload type:
@@ -167,8 +192,7 @@ type DoInvoiceableLine = {
 // SO→PO — the OUTSTANDING axis (qty − po_qty_picked + sofa MRP rollup), from
 // /mfg-purchase-orders/outstanding-so-items (the SAME stock-aware shortage view
 // the desktop PurchaseOrderFromSo picker uses). `remainingQty` is the pooled
-// shortage; the endpoint returns EVERY outstanding SO line, so we scope to the
-// picked SO's doc_no client-side.
+// shortage; the request asks the server for the picked SO's doc_no only.
 type OutstandingSoLine = {
   soItemId: string; soDocNo: string; itemCode: string; description: string | null;
   itemGroup: string | null; variants: unknown;
@@ -292,20 +316,40 @@ export function MobileConvertWizard({
     : (selectedSourceId ? 2 : 1);
 
   // ── Source list query ──────────────────────────────────────────────────────
-  const sourceQuery = useQuery<any>({
-    queryKey: ["convert-source", meta.source],
-    queryFn: () => {
-      if (meta.source === "so") return authedFetch<{ salesOrders?: SoListRow[] }>("/mfg-sales-orders?limit=200");
-      if (meta.source === "do") return authedFetch<{ deliveryOrders?: DoListRow[] }>("/delivery-orders-mfg?limit=200");
-      return authedFetch<{ purchaseOrders?: PoListRow[] }>("/mfg-purchase-orders?limit=200");
-    },
+  /* One page at a time of the list's own paged read, asked for the convertible statuses only and searched on the
+     server (audit 20 Nov 2026). It used to ask for a 200 limit, which the lists ignore: they answered their newest 500
+     documents of any status, so an older open order could not be converted on the phone at all. */
+  const [debouncedQ, setDebouncedQ] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+  const serverSupplier = meta.source === "po" ? supplierFilter : null;
+  const sourceQuery = useInfiniteQuery({
+    queryKey: ["convert-source", meta.source, debouncedQ, serverSupplier],
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) =>
+      authedFetch<ConvertSourcePage>(convertSourcePageUrl(meta.source, pageParam, debouncedQ, serverSupplier), { signal }),
+    getNextPageParam: (last, _all, lastPage) =>
+      (lastPage + 1) * CONVERT_SOURCE_PAGE_SIZE < Number(last.total ?? 0) ? lastPage + 1 : undefined,
+    placeholderData: (prev) => prev,
     staleTime: 30_000,
   });
+  /* Every loaded page as one list response, so the filters below read it as before. */
+  const sourceData = useMemo(() => {
+    const pages = sourceQuery.data?.pages ?? [];
+    return {
+      salesOrders: pages.flatMap((p) => p.salesOrders ?? []),
+      deliveryOrders: pages.flatMap((p) => p.deliveryOrders ?? []),
+      purchaseOrders: pages.flatMap((p) => p.purchaseOrders ?? []),
+      total: pages[0]?.total ?? null,
+    };
+  }, [sourceQuery.data]);
 
   // Only offer processible sources (not DRAFT / CANCELLED). GRN drops fully
   // received / cancelled POs (only open / partially_received can be received).
   const sources = useMemo(() => {
-    const data = sourceQuery.data as any;
+    const data = sourceData;
     /* ONE DECLARATION, NOT A THIRD OPINION. This was a hand-typed
        `!== DRAFT && !== CANCELLED` — a fourth spelling of the same rule, kept in
        step with the other three only by whoever remembered. The desktop, the
@@ -319,7 +363,8 @@ export function MobileConvertWizard({
       const s = str(status).toUpperCase();
       return s !== "DRAFT" && s !== "CANCELLED" && s !== "RECEIVED" && s !== "CLOSED";
     };
-    const needle = q.trim().toLowerCase();
+    /* The search runs on the server (debouncedQ above), over more fields than the row shows, so it is not repeated
+       here: a second, narrower filter would hide rows the server matched by phone number or reference. */
     /* A SALES ORDER source asks the Sales Order's own question. The DO set above
        was applied here too, and a Sales Order is never LOADED or DISPATCHED, so
        the phone offered only DELIVERED orders — a confirmed order waiting for its
@@ -328,27 +373,26 @@ export function MobileConvertWizard({
        is pinned equal to it. */
     if (meta.source === "so") {
       return ((data?.salesOrders ?? []) as SoListRow[])
-        .filter((r) => soCanRaiseDo(r.status, r.on_hold ?? null))
-        .filter((r) => matchesSearch([r.debtor_name, r.doc_no, customerRefOf(r)], needle));
+        .filter((r) => soCanRaiseDo(r.status, r.on_hold ?? null));
     }
     if (meta.source === "do") {
       return ((data?.deliveryOrders ?? []) as DoListRow[])
-        .filter((r) => isTransferableDo(r.status))
-        .filter((r) => matchesSearch([r.debtor_name, r.do_number, customerRefOf(r)], needle));
+        .filter((r) => isTransferableDo(r.status));
     }
     // PO (GRN): filter to one supplier at a time so /grns/from-pos never 400s
     // on mixed_suppliers. Once a supplier is chosen, show only that supplier.
     return ((data?.purchaseOrders ?? []) as PoListRow[])
       .filter((r) => isReceivablePo(r.status))
-      .filter((r) => !supplierFilter || str(r.supplier?.id) === supplierFilter)
-      .filter((r) => !needle || `${str(r.supplier?.name)} ${r.po_number}`.toLowerCase().includes(needle));
-  }, [sourceQuery.data, meta.source, q, supplierFilter]);
+      .filter((r) => !supplierFilter || str(r.supplier?.id) === supplierFilter);
+  }, [sourceData, meta.source, supplierFilter]);
 
-  // Distinct suppliers for the GRN supplier chips (from receivable POs).
+  // Distinct suppliers for the GRN supplier chips (from receivable POs). Kept across reads: picking a chip asks the
+  // server for that supplier only, and the other chips must stay to switch back.
+  const seenSuppliers = useRef(new Map<string, string>());
   const suppliers = useMemo(() => {
     if (meta.source !== "po") return [];
-    const data = sourceQuery.data as any;
-    const seen = new Map<string, string>();
+    const data = sourceData;
+    const seen = seenSuppliers.current;
     for (const r of (data?.purchaseOrders ?? []) as PoListRow[]) {
       const s = str(r.status).toUpperCase();
       if (s === "DRAFT" || s === "CANCELLED" || s === "RECEIVED" || s === "CLOSED") continue;
@@ -356,7 +400,7 @@ export function MobileConvertWizard({
       if (id) seen.set(id, str(r.supplier?.name) || str(r.supplier?.code) || id);
     }
     return [...seen.entries()].map(([id, name]) => ({ id, name }));
-  }, [sourceQuery.data, meta.source]);
+  }, [sourceData, meta.source]);
 
   // ── Convertible-lines query (SO→DO/PO, DO→SI). GRN-from-POs has no line
   //    picker. ──────────────────────────────────────────────────────────────
@@ -370,12 +414,19 @@ export function MobileConvertWizard({
         // axis is wrong for a PO: a fully-PO'd-but-undelivered line would 409
         // dead on submit, a delivered-but-unpurchased restock PO could never be
         // raised, and sofa qty (MRP-pooled) would be off. Mirrors the desktop
-        // PurchaseOrderFromSo picker (useOutstandingSoItems). The endpoint
-        // returns EVERY outstanding SO line, so scope to the picked SO's doc_no.
-        const res = await authedFetch<{ items?: OutstandingSoLine[] }>(
-          `/mfg-purchase-orders/outstanding-so-items`,
-        );
-        return (res.items ?? [])
+        // PurchaseOrderFromSo picker. The server keeps only the picked SO's
+        // lines (docNo); every page is read so none of that SO's lines is lost.
+        const soLines: OutstandingSoLine[] = [];
+        let cursor: string | null = null;
+        for (let n = 0; n < 50; n++) {
+          const res: { items?: OutstandingSoLine[]; nextCursor?: string | null } = await authedFetch(
+            outstandingSoPageUrl({ docNo: str(selectedSourceId) }, cursor, 200),
+          );
+          soLines.push(...(res.items ?? []));
+          cursor = res.nextCursor ?? null;
+          if (!cursor) break;
+        }
+        return soLines
           .filter((l) => str(l.soDocNo) === str(selectedSourceId))
           .map<PickLine>((l) => ({
             lineId: l.soItemId,
@@ -670,11 +721,11 @@ export function MobileConvertWizard({
     }
     if (!selectedSourceId) return "";
     if (meta.source === "so") return selectedSourceId; // doc_no is the id
-    const row = ((sourceQuery.data as any)?.deliveryOrders ?? []).find(
+    const row = sourceData.deliveryOrders.find(
       (r: DoListRow) => str(r.id) === selectedSourceId,
     ) as DoListRow | undefined;
     return row ? str(row.do_number) : "";
-  }, [meta.source, selectedPoIds, selectedSourceId, sourceQuery.data]);
+  }, [meta.source, selectedPoIds, selectedSourceId, sourceData]);
 
   // Spec step labels: 1 = pick source, 2 = pick lines (GRN sets received qty).
   const stepLabel = step === 1
@@ -716,10 +767,10 @@ export function MobileConvertWizard({
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${meta.sourceNoun.toLowerCase()}`} />
             </div>
             <SearchScopeHint
-              scope="loaded"
-              loadedLimit={200}
+              scope="server"
+              searching={q.trim() !== debouncedQ || sourceQuery.isFetching}
               countPending={sourceQuery.isLoading || sourceQuery.isError}
-              resultCount={sourceQuery.isSuccess ? sources.length : undefined}
+              resultCount={sourceQuery.isSuccess && sourceData.total != null ? sourceData.total : undefined}
               term={q}
               className="mt-1 px-1"
             />
@@ -745,6 +796,10 @@ export function MobileConvertWizard({
             rows={sources}
             selectedPoIds={selectedPoIds}
             supplierFilter={supplierFilter}
+            hasMore={!!sourceQuery.hasNextPage}
+            loadingMore={sourceQuery.isFetchingNextPage}
+            moreFailed={sourceQuery.isFetchNextPageError}
+            onLoadMore={() => { void sourceQuery.fetchNextPage(); }}
             onPickSingle={(id) => setSelectedSourceId(id)}
             onTogglePo={(row) => {
               // First PO pins the supplier filter (enforces one-supplier GRN).
@@ -823,7 +878,7 @@ export function MobileConvertWizard({
 
 // ── Step 1: source picker ────────────────────────────────────────────────────
 function SourceStep({
-  kind, loading, error, rows, selectedPoIds, supplierFilter, onPickSingle, onTogglePo,
+  kind, loading, error, rows, selectedPoIds, supplierFilter, hasMore, loadingMore, moreFailed, onLoadMore, onPickSingle, onTogglePo,
 }: {
   kind: SourceKind;
   loading: boolean;
@@ -831,12 +886,29 @@ function SourceStep({
   rows: any[];
   selectedPoIds: string[];
   supplierFilter: string | null;
+  hasMore: boolean;
+  loadingMore: boolean;
+  moreFailed: boolean;
+  onLoadMore: () => void;
   onPickSingle: (id: string) => void;
   onTogglePo: (row: PoListRow) => void;
 }) {
   if (loading) return <Muted>Loading…</Muted>;
   if (error) return <Muted danger>Couldn't load the source documents. Please try again.</Muted>;
-  if (!rows.length) return <Muted>No convertible documents to show.</Muted>;
+  /* Older documents are a tap away: the list reads one page at a time. */
+  const more = hasMore || moreFailed ? (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "6px 0" }}>
+      {moreFailed && <Muted danger>The next documents could not be loaded.</Muted>}
+      <button type="button" className="chip" onClick={onLoadMore} disabled={loadingMore}>
+        {loadingMore ? "Loading…" : moreFailed ? "Try again" : "Show older documents"}
+      </button>
+    </div>
+  ) : null;
+  if (!rows.length) {
+    return more
+      ? <><Muted>None of the documents loaded so far can be converted.</Muted>{more}</>
+      : <Muted>No convertible documents to show.</Muted>;
+  }
 
   if (kind === "po") {
     return (
@@ -870,6 +942,7 @@ function SourceStep({
             </div>
           );
         })}
+        {more}
       </div>
     );
   }
@@ -905,6 +978,7 @@ function SourceStep({
           </div>
         );
       })}
+      {more}
     </div>
   );
 }

@@ -48,7 +48,9 @@ import { klToday, materialDates } from '../lib/production-material-dates';
 import { scmAreaAllows } from '../middleware/area-guard';
 import { checkReturn, filterProductionTab, holidaySet, materialPoWarehouse, materialVerdict, progressOf, stockStatusOf, validHours, wholeNeed, type MaterialState, type PoLink, type ReturnLine } from '../lib/renovation-production';
 import { filterProductionList } from '../lib/production-list-read';
+import { materialsToOrder, type PickerMaterial, type PickerOrder, type PickerPoLine, type PickerSupplier } from '../lib/renovation-material-picker';
 import { PRODUCTION_DOC, issueMaterials, returnMaterial, reverseIssues } from '../lib/renovation-production-stock';
+import { deferAllocationRecompute } from '../lib/stock-allocation-job';
 import { voChangeWaiting } from '../lib/renovation-po-change-guard';
 import { refuseWithoutWriting } from '../lib/no-write-refusal';
 import { heldSoBehindLines, soOnHoldResponse } from '../lib/source-document-gates';
@@ -348,6 +350,22 @@ productionOrders.get('/', async (c) => {
        Date, ...) — the same read the export uses (lib/po-line-export.ts), so the
        screen and the file agree cell for cell. The legacy unpaged path does not
        carry them: its callers never render a line column. */
+    /* Each order's customer, from its lines' sales orders, for the list's "project - customer" heading (owner,
+       24 Nov 2026). A label: a failed read leaves it blank rather than failing the list. */
+    type SoHead = { debtor_name: string | null };
+    type SoLine = { so: SoHead | SoHead[] | null };
+    type OrderSo = { production_order_id: string; so: SoLine | SoLine[] | null };
+    const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? v[0] ?? null : v);
+    const customers = await chunkIn<OrderSo>(stamped.rows.map((r) => r.id), (batch, from, to) =>
+      supabase.from('production_order_items').select('production_order_id, so:mfg_sales_order_items!inner (so:mfg_sales_orders!inner (debtor_name))')
+        .in('production_order_id', batch).order('id').range(from, to));
+    if (customers.error) console.error('[production-orders list] customers not read; headings show the project only', customers.error.message);
+    const customerOf = new Map<string, string>();
+    for (const l of customers.data) {
+      const name = one(one(l.so)?.so ?? null)?.debtor_name?.trim();
+      if (name && !customerOf.has(l.production_order_id)) customerOf.set(l.production_order_id, name);
+    }
+    for (const r of stamped.rows) (r as Record<string, unknown>).customer_name = customerOf.get(r.id) ?? null;
     const withLines = await attachPoLines(supabase, c, stamped.rows);
     if (withLines.error) return c.json({ error: 'lines_read_failed', reason: withLines.error }, 500);
     await attachMaterialReadiness(c, supabase, withLines.rows as Array<Record<string, unknown>>, activeCompanyId(c) ?? null);
@@ -529,6 +547,80 @@ productionOrders.delete('/sku-composition/:rowId', async (c) => {
   if (error) return c.json({ error: 'delete_failed', reason: error.message }, 500);
   if (!data) return c.json(NOT_THIS_COMPANY, 404);
   return c.json({ ok: true });
+});
+
+/* Purchase Orders > Transfer from Production Order (owner, 23 Nov 2026): every raw material of an open order still to be
+   bought. Only orders /material-pos accepts are listed (submitted, not held), so a ticked line can always be ordered. */
+productionOrders.get('/materials-to-order', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const { data: orderRows, error: orderErr } = await paginateAll<PickerOrder>((from, to) =>
+    scopeToCompanyId(sb.from('production_orders').select('id, po_number, project_id, purchase_location_id').eq('status', 'SUBMITTED').eq('on_hold', false), co.companyId)
+      .order('id').range(from, to));
+  if (orderErr) return c.json({ error: 'load_failed', reason: orderErr.message }, 500);
+  const orders = new Map((orderRows ?? []).map((o) => [o.id, o]));
+  if (orders.size === 0) return c.json({ rows: [] });
+  const orderIds = [...orders.keys()];
+  const { data: materials, error: matErr } = await chunkIn<PickerMaterial>(orderIds, (batch, from, to) =>
+    scopeToCompanyId(sb.from('production_order_materials')
+      .select('id, production_order_id, item_code, description, uom, qty_needed, processing_date, delivery_date, warehouse_id')
+      .in('production_order_id', batch), co.companyId).order('id').range(from, to));
+  if (matErr) return c.json({ error: 'load_failed', reason: matErr.message }, 500);
+  if (materials.length === 0) return c.json({ rows: [] });
+  const { data: poLines, error: lineErr } = await chunkIn<PickerPoLine>(materials.map((m) => m.id), async (batch, from, to) => {
+    const r = await sb.from('purchase_order_items').select('production_material_id, qty, po:purchase_orders!inner (status)')
+      .in('production_material_id', batch).order('id').range(from, to);
+    /* A to-one embed: PostgREST answers an object, the generated type says an array. */
+    return { data: r.data as unknown as PickerPoLine[] | null, error: r.error };
+  });
+  if (lineErr) return c.json({ error: 'load_failed', reason: lineErr.message }, 500);
+
+  const codes = [...new Set(materials.map((m) => m.item_code))];
+  const { data: binds, error: bindErr } = await readMfgProductBindings<{ item_code: string; supplier_id: string }>(sb, {
+    codes, companyId: co.companyId, select: 'item_code, supplier_id',
+  });
+  if (bindErr) return c.json({ error: 'load_failed', reason: bindErr.message }, 500);
+  /* Bindings arrive main supplier first: the first per code is the one /material-pos orders from. */
+  const supplierIdOf = new Map<string, string>();
+  for (const b of binds) if (!supplierIdOf.has(b.item_code)) supplierIdOf.set(b.item_code, b.supplier_id);
+  const { data: sups, error: supErr } = await chunkIn<PickerSupplier>([...new Set(supplierIdOf.values())], (batch, from, to) =>
+    scopeToCompanyId(sb.from('suppliers').select('id, code, name').in('id', batch), co.companyId).order('id').range(from, to));
+  if (supErr) return c.json({ error: 'load_failed', reason: supErr.message }, 500);
+  const supById = new Map(sups.map((s) => [s.id, s]));
+  const mainSupplierOf = new Map<string, PickerSupplier>();
+  for (const [code, id] of supplierIdOf) { const s = supById.get(id); if (s) mainSupplierOf.set(code, s); }
+
+  const projectIds = [...new Set([...orders.values()].map((o) => o.project_id).filter((p): p is number => p != null))];
+  const projectOf = new Map<number, { code: string | null; name: string | null }>();
+  if (projectIds.length > 0) {
+    const { data: projects } = await chunkIn<{ id: number; code: string | null; name: string | null }, number>(projectIds, (batch, from, to) =>
+      sb.schema('public').from('projects').select('id, code, name').in('id', batch).order('id').range(from, to));
+    for (const p of projects) projectOf.set(Number(p.id), { code: p.code, name: p.name });
+  }
+  const { data: items } = await chunkIn<{ production_order_id: string; so_item_id: string | null }>(orderIds, (batch, from, to) =>
+    sb.from('production_order_items').select('production_order_id, so_item_id').in('production_order_id', batch).not('so_item_id', 'is', null).order('id').range(from, to));
+  const soItemIds = [...new Set(items.map((i) => i.so_item_id).filter((x): x is string => Boolean(x)))];
+  const { data: soLines } = await chunkIn<{ id: string; doc_no: string }>(soItemIds, (batch, from, to) =>
+    scopeToCompanyId(sb.from('mfg_sales_order_items').select('id, doc_no').in('id', batch), co.companyId).order('id').range(from, to));
+  const docOfItem = new Map(soLines.map((l) => [l.id, l.doc_no]));
+  const soDocsOf = new Map<string, string[]>();
+  for (const i of items) {
+    const doc = i.so_item_id ? docOfItem.get(i.so_item_id) : undefined;
+    if (!doc) continue;
+    const list = soDocsOf.get(i.production_order_id) ?? [];
+    if (!list.includes(doc)) list.push(doc);
+    soDocsOf.set(i.production_order_id, list);
+  }
+  /* Where /material-pos would deliver it, so the New PO form opens on that Purchase Location. */
+  const { data: wh } = await scopeToCompanyId(sb.from('warehouses').select('id, code, is_default').eq('is_active', true), co.companyId).order('code');
+  const warehouses = (wh ?? []) as Array<{ id: string; code: string; is_default: boolean | null }>;
+  const codeOfWh = new Map(warehouses.map((w) => [w.id, w.code]));
+  const warehouseOf = (m: PickerMaterial): string | null => {
+    const id = materialPoWarehouse([m.warehouse_id, orders.get(m.production_order_id)?.purchase_location_id], warehouses);
+    return id ? codeOfWh.get(id) ?? null : null;
+  };
+  return c.json({ rows: materialsToOrder({ materials, orders, poLines, mainSupplierOf, projectOf, soDocsOf, warehouseOf }) });
 });
 
 /* ── MRP shortages -> raw-material POs ──
@@ -1351,6 +1443,7 @@ const START_CLEARED = { actual_start_at: null, actual_start_by: null, actual_sta
 export async function undoStart(c: any, sb: any, orderId: string): Promise<string | null> {
   const back = await reverseIssues(sb, orderId, c.get('user')?.id ?? null);
   if (!back.ok) return back.reason;
+  deferAllocationRecompute(c, sb, 'production-undo-start');
   /* No longer started: nobody stays on the clock, or the timer would run on hidden and block the next Start's time. */
   await stopRunningTimers(sb, orderId, actorName(c));
   const { error } = await sb.from('production_order_workers').delete().eq('production_order_id', orderId).eq('how', 'STARTED');
@@ -1719,6 +1812,8 @@ productionOrders.post('/:id/start', async (c) => {
   const now = new Date().toISOString();
   const { error: startErr } = await sb.from('production_orders').update({ actual_start_at: now, actual_start_by: staffId, actual_start_by_name: name, start_lock_at: null, updated_at: now }).eq('id', id);
   if (startErr) return c.json({ error: 'update_failed', reason: startErr.message }, 500);
+  /* Start takes stock out like a DO does, so the SO lines that counted on it are walked again (after the answer). */
+  if (issued.issuedLines > 0) deferAllocationRecompute(c, sb, 'production-start');
   const { data: named } = await sb.from('production_order_workers').select('name').eq('production_order_id', id);
   if (!((named ?? []) as Array<{ name: string }>).some((w) => w.name.toLowerCase() === name.toLowerCase())) {
     await sb.from('production_order_workers').insert({ production_order_id: id, company_id: co.companyId, person_key: `user:${String(c.get('houzsUser')?.id ?? name)}`, name, how: 'STARTED', created_by: staffId });
@@ -1758,6 +1853,7 @@ productionOrders.post('/:id/request-more', async (c) => {
     await sb.from('production_order_materials').delete().eq('id', materialId);
     return c.json({ error: 'stock_failed', message: issued.reason }, 409);
   }
+  if (issued.issuedLines > 0) deferAllocationRecompute(c, sb, 'production-request-more');
   await recordEntityAudit(sb, {
     entityType: 'PRODUCTION_ORDER', entityId: order.id, entityDocNo: order.po_number, action: 'UPDATE', actor: c.get('houzsUser'), companyId: co.companyId, statusSnapshot: order.status,
     note: `Requested more: ${wholeNeed(qty)} ${code}`, fieldChanges: [],
@@ -1788,7 +1884,10 @@ productionOrders.post('/:id/return-stock', async (c) => {
   for (const l of lines) {
     const m = byId.get(l.materialId)!;
     const problem = await returnMaterial(sb, { m, qty: l.qty, warehouseId: l.warehouseId, poNumber: order.po_number, companyId: co.companyId, performedBy: c.get('user')?.id ?? null });
-    if (problem) return c.json({ error: 'stock_failed', message: moved > 0 ? `${moved} line(s) went back. ${problem}` : problem, moved }, 409);
+    if (problem) {
+      if (moved > 0) deferAllocationRecompute(c, sb, 'production-return');
+      return c.json({ error: 'stock_failed', message: moved > 0 ? `${moved} line(s) went back. ${problem}` : problem, moved }, 409);
+    }
     m.qty_returned += l.qty;
     moved += 1;
   }
@@ -1796,6 +1895,7 @@ productionOrders.post('/:id/return-stock', async (c) => {
     entityType: 'PRODUCTION_ORDER', entityId: order.id, entityDocNo: order.po_number, action: 'UPDATE', actor: c.get('houzsUser'), companyId: co.companyId, statusSnapshot: order.status,
     note: `Returned stock: ${lines.map((l) => `${l.qty} ${byId.get(l.materialId)!.item_code}`).join(', ')}`, fieldChanges: [],
   });
+  deferAllocationRecompute(c, sb, 'production-return');
   return c.json({ ok: true, moved });
 });
 

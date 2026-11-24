@@ -20,7 +20,7 @@ const VIEWS: { key: View; label: string }[] = [
 ];
 
 const INTRO: Record<View, string> = {
-  roles: 'Pick a role to see and change what it can do. Grouped by company, then department. The Staff row covers people with no position.',
+  roles: 'Pick a role to see and change what it can do. Grouped by department. The Staff row covers people with no position.',
   people: 'Pick a person to give them more or less than their role. Custom shows how many areas are set just for them.',
   setup: 'The departments and positions people are placed in.',
 };

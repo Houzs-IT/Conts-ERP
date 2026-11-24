@@ -62,6 +62,7 @@ export const AUDIT_ENTITY_TYPES = [
   'DELIVERY_ORDER',
   'PURCHASE_RETURN',
   'LEDGER_SETTINGS', // Conts: the ledger start date and fiscal year end, keyed by company id
+  'CREDIT_NOTE', // a credit note's knock-off moved: what each invoice took, from -> to
 ] as const;
 
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];

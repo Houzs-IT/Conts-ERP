@@ -16,6 +16,8 @@
 //   GET  /accounts, /projects       what a cost is, and the project it is on
 //   GET  /suppliers?q=, /purchase-orders?q=   who finance pays (office staff)
 //   POST /utility-bills/*          scanned utility bills from Property OS (utility-bill-routes.ts; office staff)
+//   GET  /finance-waiting          how many payment requests and claims wait for finance to pay (office staff; Property
+//                                  OS shows it on the Payment requests menu entry only to those who open the Ledger)
 import { paginateAll } from '../scm/lib/paginate-all';
 import { Hono } from 'hono';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
@@ -26,10 +28,13 @@ import { docMonthTag, insertWithDocNoRetry, mintMonthlyDocNo } from '../scm/lib/
 import { BILL_MODEL, extractOneBill, matchSupplier } from '../acc/bill-extract';
 import { requestAiTag } from '../services/aiUsage';
 import { lineDepartment, resolveFloatId } from './petty-cash';
+import { CLAIM_WAITING_STATUSES, stillWaiting } from './finance-waiting';
 import { RECEIPT_COLS, allRows, filesOf, floatBalances, linesOf, monthRange, receiptView, staffNames, type FloatRow, type ReceiptRow } from './petty-cash-store';
 import type { Staff } from './staff-identity';
 import { bankDetailsOf } from './petty-cash-routes';
-import { buildLines, defaultLineSubs } from './claims-lines';
+import { buildLines, defaultLineSubs, withTargetLabels } from './claims-lines';
+import { readRecoveries, recoveriesOf, saveRecoveries } from './owner-recovery';
+import { RENO_KIND_OF, loadSubDepartments, projectRenoKind, projectSide, subForStaffDepartment } from './sub-departments';
 import { myRequestRoutes } from './payment-request-routes';
 import { utilityBillRoutes } from './utility-bill-routes';
 
@@ -150,6 +155,9 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
   if (!decoded.ok) return c.json({ error: decoded.error, message: decoded.message }, decoded.status);
   const built = await buildLines(sb, staff, b.lines, amountSen, co.companyId);
   if (!built.ok) return c.json({ error: 'validation', message: built.message }, 422);
+  /* What a unit's owner pays back (chew, 23 Nov 2026: claims as payment requests): charged once finance checks it (0363). */
+  const recover = readRecoveries(b.lines, built.lines);
+  if (!recover.ok) return c.json({ error: 'validation', message: recover.message }, 422);
 
   /* A proper receipt for one finance rejected replaces it and keeps its float. The old one is claimed first, so two
      replacements at once cannot both be made; it goes back to Rejected if this one is not saved. */
@@ -196,6 +204,8 @@ export const handInHandler = async (c: Ctx): Promise<Response> => {
   if (ins.error) return fail(ins.error.message);
   const fr = await sb.from('staff_receipt_files').insert(stored.map(s => ({ ...s, receipt_id: id })));
   if (fr.error) return fail(fr.error.message);
+  const rv = await saveRecoveries(sb, id, recover.byUnit, staff.userId, 'receipt');
+  if (rv) return fail(rv);
   return c.json({ id, receiptNo: row.receipt_no, route: floatId ? 'float' : 'finance' }, 201);
 };
 
@@ -212,8 +222,9 @@ export const myReceiptsHandler = async (c: Ctx): Promise<Response> => {
   });
   const rows = all.sort((a, b) => String(b.spend_date).localeCompare(String(a.spend_date)) || b.receipt_no.localeCompare(a.receipt_no));
   const ids = rows.map(r => r.id);
-  const [lines, files, names] = await Promise.all([linesOf(sb, ids), filesOf(sb, ids), staffNames(sb)]);
-  return c.json({ receipts: rows.map(r => receiptView(r, lines.get(r.id) ?? [], files.get(r.id) ?? [], names)) });
+  const [lines, files, names, recovers] = await Promise.all([linesOf(sb, ids), filesOf(sb, ids), staffNames(sb), recoveriesOf(sb, ids, 'receipt')]);
+  const views = rows.map(r => ({ ...receiptView(r, lines.get(r.id) ?? [], files.get(r.id) ?? [], names), recoveries: recovers.get(r.id) ?? [] }));
+  return c.json({ receipts: await withTargetLabels(sb, co.companyId, views) });
 };
 
 export const receiptFileHandler = async (c: Ctx): Promise<Response> => {
@@ -276,9 +287,10 @@ export const myJobsHandler = async (c: Ctx): Promise<Response> => {
 };
 
 export const unitsHandler = async (c: Ctx): Promise<Response> => {
-  const { data, error } = await c.get('supabase').schema('public').from('conts_units').select('id, building, unit_number');
+  const { data, error } = await c.get('supabase').schema('public').from('conts_units').select('id, building, unit_number, unit_code');
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-  const units = ((data ?? []) as Array<{ id: string; building: string; unit_number: string }>).map(u => ({ id: u.id, building: u.building, unitNumber: u.unit_number }))
+  /* The code Property OS shows the unit by (A-12-01), else the number it was imported with (0350). */
+  const units = ((data ?? []) as Array<{ id: string; building: string; unit_number: string; unit_code?: string | null }>).map(u => ({ id: u.id, building: u.building, unitNumber: u.unit_code || u.unit_number }))
     .sort((a, b) => a.building.localeCompare(b.building) || a.unitNumber.localeCompare(b.unitNumber, 'en', { numeric: true }));
   return c.json({ units });
 };
@@ -297,15 +309,36 @@ export const accountsHandler = async (c: Ctx): Promise<Response> => {
   return c.json({ accounts });
 };
 
-/** Projects a cost can be put on: the company's projects not archived. */
+/** Projects a cost can be put on: the company's projects not archived, each with its side (the company's own Rental
+ *  project is Rental, every other one Renovation) and brand, so a line offers only those that fit its department, as the
+ *  payment voucher does (chew, 17 Nov 2026). */
 export const projectsHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const { data, error } = await c.get('supabase').schema('public').from('projects').select('id, code, name, archived_at').eq('company_id', co.companyId).is('archived_at', null);
+  const sb = c.get('supabase');
+  const { data, error } = await sb.schema('public').from('projects').select('id, code, name, archived_at, funding, internal_department').eq('company_id', co.companyId).is('archived_at', null);
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
-  const projects = ((data ?? []) as Array<{ id: number; code: string | null; name: string }>).map(p => ({ id: Number(p.id), code: p.code, name: p.name }))
+  const rows = (data ?? []) as Array<{ id: number; code: string | null; name: string; funding: string | null; internal_department: string | null }>;
+  const kinds = await projectRenoKind(sb, co.companyId, rows.map(p => Number(p.id)));
+  const projects = rows.map(p => ({ id: Number(p.id), code: p.code, name: p.name, side: projectSide(p), renoKind: kinds.get(Number(p.id)) ?? null }))
     .sort((a, b) => a.name.localeCompare(b.name));
   return c.json({ projects });
+};
+
+/** The sub-departments a line can be put on (SOP 1.1: 自动带出部门（可以改）; chew 16 Nov 2026): the active ones, by
+ *  department, and the one the person's own lines start on (their staff department's, else their side's built-in row). */
+export const subDepartmentsHandler = async (c: Ctx): Promise<Response> => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const s = staffOf(c);
+  const loaded = await loadSubDepartments(c.get('supabase'), co.companyId);
+  if (!loaded.ok) return c.json({ error: 'load_failed', reason: loaded.error }, 500);
+  let mine: string | null = null;
+  try { mine = subForStaffDepartment(loaded.list, s.departmentId, lineDepartment(s.side)).id; } catch { /* not set up yet */ }
+  /* renoKind: the brand a Renovation sub-department's projects are; maintenance: a Rental one whose lines may name a job. */
+  const subDepartments = loaded.list.filter(x => x.active).map(x => ({ id: x.id, department: x.department, name: x.name,
+    renoKind: x.fixedKey ? RENO_KIND_OF[x.fixedKey] ?? null : null, maintenance: x.department === 'rental' && /maint/i.test(x.name) }));
+  return c.json({ subDepartments, mine });
 };
 
 /** Suppliers and purchase orders to ask finance to pay, by name or number. Office staff only. */
@@ -339,6 +372,30 @@ export const purchaseOrdersHandler = async (c: Ctx): Promise<Response> => {
 };
 
 /** The staff router. `source` marks which mount it is, for the receipt's source. */
+/** The Payment requests screen's "Waiting for payment" view, as one number (chew, 19 Nov 2026: the menu shows how many
+ *  are pending): requests still SUBMITTED with no voucher (not cancelled) and no live AP invoice on them, and claims
+ *  finance pays back (no float) handed in or checked with no voucher yet. What finance has started (a voucher or an AP
+ *  invoice made) is no longer pending for it (chew, 20 Nov 2026); the person who asked still sees it waiting. Only a
+ *  count leaves here, never a row; field staff get 0. */
+export const financeWaitingHandler = async (c: Ctx): Promise<Response> => {
+  if (staffOf(c).field) return c.json({ count: 0, requests: 0, claims: 0 });
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  try {
+    const [rows, cl] = await Promise.all([
+      allRows<{ id: string; ap_invoice_id: string | null }>((f, t) => sb.from('payment_requests').select('id, ap_invoice_id').eq('company_id', co.companyId).eq('status', 'SUBMITTED').order('id').range(f, t)),
+      sb.from('staff_receipts').select('id', { count: 'exact', head: true }).eq('company_id', co.companyId).is('float_id', null).is('payback_pv_id', null).in('status', [...CLAIM_WAITING_STATUSES]),
+    ]);
+    if (cl.error) throw new Error(cl.error.message);
+    const requests = (await stillWaiting(sb, rows)).length;
+    const claims = Number(cl.count ?? 0);
+    return c.json({ count: requests + claims, requests, claims });
+  } catch {
+    return c.json({ error: 'count_failed', message: 'The waiting count could not be read.' }, 500);
+  }
+};
+
 export function myClaimsRouter(source: 'session' | 'forward') {
   const r = new Hono<{ Variables: Record<string, unknown> }>();
   r.use('*', async (c, next) => { c.set('claimsSource', source); await next(); });
@@ -354,6 +411,8 @@ export function myClaimsRouter(source: 'session' | 'forward') {
   r.get('/units', unitsHandler);
   r.get('/accounts', accountsHandler);
   r.get('/projects', projectsHandler);
+  r.get('/sub-departments', subDepartmentsHandler);
+  r.get('/finance-waiting', financeWaitingHandler);
   r.get('/suppliers', suppliersHandler);
   r.get('/purchase-orders', purchaseOrdersHandler);
   myRequestRoutes(r);

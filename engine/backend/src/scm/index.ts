@@ -1036,7 +1036,9 @@ scm.route("/site-receipts", siteReceipts);
 // Reads ride the Sales Orders view level; each write checks its own
 // scm.renovation.* key inside routes/renovation.ts.
 import { renovation } from "./routes/renovation";
+import { renovationPackages } from "./routes/renovation-packages";
 scm.use("/renovation/*", scmAreaGuard("scm.sales.orders", { writeLevel: "view" }));
+scm.route("/renovation", renovationPackages); // the Packages module (mig 0347): /packages*
 scm.route("/renovation", quotationAttachments); // photos and documents (mig 0119)
 scm.route("/renovation", variationOrderAttachments); // photos and documents (mig 0119)
 scm.route("/renovation", renovation);

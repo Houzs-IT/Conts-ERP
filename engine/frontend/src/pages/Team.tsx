@@ -2400,7 +2400,7 @@ function MembersTab({
           >
             <span className="h-px w-5 bg-accent" />
             <h2 className="text-[10px] font-bold uppercase tracking-brand text-accent underline-offset-2 group-hover:underline">
-              Pending Invitations ({invites.data?.invitations.length ?? 0})
+              Pending invitations ({invites.data?.invitations.length ?? 0})
             </h2>
             {invitesOpen ? (
               <ChevronDown size={12} className="text-accent" />
@@ -4585,13 +4585,13 @@ function DivisionColumn({
           <span className="truncate text-[9.5px] font-semibold uppercase tracking-wide text-ink-muted">
             {division || "—"}
           </span>
-          <span className="text-[9px] text-ink-muted/60">{members.length}</span>
+          <span className="text-[9px] text-ink-muted">{members.length}</span>
         </div>
       )}
       {clusters.map((c, ci) => (
         <div key={ci} className="flex flex-col gap-2">
           {c.label && (
-            <div className="px-0.5 text-[9px] font-medium uppercase tracking-wide text-ink-muted/80">
+            <div className="px-0.5 text-[9px] font-medium uppercase tracking-wide text-ink-muted">
               {c.label}
             </div>
           )}
@@ -5070,7 +5070,7 @@ function DepartmentEditor({
     <Panel
       open
       onClose={onClose}
-      title={isCreate ? "New Department" : department!.name}
+      title={isCreate ? "New department" : department!.name}
       subtitle={isCreate ? "Create a team grouping" : "Edit department"}
       width={440}
       footer={
@@ -5353,7 +5353,7 @@ export function InvitePanel({
     <Panel
       open={open}
       onClose={reset}
-      title="Invite Member"
+      title="Invite member"
       subtitle="Set a password to create the account now, or send an invite link"
       width={440}
     >
@@ -5624,7 +5624,7 @@ export function InvitePanel({
           </div>
         </PanelSection>
       ) : issued.active ? (
-        <PanelSection title="Account Created">
+        <PanelSection title="Account created">
           <p className="text-[12.5px] text-ink-secondary">
             <span className="font-semibold text-ink">{issued.email}</span> can sign in
             now with the password you set. They can change it anytime from their
@@ -5635,7 +5635,7 @@ export function InvitePanel({
           </Button>
         </PanelSection>
       ) : (
-        <PanelSection title="Invitation Issued">
+        <PanelSection title="Invitation issued">
           <p className="text-[12.5px] text-ink-secondary">
             {issued.email_sent ? (
               <>

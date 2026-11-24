@@ -1,10 +1,10 @@
 import { type Env, all, json, fail, nowIso } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { todayMyt } from '../../_lib/ops';
-import { loadInputs, withYearToDate, computeMonth, statementSettings, hasActivity, unitForMonth, type Query, type UnitRow, type UnitMonth } from '../../_lib/ownerStatement';
+import { loadInputs, withYearToDate, computeMonth, statementSettings, hasActivity, type Query, type UnitMonth } from '../../_lib/ownerStatement';
 import { unitCode } from '../../_lib/ownerReport';
-import { isTenancy, type RevenueModel } from '../../_lib/revenueModel';
-import { codeOf } from '../../_lib/unitPurpose';
+import { isTenancy } from '../../_lib/revenueModel';
+import { asTrading, isTraded, groupOf, nonRentalUnits, rentOutIncome } from '../../_lib/unitReport';
 import { contractTypes } from '../../_lib/contractTypes';
 import { monthEndExclusive } from '../../_lib/revenue';
 import { companyLateFor, finalReadiness, monthSteps } from '../../_lib/ownerLocks';
@@ -15,7 +15,6 @@ import { PLACEHOLDER_OWNER } from '../../_lib/hostplatformImport';
 import {
   LOCK_FROM, STAGES, finalWaiting, waitingText, cleaningChecks, utilitiesChecks, o2Checks, notReadyText, monthLabel, lockMonthProblem, type FinalUnit, type Stage,
 } from '../../_lib/stageLocks';
-import type { ReportGroup } from '../../../src/lib/ownerOverall';
 
 const rmText = (sen: number) => `RM ${(sen / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const BILL: Record<string, string> = { electricity: 'Electricity', water: 'Water', internet: 'Internet', sewerage: 'Indah Water' };
@@ -26,19 +25,6 @@ const said = (d: string) => d.replace(/^O2:\s*/i, '').trim().toLowerCase();
 const some = (items: string[], max = 4) => items.length > max ? `${items.slice(0, max).join('; ')}; and ${items.length - max} more` : items.join('; ');
 
 const UTILITIES = new Set(['electricity', 'water', 'internet', 'sewerage']);
-
-/** A type is grouped by its income model; one whose owner is paid a fixed amount is in the MANAGE group. GRR is no
- *  longer a contract type (contractTypes.ts NO_GRR), so it has no group of its own. */
-const MODEL_GROUP: Partial<Record<RevenueModel, ReportGroup>> = {
-  management: 'PS', management_guarantee: 'PS', management_yearly_guarantee: 'PS', long_term: 'LT', master_lease: 'RTR',
-};
-
-/** Reads a master lease as a GRR contract: the company trades the unit and pays the owner a fixed rent. */
-const asFixedRent = (u: UnitRow): UnitRow => ({
-  ...u,
-  revenue_model: u.revenue_model === 'master_lease' ? 'grr' : u.revenue_model,
-  history: u.history?.map(h => (h.revenue_model === 'master_lease' ? { ...h, revenue_model: 'grr' } : h)),
-});
 
 /** Each owner's statement for the month on the report's Final column (owner statement close part 3, mockup screen 5):
  *  none yet, a draft, or final (by whom and when: the latest Make final in the history); what is still waiting before it
@@ -68,13 +54,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const q: Query = (sql, ...args) => all(env, sql, ...args);
   const lockable = month >= LOCK_FROM;
-  const [settings, loaded, types, late, statements, revenue] = await Promise.all([
+  const [settings, loaded, types, late, statements, revenue, nonRental, rentOut] = await Promise.all([
     statementSettings(q), loadInputs(q, `${month}-01`, monthEndExclusive(month)), contractTypes(env),
     // The company's share of late changes to an earlier, locked month that counts this month (part 2b, choice A).
     companyLateFor(env, null, month, month),
     all<{ id: string; owner_id: string; state: string }>(env, 'SELECT id, owner_id, state FROM owner_statements WHERE period_start = ?', `${month}-01`),
     // Revenue waits while the month's Airbnb reservations are still to confirm (Unit report locks, spec goal 4).
     lockable ? unconfirmedRevenue(env, month) : Promise.resolve({ byUnit: new Map<string, number>(), files: 0 }),
+    nonRentalUnits(env), rentOutIncome(env, [month]),
   ]);
   const inputs = await withYearToDate(q, loaded, month, settings);
   const dated = computeMonth(month, inputs, settings, 'dated');
@@ -124,35 +111,35 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   };
   const unitOf = new Map(inputs.units.map(u => [u.id, u]));
   // Owner credits and charges stay where the statement puts them (O2 below), so the trading run takes none.
-  const leased = inputs.units.filter(u => months.some(m => m.unitId === u.id && m.terms.model === 'master_lease'));
+  const leased = inputs.units.filter(u => months.some(m => m.unitId === u.id && isTraded(m.terms.model)));
   const trading = new Map(leased.length
-    ? computeMonth(month, { ...inputs, units: leased.map(asFixedRent), adjustments: [] }, settings, 'dated').map(t => [t.unitId, t])
+    ? computeMonth(month, { ...inputs, units: leased.map(asTrading), adjustments: [] }, settings, 'dated').map(t => [t.unitId, t])
     : []);
 
   const rows = months.flatMap(m => {
-    const lease = m.terms.model === 'master_lease';
-    const f = lease ? trading.get(m.unitId)! : m;
+    if (nonRental.has(m.unitId)) return [];
+    const traded = isTraded(m.terms.model);
+    const f = traded ? trading.get(m.unitId) ?? m : m;
+    // A rent to rent earns the contract's rent-out amount from its tenant as well as any stays (owner, 19 Nov 2026).
+    const rentIn = m.terms.model === 'master_lease' ? rentOut.get(`${m.unitId}|${month}`) ?? 0 : 0;
     const lateOf = late.get(`${m.unitId}|${month}`);
-    if (!hasActivity(f) && !m.adjustmentIds.length && !lateOf) return [];
+    if (!hasActivity(f) && !rentIn && !m.adjustmentIds.length && !lateOf) return [];
     const u = unitOf.get(m.unitId)!;
-    const tenancy = isTenancy(m.terms.model);
-    const share = f.terms.basis === 'share' && !tenancy;
-    // The stored code belongs to the current contract; a month under an earlier one reads its code from that model.
-    const stored = unitForMonth(u, month).contract_id === u.contract_id ? u.contract_code : null;
-    const code = m.terms.source === 'contract' ? codeOf(types, m.terms.model, stored) : null;
-    const group = code === null ? undefined : types.find(type => type.code === code)?.hasFixedOwnerAmount ? 'MANAGE' : MODEL_GROUP[m.terms.model];
-    if (!group) return [];
+    const { group, code } = groupOf(types, u, m, month);
+    const none = group === 'NONE';
+    const share = f.terms.basis === 'share' && !isTenancy(f.terms.model) && !none;
     const sum = (pick: (category: string) => boolean) => f.deductionGroups.filter(g => pick(g.category)).reduce((n, g) => n + g.amount, 0);
     const locks = step?.locks.get(m.unitId) ?? {};
     return [{
       unitId: m.unitId, ownerId: m.ownerId, // The workbook's code (SKYLINE-C2701): the unit's own code field holds only its number (C27-01).
       code: unitCode(u.property_name, u.unit_number), building: u.property_name, ownerName: u.owner_name,
       group, contractCode: code,
-      contract: share ? 'PS' : 'LT', revenue: f.gross,
+      // No contract: the company's part is not claimed until the contract is added, so it reads 0 (the owner's for now).
+      contract: share || none ? 'PS' : 'LT', revenue: f.gross + rentIn,
       cleaning: sum(c => c.startsWith('cleaning')), utilities: sum(c => UTILITIES.has(c)),
       electricity: sum(c => c === 'electricity'), water: sum(c => c === 'water'), internet: sum(c => c === 'internet'), sewerage: sum(c => c === 'sewerage'),
       additional: sum(c => c === 'additional'), misc: sum(c => c === 'misc'),
-      ownerPct: share ? f.terms.ownerPct ?? 0 : 0,
+      ownerPct: none ? 100 : share ? f.terms.ownerPct ?? 0 : 0,
       // The agent's part of the operator's share (Agent = GP x agent %, part 3); a long-term let or fixed rent has none.
       agentPct: share ? Number(f.terms.agentPct ?? 0) : 0,
       // Unit report locks (13 Nov 2026): the categories that list the unit, who locked each and when, its Airbnb
@@ -162,11 +149,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       toConfirm: revenue.byUnit.get(m.unitId) ?? 0,
       hints: lockable ? hintsFor(m) : {},
       // A yearly guarantee is checked once a year (its true-up lands on the statement as a top-up), not month by month.
-      // A long-term let's owner base is the owner's part of the rent; GRR and master lease, the fixed rent.
-      ltGrr: tenancy ? f.ownerShare : !share ? f.fixedRent : f.terms.model === 'management_guarantee' ? f.guarantee : 0,
+      // A long-term let's owner base is the rent its statement pays (by the tenancy's days, as locked); a master lease's, the fixed rent.
+      ltGrr: none ? 0 : isTenancy(m.terms.model) ? m.payoutBeforeAdjustments : !share ? f.fixedRent : f.terms.model === 'management_guarantee' ? f.guarantee : 0,
       // A tenancy is let by the month, not by the night, so it stays out of occupancy. The statement's nights leave out
       // owner stays and HostPlatform free stays (both owner_stay), so occupancy matches the misc charge (owner, 4 Nov 2026).
-      o2: m.adjustmentsTotal, nights: f.nights, days: tenancy ? 0 : f.days,
+      o2: m.adjustmentsTotal, nights: f.nights, days: f.days,
       late: lateOf?.amount ?? 0, lateItems: lateOf?.items ?? [],
     }];
   });

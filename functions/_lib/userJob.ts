@@ -3,7 +3,7 @@ import { hasColumn } from './auth';
 
 /** Migration 0113: a staff account's department and position, free text. The renovation pickers in the engine show
  *  them after the name ("Alex · Project PIC · Renovation"). Before the migration runs both are simply absent. */
-export const userJobReady = (env: Env) => hasColumn(env, 'users', 'department').catch(() => false);
+export const userJobReady = (env: Env) => hasColumn(env, 'users', 'department');
 
 export const JOB_MAX = 80;
 

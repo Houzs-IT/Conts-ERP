@@ -4,7 +4,7 @@ import { firstOpenMonth } from '../../src/lib/deductMonth';
 
 export const EXPENSE_CATEGORIES = ['internet', 'electricity', 'water', 'sewerage', 'cleaning', 'housekeeping', 'maintenance', 'utilities', 'consumables', 'furniture', 'management_fee', 'channel_fee', 'other'];
 /** Who pays an expense ("Paid by" on screen). Only 'owner' reaches the owner statement; the rest stay in the unit's
- *  own profit and loss. owner = Owner (via statement), the_conts = Company, tenant = Tenant, guest_deposit = Guest. */
+ *  own profit and loss. owner = Owner (sharing), the_conts = Company, tenant = Tenant, guest_deposit = Guest. */
 /** Words for approval summaries and reports, which are read by people: "Indah Water, 5 Oct 2026", never "sewerage, 2026-10-05". */
 export function expenseCategoryLabel(c: string | null | undefined) {
   if (!c) return 'Expense';
@@ -101,7 +101,7 @@ export function expenseWhere(f: ExpenseFilter, skip?: keyof ExpenseFilter): { sq
   if (f.unit && skip !== 'unit') { parts.push('e.unit_id = ?'); args.push(f.unit); }
   if (f.owner && skip !== 'owner') { parts.push('u.owner_id = ?'); args.push(f.owner); }
   if (f.q && skip !== 'q') {
-    parts.push(`(e.description ILIKE ? OR e.reference ILIKE ? OR u.unit_number ILIKE ? OR p.name ILIKE ?)`);
+    parts.push(`(e.description ILIKE ? OR e.reference ILIKE ? OR concat_ws(' ', u.unit_number, u.unit_code) ILIKE ? OR p.name ILIKE ?)`);
     const like = `%${f.q.replace(/[%_\\]/g, m => '\\' + m)}%`;
     args.push(like, like, like, like);
   }

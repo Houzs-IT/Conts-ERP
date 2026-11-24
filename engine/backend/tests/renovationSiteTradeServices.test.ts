@@ -51,9 +51,9 @@ describe("catalog: the three are filed under SERVICE", () => {
     expect(siteGroupOf(null, "CLEANING")).toBeNull();
   });
 
-  test("the three stay fixed in settings like the Works trades; other services stay editable", () => {
+  test("the three stay fixed in settings; Works trades and other services stay editable", () => {
     for (const c of SITE_TRADE_SERVICES) expect(isFixedSub("SERVICE", c)).toBe(true);
-    expect(isFixedSub("WORKS", "PAINTING")).toBe(true);
+    expect(isFixedSub("WORKS", "PAINTING")).toBe(false);
     expect(isFixedSub("SERVICE", "DELIVERY")).toBe(false);
     expect(isFixedSub("SOFT", "CARPET")).toBe(false);
   });

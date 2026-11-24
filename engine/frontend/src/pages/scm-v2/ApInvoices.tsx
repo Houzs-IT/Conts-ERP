@@ -31,17 +31,20 @@
 // ----------------------------------------------------------------------------
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Camera, Plus, Printer } from 'lucide-react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { takeBack } from '../../lib/backTrail';
+import { Camera, Copy, Plus, Printer } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { useAccounts, postableAccounts, type Account } from '../../vendor/scm/lib/accounting-queries';
 import { useSuppliers } from '../../vendor/scm/lib/suppliers-queries';
 import {
   useApInvoices, useApInvoiceDetail, useCreateApInvoice, useUpdateApInvoice, usePostApInvoice, useCancelApInvoice,
   useApInvoiceFiles, useUploadApInvoiceFile, useDeleteApInvoiceFile, fetchApInvoiceFileBlobUrl,
-  type ApListKind, type ApListRow, type ApInvoiceHeader, type ApInvoiceLine,
+  type ApListKind, type ApListRow, type ApInvoiceHeader, type ApInvoiceLine, type ApInvoiceRequest,
 } from '../../vendor/scm/lib/ap-invoice-queries';
-import type { PvFilePayload, BillExtraction, VendorMemory } from '../../vendor/scm/lib/payment-voucher-queries';
+import { fileToBase64, PV_FILE_ACCEPT, useExtractBills, type PvFilePayload, type BillExtraction, type VendorMemory } from '../../vendor/scm/lib/payment-voucher-queries';
+import { requestFileUrl } from '../../conts/claimsQueries';
+import { fillFromPapers, type ReadBill } from '../../conts/requestBillRead';
 import { takePvFiles } from '../../vendor/scm/lib/pv-file-handoff';
 import { generateApListingPdf } from '../../vendor/scm/lib/ap-invoice-listing-pdf';
 import { DocFilesCard } from '../../vendor/scm/components/DocFilesCard';
@@ -50,6 +53,7 @@ import { Modal } from '../../vendor/scm/components/Modal';
 import { SearchCombo } from '../../vendor/scm/components/SearchCombo';
 import { useAuth as useHouzsAuth } from '../../auth/AuthContext';
 import { useConfirm } from '../../vendor/scm/components/ConfirmDialog';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKeyFor } from '../../lib/idempotency';
 import { useNotify } from '../../vendor/scm/components/NotifyDialog';
 import { fmtSen, fmtDateOrDash } from '../../vendor/shared/format';
 import styles from './SalesOrderDetail.module.css';
@@ -58,7 +62,8 @@ import { humaniseStatusKey } from '../../vendor/scm/lib/status-pill';
 import { DataTable, type Column } from '../../components/DataTable';
 import { cancelledDocNoClass, cancelledRowClass } from '../../lib/scm';
 import { departmentOf } from '../../conts/department';
-import { ApInvoiceForm, emptyApForm, formFromExtraction, scanNoteFor, type ApFormMode, type ApFormSubmit, type ApFormValues } from './ApInvoiceForm';
+import { UnitName } from '../../conts/Pickers';
+import { ApInvoiceForm, emptyApForm, formFromExtraction, scanNoteFor, type ApFormMode, type ApFormSubmit, type ApFormValues} from './ApInvoiceForm';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 const myt = (): string => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
@@ -87,7 +92,7 @@ const Meta = ({ label, value }: { label: string; value: React.ReactNode }) => (
   </div>
 );
 
-type Detail = { invoice: ApInvoiceHeader; lines: ApInvoiceLine[]; supplier: { id: string; code: string; name: string } | null };
+type Detail = { invoice: ApInvoiceHeader; lines: ApInvoiceLine[]; supplier: { id: string; code: string; name: string } | null; requests?: ApInvoiceRequest[] };
 /** The form's values from a bill: an EDIT keeps everything, a COPY keeps the
     supplier, description and lines and starts the paper afresh — no supplier
     number, today's date, no due date, a new number on save. */
@@ -97,12 +102,34 @@ const fromDetail = (d: Detail, copy: boolean): ApFormValues => ({
   invoiceDate: copy ? myt() : d.invoice.invoice_date,
   dueDate: copy ? '' : (d.invoice.due_date ?? ''),
   description: d.invoice.notes ?? '',
+  /* A copy is a new bill: not a quotation of the request the original came from. */
+  provisional: copy ? false : d.invoice.provisional === true,
   lines: d.lines.map((l, i) => ({ rid: i + 1, description: l.description ?? '', debitAccountCode: l.debit_account_code, amountSen: l.amount_sen, department: departmentOf((l as { department?: unknown }).department),
-    projectId: (l as { project_id?: number | null }).project_id ?? null, subDepartmentId: (l as { sub_department_id?: string | null }).sub_department_id ?? null })),
+    projectId: (l as { project_id?: number | null }).project_id ?? null, subDepartmentId: (l as { sub_department_id?: string | null }).sub_department_id ?? null,
+    unitId: l.unit_id ?? null, sourceRequestLineId: copy ? null : (l.source_request_line_id ?? null) })),
+});
+
+/** Conts (chew, 16 Nov 2026): Make AP invoice on payment requests opens the New form filled in from each, one after
+    another; finance chooses the supplier (when typed in) and the accounts here. */
+export type RequestForBill = {
+  id: string; requestNo: string; type: 'PAYMENT' | 'DEPOSIT'; supplierId: string | null; payeeName: string; wantedOn: string | null; note: string | null;
+  lines: Array<{ id?: string; description: string | null; amountSen: number; department: string; projectId: number | null; unitId: string | null; subDepartmentId?: string | null }>;
+  /** Its papers: read by the bill reader when the form opens (chew, 16 Nov 2026). */
+  files?: Array<{ id: string; fileName: string; mime: string }>;
+};
+const formFromRequest = (r: RequestForBill): ApFormValues => ({
+  supplierId: r.supplierId ?? '', supplierRef: '', invoiceDate: myt(), dueDate: r.wantedOn ?? '',
+  description: `Payment request ${r.requestNo}${r.type === 'DEPOSIT' ? ' (deposit)' : ''}${r.note ? ` — ${r.note}` : ''}`,
+  /* A deposit is paid on a quotation: its bill is the quotation until the formal invoice comes (SOP 3.8). */
+  provisional: r.type === 'DEPOSIT',
+  lines: r.lines.map((l, i) => ({ rid: i + 1, description: l.description ?? '', debitAccountCode: '', amountSen: l.amountSen, department: departmentOf(l.department),
+    projectId: l.projectId, subDepartmentId: l.subDepartmentId ?? null, unitId: l.unitId, sourceRequestLineId: l.id ?? null })),
 });
 
 type FormState = {
   mode: ApFormMode; initial: ApFormValues; invoiceId?: string; invoiceNumber?: string; posted?: boolean; paidSen?: number;
+  /** Opened from a payment request: which, and where it is in the line of them ("2 of 3"). */
+  fromRequest?: { request: RequestForBill; n: number; of: number };
   /** A bill handed over from the pile page: its read pages and the reader's sentence. */
   scan?: { files: PvFilePayload[]; note: string };
 };
@@ -118,7 +145,19 @@ export const ApInvoices = () => {
   const [kind, setKind] = useState<ApListKind>('ALL');
   const listQ = useApInvoices(kind);
   const rows = listQ.data?.rows ?? [];
-  const [detailId, setDetailId] = useState<string | null>(null);
+  /* ?open=<id> opens a bill straight away: the link from a payment request (chew, 15 Nov 2026). */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [detailId, setDetailId] = useState<string | null>(searchParams.get('open'));
+  /* A bill opened from a link elsewhere (a voucher's Linked invoices, a payment request): closing it goes back to that
+     page (chew, 20 Nov 2026), as Back does (lib/backTrail); with nothing behind it, the list stays. */
+  const closeDetail = () => {
+    const opened = searchParams.get('open');
+    setDetailId(null);
+    if (!opened) return;
+    const to = takeBack(`${location.pathname}${location.search}`);
+    if (to) navigate(to);
+    else setSearchParams((p) => { p.delete('open'); return p; }, { replace: true });
+  };
   const detailQ = useApInvoiceDetail(detailId);
   const detail = detailQ.data;
 
@@ -154,6 +193,7 @@ export const ApInvoices = () => {
 
   /* The one form — New, Edit, Copy — in its own pop-out over the list. */
   const [form, setForm] = useState<FormState | null>(null);
+  const createKeys = useContentBoundIdempotencyKeyFor(form);
   const openNew = () => setForm({ mode: 'new', initial: emptyApForm() });
 
   /* The pile page's hand-off (/scm/ap-invoices/scan → here): ONE BILL = ONE AP
@@ -162,6 +202,54 @@ export const ApInvoices = () => {
      the state is consumed once and cleared, so a refresh does not re-open it. */
   const location = useLocation();
   const navigate = useNavigate();
+  /* The payment requests still to make bills from, after the one open now. */
+  const [requestQueue, setRequestQueue] = useState<RequestForBill[]>([]);
+  const extractBills = useExtractBills();
+  const [reading, setReading] = useState<string | null>(null);
+  /* The request's papers, read as Scan bill reads one bill (its pages together); null when there are none or they
+     cannot be read — the form then opens as the request filled it. */
+  const readPapers = async (r: RequestForBill): Promise<ReadBill | null> => {
+    const papers = (r.files ?? []).filter((f) => PV_FILE_ACCEPT.split(',').includes(f.mime)).slice(0, 8);
+    if (papers.length === 0) return null;
+    try {
+      const files = await Promise.all(papers.map(async (f) => {
+        const url = await requestFileUrl(r.id, f.id, f.mime);
+        const blob = await (await fetch(url)).blob();
+        URL.revokeObjectURL(url);
+        return { name: f.fileName, mime: f.mime, dataBase64: await fileToBase64(new File([blob], f.fileName, { type: f.mime })) };
+      }));
+      const bill = (await extractBills.mutateAsync([{ files }])).bills.at(0);
+      return bill?.ok ? { extraction: bill.extraction, supplierMatch: bill.supplierMatch, memory: bill.memory } : null;
+    } catch { return null; }
+  };
+  const openFromRequest = async (list: RequestForBill[], of: number) => {
+    const [first, ...rest] = list;
+    setRequestQueue(rest);
+    if (!first) { setForm(null); return; }
+    const missingSupplier = !first.supplierId ? ` Paid to "${first.payeeName}" as typed: choose the supplier.` : '';
+    let initial = formFromRequest(first);
+    let note = `From ${first.requestNo}: choose each line's account, then save.${missingSupplier}`;
+    if ((first.files ?? []).length > 0) {
+      setReading(`Reading ${first.requestNo}'s papers…`);
+      const read = await readPapers(first);
+      setReading(null);
+      if (read) {
+        const filled = fillFromPapers(initial, read);
+        initial = filled.values;
+        note = `From ${first.requestNo}. ${filled.note}${initial.supplierId ? '' : missingSupplier}`;
+      } else {
+        note = `From ${first.requestNo}: its papers could not be read — fill in from them. Choose each line's account, then save.${missingSupplier}`;
+      }
+    }
+    setForm({ mode: 'new', initial, fromRequest: { request: first, n: of - rest.length, of }, scan: { files: [], note } });
+  };
+  useEffect(() => {
+    const st = location.state as { fromRequests?: RequestForBill[] } | null;
+    if (!st?.fromRequests?.length) return;
+    void openFromRequest(st.fromRequests, st.fromRequests.length);
+    navigate(location.pathname, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
   useEffect(() => {
     const st = location.state as { apPrefill?: { extraction: BillExtraction; supplierMatch: { id: string; name: string } | null; memory: VendorMemory | null } } | null;
     if (!st?.apPrefill) return;
@@ -193,7 +281,12 @@ export const ApInvoices = () => {
         });
         return;
       }
-      const res = await create.mutateAsync(values);
+      const body = form.fromRequest ? { ...values, paymentRequestId: form.fromRequest.request.id } : values;
+      const sent = await sendWithContentKey(createKeys, body,
+        () => askConfirm(unansweredSaveQuestion('AP invoice', 'the AP invoice list')),
+        (idempotencyKey) => create.mutateAsync({ ...body, idempotencyKey }));
+      if (!sent.sent) return;
+      const res = sent.value;
       /* Attach the scanned bill AFTER the invoice exists — sequentially, so
          sort_no (= print order) is the scan order. A failed upload never
          un-saves the bill: the notice says what still needs adding, and the
@@ -209,6 +302,12 @@ export const ApInvoices = () => {
           attachErr = e instanceof Error ? e.message : 'The file could not be uploaded.';
           break;
         }
+      }
+      /* From payment requests: the next one opens; the last one shows its bill. */
+      if (form.fromRequest && requestQueue.length > 0) {
+        void openFromRequest(requestQueue, form.fromRequest.of);
+        void notify({ title: `${res.invoice.invoice_number} raised from ${form.fromRequest.request.requestNo}`, body: 'Next request opened.', tone: 'info' });
+        return;
       }
       setForm(null);
       setDetailId(res.invoice.id);
@@ -276,7 +375,12 @@ export const ApInvoices = () => {
       render: (r) => <>{r.supplierName ?? '—'}{r.supplierCode ? <span style={soft}> · {r.supplierCode}</span> : null}</>,
       getValue: (r) => r.supplierName ?? '',
     },
-    { key: 'ref', label: 'Ref', render: (r) => r.supplierInvoiceRef ?? '—', getValue: (r) => r.supplierInvoiceRef ?? '' },
+    {
+      key: 'ref', label: 'Ref',
+      /* A quotation booked before its formal invoice says so (SOP 3.8: the list of formal invoices still owed). */
+      render: (r) => (r.provisional ? <span style={{ color: 'var(--c-orange)', fontWeight: 600 }}>Quotation</span> : (r.supplierInvoiceRef ?? '—')),
+      getValue: (r) => (r.provisional ? 'Quotation' : (r.supplierInvoiceRef ?? '')),
+    },
     { key: 'description', label: 'Description', width: '260px', render: (r) => r.description ?? '—', getValue: (r) => r.description ?? '' },
     { key: 'date', label: 'Date', render: (r) => fmtDateOrDash(r.invoiceDate), getValue: (r) => r.invoiceDate, exportFormat: 'date' },
     { key: 'due', label: 'Due', render: (r) => fmtDateOrDash(r.dueDate), getValue: (r) => r.dueDate, exportFormat: 'date' },
@@ -292,7 +396,9 @@ export const ApInvoices = () => {
     { key: 'status', label: 'Status', render: (r) => <span style={{ fontSize: 'var(--fs-11)' }}>{humaniseStatusKey(r.status)}</span>, getValue: (r) => r.status },
   ], []);
 
-  const formTitle = form?.mode === 'edit'
+  const formTitle = form?.fromRequest
+    ? `New AP invoice — from ${form.fromRequest.request.requestNo}${form.fromRequest.of > 1 ? ` (${form.fromRequest.n} of ${form.fromRequest.of})` : ''}`
+    : form?.mode === 'edit'
     ? `Edit ${form.invoiceNumber ?? 'AP invoice'}`
     : form?.mode === 'copy' ? `New AP invoice — copied from ${form.invoiceNumber ?? 'a bill'}` : 'New AP invoice — a supplier bill not for stock';
 
@@ -300,9 +406,13 @@ export const ApInvoices = () => {
     <div className="space-y-4">
       <PageHeader
         eyebrow="Finance"
-        title="AP Invoices"
+        title="AP invoices"
         actions={canCreate ? (
           <span style={{ display: 'inline-flex', gap: 'var(--space-4)', alignItems: 'center' }}>
+            {/* The supplier bills booked more than once (ported from Houzs). */}
+            <button type="button" onClick={() => navigate('/scm/ap-invoices/duplicates')} style={linkBtn}>
+              <Copy {...ICON} /> Duplicate bills
+            </button>
             {/* The pile: many supplier bills at once, read and split one AP
                 invoice each (owner 2026-09-08: scan bill 的按钮可以直接做在
                 + new ap invoice 附近吗). */}
@@ -316,6 +426,7 @@ export const ApInvoices = () => {
         ) : undefined}
       />
 
+      {reading && <div role="status" style={{ color: 'var(--c-orange)', fontWeight: 600 }}>{reading}</div>}
       <section className={styles.card}>
         <div className={styles.cardHeader}>
           <h2 className={styles.cardTitle}>Supplier invoices — both kinds</h2>
@@ -347,6 +458,8 @@ export const ApInvoices = () => {
               ? 'No supplier invoices match this filter — pick another supplier or kind.'
               : 'No supplier invoices here yet — purchase invoices show once posted on the Procurement side; raise an AP invoice for a non-stock bill.'}
             getRowKey={(r) => `${r.kind}-${r.id}`}
+            /* Double-click opens it (chew, 19 Nov 2026): a purchase invoice on its own page, an AP invoice in its pop-out. */
+            onRowDoubleClick={(r) => (r.kind === 'PI' ? navigate(`/scm/purchase-invoices/${r.id}`) : setDetailId(r.id))}
             getRowClassName={(r) => cancelledRowClass(r.status)}
             getRowStyle={(r) => (r.status === 'CANCELLED' ? { opacity: 0.55 } : undefined)}
             onFilteredRowsChange={setShownRows}
@@ -358,7 +471,7 @@ export const ApInvoices = () => {
       {detailId && detail && (
         <Modal
           title={`${detail.invoice.invoice_number} · ${detail.supplier?.name ?? '—'}`}
-          onClose={() => setDetailId(null)}
+          onClose={closeDetail}
           ariaLabel={`AP invoice ${detail.invoice.invoice_number}`}
           actions={(
             <>
@@ -384,10 +497,20 @@ export const ApInvoices = () => {
         >
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 'var(--space-3)', fontSize: 'var(--fs-13)' }}>
             <Meta label="Supplier" value={<span><span style={mono}>{detail.supplier?.code ?? ''}</span> {detail.supplier?.name ?? '—'}</span>} />
-            <Meta label="Supplier's invoice no." value={detail.invoice.supplier_invoice_ref ?? '—'} />
+            <Meta label="Supplier's invoice no." value={detail.invoice.provisional
+              ? <span style={{ color: 'var(--c-orange)', fontWeight: 600 }}>Quotation — no formal invoice yet</span>
+              : (detail.invoice.supplier_invoice_ref ?? '—')} />
             <Meta label="Invoice date" value={fmtDateOrDash(detail.invoice.invoice_date)} />
             <Meta label="Due date" value={fmtDateOrDash(detail.invoice.due_date)} />
             <Meta label="Description" value={detail.invoice.notes ?? '—'} />
+            {(detail.requests ?? []).length > 0 && (
+              <Meta label="Payment requests" value={(detail.requests ?? []).map((q) => (
+                <span key={q.id} style={{ display: 'block' }}>
+                  <span style={mono}>{q.requestNo}</span>
+                  <span style={soft}> · {q.type === 'DEPOSIT' ? 'deposit' : q.balance ? 'balance' : 'payment'} · {humaniseStatusKey(q.status)} · {fmtSen(q.amountSen)}</span>
+                </span>
+              ))} />
+            )}
           </div>
           <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 'var(--fs-13)' }}>
             <thead>
@@ -395,6 +518,7 @@ export const ApInvoices = () => {
                 <th style={{ ...th, width: 36 }}>#</th>
                 <th style={th}>Account</th>
                 <th style={th}>Description</th>
+                <th style={th}>Unit</th>
                 <th style={{ ...th, textAlign: 'right' }}>Amount</th>
                 <th style={th} aria-label="Files" />
               </tr>
@@ -405,12 +529,13 @@ export const ApInvoices = () => {
                   <td style={{ ...td, ...mono, color: 'var(--fg-muted)' }}>{l.line_no}</td>
                   <td style={td}><span style={mono}>{l.debit_account_code}</span>{accountName(l.debit_account_code) ? <span style={soft}> · {accountName(l.debit_account_code)}</span> : null}</td>
                   <td style={td}>{l.description ?? '—'}</td>
+                  <td style={td}>{l.unit_id ? <UnitName id={l.unit_id} /> : '—'}</td>
                   <td style={{ ...td, ...right }}>{fmtSen(l.amount_sen)}</td>
                   <td style={{ ...td, ...right }}><LineFilesButton docType="ap_invoice" docId={detail.invoice.id} lineId={l.id} canEdit={canCreate && detail.invoice.status !== 'CANCELLED'} /></td>
                 </tr>
               ))}
               <tr style={{ borderTop: '1px solid var(--border-weak, #e3e1da)' }}>
-                <td colSpan={3} style={{ ...td, fontWeight: 600 }}>Total · paid {fmtSen(detail.invoice.paid_sen)}</td>
+                <td colSpan={4} style={{ ...td, fontWeight: 600 }}>Total · paid {fmtSen(detail.invoice.paid_sen)}</td>
                 <td style={{ ...td, ...right, fontWeight: 700 }}>{fmtSen(detail.invoice.total_sen)}</td>
                 <td style={td} />
               </tr>
@@ -423,9 +548,9 @@ export const ApInvoices = () => {
       )}
 
       {form && (
-        <Modal title={formTitle} onClose={() => setForm(null)} ariaLabel={formTitle}>
+        <Modal title={formTitle} onClose={() => { setForm(null); setRequestQueue([]); }} ariaLabel={formTitle}>
           <ApInvoiceForm
-            key={`${form.mode}-${form.invoiceId ?? 'new'}${form.scan ? '-scan' : ''}`}
+            key={`${form.mode}-${form.invoiceId ?? 'new'}${form.scan ? '-scan' : ''}${form.fromRequest ? `-${form.fromRequest.request.id}` : ''}`}
             mode={form.mode}
             initial={form.initial}
             initialFiles={form.scan?.files}
@@ -437,7 +562,7 @@ export const ApInvoices = () => {
             paidSen={form.paidSen}
             saving={create.isPending || update.isPending || uploadFile.isPending}
             onSubmit={submitForm}
-            onCancel={() => setForm(null)}
+            onCancel={() => { setForm(null); setRequestQueue([]); }}
           />
         </Modal>
       )}

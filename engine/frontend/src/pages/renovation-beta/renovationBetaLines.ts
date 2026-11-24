@@ -60,6 +60,9 @@ export interface ManagedLine {
   contractLineId?: string | null;
   /** The suppliers the SKU can be ordered from (its bindings), main first. LinesAnswer.suppliers has the rest. */
   supplierChoices?: SupplierChoice[];
+  /** Where the goods are received: the SO line's warehouse, which MRP and the PO follow (owner, 17 Nov 2026). */
+  warehouseId?: string | null;
+  warehouseName?: string | null;
   /** Its raw materials: the list saved on the line, else the SKU's composition times the line's qty. */
   materials?: LineMaterial[];
   /** The completed production order that closes its raw materials (null: they can still change). */
@@ -89,6 +92,8 @@ export interface LinesAnswer {
   lines: ManagedLine[];
   /** Every active supplier: picking one the SKU has no binding to binds it. */
   suppliers?: Array<{ id: string; name: string }>;
+  /** The company's active warehouses, for where a line is received. */
+  warehouses?: Array<{ id: string; code: string; name: string }>;
   pendingPoChanges: PendingPoChange[];
   /** The caller's role sees only some product categories: lines of the others are left out by the server. */
   categoryRestricted: boolean;
@@ -106,6 +111,12 @@ export const linesApi = {
   /** One date on many lines in one request: a band's date, which each line's own request made slow (owner, 4 Nov 2026). */
   savePlans: (projectId: number, itemIds: readonly string[], b: Partial<LinePlan>): Promise<{ ok: true; saved: string[]; refused: { itemCode: string; reason: string }[] }> =>
     api.put<{ ok: true; saved: string[]; refused: { itemCode: string; reason: string }[] }>(`${B}/projects/${projectId}/line-plans`, { itemIds, ...b }),
+  /** The supplier of a line with no PO yet (backend renovationBeta.ts PUT .../supplier); MRP starts from it. */
+  saveSupplier: (projectId: number, itemId: string, supplierId: string): Promise<{ ok: true; supplierId: string; supplierName: string }> =>
+    api.put<{ ok: true; supplierId: string; supplierName: string }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/supplier`, { supplierId }),
+  /** Where a line with no PO yet is received (PUT .../warehouse): the SO line's warehouse, which MRP and the PO follow. */
+  saveWarehouse: (projectId: number, itemId: string, warehouseId: string): Promise<{ ok: true; warehouseId: string; warehouseName: string }> =>
+    api.put<{ ok: true; warehouseId: string; warehouseName: string }>(`${B}/projects/${projectId}/lines/${encodeURIComponent(itemId)}/warehouse`, { warehouseId }),
   /** A PO line's delivery date, through the PO's own line update (PATCH /:id/items/:itemId). */
   setPoLineDelivery: (poId: string, poLineId: string, deliveryDate: string | null): Promise<unknown> =>
     authedFetch(`/mfg-purchase-orders/${encodeURIComponent(poId)}/items/${encodeURIComponent(poLineId)}`, { method: "PATCH", body: JSON.stringify({ deliveryDate }) }),
@@ -397,6 +408,16 @@ export function byCategory(items: readonly ManagedLine[]): CategoryBlock[] {
         .map(([sl, s]) => ({ key: `${label}/${sl}`, label: sl, items: s.items }));
       return { key: label, label, subs, count: subs.reduce((n, s) => n + s.items.length, 0) };
     });
+}
+
+/** Whether the line still waits for a PO, so its supplier and warehouse can be picked here. */
+export function picksSupplier(l: ManagedLine): boolean {
+  return !l.plan.noPo && !livePo(l);
+}
+
+/** Who the line is bought from: the live PO's supplier once a PO holds it, else the one picked or defaulted. */
+export function supplierOf(l: ManagedLine): string | null {
+  return livePo(l)?.supplierName ?? l.supplierName;
 }
 
 /** The live PO holding the line, if any. */

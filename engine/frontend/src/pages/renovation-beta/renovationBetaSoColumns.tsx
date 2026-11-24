@@ -24,7 +24,17 @@ export type ProjectSo = Parameters<typeof resolveSoLocation>[0] & Parameters<typ
 
 export const fetchProjectSos = (): Promise<ProjectSo[]> => fetchSoExportRows<ProjectSo>({});
 
-type Field = { key: string; label: string; group: string; value: (s: ProjectSo) => string | number | null | undefined; kind?: "date" | "money" };
+/** `outstandingSen`: what the project board says is still to collect (it counts AutoCount's collections on the
+    contracts it carried, which the order's own paid figure does not); null when the board has no payment figure. */
+export interface ProjectFacts { brand: string | null | undefined; outstandingSen?: number | null }
+
+type Field = {
+  key: string; label: string; group: string; value: (s: ProjectSo) => string | number | null | undefined; kind?: "date" | "money";
+  projectValue?: (p: ProjectFacts) => string | null | undefined;
+  /** Read before the order's own figure when it answers (not null). */
+  boardValue?: (s: ProjectSo, p: ProjectFacts) => number | null;
+};
+const boardBalance = (p: ProjectFacts): number | null => (p.outstandingSen == null ? null : p.outstandingSen);
 const FIELDS: readonly Field[] = [
   { key: "so_doc_no", label: "SO No.", group: "Basic", value: (s) => s.ac_doc_no ?? s.doc_no },
   { key: "so_date", label: "Date", group: "Basic", value: (s) => s.so_date, kind: "date" },
@@ -32,14 +42,15 @@ const FIELDS: readonly Field[] = [
   { key: "so_agent", label: "Agent", group: "Basic", value: (s) => s.ac_agent ?? s.agent },
   { key: "so_debtor_name", label: "Debtor Name", group: "Basic", value: (s) => s.debtor_name },
   { key: "so_debtor_code", label: "Debtor Code", group: "Basic", value: (s) => s.ac_debtor_code ?? s.debtor_code },
-  { key: "so_branding", label: "Branding", group: "Basic", value: (s) => s.ac_branding ?? s.branding },
+  { key: "so_branding", label: "Branding", group: "Basic", value: (s) => s.branding ?? s.ac_branding, projectValue: (p) => p.brand },
   { key: "so_exemption", label: "Sales Exemption Expiry Date", group: "Basic", value: (s) => s.sales_exemption_expiry, kind: "date" },
   { key: "so_status", label: "Status", group: "Basic", value: (s) => soListStatusWord(s.status, s.delivery_state ?? null, s.lifecycle_state ?? null, s.on_hold ?? null) },
   { key: "so_note", label: "Note", group: "Basic", value: (s) => s.note },
   { key: "so_currency", label: "Curr. Code", group: "Amounts", value: (s) => s.currency ?? "MYR" },
   { key: "so_total", label: "Total", group: "Amounts", value: (s) => s.local_total_sen, kind: "money" },
-  { key: "so_paid", label: "Paid", group: "Amounts", value: (s) => s.paid_total_sen ?? s.paid_sen, kind: "money" },
-  { key: "so_balance", label: "Balance", group: "Amounts", value: (s) => s.balance_sen_live ?? s.balance_sen, kind: "money" },
+  { key: "so_paid", label: "Paid", group: "Amounts", value: (s) => s.paid_total_sen ?? null, kind: "money",
+    boardValue: (s, p) => { const b = boardBalance(p); return b == null || s.local_total_sen == null ? null : Math.max(0, Number(s.local_total_sen) - b); } },
+  { key: "so_balance", label: "Balance", group: "Amounts", value: (s) => s.balance_sen_live ?? null, kind: "money", boardValue: (_s, p) => boardBalance(p) },
   { key: "so_deposit", label: "Deposit", group: "Amounts", value: (s) => s.deposit_sen, kind: "money" },
   { key: "so_payment_method", label: "Payment Method", group: "Amounts", value: (s) => s.payment_methods_summary || s.payment_method },
   { key: "so_location", label: "Sales Location", group: "Logistics", value: (s) => resolveSoLocation(s).label },
@@ -60,11 +71,15 @@ const FIELDS: readonly Field[] = [
   { key: "so_building_type", label: "Building Type", group: "Customer", value: (s) => s.building_type },
 ];
 
-export function soColumns<T>(soOf: (row: T) => ProjectSo | undefined): Column<T>[] {
+export function soColumns<T>(soOf: (row: T) => ProjectSo | undefined, projectOf: (row: T) => ProjectFacts): Column<T>[] {
   return FIELDS.map((f) => {
     const read = (row: T): string | number | null => {
       const s = soOf(row);
-      return s ? f.value(s) ?? null : null;
+      const fromBoard = s && f.boardValue ? f.boardValue(s, projectOf(row)) : null;
+      if (fromBoard != null) return fromBoard;
+      const fromSo = s ? f.value(s) : null;
+      if (fromSo != null && fromSo !== "") return fromSo;
+      return f.projectValue?.(projectOf(row)) || null;
     };
     const show = (v: string | number | null): ReactNode => {
       if (v === null || v === "") return "-";
@@ -72,8 +87,9 @@ export function soColumns<T>(soOf: (row: T) => ProjectSo | undefined): Column<T>
       return f.kind === "money" ? money(Number(v)) : v;
     };
     return {
-      key: f.key, label: f.label, group: `Sales order: ${f.group}`, width: "140px", defaultHidden: true, align: f.kind === "money" ? "right" : undefined,
-      getValue: read, render: (row: T) => <span style={{ fontSize: 12.5 }}>{show(read(row))}</span>,
+      key: f.key, label: f.label, group: `Sales order: ${f.group}`, width: f.kind === "money" ? "160px" : "140px", defaultHidden: true, align: f.kind === "money" ? "right" : undefined,
+      /* Amounts line up digit under digit and are never cut short (chew, 18 Nov 2026). */
+      getValue: read, render: (row: T) => <span style={f.kind === "money" ? { fontSize: 12.5, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" } : { fontSize: 12.5 }}>{show(read(row))}</span>,
       ...(f.kind === "date" ? { filterType: "date" as const, dateValue: (row: T) => { const v = read(row); return v === null ? null : String(v); } } : {}),
       ...(f.kind === "money" ? { filterType: "number" as const, numberValue: (row: T) => { const v = read(row); return v === null ? null : Number(v); } } : {}),
     };

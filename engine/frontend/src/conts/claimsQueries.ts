@@ -8,10 +8,14 @@ import { authedFetch } from "../vendor/scm/lib/authed-fetch";
 export type LineDepartment = "rental" | "supply" | "shared";
 export type ReceiptStatus = "HANDED_IN" | "CHECKED" | "TOPPED_UP" | "PAID_BACK" | "REJECTED" | "REPAID" | "WRITTEN_OFF" | "REPLACED";
 export type ClaimLine = {
+  /** A request line's id: the account finance chooses for it on Make voucher / Make AP invoice is keyed by it. */
+  id?: string;
   department: LineDepartment; unitId: string | null; maintenanceIssueId: string | null; projectId: number | null;
   accountCode: string | null; amountSen: number; description: string | null;
   /** Its sub-department (SOP 1.1; chew 4 Nov 2026): set on hand-in, changed by finance while checking. */
   subDepartmentId?: string | null;
+  /** The unit ("Agile C-13-13A"), job or project the line is for, when the list names it. */
+  targetLabel?: string | null;
 };
 export type Receipt = {
   id: string; receiptNo: string; submitterUserId: string; submitterName: string; floatId: string | null; spendDate: string;
@@ -21,6 +25,8 @@ export type Receipt = {
   /** Finance's pay-back list only: where the money goes. The bank given on the claim (Direct Claim to Me) when there is
    *  one, else the saved details; differsFromSaved when the claim's account is not the saved one or nothing is saved. */
   bank?: { bankName: string; accountNo: string; accountName: string | null; fromClaim: boolean; differsFromSaved: boolean } | null;
+  /** What each unit's owner pays back (0363): charged to the owner as O2 once finance checks the claim (`charged`). */
+  recoveries?: { unitId: string; amountSen: number; charged: boolean }[];
 };
 export type RequestStatus = "SUBMITTED" | "PART_PAID" | "PAID" | "REJECTED" | "CLOSED" | "WITHDRAWN";
 export type PaymentRequest = {
@@ -28,7 +34,25 @@ export type PaymentRequest = {
   payeeName: string; payeeToCheck: boolean; purchaseOrderId: string | null; wantedOn: string | null; owesFormalInvoice: boolean;
   note: string | null; amountSen: number; status: RequestStatus; reason: string | null; decidedBy: string | null; createdAt: string;
   lines: ClaimLine[]; files: { id: string; fileName: string; mime: string }[]; vouchers: { id: string; pvNumber: string; status: string }[];
+  /** What each unit's owner pays back (0352): charged to the owner as O2 once the request is paid (`charged`). */
+  recoveries?: { unitId: string; amountSen: number; charged: boolean }[];
+  /** Conts (chew, 15 Nov 2026): the AP invoice it is paid through (then paid on the Payment voucher page, against the
+   *  bill); a balance's deposit, a deposit's balance requests; what was first asked, once the bill changed it. */
+  /** Made from utility bills (Utility bills): paid by voucher against the accrual, never through an AP invoice. */
+  fromBills?: boolean;
+  apInvoice?: { id: string; invoiceNumber: string; status: string; provisional: boolean; totalSen: number; paidSen: number } | null;
+  parentRequestNo?: string | null;
+  balanceRequests?: { id: string; requestNo: string; status: string }[];
+  askedLines?: unknown[] | null; askedAmountSen?: number | null;
 };
+/** The line under a request's status: why it was rejected or closed; for one sent again after a rejection (it keeps its
+ *  number, chew 13 Nov 2026), that it was rejected before, by whom and why, so finance checks what changed. */
+export function requestStatusNote(r: { status: string; reason: string | null; decidedBy: string | null }): string | null {
+  if (!r.reason) return null;
+  if (r.status === "REJECTED" || r.status === "CLOSED") return r.reason;
+  return `Rejected before${r.decidedBy ? ` by ${r.decidedBy}` : ""}: ${r.reason}`;
+}
+
 export type FloatSummary = {
   id: string; floatSen: number; balanceSen: number; low: boolean; lastTopUpOn: string | null; topUpRequested?: boolean;
   departmentName?: string; keeperName?: string; warnPct?: number; active?: boolean;

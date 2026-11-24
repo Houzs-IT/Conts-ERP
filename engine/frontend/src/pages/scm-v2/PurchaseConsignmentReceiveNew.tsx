@@ -32,7 +32,8 @@ import {
   useCreatePurchaseConsignmentReceive,
   usePostPurchaseConsignmentReceive,
 } from '../../vendor/scm/lib/purchase-consignment-receive-queries';
-import { useIdempotencyKey } from '../../lib/idempotency';
+import { sendWithContentKey, unansweredSaveQuestion, useContentBoundIdempotencyKey } from '../../lib/idempotency';
+import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readScmHandoff, removeScmHandoff } from '../../lib/scmHandoffStorage';
 import {
   usePurchaseConsignmentOrderDetail,
@@ -124,12 +125,10 @@ export const PurchaseConsignmentReceiveNew = () => {
     [poListQ.data],
   );
 
-  /* One key for the one receive this page is open to raise (lib/idempotency.ts).
-     Same create-then-post-then-dialog shape as GrnNew (which carries the full
-     reasoning): the post below is unconditional here, so a failure in it reports
-     "Save failed" while the receive already exists — the re-press must REPLAY
-     rather than receive the consigned goods a second time. */
-  const idemKey = useIdempotencyKey();
+  /* One key per purchase consignment receive CONTENT (lib/idempotency.ts createContentBoundKey): the same form re-pressed after a stall
+     replays the first answer instead of raising a second document; a save the server refused releases the key, so
+     the corrected form is a new request instead of a replay of the refusal (audit 20 Nov 2026, items 19-24). */
+  const idemKeys = useContentBoundIdempotencyKey();
   const create = useCreatePurchaseConsignmentReceive();
   const post   = usePostPurchaseConsignmentReceive();
   const saving = create.isPending || post.isPending;
@@ -379,8 +378,7 @@ export const PurchaseConsignmentReceiveNew = () => {
       return;
     }
     try {
-      const createRes = await create.mutateAsync({
-        idempotencyKey: idemKey,
+      const payload = {
         // Backend (purchase-consignment-receives POST) reads
         // purchaseConsignmentOrderId / pcOrderItemId — NOT the PO's
         // purchaseOrderId / purchaseOrderItemId. Sending the wrong keys
@@ -405,7 +403,10 @@ export const PurchaseConsignmentReceiveNew = () => {
           itemGroup:           l.itemGroup,
           variants:            l.variants,
         })),
-      });
+      };
+      const sent = await sendWithContentKey(idemKeys, payload, () => serviceConfirm(unansweredSaveQuestion('purchase consignment receive', 'Procurement > Purchase Consignment Receives')), (idempotencyKey) => create.mutateAsync({ ...payload, idempotencyKey }));
+      if (!sent.sent) return;
+      const createRes = sent.value;
       await post.mutateAsync(createRes.id);
       setDialog({
         title: `Receive ${createRes.grnNumber} created`,

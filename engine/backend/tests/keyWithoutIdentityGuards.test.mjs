@@ -144,7 +144,7 @@ const SITE_15 = [
   {
     label: 'sales-invoices POST / still funnels through that gate',
     file: 'src/scm/routes/sales-invoices.ts',
-    start: 'const over = await checkSiOverRemaining(sb, items);',
+    start: 'const over = await checkSiOverRemaining(sb, items, undefined, true);',
     end: 'if (over) return c.json(over.body, over.status);',
     expect: /checkSiOverRemaining/,
   },

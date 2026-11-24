@@ -17,6 +17,7 @@
 // the SO amendment): the whole point of this module is the single-approver gate.
 // ----------------------------------------------------------------------------
 
+import { takeBack } from '../../lib/backTrail';
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -444,7 +445,7 @@ export function PoAmendmentDetailV2() {
     }
   };
 
-  const goBack = () => navigate("/scm/po-amendments");
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? "/scm/po-amendments");
   const openPo = () => poId && navigate(`/scm/purchase-orders/${poId}`);
 
   if (isPending) {

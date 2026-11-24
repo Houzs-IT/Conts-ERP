@@ -1,5 +1,5 @@
 import { type Env, all, one, run, fail, nowIso } from './db';
-import { accessFor, canManage, levelsFor, isSide, sideSql, isKind, type DepartmentKind, type Level, type Side } from './access';
+import { accessFor, canManage, levelsFor, isSide, sideSql, sideWithRolesSql, userRolesReady, isKind, type DepartmentKind, type Level, type Side } from './access';
 import { notify } from './notify';
 import { legacyRolesIncludeOwners, parseList } from './twoStepLegacy';
 
@@ -92,9 +92,11 @@ export async function endSession(env: Env, sid: string | undefined, userId: stri
 /** Whether management requires two-step sign-in for this person: owners follow their own switch, everyone else their
  *  department is on the list (the setting saved by department), or, until that setting exists, their role is on the old
  *  list (which is what the department list is worked out from, see twoStepLegacy.ts). */
-export function twoStepRequired(settings: SecuritySettings, who: { role: string; departmentId?: string | null }): boolean {
+export function twoStepRequired(settings: SecuritySettings, who: { role: string; departmentId?: string | null; extraDepartmentIds?: readonly string[] }): boolean {
   if (who.role === 'owner') return settings.require2faOwners;
-  if (settings.require2faDepartments) return !!who.departmentId && settings.require2faDepartments.includes(who.departmentId);
+  // Any department the person holds a role in (migration 0349) counts.
+  const listed = settings.require2faDepartments;
+  if (listed) return [who.departmentId, ...(who.extraDepartmentIds ?? [])].some(id => !!id && listed.includes(id));
   return settings.require2faRoles.includes(who.role);
 }
 
@@ -106,11 +108,11 @@ export function twoStepRequired(settings: SecuritySettings, who: { role: string;
  *  once that browser has signed out. */
 export async function sessionState(env: Env, userId: string, sid?: string): Promise<{
   settings: SecuritySettings;
-  user: { role: string; side: Side; departmentId: string | null; positionId: string | null; kind: DepartmentKind | null; active: boolean; fullName: string; revokedAt: number; twoFactorOn: boolean; sessionLive: boolean; mustChangePassword: boolean } | null;
+  user: { role: string; side: Side; departmentId: string | null; positionId: string | null; extraDepartmentIds: string[]; kind: DepartmentKind | null; active: boolean; fullName: string; revokedAt: number; twoFactorOn: boolean; sessionLive: boolean; mustChangePassword: boolean } | null;
 }> {
-  const [revokedCol, totpCol, sessions, sideCol] = await Promise.all([
+  const [revokedCol, totpCol, sessions, sideCol, withRoles] = await Promise.all([
     hasColumn(env, 'users', 'sessions_revoked_at'), hasColumn(env, 'users', 'totp_enabled_at'), sid ? sessionTable(env) : false,
-    hasColumn(env, 'users', 'side'),
+    hasColumn(env, 'users', 'side'), userRolesReady(env),
   ]);
   const rows = await all<{ key: string; value: string }>(env, `
     SELECT key, value FROM settings WHERE key LIKE 'security.%'
@@ -118,14 +120,15 @@ export async function sessionState(env: Env, userId: string, sid?: string): Prom
     SELECT '~user', users.role || '|' || users.is_active::text || '|' || ${revokedCol ? "COALESCE(users.sessions_revoked_at, '')" : "''"}
       || '|' || ${totpCol ? "(users.totp_enabled_at IS NOT NULL)::int::text" : "'0'"}
       || '|' || ${sessions ? '(SELECT count(*) FROM user_sessions s WHERE s.id = ? AND s.user_id = users.id)::text' : "'1'"}
-      || '|' || users.must_change_password::text || '|' || ${sideCol ? sideSql('users', 'd') : "COALESCE(d.side, 'both')"}
+      || '|' || users.must_change_password::text || '|' || ${sideCol ? (withRoles ? sideWithRolesSql('users', 'd') : sideSql('users', 'd')) : "COALESCE(d.side, 'both')"}
       || '|' || COALESCE(users.department_id, '') || '|' || COALESCE(users.position_id, '') || '|' || COALESCE(d.kind, '')
+      || '|' || ${withRoles ? "COALESCE((SELECT string_agg(DISTINCT p.department_id, ',') FROM user_roles r JOIN positions p ON p.id = r.position_id WHERE r.user_id = users.id), '')" : "''"}
       || '|' || users.full_name FROM users LEFT JOIN departments d ON d.id = users.department_id WHERE users.id = ?`, ...(sessions ? [sid, userId] : [userId]));
   const u = rows.find(r => r.key === '~user');
-  const [role, active, revoked, totp, live, mustChange, side, departmentId, positionId, kind, ...name] = (u?.value ?? '').split('|');
+  const [role, active, revoked, totp, live, mustChange, side, departmentId, positionId, kind, extra, ...name] = (u?.value ?? '').split('|');
   return {
     settings: parseSecurity(rows.filter(r => r.key !== '~user')),
-    user: u ? { role, side: isSide(side) ? side : 'both', departmentId: departmentId || null, positionId: positionId || null, kind: isKind(kind) ? kind : null, active: active === '1', fullName: name.join('|'), revokedAt: revoked ? Date.parse(revoked) : 0, twoFactorOn: totp === '1', sessionLive: live !== '0', mustChangePassword: mustChange !== '0' } : null,
+    user: u ? { role, side: isSide(side) ? side : 'both', departmentId: departmentId || null, positionId: positionId || null, extraDepartmentIds: extra ? extra.split(',') : [], kind: isKind(kind) ? kind : null, active: active === '1', fullName: name.join('|'), revokedAt: revoked ? Date.parse(revoked) : 0, twoFactorOn: totp === '1', sessionLive: live !== '0', mustChangePassword: mustChange !== '0' } : null,
   };
 }
 

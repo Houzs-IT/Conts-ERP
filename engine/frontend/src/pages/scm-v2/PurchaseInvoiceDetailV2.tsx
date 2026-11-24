@@ -2,6 +2,8 @@
 // page. Procurement-side twin of SalesInvoiceDetailV2: money-forward,
 // Outstanding-as-hero, but flipped — this is what WE owe to the supplier.
 
+import { takeBack } from '../../lib/backTrail';
+import { PHONE_MORE_BUTTON, phoneMoreHeaderClass } from "../../components/scm-v2/phoneMoreActions";
 import { lazy, useMemo, useState, type ReactNode } from "react";
 import { buildVariantSummary, fmtDate, fmtMoneySen, orderLineIdentity, fmtQty } from "@2990s/shared";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -149,8 +151,9 @@ const supplierCodeOf = (h: PiHeader): string => h.supplier?.code || "—";
 const sourceOf = (h: PiHeader): string =>
   h.grn?.grn_number || h.purchase_order?.po_number || "—";
 
+/* A cancelled invoice owes nothing (click sweep G17): it showed "Owed" in red. */
 const outstandingOf = (h: PiHeader): number =>
-  Math.max(0, (h.total_sen ?? 0) - (h.paid_sen ?? 0));
+  (h.status || "").toUpperCase() === "CANCELLED" ? 0 : Math.max(0, (h.total_sen ?? 0) - (h.paid_sen ?? 0));
 
 // PI effective lifecycle.
 type Effective = "draft" | "posted" | "partial" | "paid" | "overdue" | "cancelled" | "on_hold";
@@ -284,17 +287,18 @@ function OwedHeroCard({ header }: { header: PiHeader }) {
   const total = header.total_sen ?? 0;
   const paid = header.paid_sen ?? 0;
   const outstanding = outstandingOf(header);
-  const isPaid = outstanding === 0;
+  const cancelled = eff === "cancelled";
+  const isPaid = !cancelled && outstanding === 0;
   // Multi-currency (Phase 1-A) — MYR-equivalent for a foreign PI (no-op for MYR).
   const isForeign = String(header.currency ?? "MYR").toUpperCase() !== "MYR";
   const rate = resolveFxRate(header.exchange_rate);
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
-        {isPaid ? "Paid in full" : "Owed to supplier"}
+        {cancelled ? "Cancelled" : isPaid ? "Paid in full" : "Owed to supplier"}
       </div>
       <div className={cn("mt-1.5 font-money text-[28px] font-bold leading-none tracking-tight text-white")}>
-        {fmtMoney(isPaid ? total : outstanding, header.currency)}
+        {fmtMoney(isPaid || cancelled ? total : outstanding, header.currency)}
       </div>
       <div className="mt-3 flex items-center gap-2">
         <span
@@ -380,6 +384,7 @@ export function PurchaseInvoiceDetailV2() {
 }
 
 function PurchaseInvoiceDetailV2ReadOnly() {
+  const [moreOpen, setMoreOpen] = useState(false);
   const { id } = useParams<{ id: string }>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -450,7 +455,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
   // details page's back button goes to its relevant list, not wherever
   // browser history happens to point). The list restores its own sticky
   // filters, so the prior filtered view comes back — no context lost.
-  const goBack = () => navigate(scmListReturnTo("/scm/purchase-invoices"));
+  const goBack = () => navigate(takeBack(`${window.location.pathname}${window.location.search}`) ?? scmListReturnTo("/scm/purchase-invoices"));
   const goEdit = () => id && navigate(`/scm/purchase-invoices/${id}?edit=1`);
   /* "Add line" from the page you START on — the affordance lived only
      inside the editor, under a different name per document, so it read as
@@ -495,7 +500,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
     if (!purchaseInvoice) return;
     if (await askConfirm({
       title: `Cancel invoice ${purchaseInvoice.invoice_number}?`,
-      body: "Any posted revenue will be reversed via a contra JE.",
+      body: "Any posted purchase entry will be reversed via a contra JE.",
       confirmLabel: "Cancel invoice",
       danger: true,
     })) {
@@ -704,7 +709,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
             <ArrowLeft size={16} /> PIs
           </button>
           <span className="font-mono text-[12.5px] font-semibold text-sidebar-ink">{purchaseInvoice.invoice_number}</span>
-          <button type="button" className="text-sidebar-ink-muted" aria-label="More actions">
+          <button type="button" className={PHONE_MORE_BUTTON} aria-label="More actions" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>
             <MoreHorizontal size={18} />
           </button>
         </div>
@@ -725,7 +730,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
         </div>
       </div>
 
-      <div className="sticky top-0 z-10 -mx-4 hidden border-b border-border bg-bg/95 px-4 py-4 backdrop-blur-sm sm:-mx-6 sm:px-6 md:block">
+      <div className={phoneMoreHeaderClass(moreOpen)}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
             <button
@@ -792,8 +797,12 @@ function PurchaseInvoiceDetailV2ReadOnly() {
             {canRecordPayment && (
               <Button variant="secondary" icon={<Wallet size={14} />} onClick={goRecordPayment}>Record payment</Button>
             )}
-            <Button variant="secondary" icon={<Plus size={14} />} onClick={goAddLine}>{ADD_LINE_LABEL}</Button>
-            <Button variant="primary" icon={<Edit3 size={14} />} onClick={goEdit}>Edit</Button>
+            {!isCancelled && (
+              <>
+                <Button variant="secondary" icon={<Plus size={14} />} onClick={goAddLine}>{ADD_LINE_LABEL}</Button>
+                <Button variant="primary" icon={<Edit3 size={14} />} onClick={goEdit}>Edit</Button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -801,9 +810,9 @@ function PurchaseInvoiceDetailV2ReadOnly() {
       <div className="py-5">
         <div className="mb-3 rounded-lg border border-border bg-surface p-4 shadow-stone md:hidden">
           <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-            {outstanding === 0 ? "Paid in full" : "Owed to supplier"}
+            {isCancelled ? "Cancelled" : outstanding === 0 ? "Paid in full" : "Owed to supplier"}
           </div>
-          <div className={cn("mt-1 font-money text-[26px] font-bold leading-none tracking-tight", outstanding === 0 ? "text-synced" : "text-err")}>
+          <div className={cn("mt-1 font-money text-[26px] font-bold leading-none tracking-tight", isCancelled ? "text-ink-muted line-through" : outstanding === 0 ? "text-synced" : "text-err")}>
             {fmtMoney(outstanding === 0 ? purchaseInvoice.total_sen : outstanding, purchaseInvoice.currency)}
           </div>
           <div className="mt-1.5 text-[12px] text-ink-muted">
@@ -983,7 +992,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
             <button type="button" onClick={goRecordPayment} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary text-[13.5px] font-bold text-white shadow-sm hover:bg-primary-ink">
               <Wallet size={16} /> Record payment
             </button>
-          ) : (
+          ) : isCancelled ? null : (
             <button type="button" onClick={goEdit} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary text-[13.5px] font-bold text-white shadow-sm hover:bg-primary-ink">
               <Edit3 size={16} /> Edit
             </button>

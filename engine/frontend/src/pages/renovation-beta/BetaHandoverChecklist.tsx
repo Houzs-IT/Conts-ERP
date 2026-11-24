@@ -153,7 +153,7 @@ function Marks({ i, canWrite, busy, onMark, onFail }: {
   const locked = !canWrite || busy || i.defectId != null || i.result === "fail";
   const btn = (on: boolean, color: string) => ({
     minHeight: 36, minWidth: 64, padding: "0 10px", borderRadius: 999, font: "inherit", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4, justifyContent: "center",
-    border: `1px solid ${on ? color : BETA.line}`, background: on ? color : "transparent", color: on ? "#FFFFFF" : BETA.ink, cursor: locked ? "default" : "pointer",
+    border: `1px solid ${on ? color : BETA.line}`, background: on ? color : "transparent", color: on ? BETA.selInkText : BETA.ink, cursor: locked ? "default" : "pointer",
   });
   return (
     <div role="group" aria-label={`Mark ${i.item}`} style={{ display: "flex", gap: 6 }}>

@@ -17,13 +17,15 @@ import { todayMyt } from "../../vendor/scm/lib/dates";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { useToast } from "../../hooks/useToast";
 import { useWarehouses } from "../../vendor/scm/lib/inventory-queries";
+import { createContentBoundKey, sendWithContentKey, unansweredSaveQuestion } from "../../lib/idempotency";
+import { useConfirm } from "../../vendor/scm/components/ConfirmDialog";
 import {
-  completeProductionOrder, useAddProductionMaterial, useAssignWorkers, useProductionMaterials, useMaterialStatus, useProductionWorkers, useRawSkus, useRequestMore, useReturnStock, useSetProductionTime, useStartProduction,
+  completeProductionOrder, refreshAfterComplete, useAddProductionMaterial, useAssignWorkers, useProductionMaterials, useMaterialStatus, useProductionWorkers, useRawSkus, useRequestMore, useReturnStock, useSetProductionTime, useStartProduction,
   type MaterialRow, type OrderChange, type ProductionProgress, type ProductionWorker,
 } from "../../vendor/scm/lib/production-order-queries";
 import { RawMaterialAddPanel, type RawPick } from "./RawMaterialAddPanel";
 import { usePhotoQueue } from "../../components/PhotoAdd";
-import { dayStrip, initialDay, materialTally, mytTime, pageStart, peopleOn, photoWord, shortDate } from "./renovationProductionDays";
+import { dayStrip, initialDay, materialTally, mytTime, pageStart, peopleOn, photoWord, returnWarehouseOf, shortDate } from "./renovationProductionDays";
 
 const FIELD = "mt-1 block h-10 w-full rounded-md border border-border bg-surface px-2.5 text-[14px] text-ink";
 const message = (e: unknown): string => (e instanceof Error ? e.message : "Something went wrong.");
@@ -54,6 +56,7 @@ export function useProductionPress(order: { id: string; po_number: string; title
   const materials = useProductionMaterials(order.id);
   const statuses = useMaterialStatus(order.id);
   const start = useStartProduction(order.id);
+  const qc = useQueryClient();
   const notify = useNotify();
   const toast = useToast();
   const [completing, setCompleting] = useState<string | null>(null);
@@ -64,7 +67,7 @@ export function useProductionPress(order: { id: string; po_number: string; title
   const startNow = () => {
     setReminder(false);
     start.mutate(undefined, {
-      onSuccess: () => toast.success(`${order.po_number} started`),
+      onSuccess: (r) => toast.success(r.shortLines ? `${order.po_number} started. ${r.shortLines} material line${r.shortLines === 1 ? "" : "s"} short of stock.` : `${order.po_number} started`),
       onError: (e) => notify({ title: "Not started", body: message(e), tone: "error" }),
     });
   };
@@ -82,6 +85,7 @@ export function useProductionPress(order: { id: string; po_number: string; title
       notify({ title: "Complete stopped", body: `${message(e)} What was already raised stays; Retry carries on from there.`, tone: "error" });
     } finally {
       setCompleting(null);
+      refreshAfterComplete(qc, order.id);
       refetch();
     }
   };
@@ -118,20 +122,34 @@ export function AddMaterialDialog({ orderId, taken, open, onClose }: { orderId: 
 export function RequestMoreDialog({ orderId, open, onClose }: { orderId: string; open: boolean; onClose: () => void }) {
   const skus = useRawSkus(open);
   const request = useRequestMore(orderId);
+  const confirm = useConfirm();
   const notify = useNotify();
   const toast = useToast();
   const [code, setCode] = useState("");
   const [qty, setQty] = useState("");
   const [neededBy, setNeededBy] = useState("");
-  useEffect(() => { if (open) { setCode(""); setQty(""); setNeededBy(""); } }, [open]);
+  /* A double press sent two requests and Complete issued both (click sweep 2, G2): isPending re-renders too late to stop
+     the second click, so a ref holds the press, and one key per opening lets the server replay a retry. */
+  const sending = useRef(false);
+  const keys = useRef(createContentBoundKey());
+  useEffect(() => { if (open) { setCode(""); setQty(""); setNeededBy(""); keys.current = createContentBoundKey(); } }, [open]);
   const n = Number(qty);
-  const send = () => request.mutate({ itemCode: code, qty: n, neededBy: neededBy || null }, {
-    onSuccess: (r) => { toast.success(r.short ? `${code} added: it shows Short until it is bought` : `${code} taken from stock`); onClose(); },
-    onError: (e) => notify({ title: "Not requested", body: message(e), tone: "error" }),
-  });
+  const send = async () => {
+    if (sending.current) return;
+    sending.current = true;
+    const body = { itemCode: code, qty: n, neededBy: neededBy || null };
+    try {
+      const sent = await sendWithContentKey(keys.current, body, () => confirm(unansweredSaveQuestion("request", "the raw materials list")), (key) => request.mutateAsync({ ...body, key }));
+      if (sent.sent) { toast.success(sent.value.short ? `${code} added: it shows Short until it is bought` : `${code} taken from stock`); onClose(); }
+    } catch (e) {
+      void notify({ title: "Not requested", body: message(e), tone: "error" });
+    } finally {
+      sending.current = false;
+    }
+  };
   return (
     <ModalOverlay open={open} onClose={onClose} title="Request more"
-      footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={send} disabled={!code || !(n > 0) || request.isPending}>Send request</Button></div>}>
+      footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={() => void send()} disabled={!code || !(n > 0) || request.isPending}>Send request</Button></div>}>
       <p className="mb-3 text-[13px] text-ink-secondary">The extra goes to Raw materials and shows Short until it is bought.</p>
       <label className="mb-2.5 block text-[13px] text-ink-secondary">Raw material
         <select className={FIELD} aria-label="Raw material" value={code} onChange={(e) => setCode(e.target.value)}>
@@ -153,6 +171,7 @@ export function RequestMoreDialog({ orderId, open, onClose }: { orderId: string;
 
 export function ReturnStockDialog({ orderId, materials, open, onClose }: { orderId: string; materials: readonly MaterialRow[]; open: boolean; onClose: () => void }) {
   const warehouses = useWarehouses({});
+  const statuses = useMaterialStatus(orderId);
   const back = useReturnStock(orderId);
   const notify = useNotify();
   const toast = useToast();
@@ -162,9 +181,10 @@ export function ReturnStockDialog({ orderId, materials, open, onClose }: { order
   const [where, setWhere] = useState<Record<string, string>>({});
   useEffect(() => { if (open) { setQty({}); setWhere({}); } }, [open]);
   const fallback = places[0]?.id ?? "";
+  const homeOf = (m: MaterialRow) => returnWarehouseOf(places, statuses.data?.[m.id]?.warehouse);
   const lines = out.flatMap((m) => {
     const n = Number(qty[m.id] ?? 0);
-    return n > 0 ? [{ materialId: m.id, qty: n, warehouseId: where[m.id] ?? fallback, uom: m.uom }] : [];
+    return n > 0 ? [{ materialId: m.id, qty: n, warehouseId: where[m.id] ?? homeOf(m), uom: m.uom }] : [];
   });
   const total = lines.reduce((t, l) => t + l.qty, 0);
   const uoms = new Set(lines.map((l) => l.uom ?? ""));
@@ -188,7 +208,7 @@ export function ReturnStockDialog({ orderId, materials, open, onClose }: { order
               </div>
               <input aria-label={`Return qty of ${m.item_code}`} type="number" min="0" step="1" inputMode="numeric" placeholder="0" value={qty[m.id] ?? ""} onFocus={(e) => e.currentTarget.select()} onChange={(e) => setQty({ ...qty, [m.id]: wholeEntry(e.target.value) })}
                 className="h-10 w-full rounded-md border border-border bg-surface px-2 text-right text-[13px]" />
-              <select aria-label={`Warehouse for ${m.item_code}`} value={where[m.id] ?? fallback} onChange={(e) => setWhere({ ...where, [m.id]: e.target.value })} className="h-10 w-full rounded-md border border-border bg-surface px-2 text-[14px]">
+              <select aria-label={`Warehouse for ${m.item_code}`} value={where[m.id] ?? homeOf(m)} onChange={(e) => setWhere({ ...where, [m.id]: e.target.value })} className="h-10 w-full rounded-md border border-border bg-surface px-2 text-[14px]">
                 {places.map((w) => <option key={w.id} value={w.id}>{w.code}</option>)}
               </select>
             </div>

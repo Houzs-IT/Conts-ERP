@@ -10,7 +10,7 @@ type Json = Record<string, unknown>;
 export const BETA_APPOINTMENT_KINDS = ["site_measure", "carpentry_measure", "site_briefing"] as const;
 export type BetaAppointmentKind = (typeof BETA_APPOINTMENT_KINDS)[number];
 export const BETA_EVENT_TYPES = ["client", "measure", "briefing", "meeting", "w3d", "w2d", "amend", "po", "update"] as const;
-export type BetaEventType = (typeof BETA_EVENT_TYPES)[number];
+export type BetaEventType = string;
 
 export const BETA_AMENDMENT_DAYS = 3;
 export const BETA_NOTE_DAYS_MAX = 60;
@@ -20,7 +20,8 @@ export const BETA_BOARD_DAYS_AFTER = 180;
 
 export const isAppointmentKind = (x: unknown): x is BetaAppointmentKind =>
   typeof x === "string" && (BETA_APPOINTMENT_KINDS as readonly string[]).includes(x);
-const isEventType = (x: unknown): x is BetaEventType => typeof x === "string" && (BETA_EVENT_TYPES as readonly string[]).includes(x);
+/* Any work of the list in Project Maintenance (migration 0342); the route checks the code against the list. */
+const isEventType = (x: unknown): x is BetaEventType => typeof x === "string" && /^[a-z0-9_]{1,40}$/.test(x);
 
 /** HH:MM on the 24 hour clock. */
 export const isClockTime = (x: unknown): x is string => typeof x === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(x);
@@ -132,19 +133,40 @@ export function cleanNoteDays(b: Json): BetaRefusal<{ days: number }> {
   return { ok: true, value: { days: d } };
 }
 
-export interface BetaAppointmentInput { onDate: string; atTime: string | null; personId: number | null; withText: string | null }
+export interface BetaAppointmentInput { onDate: string; atTime: string | null; personIds: number[]; withText: string | null; whoText: string | null }
+
+/** Who goes (owner, 22 Nov 2026): several of the company's people, each with it on their own calendar, and a typed name
+    for someone without an account, kept beside them. `personIds` is the list; `personId` is what screens from before
+    this change send. Undefined when it is not a list of ids. */
+const WHO_TEXT_MAX = 120;
+export const BETA_BOOKING_PEOPLE_MAX = 20;
+function peopleOfBody(b: Json): number[] | undefined {
+  if ("personIds" in b) return blank(b.personIds) ? [] : idList(b.personIds);
+  const id = idOrNull(b.personId);
+  return id === undefined ? undefined : id == null ? [] : [id];
+}
+function whoTextOf(v: unknown): string | null | undefined {
+  if (blank(v)) return null;
+  if (typeof v !== "string" || v.trim().length > WHO_TEXT_MAX) return undefined;
+  return v.trim();
+}
+const PEOPLE_INVALID = "Pick people from the list, or leave it empty.";
+const PEOPLE_TOO_MANY = `Pick at most ${BETA_BOOKING_PEOPLE_MAX} people.`;
 
 export function cleanBetaAppointment(b: Json): BetaRefusal<BetaAppointmentInput> {
   if (!isIsoDay(b.onDate)) return no("date_invalid", "Give the day as YYYY-MM-DD.");
   if (!blank(b.atTime) && !isClockTime(b.atTime)) return no("time_invalid", "Give the time as HH:MM.");
-  const personId = idOrNull(b.personId);
-  if (personId === undefined) return no("person_invalid", "Pick a person from the list, or leave it empty.");
+  const personIds = peopleOfBody(b);
+  if (personIds === undefined) return no("person_invalid", PEOPLE_INVALID);
+  if (personIds.length > BETA_BOOKING_PEOPLE_MAX) return no("too_many_people", PEOPLE_TOO_MANY);
   const withText = noteOf(b.withText);
   if (withText === undefined) return no("text_invalid", `Who it is with can be up to ${BETA_NOTE_MAX} characters.`);
-  return { ok: true, value: { onDate: b.onDate, atTime: blank(b.atTime) ? null : (b.atTime as string), personId, withText } };
+  const whoText = whoTextOf(b.whoText);
+  if (whoText === undefined) return no("who_invalid", `A typed name can be up to ${WHO_TEXT_MAX} characters.`);
+  return { ok: true, value: { onDate: b.onDate, atTime: blank(b.atTime) ? null : (b.atTime as string), personIds, withText, whoText } };
 }
 
-export interface BetaEventInput { projectId: number | null; onDate: string; atTime: string | null; type: BetaEventType; note: string | null; personId: number | null }
+export interface BetaEventInput { projectId: number | null; onDate: string; atTime: string | null; type: BetaEventType; note: string | null; personIds: number[]; whoText: string | null }
 
 export function cleanBetaEvent(b: Json): BetaRefusal<BetaEventInput> {
   const projectId = idOrNull(b.projectId);
@@ -154,15 +176,18 @@ export function cleanBetaEvent(b: Json): BetaRefusal<BetaEventInput> {
   if (!isEventType(b.type)) return no("type_invalid", "Pick the kind of entry from the list.");
   const note = noteOf(b.note);
   if (note === undefined) return no("note_invalid", `A note can be up to ${BETA_NOTE_MAX} characters.`);
-  const personId = idOrNull(b.personId);
-  if (personId === undefined) return no("person_invalid", "Pick a person from the list, or leave it empty.");
-  return { ok: true, value: { projectId, onDate: b.onDate, atTime: blank(b.atTime) ? null : (b.atTime as string), type: b.type, note, personId } };
+  const personIds = peopleOfBody(b);
+  if (personIds === undefined) return no("person_invalid", PEOPLE_INVALID);
+  if (personIds.length > BETA_BOOKING_PEOPLE_MAX) return no("too_many_people", PEOPLE_TOO_MANY);
+  const whoText = whoTextOf(b.whoText);
+  if (whoText === undefined) return no("who_invalid", `A typed name can be up to ${WHO_TEXT_MAX} characters.`);
+  return { ok: true, value: { projectId, onDate: b.onDate, atTime: blank(b.atTime) ? null : (b.atTime as string), type: b.type, note, personIds, whoText } };
 }
 
 /** The fields of an event change; only the ones the caller sent are present. */
 export interface BetaEventPatch {
   projectId?: number | null; onDate?: string; atTime?: string | null; type?: BetaEventType; note?: string | null;
-  personId?: number | null; done?: boolean;
+  personIds?: number[]; whoText?: string | null; done?: boolean;
 }
 
 export function cleanBetaEventPatch(b: Json): BetaRefusal<BetaEventPatch> {
@@ -189,10 +214,16 @@ export function cleanBetaEventPatch(b: Json): BetaRefusal<BetaEventPatch> {
     if (v === undefined) return no("note_invalid", `A note can be up to ${BETA_NOTE_MAX} characters.`);
     p.note = v;
   }
-  if ("personId" in b) {
-    const v = idOrNull(b.personId);
-    if (v === undefined) return no("person_invalid", "Pick a person from the list, or leave it empty.");
-    p.personId = v;
+  if ("personIds" in b || "personId" in b) {
+    const v = peopleOfBody(b);
+    if (v === undefined) return no("person_invalid", PEOPLE_INVALID);
+    if (v.length > BETA_BOOKING_PEOPLE_MAX) return no("too_many_people", PEOPLE_TOO_MANY);
+    p.personIds = v;
+  }
+  if ("whoText" in b) {
+    const v = whoTextOf(b.whoText);
+    if (v === undefined) return no("who_invalid", `A typed name can be up to ${WHO_TEXT_MAX} characters.`);
+    p.whoText = v;
   }
   if ("done" in b) {
     if (typeof b.done !== "boolean") return no("done_invalid", "Done must be true or false.");
@@ -213,7 +244,8 @@ export function ordinal(n: number): string {
 }
 
 /** outstandingSen = the sales order total less the money received on it, never below zero. */
-export type BoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string; outstandingSen: number };
+/** paid: instalments fully received (the Second payment design work reads it). */
+export type BoardPayment = { state: "hidden" } | { state: "none" } | { state: "ok"; label: string; outstandingSen: number; paid: number };
 
 /** "2 of 4 paid", "Fully paid", or "Pending 2nd payment" while a bill waits for money. A contract without
     instalments has nothing to pay, so it reads as none. */
@@ -222,10 +254,10 @@ export function paymentLabel(p: BetaPayments): BoardPayment {
   if (p.instalments.length === 0) return { state: "none" };
   const outstandingSen = Math.max(0, p.contractSen - p.receivedSen);
   const paid = p.instalments.filter((i) => i.status === "paid").length;
-  if (paid === p.instalments.length) return { state: "ok", label: "Fully paid", outstandingSen };
+  if (paid === p.instalments.length) return { state: "ok", label: "Fully paid", outstandingSen, paid };
   const next = p.instalments.find((i) => i.status !== "paid");
-  if (next?.status === "billed") return { state: "ok", label: `Pending ${ordinal(next.seq)} payment`, outstandingSen };
-  return { state: "ok", label: `${paid} of ${p.instalments.length} paid`, outstandingSen };
+  if (next?.status === "billed") return { state: "ok", label: `Pending ${ordinal(next.seq)} payment`, outstandingSen, paid };
+  return { state: "ok", label: `${paid} of ${p.instalments.length} paid`, outstandingSen, paid };
 }
 
 /** Rows grouped by their project_id, each group in the order the rows came. */
@@ -244,6 +276,19 @@ export function rolesOf(x: unknown): string[] {
   if (Array.isArray(x)) return x.map(String);
   if (typeof x === "string") return x.replace(/^\{|\}$/g, "").split(",").map((s) => s.trim()).filter(Boolean);
   return [];
+}
+
+export interface BoardPersonRow {
+  id: number; name: string; roles: unknown; position: string | null; department: string | null; offered: boolean; manager_person_id: number | null;
+}
+
+/** A board person as sent: `managerPersonId` is the person of the account this one reports to (System > Users >
+    Reports to), so the Calendar can show a manager the people under them; null when no one or before migration 0299. */
+export function boardPersonOf(p: BoardPersonRow) {
+  return {
+    id: Number(p.id), name: p.name, roles: rolesOf(p.roles), position: p.position ?? null, department: p.department ?? null, offered: !!p.offered,
+    managerPersonId: p.manager_person_id == null ? null : Number(p.manager_person_id),
+  };
 }
 
 /** The Malaysian day a UTC timestamp text (projects.created_at) falls on; null when it is empty or not a time. */
@@ -272,7 +317,9 @@ export interface BoardNoteRow { id: number; project_id: number; kind: "3d" | "2d
 export interface BoardReviewRow { file_id: number; project_id: number; sent_on: string | null; approved_on: string | null }
 export interface BoardAppointmentRow {
   project_id: number; kind: BetaAppointmentKind; on_date: string; at_time: string | null; person_id: number | null;
-  with_text: string | null; done_at: string | null;
+  /** Everyone going, first pick first; absent on older callers, which then read person_id alone. */
+  person_ids?: unknown;
+  with_text: string | null; who_text?: string | null; done_at: string | null;
 }
 
 export interface BoardSets {
@@ -298,8 +345,15 @@ export interface BoardProject {
   files: Array<{ id: number; kind: "3d" | "2d"; version: number; submittedOn: string }>;
   notes: Array<{ id: number; kind: "3d" | "2d"; notedOn: string; closedOn: string | null; days: number | null }>;
   reviews: Array<{ fileId: number; sentOn: string | null; approvedOn: string | null }>;
-  appointments: Array<{ kind: BetaAppointmentKind; onDate: string; atTime: string | null; personId: number | null; withText: string | null; doneAt: string | null }>;
+  appointments: Array<{ kind: BetaAppointmentKind; onDate: string; atTime: string | null; personId: number | null; personIds: number[]; withText: string | null; whoText: string | null; doneAt: string | null }>;
   payment: BoardPayment;
+}
+
+/** The people of a booking from its person_ids (a Postgres array, parsed or as "{1,2}" text), else its one person_id. */
+export function bookingPeopleOf(ids: unknown, personId: number | null | undefined): number[] {
+  const raw = Array.isArray(ids) ? ids : typeof ids === "string" ? ids.replace(/[{}\s]/g, "").split(",").filter(Boolean) : [];
+  const out = [...new Set(raw.map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))];
+  return out.length ? out : personId != null ? [Number(personId)] : [];
 }
 
 /** [{ id, name }] from the board query's JSON (text or already parsed); anything else reads as nobody. */
@@ -330,7 +384,7 @@ export function buildBoardProject(p: BoardProjectRow, sets: BoardSets, payment: 
     notes: (sets.notes.get(p.id) ?? []).map((n) => ({ id: n.id, kind: n.kind, notedOn: n.noted_on, closedOn: n.closed_on, days: n.days })),
     reviews: (sets.reviews.get(p.id) ?? []).map((r) => ({ fileId: r.file_id, sentOn: r.sent_on, approvedOn: r.approved_on })),
     appointments: (sets.appointments.get(p.id) ?? []).map((a) => ({
-      kind: a.kind, onDate: a.on_date, atTime: a.at_time, personId: a.person_id, withText: a.with_text, doneAt: a.done_at,
+      kind: a.kind, onDate: a.on_date, atTime: a.at_time, personId: a.person_id, personIds: bookingPeopleOf(a.person_ids, a.person_id), withText: a.with_text, whoText: a.who_text ?? null, doneAt: a.done_at,
     })),
     payment,
   };

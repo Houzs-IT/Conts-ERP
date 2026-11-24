@@ -11,9 +11,14 @@ import { RENOVATION_GROUPS, SUB_CATEGORIES, UOMS, categoryMatches, rememberSubCa
 import { MFG_PRODUCT_CATEGORIES, liveCategoryRows, mfgCategoryLabel, rememberCategories } from '../../shared/product-categories';
 import { CONTS_RENOVATION_CATALOG } from '../../../conts/catalog';
 
-type CatalogResponse = { groups?: Array<{ code: string; label: string; sort_order: number }>; subCategories: SubCategoryDef[]; uoms?: UomDef[]; canEdit: boolean };
+export interface CatalogGroupRow { code: string; label: string; sort_order?: number; active?: boolean }
+
+type CatalogResponse = { groups?: CatalogGroupRow[]; subCategories: SubCategoryDef[]; uoms?: UomDef[]; canEdit: boolean };
 
 const KEY = ['renovation-catalog'] as const;
+
+/* Groups hidden under Sub-categories > Groups, for categoryOptionsNow, which has no hook. */
+const hiddenGroups = new Set<string>();
 
 export function useRenovationCatalog() {
   const q = useQuery({
@@ -23,11 +28,17 @@ export function useRenovationCatalog() {
   });
   const all: readonly SubCategoryDef[] = q.data?.subCategories ?? SUB_CATEGORIES;
   const uoms: readonly UomDef[] = q.data?.uoms ?? UOMS;
-  /** The category groups with their names, in their order (product_category_groups). */
-  const groups: ReadonlyArray<{ code: string; label: string }> = q.data?.groups ?? RENOVATION_GROUPS;
+  /** Every category group with its name, in its order (product_category_groups), hidden ones included. */
+  const allGroups: readonly CatalogGroupRow[] = q.data?.groups ?? RENOVATION_GROUPS;
+  /** The groups chips and pickers offer: the shown ones. */
+  const groups = useMemo(() => allGroups.filter((g) => g.active !== false), [allGroups]);
   /* Pure label and group lookups have no hook of their own; they read what was last loaded here. */
   useEffect(() => {
-    if (q.data?.groups) rememberCategories(q.data.groups);
+    if (q.data?.groups) {
+      rememberCategories(q.data.groups);
+      hiddenGroups.clear();
+      for (const g of q.data.groups) if (g.active === false) hiddenGroups.add(g.code);
+    }
     if (q.data?.subCategories) rememberSubCategories(q.data.subCategories);
   }, [q.data]);
   const read = useMemo(() => ({
@@ -39,7 +50,7 @@ export function useRenovationCatalog() {
     pickableUoms: (keep?: string | null) => uoms.filter((u) => u.active !== false || u.code === keep),
     uomPrint: (code: string | null | undefined): string => uomPrintLabel(code, uoms),
   }), [all, uoms]);
-  return { query: q, all, uoms, groups, canEdit: q.data?.canEdit ?? false, ...read };
+  return { query: q, all, uoms, groups, allGroups, canEdit: q.data?.canEdit ?? false, ...read };
 }
 
 /** The categories a filter or picker offers: the master list, or on a Houzs build the enum list.
@@ -58,7 +69,7 @@ export function useCategoryOptions(): Array<{ value: string; label: string }> {
 export function categoryOptionsNow(): Array<{ value: string; label: string }> {
   if (!CONTS_RENOVATION_CATALOG) return MFG_PRODUCT_CATEGORIES.map((c) => ({ value: c as string, label: mfgCategoryLabel(c) }));
   const live = liveCategoryRows();
-  return (live.length > 0 ? live : RENOVATION_GROUPS).map((g) => ({ value: g.code, label: g.label }));
+  return (live.length > 0 ? live : RENOVATION_GROUPS).filter((g) => !hiddenGroups.has(g.code)).map((g) => ({ value: g.code, label: g.label }));
 }
 
 /** Filter options plus any value the rows carry that no option covers (a renovation line's item group RENOVATION),
@@ -95,6 +106,15 @@ export function useUpdateSubCategory() {
   return useMutation({
     mutationFn: ({ code, ...patch }: { code: string; label?: string; sortOrder?: number; active?: boolean }) =>
       authedFetch<{ ok: boolean }>(`/renovation-catalog/sub-categories/${encodeURIComponent(code)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
+export function useUpdateGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ code, ...patch }: { code: string; label?: string; sortOrder?: number; active?: boolean }) =>
+      authedFetch<{ ok: boolean }>(`/renovation-catalog/groups/${encodeURIComponent(code)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: KEY }),
   });
 }

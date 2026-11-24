@@ -4,30 +4,18 @@
    cannot show a line differently. */
 import type { ReactElement, ReactNode } from "react";
 import { roomGroups, type SoPrintRooms } from "../../vendor/scm/lib/so-print-rooms";
+import { ToggleGroup } from "../../components/scm-v2/ToggleGroup";
 
 export type SoLinesView = "item" | "area" | "category";
 
-export function SoLinesViewToggle({ view, onChange }: { view: SoLinesView; onChange: (v: SoLinesView) => void }): ReactElement {
-  const btn = (v: SoLinesView, label: string) => (
-    <button
-      type="button"
-      aria-pressed={view === v}
-      onClick={() => onChange(v)}
-      className={
-        "h-7 px-3 text-[12px] font-semibold transition-colors " +
-        (view === v ? "bg-primary text-white" : "bg-surface text-ink-secondary hover:bg-surface-dim")
-      }
-    >
-      {label}
-    </button>
-  );
-  return (
-    <div role="group" aria-label="Show lines" className="inline-flex overflow-hidden rounded-md border border-border">
-      {btn("item", "By item")}
-      {btn("area", "By area")}
-      {btn("category", "By category")}
-    </div>
-  );
+const LINES_VIEW_OPTIONS = [
+  { value: "item", label: "By item" },
+  { value: "area", label: "By area" },
+  { value: "category", label: "By category" },
+] as const;
+
+export function SoLinesViewToggle({ view, onChange }: { view: SoLinesView; onChange: (view: SoLinesView) => void }): ReactElement {
+  return <ToggleGroup label="Show lines" options={LINES_VIEW_OPTIONS} value={view} onChange={onChange} />;
 }
 
 interface AreaColumn<T> { key: string; label: string; align?: "left" | "right" | "center"; render?: (row: T) => ReactNode }

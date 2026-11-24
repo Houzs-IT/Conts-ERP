@@ -48,7 +48,7 @@ function world(over: Record<string, Row[]> = {}) {
     sales_invoice_payments: [
       { id: 'p1', company_id: CO, sales_invoice_id: 'si1', paid_at: '2026-11-05T02:00:00Z', amount_sen: 1_000_000 },
       { id: 'p2', company_id: CO, sales_invoice_id: 'si2', paid_at: '2026-11-25T02:00:00Z', amount_sen: 1_000_000 },
-      { id: 'p3', company_id: CO, sales_invoice_id: 'si2', paid_at: '2026-11-28T02:00:00Z', amount_sen: 500_000 }, // not confirmed
+      { id: 'p3', company_id: CO, sales_invoice_id: 'si2', paid_at: '2026-11-28T02:00:00Z', amount_sen: 500_000 }, // not confirmed yet: counts all the same (chew, 17 Nov 2026)
     ],
     acc_official_receipts: [
       { company_id: CO, payment_source: 'SIPAY', payment_id: 'p1', status: 'FORMAL' },
@@ -85,7 +85,7 @@ describe('renovation project status rows', () => {
       soDocNo: SO, projectName: 'SKYLINE D-25-13', customerCode: '301-M002', customerName: 'MS LEE', salesperson: 'ALEX',
       brand: 'The Conts', kind: 'RENOVATION', status: 'RENO_IN_PROGRESS', stage: 'CARPENTRY', handoverDate: '2026-11-25', delayed: true,
       contractSen: 10_000_000, voSen: 1_000_000, revisedContractSen: 11_000_000,
-      receivedSen: 2_000_000, outstandingSen: 9_000_000, collectedBp: 1818,
+      receivedSen: 2_500_000, outstandingSen: 8_500_000, collectedBp: 2273,
       nextInstalment: { seq: 3, label: 'Handover', amountSen: 6_000_000, trigger: 'manual' },
       invoicedSen: 5_000_000, advanceLeftSen: 6_000_000,
       expectedCostSen: 7_100_000, costSpentSen: 5_550_000, completionBp: 7817, earnedSen: 8_598_592, differenceSen: -3_598_592,
@@ -93,6 +93,24 @@ describe('renovation project status rows', () => {
       overBudget: false, lossExpected: false, goliveCostMissing: false,
       expectedGpBp: 3545, gpToDateBp: -1100,
     });
+  });
+
+  it('a cancelled instalment invoice billed nothing: the next instalment is that one again at its own amount', async () => {
+    /* RM 100,000 on 15/50/30/5; instalment 1 invoiced at RM 15,000, then cancelled. */
+    const w = world({
+      mfg_sales_order_items: [{ id: 'a', doc_no: SO, company_id: CO, item_code: 'RN-X', total_sen: 10_000_000, line_cost_sen: 6_500_000, cancelled: false, created_at: '2026-11-03T03:00:00Z' }],
+      reno_doc_instalments: [
+        { so_doc_no: SO, seq: 1, label: 'Deposit', pct_bp: 1500, trigger: 'manual' },
+        { so_doc_no: SO, seq: 2, label: 'Carpentry', pct_bp: 5000, trigger: 'manual' },
+        { so_doc_no: SO, seq: 3, label: 'Fitting', pct_bp: 3000, trigger: 'manual' },
+        { so_doc_no: SO, seq: 4, label: 'Handover', pct_bp: 500, trigger: 'manual' },
+      ],
+      reno_instalment_bills: [{ so_doc_no: SO, seq: 1, kind: 'INVOICE', amount_sen: 1_500_000, invoice_date: '2026-11-03', sales_invoice_id: 'si1' }],
+      sales_invoices: [{ id: 'si1', company_id: CO, so_doc_no: SO, invoice_date: '2026-11-03', total_sen: 1_500_000, status: 'CANCELLED' }],
+      sales_invoice_payments: [],
+    });
+    const [r] = await renoProjectRows(w, CO, '2026-11-30');
+    expect(r).toMatchObject({ invoicedSen: 0, nextInstalment: { seq: 1, label: 'Deposit', amountSen: 1_500_000, trigger: 'manual' }, gapsByInvoiceDays: [null, null, null] });
   });
 
   it('work ahead of money is flagged at 20 points', async () => {
@@ -198,10 +216,20 @@ describe('close-out of a contract signed before go-live', () => {
     return w;
   };
 
+  it('a contract AutoCount carried counts the ERP\'s payments on top, before go-live too (chew, 23 Nov 2026)', async () => {
+    const w = old();
+    w.tables.acc_company_settings[0]!.documents_cutover_date = '2026-11-20';
+    w.tables.reno_so_contracts[0]!.golive_contract_sen = 5_000_000;
+    const r = (await renoProjectRows(w, CO, '2026-11-30'))[0]!;
+    /* RM 50,000 seeded less RM 10,000 open = RM 40,000 by go-live (21 Nov); every payment recorded in the ERP on top:
+       RM 10,000 on 5 Nov, RM 10,000 on the opening invoice on 15 Nov, then RM 10,000 + RM 5,000 after go-live. */
+    expect(r.receivedSen).toBe(7_500_000);
+  });
+
   it('counts AutoCount collection and the opening invoice paid since', async () => {
     const r = (await renoProjectRows(old(), CO, '2026-11-30'))[0]!;
-    /* RM 40,000 before go-live + RM 10,000 on the opening invoice + RM 20,000 confirmed since on the new invoices. */
-    expect(r.receivedSen).toBe(7_000_000);
+    /* RM 40,000 before go-live + RM 10,000 on the opening invoice + RM 25,000 recorded since on the new invoices. */
+    expect(r.receivedSen).toBe(7_500_000);
   });
 
   it('a deposit is known when the opening balances carry none on 330-0040', async () => {

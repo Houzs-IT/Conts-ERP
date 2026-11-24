@@ -4,7 +4,7 @@
        the provider's supplier when one is on the list, else the payee to check; the same scan twice is one request. */
 import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
-import { fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
+import { asCopies, fakeSb, publicTablesOnly } from '../scm/lib/fake-postgrest';
 import { myClaimsRouter } from './my-claims-routes';
 import type { Staff } from './staff-identity';
 /* eslint-disable @typescript-eslint/no-explicit-any -- Hono context and PostgREST client, untyped as in the routes they test */
@@ -50,6 +50,22 @@ describe('reading a page', () => {
   });
 });
 
+describe("a provider's supplier on the list (chew, 16 Nov 2026)", () => {
+  test('long names on the bill find the short names on the list, and the other way round; two alike find none', async () => {
+    const { providerSupplier } = await import('./utility-bill-routes');
+    const list = (...names: string[]) => names.map((name, i) => ({ id: `S${i}`, name }));
+    expect(providerSupplier('Tenaga Nasional Berhad', list('TNB', 'ACE HARDWARE'))?.name).toBe('TNB');
+    expect(providerSupplier('Tenaga Nasional Berhad', list('TENAGA NASIONAL BHD'))?.name).toBe('TENAGA NASIONAL BHD');
+    expect(providerSupplier('TNB', list('Tenaga Nasional Berhad'))?.name).toBe('Tenaga Nasional Berhad');
+    expect(providerSupplier('Perbadanan Pengurusan Skyline Residence', list('MC SKYLINE RESIDENCE', 'MC AGILE'))?.name).toBe('MC SKYLINE RESIDENCE');
+    expect(providerSupplier('Joint Management Body Agile Bukit Bintang', list('JMB AGILE BUKIT BINTANG'))?.name).toBe('JMB AGILE BUKIT BINTANG');
+    expect(providerSupplier('Skyline Residence Management Office', list('SKYLINE RESIDENCE', 'ACE'))?.name).toBe('SKYLINE RESIDENCE');
+    expect(providerSupplier('Indah Water', list('INDAH WATER KONSORTIUM SDN BHD'))?.name).toBe('INDAH WATER KONSORTIUM SDN BHD');
+    expect(providerSupplier('TIME', list('OVERTIME TRADING'))).toBeNull();
+    expect(providerSupplier('Skyline', list('SKYLINE RESIDENCE', 'SKYLINE MALL'))).toBeNull();
+  });
+});
+
 describe('a payment request for a provider', () => {
   test('one request, one Rental line per bill with its unit, no account, total = the bills', async () => {
     const sb = world();
@@ -62,6 +78,17 @@ describe('a payment request for a provider', () => {
       ['rental', 'U1', null, 13_118, 'Electricity 2026-10 2104010945XX02'],
       ['rental', 'U2', null, 4_510, 'Electricity 2026-10 2200118899XX11'],
     ]);
+  });
+  test("each line starts on its kind's accrual account, when the chart has it (chew, 16 Nov 2026)", async () => {
+    const sb = world();
+    sb.tables.accounts = [{ company_id: CO, account_code: '420-0010', is_active: true }, { company_id: CO, account_code: '420-0020', is_active: true }];
+    expect((await ask(appFor(sb, FIN), { bills: [BILLS[0], { ...BILLS[1], kind: 'sewerage' }] })).status).toBe(201);
+    expect(sb.tables.payment_request_lines.map(l => l.account_code)).toEqual(['420-0010', null]);
+  });
+  test("each line keeps its bill's date, the day its expense is booked on; a date that is not one is dropped", async () => {
+    const sb = world();
+    expect((await ask(appFor(sb, FIN), { bills: [{ ...BILLS[0], billDate: '2026-10-24' }, { ...BILLS[1], billDate: '24/10/2026' }] })).status).toBe(201);
+    expect(sb.tables.payment_request_lines.map(l => l.bill_date)).toEqual(['2026-10-24', null]);
   });
   test("the provider's supplier when one is on the list (this company's only)", async () => {
     const sb = world();
@@ -87,5 +114,136 @@ describe('a payment request for a provider', () => {
     expect((await ask(appFor(sb, FIN), { bills: [{ ...BILLS[0], unitId: 'NOPE' }] })).status).toBe(422);
     expect((await ask(appFor(sb, FIN), { scanBatchId: '' })).status).toBe(422);
     expect(sb.tables.payment_requests).toHaveLength(0);
+  });
+});
+
+describe('a withdrawn or rejected utility request is sent again with its bills as they are now (chew, 13 Nov 2026)', () => {
+  const again = (a: Hono<any>, id: string, bills: unknown) => post(a, `/utility-bills/payment-request/${id}/resubmit`, { bills });
+  const sent = async (sb: ReturnType<typeof world>) => (await (await ask(appFor(sb, FIN))).json()) as { id: string; requestNo: string };
+
+  test('the same request and number, a line per bill as it is now, the new total, back with finance; a rejection reason stays', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    Object.assign(sb.tables.payment_requests[0], { status: 'REJECTED', reason: 'C37-13A is 45.10, not 4.51', decided_by: 'Chew' });
+    const fixed = [BILLS[0], { ...BILLS[1], amountSen: 45_100 }];
+    const r = await again(appFor(sb, FIN), first.id, fixed);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ id: first.id, requestNo: first.requestNo, amountSen: 13_118 + 45_100 });
+    expect(sb.tables.payment_requests).toHaveLength(1);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: 58_218, reason: 'C37-13A is 45.10, not 4.51', decided_by: 'Chew' });
+    expect(sb.tables.payment_request_lines.map((l: any) => [l.unit_id, l.amount_sen, l.department])).toEqual([['U1', 13_118, 'rental'], ['U2', 45_100, 'rental']]);
+  });
+
+  test('a bill taken off (owner paid, deleted) leaves its line; withdrawn by the person who sent it works the same', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    sb.tables.payment_requests[0].status = 'WITHDRAWN';
+    expect((await again(appFor(sb, FIN), first.id, [BILLS[0]])).status).toBe(200);
+    expect(sb.tables.payment_request_lines.map((l: any) => l.unit_id)).toEqual(['U1']);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: 13_118 });
+  });
+
+  test('two people press Send again at once: one goes, the other is told; one set of lines (review, 13 Nov 2026)', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    Object.assign(sb.tables.payment_requests[0], { status: 'REJECTED', updated_at: '2026-11-13T01:00:00.000Z' });
+    const OPS: Staff = { userId: 'u-ops', name: 'Wei Wen', email: 'o@x', departmentId: 'ops', side: 'both', role: 'operations_staff', field: false };
+    const copyApp = (staff: Staff) => { const a = new Hono<{ Variables: Record<string, unknown> }>(); a.use('*', async (c, next) => { c.set('supabase', asCopies(sb)); c.set('companyId', CO); c.set('staff', staff); await next(); }); a.route('/', myClaimsRouter('forward')); return a; };
+    const fixed = [BILLS[0], { ...BILLS[1], amountSen: 45_100 }];
+    const [ra, rb] = await Promise.all([again(copyApp(FIN), first.id, fixed), again(copyApp(OPS), first.id, fixed)]);
+    expect([ra.status, rb.status].sort()).toEqual([200, 409]);
+    expect(sb.tables.payment_request_lines).toHaveLength(2);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: 58_218 });
+  });
+
+  test('refused: still with finance, not a utility request, field staff, no bills, a unit that does not exist; nothing changes', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    expect((await again(appFor(sb, FIN), first.id, BILLS)).status).toBe(409);
+    sb.tables.payment_requests[0].status = 'WITHDRAWN';
+    expect((await again(appFor(sb, TECH), first.id, BILLS)).status).toBe(403);
+    expect((await again(appFor(sb, FIN), first.id, [])).status).toBe(422);
+    expect((await again(appFor(sb, FIN), first.id, [{ ...BILLS[0], unitId: 'NOPE' }])).status).toBe(422);
+    sb.tables.payment_requests.push({ id: 'R-OTHER', company_id: CO, request_no: 'PRQ-2611-0002', status: 'WITHDRAWN', source_key: null, amount_sen: 100 });
+    expect((await again(appFor(sb, FIN), 'R-OTHER', BILLS)).status).toBe(404);
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'WITHDRAWN', amount_sen: 17_628 });
+    expect(sb.tables.payment_request_lines).toHaveLength(2);
+  });
+});
+
+import { earliestDue } from './utility-bill-routes';
+describe('the request is wanted by its earliest due date (chew, 18 Nov 2026)', () => {
+  const line = (dueDate: string | null) => ({ unitId: 'u', amountSen: 100, sort: 0, description: 'Electricity', kind: 'electricity', billDate: null, dueDate });
+  test('the soonest of the bills that print one', () => {
+    expect(earliestDue([line('2026-12-09'), line(null), line('2026-12-03')])).toBe('2026-12-03');
+  });
+  test('none when no bill prints one', () => {
+    expect(earliestDue([line(null)])).toBeNull();
+  });
+});
+
+describe('a waiting utility request takes its changed bills until it is paid (chew, 19 Nov 2026)', () => {
+  const change = (a: Hono<any>, id: string, bills: unknown) => post(a, `/utility-bills/payment-request/${id}/bills`, { bills });
+  const sent = async (sb: ReturnType<typeof world>) => (await (await ask(appFor(sb, FIN))).json()) as { id: string; requestNo: string };
+
+  test('same number, still waiting, the new lines and total', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    const r = await change(appFor(sb, FIN), first.id, [BILLS[0], { ...BILLS[1], amountSen: 45_100 }]);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ id: first.id, requestNo: first.requestNo, amountSen: 13_118 + 45_100, filesAdded: 0 });
+    expect(sb.tables.payment_requests[0]).toMatchObject({ status: 'SUBMITTED', amount_sen: 58_218 });
+    expect(sb.tables.payment_request_lines.map((l: any) => [l.unit_id, l.amount_sen])).toEqual([['U1', 13_118], ['U2', 45_100]]);
+  });
+  test('a request with no file takes the remaining bill page; one with files keeps its own (chew, 20 Nov 2026)', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    const one = await post(appFor(sb, FIN), `/utility-bills/payment-request/${first.id}/bills`, { bills: [BILLS[0]], files: [PNG] });
+    expect(await one.json()).toMatchObject({ amountSen: 13_118, filesAdded: 1 });
+    expect(sb.tables.payment_request_files.filter((f: any) => f.request_id === first.id)).toHaveLength(1);
+    const again = await post(appFor(sb, FIN), `/utility-bills/payment-request/${first.id}/bills`, { bills: [BILLS[0]], files: [PNG] });
+    expect(await again.json()).toMatchObject({ filesAdded: 0 });
+    expect(sb.tables.payment_request_files.filter((f: any) => f.request_id === first.id)).toHaveLength(1);
+  });
+  test('refused once a voucher is on it, once it is no longer waiting, and for field staff', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    expect((await change(appFor(sb, TECH), first.id, BILLS)).status).toBe(403);
+    sb.tables.payment_vouchers = [{ id: 'PV1', company_id: 1, pv_number: 'PV-2611-001', status: 'DRAFT', submitted_at: null, payment_request_id: first.id }];
+    sb.tables.payment_voucher_lines ??= [];
+    const pv = await change(appFor(sb, FIN), first.id, BILLS);
+    expect(pv.status).toBe(409);
+    expect(((await pv.json()) as { error: string }).error).toBe('has_voucher');
+    sb.tables.payment_vouchers[0].status = 'CANCELLED';
+    sb.tables.payment_requests[0].status = 'PAID';
+    expect((await change(appFor(sb, FIN), first.id, BILLS)).status).toBe(409);
+  });
+});
+
+describe('a waiting utility request taken back by the office when the owner paid the bill (chew, 20 Nov 2026)', () => {
+  const sent = async (sb: ReturnType<typeof world>) => (await (await ask(appFor(sb, FIN))).json()) as { id: string; requestNo: string };
+  const OTHER: Staff = { ...FIN, userId: 'u-fin-2', name: 'Lim' };
+  test('anyone in the office takes it back, not only the person who sent it; again changes nothing', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    const r = await post(appFor(sb, OTHER), `/utility-bills/payment-request/${first.id}/withdraw`, {});
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ id: first.id, requestNo: first.requestNo, status: 'WITHDRAWN' });
+    expect(sb.tables.payment_requests[0].status).toBe('WITHDRAWN');
+    expect((await post(appFor(sb, OTHER), `/utility-bills/payment-request/${first.id}/withdraw`, {})).status).toBe(200);
+  });
+  test('refused for field staff, once a voucher is on it, and once it is being paid', async () => {
+    const sb = world();
+    const first = await sent(sb);
+    expect((await post(appFor(sb, TECH), `/utility-bills/payment-request/${first.id}/withdraw`, {})).status).toBe(403);
+    sb.tables.payment_vouchers = [{ id: 'PV1', company_id: 1, pv_number: 'PV-2611-001', status: 'DRAFT', submitted_at: null, payment_request_id: first.id }];
+    sb.tables.payment_voucher_lines ??= [];
+    const pv = await post(appFor(sb, FIN), `/utility-bills/payment-request/${first.id}/withdraw`, {});
+    expect(pv.status).toBe(409);
+    expect(((await pv.json()) as { error: string }).error).toBe('has_voucher');
+    sb.tables.payment_vouchers[0].status = 'CANCELLED';
+    sb.tables.payment_requests[0].status = 'PART_PAID';
+    expect((await post(appFor(sb, FIN), `/utility-bills/payment-request/${first.id}/withdraw`, {})).status).toBe(409);
+    expect(sb.tables.payment_requests[0].status).toBe('PART_PAID');
   });
 });

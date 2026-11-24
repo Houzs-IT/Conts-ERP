@@ -834,7 +834,7 @@ const StockAdjustmentForm = ({ onStartNew, existing }: { onStartNew: () => void;
     <div className="space-y-4">
       <PageHeader back
         eyebrow="Inventory"
-        title={existing ? `Edit ${existing.adjustment_no}` : 'New Stock Adjustment'}
+        title={existing ? `Edit ${existing.adjustment_no}` : 'New stock adjustment'}
         actions={
           saved ? (
             <div className={styles.actions}>

@@ -127,7 +127,7 @@ const createBody = (over: Row = {}) => ({
 describe('saving a plain voucher teaches the vendor habit', () => {
   test('first save writes the row; a re-save is last-saved-wins and times_seen grows', async () => {
     const tables: Record<string, Row[]> = {
-      accounts: [{ account_code: '330-0000', account_name: 'Bank', acc_money: true, is_active: true, company_id: CO }],
+      accounts: [{ account_code: '330-0000', account_name: 'Bank', acc_money: true, is_active: true, company_id: CO }, { account_code: '900-U001', account_name: 'X', is_active: true, company_id: CO }, { account_code: '900-U009', account_name: 'X', is_active: true, company_id: CO }, { account_code: '900-U777', account_name: 'X', is_active: true, company_id: CO }, { account_code: '400-0000', account_name: 'X', is_active: true, company_id: CO }],
     };
     const app = harness(tables);
 
@@ -159,7 +159,7 @@ describe('saving a plain voucher teaches the vendor habit', () => {
 
   test('an AP payment teaches nothing — its account is the AP control, fixed by role', async () => {
     const tables: Record<string, Row[]> = {
-      accounts: [{ account_code: '330-0000', account_name: 'Bank', acc_money: true, is_active: true, company_id: CO }],
+      accounts: [{ account_code: '330-0000', account_name: 'Bank', acc_money: true, is_active: true, company_id: CO }, { account_code: '900-U001', account_name: 'X', is_active: true, company_id: CO }, { account_code: '900-U009', account_name: 'X', is_active: true, company_id: CO }, { account_code: '900-U777', account_name: 'X', is_active: true, company_id: CO }, { account_code: '400-0000', account_name: 'X', is_active: true, company_id: CO }],
     };
     const app = harness(tables);
     const res = await app.request('/payment-vouchers', {
@@ -176,7 +176,7 @@ describe('saving a plain voucher teaches the vendor habit', () => {
 
   test('a memory client that THROWS still saves the voucher — best-effort means best-effort', async () => {
     const tables: Record<string, Row[]> = {
-      accounts: [{ account_code: '330-0000', account_name: 'Bank', acc_money: true, is_active: true, company_id: CO }],
+      accounts: [{ account_code: '330-0000', account_name: 'Bank', acc_money: true, is_active: true, company_id: CO }, { account_code: '900-U001', account_name: 'X', is_active: true, company_id: CO }, { account_code: '900-U009', account_name: 'X', is_active: true, company_id: CO }, { account_code: '900-U777', account_name: 'X', is_active: true, company_id: CO }, { account_code: '400-0000', account_name: 'X', is_active: true, company_id: CO }],
     };
     const app = harness(tables, { poisonMemory: true });
     const res = await app.request('/payment-vouchers', {
@@ -196,6 +196,7 @@ describe('saving a plain voucher teaches the vendor habit', () => {
         submitted_at: null, approved_at: null,
       }],
       payment_voucher_lines: [{ id: 'l1', pv_id: 'pv-1', line_no: 1, debit_account_code: '900-U001', amount_sen: 15000 }],
+      accounts: [{ account_code: '900-U777', account_name: 'X', is_active: true, company_id: CO }],
     };
     const app = harness(tables);
     const res = await app.request('/payment-vouchers/pv-1', {

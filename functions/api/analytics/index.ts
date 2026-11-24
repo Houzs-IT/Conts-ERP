@@ -64,7 +64,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const days = periods.reduce((n, p) => n + daysIn(p), 0);
   const unitRows = await all<any>(env, `
-    SELECT u.id, u.unit_number, u.property_id, p.name AS property_name,
+    SELECT u.id, COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, u.property_id, p.name AS property_name,
            (SELECT ROUND(AVG(v.rating)::numeric, 2) FROM reviews v WHERE v.unit_id = u.id) AS rating
     FROM units u JOIN properties p ON p.id = u.property_id WHERE u.is_listed = 1${await rentalOnly(env)}`);
   const byUnit = groupBy(window, r => r.unit_id);

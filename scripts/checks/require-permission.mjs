@@ -19,6 +19,7 @@ const MIDDLEWARE = 'functions/api/_middleware.ts';
 
 export const allow = {
   'functions/api/[[path]].ts': 'Catch-all 404 for unknown /api paths; it returns no data.',
+  'functions/api/public/meetings/[[path]].ts': 'Public: a guest booking a meeting room through a link; the link code or the private booking token is the credential, and the IT Hub shows a guest only when rooms are taken, never what or by whom.',
   'functions/api/auth/login.ts': 'Public: signing in is how a session is made.',
   'functions/api/auth/login-2fa.ts': 'Public: second sign-in step; the short-lived challenge from login is the credential.',
   'functions/api/connect/verify-login.ts': 'Server to server for Houzs Connect; gated on CONNECT_LOGIN_KEY before anything about an account is said.',

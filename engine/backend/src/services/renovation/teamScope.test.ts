@@ -33,6 +33,7 @@ describe("teamProjectSql", () => {
     expect(sql).toContain("tsd.person_3d_ids && ARRAY[4,9]::bigint[]");
     expect(sql).toContain("tsd.person_2d_ids && ARRAY[4,9]::bigint[]");
     expect(sql).toContain("tsa.person_id IN (4,9)");
+    expect(sql).toContain("tsa.person_ids && ARRAY[4,9]::bigint[]");
     expect(sql).toContain("tsp.person_id IN (4,9)");
   });
 

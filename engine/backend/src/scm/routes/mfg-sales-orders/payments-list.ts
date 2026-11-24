@@ -2,11 +2,16 @@ import type { Hono } from 'hono';
 import type { Env, Variables } from '../../env';
 import { scopeToCompany } from '../../lib/companyScope';
 import { PAYMENT_COLS } from '../../lib/so-payment-row';
+import { companyOf, receiptFactsFor, registerPaymentReceiptRoutes } from './payment-receipts';
 
 /* GET /:docNo/payments — moved out of mfg-sales-orders.ts, which calls this where the block
    stood, so registration order is unchanged. The body is moved verbatim and left
    unindented on purpose: source tests anchor on `\nmfgSalesOrders.<verb>(`. */
-export function registerPaymentsListRoutes(mfgSalesOrders: Hono<{ Bindings: Env; Variables: Variables }>): void {
+export function registerPaymentsListRoutes(
+  mfgSalesOrders: Hono<{ Bindings: Env; Variables: Variables }>,
+  blocked: Parameters<typeof registerPaymentReceiptRoutes>[1],
+): void {
+registerPaymentReceiptRoutes(mfgSalesOrders, blocked);
 // ── Payments — PR #163 (migration 0073) ───────────────────────────────
 //
 // HOOKKA-style transaction ledger per SO. Each row is one receipt /
@@ -25,11 +30,15 @@ mfgSalesOrders.get('/:docNo/payments', async (c) => {
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   // Flatten the joined `staff.name` onto `collected_by_name` so the UI
   // doesn't need to drill into a nested object.
-  const payments = (data ?? []).map((r: unknown) => {
+  const rows = (data ?? []).map((r: unknown): Record<string, unknown> => {
     const row = r as Record<string, unknown> & { staff: { name: string } | null };
     const { staff, ...rest } = row;
     return { ...rest, collected_by_name: staff?.name ?? null };
   });
+  /* Each payment's official receipt, the instalment invoice it is for and whether finance has confirmed the money
+     (payment-receipts.ts; chew, 21 Nov 2026). Left off when they cannot be read: the money still lists. */
+  const facts = await receiptFactsFor(sb, companyOf(c), rows.map((r) => ({ id: String(r.id), method: r.method as string | null, amount_sen: Number(r.amount_sen) })));
+  const payments = facts ? rows.map((r) => ({ ...r, ...facts.get(String(r.id)) })) : rows;
   return c.json({ payments });
 });
 }

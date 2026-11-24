@@ -55,18 +55,24 @@ export function personLabelOf(p: { name: string; position?: string | null; depar
 }
 
 /** Whether the staff view of migration 0113 is there to read. */
+let staffViewKnown = false;
 export async function staffViewReady(db: Db): Promise<boolean> {
+  /* A view never disappears once its migration is in, so a true answer is kept for the isolate's life. */
+  if (staffViewKnown) return true;
   const r = await db.prepare(`SELECT to_regclass('public.conts_staff') IS NOT NULL AS ready`).first<{ ready: boolean }>();
-  return !!r?.ready;
+  staffViewKnown = !!r?.ready;
+  return staffViewKnown;
 }
 
 /** Brings the company's people in line with the user accounts. False (and no writes) before migration 0113. */
 export async function syncPeopleFromUsers(db: Db, companyId: number): Promise<boolean> {
   if (!(await staffViewReady(db))) return false;
-  const staff = (await db.prepare(`SELECT id, full_name AS name, email, department, position, active FROM conts_staff`).all<StaffRow>()).results ?? [];
-  const people = (await db.prepare(
-    `SELECT id::int AS id, name, active, pos_user_id FROM project_people WHERE company_id = ? ORDER BY id`,
-  ).bind(companyId).all<SyncPersonRow>()).results ?? [];
+  const [staffRes, peopleRes] = await Promise.all([
+    db.prepare(`SELECT id, full_name AS name, email, department, position, active FROM conts_staff`).all<StaffRow>(),
+    db.prepare(`SELECT id::int AS id, name, active, pos_user_id FROM project_people WHERE company_id = ? ORDER BY id`).bind(companyId).all<SyncPersonRow>(),
+  ]);
+  const staff = staffRes.results ?? [];
+  const people = peopleRes.results ?? [];
   for (const op of planPeopleSync(staff, people)) {
     if (op.kind === "insert") {
       // Two pickers opening at once may both insert; the unique index keeps one.

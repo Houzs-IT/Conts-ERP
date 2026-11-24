@@ -190,6 +190,9 @@ export type OutstandingSoItem = {
   /** The order's raw reference pair (resolve with soRefOfCamelStamp). */
   soRef?: string | null;
   soCustomerSoNo?: string | null;
+  /** The order's project (scm.mfg_sales_orders.project_id -> public.projects), as the PO picker reads it. */
+  projectCode?: string | null;
+  projectName?: string | null;
 };
 
 export function useOutstandingSoItems() {
@@ -199,6 +202,9 @@ export function useOutstandingSoItems() {
       `/mfg-purchase-orders/outstanding-so-items`,
     ).then((r) => r.items),
     staleTime: 30_000,
+    /* Each try re-runs the whole MRP plan on the server; a failed one is shown, not silently re-sent (same as the PO
+       hook in suppliers-queries.ts). */
+    retry: false,
   });
 }
 
@@ -700,7 +706,18 @@ const refreshOrder = (qc: ReturnType<typeof useQueryClient>, id: string) => {
   void qc.invalidateQueries({ queryKey: ['production-order-detail', id] });
   void qc.invalidateQueries({ queryKey: ['production-orders'] });
   void qc.invalidateQueries({ queryKey: ['production-orders-paged'] });
+  // Start and Return stock move stock and the order's SO lines; on-hand screens read ['inventory'].
+  void qc.invalidateQueries({ queryKey: ['inventory'] });
 };
+/* Complete raises a GRN and a DO and delivers it through plain requests, outside react-query, so nothing refreshed
+   those documents, stock or the sales order until a reload. Call after Complete, whether it finished or stopped. */
+export function refreshAfterComplete(qc: ReturnType<typeof useQueryClient>, id: string): void {
+  refreshOrder(qc, id);
+  for (const k of ['grns', 'grn-detail', 'mfg-delivery-orders', 'mfg-delivery-order-detail', 'mfg-sales-orders',
+    'mfg-sales-order-detail', 'renovation-doc-trail', 'so-line-status']) {
+    void qc.invalidateQueries({ queryKey: [k] });
+  }
+}
 const orderPost = <T,>(path: string, method = 'POST') => (body: unknown) =>
   authedFetch<T>(`/production-orders/${path}`, { method, body: JSON.stringify(body) });
 
@@ -714,7 +731,8 @@ export function useStartProduction(id: string) {
 export function useRequestMore(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { itemCode: string; qty: number; neededBy: string | null }) => orderPost<{ ok: true; short: boolean }>(`${id}/request-more`)(body),
+    mutationFn: ({ key, ...body }: { itemCode: string; qty: number; neededBy: string | null; key?: string }) =>
+      authedFetch<{ ok: true; short: boolean }>(`/production-orders/${id}/request-more`, idempotentInit(key, { method: 'POST', body: JSON.stringify(body) })),
     onSuccess: () => refreshOrder(qc, id),
   });
 }
@@ -901,3 +919,23 @@ export const createMaterialPos = ({ idempotencyKey, ...body }: {
   idempotencyKey?: string; picks: Array<{ materialId: string; qty: number; supplierId: string | null }>; mode: 'combined' | 'per-so'; expectedAt?: string;
 }) => authedFetch<{ total: number; created: Array<{ id: string; poNumber: string }>; alreadyOrdered?: boolean }>(
   `/production-orders/material-pos`, idempotentInit(idempotencyKey, { method: 'POST', body: JSON.stringify(body) }));
+
+/** Purchase Orders > Transfer from Production Order: raw materials of open orders still to be bought. */
+export type MaterialToOrder = {
+  materialId: string; productionOrderId: string; productionOrderNo: string;
+  projectId: number | null; projectCode: string | null; projectName: string | null; soDocNos: string[];
+  itemCode: string; description: string | null; uom: string | null;
+  qtyNeeded: number; qtyOrdered: number; qtyToOrder: number;
+  processingDate: string | null; deliveryDate: string | null;
+  mainSupplierId: string | null; mainSupplierCode: string | null; mainSupplierName: string | null;
+  warehouseCode: string | null;
+};
+export const MATERIALS_TO_ORDER_KEY = ['production-orders', 'materials-to-order'] as const;
+export function useMaterialsToOrder() {
+  return useQuery({
+    queryKey: MATERIALS_TO_ORDER_KEY,
+    queryFn: () => authedFetch<{ rows: MaterialToOrder[] }>('/production-orders/materials-to-order').then((r) => r.rows),
+    staleTime: 0,
+    retry: retryUnlessClientError,
+  });
+}

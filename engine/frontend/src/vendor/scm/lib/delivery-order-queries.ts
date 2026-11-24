@@ -18,7 +18,7 @@
 //     sales-order-queries module — re-exported below so the page's single
 //     import site keeps working.
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authedFetch } from './authed-fetch';
 import { idempotentInit } from '../../../lib/idempotency';
 import { serviceNotify } from './dialog-service';
@@ -56,10 +56,55 @@ export type DeliverableSoLine = {
   notReady: { status: 'PARTIAL' | 'PENDING'; reason: string } | null;
 };
 
+/** The DO list's Customer Name funnel choices: the DOs' own distinct names, under the list's scope (audit 20 Nov 2026). */
+export const useDoCustomerNames = () => useQuery({
+  queryKey: ['mfg-delivery-orders', 'customer-names'],
+  queryFn: () => authedFetch<{ names: string[] }>(`/delivery-orders-mfg/customer-names`).then((r) => r.names),
+  staleTime: 5 * 60_000,
+  retry: retryUnlessClientError,
+});
+
 export const useDeliverableSoLines = () => useQuery({
   queryKey: ['mfg-delivery-orders', 'deliverable-so-lines'],
   queryFn: () => authedFetch<{ lines: DeliverableSoLine[] }>(
     `/delivery-orders-mfg/deliverable-so-lines`,
+  ).then((r) => r.lines),
+  staleTime: 30_000,
+  retry: retryUnlessClientError,
+});
+
+/** One page of the DO-from-SO picker (backend lib/deliverable-so-page.ts): whole orders, newest first, only lines
+    with something left to deliver, searched on the server (audit 20 Nov 2026). */
+export type DeliverableSoPage = { lines: DeliverableSoLine[]; nextCursor: string | null; pageSize: number };
+
+export const DELIVERABLE_SO_PAGE_SIZE = 100;
+
+export function deliverableSoPageUrl(q: string, cursor: string | null, limit = DELIVERABLE_SO_PAGE_SIZE): string {
+  const p = new URLSearchParams({ limit: String(limit) });
+  if (cursor) p.set('cursor', cursor);
+  if (q.trim()) p.set('q', q.trim());
+  return `/delivery-orders-mfg/deliverable-so-lines?${p.toString()}`;
+}
+
+export const useDeliverableSoLinesPaged = (q: string, opts: { enabled?: boolean } = {}) => useInfiniteQuery({
+  queryKey: ['mfg-delivery-orders', 'deliverable-so-lines', 'paged', q],
+  enabled: opts.enabled ?? true,
+  initialPageParam: null as string | null,
+  queryFn: ({ pageParam, signal }) => authedFetch<DeliverableSoPage>(deliverableSoPageUrl(q, pageParam), { signal }),
+  getNextPageParam: (last) => last.nextCursor,
+  /* A new search keeps the last list on screen until its answer arrives, instead of flashing empty. */
+  placeholderData: (prev) => prev,
+  staleTime: 30_000,
+  /* A failed page is shown with a Try again button, not silently re-sent. */
+  retry: false,
+});
+
+/** The deliverable lines of the given orders only (the "Deliver" button on an SO): the server reads just those. */
+export const useDeliverableSoLinesForDocs = (docNos: readonly string[]) => useQuery({
+  queryKey: ['mfg-delivery-orders', 'deliverable-so-lines', 'docs', [...docNos].sort().join(',')],
+  enabled: docNos.length > 0,
+  queryFn: () => authedFetch<{ lines: DeliverableSoLine[] }>(
+    `/delivery-orders-mfg/deliverable-so-lines?docNos=${encodeURIComponent(docNos.join(','))}`,
   ).then((r) => r.lines),
   staleTime: 30_000,
   retry: retryUnlessClientError,
@@ -199,6 +244,8 @@ const releaseSoSideQueries = (qc: ReturnType<typeof useQueryClient>) => {
   invalidateSoLists(qc);
   qc.invalidateQueries({ queryKey: ['mfg-sales-order-detail'] });
   qc.invalidateQueries({ queryKey: ['mfg-delivery-orders', 'deliverable-so-lines'], refetchType: 'all' });
+  // A confirmed DO (create or line change on a shipped DO) moves stock too.
+  void qc.invalidateQueries({ queryKey: ['inventory'] });
 };
 
 export const useMfgDeliveryOrders = (status?: string) => useQuery({

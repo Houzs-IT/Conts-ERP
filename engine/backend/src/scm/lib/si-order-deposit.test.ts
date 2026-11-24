@@ -76,32 +76,42 @@ describe('allocateOrderDeposit — the owner\'s split rule', () => {
       inv({ id: 'a', invoiceNumber: 'HC-SI-2608-001', totalSen: 300_000, ownPaidSen: 150_000 }),
       inv({ id: 'b', invoiceNumber: 'HC-SI-2608-002', totalSen: 300_000 }),
     ]);
-    // Pool = 400,000 − 150,000 already received on the invoices = 250,000.
-    expect(slices.get('a')).toBe(150_000); // only what it still owed
-    expect(slices.get('b')).toBe(100_000); // the rest spilled
+    // a owes 150,000 after its own receipt and takes it; the rest spills to b.
+    expect(slices.get('a')).toBe(150_000);
+    expect(slices.get('b')).toBe(250_000);
   });
 
-  /* Conts owner decision C4 (11 Oct 2026): the invoice receipt is the record of
-     money received, so an order payment and an invoice receipt are never added
-     for one order — the order's money counts only past what its invoices have
-     already received. */
-  test('C4: a deposit taken on the order AND keyed again on the invoice counts once', () => {
-    // Order collected RM 2,000; the same RM 2,000 then recorded on the RM 5,000 invoice.
+  /* 21 Nov 2026 (click sweep F28/F31): order money and invoice receipts are
+     different money and both count. Replaces decision C4's order-level max. */
+  test('a receipt on a later invoice does not take the deposit off an earlier one', () => {
+    // SO-913: RM 240 taken on the order; instalment 1 RM 240, instalment 2 RM 240 with RM 100 paid on it.
+    const slices = allocateOrderDeposit(24_000, [
+      inv({ id: 'i1', invoiceNumber: 'TC-SI-2611-007', totalSen: 24_000 }),
+      inv({ id: 'i2', invoiceNumber: 'TC-SI-2611-008', totalSen: 24_000, ownPaidSen: 10_000 }),
+    ]);
+    expect(slices.get('i1')).toBe(24_000); // still settled by the deposit
+    expect(slices.get('i2')).toBe(0); // owes 140 after its own 100
+  });
+
+  test('paying the rest of a deposit-covered invoice on the invoice settles it', () => {
     const slices = allocateOrderDeposit(200_000, [
-      inv({ id: 'a', invoiceNumber: 'TC-SI-2610-001', totalSen: 500_000, ownPaidSen: 200_000 }),
+      inv({ id: 'a', invoiceNumber: 'TC-SI-2610-001', totalSen: 300_000, ownPaidSen: 100_000 }),
     ]);
-    expect(slices.get('a')).toBe(0); // owes RM 3,000, not RM 1,000
+    expect(slices.get('a')).toBe(200_000); // 100,000 + 200,000 = paid in full
   });
 
-  test('C4: order money beyond what the invoices recorded still applies', () => {
-    // Order collected RM 3,000; the invoice has recorded RM 1,000 of it.
-    const slices = allocateOrderDeposit(300_000, [
-      inv({ id: 'a', invoiceNumber: 'TC-SI-2610-001', totalSen: 500_000, ownPaidSen: 100_000 }),
+  /* A customer's credit note knocked off the first invoice: it owes that much
+     less, so the order's money spills to the next. */
+  test("a credit note knocked off an invoice spills the order's money to the next one", () => {
+    const slices = allocateOrderDeposit(390_000, [
+      inv({ id: 'a', invoiceNumber: 'HC-SI-2608-001', invoiceDate: '2026-08-20', totalSen: 300_000, creditedSen: 50_000 }),
+      inv({ id: 'b', invoiceNumber: 'HC-SI-2608-002', invoiceDate: '2026-08-22', totalSen: 140_000 }),
     ]);
-    expect(slices.get('a')).toBe(200_000); // settled = max(3,000, 1,000) = RM 3,000
+    expect(slices.get('a')).toBe(250_000);
+    expect(slices.get('b')).toBe(140_000);
   });
 
-  test('C4: receipts on a cancelled or draft invoice do not use up the order\'s money', () => {
+  test('receipts on a cancelled or draft invoice do not use up the order\'s money', () => {
     const slices = allocateOrderDeposit(200_000, [
       inv({ id: 'dead', invoiceNumber: 'TC-SI-2610-001', status: 'CANCELLED', totalSen: 500_000, ownPaidSen: 200_000 }),
       inv({ id: 'live', invoiceNumber: 'TC-SI-2610-002', totalSen: 500_000 }),
@@ -129,7 +139,7 @@ describe('allocateOrderDeposit — the owner\'s split rule', () => {
      it is, and nothing may lose a customer's money between two invoices. Both
      halves are asserted over generated cases rather than a handful of examples,
      because the failure that matters is the combination nobody thought of. */
-  test('the slices always sum to min(order collected less invoice receipts, what the invoices could absorb)', () => {
+  test('the slices always sum to min(order collected, what the invoices could absorb)', () => {
     let seed = 20260823;
     const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
     for (let round = 0; round < 400; round++) {
@@ -153,12 +163,8 @@ describe('allocateOrderDeposit — the owner\'s split rule', () => {
         .reduce((s, r) => s + Math.max(0, r.totalSen - r.ownPaidSen), 0);
       const allocated = [...slices.values()].reduce((s, v) => s + v, 0);
 
-      const receipts = rows
-        .filter((r) => absorbsOrderDeposit(r.status))
-        .reduce((s, r) => s + r.ownPaidSen, 0);
-      // Total-preserving: nothing invented, nothing lost — and never on top of
-      // money the invoices already received (C4).
-      expect(allocated).toBe(Math.min(Math.max(0, collected - receipts), absorbable));
+      // Total-preserving: nothing invented, nothing lost.
+      expect(allocated).toBe(Math.min(collected, absorbable));
       // Never more than the order actually holds...
       expect(allocated).toBeLessThanOrEqual(collected);
       // ...and never more than any single invoice still owes.
@@ -181,6 +187,10 @@ type Store = {
   invoices: Array<Record<string, unknown>>;
   siPayments: Array<Record<string, unknown>>;
   updates: Array<Record<string, unknown>>;
+  /* The customers' credit notes knocked off the invoices (si-credit-notes.ts). */
+  allocations: Array<Record<string, unknown>>;
+  notes: Array<Record<string, unknown>>;
+  creditErr: string | null;
 };
 
 const emptyStore = (o: Partial<Store> = {}): Store => ({
@@ -190,6 +200,9 @@ const emptyStore = (o: Partial<Store> = {}): Store => ({
   invoices: [],
   siPayments: [],
   updates: [],
+  allocations: [],
+  notes: [],
+  creditErr: null,
   ...o,
 });
 
@@ -200,13 +213,16 @@ function fakeSb(store: Store) {
     op: 'select' | 'update' = 'select';
     cols = '';
     filters: Record<string, unknown> = {};
+    ins: Partial<Record<string, unknown[]>> = {};
     payload: Record<string, unknown> | null = null;
     singleRow = false;
     constructor(table: string) { this.table = table; }
     select(cols?: string) { if (this.op === 'select') this.cols = cols ?? ''; return this; }
     update(payload: Record<string, unknown>) { this.op = 'update'; this.payload = payload; return this; }
     eq(col: string, val: unknown) { this.filters[col] = val; return this; }
+    in(col: string, vals: unknown[]) { this.ins[col] = vals; return this; }
     order() { return this; }
+    range() { return this; }
     maybeSingle() { this.singleRow = true; return this; }
     private result(): { data: unknown; error: unknown } {
       if (this.op === 'update') {
@@ -222,6 +238,13 @@ function fakeSb(store: Store) {
       }
       if (this.table === 'sales_invoice_payments') {
         return { data: store.siPayments.filter((r) => r.sales_invoice_id === this.filters.sales_invoice_id), error: null };
+      }
+      if (this.table === 'acc_credit_note_allocations') {
+        if (store.creditErr) return { data: null, error: { message: store.creditErr } };
+        return { data: store.allocations.filter((r) => (this.ins.sales_invoice_id ?? []).includes(r.sales_invoice_id)), error: null };
+      }
+      if (this.table === 'acc_credit_notes') {
+        return { data: store.notes.filter((r) => (this.ins.id ?? []).includes(r.id)), error: null };
       }
       if (this.table === 'sales_invoices') {
         const rows = store.invoices.filter((r) =>
@@ -311,6 +334,36 @@ describe('recomputeSiPaid — the number and the status pill agree', () => {
     expect(store.updates.at(-1)!.status).toBe('SENT');
   });
 
+  /* A customer's credit note knocked off it settles it like the deposit does
+     (ported from Houzs) — and paid_sen keeps meaning receipts alone. */
+  test('a credit note covering what the deposit left moves it to PAID, paid_sen untouched', async () => {
+    const store = reportedChain();
+    store.allocations = [{ id: 'al-1', note_id: 'cn-1', sales_invoice_id: 'si-1', applied_sen: 240_000 }];
+    store.notes = [{ id: 'cn-1', status: 'POSTED' }];
+    await recomputeSiPaid(fakeSb(store), 'si-1');
+    const u = store.updates.at(-1)!;
+    expect(u.paid_sen).toBe(0);
+    expect(u.status).toBe('PAID');
+  });
+
+  test("a cancelled or draft note's rows settle nothing", async () => {
+    const store = reportedChain();
+    store.allocations = [{ id: 'al-1', note_id: 'cn-1', sales_invoice_id: 'si-1', applied_sen: 240_000 }];
+    store.notes = [{ id: 'cn-1', status: 'CANCELLED' }];
+    await recomputeSiPaid(fakeSb(store), 'si-1');
+    expect(store.updates.at(-1)!.status).toBe('PARTIALLY_PAID');
+  });
+
+  test('a failed credit-note read leaves the STATUS alone rather than guessing', async () => {
+    const store = reportedChain();
+    store.invoices[0]!.status = 'PAID';
+    store.creditErr = 'connection reset';
+    await recomputeSiPaid(fakeSb(store), 'si-1');
+    const u = store.updates.at(-1)!;
+    expect(u.paid_sen).toBe(0);
+    expect('status' in u).toBe(false);
+  });
+
   test('a failed deposit read leaves the STATUS alone rather than reverting it', async () => {
     const store = reportedChain();
     store.invoices[0]!.status = 'PARTIALLY_PAID';
@@ -342,9 +395,9 @@ describe('recomputeSiPaid — the number and the status pill agree', () => {
       { id: 'si-2', so_doc_no: 'HC-SO-2608-006', company_id: 1, invoice_number: 'HC-SI-2608-005', invoice_date: '2026-08-24', status: 'SENT', total_sen: 140_000, paid_sen: 0 },
     ];
     const sb = fakeSb(store);
+    // Re-rolling one invoice re-rolls its siblings too (their share of the deposit can move).
     await recomputeSiPaid(sb, 'si-1');
-    expect(store.updates.at(-1)!.status).toBe('PARTIALLY_PAID');
-    await recomputeSiPaid(sb, 'si-2');
-    expect(store.updates.at(-1)!.status).toBe('SENT');
+    expect(store.updates.filter((u) => u.id === 'si-1').at(-1)!.status).toBe('PARTIALLY_PAID');
+    expect(store.updates.filter((u) => u.id === 'si-2').at(-1)!.status).toBe('SENT');
   });
 });

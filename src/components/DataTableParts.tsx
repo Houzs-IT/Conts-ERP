@@ -6,6 +6,7 @@ import ChannelMark from './ChannelMark';
 import { CHANNEL_META, cx } from '../lib/design-tokens';
 import type { BookingChannel } from '../lib/types';
 import type { AnyTone } from '../lib/status';
+import { initials } from '../lib/format';
 
 /**
  * Pieces of the shared table (DataTable.tsx): a floating panel that is not clipped by the table's scroll box,
@@ -14,13 +15,15 @@ import type { AnyTone } from '../lib/status';
 
 /** A panel under its trigger, drawn on top of the page so a scrolling table cannot clip it. Closes on an outside
  *  click or Escape. */
-export function Floating({ anchor, fallback, open, onClose, width = 260, maxHeight, align = 'left', children, label, live }: {
+export function Floating({ anchor, fallback, open, onClose, width = 260, maxHeight, align = 'left', children, label, live, takeFocus }: {
   anchor: RefObject<HTMLElement>; open: boolean; onClose: () => void; width?: number; maxHeight?: number; align?: 'left' | 'right';
   /** Where to open when the anchor is hidden (the toolbar folded it into "More table tools"). */
   fallback?: RefObject<HTMLElement>;
   children: ReactNode; label: string;
   /** A panel that only filters, sorts or picks columns: usable while a saved snapshot is shown (lib/snapshotView.ts). */
   live?: boolean;
+  /** Move focus into the panel when it opens (toolbar panels). Off for lists under a field being typed in. */
+  takeFocus?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<FloatingPosition | null>(null);
@@ -66,12 +69,17 @@ export function Floating({ anchor, fallback, open, onClose, width = 260, maxHeig
     document.addEventListener('keydown', onKey, true);
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey, true); };
   }, [open, onClose, anchor]);
+  // Focus moves into the panel once it is placed: it sits at the end of the page, so Tab from the trigger never reached it.
+  const placed = !!takeFocus && open && pos !== null;
+  useEffect(() => {
+    if (placed) (panel.current?.querySelector<HTMLElement>('input:not([disabled]), button:not([disabled]), select, textarea, [href], [tabindex]:not([tabindex="-1"])') ?? panel.current)?.focus();
+  }, [placed]);
   if (!open || !pos) return null;
   return createPortal(
-    <div ref={panel} role="dialog" aria-label={label} {...(live ? { 'data-live': '' } : {})}
+    <div ref={panel} role="dialog" aria-label={label} tabIndex={-1} {...(live ? { 'data-live': '' } : {})}
       // Above every dialog (z 50 to 70) so a list opened inside one is never behind it; below ConfirmDialog (80).
       style={{ position: 'fixed', top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.w, maxHeight: pos.maxH, zIndex: 75 }}
-      className="overflow-auto bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] text-ink font-sans">
+      className="outline-none overflow-auto bg-card border border-solid border-line rounded-card shadow-[var(--shadow-overlay)] text-ink font-sans">
       {children}
     </div>,
     document.body,
@@ -155,7 +163,6 @@ export function ChannelCell({ channel }: { channel: string }) {
   );
 }
 
-const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('');
 
 export function PersonCell({ name }: { name: string | null | undefined }) {
   if (!name) return <span className="text-muted-ink">—</span>;

@@ -17,13 +17,28 @@ import { DocEditor } from './DocEditor';
 import { InstalmentEditor, totalsOfSections, TotalsCard } from './DocParts';
 import { Card, ErrorBanner, Field, fmtDate, inputCls, MoneyInput } from './shared';
 
-/** The old address of the list. */
+/** The old addresses: package templates are records of the Packages module now (owner, 20 Nov 2026). */
 export function QuotationTemplates() {
-  return <Navigate to="/scm/sales-orders/maintenance?open=package-templates#package-templates" replace />;
+  return <Navigate to="/scm/renovation/packages" replace />;
 }
 
-/** Package templates, in SO Maintenance. */
+export function OldTemplateAddress() {
+  const { id } = useParams();
+  return <Navigate to={id ? `/scm/renovation/packages/${id}` : '/scm/renovation/packages'} replace />;
+}
+
+/** SO Maintenance > Package templates: moved to its own module under Sales order. */
 export function PackageTemplatesSection() {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4 text-[13px]">
+      <span className="text-ink-secondary">Package templates are now the <b>Packages</b> module (Sales order &gt; Packages): packages and kits, with areas, products and SLA days.</span>
+      <Link to="/scm/renovation/packages" className="inline-flex h-9 items-center rounded-lg bg-primary px-3 font-semibold text-white">Open Packages</Link>
+    </div>
+  );
+}
+
+/** The old card list, kept for reference until nothing links to it. */
+export function OldPackageTemplatesSection() {
   const list = useTemplates();
   const navigate = useNavigate();
   const { can } = useAuth();

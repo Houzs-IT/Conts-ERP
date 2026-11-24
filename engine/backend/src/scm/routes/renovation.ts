@@ -13,7 +13,8 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { supabaseAuth } from '../middleware/auth';
-import { hasHouzsPerm } from '../lib/houzs-perms';
+import { canViewAllSales, hasHouzsPerm } from '../lib/houzs-perms';
+import { soDocOutOfScope } from '../lib/salesScope';
 import { activeCompanyId, companyDocPrefix } from '../lib/companyScope';
 import type { Env, Variables } from '../env';
 import { inRenoTx, qtyCapRefusalOf, renoDbOf, RenoError, sqlFor, type RenoDb } from '../lib/renovation-db';
@@ -26,10 +27,10 @@ import { previewPoSplit, raisePos } from '../lib/renovation-po-split';
 import { billingView, billInstalment, creditContract } from '../lib/renovation-billing';
 import { applyCustomerCreditToSi } from '../lib/customer-credits';
 import { recomputeSiPaid } from '../lib/si-order-deposit';
-import { applyVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
+import { approveVo, createVoWithEdits, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, saveVoEdits, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
 import { voucherForPoPayment } from '../lib/renovation-po-voucher';
-import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule } from '../lib/renovation-po-schedule';
-import { listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
+import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule, takeBackPoPayment } from '../lib/renovation-po-schedule';
+import { applyTermsToContract, listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
 import { normaliseHeader, normaliseInstalments, normalisePoSchedule, normaliseSections, PRINT_FORMATS } from '../lib/renovation-validate';
 import { onRenovationSoLinesChanged } from '../lib/renovation-hooks';
 import { postSiRevenue } from '../lib/post-si-revenue';
@@ -48,11 +49,12 @@ const PERM = {
   quote: 'scm.renovation.quote',
   voApply: 'scm.renovation.vo.apply',
   bill: 'scm.renovation.bill',
+  billOwn: 'scm.renovation.bill_own',
   terms: 'scm.renovation.terms',
   poSplit: 'scm.renovation.po_split',
 } as const;
 
-function actorOf(c: C): RenoActor {
+export function actorOf(c: C): RenoActor {
   const hu = c.get('houzsUser');
   return {
     name: hu?.name ?? hu?.email ?? null,
@@ -63,17 +65,17 @@ function actorOf(c: C): RenoActor {
   };
 }
 
-const param = (c: C, name: string): string => {
+export const param = (c: C, name: string): string => {
   const v = c.req.param(name);
   if (!v) throw new RenoError(400, 'missing_param', `Missing ${name}.`);
   return v;
 };
 
-const json = async (c: C): Promise<Record<string, any>> => {
+export const json = async (c: C): Promise<Record<string, any>> => {
   try { return (await c.req.json()) ?? {}; } catch { throw new RenoError(400, 'invalid_json', 'The request body is not valid JSON.'); }
 };
 
-function need<T>(r: { ok: true; value: T } | { ok: false; problems: string[] }): T {
+export function need<T>(r: { ok: true; value: T } | { ok: false; problems: string[] }): T {
   if (!r.ok) throw new RenoError(422, 'invalid_document', r.problems.slice(0, 8).join(' '), { problems: r.problems });
   return r.value;
 }
@@ -85,7 +87,7 @@ const intParam = (v: unknown, name: string): number => {
 };
 
 /** Runs a handler with a DB connection; turns RenoError into JSON. */
-function handle(perm: string | null, fn: (c: C, ctx: { sqlRead: RenoDb; tx: <T>(f: (db: RenoDb) => Promise<T>) => Promise<T> }) => Promise<Response>) {
+export function handle(perm: string | null, fn: (c: C, ctx: { sqlRead: RenoDb; tx: <T>(f: (db: RenoDb) => Promise<T>) => Promise<T> }) => Promise<Response>) {
   return async (c: C) => {
     if (perm && !hasHouzsPerm(c, perm)) return c.json({ error: 'forbidden', message: `You need the "${perm}" permission for this.` }, 403);
     const sql = sqlFor(c.env);
@@ -134,6 +136,7 @@ renovation.put('/quotations/:id', handle(PERM.quote, async (c, { tx, sqlRead }) 
   const b = await json(c);
   const body = {
     version: intParam(b.version, 'version'),
+    projectId: b.projectId === undefined ? undefined : b.projectId == null || b.projectId === '' ? null : intParam(b.projectId, 'projectId'),
     header: b.header !== undefined ? need(normaliseHeader(b.header)) : undefined,
     sections: b.sections !== undefined ? need(normaliseSections(b.sections, 'doc', await loadUomsSql(sqlRead))) : undefined,
     instalments: b.instalments !== undefined ? need(normaliseInstalments(b.instalments)) : undefined,
@@ -280,7 +283,7 @@ renovation.get('/lookups/products', handle(null, async (c, { sqlRead }) => {
        left join scm.suppliers s on s.id = b.supplier_id
       where p.company_id = $1 and p.status = 'ACTIVE' and p.code not like 'RENO-%'
         and ($2 = '' or p.code ilike '%' || $2 || '%' or p.name ilike '%' || $2 || '%')
-      order by (p.code ilike 'RN-%') desc, p.code
+      order by lower(p.code) = lower($2) desc, (p.code ilike 'RN-%') desc, p.code
       limit 50`,
     [actorOf(c).companyId, q],
   );
@@ -428,7 +431,34 @@ async function spendCustomerCredit(c: Context<{ Bindings: Env; Variables: Variab
   }
 }
 
-renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(PERM.bill, async (c, { tx }) => {
+/* A contract's payment terms set again from a template, while nothing is billed (lib/renovation-terms). */
+renovation.post('/sales-orders/:docNo/instalments/terms', handle(PERM.terms, async (c, { tx }) => {
+  const b = await json(c);
+  const actor = actorOf(c);
+  return c.json(await tx((db) => applyTermsToContract(db, actor.companyId, param(c, 'docNo'), String(b.templateId ?? ''))));
+}));
+
+/** May the caller bill this contract's instalments? scm.renovation.bill bills any; scm.renovation.bill_own (every
+    salesperson, chew 21 Nov 2026) only an order in the caller's sales scope: their own, their downline's, one shared
+    with them or open to all (the rule every sales-order read follows, lib/salesScope). An order out of scope answers
+    as one that does not exist. */
+async function billRefusal(c: C, docNo: string): Promise<Response | null> {
+  if (hasHouzsPerm(c, PERM.bill)) return null;
+  if (!hasHouzsPerm(c, PERM.billOwn)) return c.json({ error: 'forbidden', message: `You need the "${PERM.bill}" permission for this.` }, 403);
+  const sb = c.get('supabase');
+  const { data, error } = await sb.from('mfg_sales_orders').select('salesperson_id, access_staff_ids, open_to_all')
+    .eq('doc_no', docNo).eq('company_id', actorOf(c).companyId).maybeSingle();
+  if (error) return c.json({ error: 'load_failed', message: 'The sales order could not be read; nothing was billed. Please try again.' }, 500);
+  const so = data as { salesperson_id?: string | null; access_staff_ids?: string[] | null; open_to_all?: boolean | null } | null;
+  const out = !so || await soDocOutOfScope(sb, c.env, c.get('houzsUser')?.id, canViewAllSales(c), {
+    salespersonId: so.salesperson_id, accessStaffIds: so.access_staff_ids, openToAll: so.open_to_all,
+  });
+  return out ? c.json({ error: 'so_not_found', message: `Sales order ${docNo} does not exist.` }, 404) : null;
+}
+
+renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(null, async (c, { tx }) => {
+  const refused = await billRefusal(c, param(c, 'docNo'));
+  if (refused) return refused;
   const b = await json(c);
   const actor = actorOf(c);
   const result = await tx((db) => billInstalment(db, actor, param(c, 'docNo'), param(c, 'id'), {
@@ -457,8 +487,9 @@ renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(PERM.bill, a
 /* ── Variation orders ───────────────────────────────────────────────────── */
 
 renovation.post('/sales-orders/:docNo/variation-orders', handle(PERM.quote, async (c, { tx }) => {
-  const b = await json(c);
-  return c.json(await tx((db) => createVo(db, actorOf(c), param(c, 'docNo'), { title: typeof b.title === 'string' ? b.title : '' })), 201);
+  const s = voFirstSaveSchema.safeParse(await json(c));
+  if (!s.success) throw new RenoError(400, 'invalid_edits', 'Send the lines to change.');
+  return c.json(await tx((db) => createVoWithEdits(db, actorOf(c), param(c, 'docNo'), s.data)), 201);
 }));
 
 renovation.get('/variation-orders/:id', handle(null, async (c, { sqlRead }) => c.json(await readVo(sqlRead, param(c, 'id'), actorOf(c).companyId))));
@@ -472,6 +503,32 @@ renovation.put('/variation-orders/:id', handle(PERM.quote, async (c, { tx, sqlRe
   })));
 }));
 
+const lineEditSchema = z.object({
+  soItemId: z.string().uuid(), qty: z.number().int().min(1).optional(), itemCode: z.string().max(80).optional(), unitPriceSen: z.number().int().min(0).optional(),
+  remove: z.boolean().optional(), variants: z.record(z.string(), z.unknown()).optional(), remark: z.string().max(500).optional(),
+  label: z.string().max(300).optional(),
+});
+const lineAddSchema = z.object({
+  room: z.string().max(120), itemCode: z.string().min(1).max(80), qty: z.number().int().min(1), unitPriceSen: z.number().int().min(0),
+  variants: z.record(z.string(), z.unknown()).optional(), remark: z.string().max(500).optional(), fromPackageId: z.string().uuid().nullable().optional(),
+  label: z.string().max(300).optional(),
+});
+
+const voEditsSchema = z.object({ lines: z.array(lineEditSchema).max(200), adds: z.array(lineAddSchema).max(200) });
+const voFirstSaveSchema = z.object({
+  title: z.string().max(200).optional(), docDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), edits: voEditsSchema.optional(),
+});
+
+renovation.put('/variation-orders/:id/edits', handle(PERM.quote, async (c, { tx }) => {
+  const s = z.object({
+    version: z.number().int(), title: z.string().max(200).optional(), docDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    edits: voEditsSchema,
+  }).safeParse(await json(c));
+  if (!s.success) throw new RenoError(400, 'invalid_edits', 'Send the lines to change.');
+  const { version, title, docDate, edits } = s.data;
+  return c.json(await tx((db) => saveVoEdits(db, actorOf(c), param(c, 'id'), { version, title, docDate, edits })));
+}));
+
 renovation.post('/variation-orders/:id/status', handle(PERM.quote, async (c, { tx }) => {
   const b = await json(c);
   const s = z.enum(['DRAFT', 'SENT', 'CANCELLED']).safeParse(b.status);
@@ -482,7 +539,7 @@ renovation.post('/variation-orders/:id/status', handle(PERM.quote, async (c, { t
 renovation.post('/variation-orders/:id/approve', handle(PERM.voApply, async (c, { tx, sqlRead }) => {
   const b = await json(c);
   const actor = actorOf(c);
-  const out = await tx((db) => applyVo(db, actor, param(c, 'id'), {
+  const out = await tx((db) => approveVo(db, actor, param(c, 'id'), {
     version: intParam(b.version, 'version'), signedName: typeof b.signedName === 'string' ? b.signedName : null, signedAt: b.signedAt ?? null,
   }));
   await onRenovationSoLinesChanged(out.soDocNo, sqlRead);
@@ -495,14 +552,8 @@ renovation.post('/sales-orders/:docNo/line-edits', handle(PERM.voApply, async (c
   const b = await json(c);
   const s = z.object({
     title: z.string().max(200).optional(),
-    edits: z.array(z.object({
-      soItemId: z.string().uuid(), qty: z.number().int().min(1).optional(), itemCode: z.string().max(80).optional(), unitPriceSen: z.number().int().min(0).optional(),
-      remove: z.boolean().optional(), variants: z.record(z.string(), z.unknown()).optional(), remark: z.string().max(500).optional(),
-    })).max(200).default([]),
-    adds: z.array(z.object({
-      room: z.string().max(120), itemCode: z.string().min(1).max(80), qty: z.number().int().min(1), unitPriceSen: z.number().int().min(0),
-      variants: z.record(z.string(), z.unknown()).optional(), remark: z.string().max(500).optional(),
-    })).max(200).default([]),
+    edits: z.array(lineEditSchema).max(200).default([]),
+    adds: z.array(lineAddSchema).max(200).default([]),
   }).safeParse(b);
   if (!s.success) throw new RenoError(400, 'invalid_edits', 'Send the lines to change.');
   return c.json(await runQuickVo(c, { tx, sqlRead }, param(c, 'docNo'), s.data.edits, s.data.adds, s.data.title ?? 'Changed on the order'));
@@ -554,5 +605,10 @@ renovation.post('/po-instalments/:id/payments', handle(PERM.bill, async (c, { tx
     amountSen: intParam(b.amountSen, 'amountSen'), paidOn: b.paidOn ?? null, paymentVoucherId: b.paymentVoucherId ?? null, note: typeof b.note === 'string' ? b.note : '',
   }));
   const voucher = paid.voucher ? await voucherForPoPayment(c, paid.id, paid.voucher) : null;
+  if (voucher && !voucher.tied) {
+    const why = voucher.problem ?? 'The voucher could not be made.';
+    await tx((db) => takeBackPoPayment(db, actorOf(c), paid.id, why));
+    return c.json({ error: 'voucher_not_made', message: `Not paid: ${why} Nothing was recorded; press Record again once it is fixed.` }, 409);
+  }
   return c.json({ id: paid.id, voucher }, 201);
 }));
