@@ -7,7 +7,8 @@ For Dream Crafter staff: designers and managers.
 - The list shows one row per project.
 - Use the **Sort** dropdown to pick Newest first, Oldest first, Due soonest, Handover soonest or Building A-Z.
 - You can also click a column header to sort by that column. The dropdown does not change when you do this.
-- The line under the list shows how many projects are shown.
+- The list shows 50 projects at a time. Use the arrows under the list for the next page.
+- The line under the list counts all projects that match your filter and search, on every page.
 - Tap a row to open the project.
 
 ## Calendar > Deadlines

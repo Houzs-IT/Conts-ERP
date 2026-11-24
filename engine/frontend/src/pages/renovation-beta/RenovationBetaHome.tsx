@@ -359,7 +359,7 @@ function HomeScreen(): ReactElement {
         </div>
       )}
 
-      <div style={{ fontSize: 12, color: MUTED }}>{list.length} shown · tap a project to open it</div>
+      <div style={{ fontSize: 12, color: MUTED }}>{list.length} project{list.length === 1 ? "" : "s"} · tap a project to open it</div>
     </div>
     </BetaMotion>
   );
