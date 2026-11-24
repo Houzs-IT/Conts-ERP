@@ -270,6 +270,8 @@ export interface UnitMonth {
   yearly?: YearlyGuarantee & { sharesBefore: number | null; yearShares: number | null };
   /** Things finance should look at before finalising (shown on the statement screen, never on the owner's report). */
   warnings: string[];
+  /** The stays counted at RM 0 because no money is recorded on them (owner, 24 Nov 2026: staff enter it from the checks). */
+  unpaidStays: Array<{ id: string; checkIn: string; checkOut: string; nights: number; guestName: string | null }>;
 }
 
 const ymd = (d: string) => d.slice(0, 10);
@@ -478,6 +480,7 @@ export function computeUnitMonth(month: string, unit: UnitRow, terms: Terms, sta
     ownerPct: terms.ownerPct, operatorShare, ownerShare, guarantee, topUp, fixedRent, yearly,
     payoutBeforeAdjustments, adjustmentsTotal, netPayout: payoutBeforeAdjustments + adjustmentsTotal,
     lines, adjustmentIds: mineAdj.map(a => a.id), warnings,
+    unpaidStays: unpaid.map(x => ({ id: x.s.id, checkIn: x.s.check_in, checkOut: x.s.check_out, nights: x.n, guestName: x.s.guest_name })),
     stageCosts, miscCharge: { amount: misc, exact: miscExact, occupancy: miscOccupancy },
   };
 }

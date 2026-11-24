@@ -30,6 +30,8 @@ interface UnitFigures {
   unitId: string; label: string; code: string; package: string | null; basis: 'share' | 'fixed_rent'; termsSource: 'contract' | 'unit' | 'default';
   nights: number; days: number; grossIncome: number; deductions: number; netIncome: number; ownerPct: number | null; operatorShare: number;
   guarantee: number; topUp: number; fixedRent: number; payoutBeforeAdjustments: number; adjustments: number; netPayout: number; warnings: string[];
+  /** Stays counted at RM 0 with no money recorded; older statements leave it out. */
+  unpaidStays?: Array<{ id: string; checkIn: string; checkOut: string; nights: number; guestName: string | null }>;
 }
 interface Line {
   id: string; unitId: string | null; unitLabel: string | null; type: 'gross' | 'expense' | 'management_fee' | 'adjustment'; category: string | null;
@@ -95,6 +97,7 @@ export default function StatementDetailPage() {
     : s.state === 'sent' && s.payout && s.payout.state !== 'paid' ? { label: 'Mark paid', run: () => setConfirm('paid') }
     : null;
   const warnings = s.units.flatMap(u => u.warnings.map(w => `${u.label}: ${w}`));
+  const unpaidStays = s.units.flatMap(u => (u.unpaidStays ?? []).map(x => ({ ...x, unitLabel: u.label })));
   const reportHref = (unitId?: string) => `/finance/statements/${encodeURIComponent(s.id)}/report${unitId ? `?unit=${encodeURIComponent(unitId)}` : ''}`;
 
   return (
@@ -135,6 +138,19 @@ export default function StatementDetailPage() {
         <div role="status" className="rounded-card border border-solid border-warning-line bg-card px-5 py-4 text-copy">
           <div className="text-[16px] font-semibold tracking-[-0.01em] mb-2">Check before marking final</div>
           <ul className="m-0 pl-[18px] flex flex-col gap-1 text-muted-ink">{warnings.map(w => <li key={w}>{w}</li>)}</ul>
+          {unpaidStays.length > 0 && (
+            // Owner, 24 Nov 2026: enter the money of a stay counted at RM 0 straight from here, then generate again.
+            <div className="mt-3 flex flex-col gap-1">
+              <div className="text-meta font-medium text-ink">Stays with no income recorded</div>
+              {unpaidStays.map(x => (
+                <div key={x.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-muted-ink">
+                  <span>{x.unitLabel} · {x.guestName || 'Guest'} · {x.checkIn} to {x.checkOut} · {x.nights} {x.nights === 1 ? 'night' : 'nights'}</span>
+                  <Link to={'/reservations/bookings?open=' + encodeURIComponent(x.id)} className="text-ink-2 font-medium">Enter income</Link>
+                </div>
+              ))}
+              <div className="text-meta text-muted-ink">After entering it, generate this month again so the statement counts it.</div>
+            </div>
+          )}
         </div>
       )}
 

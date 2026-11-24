@@ -2,7 +2,7 @@ import { type Env, all, json, fail, nowIso, mytToday } from '../../_lib/db';
 import { rentalOnly } from '../../_lib/unitPurpose';
 import { requireSession } from '../../_lib/auth';
 import { OTA_CHANNELS, upliftFor, defaultUpliftShare } from '../../_lib/channelPrice';
-import { loadPricing, pricingReady, grid } from '../../_lib/unitPricing';
+import { loadPricing, pricingReady, grid, applyPricingDefaults } from '../../_lib/unitPricing';
 import { holidaysReady, listHolidays, normalizeState, appliesTo } from '../../_lib/holidays';
 
 const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
@@ -14,6 +14,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (!session.manage) return fail('FORBIDDEN', 'Pricing is visible to people with Full Performance access.', 403);
+  const commission = await applyPricingDefaults(env);
 
   // Every unit, listed or not: a new unit starts unlisted with no base rate, and it needs one set here
   // before it can be sold anywhere (Channex setup refuses a unit without a base price).
@@ -41,6 +42,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   return json({
     generatedAt: nowIso(),
+    commission,
     // Before migration 0202 there is no holiday price, no holiday list and only the RM-above rule.
     levelsReady: ready, holidaysReady: holidays !== null,
     units: units.map(u => {

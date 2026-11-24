@@ -9,6 +9,7 @@ import { dayLabel } from '../../../_lib/bookingLifecycle';
 import { checkSen, checkDate, invalid, type Fields } from '../../../_lib/validate';
 import { bookingNotice } from '../../../_lib/notices';
 import { countsAsIncome, incomeNotice, stayMonthsOf } from '../../../_lib/lockGuards';
+import { liveInvoiceOf, reissueInvoiceAfterChange } from '../../../_lib/guestDocuments';
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** States whose dates can still move. A finished, cancelled or no-show stay is history. */
@@ -55,8 +56,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const clash = await findClash(env, cur.unit_id, b.checkIn, b.checkOut, id);
   if (clash) return json(clashResponseBody(clash), 409);
 
+  /* An issued invoice is for the stay as it was (owner, 24 Nov 2026): the ask says so, and the save replaces it. */
+  const invoice = await liveInvoiceOf(env, id);
   if (!b.confirm) {
-    return fail('CONFIRMATION_REQUIRED', `${cur.guest_name} moves from ${dayLabel(cur.check_in)} – ${dayLabel(cur.check_out)} to ${dayLabel(b.checkIn)} – ${dayLabel(b.checkOut)}. Confirm to continue.`, 428);
+    const inv = invoice ? ` Invoice ${invoice.doc_no} was issued for the old stay: it will be voided and a new invoice issued.` : '';
+    return fail('CONFIRMATION_REQUIRED', `${cur.guest_name} moves from ${dayLabel(cur.check_in)} – ${dayLabel(cur.check_out)} to ${dayLabel(b.checkIn)} – ${dayLabel(b.checkOut)}.${inv} Confirm to continue.`, 428);
   }
 
   const now = nowIso();
@@ -95,5 +99,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   // locked figures and the difference goes on (owner statement close part 2b).
   const notice = countsAsIncome(cur.state, cur.channel)
     ? await incomeNotice(env, cur.unit_id, [...stayMonthsOf(cur.check_in, cur.check_out), ...stayMonthsOf(b.checkIn, b.checkOut)]) : null;
-  return json({ id, checkIn: b.checkIn, checkOut: b.checkOut, grossBookingValue: gross ?? Number(cur.gross_booking_value), effects: { channel }, notice });
+  const reissued = invoice && cur.state !== 'inquiry' ? await reissueInvoiceAfterChange(env, session, id, gross != null && gross !== Number(cur.gross_booking_value) ? 'dates and total' : 'dates') : null;
+  const invoiceText = reissued ? (reissued.problem ?? `Invoice ${reissued.voided} was voided and ${reissued.issued} issued for the new dates.`) : null;
+  return json({ id, checkIn: b.checkIn, checkOut: b.checkOut, grossBookingValue: gross ?? Number(cur.gross_booking_value), effects: { channel, invoice: invoiceText }, notice });
 };

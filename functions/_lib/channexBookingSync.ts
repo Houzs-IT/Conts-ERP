@@ -1,4 +1,5 @@
 import { ensureTurnovers, replanTurnover } from './cleaning';
+import { liveInvoiceOf } from './guestDocuments';
 import { realNamePart } from './guestName';
 import { syncAvailabilityIfLinked } from './channexSync';
 import { bookingAmounts } from './channexAmounts';
@@ -134,6 +135,16 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
       before: moved ? { checkIn: existing.check_in, checkOut: existing.check_out } : undefined,
       after: { channexBookingId: a.booking_id, ...(moved ? { checkIn, checkOut } : {}) } });
     if (moved) await bookingNotice(env, existing.id, 'dates', null, { from: { checkIn: existing.check_in, checkOut: existing.check_out } });
+    /* A booking the guest paid us directly can carry our invoice; the site moved the stay, so that invoice is for the old
+       dates (owner, 24 Nov 2026). No person made this change, so it is flagged for staff to void and reissue, never
+       reissued by itself. Never fails the sync. */
+    if (moved) {
+      try {
+        const inv = await liveInvoiceOf(env, existing.id);
+        if (inv) await audit(env, { actorId: null, actorLabel: 'Channex', action: 'document.stale_after_site_change', entityTable: 'reservations', entityId: existing.id,
+          after: { docNo: inv.doc_no, note: `Invoice ${inv.doc_no} is for the old dates: void it and issue a new one from the reservation.` } });
+      } catch { /* the sync stands */ }
+    }
     if (existing.check_out !== checkOut) await replanTurnover(env, existing.id, true); else await ensureTurnovers(env, { reservationIds: [existing.id] });
     return true;
   }

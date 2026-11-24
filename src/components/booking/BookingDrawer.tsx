@@ -356,16 +356,18 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
   const fixedSen = d.money.gross - roomSen;
   const perNight = d.nights > 0 && roomSen > 0 ? roomSen / d.nights : 0;
 
+  const liveInvoice = (d.documents ?? []).find(x => x.type === 'invoice' && !x.voidedAt);
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!valid) return;
     setBusy(true); setError(null); setFieldErrors({});
     try {
-      const res = await api.patch<{ effects?: { channel: ChannelSync }; notice?: string | null }>(`/reservations/${d.id}/dates`, {
+      const res = await api.patch<{ effects?: { channel: ChannelSync; invoice?: string | null }; notice?: string | null }>(`/reservations/${d.id}/dates`, {
         checkIn, checkOut, confirm: true, ...(priceChanged ? { grossBookingValue: totalSen } : {}),
       });
       onSaved({ checkIn, checkOut, channel: res?.effects?.channel });
       if (res?.notice) toast(incomeLockedToast(res.notice));
+      if (res?.effects?.invoice) toast({ tone: 'info', title: 'Invoice replaced.', body: res.effects.invoice });
     } catch (err) {
       setError(failMessage(err));
       if (err instanceof ApiFailure && err.fields) setFieldErrors(err.fields);
@@ -380,6 +382,12 @@ function ChangeDatesModal({ d, onClose, onSaved }: { d: Detail; onClose: () => v
         <div className="py-[9px] px-[11px] rounded-control bg-page border border-solid border-line text-meta text-muted-ink">
           Now: {dateRange(d.checkIn, d.checkOut)} · {fmtNights(d.nights)}{d.money.gross > 0 ? ` · ${rm(d.money.gross)}` : ''}
         </div>
+        {liveInvoice && (
+          // Owner, 24 Nov 2026: the invoice is for the stay as it was, so saving replaces it.
+          <div className="py-[9px] px-[11px] rounded-control bg-warning-bg border border-solid border-line text-meta text-warning">
+            Invoice {liveInvoice.docNo} was issued for these dates. Saving voids it and issues a new invoice for the new dates.
+          </div>
+        )}
         {!inHouse ? (
           <StayRange label="New dates" from={checkIn} to={checkOut} onChange={(f, t) => { setCheckIn(f); setCheckOut(t); }} required
             error={fieldErrors.checkIn || fieldErrors.checkOut}
