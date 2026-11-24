@@ -19,6 +19,7 @@
    the post rolls back never leaves an orphan CREATE row. Callers of this core
    record their own CREATE at the moment their draft becomes final. */
 import { unknownProductCodeRefusal } from './validate-item-codes';
+import { lineDiscountShare } from '../shared/line-discount-share';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { Env, Variables } from '../env';
 import { getSupabaseService } from '../../db/supabase';
@@ -271,7 +272,8 @@ export async function createDraftGrnsFromPoItemsCore(
     if (!h) continue;
 
     const rows = bucket.lines.map(({ row, qty }) => {
-      const discountSen = row.discount_sen ?? 0;
+      /* A partial receipt carries its share of the PO line discount, never the whole of it on every GRN. */
+      const discountSen = lineDiscountShare(row.discount_sen, row.qty, row.received_qty, qty);
       return {
         grn_id: h.id,
         purchase_order_item_id: row.id,

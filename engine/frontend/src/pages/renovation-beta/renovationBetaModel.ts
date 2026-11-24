@@ -597,9 +597,11 @@ const PAST_DESIGN = ["ordering", "renovation", "handover"] as const;
 type FlowTask = Pick<TaskViewV2, "id" | "label" | "status" | "planned_start" | "planned_end" | "actual_start">;
 
 /** The To do row for the project's step once it is past design, or null while it is still in design (or closed). */
-export function flowStepRow(flow: { current: string; currentLabel: string }, tasks: readonly FlowTask[], today: string): TodoRow | null {
+export function flowStepRow(flow: { current: string; currentLabel: string }, tasks: readonly FlowTask[], today: string, poCount = 0): TodoRow | null {
   if (!(PAST_DESIGN as readonly string[]).includes(flow.current)) return null;
   if (flow.current === "ordering") {
+    /* Once the main items have POs there is nothing left to order (owner, 24 Nov 2026). */
+    if (poCount > 0) return null;
     return { id: "flow-ordering", tone: "warn", group: flow.currentLabel.toLowerCase(), title: "Order the main items", detail: "Purchase orders for this project's sales order", action: { type: "open", label: "Open PO", tab: "po" } };
   }
   if (flow.current === "handover") {
@@ -718,6 +720,8 @@ export interface StepperInput {
   sla?: (StepSlaDays & { stepKey: string }) | null;
   /** The Design steps (the row under Design, the same ones Calendar's Progress shows): Design is ticked only when all are done. */
   design?: { done: number; total: number };
+  /** The engine's Design stage complete flag (approved drawings, stageLayers); false keeps Design from reading approved. */
+  designApproved?: boolean | null;
 }
 
 /** The engine's own order of the flow; the mockup draws Sales order before Design. */
@@ -745,6 +749,10 @@ export function stepperItems(i: StepperInput): StepperItem[] {
     const { design } = i;
     if (key === "design" && cur >= 2 && design && design.done < design.total) {
       return { key, label: label(key, key), state: "later", sub: `Moved on · ${design.done} of ${design.total} done` };
+    }
+    /* Past design with no approved drawing: never "Design approved" (owner, 24 Nov 2026). */
+    if (key === "design" && cur >= 2 && i.designApproved === false) {
+      return { key, label: label(key, key), state: "later", sub: "Moved on · drawings not approved" };
     }
     const state: StepperItem["state"] = key === "design" ? (cur >= 2 ? "done" : "current") : rank < cur ? "done" : rank === cur ? "current" : "later";
     let sub = "-";
