@@ -350,6 +350,22 @@ productionOrders.get('/', async (c) => {
        Date, ...) — the same read the export uses (lib/po-line-export.ts), so the
        screen and the file agree cell for cell. The legacy unpaged path does not
        carry them: its callers never render a line column. */
+    /* Each order's customer, from its lines' sales orders, for the list's "project - customer" heading (owner,
+       24 Nov 2026). A label: a failed read leaves it blank rather than failing the list. */
+    type SoHead = { debtor_name: string | null };
+    type SoLine = { so: SoHead | SoHead[] | null };
+    type OrderSo = { production_order_id: string; so: SoLine | SoLine[] | null };
+    const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? v[0] ?? null : v);
+    const customers = await chunkIn<OrderSo>(stamped.rows.map((r) => r.id), (batch, from, to) =>
+      supabase.from('production_order_items').select('production_order_id, so:mfg_sales_order_items!inner (so:mfg_sales_orders!inner (debtor_name))')
+        .in('production_order_id', batch).order('id').range(from, to));
+    if (customers.error) console.error('[production-orders list] customers not read; headings show the project only', customers.error.message);
+    const customerOf = new Map<string, string>();
+    for (const l of customers.data) {
+      const name = one(one(l.so)?.so ?? null)?.debtor_name?.trim();
+      if (name && !customerOf.has(l.production_order_id)) customerOf.set(l.production_order_id, name);
+    }
+    for (const r of stamped.rows) (r as Record<string, unknown>).customer_name = customerOf.get(r.id) ?? null;
     const withLines = await attachPoLines(supabase, c, stamped.rows);
     if (withLines.error) return c.json({ error: 'lines_read_failed', reason: withLines.error }, 500);
     await attachMaterialReadiness(c, supabase, withLines.rows as Array<Record<string, unknown>>, activeCompanyId(c) ?? null);

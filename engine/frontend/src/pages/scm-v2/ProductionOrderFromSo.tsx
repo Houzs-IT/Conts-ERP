@@ -36,6 +36,7 @@ import {
   useProductionOrderDetail,
 } from '../../vendor/scm/lib/production-order-queries';
 import { DataGridCompat, type GridColumn } from '../../components/DataGridCompat';
+import { PROJECT_GROUP, PROJECT_GROUP_KEY, projectCustomerHeading } from '../../lib/projectCustomerHeading';
 import { useIdempotencyKey } from '../../lib/idempotency';
 import { readScmHandoff } from '../../lib/scmHandoffStorage';
 import { ActionResultDialog } from '../../vendor/scm/components/ActionResultDialog';
@@ -314,6 +315,12 @@ export const ProductionOrderFromSo = () => {
       sortFn: (a, b) => soRefOfCamelStamp(a).localeCompare(soRefOfCamelStamp(b)),
     },
     {
+      /* Hidden: the grid groups on it, as on the PO picker (owner, 24 Nov 2026). */
+      key: PROJECT_GROUP_KEY, label: 'Project - customer', defaultHidden: true, sortable: false,
+      accessor: (r) => projectCustomerHeading(r.projectName || r.projectCode, r.debtorName),
+      groupValue: (r) => projectCustomerHeading(r.projectName || r.projectCode, r.debtorName),
+    },
+    {
       key: 'debtorName', label: 'Customer', width: 180, sortable: true, groupable: true,
       accessor: (r) => r.debtorName ?? '—',
       searchValue: (r) => r.debtorName ?? '',
@@ -588,6 +595,7 @@ export const ProductionOrderFromSo = () => {
         columns={columns}
         storageKey={STORAGE_KEY}
         rowKey={(r) => r.soItemId}
+        groupBy={PROJECT_GROUP}
         searchPlaceholder="Search SO, customer, item…"
         /* Commander 2026-05-28 — click anywhere on a row to toggle its pick
            (the checkbox is just a visual). */
