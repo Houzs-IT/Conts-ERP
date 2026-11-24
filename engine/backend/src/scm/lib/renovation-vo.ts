@@ -559,6 +559,14 @@ export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edi
   return out;
 }
 
+/** A new VO saved with its first edits in one go, so a VO opened and left never exists. */
+export async function createVoWithEdits(db: RenoDb, actor: RenoActor, soDocNo: string, body: { title?: string; docDate?: string; edits?: VoEdits }): Promise<{ id: string; voNo: string; version: number }> {
+  const created = await createVo(db, actor, soDocNo, { title: body.title });
+  if (!body.edits) return created;
+  const saved = await saveVoEdits(db, actor, created.id, { version: created.version, title: body.title, docDate: body.docDate, edits: body.edits });
+  return { ...created, version: saved.version };
+}
+
 export async function saveVoEdits(db: RenoDb, actor: RenoActor, id: string, body: { version: number; title?: string; docDate?: string; edits: VoEdits }): Promise<{ version: number; netSen: number }> {
   const v = await lockVo(db, id, actor.companyId);
   const b = await buildEditSections(db, actor, v.so_doc_no, body.edits.lines, body.edits.adds);

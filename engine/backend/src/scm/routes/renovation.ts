@@ -27,7 +27,7 @@ import { previewPoSplit, raisePos } from '../lib/renovation-po-split';
 import { billingView, billInstalment, creditContract } from '../lib/renovation-billing';
 import { applyCustomerCreditToSi } from '../lib/customer-credits';
 import { recomputeSiPaid } from '../lib/si-order-deposit';
-import { approveVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, saveVoEdits, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
+import { approveVo, createVoWithEdits, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, saveVoEdits, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
 import { voucherForPoPayment } from '../lib/renovation-po-voucher';
 import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule, takeBackPoPayment } from '../lib/renovation-po-schedule';
 import { applyTermsToContract, listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
@@ -486,17 +486,10 @@ renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(null, async 
 
 /* ── Variation orders ───────────────────────────────────────────────────── */
 
-/* The VO screen creates the VO on its first save (with its edits), so a VO opened and left never exists. */
 renovation.post('/sales-orders/:docNo/variation-orders', handle(PERM.quote, async (c, { tx }) => {
   const s = voFirstSaveSchema.safeParse(await json(c));
   if (!s.success) throw new RenoError(400, 'invalid_edits', 'Send the lines to change.');
-  const { title, docDate, edits } = s.data;
-  return c.json(await tx(async (db) => {
-    const created = await createVo(db, actorOf(c), param(c, 'docNo'), { title });
-    if (!edits) return created;
-    const saved = await saveVoEdits(db, actorOf(c), created.id, { version: created.version, title, docDate, edits });
-    return { ...created, version: saved.version };
-  }), 201);
+  return c.json(await tx((db) => createVoWithEdits(db, actorOf(c), param(c, 'docNo'), s.data)), 201);
 }));
 
 renovation.get('/variation-orders/:id', handle(null, async (c, { sqlRead }) => c.json(await readVo(sqlRead, param(c, 'id'), actorOf(c).companyId))));
