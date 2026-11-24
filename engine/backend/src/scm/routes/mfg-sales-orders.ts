@@ -6778,6 +6778,7 @@ export const patchMfgSalesOrderHeaderHandler = async (c: any) => {
      Object.keys(updates) is exactly the set it wrote — the loop above only adds
      a key when the request body carried it. */
   await queueAcSoEdit(c, docNo, [], [], Object.keys(updates));
+  await shareHeaderWithProject(c, docNo, Object.keys(updates));
 
   return c.json({
     ok: true,
@@ -6793,6 +6794,31 @@ export const patchMfgSalesOrderHeaderHandler = async (c: any) => {
     } : {}),
   });
 };
+
+/* The customer, phone, address and salesperson an order shares with its renovation project (scm/shared/renovation-property
+   SHARED_FIELDS) go to the project when they change here, whatever kind the order is (owner, 24 Nov 2026: "双向sync").
+   Before this only a save of the Order information block wrote them back, so a phone or address changed alone stayed on
+   the order. The order is already saved: a failed copy is logged and never undoes it. */
+const PROJECT_SHARED_SO_COLUMNS = new Set(['debtor_name', 'phone', 'email', 'salesperson_id', 'address1', 'address2', 'customer_state', 'city', 'postcode', 'customer_country', 'sales_location']);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the router's own Context, as queueAcSoEdit takes it
+async function shareHeaderWithProject(c: any, docNo: string, written: string[]): Promise<void> {
+  if (!written.some((k) => PROJECT_SHARED_SO_COLUMNS.has(k))) return;
+  try {
+    const db = c.env.DB as unknown as RenoInfoDb;
+    /* Only a renovation project shares these fields; a fair link (Houzs's project_id use) is left alone. */
+    const now = await db.prepare(
+      `SELECT o.project_id::int AS project_id, o.company_id::int AS company_id FROM scm.mfg_sales_orders o
+         JOIN projects p ON p.id = o.project_id AND p.project_kind = 'renovation' WHERE o.doc_no = ?`,
+    ).bind(docNo).first<{ project_id: number; company_id: number | null }>();
+    if (!now) return;
+    const projectId = Number(now.project_id);
+    const { copySoIntoProject } = await import('../../services/renovation/customerProperty');
+    await copySoIntoProject(db, docNo, projectId, Number(c.get('houzsUser')?.id ?? 0), activeCompanyId(c) ?? Number(now.company_id ?? 0));
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[mfg-so] header saved; copying it to the project failed:', docNo, e);
+  }
+}
 
 mfgSalesOrders.patch('/:docNo', patchMfgSalesOrderHeaderHandler);
 

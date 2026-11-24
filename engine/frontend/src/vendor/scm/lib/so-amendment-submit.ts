@@ -155,7 +155,7 @@ export const VO_MODE_BANNER =
 /** A renovation contract: only a change of amount or an added line is a VO (owner, 4 Nov 2026). */
 export const CONTRACT_MODE_BANNER =
   'Edit the lines here and press Save. Options, remarks and dates just save. Adding or removing a line or changing its SKU, '
-  + 'qty or price changes what the customer pays, so that is recorded as a VO. The customer and address are changed on the project.';
+  + 'qty or price changes what the customer pays, so that is recorded as a VO. The customer, address and dates just save, and go to the project too.';
 
 export const AMENDMENT_MODE_BANNER =
   'This order is already ordered from the supplier. Edit the lines, dates, delivery '
