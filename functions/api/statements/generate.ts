@@ -73,7 +73,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       let deficit = -list.reduce((n, m) => n + m.netPayout, 0);
       if (deficit <= 0) continue;
       const attached = new Set(list.flatMap(m => m.adjustmentIds));
-      const debits = inputs.adjustments.filter(a => attached.has(a.id) && Number(a.amount) < 0)
+      // A lock's late-change difference (ownerLocks.ts, id adj-lock-) belongs to its month by the close rules: never moved.
+      const debits = inputs.adjustments.filter(a => attached.has(a.id) && Number(a.amount) < 0 && !a.id.startsWith('adj-lock-'))
         .sort((a, b) => b.occurred_on.localeCompare(a.occurred_on) || b.id.localeCompare(a.id));
       for (const a of debits) {
         if (deficit <= 0) break;
