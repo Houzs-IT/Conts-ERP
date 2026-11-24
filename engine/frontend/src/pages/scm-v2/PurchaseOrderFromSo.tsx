@@ -50,6 +50,7 @@ import { DateField } from "../../vendor/scm/components/DateField";
 import { useCategoryOptions, withRowCategories } from '../../vendor/scm/lib/renovation-catalog-queries';
 import { SoLineStatusCell, soLineStatusText, useSoLineStatus } from './SoLineStatus';
 import { mrpProjectLabel } from './mrp-model-pipeline';
+import { PROJECT_GROUP, PROJECT_GROUP_KEY, projectCustomerHeading } from '../../lib/projectCustomerHeading';
 
 const ICON = { size: 16, strokeWidth: 1.75 } as const;
 
@@ -453,18 +454,6 @@ Nothing was ticked.` });
   // ── Columns — memoized on `picks` so the controlled checkbox + qty input
   //    re-render when pick state changes (DataGrid is React.memo'd). ───────
   const lineStatus = useSoLineStatus(items.map((r) => r.soItemId));
-  /* Lines of one project sit under one heading, "project - customer" (owner, 24 Nov 2026), instead of repeating both on every row. */
-  const groupByProject = useMemo(() => {
-    const customerOf = new Map<string, string>();
-    for (const r of items) {
-      const project = projectTitleOf(r) || '(none)';
-      if (r.debtorName && !customerOf.has(project)) customerOf.set(project, r.debtorName);
-    }
-    return {
-      key: 'project',
-      label: (v: string): string => [v === '(none)' ? 'No project' : v, customerOf.get(v)].filter(Boolean).join(' - '),
-    };
-  }, [items]);
   const columns = useMemo<GridColumn<OutstandingSoItem>[]>(() => [
     {
       key: 'pick', label: '', width: 40, sortable: false, groupable: false,
@@ -502,6 +491,12 @@ Nothing was ticked.` });
       searchValue: (r) => mrpProjectLabel(r),
       groupValue: (r) => projectTitleOf(r) || '(none)',
       sortFn: (a, b) => projectTitleOf(a).localeCompare(projectTitleOf(b)),
+    },
+    {
+      /* Hidden: the grid groups on it (owner, 24 Nov 2026). */
+      key: PROJECT_GROUP_KEY, label: 'Project - customer', defaultHidden: true, sortable: false,
+      accessor: (r) => projectCustomerHeading(projectTitleOf(r), r.debtorName),
+      groupValue: (r) => projectCustomerHeading(projectTitleOf(r), r.debtorName),
     },
     {
       key: 'debtorName', label: 'Customer', width: 180, sortable: true, serverSortable: true, filterCounts: facets?.debtorName, groupable: true,
@@ -787,7 +782,7 @@ Nothing was ticked.` });
         columns={columns}
         storageKey={STORAGE_KEY}
         rowKey={(r) => r.soItemId}
-        groupBy={groupByProject}
+        groupBy={PROJECT_GROUP}
         /* The search box in the toolbar searches on the server; the grid's own box would only search the loaded page. */
         hideSearch
         serverSort

@@ -82,6 +82,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "../../lib/utils";
 import { convertToLink, transferToLabel, transferFromLabel } from "../../lib/convertScope";
 import { isCancelledDocStatus } from "../../lib/scm";
+import { PROJECT_GROUP, PROJECT_GROUP_KEY, projectCustomerHeading } from "../../lib/projectCustomerHeading";
 import { OVERDUE_CLASS, isPastDue } from "../../lib/tableHighlight";
 import { ResizableDetailDrawer } from "../../components/ResizableDetailDrawer";
 import { useHoldAction } from "./use-hold-action";
@@ -709,6 +710,12 @@ function PoLinesExpansion({ id }: { id: string }) {
 
 // ─── Main page ──────────────────────────────────────────────────────────────
 
+/* The list's own fields from the server (routes/production-orders.ts), read the way the Project column reads them. */
+const projectHeadingOf = (r: PoGridRow): string => {
+  const { project_label, customer_name } = r as { project_label?: string | null; customer_name?: string | null };
+  return projectCustomerHeading(project_label, customer_name);
+};
+
 export function ProductionOrdersListV2() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -1177,6 +1184,16 @@ export function ProductionOrdersListV2() {
       render: (r) => <span className="text-[12.5px] text-ink-secondary">{(r as { project_label?: string | null }).project_label ?? "—"}</span>,
     },
     {
+      /* Hidden: the table groups on it, one heading per project (owner, 24 Nov 2026). */
+      key: PROJECT_GROUP_KEY,
+      label: "Project - customer",
+      defaultHidden: true,
+      disableSort: true,
+      neverSort: true,
+      getValue: projectHeadingOf,
+      render: projectHeadingOf,
+    },
+    {
       /* As an SO line's Stock (owner, 6 Nov 2026): are this order's raw materials here? */
       key: "material_stock_status",
       label: "Stock Status",
@@ -1462,6 +1479,7 @@ export function ProductionOrdersListV2() {
                 error={error ? (error as Error).message ?? "Failed to load" : null}
                 columns={columns}
                 getRowKey={(r) => r.id}
+                groupBy={PROJECT_GROUP}
                 getRowClassName={(r) =>
                   isCancelledDocStatus(r.status) ? "dt-row-cancelled" : undefined
                 }
