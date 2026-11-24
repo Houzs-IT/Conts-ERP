@@ -390,7 +390,8 @@ export default function BookingsPage() {
         </>}
         primary={demoOn
           ? <Button size="sm" variant="primary" icon={<Icon name="FlaskConical" size="sm" />} onClick={() => setAddingSample(true)}>Sample reservation</Button>
-          : <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => { setPrefill(null); setCreating(true); }}>Create reservation</Button>} />
+          // Only someone who may change reservations sees Create (owner, 24 Nov 2026: finance does not take bookings).
+          : canOps ? <Button size="sm" variant="primary" icon={<Icon name="Plus" size="sm" />} onClick={() => { setPrefill(null); setCreating(true); }}>Create reservation</Button> : undefined} />
 
       <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onImportFile} className="hidden" aria-hidden />
 

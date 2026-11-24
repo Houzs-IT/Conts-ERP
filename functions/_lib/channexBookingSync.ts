@@ -1,4 +1,5 @@
 import { ensureTurnovers, replanTurnover } from './cleaning';
+import { realNamePart } from './guestName';
 import { syncAvailabilityIfLinked } from './channexSync';
 import { bookingAmounts } from './channexAmounts';
 import { type Env, one, run, audit, nowIso } from './db';
@@ -104,9 +105,10 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
   const guestsCount = Math.max(1, Number(occupancy.adults ?? 1) + Number(occupancy.children ?? 0));
   // A booking with no name gets its reference in the placeholder, so nameless guests do not all become one record.
   const ref = a.ota_reservation_code ?? a.unique_id ?? a.booking_id ?? '';
-  const guestName = [a.customer?.name, a.customer?.surname].filter(Boolean).join(' ').trim() || `${a.ota_name ?? 'Channel'} guest${ref ? ` ${ref}` : ''}`;
+  const namePart = realNamePart(a.customer?.name), surnamePart = realNamePart(a.customer?.surname);
+  const guestName = [namePart, surnamePart].filter(Boolean).join(' ').trim() || `${a.ota_name ?? 'Channel'} guest${ref ? ` ${ref}` : ''}`;
   // A booking already here keeps its guest when the site sent no name, rather than becoming the placeholder.
-  const keepGuest = !!existing && !(a.customer?.name || a.customer?.surname);
+  const keepGuest = !!existing && !(namePart || surnamePart);
   const guestId = keepGuest ? null : await upsertGuest(env, { fullName: guestName, email: a.customer?.mail ?? null, phone: a.customer?.phone ?? null });
   // Booking value and the site's fee: Channex's amount is the payout on Airbnb (channexAmounts.ts).
   const { grossSen: amountSen, feeSen, source: amountSource } = bookingAmounts(a, room.amount);

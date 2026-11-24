@@ -456,7 +456,8 @@ export default function UsersPage() {
       meta: `Sent to ${u.email}`, confirmLabel: 'Send link', busyLabel: 'Sending…',
       onConfirm: () => act(u, security(u, 'reset_email'), `Reset link sent to ${u.email}.`),
     }) });
-    if (u.isActive && !invited) items.push({ key: 'link', label: 'Get a reset link to pass on', icon: 'Link', run: () => makeResetLink(u) });
+    // Never for another management account (owner, 24 Nov 2026; reset-link.ts refuses it too).
+    if (u.isActive && !invited && u.role !== 'management') items.push({ key: 'link', label: 'Get a reset link to pass on', icon: 'Link', run: () => makeResetLink(u) });
     if (u.isActive && !self) items.push({ key: 'temp', label: 'Reset password', icon: 'KeyRound', run: () => setConfirm({
       title: `Reset ${personName(u.fullName)}'s password?`,
       body: 'Their current password stops working and they are signed out on every device now. You get a temporary password to give them; when they sign in with it, they must choose their own before they can do anything else.',
