@@ -3311,6 +3311,9 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
      (case-insensitive). The adoption marks the field dirty, so the operator's
      next Save persists the master link — self-healing, no data migration. */
   useEffect(() => {
+    /* A renovation order has no venue on its form; on the server a venue change also unlinks the order from its
+       project (fair link), so nothing here may set one (owner, 24 Nov 2026: TC-SO-2604-001). */
+    if (reno) return;
     const opts = venuesQ.data ?? [];
     if (!opts.length) return;
     setForm((s) => {
@@ -3320,7 +3323,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       const hit = opts.find((v) => (v.name ?? '').trim().toUpperCase() === name);
       return hit && s.venueId !== hit.id ? { ...s, venueId: hit.id } : s;
     });
-  }, [venuesQ.data, form.venueId, form.venue]);
+  }, [reno, venuesQ.data, form.venueId, form.venue]);
   const buildPayload = () => payloadFor(form);
   /* The header payload AS SEEDED (pristine) — trySave diffs the outgoing
      payload against this so an untouched field is never sent (the header mirror
@@ -3371,6 +3374,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
      not be in the list at first paint). We only patch when the resolved
      values differ from the current form to avoid an infinite loop. */
   useEffect(() => {
+    if (reno) return; // see the venue seeding above: a renovation order never takes a venue
     if (!form.salespersonId) return;
     /* Houzs 2026-06-23 (owner): Venue is manually pickable — only auto-fill the
        DEFAULT when it is still empty; never override a manual or loaded pick. */
@@ -3381,7 +3385,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
     const resolvedName = (venuesQ.data ?? []).find((v) => v.id === resolvedId)?.name;
     if (!resolvedName) return; // 0591: `?? ''` blanked a loaded venue, permanently
     setForm((s) => (s.venueId || s.venue.trim() ? s : { ...s, venueId: resolvedId, venue: resolvedName, fair: null }));
-  }, [form.salespersonId, staffList, venuesQ.data, form.venueId, form.venue]);
+  }, [reno, form.salespersonId, staffList, venuesQ.data, form.venueId, form.venue]);
 
   /* Commander 2026-05-27 (Fix 5) — State → Sales Location cascade. When the
      user picks a delivery state, look up state_warehouse_mappings and set
@@ -3585,8 +3589,15 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
     headerDraft.answer(restore);
   };
 
-  const directHeaderPatch = () => diffHeaderPayload(originalPayloadRef.current,
-    withoutFrozenHeaderFields(buildPayload()));
+  /* A renovation order never sends a venue or fair: neither is on its form, and a venue change unlinks its project. */
+  const withoutVenueOnReno = <T extends Record<string, unknown>>(p: T): T => {
+    if (!reno) return p;
+    const out: Record<string, unknown> = { ...p };
+    for (const k of ['venue', 'venueId', 'fairVenue', 'fairOrganizer', 'fairStart', 'fairEnd', 'fairDate']) delete out[k];
+    return out as T;
+  };
+  const directHeaderPatch = () => withoutVenueOnReno(diffHeaderPayload(originalPayloadRef.current,
+    withoutFrozenHeaderFields(buildPayload())));
 
   const trySave = (
     cb?: { onSuccess?: () => void; onError?: (msg: string, raw?: unknown) => void },
@@ -3602,7 +3613,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
        columns are removed BEFORE the diff, so they are never sent: the server's
        lock diffs `col in updates`, so an unsent column cannot 409. */
     onSave(opts?.keepLockedColsAsOriginal ? directHeaderPatch()
-      : diffHeaderPayload(originalPayloadRef.current, buildPayload()), cb);
+      : withoutVenueOnReno(diffHeaderPayload(originalPayloadRef.current, buildPayload())), cb);
   };
 
   /* PR-A — Expose imperative save()/reset() so the page-level Edit/Save/
