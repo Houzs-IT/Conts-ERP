@@ -85,6 +85,7 @@ import { createDebtorHandler, listDebtorsHandler, patchDebtorHandler } from '../
 import { mergeDebtors } from '../../acc/debtor-merge';
 import { discardDraftJournal } from '../../acc/draft-journal';
 import { AUTOCOUNT_MAX_DOCS, importAutocountJournals, reverseAutocountJournals, type AutocountJournal } from '../../acc/autocount-journals';
+import { AUTOCOUNT_PI_MAX, importAutocountPiLines, type AutocountPiIn } from '../../acc/autocount-pi-lines';
 import { partyLedgerHandler } from '../../conts/party-ledger';
 import { apAgingHandler, arAgingHandler } from '../../conts/aging-routes';
 import { createSubDepartmentHandler, listStaffDepartmentsHandler, listSubDepartmentsHandler, updateSubDepartmentHandler } from '../../conts/sub-department-routes';
@@ -656,6 +657,22 @@ export const autocountReverseHandler = async (c: AccCtx): Promise<Response> => {
   return c.json(await reverseAutocountJournals(c.get('supabase'), co.companyId, docNos.map(String), why));
 };
 accounting.post('/opening/autocount-journals/reverse', autocountReverseHandler);
+
+/* What AutoCount's purchase invoices said, line by line, view only, and the opening bills they are behind
+   (acc/autocount-pi-lines.ts; chew, 24 Nov 2026). { pis, dryRun }: a dry run stores nothing and says what it would link. */
+export const autocountPiLinesHandler = async (c: AccCtx): Promise<Response> => {
+  if (!requireGlPost(c)) return c.json({ error: "You don't have permission to post to the general ledger." }, 403);
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  let body: Record<string, unknown> | null;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+  const pis = body?.pis;
+  if (!Array.isArray(pis) || pis.length === 0) return c.json({ error: 'Send the purchase invoices.' }, 400);
+  if (pis.length > AUTOCOUNT_PI_MAX) return c.json({ error: `At most ${AUTOCOUNT_PI_MAX} purchase invoices at a time.` }, 400);
+  const r = await importAutocountPiLines(c.get('supabase'), co.companyId, pis as AutocountPiIn[], body?.dryRun === true);
+  return 'ok' in r ? c.json({ error: r.error }, 409) : c.json(r);
+};
+accounting.post('/opening/autocount-pi-lines', autocountPiLinesHandler);
 
 /* The open documents brought to AutoCount's as at the day it stopped (acc/opening.ts cutoverDocuments; chew, 17 Nov
    2026). { asOf, receivables, payables, dryRun }: a dry run says what it would remove, keep and add. */
