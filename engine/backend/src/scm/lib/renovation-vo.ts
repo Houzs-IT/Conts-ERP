@@ -119,10 +119,12 @@ export function voNoFor(soDocNo: string, seq: number): string {
   return `VO-${soDocNo}-${String(seq).padStart(2, '0')}`;
 }
 
+/* discount_change is read through to_jsonb so a database that has not run migration 0371 yet still reads its VOs
+   (as no discount change) instead of failing every VO screen; only saving a discount change needs the column. */
 async function lockVo(db: RenoDb, id: string, companyId: number) {
   const [v] = await db.q(
     `select id, vo_no, so_doc_no, seq, status, title, doc_date::text as doc_date, net_sen, version, signed_name, signed_at::text as signed_at,
-            approved_at::text as approved_at, amendment_id, edits, discount_change
+            approved_at::text as approved_at, amendment_id, edits, to_jsonb(reno_variation_orders) -> 'discount_change' as discount_change
        from scm.reno_variation_orders where id = $1 and company_id = $2 for update`,
     [id, companyId],
   );
@@ -191,7 +193,7 @@ export function omitAmountSen(target: Pick<DocLineOut, 'kind' | 'qty' | 'measure
 export async function readVo(db: RenoDb, id: string, companyId: number) {
   const [v] = await db.q(
     `select id, vo_no, so_doc_no, seq, status, title, doc_date::text as doc_date, net_sen, version, signed_name, signed_at::text as signed_at,
-            approved_at::text as approved_at, approved_by, amendment_id, edits, discount_change
+            approved_at::text as approved_at, approved_by, amendment_id, edits, to_jsonb(reno_variation_orders) -> 'discount_change' as discount_change
        from scm.reno_variation_orders where id = $1 and company_id = $2`,
     [id, companyId],
   );

@@ -44,6 +44,8 @@ export type AmendmentQueueRow = {
   /** The SO's customer reference, by the Sales Order list's own rule — carried
    *  for BOTH kinds of row since the cancellation endpoint began sending it. */
   reference: string;
+  /** The order's project code and name, searched with the SO number; '' when it has none. */
+  project: string;
   /** "A3" for an amendment, the SO's number for a cancellation. */
   numberLabel: string;
   /** Whose signature it waits on, and the badge colour for it. `approverKey`
@@ -109,6 +111,7 @@ export const amendmentQueueRowOf = (a: AmendmentRow, reference: string): Amendme
   kindLabel: 'Amendment',
   soDocNo: a.so_doc_no,
   reference,
+  project: a.so_project ?? '',
   numberLabel: String(a.amendment_no ?? '').trim() || '—',
   approverKey: soAmendmentApprover(a.lane),
   /* A renovation contract's VO applies on the spot and waits on nobody; it has no lane, which read as Legacy. */
@@ -135,6 +138,7 @@ export const cancelQueueRowOf = (r: CancelRequestRow): AmendmentQueueRow => ({
   kindLabel: 'Cancellation',
   soDocNo: r.doc_number || r.doc_key,
   reference: cancelRequestReferenceOf(r),
+  project: '',
   numberLabel: 'Cancel',
   approverKey: cancelApproverKey(r),
   approverLabel: cancelApproverLabel(r),

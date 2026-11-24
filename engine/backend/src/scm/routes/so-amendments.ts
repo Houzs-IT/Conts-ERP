@@ -26,6 +26,7 @@ import {
 } from '../shared';
 import { applySoAmendment, reviseBoundPo, ReceivedFloorError } from '../lib/so-revision';
 import { chunkIn } from '../lib/paginate-all';
+import { projectTextBySoDocNo } from '../lib/so-ref-search';
 import { renovationAmendmentChanges } from '../../services/renovation/renovationVoChangeRead';
 import { voListDetails, type VoListDetail } from '../../services/renovation/renovationVoListRead';
 import { raisePoFollowUps } from '../lib/amendment-po-followup';
@@ -390,6 +391,13 @@ soAmendments.get('/', async (c) => {
       refBySo.set(so.doc_no, so);
     }
   }
+  /* The order's project, for the list search (owner, 24 Nov 2026). Search help only, so a failed read leaves it blank. */
+  let projectBySo = new Map<string, string>();
+  try {
+    projectBySo = await projectTextBySoDocNo(sb, c, allDocNos);
+  } catch (e) {
+    console.warn('[so-amendments] project names skipped', e instanceof Error ? e.message : e);
+  }
   /* What each renovation VO changed (owner, 6 Nov 2026). Never blocks the queue: a row with no `vo` shows dashes. */
   let voById = new Map<string, VoListDetail>();
   try {
@@ -405,6 +413,7 @@ soAmendments.get('/', async (c) => {
       bound_pos: r.so_doc_no ? (boundBySo.get(r.so_doc_no) ?? []) : [],
       so_ref: so?.ref ?? null,
       so_customer_so_no: so?.customer_so_no ?? null,
+      so_project: r.so_doc_no ? (projectBySo.get(r.so_doc_no) ?? null) : null,
     };
   });
   return c.json({ amendments });

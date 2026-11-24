@@ -88,6 +88,8 @@ export type AmendmentRow = {
      from a pre-upgrade backend, so read it defensively. */
   so_ref?: string | null;
   so_customer_so_no?: string | null;
+  /** "<code> <name>" of the order's project, for the list search; null when it has none. */
+  so_project?: string | null;
 };
 
 export type AmendmentLine = {

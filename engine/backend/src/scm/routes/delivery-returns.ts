@@ -22,6 +22,7 @@ import { scopeToCompany, activeCompanyId, stampCompany, companyDocPrefix,
   crossCompanySourceRefusal,
   requireActiveCompanyId, scopeToCompanyId, NOT_THIS_COMPANY } from '../lib/companyScope';
 import { stampDoLineSoRefs } from '../lib/so-ref-lookup';
+import { deliveryOrderIdsForSoDocNos, inArm, projectTextBySoDocNo, soDocNosByProject } from '../lib/so-ref-search';
 import { isMigratedNoStock, type MigratedFlagRow } from '../lib/migrated-no-stock';
 import { writeMovements, defaultWarehouseId } from '../lib/inventory-movements';
 import { assertLinkedLineItemsMatch } from '../lib/line-link-item-identity';
@@ -791,7 +792,16 @@ export async function deliveryReturnListHandler(c: Context<{ Bindings: Env; Vari
   let q = filterDeliveryReturnList(sb.from('delivery_returns').select(HEADER, paged ? { count: 'exact' } : undefined), filters, c, scopeIds);
   if (paged) {
     const or = returnSearchOr(DR_SEARCH_COLS, paged.q);
-    if (or) q = q.or(or);
+    /* A return is also found by its order's project (owner, 24 Nov 2026); a failed lookup only drops that arm. */
+    let projectDoIds: string[] = [];
+    if (or) {
+      try {
+        projectDoIds = await deliveryOrderIdsForSoDocNos(sb, c, await soDocNosByProject(sb, c, paged.q));
+      } catch (e) {
+        console.warn('[delivery-returns] project search skipped', e instanceof Error ? e.message : e);
+      }
+    }
+    if (or) q = q.or([or, ...inArm('delivery_order_id', projectDoIds)].join(','));
   }
   const ordered = orderDeliveryReturnList(q);
   const { data, error, count } = await (paged ? ordered.range(...pageRange(paged)) : ordered.limit(500));
@@ -800,6 +810,13 @@ export async function deliveryReturnListHandler(c: Context<{ Bindings: Env; Vari
   /* The SO number and the book's Agent spelling are ancillary: a failed read
      leaves them blank and must not 500 the list (the export refuses instead). */
   await stampDrListSoDocNo(sb, c, rows);
+  /* The order's project, for the list search. Search help only: a failed read leaves it blank. */
+  try {
+    const projectBySo = await projectTextBySoDocNo(sb, c, rows.map((row) => String(row.so_doc_no ?? '')));
+    for (const row of rows) row.so_project = projectBySo.get(String(row.so_doc_no ?? '')) ?? null;
+  } catch (e) {
+    console.warn('[delivery-returns] project names skipped', e instanceof Error ? e.message : e);
+  }
   await stampDrListBookSpellings(sb, c, rows);
   gateDrListFinance(rows, canViewScmFinance(c));
   const attached = await attachDeliveryReturnLines(sb, c, rows);

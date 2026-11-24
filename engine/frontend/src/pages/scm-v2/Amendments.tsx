@@ -113,7 +113,7 @@ const buildAmendmentColumns = (
     {
       key: 'so_doc_no', label: 'SO No.', width: 140, sortable: true, groupable: true,
       accessor: (r) => <span style={{ fontWeight: 700, color: 'var(--c-burnt)', fontVariantNumeric: 'tabular-nums' }}>{r.soDocNo}</span>,
-      searchValue: (r) => r.soDocNo,
+      searchValue: (r) => `${r.soDocNo} ${r.project}`,
       // accessor is JSX → export the raw SO-no string so the column isn't blank.
       exportValue: (r) => r.soDocNo,
       groupValue: (r) => r.soDocNo,
@@ -362,7 +362,7 @@ export const Amendments = () => {
           storageKey={AMENDMENT_LIST_STORAGE_KEY}
           exportName="VO"
           rowKey={(r) => r.key}
-          searchPlaceholder="Search SO no, reference, VO no, requested by, reason…"
+          searchPlaceholder="Search SO no, project, reference, VO no, requested by, reason…"
           loadedSearchLimit={500}
           groupBanner={false}
           defaultSort={OPEN_ORDER}
