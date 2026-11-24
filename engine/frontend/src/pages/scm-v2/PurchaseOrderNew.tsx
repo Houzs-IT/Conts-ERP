@@ -132,7 +132,7 @@ type DraftLine = {
 };
 
 /* One picked line handed over by a From-SO or From-Production picker (renovation-po-from-production.ts). */
-type FormPick = Pick<OutstandingSoItem, 'itemCode' | 'description' | 'remainingQty' | 'qty' | 'variants' | 'lineDeliveryDate' | 'deliveryDate' | 'salesLocation' | 'mainSupplierCode'> & {
+type FormPick = Pick<OutstandingSoItem, 'itemCode' | 'description' | 'remainingQty' | 'qty' | 'variants' | 'lineDeliveryDate' | 'deliveryDate' | 'salesLocation' | 'mainSupplierCode' | 'remark'> & {
   itemGroup: string | null;
   soItemId: string | null;
   _pickQty?: number;
@@ -423,6 +423,8 @@ export const PurchaseOrderNew = () => {
          was the only one that guessed. */
       category: p.itemGroup || categoryForCode(p.itemCode),
       deliveryDate: p.lineDeliveryDate ?? p.deliveryDate ?? undefined,
+      // The SO line remark rides onto the PO line, which the PO PDF prints as "Remark:".
+      notes: p.remark ?? '',
       // Commander 2026-05-29 (BUG 1) — remember the source SO line so the
       // create call can increment its po_qty_picked (drops it from the picker).
       soItemId: p.soItemId,

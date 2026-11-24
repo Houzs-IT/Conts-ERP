@@ -546,7 +546,7 @@ async function outstandingSoRows(c: PoCtx, items: unknown[] | null, mrpRun: Prom
     id: string; doc_no: string; item_code: string; description: string | null;
     item_group: string; qty: number; po_qty_picked: number; unit_price_sen: number;
     variants: unknown; line_suffix: string | null; cancelled: boolean;
-    line_delivery_date: string | null;
+    line_delivery_date: string | null; remark: string | null;
     so: {
       doc_no: string; debtor_name: string | null; branding: string | null; status: string;
       on_hold: boolean | null;
@@ -677,6 +677,7 @@ async function outstandingSoRows(c: PoCtx, items: unknown[] | null, mrpRun: Prom
         processingDate:   r.so.processing_date,
         salesLocation:    r.so.sales_location,
         lineDeliveryDate: r.line_delivery_date,
+        remark:           r.remark,
         mainSupplierCode: mainSupplierByCode.get(r.item_code)?.code ?? null,
         mainSupplierName: mainSupplierByCode.get(r.item_code)?.name ?? null,
         soRef:            r.so.ref ?? null,
