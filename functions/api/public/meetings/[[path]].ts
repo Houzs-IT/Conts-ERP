@@ -1,5 +1,6 @@
 import { type Env, json, audit } from '../../../_lib/db';
 import { guestHub, meetingsFetch, type MeetingsHub } from '../../../_lib/meetingsHub';
+import { mailSoon } from '../../../_lib/meetingMail';
 
 /**
  * /api/public/meetings/* — the guest side of a meeting-room booking link (/book/:code, src/pages/MeetingBookPage.tsx).
@@ -28,7 +29,7 @@ async function relay(call: Promise<Response>): Promise<Response> {
   return said('Booking could not be reached. Try again in a moment.', 502);
 }
 
-export const onRequest: PagesFunction<Env> = async ({ request, env, params }) => {
+export const onRequest: PagesFunction<Env> = async ({ request, env, params, waitUntil }) => {
   const parts = ([] as string[]).concat(params.path ?? []).filter(Boolean);
   const hub = guestHub(env);
   if (!hub) return said('Booking is not available right now.', 503);
@@ -54,6 +55,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params }) =>
       const body = { start: b.start, end: b.end, roomId: b.roomId, name: b.name, phone: b.phone, email: b.email, company: b.company, department: b.department, title: b.title, people: b.people };
       const res = await send(`/public/links/${id}/book`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (res.ok) {
+        mailSoon(env, waitUntil);
         try { await audit(env, { actorId: null, actorLabel: `Guest ${String(b.name ?? '').slice(0, 80)}`, action: 'meetings.guest_book', entityTable: 'meeting_links', entityId: id, after: { start: b.start, end: b.end, roomId: b.roomId, company: b.company } }); }
         catch (e) { console.error('Guest booking audit failed', e); }
       }
@@ -66,6 +68,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params }) =>
     if (request.method === 'POST' && act === 'cancel') {
       const res = await send(`/public/bookings/${id}/cancel`, { method: 'POST' });
       if (res.ok) {
+        mailSoon(env, waitUntil);
         try { await audit(env, { actorId: null, actorLabel: 'Guest', action: 'meetings.guest_cancel', entityTable: 'meetings', entityId: id.slice(0, 8) }); }
         catch (e) { console.error('Guest cancel audit failed', e); }
       }
