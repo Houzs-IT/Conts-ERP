@@ -39,6 +39,13 @@ export async function bindMaterialsTo(
   }
 }
 
+/** Owner, 24 Nov 2026: a raw material follows its main supplier; only one with none may go to a creditor picked on the
+    form. Returns the main supplier code that keeps the lines from moving to nextCode, or null when they may move. */
+export function mainSupplierHolding(lines: ReadonlyArray<{ mainSupplierCode?: string | null }>, nextCode: string | null): string | null {
+  for (const l of lines) if (l.mainSupplierCode && l.mainSupplierCode !== nextCode) return l.mainSupplierCode;
+  return null;
+}
+
 /** One supplier per PO, as on Pick Sales Orders: once a bound line is ticked, other suppliers' lines lock; unbound lines
     never lock. */
 export function lockedSupplierOf(rows: ReadonlyArray<Pick<MaterialToOrder, 'materialId' | 'mainSupplierCode'>>, picked: ReadonlySet<string>): string | null {

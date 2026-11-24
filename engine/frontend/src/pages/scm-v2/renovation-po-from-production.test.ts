@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { bindMaterialsTo, formPickOfProduction, isLockedOut, lockedSupplierOf, type ProductionPick } from './renovation-po-from-production';
+import { bindMaterialsTo, formPickOfProduction, isLockedOut, lockedSupplierOf, type ProductionPick, mainSupplierHolding } from './renovation-po-from-production';
 
 const row = (id: string, supplier: string | null, extra: Partial<ProductionPick> = {}): ProductionPick => ({
   materialId: id, productionOrderId: 'o1', productionOrderNo: 'PRO-1', projectId: null, projectCode: null, projectName: null, soDocNos: [],
@@ -47,5 +47,17 @@ describe('New PO form', () => {
     const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'PurchaseOrderNew.tsx'), 'utf8');
     expect(src).toContain("readScmHandoff<ProductionPick[]>('poFromProductionPicks')");
     expect(src).toContain('productionMaterialId: l.productionMaterialId ?? null');
+  });
+});
+
+describe('mainSupplierHolding (owner, 24 Nov 2026: follow the main supplier; only unbound materials may pick)', () => {
+  it('lets unbound materials move to any creditor', () => {
+    expect(mainSupplierHolding([{ mainSupplierCode: null }, {}], 'SUP-B')).toBeNull();
+  });
+  it('keeps a material with a main supplier on it', () => {
+    expect(mainSupplierHolding([{ mainSupplierCode: null }, { mainSupplierCode: 'SUP-A' }], 'SUP-B')).toBe('SUP-A');
+  });
+  it('allows moving back to the main supplier itself', () => {
+    expect(mainSupplierHolding([{ mainSupplierCode: 'SUP-A' }], 'SUP-A')).toBeNull();
   });
 });
