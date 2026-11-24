@@ -43,7 +43,7 @@ import { paginateAll } from './paginate-all';
  *  the shipped one rather than a copy that can drift away from it. */
 export const OUTSTANDING_SO_SELECT = `
       id, doc_no, item_code, description, item_group, qty, po_qty_picked, unit_price_sen,
-      variants, line_suffix, cancelled, line_delivery_date,
+      variants, line_suffix, cancelled, line_delivery_date, remark,
       so:mfg_sales_orders!inner ( doc_no, debtor_name, branding, status, on_hold, so_date, customer_delivery_date, processing_date, sales_location, ref, customer_so_no, project_id )
     `;
 
