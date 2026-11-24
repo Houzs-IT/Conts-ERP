@@ -13,8 +13,8 @@ const LIST = { listStyle: "none", margin: 0, padding: 0 } as const;
 const PAGE = 10;
 
 export function BetaCalProgress({ m, who, viewingName }: { m: BoardModel; who: Viewing; viewingName: string | null }): ReactElement {
-  // Every step done: out of the person cards and into one Complete card at the end (owner, 24 Nov 2026).
-  const finished = (p: DesignProject): boolean => currentStep(m, p) === 99;
+  // Every step done, or handed over to the client: out of the person cards and into one Complete card at the end (owner, 24 Nov 2026).
+  const finished = (p: DesignProject): boolean => p.handedOver != null || currentStep(m, p) === 99;
   const open = (ps: DesignProject[]): DesignProject[] => ps.filter((p) => !finished(p));
   const list = who === "All" ? [] : open(progressList(m, who));
   const groups = who === "All" ? progressByPerson(m).map((g) => ({ ...g, projects: open(g.projects) })) : [];

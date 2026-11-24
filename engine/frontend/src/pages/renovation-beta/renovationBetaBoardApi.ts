@@ -62,6 +62,8 @@ export interface BetaBoardProject {
   /** The project's sales order numbers, for the list's search. */
   soDocNos?: string[];
   handoverOn: string | null;
+  /** The day it was handed over; absent from an older server. */
+  handedOverOn?: string | null;
   lead: BetaBoardRef | null;
   /** The first of people3d / people2d. */
   person3d: BetaBoardRef | null;

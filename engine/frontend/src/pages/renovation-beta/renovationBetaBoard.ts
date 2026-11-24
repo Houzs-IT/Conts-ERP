@@ -72,6 +72,8 @@ export interface DesignProject {
   site: PersonRef | null;
   unassigned: boolean;
   handover: string | null;
+  /** The day it was handed over to the client; null while it is still running. */
+  handedOver: string | null;
   measuredOn: string | null;
   design: Record<Kind, DesignTrack>;
   po: string | null;
@@ -324,6 +326,7 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
       site: ref(p.sitePic),
       unassigned: lead == null,
       handover: p.handoverOn,
+      handedOver: p.handedOverOn ?? null,
       measuredOn: p.measuredOn,
       design: { "3": d3, "2": d2 },
       po: p.poDoneOn,
