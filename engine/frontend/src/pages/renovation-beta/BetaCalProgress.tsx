@@ -13,8 +13,12 @@ const LIST = { listStyle: "none", margin: 0, padding: 0 } as const;
 const PAGE = 10;
 
 export function BetaCalProgress({ m, who, viewingName }: { m: BoardModel; who: Viewing; viewingName: string | null }): ReactElement {
-  const list = who === "All" ? [] : progressList(m, who);
-  const groups = who === "All" ? progressByPerson(m) : [];
+  // Every step done: out of the person cards and into one Complete card at the end (owner, 24 Nov 2026).
+  const finished = (p: DesignProject): boolean => currentStep(m, p) === 99;
+  const open = (ps: DesignProject[]): DesignProject[] => ps.filter((p) => !finished(p));
+  const list = who === "All" ? [] : open(progressList(m, who));
+  const groups = who === "All" ? progressByPerson(m).map((g) => ({ ...g, projects: open(g.projects) })) : [];
+  const complete = progressList(m, who).filter(finished);
   return (
     <section aria-labelledby="betaProgHead" style={{ ...GLASS, borderRadius: 26, padding: 20, display: "flex", flexDirection: "column", gap: 8 }}>
       <div>
@@ -30,22 +34,23 @@ export function BetaCalProgress({ m, who, viewingName }: { m: BoardModel; who: V
         </ol>
       )}
       {/* The people who report to the person viewed, one closed card each (YH, 23 Nov 2026). */}
-      {who !== "All" && reportsOf(m, who).map((x) => <PersonCard key={x.id} m={m} person={x} projects={progressList(m, x.id)} />)}
+      {who !== "All" && reportsOf(m, who).map((x) => <PersonCard key={x.id} m={m} person={x} projects={open(progressList(m, x.id))} />)}
+      {complete.length > 0 && <PersonCard m={m} person={null} title="Complete" hl={who} projects={complete} />}
     </section>
   );
 }
 
 /** One person's projects as a toggle heading, closed until opened, ten rows a page. */
-function PersonCard({ m, person, projects }: { m: BoardModel; person: PersonRef | null; projects: DesignProject[] }): ReactElement {
+function PersonCard({ m, person, projects, title, hl }: { m: BoardModel; person: PersonRef | null; projects: DesignProject[]; title?: string; hl?: Viewing }): ReactElement {
   const [page, setPage] = useState(0);
   const pages = Math.ceil(projects.length / PAGE);
   const at = Math.min(page, pages - 1);
   return (
     <details style={TOGGLE}>
       <summary style={TOGGLE_HEAD}>
-        {person?.name ?? "Not assigned"} <span style={{ color: MUTED, fontWeight: 500 }}>· {projects.length}</span>
+        {title ?? person?.name ?? "Not assigned"} <span style={{ color: MUTED, fontWeight: 500 }}>· {projects.length}</span>
       </summary>
-      <ol style={LIST}>{projects.slice(at * PAGE, at * PAGE + PAGE).map((p) => <ProgressRow key={p.id} m={m} p={p} hl={person?.id ?? "All"} />)}</ol>
+      <ol style={LIST}>{projects.slice(at * PAGE, at * PAGE + PAGE).map((p) => <ProgressRow key={p.id} m={m} p={p} hl={hl ?? person?.id ?? "All"} />)}</ol>
       {pages > 1 && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0 14px", fontSize: 13, color: MUTED }}>
           <button type="button" disabled={at === 0} onClick={() => setPage(at - 1)} style={BTN}>Previous</button>
