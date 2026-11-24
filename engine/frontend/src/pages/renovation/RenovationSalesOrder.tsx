@@ -42,6 +42,7 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
      contract (chew, 24 Nov 2026: 20% on the first, 45% on the second, the running total never below the schedule's). */
   const [scheduled, setScheduled] = useState(inst?.amountSen ?? 0);
   const [amount, setAmount] = useState(inst?.amountSen ?? 0);
+  const [amountText, setAmountText] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
@@ -50,7 +51,7 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
   const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ kind: string; invoiceNumber?: string; noteNumber?: string; amountSen: number; posting: { status: string; reason?: string }; einvoiceWarning?: string | null }>(
     `/sales-orders/${encodeURIComponent(c.docNo)}/instalments/${inst!.id}/bill`, 'POST', body));
   /* By id: billing refetches the contract, and a new copy of this instalment must not wipe the result just shown. */
-  useEffect(() => { setScheduled(inst?.amountSen ?? 0); setAmount(inst?.amountSen ?? 0); setNote(null); setError(null); setResult(null); setEinvoice(null); }, [inst?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- amount is read only when another instalment opens
+  useEffect(() => { setScheduled(inst?.amountSen ?? 0); setAmount(inst?.amountSen ?? 0); setAmountText(null); setNote(null); setError(null); setResult(null); setEinvoice(null); }, [inst?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- amount is read only when another instalment opens
   /* Click sweep G12: a double click sent two POSTs (201 + 409) before isPending re-rendered the button. */
   const inFlight = useRef(false);
   if (!inst) return null;
@@ -99,7 +100,16 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
         </div>
         {!negative && !result && maxSen > scheduled && (
           <Field label={`Amount to bill (at least ${rm(scheduled)}, at most ${rm(maxSen)})`}>
-            <MoneyInput value={amount} onChange={(v) => setAmount(v ?? 0)} ariaLabel="Amount to bill" />
+            {/* Read as it is typed: the button and the running total follow every keystroke. */}
+            <input aria-label="Amount to bill" inputMode="decimal" className={cn(inputCls, 'w-full text-right tabular-nums')}
+              value={amountText ?? (amount / 100).toFixed(2)}
+              onFocus={(e) => e.currentTarget.select()}
+              onChange={(e) => {
+                setAmountText(e.target.value);
+                const n = Number(e.target.value.replace(/,/g, '').trim());
+                setAmount(e.target.value.trim() !== '' && Number.isFinite(n) ? Math.round(n * 100) : 0);
+              }}
+              onBlur={() => setAmountText(null)} />
             <div className={cn('mt-1 text-[12px]', outOfRange ? 'text-err' : 'text-ink-secondary')}>
               {amount < scheduled
                 ? `Too little: billed so far plus this must reach ${pctLabel(inst.cumBp)} of the contract.`
