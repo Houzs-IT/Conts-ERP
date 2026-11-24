@@ -28,9 +28,9 @@ import {
   cleanDesignApproval, cleanDesignSent, defectMoveRefusal, designLabel, type BetaPayments, type DefectMove,
 } from "../services/renovation/beta";
 import {
-  BETA_AMENDMENT_DAYS, bookingPeopleOf, buildBoardProject, cleanBetaAppointment, cleanBetaDesign, cleanBetaEvent, cleanBetaEventPatch, cleanBoardRange, cleanNoteDays,
-  designChangeNote, designPersonIds, groupByProject, isAppointmentKind, paymentLabel, rolesOf,
-  type BetaDesignPatch, type BetaEventPatch, type BoardAppointmentRow, type BoardFileRow, type BoardNoteRow, type BoardPayment, type BoardProjectRow,
+  BETA_AMENDMENT_DAYS, boardPersonOf, bookingPeopleOf, buildBoardProject, cleanBetaAppointment, cleanBetaDesign, cleanBetaEvent, cleanBetaEventPatch, cleanBoardRange, cleanNoteDays,
+  designChangeNote, designPersonIds, groupByProject, isAppointmentKind, paymentLabel,
+  type BetaDesignPatch, type BetaEventPatch, type BoardAppointmentRow, type BoardFileRow, type BoardNoteRow, type BoardPayment, type BoardPersonRow, type BoardProjectRow,
   type BoardReviewRow,
 } from "../services/renovation/betaBoard";
 import { loadClientItems, loadProjectPoLines, loadProjectVos } from "../services/renovation/betaVoPo";
@@ -452,8 +452,6 @@ async function companyPeople(c: Ctx, companyId: number, ids: readonly number[]):
 
 const PERSON_REFUSAL = { error: "person_invalid", message: "That person is not on this company's list." } as const;
 
-interface BoardPersonRow { id: number; name: string; roles: unknown; position: string | null; department: string | null; offered: boolean }
-
 /* The board's people follow the project page's people list (routes/renovationProject.ts GET /people; owner,
    14 Oct 2026): the list is brought in line with the user accounts first, and `offered` is true only for people
    linked to an active account, labelled with the account's position and department. Every person of the company
@@ -468,10 +466,13 @@ async function boardPeople(c: Ctx, companyId: number): Promise<BoardPersonRow[]>
   }
   const res = await db(c).prepare(
     fromUsers
-      ? `SELECT pp.id::int AS id, pp.name, to_json(pp.roles) AS roles, s.position, s.department, (pp.pos_user_id IS NOT NULL AND pp.active) AS offered
+      ? `SELECT pp.id::int AS id, pp.name, to_json(pp.roles) AS roles, s.position, s.department, (pp.pos_user_id IS NOT NULL AND pp.active) AS offered,
+                (SELECT m.id::int FROM project_people m
+                  WHERE m.company_id = pp.company_id AND m.pos_user_id::text = to_jsonb(s)->>'manager_id'
+                  ORDER BY (m.pos_user_id IS NOT NULL AND m.active) DESC, m.id LIMIT 1) AS manager_person_id
            FROM project_people pp LEFT JOIN conts_staff s ON s.id = pp.pos_user_id
           WHERE pp.company_id = ? ORDER BY lower(pp.name), pp.id`
-      : `SELECT id::int AS id, name, to_json(roles) AS roles, NULL AS position, NULL AS department, active AS offered
+      : `SELECT id::int AS id, name, to_json(roles) AS roles, NULL AS position, NULL AS department, active AS offered, NULL AS manager_person_id
            FROM project_people WHERE company_id = ? ORDER BY lower(name), id`,
   ).bind(companyId).all<BoardPersonRow>();
   return res.results ?? [];
@@ -618,9 +619,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       files: groupByProject(files.results ?? []), notes: groupByProject(notes.results ?? []),
       reviews: groupByProject(reviews.results ?? []), appointments: groupByProject(appointments.results ?? []),
     };
-    const peopleList = people.map((p) => ({
-      id: Number(p.id), name: p.name, roles: rolesOf(p.roles), position: p.position ?? null, department: p.department ?? null, offered: !!p.offered,
-    }));
+    const peopleList = people.map(boardPersonOf);
     const mine = new Set(meIds);
     const paymentOf = (projectId: number): BoardPayment => (hidden ? { state: "hidden" } : payments.get(projectId) ?? { state: "none" });
     return c.json({

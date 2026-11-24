@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
-  addDays, bookingPeopleOf, buildBoardProject, cleanBetaAppointment, cleanBetaDesign, cleanBetaEvent, cleanBetaEventPatch, cleanBoardRange, cleanNoteDays, createdOnOf,
+  addDays, boardPersonOf, bookingPeopleOf, buildBoardProject, cleanBetaAppointment, cleanBetaDesign, cleanBetaEvent, cleanBetaEventPatch, cleanBoardRange, cleanNoteDays, createdOnOf,
   designChangeNote, designPersonIds, groupByProject, isClockTime, ordinal, paymentLabel, rolesOf, type BoardProjectRow,
 } from "../src/services/renovation/betaBoard";
 import type { BetaInstalment, BetaPayments } from "../src/services/renovation/beta";
@@ -200,5 +200,13 @@ describe("Beta board: timeline titles", () => {
     expect(activityText({ action: "beta_event_added", to_value: "w3d", note: "2026-11-03 · Draw" })).toEqual({ title: "Calendar entry added", body: "W3d · 2026-11-03 · Draw" });
     expect(activityText({ action: "beta_event_changed", to_value: "client" })).toEqual({ title: "Calendar entry changed", body: "Client" });
     expect(activityText({ action: "beta_event_removed", to_value: "client" })).toEqual({ title: "Calendar entry removed", body: "Client" });
+  });
+});
+
+describe("Beta board: people", () => {
+  test("the person they report to is sent as a number, or null", () => {
+    const row = { id: 5, name: "Yi Xuan", roles: "{designer}", position: null, department: null, offered: true, manager_person_id: 3 };
+    expect(boardPersonOf(row)).toEqual({ id: 5, name: "Yi Xuan", roles: ["designer"], position: null, department: null, offered: true, managerPersonId: 3 });
+    expect(boardPersonOf({ ...row, manager_person_id: null }).managerPersonId).toBeNull();
   });
 });

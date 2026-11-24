@@ -31,7 +31,7 @@ export type Viewing = number | "All";
 export interface PersonRef { id: number; name: string }
 
 /** A person as the pickers and chips show them: the project page's label parts and whether they may be picked now. */
-export interface BoardPerson extends PersonRef { position: string | null; department: string | null; offered: boolean }
+export interface BoardPerson extends PersonRef { position: string | null; department: string | null; offered: boolean; managerPersonId: number | null }
 
 export interface Amendment { id: number; s: string; days: number; done: string | null }
 
@@ -340,11 +340,12 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
 export function buildModel(board: BetaBoard): BoardModel {
   const projects = toBoardProjects(board);
   const byId = new Map(projects.map((p) => [p.id, p] as const));
+  const person = personRefs(board.people);
   const everyone: BoardPerson[] = board.people.map((x) => ({
     id: x.id, name: x.name, position: x.position ?? null, department: x.department ?? null, offered: x.offered ?? true,
+    managerPersonId: x.managerPersonId == null ? null : person.get(x.managerPersonId)?.id ?? x.managerPersonId,
   }));
   const people = everyone.filter((x) => x.offered).map((x) => ({ id: x.id, name: x.name }));
-  const person = personRefs(board.people);
   const workTypes = rememberWorkTypes(board.workTypes?.length ? board.workTypes : LEGACY_WORK_TYPES);
   const bookable = new Set(workTypes.filter((w) => w.bookable).map((w) => w.code));
   /* A booked work is done once its day has passed (owner, 19 Nov 2026), as an appointment is (adone): before, a stored
@@ -705,6 +706,14 @@ export function homeRow(m: BoardModel, p: DesignProject): HomeRow {
     word: conditionWord(status(m, p)[1]),
     left: nx?.d ? diff(nx.d, m.today) : null,
   };
+}
+
+/** The offered people who report straight to this person (System > Users > Reports to), by name. */
+export function reportsOf(m: BoardModel, personId: number): PersonRef[] {
+  return m.everyone
+    .filter((x) => x.offered && x.id !== personId && x.managerPersonId === personId)
+    .map((x) => ({ id: x.id, name: x.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /* ---------- Progress ---------- */

@@ -64,6 +64,7 @@ export function Pagination({
       </div>
       <div className="flex items-center gap-1 sm:ml-1">
         <button
+          aria-label="Previous page"
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
           className={cn(
@@ -80,6 +81,7 @@ export function Pagination({
         </span>
         <button
           disabled={page >= totalPages}
+          aria-label="Next page"
           onClick={() => onPageChange(page + 1)}
           className={cn(
             "flex h-8 w-8 items-center justify-center rounded-md border border-border bg-surface transition-colors sm:h-7 sm:w-7",

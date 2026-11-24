@@ -19,7 +19,9 @@ export type EventType = string;
 /** Every person of the company. `offered` (the project page's rule, routes/renovationProject.ts GET /people) is true
     only for people linked to an active user account; position and department come from that account. Older servers
     send neither, and then every person is offered. */
-export interface BetaBoardPerson { id: number; name: string; roles: string[]; position?: string | null; department?: string | null; offered?: boolean }
+export interface BetaBoardPerson { id: number; name: string; roles: string[]; position?: string | null; department?: string | null; offered?: boolean;
+  /** The person of the account this one reports to (System > Users > Reports to); absent on an older server. */
+  managerPersonId?: number | null }
 export interface BetaBoardRef { id: number; name: string }
 
 export interface BetaBoardAppointment {
