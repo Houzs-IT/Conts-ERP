@@ -58,7 +58,7 @@ type Q = {
   lte(col: string, val: unknown): Q;
   range(from: number, to: number): PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>;
 };
-type Sb = { from(table: string): Q };
+type Sb = { from(table: string): Q; schema(name: 'public'): { from(table: string): Q } };
 type Page<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
 
 /* A PO line's printed position: line_no, then creation order, then id (the
@@ -109,6 +109,24 @@ export async function attachPoLines<H extends PoLineHeader>(
   );
   if (so.error) return { error: `sales order numbers: ${so.error}`, rows: [], lineCount: 0 };
 
+  const soDocNos = [...new Set([...so.byId.values()].map(({ doc_no }) => doc_no).filter((d): d is string => !!d))];
+  const soProjects = await chunkIn<{ doc_no: string; project_id: number | null }>(soDocNos, (batch, from, to) =>
+    scopeToCompany(sb.from('mfg_sales_orders').select('doc_no, project_id'), c)
+      .in('doc_no', batch)
+      .order('doc_no', { ascending: true })
+      .range(from, to) as Page<{ doc_no: string; project_id: number | null }>);
+  if (soProjects.error) return { error: `sales order projects: ${soProjects.error.message}`, rows: [], lineCount: 0 };
+  const projectIds = [...new Set(soProjects.data.map(({ project_id }) => project_id).filter((id): id is number => id != null))];
+  /* Projects live only in the public schema (lib/fake-postgrest.ts publicTablesOnly). */
+  const projects = await chunkIn<{ id: number; name: string | null }, number>(projectIds, (batch, from, to) =>
+    sb.schema('public').from('projects').select('id, name')
+      .in('id', batch.map(String))
+      .order('id', { ascending: true })
+      .range(from, to) as Page<{ id: number; name: string | null }>);
+  if (projects.error) return { error: `project names: ${projects.error.message}`, rows: [], lineCount: 0 };
+  const projectNameById = new Map(projects.data.map(({ id, name }) => [Number(id), name]));
+  const projectNameBySo = new Map(soProjects.data.map(({ doc_no, project_id }) => [doc_no, project_id == null ? null : projectNameById.get(Number(project_id)) ?? null]));
+
   /* The line's warehouse, else the PO header's — the line OVERRIDES the header
      (lib/outstanding-po-lines.ts toOutstandingPoItems) — as AutoCount's SHORT
      code (`KL`, not `KL WAREHOUSE`; owner 2026-09-15), through the write-back's
@@ -138,8 +156,11 @@ export async function attachPoLines<H extends PoLineHeader>(
   }
   const rows = headers.map((h) => {
     const headerWarehouse = h.purchase_location_id ? wh.byId.get(h.purchase_location_id) : null;
-    const lines = [...(byPo.get(h.id) ?? [])].sort(byLinePosition).map((l) => toPoListLine(h, { ...l, description2: poLineDescription2(l.item_group, l.variants, l.description2) }, {
-      soDocNo: l.so_item_id ? so.byId.get(l.so_item_id)?.doc_no ?? null : null,
+    const lines = [...(byPo.get(h.id) ?? [])].sort(byLinePosition).map((l) => {
+      const soDocNo = l.so_item_id ? so.byId.get(l.so_item_id)?.doc_no ?? null : null;
+      return toPoListLine(h, { ...l, description2: poLineDescription2(l.item_group, l.variants, l.description2) }, {
+      soDocNo,
+      projectName: soDocNo ? projectNameBySo.get(soDocNo) ?? null : null,
       /* AutoCount lists a purchase line under the SUPPLIER's item code, and its
          Item Description / Item Group are that item's (the book's item master,
          services/autocount-book-item.ts). Measured 2026-09-15 against the owner's
@@ -149,7 +170,8 @@ export async function attachPoLines<H extends PoLineHeader>(
         warehouseLabel(l.warehouse_id ? wh.byId.get(l.warehouse_id) : null) ?? warehouseLabel(headerWarehouse),
         LOCATION_MAP,
       ),
-    }));
+      });
+    });
     return { ...h, lines };
   });
   return { error: null, rows, lineCount: all.length };
