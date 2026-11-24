@@ -65,7 +65,7 @@ const LEDGER_ICON: Record<string, string> = {
   'not-yet-billed': 'hourglass', 'e-invoice': 'badge-check', 'official-receipts': 'receipt-text', 'debtors': 'contact',
   'customer-ledger': 'book-user', 'outstanding': 'clock', 'daily-bank': 'calendar-days', 'merchant-recon': 'credit-card',
   'to-do': 'list-checks', 'branding': 'stamp', 'payment-listing': 'list-ordered', 'unmatched-payments': 'search-x',
-  'rental-unit-costs': 'building-2', 'department-spend': 'chart-pie', 'renovation-projects': 'hammer', 'ai-usage': 'sparkles',
+  'rental-unit-costs': 'building-2', 'department-spend': 'chart-pie', 'renovation-projects': 'hammer', 'commission': 'percent', 'ai-usage': 'sparkles',
 };
 
 /** The Finance groups, in order, each by its screens: finance's own desk screens by key, the ledger's by slug
@@ -77,7 +77,7 @@ const FINANCE_LAYOUT: Array<[part: string, entries: string[]]> = [
   ['Billing', ['deposit-invoices', 'other-debtors', 'credit-debit-notes', 'not-yet-billed', 'e-invoice']],
   ['Collections', ['money-received', 'official-receipts', 'debtors', 'customer-ledger', 'outstanding', 'debtor-ageing']],
   ['Bank', ['daily-bank', 'bank-reconciliation', 'merchant-recon', 'unmatched-payments', 'desk:airbnbRecon']],
-  ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'department-spend', 'renovation-projects', 'ai-usage']],
+  ['Reports', ['profit-and-loss', 'balance-sheet', 'trial-balance', 'general-ledger', 'journal-entries', 'desk:unitPnl', 'rental-unit-costs', 'department-spend', 'renovation-projects', 'commission', 'ai-usage']],
   ['Setup', ['chart-of-accounts', 'item-group-accounts', 'ledger-setup', 'branding', 'staff-banks']],
 ];
 
@@ -96,6 +96,8 @@ export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix:
     key: `ledger_${s.slug}${keySuffix}`, label: s.label, icon: LEDGER_ICON[s.slug] ?? 'book-open', path: `${prefix}/${s.slug}`, area: 'ledger',
     // How many wait for finance to pay (chew, 19 Nov 2026), as the screen's "Waiting for payment" view counts them.
     ...(s.slug === 'payment-requests' ? { badge: 'paymentRequests' as BadgeKey } : {}),
+    // Everyone's pay: shown only to Full on the Ledger (the engine itself admits management only).
+    ...(s.slug === 'commission' ? { full: true } : {}),
   } as NavItem]));
   /* One FINANCE group (chew, 2 Nov 2026: one Finance category with its parts inside): each part opens to its screens. */
   return [{
@@ -105,7 +107,7 @@ export function financeGroups(prefix: '/finance' | '/supply/finance', keySuffix:
       // Rental's Airbnb reconciliation is a Unit report tab (chew, 13 Nov 2026), so its Finance menu leaves it out.
       children: entries.filter(e => !(workspace === 'rental' && e === 'desk:airbnbRecon'))
         .map(e => (e.startsWith('desk:') ? desk[e.slice(5)] : ledger.get(e))).filter((i): i is NavItem => !!i)
-        .map(i => ({ key: i.key, label: i.label, path: i.path!, area: i.area, badge: i.badge, icon: i.icon })),
+        .map(i => ({ key: i.key, label: i.label, path: i.path!, area: i.area, badge: i.badge, icon: i.icon, ...(i.full ? { full: true } : {}) })),
     })),
   }];
 }
