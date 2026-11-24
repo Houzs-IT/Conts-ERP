@@ -4,14 +4,13 @@
    showed the picker and others did not, and the card changed size from one screen to the next. */
 
 import { useMemo, useState, type ReactElement } from "react";
-import { ToggleGroup } from "../../components/scm-v2/ToggleGroup";
 import { PrintPreviewModal, type PrintPreviewRow } from "../../components/scm-v2/PrintPreviewModal";
 import { useSoInfoLists, useSoRooms } from "../projects/renovation/customerPropertyApi";
 import { projectDatesText } from "../projects/renovation/customerPropertyModel";
 import { categoryRooms } from "../../vendor/scm/lib/so-print-rooms";
 import type { SoPrintRooms } from "../../vendor/scm/lib/so-print-rooms";
 import { useMfgProducts } from "../../vendor/scm/lib/mfg-products-queries";
-import type { UnitPriceChoice } from "../../vendor/scm/lib/sales-order-pdf";
+import { ALL_SO_PDF_COLUMNS, type SoPdfColumns } from "../../vendor/scm/lib/sales-order-pdf";
 import { useRenovationCatalog } from "../../vendor/scm/lib/renovation-catalog-queries";
 import { SoLinesViewToggle, type SoLinesView } from "./renovationSoAreaLines";
 
@@ -24,7 +23,7 @@ export function useSoPrintLayout(docNo: string | null | undefined, items: readon
   const renoRooms = useSoRooms(docNo ?? undefined, renoMode).data ?? null;
   /* The PDF's own layout (owner, 31 Oct 2026: "export PDF 应该都是 by default by area"). */
   const [printLayout, setPrintLayout] = useState<SoLinesView>("area");
-  const [unitPrice, setUnitPrice] = useState<UnitPriceChoice>("show");
+  const [columns, setColumns] = useState<SoPdfColumns>(ALL_SO_PDF_COLUMNS);
   const printRooms: SoPrintRooms | undefined = renoMode && renoRooms && renoRooms.roomSections.length > 0
     ? { order: renoRooms.roomSections, byItem: renoRooms.itemRooms } : undefined;
   /* The printed Start / End date are the linked project's (owner, 15 Oct 2026). The PDF's standard font has no em
@@ -42,19 +41,21 @@ export function useSoPrintLayout(docNo: string | null | undefined, items: readon
   /* "By item" prints the plain line list; until the catalog has loaded, "By category" prints by area. */
   const pdfRooms = printLayout === "item" ? undefined : printLayout === "category" ? categoryView ?? printRooms : printRooms;
   return {
-    renoMode, renoRooms, renoDates, printRooms, categoryView, printLayout, setPrintLayout, unitPrice, setUnitPrice,
+    renoMode, renoRooms, renoDates, printRooms, categoryView, printLayout, setPrintLayout, columns, setColumns,
     /** The generator's last argument (generateSalesOrderPdf opts). */
-    pdfOpts: { rooms: pdfRooms, projectDates: printProjectDates, unitPrice },
+    pdfOpts: { rooms: pdfRooms, projectDates: printProjectDates, columns },
   };
 }
 
-const UNIT_PRICE_OPTIONS = [
-  { value: "show", label: "Show" },
-  { value: "hide", label: "Hide" },
-  { value: "total", label: "Total" },
-] as const;
+const COLUMN_CHOICES: ReadonlyArray<{ key: keyof SoPdfColumns; label: string }> = [
+  { key: "qty", label: "Qty" },
+  { key: "unit", label: "Unit" },
+  { key: "price", label: "Price" },
+  { key: "discount", label: "Discount" },
+  { key: "amount", label: "Amount" },
+];
 
-type PrintLayoutChoices = Pick<ReturnType<typeof useSoPrintLayout>, "printRooms" | "printLayout" | "setPrintLayout" | "unitPrice" | "setUnitPrice">;
+type PrintLayoutChoices = Pick<ReturnType<typeof useSoPrintLayout>, "printRooms" | "printLayout" | "setPrintLayout" | "columns" | "setColumns">;
 
 function PrintLayoutOptions({ layout }: { layout: PrintLayoutChoices }): ReactElement {
   const optionRow = "flex flex-wrap items-center justify-between gap-x-3 gap-y-2";
@@ -67,13 +68,19 @@ function PrintLayoutOptions({ layout }: { layout: PrintLayoutChoices }): ReactEl
         </div>
       )}
       <div className={optionRow}>
-        <span className="text-[12px] font-semibold text-ink-secondary">Per unit price</span>
-        <ToggleGroup
-          label="Per unit price"
-          options={UNIT_PRICE_OPTIONS}
-          value={layout.unitPrice}
-          onChange={layout.setUnitPrice}
-        />
+        <span className="text-[12px] font-semibold text-ink-secondary">Columns</span>
+        <span role="group" aria-label="Columns" className="flex flex-wrap gap-x-4 gap-y-1">
+          {COLUMN_CHOICES.map(({ key, label }) => (
+            <label key={key} className="flex min-h-7 items-center gap-1.5 text-[12.5px] text-ink [@media(pointer:coarse)]:min-h-11">
+              <input
+                type="checkbox"
+                checked={layout.columns[key]}
+                onChange={(e) => layout.setColumns({ ...layout.columns, [key]: e.target.checked })}
+              />
+              {label}
+            </label>
+          ))}
+        </span>
       </div>
     </div>
   );

@@ -352,11 +352,13 @@ export interface SoPdfOptions {
   quotation?: boolean;
   /* The timetable (owner, 17 Nov 2026): each line's processing and delivery dates in place of its unit price and discount; no payments. */
   timetable?: Record<string, { orderOn: string | null; deliverOn: string | null }>;
-  /* Show the unit price, hide it, or print only qty per line with money on the subtotal rows ('total'). */
-  unitPrice?: UnitPriceChoice;
+  /* Which line columns print (owner, 24 Nov 2026: Qty / Unit / Price / Discount / Amount ticks). Every one by default. */
+  columns?: SoPdfColumns;
 }
 
-export type UnitPriceChoice = 'show' | 'hide' | 'total';
+export interface SoPdfColumns { qty: boolean; unit: boolean; price: boolean; discount: boolean; amount: boolean }
+
+export const ALL_SO_PDF_COLUMNS: SoPdfColumns = { qty: true, unit: true, price: true, discount: true, amount: true };
 
 interface PrintedLine { item: SoItem; rowNumber: number; description: string }
 interface LineColumn { label: string; style: Partial<Styles>; cell: (line: PrintedLine) => string }
@@ -371,28 +373,34 @@ function dateColumns(timetable: NonNullable<SoPdfOptions['timetable']>): LineCol
   ];
 }
 
-function moneyColumns(currency: string, unitPrice: UnitPriceChoice): LineColumn[] {
+function moneyColumns(currency: string, columns: SoPdfColumns): LineColumn[] {
   const moneyWidth = SHOW_CODE ? 24 : 26;
-  /* Total: a line prints its qty only; money shows on the group subtotal rows and the totals. */
-  if (unitPrice === 'total') return [{ label: 'SubTotal (RM)', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: () => '' }];
-  const unitPriceColumn: LineColumn = { label: 'Unit Price', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.unit_price_sen, currency) };
-  return [
-    ...(unitPrice === 'hide' ? [] : [unitPriceColumn]),
-    { label: 'Discount', style: { cellWidth: SHOW_CODE ? 16 : 20, ...NUMBER_CELL }, cell: (line) => (line.item.discount_sen > 0 ? fmtRm(line.item.discount_sen, currency) : '—') },
-    { label: 'Amount (RM)', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.total_sen, currency) },
-  ];
+  const priceColumn: LineColumn = { label: 'Unit Price', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.unit_price_sen, currency) };
+  const discountColumn: LineColumn = { label: 'Discount', style: { cellWidth: SHOW_CODE ? 16 : 20, ...NUMBER_CELL }, cell: (line) => (line.item.discount_sen > 0 ? fmtRm(line.item.discount_sen, currency) : '—') };
+  /* Amount unticked keeps the column, blank on each line: money shows on the group subtotal rows and the totals. */
+  const amountColumn: LineColumn = columns.amount
+    ? { label: 'Amount (RM)', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: (line) => fmtRm(line.item.total_sen, currency) }
+    : { label: 'SubTotal (RM)', style: { cellWidth: moneyWidth, ...NUMBER_CELL }, cell: () => '' };
+  return [...(columns.price ? [priceColumn] : []), ...(columns.discount ? [discountColumn] : []), amountColumn];
+}
+
+function qtyColumn(columns: SoPdfColumns, width: number): LineColumn[] {
+  if (!columns.qty && !columns.unit) return [];
+  const cell = (line: PrintedLine): string => [columns.qty ? String(line.item.qty) : '', columns.unit ? line.item.uom : ''].filter(Boolean).join(' ');
+  return [{ label: columns.qty ? 'Qty' : 'Unit', style: { cellWidth: width, ...NUMBER_CELL }, cell }];
 }
 
 /* Money cells must stay on ONE line ("MYR 2,990.00", never wrapped): numeric columns are 7.5 pt, right-aligned, at a
    fixed width. Description ('auto') is the only column allowed to wrap and takes whatever width the others leave. */
 function lineColumns(currency: string, opts: SoPdfOptions): LineColumn[] {
+  const columns = opts.columns ?? ALL_SO_PDF_COLUMNS;
   const leading: LineColumn[] = [
     { label: '#', style: { cellWidth: 8, ...NUMBER_CELL }, cell: (line) => String(line.rowNumber) },
     ...(SHOW_CODE ? [{ label: 'Item Code', style: { cellWidth: 28 }, cell: (line: PrintedLine) => line.item.item_code }] : []),
     { label: 'Description', style: { cellWidth: 'auto' }, cell: (line) => line.description },
-    { label: 'Qty', style: { cellWidth: SHOW_CODE ? 14 : opts.timetable ? 20 : 16, ...NUMBER_CELL }, cell: (line) => `${line.item.qty} ${line.item.uom}` },
+    ...qtyColumn(columns, SHOW_CODE ? 14 : opts.timetable ? 20 : 16),
   ];
-  return [...leading, ...(opts.timetable ? dateColumns(opts.timetable) : moneyColumns(currency, opts.unitPrice ?? 'show'))];
+  return [...leading, ...(opts.timetable ? dateColumns(opts.timetable) : moneyColumns(currency, columns))];
 }
 
 /* Draw ONE sales order's content into `doc` (letterhead → meta → items →

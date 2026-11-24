@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { DEFAULT_BRANDING, clearBrandingLogoCache, setBrandingCache } from '../../../lib/branding';
-import type { UnitPriceChoice } from './sales-order-pdf';
+import { ALL_SO_PDF_COLUMNS, type SoPdfColumns } from './sales-order-pdf';
 
 type JsPdf = import('jspdf').jsPDF;
 
@@ -22,7 +22,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function printedText(unitPrice: UnitPriceChoice): Promise<string[]> {
+async function printedText(unticked: Partial<SoPdfColumns> = {}): Promise<string[]> {
   setBrandingCache({ ...DEFAULT_BRANDING, logoR2Key: '' }, 'HOUZS');
   const [{ jsPDF }, { default: autoTable }, { renderSalesOrderInto }] = await Promise.all([
     import('jspdf'),
@@ -43,14 +43,14 @@ async function printedText(unitPrice: UnitPriceChoice): Promise<string[]> {
     qty: 2, unit_price_sen: 150000, discount_sen: 0, total_sen: 300000, variants: null,
   }], [], [], {
     rooms: { order: ['Wiring works'], byItem: { a: 'Wiring works' } },
-    unitPrice,
+    columns: { ...ALL_SO_PDF_COLUMNS, ...unticked },
   });
   return drawn;
 }
 
-describe('sales order PDF: hiding the unit price', () => {
-  test('drops the Unit Price column and keeps description, qty, discount and amount', async () => {
-    const drawn = await printedText('hide');
+describe('sales order PDF: column ticks', () => {
+  test('unticking Price drops the Unit Price column and keeps description, qty, discount and amount', async () => {
+    const drawn = await printedText({ price: false });
     expect(drawn.filter((text) => text.includes('Unit Price'))).toEqual([]);
     expect(drawn.filter((text) => text.includes('RM 1,500.00'))).toEqual([]);
     expect(drawn).toContain('Works - Electrical - Looping new socket');
@@ -59,20 +59,38 @@ describe('sales order PDF: hiding the unit price', () => {
     expect(drawn.some((text) => text.includes('RM 3,000.00'))).toBe(true);
   });
 
-  test('total prints qty on the line and money only on the subtotal rows and totals', async () => {
+  test('unticking Amount blanks the line amount under SubTotal (RM) and keeps the room subtotal and totals', async () => {
     const amounts = (drawn: string[]) => drawn.filter((text) => text.includes('RM 3,000.00')).length;
-    const shown = await printedText('show');
-    const drawn = await printedText('total');
+    const shown = await printedText();
+    const drawn = await printedText({ price: false, discount: false, amount: false });
     expect(drawn.filter((text) => text.includes('Unit Price') || text === 'Discount' || text.includes('RM 1,500.00'))).toEqual([]);
     expect(drawn).toContain('2 POINT');
     expect(drawn).toContain('SubTotal (RM)');
+    expect(drawn).not.toContain('Amount (RM)');
+    expect(drawn).toContain('Subtotal - Wiring works');
     expect(amounts(drawn)).toBe(amounts(shown) - 1);
     expect(amounts(drawn)).toBeGreaterThan(0);
   });
 
-  test('prints the unit price by default', async () => {
-    const drawn = await printedText('show');
+  test('unticking Unit prints the bare qty; unticking Qty prints the unit alone', async () => {
+    expect(await printedText({ unit: false })).toContain('2');
+    expect(await printedText({ unit: false })).not.toContain('2 POINT');
+    const unitOnly = await printedText({ qty: false });
+    expect(unitOnly).toContain('POINT');
+    expect(unitOnly).toContain('Unit');
+  });
+
+  test('unticking Qty and Unit drops the column', async () => {
+    const drawn = await printedText({ qty: false, unit: false });
+    expect(drawn).not.toContain('Qty');
+    expect(drawn).not.toContain('2 POINT');
+  });
+
+  test('prints every column by default', async () => {
+    const drawn = await printedText();
     expect(drawn).toContain('Unit Price');
+    expect(drawn).toContain('Amount (RM)');
+    expect(drawn).toContain('2 POINT');
     expect(drawn.some((text) => text.includes('RM 1,500.00'))).toBe(true);
   });
 });
