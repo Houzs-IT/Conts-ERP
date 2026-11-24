@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { color, radius } from '../theme';
 import { findNav } from '../lib/navigation';
 import { close, pageOf, readTabs, visit, writeTabs, type PageTab } from '../lib/pageTabs';
+import { RESUME } from '../lib/enginePlaces';
 import Icon from './Icon';
 
 /** The name a page goes by on its tab: the top bar's page name ("Payment requests"; a record under a list reads
@@ -61,7 +62,7 @@ export default function PageTabs({ navigate }: { navigate: (p: string) => void }
             borderRadius: `${radius.sm}px ${radius.sm}px 0 0`, border: `1px solid ${on ? color.border : 'transparent'}`, borderBottom: 'none',
             marginBottom: -1, background: on ? color.page : 'transparent',
           }}>
-            <Link to={t.path} aria-current={on ? 'page' : undefined} title={t.title} style={{
+            <Link to={t.path} state={RESUME} aria-current={on ? 'page' : undefined} title={t.title} style={{
               minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 4px 0 12px', lineHeight: '32px',
               color: on ? color.ink : color.textMuted, fontSize: 13, fontWeight: on ? 600 : 500, textDecoration: 'none',
             }}>{t.title}</Link>
