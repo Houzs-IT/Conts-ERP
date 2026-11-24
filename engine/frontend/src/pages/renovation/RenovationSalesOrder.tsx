@@ -38,6 +38,9 @@ function lineQty(l: DocLine): string {
 
 function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstalment | null; onClose: () => void }) {
   const [date, setDate] = useState(todayIso());
+  /* What the schedule asks of this instalment (its minimum), and what is billed: raised as far as the rest of the
+     contract (chew, 24 Nov 2026: 20% on the first, 45% on the second, the running total never below the schedule's). */
+  const [scheduled, setScheduled] = useState(inst?.amountSen ?? 0);
   const [amount, setAmount] = useState(inst?.amountSen ?? 0);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,17 +50,21 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
   const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ kind: string; invoiceNumber?: string; noteNumber?: string; amountSen: number; posting: { status: string; reason?: string }; einvoiceWarning?: string | null }>(
     `/sales-orders/${encodeURIComponent(c.docNo)}/instalments/${inst!.id}/bill`, 'POST', body));
   /* By id: billing refetches the contract, and a new copy of this instalment must not wipe the result just shown. */
-  useEffect(() => { setAmount(inst?.amountSen ?? 0); setNote(null); setError(null); setResult(null); setEinvoice(null); }, [inst?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- amount is read only when another instalment opens
+  useEffect(() => { setScheduled(inst?.amountSen ?? 0); setAmount(inst?.amountSen ?? 0); setNote(null); setError(null); setResult(null); setEinvoice(null); }, [inst?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- amount is read only when another instalment opens
   /* Click sweep G12: a double click sent two POSTs (201 + 409) before isPending re-rendered the button. */
   const inFlight = useRef(false);
   if (!inst) return null;
-  const negative = amount < 0;
+  const negative = scheduled < 0;
+  const revised = c.billing.revisedContractSen;
+  const maxSen = Math.max(scheduled, revised - c.billing.billedSen);
+  const outOfRange = !negative && (amount < scheduled || amount > maxSen);
+  const cumAfterBp = revised > 0 ? Math.round(((c.billing.billedSen + amount) * 10000) / revised) : 0;
   const submit = async (confirmCreditNote = false) => {
     if (inFlight.current) return;
     inFlight.current = true;
     setError(null);
     try {
-      const r = await run.mutateAsync({ invoiceDate: date, expectedAmountSen: amount, confirmCreditNote });
+      const r = await run.mutateAsync({ invoiceDate: date, expectedAmountSen: scheduled, confirmCreditNote, ...(!negative && amount !== scheduled ? { amountSen: amount } : {}) });
       const doc = r.kind === 'INVOICE' ? `Sales invoice ${r.invoiceNumber}` : r.kind === 'CREDIT_NOTE' ? `Credit note ${r.noteNumber}` : 'Nothing to bill: instalment closed';
       const posted = r.posting.status === 'posted' || r.posting.status === 'already_posted' ? 'journal posted' : r.posting.status === 'not_needed' ? '' : `journal not posted yet (${r.posting.reason ?? r.posting.status})`;
       setNote(null);
@@ -65,8 +72,8 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
       setResult([doc, rm(r.amountSen), posted].filter(Boolean).join(' · '));
     } catch (e) {
       const f = refusalOf(e);
-      if (f.code === 'stale_amount' && typeof f.detail.amountSen === 'number') { void qc.invalidateQueries({ queryKey: ['reno'] }); setAmount(f.detail.amountSen); setNote('The amount changed (a variation order moved the contract sum). Check the new amount and bill again.'); return; }
-      if (f.code === 'credit_note_needs_confirm' && typeof f.detail.amountSen === 'number') { setAmount(f.detail.amountSen); setNote(f.message); return; }
+      if (f.code === 'stale_amount' && typeof f.detail.amountSen === 'number') { void qc.invalidateQueries({ queryKey: ['reno'] }); setScheduled(f.detail.amountSen); setAmount(f.detail.amountSen); setNote('The amount changed (a variation order moved the contract sum). Check the new amount and bill again.'); return; }
+      if (f.code === 'credit_note_needs_confirm' && typeof f.detail.amountSen === 'number') { setScheduled(f.detail.amountSen); setAmount(f.detail.amountSen); setNote(f.message); return; }
       setError(f.message);
     } finally {
       inFlight.current = false;
@@ -81,7 +88,7 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
             {negative
               ? <Button variant="danger" disabled={run.isPending} onClick={() => submit(true)}>{run.isPending ? 'Raising…' : `Raise credit note ${rm(-amount)}`}</Button>
-              : <Button disabled={run.isPending} onClick={() => submit(false)}>{run.isPending ? 'Billing…' : amount === 0 ? 'Close instalment' : `Issue invoice ${rm(amount)}`}</Button>}
+              : <Button disabled={run.isPending || outOfRange} onClick={() => submit(false)}>{run.isPending ? 'Billing…' : amount === 0 ? 'Close instalment' : `Issue invoice ${rm(amount)}`}</Button>}
           </div>
         )}>
       <div className="space-y-3 text-[13px]">
@@ -90,6 +97,18 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
           <div className="flex justify-between"><span className="text-ink-secondary">Already billed</span><span className="tabular-nums">{rm(c.billing.billedSen)}</span></div>
           <div className="mt-1 flex justify-between border-t border-border-subtle pt-1 text-[15px] font-semibold"><span>This instalment</span><span className={cn('tabular-nums', negative && 'text-err')}>{rm(amount)}</span></div>
         </div>
+        {!negative && !result && maxSen > scheduled && (
+          <Field label={`Amount to bill (at least ${rm(scheduled)}, at most ${rm(maxSen)})`}>
+            <MoneyInput value={amount} onChange={(v) => setAmount(v ?? 0)} ariaLabel="Amount to bill" />
+            <div className={cn('mt-1 text-[12px]', outOfRange ? 'text-err' : 'text-ink-secondary')}>
+              {amount < scheduled
+                ? `Too little: billed so far plus this must reach ${pctLabel(inst.cumBp)} of the contract.`
+                : amount > maxSen
+                  ? 'More than is left of the contract.'
+                  : `Billed in all after this: ${pctLabel(cumAfterBp)} of the contract${amount > scheduled ? '. The next instalments bill less by the extra.' : ''}`}
+            </div>
+          </Field>
+        )}
         {negative && <div className="rounded bg-warning-bg px-3 py-2 text-warning-text">The contract is over-billed after a variation order: this instalment becomes a credit note to the customer.</div>}
         {note && <div className="rounded bg-warning-bg px-3 py-2 text-warning-text">{note}</div>}
         {!result && <Field label={negative ? 'Credit note date' : 'Invoice date'}><input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} /></Field>}

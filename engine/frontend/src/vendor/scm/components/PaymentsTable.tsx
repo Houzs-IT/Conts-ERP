@@ -1468,9 +1468,9 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
                 </span>
                 {showReceipt && (
                   <span className={paymentsStyles.cell} data-label="Official receipt" style={{ alignItems: 'center', gap: 6 }}>
-                    {/* The receipt as finance stands on it (chew, 21 + 24 Nov 2026): a formal OR prints with its number,
-                        money finance has not confirmed yet waits and prints nothing; and the instalment invoice a
-                        renovation receipt is for. */}
+                    {/* The receipt as finance stands on it (chew, 21 + 24 Nov 2026): a formal OR's number, or waiting for
+                        finance (that one prints too, without a watermark); and the instalment invoice a renovation
+                        receipt is for. */}
                     {p.method === CONVERTED_METHOD ? <span className={detailStyles.muted}>—</span> : (
                       <>
                         <span style={{ display: 'inline-flex', flexDirection: 'column', fontSize: 'var(--fs-12)', lineHeight: 1.35 }}>
@@ -1479,18 +1479,16 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
                             : <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{p.or_number ?? 'Official receipt'}</span>}
                           {p.invoice_no && <span style={{ color: 'var(--fg-muted)' }}>for {p.invoice_no}</span>}
                         </span>
-                        {p.confirmed !== false && p.or_status !== 'DRAFT' && (
-                          <button
-                            type="button"
-                            onClick={() => void printReceipt(p.id)}
-                            disabled={receiptBusy === p.id}
-                            title="Print official receipt"
-                            aria-label={`Print official receipt${p.or_number ? ` ${p.or_number}` : ''}`}
-                            style={{ background: 'transparent', border: 'none', padding: 4, cursor: 'pointer', color: 'var(--fg-muted)' }}
-                          >
-                            <Printer size={14} strokeWidth={1.75} />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => void printReceipt(p.id)}
+                          disabled={receiptBusy === p.id}
+                          title="Print official receipt"
+                          aria-label={`Print official receipt${p.or_number ? ` ${p.or_number}` : ''}`}
+                          style={{ background: 'transparent', border: 'none', padding: 4, cursor: 'pointer', color: 'var(--fg-muted)' }}
+                        >
+                          <Printer size={14} strokeWidth={1.75} />
+                        </button>
                       </>
                     )}
                   </span>
