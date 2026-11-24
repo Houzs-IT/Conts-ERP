@@ -43,6 +43,7 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
   const [scheduled, setScheduled] = useState(inst?.amountSen ?? 0);
   const [amount, setAmount] = useState(inst?.amountSen ?? 0);
   const [amountText, setAmountText] = useState<string | null>(null);
+  const [pctText, setPctText] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
@@ -51,7 +52,7 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
   const run = useRenoMutation((body: Record<string, unknown>) => renoSend<{ kind: string; invoiceNumber?: string; noteNumber?: string; amountSen: number; posting: { status: string; reason?: string }; einvoiceWarning?: string | null }>(
     `/sales-orders/${encodeURIComponent(c.docNo)}/instalments/${inst!.id}/bill`, 'POST', body));
   /* By id: billing refetches the contract, and a new copy of this instalment must not wipe the result just shown. */
-  useEffect(() => { setScheduled(inst?.amountSen ?? 0); setAmount(inst?.amountSen ?? 0); setAmountText(null); setNote(null); setError(null); setResult(null); setEinvoice(null); }, [inst?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- amount is read only when another instalment opens
+  useEffect(() => { setScheduled(inst?.amountSen ?? 0); setAmount(inst?.amountSen ?? 0); setAmountText(null); setPctText(null); setNote(null); setError(null); setResult(null); setEinvoice(null); }, [inst?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- amount is read only when another instalment opens
   /* Click sweep G12: a double click sent two POSTs (201 + 409) before isPending re-rendered the button. */
   const inFlight = useRef(false);
   if (!inst) return null;
@@ -100,16 +101,31 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
         </div>
         {!negative && !result && maxSen > scheduled && (
           <Field label={`Amount to bill (at least ${rm(scheduled)}, at most ${rm(maxSen)})`}>
-            {/* Read as it is typed: the button and the running total follow every keystroke. */}
-            <input aria-label="Amount to bill" inputMode="decimal" className={cn(inputCls, 'w-full text-right tabular-nums')}
-              value={amountText ?? (amount / 100).toFixed(2)}
-              onFocus={(e) => e.currentTarget.select()}
-              onChange={(e) => {
-                setAmountText(e.target.value);
-                const n = Number(e.target.value.replace(/,/g, '').trim());
-                setAmount(e.target.value.trim() !== '' && Number.isFinite(n) ? Math.round(n * 100) : 0);
-              }}
-              onBlur={() => setAmountText(null)} />
+            {/* By amount or by % of the contract (chew, 24 Nov 2026); either one moves the other. Read as typed: the button
+                and the running total follow every keystroke. */}
+            <div className="grid grid-cols-[1fr_120px] gap-2">
+              <input aria-label="Amount to bill (RM)" inputMode="decimal" className={cn(inputCls, 'w-full text-right tabular-nums')}
+                value={amountText ?? (amount / 100).toFixed(2)}
+                onFocus={(e) => e.currentTarget.select()}
+                onChange={(e) => {
+                  setAmountText(e.target.value); setPctText(null);
+                  const n = Number(e.target.value.replace(/,/g, '').trim());
+                  setAmount(e.target.value.trim() !== '' && Number.isFinite(n) ? Math.round(n * 100) : 0);
+                }}
+                onBlur={() => setAmountText(null)} />
+              <div className="relative">
+                <input aria-label="Percent of the contract to bill" inputMode="decimal" className={cn(inputCls, 'w-full pr-7 text-right tabular-nums')}
+                  value={pctText ?? (revised > 0 ? String(Math.round((amount * 10000) / revised) / 100) : '')}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onChange={(e) => {
+                    setPctText(e.target.value); setAmountText(null);
+                    const n = Number(e.target.value.replace(/[,%]/g, '').trim());
+                    setAmount(e.target.value.trim() !== '' && Number.isFinite(n) ? Math.round((revised * n) / 100) : 0);
+                  }}
+                  onBlur={() => setPctText(null)} />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-secondary">%</span>
+              </div>
+            </div>
             <div className={cn('mt-1 text-[12px]', outOfRange ? 'text-err' : 'text-ink-secondary')}>
               {amount < scheduled
                 ? `Too little: billed so far plus this must reach ${pctLabel(inst.cumBp)} of the contract.`
