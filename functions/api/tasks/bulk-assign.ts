@@ -7,7 +7,7 @@ const MAX = 200;
 /** POST /api/tasks/bulk-assign { taskIds?: string[], reservationIds?: string[], cleanerIds | cleanerId, force? }
  *  Gives one or more cleaners (all of them on every job) many cleans at once, from the Cleaning list's ticked rows or from ticked bookings (their open
  *  turnover cleans). Each task goes through the same assignCleaner as one at a time, so each is audited and the
- *  cleaner notified the same way; a clean that clashes with the cleaner's other work (or is finished) is skipped
+ *  cleaner notified the same way (a finished clean is corrected quietly); a clean that clashes with the cleaner's other work is skipped
  *  with the reason unless force. */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);

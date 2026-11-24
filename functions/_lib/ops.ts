@@ -118,7 +118,8 @@ export async function assignCleaner(env: Env, session: Session, taskId: string, 
 export async function assignCleaners(env: Env, session: Session, taskId: string, cleaners: RosterCleaner[], force: boolean, quiet = false, mode: 'replace' | 'add' = 'replace'): Promise<Response> {
   const task = await one<any>(env, 'SELECT id, state, cleaner_id, assignee_id, due_at, unit_id FROM tasks WHERE id = ?', taskId);
   if (!task) return fail('NOT_FOUND', 'That task no longer exists. Refresh the list.', 404);
-  if (task.state === 'resolved') return fail('CONFLICT', 'That task is already finished.', 409);
+  // A finished job is corrected from History: it stays finished, skips the clash check and nobody is pinged.
+  const finished = task.state === 'resolved';
 
   const ready = await taskCleanersReady(env);
   const before = await currentCleaners(env, taskId);
@@ -129,7 +130,7 @@ export async function assignCleaners(env: Env, session: Session, taskId: string,
   const list = ready ? wanted : wanted.slice(0, 1);
   const added = list.filter(w => w.c && !before.some(b => b.cleanerId === w.cleanerId)).map(w => w.c!);
 
-  if (!force && task.due_at && added.length) {
+  if (!force && !finished && task.due_at && added.length) {
     // Every other open job within 90 minutes of this one, with who is on it; each new cleaner is matched against it.
     const near = await all<{ id: string; cleaner_id: string | null; assignee_id: string | null; listed: string | null }>(env, `
       SELECT t.id, t.cleaner_id, t.assignee_id, ${ready ? `(SELECT string_agg(tc.cleaner_id, ',') FROM task_cleaners tc WHERE tc.task_id = t.id)` : 'NULL'} AS listed
@@ -149,7 +150,7 @@ export async function assignCleaners(env: Env, session: Session, taskId: string,
   }
 
   const first = list[0] ?? null;
-  const state = first ? (task.state === 'in_progress' ? 'in_progress' : 'assigned') : (task.state === 'assigned' ? 'open' : task.state);
+  const state = finished ? task.state : first ? (task.state === 'in_progress' ? 'in_progress' : 'assigned') : (task.state === 'assigned' ? 'open' : task.state);
   await run(env, 'UPDATE tasks SET cleaner_id = ?, assignee_id = ?, state = ?, updated_at = ? WHERE id = ?',
     first?.cleanerId ?? null, first?.userId ?? null, state, nowIso(), taskId);
   await writeTaskCleaners(env, taskId, list, session.userId);
@@ -159,7 +160,7 @@ export async function assignCleaners(env: Env, session: Session, taskId: string,
     before: { cleanerId: task.cleaner_id, assigneeId: task.assignee_id, cleaners: names(before), state: task.state },
     after: { cleanerId: first?.cleanerId ?? null, assigneeId: first?.userId ?? null, cleaners: names(list), state },
   });
-  if (added.length) {
+  if (added.length && !finished) {
     const unit = await one<{ unit_number: string; property_name: string }>(env, `
       SELECT COALESCE(NULLIF(u.unit_code, ''), u.unit_number) AS unit_number, p.name AS property_name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?`, task.unit_id);
     // At most ten cleaners on a job (pickedCleanerIds), so at most ten pushes.
