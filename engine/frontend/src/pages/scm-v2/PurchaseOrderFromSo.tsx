@@ -453,6 +453,18 @@ Nothing was ticked.` });
   // ── Columns — memoized on `picks` so the controlled checkbox + qty input
   //    re-render when pick state changes (DataGrid is React.memo'd). ───────
   const lineStatus = useSoLineStatus(items.map((r) => r.soItemId));
+  /* Lines of one project sit under one heading, "project - customer" (owner, 24 Nov 2026), instead of repeating both on every row. */
+  const groupByProject = useMemo(() => {
+    const customerOf = new Map<string, string>();
+    for (const r of items) {
+      const project = projectTitleOf(r) || '(none)';
+      if (r.debtorName && !customerOf.has(project)) customerOf.set(project, r.debtorName);
+    }
+    return {
+      key: 'project',
+      label: (v: string): string => [v === '(none)' ? 'No project' : v, customerOf.get(v)].filter(Boolean).join(' - '),
+    };
+  }, [items]);
   const columns = useMemo<GridColumn<OutstandingSoItem>[]>(() => [
     {
       key: 'pick', label: '', width: 40, sortable: false, groupable: false,
@@ -775,6 +787,7 @@ Nothing was ticked.` });
         columns={columns}
         storageKey={STORAGE_KEY}
         rowKey={(r) => r.soItemId}
+        groupBy={groupByProject}
         /* The search box in the toolbar searches on the server; the grid's own box would only search the loaded page. */
         hideSearch
         serverSort
