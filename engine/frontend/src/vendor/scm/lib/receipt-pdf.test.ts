@@ -84,6 +84,10 @@ describe('the official receipt — A5 landscape', () => {
     expect(has(draft.draws, 'Draft')).toBe(false);
     expect(has(draft.draws, 'Status')).toBe(false);
     expect(draft.draws.some((d) => d.text === 'DRAFT')).toBe(false);
+    // No number until the money is confirmed.
+    expect(has(draft.draws, 'OR No')).toBe(false);
+    const formal = await render({});
+    expect(has(formal.draws, 'OR No')).toBe(true);
   });
 
   test('a cancelled receipt prints CANCELLED with its reason; a sales invoice payment prints its order, never the invoice id', async () => {
