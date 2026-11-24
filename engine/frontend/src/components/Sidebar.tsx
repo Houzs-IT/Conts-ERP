@@ -724,6 +724,8 @@ export const ALL_NAV_TABS: NavTab[] = [
           // E-invoice (Conts) — renovation invoices and credit notes prepared for LHDN; nothing is sent yet.
           { to: "/scm/einvoice", label: "E-invoice", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           // Renovation projects (Conts, SOP 4.2.3) — completion % and the money per project; management only.
+          // Commission (Conts, owner 25 Nov 2026) — sales commission on renovation contracts; management only.
+          { to: "/scm/commission", label: "Commission", icon: HandCoins, anyPerm: ["*"] },
           { to: "/scm/reno-projects", label: "Renovation projects", icon: AlertCircle, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"], badge: "reno-cost-alerts" },
           { to: "/scm/rental-unit-costs", label: "Rental unit costs", icon: FileText, anyPerm: ["*", "scm.access", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
           { to: "/scm/department-spend", label: "Spending by department", icon: FileText, anyPerm: ["*", "scm.payment_voucher.post"], anyAccess: ["scm.finance.accounting"] },
