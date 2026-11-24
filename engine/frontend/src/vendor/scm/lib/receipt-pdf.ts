@@ -10,7 +10,8 @@
 // cash was received at the counter); one line `Payment for sales order <SO>`
 // with its amount; AMOUNT RECEIVED over a double rule; the amount in words
 // (the same amountInWordsMyr every money print here uses); Received by and
-// the company chop. A DRAFT receipt prints with a big diagonal DRAFT watermark
+// the company chop. A CANCELLED receipt prints with a big diagonal watermark; a DRAFT one
+// prints without (chew, 24 Nov 2026), its Status line saying the money is not confirmed
 // — the salesperson can hand something over the moment the payment is keyed,
 // and nobody can mistake it for the confirmed paper (draft 的可以打印,带 DRAFT
 // 水印 — the owner's own design). A CANCELLED one prints CANCELLED, its reason
@@ -179,16 +180,15 @@ function renderReceiptInto(doc: JsPdf, autoTable: AutoTable, r: ReceiptPdfData, 
   doc.rect(pageW / 2 + 5, ty + 2, boxW, boxH);
   doc.setLineDashPattern([], 0);
 
-  /* The watermark LAST, over everything: a draft must read as a draft from
-     across the counter, and a cancelled receipt as cancelled. */
-  if (status !== 'FORMAL') {
-    const cancelled = status === 'CANCELLED';
+  /* The watermark LAST, over everything: a cancelled receipt must read as cancelled from across the counter. A draft
+     prints without one (chew, 24 Nov 2026): its Status line says the money is not confirmed yet. */
+  if (status === 'CANCELLED') {
     doc.saveGraphicsState();
     doc.setGState(doc.GState({ opacity: 0.14 }));
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(cancelled ? 48 : 64);
+    doc.setFontSize(48);
     doc.setTextColor(180, 30, 30);
-    doc.text(cancelled ? 'CANCELLED' : 'DRAFT', pageW / 2, pageH / 2, { align: 'center', angle: 25 });
+    doc.text('CANCELLED', pageW / 2, pageH / 2, { align: 'center', angle: 25 });
     doc.restoreGraphicsState();
     doc.setTextColor(0, 0, 0);
   }

@@ -36,7 +36,7 @@
 import { auditSo, mintDocNo, refuse, todayKl, yymmOf, type RenoDb, type UnsafeRunner, renoDbOf } from './renovation-db';
 import { readContractHead, recomputeSoHeader, RENO_LIVE_STATUSES } from './renovation-so';
 import type { RenoActor } from './renovation-quotation';
-import { instalmentPreview, nextInstalmentAmount } from '../shared/renovation-money';
+import { BP_SCALE, instalmentBillRange, instalmentPreview, nextInstalmentAmount } from '../shared/renovation-money';
 import { fmtSen } from '../shared/format';
 import { renderRenoDescription } from './reno-invoice-description';
 import { MAX_DESCRIPTION } from '../../acc/einvoice-build';
@@ -355,7 +355,7 @@ export async function billInstalment(
   actor: RenoActor,
   soDocNo: string,
   instalmentId: string,
-  body: { invoiceDate?: string | null; expectedAmountSen: number; confirmCreditNote?: boolean },
+  body: { invoiceDate?: string | null; expectedAmountSen: number; confirmCreditNote?: boolean; amountSen?: number | null },
 ): Promise<BillResult> {
   const head = await readContractHead(db, soDocNo, actor.companyId, true);
   if (!(RENO_LIVE_STATUSES as readonly string[]).includes(head.status)) throw refuse(409, 'contract_not_live', `A ${head.status} contract cannot be billed.`);
@@ -375,11 +375,28 @@ export async function billInstalment(
     throw refuse(409, 'stale_amount', 'The amount changed since this screen was opened (a variation order moved the contract sum). Check the new amount and bill again.',
       { amountSen: n.amountSen });
   }
+  /* The amount billed may be raised (chew, 24 Nov 2026): never below what keeps the running total at the schedule's,
+     never past the contract. What it bills ahead, the next instalments bill less (nextInstalmentAmount). */
+  if (body.amountSen !== undefined && body.amountSen !== null && n.amountSen >= 0) {
+    const want = body.amountSen;
+    const range = instalmentBillRange(n, view.revisedContractSen, billedBefore);
+    if (!Number.isSafeInteger(want) || want < range.minSen) {
+      throw refuse(409, 'below_schedule', `Instalment ${inst.seq} must bill at least ${fmtSen(range.minSen)}: with what is billed already that is ${n.cumBp / 100}% of the contract, as the schedule says.`,
+        { minSen: range.minSen, maxSen: range.maxSen });
+    }
+    if (want > range.maxSen) {
+      throw refuse(409, 'over_contract', `Instalment ${inst.seq} can bill at most ${fmtSen(range.maxSen)}, the rest of the contract.`, { minSen: range.minSen, maxSen: range.maxSen });
+    }
+    n.amountSen = want;
+  }
   const invoiceDate = body.invoiceDate || todayKl();
   /* The one line the invoice (and its e-invoice) carries, from finance's template (acc/einvoice-settings.ts). */
   const [tpl] = await db.q<{ reno_invoice_description: string | null }>(
     'select reno_invoice_description from scm.acc_company_settings where company_id = $1', [actor.companyId]);
-  const label = renderRenoDescription(tpl?.reno_invoice_description ?? null, { seq: inst.seq, pctBp: inst.pctBp, label: inst.label, soDocNo });
+  /* A raised amount prints the share of the contract it is, e.g. 20% where the schedule said 15%. */
+  const scheduled = nextInstalmentAmount({ instalments: view.instalments.map((i) => ({ seq: i.seq, pctBp: i.pctBp })), seq: inst.seq, revisedContractSen: view.revisedContractSen, billedSen: billedBefore }).amountSen;
+  const pctBp = n.amountSen !== scheduled && view.revisedContractSen > 0 ? Math.round((n.amountSen * BP_SCALE) / view.revisedContractSen) : inst.pctBp;
+  const label = renderRenoDescription(tpl?.reno_invoice_description ?? null, { seq: inst.seq, pctBp, label: inst.label, soDocNo });
   const creditLabel = `Credit: ${label}`.length > MAX_DESCRIPTION ? `Credit: ${label}`.slice(0, MAX_DESCRIPTION - 1) + '…' : `Credit: ${label}`;
   let result: BillResult;
   if (n.amountSen > 0) {
