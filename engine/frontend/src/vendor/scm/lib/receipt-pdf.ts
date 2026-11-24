@@ -107,8 +107,10 @@ function renderReceiptInto(doc: JsPdf, autoTable: AutoTable, r: ReceiptPdfData, 
 
   let y = drawHeader(doc, {
     docTitle: 'OFFICIAL RECEIPT',
+    /* No number until finance confirms the money (chew, 24 Nov 2026): the draft's number is not the one the customer
+       will keep, so a receipt of unconfirmed money carries none. */
     rightMeta: [
-      { label: 'OR No', value: r.or_number },
+      ...(status === 'DRAFT' ? [] : [{ label: 'OR No', value: r.or_number }]),
       { label: 'Date', value: fmtDocDate(r.paid_at) },
     ],
     ...(brand ? { name: brand.name, logo: brand.logo, ...(brand.lines.length ? { lines: brand.lines } : {}) } : {}),
@@ -205,7 +207,9 @@ export async function generateReceiptPdf(r: ReceiptPdfData, opts?: { action?: Pd
   /* A Chinese name or address needs the font up front, or helvetica paints mojibake. */
   await ensurePdfCjkFont(doc, r);
   renderReceiptInto(doc, autoTable, r, brand);
-  deliverPdf(doc, `${r.or_number}-${safeName(r.customer_name ?? r.doc_no ?? 'receipt')}.pdf`, opts?.action);
+  /* The file is named as the paper: a draft by its order (or 'receipt'), not its draft number. */
+  const fileNo = r.status.toUpperCase() === 'DRAFT' ? `Receipt-${r.sales_order ?? (r.payment_source === 'SIPAY' ? '' : r.doc_no ?? '')}`.replace(/-$/, '') : r.or_number;
+  deliverPdf(doc, `${fileNo}-${safeName(r.customer_name ?? r.doc_no ?? 'receipt')}.pdf`, opts?.action);
 }
 
 /** For tests and samples: draw one receipt onto a given document. */
