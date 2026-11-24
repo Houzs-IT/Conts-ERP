@@ -186,6 +186,7 @@ import {
   readVersionConflict, SoVersionConflictBanner, type SoVersionConflict,
 } from './so-version-conflict';
 import { RevisionsTab } from './so-revisions-tab';
+import { contractDiscountSen } from '../../mobile/contractLineEdits';
 import styles from './SalesOrderDetail.module.css';
 import { CustomerBlock } from '../projects/renovation/CustomerBlock';
 import { soInfoApi, useSoInfoLists, useSoRooms } from '../projects/renovation/customerPropertyApi';
@@ -1413,7 +1414,15 @@ export const SalesOrderDetail = () => {
     const edits: Edit[] = [];
     const adds: Array<{ room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string }> = [];
     const specs: typeof lines = [];
-    for (const l of lines) {
+    let discount: ReturnType<typeof contractDiscountSen<CreateAmendmentLine>>;
+    try {
+      discount = contractDiscountSen(lines, items);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    const { discountSen } = discount;
+    for (const l of discount.lineChanges) {
       const variants = (l.newVariants ?? undefined) as Record<string, unknown> | undefined;
       if (l.changeType === 'ADD') {
         /* A line with no room shows under Common area on the form, so it is saved there (placeRows). */
@@ -1446,9 +1455,9 @@ export const SalesOrderDetail = () => {
         });
         poFlags += r.flags ?? 0;
       }
-      const vo = edits.length || adds.length
+      const vo = edits.length || adds.length || discountSen !== undefined
         ? await authedFetch<{ voNo: string; flags: number }>(`/renovation/sales-orders/${encodeURIComponent(header.doc_no)}/line-edits`, {
-          method: 'POST', body: JSON.stringify({ edits, adds, title: 'Changed on the sales order' }),
+          method: 'POST', body: JSON.stringify({ edits, adds, discountSen, title: 'Changed on the sales order' }),
         })
         : null;
       /* The rooms, last, after the VO has added or removed its lines. */

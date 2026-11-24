@@ -229,9 +229,11 @@ const SOURCES: Source[] = [
   {
     kind: "delivery_order",
     async run(db, t, co, limit) {
-      const m = matchSql(t, ["d.do_number", "d.so_doc_no", "d.debtor_name", "d.ref"], ["d.do_number", "d.so_doc_no", "d.phone"]);
+      const m = matchSql(t, ["d.do_number", "d.so_doc_no", "d.debtor_name", "d.ref", "p.code", "p.name"], ["d.do_number", "d.so_doc_no", "d.phone"]);
       const r = await rows(db, `SELECT d.id, d.do_number, d.so_doc_no, d.debtor_name, d.do_date
           FROM scm.delivery_orders d
+          LEFT JOIN scm.mfg_sales_orders so ON so.doc_no = d.so_doc_no
+          LEFT JOIN projects p ON p.id = so.project_id
          WHERE true${co.active("d.company_id")} AND ${m.sql}
          ORDER BY d.do_date DESC NULLS LAST LIMIT ${limit}`, m.args);
       return r.map((x) => ({
@@ -244,9 +246,11 @@ const SOURCES: Source[] = [
   {
     kind: "sales_invoice",
     async run(db, t, co, limit) {
-      const m = matchSql(t, ["i.invoice_number", "i.so_doc_no", "i.debtor_name", "i.ref"], ["i.invoice_number", "i.so_doc_no", "i.phone"]);
+      const m = matchSql(t, ["i.invoice_number", "i.so_doc_no", "i.debtor_name", "i.ref", "p.code", "p.name"], ["i.invoice_number", "i.so_doc_no", "i.phone"]);
       const r = await rows(db, `SELECT i.id, i.invoice_number, i.so_doc_no, i.debtor_name, i.invoice_date
           FROM scm.sales_invoices i
+          LEFT JOIN scm.mfg_sales_orders so ON so.doc_no = i.so_doc_no
+          LEFT JOIN projects p ON p.id = so.project_id
          WHERE true${co.active("i.company_id")} AND ${m.sql}
          ORDER BY i.invoice_date DESC NULLS LAST LIMIT ${limit}`, m.args);
       return r.map((x) => ({

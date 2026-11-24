@@ -57,8 +57,9 @@ export function QuotationSoPrint({ open, onClose, docNo, status, header, section
       }
       return { ...r, item_group: 'RENOVATION', variants: null };
     });
-    /* The document discount prints as a line of its own, as the sales order carries it once converted. */
-    if (header.docDiscountSen > 0) {
+    /* The document discount prints as a line of its own, as the sales order carries it once converted. A VO that takes
+       discount off passes it negative, so the line adds to the total. */
+    if (header.docDiscountSen !== 0) {
       items.push({
         id: 'quote-discount', item_code: 'RENO-DISCOUNT', description: header.docDiscountLabel || 'Discount', description2: null, uom: 'LOT', qty: 1,
         unit_price_sen: -header.docDiscountSen, discount_sen: 0, total_sen: -header.docDiscountSen, item_group: 'RENOVATION', variants: null,

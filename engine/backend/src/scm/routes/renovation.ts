@@ -548,16 +548,18 @@ renovation.post('/sales-orders/:docNo/line-edits', handle(PERM.voApply, async (c
     title: z.string().max(200).optional(),
     edits: z.array(lineEditSchema).max(200).default([]),
     adds: z.array(lineAddSchema).max(200).default([]),
+    discountSen: z.number().int().min(0).max(2_000_000_000).optional(),
   }).safeParse(b);
   if (!s.success) throw new RenoError(400, 'invalid_edits', 'Send the lines to change.');
-  return c.json(await runQuickVo(c, { tx, sqlRead }, param(c, 'docNo'), s.data.edits, s.data.adds, s.data.title ?? 'Changed on the order'));
+  return c.json(await runQuickVo(c, { tx, sqlRead }, param(c, 'docNo'), s.data.edits, s.data.adds, s.data.title ?? 'Changed on the order', s.data.discountSen));
 }));
 
 async function runQuickVo(
   c: C, ctx: { sqlRead: RenoDb; tx: <T>(f: (db: RenoDb) => Promise<T>) => Promise<T> }, docNo: string, edits: QuickLineEdit[], adds: QuickLineAdd[], title: string,
+  discountSen?: number,
 ) {
   const actor = actorOf(c);
-  const out = await ctx.tx((db) => quickVo(db, actor, docNo, edits, adds, title));
+  const out = await ctx.tx((db) => quickVo(db, actor, docNo, edits, adds, title, discountSen));
   await onRenovationSoLinesChanged(out.soDocNo, ctx.sqlRead);
   const posting = await postContractAfterCommit(c, actor, out.soDocNo, out.docDate);
   return { voNo: out.voNo, netSen: out.netSen, revisedContractSen: out.revisedContractSen, flags: out.flags, posting };

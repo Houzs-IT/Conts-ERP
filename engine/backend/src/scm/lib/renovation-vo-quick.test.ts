@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { carryToAddedLine, poLineTargets, quickVoLines } from './renovation-vo';
+import { carryToAddedLine, discountChangeOf, discountNetSen, poLineTargets, quickVoLines, requestedDiscountSen } from './renovation-vo';
 import type { RenoDb } from './renovation-db';
 import type { DocLineOut } from './renovation-doc-lines';
 
@@ -120,5 +120,32 @@ describe('poLineTargets: what each PO line keeps', () => {
   it('nothing to change, nothing flagged', () => {
     expect(poLineTargets([line('a', 3)], 3)).toEqual([]);
     expect(poLineTargets([line('a', 3, 3)], 0)).toEqual([]);
+  });
+});
+
+describe('the contract discount in a quick VO', () => {
+  const discountRowId = 'D1';
+  it('the bin on the discount row removes the discount', () => {
+    expect(requestedDiscountSen(discountRowId, [{ soItemId: discountRowId, remove: true }], undefined)).toBe(0);
+  });
+  it('a new amount sent on its own is taken as it is', () => {
+    expect(requestedDiscountSen(discountRowId, [], 500000)).toBe(500000);
+  });
+  it('untouched: no discount change', () => {
+    expect(requestedDiscountSen(discountRowId, [{ soItemId: 'I1', qty: 3 }], undefined)).toBeUndefined();
+    expect(requestedDiscountSen(null, [], undefined)).toBeUndefined();
+  });
+  it('a price on the discount row alone is refused, so an older app cannot clear it by sending 0', () => {
+    expect(() => requestedDiscountSen(discountRowId, [{ soItemId: discountRowId, unitPriceSen: 0 }], undefined)).toThrow(/bin to remove it/);
+  });
+  it('removing RM 8,979 of discount raises the contract by RM 8,979', () => {
+    expect(discountNetSen({ fromSen: 897900, toSen: 0, label: 'Discount as per quotation' })).toBe(897900);
+    expect(discountNetSen({ fromSen: 0, toSen: 100000, label: 'Discount' })).toBe(-100000);
+    expect(discountNetSen(null)).toBe(0);
+  });
+  it('reads the stored change, and nothing from a malformed one', () => {
+    expect(discountChangeOf('{"fromSen":897900,"toSen":0,"label":"Discount as per quotation"}')).toEqual({ fromSen: 897900, toSen: 0, label: 'Discount as per quotation' });
+    expect(discountChangeOf(null)).toBeNull();
+    expect(discountChangeOf({ fromSen: '1' })).toBeNull();
   });
 });

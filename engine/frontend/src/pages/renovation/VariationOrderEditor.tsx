@@ -307,6 +307,12 @@ export function VariationOrderEditor() {
                 {v.sections.flatMap((s) => s.lines.filter((l) => l.voChange === 'OMIT')).map((l) => (
                   <li key={l.id} className="flex justify-between px-3 py-1.5"><span>{l.description} <span className="text-ink-muted">x {l.qty}</span></span><span className="tabular-nums text-err">{rm(l.netSen ?? 0)}</span></li>
                 ))}
+                {v.discountChange && (
+                  <li className="flex justify-between px-3 py-1.5">
+                    <span>{v.discountChange.label} <span className="text-ink-muted">{v.discountChange.toSen === 0 ? `removed, was ${rm(v.discountChange.fromSen)}` : `${rm(v.discountChange.fromSen)} to ${rm(v.discountChange.toSen)}`}</span></span>
+                    <span className="tabular-nums">{rm(v.discountChange.fromSen - v.discountChange.toSen)}</span>
+                  </li>
+                )}
               </ul>
             ) : (
               <div className="max-h-[420px] overflow-auto">
@@ -360,7 +366,10 @@ export function VariationOrderEditor() {
         </div>
       </ModalOverlay>
       <QuotationSoPrint kind="VARIATION_ORDER" open={printOpen} onClose={() => setPrintOpen(false)} docNo={v.voNo} status={v.status} reference={v.soDocNo}
-        header={{ ...(contract.data?.header ?? ({} as DocHeader)), customerName: contract.data?.header.customerName || contract.data?.debtorName || '', docDate, lastAmended: null, docDiscountSen: 0, promoLines: [] }}
+        header={{ ...(contract.data?.header ?? ({} as DocHeader)), customerName: contract.data?.header.customerName || contract.data?.debtorName || '', docDate, lastAmended: null,
+          docDiscountSen: v.discountChange ? v.discountChange.toSen - v.discountChange.fromSen : 0,
+          docDiscountLabel: v.discountChange ? `${v.discountChange.label} (${v.discountChange.toSen === 0 ? 'removed' : `now ${rm(v.discountChange.toSen)}`}, was ${rm(v.discountChange.fromSen)})` : '',
+          promoLines: [] }}
         sections={printSections} instalments={[]} brand={brand} />
     </div>
   );

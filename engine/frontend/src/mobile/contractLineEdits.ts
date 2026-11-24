@@ -14,7 +14,31 @@ type Snap = { id: string; item_code: string | null; qty: number | null; unit_pri
 export type ContractEdit = { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string };
 export type ContractAdd = { room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string };
 
-export function contractLineEdits(lines: readonly PhoneLineChange[], items: readonly Snap[]): { edits: ContractEdit[]; adds: ContractAdd[] } {
+export const CONTRACT_DISCOUNT_CODE = 'RENO-DISCOUNT';
+
+/** The contract's document discount is one negative RENO-DISCOUNT row, not a contract line, so the VO takes its new
+    amount on its own: 0 when the row is binned, the typed amount when it is repriced. Throws the sentence to show when
+    the row is changed in a way a discount cannot be. */
+export function contractDiscountSen<L extends PhoneLineChange>(lines: readonly L[], items: readonly (Snap & { cancelled?: boolean | null })[]): { discountSen?: number; lineChanges: L[] } {
+  const discountRow = items.find((it) => it.item_code === CONTRACT_DISCOUNT_CODE && it.cancelled !== true);
+  if (!discountRow) return { lineChanges: [...lines] };
+  let discountSen: number | undefined;
+  const lineChanges: L[] = [];
+  for (const l of lines) {
+    if (l.salesOrderItemId !== discountRow.id) { lineChanges.push(l); continue; }
+    if (l.changeType === 'REMOVE') { discountSen = 0; continue; }
+    const codeMoved = l.newItemCode != null && l.newItemCode !== discountRow.item_code;
+    const qtyMoved = l.newQty != null && l.newQty !== discountRow.qty;
+    if (codeMoved || qtyMoved) throw new Error('The discount row only takes a new amount, or the bin to remove it.');
+    if (l.newUnitPriceSen == null || l.newUnitPriceSen === discountRow.unit_price_sen) continue;
+    if (l.newUnitPriceSen > 0) throw new Error('A discount is a negative amount, for example -5000.00. Use the bin to remove it.');
+    discountSen = -Math.round(l.newUnitPriceSen);
+  }
+  return { discountSen, lineChanges };
+}
+
+export function contractLineEdits(allLines: readonly PhoneLineChange[], items: readonly Snap[]): { edits: ContractEdit[]; adds: ContractAdd[]; discountSen?: number } {
+  const { discountSen, lineChanges: lines } = contractDiscountSen(allLines, items);
   const byId = new Map(items.map((it) => [it.id, it]));
   const edits: ContractEdit[] = [];
   const adds: ContractAdd[] = [];
@@ -35,5 +59,5 @@ export function contractLineEdits(lines: readonly PhoneLineChange[], items: read
     if (l.newUnitPriceSen != null && l.newUnitPriceSen !== it.unit_price_sen) e.unitPriceSen = Math.max(0, Math.round(l.newUnitPriceSen));
     if (e.itemCode !== undefined || e.qty !== undefined || e.unitPriceSen !== undefined) edits.push(e);
   }
-  return { edits, adds };
+  return { edits, adds, discountSen };
 }
