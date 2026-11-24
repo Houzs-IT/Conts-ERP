@@ -124,6 +124,15 @@ describe('open-to-all — the helpers bypass scope for flagged orders', () => {
     });
     expect(out).toBe(false);
   });
+
+  it('an order with no salesperson is open to everyone (Conts, 25 Nov 2026)', async () => {
+    let captured = '';
+    const q: { or: (s: string) => typeof q } = { or: (s: string) => { captured = s; return q; } };
+    applySoScope(q, ['11111111-1111-1111-1111-111111111111']);
+    expect(captured).toContain('salesperson_id.is.null');
+    const sb = { from: () => { throw new Error('scope lookup must not run for an order with no salesperson'); } };
+    expect(await soDocOutOfScope(sb, {} as never, 999, false, { salespersonId: null, accessStaffIds: [] })).toBe(false);
+  });
 });
 
 describe('open-to-all — reach is Sales Orders only, exactly like sharing', () => {
