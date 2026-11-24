@@ -4,7 +4,7 @@ import { qtyLabel } from '../../vendor/shared/renovation-money';
 import type { DocSection, LineSpec, VoEdits } from '../../lib/renovation/api';
 import { cn } from '../../lib/utils';
 import { RenovationVariantPicker, hasVariantPickers } from '../../vendor/scm/components/renovationVariantPicker';
-import { ProductPicker } from './DocEditor';
+import { VoItemPicker } from './VoItemPicker';
 import { MoneyInput, rm } from './shared';
 import {
   addLine, dropAdd, removeLine, roomsOf, setAddPrice, setAddQty, setAddRemark, setLineOptions, setLinePrice, setLineQty, setLineRemark,
@@ -84,7 +84,8 @@ export function VoRoomEditor({ sections, edits, onChange, disabled, contractErro
             <input className={cn(FIELD, 'flex-1')} value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder="Kitchen" />
           </label>
           <div className="w-full sm:w-56" aria-label="Pick the first product for the new room">
-            <ProductPicker value={null} tall disabled={!newRoom.trim()} onPick={(p) => { onChange(addLine(edits, newRoom, p)); setNewRoom(''); }} />
+            <VoItemPicker mode="add" value={null} title={`Add items · ${newRoom.trim() || 'new room'}`} disabled={!newRoom.trim()}
+              onPick={(p) => onChange(addLine(edits, newRoom, p))} onClose={() => setNewRoom('')} />
           </div>
         </div>
       )}
@@ -108,7 +109,7 @@ function RoomCard({ room, edits, onChange, disabled }: { room: Room; edits: VoEd
       {!disabled && (
         <div className="flex flex-wrap items-center gap-2 border-t border-border-subtle px-3 py-2">
           <span className={cn('text-[12.5px] text-ink-secondary', WRAP)}>Add line in {room.name}</span>
-          <div className="w-full sm:w-56"><ProductPicker value={null} tall onPick={(p) => onChange(addLine(edits, room.name, p))} /></div>
+          <div className="w-full sm:w-56"><VoItemPicker mode="add" value={null} title={`Add items · ${room.name}`} onPick={(p) => onChange(addLine(edits, room.name, p))} /></div>
         </div>
       )}
     </section>
@@ -166,7 +167,7 @@ function RowView({ r, edits, onChange, disabled }: { r: RoomRow; edits: VoEdits;
 
       <div className="min-w-0 lg:order-1">
         {line && !isRemoved && !disabled ? (
-          <ProductPicker value={r.sku} tall onPick={(p) => onChange(swapLine(edits, line, p))} />
+          <VoItemPicker mode="replace" value={r.sku} title={`Change item · ${r.name}`} onPick={(p) => onChange(swapLine(edits, line, p))} />
         ) : (
           <span className={cn('block truncate font-mono text-[11.5px]', isRemoved && 'text-err line-through')}>{r.sku ?? '-'}</span>
         )}

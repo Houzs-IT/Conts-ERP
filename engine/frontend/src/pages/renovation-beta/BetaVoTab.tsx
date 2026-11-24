@@ -5,11 +5,10 @@
 
 import { FromPackageButton } from "../renovation/renovationPackagePick";
 import { useEffect, useState, type ReactElement } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { ExternalLink, FilePlus2 } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { useQuery } from "../../hooks/useQuery";
-import { refusalOf, renoSend } from "../../lib/renovation/api";
 import { money } from "../projects/renovation/renovationModel";
 import { TONE_ACCENT, TONE_ALERT, TONE_DONE, TONE_QUIET, TONE_WAIT, WS, WsBadge, WsCard, WsEmpty, WsFilterPill, WsPageHead, btnStyle } from "./BetaWsUi";
 import { WsNarrow, WsNarrowStyle, WsStat, WsStats, WsTable, metaStyle, narrowItemStyle, numStyle, tdStyle, thStyle } from "./BetaVoPoUi";
@@ -108,29 +107,17 @@ function VoBody({ p, d }: { p: BetaTabProps; d: VoAnswer }): ReactElement {
 }
 
 function NewVo({ p, so }: { p: BetaTabProps; so: VoAnswer["so"] }): ReactElement | null {
-  const navigate = useNavigate();
   const { can } = useAuth();
-  const [busy, setBusy] = useState(false);
   if (!so) return null;
   const style = { ...btnStyle("teal", "lg"), borderRadius: 10 };
   if (!so.renovation) {
     return <Link to={`/scm/sales-orders/${encodeURIComponent(so.docNo)}?edit=1`} style={style}><FilePlus2 size={16} aria-hidden="true" />New VO</Link>;
   }
   if (!can("scm.renovation.quote")) return null;
-  const start = async (): Promise<void> => {
-    setBusy(true);
-    try {
-      const r = await renoSend<{ id: string }>(`/sales-orders/${encodeURIComponent(so.docNo)}/variation-orders`, "POST", {});
-      navigate(`/scm/renovation/variation-orders/${r.id}`);
-    } catch (e) {
-      p.onError(refusalOf(e).message);
-      setBusy(false);
-    }
-  };
   return (
     <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8 }}>
       <FromPackageButton docNo={so.docNo} onError={p.onError} style={{ ...btnStyle("outline", "lg"), borderRadius: 10 }} />
-      <button type="button" disabled={busy} onClick={() => void start()} style={style}><FilePlus2 size={16} aria-hidden="true" />{busy ? "Opening..." : "New VO"}</button>
+      <Link to={`/scm/renovation/variation-orders/new?so=${encodeURIComponent(so.docNo)}`} style={style}><FilePlus2 size={16} aria-hidden="true" />New VO</Link>
     </span>
   );
 }

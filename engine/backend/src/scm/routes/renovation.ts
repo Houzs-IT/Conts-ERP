@@ -27,7 +27,7 @@ import { previewPoSplit, raisePos } from '../lib/renovation-po-split';
 import { billingView, billInstalment, creditContract } from '../lib/renovation-billing';
 import { applyCustomerCreditToSi } from '../lib/customer-credits';
 import { recomputeSiPaid } from '../lib/si-order-deposit';
-import { approveVo, createVo, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, saveVoEdits, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
+import { approveVo, createVoWithEdits, listPoFlags, quickVo, readVo, resolvePoFlag, saveVo, saveVoEdits, setVoStatus, type QuickLineEdit, type QuickLineAdd } from '../lib/renovation-vo';
 import { voucherForPoPayment } from '../lib/renovation-po-voucher';
 import { applyDefaultPoSchedule, readPoSchedule, recordPoPayment, releasePoInstalment, savePoSchedule, takeBackPoPayment } from '../lib/renovation-po-schedule';
 import { applyTermsToContract, listBrandProfiles, listTermTemplates, saveBrandProfile, saveTermTemplate } from '../lib/renovation-terms';
@@ -283,7 +283,7 @@ renovation.get('/lookups/products', handle(null, async (c, { sqlRead }) => {
        left join scm.suppliers s on s.id = b.supplier_id
       where p.company_id = $1 and p.status = 'ACTIVE' and p.code not like 'RENO-%'
         and ($2 = '' or p.code ilike '%' || $2 || '%' or p.name ilike '%' || $2 || '%')
-      order by (p.code ilike 'RN-%') desc, p.code
+      order by lower(p.code) = lower($2) desc, (p.code ilike 'RN-%') desc, p.code
       limit 50`,
     [actorOf(c).companyId, q],
   );
@@ -487,8 +487,9 @@ renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(null, async 
 /* ── Variation orders ───────────────────────────────────────────────────── */
 
 renovation.post('/sales-orders/:docNo/variation-orders', handle(PERM.quote, async (c, { tx }) => {
-  const b = await json(c);
-  return c.json(await tx((db) => createVo(db, actorOf(c), param(c, 'docNo'), { title: typeof b.title === 'string' ? b.title : '' })), 201);
+  const s = voFirstSaveSchema.safeParse(await json(c));
+  if (!s.success) throw new RenoError(400, 'invalid_edits', 'Send the lines to change.');
+  return c.json(await tx((db) => createVoWithEdits(db, actorOf(c), param(c, 'docNo'), s.data)), 201);
 }));
 
 renovation.get('/variation-orders/:id', handle(null, async (c, { sqlRead }) => c.json(await readVo(sqlRead, param(c, 'id'), actorOf(c).companyId))));
@@ -513,10 +514,15 @@ const lineAddSchema = z.object({
   label: z.string().max(300).optional(),
 });
 
+const voEditsSchema = z.object({ lines: z.array(lineEditSchema).max(200), adds: z.array(lineAddSchema).max(200) });
+const voFirstSaveSchema = z.object({
+  title: z.string().max(200).optional(), docDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), edits: voEditsSchema.optional(),
+});
+
 renovation.put('/variation-orders/:id/edits', handle(PERM.quote, async (c, { tx }) => {
   const s = z.object({
     version: z.number().int(), title: z.string().max(200).optional(), docDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    edits: z.object({ lines: z.array(lineEditSchema).max(200), adds: z.array(lineAddSchema).max(200) }),
+    edits: voEditsSchema,
   }).safeParse(await json(c));
   if (!s.success) throw new RenoError(400, 'invalid_edits', 'Send the lines to change.');
   const { version, title, docDate, edits } = s.data;

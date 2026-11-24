@@ -4,7 +4,7 @@
 // up the difference, and PO lines that bought omitted work are flagged.
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Package, Printer, Save, Send } from 'lucide-react';
 import { QuotationSoPrint } from '../scm-v2/renovationQuotationPrint';
 import { PageHeader } from '../../components/Layout';
@@ -13,7 +13,7 @@ import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapMod
 import { useAuth } from '../../auth/AuthContext';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { lineAmounts, qtyLabel } from '../../vendor/shared/renovation-money';
-import { contractPostingWarning, refusalOf, renoSend, sectionsForSave, useBrands, useContract, useRenoMutation, useVo, type ContractPosting, type DocHeader, type DocLine, type DocSection } from '../../lib/renovation/api';
+import { contractPostingWarning, refusalOf, renoSend, sectionsForSave, useBrands, useContract, useRenoMutation, useVo, type ContractPosting, type DocHeader, type DocLine, type DocSection, type VoView } from '../../lib/renovation/api';
 import { useToast } from '../../hooks/useToast';
 import { amountsOf, blankSection, DocEditor } from './DocEditor';
 import { DocAttachments } from '../../components/doc-attachments/DocAttachments';
@@ -50,8 +50,12 @@ function omitAmount(l: DocLine, omitQty: number | null): number {
 
 export function VariationOrderEditor() {
   const { id } = useParams();
-  const vo = useVo(id);
-  const contract = useContract(vo.data?.soDocNo);
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  /* New VO opens /variation-orders/new?so=<docNo>: nothing is created until the first save with a change. */
+  const newSo = id === 'new' ? params.get('so') : null;
+  const vo = useVo(newSo ? undefined : id);
+  const contract = useContract(vo.data?.soDocNo ?? newSo ?? undefined);
   const brands = useBrands();
   const { can } = useAuth();
   const toast = useToast();
@@ -61,7 +65,7 @@ export function VariationOrderEditor() {
   const [omits, setOmits] = useState<OmitPick[]>([]);
   const [edits, setEdits] = useState<VoEdits>(EMPTY_EDITS);
   /* A VO built in the Add and Omit layout, and any approved or cancelled VO, keeps that layout. */
-  const roomMode = Boolean(vo.data && vo.data.status !== 'APPROVED' && vo.data.status !== 'CANCELLED'
+  const roomMode = Boolean(newSo) || Boolean(vo.data && vo.data.status !== 'APPROVED' && vo.data.status !== 'CANCELLED'
     && (vo.data.edits || (vo.data.status === 'DRAFT' && vo.data.sections.length === 0)));
   const [dirty, setDirty] = useState(false);
   /* Saved, and the server's copy is on its way: the form stays shut until it lands, or the refetch would replace what was typed meanwhile. */
@@ -71,7 +75,6 @@ export function VariationOrderEditor() {
   const [signedName, setSignedName] = useState('');
   const [printOpen, setPrintOpen] = useState(false);
   const run = useRenoMutation(async (fn: () => Promise<unknown>) => fn());
-  const [params, setParams] = useSearchParams();
   const packages = usePackages();
   const pkgById = useMemo(() => new Map((packages.data?.packages ?? []).map((x) => [x.id, x])), [packages.data]);
   const packageCodes = useMemo(() => Object.fromEntries([...pkgById.values()].map((x) => [x.id, x.code])), [pkgById]);
@@ -126,14 +129,14 @@ export function VariationOrderEditor() {
   }, [vo.data]);
   const fromPackage = params.get('package');
   useEffect(() => {
-    if (!fromPackage || !vo.data || vo.data.status !== 'DRAFT') return;
+    if (!fromPackage || (!newSo && vo.data?.status !== 'DRAFT')) return;
     setParams((p) => { const n = new URLSearchParams(p); n.delete('package'); return n; }, { replace: true });
     setConfirm({ packageId: fromPackage, defaultArea: '', sectionIndex: null, lineIndex: null, replace: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the VO has loaded
   }, [fromPackage, vo.data?.id]);
   const fromTemplate = params.get('template');
   useEffect(() => {
-    if (!fromTemplate || !vo.data || vo.data.status !== 'DRAFT') return;
+    if (!fromTemplate || (!newSo && vo.data?.status !== 'DRAFT')) return;
     setParams((p) => { const n = new URLSearchParams(p); n.delete('template'); return n; }, { replace: true });
     void addTemplate(fromTemplate);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the VO has loaded
@@ -160,8 +163,12 @@ export function VariationOrderEditor() {
     .filter((l) => (l.kind === 'ITEM' || l.kind === 'CHILD') && !l.omittedByVoId && !l.soItemCancelled)
     .map((l) => ({ section: s.heading, line: l })))), [contract.data]);
 
-  if (vo.isLoading || !vo.data) return <div className="p-8 text-center text-[13px] text-ink-muted">{vo.error ? refusalOf(vo.error).message : 'Loading variation order…'}</div>;
-  const v = vo.data;
+  const unsaved: VoView | null = newSo ? {
+    id: '', voNo: 'New variation order', soDocNo: newSo, seq: 0, status: 'DRAFT', title: '', docDate: todayIso(), version: 0, signedName: null,
+    signedAt: null, approvedAt: null, approvedBy: null, amendmentId: null, sections: [], totals: { addSen: 0, omitSen: 0, netSen: 0 },
+  } : null;
+  const v = unsaved ?? vo.data;
+  if (!v) return <div className="p-8 text-center text-[13px] text-ink-muted">{vo.error ? refusalOf(vo.error).message : 'Loading variation order…'}</div>;
   const editable = v.status === 'DRAFT' && can('scm.renovation.quote');
   const locked = !editable || run.isPending || (settling && vo.isFetching);
   const filesEditable = v.status !== 'CANCELLED' && can('scm.renovation.quote');
@@ -195,9 +202,15 @@ export function VariationOrderEditor() {
     setError(null);
     try { await run.mutateAsync(fn); return true; } catch (e) { setError(refusalOf(e).message); return false; }
   };
-  const save = () => act(() => (roomMode
+  const create = async (): Promise<void> => {
+    if (!edits.lines.length && !edits.adds.length && !title.trim()) { setError('Change, add or remove a line first.'); return; }
+    let made: { id: string } | undefined;
+    const ok = await act(async () => { made = await renoSend<{ id: string }>(`/sales-orders/${encodeURIComponent(v.soDocNo)}/variation-orders`, 'POST', { title, docDate, edits }); });
+    if (ok && made) { setDirty(false); navigate(`/scm/renovation/variation-orders/${made.id}`, { replace: true }); }
+  };
+  const save = () => (unsaved ? create() : act(() => (roomMode
     ? renoSend(`/variation-orders/${v.id}/edits`, 'PUT', { version: v.version, title, docDate, edits })
-    : renoSend(`/variation-orders/${v.id}`, 'PUT', { version: v.version, title, docDate, sections: bodySections() }))).then((ok) => { if (ok) { setDirty(false); setSettling(true); draft.clear(); } });
+    : renoSend(`/variation-orders/${v.id}`, 'PUT', { version: v.version, title, docDate, sections: bodySections() }))).then((ok) => { if (ok) { setDirty(false); setSettling(true); draft.clear(); } }));
   const openPrint = () => (roomMode && dirty ? setError('Save your changes first, then print.') : setPrintOpen(true));
   const setStatus = async (to: string, confirm?: string) => {
     if (confirm && !(await serviceConfirm({ title: confirm, danger: to === 'CANCELLED' }))) return;
@@ -241,14 +254,14 @@ export function VariationOrderEditor() {
         actions={(
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill status={v.status} />
-            <Button variant="secondary" icon={<Printer size={15} />} onClick={openPrint}>Print</Button>
+            {!unsaved && <Button variant="secondary" icon={<Printer size={15} />} onClick={openPrint}>Print</Button>}
             {editable && <Button icon={<Save size={15} />} disabled={!dirty || run.isPending} onClick={save}>Save</Button>}
           </div>
         )}
       />
       <ErrorBanner error={error} onClose={() => setError(null)} />
       {draft.offered && <RenovationDraftBanner savedAt={draft.offered.ts} stale={draft.stale} onRestore={restoreDraft} onDiscard={() => draft.answer(false)} />}
-      {v.status !== 'APPROVED' && v.status !== 'CANCELLED' && can('scm.renovation.quote') && (
+      {!unsaved && v.status !== 'APPROVED' && v.status !== 'CANCELLED' && can('scm.renovation.quote') && (
         <div className="flex flex-wrap gap-2">
           {v.status === 'DRAFT' && <Button variant="secondary" icon={<Send size={15} />} onClick={() => setStatus('SENT')}>Mark sent for signature</Button>}
           {v.status === 'SENT' && <Button variant="ghost" onClick={() => setStatus('DRAFT')}>Back to draft</Button>}
@@ -337,7 +350,7 @@ export function VariationOrderEditor() {
             )}
           </Card>
           </>}
-          <DocAttachments docType="variation_order" docId={v.id} canEdit={filesEditable} />
+          {!unsaved && <DocAttachments docType="variation_order" docId={v.id} canEdit={filesEditable} />}
         </div>
         <div className="2xl:sticky 2xl:top-4 2xl:self-start">
           <Card title="Variation">

@@ -253,13 +253,7 @@ export function ContractSections({ docNo, embedded = false }: { docNo: string | 
       if (warning) setError(warning);
     } catch (e) { setError(refusalOf(e).message); }
   };
-  const newVo = async () => {
-    setError(null);
-    try {
-      const r = await run.mutateAsync(() => renoSend<{ id: string }>(`/sales-orders/${encodeURIComponent(k.docNo)}/variation-orders`, 'POST', {})) as { id: string };
-      navigate(`/scm/renovation/variation-orders/${r.id}`);
-    } catch (e) { setError(refusalOf(e).message); }
-  };
+  const newVo = () => navigate(`/scm/renovation/variation-orders/new?so=${encodeURIComponent(k.docNo)}`);
   const resolveFlag = async (id: string) => {
     setError(null);
     try { await run.mutateAsync(() => renoSend(`/po-flags/${id}/resolve`, 'POST', {})); } catch (e) { setError(refusalOf(e).message); }
