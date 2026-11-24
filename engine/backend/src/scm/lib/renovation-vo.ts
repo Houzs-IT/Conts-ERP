@@ -137,18 +137,18 @@ export function voEditsOf(raw: unknown): VoEdits | null {
   return Array.isArray(lines) && Array.isArray(adds) ? { lines: lines as QuickLineEdit[], adds: adds as QuickLineAdd[] } : null;
 }
 
-export async function createVo(db: RenoDb, actor: RenoActor, soDocNo: string, body: { title?: string }): Promise<{ id: string; voNo: string }> {
+export async function createVo(db: RenoDb, actor: RenoActor, soDocNo: string, body: { title?: string }): Promise<{ id: string; voNo: string; version: number }> {
   const head = await readContractHead(db, soDocNo, actor.companyId, true);
   if (!(RENO_LIVE_STATUSES as readonly string[]).includes(head.status)) throw refuse(409, 'contract_not_live', `A ${head.status} contract cannot take a variation order.`);
   const [m] = await db.q<{ n: number }>(`select coalesce(max(seq), 0)::int as n from scm.reno_variation_orders where so_doc_no = $1`, [soDocNo]);
   const seq = Number(m.n) + 1;
   const voNo = voNoFor(soDocNo, seq);
-  const [v] = await db.q<{ id: string }>(
-    `insert into scm.reno_variation_orders (company_id, vo_no, so_doc_no, seq, title, created_by, doc_date) values ($1, $2, $3, $4, $5, $6, $7::date) returning id`,
+  const [v] = await db.q<{ id: string; version: number }>(
+    `insert into scm.reno_variation_orders (company_id, vo_no, so_doc_no, seq, title, created_by, doc_date) values ($1, $2, $3, $4, $5, $6, $7::date) returning id, version`,
     [actor.companyId, voNo, soDocNo, seq, body.title ?? '', actor.name, todayKl()],
   );
   await auditSo(db, { companyId: actor.companyId, docNo: soDocNo, action: 'VO_CREATE', actorName: actor.name, note: voNo });
-  return { id: v.id, voNo };
+  return { id: v.id, voNo, version: Number(v.version) };
 }
 
 interface OmitTarget extends DocLineOut { sectionHeading: string }

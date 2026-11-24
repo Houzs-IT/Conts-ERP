@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import { FileDown, Package, Search } from 'lucide-react';
 import { Button } from '../../components/Button';
 import { ModalOverlay } from '../../components/scm-v2/DocumentRelationshipMapModal';
-import { refusalOf, renoSend, type ContractView, type DocLine, type DocSection } from '../../lib/renovation/api';
+import { refusalOf, type ContractView, type DocLine, type DocSection } from '../../lib/renovation/api';
 import {
   createPackage, expandPackage, KIND_LONG, NO_AREA, nextPackageCode, searchPackages, type ExpandedPackage, type PackageHit, type PackageKind,
 } from '../../lib/renovation/renovationPackagesApi';
@@ -82,28 +82,17 @@ export function PackagePickerDialog({ open, onClose, onPick }: { open: boolean; 
 }
 
 /** On the sales order: pick a package, then a new VO opens with it in its confirm dialog. */
-export function FromPackageButton({ docNo, onError, className, style }: { docNo: string; onError: (text: string) => void; className?: string; style?: CSSProperties }): ReactElement {
+export function FromPackageButton({ docNo, className, style }: { docNo: string; onError: (text: string) => void; className?: string; style?: CSSProperties }): ReactElement {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const pick = async (h: PackageHit) => {
-    setBusy(true);
-    try {
-      const r = await renoSend<{ id: string }>(`/sales-orders/${encodeURIComponent(docNo)}/variation-orders`, 'POST', {});
-      navigate(`/scm/renovation/variation-orders/${r.id}?package=${encodeURIComponent(h.id)}`);
-    } catch (e) {
-      onError(refusalOf(e).message);
-      setBusy(false);
-      setOpen(false);
-    }
-  };
+  const pick = (h: PackageHit) => navigate(`/scm/renovation/variation-orders/new?so=${encodeURIComponent(docNo)}&package=${encodeURIComponent(h.id)}`);
   return (
     <>
-      <button type="button" className={className} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, ...style }} disabled={busy} onClick={() => setOpen(true)}
+      <button type="button" className={className} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, ...style }} onClick={() => setOpen(true)}
         title="Add a package's or kit's products to this sales order, through a new VO">
-        <Package size={15} aria-hidden="true" />{busy ? 'Opening...' : 'From package'}
+        <Package size={15} aria-hidden="true" />From package
       </button>
-      <PackagePickerDialog open={open} onClose={() => setOpen(false)} onPick={(h) => void pick(h)} />
+      <PackagePickerDialog open={open} onClose={() => setOpen(false)} onPick={pick} />
     </>
   );
 }

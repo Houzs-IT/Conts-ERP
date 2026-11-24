@@ -486,9 +486,17 @@ renovation.post('/sales-orders/:docNo/instalments/:id/bill', handle(null, async 
 
 /* ── Variation orders ───────────────────────────────────────────────────── */
 
+/* The VO screen creates the VO on its first save (with its edits), so a VO opened and left never exists. */
 renovation.post('/sales-orders/:docNo/variation-orders', handle(PERM.quote, async (c, { tx }) => {
-  const b = await json(c);
-  return c.json(await tx((db) => createVo(db, actorOf(c), param(c, 'docNo'), { title: typeof b.title === 'string' ? b.title : '' })), 201);
+  const s = voFirstSaveSchema.safeParse(await json(c));
+  if (!s.success) throw new RenoError(400, 'invalid_edits', 'Send the lines to change.');
+  const { title, docDate, edits } = s.data;
+  return c.json(await tx(async (db) => {
+    const created = await createVo(db, actorOf(c), param(c, 'docNo'), { title });
+    if (!edits) return created;
+    const saved = await saveVoEdits(db, actorOf(c), created.id, { version: created.version, title, docDate, edits });
+    return { ...created, version: saved.version };
+  }), 201);
 }));
 
 renovation.get('/variation-orders/:id', handle(null, async (c, { sqlRead }) => c.json(await readVo(sqlRead, param(c, 'id'), actorOf(c).companyId))));
@@ -513,10 +521,15 @@ const lineAddSchema = z.object({
   label: z.string().max(300).optional(),
 });
 
+const voEditsSchema = z.object({ lines: z.array(lineEditSchema).max(200), adds: z.array(lineAddSchema).max(200) });
+const voFirstSaveSchema = z.object({
+  title: z.string().max(200).optional(), docDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), edits: voEditsSchema.optional(),
+});
+
 renovation.put('/variation-orders/:id/edits', handle(PERM.quote, async (c, { tx }) => {
   const s = z.object({
     version: z.number().int(), title: z.string().max(200).optional(), docDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    edits: z.object({ lines: z.array(lineEditSchema).max(200), adds: z.array(lineAddSchema).max(200) }),
+    edits: voEditsSchema,
   }).safeParse(await json(c));
   if (!s.success) throw new RenoError(400, 'invalid_edits', 'Send the lines to change.');
   const { version, title, docDate, edits } = s.data;
