@@ -194,19 +194,7 @@ export interface VoView {
   id: string; voNo: string; soDocNo: string; seq: number; status: VoStatus; title: string; docDate: string; version: number;
   signedName: string | null; signedAt: string | null; approvedAt: string | null; approvedBy: string | null; amendmentId: string | null;
   sections: DocSection[]; totals: { addSen: number; omitSen: number; netSen: number };
-  edits?: VoEdits | null;
-  lineSpecs?: Record<string, LineSpec>;
 }
-
-export interface LineSpec { variants: Record<string, unknown>; remark: string | null; optionsText: string | null; group: string }
-
-// `variants` is the whole option set after the change, not a patch.
-export interface VoLineEdit {
-  soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; label?: string;
-  variants?: Record<string, unknown>; remark?: string;
-}
-export interface VoLineAdd { room: string; itemCode: string; qty: number; unitPriceSen: number; label?: string; fromPackageId?: string | null; remark?: string }
-export interface VoEdits { lines: VoLineEdit[]; adds: VoLineAdd[] }
 
 export interface PoFlag {
   id: string; action: 'AMEND' | 'CANCEL'; newQty: number | null; status: 'OPEN' | 'RESOLVED'; note: string; createdAt: string;

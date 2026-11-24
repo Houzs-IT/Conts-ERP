@@ -67,9 +67,8 @@ function move<T>(arr: T[], i: number, d: -1 | 1): T[] {
 
 const KIND_LABEL: Record<RenoLineKind, string> = { ITEM: 'Item', CHILD: 'Add-on', DETAIL: 'Dimension', TEXT: 'Text' };
 
-export function ProductPicker({ value, onPick, disabled, onPickPackage, packageKind, tall }: {
+export function ProductPicker({ value, onPick, disabled, onPickPackage, packageKind }: {
   value: string | null; onPick: (p: ProductPick) => void; disabled?: boolean; onPickPackage?: (h: PackageHit) => void;
-  tall?: boolean;
   /** Offer only packages of this kind (a package's own lines can take a kit, never a whole package). */
   packageKind?: PackageHit['kind'];
 }) {
@@ -88,8 +87,7 @@ export function ProductPicker({ value, onPick, disabled, onPickPackage, packageK
     const place = () => {
       const r = ref.current?.getBoundingClientRect();
       if (!r) return;
-      /* Open upward only when the whole list fits above (phone landscape: it would start off screen). */
-      const up = window.innerHeight - r.bottom < 340 && r.top > window.innerHeight - r.bottom && r.top > 340;
+      const up = window.innerHeight - r.bottom < 340 && r.top > window.innerHeight - r.bottom;
       setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - 348)), top: up ? r.top - 4 : r.bottom + 4, up });
     };
     place();
@@ -119,7 +117,7 @@ export function ProductPicker({ value, onPick, disabled, onPickPackage, packageK
     <div ref={ref} className="relative">
       <button
         type="button" disabled={disabled} onClick={() => setOpen((o) => !o)}
-        className={cn('flex w-full items-center gap-1 rounded border px-1.5 text-left font-semibold', tall ? 'h-11 text-[13px] lg:h-8 lg:text-[11.5px]' : 'h-8 text-[11.5px]', value ? 'border-border bg-surface-2 text-primary-ink' : 'border-dashed border-err/50 text-err', disabled && 'opacity-70')}
+        className={cn('flex h-8 w-full items-center gap-1 rounded border px-1.5 text-left text-[11.5px] font-semibold', value ? 'border-border bg-surface-2 text-primary-ink' : 'border-dashed border-err/50 text-err', disabled && 'opacity-70')}
         title={value ? `Product ${value}` : 'Pick the product for this line'}
       >
         <Search size={12} className="shrink-0" />
@@ -128,7 +126,7 @@ export function ProductPicker({ value, onPick, disabled, onPickPackage, packageK
       {open && pos && createPortal(
         <div ref={panelRef} style={{ position: 'fixed', left: pos.left, top: pos.top, transform: pos.up ? 'translateY(-100%)' : undefined }}
           className="z-[1000] w-[340px] max-w-[85vw] rounded-lg border border-border bg-surface p-2 shadow-lg">
-          <input autoFocus className={cn(tall ? inputCls.replace('text-[13px]', 'text-[16px] lg:text-[13px]') : inputCls, 'w-full')} placeholder="Search code or name (RN- for generic works)" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input autoFocus className={`${inputCls} w-full`} placeholder="Search code or name (RN- for generic works)" value={q} onChange={(e) => setQ(e.target.value)} />
           <div className={cn('mt-2 overflow-auto', onPickPackage ? 'max-h-80' : 'max-h-64')}>
             {onPickPackage && <PackageHits hits={packageHits} onPick={(h) => { setOpen(false); onPickPackage(h); }} />}
             {onPickPackage && packageHits.length > 0 && rows.length > 0 && <div className="px-2 pt-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-ink-muted">SKUs</div>}
