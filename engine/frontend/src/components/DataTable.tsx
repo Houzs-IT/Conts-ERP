@@ -3026,6 +3026,14 @@ function DataTableInner<T, L>({
                   <td colSpan={totalColSpan} style={{ height: (renderList.length - vEnd) * rowHeightRef.current, padding: 0, border: 0 }} />
                 </tr>
               )}
+              {/* The pager rides the last row, like "Load more": outside the table it sat under the frozen table box and missed the night inks. */}
+              {pageSize && sortedRows && sortedRows.length > pageSize && (
+                <tr>
+                  <td colSpan={totalColSpan} className="border-t border-border px-3 pb-3">
+                    <Pagination page={pageNo} perPage={pageSize} total={sortedRows.length} onPageChange={setPage} />
+                  </td>
+                </tr>
+              )}
               {hiddenByLimit > 0 && (
                 <tr>
                   <td colSpan={totalColSpan} className="p-0">
@@ -3650,9 +3658,6 @@ function DataTableInner<T, L>({
           </div>,
           document.body
         )}
-      {showTable && pageSize && sortedRows && sortedRows.length > pageSize && (
-        <Pagination page={pageNo} perPage={pageSize} total={sortedRows.length} onPageChange={setPage} />
-      )}
       {/* Runway spacer — see the frozen-header block above: restores exactly
           the page-scroll distance the height cap removed, so scrolling always
           carries the table box up to the pinned page header before the page

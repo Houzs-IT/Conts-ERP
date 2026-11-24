@@ -338,7 +338,8 @@ function HomeScreen(): ReactElement {
         <ol className="stag" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
           {rows.length === 0 && <li style={{ color: MUTED }}>{query.trim() ? `No project matches "${query.trim()}".` : "No projects here."}</li>}
           {rows.slice((phoneNo - 1) * PAGE, phoneNo * PAGE).map((r) => <PhoneCard key={r.p.id} r={r} sla={slaOf(slaById.get(r.p.id), today)} onOpen={() => rememberLastProject(r.p.id)} />)}
-          {rows.length > PAGE && <li><Pagination page={phoneNo} perPage={PAGE} total={rows.length} onPageChange={(n) => setPhonePage({ view: viewKey, n })} /></li>}
+          {/* dc-glass: the embed night rules give the pager light inks on the dark page. */}
+          {rows.length > PAGE && <li className="dc-glass rounded-md border border-border bg-surface px-3 pb-3"><Pagination page={phoneNo} perPage={PAGE} total={rows.length} onPageChange={(n) => setPhonePage({ view: viewKey, n })} /></li>}
         </ol>
       ) : (
         <div style={{ ...CARD, overflow: "hidden" }}>
