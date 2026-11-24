@@ -7,6 +7,7 @@ import {
   parseInstallmentMonths,
   UnknownPaymentMethodError,
   convertDraftsFrom,
+  carriedPaymentRows,
 } from "./PaymentsTable";
 import { CONVERT_LABEL } from "../lib/so-money-queries";
 
@@ -189,5 +190,16 @@ describe("Convert from cancelled SO — the desktop's fifth method", () => {
       [CONVERT_LABEL, "2990-SO-2607-024", 30000, "staff-1"],
     ]);
     expect(convertDraftsFrom(null)).toEqual([]);
+  });
+});
+
+/* Owner, 24 Nov 2026 (TC-SO-2604-001): Paid read RM 55,019.00 with "0 transactions"; the list must tally with Paid. */
+describe("carriedPaymentRows — money counted in Paid shows as rows of its own", () => {
+  it("lists what AutoCount was paid before go-live, then receipts on invoices", () => {
+    const rows = carriedPaymentRows(5501900, 12000);
+    expect(rows.map((r) => [r.label, r.amountSen])).toEqual([["Paid before go-live", 5501900], ["Received on invoices", 12000]]);
+  });
+  it("adds nothing when there is none", () => {
+    expect(carriedPaymentRows(0, 0)).toEqual([]);
   });
 });
