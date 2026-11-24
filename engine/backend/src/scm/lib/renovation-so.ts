@@ -199,7 +199,11 @@ export async function convertQuotationToSo(
   /* Conts (finance phase 1.5; SOP 2.1): the contract's customer as a debtor under its control — renovation 301-0000
      or inhouse renovation 302-0000, by the project's kind else the brand's (contractOrderKind) — so its invoices and
      payments name the customer and post to its control. The project's customer, when it has one. */
-  const [proj] = q.projectId ? await db.q<{ customer_id: string | null; name: string | null; state: string | null }>(`select customer_id, name, state from public.projects where id = $1`, [q.projectId]) : [];
+  const [proj] = q.projectId ? await db.q<{ customer_id: string | null; name: string | null; state: string | null; salesperson_staff_id: string | null }>(`select customer_id, name, state, to_jsonb(p)->>'salesperson_staff_id' as salesperson_staff_id from public.projects p where id = $1`, [q.projectId]) : [];
+  /* The contract names its salesperson (owner, 24 Nov 2026: the PDF printed none): the project's, else whoever converts it. */
+  const projSalesperson = (proj as { salesperson_staff_id: string | null } | undefined)?.salesperson_staff_id ?? null;
+  const [converter] = !projSalesperson && actor.userId != null ? await db.q<{ id: string }>(`select id::text as id from scm.staff where user_id = $1 limit 1`, [actor.userId]) : [];
+  const salespersonId = projSalesperson ?? (converter as { id: string } | undefined)?.id ?? null;
   const customerId = proj?.customer_id ?? null;
   /* One customer account per project and its own advance sub-account (spec 2.5; chew 30 Oct 2026): never reused,
      and no guessing — a kind with no control mapped refuses the conversion until finance maps it. */
@@ -229,11 +233,11 @@ export async function convertQuotationToSo(
   );
   await db.q(
     `insert into scm.mfg_sales_orders (doc_no, so_date, so_kind, status, debtor_name, debtor_code, customer_id, project_id, branding, ref, phone, email,
-        address1, address2, note, created_by, company_id, sales_location, warehouse_id, customer_state)
-     values ($1, $2::date, 'RENOVATION', 'RENO_CONFIRMED', $3, $14, $15, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $16, $17, $18)`,
+        address1, address2, note, created_by, company_id, sales_location, warehouse_id, customer_state, salesperson_id)
+     values ($1, $2::date, 'RENOVATION', 'RENO_CONFIRMED', $3, $14, $15, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $16, $17, $18, $19::uuid)`,
     [docNo, soDate, debtorName, q.projectId, brand?.name ?? null, rev.docNo, h.customerPhone || null, h.customerEmail || null,
       h.building || null, h.unitNo || null, `Renovation contract from quotation ${rev.docNo}`, actor.staffId, actor.companyId, debtorCode, customerId,
-      wh?.code ?? null, wh?.id ?? null, state],
+      wh?.code ?? null, wh?.id ?? null, state, salespersonId],
   );
   await fillProjectBrand(db, q.projectId ?? null, brand?.name ?? null);
   await insertSoItems(db, docNo, rows, { companyId: actor.companyId, debtorName, lineDate: soDate });

@@ -16,9 +16,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!MANAGE.includes(session.role)) return fail('FORBIDDEN', 'Only management can make a reset link.', 403);
 
   const id = String(params.id);
-  const user = await one<{ id: string; email: string; is_active: number }>(env, 'SELECT id, email, is_active FROM users WHERE id = ?', id);
+  const user = await one<{ id: string; email: string; is_active: number; role: string }>(env, 'SELECT id, email, is_active, role FROM users WHERE id = ?', id);
   if (!user) return fail('NOT_FOUND', 'That account no longer exists.', 404);
   if (!user.is_active) return fail('VALIDATION', 'Turn the account back on before making a reset link.', 422);
+  /* A reset link is a way into the account, so one management account never makes one for another (owner, 24 Nov 2026);
+     a management account resets its own password from the sign-in page. */
+  if (user.role === 'management' && user.id !== session.userId) {
+    return fail('FORBIDDEN', 'A reset link cannot be made for another management account. They reset their own password from the sign-in page.', 403);
+  }
 
   const token = crypto.randomUUID();
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)))]

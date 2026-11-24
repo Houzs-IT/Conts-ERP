@@ -39,7 +39,7 @@ describe('the two copies of this module are the same file', () => {
 describe('the column labels (the import contract)', () => {
   test("AutoCount's PO listing columns, in AutoCount's order, then the extras", () => {
     expect(Object.values(PO_LINE_LABELS)).toEqual([
-      'Doc No', 'SO Doc No.', 'Creditor Code', 'Creditor Name', 'Item Code', 'Item Description',
+      'Doc No', 'Project', 'SO Doc No.', 'Creditor Code', 'Creditor Name', 'Item Code', 'Item Description',
       'Item Description 2', 'Location', 'Item Group', 'Doc Date', 'Remaining Qty', 'Delivery Date',
       'Estimate Delivery Date', 'Supplier Delivery Date 2', 'Supplier Delivery Date 3',
       'ERP Doc No', 'ERP Item Code', 'Remarks', 'Qty', 'Received Qty', 'Unit Price', 'Line Total', 'Line ID',

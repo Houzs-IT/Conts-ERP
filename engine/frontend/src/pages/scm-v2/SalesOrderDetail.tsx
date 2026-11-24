@@ -186,6 +186,7 @@ import {
   readVersionConflict, SoVersionConflictBanner, type SoVersionConflict,
 } from './so-version-conflict';
 import { RevisionsTab } from './so-revisions-tab';
+import { contractDiscountSen } from '../../mobile/contractLineEdits';
 import styles from './SalesOrderDetail.module.css';
 import { CustomerBlock } from '../projects/renovation/CustomerBlock';
 import { soInfoApi, useSoInfoLists, useSoRooms } from '../projects/renovation/customerPropertyApi';
@@ -1402,20 +1403,27 @@ export const SalesOrderDetail = () => {
       setSaveError("A renovation contract's line discount is changed on the contract page (New VO). Change the price here instead.");
       return;
     }
-    if (handle.hasHeaderPatchChanges()) {
-      setSaveError("A renovation contract's customer, address and dates are changed on its project (Customer info, Edit); they follow to this order.");
-      return;
-    }
+    /* Customer, address and dates save from Edit SO like on any order, and the server copies the shared ones to the
+       project (owner, 24 Nov 2026: "双向sync"); only the money moves through a VO. */
+    const headerMoved = handle.hasHeaderPatchChanges();
     const contractDates = lineDateChanges();
     const contractDatesMoved = Object.keys(contractDates.processing).length + Object.keys(contractDates.delivery).length > 0;
     /* Rooms are layout, not money: a contract's room changes save directly, never as a VO (click sweep F9). */
     const contractRoomsMoved = renoLines && renoRoomsDirty.current;
-    if (lines.length === 0 && !handle.hasDirectHeaderChanges() && !contractDatesMoved && !contractRoomsMoved) { finishEditWithoutVo(); return; }
+    if (lines.length === 0 && !headerMoved && !handle.hasDirectHeaderChanges() && !contractDatesMoved && !contractRoomsMoved) { finishEditWithoutVo(); return; }
     type Edit = { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string };
     const edits: Edit[] = [];
     const adds: Array<{ room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string }> = [];
     const specs: typeof lines = [];
-    for (const l of lines) {
+    let discount: ReturnType<typeof contractDiscountSen<CreateAmendmentLine>>;
+    try {
+      discount = contractDiscountSen(lines, items);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    const { discountSen } = discount;
+    for (const l of discount.lineChanges) {
       const variants = (l.newVariants ?? undefined) as Record<string, unknown> | undefined;
       if (l.changeType === 'ADD') {
         /* A line with no room shows under Common area on the form, so it is saved there (placeRows). */
@@ -1438,7 +1446,7 @@ export const SalesOrderDetail = () => {
     setSavingOrder(true);
     try {
       await new Promise<void>((resolve, reject) => {
-        handle.save({ onSuccess: () => resolve(), onError: (msg) => reject(new Error(msg)) }, { renoBlockOnly: true });
+        handle.save({ onSuccess: () => resolve(), onError: (msg) => reject(new Error(msg)) }, headerMoved ? undefined : { renoBlockOnly: true });
       });
       await saveLineDates(contractDates, header.doc_no);
       let poFlags = 0;
@@ -1448,9 +1456,9 @@ export const SalesOrderDetail = () => {
         });
         poFlags += r.flags ?? 0;
       }
-      const vo = edits.length || adds.length
+      const vo = edits.length || adds.length || discountSen !== undefined
         ? await authedFetch<{ voNo: string; flags: number }>(`/renovation/sales-orders/${encodeURIComponent(header.doc_no)}/line-edits`, {
-          method: 'POST', body: JSON.stringify({ edits, adds, title: 'Changed on the sales order' }),
+          method: 'POST', body: JSON.stringify({ edits, adds, discountSen, title: 'Changed on the sales order' }),
         })
         : null;
       /* The rooms, last, after the VO has added or removed its lines. */
@@ -1463,7 +1471,7 @@ export const SalesOrderDetail = () => {
         title: 'Saved',
         body: vo
           ? `${vo.voNo} raised and applied: ${edits.length + adds.length} line change${edits.length + adds.length === 1 ? '' : 's'}.${vo.flags ? ` ${vo.flags} PO line${vo.flags === 1 ? '' : 's'} flagged for purchasing to change.` : ''}`
-          : lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.${poFlags ? ` ${poFlags} PO line${poFlags === 1 ? '' : 's'} flagged for purchasing to tell the supplier.` : ''}` : contractRoomsMoved && !handle.hasDirectHeaderChanges() ? 'Rooms saved.' : 'Order information saved.',
+          : lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.${poFlags ? ` ${poFlags} PO line${poFlags === 1 ? '' : 's'} flagged for purchasing to tell the supplier.` : ''}` : contractRoomsMoved && !headerMoved && !handle.hasDirectHeaderChanges() ? 'Rooms saved.' : 'Order information saved.',
         tone: 'info',
       });
     } catch (e) {
@@ -3312,6 +3320,9 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
      (case-insensitive). The adoption marks the field dirty, so the operator's
      next Save persists the master link — self-healing, no data migration. */
   useEffect(() => {
+    /* A renovation order has no venue on its form; on the server a venue change also unlinks the order from its
+       project (fair link), so nothing here may set one (owner, 24 Nov 2026: TC-SO-2604-001). */
+    if (reno) return;
     const opts = venuesQ.data ?? [];
     if (!opts.length) return;
     setForm((s) => {
@@ -3321,7 +3332,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
       const hit = opts.find((v) => (v.name ?? '').trim().toUpperCase() === name);
       return hit && s.venueId !== hit.id ? { ...s, venueId: hit.id } : s;
     });
-  }, [venuesQ.data, form.venueId, form.venue]);
+  }, [reno, venuesQ.data, form.venueId, form.venue]);
   const buildPayload = () => payloadFor(form);
   /* The header payload AS SEEDED (pristine) — trySave diffs the outgoing
      payload against this so an untouched field is never sent (the header mirror
@@ -3372,6 +3383,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
      not be in the list at first paint). We only patch when the resolved
      values differ from the current form to avoid an infinite loop. */
   useEffect(() => {
+    if (reno) return; // see the venue seeding above: a renovation order never takes a venue
     if (!form.salespersonId) return;
     /* Houzs 2026-06-23 (owner): Venue is manually pickable — only auto-fill the
        DEFAULT when it is still empty; never override a manual or loaded pick. */
@@ -3382,7 +3394,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
     const resolvedName = (venuesQ.data ?? []).find((v) => v.id === resolvedId)?.name;
     if (!resolvedName) return; // 0591: `?? ''` blanked a loaded venue, permanently
     setForm((s) => (s.venueId || s.venue.trim() ? s : { ...s, venueId: resolvedId, venue: resolvedName, fair: null }));
-  }, [form.salespersonId, staffList, venuesQ.data, form.venueId, form.venue]);
+  }, [reno, form.salespersonId, staffList, venuesQ.data, form.venueId, form.venue]);
 
   /* Commander 2026-05-27 (Fix 5) — State → Sales Location cascade. When the
      user picks a delivery state, look up state_warehouse_mappings and set
@@ -3572,8 +3584,29 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
   /* The EXACT body the direct half sends in amendment mode; trySave and
      hasDirectHeaderChanges share it so the two cannot disagree. Frozen keys are
      DROPPED before the diff, never reverted (see withoutFrozenHeaderFields). */
-  const directHeaderPatch = () => diffHeaderPayload(originalPayloadRef.current,
-    withoutFrozenHeaderFields(buildPayload()));
+  /* The customer, address and dates being edited are kept in this browser like the lines (owner, 24 Nov 2026: leave the
+     page and come back, and it offers them again). Cleared on a successful save and on Cancel. */
+  const headerDraftValue = useMemo(() => ({ form, renoInfo }), [form, renoInfo]);
+  const headerDraftDirty = isEditing && (hasHeaderChanges(diffHeaderPayload(originalPayloadRef.current, payloadFor(form))) || renoChanged());
+  const headerDraft = useRenovationDraft(isEditing ? `so-edit-header:${header.doc_no}` : null, headerDraftValue, headerDraftDirty, header.version);
+  const restoreHeaderDraft = (restore: boolean) => {
+    const offered = headerDraft.offered;
+    if (restore && offered) {
+      setForm(offered.v.form);
+      if (reno) setRenoInfo(offered.v.renoInfo);
+    }
+    headerDraft.answer(restore);
+  };
+
+  /* A renovation order never sends a venue or fair: neither is on its form, and a venue change unlinks its project. */
+  const withoutVenueOnReno = <T extends Record<string, unknown>>(p: T): T => {
+    if (!reno) return p;
+    const out: Record<string, unknown> = { ...p };
+    for (const k of ['venue', 'venueId', 'fairVenue', 'fairOrganizer', 'fairStart', 'fairEnd', 'fairDate']) delete out[k];
+    return out as T;
+  };
+  const directHeaderPatch = () => withoutVenueOnReno(diffHeaderPayload(originalPayloadRef.current,
+    withoutFrozenHeaderFields(buildPayload())));
 
   const trySave = (
     cb?: { onSuccess?: () => void; onError?: (msg: string, raw?: unknown) => void },
@@ -3589,7 +3622,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
        columns are removed BEFORE the diff, so they are never sent: the server's
        lock diffs `col in updates`, so an unsent column cannot 409. */
     onSave(opts?.keepLockedColsAsOriginal ? directHeaderPatch()
-      : diffHeaderPayload(originalPayloadRef.current, buildPayload()), cb);
+      : withoutVenueOnReno(diffHeaderPayload(originalPayloadRef.current, buildPayload())), cb);
   };
 
   /* PR-A — Expose imperative save()/reset() so the page-level Edit/Save/
@@ -3631,13 +3664,14 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
 
   useImperativeHandle(ref, () => ({
     validate: () => validateDates(),
-    save: (cb, opts) => trySaveWithReno(cb, opts),
+    save: (cb, opts) => trySaveWithReno({ ...cb, onSuccess: () => { headerDraft.clear(); cb.onSuccess(); } }, opts),
     /* Cancel re-seeds the form, so the pristine snapshot must move with it —
        otherwise the next edit would diff against the abandoned session. */
     reset: () => {
       const seeded = initialFormFor(header);
       setForm(seeded);
       originalPayloadRef.current = payloadFor(seeded);
+      headerDraft.clear();
       if (renoQ.data) {
         setRenoInfo(renoQ.data.info);
         setRenoProject(renoQ.data.project);
@@ -4087,6 +4121,17 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
 
   return (
     <>
+      {isEditing && headerDraft.offered && (
+        <div className={styles.bannerWarn} role="status">
+          <strong>Unsaved customer, address and date changes from {new Date(headerDraft.offered.ts).toLocaleString()}.</strong>
+          <span>
+            {headerDraft.stale ? 'The order was saved again after them, so check them before saving. ' : ''}
+            Restore them?
+          </span>
+          <Button variant="primary" onClick={() => restoreHeaderDraft(true)}>Restore</Button>
+          <Button variant="ghost" onClick={() => restoreHeaderDraft(false)}>Discard</Button>
+        </div>
+      )}
       {reno ? (
         !isEditing ? (
           /* A renovation order reads Order information, Customer, Delivery address: the order of the block Edit opens. */

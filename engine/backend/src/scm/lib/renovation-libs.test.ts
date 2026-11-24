@@ -99,6 +99,10 @@ describe('write fence on /mfg-sales-orders', () => {
     expect(customerOnlyPatch({ debtorCode: '301-M144', version: 2 })).toBe(true);
     expect(customerOnlyPatch({ version: 2 })).toBe(false);
     expect(customerOnlyPatch(null)).toBe(false);
+    // Owner, 24 Nov 2026: customer details, address and dates change from Edit SO on a contract too.
+    expect(customerOnlyPatch({ phone: '0123', address1: 'A-1', city: 'KL', postcode: '50000', customerState: 'WP', version: 3 })).toBe(true);
+    expect(customerOnlyPatch({ processingDate: '2026-12-01', customerDeliveryDate: '2026-12-20' })).toBe(true);
+    expect(customerOnlyPatch({ phone: '0123', deliveryFeeSen: 100 })).toBe(false);
   });
 });
 

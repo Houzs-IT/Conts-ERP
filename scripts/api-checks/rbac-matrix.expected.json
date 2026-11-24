@@ -13,7 +13,7 @@
  "DELETE /api/departments/positions/[id]": "AFFFFFFU",
  "DELETE /api/driver-leave/[id]": "AFFFFFFU",
  "DELETE /api/drivers/[id]": "AFFFFFFU",
- "DELETE /api/expenses/[id]": "AFFAFFFU",
+ "DELETE /api/expenses/[id]": "AFFFFFFU",
  "DELETE /api/fabrics/[id]": "AFFFFFFU",
  "DELETE /api/fleet-health/[id]": "AFFFFFFU",
  "DELETE /api/holidays/[id]": "AAFAFFFU",

@@ -22,7 +22,7 @@ export interface PricedUnit {
   nextHolidays: { date: string; name: string }[];
   rates: ChannelRate[];
 }
-export interface PricingPayload { units: PricedUnit[]; generatedAt: string; levelsReady: boolean; holidaysReady: boolean }
+export interface PricingPayload { units: PricedUnit[]; generatedAt: string; levelsReady: boolean; holidaysReady: boolean; commission?: Record<string, number> }
 
 /** The words the owner sees for each level (docs/VOCABULARY.md: Nightly price, Weekend price, Custom price). */
 export const LEVEL_LABEL: Record<Level, string> = { base: 'Nightly price', weekend: 'Weekend price', holiday: 'Holiday price' };

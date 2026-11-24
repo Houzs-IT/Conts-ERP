@@ -89,7 +89,9 @@ export async function chargeClean(env: Env, session: Session, task: { id: string
     if (existing) return { amount: Number(existing.amount), created: false, reason: 'already charged' };
     // A cleaner's or vendor's invoice (0127) is The Conts' cost, not a charge to the unit, so it never stands in for one.
     const invoices = (await hasJobInvoices(env)) ? ' AND invoice_task_id IS NULL AND invoice_maintenance_id IS NULL' : '';
-    const sameDay = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE unit_id = ? AND category = 'cleaning' AND incurred_on = ?${invoices} LIMIT 1`, task.unit_id, day);
+    /* Only an IMPORTED clean (the owner workbook's, with no job) stands in for this one: a second job the same day is a
+       second clean and is charged too (owner, 24 Nov 2026). */
+    const sameDay = await one<{ amount: number }>(env, `SELECT amount FROM expenses WHERE unit_id = ? AND category = 'cleaning' AND incurred_on = ? AND task_id IS NULL${invoices} LIMIT 1`, task.unit_id, day);
     if (sameDay) return { amount: Number(sameDay.amount), created: false, reason: 'a clean is already charged on this unit today' };
     const price = set ?? await cleanPrice(env, task.unit_id, task.kind);
     if (await isPeriodLocked(env, task.unit_id, day)) return { amount: price.amount, created: false, reason: "this month's owner statement is already final" };

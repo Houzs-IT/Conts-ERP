@@ -919,6 +919,8 @@ export type OutstandingSoItem = {
   processingDate:   string | null;
   salesLocation:    string | null;
   lineDeliveryDate: string | null;
+  /** The SO line's remark; the New PO form copies it into the PO line's notes. Optional: older API builds omit it. */
+  remark?:          string | null;
   /* Commander 2026-05-28 — the SKU's MAIN supplier (null when unbound, i.e.
      the line can't be converted to a PO until it's assigned a supplier). */
   mainSupplierCode: string | null;

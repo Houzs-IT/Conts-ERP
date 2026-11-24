@@ -10,7 +10,7 @@ import {
 } from "../scm/lib/companyScope";
 // The ONE definition of ASSR's company scope — see the note above its use below.
 import { assrCompanySql } from "./assr";
-import { inArm, poIdsForSoDocNos, soDocNosByRef } from "../scm/lib/so-ref-search";
+import { SO_REF_MATCH_CAP, inArm, poIdsForSoDocNos, soDocNosByRef } from "../scm/lib/so-ref-search";
 import { initialsLikes } from "../services/projects";
 
 /** Each word on its own, in any field, as the project list searches ("mle sccc"). */
@@ -274,9 +274,40 @@ export async function runGlobalSearch(
   // ── SCM sources (Supabase, scm schema) ─────────────────────
   // Guarded: any failure here degrades to the public hits above, and names the
   // source it could not read in `degraded`.
-  await appendScmHits(c, env, raw, hits, degraded);
+  const projectIds = await projectIdsByName(env, raw, projectCoSql);
+  await appendScmHits(c, env, raw, hits, degraded, projectIds);
 
   return { hits, degraded };
+}
+
+/* Projects whose name or code holds every word typed, so an SO (and its DO / SI / PO) is found by its project's name.
+   Projects live in the public schema and SOs behind PostgREST, so the ids are resolved here and passed on as an `in`
+   arm. One-character terms are prefix searches and skip it; a failed lookup only drops this arm. */
+async function projectIdsByName(env: Env, raw: string, projectCoSql: string): Promise<string[]> {
+  const words = raw.trim().split(/\s+/).filter(Boolean);
+  if (raw.trim().length < 2 || words.length === 0) return [];
+  const binds: string[] = [];
+  const wordArms = words.flatMap((word) => {
+    const like = searchPattern(word);
+    if (like === null) return [];
+    binds.push(like, like);
+    return [`(code LIKE ?${binds.length - 1} OR name LIKE ?${binds.length})`];
+  });
+  if (wordArms.length === 0) return [];
+  try {
+    const matchedProjects = await env.DB.prepare(
+      `SELECT id FROM projects
+        WHERE archived_at IS NULL AND ${wordArms.join(" AND ")}${projectCoSql}
+        ORDER BY id DESC
+        LIMIT ${SO_REF_MATCH_CAP}`
+    )
+      .bind(...binds)
+      .all<{ id: number | string }>();
+    return matchedProjects.results.map((project) => String(project.id));
+  } catch (e) {
+    console.warn("[search] project name lookup failed:", e instanceof Error ? e.message : e);
+    return [];
+  }
 }
 
 app.get("/", async (c) => {
@@ -311,6 +342,7 @@ async function appendScmHits(
   raw: string,
   hits: Hit[],
   degraded: HitType[],
+  projectIds: readonly string[] = [],
 ): Promise<void> {
   if (!isSupabaseConfigured(env)) return;
   const wildcard = searchPattern(raw, true);
@@ -334,7 +366,11 @@ async function appendScmHits(
   let soRefPoIds: string[] = [];
   if (wildcard.startsWith("%")) {
     try {
-      soRefDocNos = await soDocNosByRef(sb, c, raw);
+      const [byRef, byProject] = await Promise.all([
+        soDocNosByRef(sb, c, raw),
+        soDocNosByProject(sb, c, projectIds),
+      ]);
+      soRefDocNos = [...new Set([...byRef, ...byProject])];
       soRefPoIds = await poIdsForSoDocNos(sb, soRefDocNos);
     } catch (e) {
       console.warn("[search] SO reference lookup failed:", e instanceof Error ? e.message : e);
@@ -350,8 +386,8 @@ async function appendScmHits(
     .from("mfg_sales_orders")
     .select("doc_no, debtor_name, phone, ref, so_date, branding")
     .or(
-      `doc_no.ilike.${wildcard},debtor_name.ilike.${wildcard},` +
-        `ref.ilike.${wildcard},customer_so_no.ilike.${wildcard},phone.ilike.${wildcard}`
+      [`doc_no.ilike.${wildcard}`, `debtor_name.ilike.${wildcard}`, `ref.ilike.${wildcard}`,
+        `customer_so_no.ilike.${wildcard}`, `phone.ilike.${wildcard}`, ...inArm("project_id", projectIds)].join(",")
     );
   const prodQuery = sb
     .from("mfg_products")
@@ -539,6 +575,21 @@ async function appendScmHits(
       link: `/scm/purchase-invoices/${encodeURIComponent(id)}`,
     });
   }
+}
+
+async function soDocNosByProject(
+  sb: ReturnType<typeof getSupabaseService>,
+  c: CompanyScopeCtx,
+  projectIds: readonly string[],
+): Promise<string[]> {
+  if (projectIds.length === 0) return [];
+  const { data, error } = await scopeToCompany(
+    sb.from("mfg_sales_orders").select("doc_no").in("project_id", [...projectIds]),
+    c,
+  ).limit(SO_REF_MATCH_CAP);
+  if (error) throw new Error(`SO project lookup failed: ${error.message}`);
+  const projectOrders = (Array.isArray(data) ? data : []) as Array<{ doc_no: string | null }>;
+  return projectOrders.map((order) => order.doc_no).filter((docNo): docNo is string => Boolean(docNo));
 }
 
 // Every SCM source, in the order appendScmHits queries them. Used to mark the

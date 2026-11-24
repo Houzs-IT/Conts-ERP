@@ -45,10 +45,23 @@ import AgreementTemplateSettings from './settings/AgreementTemplate';
 // The agreement template has its own versioned store and screen (settings/AgreementTemplate.tsx), not these rows.
 type SectionKey = Exclude<SettingsSectionKey, 'agreement' | 'services'>;
 
+/* The booking sites' commission and default uplift (owner, 24 Nov 2026). An uplift is the default for units with no rule of
+   their own, so changing it changes the prices sent to that site. */
+const SITE_PRICE_ROWS = [
+  { key: 'airbnbCommission', label: 'Airbnb service fee', description: 'What Airbnb keeps of the guest price; used to show what is left for us.' },
+  { key: 'bookingComCommission', label: 'Booking.com service fee', description: 'What Booking.com keeps of the guest price.' },
+  { key: 'agodaCommission', label: 'Agoda service fee', description: 'What Agoda keeps of the guest price.' },
+  { key: 'airbnbUplift', label: 'Airbnb price above direct', description: 'For units with no Airbnb price rule of their own. Changes the prices sent to Airbnb.' },
+  { key: 'bookingComUplift', label: 'Booking.com price above direct', description: 'For units with no Booking.com price rule of their own. Changes the prices sent to Booking.com.' },
+  { key: 'agodaUplift', label: 'Agoda price above direct', description: 'For units with no Agoda price rule of their own. Changes the prices sent to Agoda.' },
+] as const;
+const SITE_PRICE_KEYS = SITE_PRICE_ROWS.map(r => r.key);
+
 interface Settings {
   company: { legalName: string; companyNumber: string; address: string; supportPhone: string; supportEmail: string };
   /** Statements use the fee for a unit whose contract has none (functions/_lib/ownerStatement.ts). */
-  locale: { managementFeePct: number };
+  /** airbnb/bookingCom/agoda Commission and Uplift: percent (owner, 24 Nov 2026; functions/_lib/unitPricing.ts). */
+  locale: { managementFeePct: number; airbnbCommission: number; bookingComCommission: number; agodaCommission: number; airbnbUplift: number; bookingComUplift: number; agodaUplift: number };
   /** The housekeeping board's standard times (functions/api/housekeeping/board.ts). */
   operations: { checkIn: string; checkOut: string };
   /** The Owner Income Report's wording; miscChargeMonthly is sen. Terms are one per line. */
@@ -77,7 +90,7 @@ const FALLBACK: Settings = {
     supportPhone: '+60 11-6133 3289',
     supportEmail: 't.conts725@gmail.com',
   },
-  locale: { managementFeePct: 25 },
+  locale: { managementFeePct: 25, airbnbCommission: 15, bookingComCommission: 15, agodaCommission: 18, airbnbUplift: 12, bookingComUplift: 18, agodaUplift: 16 },
   operations: { checkIn: '15:00', checkOut: '11:00' },
   report: { paymentTerms: '7th every month', monthlyTerms: '', yearTerms: '', miscChargeMonthly: 10000 },
   approvals: { enabled: false, expenseThreshold: 50000, financeAdminLimit: 200000 },
@@ -218,6 +231,10 @@ export default function SettingsPage() {
     if (k === 'locale') {
       const fee = draft.locale.managementFeePct as number | null;
       if (fee == null || fee < 0 || fee > 100) e['locale.managementFeePct'] = 'Enter a share from 0 to 100%.';
+      for (const key of SITE_PRICE_KEYS) {
+        const v = draft.locale[key] as number | null, max = key.endsWith('Commission') ? 50 : 100;
+        if (v == null || v < 0 || v > max) e[`locale.${key}`] = `Enter a share from 0 to ${max}%.`;
+      }
     }
     if (k === 'operations') {
       if (!draft.operations.checkIn) e['operations.checkIn'] = 'Enter the standard check-in time.';
@@ -333,6 +350,14 @@ export default function SettingsPage() {
             onChange={v => patch('locale', { managementFeePct: held(v) }, 'locale.managementFeePct')} />
         </div>
       </Row>
+      {SITE_PRICE_ROWS.map(row => (
+        <Row key={row.key} label={row.label} description={row.description}>
+          <div className="max-w-[240px]">
+            <PercentInput aria-label={row.label} value={draft.locale[row.key]} error={errors[`locale.${row.key}`]}
+              onChange={v => patch('locale', { [row.key]: held(v) }, `locale.${row.key}`)} />
+          </div>
+        </Row>
+      ))}
     </> },
 
     report: { saveLabel: 'Save wording', rows: <>

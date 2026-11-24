@@ -406,6 +406,8 @@ function PurchaseInvoiceDetailV2ReadOnly() {
   /* Every source note this invoice bills (owner 2026-08-06 multi-note) — the
      backend derives it from the LINES, so it covers notes the header's single
      grn_id doesn't name. Empty on a manual PI. */
+  /* Conts: the AutoCount purchase invoice an opening bill is the balance of, line by line (migration 0370). */
+  const autocountPi = (detail.data as { autocountPi?: AutocountPi | null } | undefined)?.autocountPi ?? null;
   const sourceGrns = useMemo(
     () => ((detail.data as { sourceGrns?: Array<{ id: string; grn_number: string; delivery_note_ref: string | null }> } | undefined)?.sourceGrns ?? []),
     [detail.data]
@@ -920,6 +922,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
                 emptyLabel="No line items"
               />
             </Section>
+            {autocountPi && <AutocountPiSection pi={autocountPi} currency={purchaseInvoice.currency} />}
             <DocAttachments docType="purchase_invoice" docId={purchaseInvoice.id} canEdit={!isCancelled} />
           </DetailMain>
 
@@ -1033,6 +1036,50 @@ function PurchaseInvoiceDetailV2ReadOnly() {
         {...print.handlers}
       />
     </div>
+  );
+}
+
+type AutocountPi = {
+  piNo: string; date: string; supplierRef: string | null; totalSen: number;
+  lines: { description: string | null; project: string | null; accountCode: string; accountDesc: string | null; amountSen: number }[];
+};
+
+/** What AutoCount's purchase invoice said, view only: it is in the ledger already, by its AutoCount journal. */
+function AutocountPiSection({ pi, currency }: { pi: AutocountPi; currency: string }) {
+  return (
+    <Section title={`AutoCount ${pi.piNo} · ${pi.lines.length} line${pi.lines.length === 1 ? "" : "s"}`}>
+      <p className="mb-3 text-[12.5px] text-ink-muted">
+        {fmtDate(pi.date)}{pi.supplierRef ? ` · supplier's no. ${pi.supplierRef}` : ""} · view only, already in the ledger from AutoCount
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="border-b border-border text-left font-mono text-[10px] uppercase tracking-brand text-ink-muted">
+              <th className="py-2 pr-3 font-semibold">Description</th>
+              <th className="py-2 pr-3 font-semibold">Project</th>
+              <th className="py-2 pr-3 font-semibold">Account</th>
+              <th className="py-2 text-right font-semibold">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pi.lines.map((l, i) => (
+              <tr key={i} className="border-b border-border/60 align-top">
+                <td className="py-2 pr-3">{l.description || "—"}</td>
+                <td className="py-2 pr-3 whitespace-nowrap">{l.project || "—"}</td>
+                <td className="py-2 pr-3"><span className="font-mono">{l.accountCode}</span>{l.accountDesc ? <span className="text-ink-muted"> · {l.accountDesc}</span> : null}</td>
+                <td className="py-2 text-right font-mono whitespace-nowrap">{fmtMoney(l.amountSen, currency)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={3} className="py-2 pr-3 text-right font-semibold">Total</td>
+              <td className="py-2 text-right font-mono font-semibold whitespace-nowrap">{fmtMoney(pi.totalSen, currency)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </Section>
   );
 }
 

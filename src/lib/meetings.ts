@@ -51,7 +51,7 @@ export type Meeting = {
   linkId: number | null;
   guest: Guest | null;
 };
-export type Bootstrap = { me: string; canManage: boolean; rooms: Room[]; people: Person[]; unread: number };
+export type Bootstrap = { me: string; canManage: boolean; rooms: Room[]; people: Person[]; unread: number; meetConnected?: boolean };
 export type Notice = { id: number; meetingId: number | null; text: string; at: string; read: boolean };
 export type GuestLink = {
   id: number;
@@ -259,6 +259,11 @@ export function nextStart(now: number, anchor: number): number {
   if (h < 8) return atHour(now, 9);
   if (h >= 18) return atHour(addDays(startOfDay(now), 1), 9);
   return Math.ceil(now / (30 * MIN)) * 30 * MIN;
+}
+
+/** The smallest free room that seats everyone (owner 2026-11-24: do not put two people in a 12-seat room). */
+export function bestRoom(rooms: Room[], people: number, busy: Set<number>): Room | null {
+  return rooms.filter((r) => r.active && !busy.has(r.id) && r.seats >= people).sort((a, b) => a.seats - b.seats || a.name.localeCompare(b.name))[0] ?? null;
 }
 
 export function emptyDraft(me: string, start: number, end: number, roomId: number | null): Draft {

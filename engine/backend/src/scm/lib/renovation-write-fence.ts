@@ -18,8 +18,13 @@ const PASS_THROUGH = [
 ];
 
 /** A header PATCH that only names the customer (the same customer filed under two codes, merged into one; chew, 17 Nov
-    2026): it touches neither the lines nor the money, so a renovation contract takes it. */
-const CUSTOMER_FIELDS = new Set(['debtorCode', 'debtorName']);
+    2026), or changes the customer's details, address or dates from Edit SO (owner, 24 Nov 2026: shared with the project
+    both ways, like any SO): it touches neither the lines nor the money, so a renovation contract takes it. */
+const CUSTOMER_FIELDS = new Set([
+  'debtorCode', 'debtorName', 'phone', 'email', 'salespersonId', 'salesLocation',
+  'address1', 'address2', 'city', 'postcode', 'customerState',
+  'processingDate', 'customerDeliveryDate',
+]);
 /** The order's version rides along with every header save (the stale-screen guard), so it is allowed beside them. */
 const ALSO_ALLOWED = new Set(['version']);
 export function customerOnlyPatch(body: unknown): boolean {

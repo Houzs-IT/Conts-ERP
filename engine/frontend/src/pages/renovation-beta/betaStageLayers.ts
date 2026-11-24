@@ -20,7 +20,7 @@ export const STAGE_RULE: Readonly<Record<string, string>> = {
 };
 
 const RULE: Readonly<Record<string, string>> = {
-  measure: "Done once the booked measure day has passed, or a measure is recorded.",
+  measure: "Done once the booked measure day has passed, a measure is recorded, or the 3D has started.",
   w3d: "Done when Record approval is pressed.",
   w2d: "Done when Record approval is pressed.",
   payment_2: "Done when the second payment is received.",

@@ -86,12 +86,13 @@ export function poStatusWord(status: string | null | undefined, onHold: boolean 
   return onHold === true && raw.toUpperCase() !== 'ON_HOLD' ? `${word} (On Hold)` : word;
 }
 
-/** The grid's column labels. The first fifteen are AutoCount's PO listing
- *  columns, in AutoCount's order (the grid's default view); the rest are extra
+/** The grid's column labels. The first sixteen are AutoCount's PO listing
+ *  columns, in AutoCount's order, plus our Project before SO Doc No (the grid's default view); the rest are extra
  *  columns the chooser offers. A grid export writes these labels as headers, and
  *  the PO line import reads a file back by them. */
 export const PO_LINE_LABELS = {
   docNo: 'Doc No',
+  projectName: 'Project',
   soDocNo: 'SO Doc No.',
   creditorCode: 'Creditor Code',
   creditorName: 'Creditor Name',
@@ -164,6 +165,8 @@ export type PoListLine = {
   location: string | null;
   /** The Sales Order the line was raised for (via so_item_id), company-scoped. */
   so_doc_no: string | null;
+  /** The name of that Sales Order's project, or null. */
+  project_name: string | null;
 };
 
 export type PoLineSource = PoEstimateDates & {
@@ -188,6 +191,7 @@ export function toPoListLine(
   ctx: {
     location: string | null;
     soDocNo: string | null;
+    projectName?: string | null;
     /** The AutoCount item master row for the line's supplier item code, or null. */
     book: { description: string | null; itemGroup: string | null } | null;
   },
@@ -217,6 +221,7 @@ export function toPoListLine(
     estimate_delivery_date_3: e3,
     location: text(ctx.location),
     so_doc_no: text(ctx.soDocNo),
+    project_name: text(ctx.projectName),
   };
 }
 

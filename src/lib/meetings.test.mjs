@@ -8,7 +8,7 @@ import { register } from 'node:module';
 register('data:text/javascript,' + encodeURIComponent(`export async function resolve(s, c, next) {
   try { return await next(s, c); } catch (e) { if (s.startsWith('.') && !/\\.[a-z]+$/.test(s)) return next(s + '.ts', c); throw e; }
 }`));
-const { busySentences, inUsualHours, layoutDay, meetingColor, readConflict } = await import('./meetings.ts');
+const { bestRoom, busySentences, inUsualHours, layoutDay, meetingColor, readConflict } = await import('./meetings.ts');
 const { directoryPeople, companyOf, mayManageRooms } = await import('../../functions/_lib/meetingsHub.ts');
 const room = (o = {}) => ({ id: 1, name: "Boardroom", location: "", floor: "", seats: 12, equipment: [], open_days: [1, 2, 3, 4, 5], open_from: 9, open_to: 18, color: "#0b8043", buffer_min: 0, max_hours: 0, advance_days: 0, active: true, closures: [], ...o });
 const at = (d, h, m = 0) => new Date(`${d}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`).getTime();
@@ -58,4 +58,11 @@ test('Manage meeting rooms: management always, staff only when given it', () => 
   assert.equal(mayManageRooms({ role: 'operations_staff', levels: { meetingRooms: 'none' } }), false);
   assert.equal(mayManageRooms({ role: 'operations_staff', levels: { meetingRooms: 'edit' } }), true);
   assert.equal(mayManageRooms({ role: 'operations_staff' }), false);
+});
+
+test("bestRoom picks the smallest free room with enough seats (owner 2026-11-24)", () => {
+  const rooms = [room({ id: 1, name: "Big", seats: 12 }), room({ id: 2, name: "Small", seats: 4 }), room({ id: 3, name: "Tiny", seats: 2, active: false }), room({ id: 4, name: "Mid", seats: 6 })];
+  assert.equal(bestRoom(rooms, 2, new Set())?.name, "Small");
+  assert.equal(bestRoom(rooms, 2, new Set([2]))?.name, "Mid");
+  assert.equal(bestRoom(rooms, 20, new Set()), null);
 });

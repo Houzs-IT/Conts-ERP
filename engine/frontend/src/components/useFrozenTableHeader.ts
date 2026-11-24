@@ -204,6 +204,42 @@ export function useFrozenTableHeader(enabled: boolean) {
     };
   }, [enabled]);
 
+  /* Disarmed on desktop (a long order with payments and photos below it), the
+     wrapper still owns the thead's sticky context but never scrolls, so the
+     header left the screen with the rows still showing. Push the sticky thead
+     down by however far the table has passed under the pinned page header,
+     capped at the table's bottom. Direct style write: no re-render per frame. */
+  const isDisarmed = freezeBox === null;
+  useLayoutEffect(() => {
+    const thead = scrollWrapRef.current?.querySelector("thead");
+    if (!enabled || !isDisarmed || !thead) return;
+    let raf = 0;
+    const follow = () => {
+      raf = 0;
+      const wrap = scrollWrapRef.current;
+      if (!wrap || window.innerWidth < 640) {
+        thead.style.top = "";
+        return;
+      }
+      const parsed = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--page-header-offset"));
+      const pageTop = Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 64;
+      const wrapRect = wrap.getBoundingClientRect();
+      const maxShift = Math.max(0, wrap.scrollHeight - thead.offsetHeight);
+      const shift = Math.min(maxShift, Math.max(0, Math.round(pageTop - wrapRect.top)));
+      thead.style.top = shift > 0 ? `${shift}px` : "";
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(follow); };
+    follow();
+    window.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+      thead.style.top = "";
+    };
+  }, [enabled, isDisarmed]);
+
   return {
     /** Root of the frozen composition — everything that must stay on screen. */
     rootRef: freezeRootRef,

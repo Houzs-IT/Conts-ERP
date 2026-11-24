@@ -428,8 +428,11 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
     setEmergencyName(h.emergency_contact_name ?? '');
     setEmergencyRel(h.emergency_contact_relationship ?? '');
     setEmergencyPhone(h.emergency_contact_phone ?? '');
-    if (Array.isArray(srcItems) && srcItems.length > 0) {
-      setLines(srcItems.map((it: any) => ({
+    /* A renovation VO omits a line by flagging it cancelled (renovation-vo.ts), so the order as it stands now is the
+       live rows only; copying the flagged ones brought the pre-VO lines back. */
+    const liveItems = Array.isArray(srcItems) ? srcItems.filter((sourceItem) => sourceItem?.cancelled !== true) : [];
+    if (liveItems.length > 0) {
+      setLines(liveItems.map((it: any) => ({
         ...newLine(),
         itemCode:       it.item_code ?? '',
         itemGroup:      it.item_group ?? 'others',

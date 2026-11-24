@@ -6156,8 +6156,13 @@ export const patchMfgSalesOrderHeaderHandler = async (c: any) => {
   /* A picked EVENT is recorded exactly (owner 2026-09-24). Resolved BEFORE the
      unchanged fields drop out: another event at the same venue changes no mapped
      column, and the save would otherwise answer "nothing to do". */
+  /* Conts: project_id on an order linked to a renovation project is that project, not a fair. A fair pick or a venue
+     change must never unlink it (owner, 24 Nov 2026: TC-SO-2604-001 would have lost RN-2604-002). */
+  const renoProjectLinked = beforeRecord.project_id != null && Boolean(await (c.env?.DB as unknown as RenoInfoDb | undefined)
+    ?.prepare("SELECT 1 AS one FROM projects WHERE id = ? AND project_kind = 'renovation'").bind(Number(beforeRecord.project_id)).first<{ one: number }>()
+    .catch(() => null));
   const fairLink = await fairLinkForEdit({ db: c.env?.DB as unknown as FairDb, companySql: activeCompanySql(c, 'p.company_id'), body, stored: beforeRecord });
-  if (fairLink && (fairLink.project_id !== (beforeRecord.project_id == null ? null : Number(beforeRecord.project_id)) || fairLink.fair_match !== beforeRecord.fair_match)) {
+  if (fairLink && !renoProjectLinked && (fairLink.project_id !== (beforeRecord.project_id == null ? null : Number(beforeRecord.project_id)) || fairLink.fair_match !== beforeRecord.fair_match)) {
     updates['project_id'] = fairLink.project_id;
     updates['fair_match'] = fairLink.fair_match;
   }
@@ -6265,7 +6270,7 @@ export const patchMfgSalesOrderHeaderHandler = async (c: any) => {
        order was linked to is now a claim about a place it was not written at.
        A picked EVENT was linked above; a place alone (Others) drops the link to
        PENDING for the nightly reconcile and, failing that, the pending screen. */
-    if (!fairLink) {
+    if (!fairLink && !renoProjectLinked) {
       updates['project_id'] = null;
       updates['fair_match'] = 'PENDING';
       updates['fair_date'] = null;
@@ -6778,6 +6783,7 @@ export const patchMfgSalesOrderHeaderHandler = async (c: any) => {
      Object.keys(updates) is exactly the set it wrote — the loop above only adds
      a key when the request body carried it. */
   await queueAcSoEdit(c, docNo, [], [], Object.keys(updates));
+  await shareHeaderWithProject(c, docNo, Object.keys(updates));
 
   return c.json({
     ok: true,
@@ -6793,6 +6799,31 @@ export const patchMfgSalesOrderHeaderHandler = async (c: any) => {
     } : {}),
   });
 };
+
+/* The customer, phone, address and salesperson an order shares with its renovation project (scm/shared/renovation-property
+   SHARED_FIELDS) go to the project when they change here, whatever kind the order is (owner, 24 Nov 2026: "双向sync").
+   Before this only a save of the Order information block wrote them back, so a phone or address changed alone stayed on
+   the order. The order is already saved: a failed copy is logged and never undoes it. */
+const PROJECT_SHARED_SO_COLUMNS = new Set(['debtor_name', 'phone', 'email', 'salesperson_id', 'address1', 'address2', 'customer_state', 'city', 'postcode', 'customer_country', 'sales_location']);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the router's own Context, as queueAcSoEdit takes it
+async function shareHeaderWithProject(c: any, docNo: string, written: string[]): Promise<void> {
+  if (!written.some((k) => PROJECT_SHARED_SO_COLUMNS.has(k))) return;
+  try {
+    const db = c.env.DB as unknown as RenoInfoDb;
+    /* Only a renovation project shares these fields; a fair link (Houzs's project_id use) is left alone. */
+    const now = await db.prepare(
+      `SELECT o.project_id::int AS project_id, o.company_id::int AS company_id FROM scm.mfg_sales_orders o
+         JOIN projects p ON p.id = o.project_id AND p.project_kind = 'renovation' WHERE o.doc_no = ?`,
+    ).bind(docNo).first<{ project_id: number; company_id: number | null }>();
+    if (!now) return;
+    const projectId = Number(now.project_id);
+    const { copySoIntoProject } = await import('../../services/renovation/customerProperty');
+    await copySoIntoProject(db, docNo, projectId, Number(c.get('houzsUser')?.id ?? 0), activeCompanyId(c) ?? Number(now.company_id ?? 0));
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[mfg-so] header saved; copying it to the project failed:', docNo, e);
+  }
+}
 
 mfgSalesOrders.patch('/:docNo', patchMfgSalesOrderHeaderHandler);
 

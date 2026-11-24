@@ -82,6 +82,8 @@ export interface RatePricing {
   savedUplifts?: Record<string, number>;
   upliftShares?: Record<string, number>;
   channelRules?: Record<string, ChannelRule>;
+  /** Each site's fee in percent from Settings (owner, 24 Nov 2026); COMMISSION until the server sends it. */
+  commission?: Record<string, number>;
 }
 export type RateUpdateValue = BulkBody;
 interface Range { from: string; to: string }
@@ -107,6 +109,7 @@ export function RateUpdate({ units, pricing, initial, onClose, onDone, building,
   /** The building the board is showing: the picker starts on it, but every unit can be picked. */
   building?: string; preselect?: string[]; loadingAll?: boolean;
 }) {
+  const feeOf = (ch: string): number => pricing.commission?.[ch] ?? COMMISSION[ch as 'airbnb'];
   const [step, setStepRaw] = useState<1 | 2 | 3 | 4>(initial.step ?? (initial.unitIds?.length && initial.from ? 3 : initial.unitIds?.length ? 2 : 1));
   const [review, setReview] = useState<Review | null>(null);
   // Units already saved by an attempt that then failed part-way: a retry leaves them alone.
@@ -171,7 +174,7 @@ export function RateUpdate({ units, pricing, initial, onClose, onDone, building,
     const us = ch === 'web' ? chosen : chosen.filter(u => u.linked?.includes(ch as BookingChannel));
     const ups = us.map(u => channelOver(ch, exampleWeb(u), pricing.channelRules?.[`${u.id}:${ch}`], pricing.savedUplifts?.[`${u.id}:${ch}`], pricing.upliftShares?.[ch], pricing.baseRate[u.id] ?? 0));
     const guest = us.map((u, i) => exampleWeb(u) + ups[i]);
-    const keep = ch === 'web' ? guest : guest.map(g => Math.round(g * (1 - COMMISSION[ch as 'airbnb'] / 100)));
+    const keep = ch === 'web' ? guest : guest.map(g => Math.round(g * (1 - feeOf(ch) / 100)));
     return { n: us.length, ups, guest, keep };
   };
 
@@ -391,13 +394,13 @@ export function RateUpdate({ units, pricing, initial, onClose, onDone, building,
                             <ChannelMark ch={ch === 'web' ? 'direct' : ch} size={18} muted={disabled} />
                             <span className="min-w-0 flex flex-col">
                               <span className="text-copy whitespace-nowrap">{CH_LABEL[ch]}</span>
-                              {/* vocab-ok: COMMISSION is the constant's name; the text reads service fee */ ch !== 'web' && <span className="text-caption text-muted-ink">{disabled ? 'Not connected' : n < chosen.length ? `${n} of ${chosen.length} units connected` : `${COMMISSION[ch]}% service fee`}</span>}
+                              {/* vocab-ok: COMMISSION is the constant's name; the text reads service fee */ ch !== 'web' && <span className="text-caption text-muted-ink">{disabled ? 'Not connected' : n < chosen.length ? `${n} of ${chosen.length} units connected` : `${feeOf(ch)}% service fee`}</span>}
                             </span>
                           </label>
                           {disabled ? <><span className="text-copy">Not connected</span><span className="text-copy">—</span><span className="text-copy">—</span></> : <>
                             <span className="text-copy [font-variant-numeric:tabular-nums]">{markup}</span>
                             <span className="text-copy font-semibold [font-variant-numeric:tabular-nums]">{span(r.guest, rm)}</span>
-                            <span className="text-copy [font-variant-numeric:tabular-nums]">{span(r.keep, rm)}{ch !== 'web' && <span className="text-caption text-muted-ink"> after {COMMISSION[ch]}%</span>}</span>
+                            <span className="text-copy [font-variant-numeric:tabular-nums]">{span(r.keep, rm)}{ch !== 'web' && <span className="text-caption text-muted-ink"> after {feeOf(ch)}%</span>}</span>
                           </>}
                         </div>
                       );

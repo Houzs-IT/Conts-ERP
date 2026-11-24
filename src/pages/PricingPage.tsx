@@ -130,7 +130,7 @@ export default function PricingPage() {
                 </div>
               </Card>
             )}
-            {selected && <UnitPrices key={selected.unitId} unit={selected} levelsReady={!!data?.levelsReady} onSaved={reload} />}
+            {selected && <UnitPrices key={selected.unitId} unit={selected} levelsReady={!!data?.levelsReady} commission={data?.commission} onSaved={reload} />}
           </div>
         )}
       </div>

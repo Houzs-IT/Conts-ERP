@@ -6,6 +6,7 @@
  *  the same file twice updates the rows the first run created instead of adding new ones. */
 
 import type { HpReservation } from './hostplatform';
+import { realNamePart } from './guestName';
 
 export type Row = Record<string, unknown>;
 export interface RowError { row: number | string; reason: string }
@@ -379,7 +380,7 @@ export function mapReservations(rows: Row[], today: string): ReservationPlan {
       const phone = opt(r['[].Contact Number[]']), email = opt(r['[].User Email[]'])?.toLowerCase() ?? null;
       // A booking with no name gets its reference in the placeholder: without it every nameless Airbnb booking
       // hashed to the same guest id and 23 stays collapsed into one "Airbnb guest" (fixed 10 Oct 2026).
-      const name = opt(r['Guest Name']) ?? ([opt(r['First Name']), opt(r['Last Name'])].filter(Boolean).join(' ') || placeholderGuestName(CHANNEL_LABEL[channel], ota ?? code));
+      const name = (realNamePart(opt(r['Guest Name'])) || undefined) ?? ([realNamePart(opt(r['First Name'])), realNamePart(opt(r['Last Name']))].filter(Boolean).join(' ') || placeholderGuestName(CHANNEL_LABEL[channel], ota ?? code));
       gid = guestId(name, phone, email);
       // HostPlatform writes "No Contact from Airbnb" where there is no number. The id keeps hashing the raw value so
       // re-imports still match existing guests; only the stored phone drops text that has no digits.
@@ -437,7 +438,7 @@ export function mapApiReservations(list: HpReservation[], today: string): Reserv
     let gid: string | null = null;
     if (g) {
       const phone = opt(g.contact_no), email = opt(g.email)?.toLowerCase() ?? null;
-      const name = [opt(g.first_name), opt(g.last_name)].filter(Boolean).join(' ') || placeholderGuestName(CHANNEL_LABEL[channel], ota ?? code);
+      const name = [realNamePart(opt(g.first_name)), realNamePart(opt(g.last_name))].filter(Boolean).join(' ') || placeholderGuestName(CHANNEL_LABEL[channel], ota ?? code);
       gid = guestId(name, phone, email);
       if (!guests.has(gid)) guests.set(gid, { id: gid, fullName: name.slice(0, 200), email, phone: phone && /\d/.test(phone) ? phone : null, countryCode: null });
     }

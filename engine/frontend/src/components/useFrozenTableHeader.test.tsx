@@ -13,15 +13,15 @@ function Harness({ onBox }: { onBox: (box: unknown) => void }) {
   return (
     <main data-testid="main">
       <div ref={rootRef} data-testid="root">
-        <div ref={scrollWrapRef} data-testid="wrap" />
+        <div ref={scrollWrapRef} data-testid="wrap"><table><thead data-testid="head" /></table></div>
       </div>
     </main>
   );
 }
 
-function boxWith(pageBelow: number) {
+function boxWith(pageBelow: number, tableTop = 200) {
   const tableH = 3000;
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => rect(200, 200 + tableH));
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => rect(tableTop, tableTop + tableH));
   const size = (el: HTMLElement, name: string) => {
     if (el.tagName === "MAIN") return name === "scrollHeight" ? 200 + tableH + pageBelow : 800;
     return tableH;
@@ -49,5 +49,10 @@ describe("useFrozenTableHeader", () => {
 
   it("leaves a long table in the page when a lot sits below it", () => {
     expect(boxWith(1500)).toBeNull();
+  });
+
+  it("keeps the header of that long table under the page header once the rows scroll past it", () => {
+    expect(boxWith(1500, -500)).toBeNull();
+    expect(document.querySelector<HTMLElement>("[data-testid=head]")?.style.top).toBe("564px");
   });
 });
