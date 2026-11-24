@@ -41,7 +41,7 @@ import {
 import { outcomeOfError, useContentBoundIdempotencyKey } from '../../lib/idempotency';
 import { serviceConfirm } from '../../vendor/scm/lib/dialog-service';
 import { readScmHandoff, removeScmHandoff, writeScmHandoff } from '../../lib/scmHandoffStorage';
-import { bindMaterialsTo, formPickOfProduction, type ProductionPick } from './renovation-po-from-production';
+import { bindMaterialsTo, formPickOfProduction, mainSupplierHolding, type ProductionPick } from './renovation-po-from-production';
 import { useMfgProducts, useMaintenanceConfig, useSpecialAddons, mfgCategoryLabel } from '../../vendor/scm/lib/mfg-products-queries';
 import { activeOptions, maintPickerValues, fmtMoneySen } from '@2990s/shared';
 import { useFabricTrackings, fabricOptionLabel } from '../../vendor/scm/lib/fabric-queries';
@@ -127,6 +127,8 @@ type DraftLine = {
   soVariants?: Record<string, unknown>;
   /** Conts — the production order raw material this line buys (Transfer from Production Order). Saved on the PO line. */
   productionMaterialId?: string | null;
+  /** Conts — the material's main supplier code when it came from Transfer from Production Order; such a line follows it. */
+  mainSupplierCode?: string | null;
 };
 
 /* One picked line handed over by a From-SO or From-Production picker (renovation-po-from-production.ts). */
@@ -426,6 +428,7 @@ export const PurchaseOrderNew = () => {
       soItemId: p.soItemId,
       soVariants: p.soItemId ? ((p.variants ?? {}) as Record<string, unknown>) : undefined,
       productionMaterialId: p.productionMaterialId ?? null,
+      mainSupplierCode: p.productionMaterialId ? p.mainSupplierCode ?? null : null,
     }));
     // Replace the initial blank line if the form is still empty; else append.
     setLines((prev) => (prev.some((l) => l.itemCode.trim()) ? [...prev, ...mapped] : mapped));
@@ -632,6 +635,15 @@ export const PurchaseOrderNew = () => {
        creditor binds each one to it (as MRP's supplier pick does) and starts their price over. */
     const filled = lines.filter((l) => l.itemCode.trim());
     if (nextSupplierId && filled.length > 0 && filled.every((l) => l.productionMaterialId)) {
+      const nextCode = (suppliers.data ?? []).find((s) => s.id === nextSupplierId)?.code ?? null;
+      const followed = mainSupplierHolding(filled, nextCode);
+      if (followed) {
+        setDialog({
+          title: 'Main supplier stays',
+          body: 'These raw materials follow their main supplier ' + followed + '. Only materials with no main supplier can be bought from another creditor; change the main supplier on the item first.',
+        });
+        return;
+      }
       const name = (suppliers.data ?? []).find((s) => s.id === nextSupplierId)?.name ?? 'this creditor';
       const proceed = await serviceConfirm({
         title: 'Change creditor?',
