@@ -11,7 +11,7 @@
 // with its amount; AMOUNT RECEIVED over a double rule; the amount in words
 // (the same amountInWordsMyr every money print here uses); Received by and
 // the company chop. A CANCELLED receipt prints with a big diagonal watermark; a DRAFT one
-// prints without (chew, 24 Nov 2026), its Status line saying the money is not confirmed
+// prints without, and without a status line (chew, 24 Nov 2026)
 // — the salesperson can hand something over the moment the payment is keyed,
 // and nobody can mistake it for the confirmed paper (draft 的可以打印,带 DRAFT
 // 水印 — the owner's own design). A CANCELLED one prints CANCELLED, its reason
@@ -133,8 +133,9 @@ function renderReceiptInto(doc: JsPdf, autoTable: AutoTable, r: ReceiptPdfData, 
         ['Sales order', order || null],
         ['Invoice', receiptInvoiceNo(r)],
         [MONEY_SEEN, confirmedLine(r)],
-        ['Status', status === 'DRAFT' ? 'Draft · money not confirmed'
-          : status === 'CANCELLED' ? `Cancelled · ${r.cancel_reason || 'its payment changed'}` : null],
+        /* No status for the customer (chew, 24 Nov 2026): a receipt of money not confirmed yet reads as any other.
+           Only a cancelled one says so, with why. */
+        ['Status', status === 'CANCELLED' ? `Cancelled · ${r.cancel_reason || 'its payment changed'}` : null],
       ],
     },
   );
@@ -181,7 +182,7 @@ function renderReceiptInto(doc: JsPdf, autoTable: AutoTable, r: ReceiptPdfData, 
   doc.setLineDashPattern([], 0);
 
   /* The watermark LAST, over everything: a cancelled receipt must read as cancelled from across the counter. A draft
-     prints without one (chew, 24 Nov 2026): its Status line says the money is not confirmed yet. */
+     prints without one and without a status (chew, 24 Nov 2026). */
   if (status === 'CANCELLED') {
     doc.saveGraphicsState();
     doc.setGState(doc.GState({ opacity: 0.14 }));
