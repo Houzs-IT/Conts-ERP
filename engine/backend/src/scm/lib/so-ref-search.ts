@@ -48,7 +48,7 @@ export async function soDocNosByProject(sb: Sb, c: CompanyScopeCtx, term: string
   const projects = await sb.schema('public').from('projects').select('id')
     .or(`name.ilike.%${s}%,code.ilike.%${s}%`).limit(SO_REF_MATCH_CAP);
   if (projects.error) throw new Error(`Project lookup failed: ${projects.error.message}`);
-  const projectIds = ((projects.data ?? []) as Array<{ id: number }>).map((project) => project.id);
+  const projectIds = (projects.data as Array<{ id: number }>).map((project) => project.id);
   if (projectIds.length === 0) return [];
   const { data, error } = await scopeToCompany(
     sb.from('mfg_sales_orders').select('doc_no').in('project_id', projectIds),
@@ -71,7 +71,7 @@ export async function deliveryOrderIdsForSoDocNos(sb: Sb, c: CompanyScopeCtx, do
   const { data, error } = await scopeToCompany(sb.from('delivery_orders').select('id').in('so_doc_no', [...docNos]), c)
     .limit(SO_REF_MATCH_CAP * 4);
   if (error) throw new Error(`Delivery order lookup failed: ${error.message}`);
-  return ((data ?? []) as Array<{ id: string | null }>).map((row) => row.id).filter((id): id is string => !!id);
+  return (data as Array<{ id: string | null }>).map((row) => row.id).filter((id): id is string => !!id);
 }
 
 /** "<code> <name>" of each SO's project, keyed by SO doc number, for lists that search the rows they hold. SOs with
