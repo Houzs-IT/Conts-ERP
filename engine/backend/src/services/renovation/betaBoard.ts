@@ -305,6 +305,8 @@ const refOf = (id: number | null, name: string | null): BoardPersonRef | null =>
 export interface BoardProjectRow {
   id: number; code: string | null; name: string; building: string | null; unit_no: string | null; customer_name: string | null;
   sales_name: string | null; created_at: string | null; handover_on: string | null; brand?: string | null;
+  /** The day it was handed over (MYT); absent on older callers. */
+  handed_over_on?: string | null;
   lead_id: number | null; lead_name: string | null; pic_id: number | null; pic_name: string | null;
   /** The 3D and 2D people in the order picked, as JSON text or parsed ([{ id, name }]). */
   p3_people: unknown; p2_people: unknown;
@@ -332,6 +334,8 @@ export interface BoardSets {
 export interface BoardProject {
   id: number; code: string | null; name: string; building: string | null; unitNo: string | null;
   customerName: string | null; salesName: string | null; createdOn: string | null; handoverOn: string | null;
+  /** The day the project was handed over; null while it is still running. */
+  handedOverOn: string | null;
   /** When the project was made (UTC ISO), for "newest first". */
   createdAt: string | null;
   /** The brand it is sold under (Dream Crafter, The Conts): the project list shows Dream Crafter's. */
@@ -373,7 +377,7 @@ export function buildBoardProject(p: BoardProjectRow, sets: BoardSets, payment: 
   const people2d = peopleOf(p.p2_people);
   return {
     id: p.id, code: p.code, name: p.name, building: p.building, unitNo: p.unit_no, customerName: p.customer_name, salesName: p.sales_name,
-    createdOn: createdOnOf(p.created_at), handoverOn: p.handover_on,
+    createdOn: createdOnOf(p.created_at), handoverOn: p.handover_on, handedOverOn: p.handed_over_on ?? null,
     createdAt: p.created_at && !Number.isNaN(Date.parse(p.created_at)) ? new Date(Date.parse(p.created_at)).toISOString() : null,
     brand: p.brand?.trim() || null,
     soDocNos: String(p.so_doc_nos ?? "").split(/\s+/).filter(Boolean),

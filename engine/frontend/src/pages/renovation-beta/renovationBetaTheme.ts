@@ -263,7 +263,7 @@ export function betaTagTone(name: string): BetaTone {
 export function betaConditionTone(text: string): readonly [string, string, string] {
   if (/amendment/i.test(text)) return [TONES.red.ink, TONES.red.soft, TONES.red.dot];
   if (/New|waiting/i.test(text)) return [TONES.amber.ink, TONES.amber.soft, TONES.amber.dot];
-  if (/booked|Done/i.test(text)) return [TONES.accent.ink, TONES.accent.soft, TONES.accent.dot];
+  if (/booked|Done|Handed over/i.test(text)) return [TONES.accent.ink, TONES.accent.soft, TONES.accent.dot];
   if (/^Pending site/.test(text)) return [TONES.grey.ink, TONES.grey.soft, TONES.grey.dot];
   return [TONES.blue.ink, TONES.blue.soft, TONES.blue.dot];
 }

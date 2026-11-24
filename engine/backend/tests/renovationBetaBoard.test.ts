@@ -187,6 +187,9 @@ describe("Beta board: grouping", () => {
     // The brand decides which list shows the project; blank reads as none.
     expect(buildBoardProject({ ...row, brand: " Dream Crafter " }, sets, { state: "none" }).brand).toBe("Dream Crafter");
     expect(buildBoardProject({ ...row, brand: "" }, sets, { state: "none" }).brand).toBeNull();
+    // Handed over: Calendar Progress puts it in the Complete card (24 Nov 2026).
+    expect(buildBoardProject(row, sets, { state: "none" }).handedOverOn).toBeNull();
+    expect(buildBoardProject({ ...row, handed_over_on: "2026-08-24" }, sets, { state: "none" }).handedOverOn).toBe("2026-08-24");
   });
 });
 

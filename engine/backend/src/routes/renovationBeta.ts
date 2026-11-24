@@ -544,7 +544,7 @@ app.get("/board", requirePageAccess("projects.list"), async (c) => {
       boardPeople(c, companyId),
       db(c).prepare(
         `SELECT p.id::int AS id, p.code, p.name, p.building, p.unit_no, p.customer_name, coalesce(sp.name, p.salesperson_name) AS sales_name, p.created_at, p.brand,
-                p.planned_handover_date::text AS handover_on,
+                p.planned_handover_date::text AS handover_on, (p.handed_over_at AT TIME ZONE '${MYT}')::date::text AS handed_over_on,
                 p.designer_person_id::int AS lead_id, dp.name AS lead_name, p.reno_pic_person_id::int AS pic_id, rp.name AS pic_name,
                 ${designPeopleSql("3d")} AS p3_people, ${designPeopleSql("2d")} AS p2_people,
                 (SELECT min(r.done_on) FROM project_design_records r WHERE r.project_id = p.id AND r.kind = 'site_measure')::text AS measured_on,
