@@ -5,7 +5,7 @@
 import { useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { BETA, GLASS, TONES } from "./renovationBetaTheme";
-import { currentStep, progressByPerson, progressList, reportsOf, status, designSteps, stepDone, type BoardModel, type DesignProject, type PersonRef, type Viewing } from "./renovationBetaBoard";
+import { currentStep, ds, progressByPerson, progressList, reportsOf, status, designSteps, stepDone, type BoardModel, type DesignProject, type PersonRef, type Viewing } from "./renovationBetaBoard";
 import { rememberLastProject } from "./renovationBetaBoardApi";
 import { BTN, CondPill, INK_SOFT, MUTED, TOGGLE, TOGGLE_HEAD } from "./BetaCalParts";
 
@@ -78,7 +78,8 @@ function ProgressRow({ m, p, hl }: { m: BoardModel; p: DesignProject; hl: Viewin
           <Link to={`/beta/projects/${p.id}`} onClick={() => rememberLastProject(p.id)} style={{ color: BETA.ink, fontWeight: 600, textDecoration: "none" }}>{p.name}</Link>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 4, fontSize: 12 }}>
-          <CondPill text={`${st[0]} - ${st[1]}`} words={st[1]} />
+          {/* A handed-over job says so instead of its last design condition (owner, 24 Nov 2026). */}
+          {p.handedOver ? <CondPill text={`Handed over ${ds(p.handedOver)}`} words="Handed over" /> : <CondPill text={`${st[0]} - ${st[1]}`} words={st[1]} />}
           {chips.map(([label, name, id]) => {
             const me = hl !== "All" && id.includes(hl);
             return (
