@@ -1308,15 +1308,19 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
   const unsavedCls = isSaved ? paymentsStyles.unsavedCell : '';
   /* Every track shares the width in proportion (owner, 5 Nov 2026: the table runs left to right), so no single column
      balloons, which is what the fixed widths above were avoiding. */
+  /* The receipt column (chew, 24 Nov 2026): the OR number, or waiting for finance, and the invoice it is for sit beside
+     the amount, readable, instead of squeezed into the row's last 28px. Only on a saved order's own rows. */
+  const showReceipt = Boolean(receiptFor) && isSaved;
+  const receiptTrack = showReceipt ? ' minmax(150px, 1.1fr)' : '';
   const gridStyle: CSSProperties | undefined = showSlip
     ? {
         gridTemplateColumns:
-          `minmax(112px, 1fr) minmax(116px, 1fr) minmax(116px, 1fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) minmax(88px, 0.8fr) minmax(140px, 1.25fr) ${hasUnsavedRows ? '104px' : '28px'}`,
-        minWidth: hasUnsavedRows ? 956 : 880,
+          `minmax(112px, 1fr) minmax(116px, 1fr) minmax(116px, 1fr)${receiptTrack} minmax(140px, 1.25fr) minmax(140px, 1.25fr) minmax(88px, 0.8fr) minmax(140px, 1.25fr) ${hasUnsavedRows ? '104px' : '28px'}`,
+        minWidth: (hasUnsavedRows ? 956 : 880) + (showReceipt ? 150 : 0),
       }
     /* Without a Slip column (a new order) the same widths, and room for the slip and remove buttons at the row's end:
        the 32px the stylesheet gives that track pushed them off the card. */
-    : { gridTemplateColumns: `minmax(112px, 1fr) minmax(116px, 1fr) minmax(116px, 1fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) ${isSaved && !hasUnsavedRows ? '28px' : '112px'}` };
+    : { gridTemplateColumns: `minmax(112px, 1fr) minmax(116px, 1fr) minmax(116px, 1fr)${receiptTrack} minmax(140px, 1.25fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) ${isSaved && !hasUnsavedRows ? '28px' : '112px'}` };
 
   return (
     <section className={detailStyles.card}>
@@ -1374,6 +1378,11 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
             <span className={paymentsStyles.headerCellRight}>
               Amount ({currency}) <DollarSign size={12} strokeWidth={1.75} />
             </span>
+            {showReceipt && (
+              <span className={paymentsStyles.headerCell}>
+                Official receipt <Printer size={12} strokeWidth={1.75} />
+              </span>
+            )}
             <span className={paymentsStyles.headerCell}>
               Account Sheet <FileText size={12} strokeWidth={1.75} />
             </span>
@@ -1457,6 +1466,35 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
                       style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, ...(isMirror(p) ? { color: 'var(--c-danger, #a33)' } : {}) }}>
                   {fmtAmt(p.amount_sen)}
                 </span>
+                {showReceipt && (
+                  <span className={paymentsStyles.cell} data-label="Official receipt" style={{ alignItems: 'center', gap: 6 }}>
+                    {/* The receipt as finance stands on it (chew, 21 + 24 Nov 2026): a formal OR prints with its number,
+                        money finance has not confirmed yet waits and prints nothing; and the instalment invoice a
+                        renovation receipt is for. */}
+                    {p.method === CONVERTED_METHOD ? <span className={detailStyles.muted}>—</span> : (
+                      <>
+                        <span style={{ display: 'inline-flex', flexDirection: 'column', fontSize: 'var(--fs-12)', lineHeight: 1.35 }}>
+                          {p.confirmed === false || p.or_status === 'DRAFT'
+                            ? <span style={{ color: 'var(--c-warning-text, #8a5a00)', fontWeight: 600 }}>Waiting for finance</span>
+                            : <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{p.or_number ?? 'Official receipt'}</span>}
+                          {p.invoice_no && <span style={{ color: 'var(--fg-muted)' }}>for {p.invoice_no}</span>}
+                        </span>
+                        {p.confirmed !== false && p.or_status !== 'DRAFT' && (
+                          <button
+                            type="button"
+                            onClick={() => void printReceipt(p.id)}
+                            disabled={receiptBusy === p.id}
+                            title="Print official receipt"
+                            aria-label={`Print official receipt${p.or_number ? ` ${p.or_number}` : ''}`}
+                            style={{ background: 'transparent', border: 'none', padding: 4, cursor: 'pointer', color: 'var(--fg-muted)' }}
+                          >
+                            <Printer size={14} strokeWidth={1.75} />
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </span>
+                )}
                 <span className={paymentsStyles.cell} data-label="Account Sheet">
                   {p.account_sheet ?? <span className={detailStyles.muted}>—</span>}
                 </span>
@@ -1500,32 +1538,6 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
                   {p.collected_by_name ?? staffNameById(p.collected_by) ?? <span className={detailStyles.muted}>—</span>}
                 </span>
                 <span className={paymentsStyles.cell}>
-                  {/* The receipt as finance stands on it (chew, 21 Nov 2026): a formal OR's number once the money is
-                      confirmed, else waiting for finance; and the instalment invoice a renovation receipt is for. */}
-                  {receiptFor && p.method !== CONVERTED_METHOD && (p.or_status || p.confirmed === false) && (
-                    <span style={{ display: 'inline-flex', flexDirection: 'column', fontSize: 'var(--fs-11)', lineHeight: 1.3, marginRight: 4 }}>
-                      {p.or_status === 'FORMAL'
-                        ? <span style={{ fontFamily: 'var(--font-mono)' }}>{p.or_number}</span>
-                        : p.confirmed === false
-                          ? <span style={{ color: 'var(--c-warning-text, #8a5a00)', fontWeight: 600 }}>Waiting for finance</span>
-                          : null}
-                      {p.invoice_no && <span style={{ color: 'var(--fg-muted)' }}>for {p.invoice_no}</span>}
-                    </span>
-                  )}
-                  {receiptFor && p.method !== CONVERTED_METHOD && (
-                    <button
-                      type="button"
-                      onClick={() => void printReceipt(p.id)}
-                      disabled={receiptBusy === p.id}
-                      title="Print official receipt"
-                      style={{
-                        background: 'transparent', border: 'none', padding: 4,
-                        cursor: 'pointer', color: 'var(--fg-muted)',
-                      }}
-                    >
-                      <Printer size={14} strokeWidth={1.75} />
-                    </button>
-                  )}
                   {!locked && (
                     <div style={{ display: 'flex', gap: 2, justifyContent: 'flex-end', alignItems: 'center' }}>
                       {/* Same-day EDIT (owner 2026-07-13) — only for a payment
@@ -1815,6 +1827,7 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
                     onCommit={(sen) => patchDraft(d.uid, { amountSen: sen ?? 0 })}
                   />
                 </span>
+                {showReceipt && <span className={`${paymentsStyles.cell} ${unsavedCls}`} data-label="Official receipt" />}
                 <span className={`${paymentsStyles.cell} ${unsavedCls}`} data-label="Account Sheet">
                   <input
                     type="text"
