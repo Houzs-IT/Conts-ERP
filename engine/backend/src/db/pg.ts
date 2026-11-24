@@ -58,10 +58,13 @@ const bigintAsNumber = {
 /**
  * Returns a fresh postgres.js client for the given connection URL.
  *
- * Detects a Hyperdrive-backed URL by its `*.hyperdrive.local` host. In prod
- * the Worker reads `c.env.HYPERDRIVE.connectionString`; locally it reads the
- * direct Supabase pooler URL from `c.env.DATABASE_URL`.
+ * In prod the Worker reads `c.env.HYPERDRIVE.connectionString`; locally it
+ * reads the direct Supabase pooler URL from `c.env.DATABASE_URL`.
  */
+// Hyperdrive's binding host was `<id>.hyperdrive.local` and became `<id>.workers.alt` (24 Nov 2026): missing it sent
+// TLS at Hyperdrive's local socket and every DB call hung until connect_timeout.
+export const isHyperdriveUrl = (databaseUrl: string): boolean => /hyperdrive\.local|\.workers\.alt[:/]/i.test(databaseUrl);
+
 export function getSql(databaseUrl: string): Sql {
   if (!databaseUrl) {
     throw new Error(
@@ -70,9 +73,7 @@ export function getSql(databaseUrl: string): Sql {
     );
   }
 
-  const isHyperdrive = /hyperdrive\.local/i.test(databaseUrl);
-
-  return isHyperdrive
+  return isHyperdriveUrl(databaseUrl)
     ? postgres(databaseUrl, {
         // max:1 — one socket per request; Hyperdrive pools origin-side.
         // Higher values risk "Cannot perform I/O on behalf of a different
