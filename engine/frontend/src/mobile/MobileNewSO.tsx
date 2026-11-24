@@ -2077,10 +2077,10 @@ export function MobileNewSO({
           // DIRECT_ONLY skips ONLY this block; the tail after it is shared.
           if (plan === "AMENDMENT" && contractOrder) {
             try {
-              const { edits, adds } = contractLineEdits(amLines, origItems);
-              if (edits.length + adds.length > 0) {
+              const { edits, adds, discountSen } = contractLineEdits(amLines, origItems);
+              if (edits.length + adds.length > 0 || discountSen !== undefined) {
                 amendCreatedRes = await authedFetch(`/renovation/sales-orders/${encodeURIComponent(docNo)}/line-edits`, {
-                  method: "POST", body: JSON.stringify({ edits, adds, title: "Changed on the sales order" }),
+                  method: "POST", body: JSON.stringify({ edits, adds, discountSen, title: "Changed on the sales order" }),
                 });
               }
             } catch (e) {
