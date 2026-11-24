@@ -117,6 +117,8 @@ export const expenseOut = (r: any) => ({
   incurredOn: r.incurred_on, reference: r.reference, chargeTo: r.charge_to,
   parentExpenseId: r.parent_expense_id ?? null, locked: !!r.locked, receiptDocumentId: r.receipt_document_id ?? null,
   taskId: r.task_id ?? null, maintenanceId: r.maintenance_id ?? null,
+  /* Migration 0369: the day the bill was paid, YYYY-MM-DD, or null. */
+  paidAt: r.paid_at ?? null,
 });
 
 export const IS_PARENT_SQL = 'EXISTS (SELECT 1 FROM expenses k WHERE k.parent_expense_id = e.id)';

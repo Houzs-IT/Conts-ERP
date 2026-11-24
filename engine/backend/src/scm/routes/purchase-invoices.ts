@@ -47,6 +47,7 @@ import { sourceGrnIdsForPi } from '../lib/convert-parent';
 import { refuseMigratedSources, receiptMustMirrorAutoCount } from '../lib/migrated-chain';
 import { MIGRATED_RECEIPTS_NOT_INVOICED_IN_AUTOCOUNT } from '../lib/migrated-receipts-not-invoiced.generated';
 import { attachGrnLineFacts, withPoPriceSnapshot } from '../lib/pi-po-price';
+import { autocountPiFor, type AutocountPiView } from '../../acc/autocount-pi-lines';
 import { parseDocPageQuery, readDocPage } from '../lib/doc-batch-page';
 import { billableGrnBase, grnSearchMatches, makeDocBatchReader } from '../lib/purchase-picker-docs'; import { loadOutstandingGrnLines } from '../lib/outstanding-grn-lines';
 import { refuseWithoutWriting } from '../lib/no-write-refusal';
@@ -601,7 +602,14 @@ purchaseInvoices.get('/:id', async (c) => {
   // "BF-01 (PC151-01)" — same READ enrichment as the SO/PO/DO/SI details
   // (owner 2026-07-24). ONE batched query; fail-soft.
   await enrichLinesWithFabricSupplierCode(sb, c, items);
-  return c.json({ purchaseInvoice: h.data, items, customerDos, sourceGrns });
+  /* Conts: an opening bill shows the AutoCount PI it is the balance of, line by line, view only (migration 0370). */
+  let autocountPi: AutocountPiView | null = null;
+  {
+    const { data: link } = await scopeToCompany(sb.from('purchase_invoices').select('company_id, opening_balance, autocount_pi_no').eq('id', id), c).maybeSingle();
+    const l = link as { company_id?: number; opening_balance?: boolean | null; autocount_pi_no?: string | null } | null;
+    if (l?.opening_balance && l.autocount_pi_no) autocountPi = await autocountPiFor(sb, Number(l.company_id), l.autocount_pi_no);
+  }
+  return c.json({ purchaseInvoice: h.data, items, customerDos, sourceGrns, autocountPi });
 });
 
 // ── Linked docs (Smart Buttons fan-out) ─────────────────────────────

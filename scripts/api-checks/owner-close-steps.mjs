@@ -309,8 +309,12 @@ const octAdj = await adjLines(OCT);
 await generate(NOV, u.owner_id);
 const novAdj = await adjLines(NOV);
 const keptIds = (kept?.adjustments ?? []).map(a => a.id).sort();
+// The released debt lands on November, or, when November cannot take it without going below zero, it is carried to
+// December as it stands (owner, 24 Nov 2026: a payout never goes negative).
+const h0 = (await db("SELECT occurred_on FROM owner_adjustments WHERE id = 'ocs-h0'"))[0];
+const h0OnNovember = novAdj.includes('ocs-h0') || ymd(h0?.occurred_on) === '2026-12-01';
 check("October's statement keeps its locked O2", octAdj.includes('ocs-a0') && JSON.stringify(octAdj) === JSON.stringify(keptIds)
-  && novAdj.includes(o2?.id) && novAdj.includes('ocs-h0') && !octAdj.includes(o2?.id) && !octAdj.includes('ocs-h0'),
+  && novAdj.includes(o2?.id) && h0OnNovember && !octAdj.includes(o2?.id) && !octAdj.includes('ocs-h0'),
   `October ${JSON.stringify(octAdj)} kept ${JSON.stringify(keptIds)} November ${JSON.stringify(novAdj)}`);
 
 const noUnit = await call('POST', `/api/owners/${u.owner_id}/adjustments`, { kind: 'charge', amount: 1500, description: 'Check: no unit', occurredOn: '2026-10-20' });

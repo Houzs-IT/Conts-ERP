@@ -26,6 +26,15 @@ const SPEC: Record<string, Record<string, Field>> = {
   // Statements use the fee for a unit whose contract has none (functions/_lib/ownerStatement.ts).
   locale: {
     managementFeePct: { def: 25, legacy: 'finance.default_fee_pct', kind: 'number', min: 0, max: 100 },
+    // What each booking site keeps (shown as what is left for us) and, until a unit sets its own rule, how much above the
+    // direct price each site sells at, in percent (owner, 24 Nov 2026; functions/_lib/unitPricing.ts applyPricingDefaults).
+    // Changing an uplift changes the prices sent to the booking sites for every unit on the default rule.
+    airbnbCommission: { def: 15, kind: 'number', min: 0, max: 50 },
+    bookingComCommission: { def: 15, kind: 'number', min: 0, max: 50 },
+    agodaCommission: { def: 18, kind: 'number', min: 0, max: 50 },
+    airbnbUplift: { def: 12, kind: 'number', min: 0, max: 100 },
+    bookingComUplift: { def: 18, kind: 'number', min: 0, max: 100 },
+    agodaUplift: { def: 16, kind: 'number', min: 0, max: 100 },
   },
   operations: {
     // The housekeeping board's standard times (functions/api/housekeeping/board.ts).

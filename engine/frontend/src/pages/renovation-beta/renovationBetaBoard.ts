@@ -72,6 +72,8 @@ export interface DesignProject {
   site: PersonRef | null;
   unassigned: boolean;
   handover: string | null;
+  /** The day it was handed over to the client; null while it is still running. */
+  handedOver: string | null;
   measuredOn: string | null;
   design: Record<Kind, DesignTrack>;
   po: string | null;
@@ -324,6 +326,7 @@ export function toBoardProjects(board: BetaBoard): DesignProject[] {
       site: ref(p.sitePic),
       unassigned: lead == null,
       handover: p.handoverOn,
+      handedOver: p.handedOverOn ?? null,
       measuredOn: p.measuredOn,
       design: { "3": d3, "2": d2 },
       po: p.poDoneOn,
@@ -439,7 +442,8 @@ export function designSteps(m: Pick<BoardModel, "workTypes">): Array<readonly [S
     payment once the second instalment is received; Variants when every sales order line has its variants. */
 export function stepDone(m: BoardModel, p: DesignProject, k: StepKey): boolean {
   switch (k) {
-    case "measure": return measured(m, p) || adone(m, p.appts.msr);
+    // Past the measure once the 3D has started, as the condition pill reads it (24 Nov 2026: pill said 3D sent, Measure stayed open).
+    case "measure": return pastMeasure(m, p) || adone(m, p.appts.msr);
     case "w3d": return p.design["3"].ok;
     case "w2d": return p.design["2"].ok;
     case "payment_2": return (p.paid ?? 0) >= 2;

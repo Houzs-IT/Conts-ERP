@@ -2,9 +2,9 @@ import { describe, expect, test, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SoPrintPreview } from "./soPrintPreview";
-import type { UnitPriceChoice } from "../../vendor/scm/lib/sales-order-pdf";
+import { ALL_SO_PDF_COLUMNS, type SoPdfColumns } from "../../vendor/scm/lib/sales-order-pdf";
 
-function renderPreview(unitPrice: UnitPriceChoice, setUnitPrice = vi.fn()) {
+function renderPreview(columns: SoPdfColumns, setColumns = vi.fn()) {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <SoPrintPreview
@@ -12,40 +12,34 @@ function renderPreview(unitPrice: UnitPriceChoice, setUnitPrice = vi.fn()) {
         onClose={vi.fn()}
         docNo="TC-SO-3"
         rows={[]}
-        layout={{ printRooms: undefined, printLayout: "area", setPrintLayout: vi.fn(), unitPrice, setUnitPrice }}
+        layout={{ printRooms: undefined, printLayout: "area", setPrintLayout: vi.fn(), columns, setColumns }}
         onViewPdf={vi.fn()}
         onPrint={vi.fn()}
         onDownload={vi.fn()}
       />
     </QueryClientProvider>,
   );
-  return setUnitPrice;
+  return setColumns;
 }
 
-describe("SO print preview: per unit price choice", () => {
-  test("offers Show, Hide and Total even when the order has no rooms", () => {
-    renderPreview("show");
-    const group = screen.getByRole("group", { name: "Per unit price" });
-    expect(group).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Show" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "Total" })).toBeTruthy();
+describe("SO print preview: column ticks", () => {
+  test("offers Qty, Unit, Price, Discount and Amount, all ticked, even when the order has no rooms", () => {
+    renderPreview(ALL_SO_PDF_COLUMNS);
+    expect(screen.getByRole("group", { name: "Columns" })).toBeTruthy();
+    for (const name of ["Qty", "Unit", "Price", "Discount", "Amount"]) {
+      expect((screen.getByRole("checkbox", { name }) as HTMLInputElement).checked).toBe(true);
+    }
     expect(screen.queryByRole("group", { name: "Show lines" })).toBeNull();
   });
 
-  test("pressing Hide asks to hide the unit price", () => {
-    const setUnitPrice = renderPreview("show");
-    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
-    expect(setUnitPrice).toHaveBeenCalledWith("hide");
+  test("unticking Amount asks for every other column with Amount off", () => {
+    const setColumns = renderPreview(ALL_SO_PDF_COLUMNS);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Amount" }));
+    expect(setColumns).toHaveBeenCalledWith({ ...ALL_SO_PDF_COLUMNS, amount: false });
   });
 
-  test("pressing Total asks for qty and subtotal only", () => {
-    const setUnitPrice = renderPreview("show");
-    fireEvent.click(screen.getByRole("button", { name: "Total" }));
-    expect(setUnitPrice).toHaveBeenCalledWith("total");
-  });
-
-  test("shows Hide as chosen when the unit price is hidden", () => {
-    renderPreview("hide");
-    expect(screen.getByRole("button", { name: "Hide" }).getAttribute("aria-pressed")).toBe("true");
+  test("shows Price unticked when the price is hidden", () => {
+    renderPreview({ ...ALL_SO_PDF_COLUMNS, price: false });
+    expect((screen.getByRole("checkbox", { name: "Price" }) as HTMLInputElement).checked).toBe(false);
   });
 });

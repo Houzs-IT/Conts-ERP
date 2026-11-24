@@ -1,4 +1,6 @@
 import { ensureTurnovers, replanTurnover } from './cleaning';
+import { liveInvoiceOf } from './guestDocuments';
+import { realNamePart } from './guestName';
 import { syncAvailabilityIfLinked } from './channexSync';
 import { bookingAmounts } from './channexAmounts';
 import { type Env, one, run, audit, nowIso } from './db';
@@ -104,9 +106,10 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
   const guestsCount = Math.max(1, Number(occupancy.adults ?? 1) + Number(occupancy.children ?? 0));
   // A booking with no name gets its reference in the placeholder, so nameless guests do not all become one record.
   const ref = a.ota_reservation_code ?? a.unique_id ?? a.booking_id ?? '';
-  const guestName = [a.customer?.name, a.customer?.surname].filter(Boolean).join(' ').trim() || `${a.ota_name ?? 'Channel'} guest${ref ? ` ${ref}` : ''}`;
+  const namePart = realNamePart(a.customer?.name), surnamePart = realNamePart(a.customer?.surname);
+  const guestName = [namePart, surnamePart].filter(Boolean).join(' ').trim() || `${a.ota_name ?? 'Channel'} guest${ref ? ` ${ref}` : ''}`;
   // A booking already here keeps its guest when the site sent no name, rather than becoming the placeholder.
-  const keepGuest = !!existing && !(a.customer?.name || a.customer?.surname);
+  const keepGuest = !!existing && !(namePart || surnamePart);
   const guestId = keepGuest ? null : await upsertGuest(env, { fullName: guestName, email: a.customer?.mail ?? null, phone: a.customer?.phone ?? null });
   // Booking value and the site's fee: Channex's amount is the payout on Airbnb (channexAmounts.ts).
   const { grossSen: amountSen, feeSen, source: amountSource } = bookingAmounts(a, room.amount);
@@ -132,6 +135,16 @@ async function applyRevision(env: Env, entry: FeedEntry): Promise<boolean> {
       before: moved ? { checkIn: existing.check_in, checkOut: existing.check_out } : undefined,
       after: { channexBookingId: a.booking_id, ...(moved ? { checkIn, checkOut } : {}) } });
     if (moved) await bookingNotice(env, existing.id, 'dates', null, { from: { checkIn: existing.check_in, checkOut: existing.check_out } });
+    /* A booking the guest paid us directly can carry our invoice; the site moved the stay, so that invoice is for the old
+       dates (owner, 24 Nov 2026). No person made this change, so it is flagged for staff to void and reissue, never
+       reissued by itself. Never fails the sync. */
+    if (moved) {
+      try {
+        const inv = await liveInvoiceOf(env, existing.id);
+        if (inv) await audit(env, { actorId: null, actorLabel: 'Channex', action: 'document.stale_after_site_change', entityTable: 'reservations', entityId: existing.id,
+          after: { docNo: inv.doc_no, note: `Invoice ${inv.doc_no} is for the old dates: void it and issue a new one from the reservation.` } });
+      } catch { /* the sync stands */ }
+    }
     if (existing.check_out !== checkOut) await replanTurnover(env, existing.id, true); else await ensureTurnovers(env, { reservationIds: [existing.id] });
     return true;
   }

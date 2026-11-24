@@ -39,6 +39,8 @@ export interface ProjectView {
   hold: { flag: HoldFlag; note: string | null; at: string | null } | null;
   /** contract total (SO incl. VOs) and received so far, from the SO's billing; never stored on the project */
   money: { contractSen: number | null; receivedSen: number | null; receivedPct: number | null };
+  /** Live purchase orders raised for the project's sales order lines (owner, 24 Nov 2026: the To do drops "Order the main items" once there are some). */
+  poCount: number;
   keyHolder: KeyHolder | null;
   vo: VoSummary | null;
 }
@@ -156,6 +158,7 @@ export function computeProjectView(f: ProjectFacts, today: string): ProjectView 
     stageLayers: stageLayersOf(flow.stages, detail.designSteps, detail.categories),
     hold: holdFlag ? { flag: holdFlag, note: f.project.hold_note ?? null, at: f.project.hold_at ?? null } : null,
     money: moneyOf(f),
+    poCount: new Set(f.poLines.map((l) => l.purchase_order_id)).size,
     keyHolder: f.keyHolder ?? null,
     vo: f.vo ?? null,
     stages,

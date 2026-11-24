@@ -32,7 +32,7 @@ export function BetaOverviewTab(p: BetaTabProps): ReactElement {
   const [viewing, setViewing] = useState<ViewedFile | null>(null);
   // Design rows come from the board logic Calendar uses; payment and defect rows from the workspace.
   // Past design, the step bar's step leads To do; design leftovers stay listed under it.
-  const step = flowStepRow(d.flow, d.tasks, today);
+  const step = flowStepRow(d.flow, d.tasks, today, d.poCount ?? 0);
   const merged = mergeTodo(
     designTodoRows(p.board.m, p.board.p, p.canWrite, d.project.customer_phone),
     todoList({ today, projectName: d.project.name, currentStage: d.currentStage, workspace }),

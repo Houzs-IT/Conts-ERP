@@ -11,7 +11,7 @@ describe("betaConditionTone", () => {
   it.each([
     ["3D amendment", "red"], ["2D amendment", "red"],
     ["New · team not assigned", "amber"], ["3D sent · waiting client", "amber"],
-    ["Carpentry measure booked", "accent"], ["Site briefing booked", "accent"], ["Done all design", "accent"],
+    ["Carpentry measure booked", "accent"], ["Site briefing booked", "accent"], ["Done all design", "accent"], ["Handed over", "accent"],
     ["Pending site measure", "grey"],
     ["3D in progress", "blue"], ["2D in progress", "blue"], ["Pending 3D design", "blue"], ["Pending carpentry measure", "blue"], ["Pending PO", "blue"],
   ])("%s is %s", (words, expected) => expect(family(words)).toBe(expected));

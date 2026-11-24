@@ -194,6 +194,8 @@ export interface VoView {
   id: string; voNo: string; soDocNo: string; seq: number; status: VoStatus; title: string; docDate: string; version: number;
   signedName: string | null; signedAt: string | null; approvedAt: string | null; approvedBy: string | null; amendmentId: string | null;
   sections: DocSection[]; totals: { addSen: number; omitSen: number; netSen: number };
+  /** The contract's document discount this VO moved, in sen; null when it left the discount alone. */
+  discountChange?: { fromSen: number; toSen: number; label: string } | null;
   edits?: VoEdits | null;
   lineSpecs?: Record<string, LineSpec>;
 }

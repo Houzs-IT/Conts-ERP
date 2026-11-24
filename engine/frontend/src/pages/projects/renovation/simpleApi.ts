@@ -96,6 +96,8 @@ export interface ProjectDetailV2 extends Omit<ProjectDetail, "tasks"> {
   stepSla?: StepSlaView | null;
   hold: Hold | null;
   money: Money;
+  /** Live POs for the project's SO lines; older servers leave it out. */
+  poCount?: number;
   keyHolder: KeyHolder | null;
   vo: { count: number; approved: number } | null;
   people: { sales: PersonRef; designer: PersonRef; renoPic: PersonRef; pic: PersonRef; attending: AttendingPerson[] };

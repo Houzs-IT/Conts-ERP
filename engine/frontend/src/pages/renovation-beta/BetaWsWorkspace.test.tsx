@@ -185,7 +185,7 @@ describe("Beta project workspace", () => {
     expect(within(team).getByRole("button", { name: "Assign" })).toBeTruthy();
     const steps = screen.getByRole("list", { name: "Project stages" });
     expect(within(steps).getByText("Sales order")).toBeTruthy();
-    expect(within(steps).getByText("Design approved")).toBeTruthy();
+    expect(within(steps).getByText(/^Moved on · \d+ of \d+ done$/)).toBeTruthy();
     expect(within(steps).getByText(/Day 13 of 45/)).toBeTruthy();
     expect(within(steps).getAllByRole("listitem").find((li) => li.getAttribute("aria-current") === "step")?.textContent).toContain("Renovation");
     const tabs = screen.getByRole("navigation", { name: "Project sections" });

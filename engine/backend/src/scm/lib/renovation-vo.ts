@@ -122,13 +122,27 @@ export function voNoFor(soDocNo: string, seq: number): string {
 async function lockVo(db: RenoDb, id: string, companyId: number) {
   const [v] = await db.q(
     `select id, vo_no, so_doc_no, seq, status, title, doc_date::text as doc_date, net_sen, version, signed_name, signed_at::text as signed_at,
-            approved_at::text as approved_at, amendment_id, edits
+            approved_at::text as approved_at, amendment_id, edits, discount_change
        from scm.reno_variation_orders where id = $1 and company_id = $2 for update`,
     [id, companyId],
   );
   if (!v) throw refuse(404, 'vo_not_found', 'That variation order does not exist.');
-  return { ...v, edits: voEditsOf(v.edits) } as { id: string; vo_no: string; so_doc_no: string; seq: number; status: VoStatus; title: string; doc_date: string; net_sen: number; version: number; signed_name: string | null; signed_at: string | null; approved_at: string | null; amendment_id: string | null; edits: VoEdits | null };
+  return { ...v, edits: voEditsOf(v.edits), discount_change: discountChangeOf(v.discount_change) } as { id: string; vo_no: string; so_doc_no: string; seq: number; status: VoStatus; title: string; doc_date: string; net_sen: number; version: number; signed_name: string | null; signed_at: string | null; approved_at: string | null; amendment_id: string | null; edits: VoEdits | null; discount_change: DiscountChange | null };
 }
+
+/** The contract's document discount a VO moves from and to, in sen (both 0 or more); null = the VO leaves it alone. */
+export interface DiscountChange { fromSen: number; toSen: number; label: string }
+
+export function discountChangeOf(raw: unknown): DiscountChange | null {
+  const value: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  if (!value || typeof value !== 'object') return null;
+  const { fromSen, toSen, label } = value as { fromSen?: unknown; toSen?: unknown; label?: unknown };
+  if (typeof fromSen !== 'number' || typeof toSen !== 'number') return null;
+  return { fromSen, toSen, label: typeof label === 'string' ? label : '' };
+}
+
+/** What a discount change does to the contract: removing RM 100 of discount raises it by RM 100. */
+export const discountNetSen = (change: DiscountChange | null): number => (change ? change.fromSen - change.toSen : 0);
 
 export function voEditsOf(raw: unknown): VoEdits | null {
   const v: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -177,7 +191,7 @@ export function omitAmountSen(target: Pick<DocLineOut, 'kind' | 'qty' | 'measure
 export async function readVo(db: RenoDb, id: string, companyId: number) {
   const [v] = await db.q(
     `select id, vo_no, so_doc_no, seq, status, title, doc_date::text as doc_date, net_sen, version, signed_name, signed_at::text as signed_at,
-            approved_at::text as approved_at, approved_by, amendment_id, edits
+            approved_at::text as approved_at, approved_by, amendment_id, edits, discount_change
        from scm.reno_variation_orders where id = $1 and company_id = $2`,
     [id, companyId],
   );
@@ -201,7 +215,9 @@ export async function readVo(db: RenoDb, id: string, companyId: number) {
   return {
     id: v.id, voNo: v.vo_no, soDocNo: v.so_doc_no, seq: Number(v.seq), status: v.status as VoStatus, title: v.title, docDate: v.doc_date,
     version: Number(v.version), signedName: v.signed_name, signedAt: v.signed_at, approvedAt: v.approved_at, approvedBy: v.approved_by,
-    amendmentId: v.amendment_id, sections, totals: { addSen, omitSen, netSen: v.status === 'APPROVED' ? Number(v.net_sen) : addSen + omitSen },
+    amendmentId: v.amendment_id, sections,
+    totals: { addSen, omitSen, netSen: v.status === 'APPROVED' ? Number(v.net_sen) : addSen + omitSen + discountNetSen(discountChangeOf(v.discount_change)) },
+    discountChange: discountChangeOf(v.discount_change),
     edits: voEditsOf(v.edits),
     lineSpecs: v.status === 'DRAFT' || v.status === 'SENT' ? await lineSpecsOf(db, v.so_doc_no, companyId) : {},
   };
@@ -297,7 +313,11 @@ export async function applyVo(
     }
   }
   const addLines = addSections.flatMap((s) => s.lines.filter((l) => l.kind === 'ITEM' || l.kind === 'CHILD'));
-  if (addLines.length === 0 && omits.length === 0) throw refuse(422, 'empty_vo', 'This variation order adds and omits nothing.');
+  const discountChange = v.discount_change;
+  if (addLines.length === 0 && omits.length === 0 && !discountChange) throw refuse(422, 'empty_vo', 'This variation order adds and omits nothing.');
+  if (discountChange && discountChange.fromSen !== head.header.docDiscountSen) {
+    throw refuse(409, 'discount_moved', `The contract's discount is now ${fmtSen(head.header.docDiscountSen)}, not ${fmtSen(discountChange.fromSen)}. Reload and try again.`);
+  }
   for (const o of omits) {
     const t = o.target;
     const after = o.omitQty === null || o.omitQty >= t.qty || t.measureMilli !== null ? 0 : t.qty - o.omitQty;
@@ -403,6 +423,12 @@ export async function applyVo(
     }
   }
 
+  if (discountChange) {
+    await applyDiscountChange(db, {
+      soDocNo, amendmentId: amd.id, companyId: actor.companyId, debtorName: head.debtorName, discountSoItemId: head.discountSoItemId, change: discountChange,
+    });
+  }
+
   // 4. Roll up, stamp the revision, close the VO.
   const before = await db.q<{ total: number }>(`select local_total_sen as total from scm.mfg_sales_orders where doc_no = $1`, [soDocNo]);
   const revised = await recomputeSoHeader(db, soDocNo);
@@ -418,10 +444,71 @@ export async function applyVo(
   );
   await auditSo(db, {
     companyId: actor.companyId, docNo: soDocNo, action: 'VO_APPLY', actorName: actor.name,
-    note: `${v.vo_no} approved: ${rows.length} line(s) added, ${omits.length} omitted, net ${fmtSen(net)}${flags ? `, ${flags} PO line(s) flagged` : ''}`,
+    note: `${v.vo_no} approved: ${rows.length} line(s) added, ${omits.length} omitted`
+      + `${discountChange ? `, discount ${fmtSen(discountChange.fromSen)} -> ${fmtSen(discountChange.toSen)}` : ''}, net ${fmtSen(net)}${flags ? `, ${flags} PO line(s) flagged` : ''}`,
   });
   const added = addSections.flatMap((s) => s.lines).filter((l) => l.soItemId).map((l) => ({ voLineId: voLineOf.get(l.id)!, soItemId: l.soItemId! }));
   return { soDocNo, netSen: net, revisedContractSen: revised, flags, voNo: v.vo_no, docDate: v.doc_date, added };
+}
+
+/* The document discount is one negative RENO-DISCOUNT row on the SO (renovation-so.ts convertQuotationToSo), not a
+   contract line: it is removed by cancelling that row, changed by repricing it, and brought back as a new row. */
+async function applyDiscountChange(db: RenoDb, c: {
+  soDocNo: string; amendmentId: string; companyId: number; debtorName: string; discountSoItemId: string | null; change: DiscountChange;
+}): Promise<void> {
+  const discountRowSen = -c.change.toSen;
+  const liveRow = c.discountSoItemId
+    ? (await db.q<{ snap: unknown }>(
+      `select to_jsonb(i) as snap from scm.mfg_sales_order_items i where i.id = $1 and not coalesce(i.cancelled, false) for update`, [c.discountSoItemId])).at(0)
+    : undefined;
+  let discountItemId = liveRow ? c.discountSoItemId : null;
+  const oldSnapshot = JSON.stringify(liveRow?.snap ?? null);
+  if (discountItemId && c.change.toSen === 0) {
+    await db.q(`update scm.mfg_sales_order_items set cancelled = true where id = $1`, [discountItemId]);
+    await db.q(
+      `insert into scm.so_amendment_lines (amendment_id, sales_order_item_id, change_type, old_snapshot, company_id) values ($1, $2, 'REMOVE', $3::text::jsonb, $4)`,
+      [c.amendmentId, discountItemId, oldSnapshot, c.companyId],
+    );
+  } else if (discountItemId) {
+    await db.q(
+      `update scm.mfg_sales_order_items set qty = 1, unit_price_sen = $2, discount_sen = 0, total_sen = $2, total_inc_sen = $2, balance_sen = $2,
+          line_cost_sen = 0, line_margin_sen = $2 where id = $1`,
+      [discountItemId, discountRowSen],
+    );
+    await db.q(
+      `insert into scm.so_amendment_lines (amendment_id, sales_order_item_id, change_type, new_qty, new_unit_price_sen, new_discount_sen, old_snapshot, company_id)
+       values ($1, $2, 'MODIFY', 1, $3, 0, $4::text::jsonb, $5)`,
+      [c.amendmentId, discountItemId, discountRowSen, oldSnapshot, c.companyId],
+    );
+  } else if (c.change.toSen > 0) {
+    const [lastLine] = await db.q<{ n: number }>(`select coalesce(max(line_no), 0)::int as n from scm.mfg_sales_order_items where doc_no = $1`, [c.soDocNo]);
+    discountItemId = crypto.randomUUID();
+    await insertSoItems(db, c.soDocNo, [{
+      id: discountItemId, line_no: Number(lastLine.n) + 1, item_code: 'RENO-DISCOUNT', description: c.change.label || 'Discount', description2: null,
+      uom: 'LOT', location: '', qty: 1, unit_price_sen: discountRowSen, discount_sen: 0, total_sen: discountRowSen, unit_cost_sen: 0, line_cost_sen: 0,
+    }], { companyId: c.companyId, debtorName: c.debtorName, lineDate: todayKl() });
+    await db.q(
+      `insert into scm.so_amendment_lines (amendment_id, sales_order_item_id, change_type, new_item_code, new_qty, new_unit_price_sen, new_discount_sen, company_id)
+       values ($1, $2, 'ADD', 'RENO-DISCOUNT', 1, $3, 0, $4)`,
+      [c.amendmentId, discountItemId, discountRowSen, c.companyId],
+    );
+  }
+  await db.q(
+    `update scm.reno_so_contracts set doc_discount_sen = $2, discount_so_item_id = $3, updated_at = now() where so_doc_no = $1`,
+    [c.soDocNo, c.change.toSen, discountItemId],
+  );
+}
+
+/** The discount a quick VO asks for: a new amount sent as `discountSen`, or the discount row's bin. Undefined when the
+    discount is not touched. A price edited on the row itself is refused: older clients send prices floored at 0, which
+    would read as "no discount". */
+export function requestedDiscountSen(discountSoItemId: string | null, edits: readonly QuickLineEdit[], discountSen: number | undefined): number | undefined {
+  const rowEdit = discountSoItemId ? edits.find((e) => e.soItemId === discountSoItemId) : undefined;
+  if (rowEdit && !rowEdit.remove && discountSen === undefined) {
+    throw refuse(422, 'discount_row_edit', 'Update the app to change the discount amount, or use the bin to remove it.');
+  }
+  if (discountSen !== undefined) return discountSen;
+  return rowEdit?.remove ? 0 : undefined;
 }
 
 /** One line's edit from the SO page or the project PO tab. Absent = unchanged. `remove` omits the line whole;
@@ -549,11 +636,19 @@ async function carryAll(db: RenoDb, out: Awaited<ReturnType<typeof applyVo>>, b:
 
 /** Edit contract lines in place: raise one VO for every change, approve it, and carry each replaced line's options,
     remark and dates onto the line that replaces it. */
-export async function quickVo(db: RenoDb, actor: RenoActor, soDocNo: string, edits: QuickLineEdit[], newLines: QuickLineAdd[], title: string): Promise<Awaited<ReturnType<typeof applyVo>>> {
-  const b = await buildEditSections(db, actor, soDocNo, edits, newLines);
-  if (b.sections.length === 0) throw refuse(422, 'nothing_changed', 'Nothing on the contract changed.');
+export async function quickVo(
+  db: RenoDb, actor: RenoActor, soDocNo: string, edits: QuickLineEdit[], newLines: QuickLineAdd[], title: string, discountSen?: number,
+): Promise<Awaited<ReturnType<typeof applyVo>>> {
+  const head = await readContractHead(db, soDocNo, actor.companyId);
+  const wantedDiscountSen = requestedDiscountSen(head.discountSoItemId, edits, discountSen);
+  const lineEdits = edits.filter((e) => e.soItemId !== head.discountSoItemId);
+  const discountChange: DiscountChange | null = wantedDiscountSen === undefined || wantedDiscountSen === head.header.docDiscountSen ? null
+    : { fromSen: head.header.docDiscountSen, toSen: wantedDiscountSen, label: head.header.docDiscountLabel || 'Discount' };
+  const b = await buildEditSections(db, actor, soDocNo, lineEdits, newLines);
+  if (b.sections.length === 0 && !discountChange) throw refuse(422, 'nothing_changed', 'Nothing on the contract changed.');
   const vo = await createVo(db, actor, soDocNo, { title });
   const saved = await saveVo(db, actor, vo.id, { version: 1, sections: b.sections });
+  if (discountChange) await db.q(`update scm.reno_variation_orders set discount_change = $2::text::jsonb where id = $1`, [vo.id, JSON.stringify(discountChange)]);
   const out = await applyVo(db, actor, vo.id, { version: saved.version });
   await carryAll(db, out, b);
   return out;

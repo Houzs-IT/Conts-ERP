@@ -174,4 +174,9 @@ describe('WIRING — a guard nothing calls is the failure mode this repo pays fo
     expect(libSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, ''))
       .not.toMatch(/\.limit\(/);
   });
+
+  test('the SO line remark reaches the picker, so the New PO form can copy it to the PO line', () => {
+    expect(OUTSTANDING_SO_SELECT).toMatch(/\bremark\b/);
+    expect(poRouterSrc).toContain('remark:           r.remark,');
+  });
 });

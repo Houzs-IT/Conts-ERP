@@ -267,6 +267,7 @@ describe('the line values', () => {
       estimate_delivery_date_3: '2026-10-01',
       location: 'PG', // AutoCount's short code, as the book spells it
       so_doc_no: 'HC-SO-013389',
+      project_name: null,
     } satisfies PoListLine]);
   });
 

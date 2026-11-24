@@ -74,7 +74,7 @@ import {
 } from './pdf-item-photos';
 import { isAttachmentKey, loadDocPdfPhotos } from './pdf-doc-photos';
 import { fetchPoItemPhotoBlob } from './sales-order-queries';
-import { renoDetailRows, renoLineNote, type RenoDocInfo } from './renovation-doc-print';
+import { renoCategoryLabel, renoDetailRows, type RenoDocInfo } from './renovation-doc-print';
 import { deliverToAddress } from './warehouse-print';
 import { stampWatermark } from '../../../lib/renovation/doc-watermark';
 
@@ -526,22 +526,15 @@ async function renderPurchaseOrderInto(
     // in the Supplier-Code column, never duplicated into the fabric line.
     const specs = docVariantLine(it, fabricMap, fabricDescMap, { labelled: true })
       || (it.description2 ?? '').trim();
-    /* Migration 0180 — per-line "Delivery:" prints the EFFECTIVE (latest
-       revised) line date: MAX over non-null of [delivery_date, _2, _3, _4]. */
-    const lineEff = effectiveDelivery(
-      it.delivery_date,
-      it.supplier_delivery_date_2,
-      it.supplier_delivery_date_3,
-      it.supplier_delivery_date_4,
-    );
     /* Owner spec: a row carries NO image — the " (photo)" marker on the first
        description line points the supplier at the ITEM PHOTOS block below. */
     const descParts = [
       `${it.description ?? it.material_name}${keysOf(it).length > 0 ? PHOTO_MARKER : ''}`,
       specs || null,
       (it.notes ?? '').trim() ? `Remark: ${(it.notes ?? '').trim()}` : null,
-      lineEff ? `Delivery: ${fmtDocDate(lineEff)}` : null,
-      renoLineNote(opts?.renovation, it.id, true) || null,
+      /* No per-line "Delivery:" (owner, 24 Nov 2026): the header Delivery Date is the one the supplier works to. */
+      /* No "Room:" on the supplier's PO (owner, 24 Nov 2026); the category stays. */
+      (opts?.renovation?.ready && it.id ? renoCategoryLabel(opts.renovation.lines[it.id]) : '') || null,
     ].filter(Boolean) as string[];
     return [
       (it.so_doc_no ?? '').trim() || singleSourceSo || '—',
@@ -595,7 +588,7 @@ async function renderPurchaseOrderInto(
       3: { cellWidth: 11 },                    // UOM
       4: { cellWidth: 10, halign: 'right' },   // Qty
       5: { cellWidth: 19, halign: 'right' },   // U/Price
-      6: { cellWidth: 11, halign: 'right' },   // Disc.
+      6: { cellWidth: 16, halign: 'right' },   // Disc. — 11 wrapped "200.00" onto two lines
       7: { cellWidth: 19, halign: 'right' },   // Total
     },
     margin: { left: margin, right: margin, top: 16 },

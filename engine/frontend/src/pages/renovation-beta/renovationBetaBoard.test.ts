@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BetaBoard, BetaBoardProject } from "./renovationBetaBoardApi";
 import {
   add, amendDue, bookIssue, buildModel, conditionText, deadlineGroups, designSteps, diff, ds, filterCounts, homeCounts, inFilter, homeList, homeRow, initials, items,
-  listFor, monthCells, whoName, nextFor, progressByPerson, progressList, rangeFor, reportsOf, shiftMonth, stage, status, type BoardModel, type DesignProject,
+  listFor, monthCells, whoName, nextFor, progressByPerson, progressList, rangeFor, reportsOf, shiftMonth, stage, status, stepDone, type BoardModel, type DesignProject,
 } from "./renovationBetaBoard";
 
 const TODAY = "2026-10-23";
@@ -149,6 +149,15 @@ describe("status words", () => {
     const g = buildModel(board([{ ...aster, start3dOn: null, measuredOn: "2026-10-05" }]));
     expect(g.projects[0].design["3"].s).toBe("2026-10-05");
     expect(g.projects[0].design["3"].done).toBe("2026-10-20");
+  });
+});
+
+describe("Measure step", () => {
+  it("is done once the 3D has started, as the condition pill reads it", () => {
+    const started = buildModel(board([{ ...aster, measuredOn: null, appointments: [] }]));
+    expect(stepDone(started, started.projects[0], "measure")).toBe(true);
+    const none = buildModel(board([{ ...aster, measuredOn: null, appointments: [], start3dOn: null, files: [] }]));
+    expect(stepDone(none, none.projects[0], "measure")).toBe(false);
   });
 });
 

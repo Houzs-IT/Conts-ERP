@@ -409,6 +409,12 @@ describe("stepperItems", () => {
     expect(at("design", { soStatus: "DRAFT" })[0]).toMatchObject({ state: "later", sub: "Not signed yet" });
     expect(at("design", { soStatus: "CANCELLED" })[0]).toMatchObject({ state: "later" });
   });
+  it("ticks Design only when every Design step is done; moved on with steps open it says so (24 Nov 2026)", () => {
+    expect(at("renovation", { design: { done: 0, total: 6 } })[1]).toMatchObject({ state: "later", sub: "Moved on · 0 of 6 done" });
+    expect(at("ordering", { design: { done: 5, total: 6 } })[1]).toMatchObject({ state: "later", sub: "Moved on · 5 of 6 done" });
+    expect(at("renovation", { design: { done: 6, total: 6 } })[1]).toMatchObject({ state: "done", sub: "Design approved" });
+    expect(at("signed", { design: { done: 0, total: 6 } })[1]).toMatchObject({ state: "current", sub: "In progress" });
+  });
     it("says in progress when the site tasks have no dates", () => {
     const items = at("renovation", { soDate: null, handoverOn: null, tasks: [] });
     expect(items[3]?.sub).toBe("In progress");

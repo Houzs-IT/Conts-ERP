@@ -8,7 +8,7 @@ import { meetingsHubFor, meetingsFetch, relayMeetings, maybePushDirectory, meeti
  * change-log calls to people with Manage meeting rooms, and writes an audit row for each change the hub accepted.
  *
  *   GET  status | bootstrap | calendar?from&to | mine | unread-count | meetings/:id | meetings/:id/files/:fid | links | log
- *   POST notifications/read | meetings | meetings/:id/(cancel|start|end) | meetings/:id/files | rooms | links
+ *   POST notifications/read | meet-link | meetings | meetings/:id/(cancel|start|end) | meetings/:id/files | rooms | links
  *   PATCH meetings/:id | rooms/:id | links/:id
  */
 const ID = /^\d{1,12}$/;
@@ -82,6 +82,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params, wait
 
   if (method === 'POST') {
     if (route === 'notifications/read') return send('/notifications/read', { method: 'POST' });
+    if (route === 'meet-link') return send('/meet-link', { method: 'POST' });
     if (route === 'meetings') {
       const body = await readJson(request);
       if (!body) return fail('VALIDATION', UNREADABLE, 400);

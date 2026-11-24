@@ -1,4 +1,4 @@
-import { type Env, all, one, run, json, fail, audit, nowIso, transaction } from '../../_lib/db';
+import { type Env, all, one, run, json, fail, audit, nowIso, mytToday, transaction } from '../../_lib/db';
 import { rmText } from '../../_lib/format';
 import { auditMany } from '../../_lib/history';
 import { requireSession } from '../../_lib/auth';
@@ -169,7 +169,21 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   if (state === 'paid') {
-    await run(env, "UPDATE owner_statements SET state = 'paid' WHERE id = ? AND state IN ('sent', 'finalised')", before.statement_id);
+    await run(env, "UPDATE owner_statements SET state = 'paid' WHERE id = ? AND state IN ('sent', 'finalised')", before.statement_id);    /* The statement's payout is the owner's money for the repairs billed that month, so those jobs read as collected
+       (owner, 24 Nov 2026). Only owner-paid jobs not yet marked, billed inside the statement's period, on this owner's
+       units. A failure here never undoes the payout: the job can still be ticked by hand. */
+    try {
+      const today = mytToday();
+      const ticked = await all<{ id: string }>(env, `UPDATE maintenance_issues m SET collected_at = ?
+          FROM owner_statements s JOIN units u ON u.owner_id = s.owner_id
+         WHERE s.id = ? AND m.unit_id = u.id AND m.charge_to = 'owner' AND (m.collected_at IS NULL OR m.collected_at = '')
+           AND m.billing_date >= s.period_start::text AND m.billing_date <= s.period_end::text
+        RETURNING m.id`, today, before.statement_id);
+      if (ticked.length) await auditMany(env, ticked.map(t => ({ actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.collected_with_payout',
+        entityTable: 'maintenance_issues', entityId: t.id, after: { collectedAt: today, payoutId: id } })));
+    } catch (e) {
+      await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'maintenance.collected_with_payout_failed', entityTable: 'payouts', entityId: id, after: { error: e instanceof Error ? e.message : String(e) } });
+    }
   }
 
   await audit(env, {

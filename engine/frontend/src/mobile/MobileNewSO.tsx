@@ -2028,11 +2028,8 @@ export function MobileNewSO({
            invalidates everything itself once the whole composite save settles. */
         // Captured once: the plan must ask about the SAME patch this branch sends.
         const directDirty = hasHeaderChanges(dirtyPatch);
-        if (contractOrder && directDirty) {
-          setSubmitting(false);
-          setError("A renovation contract's customer, address and dates are changed on its project. They follow to this order.");
-          return;
-        }
+        /* A renovation contract saves its customer, address and dates here like any order; the server copies the shared
+           ones to the project (owner, 24 Nov 2026). */
         if (amendmentMode && directDirty) {
           /* Attach the mandatory loaded token after the dirty check, so `version`
              never turns an otherwise-empty patch into a mutation. A 409 throws;
@@ -2080,10 +2077,10 @@ export function MobileNewSO({
           // DIRECT_ONLY skips ONLY this block; the tail after it is shared.
           if (plan === "AMENDMENT" && contractOrder) {
             try {
-              const { edits, adds } = contractLineEdits(amLines, origItems);
-              if (edits.length + adds.length > 0) {
+              const { edits, adds, discountSen } = contractLineEdits(amLines, origItems);
+              if (edits.length + adds.length > 0 || discountSen !== undefined) {
                 amendCreatedRes = await authedFetch(`/renovation/sales-orders/${encodeURIComponent(docNo)}/line-edits`, {
-                  method: "POST", body: JSON.stringify({ edits, adds, title: "Changed on the sales order" }),
+                  method: "POST", body: JSON.stringify({ edits, adds, discountSen, title: "Changed on the sales order" }),
                 });
               }
             } catch (e) {

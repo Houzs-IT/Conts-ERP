@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useSession } from '../lib/session';
 import { Modal as SharedModal } from '../components/Modal';
 import Icon from '../components/Icon';
 import PageHeader from '../components/PageHeader';
@@ -74,6 +75,8 @@ interface Expense {
   description: string; amount: number; incurredOn: string; reference: string | null; chargeTo: ChargeTo;
   unitId?: string; locked?: boolean;
   receiptDocumentId?: string | null; taskId?: string | null; maintenanceId?: string | null;
+  /** The day the bill was paid (owner, 24 Nov 2026; migration 0369), or null when not paid yet. */
+  paidAt?: string | null;
   // When set, this row is a line item under another expense (its parent). The
   // grouped view nests it under that rollup; the parent then carries no amount of
   // its own — its children hold the money. See api.md.
@@ -198,6 +201,7 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
 
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
+  const { user } = useSession();
   const [reporting, setReporting] = useState(false);
   const [formFields, setFormFields] = useState<Record<string, string>>({});
 
@@ -232,6 +236,17 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
     } catch (e) {
       if (e instanceof ApiFailure && e.fields) setFormFields(e.fields);
       toast({ tone: 'critical', title: 'Expense was not added.', body: errorMessage(e, 'Try again in a moment.') });
+    }
+  }
+
+  async function deleteExpense(id: string) {
+    try {
+      await api.del(`/expenses/${id}`);
+      setEditing(null);
+      toast({ tone: 'success', title: 'Expense deleted.', body: 'It is kept in the history log.' });
+      refresh();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'Expense was not deleted.', body: errorMessage(e, 'Try again in a moment.') });
     }
   }
 
@@ -291,6 +306,7 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
     { key: 'date', label: 'Date', type: 'date', value: r => r.incurredOn, sortKey: 'date', width: 120, filter: false,
       sub: r => (r.locked ? 'Statement final' : null) },
     { key: 'reference', label: 'Reference', type: 'ref', value: r => r.reference, width: 130, filter: false },
+    { key: 'paidAt', label: 'Paid on', type: 'date', value: r => r.paidAt ?? null, width: 120, filter: false },
     { key: 'chargeTo', label: 'Charged to', value: r => CHARGE_LABEL[r.chargeTo] ?? r.chargeTo, hidden: true, filter: false, width: 130 },
     { key: 'amount', label: 'Amount', type: 'money', value: r => r.amount, sortKey: 'amount', width: 120, filter: false,
       render: r => <MoneyText sen={r.amount} mode="exact" className="font-medium" /> },
@@ -428,6 +444,7 @@ function ExpenseBills({ tabs }: { tabs: ReactNode }) {
           fieldErrors={formFields}
           onClose={() => { setEditing(null); setFormFields({}); }}
           onSave={delta => saveEdit(editing.id, delta)}
+          onDelete={user?.role === 'management' ? () => deleteExpense(editing.id) : undefined}
         />
       )}
       {reporting && (
@@ -619,7 +636,9 @@ function LabeledField({ label, children }: { label: string; children: ReactNode 
 
 // ---- Add / edit expense ----------------------------------------------------
 
-function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, locked, lockReason, fieldErrors = {}, onClose, onSubmit, onSave }: {
+function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, locked, lockReason, fieldErrors = {}, onClose, onSubmit, onSave, onDelete }: {
+  /** Management only, on a bill that is not locked (owner, 24 Nov 2026). */
+  onDelete?: () => Promise<void> | void;
   fieldErrors?: Record<string, string>;
   mode: 'create' | 'edit';
   expense?: Expense;
@@ -641,6 +660,8 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
   const [reference, setReference] = useState(expense?.reference ?? '');
   const [description, setDescription] = useState(expense?.description ?? '');
   const [receipt, setReceipt] = useState<File | null>(null);
+  const [paidAt, setPaidAt] = useState(expense?.paidAt ?? '');
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   // This dialog records bills the owner pays, so a utility bill or other deduction needs its receipt (src/lib/receipts.ts).
   const needsReceipt = mode === 'create' && receiptRequired(category, 'owner');
@@ -666,7 +687,8 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
       if (mode === 'create') {
         await onSubmit?.({ unitId, category, description: description.trim(), amount: sen, incurredOn, reference: reference.trim(), receipt: needsReceipt ? receipt : null });
       } else {
-        await onSave?.({ category, description: description.trim(), amount: sen, incurredOn, ...(reference.trim() ? { reference: reference.trim() } : {}) });
+        await onSave?.({ category, description: description.trim(), amount: sen, incurredOn, ...(reference.trim() ? { reference: reference.trim() } : {}),
+          ...(paidAt !== (expense?.paidAt ?? '') ? { paidAt: paidAt || null } : {}) });
       }
     } finally { setBusy(false); }
   }
@@ -687,6 +709,9 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
         : [buildingName(expense?.propertyName), expense?.unitNumber].join(' ')}
       onClose={onClose}
       footer={<>
+        {onDelete && !readOnly && (confirmDelete
+          ? <Button size="sm" variant="danger" loading={busy} onClick={async () => { setBusy(true); try { await onDelete(); } finally { setBusy(false); } }}>Confirm delete</Button>
+          : <Button size="sm" variant="secondary" onClick={() => setConfirmDelete(true)}>Delete expense</Button>)}
         <Button size="sm" variant="secondary" onClick={onClose}>{readOnly ? 'Close' : 'Cancel'}</Button>
         {!readOnly && (
           <Button size="sm" variant="primary" onClick={() => submit()} loading={busy} disabled={!valid} disabledReason={disabledReason}>
@@ -716,6 +741,7 @@ function ExpenseModal({ mode, expense, filters, defaultBuilding, defaultUnit, lo
         <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-[14px]">
           <DateField label="Date" required disabled={readOnly} value={incurredOn} onChange={setIncurredOn} error={fieldErrors.incurredOn} />
           <LabeledField label={needsRef ? 'Reference' : 'Reference (optional)'}><input required={needsRef} disabled={readOnly} value={reference} onChange={e => setReference(e.target.value)} placeholder="INV-2026-0912" className={fieldMono} /></LabeledField>
+          {mode === 'edit' && <DateField label="Paid on (optional)" disabled={readOnly} value={paidAt} onChange={setPaidAt} error={fieldErrors.paidAt} />}
         </div>
         <LabeledField label="Description">
           <textarea disabled={readOnly} value={description} onChange={e => setDescription(e.target.value)} placeholder="Internet, September" rows={2}

@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react';
 import type { BrandProfile, DocHeader, DocSection, Instalment } from '../../lib/renovation/api';
 import type { PdfAction } from '../../vendor/scm/lib/pdf-common';
-import type { UnitPriceChoice } from '../../vendor/scm/lib/sales-order-pdf';
+import { ALL_SO_PDF_COLUMNS, type SoPdfColumns } from '../../vendor/scm/lib/sales-order-pdf';
 import { categoryRooms, type SoPrintRooms } from '../../vendor/scm/lib/so-print-rooms';
 import { useMfgProducts } from '../../vendor/scm/lib/mfg-products-queries';
 import { useRenovationCatalog } from '../../vendor/scm/lib/renovation-catalog-queries';
@@ -35,7 +35,7 @@ export function QuotationSoPrint({ open, onClose, docNo, status, header, section
   const { nameOf } = useStaffLookup();
   const { rows, rooms } = useMemo(() => quotationLines(sections), [sections]);
   const [printLayout, setPrintLayout] = useState<SoLinesView>('area');
-  const [unitPrice, setUnitPrice] = useState<UnitPriceChoice>('show');
+  const [columns, setColumns] = useState<SoPdfColumns>(ALL_SO_PDF_COLUMNS);
   const catalogQ = useMfgProducts({ enabled: open });
   const catalogNames = useRenovationCatalog();
   const categoryView = useMemo(() => {
@@ -57,8 +57,9 @@ export function QuotationSoPrint({ open, onClose, docNo, status, header, section
       }
       return { ...r, item_group: 'RENOVATION', variants: null };
     });
-    /* The document discount prints as a line of its own, as the sales order carries it once converted. */
-    if (header.docDiscountSen > 0) {
+    /* The document discount prints as a line of its own, as the sales order carries it once converted. A VO that takes
+       discount off passes it negative, so the line adds to the total. */
+    if (header.docDiscountSen !== 0) {
       items.push({
         id: 'quote-discount', item_code: 'RENO-DISCOUNT', description: header.docDiscountLabel || 'Discount', description2: null, uom: 'LOT', qty: 1,
         unit_price_sen: -header.docDiscountSen, discount_sen: 0, total_sen: -header.docDiscountSen, item_group: 'RENOVATION', variants: null,
@@ -81,7 +82,7 @@ export function QuotationSoPrint({ open, onClose, docNo, status, header, section
     const { generateSalesOrderPdf } = await import('../../vendor/scm/lib/sales-order-pdf');
     await generateSalesOrderPdf(soHeader, items, [], action, [], {
       docTitle: kind === 'VARIATION_ORDER' ? 'VARIATION ORDER' : 'QUOTATION', docNoun: kind === 'VARIATION_ORDER' ? 'variation order' : 'quotation',
-      rooms: pdfRooms, contract, quotation: true, unitPrice,
+      rooms: pdfRooms, contract, quotation: true, columns,
     });
   };
 
@@ -98,7 +99,7 @@ export function QuotationSoPrint({ open, onClose, docNo, status, header, section
         { label: 'Items', value: `${rows.length} line${rows.length === 1 ? '' : 's'}` },
         { label: kind === 'VARIATION_ORDER' ? 'Contract changes by' : 'Quotation total', value: fmtMoney(totalSen, 'MYR') },
       ]}
-      layout={{ printRooms, printLayout, setPrintLayout, unitPrice, setUnitPrice }}
+      layout={{ printRooms, printLayout, setPrintLayout, columns, setColumns }}
       onViewPdf={() => run('preview')}
       onPrint={() => run('print')}
       onDownload={() => run('save')}

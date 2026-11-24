@@ -7,8 +7,7 @@ import { BTN, CHIP, CONTROL, LABEL, PRI, chip } from "./ui";
 import {
   DAY, DAY_NAMES, HOUR, MIN, REMINDER_OPTIONS, addDays, atHour, busySentences, directoryTree, fmtDay, fmtDayLong, fmtRange, fmtTime,
   hhmm, inUsualHours, isoDay, minutesOfDay, ms, peopleOf, personLine, personName, remLabel, snapMinutes, startOfDay, withTime,
-  type ConflictReply, type Draft, type Meeting, type Person, type Room,
-} from "../../lib/meetings";
+  type ConflictReply, type Draft, type Meeting, type Person, type Room, bestRoom } from "../../lib/meetings";
 
 /* The Meetings page's dialogs: a meeting's details, quick booking, the full editor
    (people picker and Find a time), the conflict dialog and the repeat-scope question. */
@@ -137,16 +136,46 @@ const REPEAT_OPTIONS = (start: number): [Draft["repeat"], string][] => [
   ["none", "Does not repeat"], ["daily", "Every day"], ["weekdays", "Every weekday (Mon - Fri)"], ["weekly", `Every week on ${DAY_NAMES[new Date(start).getDay()]}`], ["monthly", "Every 4 weeks"],
 ];
 
-function RoomOptions({ rooms, d, busyRooms }: { rooms: Room[]; d: Draft; busyRooms: Set<number> }) {
+/** In person (pick a room, best fit first) or Online (no room, private to the people in it). Over-full rooms warn but still book. */
+function RoomPicker({ rooms, d, busyRooms, onRoom, compact }: { rooms: Room[]; d: Draft; busyRooms: Set<number>; onRoom: (id: number | null) => void; compact: boolean }) {
+  const [online, setOnline] = useState(d.roomId === null && d.id !== null);
+  const count = 1 + d.attendees.length;
+  const best = bestRoom(rooms, count, busyRooms);
+  const room = rooms.find((r) => r.id === d.roomId);
   return (
-    <>
-      <option value="">No room (online or outside)</option>
-      {rooms.filter((r) => r.active).map((r) => (
-        <option key={r.id} value={r.id}>
-          {r.name} · {r.seats} seats{busyRooms.has(r.id) ? " · taken" : " · free"}{inUsualHours(r, d.start, d.end) ? "" : " · after hours"}{r.seats < 1 + d.attendees.length ? " · too small" : ""}
-        </option>
-      ))}
-    </>
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" className={chip(!online)} onClick={() => { setOnline(false); if (d.roomId === null) onRoom(best?.id ?? null); }}>In person</button>
+        <button type="button" className={chip(online)} onClick={() => { setOnline(true); onRoom(null); }}>Online</button>
+      </div>
+      {online ? (
+        <div className="text-[12.5px] text-muted-ink">No room. Only you and the people you add can see this meeting.</div>
+      ) : (
+        <>
+          <select aria-label="Room" className={CONTROL} value={d.roomId ?? ""} onChange={(e) => onRoom(e.target.value ? Number(e.target.value) : null)}>
+            <option value="" disabled>Pick a room</option>
+            {rooms.filter((r) => r.active).map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name} · {r.seats} seats{busyRooms.has(r.id) ? " · taken" : " · free"}{best?.id === r.id ? " · best fit" : ""}{inUsualHours(r, d.start, d.end) ? "" : " · after hours"}
+              </option>
+            ))}
+          </select>
+          {!room && <div className="text-[12.5px] text-warning">Pick a room, or choose Online.</div>}
+          {room && room.seats < count && (
+            <div className="text-[12.5px] text-warning">
+              {count} people, but {room.name} seats {room.seats}. You can still book it.
+              {best && best.id !== room.id && <> <button type="button" className="font-semibold underline" onClick={() => onRoom(best.id)}>Use {best.name} ({best.seats} seats)</button></>}
+            </div>
+          )}
+          {room && room.seats >= count && best && best.id !== room.id && room.seats > best.seats * 2 && !compact && (
+            <div className="text-[12.5px] text-muted-ink">
+              {room.name} is large for {count}. <button type="button" className="font-semibold underline" onClick={() => onRoom(best.id)}>Use {best.name} ({best.seats} seats)</button>
+            </div>
+          )}
+          {room && !inUsualHours(room, d.start, d.end) && <div className="text-[12.5px] text-warning">Outside this room's usual hours ({room.open_from}:00 - {room.open_to}:00). You can still book it; it counts as after hours.</div>}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -155,7 +184,6 @@ export function QuickBook(p: {
   onClose: () => void; onMore: (d: Draft) => void; onSave: (d: Draft) => void;
 }) {
   const [d, setD] = useState(p.draft);
-  const room = p.rooms.find((r) => r.id === d.roomId);
   return (
     <>
       <div className="fixed inset-0 z-[39]" onPointerDown={p.onClose} />
@@ -164,10 +192,8 @@ export function QuickBook(p: {
         <div className="flex justify-end"><button type="button" aria-label="Close" className="rounded-full p-2 text-muted-ink hover:bg-muted" onClick={p.onClose}><X size={17} /></button></div>
         <input autoFocus className="h-11 w-full border-0 border-b-2 border-primary bg-transparent px-0.5 text-[21px] text-ink outline-none" placeholder="Add title" aria-label="Title" value={d.title} onChange={(e) => setD({ ...d, title: e.target.value })} />
         <div className="my-3 text-muted-ink">{fmtDayLong(d.start)} · <b className="text-ink">{fmtRange(d.start, d.end)}</b></div>
-        <label className={LABEL}>Room
-          <select className={CONTROL} value={d.roomId ?? ""} onChange={(e) => setD({ ...d, roomId: e.target.value ? Number(e.target.value) : null })}><RoomOptions rooms={p.rooms} d={d} busyRooms={p.busyRooms} /></select>
-        </label>
-        {room && !inUsualHours(room, d.start, d.end) && <div className="mt-1.5 text-[12.5px] text-warning">Outside this room's usual hours. You can still book it; it counts as after-hours use.</div>}
+        <div className={cn(LABEL, "mb-1")}>Where</div>
+        <RoomPicker rooms={p.rooms} d={d} busyRooms={p.busyRooms} onRoom={(id) => setD({ ...d, roomId: id })} compact />
         <label className={cn(LABEL, "mt-2.5")}>Repeat
           <select className={CONTROL} value={d.repeat} onChange={(e) => setD({ ...d, repeat: e.target.value as Draft["repeat"], repeatUntil: d.repeatUntil ?? isoDay(addDays(d.start, 56)) })}>
             {REPEAT_OPTIONS(d.start).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -270,9 +296,11 @@ export function ScopeQuestion({ title, act, onClose, onPick }: { title: string; 
 
 export function PeoplePicker({ people, value, exclude, onChange }: { people: Person[]; value: string[]; exclude: string; onChange: (v: string[]) => void }) {
   const tree = useMemo(() => directoryTree(people.filter((p) => p.key !== exclude)), [people, exclude]);
-  const [co, setCo] = useState(() => tree[0]?.company ?? "");
+  // Open on the organiser's own company and department (owner 2026-11-24).
+  const own = people.find((x) => x.key === exclude);
+  const [co, setCo] = useState(() => (own && tree.some((t) => t.company === own.company) ? own.company : tree[0]?.company ?? ""));
   const comp = tree.find((t) => t.company === co) ?? tree.at(0);
-  const [dept, setDept] = useState("");
+  const [dept, setDept] = useState(() => own?.department ?? "");
   const dep = comp?.departments.find((x) => x.name === dept) ?? comp?.departments.at(0);
   if (!comp) return <p className="text-faint">No one in the staff list yet.</p>;
   const inDept = dep?.people ?? [];
@@ -280,7 +308,7 @@ export function PeoplePicker({ people, value, exclude, onChange }: { people: Per
   const toggle = (k: string) => onChange(value.includes(k) ? value.filter((x) => x !== k) : [...value, k]);
   return (
     <div className="flex flex-col gap-2.5">
-      <PersonSearch people={people} exclude={[exclude, ...value]} placeholder="Search any name, in any company" onPick={(k) => onChange([...value, k])} />
+      <PersonSearch people={people} exclude={[exclude, ...value]} placeholder="Search a name in any company or department" onPick={(k) => onChange([...value, k])} />
       <div className="text-[11.5px] font-semibold uppercase tracking-wide text-faint">1. Company</div>
       {tree.length > 6
         ? <select className={CONTROL} value={comp.company} onChange={(e) => { setCo(e.target.value); setDept(""); }} aria-label="Company">{tree.map((t) => <option key={t.company}>{t.company}</option>)}</select>
@@ -348,7 +376,7 @@ export function FindTime({ d, rooms, people, meetings, now, onPick }: { d: Draft
         <label className={LABEL}>To<DateField aria-label="To" fullWidth value={to} onChange={(v) => { if (v) setTo(v); }} /></label>
         <label className={LABEL}>Length<select className={CONTROL} value={len} onChange={(e) => setLen(Number(e.target.value))}>{[30, 45, 60, 90, 120, 180].map((v) => <option key={v} value={v}>{v < 60 ? `${v} min` : `${v / 60} h`}</option>)}</select></label>
       </div>
-      <div className="text-[13px] text-muted-ink">{who.length} {who.length === 1 ? "person" : "people"} · times when everyone is free and a room with {who.length}+ seats is open.</div>
+      <div className="text-[13px] text-muted-ink">{who.length} {who.length === 1 ? "person" : "people"} · times when everyone is free{d.roomId === null ? "" : ` and a room with ${who.length}+ seats is open`}.</div>
       {result.map(({ day, slots }) => (
         <div key={day}>
           <div className="mb-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-faint">{fmtDay(day)}{slots.length ? "" : " · no common time"}</div>
@@ -405,14 +433,30 @@ function DayColumns({ d, rooms, people, busy, who, onPick }: { d: Draft; rooms: 
 export function MeetingEditor(p: {
   draft: Draft; isNew: boolean; me: string; rooms: Room[]; people: Person[]; peopleMap: Map<string, Person>; meetings: Meeting[]; now: number;
   busyRooms: Set<number>; saving: boolean; pendingFiles: File[]; onFiles: (f: File[]) => void;
+  /** Creates a Google Meet link; null while Google Meet is not connected. */
+  makeMeet: (() => Promise<string>) | null;
   onClose: () => void; onSave: (d: Draft) => void;
 }) {
   const [d, setD] = useState<Draft>(p.draft);
+  const [meetBusy, setMeetBusy] = useState(false);
+  const [meetError, setMeetError] = useState<string | null>(null);
+  const newMeet = async () => {
+    if (!p.makeMeet) return;
+    setMeetBusy(true);
+    setMeetError(null);
+    try {
+      const url = await p.makeMeet();
+      setD((v) => ({ ...v, videoType: "meet", videoUrl: url }));
+    } catch (e) {
+      setMeetError((e instanceof Error ? e.message : "Google Meet did not answer.").replace(/^\d+:\s*/, ""));
+    } finally {
+      setMeetBusy(false);
+    }
+  };
   const [tab, setTab] = useState<"people" | "find">("people");
   const fileRef = useRef<HTMLInputElement>(null);
   const set = (x: Partial<Draft>) => setD((v) => ({ ...v, ...x }));
   const day = isoDay(d.start);
-  const room = p.rooms.find((r) => r.id === d.roomId);
   const addFiles = (list: FileList | File[]) => {
     const ok = [...list].filter((f) => f.size <= 25 * 1024 * 1024);
     p.onFiles([...p.pendingFiles, ...ok].slice(0, 10));
@@ -443,16 +487,22 @@ export function MeetingEditor(p: {
             <div className="grid grid-cols-[22px_minmax(0,1fr)] items-start gap-3">
               <span className="mt-2.5 text-muted-ink"><MapPin size={18} /></span>
               <div>
-                <select aria-label="Room" className={CONTROL} value={d.roomId ?? ""} onChange={(e) => set({ roomId: e.target.value ? Number(e.target.value) : null })}><RoomOptions rooms={p.rooms} d={d} busyRooms={p.busyRooms} /></select>
-                {room && !inUsualHours(room, d.start, d.end) && <div className="mt-1 text-[12.5px] text-warning">Outside this room's usual hours ({room.open_from}:00 - {room.open_to}:00). You can still book it; it counts as after hours.</div>}
+                <RoomPicker rooms={p.rooms} d={d} busyRooms={p.busyRooms} onRoom={(id) => set({ roomId: id })} compact={false} />
               </div>
               <span className="mt-1.5 text-muted-ink"><Video size={18} /></span>
               <div className="flex flex-col gap-2">
                 <div className="flex flex-wrap gap-1.5">
-                  {([["meet", "Google Meet"], ["zoom", "Zoom"], ["link", "Paste a link"], ["none", "None"]] as const).map(([k, l]) => <button key={k} type="button" className={chip(d.videoType === k)} onClick={() => set({ videoType: k })}>{l}</button>)}
+                  {([["meet", "Google Meet"], ["zoom", "Zoom"], ["link", "Paste a link"], ["none", "None"]] as const).map(([k, l]) => <button key={k} type="button" className={chip(d.videoType === k)} onClick={() => { set({ videoType: k }); if (k === "meet" && p.makeMeet && !d.videoUrl) void newMeet(); }}>{l}</button>)}
                 </div>
                 {d.videoType !== "none" && <input className={CONTROL} aria-label="Video link" placeholder={d.videoType === "zoom" ? "https://zoom.us/j/..." : d.videoType === "meet" ? "https://meet.google.com/..." : "https://..."} value={d.videoUrl} onChange={(e) => set({ videoUrl: e.target.value })} />}
-                {d.videoType !== "none" && <div className="text-[12px] text-faint">Paste the link from {d.videoType === "meet" ? "Google Meet" : d.videoType === "zoom" ? "Zoom" : "your video app"}. You can also add it later; everyone in the meeting is told. Creating the link automatically comes when Google is connected.</div>}
+                {d.videoType === "meet" && p.makeMeet && (
+                  <div className="flex flex-wrap items-center gap-2 text-[12px] text-faint">
+                    <button type="button" className={chip(false)} disabled={meetBusy} onClick={() => void newMeet()}>{meetBusy ? "Creating..." : d.videoUrl ? "New Meet link" : "Create Meet link"}</button>
+                    <span>Anyone with the link can join, outside guests too. Send it to them from Mail Center.</span>
+                  </div>
+                )}
+                {meetError && <div className="text-[12.5px] text-warning">{meetError}</div>}
+                {d.videoType !== "none" && !(d.videoType === "meet" && p.makeMeet) && <div className="text-[12px] text-faint">Paste the link from {d.videoType === "meet" ? "Google Meet" : d.videoType === "zoom" ? "Zoom" : "your video app"}. You can also add it later; everyone in the meeting is told.</div>}
               </div>
               <span className="mt-1.5 text-muted-ink"><Bell size={18} /></span>
               <div className="flex flex-col gap-2">
