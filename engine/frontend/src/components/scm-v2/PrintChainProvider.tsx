@@ -53,6 +53,7 @@ import type { PdfAction } from "../../vendor/scm/lib/pdf-common";
    the fetch and the generators stay behind the dynamic imports below — that is
    what keeps jspdf out of every list's bundle. */
 import { printPreviewRows } from "../../lib/printDocumentPdf";
+import { SoListPrintPreview, type SoPdfRender } from "../../pages/scm-v2/soListPrintPreview";
 
 /** Open the print preview for one document. Never navigates. */
 export type PrintDocumentFn = (target: PrintTarget) => void;
@@ -104,12 +105,14 @@ export function PrintChainProvider({ children }: { children: ReactNode }) {
     );
   }, [notify]);
 
-  const deliver = useCallback(async (action: PdfAction) => {
+  /* `render` replaces the generic generator: the Sales Order draws with its own page's layout and columns. */
+  const deliver = useCallback(async (action: PdfAction, render?: SoPdfRender) => {
     const cur = read.current;
     if (!cur) return;
     try {
       await trackPrintAction({ kind: "chain", target: cur.target }, async () => {
         const bundle = await cur.promise;
+        if (render) return render(bundle, action);
         const { renderPrintBundle } = await import("../../lib/printDocumentPdf");
         await renderPrintBundle(cur.target, bundle, action);
       }, Date.now);
@@ -136,7 +139,11 @@ export function PrintChainProvider({ children }: { children: ReactNode }) {
      — the same rule `usePrintPreview` states, so a slow document can show
      "Preparing…" instead of vanishing. A new-tab preview leaves it open: the
      operator looked, and now wants to print. */
-  const finish = useCallback(async (action: PdfAction) => { await deliver(action); close(); }, [deliver, close]);
+  const finish = useCallback(async (action: PdfAction, render?: SoPdfRender) => { await deliver(action, render); close(); }, [deliver, close]);
+  const runSo = useCallback(
+    (action: PdfAction, render: SoPdfRender) => (action === "preview" ? deliver(action, render) : finish(action, render)),
+    [deliver, finish],
+  );
 
   const rows = useMemo(() => {
     if (!target) return [];
@@ -149,7 +156,9 @@ export function PrintChainProvider({ children }: { children: ReactNode }) {
   return (
     <PrintChainContext.Provider value={printDocument}>
       {children}
-      {target && (
+      {target?.doc === "so" ? (
+        <SoListPrintPreview key={target.docNo} docNo={target.docNo} bundle={loaded} onClose={close} run={runSo} />
+      ) : target && (
         <PrintPreviewModal
           open
           onClose={close}

@@ -16,6 +16,7 @@
 import { describe, expect, test, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const fetchPrintBundle = vi.fn();
 const renderPrintBundle = vi.fn();
@@ -23,6 +24,17 @@ vi.mock("../../lib/printDocumentPdf", async (orig) => ({
   ...(await orig<typeof import("../../lib/printDocumentPdf")>()),
   fetchPrintBundle: (...a: unknown[]) => fetchPrintBundle(...a),
   renderPrintBundle: (...a: unknown[]) => renderPrintBundle(...a),
+}));
+
+const generateSalesOrderPdf = vi.fn();
+vi.mock("../../vendor/scm/lib/sales-order-pdf", async (orig) => ({
+  ...(await orig<typeof import("../../vendor/scm/lib/sales-order-pdf")>()),
+  generateSalesOrderPdf: (...a: unknown[]) => generateSalesOrderPdf(...a),
+}));
+vi.mock("../../lib/renovation/api", async (orig) => ({
+  ...(await orig<typeof import("../../lib/renovation/api")>()),
+  useBrands: () => ({ data: { brands: [] } }),
+  useContract: () => ({ data: undefined }),
 }));
 
 const notify = vi.fn();
@@ -41,9 +53,11 @@ function Harness({ target = DO_TARGET }: { target?: PrintTarget }) {
 
 const mount = (target?: PrintTarget) =>
   render(
-    <PrintChainProvider>
-      <Harness target={target} />
-    </PrintChainProvider>,
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <PrintChainProvider>
+        <Harness target={target} />
+      </PrintChainProvider>
+    </QueryClientProvider>,
   );
 
 beforeEach(() => {
@@ -139,6 +153,40 @@ describe("a failure reaches the operator", () => {
     await userEvent.click(await screen.findByText("Print now"));
     await waitFor(() => expect(notify).toHaveBeenCalled());
     expect(notify.mock.calls[0]![0]).toMatchObject({ tone: "error", body: "jspdf blew up" });
+  });
+});
+
+describe("a Sales Order from a list prints as its own page does", () => {
+  const SO: PrintTarget = { doc: "so", docNo: "TC-SO-2508-001", key: "TC-SO-2508-001" };
+
+  beforeEach(() => {
+    fetchPrintBundle.mockResolvedValue({
+      header: { debtor_name: "MR PAUL", so_date: "2025-08-05", status: "RENO_CONFIRMED", local_total_sen: 10000, currency: "MYR" },
+      items: [{ id: "l1", item_code: "A" }, { id: "l2", item_code: "B", cancelled: true }],
+      payments: [],
+    });
+  });
+
+  test("the card has the page's lines and the column ticks, not customer, date and status", async () => {
+    mount(SO);
+    await userEvent.click(screen.getByText("trigger"));
+    expect(await screen.findByText("1 line")).toBeTruthy();
+    expect(screen.getByText(/Order date/)).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Columns" })).toBeTruthy();
+    expect(screen.queryByText("RENO_CONFIRMED")).toBeNull();
+  });
+
+  test("Print now draws the order with the SO generator and the picked columns, not the generic one", async () => {
+    generateSalesOrderPdf.mockReset().mockResolvedValue(undefined);
+    mount(SO);
+    await userEvent.click(screen.getByText("trigger"));
+    await screen.findByText("1 line");
+    await userEvent.click(screen.getByRole("checkbox", { name: "Discount" }));
+    await userEvent.click(screen.getByText("Print now"));
+    await waitFor(() => expect(generateSalesOrderPdf).toHaveBeenCalledTimes(1));
+    expect(generateSalesOrderPdf.mock.calls[0]![3]).toBe("print");
+    expect(generateSalesOrderPdf.mock.calls[0]![5]).toMatchObject({ columns: { discount: false, amount: true } });
+    expect(renderPrintBundle).not.toHaveBeenCalled();
   });
 });
 
