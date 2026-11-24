@@ -22,6 +22,7 @@ const line: PoConvertLine = {
   variants: { fabricCode: 'EZ-003' },
   soItemId: 'si-1',
   photoUrls: ['so-items/HC-SO-013503/si-1/build.jpg'],
+  remark: 'No armrest stitching',
 };
 
 describe('poConvertLineRow', () => {
@@ -32,7 +33,7 @@ describe('poConvertLineRow', () => {
        after the caller has ordered the payload (lib/po-line-order.ts). */
     expect(Object.keys(poConvertLineRow('po-1', line, false, line.itemGroup)).sort()).toEqual([
       'delivery_date', 'description2', 'from_mrp', 'item_code', 'item_group',
-      'line_total_sen', 'material_kind', 'material_name', 'photo_urls',
+      'line_total_sen', 'material_kind', 'material_name', 'notes', 'photo_urls',
       'purchase_order_id', 'qty', 'so_item_id', 'supplier_sku', 'unit_price_sen',
       'variants', 'warehouse_id',
     ]);
@@ -62,6 +63,11 @@ describe('poConvertLineRow', () => {
     const b = poConvertLineRow('po-1', { ...line, soItemId: 'si-2' }, false, line.itemGroup);
     expect(a.photo_urls).toEqual(line.photoUrls);
     expect(b.photo_urls).toEqual(line.photoUrls);
+  });
+
+  test('the SO line remark becomes the PO line notes, which the PO PDF prints as Remark', () => {
+    expect(poConvertLineRow('po-1', line, false, line.itemGroup).notes).toBe('No armrest stitching');
+    expect(poConvertLineRow('po-1', { ...line, remark: null }, false, line.itemGroup).notes).toBeNull();
   });
 
   test('a line with no variants still gets a row, with a null summary', () => {

@@ -31,6 +31,7 @@ export interface PoConvertLine {
   variants: Record<string, unknown> | null;
   soItemId: string | null;
   photoUrls: string[];
+  remark: string | null;
 }
 
 /**
@@ -95,6 +96,8 @@ export function poConvertLineRow(
        carry it or that compartment shows no photo at all. Lines stay 1:1 with
        their SO line, so this is simply each line's own array. */
     photo_urls: l.photoUrls,
+    // The PO PDF prints `notes` as the line's Remark; the per-PO convert-from-so arm already copies it.
+    notes: l.remark,
     // Commander 2026-05-31 — MRP-origin lines are reference-only (no SO lock).
     from_mrp: fromMrp,
   };
