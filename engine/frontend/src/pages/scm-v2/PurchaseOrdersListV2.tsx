@@ -1247,6 +1247,7 @@ export function PurchaseOrdersListV2() {
         </span>
       ),
     },
+    lineCols.project_name!,
     lineCols.so_doc_no!,
     {
       key: "creditor_code",

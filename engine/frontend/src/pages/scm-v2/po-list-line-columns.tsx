@@ -29,6 +29,7 @@ const date = (key: string, label: string, pick: (l: PoListLine) => string | null
 /** The line columns, keyed for the grid. The page decides the order. */
 export function poLineColumns(): Record<string, PoColumn> {
   return {
+    project_name: text("project_name", PO_LINE_LABELS.projectName, (l) => l.project_name, { width: "200px" }),
     so_doc_no: text("so_doc_no", PO_LINE_LABELS.soDocNo, (l) => l.so_doc_no, { mono: true }),
     // The supplier's own code when the binding has one, else ours: a renovation PO line has no supplier SKU and the
     // column read "—" (TC-PO-2611-001, owner run 1 Nov 2026).
