@@ -475,6 +475,13 @@ Nothing was ticked.` });
       },
     },
     {
+      key: 'project', label: 'Project', width: 200, sortable: true, serverSortable: true, filterCounts: facets?.project, groupable: true,
+      accessor: (r) => projectTitleOf(r) || '—',
+      searchValue: (r) => mrpProjectLabel(r),
+      groupValue: (r) => projectTitleOf(r) || '(none)',
+      sortFn: (a, b) => projectTitleOf(a).localeCompare(projectTitleOf(b)),
+    },
+    {
       key: 'soDocNo', label: 'SO Doc No', width: 120, sortable: true, serverSortable: true, filterCounts: facets?.soDocNo, groupable: true,
       accessor: (r) => <span className={styles.codeCell}>{r.soDocNo}</span>,
       searchValue: (r) => r.soDocNo,
@@ -484,13 +491,6 @@ Nothing was ticked.` });
       accessor: (r) => soRefOfCamelStamp(r) || '—',
       searchValue: (r) => soRefOfCamelStamp(r),
       sortFn: (a, b) => soRefOfCamelStamp(a).localeCompare(soRefOfCamelStamp(b)),
-    },
-    {
-      key: 'project', label: 'Project', width: 200, sortable: true, serverSortable: true, filterCounts: facets?.project, groupable: true,
-      accessor: (r) => projectTitleOf(r) || '—',
-      searchValue: (r) => mrpProjectLabel(r),
-      groupValue: (r) => projectTitleOf(r) || '(none)',
-      sortFn: (a, b) => projectTitleOf(a).localeCompare(projectTitleOf(b)),
     },
     {
       /* Hidden: the grid groups on it (owner, 24 Nov 2026). */
