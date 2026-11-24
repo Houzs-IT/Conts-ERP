@@ -147,6 +147,7 @@ const ContsFinanceHome = lazy(() => import("./conts/FinanceTodo").then((m) => ({
 const ContsFinanceMenu = lazy(() => import("./conts/FinanceTodo").then((m) => ({ default: m.FinanceMenu })));
 const ContsFinanceTodoRules = lazy(() => import("./conts/FinanceTodoRules").then((m) => ({ default: m.FinanceTodoRulesPage })));
 const ContsRenoProjects = lazy(() => import("./conts/RenoProjects").then((m) => ({ default: m.RenoProjects })));
+const ContsCommission = lazy(() => import("./conts/Commission").then((m) => ({ default: m.ContsCommission })));
 const ContsRentalUnitCosts = lazy(() => import("./conts/RentalUnitCosts").then((m) => ({ default: m.RentalUnitCosts })));
 const ContsDepartmentSpend = lazy(() => import("./conts/DepartmentSpend").then((m) => ({ default: m.DepartmentSpend })));
 const ContsAiUsage = lazy(() => import("./conts/AiUsage").then((m) => ({ default: m.AiUsage })));
@@ -835,6 +836,7 @@ export default function App() {
         <Route path="/scm/petty-cash/:id" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsPettyCashFloat /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/debtors" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsDebtors /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/einvoice" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsEInvoice /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
+        <Route path="/scm/commission" element={<Guard anyPerm={["*"]}><Scm2990Shell><ContsCommission /></Scm2990Shell></Guard>} />
         <Route path="/scm/reno-projects" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsRenoProjects /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/rental-unit-costs" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsRentalUnitCosts /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/department-spend" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsDepartmentSpend /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />

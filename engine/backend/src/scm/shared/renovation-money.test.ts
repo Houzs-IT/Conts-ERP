@@ -3,6 +3,7 @@ import {
   docTotals,
   formatMeasure,
   formatRm,
+  instalmentBillRange,
   instalmentPctError,
   instalmentPreview,
   lineAmounts,
@@ -197,6 +198,18 @@ describe('progress billing', () => {
     expect(instalmentPctError([{ seq: 1, pctBp: 3000 }])).toMatch(/30%/);
     expect(instalmentPctError([])).toMatch(/at least one/);
     expect(instalmentPctError([{ seq: 1, pctBp: 5000 }, { seq: 1, pctBp: 5000 }])).toMatch(/share/);
+  });
+
+  test('billed ahead (chew, 24 Nov 2026): 20% then 45%, and an instalment already reached bills nothing, not a credit', () => {
+    const n1 = nextInstalmentAmount({ instalments: sched, seq: 1, revisedContractSen: RM(100000), billedSen: 0 });
+    expect(instalmentBillRange(n1, RM(100000), 0)).toEqual({ minSen: RM(15000), maxSen: RM(100000) });
+    const n2 = nextInstalmentAmount({ instalments: sched, seq: 2, revisedContractSen: RM(100000), billedSen: RM(20000) });
+    expect(n2.amountSen).toBe(RM(45000));
+    expect(instalmentBillRange(n2, RM(100000), RM(20000))).toEqual({ minSen: RM(45000), maxSen: RM(80000) });
+    // 70% on the first: the second (65%) is reached already.
+    const ahead = nextInstalmentAmount({ instalments: sched, seq: 2, revisedContractSen: RM(100000), billedSen: RM(70000) });
+    expect(ahead.amountSen).toBe(0);
+    expect(instalmentPreview(sched, RM(100000), new Map([[1, RM(70000)]])).map((r) => r.amountSen)).toEqual([RM(70000), 0, RM(25000), RM(5000)]);
   });
 
   test('unknown seq throws', () => {

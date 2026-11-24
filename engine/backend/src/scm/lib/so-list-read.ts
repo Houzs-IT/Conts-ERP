@@ -243,9 +243,11 @@ async function readProjectCodeDocNos(
   c: CompanyScopeCtx,
   term: string,
 ): Promise<{ ok: true; docNos: string[] } | { ok: false; status: 500; body: { error: string; reason: string } }> {
-  const esc = term.replace(/[\\%_]/g, (m) => `\\${m}`);
+  const esc = escapeForOr(term.replace(/[\\%_]/g, (m) => `\\${m}`));
+  if (!esc) return { ok: true, docNos: [] };
+  /* The project's name too (owner, 24 Nov 2026): staff search an order by the project it belongs to. */
   const projects = await sb.schema('public').from('projects')
-    .select('id').ilike('code', `%${esc}%`).limit(APPROVAL_CODE_SEARCH_CAP);
+    .select('id').or(`code.ilike.%${esc}%,name.ilike.%${esc}%`).limit(APPROVAL_CODE_SEARCH_CAP);
   if (projects.error) return { ok: false, status: 500, body: { error: 'load_failed', reason: `project codes: ${projects.error.message}` } };
   const ids = ((projects.data ?? []) as Array<{ id: number }>).map(({ id }) => id);
   if (ids.length === 0) return { ok: true, docNos: [] };

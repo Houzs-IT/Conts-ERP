@@ -11,8 +11,7 @@
 //                     the receipt row to print, for anyone who may see the order
 //                     (the salesperson included; /accounting/receipts/ensure is
 //                     the finance area's door). Fetches or heals it as ensure
-//                     does. Only a formal receipt prints here: money finance has not
-//                     confirmed yet has no receipt for the order (chew, 24 Nov 2026).
+//                     does; a draft prints without a watermark, a formal one with its formal number.
 // ----------------------------------------------------------------------------
 import type { Context, Hono } from 'hono';
 import type { Env, Variables } from '../../env';
@@ -94,12 +93,8 @@ export function registerPaymentReceiptRoutes(
     }
     const r = await ensureReceiptForPayment(sb, 'SOPAY', paymentId, companyOf(c));
     if (!r.ok) return c.json({ error: 'ensure_failed', reason: r.reason }, r.reason.endsWith('not found') ? 404 : 500);
-    /* No draft from the order (chew, 24 Nov 2026): the receipt prints once finance has confirmed the money; until then
-       finance alone prints the draft, from Official receipts. */
-    if (r.status === 'DRAFT') {
-      await linkReceiptInvoiceBestEffort(sb, r.id);
-      return c.json({ error: 'not_confirmed', message: 'Finance has not confirmed this money yet. The receipt can be printed once it is confirmed.' }, 409);
-    }
+    /* A draft renovation receipt names its invoice as things stand now (a formal one keeps its own). */
+    if (r.status === 'DRAFT') await linkReceiptInvoiceBestEffort(sb, r.id);
     const { data: row, error: rowErr } = await sb.from('acc_official_receipts').select('*').eq('id', r.id).maybeSingle();
     if (rowErr || !row) return c.json({ error: 'ensure_failed', reason: rowErr?.message ?? 'receipt vanished after ensure' }, 500);
     /* RECEIVED FROM on the print: the order's phone and address, its brand — as finance's print gets them. */

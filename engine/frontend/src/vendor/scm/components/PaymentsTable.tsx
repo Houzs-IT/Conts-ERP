@@ -1176,7 +1176,11 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
     if (src) patchDraft(uid, { convertedFromDocNo: src.docNo, ...(amountSen <= 0 ? { amountSen: src.movableSen } : {}) });
   };
 
-  const totalRowCount = persistedPayments.length + drafts.length;
+  /* Money that counts in Paid without a payment row here (owner, 24 Nov 2026: the list must tally with Paid): what
+     AutoCount was paid before go-live, already in the books from the import, and receipts recorded on the sales
+     invoices. Shown as rows of their own, read only; never a payment, which would book the money a second time. */
+  const carriedRows = carriedPaymentRows(beforeGoLiveSen, onInvoicesSen);
+  const totalRowCount = persistedPayments.length + drafts.length + carriedRows.length;
 
   /* Optional payment-slip column. One slip per order, so we fetch it once and
      render the same proof thumbnail on each persisted row, in a "Slip" column
@@ -1366,7 +1370,7 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
               clipped at the right edge. overflow lives on the wrapper, the
               min-width on the inner .grid (must be different elements). */}
           <div className={paymentsStyles.gridScroll}
-            style={(!isSaved || !paymentsQ.isLoading) && persistedPayments.length === 0 && drafts.length === 0 ? { display: 'none' } : undefined}>
+            style={(!isSaved || !paymentsQ.isLoading) && persistedPayments.length === 0 && drafts.length === 0 && carriedRows.length === 0 ? { display: 'none' } : undefined}>
           <div className={paymentsStyles.grid} style={gridStyle}>
             {/* Header row */}
             <span className={paymentsStyles.headerCell}>
@@ -1407,7 +1411,7 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
             )}
             {(!isSaved || !paymentsQ.isLoading) &&
               persistedPayments.length === 0 &&
-              drafts.length === 0 && (
+              drafts.length === 0 && carriedRows.length === 0 && (
               <span className={paymentsStyles.emptyRow} style={{ gridColumn: '1 / -1' }}>
                 No payments recorded yet · click "Add Payment" to log a deposit
               </span>
@@ -1415,6 +1419,14 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
 
             {/* Persisted payment rows (SAVED mode only). A row currently being
                 edited in place is hidden — its editable draft renders below. */}
+            {carriedRows.map((c) => (
+              <div className={paymentsStyles.row} key={c.key}>
+                <span className={paymentsStyles.cell} data-label="Date">-</span>
+                <span className={paymentsStyles.cell} data-label="Method"><span className={paymentsStyles.methodPill}>{c.label}</span></span>
+                <span className={paymentsStyles.cellRight} data-label="Amount" style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{fmtAmt(c.amountSen)}</span>
+                <span className={paymentsStyles.cell} style={{ gridColumn: '4 / -1', color: 'var(--fg-muted)', fontSize: 'var(--fs-12)' }}>{c.note}</span>
+              </div>
+            ))}
             {persistedPayments.filter((p) => !isEditingPersisted(p.id)).map((p) => (
               <div className={paymentsStyles.row} key={p.id}>
                 <span className={paymentsStyles.cell} data-label="Date" style={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -1468,9 +1480,9 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
                 </span>
                 {showReceipt && (
                   <span className={paymentsStyles.cell} data-label="Official receipt" style={{ alignItems: 'center', gap: 6 }}>
-                    {/* The receipt as finance stands on it (chew, 21 + 24 Nov 2026): a formal OR prints with its number,
-                        money finance has not confirmed yet waits and prints nothing; and the instalment invoice a
-                        renovation receipt is for. */}
+                    {/* The receipt as finance stands on it (chew, 21 + 24 Nov 2026): a formal OR's number, or waiting for
+                        finance (that one prints too, without a watermark); and the instalment invoice a renovation
+                        receipt is for. */}
                     {p.method === CONVERTED_METHOD ? <span className={detailStyles.muted}>—</span> : (
                       <>
                         <span style={{ display: 'inline-flex', flexDirection: 'column', fontSize: 'var(--fs-12)', lineHeight: 1.35 }}>
@@ -1479,18 +1491,16 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
                             : <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{p.or_number ?? 'Official receipt'}</span>}
                           {p.invoice_no && <span style={{ color: 'var(--fg-muted)' }}>for {p.invoice_no}</span>}
                         </span>
-                        {p.confirmed !== false && p.or_status !== 'DRAFT' && (
-                          <button
-                            type="button"
-                            onClick={() => void printReceipt(p.id)}
-                            disabled={receiptBusy === p.id}
-                            title="Print official receipt"
-                            aria-label={`Print official receipt${p.or_number ? ` ${p.or_number}` : ''}`}
-                            style={{ background: 'transparent', border: 'none', padding: 4, cursor: 'pointer', color: 'var(--fg-muted)' }}
-                          >
-                            <Printer size={14} strokeWidth={1.75} />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => void printReceipt(p.id)}
+                          disabled={receiptBusy === p.id}
+                          title="Print official receipt"
+                          aria-label={`Print official receipt${p.or_number ? ` ${p.or_number}` : ''}`}
+                          style={{ background: 'transparent', border: 'none', padding: 4, cursor: 'pointer', color: 'var(--fg-muted)' }}
+                        >
+                          <Printer size={14} strokeWidth={1.75} />
+                        </button>
                       </>
                     )}
                   </span>
@@ -2046,3 +2056,14 @@ const PaymentsTableInner = (props: PaymentsTableProps) => {
 };
 
 export const PaymentsTable = memo(PaymentsTableInner) as typeof PaymentsTableInner;
+
+/** Money that counts in Paid without a payment row (owner, 24 Nov 2026: the list must tally with Paid): what AutoCount was
+ *  paid before go-live, already in the books from the import, and receipts recorded on the sales invoices. Shown as read
+ *  only rows; never a payment, which would book the money a second time. */
+export function carriedPaymentRows(beforeGoLiveSen: number, onInvoicesSen: number): Array<{ key: string; label: string; note: string; amountSen: number }> {
+  return [
+    ...(beforeGoLiveSen > 0 ? [{ key: 'golive', label: 'Paid before go-live', note: 'Paid in AutoCount before the ERP started. Already in the books from the import, so it is not recorded again here.', amountSen: beforeGoLiveSen }] : []),
+    ...(onInvoicesSen > 0 ? [{ key: 'invoices', label: 'Received on invoices', note: "Receipts recorded on this order's sales invoices.", amountSen: onInvoicesSen }] : []),
+  ];
+}
+

@@ -280,7 +280,7 @@ export function QuotationsList() {
           onChange={setStatus}
         />
         <div className="flex-1" />
-        {view === 'cards' && <input aria-label="Search quotations" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search number, customer, building…" className="h-9 w-64 max-w-full rounded-md border border-border bg-surface px-3 text-[13px] text-ink focus:border-primary focus:outline-none" />}
+        {view === 'cards' && <input aria-label="Search quotations" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search number, customer, building, project…" className="h-9 w-64 max-w-full rounded-md border border-border bg-surface px-3 text-[13px] text-ink focus:border-primary focus:outline-none" />}
         <ViewToggle value={view} onChange={changeView} />
       </div>
 
@@ -305,7 +305,7 @@ export function QuotationsList() {
         search={{
           value: q,
           onChange: setQ,
-          placeholder: 'Search number, customer, building…',
+          placeholder: 'Search number, customer, building, project…',
           scope: 'server',
           totalRecords: rows.length,
           countPending: list.isLoading,

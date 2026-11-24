@@ -136,6 +136,7 @@ export function RoomDialog({ initial, locations, futureBookings, saving, error, 
           <label className={LABEL}>Location<input className={CONTROL} list="meeting-locations" value={x.location} onChange={(e) => setX({ ...x, location: e.target.value })} /><datalist id="meeting-locations">{locations.map((l) => <option key={l} value={l} />)}</datalist></label>
           <label className={LABEL}>Floor / area<input className={CONTROL} value={x.floor} placeholder="Level 2" onChange={(e) => setX({ ...x, floor: e.target.value })} /></label>
         </div>
+        <label className={LABEL}>Address for visitors<input className={CONTROL} value={x.address} placeholder="Street, postcode, city" onChange={(e) => setX({ ...x, address: e.target.value })} /><span className="text-[12px] font-normal text-faint">Shown with a Google Maps link in the emails outside guests get.</span></label>
         <div className="grid grid-cols-3 gap-2.5">
           <div className={LABEL}>How many people<NumberInput aria-label="How many people" min={1} max={500} value={x.seats} onChange={(n) => setX({ ...x, seats: n ?? 1 })} /></div>
           <label className={LABEL}>Opens<select className={CONTROL} value={x.openFrom} onChange={(e) => setX({ ...x, openFrom: Number(e.target.value) })}>{[6, 7, 8, 9, 10].map((h) => <option key={h} value={h}>{h}:00</option>)}</select></label>

@@ -132,9 +132,9 @@ export function SoInstalments({ rows, money, onBill, onPrintInvoice }: {
               <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-secondary">{r.label}</span>
               {!r.slot && <span className="text-[11px] text-ink-muted">{(r.pctBp / 100).toFixed(r.pctBp % 100 ? 1 : 0)}%</span>}
             </div>
-            <div className="text-[17px] font-bold tabular-nums text-ink">{r.slot && r.amountSen === 0 ? "-" : money(part ? toCollectSen(r) : r.amountSen)}</div>
+            <div className="text-[17px] font-bold tabular-nums text-ink">{r.slot && r.amountSen === 0 ? "-" : money(r.amountSen)}</div>
             <div className={`text-[12px] font-semibold ${paid ? "text-synced" : part || due ? "text-warning-text" : "text-ink-muted"}`}>
-              {paid ? (r.slot ? "Received" : r.paidBeforeGoLive ? "Paid before go-live" : "Paid") : part ? `To collect, ${money(r.paidSen)} of ${money(r.amountSen)} paid` : r.slot ? "Not received" : r.beforeGoLive ? "Billed before go-live, not paid" : "Not paid"}
+              {paid ? (r.slot ? "Received" : r.paidBeforeGoLive ? "Paid before go-live" : "Paid") : part ? `${money(r.paidSen)} paid, ${money(toCollectSen(r))} to collect` : r.slot ? "Not received" : r.beforeGoLive ? "Billed before go-live, not paid" : "Not paid"}
             </div>
             {(r.waitingSen ?? 0) > 0 && (
               <div className="text-[11.5px] font-medium text-ink-secondary">{money(r.waitingSen ?? 0)} waiting for finance</div>
