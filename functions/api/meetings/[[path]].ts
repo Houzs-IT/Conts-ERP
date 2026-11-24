@@ -1,6 +1,7 @@
 import { type Env, json, fail, audit } from '../../_lib/db';
 import { requireSession } from '../../_lib/auth';
 import { meetingsHubFor, meetingsFetch, relayMeetings, maybePushDirectory, meetingsConnected, type MeetingsHub } from '../../_lib/meetingsHub';
+import { mailSoon, mailFromBadge } from '../../_lib/meetingMail';
 
 /**
  * /api/meetings/* — the Meetings page (src/pages/meetings). Every call goes to the Houzs IT Hub (functions/_lib/
@@ -37,8 +38,9 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params, wait
   const manage = hub.headers['X-Can-Manage-Rooms'] === '1';
   const url = new URL(request.url);
 
-  /** A change the hub accepted, written to Conts's own audit log as well. */
+  /** A change the hub accepted, written to Conts's own audit log as well; the emails it made go out after the answer. */
   const changed = async (res: Response, action: string, entityId: string, after?: unknown) => {
+    if (res.ok && /^meetings\.(book|change|cancel)$/.test(action)) mailSoon(env, waitUntil);
     if (res.ok) {
       try { await audit(env, { actorId: session.userId, actorLabel: session.fullName, action, entityTable: 'meetings', entityId, after }); }
       catch (e) { console.error('Meetings audit failed', action, entityId, e); }
@@ -61,6 +63,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params, wait
     if (route === 'unread-count') {
       const res = await send('/unread');
       if (!res.ok) return res;
+      mailFromBadge(env, waitUntil);
       const n = Number(((await res.json()) as { unread?: unknown }).unread);
       return json({ count: Number.isFinite(n) && n > 0 ? n : 0 });
     }

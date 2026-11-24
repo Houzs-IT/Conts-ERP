@@ -12,6 +12,8 @@
 #   WHATSAPP_TOKEN, WHATSAPP_PHONE_ID   optional: WhatsApp copies
 #   IT_HUB_API_KEY       optional: the same key the Pages project uses for IT Support; with it, the worker asks
 #                        the website to send its health report to the Houzs IT Hub every 5 minutes
+#                        with IT_HUB_URL and MAIL_API_KEY too, it sends the meeting emails the hub wrote for Conts
+#                        meetings every 5 minutes (functions/_lib/meetingMail.ts), reminders included
 #   CONTS_CRON_SECRET    optional: the same value as the engine's CONTS_CRON_SECRET; with it, the worker asks the
 #                        engine every 5 minutes to retry Mail Center emails whose first send failed
 

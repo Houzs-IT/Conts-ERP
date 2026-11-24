@@ -19,6 +19,7 @@ import { runGuestReviews } from './guestReviews';
 import { passKeyUrgencyChanges, applyPassKeyUrgency } from './passKeyJobs';
 import { syncLate } from './ownerLocks';
 import { pushMeetingsDirectory, meetingsConnected } from './meetingsHub';
+import { sendMeetingMail } from './meetingMail';
 
 /**
  * The scheduled jobs, shared by the cron worker (worker/scheduled.ts) and the local dry run
@@ -406,7 +407,7 @@ export const CRON = {
 /** What each trigger runs, in order. */
 export const SCHEDULE: Record<string, ((env: Env, o?: RunOptions) => Promise<JobReport>)[]> = {
   [CRON.everyMinute]: [channexOutbox, hubHealthReport],
-  [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft, engineMailOutbox],
+  [CRON.fiveMinutes]: [hostplatformPull, autoGuestLeft, engineMailOutbox, meetingMail],
   [CRON.quarterHour]: [drainOutbox, repairBlockSweep, guestReviewSweep, lateIncomeSweep],
   [CRON.hourly]: [overdueSweep, forgottenClockOuts, hostplatformSweep, passKeyUrgencySweep, meetingsDirectory],
   [CRON.daily]: [dailyDigest],
@@ -424,6 +425,20 @@ export async function meetingsDirectory(env: Env, o: RunOptions = {}): Promise<J
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
     return { job: 'meetings-directory', summary: 'Staff list not sent.', error };
+  }
+}
+
+/** Every 5 minutes: the meeting emails the Houzs IT Hub wrote for meetings made here, reminders included, sent with
+ *  Conts's mail key (functions/_lib/meetingMail.ts). A booking, change or cancellation also sends its own at once. */
+export async function meetingMail(env: Env, o: RunOptions = {}): Promise<JobReport> {
+  if (!meetingsConnected(env)) return { job: 'meeting-mail', summary: 'Not connected here (IT_HUB_URL or IT_HUB_API_KEY not set): nothing sent.' };
+  if (o.dryRun) return { job: 'meeting-mail', summary: 'Would send the waiting meeting emails.' };
+  try {
+    const r = await sendMeetingMail(env);
+    return { job: 'meeting-mail', summary: r.sent || r.failed ? `${plural(r.sent, 'meeting email')} sent, ${r.failed} not sent.` : 'No meeting emails waiting.' };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    return { job: 'meeting-mail', summary: 'Meeting emails not collected.', error };
   }
 }
 
