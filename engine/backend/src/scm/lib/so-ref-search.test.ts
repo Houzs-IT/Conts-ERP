@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inArm, poIdsByLineText, poIdsForSoDocNos, soDocNosByRef, SO_REF_MATCH_CAP } from './so-ref-search';
+import { inArm, poIdsByLineText, poIdsForSoDocNos, projectTextBySoDocNo, soDocNosByProject, soDocNosByRef, soDocNosByRefOrProject, SO_REF_MATCH_CAP } from './so-ref-search';
 import { filterDoList, type DoListParams } from './do-list-read';
 import { filterSiList, type SiListFilters } from './si-list-read';
 import { filterPoList, type PoListFilters } from './po-list-read';
@@ -71,6 +71,7 @@ describe('list searches match the SO link resolved from the SO reference', () =>
 function fakeSb(rows: Record<string, Record<string, unknown>[]>) {
   const log: string[] = [];
   const sb = {
+    schema() { return sb; },
     from(table: string) {
       const st: { table: string; col?: string; vals?: unknown } = { table };
       const q: Record<string, unknown> = {
@@ -100,6 +101,38 @@ describe('soDocNosByRef', () => {
     expect(await soDocNosByRef(sb, ctx, '   ')).toEqual([]);
     expect(await soDocNosByRef(sb, ctx, null)).toEqual([]);
     expect(log).toEqual([]);
+  });
+});
+
+describe('documents are found by their project name or code (owner, 24 Nov 2026)', () => {
+  it("resolves the project's orders, company-scoped", async () => {
+    const { sb, log } = fakeSb({ projects: [{ id: 7 }], mfg_sales_orders: [{ doc_no: 'TC-SO-2611-039' }] });
+    expect(await soDocNosByProject(sb, ctx, 'quaver')).toEqual(['TC-SO-2611-039']);
+    expect(log).toContain('projects.or(name.ilike.%quaver%,code.ilike.%quaver%)');
+    expect(log).toContain('mfg_sales_orders.eq(company_id,1)');
+  });
+  it('no project matched: no order read', async () => {
+    const { sb, log } = fakeSb({ projects: [] });
+    expect(await soDocNosByProject(sb, ctx, 'quaver')).toEqual([]);
+    expect(log.some((line) => line.startsWith('mfg_sales_orders'))).toBe(false);
+  });
+  it('one letter is too generic to look up', async () => {
+    const { sb, log } = fakeSb({});
+    expect(await soDocNosByProject(sb, ctx, 'q')).toEqual([]);
+    expect(log).toEqual([]);
+  });
+  it('the SO link admits both reference and project matches, once each', async () => {
+    const { sb } = fakeSb({ projects: [{ id: 7 }], mfg_sales_orders: [{ doc_no: 'TC-SO-1' }] });
+    expect(await soDocNosByRefOrProject(sb, ctx, 'quaver')).toEqual(['TC-SO-1']);
+  });
+  it("labels each order with its project's code and name, and leaves orders without one out", async () => {
+    const { sb } = fakeSb({
+      'mfg_sales_orders:doc_no': [{ doc_no: 'TC-SO-1', project_id: 7 }, { doc_no: 'TC-SO-2', project_id: null }],
+      'projects:id': [{ id: 7, code: 'RN-2611-058', name: 'QUAVER RESIDENCE' }],
+    });
+    const byOrder = await projectTextBySoDocNo(sb, ctx, ['TC-SO-1', 'TC-SO-2']);
+    expect(byOrder.get('TC-SO-1')).toBe('RN-2611-058 QUAVER RESIDENCE');
+    expect(byOrder.has('TC-SO-2')).toBe(false);
   });
 });
 

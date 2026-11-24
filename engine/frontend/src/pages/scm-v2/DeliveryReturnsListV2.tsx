@@ -1591,7 +1591,7 @@ export function DeliveryReturnsListV2() {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search return, customer, reason…"
+          placeholder="Search return, customer, project, reason…"
           className="h-10 w-full rounded-lg border border-border bg-surface px-3.5 text-[14px] text-ink outline-none transition-colors placeholder:text-ink-muted focus:border-primary focus:ring-2 focus:ring-primary/20"
         />
         <SearchScopeHint scope="loaded" loadedLimit={500} resultCount={filtered.length} term={search} className="mt-1 px-1" />
@@ -1679,7 +1679,7 @@ export function DeliveryReturnsListV2() {
               search={{
                 value: search,
                 onChange: setSearch,
-                placeholder: "Search return, customer, reason, salesperson…",
+                placeholder: "Search return, customer, project, reason, salesperson…",
                 loadedLimit: 500,
               }}
               resetFilters={{
