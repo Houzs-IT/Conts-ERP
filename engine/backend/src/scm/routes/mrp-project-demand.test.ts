@@ -33,9 +33,9 @@ describe('which project lines are demand', () => {
     expect(line?.line_delivery_date).toBeNull();
   });
 
-  test('no date at all is not demand', () => {
-    expect(projectDemandLine(row(), undefined)).toEqual([]);
-    expect(projectDemandLine(row(), plan({}))).toEqual([]);
+  test('no date at all is still demand, undated (owner, 24 Nov 2026)', () => {
+    expect(projectDemandLine(row(), undefined)).toHaveLength(1);
+    expect(projectDemandLine(row(), plan({}))).toHaveLength(1);
   });
 
   test('marked No PO stays out, whatever dates it has', () => {

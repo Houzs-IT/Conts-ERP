@@ -2,6 +2,7 @@
 // PO → GRN → Purchase Invoice. On POST, qty_received rolls up to PO items.
 
 import { readStatusMoney } from '../lib/status-money';
+import { lineDiscountShare } from '../shared/line-discount-share';
 import { poPriceByPoItemId, poRefByPoItemId, stampGrnLinePoRefs, type LinePoRef } from '../lib/line-po-ref';
 import { Hono } from 'hono';
 import { GRN_STATUS_BUCKETS } from '../lib/grn-status-buckets';
@@ -1894,7 +1895,8 @@ export const createGrnFromPosHandler = async (c: Context<{ Bindings: Env; Variab
 
   const rows = itemList.map((it) => {
     const qtyReceived = it.qty - (it.received_qty ?? 0);
-    const discountSen = it.discount_sen ?? 0;
+    /* The rest of the line receives its remaining share of the discount (a partial GRN may have taken part). */
+    const discountSen = lineDiscountShare(it.discount_sen ?? 0, it.qty, it.received_qty, qtyReceived);
     return {
       grn_id: h.id,
       purchase_order_item_id: it.id,

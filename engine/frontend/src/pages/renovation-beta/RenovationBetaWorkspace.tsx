@@ -118,6 +118,8 @@ function WorkspaceScreen(): ReactElement {
   const items = stepperItems({
     steps: d.flow.steps, currentKey: d.flow.current, currentIndex: d.flow.currentIndex, soDate: (d.signedSo ?? d.so)?.so_date ?? null, soStatus: (d.signedSo ?? d.so)?.status ?? null, handoverOn: p.handed_over_at ?? p.planned_handover_date, tasks: d.tasks, today, sla: d.stepSla ?? null,
     design: { done: designSteps.filter((s) => s.state === "done").length, total: designSteps.length },
+    /* Older servers (and fixtures) send no stage layers: then nothing is known and the steps alone decide. */
+    designApproved: (d as { stageLayers?: { stages?: Array<{ key: string; complete: boolean }> } }).stageLayers?.stages?.find((s) => s.key === "design")?.complete ?? null,
   });
   // The second layer (owner, 19 Nov 2026): Design from Design work, Renovation from the catalog categories when the
   // server sends them; the other stages say when they complete.

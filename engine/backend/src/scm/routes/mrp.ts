@@ -504,7 +504,9 @@ export function projectDemandLine(
   /* The line's own processing date stands in for the order's (MRP's Processing Date column and date basis). */
   const so = r.so && plan?.order_on ? { ...r.so, processing_date: plan.order_on } : r.so;
   const line = plan?.deliver_on ? { ...r, so, line_delivery_date: plan.deliver_on, line_delivery_date_overridden: true } : { ...r, so };
-  return plan?.order_on || deliveryOf(line) !== null ? [line] : [];
+  /* An undated line is still demand (owner, 24 Nov 2026): a new contract has no dates yet and was invisible here; it
+     sits with the other undated lines, shown under Show no-date, like a standard order's. */
+  return [line];
 }
 
 /* Earliest-first comparator that pushes NULL dates to the end. */

@@ -80,7 +80,15 @@ const LINES_SQL = `
     JOIN projects p ON p.id = so.project_id AND p.company_id = so.company_id
     LEFT JOIN LATERAL (SELECT mp.category_group, mp.category::text AS prod_category, mp.sub_category FROM scm.mfg_products mp WHERE mp.code = i.item_code AND mp.company_id = so.company_id
                         ORDER BY (mp.status::text = 'ACTIVE') DESC LIMIT 1) prod ON true
-   WHERE so.project_id IN ${IN_PROJECTS} AND so.status::text <> 'CANCELLED' AND NOT coalesce(i.cancelled, false)`;
+   WHERE so.project_id IN ${IN_PROJECTS} AND so.status::text <> 'CANCELLED' AND NOT coalesce(i.cancelled, false)
+     /* A line the customer buys (supplier CUSTOMER: the line's plan, else the contract line, else the SKU's main supplier)
+        never gets a delivery order, so it would hold its category open for good (owner, 24 Nov 2026). */
+     AND coalesce(
+           (SELECT s.code FROM scm.reno_beta_line_plans lp JOIN scm.suppliers s ON s.id = lp.supplier_id WHERE lp.so_item_id = i.id),
+           (SELECT s.code FROM scm.reno_doc_lines dl JOIN scm.suppliers s ON s.id = dl.supplier_id WHERE dl.so_item_id = i.id LIMIT 1),
+           (SELECT s.code FROM scm.supplier_material_bindings b JOIN scm.suppliers s ON s.id = b.supplier_id
+             WHERE b.material_kind = 'mfg_product' AND b.item_code = i.item_code AND b.company_id = so.company_id AND b.is_main_supplier LIMIT 1)
+         ) IS DISTINCT FROM 'CUSTOMER'`;
 
 /** Variation orders per project: the renovation contract's own (not cancelled) and the sales order amendments that are
     not one of them (not rejected), on any live sales order of the project, the same set the project's VO tab lists. */
