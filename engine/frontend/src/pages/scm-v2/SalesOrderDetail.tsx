@@ -1402,15 +1402,14 @@ export const SalesOrderDetail = () => {
       setSaveError("A renovation contract's line discount is changed on the contract page (New VO). Change the price here instead.");
       return;
     }
-    if (handle.hasHeaderPatchChanges()) {
-      setSaveError("A renovation contract's customer, address and dates are changed on its project (Customer info, Edit); they follow to this order.");
-      return;
-    }
+    /* Customer, address and dates save from Edit SO like on any order, and the server copies the shared ones to the
+       project (owner, 24 Nov 2026: "双向sync"); only the money moves through a VO. */
+    const headerMoved = handle.hasHeaderPatchChanges();
     const contractDates = lineDateChanges();
     const contractDatesMoved = Object.keys(contractDates.processing).length + Object.keys(contractDates.delivery).length > 0;
     /* Rooms are layout, not money: a contract's room changes save directly, never as a VO (click sweep F9). */
     const contractRoomsMoved = renoLines && renoRoomsDirty.current;
-    if (lines.length === 0 && !handle.hasDirectHeaderChanges() && !contractDatesMoved && !contractRoomsMoved) { finishEditWithoutVo(); return; }
+    if (lines.length === 0 && !headerMoved && !handle.hasDirectHeaderChanges() && !contractDatesMoved && !contractRoomsMoved) { finishEditWithoutVo(); return; }
     type Edit = { soItemId: string; qty?: number; itemCode?: string; unitPriceSen?: number; remove?: boolean; variants?: Record<string, unknown>; remark?: string };
     const edits: Edit[] = [];
     const adds: Array<{ room: string; itemCode: string; qty: number; unitPriceSen: number; variants?: Record<string, unknown>; remark?: string }> = [];
@@ -1438,7 +1437,7 @@ export const SalesOrderDetail = () => {
     setSavingOrder(true);
     try {
       await new Promise<void>((resolve, reject) => {
-        handle.save({ onSuccess: () => resolve(), onError: (msg) => reject(new Error(msg)) }, { renoBlockOnly: true });
+        handle.save({ onSuccess: () => resolve(), onError: (msg) => reject(new Error(msg)) }, headerMoved ? undefined : { renoBlockOnly: true });
       });
       await saveLineDates(contractDates, header.doc_no);
       let poFlags = 0;
@@ -1463,7 +1462,7 @@ export const SalesOrderDetail = () => {
         title: 'Saved',
         body: vo
           ? `${vo.voNo} raised and applied: ${edits.length + adds.length} line change${edits.length + adds.length === 1 ? '' : 's'}.${vo.flags ? ` ${vo.flags} PO line${vo.flags === 1 ? '' : 's'} flagged for purchasing to change.` : ''}`
-          : lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.${poFlags ? ` ${poFlags} PO line${poFlags === 1 ? '' : 's'} flagged for purchasing to tell the supplier.` : ''}` : contractRoomsMoved && !handle.hasDirectHeaderChanges() ? 'Rooms saved.' : 'Order information saved.',
+          : lines.length ? `${lines.length} line${lines.length === 1 ? '' : 's'} updated.${poFlags ? ` ${poFlags} PO line${poFlags === 1 ? '' : 's'} flagged for purchasing to tell the supplier.` : ''}` : contractRoomsMoved && !headerMoved && !handle.hasDirectHeaderChanges() ? 'Rooms saved.' : 'Order information saved.',
         tone: 'info',
       });
     } catch (e) {
@@ -3572,6 +3571,20 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
   /* The EXACT body the direct half sends in amendment mode; trySave and
      hasDirectHeaderChanges share it so the two cannot disagree. Frozen keys are
      DROPPED before the diff, never reverted (see withoutFrozenHeaderFields). */
+  /* The customer, address and dates being edited are kept in this browser like the lines (owner, 24 Nov 2026: leave the
+     page and come back, and it offers them again). Cleared on a successful save and on Cancel. */
+  const headerDraftValue = useMemo(() => ({ form, renoInfo }), [form, renoInfo]);
+  const headerDraftDirty = isEditing && (hasHeaderChanges(diffHeaderPayload(originalPayloadRef.current, payloadFor(form))) || renoChanged());
+  const headerDraft = useRenovationDraft(isEditing ? `so-edit-header:${header.doc_no}` : null, headerDraftValue, headerDraftDirty, header.version);
+  const restoreHeaderDraft = (restore: boolean) => {
+    const offered = headerDraft.offered;
+    if (restore && offered) {
+      setForm(offered.v.form);
+      if (reno) setRenoInfo(offered.v.renoInfo);
+    }
+    headerDraft.answer(restore);
+  };
+
   const directHeaderPatch = () => diffHeaderPayload(originalPayloadRef.current,
     withoutFrozenHeaderFields(buildPayload()));
 
@@ -3631,13 +3644,14 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
 
   useImperativeHandle(ref, () => ({
     validate: () => validateDates(),
-    save: (cb, opts) => trySaveWithReno(cb, opts),
+    save: (cb, opts) => trySaveWithReno({ ...cb, onSuccess: () => { headerDraft.clear(); cb.onSuccess(); } }, opts),
     /* Cancel re-seeds the form, so the pristine snapshot must move with it —
        otherwise the next edit would diff against the abandoned session. */
     reset: () => {
       const seeded = initialFormFor(header);
       setForm(seeded);
       originalPayloadRef.current = payloadFor(seeded);
+      headerDraft.clear();
       if (renoQ.data) {
         setRenoInfo(renoQ.data.info);
         setRenoProject(renoQ.data.project);
@@ -4087,6 +4101,17 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
 
   return (
     <>
+      {isEditing && headerDraft.offered && (
+        <div className={styles.bannerWarn} role="status">
+          <strong>Unsaved customer, address and date changes from {new Date(headerDraft.offered.ts).toLocaleString()}.</strong>
+          <span>
+            {headerDraft.stale ? 'The order was saved again after them, so check them before saving. ' : ''}
+            Restore them?
+          </span>
+          <Button variant="primary" onClick={() => restoreHeaderDraft(true)}>Restore</Button>
+          <Button variant="ghost" onClick={() => restoreHeaderDraft(false)}>Discard</Button>
+        </div>
+      )}
       {reno ? (
         !isEditing ? (
           /* A renovation order reads Order information, Customer, Delivery address: the order of the block Edit opens. */

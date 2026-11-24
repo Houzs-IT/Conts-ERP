@@ -2028,11 +2028,8 @@ export function MobileNewSO({
            invalidates everything itself once the whole composite save settles. */
         // Captured once: the plan must ask about the SAME patch this branch sends.
         const directDirty = hasHeaderChanges(dirtyPatch);
-        if (contractOrder && directDirty) {
-          setSubmitting(false);
-          setError("A renovation contract's customer, address and dates are changed on its project. They follow to this order.");
-          return;
-        }
+        /* A renovation contract saves its customer, address and dates here like any order; the server copies the shared
+           ones to the project (owner, 24 Nov 2026). */
         if (amendmentMode && directDirty) {
           /* Attach the mandatory loaded token after the dirty check, so `version`
              never turns an otherwise-empty patch into a mutation. A 409 throws;
