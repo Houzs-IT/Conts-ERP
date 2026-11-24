@@ -90,6 +90,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       if (v === null) fields.email = 'Email does not look right. Check it, or leave it blank.';
       else if (!fields.email && v.toLowerCase() !== String(owner.email ?? '').toLowerCase()) {
         if (v && await one(env, 'SELECT 1 AS x FROM owners WHERE lower(email) = lower(?) AND id <> ?', v, id)) fields.email = 'Another owner already uses that email address.';
+        // The portal sign-in follows the owner's email (below), so it must be free among the logins too.
+        else if (v && owner.user_id && await one(env, 'SELECT 1 AS x FROM users WHERE lower(email) = lower(?) AND id <> ?', v, owner.user_id)) fields.email = 'Another account already signs in with that email address.';
         // email is NOT NULL on owners: no email is stored as ''.
         else { sets.push('email = ?'); args.push(v); before.email = owner.email || null; after.email = v || null; }
       }
@@ -115,6 +117,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   await run(env, `UPDATE owners SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, nowIso(), id);
   await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'owner.update', entityTable: 'owners', entityId: id, before, after });
+  /* The owner's portal sign-in email follows the owner's email (owner, 24 Nov 2026), so the invited owner signs in with
+     the address the office now holds. A blank email leaves the login as it was. */
+  if (typeof after.email === 'string' && after.email && owner.user_id) {
+    await run(env, "UPDATE users SET email = ? WHERE id = ? AND role = 'owner'", after.email, owner.user_id);
+    await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'user.email_follows_owner', entityTable: 'users', entityId: owner.user_id, before: { email: before.email ?? null }, after: { email: after.email } });
+  }
   return json({ ok: true, changed: true, ...(ignored.length ? { ignored } : {}), ...('defaultManagementFeePct' in after ? { defaultManagementFeePct: after.defaultManagementFeePct } : {}) });
 };
 

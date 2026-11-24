@@ -40,6 +40,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (b.incurredOn !== undefined && !isIsoDate(String(b.incurredOn))) fields.incurredOn = 'A date is required.';
   if (b.chargeTo !== undefined && !CHARGE_TO.includes(b.chargeTo)) fields.chargeTo = 'Choose who pays.';
   if (b.receiptDocumentId !== undefined && (typeof b.receiptDocumentId !== 'string' || !b.receiptDocumentId)) fields.receipt = 'Upload the receipt again.';
+  if (b.paidAt !== undefined && b.paidAt !== null && b.paidAt !== '' && !isIsoDate(String(b.paidAt))) fields.paidAt = 'Pick the day the bill was paid, or leave it empty.';
   if (Object.keys(fields).length) return fail('VALIDATION', 'Check the highlighted fields.', 422, fields);
 
   const cur = await one<any>(env, 'SELECT id, unit_id, category, amount, incurred_on, deduct_month, rolled, description, reference, charge_to, receipt_document_id FROM expenses WHERE id = ?', id);
@@ -48,6 +49,17 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     return fail('VALIDATION', 'That receipt was not found. Upload it again.', 422, { receipt: 'Upload the receipt again.' });
   }
   const changesMoney = ['category', 'description', 'amount', 'incurredOn', 'reference', 'chargeTo'].some(k => b[k] !== undefined);
+  /* The paid date (owner, 24 Nov 2026; migration 0369) changes no figure, so it saves on its own, a final month included. */
+  if (b.paidAt !== undefined) {
+    const paidAt = b.paidAt ? String(b.paidAt) : null;
+    const was = await one<{ paid_at: string | null }>(env, 'SELECT paid_at FROM expenses WHERE id = ?', id);
+    if ((was?.paid_at ?? null) !== paidAt) {
+      await run(env, 'UPDATE expenses SET paid_at = ? WHERE id = ?', paidAt, id);
+      await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.paid_at', entityTable: 'expenses', entityId: id,
+        before: { paidAt: was?.paid_at ?? null }, after: { paidAt } });
+    }
+    if (!changesMoney && !b.receiptDocumentId) return json({ ok: true });
+  }
   if (!changesMoney && b.receiptDocumentId) {
     await run(env, 'UPDATE expenses SET receipt_document_id = ? WHERE id = ?', b.receiptDocumentId, id);
     await audit(env, { actorId: session.userId, actorLabel: session.fullName, action: 'expense.receipt', entityTable: 'expenses', entityId: id,
@@ -102,7 +114,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
-  if (!session.manage) return fail('FORBIDDEN', 'Only finance and management can remove expenses.', 403);
+  // Management only (owner, 24 Nov 2026).
+  if (session.role !== 'management') return fail('FORBIDDEN', 'Only management can delete an expense.', 403);
 
   const id = String(params.id);
   const cur = await one<{ unit_id: string; deduct_month: string; category: string; amount: number; incurred_on: string; description: string | null; charge_to: string; payment_request_id: string | null }>(env,

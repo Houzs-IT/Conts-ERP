@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { mayWork } from '../lib/areaAccess';
 import { Modal as SharedModal } from '../components/Modal';
 import { TileSkeleton } from '../components/Loading';
 import { BarTrend, Eyebrow, Figure, Segmented, StatTile, TotalsRow } from '../components/Metric';
@@ -476,7 +477,7 @@ export default function DashboardPage() {
           <>{monthLabel(period)} to date{kpi.loading && <> · <span aria-hidden className="skeleton inline-block align-middle h-[11px] w-[120px]" /></>}</>
         )}
         actions={<Button variant="secondary" size="sm" live onClick={() => go('/properties/units')}>Manage units</Button>}
-        primary={<Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => go('/reservations/bookings?create=1')}>Create reservation</Button>}
+        primary={mayWork(user, 'reservations') ? <Button variant="primary" size="sm" icon={<Icon name="Plus" size="sm" />} onClick={() => go('/reservations/bookings?create=1')}>Create reservation</Button> : undefined}
       />
 
       {failure && <StaleBanner message={`Showing the last figures we have. ${failure}`} onRetry={() => { kpi.reload(); trend.reload(); today.reload(); exc.reload(); portfolio.reload(); channels.reload(); }} />}
