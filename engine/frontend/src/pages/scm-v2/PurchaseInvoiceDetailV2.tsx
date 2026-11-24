@@ -151,8 +151,9 @@ const supplierCodeOf = (h: PiHeader): string => h.supplier?.code || "—";
 const sourceOf = (h: PiHeader): string =>
   h.grn?.grn_number || h.purchase_order?.po_number || "—";
 
+/* A cancelled invoice owes nothing (click sweep G17): it showed "Owed" in red. */
 const outstandingOf = (h: PiHeader): number =>
-  Math.max(0, (h.total_sen ?? 0) - (h.paid_sen ?? 0));
+  (h.status || "").toUpperCase() === "CANCELLED" ? 0 : Math.max(0, (h.total_sen ?? 0) - (h.paid_sen ?? 0));
 
 // PI effective lifecycle.
 type Effective = "draft" | "posted" | "partial" | "paid" | "overdue" | "cancelled" | "on_hold";
@@ -286,17 +287,18 @@ function OwedHeroCard({ header }: { header: PiHeader }) {
   const total = header.total_sen ?? 0;
   const paid = header.paid_sen ?? 0;
   const outstanding = outstandingOf(header);
-  const isPaid = outstanding === 0;
+  const cancelled = eff === "cancelled";
+  const isPaid = !cancelled && outstanding === 0;
   // Multi-currency (Phase 1-A) — MYR-equivalent for a foreign PI (no-op for MYR).
   const isForeign = String(header.currency ?? "MYR").toUpperCase() !== "MYR";
   const rate = resolveFxRate(header.exchange_rate);
   return (
     <div className="rounded-lg bg-sidebar px-5 py-5 text-sidebar-ink shadow-stone">
       <div className="font-mono text-[10px] font-semibold uppercase tracking-brand text-sidebar-ink-muted">
-        {isPaid ? "Paid in full" : "Owed to supplier"}
+        {cancelled ? "Cancelled" : isPaid ? "Paid in full" : "Owed to supplier"}
       </div>
       <div className={cn("mt-1.5 font-money text-[28px] font-bold leading-none tracking-tight text-white")}>
-        {fmtMoney(isPaid ? total : outstanding, header.currency)}
+        {fmtMoney(isPaid || cancelled ? total : outstanding, header.currency)}
       </div>
       <div className="mt-3 flex items-center gap-2">
         <span
@@ -795,8 +797,12 @@ function PurchaseInvoiceDetailV2ReadOnly() {
             {canRecordPayment && (
               <Button variant="secondary" icon={<Wallet size={14} />} onClick={goRecordPayment}>Record payment</Button>
             )}
-            <Button variant="secondary" icon={<Plus size={14} />} onClick={goAddLine}>{ADD_LINE_LABEL}</Button>
-            <Button variant="primary" icon={<Edit3 size={14} />} onClick={goEdit}>Edit</Button>
+            {!isCancelled && (
+              <>
+                <Button variant="secondary" icon={<Plus size={14} />} onClick={goAddLine}>{ADD_LINE_LABEL}</Button>
+                <Button variant="primary" icon={<Edit3 size={14} />} onClick={goEdit}>Edit</Button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -804,9 +810,9 @@ function PurchaseInvoiceDetailV2ReadOnly() {
       <div className="py-5">
         <div className="mb-3 rounded-lg border border-border bg-surface p-4 shadow-stone md:hidden">
           <div className="font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted">
-            {outstanding === 0 ? "Paid in full" : "Owed to supplier"}
+            {isCancelled ? "Cancelled" : outstanding === 0 ? "Paid in full" : "Owed to supplier"}
           </div>
-          <div className={cn("mt-1 font-money text-[26px] font-bold leading-none tracking-tight", outstanding === 0 ? "text-synced" : "text-err")}>
+          <div className={cn("mt-1 font-money text-[26px] font-bold leading-none tracking-tight", isCancelled ? "text-ink-muted line-through" : outstanding === 0 ? "text-synced" : "text-err")}>
             {fmtMoney(outstanding === 0 ? purchaseInvoice.total_sen : outstanding, purchaseInvoice.currency)}
           </div>
           <div className="mt-1.5 text-[12px] text-ink-muted">
@@ -986,7 +992,7 @@ function PurchaseInvoiceDetailV2ReadOnly() {
             <button type="button" onClick={goRecordPayment} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary text-[13.5px] font-bold text-white shadow-sm hover:bg-primary-ink">
               <Wallet size={16} /> Record payment
             </button>
-          ) : (
+          ) : isCancelled ? null : (
             <button type="button" onClick={goEdit} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary text-[13.5px] font-bold text-white shadow-sm hover:bg-primary-ink">
               <Edit3 size={16} /> Edit
             </button>

@@ -8,7 +8,7 @@
 // phone's renovation documents (mobile/MobileRenovationDocs.tsx).
 
 import { FromPackageButton, SaveAsPackageDialog } from './renovationPackagePick';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -48,9 +48,13 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
     `/sales-orders/${encodeURIComponent(c.docNo)}/instalments/${inst!.id}/bill`, 'POST', body));
   /* By id: billing refetches the contract, and a new copy of this instalment must not wipe the result just shown. */
   useEffect(() => { setAmount(inst?.amountSen ?? 0); setNote(null); setError(null); setResult(null); setEinvoice(null); }, [inst?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- amount is read only when another instalment opens
+  /* Click sweep G12: a double click sent two POSTs (201 + 409) before isPending re-rendered the button. */
+  const inFlight = useRef(false);
   if (!inst) return null;
   const negative = amount < 0;
   const submit = async (confirmCreditNote = false) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setError(null);
     try {
       const r = await run.mutateAsync({ invoiceDate: date, expectedAmountSen: amount, confirmCreditNote });
@@ -64,6 +68,8 @@ function BillDialog({ c, inst, onClose }: { c: ContractView; inst: BillingInstal
       if (f.code === 'stale_amount' && typeof f.detail.amountSen === 'number') { void qc.invalidateQueries({ queryKey: ['reno'] }); setAmount(f.detail.amountSen); setNote('The amount changed (a variation order moved the contract sum). Check the new amount and bill again.'); return; }
       if (f.code === 'credit_note_needs_confirm' && typeof f.detail.amountSen === 'number') { setAmount(f.detail.amountSen); setNote(f.message); return; }
       setError(f.message);
+    } finally {
+      inFlight.current = false;
     }
   };
   return (

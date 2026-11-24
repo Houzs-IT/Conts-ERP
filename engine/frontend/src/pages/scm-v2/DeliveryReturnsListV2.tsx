@@ -458,7 +458,7 @@ function DetailDrawer({
                 <XIcon size={18} />
               </button>
               <div className="min-w-0 flex-1">
-                <div className="font-mono text-[14px] font-bold tracking-wide">
+                <div className="truncate whitespace-nowrap font-mono text-[14px] font-bold tracking-wide">
                   {row.return_number}
                 </div>
                 <div className="mt-0.5 text-[11px] text-sidebar-ink-muted">Delivery Return</div>
@@ -468,7 +468,7 @@ function DetailDrawer({
                 onClick={onOpenFull}
                 className="inline-flex items-center gap-1.5 rounded-md border border-accent-bright/40 px-2.5 py-1.5 text-[11.5px] font-semibold text-accent-bright hover:bg-accent-bright/10"
               >
-                Open full page <ExternalLink size={12} />
+                <span className="hidden sm:inline">Open full page</span> <ExternalLink size={12} aria-label="Open full page" />
               </button>
               <Badge tone={st.tone} variant="solid" size="xs">
                 {st.label}
