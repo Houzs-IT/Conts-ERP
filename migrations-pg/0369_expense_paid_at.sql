@@ -5,3 +5,5 @@
 -- paid or not). YYYY-MM-DD, empty = not paid yet. It is not money: it changes no figure on any statement, so it may be
 -- set on a bill whose month is already final.
 alter table pos.expenses add column if not exists paid_at text;
+-- Demo mode mirrors every pos column (0203): its views take the new one.
+select demo.sync();
