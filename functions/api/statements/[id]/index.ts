@@ -5,6 +5,17 @@ import { unitCode } from '../../../_lib/ownerReport';
 /** GET /api/statements/:id — one statement with everything behind it: its units (nights, income, deductions,
  *  split, guarantee, adjustments, payout), every line with the booking, expense or adjustment it came from,
  *  the payout once sent, and what finance should check before finalising. */
+/** A statement unit's stored checks: the warnings, and the stays counted at RM 0 that staff can enter income for. */
+function unitNotes(notes: string | null): { warnings: string[]; unpaidStays: Array<{ id: string; checkIn: string; checkOut: string; nights: number; guestName: string | null }> } {
+  if (!notes) return { warnings: [], unpaidStays: [] };
+  try {
+    const v = JSON.parse(notes) as unknown;
+    if (Array.isArray(v)) return { warnings: v.map(String), unpaidStays: [] };
+    const o = v as { warnings?: unknown; unpaidStays?: unknown };
+    return { warnings: Array.isArray(o.warnings) ? o.warnings.map(String) : [], unpaidStays: Array.isArray(o.unpaidStays) ? o.unpaidStays as never : [] };
+  } catch { return { warnings: [], unpaidStays: [] }; }
+}
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
@@ -44,7 +55,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
         basis: u.basis, termsSource: u.terms_source, nights: u.nights, days: u.days, grossIncome: u.gross_income, deductions: u.deductions, netIncome: u.net_income,
         ownerPct: u.owner_pct === null ? null : Number(u.owner_pct), operatorShare: u.operator_share, guarantee: u.guarantee, topUp: u.top_up, fixedRent: u.fixed_rent,
         payoutBeforeAdjustments: u.payout_before_adjustments, adjustments: u.adjustments_total, netPayout: u.net_payout,
-        warnings: u.notes ? (JSON.parse(u.notes) as string[]) : [],
+        /* notes: a plain list of warnings (before 24 Nov 2026), or { warnings, unpaidStays }. */
+        ...unitNotes(u.notes),
       })),
       lines: lines.map(l => ({
         id: l.id, unitId: l.unit_id, unitLabel: l.property_name ? `${l.property_name} ${l.unit_number}` : null, type: l.line_type, category: l.category,

@@ -1,5 +1,5 @@
 import { OTA_CHANNELS, SALES_CHANNELS, upliftFor, defaultUpliftShare } from '../../_lib/channelPrice';
-import { loadPricing, pricesFor, holidayNight } from '../../_lib/unitPricing';
+import { loadPricing, pricesFor, holidayNight, applyPricingDefaults } from '../../_lib/unitPricing';
 import { holidaysReady, listHolidays } from '../../_lib/holidays';
 import { type Env, all, json, fail } from '../../_lib/db';
 import { rentalOnly } from '../../_lib/unitPurpose';
@@ -19,6 +19,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { session, response } = await requireSession(request, env);
   if (!session) return response!;
   if (isFieldRole(session.role)) return fail('FORBIDDEN', 'The calendar is not available to cleaners and technicians.', 403);
+  const commission = await applyPricingDefaults(env);
 
   const url = new URL(request.url);
   const from = url.searchParams.get('from') ?? new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
@@ -122,6 +123,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // For pricing new web prices in Rate update: uplifts set by hand, and the share each site adds otherwise.
     savedUplifts: Object.fromEntries(uplifts.map(x => [`${x.unit_id}:${x.channel}`, Number(x.uplift)])),
     upliftShares: Object.fromEntries(OTA_CHANNELS.map(ch => [ch, defaultUpliftShare(ch)])),
+    // Each site's commission in percent (Settings > Pricing), for what is kept after the site's cut.
+    commission,
     canSetRates,
     // Each channel's standard price per level, keyed "unitId:channel" (web is direct): { base, weekend, holiday }.
     // A night with no custom price sells at holiday (when listed in holidayNights and the channel has one), else

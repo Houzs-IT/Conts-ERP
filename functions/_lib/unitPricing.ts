@@ -1,4 +1,5 @@
 import { type Env, all } from './db';
+import { UPLIFT_FALLBACK, setDefaultUplifts } from './channelPrice';
 import { hasColumn } from './auth';
 import { holidayDatesByUnit } from './holidays';
 import {
@@ -23,6 +24,7 @@ const IN = 'IN (SELECT jsonb_array_elements_text(?::text::jsonb))';
 
 /** The pricing of the given units, with the holidays from `from` to `to` (a holiday eve on `to` needs the next day). */
 export async function loadPricing(env: Env, unitIds: string[], from: string, to: string): Promise<Map<string, UnitPricing>> {
+  await applyPricingDefaults(env);
   const out = new Map<string, UnitPricing>();
   if (!unitIds.length) return out;
   const ready = await pricingReady(env);
@@ -61,3 +63,28 @@ export const standardPrice = (p: UnitPricing, channel: string, date: string): nu
 /** Every channel's prices per level, Direct first. */
 export const grid = (p: UnitPricing): Record<SalesChannel, LevelPrices> =>
   Object.fromEntries(SALES_CHANNELS.map(ch => [ch, pricesFor(p, ch)])) as Record<SalesChannel, LevelPrices>;
+
+/** The booking sites' commission and default uplift, in percent, from Settings (the locale section) (owner, 24 Nov 2026). */
+export const COMMISSION_FALLBACK: Readonly<Record<string, number>> = { airbnb: 15, booking_com: 15, agoda: 18 };
+const SETTING_OF: Record<string, string> = { airbnb: 'airbnb', booking_com: 'bookingCom', agoda: 'agoda' };
+let pricingSeen: { at: number; commission: Record<string, number> } | null = null;
+
+/** Loads Settings > Pricing (kept a minute per worker) and applies the default uplift to every price worked out after it.
+ *  Returns the commission percentages for the screens that show what is kept after a site's cut. Never throws. */
+export async function applyPricingDefaults(env: Env): Promise<Record<string, number>> {
+  if (pricingSeen && Date.now() - pricingSeen.at < 60_000) return pricingSeen.commission;
+  const commission: Record<string, number> = { ...COMMISSION_FALLBACK };
+  const uplift: Record<string, number> = { ...UPLIFT_FALLBACK };
+  try {
+    const rows = await all<{ key: string; value: string }>(env, `SELECT key, value FROM settings WHERE key LIKE 'locale.%'`);
+    const map = new Map(rows.map(r => [r.key, Number(r.value)]));
+    for (const [ch, name] of Object.entries(SETTING_OF)) {
+      const c = map.get(`locale.${name}Commission`), up = map.get(`locale.${name}Uplift`);
+      if (c !== undefined && Number.isFinite(c)) commission[ch] = c;
+      if (up !== undefined && Number.isFinite(up)) uplift[ch] = up / 100;
+    }
+  } catch { /* the settings table not reachable: the built-in figures stand */ }
+  setDefaultUplifts(uplift);
+  pricingSeen = { at: Date.now(), commission };
+  return commission;
+}

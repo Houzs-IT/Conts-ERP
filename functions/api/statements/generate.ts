@@ -57,7 +57,50 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (!ids.has(ownerId)) ids.set(ownerId, existingOf.get(ownerId)?.id ?? crypto.randomUUID());
       return ids.get(ownerId)!;
     };
-    const months = computeMonth(period, { ...inputs, units }, settings, 'open', idOf).filter(hasActivity);
+    let months = computeMonth(period, { ...inputs, units }, settings, 'open', idOf).filter(hasActivity);
+
+    /* A debt deducted in one go must not make an owner's payout negative (owner, 24 Nov 2026: RM 14,000 on a RM 4,630
+       month gave -RM 9,369.70). Where this month's owner charges push an owner below zero, the latest of them is cut to
+       what the month can take and the rest goes on as an open charge dated the first day of next month, so each month
+       deducts what it can until the debt is paid. Only provisional statements; every split is audited. */
+    const nextMonthDay = endEx;
+    let split = 0;
+    const perOwner = new Map<string, UnitMonth[]>();
+    for (const m of months) { const l = perOwner.get(m.ownerId); if (l) l.push(m); else perOwner.set(m.ownerId, [m]); }
+    for (const [ownerId, list] of perOwner) {
+      const cur = existingOf.get(ownerId);
+      if (cur && cur.state !== 'provisional') continue;
+      let deficit = -list.reduce((n, m) => n + m.netPayout, 0);
+      if (deficit <= 0) continue;
+      const attached = new Set(list.flatMap(m => m.adjustmentIds));
+      // A lock's late-change difference (ownerLocks.ts, id adj-lock-) belongs to its month by the close rules: never moved.
+      const debits = inputs.adjustments.filter(a => attached.has(a.id) && Number(a.amount) < 0 && !a.id.startsWith('adj-lock-'))
+        .sort((a, b) => b.occurred_on.localeCompare(a.occurred_on) || b.id.localeCompare(a.id));
+      for (const a of debits) {
+        if (deficit <= 0) break;
+        const owed = -Number(a.amount), cut = Math.min(deficit, owed), now = nowIso();
+        if (cut >= owed) {
+          // The whole charge waits for next month.
+          await run(tx, 'UPDATE owner_adjustments SET occurred_on = ?, statement_id = NULL, updated_at = ? WHERE id = ?', nextMonthDay, now, a.id);
+        } else {
+          await run(tx, 'UPDATE owner_adjustments SET amount = ?, updated_at = ? WHERE id = ?', Number(a.amount) + cut, now, a.id);
+          await run(tx, `INSERT INTO owner_adjustments (id, owner_id, unit_id, kind, amount, description, occurred_on, reference, state, source, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', 'manual', ?, ?, ?)`,
+            crypto.randomUUID(), a.owner_id, a.unit_id, a.kind, -cut, `${a.description.replace(/ \(rest carried from \d{4}-\d{2}\)$/, '')} (rest carried from ${period})`.slice(0, 500),
+            nextMonthDay, a.reference, session.userId, now, now);
+        }
+        await audit(tx, { actorId: session.userId, actorLabel: session.fullName, action: 'owner_adjustment.carried', entityTable: 'owner_adjustments', entityId: a.id,
+          before: { amount: Number(a.amount), occurredOn: a.occurred_on },
+          after: { keptThisMonth: cut >= owed ? 0 : Number(a.amount) + cut, carriedToNextMonth: -cut, nextMonth: nextMonthDay, period } });
+        deficit -= cut;
+        split++;
+      }
+    }
+    if (split) {
+      // Read the owner charges again so the statements below carry the split.
+      const again = await withYearToDate(q, await loadInputs(q, start, endEx, ownerIds ? { ownerIds } : {}), period, settings);
+      months = computeMonth(period, { ...again, units: again.units.filter(u => u.owner_name.toLowerCase() !== PLACEHOLDER_OWNER.toLowerCase()) }, settings, 'open', idOf).filter(hasActivity);
+    }
 
     const byOwner = new Map<string, UnitMonth[]>();
     for (const m of months) { const l = byOwner.get(m.ownerId); if (l) l.push(m); else byOwner.set(m.ownerId, [m]); }
@@ -85,7 +128,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           id: crypto.randomUUID(), statement_id: id, unit_id: m.unitId, basis: m.terms.basis === 'none' ? 'fixed_rent' : m.terms.basis, revenue_model: m.terms.model,
           terms_source: m.terms.source, nights: m.nights, days: m.days,
           gross_income: m.gross, deductions: m.deductions, net_income: m.net, owner_pct: m.ownerPct, operator_share: m.operatorShare, guarantee: m.guarantee,
-          top_up: m.topUp, fixed_rent: m.fixedRent, payout_before_adjustments: m.payoutBeforeAdjustments, adjustments_total: m.adjustmentsTotal, net_payout: m.netPayout, notes: m.warnings.length ? JSON.stringify(m.warnings) : null, created_at: now,
+          top_up: m.topUp, fixed_rent: m.fixedRent, payout_before_adjustments: m.payoutBeforeAdjustments, adjustments_total: m.adjustmentsTotal, net_payout: m.netPayout, notes: m.warnings.length || m.unpaidStays.length ? JSON.stringify({ warnings: m.warnings, unpaidStays: m.unpaidStays }) : null, created_at: now,
         });
       }
       statements.push({ id, owner_id: ownerId, period_start: start, period_end: end, gross_booking_value: gross, management_fee: fee, expenses_total: costs,

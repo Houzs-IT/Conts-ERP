@@ -218,3 +218,28 @@ export async function documentsFor(env: Env, reservationId: string): Promise<Doc
     return []; // before migration 0097
   }
 }
+
+/** The live invoice of a booking, if one is issued. */
+export async function liveInvoiceOf(env: Env, reservationId: string): Promise<{ id: string; doc_no: string } | null> {
+  try {
+    return await one<{ id: string; doc_no: string }>(env, `SELECT id, doc_no FROM issued_documents WHERE reservation_id = ? AND doc_type = 'invoice' AND voided_at IS NULL`, reservationId);
+  } catch { return null; } // before migration 0097
+}
+
+/** After a booking's dates or total change, its issued invoice is for the old stay (owner, 24 Nov 2026): void it and issue a
+ *  new one for the stay as it now is. Never throws: the booking change is already saved, so a failure is returned as text. */
+export async function reissueInvoiceAfterChange(env: Env, session: Session, reservationId: string, what: string): Promise<{ voided: string; issued: string | null; problem: string | null } | null> {
+  const live = await liveInvoiceOf(env, reservationId);
+  if (!live) return null;
+  try {
+    await voidDoc(env, session, live.id, `Replaced: the reservation's ${what} changed.`);
+  } catch (e) {
+    return { voided: '', issued: null, problem: `Invoice ${live.doc_no} could not be voided (${e instanceof Error ? e.message : String(e)}). Void and reissue it from the reservation.` };
+  }
+  try {
+    const doc = await issue(env, session, { type: 'invoice', reservationId });
+    return { voided: live.doc_no, issued: doc.docNo, problem: null };
+  } catch (e) {
+    return { voided: live.doc_no, issued: null, problem: `Invoice ${live.doc_no} was voided, but a new one could not be issued: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}

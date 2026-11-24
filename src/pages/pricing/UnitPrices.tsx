@@ -34,7 +34,7 @@ function Tag({ text, kind }: { text: string; kind: 'internal' | 'external' }) {
 
 /** One unit's prices: the direct price of each level, every channel's resulting price per level (editable: a channel
  *  price typed in switches that channel to fixed prices), how each channel is priced, and the internal cost floor. */
-export function UnitPrices({ unit, levelsReady, onSaved }: { unit: PricedUnit; levelsReady: boolean; onSaved: () => void }) {
+export function UnitPrices({ unit, levelsReady, commission, onSaved }: { unit: PricedUnit; levelsReady: boolean; commission?: Record<string, number>; onSaved: () => void }) {
   const toast = useToast();
   const [ruleFor, setRuleFor] = useState<ChannelRate | null>(null);
   const [busy, setBusy] = useState(false);
@@ -78,7 +78,7 @@ export function UnitPrices({ unit, levelsReady, onSaved }: { unit: PricedUnit; l
         : <EditableMoney sen={value} clearable={level !== 'base'} minSen={1} emptyLabel="Uses weekend or nightly" ariaLabel={`Direct ${LEVEL_LABEL[level].toLowerCase()}`} onCommit={s => setDirect(level, s)} />;
     }
     const r = unit.rates.find(x => x.channel === c)!;
-    const keep = value == null ? null : Math.round(value * (1 - COMMISSION[c] / 100));
+    const keep = value == null ? null : Math.round(value * (1 - (commission?.[c] ?? COMMISSION[c]) / 100));
     return (
       <span className="inline-flex flex-col items-end">
         {!levelsReady ? <span className="tabular-nums">{value == null ? '—' : rmWhole(value)}</span> : (

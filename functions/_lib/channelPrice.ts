@@ -21,8 +21,12 @@ export type OtaChannel = typeof OTA_CHANNELS[number];
 export const PRICE_LEVELS = ['base', 'weekend', 'holiday'] as const;
 export type PriceLevel = typeof PRICE_LEVELS[number];
 
-/** Until someone sets a rule by hand, each channel adds this share of the night's direct price. */
-const DEFAULT_UPLIFT: Record<string, number> = { airbnb: 0.12, booking_com: 0.18, agoda: 0.16 };
+/** Until someone sets a rule by hand, each channel adds this share of the night's direct price. Settings > Pricing
+ *  changes it (owner, 24 Nov 2026); unitPricing.applyPricingDefaults loads it before any price is worked out. */
+export const UPLIFT_FALLBACK: Readonly<Record<string, number>> = { airbnb: 0.12, booking_com: 0.18, agoda: 0.16 };
+const DEFAULT_UPLIFT: Record<string, number> = { ...UPLIFT_FALLBACK };
+/** Sets the default shares from Settings (fractions, e.g. 0.12). */
+export function setDefaultUplifts(shares: Record<string, number>): void { Object.assign(DEFAULT_UPLIFT, shares); }
 
 /** The share of the direct price a channel adds while nobody has set its rule by hand. */
 export const defaultUpliftShare = (channel: string) => DEFAULT_UPLIFT[channel] ?? 0;

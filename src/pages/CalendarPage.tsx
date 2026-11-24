@@ -67,7 +67,7 @@ interface Payload {
   rates?: Record<string, number>;
   /** Each booking site's uplift on a weekday night, and on a weekend night (a default uplift is a share of the night's web price). */
   uplifts?: Record<string, number>; weekendUplifts?: Record<string, number>;
-  savedUplifts?: Record<string, number>; upliftShares?: Record<string, number>;
+  savedUplifts?: Record<string, number>; upliftShares?: Record<string, number>; commission?: Record<string, number>;
   /** Each channel's price per level, keyed "unitId:channel" (functions/_lib/channelPrice.ts), and each unit's holiday
    *  nights in the window. Missing (an older backend): the weekend and uplift fields above are used. */
   levelPrices?: Record<string, LevelPrices>; holidayNights?: Record<string, string[]>;
@@ -425,9 +425,11 @@ function CalendarBoard() {
         setBusy(true);
         setDateEdits(e => ({ ...e, [b.id]: { checkIn: newCheckIn, checkOut: newCheckOut } }));
         try {
-          const res = await api.patch<{ effects?: { channel: ChannelSync }; notice?: string | null }>(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true });
+          const res = await api.patch<{ effects?: { channel: ChannelSync; invoice?: string | null }; notice?: string | null }>(`/reservations/${b.id}/dates`, { checkIn: newCheckIn, checkOut: newCheckOut, confirm: true });
           toast({ tone: 'success', title: 'Reservation moved.', body: `${b.guestName || 'The reservation'} is now ${dateRange(newCheckIn, newCheckOut)}. ${channelNote(res?.effects?.channel, 'moved')}`.trim() });
           if (res?.notice) toast(incomeLockedToast(res.notice));
+          // An issued invoice was for the old dates: it was voided and a new one issued (owner, 24 Nov 2026).
+          if (res?.effects?.invoice) toast({ tone: 'info', title: 'Invoice replaced.', body: res.effects.invoice });
           reload();
         } catch (e) {
           // Put the bar back where it was: the server kept the old dates.
@@ -928,7 +930,7 @@ function CalendarBoard() {
       {rateUpdate && <RateUpdate units={rateSource?.units ?? allUnits} initial={rateUpdate} onClose={() => setRateUpdate(false)}
         loadingAll={property !== 'all' && !everyUnit.data} building={property !== 'all' ? property : undefined}
         preselect={!rateUpdate.unitIds && property !== 'all' && units.length <= 12 ? units.map(u => u.id) : undefined}
-        pricing={{ baseRate: { ...(rateSource?.baseRate ?? {}), ...(data?.baseRate ?? {}) }, weekendRate: { ...(rateSource?.weekendRate ?? {}), ...(data?.weekendRate ?? {}) }, savedUplifts: { ...(rateSource?.savedUplifts ?? {}), ...(data?.savedUplifts ?? {}) }, upliftShares: data?.upliftShares ?? rateSource?.upliftShares, channelRules: { ...(rateSource?.channelRules ?? {}), ...(data?.channelRules ?? {}) } }}
+        pricing={{ baseRate: { ...(rateSource?.baseRate ?? {}), ...(data?.baseRate ?? {}) }, weekendRate: { ...(rateSource?.weekendRate ?? {}), ...(data?.weekendRate ?? {}) }, savedUplifts: { ...(rateSource?.savedUplifts ?? {}), ...(data?.savedUplifts ?? {}) }, upliftShares: data?.upliftShares ?? rateSource?.upliftShares, commission: data?.commission ?? rateSource?.commission, channelRules: { ...(rateSource?.channelRules ?? {}), ...(data?.channelRules ?? {}) } }}
         onDone={(v, res) => {
           setRateUpdate(false);
           const ranges = v.lines.length === 1 ? dateRange(v.lines[0].from, v.lines[0].to) : plural(v.lines.length, 'date range');
