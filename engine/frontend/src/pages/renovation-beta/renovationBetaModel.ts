@@ -716,6 +716,8 @@ export interface StepperInput {
   today: string;
   /** The current step against its SLA (ProjectDetailV2.stepSla), the same day count the project list shows. */
   sla?: (StepSlaDays & { stepKey: string }) | null;
+  /** The Design steps (the row under Design, the same ones Calendar's Progress shows): Design is ticked only when all are done. */
+  design?: { done: number; total: number };
 }
 
 /** The engine's own order of the flow; the mockup draws Sales order before Design. */
@@ -728,7 +730,7 @@ export function soConfirmed(status: string | null | undefined): boolean {
   return s !== "" && s !== "DRAFT" && s !== "CANCELLED";
 }
 
-/** The mockup's six circles in its order. Flow at design: Sales order not signed, Design current. Flow at signed: Sales order done, Design current. Ordering or later: both done. */
+/** The mockup's six circles in its order. Flow at design: Sales order not signed, Design current. Flow at signed: Sales order done, Design current. Ordering or later: both done, except a Design with steps still open. */
 export function stepperItems(i: StepperInput): StepperItem[] {
   const days = renovationDays(i.tasks, i.today);
   const cur = FLOW_RANK[i.currentKey] ?? i.currentIndex;
@@ -739,6 +741,10 @@ export function stepperItems(i: StepperInput): StepperItem[] {
     if (key === "signed") {
       const done = cur >= 1 || soConfirmed(i.soStatus);
       return { key, label: "Sales order", state: done ? "done" : "later", sub: done ? (i.soDate ? `Signed ${dayMonth(i.soDate)}` : "Signed") : "Not signed yet" };
+    }
+    const { design } = i;
+    if (key === "design" && cur >= 2 && design && design.done < design.total) {
+      return { key, label: label(key, key), state: "later", sub: `Moved on · ${design.done} of ${design.total} done` };
     }
     const state: StepperItem["state"] = key === "design" ? (cur >= 2 ? "done" : "current") : rank < cur ? "done" : rank === cur ? "current" : "later";
     let sub = "-";
