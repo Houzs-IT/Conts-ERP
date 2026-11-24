@@ -283,7 +283,7 @@ renovation.get('/lookups/products', handle(null, async (c, { sqlRead }) => {
        left join scm.suppliers s on s.id = b.supplier_id
       where p.company_id = $1 and p.status = 'ACTIVE' and p.code not like 'RENO-%'
         and ($2 = '' or p.code ilike '%' || $2 || '%' or p.name ilike '%' || $2 || '%')
-      order by (p.code ilike 'RN-%') desc, p.code
+      order by lower(p.code) = lower($2) desc, (p.code ilike 'RN-%') desc, p.code
       limit 50`,
     [actorOf(c).companyId, q],
   );
