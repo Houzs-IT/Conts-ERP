@@ -182,11 +182,11 @@ test('a shared endpoint takes the highest level the person has on any of its pag
   assert.equal(tie.level, 'none');
 });
 
-test('each company closes the other one\'s categories: The Conts closes Projects, Dream Crafter closes HR', () => {
-  assert.equal(closedBySide('staff', 'conts', 'Projects'), true);
-  assert.equal(closedBySide('staff', 'dream_crafter', 'Projects'), false);
+test('each company closes the other one\'s categories: The Conts closes Supply chain, Dream Crafter closes HR', () => {
+  assert.equal(closedBySide('staff', 'conts', 'Supply chain'), true);
+  assert.equal(closedBySide('staff', 'conts', 'Projects'), false);
   assert.equal(closedBySide('staff', 'dream_crafter', 'HR'), true);
-  assert.equal(closedBySide('management', 'conts', 'Projects'), false);
+  assert.equal(closedBySide('management', 'conts', 'Supply chain'), false);
   assert.equal(AREAS.some(a => a.key === 'dcHr'), false);
   for (const key of ['lockIncome', 'lockDeductions', 'lockO2', 'unlockStep']) assert.equal(area(key).group, 'Units', key);
 });
@@ -204,6 +204,15 @@ test('every permission category is a section of the menu, so the chart reads lik
 const role = ({ position = {}, department = {} } = {}) => ({
   position: { rules: new Map(Object.entries(position)) },
   department: { rules: new Map(Object.entries(department)) },
+});
+
+test('the other company\'s groups: closed to a one-company department\'s rules, open to a Both department\'s and to the person', () => {
+  const department = { 'group:Supply chain': 'edit' };
+  assert.deepEqual(at({ ...rules({ department }), side: 'both' }, 'scSales'), { level: 'edit', origin: 'department' });
+  assert.deepEqual(at({ ...rules({ department }), side: 'conts' }, 'scSales'), { level: 'none', origin: 'none' });
+  assert.deepEqual(at({ ...rules({ department, user: { scSales: 'view' } }), side: 'conts' }, 'scSales'), { level: 'view', origin: 'user' });
+  const conts = { ...rules(), side: 'conts', extra: [{ ...role({ department }), side: 'both' }] };
+  assert.deepEqual(at(conts, 'scSales'), { level: 'edit', origin: 'department' });
 });
 
 test('extra roles: each area takes the highest level any role gives', () => {

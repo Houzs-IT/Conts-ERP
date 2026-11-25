@@ -181,7 +181,7 @@ export type RuleMap = ReadonlyMap<string, Setting>;
 export interface DepartmentRules { rules: RuleMap }
 export interface PositionRules { rules: RuleMap }
 export interface UserOverrides { rules: RuleMap }
-export interface RoleRules { department: DepartmentRules; position: PositionRules }
+export interface RoleRules { department: DepartmentRules; position: PositionRules; side?: Side }
 /** `department` / `position`: the person's main role. `extra`: their other roles (migration 0349). */
 export interface Rules extends RoleRules { user: UserOverrides; extra?: readonly RoleRules[] }
 export interface Who { userId: string; departmentId: string | null; positionId: string | null; kind: DepartmentKind }
@@ -197,8 +197,8 @@ const levelIn = (rules: RuleMap, key: string): PermissionLevel | null => {
  * One person's level in one area. Management is Full and cannot be changed; cleaning and maintenance have no desk
  * areas. Everyone else: the area's own setting at user, then position, then department; then the category baseline at
  * position, then department; then No access. An area setting at any tier beats every baseline, so a door a department
- * closes explicitly stays closed. 'inherit' counts as not set. The side closing the other side's categories is not
- * part of this.
+ * closes explicitly stays closed. 'inherit' counts as not set. A role whose department is on one company gives nothing
+ * in the other company's categories; the person's own setting still does.
  * A person with extra roles gets the highest level any one role gives. Their own setting comes first in every role, so
  * it still decides when set; one role's No access does not close what another role opens.
  */
@@ -212,15 +212,14 @@ export function resolveFor(rules: Rules, who: Pick<Who, 'kind'>, area: Area): Re
 
 function resolveRole(rules: Rules, area: Area): Resolution {
   const group = groupKey(area.group);
-  const steps: [Origin, RuleMap, string][] = [
-    ['user', rules.user.rules, area.key],
-    ['position', rules.position.rules, area.key],
-    ['department', rules.department.rules, area.key],
-    ['position', rules.position.rules, group],
-    ['department', rules.department.rules, group],
-  ];
+  const areaSteps: [Origin, RuleMap, string][] = [['position', rules.position.rules, area.key], ['department', rules.department.rules, area.key]];
+  const groupSteps: [Origin, RuleMap, string][] = [['position', rules.position.rules, group], ['department', rules.department.rules, group]];
+  // The Roles page hides the other company's groups, but older rules for them are still stored.
+  const isClosedToRole = !!rules.side && closedBySide('staff', rules.side, area.group);
   // A power given one by one takes no category baseline.
-  for (const [origin, map, key] of area.ownGrant ? steps.slice(0, 3) : steps) {
+  const roleSteps = isClosedToRole ? [] : area.ownGrant ? areaSteps : [...areaSteps, ...groupSteps];
+  const userStep: [Origin, RuleMap, string] = ['user', rules.user.rules, area.key];
+  for (const [origin, map, key] of [userStep, ...roleSteps]) {
     const level = levelIn(map, key);
     if (level) return { level, origin };
   }
@@ -241,17 +240,23 @@ export async function rulesFor(env: Env, who: Who): Promise<Rules> {
            OR (scope = 'position' AND (scope_id = ? OR scope_id IN (${extraPositions})))
            OR (scope = 'department' AND (scope_id = ? OR scope_id IN (${extraDepartments})))
        UNION ALL
-       SELECT 'role', r.position_id, p.department_id, '' FROM user_roles r JOIN positions p ON p.id = r.position_id WHERE r.user_id = ?`
+       SELECT 'role', r.position_id, p.department_id, '' FROM user_roles r JOIN positions p ON p.id = r.position_id WHERE r.user_id = ?
+       UNION ALL
+       SELECT 'side', d.id, d.side, '' FROM departments d WHERE d.id = ? OR d.id IN (${extraDepartments})`
     : `SELECT scope, scope_id, area, level FROM access_rules
-        WHERE (scope = 'user' AND scope_id = ?) OR (scope = 'position' AND scope_id = ?) OR (scope = 'department' AND scope_id = ?)`,
+        WHERE (scope = 'user' AND scope_id = ?) OR (scope = 'position' AND scope_id = ?) OR (scope = 'department' AND scope_id = ?)
+       UNION ALL
+       SELECT 'side', d.id, d.side, '' FROM departments d WHERE d.id = ?`,
   ...(withRoles
-    ? [who.userId, who.positionId, who.userId, who.departmentId, who.userId, who.userId]
-    : [who.userId, who.positionId, who.departmentId]));
+    ? [who.userId, who.positionId, who.userId, who.departmentId, who.userId, who.userId, who.departmentId, who.userId]
+    : [who.userId, who.positionId, who.departmentId, who.departmentId]));
   const user = new Map<string, Setting>();
   const byScope = { department: new Map<string, Map<string, Setting>>(), position: new Map<string, Map<string, Setting>>() };
   const roles: { positionId: string; departmentId: string }[] = [];
+  const departmentSides = new Map<string, Side>();
   for (const r of rows) {
     if (r.scope === 'role') { roles.push({ positionId: r.scope_id, departmentId: r.area }); continue; }
+    if (r.scope === 'side') { if (isSide(r.area)) departmentSides.set(r.scope_id, r.area); continue; }
     if (r.scope !== 'department' && r.scope !== 'position' && r.scope !== 'user') continue;
     // A category row holds a level; an area row a level or 'inherit', as in role_access.
     const { level } = r;
@@ -265,6 +270,7 @@ export async function rulesFor(env: Env, who: Who): Promise<Rules> {
   const roleRules = (departmentId: string | null, positionId: string | null): RoleRules => ({
     department: { rules: (departmentId && byScope.department.get(departmentId)) || new Map() },
     position: { rules: (positionId && byScope.position.get(positionId)) || new Map() },
+    side: departmentId ? departmentSides.get(departmentId) : undefined,
   });
   return {
     ...roleRules(who.departmentId, who.positionId),
@@ -386,12 +392,15 @@ export async function accessFor(env: Env, who: Actor, path: string, method = 'GE
   const staff = isStaff(who);
   const areas = routeAreas(method, path);
   if (!areas) return { area: null, level: 'full', chosen: false, role, staff };
-  // Closed by the account's side: treated as a chosen No access, so the handlers' own role lists give way too.
-  const openAreas = areas.filter(area => !offSide(kind, who.side ?? 'both', area));
-  if (openAreas.length === 0) return { area: areas[0], level: 'none', chosen: true, role, staff };
-  if (!staff) return { area: openAreas[0], level: kind === 'management' ? 'full' : 'none', chosen: false, role, staff };
+  if (!staff) {
+    // Closed by the account's side: treated as a chosen No access, so the handlers' own role lists give way too.
+    const openAreas = areas.filter(area => !offSide(kind, who.side ?? 'both', area));
+    if (openAreas.length === 0) return { area: areas[0], level: 'none', chosen: true, role, staff };
+    return { area: openAreas[0], level: kind === 'management' ? 'full' : 'none', chosen: false, role, staff };
+  }
+  // Desk staff: each role's department closes the other company's groups to that role's rules (resolveFor).
   const rules = await rulesCached(env, whoOf(who));
-  const best = highestLevelOf(openAreas.map(area => ({ area, level: resolveFor(rules, whoOf(who), area).level })));
+  const best = highestLevelOf(areas.map(area => ({ area, level: resolveFor(rules, whoOf(who), area).level })));
   return { area: best.area, level: best.level, chosen: true, role, staff };
 }
 
@@ -417,11 +426,9 @@ export function refusalFor(a: Access, method: string): string | null {
 
 /** Every area's level for one person: what their menu and screens follow. */
 export async function levelsFor(env: Env, who: Actor): Promise<Record<string, Level>> {
-  const kind = kindOf(who);
-  const side = who.side ?? 'both';
   const w = whoOf(who);
   const rules = isStaff(who) ? await rulesCached(env, w) : noRules;
-  return Object.fromEntries(AREAS.map(a => [a.key, offSide(kind, side, a) || hasNoDeskAreas(who.role) ? 'none' : resolveFor(rules, w, a).level]));
+  return Object.fromEntries(AREAS.map(a => [a.key, hasNoDeskAreas(who.role) ? 'none' : resolveFor(rules, w, a).level]));
 }
 
 /** One area's level for the person, for a handler whose action belongs to a different area than the request's path
@@ -442,13 +449,14 @@ export async function peopleWithAccess(env: Env, areaKey: string, min: Level): P
   if (!area) return [];
   const withRoles = await userRolesReady(env);
   const [people, rows, extraRoles] = await Promise.all([
-    all<{ id: string; role: string; side: string | null; department_id: string | null; position_id: string | null; kind: string | null }>(env,
-      `SELECT u.id, u.role, ${withRoles ? sideWithRolesSql('u', 'd') : sideSql('u', 'd')} AS side, u.department_id, u.position_id, d.kind
+    all<{ id: string; role: string; department_side: string | null; department_id: string | null; position_id: string | null; kind: string | null }>(env,
+      `SELECT u.id, u.role, d.side AS department_side, u.department_id, u.position_id, d.kind
          FROM users u LEFT JOIN departments d ON d.id = u.department_id WHERE u.is_active = 1 AND u.role <> 'owner'`),
     all<{ scope: string; scope_id: string; area: string; level: string }>(env, 'SELECT scope, scope_id, area, level FROM access_rules'),
     withRoles
-      ? all<{ user_id: string; position_id: string; department_id: string }>(env,
-        'SELECT r.user_id, r.position_id, p.department_id FROM user_roles r JOIN positions p ON p.id = r.position_id')
+      ? all<{ user_id: string; position_id: string; department_id: string; department_side: string | null }>(env,
+        `SELECT r.user_id, r.position_id, p.department_id, d.side AS department_side
+           FROM user_roles r JOIN positions p ON p.id = r.position_id JOIN departments d ON d.id = p.department_id`)
       : Promise.resolve([]),
   ]);
   const mapFor = (scope: string, id: string | null): Map<string, Setting> => {
@@ -460,10 +468,12 @@ export async function peopleWithAccess(env: Env, areaKey: string, min: Level): P
   for (const p of people) {
     const kind = kindOf({ role: p.role, kind: isKind(p.kind) ? p.kind : null });
     if ((kind !== 'management' && kind !== 'staff') || hasNoDeskAreas(p.role)) continue;
-    if (offSide(kind, isSide(p.side) ? p.side : 'both', area)) continue;
     const extra = extraRoles.filter(r => r.user_id === p.id && r.position_id !== p.position_id)
-      .map(r => ({ department: { rules: mapFor('department', r.department_id) }, position: { rules: mapFor('position', r.position_id) } }));
-    const rules: Rules = { department: { rules: mapFor('department', p.department_id) }, position: { rules: mapFor('position', p.position_id) }, user: { rules: mapFor('user', p.id) }, extra };
+      .map(r => ({ department: { rules: mapFor('department', r.department_id) }, position: { rules: mapFor('position', r.position_id) }, side: isSide(r.department_side) ? r.department_side : undefined }));
+    const rules: Rules = {
+      department: { rules: mapFor('department', p.department_id) }, position: { rules: mapFor('position', p.position_id) },
+      side: isSide(p.department_side) ? p.department_side : undefined, user: { rules: mapFor('user', p.id) }, extra,
+    };
     if (RANK[resolveFor(rules, { kind }, area).level] >= RANK[min]) out.push({ id: p.id, kind });
   }
   return out;

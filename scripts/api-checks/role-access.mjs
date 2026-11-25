@@ -19,7 +19,7 @@ const staffPos = ops?.positions.find(p => p.name === 'Operations Staff');
 const areaCount = (start?.categories ?? []).reduce((n, c) => n + c.areas.length, 0);
 check('chart lists every area and every department with its positions', r.status === 200 && areaCount >= 20 && !!ops && !!finance && !!management && !!staffPos && start.canEdit === true, r.text.slice(0, 200));
 const stored = (scope, id, key) => start.rules[scope][id]?.[key] ?? null;
-const touched = [['position', staffPos.id, 'finance'], ['position', staffPos.id, 'reservations'], ['position', staffPos.id, 'scInvoices'], ['department', finance.id, 'comms'], ['department', finance.id, 'properties']];
+const touched = [['position', staffPos.id, 'finance'], ['position', staffPos.id, 'reservations'], ['position', staffPos.id, 'scInvoices'], ['department', finance.id, 'comms'], ['department', finance.id, 'properties'], ['department', dept('Admin').id, 'reservations']];
 const keep = touched.map(([scope, scopeId, key]) => ({ scope, scopeId, key, level: stored(scope, scopeId, key) }));
 await put(keep.filter(k => k.scope === 'position').map(k => ({ ...k, level: null })));
 await sleep(WAIT);
@@ -102,14 +102,18 @@ r = await call('POST', '/api/users', { fullName: 'No Side', email: `noside-${Dat
 check('Works on is required (422)', r.status === 422 && /side/.test(r.text), r.text);
 r = await call('GET', '/api/users');
 check('Users and roles lists no cleaners or technicians', r.status === 200 && !r.json.data.some(u => u.role === 'housekeeper' || u.role === 'technician'), r.text.slice(0, 160));
+await put([{ scope: 'department', scopeId: admin.id, key: 'reservations', level: 'view' }]);
 r = await call('PATCH', `/api/users/${staff.userId}`, { side: 'dream_crafter', departmentId: admin.id, positionId: adminPos?.id ?? null });
 check('a person moves to Admin (on both sides) working on Dream Crafter only', r.status === 200, r.text);
+await sleep(WAIT);
+// Owner, 25 Nov 2026: a department on both sides gives its ticks to everyone in it, whatever their own Works on says.
 r = await callAsUser(staff, 'GET', '/api/reservations');
-check('...so The Conts screens close for them', r.status === 403, `${r.status}`);
+check('...so Admin\'s View on Reservations still reaches them', r.status === 200, `${r.status}`);
 r = await callAsUser(staff, 'GET', '/api/sales-orders');
 check('...and the Dream Crafter ones open', r.status === 200, `${r.status} ${r.text.slice(0, 120)}`);
 r = await call('GET', `/api/users/${staff.userId}/access`);
-check('...and their own access chart says the same', r.status === 200 && r.json?.user?.side === 'dream_crafter' && r.json.areas.find(a => a.key === 'reservations')?.level === 'none', r.text.slice(0, 200));
+const reservationsArea = r.json?.areas?.find(a => a.key === 'reservations');
+check('...and their own access chart says the same', r.status === 200 && r.json?.user?.side === 'dream_crafter' && reservationsArea?.level === 'view' && reservationsArea.origin === 'department', r.text.slice(0, 200));
 r = await call('PATCH', `/api/users/${staff.userId}`, { side: 'conts', departmentId: ops.id, positionId: staffPos.id });
 check('back to Operations / Operations Staff', r.status === 200, r.text);
 

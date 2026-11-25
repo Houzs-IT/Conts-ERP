@@ -43,13 +43,20 @@ test('staff level comes from the rules and always counts as chosen', async () =>
   assert.deepEqual([none.level, none.chosen], ['none', true]);
 });
 
-test('the side closes the other side after the rules resolve, and is never opened by them', async () => {
+test('a one-company department\'s rules never reach the other company; a Both department\'s reach everyone in it', async () => {
+  const roleRows = [rule('department', 'group:Supply chain', 'full'), rule('department', 'group:Operations', 'edit')];
+  const departmentOn = side => ({ scope: 'side', scope_id: 'd1', area: side, level: '' });
   forgetRules();
-  const env = envWith([rule('department', 'group:Supply chain', 'full'), rule('department', 'group:Operations', 'edit')]);
-  const conts = await accessFor(env, staff({ side: 'conts' }), SO);
+  const conts = await accessFor(envWith([...roleRows, departmentOn('conts')]), staff({ side: 'conts' }), SO);
   assert.deepEqual([conts.level, conts.chosen], ['none', true]);
-  const dc = await accessFor(env, staff({ side: 'dream_crafter' }), '/api/reservations');
+  forgetRules();
+  const dc = await accessFor(envWith([...roleRows, departmentOn('dream_crafter')]), staff({ side: 'dream_crafter' }), '/api/reservations');
   assert.deepEqual([dc.level, dc.chosen], ['none', true]);
+  forgetRules();
+  const contsInBoth = await accessFor(envWith([...roleRows, departmentOn('both')]), staff({ side: 'conts' }), SO);
+  assert.equal(contsInBoth.level, 'full');
+  forgetRules();
+  const env = envWith(roleRows);
   const both = await accessFor(env, staff(), SO);
   assert.equal(both.level, 'full');
   // A side does not give what the rules do not: Dream Crafter side, nothing set for Finance.

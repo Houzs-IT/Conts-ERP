@@ -10,7 +10,7 @@ import type { AccessLevel, PersonAccess, PersonAccessArea, PersonAccessChange } 
 import { BackLink } from './MasterDetail';
 import RoleGrid, { groupByCompany, type GridCategory } from './RoleGrid';
 import { SaveBar } from './SaveBar';
-import { closedBySide, closedCompanyLabel, sideLabel } from './shared';
+import { sideLabel } from './shared';
 
 export interface PersonPageProps {
   personId: string;
@@ -31,7 +31,6 @@ type PersonAccessUpdate = { changes: PersonAccessChange[] } | { resetAll: true }
 function categoriesOf(access: PersonAccess): GridCategory[] {
   const categoriesByGroup = new Map<string, GridCategory>();
   for (const area of access.areas) {
-    if (closedBySide(access.user.kind, access.user.side, area.group)) continue;
     const category = categoriesByGroup.get(area.group) ?? { group: area.group, areas: [] };
     category.areas.push({ key: area.key, label: area.label, ownGrant: area.ownGrant });
     categoriesByGroup.set(area.group, category);
@@ -110,9 +109,6 @@ function PersonAccessEditor({ access, onBack, onSaved, onDirtyChange }: PersonAc
   useEffect(() => { onDirtyChange(hasUnsavedChanges); }, [hasUnsavedChanges, onDirtyChange]);
 
   const ownSettingCount = countDifferences(savedLevels, roleLevels, areaKeys);
-  const closedNote = user.side === 'both'
-    ? null
-    : `${personName(user.fullName)} works on ${sideLabel(user.side)} only. ${closedCompanyLabel(user.side)} areas are closed, so they are not shown.`;
 
   async function send(update: PersonAccessUpdate, successTitle: string) {
     setIsSaving(true);
@@ -149,7 +145,6 @@ function PersonAccessEditor({ access, onBack, onSaved, onDirtyChange }: PersonAc
         <span className="text-meta text-muted-ink">
           {canEdit ? 'The boxes start from the role. Change one to give this person more (Extra) or less (Less).' : 'Only management can change this.'}
         </span>
-        {closedNote && <p className="m-0 mt-1 py-2 px-2.5 rounded-control bg-muted text-meta text-muted-ink">{closedNote}</p>}
       </div>
 
       <RoleGrid companies={companies} levels={levels} savedLevels={savedLevels} roleLevels={roleLevels}
