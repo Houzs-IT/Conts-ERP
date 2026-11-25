@@ -1,16 +1,16 @@
 -- REVERSAL: re-run migrations-pg/0368_scm_so_paid_erp_receipts_on_top.sql, then
 --   alter table scm.reno_so_contracts drop column autocount_received_sen;
--- GRANTS: none - a new column keeps the table's grants; CREATE OR REPLACE VIEW keeps the view's.
+-- GRANTS: none - a new column keeps the table grants, and CREATE OR REPLACE VIEW keeps the view grants.
 --
 -- What AutoCount collected on a renovation contract before go-live, as its AR collection list shows it (chew, 25 Nov
 -- 2026: "开多少单我不理，先把collection做好先"). Until now it was worked out as what AutoCount invoiced less what the
--- customer still owed at go-live; where the invoiced figure seeded at go-live is off, the collection was off with it
--- (D'CLOVER A-3A-3A: RM 57,000.90 against AutoCount's RM 57,145.90).
+-- customer still owed at go-live. Where the invoiced figure seeded at go-live is off, the collection was off with it
+-- (DCLOVER A-3A-3A: RM 57,000.90 against the AutoCount figure RM 57,145.90).
 --
---   reno_so_contracts.autocount_received_sen  AutoCount's receipts on the contract up to go-live, from the AR
+--   reno_so_contracts.autocount_received_sen  AutoCount receipts on the contract up to go-live, from the AR
 --                                             collection list. Null = not given: worked out as before.
 -- Read by the engine's billing view (scm/lib/renovation-billing), acc/reno-paid-before-golive, the Renovation projects
--- page (acc/reno-projects) and, here, the SO list's Paid and Balance (only extra_sen changes; columns unchanged).
+-- page (acc/reno-projects) and, here, the SO list Paid and Balance (only extra_sen changes, columns unchanged).
 -- Set through POST /accounting/renovation-opening/autocount-received.
 
 set local search_path = scm, public, extensions;
@@ -18,16 +18,6 @@ set local lock_timeout = '5s';
 
 alter table scm.reno_so_contracts add column if not exists autocount_received_sen bigint
   check (autocount_received_sen is null or autocount_received_sen >= 0);
-
-CREATE OR REPLACE VIEW keeps the existing grants.
---
--- The SO list's Paid and Balance: money recorded on the order in the ERP counts on top of what AutoCount was paid
--- before go-live, whatever its date (chew, 23 Nov 2026: "我保留mk这笔然后当做autocount没有这笔"). 0365 took the
--- order payments dated before go-live out of AutoCount's figure, as AutoCount's own money; the ERP's books start on
--- the ledger start, and a payment AutoCount also recorded now has AutoCount's copy taken back
--- (acc/autocount-journals reverseAutocountJournals) and its opening documents raised by it. Same rule as the engine's
--- billing view (scm/lib/renovation-billing) and the Renovation projects page (acc/reno-projects). Only extra_sen
--- changes; columns, order and types unchanged.
 
 CREATE OR REPLACE VIEW scm.mfg_sales_orders_with_payment_totals AS
  SELECT so.doc_no,
