@@ -788,11 +788,13 @@ export function useMaterialStatus(id: string) {
     retry: retryUnlessClientError,
   });
 }
+export type RawSkuSupplier = { code: string; name: string | null };
+export type RawSkuRow = { code: string; name: string | null; uom: string | null; suppliers: RawSkuSupplier[] };
 export function useRawSkus(enabled: boolean) {
   return useQuery({
     queryKey: ['production-raw-skus'],
     enabled,
-    queryFn: () => authedFetch<{ skus: Array<{ code: string; name: string | null; uom: string | null }> }>(`/production-orders/raw-skus`).then((r) => r.skus),
+    queryFn: () => authedFetch<{ skus: RawSkuRow[] }>(`/production-orders/raw-skus`).then((r) => r.skus),
     staleTime: 60_000,
     retry: retryUnlessClientError,
   });

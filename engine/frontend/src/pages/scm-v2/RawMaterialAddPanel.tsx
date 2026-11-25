@@ -8,13 +8,22 @@ import { Button } from "../../components/Button";
 import { useNotify } from "../../vendor/scm/components/NotifyDialog";
 import { useToast } from "../../hooks/useToast";
 import { useCreateMfgProduct, type NewMfgProductInput } from "../../vendor/scm/lib/mfg-products-queries";
+import type { RawSkuSupplier } from "../../vendor/scm/lib/production-order-queries";
 
-export interface RawSku { code: string; name: string | null; uom?: string | null }
+export interface RawSku { code: string; name: string | null; uom?: string | null; suppliers?: readonly RawSkuSupplier[] }
 export interface RawPick { code: string; qty: number }
 
 const LABEL = "font-mono text-[9.5px] font-semibold uppercase tracking-brand text-ink-muted";
 const INPUT = "h-8 w-full rounded-md border border-border bg-surface px-2 text-[13px]";
-const ROW = "grid grid-cols-[24px_minmax(0,1fr)_44px_84px] items-center gap-2 px-2";
+const ROW = "grid grid-cols-[24px_minmax(0,1fr)_44px_84px] items-center gap-2 px-2 sm:grid-cols-[24px_minmax(0,1.4fr)_minmax(0,1fr)_44px_84px]";
+
+const supplierLabel = (supplier: RawSkuSupplier): string => supplier.name || supplier.code;
+function describeSuppliers(suppliers: readonly RawSkuSupplier[] | undefined): string {
+  const mainSupplier = suppliers?.at(0);
+  if (!mainSupplier) return "No supplier";
+  const otherCount = (suppliers?.length ?? 0) - 1;
+  return otherCount > 0 ? `${supplierLabel(mainSupplier)} +${otherCount} more` : supplierLabel(mainSupplier);
+}
 
 export function RawMaterialAddPanel({ skus, taken, qtyLabel = "Qty", seed, extra, footnote, onAdd, onCancel }: {
   skus: readonly RawSku[];
@@ -44,7 +53,7 @@ export function RawMaterialAddPanel({ skus, taken, qtyLabel = "Qty", seed, extra
     const term = search.trim().toLowerCase();
     return skus
       .filter((s) => !taken?.has(s.code))
-      .filter((s) => !term || `${s.code} ${s.name ?? ""}`.toLowerCase().includes(term));
+      .filter((s) => !term || [s.code, s.name, ...(s.suppliers ?? []).flatMap((supplier) => [supplier.code, supplier.name])].join(" ").toLowerCase().includes(term));
   }, [skus, taken, search]);
   const codes = Object.keys(picked);
   const valid = codes.length > 0 && codes.every((c) => Number(picked[c]) > 0);
@@ -82,10 +91,10 @@ export function RawMaterialAddPanel({ skus, taken, qtyLabel = "Qty", seed, extra
 
   return (
     <div className="flex flex-col gap-2">
-      <input aria-label="Search raw materials" className={INPUT} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search raw materials by code or name" />
+      <input aria-label="Search raw materials" className={INPUT} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by code, name or supplier" />
       <div className="overflow-hidden rounded-md border border-border">
         <div className={`${ROW} border-b border-border bg-surface-2 py-1.5`}>
-          <span /><span className={LABEL}>Raw material</span><span className={LABEL}>Unit</span><span className={`${LABEL} text-right`}>{qtyLabel}</span>
+          <span /><span className={LABEL}>Raw material</span><span className={`${LABEL} hidden sm:block`}>Supplier</span><span className={LABEL}>Unit</span><span className={`${LABEL} text-right`}>{qtyLabel}</span>
         </div>
         <div role="group" aria-label="Raw materials" className="max-h-[260px] overflow-y-auto">
           {offered.map((s) => {
@@ -96,7 +105,9 @@ export function RawMaterialAddPanel({ skus, taken, qtyLabel = "Qty", seed, extra
                 <span className="min-w-0">
                   <span className="block break-words text-[12.5px] font-semibold text-ink">{s.name || s.code}</span>
                   <span className="block font-mono text-[11px] text-ink-muted">{s.code}</span>
+                  <span className="block break-words text-[11px] text-ink-secondary sm:hidden">{describeSuppliers(s.suppliers)}</span>
                 </span>
+                <span title={s.suppliers?.map(supplierLabel).join(", ")} className="hidden min-w-0 break-words text-[12px] text-ink-secondary sm:block">{describeSuppliers(s.suppliers)}</span>
                 <span className="text-[12px] text-ink-muted">{s.uom ?? ""}</span>
                 {on ? (
                   <input
