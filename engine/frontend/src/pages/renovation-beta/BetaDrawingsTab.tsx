@@ -599,7 +599,7 @@ function BigUpload({ title, sub, onClick, strong = false, center = false }: { ti
   return (
     <button type="button" onClick={onClick}
       style={{ flex: center ? "1 1 240px" : undefined, display: "flex", flexDirection: "column", alignItems: center ? "center" : "flex-start", gap: 4, padding: center ? 18 : "14px 16px", borderRadius: 10,
-        border: `1.5px dashed ${strong ? BETA.accent : "#A9B4B2"}`, background: strong ? WS.tealSoft : BETA.surface, font: "inherit", textAlign: center ? "center" : "left", cursor: "pointer", color: BETA.ink }}>
+        border: `1.5px dashed ${strong ? BETA.accent : BETA.dash}`, background: strong ? WS.tealSoft : BETA.surface, font: "inherit", textAlign: center ? "center" : "left", cursor: "pointer", color: BETA.ink }}>
       <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, color: strong ? BETA.accentInk : BETA.ink }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 16V4" /><path d="M7 9l5-5 5 5" /><path d="M4 20h16" /></svg>
         {title}

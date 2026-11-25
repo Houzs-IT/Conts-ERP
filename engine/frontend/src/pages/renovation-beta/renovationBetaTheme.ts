@@ -45,7 +45,8 @@ const BASE_TOKENS = {
   ink: ["#111216", "#EEF1F8"],
   muted: ["#5E5E5E", "#ADB4C5"],
   text2: ["#4A4A4A", "#B9C0D0"],
-  faint: ["#6B6B6B", "#A7AEBF"],
+  /* 4.5:1 on the darkest tint it sits on (the lead chip's pick wash), not only on the bare card. */
+  faint: ["#616161", "#A7AEBF"],
   line: ["rgba(10,10,10,.1)", "rgba(150,175,255,.18)"],
   lineSoft: ["rgba(10,10,10,.07)", "rgba(150,175,255,.11)"],
   border: ["rgba(10,10,10,.5)", "rgba(150,175,255,.6)"],
@@ -95,9 +96,10 @@ const BASE_TOKENS = {
   ],
   btnEdge: ["rgba(255,255,255,.7)", "rgba(150,175,255,.24)"],
   /* The glass pill sits on a white card, so a white edge made it vanish: it gets a slate edge in the light skin. */
-  btnGlassEdge: ["rgba(55,70,125,.65)", "rgba(150,175,255,.24)"],
+  btnGlassEdge: ["rgba(55,70,125,.65)", "rgba(150,175,255,.6)"],
   /* The project stepper: the track, a step not reached yet, the step in progress and a step done. */
-  stepTrack: ["#D5D9E3", "#3A4055"],
+  /* The track is the only mark of the steps still to come, so it keeps 3:1 against the card (WCAG 1.4.11). */
+  stepTrack: ["#808797", "#717A90"],
   stepNext: ["linear-gradient(180deg,rgba(255,255,255,.9),rgba(240,244,250,.55))", "linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.04))"],
   stepNextShadow: [
     "inset 0 2px 2px rgba(255,255,255,.95),inset 0 -3px 6px rgba(110,125,160,.15),0 4px 10px -4px rgba(90,105,150,.3)",
@@ -122,7 +124,7 @@ const TONE_TOKENS = {
   accent: { ink: ["#0F5F58", "#7BE8D8"], soft: ["#DCF0ED", "rgba(40,200,180,.16)"], strong: ["#C8E8E3", "rgba(40,200,180,.26)"], dot: ["#1A7A72", "#2CC9B4"], line: ["#A9D2CC", "rgba(40,200,180,.4)"] },
   amber: { ink: ["#7A4F00", "#F7CD73"], soft: ["#F8EED9", "rgba(245,190,80,.16)"], strong: ["#F3E2BC", "rgba(245,190,80,.26)"], dot: ["#B07A1A", "#F2B84B"], line: ["#EBD3A0", "rgba(245,190,80,.4)"] },
   red: { ink: ["#962D25", "#FF9B90"], soft: ["#F6E3E0", "rgba(255,110,100,.16)"], strong: ["#F1D0CB", "rgba(255,110,100,.26)"], dot: ["#A3322A", "#FF6E64"], line: ["#E3AEA9", "rgba(255,110,100,.4)"] },
-  grey: { ink: ["#4A4A4A", "#B9C0D0"], soft: ["#F0F0F0", "rgba(255,255,255,.07)"], strong: ["#E3E3E3", "rgba(255,255,255,.12)"], dot: ["#8E8E8E", "#7E869A"], line: ["#C9CED8", "rgba(150,175,255,.28)"] },
+  grey: { ink: ["#4A4A4A", "#B9C0D0"], soft: ["#F0F0F0", "rgba(255,255,255,.07)"], strong: ["#E3E3E3", "rgba(255,255,255,.12)"], dot: ["#7A7A7A", "#7E869A"], line: ["#C9CED8", "rgba(150,175,255,.28)"] },
   blue: { ink: ["#303030", "#DDE2EE"], soft: ["#E6EDFF", "rgba(80,130,255,.18)"], strong: ["#D3E0FF", "rgba(80,130,255,.28)"], dot: ["#111216", "#EEF1F8"], line: ["#B9CCFF", "rgba(80,130,255,.4)"] },
 } as const satisfies Record<string, Record<string, Pair>>;
 
