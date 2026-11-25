@@ -793,7 +793,10 @@ export function humanApiError(status: number, body: string): string {
        one. Nothing about what they do changed. */
     const isPlain = (r: string) =>
       !!r && r.length < 200 && !r.trim().startsWith('{') && !isErrorCode(r) &&
-      !/violates|constraint|null value|column|relation|syntax|PGRST|error_code|\b\d{5}\b/i.test(r);
+      /* A bare five-digit run is a Postgres SQLSTATE (23505); one inside a document number (QT-TC-00148, IV/2610/00137)
+         is the document the sentence names, and dropping it hid "this bill is already booked as …" behind "That clashes
+         with something already in the system" (chew, 25 Nov 2026). */
+      !/violates|constraint|null value|column|relation|syntax|PGRST|error_code|(?<![-/\w])\d{5}\b/i.test(r);
 
     /* THE DIAGNOSTIC TAIL, DROPPED INSTEAD OF THE WHOLE SENTENCE.
        Sixteen fail-closed refusals in this tree write the operator's sentence
