@@ -201,6 +201,7 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
   if (sos.length === 0) return out;
   const orderPaidOf = new Map(orderPaid.map((r) => [r.so_doc_no, { paidSen: Number(r.paid_sen), waitingSen: Number(r.waiting_sen), beforeSen: Number(r.before_golive_sen ?? 0) }]));
   const paidBeforeOf = paidBeforeGoLiveOfRows(preGoLive);
+  const autocountCollected = new Set(preGoLive.filter((r) => r.kind === 'C' && r.doc_no && r.received_sen != null).map((r) => String(r.doc_no)));
   for (const so of sos) {
     const instalments = instRows
       .filter((r) => r.so_doc_no === so.doc_no)
@@ -212,7 +213,8 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
     const creditedSen = credits.reduce((s, c) => s + c.amountSen, 0);
     const paid = orderPaidOf.get(so.doc_no);
     out.set(so.doc_no, assembleView(so.doc_no, so.status, so.original_contract_sen, Number(so.revised_sen ?? 0), instalments, soBills, creditedSen, credits,
-      Number(so.billed_before_golive_sen ?? 0), paid?.paidSen ?? 0, paid?.waitingSen ?? 0, paidBeforeOf.get(so.doc_no) ?? 0, paid?.beforeSen ?? 0));
+      Number(so.billed_before_golive_sen ?? 0), paid?.paidSen ?? 0, paid?.waitingSen ?? 0, paidBeforeOf.get(so.doc_no) ?? 0, paid?.beforeSen ?? 0,
+      autocountCollected.has(so.doc_no)));
   }
   return out;
 }
@@ -262,6 +264,10 @@ export function assembleView(
   paidBeforeGoLiveSen = 0,
   /** The confirmed order payments dated before go-live (inside orderPaidSen). */
   orderPaidBeforeGoLiveSen = 0,
+  /** paidBeforeGoLiveSen is AutoCount's own AR collection (reno_so_contracts.autocount_received_sen): money received,
+      counted whole even past the contract (chew, 25 Nov 2026: "我现在看的是收钱哦"; FORESTA 19-05 RM 103,768 on a
+      RM 96,399 contract), as the SO list counts it. */
+  autocountCollected = false,
 ): BillingView {
   const waitingOf = (b: { waiting_sen?: number | string | null }) => Math.max(0, Number(b.waiting_sen ?? 0));
   const paidOf = (b: { paid_sen: number | null; waiting_sen?: number | string | null }) => Math.max(0, Number(b.paid_sen ?? 0) - waitingOf(b));
@@ -280,7 +286,8 @@ export function assembleView(
      against it) less the previous instalment's; what was paid before go-live fills those shares oldest first. */
   /* Never past the contract: what AutoCount invoiced, or the contract sum when money was paid ahead of its invoicing
      (acc/reno-paid-before-golive; chew, 25 Nov 2026). A contract AutoCount never invoiced has none. */
-  const paidBefore = Math.min(Math.max(0, Math.trunc(Number(paidBeforeGoLiveSen) || 0)), billedBeforeGoLiveSen > 0 ? Math.max(billedBeforeGoLiveSen, revised) : 0);
+  const paidBeforeRaw = Math.max(0, Math.trunc(Number(paidBeforeGoLiveSen) || 0));
+  const paidBefore = autocountCollected ? paidBeforeRaw : Math.min(paidBeforeRaw, billedBeforeGoLiveSen > 0 ? Math.max(billedBeforeGoLiveSen, revised) : 0);
   const shareOf = new Map<number, number>();
   const paidOfSeq = new Map<number, number>();
   if (covered.size > 0) {
