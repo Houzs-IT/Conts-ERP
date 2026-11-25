@@ -10,6 +10,7 @@ register('data:text/javascript,' + encodeURIComponent(`export async function res
 }`));
 const { bestRoom, busySentences, inUsualHours, layoutDay, meetingColor, readConflict } = await import('./meetings.ts');
 const { directoryPeople, companyOf, mayManageRooms } = await import('../../functions/_lib/meetingsHub.ts');
+const { mayReviewRenoClaims } = await import('../../functions/_lib/access.ts');
 const room = (o = {}) => ({ id: 1, name: "Boardroom", location: "", floor: "", seats: 12, equipment: [], open_days: [1, 2, 3, 4, 5], open_from: 9, open_to: 18, color: "#0b8043", buffer_min: 0, max_hours: 0, advance_days: 0, active: true, closures: [], ...o });
 const at = (d, h, m = 0) => new Date(`${d}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`).getTime();
 const meeting = (o) => ({ id: 1, title: "M", start: new Date(at("2026-11-23", 10)).toISOString(), end: new Date(at("2026-11-23", 11)).toISOString(), roomId: 1, organizer: "lim@x", bookedBy: "lim@x", attendees: [], notes: "", video: { type: "none", url: "" }, reminders: [], status: "scheduled", startedAt: null, endedAt: null, seriesId: null, createdIn: "CONTS", linkId: null, guest: null, ...o });
@@ -65,4 +66,13 @@ test("bestRoom picks the smallest free room with enough seats (owner 2026-11-24)
   assert.equal(bestRoom(rooms, 2, new Set())?.name, "Small");
   assert.equal(bestRoom(rooms, 2, new Set([2]))?.name, "Mid");
   assert.equal(bestRoom(rooms, 20, new Set()), null);
+});
+
+test('only management or an edit or full level reviews renovation claims', () => {
+  assert.equal(mayReviewRenoClaims({ role: 'management', levels: {} }), true);
+  assert.equal(mayReviewRenoClaims({ role: 'finance_admin', levels: { renoClaimReview: 'edit' } }), true);
+  assert.equal(mayReviewRenoClaims({ role: 'finance_admin', levels: { renoClaimReview: 'full' } }), true);
+  assert.equal(mayReviewRenoClaims({ role: 'finance_admin', levels: { renoClaimReview: 'view' } }), false);
+  assert.equal(mayReviewRenoClaims({ role: 'finance_admin', levels: { renoClaimReview: 'none' } }), false);
+  assert.equal(mayReviewRenoClaims({ role: 'finance_admin' }), false);
 });

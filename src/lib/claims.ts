@@ -11,7 +11,7 @@ import { bankProblem, type ClaimBank } from './claimBank';
 import type { StatusTone } from './status';
 
 export type LineDepartment = 'rental' | 'supply' | 'shared';
-export type ReceiptStatus = 'HANDED_IN' | 'CHECKED' | 'TOPPED_UP' | 'PAID_BACK' | 'REJECTED' | 'REPAID' | 'WRITTEN_OFF' | 'REPLACED';
+export type ReceiptStatus = 'HANDED_IN' | 'CHECKED' | 'TOPPED_UP' | 'PAID_BACK' | 'REJECTED' | 'REPAID' | 'WRITTEN_OFF' | 'REPLACED' | 'RENO_REVIEW';
 export type RequestStatus = 'SUBMITTED' | 'PART_PAID' | 'PAID' | 'REJECTED' | 'CLOSED' | 'WITHDRAWN';
 export interface ClaimLine {
   department: LineDepartment; unitId: string | null; maintenanceIssueId: string | null; projectId: number | null; accountCode: string | null; amountSen: number; description: string | null;
@@ -20,7 +20,7 @@ export interface ClaimLine {
 export interface ClaimFile { id: string; fileName: string; mime: string }
 export interface Receipt {
   id: string; receiptNo: string; submitterName: string; floatId: string | null; spendDate: string; amountSen: number; vendorName: string | null;
-  note: string | null; status: ReceiptStatus; rejectReason: string | null; lines: ClaimLine[]; files: ClaimFile[];
+  note: string | null; status: ReceiptStatus; rejectReason: string | null; lines: ClaimLine[]; files: ClaimFile[]; renoReviewedBy?: string | null; renoReviewedAt?: string | null;
   /** What each unit's owner pays back (0363): charged to the owner as O2 once finance checks the claim (`charged`). */
   recoveries?: { unitId: string; amountSen: number; charged: boolean }[];
 }
@@ -55,7 +55,7 @@ export interface LineSubDepartment { id: string; department: LineDepartment; nam
 export const DEPARTMENT: Record<LineDepartment, string> = { rental: 'Rental', supply: 'Renovation', shared: 'Shared' };
 export const RECEIPT_STATUS: Record<ReceiptStatus, string> = {
   HANDED_IN: 'Waiting for a check', CHECKED: 'Checked', TOPPED_UP: 'Paid back', PAID_BACK: 'Paid back',
-  REJECTED: 'Rejected', REPAID: 'Repaid', WRITTEN_OFF: 'Written off', REPLACED: 'Replaced',
+  REJECTED: 'Rejected', REPAID: 'Repaid', WRITTEN_OFF: 'Written off', REPLACED: 'Replaced', RENO_REVIEW: 'With renovation review',
 };
 export const REQUEST_STATUS: Record<RequestStatus, string> = {
   SUBMITTED: 'Waiting for payment', PART_PAID: 'Part paid', PAID: 'Paid', REJECTED: 'Rejected', CLOSED: 'Closed', WITHDRAWN: 'Withdrawn',
@@ -68,7 +68,7 @@ export function describeClaimLine(line: ClaimLine): string {
 }
 export const RECEIPT_TONE: Record<ReceiptStatus, StatusTone> = {
   HANDED_IN: 'warning', CHECKED: 'info', TOPPED_UP: 'success', PAID_BACK: 'success',
-  REJECTED: 'danger', REPAID: 'neutral', WRITTEN_OFF: 'neutral', REPLACED: 'neutral',
+  REJECTED: 'danger', REPAID: 'neutral', WRITTEN_OFF: 'neutral', REPLACED: 'neutral', RENO_REVIEW: 'info',
 };
 export const REQUEST_TONE: Record<RequestStatus, StatusTone> = {
   SUBMITTED: 'warning', PART_PAID: 'info', PAID: 'success', REJECTED: 'danger', CLOSED: 'neutral', WITHDRAWN: 'neutral',
@@ -76,6 +76,7 @@ export const REQUEST_TONE: Record<RequestStatus, StatusTone> = {
 
 /** A receipt's file, opened in the browser (the session cookie goes with it). */
 export const receiptFileHref = (receiptId: string, fileId: string) => `/api/claims/receipts/${receiptId}/files/${fileId}`;
+export const renoReviewFileHref = (receiptId: string, fileId: string) => `/api/claims/reno-review/${receiptId}/files/${fileId}`;
 export const requestFileHref = (requestId: string, fileId: string) => `/api/claims/requests/${requestId}/files/${fileId}`;
 
 /** What the photo says: the amount, the date and the shop, or nothing when it cannot be read. */

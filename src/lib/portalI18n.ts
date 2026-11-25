@@ -234,7 +234,7 @@ const en = {
     send: 'Send', sent: 'Receipt handed in', paidFromFloat: "Your department's petty cash pays you back.", paidByFinance: 'Finance pays you back by transfer.',
     needPhoto: 'Add a photo of the receipt.', needAmount: 'Enter the amount.', notSent: 'Not sent. Check your signal and try again.',
     mine: 'My receipts', none: 'No receipts yet.', open: 'Photo',
-    status: { HANDED_IN: 'Waiting', CHECKED: 'Checked', TOPPED_UP: 'Paid back', PAID_BACK: 'Paid back', REJECTED: 'Rejected', REPAID: 'Repaid', WRITTEN_OFF: 'Written off', REPLACED: 'Replaced' } as Record<string, string>,
+    status: { HANDED_IN: 'Waiting', CHECKED: 'Checked', TOPPED_UP: 'Paid back', PAID_BACK: 'Paid back', REJECTED: 'Rejected', REPAID: 'Repaid', WRITTEN_OFF: 'Written off', REPLACED: 'Replaced', RENO_REVIEW: 'With reno review' } as Record<string, string>,
     rejected: (reason: string): string => `Rejected: ${reason}`,
     keeper: 'Petty cash you keep', balance: 'Cash you should hold', float: (amount: string): string => `Float ${amount}`,
     belowZero: 'Below zero: the next top-up pays you back.', low: 'Running low.', askTopUp: 'Ask for a top-up', topUpAsked: 'Top-up asked for',
@@ -245,7 +245,7 @@ const en = {
     pettyCashNote: 'Paid back from your petty cash.', directNote: 'Finance transfers it to your bank account. Your petty cash is not used.',
     noFloatNote: 'You have no petty cash, so finance transfers it to your bank account.', supplierNote: 'Finance pays the supplier on the bill. You pay nothing.',
     bank: 'Bank', bankPick: 'Choose the bank', accountNo: 'Account number', accountName: 'Name on the account',
-    bankNote: 'Changes here are kept on this claim only.', directSent: 'Finance will transfer it to your bank account.',
+    bankNote: 'Changes here are kept on this claim only.', directSent: 'Finance will transfer it to your bank account.', renoSent: 'The renovation reviewer checks it first, then it goes to finance.',
     bankWrong: { bankName: 'Choose the bank.', accountNo: 'Digits only, 5 to 30.', accountName: 'Enter the name on the account.' },
   },
 };
@@ -439,7 +439,7 @@ const ms: PortalStrings = {
     send: 'Hantar', sent: 'Resit diserahkan', paidFromFloat: 'Wang runcit jabatan anda membayar balik.', paidByFinance: 'Kewangan membayar balik melalui pindahan.',
     needPhoto: 'Tambah foto resit.', needAmount: 'Masukkan jumlah.', notSent: 'Tidak dihantar. Semak isyarat dan cuba lagi.',
     mine: 'Resit saya', none: 'Belum ada resit.', open: 'Foto',
-    status: { HANDED_IN: 'Menunggu', CHECKED: 'Disemak', TOPPED_UP: 'Dibayar balik', PAID_BACK: 'Dibayar balik', REJECTED: 'Ditolak', REPAID: 'Dibayar semula', WRITTEN_OFF: 'Dihapus kira', REPLACED: 'Diganti' },
+    status: { HANDED_IN: 'Menunggu', CHECKED: 'Disemak', TOPPED_UP: 'Dibayar balik', PAID_BACK: 'Dibayar balik', REJECTED: 'Ditolak', REPAID: 'Dibayar semula', WRITTEN_OFF: 'Dihapus kira', REPLACED: 'Diganti', RENO_REVIEW: 'Semakan renovasi' },
     rejected: reason => `Ditolak: ${reason}`,
     keeper: 'Wang runcit yang anda simpan', balance: 'Wang tunai yang patut ada', float: amount => `Apungan ${amount}`,
     belowZero: 'Bawah sifar: tambahan seterusnya membayar balik anda.', low: 'Semakin rendah.', askTopUp: 'Minta tambahan', topUpAsked: 'Tambahan telah diminta',
@@ -450,7 +450,7 @@ const ms: PortalStrings = {
     pettyCashNote: 'Dibayar balik daripada petty cash anda.', directNote: 'Kewangan memindahkannya ke akaun bank anda. Petty cash anda tidak digunakan.',
     noFloatNote: 'Anda tiada petty cash, jadi kewangan memindahkannya ke akaun bank anda.', supplierNote: 'Kewangan membayar pembekal pada bil. Anda tidak membayar apa-apa.',
     bank: 'Bank', bankPick: 'Pilih bank', accountNo: 'Nombor akaun', accountName: 'Nama pada akaun',
-    bankNote: 'Perubahan di sini disimpan pada tuntutan ini sahaja.', directSent: 'Kewangan akan memindahkannya ke akaun bank anda.',
+    bankNote: 'Perubahan di sini disimpan pada tuntutan ini sahaja.', directSent: 'Kewangan akan memindahkannya ke akaun bank anda.', renoSent: 'Penyemak renovasi menyemaknya dahulu, kemudian ia dihantar ke kewangan.',
     bankWrong: { bankName: 'Pilih bank.', accountNo: 'Digit sahaja, 5 hingga 30.', accountName: 'Masukkan nama pada akaun.' },
   },
 };
@@ -638,7 +638,7 @@ const zh: PortalStrings = {
     send: '提交', sent: '收据已提交', paidFromFloat: '你部门的零用金会还给你。', paidByFinance: '财务会转账还给你。',
     needPhoto: '请加收据照片。', needAmount: '请填金额。', notSent: '没有提交成功。请检查网络后再试。',
     mine: '我的收据', none: '还没有收据。', open: '照片',
-    status: { HANDED_IN: '等待核对', CHECKED: '已核对', TOPPED_UP: '已还', PAID_BACK: '已还', REJECTED: '被退回', REPAID: '已退还', WRITTEN_OFF: '已注销', REPLACED: '已替换' },
+    status: { HANDED_IN: '等待核对', CHECKED: '已核对', TOPPED_UP: '已还', PAID_BACK: '已还', REJECTED: '被退回', REPAID: '已退还', WRITTEN_OFF: '已注销', REPLACED: '已替换', RENO_REVIEW: '装修审核中' },
     rejected: reason => `被退回：${reason}`,
     keeper: '你保管的零用金', balance: '你手上应有的现金', float: amount => `定额 ${amount}`,
     belowZero: '低于零：下次补回时会还给你。', low: '快用完了。', askTopUp: '申请补回', topUpAsked: '已申请补回',
@@ -649,7 +649,7 @@ const zh: PortalStrings = {
     pettyCashNote: '从你的零用金（petty cash）还给你。', directNote: '财务直接转账到你的银行户口，不动用你的零用金。',
     noFloatNote: '你没有零用金，所以由财务转账到你的银行户口。', supplierNote: '财务直接付款给账单上的供应商，你不用付钱。',
     bank: '银行', bankPick: '选择银行', accountNo: '户口号码', accountName: '户口名字',
-    bankNote: '这里的修改只保存在这张报销单上。', directSent: '财务会转账到你的银行户口。',
+    bankNote: '这里的修改只保存在这张报销单上。', directSent: '财务会转账到你的银行户口。', renoSent: '装修审核人会先核对，然后才交给财务。',
     bankWrong: { bankName: '请选择银行。', accountNo: '只能是数字，5 到 30 位。', accountName: '请填写户口名字。' },
   },
 };
@@ -837,7 +837,7 @@ const my: PortalStrings = {
     send: 'ပို့ရန်', sent: 'ပြေစာ တင်ပြီးပါပြီ', paidFromFloat: 'သင့်ဌာန၏ အသုံးစရိတ်ငွေမှ ပြန်ပေးပါမည်။', paidByFinance: 'ငွေစာရင်းဌာနက ငွေလွှဲ၍ ပြန်ပေးပါမည်။',
     needPhoto: 'ပြေစာ ဓာတ်ပုံ ထည့်ပါ။', needAmount: 'ပမာဏ ထည့်ပါ။', notSent: 'မပို့ရပါ။ လိုင်းကို စစ်ပြီး ထပ်ကြိုးစားပါ။',
     mine: 'ကျွန်ုပ်၏ ပြေစာများ', none: 'ပြေစာ မရှိသေးပါ။', open: 'ဓာတ်ပုံ',
-    status: { HANDED_IN: 'စောင့်ဆိုင်းနေသည်', CHECKED: 'စစ်ပြီး', TOPPED_UP: 'ပြန်ပေးပြီး', PAID_BACK: 'ပြန်ပေးပြီး', REJECTED: 'ပယ်ချခံရသည်', REPAID: 'ပြန်အပ်ပြီး', WRITTEN_OFF: 'စာရင်းမှ ပယ်ဖျက်ပြီး', REPLACED: 'အစားထိုးပြီး' },
+    status: { HANDED_IN: 'စောင့်ဆိုင်းနေသည်', CHECKED: 'စစ်ပြီး', TOPPED_UP: 'ပြန်ပေးပြီး', PAID_BACK: 'ပြန်ပေးပြီး', REJECTED: 'ပယ်ချခံရသည်', REPAID: 'ပြန်အပ်ပြီး', WRITTEN_OFF: 'စာရင်းမှ ပယ်ဖျက်ပြီး', REPLACED: 'အစားထိုးပြီး', RENO_REVIEW: 'ပြုပြင်မွမ်းမံရေး စစ်ဆေးနေသည်' },
     rejected: reason => `ပယ်ချခံရသည် - ${reason}`,
     keeper: 'သင် ထိန်းသိမ်းသော အသုံးစရိတ်ငွေ', balance: 'သင့်လက်ထဲ ရှိသင့်သော ငွေသား', float: amount => `သတ်မှတ်ငွေ ${amount}`,
     belowZero: 'သုညအောက်: နောက်တစ်ကြိမ် ဖြည့်သောအခါ ပြန်ပေးပါမည်။', low: 'နည်းလာပြီ။', askTopUp: 'ငွေဖြည့်ရန် တောင်းဆိုရန်', topUpAsked: 'ငွေဖြည့်ရန် တောင်းဆိုပြီး',
@@ -848,12 +848,12 @@ const my: PortalStrings = {
     pettyCashNote: 'သင့် petty cash မှ ပြန်ပေးပါမည်။', directNote: 'ငွေစာရင်းဌာနက သင့်ဘဏ်အကောင့်သို့ လွှဲပေးပါမည်။ သင့် petty cash ကို မသုံးပါ။',
     noFloatNote: 'သင့်တွင် petty cash မရှိသဖြင့် ငွေစာရင်းဌာနက သင့်ဘဏ်အကောင့်သို့ လွှဲပေးပါမည်။', supplierNote: 'ငွေစာရင်းဌာနက ငွေတောင်းခံလွှာပေါ်ရှိ ပစ္စည်းပေးသူကို ပေးချေပါမည်။ သင် ဘာမှ မပေးရပါ။',
     bank: 'ဘဏ်', bankPick: 'ဘဏ် ရွေးပါ', accountNo: 'အကောင့်နံပါတ်', accountName: 'အကောင့်ပေါ်ရှိ အမည်',
-    bankNote: 'ဤနေရာတွင် ပြင်ဆင်ချက်များကို ဤတောင်းခံလွှာတွင်သာ သိမ်းထားပါမည်။', directSent: 'ငွေစာရင်းဌာနက သင့်ဘဏ်အကောင့်သို့ လွှဲပေးပါမည်။',
+    bankNote: 'ဤနေရာတွင် ပြင်ဆင်ချက်များကို ဤတောင်းခံလွှာတွင်သာ သိမ်းထားပါမည်။', directSent: 'ငွေစာရင်းဌာနက သင့်ဘဏ်အကောင့်သို့ လွှဲပေးပါမည်။', renoSent: 'ပြုပြင်မွမ်းမံရေး စစ်ဆေးသူက အရင်စစ်ပြီးမှ ငွေစာရင်းဌာနသို့ ပို့ပါမည်။',
     bankWrong: { bankName: 'ဘဏ် ရွေးပါ။', accountNo: 'ဂဏန်းများသာ၊ ၅ မှ ၃၀ လုံး။', accountName: 'အကောင့်ပေါ်ရှိ အမည် ထည့်ပါ။' },
   },
 };
 
-const STRINGS: Record<PortalLang, PortalStrings> = { en, ms, zh, my };
+export const STRINGS: Record<PortalLang, PortalStrings> = { en, ms, zh, my };
 
 /** The portal's words in the phone's language. */
 export function usePortalText(): PortalStrings {

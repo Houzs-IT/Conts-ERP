@@ -387,6 +387,7 @@ function RowDetail({ r, lineText }: { r: Row; lineText: (l: Line) => string }) {
       ) : (
         <>
           {field("Status", RECEIPT_STATUS[r.c.status])}
+          {r.c.renoReviewedBy && field("Reviewed by", r.c.renoReviewedBy)}
           {field("Spent on", r.c.spendDate)}
           {field("By", r.c.submitterName)}
           {field("Shop", r.c.vendorName)}

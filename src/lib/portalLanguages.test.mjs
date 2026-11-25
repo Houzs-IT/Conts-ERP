@@ -15,3 +15,12 @@ test('Me offers English, Bahasa Melayu, Chinese and Burmese', () => {
 test('Chinese is named in its own script', () => {
   assert.equal(LANG_LABEL.zh, '中文');
 });
+
+test('every language words the reno review status and the reno hand-in note', async () => {
+  const { STRINGS } = await import('./portalI18n.ts');
+  for (const lang of OFFERED_PORTAL_LANGS) {
+    const text = STRINGS[lang];
+    assert.ok(text.receipts.status.RENO_REVIEW, `${lang} status`);
+    assert.ok(text.claimPay.renoSent, `${lang} renoSent`);
+  }
+});

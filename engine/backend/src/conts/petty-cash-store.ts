@@ -22,13 +22,14 @@ export interface ReceiptRow {
   created_at: string;
   /** The bank given on a Direct Claim to Me (migration 0314); null on every other receipt. */
   payee_bank_name?: string | null; payee_account_no?: string | null; payee_account_name?: string | null;
+  reno_reviewed_by?: string | null; reno_reviewed_at?: string | null;
 }
 export interface ReceiptLineRow {
   id: string; receipt_id: string; department: string; unit_id: string | null; maintenance_issue_id: string | null; sub_department_id?: string | null;
   project_id: number | null; account_code: string | null; amount_sen: number; description: string | null; sort: number;
 }
 
-export const RECEIPT_COLS = 'id, receipt_no, submitter_user_id, float_id, spend_date, amount_sen, vendor_name, note, status, reject_reason, checked_at, checked_by, topup_pv_id, payback_pv_id, replaces_id, source, created_at, payee_bank_name, payee_account_no, payee_account_name';
+export const RECEIPT_COLS = 'id, receipt_no, submitter_user_id, float_id, spend_date, amount_sen, vendor_name, note, status, reject_reason, checked_at, checked_by, topup_pv_id, payback_pv_id, replaces_id, source, created_at, payee_bank_name, payee_account_no, payee_account_name, reno_reviewed_by, reno_reviewed_at';
 
 export async function floatsOf(sb: Db, companyId: number, opts: { activeOnly?: boolean } = {}): Promise<FloatRow[]> {
   let q = sb.from('petty_cash_floats').select('*').eq('company_id', companyId);
@@ -89,7 +90,7 @@ export function receiptView(r: ReceiptRow, lines: ReceiptLineRow[], files: Array
     id: r.id, receiptNo: r.receipt_no, submitterUserId: r.submitter_user_id, submitterName: names.get(r.submitter_user_id) ?? '',
     floatId: r.float_id, spendDate: String(r.spend_date).slice(0, 10), amountSen: Number(r.amount_sen), vendorName: r.vendor_name,
     note: r.note, status: r.status, rejectReason: r.reject_reason, checkedAt: r.checked_at, checkedBy: r.checked_by,
-    topUpPvId: r.topup_pv_id, paybackPvId: r.payback_pv_id, replacesId: r.replaces_id, source: r.source,
+    topUpPvId: r.topup_pv_id, paybackPvId: r.payback_pv_id, replacesId: r.replaces_id, source: r.source, renoReviewedBy: r.reno_reviewed_by ?? null, renoReviewedAt: r.reno_reviewed_at ?? null,
     lines: lines.map(l => ({ id: l.id, department: l.department, unitId: l.unit_id, maintenanceIssueId: l.maintenance_issue_id,
       projectId: l.project_id, accountCode: l.account_code, amountSen: Number(l.amount_sen), description: l.description, subDepartmentId: l.sub_department_id ?? null })),
     files: files.map(f => ({ id: f.id, fileName: f.file_name, mime: f.mime })),

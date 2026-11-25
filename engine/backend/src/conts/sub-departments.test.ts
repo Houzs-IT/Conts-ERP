@@ -102,7 +102,7 @@ describe('sub-departments', () => {
 
 /* Final review: the project must fit the sub-department on every document, not only on vouchers. */
 describe('a project fits its line', () => {
-  const S = (fixedKey: SubDepartment['fixedKey'], department: SubDepartment['department']): SubDepartment => ({ id: 'x', department, name: 'x', fixedKey, staffDepartmentId: null, active: true, sort: 0 });
+  const S = (fixedKey: SubDepartment['fixedKey'], department: SubDepartment['department']): SubDepartment => ({ id: 'x', department, name: 'x', fixedKey, staffDepartmentId: null, active: true, sort: 0, renoReview: false });
   const customer = { name: 'SKYLINE', funding: 'customer', internal_department: null };
   const ownUnit = { name: 'A-3-1 FIT-OUT', funding: 'internal', internal_department: 'rental' };
   test('the side, then the brand; Company names none; no sub-department checks nothing', () => {

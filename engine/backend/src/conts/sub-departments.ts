@@ -10,7 +10,7 @@ type Db = any;
 
 export type FixedKey = 'rental_general' | 'dreamcrafter' | 'theconts' | 'company';
 export type SubDepartment = {
-  id: string; department: Department; name: string; fixedKey: FixedKey | null; staffDepartmentId: string | null; active: boolean; sort: number;
+  id: string; department: Department; name: string; fixedKey: FixedKey | null; staffDepartmentId: string | null; active: boolean; sort: number; renoReview: boolean;
 };
 export type RenoKind = 'RENOVATION' | 'INHOUSE_RENOVATION';
 
@@ -21,11 +21,11 @@ export const RENO_KIND_OF: Partial<Record<FixedKey, RenoKind>> = { dreamcrafter:
 
 /** The company's list, retired rows included: by department (Rental, Renovation, Company), then order, then name. */
 export async function loadSubDepartments(sb: Db, companyId: number): Promise<{ ok: true; list: SubDepartment[] } | { ok: false; error: string }> {
-  const { data, error } = await sb.from('acc_sub_departments').select('id, department, name, fixed_key, staff_department_id, active, sort').eq('company_id', companyId);
+  const { data, error } = await sb.from('acc_sub_departments').select('id, department, name, fixed_key, staff_department_id, active, sort, reno_review').eq('company_id', companyId);
   if (error) return { ok: false, error: error.message };
   const list = ((data ?? []) as Array<Record<string, any>>).filter((r) => isDepartment(r.department)).map((r): SubDepartment => ({
     id: String(r.id), department: r.department as Department, name: String(r.name), fixedKey: (r.fixed_key ?? null) as FixedKey | null,
-    staffDepartmentId: r.staff_department_id != null ? String(r.staff_department_id) : null, active: r.active !== false, sort: Number(r.sort ?? 0),
+    staffDepartmentId: r.staff_department_id != null ? String(r.staff_department_id) : null, active: r.active !== false, sort: Number(r.sort ?? 0), renoReview: r.reno_review === true,
   }));
   const order = (d: Department) => DEPARTMENTS.indexOf(d);
   list.sort((a, b) => order(a.department) - order(b.department) || a.sort - b.sort || a.name.localeCompare(b.name));

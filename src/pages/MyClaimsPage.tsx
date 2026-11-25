@@ -18,11 +18,13 @@ import { FileDropRow } from '../components/Attachments';
 import { MoneyInput, DateField } from '../components/inputs';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
+import { useSession } from '../lib/session';
+import { mayWork } from '../lib/areaAccess';
 import { useApi } from '../lib/useApi';
 import { api, errorMessage } from '../lib/api';
 import { date, monthLabel, rm, todayMyt, buildingName } from '../lib/format';
 import {
-  DEPARTMENT, bankProblem, RECEIPT_STATUS, RECEIPT_TONE, REQUEST_STATUS, REQUEST_TONE, describeClaimLine, postWithFiles, readReceipt, readRequestBill, receiptFileHref, requestBillFill, requestFileHref, thisMonthMyt,
+  DEPARTMENT, bankProblem, RECEIPT_STATUS, RECEIPT_TONE, REQUEST_STATUS, REQUEST_TONE, describeClaimLine, postWithFiles, readReceipt, readRequestBill, receiptFileHref, renoReviewFileHref, requestBillFill, requestFileHref, thisMonthMyt,
   type ClaimBank, type ClaimFile, type ClaimLine, type LineDepartment, type LineSubDepartment, type Me, type MyFloat, type NewLine, type PaymentRequest, type Receipt
 } from '../lib/claims';
 import { canResubmit, fixOnUtilityBills, lineDraftOf, reasonNote, wantedOnAgain } from '../lib/requestResubmit';
@@ -39,7 +41,7 @@ import { usePortalText } from '../lib/portalI18n';
  * chooses the account (finance does, while checking), and a line's department is the person's (the engine sets it).
  * Everything is kept in the engine; this page reaches it through /api/claims (functions/api/claims/[[path]].ts).
  */
-type Tab = 'handin' | 'mine' | 'float';
+type Tab = 'handin' | 'mine' | 'float' | 'review';
 type Kind = 'claim' | 'direct';
 /* subDepartmentId: '' starts the line on the person's own department (the engine fills it); else the one chosen (SOP 1.1, the department
    starts as the person's and may be changed; chew 16 Nov 2026). */
@@ -60,6 +62,8 @@ const lastMonths = (n: number): SelectOption[] => {
 
 export default function MyClaimsPage() {
   const me = useApi<Me>('/claims/me');
+  const { user } = useSession();
+  const canReview = mayWork(user, 'renoClaimReview');
   const [tab, setTab] = useState<Tab>('handin');
   const [handInKind, setHandInKind] = useState<Kind>('claim');
   const [mineMonth, setMineMonth] = useState(thisMonthMyt());
@@ -72,6 +76,7 @@ export default function MyClaimsPage() {
     { key: 'handin' as const, label: 'Hand in' },
     { key: 'mine' as const, label: 'Mine' },
     ...(me.data?.keepsFloat ? [{ key: 'float' as const, label: 'Petty cash I keep' }] : []),
+    ...(canReview ? [{ key: 'review' as const, label: 'To review' }] : []),
   ];
   return (
     <div className="flex flex-col gap-4">
@@ -82,6 +87,7 @@ export default function MyClaimsPage() {
         onDone={showMine} onCancelEdit={() => { setEditing(null); setTab('mine'); }} />}
       {tab === 'mine' && <Mine month={mineMonth} onMonthChange={setMineMonth} onHandIn={startHandIn} onEdit={startEdit} />}
       {tab === 'float' && <KeptFloat />}
+      {tab === 'review' && canReview && <RenoReview />}
     </div>
   );
 }
@@ -419,10 +425,10 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
     setBusy(true);
     try {
       if (kind === 'claim') {
-        const made = await postWithFiles<{ receiptNo: string; route: 'float' | 'finance' }>('/claims/receipts',
+        const made = await postWithFiles<{ receiptNo: string; route: 'float' | 'finance'; renoReview: boolean }>('/claims/receipts',
           { spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: built.lines,
             ...(transfer ? { payBack: 'finance', bank } : {}) }, files);
-        toast({ tone: 'success', title: `Receipt ${made.receiptNo} handed in`, body: made.route === 'float' ? 'Your department\'s petty cash pays you back.' : 'Finance pays you back by transfer.' });
+        toast({ tone: 'success', title: `Receipt ${made.receiptNo} handed in`, body: made.renoReview ? 'It goes to the renovation reviewer first, then to finance.' : made.route === 'float' ? 'Your department\'s petty cash pays you back.' : 'Finance pays you back by transfer.' });
       } else {
         const body = {
           type, supplierId: supplier?.id, purchaseOrderId: poId || undefined, payeeName: !poId && !supplier ? payeeName.trim() || undefined : undefined,
@@ -570,9 +576,9 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
   );
 }
 
-function Files({ r }: { r: Receipt }) {
+function Files({ r, hrefOf = receiptFileHref }: { r: Receipt; hrefOf?: (receiptId: string, fileId: string) => string }) {
   if (!r.files.length) return <>—</>;
-  return <>{r.files.map((f, i) => <a key={f.id} href={receiptFileHref(r.id, f.id)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="mr-2 text-primary font-medium">{f.mime === 'application/pdf' ? 'PDF' : 'Photo'}{r.files.length > 1 ? ` ${i + 1}` : ''}</a>)}</>;
+  return <>{r.files.map((f, i) => <a key={f.id} href={hrefOf(r.id, f.id)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="mr-2 text-primary font-medium">{f.mime === 'application/pdf' ? 'PDF' : 'Photo'}{r.files.length > 1 ? ` ${i + 1}` : ''}</a>)}</>;
 }
 
 /* One paid through an AP invoice is changed on the invoice by finance, not withdrawn (chew, 15 Nov 2026). */
@@ -856,5 +862,85 @@ function KeptFloat() {
       <DataTable id="my-claims-float" toolbar={<MonthToolbar title="Receipts on the float" count={q.data?.receipts.length} month={month} onMonthChange={setMonth} />} columns={cols} rows={q.data?.receipts ?? null} rowKey={r => r.id} loading={q.loading} error={q.error} onRetry={q.reload}
         empty={{ title: noReceiptsIn(month) }} />
     </div>
+  );
+}
+
+function RenoReviewDetail({ receipt, onClose, onDone }: { receipt: Receipt; onClose: () => void; onDone: () => void }) {
+  const toast = useToast();
+  const [lines, setLinesState] = useState<LineDraft[]>(() => receipt.lines.map(lineDraftOf));
+  const [isEdited, setIsEdited] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [isSendingBack, setIsSendingBack] = useState(false);
+  const [amountSen, setAmountSenState] = useState<number | null>(receipt.amountSen);
+  const setLines = (next: LineDraft[]) => { setLinesState(next); setIsEdited(true); };
+  const setAmountSen = (next: number | null) => { setAmountSenState(next); setIsEdited(true); };
+  const base = `/claims/reno-review/${receipt.id}`;
+  const sendToFinance = async () => {
+    if (!amountSen || amountSen <= 0) return setProblem('Enter the amount.');
+    const built = toLines(lines, amountSen);
+    if (!built.ok) return setProblem(built.message);
+    setIsBusy(true);
+    try {
+      await api.post(`${base}/send`, isEdited ? { lines: built.lines } : {});
+      toast({ tone: 'success', title: `Receipt ${receipt.receiptNo} sent to finance` });
+      onDone();
+    } catch (e) { setProblem(errorMessage(e, 'Not sent.')); } finally { setIsBusy(false); }
+  };
+  return (
+    <>
+      <Modal title={`Receipt ${receipt.receiptNo}`} eyebrow="To review" size="md" onClose={onClose}
+        footer={(
+          <div className="flex flex-wrap justify-end gap-2 pb-[env(safe-area-inset-bottom)]">
+            <Button variant="secondary" className="max-md:min-h-11" disabled={isBusy} onClick={() => setIsSendingBack(true)}>Send back</Button>
+            <Button variant="primary" className="max-md:min-h-11" loading={isBusy} onClick={() => void sendToFinance()}>Send to finance</Button>
+          </div>
+        )}>
+        <KeyFacts cols={2} items={[
+          { label: 'Amount', value: rm(receipt.amountSen) },
+          { label: 'Handed in by', value: <WrappedFact text={receipt.submitterName} /> },
+          { label: 'Date on the receipt', value: date(receipt.spendDate) },
+          { label: 'Shop', value: <WrappedFact text={receipt.vendorName ?? 'None'} /> },
+        ]} />
+        {receipt.note && <NoteBlock text={receipt.note} />}
+        <Papers files={receipt.files} hrefOf={fileId => renoReviewFileHref(receipt.id, fileId)} />
+        <section className="flex flex-col gap-2">
+          <MoneyInput label="Amount" required valueSen={amountSen} onChangeSen={setAmountSen} />
+          <span className="ds-eyebrow">What it was for</span>
+          <LinesEditor lines={lines} setLines={setLines} totalSen={amountSen} department="supply" />
+        </section>
+        {problem && <Problem text={problem} />}
+      </Modal>
+      <ConfirmDialog spec={isSendingBack ? {
+        title: `Send ${receipt.receiptNo} back`, body: 'The person who handed it in sees your reason and can hand in a replacement.', confirmLabel: 'Send back', danger: true,
+        reason: { label: 'Why is it sent back?', maxLength: 300 },
+        onConfirm: async reason => {
+          try {
+            await api.post(`${base}/reject`, { reason: reason.trim() });
+            toast({ tone: 'success', title: `Receipt ${receipt.receiptNo} sent back` });
+            onDone();
+          } catch (e) { toast({ tone: 'critical', title: 'Not sent back', body: errorMessage(e) }); }
+        },
+      } : null} onClose={() => setIsSendingBack(false)} />
+    </>
+  );
+}
+
+function RenoReview() {
+  const queue = useApi<{ receipts: Receipt[] }>('/claims/reno-review');
+  const [open, setOpen] = useState<Receipt | null>(null);
+  const cols: Column<Receipt>[] = [
+    { key: 'date', label: 'Date', type: 'date', value: r => r.spendDate, phone: 'meta' },
+    { key: 'by', label: 'Handed in by', value: r => r.submitterName, phone: 'title' },
+    { key: 'shop', label: 'Shop', value: r => r.vendorName ?? '', sub: r => r.lines.map(l => l.description).filter(Boolean).join('; ') },
+    { key: 'amount', label: 'Amount', type: 'money', value: r => r.amountSen },
+    { key: 'files', label: 'Receipt', value: r => r.files.length, render: r => <Files r={r} hrefOf={renoReviewFileHref} /> },
+  ];
+  return (
+    <>
+      <DataTable id="my-claims-reno-review" toolbar={<TableTitle title="Waiting for your review" count={queue.data?.receipts.length} />} columns={cols} rows={queue.data?.receipts ?? null} rowKey={r => r.id}
+        loading={queue.loading} error={queue.error} onRetry={queue.reload} onRowClick={setOpen} empty={{ title: 'Nothing to review', body: 'Renovation claims handed in to the reviewer show here.' }} />
+      {open && <RenoReviewDetail key={open.id} receipt={open} onClose={() => setOpen(null)} onDone={() => { setOpen(null); queue.reload(); }} />}
+    </>
   );
 }

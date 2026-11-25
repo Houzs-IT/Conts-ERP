@@ -7,6 +7,7 @@ import type { Department } from "./department";
 export type FixedKey = "rental_general" | "dreamcrafter" | "theconts" | "company";
 export type SubDepartment = {
   id: string; department: Department; name: string; fixedKey: FixedKey | null; staffDepartmentId: string | null; active: boolean; sort: number;
+  renoReview: boolean;
 };
 export type StaffDepartment = { id: string; name: string };
 
@@ -24,7 +25,7 @@ export const useStaffDepartments = () => useQuery({
 
 export type SubDepartmentSave =
   | { id?: undefined; department: Department; name: string; staffDepartmentId?: string | null }
-  | { id: string; name?: string; staffDepartmentId?: string | null; active?: boolean; sort?: number };
+  | { id: string; name?: string; staffDepartmentId?: string | null; active?: boolean; sort?: number; renoReview?: boolean };
 
 export const useSaveSubDepartment = () => {
   const qc = useQueryClient();

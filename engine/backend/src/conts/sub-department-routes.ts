@@ -2,7 +2,7 @@
 // under /accounting, behind the Ledger guard.
 //   GET  /accounting/sub-departments        the list, retired ones included
 //   POST /accounting/sub-departments        { department, name, staffDepartmentId? } — needs the ledger post key
-//   PUT  /accounting/sub-departments/:id    { name?, staffDepartmentId?, active?, sort? } — the same key
+//   PUT  /accounting/sub-departments/:id    { name?, staffDepartmentId?, active?, sort?, renoReview? } — the same key
 //   GET  /accounting/staff-departments      Property OS's staff departments a sub-department can map to
 import { hasHouzsPerm } from '../scm/lib/houzs-perms';
 import { requireActiveCompanyId } from '../scm/lib/companyScope';
@@ -80,6 +80,11 @@ export const updateSubDepartmentHandler = async (c: Ctx): Promise<Response> => {
     if (typeof body.active !== 'boolean') return c.json({ error: 'active_invalid' }, 400);
     if (!body.active && s.fixedKey) return c.json({ error: 'built_in', message: `${s.name} is built in: rename it, never retire it.` }, 409);
     patch.active = body.active;
+  }
+  if (body.renoReview !== undefined) {
+    if (typeof body.renoReview !== 'boolean') return c.json({ error: 'reno_review_invalid' }, 400);
+    if (body.renoReview && s.department !== 'supply') return c.json({ error: 'reno_review_department', message: 'Only a Renovation department can be set for Reno review.' }, 422);
+    patch.reno_review = body.renoReview;
   }
   if (Object.keys(patch).length === 0) return c.json({ subDepartment: s });
   const { data, error } = await sb.from('acc_sub_departments').update(patch).eq('company_id', co.companyId).eq('id', id).select('*').maybeSingle();

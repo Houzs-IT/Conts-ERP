@@ -45,6 +45,14 @@ function Row({ s, canSave, save, staff }: {
         <option value="">No staff department</option>
         {staff.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
       </select>
+      {s.department === "supply" && (
+        <label title="Direct claims on these wait for the renovation reviewer before finance checks them."
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, minHeight: 44, fontSize: "var(--fs-13)" }}>
+          <input type="checkbox" aria-label={`Review before finance for ${s.name}`} checked={s.renoReview} disabled={!canSave}
+            onChange={(e) => void save({ id: s.id, renoReview: e.target.checked })} />
+          Review before finance
+        </label>
+      )}
       {s.fixedKey && <span style={{ fontSize: "var(--fs-12)", color: MUTED }}>Built in</span>}
       {!s.active && <span style={{ fontSize: "var(--fs-12)", color: MUTED }}>Retired</span>}
       {canSave && !s.fixedKey && s.active && (
