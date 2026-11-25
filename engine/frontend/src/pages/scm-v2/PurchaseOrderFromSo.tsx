@@ -554,6 +554,12 @@ Nothing was ticked.` });
       searchValue: (r) => r.description ?? '',
     },
     {
+      key: 'remark', label: 'Remarks', width: 200, sortable: false,
+      accessor: (r) => (r.remark ? <span style={{ whiteSpace: 'pre-wrap' }}>{r.remark}</span> : <span className={styles.muted}>-</span>),
+      searchValue: (r) => r.remark ?? '',
+      exportValue: (r) => r.remark ?? '',
+    },
+    {
       key: 'lineStatus', label: 'Stock & orders', width: 320, sortable: false,
       accessor: (r) => <SoLineStatusCell s={lineStatus[r.soItemId]} />,
       searchValue: (r) => soLineStatusText(lineStatus[r.soItemId]),
