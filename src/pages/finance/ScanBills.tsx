@@ -46,7 +46,12 @@ type Row = {
   /** The owner's own part typed by hand (chew, 19 Nov 2026: scanned bills must still take a hand edit); left blank, the days outside the
    *  contract as worked out. */
   ownerPartSen?: number | null;
+  /** Unticked: the company bears this unit's part, nothing is deducted from its owner (charge_to the_conts). */
+  deductOwner?: boolean;
+  /** The bill split with other units, an amount typed for each (chew, 25 Nov 2026); this row's unit keeps the rest. */
+  shares?: Share[];
 };
+type Share = { key: string; unitId: string; amountSen: number | null; deductOwner: boolean; ownerPaid: boolean };
 type Group = { provider: string; count: number; amountSen: number; scanIds: string[] };
 type Sent = Group & { part: number; requestNo?: string; failed?: string };
 type ScanUnit = { id: string; label: string; contracts: SplitContract[] };
@@ -221,7 +226,23 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
     pump();
   }
 
-  const ready = (r: Row) => r.state === 'done' && r.tick && !!r.kind && /^\d{4}-\d{2}$/.test(r.billMonth) && (r.amountSen ?? 0) > 0 && !!r.unitId;
+  /* This row's unit's part: the bill less what is split to other units. */
+  const sharedOf = (r: Row) => (r.shares ?? []).reduce((n, x) => n + (x.amountSen ?? 0), 0);
+  const partOf = (r: Row) => (r.amountSen ?? 0) - sharedOf(r);
+  const sharesProblem = (r: Row): string | null => {
+    const list = r.shares ?? [];
+    if (!list.length) return null;
+    if (list.some(x => !x.unitId)) return 'Pick the unit of each part.';
+    if (list.some(x => !(x.amountSen && x.amountSen > 0))) return 'Enter the amount of each part.';
+    if (new Set([r.unitId, ...list.map(x => x.unitId)]).size !== list.length + 1) return 'A unit is in the split twice.';
+    if (partOf(r) <= 0) return "The parts come to the whole bill or more: leave this unit's part.";
+    return null;
+  };
+  const ready = (r: Row) => r.state === 'done' && r.tick && !!r.kind && /^\d{4}-\d{2}$/.test(r.billMonth) && (r.amountSen ?? 0) > 0 && !!r.unitId && !sharesProblem(r);
+  const patchShare = (key: string, shareKey: string, p: Partial<Share>) => {
+    const r = rowsRef.current.find(x => x.key === key);
+    if (r) patch(key, { shares: (r.shares ?? []).map(x => (x.key === shareKey ? { ...x, ...p } : x)) });
+  };
   const chosen = rows.filter(r => r.state === 'done' && r.tick);
   const recordable = chosen.filter(ready);
   const total = rows.length, finished = rows.filter(r => r.state !== 'waiting' && r.state !== 'reading').length;
@@ -230,7 +251,7 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
      answer still lists what finance pays, so the payment requests go out (functions/_lib/utilityScan.ts). */
   async function record() {
     setProblem(null);
-    if (chosen.length !== recordable.length) return setProblem('Every ticked row needs its kind, month, amount and unit.');
+    if (chosen.length !== recordable.length) return setProblem(chosen.map(sharesProblem).find(Boolean) ?? 'Every ticked row needs its kind, month, amount and unit.');
     setSaving(true);
     try {
       const res = await api.post<{ recorded: number; alreadyDone: number; rolled: unknown[]; ownerLines: number; notSplit: string[]; toPay: Group[] }>(
@@ -238,7 +259,9 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
           batchId, rows: recordable.map(r => ({
             scanId: r.scan!.scanId, unitId: r.unitId, accountId: r.accountId, kind: r.kind, billMonth: r.billMonth, amountSen: r.amountSen,
             periodFrom: r.periodFrom || null, periodTo: r.periodTo || null, dueDate: r.dueDate || null, ownerPaid: r.ownerPaid,
-            ...(r.ownerPartSen != null && !r.ownerPaid ? { ownerPartSen: r.ownerPartSen } : {}),
+            chargeTo: r.deductOwner === false ? 'the_conts' : 'owner',
+            ...(r.ownerPartSen != null && !r.ownerPaid && r.deductOwner !== false ? { ownerPartSen: r.ownerPartSen } : {}),
+            ...((r.shares ?? []).length ? { shares: r.shares!.map(x => ({ unitId: x.unitId, amountSen: x.amountSen, chargeTo: x.deductOwner ? 'owner' : 'the_conts', ownerPaid: x.ownerPaid })) } : {}),
           })),
         });
       const done = new Set(recordable.map(r => r.key));
@@ -285,15 +308,15 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
   /* The owner's own part as worked out: the days outside the contract (null when the bill is not split). */
   const autoPart = (r: Row): number | null => {
     if (!r.unitId || !r.periodFrom || !r.periodTo || !r.amountSen) return null;
-    const s = contractSplit({ from: r.periodFrom, to: r.periodTo }, r.amountSen, contractsOf.get(r.unitId) ?? []);
+    const s = contractSplit({ from: r.periodFrom, to: r.periodTo }, partOf(r), contractsOf.get(r.unitId) ?? []);
     return s.kind === 'split' ? s.outsideSen : null;
   };
   /* What the row saves (functions/_lib/utilityScan.ts): a typed part is the owner's whole, and the rest of the bill is
      still split by days at the contract (chew, 19 Nov 2026). */
   const splitText = (r: Row) => {
     const typed = r.ownerPartSen != null && !r.ownerPaid ? r.ownerPartSen : 0;
-    if (!r.amountSen || typed > r.amountSen) return null;
-    const rest = r.amountSen - typed;
+    if (!r.amountSen || typed > partOf(r)) return null;
+    const rest = partOf(r) - typed;
     const s = r.unitId && r.periodFrom && r.periodTo ? contractSplit({ from: r.periodFrom, to: r.periodTo }, rest, contractsOf.get(r.unitId) ?? []) : { kind: 'none' as const };
     if (s.kind === 'two-contracts') return 'Two contracts in this period: split by hand';
     const days = s.kind === 'split' ? `${s.outsideDays} days outside the contract ${rm(s.outsideSen)}` : '';
@@ -372,8 +395,47 @@ export default function ScanBills({ onBack, onRecorded }: { onBack: () => void; 
                         </div>
                       </td>
                       <td className={`${cell} min-w-[14rem]`}>
-                        <UnitPicker label="Unit" units={roster} value={r.unitId} disabled={!editable}
-                          onChange={id => patch(r.key, { unitId: id, accountId: id && id === r.scan?.unitId ? r.scan.match.accountId : null, tick: r.tick || !!id })} />
+                        <div className="flex flex-col gap-2">
+                          <UnitPicker label="Unit" units={roster} value={r.unitId} disabled={!editable}
+                            onChange={id => patch(r.key, { unitId: id, accountId: id && id === r.scan?.unitId ? r.scan.match.accountId : null, tick: r.tick || !!id })} />
+                          <label className="flex items-center gap-2">
+                            <input type="checkbox" aria-label="Deduct from this unit's owner" checked={r.deductOwner !== false} disabled={!editable}
+                              onChange={e => patch(r.key, { deductOwner: e.target.checked })} />
+                            Deduct from owner
+                          </label>
+                          {/* One bill for two or more units (chew, 25 Nov 2026): an amount typed for each other unit, each
+                              deducted from its owner or not and paid back to its owner or not; this unit keeps the rest. */}
+                          {(r.shares ?? []).length > 0 && (
+                            <span className="text-[var(--color-text-muted)]">This unit's part {rm(Math.max(0, partOf(r)))}</span>
+                          )}
+                          {(r.shares ?? []).map((x, i) => (
+                            <div key={x.key} className="flex flex-col gap-1 rounded border border-[var(--color-border-muted)] p-2">
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold">Part {i + 2}</span>
+                                <Button size="sm" variant="ghost" disabled={!editable} aria-label={`Remove part ${i + 2}`}
+                                  onClick={() => patch(r.key, { shares: (r.shares ?? []).filter(y => y.key !== x.key) })}>Remove</Button>
+                              </div>
+                              <UnitPicker label={`Part ${i + 2} unit`} units={roster} value={x.unitId} disabled={!editable} onChange={id => patchShare(r.key, x.key, { unitId: id })} />
+                              <MoneyInput aria-label={`Part ${i + 2} amount`} valueSen={x.amountSen} disabled={!editable} onChangeSen={v => patchShare(r.key, x.key, { amountSen: v })} />
+                              <label className="flex items-center gap-2">
+                                <input type="checkbox" aria-label={`Part ${i + 2}: deduct from its owner`} checked={x.deductOwner} disabled={!editable}
+                                  onChange={e => patchShare(r.key, x.key, { deductOwner: e.target.checked })} />
+                                Deduct from owner
+                              </label>
+                              <label className="flex items-center gap-2">
+                                <input type="checkbox" aria-label={`Part ${i + 2}: its owner paid it, pay it back`} checked={x.ownerPaid} disabled={!editable}
+                                  onChange={e => patchShare(r.key, x.key, { ownerPaid: e.target.checked })} />
+                                Owner paid (pay back)
+                              </label>
+                            </div>
+                          ))}
+                          {editable && (
+                            <Button size="sm" variant="secondary" onClick={() => patch(r.key, { shares: [...(r.shares ?? []), { key: crypto.randomUUID(), unitId: '', amountSen: null, deductOwner: true, ownerPaid: false }] })}>
+                              Split with another unit
+                            </Button>
+                          )}
+                          {sharesProblem(r) && <span className="text-danger">{sharesProblem(r)}</span>}
+                        </div>
                       </td>
                       <td className={cell}>
                         <input type="checkbox" aria-label="Owner paid this bill" checked={r.ownerPaid} disabled={!editable} onChange={e => patch(r.key, { ownerPaid: e.target.checked })} />
