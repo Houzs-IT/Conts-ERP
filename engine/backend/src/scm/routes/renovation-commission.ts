@@ -4,7 +4,11 @@
 //   GET    /                      every live contract with its commission per person, the schemes, payouts, monthly sales
 //   POST   /schemes               add a scheme (one per brand)   PUT /schemes/:id   change one   DELETE /schemes/:id
 //   POST   /payouts               record commission paid { soDocNo, staffId, amountSen, paidOn, note }
+//   POST   /payouts/batch         the monthly settlement: several payouts at once { paidOn, items: [{ soDocNo, staffId, amountSen }] }
 //   POST   /payouts/:id/void      take a payout back (kept, marked voided)
+//
+// Once the month a part of a contract was sold in has ended, the GET fixes that part's people and rates in
+// scm.reno_commission_locks (migration 0375), so an order claimed a year later still pays what it earned then.
 //
 // Management only (the `*` grant): it shows every person's pay. The math is scm/shared/renovation-commission.ts; the
 // contract sum and the money collected are the Renovation projects page's own figures (acc/reno-projects.ts), so the
@@ -19,8 +23,8 @@ import type { Env, Variables } from '../env';
 import { renoProjectRows } from '../../acc/reno-projects';
 import { inChunks } from '../../acc/reno-completion';
 import {
-  contractCommission, contractPortions, monthlySales, schemeProblems, type CommissionScheme, type CommissionStage, type CommissionTier,
-  type ContractCommission, type ContractPortion,
+  contractCommission, contractPortions, monthlySales, portionKey, schemeProblems, type CommissionScheme, type CommissionStage, type CommissionTier,
+  type ContractCommission, type ContractPortion, type PortionLock,
 } from '../shared/renovation-commission';
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
@@ -59,14 +63,25 @@ renovationCommission.get('/', async (c) => {
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
   try {
-    const [contracts, schemesRes, payoutsRes, staffRes] = await Promise.all([
+    const [contracts, schemesRes, payoutsRes, staffRes, locksRes] = await Promise.all([
       renoProjectRows(sb, co.companyId, todayMyt()),
       sb.from('reno_commission_schemes').select('*').eq('company_id', co.companyId).order('name'),
       sb.from('reno_commission_payouts').select('id, so_doc_no, staff_id, amount_sen, paid_on, note, created_by, created_at, voided_at, voided_by')
         .eq('company_id', co.companyId).order('paid_on', { ascending: false }),
       sb.from('staff').select('id, name, user_id, active').order('name'),
+      sb.from('reno_commission_locks').select('so_doc_no, portion_ref, salesperson_id, manager_staff_id, month_sales_sen, sales_bp, manager_bp, locked_at')
+        .eq('company_id', co.companyId).limit(100_000),
     ]);
-    for (const r of [schemesRes, payoutsRes, staffRes]) if (r.error) throw new Error(r.error.message);
+    for (const r of [schemesRes, payoutsRes, staffRes, locksRes]) if (r.error) throw new Error(r.error.message);
+    const locksByDoc = new Map<string, Map<string, PortionLock>>();
+    for (const l of (locksRes.data ?? []) as Row[]) {
+      const m = locksByDoc.get(String(l.so_doc_no)) ?? new Map<string, PortionLock>();
+      m.set(String(l.portion_ref), {
+        salespersonId: (l.salesperson_id as string | null) ?? null, managerStaffId: (l.manager_staff_id as string | null) ?? null,
+        monthSalesSen: Number(l.month_sales_sen ?? 0), salesBp: Number(l.sales_bp), managerBp: Number(l.manager_bp), lockedAt: String(l.locked_at),
+      });
+      locksByDoc.set(String(l.so_doc_no), m);
+    }
     const docs = contracts.map((k) => k.soDocNo);
     const [orders, instalments, vos] = await Promise.all([
       inChunks(docs, (b, f, t) => sb.from('mfg_sales_orders').select('doc_no, so_date, salesperson_id, branding').eq('company_id', co.companyId).in('doc_no', b).order('doc_no').range(f, t), 'orders'),
@@ -118,12 +133,27 @@ renovationCommission.get('/', async (c) => {
     const salesByScheme = new Map<string, Map<string, number>>();
     for (const s of live) salesByScheme.set(s.id, monthlySales(prepared.filter((p) => p.scheme?.id === s.id).map((p) => ({ salespersonId: p.spId, portions: p.portions }))));
 
+    const thisMonth = todayMyt().slice(0, 7);
+    const lockStamp = new Date().toISOString();
+    const newLocks: Row[] = [];
     const rows = prepared.map(({ k, spId, soDate, branding, scheme, portions }) => {
       const problem = !spId ? 'no_salesperson' : !scheme ? 'no_scheme' : null;
       const calc: ContractCommission | null = spId && scheme
         ? contractCommission({ baseSen: k.revisedContractSen, collectedSen: k.receivedSen, instalments: plan.get(k.soDocNo) ?? [] },
-          portions, scheme, spId, salesByScheme.get(scheme.id) ?? new Map(), paidByDoc.get(k.soDocNo) ?? new Map())
+          portions, scheme, spId, salesByScheme.get(scheme.id) ?? new Map(), paidByDoc.get(k.soDocNo) ?? new Map(), locksByDoc.get(k.soDocNo))
         : null;
+      /* Parts sold in a month that has ended are fixed now, at the rates just worked out. */
+      if (calc && scheme) {
+        for (const p of calc.portions) {
+          if (p.lockedAt || p.month >= thisMonth) continue;
+          newLocks.push({
+            company_id: co.companyId, so_doc_no: k.soDocNo, portion_ref: portionKey(p), month: p.month, scheme_id: scheme.id,
+            salesperson_id: p.salespersonId, manager_staff_id: p.managerStaffId, month_sales_sen: p.monthSalesSen,
+            sales_bp: p.salesBp, manager_bp: p.managerBp, locked_at: lockStamp,
+          });
+          p.lockedAt = lockStamp;
+        }
+      }
       return {
         soDocNo: k.soDocNo, soDate, projectName: k.projectName, customerName: k.customerName, status: k.status, branding,
         salespersonId: spId, salespersonName: spId ? staffName.get(spId) ?? k.salesperson : null,
@@ -131,10 +161,18 @@ renovationCommission.get('/', async (c) => {
         baseSen: k.revisedContractSen, collectedSen: k.receivedSen,
         collectedBp: calc?.collectedBp ?? (k.revisedContractSen > 0 ? Math.min(10_000, Math.floor((k.receivedSen * 10_000) / k.revisedContractSen)) : 0),
         releasedBp: calc?.releasedBp ?? 0, stages: calc?.stages ?? [], companyPoolSen: calc?.companyPoolSen ?? 0,
-        portions: calc?.portions ?? portions.map((p) => ({ ...p, monthSalesSen: 0, salesBp: 0, managerBp: 0, salesSen: 0, managerSen: 0 })),
+        portions: (calc?.portions ?? portions.map((p) => ({ ...p, monthSalesSen: 0, salesBp: 0, managerBp: 0, salesSen: 0, managerSen: 0, salespersonId: spId ?? '', managerStaffId: null, lockedAt: null })))
+          .map((p) => ({ ...p, salespersonName: staffName.get(p.salespersonId) ?? '', managerName: p.managerStaffId ? staffName.get(p.managerStaffId) ?? '' : null })),
         shares: (calc?.shares ?? []).map((s) => ({ ...s, staffName: staffName.get(s.staffId) ?? '' })),
       };
     });
+    if (newLocks.length > 0) {
+      for (let i = 0; i < newLocks.length; i += 500) {
+        const { error } = await sb.from('reno_commission_locks')
+          .upsert(newLocks.slice(i, i + 500), { onConflict: 'company_id,so_doc_no,portion_ref', ignoreDuplicates: true });
+        if (error) throw new Error(`Could not fix the closed months: ${error.message}`);
+      }
+    }
     /* Sales per person per month, for the tier each month landed on. */
     const months = [...salesByScheme].flatMap(([schemeId, m]) => [...m].map(([key, sen]) => {
       const [staffId, month] = key.split('|');
@@ -180,12 +218,20 @@ renovationCommission.post('/schemes', async (c) => {
 renovationCommission.put('/schemes/:id', async (c) => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
-  const b = schemeBody((await c.req.json().catch(() => ({}))) as Row);
+  const raw = (await c.req.json().catch(() => ({}))) as Row;
+  const b = schemeBody(raw);
   if (!b.ok) return c.json({ error: 'invalid', message: b.problems.join(' '), problems: b.problems }, 400);
-  const { data, error } = await c.get('supabase').from('reno_commission_schemes').update(b.row)
+  const sb = c.get('supabase');
+  const { data, error } = await sb.from('reno_commission_schemes').update(b.row)
     .eq('id', c.req.param('id')).eq('company_id', co.companyId).select('*').maybeSingle();
   if (error) return c.json({ error: 'save_failed', message: dupBrand(error.message) ? DUP : error.message }, dupBrand(error.message) ? 409 : 500);
   if (!data) return c.json({ error: 'not_found', message: 'That scheme does not exist.' }, 404);
+  /* "Apply to closed months too": the fixed rates of this scheme's closed months are dropped, and the next read fixes
+     them again at the new rates. Paid money stays paid; what is left to claim follows the new figure. */
+  if (raw.relockClosedMonths === true) {
+    const { error: e2 } = await sb.from('reno_commission_locks').delete().eq('company_id', co.companyId).eq('scheme_id', c.req.param('id'));
+    if (e2) return c.json({ error: 'save_failed', message: `Saved, but the closed months were not recalculated: ${e2.message}` }, 500);
+  }
   return c.json(schemeOf(data as Row));
 });
 
@@ -228,6 +274,36 @@ renovationCommission.post('/payouts', async (c) => {
   }).select('id').single();
   if (error) return c.json({ error: 'save_failed', message: error.message }, 500);
   return c.json({ id: (data as Row).id }, 201);
+});
+
+/* The monthly settlement: every claim ticked is paid in one go, all or nothing. */
+renovationCommission.post('/payouts/batch', async (c) => {
+  const co = requireActiveCompanyId(c);
+  if (!co.ok) return c.json(co.refusal, 409);
+  const sb = c.get('supabase');
+  const raw = (await c.req.json().catch(() => ({}))) as Row;
+  const paidOn = String(raw.paidOn ?? '').trim();
+  const items = (Array.isArray(raw.items) ? (raw.items as unknown[]) : []).map((x) => (x ?? {}) as Row).map((x) => ({
+    soDocNo: String(x.soDocNo ?? '').trim(), staffId: String(x.staffId ?? '').trim(), amountSen: Math.round(Number(x.amountSen ?? 0)),
+  }));
+  const problems = [
+    ...(!ISO.test(paidOn) ? ['Enter the date it was paid.'] : []),
+    ...(items.length === 0 ? ['Tick at least one claim.'] : []),
+    ...(items.some((x) => !x.soDocNo || !x.staffId || !(x.amountSen > 0)) ? ['Every claim needs an order, a person and an amount above zero.'] : []),
+  ];
+  if (problems.length > 0) return c.json({ error: 'invalid', message: problems.join(' '), problems }, 400);
+  const docs = [...new Set(items.map((x) => x.soDocNo))];
+  const { data: found, error: e1 } = await sb.from('mfg_sales_orders').select('doc_no').eq('company_id', co.companyId).in('doc_no', docs);
+  if (e1) return c.json({ error: 'save_failed', message: e1.message }, 500);
+  const known = new Set(((found ?? []) as Row[]).map((r) => String(r.doc_no)));
+  const missing = docs.filter((d) => !known.has(d));
+  if (missing.length > 0) return c.json({ error: 'not_found', message: `Sales order ${missing.join(', ')} does not exist.` }, 404);
+  const note = String(raw.note ?? '').trim().slice(0, 500) || `Commission settlement ${paidOn}`;
+  const { error } = await sb.from('reno_commission_payouts').insert(items.map((x) => ({
+    company_id: co.companyId, so_doc_no: x.soDocNo, staff_id: x.staffId, amount_sen: x.amountSen, paid_on: paidOn, note, created_by: who(c),
+  })));
+  if (error) return c.json({ error: 'save_failed', message: error.message }, 500);
+  return c.json({ count: items.length, totalSen: items.reduce((t, x) => t + x.amountSen, 0) }, 201);
 });
 
 renovationCommission.post('/payouts/:id/void', async (c) => {

@@ -53,7 +53,18 @@ export interface ContractMoney {
 
 export interface PortionCommission extends ContractPortion {
   monthSalesSen: number; salesBp: number; managerBp: number; salesSen: number; managerSen: number;
+  salespersonId: string; managerStaffId: string | null;
+  /** When the rates were fixed (the month closed); null while the month is still open and the rates can move. */
+  lockedAt: string | null;
 }
+
+/** The rates fixed for one part of a contract once its month closed (scm.reno_commission_locks). */
+export interface PortionLock {
+  salespersonId: string | null; managerStaffId: string | null; monthSalesSen: number; salesBp: number; managerBp: number; lockedAt: string;
+}
+
+/** The key a part of a contract is locked under: 'SO', the VO number, or 'OTHER'. */
+export const portionKey = (p: Pick<ContractPortion, 'source' | 'ref'>): string => (p.source === 'VO' ? p.ref : p.source);
 
 export interface CommissionShare {
   staffId: string;
@@ -125,6 +136,7 @@ export function contractCommission(
   salespersonId: string,
   sales: ReadonlyMap<string, number>,
   paid: ReadonlyMap<string, number>,
+  locks?: ReadonlyMap<string, PortionLock>,
 ): ContractCommission {
   const base = Math.max(0, money.baseSen);
   const collectedBp = base > 0 ? Math.min(10_000, Math.floor((Math.max(0, money.collectedSen) * 10_000) / base)) : 0;
@@ -136,22 +148,40 @@ export function contractCommission(
 
   const isManager = scheme.managerStaffId != null && scheme.managerStaffId === salespersonId;
   const rows: PortionCommission[] = portions.map((p) => {
+    const lock = locks?.get(portionKey(p));
+    if (lock) {
+      const sp = lock.salespersonId ?? salespersonId;
+      return { ...p, monthSalesSen: lock.monthSalesSen, salesBp: lock.salesBp, managerBp: lock.managerBp, salespersonId: sp, managerStaffId: lock.managerStaffId,
+        salesSen: applyBp(p.sen, lock.salesBp), managerSen: applyBp(p.sen, lock.managerBp), lockedAt: lock.lockedAt };
+    }
     const monthSalesSen = sales.get(`${salespersonId}|${p.month}`) ?? 0;
     const salesBp = isManager ? scheme.managerBp : salesRateBp(scheme.tiers, monthSalesSen, scheme.managerBp);
     const managerBp = isManager || !scheme.managerStaffId ? 0 : scheme.managerBp - salesBp;
-    return { ...p, monthSalesSen, salesBp, managerBp, salesSen: applyBp(p.sen, salesBp), managerSen: applyBp(p.sen, managerBp) };
+    return { ...p, monthSalesSen, salesBp, managerBp, salespersonId, managerStaffId: isManager ? null : scheme.managerStaffId,
+      salesSen: applyBp(p.sen, salesBp), managerSen: applyBp(p.sen, managerBp), lockedAt: null };
   });
-  const share = (staffId: string, role: 'sales' | 'manager', totalSen: number): CommissionShare => {
+  /* One share per person over every part: a manager who opened the order, or who managed some months, is paid as one. */
+  const totals = new Map<string, { sales: number; manager: number }>();
+  const add = (id: string | null, key: 'sales' | 'manager', sen: number) => {
+    if (!id) return;
+    const t = totals.get(id) ?? { sales: 0, manager: 0 };
+    t[key] += sen;
+    totals.set(id, t);
+  };
+  for (const r of rows) {
+    const ownOrder = r.managerStaffId == null && r.salespersonId === scheme.managerStaffId;
+    add(r.salespersonId, ownOrder ? 'manager' : 'sales', r.salesSen);
+    add(r.managerStaffId, 'manager', r.managerSen);
+  }
+  for (const id of paid.keys()) if (!totals.has(id)) totals.set(id, { sales: 0, manager: 0 });
+  const shares: CommissionShare[] = [...totals].map(([staffId, t]) => {
+    const totalSen = t.sales + t.manager;
     const earnedSen = applyBp(totalSen, releasedBp);
     const paidSen = paid.get(staffId) ?? 0;
-    return { staffId, role, rateBp: base > 0 ? Math.round((totalSen * 10_000) / base) : 0, totalSen, earnedSen, paidSen, claimableSen: Math.max(0, earnedSen - paidSen) };
-  };
-  const salesTotal = rows.reduce((t, r) => t + r.salesSen, 0);
-  const managerTotal = rows.reduce((t, r) => t + r.managerSen, 0);
-  const shares = [
-    share(salespersonId, isManager ? 'manager' : 'sales', salesTotal),
-    ...(!isManager && scheme.managerStaffId ? [share(scheme.managerStaffId, 'manager', managerTotal)] : []),
-  ].filter((s) => s.totalSen !== 0 || s.paidSen !== 0);
+    return { staffId, role: t.sales !== 0 || t.manager === 0 ? 'sales' as const : 'manager' as const, rateBp: base > 0 ? Math.round((totalSen * 10_000) / base) : 0,
+      totalSen, earnedSen, paidSen, claimableSen: Math.max(0, earnedSen - paidSen) };
+  }).filter((x) => x.totalSen !== 0 || x.paidSen !== 0)
+    .sort((a, b) => (a.role === b.role ? 0 : a.role === 'sales' ? -1 : 1));
   return { collectedBp, releasedBp, stages, portions: rows, shares, companyPoolSen: applyBp(base, scheme.companyPoolBp) };
 }
 

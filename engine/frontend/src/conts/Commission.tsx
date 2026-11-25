@@ -1,5 +1,6 @@
 // Conts only (not part of Houzs's code): Commission — /scm/commission (owner, 25 Nov 2026). Management only.
 // Worked out on each load from the contracts, their VOs and the money collected; nothing to press.
+// Monthly settlement: every claim ready to pay, old or new, ticked and paid in one go.
 // By order: every live renovation contract, its commission per person, split by the month each part was sold in.
 // By person: what each person earned, was paid and can still claim. Monthly sales: each salesperson's sales per month
 // and the tier it reached. Payouts: every payment, taken back but never deleted. Settings: one scheme per brand.
@@ -15,12 +16,12 @@ import { DateField } from "../vendor/scm/components/DateField";
 import styles from "../pages/scm-v2/SalesOrderDetail.module.css";
 import { useDialog } from "../hooks/useDialog";
 import {
-  bpFromPct, pctText, personTotals, senFromRm, stageText, tierBp, useCommission, useDeleteScheme, useRecordPayout, useSaveScheme,
-  useVoidPayout, type CommissionData, type CommissionMonth, type CommissionPayout, type CommissionRow, type CommissionScheme,
+  bpFromPct, claimsOf, monthGroups, pctText, personTotals, senFromRm, stageText, useCommission, useDeleteScheme, useRecordPayout, useSaveScheme,
+  useSettle, useVoidPayout, type Claim, type CommissionData, type CommissionPayout, type CommissionRow, type CommissionScheme,
   type CommissionShare, type CommissionStage, type PersonTotal, type SchemeInput,
 } from "./commissionQueries";
 
-type Tab = "orders" | "people" | "months" | "payouts" | "settings";
+type Tab = "settle" | "orders" | "people" | "months" | "payouts" | "settings";
 
 const BAD = "var(--c-error, #b3261e)";
 const GOOD = "var(--c-success, #2F5D4F)";
@@ -54,8 +55,7 @@ const ORDER_COLUMNS: Column<CommissionRow>[] = [
   moneyCol<CommissionRow>("total", "Commission (RM)", (r) => sum(r.shares, "totalSen")),
   moneyCol<CommissionRow>("earned", "Earned (RM)", (r) => sum(r.shares, "earnedSen")),
   moneyCol<CommissionRow>("paid", "Paid (RM)", (r) => sum(r.shares, "paidSen")),
-  moneyCol<CommissionRow>("claimable", "To pay (RM)", (r) => sum(r.shares, "claimableSen"), { strong: true }),
-  moneyCol<CommissionRow>("pool", "Company pool (RM)", (r) => r.companyPoolSen, { hidden: true }),
+  moneyCol<CommissionRow>("claimable", "Can claim (RM)", (r) => sum(r.shares, "claimableSen"), { strong: true }),
 ];
 
 const PEOPLE_COLUMNS: Column<PersonTotal>[] = [
@@ -64,12 +64,12 @@ const PEOPLE_COLUMNS: Column<PersonTotal>[] = [
   moneyCol<PersonTotal>("total", "Commission (RM)", (r) => r.totalSen),
   moneyCol<PersonTotal>("earned", "Earned (RM)", (r) => r.earnedSen),
   moneyCol<PersonTotal>("paid", "Paid (RM)", (r) => r.paidSen),
-  moneyCol<PersonTotal>("claimable", "To pay (RM)", (r) => r.claimableSen, { strong: true }),
+  moneyCol<PersonTotal>("claimable", "Can claim (RM)", (r) => r.claimableSen, { strong: true }),
 ];
 
 export function ContsCommission() {
   const q = useCommission();
-  const [tab, setTab] = useState<Tab>("orders");
+  const [tab, setTab] = useState<Tab>("settle");
   const [open, setOpen] = useState<string | null>(null);
   const [person, setPerson] = useState<string>("");
   const data = q.data;
@@ -78,13 +78,14 @@ export function ContsCommission() {
   const toPay = people.reduce((t, p) => t + p.claimableSen, 0);
   const missing = (data?.rows ?? []).filter((r) => r.problem).length;
   const openRow = data?.rows.find((r) => r.soDocNo === open) ?? null;
+  const claims = useMemo(() => claimsOf(data?.rows ?? []), [data]);
 
   return (
     <div className="space-y-4">
       <PageHeader title="Commission" description="Worked out from each order, its VOs and the money collected. Paid out in stages as the customer pays." />
       {data && (
         <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap", fontSize: "var(--fs-13)" }}>
-          <Kpi label="To pay now" value={`RM ${rm(toPay)}`} strong />
+          <Kpi label="Can claim now" value={`RM ${rm(toPay)}`} strong />
           <Kpi label="Earned so far" value={`RM ${rm(people.reduce((t, p) => t + p.earnedSen, 0))}`} />
           <Kpi label="Paid" value={`RM ${rm(people.reduce((t, p) => t + p.paidSen, 0))}`} />
           {missing > 0 && <Kpi label="Orders with no commission" value={`${missing} of ${data.rows.length}`} bad />}
@@ -94,6 +95,7 @@ export function ContsCommission() {
         <div role="status" style={{ color: BAD }}>No commission scheme yet. Set one up under Settings to start working out commission.</div>
       )}
       <TabStrip<Tab> value={tab} onChange={setTab} options={[
+        { value: "settle", label: "Monthly settlement", count: claims.length },
         { value: "orders", label: "By order" },
         { value: "people", label: "By person", count: people.length },
         { value: "months", label: "Monthly sales" },
@@ -101,6 +103,7 @@ export function ContsCommission() {
         { value: "settings", label: "Settings" },
       ]} />
       {q.isError && <div role="alert" style={{ color: BAD }}>{errText(q.error)}</div>}
+      {tab === "settle" && data && <Settle claims={claims} onOpen={setOpen} />}
       {tab === "orders" && (
         <>
           <label className={styles.field} style={{ maxWidth: 280 }}>
@@ -168,7 +171,7 @@ function OrderDialog({ row, payouts, onClose }: { row: CommissionRow; payouts: C
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
               <thead><tr style={{ color: MUTED }}>
                 <th style={{ ...th, textAlign: "left", paddingLeft: 0 }}>Month</th><th style={{ ...th, textAlign: "left" }}>From</th><th style={th}>Amount</th>
-                <th style={th}>Month's sales</th><th style={th}>Salesperson</th><th style={th}>Manager</th><th style={th}>Salesperson RM</th><th style={th}>Manager RM</th>
+                <th style={th}>Month's sales</th><th style={th}>Salesperson</th><th style={th}>Manager</th><th style={th}>Salesperson RM</th><th style={th}>Manager RM</th><th style={th}>Rate</th>
               </tr></thead>
               <tbody>{row.portions.map((p, i) => (
                 <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
@@ -176,6 +179,7 @@ function OrderDialog({ row, payouts, onClose }: { row: CommissionRow; payouts: C
                   <td style={td}>{rm(p.sen)}</td><td style={td}>{rm0(p.monthSalesSen)}</td>
                   <td style={td}>{pctText(p.salesBp)}</td><td style={td}>{pctText(p.managerBp)}</td>
                   <td style={td}>{rm(p.salesSen)}</td><td style={td}>{rm(p.managerSen)}</td>
+                  <td style={{ ...td, color: p.lockedAt ? MUTED : undefined }}>{p.lockedAt ? "Locked" : "Month open"}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -198,7 +202,7 @@ function OrderDialog({ row, payouts, onClose }: { row: CommissionRow; payouts: C
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
               <thead><tr style={{ color: MUTED }}>
                 <th style={{ ...th, textAlign: "left", paddingLeft: 0 }}>Person</th><th style={{ ...th, textAlign: "left" }}>Role</th><th style={th}>Commission</th>
-                <th style={th}>Earned</th><th style={th}>Paid</th><th style={th}>To pay</th><th />
+                <th style={th}>Earned</th><th style={th}>Paid</th><th style={th}>Can claim</th><th />
               </tr></thead>
               <tbody>{row.shares.map((s) => (
                 <tr key={s.staffId} style={{ borderTop: "1px solid var(--border)" }}>
@@ -211,7 +215,6 @@ function OrderDialog({ row, payouts, onClose }: { row: CommissionRow; payouts: C
             </table>
           </div>
         )}
-        {row.companyPoolSen > 0 && <div style={{ color: MUTED }}>Company pool kept aside: RM {rm(row.companyPoolSen)} (not paid to anyone).</div>}
         {payouts.length > 0 && (
           <div>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Paid on this order</div>
@@ -270,25 +273,136 @@ function PayDialog({ soDocNo, share, onClose }: { soDocNo: string; share: Commis
   );
 }
 
-/* ── Monthly sales and the tier reached ─────────────────────────────────── */
+/* ── Monthly sales: every SO and VO in the month, the tier it reached, the rate each line paid ── */
 function Months({ data }: { data: CommissionData }) {
-  const schemeOf = new Map(data.schemes.map((s) => [s.id, s]));
-  const cols: Column<CommissionMonth>[] = [
-    { key: "month", label: "Month", render: (r) => r.month, getValue: (r) => r.month },
-    { key: "person", label: "Salesperson", render: (r) => <span style={{ fontWeight: 600 }}>{r.staffName}</span>, getValue: (r) => r.staffName },
-    { key: "scheme", label: "Scheme", render: (r) => schemeOf.get(r.schemeId)?.name ?? "—", getValue: (r) => schemeOf.get(r.schemeId)?.name ?? "" },
-    moneyCol<CommissionMonth>("sales", "Sales incl. VOs (RM)", (r) => r.salesSen),
-    { key: "tier", label: "Salesperson rate", align: "right", render: (r) => {
-      const s = schemeOf.get(r.schemeId);
-      if (!s) return "—";
-      return <span style={num}>{s.managerStaffId === r.staffId ? `${pctText(s.managerBp)} (manager)` : pctText(tierBp(s.tiers, r.salesSen, s.managerBp))}</span>;
-    }, getValue: (r) => r.salesSen },
-  ];
+  const groups = useMemo(() => monthGroups(data.rows), [data]);
+  const [person, setPerson] = useState("");
+  const people = [...new Map(groups.map((g) => [g.staffId, g.staffName])).entries()].sort((x, y) => x[1].localeCompare(y[1]));
+  const shown = groups.filter((g) => !person || g.staffId === person);
   return (
-    <DataTable<CommissionMonth>
-      tableId="conts-commission-months" exportName="commission-monthly-sales" exportXlsx columns={cols} rows={data.months}
-      emptyLabel="No sales yet under a scheme." getRowKey={(r) => `${r.schemeId}|${r.staffId}|${r.month}`}
-    />
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", fontSize: "var(--fs-13)" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <label className={styles.field} style={{ maxWidth: 280 }}>
+          <span className={styles.fieldLabel}>Salesperson</span>
+          <select className={styles.fieldInput} value={person} onChange={(e) => setPerson(e.target.value)}>
+            <option value="">Everyone</option>
+            {people.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </label>
+        <span style={{ color: MUTED, flex: 1, minWidth: 240 }}>Each SO counts in the month of its date and each VO in the month of its own date. The month total picks the tier. Once the month ends its rates are locked.</span>
+      </div>
+      {shown.length === 0 && <div style={{ color: MUTED }}>No sales yet under a scheme.</div>}
+      {shown.map((g) => (
+        <div key={g.key} style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "baseline", padding: "10px 14px", background: "var(--bg-subtle, rgba(0,0,0,0.03))" }}>
+            <span style={{ fontWeight: 600, flex: 1, minWidth: 200 }}>{g.staffName} · {g.month}</span>
+            <span style={{ color: MUTED }}>{g.schemeName}</span>
+            <span style={{ ...num, fontWeight: 600 }}>RM {rm(g.totalSen)}</span>
+            <span style={{ ...num, fontWeight: 600, color: GOOD }}>Salesperson {pctText(g.salesBp)}</span>
+            <span style={{ color: MUTED }}>{g.locked ? "Locked" : "Month open"}</span>
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+              <thead><tr style={{ color: MUTED }}>
+                <th style={{ ...th, textAlign: "left", paddingLeft: 14 }}>Order / VO</th><th style={{ ...th, textAlign: "left" }}>Project</th><th style={{ ...th, textAlign: "left" }}>Date</th>
+                <th style={th}>Sales (RM)</th><th style={th}>Salesperson</th><th style={th}>Manager</th><th style={{ ...th, paddingRight: 14 }}>Manager (RM)</th>
+              </tr></thead>
+              <tbody>{g.lines.map(({ row, portion: p }, i) => (
+                <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td style={{ padding: "6px 0 6px 14px" }}><span style={{ fontWeight: 600 }}>{p.source === "OTHER" ? "Other" : p.source}</span> {row.soDocNo}{p.source === "VO" ? ` ${p.ref}` : ""}</td>
+                  <td style={{ paddingLeft: 8 }}>{row.projectName || row.customerName}</td>
+                  <td style={{ paddingLeft: 8 }}>{p.date}</td>
+                  <td style={td}>{rm(p.sen)}</td>
+                  <td style={td}>{pctText(p.salesBp)} = {rm(p.salesSen)}</td>
+                  <td style={td}>{p.managerName ? `${p.managerName} ${pctText(p.managerBp)}` : "—"}</td>
+                  <td style={{ ...td, paddingRight: 14 }}>{rm(p.managerSen)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Monthly settlement: tick the claims being paid, mark them paid in one go ── */
+function Settle({ claims, onOpen }: { claims: Claim[]; onOpen: (soDocNo: string) => void }) {
+  const [person, setPerson] = useState("");
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [paidOn, setPaidOn] = useState(today());
+  const [note, setNote] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const settle = useSettle();
+  const dialog = useDialog();
+  const people = [...new Map(claims.map((c) => [c.share.staffId, c.share.staffName])).entries()].sort((x, y) => x[1].localeCompare(y[1]));
+  const shown = claims.filter((c) => !person || c.share.staffId === person);
+  const chosen = shown.filter((c) => picked[c.key]);
+  const chosenSen = chosen.reduce((t, c) => t + c.share.claimableSen, 0);
+  const allPicked = shown.length > 0 && chosen.length === shown.length;
+  const submit = async () => {
+    setNote(null); setDone(null);
+    if (chosen.length === 0) { setNote("Tick the claims you are paying."); return; }
+    if (!paidOn) { setNote("Enter the date it was paid."); return; }
+    if (!(await dialog.confirm(`Mark ${chosen.length} claim${chosen.length === 1 ? "" : "s"} as paid on ${paidOn}, RM ${rm(chosenSen)} in total?`))) return;
+    try {
+      await settle.mutateAsync({ paidOn, note: "", items: chosen.map((c) => ({ soDocNo: c.row.soDocNo, staffId: c.share.staffId, amountSen: c.share.claimableSen })) });
+      setPicked({}); setDone(`Recorded ${chosen.length} payout${chosen.length === 1 ? "" : "s"}, RM ${rm(chosenSen)}.`);
+    } catch (e) { setNote(errText(e)); }
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", fontSize: "var(--fs-13)" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <label className={styles.field} style={{ maxWidth: 280 }}>
+          <span className={styles.fieldLabel}>Person</span>
+          <select className={styles.fieldInput} value={person} onChange={(e) => { setPerson(e.target.value); setPicked({}); }}>
+            <option value="">Everyone</option>
+            {people.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </label>
+        <span style={{ color: MUTED, flex: 1, minWidth: 240 }}>Every order whose customer has paid far enough, however old. Amounts use the rates locked when each month closed.</span>
+      </div>
+      <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
+          <thead><tr style={{ color: MUTED }}>
+            <th style={{ ...th, textAlign: "left", paddingLeft: 12, width: 32 }}>
+              <input type="checkbox" aria-label="Tick every claim" checked={allPicked}
+                onChange={(e) => setPicked(e.target.checked ? Object.fromEntries(shown.map((c) => [c.key, true])) : {})} />
+            </th>
+            <th style={{ ...th, textAlign: "left" }}>Person</th><th style={{ ...th, textAlign: "left" }}>Order</th><th style={{ ...th, textAlign: "left" }}>Project</th>
+            <th style={th}>Released</th><th style={th}>Commission</th><th style={th}>Paid before</th><th style={{ ...th, paddingRight: 12 }}>Can claim</th>
+          </tr></thead>
+          <tbody>
+            {shown.length === 0 && <tr><td colSpan={8} style={{ padding: 14, color: MUTED }}>Nothing to claim right now.</td></tr>}
+            {shown.map((c) => (
+              <tr key={c.key} style={{ borderTop: "1px solid var(--border)" }}>
+                <td style={{ padding: "6px 0 6px 12px" }}>
+                  <input type="checkbox" aria-label={`Pay ${c.share.staffName} on ${c.row.soDocNo}`} checked={!!picked[c.key]}
+                    onChange={(e) => setPicked({ ...picked, [c.key]: e.target.checked })} />
+                </td>
+                <td style={{ paddingLeft: 8 }}><div style={{ fontWeight: 600 }}>{c.share.staffName}</div><div style={{ color: MUTED }}>{ROLE[c.share.role]}</div></td>
+                <td style={{ paddingLeft: 8 }}>
+                  <button type="button" onClick={() => onOpen(c.row.soDocNo)} style={{ border: 0, background: "none", padding: 0, color: "var(--c-link, #1f5c4a)", cursor: "pointer", font: "inherit" }}>{c.row.soDocNo}</button>
+                  <div style={{ color: MUTED }}>{c.row.soDate ?? ""}</div>
+                </td>
+                <td style={{ paddingLeft: 8 }}>{c.row.projectName || c.row.customerName}</td>
+                <td style={td}>{pctText(c.row.releasedBp)}</td>
+                <td style={td}>{rm(c.share.totalSen)}</td>
+                <td style={td}>{rm(c.share.paidSen)}</td>
+                <td style={{ ...td, paddingRight: 12, fontWeight: 600, color: GOOD }}>{rm(c.share.claimableSen)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", justifyContent: "flex-end" }}>
+        <span style={{ ...num, fontWeight: 600, flex: 1, minWidth: 200 }}>{chosen.length > 0 ? `${chosen.length} ticked · RM ${rm(chosenSen)}` : `${shown.length} claims · RM ${rm(shown.reduce((t, c) => t + c.share.claimableSen, 0))}`}</span>
+        <label className={styles.field} style={{ width: 170 }}><span className={styles.fieldLabel}>Paid on</span><DateField value={paidOn} onChange={(v) => setPaidOn(v)} /></label>
+        <Button onClick={submit} disabled={settle.isPending || chosen.length === 0}>{settle.isPending ? "Saving…" : "Mark ticked as paid"}</Button>
+      </div>
+      {note && <div role="alert" style={{ color: BAD }}>{note}</div>}
+      {done && <div role="status" style={{ color: GOOD }}>{done}</div>}
+    </div>
   );
 }
 
@@ -334,7 +448,7 @@ function Settings({ data }: { data: CommissionData }) {
         {!covered.has("") && <Button variant="secondary" onClick={() => setAdding(newScheme(null))}>Add scheme for all brands</Button>}
       </div>
       <div style={{ color: MUTED, fontSize: "var(--fs-12)" }}>
-        Each brand follows its own scheme; a scheme for all brands covers any brand without one. Changing a scheme changes every unpaid figure at once; payouts already recorded stay.
+        Each brand follows its own scheme; a scheme for all brands covers any brand without one. A change applies to months still open; months already closed keep the rates locked when they closed, unless you tick "Also apply to closed months" when saving.
       </div>
       {data.schemes.length === 0 && !adding && <div style={{ color: MUTED }}>No scheme yet.</div>}
       {adding && <SchemeCard scheme={null} initial={adding} data={data} onDone={() => setAdding(null)} />}
@@ -351,6 +465,7 @@ function SchemeCard({ scheme, initial, data, onDone }: { scheme: CommissionSchem
   const [tiers, setTiers] = useState(initial.tiers.map((x) => ({ from: rm0(x.fromSen).replace(/,/g, ""), pct: pctInput(x.bp) })));
   const [note, setNote] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [relock, setRelock] = useState(false);
   const save = useSaveScheme();
   const del = useDeleteScheme();
   const dialog = useDialog();
@@ -363,8 +478,9 @@ function SchemeCard({ scheme, initial, data, onDone }: { scheme: CommissionSchem
       setNote("Enter each rate as a number like 1.25, and each monthly sales figure in RM like 60000."); return;
     }
     try {
-      await save.mutateAsync({ id: scheme?.id ?? null, scheme: { ...t, managerBp, companyPoolBp, tiers: parsed.map((x) => ({ fromSen: x.fromSen ?? 0, bp: x.bp ?? 0 })) } });
-      setSaved(true); onDone?.();
+      if (relock && !(await dialog.confirm("Recalculate every closed month of this scheme at the new rates? Money already paid stays paid; what is left to claim follows the new figures."))) return;
+      await save.mutateAsync({ id: scheme?.id ?? null, scheme: { ...t, managerBp, companyPoolBp, tiers: parsed.map((x) => ({ fromSen: x.fromSen ?? 0, bp: x.bp ?? 0 })) }, relockClosedMonths: relock });
+      setSaved(true); setRelock(false); onDone?.();
     } catch (e) { setNote(errText(e)); }
   };
   const managerBp = bpFromPct(rates.manager) ?? 0;
@@ -383,8 +499,6 @@ function SchemeCard({ scheme, initial, data, onDone }: { scheme: CommissionSchem
           </select></label>
         <label className={styles.field}><span className={styles.fieldLabel}>Manager rate (%)</span>
           <input className={styles.fieldInput} inputMode="decimal" value={rates.manager} onChange={(e) => setRates({ ...rates, manager: e.target.value })} /></label>
-        <label className={styles.field}><span className={styles.fieldLabel}>Company pool (%)</span>
-          <input className={styles.fieldInput} inputMode="decimal" value={rates.company} onChange={(e) => setRates({ ...rates, company: e.target.value })} /></label>
       </div>
 
       <div>
@@ -424,6 +538,11 @@ function SchemeCard({ scheme, initial, data, onDone }: { scheme: CommissionSchem
       <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <input type="checkbox" checked={t.active} onChange={(e) => setT({ ...t, active: e.target.checked })} /> Scheme in use
       </label>
+      {scheme && (
+        <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input type="checkbox" checked={relock} onChange={(e) => setRelock(e.target.checked)} /> Also apply to closed months (normally only open months change)
+        </label>
+      )}
       {note && <div role="alert" style={{ color: BAD }}>{note}</div>}
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
         {saved && <span style={{ color: GOOD }}>Saved</span>}
