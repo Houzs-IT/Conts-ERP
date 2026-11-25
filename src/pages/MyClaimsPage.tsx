@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import PageHeader from '../components/PageHeader';
 import { Card } from '../components/Card';
-import { Button, ButtonLink } from '../components/Button';
+import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Select, type SelectOption } from '../components/Select';
 import { Segmented, StatTile } from '../components/Metric';
@@ -14,7 +14,8 @@ import { StaleBanner } from '../components/DataState';
 import Icon from '../components/Icon';
 import { TONE, cx } from '../lib/design-tokens';
 import { DataTable, type Column } from '../components/DataTable';
-import { FileDropRow } from '../components/Attachments';
+import { FileDropRow, MediaViewer, type MediaItem } from '../components/Attachments';
+import { ClaimPapers, claimFileItem } from './claims/ClaimPapers';
 import { MoneyInput, DateField } from '../components/inputs';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
@@ -33,7 +34,7 @@ import { depositSen, percentOf } from '../lib/deposit';
 import { ClaimBankFields, useSavedBank } from '../components/ops/ClaimBankFields';
 import { usePortalText } from '../lib/portalI18n';
 import { LinesEditor, blankLine, toLines, type LineDraft } from './claims/ClaimLines';
-import { ClaimSection, FORM_FOOTER, GridRow, KeptPapers, TWO_COLUMN_GRID, RowHelp } from './claims/FormLayout';
+import { ClaimSection, FORM_FOOTER, GridRow, TWO_COLUMN_GRID, RowHelp } from './claims/FormLayout';
 import { ReviewFooter } from './claims/ReviewFooter';
 import { SupplierPicker, type Supplier } from './claims/SupplierPicker';
 
@@ -269,9 +270,10 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
   const keptHref = (fileId: string) => (reviewing ? renoReviewFileHref(reviewing.receipt.id, fileId) : requestFileHref(editing?.id ?? '', fileId));
   const papersRow = (label: string, hint: string) => (
     <>
-      <KeptPapers files={kept} hrefOf={keptHref} onRemove={fileId => setKept(k => k.filter(x => x.id !== fileId))} label={reviewing ? 'Papers on the receipt' : undefined} />
       <FileDropRow label={kept.length ? 'Add more papers (optional)' : label} hint={hint} accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
-        busy={reading} chosen={files.length ? files.map(f => f.name).join(', ') : null} />
+        busy={reading} />
+      <ClaimPapers saved={kept} hrefOf={keptHref} picked={files} onRemoveSaved={fileId => setKept(k => k.filter(x => x.id !== fileId))}
+        onRemovePicked={index => setFiles(list => list.filter((_, position) => position !== index))} />
     </>
   );
   const summary = (
@@ -390,8 +392,17 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
 }
 
 function Files({ r, hrefOf = receiptFileHref }: { r: Receipt; hrefOf?: (receiptId: string, fileId: string) => string }) {
+  const [viewing, setViewing] = useState<MediaItem | null>(null);
   if (!r.files.length) return <>—</>;
-  return <>{r.files.map((f, i) => <a key={f.id} href={hrefOf(r.id, f.id)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="mr-2 text-primary font-medium">{f.mime === 'application/pdf' ? 'PDF' : 'Photo'}{r.files.length > 1 ? ` ${i + 1}` : ''}</a>)}</>;
+  return (
+    <>
+      {r.files.map((f, i) => (
+        <button key={f.id} type="button" onClick={e => { e.stopPropagation(); setViewing(claimFileItem(f, fileId => hrefOf(r.id, fileId))); }}
+          className="mr-2 p-0 border-0 bg-transparent cursor-pointer text-primary font-medium">{f.mime === 'application/pdf' ? 'PDF' : 'Photo'}{r.files.length > 1 ? ` ${i + 1}` : ''}</button>
+      ))}
+      {viewing && <span onClick={e => e.stopPropagation()}><MediaViewer item={viewing} onClose={() => setViewing(null)} /></span>}
+    </>
+  );
 }
 
 /* One paid through an AP invoice is changed on the invoice by finance, not withdrawn (chew, 15 Nov 2026). */
@@ -454,14 +465,7 @@ function Papers({ files, hrefOf }: { files: ClaimFile[]; hrefOf: (fileId: string
   return (
     <section className="flex flex-col gap-2">
       <span className="ds-eyebrow">Papers</span>
-      <div className="flex flex-wrap gap-2">
-        {files.map(file => (
-          <ButtonLink key={file.id} href={hrefOf(file.id)} target="_blank" rel="noreferrer" size="sm" className="max-w-full max-md:min-h-11"
-            icon={<Icon name={file.mime === 'application/pdf' ? 'FileText' : 'Image'} size="sm" />}>
-            <span className="truncate">{file.fileName}</span>
-          </ButtonLink>
-        ))}
-      </div>
+      <ClaimPapers saved={files} hrefOf={hrefOf} picked={[]} />
     </section>
   );
 }

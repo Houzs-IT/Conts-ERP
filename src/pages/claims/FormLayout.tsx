@@ -1,7 +1,5 @@
 import type { ReactNode } from 'react';
-import { Button } from '../../components/Button';
 import { cx } from '../../lib/design-tokens';
-import type { ClaimFile } from '../../lib/claims';
 
 export const FORM_GRID = 'grid grid-cols-1 sm:grid-cols-3 gap-3 items-start';
 export const SPAN_ALL = 'col-span-full';
@@ -33,21 +31,6 @@ export function ReadOnlyValue({ label, value }: { label: string; value: ReactNod
       <div className="h-[var(--control-height)] min-h-10 flex items-center px-3 rounded-control border border-solid border-line-soft bg-muted text-copy text-muted-ink min-w-0">
         <span className="truncate">{value}</span>
       </div>
-    </div>
-  );
-}
-
-export function KeptPapers({ files, hrefOf, onRemove, label = 'Papers on the request' }: { files: ClaimFile[]; hrefOf: (fileId: string) => string; onRemove: (fileId: string) => void; label?: string }) {
-  if (files.length === 0) return null;
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-meta font-semibold text-ink">{label}</span>
-      {files.map(file => (
-        <div key={file.id} className="flex items-center justify-between gap-2 min-h-10 px-3 rounded-control border border-solid border-line-soft">
-          <a href={hrefOf(file.id)} target="_blank" rel="noreferrer" className="min-w-0 truncate text-copy text-primary font-medium">{file.fileName}</a>
-          <Button size="sm" variant="tertiary" aria-label={`Remove ${file.fileName}`} onClick={() => onRemove(file.id)}>Remove</Button>
-        </div>
-      ))}
     </div>
   );
 }
