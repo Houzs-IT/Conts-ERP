@@ -837,6 +837,9 @@ export default function App() {
         <Route path="/scm/debtors" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsDebtors /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/einvoice" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsEInvoice /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/commission" element={<Guard anyPerm={["*"]}><Scm2990Shell><ContsCommission /></Scm2990Shell></Guard>} />
+        {/* Everyone signed in: the backend answers each person with only their own commission (a scheme's sales manager also
+            sees and sets that scheme; management sees all). */}
+        <Route path="/scm/my-commission" element={<Scm2990Shell><ContsCommission /></Scm2990Shell>} />
         <Route path="/scm/reno-projects" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsRenoProjects /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/rental-unit-costs" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsRentalUnitCosts /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />
         <Route path="/scm/department-spend" element={<ContsLedgerGate><ScmGuard area="scm.finance.accounting"><Scm2990Shell><ContsDepartmentSpend /></Scm2990Shell></ScmGuard></ContsLedgerGate>} />

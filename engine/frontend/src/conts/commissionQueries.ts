@@ -34,9 +34,12 @@ export type CommissionPayout = {
   createdBy: string | null; voidedAt: string | null;
 };
 export type CommissionMonth = { schemeId: string; staffId: string; staffName: string; month: string; salesSen: number };
+/** What the caller may do: management sees and pays everyone; a scheme's sales manager sees and sets that scheme;
+    everyone else sees only their own share. */
+export type CommissionViewer = { staffId: string | null; isAdmin: boolean; canPay: boolean; canAddScheme: boolean; editableSchemeIds: string[] };
 export type CommissionData = {
   rows: CommissionRow[]; schemes: CommissionScheme[]; payouts: CommissionPayout[];
-  staff: Array<{ id: string; name: string }>; months: CommissionMonth[]; brandings: string[];
+  staff: Array<{ id: string; name: string }>; months: CommissionMonth[]; brandings: string[]; viewer: CommissionViewer;
 };
 
 const KEY = ["conts-commission"];
@@ -116,4 +119,47 @@ export function monthGroups(rows: readonly CommissionRow[]): MonthGroup[] {
     }
   }
   return [...out.values()].sort((a, b) => b.month.localeCompare(a.month) || a.staffName.localeCompare(b.staffName));
+}
+
+/** One person's commission on one part of an order (the SO, a VO, other changes), and how much of it was claimed.
+    Payments are set against the parts in order: the SO first, then each VO by date. */
+export type ClaimPart = { portion: CommissionPortion; rateBp: number; commissionSen: number; earnedSen: number; claimedSen: number; leftSen: number };
+export function claimParts(row: CommissionRow, staffId: string, paidSen: number): ClaimPart[] {
+  const parts = [...row.portions]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((p) => {
+      const commissionSen = (p.salespersonId === staffId ? p.salesSen : 0) + (p.managerStaffId === staffId ? p.managerSen : 0);
+      const rateBp = (p.salespersonId === staffId ? p.salesBp : 0) + (p.managerStaffId === staffId ? p.managerBp : 0);
+      return { portion: p, rateBp, commissionSen, earnedSen: Math.round((commissionSen * row.releasedBp) / 10_000), claimedSen: 0, leftSen: 0 };
+    })
+    .filter((x) => x.commissionSen !== 0);
+  let rest = paidSen;
+  parts.forEach((x, i) => {
+    const take = i === parts.length - 1 ? rest : Math.max(0, Math.min(rest, x.earnedSen));
+    x.claimedSen = take;
+    rest -= take;
+    x.leftSen = x.earnedSen - x.claimedSen;
+  });
+  return parts;
+}
+
+/** A person's month: what they sold, the rate it reached, the commission it made them, and the money that moved. */
+export type PersonMonth = {
+  month: string; salesSen: number; salesBp: number | null; commissionSen: number;
+  lines: Array<{ row: CommissionRow; portion: CommissionPortion; role: "sales" | "manager"; rateBp: number; commissionSen: number }>;
+};
+export function personMonths(rows: readonly CommissionRow[], staffId: string): PersonMonth[] {
+  const out = new Map<string, PersonMonth>();
+  for (const r of rows) for (const p of r.portions) {
+    const asSales = p.salespersonId === staffId && p.salesSen !== 0;
+    const asManager = p.managerStaffId === staffId && p.managerSen !== 0;
+    if (!asSales && !asManager && p.salespersonId !== staffId) continue;
+    const m = out.get(p.month) ?? { month: p.month, salesSen: 0, salesBp: null, commissionSen: 0, lines: [] };
+    if (p.salespersonId === staffId) { m.salesSen += p.sen; m.salesBp = p.salesBp; }
+    if (asSales || p.salespersonId === staffId) m.lines.push({ row: r, portion: p, role: "sales", rateBp: p.salesBp, commissionSen: p.salesSen });
+    if (asManager) m.lines.push({ row: r, portion: p, role: "manager", rateBp: p.managerBp, commissionSen: p.managerSen });
+    m.commissionSen += (asSales ? p.salesSen : 0) + (asManager ? p.managerSen : 0);
+    out.set(p.month, m);
+  }
+  return [...out.values()].sort((a, b) => b.month.localeCompare(a.month));
 }
