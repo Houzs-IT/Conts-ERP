@@ -21,15 +21,17 @@ async function load(env: Env, id: string): Promise<Cur | null> {
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id WHERE e.id = ?`, id);
 }
 
-/** What stops a bill being split or put back: a final statement, a cost lock, or a payment request finance is on. A request
- *  that came back (withdrawn or rejected) is fine: the bill changes here and goes with Send again. */
-async function blocked(env: Env, cur: Cur): Promise<string | null> {
+/** What stops a bill being split or put back: a final statement, a cost lock, or a payment request finance is on when the
+ *  split changes what it pays. A request that came back (withdrawn or rejected) is fine: the bill changes here and goes
+ *  with Send again. When no part is paid by its owner the provider is still paid the same, so a request finance is on
+ *  stays as it is and the parts ride on it (chew, 25 Nov 2026: PRQ-2611-056, a bill recorded on one unit and meant for two). */
+async function blocked(env: Env, cur: Cur, changesPay: boolean): Promise<string | null> {
   if (await isExpenseLocked(env, cur)) return 'The owner statement for this bill is final, so it cannot be split.';
   const kept = await keptCostProblem(env, cur.id);
   if (kept) return kept;
   if (cur.payment_request_id) {
     const state = await requestState(env, cur.payment_request_id);
-    if (state && !RETURNED.has(state.status)) return `${state.requestNo ?? 'Its payment request'} is with finance. Split it before it is sent, or after finance sends it back.`;
+    if (state && !RETURNED.has(state.status) && changesPay) return `${state.requestNo ?? 'Its payment request'} is with finance, and a part its owner paid would change what it pays. Split it after finance sends it back, or leave Owner paid unticked.`;
   }
   return null;
 }
@@ -69,7 +71,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (new Set(units).size !== units.length) return fail('VALIDATION', 'A unit is in the split twice.', 422);
   const shared = shares.reduce((n, x) => n + x.amountSen, 0);
   if (shared >= Number(cur.amount)) return fail('VALIDATION', `The parts come to ${rmText(shared)}; this bill's shared part is ${rmText(Number(cur.amount))}. Leave some for this unit.`, 422);
-  const stop = await blocked(env, cur);
+  const stop = await blocked(env, cur, shares.some(x => x.ownerPaid));
   if (stop) return fail('LOCKED', stop, 409);
 
   const owners = new Map((await all<{ id: string; owner_id: string | null }>(env, `SELECT id, owner_id FROM units WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb))`,
@@ -126,9 +128,9 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params
   const cur = await load(env, id);
   if (!cur || !isUtility(cur.category)) return fail('NOT_FOUND', 'That utility bill no longer exists.', 404);
   if (!cur.parts) return fail('VALIDATION', 'This bill is not split.', 422);
-  const stop = await blocked(env, cur);
+  const parts = await all<{ id: string; unit_id: string; amount: number; deduct_month: string; owner_paid: boolean }>(env, 'SELECT id, unit_id, amount, deduct_month, coalesce(owner_paid, false) AS owner_paid FROM expenses WHERE split_of = ?', id);
+  const stop = await blocked(env, cur, parts.some(p => p.owner_paid));
   if (stop) return fail('LOCKED', stop, 409);
-  const parts = await all<{ id: string; unit_id: string; amount: number; deduct_month: string }>(env, 'SELECT id, unit_id, amount, deduct_month FROM expenses WHERE split_of = ?', id);
   for (const p of parts) {
     if (await isExpenseLocked(env, p)) return fail('LOCKED', `${await unitLabel(env, p.unit_id)}'s part is on a final statement, so the split stays.`, 409);
     const kept = await keptCostProblem(env, p.id);

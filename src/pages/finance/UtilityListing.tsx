@@ -558,8 +558,8 @@ function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose, onSaved }:
             {b.description && (b.splitOf || (b.parts ?? 0) > 0) && <Row label="Note">{b.description}</Row>}
             {editable(b) && !b.splitOf && !(b.parts ?? 0) && <EditAmount bill={b} onSaved={onSaved} />}
             {editable(b) && !b.splitOf && !(b.parts ?? 0) && <MoveUnit bill={b} onSaved={onSaved} />}
-            {editable(b) && !b.splitOf && !(b.parts ?? 0) && !b.ownerPaid && !b.recordOnly && <SplitBill bill={b} onSaved={onSaved} />}
-            {editable(b) && (b.parts ?? 0) > 0 && <UndoSplit bill={b} onSaved={onSaved} />}
+            {!b.final && !b.splitOf && !(b.parts ?? 0) && !b.ownerPaid && !b.recordOnly && <SplitBill bill={b} onSaved={onSaved} />}
+            {!b.final && (b.parts ?? 0) > 0 && <UndoSplit bill={b} onSaved={onSaved} />}
             {b.splitOf && <span className="text-meta text-muted-ink">A part of a bill split across units: change it from that bill (Undo split).</span>}
           </div>
         ))}
