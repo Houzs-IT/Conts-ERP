@@ -338,11 +338,12 @@ export function FileRow({ file }: { file: FileRowItem }) {
 
 /** The dashed "Add file" row: click to browse or drop a file on it. Dropped files are held to `accept` as the
  *  picker would be. With `chosen`, a single-file picker shows what was picked and offers to change it. */
-export function FileDropRow({ label = 'Add file', hint, accept, multiple, onPick, busy, chosen, disabled, ariaLabel, tall }: {
+export function FileDropRow({ label = 'Add file', hint, accept, multiple, onPick, busy, chosen, disabled, ariaLabel, tall, compact }: {
   label?: string; hint?: ReactNode; accept?: string; multiple?: boolean; onPick: (files: FileList) => void;
   busy?: boolean; chosen?: string | null; disabled?: boolean; ariaLabel?: string;
   /** A tall centred drop zone instead of a row, for forms where attaching is the point (IT Support). */
   tall?: boolean;
+  compact?: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [refused, setRefused] = useState<string | null>(null);
@@ -353,6 +354,25 @@ export function FileDropRow({ label = 'Add file', hint, accept, multiple, onPick
     setRefused(null); onPick(files);
   }
   const drop = useDropTarget(take, !busy && !disabled);
+  if (compact) {
+    const isOff = busy || disabled;
+    return (
+      <div className="flex flex-col gap-1.5 min-w-0">
+        <button type="button" disabled={isOff} onClick={() => input.current?.click()} aria-label={ariaLabel} {...drop.handlers}
+          className={cx(DASHED, 'w-full min-h-11 md:min-h-[var(--control-height-sm)] flex items-center gap-2 px-1.5 py-1 text-left',
+            isOff ? 'border-line bg-page text-faint cursor-not-allowed' : cx('cursor-pointer', drop.over ? DASHED_OVER : DASHED_IDLE))}>
+          <span className={cx('flex-none inline-flex items-center gap-1.5 h-8 px-2.5 rounded-control border border-solid border-line bg-card text-copy font-medium', !isOff && 'text-ink')}>
+            {busy ? <Spinner className="w-4 h-4" /> : <Icon name={chosen ? fileIcon(chosen) : drop.over ? 'Download' : 'Paperclip'} size="sm" />}
+            <span className="truncate">{busy ? 'Uploading…' : drop.over ? 'Drop to add' : chosen ?? label}</span>
+          </span>
+          {hint && !busy && <span className="flex-1 min-w-0 truncate text-meta text-muted-ink">{chosen ? 'Click or drop to replace' : hint}</span>}
+        </button>
+        <input ref={input} type="file" accept={accept} multiple={multiple} className="hidden" aria-label={ariaLabel ?? label}
+          onChange={e => { if (e.target.files?.length) { setRefused(null); onPick(e.target.files); } e.target.value = ''; }} />
+        {refused && <span className="text-meta text-danger">{refused}</span>}
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-1.5 min-w-0">
       <button type="button" disabled={busy || disabled} onClick={() => input.current?.click()} aria-label={ariaLabel} {...drop.handlers}

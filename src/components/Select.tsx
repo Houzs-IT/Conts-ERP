@@ -249,8 +249,9 @@ export function ComboInput({ value, onChange, options, label, placeholder, maxLe
   );
 }
 
-export function ComboSelect({ value, onChange, options, label, placeholder = 'Type to search' }: {
+export function ComboSelect({ value, onChange, options, label, placeholder = 'Type to search', onQueryChange }: {
   value: string; onChange: (v: string) => void; options: SelectOption[]; label: string; placeholder?: string;
+  onQueryChange?: (query: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState<string | null>(null);
@@ -278,7 +279,7 @@ export function ComboSelect({ value, onChange, options, label, placeholder = 'Ty
   useEffect(() => { if (open) document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: 'nearest' }); }, [active, open, listId]);
 
   const openList = () => { setOpen(true); setActive(Math.max(0, sorted.findIndex(o => o.value === value))); };
-  const close = () => { setOpen(false); setQuery(null); };
+  const close = () => { setOpen(false); setQuery(null); onQueryChange?.(''); };
   const choose = (option?: SelectOption) => { if (!option || option.disabled) return; onChange(option.value); close(); };
   const onListScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const box = e.currentTarget;
@@ -302,7 +303,7 @@ export function ComboSelect({ value, onChange, options, label, placeholder = 'Ty
           aria-activedescendant={open && shown[active] ? `${listId}-${active}` : undefined}
           onFocus={e => { e.currentTarget.select(); openList(); }}
           onClick={() => { if (!open) openList(); }}
-          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onChange={e => { setQuery(e.target.value); onQueryChange?.(e.target.value); setOpen(true); }}
           onKeyDown={onKey}
           className="field-input" style={{ paddingRight: 36 }} />
         <button type="button" tabIndex={-1} aria-label={`Show ${label.toLowerCase()} list`} onMouseDown={e => e.preventDefault()}
