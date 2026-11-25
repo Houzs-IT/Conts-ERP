@@ -92,7 +92,7 @@ function LineTargetFields({ line: l, sub, targets, onPick }: { line: LineDraft; 
       placeholder={`No project: ${sub.name}'s own cost`} options={projects} />;
   }
   return (
-    <div className="flex flex-col gap-3 min-w-0">
+    <>
       <ComboSelect label="Unit" value={l.where === 'unit' ? l.unitId : ''} onChange={v => onPick(v ? only('unit', { unitId: v }) : only('none', {}))}
         placeholder="Type a building or unit" options={targets.unitOptions} />
       {sub?.maintenance && <ComboSelect label="Or a maintenance job" value={l.where === 'job' ? l.jobId : ''} onChange={v => onPick(v ? only('job', { jobId: v }) : only('none', {}))}
@@ -100,7 +100,7 @@ function LineTargetFields({ line: l, sub, targets, onPick }: { line: LineDraft; 
       {/* The company's own Rental projects only; none open, no box (chew, 17 Nov 2026). */}
       {projects.length > 0 && <ComboSelect label="Or a project" value={l.where === 'project' ? l.projectId : ''} onChange={pickProject}
         placeholder="Type the project name or code" options={projects} />}
-    </div>
+    </>
   );
 }
 
