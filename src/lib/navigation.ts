@@ -220,6 +220,9 @@ export const NAV: NavGroup[] = [
     // books, so no permission area; adding and changing rooms needs Manage meeting rooms (area meetingRooms). Its count comes
     // from lib/meetingsUnread.ts.
     { key: 'meetings', label: 'Meetings', icon: 'calendar-clock', path: '/system/meetings', badge: 'meetings' },
+    // Claude / ChatGPT reading the ERP with the person's own login (owner, 25 Nov 2026). Every desk person: staff ask for
+    // access here; management approves, sees every lookup and disconnects (functions/api/ai-connector checks who).
+    { key: 'aiConnector', label: 'AI Connector', icon: 'bot', path: '/system/ai-connector' },
   ] },
 
   // Supply chain workspace. Mirrors Houzs's hierarchy: section -> collapsible area -> page.

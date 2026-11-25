@@ -22,6 +22,9 @@ export const allow = {
   'functions/api/properties/[id]/channels/lookup.ts': 'Read-only check of a Hotel ID with Channex for a building, sent as POST; nothing is stored.',
   'functions/api/table-layouts/columns.ts': 'Keeps a person\'s own column order for a list, a display preference saved on each header drag; no business record changes.',
   'functions/api/system/health/hub-report.ts':'Reads the live health and sends it to the IT Hub, every 5 minutes; nothing in Conts is stored or changed.',
+  'functions/api/mcp/index.ts': 'POST carries an AI Connector read (JSON-RPC); reads change nothing, and each one is logged in mcp_calls.',
+  'functions/api/mcp/oauth/register.ts': 'Stores the OAuth registration of an AI app (name and return addresses), which grants nothing; connecting is audited when the person presses Allow (ai_connector.connect).',
+  'functions/api/mcp/oauth/token.ts': 'Issues the tokens of the AI app after the person pressed Allow, which is audited there (ai_connector.connect); each later use is logged in mcp_calls.',
 };
 
 export const def = {

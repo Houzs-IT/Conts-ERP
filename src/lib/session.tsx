@@ -7,6 +7,7 @@ import { go } from './go';
 import { confirmLeaving } from './useLeaveGuard';
 import { isFieldRole } from './fieldRoles';
 import { clearSnapshots, setSnapshotOwner, snapshotsReady } from './snapshots';
+import { takeAiConnect } from './aiConnectReturn';
 
 /** The password was right and the account has two-step sign-in on: the code is asked for next. */
 export interface TwoStep { challenge: string; backupOnly: boolean }
@@ -79,7 +80,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const finish = (res: SignInAnswer): SignedIn => {
     if (res.twoStep) return { twoStep: { challenge: res.challenge, backupOnly: res.backupOnly } };
     setUser(res.user);
-    go(res.home);
+    // Signed in from an AI app's "Allow?" screen: back to it, not the home screen.
+    go(takeAiConnect() ?? res.home);
     return { home: res.home };
   };
 
