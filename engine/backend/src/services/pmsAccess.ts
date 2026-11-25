@@ -167,7 +167,9 @@ const SALES_POSITION = /^sales/i;
  * canViewAllSales), which supersedes the scoped Sales tier — so a Sales Director
  * is never held to the self+downline Sales scope.
  */
-export function isSalesUser(user: AuthUser | null | undefined): boolean {
+export function isSalesUser(
+  user: Pick<AuthUser, "position_name" | "department_name" | "position_policy"> | null | undefined,
+): boolean {
   if (!user) return false;
   const row = policyOf(user);
   if (row) return row.cohort === "sales";

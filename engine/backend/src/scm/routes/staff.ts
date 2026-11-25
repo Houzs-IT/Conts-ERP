@@ -337,14 +337,14 @@ staff.get("/pickable", async (c) => {
   const emails = Array.from(new Set(emailByUserId.values()));
   if (emails.length > 0) {
     try {
-      const res = await c.env.DB.prepare(
+      const contsStaffResult = await c.env.DB.prepare(
         `SELECT lower(email) AS email, position AS position_name, department AS department_name
            FROM public.conts_staff
           WHERE lower(email) IN (${emails.map(() => "?").join(",")})`,
       )
         .bind(...emails)
         .all<{ email: string; position_name: string | null; department_name: string | null }>();
-      for (const row of res.results) {
+      for (const row of contsStaffResult.results) {
         contsRecordByEmail.set(row.email, { position_name: row.position_name, department_name: row.department_name });
       }
     } catch (err) {
