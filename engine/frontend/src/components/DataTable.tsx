@@ -2164,8 +2164,8 @@ function DataTableInner<T, L>({
     let raf = 0;
     const heights = rowHeightsRef.current;
     const keyAt = (i: number): string | null => {
-      const it = renderList[i];
-      return it && it.kind === "row" ? String(getRowKey(it.row)) : null;
+      const it = renderList.at(i);
+      return it?.kind === "row" ? String(getRowKey(it.row)) : null;
     };
     const measure = () => {
       raf = 0;
@@ -2222,13 +2222,13 @@ function DataTableInner<T, L>({
     if (!canVirtualize) return;
     const el = tbodyRef.current;
     if (!el) return;
-    let changed = false;
-    el.querySelectorAll<HTMLElement>("tr[data-vrow]").forEach((tr) => {
+    let changed = 0;
+    for (const tr of Array.from(el.querySelectorAll<HTMLElement>("tr[data-vrow]"))) {
       const k = tr.getAttribute("data-rowkey");
       const h = tr.offsetHeight;
-      if (k != null && h > 0 && rowHeightsRef.current.get(k) !== h) { rowHeightsRef.current.set(k, h); changed = true; }
-    });
-    if (changed) window.dispatchEvent(new Event("scroll"));
+      if (k != null && h > 0 && rowHeightsRef.current.get(k) !== h) { rowHeightsRef.current.set(k, h); changed += 1; }
+    }
+    if (changed > 0) window.dispatchEvent(new Event("scroll"));
   });
   const vStart = canVirtualize ? winRange.start : 0;
   const vEnd = canVirtualize ? Math.min(renderList.length, winRange.end) : renderList.length;
