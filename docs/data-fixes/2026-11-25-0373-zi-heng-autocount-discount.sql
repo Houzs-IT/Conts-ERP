@@ -1,3 +1,6 @@
+-- APPLIED to production on 25 Nov 2026 as migration 0373 (migrate-production.yml, --only=0373). Kept here, not in
+-- migrations-pg: it is a one-off fix of one production contract; public.pos_migrations keeps its row.
+
 -- 0373_zi_heng_autocount_discount: one-off data fix of one production contract, MR ZI HENG, MYARA PARK R-19-08
 -- (TC-SO-2605-007), chew 25 Nov 2026 ("两张都改"). On an empty database (CI, staging) the rows are not there and nothing
 -- changes.
