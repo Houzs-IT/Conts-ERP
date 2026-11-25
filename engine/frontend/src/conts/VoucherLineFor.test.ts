@@ -6,7 +6,7 @@ import type { SubDepartment } from "./subDepartmentQueries";
 // Rental; Renovation (Dream Crafter) and In-house Reno (The Conts) under Renovation; Company. A renovation one may name
 // one of its brand's projects, or none (the brand's own cost); a Rental one a unit, or the company's own Rental project.
 const S = (id: string, department: SubDepartment["department"], name: string, fixedKey: SubDepartment["fixedKey"] = null): SubDepartment =>
-  ({ id, department, name, fixedKey, staffDepartmentId: null, active: true, sort: 0 });
+  ({ id, department, name, fixedKey, staffDepartmentId: null, active: true, sort: 0, renoReview: false });
 const SUBS = [
   S("s-gen", "rental", "Rental (general)", "rental_general"), S("s-cln", "rental", "Cleaning"),
   S("s-dc", "supply", "Renovation (Dream Crafter)", "dreamcrafter"), S("s-tc", "supply", "In-house Reno (The Conts)", "theconts"),

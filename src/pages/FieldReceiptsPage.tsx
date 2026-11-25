@@ -179,11 +179,11 @@ function HandIn({ me, onClose, onDone }: { me: Me; onClose: () => void; onDone: 
         }, files);
         toast({ tone: 'success', title: tr.supplierSent });
       } else {
-        const made = await postWithFiles<{ route: 'float' | 'finance' }>('/claims/receipts', {
+        const made = await postWithFiles<{ route: 'float' | 'finance'; renoReview?: boolean }>('/claims/receipts', {
           spendDate, amountSen, vendorName: vendorName.trim() || undefined, note: note.trim() || undefined, lines: [line],
           ...(way === 'finance' ? { payBack: 'finance', bank } : {}),
         }, files);
-        toast({ tone: 'success', title: tr.sent, body: way === 'finance' ? p.directSent : made.route === 'float' ? tr.paidFromFloat : tr.paidByFinance });
+        toast({ tone: 'success', title: tr.sent, body: made.renoReview ? p.renoSent : way === 'finance' ? p.directSent : made.route === 'float' ? tr.paidFromFloat : tr.paidByFinance });
       }
       onDone();
     } catch (e) { setProblem(errorMessage(e, tr.notSent)); } finally { setBusy(false); }

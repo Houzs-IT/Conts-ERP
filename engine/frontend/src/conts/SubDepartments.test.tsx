@@ -10,7 +10,7 @@ const LIST = {
     { id: "s-gen", department: "rental", name: "Rental (general)", fixedKey: "rental_general", staffDepartmentId: null, active: true, sort: 10 },
     { id: "s-cln", department: "rental", name: "Cleaning", fixedKey: null, staffDepartmentId: "dept-cln", active: true, sort: 30 },
     { id: "s-old", department: "rental", name: "Laundry", fixedKey: null, staffDepartmentId: null, active: false, sort: 40 },
-    { id: "s-dc", department: "supply", name: "Renovation (Dream Crafter)", fixedKey: "dreamcrafter", staffDepartmentId: null, active: true, sort: 10 },
+    { id: "s-dc", department: "supply", name: "Renovation (Dream Crafter)", fixedKey: "dreamcrafter", staffDepartmentId: null, active: true, sort: 10, renoReview: false },
     { id: "s-co", department: "shared", name: "Company", fixedKey: "company", staffDepartmentId: null, active: true, sort: 10 },
   ],
 };
@@ -64,10 +64,18 @@ describe("the department list", () => {
     await waitFor(() => expect(saveAsync).toHaveBeenCalledWith({ id: "s-old", active: true }));
   });
 
+  it("lets finance turn on review before finance for a renovation row only", async () => {
+    render(<SubDepartments canSave />);
+    expect(screen.queryByLabelText("Review before finance for Cleaning")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Review before finance for Renovation (Dream Crafter)"));
+    await waitFor(() => expect(saveAsync).toHaveBeenCalledWith({ id: "s-dc", renoReview: true }));
+  });
+
   it("without the post key every field is read only", () => {
     render(<SubDepartments canSave={false} />);
     expect((screen.getByLabelText("Name of Cleaning") as HTMLInputElement).disabled).toBe(true);
     expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Retire Cleaning" })).toBeNull();
+    expect((screen.getByLabelText("Review before finance for Renovation (Dream Crafter)") as HTMLInputElement).disabled).toBe(true);
   });
 });

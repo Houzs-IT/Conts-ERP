@@ -138,6 +138,9 @@ export const AREAS: Area[] = [
   // Airbnb's payments matched to the bookings (chew, 10 Nov 2026). Migration 0258 closed it for every department until
   // management opens it (chew: "到时我才给权限"), so no Finance baseline reaches it.
   { key: 'airbnbRecon', label: 'Airbnb reconciliation', group: 'Finance', api: ['airbnb-recon'], managed: true, strictRead: true },
+  // Staff claims with a line on a flagged Renovation sub-department wait here before finance. Reviewing writes, so a
+  // view level does not count (mayReviewRenoClaims). Given one by one; management always has it.
+  { key: 'renoClaimReview', label: 'Review renovation claims', group: 'Finance', api: [], managed: true, ownGrant: true },
   { key: 'pricing', label: 'Pricing', group: 'Growth', api: ['pricing', 'rates'] },
   { key: 'reviews', label: 'Reviews', group: 'Growth', api: ['reviews'] },
   // Messages sat under Reservations from 30 Oct to 2 Nov 2026; migration 0200 pinned its stored levels when it moved here.
@@ -445,6 +448,9 @@ export async function levelAt(env: Env, who: Actor, areaKey: string): Promise<Le
  *  finance, operations manager) with the level the Permissions screen shows. Management is full everywhere. */
 export const can = (s: { levels?: Record<string, Level> }, areaKey: string, min: Level): boolean =>
   RANK[s.levels?.[areaKey] ?? 'none'] >= RANK[min];
+
+export const mayReviewRenoClaims = (s: { role?: string; levels?: Record<string, Level> }): boolean =>
+  s.role === 'management' || can(s, 'renoClaimReview', 'edit');
 
 /** Every active desk account whose level in an area reaches `min`, side closing included: the people a notice for
  *  that area goes to ("people whose department or position grants it"). Read in two queries however many people. */

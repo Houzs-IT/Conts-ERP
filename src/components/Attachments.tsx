@@ -9,6 +9,8 @@ import { useToast } from './Toast';
 /* One look for every upload in the app: a quiet label with a count, then either a thumbnail grid whose last tile
    adds more (photos and videos), or a list of file rows ending in an "Add file" row (invoices, receipts, CSVs). */
 
+export const isPdfItem = (item: MediaItem) => item.kind === 'pdf' || item.mimeType === 'application/pdf';
+
 export interface MediaItem { id: string; kind: string; url: string; fileName: string; mimeType?: string; stage?: string | null }
 
 /** "Before · 2": the section label above an attachment area. `sub` is the quieter label of a column inside one. */
@@ -160,7 +162,14 @@ export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', ca
           <div key={m.id} className="relative">
             <button type="button" onClick={() => setView(m)} title={m.fileName} aria-label={`Open ${m.fileName}`}
               className="group relative block w-full aspect-square rounded-control overflow-hidden bg-sunken border-0 p-0 cursor-pointer outline-none focus-visible:[box-shadow:0_0_0_2px_var(--color-card),0_0_0_4px_var(--color-gold)]">
-              {m.kind === 'video'
+              {isPdfItem(m)
+                ? (
+                  <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-1.5 text-center text-muted-ink">
+                    <Icon name="FileText" size="base" />
+                    <span className="w-full truncate text-caption">{m.fileName}</span>
+                  </span>
+                )
+                : m.kind === 'video'
                 ? <video src={`${m.url}#t=0.1`} preload="metadata" muted playsInline className="w-full h-full object-cover block bg-charcoal" />
                 : <img src={m.url} alt={m.fileName} loading="lazy" className="w-full h-full object-cover block transition-transform duration-[var(--motion-standard)] group-hover:scale-[1.03]" />}
               <span aria-hidden className="absolute inset-0 rounded-control [box-shadow:inset_0_0_0_1px_var(--color-line-soft)]" />
@@ -251,7 +260,7 @@ export function MediaGallery({ items, upload, onDone, addLabel = 'Add photo', ca
   );
 }
 
-function MediaViewer({ item, onClose }: { item: MediaItem; onClose: () => void }) {
+export function MediaViewer({ item, onClose }: { item: MediaItem; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
     window.addEventListener('keydown', onKey, true);
@@ -262,10 +271,12 @@ function MediaViewer({ item, onClose }: { item: MediaItem; onClose: () => void }
       <div className="relative max-w-[min(960px,100%)] max-h-full flex flex-col gap-2" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-2 text-white text-copy">
           <span className="flex-1 truncate">{item.fileName}</span>
-          <a href={item.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 h-9 px-3 rounded-control text-gold hover:bg-[rgba(255,255,255,0.1)]"><Icon name="ExternalLink" size="sm" />Open</a>
-          <button type="button" onClick={onClose} aria-label="Close" className="w-9 h-9 grid place-items-center rounded-control bg-[rgba(255,255,255,0.1)] text-white cursor-pointer"><Icon name="X" size="sm" /></button>
+          <a href={item.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 min-h-11 px-3 rounded-control text-gold hover:bg-[rgba(255,255,255,0.1)]"><Icon name="ExternalLink" size="sm" />Open</a>
+          <button type="button" onClick={onClose} aria-label="Close" className="w-11 h-11 grid place-items-center rounded-control bg-[rgba(255,255,255,0.1)] text-white cursor-pointer"><Icon name="X" size="sm" /></button>
         </div>
-        {item.kind === 'video'
+        {isPdfItem(item)
+          ? <iframe src={item.url} title={item.fileName} className="w-[min(960px,92vw)] h-[80dvh] bg-white rounded-control border-0" />
+          : item.kind === 'video'
           ? <video src={item.url} controls autoPlay className="max-w-full max-h-[80dvh] bg-black rounded-control" />
           : <img src={item.url} alt={item.fileName} className="max-w-full max-h-[80dvh] object-contain rounded-control" />}
       </div>

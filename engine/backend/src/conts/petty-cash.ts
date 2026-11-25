@@ -2,7 +2,7 @@
  *  §4.5). One float per department, kept by one person. A receipt handed in on a float is paid from it at once; the
  *  balance is the cash the keeper should hold. Pure functions, so the routes and the screens agree. Amounts in sen. */
 
-export type ReceiptStatus = 'HANDED_IN' | 'CHECKED' | 'TOPPED_UP' | 'PAID_BACK' | 'REJECTED' | 'REPAID' | 'WRITTEN_OFF' | 'REPLACED';
+export type ReceiptStatus = 'HANDED_IN' | 'CHECKED' | 'TOPPED_UP' | 'PAID_BACK' | 'REJECTED' | 'REPAID' | 'WRITTEN_OFF' | 'REPLACED' | 'RENO_REVIEW';
 export type LineDepartment = 'rental' | 'supply' | 'shared';
 export interface FloatEvent { kind: 'PAID_IN' | 'RETURNED' | 'REPAID'; amountSen: number }
 

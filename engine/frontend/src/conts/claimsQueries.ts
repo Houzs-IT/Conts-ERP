@@ -6,7 +6,7 @@ import { api } from "../api/client";
 import { authedFetch } from "../vendor/scm/lib/authed-fetch";
 
 export type LineDepartment = "rental" | "supply" | "shared";
-export type ReceiptStatus = "HANDED_IN" | "CHECKED" | "TOPPED_UP" | "PAID_BACK" | "REJECTED" | "REPAID" | "WRITTEN_OFF" | "REPLACED";
+export type ReceiptStatus = "RENO_REVIEW" | "HANDED_IN" | "CHECKED" | "TOPPED_UP" | "PAID_BACK" | "REJECTED" | "REPAID" | "WRITTEN_OFF" | "REPLACED";
 export type ClaimLine = {
   /** A request line's id: the account finance chooses for it on Make voucher / Make AP invoice is keyed by it. */
   id?: string;
@@ -20,7 +20,7 @@ export type ClaimLine = {
 export type Receipt = {
   id: string; receiptNo: string; submitterUserId: string; submitterName: string; floatId: string | null; spendDate: string;
   amountSen: number; vendorName: string | null; note: string | null; status: ReceiptStatus; rejectReason: string | null;
-  checkedAt: string | null; checkedBy: string | null; topUpPvId: string | null; paybackPvId: string | null; replacesId: string | null;
+  checkedAt: string | null; checkedBy: string | null; renoReviewedBy?: string | null; renoReviewedAt?: string | null; topUpPvId: string | null; paybackPvId: string | null; replacesId: string | null;
   source: string; lines: ClaimLine[]; files: { id: string; fileName: string; mime: string }[]; overLimit?: boolean;
   /** Finance's pay-back list only: where the money goes. The bank given on the claim (Direct Claim to Me) when there is
    *  one, else the saved details; differsFromSaved when the claim's account is not the saved one or nothing is saved. */
@@ -68,7 +68,7 @@ export type FloatRow = FloatSummary & {
 
 /* Plain words for statuses, the same everywhere. */
 export const RECEIPT_STATUS: Record<ReceiptStatus, string> = {
-  HANDED_IN: "Waiting for a check", CHECKED: "Checked", TOPPED_UP: "Topped up", PAID_BACK: "Paid back",
+  RENO_REVIEW: "With renovation review", HANDED_IN: "Waiting for a check", CHECKED: "Checked", TOPPED_UP: "Topped up", PAID_BACK: "Paid back",
   REJECTED: "Rejected", REPAID: "Repaid", WRITTEN_OFF: "Written off", REPLACED: "Replaced",
 };
 export const REQUEST_STATUS: Record<RequestStatus, string> = {
