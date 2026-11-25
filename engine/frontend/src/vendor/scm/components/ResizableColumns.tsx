@@ -23,11 +23,18 @@ export function useColumnWidths(storageKey: string, defaults: Record<string, num
     for (const k of Object.keys(defaults)) if (typeof kept[k] === 'number' && kept[k] >= MIN_W) out[k] = kept[k];
     return out;
   });
+  /* Kept only once the person drags (or resets), so changing the defaults reaches everyone who never did. */
+  const dragged = useRef(false);
   useEffect(() => {
+    if (!dragged.current) return;
     try { window.localStorage.setItem(storageKey, JSON.stringify(widths)); } catch { /* private mode: widths last this visit */ }
   }, [storageKey, widths]);
-  const resize = useCallback((col: string, w: number) => setWidths((prev) => ({ ...prev, [col]: Math.max(MIN_W, Math.round(w)) })), []);
-  const reset = useCallback(() => setWidths({ ...defaults }), [defaults]);
+  const resize = useCallback((col: string, w: number) => { dragged.current = true; setWidths((prev) => ({ ...prev, [col]: Math.max(MIN_W, Math.round(w)) })); }, []);
+  const reset = useCallback(() => {
+    dragged.current = false;
+    try { window.localStorage.removeItem(storageKey); } catch { /* nothing kept */ }
+    setWidths({ ...defaults });
+  }, [defaults, storageKey]);
   const total = Object.values(widths).reduce((s, w) => s + w, 0);
   return { widths, resize, reset, total };
 }
