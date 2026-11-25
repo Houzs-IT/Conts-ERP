@@ -335,11 +335,27 @@ export const floatReceiptsHandler = async (c: Ctx): Promise<Response> => {
   });
 };
 
+/** Who sent each reviewed renovation claim on to finance. Before migration 0379 runs the columns are missing (42703): none. */
+async function renoReviewersOf(sb: any, companyId: number): Promise<Map<string, { reno_reviewed_by: string | null; reno_reviewed_at: string | null }>> {
+  const reviewed = new Map<string, { reno_reviewed_by: string | null; reno_reviewed_at: string | null }>();
+  try {
+    const rows = await allRows<{ id: string; reno_reviewed_by: string | null; reno_reviewed_at: string | null }>((f, t) =>
+      sb.from('staff_receipts').select('id, reno_reviewed_by, reno_reviewed_at').eq('company_id', companyId).not('reno_reviewed_by', 'is', null).order('id').range(f, t));
+    for (const r of rows) reviewed.set(r.id, { reno_reviewed_by: r.reno_reviewed_by, reno_reviewed_at: r.reno_reviewed_at });
+  } catch (e) {
+    /* allRows keeps only the message: "column staff_receipts.reno_reviewed_by does not exist". */
+    if (!/reno_reviewed\S* does not exist/.test(e instanceof Error ? e.message : String(e))) throw e;
+  }
+  return reviewed;
+}
+
 export const financeReceiptsHandler = async (c: Ctx): Promise<Response> => {
   const co = requireActiveCompanyId(c);
   if (!co.ok) return c.json(co.refusal, 409);
   const sb = c.get('supabase');
-  const rows = (await receiptsWhere(sb, co.companyId, null, c.req.query('month'))).sort((a, b) => String(a.spend_date).localeCompare(String(b.spend_date)));
+  const found = (await receiptsWhere(sb, co.companyId, null, c.req.query('month'))).sort((a, b) => String(a.spend_date).localeCompare(String(b.spend_date)));
+  const reviewers = await renoReviewersOf(sb, co.companyId);
+  const rows = found.map(r => ({ ...r, ...reviewers.get(r.id) }));
   const [views, saved] = await Promise.all([receiptViews(sb, co.companyId, rows), savedBanksOf(sb, co.companyId, rows.map(r => r.submitter_user_id))]);
   /* Reading bank details is Ledger full's, as on GET /accounting/staff-bank (final review): view and edit see the bank,
      the name and the flags, with only the last four digits of the account. */
