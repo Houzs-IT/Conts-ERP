@@ -14,7 +14,7 @@
 //   GET  /jobs                     maintenance jobs I may put a receipt on
 //   GET  /units                    units to name on a receipt
 //   GET  /accounts, /projects       what a cost is, and the project it is on
-//   GET  /suppliers?q=, /purchase-orders?q=   who finance pays (office staff)
+//   GET  /suppliers?q=, /purchase-orders?q=&supplierId=   who finance pays (office staff)
 //   POST /utility-bills/*          scanned utility bills from Property OS (utility-bill-routes.ts; office staff)
 //   GET  /finance-waiting          how many payment requests and claims wait for finance to pay (office staff; Property
 //                                  OS shows it on the Payment requests menu entry only to those who open the Ledger)
@@ -365,6 +365,10 @@ export const purchaseOrdersHandler = async (c: Ctx): Promise<Response> => {
   const q = String(c.req.query('q') ?? '').trim().replace(/[%,()]/g, '');
   let query = c.get('supabase').from('purchase_orders').select('id, po_number, supplier_id, status, total_sen, project_id').eq('company_id', co.companyId).neq('status', 'CANCELLED');
   if (q) query = query.ilike('po_number', `%${q}%`);
+  /* A supplier picked first lists its own POs (chew, 25 Nov 2026). */
+  const supplierId = String(c.req.query('supplierId') ?? '').trim();
+  if (supplierId) query = query.eq('supplier_id', supplierId);
+  if (!q && !supplierId) return c.json({ purchaseOrders: [] });
   const { data, error } = await query.order('po_number', { ascending: false }).limit(50);
   if (error) return c.json({ error: 'load_failed', reason: error.message }, 500);
   return c.json({ purchaseOrders: ((data ?? []) as Array<{ id: string; po_number: string; supplier_id: string; status: string; total_sen: number; project_id: number | null }>)
