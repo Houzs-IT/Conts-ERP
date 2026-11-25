@@ -24,8 +24,8 @@ export function poMissingOptionLabels(
   return missing.filter((a) => has(a.key)).map((a) => a.label);
 }
 
-/** An order line's two lines of identity, Conts reading: the product NAME, its options under it. No product code
-    (owner, 16 Nov 2026: drop the code, the description is enough); the code shows only when the line has no name. */
+/** An order line's two lines of identity, Conts reading: the product NAME, then the SKU code and its options under it.
+    The code stays off the second line only when it is already the first (a line with no name). */
 export function contsLineIdentity(input: { code?: string | null; description?: string | null; variant?: string | null }): {
   primary: string;
   secondary: string | null;
@@ -34,6 +34,6 @@ export function contsLineIdentity(input: { code?: string | null; description?: s
   const name = String(input.description ?? "").trim();
   const variant = String(input.variant ?? "").trim();
   const primary = name || code;
-  const sub = variant && variant !== primary ? variant : "";
+  const sub = [code !== primary ? code : "", variant !== primary ? variant : ""].filter(Boolean).join(" · ");
   return { primary, secondary: sub || null };
 }

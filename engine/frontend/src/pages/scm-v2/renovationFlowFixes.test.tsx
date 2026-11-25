@@ -62,11 +62,11 @@ describe("SO lines by area", () => {
 });
 
 describe("SO line names", () => {
-  it("shows the product name and its options, not the code", () => {
+  it("shows the product name, then the SKU code and its options", () => {
     expect(contsLineIdentity({ code: "CUS-KITCHEN_CABINET", description: "Customer Kitchen cabinet", variant: "" }))
-      .toEqual({ primary: "Customer Kitchen cabinet", secondary: null });
+      .toEqual({ primary: "Customer Kitchen cabinet", secondary: "CUS-KITCHEN_CABINET" });
     expect(contsLineIdentity({ code: "SOFA-1", description: "Sofa 5530", variant: "Grey · 3 seater" }))
-      .toEqual({ primary: "Sofa 5530", secondary: "Grey · 3 seater" });
+      .toEqual({ primary: "Sofa 5530", secondary: "SOFA-1 · Grey · 3 seater" });
     expect(contsLineIdentity({ code: "RN-X", description: "", variant: "" })).toEqual({ primary: "RN-X", secondary: null });
   });
 });

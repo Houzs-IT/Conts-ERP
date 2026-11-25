@@ -470,7 +470,8 @@ export function soLineColumns<T extends SoDisplayLine>({ docNo, docId, currency,
                 / variant trio; this is free text that appears nowhere else on the
                 row), and it WRAPS rather than truncating — a half-shown
                 instruction is worse than none. */}
-            {remark && (
+            {/* Conts reads the remark in its own column, shown by default, so the item cell keeps name + SKU only. */}
+            {remark && !CONTS_LINES_BY_NAME && (
               <div className="mt-1 whitespace-pre-wrap break-words text-[11.5px] italic leading-snug text-ink-secondary">
                 {remark}
               </div>
@@ -545,7 +546,8 @@ export function soLineColumns<T extends SoDisplayLine>({ docNo, docId, currency,
       ),
     },
     /* Remark as its OWN column — hidden by default because the text already
-       renders under the item above, where it is read. This column exists so the
+       renders under the item above, where it is read (Conts shows it here
+       instead, so it is visible by default there). This column exists so the
        remark is SEARCHABLE, filterable and lands in the CSV export: a `render`
        has no getValue, so without it the instruction is invisible to every one
        of those (the same reason the Stock / Incoming PO pair below carry one). */
@@ -553,7 +555,7 @@ export function soLineColumns<T extends SoDisplayLine>({ docNo, docId, currency,
       key: "remark",
       label: "Remark",
       width: "220px",
-      defaultHidden: true,
+      defaultHidden: !CONTS_LINES_BY_NAME,
       getValue: (l) => (l.remark ?? "").trim(),
       render: (l) => {
         const remark = (l.remark ?? "").trim();
