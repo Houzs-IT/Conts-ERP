@@ -1026,7 +1026,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
                   options={[
                     ...sortByText(staffList).map((s) => ({
                       value: s.id,
-                      label: `${s.name} (${s.staffCode})`,
+                      label: s.name,
                     })),
                     ...(form.salespersonId && !staffList.some((s) => s.id === form.salespersonId)
                       ? [{ value: form.salespersonId, label: '(former staff)' }]

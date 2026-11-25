@@ -729,12 +729,12 @@ export const ConsignmentOrderNew = () => {
                   options={canChangeSalesperson
                     ? sortByText(staffList).map((s) => ({
                         value: s.id,
-                        label: `${s.name} (${s.staffCode})`,
+                        label: s.name,
                       }))
                     : selfStaffMatch
                       ? [{
                           value: selfStaffMatch.id,
-                          label: `${selfStaffMatch.name} (${selfStaffMatch.staffCode})`,
+                          label: selfStaffMatch.name,
                         }]
                       : []}
                 />
