@@ -8,7 +8,11 @@
  *   POST /api/mcp/oauth/token        authorization_code (PKCE S256) and refresh_token (rotating)
  *   GET  /.well-known/oauth-*        discovery, at the site root
  *
- * READ-ONLY and the person's OWN access by construction: a tool call re-enters the API in-process as a GET carrying
+ * Actions (owner, 26 Nov 2026, "confirm first, then do"): propose_meeting / propose_email prepare a booking or an email
+ * and return a summary; confirm_action, after the person said yes, does it once through the ERP's own Meetings and Mail
+ * Center endpoints as the person. Everything else is read-only. See mcpActions.ts / mcpActionTools.ts for the fence.
+ *
+ * Reads are the person's OWN access by construction: a tool call re-enters the API in-process as a GET carrying
  * the person's token and this isolate's secret (mcpDispatch.ts). The session middleware accepts a connector token only
  * that way and only for GET/HEAD, turns it into that person's session, and every handler then checks as usual.
  *
@@ -23,6 +27,8 @@ import { logCall, type McpIdentity } from './mcpStore';
 import { dispatchGet } from './mcpDispatch';
 import { apiRoutes } from './apiRoutes.generated';
 import { originOf } from './mcpDiscovery';
+import { ACTION_TOOLS, runActionTool } from './mcpActionTools';
+import { actionsEnabled, mcpActionsReady } from './mcpStore';
 import {
   FETCH_SPECS, PROMPTS, docTitle, findById, monthEnd, myToday, normaliseMonth, parseFetchId, pickFields, prevMonth, promptText,
   searchResults, summariseReservations, summariseBusiness, summariseToday, validRange,
@@ -33,7 +39,7 @@ export { originOf };
 export const MCP_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 /** erp_get's cap. Was 60k; quick answers and `fields` make most replies far smaller. */
 export const MAX_RESULT_CHARS = 30_000;
-const SERVER_INFO = { name: 'conts-erp', title: 'The Conts ERP', version: '1.1.0' };
+const SERVER_INFO = { name: 'conts-erp', title: 'The Conts ERP', version: '1.2.0' };
 
 /** The GET routes as list_modules and list_endpoints show them. */
 export const mcpRouteInfo = (): RouteInfo[] => apiRoutes().map(r => ({ method: r.method, path: r.path }));
@@ -42,7 +48,9 @@ type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean
 const text = (t: string, isError = false): ToolResult => ({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) });
 
 const INSTRUCTIONS = `You are connected to The Conts ERP as the signed-in staff member. The Conts manages short-stay rental units for their owners: units and buildings, owners and their contracts, reservations from Airbnb, Booking.com and Agoda, guests, cleaning and maintenance jobs, owner statements and payouts, expenses and utility bills, pricing and reviews, HR for field staff; plus the Dream Crafter supply chain screens (sales orders, purchasing, stock, transport).
-Everything is READ-ONLY and limited to what this person may see in the ERP. Never guess figures a call did not return.
+Everything is limited to what this person may see and do in the ERP. Never guess figures a call did not return.
+READ-ONLY, with ONE exception, and only when management switched it on: propose_meeting / propose_email prepare a meeting or an email and return a summary and a confirmationId. Show the person that summary word for word and ask them to confirm; call confirm_action ONLY after they explicitly say yes in this conversation. Never confirm on your own, never for anything they did not ask for. Nothing else can be changed: no orders, money, stock, approvals or deletes.
+Document chains: document_flow {number_or_id} (a reservation's invoice, receipts, payments, owner and owner statement). PDFs: get_pdf {type, id}.
 ANSWER FAST: use a quick answer first. It is one call and already summarised:
 - Occupancy, reservation income, average nightly price, earnings per available night, income per unit, owner payout estimate, split by channel, against last month: business_summary {month: "YYYY-MM"} (default this month).
 - Reservations for a period (how many, nights, guest total, fees, expected payout, still owed, by channel and status, direct guests still owing, host payouts outstanding): reservations_summary {from, to} (default this month).
@@ -99,6 +107,7 @@ const TOOLS = [
     },
     annotations: RO,
   },
+  ...ACTION_TOOLS,
   {
     name: 'search', title: 'Search the ERP',
     description: 'Find reservations (by reference, guest name or phone), guests, units, buildings, owners, maintenance and cleaning jobs, expenses and utility bills, and supply chain records, by number or name. Returns ids to open with fetch.',
@@ -180,8 +189,12 @@ async function callTool(request: Request, env: Env, waitUntil: (p: Promise<unkno
   let result: ToolResult;
   const read = (path: string, q?: Record<string, unknown>) => readValue(request, env, waitUntil, token, path, q);
   try {
-    if (name === 'whoami') {
-      result = text(JSON.stringify({ name: id.user.fullName, email: id.user.email, readOnly: true }));
+    const acted = await runActionTool(name, args, { request, env, waitUntil, id, token, origin: originOf(request), read });
+    if (acted) {
+      ({ result, status, note, target } = acted);
+    } else if (name === 'whoami') {
+      const actions = (await mcpActionsReady(env)) && (await actionsEnabled(env));
+      result = text(JSON.stringify({ name: id.user.fullName, email: id.user.email, readOnly: !actions, actions: actions ? 'meetings and email, each confirmed by you first' : 'off' }));
     } else if (name === 'list_modules') {
       result = text(JSON.stringify({ readOnly: true, modules: moduleCatalog(mcpRouteInfo()), tip: 'Try a quick answer first (business_summary, reservations_summary, today_summary, search). Else call list_endpoints with a prefix, then erp_get with "fields". A module your account cannot open answers "not available to your role".' }));
     } else if (name === 'list_endpoints') {

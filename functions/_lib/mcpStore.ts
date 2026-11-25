@@ -12,6 +12,7 @@
  */
 import { type Env, all, one, run, nowIso } from './db';
 import { hasColumn } from './auth';
+import { ACTIONS_SETTING_KEY, ACTION_TTL_MS, PENDING_SQL, type ActionKind } from './mcpActions';
 
 export const MCP_TOKEN_PREFIX = 'ctmcp_';
 export const MCP_REFRESH_PREFIX = 'ctmcpr_';
@@ -192,4 +193,61 @@ export async function logCall(env: Env, c: CallLog): Promise<void> {
   } catch (e) {
     console.error('AI Connector call log failed', e);
   }
+}
+
+/* ---------- actions, confirm first (migration 0380; functions/_lib/mcpActions.ts) ---------- */
+
+/** Whether migration 0380 (mcp_pending_actions) has been applied. */
+export const mcpActionsReady = (env: Env) => hasColumn(env, 'mcp_pending_actions', 'id');
+
+/** The owner's switch "Allow AI actions (meetings, email)": off unless management turned it on. */
+export async function actionsEnabled(env: Env): Promise<boolean> {
+  return (await one<{ value: string }>(env, 'SELECT value FROM settings WHERE key = ?', ACTIONS_SETTING_KEY))?.value === '1';
+}
+
+export async function setActionsEnabled(env: Env, on: boolean): Promise<void> {
+  await run(env, 'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at',
+    ACTIONS_SETTING_KEY, on ? '1' : '0', nowIso());
+}
+
+export interface PendingAction { id: string; kind: ActionKind; payload: unknown; summary: string; expiresAt: string }
+
+export async function createPendingAction(env: Env, a: { tokenId: string; userId: string; kind: ActionKind; payload: unknown; summary: string }): Promise<PendingAction> {
+  const id = `mcpx_${randomToken(18)}`;
+  const expiresAt = later(ACTION_TTL_MS);
+  // Lapsed proposals nobody confirmed go when a new one is made (kept 30 days for the record), so the table stays small.
+  await run(env, PENDING_SQL.sweep, new Date(Date.now() - 30 * 24 * 3600_000).toISOString());
+  await run(env, PENDING_SQL.insert, id, a.tokenId, a.userId, a.kind, JSON.stringify(a.payload), a.summary.slice(0, 25_000), nowIso(), expiresAt);
+  return { id, kind: a.kind, payload: a.payload, summary: a.summary, expiresAt };
+}
+
+type PendingRow = { id: string; kind: ActionKind; payload_json: string; summary: string; expires_at: string };
+const pendingOf = (r: PendingRow): PendingAction => {
+  let payload: unknown = null;
+  try { payload = JSON.parse(r.payload_json); } catch { payload = null; }
+  return { id: r.id, kind: r.kind, payload, summary: r.summary, expiresAt: r.expires_at };
+};
+
+/** Single use: the UPDATE claims the proposal for this token and person, while it has not lapsed and was never used.
+ *  A second confirm, another person's or another connection's id, or a lapsed one finds nothing. */
+export async function consumePendingAction(env: Env, id: string, tokenId: string, userId: string): Promise<PendingAction | null> {
+  const r = await one<PendingRow>(env, PENDING_SQL.consume, nowIso(), id, tokenId, userId, nowIso());
+  return r ? pendingOf(r) : null;
+}
+
+/** Marks a proposal cancelled (unused only). Returns whether one was. */
+export async function cancelPendingAction(env: Env, id: string, tokenId: string, userId: string): Promise<boolean> {
+  return (await all(env, PENDING_SQL.cancel, nowIso(), id, tokenId, userId)).length > 0;
+}
+
+/** What came of a confirmed action. Never throws: the action already happened (or failed) either way. */
+export async function finishPendingAction(env: Env, id: string, outcome: 'done' | 'failed', result: string): Promise<void> {
+  try { await run(env, PENDING_SQL.finish, outcome, result.slice(0, 500), id); }
+  catch (e) { console.error('AI Connector action result not saved', id, e); }
+}
+
+/** Confirmed actions (done or failed) of one person in the last 24 hours, for the daily limit. */
+export async function confirmedInLastDay(env: Env, userId: string): Promise<number> {
+  const r = await one<{ n: number }>(env, PENDING_SQL.countDay, userId, new Date(Date.now() - 24 * 3600_000).toISOString());
+  return Number(r?.n ?? 0);
 }

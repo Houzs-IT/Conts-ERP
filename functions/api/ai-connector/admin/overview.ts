@@ -1,7 +1,7 @@
 import { type Env, all, json, nowIso, one } from '../../../_lib/db';
 import { connectorGate, connectorUrl } from '../../../_lib/aiConnector';
 import { appLabel } from '../../../_lib/mcpAccess';
-import { LEAK_CLIENT_ID } from '../../../_lib/mcpStore';
+import { LEAK_CLIENT_ID, actionsEnabled, mcpActionsReady } from '../../../_lib/mcpStore';
 
 /** Where a person sits, for the lists: their position, else their department. */
 const PLACE_JOIN = 'LEFT JOIN positions p ON p.id = u.position_id LEFT JOIN departments d ON d.id = u.department_id';
@@ -48,9 +48,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
              (SELECT count(DISTINCT user_id) FROM mcp_tokens WHERE revoked_at IS NULL AND refresh_expires_at > ? AND client_id <> ?) AS people`,
     dayAgo, dayAgo, now, LEAK_CLIENT_ID),
   ]);
+  const actionsReady = await mcpActionsReady(env);
+  const actionsOn = actionsReady && await actionsEnabled(env);
   const person = (r: Person) => ({ userId: r.user_id, name: r.full_name, position: r.place || '' });
   return json({
     connectorUrl: connectorUrl(request),
+    actions: { ready: actionsReady, enabled: actionsOn },
     stats: { connectedPeople: Number(stats?.people ?? 0), callsToday: Number(stats?.calls ?? 0), refusedToday: Number(stats?.refused ?? 0), waiting: requests.length },
     requests: requests.map(r => ({ ...person(r), id: r.id, reason: r.reason ?? '', createdAt: r.created_at })),
     connected: connected.map(r => ({ ...person(r), tokenId: r.id, app: appLabel(r.client_name ?? ''), connectedAt: r.created_at, lastUsedAt: r.last_used_at })),
