@@ -183,6 +183,7 @@ export type OutstandingSoItem = {
   processingDate:   string | null;
   salesLocation:    string | null;
   lineDeliveryDate: string | null;
+  remark?:          string | null;
   /* Commander 2026-05-28 — the SKU's MAIN supplier (null when unbound, i.e.
      the line can't be converted to a Production Order until it's assigned a supplier). */
   mainSupplierCode: string | null;
