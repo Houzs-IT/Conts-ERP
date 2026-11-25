@@ -1,5 +1,6 @@
 import { activeCompanyId, houzsCompanyId, mirrorCompanyId } from "./companyScope";
 import type { Env } from "../env";
+import { isSalesUser } from "../../services/pmsAccess";
 
 /* The seeded super_admin system row (mig 0022 / 0066; the SCM auth bridge pins
    every caller to it). Same literal as middleware/auth.ts + staff-mirror.ts —
@@ -150,6 +151,23 @@ export function filterStaffToCompany<T extends StaffScopeRow>(
    attribution is DERIVED. A helper only one file can reach is a helper the next
    file re-derives or skips, so the applied pass lives with the rule now.
    ═══════════════════════════════════════════════════════════════════════════ */
+
+export type OrgRecord = { position_name: string | null; department_name: string | null };
+
+/* Conts keeps positions in Property OS (public.conts_staff), not in the engine's
+   public.positions, so a person counts as sales when either record says so. Only
+   the picker reads Property OS: writing it into users.position_id would also put
+   them in the engine's sales access cohort. Conts directors also sell, so the
+   Property OS Management department is pickable too (owner, 25 Nov 2026). */
+const isSalesRecord = (record: OrgRecord | undefined): boolean =>
+  record !== undefined &&
+  // isSalesUser reads only the position policy, position and department off an AuthUser.
+  isSalesUser({ ...record, permissions_set: null } as unknown as Parameters<typeof isSalesUser>[0]);
+
+export function isPickableSalesperson(engineRecord: OrgRecord | undefined, contsRecord: OrgRecord | undefined): boolean {
+  const isContsManagement = (contsRecord?.department_name ?? "").trim().toLowerCase() === "management";
+  return isSalesRecord(engineRecord) || isSalesRecord(contsRecord) || isContsManagement;
+}
 
 /** A staff row's linked Houzs user id, reading camelCase ?? snake_case (the
  *  PostgREST driver may camelCase result columns). Null when unlinked. */
