@@ -9,6 +9,14 @@ import { o2Date } from './lockGuards';
 
 const KINDS = ['electricity', 'water', 'internet', 'sewerage'];
 const KIND_LABEL: Record<string, string> = { electricity: 'Electricity', water: 'Water', internet: 'Internet', sewerage: 'Indah Water' };
+/* What the company pays the provider for a bill (`e`, joined to its scan `s`). A bill split across units (expenses.split_of,
+   chew 25 Nov 2026) is paid once, for every part no owner paid: each part's shared amount and owner's own part (a
+   record-only part carries the whole of it). Any other bill: the whole printed bill (its scan's), else its amount and
+   owner's own part. */
+const PART_SEN = (x: string) => `(CASE WHEN coalesce(${x}.record_only, false) THEN ${x}.amount ELSE ${x}.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = ${x}.id AND o.kind = 'charge'), 0) END)`;
+const HAS_PARTS = 'EXISTS (SELECT 1 FROM expenses p WHERE p.split_of = e.id)';
+const PAY_SEN = `(CASE WHEN ${HAS_PARTS} THEN (SELECT coalesce(sum(${PART_SEN('x')}), 0) FROM expenses x WHERE (x.id = e.id OR x.split_of = e.id) AND NOT coalesce(x.owner_paid, false))
+  ELSE coalesce(s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) END)`;
 
 /** billDate: the day the bill's expense belongs to: the end of its printed period, else its bill date as entered (chew,
  *  16 Nov 2026: the engine books the expense against the accrual on it when the bill is paid). */
@@ -21,12 +29,12 @@ export interface RequestBill { expenseId: string; unitId: string; kind: string; 
 export async function billsToRequest(env: Env, expenseIds: string[], provider?: string): Promise<{ provider: string; bills: RequestBill[] }[]> {
   if (!expenseIds.length) return [];
   const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; due_date: string | null; reference: string | null; amount: number; provider: string | null }>(env, `
-    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, coalesce(s.payable_sen, s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) AS amount,
+    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, ${PAY_SEN} AS amount,
            coalesce(nullif(s.provider, ''), (SELECT a.provider FROM unit_utility_accounts a WHERE a.unit_id = e.unit_id AND a.kind = e.category AND a.account_no = e.reference
              AND coalesce(a.provider, '') <> '' ORDER BY a.created_at LIMIT 1)) AS provider
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
     WHERE e.id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND e.category IN ('electricity','water','internet','sewerage')
-      AND e.split_of IS NULL AND (s.payable_sen IS NOT NULL OR NOT e.owner_paid) AND coalesce(s.payable_sen, s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) > 0 AND e.payment_request_id IS NULL
+      AND e.split_of IS NULL AND (${HAS_PARTS} OR NOT e.owner_paid) AND ${PAY_SEN} > 0 AND e.payment_request_id IS NULL
     ORDER BY e.incurred_on, e.unit_id, e.category`, JSON.stringify(expenseIds));
   const out = new Map<string, RequestBill[]>();
   for (const r of rows) {
@@ -63,7 +71,7 @@ export async function requestState(env: Env, requestId: string): Promise<{ id: s
  *  go of the request once it has gone out again. */
 export async function billsOnRequest(env: Env, requestId: string): Promise<{ bills: RequestBill[]; off: string[] }> {
   const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; due_date: string | null; reference: string | null; amount: number; owner_paid: boolean; split_of: string | null }>(env, `
-    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, coalesce(s.payable_sen, s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) AS amount, (s.payable_sen IS NULL AND e.owner_paid) AS owner_paid, e.split_of
+    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, ${PAY_SEN} AS amount, (NOT ${HAS_PARTS} AND e.owner_paid) AS owner_paid, e.split_of
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
     WHERE e.payment_request_id = ? ORDER BY e.incurred_on, e.unit_id, e.category, e.id`, requestId);
   const bills: RequestBill[] = [], off: string[] = [];

@@ -44,8 +44,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
              e.receipt_document_id, e.reference, ${LOCKED_SQL} AS final,
              e.payment_request_id, e.payment_request_no, r.status AS request_status, r.reason AS request_reason, r.decided_by AS request_decided_by,
              to_char(r.created_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM') AS request_month,
-             coalesce(sc.bill_sen, e.amount) AS request_sen,
-             coalesce(sc.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) AS whole_sen
+             e.split_of, (SELECT count(*)::int FROM expenses x WHERE x.split_of = e.id) AS parts,
+             -- A bill split across units (chew, 25 Nov 2026): its request pays every part no owner paid; its own whole is its own part.
+             CASE WHEN EXISTS (SELECT 1 FROM expenses x WHERE x.split_of = e.id)
+               THEN (SELECT coalesce(sum(CASE WHEN coalesce(x.record_only, false) THEN x.amount ELSE x.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = x.id AND o.kind = 'charge'), 0) END), 0)
+                     FROM expenses x WHERE (x.id = e.id OR x.split_of = e.id) AND NOT coalesce(x.owner_paid, false))
+               ELSE coalesce(sc.bill_sen, e.amount) END AS request_sen,
+             CASE WHEN e.split_of IS NOT NULL OR EXISTS (SELECT 1 FROM expenses x WHERE x.split_of = e.id)
+               THEN (CASE WHEN coalesce(e.record_only, false) THEN e.amount ELSE e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0) END)
+               ELSE coalesce(sc.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) END AS whole_sen
       FROM expenses e JOIN units u ON u.id = e.unit_id
       LEFT JOIN utility_payment_requests() r ON r.id = e.payment_request_id -- migration 0220: pos_app cannot read scm.payment_requests directly (RLS)
       LEFT JOIN utility_bill_scans sc ON sc.expense_id = e.id
@@ -81,6 +88,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       whole: Number(b.whole_sen),
       // The printed period and the bill's note ("22 of 30 days in the contract"), to check a scanned bill's split.
       description: b.description ?? null, periodFrom: b.period_from ?? null, periodTo: b.period_to ?? null, scanned: !!b.scanned,
+      // Split across units: the bill it was split from (on a part), or how many parts it has (on the bill).
+      splitOf: b.split_of ?? null, parts: Number(b.parts ?? 0),
       receiptId: b.receipt_document_id ?? null, reference: b.reference ?? null, rolled: !!b.rolled,
       request: b.payment_request_id && b.request_status
         ? { id: b.payment_request_id, no: b.payment_request_no ?? null, status: b.request_status, month: b.request_month, amount: Number(b.request_sen),

@@ -20,6 +20,8 @@ export interface GridBill {
   description?: string | null; periodFrom?: string | null; periodTo?: string | null; scanned?: boolean;
   /** The owner paid the provider: the company does not pay it and the whole bill goes back to the owner as a credit. */
   ownerPaid?: boolean;
+  /** One bill for several units (chew, 25 Nov 2026): on a part, the bill it was split from; on that bill, its parts. */
+  splitOf?: string | null; parts?: number;
   /** The deduction month's owner statement is final (finalised, sent or paid). */
   final: boolean;
   receiptId: string | null; reference: string | null; rolled: boolean;
