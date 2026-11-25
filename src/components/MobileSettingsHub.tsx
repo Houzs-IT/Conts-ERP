@@ -26,6 +26,8 @@ const GROUPS: { label: string; items: { label: string; sub: string; icon: string
     { label: 'Users and roles', sub: 'Accounts, permissions, organisation chart', icon: 'ShieldCheck', path: '/system/users' },
     { label: 'Integrations', sub: 'Channex, email, WhatsApp, bank', icon: 'Plug', path: '/system/integrations' },
     { label: 'System health', sub: 'Status, problems and the audit trail', icon: 'Activity', path: '/system/health' },
+    // The phone's way to the AI Connector (owner, 25 Nov 2026: approve and disconnect from a phone too).
+    { label: 'AI Connector', sub: 'Claude and ChatGPT, read only, with your own access', icon: 'Bot', path: '/system/ai-connector' },
   ] },
 ];
 

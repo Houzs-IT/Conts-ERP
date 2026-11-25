@@ -9,6 +9,8 @@ import { overLimit } from '../_lib/textLimits';
 import { once } from '../_lib/idempotency';
 import { demoAsked, demoAllowed } from '../_lib/demo';
 import { isPolled, withPollEtag } from '../_lib/pollEtag';
+import { MCP_INNER_HEADER, isMcpInner } from '../_lib/mcpInner';
+import { MCP_TOKEN_PREFIX, resolveAccessToken } from '../_lib/mcpStore';
 
 /**
  * Runs before every /api endpoint. Most endpoints only check that someone is signed
@@ -50,7 +52,7 @@ const OWNER_ALLOWED: [string, RegExp][] = [
  *                statements, payouts, accounting and the supply chain (the engine), channel and HostPlatform
  *                connections and imports, receipts and claims (the engine), IT support and meeting rooms (the IT Hub), system health,
  *                and user accounts and permissions. */
-const DEMO_LIVE = /^\/api\/(auth|account|owner|table-layouts)(\/|$)|^\/api\/demo$|^\/api\/(reservations|units|payouts|operations\/service-prices)\/export$/;
+const DEMO_LIVE = /^\/api\/(auth|account|owner|table-layouts|ai-connector)(\/|$)|^\/api\/demo$|^\/api\/(reservations|units|payouts|operations\/service-prices)\/export$/;
 const DEMO_REFUSED = /^\/api\/(statements\/(finalise|send|unlock-final)|payouts|integrations|import|claims|supply-chain|it-support|meetings|public\/meetings|system|users|accounting|units\/[^/]+\/channex-setup)(\/|$)/;
 
 /** Renovation staff (migration 0316): their own sign-in, account and notices, and their own clock, leave, pay and receipts. */
@@ -112,6 +114,9 @@ const PUBLIC = new Set([
   'GET /api/auth/reset-password', 'POST /api/auth/reset-password', 'GET /api/settings/public',
   // Houzs Connect checking a Conts account; the handler checks Connect's key itself.
   'POST /api/connect/verify-login',
+  // The AI Connector (MCP) and its OAuth steps, called by Claude / ChatGPT with no cookie: each handler checks the
+  // connector token or the OAuth client itself (functions/api/mcp). Its admin page is /api/ai-connector, signed in as usual.
+  'GET /api/mcp', 'POST /api/mcp', 'POST /api/mcp/oauth/register', 'GET /api/mcp/oauth/authorize', 'POST /api/mcp/oauth/token',
 ]);
 
 /** What someone still on a temporary password (an invite, or management's Reset password) can reach: replacing it,
@@ -121,9 +126,39 @@ const TEMP_PASSWORD_ALLOWED = /^(GET \/api\/auth\/session|POST \/api\/auth\/(log
 /** What someone who must still set up two-step sign-in can reach. */
 const SETUP_ALLOWED = /^(GET \/api\/auth\/session|POST \/api\/auth\/(logout|change-password)|GET \/api\/account|POST \/api\/account\/.+)$/;
 
-const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => {
-  const route = `${request.method} ${new URL(request.url).pathname.replace(/\/+$/, '')}`;
-  if (request.method === 'OPTIONS' || PUBLIC.has(route)) return next();
+/**
+ * AI Connector (owner, 25 Nov 2026): a connector read arrives here as a GET carrying the person's `ctmcp_` token and
+ * this isolate's secret header (functions/_lib/mcpInner.ts), dispatched in-process by functions/_lib/mcpDispatch.ts.
+ * It is turned into a short-lived session cookie for that person, so everything below and every handler's own checks
+ * run exactly as for their browser. A token without the secret (copied out of an AI app and sent here directly), or on
+ * anything but GET/HEAD, is refused: the connector is read-only by construction. Null: not a connector request.
+ */
+async function connectorRequest(request: Request, env: Env): Promise<Request | Response | null> {
+  const token = /^Bearer\s+(\S+)$/i.exec(request.headers.get('authorization') ?? '')?.[1] ?? '';
+  if (!token.startsWith(MCP_TOKEN_PREFIX)) return null;
+  const path = new URL(request.url).pathname;
+  if (path === '/api/mcp' || path.startsWith('/api/mcp/')) return null;
+  if (!isMcpInner(request.headers.get(MCP_INNER_HEADER)) || (request.method !== 'GET' && request.method !== 'HEAD')) {
+    return fail('FORBIDDEN', 'An AI Connector token works only through the AI Connector, and only to read.', 403);
+  }
+  const who = await resolveAccessToken(env, token);
+  if (!who) return fail('UNAUTHENTICATED', 'This AI Connector sign-in has ended or was switched off. Connect the AI app again.', 401);
+  // Five minutes is plenty for one read; the cookie never leaves this isolate.
+  const cookieValue = await signSession(env.SESSION_SECRET, { userId: who.user.id, email: who.user.email, role: who.user.role, fullName: who.user.fullName }, 5 / 60, 1);
+  const headers = new Headers(request.headers);
+  headers.delete('authorization');
+  headers.delete(MCP_INNER_HEADER);
+  headers.set('cookie', `tc_session=${cookieValue}`);
+  return new Request(request, { headers });
+}
+
+const handle: PagesFunction<Env> = async ({ request: asked, env, next, waitUntil }) => {
+  const route = `${asked.method} ${new URL(asked.url).pathname.replace(/\/+$/, '')}`;
+  if (asked.method === 'OPTIONS' || PUBLIC.has(route)) return next();
+
+  const viaConnector = await connectorRequest(asked, env);
+  if (viaConnector instanceof Response) return viaConnector;
+  const request = viaConnector ?? asked;
 
   const signed = await readSession(env.SESSION_SECRET, readCookie(request));
   if (!signed) return next(); // the endpoint answers 401 itself
@@ -234,6 +269,10 @@ const handle: PagesFunction<Env> = async ({ request, env, next, waitUntil }) => 
   headers.append('set-cookie', cookie(request, refreshed, ttlHours * 3600));
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 };
+
+/** The middleware without its outer error handling and per-request database client, for the AI Connector's in-process
+ *  reads (functions/_lib/mcpDispatch.ts): they run inside the connector request's own client and catch errors themselves. */
+export const handleApiRequest = handle;
 
 /** An endpoint that throws (a database error, a bug) would otherwise reach the browser as the platform's own error
  *  page or a raw message. It is logged here and answered in the standard envelope with a plain sentence instead. */

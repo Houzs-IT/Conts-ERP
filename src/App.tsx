@@ -13,6 +13,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage'));
 import { HOME, homeFor, screenClosed, switchedOff } from './lib/navigation';
 import { setNavigate } from './lib/go';
 import { BootScreen, PageShown, PageSkeleton } from './components/Loading';
+import { rememberAiConnect } from './lib/aiConnectReturn';
 
 /** react-router (ERP convention) with route-level code splitting — every page is
  *  lazy-loaded so the initial bundle stays small. Plain addresses (/owners/5); main.tsx moves old
@@ -115,6 +116,8 @@ const MeetingsPage = lazy(() => import('./pages/MeetingsPage'));
 const MeetingBookPage = lazy(() => import('./pages/MeetingBookPage'));
 const MyClaimsPage = lazy(() => import('./pages/MyClaimsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const AiConnectorPage = lazy(() => import('./pages/AiConnectorPage'));
+const AiConnectPage = lazy(() => import('./pages/AiConnectPage'));
 const NotDesignedPage = lazy(() => import('./pages/NotDesignedPage'));
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
 // The portal's shell carries its four-language strings (src/lib/portalI18n.ts): only cleaners and technicians load it.
@@ -274,6 +277,8 @@ function Routed() {
   }
   // A guest booking a meeting room through a link someone sent them: no sign-in, signed in or not (MeetingBookPage).
   if (/^\/book\/[^/]+$/.test(location.pathname)) return <div className="meetings-ui"><Suspense fallback={<BootScreen />}><MeetingBookPage /></Suspense></div>;
+  // An AI app's "Allow?" screen opened before signing in comes back after sign-in (lib/aiConnectReturn.ts).
+  if (!user && location.pathname === '/ai-connect') rememberAiConnect(location.pathname + location.search);
   if (!user) return <Suspense fallback={<BootScreen />}><LoginPage /></Suspense>;
   // A temporary password (invite, or management's Reset password) must be replaced before anything else. Sign-in
   // sends the browser to /change-password, which has no screen of its own, so this holds on every address.
@@ -288,6 +293,8 @@ function Routed() {
       </div>
     );
   }
+  // The AI Connector's "Allow?" screen (Claude / ChatGPT sends people here): on its own, no menu, any device.
+  if (location.pathname === '/ai-connect') return <Suspense fallback={<BootScreen />}><AiConnectPage /></Suspense>;
   const account = location.pathname === '/account';
   // Field roles: single-column 44px shell, not the desk nav.
   if (user.role === 'renovator') {
@@ -464,6 +471,7 @@ function Routed() {
         <Route path="/system/settings/:section?" element={<SettingsPage />} />
         <Route path="/system/audit" element={<Navigate to="/system/health" replace />} />
         <Route path="/system/health" element={<SystemHealthPage />} />
+        <Route path="/system/ai-connector" element={<AiConnectorPage />} />
         <Route path="/system/it-support" element={<ItSupportPage />} />
         <Route path="/supply/it-support" element={<ItSupportPage />} />
         <Route path="/system/meetings" element={<MeetingsPage />} />

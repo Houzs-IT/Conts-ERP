@@ -21,6 +21,10 @@ export const allow = {
   'functions/api/integrations/hostplatform-webhook.ts': 'Called by HostPlatform, not a person; authenticated by the shared webhook secret header instead of a cookie.',
   'functions/api/public/meetings/[[path]].ts': 'A guest booking a meeting room through a link someone sent them; the link code (or the private booking token) is the only credential, and the IT Hub shows a guest only when rooms are taken, never what or by whom.',
   'functions/api/system/health/hub-report.ts': 'Called by the cron worker, not a person; authenticated by Conts\'s IT Hub key (compared in constant time) instead of a cookie.',
+  'functions/api/mcp/index.ts': 'The AI Connector (MCP), called by Claude or ChatGPT with no cookie; the connector token is the credential (resolveAccessToken: live, not revoked, the person active and allowed), and every read runs as that person through the session middleware.',
+  'functions/api/mcp/oauth/register.ts': 'OAuth client registration for the AI Connector, called by the AI app before anyone signs in; registering grants nothing.',
+  'functions/api/mcp/oauth/authorize.ts': 'OAuth authorize step for the AI Connector: checks the AI app and sends the browser to /ai-connect, where the person signs in and presses Allow (api/ai-connector/consent, signed in).',
+  'functions/api/mcp/oauth/token.ts': 'OAuth token step for the AI Connector, called by the AI app; the one-time code with its PKCE verifier, or a refresh token, is the credential, and the person must still be active and allowed.',
 };
 
 export const def = {

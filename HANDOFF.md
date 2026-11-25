@@ -231,6 +231,23 @@ say which guest is in the way.
 **Sign-in has no portal picker.** One form for everyone; the account's role decides
 where it lands. A picker asks the user a question the server already knows.
 
+## AI Connector (MCP), 25 Nov 2026
+
+Staff connect Claude or ChatGPT to the ERP with their own login: read-only, only what that login sees. Management
+approves each person, sees every lookup and disconnects anyone on **System > AI Connector** (`/system/ai-connector`,
+phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`.
+
+- **State:** code shipped behind migration `0378_mcp_connector.sql`. Until that migration is applied (Actions > Apply
+  migrations to production, `only=0378`), every connector endpoint answers "not set up yet"; nothing else reads its tables.
+- **Read-only by construction:** a tool call re-enters the API in-process (`functions/_lib/mcpDispatch.ts`) as a GET
+  with the person's `ctmcp_` token and a per-isolate secret header; `functions/api/_middleware.ts` turns that into the
+  person's session and every handler checks as usual. The token sent straight to `/api/*`, or on any write, gets 403.
+- **Route table:** `functions/_lib/apiRoutes.generated.ts` is generated from the `functions/api` tree
+  (`node scripts/gen-api-routes.mjs`; `npm run build` regenerates, `npm run check` fails when it is stale).
+- **Admin = management** (`isMcpAdmin` in `functions/_lib/mcpStore.ts`). Owners and field accounts cannot use it.
+- Files: `functions/_lib/mcp*.ts`, `functions/_lib/aiConnector.ts`, `functions/api/mcp/`, `functions/api/ai-connector/`,
+  `functions/.well-known/`, `src/pages/AiConnectorPage.tsx`, `src/pages/AiConnectPage.tsx`, tests `src/lib/mcpAccess.test.mjs`.
+
 ## Blocked on the client
 
 1. **The vector logo.** Every logo position renders a marked placeholder.
