@@ -1,6 +1,7 @@
 import { type Env, json } from '../../_lib/db';
 import { mcpReady, resolveAccessToken } from '../../_lib/mcpStore';
 import { handleRpc, originOf, type RpcReq } from '../../_lib/mcpServer';
+import { rememberVerified } from '../../_lib/mcpInner';
 
 /**
  * POST /api/mcp: the AI Connector's MCP endpoint (Streamable HTTP, stateless JSON-RPC), called by Claude or ChatGPT
@@ -19,6 +20,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       'www-authenticate': `Bearer realm="conts-erp", resource_metadata="${originOf(request)}/.well-known/oauth-protected-resource/api/mcp"${token ? ', error="invalid_token"' : ''}`,
     });
   }
+  // The tool calls' in-process reads reuse this check instead of repeating it (functions/api/_middleware.ts
+  // connectorRequest, recallVerified): one token query per lookup, not one more per read.
+  rememberVerified(token, id);
   let body: unknown;
   try { body = await request.json(); } catch { return json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }, 400); }
   const batch = Array.isArray(body);

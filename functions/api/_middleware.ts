@@ -9,8 +9,8 @@ import { overLimit } from '../_lib/textLimits';
 import { once } from '../_lib/idempotency';
 import { demoAsked, demoAllowed } from '../_lib/demo';
 import { isPolled, withPollEtag } from '../_lib/pollEtag';
-import { MCP_INNER_HEADER, isMcpInner } from '../_lib/mcpInner';
-import { MCP_TOKEN_PREFIX, resolveAccessToken } from '../_lib/mcpStore';
+import { MCP_INNER_HEADER, isMcpInner, recallVerified } from '../_lib/mcpInner';
+import { MCP_TOKEN_PREFIX, resolveAccessToken, type McpIdentity } from '../_lib/mcpStore';
 
 /**
  * Runs before every /api endpoint. Most endpoints only check that someone is signed
@@ -141,7 +141,8 @@ async function connectorRequest(request: Request, env: Env): Promise<Request | R
   if (!isMcpInner(request.headers.get(MCP_INNER_HEADER)) || (request.method !== 'GET' && request.method !== 'HEAD')) {
     return fail('FORBIDDEN', 'An AI Connector token works only through the AI Connector, and only to read.', 403);
   }
-  const who = await resolveAccessToken(env, token);
+  // Checked at the door of this same AI request moments ago (functions/api/mcp/index.ts rememberVerified); else check now.
+  const who = recallVerified<McpIdentity>(token) ?? await resolveAccessToken(env, token);
   if (!who) return fail('UNAUTHENTICATED', 'This AI Connector sign-in has ended or was switched off. Connect the AI app again.', 401);
   // Five minutes is plenty for one read; the cookie never leaves this isolate.
   const cookieValue = await signSession(env.SESSION_SECRET, { userId: who.user.id, email: who.user.email, role: who.user.role, fullName: who.user.fullName }, 5 / 60, 1);

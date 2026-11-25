@@ -245,8 +245,30 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
 - **Route table:** `functions/_lib/apiRoutes.generated.ts` is generated from the `functions/api` tree
   (`node scripts/gen-api-routes.mjs`; `npm run build` regenerates, `npm run check` fails when it is stale).
 - **Admin = management** (`isMcpAdmin` in `functions/_lib/mcpStore.ts`). Owners and field accounts cannot use it.
+- **Faster answers (owner: searching felt slow).** The AI used to walk list_modules -> list_endpoints -> erp_get and
+  read replies of up to 60k characters. Now (`functions/_lib/mcpQuick.ts`, pure, tests `src/lib/mcpQuick.test.mjs`):
+  - Quick answers, one call each, about 1-2k characters, read AS THE PERSON through the same `readValue` as erp_get
+    (path gate, in-process GET, credential stripping), so access is unchanged:
+    `business_summary {month}` = `/api/dashboard/kpis` for the month and the month before + `/api/dashboard/channels`;
+    `reservations_summary {from,to}` = `/api/reservations?view=all&from&to` (the Reservations list's totals, tabs,
+    channel / status counts and to-do cards); `today_summary` = `/api/dashboard/today` + `/api/dashboard/exceptions`.
+    No Channex, HostPlatform or engine calls. Without finance access the money figures are simply absent (the
+    endpoints leave them out) and the note says so.
+  - `search {query}` / `fetch {id}` in the shape ChatGPT requires (outside Developer Mode it rejects a connector
+    without them; deep research uses only them). search = `/api/search` (id `<kind>:<row id>`); fetch opens the
+    kind's detail endpoint (`FETCH_SPECS`): reservation, guest, unit, owner, cleaning, expense / bill directly;
+    maintenance and building are picked out of their list by id. Supply chain kinds (from the engine) have no fetch:
+    the answer points to the link search gave.
+  - `prompts/list` + `prompts/get`: monthly review, today at a glance, find a reservation; `prompts` advertised.
+  - `erp_get` takes `fields` (keep only those keys, any depth); its cap is 30k (was 60k).
+  - One token check per lookup: `functions/api/mcp/index.ts` remembers the identity it verified for 15 s
+    (`rememberVerified`, per isolate) and the middleware's `connectorRequest` reuses it (`recallVerified`) for that
+    request's in-process reads instead of querying `mcp_tokens` again. Every new request from the AI app is still
+    checked at the door, so Disconnect / Remove stop the next request; reads already admitted may finish for up to 15 s.
+  - Not yet measured live: reply sizes and timings on production need 0378 applied and a real session.
 - Files: `functions/_lib/mcp*.ts`, `functions/_lib/aiConnector.ts`, `functions/api/mcp/`, `functions/api/ai-connector/`,
-  `functions/.well-known/`, `src/pages/AiConnectorPage.tsx`, `src/pages/AiConnectPage.tsx`, tests `src/lib/mcpAccess.test.mjs`.
+  `functions/.well-known/`, `src/pages/AiConnectorPage.tsx`, `src/pages/AiConnectPage.tsx`, tests
+  `src/lib/mcpAccess.test.mjs`, `src/lib/mcpQuick.test.mjs`.
 
 ## Blocked on the client
 
