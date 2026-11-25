@@ -318,9 +318,6 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
           </ClaimSection>
         ) : (
           <>
-            <ClaimSection title="Bill or quotation">
-              {papersRow('Add the invoice, receipt or quotation', 'Photos or a PDF. Empty fields are filled from it; check them before you send.')}
-            </ClaimSection>
             <ClaimSection title="Who is paid">
               {/* The supplier first, then its PO (chew, 25 Nov 2026): the PO box lists the supplier's own POs, and a PO
                   picked fills the bill total with its amount. */}
@@ -345,7 +342,8 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
                 <Field label="Find a PO (optional)" value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="PO number" />
               </GridRow>
             </ClaimSection>
-            <ClaimSection title="Money">
+            <ClaimSection title="Money and papers">
+              {papersRow('Add the invoice, receipt or quotation', 'Photos or a PDF. Empty fields are filled from it; check them before you send.')}
               <GridRow>
                 <MoneyInput label="Bill or quotation total" required valueSen={billTotalSen} onChangeSen={v => { setBillTotalSen(v); shareOf(v, depositPct); }} />
                 <Field label="Deposit % (optional)" numeric inputMode="decimal" value={depositPct} trailing="%" placeholder="e.g. 50"
