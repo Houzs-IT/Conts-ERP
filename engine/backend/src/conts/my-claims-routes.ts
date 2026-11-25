@@ -123,7 +123,7 @@ export function claimBank(x: unknown): { bankName: string; accountNo: string; ac
   return { bankName, accountNo, accountName };
 }
 
-/** Does any line sit on a sub-department flagged for Reno review (0378)? A list that cannot be read counts as none. */
+/** Does any line sit on a sub-department flagged for Reno review (0379)? A list that cannot be read counts as none. */
 async function needsRenoReview(sb: any, companyId: number, lines: Array<{ sub_department_id?: string | null }>): Promise<boolean> {
   const loaded = await loadSubDepartments(sb, companyId);
   if (!loaded.ok) return false;

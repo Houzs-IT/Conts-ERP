@@ -13,6 +13,7 @@ export type SubDepartment = {
   id: string; department: Department; name: string; fixedKey: FixedKey | null; staffDepartmentId: string | null; active: boolean; sort: number; renoReview: boolean;
 };
 export type RenoKind = 'RENOVATION' | 'INHOUSE_RENOVATION';
+export const UNDEFINED_COLUMN = '42703';
 
 /** The built-in row each department's lines without a sub-department read as. */
 const DEFAULT_KEY: Record<Department, FixedKey> = { rental: 'rental_general', supply: 'dreamcrafter', shared: 'company' };
@@ -21,7 +22,10 @@ export const RENO_KIND_OF: Partial<Record<FixedKey, RenoKind>> = { dreamcrafter:
 
 /** The company's list, retired rows included: by department (Rental, Renovation, Company), then order, then name. */
 export async function loadSubDepartments(sb: Db, companyId: number): Promise<{ ok: true; list: SubDepartment[] } | { ok: false; error: string }> {
-  const { data, error } = await sb.from('acc_sub_departments').select('id, department, name, fixed_key, staff_department_id, active, sort, reno_review').eq('company_id', companyId);
+  const cols = 'id, department, name, fixed_key, staff_department_id, active, sort';
+  let { data, error } = await sb.from('acc_sub_departments').select(`${cols}, reno_review`).eq('company_id', companyId);
+  /* Before migration 0379 runs the column is missing (42703): read the list without it, so nothing waits for review yet. */
+  if (error?.code === UNDEFINED_COLUMN) ({ data, error } = await sb.from('acc_sub_departments').select(cols).eq('company_id', companyId));
   if (error) return { ok: false, error: error.message };
   const list = ((data ?? []) as Array<Record<string, any>>).filter((r) => isDepartment(r.department)).map((r): SubDepartment => ({
     id: String(r.id), department: r.department as Department, name: String(r.name), fixedKey: (r.fixed_key ?? null) as FixedKey | null,

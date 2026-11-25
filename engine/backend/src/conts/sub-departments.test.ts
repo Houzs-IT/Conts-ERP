@@ -124,3 +124,24 @@ describe('a project fits its line', () => {
       .toBe('Line 2: SKYLINE is a Dream Crafter project.');
   });
 });
+
+describe('before migration 0379 adds reno_review', () => {
+  const ROWS = [{ id: 's1', department: 'supply', name: 'In-house Reno (The Conts)', fixed_key: 'theconts', staff_department_id: null, active: true, sort: 1 }];
+  const withoutRenoReview = () => {
+    const asked: string[] = [];
+    const sb = { from: () => ({ select: (cols: string) => ({ eq: async () => {
+      asked.push(cols);
+      return cols.includes('reno_review')
+        ? { data: null, error: { code: '42703', message: 'column acc_sub_departments.reno_review does not exist' } }
+        : { data: ROWS, error: null };
+    } }) }) };
+    return { sb, asked };
+  };
+
+  test('the list still loads, and nothing waits for review', async () => {
+    const { sb, asked } = withoutRenoReview();
+    const r = await loadSubDepartments(sb, CO);
+    expect(r.ok && r.list.map((s) => [s.name, s.renoReview])).toEqual([['In-house Reno (The Conts)', false]]);
+    expect(asked).toHaveLength(2);
+  });
+});

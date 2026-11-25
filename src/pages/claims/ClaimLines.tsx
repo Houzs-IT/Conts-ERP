@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '../../components/Button';
 import { Field } from '../../components/Field';
 import { ComboSelect, type SelectOption } from '../../components/Select';
+import { ChoiceChips } from '../../components/ChoiceChips';
 import { MoneyInput } from '../../components/inputs';
 import Icon from '../../components/Icon';
 import { useApi } from '../../lib/useApi';
@@ -46,7 +47,7 @@ export function useLineTargets(): LineTargets {
       .map(p => ({ value: String(p.id), label: [p.code, p.name].filter(Boolean).join(' ') }));
     const list = subs.data?.subDepartments ?? [];
     const mineSub = list.find(x => x.id === subs.data?.mine) ?? null;
-    const subOptions = list.map(x => ({ value: x.id, label: x.id === mineSub?.id ? `${x.name} (yours)` : x.name, group: DEPARTMENT[x.department] }));
+    const subOptions = list.map(x => ({ value: x.id, label: x.id === mineSub?.id ? `${x.name} (your department)` : x.name, group: DEPARTMENT[x.department] }));
     return { unitOptions, jobOptions, projectsFor, subs: list, subOptions, mineSub };
   }, [units.data, jobs.data, projects.data, subs.data]);
 }
@@ -80,27 +81,52 @@ export function toLines(lines: LineDraft[], totalSen: number): { ok: true; lines
  *  line's job), a Renovation line's project of its brand (optional), nothing for the Company. Finance sets the account. */
 /** What a line's department brings, as on the payment voucher: Rental its unit or a Rental project (Maintenance also a job),
  *  Renovation a project of its brand (optional), the Company nothing. One of them at a time. */
-function LineTargetFields({ line: l, sub, targets, onPick }: { line: LineDraft; sub: LineSubDepartment | null; targets: LineTargets; onPick: (p: Partial<LineDraft>) => void }) {
+/* What a Rental line is for: its unit, a maintenance job (Maintenance only) or the company's own Rental project (none
+   open, no chip: chew, 17 Nov 2026). With two or three, chips pick one and its box shows; with only the unit, just the box. */
+type RentalFor = Exclude<LineDraft['where'], 'none'>;
+const FOR_LABEL: Record<RentalFor, string> = { unit: 'Unit', job: 'Maintenance job', project: 'Project' };
+
+const rentalChoices = (sub: LineSubDepartment | null, targets: LineTargets): RentalFor[] =>
+  ['unit', ...(sub?.maintenance ? ['job' as const] : []), ...(targets.projectsFor(sub).length > 0 ? ['project' as const] : [])];
+
+function LineForFields({ line: l, sub, targets, onPick }: { line: LineDraft; sub: LineSubDepartment | null; targets: LineTargets; onPick: (p: Partial<LineDraft>) => void }) {
+  const [chosen, setChosen] = useState<RentalFor | null>(null);
   const only = (where: LineDraft['where'], patch: Partial<LineDraft>): Partial<LineDraft> =>
     ({ where, unitId: '', jobId: '', projectId: '', ...patch });
-  const pickProject = (v: string) => onPick(v ? only('project', { projectId: v }) : only('none', {}));
   const projects = targets.projectsFor(sub);
   if (sub?.department === 'shared') return <ReadOnlyValue label="For" value="Whole company" />;
   if (sub?.department === 'supply') {
     if (projects.length === 0) return <ReadOnlyValue label="Project" value={`No open project of this brand: ${sub.name}'s own cost`} />;
-    return <ComboSelect label="Project (optional)" value={l.where === 'project' ? l.projectId : ''} onChange={pickProject}
+    return <ComboSelect label="Project (optional)" value={l.where === 'project' ? l.projectId : ''} onChange={v => onPick(v ? only('project', { projectId: v }) : only('none', {}))}
       placeholder={`No project: ${sub.name}'s own cost`} options={projects} />;
   }
+  const choices = rentalChoices(sub, targets);
+  /* The chip last tapped, else the line's target, else Unit. Tapping a chip only shows its box: the line keeps what it has
+     until something is picked there, as when every box showed at once. An empty line saves as a Rental general cost. */
+  const shown: RentalFor = chosen && choices.includes(chosen) ? chosen : l.where !== 'none' ? l.where : 'unit';
+  const choose = (kind: RentalFor) => setChosen(kind);
+  const savedOptions: Record<RentalFor, SelectOption[]> = { unit: targets.unitOptions, job: targets.jobOptions, project: projects };
+  const savedId: Record<RentalFor, string> = { unit: l.unitId, job: l.jobId, project: l.projectId };
+  const saved = l.where === 'none' || l.where === shown ? null : l.where;
+  const kept = saved
+    ? `${FOR_LABEL[saved]} ${savedOptions[saved].find(o => o.value === savedId[saved])?.label ?? ''} stays on this line until you pick ${shown === 'job' ? 'a job' : shown === 'project' ? 'a project' : 'a unit'}.`
+    : null;
+  const pick = (where: Exclude<LineDraft['where'], 'none'>, key: 'unitId' | 'jobId' | 'projectId') => (v: string) =>
+    onPick(v ? only(where, { [key]: v }) : only('none', {}));
+  const box = shown === 'job'
+    ? <ComboSelect label="Maintenance job" value={l.where === 'job' ? l.jobId : ''} onChange={pick('job', 'jobId')} placeholder="Type the job or its unit" options={targets.jobOptions} />
+    : shown === 'project'
+      ? <ComboSelect label="Project" value={l.where === 'project' ? l.projectId : ''} onChange={pick('project', 'projectId')} placeholder="Type the project name or code" options={projects} />
+      : <ComboSelect label="Unit" value={l.where === 'unit' ? l.unitId : ''} onChange={pick('unit', 'unitId')} placeholder="Type a building or unit" options={targets.unitOptions} />;
+  if (choices.length === 1) return box;
   return (
-    <div className="flex flex-col gap-3 min-w-0">
-      <ComboSelect label="Unit" value={l.where === 'unit' ? l.unitId : ''} onChange={v => onPick(v ? only('unit', { unitId: v }) : only('none', {}))}
-        placeholder="Type a building or unit" options={targets.unitOptions} />
-      {sub?.maintenance && <ComboSelect label="Or a maintenance job" value={l.where === 'job' ? l.jobId : ''} onChange={v => onPick(v ? only('job', { jobId: v }) : only('none', {}))}
-        placeholder="Type the job or its unit" options={targets.jobOptions} />}
-      {/* The company's own Rental projects only; none open, no box (chew, 17 Nov 2026). */}
-      {projects.length > 0 && <ComboSelect label="Or a project" value={l.where === 'project' ? l.projectId : ''} onChange={pickProject}
-        placeholder="Type the project name or code" options={projects} />}
-    </div>
+    <>
+      <ChoiceChips label="For" value={shown} onChange={choose} options={choices.map(value => ({ value, label: FOR_LABEL[value] }))} />
+      <div className={cx('min-w-0 flex flex-col gap-1.5', SPAN_ALL)}>
+        {box}
+        {kept && <span className="text-meta text-muted-ink">{kept}</span>}
+      </div>
+    </>
   );
 }
 
@@ -124,14 +150,16 @@ export function LinesEditor({ lines, setLines, totalSen, department, recoverOn =
             </div>
           )}
           <div className={TWO_COLUMN_GRID}>
-            {subOptions.length === 0 ? (
-              <ReadOnlyValue label="Department" value={`${DEPARTMENT[department]} (from your department)`} />
-            ) : (
-              <ComboSelect label="Department" value={l.subDepartmentId || mineSub?.id || ''}
-                onChange={v => set(i, { subDepartmentId: v === mineSub?.id ? '' : v, where: 'none', unitId: '', jobId: '', projectId: '' })}
-                placeholder="Type a department" options={subOptions} />
-            )}
-            <LineTargetFields line={l} sub={subOf(l)} targets={targets} onPick={patch => set(i, patch)} />
+            <div className="min-w-0">
+              {subOptions.length === 0 ? (
+                <ReadOnlyValue label="Department" value={`${DEPARTMENT[department]} (from your department)`} />
+              ) : (
+                <ComboSelect label="Department" value={l.subDepartmentId || mineSub?.id || ''}
+                  onChange={v => set(i, { subDepartmentId: v === mineSub?.id ? '' : v, where: 'none', unitId: '', jobId: '', projectId: '' })}
+                  placeholder="Type a department" options={subOptions} />
+              )}
+            </div>
+            <LineForFields line={l} sub={subOf(l)} targets={targets} onPick={patch => set(i, patch)} />
             <div className={cx('min-w-0', SPAN_ALL)}>
               <Field label="Description" value={l.description} onChange={e => set(i, { description: e.target.value })} placeholder="e.g. tap for the kitchen" maxLength={300} />
             </div>
