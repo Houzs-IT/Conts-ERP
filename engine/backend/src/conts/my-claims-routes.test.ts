@@ -203,6 +203,20 @@ describe('payment requests', () => {
     expect((await ask(a, { supplierId: undefined, purchaseOrderId: 'PO1' })).status).toBe(201);
     expect(sb.tables.payment_requests[0]).toMatchObject({ supplier_id: 'S1', payee_name: 'ACE HARDWARE', payee_to_check: false, status: 'SUBMITTED' });
   });
+  test("a supplier picked lists its own POs; nothing typed and no supplier lists none (chew, 25 Nov 2026)", async () => {
+    const sb = world();
+    sb.tables.purchase_orders = [
+      { id: 'PO1', company_id: CO, supplier_id: 'S1', po_number: 'TC-PO-2611-001', status: 'SUBMITTED', total_sen: 10000, project_id: null },
+      { id: 'PO2', company_id: CO, supplier_id: 'S2', po_number: 'TC-PO-2611-002', status: 'SUBMITTED', total_sen: 20000, project_id: null },
+      { id: 'PO3', company_id: CO, supplier_id: 'S1', po_number: 'TC-PO-2611-003', status: 'CANCELLED', total_sen: 30000, project_id: null },
+    ];
+    const a = appFor(sb, OPS);
+    const ids = async (q: string) => ((await (await get(a, `/purchase-orders?${q}`)).json()) as { purchaseOrders: { id: string }[] }).purchaseOrders.map(p => p.id);
+    expect(await ids('supplierId=S1')).toEqual(['PO1']);
+    expect(await ids('q=2611&supplierId=S2')).toEqual(['PO2']);
+    expect(await ids('q=2611')).toEqual(['PO2', 'PO1']);
+    expect(await ids('')).toEqual([]);
+  });
   test('a field worker asks finance to pay a supplier by name only: no list, no PO, no deposit (chew, 12 Nov 2026)', async () => {
     const sb = world();
     const a = appFor(sb, TECH);

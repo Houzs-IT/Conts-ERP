@@ -340,7 +340,10 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
   const [payeeName, setPayeeName] = useState(editing && !editing.supplierId ? editing.payeeName : '');
   const [wantedOn, setWantedOn] = useState(wantedOnAgain(editing?.wantedOn ?? null, todayMyt()));
   const pq = poSearch.trim();
-  const pos = useApi<{ purchaseOrders: { id: string; poNumber: string; status: string; totalSen: number }[] }>(kind === 'direct' && pq.length >= 2 ? `/claims/purchase-orders?q=${encodeURIComponent(pq)}` : null);
+  /* A PO number typed finds it; with none typed, a supplier picked lists its own POs (chew, 25 Nov 2026). */
+  const poQuery = pq.length >= 2 ? `q=${encodeURIComponent(pq)}${supplier?.id ? `&supplierId=${encodeURIComponent(supplier.id)}` : ''}`
+    : supplier?.id ? `supplierId=${encodeURIComponent(supplier.id)}` : null;
+  const pos = useApi<{ purchaseOrders: { id: string; poNumber: string; status: string; totalSen: number }[] }>(kind === 'direct' && poQuery ? `/claims/purchase-orders?${poQuery}` : null);
 
   const found = (pos.data?.purchaseOrders ?? []).map(p => ({ value: p.id, label: `${p.poNumber} · ${rm(p.totalSen)}` }));
   const poOptions = po && !found.some(o => o.value === po.id) ? [{ value: po.id, label: po.label }, ...found] : found;
