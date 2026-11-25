@@ -20,6 +20,13 @@ describe('allocatePaidBeforeGoLive', () => {
     expect(one(3_000_000, 5_000_000)).toBe(0);
     expect(one(3_000_000, -200_000)).toBe(3_000_000);
   });
+  test('paid ahead beyond every invoice counts on the part AutoCount never invoiced, up to it (chew, 25 Nov 2026: MS LEE)', () => {
+    const lee = (contract: number | null) => allocatePaidBeforeGoLive([{ soDocNo: 'TC-SO-2509-002', debtorCode: '301-M237', soDate: '2025-09-05',
+      billedBeforeGoLiveSen: 4_424_500, contractSen: contract }], new Map([['301-M237', -71_200]])).get('TC-SO-2509-002');
+    expect(lee(4_760_492)).toBe(4_495_700); // 44,245 + 712: the VO after go-live was paid ahead
+    expect(lee(4_450_000)).toBe(4_450_000); // never past the contract
+    expect(lee(null)).toBe(4_424_500); // no contract sum: as before
+  });
   test('no customer code, or no opening row for it: no code owes all, no row owes nothing', () => {
     expect(allocatePaidBeforeGoLive([{ soDocNo: 'A', debtorCode: '', soDate: null, billedBeforeGoLiveSen: 100 }], new Map()).get('A')).toBe(0);
     expect(allocatePaidBeforeGoLive([{ soDocNo: 'A', debtorCode: 'X', soDate: null, billedBeforeGoLiveSen: 100 }], new Map()).get('A')).toBe(100);

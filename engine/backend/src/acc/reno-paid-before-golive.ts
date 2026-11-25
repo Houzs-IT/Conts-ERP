@@ -16,7 +16,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- PostgREST client, untyped as everywhere in acc/ */
 type Db = any;
 
-export interface PreGoLiveContract { soDocNo: string; debtorCode: string; soDate: string | null; billedBeforeGoLiveSen: number }
+export interface PreGoLiveContract {
+  soDocNo: string; debtorCode: string; soDate: string | null; billedBeforeGoLiveSen: number;
+  /** The contract's sum now (its lines). Money the customer paid ahead in AutoCount, beyond every invoice it had,
+      counts on the contract up to the part AutoCount never invoiced (chew, 25 Nov 2026: MS LEE's RM 712). */
+  contractSen?: number | null;
+}
 
 /** Paid before go-live per contract (see the header). `owedByDebtor`: what each customer code still owed at go-live,
     net of what it had paid ahead (a negative owes nothing). A contract with no customer code owes its whole amount:
@@ -31,12 +36,19 @@ export function allocatePaidBeforeGoLive(contracts: readonly PreGoLiveContract[]
     byDebtor.set(code, [...(byDebtor.get(code) ?? []), { ...c, billedBeforeGoLiveSen: billed }]);
   }
   for (const [code, list] of byDebtor) {
-    let owed = Math.max(0, Math.trunc(Number(owedByDebtor.get(code) ?? 0) || 0));
+    const net = Math.trunc(Number(owedByDebtor.get(code) ?? 0) || 0);
+    let owed = Math.max(0, net);
+    /* Paid ahead beyond every invoice (an opening credit larger than the opening invoices): it paid for the part of a
+       contract AutoCount had not invoiced yet (a VO after go-live, a later instalment), oldest contract first. */
+    let ahead = Math.max(0, -net);
     const oldestFirst = [...list].sort((a, b) => String(a.soDate ?? '9999').localeCompare(String(b.soDate ?? '9999')) || a.soDocNo.localeCompare(b.soDocNo));
     for (const c of oldestFirst) {
       const owes = Math.min(owed, c.billedBeforeGoLiveSen);
       owed -= owes;
-      out.set(c.soDocNo, c.billedBeforeGoLiveSen - owes);
+      const room = c.contractSen == null ? 0 : Math.max(0, Math.trunc(Number(c.contractSen) || 0) - c.billedBeforeGoLiveSen);
+      const extra = owes > 0 ? 0 : Math.min(ahead, room);
+      ahead -= extra;
+      out.set(c.soDocNo, c.billedBeforeGoLiveSen - owes + extra);
     }
   }
   return out;
@@ -59,7 +71,7 @@ export async function paidBeforeGoLiveOf(sb: Db, companyId: number, soDocNos: re
   const codes = [...new Set(mine.map((o) => String(o.debtor_code ?? '').trim()).filter(Boolean))];
   if (codes.length === 0) return out;
   const [orders, sis, credits] = await Promise.all([
-    read(sb.from('mfg_sales_orders').select('doc_no, debtor_code, so_date, status').eq('company_id', companyId).in('debtor_code', codes), 'customer orders'),
+    read(sb.from('mfg_sales_orders').select('doc_no, debtor_code, so_date, status, local_total_sen').eq('company_id', companyId).in('debtor_code', codes), 'customer orders'),
     read(sb.from('sales_invoices').select('debtor_code, total_sen, status').eq('company_id', companyId).eq('opening_balance', true).in('debtor_code', codes), 'opening invoices'),
     read(sb.from('customer_credits').select('debtor_code, amount_sen').eq('company_id', companyId).eq('source_type', 'OPENING').in('debtor_code', codes), 'opening credits'),
   ]);
@@ -74,7 +86,7 @@ export async function paidBeforeGoLiveOf(sb: Db, companyId: number, soDocNos: re
   for (const c of credits) owed.set(String(c.debtor_code), (owed.get(String(c.debtor_code)) ?? 0) - Number(c.amount_sen ?? 0));
   const all = allocatePaidBeforeGoLive(liveOrders.filter((o) => (billedOf.get(String(o.doc_no)) ?? 0) > 0).map((o) => ({
     soDocNo: String(o.doc_no), debtorCode: String(o.debtor_code ?? ''), soDate: o.so_date ? String(o.so_date).slice(0, 10) : null,
-    billedBeforeGoLiveSen: billedOf.get(String(o.doc_no)) ?? 0,
+    billedBeforeGoLiveSen: billedOf.get(String(o.doc_no)) ?? 0, contractSen: o.local_total_sen == null ? null : Number(o.local_total_sen),
   })), owed);
   for (const d of docs) out.set(d, all.get(d) ?? 0);
   return out;
