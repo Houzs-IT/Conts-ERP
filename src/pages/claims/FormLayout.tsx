@@ -1,15 +1,15 @@
 import type { ReactNode } from 'react';
 import { cx } from '../../lib/design-tokens';
 
-export const FORM_GRID = 'grid grid-cols-1 sm:grid-cols-3 gap-3 items-start';
+export const FORM_GRID = 'grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-y-2 items-start';
 export const SPAN_ALL = 'col-span-full';
-export const TWO_COLUMN_GRID = 'grid grid-cols-1 sm:grid-cols-2 gap-3 items-start';
+export const TWO_COLUMN_GRID = 'grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-y-2 items-start';
 
 export function ClaimSection({ title, hint, children }: { title: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <section className="ds-fs">
       <div className="ds-fs-h max-sm:flex-col max-sm:gap-0.5!"><b>{title}</b>{hint && <span>{hint}</span>}</div>
-      <div className="flex flex-col gap-3">{children}</div>
+      <div className="flex flex-col gap-3 md:gap-2">{children}</div>
     </section>
   );
 }

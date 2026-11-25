@@ -3,7 +3,7 @@ import PageHeader from '../components/PageHeader';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
-import { Select, type SelectOption } from '../components/Select';
+import { ComboSelect, type SelectOption } from '../components/Select';
 import { Segmented, StatTile } from '../components/Metric';
 import { ChoiceChips } from '../components/ChoiceChips';
 import { KeyFacts } from '../components/KeyFacts';
@@ -271,7 +271,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
   const papersRow = (label: string, hint: string) => (
     <>
       <FileDropRow label={kept.length ? 'Add more papers (optional)' : label} hint={hint} accept="image/*,application/pdf" multiple onPick={l => void pick(l)}
-        busy={reading} />
+        busy={reading} compact />
       <ClaimPapers saved={kept} hrefOf={keptHref} picked={files} onRemoveSaved={fileId => setKept(k => k.filter(x => x.id !== fileId))}
         onRemovePicked={index => setFiles(list => list.filter((_, position) => position !== index))} />
     </>
@@ -293,7 +293,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
   );
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4 items-start">
-      <Card className="p-4 sm:p-5 flex flex-col gap-4">
+      <Card className="claim-form-compact p-4 sm:p-5 flex flex-col gap-4">
         {reviewing ? (
           <ClaimSection title={`Reviewing ${reviewing.receipt.receiptNo}, handed in by ${reviewing.receipt.submitterName}`}>
             <div><Button size="sm" variant="tertiary" onClick={reviewing.onBack}>Back to the list</Button></div>
@@ -327,22 +327,18 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
                 <div className="min-w-0">
                   <SupplierPicker value={supplier} onChange={v => { setSupplier(v); if (v?.id !== supplier?.id) { setPo(null); setPoSearch(''); } }} allowNotListed={type === 'PAYMENT'} />
                 </div>
-                {!supplier && type === 'PAYMENT' && <Field label="Pay to (not on the list)" value={payeeName} onChange={e => setPayeeName(e.target.value)} maxLength={200} />}
-              </div>
-              {!supplier && type === 'PAYMENT' && <RowHelp>Finance checks the payee before paying.</RowHelp>}
-              <div className={TWO_COLUMN_GRID}>
                 {/* The chosen PO stays an option when a new search no longer finds it, so the box never shows "Not against a
                     PO" while one is still chosen. */}
-                <div className="min-w-0">
-                  <Select label="Purchase order" showLabel value={poId} onChange={v => {
+                <ComboSelect label="Purchase order (optional)" value={poId} onQueryChange={setPoSearch} placeholder="Not against a PO, or type a PO number"
+                  onChange={v => {
                     const o = poOptions.find(x => x.value === v);
                     setPo(o ? { id: o.value, label: o.label } : null);
                     if (o?.totalSen != null) { setBillTotalSen(o.totalSen); shareOf(o.totalSen, depositPct); }
                   }}
-                    options={[{ value: '', label: supplier ? (found.length ? 'Not against a PO' : 'No PO for this supplier') : 'Not against a PO' }, ...poOptions]} />
-                </div>
-                <Field label="Find a PO (optional)" value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="PO number" />
+                  options={[{ value: '', label: supplier && !found.length ? 'No PO for this supplier' : 'Not against a PO' }, ...poOptions]} />
+                {!supplier && type === 'PAYMENT' && <Field label="Pay to (not on the list)" value={payeeName} onChange={e => setPayeeName(e.target.value)} maxLength={200} />}
               </div>
+              {!supplier && type === 'PAYMENT' && <RowHelp>Finance checks the payee before paying.</RowHelp>}
             </ClaimSection>
             <ClaimSection title="Money and papers">
               {papersRow('Add the invoice, receipt or quotation', 'Photos or a PDF. Empty fields are filled from it; check them before you send.')}
@@ -352,13 +348,13 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit, rev
                   onChange={e => { setDepositPct(e.target.value); setDepositAmtSen(e.target.value.trim() ? depositSen(billTotalSen, e.target.value) : null); }} />
                 <MoneyInput label="Deposit amount (optional)" valueSen={depositAmtSen} onChangeSen={v => { setDepositAmtSen(v); setDepositPct(v == null ? '' : percentOf(v, billTotalSen) ?? depositPct); }} />
               </GridRow>
-              <RowHelp>
-                {type === 'DEPOSIT'
-                  ? `A deposit of ${rm(depositAmtSen!)}: paid before the bill, to a supplier on the list; the balance is asked for later.`
-                  : 'Pays the whole bill. To pay a deposit only, fill its percent or its amount.'}
-              </RowHelp>
               <GridRow>
                 <DateField label="Pay by (optional)" value={wantedOn} onChange={setWantedOn} min={todayMyt()} />
+                <p className="m-0 min-w-0 text-meta text-muted-ink sm:col-span-2 sm:self-end sm:min-h-[var(--control-height)] sm:flex sm:items-center">
+                  {type === 'DEPOSIT'
+                    ? `A deposit of ${rm(depositAmtSen!)}: paid before the bill, to a supplier on the list; the balance is asked for later.`
+                    : 'Pays the whole bill. To pay a deposit only, fill its percent or its amount.'}
+                </p>
               </GridRow>
             </ClaimSection>
           </>

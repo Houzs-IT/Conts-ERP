@@ -75,6 +75,13 @@
 .ds-fs-h b { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-ink-2); }
 .ds-fs-h span { font-size: 12px; color: var(--color-muted-ink); }
 
+/* The Hand in form on a desktop: 36px fields and tighter bands. Phones keep the 44px targets. */
+@media (min-width: 768px) {
+  .claim-form-compact { --control-height: var(--control-height-sm); }
+  .claim-form-compact .ds-fs { gap: var(--space-2); }
+  .claim-form-compact .ds-fs + .ds-fs { padding-top: var(--space-3); }
+}
+
 .ds-label { font-size: 12px; font-weight: 600; color: var(--color-ink-2); display: flex; gap: 6px; align-items: center; }
 .ds-label .ds-req { color: var(--color-critical-fg); }
 
