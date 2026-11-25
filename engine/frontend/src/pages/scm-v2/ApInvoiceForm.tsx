@@ -22,7 +22,7 @@ import {
   useExtractBills, fileToBase64, PV_FILE_ACCEPT, type BillExtraction, type VendorMemory, type PvFilePayload,
 } from '../../vendor/scm/lib/payment-voucher-queries';
 import { AccountSelect } from '../../vendor/scm/components/AccountSelect';
-import { ResizableTh, useColumnWidths } from '../../vendor/scm/components/ResizableColumns';
+import { LineTableHead, useLineColumns, type LineColumn } from '../../vendor/scm/components/ResizableColumns';
 import { useSaveHotkey, SAVE_HOTKEY_HINT } from '../../vendor/scm/lib/use-save-hotkey';
 import { upperFill } from '../../vendor/scm/lib/ocr-fill';
 import { SearchCombo } from '../../vendor/scm/components/SearchCombo';
@@ -119,7 +119,17 @@ const td: React.CSSProperties = { padding: '6px 8px', verticalAlign: 'middle' };
 const right: React.CSSProperties = { textAlign: 'right', fontFamily: 'var(--font-mono)' };
 const iconBtn: React.CSSProperties = { border: 'none', background: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: 2 };
 /* The line table's columns, in px; the person drags them wider or narrower (chew, 25 Nov 2026: description too small). */
-const LINE_COLS = { account: 190, description: 190, amount: 100, department: 115, project: 110, unit: 95, actions: 50 }; // 850: fits the New AP invoice window
+/* The line columns: each person drags them into their own order and widths, kept on their account (chew, 25 Nov 2026).
+   The defaults add up to 850 with the actions, which fits the New AP invoice window. */
+const LINE_COLS: readonly LineColumn[] = [
+  { key: 'account', label: 'Account', width: 190 },
+  { key: 'description', label: 'Description', width: 190 },
+  { key: 'amount', label: 'Amount (RM)', width: 100, align: 'right' },
+  { key: 'department', label: 'Department', width: 115 },
+  { key: 'project', label: 'Project', width: 110 },
+  { key: 'unit', label: 'Unit', width: 95 },
+];
+const ACTIONS_W = 50;
 
 export const ApInvoiceForm = ({
   mode, initial, suppliers, suppliersLoading = false, lineAccounts, posted = false, paidSen = 0, saving, onSubmit, onCancel,
@@ -187,7 +197,7 @@ export const ApInvoiceForm = ({
     const rid = tr ? Number(tr.getAttribute('data-line')) : NaN;
     return Number.isFinite(rid) ? rid : undefined;
   };
-  const cols = useColumnWidths('conts.apInvoiceForm.cols.v2', LINE_COLS);
+  const cols = useLineColumns('conts:ap-invoice-lines', LINE_COLS);
   const removeLine = (rid: number) => setV((prev) => (prev.lines.length > 1 ? { ...prev, lines: prev.lines.filter((l) => l.rid !== rid) } : prev));
   const hopFrom = (rid: number) => {
     const i = v.lines.findIndex((l) => l.rid === rid);
@@ -333,71 +343,53 @@ export const ApInvoiceForm = ({
       {/* The lines, in the owner's order: account number, description, amount.
           Insert anywhere in the table adds a line and lands on it. */}
       <div style={{ overflowX: 'auto' }}>
-      <table ref={tableRef} style={{ width: cols.total, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}
+      <table ref={tableRef} style={{ width: cols.total + ACTIONS_W, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}
         onKeyDown={(e) => { if (e.key === 'Insert') { e.preventDefault(); addLine(true, lineOfFocus(e.target)); } }}>
-        <thead>
-          <tr>
-            <ResizableTh col="account" width={cols.widths.account} onResize={cols.resize} onReset={cols.reset} style={th}>Account</ResizableTh>
-            <ResizableTh col="description" width={cols.widths.description} onResize={cols.resize} onReset={cols.reset} style={th}>Description</ResizableTh>
-            <ResizableTh col="amount" width={cols.widths.amount} onResize={cols.resize} onReset={cols.reset} style={{ ...th, textAlign: 'right', paddingRight: 14 }}>Amount (RM)</ResizableTh>
-            <ResizableTh col="department" width={cols.widths.department} onResize={cols.resize} onReset={cols.reset} style={th}>Department</ResizableTh>
-            <ResizableTh col="project" width={cols.widths.project} onResize={cols.resize} onReset={cols.reset} style={th}>Project</ResizableTh>
-            <ResizableTh col="unit" width={cols.widths.unit} onResize={cols.resize} onReset={cols.reset} style={th}>Unit</ResizableTh>
-            <th style={{ ...th, width: cols.widths.actions }} />
-          </tr>
-        </thead>
+        <LineTableHead columns={cols} thStyle={th} extra={ACTIONS_W} />
         <tbody>
-          {v.lines.map((l) => (
-            <tr key={l.rid} data-line={l.rid}>
-              <td style={td}>
-                <AccountSelect accounts={lineAccounts} value={l.debitAccountCode} className={styles.fieldInput}
-                  onChange={(code) => patchLine(l.rid, { debitAccountCode: code })} placeholder="— account this line charges —" />
-              </td>
-              <td style={td}>
-                <input className={styles.fieldInput} style={{ width: '100%' }} placeholder="Description" value={l.description} aria-label={`line ${l.rid} description`}
-                  onChange={(e) => patchLine(l.rid, { description: e.target.value })} />
-              </td>
-              <td style={td}>
-                <MoneyInput bare valueSen={l.amountSen} inputClassName={styles.fieldInput} selectOnFocus aria-label={`line ${l.rid} amount`}
-                  placeholder="0.00" style={{ width: '100%' }}
-                  onCommit={(sen) => patchLine(l.rid, { amountSen: sen ?? 0 })}
-                  onKeyDown={(e) => { if (e.key === 'Enter') hopFrom(l.rid); }} />
-              </td>
-              <td style={td}>
-                <SubDepartmentSelect className={styles.fieldInput} style={{ width: '100%' }} label={`line ${l.rid} department`}
-                  value={{ department: l.department, subDepartmentId: l.subDepartmentId ?? null }} onChange={(v) => patchLine(l.rid, v)} />
-              </td>
-              <td style={td}>
-                <ProjectPicker inputClass={styles.fieldInput} ariaLabel={`line ${l.rid} project`} placeholder="No project"
-                  value={l.projectId ?? null} onChange={(id) => patchLine(l.rid, { projectId: id })} />
-              </td>
-              <td style={td}>
-                <UnitPicker inputClass={styles.fieldInput} ariaLabel={`line ${l.rid} unit`} placeholder="No unit"
-                  value={l.unitId ?? null} onChange={(id) => patchLine(l.rid, { unitId: id })} />
-              </td>
-              <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                <button type="button" aria-label={`add a line below line ${l.rid}`} title="Add a line below" onClick={() => addLine(true, l.rid)} style={iconBtn}>
-                  <Plus size={14} strokeWidth={1.75} />
-                </button>
-                {v.lines.length > 1 && (
-                  <button type="button" aria-label={`remove line ${l.rid}`} onClick={() => removeLine(l.rid)} style={iconBtn}>
-                    <X size={14} strokeWidth={1.75} />
+          {v.lines.map((l) => {
+            const cell: Record<string, React.ReactNode> = {
+              account: <AccountSelect accounts={lineAccounts} value={l.debitAccountCode} className={styles.fieldInput}
+                onChange={(code) => patchLine(l.rid, { debitAccountCode: code })} placeholder="— account this line charges —" />,
+              description: <input className={styles.fieldInput} style={{ width: '100%' }} placeholder="Description" value={l.description} aria-label={`line ${l.rid} description`}
+                onChange={(e) => patchLine(l.rid, { description: e.target.value })} />,
+              amount: <MoneyInput bare valueSen={l.amountSen} inputClassName={styles.fieldInput} selectOnFocus aria-label={`line ${l.rid} amount`}
+                placeholder="0.00" style={{ width: '100%' }}
+                onCommit={(sen) => patchLine(l.rid, { amountSen: sen ?? 0 })}
+                onKeyDown={(e) => { if (e.key === 'Enter') hopFrom(l.rid); }} />,
+              department: <SubDepartmentSelect className={styles.fieldInput} style={{ width: '100%' }} label={`line ${l.rid} department`}
+                value={{ department: l.department, subDepartmentId: l.subDepartmentId ?? null }} onChange={(v) => patchLine(l.rid, v)} />,
+              project: <ProjectPicker inputClass={styles.fieldInput} ariaLabel={`line ${l.rid} project`} placeholder="No project"
+                value={l.projectId ?? null} onChange={(id) => patchLine(l.rid, { projectId: id })} />,
+              unit: <UnitPicker inputClass={styles.fieldInput} ariaLabel={`line ${l.rid} unit`} placeholder="No unit"
+                value={l.unitId ?? null} onChange={(id) => patchLine(l.rid, { unitId: id })} />,
+            };
+            return (
+              <tr key={l.rid} data-line={l.rid}>
+                {cols.cols.map((c) => <td key={c.key} style={td}>{cell[c.key]}</td>)}
+                <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                  <button type="button" aria-label={`add a line below line ${l.rid}`} title="Add a line below" onClick={() => addLine(true, l.rid)} style={iconBtn}>
+                    <Plus size={14} strokeWidth={1.75} />
                   </button>
-                )}
-              </td>
-            </tr>
-          ))}
+                  {v.lines.length > 1 && (
+                    <button type="button" aria-label={`remove line ${l.rid}`} onClick={() => removeLine(l.rid)} style={iconBtn}>
+                      <X size={14} strokeWidth={1.75} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
         <tfoot>
           <tr style={{ borderTop: '1px solid var(--border-weak, #e3e1da)' }}>
-            <td colSpan={2} style={td}>
-              <AddLineButton variant="ghost" onClick={() => addLine(true)} />
-              <span style={{ ...soft, marginLeft: 'var(--space-3)' }}>Insert or + adds a line below · Enter on an amount moves down · drag a heading's edge to resize</span>
+            <td colSpan={cols.cols.length + 1} style={td}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+                <AddLineButton variant="ghost" onClick={() => addLine(true)} />
+                <span style={soft}>Insert or + adds a line below · drag a heading to move it, its edge to resize</span>
+                <span style={{ ...right, marginLeft: 'auto', fontWeight: 700, color: belowPaid ? 'var(--c-festive-b, #B8331F)' : undefined }}>Total {fmtSen(total)}</span>
+              </div>
             </td>
-            <td style={{ ...td, ...right, fontWeight: 700, color: belowPaid ? 'var(--c-festive-b, #B8331F)' : undefined }}>Total {fmtSen(total)}</td>
-            <td />
-            <td />
-            <td />
           </tr>
         </tfoot>
       </table>

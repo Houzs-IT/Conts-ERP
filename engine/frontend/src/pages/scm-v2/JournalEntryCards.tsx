@@ -31,6 +31,25 @@ import { fmtSen, fmtDateOrDash } from '../../vendor/shared/format';
 import { byText } from '../../vendor/scm/lib/sort-options';
 import { DateField } from '../../vendor/scm/components/DateField';
 import { SearchCombo } from '../../vendor/scm/components/SearchCombo';
+import { LineTableHead, useLineColumns, type LineColumn } from '../../vendor/scm/components/ResizableColumns';
+
+/* The journal's lines as one table with one heading row (chew, 25 Nov 2026), each person's column order and widths kept
+   on their account. */
+const JE_LINE_COLS: readonly LineColumn[] = [
+  { key: 'account', label: 'Account', width: 260 },
+  { key: 'debit', label: 'Debit (RM)', width: 110, align: 'right' },
+  { key: 'credit', label: 'Credit (RM)', width: 110, align: 'right' },
+  { key: 'note', label: 'Line note', width: 220 },
+  { key: 'department', label: 'Department', width: 170 },
+  { key: 'project', label: 'Project', width: 180 },
+  { key: 'unit', label: 'Unit', width: 150 },
+];
+const JE_ACTIONS_W = 150;
+const jeTh: React.CSSProperties = {
+  padding: '6px 8px', textAlign: 'left', fontSize: 'var(--fs-11)', fontWeight: 600, letterSpacing: '0.04em',
+  textTransform: 'uppercase', color: 'var(--fg-muted)', borderBottom: '1px solid var(--border-weak, #e3e1da)', whiteSpace: 'nowrap',
+};
+const jeTd: React.CSSProperties = { padding: '5px 8px', verticalAlign: 'middle', borderBottom: '1px solid var(--border-weak, #e3e1da)' };
 import styles from './Suppliers.module.css';
 
 const fmt = (sen: number | null | undefined) => fmtSen(sen);
@@ -174,6 +193,7 @@ export const NewJournalForm = ({ onDone, initial, editing }: { onDone: () => voi
     && lines.every((l) => l.accountCode || (!l.debit && !l.credit))
     && lines.every((l) => !l.accountCode || !!l.department);
 
+  const jeCols = useLineColumns('conts:journal-lines', JE_LINE_COLS);
   const setLine = (i: number, patch: Partial<DraftLine>) =>
     setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
 
@@ -227,38 +247,46 @@ export const NewJournalForm = ({ onDone, initial, editing }: { onDone: () => voi
           value={narration} onChange={(e) => setNarration(e.target.value)} />
       </div>
 
-      {lines.map((l, i) => (
-        <div key={i} style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* The account fills its column, and the column is the widest on the line
-              (owner 2026-09-18: JE 显示 hide 掉名字了 — the box clipped the name). */}
-          <span style={{ minWidth: 300, flex: 2 }}>
-            <SearchCombo fill options={options} value={l.accountCode} onChange={(code) => setLine(i, { accountCode: code })}
-              placeholder="Type a code or a name…" aria-label={`Line ${i + 1} account`} />
-          </span>
-          <input style={{ ...fieldStyle, width: 120 }} placeholder="Debit RM" inputMode="decimal" aria-label={`Line ${i + 1} debit`}
-            value={l.debit} onChange={(e) => setLine(i, { debit: e.target.value, credit: e.target.value ? '' : l.credit })} />
-          <input style={{ ...fieldStyle, width: 120 }} placeholder="Credit RM" inputMode="decimal" aria-label={`Line ${i + 1} credit`}
-            value={l.credit} onChange={(e) => setLine(i, { credit: e.target.value, debit: e.target.value ? '' : l.debit })} />
-          <input style={{ ...fieldStyle, flex: 1, minWidth: 160 }} placeholder="Line note" aria-label={`Line ${i + 1} note`}
-            value={l.notes} onChange={(e) => setLine(i, { notes: e.target.value })} />
-          <SubDepartmentSelect style={{ ...fieldStyle, width: 180 }} label={`Line ${i + 1} department`} blank="Department…"
-            value={{ department: l.department, subDepartmentId: l.subDepartmentId ?? null }} onChange={(v) => setLine(i, { ...v, unitId: v.department === 'rental' ? l.unitId ?? null : null })} />
-          <span style={{ width: 220 }}>
-            <ProjectPicker value={l.projectId ?? null} onChange={(id) => setLine(i, { projectId: id })} placeholder="No project" ariaLabel={`Line ${i + 1} project`} inputClass="" />
-          </span>
-          {l.department === 'rental' && (
-            <span style={{ width: 180 }}>
-              <UnitPicker value={l.unitId ?? null} onChange={(u) => setLine(i, { unitId: u })} ariaLabel={`Line ${i + 1} unit`} inputClass="" />
-            </span>
-          )}
-          {/* A line right below this one (chew, 25 Nov 2026: add a line between lines), with the department of this one. */}
-          <button type="button" style={btnStyle()} title="Add a line below" aria-label={`Add a line below line ${i + 1}`}
-            onClick={() => setLines((ls) => [...ls.slice(0, i + 1), { ...EMPTY_LINE, ...nextLineSub(ls.slice(0, i + 1).map((x) => ({ department: x.department, subDepartmentId: x.subDepartmentId ?? null }))) }, ...ls.slice(i + 1)])}>+ Below</button>
-          {lines.length > 2 && (
-            <button type="button" style={btnStyle()} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Remove</button>
-          )}
-        </div>
-      ))}
+      <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: jeCols.total + JE_ACTIONS_W, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+        <LineTableHead columns={jeCols} thStyle={jeTh} extra={JE_ACTIONS_W} />
+        <tbody>
+          {lines.map((l, i) => {
+            const cell: Record<string, React.ReactNode> = {
+              /* The account fills its column (owner 2026-09-18: JE 显示 hide 掉名字了 — the box clipped the name). */
+              account: <SearchCombo fill options={options} value={l.accountCode} onChange={(code) => setLine(i, { accountCode: code })}
+                placeholder="Type a code or a name…" aria-label={`Line ${i + 1} account`} />,
+              debit: <input style={{ ...fieldStyle, width: '100%', textAlign: 'right' }} placeholder="0.00" inputMode="decimal" aria-label={`Line ${i + 1} debit`}
+                value={l.debit} onChange={(e) => setLine(i, { debit: e.target.value, credit: e.target.value ? '' : l.credit })} />,
+              credit: <input style={{ ...fieldStyle, width: '100%', textAlign: 'right' }} placeholder="0.00" inputMode="decimal" aria-label={`Line ${i + 1} credit`}
+                value={l.credit} onChange={(e) => setLine(i, { credit: e.target.value, debit: e.target.value ? '' : l.debit })} />,
+              note: <input style={{ ...fieldStyle, width: '100%' }} placeholder="Line note" aria-label={`Line ${i + 1} note`}
+                value={l.notes} onChange={(e) => setLine(i, { notes: e.target.value })} />,
+              department: <SubDepartmentSelect style={{ ...fieldStyle, width: '100%' }} label={`Line ${i + 1} department`} blank="Department…"
+                value={{ department: l.department, subDepartmentId: l.subDepartmentId ?? null }} onChange={(v) => setLine(i, { ...v, unitId: v.department === 'rental' ? l.unitId ?? null : null })} />,
+              project: <ProjectPicker value={l.projectId ?? null} onChange={(id) => setLine(i, { projectId: id })} placeholder="No project" ariaLabel={`Line ${i + 1} project`} inputClass="" />,
+              /* A unit only on a Rental line. */
+              unit: l.department === 'rental'
+                ? <UnitPicker value={l.unitId ?? null} onChange={(u) => setLine(i, { unitId: u })} ariaLabel={`Line ${i + 1} unit`} inputClass="" />
+                : <span style={{ color: 'var(--fg-muted)', fontSize: 'var(--fs-12)' }}>—</span>,
+            };
+            return (
+              <tr key={i}>
+                {jeCols.cols.map((c) => <td key={c.key} style={jeTd}>{cell[c.key]}</td>)}
+                <td style={{ ...jeTd, whiteSpace: 'nowrap' }}>
+                  {/* A line right below this one (chew, 25 Nov 2026: add a line between lines), with the department of this one. */}
+                  <button type="button" style={btnStyle()} title="Add a line below" aria-label={`Add a line below line ${i + 1}`}
+                    onClick={() => setLines((ls) => [...ls.slice(0, i + 1), { ...EMPTY_LINE, ...nextLineSub(ls.slice(0, i + 1).map((x) => ({ department: x.department, subDepartmentId: x.subDepartmentId ?? null }))) }, ...ls.slice(i + 1)])}>+ Below</button>
+                  {lines.length > 2 && (
+                    <button type="button" style={{ ...btnStyle(), marginLeft: 4 }} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Remove</button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      </div>
 
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
         <button type="button" style={btnStyle()} onClick={() => setLines((ls) => [...ls, { ...EMPTY_LINE, ...nextLineSub(ls.map((x) => ({ department: x.department, subDepartmentId: x.subDepartmentId ?? null }))) }])}>Add line</button>
