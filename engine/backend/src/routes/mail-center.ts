@@ -29,6 +29,7 @@ import type { AuthUser } from "../services/auth";
 import { hasPermission } from "../services/permissions";
 import { recipientList, sendEmail } from "../services/email";
 import { getBranding, getBrandingForCompany } from "../services/branding";
+import { mailboxDomains } from "../services/mail-domains";
 import { validateMailAttachments } from "../lib/mail-attachments";
 import { isSalesDirectorUser } from "../services/pmsAccess";
 import { activeCompanyCodePred, activeCompanyId, activeCompanySql } from "../scm/lib/companyScope";
@@ -1081,6 +1082,14 @@ app.get("/attachments/:id", async (c) => {
 
 // GET /api/mail-center/addresses — our addresses / aliases, scoped to match the
 // thread scope at every visibility level.
+async function allowedMailboxDomains(c: Context<{ Bindings: Env }>): Promise<string[]> {
+  const branding = await getBrandingForCompany(c.env, activeCompanyId(c));
+  return mailboxDomains(branding.email, c.env.MAIL_EXTRA_DOMAINS);
+}
+
+// The domains a new mailbox may use, for the Mailboxes form (same list the POST below checks).
+app.get("/domains", async (c) => c.json({ domains: await allowedMailboxDomains(c) }));
+
 app.get("/addresses", async (c) => {
   c.header("Cache-Control", "no-store");
   const scope = await getMailScope(c);
@@ -1527,16 +1536,16 @@ app.post("/addresses", async (c) => {
   // not the HOUZS row — a 2990 mailbox must be on 2990's own domain). The
   // frontend picker (MailboxesTab) validates against the same company-aware
   // /api/branding, so both surfaces agree.
-  const branding = await getBrandingForCompany(c.env, activeCompanyId(c));
-  const domain = (branding.email.split("@")[1] || "").trim().toLowerCase();
-  if (!domain) {
+  // Extra domains (a brand's own, e.g. Dream Crafter's) come from MAIL_EXTRA_DOMAINS (CONTS-0081).
+  const domains = await allowedMailboxDomains(c);
+  if (domains.length === 0) {
     return c.json(
       { error: "Set this company's email in Settings -> Branding first; it defines the mailbox domain." },
       400,
     );
   }
-  if (!address.endsWith(`@${domain}`)) {
-    return c.json({ error: `address must end with @${domain}` }, 400);
+  if (!domains.some((d) => address.endsWith(`@${d}`))) {
+    return c.json({ error: `address must end with ${domains.map((d) => `@${d}`).join(" or ")}` }, 400);
   }
 
   const userId = c.get("userId") ?? null;

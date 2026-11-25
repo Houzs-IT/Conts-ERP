@@ -244,6 +244,11 @@ function NewMailboxModal({
     const fromEmail = (branding.email || "").split("@")[1];
     return (fromEmail || "houzscentury.com").trim().toLowerCase();
   }, [branding.email]);
+  // Every domain a mailbox may use: Branding's plus the engine's extra ones (CONTS-0081, e.g. Dream Crafter's).
+  const domainsQ = useQuery<{ domains: string[] }>("/api/mail-center/domains", () =>
+    api.get("/api/mail-center/domains"),
+  );
+  const domains = domainsQ.data?.domains.length ? domainsQ.data.domains : [domain];
 
   const [kind, setKind] = useState<"person" | "dept">("person");
   const [address, setAddress] = useState("");
@@ -265,7 +270,7 @@ function NewMailboxModal({
   const addrTrim = address.trim().toLowerCase();
   const addrValid =
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addrTrim) &&
-    addrTrim.endsWith(`@${domain}`);
+    domains.some((d) => addrTrim.endsWith(`@${d}`));
   const canSave =
     !busy &&
     addrValid &&
@@ -435,7 +440,7 @@ function NewMailboxModal({
             />
             {address.trim() && !addrValid && (
               <div className="mt-1 text-[10px] text-err">
-                Must be a valid address ending in @{domain}.
+                Must be a valid address ending in {domains.map((d) => `@${d}`).join(" or ")}.
               </div>
             )}
           </div>
