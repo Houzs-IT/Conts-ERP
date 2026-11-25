@@ -333,7 +333,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
       : type === 'DEPOSIT' && billTotalSen ? `Deposit of ${rm(billTotalSen)}` : '';
     return [said, note.trim()].filter(Boolean).join(' · ');
   };
-  const [supplier, setSupplier] = useState<Supplier | null>(editing?.supplierId && !editing.purchaseOrderId ? { id: editing.supplierId, code: '', name: editing.payeeName } : null);
+  const [supplier, setSupplier] = useState<Supplier | null>(editing?.supplierId ? { id: editing.supplierId, code: '', name: editing.payeeName } : null);
   const [poSearch, setPoSearch] = useState('');
   const [po, setPo] = useState<{ id: string; label: string } | null>(editing?.purchaseOrderId ? { id: editing.purchaseOrderId, label: 'The PO on this request' } : null);
   const poId = po?.id ?? '';
@@ -345,8 +345,8 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
     : supplier?.id ? `supplierId=${encodeURIComponent(supplier.id)}` : null;
   const pos = useApi<{ purchaseOrders: { id: string; poNumber: string; status: string; totalSen: number }[] }>(kind === 'direct' && poQuery ? `/claims/purchase-orders?${poQuery}` : null);
 
-  const found = (pos.data?.purchaseOrders ?? []).map(p => ({ value: p.id, label: `${p.poNumber} · ${rm(p.totalSen)}` }));
-  const poOptions = po && !found.some(o => o.value === po.id) ? [{ value: po.id, label: po.label }, ...found] : found;
+  const found = (pos.data?.purchaseOrders ?? []).map(p => ({ value: p.id, label: `${p.poNumber} · ${rm(p.totalSen)}`, totalSen: p.totalSen }));
+  const poOptions: { value: string; label: string; totalSen?: number }[] = po && !found.some(o => o.value === po.id) ? [{ value: po.id, label: po.label }, ...found] : found;
 
   /* The receipt and the bill are different papers: switching drops the files; amount, lines and note stay. */
   /* A receipt read still running when the kind is switched (or the files are picked again) must not land: each read
@@ -425,7 +425,7 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
         toast({ tone: 'success', title: `Receipt ${made.receiptNo} handed in`, body: made.route === 'float' ? 'Your department\'s petty cash pays you back.' : 'Finance pays you back by transfer.' });
       } else {
         const body = {
-          type, supplierId: poId ? undefined : supplier?.id, purchaseOrderId: poId || undefined, payeeName: !poId && !supplier ? payeeName.trim() || undefined : undefined,
+          type, supplierId: supplier?.id, purchaseOrderId: poId || undefined, payeeName: !poId && !supplier ? payeeName.trim() || undefined : undefined,
           amountSen, wantedOn: wantedOn || undefined, note: depositNote() || undefined, lines: built.lines,
         };
         if (editing) {
@@ -488,6 +488,28 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
         ) : (
           <>
             <section className="ds-fs">
+              <div className="ds-fs-h"><b>Who is paid</b></div>
+              <div className="flex flex-col gap-3">
+                {/* The supplier first, then its PO (chew, 25 Nov 2026): the PO box lists the supplier's own POs, and a PO
+                    picked fills the bill total with its amount. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                  <SupplierPicker value={supplier} onChange={v => { setSupplier(v); if (v?.id !== supplier?.id) { setPo(null); setPoSearch(''); } }} allowNotListed={type === 'PAYMENT'} />
+                  {!supplier && type === 'PAYMENT' && <Field label="Pay to (not on the list)" value={payeeName} onChange={e => setPayeeName(e.target.value)} maxLength={200} help="Finance checks the payee before paying." />}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                  {/* The chosen PO stays an option when a new search no longer finds it, so the box never shows "Not against a
+                      PO" while one is still chosen. */}
+                  <Select label="Purchase order" showLabel value={poId} onChange={v => {
+                    const o = poOptions.find(x => x.value === v);
+                    setPo(o ? { id: o.value, label: o.label } : null);
+                    if (o?.totalSen != null) { setBillTotalSen(o.totalSen); shareOf(o.totalSen, depositPct); }
+                  }}
+                    options={[{ value: '', label: supplier ? (found.length ? 'Not against a PO' : 'No PO for this supplier') : 'Not against a PO' }, ...poOptions]} />
+                  <Field label="Find a PO (optional)" value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="PO number" />
+                </div>
+              </div>
+            </section>
+            <section className="ds-fs">
               <div className="ds-fs-h"><b>Money and papers</b></div>
               <div className="flex flex-col gap-3">
                 {kept.length > 0 && (
@@ -516,20 +538,6 @@ function HandInForm({ me, initialKind, onDone, editing = null, onCancelEdit }: {
                 </p>
                 <div className="sm:max-w-[50%]">
                   <DateField label="Pay by (optional)" value={wantedOn} onChange={setWantedOn} min={todayMyt()} />
-                </div>
-              </div>
-            </section>
-            <section className="ds-fs">
-              <div className="ds-fs-h"><b>Who is paid</b></div>
-              <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
-                  <Field label="Find a PO (optional)" value={poSearch} onChange={e => setPoSearch(e.target.value)} placeholder="PO number" />
-                  {/* The chosen PO stays an option when a new search no longer finds it, so the box never shows "Not against a
-                      PO" while one is still chosen. */}
-                  <Select label="Purchase order" showLabel value={poId} onChange={v => { const o = poOptions.find(x => x.value === v); setPo(o ? { id: o.value, label: o.label } : null); if (o) setSupplier(null); }}
-                    options={[{ value: '', label: 'Not against a PO' }, ...poOptions]} />
-                  {!poId && <SupplierPicker value={supplier} onChange={setSupplier} allowNotListed={type === 'PAYMENT'} />}
-                  {!poId && !supplier && type === 'PAYMENT' && <Field label="Pay to (not on the list)" value={payeeName} onChange={e => setPayeeName(e.target.value)} maxLength={200} help="Finance checks the payee before paying." />}
                 </div>
               </div>
             </section>
