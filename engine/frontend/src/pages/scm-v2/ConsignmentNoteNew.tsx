@@ -438,7 +438,7 @@ export const ConsignmentNoteNew = () => {
                   value={salespersonId}
                   onChange={setSalespersonId}
                   options={[
-                    ...sortByText(staffList).map((s) => ({ value: s.id, label: `${s.name} (${s.staffCode})` })),
+                    ...sortByText(staffList).map((s) => ({ value: s.id, label: s.name })),
                     ...(salespersonId && !staffList.some((s) => s.id === salespersonId)
                       ? [{ value: salespersonId, label: '(former staff)' }]
                       : []),

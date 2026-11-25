@@ -158,15 +158,10 @@ export type OrgRecord = { position_name: string | null; department_name: string 
    public.positions, so a person counts as sales when either record says so. Only
    the picker reads Property OS: writing it into users.position_id would also put
    them in the engine's sales access cohort. Conts directors also sell, so the
-   Property OS Management department is pickable too (owner, 25 Nov 2026). */
-const isSalesRecord = (record: OrgRecord | undefined): boolean =>
-  record !== undefined &&
-  // isSalesUser reads only the position policy, position and department off an AuthUser.
-  isSalesUser({ ...record, permissions_set: null } as unknown as Parameters<typeof isSalesUser>[0]);
-
+   Property OS Management department is pickable too. */
 export function isPickableSalesperson(engineRecord: OrgRecord | undefined, contsRecord: OrgRecord | undefined): boolean {
   const isContsManagement = (contsRecord?.department_name ?? "").trim().toLowerCase() === "management";
-  return isSalesRecord(engineRecord) || isSalesRecord(contsRecord) || isContsManagement;
+  return isSalesUser(engineRecord) || isSalesUser(contsRecord) || isContsManagement;
 }
 
 /** A staff row's linked Houzs user id, reading camelCase ?? snake_case (the

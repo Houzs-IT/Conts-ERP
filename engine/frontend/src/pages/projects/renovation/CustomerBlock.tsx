@@ -228,7 +228,7 @@ export function CustomerBlock({
   const staffRows = (staff.data ?? []).filter((s) => s.active || s.id === value.salespersonId);
   const staffName = (sid: string) => {
     const s = staffRows.find((x) => x.id === sid);
-    return s ? `${s.name} (${s.staffCode})` : sid && project?.salespersonId === sid ? project.salespersonName : "";
+    return s ? s.name : sid && project?.salespersonId === sid ? project.salespersonName : "";
   };
 
   const gaps = mode === "so" && project ? projectGaps(project) : [];
@@ -300,7 +300,7 @@ export function CustomerBlock({
             {value.salespersonId && !staffRows.some((s) => s.id === value.salespersonId) && (
               <option value={value.salespersonId}>{project?.salespersonName || "Former staff"}</option>
             )}
-            {staffRows.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.staffCode})</option>)}
+            {staffRows.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </Cell>
       </div>

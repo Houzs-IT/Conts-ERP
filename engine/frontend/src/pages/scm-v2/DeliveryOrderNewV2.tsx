@@ -1371,7 +1371,7 @@ export function DeliveryOrderNewV2() {
                 value={salespersonId}
                 onChange={setSalespersonId}
                 placeholder="—"
-                options={salesStaff.map((s) => ({ value: s.id, label: `${s.name} (${s.staffCode})` }))}
+                options={salesStaff.map((s) => ({ value: s.id, label: s.name }))}
               />
             </div>
           </div>

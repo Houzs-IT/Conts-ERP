@@ -3817,7 +3817,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
                   options={[
                     ...sortByText(staffList).map((s) => ({
                       value: s.id,
-                      label: `${s.name} (${s.staffCode})`,
+                      label: s.name,
                     })),
                     /* Persisted salesperson may not be in the active list
                        (deactivated since the SO was created) — carry a row for
