@@ -154,3 +154,16 @@ describe('paidBeforeGoLiveOf: a contract seeded with only the whole amount AutoC
     expect((await paidBeforeGoLiveOf(sb, 1, ['TC-SO-2607-010'])).get('TC-SO-2607-010')).toBe(3_785_500);
   });
 });
+
+describe("AutoCount's AR collection on the billing view", () => {
+  test('counts whole, past the contract (FORESTA 19-05: RM 103,768 collected on RM 96,399)', () => {
+    const v = assembleView('TC-SO-2601-003', 'RENO_CONFIRMED', 9_639_900, 9_639_900, quarter, [], 0, [], 9_639_900, 0, 0, 10_376_800, 0, true);
+    expect(v.receivedSen).toBe(10_376_800);
+    expect(v.paidBeforeGoLiveSen).toBe(10_376_800);
+    expect(v.instalments.every((i) => i.paidBeforeGoLive)).toBe(true);
+  });
+  test('a worked-out figure still stops at the contract', () => {
+    const v = assembleView('X', 'RENO_CONFIRMED', 9_639_900, 9_639_900, quarter, [], 0, [], 9_639_900, 0, 0, 10_376_800);
+    expect(v.receivedSen).toBe(9_639_900);
+  });
+});
