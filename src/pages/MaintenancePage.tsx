@@ -266,18 +266,26 @@ const unitText = ({ unitNumber }: Pick<Issue, 'unitNumber'>): string => unitNumb
 const jobLabel = (i: Issue) => `${buildingName(i.propertyName)} ${unitText(i)}`;
 // Some rows are in progress without a start time (set before Start repair recorded one), so the state counts too.
 const started = (i: Issue) => !!i.startedAt || i.state === 'in_progress';
-type Move = 'start' | 'end' | 'reopen';
+type Move = 'start' | 'end' | 'reopen' | 'done';
 /** Why a ticked job is left alone by a move, or null when the move applies. */
 function moveSkip(i: Issue, move: Move): string | null {
   if (move === 'reopen') return i.state === 'resolved' ? null : 'Not finished';
   if (i.state === 'resolved') return 'Already finished';
+  /* Done in bulk (chew, 25 Nov 2026: a button to tick many done at once): a repair finished with no cost closes at RM 0; one with a
+     quote or an amount is closed on its own, with the amount and who pays. */
+  if (move === 'done') {
+    if (typeOf(i) === 'pass_key') return 'A pass key job: use Done on it';
+    if (!i.endedAt) return 'Repair not finished yet';
+    if ((i.quotedAmount ?? 0) > 0 || (i.finalAmount ?? 0) > 0 || (i.contractorAmount ?? 0) > 0) return 'Has a cost: close it on its own with the amount';
+    return null;
+  }
   if (move === 'start') return started(i) ? 'Already started' : awaitingOwner(i) ? "Waiting for the owner's approval" : null;
   return !i.startedAt ? 'Not started' : i.endedAt ? 'Repair already finished' : null;
 }
 const collectedText = (i: Issue) => (i.collectedAt ? `Collected ${dateShort(i.collectedAt)}` : COLLECT_FROM[i.chargeTo] && (i.finalAmount ?? i.quotedAmount) ? 'Not yet' : '');
 const paidText = (i: Issue) => (i.contractorPaidAt ? `Paid ${dateShort(i.contractorPaidAt)}` : i.contractorAmount != null ? 'Not yet' : '');
 const isOpenJob = (i: Issue): boolean => i.state !== 'resolved';
-const MOVE_DONE: Record<Move, string> = { start: 'started', end: 'marked repair finished', reopen: 'reopened' };
+const MOVE_DONE: Record<Move, string> = { start: 'started', end: 'marked repair finished', reopen: 'reopened', done: 'closed as done (no cost)' };
 const COST_SLIDER_START: RangeBounds = { lowest: 0, highest: 1000 };
 
 function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, money, canBulk, onChanged, buildingOptions, unitOptions, toolbar, filtered, onClearFilters, empty, above }: {
@@ -314,9 +322,16 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
   async function bulkMove(picked: Issue[], move: Move, clear: () => void) {
     const todo = picked.filter(i => !moveSkip(i, move));
     const left = picked.filter(i => moveSkip(i, move)).map(i => ({ label: jobLabel(i), reason: moveSkip(i, move)! }));
+    if (move === 'done') {
+      const ok = await ask({ title: `Close ${plural(todo.length, 'job')} as done?`, confirmLabel: `Close ${plural(todo.length, 'job')}`, cancelLabel: 'Keep open',
+        body: 'Each is closed with no cost (RM 0) and moves to Done. A job with a quote or an amount is left for you to close on its own.',
+        meta: left.length ? <>{plural(left.length, 'ticked job')} {left.length === 1 ? 'is' : 'are'} left as they are.</> : undefined });
+      if (ok === null) return;
+    }
     setBusy(move);
     const res = await runEach(todo, i => (move === 'start' ? api.post(`/maintenance/issues/${i.id}/start`, {})
       : move === 'end' ? api.post(`/maintenance/issues/${i.id}/end`, {})
+      : move === 'done' ? api.post(`/maintenance/issues/${i.id}/complete`, { finalAmount: 0 })
       : api.patch(`/maintenance/issues/${i.id}`, { state: 'reopened' })), jobLabel);
     setBusy(null);
     const failed = [...res.failed, ...left];
@@ -420,6 +435,7 @@ function IssueTable({ tab, rows, loading, error, onRetry, selected, onSelect, mo
             <Button size="sm" variant="secondary" icon={<Icon name="UserPlus" size="sm" />} onClick={() => setAssigning({ rows: picked, clear })}>Assign</Button>
             {can('start') && <Button size="sm" variant="secondary" icon={<Icon name="Play" size="sm" />} loading={busy === 'start'} onClick={() => void bulkMove(picked, 'start', clear)}>Start repair</Button>}
             {can('end') && <Button size="sm" variant="secondary" icon={<Icon name="Flag" size="sm" />} loading={busy === 'end'} onClick={() => void bulkMove(picked, 'end', clear)}>Repair finished</Button>}
+            {money && can('done') && <Button size="sm" variant="primary" icon={<Icon name="CheckCheck" size="sm" />} loading={busy === 'done'} onClick={() => void bulkMove(picked, 'done', clear)}>Done (no cost)</Button>}
             {money && can('reopen') && <Button size="sm" variant="secondary" icon={<Icon name="RotateCcw" size="sm" />} loading={busy === 'reopen'} onClick={() => void bulkMove(picked, 'reopen', clear)}>Reopen</Button>}
             {picked.some(isOpenJob) && <Button size="sm" variant="danger" icon={<Icon name="Trash2" size="sm" />} loading={busy === 'delete'} onClick={() => void deleteJobs(picked, clear)}>Delete</Button>}
           </>;
