@@ -87,7 +87,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     if (there) return fail('ALREADY_RECORDED', `${await unitLabel(env, x.unitId)} already has this bill for that month.`, 409);
   }
 
-  const whole = Number(cur.amount) + shared;
+  /* The whole bill as printed: a scanned one's page, else the amount on file (the parts come out of it). */
+  const whole = Number(cur.bill_sen ?? cur.amount);
   const labels = new Map(await Promise.all(units.map(async u => [u, await unitLabel(env, u)] as const)));
   const note = (unitId: string, sen: number) => `, ${rmText(sen)} of a ${rmText(whole)} bill shared with ${units.filter(u => u !== unitId).map(u => labels.get(u)).join(', ')}`;
   const base = (cur.description ?? 'Utility bill').replace(NOTE, '');
