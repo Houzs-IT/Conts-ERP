@@ -13,7 +13,7 @@ import { dispatchRequest } from './mcpDispatch';
 import { scmEngineConfigured } from './scmEngine';
 import {
   ACTIONS_OFF, EXPORT_PREFIX, EXPORT_TTL_MS, MAX_CONFIRMED_PER_DAY, conflictText, proposeEmail, proposeMeeting, reservationFlow, safeFileName,
-  signExport, statementFlow, stayMonths, validConfirmationId, type EmailPayload, type MeetingDirectory, type MeetingPayload,
+  signExport, statementFlow, stayMonths, unitOwner, validConfirmationId, type EmailPayload, type MeetingDirectory, type MeetingPayload,
 } from './mcpActions';
 import { parseFetchId } from './mcpQuick';
 import {
@@ -190,9 +190,10 @@ async function flowOfReservation(c: ToolCtx, rid: string): Promise<Outcome> {
   ]);
   if (!pay.ok) refused.push(pay.status === 403 ? 'Payments, invoices and receipts are not available to your role.' : `Payments could not be read: ${pay.message}`);
   if (unit && !unit.ok) refused.push(`The unit and its owner are not available: ${unit.message}`);
-  const ownerName = unit?.ok ? String(obj(obj(unit.value).owner).name ?? '') : '';
+  const owner = unit?.ok ? unitOwner(unit.value) : {};
+  const ownerName = String(owner.name ?? '');
   const statements: { period: string; body: unknown | null }[] = [];
-  if (unit?.ok && obj(obj(unit.value).owner).id) {
+  if (owner.id) {
     const months = stayMonths(String(res.checkIn ?? ''), String(res.checkOut ?? ''));
     const got = await Promise.all(months.map(m => c.read('/api/statements', { period: m, q: ownerName, pageSize: 50 })));
     got.forEach((g, i) => statements.push({ period: months[i], body: g.ok ? g.value : null }));

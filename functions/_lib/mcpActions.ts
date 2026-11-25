@@ -253,6 +253,9 @@ const num = (v: unknown): number | null => (v === null || v === undefined || v =
 export const rm = (sen: unknown): number | null => { const n = num(sen); return n === null ? null : Math.round(n) / 100; };
 const enc = encodeURIComponent;
 
+/** The owner of a unit from GET /api/units/detail ({ unit: { owner } }); a bare { owner } is read too. */
+export const unitOwner = (detail: unknown): Obj => { const d = obj(detail); return obj(obj(d.unit).owner ?? d.owner); };
+
 /** The owner-statement months a stay touches: check-in month to the month of the last night. */
 export function stayMonths(checkIn: string, checkOut: string): string[] {
   if (!/^\d{4}-\d{2}-\d{2}/.test(checkIn)) return [];
@@ -303,8 +306,8 @@ export function reservationFlow(x: {
       });
     }
   }
-  const u = obj(x.unit);
-  const owner = obj(u.owner);
+  // GET /api/units/detail answers { unit: { owner }, ... }.
+  const owner = unitOwner(x.unit);
   const ownerId = str(owner.id);
   if (ownerId) {
     chain.push({ type: 'Owner', number: str(owner.name) || ownerId, status: '', date: null, amountRM: null, url: `${x.origin}/owners/${enc(ownerId)}` });

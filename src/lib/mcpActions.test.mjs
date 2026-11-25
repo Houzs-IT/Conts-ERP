@@ -142,7 +142,7 @@ test('stay months and the reservation flow', () => {
     reservation: { id: 'r1', externalRef: 'HM123', state: 'checked_out', checkIn: '2026-11-29', checkOut: '2026-12-02', guestName: 'Ali', propertyName: 'Vista', unitNumber: 'A-1', money: { gross: 123450 },
       documents: [{ id: 'd1', type: 'invoice', docNo: 'INV-0001', amount: 123450, issuedAt: '2026-11-29T01:00:00Z', voidedAt: null, pdf: '/api/guest-documents/d1/pdf' }] },
     payments: { data: [{ id: 'p1', amount: 100000, receivedOn: '2026-11-30', status: 'received', kind: 'payment', reference: 'FPX1', method: 'transfer' }] },
-    unit: { owner: { id: 'o1', name: 'Tan' } },
+    unit: { unit: { owner: { id: 'o1', name: 'Tan' } } },
     statements: [
       { period: '2026-11', body: { data: [{ id: 's1', ownerId: 'o1', period: '2026-11', state: 'sent', netPayout: 50000, periodEnd: '2026-11-30', ownerName: 'Tan' }, { id: 's9', ownerId: 'o2', period: '2026-11' }] } },
       { period: '2026-12', body: { data: [] } },
