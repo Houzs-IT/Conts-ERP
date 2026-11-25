@@ -8,7 +8,7 @@ import { register } from 'node:module';
 register('data:text/javascript,' + encodeURIComponent(`export async function resolve(s, c, next) {
   try { return await next(s, c); } catch (e) { if (s.startsWith('.') && !/\\.[a-z]+$/.test(s)) return next(s + '.ts', c); throw e; }
 }`));
-const { AREAS, resolveFor, sidedResolution, routeAreas, highestLevelOf, closedBySide } = await import('../../functions/_lib/access.ts');
+const { AREAS, resolveFor, routeAreas, highestLevelOf, closedBySide } = await import('../../functions/_lib/access.ts');
 
 const area = key => AREAS.find(a => a.key === key);
 const rules = ({ user = {}, position = {}, department = {} } = {}) => ({
@@ -206,13 +206,13 @@ const role = ({ position = {}, department = {} } = {}) => ({
   department: { rules: new Map(Object.entries(department)) },
 });
 
-test('the other company\'s areas: a role never opens them, the person\'s own setting does', () => {
-  const roleOpensSupply = rules({ department: { 'group:Supply chain': 'full', scSales: 'edit' } });
-  assert.deepEqual(sidedResolution(roleOpensSupply, staff, 'conts', area('scSales')), { level: 'none', origin: 'none' });
-  roleOpensSupply.user.rules.set('scSales', 'view');
-  assert.deepEqual(sidedResolution(roleOpensSupply, staff, 'conts', area('scSales')), { level: 'view', origin: 'user' });
-  assert.deepEqual(sidedResolution(rules({ user: { scSales: 'edit' } }), { kind: 'cleaning' }, 'conts', area('scSales')), { level: 'none', origin: 'none' });
-  assert.deepEqual(sidedResolution(rules(), { kind: 'management' }, 'conts', area('scSales')), { level: 'full', origin: 'fixed' });
+test('the other company\'s groups: closed to a one-company department\'s rules, open to a Both department\'s and to the person', () => {
+  const department = { 'group:Supply chain': 'edit' };
+  assert.deepEqual(at({ ...rules({ department }), side: 'both' }, 'scSales'), { level: 'edit', origin: 'department' });
+  assert.deepEqual(at({ ...rules({ department }), side: 'conts' }, 'scSales'), { level: 'none', origin: 'none' });
+  assert.deepEqual(at({ ...rules({ department, user: { scSales: 'view' } }), side: 'conts' }, 'scSales'), { level: 'view', origin: 'user' });
+  const conts = { ...rules(), side: 'conts', extra: [{ ...role({ department }), side: 'both' }] };
+  assert.deepEqual(at(conts, 'scSales'), { level: 'edit', origin: 'department' });
 });
 
 test('extra roles: each area takes the highest level any role gives', () => {

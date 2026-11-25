@@ -1,6 +1,6 @@
 import { type Env, all, one } from './db';
 import {
-  AREAS, GROUPS, closedBySide, LEVELS, groupKey, isKind, isLevel, isSetting, isSide, resolveFor, rulesFor, sidedResolution, sideSql, sideWithRolesSql, userRolesReady,
+  AREAS, GROUPS, LEVELS, groupKey, isKind, isLevel, isSetting, isSide, resolveFor, rulesFor, sideSql, sideWithRolesSql, userRolesReady,
   type DepartmentKind, type Level, type Origin, type Rules, type Setting, type Side,
 } from './access';
 
@@ -271,8 +271,7 @@ export async function personAccess(env: Env, userId: string, canEdit: boolean): 
   const rules: Rules = await rulesFor(env, who);
   const withoutOverrides: Rules = { ...rules, user: { rules: new Map() } };
   const areas = AREAS.filter(a => !a.hidden).map((a): PersonArea => {
-    const closed = closedBySide(kind, side, a.group);
-    const now = sidedResolution(rules, who, side, a);
+    const now = resolveFor(rules, who, a);
     const base = resolveFor(withoutOverrides, who, a);
     const own = rules.user.rules.get(a.key);
     // Management is fixed Full from its department, so "what you would get" names the department.
@@ -281,7 +280,7 @@ export async function personAccess(env: Env, userId: string, canEdit: boolean): 
       key: a.key, label: a.label, group: a.group, ownGrant: !!a.ownGrant,
       level: now.level, origin: now.origin,
       override: isLevel(own) ? own : null,
-      inherited: closed ? { level: 'none', origin: 'none' } : { level: base.level, origin },
+      inherited: { level: base.level, origin },
     };
   });
   return {
