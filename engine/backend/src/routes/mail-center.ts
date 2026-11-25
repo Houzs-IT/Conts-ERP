@@ -32,6 +32,7 @@ import { getBranding, getBrandingForCompany } from "../services/branding";
 import { validateMailAttachments } from "../lib/mail-attachments";
 import { isSalesDirectorUser } from "../services/pmsAccess";
 import { activeCompanyCodePred, activeCompanyId, activeCompanySql } from "../scm/lib/companyScope";
+import { maskLoginLinks } from "./lib/mail-outbox-mask";
 import { toArray, stripHtml, safeIso, base64ToBytes, safeFilename } from "../services/mail-parse";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -1175,6 +1176,8 @@ app.get("/outbox", async (c) => {
       .bind(...binds, limit, offset)
       .all<OutboxRow>();
 
+    // Sign-in links (invite / reset) only for a Mail Center admin (lib/mail-outbox-mask.ts).
+    const admin = isMailAdmin(c.get("user"));
     const rows = (res.results ?? []).map((r) => ({
       id: r.id,
       toAddress: r.to_address ?? "",
@@ -1184,7 +1187,7 @@ app.get("/outbox", async (c) => {
       lastError: r.last_error ?? null,
       sentAt: r.sent_at ?? null,
       createdAt: r.created_at ?? "",
-      snippet: outboxSnippet(r.body_text, r.body_html),
+      snippet: admin ? outboxSnippet(r.body_text, r.body_html) : maskLoginLinks(outboxSnippet(r.body_text, r.body_html)),
       attachmentNames: [] as string[],
     }));
 
@@ -1233,8 +1236,8 @@ app.get("/outbox/:id", async (c) => {
       lastError: r.last_error ?? null,
       sentAt: r.sent_at ?? null,
       createdAt: r.created_at ?? "",
-      bodyText: r.body_text ?? "",
-      bodyHtml: r.body_html ?? "",
+      bodyText: isMailAdmin(c.get("user")) ? r.body_text ?? "" : maskLoginLinks(r.body_text),
+      bodyHtml: isMailAdmin(c.get("user")) ? r.body_html ?? "" : maskLoginLinks(r.body_html),
       attachmentNames: [] as string[],
     });
   } catch (e) {
