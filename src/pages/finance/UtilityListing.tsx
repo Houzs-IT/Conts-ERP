@@ -450,6 +450,85 @@ function MoveUnit({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) {
   );
 }
 
+type SplitPart = { key: string; unitId: string; amount: number | null; deductOwner: boolean; ownerPaid: boolean };
+
+/** One bill that is really for two or more units (chew, 25 Nov 2026): an amount typed for each other unit, each part
+ *  deducted from its owner or not and paid back to its owner or not; this unit keeps the rest. The provider is still paid
+ *  once (POST /expenses/utilities/bills/:id/split). */
+function SplitBill({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) {
+  const roster = useUnitRoster();
+  const [open, setOpen] = useState(false);
+  const [parts, setParts] = useState<SplitPart[]>([]);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const fresh = (): SplitPart => ({ key: crypto.randomUUID(), unitId: '', amount: null, deductOwner: true, ownerPaid: false });
+  if (!open) return <div><Button size="sm" variant="secondary" icon={<Icon name="Split" size="sm" />} onClick={() => { setParts([fresh()]); setOpen(true); }}>Split with another unit</Button></div>;
+  const shared = parts.reduce((n, x) => n + (x.amount ?? 0), 0);
+  const left = bill.amount - shared;
+  const units = [bill.unitId, ...parts.map(x => x.unitId).filter(Boolean)];
+  const problem = parts.some(x => !x.unitId) ? 'Pick the unit of each part.'
+    : parts.some(x => !(x.amount && x.amount > 0)) ? 'Enter the amount of each part.'
+    : new Set(units).size !== units.length ? 'A unit is in the split twice.'
+    : left <= 0 ? 'Leave some of the bill for this unit.' : null;
+  const set = (key: string, p: Partial<SplitPart>) => setParts(list => list.map(x => (x.key === key ? { ...x, ...p } : x)));
+  const save = async () => {
+    if (problem) return;
+    setBusy(true);
+    try {
+      await api.post(`/expenses/utilities/bills/${encodeURIComponent(bill.id)}/split`, {
+        shares: parts.map(x => ({ unitId: x.unitId, amountSen: x.amount, chargeTo: x.deductOwner ? 'owner' : 'the_conts', ownerPaid: x.ownerPaid })) });
+      toast({ tone: 'success', title: `Bill split: this unit keeps ${rm(left)}.`, body: 'Each other unit has its own part. The provider is still paid once.' });
+      onSaved();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'The bill was not split.', body: errorMessage(e, 'Try again in a moment.') });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 p-2 rounded-control border border-dashed border-line">
+      <span className="text-meta text-muted-ink">This unit&apos;s part now {rm(bill.amount)}. Type each other unit&apos;s amount; this unit keeps the rest ({rm(Math.max(0, left))}).</span>
+      {parts.map((x, i) => (
+        <div key={x.key} className="flex flex-col gap-1 p-2 rounded-control border border-solid border-line">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold">Part {i + 2}</span>
+            {parts.length > 1 && <Button size="sm" variant="ghost" onClick={() => setParts(list => list.filter(y => y.key !== x.key))}>Remove</Button>}
+          </div>
+          <UnitPicker label={`Part ${i + 2} unit`} units={roster.filter(u => u.id !== bill.unitId)} value={x.unitId} onChange={id => set(x.key, { unitId: id })} />
+          <MoneyInput label={`Part ${i + 2} amount`} valueSen={x.amount} onChangeSen={v => set(x.key, { amount: v })} />
+          <label className="flex items-center gap-2"><input type="checkbox" checked={x.deductOwner} onChange={e => set(x.key, { deductOwner: e.target.checked })} />Deduct from owner</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={x.ownerPaid} onChange={e => set(x.key, { ownerPaid: e.target.checked })} />Owner paid (pay back)</label>
+        </div>
+      ))}
+      <div><Button size="sm" variant="ghost" onClick={() => setParts(list => [...list, fresh()])}>Add another unit</Button></div>
+      {problem && <span className="text-meta text-danger">{problem}</span>}
+      <div className="flex gap-2">
+        <Button size="sm" variant="primary" loading={busy} disabled={!!problem} onClick={() => void save()}>Split bill</Button>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setOpen(false); setParts([]); }}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
+/** The parts of a split bill put back on it, to fix the split (DELETE /expenses/utilities/bills/:id/split). */
+function UndoSplit({ bill, onSaved }: { bill: GridBill; onSaved: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const undo = async () => {
+    setBusy(true);
+    try {
+      await api.del(`/expenses/utilities/bills/${encodeURIComponent(bill.id)}/split`);
+      toast({ tone: 'success', title: 'Split undone: the whole bill is on this unit again.' });
+      onSaved();
+    } catch (e) {
+      toast({ tone: 'critical', title: 'The split was not undone.', body: errorMessage(e, 'Try again in a moment.') });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <div><Button size="sm" variant="secondary" loading={busy} onClick={() => void undo()}>Undo split ({bill.parts} other unit{bill.parts === 1 ? '' : 's'})</Button></div>;
+}
+
 function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose, onSaved }: { unit: Unit; month: string; kind: UtilityKind | 'total'; cell: Cell; mode?: Mode; onClose: () => void; onSaved: () => void }) {
   const title = `${unitName(unit)} · ${kind === 'total' ? 'All bills' : KIND_LABEL[kind]} · ${monthLabel(month)}`;
   return (
@@ -476,8 +555,12 @@ function BillPanel({ unit, month, kind, cell, mode = 'bill', onClose, onSaved }:
               ? <div><Button size="sm" variant="secondary" icon={<Icon name="FileText" size="sm" />}
                   onClick={() => downloadFile(`/documents/${encodeURIComponent(b.receiptId!)}/download`).catch(notifyFailure)}>View bill</Button></div>
               : <span className="text-meta text-muted-ink">No bill file attached.</span>}
-            {editable(b) && <EditAmount bill={b} onSaved={onSaved} />}
-            {editable(b) && <MoveUnit bill={b} onSaved={onSaved} />}
+            {b.description && (b.splitOf || (b.parts ?? 0) > 0) && <Row label="Note">{b.description}</Row>}
+            {editable(b) && !b.splitOf && !(b.parts ?? 0) && <EditAmount bill={b} onSaved={onSaved} />}
+            {editable(b) && !b.splitOf && !(b.parts ?? 0) && <MoveUnit bill={b} onSaved={onSaved} />}
+            {editable(b) && !b.splitOf && !(b.parts ?? 0) && !b.ownerPaid && !b.recordOnly && <SplitBill bill={b} onSaved={onSaved} />}
+            {editable(b) && (b.parts ?? 0) > 0 && <UndoSplit bill={b} onSaved={onSaved} />}
+            {b.splitOf && <span className="text-meta text-muted-ink">A part of a bill split across units: change it from that bill (Undo split).</span>}
           </div>
         ))}
       </div>

@@ -45,6 +45,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
            (SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge') AS part
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id WHERE e.id = ?`, id);
   if (!cur || !isUtility(cur.category)) return fail('NOT_FOUND', 'That utility bill no longer exists.', 404);
+  /* A bill split across units (chew, 25 Nov 2026) changes as a whole: undo the split (DELETE .../split), change it, split it again. */
+  if (await one(env, 'SELECT 1 AS x FROM expenses WHERE split_of = ? OR (id = ? AND split_of IS NOT NULL) LIMIT 1', id, id)) return fail('SPLIT', 'This bill is split with other units. Undo the split, change it, then split it again.', 409);
   // A record-only bill kept from AutoCount has no owner lines to follow it, so it stays as it is.
   if (cur.record_only && !cur.scan_id) return fail('RECORD_ONLY', 'This bill is kept for the records only, so it is changed in the unit’s Costs.', 409);
   if (await isExpenseLocked(env, cur)) return fail('PERIOD_LOCKED', 'The owner statement for that month is final, so this bill is locked.', 409);

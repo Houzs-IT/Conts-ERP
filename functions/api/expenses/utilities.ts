@@ -142,9 +142,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         AND incurred_on >= ? AND incurred_on < ?`, JSON.stringify(unitBills.map(r => r.unitId)), from, to) : Promise.resolve([]),
     // The bills this save would replace, and the statement each is deducted on.
     picked.length ? all<{ id: string; unit_id: string; category: string; reference: string; deduct_month: string; payment_request_id: string | null; payment_request_no: string | null;
-      requested: boolean; request_status: string | null; amount: number; charge_to: string; owner_paid: boolean; record_only: boolean; scan_id: string | null; bill_sen: number | null }>(env, `
+      requested: boolean; request_status: string | null; amount: number; charge_to: string; owner_paid: boolean; record_only: boolean; scan_id: string | null; bill_sen: number | null; split: boolean }>(env, `
       SELECT e.id, e.unit_id, e.category, e.reference, e.deduct_month, e.payment_request_id, e.payment_request_no, e.payment_request_id IS NOT NULL AS requested, r.status AS request_status,
-             e.amount, e.charge_to, e.owner_paid, coalesce(e.record_only, false) AS record_only, s.id AS scan_id, s.bill_sen
+             e.amount, e.charge_to, e.owner_paid, coalesce(e.record_only, false) AS record_only, s.id AS scan_id, s.bill_sen,
+             (e.split_of IS NOT NULL OR EXISTS (SELECT 1 FROM expenses x WHERE x.split_of = e.id)) AS split
       FROM expenses e LEFT JOIN utility_payment_requests() r ON r.id = e.payment_request_id LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
       WHERE e.unit_id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND e.incurred_on >= ? AND e.incurred_on < ?`, JSON.stringify(unitIds), from, to) : Promise.resolve([]),
   ]);
@@ -158,6 +159,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       AND EXISTS (SELECT 1 FROM owner_report_locks k WHERE k.stage = 'o2' AND k.frozen->'adjustments' @> jsonb_build_array(jsonb_build_object('id', a.id)))`,
     JSON.stringify(current.map(x => x.id)))).map(r => r.expense_id)) : new Set<string>();
   const onKept = new Set(current.filter(x => keptLines.has(x.id)).map(x => `${x.unit_id}|${x.category}|${x.reference}`));
+  // A bill split across units (chew, 25 Nov 2026) is not replaced from the month grid: it changes with Undo split.
+  const onSplit = new Set(current.filter(x => x.split).map(x => `${x.unit_id}|${x.category}|${x.reference}`));
   // A bill already sent for payment is not replaced here: a new entry would pay it twice (chew, 5 Nov 2026; SOP 3.10).
   // Unless its request came back, withdrawn or rejected: the bill is fixed here and keeps the request, which goes to
   // finance again with "Send again" on Utility bills, not as a new request (chew, 13 Nov 2026).
@@ -185,6 +188,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const bills = new Map<string, { id: string; unit_id: string; kind: string; description: string; amount: number; account_no: string; charge_to: string; receipt: string | null; accountId: string; deduct_month: string; rolled: boolean; owner_paid: boolean; payment_request_id: string | null; payment_request_no: string | null }>();
   for (const { r, a } of picked) {
     if (onFinal.has(`${a.unit_id}|${a.kind}|${a.account_no}`) || onKept.has(`${a.unit_id}|${a.kind}|${a.account_no}`)) { locked.push(a.account_no); continue; }
+    if (onSplit.has(`${a.unit_id}|${a.kind}|${a.account_no}`)) { scanned.push(a.account_no); continue; }
     if (onRequest.has(`${a.unit_id}|${a.kind}|${a.account_no}`)) { requested.push(a.account_no); continue; }
     if (blank.has(`${a.unit_id}|${a.kind}`)) { elsewhere.push(a.account_no); continue; }
     const back = returned.get(`${a.unit_id}|${a.kind}|${a.account_no}`);

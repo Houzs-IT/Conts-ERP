@@ -35,6 +35,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     payment_request_id: string | null; receipt_document_id: string | null }>(env,
     `SELECT unit_id, category, left(incurred_on::text, 10) AS incurred_on, deduct_month, reference, description, charge_to, payment_request_id, receipt_document_id FROM expenses WHERE id = ?`, id);
   if (!cur || !isUtility(cur.category)) return fail('NOT_FOUND', 'That utility bill no longer exists.', 404);
+  /* A bill split across units (chew, 25 Nov 2026) changes as a whole: undo the split (DELETE .../split), change it, split it again. */
+  if (await one(env, 'SELECT 1 AS x FROM expenses WHERE split_of = ? OR (id = ? AND split_of IS NOT NULL) LIMIT 1', id, id)) return fail('SPLIT', 'This bill is split with other units. Undo the split first.', 409);
   if (cur.unit_id === to) return json({ ok: true, unchanged: true });
   const unit = await one<{ id: string; owner_id: string | null }>(env, 'SELECT id, owner_id FROM units WHERE id = ?', to);
   if (!unit) return fail('VALIDATION', 'That unit no longer exists.', 422, { unitId: 'Pick another unit.' });
