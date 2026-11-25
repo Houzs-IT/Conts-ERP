@@ -2101,10 +2101,19 @@ function DataTableInner<T, L>({
     renderList.length > VIRTUAL_ROW_THRESHOLD;
   const tbodyRef = useRef<HTMLTableSectionElement>(null);
   const rowHeightRef = useRef(ROW_HEIGHT_ESTIMATE);
-  const [winRange, setWinRange] = useState<{ start: number; end: number }>({
+  const [winRange, setWinRange] = useState<{ start: number; end: number; top: number; bottom: number }>({
     start: 0,
     end: VIRTUAL_ROW_THRESHOLD * 2,
+    top: 0,
+    bottom: 0,
   });
+  /* Each row's own height, once drawn, by its key (chew, 25 Nov 2026: the list jumped up and down while scrolling).
+     The spacers used to be (rows off screen) x (the average height of the rows on screen); that average moved as
+     rows of other heights came into view, so the spacer above grew and shrank under the reader and the table
+     shook. A row's measured height is now kept and summed, and a row never drawn counts at one height fixed at the
+     first measure, so the spacers move only by what really changed. */
+  const rowHeightsRef = useRef(new Map<string, number>());
+  const rowEstimateRef = useRef<number | null>(null);
 
   /* Scroll-to-row (map pin -> board row, DataGrid parity). The nonce is the
      trigger, so the same pin clicked twice scrolls again. A windowed row may not
@@ -2153,34 +2162,74 @@ function DataTableInner<T, L>({
   useEffect(() => {
     if (!canVirtualize) return;
     let raf = 0;
+    const heights = rowHeightsRef.current;
+    const keyAt = (i: number): string | null => {
+      const it = renderList.at(i);
+      return it?.kind === "row" ? String(getRowKey(it.row)) : null;
+    };
     const measure = () => {
       raf = 0;
       const el = tbodyRef.current;
       if (!el) return;
-      /* The average of the rows drawn, not the first one: with text wrapped the
-         rows are no longer one height. */
       const drawn = el.querySelectorAll<HTMLElement>("tr[data-vrow]");
       let sum = 0;
-      drawn.forEach((tr) => { sum += tr.offsetHeight; });
-      if (drawn.length > 0 && sum > 0) rowHeightRef.current = sum / drawn.length;
-      const rh = rowHeightRef.current || ROW_HEIGHT_ESTIMATE;
-      const top = el.getBoundingClientRect().top; // tbody top relative to viewport
+      drawn.forEach((tr) => {
+        const h = tr.offsetHeight;
+        sum += h;
+        const k = tr.getAttribute("data-rowkey");
+        if (k != null && h > 0) heights.set(k, h);
+      });
+      if (rowEstimateRef.current == null && drawn.length > 0 && sum > 0) rowEstimateRef.current = sum / drawn.length;
+      const est = rowEstimateRef.current ?? ROW_HEIGHT_ESTIMATE;
+      rowHeightRef.current = est;
+      const hOf = (i: number) => { const k = keyAt(i); return (k != null ? heights.get(k) : undefined) ?? est; };
+      const above = -el.getBoundingClientRect().top; // how far the tbody's top is above the viewport
       const vh = window.innerHeight;
-      const first = Math.max(0, Math.floor(-top / rh) - VIRTUAL_OVERSCAN);
-      const count = Math.ceil(vh / rh) + VIRTUAL_OVERSCAN * 2;
-      const last = Math.min(renderList.length, first + count);
-      setWinRange((prev) => (prev.start === first && prev.end === last ? prev : { start: first, end: last }));
+      const n = renderList.length;
+      let i = 0;
+      let y = 0;
+      while (i < n && y + hOf(i) <= above) { y += hOf(i); i++; }
+      const first = Math.max(0, i - VIRTUAL_OVERSCAN);
+      let j = i;
+      let y2 = y;
+      while (j < n && y2 < above + vh) { y2 += hOf(j); j++; }
+      const last = Math.min(n, j + VIRTUAL_OVERSCAN);
+      let top = 0;
+      for (let k = 0; k < first; k++) top += hOf(k);
+      let bottom = 0;
+      for (let k = last; k < n; k++) bottom += hOf(k);
+      top = Math.round(top);
+      bottom = Math.round(bottom);
+      setWinRange((prev) => (prev.start === first && prev.end === last && prev.top === top && prev.bottom === bottom
+        ? prev : { start: first, end: last, top, bottom }));
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(measure); };
+    /* A new width can rewrap every row: heights are measured again. */
+    const onResize = () => { heights.clear(); rowEstimateRef.current = null; onScroll(); };
     measure();
     window.addEventListener("scroll", onScroll, { capture: true, passive: true });
-    window.addEventListener("resize", onScroll);
+    window.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", onScroll);
+      window.removeEventListener("resize", onResize);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [canVirtualize, renderList.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getRowKey is a caller prop read fresh each measure
+  }, [canVirtualize, renderList]);
+  /* Drawn rows change height when they are drawn again (wrap on or off, columns shown or hidden): measure after each
+     window change so the cache follows, without waiting for a scroll. */
+  useEffect(() => {
+    if (!canVirtualize) return;
+    const el = tbodyRef.current;
+    if (!el) return;
+    let changed = 0;
+    for (const tr of Array.from(el.querySelectorAll<HTMLElement>("tr[data-vrow]"))) {
+      const k = tr.getAttribute("data-rowkey");
+      const h = tr.offsetHeight;
+      if (k != null && h > 0 && rowHeightsRef.current.get(k) !== h) { rowHeightsRef.current.set(k, h); changed += 1; }
+    }
+    if (changed > 0) window.dispatchEvent(new Event("scroll"));
+  });
   const vStart = canVirtualize ? winRange.start : 0;
   const vEnd = canVirtualize ? Math.min(renderList.length, winRange.end) : renderList.length;
 
@@ -2726,7 +2775,7 @@ function DataTableInner<T, L>({
               )}
               {canVirtualize && vStart > 0 && (
                 <tr aria-hidden>
-                  <td colSpan={totalColSpan} style={{ height: vStart * rowHeightRef.current, padding: 0, border: 0 }} />
+                  <td colSpan={totalColSpan} style={{ height: winRange.top, padding: 0, border: 0 }} />
                 </tr>
               )}
               {!effectiveLoading &&
@@ -3023,7 +3072,7 @@ function DataTableInner<T, L>({
                 })}
               {canVirtualize && vEnd < renderList.length && (
                 <tr aria-hidden>
-                  <td colSpan={totalColSpan} style={{ height: (renderList.length - vEnd) * rowHeightRef.current, padding: 0, border: 0 }} />
+                  <td colSpan={totalColSpan} style={{ height: winRange.bottom, padding: 0, border: 0 }} />
                 </tr>
               )}
               {/* The pager rides the last row, like "Load more": outside the table it sat under the frozen table box and missed the night inks. */}
