@@ -295,7 +295,7 @@ renovationCommission.post('/payouts/batch', async (c) => {
   const docs = [...new Set(items.map((x) => x.soDocNo))];
   const { data: found, error: e1 } = await sb.from('mfg_sales_orders').select('doc_no').eq('company_id', co.companyId).in('doc_no', docs);
   if (e1) return c.json({ error: 'save_failed', message: e1.message }, 500);
-  const known = new Set(((found ?? []) as Row[]).map((r) => String(r.doc_no)));
+  const known = new Set((found as Row[]).map((r) => String(r.doc_no)));
   const missing = docs.filter((d) => !known.has(d));
   if (missing.length > 0) return c.json({ error: 'not_found', message: `Sales order ${missing.join(', ')} does not exist.` }, 404);
   const note = String(raw.note ?? '').trim().slice(0, 500) || `Commission settlement ${paidOn}`;
