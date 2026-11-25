@@ -266,9 +266,32 @@ phone: Settings > System). Connector address: `https://erp.theconts.com/api/mcp`
     request's in-process reads instead of querying `mcp_tokens` again. Every new request from the AI app is still
     checked at the door, so Disconnect / Remove stop the next request; reads already admitted may finish for up to 15 s.
   - Not yet measured live: reply sizes and timings on production need 0378 applied and a real session.
+- **Actions, document flow, PDFs (owner, 26 Nov 2026, "confirm first, then do").** Behind migration
+  `0380_mcp_pending_actions.sql` (NOT auto-applied: Actions > Apply migrations to production, `only=0380`) AND the switch
+  "Allow AI actions (meetings, email)" on System > AI Connector (settings key `mcp.actionsEnabled`, default OFF).
+  - `propose_meeting` / `propose_email` check everything (Meetings directory read as the person for people and meeting
+    rooms; Mail Center Compose's own rules for email), store the exact body in `mcp_pending_actions` (10 minutes) and
+    answer a summary + `confirmationId`. `confirm_action` claims the row once (`UPDATE ... used_at IS NULL AND expires_at >
+    now RETURNING`, same token and person), then sends it through the ERP's OWN endpoint in-process as the person:
+    `POST /api/meetings/meetings` (the IT Hub), or the Mail Center sign-on `POST /api/supply-chain/engine-session` and
+    then engine `POST /api/mail-center/compose` (mailbox access is the engine's), signing the engine session out after.
+    `cancel_action` drops one. Max 30 confirmed per person per 24 h. Every proposal / confirmation is in `mcp_calls`
+    (recipients + subject for email, never the body).
+  - Write fence: `mcpActions.ts ACTION_ALLOWLIST` (those two POSTs only) + `connectorDecision` in the session middleware:
+    inner secret, action-id header, allow-listed method + path, and a single-use 60 s permit granted by confirm_action
+    right after it consumed the row (`mcpInner.ts grantActionPermit / takeActionPermit`). Dispatched writes can only
+    reach those two handlers (`mcpDispatch.ts actionRoutes`). Anything else with a connector token is 403.
+  - `document_flow {number_or_id}`: reservation -> guest invoice / receipts -> payments -> unit owner -> owner statement(s)
+    for the months of the stay; or a statement -> its units. Supply chain chains (engine) are not covered: those screens
+    show their own linked documents.
+  - `get_pdf {type, id}`: `statement` = the Owners page's own pdf-lib generator (`src/lib/statementPdf.ts`) run on the
+    server, stored in MEDIA under `mcp-exports/`, 15-minute HMAC link served by `GET /api/mcp/export` (public; link is
+    the credential). `guest_document` = the existing print page link (browser Print / Save as PDF; no server PDF exists).
+    `mcp-exports/` files are not deleted automatically yet (an R2 lifecycle rule on that prefix would do it).
+  - Tests: `src/lib/mcpActions.test.mjs` (fence, permits, lifecycle SQL on PGlite, validation, flow shaping, links).
 - Files: `functions/_lib/mcp*.ts`, `functions/_lib/aiConnector.ts`, `functions/api/mcp/`, `functions/api/ai-connector/`,
   `functions/.well-known/`, `src/pages/AiConnectorPage.tsx`, `src/pages/AiConnectPage.tsx`, tests
-  `src/lib/mcpAccess.test.mjs`, `src/lib/mcpQuick.test.mjs`.
+  `src/lib/mcpAccess.test.mjs`, `src/lib/mcpQuick.test.mjs`, `src/lib/mcpActions.test.mjs`.
 
 ## Blocked on the client
 

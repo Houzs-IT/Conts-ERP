@@ -3,6 +3,7 @@ import PageHeader from '../components/PageHeader';
 import { Button } from '../components/Button';
 import { ConfirmButton } from '../components/ConfirmDialog';
 import { Select } from '../components/Select';
+import { Switch } from '../components/Switch';
 import { StatRow, StatTile } from '../components/Metric';
 import { Segmented } from '../components/Metric';
 import { useToast } from '../components/Toast';
@@ -14,6 +15,7 @@ type Me = { allowed: boolean; isAdmin: boolean; pendingRequest: { id: string; cr
 type Person = { userId: string; name: string; position: string };
 type Overview = {
   connectorUrl: string;
+  actions?: { ready: boolean; enabled: boolean };
   stats: { connectedPeople: number; callsToday: number; refusedToday: number; waiting: number };
   requests: (Person & { id: string; reason: string; createdAt: string | null })[];
   connected: (Person & { tokenId: string; app: string; connectedAt: string | null; lastUsedAt: string | null })[];
@@ -174,6 +176,15 @@ function AdminView({ ov, reload }: { ov: Overview; reload: () => void }) {
         <StatTile label="Refused (24 h)" value={String(ov.stats.refusedToday)} />
       </StatRow>
 
+      <Section title="AI actions" sub="Off: the AI Connector only reads. On: a connected AI app may also book a meeting or send an email for the person, but only after showing them exactly what it will do and the person saying yes in the chat. Never orders, money, stock, approvals or deletes. Every proposal and confirmation shows in Recent lookups; at most 30 actions per person a day."
+        right={<div className="flex items-center gap-2">
+          <span className="text-copy text-ink">Allow AI actions (meetings, email)</span>
+          <Switch label="Allow AI actions (meetings, email)" checked={!!ov.actions?.enabled} disabled={blocked || !ov.actions?.ready}
+            onChange={next => void act('actions', () => api.post('/ai-connector/admin/settings', { actionsEnabled: next }), next ? 'AI actions allowed' : 'AI actions switched off')} />
+        </div>}>
+        {!ov.actions?.ready && <Empty>Not available yet: its database update (migration 0380) has not been applied.</Empty>}
+      </Section>
+
       <Section title="Waiting for approval" sub="Staff who pressed Request access.">
         {ov.requests.length === 0 ? <Empty>No one is waiting.</Empty> : (
           <div>
@@ -240,7 +251,7 @@ function AdminView({ ov, reload }: { ov: Overview; reload: () => void }) {
 
       <LeakCheck people={ov.allowed} />
 
-      <Section title="Recent lookups" sub="The last 100 things an AI app read, newest first.">
+      <Section title="Recent lookups" sub="The last 100 things an AI app read, proposed or did, newest first. Emails show the recipients and subject only.">
         {ov.calls.length === 0 ? <Empty>Nothing yet.</Empty> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-copy">
@@ -308,7 +319,7 @@ export default function AiConnectorPage() {
 
   return (
     <div className="flex flex-col gap-5 max-w-[1080px]">
-      <PageHeader title="AI Connector" sub="Ask Claude or ChatGPT about the ERP. Read only, and only what your own login can see."
+      <PageHeader title="AI Connector" sub="Ask Claude or ChatGPT about the ERP, only what your own login can see. Read only, unless management allows AI actions (a meeting or an email, each confirmed by you first)."
         actions={<Button live onClick={reload}>Refresh</Button>} />
 
       {error && <div role="alert" className="rounded-control border border-solid border-danger-line bg-danger-bg text-danger text-copy p-3">{error}</div>}

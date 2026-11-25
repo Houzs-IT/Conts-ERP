@@ -50,3 +50,26 @@ export function recallVerified<T>(token: string, now = Date.now()): T | null {
   if (e.exp <= now) { verified.delete(token); return null; }
   return e.id as T;
 }
+
+/* ---------- the one write a confirmed action may make ----------
+ * AI Connector actions (owner, 26 Nov 2026; functions/_lib/mcpActions.ts). confirm_action claims its mcp_pending_actions
+ * row and only then grants a permit here for that action id: one person, one method + path from ACTION_ALLOWLIST, 60
+ * seconds. Its in-process write carries this isolate's secret AND the action id in MCP_ACTION_HEADER; the session
+ * middleware takes the permit (single use) and lets the write through only when everything matches
+ * (connectorDecision). Never reachable from outside: the permit map lives in this isolate, and the header is useless
+ * without the secret. */
+export const MCP_ACTION_HEADER = 'x-conts-mcp-action';
+const PERMIT_TTL_MS = 60_000;
+const permits = new Map<string, { userId: string; method: string; path: string; exp: number }>();
+
+export function grantActionPermit(actionId: string, p: { userId: string; method: string; path: string }, now = Date.now()): void {
+  if (permits.size > 200) for (const [k, v] of permits) if (v.exp <= now) permits.delete(k);
+  permits.set(actionId, { ...p, method: p.method.toUpperCase(), exp: now + PERMIT_TTL_MS });
+}
+
+/** The permit for an action id, removed as it is taken: a second write with the same id finds none. */
+export function takeActionPermit(actionId: string): { userId: string; method: string; path: string; exp: number } | null {
+  const p = permits.get(actionId) ?? null;
+  permits.delete(actionId);
+  return p;
+}
