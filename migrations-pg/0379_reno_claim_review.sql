@@ -1,4 +1,4 @@
--- 0378_reno_claim_review: a Direct Claim to Me with a line on a sub-department flagged for Reno review waits for that
+-- 0379_reno_claim_review: a Direct Claim to Me with a line on a sub-department flagged for Reno review waits for that
 -- review before it reaches finance. The claim is saved RENO_REVIEW; the reviewer (Property OS gates who) edits the lines
 -- and sends it on (HANDED_IN), or sends it back (REJECTED, with a reason; the claimant replaces it as for any rejection).
 --   scm.staff_receipts.status         gains RENO_REVIEW (not a charged status in 0363, so no owner recovery fires on it)
