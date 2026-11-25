@@ -179,11 +179,13 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
           where o.doc_no in (select jsonb_array_elements_text($1::text::jsonb)) and ($2::bigint is null or o.company_id = $2)
             and nullif(trim(o.debtor_code), '') is not null)
        select 'C' as kind, o.company_id, o.debtor_code, o.doc_no, o.so_date::text as so_date, greatest(coalesce(k.billed_before_golive_sen, 0), coalesce(k.golive_contract_sen, 0))::bigint as sen,
-              (select coalesce(sum(i.total_sen), 0) from scm.mfg_sales_order_items i where i.doc_no = o.doc_no and not i.cancelled)::bigint as contract_sen
+              (select coalesce(sum(i.total_sen), 0) from scm.mfg_sales_order_items i where i.doc_no = o.doc_no and not i.cancelled)::bigint as contract_sen,
+              k.autocount_received_sen::bigint as received_sen
          from scm.mfg_sales_orders o
          join mine m on m.company_id = o.company_id and m.debtor_code = o.debtor_code
          join scm.reno_so_contracts k on k.so_doc_no = o.doc_no
-        where greatest(coalesce(k.billed_before_golive_sen, 0), coalesce(k.golive_contract_sen, 0)) > 0 and o.status::text <> 'CANCELLED'
+        where (greatest(coalesce(k.billed_before_golive_sen, 0), coalesce(k.golive_contract_sen, 0)) > 0 or k.autocount_received_sen is not null)
+          and o.status::text <> 'CANCELLED'
        union all
        select 'O' as kind, m.company_id, m.debtor_code, null as doc_no, null as so_date,
               (coalesce((select sum(si.total_sen) from scm.sales_invoices si
@@ -191,7 +193,7 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
                             and upper(coalesce(si.status::text, '')) not in ('DRAFT', 'CANCELLED', 'VOID')), 0)
              - coalesce((select sum(cc.amount_sen) from scm.customer_credits cc
                           where cc.company_id = m.company_id and cc.debtor_code = m.debtor_code and cc.source_type = 'OPENING'), 0))::bigint as sen,
-              null::bigint as contract_sen
+              null::bigint as contract_sen, null::bigint as received_sen
          from mine m`,
       [docsJson, companyId ?? null],
     ),
@@ -216,7 +218,12 @@ export async function billingViews(runner: RenoDb | UnsafeRunner, soDocNos: read
 }
 
 /** One row of billingViews' pre-go-live read: a contract AutoCount invoiced (C) or what a customer still owed at go-live (O). */
-export interface PreGoLiveRow { kind: 'C' | 'O'; company_id: number | string; debtor_code: string; doc_no: string | null; so_date: string | null; sen: number | string | null; contract_sen?: number | string | null }
+export interface PreGoLiveRow {
+  kind: 'C' | 'O'; company_id: number | string; debtor_code: string; doc_no: string | null; so_date: string | null; sen: number | string | null;
+  contract_sen?: number | string | null;
+  /** What AutoCount collected on the contract before go-live, from its AR collection list (acc/reno-paid-before-golive). */
+  received_sen?: number | string | null;
+}
 
 /** That read as paid before go-live per contract (acc/reno-paid-before-golive allocatePaidBeforeGoLive). A customer is
     its company and its code, so two companies' same code never mix. Exported for tests. */
@@ -226,6 +233,7 @@ export function paidBeforeGoLiveOfRows(rows: readonly PreGoLiveRow[]): Map<strin
   return allocatePaidBeforeGoLive(rows.filter((r) => r.kind === 'C' && r.doc_no).map((r) => ({
     soDocNo: String(r.doc_no), debtorCode: key(r), soDate: r.so_date ? String(r.so_date).slice(0, 10) : null, billedBeforeGoLiveSen: Number(r.sen ?? 0),
     contractSen: r.contract_sen == null ? null : Number(r.contract_sen),
+    autocountReceivedSen: r.received_sen == null ? null : Number(r.received_sen),
   })), owed);
 }
 

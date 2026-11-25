@@ -52,6 +52,27 @@ describe('allocatePaidBeforeGoLive', () => {
     ]);
     expect(Object.fromEntries(m)).toEqual({ A: 600, B: 1_000 });
   });
+  test("AutoCount's own collection, where given, is the figure (chew, 25 Nov 2026: D'CLOVER A-3A-3A)", () => {
+    const m = paidBeforeGoLiveOfRows([
+      { kind: 'C', company_id: 1, debtor_code: '301-M120', doc_no: 'TC-SO-2605-010', so_date: '2026-06-01', sen: 9_509_814, received_sen: 5_714_590 },
+      { kind: 'O', company_id: 1, debtor_code: '301-M120', doc_no: null, so_date: null, sen: 3_809_724 },
+    ]);
+    expect(m.get('TC-SO-2605-010')).toBe(5_714_590); // not 95,098.14 - 38,097.24 = 57,000.90
+  });
+});
+
+describe('autocountReceivedSen', () => {
+  test('overrides only its own contract; the customer owed still lies on the oldest first', () => {
+    const m = allocatePaidBeforeGoLive([
+      { soDocNo: 'OLD', debtorCode: 'D', soDate: '2026-03-01', billedBeforeGoLiveSen: 5_000, autocountReceivedSen: 4_800 },
+      { soDocNo: 'NEW', debtorCode: 'D', soDate: '2026-06-01', billedBeforeGoLiveSen: 2_000 },
+    ], new Map([['D', 1_000]]));
+    expect(Object.fromEntries(m)).toEqual({ OLD: 4_800, NEW: 2_000 });
+  });
+  test('given on a contract seeded with nothing invoiced, it still counts; null keeps the worked-out figure', () => {
+    expect(allocatePaidBeforeGoLive([{ soDocNo: 'A', debtorCode: 'D', soDate: null, billedBeforeGoLiveSen: 0, autocountReceivedSen: 700 }], new Map()).get('A')).toBe(700);
+    expect(allocatePaidBeforeGoLive([{ soDocNo: 'A', debtorCode: 'D', soDate: null, billedBeforeGoLiveSen: 900, autocountReceivedSen: null }], new Map([['D', 100]])).get('A')).toBe(800);
+  });
 });
 
 describe('the billing view of a contract paid before go-live', () => {

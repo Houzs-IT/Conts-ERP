@@ -76,7 +76,7 @@ import {
 } from './accounting-chart';
 import { itemGroupsList, itemGroupCreate, itemGroupBind, itemGroupPatch, subCategoryBind } from './accounting-item-groups';
 import { piPeriodicBackfill } from './accounting-pi-backfill';
-import { renoOpeningApply, renoOpeningPreview } from './accounting-reno-opening';
+import { renoAutocountReceived, renoOpeningApply, renoOpeningPreview } from './accounting-reno-opening';
 import { stockCloseStatus, stockCloseRun } from './accounting-stock-close';
 import { pnlReport, balanceSheetReport, loadAccounts, loadSums } from './accounting-reports';
 import { importOpeningJournal, importOpeningPayables, importOpeningReceivables, openingCheck, reverseOpeningJournal, cutoverDocuments } from '../../acc/opening';
@@ -719,6 +719,8 @@ accounting.post('/opening/deposits/reverse', openingDepositsReverseHandler);
 /* Renovation contracts signed before the ledger start, seeded at go-live (accounting-reno-opening.ts; posts nothing). */
 accounting.post('/renovation-opening/preview', renoOpeningPreview);
 accounting.post('/renovation-opening/apply', renoOpeningApply);
+/* What AutoCount collected on a contract before go-live, from its AR collection list (chew, 25 Nov 2026). */
+accounting.post('/renovation-opening/autocount-received', renoAutocountReceived);
 
 /* ════════════════════════════════════════════════════════════════════════
    Journal Entries
