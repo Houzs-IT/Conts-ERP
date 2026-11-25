@@ -11,6 +11,10 @@
  * READ-ONLY and the person's OWN access by construction: a tool call re-enters the API in-process as a GET carrying
  * the person's token and this isolate's secret (mcpDispatch.ts). The session middleware accepts a connector token only
  * that way and only for GET/HEAD, turns it into that person's session, and every handler then checks as usual.
+ *
+ * Quick answers (business_summary, reservations_summary, today_summary; functions/_lib/mcpQuick.ts) answer the commonest
+ * questions in one call of a few hundred characters, from the same endpoints the Dashboard and Reservations list read,
+ * through the same readValue as erp_get. search + fetch are the pair ChatGPT requires.
  */
 import { type Env } from './db';
 import { MCP_INNER_HEADER, mcpInnerSecret } from './mcpInner';
@@ -19,12 +23,17 @@ import { logCall, type McpIdentity } from './mcpStore';
 import { dispatchGet } from './mcpDispatch';
 import { apiRoutes } from './apiRoutes.generated';
 import { originOf } from './mcpDiscovery';
+import {
+  FETCH_SPECS, PROMPTS, docTitle, findById, monthEnd, myToday, normaliseMonth, parseFetchId, pickFields, prevMonth, promptText,
+  searchResults, summariseReservations, summariseBusiness, summariseToday, validRange,
+} from './mcpQuick';
 
 export { originOf };
 
 export const MCP_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
-export const MAX_RESULT_CHARS = 60_000;
-const SERVER_INFO = { name: 'conts-erp', title: 'The Conts ERP', version: '1.0.0' };
+/** erp_get's cap. Was 60k; quick answers and `fields` make most replies far smaller. */
+export const MAX_RESULT_CHARS = 30_000;
+const SERVER_INFO = { name: 'conts-erp', title: 'The Conts ERP', version: '1.1.0' };
 
 /** The GET routes as list_modules and list_endpoints show them. */
 export const mcpRouteInfo = (): RouteInfo[] => apiRoutes().map(r => ({ method: r.method, path: r.path }));
@@ -34,13 +43,41 @@ const text = (t: string, isError = false): ToolResult => ({ content: [{ type: 't
 
 const INSTRUCTIONS = `You are connected to The Conts ERP as the signed-in staff member. The Conts manages short-stay rental units for their owners: units and buildings, owners and their contracts, reservations from Airbnb, Booking.com and Agoda, guests, cleaning and maintenance jobs, owner statements and payouts, expenses and utility bills, pricing and reviews, HR for field staff; plus the Dream Crafter supply chain screens (sales orders, purchasing, stock, transport).
 Everything is READ-ONLY and limited to what this person may see in the ERP. Never guess figures a call did not return.
-Start with list_modules, then list_endpoints for a module, then erp_get. Money is in sen (RM x 100) where a field ends in Sen. Dates are YYYY-MM-DD, Malaysia time. Use query parameters (from / to dates, page / pageSize, q or search, status) to keep answers small.
+ANSWER FAST: use a quick answer first. It is one call and already summarised:
+- Occupancy, reservation income, average nightly price, earnings per available night, income per unit, owner payout estimate, split by channel, against last month: business_summary {month: "YYYY-MM"} (default this month).
+- Reservations for a period (how many, nights, guest total, fees, expected payout, still owed, by channel and status, direct guests still owing, host payouts outstanding): reservations_summary {from, to} (default this month).
+- Today (check-ins, checkouts, cleaning pending, open repairs, unread guest messages, what needs someone now): today_summary.
+- A reservation by reference, or a guest, unit, building, owner, job or bill by name or phone: search {query}, then fetch {id} for the full record.
+Only when no quick answer fits: list_modules, then list_endpoints for a module, then erp_get. With erp_get pass "fields" (only the keys you need) and query parameters (from / to dates, page / pageSize, q or search, status) to keep replies small.
+Quick answers give money in RM. In erp_get replies money is in sen (RM x 100) where a field ends in Sen or is an amount. Dates are YYYY-MM-DD, Malaysia time.
 If a call says "not available to your role" or names a missing access, tell the person their account does not have access to that data.`;
 
 const RO = { readOnlyHint: true, openWorldHint: false };
+const NO_ARGS = { type: 'object', properties: {}, additionalProperties: false };
 const TOOLS = [
-  { name: 'whoami', title: 'Who am I connected as', description: 'The ERP account this connection uses.', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO },
-  { name: 'list_modules', title: 'List ERP modules', description: 'The ERP modules (API path prefixes) with how many read endpoints each has. Start here.', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: RO },
+  {
+    name: 'business_summary', title: 'Business summary (quick answer)',
+    description: "A month's occupancy, reservation income, average nightly price, earnings per available night, income per unit and owner payout estimate in ONE call, against the month before, with the split by channel. Same figures as the Dashboard.",
+    inputSchema: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM. Default: this month.' } }, additionalProperties: false },
+    annotations: RO,
+  },
+  {
+    name: 'reservations_summary', title: 'Reservations summary (quick answer)',
+    description: 'Reservations whose stay touches a date range in ONE call: count, nights, guest total, service fees, expected payout and still owed (RM), by channel, status and tab, plus direct guests still owing and host payouts outstanding. Same totals as the Reservations list. Default: this month.',
+    inputSchema: {
+      type: 'object',
+      properties: { from: { type: 'string', description: 'YYYY-MM-DD. Default: the 1st of this month.' }, to: { type: 'string', description: 'YYYY-MM-DD. Default: the last day of this month.' } },
+      additionalProperties: false,
+    },
+    annotations: RO,
+  },
+  {
+    name: 'today_summary', title: 'Today (quick answer)',
+    description: "Today's check-ins, checkouts, cleaning pending, open maintenance jobs and unread guest messages, and the Dashboard's list of what needs someone now, in ONE call.",
+    inputSchema: NO_ARGS, annotations: RO,
+  },
+  { name: 'whoami', title: 'Who am I connected as', description: 'The ERP account this connection uses.', inputSchema: NO_ARGS, annotations: RO },
+  { name: 'list_modules', title: 'List ERP modules', description: 'The ERP modules (API path prefixes) with how many read endpoints each has. Use when no quick answer fits.', inputSchema: NO_ARGS, annotations: RO },
   {
     name: 'list_endpoints', title: 'List read endpoints',
     description: 'Every readable GET address under a module prefix (e.g. /api/reservations), with :id style placeholders.',
@@ -49,26 +86,45 @@ const TOOLS = [
   },
   {
     name: 'erp_get', title: 'Read from the ERP',
-    description: 'Read one ERP API address as the signed-in person (GET only) and return its JSON. Large replies are cut; narrow them with query parameters.',
+    description: 'Read one ERP API address as the signed-in person (GET only) and return its JSON. Try a quick answer first. Large replies are cut; pass "fields" and narrow them with query parameters.',
     inputSchema: {
       type: 'object',
       properties: {
         path: { type: 'string', description: 'API path without query string, with real ids in place of :id, e.g. /api/reservations' },
         query: { type: 'object', description: 'Query parameters, e.g. {"from":"2026-11-01","to":"2026-11-30"}', additionalProperties: { type: ['string', 'number', 'boolean'] } },
+        fields: { type: 'array', items: { type: 'string' }, description: 'Only keep these keys (at any depth), e.g. ["externalRef","checkIn","checkOut","state"]. Makes big replies small and fast.' },
       },
       required: ['path'],
       additionalProperties: false,
     },
     annotations: RO,
   },
+  {
+    name: 'search', title: 'Search the ERP',
+    description: 'Find reservations (by reference, guest name or phone), guests, units, buildings, owners, maintenance and cleaning jobs, expenses and utility bills, and supply chain records, by number or name. Returns ids to open with fetch.',
+    inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'a reservation reference, guest, unit, building, owner or supplier name, or a phone number' } }, required: ['query'], additionalProperties: false },
+    annotations: RO,
+  },
+  {
+    name: 'fetch', title: 'Open a search result',
+    description: 'The full record for an id returned by search (e.g. "reservation:abc123"): a reservation with its money, a guest, a unit, an owner, a job, a bill.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'An id from search' } }, required: ['id'], additionalProperties: false },
+    annotations: RO,
+  },
 ];
 
 export interface ReadResult { result: ToolResult; status: number; note: string; target: string; body: unknown; removed: string[] }
 
-/** Reads one endpoint as the person behind `token`; shared with the leak check (api/ai-connector/admin/leak-check). */
-export async function readEndpoint(request: Request, env: Env, waitUntil: (p: Promise<unknown>) => void, token: string, rawPath: string, query: Record<string, unknown> | undefined): Promise<ReadResult> {
+type ReadValue =
+  | { ok: true; status: number; value: unknown; removed: string[]; target: string }
+  | { ok: false; status: number; message: string; note: string; target: string };
+
+/** Reads one endpoint as the person behind `token`: the path gate, the in-process GET (the middleware and the handler
+ *  decide access, as for their browser), then credential fields stripped. Every read goes through here: erp_get, the
+ *  quick answers, search and fetch. */
+async function readValue(request: Request, env: Env, waitUntil: (p: Promise<unknown>) => void, token: string, rawPath: string, query: Record<string, unknown> | undefined): Promise<ReadValue> {
   const d = classifyPath(rawPath);
-  if (!d.ok) return { result: text(d.reason, true), status: 400, note: 'blocked path', target: String(rawPath ?? '').slice(0, 300), body: null, removed: [] };
+  if (!d.ok) return { ok: false, status: 400, message: d.reason, note: 'blocked path', target: String(rawPath ?? '').slice(0, 300) };
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(query && typeof query === 'object' ? query : {})) {
     if (v === undefined || v === null || typeof v === 'object') continue;
@@ -84,34 +140,50 @@ export async function readEndpoint(request: Request, env: Env, waitUntil: (p: Pr
   const message = (body as { error?: { message?: unknown } } | null)?.error?.message;
   if (res.status === 401 || res.status === 403) {
     const why = typeof message === 'string' ? ` The ERP says: ${message}` : '';
-    return { result: text(`Not available to your role: your ERP account does not have access to this.${why}`, true), status: res.status, note: 'no access', target, body: null, removed: [] };
+    return { ok: false, status: res.status, message: `Not available to your role: your ERP account does not have access to this.${why}`, note: 'no access', target };
   }
   if (!ctype.includes('json')) {
-    return { result: text(`This endpoint returns a file (${ctype.split(';')[0] || 'unknown type'}), not data. Open it in the ERP instead.`, true), status: res.status, note: 'not data', target, body: null, removed: [] };
+    return { ok: false, status: res.status, message: `This endpoint returns a file (${ctype.split(';')[0] || 'unknown type'}), not data. Open it in the ERP instead.`, note: 'not data', target };
   }
   if (res.status >= 400) {
     const msg = typeof message === 'string' ? message : `the request failed (${res.status})`;
-    return { result: text(`The ERP answered: ${msg}`, true), status: res.status, note: msg.slice(0, 120), target, body: null, removed: [] };
+    return { ok: false, status: res.status, message: `The ERP answered: ${msg}`, note: msg.slice(0, 120), target };
   }
   const { value, removed } = redactSecrets(body);
-  let out = JSON.stringify(value);
+  return { ok: true, status: res.status, value, removed: [...removed], target };
+}
+
+/** erp_get: one endpoint as JSON text, only `fields` when given, cut at MAX_RESULT_CHARS. Shared with the leak check
+ *  (api/ai-connector/admin/leak-check). */
+export async function readEndpoint(request: Request, env: Env, waitUntil: (p: Promise<unknown>) => void, token: string, rawPath: string, query: Record<string, unknown> | undefined, fields: string[] = []): Promise<ReadResult> {
+  const r = await readValue(request, env, waitUntil, token, rawPath, query);
+  if (!r.ok) return { result: text(r.message, true), status: r.status, note: r.note, target: r.target, body: null, removed: [] };
+  let out = JSON.stringify(pickFields(r.value, fields));
   const cut = out.length > MAX_RESULT_CHARS;
   if (cut) out = out.slice(0, MAX_RESULT_CHARS);
   const notes: string[] = [];
-  if (removed.size) notes.push(`Credential fields removed: ${[...removed].join(', ')}.`);
-  if (cut) notes.push(`Reply cut at ${MAX_RESULT_CHARS} characters. Narrow it with query parameters (dates, page / pageSize, search).`);
-  return { result: text((notes.length ? `${notes.join(' ')}\n` : '') + out), status: res.status, note: cut ? 'cut' : '', target, body: value, removed: [...removed] };
+  if (r.removed.length) notes.push(`Credential fields removed: ${r.removed.join(', ')}.`);
+  if (cut) notes.push(`Reply cut at ${MAX_RESULT_CHARS} characters. Pass "fields" and narrow it with query parameters (dates, page / pageSize, search), or use a quick answer.`);
+  return { result: text((notes.length ? `${notes.join(' ')}\n` : '') + out), status: r.status, note: cut ? 'cut' : '', target: r.target, body: r.value, removed: r.removed };
+}
+
+/** A quick answer: the summary as JSON, or the first refusal / error among the reads it cannot do without. */
+function quickResult(summary: () => unknown, needed: ReadValue[]): { result: ToolResult; status: number; note: string } {
+  const failed = needed.find(x => !x.ok);
+  if (failed && !failed.ok) return { result: text(failed.message, true), status: failed.status, note: failed.note };
+  return { result: text(JSON.stringify(summary())), status: 200, note: '' };
 }
 
 async function callTool(request: Request, env: Env, waitUntil: (p: Promise<unknown>) => void, id: McpIdentity, token: string, name: string, args: Record<string, unknown>): Promise<ToolResult> {
   const t0 = Date.now();
   let status = 200, note = '', target = '';
   let result: ToolResult;
+  const read = (path: string, q?: Record<string, unknown>) => readValue(request, env, waitUntil, token, path, q);
   try {
     if (name === 'whoami') {
       result = text(JSON.stringify({ name: id.user.fullName, email: id.user.email, readOnly: true }));
     } else if (name === 'list_modules') {
-      result = text(JSON.stringify({ readOnly: true, modules: moduleCatalog(mcpRouteInfo()), tip: 'Call list_endpoints with a prefix, then erp_get. A module your account cannot open answers "not available to your role".' }));
+      result = text(JSON.stringify({ readOnly: true, modules: moduleCatalog(mcpRouteInfo()), tip: 'Try a quick answer first (business_summary, reservations_summary, today_summary, search). Else call list_endpoints with a prefix, then erp_get with "fields". A module your account cannot open answers "not available to your role".' }));
     } else if (name === 'list_endpoints') {
       const prefix = String(args.prefix ?? '');
       target = prefix.slice(0, 300);
@@ -119,8 +191,65 @@ async function callTool(request: Request, env: Env, waitUntil: (p: Promise<unkno
       if (!d.ok) { result = text(d.reason, true); status = 400; }
       else result = text(JSON.stringify({ prefix: d.path, endpoints: readablePaths(mcpRouteInfo(), d.path).slice(0, 300) }));
     } else if (name === 'erp_get') {
-      const r = await readEndpoint(request, env, waitUntil, token, String(args.path ?? ''), args.query as Record<string, unknown> | undefined);
+      const fields = Array.isArray(args.fields) ? (args.fields as unknown[]).map(String).filter(Boolean).slice(0, 40) : [];
+      const r = await readEndpoint(request, env, waitUntil, token, String(args.path ?? ''), args.query as Record<string, unknown> | undefined, fields);
       ({ result, status, note, target } = r);
+    } else if (name === 'business_summary') {
+      const today = myToday();
+      const month = normaliseMonth(args.month, today);
+      target = `business:${month}`;
+      const [cur, prev, ch] = await Promise.all([
+        read('/api/dashboard/kpis', { period: month }), read('/api/dashboard/kpis', { period: prevMonth(month) }), read('/api/dashboard/channels', { period: month }),
+      ]);
+      // Only the month itself must open; the comparison and the channel split are extras.
+      ({ result, status, note } = quickResult(() => summariseBusiness(month, today, cur.ok ? cur.value : null, prev.ok ? prev.value : null, ch.ok ? ch.value : null), [cur]));
+    } else if (name === 'reservations_summary') {
+      const today = myToday();
+      const range = validRange(args.from ?? `${today.slice(0, 7)}-01`, args.to ?? monthEnd(today.slice(0, 7)));
+      if (!range) { result = text('Give from and to as YYYY-MM-DD (from on or before to, at most 400 days).', true); status = 400; }
+      else {
+        target = `reservations:${range.from}..${range.to}`;
+        // The Reservations list's totals, counts and to-do cards cover the whole filtered set; size 25 is its smallest page.
+        const r = await read('/api/reservations', { view: 'all', from: range.from, to: range.to, size: 25 });
+        ({ result, status, note } = quickResult(() => summariseReservations(range, r.ok ? r.value : null), [r]));
+      }
+    } else if (name === 'today_summary') {
+      target = 'today';
+      const [t, ex] = await Promise.all([read('/api/dashboard/today'), read('/api/dashboard/exceptions')]);
+      ({ result, status, note } = quickResult(() => summariseToday(t.ok ? t.value : null, ex.ok ? ex.value : null), [t]));
+    } else if (name === 'search') {
+      const q = String(args.query ?? args.q ?? '').trim().slice(0, 60);
+      target = `search:${q}`;
+      if (!q) { result = text('Give something to search for: a reservation reference, a name or a phone number.', true); status = 400; }
+      else {
+        const r = await read('/api/search', { q });
+        if (!r.ok) { result = text(r.message, true); status = r.status; note = r.note; }
+        else {
+          const { results, partial } = searchResults(r.value, originOf(request));
+          if (partial) note = 'supply chain search incomplete';
+          result = text(JSON.stringify({ results }));
+        }
+      }
+    } else if (name === 'fetch') {
+      const f = parseFetchId(args.id);
+      target = `fetch:${String(args.id ?? '').slice(0, 200)}`;
+      const spec = f ? FETCH_SPECS[f.kind] : undefined;
+      if (!f) { result = text('Give an id from search, e.g. reservation:abc123.', true); status = 400; }
+      else if (!spec) { result = text(`A ${f.kind.replace(/_/g, ' ')} is a supply chain record: open it with the link search gave.`, true); status = 400; }
+      else {
+        const r = await read(spec.path(f.rowId), spec.query?.(f.rowId));
+        const doc = r.ok ? (spec.pick ? findById(r.value, f.rowId) : r.value) : null;
+        if (!r.ok) { result = text(r.message, true); status = r.status; note = r.note; }
+        else if (!doc) { result = text('That record was not found, or your account cannot see it.', true); status = 404; }
+        else {
+          let body = JSON.stringify(doc);
+          if (body.length > MAX_RESULT_CHARS) body = body.slice(0, MAX_RESULT_CHARS);
+          result = text(JSON.stringify({
+            id: `${f.kind}:${f.rowId}`, title: docTitle(f.kind, doc), text: body, url: originOf(request) + spec.page(f.rowId),
+            metadata: { kind: f.kind, source: r.target, credentialFieldsRemoved: r.removed },
+          }));
+        }
+      }
     } else {
       result = text(`Unknown tool: ${name}`, true);
       status = 400;
@@ -144,13 +273,19 @@ export async function handleRpc(request: Request, env: Env, waitUntil: (p: Promi
     case 'initialize': {
       const asked = String(m.params?.protocolVersion ?? '');
       const protocolVersion = MCP_PROTOCOL_VERSIONS.includes(asked) ? asked : MCP_PROTOCOL_VERSIONS[0];
-      return reply({ protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: SERVER_INFO, instructions: INSTRUCTIONS });
+      return reply({ protocolVersion, capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }, serverInfo: SERVER_INFO, instructions: INSTRUCTIONS });
     }
     case 'ping': return reply({});
     case 'tools/list': return reply({ tools: TOOLS });
     case 'tools/call': return reply(await callTool(request, env, waitUntil, id, token, String(m.params?.name ?? ''), (m.params?.arguments as Record<string, unknown> | undefined) ?? {}));
     case 'resources/list': return reply({ resources: [] });
-    case 'prompts/list': return reply({ prompts: [] });
+    case 'prompts/list': return reply({ prompts: PROMPTS });
+    case 'prompts/get': {
+      const pname = String(m.params?.name ?? '');
+      const ptext = promptText(pname, (m.params?.arguments as Record<string, unknown> | undefined) ?? {});
+      if (ptext === null) return { jsonrpc: '2.0', id: m.id ?? null, error: { code: -32602, message: `Unknown prompt: ${pname}` } };
+      return reply({ description: PROMPTS.find(x => x.name === pname)?.description ?? '', messages: [{ role: 'user', content: { type: 'text', text: ptext } }] });
+    }
     default:
       if (m.id === undefined || m.id === null || (m.method ?? '').startsWith('notifications/')) return null;
       return { jsonrpc: '2.0', id: m.id, error: { code: -32601, message: `Method not found: ${m.method ?? ''}` } };
