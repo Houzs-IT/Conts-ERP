@@ -457,7 +457,7 @@ const CustomerCardInner = forwardRef<CustomerCardHandle, CustomerCardProps>(({
                 <select className={styles.fieldSelect} value={form.salespersonId}
                   disabled={inputsDisabled} onChange={(e) => set('salespersonId', e.target.value)}>
                   <option value="">— Pick staff —</option>
-                  {sortByText(staffList).map((s) => <option key={s.id} value={s.id}>{s.name} ({s.staffCode})</option>)}
+                  {sortByText(staffList).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   {form.salespersonId && !staffList.some((s) => s.id === form.salespersonId) && (
                     <option value={form.salespersonId}>(former staff)</option>
                   )}

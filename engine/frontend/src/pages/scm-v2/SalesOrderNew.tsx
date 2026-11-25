@@ -2228,11 +2228,11 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
                       pickable list (which already contains the creator). */}
                   {!canChangeSalesperson && selfStaffMatch && (
                     <option value={selfStaffMatch.id}>
-                      {selfStaffMatch.name} ({selfStaffMatch.staffCode})
+                      {selfStaffMatch.name}
                     </option>
                   )}
                   {canChangeSalesperson && sortByText(filteredStaffList).map((s) => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.staffCode})</option>
+                    <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
                 <ChevronDown size={14} strokeWidth={1.75} className={styles.selectChevron} />

@@ -226,7 +226,7 @@ export function MobileDoHeaderEdit({ id, onBack, onSaved }: {
       {field("Phone", <PhoneInput aria-label="Phone" value={form.phone} disabled={lockedKey("phone")} onChange={(v) => set({ phone: v })} />)}
       {text("Email", "email", "email", { inputMode: "email" })}
       {choice("Customer type", "customerType", "customerType", customerTypeOpts.map((o) => [o.value, o.label]))}
-      {choice("Salesperson", "salespersonId", "salespersonId", salesStaff.map((s) => [s.id, `${s.name} (${s.staffCode})`]))}
+      {choice("Salesperson", "salespersonId", "salespersonId", salesStaff.map((s) => [s.id, s.name]))}
 
       {section("Delivery address")}
       {text("Address line 1", "address1", "address1", { placeholder: "Unit, street, area" })}

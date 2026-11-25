@@ -388,7 +388,7 @@ export const DeliveryReturnNew = () => {
               <span className={styles.selectWrap}>
                 <select className={styles.fieldSelect} value={salespersonId} onChange={(e) => setSalespersonId(e.target.value)}>
                   <option value="">— Pick staff —</option>
-                  {sortByText(staffList).map((s) => <option key={s.id} value={s.id}>{s.name} ({s.staffCode})</option>)}
+                  {sortByText(staffList).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   {salespersonId && !staffList.some((s) => s.id === salespersonId) && <option value={salespersonId}>(former staff)</option>}
                 </select>
                 <ChevronDown size={14} strokeWidth={1.75} className={styles.selectChevron} />
