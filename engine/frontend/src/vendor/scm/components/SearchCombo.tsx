@@ -46,7 +46,9 @@ const EDGE_GAP = 8;
    every account label wrapped to three lines. The panel now takes at least
    PANEL_MIN_W, shifting left when that would run off the viewport's right
    edge — the input anchors it, it no longer straitjackets it. */
-const PANEL_MIN_W = 320;
+/* 25 Nov 2026 (chew: 调窄 account，list 不会变小): 440, so a column dragged narrow still opens a list that shows an
+   account's code and name on one line. */
+const PANEL_MIN_W = 440;
 
 type PanelPos = { up: boolean; maxH: number; left: number; width: number; top: number; bottom: number };
 

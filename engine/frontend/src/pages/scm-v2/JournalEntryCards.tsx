@@ -251,6 +251,9 @@ export const NewJournalForm = ({ onDone, initial, editing }: { onDone: () => voi
               <UnitPicker value={l.unitId ?? null} onChange={(u) => setLine(i, { unitId: u })} ariaLabel={`Line ${i + 1} unit`} inputClass="" />
             </span>
           )}
+          {/* A line right below this one (chew, 25 Nov 2026: add a line between lines), with the department of this one. */}
+          <button type="button" style={btnStyle()} title="Add a line below" aria-label={`Add a line below line ${i + 1}`}
+            onClick={() => setLines((ls) => [...ls.slice(0, i + 1), { ...EMPTY_LINE, ...nextLineSub(ls.slice(0, i + 1).map((x) => ({ department: x.department, subDepartmentId: x.subDepartmentId ?? null }))) }, ...ls.slice(i + 1)])}>+ Below</button>
           {lines.length > 2 && (
             <button type="button" style={btnStyle()} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Remove</button>
           )}

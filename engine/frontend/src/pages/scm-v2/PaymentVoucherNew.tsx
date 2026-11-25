@@ -22,7 +22,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { departmentOf } from '../../conts/department';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { Save, Trash2, X } from 'lucide-react';
+import { Plus, Save, Trash2, X } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
 import { useCreatePaymentVoucher, usePaymentVoucherDetail, useSupplierAdvances, usePvReservations, NO_RESERVATIONS, useExtractBills, useUploadPvFile, useRefundSource, fileToBase64, type BillExtraction, type VendorMemory, type PvFilePayload } from '../../vendor/scm/lib/payment-voucher-queries';
@@ -432,9 +432,12 @@ export const PaymentVoucherNew = () => {
     document.querySelector<HTMLInputElement>(`[data-line="${landOn}"] [data-land] input[role="combobox"]`)?.focus();
     setLandOn(null);
   }, [landOn, lines]);
-  const addLineAndLand = () => {
-    const l = newLine(purposeOfNew(lines));
-    setLines((prev) => [...prev, l]);
+  /* At the end, or right below `afterRid` (chew, 25 Nov 2026: add a line between lines), for what the line above is for. */
+  const addLineAndLand = (afterRid?: string) => {
+    const at = afterRid == null ? lines.length : lines.findIndex((x) => x.rid === afterRid) + 1;
+    const pos = at > 0 ? at : lines.length;
+    const l = newLine(purposeOfNew(lines.slice(0, pos)));
+    setLines((prev) => { const next = [...prev]; next.splice(Math.min(pos, next.length), 0, l); return next; });
     setLandOn(l.rid);
   };
   const hopFrom = (rid: string) => {
@@ -1043,7 +1046,7 @@ export const PaymentVoucherNew = () => {
           <div className={voucherLineCss.lines}>
           {lines.map((l, idx) => (
             <div key={l.rid} data-line={l.rid} className={voucherLineCss.row}
-              onKeyDown={(e) => { if (e.key === 'Insert') { e.preventDefault(); addLineAndLand(); } }}>
+              onKeyDown={(e) => { if (e.key === 'Insert') { e.preventDefault(); addLineAndLand(l.rid); } }}>
               <div className={`${voucherLineCss.cell} ${voucherLineCss.forCell}`}>
                 <span className={styles.fieldLabel}>Line {idx + 1} · Department *</span>
                 <LineSubSelect n={idx + 1} line={l} subs={subs} className={styles.fieldInput} onChange={(id) => setPurpose(l.rid, { subDepartmentId: id })} />
@@ -1080,6 +1083,10 @@ export const PaymentVoucherNew = () => {
                 <DepartmentTag n={idx + 1} department={lineDepartment(l, sideOf(l.projectId))} />
               </div>
               <div className={voucherLineCss.remove}>
+                <button type="button" onClick={() => addLineAndLand(l.rid)} title="Add a line below" aria-label={`Add a line below line ${idx + 1}`}
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: 4, display: 'inline-flex' }}>
+                  <Plus {...SM_ICON} />
+                </button>
                 {lines.length > 1 && (
                   <button type="button" onClick={() => dropLine(l.rid)} title="Remove line" aria-label={`Remove line ${idx + 1}`}
                     style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--c-festive-b, #B8331F)', padding: 4, display: 'inline-flex' }}>

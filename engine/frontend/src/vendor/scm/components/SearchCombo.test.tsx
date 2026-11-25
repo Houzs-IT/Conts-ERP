@@ -60,7 +60,7 @@ describe('SearchCombo panel placement', () => {
     /* Round 3 (owner 2026-09-05: 挤在一起) — a 200px input no longer
        straitjackets the panel: it opens at PANEL_MIN_W so account labels
        hold one line. jsdom innerWidth 1024 leaves plenty of room at left 40. */
-    expect(listbox.style.width).toBe('320px');
+    expect(listbox.style.width).toBe('440px'); // 440 since 25 Nov 2026 (a narrow column keeps a wide list)
   });
 
   test('room below → sits under the input at the full 280', () => {

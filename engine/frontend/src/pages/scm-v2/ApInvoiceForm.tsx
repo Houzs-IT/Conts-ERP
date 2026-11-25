@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 import { type Department } from '../../conts/department';
 import { nextLineSub, SubDepartmentSelect } from '../../conts/SubDepartmentSelect';
 import { ProjectPicker, UnitPicker } from '../../conts/Pickers';
-import { X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { Button } from '@2990s/design-system';
 import { AddLineButton } from '../../vendor/scm/components/AddLineButton';
 import type { Account } from '../../vendor/scm/lib/accounting-queries';
@@ -22,6 +22,7 @@ import {
   useExtractBills, fileToBase64, PV_FILE_ACCEPT, type BillExtraction, type VendorMemory, type PvFilePayload,
 } from '../../vendor/scm/lib/payment-voucher-queries';
 import { AccountSelect } from '../../vendor/scm/components/AccountSelect';
+import { ResizableTh, useColumnWidths } from '../../vendor/scm/components/ResizableColumns';
 import { useSaveHotkey, SAVE_HOTKEY_HINT } from '../../vendor/scm/lib/use-save-hotkey';
 import { upperFill } from '../../vendor/scm/lib/ocr-fill';
 import { SearchCombo } from '../../vendor/scm/components/SearchCombo';
@@ -117,6 +118,8 @@ const th: React.CSSProperties = {
 const td: React.CSSProperties = { padding: '6px 8px', verticalAlign: 'middle' };
 const right: React.CSSProperties = { textAlign: 'right', fontFamily: 'var(--font-mono)' };
 const iconBtn: React.CSSProperties = { border: 'none', background: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: 2 };
+/* The line table's columns, in px; the person drags them wider or narrower (chew, 25 Nov 2026: description too small). */
+const LINE_COLS = { account: 260, description: 300, amount: 130, department: 150, project: 170, unit: 150, actions: 56 };
 
 export const ApInvoiceForm = ({
   mode, initial, suppliers, suppliersLoading = false, lineAccounts, posted = false, paidSen = 0, saving, onSubmit, onCancel,
@@ -163,14 +166,28 @@ export const ApInvoiceForm = ({
     el?.focus();
     setLandOn(null);
   }, [landOn, v.lines]);
-  const addLine = (land: boolean) => {
+  /* A line goes at the end, or right below `afterRid` (chew, 25 Nov 2026: add a line between lines); it takes the
+     department of the line above it. */
+  const addLine = (land: boolean, afterRid?: number) => {
     setV((prev) => {
       const rid = nextRid(prev.lines);
       if (land) setLandOn(rid);
-      const above = nextLineSub(prev.lines.map((x) => ({ department: x.department, subDepartmentId: x.subDepartmentId ?? null })));
-      return { ...prev, lines: [...prev.lines, { ...emptyLine(rid, above.department, above.subDepartmentId), projectId: billProject }] };
+      const at = afterRid == null ? prev.lines.length : prev.lines.findIndex((x) => x.rid === afterRid) + 1;
+      const upTo = prev.lines.slice(0, at > 0 ? at : prev.lines.length);
+      const above = nextLineSub(upTo.map((x) => ({ department: x.department, subDepartmentId: x.subDepartmentId ?? null })));
+      const line = { ...emptyLine(rid, above.department, above.subDepartmentId), projectId: billProject };
+      const lines = [...prev.lines];
+      lines.splice(at > 0 ? at : lines.length, 0, line);
+      return { ...prev, lines };
     });
   };
+  /* The line the cursor is in: Insert adds the new line right below it. */
+  const lineOfFocus = (target: EventTarget | null): number | undefined => {
+    const tr = target instanceof Element ? target.closest('tr[data-line]') : null;
+    const rid = tr ? Number(tr.getAttribute('data-line')) : NaN;
+    return Number.isFinite(rid) ? rid : undefined;
+  };
+  const cols = useColumnWidths('conts.apInvoiceForm.cols', LINE_COLS);
   const removeLine = (rid: number) => setV((prev) => (prev.lines.length > 1 ? { ...prev, lines: prev.lines.filter((l) => l.rid !== rid) } : prev));
   const hopFrom = (rid: number) => {
     const i = v.lines.findIndex((l) => l.rid === rid);
@@ -315,17 +332,18 @@ export const ApInvoiceForm = ({
 
       {/* The lines, in the owner's order: account number, description, amount.
           Insert anywhere in the table adds a line and lands on it. */}
-      <table ref={tableRef} style={{ width: '100%', borderCollapse: 'collapse' }}
-        onKeyDown={(e) => { if (e.key === 'Insert') { e.preventDefault(); addLine(true); } }}>
+      <div style={{ overflowX: 'auto' }}>
+      <table ref={tableRef} style={{ width: cols.total, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse' }}
+        onKeyDown={(e) => { if (e.key === 'Insert') { e.preventDefault(); addLine(true, lineOfFocus(e.target)); } }}>
         <thead>
           <tr>
-            <th style={{ ...th, width: '34%' }}>Account</th>
-            <th style={th}>Description</th>
-            <th style={{ ...th, textAlign: 'right', width: 150 }}>Amount (RM)</th>
-            <th style={{ ...th, width: 150 }}>Department</th>
-            <th style={{ ...th, width: 180 }}>Project</th>
-            <th style={{ ...th, width: 160 }}>Unit</th>
-            <th style={{ ...th, width: 36 }} />
+            <ResizableTh col="account" width={cols.widths.account} onResize={cols.resize} onReset={cols.reset} style={th}>Account</ResizableTh>
+            <ResizableTh col="description" width={cols.widths.description} onResize={cols.resize} onReset={cols.reset} style={th}>Description</ResizableTh>
+            <ResizableTh col="amount" width={cols.widths.amount} onResize={cols.resize} onReset={cols.reset} style={{ ...th, textAlign: 'right', paddingRight: 14 }}>Amount (RM)</ResizableTh>
+            <ResizableTh col="department" width={cols.widths.department} onResize={cols.resize} onReset={cols.reset} style={th}>Department</ResizableTh>
+            <ResizableTh col="project" width={cols.widths.project} onResize={cols.resize} onReset={cols.reset} style={th}>Project</ResizableTh>
+            <ResizableTh col="unit" width={cols.widths.unit} onResize={cols.resize} onReset={cols.reset} style={th}>Unit</ResizableTh>
+            <th style={{ ...th, width: cols.widths.actions }} />
           </tr>
         </thead>
         <tbody>
@@ -357,7 +375,10 @@ export const ApInvoiceForm = ({
                 <UnitPicker inputClass={styles.fieldInput} ariaLabel={`line ${l.rid} unit`} placeholder="No unit"
                   value={l.unitId ?? null} onChange={(id) => patchLine(l.rid, { unitId: id })} />
               </td>
-              <td style={td}>
+              <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                <button type="button" aria-label={`add a line below line ${l.rid}`} title="Add a line below" onClick={() => addLine(true, l.rid)} style={iconBtn}>
+                  <Plus size={14} strokeWidth={1.75} />
+                </button>
                 {v.lines.length > 1 && (
                   <button type="button" aria-label={`remove line ${l.rid}`} onClick={() => removeLine(l.rid)} style={iconBtn}>
                     <X size={14} strokeWidth={1.75} />
@@ -371,7 +392,7 @@ export const ApInvoiceForm = ({
           <tr style={{ borderTop: '1px solid var(--border-weak, #e3e1da)' }}>
             <td colSpan={2} style={td}>
               <AddLineButton variant="ghost" onClick={() => addLine(true)} />
-              <span style={{ ...soft, marginLeft: 'var(--space-3)' }}>Insert adds a line · Enter on an amount moves down</span>
+              <span style={{ ...soft, marginLeft: 'var(--space-3)' }}>Insert or + adds a line below · Enter on an amount moves down · drag a heading's edge to resize</span>
             </td>
             <td style={{ ...td, ...right, fontWeight: 700, color: belowPaid ? 'var(--c-festive-b, #B8331F)' : undefined }}>Total {fmtSen(total)}</td>
             <td />
@@ -380,6 +401,7 @@ export const ApInvoiceForm = ({
           </tr>
         </tfoot>
       </table>
+      </div>
 
       <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end', alignItems: 'center' }}>
         {belowPaid && <span style={{ fontSize: 'var(--fs-12)', color: 'var(--c-festive-b, #B8331F)' }}>The total cannot fall below the {fmtSen(paidSen)} already paid.</span>}
