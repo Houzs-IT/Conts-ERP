@@ -121,7 +121,7 @@ export function ContsCommission() {
       {q.isError && <div role="alert" style={{ color: BAD }}>{errText(q.error)}</div>}
       {tab === "settle" && data && viewer?.canPay && <Settle claims={claims} onOpen={setOpen} />}
       {tab === "overview" && data && <Overview data={data} people={personList} allowEveryone onOpen={setOpen} />}
-      {tab === "payouts" && data && <Payouts data={data} />}
+      {tab === "payouts" && data && <Payouts data={data} claims={claims} onOpen={setOpen} />}
       {tab === "settings" && data && <Settings data={data} />}
       {openRow && data && <OrderDialog row={openRow} payouts={data.payouts.filter((p) => p.soDocNo === openRow.soDocNo)} canPay={data.viewer.canPay} onClose={() => setOpen(null)} />}
     </div>
@@ -425,10 +425,10 @@ function Settle({ claims, onOpen }: { claims: Claim[]; onOpen: (soDocNo: string)
                 onChange={(e) => setPicked(e.target.checked ? Object.fromEntries(shown.map((c) => [c.key, true])) : {})} />
             </th>
             {head("person", "Person", true)}{head("role", "Role", true)}{head("order", "Order", true)}{head("date", "SO date", true)}{head("project", "Project", true)}
-            {head("released", "Released")}{head("total", "Commission")}{head("paid", "Paid before")}{head("claim", "Can claim", false, { paddingRight: 12 })}
+            {head("total", "Total comm")}{head("claim", "Claim now", false, { paddingRight: 12 })}
           </tr></thead>
           <tbody>
-            {shown.length === 0 && <tr><td colSpan={10} style={{ padding: 14, color: MUTED }}>Nothing to claim right now.</td></tr>}
+            {shown.length === 0 && <tr><td colSpan={8} style={{ padding: 14, color: MUTED }}>Nothing to claim right now.</td></tr>}
             {shown.map((c) => (
               <tr key={c.key} style={{ borderTop: "1px solid var(--border)" }}>
                 <td style={{ padding: "6px 0 6px 12px" }}>
@@ -442,10 +442,15 @@ function Settle({ claims, onOpen }: { claims: Claim[]; onOpen: (soDocNo: string)
                 </td>
                 <td style={{ paddingLeft: 8, color: MUTED, whiteSpace: "nowrap" }}>{c.row.soDate ?? ""}</td>
                 <td style={{ paddingLeft: 8 }}>{c.row.projectName || c.row.customerName}</td>
-                <td style={td}>{pctText(c.row.releasedBp)}</td>
                 <td style={td}>{rm(c.share.totalSen)}</td>
-                <td style={td}>{rm(c.share.paidSen)}</td>
-                <td style={{ ...td, paddingRight: 12, fontWeight: 600, color: GOOD }}>{rm(c.share.claimableSen)}</td>
+                <td style={{ ...td, paddingRight: 12 }}>
+                  <div style={{ fontWeight: 600, color: GOOD }}>{rm(c.share.claimableSen)}</div>
+                  {(c.row.releasedBp < 10_000 || c.share.paidSen > 0) && (
+                    <div style={{ color: MUTED, fontSize: "var(--fs-12, 12px)" }}>
+                      {[c.row.releasedBp < 10_000 ? `${pctText(c.row.releasedBp)} released` : "", c.share.paidSen > 0 ? `${rm(c.share.paidSen)} claimed before` : ""].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -472,12 +477,94 @@ const PAYOUT_COLUMNS: Column<CommissionPayout>[] = [
   { key: "by", label: "Recorded by", render: (r) => r.createdBy || "—", getValue: (r) => r.createdBy ?? "" },
   { key: "state", label: "", render: (r) => (r.voidedAt ? <span style={{ color: BAD }}>Taken back</span> : ""), getValue: (r) => (r.voidedAt ? 1 : 0) },
 ];
-function Payouts({ data }: { data: CommissionData }) {
+/* Payouts: the month's panel HR pays from (owner, 26 Nov 2026): per person what was claimed that month and on which
+   orders, what each can still claim, then every payout ever recorded. */
+function Payouts({ data, claims, onOpen }: { data: CommissionData; claims: Claim[]; onOpen: (soDocNo: string) => void }) {
+  const thisMonth = today().slice(0, 7);
+  const live = data.payouts.filter((p) => !p.voidedAt);
+  const monthList = [...new Set([thisMonth, ...live.map((p) => p.paidOn.slice(0, 7))])].sort().reverse();
+  const [month, setMonth] = useState(thisMonth);
+  const [openPerson, setOpenPerson] = useState<string | null>(null);
+  const project = (so: string) => { const r = data.rows.find((x) => x.soDocNo === so); return r ? r.projectName || r.customerName : ""; };
+  const inMonth = live.filter((p) => p.paidOn.startsWith(month));
+  const people = new Map<string, { id: string; name: string; paid: CommissionPayout[]; open: Claim[] }>();
+  const at = (id: string, name: string) => { let x = people.get(id); if (!x) { x = { id, name, paid: [], open: [] }; people.set(id, x); } return x; };
+  for (const p of inMonth) at(p.staffId, p.staffName).paid.push(p);
+  for (const c of claims) at(c.share.staffId, c.share.staffName).open.push(c);
+  const list = [...people.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const sumPaid = (x: { paid: CommissionPayout[] }) => x.paid.reduce((t, p) => t + p.amountSen, 0);
+  const sumOpen = (x: { open: Claim[] }) => x.open.reduce((t, c) => t + c.share.claimableSen, 0);
   return (
-    <DataTable<CommissionPayout>
-      tableId="conts-commission-payouts" exportName="commission-payouts" exportXlsx columns={PAYOUT_COLUMNS} rows={data.payouts}
-      emptyLabel="No commission paid yet. Open an order under By order and record a payout." getRowKey={(r) => r.id}
-    />
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", fontSize: "var(--fs-13)" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <label className={styles.field} style={{ width: 180 }}>
+          <span className={styles.fieldLabel}>Month</span>
+          <select className={styles.fieldInput} value={month} onChange={(e) => { setMonth(e.target.value); setOpenPerson(null); }}>
+            {monthList.map((x) => <option key={x} value={x}>{monthLabel(x)}</option>)}
+          </select>
+        </label>
+        <Kpi label={`Claimed in ${monthLabel(month)}`} value={`RM ${rm(list.reduce((t, x) => t + sumPaid(x), 0))}`} strong />
+        <Kpi label="Still to claim (all months)" value={`RM ${rm(list.reduce((t, x) => t + sumOpen(x), 0))}`} />
+        <span style={{ color: MUTED, flex: 1, minWidth: 240 }}>HR pays each person what they claimed this month. Tick claims under Monthly settlement to add them here. Click a person for the orders.</span>
+      </div>
+
+      <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
+          <thead><tr style={{ color: MUTED }}>
+            <th style={{ ...th, textAlign: "left", paddingLeft: 14 }}>Person</th>
+            <th style={th}>Claimed in {monthLabel(month)}</th><th style={th}>Orders</th>
+            <th style={th}>Still to claim</th><th style={{ ...th, paddingRight: 14 }}>Orders</th>
+          </tr></thead>
+          <tbody>
+            {list.length === 0 && <tr><td colSpan={5} style={{ padding: 14, color: MUTED }}>Nothing claimed or waiting.</td></tr>}
+            {list.map((x) => (
+              <Fragment key={x.id}>
+                <tr style={{ borderTop: "1px solid var(--border)", cursor: "pointer" }} onClick={() => setOpenPerson(openPerson === x.id ? null : x.id)}>
+                  <td style={{ padding: "8px 0 8px 14px", fontWeight: 600 }}>{openPerson === x.id ? "▾" : "▸"} {x.name}</td>
+                  <td style={{ ...td, fontWeight: 600, color: sumPaid(x) > 0 ? GOOD : MUTED }}>RM {rm(sumPaid(x))}</td>
+                  <td style={td}>{x.paid.length}</td>
+                  <td style={td}>RM {rm(sumOpen(x))}</td>
+                  <td style={{ ...td, paddingRight: 14 }}>{x.open.length}</td>
+                </tr>
+                {openPerson === x.id && (
+                  <tr><td colSpan={5} style={{ padding: "4px 14px 14px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+                      <div>
+                        <div style={{ fontWeight: 600, padding: "6px 0" }}>Claimed in {monthLabel(month)}</div>
+                        {x.paid.length === 0 ? <div style={{ color: MUTED }}>Nothing this month.</div> : x.paid.map((p) => (
+                          <div key={p.id} style={{ display: "flex", gap: 8, padding: "4px 0", borderTop: "1px solid var(--border)" }}>
+                            <span style={{ color: MUTED, whiteSpace: "nowrap" }}>{p.paidOn}</span>
+                            <button type="button" onClick={() => onOpen(p.soDocNo)} style={{ border: 0, background: "none", padding: 0, color: "var(--c-link, #1f5c4a)", cursor: "pointer", font: "inherit" }}>{p.soDocNo}</button>
+                            <span style={{ flex: 1, color: MUTED }}>{project(p.soDocNo)}</span>
+                            <span style={{ ...num, fontWeight: 600 }}>{rm(p.amountSen)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600, padding: "6px 0" }}>Can claim now</div>
+                        {x.open.length === 0 ? <div style={{ color: MUTED }}>Nothing waiting.</div> : x.open.map((c) => (
+                          <div key={c.key} style={{ display: "flex", gap: 8, padding: "4px 0", borderTop: "1px solid var(--border)" }}>
+                            <button type="button" onClick={() => onOpen(c.row.soDocNo)} style={{ border: 0, background: "none", padding: 0, color: "var(--c-link, #1f5c4a)", cursor: "pointer", font: "inherit" }}>{c.row.soDocNo}</button>
+                            <span style={{ flex: 1, color: MUTED }}>{c.row.projectName || c.row.customerName}</span>
+                            <span style={{ ...num, fontWeight: 600, color: GOOD }}>{rm(c.share.claimableSen)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </td></tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={sectionTitle}>Every payout</div>
+      <DataTable<CommissionPayout>
+        tableId="conts-commission-payouts" exportName="commission-payouts" exportXlsx columns={PAYOUT_COLUMNS} rows={data.payouts}
+        emptyLabel="No commission paid yet. Tick claims under Monthly settlement to pay them." getRowKey={(r) => r.id}
+      />
+    </div>
   );
 }
 
@@ -617,10 +704,10 @@ function SchemeCard({ scheme, initial, data, onDone, readOnly }: { scheme: Commi
 
 /* ── One person by month: sales, the rate reached, commission, claimed this month, can claim now ── */
 /* ── Overview: people on the left; the picked person's months and orders on the right (Everyone = every order) ── */
-type OrderSortKey = "order" | "date" | "project" | "released" | "total" | "earned" | "paid" | "claim";
+type OrderSortKey = "order" | "date" | "project" | "role" | "released" | "total" | "earned" | "paid" | "claim";
 type MyOrder = { row: CommissionRow; share: CommissionShare };
 const ORDER_SORT: Record<OrderSortKey, (x: MyOrder) => string | number> = {
-  order: (x) => x.row.soDocNo, date: (x) => x.row.soDate ?? "", project: (x) => x.row.projectName || x.row.customerName,
+  order: (x) => x.row.soDocNo, date: (x) => x.row.soDate ?? "", project: (x) => x.row.projectName || x.row.customerName, role: (x) => x.share.role,
   released: (x) => x.row.releasedBp, total: (x) => x.share.totalSen, earned: (x) => x.share.earnedSen, paid: (x) => x.share.paidSen,
   claim: (x) => x.share.claimableSen,
 };
@@ -708,6 +795,9 @@ function PersonPane({ data, person, onOpen }: { data: CommissionData; person: Pe
   const [month, setMonth] = useState<string | null>(null);
   const m: PersonMonth | null = month ? months.find((x) => x.month === month) ?? { month, salesSen: 0, salesBp: null, commissionSen: 0, lines: [] } : null;
   const claimedIn = (mo: string) => myPayouts.filter((p) => p.paidOn.startsWith(mo)).reduce((t, p) => t + p.amountSen, 0);
+  /* A manager earns on the team's orders too; their sales are shown apart from the person's own. */
+  const teamIn = (x: PersonMonth | undefined | null) => (x ? x.lines.filter((l) => l.role === "manager").reduce((t, l) => t + l.portion.sen, 0) : 0);
+  const asText = (l: PersonMonth["lines"][number]) => (l.role === "manager" ? `Manager · ${l.portion.salespersonName || l.row.salespersonName || "team"}` : "Own sale");
   const [query, setQuery] = useState("");
   const [onlyClaimable, setOnlyClaimable] = useState(false);
   const [sort, setSort] = useState<{ key: OrderSortKey; desc: boolean }>({ key: "date", desc: true });
@@ -717,42 +807,42 @@ function PersonPane({ data, person, onOpen }: { data: CommissionData; person: Pe
     .map((r) => ({ row: r, share: r.shares.find((s) => s.staffId === staffId) }))
     .filter((x): x is MyOrder => x.share != null)
     .filter((x) => (!onlyClaimable || x.share.claimableSen > 0) && (!q || `${x.row.soDocNo} ${x.row.projectName} ${x.row.customerName}`.toLowerCase().includes(q)))
-    .filter((x) => !m || m.lines.some((l) => l.row.soDocNo === x.row.soDocNo))
     .sort((a, b) => (sort.desc ? -1 : 1) * cmp(ORDER_SORT[sort.key](a), ORDER_SORT[sort.key](b)));
   const [openDoc, setOpenDoc] = useState<string | null>(null);
-  const maxSales = Math.max(1, ...months.map((x) => x.salesSen));
+  const maxSales = Math.max(1, ...months.map((x) => x.salesSen + teamIn(x)));
   return (
     <>
       <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
-        <Kpi label="Can claim now" value={`RM ${rm(person.claimableSen)}`} strong />
-        <Kpi label="Earned so far" value={`RM ${rm(person.earnedSen)}`} />
+        <Kpi label="Claim now" value={`RM ${rm(person.claimableSen)}`} strong />
         <Kpi label="Claimed" value={`RM ${rm(person.paidSen)}`} />
-        <Kpi label="Total commission" value={`RM ${rm(person.totalSen)}`} />
+        <Kpi label="Total comm" value={`RM ${rm(person.totalSen)}`} />
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
           <span style={sectionTitle}>Sales by month</span>
-          <span style={{ color: MUTED, flex: 1 }}>SO and VO in the month they were signed. The month total sets the salesperson rate. Click a month to see what was sold.</span>
-          {m && <Button variant="ghost" onClick={() => setMonth(null)}>Show every month</Button>}
+          <span style={{ color: MUTED, flex: 1 }}>Own sales set the salesperson rate. Team sales are the orders of the people under this manager. Click a month to see what was sold.</span>
+          {m && <Button variant="ghost" onClick={() => setMonth(null)}>Close the month</Button>}
         </div>
         {monthList.length === 0 ? <div style={{ color: MUTED }}>No sales yet.</div> : (
           <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
             {monthList.map((mo) => {
               const x = months.find((y) => y.month === mo);
+              const team = teamIn(x);
               const on = m?.month === mo;
               return (
                 <button key={mo} type="button" onClick={() => setMonth(on ? null : mo)} aria-pressed={on}
                   style={{
-                    flex: "0 0 156px", display: "flex", flexDirection: "column", gap: 3, padding: "8px 10px", borderRadius: 8, textAlign: "left", cursor: "pointer", font: "inherit",
+                    flex: "0 0 168px", display: "flex", flexDirection: "column", gap: 3, padding: "8px 10px", borderRadius: 8, textAlign: "left", cursor: "pointer", font: "inherit",
                     border: on ? "1px solid var(--accent, #1f5c4a)" : "1px solid var(--border)", background: on ? "var(--accent-soft, rgba(31,92,74,0.08))" : "var(--bg-surface, #fff)",
                   }}>
                   <span style={{ fontWeight: 600 }}>{monthLabel(mo)}</span>
-                  <span style={{ ...num }}>RM {rm0(x?.salesSen ?? 0)}</span>
                   <span style={{ height: 4, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
-                    <span style={{ display: "block", height: "100%", width: `${Math.round(((x?.salesSen ?? 0) / maxSales) * 100)}%`, background: "var(--accent, #1f5c4a)" }} />
+                    <span style={{ display: "block", height: "100%", width: `${Math.round((((x?.salesSen ?? 0) + team) / maxSales) * 100)}%`, background: "var(--accent, #1f5c4a)" }} />
                   </span>
-                  <span style={{ color: MUTED }}>{x?.salesBp != null ? `Rate ${pctText(x.salesBp)}` : "No sales"} · comm RM {rm0(x?.commissionSen ?? 0)}</span>
+                  <span style={num}>Own RM {rm0(x?.salesSen ?? 0)}{x?.salesBp != null && (x.salesSen) !== 0 ? ` · ${pctText(x.salesBp)}` : ""}</span>
+                  {team !== 0 && <span style={num}>Team RM {rm0(team)}</span>}
+                  <span style={{ ...num, fontWeight: 600 }}>Comm RM {rm0(x?.commissionSen ?? 0)}</span>
                   {claimedIn(mo) > 0 && <span style={{ color: GOOD }}>Claimed RM {rm0(claimedIn(mo))}</span>}
                 </button>
               );
@@ -761,59 +851,71 @@ function PersonPane({ data, person, onOpen }: { data: CommissionData; person: Pe
         )}
       </div>
 
-      {m && m.lines.length > 0 && (
+      {m && (
         <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
-          <div style={{ padding: "10px 14px", fontWeight: 600 }}>Sold in {monthLabel(m.month)}: RM {rm(m.salesSen)}{m.salesBp != null ? `, rate ${pctText(m.salesBp)}` : ""}, commission RM {rm(m.commissionSen)}</div>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
-            <thead><tr style={{ color: MUTED }}>
-              <th style={{ ...th, textAlign: "left", paddingLeft: 14 }}>Order / VO</th><th style={{ ...th, textAlign: "left" }}>Project</th><th style={{ ...th, textAlign: "left" }}>Date</th>
-              <th style={th}>Sales (RM)</th><th style={{ ...th, textAlign: "left" }}>As</th><th style={th}>Rate</th><th style={{ ...th, paddingRight: 14 }}>Commission (RM)</th>
-            </tr></thead>
-            <tbody>{m.lines.map((l, i) => (
-              <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
-                <td style={{ padding: "6px 0 6px 14px" }}><span style={{ fontWeight: 600 }}>{l.portion.source === "OTHER" ? "Other" : l.portion.source}</span> {l.row.soDocNo}{l.portion.source === "VO" ? ` ${l.portion.ref}` : ""}</td>
-                <td style={{ paddingLeft: 8 }}>{l.row.projectName || l.row.customerName}</td>
-                <td style={{ paddingLeft: 8 }}>{l.portion.date}</td>
-                <td style={td}>{rm(l.portion.sen)}</td>
-                <td style={{ paddingLeft: 8 }}>{ROLE[l.role]}</td>
-                <td style={td}>{pctText(l.rateBp)}</td>
-                <td style={{ ...td, paddingRight: 14 }}>{rm(l.commissionSen)}</td>
-              </tr>
-            ))}</tbody>
-          </table>
+          <div style={{ padding: "10px 14px", fontWeight: 600 }}>
+            {monthLabel(m.month)}: own sales RM {rm(m.salesSen)}{teamIn(m) !== 0 ? `, team sales RM ${rm(teamIn(m))}` : ""}, comm RM {rm(m.commissionSen)}
+          </div>
+          {m.lines.length === 0 ? <div style={{ padding: "0 14px 12px", color: MUTED }}>Nothing sold this month.</div> : (
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+              <thead><tr style={{ color: MUTED }}>
+                <th style={{ ...th, textAlign: "left", paddingLeft: 14 }}>Order / VO</th><th style={{ ...th, textAlign: "left" }}>Project</th><th style={{ ...th, textAlign: "left" }}>Date</th>
+                <th style={{ ...th, textAlign: "left" }}>As</th><th style={th}>Sales (RM)</th><th style={th}>Rate</th><th style={{ ...th, paddingRight: 14 }}>Comm (RM)</th>
+              </tr></thead>
+              <tbody>
+                {m.lines.map((l, i) => (
+                  <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td style={{ padding: "6px 0 6px 14px" }}><span style={{ fontWeight: 600 }}>{l.portion.source === "OTHER" ? "Other" : l.portion.source}</span> {l.row.soDocNo}{l.portion.source === "VO" ? ` ${l.portion.ref}` : ""}</td>
+                    <td style={{ paddingLeft: 8 }}>{l.row.projectName || l.row.customerName}</td>
+                    <td style={{ paddingLeft: 8 }}>{l.portion.date}</td>
+                    <td style={{ paddingLeft: 8, color: l.role === "manager" ? MUTED : undefined }}>{asText(l)}</td>
+                    <td style={td}>{rm(l.portion.sen)}</td>
+                    <td style={td}>{pctText(l.rateBp)}</td>
+                    <td style={{ ...td, paddingRight: 14 }}>{rm(l.commissionSen)}</td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: "2px solid var(--border)", fontWeight: 600 }}>
+                  <td style={{ padding: "6px 0 6px 14px" }} colSpan={6}>Comm on {monthLabel(m.month)} sales</td>
+                  <td style={{ ...td, paddingRight: 14 }}>{rm(m.commissionSen)}</td>
+                </tr>
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ ...sectionTitle, flex: 1 }}>{m ? `Orders with sales in ${monthLabel(m.month)}` : "Every order"} ({orders.length})</span>
+          <span style={{ ...sectionTitle, flex: 1 }}>Claim by order, all months ({orders.length})</span>
           <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <input type="checkbox" checked={onlyClaimable} onChange={(e) => setOnlyClaimable(e.target.checked)} /> Only with money to claim
           </label>
           <input className={styles.fieldInput} style={{ maxWidth: 240 }} value={query} placeholder="Search SO, project or customer" aria-label="Search orders" onChange={(e) => setQuery(e.target.value)} />
         </div>
         <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
             <thead><tr style={{ color: MUTED }}>
-              {head("order", "Order", true, { paddingLeft: 14 })}{head("date", "SO date", true)}{head("project", "Project", true)}
-              {head("released", "Released")}{head("total", "Commission")}{head("earned", "Earned")}{head("paid", "Claimed")}{head("claim", "Can claim", false, { paddingRight: 14 })}
+              {head("order", "Order", true, { paddingLeft: 14 })}{head("date", "SO date", true)}{head("project", "Project", true)}{head("role", "As", true)}
+              {head("total", "Total comm")}{head("paid", "Claimed")}{head("claim", "Claim now", false, { paddingRight: 14 })}
             </tr></thead>
             <tbody>
-              {orders.length === 0 && <tr><td colSpan={8} style={{ padding: 14, color: MUTED }}>No orders match.</td></tr>}
+              {orders.length === 0 && <tr><td colSpan={7} style={{ padding: 14, color: MUTED }}>No orders match.</td></tr>}
               {orders.map(({ row, share }) => (
                 <Fragment key={row.soDocNo}>
                   <tr style={{ borderTop: "1px solid var(--border)", cursor: "pointer" }} onClick={() => setOpenDoc(openDoc === row.soDocNo ? null : row.soDocNo)}>
                     <td style={{ padding: "6px 0 6px 14px", fontWeight: 600, whiteSpace: "nowrap" }}>{openDoc === row.soDocNo ? "▾" : "▸"} {row.soDocNo}</td>
                     <td style={{ paddingLeft: 8, color: MUTED, whiteSpace: "nowrap" }}>{row.soDate ?? ""}</td>
                     <td style={{ paddingLeft: 8 }}>{row.projectName || row.customerName}</td>
-                    <td style={td}>{pctText(row.releasedBp)}</td>
+                    <td style={{ paddingLeft: 8, color: MUTED }}>{share.role === "manager" ? `Manager · ${row.salespersonName ?? "team"}` : "Own sale"}</td>
                     <td style={td}>{rm(share.totalSen)}</td>
-                    <td style={td}>{rm(share.earnedSen)}</td>
                     <td style={td}>{rm(share.paidSen)}</td>
-                    <td style={{ ...td, paddingRight: 14, fontWeight: 600, color: share.claimableSen > 0 ? GOOD : undefined }}>{rm(share.claimableSen)}</td>
+                    <td style={{ ...td, paddingRight: 14 }}>
+                      <div style={{ fontWeight: 600, color: share.claimableSen > 0 ? GOOD : undefined }}>{rm(share.claimableSen)}</div>
+                      {row.releasedBp < 10_000 && <div style={{ color: MUTED, fontSize: "var(--fs-12, 12px)" }}>{pctText(row.releasedBp)} released</div>}
+                    </td>
                   </tr>
                   {openDoc === row.soDocNo && (
-                    <tr><td colSpan={8} style={{ padding: "4px 14px 12px" }}>
+                    <tr><td colSpan={7} style={{ padding: "4px 14px 12px" }}>
                       <ClaimBreakdown row={row} share={share} />
                       <Button variant="ghost" onClick={() => onOpen(row.soDocNo)}>Open the order</Button>
                     </td></tr>
