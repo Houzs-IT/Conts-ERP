@@ -142,7 +142,7 @@ import { headerFromParty } from '../renovation/QuotationCustomerCard';
 import { QuotationCards, QuotationNotices } from './renovationQuotationChrome';
 import { blockFromQuote, grossSen, partyFromBlock, qtyFields, sectionsFromForm, seedQuoteForm, soFieldsFromBlock, type QuoteSources } from './renovationQuotationForm';
 import { SoInstalments } from './renovationSoInstalments';
-import { soInfoApi, useSoInfoLists } from '../projects/renovation/customerPropertyApi';
+import { soInfoApi, useSoInfoLists, useSoRooms } from '../projects/renovation/customerPropertyApi';
 import {
   EMPTY_CUSTOMER_PROPERTY, mergeProjectIntoSo, missingFields, quoteBrandFor, toRenovationBlock,
   type CustomerPropertyValue, type ProjectShared,
@@ -347,6 +347,7 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
      else, a failed read included, keeps Houzs's form exactly. */
   const renoListsQ = useSoInfoLists();
   const reno = renoListsQ.data?.ready === true;
+  const copyRooms = useSoRooms(copyFromDocNo, reno);
   const renoPending = renoListsQ.isLoading;
   const [renoInfo, setRenoInfo] = useState<CustomerPropertyValue>(EMPTY_CUSTOMER_PROPERTY);
   const [renoProject, setRenoProject] = useState<ProjectShared | null>(null);
@@ -412,6 +413,8 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
     const h = copySource.data?.salesOrder;
     const srcItems = copySource.data?.items;
     if (!h) return;
+    /* Rooms live outside the SO detail: wait for them, or every copied line lands in Common area. */
+    if (renoListsQ.isLoading || (reno && copyRooms.isLoading)) return;
     setDebtorCode(h.debtor_code ?? '');
     setDebtorName(h.debtor_name ?? '');
     setPhone(h.phone ?? '');
@@ -432,8 +435,14 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
        live rows only; copying the flagged ones brought the pre-VO lines back. */
     const liveItems = Array.isArray(srcItems) ? srcItems.filter((sourceItem) => sourceItem?.cancelled !== true) : [];
     if (liveItems.length > 0) {
-      setLines(liveItems.map((it: any) => ({
-        ...newLine(),
+      const sourceItemRooms = copyRooms.data?.itemRooms ?? {};
+      const copiedLineRoom: Record<string, string> = {};
+      setLines(liveItems.map((it: any) => {
+        const copiedLine = newLine();
+        const sourceRoom = sourceItemRooms[it.id];
+        if (sourceRoom) copiedLineRoom[copiedLine.rid] = sourceRoom;
+        return {
+        ...copiedLine,
         itemCode:       it.item_code ?? '',
         itemGroup:      it.item_group ?? 'others',
         description:    it.description ?? '',
@@ -445,13 +454,18 @@ export const SalesOrderNew = ({ asQuotation = false }: { asQuotation?: boolean }
         unitCostSen:  it.unit_cost_sen ?? 0,
         variants:       (it.variants as Record<string, unknown>) ?? {},
         remark:         it.remark ?? '',
-      })));
+        };
+      }));
+      if (copyRooms.data?.roomSections.length) {
+        setRenoRooms(copyRooms.data.roomSections);
+        setRenoLineRoom(copiedLineRoom);
+      }
     }
     /* Money moved from cancelled orders (docs/bugs/0931): ?convert=SO-a:sen,… seeds one converted row each. */
     if (searchParams.get('convert')) setPaymentDrafts(convertDraftsFrom(searchParams.get('convert')));
     setCopySeeded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [copyFromDocNo, copySeeded, copySource.data]);
+  }, [copyFromDocNo, copySeeded, copySource.data, copyRooms.data, copyRooms.isLoading, renoListsQ.isLoading, reno]);
 
   /* A saved quotation fills the form when it opens and after each save or revision switch; typing does not reach here. */
   const quoteSeedKey = quoteView ? `${quoteView.revision.id}:${quoteView.quotation.version}` : '';
