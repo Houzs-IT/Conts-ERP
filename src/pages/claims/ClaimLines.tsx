@@ -101,10 +101,16 @@ function LineForFields({ line: l, sub, targets, onPick }: { line: LineDraft; sub
       placeholder={`No project: ${sub.name}'s own cost`} options={projects} />;
   }
   const choices = rentalChoices(sub, targets);
-  /* A line with a target shows its chip; an empty one the chip last picked, else Unit. An empty box saves as before: a
-     Rental general cost. */
-  const shown: RentalFor = l.where !== 'none' ? l.where : chosen && choices.includes(chosen) ? chosen : 'unit';
-  const choose = (kind: RentalFor) => { if (kind === shown) return; setChosen(kind); onPick(only('none', {})); };
+  /* The chip last tapped, else the line's target, else Unit. Tapping a chip only shows its box: the line keeps what it has
+     until something is picked there, as when every box showed at once. An empty line saves as a Rental general cost. */
+  const shown: RentalFor = chosen && choices.includes(chosen) ? chosen : l.where !== 'none' ? l.where : 'unit';
+  const choose = (kind: RentalFor) => setChosen(kind);
+  const savedOptions: Record<RentalFor, SelectOption[]> = { unit: targets.unitOptions, job: targets.jobOptions, project: projects };
+  const savedId: Record<RentalFor, string> = { unit: l.unitId, job: l.jobId, project: l.projectId };
+  const saved = l.where === 'none' || l.where === shown ? null : l.where;
+  const kept = saved
+    ? `${FOR_LABEL[saved]} ${savedOptions[saved].find(o => o.value === savedId[saved])?.label ?? ''} stays on this line until you pick ${shown === 'job' ? 'a job' : shown === 'project' ? 'a project' : 'a unit'}.`
+    : null;
   const pick = (where: Exclude<LineDraft['where'], 'none'>, key: 'unitId' | 'jobId' | 'projectId') => (v: string) =>
     onPick(v ? only(where, { [key]: v }) : only('none', {}));
   const box = shown === 'job'
@@ -116,7 +122,10 @@ function LineForFields({ line: l, sub, targets, onPick }: { line: LineDraft; sub
   return (
     <>
       <ChoiceChips label="For" value={shown} onChange={choose} options={choices.map(value => ({ value, label: FOR_LABEL[value] }))} />
-      <div className={cx('min-w-0', SPAN_ALL)}>{box}</div>
+      <div className={cx('min-w-0 flex flex-col gap-1.5', SPAN_ALL)}>
+        {box}
+        {kept && <span className="text-meta text-muted-ink">{kept}</span>}
+      </div>
     </>
   );
 }
