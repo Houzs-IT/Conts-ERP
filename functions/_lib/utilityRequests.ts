@@ -21,12 +21,12 @@ export interface RequestBill { expenseId: string; unitId: string; kind: string; 
 export async function billsToRequest(env: Env, expenseIds: string[], provider?: string): Promise<{ provider: string; bills: RequestBill[] }[]> {
   if (!expenseIds.length) return [];
   const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; due_date: string | null; reference: string | null; amount: number; provider: string | null }>(env, `
-    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, coalesce(s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) AS amount,
+    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, coalesce(s.payable_sen, s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) AS amount,
            coalesce(nullif(s.provider, ''), (SELECT a.provider FROM unit_utility_accounts a WHERE a.unit_id = e.unit_id AND a.kind = e.category AND a.account_no = e.reference
              AND coalesce(a.provider, '') <> '' ORDER BY a.created_at LIMIT 1)) AS provider
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
     WHERE e.id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) AND e.category IN ('electricity','water','internet','sewerage')
-      AND NOT e.owner_paid AND coalesce(s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) > 0 AND e.payment_request_id IS NULL
+      AND e.split_of IS NULL AND (s.payable_sen IS NOT NULL OR NOT e.owner_paid) AND coalesce(s.payable_sen, s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) > 0 AND e.payment_request_id IS NULL
     ORDER BY e.incurred_on, e.unit_id, e.category`, JSON.stringify(expenseIds));
   const out = new Map<string, RequestBill[]>();
   for (const r of rows) {
@@ -62,12 +62,14 @@ export async function requestState(env: Env, requestId: string): Promise<{ id: s
  *  their full bills as billsToRequest sends them. `off` names the ones the owner now pays (or at nothing), which are let
  *  go of the request once it has gone out again. */
 export async function billsOnRequest(env: Env, requestId: string): Promise<{ bills: RequestBill[]; off: string[] }> {
-  const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; due_date: string | null; reference: string | null; amount: number; owner_paid: boolean }>(env, `
-    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, coalesce(s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) AS amount, e.owner_paid
+  const rows = await all<{ id: string; unit_id: string; category: string; incurred_on: string; bill_date: string | null; due_date: string | null; reference: string | null; amount: number; owner_paid: boolean; split_of: string | null }>(env, `
+    SELECT e.id, e.unit_id, e.category, e.incurred_on, left(coalesce(e.period_to::text, e.incurred_on::text), 10) AS bill_date, left(s.due_date::text, 10) AS due_date, e.reference, coalesce(s.payable_sen, s.bill_sen, e.amount + coalesce((SELECT -sum(o.amount) FROM owner_adjustments o WHERE o.expense_id = e.id AND o.kind = 'charge'), 0)) AS amount, (s.payable_sen IS NULL AND e.owner_paid) AS owner_paid, e.split_of
     FROM expenses e LEFT JOIN utility_bill_scans s ON s.expense_id = e.id
     WHERE e.payment_request_id = ? ORDER BY e.incurred_on, e.unit_id, e.category, e.id`, requestId);
   const bills: RequestBill[] = [], off: string[] = [];
   for (const r of rows) {
+    /* A part split to another unit rides on its bill (utility_bill_scans.payable_sen counts it there): neither a bill of its own nor let go. */
+    if (r.split_of) continue;
     if (r.owner_paid || !(Number(r.amount) > 0) || !KINDS.includes(r.category)) { off.push(r.id); continue; }
     bills.push({ expenseId: r.id, unitId: r.unit_id, kind: r.category, billMonth: String(r.incurred_on).slice(0, 7), billDate: r.bill_date ?? null, dueDate: r.due_date ?? null, accountNo: r.reference || null, amountSen: Number(r.amount) });
   }
@@ -78,19 +80,21 @@ export async function billsOnRequest(env: Env, requestId: string): Promise<{ bil
 export async function unlinkRequest(env: Env, expenseIds: string[]): Promise<number> {
   if (!expenseIds.length) return 0;
   const rows = await all<{ id: string }>(env, `UPDATE expenses SET payment_request_id = NULL, payment_request_no = NULL
-    WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) RETURNING id`, JSON.stringify(expenseIds));
-  return rows.length;
+    WHERE id IN (SELECT jsonb_array_elements_text(?::text::jsonb)) OR split_of IN (SELECT jsonb_array_elements_text(?::text::jsonb)) RETURNING id`,
+    JSON.stringify(expenseIds), JSON.stringify(expenseIds));
+  /* A bill's parts split to other units go with it (they count on it, never alone). */
+  return rows.filter(r => expenseIds.includes(r.id)).length;
 }
 
 /** Bills moved from one request to another, each to its own (an old grouped request split into one per bill); a bill
  *  no longer on `fromId` stays where it is. */
 export async function moveRequest(env: Env, fromId: string, moves: { expenseId: string; id: string; requestNo: string | null }[]): Promise<number> {
   if (!moves.length) return 0;
-  const rows = await all<{ id: string }>(env, `UPDATE expenses e SET payment_request_id = m.id, payment_request_no = m.no
+  const rows = await all<{ id: string; split_of: string | null }>(env, `UPDATE expenses e SET payment_request_id = m.id, payment_request_no = m.no
     FROM jsonb_to_recordset(?::text::jsonb) AS m(expense_id text, id text, no text)
-    WHERE e.id = m.expense_id AND e.payment_request_id = ? RETURNING e.id`,
+    WHERE (e.id = m.expense_id OR e.split_of = m.expense_id) AND e.payment_request_id = ? RETURNING e.id, e.split_of`,
     JSON.stringify(moves.map(m => ({ expense_id: m.expenseId, id: m.id, no: m.requestNo }))), fromId);
-  return rows.length;
+  return rows.filter(r => !r.split_of).length;
 }
 
 /** Each bill's provider as billsToRequest names it: the scan's, else its account's, else the kind. */

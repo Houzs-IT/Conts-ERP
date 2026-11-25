@@ -169,6 +169,31 @@ const [l4] = await sql`select payment_request_id, payment_request_no from expens
 check('let go: the bill keeps no request', let1 === 1 && l4.payment_request_id === null && l4.payment_request_no === null, { let1, l4 });
 check('a request with no bills has nothing to send', (await R.billsOnRequest(env, 'req-none')).bills.length === 0);
 
+// One bill for two units (chew, 25 Nov 2026): the amount typed for the other unit is its own bill there, each part deducted
+// from its owner or not and paid back to its owner or not; the provider is paid once, for the parts no owner paid.
+const sp = await scan({ ...READ, billMonth: '2027-12', accountNoVisible: '3300112233XX44' });
+const shared = await M.recordScannedBills(env, session, BATCH, [{ scanId: sp, unitId: A.id, kind: 'electricity', billMonth: '2027-12', amountSen: 30000, chargeTo: 'the_conts',
+  shares: [{ unitId: B.id, amountSen: 12000, ownerPaid: true }] }]);
+const [pA] = await sql`select e.* from expenses e join utility_bill_scans s on s.expense_id = e.id where s.id = ${sp}`;
+const [pB] = await sql`select * from expenses where split_of = ${pA?.id ?? ''}`;
+check('split: this unit keeps what the other part leaves (RM 180), not deducted from its owner', shared.ok && pA?.unit_id === A.id && pA?.amount === 18000 && pA?.charge_to === 'the_conts' && !pA?.owner_paid, { shared, pA });
+check('split: the other unit has its own bill of RM 120, paid by its owner, linked to the bill', pB?.unit_id === B.id && pB?.amount === 12000 && pB?.owner_paid === true && pB?.charge_to === 'owner' && pB?.reference === pA?.reference, pB);
+const adjB = await sql`select amount, owner_id from owner_adjustments where expense_id = ${pB?.id ?? ''}`;
+check("split: the other unit's owner gets their RM 120 back", adjB.length === 1 && adjB[0].amount === 12000 && adjB[0].owner_id === B.owner_id, adjB);
+check('split: the company pays the provider once, RM 180 (the part no owner paid)', shared.ok && shared.toPay.length === 1 && shared.toPay[0].amountSen === 18000, shared.ok && shared.toPay);
+const payS = await M.billsToPay(env, BATCH, [sp]);
+check('split: the payment request takes both parts', payS[0]?.expenseIds?.length === 2 && payS[0].expenseIds.includes(pB?.id), payS);
+const reqS = await R.billsToRequest(env, [pA.id, pB.id]);
+check('split: asked again from Utility bills, it is one bill of RM 180', reqS.length === 1 && reqS[0].bills.length === 1 && reqS[0].bills[0].expenseId === pA.id && reqS[0].bills[0].amountSen === 18000, reqS);
+await R.linkRequest(env, [pA.id, pB.id], { id: 'req-s', requestNo: 'PRQ-2712-001' });
+const onS = await R.billsOnRequest(env, 'req-s');
+check('split: on its request, one bill and nothing let go', onS.bills.length === 1 && onS.bills[0].amountSen === 18000 && onS.off.length === 0, onS);
+const sq = await scan({ ...READ, billMonth: '2028-01' });
+const over = await M.recordScannedBills(env, session, BATCH, [{ scanId: sq, unitId: A.id, kind: 'electricity', billMonth: '2028-01', amountSen: 10000, shares: [{ unitId: B.id, amountSen: 10000 }] }]);
+check('split: parts that come to the whole bill are refused', !over.ok && over.status === 422, over);
+const twice = await M.recordScannedBills(env, session, BATCH, [{ scanId: sq, unitId: A.id, kind: 'electricity', billMonth: '2028-01', amountSen: 10000, shares: [{ unitId: A.id, amountSen: 1000 }] }]);
+check('split: the same unit twice is refused', !twice.ok && twice.status === 422, twice);
+
 await sql.end();
 db.kill();
 console.log(fails ? `\n${fails} FAILED` : '\nall ok');
