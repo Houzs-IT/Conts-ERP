@@ -183,6 +183,7 @@ export type OutstandingSoItem = {
   processingDate:   string | null;
   salesLocation:    string | null;
   lineDeliveryDate: string | null;
+  remark?:          string | null;
   /* Commander 2026-05-28 — the SKU's MAIN supplier (null when unbound, i.e.
      the line can't be converted to a Production Order until it's assigned a supplier). */
   mainSupplierCode: string | null;
@@ -788,11 +789,13 @@ export function useMaterialStatus(id: string) {
     retry: retryUnlessClientError,
   });
 }
+export type RawSkuSupplier = { code: string; name: string | null };
+export type RawSkuRow = { code: string; name: string | null; uom: string | null; suppliers: RawSkuSupplier[] };
 export function useRawSkus(enabled: boolean) {
   return useQuery({
     queryKey: ['production-raw-skus'],
     enabled,
-    queryFn: () => authedFetch<{ skus: Array<{ code: string; name: string | null; uom: string | null }> }>(`/production-orders/raw-skus`).then((r) => r.skus),
+    queryFn: () => authedFetch<{ skus: RawSkuRow[] }>(`/production-orders/raw-skus`).then((r) => r.skus),
     staleTime: 60_000,
     retry: retryUnlessClientError,
   });

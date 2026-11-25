@@ -376,6 +376,12 @@ export const ProductionOrderFromSo = () => {
       searchValue: (r) => r.description ?? '',
     },
     {
+      key: 'remark', label: 'Remark', width: 220, sortable: true,
+      accessor: (r) => r.remark || '—',
+      searchValue: (r) => r.remark ?? '',
+      sortFn: (a, b) => (a.remark ?? '').localeCompare(b.remark ?? ''),
+    },
+    {
       key: 'lineStatus', label: 'Stock & orders', width: 320, sortable: false,
       accessor: (r) => <SoLineStatusCell s={lineStatus[r.soItemId]} />,
       searchValue: (r) => soLineStatusText(lineStatus[r.soItemId]),
